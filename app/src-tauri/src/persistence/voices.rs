@@ -328,7 +328,7 @@ async fn seed_single_zipvoice(conn: &Connection, slug: &str, path: &Path) -> Res
 
 /// Derives the seeded display name from a pack directory slug. The seeded row
 /// is the single source of display names; the frontend holds no fallback list.
-fn display_name_for_slug(slug: &str) -> String {
+pub fn display_name_for_slug(slug: &str) -> String {
     let mut chars = slug.chars();
     match chars.next() {
         None => String::new(),

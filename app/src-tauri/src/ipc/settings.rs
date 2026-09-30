@@ -5,7 +5,8 @@ use tauri::{AppHandle, Manager, State};
 use crate::{
     config::{
         apply_setting_mutation, dispatch_worker_command, get_setting_reload_policy,
-        handle_setting_side_effects, schedule_debounced_save, SettingReloadPolicy, VoxSettings,
+        handle_setting_side_effects, request_engine_restart, schedule_debounced_save,
+        SettingReloadPolicy, VoxSettings,
     },
     core::{
         error::VoxIpcError,
@@ -28,6 +29,7 @@ pub struct SettingUpdateResult {
     pub applied: bool,
     pub reload_policy: String,
     pub message: String,
+    pub restart_scheduled: bool,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -35,6 +37,7 @@ pub struct ResetSettingsResult {
     pub settings: VoxSettings,
     pub reload_policy: String,
     pub message: String,
+    pub restart_scheduled: bool,
 }
 
 /// Called by the frontend on mount to load initial settings snapshot and model paths.
@@ -95,11 +98,19 @@ pub async fn update_setting<R: tauri::Runtime>(
         dispatch_worker_command(&app, &domain, &key, &value).await;
     }
 
+    let restart_scheduled = if policy == SettingReloadPolicy::Restart {
+        let reason = format!("{}.{} = {}", domain, key, value);
+        request_engine_restart(&app, state.inner(), &reason)
+    } else {
+        false
+    };
+
     schedule_debounced_save(state.inner().clone()).await;
 
     let action_label = match policy {
         SettingReloadPolicy::Hot => "hot-applied",
         SettingReloadPolicy::WorkerCommand => "dispatched to worker",
+        SettingReloadPolicy::Restart if restart_scheduled => "engine restart scheduled",
         SettingReloadPolicy::Restart => "restart required",
     };
 
@@ -117,6 +128,7 @@ pub async fn update_setting<R: tauri::Runtime>(
         applied: true,
         reload_policy: policy.as_str().to_string(),
         message,
+        restart_scheduled,
     })
 }
 
@@ -162,10 +174,18 @@ pub async fn reset_settings<R: tauri::Runtime>(
 
     schedule_debounced_save(state.inner().clone()).await;
 
+    let restart_scheduled = request_engine_restart(&app, state.inner(), "reset_settings -> defaults");
+
     Ok(ResetSettingsResult {
         settings: defaults,
         reload_policy: "restart".to_string(),
-        message: "Settings reset to defaults. Restart required to reinitialize providers."
-            .to_string(),
+        message: if restart_scheduled {
+            "Settings reset to defaults. Engine restart scheduled to reinitialize providers."
+                .to_string()
+        } else {
+            "Settings reset to defaults. Restart required to reinitialize providers."
+                .to_string()
+        },
+        restart_scheduled,
     })
 }

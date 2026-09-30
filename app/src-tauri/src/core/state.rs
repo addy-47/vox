@@ -154,6 +154,10 @@ pub struct AppState {
     pub pipeline_accumulator: Arc<ParkingMutex<TurnAccumulator>>,
     pub turn_metrics: Arc<TurnMetricsCollector>,
     pub db: Arc<VoxDb>,
+    pub restart_requested: Arc<AtomicBool>,
+    pub restart_runner: Arc<AtomicBool>,
+    pub worker_warmup_claimed: Arc<AtomicBool>,
+    pub restart_in_flight: Arc<AtomicBool>,
 }
 
 impl AppState {
@@ -201,6 +205,10 @@ impl AppState {
             pipeline_accumulator: Arc::new(ParkingMutex::new(TurnAccumulator::new())),
             turn_metrics: Arc::new(TurnMetricsCollector::new()),
             db,
+            restart_requested: Arc::new(AtomicBool::new(false)),
+            restart_runner: Arc::new(AtomicBool::new(false)),
+            worker_warmup_claimed: Arc::new(AtomicBool::new(false)),
+            restart_in_flight: Arc::new(AtomicBool::new(false)),
         }
     }
 

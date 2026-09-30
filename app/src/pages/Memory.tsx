@@ -16,7 +16,6 @@ import {
   FileText,
   MessageSquare,
   Hand,
-  X,
   Tag,
 } from "lucide-react";
 import {
@@ -33,7 +32,8 @@ import {
   type MemoryRevisionView,
   type ConfirmationReason,
 } from "@/services/memoryService";
-import { AmbientBackground, ErrorBoundary } from "@/shared/components/common";
+import { useObservationsList } from "@/shared/hooks/useObservationsList";
+import { AmbientBackground, ErrorBoundary, OrbitalLoader } from "@/shared/components/common";
 import { Drawer } from "@/shared/ui/Drawer";
 import { EdgePanel, Tooltip, Markdown, BottomDockFeather } from "@/shared/ui";
 import { usePanelStateContext } from "@/shared/hooks/usePanelState";
@@ -82,6 +82,7 @@ export const Memory: React.FC = memo(() => {
     reason: ConfirmationReason;
     pendingCount: number;
   } | null>(null);
+  const [pendingActionType, setPendingActionType] = useState<"consolidate" | "regenerate">("consolidate");
   const [justCommitted, setJustCommitted] = useState(false);
   const [facts, setFacts] = useState<ObservationRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -124,6 +125,15 @@ export const Memory: React.FC = memo(() => {
 
   const [drawerBodyReady, setDrawerBodyReady] = useState(false);
   const [stagingMode, setStagingMode] = useState<StagingMode>("idle");
+  const {
+    observations: paginatedObservations,
+    statusFilter: obsStatusFilter,
+    setStatusFilter: setObsStatusFilter,
+    isLoading: obsLoading,
+    isLoadingMore: obsLoadingMore,
+    hasMore: obsHasMore,
+    loadMore: obsLoadMore,
+  } = useObservationsList(stagingMode === "facts");
   const [saving, setSaving] = useState(false);
   const [consolidating, setConsolidating] = useState(false);
   const [isCommitting, setIsCommitting] = useState(false);
@@ -177,7 +187,7 @@ export const Memory: React.FC = memo(() => {
     if (!isSilent) setLoading(true);
     setRefreshing(true);
     try {
-      const [mem, allFacts, allVersions, allSuggestions] = await Promise.all([
+      const [mem, activeFacts, allVersions, allSuggestions] = await Promise.all([
         getPersonalMemory(),
         getActiveObservations(),
         getPersonalMemoryVersions(),
@@ -186,7 +196,7 @@ export const Memory: React.FC = memo(() => {
       setPersonalMemory(mem);
       setDisplayedRecord(mem);
       setVersions(allVersions);
-      setFacts(allFacts);
+      setFacts(activeFacts);
       setSuggestions(allSuggestions);
       if (allSuggestions.length > 0) {
         setStagingMode("suggestions");
@@ -368,6 +378,7 @@ export const Memory: React.FC = memo(() => {
   const handleConsolidateNow = useCallback(
     async (forced = false) => {
       if (consolidating) return;
+      setPendingActionType("consolidate");
       setConsolidating(true);
       setLeftFlash(true);
 
@@ -589,6 +600,7 @@ export const Memory: React.FC = memo(() => {
   const handleRegenerateWithComments = useCallback(
     async (commentsToApply: MemoryComment[], forced?: boolean) => {
       if (!commentsToApply.length) return;
+      setPendingActionType("regenerate");
       setSaving(true);
       setLeftFlash(true);
       try {
@@ -641,6 +653,18 @@ export const Memory: React.FC = memo(() => {
     },
     [refresh, storeClearComments]
   );
+
+  const handleConfirmPendingIntegration = useCallback(() => {
+    if (pendingActionType === "regenerate" && comments.length > 0) {
+      handleRegenerateWithComments(comments, true);
+    } else {
+      handleConsolidateNow(true);
+    }
+  }, [pendingActionType, comments, handleRegenerateWithComments, handleConsolidateNow]);
+
+  const handleCancelPendingConfirmation = useCallback(() => {
+    setPendingConfirmation(null);
+  }, []);
 
   const handleRecenter = useCallback(() => graphRef.current?.recenter(), []);
   const handleZoomIn = useCallback(() => graphRef.current?.zoomIn(), []);
@@ -833,6 +857,17 @@ export const Memory: React.FC = memo(() => {
         />
       )}
 
+      {/* ── Ambient Orbital Loading State ── */}
+      {loading && (
+        <div className="absolute inset-0 z-20 flex flex-col items-center justify-center pointer-events-none animate-in fade-in duration-300">
+          <OrbitalLoader
+            size="md"
+            title={MEMORY_COPY.graphLoadingTitle}
+            subtitle={MEMORY_COPY.graphLoadingSubtitle}
+          />
+        </div>
+      )}
+
       {/* ── Empty State ── */}
       {!loading && facts.length === 0 && (
         <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
@@ -886,30 +921,30 @@ export const Memory: React.FC = memo(() => {
         }
         headerActions={
           <div className="flex items-center gap-2 flex-wrap">
-            {unconsolidatedIdentityCount > 0 && (
-              <button
-                type="button"
-                onClick={() =>
-                  setStagingMode((prev) => (prev === "facts" ? "idle" : "facts"))
-                }
-                className={cn(
-                  "flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-mono border transition-all cursor-pointer shadow-sm",
-                  stagingMode === "facts"
-                    ? "bg-[rgba(var(--accent),0.25)] border-[rgba(var(--accent),0.55)] text-[rgb(var(--accent))]"
-                    : "bg-[rgba(var(--foreground),0.04)] border-[rgba(var(--border),0.18)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:border-[rgba(var(--accent),0.3)]"
-                )}
-                title="View candidate facts queued for integration"
-              >
-                <Tag
-                  size={12}
-                  className={stagingMode === "facts" ? "text-[rgb(var(--accent))]" : ""}
-                />
-                <span>{MEMORY_COPY.learnedFacts}</span>
-                <span className="px-1.5 py-0.2 rounded-full text-[10px] font-mono font-medium text-[rgb(var(--accent))]">
-                  {unconsolidatedIdentityCount}
+            <button
+              type="button"
+              onClick={() =>
+                setStagingMode((prev) => (prev === "facts" ? "idle" : "facts"))
+              }
+              className={cn(
+                "flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-mono border transition-all cursor-pointer shadow-sm",
+                stagingMode === "facts"
+                  ? "bg-[rgba(var(--accent),0.25)] border-[rgba(var(--accent),0.55)] text-[rgb(var(--accent))]"
+                  : "bg-[rgba(var(--foreground),0.04)] border-[rgba(var(--border),0.18)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:border-[rgba(var(--accent),0.3)]"
+              )}
+              title="View candidate and historical observations"
+            >
+              <Tag
+                size={12}
+                className={stagingMode === "facts" ? "text-[rgb(var(--accent))]" : ""}
+              />
+              <span>{MEMORY_COPY.viewObservations}</span>
+              {unconsolidatedIdentityCount > 0 && (
+                <span className="text-[10.5px] font-mono text-[rgb(var(--accent))]">
+                  ({unconsolidatedIdentityCount})
                 </span>
-              </button>
-            )}
+              )}
+            </button>
 
             {suggestions.length > 0 && stagingMode !== "suggestions" && (
               <button
@@ -920,74 +955,40 @@ export const Memory: React.FC = memo(() => {
               >
                 <Sparkles size={12} />
                 <span>Review Suggestions</span>
-                <span className="px-1.5 py-0.2 rounded-full text-[10px] font-mono font-medium bg-emerald-500/20">
-                  {suggestions.length}
+                <span className="text-[10.5px] font-mono text-emerald-400">
+                  ({suggestions.length})
                 </span>
               </button>
             )}
 
-            {pendingConfirmation ? (
-              <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[rgba(var(--foreground),0.04)] border border-[rgba(var(--accent),0.35)] animate-in fade-in duration-150">
-                {pendingConfirmation.reason === "compaction_in_progress" ? (
-                  <span className="text-[11px] font-mono text-amber-300">
-                    {MEMORY_COPY.compactionRunning}
-                  </span>
-                ) : (
-                  <div className="flex items-center gap-2">
-                    <span className="text-[11px] font-mono text-sky-300">
-                      {pendingConfirmation.pendingCount} items pending
-                    </span>
-                    <button
-                      type="button"
-                      disabled={consolidating}
-                      onClick={() => {
-                        setPendingConfirmation(null);
-                        handleConsolidateNow(true);
-                      }}
-                      className="px-2 py-0.5 rounded-lg text-[10.5px] font-mono font-medium text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.15)] transition-colors cursor-pointer"
-                    >
-                      {MEMORY_COPY.integrateAnyway}
-                    </button>
-                  </div>
-                )}
-                <button
-                  type="button"
-                  onClick={() => setPendingConfirmation(null)}
-                  className="p-1 rounded-lg text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors cursor-pointer"
-                >
-                  <X size={12} />
-                </button>
-              </div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => handleConsolidateNow(false)}
-                disabled={consolidating || unconsolidatedIdentityCount === 0}
-                className={cn(
-                  "flex items-center gap-2 px-3 py-1.5 rounded-xl text-[11px] font-mono border transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-sm",
-                  consolidating
-                    ? "bg-[rgba(var(--accent),0.25)] border-[rgba(var(--accent),0.5)] text-[rgb(var(--accent))]"
-                    : unconsolidatedIdentityCount > 0
-                    ? "bg-[rgba(var(--accent),0.12)] border-[rgba(var(--accent),0.3)] text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.2)] cursor-pointer"
-                    : "bg-[rgba(var(--foreground),0.04)] border border-[rgba(var(--border),0.12)] text-[rgb(var(--foreground-muted))]/40"
-                )}
-              >
-                <Zap
-                  size={12}
-                  className={cn(consolidating && "animate-pulse text-[rgb(var(--accent))]")}
-                />
-                <span>
-                  {consolidating
-                    ? MEMORY_COPY.consolidating
-                    : MEMORY_COPY.consolidate}
+            <button
+              type="button"
+              onClick={() => handleConsolidateNow(false)}
+              disabled={consolidating || unconsolidatedIdentityCount === 0}
+              className={cn(
+                "flex items-center gap-2 px-3 py-1.5 rounded-xl text-[11px] font-mono border transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-sm",
+                consolidating
+                  ? "bg-[rgba(var(--accent),0.25)] border-[rgba(var(--accent),0.5)] text-[rgb(var(--accent))]"
+                  : unconsolidatedIdentityCount > 0
+                  ? "bg-[rgba(var(--accent),0.12)] border-[rgba(var(--accent),0.3)] text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.2)] cursor-pointer"
+                  : "bg-[rgba(var(--foreground),0.04)] border border-[rgba(var(--border),0.12)] text-[rgb(var(--foreground-muted))]/40"
+              )}
+            >
+              <Zap
+                size={12}
+                className={cn(consolidating && "animate-pulse text-[rgb(var(--accent))]")}
+              />
+              <span>
+                {consolidating
+                  ? MEMORY_COPY.consolidating
+                  : MEMORY_COPY.consolidate}
+              </span>
+              {unconsolidatedIdentityCount > 0 && (
+                <span className="text-[10.5px] font-mono text-[rgb(var(--accent))]">
+                  ({unconsolidatedIdentityCount})
                 </span>
-                {unconsolidatedIdentityCount > 0 && (
-                  <span className="px-1.5 py-0.2 rounded-full text-[10px] font-mono font-medium text-[rgb(var(--accent))]">
-                    {unconsolidatedIdentityCount}
-                  </span>
-                )}
-              </button>
-            )}
+              )}
+            </button>
           </div>
         }
         bodyClassName="px-4 sm:px-6 py-4 overflow-y-auto lg:overflow-hidden h-full flex flex-col min-h-0"
@@ -1153,6 +1154,16 @@ export const Memory: React.FC = memo(() => {
                 onApplySuggestions={handleApplySuggestions}
                 isApplyingSuggestions={isApplyingSuggestions}
                 candidateFacts={identityCandidateFacts}
+                observations={paginatedObservations}
+                observationFilter={obsStatusFilter}
+                onObservationFilterChange={setObsStatusFilter}
+                isLoadingObservations={obsLoading}
+                isLoadingMoreObservations={obsLoadingMore}
+                hasMoreObservations={obsHasMore}
+                onLoadMoreObservations={obsLoadMore}
+                pendingConfirmation={pendingConfirmation}
+                onConfirmPendingIntegration={handleConfirmPendingIntegration}
+                onCancelPendingConfirmation={handleCancelPendingConfirmation}
                 justCommitted={justCommitted}
                 onViewVersionHistory={() => {
                   setJustCommitted(false);

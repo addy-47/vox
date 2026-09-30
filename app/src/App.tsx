@@ -65,6 +65,7 @@ const App: React.FC = () => {
 
     // Preload secondary page route chunks in the background
     import("@/pages/History").catch(() => {});
+    import("@/pages/Memory").catch(() => {});
     import("@/pages/Settings").catch(() => {});
     import("@/pages/Monitoring").catch(() => {});
 
@@ -154,7 +155,7 @@ const App: React.FC = () => {
               {/* Main App content mounts and initializes behind the loader */}
               <div className="relative h-full w-full">
                 {setupCompleted !== null && (
-                  <Suspense fallback={null}>
+                  <Suspense fallback={<PageLoader />}>
                     <PanelStateProvider>
                       <ProfilerDrawerProvider>
                         <PageDrawerProvider>

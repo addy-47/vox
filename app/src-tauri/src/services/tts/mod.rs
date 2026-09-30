@@ -19,7 +19,10 @@ pub use providers::{
     },
     kokoro::KokoroEngine,
     supertonic::TtsEngine,
-    zipvoice::{resolve_zipvoice_reference, ZipvoiceEngine, ZipvoiceReference, ZipvoiceVoiceEntry},
+    zipvoice::{
+        resolve_zipvoice_reference, ZipvoiceEngine, ZipvoiceReference, ZipvoiceVoiceEntry,
+        ZIPVOICE_GUIDANCE_SCALE,
+    },
     TtsProvider,
 };
 pub use voice::VoiceProfile;

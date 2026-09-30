@@ -334,6 +334,10 @@ fn apply_tts_mutation(
             settings.tts.supertonic = serde_json::from_value(value.clone())
                 .map_err(|e| format!("Invalid supertonic config: {}", e))?;
         }
+        "kokoro" => {
+            settings.tts.kokoro = serde_json::from_value(value.clone())
+                .map_err(|e| format!("Invalid kokoro config: {}", e))?;
+        }
         "chatterbox" => {
             settings.tts.chatterbox = serde_json::from_value(value.clone())
                 .map_err(|e| format!("Invalid chatterbox config: {}", e))?;

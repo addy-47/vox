@@ -456,6 +456,13 @@ pub async fn ensure_modular_workers(state: &AppState) -> Result<(), String> {
         None
     };
 
+    let Some(_claim) = WarmUpClaim::acquire(&state.worker_warmup_claimed) else {
+        log::debug!(
+            "[Core::Engine] LLM/TTS warm-up already in progress; skipping duplicate construction"
+        );
+        return Ok(());
+    };
+
     // Check if workers are already active under a short lock
     let (needs_llm, needs_tts, playback_engine, pipeline_tx) = {
         let lock = state.engine.lock().await;
@@ -512,6 +519,11 @@ pub async fn ensure_modular_workers(state: &AppState) -> Result<(), String> {
             if needs_tts && engine.tts_tx.is_none() {
                 engine.tts_tx = new_tts_tx;
                 engine.tts_handle = new_tts_handle;
+            } else {
+                log::error!(
+                    "[Core::Engine] TTS worker populated by another path despite warm-up claim; \
+                     discarding duplicate provider"
+                );
             }
         }
     }
@@ -519,6 +531,24 @@ pub async fn ensure_modular_workers(state: &AppState) -> Result<(), String> {
     ensure_memory_embedder(&settings);
 
     Ok(())
+}
+
+/// Releases its claim on drop, so the `?` paths in `ensure_modular_workers`
+/// cannot strand it and deadlock every future warm-up attempt.
+struct WarmUpClaim<'a>(&'a AtomicBool);
+
+impl<'a> WarmUpClaim<'a> {
+    fn acquire(flag: &'a AtomicBool) -> Option<Self> {
+        flag.compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .ok()
+            .map(|_| Self(flag))
+    }
+}
+
+impl Drop for WarmUpClaim<'_> {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::Release);
+    }
 }
 
 /// Pre-warms the memory embedder asynchronously if context retrieval is enabled.

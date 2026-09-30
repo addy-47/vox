@@ -37,10 +37,9 @@ pub async fn stop_engine<R: tauri::Runtime>(app: AppHandle<R>) -> Result<(), Vox
 }
 
 /// Restarts the 3-tier audio engine, preserving the active session if one was running.
-#[tauri::command]
-pub async fn restart_engine<R: tauri::Runtime>(
-    app: AppHandle<R>,
-    state: State<'_, Arc<AppState>>,
+pub async fn restart_engine_inner<R: tauri::Runtime>(
+    app: &AppHandle<R>,
+    state: &AppState,
 ) -> Result<(), VoxIpcError> {
     let active_session_id = if state.pipeline.state() != InteractionState::Idle {
         let conv_id = state.conversation_id.load(Ordering::Relaxed);
@@ -53,10 +52,10 @@ pub async fn restart_engine<R: tauri::Runtime>(
         None
     };
 
-    stop_audio_engine(&state)
+    stop_audio_engine(state)
         .await
         .map_err(VoxIpcError::Engine)?;
-    start_audio_engine(&app, &state)
+    start_audio_engine(app, state)
         .await
         .map_err(VoxIpcError::Engine)?;
 
@@ -82,6 +81,15 @@ pub async fn restart_engine<R: tauri::Runtime>(
     }
 
     Ok(())
+}
+
+/// Restarts the 3-tier audio engine, preserving the active session if one was running.
+#[tauri::command]
+pub async fn restart_engine<R: tauri::Runtime>(
+    app: AppHandle<R>,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), VoxIpcError> {
+    restart_engine_inner(&app, &state).await
 }
 
 /// Starts the voice assistant session by booting audio engine and routing SessionStart.

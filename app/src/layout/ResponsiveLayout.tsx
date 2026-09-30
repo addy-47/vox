@@ -2,7 +2,7 @@ import React, { useRef, useState, useEffect, useCallback, lazy, Suspense } from 
 import { EdgeNav } from "./EdgeNav";
 import { LAYOUT_COPY } from "@/data/layoutCopy";
 import { TitleBar } from "./TitleBar";
-import { AmbientBackground, HelpPanel, NotificationPanel, ErrorBoundary } from "@/shared/components/common";
+import { AmbientBackground, HelpPanel, NotificationPanel, ErrorBoundary, OrbitalLoader } from "@/shared/components/common";
 import { ActiveSessionHeader, TurnMetricsBadge } from "@/shared/components/home";
 import { EdgePanel, TopRightCluster, BottomDockFeather } from "@/shared/ui";
 import { usePanelStateContext } from "@/shared/hooks/usePanelState";
@@ -346,7 +346,19 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
           }}
         >
           <div className="h-full w-full overflow-hidden flex flex-col">
-            {children || <Outlet />}
+            <Suspense
+              fallback={
+                <div className="flex-1 w-full h-full flex flex-col items-center justify-center p-6 animate-in fade-in duration-200">
+                  <OrbitalLoader
+                    size="md"
+                    title={LAYOUT_COPY.nav.loadingSurface}
+                    subtitle={LAYOUT_COPY.nav.preparingEnvironment}
+                  />
+                </div>
+              }
+            >
+              {children || <Outlet />}
+            </Suspense>
           </div>
         </main>
 

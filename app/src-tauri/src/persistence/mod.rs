@@ -32,8 +32,8 @@ pub use compactions::{
 };
 pub use facts::{
     deactivate_observation, deactivate_observations_batch, fetch_active_episodic_observations,
-    fetch_active_observations_by_type, fetch_all_active_observations, mark_observations_integrated,
-    EpisodicObservationCandidate, ObservationRecord,
+    fetch_active_observations_by_type, fetch_all_observations,
+    mark_observations_integrated, EpisodicObservationCandidate, ObservationRecord,
 };
 pub use notifications::{NewNotification, NotificationRecord};
 pub use personal_memory::{

@@ -146,9 +146,9 @@ pub enum ConfirmationReason { CompactionInProgress, PendingQueueItems }
   - Commits all document and revision updates in a single atomic database transaction.
   - Broadcasts `IpcEvent::PersonalMemoryUpdated`.
 
-#### `get_active_observations(projectId: Option<String>) -> Vec<ObservationRecord>` — [RENAMED from `get_active_facts`]
-- **Purpose**: Returns all `status = 'active'` observations from `memory_facts` for memory graph visualization.
-- **Behavior**: Queries all active observation rows (all `fact_type` values: `personal`, `objective`, `workdone`, `blocker`, `next_step`, `pitfall`), optionally scoped by `project_id` via the session join. Returns `Vec<ObservationRecord>` ordered by `created_at DESC`. Read-only; no working memory mutation.
+#### `get_observations(projectId: Option<String>, status: Option<String>, limit: Option<u32>, offset: Option<u32>) -> Vec<ObservationRecord>`
+- **Purpose**: Returns observations from `memory_facts` across all or filtered statuses (`active`, `integrated`, `deactivated`), optionally scoped by `project_id`, with optional pagination (`limit`, `offset`).
+- **Behavior**: If `status` is supplied (e.g. `'active'`), queries rows matching that status. If omitted or null, returns all observations regardless of status ordered by `created_at DESC`. Applies `LIMIT` and `OFFSET` when provided for efficient windowed scrolling. Read-only; no working memory mutation.
 
 ---
 
@@ -269,15 +269,23 @@ Manages configuration and model assets.
 
 #### `get_settings()` & `update_setting(key: String, value: Value)` & `reset_settings()`
 - **Purpose**: Reads, mutates, or resets application configuration.
-- **Behavior**: Atomically updates `settings.json` with schema validation, hot-reloads live workers (VAD thresholds, speech rate, compute threads), and emits `IpcEvent::SettingsUpdated`. Supports provider-specific TTS sub-struct keys: `tts.chatterbox`, `tts.chatterbox_remote`, and `tts.zipvoice` (`{ voice_id: Option<String>, guidance_scale: f32 }`).
+- **Behavior**: Atomically updates `settings.json` with schema validation, hot-reloads live workers (VAD thresholds, speech rate, compute threads), and emits `IpcEvent::SettingsUpdated`. Supports provider-specific TTS sub-struct keys: `tts.chatterbox`, `tts.chatterbox_remote`, and `tts.zipvoice` (`{ voice_id: Option<String> }`).
 - **Unknown Keys Are Rejected:** An unrecognised `(domain, key)` pair MUST return `InvalidArgument`. It MUST NOT return a success payload with `applied: false` — a rejected write is otherwise indistinguishable from an applied one, and the value is silently dropped. The frontend MUST surface a rejection to the user; a green "Saved" indicator for a value the backend refused is a correctness defect.
+- **Reload Policy Is Backend-Owned and Must Be Executed:** Every accepted `(domain, key)` is classified by `config::get_setting_reload_policy` as `Hot`, `WorkerCommand`, or `Restart`. The classification is the SSOT; the frontend MUST NOT carry its own copy of the key list.
+  - `Hot` — read from live state on each use; nothing further to do.
+  - `WorkerCommand` — forwarded over the worker's command channel.
+  - `Restart` — MUST actually rebuild the engine, not merely be reported. Providers cache their wiring (model path, credentials, thread pool, reference voice) for the engine's entire lifetime, so a `Restart`-classified write that is only reported leaves the running engine disagreeing with the persisted settings.
+  - Every key `apply_setting_mutation` accepts MUST have an explicit arm. A key reaching the catch-all MUST be treated as a defect, not as a silent `Restart` default; `is_explicitly_classified` exists to make that testable.
+- **Response Contract:** `update_setting` and `reset_settings` return `reload_policy: String` plus `restart_scheduled: bool`. `restart_scheduled` is `true` when the backend has taken responsibility for the rebuild. The frontend MUST render its restart affordance from these fields and MUST NOT infer reload need by comparing draft against saved settings.
+- **Restarts Are Coalesced:** A single settings commit writes every dirty key in parallel, so multiple `Restart`-classified keys can land at once. Exactly one restart MUST be performed per burst; requests arriving during an in-flight rebuild MUST be absorbed by that rebuild rather than queued into a second one.
+- **No Dead Policy State:** A policy classification the frontend cannot act on is dead weight. If a field is returned, it MUST have a consuming site, and a consuming site MUST NOT carry a duplicate of the backend table.
 
 #### `get_model_catalog()` & `get_provider_caps()`
 - **Purpose**: Queries verified models and dynamic provider capabilities.
 - **Behavior**: Reads canonical models manifest and inspects hardware acceleration support. Canonical TTS provider IDs: `supertonic`, `kokoro`, `chatterbox`, `chatterbox_remote`, `edge_tts`, and `zipvoice`.
 - **Capability Contract**: Returns `ProviderCaps { voices: ProviderVoiceSource, clone: bool }`. For `zipvoice`, caps are `{ voices: Custom, clone: false }`. Unknown provider IDs MUST return an explicit error and never silently fall through to default/catalog capabilities.
 - **A Capability Field Must Be Consumed:** `ProviderCaps` carries only facts that vary between providers and that the frontend acts on. A boolean that is uniformly true across every provider is not a capability and MUST NOT be added — a field with no consuming site is dead weight that reads as a contract. Speed is deliberately absent: every provider supports it, so a `speed: bool` was uniformly `true` and read by nobody. Per-provider speed *ranges* are a separate concern, declared beside the clamp that enforces them.
-- **Diffusion Steps Are Not A Setting:** Each TTS provider synthesises at a fixed, per-provider validated step count declared as a constant beside that provider's engine (`zipvoice` 4 — flow-distilled; `supertonic` 12; `chatterbox` 10; `chatterbox_remote` 10). There is no `tts.quality_steps` key, no `quality_steps` capability, and no quality control in the UI. The ceiling is the model's validated optimum, **not** the largest value that would still run — a flow-distilled model degrades when overshot.
+- **Diffusion Steps & Guidance Scale Are Not Settings:** Each TTS provider synthesises at a fixed, per-provider validated step count and guidance scale declared as constants beside that provider's engine (`zipvoice` steps 4, guidance scale 1.0 — flow-distilled; `supertonic` 12; `chatterbox` 10; `chatterbox_remote` 10). There is no `tts.quality_steps` or `tts.guidance_scale` key in the UI. ZipVoice is flow-distilled (arXiv 2506.13053), where distillation exists specifically to eliminate classifier-free guidance — guidance scale is fixed to `1.0` (1 forward pass/step), avoiding 2x computational slowdown and metallic over-saturation.
 - **Parameter Ranges Are Per-Provider:** Where a provider supports a tunable range, the range is declared beside the clamp that enforces it, not as a UI constant. `speed` is `0.7..=2.0` for every provider except `edge_tts`, which is `0.5..=2.0`.
 
 #### `manage_models(action: String, modelId: String)` & `check_updates()`

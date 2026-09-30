@@ -12,7 +12,7 @@ use crate::{
         events::InteractionMode,
         state::{AppState, InteractionOwner, InteractionState},
     },
-    ipc::pipeline::{launch_engine, stop_engine},
+    ipc::pipeline::{launch_engine, restart_engine_inner, stop_engine},
     pipeline::dictation::{transition_dictation, DictationInteractionMode, DictationOutputMode},
     services::{
         dictation::init_dictation_hotkey_listener,
@@ -29,6 +29,65 @@ use crate::{
 /// Disk write is deferred by this duration after the last setting change.
 /// Prevents thrashing disk on rapid slider updates (dozens of changes/sec).
 pub const SETTINGS_SAVE_DEBOUNCE_MS: u64 = 1500;
+
+pub const RESTART_COALESCE_MS: u64 = 150;
+
+pub fn request_engine_restart<R: tauri::Runtime>(
+    app: &AppHandle<R>,
+    state: &Arc<AppState>,
+    reason: &str,
+) -> bool {
+    state.restart_requested.store(true, Ordering::Release);
+
+    if state
+        .restart_runner
+        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+        .is_err()
+    {
+        log::debug!(
+            "[Settings] Restart already in progress; folding '{}' into it",
+            reason
+        );
+        return true;
+    }
+
+    let app = app.clone();
+    let state = Arc::clone(state);
+    let reason = reason.to_string();
+    tauri::async_runtime::spawn(async move {
+        log::info!("[Settings] Engine restart scheduled ({})", reason);
+        loop {
+            tokio::time::sleep(Duration::from_millis(RESTART_COALESCE_MS)).await;
+
+            if !state.restart_requested.swap(false, Ordering::AcqRel) {
+                state.restart_runner.store(false, Ordering::Release);
+                if !state.restart_requested.swap(false, Ordering::AcqRel) {
+                    break;
+                }
+                if state
+                    .restart_runner
+                    .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+                    .is_err()
+                {
+                    break;
+                }
+                continue;
+            }
+
+            state.restart_in_flight.store(true, Ordering::Release);
+            let outcome = restart_engine_inner(&app, &state).await;
+            state.restart_in_flight.store(false, Ordering::Release);
+
+            match outcome {
+                Ok(()) => log::info!("[Settings] Engine restart completed"),
+                Err(e) => log::error!("[Settings] Engine restart failed: {}", e),
+            }
+        }
+        log::debug!("[Settings] Engine restart runner finished");
+    });
+
+    true
+}
 
 async fn handle_dictation_side_effects<R: tauri::Runtime>(
     app: &AppHandle<R>,

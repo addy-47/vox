@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, memo, Suspense, lazy } from "react";
-import { RotateCcw, Check, X } from "lucide-react";
+import { RotateCcw, Check, X, RefreshCw } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { useSettingsStore } from "@/store/settingsStore";
 import { ErrorBoundary, OrbitalLoader } from "@/shared/components/common";
@@ -66,30 +66,19 @@ import { SettingsCardWrapper } from "@/shared/components/settings/SettingsCardWr
 import { useSettingsPage } from "@/shared/hooks/useSettingsPage";
 
 export const Settings: React.FC = () => {
-  const settings = useSettingsStore((s) => s.settings);
   const draftSettings = useSettingsStore((s) => s.draftSettings);
   const commitChanges = useSettingsStore((s) => s.commitChanges);
   const discardChanges = useSettingsStore((s) => s.discardChanges);
   const hasChanges = useSettingsStore((s) => s.hasChanges);
   const autoSavedDomain = useSettingsStore((s) => s.autoSavedDomain);
   const isAutoSaved = !!autoSavedDomain;
+  const restartInFlight = useSettingsStore((s) => s.restartInFlight);
   const restoreDefaults = useSettingsStore((s) => s.restoreDefaults);
   const [isMobileConfirmRestore, setIsMobileConfirmRestore] = useState(false);
 
-  const requiresRestart = useMemo(() => {
-    if (!settings || !draftSettings) return false;
-    const isRealtime = draftSettings?.interaction?.pipeline_mode === "realtime";
-    if (isRealtime) return false;
-    return (
-      settings.vad.vad_backend !== draftSettings.vad.vad_backend ||
-      settings.stt.active !== draftSettings.stt.active ||
-      settings.stt.embedded.model !== draftSettings.stt.embedded.model ||
-      settings.llm.active !== draftSettings.llm.active ||
-      settings.llm.context_window !== draftSettings.llm.context_window ||
-      settings.llm.threads !== draftSettings.llm.threads ||
-      settings.tts.active !== draftSettings.tts.active
-    );
-  }, [settings, draftSettings]);
+  // Reload policy is not computed here. The backend classifies every mutation
+  // (`config::get_setting_reload_policy`) and executes the rebuild itself, so
+  // the page only mirrors `restartInFlight`.
 
   const isCloudLlmMissingKey =
     draftSettings?.llm?.active === "cloud" &&
@@ -247,7 +236,7 @@ export const Settings: React.FC = () => {
             <div className="flex gap-1.5 items-center">
               {/* Auto-synced Toast Badge on Routine Saves */}
               <AnimatePresence>
-                {!hasChanges && isAutoSaved && (
+                {!hasChanges && isAutoSaved && !restartInFlight && (
                   <motion.div
                     initial={{ opacity: 0, scale: 0.9 }}
                     animate={{ opacity: 1, scale: 1 }}
@@ -262,6 +251,24 @@ export const Settings: React.FC = () => {
                 )}
               </AnimatePresence>
 
+              {/* The backend rebuilt the engine for a `Restart`-classified
+                  change. Mirrors AppState::restart_in_flight. */}
+              <AnimatePresence>
+                {!hasChanges && restartInFlight && (
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.9 }}
+                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-[rgba(var(--accent),0.1)] border border-[rgba(var(--accent),0.2)] text-[rgb(var(--accent))]"
+                  >
+                    <RefreshCw size={13} className="animate-spin" />
+                    <span className="text-[11px] font-mono font-bold uppercase tracking-wider">
+                      {SETTINGS_COPY.restartingEngine}
+                    </span>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
               {/* Manual Changes Actions: Tick First (Commit) & Cross Second (Discard) */}
               {hasChanges && (
                 <>
@@ -270,8 +277,6 @@ export const Settings: React.FC = () => {
                     label={
                       isMissingCloudKey
                         ? SETTINGS_COPY.apiKeyRequired
-                        : requiresRestart
-                        ? SETTINGS_COPY.applyAndReload
                         : SETTINGS_COPY.saveChanges
                     }
                     side="bottom"

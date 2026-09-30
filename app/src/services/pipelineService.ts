@@ -48,10 +48,6 @@ export function launchEngine(): Promise<void> {
   return invoke("launch_engine");
 }
 
-export function restartEngine(): Promise<void> {
-  return invoke("restart_engine");
-}
-
 // ── Session Lifecycle (ipc/pipeline.rs) ──────────────────────────────────────
 
 export function startSession(sessionId?: number | null): Promise<void> {

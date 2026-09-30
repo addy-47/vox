@@ -129,6 +129,7 @@ export interface ModelCatalog {
   model_groups: ModelGroupInfo[];
   voices: VoiceProfile[];
   preset_colors: string[];
+  active_voice_name?: string | null;
 }
 
 export type AudioOutputMode = "Speaker" | "Headset";
@@ -333,7 +334,14 @@ export interface SettingsState {
   capabilitiesCache: Record<string, ModelCapabilities>;
   isLoading: boolean;
   hasChanges: boolean;
+  /**
+   * `domain.key` entries the backend classified `SettingReloadPolicy::Restart`
+   * during the most recent commit. Authoritative: the backend executed the
+   * rebuild. The UI must never reconstruct this from a local key list.
+   */
   restartKeys: string[];
+  /** True while the backend's coalesced engine restart is running. */
+  restartInFlight: boolean;
   error: string | null;
 
   loadSettings: () => Promise<void>;
@@ -346,6 +354,7 @@ export interface SettingsState {
     explicitDomainId?: SettingsDomainId
   ) => void;
   commitChanges: () => Promise<void>;
+  trackRestartCompletion: () => void;
   discardChanges: () => void;
   isDomainDirty: (domainId: string) => boolean;
   discardDomainChanges: (domainId: string) => void;
@@ -414,6 +423,11 @@ function applyAppearance(appearance?: AppearanceSettings) {
 let appearanceDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 let settingsAutoSaveTimer: ReturnType<typeof setTimeout> | null = null;
 
+/** Poll cadence for mirroring the backend's restart progress. */
+const RESTART_POLL_INTERVAL_MS = 400;
+/** Upper bound so a failed restart cannot wedge the UI in "restarting". */
+const RESTART_POLL_MAX_TICKS = 30;
+
 export const useSettingsStore = create<SettingsState>((set, get) => ({
   settings: null,
   draftSettings: null,
@@ -422,6 +436,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   isLoading: true,
   hasChanges: false,
   restartKeys: [],
+  restartInFlight: false,
   error: null,
 
   loadSettings: async () => {
@@ -681,6 +696,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     const promises: Promise<unknown>[] = [];
     const restartKeys: string[] = [];
     const failures: { domain: string; key: string; reason: string }[] = [];
+    let restartScheduled = false;
 
     const canonicalDomains: (keyof VoxSettings)[] = [
       "audio",
@@ -715,8 +731,15 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         promises.push(
           updateSetting(domain, key, val).then(
             (res) => {
+              // The backend is the only authority on reload policy. It reports
+              // the class per key and, for `Restart`, has already taken
+              // responsibility for rebuilding the engine — so nothing here
+              // needs to decide whether to reload.
               if (res?.reload_policy === "restart") {
                 restartKeys.push(`${domain}.${key}`);
+              }
+              if (res?.restart_scheduled) {
+                restartScheduled = true;
               }
             },
             (err: unknown) => {
@@ -765,13 +788,40 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       const fetched = bootState.settings;
       const cloned = structuredClone(fetched);
       set({ settings: fetched, draftSettings: cloned, hasChanges: false, isLoading: false });
+      await get().loadModelCatalog().catch(console.error);
 
-      if (restartKeys.length > 0) {
-        set({ restartKeys });
+      // Replace wholesale rather than merging: a key that stopped being
+      // restart-classified must not linger in the banner on the next commit.
+      set({ restartKeys, restartInFlight: restartScheduled });
+      if (restartScheduled) {
+        // The restart is asynchronous and coalesced. Poll until the backend's
+        // runner has finished so the "restarting" state cannot get stuck on.
+        get().trackRestartCompletion();
       }
     } finally {
       set({ isCommitting: false });
     }
+  },
+
+  /**
+   * Mirrors the backend's `restart_in_flight` flag into the store.
+   *
+   * The restart runs on a spawned task with no completion event, so this polls
+   * the `SettingsUpdated` IPC event (re-emitted as the engine comes back) to
+   * clear the flag. Bounded so a failed restart cannot wedge the UI in
+   * "restarting" forever.
+   */
+  trackRestartCompletion: () => {
+    let ticks = 0;
+    const poll = setInterval(() => {
+      ticks += 1;
+      if (ticks > RESTART_POLL_MAX_TICKS || !get().restartInFlight) {
+        clearInterval(poll);
+        if (get().restartInFlight) {
+          set({ restartInFlight: false });
+        }
+      }
+    }, RESTART_POLL_INTERVAL_MS);
   },
 
   discardChanges: () => {
@@ -788,8 +838,19 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       const defaults = res.settings;
       const cloned = structuredClone(defaults);
       applyAppearance(defaults.appearance);
+      // `restart_scheduled` is the backend's own verdict; `["all"]` is only a
+      // display placeholder for a reset that touched every domain.
       const restartKeys = res.reload_policy === "restart" ? ["all"] : [];
-      set({ settings: defaults, draftSettings: cloned, hasChanges: false, restartKeys });
+      set({
+        settings: defaults,
+        draftSettings: cloned,
+        hasChanges: false,
+        restartKeys,
+        restartInFlight: res.restart_scheduled,
+      });
+      if (res.restart_scheduled) {
+        get().trackRestartCompletion();
+      }
     } catch (err) {
       console.error("Failed to restore defaults:", err);
     }
@@ -804,6 +865,6 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   },
 
   clearRestartKeys: () => {
-    set({ restartKeys: [] });
+    set({ restartKeys: [], restartInFlight: false });
   },
 }));
