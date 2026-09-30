@@ -7,14 +7,6 @@ use crate::persistence::personal_memory::{
 };
 
 /// Saves a user-authored Markdown document as the next active Personal Memory version.
-///
-/// The deterministic inverse of `PersonalMemory::render_to_markdown`: headings become sections,
-/// paragraphs become prose blocks, and the application assigns fresh persistent IDs. No LLM runs on
-/// this path, so a manual save is deterministic and costs nothing.
-///
-/// A heading-less document is refused rather than silently emptying Personal Memory; only an
-/// explicitly empty document clears it. Staged revisions are bulk-rejected after the save commits,
-/// never when the version check rejects the write.
 pub async fn save_personal_memory_from_markdown(
     conn: &Connection,
     project_id: Option<&str>,
@@ -39,7 +31,11 @@ pub async fn save_personal_memory_from_markdown(
         "[Memory::Manual] Saved v{} from Markdown: {} section(s), {} block(s).",
         saved.version,
         memory.sections.len(),
-        memory.sections.iter().map(|s| s.blocks.len()).sum::<usize>()
+        memory
+            .sections
+            .iter()
+            .map(|s| s.blocks.len())
+            .sum::<usize>()
     );
     Ok(saved)
 }

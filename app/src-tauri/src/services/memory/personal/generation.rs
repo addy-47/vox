@@ -7,7 +7,7 @@ use anyhow::{anyhow, Result};
 use tokio_util::sync::CancellationToken;
 
 use super::prompts::{
-    consolidation_json_schema, CONSOLIDATION_MAX_OUTPUT_TOKENS, PERSONAL_CONSOLIDATION_TEMPERATURE,
+    CONSOLIDATION_MAX_OUTPUT_TOKENS, PERSONAL_CONSOLIDATION_TEMPERATURE,
 };
 use crate::services::{
     harness::{ChatMessage, Role},
@@ -19,22 +19,14 @@ use crate::services::{
 };
 
 /// Dispatches an LLM generation pass and gathers streamed tokens into a single text output.
-///
-/// Every pass is structured. The previous design branched on a `structured` flag and sent cold
-/// generation and regeneration as `OutputConstraint::Text`, asking the model to emit raw Markdown.
-/// Markdown is now a derived rendering of the semantic model, so no pass may emit it
-/// (`memory-spec.md §5.3` step 5). Selects the strict schema constraint, falling back to
-/// JSON-object when the catalog baseline reports the model lacks structured-output support. Mirrors
-/// `compaction_output_constraint` so both structured passes negotiate the same way; the transport
-/// additionally negotiates down on a provider 400.
-fn consolidation_output_constraint(model: &str) -> OutputConstraint {
+fn consolidation_output_constraint(model: &str, schema: serde_json::Value) -> OutputConstraint {
     let supported = get_baseline_spec(model)
         .map(|spec| spec.supports_structured)
         .unwrap_or(true);
     if supported {
         OutputConstraint::JsonSchema {
             name: "personal_memory_consolidation".to_string(),
-            schema: consolidation_json_schema(),
+            schema,
             strict: true,
         }
     } else {
@@ -51,15 +43,13 @@ pub(super) async fn execute_personal_llm_pass(
     system_prompt: &str,
     user_content: &str,
     settings: &LlmSettings,
+    schema: serde_json::Value,
 ) -> Result<String> {
     let now_ms = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as u64;
 
-    // Seeded from the same constant the explicit override below applies, so the two can never
-    // disagree. A bare literal here previously shadowed the constant: editing
-    // `CONSOLIDATION_MAX_OUTPUT_TOKENS` would have silently stopped affecting the policy.
     let policy = GenerationPolicy::from_settings(settings, Some(CONSOLIDATION_MAX_OUTPUT_TOKENS));
     let mut request = policy.build_request(
         GenerationPurpose::StructuredExtraction,
@@ -83,26 +73,7 @@ pub(super) async fn execute_personal_llm_pass(
         },
     );
 
-    request.output = consolidation_output_constraint(settings.active_model());
-
-    // REASONING IS DISABLED — deliberately, and this reverses the setting introduced with the
-    // first cut of the indexed patch engine. That cut turned reasoning ON because, under the
-    // previous prose-targeting protocol, the model had to re-quote document text verbatim and
-    // degenerated into whole-document echo operations without reasoning first
-    // (`docs/plans/phase12/consolidation-structured--logic-plan.md` §2.2). The semantic design
-    // removes that failure mode at its root: an operation carries only a small `text` field and
-    // never restates the document, so there is nothing to echo and nothing to reason about.
-    //
-    // Measured against the server on this exact task shape (qwen3.5:9b, strict JSON schema):
-    //   reasoning ON  -> `done_reason=length`, 3843 eval tokens, ~17.9k chars of thinking trace,
-    //                    ZERO content tokens, at every ceiling tried (512 / 1024 / 4096).
-    //                    The model reasons for the entire budget and never emits an answer, which
-    //                    tripped the empty-output guard and aborted the whole cycle.
-    //   reasoning OFF -> `done_reason=stop`, 55-250 eval tokens, valid minimal JSON, ~1s,
-    //                    0 out-of-range indices and 0 multi-line `text` across 6 document/fact
-    //                    combinations.
-    // The out-of-range and multi-line indices seen with reasoning ON are a symptom of the same
-    // runaway trace, not an independent engine defect.
+    request.output = consolidation_output_constraint(settings.active_model(), schema);
     request.options.reasoning = ReasoningMode::Disabled;
     request.options.max_output_tokens = Some(CONSOLIDATION_MAX_OUTPUT_TOKENS);
     request.options.temperature = Some(PERSONAL_CONSOLIDATION_TEMPERATURE);

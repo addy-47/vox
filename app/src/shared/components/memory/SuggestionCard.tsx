@@ -1,10 +1,10 @@
 import React, { memo } from "react";
-import { Plus, Replace, Trash2, Check, X } from "lucide-react";
+import { Plus, Replace, Trash2, Check, X, Layers } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
-import type { PersonalMemorySuggestionRecord } from "@/services/memoryService";
+import type { MemoryRevisionView } from "@/services/memoryService";
 
 export interface SuggestionCardProps {
-  suggestion: PersonalMemorySuggestionRecord;
+  suggestion: MemoryRevisionView;
   decision?: "accept" | "reject";
   onSelectDecision: (id: string, decision: "accept" | "reject") => void;
   disabled?: boolean;
@@ -28,20 +28,30 @@ export const SuggestionCard: React.FC<SuggestionCardProps> = memo(
         {/* Header: Op tag & Action toggles */}
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-1.5">
-            {op === "insert_after" ? (
+            {op === "create_block" ? (
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10.5px] font-mono font-semibold bg-emerald-500/15 border border-emerald-500/30 text-emerald-400">
                 <Plus size={11} strokeWidth={2.5} />
-                Insert after [{suggestion.target_index}]
+                Create Block
               </span>
-            ) : op === "replace" ? (
+            ) : op === "create_section" ? (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10.5px] font-mono font-semibold bg-emerald-500/15 border border-emerald-500/30 text-emerald-400">
+                <Layers size={11} strokeWidth={2.5} />
+                Create Section
+              </span>
+            ) : op === "update_block" ? (
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10.5px] font-mono font-semibold bg-sky-500/15 border border-sky-500/30 text-sky-400">
                 <Replace size={11} strokeWidth={2.5} />
-                Replace [{suggestion.target_index}]
+                Update Block
               </span>
             ) : (
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10.5px] font-mono font-semibold bg-rose-500/15 border border-rose-500/30 text-rose-400">
                 <Trash2 size={11} strokeWidth={2.5} />
-                Delete [{suggestion.target_index}]
+                Delete Block
+              </span>
+            )}
+            {suggestion.target_id && (
+              <span className="text-[10px] font-mono text-[rgb(var(--foreground-muted))]">
+                [{suggestion.target_id.slice(-6)}]
               </span>
             )}
           </div>
@@ -80,28 +90,22 @@ export const SuggestionCard: React.FC<SuggestionCardProps> = memo(
         </div>
 
         {/* Diff Content Preview */}
-        {suggestion.content ? (
-          <div
-            className={cn(
-              "p-2.5 rounded-lg text-[12px] font-mono leading-relaxed border select-text break-words whitespace-pre-wrap",
-              op === "insert_after"
-                ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-200"
-                : op === "replace"
-                ? "bg-sky-500/10 border-sky-500/20 text-sky-200"
-                : "bg-rose-500/10 border-rose-500/20 text-rose-300 line-through opacity-80"
-            )}
-          >
-            {suggestion.content}
-          </div>
-        ) : (
-          <div className="p-2.5 rounded-lg text-[11px] font-mono leading-relaxed bg-rose-500/10 border border-rose-500/20 text-rose-300 italic">
-            Element [{suggestion.target_index}] will be deleted from the document.
-          </div>
-        )}
+        <div
+          className={cn(
+            "p-2.5 rounded-lg text-[12px] font-mono leading-relaxed border select-text break-words whitespace-pre-wrap",
+            op === "create_block" || op === "create_section"
+              ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-200"
+              : op === "update_block"
+              ? "bg-sky-500/10 border-sky-500/20 text-sky-200"
+              : "bg-rose-500/10 border-rose-500/20 text-rose-300 line-through opacity-80"
+          )}
+        >
+          {suggestion.preview}
+        </div>
 
         {/* Footer State */}
         <div className="flex items-center justify-between text-[10px] font-mono text-[rgb(var(--foreground-muted))] pt-0.5">
-          <span>Target line index #{suggestion.target_index}</span>
+          <span>{suggestion.target_id || "Global"}</span>
           <span
             className={cn(
               "font-medium",

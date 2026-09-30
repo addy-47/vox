@@ -47,9 +47,10 @@ async fn seed_test_identity_facts(db_path: &std::path::Path) -> anyhow::Result<(
     let conn = db.connect()?;
     vox_lib::persistence::schema::run_migrations(&conn).await?;
 
+    let seed_json = r#"{"sections":[{"id":"sec_seed","title":"Profile","blocks":[{"id":"blk_seed","text":"User is an advanced systems engineer. Preferred language is Rust."}]}]}"#;
     conn.execute(
-        "UPDATE personal_memory SET content = 'User is an advanced systems engineer. Preferred language is Rust.' WHERE project_id IS NULL;",
-        (),
+        "UPDATE personal_memory SET content = ? WHERE project_id IS NULL;",
+        (seed_json,),
     )
     .await?;
 

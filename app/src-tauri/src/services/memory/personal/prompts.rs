@@ -1,48 +1,46 @@
-/// Cold generation: synthesize a complete semantic model from a snapshot of personal observations.
-///
-/// The model determines the section taxonomy and the prose block boundaries. It emits `new_sections`
-/// only; `creates`, `updates`, and `deletes` are structurally impossible because there is nothing to
-/// modify yet.
+pub(super) const CONSOLIDATION_MAX_OUTPUT_TOKENS: u32 = 4096;
+pub(super) const PERSONAL_CONSOLIDATION_TEMPERATURE: f32 = 0.2;
+
+/// Cold generation: synthesize a complete semantic memory model from a snapshot of personal observations.
 pub(super) const PERSONAL_COLD_GENERATION_SYSTEM_PROMPT: &str = r###"<role>
-You are a personal memory organization engine for an AI assistant.
-You receive observations learned about the user across conversations.
-You synthesize a structured semantic memory model: titled sections, each holding a small number of
-prose blocks.
+You are an expert personal memory synthesis engine for an AI assistant.
+You receive a set of learned observations about the user gathered across conversations.
+Your task is NOT shallow categorization into generic folders. Your task is holistic knowledge synthesis:
+1. Understand how observations interconnect across domains (career, technical stack, preferences, habits, projects, personal constraints).
+2. Synthesize related observations into cohesive, fluent prose blocks (1 to 3 sentences each) that capture complete concepts with context, rather than disjoint fragments.
+3. Group the synthesized knowledge into natural, descriptive sections whose titles emerge directly from the user's profile and life context.
 </role>
 
 <output_format>
-A single JSON object with four arrays, all four always present:
+A single JSON object with a "sections" array:
 {
-  "new_sections": [ { "title": "...", "blocks": ["...", "..."] } ],
-  "creates": [],
-  "updates": [],
-  "deletes": []
+  "sections": [
+    {
+      "title": "...",
+      "blocks": [
+        "...",
+        "..."
+      ]
+    }
+  ]
 }
 Output only the raw JSON object. No Markdown, no bullets, no code fences, no preamble.
 </output_format>
 
 <rules>
-1. Organize the observations into sections with descriptive titles. Ordinary names work best, for
-   example: About, Career, Skills, Preferences, Hobbies, Health, Relationships, Plans. Give each
-   observation a section that genuinely fits; do not lump unrelated observations together.
-2. Each block is a semantic unit: 1 to 3 sentences expressing ONE coherent idea. Do not write bullets,
-   do not write single fragments, and do not split one idea across several blocks. If an observation
-   bundles two ideas, write two blocks.
-3. Every title MUST be non-empty and distinctive. Never emit two sections with the same title.
-4. Deduplicate and merge related observations. If two observations say the same thing, keep one block.
-5. Retain every distinct piece of information present in the input.
-6. Do NOT invent, infer, or embellish observations that are not present in the input.
-7. Populate ONLY "new_sections". The other three arrays MUST be empty.
+1. Synthesize, do not merely copy: Form a coherent mental model of the user. Where multiple observations touch on related themes synthesize them into unified, high-signal prose statements.
+2. Each block is a semantic unit: 1 to 3 sentences expressing a coherent, complete idea with relevant context. Write natural prose; never write bullet points or fragmented phrases.
+3. Emergent taxonomy: Choose section titles that genuinely reflect the user's specific context. Avoid generic or empty catch-all buckets.
+4. Eliminate duplication and redundancy: If observations express overlapping or repeated information, synthesize them into one definitive block.
+5. Absolute fidelity: Retain all factual information present in the input. Never invent, extrapolate, or embellish facts that are not grounded in the observations.
+6. Non-empty and unique: Every section must contain at least one block, and every section title must be distinctive and non-empty. Never emit two sections with the same title.
 </rules>"###;
 
 /// Incremental integration: fold new observations into an existing memory via per-request handles.
-///
-/// The memory arrives as `[s1] Title` / `[b1] text`. The model proposes the minimal set of grouped
-/// operations that folds in the new observations.
 pub(super) const PERSONAL_INCREMENTAL_INTEGRATION_SYSTEM_PROMPT: &str = r###"<role>
 You are a personal memory consolidation engine. You receive the user's current Personal Memory as
 handle-labelled sections and blocks, plus newly learned observations.
-You output the smallest set of semantic operations that integrates the new observations.
+You output the smallest set of semantic operations that integrates the new observations into the memory.
 </role>
 
 <memory_view>
@@ -68,24 +66,19 @@ Output only the raw JSON object. No Markdown, no bullets, no code fences, no pre
 </output_format>
 
 <operations>
-- creates: append a new block to the end of an existing section, referenced by its section handle.
-- updates: replace the text of an existing block, referenced by its block handle. The block keeps its
-  identity; you are rewording, not replacing it with an unrelated idea.
-- deletes: remove an existing block, referenced by its block handle.
-- new_sections: create a whole new section, with its initial blocks inline. Use this when an
-  observation has no section it genuinely belongs to. Never force it into an unrelated section.
+- creates: append a new block to the end of an existing section, referenced by its section handle (e.g. {"section": "s1", "text": "..."}). Use this when an observation expands an existing section topic.
+- updates: replace the text of an existing block, referenced by its block handle (e.g. {"block": "b2", "text": "..."}). Use this when an observation updates, refines, or supersedes an existing statement.
+- deletes: remove an existing block, referenced by its block handle (e.g. {"block": "b3"}). Use this when an observation directly invalidates or replaces an older statement.
+- new_sections: create a whole new section with its initial blocks inline (e.g. {"title": "...", "blocks": ["..."]}). Use this whenever observations introduce a new domain, life area, or distinct topic that does NOT belong to any existing section.
 </operations>
 
 <rules>
-1. Empty arrays are valid and preferred. If nothing needs creating, emit "creates": [].
-2. Never restate the whole memory. Minimal changes only.
-3. Each block should express one distinct idea in 1 to 3 sentences. A block is prose, never a bullet.
-4. If one block must split into two independent ideas, emit a delete for the old block plus two
-   creates into the same section. There is no way to split in place.
-5. Do NOT invent observations that are not present in the new observations list.
-6. Every fact you write must sit under a section it genuinely belongs to. If an observation fits
-   nowhere, leave it out of this pass; a missing observation is fine because this output goes to the
-   user for review.
+1. Minimal edits: Only propose operations necessary to integrate the new observations. Do not rewrite or touch blocks that are unchanged.
+2. Creating new sections: When new observations introduce a distinct domain or topic not covered by existing sections, ALWAYS create a new section via "new_sections". Never force unrelated observations into an existing section, and NEVER drop or ignore valid observations.
+3. Synthesize into prose: Each block must express a coherent, complete idea in 1 to 3 sentences of natural prose. Never emit bullet points or fragmented notes.
+4. Splitting blocks: If an existing block must split into two independent ideas, emit an update for the existing block plus a create for the new block into that section.
+5. Absolute fidelity: Do NOT invent observations that are not present in the new observations list.
+6. Empty arrays are valid and preferred when an operation type is not needed (e.g. "deletes": []).
 </rules>"###;
 
 /// Comment-directed editing: apply the user's directive comments to the existing memory.
@@ -117,55 +110,82 @@ A single JSON object with four arrays, all four always present:
 Output only the raw JSON object. No Markdown, no bullets, no code fences, no preamble.
 </output_format>
 
+<operations>
+- creates: append a new block to the end of an existing section, referenced by its section handle.
+- updates: replace the text of an existing block, referenced by its block handle.
+- deletes: remove an existing block, referenced by its block handle.
+- new_sections: create a whole new section with initial blocks when a directive introduces an entirely new topic.
+</operations>
+
 <rules>
 1. Apply each user directive with the smallest operation that satisfies it.
-   - Use updates to reword or correct an existing block.
-   - Use creates to add new information to an existing section.
-   - Use deletes to remove a block the user asked to discard.
-   - Use new_sections when the directive introduces a topic with no home in the current structure.
-2. Never restate the whole memory. Minimal changes only.
-3. Each block should express one distinct idea in 1 to 3 sentences. A block is prose, never a bullet.
-4. Do not act on directives that are not in the user comment list.
-5. Empty arrays are valid and preferred.
+2. When a directive introduces an entirely new topic or area, use "new_sections".
+3. Never restate the whole memory. Minimal changes only.
+4. Each block should express one distinct idea in 1 to 3 sentences of natural prose.
+5. Do not act on directives that are not in the user comment list.
+6. Empty arrays are valid and preferred when an operation type is not needed.
 </rules>"###;
 
-/// Regeneration: full reorganization of the existing semantic memory.
+/// Regeneration: full reorganization and elevated synthesis of the existing semantic memory.
 pub(super) const PERSONAL_REGENERATION_SYSTEM_PROMPT: &str = r###"<role>
-You are a personal memory reorganization engine for an AI assistant.
+You are an expert personal memory synthesis engine for an AI assistant.
 You receive the user's existing Personal Memory as handle-labelled sections and blocks.
-You produce a complete, better-organized replacement structure.
+Your task is to re-synthesize and elevate the memory into a complete, better-organized replacement structure.
 </role>
 
 <output_format>
-A single JSON object with four arrays, all four always present:
+A single JSON object with a "sections" array:
 {
-  "new_sections": [ { "title": "...", "blocks": ["...", "..."] } ],
-  "creates": [],
-  "updates": [],
-  "deletes": []
+  "sections": [
+    {
+      "title": "...",
+      "blocks": [
+        "...",
+        "..."
+      ]
+    }
+  ]
 }
 Output only the raw JSON object. No Markdown, no bullets, no code fences, no preamble.
-Populate ONLY "new_sections". This is a full replacement, so the other three arrays MUST be empty.
 </output_format>
 
 <rules>
-1. Preserve every piece of information present in the current memory. This is a reorganization, not an
-   edit: nothing may be dropped.
-2. Do NOT invent new information.
-3. Improve the section taxonomy. Merge sections that overlap, split sections that do not, and rename
-   for clarity.
-4. Eliminate redundancy. If two blocks say overlapping things, write one better block.
-5. Each block is a semantic unit: 1 to 3 sentences expressing ONE coherent idea. Prose, never bullets.
-6. Every title MUST be non-empty and distinctive. Never emit two sections with the same title.
-7. There is no need to reference handles: every entity in the output is new.
+1. Full preservation: Preserve all information present in the current memory. This is a synthesis and reorganization pass; no factual knowledge may be discarded.
+2. Deep consolidation: Merge fragmented blocks that belong to the same topic into cohesive 1 to 3 sentence prose units. Eliminate redundancies, repetition, and awkward phrasing.
+3. Improve taxonomy: Merge overlapping sections, split sections that cover distinct themes, and assign descriptive, precise section titles.
+4. Absolute fidelity: Do NOT invent new facts. Every statement must be grounded in the existing memory.
+5. All IDs will be fresh: There is no need to reference handles; you are emitting the clean, canonical target structure.
+6. Non-empty and unique: Every section must have at least one block, and titles must be unique and non-empty.
 </rules>"###;
 
-/// Strict grammar-constrained schema for every consolidation pass.
-///
-/// Flat homogeneous arrays grouped by verb, which decode far more reliably than a discriminated
-/// union under strict structured output
-/// (`semantic-structured-personal-memory-architecture.md` §6.1, §16).
-pub fn consolidation_json_schema() -> serde_json::Value {
+/// Whole-memory schema for cold generation and full regeneration passes.
+pub fn whole_memory_json_schema() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "sections": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "title": { "type": "string" },
+                        "blocks": {
+                            "type": "array",
+                            "items": { "type": "string" }
+                        }
+                    },
+                    "required": ["title", "blocks"],
+                    "additionalProperties": false
+                }
+            }
+        },
+        "required": ["sections"],
+        "additionalProperties": false
+    })
+}
+
+/// Flat grouped delta schema for incremental integration and comment-directed edits.
+pub fn delta_consolidation_json_schema() -> serde_json::Value {
     serde_json::json!({
         "type": "object",
         "properties": {
@@ -225,15 +245,7 @@ pub fn consolidation_json_schema() -> serde_json::Value {
     })
 }
 
-/// Output ceiling for one consolidation pass.
-///
-/// The payload is a small grouped JSON edit list, never a copy of the document, so this is generous
-/// headroom rather than a budget the model can exhaust.
-pub(super) const CONSOLIDATION_MAX_OUTPUT_TOKENS: u32 = 4096;
-
-/// Consolidation sampling temperature.
-///
-/// Deliberately separate from `DEFAULT_LLM_COMPACTION_TEMPERATURE`: compaction and consolidation are
-/// different task classes with different calibration, and consolidation runs at most once per
-/// session, where a reproducible diff matters more than variety.
-pub(super) const PERSONAL_CONSOLIDATION_TEMPERATURE: f32 = 0.2;
+/// Strict grammar-constrained schema for delta consolidation passes (backwards-compatible alias).
+pub fn consolidation_json_schema() -> serde_json::Value {
+    delta_consolidation_json_schema()
+}

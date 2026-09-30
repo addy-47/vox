@@ -10,6 +10,7 @@ use super::{
         ConsolidationOutput, RejectedOperation, ResolvedOp,
     },
     prompts::{
+        delta_consolidation_json_schema, whole_memory_json_schema,
         COMMENT_DIRECTED_EDIT_SYSTEM_PROMPT, PERSONAL_COLD_GENERATION_SYSTEM_PROMPT,
         PERSONAL_INCREMENTAL_INTEGRATION_SYSTEM_PROMPT, PERSONAL_REGENERATION_SYSTEM_PROMPT,
     },
@@ -31,32 +32,21 @@ use crate::{
     services::llm::{LlmProvider, LlmSettings},
 };
 
-/// The `auto_apply` value of `settings.personal_memory.suggestion_policy` (`memory-spec.md §5.4`).
 const SUGGESTION_POLICY_AUTO_APPLY: &str = "auto_apply";
 
-/// Why the backend declined to run consolidation and is asking the user to decide.
-///
-/// Every variant is side-effect free: no LLM pass ran, no revision was staged, and no observation
-/// changed status. The frontend decides whether to offer a confirm affordance
-/// (`PendingQueueItems`) or to keep the control disabled (`CompactionInProgress`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ConfirmationReason {
-    /// A compaction run is in progress. The UI disables the control in this state rather than
-    /// offering a confirm path, so this variant only surfaces on a request/compaction race.
     CompactionInProgress,
-    /// The ingestion queue still holds items that have not reached a terminal state.
     PendingQueueItems,
 }
 
-/// The result of a consolidation request (`ipc-spec.md §2.3`).
-///
-/// `record` exposes rendered Markdown on the wire; the canonical JSON it also carries never
-/// serializes.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "status", rename_all = "snake_case")]
 pub enum ConsolidateOutcome {
-    Completed { record: PersonalMemoryRecord },
+    Completed {
+        record: PersonalMemoryRecord,
+    },
     ConfirmationRequired {
         reason: ConfirmationReason,
         pending_count: i64,
@@ -75,18 +65,13 @@ impl ConsolidateOutcome {
     }
 }
 
-/// Arguments for one `consolidate_personal_memory` request, bundled to keep the entry point within
-/// the five-argument ceiling (`backend-style-guide.md §6`).
 pub struct ConsolidationRequest<'a> {
     pub conn: &'a Connection,
     pub llm_provider: &'a dyn LlmProvider,
-    /// Directive comments from the user. When present the request is a comment-directed edit and is
-    /// never gated and consumes no observation.
     pub comments: Option<Vec<String>>,
     pub project_id: Option<&'a str>,
     pub memory_settings: &'a PersonalMemorySettings,
     pub llm_settings: Option<&'a LlmSettings>,
-    /// True when the user has confirmed proceeding despite unfinished ingestion items.
     pub forced: bool,
 }
 
@@ -102,12 +87,6 @@ struct ConsolidationPass<'a> {
 
 /// Integrates active personal observations into the semantic Personal Memory model, or stages
 /// comment-directed edits.
-///
-/// Gating follows `memory-spec.md §5.3` §5.3.2: nothing here blocks on queue state. With `forced`
-/// false and unfinished ingestion items present, the call returns `ConfirmationRequired` with no
-/// side effects and the frontend re-issues it with `forced = true`. With `forced` true, only the
-/// observations active at snapshot time are consumed and pending items keep draining through the
-/// normal quiet observer.
 pub async fn consolidate_personal_memory(
     request: ConsolidationRequest<'_>,
 ) -> Result<ConsolidateOutcome> {
@@ -131,7 +110,6 @@ pub async fn consolidate_personal_memory(
         return Ok(blocked);
     }
 
-    // INVARIANT 5.3-C: snapshot the candidates once, before the pass.
     let candidates = fetch_active_observations_by_type(request.conn, "personal").await?;
     if candidates.is_empty() {
         log::info!(
@@ -148,7 +126,6 @@ pub async fn consolidate_personal_memory(
         run_incremental_integration(&pass, &candidates).await?
     };
 
-    // INVARIANT: a pass that landed nothing must not consume the snapshot.
     if !pass_result.landed {
         log::warn!(
             "[Memory::Personal] Pass produced no applicable operation; {} observation(s) left 'active' for the next run.",
@@ -172,10 +149,6 @@ pub async fn consolidate_personal_memory(
 
 /// Evaluates the two user-controlled gates, returning a `ConfirmationRequired` outcome when one
 /// blocks the run and `None` when consolidation may proceed.
-///
-/// A compaction in progress always blocks: the backend never preempts or defers a compaction.
-/// Pending ingestion items block only when `forced` is false, because whether an incomplete queue is
-/// acceptable is the user's call, not the backend's.
 async fn gate_on_compaction_and_queue(
     conn: &Connection,
     forced: bool,
@@ -204,20 +177,17 @@ async fn gate_on_compaction_and_queue(
 }
 
 /// Cold generation: synthesize a complete semantic model from the candidate observations.
-///
-/// The model may only populate `new_sections`. Anything in the other three arrays is a protocol
-/// violation on a pass that has nothing to modify, so it is logged and dropped.
 async fn run_cold_generation(
     pass: &ConsolidationPass<'_>,
     candidates: &[ObservationRecord],
 ) -> Result<PassResult> {
     let user_content = format!(
         "<learned_observations>\n{}\n</learned_observations>\n\n\
-         Synthesize a complete structured memory from these observations. Populate only 'new_sections'.",
+         Synthesize a complete structured personal memory from these observations.",
         render_observation_bullets(candidates)
     );
 
-    let output = run_structured_pass(
+    let drafts = run_whole_memory_pass(
         pass,
         PERSONAL_COLD_GENERATION_SYSTEM_PROMPT,
         &user_content,
@@ -225,7 +195,6 @@ async fn run_cold_generation(
     )
     .await?;
 
-    let drafts = new_section_drafts(&output, "cold generation");
     if drafts.is_empty() {
         return Err(anyhow!(
             "Cold generation returned no usable sections; memory left unchanged at v{}",
@@ -240,9 +209,6 @@ async fn run_cold_generation(
 }
 
 /// Incremental integration: fold the candidate observations into the existing semantic model.
-///
-/// Resolved operations are staged as pending revisions, or committed directly when the
-/// `auto_apply` policy is active. Deletions are always held for user confirmation.
 async fn run_incremental_integration(
     pass: &ConsolidationPass<'_>,
     candidates: &[ObservationRecord],
@@ -270,7 +236,7 @@ async fn run_incremental_integration(
     log_operation_rejections("incremental integration", &rejected);
 
     if pass.memory_settings.suggestion_policy == SUGGESTION_POLICY_AUTO_APPLY {
-        auto_apply_non_destructive(pass, resolved).await
+        auto_apply_operations(pass, resolved).await
     } else {
         let staged = stage_revisions(pass.conn, pass.current_record, resolved).await?;
         log::info!(
@@ -286,8 +252,6 @@ async fn run_incremental_integration(
 }
 
 /// Comment-directed editing: apply the user's own directives to the existing memory.
-///
-/// Never gated, and never transitions an observation, because no observation is consumed here.
 async fn stage_comment_directed_edits(
     pass: &ConsolidationPass<'_>,
     comments: &[String],
@@ -330,10 +294,6 @@ async fn stage_comment_directed_edits(
 }
 
 /// Regeneration: replace the entire structure with a freshly organized one, all persistent IDs new.
-///
-/// Every previously pending revision is bulk-rejected rather than left to fail individually at
-/// acceptance time, because regeneration supersedes every ID by construction
-/// (`memory-spec.md §5.3` step 5, Regeneration).
 pub async fn regenerate_personal_memory(
     conn: &Connection,
     llm_provider: &dyn LlmProvider,
@@ -363,12 +323,11 @@ pub async fn regenerate_personal_memory(
     let (handle_view, _) = memory.to_handle_format();
     let user_content = format!(
         "<current_memory>\n{}\n</current_memory>\n\n\
-         Reorganize this memory into a new coherent structure. Preserve every piece of information. \
-         Populate only 'new_sections'.",
+         Re-synthesize and reorganize this memory into an elevated, coherent structure. Preserve all factual information.",
         handle_view
     );
 
-    let output = run_structured_pass(
+    let drafts = run_whole_memory_pass(
         &pass,
         PERSONAL_REGENERATION_SYSTEM_PROMPT,
         &user_content,
@@ -376,7 +335,6 @@ pub async fn regenerate_personal_memory(
     )
     .await?;
 
-    let drafts = new_section_drafts(&output, "regeneration");
     if drafts.is_empty() {
         return Err(anyhow!(
             "Regeneration returned no usable sections; memory left unchanged at v{}",
@@ -388,9 +346,6 @@ pub async fn regenerate_personal_memory(
 }
 
 /// Commits a freshly built structure as the next active memory version.
-///
-/// `bulk_reject_stale` is set for regeneration only, where every previously pending revision is
-/// superseded by construction.
 async fn commit_new_structure(
     pass: &ConsolidationPass<'_>,
     drafts: Vec<NewSectionDraft>,
@@ -438,24 +393,17 @@ async fn commit_new_structure(
     Ok(saved)
 }
 
-/// Commits every non-destructive operation under the `auto_apply` policy and stages the rest.
-///
-/// Deletions are always held for confirmation: an automatic policy setting is not sufficient
-/// authorization to drop content the user may still want (`memory-spec.md §5.4`).
-async fn auto_apply_non_destructive(
+/// Commits all resolved operations under the `auto_apply` policy directly into a new version.
+async fn auto_apply_operations(
     pass: &ConsolidationPass<'_>,
     resolved: Vec<ResolvedOp>,
 ) -> Result<PassResult> {
-    let (destructive, committable): (Vec<ResolvedOp>, Vec<ResolvedOp>) = resolved
-        .into_iter()
-        .partition(|op| !op.is_non_destructive());
-
     let memory = PersonalMemory::from_json(&pass.current_record.content)?;
-    let report: ApplyReport = apply_operations(&memory, &committable)?;
+    let report: ApplyReport = apply_operations(&memory, &resolved)?;
     log_operation_rejections("auto-apply", &report.rejected);
 
     let mut record = pass.current_record.clone();
-    let applied = committable.len().saturating_sub(report.rejected.len());
+    let applied = resolved.len().saturating_sub(report.rejected.len());
     if applied > 0 {
         record = commit_applied_memory(pass, &report.memory).await?;
         log::info!(
@@ -465,19 +413,9 @@ async fn auto_apply_non_destructive(
         );
     }
 
-    let mut held = 0;
-    if !destructive.is_empty() {
-        let staging_base = &record;
-        held = stage_revisions(pass.conn, staging_base, destructive).await?;
-        log::info!(
-            "[Memory::Personal::AutoApply] Held {} deletion(s) for user confirmation.",
-            held
-        );
-    }
-
     Ok(PassResult {
         outcome: ConsolidateOutcome::completed(record),
-        landed: applied > 0 || held > 0,
+        landed: applied > 0,
     })
 }
 
@@ -502,7 +440,52 @@ async fn commit_applied_memory(
     .await
 }
 
-/// Issues one structured LLM pass and deserializes the flat grouped JSON payload.
+#[derive(Debug, Deserialize)]
+struct WholeMemoryOutput {
+    sections: Vec<WholeMemorySectionDraft>,
+}
+
+#[derive(Debug, Deserialize)]
+struct WholeMemorySectionDraft {
+    title: String,
+    blocks: Vec<String>,
+}
+
+/// Issues one whole-memory structured LLM pass (cold generation or regeneration).
+async fn run_whole_memory_pass(
+    pass: &ConsolidationPass<'_>,
+    system_prompt: &str,
+    user_content: &str,
+    pass_name: &str,
+) -> Result<Vec<NewSectionDraft>> {
+    let raw = execute_personal_llm_pass(
+        pass.llm_provider,
+        system_prompt,
+        user_content,
+        pass.llm_settings,
+        whole_memory_json_schema(),
+    )
+    .await?;
+    let output: WholeMemoryOutput = serde_json::from_str(extract_json_payload(&raw)).map_err(|e| {
+        anyhow!(
+            "Failed to parse {} JSON output: {} (raw: {})",
+            pass_name,
+            e,
+            raw
+        )
+    })?;
+    Ok(output
+        .sections
+        .into_iter()
+        .filter(|s| !s.title.trim().is_empty())
+        .map(|s| NewSectionDraft {
+            title: s.title.trim().to_string(),
+            blocks: s.blocks,
+        })
+        .collect())
+}
+
+/// Issues one delta structured LLM pass (incremental integration or comment edit).
 async fn run_structured_pass(
     pass: &ConsolidationPass<'_>,
     system_prompt: &str,
@@ -514,6 +497,7 @@ async fn run_structured_pass(
         system_prompt,
         user_content,
         pass.llm_settings,
+        delta_consolidation_json_schema(),
     )
     .await?;
     serde_json::from_str(extract_json_payload(&raw)).map_err(|e| {
@@ -524,28 +508,6 @@ async fn run_structured_pass(
             raw
         )
     })
-}
-
-/// Extracts the `new_sections` array as drafts, logging and dropping any non-`new_sections`
-/// operation, which is a protocol violation on the cold-generation and regeneration passes.
-fn new_section_drafts(output: &ConsolidationOutput, pass_name: &str) -> Vec<NewSectionDraft> {
-    let stray = output.creates.len() + output.updates.len() + output.deletes.len();
-    if stray > 0 {
-        log::warn!(
-            "[Memory::Personal::{}] Dropped {} create/update/delete operation(s); this pass may only populate new_sections.",
-            pass_name,
-            stray
-        );
-    }
-    output
-        .new_sections
-        .iter()
-        .filter(|section| !section.title.trim().is_empty())
-        .map(|section| NewSectionDraft {
-            title: section.title.trim().to_string(),
-            blocks: section.blocks.clone(),
-        })
-        .collect()
 }
 
 /// Renders candidate observations as a bullet list for the LLM prompt.
@@ -575,9 +537,6 @@ fn render_comment_bullets(comments: &[String]) -> String {
 
 /// Parses the stored canonical JSON and returns its sections, or an empty vector when the payload is
 /// malformed.
-///
-/// A malformed payload is treated as "no memory" rather than an error, so the cold-generation path
-/// can rebuild it from observations instead of wedging every future consolidation.
 fn stored_sections(record: &PersonalMemoryRecord) -> Vec<MemorySection> {
     match PersonalMemory::from_json(&record.content) {
         Ok(memory) => memory.sections,
@@ -592,11 +551,6 @@ fn stored_sections(record: &PersonalMemoryRecord) -> Vec<MemorySection> {
 }
 
 /// Logs per-operation rejections with their attribution, never escalating the batch.
-///
-/// Refusing an operation silently once meant an unsafe operation could not be tied to a revision
-/// row, forcing escalation to the whole batch and stalling consolidation permanently
-/// (`consolidation-structured--logic-plan.md` §4.5). Every rejection is attributed and the rest of
-/// the batch proceeds.
 fn log_operation_rejections(pass_name: &str, rejected: &[RejectedOperation]) {
     for rejection in rejected {
         log::warn!(

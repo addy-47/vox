@@ -3,7 +3,11 @@ use std::sync::Arc;
 use tauri::{AppHandle, State};
 
 use crate::{
-    core::{error::VoxIpcError, events::{emit_ipc, IpcEvent}, state::AppState},
+    core::{
+        error::VoxIpcError,
+        events::{emit_ipc, IpcEvent},
+        state::AppState,
+    },
     persistence::{
         fetch_all_active_observations, list_personal_memory_versions,
         personal_memory::get_personal_memory as db_get_personal_memory,

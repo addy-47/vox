@@ -7,13 +7,13 @@ mod prompts;
 mod revisions;
 
 pub use consolidate::{
-    consolidate_personal_memory, regenerate_personal_memory, ConfirmationReason, ConsolidateOutcome,
-    ConsolidationRequest,
+    consolidate_personal_memory, regenerate_personal_memory, ConfirmationReason,
+    ConsolidateOutcome, ConsolidationRequest,
 };
 pub use manual::save_personal_memory_from_markdown;
 pub use model::{
-    generate_block_id, generate_section_id, HandleMap, MemoryBlock, MemorySection,
-    NewSectionDraft, PersonalMemory,
+    generate_block_id, generate_section_id, HandleMap, MemoryBlock, MemorySection, NewSectionDraft,
+    PersonalMemory,
 };
 pub use operations::{
     apply_operations, resolve_operations, ApplyReport, ConsolidationOutput, CreateBlockOutput,
@@ -21,8 +21,8 @@ pub use operations::{
 };
 pub use prompts::consolidation_json_schema;
 pub use revisions::{
-    batch_resolve_memory_revisions, list_memory_revision_views, MemoryRevisionError,
-    MemoryRevisionView,
+    batch_resolve_memory_revisions, list_memory_revision_views, stage_revisions,
+    MemoryRevisionError, MemoryRevisionView,
 };
 
 pub use crate::persistence::personal_memory::{

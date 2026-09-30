@@ -259,33 +259,33 @@ Consolidates personal knowledge through dedicated LLM passes tailored to memory 
    - **Cold Generation (Initial Memory)**:
      - *Trigger*: Invoked when no personal memory exists yet (empty content / version 0).
      - *Input*: Active personal observations.
-     - *Task*: Synthesize a coherent semantic memory model. The LLM determines sections, groups related observations into prose blocks (1–3 sentences, one idea each), deduplicates, and removes redundancy.
-     - *Output*: `new_sections` populated; `creates`, `updates`, `deletes` empty.
+     - *Task*: Synthesize a coherent semantic memory model. The LLM performs holistic knowledge synthesis across observations (understanding links, domain context, and thematic relationships), groups related concepts into coherent prose blocks (1–3 sentences each), and structures them into emergent sections.
+     - *Output*: Dedicated whole-memory JSON schema: `{"sections": [{"title": "...", "blocks": ["..."]}]}`. No artificial delta arrays (`creates`, `updates`, `deletes`).
      - *Validation*: `PersonalMemory::validate()` — non-empty titles, unique titles, at least one section, non-empty blocks.
      - *Commit*: Application assigns all IDs, serializes to JSON, saves as version 1 with `is_active = 1`. Candidate observations transition to `'integrated'`.
    - **Incremental Observation Integration**:
      - *Trigger*: Invoked when an active personal memory exists and active personal observations are available.
      - *Input*: Current memory in handle format + active personal observations as a bullet list.
-     - *Task*: Propose the minimal set of semantic operations to integrate the new observations.
-     - *Output*: Flat grouped JSON with `new_sections`, `creates`, `updates`, `deletes` as needed.
+     - *Task*: Propose the minimal set of semantic operations to integrate new observations. If observations update or supersede existing blocks, emit `updates`. If they expand existing topics, emit `creates`. When observations introduce a distinct new area or topic not covered by existing sections, emit `new_sections`. Never discard observations or force unrelated concepts into existing sections.
+     - *Output*: Flat grouped delta JSON with `new_sections`, `creates`, `updates`, `deletes`.
      - *Handle Resolution*: Engine maps per-request handles to persistent IDs. Unresolvable handles are rejected per-operation; the rest of the batch is applied.
      - *Staging*: Resolved operations are persisted as `personal_memory_revisions` rows with `status = 'pending'`.
    - **Comment-Directed Edits**:
      - *Trigger*: Invoked when the user submits directive comments on the active memory.
      - *Input*: Current memory in handle format + user comment directives.
      - *Task*: Propose semantic operations applying the user directives.
-     - *Output*: Same flat grouped JSON, staged as pending revisions.
+     - *Output*: Flat grouped delta JSON (`new_sections`, `creates`, `updates`, `deletes`), staged as pending revisions.
    - **Regeneration (Reformat Existing Memory)**:
      - *Trigger*: User-initiated "Regenerate" / "Reformat Memory" action.
      - *Input*: Current semantic memory in handle format.
-     - *Task*: Reorganize the memory into a new coherent structure, improving section groupings, eliminating redundancy, polishing clarity without inventing information.
-     - *Output*: `new_sections` only. All IDs are fresh — application assigns new `sec_*` and `blk_*` IDs to every entity.
+     - *Task*: Re-synthesize the memory into a new coherent structure, consolidating fragmented blocks, resolving redundancy, and elevating clarity and thematic structure.
+     - *Output*: Dedicated whole-memory JSON schema (`{"sections": [{"title": "...", "blocks": ["..."]}]}`). All IDs are fresh — application assigns new `sec_*` and `blk_*` IDs to every entity.
      - *Commit*: Saved as version `max_version + 1` with `is_active = 1`. Pending revisions targeting old IDs are bulk-rejected as stale.
    - **Generation Settings (all passes)**:
-     - *JSON Schema Mode*: **`OutputConstraint::JsonSchema` for all four passes.** The previous split where cold generation and regeneration used `OutputConstraint::Text` (raw Markdown) is eliminated. Every pass emits the flat grouped JSON schema.
-     - *Reasoning*: **Disabled** for every pass. Measured against `qwen3.5:9b`: reasoning ON consumed the entire output budget with zero content tokens at every ceiling tried (512 / 1024 / 4096). The flat grouped schema is even smaller than the prior index-addressed edits, so this is strictly safer.
+     - *JSON Schema Mode*: **`OutputConstraint::JsonSchema` for all passes.** Cold generation and regeneration use the pure whole-memory schema (`cold_consolidation_json_schema`) emitting `{"sections": [...]}`. Incremental integration and comment-directed edits use the delta schema (`delta_consolidation_json_schema`) emitting `{new_sections, creates, updates, deletes}`.
+     - *Reasoning*: **Disabled** for every pass. Measured against `qwen3.5:9b`: reasoning ON consumed the entire output budget with zero content tokens at every ceiling tried (512 / 1024 / 4096). The schema is compact, so this is strictly safer.
      - *Temperature*: `0.2`. Separate from the compaction temperature: consolidation runs at most once per session, where a reproducible diff matters more than variety.
-     - *Output ceiling*: 4096 tokens, generous headroom for the compact flat grouped JSON.
+     - *Output ceiling*: 4096 tokens, generous headroom for structured consolidation output.
 
 6. **Staging & Revision Lifecycle**:
    - Generated operations from incremental integration or comment-directed edits are persisted in `personal_memory_revisions` with `status = 'pending'`.
@@ -317,7 +317,7 @@ Consolidates personal knowledge through dedicated LLM passes tailored to memory 
 ### 5.4 Revision Policies & Cadence
 - **Revision Policy** (`settings.personal_memory.suggestion_policy`):
   - `"manual_review"` (default): All observation integration and comment edits land in `personal_memory_revisions` for user review.
-  - `"auto_apply"`: Non-destructive operations (`create_block`, `create_section`, `update_block`) from observation integration automatically commit into a new memory version; deletions are held for user confirmation. Comment-directed edits always stage for review regardless of policy, since the user must verify the model's interpretation of their directives.
+  - `"auto_apply"`: All operations (`create_block`, `create_section`, `update_block`, `delete_block`) from observation integration automatically commit into a new memory version. Comment-directed edits always stage for review regardless of policy, since the user must verify the model's interpretation of their directives.
 - **Cadence** (`settings.personal_memory.consolidation_cadence`):
   - `"manual"` (default): Triggered on-demand via the `"Integrate Learned Observations"` button or comment regeneration.
   - `"daily"` (with `settings.personal_memory.consolidation_time` as `"HH:MM"`): Runs daily at configured time.
