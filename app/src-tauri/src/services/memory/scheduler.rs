@@ -16,9 +16,7 @@ use crate::{
             actor::create_llm_provider_from_llm_settings, LlmProvider, QWEN_MODEL_DIR,
             QWEN_MODEL_FILE,
         },
-        memory::personal::{
-            consolidate_personal_memory, ConsolidateOutcome, ConsolidationRequest,
-        },
+        memory::personal::{consolidate_personal_memory, ConsolidateOutcome, ConsolidationRequest},
         notifications::{notify, Action, ActionPayload, NotificationCategory, NotificationParams},
     },
     utils::paths,
@@ -92,10 +90,7 @@ pub async fn run_consolidation_once<R: tauri::Runtime>(
         return Ok(());
     };
 
-    if let Err(e) = emit_ipc(
-        app,
-        IpcEvent::PersonalMemoryUpdated(record),
-    ) {
+    if let Err(e) = emit_ipc(app, IpcEvent::PersonalMemoryUpdated(record)) {
         log::warn!(
             "[Memory::Scheduler] Failed to emit PersonalMemoryUpdated: {}",
             e

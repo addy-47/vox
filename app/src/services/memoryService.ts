@@ -2,17 +2,35 @@ import { invoke } from "@tauri-apps/api/core";
 
 /**
  * Mirror of `PersonalMemoryRecord` (persistence/personal_memory.rs).
- * Single evolving markdown document per project scope.
+ * Structured semantic model with rendered markdown cache.
  */
 export interface PersonalMemoryRecord {
   id: number;
   project_id: string | null;
+  /** Canonical JSON representation of PersonalMemory (`{"sections": [...]}`). */
   content: string;
-  /** Monotonic version counter — must be passed back in save/import to detect concurrent edits. */
+  /** Markdown rendered from the canonical semantic model. */
+  markdown: string;
+  /** Monotonic version counter — must be passed back in save to detect concurrent edits. */
   version: number;
   is_active?: number;
   last_consolidated_at: number;
   updated_at: number;
+}
+
+export interface MemoryBlock {
+  id: string;
+  text: string;
+}
+
+export interface MemorySection {
+  id: string;
+  title: string;
+  blocks: MemoryBlock[];
+}
+
+export interface SemanticPersonalMemory {
+  sections: MemorySection[];
 }
 
 /**
@@ -44,7 +62,7 @@ export function setActivePersonalMemoryVersion(
 }
 
 /**
- * Saves direct manual edits to the personal memory document.
+ * Saves direct manual edits to the rendered Markdown document.
  * `expectedVersion` must equal the current record version to prevent overwriting concurrent edits.
  * Rejects with `VoxIpcError::Conflict` on version mismatch.
  */
@@ -60,87 +78,91 @@ export function savePersonalMemory(
   });
 }
 
-export type ConsolidationConflictPolicy = "prompt" | "pause_compaction" | "queue";
+export type ConfirmationReason = "compaction_in_progress" | "pending_queue_items";
+
+export type ConsolidateOutcome =
+  | { status: "completed"; record: PersonalMemoryRecord }
+  | { status: "confirmation_required"; reason: ConfirmationReason; pending_count: number };
 
 /**
- * Merges active personal facts or applies directive comments to consolidate the
+ * Merges active personal observations or applies directive comments to consolidate the
  * personal memory document via LLM. Emits `PersonalMemoryUpdated` on success.
  */
 export function consolidatePersonalMemory(
   comments?: string[],
   projectId?: string,
-  conflictPolicy?: ConsolidationConflictPolicy,
-): Promise<PersonalMemoryRecord> {
+  forced?: boolean,
+): Promise<ConsolidateOutcome> {
   return invoke("consolidate_personal_memory", {
     comments: comments ?? null,
     projectId: projectId ?? null,
-    conflictPolicy: conflictPolicy ?? null,
+    forced: forced ?? null,
   });
 }
 
 /**
  * Reformats and clarifies the existing personal memory document using LLM on demand.
- * Operates on current markdown content, not on raw facts.
+ * Operates on current semantic memory, not on raw observations.
  */
 export function regeneratePersonalMemory(projectId?: string): Promise<PersonalMemoryRecord> {
   return invoke("regenerate_personal_memory", { projectId: projectId ?? null });
 }
 
-export interface PersonalMemorySuggestionRecord {
+/**
+ * Projected semantic revision view from `personal_memory_revisions`.
+ */
+export interface MemoryRevisionView {
   id: string;
-  base_memory_version: number;
-  project_id: string | null;
+  /** `create_section` | `create_block` | `update_block` | `delete_block`. */
   op: string;
-  target_index: number;
-  content: string | null;
+  /** The persistent `sec_*` or `blk_*` ID this operation targets, empty for `create_section`. */
+  target_id: string;
   status: string;
   created_at: number;
-  resolved_at: number | null;
+  /** Human-readable one-line description, resolved against the active semantic model. */
+  preview: string;
+  /** Full JSON payload of the ResolvedOp. */
+  content: string;
+  /** Original text of target block prior to update or deletion. */
+  old_text?: string | null;
 }
 
-export interface SuggestionDecision {
+export interface RevisionDecision {
   id: string;
   action: "accept" | "reject";
 }
 
-export interface ResolveSuggestionsRequest {
+export interface ResolveRevisionsRequest {
   projectId?: string | null;
-  decisions: SuggestionDecision[];
-}
-
-export function getMemorySuggestions(projectId?: string): Promise<PersonalMemorySuggestionRecord[]> {
-  return invoke("get_memory_suggestions", { projectId: projectId ?? null });
-}
-
-export function resolveMemorySuggestions(
-  request: ResolveSuggestionsRequest,
-): Promise<PersonalMemoryRecord> {
-  return invoke("resolve_memory_suggestions", { request });
-}
-
-export function resolveMemorySuggestion(
-  id: string,
-  action: "accept" | "reject",
-  projectId?: string,
-): Promise<PersonalMemoryRecord> {
-  return invoke("resolve_memory_suggestion", {
-    id,
-    action,
-    projectId: projectId ?? null,
-  });
+  decisions: RevisionDecision[];
 }
 
 /**
- * Mirror of `FactRecord` (persistence/facts.rs).
- * Represents a single active memory fact extracted from a session.
- *
- * `fact_type` values: "personal" | "objective" | "workdone" | "blocker" | "next_step" | "pitfall"
- * "personal" facts are identity/persistent; all others are session-scoped.
+ * Lists all pending semantic memory revisions awaiting review.
  */
-export interface FactRecord {
+export function getMemoryRevisions(projectId?: string): Promise<MemoryRevisionView[]> {
+  return invoke("get_memory_revisions", { projectId: projectId ?? null });
+}
+
+/**
+ * Resolves a batch of pending personal memory revisions in a single atomic transaction.
+ */
+export function resolveMemoryRevisions(
+  request: ResolveRevisionsRequest,
+): Promise<PersonalMemoryRecord> {
+  return invoke("resolve_memory_revisions", { request });
+}
+
+/**
+ * Mirror of `ObservationRecord` (persistence/facts.rs).
+ * Represents a single active memory observation extracted from a session.
+ */
+export interface ObservationRecord {
   id: string;
   session_id: number | null;
   compaction_id: number;
+  observation_type: string;
+  /** Normalized compatibility alias */
   fact_type: string;
   text: string;
   status: string;
@@ -149,9 +171,23 @@ export interface FactRecord {
 }
 
 /**
- * Returns all `status = 'active'` memory facts for graph visualization.
- * Includes every fact_type: personal, objective, workdone, blocker, next_step, pitfall.
+ * Returns all `status = 'active'` observations for memory graph visualization.
  */
-export function getActiveFacts(projectId?: string): Promise<FactRecord[]> {
-  return invoke("get_active_facts", { projectId: projectId ?? null });
+export async function getActiveObservations(projectId?: string): Promise<ObservationRecord[]> {
+  const records = await invoke<Array<Omit<ObservationRecord, "fact_type"> & { fact_type?: string }>>(
+    "get_active_observations",
+    { projectId: projectId ?? null }
+  );
+  return records.map((r) => ({
+    ...r,
+    fact_type: r.observation_type,
+  }));
 }
+
+// Compatibility aliases
+export type FactRecord = ObservationRecord;
+export const getActiveFacts = getActiveObservations;
+export type PersonalMemorySuggestionRecord = MemoryRevisionView;
+export const getMemorySuggestions = getMemoryRevisions;
+export type ResolveSuggestionsRequest = ResolveRevisionsRequest;
+export const resolveMemorySuggestions = resolveMemoryRevisions;

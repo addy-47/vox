@@ -6,9 +6,6 @@ use super::model::{
 };
 
 /// The flat grouped JSON payload emitted by every consolidation LLM pass.
-///
-/// Homogeneous arrays grouped by verb, rather than a discriminated union, because flat arrays are
-/// more robust under grammar-constrained decoding (`semantic-structured-personal-memory-architecture.md` §6).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ConsolidationOutput {
     #[serde(default)]
@@ -51,11 +48,6 @@ pub struct DeleteBlockOutput {
 }
 
 /// A fully resolved semantic operation, addressing persistent IDs rather than LLM handles.
-///
-/// This is what gets persisted in `personal_memory_revisions.content` and replayed at acceptance
-/// time. Because every target is a persistent semantic ID, each operation is independently
-/// resolvable: accepting one never shifts the target of another, which eliminates the re-anchoring
-/// cascade that stalled the previous positional design.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum ResolvedOp {
@@ -95,16 +87,8 @@ impl ResolvedOp {
 }
 
 /// An operation the engine refused to apply, with the reason.
-///
-/// Refusing an operation must never be silent and must never escalate to the whole batch: while
-/// rejections were log-only in an earlier design, an unsafe operation could not be attributed to a
-/// revision row, so the refusal had to be escalated, and escalating stalled consolidation permanently
-/// (`consolidation-structured--logic-plan.md` §4.5). Per-operation rejection with attribution is the
-/// fix.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RejectedOperation {
-    /// Index into the operations slice the caller passed in, so a rejection maps back to the
-    /// revision row it came from.
     pub position: usize,
     pub operation: ResolvedOp,
     pub reason: String,
@@ -118,9 +102,6 @@ pub struct ApplyReport {
 }
 
 /// Maps LLM output handles onto persistent IDs, rejecting any unresolvable handle per operation.
-///
-/// `new_sections` need no resolution because they mint new entities. Rejection is per operation and
-/// the rest of the batch proceeds, so one hallucinated handle cannot discard an otherwise valid pass.
 pub fn resolve_operations(
     output: &ConsolidationOutput,
     handle_map: &HandleMap,
@@ -219,11 +200,6 @@ pub fn resolve_operations(
 }
 
 /// Applies resolved semantic operations to a memory model, in order.
-///
-/// Each operation is applied against the live model, so an operation targeting an ID that a previous
-/// operation in the same batch removed is rejected rather than silently applied to the wrong entity.
-/// This is the structural guarantee that makes bulk resolution safe without any re-anchoring.
-/// Empty sections are pruned once, after the whole batch.
 pub fn apply_operations(memory: &PersonalMemory, operations: &[ResolvedOp]) -> Result<ApplyReport> {
     let mut current = memory.clone();
     let mut rejected = Vec::new();
@@ -325,4 +301,281 @@ pub(super) fn extract_json_payload(raw: &str) -> &str {
         }
     }
     trimmed
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample_model() -> PersonalMemory {
+        PersonalMemory {
+            sections: vec![
+                MemorySection {
+                    id: "sec_alpha".to_string(),
+                    title: "Profile".to_string(),
+                    blocks: vec![
+                        MemoryBlock {
+                            id: "blk_1".to_string(),
+                            text: "Lives in Austin.".to_string(),
+                        },
+                        MemoryBlock {
+                            id: "blk_2".to_string(),
+                            text: "Works on AI.".to_string(),
+                        },
+                    ],
+                },
+                MemorySection {
+                    id: "sec_beta".to_string(),
+                    title: "Hobbies".to_string(),
+                    blocks: vec![MemoryBlock {
+                        id: "blk_3".to_string(),
+                        text: "Plays guitar.".to_string(),
+                    }],
+                },
+            ],
+        }
+    }
+
+    #[test]
+    fn test_resolve_operations_all_variants() {
+        let memory = sample_model();
+        let (_view, handle_map) = memory.to_handle_format();
+
+        let output = ConsolidationOutput {
+            new_sections: vec![NewSectionOutput {
+                title: "Projects".to_string(),
+                blocks: vec!["Building Vox assistant.".to_string()],
+            }],
+            creates: vec![CreateBlockOutput {
+                section: "s1".to_string(),
+                text: "Also loves hiking.".to_string(),
+            }],
+            updates: vec![UpdateBlockOutput {
+                block: "b1".to_string(),
+                text: "Lives in Seattle now.".to_string(),
+            }],
+            deletes: vec![DeleteBlockOutput {
+                block: "b3".to_string(),
+            }],
+        };
+
+        let (resolved, rejected) = resolve_operations(&output, &handle_map);
+        assert!(
+            rejected.is_empty(),
+            "Expected zero rejections, got: {:?}",
+            rejected
+        );
+        assert_eq!(resolved.len(), 4);
+
+        assert_eq!(
+            resolved[0],
+            ResolvedOp::CreateSection {
+                title: "Projects".to_string(),
+                blocks: vec!["Building Vox assistant.".to_string()],
+            }
+        );
+        assert_eq!(
+            resolved[1],
+            ResolvedOp::CreateBlock {
+                section_id: "sec_alpha".to_string(),
+                text: "Also loves hiking.".to_string(),
+            }
+        );
+        assert_eq!(
+            resolved[2],
+            ResolvedOp::UpdateBlock {
+                block_id: "blk_1".to_string(),
+                text: "Lives in Seattle now.".to_string(),
+            }
+        );
+        assert_eq!(
+            resolved[3],
+            ResolvedOp::DeleteBlock {
+                block_id: "blk_3".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn test_resolve_operations_unknown_handles_and_empty_text_isolated() {
+        let memory = sample_model();
+        let (_view, handle_map) = memory.to_handle_format();
+
+        let output = ConsolidationOutput {
+            new_sections: vec![NewSectionOutput {
+                title: "   ".to_string(), // empty title -> reject
+                blocks: vec![],
+            }],
+            creates: vec![
+                CreateBlockOutput {
+                    section: "s99".to_string(), // unknown section -> reject
+                    text: "Valid text".to_string(),
+                },
+                CreateBlockOutput {
+                    section: "s1".to_string(),
+                    text: "   ".to_string(), // empty text -> reject
+                },
+            ],
+            updates: vec![
+                UpdateBlockOutput {
+                    block: "b99".to_string(), // unknown block -> reject
+                    text: "Valid text".to_string(),
+                },
+                UpdateBlockOutput {
+                    block: "b1".to_string(),
+                    text: "".to_string(), // empty text -> reject
+                },
+            ],
+            deletes: vec![
+                DeleteBlockOutput {
+                    block: "b99".to_string(), // unknown block -> reject
+                },
+                DeleteBlockOutput {
+                    block: "b2".to_string(), // valid delete -> resolve!
+                },
+            ],
+        };
+
+        let (resolved, rejected) = resolve_operations(&output, &handle_map);
+        assert_eq!(resolved.len(), 1);
+        assert_eq!(
+            resolved[0],
+            ResolvedOp::DeleteBlock {
+                block_id: "blk_2".to_string(),
+            }
+        );
+        assert_eq!(rejected.len(), 6);
+    }
+
+    #[test]
+    fn test_apply_operations_success() {
+        let memory = sample_model();
+        let ops = vec![
+            ResolvedOp::CreateSection {
+                title: "Reading".to_string(),
+                blocks: vec!["Reads Sci-Fi.".to_string()],
+            },
+            ResolvedOp::CreateBlock {
+                section_id: "sec_alpha".to_string(),
+                text: "Likes coffee.".to_string(),
+            },
+            ResolvedOp::UpdateBlock {
+                block_id: "blk_1".to_string(),
+                text: "Lives in Denver.".to_string(),
+            },
+        ];
+
+        let report = apply_operations(&memory, &ops).unwrap();
+        assert!(report.rejected.is_empty());
+        assert_eq!(report.memory.sections.len(), 3);
+
+        // Verify update
+        let (s_i, b_i) = report.memory.find_block("blk_1").unwrap();
+        assert_eq!(
+            report.memory.sections[s_i].blocks[b_i].text,
+            "Lives in Denver."
+        );
+
+        // Verify create block in sec_alpha
+        assert_eq!(report.memory.sections[0].blocks.len(), 3);
+        assert_eq!(report.memory.sections[0].blocks[2].text, "Likes coffee.");
+
+        // Verify create section
+        assert_eq!(report.memory.sections[2].title, "Reading");
+        assert_eq!(report.memory.sections[2].blocks[0].text, "Reads Sci-Fi.");
+    }
+
+    #[test]
+    fn test_apply_operations_duplicate_section_rejected() {
+        let memory = sample_model();
+        let ops = vec![ResolvedOp::CreateSection {
+            title: "profile".to_string(), // duplicates "Profile"
+            blocks: vec!["Text".to_string()],
+        }];
+
+        let report = apply_operations(&memory, &ops).unwrap();
+        assert_eq!(report.rejected.len(), 1);
+        assert!(report.rejected[0].reason.contains("already exists"));
+    }
+
+    #[test]
+    fn test_apply_operations_missing_targets_rejected() {
+        let memory = sample_model();
+        let ops = vec![
+            ResolvedOp::CreateBlock {
+                section_id: "sec_nonexistent".to_string(),
+                text: "Hello".to_string(),
+            },
+            ResolvedOp::UpdateBlock {
+                block_id: "blk_nonexistent".to_string(),
+                text: "Hello".to_string(),
+            },
+            ResolvedOp::DeleteBlock {
+                block_id: "blk_nonexistent".to_string(),
+            },
+        ];
+
+        let report = apply_operations(&memory, &ops).unwrap();
+        assert_eq!(report.rejected.len(), 3);
+        assert!(report.rejected[0].reason.contains("no longer exists"));
+        assert!(report.rejected[1].reason.contains("no longer exists"));
+        assert!(report.rejected[2].reason.contains("no longer exists"));
+    }
+
+    #[test]
+    fn test_apply_operations_auto_prunes_empty_section() {
+        let memory = sample_model();
+        // sec_beta has only blk_3. Deleting blk_3 should auto-prune sec_beta!
+        let ops = vec![ResolvedOp::DeleteBlock {
+            block_id: "blk_3".to_string(),
+        }];
+
+        let report = apply_operations(&memory, &ops).unwrap();
+        assert!(report.rejected.is_empty());
+        assert_eq!(report.memory.sections.len(), 1);
+        assert_eq!(report.memory.sections[0].id, "sec_alpha");
+        assert_eq!(report.memory.find_section("sec_beta"), None);
+    }
+
+    #[test]
+    fn test_extract_json_payload() {
+        assert_eq!(
+            extract_json_payload(r#"{"key": "value"}"#),
+            r#"{"key": "value"}"#
+        );
+        assert_eq!(
+            extract_json_payload("```json\n{\"key\": \"value\"}\n```"),
+            r#"{"key": "value"}"#
+        );
+        assert_eq!(
+            extract_json_payload("```\n{\"key\": \"value\"}\n```"),
+            r#"{"key": "value"}"#
+        );
+    }
+
+    #[test]
+    fn test_resolved_op_is_non_destructive() {
+        assert!(ResolvedOp::CreateSection {
+            title: "T".to_string(),
+            blocks: vec![]
+        }
+        .is_non_destructive());
+
+        assert!(ResolvedOp::CreateBlock {
+            section_id: "s".to_string(),
+            text: "t".to_string()
+        }
+        .is_non_destructive());
+
+        assert!(ResolvedOp::UpdateBlock {
+            block_id: "b".to_string(),
+            text: "t".to_string()
+        }
+        .is_non_destructive());
+
+        assert!(!ResolvedOp::DeleteBlock {
+            block_id: "b".to_string()
+        }
+        .is_non_destructive());
+    }
 }

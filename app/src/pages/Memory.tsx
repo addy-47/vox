@@ -25,12 +25,13 @@ import {
   setActivePersonalMemoryVersion,
   savePersonalMemory,
   consolidatePersonalMemory,
-  getActiveFacts,
-  getMemorySuggestions,
-  resolveMemorySuggestions,
+  getActiveObservations,
+  getMemoryRevisions,
+  resolveMemoryRevisions,
   type PersonalMemoryRecord,
-  type FactRecord,
-  type PersonalMemorySuggestionRecord,
+  type ObservationRecord,
+  type MemoryRevisionView,
+  type ConfirmationReason,
 } from "@/services/memoryService";
 import { AmbientBackground, ErrorBoundary } from "@/shared/components/common";
 import { Drawer } from "@/shared/ui/Drawer";
@@ -74,11 +75,15 @@ export const Memory: React.FC = memo(() => {
   const [personalMemory, setPersonalMemory] = useState<PersonalMemoryRecord | null>(null);
   const [versions, setVersions] = useState<PersonalMemoryRecord[]>([]);
   const [displayedRecord, setDisplayedRecord] = useState<PersonalMemoryRecord | null>(null);
-  const [suggestions, setSuggestions] = useState<PersonalMemorySuggestionRecord[]>([]);
+  const [suggestions, setSuggestions] = useState<MemoryRevisionView[]>([]);
   const [isApplyingSuggestions, setIsApplyingSuggestions] = useState(false);
   const [isRestoringVersion, setIsRestoringVersion] = useState(false);
-  const [conflictInPlace, setConflictInPlace] = useState(false);
-  const [facts, setFacts] = useState<FactRecord[]>([]);
+  const [pendingConfirmation, setPendingConfirmation] = useState<{
+    reason: ConfirmationReason;
+    pendingCount: number;
+  } | null>(null);
+  const [justCommitted, setJustCommitted] = useState(false);
+  const [facts, setFacts] = useState<ObservationRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -86,7 +91,7 @@ export const Memory: React.FC = memo(() => {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCollection, setSelectedCollection] = useState("all");
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
-  const [selectedFact, setSelectedFact] = useState<FactRecord | null>(null);
+  const [selectedFact, setSelectedFact] = useState<ObservationRecord | null>(null);
   const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null);
   const { isPanelOpen, closePanel, togglePanel } = usePanelStateContext();
   const { isProfilerOpen } = useProfilerDrawer();
@@ -174,15 +179,18 @@ export const Memory: React.FC = memo(() => {
     try {
       const [mem, allFacts, allVersions, allSuggestions] = await Promise.all([
         getPersonalMemory(),
-        getActiveFacts(),
+        getActiveObservations(),
         getPersonalMemoryVersions(),
-        getMemorySuggestions().catch(() => []),
+        getMemoryRevisions().catch(() => []),
       ]);
       setPersonalMemory(mem);
       setDisplayedRecord(mem);
       setVersions(allVersions);
       setFacts(allFacts);
       setSuggestions(allSuggestions);
+      if (allSuggestions.length > 0) {
+        setStagingMode("suggestions");
+      }
     } catch (e) {
       console.error("[Memory] Failed to load data:", e);
     } finally {
@@ -260,7 +268,7 @@ export const Memory: React.FC = memo(() => {
   const unconsolidatedIdentityCount = identityCandidateFacts.length;
 
   // ── Node & Core Click Handlers ─────────────────────────────────────────────
-  const handleSelectNode = useCallback((fact: FactRecord | null, pos?: { x: number; y: number }) => {
+  const handleSelectNode = useCallback((fact: ObservationRecord | null, pos?: { x: number; y: number }) => {
     setSelectedFact(fact);
     if (fact && pos) {
       setTooltipPos(pos);
@@ -276,7 +284,7 @@ export const Memory: React.FC = memo(() => {
     }
   }, []);
 
-  const handleSelectFactFromRail = useCallback((fact: FactRecord) => {
+  const handleSelectFactFromRail = useCallback((fact: ObservationRecord) => {
     setSelectedFact(fact);
     setTooltipPos({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
     graphRef.current?.flyToNode(fact.id);
@@ -358,56 +366,56 @@ export const Memory: React.FC = memo(() => {
   );
 
   const handleConsolidateNow = useCallback(
-    async (conflictPolicy?: "prompt" | "pause_compaction" | "queue") => {
-      if (consolidating || unconsolidatedIdentityCount === 0) return;
+    async (forced = false) => {
+      if (consolidating) return;
       setConsolidating(true);
-      // 1. Smoothly fade overlay in over old content
       setLeftFlash(true);
 
       try {
-        const updated = await consolidatePersonalMemory(
+        const outcome = await consolidatePersonalMemory(
           undefined,
           undefined,
-          conflictPolicy ?? "prompt"
+          forced
         );
-        // 2. Wait until overlay is opaque before swapping document content
-        await new Promise((resolve) => setTimeout(resolve, 250));
-        setPersonalMemory(updated);
-        setDisplayedRecord(updated);
 
-        const [allVersions, pendingSuggestions] = await Promise.all([
-          getPersonalMemoryVersions(),
-          getMemorySuggestions().catch(() => []),
-        ]);
-        setVersions(allVersions);
-        setSuggestions(pendingSuggestions);
-        await refresh(true);
-        setIsCommitting(true);
-        setConflictInPlace(false);
+        if (outcome.status === "completed") {
+          await new Promise((resolve) => setTimeout(resolve, 250));
+          setPersonalMemory(outcome.record);
+          setDisplayedRecord(outcome.record);
 
-        if (pendingSuggestions.length > 0) {
-          setStagingMode("suggestions");
-        }
+          const [allVersions, pendingSuggestions] = await Promise.all([
+            getPersonalMemoryVersions(),
+            getMemoryRevisions().catch(() => []),
+          ]);
+          setVersions(allVersions);
+          setSuggestions(pendingSuggestions);
+          await refresh(true);
+          setIsCommitting(true);
+          setPendingConfirmation(null);
 
-        // 3. Smoothly fade overlay out to reveal new content
-        setTimeout(() => {
-          setIsCommitting(false);
+          if (pendingSuggestions.length > 0) {
+            setStagingMode("suggestions");
+          }
+
+          setTimeout(() => {
+            setIsCommitting(false);
+            setLeftFlash(false);
+          }, 900);
+        } else if (outcome.status === "confirmation_required") {
           setLeftFlash(false);
-        }, 900);
+          setPendingConfirmation({
+            reason: outcome.reason,
+            pendingCount: outcome.pending_count,
+          });
+        }
       } catch (e: unknown) {
-        const msg = (e as { message?: string })?.message || String(e);
-        if (msg.includes("active compaction is in progress")) {
-          setLeftFlash(false);
-          setConflictInPlace(true);
-        } else {
-          console.error("[Memory] Consolidate failed:", e);
-          setLeftFlash(false);
-        }
+        console.error("[Memory] Consolidate failed:", e);
+        setLeftFlash(false);
       } finally {
         setConsolidating(false);
       }
     },
-    [consolidating, unconsolidatedIdentityCount, refresh]
+    [consolidating, refresh]
   );
 
   const handleApplySuggestions = useCallback(
@@ -421,7 +429,7 @@ export const Memory: React.FC = memo(() => {
       setLeftFlash(true);
 
       try {
-        const updated = await resolveMemorySuggestions({
+        const updated = await resolveMemoryRevisions({
           projectId: undefined,
           decisions: decisionList,
         });
@@ -431,7 +439,7 @@ export const Memory: React.FC = memo(() => {
 
         const [allVersions, remainingSuggestions] = await Promise.all([
           getPersonalMemoryVersions(),
-          getMemorySuggestions().catch(() => []),
+          getMemoryRevisions().catch(() => []),
         ]);
         setVersions(allVersions);
         setSuggestions(remainingSuggestions);
@@ -439,6 +447,7 @@ export const Memory: React.FC = memo(() => {
         setIsCommitting(true);
 
         if (remainingSuggestions.length === 0) {
+          setJustCommitted(true);
           setStagingMode("idle");
         }
 
@@ -457,13 +466,14 @@ export const Memory: React.FC = memo(() => {
   );
 
   const handleCopyDoc = useCallback(async () => {
-    if (!personalMemory?.content) return;
-    const ok = await copyToClipboard(personalMemory.content);
+    const text = personalMemory?.markdown || personalMemory?.content;
+    if (!text) return;
+    const ok = await copyToClipboard(text);
     if (ok) {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     }
-  }, [personalMemory?.content]);
+  }, [personalMemory?.markdown, personalMemory?.content]);
 
   useEffect(() => {
     const handleSelectionChange = () => {
@@ -577,7 +587,7 @@ export const Memory: React.FC = memo(() => {
   }, [storeClearComments]);
 
   const handleRegenerateWithComments = useCallback(
-    async (commentsToApply: MemoryComment[], policy?: "pause_compaction" | "queue") => {
+    async (commentsToApply: MemoryComment[], forced?: boolean) => {
       if (!commentsToApply.length) return;
       setSaving(true);
       setLeftFlash(true);
@@ -585,25 +595,43 @@ export const Memory: React.FC = memo(() => {
         const formattedComments = commentsToApply.map(
           (c) => `Line ${c.line} ("${c.quotedText}"): ${c.text}`
         );
-        const updated = await consolidatePersonalMemory(
+        const outcome = await consolidatePersonalMemory(
           formattedComments,
           undefined,
-          policy ?? "prompt"
+          forced ?? false
         );
-        setPersonalMemory(updated);
-        setDisplayedRecord(updated);
-        const allVersions = await getPersonalMemoryVersions();
-        setVersions(allVersions);
-        storeClearComments();
-        setIsCommitting(true);
-        setTimeout(() => {
-          setStagingMode("idle");
-        }, 400);
-        setTimeout(() => {
-          setIsCommitting(false);
+
+        if (outcome.status === "completed") {
+          setPersonalMemory(outcome.record);
+          setDisplayedRecord(outcome.record);
+          const [allVersions, pendingSuggestions] = await Promise.all([
+            getPersonalMemoryVersions(),
+            getMemoryRevisions().catch(() => []),
+          ]);
+          setVersions(allVersions);
+          setSuggestions(pendingSuggestions);
+          storeClearComments();
+          setIsCommitting(true);
+          setPendingConfirmation(null);
+
+          if (pendingSuggestions.length > 0) {
+            setStagingMode("suggestions");
+          } else {
+            setStagingMode("idle");
+          }
+
+          setTimeout(() => {
+            setIsCommitting(false);
+            setLeftFlash(false);
+          }, 700);
+          await refresh(true);
+        } else if (outcome.status === "confirmation_required") {
           setLeftFlash(false);
-        }, 700);
-        await refresh(true);
+          setPendingConfirmation({
+            reason: outcome.reason,
+            pendingCount: outcome.pending_count,
+          });
+        }
       } catch (e) {
         setLeftFlash(false);
         throw e;
@@ -898,29 +926,34 @@ export const Memory: React.FC = memo(() => {
               </button>
             )}
 
-            {conflictInPlace ? (
-              <div className="flex items-center gap-1.5 p-0.5 rounded-xl bg-[rgba(var(--foreground),0.04)] border border-[rgba(var(--accent),0.3)] animate-in fade-in duration-150">
+            {pendingConfirmation ? (
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[rgba(var(--foreground),0.04)] border border-[rgba(var(--accent),0.35)] animate-in fade-in duration-150">
+                {pendingConfirmation.reason === "compaction_in_progress" ? (
+                  <span className="text-[11px] font-mono text-amber-300">
+                    {MEMORY_COPY.compactionRunning}
+                  </span>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] font-mono text-sky-300">
+                      {pendingConfirmation.pendingCount} items pending
+                    </span>
+                    <button
+                      type="button"
+                      disabled={consolidating}
+                      onClick={() => {
+                        setPendingConfirmation(null);
+                        handleConsolidateNow(true);
+                      }}
+                      className="px-2 py-0.5 rounded-lg text-[10.5px] font-mono font-medium text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.15)] transition-colors cursor-pointer"
+                    >
+                      {MEMORY_COPY.integrateAnyway}
+                    </button>
+                  </div>
+                )}
                 <button
                   type="button"
-                  disabled={consolidating}
-                  onClick={() => handleConsolidateNow("pause_compaction")}
-                  className="px-2.5 py-1 rounded-lg text-[11px] font-mono font-medium text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.12)] transition-colors cursor-pointer disabled:opacity-50"
-                >
-                  {consolidating ? "Pausing…" : "Pause & Run"}
-                </button>
-                <button
-                  type="button"
-                  disabled={consolidating}
-                  onClick={() => handleConsolidateNow("queue")}
-                  className="px-2.5 py-1 rounded-lg text-[11px] font-mono text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.06)] transition-colors cursor-pointer disabled:opacity-50"
-                >
-                  {consolidating ? "Queueing…" : "Queue"}
-                </button>
-                <button
-                  type="button"
-                  disabled={consolidating}
-                  onClick={() => setConflictInPlace(false)}
-                  className="p-1 rounded-lg text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.06)] transition-colors cursor-pointer"
+                  onClick={() => setPendingConfirmation(null)}
+                  className="p-1 rounded-lg text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors cursor-pointer"
                 >
                   <X size={12} />
                 </button>
@@ -928,7 +961,7 @@ export const Memory: React.FC = memo(() => {
             ) : (
               <button
                 type="button"
-                onClick={() => handleConsolidateNow()}
+                onClick={() => handleConsolidateNow(false)}
                 disabled={consolidating || unconsolidatedIdentityCount === 0}
                 className={cn(
                   "flex items-center gap-2 px-3 py-1.5 rounded-xl text-[11px] font-mono border transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-sm",
@@ -1020,7 +1053,7 @@ export const Memory: React.FC = memo(() => {
                     <button
                       type="button"
                       onClick={handleCopyDoc}
-                      disabled={!displayedRecord?.content}
+                      disabled={!displayedRecord?.markdown && !displayedRecord?.content}
                       className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[11px] font-mono bg-[rgba(var(--foreground),0.05)] border border-[rgba(var(--border),0.14)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors disabled:opacity-40 cursor-pointer shadow-sm"
                       title="Copy personal memory markdown to clipboard"
                     >
@@ -1077,9 +1110,9 @@ export const Memory: React.FC = memo(() => {
                   ))}
 
                   {drawerBodyReady ? (
-                    displayedRecord?.content ? (
+                    displayedRecord?.markdown || displayedRecord?.content ? (
                       <Markdown
-                        content={displayedRecord.content}
+                        content={displayedRecord.markdown || displayedRecord.content}
                         variant="document"
                         autoHeadings
                       />
@@ -1099,8 +1132,13 @@ export const Memory: React.FC = memo(() => {
               {/* Right Column: Dynamic Workspace / Staging Slate */}
               <PersonalMemoryStagingCard
                 canonicalContent={displayedRecord?.content ?? ""}
+                canonicalMarkdown={displayedRecord?.markdown ?? ""}
+                activeVersion={personalMemory?.version ?? 1}
                 mode={stagingMode}
-                onModeChange={setStagingMode}
+                onModeChange={(m) => {
+                  setStagingMode(m);
+                  if (justCommitted) setJustCommitted(false);
+                }}
                 onSave={handleSaveStaging}
                 onRegenerateWithComments={handleRegenerateWithComments}
                 comments={comments}
@@ -1115,6 +1153,10 @@ export const Memory: React.FC = memo(() => {
                 onApplySuggestions={handleApplySuggestions}
                 isApplyingSuggestions={isApplyingSuggestions}
                 candidateFacts={identityCandidateFacts}
+                justCommitted={justCommitted}
+                onViewVersionHistory={() => {
+                  setJustCommitted(false);
+                }}
               />
             </div>
           </div>

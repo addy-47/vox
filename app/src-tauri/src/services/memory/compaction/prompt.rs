@@ -233,3 +233,49 @@ fn compaction_output_constraint(model: &str) -> OutputConstraint {
         OutputConstraint::JsonObject
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_calculate_compaction_max_tokens_bounds() {
+        // Standard 8k context window: 8192 * 0.15 = 1228
+        assert_eq!(calculate_compaction_max_tokens(8192, None), 1228);
+
+        // Very small context window: 1000 * 0.15 = 150 -> clamped to 256 floor
+        assert_eq!(calculate_compaction_max_tokens(1000, None), 256);
+
+        // Huge context window: 200_000 * 0.15 = 30_000 -> clamped to 16_384 ceiling
+        assert_eq!(calculate_compaction_max_tokens(200_000, None), 16_384);
+
+        // Probed ceiling lower than slice
+        assert_eq!(calculate_compaction_max_tokens(8192, Some(512)), 512);
+
+        // Probed ceiling higher than slice
+        assert_eq!(calculate_compaction_max_tokens(8192, Some(4096)), 1228);
+
+        // Probed ceiling below minimum floor (256) -> clamped to 256
+        assert_eq!(calculate_compaction_max_tokens(8192, Some(100)), 256);
+    }
+
+    #[test]
+    fn test_compaction_json_schema_structure() {
+        let schema = compaction_json_schema();
+        assert_eq!(schema["type"], "object");
+        let required = schema["required"].as_array().unwrap();
+        let required_fields: Vec<&str> = required.iter().filter_map(|v| v.as_str()).collect();
+        assert_eq!(
+            required_fields,
+            vec![
+                "personal",
+                "objective",
+                "workdone",
+                "blocker",
+                "next_step",
+                "pitfall"
+            ]
+        );
+        assert_eq!(schema["additionalProperties"], false);
+    }
+}

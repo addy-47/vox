@@ -1645,25 +1645,38 @@ Production Functions Called:
 #### 14.1 Seam Identifier & Classification
 
 - **Binary:** `app/src-tauri/tests/personal_memory_test.rs`
-- **Classification:** **Category C (Decommission Legacy v1 BFS Retrieval & Author Target Memory v2 Subsystem Spec)**
-- **Subsystems:** `services/memory/personal.rs`, `persistence/personal_memory.rs`, `persistence/sessions.rs`, `persistence/facts.rs`, `ipc/memory.rs`
+- **Classification:** **Category A (Semantic Structured Personal Memory & Revision Lifecycle)**
+- **Subsystems:** `services/memory/personal/`, `persistence/personal_memory/`, `persistence/sessions/`, `persistence/facts/`
 - **Execution Command:** `cargo nextest run --test personal_memory_test --release --nocapture --test-threads=1`
 
 #### 14.2 `/create-test` Phase 1 — Production Path Trace
 
 ```
 Production Entry Seams:
-  Entry Seam A (Personal Memory CRUD / Optimistic Save):
+  Entry Seam A (Optimistic Save & Direct Concurrency):
     save_personal_memory(conn, project_id, content, expected_version)
-  Entry Seam B (Consolidation Pipeline):
-    consolidate_personal_memory(conn, provider, comments, project_id)
-  Entry Seam C (File Portability):
-    export_personal_memory(conn, path, project_id)
-    import_personal_memory(conn, path, project_id)
-  Entry Seam D (Session Continuation):
+  Entry Seam B (Manual Markdown Save & Revision Invalidation):
+    save_personal_memory_from_markdown(conn, project_id, markdown, expected_version)
+  Entry Seam C (Consolidation Confirmation Gating):
+    consolidate_personal_memory(ConsolidationRequest)
+  Entry Seam D (Revision Staging & Ordering):
+    stage_revisions(conn, current_record, operations)
+    fetch_pending_revisions(conn, project_id)
+  Entry Seam E (Batch Revision Resolution):
+    batch_resolve_memory_revisions(conn, project_id, decisions)
+  Entry Seam F (Session Continuation):
     fetch_session_continuation(conn, session_id)
+  Entry Seam G (Version History Navigation):
+    list_personal_memory_versions(conn, project_id)
+    set_active_personal_memory_version(conn, project_id, version)
+  Entry Seam H (Observation Status Transition):
+    mark_observations_integrated(conn, observation_ids)
 
-Direction Check: PASS — entry seams operate at the service and persistence facade, driving business validation (optimistic concurrency, ingestion quiescence gating, fact state transitions, session continuation slicing), NOT raw isolated SQL helper calls.
+Note on Model Evaluation Boundary:
+  End-to-end multi-turn fact extraction and LLM consolidation quality are evaluated
+  exclusively via evals (Sprint 5: evals/personal_consolidation_eval.rs). The integration
+  test covers deterministic database transactions, service orchestration, revision lifecycles,
+  and state invariants. Zero live LLMs, mocks, or dataset JSON fixtures are used.
 
 Production Path — Optimistic Concurrency Control (Direct Manual Edits):
   save_personal_memory(conn, project_id, content, expected_version)
@@ -1674,22 +1687,28 @@ Production Path — Optimistic Concurrency Control (Direct Manual Edits):
   └─► If affected_rows == 1:
       └──► Returns Ok(PersonalMemoryRecord { version: N+1, content, ... })
 
-Production Path — Fact Consolidation & Quiescence Gating:
-  consolidate_personal_memory(conn, provider, comments, project_id)
-  ├─► Quiescence Check: verify_ingestion_quiescence(conn)
-  │   ├─► has_in_progress_compaction(conn) => Err("Precondition failed: active compaction is in progress")
-  │   └─► has_unfinished_items(conn) => Err("Precondition failed: pending items in memory ingestion queue")
-  ├─► Candidate Fact Gathering:
-  │   fetch_active_facts_by_type(conn, "personal")
-  │   If empty => return Ok(current_record) (no-op)
-  ├─► LLM Reasoning Merge:
-  │   execute_personal_llm_pass(provider, SYSTEM_PROMPT, current_memory + active_facts)
-  ├─► Atomic Save & Provenance Update:
-  │   save_consolidated_memory(conn, project_id, updated_markdown, current_version)
-  │   └──► Sets last_consolidated_at = now, version = version + 1
-  └─► Fact State Transition:
-      mark_facts_consolidated(conn, fact_ids)
-      └──► UPDATE memory_facts SET status = 'consolidated' WHERE id IN (...)
+Production Path — Manual Markdown Save & Re-minting Invalidation:
+  save_personal_memory_from_markdown(conn, project_id, markdown, expected_version)
+  ├─► Parse markdown via PersonalMemory::from_markdown()
+  ├─► Validate structure via PersonalMemory::validate()
+  ├─► save_personal_memory(conn, project_id, &json, expected_version)
+  └─► reject_all_pending_revisions(conn, project_id)
+      └──► Transitions all existing pending revisions to 'rejected'
+
+Production Path — Consolidation Confirmation Gating:
+  consolidate_personal_memory(ConsolidationRequest)
+  ├─► has_in_progress_compaction(conn) => ConfirmationRequired(CompactionInProgress)
+  ├─► (!forced && has_unfinished_items(conn)) => ConfirmationRequired(PendingQueueItems)
+  └─► fetch_active_observations_by_type("personal").is_empty() => Ok(ConsolidateOutcome::Completed(current_record)) (clean no-op)
+
+Production Path — Batch Revision Resolution:
+  batch_resolve_memory_revisions(conn, project_id, decisions)
+  ├─► validate_decisions(decisions, &pending_map) ('accept' or 'reject' only)
+  ├─► deserialize_accepted_ops() -> Vec<ResolvedOp>
+  ├─► apply_operations(&current_memory, &accepted_ops) -> ApplyReport
+  ├─► report.memory.validate() -> Structure contract enforcement
+  ├─► If accept: write new version (version + 1), mark accepted revisions 'accepted'
+  └─► If reject: preserve active memory version, mark rejected revisions 'rejected'
 
 Production Path — Session Continuation Payload Assembly:
   fetch_session_continuation(conn, session_id)
@@ -1702,58 +1721,57 @@ Production Path — Session Continuation Payload Assembly:
   └─► Returns SessionContinuationData { personal_memory, latest_summary, turns }
 
 Observable Exit:
-  1. Optimistic Concurrency: Stale `expected_version` calls return explicit conflict errors.
-  2. Fact Consolidation: Active personal facts transition from `status = 'active'` to `status = 'consolidated'`.
-  3. Quiescence Gating: Consolidation is rejected when compactions or ingestion queue tasks are in-flight.
-  4. Portability Roundtrip: `import_personal_memory` replaces document content; `export_personal_memory` writes identical text to disk.
-  5. Continuation Hydration: `SessionContinuationData` contains personal memory, latest compaction context summary, and strictly uncompacted turns.
-
-Production Functions Called:
-  setup:   VoxDb::open(), recreate_schema(), insert_fact(), create_session_with_id(), record_compaction_start()
-  entry:   save_personal_memory(), consolidate_personal_memory(), export_personal_memory(), import_personal_memory(), fetch_session_continuation()
-  observe: PersonalMemoryRecord, fetch_active_facts_by_type(), SessionContinuationData, disk file contents
-  teardown: drop TempPathsGuard
+  1. Optimistic Concurrency: Stale expected_version calls return explicit conflict errors.
+  2. Manual Markdown Save: Bulk-rejects pending revisions superseded by re-minted IDs.
+  3. Confirmation Gating: Returns typed ConfirmationRequired without side effects when compaction/queue is busy.
+  4. Revision Lifecycle: stage_revisions persists pending rows; batch_resolve_memory_revisions applies ops and increments version.
+  5. Continuation Hydration: SessionContinuationData contains strictly uncompacted turns past the latest compaction watermark.
+  6. Observation Transition: mark_observations_integrated moves candidate IDs active -> integrated with 0 active remaining.
 ```
 
 #### 14.3 `/create-test` Phase 2a — Testability Check
 
-1. Entry seam callable with production signature? **Yes** (`save_personal_memory`, `consolidate_personal_memory`, `fetch_session_continuation`).
-2. Production constructors used? **Yes** (`VoxDb::open`, `get_personal_memory`, `save_consolidated_memory`).
-3. State observable? **Yes** (`personal_memory`, `memory_facts`, `session_compactions`, `SessionContinuationData`).
-4. Real components without mocks? **Yes** (Real Turso SQLite engine; canned/mock LLM provider for deterministic fact consolidation).
+1. Entry seams callable with production signature? **Yes** (`save_personal_memory`, `save_personal_memory_from_markdown`, `consolidate_personal_memory`, `batch_resolve_memory_revisions`, `fetch_session_continuation`).
+2. Production constructors used? **Yes** (`get_test_app_and_state`, `stage_revisions`, `batch_resolve_memory_revisions`).
+3. State observable? **Yes** (`personal_memory`, `personal_memory_revisions`, `memory_facts`, `SessionContinuationData`).
+4. Real components without mocks? **Yes** (Real Turso SQLite engine; zero live LLM network dependencies).
 
 #### 14.4 `/create-test` Phase 2b — False-Green Audit Table
 
-| If this production defect existed                                  | Would Seam 14 test fail? | Expected Failure Mode                                                                    |
-| ------------------------------------------------------------------ | ------------------------ | ---------------------------------------------------------------------------------------- |
-| **Optimistic concurrency check omitted (unconditional overwrite)** | **Must fail**            | Stale save succeeds instead of returning version conflict error.                         |
-| `mark_facts_consolidated` omitted on successful merge              | Must fail                | Merged facts remain `status = 'active'`; `fetch_active_facts_by_type` returns > 0.       |
-| Quiescence gate ignores in-progress compaction                     | Must fail                | Consolidation proceeds during active compaction instead of returning Precondition error. |
-| Quiescence gate ignores pending ingestion queue items              | Must fail                | Consolidation proceeds with pending queue items instead of returning Precondition error. |
-| Continuation turn slicing includes already compacted turns         | Must fail                | `turns.len()` in continuation data contains old compacted turns.                         |
-| Export writes empty or corrupted file                              | Must fail                | Exported disk file fails byte-for-byte equality assertion against database content.      |
+| If this production defect existed | Would Seam 14 test fail? | Expected Failure Mode |
+| :--- | :--- | :--- |
+| **Optimistic concurrency check omitted (unconditional overwrite)** | **Must fail** | Stale save succeeds instead of returning version conflict error. |
+| `batch_resolve_memory_revisions` fails to apply operations | Must fail | Active memory content lacks applied operation changes. |
+| Structure contract validation omitted during batch resolution | Must fail | Invalid operation commits malformed memory version. |
+| Stale revision invalidation omitted on manual markdown save | Must fail | Pending revisions remain `pending` after manual save. |
+| Quiescence gate ignores in-progress compaction | Must fail | Returns `Completed` instead of `ConfirmationRequired(CompactionInProgress)`. |
+| Continuation turn slicing includes already compacted turns | Must fail | `turns.len()` in continuation data contains old compacted turns. |
 
 #### 14.5 `/test` Execution Protocol
 
 - **Command:** `cargo nextest run --test personal_memory_test --release --nocapture --test-threads=1`
-- **Execution Target:** 5 subtests run locally in < 1.0s.
+- **Execution Target:** 8 subtests run locally in < 0.5s.
 - **Subtests:**
   1. `test_personal_memory_optimistic_concurrency`: Validates version incrementing on update and rejection of stale `expected_version`.
-  2. `test_personal_memory_consolidation_with_facts`: Seeds active personal facts, runs consolidation, asserts document updated and facts marked `consolidated`.
-  3. `test_consolidation_quiescence_precondition_gating`: Verifies rejection when compaction is `in_progress` or queue items are `pending`.
-  4. `test_export_and_import_roundtrip`: Verifies document import overwrite and byte-for-byte disk export.
-  5. `test_session_continuation_data_assembly`: Seeds 10 turns, completed compaction for turns 1–5, asserts continuation data contains strictly turns 6–10.
+  2. `test_consolidation_confirmation_gating`: Verifies `ConfirmationRequired` for compaction in-progress and pending queue items.
+  3. `test_session_continuation_data_assembly`: Seeds 10 turns, completed compaction for turns 1–5, asserts continuation data contains strictly turns 6–10.
+  4. `test_personal_memory_versions`: Verifies version listing and active version restoration.
+  5. `test_revision_stage_and_fetch_pending_roundtrip`: Verifies `stage_revisions` write and `fetch_pending_revisions` ordered readback.
+  6. `test_batch_resolve_revisions_applies_operations_and_bumps_version`: Verifies production seam applies ops, updates content, bumps version, and flips status.
+  7. `test_batch_resolve_revisions_rejection`: Verifies rejection flips revision status without bumping version or modifying memory.
+  8. `test_candidate_partition_leaves_no_fact_trapped_in_staged`: Verifies Invariant 5.3-A (`active -> integrated` transition).
+  9. `test_manual_markdown_save_bulk_rejects_superseded_revisions`: Verifies manual markdown save bulk-rejects superseded pending revisions.
 
 #### 14.6 `/mutate` Mutant Definitions (Tier 1)
 
 - **Mutant 14.1 (Optimistic Concurrency Inversion):** In `persistence/personal_memory.rs:save_personal_memory`, delete `AND version = ?`.  
   _Prediction:_ Subtest 1 goes RED because stale update succeeds without conflict.
-- **Mutant 14.2 (Quiescence Gate Deletion):** In `services/memory/personal.rs:consolidate_personal_memory`, delete `verify_ingestion_quiescence(conn).await?;`.  
-  _Prediction:_ Subtest 3 goes RED because consolidation executes despite in-progress compaction.
-- **Mutant 14.3 (Fact Consolidation Status Omission):** In `services/memory/personal.rs:consolidate_personal_memory`, delete `mark_facts_consolidated(conn, &fact_ids).await?;`.  
-  _Prediction:_ Subtest 2 goes RED because active personal facts are not transitioned to `consolidated`.
-- **Mutant 14.4 (Continuation Turn Watermark Off-By-One):** In `persistence/sessions.rs:fetch_session_continuation`, change `last_compacted + 1` to `last_compacted`.  
-  _Prediction:_ Subtest 5 goes RED because turn count is 6 instead of 5 (includes already compacted turn).
+- **Mutant 14.2 (Compaction Gate Deletion):** In `services/memory/personal/consolidate.rs:gate_on_compaction_and_queue`, remove `has_in_progress_compaction` check.  
+  _Prediction:_ Subtest 2 goes RED because compaction does not yield `ConfirmationRequired`.
+- **Mutant 14.3 (Continuation Turn Watermark Off-By-One):** In `persistence/sessions.rs:fetch_session_continuation`, change `last_compacted + 1` to `last_compacted`.  
+  _Prediction:_ Subtest 3 goes RED because turn count is 6 instead of 5.
+- **Mutant 14.4 (Manual Save Revision Invalidation Omission):** In `services/memory/personal/manual.rs`, comment out `reject_superseded_revisions`.  
+  _Prediction:_ Subtest 9 goes RED because superseded revision stays pending.
 
 ---
 

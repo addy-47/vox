@@ -10,17 +10,11 @@ use crate::services::memory::personal::PersonalMemory;
 const EMPTY_PERSONAL_MEMORY_JSON: &str = r#"{"sections":[]}"#;
 
 /// Strongly-typed row representation of a Personal Memory version, and the wire type for it.
-///
-/// The DB column `content` holds the canonical semantic JSON. This record exposes that model rendered
-/// to Markdown, so no caller can accidentally ship the canonical form over IPC.
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct PersonalMemoryRecord {
     pub id: i64,
     pub project_id: Option<String>,
-    /// Canonical semantic JSON. `skip_serializing` makes it impossible to ship over IPC.
-    #[serde(skip_serializing)]
     pub content: String,
-    /// Rendered from `content` at read time. The only representation the frontend receives.
     pub markdown: String,
     pub version: i64,
     pub is_active: i64,
@@ -148,9 +142,6 @@ async fn parse_record(rows: &mut turso::Rows) -> Result<Option<PersonalMemoryRec
 }
 
 /// Renders stored canonical JSON to Markdown, degrading to an empty string on a malformed payload.
-///
-/// A corrupt document must not fail the read: the Memory page and the system-prompt assembly both
-/// consume this, and the next consolidation pass rebuilds the model anyway.
 fn render_stored_memory(content: &str, version: i64) -> String {
     match PersonalMemory::from_json(content) {
         Ok(memory) => memory.render_to_markdown(),
@@ -166,10 +157,6 @@ fn render_stored_memory(content: &str, version: i64) -> String {
 }
 
 /// Appends a new version carrying `content` under an optimistic concurrency check.
-///
-/// `content` is the canonical semantic JSON. `expected_version` is the version the caller believes is
-/// active; a mismatch is a conflict and nothing is written. The previous version flips to
-/// `is_active = 0` and remains permanently retrievable through `list_personal_memory_versions`.
 pub async fn save_personal_memory(
     conn: &Connection,
     project_id: Option<&str>,
@@ -180,9 +167,6 @@ pub async fn save_personal_memory(
 }
 
 /// Appends a new version carrying `content`, stamping `last_consolidated_at` with the commit time.
-///
-/// Identical to `save_personal_memory` except that the new version also records when consolidation
-/// produced it, which the daily scheduler and the missed-run notification read.
 pub async fn save_consolidated_memory(
     conn: &Connection,
     project_id: Option<&str>,
@@ -193,8 +177,6 @@ pub async fn save_consolidated_memory(
 }
 
 /// Inserts the new active version and deactivates its predecessors inside one transaction.
-///
-/// Shared by manual saves and consolidation commits so both paths get identical version bookkeeping.
 async fn append_memory_version(
     conn: &Connection,
     project_id: Option<&str>,
@@ -253,10 +235,7 @@ async fn append_memory_version(
 }
 
 /// Marks every version of a project scope inactive.
-async fn deactivate_all_versions(
-    conn: &Connection,
-    project_id: Option<&str>,
-) -> Result<()> {
+async fn deactivate_all_versions(conn: &Connection, project_id: Option<&str>) -> Result<()> {
     match project_id {
         Some(pid) => {
             conn.execute(
@@ -414,10 +393,6 @@ pub async fn set_active_personal_memory_version(
 }
 
 /// Strongly-typed row representation of a pending semantic memory revision.
-///
-/// `target_id` is a persistent `sec_*` or `blk_*` ID, not a positional index. That is what makes each
-/// revision independently resolvable: accepting one never shifts the target of another, so the
-/// re-anchoring arithmetic the positional design required has no analogue here.
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct PersonalMemoryRevisionRecord {
     pub id: String,
@@ -425,8 +400,6 @@ pub struct PersonalMemoryRevisionRecord {
     pub project_id: Option<String>,
     pub op: String,
     pub target_id: String,
-    /// JSON payload: `{ "text": "..." }` for block operations,
-    /// `{ "title": "...", "blocks": ["..."] }` for `create_section`.
     pub content: String,
     pub status: String,
     pub created_at: i64,
@@ -437,7 +410,6 @@ pub struct PersonalMemoryRevisionRecord {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RevisionDecision {
     pub id: String,
-    /// `"accept"` or `"reject"`. Validated at the persistence boundary; anything else is an error.
     pub action: String,
 }
 
@@ -535,9 +507,6 @@ pub async fn fetch_pending_revisions(
 }
 
 /// Bulk-rejects every pending revision of a project scope, used when regeneration supersedes all IDs.
-///
-/// Accepting a bulk rejection without emitting a reason is deliberate: regeneration replaces the
-/// entire structure, so every pending revision targets an ID that no longer exists by construction.
 pub async fn reject_all_pending_revisions(
     conn: &Connection,
     project_id: Option<&str>,
@@ -568,11 +537,6 @@ pub async fn reject_all_pending_revisions(
 }
 
 /// Resolves a batch of personal memory revisions in a single atomic transaction.
-///
-/// Accepted revisions write `new_content` as the next active memory version; every decision in
-/// `decisions` flips its row to `'accepted'` or `'rejected'`. Remaining pending revisions are left
-/// untouched: their `base_memory_version` is generation-time provenance, and because operations
-/// address persistent semantic IDs there is nothing to re-anchor.
 pub async fn resolve_batch_revisions_transaction(
     conn: &Connection,
     project_id: Option<&str>,

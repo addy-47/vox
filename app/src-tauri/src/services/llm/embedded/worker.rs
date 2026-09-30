@@ -24,13 +24,15 @@ pub struct CacheState {
 
 /// In-process llama.cpp model worker executing token generation.
 pub struct LlmWorker {
+    // Drop order invariant: ctx MUST be dropped before model because LlamaContext
+    // references LlamaModel internally in llama.cpp. Rust drops struct fields top-to-bottom.
+    pub(crate) ctx: Mutex<Option<LlamaContext<'static>>>,
+    pub(crate) cache_state: Mutex<Option<CacheState>>,
     pub(crate) model: LlamaModel,
     pub(crate) backend: &'static LlamaBackend,
     pub(crate) ctx_size: u32,
     pub(crate) n_threads: u32,
     pub(crate) family: ModelFamily,
-    pub(crate) ctx: Mutex<Option<LlamaContext<'static>>>,
-    pub(crate) cache_state: Mutex<Option<CacheState>>,
 }
 
 impl LlmWorker {
@@ -125,3 +127,14 @@ impl LlmWorker {
         Ok(())
     }
 }
+
+impl Drop for LlmWorker {
+    fn drop(&mut self) {
+        // Explicitly clear LlamaContext while LlamaModel is still alive.
+        // In llama.cpp, llama_free(ctx) accesses the underlying model.
+        if let Some(mut ctx_lock) = self.ctx.try_lock() {
+            *ctx_lock = None;
+        }
+    }
+}
+
