@@ -5,7 +5,6 @@ pub mod speech;
 pub mod transcript;
 
 pub use config::*;
-
 use tauri::AppHandle;
 
 use crate::core::{

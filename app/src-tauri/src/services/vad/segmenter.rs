@@ -276,7 +276,7 @@ pub fn process_windowed_validation(
     chunk: &[f32],
     raw_energy: f32,
     vad: &mut VadBackend,
-    state: &mut VadActorState, 
+    state: &mut VadActorState,
     channels: &VadActorChannels,
 ) {
     if !state.window_active {

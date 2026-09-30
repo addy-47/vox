@@ -585,6 +585,15 @@ fn apply_personal_memory_mutation(
                 .ok_or("consolidation_time must be in HH:MM 24-hour format".to_string())?;
             settings.personal_memory.consolidation_time = val.to_string();
         }
+        "suggestion_policy" => {
+            let val = value.as_str().ok_or("suggestion_policy must be a string")?;
+            if !matches!(val, "manual_review" | "auto_apply") {
+                return Err(
+                    "suggestion_policy must be one of: manual_review, auto_apply".to_string(),
+                );
+            }
+            settings.personal_memory.suggestion_policy = val.to_string();
+        }
         _ => return Ok(false),
     }
     Ok(true)

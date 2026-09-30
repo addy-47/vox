@@ -10,7 +10,7 @@ pub struct QueueItem {
     pub id: i64,
     pub session_id: Option<i64>,
     pub compaction_id: i64,
-    pub fact_type: String,
+    pub observation_type: String,
     pub text: String,
     pub status: String,
     pub retry_count: i64,
@@ -19,12 +19,12 @@ pub struct QueueItem {
     pub processed_at: Option<i64>,
 }
 
-/// Enqueues a newly extracted fact into `memory_ingestion_queue` with status 'pending'.
-pub async fn enqueue_fact(
+/// Enqueues a newly extracted observation into `memory_ingestion_queue` with status 'pending'.
+pub async fn enqueue_observation(
     conn: &Connection,
     session_id: Option<i64>,
     compaction_id: i64,
-    fact_type: &str,
+    observation_type: &str,
     text: &str,
 ) -> Result<i64> {
     let now = SystemTime::now()
@@ -36,7 +36,7 @@ pub async fn enqueue_fact(
         .query(
             "INSERT INTO memory_ingestion_queue (session_id, compaction_id, type, text, status, retry_count, created_at)
              VALUES (?, ?, ?, ?, 'pending', 0, ?) RETURNING id;",
-            (session_id, compaction_id, fact_type.to_string(), text.to_string(), now),
+            (session_id, compaction_id, observation_type.to_string(), text.to_string(), now),
         )
         .await?;
 
@@ -76,7 +76,7 @@ pub async fn claim_pending_queue_batch(
                 id: row.get(0)?,
                 session_id: row.get(1).ok(),
                 compaction_id: row.get(2)?,
-                fact_type: row.get(3)?,
+                observation_type: row.get(3)?,
                 text: row.get(4)?,
                 status: row.get(5)?,
                 retry_count: row.get(6)?,
@@ -205,9 +205,21 @@ pub async fn has_unfinished_items(conn: &Connection) -> Result<bool> {
     Ok(rows.next().await?.is_some())
 }
 
+/// Counts ingestion queue items that are not yet finished.
+pub async fn count_unfinished_items(conn: &Connection) -> Result<i64> {
+    let mut rows = conn
+        .query(
+            "SELECT COUNT(*) FROM memory_ingestion_queue WHERE status NOT IN ('completed', 'failed')",
+            (),
+        )
+        .await?;
+    match rows.next().await? {
+        Some(row) => Ok(row.get::<i64>(0)?),
+        None => Ok(0),
+    }
+}
+
 /// Reconciles items left in indeterminate processing states on boot.
-/// Stage1Processing items are reset to 'pending', Stage2Processing items to 'stage1_done'.
-/// Items exceeding 3 retries are marked 'failed'.
 pub async fn reconcile_crashed_queue_on_boot(conn: &Connection) -> Result<usize> {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)

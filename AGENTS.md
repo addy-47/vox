@@ -71,7 +71,7 @@
 
 ### 4.3 Specifications, Behavioral Contracts & Non-Drift Hook [MANDATORY]
 
-> 🛑 **MANDATORY SPEC ALIGNMENT HOOK (NON-NEGOTIABLE):**
+> 🛑 **MANDATORY SPEC ALIGNMENT HOOK:**
 > Every agent working on Vox must adhere strictly to the approved specifications.
 > 1. **Specification Divergence / Additions**: If an agent needs to implement, modify, or add behavior, commands, or schemas that diverge from or are not defined in the relevant spec, it MUST STOP and ask the user for approval. If approved, the agent MUST update the spec artifact FIRST before authoring or modifying code. Specifications must NEVER quietly drift from code.
 > 2. **Code Divergence / Legacy Code**: If existing code implements nuances or legacy behaviors not defined in the spec, the agent MUST confirm with the user first before either pruning the code or updating the spec to capture the behavior.
@@ -94,14 +94,6 @@ Authoritative system specifications reside in [`docs/specs/`](file:///home/addy/
 - **Dictation Gate 0 CPU Benchmark & Refiner Architecture (2026-09-29):** Empirically verified Gate 0 on client hardware (i5-1145G7): `lfm-230m` decodes at 10.4 tok/s (~96ms/tok, ~1.2–2.0s/sentence), proving autoregressive SLMs mathematically violate the 85ms P95 SLA on CPU. Formulated stitched non-autoregressive architecture (pruned 4-layer encoder tagger + deterministic ITN rule engine + micro-replacer) targeting ~12–18ms single-pass latency.
 - **IPC Parameter Casing & LLM Provider Deserialization Fix (2026-09-29):** Fixed missing `providerId` in `get_provider_caps` and added camelCase/snake_case resilience for `probe_model_capabilities` in `settingsService.ts`; added `open_ai_compat` serde alias to `LlmProviderConfig::Server` with unit tests and widened frontend provider types; verified 0 errors across `clippy --all-targets --release` and `tsc --noEmit`.
 - **`open_ai_compat` Variant Purge & Backend Style Guide Overhaul (2026-09-29):** Removed the `open_ai_compat` third provider kind from the entire stack (Rust enum, IPC serde alias, catalog CAP_KIND, probe, test fixtures, transport config); all remote OpenAI-compatible endpoints now classified as `server`. Updated `backend-style-guide.md`: purged phantom `constants.rs` reference, enforced 3-tier constant hierarchy, replaced duplicated invariants with spec-first pointers.
+- **Semantic Structured Personal Memory Backend (2026-09-30):** Replaced positional Markdown memory (`document.rs`/`patch.rs`/`suggestions.rs`) with a canonical semantic JSON model (`model.rs`), ID-addressed operations (`operations.rs`), flat-grouped JSON prompts, and `personal_memory_revisions` (schema v10, ZBC drop of old table). Added `ConsolidationRequest`/`ConsolidateOutcome` with user-controlled `forced` gating, `suggestion_policy` setting with `auto_apply`, deterministic Markdown→JSON manual save, `markdown` wire field with `skip_serializing` on canonical `content`, and renamed fact→observation across Rust. Specs (`memory`/`db`/`ipc`) updated first per §4.3; frontend migration explicitly deferred.
 
 ---
-
----
-
-## 6. Backlog
-
-- **[STT / Fixed 2026-09-28] Nemotron-3.5 initial boundary clipping:** Root-caused to (1) VAD onset gate dropping one 16ms frame + (2) streaming transducer blank-lock on zero-context onsets (no CTC path exists — backlog terminology was wrong). Fixed via pre-roll retention (`segmenter.rs`) + 300ms stream warmup (`NEMOTRON_WARMUP_SILENCE_SAMPLES`); bench-verified. Follow-up data bug: `vera` pack `reference.txt` omits the spoken lead-in "transcript" (confirmed by Qwen).
-- **[TTS / Root-caused 2026-09-29] ZipVoice voice quality & acoustic profile:** Prompt-swap proof shows the cloner reproduces reference timbre (bright Kokoro prompt → HF 0.138 vs 0.043–0.095 on VCTK-derived packs); weights/params/pipeline exonerated, steps 8→4 correct per upstream. Fix = curate brighter reference clips (HF content, expressive) or shelf-EQ existing ones; model surgery not needed.
-- **[Benchmark] Pipeline bench & Kokoro vs ZipVoice comparative report:** Execute `pipeline_bench` sequentially across Kokoro and ZipVoice baselines and produce comparative TTFA, RTF, E2E latency, and audio quality assessment report.
-

@@ -7,8 +7,10 @@ use uuid::Uuid;
 use super::{SOFT_VECTOR_DEDUP_THRESHOLD, STAGE2_BATCH_SIZE};
 use crate::{
     persistence::{
-        deactivate_fact,
-        facts::{fetch_active_vectors_by_type, insert_fact, insert_vector, FactRecord},
+        deactivate_observation,
+        facts::{
+            fetch_active_vectors_by_type, insert_observation, insert_vector, ObservationRecord,
+        },
         fetch_session_project_id,
         queue::claim_pending_queue_batch,
         record_queue_item_failure, update_queue_item_status, QueueItem,
@@ -152,25 +154,28 @@ where
     Ok(summary)
 }
 
-/// Deduplicates against active vectors and commits a single fact and vector to storage.
+/// Deduplicates against active vectors and commits a single observation and vector to storage.
+///
+/// On a cosine match the incoming observation wins: the older stored observation is deactivated, and the
+/// incoming one is inserted as `active`.
 async fn process_stage2_item_with_embedding(
     conn: &Connection,
     item: &QueueItem,
     embedding: &[f32],
 ) -> Result<(usize, usize)> {
-    let active_vectors = fetch_active_vectors_by_type(conn, &item.fact_type).await?;
+    let active_vectors = fetch_active_vectors_by_type(conn, &item.observation_type).await?;
     let mut deactivated = 0;
 
-    for (existing_fact_id, vec) in active_vectors {
+    for (existing_observation_id, vec) in active_vectors {
         let similarity = cosine_similarity(embedding, &vec);
         if similarity >= SOFT_VECTOR_DEDUP_THRESHOLD {
             log::info!(
-                "[Memory::Ingestion::Stage2] Cosine duplicate found (sim={:.3}). Deactivating older fact {} for incoming item {}",
+                "[Memory::Ingestion::Stage2] Cosine duplicate found (sim={:.3}). Deactivating older observation {} for incoming item {}",
                 similarity,
-                existing_fact_id,
+                existing_observation_id,
                 item.id
             );
-            deactivate_fact(conn, &existing_fact_id).await?;
+            deactivate_observation(conn, &existing_observation_id).await?;
             deactivated += 1;
         }
     }
@@ -179,26 +184,26 @@ async fn process_stage2_item_with_embedding(
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as i64;
-    let fact_id = format!("fact_{}_{}", now, Uuid::new_v4().simple());
+    let observation_id = format!("fact_{}_{}", now, Uuid::new_v4().simple());
 
     let project_id = resolve_project_id(conn, item.session_id).await?;
 
-    let fact = FactRecord {
-        id: fact_id.clone(),
+    let observation = ObservationRecord {
+        id: observation_id.clone(),
         session_id: item.session_id,
         compaction_id: item.compaction_id,
-        fact_type: item.fact_type.clone(),
+        observation_type: item.observation_type.clone(),
         text: item.text.clone(),
         status: "active".to_string(),
         created_at: now,
         updated_at: now,
     };
 
-    insert_fact(conn, &fact).await?;
+    insert_observation(conn, &observation).await?;
     insert_vector(
         conn,
-        &fact_id,
-        &item.fact_type,
+        &observation_id,
+        &item.observation_type,
         "active",
         project_id.as_deref(),
         embedding,

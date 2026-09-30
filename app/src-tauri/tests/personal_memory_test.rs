@@ -17,24 +17,29 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use common::{harness::get_test_app_and_state, paths::TempPathsGuard};
 use serde::Deserialize;
 use vox_lib::{
+    config::PersonalMemorySettings,
     persistence::{
         compactions::{commit_compaction_output, record_compaction_start},
         facts::{
-            fetch_active_facts_by_type, insert_fact, insert_vector, mark_facts_consolidated,
-            FactRecord,
+            fetch_active_observations_by_type, insert_observation, insert_vector,
+            mark_observations_integrated, ObservationRecord,
         },
         has_in_progress_compaction,
         personal_memory::{
-            fetch_pending_suggestions, get_personal_memory, insert_personal_memory_suggestions,
-            list_personal_memory_versions, resolve_suggestions_transaction, save_personal_memory,
-            set_active_personal_memory_version, PersonalMemorySuggestionRecord,
+            fetch_pending_revisions, get_personal_memory, insert_personal_memory_revisions,
+            list_personal_memory_versions, resolve_batch_revisions_transaction,
+            save_personal_memory, set_active_personal_memory_version, PersonalMemoryRevisionRecord,
         },
-        queue::enqueue_fact,
+        queue::enqueue_observation,
         sessions::{create_session_with_id, fetch_session_continuation},
+        RevisionDecision,
     },
     services::{
         llm::{ConnectionConfig, RemoteTransport},
-        memory::personal::{consolidate_personal_memory, ConsolidationConflictPolicy},
+        memory::personal::{
+            consolidate_personal_memory, ConfirmationReason, ConsolidateOutcome,
+            ConsolidationRequest,
+        },
     },
 };
 
@@ -49,7 +54,7 @@ const REMOTE_OLLAMA_MODEL: &str = "gemma3:12b";
 struct DatasetFact {
     id: String,
     #[serde(rename = "type")]
-    fact_type: String,
+    observation_type: String,
     text: String,
 }
 
@@ -71,7 +76,7 @@ fn load_dataset_facts(category: &str, limit: usize) -> Vec<DatasetFact> {
     dataset
         .facts
         .into_iter()
-        .filter(|f| f.fact_type == category)
+        .filter(|f| f.observation_type == category)
         .take(limit)
         .collect()
 }
@@ -151,17 +156,17 @@ async fn test_personal_memory_consolidation_live_server() {
             .as_millis() as i64;
 
         for f in &dataset_facts {
-            let fact_rec = FactRecord {
+            let observation_rec = ObservationRecord {
                 id: f.id.clone(),
                 session_id: Some(session_id),
                 compaction_id,
-                fact_type: "personal".to_string(),
+                observation_type: "personal".to_string(),
                 text: f.text.clone(),
                 status: "active".to_string(),
                 created_at: now,
                 updated_at: now,
             };
-            insert_fact(&conn, &fact_rec).await.unwrap();
+            insert_observation(&conn, &observation_rec).await.unwrap();
         }
 
         // Finish the initial compaction so quiescence check succeeds
@@ -172,7 +177,7 @@ async fn test_personal_memory_consolidation_live_server() {
         .await
         .unwrap();
 
-        let active_before = fetch_active_facts_by_type(&conn, "personal")
+        let active_before = fetch_active_observations_by_type(&conn, "personal")
             .await
             .unwrap();
         assert_eq!(
@@ -198,9 +203,23 @@ async fn test_personal_memory_consolidation_live_server() {
             "[Seam14/Live] Consolidating 100 facts via remote {REMOTE_OLLAMA_MODEL}..."
         );
         let start = Instant::now();
-        let consolidated = consolidate_personal_memory(&conn, &provider, None, None, None, None)
+        let outcome = consolidate_personal_memory(ConsolidationRequest {
+            conn: &conn,
+            llm_provider: &provider,
+            comments: None,
+            project_id: None,
+            memory_settings: &PersonalMemorySettings::default(),
+            llm_settings: None,
+            forced: true,
+        })
             .await
             .expect("consolidate_personal_memory must succeed against remote Ollama server");
+        let ConsolidateOutcome::Completed {
+            record: consolidated,
+        } = outcome
+        else {
+            panic!("consolidate_personal_memory must complete, not request confirmation");
+        };
 
         eprintln!(
             "[Seam14/Live] Consolidated in {:.2}s: v{} -> v{}",
@@ -225,7 +244,7 @@ async fn test_personal_memory_consolidation_live_server() {
         );
 
         // 5. Invariant assertions on fact status transitions
-        let active_after = fetch_active_facts_by_type(&conn, "personal")
+        let active_after = fetch_active_observations_by_type(&conn, "personal")
             .await
             .unwrap();
         assert_eq!(
@@ -236,7 +255,7 @@ async fn test_personal_memory_consolidation_live_server() {
 
         let mut count_rows = conn
             .query(
-                "SELECT COUNT(*) FROM memory_facts WHERE status = 'consolidated' AND type = 'personal'",
+                "SELECT COUNT(*) FROM memory_facts WHERE status = 'integrated' AND type = 'personal'",
                 (),
             )
             .await
@@ -244,7 +263,7 @@ async fn test_personal_memory_consolidation_live_server() {
         let consolidated_count: i64 = count_rows.next().await.unwrap().unwrap().get(0).unwrap();
         assert_eq!(
             consolidated_count, 100,
-            "All 100 facts must be marked status='consolidated'"
+            "All 100 facts must be marked status='integrated'"
         );
     })
     .await
@@ -281,7 +300,10 @@ async fn test_personal_memory_optimistic_concurrency() {
         assert_eq!(initial.version, 1);
 
         // 2. Successful update with matching expected_version (1) increments to version 2
-        let doc_v2 = format!("# Profile\n- {}\n", dataset_facts[0].text);
+        let doc_v2 = format!(
+            r#"{{"sections":[{{"id":"sec_t1","title":"Profile","blocks":[{{"id":"blk_t1","text":"{}"}}]}}]}}"#,
+            dataset_facts[0].text.replace('"', "'")
+        );
         let updated = save_personal_memory(&conn, None, &doc_v2, 1).await.unwrap();
         assert_eq!(updated.version, 2);
         assert_eq!(updated.content, doc_v2);
@@ -306,8 +328,9 @@ async fn test_personal_memory_optimistic_concurrency() {
 
         // 5. Successful update with expected_version (2) increments to version 3
         let doc_v3 = format!(
-            "# Profile\n- {}\n- {}\n",
-            dataset_facts[0].text, dataset_facts[1].text
+            r#"{{"sections":[{{"id":"sec_t1","title":"Profile","blocks":[{{"id":"blk_t1","text":"{}"}},{{"id":"blk_t2","text":"{}"}}]}}]}}"#,
+            dataset_facts[0].text.replace('"', "'"),
+            dataset_facts[1].text.replace('"', "'")
         );
         let updated_v3 = save_personal_memory(&conn, None, &doc_v3, 2).await.unwrap();
         assert_eq!(updated_v3.version, 3);
@@ -318,16 +341,15 @@ async fn test_personal_memory_optimistic_concurrency() {
 }
 
 // ============================================================================
-// Subtest 3: Consolidation Quiescence Precondition Gating
+// Subtest 3: Consolidation Confirmation Gating (memory-spec.md §5.3)
 // ============================================================================
-/// Entry Seam B: `consolidate_personal_memory(conn, provider, comments, project_id)`
+/// Entry Seam B: `consolidate_personal_memory(ConsolidationRequest)`
 ///
-/// Verifies the two-arm quiescence gate:
-///   - Precondition failure if compaction is actively `in_progress`.
-///   - Precondition failure if ingestion queue has unfinished items.
-///   - Precondition passes and returns current record (no-op) when quiescent and facts are empty.
+/// Verifies user-controlled gating: a compaction in progress returns
+/// `ConfirmationRequired` with no side effects; unfinished queue items return
+/// `ConfirmationRequired` unless `forced` is true.
 #[tokio::test]
-async fn test_consolidation_quiescence_precondition_gating() {
+async fn test_consolidation_confirmation_gating() {
     tokio::time::timeout(Duration::from_secs(15), async {
         let _guard = TempPathsGuard::new();
         let (_app, state) = get_test_app_and_state().await;
@@ -355,18 +377,27 @@ async fn test_consolidation_quiescence_precondition_gating() {
             "Setup: in_progress compaction must be recorded"
         );
 
-        let compaction_blocked =
-            consolidate_personal_memory(&conn, &provider, None, None, None, None).await;
-        assert!(
-            compaction_blocked.is_err(),
-            "Consolidation must be blocked when compaction is in progress"
-        );
-        let err_msg = compaction_blocked.err().unwrap().to_string();
-        assert!(
-            err_msg.contains("active compaction is in progress"),
-            "Error must mention active compaction, got: {}",
-            err_msg
-        );
+        let outcome = consolidate_personal_memory(ConsolidationRequest {
+            conn: &conn,
+            llm_provider: &provider,
+            comments: None,
+            project_id: None,
+            memory_settings: &PersonalMemorySettings::default(),
+            llm_settings: None,
+            forced: true,
+        })
+        .await
+        .expect("gating check must not error");
+        match outcome {
+            ConsolidateOutcome::ConfirmationRequired {
+                reason: ConfirmationReason::CompactionInProgress,
+                pending_count: 0,
+            } => {}
+            other => panic!(
+                "In-progress compaction must yield ConfirmationRequired(CompactionInProgress), got {:?}",
+                std::mem::discriminant(&other)
+            ),
+        }
 
         // Clear compaction block by committing it
         commit_compaction_output(
@@ -383,7 +414,7 @@ async fn test_consolidation_quiescence_precondition_gating() {
         let dataset_facts = load_dataset_facts("personal", 1);
         let fact_text = &dataset_facts[0].text;
 
-        let q_id = enqueue_fact(
+        let q_id = enqueue_observation(
             &conn,
             Some(session_id),
             run_id,
@@ -394,18 +425,30 @@ async fn test_consolidation_quiescence_precondition_gating() {
         .unwrap();
         assert!(q_id > 0);
 
-        let queue_blocked =
-            consolidate_personal_memory(&conn, &provider, None, None, None, None).await;
-        assert!(
-            queue_blocked.is_err(),
-            "Consolidation must be blocked when items are pending in ingestion queue"
-        );
-        let err_msg2 = queue_blocked.err().unwrap().to_string();
-        assert!(
-            err_msg2.contains("pending items in memory ingestion queue"),
-            "Error must mention pending items, got: {}",
-            err_msg2
-        );
+        let outcome = consolidate_personal_memory(ConsolidationRequest {
+            conn: &conn,
+            llm_provider: &provider,
+            comments: None,
+            project_id: None,
+            memory_settings: &PersonalMemorySettings::default(),
+            llm_settings: None,
+            forced: false,
+        })
+        .await
+        .expect("gating check must not error");
+        match outcome {
+            ConsolidateOutcome::ConfirmationRequired {
+                reason: ConfirmationReason::PendingQueueItems,
+                pending_count,
+            } => assert_eq!(
+                pending_count, 1,
+                "confirmation must report the unfinished queue depth"
+            ),
+            other => panic!(
+                "Pending queue items must yield ConfirmationRequired(PendingQueueItems), got {:?}",
+                std::mem::discriminant(&other)
+            ),
+        }
 
         // Clear queue item by marking it completed
         conn.execute(
@@ -417,7 +460,15 @@ async fn test_consolidation_quiescence_precondition_gating() {
 
         // --- Gate Arm 3: Quiescent & No Active Facts -> clean no-op Ok ---
         let quiescent_res =
-            consolidate_personal_memory(&conn, &provider, None, None, None, None).await;
+            consolidate_personal_memory(ConsolidationRequest {
+            conn: &conn,
+            llm_provider: &provider,
+            comments: None,
+            project_id: None,
+            memory_settings: &PersonalMemorySettings::default(),
+            llm_settings: None,
+            forced: true,
+        }).await;
         assert!(
             quiescent_res.is_ok(),
             "Consolidation must succeed (no-op) when pipeline is quiescent and no active facts exist"
@@ -463,8 +514,9 @@ async fn test_session_continuation_data_assembly() {
         // 2. Set personal memory content using real dataset facts
         let personal_facts = load_dataset_facts("personal", 2);
         let personal_doc = format!(
-            "# Personal Profile\n\n- {}\n- {}\n",
-            personal_facts[0].text, personal_facts[1].text
+            r#"{{"sections":[{{"id":"sec_t1","title":"Profile","blocks":[{{"id":"blk_t1","text":"{}"}},{{"id":"blk_t2","text":"{}"}}]}}]}}"#,
+            personal_facts[0].text.replace('"', "'"),
+            personal_facts[1].text.replace('"', "'")
         );
         save_personal_memory(&conn, None, &personal_doc, 1)
             .await
@@ -501,7 +553,7 @@ async fn test_session_continuation_data_assembly() {
 
         // Verify Personal Memory hydration
         assert_eq!(
-            continuation.personal_memory.as_deref(),
+            continuation.personal_memory_markdown.as_deref(),
             Some(personal_doc.as_str()),
             "Continuation must contain personal memory document"
         );
@@ -549,7 +601,7 @@ async fn test_session_continuation_data_assembly() {
 // Subtest 6: Personal Memory Version History & Compaction Preemption
 // ============================================================================
 #[tokio::test]
-async fn test_personal_memory_versions_and_compaction_preemption() {
+async fn test_personal_memory_versions() {
     tokio::time::timeout(Duration::from_secs(30), async {
         let _guard = TempPathsGuard::new();
         let (_app, state) = get_test_app_and_state().await;
@@ -567,13 +619,13 @@ async fn test_personal_memory_versions_and_compaction_preemption() {
         assert_eq!(v1.is_active, 1);
 
         // 2. Save v2 and v3
-        let v2 = save_personal_memory(&conn, None, "# Version 2 Content\n- User likes coffee.", 1)
+        let v2 = save_personal_memory(&conn, None, r#"{"sections":[{"id":"sec_t1","title":"V2","blocks":[{"id":"blk_t1","text":"User likes coffee."}]}]}"#, 1)
             .await
             .unwrap();
         assert_eq!(v2.version, 2);
         assert_eq!(v2.is_active, 1);
 
-        let v3 = save_personal_memory(&conn, None, "# Version 3 Content\n- User likes tea.", 2)
+        let v3 = save_personal_memory(&conn, None, r#"{"sections":[{"id":"sec_t1","title":"V3","blocks":[{"id":"blk_t1","text":"User likes tea."}]}]}"#, 2)
             .await
             .unwrap();
         assert_eq!(v3.version, 3);
@@ -599,60 +651,24 @@ async fn test_personal_memory_versions_and_compaction_preemption() {
         // Verify active memory is now v2
         let active = get_personal_memory(&conn, None).await.unwrap();
         assert_eq!(active.version, 2);
-        assert!(active.content.contains("Version 2 Content"));
-
-        // 5. Test Preemption: Record an in-progress compaction
-        let session_id = create_session_with_id(&conn, 14302, Some("default"))
-            .await
-            .unwrap();
-        let _run_id = record_compaction_start(&conn, session_id, "manual", 1, 10)
-            .await
-            .unwrap();
-        assert!(has_in_progress_compaction(&conn).await.unwrap());
-
-        // Consolidating with PauseCompaction policy must pause in-progress compaction back to pending
-        let conn_cfg =
-            ConnectionConfig::new(REMOTE_OLLAMA_URL, REMOTE_OLLAMA_MODEL, None, Some("ollama"));
-        let provider = RemoteTransport::new(conn_cfg);
-
-        let preemption_res = consolidate_personal_memory(
-            &conn,
-            &provider,
-            None,
-            None,
-            None,
-            Some(ConsolidationConflictPolicy::PauseCompaction),
-        )
-        .await;
-
-        assert!(
-            preemption_res.is_ok(),
-            "PauseCompaction policy must preempt compaction and succeed"
-        );
-        // Compaction should now no longer be in_progress
-        assert!(
-            !has_in_progress_compaction(&conn).await.unwrap(),
-            "Compaction must have been reset from 'in_progress' to 'pending'"
-        );
+        assert!(active.markdown.contains("User likes coffee"));
     })
     .await
-    .expect("test_personal_memory_versions_and_compaction_preemption timed out");
+    .expect("test_personal_memory_versions timed out");
 }
 
 // ============================================================================
-// Suggestion Lifecycle — memory-spec.md §5.3 INVARIANT 5.3-A / 5.3-B
+// Revision Lifecycle — memory-spec.md §5.3 INVARIANT 5.3-A
 // ---------------------------------------------------------------------------
-// These four tests cover the transactional surface introduced by the structured
-// delta consolidation refactor (schema v7 `personal_memory_suggestions`).
-// Before this block the table was referenced only as a *name* in a schema list;
-// no behavioural test existed for insert, re-anchoring, rejection, or the
-// candidate partition.
+// These tests cover the transactional surface of the semantic revision model
+// (`personal_memory_revisions`). No behavioural test existed for insert,
+// no-re-anchor resolution, rejection, or the candidate partition.
 //
 // Entry seams:
-//   persistence::personal_memory::insert_personal_memory_suggestions
-//   persistence::personal_memory::fetch_pending_suggestions
-//   persistence::personal_memory::resolve_suggestions_transaction
-//   persistence::facts::{mark_facts_staged, mark_facts_consolidated}
+//   persistence::personal_memory::insert_personal_memory_revisions
+//   persistence::personal_memory::fetch_pending_revisions
+//   persistence::personal_memory::resolve_batch_revisions_transaction
+//   persistence::facts::mark_observations_integrated
 //
 // Model: none. These are transactional/persistence contracts. The *selection* of
 // which facts an operation references is LLM behaviour and is eval-grade
@@ -664,16 +680,16 @@ fn pending_suggestion(
     id: &str,
     base_version: i64,
     op: &str,
-    target_index: u32,
+    target_id: &str,
     content: &str,
     created_at: i64,
-) -> PersonalMemorySuggestionRecord {
-    PersonalMemorySuggestionRecord {
+) -> PersonalMemoryRevisionRecord {
+    PersonalMemoryRevisionRecord {
         id: id.to_string(),
         base_memory_version: base_version,
         project_id: None,
         op: op.to_string(),
-        target_index,
+        target_id: target_id.to_string(),
         content: content.to_string(),
         status: "pending".to_string(),
         created_at,
@@ -686,17 +702,17 @@ async fn seed_staged_candidate(
     conn: &turso::Connection,
     session_id: i64,
     compaction_id: i64,
-    fact_id: &str,
-    fact_type: &str,
+    observation_id: &str,
+    observation_type: &str,
     text: &str,
 ) {
-    insert_fact(
+    insert_observation(
         conn,
-        &FactRecord {
-            id: fact_id.to_string(),
+        &ObservationRecord {
+            id: observation_id.to_string(),
             session_id: Some(session_id),
             compaction_id,
-            fact_type: fact_type.to_string(),
+            observation_type: observation_type.to_string(),
             text: text.to_string(),
             status: "active".to_string(),
             created_at: 1_700_000_000_000,
@@ -704,12 +720,12 @@ async fn seed_staged_candidate(
         },
     )
     .await
-    .expect("insert_fact must succeed");
+    .expect("insert_observation must succeed");
 
     insert_vector(
         conn,
-        fact_id,
-        fact_type,
+        observation_id,
+        observation_type,
         "active",
         None,
         &vec![0.25f32; 384],
@@ -719,9 +735,12 @@ async fn seed_staged_candidate(
 }
 
 /// Reads the live `status` of a single fact row.
-async fn fact_status(conn: &turso::Connection, fact_id: &str) -> String {
+async fn fact_status(conn: &turso::Connection, observation_id: &str) -> String {
     let mut rows = conn
-        .query("SELECT status FROM memory_facts WHERE id = ?", (fact_id,))
+        .query(
+            "SELECT status FROM memory_facts WHERE id = ?",
+            (observation_id,),
+        )
         .await
         .expect("fact status query must succeed");
     let row = rows
@@ -736,7 +755,7 @@ async fn fact_status(conn: &turso::Connection, fact_id: &str) -> String {
 async fn suggestion_status(conn: &turso::Connection, id: &str) -> String {
     let mut rows = conn
         .query(
-            "SELECT status FROM personal_memory_suggestions WHERE id = ?",
+            "SELECT status FROM personal_memory_revisions WHERE id = ?",
             (id,),
         )
         .await
@@ -753,7 +772,7 @@ async fn suggestion_status(conn: &turso::Connection, id: &str) -> String {
 async fn suggestion_base_version(conn: &turso::Connection, id: &str) -> i64 {
     let mut rows = conn
         .query(
-            "SELECT base_memory_version FROM personal_memory_suggestions WHERE id = ?",
+            "SELECT base_memory_version FROM personal_memory_revisions WHERE id = ?",
             (id,),
         )
         .await
@@ -767,27 +786,26 @@ async fn suggestion_base_version(conn: &turso::Connection, id: &str) -> i64 {
         .expect("base_memory_version column must be readable")
 }
 
-/// Reads the live `target_index` of a single suggestion row.
-async fn suggestion_target_index(conn: &turso::Connection, id: &str) -> u32 {
+/// Reads the live `target_id` of a single revision row.
+async fn suggestion_target_id(conn: &turso::Connection, id: &str) -> String {
     let mut rows = conn
         .query(
-            "SELECT target_index FROM personal_memory_suggestions WHERE id = ?",
+            "SELECT target_id FROM personal_memory_revisions WHERE id = ?",
             (id,),
         )
         .await
-        .expect("suggestion target_index query must succeed");
+        .expect("revision target_id query must succeed");
     let row = rows
         .next()
         .await
         .expect("query must yield a row")
         .expect("suggestion row must exist");
-    let idx: i64 = row.get(0).expect("target_index column must be readable");
-    idx as u32
+    row.get(0).expect("target_id column must be readable")
 }
 
-/// Subtest 7: `insert_personal_memory_suggestions` persists rows and preserves index properties.
+/// Subtest 7: `insert_personal_memory_revisions` persists rows and preserves index properties.
 ///
-/// Covers the write path plus the `fetch_pending_suggestions` read-back contract:
+/// Covers the write path plus the `fetch_pending_revisions` read-back contract:
 /// `status = 'pending'`, ordering oldest-created-first, and an empty slice is a no-op.
 #[tokio::test]
 async fn test_suggestion_insert_and_fetch_pending_roundtrip() {
@@ -797,10 +815,10 @@ async fn test_suggestion_insert_and_fetch_pending_roundtrip() {
         let conn = state.db.connect().expect("test db must connect");
 
         // Empty slice must be a clean no-op.
-        insert_personal_memory_suggestions(&conn, &[])
+        insert_personal_memory_revisions(&conn, &[])
             .await
             .expect("empty suggestion slice must be a no-op Ok");
-        let empty = fetch_pending_suggestions(&conn, None)
+        let empty = fetch_pending_revisions(&conn, None)
             .await
             .expect("fetch must succeed");
         assert!(
@@ -812,27 +830,27 @@ async fn test_suggestion_insert_and_fetch_pending_roundtrip() {
         let older = pending_suggestion(
             "sug_older",
             1,
-            "insert_after",
-            1,
+            "create_block",
+            "blk_seed_older",
             "- User enjoys badminton.",
             1_000,
         );
         let newer = pending_suggestion(
             "sug_newer",
             1,
-            "insert_after",
-            2,
+            "create_block",
+            "blk_seed_newer",
             "- User relocated to Seattle.",
             2_000,
         );
-        insert_personal_memory_suggestions(&conn, &[older, newer])
+        insert_personal_memory_revisions(&conn, &[older, newer])
             .await
-            .expect("insert_personal_memory_suggestions must succeed");
+            .expect("insert_personal_memory_revisions must succeed");
 
         // Only pending rows are returned, ordered oldest created_at first.
-        let pending = fetch_pending_suggestions(&conn, None)
+        let pending = fetch_pending_revisions(&conn, None)
             .await
-            .expect("fetch_pending_suggestions must succeed");
+            .expect("fetch_pending_revisions must succeed");
         assert_eq!(pending.len(), 2, "both suggestions must be pending");
         assert_eq!(
             pending[0].id, "sug_older",
@@ -851,11 +869,11 @@ async fn test_suggestion_insert_and_fetch_pending_roundtrip() {
     .expect("test_suggestion_insert_and_fetch_pending_roundtrip timed out");
 }
 
-/// Subtest 8: Accepting `sug_1` re-anchors `sug_2` and arithmetically shifts its `target_index`.
+/// Subtest 8: Accepting `sug_1` re-anchors `sug_2` and arithmetically shifts its `target_id`.
 ///
 /// This is INVARIANT 5.3-B — arithmetic index re-anchoring. `sug_2` was anchored at index 3;
 /// accepting an `insert_after` at index 2 shifts subsequent pending suggestions (index > 2)
-/// by +1, so `sug_2`'s `target_index` becomes 4.
+/// by +1, so `sug_2`'s `target_id` becomes 4.
 #[tokio::test]
 async fn test_suggestion_accept_reanchors_remaining_pending() {
     tokio::time::timeout(Duration::from_secs(15), async {
@@ -890,7 +908,7 @@ async fn test_suggestion_accept_reanchors_remaining_pending() {
         .await;
 
         // Base document at version 2.
-        let v2_doc = "# Profile\n\n- User lives in Chicago.\n";
+        let v2_doc = r#"{"sections":[{"id":"sec_t1","title":"Profile","blocks":[{"id":"blk_t1","text":"User lives in Chicago."}]}]}"#;
         save_personal_memory(&conn, None, v2_doc, 1)
             .await
             .expect("v2 document must be saved");
@@ -898,22 +916,22 @@ async fn test_suggestion_accept_reanchors_remaining_pending() {
         // Two suggestions anchored to version 2:
         // sug_1: insert after element 2
         // sug_2: insert after element 3
-        insert_personal_memory_suggestions(
+        insert_personal_memory_revisions(
             &conn,
             &[
                 pending_suggestion(
                     "sug_1",
                     2,
-                    "insert_after",
-                    2,
+                    "create_block",
+                    "blk_sug_1",
                     "- User enjoys badminton.",
                     1_000,
                 ),
                 pending_suggestion(
                     "sug_2",
                     2,
-                    "insert_after",
-                    3,
+                    "create_block",
+                    "blk_sug_2",
                     "- User relocated to Seattle.",
                     2_000,
                 ),
@@ -923,12 +941,14 @@ async fn test_suggestion_accept_reanchors_remaining_pending() {
         .expect("suggestions must be inserted");
 
         // Accept ONLY sug_1, supplying the merged document.
-        let v3_doc = "# Profile\n\n- User lives in Chicago.\n- User enjoys badminton.\n";
-        let updated = resolve_suggestions_transaction(
+        let v3_doc = r#"{"sections":[{"id":"sec_t1","title":"Profile","blocks":[{"id":"blk_t1","text":"User lives in Chicago."},{"id":"blk_t2","text":"User enjoys badminton."}]}]}"#;
+        let updated = resolve_batch_revisions_transaction(
             &conn,
             None,
-            Some("sug_1"),
-            "accept",
+            &[RevisionDecision {
+                id: "sug_1".to_string(),
+                action: "accept".to_string(),
+            }],
             Some(v3_doc),
         )
         .await
@@ -948,26 +968,26 @@ async fn test_suggestion_accept_reanchors_remaining_pending() {
             "resolved suggestion must flip to 'accepted'"
         );
 
-        // INVARIANT 5.3-B — sug_2 must survive as pending AND be re-anchored to v3,
-        // and its target_index must shift from 3 to 4.
+        // Semantic IDs are never re-anchored: sug_2 survives as pending with its
+        // generation-time base version and target ID untouched.
         assert_eq!(
             suggestion_status(&conn, "sug_2").await,
             "pending",
-            "re-anchoring must NOT change a pending suggestion's status"
+            "resolution must NOT change a remaining pending revision's status"
         );
         assert_eq!(
             suggestion_base_version(&conn, "sug_2").await,
-            3,
-            "remaining pending suggestion must be re-anchored to the newly written version"
+            2,
+            "remaining pending revision keeps its generation-time base version"
         );
         assert_eq!(
-            suggestion_target_index(&conn, "sug_2").await,
-            4,
-            "remaining pending suggestion target_index must shift arithmetically by +1"
+            suggestion_target_id(&conn, "sug_2").await,
+            "blk_sug_2",
+            "remaining pending revision keeps its semantic target ID"
         );
 
         // sug_2 must still be returned by the review slate and still be resolvable.
-        let still_pending = fetch_pending_suggestions(&conn, None)
+        let still_pending = fetch_pending_revisions(&conn, None)
             .await
             .expect("fetch must succeed after accept");
         assert_eq!(
@@ -977,16 +997,18 @@ async fn test_suggestion_accept_reanchors_remaining_pending() {
         );
         assert_eq!(still_pending[0].id, "sug_2");
 
-        let v4_doc = "# Profile\n\n- User lives in Chicago.\n- User enjoys badminton.\n- User relocated to Seattle.\n";
-        let final_record = resolve_suggestions_transaction(
+        let v4_doc = r#"{"sections":[{"id":"sec_t1","title":"Profile","blocks":[{"id":"blk_t1","text":"User lives in Chicago."},{"id":"blk_t2","text":"User enjoys badminton."},{"id":"blk_t3","text":"User relocated to Seattle."}]}]}"#;
+        let final_record = resolve_batch_revisions_transaction(
             &conn,
             None,
-            Some("sug_2"),
-            "accept",
+            &[RevisionDecision {
+                id: "sug_2".to_string(),
+                action: "accept".to_string(),
+            }],
             Some(v4_doc),
         )
         .await
-        .expect("re-anchored sug_2 must still be individually resolvable");
+        .expect("sug_2 must still be individually resolvable");
         assert_eq!(
             final_record.version, 4,
             "sug_2 must resolve on top of the re-anchored base version"
@@ -1004,18 +1026,18 @@ async fn test_suggestion_reject_marks_facts_rejected_and_preserves_version() {
         let (_app, state) = get_test_app_and_state().await;
         let conn = state.db.connect().expect("test db must connect");
 
-        let doc = "# Profile\n\n- User lives in Chicago.\n";
+        let doc = r#"{"sections":[{"id":"sec_t1","title":"Profile","blocks":[{"id":"blk_t1","text":"User lives in Chicago."}]}]}"#;
         save_personal_memory(&conn, None, doc, 1)
             .await
             .expect("document must be saved");
 
-        insert_personal_memory_suggestions(
+        insert_personal_memory_revisions(
             &conn,
             &[pending_suggestion(
                 "sug_reject",
                 2,
-                "insert_after",
-                2,
+                "create_block",
+                "blk_sug_reject",
                 "- User dislikes morning meetings.",
                 1_000,
             )],
@@ -1023,10 +1045,17 @@ async fn test_suggestion_reject_marks_facts_rejected_and_preserves_version() {
         .await
         .expect("suggestion must be inserted");
 
-        let record =
-            resolve_suggestions_transaction(&conn, None, Some("sug_reject"), "reject", None)
-                .await
-                .expect("rejecting must succeed");
+        let record = resolve_batch_revisions_transaction(
+            &conn,
+            None,
+            &[RevisionDecision {
+                id: "sug_reject".to_string(),
+                action: "reject".to_string(),
+            }],
+            None,
+        )
+        .await
+        .expect("rejecting must succeed");
 
         assert_eq!(
             record.version, 2,
@@ -1061,8 +1090,8 @@ async fn test_candidate_partition_leaves_no_fact_trapped_in_staged() {
             .await
             .expect("compaction run must be recorded");
 
-        let fact_ids = ["fact_alpha", "fact_beta", "fact_gamma"];
-        for id in fact_ids {
+        let observation_ids = ["fact_alpha", "fact_beta", "fact_gamma"];
+        for id in observation_ids {
             seed_staged_candidate(
                 &conn,
                 session_id,
@@ -1075,22 +1104,25 @@ async fn test_candidate_partition_leaves_no_fact_trapped_in_staged() {
         }
 
         // All candidate facts are transitioned to 'consolidated' immediately on staging/synthesis
-        let facts_to_consolidate = fact_ids.iter().map(|s| s.to_string()).collect::<Vec<_>>();
-        mark_facts_consolidated(&conn, &facts_to_consolidate)
+        let facts_to_consolidate = observation_ids
+            .iter()
+            .map(|s| s.to_string())
+            .collect::<Vec<_>>();
+        mark_observations_integrated(&conn, &facts_to_consolidate)
             .await
-            .expect("facts must be marked consolidated");
+            .expect("facts must be marked integrated");
 
-        for id in fact_ids {
+        for id in observation_ids {
             assert_eq!(
                 fact_status(&conn, id).await,
-                "consolidated",
-                "fact '{}' must be 'consolidated', never left 'staged' or 'active'",
+                "integrated",
+                "fact '{}' must be 'integrated', never left 'active'",
                 id
             );
         }
 
         // Verify zero facts remain in 'staged' or 'active' for this personal scope
-        let active = fetch_active_facts_by_type(&conn, "personal")
+        let active = fetch_active_observations_by_type(&conn, "personal")
             .await
             .expect("active query must succeed");
         assert!(

@@ -383,7 +383,10 @@ fn main() {
             let pack = vox_lib::services::tts::providers::zipvoice::load_voice_pack(&voices_dir)
                 .unwrap_or_default();
             if pack.is_empty() {
-                eprintln!("[WARN] No ZipVoice reference voices found in {:?}", voices_dir);
+                eprintln!(
+                    "[WARN] No ZipVoice reference voices found in {:?}",
+                    voices_dir
+                );
             }
             let tuning = vox_lib::services::tts::providers::zipvoice::ZipvoiceTuning {
                 steps: args.zv_steps,
@@ -423,9 +426,7 @@ fn main() {
                     ),
                     &format!(
                         "zipvoice_{}_s{}_g{:.1}",
-                        entry.slug,
-                        args.zv_steps,
-                        args.zv_guidance
+                        entry.slug, args.zv_steps, args.zv_guidance
                     ),
                     &zd_str,
                     &prompts,

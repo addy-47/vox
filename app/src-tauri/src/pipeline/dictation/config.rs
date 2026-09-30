@@ -1,8 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::core::defaults::{
-    DEFAULT_DICTATION_ENABLED, DEFAULT_DICTATION_HOTKEY,
-    DEFAULT_DICTATION_SILENCE_AUTO_STOP_MS,
+    DEFAULT_DICTATION_ENABLED, DEFAULT_DICTATION_HOTKEY, DEFAULT_DICTATION_SILENCE_AUTO_STOP_MS,
 };
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Default)]

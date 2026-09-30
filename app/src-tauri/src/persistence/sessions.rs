@@ -16,7 +16,7 @@ use crate::utils::json::parse_unified_compaction_json;
 /// Data payload required to seed conversation continuation in working memory.
 #[derive(Debug, Clone)]
 pub struct SessionContinuationData {
-    pub personal_memory: Option<String>,
+    pub personal_memory_markdown: Option<String>,
     pub latest_summary: Option<String>,
     pub turns: Vec<TurnRow>,
     pub max_turn_id: u32,
@@ -373,8 +373,8 @@ pub async fn fetch_session_continuation(
     conn: &Connection,
     session_id: i64,
 ) -> Result<SessionContinuationData> {
-    let personal_memory = match get_personal_memory(conn, None).await {
-        Ok(rec) if !rec.content.trim().is_empty() => Some(rec.content),
+    let personal_memory_markdown = match get_personal_memory(conn, None).await {
+        Ok(rec) if !rec.markdown.trim().is_empty() => Some(rec.markdown),
         _ => None,
     };
 
@@ -429,7 +429,7 @@ pub async fn fetch_session_continuation(
     };
 
     Ok(SessionContinuationData {
-        personal_memory,
+        personal_memory_markdown,
         latest_summary,
         turns,
         max_turn_id,

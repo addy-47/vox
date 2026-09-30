@@ -25,7 +25,7 @@ use tempfile::tempdir;
 use vox_lib::persistence::{
     compactions::record_compaction_start,
     decode_f32_blob, encode_f32_blob,
-    facts::{insert_fact, insert_vector, FactRecord},
+    facts::{insert_observation, insert_vector, ObservationRecord},
     notifications::{create_notification, NewNotification, Severity},
     personal_memory::get_personal_memory,
     projects::{delete_project, get_project_by_id},
@@ -107,7 +107,7 @@ async fn test_schema_migration_and_seed_data() {
             "personal_memory",
             "voices",
             "session_tool_calls",
-            "personal_memory_suggestions",
+            "personal_memory_revisions",
         ];
 
         for table in &expected_tables {
@@ -209,18 +209,18 @@ async fn test_relational_cascades_and_foreign_key_restrictions() {
         .expect("Failed to insert tool call");
 
         // Insert fact associated with session_id
-        let fact_id = "fact_cascade_20201".to_string();
-        let fact_rec = FactRecord {
-            id: fact_id.clone(),
+        let observation_id = "fact_cascade_20201".to_string();
+        let observation_rec = ObservationRecord {
+            id: observation_id.clone(),
             session_id: Some(session_id),
             compaction_id,
-            fact_type: "objective".to_string(),
+            observation_type: "objective".to_string(),
             text: "User is building integration tests".to_string(),
             status: "active".to_string(),
             created_at: 1000,
             updated_at: 1000,
         };
-        insert_fact(&conn, &fact_rec)
+        insert_observation(&conn, &observation_rec)
             .await
             .expect("Failed to insert fact");
 
@@ -228,7 +228,7 @@ async fn test_relational_cascades_and_foreign_key_restrictions() {
         let test_vec = vec![0.5f32; 384];
         insert_vector(
             &conn,
-            &fact_id,
+            &observation_id,
             "objective",
             "active",
             Some("default"),
@@ -302,7 +302,7 @@ async fn test_relational_cascades_and_foreign_key_restrictions() {
         let mut fact_rows = conn
             .query(
                 "SELECT session_id FROM memory_facts WHERE id = ?;",
-                (fact_id.clone(),),
+                (observation_id.clone(),),
             )
             .await
             .unwrap();
@@ -321,7 +321,7 @@ async fn test_relational_cascades_and_foreign_key_restrictions() {
         let mut vec_rows = conn
             .query(
                 "SELECT COUNT(*) FROM memory_facts_vectors WHERE fact_id = ?;",
-                (fact_id.clone(),),
+                (observation_id.clone(),),
             )
             .await
             .unwrap();
@@ -329,14 +329,14 @@ async fn test_relational_cascades_and_foreign_key_restrictions() {
         assert_eq!(vec_count, 1, "Vector must still exist while fact exists");
 
         // 5. CASCADE Check: Deleting fact cascades to vector
-        conn.execute("DELETE FROM memory_facts WHERE id = ?;", (fact_id.clone(),))
+        conn.execute("DELETE FROM memory_facts WHERE id = ?;", (observation_id.clone(),))
             .await
             .expect("Failed to delete fact");
 
         let mut vec_after = conn
             .query(
                 "SELECT COUNT(*) FROM memory_facts_vectors WHERE fact_id = ?;",
-                (fact_id,),
+                (observation_id,),
             )
             .await
             .unwrap();
@@ -615,31 +615,38 @@ async fn test_f32_blob_vector_precision_roundtrip() {
             .await
             .expect("Failed to record compaction");
 
-        let fact_id = "fact_vector_precision_test";
-        let fact_rec = FactRecord {
-            id: fact_id.to_string(),
+        let observation_id = "fact_vector_precision_test";
+        let observation_rec = ObservationRecord {
+            id: observation_id.to_string(),
             session_id: Some(session_id),
             compaction_id,
-            fact_type: "objective".to_string(),
+            observation_type: "objective".to_string(),
             text: "Vector precision test fact".to_string(),
             status: "active".to_string(),
             created_at: 1000,
             updated_at: 1000,
         };
-        insert_fact(&conn, &fact_rec)
+        insert_observation(&conn, &observation_rec)
             .await
             .expect("Failed to insert parent fact");
 
         // 4. Insert vector via production helper
-        insert_vector(&conn, fact_id, "objective", "active", None, &original_vec)
-            .await
-            .expect("Failed to insert vector");
+        insert_vector(
+            &conn,
+            observation_id,
+            "objective",
+            "active",
+            None,
+            &original_vec,
+        )
+        .await
+        .expect("Failed to insert vector");
 
         // 5. Select raw BLOB from SQLite
         let mut rows = conn
             .query(
                 "SELECT embedding FROM memory_facts_vectors WHERE fact_id = ?;",
-                (fact_id,),
+                (observation_id,),
             )
             .await
             .expect("Query vector failed");

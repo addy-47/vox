@@ -267,8 +267,8 @@ fn test_settings_json_roundtrip_persistence() {
     );
 
     // Validate raw JSON schema contains mutated values
-    let json_val: serde_json::Value =
-        vox_lib::utils::jsonc::from_jsonc_str(&raw_content).expect("settings.jsonc must be valid JSONC");
+    let json_val: serde_json::Value = vox_lib::utils::jsonc::from_jsonc_str(&raw_content)
+        .expect("settings.jsonc must be valid JSONC");
     assert_eq!(
         json_val["tts"]["voice_index"], 42,
         "Raw JSON must contain mutated tts.voice_index == 42"
@@ -292,7 +292,11 @@ fn test_settings_json_roundtrip_persistence() {
     {
         use std::os::unix::fs::PermissionsExt;
         let perms = fs::metadata(&providers_path).unwrap().permissions();
-        assert_eq!(perms.mode() & 0o777, 0o600, "providers.jsonc must be chmod 0600");
+        assert_eq!(
+            perms.mode() & 0o777,
+            0o600,
+            "providers.jsonc must be chmod 0600"
+        );
     }
 
     // Verify agent.jsonc contains cognitive params
@@ -387,7 +391,9 @@ fn test_settings_malformed_fallback_to_default() {
     if let Ok(entries) = fs::read_dir(parent) {
         for entry in entries.flatten() {
             let filename = entry.file_name().to_string_lossy().to_string();
-            if filename.starts_with("settings.corrupt.") && (filename.ends_with(".jsonc") || filename.ends_with(".json")) {
+            if filename.starts_with("settings.corrupt.")
+                && (filename.ends_with(".jsonc") || filename.ends_with(".json"))
+            {
                 found_corrupt_backup = true;
                 let backup_content =
                     fs::read_to_string(entry.path()).expect("Backup file must be readable");
@@ -694,11 +700,13 @@ fn test_settings_3way_partial_corruption_recovery() {
     assert_eq!(loaded.appearance.accent_seed, "#8B5CF6");
 
     // The corrupt section (vad) should fall back to defaults
-    assert_eq!(loaded.vad.threshold, vox_lib::core::defaults::DEFAULT_VAD_THRESHOLD);
+    assert_eq!(
+        loaded.vad.threshold,
+        vox_lib::core::defaults::DEFAULT_VAD_THRESHOLD
+    );
 
     assert!(
         Instant::now() < deadline,
         "test_settings_3way_partial_corruption_recovery exceeded 10s deadline"
     );
 }
-

@@ -358,20 +358,12 @@ async fn render_evidence_xml(
     let current_tracked_tokens = if live_tracked > 0 {
         live_tracked
     } else if let Ok(conn) = ctx.app_state.db.connect() {
-        if let Ok(turns) = compactions::fetch_turns_for_compaction(
-            &conn,
-            ctx.session_id,
-            1,
-            ctx.turn_id,
-        )
-        .await
+        if let Ok(turns) =
+            compactions::fetch_turns_for_compaction(&conn, ctx.session_id, 1, ctx.turn_id).await
         {
             turns
                 .iter()
-                .map(|t| {
-                    estimate_tokens(&t.user_text)
-                        + estimate_tokens(&t.assistant_text)
-                })
+                .map(|t| estimate_tokens(&t.user_text) + estimate_tokens(&t.assistant_text))
                 .sum()
         } else {
             0

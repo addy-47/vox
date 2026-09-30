@@ -69,66 +69,86 @@ Manages conversational history queries, turn records, and session metadata.
 ---
 
 ### 2.3 Personal Memory Domain (`ipc/memory.rs`) — [REFACTORED]
-Manages the single evolving Personal Memory markdown document.
+Manages the single evolving Personal Memory semantic model. The canonical representation is structured JSON; every command below that touches the document returns **rendered Markdown**, so the frontend never sees the canonical format.
 
-#### `get_personal_memory(projectId: Option<String>)`
-- **Purpose**: Retrieves the consolidated Personal Memory markdown document.
-- **Behavior**: Queries `personal_memory WHERE project_id IS ?` (or default if None). Returns raw markdown text, revision version number, and last consolidated timestamp.
+#### `PersonalMemoryRecord` (storage row and IPC wire type)
 
-#### `save_personal_memory(content: String, expectedVersion: u64, projectId: Option<String>)`
-- **Purpose**: Saves direct manual text edits made to the Personal Memory document.
-- **Behavior**: Optimistic concurrency check: updates content and increments version only if `version == expectedVersion`. If version drifted, rejects with `VoxIpcError::Conflict`. Broadcasts `IpcEvent::PersonalMemoryUpdated`.
+One struct serves both roles. The DB column `content` holds the canonical semantic JSON; the record
+additionally carries `markdown`, rendered from `content` at read time. `content` is marked
+`#[serde(skip_serializing)]`, so serialization physically cannot emit the canonical form — the only
+representation the frontend receives is `markdown`.
 
-#### `consolidate_personal_memory(comments: Option<Vec<String>>, projectId: Option<String>, conflictPolicy: Option<String>)` — [UNIFIED]
-- **Purpose**: Consolidates active personal facts into the document or stages comment-driven LLM edits.
-- **Behavior**: 
-  - If `comments` provided: triggers Prompt 3 (comment-directed edits) with numbered content elements, staging index-addressed delta suggestions into `personal_memory_suggestions`. Never blocked by background ingestion queue items or compactions.
-  - If `comments` None:
-    - If compaction is active: evaluates `conflictPolicy` (`"pause_compaction" | "queue" | "prompt"`). If `pause_compaction`, resets ongoing compaction to `'pending'`, drains queue, and consolidates immediately. If `prompt` (default), raises `CompactionInProgress` error so UI can prompt user.
-    - If the current document is empty: runs Prompt 1 (cold start), synthesizing a complete structured markdown document from active facts, marking facts `'consolidated'`, and saving version 1 (`is_active = 1`).
-    - If an active document exists: runs Prompt 2 (incremental integration) with numbered content elements, staging index-addressed suggestions into `personal_memory_suggestions`, and marking candidate facts `'consolidated'`.
-  - Broadcasts `IpcEvent::PersonalMemoryUpdated`.
+#### `get_personal_memory(projectId: Option<String>) -> PersonalMemoryRecord`
+- **Purpose**: Retrieves the active Personal Memory rendered as Markdown.
+- **Behavior**: Reads the active `personal_memory` row, deserializes `content` into the semantic model, and returns `render_to_markdown()` output with the revision version and last consolidated timestamp.
 
-#### `regenerate_personal_memory(projectId: Option<String>)` — [NEW]
-- **Purpose**: Reformats and reorganizes the existing consolidated personal memory document.
-- **Behavior**: Triggers the regeneration LLM pass on the existing active personal memory document (reformatting section headings, pruning redundant bullets, and clarifying prose). Operates strictly on the existing document text, NOT raw facts. Inserts a new `personal_memory` record with `version = max_version + 1`, `is_active = 1`, and broadcasts `IpcEvent::PersonalMemoryUpdated`.
+#### `save_personal_memory(content: String, expectedVersion: u64, projectId: Option<String>) -> PersonalMemoryRecord`
+- **Purpose**: Saves direct manual edits made to the rendered Markdown document.
+- **Behavior**: Parses `content` back into the semantic model with the deterministic Markdown→JSON converter (`## Title` → section, each paragraph → prose block, application assigns fresh persistent IDs), validates via `PersonalMemory::validate()`, then persists the canonical JSON under an optimistic concurrency check: the new version is written only if `version == expectedVersion`, otherwise `VoxIpcError::Conflict`. Broadcasts `IpcEvent::PersonalMemoryUpdated`.
 
-#### `get_personal_memory_versions(projectId: Option<String>)` — [NEW]
-- **Purpose**: Lists all historical versions of the personal memory document for carousel browsing.
-- **Behavior**: Queries `personal_memory WHERE project_id IS ? ORDER BY version DESC`. Returns `Vec<PersonalMemoryRecord>` including `version` and `is_active` flags.
+#### `consolidate_personal_memory(comments: Option<Vec<String>>, projectId: Option<String>, forced: Option<bool>) -> ConsolidateOutcome` — [UNIFIED]
+- **Purpose**: Integrates active personal observations into the semantic model, or stages comment-directed LLM edits.
+```rust
+#[serde(tag = "status", rename_all = "snake_case")]
+pub enum ConsolidateOutcome {
+    Completed { record: PersonalMemoryRecord },
+    ConfirmationRequired { reason: ConfirmationReason, pending_count: i64 },
+}
+#[serde(rename_all = "snake_case")]
+pub enum ConfirmationReason { CompactionInProgress, PendingQueueItems }
+```
+- **Behavior**:
+  - If `comments` is provided: runs the comment-directed LLM pass over the current memory in handle format, stages resolved semantic operations into `personal_memory_revisions`, and returns `Completed`. This path is never gated by compaction state, queue state, or `forced`.
+  - If `comments` is None:
+    - If any `session_compactions.status = 'in_progress'` row exists, returns `ConfirmationRequired { reason: CompactionInProgress, .. }` with no side effects. The frontend disables the control in this state rather than offering a confirm affordance.
+    - If `forced` is false/absent and unfinished `memory_ingestion_queue` items exist, returns `ConfirmationRequired { reason: PendingQueueItems, pending_count }` with no side effects. The frontend surfaces a confirm toast; confirming re-issues the command with `forced = true`.
+    - With `forced = true`, candidate observations are snapshotted once (INVARIANT 5.3-C) and pending queue items are left `pending` to drain via the normal quiet observer. No inline ingestion cycle runs.
+    - If no active memory exists: runs the cold-generation pass, synthesizes the complete semantic model from the snapshot, saves version 1 (`is_active = 1`), and marks exactly the snapshot `'integrated'`.
+    - If an active memory exists: runs the incremental pass, resolves per-request handles to persistent IDs, and either stages the resolved operations as pending revisions (`suggestion_policy = "manual_review"`) or auto-commits non-destructive operations while holding deletions for confirmation (`suggestion_policy = "auto_apply"`). Marks exactly the snapshot `'integrated'`.
+  - Broadcasts `IpcEvent::PersonalMemoryUpdated` on `Completed`.
 
-#### `set_active_personal_memory_version(version: u64, projectId: Option<String>)` — [NEW]
+#### `regenerate_personal_memory(projectId: Option<String>) -> PersonalMemoryRecord`
+- **Purpose**: Reorganizes the existing semantic Personal Memory into a new coherent structure.
+- **Behavior**: Renders the current memory to the LLM in handle format, receives a complete new structure via the `new_sections`-only grouped schema, assigns fresh `sec_*`/`blk_*` IDs to every entity, bulk-rejects any pending revisions that targeted the superseded IDs, and inserts a new `personal_memory` record with `version = max_version + 1`, `is_active = 1`. Operates strictly on the existing semantic model, NOT on raw observations. Broadcasts `IpcEvent::PersonalMemoryUpdated`.
+
+#### `get_personal_memory_versions(projectId: Option<String>) -> Vec<PersonalMemoryView>`
+- **Purpose**: Lists all historical versions for carousel browsing.
+- **Behavior**: Queries `personal_memory WHERE project_id IS ? ORDER BY version DESC`, renders each row's canonical JSON to Markdown, and returns `Vec<PersonalMemoryRecord>` including `version` and `is_active` flags.
+
+#### `set_active_personal_memory_version(version: i64, projectId: Option<String>) -> PersonalMemoryRecord`
 - **Purpose**: Restores a historical version as the active personal memory profile.
-- **Behavior**: Inside a transaction, updates `is_active = 0` for all versions of that project and sets `is_active = 1` for the specified version. Broadcasts `IpcEvent::PersonalMemoryUpdated`.
+- **Behavior**: Inside a transaction, updates `is_active = 0` for all versions of that project and sets `is_active = 1` for the specified version, then renders the newly active row to Markdown. Broadcasts `IpcEvent::PersonalMemoryUpdated`.
 
-#### `get_memory_suggestions(projectId: Option<String>)` — [NEW]
-- **Purpose**: Lists all uncommitted delta suggestions pending review for the active personal memory document.
-- **Behavior**: Queries `personal_memory_suggestions WHERE status = 'pending' AND base_memory_version = active_version`. Returns `Vec<MemorySuggestionRecord>`.
+#### `get_memory_revisions(projectId: Option<String>) -> Vec<MemoryRevisionView>` — [RENAMED from `get_memory_suggestions`]
+- **Purpose**: Lists all pending semantic operations awaiting review.
+- **Behavior**: Queries `personal_memory_revisions WHERE project_id IS ? AND status = 'pending' ORDER BY created_at ASC`. Returns `Vec<MemoryRevisionView>`, which carries `id`, `op` (`create_section` | `create_block` | `update_block` | `delete_block`), `target_id`, `status`, `created_at`, and a human-readable `preview` string resolved against the active semantic model (for example, `Create block in 'Vox Development': Addy is building…`).
 
-#### `resolve_memory_suggestions(request: ResolveSuggestionsRequest)` — [REFACTORED BATCH]
-- **Purpose**: Atomically resolves a batch of pending memory suggestions (accept and/or reject) in a single IPC roundtrip.
+#### `resolve_memory_revisions(request: ResolveRevisionsRequest) -> PersonalMemoryRecord` — [REFACTORED BATCH]
+- **Purpose**: Atomically resolves a batch of pending memory revisions (accept and/or reject) in a single IPC roundtrip.
 - **Parameters**:
   ```rust
-  pub struct SuggestionDecision {
+  pub struct RevisionDecision {
       pub id: String,
       pub action: String, // "accept" | "reject"
   }
-  pub struct ResolveSuggestionsRequest {
+  pub struct ResolveRevisionsRequest {
       pub project_id: Option<String>,
-      pub decisions: Vec<SuggestionDecision>,
+      pub decisions: Vec<RevisionDecision>,
   }
   ```
 - **Behavior**:
-  - Validates that each item in `decisions` has `action == "accept"` or `action == "reject"`.
-  - For accepted suggestions, applies index-addressed patch operations in descending target index order to the active document text, increments `version`, and inserts new `personal_memory` row (`is_active = 1`).
-  - Marks accepted suggestions as `'accepted'` (`resolved_at = now`) and rejected suggestions as `'rejected'` (`resolved_at = now`).
-  - If un-reviewed suggestions remain pending, updates their `base_memory_version = version + 1`.
-  - Commits all document and suggestion updates in a single atomic database transaction.
+  - Validates that each item in `decisions` has `action == "accept"` or `action == "reject"`, else `VoxIpcError::InvalidArgument`. A decision targeting a non-pending revision yields `VoxIpcError::NotFound`.
+  - Deserializes each accepted revision's `ResolvedOp` from its JSON payload and applies it to the active semantic model. Because operations address persistent semantic IDs rather than positional indices, **no re-anchoring of remaining pending revisions occurs and no descending-index sort is required**.
+  - Per-operation rejection: an operation whose target ID no longer exists (deleted by another accepted operation in the same batch, or by a prior accept) is auto-rejected with a logged reason, and the rest of the batch still applies.
+  - Validates the result with `PersonalMemory::validate()`. A violating result commits nothing — no version bump, no row status change — and returns `VoxIpcError::Engine`.
+  - Inserts a new `personal_memory` row with `version = max_version + 1`, `is_active = 1`, and `last_consolidated_at = now()`; the previous version flips to `is_active = 0`.
+  - Marks accepted revisions `'accepted'` and rejected revisions `'rejected'`, both with `resolved_at = now()`.
+  - Commits all document and revision updates in a single atomic database transaction.
   - Broadcasts `IpcEvent::PersonalMemoryUpdated`.
 
-#### `get_active_facts(projectId: Option<String>)` — [NEW]
-- **Purpose**: Returns all `status = 'active'` facts from `memory_facts` for memory graph visualization.
-- **Behavior**: Queries all active fact rows (all `fact_type` values: `personal`, `objective`, `workdone`, `blocker`, `next_step`, `pitfall`), optionally scoped by `project_id` via the session join. Returns `Vec<FactRecord>` ordered by `created_at DESC`. Read-only; no working memory mutation.
+#### `get_active_observations(projectId: Option<String>) -> Vec<ObservationRecord>` — [RENAMED from `get_active_facts`]
+- **Purpose**: Returns all `status = 'active'` observations from `memory_facts` for memory graph visualization.
+- **Behavior**: Queries all active observation rows (all `fact_type` values: `personal`, `objective`, `workdone`, `blocker`, `next_step`, `pitfall`), optionally scoped by `project_id` via the session join. Returns `Vec<ObservationRecord>` ordered by `created_at DESC`. Read-only; no working memory mutation.
 
 ---
 
@@ -281,7 +301,7 @@ Window visibility and custom TTS voice management.
 
 ## 3. Permanently Decommissioned IPC Commands
 
-The following 10 legacy commands are permanently purged:
+The following 11 legacy commands are permanently purged:
 1. `get_memory_graph_topology` (scrapped with 3D canvas)
 2. `get_graph_version` (scrapped with 3D canvas)
 3. `get_memory_fact_detail` (scrapped with 3D canvas)
@@ -292,6 +312,7 @@ The following 10 legacy commands are permanently purged:
 8. `retry_failed_queue_items` (replaced by automatic boot recovery)
 9. `toggle_pipeline_processing` (subsumed by standard settings toggle)
 10. `commit_session_to_history` (purged; backend pipeline owns transcript history directly)
+11. `resolve_memory_suggestion` (singular single-revision form; superseded by the batch `resolve_memory_revisions` command, and never consumed by the frontend)
 
 ---
 
@@ -310,7 +331,7 @@ Every event emitted by the backend via `emit_ipc` or `emit_ipc_to` is mapped dir
 | `system_stats` | `SystemStatsPayload { system_cpu, system_ram_pct, vox_cpu, vox_ram_mb, threads, ... }` | One-second full launch-scope CPU and resident RAM usage. Release builds include the application and owned descendants; debug builds also include the `tauri dev` process tree. |
 | `notification_created` | `NotificationRecord { id, group_key, category, severity, title, message, status, ... }` | Emitted when a persistent actionable notification or alert is created. |
 | `notification_updated` | `NotificationRecord { id, group_key, category, severity, title, message, status, ... }` | Emitted when an active notification status changes (e.g. marked read or updated). |
-| `personal_memory_updated`| `PersonalMemoryRecord { id, project_id, content, version, last_consolidated_at, updated_at }` | Emitted when Personal Memory is consolidated, edited, or regenerated. |
+| `personal_memory_updated`| `PersonalMemoryRecord { id, project_id, markdown, version, last_consolidated_at, updated_at }` | Emitted when Personal Memory is consolidated, edited, regenerated, or version-restored. Only `markdown` serializes; `content` never leaves the backend. |
 | `turn_metrics` | `TurnMetricsPayload { turn_id, ttft_ms, ttfa_ms, total_voice_latency_ms, context_tokens_used, context_window }` | Key milestone latencies (TTFT, TTFA, end-to-end voice latency) and context utilization tokens emitted at the start of assistant turn playback. |
 | `sessions_changed` | `void` | Signals frontend when sessions are updated asynchronously / out-of-band by the backend (e.g. session title assignment via `respond_and_set_title` or compaction cleanup). Frontend refetches the session list. |
 | `settings-updated` | `void` | Signals frontend that application settings were hot-reloaded. |

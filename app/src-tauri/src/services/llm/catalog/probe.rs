@@ -15,8 +15,8 @@ use super::{
     presets::lookup_preset,
     sync::get_baseline_spec,
     types::{
-        CapabilityProvenance, ModelCapabilities, ModelProbeResult, CAP_KIND_EMBEDDED,
-        CAP_KIND_SERVER, LlmModelInfo,
+        CapabilityProvenance, LlmModelInfo, ModelCapabilities, ModelProbeResult, CAP_KIND_EMBEDDED,
+        CAP_KIND_SERVER,
     },
 };
 use crate::{
@@ -26,8 +26,7 @@ use crate::{
             chat_completions, inject_auth_headers, ollama, responses, sse::SseDecoder,
             ConnectionConfig, TransportType,
         },
-        EmbeddedProvider, LlmProvider, LlmProviderConfig, RemoteTransport,
-        QWEN_MODEL_DIR,
+        EmbeddedProvider, LlmProvider, LlmProviderConfig, RemoteTransport, QWEN_MODEL_DIR,
     },
     utils::paths,
 };

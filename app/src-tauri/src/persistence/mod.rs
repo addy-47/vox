@@ -6,10 +6,7 @@ use std::{
 
 use turso::{Builder, Connection, Database};
 
-use crate::{
-    core::error::PersistenceError,
-    services::llm::ToolFlow,
-};
+use crate::{core::error::PersistenceError, services::llm::ToolFlow};
 
 pub const PERSISTENCE_CHANNEL_CAPACITY: usize = 128;
 pub const WORKER_EVENT_POLL_TIMEOUT: Duration = Duration::from_millis(100);
@@ -30,26 +27,26 @@ pub mod voices;
 pub mod worker;
 
 pub use compactions::{
-    commit_compaction_output, has_in_progress_compaction, pause_in_progress_compactions,
-    record_compaction_start, resolve_uncompacted_range, CompactionRecord,
+    commit_compaction_output, has_in_progress_compaction, record_compaction_start,
+    resolve_uncompacted_range, CompactionRecord,
 };
 pub use facts::{
-    deactivate_fact, deactivate_facts_batch, fetch_active_episodic_memory,
-    fetch_active_facts_by_type, fetch_all_active_facts, mark_facts_consolidated,
-    mark_facts_rejected, mark_facts_staged, EpisodicFactCandidate, FactRecord,
+    deactivate_observation, deactivate_observations_batch, fetch_active_episodic_observations,
+    fetch_active_observations_by_type, fetch_all_active_observations, mark_observations_integrated,
+    EpisodicObservationCandidate, ObservationRecord,
 };
 pub use notifications::{NewNotification, NotificationRecord};
 pub use personal_memory::{
-    fetch_pending_suggestions, get_personal_memory, insert_personal_memory_suggestions,
-    list_personal_memory_versions, resolve_batch_suggestions_transaction,
-    resolve_suggestions_transaction, save_consolidated_memory, save_personal_memory,
-    set_active_personal_memory_version, update_consolidated_memory, MemorySuggestionRecord,
-    PersonalMemoryRecord, PersonalMemorySuggestionRecord, SuggestionDecision,
+    fetch_pending_revisions, get_personal_memory, insert_personal_memory_revisions,
+    list_personal_memory_versions, reject_all_pending_revisions,
+    resolve_batch_revisions_transaction, save_consolidated_memory, save_personal_memory,
+    set_active_personal_memory_version, PersonalMemoryRecord, PersonalMemoryRevisionRecord,
+    RevisionDecision,
 };
 pub use projects::ProjectRow;
 pub use queue::{
-    enqueue_fact, has_unfinished_items, record_queue_item_failure, update_queue_item_status,
-    QueueItem,
+    count_unfinished_items, enqueue_observation, has_unfinished_items, record_queue_item_failure,
+    update_queue_item_status, QueueItem,
 };
 pub use sessions::{
     ensure_session_exists, fetch_session_project_id, set_session_title, SessionRow, TurnRow,

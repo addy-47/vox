@@ -165,6 +165,7 @@ pub async fn reset_settings<R: tauri::Runtime>(
     Ok(ResetSettingsResult {
         settings: defaults,
         reload_policy: "restart".to_string(),
-        message: "Settings reset to defaults. Restart required to reinitialize providers.".to_string(),
+        message: "Settings reset to defaults. Restart required to reinitialize providers."
+            .to_string(),
     })
 }

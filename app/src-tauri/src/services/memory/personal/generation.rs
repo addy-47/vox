@@ -12,18 +12,21 @@ use super::prompts::{
 use crate::services::{
     harness::{ChatMessage, Role},
     llm::{
-        catalog::get_baseline_spec,
-        ConversationInput, GenerationPolicy, GenerationPurpose, LlmProvider, LlmSettings,
-        LlmStreamEvent, OutputConstraint, ReasoningMode,
+        catalog::get_baseline_spec, ConversationInput, GenerationPolicy, GenerationPurpose,
+        LlmProvider, LlmSettings, LlmStreamEvent, OutputConstraint, ReasoningMode,
     },
     memory::COMPACTION_SENTINEL_TURN_ID,
 };
 
 /// Dispatches an LLM generation pass and gathers streamed tokens into a single text output.
-/// Selects the strict schema constraint, falling back to JSON-object when the
-/// catalog baseline reports the model lacks structured-output support. Mirrors
-/// `compaction_output_constraint` so both structured passes negotiate the same
-/// way; the transport additionally negotiates down on a provider 400.
+///
+/// Every pass is structured. The previous design branched on a `structured` flag and sent cold
+/// generation and regeneration as `OutputConstraint::Text`, asking the model to emit raw Markdown.
+/// Markdown is now a derived rendering of the semantic model, so no pass may emit it
+/// (`memory-spec.md §5.3` step 5). Selects the strict schema constraint, falling back to
+/// JSON-object when the catalog baseline reports the model lacks structured-output support. Mirrors
+/// `compaction_output_constraint` so both structured passes negotiate the same way; the transport
+/// additionally negotiates down on a provider 400.
 fn consolidation_output_constraint(model: &str) -> OutputConstraint {
     let supported = get_baseline_spec(model)
         .map(|spec| spec.supports_structured)
@@ -42,12 +45,12 @@ fn consolidation_output_constraint(model: &str) -> OutputConstraint {
     }
 }
 
+/// Runs one structured consolidation LLM pass and collects the streamed tokens into a single payload.
 pub(super) async fn execute_personal_llm_pass(
     provider: &dyn LlmProvider,
     system_prompt: &str,
     user_content: &str,
     settings: &LlmSettings,
-    structured: bool,
 ) -> Result<String> {
     let now_ms = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -58,13 +61,8 @@ pub(super) async fn execute_personal_llm_pass(
     // disagree. A bare literal here previously shadowed the constant: editing
     // `CONSOLIDATION_MAX_OUTPUT_TOKENS` would have silently stopped affecting the policy.
     let policy = GenerationPolicy::from_settings(settings, Some(CONSOLIDATION_MAX_OUTPUT_TOKENS));
-    let purpose = if structured {
-        GenerationPurpose::StructuredExtraction
-    } else {
-        GenerationPurpose::Conversation
-    };
     let mut request = policy.build_request(
-        purpose,
+        GenerationPurpose::StructuredExtraction,
         ConversationInput {
             messages: vec![
                 ChatMessage {
@@ -85,17 +83,13 @@ pub(super) async fn execute_personal_llm_pass(
         },
     );
 
-    if structured {
-        request.output = consolidation_output_constraint(settings.active_model());
-    } else {
-        request.output = OutputConstraint::Text;
-    }
+    request.output = consolidation_output_constraint(settings.active_model());
 
     // REASONING IS DISABLED — deliberately, and this reverses the setting introduced with the
     // first cut of the indexed patch engine. That cut turned reasoning ON because, under the
     // previous prose-targeting protocol, the model had to re-quote document text verbatim and
     // degenerated into whole-document echo operations without reasoning first
-    // (`docs/plans/phase12/consolidation-structured--logic-plan.md` §2.2). The indexed design
+    // (`docs/plans/phase12/consolidation-structured--logic-plan.md` §2.2). The semantic design
     // removes that failure mode at its root: an operation carries only a small `text` field and
     // never restates the document, so there is nothing to echo and nothing to reason about.
     //
@@ -103,7 +97,7 @@ pub(super) async fn execute_personal_llm_pass(
     //   reasoning ON  -> `done_reason=length`, 3843 eval tokens, ~17.9k chars of thinking trace,
     //                    ZERO content tokens, at every ceiling tried (512 / 1024 / 4096).
     //                    The model reasons for the entire budget and never emits an answer, which
-    //                    tripped the empty-document guard and aborted the whole cycle.
+    //                    tripped the empty-output guard and aborted the whole cycle.
     //   reasoning OFF -> `done_reason=stop`, 55-250 eval tokens, valid minimal JSON, ~1s,
     //                    0 out-of-range indices and 0 multi-line `text` across 6 document/fact
     //                    combinations.
@@ -194,8 +188,8 @@ pub(super) async fn execute_personal_llm_pass(
 
     let cleaned = output.trim();
     if cleaned.is_empty() {
-        log::error!("[Memory::Personal] LLM generated empty personal memory document!");
-        return Err(anyhow!("LLM generated empty personal memory document"));
+        log::error!("[Memory::Personal] LLM generated an empty consolidation payload!");
+        return Err(anyhow!("LLM generated an empty consolidation payload"));
     }
 
     Ok(cleaned.to_string())

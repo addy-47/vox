@@ -8,7 +8,9 @@ use tauri::{AppHandle, Manager};
 use super::ROUTER_THREAD_NAME;
 use crate::{
     core::{
-        events::{emit_ipc_to, InteractionMode, IpcEvent, PipelineMode, StateChangedPayload, VoxEvent},
+        events::{
+            emit_ipc_to, InteractionMode, IpcEvent, PipelineMode, StateChangedPayload, VoxEvent,
+        },
         state::{AppState, AppWindow, InteractionOwner, InteractionState},
     },
     pipeline::dictation::DictationInteractionMode,

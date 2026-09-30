@@ -1,156 +1,502 @@
-# Product Requirements Document (PRD)
-# Vox Realtime Dictation Speech Refinement Engine
+# Vox Dictation Speech Refinement Engine
 
----
+Status: Concept / Research & Exploration
+Scope: Dictation v2
+Audience: ML Engineer, Backend Engineer, Test Engineer
 
-## 1. Problem Statement & User Experience
+## 1. Problem
 
-### 1.1 Context & Core Need
-Vox's dictation subsystem captures spoken audio via VAD and transcribes it using an acoustic STT model (Nemotron-3.5 / Qwen3-ASR). However, raw acoustic transcripts reflect spoken disfluencies, phonetic numbers, unformatted punctuation, and mid-sentence backtracking that make spoken dictation unusable without manual editing.
+Vox dictation currently performs the core speech-to-text path successfully: speech is captured, sent through local STT, and the resulting transcript is routed directly to the OS output layer. The existing architecture intentionally keeps dictation outside the LLM/TTS cognitive path.
 
-Vox requires a **neural refinement layer** between acoustic STT and the OS paste injection (`output_router`). This engine must transform spontaneous spoken thoughts into clean, publication-ready text that reads as if it were typed with care.
+The remaining problem is that acoustic transcription is not necessarily suitable as written text.
 
-### 1.2 Scope & Domain
-This is a **universal everyday dictation tool** across all desktop applications (chat, email, documents, terminals, code editors). It must handle conversational prose, technical acronyms, file names, company names, currency, and spoken voice commands simultaneously.
+Natural speech contains disfluencies, repetitions, corrections, spoken forms of numbers and dates, missing punctuation, inconsistent capitalization, filler words, and speech repairs.
 
----
+For example:
 
-## 2. Functional Requirements & Transformation Matrix
+`I want to do this on Friday oh no no not Friday Saturday`
 
-| Capability | Raw Spoken Input (from STT) | Required Cleaned Output | Edge-Case / Hazard to Guard |
-| :--- | :--- | :--- | :--- |
-| **1. Backtracking & Self-Correction** | *"Let's do this on Friday or not actually on Saturday"* | *"Let's do this on Saturday."* | Do NOT truncate when no repair exists. |
-| **2. Multi-word Repair** | *"Send three wait no actually send four copies"* | *"Send 4 copies."* | Preserve the verb and surrounding grammar. |
-| **3. Inverse Text Normalization (ITN)** | *"twenty five dollars and fifty cents"* | *"$25.50"* | Never alter numeric values; convert spoken units to symbols. |
-| **4. Dates & Times** | *"meet at four thirty p m on the twenty first"* | *"meet at 4:30 PM on the 21st"* | Handle relative context (AM/PM, ordinal suffixes). |
-| **5. File Names & Extensions** | *"open dot e n v or package dot json"* | *"open `.env` or `package.json`"* | Recognize file extensions (`.tsx`, `.py`, `.rs`, `.env`). |
-| **6. Acronyms & Real-world Entities** | *"deploy the v ram to a w s and open a i"* | *"deploy the VRAM to AWS and OpenAI"* | Truecase technical acronyms and company names. |
-| **7. Spoken Quotes & Direct Speech** | *"he said quote I will return unquote immediately"* | *'he said "I will return" immediately'* | Balance quotation marks; handle unquote boundaries. |
-| **8. Structural Voice Formatting** | *"first paragraph period new line second paragraph"* | *"First paragraph.\nSecond paragraph"* | Convert spoken punctuation commands to typography. |
-| **9. Conversational Filler Removal** | *"Um, I think we should, you know, proceed"* | *"I think we should proceed"* | Strip hesitation crutches (*"um"*, *"uh"*, *"er"*). |
-| **10. Semantic Preservation (Identity)** | *"I like drinking tea in the morning"* | *"I like drinking tea in the morning"* | **CRITICAL**: Never strip semantic words like *"like"*, *"umami"*. |
+should ideally become:
 
----
+`I want to do this on Saturday.`
 
-## 3. Architectural Evaluation: Encoder-Only Tagger vs. Full SLM
+The system therefore needs a refinement stage between STT and output that converts raw spoken-language transcription into usable written text while preserving the user's intended meaning.
 
-The core architectural dilemma is whether to use a **Token-Classification Tagger** (`ModernBERT` / `LFM2.5-Encoder-230M`) or a **Compact Generative SLM** (`LFM2.5-230M` / `Qwen3.5-0.8B`).
+The refinement system should be treated primarily as a constrained text-transformation problem rather than as unrestricted text generation.
 
-```
-┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
-│                                   TAGGER vs. SLM TRADE-OFF MATRIX                                │
-├─────────────────────────┬───────────────────────────────────────┬────────────────────────────────┤
-│ Dimension               │ Token Tagger (Seq2Edit)               │ Compact Generative SLM (230M)  │
-│                         │ (e.g. ModernBERT / LFM-Encoder)       │ (e.g. Liquid LFM2.5-230M)      │
-├─────────────────────────┼───────────────────────────────────────┼────────────────────────────────┤
-│ Operation               │ Label per token: KEEP / DELETE / PUNC │ Autoregressive text generation │
-│ File names & Extensions │ ❌ Cannot insert dots or join tokens  │ ✅ Native (`dot env` -> `.env`)│
-│ Acronyms & Entities     │ ❌ Cannot rewrite `open a i` -> OpenAI│ ✅ Native entity normalization │
-│ ITN (Spoken Numbers)    │ ❌ Cannot turn `twenty five` into `25`│ ✅ Native numerical reasoning  │
-│ Complex Backtracking    │ ⚠️ Can only delete exact spans        │ ✅ Reformulates syntax & tense │
-│ Hallucination Risk      │ 0.0% (Mathematically impossible)      │ Small (Mitigated via guards)   │
-│ CPU Latency             │ Ultra-fast (10–15 ms)                 │ Fast on edge (60–90 ms)        │
-│ Memory Footprint        │ ~70 MB (INT8 ONNX)                    │ ~130–230 MB (Q8 GGUF)          │
-└─────────────────────────┴───────────────────────────────────────┴────────────────────────────────┘
-```
+## 2. Goal
 
-### Architectural Verdict
-A pure token tagger **cannot scale to real-world dictation**. It cannot generate symbols, file extensions, numeric digits, or proper capitalization of multi-token entities (`"dot t s x"` $\to$ `".tsx"`). 
+Introduce a local, low-latency Dictation Refinement Engine that receives finalized STT output and produces a polished transcript before Vox commits text to the target application.
 
-**Decision**:
-1. **Primary Engine**: **Compact Generative SLM** (`LiquidAI/LFM2.5-230M` or `Qwen3.5-0.8B`). Handles full-spectrum normalization, repairs, file names, ITN, and formatting.
-2. **Secondary Fallback & Safety Net**: **Deterministic Rule Engine + Validation Guardrails**. If the SLM violates a safety invariant, drops numeric tokens, or exceeds latency thresholds, the system drops the generative output and falls back to deterministic rules.
+The intended capability set includes:
 
----
+* Speech repairs and backtracking
+* Repetition and disfluency removal
+* Filler removal
+* Punctuation
+* Capitalization / truecasing
+* Quotes and other spoken formatting constructs
+* Inverse text normalization
+* Numbers, dates, currencies and similar written representations
+* Context-dependent corrections where simple deterministic processing is insufficient
 
-## 4. System Invariants & Execution Boundary
+The system should initially remain separate from the conversational LLM/Harness path. The existing dictation architecture explicitly treats dictation as a zero-LLM/TTS path.
 
-### 4.1 Utterance-Level Injection Contract
-- **No In-Cursor Streaming**: Vox injects text into foreign host applications via simulated paste (`Ctrl+V` / `Cmd+V`) through `output_router`. Because simulated keystrokes cannot cleanly retract or backspace over committed words in third-party applications, **refinement runs once per completed utterance** at the `TranscriptFinal` boundary (PTT release or VAD silence auto-stop).
-- **Left-Context Continuity (`prev_tail`)**: The engine accepts an optional context parameter containing the trailing 20 characters of Vox's previous utterance. This informs the model whether the upcoming utterance should start capitalized or continue a lowercase sentence.
+## 3. Current Architecture
 
-### 4.2 Script & Language Gating (Hindi/Hinglish Non-Interference)
-- Vox contains a dedicated Devanagari transliteration engine (`transliterate_if_hi`).
-- **Invariant**: The English refinement model must **never touch Devanagari script** or romanized code-switched Hindi without explicit multilingual training. If Devanagari unicode characters are detected, the neural refiner is bypassed completely, routing directly to transliteration and output.
+The existing production path is broadly:
 
-### 4.3 Runtime Lifecycle & Zero Idle RAM Guarantee
-- Like STT and transliteration models in Vox, the refiner model must be an **evictable singleton**:
-  - Lazily initialized upon first dictation activation.
-  - Automatically evicted from RAM after 5 minutes of dictation inactivity.
-  - Must not leak memory or persist background threads when dictation is disabled.
+`Speech/PTT -> VAD window -> STT -> TranscriptFinal -> Dictation transcript handler -> OutputRouter`
 
----
+The current integration contract verifies that dictation reaches the output router without dispatching work to the LLM.
 
-## 5. Input / Output Contracts & Runtime Safety Guardrails
+The refinement engine would conceptually become:
 
-### 5.1 Interface Schema
-```rust
-pub struct RefinementRequest<'a> {
-    pub raw_transcript: &'a str,
-    pub prev_tail: Option<&'a str>, // Last ~20 chars of preceding utterance
-    pub language_tag: Option<&'a str>,
-}
+`Speech/PTT -> VAD -> STT -> Refinement -> OutputRouter`
 
-pub struct RefinementResponse {
-    pub cleaned_text: String,
-    pub latency_ms: u32,
-    pub fallback_triggered: bool,
-}
-```
+The exact event/state representation is intentionally open for investigation. The existing `TranscriptFinal` contract should not be changed merely for architectural aesthetics; the ML/backend investigation should determine the cleanest integration seam.
 
-### 5.2 Mandatory Runtime Safety Guardrails (Zero Hallucination Gates)
-Every output generated by the neural model must pass through three strict deterministic gates in Rust before being sent to the OS clipboard:
+## 4. Proposed User Experience
 
-1. **Numeric Invariant Gate**:
-   - Extract all spoken numbers from `raw_transcript` (e.g. *"twenty five"*, *"three hundred"*).
-   - Verify that the numeric equivalent (`25`, `300`) exists in the cleaned output. If digits were dropped or altered, **reject the output** and fallback.
-2. **Length & Edit Ratio Clamp**:
-   - The cleaned output must satisfy: $0.35 \le \frac{\text{len}(\text{cleaned})}{\text{len}(\text{raw})} \le 1.15$ (unless resolving spoken punctuation commands).
-   - If output length is suspiciously long (hallucinated conversational response like *"Sure, here is your text:"*), **reject and fallback**.
-3. **Content Word Containment**:
-   - Every proper noun or technical identifier in `cleaned` must have phonetic or lexical grounding in `raw_transcript`. The model must never introduce novel external facts.
-4. **Fallback Behavior**:
-   - If any gate fails, Vox falls back to a deterministic rule cleaner (regex filler stripper + basic ITN) applied to `raw_transcript`. Dictation output is never blocked.
+The important UX distinction is between transcription and commitment.
 
----
+While the user is speaking, Vox may continue exposing live/interim transcription where appropriate.
 
-## 6. Dataset Distribution & Curation Requirements
+After speech ends, the transcript becomes a staging candidate rather than immediately becoming committed output.
 
-To avoid learning an aggressive "over-editing bias", the training and evaluation corpus must reflect natural speech distributions where the majority of spoken phrases are already grammatical.
+Conceptually:
 
-### 6.1 Distribution Composition (Target: 80,000 Samples)
-| Bucket | Proportion | Purpose / Description |
-| :--- | :--- | :--- |
-| **Bucket A: Clean Identity Invariants** | **45%** (36,000) | Already-clean sentences. Ground truth output is identical to input. Teaches the model when NOT to edit. |
-| **Bucket B: Backtracking & Repairs** | **20%** (16,000) | False starts, explicit corrections (*"wait no"*, *"or rather"*), and implicit restarts. |
-| **Bucket C: Numbers, Units & Dates (ITN)** | **15%** (12,000) | Spoken currencies, percentages, times, dates, and large numbers converted to digits. |
-| **Bucket D: Entities, Acronyms & File Names**| **10%** (8,000) | File paths (`.tsx`, `.env`), acronyms (`AWS`, `VRAM`, `API`), companies (`OpenAI`, `GitHub`). |
-| **Bucket E: Quotes & Spoken Formatting** | **10%** (8,000) | Quotes (*"quote ... unquote"*), line breaks (*"new line"*), and spoken punctuation commands. |
+`Live speech -> raw/interim transcript -> speech ends -> refinement/staging -> polished transcript -> OS output`
 
-### 6.2 Hard Negatives Requirement
-The dataset must explicitly include ambiguous linguistic constructs to prevent naive keyword deletion:
-- *"I like the idea"* (Verb *"like"* $\to$ MUST KEEP).
-- *"Wait for me outside"* (Imperative *"wait"* $\to$ MUST KEEP).
-- *"The Jurassic period was prehistoric"* (Noun *"period"* $\to$ MUST KEEP).
-- *"Get a price quote from them"* (Noun *"quote"* $\to$ MUST KEEP).
-- *"We are launching a new line of shoes"* (Phrase *"new line"* $\to$ MUST KEEP).
-- *"He is actually coming"* (Adverb *"actually"* $\to$ MUST KEEP).
+The existing dictation lifecycle already has a post-speech processing phase before returning to `Ready`, so this architecture should investigate whether that existing lifecycle can naturally accommodate refinement rather than introducing an independent orchestration mechanism.
 
-### 6.3 Acoustic Realism Requirement
-Pure LLM-generated text lacks realistic acoustic speech characteristics. Synthetic samples must be generated using **Target-First Programmatic Injection** combined with **TTS $\to$ Nemotron ASR round-tripping** to capture realistic speech recognition noise, phonetic homophones, and imperfect tokenization.
+The existing specification also explicitly identifies a future neural refinement engine between acoustic STT and the Output Router.
 
----
+## 5. Architectural Invariants
 
-## 7. Acceptance Criteria & Evaluation Benchmarks
+These are the things the implementation should preserve unless investigation demonstrates a fundamental architectural reason to change them.
 
-Before any model artifact is accepted into production, it must be evaluated on an independent, hand-audited test set of **500 real human dictation utterances**:
+### Dictation remains independent from the conversational LLM
 
-| Metric | Target SLA | Release Gate Threshold | Notes |
-| :--- | :--- | :--- | :--- |
-| **Identity Invariance Rate (IDR)** | **$\ge$ 99.0%** | $\ge$ 98.0% | Percentage of clean sentences left completely untouched. |
-| **Numeric Accuracy** | **100.0%** | 99.8% | Digits, amounts, and dates correctly normalized without loss. |
-| **Repair Recall (Backtracking)** | **$\ge$ 93.0%** | $\ge$ 90.0% | Correctly eliminates abandoned reparandums. |
-| **Entity / Acronym Casing** | **$\ge$ 95.0%** | $\ge$ 92.0% | Accurately cases acronyms and file extensions. |
-| **Hallucination Rate** | **0.0%** | $\le$ 0.05% | Introducing facts/words not present in speech. |
-| **P95 Latency on 4-Core CPU** | **$\le$ 85 ms** | $\le$ 110 ms | Total elapsed time for 25-word utterance on client CPU. |
-| **RAM Consumption (Active)** | **$\le$ 250 MB**| $\le$ 350 MB | Peak resident memory during inference. |
+The refinement system must not turn dictation into an invocation of the normal conversational Harness/LLM pipeline.
+
+`Dictation -> local refinement -> OutputRouter`
+
+remains conceptually separate from:
+
+`Assistant -> Harness -> LLM -> TTS`
+
+The existing integration tests explicitly treat zero LLM dispatch as a dictation invariant.
+
+### Rules must not become the primary intelligence layer
+
+Deterministic rules are useful for genuinely deterministic transformations and safety validation.
+
+They should not become a large hand-written linguistic system containing decisions about repairs, meaning, context or intent.
+
+A useful principle is:
+
+`Model decides -> deterministic layer executes/validates`
+
+rather than:
+
+`large rule system decides -> models handle exceptions`
+
+The ML investigation should challenge this formulation if a better architecture is found, but the system should avoid recreating a brittle rule-based NLP engine.
+
+### No fabricated latency assumptions
+
+Latency must be measured on the actual Vox deployment environment.
+
+The existing speech-finalization window may provide some processing budget, but it should not be assumed that the entire window is available to refinement. STT, orchestration and other work consume part of the available time.
+
+Latency targets therefore need to emerge from profiling rather than being selected as arbitrary constants.
+
+### No model should be selected because of model size alone
+
+Model candidates should be evaluated on the actual task, including quality, false edits, latency, memory, CPU/GPU/NPU behavior, deployment complexity and fine-tuning suitability.
+
+A smaller model is not automatically preferable if it creates unacceptable correction errors.
+
+### Research precedes implementation commitment
+
+The ML engineer should investigate the proposed architecture and candidate models before implementation and should be encouraged to replace the proposed approach where evidence supports a better solution.
+
+## 6. Working Architecture Hypothesis
+
+The current hypothesis is a two-stage neural refinement architecture.
+
+`STT transcript -> Edit Planner -> deterministic execution/normalization -> contextual Resolver -> validation -> final transcript`
+
+This is a hypothesis to benchmark, not a locked implementation.
+
+### Stage A — Edit Planner
+
+The first model would analyse the transcript and identify where and what type of transformation is required.
+
+The original idea was a token-level tagger with labels such as:
+
+`KEEP / EDIT / DELETE / PUNCTUATE / CAPITALIZE / NUMBER / CURRENCY`
+
+The ML investigation should not assume this label design is correct.
+
+A more expressive formulation may instead involve structured edit operations such as:
+
+`KEEP -> DELETE(span) -> REPLACE(span) -> NORMALIZE(span) -> INSERT(boundary) -> SPLIT/MERGE`
+
+with attributes describing the required transformation.
+
+The agent should investigate token classification, span classification, boundary prediction, structured edit prediction and other non-autoregressive approaches.
+
+The objective is to identify edits rather than generate the entire sentence.
+
+### Stage B — Deterministic Processing
+
+A deterministic layer may execute transformations that are unambiguous and/or validate model output.
+
+Potential responsibilities include:
+
+* Applying explicitly selected formatting operations
+* Safe ITN transformations
+* Structural validation
+* Number/entity preservation
+* Detecting malformed output
+* Rejecting unsafe or implausible edits
+* Providing no-op behavior when appropriate
+
+This layer should remain deliberately narrow.
+
+### Stage C — Contextual Resolver
+
+Some corrections cannot be reliably expressed as isolated token operations.
+
+Speech repairs are the clearest example.
+
+`Let's meet Friday, wait no, Saturday`
+
+requires understanding that `Friday` was superseded by `Saturday`.
+
+The resolver therefore receives broader context and selected edit regions and produces bounded corrections.
+
+It should be investigated as a contextual editor rather than simply asking an autoregressive model to regenerate the entire transcript.
+
+The ML engineer should also investigate whether the resolver is actually necessary for all tasks, whether one model can perform both stages effectively, or whether another architecture provides better quality/latency.
+
+## 7. Candidate Planner Models
+
+The current investigation should include, but not be limited to:
+
+* ModernBERT-style encoder models
+* Laya / System-One-style decision models
+* GLiNER2.5-Decide or related structured decision/span models
+* Other current non-autoregressive encoder or edit-planning architectures
+
+One important research clarification is that Laya should not simply be treated as a fundamentally different encoder alternative to ModernBERT. Its English implementation is itself based on a ModernBERT-large backbone; the interesting distinction is its decision-oriented interface/training approach.
+
+The agent should verify the current model landscape rather than relying on this initial shortlist.
+
+## 8. Candidate Resolver Models
+
+The resolver investigation should include small local SLMs across a range of model sizes.
+
+The candidate pool should explicitly include:
+
+* SmallLM around the 130M class
+* LFM2.5-230M
+* LFM2.5-350M
+* Other small LFM-family variants
+* Qwen small models
+* Other compact models discovered through research
+
+The purpose is not to select the smallest model.
+
+The objective is to find the smallest model that provides acceptable contextual correction quality while meeting the actual deployment constraints.
+
+## 9. Important Alternative Architectures to Investigate
+
+The ML agent should compare the proposed two-stage architecture against at least these alternatives:
+
+1. A single multi-task encoder performing punctuation, casing, ITN and disfluency/edit detection.
+
+2. An encoder/tagging stage followed by a small generative resolver, similar in principle to two-stage neural speech-text normalization architectures.
+
+3. A single small SLM performing complete transcript refinement.
+
+4. A structured edit model that directly predicts spans and transformations without a separate resolver.
+
+5. A hybrid architecture where deterministic normalization handles clearly safe cases and neural models handle only ambiguous transformations.
+
+6. Architectures incorporating ASR confidence, word timestamps or N-best hypotheses if those materially improve correction quality.
+
+The agent should recommend the architecture based on evidence rather than treating the currently proposed two-stage design as predetermined.
+
+## 10. ASR Information
+
+The initial system can operate on finalized text alone.
+
+However, the architecture should investigate whether additional STT information can materially improve refinement:
+
+`1-best transcript`
+
+versus:
+
+`1-best + confidence`
+
+versus:
+
+`N-best hypotheses + confidence/timing`
+
+This is particularly relevant to semantic correction. A text-only refiner cannot recover information that the STT system completely failed to recognize unless alternative hypotheses or acoustic information are available.
+
+This does not necessarily need to be part of the first implementation, but the interface should avoid unnecessarily preventing it later.
+
+## 11. Dataset Strategy
+
+Dataset development is a major part of this project and should happen before model selection is finalized.
+
+The dataset should represent the actual transformation Vox needs rather than relying exclusively on generic text-generation datasets.
+
+### Clean -> Spoken/ASR-like -> Refined
+
+A useful training structure is:
+
+`Clean written text -> synthetic spoken/ASR corruption -> expected refined text`
+
+Synthetic corruption should cover phenomena such as:
+
+* Missing punctuation
+* Missing capitalization
+* Spoken numbers
+* Spoken dates
+* Spoken currencies
+* Fillers
+* Repetitions
+* False starts
+* Speech repairs
+* Backtracking
+* Partial phrases
+* Common ASR-style formatting errors
+* Context-dependent replacements
+
+The corruption generator should avoid producing unrealistic speech patterns.
+
+### Real conversational speech
+
+Public conversational/disfluency datasets should be investigated, including corpora containing repairs, repetitions and disfluencies.
+
+These provide important examples that synthetic corruption may not reproduce accurately.
+
+### Hard negatives / no-op examples
+
+The dataset must contain clean and ambiguous examples where the correct action is to make no change.
+
+This is critical.
+
+A refiner that aggressively "improves" already-correct text can be more damaging than one that occasionally misses a formatting opportunity.
+
+### Edit annotations
+
+Where practical, the dataset should contain both:
+
+`raw transcript -> final transcript`
+
+and structured edit information describing what changed.
+
+This allows the planner to be trained and evaluated independently from the resolver.
+
+## 12. Dataset Splitting
+
+The ML investigation should ensure that evaluation does not leak speakers, sessions or near-duplicate examples between training and evaluation sets.
+
+The test set should deliberately contain difficult examples rather than being a random sample dominated by easy formatting cases.
+
+The agent should recommend the exact split strategy after examining available datasets.
+
+## 13. Evaluation
+
+Evaluation should measure more than final text similarity.
+
+Important metrics to investigate include:
+
+* Edit precision / recall / F1
+* Unnecessary-edit rate
+* Exact-match or normalized text accuracy
+* Punctuation accuracy
+* Capitalization accuracy
+* ITN accuracy
+* Speech-repair resolution accuracy
+* Semantic preservation
+* Number/date/currency preservation
+* Named-entity preservation
+* No-op accuracy
+* Resolver abstention quality
+* End-to-end latency
+* P50/P95 latency
+* Memory consumption
+* CPU/GPU/NPU utilization
+
+The exact acceptance thresholds should be established after creating a representative benchmark and baseline.
+
+No arbitrary threshold should be treated as a requirement before the benchmark exists.
+
+## 14. Safety / Validation
+
+The refinement engine should be conservative when confidence is low.
+
+Potential validation mechanisms to investigate include:
+
+* Number preservation
+* Date/currency preservation
+* Named-entity preservation
+* URL/email/code preservation where applicable
+* Length-change constraints
+* Structural validity
+* Confidence thresholds
+* No-op / abstain outputs
+* Comparison between raw and refined text
+* Rejecting malformed model-produced edits
+
+The existing dictation specification already identifies deterministic runtime guards such as number conservation and length-ratio validation as a direction for this future system.
+
+The ML engineer should determine which guards are actually useful and whether additional validation is required.
+
+## 15. End-to-End Workflow
+
+The intended workflow should be evaluated as:
+
+`Audio -> VAD -> STT -> raw transcript -> refinement planning -> deterministic transformations -> contextual resolution -> validation -> OutputRouter`
+
+The user-facing behavior is:
+
+`Speech -> live/raw transcript -> speech ends -> refinement -> final committed text`
+
+The backend integration should preserve the existing dictation ownership, lifecycle and zero-LLM characteristics.
+
+## 16. Proposed Research Order
+
+The first phase should not begin by implementing models.
+
+First, the ML agent should inspect the current dictation/STT interfaces and determine exactly what information is available at the refinement boundary.
+The code and specs are avl in the vox/ dir already , main relevant file is dictation-spec.md in docs/specs .
+
+Then establish a representative evaluation dataset and baseline raw-STT outputs.
+
+Then research current architectures for speech disfluency removal, ITN, punctuation/casing, ASR correction and structured edit prediction.
+
+Then benchmark candidate planner architectures.
+
+Then benchmark candidate resolver architectures.
+
+Then compare the proposed two-stage design against simpler alternatives.
+
+Only after these results should the architecture and model combination be selected for implementation.
+
+The implementation should then proceed around a clearly defined refinement contract, followed by integration testing and end-to-end latency measurement.
+
+## 17. Initial Engineering Contract to Investigate
+
+The agent should investigate whether the refinement subsystem should expose a contract conceptually equivalent to:
+
+`RawTranscript -> RefinementRequest -> EditPlan -> RefinedTranscript`
+
+The exact structures, events and ownership should be proposed after inspecting the current codebase.
+
+The contract should ideally make it possible to observe:
+
+* Raw transcript
+* Planned edits
+* Applied edits
+* Final transcript
+* Confidence/abstention information
+* Refinement latency
+* Validation failures
+
+This will make both model development and production debugging substantially easier.
+
+## 18. Implementation Scope
+
+The initial implementation should focus on English.
+
+The current dictation specification explicitly places Devanagari outside the initial refinement scope, with transliteration handled separately.
+
+The first implementation should establish the refinement pipeline and evaluation methodology before expanding language coverage.
+
+UI concepts such as a floating caret overlay are separate future work and should not be coupled to the refinement engine itself.
+
+## 19. What Is Currently Finalised vs Open
+
+### Architectural direction currently established
+
+Dictation should remain separate from the conversational LLM pipeline.
+
+The refinement stage belongs between STT and OutputRouter.
+
+The system should favour constrained transformation over unrestricted regeneration.
+
+Rules should remain a narrow deterministic execution/validation layer rather than becoming the primary linguistic intelligence.
+
+The system must be benchmark-driven rather than based on assumed latency or model-size targets.
+
+English is the initial refinement scope.
+
+### Strong working hypothesis
+
+A planner + deterministic layer + contextual resolver architecture is currently the leading design hypothesis.
+
+Structured edit/span prediction is a promising direction for the planner.
+
+A small local SLM is a promising direction for context-dependent resolution.
+
+SmallLM-class models, LFM-family models, Qwen-family models and other compact models should be considered.
+
+### Explicitly not finalised
+
+The exact planner architecture.
+
+The exact planner label/operation schema.
+
+Whether the planner should be token-, span-, boundary- or edit-oriented.
+
+Whether a separate resolver is actually necessary.
+
+Whether the resolver should be autoregressive.
+
+The exact resolver model.
+
+Whether SmallLM 130M is sufficient.
+
+Whether a larger model provides a worthwhile quality improvement.
+
+The division of work between neural models and deterministic processing.
+
+Whether ASR N-best/confidence information is required.
+
+The exact staging behavior and integration point in the existing event/state system.
+
+Latency targets.
+
+Quality thresholds.
+
+Dataset composition and weighting.
+
+Production rollout criteria.
+
+All of these should be determined through research, experiments and benchmarks.
+
+## 20. ML Agent Mandate
+
+The ML agent should treat this document as a research direction, not an implementation prescription.
+
+For each major design decision it should:
+
+`Inspect existing system -> research current approaches -> establish baseline -> benchmark alternatives -> identify tradeoffs -> recommend an approach`
+
+The agent should explicitly challenge the proposed architecture where evidence suggests a simpler, faster or more reliable solution.
+
+It should not select a model because it appears fashionable, small, fast according to a vendor claim, or conceptually aligned with the proposal.
+
+It should produce measurable evidence for quality, false edits, latency, resource consumption and deployment feasibility.
+
+The most important outcome of this phase is therefore not "build the proposed two-model pipeline."
+
+It is to determine what architecture can reliably transform raw Vox dictation into useful written text while preserving user intent, remaining local and low-latency, and avoiding unnecessary modification of correct speech.

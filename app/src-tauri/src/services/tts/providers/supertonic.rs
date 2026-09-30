@@ -20,8 +20,8 @@ use super::{speed_range, SynthesisContext, TtsProvider};
 use crate::services::{
     translit::is_devanagari,
     tts::{
-        ParamRange, ProviderCaps, TtsVoiceSource, MAX_SPEED, MIN_SPEED,
-        SUPER_SAMPLE_RATE, TTS_SAMPLE_RATE,
+        ParamRange, ProviderCaps, TtsVoiceSource, MAX_SPEED, MIN_SPEED, SUPER_SAMPLE_RATE,
+        TTS_SAMPLE_RATE,
     },
 };
 

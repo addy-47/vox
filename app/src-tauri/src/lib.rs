@@ -39,14 +39,16 @@ use crate::{
         events::VoxEvent,
         state::{AppState, InteractionState, RuntimeStatus, TelemetryState},
     },
-    pipeline::dictation::{DictationInteractionMode, DictationOutputMode},
     ipc::{
         audio::list_audio_devices,
+        catalog::{
+            check_provider_health, get_model_catalog, get_provider_caps, list_llm_models,
+            probe_model_capabilities, setup_remote_server,
+        },
         memory::{
-            consolidate_personal_memory, get_active_facts, get_memory_suggestions,
+            consolidate_personal_memory, get_active_observations, get_memory_revisions,
             get_personal_memory, get_personal_memory_versions, regenerate_personal_memory,
-            resolve_memory_suggestion, resolve_memory_suggestions, save_personal_memory,
-            set_active_personal_memory_version,
+            resolve_memory_revisions, save_personal_memory, set_active_personal_memory_version,
         },
         monitoring::{get_profiler_snapshot, get_runtime_snapshot, record_memory_profile_event},
         notifications::{
@@ -63,10 +65,6 @@ use crate::{
             submit_text_input,
         },
         projects::{create_project, delete_project, get_projects, rename_project},
-        catalog::{
-            check_provider_health, get_model_catalog, get_provider_caps, list_llm_models,
-            probe_model_capabilities, setup_remote_server,
-        },
         settings::{get_settings, reset_settings, update_setting},
         setup::{
             check_updates, complete_setup_wizard, fetch_manifest, get_onboarding_status,
@@ -89,6 +87,7 @@ use crate::{
         },
     },
     persistence::{worker::spawn_persistence_worker, PersistenceEvent, TOKIO_HANDLE},
+    pipeline::dictation::{DictationInteractionMode, DictationOutputMode},
     services::{
         dictation::init_dictation_hotkey_listener,
         memory::{
@@ -137,7 +136,9 @@ pub fn run() {
         );
 
         // Emergency write to crashes directory if paths are available
-        let crash_dir = paths::try_get().map(|p| p.crashes).unwrap_or_else(paths::crashes_dir);
+        let crash_dir = paths::try_get()
+            .map(|p| p.crashes)
+            .unwrap_or_else(paths::crashes_dir);
         if create_dir_all(&crash_dir).is_ok() {
             let timestamp = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -675,10 +676,9 @@ pub fn run() {
             regenerate_personal_memory,
             get_personal_memory_versions,
             set_active_personal_memory_version,
-            get_active_facts,
-            get_memory_suggestions,
-            resolve_memory_suggestion,
-            resolve_memory_suggestions,
+            get_active_observations,
+            get_memory_revisions,
+            resolve_memory_revisions,
             // Voices
             list_voices,
             add_voice_from_file,

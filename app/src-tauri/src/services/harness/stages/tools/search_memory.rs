@@ -6,7 +6,7 @@ use serde_json::{json, Value};
 use super::{ToolDefinition, ToolDomain, ToolError, ToolExecutionContext, ToolResult};
 use crate::{
     core::events::PipelineMode,
-    persistence::{fetch_active_episodic_memory, EpisodicFactCandidate},
+    persistence::{fetch_active_episodic_observations, EpisodicObservationCandidate},
     services::{
         llm::ToolFlow,
         memory::ml::{cosine_similarity, ensure_embedder_loaded, generate_embedding},
@@ -132,7 +132,7 @@ async fn perform_hybrid_search(
         .connect()
         .map_err(|e| ToolError::ExecutionFailed(format!("Database connect error: {}", e)))?;
 
-    let candidates = fetch_active_episodic_memory(&conn)
+    let candidates = fetch_active_episodic_observations(&conn)
         .await
         .map_err(|e| ToolError::ExecutionFailed(format!("Episodic memory query error: {}", e)))?;
 
@@ -145,7 +145,7 @@ async fn perform_hybrid_search(
         log::info!(
             "[MemorySearchTool] Candidate id={} type={} embedding_present={} text='{}'",
             candidate.id,
-            candidate.fact_type,
+            candidate.observation_type,
             candidate.embedding.is_some(),
             candidate.text
         );
@@ -198,7 +198,7 @@ async fn perform_hybrid_search(
     } else {
         let lines: Vec<String> = results
             .into_iter()
-            .map(|f| format!("- [{}] {}", f.fact_type, f.text))
+            .map(|f| format!("- [{}] {}", f.observation_type, f.text))
             .collect();
         Ok(format!(
             "Found relevant memory records:\n{}",
@@ -209,12 +209,12 @@ async fn perform_hybrid_search(
 
 /// Fuses dense cosine similarity and lexical token matches via Reciprocal Rank Fusion.
 fn rank_candidates<'a>(
-    candidates: &'a [EpisodicFactCandidate],
+    candidates: &'a [EpisodicObservationCandidate],
     query: &str,
     query_embedding: Option<&[f32]>,
     top_k: usize,
     cutoff: f32,
-) -> Vec<&'a EpisodicFactCandidate> {
+) -> Vec<&'a EpisodicObservationCandidate> {
     let mut vector_scores: HashMap<String, f32> = HashMap::new();
     if let Some(q_vec) = query_embedding {
         for c in candidates {
@@ -252,7 +252,7 @@ fn rank_candidates<'a>(
         }
     }
 
-    let mut rrf_scores: Vec<(&'a EpisodicFactCandidate, f32)> = Vec::new();
+    let mut rrf_scores: Vec<(&'a EpisodicObservationCandidate, f32)> = Vec::new();
     for c in candidates {
         let mut score = 0.0f32;
         if let Some(vec_score) = vector_scores.get(&c.id) {
@@ -266,7 +266,7 @@ fn rank_candidates<'a>(
         log::info!(
             "[MemorySearchTool] Fused candidate id={} type={} dense_admitted={} lexical_matches={} rrf_score={} final_admitted={}",
             c.id,
-            c.fact_type,
+            c.observation_type,
             dense_admitted,
             lexical_matches,
             score,

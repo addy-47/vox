@@ -11,8 +11,7 @@ use crate::{
     },
     persistence::notifications::{fetch_notification_by_id, resolve_notification_in_place},
     services::memory::{
-        compaction::coordinator::CompactionCoordinator,
-        scheduler::run_consolidation_once,
+        compaction::coordinator::CompactionCoordinator, scheduler::run_consolidation_once,
     },
 };
 
@@ -106,12 +105,7 @@ pub async fn execute_notification_action<R: tauri::Runtime + 'static>(
             let db = state.db.clone();
 
             tauri::async_runtime::spawn(async move {
-                match run_consolidation_once(
-                    &app_handle,
-                    &app_state,
-                )
-                .await
-                {
+                match run_consolidation_once(&app_handle, &app_state).await {
                     Ok(()) => {
                         log::info!("[Notifications::Action] Consolidation completed successfully");
                         if let Ok(conn) = db.connect() {

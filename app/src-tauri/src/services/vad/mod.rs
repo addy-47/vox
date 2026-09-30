@@ -4,11 +4,11 @@ pub mod factory;
 pub mod providers;
 pub mod segmenter;
 
-pub use config::{VadBackendOption, VadSettings};
 pub use actor::{
     spawn_vad_actor, VadActorChannels, VadActorConfig, VadActorHandles, VadCommand,
     VadOperationalMode, VadValidationResult,
 };
+pub use config::{VadBackendOption, VadSettings};
 pub use factory::create_vad_instance_from_settings;
 pub use providers::{
     earshot_vad, silero_onnx, ten_onnx, EarshotVadEngine, SileroVadEngine, TenVadEngine,

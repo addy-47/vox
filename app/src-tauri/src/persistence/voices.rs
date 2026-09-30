@@ -189,10 +189,7 @@ pub async fn seed_packaged_voices(conn: &Connection) -> Result<()> {
         Some(p) => p.models,
         None => return Ok(()),
     };
-    let packaged_voices_dir = models_dir
-        .join("tts")
-        .join("chatterbox")
-        .join("voices");
+    let packaged_voices_dir = models_dir.join("tts").join("chatterbox").join("voices");
     if !packaged_voices_dir.exists() {
         return Ok(());
     }
@@ -267,10 +264,7 @@ pub async fn seed_zipvoice_voices(conn: &Connection) -> Result<()> {
         Some(p) => p.models,
         None => return Ok(()),
     };
-    let packaged_voices_dir = models_dir
-        .join("tts")
-        .join("zipvoice")
-        .join("voices");
+    let packaged_voices_dir = models_dir.join("tts").join("zipvoice").join("voices");
     if !packaged_voices_dir.exists() {
         return Ok(());
     }

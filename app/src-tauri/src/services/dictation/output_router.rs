@@ -2,8 +2,8 @@ use tauri::AppHandle;
 
 use crate::{
     core::{error::DictationError, events::Severity},
-    pipeline::dictation::DictationOutputMode,
     persistence::VoxDb,
+    pipeline::dictation::DictationOutputMode,
     services::{
         dictation::{clipboard, input::create_input_adapter},
         notifications::lifecycle::{self, LifecycleCard},

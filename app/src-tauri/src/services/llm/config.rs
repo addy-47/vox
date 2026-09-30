@@ -186,7 +186,10 @@ mod tests {
         let settings = LlmSettings::default();
         assert_eq!(settings.active, LlmActiveProvider::Embedded);
         assert_eq!(settings.temperature, DEFAULT_LLM_TEMPERATURE);
-        assert_eq!(settings.compaction_temperature, DEFAULT_LLM_COMPACTION_TEMPERATURE);
+        assert_eq!(
+            settings.compaction_temperature,
+            DEFAULT_LLM_COMPACTION_TEMPERATURE
+        );
         assert_eq!(settings.max_output_tokens, DEFAULT_LLM_MAX_OUTPUT_TOKENS);
         assert_eq!(settings.context_window, DEFAULT_LLM_CONTEXT_WINDOW);
         assert_eq!(settings.threads, DEFAULT_LLM_THREADS);
@@ -230,13 +233,18 @@ mod tests {
             } => {
                 assert_eq!(base_url, DEFAULT_LLM_SERVER_BASE_URL);
                 assert_eq!(model, DEFAULT_LLM_SERVER_MODEL);
-                assert_eq!(provider_name.as_deref(), Some(DEFAULT_LLM_SERVER_PROVIDER_NAME));
+                assert_eq!(
+                    provider_name.as_deref(),
+                    Some(DEFAULT_LLM_SERVER_PROVIDER_NAME)
+                );
             }
             _ => panic!("Expected LlmProviderConfig::Server"),
         }
 
         settings.active = LlmActiveProvider::Cloud;
-        settings.cloud_keys.insert("nvidia".to_string(), "nv-secret-123".to_string());
+        settings
+            .cloud_keys
+            .insert("nvidia".to_string(), "nv-secret-123".to_string());
         assert_eq!(settings.active_model(), DEFAULT_LLM_CLOUD_MODEL);
 
         match settings.to_provider_config() {
@@ -249,7 +257,10 @@ mod tests {
             } => {
                 assert_eq!(base_url, DEFAULT_LLM_CLOUD_BASE_URL);
                 assert_eq!(model, DEFAULT_LLM_CLOUD_MODEL);
-                assert_eq!(provider_name.as_deref(), Some(DEFAULT_LLM_CLOUD_PROVIDER_NAME));
+                assert_eq!(
+                    provider_name.as_deref(),
+                    Some(DEFAULT_LLM_CLOUD_PROVIDER_NAME)
+                );
                 assert_eq!(api_key.as_deref(), Some("nv-secret-123"));
             }
             _ => panic!("Expected LlmProviderConfig::Cloud"),

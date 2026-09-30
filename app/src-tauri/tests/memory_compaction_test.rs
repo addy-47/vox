@@ -18,7 +18,6 @@ use serde::Deserialize;
 use tokio_util::sync::CancellationToken;
 use vox_lib::{
     core::state::InteractionState,
-    services::llm::{LlmActiveProvider, LlmRemoteConfig},
     persistence::{
         compactions::{
             commit_compaction_output, fetch_latest_compaction_run, fetch_turns_for_compaction,
@@ -28,6 +27,7 @@ use vox_lib::{
     },
     services::{
         harness::stages::compaction::{CompactionStage, MIN_MESSAGES_FOR_COMPACTION},
+        llm::{LlmActiveProvider, LlmRemoteConfig},
         memory::compaction::coordinator::{build_history_messages, CompactionCoordinator},
     },
     utils::json::parse_unified_compaction_json,

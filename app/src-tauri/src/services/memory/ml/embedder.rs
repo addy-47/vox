@@ -5,7 +5,7 @@ use ndarray::Array2;
 use parking_lot::Mutex;
 use tokenizers::Tokenizer;
 
-use crate::utils::paths::{try_get, init, models_dir};
+use crate::utils::paths::{init, models_dir, try_get};
 
 /// ONNX session container for running dense sentence text embeddings.
 pub struct TextEmbedder {
