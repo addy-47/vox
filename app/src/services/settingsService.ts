@@ -21,6 +21,10 @@ export interface SettingUpdateResult {
   applied: boolean;
   reload_policy: string;
   message: string;
+  /** The backend has taken responsibility for rebuilding the engine because
+   *  this key is `SettingReloadPolicy::Restart`. The frontend must render from
+   *  this rather than from its own list of keys. */
+  restart_scheduled: boolean;
 }
 
 export interface AudioDevice {
@@ -67,6 +71,8 @@ export interface ResetSettingsResult {
   settings: VoxSettings;
   reload_policy: string;
   message: string;
+  /** The backend has taken responsibility for rebuilding the engine. */
+  restart_scheduled: boolean;
 }
 
 /** Reset all settings to factory defaults. (ipc/settings.rs:118) */

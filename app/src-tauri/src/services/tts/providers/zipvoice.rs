@@ -1,7 +1,7 @@
 use std::{
     fs::{self, File},
     io::{BufReader, Read},
-    path::Path,
+    path::{Path, PathBuf},
     sync::{
         atomic::{AtomicI32, AtomicU32, Ordering},
         Arc,
@@ -38,11 +38,10 @@ pub const MODEL_FILE_TTS_ZIPVOICE_TOKENS: &str = "tokens.txt";
 pub const MODEL_FILE_TTS_ZIPVOICE_LEXICON: &str = "lexicon.txt";
 pub const MODEL_DIRNAME_TTS_ZIPVOICE_ESPEAK: &str = "espeak-ng-data";
 
-/// Silence scale for ZipVoice. Must remain 1.0 because sherpa-onnx scales silence after callback generation,
-/// which would cause callback streaming audio to diverge from final audio.
+/// Silence scale for ZipVoice.
 pub const ZIPVOICE_SILENCE_SCALE: f32 = 1.0;
-pub const MIN_ZIPVOICE_GUIDANCE_SCALE: f32 = 1.0;
-pub const MAX_ZIPVOICE_GUIDANCE_SCALE: f32 = 3.0;
+/// Internal guidance scale for flow-distilled ZipVoice (1 forward pass per step).
+pub const ZIPVOICE_GUIDANCE_SCALE: f32 = 1.0;
 
 const DEFAULT_ZIPVOICE_FEAT_SCALE: f32 = 0.1;
 const DEFAULT_ZIPVOICE_T_SHIFT: f32 = 0.5;
@@ -138,6 +137,10 @@ pub struct ZipvoiceEngine {
     target_rms: AtomicF32,
     min_char_in_sentence: AtomicI32,
     reference: RwLock<Option<Arc<ZipvoiceReference>>>,
+    /// Root of the packaged voice profiles. Retained so `set_voice` can resolve
+    /// an index into a reference clip at runtime; without it, voice selection
+    /// would be unreachable without a full engine rebuild.
+    voices_dir: PathBuf,
 }
 
 impl TtsProvider for ZipvoiceEngine {
@@ -156,6 +159,57 @@ impl TtsProvider for ZipvoiceEngine {
             speed.clamp(Self::SPEED_RANGE.min, Self::SPEED_RANGE.max),
             Ordering::Relaxed,
         );
+    }
+
+    /// Resolves a voice index into a packaged reference profile and hot-swaps
+    /// it in.
+    ///
+    /// ZipVoice is zero-shot: identity comes from the reference clip, so there
+    /// is no in-engine voice table to index. The index is therefore a position
+    /// into the voice pack, matching the order `load_voice_pack` returns.
+    ///
+    /// Previously unimplemented, so `TtsCommand::SetVoice` silently did nothing
+    /// for ZipVoice while `dispatch_worker_command` still logged a dispatch.
+    /// Loading the clip is blocking I/O plus a decode, so a failure leaves the
+    /// previous voice in place rather than dropping to silence.
+    fn set_voice(&self, voice: i32) {
+        if voice < 0 {
+            log::warn!(
+                "[Tts::Zipvoice] Ignoring negative voice index {}",
+                voice
+            );
+            return;
+        }
+        let idx = voice as usize;
+
+        let pack = match load_voice_pack(&self.voices_dir) {
+            Ok(p) => p,
+            Err(e) => {
+                log::error!(
+                    "[Tts::Zipvoice] Cannot load voice pack from {:?}: {}",
+                    self.voices_dir,
+                    e
+                );
+                return;
+            }
+        };
+        let Some(entry) = pack.get(idx) else {
+            log::error!(
+                "[Tts::Zipvoice] Voice index {} out of range ({} packaged voices available)",
+                idx,
+                pack.len()
+            );
+            return;
+        };
+
+        match resolve_zipvoice_reference(&self.voices_dir, Some(entry.slug.as_str())) {
+            Ok(reference) => self.set_reference(reference),
+            Err(e) => log::error!(
+                "[Tts::Zipvoice] Failed to load reference for voice '{}': {}",
+                entry.slug,
+                e
+            ),
+        }
     }
 
     /// Returns true confirming the engine is loaded in memory.
@@ -202,8 +256,11 @@ impl ZipvoiceEngine {
     ) -> Result<Self> {
         let mp = |f: &str| -> String { model_path.join(f).to_string_lossy().into() };
 
-        let clamped_guidance =
-            guidance_scale.clamp(MIN_ZIPVOICE_GUIDANCE_SCALE, MAX_ZIPVOICE_GUIDANCE_SCALE);
+        let clamped_guidance = if guidance_scale > 0.0 {
+            guidance_scale
+        } else {
+            ZIPVOICE_GUIDANCE_SCALE
+        };
         let clamped_speed = speed.clamp(Self::SPEED_RANGE.min, Self::SPEED_RANGE.max);
 
         let config = OfflineTtsConfig {
@@ -249,6 +306,7 @@ impl ZipvoiceEngine {
             target_rms: AtomicF32::new(DEFAULT_ZIPVOICE_TARGET_RMS),
             min_char_in_sentence: AtomicI32::new(DEFAULT_ZIPVOICE_MIN_CHAR),
             reference: RwLock::new(initial_reference),
+            voices_dir: model_path.join("voices"),
         })
     }
 
@@ -262,11 +320,10 @@ impl ZipvoiceEngine {
         );
     }
 
-    /// Hot-updates the flow-matching classifier-free guidance scale.
     fn set_guidance_scale(&self, scale: f32) {
-        let clamped = scale.clamp(MIN_ZIPVOICE_GUIDANCE_SCALE, MAX_ZIPVOICE_GUIDANCE_SCALE);
-        self.guidance_scale.store(clamped, Ordering::Relaxed);
-        log::debug!("[Tts::Zipvoice] Guidance scale updated to {:.2}", clamped);
+        let val = if scale > 0.0 { scale } else { ZIPVOICE_GUIDANCE_SCALE };
+        self.guidance_scale.store(val, Ordering::Relaxed);
+        log::debug!("[Tts::Zipvoice] Guidance scale updated to {:.2}", val);
     }
 
     /// Hot-swaps the full inference tuning set without restarting the engine.
@@ -365,8 +422,22 @@ impl ZipvoiceEngine {
         let tts_guard = self.tts.lock();
         let sample_rate = tts_guard.sample_rate() as usize;
 
+        let clean_text = normalize_zipvoice_text(text);
+        if clean_text.trim().is_empty() {
+            return Ok(());
+        }
+
+        log::info!(
+            "[Tts::Zipvoice] Synthesizing turn {} clause ({} chars) voice='{}' ({} samples, {} chars ref)",
+            ctx.turn_id,
+            clean_text.len(),
+            reference.slug,
+            reference.samples.len(),
+            reference.text.len(),
+        );
+
         let audio = tts_guard.generate_with_config(
-            text,
+            &clean_text,
             &gen_config,
             Some(move |_samples: &[f32], _progress: f32| -> bool {
                 !cancel_cb.load(Ordering::Relaxed)
@@ -578,4 +649,19 @@ fn check_peak_clipping(samples: &[f32]) {
     if max_abs > 1.0 {
         log::warn!("[Tts::Zipvoice] Audio peak clipped: {:.3} > 1.0", max_abs);
     }
+}
+
+/// Normalizes Unicode typographic characters to ASCII equivalents for sherpa-onnx lexicon.
+fn normalize_zipvoice_text(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    for ch in input.chars() {
+        match ch {
+            '’' | '‘' | '`' | '´' => out.push('\''),
+            '“' | '”' | '«' | '»' => out.push('"'),
+            '—' | '–' | '―' => out.push_str(" - "),
+            '…' => out.push_str("..."),
+            _ => out.push(ch),
+        }
+    }
+    out
 }

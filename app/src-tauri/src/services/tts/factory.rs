@@ -8,7 +8,7 @@ use crate::{
         providers::TtsProvider, resolve_zipvoice_reference, ChatterboxEngine,
         ChatterboxRemoteProvider, EdgeTtsProvider, KokoroEngine, ProviderCaps, TtsActiveProvider,
         TtsEngine as SupertonicEngine, TtsProviderConfig, TtsSettings, ZipvoiceEngine,
-        CHATTERBOX_MODEL_DIR, KOKORO_MODEL_DIR, ZIPVOICE_MODEL_DIR,
+        CHATTERBOX_MODEL_DIR, KOKORO_MODEL_DIR, ZIPVOICE_GUIDANCE_SCALE, ZIPVOICE_MODEL_DIR,
     },
     utils::paths::model_dir,
 };
@@ -112,7 +112,7 @@ pub fn create_tts_provider(
         }
         TtsProviderConfig::Zipvoice {
             voice_id,
-            guidance_scale,
+            guidance_scale: _,
         } => {
             log::info!("[TTS Factory] Initializing ZipVoice engine");
             let zipvoice_path = model_dir(ZIPVOICE_MODEL_DIR);
@@ -127,7 +127,7 @@ pub fn create_tts_provider(
             ZipvoiceEngine::new(
                 &zipvoice_path,
                 speed,
-                *guidance_scale,
+                ZIPVOICE_GUIDANCE_SCALE,
                 num_threads,
                 initial_ref,
             )

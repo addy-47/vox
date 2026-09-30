@@ -1,8 +1,7 @@
-import { useMemo, useCallback, useState, memo } from "react";
+import { useMemo, useCallback, memo } from "react";
 import { AlertCircle, Check, RefreshCw } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { useSettingsStore, type SettingsState } from "@/store/settingsStore";
-import { restartEngine } from "@/services/pipelineService";
 import { ErrorBoundary } from "@/shared/components/common";
 import { AnimatePresence, motion } from "framer-motion";
 import type { SettingsDomain as Domain } from "@/data/settingsCopy";
@@ -17,30 +16,14 @@ export interface SettingsCardWrapperProps {
 }
 
 export const SettingsCardWrapper = memo(({ domain, isActive, layoutMode, children }: SettingsCardWrapperProps) => {
-  const settings = useSettingsStore((s) => s.settings);
   const draftSettings = useSettingsStore((s) => s.draftSettings);
-  const commitChanges = useSettingsStore((s) => s.commitChanges);
 
   const hasChanges = useSettingsStore(useCallback((s: SettingsState) => Boolean(s.isDomainDirty(domain.id)), [domain.id]));
 
-
-  const requiresRestart = useMemo(() => {
-    if (!settings || !draftSettings) return false;
-    if (domain.id === "models") {
-      const isRealtime = draftSettings?.interaction?.pipeline_mode === "realtime";
-      if (isRealtime) return false;
-      return (
-        settings.vad.vad_backend !== draftSettings.vad.vad_backend ||
-        settings.stt.active !== draftSettings.stt.active ||
-        settings.stt.embedded.model !== draftSettings.stt.embedded.model ||
-        settings.llm.active !== draftSettings.llm.active ||
-        settings.llm.context_window !== draftSettings.llm.context_window ||
-        settings.llm.threads !== draftSettings.llm.threads ||
-        settings.tts.active !== draftSettings.tts.active
-      );
-    }
-    return false;
-  }, [domain.id, settings, draftSettings]);
+  // Reload policy is owned by the backend (`config::get_setting_reload_policy`).
+  // The verdict arrives on `update_setting` and the backend has already acted on
+  // a `Restart` classification, so the card never decides whether to reload.
+  const restartInFlight = useSettingsStore((s) => s.restartInFlight);
 
   const isCloudLlmMissingKey =
     draftSettings?.llm?.active === "cloud" &&
@@ -65,25 +48,6 @@ export const SettingsCardWrapper = memo(({ domain, isActive, layoutMode, childre
     }
     return false;
   }, [domain.id, draftSettings?.interaction?.pipeline_mode, isRealtimeMissingKey, isCloudLlmMissingKey, isCloudSttMissingKey]);
-
-  const [isReloading, setIsReloading] = useState(false);
-
-  const handleSave = async () => {
-    if (isDomainMissingCloudKey || isReloading) return;
-    if (requiresRestart) {
-      setIsReloading(true);
-      try {
-        await commitChanges();
-        await restartEngine();
-      } catch (e) {
-        console.error("[Settings] Error restarting engine after commit:", e);
-      } finally {
-        setIsReloading(false);
-      }
-    } else {
-      await commitChanges();
-    }
-  };
 
   const isAutoSavedHere = useSettingsStore((s) => s.autoSavedDomain === domain.id);
   const saveFailure = useSettingsStore((s) => s.failedSaveDomains[domain.id]);
@@ -111,68 +75,61 @@ export const SettingsCardWrapper = memo(({ domain, isActive, layoutMode, childre
               {children}
             </ErrorBoundary>
 
-            {/* ─── Repurposed Dynamic Footer: Auto-Save Confirmation OR Heavy Restart Action Bar ─── */}
+            {/* ─── Dynamic Footer: one of four mutually exclusive states ─── */}
             {(layoutMode === "full-max" || layoutMode === "full-min") && (
               <AnimatePresence>
-                {/* Mode A: Explicit Restart Required Bar (ONLY for Type 3 Restart or Missing Cloud Key) */}
-                {hasChanges && (requiresRestart || isDomainMissingCloudKey) && (
+                {/* Mode A: A required credential is missing, so the commit cannot
+                    succeed. Save stays disabled; only Discard is actionable. */}
+                {hasChanges && isDomainMissingCloudKey && (
                   <motion.div
-                    key="restart-footer"
+                    key="missing-key-footer"
                     initial={{ opacity: 0, height: 0 }}
                     animate={{ opacity: 1, height: "auto" }}
                     exit={{ opacity: 0, height: 0 }}
                     transition={{ duration: 0.2 }}
                     className="w-full p-3 px-5 rounded-b-[1.25rem] rounded-t-none bg-[rgba(var(--accent),0.08)] dark:bg-[rgba(var(--accent),0.12)] border border-t-0 border-[rgba(var(--accent),0.2)] flex items-center justify-between overflow-hidden text-[12px]"
                   >
-                    {isDomainMissingCloudKey ? (
-                      <>
-                        <span className="font-bold uppercase tracking-wider text-rose-400 flex items-center gap-1.5">
-                          <AlertCircle size={14} /> {SETTINGS_COPY.apiKeyRequired}
-                        </span>
-                        <div className="flex gap-2">
-                          <button
-                            disabled
-                            className="px-3.5 py-1 rounded-lg bg-[rgba(var(--foreground),0.05)] text-[rgb(var(--foreground-muted))]/40 font-black text-[12px] uppercase tracking-wider cursor-not-allowed border border-[rgba(var(--border),0.1)]"
-                          >
-                            {SETTINGS_COPY.saveChanges}
-                          </button>
-                          <button
-                            onClick={() => useSettingsStore.getState().discardDomainChanges(domain.id)}
-                            className="px-3 py-1 rounded-lg bg-transparent text-[rgb(var(--foreground-muted))] hover:text-rose-400 hover:bg-rose-500/10 border border-transparent hover:border-rose-500/20 text-[12px] font-bold uppercase tracking-wider transition-all cursor-pointer"
-                          >
-                            {SETTINGS_COPY.discardChanges}
-                          </button>
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <span className="font-bold uppercase tracking-wider text-[rgb(var(--accent))] flex items-center gap-1.5">
-                          <RefreshCw size={14} className={isReloading ? "animate-spin" : undefined} /> {requiresRestart ? SETTINGS_COPY.pipelineRestartRequired : SETTINGS_COPY.unsavedChanges}
-                        </span>
-                        <div className="flex gap-2">
-                          <button
-                            onClick={handleSave}
-                            disabled={isReloading}
-                            className="px-3.5 py-1 rounded-lg bg-[rgb(var(--accent))] text-black dark:text-white font-black text-[12px] uppercase tracking-wider hover:brightness-110 active:scale-95 transition-all cursor-pointer shadow-md flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
-                          >
-                            {isReloading && <RefreshCw size={12} className="animate-spin" />}
-                            <span>{isReloading ? SETTINGS_COPY.reloading : (requiresRestart ? SETTINGS_COPY.applyAndReload : SETTINGS_COPY.saveChanges)}</span>
-                          </button>
-                          <button
-                            onClick={() => useSettingsStore.getState().discardDomainChanges(domain.id)}
-                            disabled={isReloading}
-                            className="px-3 py-1 rounded-lg bg-transparent text-[rgb(var(--foreground-muted))] hover:text-rose-400 hover:bg-rose-500/10 border border-transparent hover:border-rose-500/20 text-[12px] font-bold uppercase tracking-wider transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                          >
-                            {SETTINGS_COPY.discardChanges}
-                          </button>
-                        </div>
-                      </>
-                    )}
+                    <span className="font-bold uppercase tracking-wider text-rose-400 flex items-center gap-1.5">
+                      <AlertCircle size={14} /> {SETTINGS_COPY.apiKeyRequired}
+                    </span>
+                    <div className="flex gap-2">
+                      <button
+                        disabled
+                        className="px-3.5 py-1 rounded-lg bg-[rgba(var(--foreground),0.05)] text-[rgb(var(--foreground-muted))]/40 font-black text-[12px] uppercase tracking-wider cursor-not-allowed border border-[rgba(var(--border),0.1)]"
+                      >
+                        {SETTINGS_COPY.saveChanges}
+                      </button>
+                      <button
+                        onClick={() => useSettingsStore.getState().discardDomainChanges(domain.id)}
+                        className="px-3 py-1 rounded-lg bg-transparent text-[rgb(var(--foreground-muted))] hover:text-rose-400 hover:bg-rose-500/10 border border-transparent hover:border-rose-500/20 text-[12px] font-bold uppercase tracking-wider transition-all cursor-pointer"
+                      >
+                        {SETTINGS_COPY.discardChanges}
+                      </button>
+                    </div>
+                  </motion.div>
+                )}
+
+                {/* Mode A2: The backend classified a committed key as `Restart`
+                    and is rebuilding the engine. Purely informational: there is
+                    no action to take and no decision for the UI to make. */}
+                {!hasChanges && !saveFailure && restartInFlight && (
+                  <motion.div
+                    key="restarting-footer"
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: "auto" }}
+                    exit={{ opacity: 0, height: 0 }}
+                    transition={{ duration: 0.2 }}
+                    className="w-full py-2 px-5 rounded-b-[1.25rem] rounded-t-none bg-[rgba(var(--accent),0.08)] dark:bg-[rgba(var(--accent),0.12)] border border-t-0 border-[rgba(var(--accent),0.2)] flex items-center justify-between overflow-hidden text-[12px]"
+                  >
+                    <span className="font-bold uppercase tracking-wider text-[rgb(var(--accent))] flex items-center gap-1.5">
+                      <RefreshCw size={14} className="animate-spin" /> {SETTINGS_COPY.restartingEngine}
+                    </span>
+                    <span className="text-[11px] text-[rgb(var(--accent))]/70 font-mono">{SETTINGS_COPY.applyingProviderChanges}</span>
                   </motion.div>
                 )}
 
                 {/* Mode B: Debounced "Changes Saved" Auto-Toast (Only on the specific modified card, using Primary Accent) */}
-                {!hasChanges && !saveFailure && isAutoSavedHere && (
+                {!hasChanges && !saveFailure && !restartInFlight && isAutoSavedHere && (
                   <motion.div
                     key="saved-toast-footer"
                     initial={{ opacity: 0, height: 0 }}

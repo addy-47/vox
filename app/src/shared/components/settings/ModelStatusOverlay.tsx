@@ -25,7 +25,7 @@ const compactModelName = (name: string): string => {
 export const ModelStatusOverlay = memo(() => {
   const { draftSettings, modelCatalog } = useSettings();
   const [presence, setPresence] = useState<Record<string, boolean>>({});
-  const [ttsCaps, setTtsCaps] = useState<ProviderCaps | null>(null);
+  const [, setTtsCaps] = useState<ProviderCaps | null>(null);
   const [vw, setVw] = useState(typeof window !== "undefined" ? window.innerWidth : 1200);
 
   useEffect(() => {
@@ -82,11 +82,14 @@ export const ModelStatusOverlay = memo(() => {
       setTtsCaps(null);
       return;
     }
-    getProviderCaps(ttsKind).then((caps) => {
-      if (isMounted) setTtsCaps(caps);
-    }).catch(() => {
-      if (isMounted) setTtsCaps(null);
-    });
+    getProviderCaps(ttsKind)
+      .then((caps) => {
+        if (isMounted) setTtsCaps(caps);
+      })
+      .catch(() => {
+        if (isMounted) setTtsCaps(null);
+      });
+
     return () => {
       isMounted = false;
     };
@@ -98,10 +101,9 @@ export const ModelStatusOverlay = memo(() => {
   const activeLlm = modelCatalog.llm.find((m) => m.id === llmId) || modelCatalog.llm[0];
   const activeAsr = modelCatalog.stt.find((m) => m.id === asrId) || modelCatalog.stt[0];
   const activeTts = modelCatalog.tts.find((m) => m.id === ttsKind) || modelCatalog.tts[0];
-  const isCatalogVoice = ttsCaps?.voices === "catalog";
-  const activeVoice = isCatalogVoice
-    ? (modelCatalog.voices.find((v) => v.id === draftSettings.tts.voice_index) || modelCatalog.voices[0])
-    : null;
+
+  // Backend is the single source of truth for the active voice name
+  const activeVoiceName = modelCatalog.active_voice_name;
 
   const llmExists = isRemoteLlm ? true : (presence[llmId] ?? true);
   const asrExists = isCloudStt ? true : (presence[asrId] ?? true);
@@ -184,13 +186,13 @@ export const ModelStatusOverlay = memo(() => {
             <div className="text-[12.5px] font-bold text-[rgb(var(--foreground))]/70 leading-none truncate flex items-center gap-1">
               {ttsName}
             </div>
-            {!isNarrow && activeVoice && (
-              <div className="text-[11.5px] font-mono mt-0.5 leading-none truncate">{activeVoice.name}</div>
+            {!isNarrow && activeVoiceName && (
+              <div className="text-[11.5px] font-mono mt-0.5 leading-none truncate">{activeVoiceName}</div>
             )}
           </div>
           {/* Tooltip */}
           <div className="absolute bottom-10 right-0 scale-95 opacity-0 group-hover:scale-100 group-hover:opacity-100 transition-all duration-200 pointer-events-none w-56 p-3 rounded-xl bg-[rgb(var(--background))]/95 border border-[rgba(var(--accent),0.15)] shadow-xl z-50 text-[13px] leading-relaxed text-[rgb(var(--foreground-muted))]/80">
-            <p className="font-bold text-[rgb(var(--foreground))] mb-1">{activeTts.name}{activeVoice ? `: ${activeVoice.name}` : ""}</p>
+            <p className="font-bold text-[rgb(var(--foreground))] mb-1">{activeTts.name}{activeVoiceName ? `: ${activeVoiceName}` : ""}</p>
             {activeTts.description}
           </div>
         </div>
@@ -200,4 +202,3 @@ export const ModelStatusOverlay = memo(() => {
 });
 
 ModelStatusOverlay.displayName = "ModelStatusOverlay";
-

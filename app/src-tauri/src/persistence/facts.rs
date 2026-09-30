@@ -72,30 +72,58 @@ pub async fn fetch_active_observations_by_type(
     Ok(observations)
 }
 
-/// Fetches all active observations across every type, optionally scoped to one project via the session join. Observations orphaned by hard session deletes (NULL session_id) appear only in the unscoped global view.
-pub async fn fetch_all_active_observations(
+/// Fetches observations across every type, optionally filtered by status and project, with limit and offset.
+pub async fn fetch_all_observations(
     conn: &Connection,
     project_id: Option<&str>,
+    status: Option<&str>,
+    limit: Option<u32>,
+    offset: Option<u32>,
 ) -> Result<Vec<ObservationRecord>> {
-    let mut rows = if let Some(pid) = project_id {
-        conn.query(
+    let limit_clause = match (limit, offset) {
+        (Some(l), Some(o)) => format!(" LIMIT {} OFFSET {}", l, o),
+        (Some(l), None) => format!(" LIMIT {}", l),
+        (None, Some(o)) => format!(" LIMIT -1 OFFSET {}", o),
+        (None, None) => String::new(),
+    };
+
+    let sql = match (project_id, status) {
+        (Some(_), Some(_)) => format!(
             "SELECT f.id, f.session_id, f.compaction_id, f.type, f.text, f.status, f.created_at, f.updated_at
              FROM memory_facts f
              JOIN sessions s ON s.id = f.session_id
-             WHERE f.status = 'active' AND s.project_id = ?
-             ORDER BY f.created_at DESC",
-            (pid.to_string(),),
-        )
-        .await?
-    } else {
-        conn.query(
+             WHERE f.status = ? AND s.project_id = ?
+             ORDER BY f.created_at DESC{}",
+            limit_clause
+        ),
+        (Some(_), None) => format!(
+            "SELECT f.id, f.session_id, f.compaction_id, f.type, f.text, f.status, f.created_at, f.updated_at
+             FROM memory_facts f
+             JOIN sessions s ON s.id = f.session_id
+             WHERE s.project_id = ?
+             ORDER BY f.created_at DESC{}",
+            limit_clause
+        ),
+        (None, Some(_)) => format!(
             "SELECT id, session_id, compaction_id, type, text, status, created_at, updated_at
              FROM memory_facts
-             WHERE status = 'active'
-             ORDER BY created_at DESC",
-            (),
-        )
-        .await?
+             WHERE status = ?
+             ORDER BY created_at DESC{}",
+            limit_clause
+        ),
+        (None, None) => format!(
+            "SELECT id, session_id, compaction_id, type, text, status, created_at, updated_at
+             FROM memory_facts
+             ORDER BY created_at DESC{}",
+            limit_clause
+        ),
+    };
+
+    let mut rows = match (project_id, status) {
+        (Some(pid), Some(st)) => conn.query(&sql, (st.to_string(), pid.to_string())).await?,
+        (Some(pid), None) => conn.query(&sql, (pid.to_string(),)).await?,
+        (None, Some(st)) => conn.query(&sql, (st.to_string(),)).await?,
+        (None, None) => conn.query(&sql, ()).await?,
     };
 
     let mut observations = Vec::new();

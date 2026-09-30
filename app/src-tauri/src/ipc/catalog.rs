@@ -5,6 +5,9 @@ use tauri::{AppHandle, Manager, State};
 use crate::{
     config::get_preset_colors,
     core::{error::VoxIpcError, state::AppState},
+    persistence::voices::{
+        display_name_for_slug, get_voice, list_voices as list_db_voices, VoiceListScope,
+    },
     services::{
         health::{self as health_svc, ProviderConfigPayload},
         llm::{
@@ -35,6 +38,7 @@ pub struct ModelCatalog {
     pub model_groups: Vec<ModelGroup>,
     pub voices: Vec<VoiceProfile>,
     pub preset_colors: Vec<String>,
+    pub active_voice_name: Option<String>,
 }
 
 /// Query the model manifest catalog filtered into distinct model categories.
@@ -99,16 +103,98 @@ pub async fn get_model_catalog<R: tauri::Runtime>(
         .cloned()
         .collect();
 
-    let tts_active = {
+    let (tts_active, tts_settings) = {
         let guard = state
             .settings
             .read()
             .map_err(|e| VoxIpcError::Internal(e.to_string()))?;
-        guard.tts.active
+        (guard.tts.active, guard.tts.clone())
     };
-    let voices = match tts_active {
-        TtsActiveProvider::Supertonic => get_supertonic_voice_profiles(),
-        _ => get_voice_profiles(),
+
+    let (voices, active_voice_name) = match tts_active {
+        TtsActiveProvider::Supertonic => {
+            let p = get_supertonic_voice_profiles();
+            let active = p
+                .get(tts_settings.voice_index as usize)
+                .or(p.first())
+                .map(|v| v.name.clone());
+            (p, active)
+        }
+        TtsActiveProvider::Kokoro => {
+            let p = get_voice_profiles();
+            let active = p
+                .get(tts_settings.voice_index as usize)
+                .or(p.first())
+                .map(|v| v.name.clone());
+            (p, active)
+        }
+        TtsActiveProvider::Zipvoice => {
+            let conn = state.db.connect().ok();
+            let pack = if let Some(ref conn) = conn {
+                list_db_voices(conn, VoiceListScope::ZipvoicePack)
+                    .await
+                    .unwrap_or_default()
+            } else {
+                Vec::new()
+            };
+
+            let profiles: Vec<VoiceProfile> = pack
+                .iter()
+                .enumerate()
+                .map(|(i, v)| VoiceProfile {
+                    id: i as i32,
+                    name: v.name.clone(),
+                    gender: None,
+                    accent: None,
+                    language: Some("en".to_string()),
+                })
+                .collect();
+
+            let active = if let Some(ref slug) = tts_settings.zipvoice.voice_id {
+                pack.iter()
+                    .find(|v| v.slug.as_deref() == Some(slug) || v.id == *slug)
+                    .map(|v| v.name.clone())
+                    .or_else(|| Some(display_name_for_slug(slug)))
+            } else {
+                pack.first().map(|v| v.name.clone()).or_else(|| Some("Alfred".to_string()))
+            };
+
+            (profiles, active)
+        }
+        TtsActiveProvider::Chatterbox | TtsActiveProvider::ChatterboxRemote => {
+            let voice_id = if tts_active == TtsActiveProvider::Chatterbox {
+                tts_settings.chatterbox.voice_id.as_deref()
+            } else {
+                tts_settings.chatterbox_remote.voice_id.as_deref()
+            };
+
+            let active = if let Some(id) = voice_id {
+                let conn = state.db.connect().ok();
+                if let Some(ref conn) = conn {
+                    get_voice(conn, id)
+                        .await
+                        .ok()
+                        .flatten()
+                        .map(|v| v.name)
+                } else {
+                    None
+                }
+            } else {
+                Some("Default".to_string())
+            };
+            (Vec::new(), active)
+        }
+        TtsActiveProvider::EdgeTts => {
+            let active = tts_settings.edge_tts.voice.map(|v| {
+                if let Some(stripped) = v.strip_suffix("Neural") {
+                    if let Some(name) = stripped.rsplit('-').next() {
+                        return name.to_string();
+                    }
+                }
+                v
+            });
+            (Vec::new(), active)
+        }
     };
 
     Ok(ModelCatalog {
@@ -120,6 +206,7 @@ pub async fn get_model_catalog<R: tauri::Runtime>(
         model_groups: groups,
         voices,
         preset_colors: get_preset_colors(),
+        active_voice_name,
     })
 }
 

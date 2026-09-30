@@ -140,12 +140,11 @@ export const TtsVoiceManager = memo(({
 
   // The settings key is the provider id itself — no map. Configs carrying a
   // voice are read by shape (voice_id / language), never by provider name.
-  const hasVoiceId = (
-    c: unknown
-  ): c is { voice_id?: string | null; language?: string } =>
-    typeof c === "object" && c !== null && "voice_id" in c;
   const rawConfig: unknown = draftSettings.tts[providerId as keyof TtsSettings];
-  const voiceConfig = hasVoiceId(rawConfig) ? rawConfig : undefined;
+  const voiceConfig =
+    typeof rawConfig === "object" && rawConfig !== null
+      ? (rawConfig as { voice_id?: string | null; language?: string; [k: string]: unknown })
+      : undefined;
   const usesLanguageVoice = !!voiceConfig && "language" in voiceConfig;
 
   // Backend-scoped voice list: the parent loads listVoices(activeProviderId),
@@ -180,16 +179,16 @@ export const TtsVoiceManager = memo(({
         voice: id,
       });
     } else if (isCustomVoices) {
-      if (!voiceConfig) return;
+      const current = voiceConfig || {};
       if (usesLanguageVoice) {
         updateDraft("tts", providerId, {
-          ...voiceConfig,
+          ...current,
           voice_id: id === BUILT_IN_VOICE_ID ? null : id,
-          language: voiceConfig.language || "en",
+          language: current.language || "en",
         });
       } else {
         updateDraft("tts", providerId, {
-          ...voiceConfig,
+          ...current,
           voice_id: id,
         });
       }

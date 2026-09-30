@@ -378,13 +378,44 @@ VoxSettings → 13 domains (appearance, audio, vad, stt, llm, tts, realtime, int
 
 ### Reload Policies (`config/mod.rs:get_setting_reload_policy`)
 
-| Policy          | Effect                                                 | Examples                                                                                                                                                       |
-| --------------- | ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Hot`           | Apply immediately (no restart)                         | UI theme, private mode, prompts, `interaction.mode`, `dictation.*`, `llm.temperature`, `stt.transliterate_enabled`                                             |
-| `WorkerCommand` | Send via channel                                       | `vad.threshold`, `vad.ptt_noise_gate`, `vad.silence_duration_ms`, `vad.speech_onset_ms`, `audio.output_mode`, `tts.speed`, `tts.voice_index`                  |
-| `Restart`       | Full pipeline restart (`stop_engine` → `start_engine`) | Model changes, provider switches, engine config, `vad.vad_backend`, `vad.max_speech_duration_s`, `tts.active`, `stt.active`, `llm.cloud_keys`, `threads`      |
+This table is the **single source of truth** for reload policy. The frontend holds no copy of it:
+`update_setting` returns the resolved `reload_policy` plus `restart_scheduled` on every write, and the
+settings UI renders its footer from that response. `is_explicitly_classified(domain, key)` exposes
+whether a key is matched by an explicit arm or would fall through to the catch-all;
+`accepted_mutation_keys_are_never_left_to_the_reload_policy_fallback` in
+`tests/settings_persistence_test.rs` asserts that every key `apply_setting_mutation` accepts is
+classified, so the two tables cannot drift apart silently.
+
+| Policy          | Effect                                                                                                             | Examples                                                                                                                                                                                                                            |
+| --------------- | -------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Hot`           | Apply immediately; read from live state on each use                                                                   | UI theme, private mode, prompts, `interaction.*`, `dictation.*`, `llm.temperature`, `llm.compaction_temperature`, `llm.max_output_tokens`, `llm.reasoning_enabled`, `stt.transliterate_enabled`, `stt.partial_throttle_ms`, all of `appearance`/`persona`/`working_memory`/`personal_memory`/`realtime`/`system` |
+| `WorkerCommand` | Forwarded to a live worker over its command channel (`dispatch_worker_command`)                                       | `vad.threshold`, `vad.ptt_noise_gate`, `vad.silence_duration_ms`, `vad.speech_onset_ms`, `audio.output_mode`, `tts.speed`, `tts.voice_index`                                                                                           |
+| `Restart`       | **Executed by the backend**: `stop_audio_engine` → `start_audio_engine` via `ipc/pipeline.rs:restart_engine_inner`   | `tts.active`, `tts.provider`, `tts.threads`, `tts.{edge_tts,supertonic,kokoro,chatterbox,chatterbox_remote,zipvoice}`, `stt.active`, `stt.provider`, `stt.model`, `stt.threads`, `stt.embedded`, `stt.cloud`, `llm.active`, `llm.provider`, `llm.model`, `llm.threads`, `llm.context_window`, `llm.{server,cloud,cloud_keys,embedded}`, `vad.vad_backend`, `vad.max_speech_duration_s`, `audio.input_device` |
+
+`Restart` is not advisory. Providers cache their wiring (model path, credentials, thread pool,
+reference voice) for the engine's whole lifetime, so a `Restart`-classified write that is merely
+reported leaves the running engine disagreeing with the persisted settings.
+
+**Coalescing.** A single settings commit writes every dirty key in parallel, so several
+`Restart`-classified keys can land at once. `config/dispatch.rs:request_engine_restart` therefore owns
+a single runner task gated on `AppState::{restart_requested, restart_runner, restart_in_flight}`:
+requests set the pending flag before contending for runner ownership, the runner settles for
+`RESTART_COALESCE_MS` (150 ms) then rebuilds, and loops to absorb anything that lands mid-rebuild.
+Switching the LLM and TTS together costs one restart, not two. `reset_settings` uses the same path.
 
 Every agent domain has a `ProviderConfig` tagged enum (`LlmProviderConfig`, `TtsProviderConfig`, `SttProviderConfig`, `RealtimeProviderKind`) for provider selection at worker construction time. Dispatch is via `config/dispatch.rs:dispatch_worker_command`. Dictation settings (`dictation.enabled`, `dictation.interaction_mode`, `dictation.hotkey`, `dictation.output_mode`) are handled by `apply_setting_mutation` in `config/mutation.rs`; `enabled` and `interaction_mode` changes trigger `transition_dictation(Ready|Idle)` via `config/dispatch.rs`.
+
+### Crash Diagnostics
+
+Rust panics and native aborts take separate paths, and both write to `paths.crashes`:
+
+- **Panic** — the hook in `lib.rs:run` captures a `Backtrace` and writes `crash_panic_<ms>.log`.
+- **Native** — `utils/crash.rs:install_native_crash_handler` traps `SIGABRT`/`SIGSEGV`/`SIGBUS`/`SIGILL`/`SIGFPE` and writes `crash_native_<ms>.log`. A glibc heap abort (`malloc(): invalid size (unsorted)`, `double free or corruption`) never reaches the panic hook, so without this the only evidence of an FFI memory-safety violation is one line on stderr. Safe Rust cannot produce that abort; the live native writers in this process are the sherpa-onnx TTS/VAD bindings (bundling espeak-ng and ONNX Runtime), the `ort` embedder, and libasound via cpal.
+
+`MALLOC_CHECK_=3` makes glibc validate the heap on every allocation so corruption aborts at the
+offending write rather than minutes later at an unrelated large allocation. It is requested in-process
+for debug builds; because glibc caches its tunables at libc init, export it in the shell
+(`MALLOC_CHECK_=3 pnpm tauri dev`) to guarantee it takes effect.
 
 ---
 

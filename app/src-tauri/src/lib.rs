@@ -20,14 +20,14 @@ pub mod wizard;
 use std::{
     backtrace::Backtrace,
     env::set_var,
-    fs::{create_dir_all, write},
+    fs::write,
     panic::set_hook,
     sync::{
         atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
         Arc,
     },
     thread::{current, sleep, Builder as ThreadBuilder},
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::Duration,
 };
 
 use tauri::{tray::TrayIconBuilder, Manager, State};
@@ -46,9 +46,10 @@ use crate::{
             probe_model_capabilities, setup_remote_server,
         },
         memory::{
-            consolidate_personal_memory, get_active_observations, get_memory_revisions,
-            get_personal_memory, get_personal_memory_versions, regenerate_personal_memory,
-            resolve_memory_revisions, save_personal_memory, set_active_personal_memory_version,
+            consolidate_personal_memory, get_memory_revisions,
+            get_observations, get_personal_memory, get_personal_memory_versions,
+            regenerate_personal_memory, resolve_memory_revisions, save_personal_memory,
+            set_active_personal_memory_version,
         },
         monitoring::{get_profiler_snapshot, get_runtime_snapshot, record_memory_profile_event},
         notifications::{
@@ -136,26 +137,18 @@ pub fn run() {
         );
 
         // Emergency write to crashes directory if paths are available
-        let crash_dir = paths::try_get()
-            .map(|p| p.crashes)
-            .unwrap_or_else(paths::crashes_dir);
-        if create_dir_all(&crash_dir).is_ok() {
-            let timestamp = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_millis();
-            let crash_file = crash_dir.join(format!("crash_{}.log", timestamp));
-            if let Err(err) = write(
-                crash_file,
-                format!(
-                    "Panic: {}\nLocation: {}\nBacktrace:\n{}",
-                    payload, location, backtrace
-                ),
-            ) {
-                log::error!("Failed to write crash log: {:?}", err);
-            }
+        if let Some(path) = crate::utils::crash::write_crash_report(
+            crate::utils::crash::CRASH_KIND_PANIC,
+            &format!("{} at {}", payload, location),
+            &backtrace.to_string(),
+        ) {
+            log::error!("[FATAL PANIC] Crash report written to {}", path);
         }
     }));
+
+    // Heap corruption and invalid accesses from native libraries abort without
+    // ever reaching the panic hook above, so they get their own handler.
+    crate::utils::crash::install_native_crash_handler();
 
     if let Err(e) = rustls::crypto::ring::default_provider().install_default() {
         log::debug!(
@@ -168,6 +161,26 @@ pub fn run() {
     #[cfg(target_os = "linux")]
     {
         set_var("ALSA_LOG_LEVEL", "0");
+
+        // Best-effort: make glibc's allocator validate the heap on every
+        // malloc/free so a corruption from a native library aborts *at the
+        // offending write* instead of minutes later at some unrelated large
+        // allocation — which is what made the ZipVoice crash undiagnosable.
+        //
+        // glibc caches its tunables at libc init, so setting this from `main`
+        // is only reliable when the process is launched with it already in the
+        // environment. For a guaranteed run, prefix the command:
+        //     MALLOC_CHECK_=3 pnpm tauri dev
+        // Debug builds only: it roughly doubles allocation cost, which would
+        // corrupt the benchmark numbers from `cargo bench --release`.
+        #[cfg(all(target_os = "linux", debug_assertions))]
+        if std::env::var("MALLOC_CHECK_").is_err() {
+            set_var("MALLOC_CHECK_", "3");
+            log::debug!(
+                "[Crash] MALLOC_CHECK_=3 requested in-process; \
+                 export it in the shell if allocator validation does not engage"
+            );
+        }
     }
 
     tauri::Builder::default()
@@ -676,7 +689,7 @@ pub fn run() {
             regenerate_personal_memory,
             get_personal_memory_versions,
             set_active_personal_memory_version,
-            get_active_observations,
+            get_observations,
             get_memory_revisions,
             resolve_memory_revisions,
             // Voices

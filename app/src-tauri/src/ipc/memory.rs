@@ -9,7 +9,7 @@ use crate::{
         state::AppState,
     },
     persistence::{
-        fetch_all_active_observations, list_personal_memory_versions,
+        fetch_all_observations, list_personal_memory_versions,
         personal_memory::get_personal_memory as db_get_personal_memory,
         set_active_personal_memory_version as db_set_active_version, ObservationRecord,
         PersonalMemoryRecord, RevisionDecision,
@@ -159,17 +159,21 @@ pub async fn set_active_personal_memory_version(
     Ok(record)
 }
 
-/// Returns all `status = 'active'` observations for memory graph visualization.
+
+/// Returns observations from `memory_facts` across all or filtered statuses (`active`, `integrated`, etc.).
 #[tauri::command]
-pub async fn get_active_observations(
+pub async fn get_observations(
     project_id: Option<String>,
+    status: Option<String>,
+    limit: Option<u32>,
+    offset: Option<u32>,
     state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<ObservationRecord>, VoxIpcError> {
     let conn = state
         .db
         .connect()
         .map_err(|e| VoxIpcError::Database(e.to_string()))?;
-    fetch_all_active_observations(&conn, project_id.as_deref())
+    fetch_all_observations(&conn, project_id.as_deref(), status.as_deref(), limit, offset)
         .await
         .map_err(|e| VoxIpcError::Database(e.to_string()))
 }

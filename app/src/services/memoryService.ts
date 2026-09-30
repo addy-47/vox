@@ -171,17 +171,35 @@ export interface ObservationRecord {
 }
 
 /**
- * Returns all `status = 'active'` observations for memory graph visualization.
+ * Returns observations from `memory_facts` across all or filtered statuses (`active`, `integrated`, etc.),
+ * with optional limit and offset pagination.
  */
-export async function getActiveObservations(projectId?: string): Promise<ObservationRecord[]> {
+export async function getObservations(
+  projectId?: string,
+  status?: string,
+  limit?: number,
+  offset?: number
+): Promise<ObservationRecord[]> {
   const records = await invoke<Array<Omit<ObservationRecord, "fact_type"> & { fact_type?: string }>>(
-    "get_active_observations",
-    { projectId: projectId ?? null }
+    "get_observations",
+    {
+      projectId: projectId ?? null,
+      status: status ?? null,
+      limit: limit ?? null,
+      offset: offset ?? null,
+    }
   );
   return records.map((r) => ({
     ...r,
     fact_type: r.observation_type,
   }));
+}
+
+/**
+ * Returns all `status = 'active'` observations for memory graph visualization.
+ */
+export function getActiveObservations(projectId?: string): Promise<ObservationRecord[]> {
+  return getObservations(projectId, "active");
 }
 
 // Compatibility aliases
