@@ -15,9 +15,12 @@ use crate::{
 
 pub type Result<T> = std::result::Result<T, PersistenceError>;
 
-pub const SCHEMA_VERSION: u32 = 9;
+pub const SCHEMA_VERSION: u32 = 10;
 
-const V2_TABLE_STATEMENTS: &[&str] = &[
+const PERSONAL_MEMORY_SEMANTIC_SCHEMA_VERSION: u32 = 9;
+const EMPTY_PERSONAL_MEMORY_JSON: &str = r#"{"sections":[]}"#;
+
+const SCHEMA_TABLE_STATEMENTS: &[&str] = &[
     "CREATE TABLE IF NOT EXISTS projects (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
@@ -146,23 +149,23 @@ const V2_TABLE_STATEMENTS: &[&str] = &[
     );",
     "CREATE INDEX IF NOT EXISTS idx_tool_calls_session_turn ON session_tool_calls(session_id, turn_id);",
     "CREATE INDEX IF NOT EXISTS idx_tool_calls_created ON session_tool_calls(created_at DESC);",
-    "CREATE TABLE IF NOT EXISTS personal_memory_suggestions (
+    "CREATE TABLE IF NOT EXISTS personal_memory_revisions (
         id TEXT PRIMARY KEY,
         base_memory_version INTEGER NOT NULL,
         project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,
         op TEXT NOT NULL,
-        target_index INTEGER NOT NULL,
+        target_id TEXT NOT NULL,
         content TEXT NOT NULL,
         status TEXT NOT NULL DEFAULT 'pending',
         created_at INTEGER NOT NULL,
         resolved_at INTEGER
     );",
-    "CREATE INDEX IF NOT EXISTS idx_suggestions_pending ON personal_memory_suggestions(base_memory_version, status);",
-    "CREATE INDEX IF NOT EXISTS idx_suggestions_status_proj ON personal_memory_suggestions(project_id, status);",
-    "CREATE INDEX IF NOT EXISTS idx_suggestions_created ON personal_memory_suggestions(created_at DESC);",
+    "CREATE INDEX IF NOT EXISTS idx_revisions_pending ON personal_memory_revisions(base_memory_version, status);",
+    "CREATE INDEX IF NOT EXISTS idx_revisions_status_proj ON personal_memory_revisions(project_id, status);",
+    "CREATE INDEX IF NOT EXISTS idx_revisions_created ON personal_memory_revisions(created_at DESC);",
 ];
 
-/// Runs schema migrations, dropping obsolete legacy tables and initializing v2 schema.
+/// Runs schema migrations, dropping obsolete legacy tables and initializing the current schema.
 pub async fn run_migrations(conn: &Connection) -> Result<()> {
     let current_version: u32 = {
         let mut rows = conn.query("PRAGMA user_version;", ()).await?;
@@ -173,6 +176,10 @@ pub async fn run_migrations(conn: &Connection) -> Result<()> {
         }
     };
 
+    if current_version == PERSONAL_MEMORY_SEMANTIC_SCHEMA_VERSION {
+        retire_positional_personal_memory_model(conn).await?;
+    }
+
     if current_version < SCHEMA_VERSION {
         log::info!(
             "[Persistence::Schema] Migrating database schema from v{} to v{}",
@@ -182,7 +189,7 @@ pub async fn run_migrations(conn: &Connection) -> Result<()> {
         conn.execute("PRAGMA foreign_keys = OFF;", ()).await?;
         conn.execute("PRAGMA foreign_keys = ON;", ()).await?;
 
-        for stmt in V2_TABLE_STATEMENTS {
+        for stmt in SCHEMA_TABLE_STATEMENTS {
             conn.execute(stmt, ()).await?;
         }
 
@@ -198,8 +205,9 @@ pub async fn run_migrations(conn: &Connection) -> Result<()> {
         .await?;
 
         conn.execute(
-            "INSERT OR IGNORE INTO personal_memory (project_id, content, version, last_consolidated_at, updated_at) VALUES (NULL, '', 1, ?, ?);",
-            (now, now),
+            "INSERT INTO personal_memory (project_id, content, version, last_consolidated_at, updated_at)
+             SELECT NULL, ?, 1, ?, ? WHERE NOT EXISTS (SELECT 1 FROM personal_memory WHERE project_id IS NULL);",
+            (EMPTY_PERSONAL_MEMORY_JSON, now, now),
         )
         .await?;
 
@@ -229,7 +237,56 @@ pub async fn run_migrations(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
-/// Drops all tables and forces a full recreation of the v2 schema.
+/// Retires the positional Personal Memory model left behind by a v9 database on disk.
+async fn retire_positional_personal_memory_model(conn: &Connection) -> Result<()> {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64;
+
+    conn.execute("DROP INDEX IF EXISTS idx_suggestions_pending;", ())
+        .await?;
+    conn.execute("DROP INDEX IF EXISTS idx_suggestions_status_proj;", ())
+        .await?;
+    conn.execute("DROP INDEX IF EXISTS idx_suggestions_created;", ())
+        .await?;
+    conn.execute("DROP TABLE IF EXISTS personal_memory_suggestions;", ())
+        .await?;
+
+    conn.execute(
+        "UPDATE personal_memory SET content = ? WHERE content IS NULL OR TRIM(content) = '' OR content NOT LIKE '{%'",
+        (EMPTY_PERSONAL_MEMORY_JSON,),
+    )
+    .await?;
+
+    conn.execute(
+        "UPDATE memory_facts SET status = 'integrated', updated_at = ? WHERE status = 'consolidated'",
+        (now,),
+    )
+    .await?;
+    conn.execute(
+        "UPDATE memory_facts SET status = 'active', updated_at = ? WHERE status = 'staged'",
+        (now,),
+    )
+    .await?;
+    conn.execute(
+        "UPDATE memory_facts_vectors SET status = 'integrated' WHERE status = 'consolidated'",
+        (),
+    )
+    .await?;
+    conn.execute(
+        "UPDATE memory_facts_vectors SET status = 'active' WHERE status = 'staged'",
+        (),
+    )
+    .await?;
+
+    log::info!(
+        "[Persistence::Schema] Retired the positional Personal Memory model (v9 artifacts removed)"
+    );
+    Ok(())
+}
+
+/// Drops all tables and forces a full recreation of the current schema.
 pub async fn recreate_schema(conn: &Connection) -> Result<()> {
     conn.execute("PRAGMA foreign_keys = OFF;", ()).await?;
     conn.execute("DROP TABLE IF EXISTS voices;", ()).await?;
@@ -239,7 +296,7 @@ pub async fn recreate_schema(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
-/// Rebuilds a binary database fixture from scratch with the v2 schema and default seeds.
+/// Rebuilds a binary database fixture from scratch with the current schema and default seeds.
 pub async fn rebuild_fixture_db(path: &Path) -> Result<()> {
     if path.exists() {
         std::fs::remove_file(path)?;

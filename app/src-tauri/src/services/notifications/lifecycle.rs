@@ -10,12 +10,9 @@ use tauri::AppHandle;
 
 use super::{notify, Action, NotificationCategory, NotificationParams};
 use crate::{
-    core::{
-        events::Severity,
-        state::AppState,
-    },
-    pipeline::dictation::DictationOutputMode,    
+    core::{events::Severity, state::AppState},
     persistence::VoxDb,
+    pipeline::dictation::DictationOutputMode,
     services::dictation::DICTATION_PARTIAL_UPDATE_THROTTLE_MS,
     toast::{show_replaceable_toast, update_replaceable_toast},
 };

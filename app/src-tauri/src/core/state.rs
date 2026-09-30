@@ -14,10 +14,6 @@ use tauri::{async_runtime::JoinHandle, menu::CheckMenuItem, AppHandle, Runtime, 
 use tokio::sync::{Mutex as TokioMutex, RwLock as TokioRwLock};
 use tracing_appender::non_blocking::WorkerGuard;
 
-pub use crate::{
-    core::engine::VoxEngine, monitoring::telemetry::TelemetryState, pipeline::PipelineAtomics,
-    services::memory::MemoryAppState,
-};
 use crate::{
     config::VoxSettings,
     core::{
@@ -29,6 +25,10 @@ use crate::{
     pipeline::assistant::TurnAccumulator,
     services::{harness::Harness, llm::LlmProvider, realtime::RealtimeActor},
     setup::{manifest::VoxManifest, model_manager::ModelManager},
+};
+pub use crate::{
+    core::engine::VoxEngine, monitoring::telemetry::TelemetryState, pipeline::PipelineAtomics,
+    services::memory::MemoryAppState,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

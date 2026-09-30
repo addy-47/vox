@@ -13,9 +13,7 @@ use ringbuf::{
 use tauri::AppHandle;
 use vox_lib::{
     config::AudioOutputMode,
-    core::{
-        events::{InteractionMode, VoxEvent},
-    },
+    core::events::{InteractionMode, VoxEvent},
     services::{
         stt::{
             actor::{spawn_stt_worker, SttActorChannels, SttActorHandles, SttCommand},

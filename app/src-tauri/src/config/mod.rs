@@ -10,17 +10,16 @@ pub use dispatch::{
     dispatch_worker_command, dispatch_worker_command_has_arm, handle_setting_side_effects,
     schedule_debounced_save, SETTINGS_SAVE_DEBOUNCE_MS,
 };
-pub use mutation::apply_setting_mutation;
-
 pub use files::{
     AgentConfigFile, CognitiveSettings, LlmProvidersConfig, LlmWiringSettings, ProvidersConfigFile,
     SettingsConfigFile, SttProvidersConfig, SttWiringSettings, TtsProvidersConfig,
     TtsWiringSettings,
 };
+pub use mutation::apply_setting_mutation;
 pub use settings::{
     get_preset_colors, AppearanceSettings, AudioOutputMode, AudioSettings,
     DeepgramVoiceAgentConfig, ElevenLabsConvaiConfig, GeminiRealtimeConfig, InteractionSettings,
-    OpenAiRealtimeConfig, PersonalMemorySettings, PersonaSettings, RealtimeProviderKind,
+    OpenAiRealtimeConfig, PersonaSettings, PersonalMemorySettings, RealtimeProviderKind,
     RealtimeSettings, SystemSettings, VoxSettings, WorkingMemorySettings,
 };
 
@@ -44,13 +43,8 @@ impl SettingReloadPolicy {
 
 pub fn get_setting_reload_policy(domain: &str, key: &str) -> SettingReloadPolicy {
     match domain {
-        "appearance"
-        | "working_memory"
-        | "personal_memory"
-        | "persona"
-        | "realtime"
-        | "interaction"
-        | "dictation" => SettingReloadPolicy::Hot,
+        "appearance" | "working_memory" | "personal_memory" | "persona" | "realtime"
+        | "interaction" | "dictation" => SettingReloadPolicy::Hot,
         "audio" if key == "output_mode" => SettingReloadPolicy::WorkerCommand,
         "tts" if key == "speed" || key == "voice_index" || key == "voice" => {
             SettingReloadPolicy::WorkerCommand

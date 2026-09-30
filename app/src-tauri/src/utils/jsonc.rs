@@ -121,8 +121,9 @@ pub fn from_jsonc_str<T: DeserializeOwned>(input: &str) -> Result<T, serde_json:
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use serde::Deserialize;
+
+    use super::*;
 
     #[derive(Debug, Deserialize, PartialEq, Eq)]
     struct Sample {
@@ -161,14 +162,19 @@ mod tests {
         }
         "#;
 
-        let sample: Sample = from_jsonc_str(jsonc).expect("Failed to parse jsonc with escaped quotes");
-        assert_eq!(sample.name, "He said \"hello // world\" /* not a comment */");
+        let sample: Sample =
+            from_jsonc_str(jsonc).expect("Failed to parse jsonc with escaped quotes");
+        assert_eq!(
+            sample.name,
+            "He said \"hello // world\" /* not a comment */"
+        );
     }
 
     #[test]
     fn test_trailing_commas_and_bom() {
         let jsonc = "\u{feff}{\n  \"name\": \"Vox\",\n  \"url\": \"https://example.com\",\n  \"count\": 10,\n}";
-        let sample: Sample = from_jsonc_str(jsonc).expect("Failed to parse jsonc with BOM and trailing comma");
+        let sample: Sample =
+            from_jsonc_str(jsonc).expect("Failed to parse jsonc with BOM and trailing comma");
         assert_eq!(sample.name, "Vox");
         assert_eq!(sample.count, 10);
 
@@ -178,7 +184,8 @@ mod tests {
         }
 
         let array_jsonc = "{\n  \"items\": [\"a\", \"b\", \"c\",],\n}";
-        let parsed: ArraySample = from_jsonc_str(array_jsonc).expect("Failed to parse array with trailing comma");
+        let parsed: ArraySample =
+            from_jsonc_str(array_jsonc).expect("Failed to parse array with trailing comma");
         assert_eq!(parsed.items, vec!["a", "b", "c"]);
     }
 }

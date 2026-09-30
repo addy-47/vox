@@ -24,8 +24,7 @@ use crate::{
     services::{
         translit::is_devanagari,
         tts::{
-            ParamRange, ProviderCaps, TtsVoiceSource, EDGE_TTS_HINDI_VOICE, MAX_SPEED,
-            MIN_SPEED,
+            ParamRange, ProviderCaps, TtsVoiceSource, EDGE_TTS_HINDI_VOICE, MAX_SPEED, MIN_SPEED,
         },
     },
 };

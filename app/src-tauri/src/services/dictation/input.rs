@@ -92,10 +92,7 @@ impl AtspiLibrary {
     /// Dynamically loads libatspi and resolves the required keyboard synthesis functions.
     fn load() -> Option<&'static Self> {
         static INSTANCE: Lazy<Option<AtspiLibrary>> = Lazy::new(|| {
-            let candidate_names = [
-                c"libatspi.so.0".as_ptr(),
-                c"libatspi.so".as_ptr(),
-            ];
+            let candidate_names = [c"libatspi.so.0".as_ptr(), c"libatspi.so".as_ptr()];
 
             let mut handle = std::ptr::null_mut();
             for &name in &candidate_names {
@@ -107,17 +104,14 @@ impl AtspiLibrary {
             }
 
             if handle.is_null() {
-                log::warn!(
-                    "[Dictation::Input] [Wayland] libatspi could not be opened dynamically"
-                );
+                log::warn!("[Dictation::Input] [Wayland] libatspi could not be opened dynamically");
                 return None;
             }
 
             // SAFETY: dlsym calls look up known AT-SPI C ABI function names in the successfully loaded libatspi library.
             unsafe {
                 let init_ptr = libc::dlsym(handle, c"atspi_init".as_ptr());
-                let gen_ptr =
-                    libc::dlsym(handle, c"atspi_generate_keyboard_event".as_ptr());
+                let gen_ptr = libc::dlsym(handle, c"atspi_generate_keyboard_event".as_ptr());
 
                 if init_ptr.is_null() || gen_ptr.is_null() {
                     log::warn!(
@@ -198,7 +192,9 @@ impl SystemInputAdapter for WaylandInputAdapter {
         let atspi_result = AtspiLibrary::load().is_some_and(|lib| lib.dispatch_ctrl_v());
 
         if atspi_result {
-            log::info!("[Dictation::Input] [Wayland] Successfully dispatched simulated Ctrl+V via AT-SPI.");
+            log::info!(
+                "[Dictation::Input] [Wayland] Successfully dispatched simulated Ctrl+V via AT-SPI."
+            );
             return Ok(());
         }
 

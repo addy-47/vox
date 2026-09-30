@@ -9,7 +9,7 @@ pub use presets::{list_presets, lookup_preset, provider_catalog};
 pub use probe::{list_models, probe_capabilities, CapabilityProbeEngine};
 pub use sync::{get_baseline_spec, load_local_baseline_cache, spawn_catalog_sync};
 pub use types::{
-    CapabilityProvenance, CatalogAuthScheme, ModelCapabilities, ModelProbeResult, ModelSpec,
-    ProviderPresetMeta, ReasoningOff, ReasoningOn, ResponseEnvelope, ToolStreamShape, WireValue,
-    CAP_KIND_CLOUD, CAP_KIND_EMBEDDED, CAP_KIND_SERVER, LlmModelInfo,
+    CapabilityProvenance, CatalogAuthScheme, LlmModelInfo, ModelCapabilities, ModelProbeResult,
+    ModelSpec, ProviderPresetMeta, ReasoningOff, ReasoningOn, ResponseEnvelope, ToolStreamShape,
+    WireValue, CAP_KIND_CLOUD, CAP_KIND_EMBEDDED, CAP_KIND_SERVER,
 };

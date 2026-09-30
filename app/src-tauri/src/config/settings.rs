@@ -10,7 +10,8 @@ use crate::{
             DEFAULT_PERSONAL_MEMORY_CONSOLIDATION_TIME,
             DEFAULT_PERSONAL_MEMORY_CONTEXT_RETRIEVAL_ENABLED,
             DEFAULT_PERSONAL_MEMORY_PIPELINE_PROCESSING_ENABLED,
-            DEFAULT_PERSONAL_MEMORY_SEMANTIC_SIMILARITY_CUTOFF, DEFAULT_PERSONAL_MEMORY_TOP_K_FACTS,
+            DEFAULT_PERSONAL_MEMORY_SEMANTIC_SIMILARITY_CUTOFF,
+            DEFAULT_PERSONAL_MEMORY_SUGGESTION_POLICY, DEFAULT_PERSONAL_MEMORY_TOP_K_FACTS,
             DEFAULT_SYSTEM_PROMPT_MODULAR, DEFAULT_SYSTEM_PROMPT_REALTIME, DEFAULT_UI_ACCENT_SEED,
             DEFAULT_UI_THEME, DEFAULT_WORKING_MEMORY_AUTO_COMPACTION,
             DEFAULT_WORKING_MEMORY_MAX_CONTEXT_SHARE, DEFAULT_WORKING_MEMORY_PRIVATE_MODE,
@@ -97,6 +98,7 @@ pub struct PersonalMemorySettings {
     pub semantic_similarity_cutoff: f32,
     pub consolidation_cadence: String,
     pub consolidation_time: String,
+    pub suggestion_policy: String,
 }
 
 impl Default for PersonalMemorySettings {
@@ -108,6 +110,7 @@ impl Default for PersonalMemorySettings {
             semantic_similarity_cutoff: DEFAULT_PERSONAL_MEMORY_SEMANTIC_SIMILARITY_CUTOFF,
             consolidation_cadence: DEFAULT_PERSONAL_MEMORY_CONSOLIDATION_CADENCE.to_string(),
             consolidation_time: DEFAULT_PERSONAL_MEMORY_CONSOLIDATION_TIME.to_string(),
+            suggestion_policy: DEFAULT_PERSONAL_MEMORY_SUGGESTION_POLICY.to_string(),
         }
     }
 }

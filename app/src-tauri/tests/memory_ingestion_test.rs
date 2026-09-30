@@ -18,10 +18,10 @@ use vox_lib::{
     persistence::{
         compactions::record_compaction_start,
         facts::{
-            fetch_active_facts_by_type, fetch_active_vectors_by_type, insert_fact, insert_vector,
-            FactRecord,
+            fetch_active_observations_by_type, fetch_active_vectors_by_type, insert_observation,
+            insert_vector, ObservationRecord,
         },
-        queue::{claim_pending_queue_batch, enqueue_fact},
+        queue::{claim_pending_queue_batch, enqueue_observation},
         sessions::create_session,
     },
     services::memory::{
@@ -46,7 +46,7 @@ struct DedupPair {
 struct DatasetFact {
     id: String,
     #[serde(rename = "type")]
-    fact_type: String,
+    observation_type: String,
     text: String,
 }
 
@@ -87,25 +87,25 @@ async fn test_stage1_exact_dedup_winner_takes_all() {
             .unwrap();
 
         // 1. Seed existing active fact using real dataset text
-        let old_fact = FactRecord {
+        let old_fact = ObservationRecord {
             id: format!("fact_old_{}", sample.id),
             session_id: Some(session_id),
             compaction_id,
-            fact_type: sample.fact_type.clone(),
+            observation_type: sample.observation_type.clone(),
             text: sample.text.clone(),
             status: "active".to_string(),
             created_at: 1000,
             updated_at: 1000,
         };
-        insert_fact(&conn, &old_fact).await.unwrap();
+        insert_observation(&conn, &old_fact).await.unwrap();
 
         // 2. Enqueue incoming fact with identical normalized text (case & punctuation variation)
         let modified_text = format!("{}!!!", sample.text.to_uppercase());
-        let q_id = enqueue_fact(
+        let q_id = enqueue_observation(
             &conn,
             Some(session_id),
             compaction_id,
-            &sample.fact_type,
+            &sample.observation_type,
             &modified_text,
         )
         .await
@@ -121,7 +121,7 @@ async fn test_stage1_exact_dedup_winner_takes_all() {
         assert_eq!(summary.errors, 0, "No errors expected during Stage 1 dedup");
 
         // 4. Assert older fact was deactivated in memory_facts
-        let active_facts = fetch_active_facts_by_type(&conn, &sample.fact_type)
+        let active_facts = fetch_active_observations_by_type(&conn, &sample.observation_type)
             .await
             .unwrap();
         assert!(
@@ -177,17 +177,17 @@ async fn test_stage2_semantic_cosine_dedup_real_embedder() {
             .unwrap();
 
         // 1. Seed existing active fact using fact1 from real dataset pair
-        let old_fact = FactRecord {
+        let old_fact = ObservationRecord {
             id: format!("fact_pair_{}_1", duplicate_pair.id),
             session_id: Some(session_id),
             compaction_id,
-            fact_type: "personal".to_string(),
+            observation_type: "personal".to_string(),
             text: duplicate_pair.fact1.clone(),
             status: "active".to_string(),
             created_at: 1000,
             updated_at: 1000,
         };
-        insert_fact(&conn, &old_fact).await.unwrap();
+        insert_observation(&conn, &old_fact).await.unwrap();
 
         let old_embeddings =
             vox_lib::services::memory::generate_embeddings_batch(&[&old_fact.text])
@@ -211,7 +211,7 @@ async fn test_stage2_semantic_cosine_dedup_real_embedder() {
         .unwrap();
 
         // 2. Enqueue incoming semantic duplicate using fact2 from real dataset pair
-        let q_id = enqueue_fact(
+        let q_id = enqueue_observation(
             &conn,
             Some(session_id),
             compaction_id,
@@ -239,7 +239,9 @@ async fn test_stage2_semantic_cosine_dedup_real_embedder() {
         assert_eq!(summary.errors, 0, "No errors expected during Stage 2 dedup");
 
         // 4. Assert older fact deactivated and new fact from dataset is active
-        let active_facts = fetch_active_facts_by_type(&conn, "personal").await.unwrap();
+        let active_facts = fetch_active_observations_by_type(&conn, "personal")
+            .await
+            .unwrap();
         assert_eq!(active_facts.len(), 1, "Exactly 1 active fact must remain");
         assert_eq!(active_facts[0].text, duplicate_pair.fact2);
 
@@ -301,11 +303,11 @@ async fn test_ingestion_cycle_end_to_end() {
         assert_eq!(dataset_facts.len(), 10, "Must load 10 facts from dataset");
 
         for fact in &dataset_facts {
-            enqueue_fact(
+            enqueue_observation(
                 &conn,
                 Some(session_id),
                 compaction_id,
-                &fact.fact_type,
+                &fact.observation_type,
                 &fact.text,
             )
             .await
@@ -366,11 +368,11 @@ async fn test_crash_reconciliation_and_poison_pill() {
             .unwrap();
 
         // 1. Seed item in 'stage1_processing' with retry_count = 0 (simulating in-flight crash)
-        let id_s1 = enqueue_fact(
+        let id_s1 = enqueue_observation(
             &conn,
             Some(session_id),
             compaction_id,
-            &dataset_facts[0].fact_type,
+            &dataset_facts[0].observation_type,
             &dataset_facts[0].text,
         )
         .await
@@ -380,11 +382,11 @@ async fn test_crash_reconciliation_and_poison_pill() {
             .unwrap();
 
         // 2. Seed item in 'stage2_processing' with retry_count = 1 (simulating in-flight crash)
-        let id_s2 = enqueue_fact(
+        let id_s2 = enqueue_observation(
             &conn,
             Some(session_id),
             compaction_id,
-            &dataset_facts[1].fact_type,
+            &dataset_facts[1].observation_type,
             &dataset_facts[1].text,
         )
         .await
@@ -397,11 +399,11 @@ async fn test_crash_reconciliation_and_poison_pill() {
         .unwrap();
 
         // 3. Seed poison pill item with retry_count = 3 in 'stage2_processing'
-        let id_poison = enqueue_fact(
+        let id_poison = enqueue_observation(
             &conn,
             Some(session_id),
             compaction_id,
-            &dataset_facts[2].fact_type,
+            &dataset_facts[2].observation_type,
             &dataset_facts[2].text,
         )
         .await

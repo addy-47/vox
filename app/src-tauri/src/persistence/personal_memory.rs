@@ -4,36 +4,32 @@ use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use turso::Connection;
 
-/// Strongly-typed row representation of an evolving personal memory document.
+use crate::services::memory::personal::PersonalMemory;
+
+/// Canonical JSON for an unpopulated Personal Memory model (`db-spec.md §2.5`).
+const EMPTY_PERSONAL_MEMORY_JSON: &str = r#"{"sections":[]}"#;
+
+/// Strongly-typed row representation of a Personal Memory version, and the wire type for it.
+///
+/// The DB column `content` holds the canonical semantic JSON. This record exposes that model rendered
+/// to Markdown, so no caller can accidentally ship the canonical form over IPC.
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct PersonalMemoryRecord {
     pub id: i64,
     pub project_id: Option<String>,
+    /// Canonical semantic JSON. `skip_serializing` makes it impossible to ship over IPC.
+    #[serde(skip_serializing)]
     pub content: String,
+    /// Rendered from `content` at read time. The only representation the frontend receives.
+    pub markdown: String,
     pub version: i64,
     pub is_active: i64,
     pub last_consolidated_at: i64,
     pub updated_at: i64,
 }
 
-/// Strongly-typed row representation of a personal memory suggestion.
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
-pub struct PersonalMemorySuggestionRecord {
-    pub id: String,
-    pub base_memory_version: i64,
-    pub project_id: Option<String>,
-    pub op: String,
-    pub target_index: u32,
-    pub content: String,
-    pub status: String,
-    pub created_at: i64,
-    pub resolved_at: Option<i64>,
-}
-
-pub type MemorySuggestionRecord = PersonalMemorySuggestionRecord;
-
-/// Retrieves the active personal memory document for global scope (`project_id: None`) or a specific project.
-/// If no active record exists, falls back to the highest version or inserts a default blank record.
+/// Retrieves the active personal memory record for global scope (`project_id: None`) or a specific project.
+/// If no active record exists, falls back to the highest version or inserts the empty canonical model.
 pub async fn get_personal_memory(
     conn: &Connection,
     project_id: Option<&str>,
@@ -100,7 +96,6 @@ pub async fn get_personal_memory(
         return Ok(record);
     }
 
-    // Insert default blank record if missing
     let (pid_str, proj_arg) = if let Some(pid) = project_id {
         (Some(pid.to_string()), Some(pid.to_string()))
     } else {
@@ -109,8 +104,8 @@ pub async fn get_personal_memory(
 
     conn.execute(
         "INSERT INTO personal_memory (project_id, content, version, is_active, last_consolidated_at, updated_at)
-         VALUES (?, '', 1, 1, ?, ?)",
-        (proj_arg, now, now),
+         VALUES (?, ?, 1, 1, ?, ?)",
+        (proj_arg, EMPTY_PERSONAL_MEMORY_JSON, now, now),
     )
     .await?;
 
@@ -124,7 +119,8 @@ pub async fn get_personal_memory(
     Ok(PersonalMemoryRecord {
         id: inserted_id,
         project_id: pid_str,
-        content: String::new(),
+        content: EMPTY_PERSONAL_MEMORY_JSON.to_string(),
+        markdown: String::new(),
         version: 1,
         is_active: 1,
         last_consolidated_at: now,
@@ -132,97 +128,80 @@ pub async fn get_personal_memory(
     })
 }
 
+/// Reads one `personal_memory` row, rendering its canonical JSON into `markdown`.
 async fn parse_record(rows: &mut turso::Rows) -> Result<Option<PersonalMemoryRecord>> {
-    if let Some(row) = rows.next().await? {
-        Ok(Some(PersonalMemoryRecord {
-            id: row.get(0)?,
-            project_id: row.get(1).ok(),
-            content: row.get(2)?,
-            version: row.get(3)?,
-            is_active: row.get(4).unwrap_or(1),
-            last_consolidated_at: row.get(5)?,
-            updated_at: row.get(6)?,
-        }))
-    } else {
-        Ok(None)
+    let Some(row) = rows.next().await? else {
+        return Ok(None);
+    };
+    let version: i64 = row.get(3)?;
+    let content: String = row.get(2)?;
+    Ok(Some(PersonalMemoryRecord {
+        id: row.get(0)?,
+        project_id: row.get(1).ok(),
+        markdown: render_stored_memory(&content, version),
+        content,
+        version,
+        is_active: row.get(4).unwrap_or(1),
+        last_consolidated_at: row.get(5)?,
+        updated_at: row.get(6)?,
+    }))
+}
+
+/// Renders stored canonical JSON to Markdown, degrading to an empty string on a malformed payload.
+///
+/// A corrupt document must not fail the read: the Memory page and the system-prompt assembly both
+/// consume this, and the next consolidation pass rebuilds the model anyway.
+fn render_stored_memory(content: &str, version: i64) -> String {
+    match PersonalMemory::from_json(content) {
+        Ok(memory) => memory.render_to_markdown(),
+        Err(e) => {
+            log::warn!(
+                "[Persistence::Memory] Stored content for v{} is not valid semantic JSON ({}); rendering empty.",
+                version,
+                e
+            );
+            String::new()
+        }
     }
 }
 
-/// Saves updated content with optimistic concurrency control against `expected_version`,
-/// appending a new revision record with `is_active = 1` and marking older versions inactive.
+/// Appends a new version carrying `content` under an optimistic concurrency check.
+///
+/// `content` is the canonical semantic JSON. `expected_version` is the version the caller believes is
+/// active; a mismatch is a conflict and nothing is written. The previous version flips to
+/// `is_active = 0` and remains permanently retrievable through `list_personal_memory_versions`.
 pub async fn save_personal_memory(
     conn: &Connection,
     project_id: Option<&str>,
     content: &str,
     expected_version: i64,
 ) -> Result<PersonalMemoryRecord> {
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as i64;
-
-    let current = get_personal_memory(conn, project_id).await?;
-    if current.version != expected_version {
-        return Err(anyhow!(
-            "Optimistic version conflict for personal memory: expected version {}, found {}",
-            expected_version,
-            current.version
-        ));
-    }
-
-    conn.execute("BEGIN IMMEDIATE;", ()).await?;
-    let res: Result<PersonalMemoryRecord> = async {
-        let (proj_arg, last_consol) = (current.project_id.clone(), current.last_consolidated_at);
-        if let Some(ref pid) = proj_arg {
-            conn.execute(
-                "UPDATE personal_memory SET is_active = 0 WHERE project_id = ?",
-                (pid.clone(),),
-            )
-            .await?;
-            conn.execute(
-                "INSERT INTO personal_memory (project_id, content, version, is_active, last_consolidated_at, updated_at)
-                 VALUES (?, ?, ?, 1, ?, ?)",
-                (pid.clone(), content.to_string(), expected_version + 1, last_consol, now),
-            )
-            .await?;
-        } else {
-            conn.execute(
-                "UPDATE personal_memory SET is_active = 0 WHERE project_id IS NULL",
-                (),
-            )
-            .await?;
-            conn.execute(
-                "INSERT INTO personal_memory (project_id, content, version, is_active, last_consolidated_at, updated_at)
-                 VALUES (NULL, ?, ?, 1, ?, ?)",
-                (content.to_string(), expected_version + 1, last_consol, now),
-            )
-            .await?;
-        }
-
-        get_personal_memory(conn, project_id).await
-    }
-    .await;
-
-    match res {
-        Ok(rec) => {
-            conn.execute("COMMIT;", ()).await?;
-            Ok(rec)
-        }
-        Err(e) => {
-            let _ = conn.execute("ROLLBACK;", ()).await;
-            Err(e)
-        }
-    }
+    append_memory_version(conn, project_id, content, expected_version, false).await
 }
 
-/// Saves consolidated content with optimistic concurrency control, stamping `last_consolidated_at`.
-/// Appends a new revision record with `is_active = 1` and marks older versions inactive.
+/// Appends a new version carrying `content`, stamping `last_consolidated_at` with the commit time.
+///
+/// Identical to `save_personal_memory` except that the new version also records when consolidation
+/// produced it, which the daily scheduler and the missed-run notification read.
 pub async fn save_consolidated_memory(
     conn: &Connection,
     project_id: Option<&str>,
     content: &str,
     expected_version: i64,
 ) -> Result<PersonalMemoryRecord> {
+    append_memory_version(conn, project_id, content, expected_version, true).await
+}
+
+/// Inserts the new active version and deactivates its predecessors inside one transaction.
+///
+/// Shared by manual saves and consolidation commits so both paths get identical version bookkeeping.
+async fn append_memory_version(
+    conn: &Connection,
+    project_id: Option<&str>,
+    content: &str,
+    expected_version: i64,
+    stamp_consolidated_at: bool,
+) -> Result<PersonalMemoryRecord> {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
@@ -237,35 +216,24 @@ pub async fn save_consolidated_memory(
         ));
     }
 
+    let last_consolidated_at = if stamp_consolidated_at {
+        now
+    } else {
+        current.last_consolidated_at
+    };
+
     conn.execute("BEGIN IMMEDIATE;", ()).await?;
     let res: Result<PersonalMemoryRecord> = async {
-        let proj_arg = current.project_id.clone();
-        if let Some(ref pid) = proj_arg {
-            conn.execute(
-                "UPDATE personal_memory SET is_active = 0 WHERE project_id = ?",
-                (pid.clone(),),
-            )
-            .await?;
-            conn.execute(
-                "INSERT INTO personal_memory (project_id, content, version, is_active, last_consolidated_at, updated_at)
-                 VALUES (?, ?, ?, 1, ?, ?)",
-                (pid.clone(), content.to_string(), expected_version + 1, now, now),
-            )
-            .await?;
-        } else {
-            conn.execute(
-                "UPDATE personal_memory SET is_active = 0 WHERE project_id IS NULL",
-                (),
-            )
-            .await?;
-            conn.execute(
-                "INSERT INTO personal_memory (project_id, content, version, is_active, last_consolidated_at, updated_at)
-                 VALUES (NULL, ?, ?, 1, ?, ?)",
-                (content.to_string(), expected_version + 1, now, now),
-            )
-            .await?;
-        }
-
+        deactivate_all_versions(conn, current.project_id.as_deref()).await?;
+        insert_memory_version(
+            conn,
+            current.project_id.as_deref(),
+            content,
+            expected_version + 1,
+            last_consolidated_at,
+            now,
+        )
+        .await?;
         get_personal_memory(conn, project_id).await
     }
     .await;
@@ -276,21 +244,66 @@ pub async fn save_consolidated_memory(
             Ok(rec)
         }
         Err(e) => {
-            let _ = conn.execute("ROLLBACK;", ()).await;
+            if let Err(rb_err) = conn.execute("ROLLBACK;", ()).await {
+                log::warn!("[Persistence::Memory] Rollback failed: {}", rb_err);
+            }
             Err(e)
         }
     }
 }
 
-/// Updates personal memory content as part of background consolidation, updating both
-/// `last_consolidated_at` and `updated_at`.
-pub async fn update_consolidated_memory(
+/// Marks every version of a project scope inactive.
+async fn deactivate_all_versions(
     conn: &Connection,
     project_id: Option<&str>,
-    new_content: &str,
-) -> Result<PersonalMemoryRecord> {
-    let current = get_personal_memory(conn, project_id).await?;
-    save_consolidated_memory(conn, project_id, new_content, current.version).await
+) -> Result<()> {
+    match project_id {
+        Some(pid) => {
+            conn.execute(
+                "UPDATE personal_memory SET is_active = 0 WHERE project_id = ?",
+                (pid.to_string(),),
+            )
+            .await?;
+        }
+        None => {
+            conn.execute(
+                "UPDATE personal_memory SET is_active = 0 WHERE project_id IS NULL",
+                (),
+            )
+            .await?;
+        }
+    }
+    Ok(())
+}
+
+/// Inserts one `personal_memory` row as the active version.
+async fn insert_memory_version(
+    conn: &Connection,
+    project_id: Option<&str>,
+    content: &str,
+    version: i64,
+    last_consolidated_at: i64,
+    now: i64,
+) -> Result<()> {
+    match project_id {
+        Some(pid) => {
+            conn.execute(
+                "INSERT INTO personal_memory (project_id, content, version, is_active, last_consolidated_at, updated_at)
+                 VALUES (?, ?, ?, 1, ?, ?)",
+                (pid.to_string(), content.to_string(), version, last_consolidated_at, now),
+            )
+            .await?;
+        }
+        None => {
+            conn.execute(
+                "INSERT INTO personal_memory (project_id, content, version, is_active, last_consolidated_at, updated_at)
+                 VALUES (NULL, ?, ?, 1, ?, ?)",
+                (content.to_string(), version, last_consolidated_at, now),
+            )
+            .await?;
+        }
+    }
+    Ok(())
 }
 
 /// Lists all historical versions of personal memory for a project (ordered newest version first).
@@ -320,11 +333,14 @@ pub async fn list_personal_memory_versions(
 
     let mut list = Vec::new();
     while let Some(row) = rows.next().await? {
+        let version: i64 = row.get(3)?;
+        let content: String = row.get(2)?;
         list.push(PersonalMemoryRecord {
             id: row.get(0)?,
             project_id: row.get(1).ok(),
-            content: row.get(2)?,
-            version: row.get(3)?,
+            markdown: render_stored_memory(&content, version),
+            content,
+            version,
             is_active: row.get(4).unwrap_or(1),
             last_consolidated_at: row.get(5)?,
             updated_at: row.get(6)?,
@@ -354,7 +370,11 @@ pub async fn set_active_personal_memory_version(
                 )
                 .await?;
             if affected == 0 {
-                return Err(anyhow!("Version {} not found for project {}", target_version, pid));
+                return Err(anyhow!(
+                    "Version {} not found for project {}",
+                    target_version,
+                    pid
+                ));
             }
         } else {
             conn.execute(
@@ -369,7 +389,10 @@ pub async fn set_active_personal_memory_version(
                 )
                 .await?;
             if affected == 0 {
-                return Err(anyhow!("Version {} not found for global personal memory", target_version));
+                return Err(anyhow!(
+                    "Version {} not found for global personal memory",
+                    target_version
+                ));
             }
         }
         get_personal_memory(conn, project_id).await
@@ -382,40 +405,70 @@ pub async fn set_active_personal_memory_version(
             Ok(rec)
         }
         Err(e) => {
-            let _ = conn.execute("ROLLBACK;", ()).await;
+            if let Err(rb_err) = conn.execute("ROLLBACK;", ()).await {
+                log::warn!("[Persistence::Memory] Rollback failed: {}", rb_err);
+            }
             Err(e)
         }
     }
 }
 
-/// Inserts a batch of personal memory suggestions within a single transaction.
-pub async fn insert_personal_memory_suggestions(
+/// Strongly-typed row representation of a pending semantic memory revision.
+///
+/// `target_id` is a persistent `sec_*` or `blk_*` ID, not a positional index. That is what makes each
+/// revision independently resolvable: accepting one never shifts the target of another, so the
+/// re-anchoring arithmetic the positional design required has no analogue here.
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+pub struct PersonalMemoryRevisionRecord {
+    pub id: String,
+    pub base_memory_version: i64,
+    pub project_id: Option<String>,
+    pub op: String,
+    pub target_id: String,
+    /// JSON payload: `{ "text": "..." }` for block operations,
+    /// `{ "title": "...", "blocks": ["..."] }` for `create_section`.
+    pub content: String,
+    pub status: String,
+    pub created_at: i64,
+    pub resolved_at: Option<i64>,
+}
+
+/// A single accept or reject instruction for one pending revision.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RevisionDecision {
+    pub id: String,
+    /// `"accept"` or `"reject"`. Validated at the persistence boundary; anything else is an error.
+    pub action: String,
+}
+
+/// Inserts a batch of pending revisions within a single transaction.
+pub async fn insert_personal_memory_revisions(
     conn: &Connection,
-    suggestions: &[PersonalMemorySuggestionRecord],
+    revisions: &[PersonalMemoryRevisionRecord],
 ) -> Result<()> {
-    if suggestions.is_empty() {
+    if revisions.is_empty() {
         return Ok(());
     }
 
     conn.execute("BEGIN IMMEDIATE;", ()).await?;
 
     let tx_res: Result<()> = async {
-        for s in suggestions {
+        for rev in revisions {
             conn.execute(
-                "INSERT INTO personal_memory_suggestions (
+                "INSERT INTO personal_memory_revisions (
                     id, base_memory_version, project_id, op,
-                    target_index, content, status, created_at, resolved_at
+                    target_id, content, status, created_at, resolved_at
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
-                    s.id.clone(),
-                    s.base_memory_version,
-                    s.project_id.clone(),
-                    s.op.clone(),
-                    s.target_index,
-                    s.content.clone(),
-                    s.status.clone(),
-                    s.created_at,
-                    s.resolved_at,
+                    rev.id.clone(),
+                    rev.base_memory_version,
+                    rev.project_id.clone(),
+                    rev.op.clone(),
+                    rev.target_id.clone(),
+                    rev.content.clone(),
+                    rev.status.clone(),
+                    rev.created_at,
+                    rev.resolved_at,
                 ),
             )
             .await?;
@@ -430,21 +483,23 @@ pub async fn insert_personal_memory_suggestions(
             Ok(())
         }
         Err(e) => {
-            let _ = conn.execute("ROLLBACK;", ()).await;
+            if let Err(rb_err) = conn.execute("ROLLBACK;", ()).await {
+                log::warn!("[Persistence::Memory] Rollback failed: {}", rb_err);
+            }
             Err(e)
         }
     }
 }
 
-/// Fetches pending suggestions for a project scope (ordered oldest created first).
-pub async fn fetch_pending_suggestions(
+/// Fetches pending revisions for a project scope (ordered oldest created first).
+pub async fn fetch_pending_revisions(
     conn: &Connection,
     project_id: Option<&str>,
-) -> Result<Vec<PersonalMemorySuggestionRecord>> {
+) -> Result<Vec<PersonalMemoryRevisionRecord>> {
     let mut rows = if let Some(pid) = project_id {
         conn.query(
-            "SELECT id, base_memory_version, project_id, op, target_index, content, status, created_at, resolved_at
-             FROM personal_memory_suggestions
+            "SELECT id, base_memory_version, project_id, op, target_id, content, status, created_at, resolved_at
+             FROM personal_memory_revisions
              WHERE project_id = ? AND status = 'pending'
              ORDER BY created_at ASC",
             (pid.to_string(),),
@@ -452,8 +507,8 @@ pub async fn fetch_pending_suggestions(
         .await?
     } else {
         conn.query(
-            "SELECT id, base_memory_version, project_id, op, target_index, content, status, created_at, resolved_at
-             FROM personal_memory_suggestions
+            "SELECT id, base_memory_version, project_id, op, target_id, content, status, created_at, resolved_at
+             FROM personal_memory_revisions
              WHERE project_id IS NULL AND status = 'pending'
              ORDER BY created_at ASC",
             (),
@@ -461,14 +516,14 @@ pub async fn fetch_pending_suggestions(
         .await?
     };
 
-    let mut suggestions = Vec::new();
+    let mut revisions = Vec::new();
     while let Some(row) = rows.next().await? {
-        suggestions.push(PersonalMemorySuggestionRecord {
+        revisions.push(PersonalMemoryRevisionRecord {
             id: row.get(0)?,
             base_memory_version: row.get(1)?,
             project_id: row.get(2).ok(),
             op: row.get(3)?,
-            target_index: row.get(4)?,
+            target_id: row.get(4)?,
             content: row.get(5)?,
             status: row.get(6)?,
             created_at: row.get(7)?,
@@ -476,22 +531,52 @@ pub async fn fetch_pending_suggestions(
         });
     }
 
-    Ok(suggestions)
+    Ok(revisions)
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct SuggestionDecision {
-    pub id: String,
-    pub action: String, // "accept" | "reject"
-}
-
-/// Resolves a batch of personal memory suggestions in a single atomic transaction.
-/// Either accepts suggestions (applying new_content, bumping version, marking suggestions 'accepted')
-/// and/or rejects suggestions (marking suggestions 'rejected').
-pub async fn resolve_batch_suggestions_transaction(
+/// Bulk-rejects every pending revision of a project scope, used when regeneration supersedes all IDs.
+///
+/// Accepting a bulk rejection without emitting a reason is deliberate: regeneration replaces the
+/// entire structure, so every pending revision targets an ID that no longer exists by construction.
+pub async fn reject_all_pending_revisions(
     conn: &Connection,
     project_id: Option<&str>,
-    decisions: &[SuggestionDecision],
+) -> Result<usize> {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64;
+
+    let (sql, arg) = match project_id {
+        Some(pid) => (
+            "UPDATE personal_memory_revisions SET status = 'rejected', resolved_at = ?
+             WHERE project_id = ? AND status = 'pending'",
+            Some(pid.to_string()),
+        ),
+        None => (
+            "UPDATE personal_memory_revisions SET status = 'rejected', resolved_at = ?
+             WHERE project_id IS NULL AND status = 'pending'",
+            None,
+        ),
+    };
+
+    let affected = match arg {
+        Some(pid) => conn.execute(sql, (now, pid)).await?,
+        None => conn.execute(sql, (now,)).await?,
+    };
+    Ok(affected as usize)
+}
+
+/// Resolves a batch of personal memory revisions in a single atomic transaction.
+///
+/// Accepted revisions write `new_content` as the next active memory version; every decision in
+/// `decisions` flips its row to `'accepted'` or `'rejected'`. Remaining pending revisions are left
+/// untouched: their `base_memory_version` is generation-time provenance, and because operations
+/// address persistent semantic IDs there is nothing to re-anchor.
+pub async fn resolve_batch_revisions_transaction(
+    conn: &Connection,
+    project_id: Option<&str>,
+    decisions: &[RevisionDecision],
     new_content: Option<&str>,
 ) -> Result<PersonalMemoryRecord> {
     if decisions.is_empty() {
@@ -500,21 +585,18 @@ pub async fn resolve_batch_suggestions_transaction(
 
     for d in decisions {
         if d.action != "accept" && d.action != "reject" {
-            return Err(anyhow!(
-                "Invalid suggestion resolution action: {}",
-                d.action
-            ));
+            return Err(anyhow!("Invalid revision resolution action: {}", d.action));
         }
     }
 
     let current = get_personal_memory(conn, project_id).await?;
-    let pending = fetch_pending_suggestions(conn, project_id).await?;
-    let pending_map: std::collections::HashMap<String, PersonalMemorySuggestionRecord> =
-        pending.into_iter().map(|s| (s.id.clone(), s)).collect();
+    let pending = fetch_pending_revisions(conn, project_id).await?;
+    let pending_ids: std::collections::HashSet<&str> =
+        pending.iter().map(|r| r.id.as_str()).collect();
 
     for d in decisions {
-        if !pending_map.contains_key(&d.id) {
-            return Err(anyhow!("Pending suggestion '{}' not found", d.id));
+        if !pending_ids.contains(d.id.as_str()) {
+            return Err(anyhow!("Pending revision '{}' not found", d.id));
         }
     }
 
@@ -523,138 +605,32 @@ pub async fn resolve_batch_suggestions_transaction(
         .unwrap_or_default()
         .as_millis() as i64;
 
-    let accepted: Vec<&SuggestionDecision> =
+    let accepted: Vec<&RevisionDecision> =
         decisions.iter().filter(|d| d.action == "accept").collect();
-
-    let rejected: Vec<&SuggestionDecision> =
+    let rejected: Vec<&RevisionDecision> =
         decisions.iter().filter(|d| d.action == "reject").collect();
-
-    let all_resolved_ids: Vec<String> = decisions.iter().map(|d| d.id.clone()).collect();
 
     conn.execute("BEGIN IMMEDIATE;", ()).await?;
 
     let tx_res: Result<PersonalMemoryRecord> = async {
-        let proj_arg = current.project_id.clone();
-
         if !accepted.is_empty() {
-            let updated_markdown = new_content
-                .ok_or_else(|| anyhow!("new_content required when accepting suggestions"))?;
-
-            if let Some(ref pid) = proj_arg {
-                conn.execute(
-                    "UPDATE personal_memory SET is_active = 0 WHERE project_id = ?",
-                    (pid.clone(),),
-                )
-                .await?;
-                conn.execute(
-                    "INSERT INTO personal_memory (project_id, content, version, is_active, last_consolidated_at, updated_at)
-                     VALUES (?, ?, ?, 1, ?, ?)",
-                    (pid.clone(), updated_markdown.to_string(), current.version + 1, now, now),
-                )
-                .await?;
-            } else {
-                conn.execute(
-                    "UPDATE personal_memory SET is_active = 0 WHERE project_id IS NULL",
-                    (),
-                )
-                .await?;
-                conn.execute(
-                    "INSERT INTO personal_memory (project_id, content, version, is_active, last_consolidated_at, updated_at)
-                     VALUES (NULL, ?, ?, 1, ?, ?)",
-                    (updated_markdown.to_string(), current.version + 1, now, now),
-                )
-                .await?;
-            }
-
-            let quoted_accepted: Vec<String> = accepted.iter().map(|d| format!("'{}'", d.id)).collect();
-            let accept_sql = format!(
-                "UPDATE personal_memory_suggestions SET status = 'accepted', resolved_at = ? WHERE id IN ({})",
-                quoted_accepted.join(",")
-            );
-            conn.execute(&accept_sql, (now,)).await?;
-
-            // If a single suggestion was accepted and others remain pending, apply INVARIANT 5.3-B arithmetic re-anchoring
-            if accepted.len() == 1 {
-                let resolved_sug = &pending_map[&accepted[0].id];
-                let k = resolved_sug.target_index;
-                let sug_in_clause = quoted_accepted.join(",");
-
-                if resolved_sug.op == "insert_after" {
-                    let shift_sql = if proj_arg.is_some() {
-                        format!(
-                            "UPDATE personal_memory_suggestions \
-                             SET target_index = target_index + 1 \
-                             WHERE project_id = ? AND status = 'pending' AND id NOT IN ({}) AND target_index > ?",
-                            sug_in_clause
-                        )
-                    } else {
-                        format!(
-                            "UPDATE personal_memory_suggestions \
-                             SET target_index = target_index + 1 \
-                             WHERE project_id IS NULL AND status = 'pending' AND id NOT IN ({}) AND target_index > ?",
-                            sug_in_clause
-                        )
-                    };
-                    if let Some(ref pid) = proj_arg {
-                        conn.execute(&shift_sql, (pid.clone(), k)).await?;
-                    } else {
-                        conn.execute(&shift_sql, (k,)).await?;
-                    }
-                } else if resolved_sug.op == "delete" {
-                    let shift_sql = if proj_arg.is_some() {
-                        format!(
-                            "UPDATE personal_memory_suggestions \
-                             SET target_index = target_index - 1 \
-                             WHERE project_id = ? AND status = 'pending' AND id NOT IN ({}) AND target_index > ?",
-                            sug_in_clause
-                        )
-                    } else {
-                        format!(
-                            "UPDATE personal_memory_suggestions \
-                             SET target_index = target_index - 1 \
-                             WHERE project_id IS NULL AND status = 'pending' AND id NOT IN ({}) AND target_index > ?",
-                            sug_in_clause
-                        )
-                    };
-                    if let Some(ref pid) = proj_arg {
-                        conn.execute(&shift_sql, (pid.clone(), k)).await?;
-                    } else {
-                        conn.execute(&shift_sql, (k,)).await?;
-                    }
-                }
-            }
-
-            // Update base_memory_version for all remaining pending suggestions
-            let quoted_all: Vec<String> = all_resolved_ids.iter().map(|id| format!("'{}'", id)).collect();
-            let reanchor_sql = if proj_arg.is_some() {
-                format!(
-                    "UPDATE personal_memory_suggestions \
-                     SET base_memory_version = ? \
-                     WHERE project_id = ? AND status = 'pending' AND id NOT IN ({})",
-                    quoted_all.join(",")
-                )
-            } else {
-                format!(
-                    "UPDATE personal_memory_suggestions \
-                     SET base_memory_version = ? \
-                     WHERE project_id IS NULL AND status = 'pending' AND id NOT IN ({})",
-                    quoted_all.join(",")
-                )
-            };
-            if let Some(ref pid) = proj_arg {
-                conn.execute(&reanchor_sql, (current.version + 1, pid.clone())).await?;
-            } else {
-                conn.execute(&reanchor_sql, (current.version + 1,)).await?;
-            }
+            let updated_json = new_content
+                .ok_or_else(|| anyhow!("new_content required when accepting revisions"))?;
+            deactivate_all_versions(conn, current.project_id.as_deref()).await?;
+            insert_memory_version(
+                conn,
+                current.project_id.as_deref(),
+                updated_json,
+                current.version + 1,
+                now,
+                now,
+            )
+            .await?;
+            set_revision_status(conn, &accepted, "accepted", now).await?;
         }
 
         if !rejected.is_empty() {
-            let quoted_rejected: Vec<String> = rejected.iter().map(|d| format!("'{}'", d.id)).collect();
-            let reject_sql = format!(
-                "UPDATE personal_memory_suggestions SET status = 'rejected', resolved_at = ? WHERE id IN ({})",
-                quoted_rejected.join(",")
-            );
-            conn.execute(&reject_sql, (now,)).await?;
+            set_revision_status(conn, &rejected, "rejected", now).await?;
         }
 
         get_personal_memory(conn, project_id).await
@@ -667,53 +643,29 @@ pub async fn resolve_batch_suggestions_transaction(
             Ok(rec)
         }
         Err(e) => {
-            let _ = conn.execute("ROLLBACK;", ()).await;
+            if let Err(rb_err) = conn.execute("ROLLBACK;", ()).await {
+                log::warn!("[Persistence::Memory] Rollback failed: {}", rb_err);
+            }
             Err(e)
         }
     }
 }
 
-/// Resolves personal memory suggestions in a single atomic transaction.
-/// Either accepts suggestions (applying new_content, bumping version, marking facts 'consolidated')
-/// or rejects suggestions (marking suggestions and associated facts 'rejected').
-pub async fn resolve_suggestions_transaction(
+/// Flips the given revision rows to `status` with a resolution timestamp.
+async fn set_revision_status(
     conn: &Connection,
-    project_id: Option<&str>,
-    target_id: Option<&str>,
-    action: &str,
-    new_content: Option<&str>,
-) -> Result<PersonalMemoryRecord> {
-    if action != "accept" && action != "reject" {
-        return Err(anyhow!("Invalid suggestion resolution action: {}", action));
-    }
-
-    let current = get_personal_memory(conn, project_id).await?;
-    let pending = fetch_pending_suggestions(conn, project_id).await?;
-
-    let to_resolve: Vec<PersonalMemorySuggestionRecord> = if let Some(tid) = target_id {
-        let found = pending
-            .into_iter()
-            .filter(|s| s.id == tid)
-            .collect::<Vec<_>>();
-        if found.is_empty() {
-            return Err(anyhow!("Pending suggestion '{}' not found", tid));
-        }
-        found
-    } else {
-        pending
-    };
-
-    if to_resolve.is_empty() {
-        return Ok(current);
-    }
-
-    let decisions: Vec<SuggestionDecision> = to_resolve
-        .into_iter()
-        .map(|s| SuggestionDecision {
-            id: s.id,
-            action: action.to_string(),
-        })
+    decisions: &[&RevisionDecision],
+    status: &str,
+    now: i64,
+) -> Result<()> {
+    let quoted: Vec<String> = decisions
+        .iter()
+        .map(|d| format!("'{}'", d.id.replace('\'', "''")))
         .collect();
-
-    resolve_batch_suggestions_transaction(conn, project_id, &decisions, new_content).await
+    let sql = format!(
+        "UPDATE personal_memory_revisions SET status = ?, resolved_at = ? WHERE id IN ({})",
+        quoted.join(",")
+    );
+    conn.execute(&sql, (status.to_string(), now)).await?;
+    Ok(())
 }

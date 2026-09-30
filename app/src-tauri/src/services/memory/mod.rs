@@ -49,17 +49,15 @@ pub use ml::{
     estimate_tokens, unload_all_onnx_models, unload_memory_pipeline_onnx_models, warmup_tokenizer,
 };
 pub use personal::{
-    apply_patch_operations, batch_resolve_memory_suggestions, consolidate_personal_memory,
-    regenerate_personal_memory, resolve_memory_suggestions, MemoryPatchOperation,
-    MemorySuggestionError, PersonalConsolidationOutput,
+    apply_operations, batch_resolve_memory_revisions, consolidate_personal_memory,
+    regenerate_personal_memory, resolve_operations, PersonalMemory, ResolvedOp,
 };
 pub use scheduler::{
     check_missed_consolidation_on_boot, spawn_consolidation_scheduler,
     start_consolidation_scheduler, stop_consolidation_scheduler,
 };
 
-pub use crate::core::error::MemoryError;
-pub use crate::persistence::has_unfinished_items;
+pub use crate::{core::error::MemoryError, persistence::has_unfinished_items};
 
 pub const QUIET_INGESTION_DEBOUNCE_SECS: u64 = 30;
 pub const COMPACTION_SENTINEL_TURN_ID: u32 = 999_999;

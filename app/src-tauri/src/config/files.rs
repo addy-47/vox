@@ -3,8 +3,8 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 use super::settings::{
-    AppearanceSettings, AudioSettings, InteractionSettings, PersonalMemorySettings,
-    PersonaSettings, RealtimeSettings, SystemSettings, VoxSettings, WorkingMemorySettings,
+    AppearanceSettings, AudioSettings, InteractionSettings, PersonaSettings,
+    PersonalMemorySettings, RealtimeSettings, SystemSettings, VoxSettings, WorkingMemorySettings,
 };
 use crate::{
     core::defaults::{
@@ -17,7 +17,7 @@ use crate::{
         stt::{SttActiveProvider, SttCloudConfig, SttEmbeddedConfig, SttSettings},
         tts::{
             TtsActiveProvider, TtsChatterboxConfig, TtsChatterboxRemoteConfig, TtsEdgeConfig,
-            TtsKokoroConfig, TtsSupertonicConfig, TtsSettings, TtsZipvoiceConfig,
+            TtsKokoroConfig, TtsSettings, TtsSupertonicConfig, TtsZipvoiceConfig,
         },
         vad::VadSettings,
     },

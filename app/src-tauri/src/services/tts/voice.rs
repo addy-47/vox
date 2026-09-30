@@ -17,7 +17,8 @@ use symphonia_core::audio::{Audio, GenericAudioBufferRef};
 use crate::{
     services::tts::{
         providers::edge_tts::get_trusted_client_token, CHATTERBOX_MODEL_DIR, EDGE_TTS_USER_AGENT,
-        EDGE_TTS_VOICES_URL_BASE, MODEL_FILE_TTS_CHATTERBOX_S3GEN, MODEL_FILE_TTS_CHATTERBOX_T3, TTS_SAMPLE_RATE,
+        EDGE_TTS_VOICES_URL_BASE, MODEL_FILE_TTS_CHATTERBOX_S3GEN, MODEL_FILE_TTS_CHATTERBOX_T3,
+        TTS_SAMPLE_RATE,
     },
     utils::paths::model_dir,
 };

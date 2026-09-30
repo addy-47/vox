@@ -10,7 +10,6 @@ pub use config::{
     TtsVoiceSource, TtsZipvoiceConfig,
 };
 pub use factory::{caps_for_id, create_tts_provider, resolve_reference_audio};
-pub use voice::VoiceProfile;
 pub use providers::{
     chatterbox::ChatterboxEngine,
     chatterbox_remote::ChatterboxRemoteProvider,
@@ -23,6 +22,7 @@ pub use providers::{
     zipvoice::{resolve_zipvoice_reference, ZipvoiceEngine, ZipvoiceReference, ZipvoiceVoiceEntry},
     TtsProvider,
 };
+pub use voice::VoiceProfile;
 
 pub use crate::core::error::TtsError;
 

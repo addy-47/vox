@@ -16,7 +16,9 @@ use crate::{
             actor::create_llm_provider_from_llm_settings, LlmProvider, QWEN_MODEL_DIR,
             QWEN_MODEL_FILE,
         },
-        memory::personal::consolidate_personal_memory,
+        memory::personal::{
+            consolidate_personal_memory, ConsolidateOutcome, ConsolidationRequest,
+        },
         notifications::{notify, Action, ActionPayload, NotificationCategory, NotificationParams},
     },
     utils::paths,
@@ -64,19 +66,36 @@ pub async fn run_consolidation_once<R: tauri::Runtime>(
     let provider = resolve_provider(state)
         .ok_or_else(|| anyhow!("Failed to initialize LLM provider for consolidation"))?;
 
-    let llm_settings = state.settings.read().ok().map(|s| s.llm.clone());
+    let (llm_settings, memory_settings) = {
+        let guard = state
+            .settings
+            .read()
+            .map_err(|_| anyhow!("Failed to acquire settings for consolidation"))?;
+        (guard.llm.clone(), guard.personal_memory.clone())
+    };
     let conn = state.db.connect()?;
-    let record = consolidate_personal_memory(
-        &conn,
-        provider.as_ref(),
-        None,
-        None,
-        llm_settings.as_ref(),
-        Some(crate::services::memory::personal::ConsolidationConflictPolicy::QueueBehind),
-    )
+    let outcome = consolidate_personal_memory(ConsolidationRequest {
+        conn: &conn,
+        llm_provider: provider.as_ref(),
+        comments: None,
+        project_id: None,
+        memory_settings: &memory_settings,
+        llm_settings: Some(&llm_settings),
+        forced: true,
+    })
     .await?;
 
-    if let Err(e) = emit_ipc(app, IpcEvent::PersonalMemoryUpdated(record)) {
+    let ConsolidateOutcome::Completed { record } = outcome else {
+        log::info!(
+            "[Memory::Scheduler] Scheduled consolidation deferred for user resolution; no new version written."
+        );
+        return Ok(());
+    };
+
+    if let Err(e) = emit_ipc(
+        app,
+        IpcEvent::PersonalMemoryUpdated(record),
+    ) {
         log::warn!(
             "[Memory::Scheduler] Failed to emit PersonalMemoryUpdated: {}",
             e

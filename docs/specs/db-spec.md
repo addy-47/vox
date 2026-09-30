@@ -102,7 +102,7 @@ Represents an ongoing or historical conversation session.
 
 *Cascade & Deletion Boundaries:*
 - **Soft Delete**: `UPDATE sessions SET deleted_at = ? WHERE id = ?`. Default queries filter `WHERE deleted_at IS NULL`.
-- **Hard Delete**: `DELETE FROM sessions WHERE id = ?`. Cascades strictly down to `turns` and `session_compactions` (`ON DELETE CASCADE`). It does **NOT** delete extracted facts, vectors, or personal memory.
+- **Hard Delete**: `DELETE FROM sessions WHERE id = ?`. Cascades strictly down to `turns` and `session_compactions` (`ON DELETE CASCADE`). It does **NOT** delete extracted observations, vectors, or personal memory.
 
 *Indexes:*
 - `idx_sessions_project_updated`: `(project_id, updated_at DESC)`
@@ -150,15 +150,15 @@ Tracks rolling compaction-of-compactions passes and retains raw outputs for roll
 ---
 
 ### 2.5 `personal_memory`
-Evolving user knowledge document with append-only historical versioning, structured for global default and future project-scoped personalization.
+Evolving user knowledge model with append-only historical versioning, structured for global default and future project-scoped personalization. The canonical representation is a **structured semantic JSON object** (sections and prose blocks, per `memory-spec.md §5.1`). Markdown is a derived rendering produced on demand — never the source of truth.
 
 | Column | Type | Constraints | Description |
 |---|---|---|---|
 | `id` | INTEGER | PRIMARY KEY AUTOINCREMENT | Row ID |
 | `project_id` | TEXT | NULLABLE REFERENCES `projects(id)` ON DELETE CASCADE | NULL for global default personal memory; project ID for project-specific memory |
-| `content` | TEXT | NOT NULL | Markdown document text |
+| `content` | TEXT | NOT NULL | Canonical Personal Memory semantic JSON (`{ "sections": [...] }`). An unpopulated memory is `{"sections":[]}`, never an empty string. |
 | `version` | INTEGER | NOT NULL DEFAULT 1 | Monotonic revision counter |
-| `is_active` | INTEGER | NOT NULL DEFAULT 1 | Boolean (1/0): 1 for the current active profile injected into LLM system prompt; 0 for archived versions |
+| `is_active` | INTEGER | NOT NULL DEFAULT 1 | Boolean (1/0): 1 for the current active profile rendered to Markdown and injected into the LLM system prompt; 0 for archived versions |
 | `last_consolidated_at` | INTEGER | NOT NULL | Millisecond epoch of last LLM merge |
 | `updated_at` | INTEGER | NOT NULL | Millisecond epoch of last edit (manual or LLM) |
 
@@ -168,29 +168,30 @@ Evolving user knowledge document with append-only historical versioning, structu
 
 ---
 
-### 2.5.1 `personal_memory_suggestions`
-Uncommitted delta operations proposed by consolidation or comment processing, pending user acceptance or auto-apply.
+### 2.5.1 `personal_memory_revisions`
+Pending semantic operations proposed by consolidation or comment processing, awaiting user acceptance, auto-apply, or rejection. Supersedes the retired `personal_memory_suggestions` table, whose positional `target_index` addressing has no semantic equivalent.
 
 | Column | Type | Constraints | Description |
 |---|---|---|---|
-| `id` | TEXT | PRIMARY KEY | Suggestion ID: `sug_{timestamp}_{uuid}` |
-| `base_memory_version` | INTEGER | NOT NULL REFERENCES `personal_memory(version)` ON DELETE CASCADE | Target document version this patch applies to |
+| `id` | TEXT | PRIMARY KEY | Revision ID: `rev_{timestamp}_{4-char-uuid}` |
+| `base_memory_version` | INTEGER | NOT NULL | Memory version this revision was generated against. Informational provenance only — it is never re-anchored or rewritten on acceptance, because operations address persistent semantic IDs rather than positions. |
 | `project_id` | TEXT | NULLABLE REFERENCES `projects(id)` ON DELETE CASCADE | Associated project scope |
-| `op` | TEXT | NOT NULL | `'insert_after'`, `'replace'`, `'delete'` |
-| `target_index` | INTEGER | NOT NULL | 1-based content element index (0 for prepend in `insert_after`) |
-| `content` | TEXT | NOT NULL | New text to insert or replace (empty for delete) |
+| `op` | TEXT | NOT NULL | `'create_section'`, `'create_block'`, `'update_block'`, `'delete_block'` |
+| `target_id` | TEXT | NOT NULL | Persistent `sec_*` or `blk_*` ID this operation targets. For `create_block`: the section to append to. For `create_section`: empty string (new entity). |
+| `content` | TEXT | NOT NULL | JSON payload: `{ "text": "..." }` for block operations, `{ "title": "...", "blocks": ["..."] }` for `create_section` |
 | `status` | TEXT | NOT NULL DEFAULT 'pending' | `'pending'`, `'accepted'`, `'rejected'` |
 | `created_at` | INTEGER | NOT NULL | Millisecond epoch |
 | `resolved_at` | INTEGER | NULLABLE | Millisecond epoch |
 
 *Indexes:*
-- `idx_suggestions_pending`: `(base_memory_version, status)`
-- `idx_suggestions_created`: `(created_at DESC)`
+- `idx_revisions_pending`: `(base_memory_version, status)`
+- `idx_revisions_status_proj`: `(project_id, status)`
+- `idx_revisions_created`: `(created_at DESC)`
 
 ---
 
 ### 2.6 `memory_ingestion_queue` (Staging)
-Temporary batch-processing staging queue for extracted facts awaiting deduplication.
+Temporary batch-processing staging queue for extracted observations awaiting deduplication.
 
 | Column | Type | Constraints | Description |
 |---|---|---|---|
@@ -219,25 +220,23 @@ Temporary batch-processing staging queue for extracted facts awaiting deduplicat
 ---
 
 ### 2.7 `memory_facts`
-Permanent fact registry storing deduped, active and historical facts.
+Permanent observation registry storing deduped, active and historical observations extracted by compaction. A "fact" is not memory; it is raw evidence extracted from a conversation and an *input* to Personal Memory formation.
 
 | Column | Type | Constraints | Description |
 |---|---|---|---|
-| `id` | TEXT | PRIMARY KEY | Fact ID: `fact_{timestamp}_{uuid}` |
+| `id` | TEXT | PRIMARY KEY | Observation ID: `fact_{timestamp}_{uuid}` (the persisted ID prefix is unchanged) |
 | `session_id` | INTEGER | NULLABLE REFERENCES `sessions(id)` ON DELETE SET NULL | Provenance session |
 | `compaction_id` | INTEGER | NOT NULL REFERENCES `session_compactions(id)` ON DELETE CASCADE | Source compaction provenance |
 | `type` | TEXT | NOT NULL | `'personal'`, `'objective'`, `'workdone'`, `'blocker'`, `'next_step'`, `'pitfall'` |
-| `text` | TEXT | NOT NULL | Deduped fact text |
-| `status` | TEXT | NOT NULL DEFAULT 'active' | Strictly `'active'`, `'inactive'`, `'staged'`, `'consolidated'`, or `'rejected'` |
+| `text` | TEXT | NOT NULL | Deduped observation text |
+| `status` | TEXT | NOT NULL DEFAULT 'active' | Strictly `'active'`, `'inactive'`, or `'integrated'` |
 | `created_at` | INTEGER | NOT NULL | Millisecond epoch |
 | `updated_at` | INTEGER | NOT NULL | Millisecond epoch |
 
 *Status Values:*
-- `'active'`: Currently valid fact available for retrieval or consolidation.
-- `'inactive'`: Deactivated fact (superseded by newer duplicate in dedup).
-- `'staged'`: Personal fact linked to a pending uncommitted suggestion.
-- `'consolidated'`: Personal fact merged into the `personal_memory` markdown document upon suggestion acceptance.
-- `'rejected'`: Personal fact rejected by user during suggestion review (preventing re-extraction).
+- `'active'`: Currently valid observation available for retrieval or consolidation.
+- `'inactive'`: Deactivated observation (superseded by a newer duplicate during dedup).
+- `'integrated'`: Personal observation folded into the semantic Personal Memory model. Set immediately when its revisions are staged, per INVARIANT 5.3-A; the set is exactly the snapshot taken per INVARIANT 5.3-C.
 
 *Indexes:*
 - `idx_facts_status_type`: `(status, type)`
@@ -250,9 +249,9 @@ Dedicated vector storage for semantic search and Stage 2 cosine deduplication. U
 
 | Column | Type | Constraints | Description |
 |---|---|---|---|
-| `fact_id` | TEXT | PRIMARY KEY REFERENCES `memory_facts(id)` ON DELETE CASCADE | Foreign key to fact |
-| `type` | TEXT | NOT NULL | Denormalized fact type (`'objective'`, `'blocker'`, etc.) |
-| `status` | TEXT | NOT NULL DEFAULT 'active' | Denormalized status (`'active'`, `'inactive'`, `'consolidated'`) |
+| `fact_id` | TEXT | PRIMARY KEY REFERENCES `memory_facts(id)` ON DELETE CASCADE | Foreign key to the observation |
+| `type` | TEXT | NOT NULL | Denormalized observation type (`'objective'`, `'blocker'`, etc.) |
+| `status` | TEXT | NOT NULL DEFAULT 'active' | Denormalized status (`'active'`, `'inactive'`, `'integrated'`) |
 | `project_id` | TEXT | NULLABLE | Denormalized project scope |
 | `created_at` | INTEGER | NOT NULL | Denormalized timestamp for recency filtering |
 | `embedding` | F32_BLOB(384) | NOT NULL | Native Turso 384-dim IEEE 754 float vector |

@@ -128,9 +128,7 @@ pub fn build_request_body(
     serde_json::Value::Object(body)
 }
 
-fn serialize_messages(
-    messages: &[ChatMessage],
-) -> Vec<serde_json::Value> {
+fn serialize_messages(messages: &[ChatMessage]) -> Vec<serde_json::Value> {
     messages
         .iter()
         .map(|m| {

@@ -31,7 +31,7 @@ use vox_lib::{
         state::InteractionOwner,
     },
     persistence::{
-        facts::{insert_fact, insert_vector, FactRecord},
+        facts::{insert_observation, insert_vector, ObservationRecord},
         schema::run_migrations,
         worker::spawn_persistence_worker,
     },
@@ -269,17 +269,17 @@ async fn test_search_memory_non_terminal_rrf_retrieval() {
 
         // Insert test memory fact
         let fact_id = "fact_gpu_01".to_string();
-        let fact_record = FactRecord {
+        let observation_record = ObservationRecord {
             id: fact_id.clone(),
             session_id: Some(session_id),
             compaction_id: 1,
-            fact_type: "hardware".to_string(),
+            observation_type: "hardware".to_string(),
             text: "User possesses an NVIDIA RTX 4090 GPU with 24GB VRAM.".to_string(),
             status: "active".to_string(),
             created_at: 1700000000,
             updated_at: 1700000000,
         };
-        insert_fact(&conn, &fact_record)
+        insert_observation(&conn, &observation_record)
             .await
             .expect("Insert fact failed");
 

@@ -26,7 +26,7 @@ use crate::{
     services::{
         translit::is_devanagari,
         tts::{
-            ParamRange, ProviderCaps, TtsVoiceSource, EDGE_TTS_HINDI_VOICE, MAX_SPEED, MIN_SPEED,   
+            ParamRange, ProviderCaps, TtsVoiceSource, EDGE_TTS_HINDI_VOICE, MAX_SPEED, MIN_SPEED,
         },
     },
 };
@@ -44,7 +44,6 @@ pub const ZIPVOICE_SILENCE_SCALE: f32 = 1.0;
 pub const MIN_ZIPVOICE_GUIDANCE_SCALE: f32 = 1.0;
 pub const MAX_ZIPVOICE_GUIDANCE_SCALE: f32 = 3.0;
 
-
 const DEFAULT_ZIPVOICE_FEAT_SCALE: f32 = 0.1;
 const DEFAULT_ZIPVOICE_T_SHIFT: f32 = 0.5;
 const DEFAULT_ZIPVOICE_TARGET_RMS: f32 = 0.1;
@@ -61,9 +60,6 @@ pub const ZIPVOICE_STEPS: i32 = 4;
 /// Default minimum sentence-chunk length merged by sherpa's chunker.
 const DEFAULT_ZIPVOICE_MIN_CHAR: i32 = 10;
 
-/// Hot-swappable ZipVoice inference tuning. All fields default to the
-/// production values; the bench drives these per-run, production never sends
-/// them so default behavior is unchanged.
 #[derive(Debug, Clone)]
 pub struct ZipvoiceTuning {
     pub steps: i32,
@@ -545,16 +541,13 @@ pub fn resolve_zipvoice_reference(
     }
 
     let selected_entry = match voice_slug {
-        Some(slug) => pack
-            .iter()
-            .find(|e| e.slug == slug)
-            .ok_or_else(|| {
-                anyhow!(
-                    "Unknown ZipVoice voice slug '{}' ({} packaged voices available)",
-                    slug,
-                    pack.len()
-                )
-            })?,
+        Some(slug) => pack.iter().find(|e| e.slug == slug).ok_or_else(|| {
+            anyhow!(
+                "Unknown ZipVoice voice slug '{}' ({} packaged voices available)",
+                slug,
+                pack.len()
+            )
+        })?,
         None => pack
             .first()
             .ok_or_else(|| anyhow!("Voice pack is unexpectedly empty"))?,

@@ -145,7 +145,13 @@ async fn test_tts_worker_cool_down_clears_handles_and_joins() {
             turn_metrics: None,
         };
 
-        let warm_res = warm_up_tts(handles, &settings.tts, &supertonic_model_dir, None, event_tx);
+        let warm_res = warm_up_tts(
+            handles,
+            &settings.tts,
+            &supertonic_model_dir,
+            None,
+            event_tx,
+        );
         assert!(warm_res.is_ok(), "warm_up_tts must return Ok(())");
         assert!(tts_tx.is_some(), "tts_tx must be populated after warm-up");
         assert!(

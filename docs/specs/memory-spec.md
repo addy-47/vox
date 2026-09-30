@@ -138,7 +138,7 @@ On application boot, crash reconciliation resets any `Stage1Processing` or `Stag
 
 ### 4.3 Deduplication Workflow & Batching Logic
 Deduplication runs via a background quiet ingestion observer task (`spawn_quiet_ingestion_observer`):
-- **Setting Gate**: Gated strictly by `settings.memory.pipeline_processing_enabled == true`. When disabled, the background observer suppresses all deduplication cycles.
+- **Setting Gate**: Gated strictly by `settings.personal_memory.pipeline_processing_enabled == true`. When disabled, the background observer suppresses all deduplication cycles.
 - **Quiet State Contract**: The observer watches the pipeline state and triggers only after a sustained 30-second quiet debounce window (`QUIET_INGESTION_DEBOUNCE_SECS = 30`).
   - **Quiet States (Eligible)**: `InteractionState::Idle`, `InteractionState::Ready`, `InteractionState::Paused`, `InteractionState::Sleeping`.
   - **Active States (Ineligible / Abort)**: `Listening`, `Thinking`, `Speaking`, `Working`, `Error`. Transitioning into any active state immediately aborts or resets the debounce window to protect the audio/inference path.
@@ -204,6 +204,7 @@ Deduplication runs via a background quiet ingestion observer task (`spawn_quiet_
 2. **Comment-Driven Structured Edits**: User leaves directive comments. The backend triggers the comment-directed LLM pass taking `[Current Memory in handle format] + [User Comments]` to generate targeted semantic operation revisions displayed on the staging slate for user review.
 3. **Version Carousel Navigation**: User flips between previous versions of personal memory to inspect changes over time or restore an earlier version as the active document.
 4. **Regeneration (User-Triggered Reorganization)**: User triggers a full reorganization of the existing Personal Memory. The backend runs the regeneration LLM pass on the current semantic memory, producing a complete new structure with fresh IDs, and saves the result as a new active version. Regeneration operates strictly on the existing semantic memory, NOT on raw observations.
+5. **Direct Document Save (Deterministic Markdown Parse)**: User edits the rendered Markdown document in place, or pastes a replacement document. The backend parses it back into the canonical semantic model with a deterministic converter — `## Title` becomes a section, each paragraph becomes a prose block, and the application assigns fresh persistent IDs. No LLM is invoked. Block boundaries are therefore re-derived by the LLM on the next consolidation pass, which is the accepted cost of keeping direct editing available. The result is validated by `PersonalMemory::validate()` and committed as a new active version under the same optimistic version check as every other write.
 
 ### 5.3 Personal Memory Consolidation Pipeline (Semantic Operations)
 Consolidates personal knowledge through dedicated LLM passes tailored to memory state and intent, using a semantic operation engine for all mutations:
@@ -211,15 +212,18 @@ Consolidates personal knowledge through dedicated LLM passes tailored to memory 
 1. **Candidate Query**:
    `SELECT * FROM memory_facts WHERE type = 'personal' AND status = 'active'`
 
-2. **Execution Gating & Preconditions**:
-   Consolidation is NEVER hard-blocked by an active compaction or pending queue items:
-   - **Comment-Driven Edits**: Executes immediately regardless of ingestion queue state or ongoing compactions.
-   - **Observation Integration ("Integrate Learned Observations" in UI)**:
-     - If an active compaction is in progress (`session_compactions.status = 'in_progress'`), the UI provides a non-blocking resolution choice:
-       1. **Pause / Preempt Compaction & Consolidate Now**: Signals cancellation on the active compaction task, resets its DB record status from `'in_progress'` back to `'pending'`, processes pending ingestion items, and immediately runs consolidation.
-       2. **Queue Consolidation**: Registers the consolidation request in `PendingConsolidationState` to run automatically as soon as the ongoing compaction finishes.
-   - **Headless Scheduled Runs**:
-     - Headless scheduled runs never raise errors. If a compaction is in progress, the scheduled run is automatically queued in `PendingConsolidationState` and executes as soon as the active compaction and its ingestion cycle finish.
+2. **Execution Gating — User-Controlled, Never Silently Deferred**:
+   Consolidation is user-initiated. The backend never preempts a compaction, never registers a deferred run, and never hard-fails on queue state. It either performs the work in full, or returns a typed confirmation request carrying zero side effects. `ConsolidationConflictPolicy` and `PendingConsolidationState` do not exist.
+
+   - **5.3.1 Compaction In Progress — UI gate, backend never waits**:
+     While any `session_compactions.status = 'in_progress'` row exists, the "Integrate Learned Observations" control is disabled — identical to its disabled state when no active personal observations exist. The backend performs no preemption, no cancellation signalling, and no deferral. If a request races in anyway (a request issued microseconds before a compaction started), the backend returns `ConsolidateOutcome::ConfirmationRequired { reason: CompactionInProgress, .. }` and performs no work.
+   - **5.3.2 Pending Ingestion Items — confirm-to-proceed, never blocked**:
+     Pending or in-flight items in `memory_ingestion_queue` never block consolidation. The IPC command carries a `forced` flag.
+     - `forced = false` (default): if unfinished queue items exist, the backend returns `ConsolidateOutcome::ConfirmationRequired { reason: PendingQueueItems, pending_count }` and performs no work. The frontend surfaces a toast with a confirm affordance.
+     - `forced = true`: consolidation proceeds immediately. Only the personal observations that are `status = 'active'` at the instant the generation request is built are used as candidates. Pending queue items are left `pending` and continue to drain through the normal quiet ingestion observer. The backend never runs an inline ingestion cycle.
+   - **5.3.3 INVARIANT 5.3-C (Observation Snapshot)**: The candidate observation ID set is snapshotted exactly once, immediately before the LLM pass is issued. On commit, precisely that snapshot transitions `active → integrated`. Observations that reach `active` mid-pass remain `active` and are picked up by the next run. No observation is ever stranded in an intermediate state.
+   - **5.3.4 Comment-Driven Edits**: Execute immediately. Never gated by compaction state, queue state, or `forced`. The `forced` flag is ignored on this path.
+   - **5.3.5 Headless Scheduled Runs**: The daily scheduler issues its request with `forced = true` and tolerates a `ConfirmationRequired` outcome by leaving the missed-run notification to the user. It never raises a UI-facing error.
 
 3. **LLM Wire Format — Per-Request Handles**:
    - For all passes that operate on an existing memory, the runtime renders the current semantic memory into a handle-labelled text format:
@@ -311,12 +315,12 @@ Consolidates personal knowledge through dedicated LLM passes tailored to memory 
      - Resolves all decisions in a single atomic transaction. On accept, all operations are applied in one pass, version is bumped once. Per-operation rejection handles conflicts within the batch.
 
 ### 5.4 Revision Policies & Cadence
-- **Revision Policy** (`settings.memory.suggestion_policy`):
+- **Revision Policy** (`settings.personal_memory.suggestion_policy`):
   - `"manual_review"` (default): All observation integration and comment edits land in `personal_memory_revisions` for user review.
-  - `"auto_apply"`: Non-destructive operations (`create_block`, `create_section`, `update_block`) automatically commit into a new memory version; deletions are held for user confirmation.
-- **Cadence** (`settings.memory.consolidation_cadence`):
+  - `"auto_apply"`: Non-destructive operations (`create_block`, `create_section`, `update_block`) from observation integration automatically commit into a new memory version; deletions are held for user confirmation. Comment-directed edits always stage for review regardless of policy, since the user must verify the model's interpretation of their directives.
+- **Cadence** (`settings.personal_memory.consolidation_cadence`):
   - `"manual"` (default): Triggered on-demand via the `"Integrate Learned Observations"` button or comment regeneration.
-  - `"daily"` (with `settings.memory.consolidation_time` as `"HH:MM"`): Runs daily at configured time.
+  - `"daily"` (with `settings.personal_memory.consolidation_time` as `"HH:MM"`): Runs daily at configured time.
   - **Missed & Failed Runs**: Runs due while the app was down emit a persistent `personal_consolidation` notification card (`pending`, tap-to-run). A failed run flips its card to `failed` with the error; successes complete silently.
 
 ### 5.5 Markdown Rendering

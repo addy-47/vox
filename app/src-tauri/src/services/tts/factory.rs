@@ -6,9 +6,9 @@ use crate::{
     persistence::voices::get_voice,
     services::tts::{
         providers::TtsProvider, resolve_zipvoice_reference, ChatterboxEngine,
-        ChatterboxRemoteProvider, EdgeTtsProvider, KokoroEngine, ProviderCaps,
-        TtsActiveProvider, TtsEngine as SupertonicEngine, TtsProviderConfig, TtsSettings,
-        ZipvoiceEngine, CHATTERBOX_MODEL_DIR, KOKORO_MODEL_DIR, ZIPVOICE_MODEL_DIR,
+        ChatterboxRemoteProvider, EdgeTtsProvider, KokoroEngine, ProviderCaps, TtsActiveProvider,
+        TtsEngine as SupertonicEngine, TtsProviderConfig, TtsSettings, ZipvoiceEngine,
+        CHATTERBOX_MODEL_DIR, KOKORO_MODEL_DIR, ZIPVOICE_MODEL_DIR,
     },
     utils::paths::model_dir,
 };

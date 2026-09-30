@@ -32,7 +32,6 @@ pub enum AudioIntent {
     TurnResponse,
 }
 
-
 #[derive(Debug, Clone)]
 pub enum VoxEvent {
     SessionStart {

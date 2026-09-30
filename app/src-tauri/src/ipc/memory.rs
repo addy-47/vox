@@ -2,25 +2,13 @@ use std::sync::Arc;
 
 use tauri::{AppHandle, State};
 
-pub use crate::persistence::personal_memory::{
-    PersonalMemoryRecord, PersonalMemorySuggestionRecord, SuggestionDecision,
-};
 use crate::{
-    core::{
-        error::VoxIpcError,
-        events::{emit_ipc, IpcEvent},
-        state::AppState,
-    },
+    core::{error::VoxIpcError, events::{emit_ipc, IpcEvent}, state::AppState},
     persistence::{
-        fetch_all_active_facts,
-        list_personal_memory_versions,
-        set_active_personal_memory_version as db_set_active_personal_memory_version,
-        fetch_pending_suggestions,
-        personal_memory::{
-            get_personal_memory as db_get_personal_memory,
-            save_personal_memory as db_save_personal_memory,
-        },
-        FactRecord,
+        fetch_all_active_observations, list_personal_memory_versions,
+        personal_memory::get_personal_memory as db_get_personal_memory,
+        set_active_personal_memory_version as db_set_active_version, ObservationRecord,
+        PersonalMemoryRecord, RevisionDecision,
     },
     services::{
         llm::{
@@ -28,17 +16,18 @@ use crate::{
             QWEN_MODEL_FILE,
         },
         memory::personal::{
-            batch_resolve_memory_suggestions as service_batch_resolve_memory_suggestions,
+            batch_resolve_memory_revisions as service_batch_resolve_memory_revisions,
             consolidate_personal_memory as service_consolidate_personal_memory,
+            list_memory_revision_views,
             regenerate_personal_memory as service_regenerate_personal_memory,
-            resolve_memory_suggestions as service_resolve_memory_suggestions,
-            MemorySuggestionError,
+            save_personal_memory_from_markdown, ConsolidateOutcome, ConsolidationRequest,
+            MemoryRevisionError, MemoryRevisionView,
         },
     },
     utils::paths,
 };
 
-/// Retrieves the consolidated personal memory markdown document.
+/// Retrieves the active Personal Memory rendered as Markdown.
 #[tauri::command]
 pub async fn get_personal_memory(
     project_id: Option<String>,
@@ -53,7 +42,7 @@ pub async fn get_personal_memory(
         .map_err(|e| VoxIpcError::Database(e.to_string()))
 }
 
-/// Saves direct manual edits made to the personal memory document with optimistic concurrency control.
+/// Saves direct manual edits to the rendered Markdown document.
 #[tauri::command]
 pub async fn save_personal_memory(
     app: AppHandle,
@@ -66,99 +55,72 @@ pub async fn save_personal_memory(
         .db
         .connect()
         .map_err(|e| VoxIpcError::Database(e.to_string()))?;
-    let record = db_save_personal_memory(
+    let record = save_personal_memory_from_markdown(
         &conn,
         project_id.as_deref(),
         &content,
         expected_version as i64,
     )
     .await
-    .map_err(|e| {
-        let err_msg = e.to_string();
-        if err_msg.contains("conflict") {
-            VoxIpcError::Conflict(err_msg)
-        } else {
-            VoxIpcError::Database(err_msg)
-        }
-    })?;
+    .map_err(map_memory_save_error)?;
 
-    if let Err(e) = emit_ipc(&app, IpcEvent::PersonalMemoryUpdated(record.clone())) {
-        log::warn!("[IPC::Memory] Failed to emit PersonalMemoryUpdated: {}", e);
-    }
-
+    emit_memory_updated(&app, record.clone());
     Ok(record)
 }
 
-/// Merges active personal facts or applies user directive comments to consolidate the personal memory document.
+/// Integrates active personal observations into the semantic model, or stages comment-directed edits.
 #[tauri::command]
 pub async fn consolidate_personal_memory(
     app: AppHandle,
     comments: Option<Vec<String>>,
     project_id: Option<String>,
-    conflict_policy: Option<String>,
+    forced: Option<bool>,
     state: State<'_, Arc<AppState>>,
-) -> Result<PersonalMemoryRecord, VoxIpcError> {
-    let llm_settings = state
-        .settings
-        .read()
-        .map(|s| s.llm.clone())
-        .unwrap_or_default();
-
-    let provider_opt = state.llm_provider.read().clone();
-    let provider: Arc<dyn LlmProvider> = match provider_opt {
-        Some(p) => p,
-        None => {
-            let models_dir = paths::get().models.clone();
-            let llm_path = models_dir.join(QWEN_MODEL_DIR).join(QWEN_MODEL_FILE);
-            create_llm_provider_from_llm_settings(&llm_settings, &llm_path)
-                .map(Arc::from)
-                .map_err(|e| {
-                    VoxIpcError::Engine(format!("Failed to initialize LLM provider: {e}"))
-                })?
-        }
+) -> Result<ConsolidateOutcome, VoxIpcError> {
+    let (llm_settings, memory_settings) = {
+        let guard = state
+            .settings
+            .read()
+            .map_err(|_| VoxIpcError::Internal("Failed to acquire settings".to_string()))?;
+        (guard.llm.clone(), guard.personal_memory.clone())
     };
+    let provider = resolve_llm_provider(&state, &llm_settings)?;
 
     log::info!(
-        "[IPC::Memory] consolidate_personal_memory initiated: comments_count={}, project_id={:?}, conflict_policy={:?}",
+        "[IPC::Memory] consolidate_personal_memory initiated: comments_count={}, project_id={:?}, forced={}",
         comments.as_ref().map(|c| c.len()).unwrap_or(0),
         project_id,
-        conflict_policy
+        forced.unwrap_or(false)
     );
-
-    let parsed_policy = conflict_policy.and_then(|s| s.parse().ok());
 
     let conn = state.db.connect().map_err(|e| {
         log::error!("[IPC::Memory] Database connection error: {}", e);
         VoxIpcError::Database(e.to_string())
     })?;
-    let record = service_consolidate_personal_memory(
-        &conn,
-        provider.as_ref(),
+    let outcome = service_consolidate_personal_memory(ConsolidationRequest {
+        conn: &conn,
+        llm_provider: provider.as_ref(),
         comments,
-        project_id.as_deref(),
-        Some(&llm_settings),
-        parsed_policy,
-    )
+        project_id: project_id.as_deref(),
+        memory_settings: &memory_settings,
+        llm_settings: Some(&llm_settings),
+        forced: forced.unwrap_or(false),
+    })
     .await
     .map_err(|e| {
         log::error!("[IPC::Memory] consolidate_personal_memory failed: {}", e);
         VoxIpcError::Engine(e.to_string())
     })?;
 
-    log::info!(
-        "[IPC::Memory] consolidate_personal_memory succeeded: v{} ({} chars)",
-        record.version,
-        record.content.len()
-    );
-
-    if let Err(e) = emit_ipc(&app, IpcEvent::PersonalMemoryUpdated(record.clone())) {
-        log::warn!("[IPC::Memory] Failed to emit PersonalMemoryUpdated: {}", e);
+    if let ConsolidateOutcome::Completed { record } = &outcome {
+        if let Err(e) = emit_ipc(&app, IpcEvent::PersonalMemoryUpdated(record.clone())) {
+            log::warn!("[IPC::Memory] Failed to emit PersonalMemoryUpdated: {}", e);
+        }
     }
-
-    Ok(record)
+    Ok(outcome)
 }
 
-/// Retrieves all historical versions of personal memory for a project or global default.
+/// Retrieves all historical versions of Personal Memory, each rendered as Markdown.
 #[tauri::command]
 pub async fn get_personal_memory_versions(
     project_id: Option<String>,
@@ -173,7 +135,7 @@ pub async fn get_personal_memory_versions(
         .map_err(|e| VoxIpcError::Database(e.to_string()))
 }
 
-/// Sets a specific historical version of personal memory to active, deactivating previous versions.
+/// Restores a historical version as the active Personal Memory, deactivating previous versions.
 #[tauri::command]
 pub async fn set_active_personal_memory_version(
     app: AppHandle,
@@ -185,64 +147,57 @@ pub async fn set_active_personal_memory_version(
         .db
         .connect()
         .map_err(|e| VoxIpcError::Database(e.to_string()))?;
-    let record = db_set_active_personal_memory_version(
-        &conn,
-        project_id.as_deref(),
-        version,
-    )
-    .await
-    .map_err(|e| VoxIpcError::Database(e.to_string()))?;
+    let record = db_set_active_version(&conn, project_id.as_deref(), version)
+        .await
+        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
 
-    if let Err(e) = emit_ipc(&app, IpcEvent::PersonalMemoryUpdated(record.clone())) {
-        log::warn!("[IPC::Memory] Failed to emit PersonalMemoryUpdated: {}", e);
-    }
-
+    emit_memory_updated(&app, record.clone());
     Ok(record)
 }
 
-/// Returns active memory facts for graph visualization, optionally scoped to one project, ordered newest first.
+/// Returns all `status = 'active'` observations for memory graph visualization.
 #[tauri::command]
-pub async fn get_active_facts(
+pub async fn get_active_observations(
     project_id: Option<String>,
     state: State<'_, Arc<AppState>>,
-) -> Result<Vec<FactRecord>, VoxIpcError> {
+) -> Result<Vec<ObservationRecord>, VoxIpcError> {
     let conn = state
         .db
         .connect()
         .map_err(|e| VoxIpcError::Database(e.to_string()))?;
-    fetch_all_active_facts(&conn, project_id.as_deref())
+    fetch_all_active_observations(&conn, project_id.as_deref())
         .await
         .map_err(|e| VoxIpcError::Database(e.to_string()))
 }
 
-/// Lists all uncommitted delta suggestions pending review for the active personal memory document.
+/// Lists all pending semantic memory revisions awaiting review.
 #[tauri::command]
-pub async fn get_memory_suggestions(
+pub async fn get_memory_revisions(
     project_id: Option<String>,
     state: State<'_, Arc<AppState>>,
-) -> Result<Vec<PersonalMemorySuggestionRecord>, VoxIpcError> {
+) -> Result<Vec<MemoryRevisionView>, VoxIpcError> {
     let conn = state
         .db
         .connect()
         .map_err(|e| VoxIpcError::Database(e.to_string()))?;
-    fetch_pending_suggestions(&conn, project_id.as_deref())
+    list_memory_revision_views(&conn, project_id.as_deref())
         .await
         .map_err(|e| VoxIpcError::Database(e.to_string()))
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ResolveSuggestionsRequest {
+pub struct ResolveRevisionsRequest {
     #[serde(alias = "project_id")]
     pub project_id: Option<String>,
-    pub decisions: Vec<SuggestionDecision>,
+    pub decisions: Vec<RevisionDecision>,
 }
 
-/// Resolves a batch of pending personal memory suggestions in a single atomic transaction.
+/// Resolves a batch of pending personal memory revisions in a single atomic transaction.
 #[tauri::command]
-pub async fn resolve_memory_suggestions(
+pub async fn resolve_memory_revisions(
     app: AppHandle,
-    request: ResolveSuggestionsRequest,
+    request: ResolveRevisionsRequest,
     state: State<'_, Arc<AppState>>,
 ) -> Result<PersonalMemoryRecord, VoxIpcError> {
     let conn = state
@@ -250,56 +205,19 @@ pub async fn resolve_memory_suggestions(
         .connect()
         .map_err(|e| VoxIpcError::Database(e.to_string()))?;
 
-    let updated_record = service_batch_resolve_memory_suggestions(
+    let record = service_batch_resolve_memory_revisions(
         &conn,
         request.project_id.as_deref(),
         &request.decisions,
     )
     .await
-    .map_err(map_suggestion_error)?;
+    .map_err(map_revision_error)?;
 
-    if let Err(e) = emit_ipc(
-        &app,
-        IpcEvent::PersonalMemoryUpdated(updated_record.clone()),
-    ) {
-        log::warn!("[IPC::Memory] Failed to emit PersonalMemoryUpdated: {}", e);
-    }
-
-    Ok(updated_record)
+    emit_memory_updated(&app, record.clone());
+    Ok(record)
 }
 
-/// Resolves a single pending suggestion or all pending suggestions for personal memory.
-/// Maintained for backward compatibility.
-#[tauri::command]
-pub async fn resolve_memory_suggestion(
-    app: AppHandle,
-    id: Option<String>,
-    action: String,
-    project_id: Option<String>,
-    state: State<'_, Arc<AppState>>,
-) -> Result<PersonalMemoryRecord, VoxIpcError> {
-    let conn = state
-        .db
-        .connect()
-        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
-
-    let updated_record =
-        service_resolve_memory_suggestions(&conn, project_id.as_deref(), id.as_deref(), &action)
-            .await
-            .map_err(map_suggestion_error)?;
-
-    if let Err(e) = emit_ipc(
-        &app,
-        IpcEvent::PersonalMemoryUpdated(updated_record.clone()),
-    ) {
-        log::warn!("[IPC::Memory] Failed to emit PersonalMemoryUpdated: {}", e);
-    }
-
-    Ok(updated_record)
-}
-
-/// User-triggered reformatting and reorganization of the existing personal memory document.
-/// Operates strictly on the existing document text, NOT raw facts.
+/// Regenerates the semantic Personal Memory into a fresh, fully reorganized structure.
 #[tauri::command]
 pub async fn regenerate_personal_memory(
     app: AppHandle,
@@ -311,55 +229,69 @@ pub async fn regenerate_personal_memory(
         .connect()
         .map_err(|e| VoxIpcError::Database(e.to_string()))?;
 
-    let llm_settings = state
-        .settings
-        .read()
-        .map(|s| s.llm.clone())
-        .unwrap_or_default();
-
-    let provider_opt = state.llm_provider.read().clone();
-    let provider: Arc<dyn LlmProvider> = match provider_opt {
-        Some(p) => p,
-        None => {
-            let models_dir = paths::get().models.clone();
-            let llm_path = models_dir.join(QWEN_MODEL_DIR).join(QWEN_MODEL_FILE);
-            create_llm_provider_from_llm_settings(&llm_settings, &llm_path)
-                .map(Arc::from)
-                .map_err(|e| {
-                    VoxIpcError::Engine(format!("Failed to initialize LLM provider: {e}"))
-                })?
-        }
+    let (llm_settings, memory_settings) = {
+        let guard = state
+            .settings
+            .read()
+            .map_err(|_| VoxIpcError::Internal("Failed to acquire settings".to_string()))?;
+        (guard.llm.clone(), guard.personal_memory.clone())
     };
+    let provider = resolve_llm_provider(&state, &llm_settings)?;
 
-    let updated_record = service_regenerate_personal_memory(
+    let record = service_regenerate_personal_memory(
         &conn,
         provider.as_ref(),
         project_id.as_deref(),
+        &memory_settings,
         Some(&llm_settings),
     )
     .await
     .map_err(|e| VoxIpcError::Engine(e.to_string()))?;
 
-    if let Err(e) = emit_ipc(
-        &app,
-        IpcEvent::PersonalMemoryUpdated(updated_record.clone()),
-    ) {
-        log::warn!("[IPC::Memory] Failed to emit PersonalMemoryUpdated: {}", e);
-    }
-
-    Ok(updated_record)
+    emit_memory_updated(&app, record.clone());
+    Ok(record)
 }
 
-/// Maps the suggestion-resolution domain error onto the IPC error taxonomy,
-/// preserving both the variant and the human-readable message.
-fn map_suggestion_error(error: MemorySuggestionError) -> VoxIpcError {
+/// Emits the `personal_memory_updated` event.
+fn emit_memory_updated(app: &AppHandle, record: PersonalMemoryRecord) {
+    if let Err(e) = emit_ipc(app, IpcEvent::PersonalMemoryUpdated(record)) {
+        log::warn!("[IPC::Memory] Failed to emit PersonalMemoryUpdated: {}", e);
+    }
+}
+
+/// Returns the cached LLM provider, constructing one from settings when none is mounted.
+fn resolve_llm_provider(
+    state: &State<'_, Arc<AppState>>,
+    llm_settings: &crate::services::llm::LlmSettings,
+) -> Result<Arc<dyn LlmProvider>, VoxIpcError> {
+    if let Some(provider) = state.llm_provider.read().clone() {
+        return Ok(provider);
+    }
+    let models_dir = paths::get().models.clone();
+    let llm_path = models_dir.join(QWEN_MODEL_DIR).join(QWEN_MODEL_FILE);
+    create_llm_provider_from_llm_settings(llm_settings, &llm_path)
+        .map(Arc::from)
+        .map_err(|e| VoxIpcError::Engine(format!("Failed to initialize LLM provider: {e}")))
+}
+
+/// Maps a manual-save failure onto the IPC error taxonomy, preserving the conflict distinction.
+fn map_memory_save_error(error: anyhow::Error) -> VoxIpcError {
+    let message = error.to_string();
+    if message.contains("conflict") {
+        VoxIpcError::Conflict(message)
+    } else {
+        VoxIpcError::Engine(message)
+    }
+}
+
+/// Maps the revision-resolution domain error onto the IPC error taxonomy, preserving both the
+/// variant and the human-readable message.
+fn map_revision_error(error: MemoryRevisionError) -> VoxIpcError {
     match error {
-        MemorySuggestionError::InvalidAction(message) => VoxIpcError::InvalidArgument(message),
-        MemorySuggestionError::NotPending(message) => VoxIpcError::NotFound(message),
-        // The engine refused to commit the patched document. Same taxonomy as `PatchEngine`:
-        // the request was well-formed, but the engine would not produce a valid document.
-        MemorySuggestionError::PatchEngine(message)
-        | MemorySuggestionError::StructureGate(message) => VoxIpcError::Engine(message),
-        MemorySuggestionError::Database(inner) => VoxIpcError::Database(inner.to_string()),
+        MemoryRevisionError::InvalidAction(message) => VoxIpcError::InvalidArgument(message),
+        MemoryRevisionError::NotPending(message) => VoxIpcError::NotFound(message),
+        MemoryRevisionError::OperationEngine(message)
+        | MemoryRevisionError::StructureGate(message) => VoxIpcError::Engine(message),
+        MemoryRevisionError::Database(inner) => VoxIpcError::Database(inner.to_string()),
     }
 }

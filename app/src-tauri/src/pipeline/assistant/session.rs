@@ -18,9 +18,6 @@ use crate::{
         state::{AppState, InteractionOwner, InteractionState},
     },
     paths::get,
-    services::llm::catalog::{
-        ModelCapabilities, CAP_KIND_CLOUD, CAP_KIND_EMBEDDED, CAP_KIND_SERVER,
-    },
     persistence::{
         compactions::{fetch_latest_compaction_run, fetch_turns_for_compaction},
         get_tokio_handle,
@@ -28,16 +25,23 @@ use crate::{
         sessions::fetch_session_continuation,
         PersistenceEvent,
     },
-    pipeline::{dictation::DictationInteractionMode, spawn_idle_monitor, transition, RoutingContext},
+    pipeline::{
+        dictation::DictationInteractionMode, spawn_idle_monitor, transition, RoutingContext,
+    },
     services::{
         self,
         harness::Harness,
         llm::{
             actor::{cool_down_llm, LlmCommand},
-            catalog::probe_capabilities,
+            catalog::{
+                probe_capabilities, ModelCapabilities, CAP_KIND_CLOUD, CAP_KIND_EMBEDDED,
+                CAP_KIND_SERVER,
+            },
             LlmActiveProvider,
         },
-        memory::{compaction::coordinator::CompactionCoordinator, trim_heap},
+        memory::{
+            compaction::coordinator::CompactionCoordinator, trim_heap,
+        },
         notifications::{Action, ActionPayload, NotificationCategory, NotificationParams},
         realtime::{create_realtime_provider, purge_session_cache, RealtimeActor},
         tts::actor::cool_down_tts,
@@ -275,7 +279,7 @@ pub fn on_session_start<R: Runtime + 'static>(
         if let (Some(sid), Some(conn)) = (session_id, conn.as_ref()) {
             match tokio_handle.block_on(fetch_session_continuation(conn, sid)) {
                 Ok(data) => (
-                    data.personal_memory,
+                    data.personal_memory_markdown,
                     data.latest_summary,
                     data.turns,
                     data.max_turn_id,
@@ -290,13 +294,8 @@ pub fn on_session_start<R: Runtime + 'static>(
             let mem = tokio_handle
                 .block_on(get_personal_memory(conn, None))
                 .ok()
-                .and_then(|r| {
-                    if r.content.trim().is_empty() {
-                        None
-                    } else {
-                        Some(r.content)
-                    }
-                });
+                .filter(|r| !r.markdown.trim().is_empty())
+                .map(|r| r.markdown);
             (mem, None, Vec::new(), 0, false)
         } else {
             (None, None, Vec::new(), 0, false)

@@ -2,7 +2,7 @@ use std::path::Path;
 
 use super::{
     providers::{EmbeddedSttProvider, SttProvider},
-    NEMOTRON_MODEL_DIR, QWEN_ASR_MODEL_DIR, SttProviderConfig, SttSettings,
+    SttProviderConfig, SttSettings, NEMOTRON_MODEL_DIR, QWEN_ASR_MODEL_DIR,
 };
 
 /// Instantiates an `SttProvider` instance from the specified configuration and model path.

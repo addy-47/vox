@@ -5,8 +5,9 @@ use turso::Connection;
 
 use super::{JACCARD_EXACT_MATCH_THRESHOLD, STAGE1_BATCH_CEILING};
 use crate::persistence::{
-    deactivate_facts_batch, fetch_active_facts_by_type, queue::claim_pending_queue_batch,
-    record_queue_item_failure, update_queue_item_status, QueueItem,
+    deactivate_observations_batch, fetch_active_observations_by_type,
+    queue::claim_pending_queue_batch, record_queue_item_failure, update_queue_item_status,
+    QueueItem,
 };
 
 /// Summary metrics returned after running a Stage 1 exact Jaccard deduplication pass.
@@ -114,25 +115,27 @@ pub async fn run_stage1_exact_dedup(conn: &Connection) -> Result<Stage1Summary> 
     Ok(summary)
 }
 
-/// Compares a single queue item against active facts of the same type and batch-deactivates exact matches.
+/// Compares a single queue item against active observations of the same type and batch-deactivates
+/// exact matches. On an exact match the incoming item wins: the older stored observation is deactivated.
 async fn process_stage1_item(conn: &Connection, item: &QueueItem) -> Result<usize> {
-    let active_facts = fetch_active_facts_by_type(conn, &item.fact_type).await?;
+    let active_observations =
+        fetch_active_observations_by_type(conn, &item.observation_type).await?;
     let mut duplicate_ids: Vec<String> = Vec::new();
 
-    for fact in active_facts {
-        let similarity = jaccard_similarity(&item.text, &fact.text);
+    for existing in active_observations {
+        let similarity = jaccard_similarity(&item.text, &existing.text);
         if similarity >= JACCARD_EXACT_MATCH_THRESHOLD {
             log::info!(
-                "[Memory::Ingestion::Stage1] Exact match found (sim={:.2}). Queuing older fact {} for batch deactivation (incoming item {})",
+                "[Memory::Ingestion::Stage1] Exact match found (sim={:.2}). Queuing older observation {} for batch deactivation (incoming item {})",
                 similarity,
-                fact.id,
+                existing.id,
                 item.id
             );
-            duplicate_ids.push(fact.id);
+            duplicate_ids.push(existing.id);
         }
     }
 
-    let deactivated = deactivate_facts_batch(conn, &duplicate_ids).await?;
+    let deactivated = deactivate_observations_batch(conn, &duplicate_ids).await?;
     Ok(deactivated)
 }
 
