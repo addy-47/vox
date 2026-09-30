@@ -9,7 +9,7 @@ use crate::{
         state::AppState,
     },
     persistence::{
-        fetch_all_observations, list_personal_memory_versions,
+        fetch_all_observations, fetch_pending_queue_observations, list_personal_memory_versions,
         personal_memory::get_personal_memory as db_get_personal_memory,
         set_active_personal_memory_version as db_set_active_version, ObservationRecord,
         PersonalMemoryRecord, RevisionDecision,
@@ -167,15 +167,39 @@ pub async fn get_observations(
     status: Option<String>,
     limit: Option<u32>,
     offset: Option<u32>,
+    observation_type: Option<String>,
     state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<ObservationRecord>, VoxIpcError> {
     let conn = state
         .db
         .connect()
         .map_err(|e| VoxIpcError::Database(e.to_string()))?;
-    fetch_all_observations(&conn, project_id.as_deref(), status.as_deref(), limit, offset)
+
+    // "staged" is the UX name for memory_facts where status = 'active' (extracted, ready to integrate).
+    // "pending" refers to memory_ingestion_queue items not yet processed by the LLM extraction pipeline.
+    if status.as_deref() == Some("pending") {
+        return fetch_pending_queue_observations(
+            &conn,
+            limit,
+            offset,
+            observation_type.as_deref(),
+        )
         .await
-        .map_err(|e| VoxIpcError::Database(e.to_string()))
+        .map_err(|e| VoxIpcError::Database(e.to_string()));
+    }
+
+    // Map frontend "staged" → backend "active" for memory_facts.
+    let mapped_status = status.as_deref().map(|s| if s == "staged" { "active" } else { s });
+    fetch_all_observations(
+        &conn,
+        project_id.as_deref(),
+        mapped_status,
+        limit,
+        offset,
+        observation_type.as_deref(),
+    )
+    .await
+    .map_err(|e| VoxIpcError::Database(e.to_string()))
 }
 
 /// Lists all pending semantic memory revisions awaiting review.

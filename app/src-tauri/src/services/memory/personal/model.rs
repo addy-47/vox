@@ -209,6 +209,18 @@ impl HandleMap {
     pub fn resolve_block(&self, handle: &str) -> Option<&str> {
         self.block_ids.get(handle.trim()).map(String::as_str)
     }
+
+    /// Returns the sorted list of valid section handles (`s1`, `s2`, …) for this request.
+    /// Used to tell the LLM which handles are legal for `creates`, preventing hallucinated `s5` etc.
+    pub fn section_handles(&self) -> Vec<String> {
+        let mut handles: Vec<String> = self.section_ids.keys().cloned().collect();
+        handles.sort_by(|a, b| {
+            let na = a.trim_start_matches('s').parse::<usize>().unwrap_or(0);
+            let nb = b.trim_start_matches('s').parse::<usize>().unwrap_or(0);
+            na.cmp(&nb)
+        });
+        handles
+    }
 }
 
 /// A section proposed by the LLM, before persistent IDs exist.

@@ -1,8 +1,7 @@
-import React, { memo } from "react";
+import React, { memo, useState, useRef, useEffect } from "react";
 import {
   Upload,
   Edit3,
-  Check,
   X,
   Sparkles,
   ArrowLeft,
@@ -10,10 +9,14 @@ import {
   Layers,
   CheckCircle2,
   Tag,
+  Filter,
+  ChevronDown,
+  Check,
 } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { MEMORY_COPY } from "@/data/memoryCopy";
 import type { StagingMode } from "../stagingTypes";
+import type { ObservationFilter } from "@/shared/hooks/useObservationsList";
 
 export interface StagingHeaderProps {
   mode: StagingMode;
@@ -32,10 +35,13 @@ export interface StagingHeaderProps {
   draftEmpty: boolean;
   onAcceptAll: () => void;
   onRejectAll: () => void;
-  onApplyAllDecisions: () => void;
   onRegenerate: () => void;
   onClearComments?: () => void;
   onCommit: () => void;
+  // Observation filter & count
+  observationFilter?: ObservationFilter;
+  onObservationFilterChange?: (filter: ObservationFilter) => void;
+  observationCount?: number;
 }
 
 export const StagingHeader: React.FC<StagingHeaderProps> = memo(
@@ -51,11 +57,26 @@ export const StagingHeader: React.FC<StagingHeaderProps> = memo(
     draftEmpty,
     onAcceptAll,
     onRejectAll,
-    onApplyAllDecisions,
     onRegenerate,
     onClearComments,
     onCommit,
+    observationFilter,
+    onObservationFilterChange,
+    observationCount,
   }) => {
+    const [isFilterOpen, setIsFilterOpen] = useState(false);
+    const filterMenuRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+      if (!isFilterOpen) return;
+      const handleClickOutside = (e: MouseEvent) => {
+        if (filterMenuRef.current && !filterMenuRef.current.contains(e.target as Node)) {
+          setIsFilterOpen(false);
+        }
+      };
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, [isFilterOpen]);
     return (
       <div className="flex items-center justify-between gap-4 border-b border-[rgba(var(--border),0.12)] pb-3.5 min-h-[44px] shrink-0">
         <div className="flex items-center gap-3">
@@ -68,7 +89,7 @@ export const StagingHeader: React.FC<StagingHeaderProps> = memo(
             )}
           >
             {justCommitted ? (
-              <CheckCircle2 size={16} className="text-emerald-400" />
+              <CheckCircle2 size={16} className="text-[rgb(var(--accent))]" />
             ) : isSuggestionsActive ? (
               <Sparkles size={16} className="text-[rgb(var(--accent))]" />
             ) : mode === "comment" ? (
@@ -106,7 +127,7 @@ export const StagingHeader: React.FC<StagingHeaderProps> = memo(
                 : mode === "import"
                 ? "Paste markdown to replace current profile"
                 : mode === "facts"
-                ? "Extracted knowledge and behavioral observations"
+                ? `${observationCount !== undefined ? `${observationCount} ` : ""}Extracted knowledge and behavioral observations`
                 : "No pending suggestions"}
             </span>
           </div>
@@ -115,22 +136,78 @@ export const StagingHeader: React.FC<StagingHeaderProps> = memo(
         {/* Action controls in header */}
         <div className="flex items-center gap-2">
           {mode === "facts" ? (
-            <button
-              type="button"
-              onClick={() => onModeChange("idle")}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-mono border border-[rgba(var(--border),0.18)] bg-[rgba(var(--foreground),0.04)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:border-[rgba(var(--accent),0.3)] transition-all cursor-pointer"
-              title="Return to Staging Mirror"
-            >
-              <X size={12} />
-              <span>Close</span>
-            </button>
+            <div className="flex items-center gap-1.5">
+              {/* Filter dropdown */}
+              <div className="relative" ref={filterMenuRef}>
+                <button
+                  type="button"
+                  onClick={() => setIsFilterOpen((prev) => !prev)}
+                  className={cn(
+                    "flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-mono border transition-all cursor-pointer",
+                    isFilterOpen || (observationFilter && observationFilter !== "all")
+                      ? "bg-[rgba(var(--accent),0.12)] border-[rgba(var(--accent),0.35)] text-[rgb(var(--accent))]"
+                      : "border-[rgba(var(--border),0.18)] bg-[rgba(var(--foreground),0.04)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:border-[rgba(var(--accent),0.3)]"
+                  )}
+                  title="Filter observations"
+                  aria-expanded={isFilterOpen}
+                >
+                  <Filter size={11} className={observationFilter && observationFilter !== "all" ? "text-[rgb(var(--accent))]" : undefined} />
+                  <span className="capitalize">{observationFilter === "staged" ? "Staged" : observationFilter === "pending" ? "Pending" : observationFilter === "integrated" ? "Integrated" : "All"}</span>
+                  <ChevronDown size={11} className={cn("transition-transform duration-150 opacity-70", isFilterOpen && "rotate-180")} />
+                </button>
+
+                {isFilterOpen && (
+                  <div className="absolute right-0 top-full mt-1.5 w-36 py-1 rounded-xl bg-[rgb(var(--card))] border border-[rgba(var(--border),0.2)] shadow-xl z-50 backdrop-blur-md">
+                    {(
+                      [
+                        { id: "staged", label: "Staged" },
+                        { id: "pending", label: "Pending" },
+                        { id: "integrated", label: "Integrated" },
+                        { id: "all", label: "All" },
+                      ] as const
+                    ).map((item) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => {
+                          onObservationFilterChange?.(item.id);
+                          setIsFilterOpen(false);
+                        }}
+                        className={cn(
+                          "w-full px-3 py-1.5 text-left text-[11px] font-mono flex items-center justify-between transition-colors cursor-pointer",
+                          observationFilter === item.id
+                            ? "bg-[rgba(var(--accent),0.12)] text-[rgb(var(--accent))] font-medium"
+                            : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.04)]"
+                        )}
+                      >
+                        <span>{item.label}</span>
+                        {observationFilter === item.id && <Check size={11} className="text-[rgb(var(--accent))]" />}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => onModeChange("idle")}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-mono border border-[rgba(var(--border),0.18)] bg-[rgba(var(--foreground),0.04)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:border-[rgba(var(--accent),0.3)] transition-all cursor-pointer"
+                title="Return to Staging Mirror"
+              >
+                <X size={12} />
+                <span>Close</span>
+              </button>
+            </div>
           ) : isSuggestionsActive ? (
-            <div className="flex items-center gap-2">
+            /* Bulk selectors only. The primary apply action lives in the review
+               view's sticky footer so there is exactly one, and it can state how
+               many decisions it will send. */
+            <div className="flex items-center gap-1">
               <button
                 type="button"
                 onClick={onAcceptAll}
                 disabled={isApplyingSuggestions}
-                className="px-2.5 py-1 rounded-lg text-[11px] font-mono text-emerald-400 hover:bg-emerald-500/10 transition-colors cursor-pointer"
+                className="px-2.5 py-1 rounded-lg text-[11px] font-mono text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.1)] transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(var(--accent))]"
               >
                 {MEMORY_COPY.acceptAll}
               </button>
@@ -138,22 +215,9 @@ export const StagingHeader: React.FC<StagingHeaderProps> = memo(
                 type="button"
                 onClick={onRejectAll}
                 disabled={isApplyingSuggestions}
-                className="px-2.5 py-1 rounded-lg text-[11px] font-mono text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
+                className="px-2.5 py-1 rounded-lg text-[11px] font-mono text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.06)] transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(var(--accent))]"
               >
                 {MEMORY_COPY.rejectAll}
-              </button>
-              <button
-                type="button"
-                onClick={onApplyAllDecisions}
-                disabled={isApplyingSuggestions}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-mono font-medium bg-[rgba(var(--accent),0.2)] border border-[rgba(var(--accent),0.45)] text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.3)] transition-all cursor-pointer shadow-sm disabled:opacity-40"
-              >
-                <Check size={12} className={cn(isApplyingSuggestions && "animate-spin")} />
-                <span>
-                  {isApplyingSuggestions
-                    ? MEMORY_COPY.applyingDecisions
-                    : MEMORY_COPY.consolidate}
-                </span>
               </button>
             </div>
           ) : mode === "comment" ? (

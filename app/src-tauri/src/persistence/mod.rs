@@ -32,7 +32,7 @@ pub use compactions::{
 };
 pub use facts::{
     deactivate_observation, deactivate_observations_batch, fetch_active_episodic_observations,
-    fetch_active_observations_by_type, fetch_all_observations,
+    fetch_active_observations_by_type, fetch_all_observations, fetch_pending_queue_observations,
     mark_observations_integrated, EpisodicObservationCandidate, ObservationRecord,
 };
 pub use notifications::{NewNotification, NotificationRecord};

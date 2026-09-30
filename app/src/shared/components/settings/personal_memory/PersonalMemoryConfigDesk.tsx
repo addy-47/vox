@@ -8,12 +8,13 @@ export interface PersonalMemoryConfigDeskProps {
   layoutMode?: "full-max" | "full-min" | "small";
 }
 
-type PersonalMemorySubTab = "consolidation" | "depth" | "cutoff";
+type PersonalMemorySubTab = "consolidation" | "depth" | "cutoff" | "suggestions";
 
 const TABS: Array<{ id: PersonalMemorySubTab; label: string }> = [
   { id: "consolidation", label: PERSONAL_MEMORY_CONFIG_DESK_COPY.tabs.consolidation },
   { id: "depth", label: PERSONAL_MEMORY_CONFIG_DESK_COPY.tabs.depth },
   { id: "cutoff", label: PERSONAL_MEMORY_CONFIG_DESK_COPY.tabs.cutoff },
+  { id: "suggestions", label: PERSONAL_MEMORY_CONFIG_DESK_COPY.tabs.suggestions },
 ];
 
 function computeNextRunText(
@@ -52,6 +53,7 @@ export const PersonalMemoryConfigDesk = memo(({ layoutMode }: PersonalMemoryConf
   const semanticSimilarityCutoff = personalMemory?.semantic_similarity_cutoff ?? 0.40;
   const consolidationCadence = personalMemory?.consolidation_cadence ?? "daily";
   const consolidationTime = personalMemory?.consolidation_time ?? "02:00";
+  const suggestionPolicy = personalMemory?.suggestion_policy ?? "manual_review";
 
   const [timeDraft, setTimeDraft] = useState(consolidationTime);
 
@@ -423,6 +425,147 @@ export const PersonalMemoryConfigDesk = memo(({ layoutMode }: PersonalMemoryConf
                   className="w-full text-center text-[10.5px] font-mono font-bold bg-transparent outline-none text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40 placeholder:font-sans placeholder:font-normal py-1 appearance-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 />
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* TAB 4: SUGGESTIONS (SUGGESTION POLICY) */}
+        {activeSubTab === "suggestions" && (
+          <div className="flex flex-row items-center justify-between gap-3 h-full p-2.5 sm:p-3 rounded-xl bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--accent),0.08)] animate-fade-in">
+            {/* Left: Title & Description */}
+            <div className="flex flex-col gap-1 min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <span className="text-[12px] font-bold uppercase tracking-wider text-[rgb(var(--foreground))]">
+                  {copy.suggestions.title}
+                </span>
+              </div>
+              <p className="text-[11px] sm:text-[11.5px] text-[rgb(var(--foreground-muted))]/75 leading-relaxed font-medium">
+                {copy.suggestions.description}
+              </p>
+            </div>
+
+            {/* Right: Synthesis Merge Gate SVG & Interactive Toggle */}
+            <div className="shrink-0 flex flex-col items-center justify-center">
+              <button
+                type="button"
+                onClick={() =>
+                  updateDraft(
+                    "personal_memory",
+                    "suggestion_policy",
+                    suggestionPolicy === "auto_apply" ? "manual_review" : "auto_apply"
+                  )
+                }
+                className={cn(
+                  "flex flex-col items-center justify-center cursor-pointer transition-all duration-300 p-1 rounded-xl outline-none group/gate",
+                  "focus-visible:ring-2 focus-visible:ring-[rgb(var(--accent))] focus-visible:ring-offset-1 focus-visible:ring-offset-[rgb(var(--card))]"
+                )}
+                title={
+                  suggestionPolicy === "auto_apply"
+                    ? "Click to switch to Manual Review"
+                    : "Click to switch to Auto-Apply"
+                }
+              >
+                <div className="relative flex items-center justify-center">
+                  <svg
+                    width={48}
+                    height={48}
+                    viewBox="0 0 48 48"
+                    className={cn(
+                      "transition-all duration-300",
+                      suggestionPolicy === "auto_apply"
+                        ? "text-[rgb(var(--accent))]"
+                        : "text-[rgb(var(--foreground-muted))]"
+                    )}
+                  >
+                    {/* Outer gate circle */}
+                    <circle
+                      cx="24"
+                      cy="24"
+                      r="20"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                      strokeDasharray={suggestionPolicy === "auto_apply" ? "none" : "3 3"}
+                      className={cn(
+                        "transition-opacity duration-300",
+                        suggestionPolicy === "auto_apply" ? "opacity-90" : "opacity-40"
+                      )}
+                    />
+
+                    {/* Flow path / Stream */}
+                    <path
+                      d={
+                        suggestionPolicy === "auto_apply"
+                          ? "M 10 24 L 38 24"
+                          : "M 10 24 L 20 24 M 28 24 L 38 24"
+                      }
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                      className="transition-all duration-300"
+                    />
+
+                    {/* Auto-apply: direction arrow chevrons */}
+                    {suggestionPolicy === "auto_apply" ? (
+                      <>
+                        <path
+                          d="M 32 19 L 37 24 L 32 29"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.8"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                        <circle
+                          cx="24"
+                          cy="24"
+                          r="3.5"
+                          fill="currentColor"
+                          className="animate-pulse"
+                        />
+                      </>
+                    ) : (
+                      <>
+                        {/* Manual review: checkpoint shield / barrier */}
+                        <rect
+                          x="20.5"
+                          y="18.5"
+                          width="7"
+                          height="11"
+                          rx="2"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.5"
+                        />
+                        <line
+                          x1="24"
+                          y1="22"
+                          x2="24"
+                          y2="26"
+                          stroke="currentColor"
+                          strokeWidth="1.5"
+                          strokeLinecap="round"
+                        />
+                      </>
+                    )}
+                  </svg>
+                </div>
+
+                {/* Status Badge below SVG */}
+                <span
+                  className={cn(
+                    "mt-1 px-2 py-0.5 rounded-full text-[9px] font-mono font-bold uppercase tracking-[0.1em] leading-none transition-all duration-300",
+                    suggestionPolicy === "auto_apply"
+                      ? "text-[rgb(var(--accent))] bg-[rgba(var(--accent),0.1)]"
+                      : "text-[rgb(var(--foreground-muted))]/60 bg-[rgba(var(--foreground),0.03)]"
+                  )}
+                >
+                  {suggestionPolicy === "auto_apply"
+                    ? copy.suggestions.autoLabel
+                    : copy.suggestions.manualLabel}
+                </span>
+              </button>
             </div>
           </div>
         )}

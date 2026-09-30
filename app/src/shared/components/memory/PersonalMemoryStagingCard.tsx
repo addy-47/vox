@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useMemo, memo } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { Sparkles } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import type {
   MemoryRevisionView,
@@ -15,6 +17,7 @@ import { CommentsQueueView } from "./staging/CommentsQueueView";
 import { RawEditorView } from "./staging/RawEditorView";
 import { LearnedFactsList } from "./LearnedFactsList";
 import { PendingConfirmationBanner } from "./staging/PendingConfirmationBanner";
+import { PixelSynthesisCanvas } from "./PixelSynthesisCanvas";
 
 export * from "./stagingTypes";
 
@@ -140,7 +143,7 @@ export const PersonalMemoryStagingCard: React.FC<PersonalMemoryStagingCardProps>
     justCommitted = false,
     onViewVersionHistory,
     observations = [],
-    observationFilter = "active",
+    observationFilter = "staged",
     onObservationFilterChange,
     isLoadingObservations = false,
     isLoadingMoreObservations = false,
@@ -152,6 +155,7 @@ export const PersonalMemoryStagingCard: React.FC<PersonalMemoryStagingCardProps>
   }) => {
     const [draft, setDraft] = useState("");
     const [decisions, setDecisions] = useState<Record<string, "accept" | "reject">>({});
+    const [failedRevisionIds, setFailedRevisionIds] = useState<Set<string>>(new Set());
 
     useEffect(() => {
       if (mode === "edit") {
@@ -166,43 +170,8 @@ export const PersonalMemoryStagingCard: React.FC<PersonalMemoryStagingCardProps>
       [canonicalContent, canonicalMarkdown]
     );
 
-    const {
-      updateRevisionsByTarget,
-      deleteRevisionsByTarget,
-      createRevisionsBySection,
-      newSectionRevisions,
-    } = useMemo(() => {
-      const updates = new Map<string, MemoryRevisionView>();
-      const deletes = new Map<string, MemoryRevisionView>();
-      const creates = new Map<string, MemoryRevisionView[]>();
-      const newSections: MemoryRevisionView[] = [];
-
-      for (const sug of suggestions) {
-        const payload = parseOpPayload(sug.content);
-        if (sug.op === "update_block") {
-          const target = sug.target_id || payload.block_id || "";
-          if (target) updates.set(target, sug);
-          if (sug.old_text) updates.set(sug.old_text.trim(), sug);
-        } else if (sug.op === "delete_block") {
-          const target = sug.target_id || payload.block_id || "";
-          if (target) deletes.set(target, sug);
-          if (sug.old_text) deletes.set(sug.old_text.trim(), sug);
-        } else if (sug.op === "create_block") {
-          const secTarget = sug.target_id || payload.section_id || "";
-          const list = creates.get(secTarget) || [];
-          list.push(sug);
-          creates.set(secTarget, list);
-        } else if (sug.op === "create_section") {
-          newSections.push(sug);
-        }
-      }
-
-      return {
-        updateRevisionsByTarget: updates,
-        deleteRevisionsByTarget: deletes,
-        createRevisionsBySection: creates,
-        newSectionRevisions: newSections,
-      };
+    useEffect(() => {
+      setFailedRevisionIds(new Set());
     }, [suggestions]);
 
     const decisionStats = useMemo(() => {
@@ -224,34 +193,94 @@ export const PersonalMemoryStagingCard: React.FC<PersonalMemoryStagingCardProps>
           delete next[id];
           return next;
         }
-        return { ...prev, [id]: action };
+        const next = { ...prev, [id]: action };
+        const allDecided =
+          suggestions.length > 0 &&
+          suggestions.every((s) => next[s.id] === "accept" || next[s.id] === "reject");
+
+        if (allDecided && onApplySuggestions) {
+          setTimeout(() => {
+            void onApplySuggestions(next)
+              .then(() => {
+                setDecisions({});
+                setFailedRevisionIds(new Set());
+              })
+              .catch((e) => {
+                console.error("[PersonalMemoryStagingCard] Auto-finalising suggestions failed:", e);
+                setFailedRevisionIds(new Set(Object.keys(next)));
+              });
+          }, 200);
+        }
+
+        return next;
       });
     };
 
-    const handleAcceptAll = () => {
+    const handleAcceptAll = async () => {
       const all: Record<string, "accept" | "reject"> = {};
       for (const s of suggestions) {
         all[s.id] = "accept";
       }
       setDecisions(all);
+      if (onApplySuggestions && suggestions.length > 0) {
+        try {
+          await onApplySuggestions(all);
+          setDecisions({});
+          setFailedRevisionIds(new Set());
+        } catch (e) {
+          console.error("[PersonalMemoryStagingCard] Accept all failed:", e);
+          setFailedRevisionIds(new Set(Object.keys(all)));
+        }
+      }
     };
 
-    const handleRejectAll = () => {
+    const handleRejectAll = async () => {
       const all: Record<string, "accept" | "reject"> = {};
       for (const s of suggestions) {
         all[s.id] = "reject";
       }
       setDecisions(all);
+      if (onApplySuggestions && suggestions.length > 0) {
+        try {
+          await onApplySuggestions(all);
+          setDecisions({});
+          setFailedRevisionIds(new Set());
+        } catch (e) {
+          console.error("[PersonalMemoryStagingCard] Reject all failed:", e);
+          setFailedRevisionIds(new Set(Object.keys(all)));
+        }
+      }
     };
 
-    const handleApplyAllDecisions = async () => {
+    const handleApplySelectedDecisions = async () => {
       if (!onApplySuggestions || suggestions.length === 0) return;
-      const finalDecisions: Record<string, "accept" | "reject"> = {};
+
+      const selected: Record<string, "accept" | "reject"> = {};
       for (const sug of suggestions) {
-        finalDecisions[sug.id] = decisions[sug.id] ?? "accept";
+        const decision = decisions[sug.id];
+        if (decision === "accept" || decision === "reject") {
+          selected[sug.id] = decision;
+        }
       }
-      await onApplySuggestions(finalDecisions);
-      setDecisions({});
+      if (Object.keys(selected).length === 0) return;
+
+      try {
+        await onApplySuggestions(selected);
+        setDecisions((prev) => {
+          const next = { ...prev };
+          for (const id of Object.keys(selected)) delete next[id];
+          return next;
+        });
+        setFailedRevisionIds(new Set());
+      } catch (e) {
+        console.error("[PersonalMemoryStagingCard] Applying decisions failed:", e);
+        setFailedRevisionIds(new Set(Object.keys(selected)));
+      }
+    };
+
+    const handleRetryFailed = () => {
+      if (failedRevisionIds.size === 0) return;
+      void handleApplySelectedDecisions();
     };
 
     const handleCommit = async () => {
@@ -278,10 +307,35 @@ export const PersonalMemoryStagingCard: React.FC<PersonalMemoryStagingCardProps>
           isSuggestionsActive
             ? "border-[rgba(var(--accent),0.35)] shadow-xl"
             : "border-[rgba(var(--accent),0.18)] hover:border-[rgba(var(--accent),0.35)] shadow-2xl",
-          (isSaving || isConsolidating || isCommitting || isApplyingSuggestions) &&
+          (isSaving || isCommitting || isApplyingSuggestions) &&
             "opacity-50 pointer-events-none select-none"
         )}
       >
+        {/* Organic Synthesis Overlay on Right Card while consolidating/integrating */}
+        <AnimatePresence>
+          {isConsolidating && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.35, ease: "easeInOut" }}
+              className="absolute inset-0 z-40 rounded-2xl overflow-hidden bg-[rgba(var(--card),0.85)] backdrop-blur-md flex flex-col items-center justify-center pointer-events-auto"
+            >
+              <PixelSynthesisCanvas active={isConsolidating} />
+              <div className="relative z-10 flex flex-col items-center text-center p-6">
+                <div className="w-10 h-10 rounded-xl bg-[rgba(var(--accent),0.15)] border border-[rgba(var(--accent),0.3)] flex items-center justify-center text-[rgb(var(--accent))] mb-3 shadow-lg animate-pulse">
+                  <Sparkles size={20} />
+                </div>
+                <h4 className="text-[13px] font-semibold text-[rgb(var(--foreground))] mb-1">
+                  Synthesizing Profile Updates…
+                </h4>
+                <p className="text-[11px] font-mono text-[rgb(var(--foreground-muted))] max-w-xs">
+                  Analyzing observations against your personal memory structure.
+                </p>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
         <StagingHeader
           mode={mode}
           onModeChange={onModeChange}
@@ -294,10 +348,12 @@ export const PersonalMemoryStagingCard: React.FC<PersonalMemoryStagingCardProps>
           draftEmpty={!draft.trim()}
           onAcceptAll={handleAcceptAll}
           onRejectAll={handleRejectAll}
-          onApplyAllDecisions={handleApplyAllDecisions}
           onRegenerate={() => handleRegenerate()}
           onClearComments={onClearComments}
           onCommit={handleCommit}
+          observationFilter={observationFilter}
+          onObservationFilterChange={onObservationFilterChange}
+          observationCount={(observations.length > 0 ? observations : candidateFacts).length}
         />
 
         {pendingConfirmation && (
@@ -317,11 +373,15 @@ export const PersonalMemoryStagingCard: React.FC<PersonalMemoryStagingCardProps>
         ) : isSuggestionsActive ? (
           <SuggestionsReviewView
             baseSections={baseSections}
-            createRevisionsBySection={createRevisionsBySection}
-            updateRevisionsByTarget={updateRevisionsByTarget}
-            deleteRevisionsByTarget={deleteRevisionsByTarget}
-            newSectionRevisions={newSectionRevisions}
+            revisions={suggestions}
             decisions={decisions}
+            decidedCount={decisionStats.accepted + decisionStats.rejected}
+            undecidedCount={decisionStats.pending}
+            isApplying={Boolean(isApplyingSuggestions)}
+            actionsDisabled={Boolean(isApplyingSuggestions)}
+            failedRevisionIds={failedRevisionIds}
+            onRetryFailed={handleRetryFailed}
+            onApplyDecisions={handleApplySelectedDecisions}
             onSelectDecision={handleSelectDecision}
             parseOpPayload={parseOpPayload}
           />

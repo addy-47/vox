@@ -75,10 +75,11 @@ Output only the raw JSON object. No Markdown, no bullets, no code fences, no pre
 <rules>
 1. Minimal edits: Only propose operations necessary to integrate the new observations. Do not rewrite or touch blocks that are unchanged.
 2. Creating new sections: When new observations introduce a distinct domain or topic not covered by existing sections, ALWAYS create a new section via "new_sections". Never force unrelated observations into an existing section, and NEVER drop or ignore valid observations.
-3. Synthesize into prose: Each block must express a coherent, complete idea in 1 to 3 sentences of natural prose. Never emit bullet points or fragmented notes.
-4. Splitting blocks: If an existing block must split into two independent ideas, emit an update for the existing block plus a create for the new block into that section.
-5. Absolute fidelity: Do NOT invent observations that are not present in the new observations list.
-6. Empty arrays are valid and preferred when an operation type is not needed (e.g. "deletes": []).
+3. CRITICAL — Handle fidelity: The `creates` array accepts ONLY section handles that appear in the `<memory_view>` above (e.g. `s1`, `s2` … up to the last section listed). NEVER invent a handle like `s5` when only `s1`–`s4` exist — if the observation belongs to a new topic, use `new_sections` instead.
+4. Synthesize into prose: Each block must express a coherent, complete idea in 1 to 3 sentences of natural prose. Never emit bullet points or fragmented notes.
+5. Splitting blocks: If an existing block must split into two independent ideas, emit an update for the existing block plus a create for the new block into that section.
+6. Absolute fidelity: Do NOT invent observations that are not present in the new observations list.
+7. Empty arrays are valid and preferred when an operation type is not needed (e.g. "deletes": []).
 </rules>"###;
 
 /// Comment-directed editing: apply the user's directive comments to the existing memory.

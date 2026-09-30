@@ -3,7 +3,7 @@ import { getObservations, type ObservationRecord } from "@/services/memoryServic
 
 const PAGE_SIZE = 25;
 
-export type ObservationFilter = "all" | "active" | "integrated";
+export type ObservationFilter = "all" | "staged" | "pending" | "integrated";
 
 export interface UseObservationsListReturn {
   observations: ObservationRecord[];
@@ -18,9 +18,10 @@ export interface UseObservationsListReturn {
 
 export function useObservationsList(
   active: boolean,
-  projectId?: string
+  projectId?: string,
+  observationType?: string
 ): UseObservationsListReturn {
-  const [statusFilter, setStatusFilter] = useState<ObservationFilter>("active");
+  const [statusFilter, setStatusFilter] = useState<ObservationFilter>("staged");
   const [observations, setObservations] = useState<ObservationRecord[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
@@ -43,7 +44,8 @@ export function useObservationsList(
 
       try {
         const statusParam = filter === "all" ? undefined : filter;
-        const batch = await getObservations(projectId, statusParam, PAGE_SIZE, offset);
+        const typeParam = observationType === "all" ? undefined : observationType;
+        const batch = await getObservations(projectId, statusParam, PAGE_SIZE, offset, typeParam);
 
         if (batch.length < PAGE_SIZE) {
           hasMoreRef.current = false;
@@ -72,7 +74,7 @@ export function useObservationsList(
         isFetchingRef.current = false;
       }
     },
-    [projectId]
+    [projectId, observationType]
   );
 
   // Re-fetch when active becomes true or statusFilter changes
