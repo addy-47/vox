@@ -39,7 +39,9 @@ use crate::{
             },
             LlmActiveProvider,
         },
-        memory::{compaction::coordinator::CompactionCoordinator,spawn_ingestion_sweep, trim_heap},
+        memory::{
+            compaction::coordinator::CompactionCoordinator, spawn_ingestion_sweep, trim_heap,
+        },
         notifications::{Action, ActionPayload, NotificationCategory, NotificationParams},
         realtime::{create_realtime_provider, purge_session_cache, RealtimeActor},
         tts::actor::cool_down_tts,

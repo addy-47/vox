@@ -3,7 +3,6 @@ import type {
   VoxSettings,
   ModelCatalog,
   LlmProviderConfig,
-  SttProviderConfig,
   ModelCapabilities,
   LlmModelInfo,
   ProviderCaps,
@@ -92,12 +91,6 @@ export async function checkLlmProviderHealth(
   return invoke<ProviderHealthCheckResult>("check_provider_health", { kind: "llm", provider });
 }
 
-export async function checkSttProviderHealth(
-  provider?: SttProviderConfig
-): Promise<ProviderHealthCheckResult> {
-  return invoke<ProviderHealthCheckResult>("check_provider_health", { kind: "stt", provider });
-}
-
 /** Check health/connectivity for the saved active TTS provider. No payload:
  * the backend derives the config from its own settings via to_provider_config. */
 export async function checkTtsProviderHealth(): Promise<ProviderHealthCheckResult> {
@@ -146,22 +139,6 @@ export function probeModelCapabilitiesFull(
   });
 }
 
-/** Validate output token cap against model ceiling. */
-export async function validateLlmTokenCap(
-  provider: LlmProviderConfig | undefined,
-  modelId: string | undefined,
-  targetCap: number
-): Promise<number | null> {
-  const res = await invoke<ModelProbeResult>("probe_model_capabilities", {
-    provider,
-    modelId,
-    targetCap,
-    model_id: modelId,
-    target_cap: targetCap,
-  });
-  return res.validated_cap;
-}
-
 /** List audio input or output devices (ipc/audio.rs). */
 export function listAudioDevices(kind: "input" | "output" = "input"): Promise<AudioDevice[]> {
   return invoke("list_audio_devices", { kind });
@@ -169,11 +146,6 @@ export function listAudioDevices(kind: "input" | "output" = "input"): Promise<Au
 
 export function listInputDevices(): Promise<AudioDevice[]> {
   return listAudioDevices("input");
-}
-
-/** Mark setup wizard as completed (ipc/settings.rs). */
-export function completeSetupWizard(): Promise<void> {
-  return invoke("complete_setup_wizard");
 }
 
 export interface RemoteServerConfig {

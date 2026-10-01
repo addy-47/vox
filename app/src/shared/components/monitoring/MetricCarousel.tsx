@@ -9,7 +9,7 @@ import {
   Headphones,
   Database,
 } from "lucide-react";
-import { type RuntimeSnapshot } from "@/services/pipelineService";
+import { type RuntimeSnapshot } from "@/services/monitoringService";
 import { MONITORING_COPY } from "@/data/monitoringCopy";
 import { type DynamicColors } from "./colorUtils";
 

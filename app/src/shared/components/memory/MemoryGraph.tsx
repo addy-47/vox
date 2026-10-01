@@ -10,7 +10,7 @@ import React, {
   ReactNode,
 } from "react";
 import * as THREE from "three";
-import { FactRecord } from "@/services/memoryService";
+import { ObservationRecord } from "@/services/memoryService";
 import { MEMORY_COPY } from "@/data/memoryCopy";
 import { useMemoryTrace } from "@/shared/hooks/useMemoryTrace";
 import { useMemoryGraphScene } from "@/shared/hooks/useMemoryGraphScene";
@@ -89,12 +89,12 @@ class GraphErrorBoundary extends Component<GraphErrorBoundaryProps, GraphErrorBo
 }
 
 interface MemoryGraphProps {
-  facts: FactRecord[];
+  facts: ObservationRecord[];
   width: number;
   height: number;
   searchQuery: string;
   selectedCollection: string;
-  onSelectNode: (fact: FactRecord | null, pos?: { x: number; y: number }) => void;
+  onSelectNode: (fact: ObservationRecord | null, pos?: { x: number; y: number }) => void;
   onCoreClick?: () => void;
   selectedFactId: string | null;
   selectedSessionId?: string | null;

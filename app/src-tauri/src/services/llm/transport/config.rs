@@ -72,9 +72,4 @@ impl ConnectionConfig {
             provider_kind: "server".to_string(),
         }
     }
-
-    pub fn with_provider_kind(mut self, kind: impl Into<String>) -> Self {
-        self.provider_kind = kind.into();
-        self
-    }
 }

@@ -156,7 +156,9 @@ pub async fn get_model_catalog<R: tauri::Runtime>(
                     .map(|v| v.name.clone())
                     .or_else(|| Some(display_name_for_slug(slug)))
             } else {
-                pack.first().map(|v| v.name.clone()).or_else(|| Some("Alfred".to_string()))
+                pack.first()
+                    .map(|v| v.name.clone())
+                    .or_else(|| Some("Alfred".to_string()))
             };
 
             (profiles, active)
@@ -171,11 +173,7 @@ pub async fn get_model_catalog<R: tauri::Runtime>(
             let active = if let Some(id) = voice_id {
                 let conn = state.db.connect().ok();
                 if let Some(ref conn) = conn {
-                    get_voice(conn, id)
-                        .await
-                        .ok()
-                        .flatten()
-                        .map(|v| v.name)
+                    get_voice(conn, id).await.ok().flatten().map(|v| v.name)
                 } else {
                     None
                 }

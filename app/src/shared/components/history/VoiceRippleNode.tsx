@@ -1,5 +1,4 @@
 import React, { useMemo, memo } from "react";
-import { motion } from "framer-motion";
 import { Trash2, Check, X } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { Tooltip } from "@/shared/ui/Tooltip";
@@ -43,15 +42,13 @@ export const VoiceRippleNode = memo(
     };
 
     return (
-      <motion.div
-        layoutId={`session-card-${session.id}`}
-        layout
+      <div
         role="button"
         tabIndex={0}
         onKeyDown={handleKeyDown}
         style={{ width: ORBIT_CARD_WIDTH }}
         className={cn(
-          "rounded-2xl p-4 flex flex-col text-left select-none group cursor-pointer transition-colors duration-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))]",
+          "rounded-2xl p-4 flex flex-col text-left select-none group cursor-pointer transition-all duration-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))]",
           isSelected
             ? "orbit-card-surface-selected scale-[1.03]"
             : "orbit-card-surface hover:border-[rgb(var(--accent))] hover:shadow-[0_0_25px_rgba(var(--accent),0.3)] hover:scale-[1.02]"
@@ -141,7 +138,7 @@ export const VoiceRippleNode = memo(
               : HISTORY_COPY.turnPlural}
           </span>
         </div>
-      </motion.div>
+      </div>
     );
   }
 );

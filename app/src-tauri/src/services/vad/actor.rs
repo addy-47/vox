@@ -71,8 +71,6 @@ pub enum VadCommand {
 #[derive(Debug, Clone)]
 pub struct VadValidationResult {
     pub is_speech_detected: bool,
-    pub speech_start_sample: usize,
-    pub speech_end_sample: usize,
     pub audio: Vec<f32>,
 }
 
@@ -93,11 +91,6 @@ pub struct VadActorState {
     pub utterance_buffer: Vec<f32>,
     pub pre_roll_buffer: PreRollBuffer,
     pub realtime_tx: Option<tokio::sync::mpsc::Sender<Vec<i16>>>,
-    pub pcm_scratch: Vec<i16>,
-    pub partial_recycle_tx: mpsc::SyncSender<Vec<f32>>,
-    pub partial_recycle_rx: mpsc::Receiver<Vec<f32>>,
-    pub realtime_recycle_tx: mpsc::SyncSender<Vec<i16>>,
-    pub realtime_recycle_rx: mpsc::Receiver<Vec<i16>>,
 
     // WindowedValidation state tracking
     pub window_active: bool,
@@ -161,8 +154,7 @@ impl VadActorState {
         let speech_end_frames = (silence_duration_ms as usize / 16).max(1);
         let speech_start_frames = (speech_onset_ms as usize / 16).max(1);
 
-        let (partial_recycle_tx, partial_recycle_rx) = mpsc::sync_channel(4);
-        let (realtime_recycle_tx, realtime_recycle_rx) = mpsc::sync_channel(32);
+
 
         Self {
             threshold,
@@ -182,11 +174,6 @@ impl VadActorState {
             ),
             pre_roll_buffer: PreRollBuffer::new(VAD_PRE_ROLL_CAPACITY),
             realtime_tx: None,
-            pcm_scratch: Vec::with_capacity(VAD_CHUNK_SIZE),
-            partial_recycle_tx,
-            partial_recycle_rx,
-            realtime_recycle_tx,
-            realtime_recycle_rx,
             window_active: false,
             window_sample_offset: 0,
             window_speech_detected: false,
@@ -305,8 +292,6 @@ fn process_vad_commands(
                 state.window_buffer.clear();
                 let result = VadValidationResult {
                     is_speech_detected: state.window_speech_detected,
-                    speech_start_sample: state.window_first_speech_sample,
-                    speech_end_sample: state.window_last_speech_sample,
                     audio: trimmed_audio,
                 };
                 if response_tx.send(result).is_err() {
@@ -340,11 +325,6 @@ fn process_vad_commands(
 }
 
 /// Extracts the speech region from a PTT window buffer for `StopWindowValidation`.
-///
-/// Returns the slice between the first and last speech samples when that span reaches
-/// `MIN_WINDOWED_SPEECH_SAMPLES`, otherwise falls back to the whole buffer when speech was
-/// detected, and returns an empty buffer when no speech was detected. Sample indices are
-/// clamped to `raw_len` so a stale marker can never panic the actor.
 pub fn trim_window(state: &VadActorState, raw_len: usize) -> Vec<f32> {
     let start = state.window_first_speech_sample.min(raw_len);
     let end = state.window_last_speech_sample.min(raw_len);
@@ -510,7 +490,6 @@ mod tests {
         (s, state_atomic, suppressed)
     }
 
-    /// Tests should_suppress_audio returns false when state is not Speaking.
     #[test]
     fn test_suppression_requires_speaking_state() {
         let (state, atomic, suppressed) = make_state(
@@ -527,7 +506,6 @@ mod tests {
         assert!(!should_suppress_audio(&suppressed2, &atomic2, &state2));
     }
 
-    /// Tests suppression active only for Speaker + Speaking + no realtime_tx.
     #[test]
     fn test_suppression_speaker_speaking_no_realtime() {
         let (state, atomic, suppressed) = make_state(
@@ -538,7 +516,6 @@ mod tests {
         assert!(should_suppress_audio(&suppressed, &atomic, &state));
     }
 
-    /// Tests Headset never suppresses even while Speaking.
     #[test]
     fn test_headset_never_suppresses() {
         let (state, atomic, suppressed) = make_state(
@@ -549,7 +526,6 @@ mod tests {
         assert!(!should_suppress_audio(&suppressed, &atomic, &state));
     }
 
-    /// Tests realtime_tx Some bypasses suppression (passthrough mode).
     #[test]
     fn test_realtime_bypasses_suppression() {
         let (tx, _rx) = tokio::sync::mpsc::channel(1);
@@ -561,7 +537,6 @@ mod tests {
         assert!(!should_suppress_audio(&suppressed, &atomic, &state));
     }
 
-    /// Tests explicit audio_suppressed flag forces suppression regardless of state/mode.
     #[test]
     fn test_audio_suppressed_flag_forces_suppression() {
         let (state, atomic, suppressed) = make_state(
@@ -580,12 +555,6 @@ mod tests {
         assert!(should_suppress_audio(&suppressed2, &atomic2, &state2));
     }
 
-    /// Tests trim_window: the extracted production trimming logic, across all three branches.
-    ///
-    /// Branch 1 (sliced trim): speech span >= 256 samples -> only [first, last) is returned.
-    /// Branch 2 (fallback):    speech detected but span < 256 -> whole buffer returned.
-    /// Branch 3 (no speech):   no speech detected -> empty buffer returned.
-    /// Clamp:                  markers beyond raw_len are clamped, never panicking.
     #[test]
     fn test_trim_window_branches() {
         let mut s = VadActorState::new(
@@ -599,7 +568,6 @@ mod tests {
         s.window_buffer = (0..1000).map(|i| i as f32).collect();
         let raw_len = s.window_buffer.len();
 
-        // Branch 1: speech span of 800 samples (>= 256) is sliced out of the buffer.
         s.window_speech_detected = true;
         s.window_first_speech_sample = 100;
         s.window_last_speech_sample = 900;
@@ -612,9 +580,8 @@ mod tests {
         assert_eq!(sliced.first().copied(), Some(100.0));
         assert_eq!(sliced.last().copied(), Some(899.0));
 
-        // Branch 2: speech detected but span below the 256 minimum -> whole buffer.
         s.window_first_speech_sample = 10;
-        s.window_last_speech_sample = 200; // span = 190 < 256
+        s.window_last_speech_sample = 200; 
         let fallback = trim_window(&s, raw_len);
         assert_eq!(
             fallback.len(),
@@ -622,7 +589,6 @@ mod tests {
             "sub-minimum speech span must fall back to the whole buffer"
         );
 
-        // Branch 3: no speech detected -> empty buffer regardless of markers.
         s.window_speech_detected = false;
         s.window_first_speech_sample = 100;
         s.window_last_speech_sample = 900;
@@ -631,7 +597,6 @@ mod tests {
             "no speech must yield an empty buffer"
         );
 
-        // Clamp: markers past raw_len are clamped instead of panicking.
         s.window_speech_detected = true;
         s.window_first_speech_sample = 5;
         s.window_last_speech_sample = 99_999;

@@ -19,12 +19,3 @@ export function normalizeToInteractionModeUpper(mode?: AnyInteractionMode | null
   return upper === "PTT" ? "PTT" : "PASSIVE";
 }
 
-/**
- * Normalizes any interaction mode representation into canonical lowercase "passive" | "ptt".
- * Defaults safely to "passive".
- */
-export function normalizeToInteractionModeLower(mode?: AnyInteractionMode | null): InteractionModeLower {
-  if (!mode) return "passive";
-  const lower = String(mode).trim().toLowerCase();
-  return lower === "ptt" ? "ptt" : "passive";
-}

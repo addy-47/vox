@@ -9,13 +9,13 @@ use super::model::{
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ConsolidationOutput {
     #[serde(default)]
-    pub new_sections: Vec<NewSectionOutput>,
+    pub new: Vec<NewSectionOutput>,
     #[serde(default)]
-    pub creates: Vec<CreateBlockOutput>,
+    pub add: Vec<CreateBlockOutput>,
     #[serde(default)]
-    pub updates: Vec<UpdateBlockOutput>,
+    pub update: Vec<UpdateBlockOutput>,
     #[serde(default)]
-    pub deletes: Vec<DeleteBlockOutput>,
+    pub delete: Vec<DeleteBlockOutput>,
 }
 
 /// A whole new section proposed by the LLM, carrying its own initial blocks so that creating a
@@ -78,12 +78,6 @@ impl ResolvedOp {
             Self::DeleteBlock { block_id } => block_id,
         }
     }
-
-    /// True when the operation only adds or rewrites content and therefore cannot lose user data.
-    /// Used by the `auto_apply` revision policy, which commits these directly and holds deletions.
-    pub fn is_non_destructive(&self) -> bool {
-        !matches!(self, Self::DeleteBlock { .. })
-    }
 }
 
 /// An operation the engine refused to apply, with the reason.
@@ -109,7 +103,7 @@ pub fn resolve_operations(
     let mut resolved = Vec::new();
     let mut rejected = Vec::new();
 
-    for section in &output.new_sections {
+    for section in &output.new {
         if section.title.trim().is_empty() {
             rejected.push(RejectedOperation {
                 position: resolved.len() + rejected.len(),
@@ -127,7 +121,7 @@ pub fn resolve_operations(
         });
     }
 
-    for create in &output.creates {
+    for create in &output.add {
         match handle_map.resolve_section(&create.section) {
             Some(section_id) if !create.text.trim().is_empty() => {
                 resolved.push(ResolvedOp::CreateBlock {
@@ -149,12 +143,15 @@ pub fn resolve_operations(
                     section_id: String::new(),
                     text: create.text.clone(),
                 },
-                reason: format!("unknown section handle '{}' — model should use new_sections for new topics", create.section),
+                reason: format!(
+                    "unknown section handle '{}' — model should use new for new topics",
+                    create.section
+                ),
             }),
         }
     }
 
-    for update in &output.updates {
+    for update in &output.update {
         match handle_map.resolve_block(&update.block) {
             Some(block_id) if !update.text.trim().is_empty() => {
                 resolved.push(ResolvedOp::UpdateBlock {
@@ -181,7 +178,7 @@ pub fn resolve_operations(
         }
     }
 
-    for delete in &output.deletes {
+    for delete in &output.delete {
         match handle_map.resolve_block(&delete.block) {
             Some(block_id) => resolved.push(ResolvedOp::DeleteBlock {
                 block_id: block_id.to_string(),
@@ -342,19 +339,19 @@ mod tests {
         let (_view, handle_map) = memory.to_handle_format();
 
         let output = ConsolidationOutput {
-            new_sections: vec![NewSectionOutput {
+            new: vec![NewSectionOutput {
                 title: "Projects".to_string(),
                 blocks: vec!["Building Vox assistant.".to_string()],
             }],
-            creates: vec![CreateBlockOutput {
+            add: vec![CreateBlockOutput {
                 section: "s1".to_string(),
                 text: "Also loves hiking.".to_string(),
             }],
-            updates: vec![UpdateBlockOutput {
+            update: vec![UpdateBlockOutput {
                 block: "b1".to_string(),
                 text: "Lives in Seattle now.".to_string(),
             }],
-            deletes: vec![DeleteBlockOutput {
+            delete: vec![DeleteBlockOutput {
                 block: "b3".to_string(),
             }],
         };
@@ -402,11 +399,11 @@ mod tests {
         let (_view, handle_map) = memory.to_handle_format();
 
         let output = ConsolidationOutput {
-            new_sections: vec![NewSectionOutput {
+            new: vec![NewSectionOutput {
                 title: "   ".to_string(), // empty title -> reject
                 blocks: vec![],
             }],
-            creates: vec![
+            add: vec![
                 CreateBlockOutput {
                     section: "s99".to_string(), // unknown section -> reject
                     text: "Valid text".to_string(),
@@ -416,7 +413,7 @@ mod tests {
                     text: "   ".to_string(), // empty text -> reject
                 },
             ],
-            updates: vec![
+            update: vec![
                 UpdateBlockOutput {
                     block: "b99".to_string(), // unknown block -> reject
                     text: "Valid text".to_string(),
@@ -426,7 +423,7 @@ mod tests {
                     text: "".to_string(), // empty text -> reject
                 },
             ],
-            deletes: vec![
+            delete: vec![
                 DeleteBlockOutput {
                     block: "b99".to_string(), // unknown block -> reject
                 },
@@ -551,31 +548,5 @@ mod tests {
             extract_json_payload("```\n{\"key\": \"value\"}\n```"),
             r#"{"key": "value"}"#
         );
-    }
-
-    #[test]
-    fn test_resolved_op_is_non_destructive() {
-        assert!(ResolvedOp::CreateSection {
-            title: "T".to_string(),
-            blocks: vec![]
-        }
-        .is_non_destructive());
-
-        assert!(ResolvedOp::CreateBlock {
-            section_id: "s".to_string(),
-            text: "t".to_string()
-        }
-        .is_non_destructive());
-
-        assert!(ResolvedOp::UpdateBlock {
-            block_id: "b".to_string(),
-            text: "t".to_string()
-        }
-        .is_non_destructive());
-
-        assert!(!ResolvedOp::DeleteBlock {
-            block_id: "b".to_string()
-        }
-        .is_non_destructive());
     }
 }

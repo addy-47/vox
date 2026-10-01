@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { getRuntimeSnapshot } from "./monitoringService";
-import type { InteractionState } from "@/services/eventsService";
+import { type InteractionState, VALID_INTERACTION_STATES } from "@/services/eventsService";
 import type { SessionRow, TurnRow } from "./historyService";
 import { useSessionStore } from "@/store/sessionStore";
 
@@ -29,9 +29,6 @@ export interface SessionOrchestrationResult {
   readonly reason?: "invalid_state" | "timeout" | "error";
 }
 
-const VALID_STATES = new Set<InteractionState>([
-  "Idle", "Ready", "Listening", "Thinking", "Speaking", "Paused", "Error", "Sleeping", "Working",
-]);
 
 export interface ContinueSessionResult {
   session: SessionRow;
@@ -210,7 +207,7 @@ async function waitForState(
 async function resyncFromSnapshot(): Promise<{ success: boolean }> {
   try {
     const snap = await getRuntimeSnapshot();
-    if (snap?.pipeline_state && VALID_STATES.has(snap.pipeline_state as InteractionState)) {
+    if (snap?.pipeline_state && VALID_INTERACTION_STATES.has(snap.pipeline_state as InteractionState)) {
       return { success: true };
     }
     return { success: false };
@@ -248,19 +245,3 @@ export function setMicMuted(muted: boolean): Promise<void> {
 export function setSessionPrivateMode(enabled: boolean): Promise<void> {
   return invoke("set_session_private_mode", { enabled });
 }
-
-// ── Re-exports for Backward Compatibility ────────────────────────────────────
-
-export { getRuntimeSnapshot, type RuntimeSnapshot, type LocalSnapshot } from "./monitoringService";
-export {
-  listVoices,
-  renameVoice,
-  addVoiceFromFile,
-  addVoiceFromRecording,
-  deleteVoice,
-  startBackendRecording,
-  stopBackendRecording,
-  type VoiceEntryDto,
-  type EdgeTtsVoiceDto,
-} from "./voiceService";
-export { setupRemoteServer, type RemoteServerConfig } from "./settingsService";

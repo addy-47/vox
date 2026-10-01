@@ -4,7 +4,7 @@ import { useSessionStore } from "@/store/sessionStore";
 import { onSessionsChanged } from "@/services/eventsService";
 import { getSessions, resolveSessionTitle } from "@/services/historyService";
 import { getProjects } from "@/services/projectService";
-import { getRuntimeSnapshot } from "@/services/pipelineService";
+import { getRuntimeSnapshot } from "@/services/monitoringService";
 
 interface ActiveSessionHeaderProps {
   panelOpen: boolean;

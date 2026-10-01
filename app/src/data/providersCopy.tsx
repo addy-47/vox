@@ -65,19 +65,6 @@ export const GeminiLogo = ({
   </svg>
 );
 
-export const OpenAiLogo = ({
-  active,
-  ...props
-}: { active?: boolean } & React.SVGProps<SVGSVGElement>) => (
-  <svg viewBox="0 0 24 24" fill="currentColor" {...props}>
-    <path
-      d="M21.3 11.1c0-.7-.2-1.4-.6-2-.4-.6-1-.9-1.7-1.1-.1-.7-.4-1.3-.9-1.8s-1.1-.9-1.8-1c-.5-.5-1.1-.9-1.8-1-.7-.2-1.4-.2-2.1 0-.6.2-1.2.5-1.7 1-.5-.5-1.1-.8-1.7-1-.7-.2-1.4-.2-2.1 0-.7.2-1.3.5-1.8 1-.5.5-.8 1.1-.9 1.8-.7.1-1.3.4-1.8.9C3 8.4 2.7 9 2.6 9.7c-.5.5-.9 1.1-1 1.8-.2.7-.2 1.4 0 2.1.2.6.5 1.2 1 1.7-.5.5-.8 1.1-1 1.7-.2.7-.2 1.4 0 2.1.2.7.5 1.3 1 1.8.5.5 1.1.8 1.8.9.1.7.4 1.3.9 1.8.5.5 1.1.9 1.8 1 .5.5 1.1.9 1.8 1 .7.2 1.4.2 2.1 0 .6-.2 1.2-.5 1.7-1 .5.5 1.1.8 1.7 1 .7.2 1.4.2 2.1 0 .7-.2 1.3-.5 1.8-1 .5-.5.8-1.1.9-1.8.7-.1 1.3-.4 1.8-.9.5-.5.8-1.1.9-1.8.5-.5.9-1.1 1-1.8.2-.7.2-1.4 0-2.1-.2-.6-.5-1.2-1-1.7.5-.5.8-1.1 1-1.7.2-.6.2-1.3 0-2zm-8.8 7.3l-2.9-1.7c-.2-.1-.3-.3-.3-.6V12.7l1.4.8c.2.1.3.3.3.6v2.1l1.5.9v-4.2l-1.4-.8c-.2-.1-.3-.3-.3-.6V9.3l2.9 1.7c.2.1.3.3.3.6v3.4l-1.4-.8c-.2-.1-.3-.3-.3-.6v-2.1l-1.5-.9v4.2l1.4.8c.2.1.3.3.3.6v1.9z"
-      fill="currentColor"
-      opacity={active ? 0.9 : 0.45}
-    />
-  </svg>
-);
-
 export const DeepgramLogo = ({
   active,
   ...props
@@ -101,39 +88,7 @@ export const DeepgramLogo = ({
   </svg>
 );
 
-export const ElevenLabsLogo = ({
-  active,
-  ...props
-}: { active?: boolean } & React.SVGProps<SVGSVGElement>) => (
-  <svg viewBox="0 0 24 24" fill="currentColor" {...props}>
-    <rect
-      x="5"
-      y="4"
-      width="5.5"
-      height="16"
-      rx="2.5"
-      fill="currentColor"
-      opacity={active ? 0.95 : 0.45}
-    />
-    <rect
-      x="13.5"
-      y="4"
-      width="5.5"
-      height="16"
-      rx="2.5"
-      fill="currentColor"
-      opacity={active ? 0.75 : 0.3}
-    />
-  </svg>
-);
 
-export const CLOUD_PROVIDER_HOSTS = CLOUD_PROVIDERS.map((p) => {
-  try {
-    return new URL(p.url).hostname;
-  } catch {
-    return p.id;
-  }
-});
 
 export const REALTIME_PROVIDERS = [
   {

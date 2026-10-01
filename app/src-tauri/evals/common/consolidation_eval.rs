@@ -95,10 +95,34 @@ pub async fn evaluate_consolidation_stage(
         .await
         .map_err(|e| anyhow!("Failed to fetch post-consolidation memory: {}", e))?;
 
+    let prior_model = PersonalMemory::from_json(&prior_record.content).unwrap_or_default();
     let post_model = PersonalMemory::from_json(&post_record.content).unwrap_or_default();
     let post_sections_count = post_model.sections.len();
     let post_blocks_count: usize = post_model.sections.iter().map(|s| s.blocks.len()).sum();
     let post_markdown = post_model.render_to_markdown();
+
+    // Compute block diff between prior and post models
+    let mut deleted_blocks = Vec::new();
+    for p_sec in &prior_model.sections {
+        for p_blk in &p_sec.blocks {
+            let still_exists = post_model
+                .sections
+                .iter()
+                .any(|s| s.blocks.iter().any(|b| b.id == p_blk.id));
+            if !still_exists {
+                deleted_blocks.push(format!(
+                    "- [Block {} | Section '{}'] {}",
+                    p_blk.id, p_sec.title, p_blk.text
+                ));
+            }
+        }
+    }
+    let deletions_count = deleted_blocks.len();
+    let deletions_rendered = if deleted_blocks.is_empty() {
+        "None (0 blocks deleted)".to_string()
+    } else {
+        deleted_blocks.join("\n")
+    };
 
     let pending_revisions = fetch_pending_revisions(&conn, None)
         .await
@@ -106,8 +130,13 @@ pub async fn evaluate_consolidation_stage(
 
     // 6. Build Consolidation Judge Prompt
     let mut obs_rendered = String::new();
-    for obs in &candidate_observations {
-        obs_rendered.push_str(&format!("- [{}] {}\n", obs.id, obs.text));
+    for (idx, obs) in candidate_observations.iter().enumerate() {
+        obs_rendered.push_str(&format!(
+            "- [O{} | Fact {}] {}\n",
+            idx + 1,
+            obs.id,
+            obs.text
+        ));
     }
     if obs_rendered.is_empty() {
         obs_rendered = "None (no active observations)".to_string();
@@ -161,6 +190,13 @@ Analyze the following personal memory consolidation pass:
 {} | Pending Revisions In DB: {}
 </consolidation_outcome>
 
+<memory_structural_changes>
+- Prior Memory: v{} ({} sections, {} blocks)
+- Resulting Memory: v{} ({} sections, {} blocks)
+- Blocks Deleted from Prior Memory (N={}):
+{}
+</memory_structural_changes>
+
 <resulting_personal_memory>
 {}
 </resulting_personal_memory>
@@ -171,7 +207,8 @@ Produce a comprehensive evaluation report in clean Markdown format with the foll
 
 ## 1. Executive Scorecard
 *(Note: Every percentage score MUST explicitly state its formula with exact counts: `X / Y = Z%`)*
-- **Observation Coverage / Retention**: [X / Y = Z%]
+- **Observation Coverage / Retention**: [X / Y = Z%] (Denominator Y = {} candidate observations. X = count of candidates demonstrably represented in resulting memory blocks. If any candidate observation is listed under 'Dropped observations' below, X MUST BE STRICTLY LESS THAN Y. Never report 100% when observations are dropped.)
+- **Deletions Audited**: [N = {}] (Count of deleted blocks. Must state whether each deletion was justified by an invalidating observation or was an unjustified deletion).
 - **Ungrounded Hallucinations / Extrapolations**: [None / Count with severity]
 - **Taxonomy & Domain Structure Quality**: [1-10]
 - **Prose Coherence & Block Fidelity**: [1-10] (Penalize heavily if ungrounded rationales are invented)
@@ -190,9 +227,9 @@ Inspect every input candidate observation:
 - Explicitly list any **dropped observations** (observations left unrepresented in the memory).
 
 ## 4. Taxonomy & Section Emergence Assessment
-- Audit the section titles (e.g. `Career & Technical Stack`, `Dietary Preferences & Health`).
+- Audit the section titles (e.g. `Career`, `About Them`, `Habits & Routine`, `Interests`, `Plans`, `Health`).
 - Penalize generic dump buckets (like `General`, `User Info`, `Notes`, `Miscellaneous`).
-- Evaluate whether related blocks are clustered logically.
+- Evaluate whether related blocks are clustered logically under umbrellas.
 
 ## 5. Prose Coherence & Block Quality
 - Audit the prose quality of each block. Blocks should be coherent 1-3 sentence statements providing clear context rather than fragmented bullet scraps.
@@ -200,8 +237,8 @@ Inspect every input candidate observation:
 
 ## 6. Delta Operation & Preservation Audit
 (If cold generation, assess structure generation; if incremental delta, assess delta operations):
-- Verify whether operations appropriately selected `creates` for existing sections, `new_sections` for novel domains, and `updates` for evolving facts.
-- Check whether stable existing knowledge was preserved or unnecessarily rewritten/deleted.
+- Verify whether operations appropriately selected `add` for existing umbrella sections, `new` for novel umbrellas, `update` for evolving facts, and `delete` ONLY when an observation directly invalidated an older statement.
+- Deletions count: N = {}. Check whether stable existing knowledge was preserved or unnecessarily deleted/rewritten.
 
 ## 7. Contradiction & Temporal Resolution
 - Check if updated facts superseded older ones cleanly, or if contradictory information is present in the final memory.
@@ -214,13 +251,28 @@ Provide 2-3 specific improvements for consolidation prompts or schema rules.
         obs_rendered,
         outcome_details,
         pending_revisions.len(),
+        prior_record.version,
+        prior_model.sections.len(),
+        prior_model
+            .sections
+            .iter()
+            .map(|s| s.blocks.len())
+            .sum::<usize>(),
+        post_record.version,
+        post_sections_count,
+        post_blocks_count,
+        deletions_count,
+        deletions_rendered,
         post_md_rendered,
-        case_id
+        case_id,
+        candidate_observations.len(),
+        deletions_count,
+        deletions_count
     );
 
     // 7. Run Judge evaluation via NVIDIA NIM Judge
     let judge_report = judge
-        .evaluate(&judge_prompt)
+        .evaluate_with_trace(&judge_prompt, case_dir, "consolidation")
         .await
         .map_err(|e| anyhow!("Consolidation Judge evaluation failed: {}", e))?;
 

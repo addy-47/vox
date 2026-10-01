@@ -414,9 +414,6 @@ export const PERSONAL_MEMORY_CONFIG_DESK_COPY = {
   },
 };
 
-// Direct alias for backward-compatibility during component refactor
-export const MEMORY_CONFIG_DESK_COPY = PERSONAL_MEMORY_CONFIG_DESK_COPY;
-
 export const TTS_VOICE_MANAGER_COPY = {
   tabs: {
     selectVoice: "Select Voice",
@@ -637,9 +634,6 @@ export const WORKING_MEMORY_SETTINGS_COPY = {
       "Percentage of LLM context window reserved for personal profile and working dialogue history.",
   },
 };
-
-// Direct alias for backward-compatibility during component refactor
-export const HISTORY_SETTINGS_COPY = WORKING_MEMORY_SETTINGS_COPY;
 
 export const VAD_SETTINGS_COPY = {
   tabs: {

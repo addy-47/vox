@@ -175,4 +175,3 @@ export const LearnedFactsList: React.FC<LearnedFactsListProps> = memo(
 );
 
 LearnedFactsList.displayName = "LearnedFactsList";
-export const ObservationsList = LearnedFactsList;

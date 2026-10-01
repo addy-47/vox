@@ -72,11 +72,6 @@ export function getStackSize(): number {
   return stack.length;
 }
 
-/** Active overlay ids in registration order (for tests / debugging). */
-export function getStackIds(): number[] {
-  return stack.map((e) => e.id);
-}
-
 function onKeyDown(e: KeyboardEvent) {
   if (e.key !== "Escape" || stack.length === 0) return;
   e.preventDefault();

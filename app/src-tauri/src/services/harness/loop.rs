@@ -245,7 +245,6 @@ fn check_loop_budget<R: Runtime>(
             let tools = if allow_tools && harness.supports_tools {
                 let filter = ToolFilter {
                     mode: PipelineMode::Modular,
-                    is_first_turn: harness.history.messages().len() <= 2,
                     title_is_unset: !harness.title_set,
                     memory_retrieval_enabled: harness.memory_retrieval_enabled,
                     web_search_enabled: harness.web_search_enabled,

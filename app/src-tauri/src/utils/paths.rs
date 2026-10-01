@@ -315,16 +315,8 @@ pub fn cache_dir() -> PathBuf {
     get().cache.clone()
 }
 
-pub fn config_dir() -> PathBuf {
-    get().config.clone()
-}
-
 pub fn data_dir() -> PathBuf {
     get().data.clone()
-}
-
-pub fn diagnostics_dir() -> PathBuf {
-    get().diagnostics.clone()
 }
 
 pub fn logs_dir() -> PathBuf {
@@ -359,11 +351,6 @@ pub fn model_dir(name: &str) -> PathBuf {
 /// Returns the directory for a specific voice entry: `~/.vox/data/voices/{id}/`
 pub fn voice_dir(id: &str) -> PathBuf {
     get().voices.join(id)
-}
-
-/// Returns the absolute path to the materialized application icon: `~/.vox/cache/vox.png`
-pub fn icon_file() -> PathBuf {
-    get().icon.clone()
 }
 
 /// Returns the path string to the application notification icon, falling back to a standard

@@ -4,13 +4,6 @@ import {
   resume as resumeSpatialNav,
 } from "@noriginmedia/norigin-spatial-navigation";
 
-export const SPATIAL_CONTAINERS = {
-  STAGE: "STAGE",
-  DOCK: "DOCK",
-  CLUSTER: "CLUSTER",
-  RAIL: "RAIL",
-} as const;
-
 let initialized = false;
 let isNavigatingWithKeys = false;
 let keyNavTimer: ReturnType<typeof setTimeout> | null = null;

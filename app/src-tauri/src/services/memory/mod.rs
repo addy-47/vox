@@ -1,14 +1,8 @@
-use std::sync::{
-    atomic::{AtomicBool, AtomicU64},
-    Arc,
-};
+use std::sync::Arc;
 
 use crate::core::state::AppState;
 
-/// Shared runtime state for the memory subsystem.
 pub struct MemoryAppState {
-    pub graph_version: Arc<AtomicU64>,
-    pub user_paused_ingestion: Arc<AtomicBool>,
     pub scheduler_handle: parking_lot::Mutex<Option<tauri::async_runtime::JoinHandle<()>>>,
 }
 
@@ -21,8 +15,6 @@ impl Default for MemoryAppState {
 impl MemoryAppState {
     pub fn new() -> Self {
         Self {
-            graph_version: Arc::new(AtomicU64::new(1)),
-            user_paused_ingestion: Arc::new(AtomicBool::new(false)),
             scheduler_handle: parking_lot::Mutex::new(None),
         }
     }
@@ -36,8 +28,8 @@ pub mod scheduler;
 
 pub use compaction::{run_compaction, CompactionResult, COMPACTION_SYSTEM_PROMPT};
 pub use ingestion::{
-    drain_ingestion_queue, reconcile_crashed_queue_on_boot, run_ingestion_cycle, IngestionCycleSummary,
-    QueueStatus,
+    drain_ingestion_queue, reconcile_crashed_queue_on_boot, run_ingestion_cycle,
+    IngestionCycleSummary, QueueStatus,
 };
 pub(crate) use ml::trim_heap;
 pub use ml::{
@@ -56,13 +48,11 @@ pub use scheduler::{
     check_missed_consolidation_on_boot, spawn_consolidation_scheduler,
     start_consolidation_scheduler, stop_consolidation_scheduler,
 };
+
 pub use crate::{core::error::MemoryError, persistence::has_unfinished_items};
 
 pub const COMPACTION_SENTINEL_TURN_ID: u32 = 999_999;
 
-/// Spawns a background task that executes an ingestion sweep draining all pending/unfinished
-/// items in `memory_ingestion_queue` if pipeline processing is enabled.
-/// Registers the cancellation token in `state.ingestion_cancel` so that active sessions can abort it immediately.
 pub fn spawn_ingestion_sweep(
     state: Arc<AppState>,
     cancel_token: Option<tokio_util::sync::CancellationToken>,
@@ -74,7 +64,9 @@ pub fn spawn_ingestion_sweep(
         .unwrap_or(true);
 
     if !is_enabled {
-        log::debug!("[Memory::Ingestion] Ingestion sweep skipped: pipeline_processing_enabled is false");
+        log::debug!(
+            "[Memory::Ingestion] Ingestion sweep skipped: pipeline_processing_enabled is false"
+        );
         return;
     }
 
@@ -88,7 +80,10 @@ pub fn spawn_ingestion_sweep(
         let conn = match db.connect() {
             Ok(c) => c,
             Err(e) => {
-                log::warn!("[Memory::Ingestion] Failed to vend connection for sweep: {}", e);
+                log::warn!(
+                    "[Memory::Ingestion] Failed to vend connection for sweep: {}",
+                    e
+                );
                 *state_arc.ingestion_cancel.lock() = None;
                 return;
             }
@@ -96,7 +91,9 @@ pub fn spawn_ingestion_sweep(
 
         match has_unfinished_items(&conn).await {
             Ok(true) => {
-                log::info!("[Memory::Ingestion] Unfinished queue items found; starting ingestion sweep.");
+                log::info!(
+                    "[Memory::Ingestion] Unfinished queue items found; starting ingestion sweep."
+                );
                 if let Err(e) = ingestion::drain_ingestion_queue(&conn, Some(&token)).await {
                     log::warn!("[Memory::Ingestion] Ingestion sweep error: {}", e);
                 }

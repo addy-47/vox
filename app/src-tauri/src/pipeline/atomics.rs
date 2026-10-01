@@ -19,8 +19,6 @@ pub struct PipelineAtomics {
     pub state_tx: tokio::sync::watch::Sender<InteractionState>,
     pub state_rx: tokio::sync::watch::Receiver<InteractionState>,
     pub dictation_state_atomic: Arc<AtomicU32>,
-    pub dictation_state_tx: tokio::sync::watch::Sender<InteractionState>,
-    pub dictation_state_rx: tokio::sync::watch::Receiver<InteractionState>,
     pub ingestion_gate: Arc<AtomicBool>,
     pub is_playback_muted: Arc<AtomicBool>,
     pub is_mic_muted: Arc<AtomicBool>,
@@ -40,8 +38,7 @@ impl PipelineAtomics {
     /// Initializes all pipeline atomics, watch channels, and cancellation tokens to idle defaults.
     pub fn new() -> Self {
         let (state_tx, state_rx) = tokio::sync::watch::channel(InteractionState::Idle);
-        let (dictation_state_tx, dictation_state_rx) =
-            tokio::sync::watch::channel(InteractionState::Idle);
+
         Self {
             cancel_flag: Arc::new(AtomicBool::new(false)),
             turn_id: Arc::new(AtomicU32::new(0)),
@@ -52,8 +49,6 @@ impl PipelineAtomics {
             state_tx,
             state_rx,
             dictation_state_atomic: Arc::new(AtomicU32::new(InteractionState::Idle as u32)),
-            dictation_state_tx,
-            dictation_state_rx,
             ingestion_gate: Arc::new(AtomicBool::new(false)),
             is_playback_muted: Arc::new(AtomicBool::new(false)),
             is_mic_muted: Arc::new(AtomicBool::new(false)),
@@ -123,17 +118,6 @@ impl PipelineAtomics {
         self.dictation_state_atomic
             .store(new_state as u32, Ordering::SeqCst);
         self.update_ingestion_gate();
-        if let Err(e) = self.dictation_state_tx.send(new_state) {
-            log::warn!(
-                "[Pipeline::State] Failed to broadcast dictation state: {}",
-                e
-            );
-        }
-    }
-
-    /// Subscribes to the broadcast dictation state channel for multi-consumer fanout.
-    pub fn subscribe_dictation_state(&self) -> tokio::sync::watch::Receiver<InteractionState> {
-        self.dictation_state_tx.subscribe()
     }
 
     /// Returns a clone of the current turn's cancellation token.

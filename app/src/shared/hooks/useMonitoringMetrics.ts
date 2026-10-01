@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { getRuntimeSnapshot, type RuntimeSnapshot } from "@/services/pipelineService";
+import { getRuntimeSnapshot, type RuntimeSnapshot } from "@/services/monitoringService";
 
 const MAX_SAMPLES = 60;
 const POLL_MS = 1000;

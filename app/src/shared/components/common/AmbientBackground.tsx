@@ -29,23 +29,7 @@ interface AmbientBackgroundProps {
  * presets collapsed to the one reachable set of values. */
 const RIPPLE_DURATION = 28; // seconds per ripple cycle
 const RIPPLE_OPACITY = 0.10; // max opacity at ring origin
-const BLOB_SPEED = 40; // seconds for blob morph cycle
-const BLOB_OPACITY = 0.032; // max blob opacity
 const GLOW_OPACITY = 0.05; // core glow under the orb
-
-interface BlobDef {
-  x: string;
-  y: string;
-  size: string;
-  animName: string;
-  delay: number;
-  borderRadius: string;
-}
-
-const BLOBS: BlobDef[] = [
-  { x: "20%",  y: "30%", size: "42vmax", animName: "blob-rotate-a", delay: 0, borderRadius: "42% 58% 60% 40% / 48% 42% 58% 52%" },
-  { x: "75%",  y: "65%", size: "36vmax", animName: "blob-rotate-b", delay: -15, borderRadius: "58% 42% 45% 55% / 62% 38% 62% 38%" },
-];
 
 const RIPPLE_COUNT = 5;
 
@@ -75,11 +59,8 @@ export const AmbientBackground = React.memo(({
     return () => observer.disconnect();
   }, []);
 
-  const blobOpacityMultiplier = isLight ? 2.5 : 1.5;
   const glowOpacityMultiplier = isLight ? 1.8 : 1.2;
   const rippleOpacityMultiplier = isLight ? 1.8 : 1.2;
-
-  const blobRefs = React.useRef<(HTMLDivElement | null)[]>([]);
 
   React.useEffect(() => {
     if (paused) {
@@ -95,10 +76,6 @@ export const AmbientBackground = React.memo(({
       if (isRunning || document.hidden) return;
       isRunning = true;
       isSettled = false;
-      // Re-enable willChange on active wake
-      blobRefs.current.forEach((el) => {
-        if (el) el.style.willChange = "transform";
-      });
       if (rippleRef.current) {
         rippleRef.current.style.animationPlayState = "running";
       }
@@ -142,10 +119,6 @@ export const AmbientBackground = React.memo(({
           isSettled = true;
           if (glowRef.current) glowRef.current.style.opacity = baseGlow.toFixed(3);
           if (rippleRef.current) rippleRef.current.style.opacity = baseRipple.toFixed(3);
-          // Demote compositor layer on idle
-          blobRefs.current.forEach((el) => {
-            if (el) el.style.willChange = "auto";
-          });
         }
         stopLoop();
         return;
@@ -194,29 +167,6 @@ export const AmbientBackground = React.memo(({
     >
       {/* Deep space base gradient */}
       <div className="amb-base" />
-
-      {/* Organic fog blobs */}
-      {BLOBS.map((blob, i) => (
-        <div
-          key={i}
-          ref={(el) => {
-            blobRefs.current[i] = el;
-          }}
-          className="amb-blob"
-          style={{
-            left: blob.x,
-            top: blob.y,
-            width: blob.size,
-            height: blob.size,
-            background: `radial-gradient(circle, rgba(var(--accent), ${BLOB_OPACITY * blobOpacityMultiplier}) 0%, transparent 68%)`,
-            animation: `${blob.animName} ${BLOB_SPEED}s ease-in-out infinite`,
-            animationPlayState: paused ? "paused" : "running",
-            animationDelay: `${blob.delay}s`,
-            borderRadius: blob.borderRadius,
-            willChange: paused ? "auto" : "transform",
-          }}
-        />
-      ))}
 
       {/* Core glow — centered at orb origin */}
       <div ref={glowRef} className="amb-glow" />

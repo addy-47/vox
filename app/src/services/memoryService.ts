@@ -204,10 +204,3 @@ export function getActiveObservations(projectId?: string): Promise<ObservationRe
   return getObservations(projectId, "active");
 }
 
-// Compatibility aliases
-export type FactRecord = ObservationRecord;
-export const getActiveFacts = getActiveObservations;
-export type PersonalMemorySuggestionRecord = MemoryRevisionView;
-export const getMemorySuggestions = getMemoryRevisions;
-export type ResolveSuggestionsRequest = ResolveRevisionsRequest;
-export const resolveMemorySuggestions = resolveMemoryRevisions;

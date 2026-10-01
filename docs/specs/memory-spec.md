@@ -282,10 +282,10 @@ Consolidates personal knowledge through dedicated LLM passes tailored to memory 
      - *Input*: Current memory in handle format + user comment directives.
      - *Task*: Propose semantic operations applying the user directives.
      - *Output*: Flat grouped delta JSON (`new`, `add`, `update`, `delete`), staged as pending revisions.
-   - **Regeneration (Reformat Existing Memory)**:
+   - **Regeneration (Re-synthesize from Integrated Facts)**:
      - *Trigger*: User-initiated "Regenerate" / "Reformat Memory" action.
-     - *Input*: Current semantic memory in handle format.
-     - *Task*: Re-synthesize the memory into a new coherent structure, consolidating fragmented blocks, resolving redundancy, and elevating clarity and thematic structure.
+     - *Input*: All already-integrated personal facts (`type = 'personal' AND status = 'integrated'`). Does not take active facts.
+     - *Task*: Re-synthesizes the personal memory from scratch using the whole-memory cold-generation prompt (`PERSONAL_COLD_GENERATION_SYSTEM_PROMPT`), consolidating fragmented blocks, resolving redundancy, and elevating clarity and thematic structure.
      - *Output*: Dedicated whole-memory JSON schema (`{"sections": [{"title": "...", "blocks": ["..."]}]}`). All IDs are fresh — application assigns new `sec_*` and `blk_*` IDs to every entity.
      - *Commit*: Saved as version `max_version + 1` with `is_active = 1`. Pending revisions targeting old IDs are bulk-rejected as stale.
    - **Generation Settings (all passes)**:

@@ -92,14 +92,3 @@ export function getShortcutsGroupedByRoute(): Record<string, ShortcutDef[]> {
   }
   return result;
 }
-
-export function getShortcutsForRoute(route: string): ShortcutDef[] {
-  if (route === "Global") return SHORTCUTS.filter((s) => s.scope === "global");
-  return SHORTCUTS.filter((s) => s.scope === `page:${route}`);
-}
-
-/** Build tooltip suffix like " (Ctrl+M)" from a shortcut id */
-export function shortcutSuffix(id: string): string {
-  const s = getShortcutById(id);
-  return s ? ` (${s.keys})` : "";
-}

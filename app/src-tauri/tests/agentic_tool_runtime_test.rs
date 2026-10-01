@@ -223,7 +223,6 @@ async fn test_terminal_tool_title_and_accumulator_parity() {
         // 6. Assert Turn 2 tool filter suppresses respond_and_set_title
         let turn2_filter = ToolFilter {
             mode: PipelineMode::Modular,
-            is_first_turn: false, // Turn 2 has >2 messages in history
             title_is_unset: false,
             memory_retrieval_enabled: true,
             web_search_enabled: true,
@@ -743,7 +742,6 @@ async fn test_web_search_non_terminal_3stage_retrieval() {
         // 3. Verify ToolFilter Gating
         let enabled_filter = ToolFilter {
             mode: PipelineMode::Modular,
-            is_first_turn: true,
             title_is_unset: true,
             memory_retrieval_enabled: true,
             web_search_enabled: true,
@@ -756,7 +754,6 @@ async fn test_web_search_non_terminal_3stage_retrieval() {
 
         let disabled_filter = ToolFilter {
             mode: PipelineMode::Modular,
-            is_first_turn: true,
             title_is_unset: true,
             memory_retrieval_enabled: true,
             web_search_enabled: false,
@@ -769,7 +766,6 @@ async fn test_web_search_non_terminal_3stage_retrieval() {
 
         let realtime_filter = ToolFilter {
             mode: PipelineMode::Realtime,
-            is_first_turn: true,
             title_is_unset: true,
             memory_retrieval_enabled: true,
             web_search_enabled: true,

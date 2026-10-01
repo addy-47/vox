@@ -16,10 +16,10 @@ import {
   setPlaybackMuted,
   setMicMuted,
   setSessionPrivateMode,
-  getRuntimeSnapshot,
   continueSession as continueSessionIpc,
   createSession as createSessionIpc,
 } from "@/services/pipelineService";
+import { getRuntimeSnapshot } from "@/services/monitoringService";
 import { getSettings } from "@/services/settingsService";
 import { SESSION_COPY } from "@/data/sessionCopy";
 import type { InteractionState, StateChangedPayload } from "@/services/eventsService";

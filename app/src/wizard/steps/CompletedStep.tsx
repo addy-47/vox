@@ -1,5 +1,4 @@
-import React from 'react';
-import { completeSetupWizard } from '@/services/settingsService';
+import { completeSetupWizard } from '@/services/setupService';
 import { Zap, Check } from 'lucide-react';
 
 import { WizardHeader } from '../components/WizardHeader';

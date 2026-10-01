@@ -12,7 +12,6 @@ use crate::{core::events::PipelineMode, services::llm::CanonicalToolDefinition};
 #[derive(Debug, Clone, Default)]
 pub struct ToolFilter {
     pub mode: PipelineMode,
-    pub is_first_turn: bool,
     pub title_is_unset: bool,
     pub memory_retrieval_enabled: bool,
     pub web_search_enabled: bool,

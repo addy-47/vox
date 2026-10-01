@@ -1,16 +1,10 @@
-use std::{
-    path::Path,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::time::{SystemTime, UNIX_EPOCH};
 
-use turso::{Builder, Connection};
+use turso::Connection;
 
 use crate::{
     core::error::PersistenceError,
-    persistence::{
-        voices::{seed_packaged_voices, seed_zipvoice_voices},
-        SQLITE_BUSY_TIMEOUT_MS,
-    },
+    persistence::voices::{seed_packaged_voices, seed_zipvoice_voices},
 };
 
 pub type Result<T> = std::result::Result<T, PersistenceError>;
@@ -282,81 +276,6 @@ async fn retire_positional_personal_memory_model(conn: &Connection) -> Result<()
 
     log::info!(
         "[Persistence::Schema] Retired the positional Personal Memory model (v9 artifacts removed)"
-    );
-    Ok(())
-}
-
-/// Drops all tables and forces a full recreation of the current schema.
-pub async fn recreate_schema(conn: &Connection) -> Result<()> {
-    conn.execute("PRAGMA foreign_keys = OFF;", ()).await?;
-    conn.execute("DROP TABLE IF EXISTS voices;", ()).await?;
-    conn.execute("PRAGMA foreign_keys = ON;", ()).await?;
-    conn.execute("PRAGMA user_version = 0;", ()).await?;
-    run_migrations(conn).await?;
-    Ok(())
-}
-
-/// Rebuilds a binary database fixture from scratch with the current schema and default seeds.
-pub async fn rebuild_fixture_db(path: &Path) -> Result<()> {
-    if path.exists() {
-        std::fs::remove_file(path)?;
-    }
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    let path_str = path.to_string_lossy();
-    let db = Builder::new_local(&path_str)
-        .experimental_index_method(true)
-        .build()
-        .await?;
-    let conn = db.connect()?;
-
-    if let Err(e) = conn.query("PRAGMA journal_mode = WAL;", ()).await {
-        log::warn!(
-            "[Persistence::Schema] Failed to set journal_mode WAL on fixture: {}",
-            e
-        );
-    }
-    let timeout_pragma = format!("PRAGMA busy_timeout = {};", SQLITE_BUSY_TIMEOUT_MS);
-    if let Err(e) = conn.execute(&timeout_pragma, ()).await {
-        log::warn!(
-            "[Persistence::Schema] Failed to set busy_timeout on fixture: {}",
-            e
-        );
-    }
-    if let Err(e) = conn.execute("PRAGMA foreign_keys = ON;", ()).await {
-        log::warn!(
-            "[Persistence::Schema] Failed to enable foreign_keys on fixture: {}",
-            e
-        );
-    }
-
-    run_migrations(&conn).await?;
-    if let Err(e) = conn.execute("PRAGMA wal_checkpoint(TRUNCATE);", ()).await {
-        log::warn!(
-            "[Persistence::Schema] Failed to checkpoint WAL on fixture: {}",
-            e
-        );
-    }
-    drop(conn);
-    drop(db);
-
-    let wal_path = path.with_extension("db-wal");
-    if wal_path.exists() {
-        if let Err(e) = std::fs::remove_file(wal_path) {
-            log::warn!("[Persistence::Schema] Failed to remove WAL file: {}", e);
-        }
-    }
-    let shm_path = path.with_extension("db-shm");
-    if shm_path.exists() {
-        if let Err(e) = std::fs::remove_file(shm_path) {
-            log::warn!("[Persistence::Schema] Failed to remove SHM file: {}", e);
-        }
-    }
-
-    log::info!(
-        "[Persistence::Schema] Successfully rebuilt fixture database at {:?}",
-        path
     );
     Ok(())
 }

@@ -9,7 +9,7 @@ import {
   addVoiceFromRecording,
   renameVoice,
   deleteVoice,
-} from "@/services/pipelineService";
+} from "@/services/voiceService";
 import { VOICE_CAROUSEL_COPY } from "@/data/settingsCopy";
 import { Edit2, Check } from "lucide-react";
 import { Tooltip } from "@/shared/ui/Tooltip";

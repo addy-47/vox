@@ -1,19 +1,13 @@
-use std::sync::{
-    atomic::{AtomicUsize, Ordering},
-    Arc,
-};
+use std::sync::Arc;
 
 use tokio::sync::mpsc::{channel, Sender};
 
 use crate::services::{
-    audio::AudioResampler,
+    audio::{AudioResampler, SINC_CHUNK_SIZE_INPUT},
     realtime::{
         RealtimeAudioConfig, RealtimeSession, BRIDGE_CHANNEL_CAPACITY, DEFAULT_INPUT_SAMPLE_RATE,
-        LOG_INTERVAL_PACKETS, SINC_CHUNK_SIZE_INPUT,
     },
 };
-
-static DROP_COUNT: AtomicUsize = AtomicUsize::new(0);
 
 /// Bridges captured PCM audio frames to active realtime streaming sessions with automatic resampling.
 pub struct AudioBridge {
@@ -93,25 +87,5 @@ impl AudioBridge {
         self.tx.clone()
     }
 
-    /// Submits a PCM audio frame buffer to the bridge in a non-blocking manner.
-    pub fn send_pcm(&self, samples: &[i16]) {
-        if let Some(ref tx) = self.tx {
-            if let Err(e) = tx.try_send(samples.to_vec()) {
-                match e {
-                    tokio::sync::mpsc::error::TrySendError::Full(_) => {
-                        let prev = DROP_COUNT.fetch_add(1, Ordering::Relaxed);
-                        if (prev as u64).is_multiple_of(LOG_INTERVAL_PACKETS) {
-                            log::warn!(
-                                "[AudioBridge] Channel buffer full, dropping input audio chunk. Dropped {} chunks so far.",
-                                prev + 1
-                            );
-                        }
-                    }
-                    tokio::sync::mpsc::error::TrySendError::Closed(_) => {
-                        log::debug!("[AudioBridge] Channel closed.");
-                    }
-                }
-            }
-        }
-    }
+
 }

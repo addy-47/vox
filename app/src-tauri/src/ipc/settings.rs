@@ -174,7 +174,8 @@ pub async fn reset_settings<R: tauri::Runtime>(
 
     schedule_debounced_save(state.inner().clone()).await;
 
-    let restart_scheduled = request_engine_restart(&app, state.inner(), "reset_settings -> defaults");
+    let restart_scheduled =
+        request_engine_restart(&app, state.inner(), "reset_settings -> defaults");
 
     Ok(ResetSettingsResult {
         settings: defaults,
@@ -183,8 +184,7 @@ pub async fn reset_settings<R: tauri::Runtime>(
             "Settings reset to defaults. Engine restart scheduled to reinitialize providers."
                 .to_string()
         } else {
-            "Settings reset to defaults. Restart required to reinitialize providers."
-                .to_string()
+            "Settings reset to defaults. Restart required to reinitialize providers.".to_string()
         },
         restart_scheduled,
     })

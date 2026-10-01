@@ -8,42 +8,22 @@ import React, {
 } from "react";
 import { createPortal } from "react-dom";
 import {
-  Copy,
-  Check,
   Zap,
   Sparkles,
   PanelLeft,
-  FileText,
-  MessageSquare,
-  Hand,
   Tag,
-  RotateCw,
 } from "lucide-react";
 import {
-  getPersonalMemory,
-  getPersonalMemoryVersions,
-  setActivePersonalMemoryVersion,
-  savePersonalMemory,
-  consolidatePersonalMemory,
-  regeneratePersonalMemory,
   getActiveObservations,
-  getMemoryRevisions,
-  resolveMemoryRevisions,
-  type PersonalMemoryRecord,
   type ObservationRecord,
-  type MemoryRevisionView,
-  type ConfirmationReason,
 } from "@/services/memoryService";
-import { useObservationsList } from "@/shared/hooks/useObservationsList";
+import { usePersonalMemoryDrawer } from "@/shared/hooks/usePersonalMemoryDrawer";
 import { ErrorBoundary, OrbitalLoader } from "@/shared/components/common";
 import { Drawer } from "@/shared/ui/Drawer";
-import { EdgePanel, Tooltip, Markdown, BottomDockFeather } from "@/shared/ui";
+import { EdgePanel, Tooltip, BottomDockFeather } from "@/shared/ui";
 import { usePanelStateContext } from "@/shared/hooks/usePanelState";
-import { useProfilerDrawer } from "@/shared/components/profiler/ProfilerDrawer";
-import { useRegisterPageDrawer } from "@/shared/context/PageDrawerContext";
 import { MEMORY_COPY } from "@/data/memoryCopy";
 import { cn } from "@/shared/lib/utils";
-import { copyToClipboard } from "@/shared/lib/clipboard";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   MemoryGraph,
@@ -55,16 +35,12 @@ import {
   GraphControlDock,
   MemoryCategory,
   toMemoryCategory,
+  PersonalMemoryDossierCard,
   PersonalMemoryStagingCard,
-  type StagingMode,
-  type MemoryComment,
-  PersonalMemoryCommentPopover,
-  type SelectionAnchor,
-  PixelSynthesisCanvas,
-  PersonalMemoryVersionNav,
+  MemoryErrorState,
+  MemoryEmptyState,
+  MemoryHint,
 } from "@/shared/components/memory";
-import { useMemoryStore } from "@/store/memoryStore";
-import Lenis from "lenis";
 
 export const Memory: React.FC = memo(() => {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -74,22 +50,9 @@ export const Memory: React.FC = memo(() => {
   const [dims, setDims] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
 
   // Data state
-  const [personalMemory, setPersonalMemory] = useState<PersonalMemoryRecord | null>(null);
-  const [versions, setVersions] = useState<PersonalMemoryRecord[]>([]);
-  const [displayedRecord, setDisplayedRecord] = useState<PersonalMemoryRecord | null>(null);
-  const [suggestions, setSuggestions] = useState<MemoryRevisionView[]>([]);
-  const [isApplyingSuggestions, setIsApplyingSuggestions] = useState(false);
-  const [isRestoringVersion, setIsRestoringVersion] = useState(false);
-  const [pendingConfirmation, setPendingConfirmation] = useState<{
-    reason: ConfirmationReason;
-    pendingCount: number;
-  } | null>(null);
-  const [pendingActionType, setPendingActionType] = useState<"consolidate" | "regenerate">("consolidate");
-  const [justCommitted, setJustCommitted] = useState(false);
   const [facts, setFacts] = useState<ObservationRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [isRegenerating, setIsRegenerating] = useState(false);
   // Load failure is a first-class state (never rendered as "no memories").
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -114,56 +77,6 @@ export const Memory: React.FC = memo(() => {
     return () => clearTimeout(id);
   }, [loading]);
 
-  // Tracked timers (style-guide §4.4): every setTimeout below registers here
-  // and all are cleared on unmount. Previously 8 untracked timeouts.
-  const timersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
-  useEffect(() => {
-    const timers = timersRef.current;
-    return () => {
-      timers.forEach((id) => clearTimeout(id));
-      timers.clear();
-    };
-  }, []);
-  const later = useCallback((fn: () => void, ms: number) => {
-    const id = setTimeout(() => {
-      timersRef.current.delete(id);
-      fn();
-    }, ms);
-    timersRef.current.add(id);
-    return id;
-  }, []);
-
-  // Commit-veil sequencing: dossier content swaps only when the veil is fully
-  // opaque (framer onAnimationComplete), never on a wall-clock sleep.
-  // Previously `await sleep(250)` swapped content at ~71% veil opacity.
-  const [veilCycle, setVeilCycle] = useState(0);
-  const pendingSwapRef = useRef<PersonalMemoryRecord | null>(null);
-  const veilReadyRef = useRef(false);
-  const handleVeilReady = useCallback(() => {
-    veilReadyRef.current = true;
-    const pending = pendingSwapRef.current;
-    if (pending) {
-      pendingSwapRef.current = null;
-      setPersonalMemory(pending);
-      setDisplayedRecord(pending);
-    }
-  }, []);
-  const stageSwap = useCallback((rec: PersonalMemoryRecord) => {
-    if (veilReadyRef.current) {
-      setPersonalMemory(rec);
-      setDisplayedRecord(rec);
-    } else {
-      pendingSwapRef.current = rec;
-    }
-  }, []);
-  const raiseVeil = useCallback(() => {
-    veilReadyRef.current = false;
-    pendingSwapRef.current = null;
-    setVeilCycle((c) => c + 1);
-    setLeftFlash(true);
-    setIsCommitting(true);
-  }, []);
-
   // Filtering & Selection
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCollection, setSelectedCollection] = useState("all");
@@ -171,7 +84,6 @@ export const Memory: React.FC = memo(() => {
   const [selectedFact, setSelectedFact] = useState<ObservationRecord | null>(null);
   const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null);
   const { isPanelOpen, closePanel, togglePanel } = usePanelStateContext();
-  const { isProfilerOpen } = useProfilerDrawer();
   const sessionRailOpen = isPanelOpen("sessions");
   const isRightPanelOpen = isPanelOpen("help") || isPanelOpen("notifications");
   const setSessionRailOpen = (v: boolean) => {
@@ -189,49 +101,6 @@ export const Memory: React.FC = memo(() => {
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
     return () => observer.disconnect();
   }, []);
-
-  // Drawer & Staging mode state
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const isGraphPaused = drawerOpen || isProfilerOpen || isRightPanelOpen;
-
-  const drawerHandlers = useMemo(() => ({
-    open: () => setDrawerOpen(true),
-    close: () => setDrawerOpen(false),
-  }), []);
-  useRegisterPageDrawer(drawerHandlers);
-
-  const [drawerBodyReady, setDrawerBodyReady] = useState(false);
-  const [stagingMode, setStagingMode] = useState<StagingMode>("idle");
-  const {
-    observations: paginatedObservations,
-    statusFilter: obsStatusFilter,
-    setStatusFilter: setObsStatusFilter,
-    isLoading: obsLoading,
-    isLoadingMore: obsLoadingMore,
-    hasMore: obsHasMore,
-    loadMore: obsLoadMore,
-  } = useObservationsList(stagingMode === "facts", undefined, "personal");
-  const [saving, setSaving] = useState(false);
-  const [consolidating, setConsolidating] = useState(false);
-  const [isCommitting, setIsCommitting] = useState(false);
-  const [leftFlash, setLeftFlash] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const [selectionAnchor, setSelectionAnchor] = useState<SelectionAnchor | null>(null);
-  const [isComposingComment, setIsComposingComment] = useState(false);
-  const isComposingCommentRef = useRef(false);
-  useEffect(() => {
-    isComposingCommentRef.current = isComposingComment;
-  }, [isComposingComment]);
-  const dossierContainerRef = useRef<HTMLDivElement>(null);
-
-  // Comments persisted in Zustand store (survive page navigation)
-  const comments = useMemoryStore((s) => s.pendingComments);
-  const reopenToComments = useMemoryStore((s) => s.reopenToComments);
-  const storeAddComment = useMemoryStore((s) => s.addComment);
-  const storeUpdateComment = useMemoryStore((s) => s.updateComment);
-  const storeDeleteComment = useMemoryStore((s) => s.deleteComment);
-  const storeClearComments = useMemoryStore((s) => s.clearComments);
-  const storeSetReopenToComments = useMemoryStore((s) => s.setReopenToComments);
 
   // ── Measure Container ──────────────────────────────────────────────────────
   // The graph mounts once real dimensions exist (dims stay > 0 afterwards,
@@ -274,22 +143,10 @@ export const Memory: React.FC = memo(() => {
     if (!isSilent) setLoading(true);
     setRefreshing(true);
     try {
-      const [mem, activeFacts, allVersions, allSuggestions] = await Promise.all([
-        getPersonalMemory(),
-        getActiveObservations(),
-        getPersonalMemoryVersions(),
-        getMemoryRevisions().catch(() => []),
-      ]);
+      const activeFacts = await getActiveObservations();
       if (!mountedRef.current) return;
-      setPersonalMemory(mem);
-      setDisplayedRecord(mem);
-      setVersions(allVersions);
       setFacts(activeFacts);
-      setSuggestions(allSuggestions);
       setLoadError(null);
-      if (allSuggestions.length > 0) {
-        setStagingMode("suggestions");
-      }
     } catch (e) {
       console.error("[Memory] Failed to load data:", e);
       // Failure is an error state, never an empty state.
@@ -306,52 +163,13 @@ export const Memory: React.FC = memo(() => {
     refresh();
   }, [refresh]);
 
-  // ── Deferred drawer body: prevents synchronous markdown build on frame 1 ──
-  useEffect(() => {
-    if (!drawerOpen) {
-      setDrawerBodyReady(false);
-      return;
-    }
-    let cancelled = false;
-    const id1 = requestAnimationFrame(() =>
-      requestAnimationFrame(() => {
-        if (!cancelled) setDrawerBodyReady(true);
-      })
-    );
-    return () => {
-      cancelled = true;
-      cancelAnimationFrame(id1);
-    };
-  }, [drawerOpen]);
-
-  // ── Auto-reopen to comment section if comments were pending when drawer was closed ──
-  useEffect(() => {
-    if (drawerOpen && reopenToComments && comments.length > 0) {
-      setStagingMode("comment");
-      storeSetReopenToComments(false);
-    }
-    return undefined;
-  }, [drawerOpen, reopenToComments, comments.length, storeSetReopenToComments]);
-
-  // ── Scoped Lenis smooth scrolling for personal memory dossier ──
-  useEffect(() => {
-    if (!drawerOpen || !drawerBodyReady) return undefined;
-    const el = dossierContainerRef.current;
-    if (!el) return undefined;
-
-    const lenis = new Lenis({
-      wrapper: el,
-      content: el,
-      eventsTarget: el,
-      smoothWheel: true,
-      autoRaf: true,
-      duration: 0.8,
-    });
-
-    return () => {
-      lenis.destroy();
-    };
-  }, [drawerOpen, drawerBodyReady]);
+  // ── Personal Memory Drawer Hook ──────────────────────────────────────────
+  const drawer = usePersonalMemoryDrawer({
+    facts,
+    onRefreshFacts: refresh,
+    onError: setLoadError,
+  });
+  const { drawerOpen } = drawer;
 
   // Counts per category for the Legend
   const categoryCounts = useMemo(() => {
@@ -362,13 +180,6 @@ export const Memory: React.FC = memo(() => {
     }
     return counts;
   }, [facts]);
-
-  // Unconsolidated personal identity candidate facts
-  const identityCandidateFacts = useMemo(() => {
-    return facts.filter((f) => f.fact_type === "personal");
-  }, [facts]);
-
-  const unconsolidatedIdentityCount = identityCandidateFacts.length;
 
   // ── Node & Core Click Handlers ─────────────────────────────────────────────
   const handleSelectNode = useCallback((fact: ObservationRecord | null, pos?: { x: number; y: number }) => {
@@ -402,445 +213,16 @@ export const Memory: React.FC = memo(() => {
     // Dismiss floating tooltip before opening drawer to release its overlay Escape listener
     setSelectedFact(null);
     setTooltipPos(null);
-    setStagingMode("idle");
-    setDrawerOpen(true);
-  }, []);
-
-  // ── Drawer Handlers ────────────────────────────────────────────────────────
-  const handleSelectVersion = useCallback((rec: PersonalMemoryRecord) => {
-    setDisplayedRecord(rec);
-  }, []);
-
-  const handleRestoreActive = useCallback(
-    async (version: number) => {
-      setIsRestoringVersion(true);
-      try {
-        const restored = await setActivePersonalMemoryVersion(version);
-        setPersonalMemory(restored);
-        setDisplayedRecord(restored);
-        // refresh(true) refetches versions too — no separate versions call.
-        await refresh(true);
-      } catch (e) {
-        console.error("[Memory] Restore version failed:", e);
-        setLoadError(MEMORY_COPY.loadFailedDesc);
-      } finally {
-        setIsRestoringVersion(false);
-      }
-    },
-    [refresh]
-  );
-
-  const handleSaveStaging = useCallback(
-    async (content: string) => {
-      if (!personalMemory) return;
-      setSaving(true);
-      // 1. Smoothly fade overlay in over old content
-      raiseVeil();
-
-      try {
-        const updated = await savePersonalMemory(content, personalMemory.version);
-        // 2. Swap only when the veil reports opaque (handleVeilReady).
-        stageSwap(updated);
-        const allVersions = await getPersonalMemoryVersions();
-        setVersions(allVersions);
-
-        // 3. Reset right card staging editor
-        later(() => {
-          setStagingMode("idle");
-        }, 300);
-
-        // 4. Smoothly fade overlay out to reveal new content
-        later(() => {
-          setIsCommitting(false);
-          setLeftFlash(false);
-        }, 900);
-      } catch (e) {
-        console.error("[Memory] Save failed:", e);
-        pendingSwapRef.current = null;
-        setIsCommitting(false);
-        setLeftFlash(false);
-      } finally {
-        setSaving(false);
-      }
-    },
-    [personalMemory, later, raiseVeil, stageSwap]
-  );
-
-  const handleConsolidateNow = useCallback(
-    async (forced = false) => {
-      if (consolidating) return;
-      setPendingActionType("consolidate");
-      setConsolidating(true);
-      raiseVeil();
-
-      try {
-        const outcome = await consolidatePersonalMemory(
-          undefined,
-          undefined,
-          forced
-        );
-
-        if (outcome.status === "completed") {
-          // Swap only when the veil reports opaque (handleVeilReady).
-          stageSwap(outcome.record);
-
-          const [allVersions, pendingSuggestions] = await Promise.all([
-            getPersonalMemoryVersions(),
-            getMemoryRevisions().catch(() => []),
-          ]);
-          setVersions(allVersions);
-          setSuggestions(pendingSuggestions);
-          await refresh(true);
-          setIsCommitting(true);
-          setPendingConfirmation(null);
-
-          if (pendingSuggestions.length > 0) {
-            setStagingMode("suggestions");
-          }
-
-          later(() => {
-            setIsCommitting(false);
-            setLeftFlash(false);
-          }, 900);
-        } else if (outcome.status === "confirmation_required") {
-          pendingSwapRef.current = null;
-          setIsCommitting(false);
-          setLeftFlash(false);
-          setPendingConfirmation({
-            reason: outcome.reason,
-            pendingCount: outcome.pending_count,
-          });
-        }
-      } catch (e: unknown) {
-        console.error("[Memory] Consolidate failed:", e);
-        pendingSwapRef.current = null;
-        setIsCommitting(false);
-        setLeftFlash(false);
-      } finally {
-        setConsolidating(false);
-      }
-    },
-    [consolidating, refresh, later, raiseVeil, stageSwap]
-  );
-
-  const handleApplySuggestions = useCallback(
-    async (decisionsMap: Record<string, "accept" | "reject">) => {
-      const decisionList = Object.entries(decisionsMap).map(([id, action]) => ({
-        id,
-        action,
-      }));
-      if (decisionList.length === 0) return;
-      setIsApplyingSuggestions(true);
-      raiseVeil();
-
-      try {
-        const updated = await resolveMemoryRevisions({
-          projectId: undefined,
-          decisions: decisionList,
-        });
-        // Swap only when the veil reports opaque (handleVeilReady).
-        stageSwap(updated);
-
-        const [allVersions, remainingSuggestions] = await Promise.all([
-          getPersonalMemoryVersions(),
-          getMemoryRevisions().catch(() => []),
-        ]);
-        setVersions(allVersions);
-        setSuggestions(remainingSuggestions);
-        await refresh(true);
-        setIsCommitting(true);
-
-        if (remainingSuggestions.length === 0) {
-          setJustCommitted(true);
-          setStagingMode("idle");
-        }
-
-        later(() => {
-          setIsCommitting(false);
-          setLeftFlash(false);
-        }, 900);
-      } catch (e) {
-        console.error("[Memory] Apply suggestions failed:", e);
-        pendingSwapRef.current = null;
-        setIsCommitting(false);
-        setLeftFlash(false);
-        throw e;
-      } finally {
-        setIsApplyingSuggestions(false);
-      }
-    },
-    [refresh, later, raiseVeil, stageSwap]
-  );
-
-  const handleCopyDoc = useCallback(async () => {
-    const text = personalMemory?.markdown || personalMemory?.content;
-    if (!text) return;
-    const ok = await copyToClipboard(text);
-    if (ok) {
-      setCopied(true);
-      later(() => setCopied(false), 2000);
-    }
-  }, [personalMemory?.markdown, personalMemory?.content, later]);
-
-  const handleRegenerateFromFacts = useCallback(async () => {
-    if (isRegenerating || saving) return;
-    setIsRegenerating(true);
-    raiseVeil();
-    try {
-      const record = await regeneratePersonalMemory();
-      stageSwap(record);
-      const allVersions = await getPersonalMemoryVersions();
-      setVersions(allVersions);
-      setIsCommitting(true);
-      later(() => {
-        setIsCommitting(false);
-        setLeftFlash(false);
-      }, 700);
-      await refresh(true);
-    } catch (e) {
-      pendingSwapRef.current = null;
-      setIsCommitting(false);
-      setLeftFlash(false);
-      console.error("[Memory] Failed to regenerate memory from integrated facts:", e);
-    } finally {
-      setIsRegenerating(false);
-    }
-  }, [isRegenerating, saving, raiseVeil, stageSwap, later, refresh]);
-
-  // Fast line-number lookup: precomputed line-start offset table over the
-  // dossier source, binary-searched per event. Previously every
-  // selectionchange event sliced + split the entire document string.
-  const lineStartsRef = useRef<number[]>([0]);
-  const dossierContentRef = useRef("");
-  useEffect(() => {
-    const content = personalMemory?.content ?? "";
-    dossierContentRef.current = content;
-    const starts: number[] = [0];
-    for (let i = 0; i < content.length; i++) {
-      if (content.charCodeAt(i) === 10) starts.push(i + 1);
-    }
-    lineStartsRef.current = starts;
-  }, [personalMemory?.content]);
-
-  const lineNumberForIndex = useCallback((idx: number): number => {
-    const starts = lineStartsRef.current;
-    let lo = 0;
-    let hi = starts.length;
-    while (lo < hi) {
-      const mid = (lo + hi) >> 1;
-      if (starts[mid] <= idx) lo = mid + 1;
-      else hi = mid;
-    }
-    return lo; // 1-based: count of line starts at or before idx
-  }, []);
-
-  useEffect(() => {
-    // rAF-throttled: selectionchange fires continuously during drag-select.
-    let rafId: number | null = null;
-    const handleSelectionChange = () => {
-      if (rafId !== null) return;
-      rafId = requestAnimationFrame(() => {
-        rafId = null;
-        // Do NOT clear or collapse anchor if the user is currently typing/composing in the popover
-        if (isComposingCommentRef.current) {
-          return;
-        }
-
-        const sel = window.getSelection();
-        if (!sel || sel.isCollapsed || !sel.rangeCount) {
-          setSelectionAnchor(null);
-          return;
-        }
-        const container = dossierContainerRef.current;
-        if (!container) return;
-
-        const anchorNode = sel.anchorNode;
-        if (!anchorNode || !container.contains(anchorNode)) {
-          setSelectionAnchor(null);
-          return;
-        }
-
-        const text = sel.toString().trim();
-        if (!text || text.length < 2) {
-          setSelectionAnchor(null);
-          return;
-        }
-
-        const range = sel.getRangeAt(0);
-        const rect = range.getBoundingClientRect();
-        const containerRect = container.getBoundingClientRect();
-
-        if (rect.width === 0 || rect.height === 0) {
-          setSelectionAnchor(null);
-          return;
-        }
-
-        // Compute client rects for multi-line highlight persistence
-        const clientRects = Array.from(range.getClientRects());
-        const selectionRects = clientRects.map((cr) => ({
-          top: cr.top - containerRect.top + container.scrollTop,
-          left: cr.left - containerRect.left,
-          width: cr.width,
-          height: cr.height,
-        }));
-
-        // Line number via the precomputed offset table (binary search).
-        const fullContent = dossierContentRef.current;
-        const snippetIdx = fullContent.indexOf(text);
-        let lineNumber = 1;
-        if (snippetIdx !== -1) {
-          lineNumber = lineNumberForIndex(snippetIdx);
-        } else {
-          const firstWord = text.split(/\s+/)[0];
-          const wordIdx = fullContent.indexOf(firstWord);
-          if (wordIdx !== -1) {
-            lineNumber = lineNumberForIndex(wordIdx);
-          }
-        }
-
-        setSelectionAnchor({
-          line: lineNumber,
-          quotedText: text.length > 80 ? `${text.slice(0, 77)}…` : text,
-          top: rect.top - containerRect.top + container.scrollTop,
-          bottom: rect.bottom - containerRect.top + container.scrollTop,
-          left: rect.left - containerRect.left,
-          right: rect.right - containerRect.left,
-          rects: selectionRects,
-        });
-      });
-    };
-
-    document.addEventListener("selectionchange", handleSelectionChange);
-    return () => {
-      document.removeEventListener("selectionchange", handleSelectionChange);
-      if (rafId !== null) cancelAnimationFrame(rafId);
-    };
-  }, [drawerOpen, lineNumberForIndex]);
-
-  const handleAddComment = useCallback(
-    (newComment: { line: number; quotedText: string; text: string; top: number }) => {
-      const commentItem: MemoryComment = {
-        id: `comment_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-        line: newComment.line,
-        quotedText: newComment.quotedText,
-        text: newComment.text,
-        top: newComment.top,
-        createdAt: Date.now(),
-      };
-      storeAddComment(commentItem);
-      setSelectionAnchor(null);
-      setIsComposingComment(false);
-      window.getSelection()?.removeAllRanges();
-      setStagingMode("comment");
-    },
-    [storeAddComment]
-  );
-
-  const handleCancelComment = useCallback(() => {
-    setSelectionAnchor(null);
-    setIsComposingComment(false);
-    window.getSelection()?.removeAllRanges();
-  }, []);
-
-  const handleDeleteComment = useCallback((id: string) => {
-    storeDeleteComment(id);
-  }, [storeDeleteComment]);
-
-  const handleUpdateComment = useCallback((id: string, text: string) => {
-    storeUpdateComment(id, text);
-  }, [storeUpdateComment]);
-
-  const handleClearComments = useCallback(() => {
-    storeClearComments();
-  }, [storeClearComments]);
-
-  const handleRegenerateWithComments = useCallback(
-    async (commentsToApply: MemoryComment[], forced?: boolean) => {
-      if (!commentsToApply.length) return;
-      setPendingActionType("regenerate");
-      setSaving(true);
-      raiseVeil();
-      try {
-        const formattedComments = commentsToApply.map(
-          (c) => `Line ${c.line} ("${c.quotedText}"): ${c.text}`
-        );
-        const outcome = await consolidatePersonalMemory(
-          formattedComments,
-          undefined,
-          forced ?? false
-        );
-
-        if (outcome.status === "completed") {
-          // Swap only when the veil reports opaque (handleVeilReady).
-          stageSwap(outcome.record);
-          const [allVersions, pendingSuggestions] = await Promise.all([
-            getPersonalMemoryVersions(),
-            getMemoryRevisions().catch(() => []),
-          ]);
-          setVersions(allVersions);
-          setSuggestions(pendingSuggestions);
-          storeClearComments();
-          setIsCommitting(true);
-          setPendingConfirmation(null);
-
-          if (pendingSuggestions.length > 0) {
-            setStagingMode("suggestions");
-          } else {
-            setStagingMode("idle");
-          }
-
-          later(() => {
-            setIsCommitting(false);
-            setLeftFlash(false);
-          }, 700);
-          await refresh(true);
-        } else if (outcome.status === "confirmation_required") {
-          pendingSwapRef.current = null;
-          setIsCommitting(false);
-          setLeftFlash(false);
-          setPendingConfirmation({
-            reason: outcome.reason,
-            pendingCount: outcome.pending_count,
-          });
-        }
-      } catch (e) {
-        pendingSwapRef.current = null;
-        setIsCommitting(false);
-        setLeftFlash(false);
-        throw e;
-      } finally {
-        setSaving(false);
-      }
-    },
-    [refresh, storeClearComments, later, raiseVeil, stageSwap]
-  );
-
-  const handleConfirmPendingIntegration = useCallback(() => {
-    if (pendingActionType === "regenerate" && comments.length > 0) {
-      handleRegenerateWithComments(comments, true);
-    } else {
-      handleConsolidateNow(true);
-    }
-  }, [pendingActionType, comments, handleRegenerateWithComments, handleConsolidateNow]);
-
-  const handleCancelPendingConfirmation = useCallback(() => {
-    setPendingConfirmation(null);
-  }, []);
-
-  // Stable callback into the memo'd staging card (an inline arrow here would
-  // defeat its memo on every parent render — style-guide §4.5).
-  const handleStagingModeChange = useCallback(
-    (m: StagingMode) => {
-      setStagingMode(m);
-      if (justCommitted) setJustCommitted(false);
-    },
-    [justCommitted]
-  );
+    drawer.openDrawer();
+  }, [drawer]);
 
   const handleRecenter = useCallback(() => graphRef.current?.recenter(), []);
   const handleZoomIn = useCallback(() => graphRef.current?.zoomIn(), []);
   const handleZoomOut = useCallback(() => graphRef.current?.zoomOut(), []);
-  const handleRefreshDock = useCallback(() => refresh(true), [refresh]);
+  const handleRefreshDock = useCallback(() => {
+    refresh(true);
+    drawer.refreshPersonalMemory(true);
+  }, [refresh, drawer]);
   const handleFocusCore = useCallback(() => graphRef.current?.focusCore(), []);
   const handleToggleSelectMode = useCallback(() => setSelectModeEnabled((prev) => !prev), []);
   const handleSelectSearchNode = useCallback(
@@ -1003,22 +385,35 @@ export const Memory: React.FC = memo(() => {
 
       {/* ── 3D Dynamic WebGL Graph Canvas ── */}
       {dims.w > 0 && (
-        <ErrorBoundary name="Memory3DGraph">
-          <MemoryGraph
-            ref={graphRef}
-            facts={facts}
-            width={Math.max(dims.w, 1)}
-            height={Math.max(dims.h, 1)}
-            searchQuery={searchQuery}
-            selectedCollection={selectedCollection}
-            selectedFactId={selectedFact?.id ?? null}
-            selectedSessionId={selectedSessionId}
-            onSelectNode={handleSelectNode}
-            onCoreClick={handleCoreClick}
-            selectModeEnabled={selectModeEnabled}
-            paused={isGraphPaused}
-          />
-        </ErrorBoundary>
+        <motion.div
+          className={cn(
+            "absolute inset-0 w-full h-full",
+            loaderShown ? "pointer-events-none" : "pointer-events-auto"
+          )}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: loaderShown ? 0 : 1 }}
+          transition={{
+            duration: 0.55,
+            ease: [0.16, 1, 0.3, 1],
+          }}
+        >
+          <ErrorBoundary name="Memory3DGraph">
+            <MemoryGraph
+              ref={graphRef}
+              facts={facts}
+              width={Math.max(dims.w, 1)}
+              height={Math.max(dims.h, 1)}
+              searchQuery={searchQuery}
+              selectedCollection={selectedCollection}
+              selectedFactId={selectedFact?.id ?? null}
+              selectedSessionId={selectedSessionId}
+              onSelectNode={handleSelectNode}
+              onCoreClick={handleCoreClick}
+              selectModeEnabled={selectModeEnabled}
+              paused={false}
+            />
+          </ErrorBoundary>
+        </motion.div>
       )}
 
       {/* ── Floating Fact Detail Tooltip ── */}
@@ -1030,93 +425,53 @@ export const Memory: React.FC = memo(() => {
         />
       )}
 
-      {/* ── Ambient Orbital Loading State (enter + exit, min dwell) ── */}
-      <AnimatePresence>
-        {loaderShown && (
-          <motion.div
-            key="memory-loader"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.25, ease: "easeOut" }}
-            className="absolute left-1/2 flex flex-col items-center justify-center pointer-events-none z-20"
-            style={{
-              top: "calc(50% - 36px)",
-              transform: "translate(-50%, -50%)",
-            }}
-          >
-            <OrbitalLoader
-              size="md"
-              title={MEMORY_COPY.graphLoadingTitle}
-              subtitle={MEMORY_COPY.graphLoadingSubtitle}
-            />
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* ── Ambient Orbital Loading State (enter + exit, strictly centered at 3D camera projection offset) ── */}
+      <div
+        className="absolute left-1/2 flex flex-col items-center justify-center pointer-events-none z-20"
+        style={{
+          top: "calc(50% - 36px)",
+          transform: "translate(-50%, -50%)",
+        }}
+      >
+        <AnimatePresence>
+          {loaderShown && (
+            <motion.div
+              key="memory-loader"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.35, ease: "easeOut" }}
+              className="flex flex-col items-center justify-center"
+            >
+              <OrbitalLoader
+                size="md"
+                title={MEMORY_COPY.graphLoadingTitle}
+                subtitle={MEMORY_COPY.graphLoadingSubtitle}
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
 
       {/* ── Load Error State ── */}
       {!loading && loadError && (
-        <div
-          className="absolute left-1/2 flex flex-col items-center justify-center pointer-events-none z-20"
-          style={{
-            top: "calc(50% - 36px)",
-            transform: "translate(-50%, -50%)",
-          }}
-        >
-          <div className="rounded-3xl bg-[rgba(var(--card),0.85)] border border-[rgba(var(--border),0.12)] backdrop-blur-xl p-8 max-w-sm text-center shadow-2xl">
-            <h3 className="font-display text-[14px] font-bold text-[rgb(var(--foreground))] mb-1">
-              {MEMORY_COPY.loadFailedTitle}
-            </h3>
-            <p className="text-[12px] text-[rgb(var(--foreground-muted))] leading-relaxed mb-4">
-              {loadError}
-            </p>
-            <button
-              type="button"
-              onClick={() => refresh()}
-              className="pointer-events-auto px-4 py-2 rounded-xl text-[12px] font-bold bg-[rgba(var(--accent),0.12)] border border-[rgba(var(--accent),0.3)] text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.2)] transition-colors cursor-pointer"
-            >
-              {MEMORY_COPY.loadFailedRetry}
-            </button>
-          </div>
-        </div>
+        <MemoryErrorState error={loadError} onRetry={refresh} />
       )}
 
       {/* ── Empty State ── */}
       {!loading && !loadError && facts.length === 0 && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-          <div className="rounded-3xl bg-[rgba(var(--card),0.85)] border border-[rgba(var(--border),0.12)] backdrop-blur-xl p-8 max-w-sm text-center shadow-2xl">
-            <Sparkles size={28} className="mx-auto text-[rgb(var(--accent))] mb-3 opacity-80" />
-            <h3 className="font-display text-[14px] font-bold text-[rgb(var(--foreground))] mb-1">
-              {MEMORY_COPY.emptyFactsTitle}
-            </h3>
-            <p className="text-[12px] text-[rgb(var(--foreground-muted))] leading-relaxed">
-              {MEMORY_COPY.emptyFactsDesc}
-            </p>
-          </div>
-        </div>
+        <MemoryEmptyState />
       )}
 
       {/* ── Memory Page Footnote Hint ── */}
       {!drawerOpen && !loading && (
-        <div className="absolute bottom-24 left-1/2 -translate-x-1/2 z-30 flex flex-col items-center gap-2 pointer-events-none">
-          <div className="flex items-center gap-1.5 text-[11px] font-mono text-[rgb(var(--foreground-muted))] opacity-60">
-            <Hand size={12} className="text-[rgb(var(--accent))]" />
-            <span>{MEMORY_COPY.memoryHint}</span>
-          </div>
-        </div>
+        <MemoryHint />
       )}
 
       {/* ── Bottom-Sheet Personal Memory Drawer ── */}
       <Drawer
         open={drawerOpen}
-        onClose={() => {
-          // Remember to reopen to comment section next time if comments are pending
-          if (comments.length > 0) {
-            storeSetReopenToComments(true);
-          }
-          setDrawerOpen(false);
-          setStagingMode("idle");
-        }}
+        onClose={drawer.closeDrawer}
         position="global"
         ariaLabel={MEMORY_COPY.personalMemory}
         height={65}
@@ -1138,70 +493,70 @@ export const Memory: React.FC = memo(() => {
               <button
                 type="button"
                 onClick={() =>
-                  setStagingMode((prev) => (prev === "facts" ? "idle" : "facts"))
+                  drawer.setStagingMode((prev) => (prev === "facts" ? "idle" : "facts"))
                 }
                 className={cn(
                   "flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-mono border transition-all cursor-pointer shadow-sm",
-                  stagingMode === "facts"
+                  drawer.stagingMode === "facts"
                     ? "bg-[rgba(var(--accent),0.25)] border-[rgba(var(--accent),0.55)] text-[rgb(var(--accent))]"
                     : "bg-[rgba(var(--foreground),0.04)] border-[rgba(var(--border),0.18)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:border-[rgba(var(--accent),0.3)]"
                 )}
               >
                 <Tag
                   size={12}
-                  className={stagingMode === "facts" ? "text-[rgb(var(--accent))]" : ""}
+                  className={drawer.stagingMode === "facts" ? "text-[rgb(var(--accent))]" : ""}
                 />
                 <span>{MEMORY_COPY.viewObservations}</span>
-                {unconsolidatedIdentityCount > 0 && (
+                {drawer.unconsolidatedIdentityCount > 0 && (
                   <span className="text-[10.5px] font-mono text-[rgb(var(--accent))]">
-                    ({unconsolidatedIdentityCount})
+                    ({drawer.unconsolidatedIdentityCount})
                   </span>
                 )}
               </button>
             </Tooltip>
 
-            {suggestions.length > 0 && stagingMode !== "suggestions" && (
+            {drawer.suggestions.length > 0 && drawer.stagingMode !== "suggestions" && (
               <Tooltip label="Review proposed profile updates">
                 <button
                   type="button"
-                  onClick={() => setStagingMode("suggestions")}
+                  onClick={() => drawer.setStagingMode("suggestions")}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-mono border border-emerald-500/40 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 transition-all cursor-pointer shadow-sm animate-pulse"
                 >
                   <Sparkles size={12} />
                   <span>Review Suggestions</span>
                   <span className="text-[10.5px] font-mono text-emerald-400">
-                    ({suggestions.length})
+                    ({drawer.suggestions.length})
                   </span>
                 </button>
               </Tooltip>
             )}
 
-            <Tooltip label={unconsolidatedIdentityCount > 0 ? "Integrate staged observations into personal profile" : "No new observations to integrate"}>
+            <Tooltip label={drawer.unconsolidatedIdentityCount > 0 ? "Integrate staged observations into personal profile" : "No new observations to integrate"}>
               <button
                 type="button"
-                onClick={() => handleConsolidateNow(false)}
-                disabled={consolidating || unconsolidatedIdentityCount === 0}
+                onClick={() => drawer.handleConsolidateNow(false)}
+                disabled={drawer.consolidating || drawer.unconsolidatedIdentityCount === 0}
                 className={cn(
                   "flex items-center gap-2 px-3 py-1.5 rounded-xl text-[11px] font-mono border transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-sm",
-                  consolidating
+                  drawer.consolidating
                     ? "bg-[rgba(var(--accent),0.25)] border-[rgba(var(--accent),0.5)] text-[rgb(var(--accent))]"
-                    : unconsolidatedIdentityCount > 0
+                    : drawer.unconsolidatedIdentityCount > 0
                     ? "bg-[rgba(var(--accent),0.12)] border-[rgba(var(--accent),0.3)] text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.2)] cursor-pointer"
                     : "bg-[rgba(var(--foreground),0.04)] border border-[rgba(var(--border),0.12)] text-[rgb(var(--foreground-muted))]/40"
                 )}
               >
                 <Zap
                   size={12}
-                  className={cn(consolidating && "animate-pulse text-[rgb(var(--accent))]")}
+                  className={cn(drawer.consolidating && "animate-pulse text-[rgb(var(--accent))]")}
                 />
                 <span>
-                  {consolidating
+                  {drawer.consolidating
                     ? MEMORY_COPY.consolidating
                     : MEMORY_COPY.consolidate}
                 </span>
-                {unconsolidatedIdentityCount > 0 && (
+                {drawer.unconsolidatedIdentityCount > 0 && (
                   <span className="text-[10.5px] font-mono text-[rgb(var(--accent))]">
-                    ({unconsolidatedIdentityCount})
+                    ({drawer.unconsolidatedIdentityCount})
                   </span>
                 )}
               </button>
@@ -1214,194 +569,67 @@ export const Memory: React.FC = memo(() => {
           <div className="w-full h-full flex-1 min-h-0">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 h-full min-h-0 w-full items-stretch">
               {/* Left Column: Canonical Persistent Memory (DB Ground Truth) */}
-              <div
-                className="relative w-full h-full min-h-0 flex flex-col glass-card rounded-2xl border border-[rgba(var(--accent),0.18)] bg-[rgba(var(--card),0.65)] backdrop-blur-sm p-5 sm:p-6 shadow-2xl overflow-hidden"
-              >
-                {/* Computational Pixel Reconstruction Overlay — smooth Framer Motion crossfade.
-                    Content swaps only via handleVeilReady (onAnimationComplete),
-                    never on a timer. The key remounts the veil per commit so the
-                    completion callback always fires for the fresh animation. */}
-                <AnimatePresence>
-                  {leftFlash && (
-                    <motion.div
-                      key={`veil-${veilCycle}`}
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      exit={{ opacity: 0 }}
-                      transition={{ duration: 0.35, ease: "easeInOut" }}
-                      onAnimationComplete={handleVeilReady}
-                      className="absolute inset-0 z-30 rounded-2xl overflow-hidden bg-[rgba(var(--card),0.85)] backdrop-blur-md pointer-events-none"
-                    >
-                      <PixelSynthesisCanvas active={leftFlash} />
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-
-                {/* Historical-revision bar. Browsing a revision no longer writes,
-                    so promoting one to canonical is an explicit labelled action
-                {/* Dossier Header Bar */}
-                <div className="flex items-center justify-between gap-4 border-b border-[rgba(var(--border),0.12)] pb-3.5 min-h-[44px] shrink-0">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-8 h-8 rounded-xl bg-[rgba(var(--accent),0.12)] border border-[rgba(var(--accent),0.25)] flex items-center justify-center text-[rgb(var(--accent))] shadow-sm">
-                      <FileText size={16} />
-                    </div>
-                    <div className="flex flex-col">
-                      <div className="flex items-center gap-2">
-                        <span className="text-[13px] font-semibold tracking-wide text-[rgb(var(--foreground))]">
-                          {MEMORY_COPY.personalMemory}
-                        </span>
-                      </div>
-                      <span className="text-[11px] font-mono text-[rgb(var(--foreground-muted))]">
-                        {personalMemory
-                          ? `${MEMORY_COPY.lastUpdated} ${new Date(personalMemory.updated_at).toLocaleDateString(undefined, {
-                              month: "short",
-                              day: "numeric",
-                              year: "numeric",
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            })}`
-                          : MEMORY_COPY.identityLayer}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <PersonalMemoryVersionNav
-                      versions={versions}
-                      activeVersionRecord={personalMemory}
-                      displayedRecord={displayedRecord}
-                      onSelectVersion={handleSelectVersion}
-                      onCommitActiveVersion={handleRestoreActive}
-                      isRestoring={isRestoringVersion}
-                    />
-
-                    <Tooltip label={MEMORY_COPY.copyDocTitle}>
-                      <button
-                        type="button"
-                        onClick={handleCopyDoc}
-                        disabled={!displayedRecord?.markdown && !displayedRecord?.content}
-                        className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[11px] font-mono bg-[rgba(var(--foreground),0.05)] border border-[rgba(var(--border),0.14)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors disabled:opacity-40 cursor-pointer shadow-sm"
-                      >
-                        {copied ? <Check size={12} className="text-[rgb(var(--accent))]" /> : <Copy size={12} />}
-                        {copied ? MEMORY_COPY.copied : MEMORY_COPY.copy}
-                      </button>
-                    </Tooltip>
-
-                    <Tooltip label="Regenerate personal profile from all integrated observations">
-                      <button
-                        type="button"
-                        onClick={handleRegenerateFromFacts}
-                        disabled={isRegenerating || saving}
-                        className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[11px] font-mono bg-[rgba(var(--foreground),0.05)] border border-[rgba(var(--border),0.14)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors disabled:opacity-40 cursor-pointer shadow-sm"
-                      >
-                        <RotateCw size={12} className={cn(isRegenerating && "animate-spin text-[rgb(var(--accent))]")} />
-                        {isRegenerating ? MEMORY_COPY.regenerating : MEMORY_COPY.regenerate}
-                      </button>
-                    </Tooltip>
-                  </div>
-                </div>
-
-                {/* Dossier Document Content with Inner Scrolling */}
-                <div
-                  ref={dossierContainerRef}
-                  className="relative flex-1 min-h-0 overflow-y-auto custom-scrollbar px-6 pt-6 pb-8 leading-relaxed max-w-none select-text"
-                >
-                  {/* Inline text selection comment popover */}
-                  <PersonalMemoryCommentPopover
-                    anchor={selectionAnchor}
-                    onAddComment={handleAddComment}
-                    onCancel={handleCancelComment}
-                    onOpenChange={setIsComposingComment}
-                  />
-
-                  {/* Persistent text highlight overlay while commenting */}
-                  {selectionAnchor?.rects?.map((r, i) => (
-                    <div
-                      key={`sel_rect_${i}`}
-                      className="absolute pointer-events-none rounded-[2px] bg-[rgba(var(--accent),0.28)] transition-opacity duration-150 z-10"
-                      style={{
-                        top: `${r.top}px`,
-                        left: `${r.left}px`,
-                        width: `${r.width}px`,
-                        height: `${r.height}px`,
-                      }}
-                    />
-                  ))}
-
-                  {/* Persistent Comment Icons on Right Margin for all saved comments (Image 3 layout) */}
-                  {comments.map((c) => (
-                    <div
-                      key={c.id}
-                      className="absolute right-1 z-30 pointer-events-auto transition-transform hover:scale-110"
-                      style={{ top: `${Math.max(4, c.top)}px` }}
-                    >
-                      <Tooltip label={`Line ${c.line}: ${c.text}`} side="left">
-                        <button
-                          type="button"
-                          onClick={() => setStagingMode("comment")}
-                          className="w-5 h-5 text-[rgb(var(--accent))] hover:scale-115 flex items-center justify-center cursor-pointer transition-transform opacity-80 hover:opacity-100"
-                        >
-                          <MessageSquare size={13} />
-                        </button>
-                      </Tooltip>
-                    </div>
-                  ))}
-
-                  {drawerBodyReady ? (
-                    displayedRecord?.markdown || displayedRecord?.content ? (
-                      <Markdown
-                        content={displayedRecord.markdown || displayedRecord.content}
-                        variant="document"
-                        autoHeadings
-                      />
-                    ) : (
-                      <p className="text-[rgb(var(--foreground-muted))] text-[13px] font-mono py-12 text-center">
-                        {MEMORY_COPY.noPersonalMemory}
-                      </p>
-                    )
-                  ) : (
-                    <div className="py-12 flex justify-center">
-                      <div className="w-6 h-6 rounded-full border-2 border-[rgba(var(--accent),0.4)] border-t-[rgb(var(--accent))] animate-spin" />
-                    </div>
-                  )}
-                </div>
-              </div>
+              <PersonalMemoryDossierCard
+                personalMemory={drawer.personalMemory}
+                displayedRecord={drawer.displayedRecord}
+                versions={drawer.versions}
+                onSelectVersion={drawer.handleSelectVersion}
+                onCommitActiveVersion={drawer.handleRestoreActive}
+                isRestoringVersion={drawer.isRestoringVersion}
+                onCopyDoc={drawer.handleCopyDoc}
+                copied={drawer.copied}
+                onRegenerateFromFacts={drawer.handleRegenerateFromFacts}
+                isRegenerating={drawer.isRegenerating}
+                saving={drawer.saving}
+                leftFlash={drawer.leftFlash}
+                veilCycle={drawer.veilCycle}
+                onVeilReady={drawer.handleVeilReady}
+                dossierContainerRef={drawer.dossierContainerRef}
+                selectionAnchor={drawer.selectionAnchor}
+                onAddComment={drawer.handleAddComment}
+                onCancelComment={drawer.handleCancelComment}
+                setIsComposingComment={drawer.setIsComposingComment}
+                comments={drawer.comments}
+                onSelectComment={() => drawer.setStagingMode("comment")}
+                drawerOpen={drawerOpen}
+                drawerBodyReady={drawer.drawerBodyReady}
+              />
 
               {/* Right Column: Dynamic Workspace / Staging Slate */}
               <PersonalMemoryStagingCard
-                canonicalContent={displayedRecord?.content ?? ""}
-                canonicalMarkdown={displayedRecord?.markdown ?? ""}
-                activeVersion={personalMemory?.version ?? 1}
-                mode={stagingMode}
-                onModeChange={handleStagingModeChange}
-                onSave={handleSaveStaging}
-                onRegenerateWithComments={handleRegenerateWithComments}
-                comments={comments}
-                onDeleteComment={handleDeleteComment}
-                onUpdateComment={handleUpdateComment}
-                onClearComments={handleClearComments}
-                unconsolidatedCount={unconsolidatedIdentityCount}
-                isSaving={saving}
-                isConsolidating={consolidating}
-                isCommitting={isCommitting}
-                suggestions={suggestions}
-                onApplySuggestions={handleApplySuggestions}
-                onDismissCommitted={() => setJustCommitted(false)}
-                isApplyingSuggestions={isApplyingSuggestions}
-                candidateFacts={identityCandidateFacts}
-                observations={paginatedObservations}
-                observationFilter={obsStatusFilter}
-                onObservationFilterChange={setObsStatusFilter}
-                isLoadingObservations={obsLoading}
-                isLoadingMoreObservations={obsLoadingMore}
-                hasMoreObservations={obsHasMore}
-                onLoadMoreObservations={obsLoadMore}
-                pendingConfirmation={pendingConfirmation}
-                onConfirmPendingIntegration={handleConfirmPendingIntegration}
-                onCancelPendingConfirmation={handleCancelPendingConfirmation}
-                justCommitted={justCommitted}
+                canonicalContent={drawer.displayedRecord?.content ?? ""}
+                canonicalMarkdown={drawer.displayedRecord?.markdown ?? ""}
+                activeVersion={drawer.personalMemory?.version ?? 1}
+                mode={drawer.stagingMode}
+                onModeChange={drawer.handleStagingModeChange}
+                onSave={drawer.handleSaveStaging}
+                onRegenerateWithComments={drawer.handleRegenerateWithComments}
+                comments={drawer.comments}
+                onDeleteComment={drawer.handleDeleteComment}
+                onUpdateComment={drawer.handleUpdateComment}
+                onClearComments={drawer.handleClearComments}
+                unconsolidatedCount={drawer.unconsolidatedIdentityCount}
+                isSaving={drawer.saving}
+                isConsolidating={drawer.consolidating}
+                isCommitting={drawer.isCommitting}
+                suggestions={drawer.suggestions}
+                onApplySuggestions={drawer.handleApplySuggestions}
+                onDismissCommitted={() => drawer.setJustCommitted(false)}
+                isApplyingSuggestions={drawer.isApplyingSuggestions}
+                candidateFacts={drawer.identityCandidateFacts}
+                observations={drawer.paginatedObservations}
+                observationFilter={drawer.obsStatusFilter}
+                onObservationFilterChange={drawer.setObsStatusFilter}
+                isLoadingObservations={drawer.obsLoading}
+                isLoadingMoreObservations={drawer.obsLoadingMore}
+                hasMoreObservations={drawer.obsHasMore}
+                onLoadMoreObservations={drawer.obsLoadMore}
+                pendingConfirmation={drawer.pendingConfirmation}
+                onConfirmPendingIntegration={drawer.handleConfirmPendingIntegration}
+                onCancelPendingConfirmation={drawer.handleCancelPendingConfirmation}
+                justCommitted={drawer.justCommitted}
                 onViewVersionHistory={() => {
-                  setJustCommitted(false);
+                  drawer.setJustCommitted(false);
                 }}
               />
             </div>

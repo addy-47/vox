@@ -100,10 +100,7 @@ pub fn install_native_crash_handler() {
             libc::SIGILL,
             libc::SIGFPE,
         ] {
-            libc::signal(
-                sig,
-                native_crash_handler as *const () as libc::sighandler_t,
-            );
+            libc::signal(sig, native_crash_handler as *const () as libc::sighandler_t);
         }
         log::debug!("[Crash] Native crash handlers installed (SIGABRT/SEGV/BUS/ILL/FPE)");
     });

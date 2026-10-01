@@ -175,10 +175,7 @@ async fn main() -> Result<()> {
     let raw_provider = create_pipeline_provider(&args.pipeline_url, &args.pipeline_model, None);
     let recording_provider = RecordingLlmProvider::new(raw_provider, args.pipeline_model.clone());
 
-    println!(
-        ">>> Initializing Judge client ({})",
-        args.judge_model
-    );
+    println!(">>> Initializing Judge client ({})", args.judge_model);
     let judge = NvidiaJudgeClient::new(judge_key, args.judge_model.clone());
 
     let target_layer = args.layer.to_lowercase();

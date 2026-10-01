@@ -131,7 +131,7 @@ Produce a comprehensive evaluation report in clean Markdown format with the foll
 
 ## 1. Executive Scorecard
 *(Note: Every percentage score MUST explicitly state its formula with exact counts: `X / Y = Z%`. Never output an ungrounded percentage).*
-- **Fact Coverage / Recall**: [X / Y = Z%]
+- **Fact Coverage / Recall**: [X / Y = Z%] (Denominator Y = count of distinct user factual declarations in dialogue turns; Numerator X = successfully captured declarations. NEVER divide extracted facts by extracted facts).
 - **Fact Precision**: [X / Y = Z%]
 - **Category Routing Accuracy**: [X / Y = Z%]
 - **Hallucination / Stale Fact Rate**: [X / Y = Z%]
@@ -151,7 +151,7 @@ Verify whether facts were routed into their correct schema buckets (`personal`, 
 - Flag any fragmented or incomplete statements.
 
 ## 5. Hallucination, Stale Facts & Grounding Check
-- **Ungrounded Facts Check**: Explicitly flag any hallucinated statements or ungrounded claims in the extracted facts.
+- **Ungrounded Facts Check**: Explicitly flag any hallucinated statements or ungrounded claims in the extracted facts. For each extracted `personal` fact, cite the dialogue turn number that grounds it. Flag any attribute not explicitly stated by the user (e.g. inventing housing type or residence proximity from an activity/visit).
 - **Temporal Resolution Check**: Verify whether any extracted `blocker` or `next_step` was already resolved/fixed by later dialogue turns. If a resolved bug or obstacle is extracted as an active blocker, flag it as a Stale Fact defect.
 
 ## 6. Duplicate Facts & Noise Filtering Audit
@@ -169,7 +169,7 @@ Provide 2-3 concise, actionable improvements for the compaction prompt or pipeli
 
     // 7. Execute Judge evaluation via NVIDIA NIM Judge
     let judge_report = judge
-        .evaluate(&judge_prompt)
+        .evaluate_with_trace(&judge_prompt, case_dir, "compaction")
         .await
         .map_err(|e| anyhow!("Compaction Judge evaluation failed: {}", e))?;
 

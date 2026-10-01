@@ -1,13 +1,13 @@
 import { memo, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Clock } from "lucide-react";
-import { FactRecord } from "@/services/memoryService";
+import { ObservationRecord } from "@/services/memoryService";
 import { getCollectionColor } from "./memoryGraphTypes";
 import { useOverlay } from "@/shared/hooks/useOverlay";
 import { MEMORY_COPY } from "@/data/memoryCopy";
 
 interface MemoryNodeTooltipProps {
-  factDetail: FactRecord | null;
+  factDetail: ObservationRecord | null;
   pos: { x: number; y: number } | null;
   onClose: () => void;
   isLightMode?: boolean;

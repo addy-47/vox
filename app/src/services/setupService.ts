@@ -89,11 +89,6 @@ export function startModelSetup(selectedIds: string[]): Promise<void> {
   return invoke<void>("manage_models", { payload: { action: "start_setup", selected_ids: selectedIds } });
 }
 
-/** Cancel an in-flight model setup. */
-export function cancelModelSetup(): Promise<void> {
-  return invoke<void>("manage_models", { payload: { action: "cancel" } });
-}
-
 /** Mark the setup wizard as completed (ipc/settings.rs). */
 export function completeSetupWizard(): Promise<void> {
   return invoke("complete_setup_wizard");

@@ -83,15 +83,6 @@ pub async fn restart_engine_inner<R: tauri::Runtime>(
     Ok(())
 }
 
-/// Restarts the 3-tier audio engine, preserving the active session if one was running.
-#[tauri::command]
-pub async fn restart_engine<R: tauri::Runtime>(
-    app: AppHandle<R>,
-    state: State<'_, Arc<AppState>>,
-) -> Result<(), VoxIpcError> {
-    restart_engine_inner(&app, &state).await
-}
-
 /// Starts the voice assistant session by booting audio engine and routing SessionStart.
 #[tauri::command]
 pub async fn start_session<R: tauri::Runtime>(

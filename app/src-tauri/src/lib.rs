@@ -46,10 +46,9 @@ use crate::{
             probe_model_capabilities, setup_remote_server,
         },
         memory::{
-            consolidate_personal_memory, get_memory_revisions,
-            get_observations, get_personal_memory, get_personal_memory_versions,
-            regenerate_personal_memory, resolve_memory_revisions, save_personal_memory,
-            set_active_personal_memory_version,
+            consolidate_personal_memory, get_memory_revisions, get_observations,
+            get_personal_memory, get_personal_memory_versions, regenerate_personal_memory,
+            resolve_memory_revisions, save_personal_memory, set_active_personal_memory_version,
         },
         monitoring::{get_profiler_snapshot, get_runtime_snapshot, record_memory_profile_event},
         notifications::{
@@ -61,7 +60,7 @@ use crate::{
         },
         pipeline::{
             continue_session, create_session, end_session, launch_engine, pause_session,
-            ptt_cancel, ptt_start, ptt_stop, restart_engine, resume_session, set_mic_muted,
+            ptt_cancel, ptt_start, ptt_stop, resume_session, set_mic_muted,
             set_playback_muted, set_session_private_mode, start_session, stop_engine,
             submit_text_input,
         },
@@ -651,7 +650,6 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             launch_engine,
             stop_engine,
-            restart_engine,
             start_session,
             end_session,
             pause_session,

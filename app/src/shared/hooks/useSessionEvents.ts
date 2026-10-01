@@ -11,14 +11,10 @@ import {
   type LlmTokenPayload,
   type TurnMetricsPayload,
 } from "@/services/eventsService";
-import type { InteractionState } from "@/services/eventsService";
-
-const VALID_STATES = new Set<InteractionState>([
-  "Idle", "Ready", "Listening", "Thinking", "Speaking", "Paused", "Error", "Sleeping",
-]);
+import { type InteractionState, VALID_INTERACTION_STATES } from "@/services/eventsService";
 
 function isValidState(s: string): s is InteractionState {
-  return VALID_STATES.has(s as InteractionState);
+  return VALID_INTERACTION_STATES.has(s as InteractionState);
 }
 
 interface SessionEventHandlers {

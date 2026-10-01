@@ -108,8 +108,8 @@ pub enum ConfirmationReason { CompactionInProgress, PendingQueueItems }
   - Broadcasts `IpcEvent::PersonalMemoryUpdated` on `Completed`.
 
 #### `regenerate_personal_memory(projectId: Option<String>) -> PersonalMemoryRecord`
-- **Purpose**: Reorganizes the existing semantic Personal Memory into a new coherent structure.
-- **Behavior**: Renders the current memory to the LLM in handle format, receives a complete new structure via the `new_sections`-only grouped schema, assigns fresh `sec_*`/`blk_*` IDs to every entity, bulk-rejects any pending revisions that targeted the superseded IDs, and inserts a new `personal_memory` record with `version = max_version + 1`, `is_active = 1`. Operates strictly on the existing semantic model, NOT on raw observations. Broadcasts `IpcEvent::PersonalMemoryUpdated`.
+- **Purpose**: Re-synthesizes Personal Memory from all currently integrated facts.
+- **Behavior**: Fetches all already-integrated facts (`type = 'personal' AND status = 'integrated'`), passes them to the whole-memory synthesis pass (`PERSONAL_COLD_GENERATION_SYSTEM_PROMPT`), assigns fresh `sec_*`/`blk_*` IDs to every entity, bulk-rejects any pending revisions that targeted superseded IDs, and inserts a new `personal_memory` record with `version = max_version + 1`, `is_active = 1`. Operates strictly over integrated facts, without touching active facts. Broadcasts `IpcEvent::PersonalMemoryUpdated`.
 
 #### `get_personal_memory_versions(projectId: Option<String>) -> Vec<PersonalMemoryView>`
 - **Purpose**: Lists all historical versions for carousel browsing.
@@ -203,12 +203,11 @@ pub struct NotificationFilter {
 ### 2.5 Pipeline & Audio Domain (`ipc/pipeline.rs` & `ipc/audio.rs`)
 Controls the voice interaction lifecycle and hardware devices.
 
-#### `launch_engine()`, `stop_engine()`, `restart_engine()`
-- **Purpose**: Initializes, completely shuts down, or restarts the 3-tier audio engine, VAD, and model workers.
+#### `launch_engine()`, `stop_engine()`
+- **Purpose**: Initializes or completely shuts down the 3-tier audio engine, VAD, and model workers. (Engine restarts are backend-owned via `restart_engine_inner` and triggered automatically by settings mutations).
 - **Behavior**: 
   - `launch_engine()`: Bootstraps CPAL streams, model weights, and hotkey listeners in `Idle` state.
   - `stop_engine()`: Cleanly joins worker threads, terminates the central router pump, and releases mic hardware.
-  - `restart_engine()`: Atomically stops and relaunches the audio engine while preserving active session continuity. If an assistant session was actively running (`state.pipeline.state() != Idle`), it captures the current `conversation_id`, stops and starts the audio engine, and automatically re-dispatches `VoxEvent::SessionStart` with the preserved `session_id`, restoring the pipeline state directly to `Ready` without dropping into un-resumable `Idle`.
 
 #### `start_session(sessionId: Option<i64>)` — [ALIGNED]
 - **Purpose**: Transitions assistant from `Idle` to `Ready`, mounting the `HarnessSession`.

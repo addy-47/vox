@@ -101,8 +101,6 @@ impl LlmProvider for EmbeddedProvider {
             }
             let conv_ctx = ConversationContext {
                 messages: request.input.messages,
-                token_count: 0,
-                kv_cache_index: 0,
             };
 
             self.engine

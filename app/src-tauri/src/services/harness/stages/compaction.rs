@@ -39,8 +39,6 @@ pub struct CompactionParams<'a> {
 pub struct CompactionStage {
     session_context: Option<String>,
     auto_compaction_enabled: bool,
-    context_window: usize,
-    is_embedded: bool,
     last_compacted_to_turn: u32,
 }
 
@@ -52,26 +50,16 @@ pub struct QuietCompactionWatcher {
 
 impl CompactionStage {
     /// Creates a new `CompactionStage` instance.
-    pub fn new(context_window: usize, is_embedded: bool, auto_compaction_enabled: bool) -> Self {
+    pub fn new(auto_compaction_enabled: bool) -> Self {
         Self {
             session_context: None,
             auto_compaction_enabled,
-            context_window,
-            is_embedded,
             last_compacted_to_turn: 0,
         }
     }
 
     pub fn auto_compaction_enabled(&self) -> bool {
         self.auto_compaction_enabled
-    }
-
-    pub fn context_window(&self) -> usize {
-        self.context_window
-    }
-
-    pub fn is_embedded(&self) -> bool {
-        self.is_embedded
     }
 
     pub fn from_turn_id(&self) -> u32 {

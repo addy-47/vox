@@ -6,9 +6,7 @@ use std::{
 use anyhow::{anyhow, Result};
 use tokio_util::sync::CancellationToken;
 
-use super::prompts::{
-    CONSOLIDATION_MAX_OUTPUT_TOKENS, PERSONAL_CONSOLIDATION_TEMPERATURE,
-};
+use super::prompts::{CONSOLIDATION_MAX_OUTPUT_TOKENS, PERSONAL_CONSOLIDATION_TEMPERATURE};
 use crate::services::{
     harness::{ChatMessage, Role},
     llm::{
@@ -131,10 +129,7 @@ pub(super) async fn execute_personal_llm_pass(
                 gen_start.elapsed(),
                 output.len()
             );
-            log::debug!(
-                "[Memory::Personal::RawResponse]\n{}",
-                output
-            );
+            log::debug!("[Memory::Personal::RawResponse]\n{}", output);
         }
         Ok(Err(e)) => {
             if let Err(join_err) = pump_handle.await {

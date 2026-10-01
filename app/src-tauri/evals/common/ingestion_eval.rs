@@ -152,6 +152,37 @@ pub async fn evaluate_ingestion_stage(
         .filter(|i| i.status == "failed")
         .count();
 
+    // 5b. Compute same-type similarity table
+    let mut same_type_sim_rendered = String::new();
+    let distinct_types: std::collections::HashSet<String> =
+        pending_items.iter().map(|i| i.fact_type.clone()).collect();
+    for obs_type in distinct_types {
+        let active_vectors =
+            vox_lib::persistence::facts::fetch_active_vectors_by_type(&conn, &obs_type)
+                .await
+                .unwrap_or_default();
+        if active_vectors.len() > 1 {
+            for i in 0..active_vectors.len() {
+                for j in (i + 1)..active_vectors.len() {
+                    let sim = vox_lib::services::memory::cosine_similarity(
+                        &active_vectors[i].1,
+                        &active_vectors[j].1,
+                    );
+                    if sim >= 0.70 {
+                        same_type_sim_rendered.push_str(&format!(
+                            "- Type '{}' | [Fact {}] <-> [Fact {}] | Cosine: {:.4}\n",
+                            obs_type, active_vectors[i].0, active_vectors[j].0, sim
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    if same_type_sim_rendered.is_empty() {
+        same_type_sim_rendered =
+            "No same-type pairs observed >= 0.70 cosine similarity.\n".to_string();
+    }
+
     let judge_prompt = format!(
         r#"You are the Vox Senior Memory Ingestion & Deduplication Judge.
 Analyze the following memory ingestion cycle, which uses:
@@ -179,6 +210,10 @@ Cross-type conceptual overlap (e.g. between an `objective` task and a `workdone`
 <post_cycle_active_observations>
 {}
 </post_cycle_active_observations>
+
+<same_type_similarity_matrix>
+{}
+</same_type_similarity_matrix>
 
 Cycle Telemetry:
 - Stage 1 Processed: {} | Errors: {}
@@ -208,7 +243,7 @@ Analyze same-type facts marked as duplicates vs. inserted:
 - **Duplicate Pollution Audit**: List any incoming facts that were inserted as novel but were actually synonymous with pre-existing same-type observations.
 
 ## 4. Near-Miss Region & Boundary Analysis
-Inspect borderline same-type candidate pairs (near the 0.85-0.95 similarity cutoff):
+Inspect borderline same-type candidate pairs (refer to `<same_type_similarity_matrix>` above):
 - Identify where the cosine threshold succeeded or struggled to separate subtle nuances.
 
 ## 5. Contradiction & Evolution Handling
@@ -221,6 +256,7 @@ Provide concise feedback on whether the 0.95 cosine threshold is optimal or requ
         pending_rendered,
         queue_decisions_rendered,
         post_obs_rendered,
+        same_type_sim_rendered,
         cycle_summary.stage1.processed,
         cycle_summary.stage1.errors,
         cycle_summary.stage2.processed,
@@ -238,7 +274,7 @@ Provide concise feedback on whether the 0.95 cosine threshold is optimal or requ
 
     // 7. Run Judge evaluation via NVIDIA NIM Judge
     let judge_report = judge
-        .evaluate(&judge_prompt)
+        .evaluate_with_trace(&judge_prompt, case_dir, "ingestion")
         .await
         .map_err(|e| anyhow!("Ingestion Judge evaluation failed: {}", e))?;
 

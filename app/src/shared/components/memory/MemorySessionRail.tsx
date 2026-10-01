@@ -16,7 +16,7 @@ import {
   sortSessionsNewestFirst,
   type SessionRow,
 } from "@/services/historyService";
-import { FactRecord } from "@/services/memoryService";
+import { ObservationRecord } from "@/services/memoryService";
 import { MEMORY_COPY } from "@/data/memoryCopy";
 import { cn } from "@/shared/lib/utils";
 import {
@@ -26,11 +26,11 @@ import {
 } from "./memoryGraphTypes";
 
 interface MemorySessionRailProps {
-  facts: FactRecord[];
+  facts: ObservationRecord[];
   selectedSessionId: string | null;
   selectedFactId: string | null;
   onSelectSession: (sessionId: string | null) => void;
-  onSelectFact: (fact: FactRecord) => void;
+  onSelectFact: (fact: ObservationRecord) => void;
   onClose?: () => void;
   isLightMode?: boolean;
 }
@@ -109,7 +109,7 @@ export const MemorySessionRail = memo<MemorySessionRailProps>(({
   const compactionGroups = useMemo(() => {
     if (!activeDrillSession) return [];
     const sessionFacts = facts.filter((f) => f.session_id === activeDrillSession.id);
-    const groupsMap = new Map<number, FactRecord[]>();
+    const groupsMap = new Map<number, ObservationRecord[]>();
     for (const f of sessionFacts) {
       const list = groupsMap.get(f.compaction_id) || [];
       list.push(f);
