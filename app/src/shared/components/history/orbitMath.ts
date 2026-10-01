@@ -35,15 +35,10 @@ export const ORBIT_CARD_OPACITY_MIN = 0.35;
 /** Scale multiplier applied to the selected card. */
 export const ORBIT_CARD_SELECTED_BOOST = 1.10;
 
-/** Z-banding — back-half cards slide behind the central clock (z-50). */
-export const ORBIT_Z_BACK_MAX = 39;
-export const ORBIT_Z_CLOCK = 50;
-export const ORBIT_Z_FRONT_MIN = 51;
 export const ORBIT_Z_SELECTED = 85;
 
 /** Faint concentric guide ring offset outside the solid ring. */
 export const ORBIT_GUIDE_GAP = 36;
-export const ORBIT_GUIDE_OPACITY = 0.12;
 
 
 export interface RingPoint {
@@ -104,57 +99,6 @@ export function orbitCapacityFor(
   return clamp(Math.floor(slots), ORBIT_CAPACITY_MIN, ORBIT_CAPACITY_MAX);
 }
 
-/**
- * Precomputed arc length table for an ellipse with compression ORBIT_TILT_COMPRESSION.
- * For parameter t from 0 to 2*PI, calculates the cumulative arc length along:
- * x(t) = cos(t), y(t) = sin(t) * ORBIT_TILT_COMPRESSION.
- */
-const ELLIPSE_STEPS = 360;
-const ELLIPSE_ARC_TABLE: number[] = (() => {
-  const table = new Array<number>(ELLIPSE_STEPS + 1);
-  table[0] = 0;
-  let cum = 0;
-  const b = ORBIT_TILT_COMPRESSION;
-  for (let i = 1; i <= ELLIPSE_STEPS; i++) {
-    const tPrev = ((i - 1) * 2 * Math.PI) / ELLIPSE_STEPS;
-    const tCurr = (i * 2 * Math.PI) / ELLIPSE_STEPS;
-    const tMid = (tPrev + tCurr) / 2;
-    // Speed: ds/dt = sqrt( (-sin t)^2 + (b * cos t)^2 )
-    const speed = Math.sqrt(Math.sin(tMid) ** 2 + (b * Math.cos(tMid)) ** 2);
-    cum += speed * (tCurr - tPrev);
-    table[i] = cum;
-  }
-  return table;
-})();
-
-const ELLIPSE_TOTAL_PERIMETER = ELLIPSE_ARC_TABLE[ELLIPSE_STEPS];
-
-/** Converts fractional perimeter distance s in [0, 1) into elliptic parameter angle t. */
-export function ellipseAngleFromFraction(fraction: number): number {
-  const norm = ((fraction % 1) + 1) % 1;
-  const targetArc = norm * ELLIPSE_TOTAL_PERIMETER;
-
-  // Binary search table
-  let low = 0;
-  let high = ELLIPSE_STEPS;
-  while (low < high) {
-    const mid = (low + high) >> 1;
-    if (ELLIPSE_ARC_TABLE[mid] < targetArc) {
-      low = mid + 1;
-    } else {
-      high = mid;
-    }
-  }
-
-  const idx = Math.max(1, low);
-  const arcPrev = ELLIPSE_ARC_TABLE[idx - 1];
-  const arcNext = ELLIPSE_ARC_TABLE[idx];
-  const ratio = arcNext === arcPrev ? 0 : (targetArc - arcPrev) / (arcNext - arcPrev);
-
-  const tPrev = ((idx - 1) * 2 * Math.PI) / ELLIPSE_STEPS;
-  const tNext = (idx * 2 * Math.PI) / ELLIPSE_STEPS;
-  return tPrev + ratio * (tNext - tPrev);
-}
 
 /**
  * Deterministic angle for the i-th card (newest first).
@@ -276,49 +220,6 @@ export function dayNumberFromKey(dayKey: string): number {
   return Number(dayKey.split("-")[2]);
 }
 
-/** Number of days in a month key ("2026-02" → 28). */
-export function daysInMonthKey(monthKey: string): number {
-  const [y, m] = monthKey.split("-").map(Number);
-  return new Date(y, m, 0).getDate();
-}
-
-// A static ring of dots between the clock and the orbit: one dot per session
-// (day view) at its clock position, or per active day (month view). Dot size
-// encodes turn count.
-
-/** Angle on a 24h dial (0 = midnight, top of the dial). */
-export function timeToDialAngle(ms: number): number {
-  const d = new Date(ms);
-  return ((d.getHours() * 60 + d.getMinutes()) / (24 * 60)) * Math.PI * 2;
-}
-
-/** Angle on a month dial (0 = first day, top of the dial). */
-export function dayToDialAngle(dayNumber: number, totalDays: number): number {
-  return ((dayNumber - 1) / totalDays) * Math.PI * 2;
-}
-
-/** SVG rotation degrees for a dial angle (clockwise from 12 o'clock). */
-export function dialDegrees(angle: number): number {
-  return (angle * 180) / Math.PI;
-}
-
-/** Dot radius from turn count, bounded so heavy days never swamp the dial. */
-export function dialDotRadius(turnCount: number): number {
-  return clamp(2 + turnCount * 0.3, 2, 5.5);
-}
-
-
-/** "45s" / "12m" / "1h 05m" from a duration in ms. */
-export function formatDuration(ms: number): string {
-  if (!Number.isFinite(ms) || ms < 0) return "";
-  const totalSeconds = Math.max(1, Math.round(ms / 1000));
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-  if (hours > 0) return `${hours}h ${String(minutes).padStart(2, "0")}m`;
-  if (minutes > 0) return `${minutes}m`;
-  return `${seconds}s`;
-}
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
@@ -350,13 +251,6 @@ export function formatDayLabel(dayKey: string): string {
   });
 }
 
-export function formatDayShortLabel(dayKey: string): string {
-  const [y, m, d] = dayKey.split("-").map(Number);
-  return new Date(y, m - 1, d).toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-  });
-}
 
 export function formatMonthLabel(monthKey: string): string {
   const [y, m] = monthKey.split("-").map(Number);

@@ -16,6 +16,18 @@ export type InteractionState =
   | "Sleeping"
   | "Working";
 
+export const VALID_INTERACTION_STATES = new Set<InteractionState>([
+  "Idle",
+  "Ready",
+  "Listening",
+  "Thinking",
+  "Speaking",
+  "Paused",
+  "Error",
+  "Sleeping",
+  "Working",
+]);
+
 /** Canonical Rust `InteractionOwner` enum (core/state.rs). */
 export type InteractionOwner = "Assistant" | "Dictation";
 
@@ -289,12 +301,6 @@ export function onSessionsChanged(handler: () => void): () => void {
       }
     }
   };
-}
-
-export function onPersonalMemoryUpdated(
-  handler: (payload: PersonalMemoryRecord) => void
-): () => void {
-  return on("personal_memory_updated", handler);
 }
 
 export function onTurnMetrics(handler: (payload: TurnMetricsPayload) => void): () => void {

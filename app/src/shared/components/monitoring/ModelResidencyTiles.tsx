@@ -1,6 +1,6 @@
 import { memo } from "react";
 import { Brain, Mic, Volume2 } from "lucide-react";
-import { type RuntimeSnapshot } from "@/services/pipelineService";
+import { type RuntimeSnapshot } from "@/services/monitoringService";
 import { type DynamicColors } from "./colorUtils";
 import { cn } from "@/shared/lib/utils";
 import { MONITORING_COPY } from "@/data/monitoringCopy";

@@ -144,9 +144,10 @@ pub async fn fetch_active_notifications(conn: &Connection) -> Result<Vec<Notific
     Ok(list)
 }
 
-/// Marks unread notifications matching the filter (or all unread) as read.
-pub async fn mark_notifications_read(
+async fn update_notifications_status(
     conn: &Connection,
+    target_status: &str,
+    status_filter_clause: &str,
     filter: Option<&NotificationFilter>,
 ) -> Result<()> {
     let now = current_timestamp_ms();
@@ -160,44 +161,53 @@ pub async fn mark_notifications_read(
                 .map(|id| format!("'{}'", id.replace('\'', "''")))
                 .collect();
             let sql = format!(
-                "UPDATE notifications SET status = 'read', updated_at = ? WHERE id IN ({}) AND status = 'unread'",
-                quoted_ids.join(",")
+                "UPDATE notifications SET status = ?, updated_at = ? WHERE id IN ({}) AND {}",
+                quoted_ids.join(","),
+                status_filter_clause
             );
-            conn.execute(&sql, (now,)).await?;
+            conn.execute(&sql, (target_status.to_string(), now)).await?;
             return Ok(());
         }
         if let Some(ref group_key) = f.group_key {
-            conn.execute(
-                "UPDATE notifications SET status = 'read', updated_at = ? WHERE group_key = ? AND status = 'unread'",
-                (now, group_key.clone()),
-            )
-            .await?;
+            let sql = format!(
+                "UPDATE notifications SET status = ?, updated_at = ? WHERE group_key = ? AND {}",
+                status_filter_clause
+            );
+            conn.execute(&sql, (target_status.to_string(), now, group_key.clone())).await?;
             return Ok(());
         }
         if let Some(ref category) = f.category {
-            conn.execute(
-                "UPDATE notifications SET status = 'read', updated_at = ? WHERE category = ? AND status = 'unread'",
-                (now, category.clone()),
-            )
-            .await?;
+            let sql = format!(
+                "UPDATE notifications SET status = ?, updated_at = ? WHERE category = ? AND {}",
+                status_filter_clause
+            );
+            conn.execute(&sql, (target_status.to_string(), now, category.clone())).await?;
             return Ok(());
         }
         if let Some(ref action_type) = f.action_type {
-            conn.execute(
-                "UPDATE notifications SET status = 'read', updated_at = ? WHERE action_type = ? AND status = 'unread'",
-                (now, action_type.clone()),
-            )
-            .await?;
+            let sql = format!(
+                "UPDATE notifications SET status = ?, updated_at = ? WHERE action_type = ? AND {}",
+                status_filter_clause
+            );
+            conn.execute(&sql, (target_status.to_string(), now, action_type.clone())).await?;
             return Ok(());
         }
     }
 
-    conn.execute(
-        "UPDATE notifications SET status = 'read', updated_at = ? WHERE status = 'unread'",
-        (now,),
-    )
-    .await?;
+    let sql = format!(
+        "UPDATE notifications SET status = ?, updated_at = ? WHERE {}",
+        status_filter_clause
+    );
+    conn.execute(&sql, (target_status.to_string(), now)).await?;
     Ok(())
+}
+
+/// Marks unread notifications matching the filter (or all unread) as read.
+pub async fn mark_notifications_read(
+    conn: &Connection,
+    filter: Option<&NotificationFilter>,
+) -> Result<()> {
+    update_notifications_status(conn, "read", "status = 'unread'", filter).await
 }
 
 /// Dismisses active notifications matching the filter (or all active).
@@ -205,56 +215,9 @@ pub async fn dismiss_notifications(
     conn: &Connection,
     filter: Option<&NotificationFilter>,
 ) -> Result<()> {
-    let now = current_timestamp_ms();
-    if let Some(f) = filter {
-        if let Some(ref ids) = f.ids {
-            if ids.is_empty() {
-                return Ok(());
-            }
-            let quoted_ids: Vec<String> = ids
-                .iter()
-                .map(|id| format!("'{}'", id.replace('\'', "''")))
-                .collect();
-            let sql = format!(
-                "UPDATE notifications SET status = 'dismissed', updated_at = ? WHERE id IN ({}) AND status != 'dismissed'",
-                quoted_ids.join(",")
-            );
-            conn.execute(&sql, (now,)).await?;
-            return Ok(());
-        }
-        if let Some(ref group_key) = f.group_key {
-            conn.execute(
-                "UPDATE notifications SET status = 'dismissed', updated_at = ? WHERE group_key = ? AND status != 'dismissed'",
-                (now, group_key.clone()),
-            )
-            .await?;
-            return Ok(());
-        }
-        if let Some(ref category) = f.category {
-            conn.execute(
-                "UPDATE notifications SET status = 'dismissed', updated_at = ? WHERE category = ? AND status != 'dismissed'",
-                (now, category.clone()),
-            )
-            .await?;
-            return Ok(());
-        }
-        if let Some(ref action_type) = f.action_type {
-            conn.execute(
-                "UPDATE notifications SET status = 'dismissed', updated_at = ? WHERE action_type = ? AND status != 'dismissed'",
-                (now, action_type.clone()),
-            )
-            .await?;
-            return Ok(());
-        }
-    }
-
-    conn.execute(
-        "UPDATE notifications SET status = 'dismissed', updated_at = ? WHERE status != 'dismissed'",
-        (now,),
-    )
-    .await?;
-    Ok(())
+    update_notifications_status(conn, "dismissed", "status != 'dismissed'", filter).await
 }
+
 
 /// Marks active interactive task cards for an entity-scoped group key as dismissed.
 pub async fn dismiss_interactive_by_entity(conn: &Connection, group_key: &str) -> Result<()> {
@@ -265,20 +228,6 @@ pub async fn dismiss_interactive_by_entity(conn: &Connection, group_key: &str) -
     )
     .await?;
     Ok(())
-}
-
-/// Convenience function to dismiss a single notification by ID.
-pub async fn dismiss_notification(conn: &Connection, id: &str) -> Result<()> {
-    dismiss_notifications(
-        conn,
-        Some(&NotificationFilter {
-            ids: Some(vec![id.to_string()]),
-            group_key: None,
-            category: None,
-            action_type: None,
-        }),
-    )
-    .await
 }
 
 /// Returns any notification record matching group_key (regardless of status).
@@ -338,11 +287,6 @@ pub async fn resolve_notification_in_place(
     record.updated_at = now;
 
     Ok(Some(record))
-}
-
-/// Convenience function to mark all unread notifications as read.
-pub async fn mark_all_notifications_read(conn: &Connection) -> Result<()> {
-    mark_notifications_read(conn, None).await
 }
 
 /// Fetches a single notification by ID.

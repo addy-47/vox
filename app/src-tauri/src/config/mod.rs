@@ -17,7 +17,8 @@ pub use files::{
     TtsWiringSettings,
 };
 pub use mutation::apply_setting_mutation;
-pub use settings::{    get_preset_colors, AppearanceSettings, AudioOutputMode, AudioSettings,
+pub use settings::{
+    get_preset_colors, AppearanceSettings, AudioOutputMode, AudioSettings,
     DeepgramVoiceAgentConfig, ElevenLabsConvaiConfig, GeminiRealtimeConfig, InteractionSettings,
     OpenAiRealtimeConfig, PersonaSettings, PersonalMemorySettings, RealtimeProviderKind,
     RealtimeSettings, SystemSettings, VoxSettings, WorkingMemorySettings,
@@ -55,16 +56,18 @@ pub fn get_setting_reload_policy(domain: &str, key: &str) -> SettingReloadPolicy
     SettingReloadPolicy::Restart
 }
 
-/// True when `(domain, key)` is matched by an explicit arm of the policy table,
-pub fn is_explicitly_classified(domain: &str, key: &str) -> bool {
-    classify_known(domain, key).is_some()
-}
-
 fn classify_known(domain: &str, key: &str) -> Option<SettingReloadPolicy> {
-
     const WORKER_COMMAND: &[(&str, &[&str])] = &[
         ("audio", &["output_mode"]),
-        ("vad", &["threshold", "ptt_noise_gate", "silence_duration_ms", "speech_onset_ms"]),
+        (
+            "vad",
+            &[
+                "threshold",
+                "ptt_noise_gate",
+                "silence_duration_ms",
+                "speech_onset_ms",
+            ],
+        ),
         ("tts", &["speed", "voice_index", "voice"]),
     ];
 
@@ -95,7 +98,7 @@ fn classify_known(domain: &str, key: &str) -> Option<SettingReloadPolicy> {
         ("stt", "provider", SettingReloadPolicy::Restart),
         ("stt", "embedded", SettingReloadPolicy::Restart),
         ("stt", "cloud", SettingReloadPolicy::Restart),
-        ("stt", "threads", SettingReloadPolicy::Restart),   
+        ("stt", "threads", SettingReloadPolicy::Restart),
         ("llm", "active", SettingReloadPolicy::Restart),
         ("llm", "model", SettingReloadPolicy::Restart),
         ("llm", "provider", SettingReloadPolicy::Restart),

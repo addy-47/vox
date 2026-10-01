@@ -144,7 +144,8 @@ pub async fn fetch_all_observations(
                  ORDER BY f.created_at DESC{}",
                 limit_clause
             );
-            conn.query(&sql, (st.to_string(), pid.to_string(), ot.to_string())).await?
+            conn.query(&sql, (st.to_string(), pid.to_string(), ot.to_string()))
+                .await?
         }
         (Some(pid), Some(st), None) => {
             let sql = format!(

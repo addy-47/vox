@@ -1,6 +1,6 @@
 import React from "react";
 import { Ghost, X, AlertCircle, RotateCcw, Hand } from "lucide-react";
-import { AnimatePresence, LayoutGroup, motion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import {
   VoiceRippleNode,
   DetailPanel,
@@ -271,144 +271,109 @@ export const History: React.FC = () => {
       ) : (
         /* Interactive Orbit/Stage Content */
         <ErrorBoundary name="HistoryStage">
-          <LayoutGroup id="history-cards">
-            <AnimatePresence mode="sync">
-              {effectiveView === "month" && isOrbitViewport ? (
-                // ── Month View (Calendar Orbit) — Exactly vertically centered matching Home.tsx Orb ──
-                <motion.div
-                  key="month-orbit"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ duration: 0.3, ease: "easeInOut" }}
-                  ref={setOrbitStageRef}
-                  className="absolute left-1/2 flex items-center justify-center z-20"
-                  style={{
-                    top: "calc(50% - 36px)",
-                    transform: "translate(-50%, -50%)",
-                    width: "100%",
-                    height: "100%",
-                  }}
-                >
-                  <OrbitCarousel
-                    nodeIds={monthNodeIds}
-                    radius={ringRadius}
-                    selectedId={null}
-                    paused={Boolean(selectedSession) || isProfilerOpen || isPanelOpen("help") || isPanelOpen("notifications")}
-                    onDragStateChange={handleDragState}
-                    renderNode={renderMonthNode}
-                    blurTargetRef={orbitStageRef}
-                  />
+          {effectiveView === "month" && isOrbitViewport ? (
+            // ── Month View (Calendar Orbit) — Exactly vertically centered matching Home.tsx Orb ──
+            <div
+              ref={setOrbitStageRef}
+              className="absolute left-1/2 flex items-center justify-center z-20"
+              style={{
+                top: "calc(50% - 36px)",
+                transform: "translate(-50%, -50%)",
+                width: "100%",
+                height: "100%",
+              }}
+            >
+              <OrbitCarousel
+                nodeIds={monthNodeIds}
+                radius={ringRadius}
+                selectedId={null}
+                paused={Boolean(selectedSession) || isProfilerOpen || isPanelOpen("help") || isPanelOpen("notifications")}
+                onDragStateChange={handleDragState}
+                renderNode={renderMonthNode}
+                blurTargetRef={orbitStageRef}
+              />
 
-                  {/* Clock implodes to zero on exit so cards have visual space to fly out */}
-                  <motion.div
-                    exit={{ scale: 0, opacity: 0 }}
-                    transition={{ duration: 0.25, ease: [0.4, 0, 0.2, 1] }}
-                  >
-                    <CentralClockNode
-                      variant="month"
-                      view={view}
-                      onViewChange={handleViewChange}
-                      primaryLabel={formatMonthHeroLabel(currentMonthGroup.monthKey)}
-                      secondaryLabel={formatMonthYearLabel(currentMonthGroup.monthKey)}
-                      monthFullLabel={formatMonthFullLabel(currentMonthGroup.monthKey)}
-                      metaLabel={monthMetaLabel}
-                      sessionsCount={currentMonthGroup.totalSessions}
-                      memoriesCount={monthTurnsCount}
-                      timeSpanLabel={currentMonthWindow?.label}
-                      windowLabel={currentMonthWindow?.label}
-                      windowProgress={monthWindowProgress}
-                      canPrev={
-                        monthWindowIndex < monthWindows.length - 1 ||
-                        monthIndex < totalMonths - 1
-                      }
-                      canNext={monthWindowIndex > 0 || monthIndex > 0}
-                      onPrev={handlePrevMonth}
-                      onNext={handleNextMonth}
-                    />
-                  </motion.div>
-                </motion.div>
-              ) : isOrbitViewport ? (
-                // ── Day View — Exactly vertically centered matching Home.tsx Orb ──
-                <motion.div
-                  key="day-orbit"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ duration: 0.3, ease: "easeInOut" }}
-                  ref={setOrbitStageRef}
-                  className="absolute left-1/2 flex items-center justify-center z-20"
-                  style={{
-                    top: "calc(50% - 36px)",
-                    transform: "translate(-50%, -50%)",
-                    width: "100%",
-                    height: "100%",
-                  }}
-                >
-                  <OrbitCarousel
-                    nodeIds={dayNodeIds}
-                    radius={ringRadius}
-                    selectedId={selectedSession ? String(selectedSession.id) : null}
-                    paused={Boolean(selectedSession) || isProfilerOpen || isPanelOpen("help") || isPanelOpen("notifications")}
-                    onDragStateChange={handleDragState}
-                    renderNode={renderDayNode}
-                    blurTargetRef={orbitStageRef}
-                  />
+              <CentralClockNode
+                variant="month"
+                view={view}
+                onViewChange={handleViewChange}
+                primaryLabel={formatMonthHeroLabel(currentMonthGroup.monthKey)}
+                secondaryLabel={formatMonthYearLabel(currentMonthGroup.monthKey)}
+                monthFullLabel={formatMonthFullLabel(currentMonthGroup.monthKey)}
+                metaLabel={monthMetaLabel}
+                sessionsCount={currentMonthGroup.totalSessions}
+                memoriesCount={monthTurnsCount}
+                timeSpanLabel={currentMonthWindow?.label}
+                windowLabel={currentMonthWindow?.label}
+                windowProgress={monthWindowProgress}
+                canPrev={
+                  monthWindowIndex < monthWindows.length - 1 ||
+                  monthIndex < totalMonths - 1
+                }
+                canNext={monthWindowIndex > 0 || monthIndex > 0}
+                onPrev={handlePrevMonth}
+                onNext={handleNextMonth}
+              />
+            </div>
+          ) : isOrbitViewport ? (
+            // ── Day View — Exactly vertically centered matching Home.tsx Orb ──
+            <div
+              ref={setOrbitStageRef}
+              className="absolute left-1/2 flex items-center justify-center z-20"
+              style={{
+                top: "calc(50% - 36px)",
+                transform: "translate(-50%, -50%)",
+                width: "100%",
+                height: "100%",
+              }}
+            >
+              <OrbitCarousel
+                nodeIds={dayNodeIds}
+                radius={ringRadius}
+                selectedId={selectedSession ? String(selectedSession.id) : null}
+                paused={Boolean(selectedSession) || isProfilerOpen || isPanelOpen("help") || isPanelOpen("notifications")}
+                onDragStateChange={handleDragState}
+                renderNode={renderDayNode}
+                blurTargetRef={orbitStageRef}
+              />
 
-                  {/* Clock implodes to zero on exit so cards have visual space to fly out */}
-                  <motion.div
-                    exit={{ scale: 0, opacity: 0 }}
-                    transition={{ duration: 0.25, ease: [0.4, 0, 0.2, 1] }}
-                  >
-                    <CentralClockNode
-                      variant="day"
-                      view={view}
-                      onViewChange={handleViewChange}
-                      primaryLabel={currentWindow?.dateSpanLabel || formatDayHeroLabel(currentGroup.dayKey)}
-                      secondaryLabel={formatDayYearLabel(currentGroup.dayKey)}
-                      dayHeroParts={formatDayHeroParts(currentGroup.dayKey)}
-                      dateSpanLabel={currentWindow?.dateSpanLabel}
-                      weekdayLabel={formatWeekdayLabel(currentGroup.dayKey)}
-                      metaLabel={dayMetaLabel}
-                      sessionsCount={currentWindowSessions.length}
-                      memoriesCount={dayTurnsCount}
-                      timeSpanLabel={dayTimeSpan || currentWindow?.label}
-                      windowLabel={currentWindow?.label}
-                      windowProgress={dayWindowProgress}
-                      canPrev={dayWindowIndex < dayWindows.length - 1}
-                      canNext={dayWindowIndex > 0}
-                      onPrev={handlePrevDate}
-                      onNext={handleNextDate}
-                    />
-                  </motion.div>
-                </motion.div>
-              ) : (
-                // ── Mobile Responsive Fallback List: Full scrollable session history ──
-                <motion.div
-                  key="list-view"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ duration: 0.3, ease: "easeInOut" }}
-                  className="absolute inset-0 z-20"
-                >
-                  <HistoryListView
-                    dayLabel={
-                      currentWindow?.dateSpanLabel
-                        ? HISTORY_COPY.sessionsInWindow(currentWindow.dateSpanLabel)
-                        : HISTORY_COPY.allSessionsLabel
-                    }
-                    sessions={sessions}
-                    selectedSession={selectedSession}
-                    confirmDeleteId={confirmDeleteId}
-                    onSelect={handleSelectSession}
-                    onDelete={handleDelete}
-                    onCancelDelete={handleCancelDelete}
-                  />
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </LayoutGroup>
+              <CentralClockNode
+                variant="day"
+                view={view}
+                onViewChange={handleViewChange}
+                primaryLabel={currentWindow?.dateSpanLabel || formatDayHeroLabel(currentGroup.dayKey)}
+                secondaryLabel={formatDayYearLabel(currentGroup.dayKey)}
+                dayHeroParts={formatDayHeroParts(currentGroup.dayKey)}
+                dateSpanLabel={currentWindow?.dateSpanLabel}
+                weekdayLabel={formatWeekdayLabel(currentGroup.dayKey)}
+                metaLabel={dayMetaLabel}
+                sessionsCount={currentWindowSessions.length}
+                memoriesCount={dayTurnsCount}
+                timeSpanLabel={dayTimeSpan || currentWindow?.label}
+                windowLabel={currentWindow?.label}
+                windowProgress={dayWindowProgress}
+                canPrev={dayWindowIndex < dayWindows.length - 1}
+                canNext={dayWindowIndex > 0}
+                onPrev={handlePrevDate}
+                onNext={handleNextDate}
+              />
+            </div>
+          ) : (
+            // ── Mobile Responsive Fallback List: Full scrollable session history ──
+            <HistoryListView
+              dayLabel={
+                currentWindow?.dateSpanLabel
+                  ? HISTORY_COPY.sessionsInWindow(currentWindow.dateSpanLabel)
+                  : HISTORY_COPY.allSessionsLabel
+              }
+              sessions={sessions}
+              selectedSession={selectedSession}
+              confirmDeleteId={confirmDeleteId}
+              onSelect={handleSelectSession}
+              onDelete={handleDelete}
+              onCancelDelete={handleCancelDelete}
+            />
+          )}
         </ErrorBoundary>
       )}
 

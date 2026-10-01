@@ -1,12 +1,12 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback, memo } from "react";
 import { Search, X } from "lucide-react";
-import { FactRecord } from "@/services/memoryService";
+import { ObservationRecord } from "@/services/memoryService";
 import { getActiveDynamicPalette, toMemoryCategory } from "./memoryGraphTypes";
 import { cn } from "@/shared/lib/utils";
 import { MEMORY_COPY } from "@/data/memoryCopy";
 
 interface SearchBarProps {
-  facts: FactRecord[];
+  facts: ObservationRecord[];
   onCommitSearch: (query: string) => void;
   onSelectNode: (factId: string | null) => void;
   className?: string;
@@ -53,7 +53,7 @@ export const SearchBar = memo<SearchBarProps>(({
   const results = useMemo(() => {
     const q = value.trim().toLowerCase();
     if (!q) return [];
-    const hits: FactRecord[] = [];
+    const hits: ObservationRecord[] = [];
     for (const { fact, haystack } of searchIndex) {
       if (haystack.includes(q)) {
         hits.push(fact);

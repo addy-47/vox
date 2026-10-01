@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { getRuntimeSnapshot, type RuntimeSnapshot } from "@/services/pipelineService";
+import { getRuntimeSnapshot, type RuntimeSnapshot } from "@/services/monitoringService";
 
 const POLL_INTERVAL_MS = 30000;
 
@@ -79,8 +79,4 @@ export function useRuntimeSnapshot(enabled: boolean = true): RuntimeSnapshot | n
   }, [enabled]);
 
   return snapshot;
-}
-
-export function getLatestSnapshot(): RuntimeSnapshot | null {
-  return sharedSnapshot;
 }

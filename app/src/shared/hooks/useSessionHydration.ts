@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { getSettings } from "@/services/settingsService";
-import { getRuntimeSnapshot } from "@/services/pipelineService";
+import { getRuntimeSnapshot } from "@/services/monitoringService";
 import { getTurns } from "@/services/historyService";
 
 interface HydrationResult {

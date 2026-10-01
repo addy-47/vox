@@ -59,7 +59,6 @@ pub struct ScopedProcess {
     pub cpu_percent: f32,
     pub memory: ProcessMemoryBytes,
     pub thread_count: u32,
-    pub is_runtime: bool,
     pub is_dev_tool: bool,
 }
 
@@ -89,12 +88,10 @@ pub struct LinuxCgroupSnapshot {
     pub file_bytes: u64,
     pub kernel_bytes: u64,
     pub shmem_bytes: u64,
-    pub shmem_thp_bytes: u64,
 }
 
 #[derive(Debug, Clone)]
 pub struct ResourceScopeSnapshot {
-    pub root_pid: u32,
     pub kind: ResourceScopeKind,
     pub process: ProcessScopeSnapshot,
     pub cgroup: Option<LinuxCgroupSnapshot>,
@@ -124,7 +121,6 @@ impl ResourceScopeSampler {
         let root = resolve_scope_root(system, self.current_pid);
         let process = collect_process_scope(system, self.current_pid, root, cpu_cores);
         ResourceScopeSnapshot {
-            root_pid: root.pid,
             kind: root.kind,
             process,
             cgroup: read_cgroup_snapshot(self.current_pid.as_u32()),
@@ -190,7 +186,6 @@ pub fn parse_cgroup_memory(
         file_bytes: values.get("file").copied().unwrap_or_default(),
         kernel_bytes: values.get("kernel").copied().unwrap_or_default(),
         shmem_bytes: values.get("shmem").copied().unwrap_or_default(),
-        shmem_thp_bytes: values.get("shmem_thp").copied().unwrap_or_default(),
     }
 }
 
@@ -287,7 +282,6 @@ fn collect_process_scope(
             cpu_percent,
             memory,
             thread_count,
-            is_runtime,
             is_dev_tool,
         });
     }

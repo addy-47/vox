@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { FactRecord } from "@/services/memoryService";
+import { ObservationRecord } from "@/services/memoryService";
 import {
   GNode,
   GLink,
@@ -12,7 +12,7 @@ import { isSoftwareRasterizer } from "@/shared/lib/glUtils";
 
 interface UseMemoryGraphSceneOptions {
   canvasContainerRef: React.RefObject<HTMLDivElement | null>;
-  facts: FactRecord[];
+  facts: ObservationRecord[];
   width: number;
   height: number;
   searchQuery: string;
@@ -503,7 +503,7 @@ export function useMemoryGraphScene({
 
   // ── Dynamic Chronological Time-Tree Algorithm ──────────────────────────────
   const rebuildTopology = useCallback(
-    (inputFacts: FactRecord[], isLight: boolean) => {
+    (inputFacts: ObservationRecord[], isLight: boolean) => {
       const instancedMesh = instancedMeshRef.current;
       const instancedRing = instancedRingRef.current;
       const lineSegments = lineSegmentsRef.current;
@@ -526,8 +526,8 @@ export function useMemoryGraphScene({
       const conduits: ConduitSegment[] = [];
 
       // 1. Partition facts into Identity (Personal) and Session facts
-      const identityFacts: FactRecord[] = [];
-      const sessionMap = new Map<string, FactRecord[]>();
+      const identityFacts: ObservationRecord[] = [];
+      const sessionMap = new Map<string, ObservationRecord[]>();
 
       inputFacts.forEach((fact) => {
         const cat = (fact.fact_type as MemoryCategory) || "objective";
@@ -1068,7 +1068,6 @@ export function useMemoryGraphScene({
     const tempCamVec = new THREE.Vector3();
     let lastRenderTimestamp = 0;
     let lastActivityTimestamp = performance.now();
-    let isSuspended = false;
 
     // ── PERF: idle settle (B4 — user-signed-off, revertible) ──────────
     // The graph now stops breathing AND stops rendering after
@@ -1078,17 +1077,11 @@ export function useMemoryGraphScene({
     // Previously the core pulse, wireframe rotation, nucleus pulse and both
     // rings ran unconditionally for 300ms→4000ms after every interaction, and
     // any cursor resting on the canvas held the loop at 30 FPS forever.
-    // REVERT: set GRAPH_SETTLES_WHEN_IDLE = false to restore perpetual
-    // breathing + the old 4000ms suspend / 300ms move window.
-    // ─────────────────────────────────────────────────────────────────
-    const GRAPH_SETTLES_WHEN_IDLE = true;
-    const IDLE_SUSPEND_MS = GRAPH_SETTLES_WHEN_IDLE ? 2000 : 4000;
-    const MOVE_WINDOW_MS = GRAPH_SETTLES_WHEN_IDLE ? 150 : 300;
+    const MOVE_WINDOW_MS = 300;
 
     const wakeLoop = () => {
       if (pausedRef.current) return;
       lastActivityTimestamp = performance.now();
-      isSuspended = false;
       if (animFrameRef.current === null) {
         animFrameRef.current = requestAnimationFrame(render);
       }
@@ -1102,9 +1095,7 @@ export function useMemoryGraphScene({
     controls.addEventListener("change", onControlsChange);
 
     const domEl = renderer.domElement;
-    // A cursor merely crossing the canvas is not intent — only a drag
-    // (buttons held) re-arms the loop. Wheel/touch/pointerdown below and
-    // camera-change above are always intent.
+    // Drag with buttons held, wheel, touch, pointerdown, or camera change triggers active pacing
     const onPointerMoveWake = (e: PointerEvent) => {
       if (e.buttons & 1) wakeLoop();
     };
@@ -1114,34 +1105,16 @@ export function useMemoryGraphScene({
     domEl.addEventListener("touchstart", wakeLoop, { passive: true });
 
     const render = (timestamp: number) => {
-      if (isSuspended) return;
-
       // Skip render when tab/window is hidden
       if (document.hidden) {
         animFrameRef.current = requestAnimationFrame(render);
         return;
       }
 
+      animFrameRef.current = requestAnimationFrame(render);
+
       // Check if actively moving via flyTo lerp or recent control change
       const isMoving = Boolean(flyToTargetRef.current) || (timestamp - lastActivityTimestamp < MOVE_WINDOW_MS);
-
-      // Settled = no fly-to and no recent interaction. When settled (and the
-      // settle behaviour is enabled), the breathing core and rings hold still
-      // instead of animating — the visible "graph goes to sleep" state. The
-      // loop itself still runs at 30 FPS until the suspend below fires, then
-      // renders one final frame and stops.
-      const settled = GRAPH_SETTLES_WHEN_IDLE && !isMoving;
-
-      // Suspend render loop after IDLE_SUSPEND_MS of inactivity
-      if (!isMoving && (timestamp - lastActivityTimestamp > IDLE_SUSPEND_MS)) {
-        isSuspended = true;
-        animFrameRef.current = null;
-        controls.update();
-        renderer.render(scene, camera);
-        return;
-      }
-
-      animFrameRef.current = requestAnimationFrame(render);
 
       // Dynamic frame pacing: 60 FPS (16ms) during interaction / flyTo; 30 FPS (32ms) when resting
       const minInterval = isMoving ? 16 : 32;
@@ -1150,25 +1123,25 @@ export function useMemoryGraphScene({
 
       const time = timestamp * 0.001;
 
-      // Sentient breathing core — frozen when settled (see above).
-      if (!settled && coreMeshRef.current) {
+      // Sentient breathing core — continuous organic breathing motion
+      if (coreMeshRef.current) {
         const pulse = 1 + 0.035 * Math.sin(time * 2.2);
         coreMeshRef.current.scale.set(pulse, pulse, pulse);
       }
-      if (!settled && coreWireMeshRef.current) {
+      if (coreWireMeshRef.current) {
         coreWireMeshRef.current.rotation.y = time * 0.12;
         coreWireMeshRef.current.rotation.x = time * 0.08;
       }
-      if (!settled && coreNucleusMeshRef.current) {
+      if (coreNucleusMeshRef.current) {
         const nucPulse = 1 + 0.06 * Math.sin(time * 3.0);
         coreNucleusMeshRef.current.scale.set(nucPulse, nucPulse, nucPulse);
       }
 
-      // Smooth harmonic counter-rotating rings — frozen when settled.
-      if (!settled && coreInnerRingRef.current) {
+      // Smooth harmonic counter-rotating rings
+      if (coreInnerRingRef.current) {
         coreInnerRingRef.current.rotation.y = time * 0.22;
       }
-      if (!settled && coreOuterRingRef.current) {
+      if (coreOuterRingRef.current) {
         coreOuterRingRef.current.rotation.y = -time * 0.16;
         coreOuterRingRef.current.rotation.x = Math.sin(time * 0.1) * 0.2;
       }

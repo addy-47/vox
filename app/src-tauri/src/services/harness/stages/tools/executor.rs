@@ -16,12 +16,9 @@ use crate::{
 /// Outcome record of a single executed tool invocation.
 #[derive(Debug, Clone)]
 pub struct ToolExecutionOutcome {
-    pub call_id: String,
     pub tool_name: String,
-    pub tool_flow: ToolFlow,
     pub result: ToolResult,
     pub is_error: bool,
-    pub duration_ms: u64,
 }
 
 /// Dispatches asynchronous persistence write for completed tool invocation.
@@ -112,12 +109,9 @@ impl ToolExecutor {
                 let err_msg = format!("Tool '{}' not found in registry", call.name);
                 dispatch_persistence(&ctx, &call, ToolFlow::Terminal, &err_msg, true, duration_ms);
                 return ToolExecutionOutcome {
-                    call_id: call.id,
                     tool_name: call.name,
-                    tool_flow: ToolFlow::Terminal,
                     result: ToolResult::new(err_msg),
                     is_error: true,
-                    duration_ms,
                 };
             }
         };
@@ -138,12 +132,9 @@ impl ToolExecutor {
             );
             dispatch_persistence(&ctx, &call, tool.flow(), &err_msg, true, duration_ms);
             return ToolExecutionOutcome {
-                call_id: call.id,
                 tool_name: call.name,
-                tool_flow: tool.flow(),
                 result: ToolResult::new(err_msg),
                 is_error: true,
-                duration_ms,
             };
         }
 
@@ -166,12 +157,9 @@ impl ToolExecutor {
         );
 
         ToolExecutionOutcome {
-            call_id: call.id,
             tool_name: call.name,
-            tool_flow: flow,
             result,
             is_error,
-            duration_ms,
         }
     }
 }

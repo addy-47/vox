@@ -342,10 +342,7 @@ fn check_window_autostop(state: &mut VadActorState, vox_event_tx: Option<&mpsc::
 /// Executes StreamPassthrough mode for direct low-latency routing to realtime cloud sinks.
 pub fn process_stream_passthrough(chunk: &[f32], state: &mut VadActorState) {
     if let Some(ref tx) = state.realtime_tx {
-        let mut pcm = state
-            .realtime_recycle_rx
-            .try_recv()
-            .unwrap_or_else(|_| Vec::with_capacity(chunk.len()));
+        let mut pcm = Vec::with_capacity(chunk.len());
         f32_to_i16_pcm(chunk, &mut pcm);
         if let Err(e) = tx.try_send(pcm) {
             log::trace!("[VAD Actor] Passthrough queue full or disconnected: {}", e);

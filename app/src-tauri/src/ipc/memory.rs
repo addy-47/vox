@@ -159,7 +159,6 @@ pub async fn set_active_personal_memory_version(
     Ok(record)
 }
 
-
 /// Returns observations from `memory_facts` across all or filtered statuses (`active`, `integrated`, etc.).
 #[tauri::command]
 pub async fn get_observations(
@@ -178,18 +177,15 @@ pub async fn get_observations(
     // "staged" is the UX name for memory_facts where status = 'active' (extracted, ready to integrate).
     // "pending" refers to memory_ingestion_queue items not yet processed by the LLM extraction pipeline.
     if status.as_deref() == Some("pending") {
-        return fetch_pending_queue_observations(
-            &conn,
-            limit,
-            offset,
-            observation_type.as_deref(),
-        )
-        .await
-        .map_err(|e| VoxIpcError::Database(e.to_string()));
+        return fetch_pending_queue_observations(&conn, limit, offset, observation_type.as_deref())
+            .await
+            .map_err(|e| VoxIpcError::Database(e.to_string()));
     }
 
     // Map frontend "staged" → backend "active" for memory_facts.
-    let mapped_status = status.as_deref().map(|s| if s == "staged" { "active" } else { s });
+    let mapped_status = status
+        .as_deref()
+        .map(|s| if s == "staged" { "active" } else { s });
     fetch_all_observations(
         &conn,
         project_id.as_deref(),

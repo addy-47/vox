@@ -113,33 +113,6 @@ pub async fn run_ingestion_cycle(conn: &Connection) -> Result<IngestionCycleSumm
     drain_ingestion_queue(conn, None).await
 }
 
-/// Executes an ingestion cycle using an injected embedding function for deterministic testing.
-pub async fn run_ingestion_cycle_with_embedder<F>(
-    conn: &Connection,
-    embed_fn: F,
-) -> Result<IngestionCycleSummary>
-where
-    F: Fn(&str) -> Result<Option<Vec<f32>>> + Send + Sync + 'static + Clone,
-{
-    let stage1 = run_stage1_exact_dedup(conn).await?;
-    let mut total_s2 = Stage2Summary::default();
-    loop {
-        let s2 = run_stage2_cosine_dedup_with_embedder(conn, embed_fn.clone()).await?;
-        if s2.processed == 0 {
-            break;
-        }
-        total_s2.processed += s2.processed;
-        total_s2.inserted += s2.inserted;
-        total_s2.duplicates_deactivated += s2.duplicates_deactivated;
-        total_s2.errors += s2.errors;
-    }
-
-    Ok(IngestionCycleSummary {
-        stage1,
-        stage2: total_s2,
-    })
-}
-
 /// Reconciles crashed queue items on application boot.
 pub async fn reconcile_crashed_queue_on_boot(conn: &Connection) -> Result<usize> {
     persistence_reconcile(conn).await

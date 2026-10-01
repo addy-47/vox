@@ -21,8 +21,7 @@ use crate::{
             ChatMessage,
         },
         llm::{
-            actor::LlmCommand, ConversationInput, GenerationOptions, GenerationPurpose,
-            GenerationRequest, LlmActiveProvider, OutputConstraint, ReasoningMode,
+            actor::LlmCommand, GenerationOptions, ReasoningMode,
         },
         memory::compaction::CompactionResult,
     },
@@ -59,7 +58,6 @@ impl Harness {
         llm_tx: mpsc::Sender<LlmCommand>,
         supports_tools: bool,
     ) -> Self {
-        let is_embedded = settings.llm.active == LlmActiveProvider::Embedded;
         let ctx_window = settings.llm.context_window as usize;
         let max_share = settings.working_memory.max_context_share;
 
@@ -70,11 +68,7 @@ impl Harness {
         let history_stage = ConversationHistoryStage::with_system_prompt(assembled_prompt);
         let budget_stage =
             ContextBudgetStage::new(ctx_window, settings.llm.max_output_tokens as usize);
-        let compaction_stage = CompactionStage::new(
-            ctx_window,
-            is_embedded,
-            settings.working_memory.auto_compaction,
-        );
+        let compaction_stage = CompactionStage::new(settings.working_memory.auto_compaction);
         let generation_options = GenerationOptions {
             temperature: Some(settings.llm.temperature),
             max_output_tokens: Some(settings.llm.max_output_tokens),
@@ -161,7 +155,6 @@ impl Harness {
         let tools = if self.supports_tools {
             let filter = ToolFilter {
                 mode: PipelineMode::Modular,
-                is_first_turn: true,
                 title_is_unset: !self.title_set,
                 memory_retrieval_enabled: self.memory_retrieval_enabled,
                 web_search_enabled: self.web_search_enabled,
@@ -252,9 +245,6 @@ impl Harness {
         }
     }
 
-    pub fn commit_turn(&mut self, assistant_text: String) {
-        self.history.push_assistant_turn(assistant_text);
-    }
 
     pub fn fallback_fifo_shift(&mut self) {
         if let Some(ref budget) = self.budget {
@@ -262,18 +252,6 @@ impl Harness {
         }
     }
 
-    pub fn create_generation_request(&self) -> GenerationRequest {
-        let input = ConversationInput {
-            messages: self.history.messages().to_vec(),
-        };
-        GenerationRequest {
-            input,
-            options: self.generation_options.clone(),
-            output: OutputConstraint::Text,
-            purpose: GenerationPurpose::Conversation,
-            tools: None,
-        }
-    }
 
     pub fn check_quiet_compaction_eligibility(&self) -> Option<Vec<ChatMessage>> {
         let budget = self.budget.as_ref()?;
@@ -294,9 +272,6 @@ impl Harness {
         self.apply_session_context(session_context, "");
     }
 
-    pub fn apply_quiet_session_context(&mut self, session_context: &str) {
-        self.apply_session_context(session_context, "");
-    }
 
     pub fn on_turn_completed(
         &mut self,
@@ -347,17 +322,11 @@ impl Harness {
         &self.tool_registry
     }
 
-    pub fn set_tool_registry(&mut self, registry: ToolRegistry) {
-        self.tool_registry = registry;
-    }
 
     pub fn title_set(&self) -> bool {
         self.title_set
     }
 
-    pub fn set_title_set(&mut self, title_set: bool) {
-        self.title_set = title_set;
-    }
 
     pub fn memory_retrieval_enabled(&self) -> bool {
         self.memory_retrieval_enabled

@@ -410,19 +410,20 @@ fn apply_interaction_mutation(
 ) -> Result<bool, String> {
     match key {
         "mode" => {
-            let mode = serde_json::from_value::<crate::core::events::InteractionMode>(value.clone())
-                .or_else(|_| {
-                    if let Some(s) = value.as_str() {
-                        match s.to_lowercase().as_str() {
-                            "ptt" => Ok(crate::core::events::InteractionMode::PTT),
-                            "passive" => Ok(crate::core::events::InteractionMode::Passive),
-                            _ => Err(format!("Unknown mode string: {}", s)),
+            let mode =
+                serde_json::from_value::<crate::core::events::InteractionMode>(value.clone())
+                    .or_else(|_| {
+                        if let Some(s) = value.as_str() {
+                            match s.to_lowercase().as_str() {
+                                "ptt" => Ok(crate::core::events::InteractionMode::PTT),
+                                "passive" => Ok(crate::core::events::InteractionMode::Passive),
+                                _ => Err(format!("Unknown mode string: {}", s)),
+                            }
+                        } else {
+                            Err("mode must be a string".to_string())
                         }
-                    } else {
-                        Err("mode must be a string".to_string())
-                    }
-                })
-                .map_err(|e| format!("Invalid interaction mode: {}", e))?;
+                    })
+                    .map_err(|e| format!("Invalid interaction mode: {}", e))?;
             settings.interaction.mode = mode;
         }
         "pipeline_mode" => {

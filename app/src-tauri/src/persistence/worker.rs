@@ -124,7 +124,7 @@ fn run_event_loop(
                     exit_loop = true;
                     break;
                 }
-                Err(e) if attempt < 4 && is_retryable_event_err(&e) => {
+                Err(e) if attempt < 4 && VoxDb::is_retryable_anyhow(&e) => {
                     log::warn!(
                         "[Persistence::Worker] {} processing failed (attempt {}): {}; retrying",
                         label,
@@ -162,12 +162,6 @@ fn persistence_event_label(event: &PersistenceEvent) -> &'static str {
         PersistenceEvent::UpdateSessionMetadata { .. } => "UpdateSessionMetadata",
         PersistenceEvent::Shutdown => "Shutdown",
     }
-}
-
-/// Mirrors `VoxDb::is_retryable` against the anyhow-wrapped error surfaced by `process_event`.
-fn is_retryable_event_err(e: &anyhow::Error) -> bool {
-    let msg = e.to_string();
-    msg.contains("conflict") || msg.contains("Busy") || msg.contains("busy")
 }
 
 fn maybe_flush_rate(writes: &mut u32, last_tick: &mut Instant, rate_atomic: &Arc<AtomicU32>) {

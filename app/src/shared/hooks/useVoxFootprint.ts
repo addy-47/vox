@@ -1,4 +1,4 @@
-import type { RuntimeSnapshot } from "@/services/pipelineService";
+import type { RuntimeSnapshot } from "@/services/monitoringService";
 import { useRuntimeSnapshot } from "@/shared/hooks/useRuntimeSnapshot";
 
 export type { RuntimeSnapshot };

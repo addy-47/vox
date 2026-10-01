@@ -147,6 +147,11 @@ pub fn enter_non_terminal_phase<R: tauri::Runtime>(
     phase: &NonTerminalPhase,
     ctx: &NonTerminalContext<'_, R>,
 ) {
+    log::info!(
+        "[Harness::NonTerminal] Entering working phase: trigger={:?}",
+        phase.trigger
+    );
+
     transition(
         InteractionState::Working,
         ctx.routing_ctx,
@@ -296,10 +301,8 @@ pub fn step4_assemble_request(
         turn_id
     );
     let tools = if harness.supports_tools && allow_tools {
-        let is_first_turn = harness.history.messages().len() <= 2;
         let filter = ToolFilter {
             mode: PipelineMode::Modular,
-            is_first_turn,
             title_is_unset: !harness.title_set,
             memory_retrieval_enabled: harness.memory_retrieval_enabled,
             web_search_enabled: harness.web_search_enabled,
@@ -307,9 +310,8 @@ pub fn step4_assemble_request(
         let active = harness.tool_registry.active_definitions(&filter);
         if active.is_empty() {
             log::info!(
-                "[Harness::Assemble] Turn {}: tools omitted (none active; first_turn={}, title_set={}, memory_enabled={}, web_search_enabled={})",
+                "[Harness::Assemble] Turn {}: tools omitted (none active; title_set={}, memory_enabled={}, web_search_enabled={})",
                 turn_id,
-                is_first_turn,
                 !filter.title_is_unset,
                 filter.memory_retrieval_enabled,
                 filter.web_search_enabled

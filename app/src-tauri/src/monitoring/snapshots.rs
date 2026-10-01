@@ -72,20 +72,10 @@ pub struct RuntimeSnapshot {
     pub is_vad_loaded: bool,
     pub is_embedder_loaded: bool,
     pub is_translit_loaded: bool,
-
     /// CPU frequency governor (Linux only, e.g. "powersave", "performance"). Empty string if unavailable.
     pub cpu_governor: String,
     /// Whether the CPU governor is optimal ("performance"). False if unknown/non-Linux.
     pub cpu_governor_optimal: bool,
-
-    /// Optional per-WebView RAM breakdown in MB (Measured via sysinfo descendant enumeration)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub main_webview_ram_mb: Option<u32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tray_webview_ram_mb: Option<u32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub wizard_webview_ram_mb: Option<u32>,
-
     /// Unix timestamp of the snapshot in milliseconds.
     pub timestamp_ms: u64,
 }
@@ -127,12 +117,6 @@ impl MonitoringState {
     pub fn get_latest(&self) -> Option<RuntimeSnapshot> {
         let guard = self.latest.read().unwrap_or_else(|e| e.into_inner());
         guard.clone()
-    }
-
-    /// Gets the full history of recorded snapshots.
-    pub fn get_history(&self) -> Vec<RuntimeSnapshot> {
-        let guard = self.history.read().unwrap_or_else(|e| e.into_inner());
-        guard.iter().cloned().collect()
     }
 
     /// Clears all recorded snapshot history and latest state.
@@ -354,9 +338,6 @@ fn collect_snapshot(
         cpu_governor: state.cpu_governor.lock().clone(),
         cpu_governor_optimal: state.cpu_governor_optimal.load(Ordering::Relaxed),
 
-        main_webview_ram_mb: None,
-        tray_webview_ram_mb: None,
-        wizard_webview_ram_mb: None,
 
         timestamp_ms: now,
     }

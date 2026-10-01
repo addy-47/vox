@@ -78,11 +78,6 @@ impl VadBackend {
         }
     }
 
-    /// Returns true if this backend is an ONNX neural detector with internal temporal hysteresis.
-    pub fn is_onnx(&self) -> bool {
-        matches!(self, VadBackend::Silero(_) | VadBackend::Ten(_))
-    }
-
     /// Flushes internal detector state across utterance boundaries.
     pub fn flush(&mut self) {
         match self {

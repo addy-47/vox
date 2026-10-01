@@ -26,15 +26,6 @@ impl ServerDialect {
             Self::GenericOpenAiCompat => "OpenAI-Compatible",
         }
     }
-
-    pub fn preset_id(&self) -> Option<&'static str> {
-        match self {
-            Self::Ollama { .. } => Some("ollama_openai_compat"),
-            Self::Vllm { .. } | Self::LlamaCpp => Some("vllm"),
-            Self::LmStudio => Some("lm_studio"),
-            Self::GenericOpenAiCompat => None,
-        }
-    }
 }
 
 /// Dynamically probe a remote endpoint using standard protocols to discover its server dialect.

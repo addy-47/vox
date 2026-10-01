@@ -28,10 +28,6 @@ impl ContextBudgetStage {
         }
     }
 
-    pub fn set_max_context_tokens(&mut self, max_tokens: usize) {
-        self.max_context_tokens = max_tokens;
-    }
-
     pub fn max_context_tokens(&self) -> usize {
         self.max_context_tokens
     }

@@ -186,4 +186,14 @@ impl VoxDb {
         matches!(e, turso::Error::Busy(_) | turso::Error::BusySnapshot(_))
             || matches!(e, turso::Error::Error(msg) if msg.contains("conflict"))
     }
+
+    /// Checks if an anyhow-wrapped error represents a retryable Turso conflict or busy condition.
+    pub fn is_retryable_anyhow(e: &anyhow::Error) -> bool {
+        if let Some(turso_err) = e.downcast_ref::<turso::Error>() {
+            Self::is_retryable(turso_err)
+        } else {
+            let msg = e.to_string();
+            msg.contains("conflict") || msg.contains("Busy") || msg.contains("busy")
+        }
+    }
 }

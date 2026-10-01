@@ -268,7 +268,14 @@ impl NvidiaJudgeClient {
             .json(&payload)
             .send()
             .await
-            .map_err(|e| anyhow!("Judge HTTP request failed (is_timeout: {}, is_connect: {}): {}", e.is_timeout(), e.is_connect(), e))?;
+            .map_err(|e| {
+                anyhow!(
+                    "Judge HTTP request failed (is_timeout: {}, is_connect: {}): {}",
+                    e.is_timeout(),
+                    e.is_connect(),
+                    e
+                )
+            })?;
 
         if !resp.status().is_success() {
             let status = resp.status();
@@ -302,5 +309,44 @@ impl NvidiaJudgeClient {
             })?;
 
         Ok(content.to_string())
+    }
+
+    /// Evaluates a prompt via the judge model and returns the verbatim markdown output,
+    /// persisting the prompt, configuration, and raw output to `<case_dir>/judge_traces.json`.
+    pub async fn evaluate_with_trace(
+        &self,
+        prompt: &str,
+        case_dir: &std::path::Path,
+        stage: &str,
+    ) -> Result<String> {
+        let content = self.evaluate(prompt).await?;
+
+        let trace_entry = serde_json::json!({
+            "stage": stage,
+            "model": self.model,
+            "temperature": 0.1,
+            "top_p": 0.9,
+            "max_tokens": 8192,
+            "prompt": prompt,
+            "response": content,
+            "timestamp_ms": std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis()
+        });
+
+        let traces_path = case_dir.join("judge_traces.json");
+        let mut traces: Vec<serde_json::Value> = if traces_path.exists() {
+            let data = std::fs::read_to_string(&traces_path).unwrap_or_default();
+            serde_json::from_str(&data).unwrap_or_default()
+        } else {
+            Vec::new()
+        };
+        traces.push(trace_entry);
+        if let Ok(serialized) = serde_json::to_string_pretty(&traces) {
+            let _ = std::fs::write(&traces_path, serialized);
+        }
+
+        Ok(content)
     }
 }

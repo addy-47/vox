@@ -177,10 +177,7 @@ impl TtsProvider for ZipvoiceEngine {
     /// previous voice in place rather than dropping to silence.
     fn set_voice(&self, voice: i32) {
         if voice < 0 {
-            log::warn!(
-                "[Tts::Zipvoice] Ignoring negative voice index {}",
-                voice
-            );
+            log::warn!("[Tts::Zipvoice] Ignoring negative voice index {}", voice);
             return;
         }
         let idx = voice as usize;
@@ -324,7 +321,11 @@ impl ZipvoiceEngine {
     }
 
     fn set_guidance_scale(&self, scale: f32) {
-        let val = if scale > 0.0 { scale } else { ZIPVOICE_GUIDANCE_SCALE };
+        let val = if scale > 0.0 {
+            scale
+        } else {
+            ZIPVOICE_GUIDANCE_SCALE
+        };
         self.guidance_scale.store(val, Ordering::Relaxed);
         log::debug!("[Tts::Zipvoice] Guidance scale updated to {:.2}", val);
     }
@@ -469,8 +470,9 @@ impl ZipvoiceEngine {
         let streamed_total = streamed_samples_count.load(Ordering::Relaxed);
         let mut total_samples = streamed_total;
         if streamed_total == 0 {
-            let audio_ref = audio
-                .ok_or_else(|| anyhow!("[Tts::Zipvoice] Generation failed and yielded zero samples"))?;
+            let audio_ref = audio.ok_or_else(|| {
+                anyhow!("[Tts::Zipvoice] Generation failed and yielded zero samples")
+            })?;
             let samples = audio_ref.samples();
             if samples.is_empty() {
                 return Err(anyhow!(

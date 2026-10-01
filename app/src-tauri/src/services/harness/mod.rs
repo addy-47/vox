@@ -174,8 +174,6 @@ impl Default for ChatMessage {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ConversationContext {
     pub messages: Vec<ChatMessage>,
-    pub token_count: usize,
-    pub kv_cache_index: usize,
 }
 
 pub fn current_timestamp_ms() -> u64 {

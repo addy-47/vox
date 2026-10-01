@@ -6,7 +6,7 @@ import {
   ArrowRightCircle,
   HelpCircle,
 } from "lucide-react";
-import { FactRecord } from "@/services/memoryService";
+import { ObservationRecord } from "@/services/memoryService";
 
 export type MemoryCategory = "personal" | "objective" | "workdone" | "blocker" | "next_step" | "pitfall";
 
@@ -31,7 +31,7 @@ export interface GNode {
   compactId: string;
   collection: MemoryCategory;
   status: "active" | "inactive";
-  factRecord: FactRecord;
+  factRecord: ObservationRecord;
   color: string;
   degree: number;
   x: number;
@@ -81,10 +81,6 @@ export interface MemoryGraphRef {
 import { getActiveDynamicPalette } from "./dynamicGraphPalette";
 export * from "./dynamicGraphPalette";
 
-
-export function getThemeCollectionColors(isLight: boolean) {
-  return getActiveDynamicPalette(isLight);
-}
 
 export function getCollectionColor(collection: string, _isInactive = false, isLight = false) {
   const palette = getActiveDynamicPalette(isLight);

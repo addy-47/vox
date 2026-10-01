@@ -219,11 +219,11 @@ async fn run_incremental_integration(
     let valid_section_handles = handle_map.section_handles().join(", ");
     let user_content = format!(
         "<current_memory>\n{}\n</current_memory>\n\n\
-         <valid_section_handles_for_creates>{}</valid_section_handles_for_creates>\n\n\
+         <valid_section_handles_for_add>{}</valid_section_handles_for_add>\n\n\
          <new_observations>\n{}\n</new_observations>\n\n\
-         Propose the minimal set of semantic operations that integrates the new observations. \
-         For `creates`, only use section handles listed in <valid_section_handles_for_creates>. \
-         For brand-new topics not covered by any existing section, use `new_sections` instead.",
+         Propose the operations that integrate every new observation into the memory. \
+         For `add`, only use section handles listed in <valid_section_handles_for_add>. \
+         Use `new` only when no existing section covers an observation's subject.",
         handle_view,
         valid_section_handles,
         render_observation_bullets(candidates)
@@ -470,14 +470,15 @@ async fn run_whole_memory_pass(
         whole_memory_json_schema(),
     )
     .await?;
-    let output: WholeMemoryOutput = serde_json::from_str(extract_json_payload(&raw)).map_err(|e| {
-        anyhow!(
-            "Failed to parse {} JSON output: {} (raw: {})",
-            pass_name,
-            e,
-            raw
-        )
-    })?;
+    let output: WholeMemoryOutput =
+        serde_json::from_str(extract_json_payload(&raw)).map_err(|e| {
+            anyhow!(
+                "Failed to parse {} JSON output: {} (raw: {})",
+                pass_name,
+                e,
+                raw
+            )
+        })?;
     Ok(output
         .sections
         .into_iter()
@@ -514,11 +515,13 @@ async fn run_structured_pass(
     })
 }
 
-/// Renders candidate observations as a bullet list for the LLM prompt.
+/// Renders candidate observations as a numbered bullet list so the model can refer to a specific
+/// observation by its `[On]` label when deciding which operation justifies it.
 fn render_observation_bullets(observations: &[ObservationRecord]) -> String {
     observations
         .iter()
-        .map(|observation| format!("- {}", observation.text.trim()))
+        .enumerate()
+        .map(|(idx, observation)| format!("- [O{}] {}", idx + 1, observation.text.trim()))
         .collect::<Vec<_>>()
         .join("\n")
 }

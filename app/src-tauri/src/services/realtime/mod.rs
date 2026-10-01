@@ -25,13 +25,6 @@ pub const DEFAULT_INPUT_SAMPLE_RATE: u32 = 16000;
 pub const DEFAULT_OUTPUT_SAMPLE_RATE: u32 = 24000;
 pub const BRIDGE_CHANNEL_CAPACITY: usize = 100;
 pub const LOG_INTERVAL_PACKETS: u64 = 100;
-pub const SINC_CHUNK_SIZE_INPUT: usize = 320;
-pub const SINC_CHUNK_SIZE_OUTPUT: usize = 512;
-pub const SINC_WINDOW_LEN: usize = 256;
-pub const SINC_OVERSAMPLING_FACTOR: usize = 128;
-pub const SINC_CUTOFF_FREQUENCY: f32 = 0.95;
-pub const PCM_INT16_MAX_FLOAT: f32 = 32767.0;
-pub const PCM_INT16_DIVISOR_FLOAT: f32 = 32768.0;
 
 pub const WS_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
 pub const WS_HEALTH_CHECK_TIMEOUT: Duration = Duration::from_secs(2);
