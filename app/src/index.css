@@ -3,29 +3,30 @@
 @config "../tailwind.config.js";
 
 :root {
-  --background: 5, 5, 5;
-  --foreground: 229, 226, 225;
-  --foreground-muted: 160, 160, 160;
+  /* Claude-style warm matte graphite palette */
+  --background: 19, 19, 21;
+  --foreground: 236, 234, 230;
+  --foreground-muted: 156, 153, 148;
   --accent: 0, 219, 233;
   --accent-dark: 8, 145, 178;
   --accent-muted: 0, 219, 233;
-  --accent-foreground: 5, 5, 5;
-  --card: 10, 10, 10;
+  --accent-foreground: 19, 19, 21;
+  --card: 27, 27, 30;
   --border: 255, 255, 255;
-  --sidebar: 5, 5, 5;
+  --sidebar: 21, 21, 24;
   --vh: 100vh;
 
   /* Sentient Field & Signal Design System */
-  --field: 12, 14, 24;
+  --field: 22, 22, 26;
   --signal: 0, 219, 233;
   --field-energy: 0.15;
 
   /* Glass elevation system (declared in docs/design.md §2) */
-  --glass-tint: 10, 12, 14;
-  --glass-surface: 20, 24, 30;
-  --glass-deep: 4, 7, 14;
-  --glass-navy: 8, 12, 22;
-  --ghost: 30, 41, 59;
+  --glass-tint: 19, 19, 21;
+  --glass-surface: 27, 27, 30;
+  --glass-deep: 14, 14, 16;
+  --glass-navy: 21, 21, 26;
+  --ghost: 36, 36, 42;
 
   /* Semantic status palette (declared in docs/design.md §3) */
   --success: 52, 211, 153;
@@ -59,19 +60,20 @@ body:not(.is-tray) {
 }
 
 [data-theme='light'] {
-  --background: 241, 245, 249;
-  --foreground: 15, 23, 42;
-  --foreground-muted: 51, 65, 85; /* #334155 Slate 700 - WCAG AA 4.5:1 Compliant */
-  --accent: 14, 116, 144; /* Deep Cyan 700 - WCAG AA 5.1:1 Compliant with white text */
+  /* Claude-style warm ivory / paper linen palette */
+  --background: 247, 246, 242;
+  --foreground: 28, 26, 24;
+  --foreground-muted: 102, 98, 92;
+  --accent: 14, 116, 144;
   --accent-dark: 21, 94, 117;
   --accent-muted: 14, 116, 144;
   --accent-foreground: 255, 255, 255;
   --card: 255, 255, 255;
   --border: 0, 0, 0;
-  --sidebar: 241, 245, 249;
+  --sidebar: 242, 240, 235;
 
   /* Light theme field & signal */
-  --field: 235, 239, 248;
+  --field: 238, 236, 230;
   --signal: 8, 145, 178;
   --field-energy: 0.08;
 
@@ -121,6 +123,27 @@ body:not(.is-tray) {
     flex-direction: column;
     overflow: hidden;
     position: relative;
+  }
+
+  /* Claude-style tactile micro-grain overlay (paper texture) */
+  #root::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    height: 100vh;
+    pointer-events: none;
+    z-index: 9999;
+    opacity: 0.035;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+    background-repeat: repeat;
+  }
+  [data-theme='light'] #root::after {
+    opacity: 0.045;
+    mix-blend-mode: multiply;
+  }
+  body.is-tray #root::after {
+    display: none !important;
   }
 
   /* Global focus-visible ring for keyboard accessibility */
@@ -179,33 +202,33 @@ body.is-tray #root {
     position: relative;
     isolation: isolate;
     overflow: hidden;
-    background: rgba(10, 12, 14, 0.18);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
-    border: 1px solid rgba(var(--border), 0.02);
+    background: rgba(var(--card), 0.40);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(var(--border), 0.05);
     border-radius: 0.75rem;
   }
   [data-theme='light'] .glass {
-    background: rgba(255, 255, 255, 0.35);
-    border-color: rgba(var(--border), 0.04);
+    background: rgba(255, 255, 255, 0.65);
+    border-color: rgba(var(--border), 0.06);
   }
 
-  /* glass-card — elevated container, 1px subtle border, inset highlight, no outer shadow */
+  /* glass-card — elevated container, 1px subtle hairline border, micro-shadow */
   .glass-card {
     position: relative;
     isolation: isolate;
     overflow: hidden;
-    background: rgba(20, 24, 30, 0.60);
+    background: rgba(var(--card), 0.78);
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
-    border: 1px solid rgba(var(--accent), 0.08);
+    border: 1px solid rgba(var(--border), 0.08);
     border-radius: 1.25rem;
-    box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.05);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12), inset 0 1px 0 0 rgba(255, 255, 255, 0.05);
   }
   [data-theme='light'] .glass-card {
-    background: rgba(255, 255, 255, 0.78);
-    border-color: rgba(var(--border), 0.12);
-    box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.6);
+    background: rgba(255, 255, 255, 0.90);
+    border-color: rgba(var(--border), 0.08);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04), inset 0 1px 0 0 rgba(255, 255, 255, 0.9);
   }
 
   .shimmer-text {
@@ -423,18 +446,7 @@ input[type="range"]:active::-webkit-slider-thumb {
   pointer-events: none;
 }
 
-/* ── Resize Handles ── */
-[class*="cursor-"] {
-    pointer-events: auto !important;
-    background: transparent;
-}
 
-.cursor-ns-resize:hover,
-.cursor-ew-resize:hover,
-.cursor-nwse-resize:hover,
-.cursor-nesw-resize:hover {
-    background: rgba(var(--accent), 0.1) !important;
-}
 
 /* ── Premium Color Picker ── */
 .custom-color-picker-v2 {
@@ -545,7 +557,7 @@ input[type="range"]:active::-webkit-slider-thumb {
 
 /* ── Ambient Background System ── */
 .amb-background-container {
-  position: fixed;
+  position: absolute;
   inset: 0;
   pointer-events: none;
   overflow: hidden;
@@ -558,17 +570,17 @@ input[type="range"]:active::-webkit-slider-thumb {
   inset: 0;
   background: radial-gradient(
     ellipse 80% 70% at var(--origin-x, 50%) var(--origin-y, 50%),
-    hsl(230 30% 6%) 0%,
-    hsl(230 20% 3%) 55%,
-    hsl(0 0% 1%) 100%
+    hsl(240 5% 9%) 0%,
+    hsl(240 5% 7.5%) 55%,
+    hsl(240 4% 6.5%) 100%
   );
 }
 [data-theme='light'] .amb-base {
   background: radial-gradient(
     ellipse 80% 70% at var(--origin-x, 50%) var(--origin-y, 50%),
-    hsl(220 60% 97%) 0%,
-    hsl(220 40% 94%) 55%,
-    hsl(220 20% 92%) 100%
+    hsl(40 20% 97%) 0%,
+    hsl(40 18% 95%) 55%,
+    hsl(40 15% 93%) 100%
   );
 }
 

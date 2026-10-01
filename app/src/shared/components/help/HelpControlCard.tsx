@@ -104,7 +104,7 @@ export const HelpControlCard = memo(({ item, variant = "card", isLast = false }:
       {/* Pro tip if present */}
       {item.tip && (
         <div className="pt-1.5 border-t border-[rgba(var(--border),0.08)] text-[11.5px] text-[rgb(var(--foreground-muted))] italic pl-0.5">
-          💡 {item.tip}
+          {item.tip}
         </div>
       )}
     </div>

@@ -72,15 +72,22 @@ const EdgePanelInner = memo(
       let cleanup: (() => void) | undefined;
       if (open) {
         focusedBeforeRef.current = document.activeElement as HTMLElement | null;
+        // Wait until after the 220ms slide-in animation settles to prevent layout jerk
         focusTimerRef.current = setTimeout(() => {
           const el = panelRef.current;
           if (el) {
             const focusable = el.querySelector<HTMLElement>(
               'button:not([disabled]),[tabIndex="0"],input,textarea,select,[contenteditable]'
             );
-            (focusable || el).focus();
+            try {
+              if (focusable) {
+                focusable.focus({ preventScroll: true });
+              } else {
+                el.focus({ preventScroll: true });
+              }
+            } catch {}
           }
-        }, 60);
+        }, 240);
         cleanup = () => { if (focusTimerRef.current) clearTimeout(focusTimerRef.current); };
       } else if (focusedBeforeRef.current) {
         const prev = focusedBeforeRef.current;
@@ -117,7 +124,7 @@ const EdgePanelInner = memo(
             className={cn(
               "absolute top-0 bottom-0 z-[35] flex flex-col bg-[rgb(var(--card))]/90 backdrop-blur-md overflow-hidden pointer-events-auto select-auto border-[rgba(var(--border),0.06)] transform-gpu will-change-transform",
               isLeft ? "left-0 border-r" : "right-0 border-l",
-              "w-[330px] max-w-[92vw]",
+              "w-[340px] max-w-[92vw]",
               className
             )}
           >

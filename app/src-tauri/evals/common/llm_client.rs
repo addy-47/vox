@@ -255,7 +255,7 @@ impl NvidiaJudgeClient {
             ],
             "temperature": 0.1,
             "top_p": 0.9,
-            "max_tokens": 16384
+            "max_tokens": 8192
         });
 
         let resp = self

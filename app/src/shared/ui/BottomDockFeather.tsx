@@ -12,16 +12,16 @@ import { cn } from "@/shared/lib/utils";
  *
  * Contract: render as the FIRST child of the dock wrapper (sibling order keeps
  * it behind the controls), and size it via `className` so it extends above the
- * dock — ~40px for corner docks (`-top-10` overscan), ~110px full-width for
+ * dock — ~48px for corner docks (`-top-12` overscan), ~110px full-width for
  * bottom bars. Always `pointer-events-none` (baked in).
  * The controls sibling MUST be positioned (`relative`): an `absolute` feather
  * otherwise paints above non-positioned siblings regardless of order.
  */
 const FEATHER_STYLE: React.CSSProperties = {
   background:
-    "linear-gradient(to top, rgb(var(--card)) 0%, rgba(var(--card), 0.8) 55%, transparent 100%)",
-  maskImage: "linear-gradient(to top, black 0%, black 60%, transparent 100%)",
-  WebkitMaskImage: "linear-gradient(to top, black 0%, black 60%, transparent 100%)",
+    "linear-gradient(to top, rgb(var(--card)) 0%, rgb(var(--card)) 40%, rgba(var(--card), 0.85) 65%, transparent 100%)",
+  maskImage: "linear-gradient(to top, black 0%, black 45%, rgba(0, 0, 0, 0.7) 70%, transparent 100%)",
+  WebkitMaskImage: "linear-gradient(to top, black 0%, black 45%, rgba(0, 0, 0, 0.7) 70%, transparent 100%)",
 };
 
 interface BottomDockFeatherProps {

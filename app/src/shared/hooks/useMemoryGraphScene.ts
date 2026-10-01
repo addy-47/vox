@@ -8,6 +8,7 @@ import {
   MemoryCategory,
   getActiveDynamicPalette,
 } from "@/shared/components/memory/memoryGraphTypes";
+import { isSoftwareRasterizer } from "@/shared/lib/glUtils";
 
 interface UseMemoryGraphSceneOptions {
   canvasContainerRef: React.RefObject<HTMLDivElement | null>;
@@ -881,29 +882,14 @@ export function useMemoryGraphScene({
     const scene = new THREE.Scene();
     sceneRef.current = scene;
 
-    // 2. Camera
+    // 2. Camera — centered with calc(50% - 36px) offset to match Home Orb & History stage
     const camera = new THREE.PerspectiveCamera(55, initialWidth / initialHeight, 5, 30000);
+    camera.setViewOffset(initialWidth, initialHeight, 0, 36, initialWidth, initialHeight);
     camera.position.set(0, 0, 3100);
     cameraRef.current = camera;
 
     // 3. Renderer
-    // ── PERF: software-rasteriser gating (same rationale as AdvancedOrb) ──
-    // REVERT: set APPLY_GRAPH_SOFTWARE_GATING = false to restore
-    // antialias:true / dpr:min(dpr,1.5) on all hardware.
-    const APPLY_GRAPH_SOFTWARE_GATING = true;
-    const isGraphSoftwareRaster = (() => {
-      if (!APPLY_GRAPH_SOFTWARE_GATING || typeof document === "undefined") return false;
-      try {
-        const gl = document.createElement("canvas").getContext("webgl");
-        if (!gl) return false;
-        const ext = gl.getExtension("WEBGL_debug_renderer_info");
-        const s = ext ? String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)) : "";
-        gl.getExtension("WEBGL_lose_context")?.loseContext();
-        return /llvmpipe|softpipe|swiftshader|software|basic render/i.test(s);
-      } catch {
-        return false;
-      }
-    })();
+    const isGraphSoftwareRaster = isSoftwareRasterizer();
     const renderer = new THREE.WebGLRenderer({
       antialias: !isGraphSoftwareRaster,
       alpha: true,
@@ -1264,6 +1250,7 @@ export function useMemoryGraphScene({
     if (!renderer || !camera || width === 0 || height === 0) return;
 
     camera.aspect = width / height;
+    camera.setViewOffset(width, height, 0, 36, width, height);
     camera.updateProjectionMatrix();
     renderer.setSize(width, height);
   }, [width, height]);

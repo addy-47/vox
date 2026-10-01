@@ -177,16 +177,9 @@ export const Home = memo(() => {
   }, [toggleMicMute, togglePlaybackMute, isPaused, pause, resume, isEngaged, engage, disengage, setTextModeOpen, interactionMode, isSleeping, interactionState, handlePttStart, handlePttStop, handlePttCancel, pttStatus, isTextModeOpen]);
 
   const { isPanelOpen, closePanel } = usePanelStateContext();
-  // Engage-failure banner: sessionError previously had zero readers, so a
-  // failed Engage spun and stopped with no feedback. role="alert" announces it.
   const sessionError = useSessionStore((s) => s.sessionError);
   const clearSessionError = useSessionStore((s) => s.setSessionError);
   const closeSessions = () => closePanel("sessions");
-  // NOTE: the orb is deliberately NOT paused when a panel/drawer opens. Wiring
-  // `paused={isAnyOverlayOpen}` toggled the WebGL rAF loop on every panel
-  // open/close: the loop cancels mid-frame, `useDynamicFPS` reseeds
-  // `lastFrameTimeRef` on resume, and the orb visibly jumps/flickers. Overlays
-  // are separate compositing layers; the orb keeps rendering underneath them.
 
   const statusLabel = toStatusLabel(
     interactionState,
@@ -305,7 +298,7 @@ export const Home = memo(() => {
 
       {/* ── Orb Stage (Vertically centered in stage distance between top edge & EdgeNav) ── */}
       <div
-        className="absolute z-10 flex items-center justify-center select-none transition-all duration-700 ease-out pointer-events-none"
+        className="absolute z-10 flex items-center justify-center select-none pointer-events-none"
         style={{
           left: "50%",
           top: "calc(50% - 36px)",

@@ -1,6 +1,6 @@
 export const MONITORING_COPY = {
   monitoringTitle: "Monitoring",
-  monitoringSubtitle: "Real-Time Telemetry",
+  monitoringSubtitle: "System Usage",
   systemMetrics: "System Metrics",
   liveMonitor: "LIVE MONITOR",
   engineMonitor: "System Monitor",

@@ -51,10 +51,16 @@ export const PageDrawerProvider: React.FC<{ children: React.ReactNode }> = memo(
 
 PageDrawerProvider.displayName = "PageDrawerProvider";
 
+const DEFAULT_PAGE_DRAWER_CONTEXT: PageDrawerContextValue = {
+  registerPageDrawer: () => () => {},
+  openActiveDrawer: () => {},
+  closeActiveDrawer: () => {},
+};
+
 export function usePageDrawer(): PageDrawerContextValue {
   const ctx = useContext(PageDrawerContext);
   if (!ctx) {
-    throw new Error("usePageDrawer must be used within PageDrawerProvider");
+    return DEFAULT_PAGE_DRAWER_CONTEXT;
   }
   return ctx;
 }

@@ -1,8 +1,9 @@
-import React, { memo, useCallback } from "react";
+import React, { memo, useCallback, useRef, useEffect } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import type { PersonalMemoryRecord } from "@/services/memoryService";
 import { MEMORY_COPY } from "@/data/memoryCopy";
+import { Tooltip } from "@/shared/ui/Tooltip";
 
 export interface PersonalMemoryVersionNavProps {
   versions: PersonalMemoryRecord[];
@@ -19,13 +20,7 @@ export const PersonalMemoryVersionNav: React.FC<PersonalMemoryVersionNavProps> =
     activeVersionRecord,
     displayedRecord,
     onSelectVersion,
-    // NOTE: `onCommitActiveVersion` is still declared on the props interface but
-    // this component no longer calls it. Browsing is preview-only; promoting a
-    // revision to canonical is an explicit user action (the dossier's Restore
-    // button). Previously a 500ms debounce fired the DB write on *browse*, so a
-    // stray double-click silently rewrote the user's active profile.
-    // REVERT: restore the debounce in navigateToRecord below.
-    onCommitActiveVersion: _onCommitActiveVersion,
+    onCommitActiveVersion,
   }) => {
     const currentRecord = displayedRecord ?? activeVersionRecord;
     const currentVersion = currentRecord?.version ?? 1;
@@ -35,12 +30,30 @@ export const PersonalMemoryVersionNav: React.FC<PersonalMemoryVersionNavProps> =
     const hasOlder = currentIndex >= 0 && currentIndex < versions.length - 1;
     const hasNewer = currentIndex > 0;
 
-    // Preview only. No IPC, no debounce, no write.
+    const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    useEffect(() => {
+      return () => {
+        if (debounceTimerRef.current) {
+          clearTimeout(debounceTimerRef.current);
+        }
+      };
+    }, []);
+
+    // Instant visual navigation + 500ms debounced active version commitment
     const navigateToRecord = useCallback(
       (targetRecord: PersonalMemoryRecord) => {
         onSelectVersion(targetRecord);
+
+        if (debounceTimerRef.current) {
+          clearTimeout(debounceTimerRef.current);
+        }
+
+        debounceTimerRef.current = setTimeout(() => {
+          onCommitActiveVersion(targetRecord.version);
+        }, 500);
       },
-      [onSelectVersion]
+      [onSelectVersion, onCommitActiveVersion]
     );
 
     const handleOlder = useCallback(() => {
@@ -57,39 +70,41 @@ export const PersonalMemoryVersionNav: React.FC<PersonalMemoryVersionNavProps> =
 
     return (
       <div className="flex items-center gap-1.5 text-[12px] font-mono text-[rgb(var(--foreground-muted))] select-none">
-        <button
-          type="button"
-          onClick={handleOlder}
-          disabled={!hasOlder}
-          aria-label={MEMORY_COPY.versions.prevVersion}
-          title={MEMORY_COPY.versions.prevVersion}
-          className={cn(
-            "p-1 rounded text-[rgb(var(--foreground-muted))] transition-colors",
-            hasOlder
-              ? "hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.06)] cursor-pointer"
-              : "opacity-30 cursor-not-allowed"
-          )}
-        >
-          <ChevronLeft size={13} />
-        </button>
+        <Tooltip label={MEMORY_COPY.versions.prevVersion}>
+          <button
+            type="button"
+            onClick={handleOlder}
+            disabled={!hasOlder}
+            aria-label={MEMORY_COPY.versions.prevVersion}
+            className={cn(
+              "p-1 rounded text-[rgb(var(--foreground-muted))] transition-colors",
+              hasOlder
+                ? "hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.06)] cursor-pointer"
+                : "opacity-30 cursor-not-allowed"
+            )}
+          >
+            <ChevronLeft size={13} />
+          </button>
+        </Tooltip>
         <span className="px-0.5">
           {MEMORY_COPY.version} {currentVersion}
         </span>
-        <button
-          type="button"
-          onClick={handleNewer}
-          disabled={!hasNewer}
-          aria-label={MEMORY_COPY.versions.nextVersion}
-          title={MEMORY_COPY.versions.nextVersion}
-          className={cn(
-            "p-1 rounded text-[rgb(var(--foreground-muted))] transition-colors",
-            hasNewer
-              ? "hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.06)] cursor-pointer"
-              : "opacity-30 cursor-not-allowed"
-          )}
-        >
-          <ChevronRight size={13} />
-        </button>
+        <Tooltip label={MEMORY_COPY.versions.nextVersion}>
+          <button
+            type="button"
+            onClick={handleNewer}
+            disabled={!hasNewer}
+            aria-label={MEMORY_COPY.versions.nextVersion}
+            className={cn(
+              "p-1 rounded text-[rgb(var(--foreground-muted))] transition-colors",
+              hasNewer
+                ? "hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.06)] cursor-pointer"
+                : "opacity-30 cursor-not-allowed"
+            )}
+          >
+            <ChevronRight size={13} />
+          </button>
+        </Tooltip>
       </div>
     );
   }

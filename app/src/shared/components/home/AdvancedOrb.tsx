@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { useDynamicFPS } from '@/shared/hooks/useDynamicFPS';
 import { type InteractionState } from '@/services/eventsService';
 import { useMemoryTrace } from '@/shared/hooks/useMemoryTrace';
+import { isSoftwareRasterizer } from '@/shared/lib/glUtils';
 
 
 interface VoxOrbProps {
@@ -25,36 +26,7 @@ const SHELL_R = 2.30;
 
 /** Number of silk-sheet disc layers. */
 const NUM_SHEETS = 7;
-
-/** Reduced sheet count on software rasterisers (fewer alpha-overdraw layers). */
 const NUM_SHEETS_SOFTWARE = 4;
-
-// ── PERF: software-rasteriser gating ──────────────────────────────────
-// On llvmpipe / SwiftShader / softpipe (Tier 1A, CPU-only) MSAA is a software
-// resolve of a 4x-multisampled buffer, dpr 2 doubles every dimension, and each
-// alpha-blended sheet is full-screen overdraw with no depth rejection. All three
-// are gated on a one-time renderer-string probe. The shader is untouched, so
-// real GPUs see zero difference.
-// REVERT: set APPLY_SOFTWARE_RASTER_GATING = false to restore
-// antialias:true / dpr:min(dpr,2) / 7 sheets on all hardware.
-// ─────────────────────────────────────────────────────────────────────
-const APPLY_SOFTWARE_RASTER_GATING = true;
-
-function detectSoftwareRaster(): boolean {
-  if (typeof document === "undefined") return false;
-  try {
-    const gl = document.createElement("canvas").getContext("webgl");
-    if (!gl) return false;
-    const ext = gl.getExtension("WEBGL_debug_renderer_info");
-    const rendererStr = ext
-      ? String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL))
-      : "";
-    gl.getExtension("WEBGL_lose_context")?.loseContext();
-    return /llvmpipe|softpipe|swiftshader|software|basic render/i.test(rendererStr);
-  } catch {
-    return false;
-  }
-}
 
 /**
  * State-dependent scale target for the root group.
@@ -712,7 +684,7 @@ export const VoxOrb = React.memo(({
 
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
-    const isSoftwareRaster = APPLY_SOFTWARE_RASTER_GATING && detectSoftwareRaster();
+    const isSoftwareRaster = isSoftwareRasterizer();
     const sheetCount = isSoftwareRaster ? NUM_SHEETS_SOFTWARE : NUM_SHEETS;
     const renderer = new THREE.WebGLRenderer({
       alpha: true,

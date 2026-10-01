@@ -18,28 +18,28 @@ typography:
     '3xl': 28px
     '4xl': 36px
 colors:
-  # ── Theme tokens (dark) ────────────────────────────────
-  background: '#050505'
-  foreground: '#e5e2e1'
-  foreground-muted: '#a0a0a0'
+  # ── Theme tokens (dark — Claude matte graphite) ────────
+  background: '#131315'
+  foreground: '#eceae6'
+  foreground-muted: '#9c9994'
   accent: '#00dbe9'
   accent-dark: '#0891b2'
   accent-muted: '#00dbe9'
-  accent-foreground: '#050505'
-  card: '#0a0a0a'
+  accent-foreground: '#131315'
+  card: '#1b1b1e'
   border: '#ffffff'
-  field: '#0c0e18'
+  field: '#16161a'
   signal: '#00dbe9'
-  # ── Theme tokens (light) ───────────────────────────────
-  background-light: '#f1f5f9'
-  foreground-light: '#0f172a'
-  foreground-muted-light: '#334155'
+  # ── Theme tokens (light — Claude warm linen/ivory) ──────
+  background-light: '#f7f6f2'
+  foreground-light: '#1c1a18'
+  foreground-muted-light: '#66625c'
   accent-light: '#0e7490'
   accent-dark-light: '#155e74'
   accent-foreground-light: '#ffffff'
   card-light: '#ffffff'
   border-light: '#000000'
-  field-light: '#ebeff8'
+  field-light: '#eeeae6'
   signal-light: '#0891b2'
   # ── Semantic status palette ────────────────────────────
   success: '#34d399'
@@ -137,20 +137,23 @@ to the voice pipeline state. Every visual decision either serves that or works a
 
 ## 2. Elevation & Glass System
 
-All cards, headers, and navigation bars use a cohesive glassmorphic system layered on a
+All cards, headers, and navigation bars use a cohesive glassmorphic and matte surface system layered on a
 transparent page root so the animated ambient background bleeds through and unifies the
-workspace. There are **4 levels of elevation**, defined by blur density and tint opacity:
+workspace.
 
-| Level | CSS Class | Blur | Tint (Dark) | Tint (Light) | Use Cases |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **Whisper** | `.glass-whisper` | 8px | `0.20` | `0.45` | Tooltips, status badges, secondary dropdowns |
-| **Surface** | `.glass-surface` | 16px | `0.45` | `0.65` | Content panels, navigation strips, settings containers |
-| **Card** | `.glass-card` | 24px | `0.65` | `0.80` | Major modules, dialog boxes, settings category headers |
-
-* **Sheen & noise**: depth is enhanced with a noise grain overlay (`.amb-noise` /
-  `.glass-base::after`) to simulate frosted glass.
-* **Boundaries**: borders are drawn with `--border` at low opacity (`rgba(var(--border), 0.08–0.15)`);
-  never use hard 1px white borders as the primary separation mechanism.
+* **Claude-Style Tactile Micro-Grain**: Depth and surface tactility are unified across the entire application
+  via a global procedural SVG micro-noise grain overlay (`#root::after`), creating a warm paper/matte finish
+  that eliminates clinical digital plastic glares (`opacity: 0.035` dark, `0.045` light with `mix-blend-mode: multiply`).
+* **Hairline Boundaries**: Borders are drawn with `--border` at crisp hairline opacity (`rgba(var(--border), 0.06–0.08)`);
+  outer fuzzy glow drops are eliminated in favor of subtle 1–2px micro-elevations (`0 1px 3px rgba(0, 0, 0, 0.12)`).
+* **Dynamic Bottom Dock Feathering**:
+  - **Compact / Mobile (`< 1024px`)**: Renders full-width floor feathering behind `EdgeNav` (`fixed bottom-0 inset-x-0 h-[110px]`)
+    where Monitoring is integrated inside the navigation dock.
+  - **Desktop (`>= 1024px`)**: Full-width floor feather is **suppressed**. Feathering is strictly localized around active
+    corner clusters and dynamically mounts only when an overlapping side panel/drawer is open:
+    1. *Bottom-Left* (Monitoring button & CPU/RAM HUD): Mounts feather only when `sessionsOpen` is true.
+    2. *Bottom-Right* (Model Status / Turn Metrics / Memory Legend): Mounts feather only when right panels (`help`, `notifications`, or memory drawer) are open.
+    3. *Center EdgeNav*: Enclosed in a compact localized capsule feather rather than bleeding edge-to-edge.
 
 ---
 
@@ -160,19 +163,19 @@ Colors are declared as RGB-triplet CSS variables (`rgb(var(--token))`) in `index
 `:root` and `[data-theme='light']`. The canonical tokens are mirrored in this file's
 frontmatter `colors` map, which is what the impeccable detector enforces.
 
-### Core tokens
+### Core tokens (Claude-Style Warm Matte & Linen)
 
-| Token | Dark | Light | Role |
+| Token | Dark (Warm Graphite) | Light (Warm Linen / Ivory) | Role |
 | :--- | :--- | :--- | :--- |
-| `--background` | `5, 5, 5` | `241, 245, 249` | Page / app shell |
-| `--foreground` | `229, 226, 225` | `15, 23, 42` | Primary text |
-| `--foreground-muted` | `160, 160, 160` | `51, 65, 85` | Secondary text, timestamps, hints |
+| `--background` | `19, 19, 21` (`#131315`) | `247, 246, 242` (`#f7f6f2`) | Page / app shell |
+| `--foreground` | `236, 234, 230` (`#eceae6`) | `28, 26, 24` (`#1c1a18`) | Primary text |
+| `--foreground-muted` | `156, 153, 148` (`#9c9994`) | `102, 98, 92` (`#66625c`) | Secondary text, timestamps, hints |
 | `--accent` | `0, 219, 233` | `14, 116, 144` | Active states, links, focus, voice signal |
 | `--accent-dark` | `8, 145, 178` | `21, 94, 117` | Hover/depressed accent |
-| `--accent-foreground` | `5, 5, 5` | `255, 255, 255` | Text on accent fills |
-| `--card` | `10, 10, 10` | `255, 255, 255` | Card fill |
+| `--accent-foreground` | `19, 19, 21` | `255, 255, 255` | Text on accent fills |
+| `--card` | `27, 27, 30` (`#1b1b1e`) | `255, 255, 255` | Card fill |
 | `--border` | `255, 255, 255` | `0, 0, 0` | Hairline borders (used at low alpha) |
-| `--field` | `12, 14, 24` | `235, 239, 248` | Ambient field base |
+| `--field` | `22, 22, 26` | `238, 236, 230` | Ambient field base |
 | `--signal` | `0, 219, 233` | `8, 145, 178` | Voice signal highlights |
 
 ### Semantic status palette

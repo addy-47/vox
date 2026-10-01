@@ -16,13 +16,7 @@ import { installOverlayStack } from "@/shared/lib/overlayStack";
 import { getCurrentWindowLabel } from "@/services/windowService";
 import { AnimatePresence, motion, MotionConfig } from "framer-motion";
 
-// Route-level preloads. React.lazy alone means the FIRST click on a route pays
-// a cold chunk fetch, and the route <Suspense> then replaces the whole stage
-// with the OrbitalLoader — which reads as a flicker/stall, not a page change.
-// These keep the chunks warm after boot so navigation is an immediate swap.
-//
-// Preloading is deferred to requestIdleCallback so it happens AFTER first paint
-// and never competes with it.
+// Route-level preloads
 const preloadRouteChunks = () => {
   void import("@/pages/History");
   void import("@/pages/Memory");
@@ -112,15 +106,10 @@ const App: React.FC = () => {
     };
     window.addEventListener('unhandledrejection', onRejection);
 
-    // Warm the secondary route chunks off the critical path. React.lazy on its
-    // own makes the first click on any route a cold fetch, which shows the
-    // full-stage Suspense fallback as a stall.
+    // Warm secondary route chunks off the critical path
     const scheduleIdle = window.requestIdleCallback
       ? (cb: () => void) => window.requestIdleCallback(cb, { timeout: 2000 })
       : (cb: () => void) => setTimeout(cb, 1200);
-    // Not cancellable, and deliberately so: cancelling an in-flight dynamic
-    // import buys nothing (the module is cached either way) and the import is
-    // idempotent. Harmless to let it complete if the app tears down.
     scheduleIdle(preloadRouteChunks);
 
     /**
@@ -282,15 +271,7 @@ const App: React.FC = () => {
   return (
     <div className="relative h-screen w-full bg-[rgb(var(--background))] overflow-hidden">
       <ErrorBoundary name="App">
-        {/* The dedicated `wizard` webview renders ONLY the setup flow. Booting
-            the full app shell here duplicated the entire runtime on first run:
-            MemoryProfilerProvider, VoiceSessionProvider (6 pipeline listeners
-            + getSettings + getRuntimeSnapshot + getTurns),
-            initSpatialNavigation() (4 global listeners incl. mousemove),
-            installOverlayStack(), and the notification fetch — all of it
-            running twice inside a 900x650 setup window while `main` booted the
-            same thing again. `isWizardWebview === null` means the label probe
-            has not resolved yet; we render nothing rather than booting twice. */}
+        {/* Dedicated setup wizard window */}
         {isWizardWebview === null ? null : isWizardWebview ? (
           <Router>
             <Suspense fallback={<PageLoader />}>

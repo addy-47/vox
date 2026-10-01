@@ -17,9 +17,7 @@ import {
   MessageSquare,
   Hand,
   Tag,
-  History,
-  Undo2,
-  Loader2,
+  RotateCw,
 } from "lucide-react";
 import {
   getPersonalMemory,
@@ -175,6 +173,7 @@ export const Memory: React.FC = memo(() => {
   const { isPanelOpen, closePanel, togglePanel } = usePanelStateContext();
   const { isProfilerOpen } = useProfilerDrawer();
   const sessionRailOpen = isPanelOpen("sessions");
+  const isRightPanelOpen = isPanelOpen("help") || isPanelOpen("notifications");
   const setSessionRailOpen = (v: boolean) => {
     if (!v) closePanel("sessions");
   };
@@ -193,7 +192,7 @@ export const Memory: React.FC = memo(() => {
 
   // Drawer & Staging mode state
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const isGraphPaused = drawerOpen || isProfilerOpen || isPanelOpen("help") || isPanelOpen("notifications");
+  const isGraphPaused = drawerOpen || isProfilerOpen || isRightPanelOpen;
 
   const drawerHandlers = useMemo(() => ({
     open: () => setDrawerOpen(true),
@@ -571,12 +570,6 @@ export const Memory: React.FC = memo(() => {
       }
     },
     [refresh, later, raiseVeil, stageSwap]
-  );
-
-  // Browsing a revision is preview-only, so the historical bar appears whenever
-  // the displayed record is not the active one.
-  const isViewingHistorical = Boolean(
-    displayedRecord && personalMemory && displayedRecord.version !== personalMemory.version
   );
 
   const handleCopyDoc = useCallback(async () => {
@@ -979,7 +972,9 @@ export const Memory: React.FC = memo(() => {
       {!drawerOpen && typeof document !== "undefined" &&
         createPortal(
           <div className="hidden lg:flex fixed bottom-4 right-4 z-40 pointer-events-none items-center">
-            <BottomDockFeather className="absolute -inset-x-8 -bottom-4 -top-10" />
+            {isRightPanelOpen && (
+              <BottomDockFeather className="absolute -right-4 -bottom-4 -top-12 w-[340px] pointer-events-none" />
+            )}
             <div className="relative pointer-events-auto flex items-center px-3 lg:px-4 py-2.5 bg-transparent border-transparent shadow-none">
               <MemoryLegendOverlay
                 selectedCollection={selectedCollection}
@@ -1044,7 +1039,11 @@ export const Memory: React.FC = memo(() => {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.25, ease: "easeOut" }}
-            className="absolute inset-0 z-20 flex flex-col items-center justify-center pointer-events-none"
+            className="absolute left-1/2 flex flex-col items-center justify-center pointer-events-none z-20"
+            style={{
+              top: "calc(50% - 36px)",
+              transform: "translate(-50%, -50%)",
+            }}
           >
             <OrbitalLoader
               size="md"
@@ -1055,9 +1054,15 @@ export const Memory: React.FC = memo(() => {
         )}
       </AnimatePresence>
 
-      {/* ── Load Error State (failure is never rendered as emptiness) ── */}
+      {/* ── Load Error State ── */}
       {!loading && loadError && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+        <div
+          className="absolute left-1/2 flex flex-col items-center justify-center pointer-events-none z-20"
+          style={{
+            top: "calc(50% - 36px)",
+            transform: "translate(-50%, -50%)",
+          }}
+        >
           <div className="rounded-3xl bg-[rgba(var(--card),0.85)] border border-[rgba(var(--border),0.12)] backdrop-blur-xl p-8 max-w-sm text-center shadow-2xl">
             <h3 className="font-display text-[14px] font-bold text-[rgb(var(--foreground))] mb-1">
               {MEMORY_COPY.loadFailedTitle}
@@ -1129,74 +1134,78 @@ export const Memory: React.FC = memo(() => {
         }
         headerActions={
           <div className="flex items-center gap-2 flex-wrap">
-            <button
-              type="button"
-              onClick={() =>
-                setStagingMode((prev) => (prev === "facts" ? "idle" : "facts"))
-              }
-              className={cn(
-                "flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-mono border transition-all cursor-pointer shadow-sm",
-                stagingMode === "facts"
-                  ? "bg-[rgba(var(--accent),0.25)] border-[rgba(var(--accent),0.55)] text-[rgb(var(--accent))]"
-                  : "bg-[rgba(var(--foreground),0.04)] border-[rgba(var(--border),0.18)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:border-[rgba(var(--accent),0.3)]"
-              )}
-              title="View candidate and historical observations"
-            >
-              <Tag
-                size={12}
-                className={stagingMode === "facts" ? "text-[rgb(var(--accent))]" : ""}
-              />
-              <span>{MEMORY_COPY.viewObservations}</span>
-              {unconsolidatedIdentityCount > 0 && (
-                <span className="text-[10.5px] font-mono text-[rgb(var(--accent))]">
-                  ({unconsolidatedIdentityCount})
-                </span>
-              )}
-            </button>
-
-            {suggestions.length > 0 && stagingMode !== "suggestions" && (
+            <Tooltip label="View candidate and historical observations">
               <button
                 type="button"
-                onClick={() => setStagingMode("suggestions")}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-mono border border-emerald-500/40 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 transition-all cursor-pointer shadow-sm animate-pulse"
-                title="Review pending suggestions"
+                onClick={() =>
+                  setStagingMode((prev) => (prev === "facts" ? "idle" : "facts"))
+                }
+                className={cn(
+                  "flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-mono border transition-all cursor-pointer shadow-sm",
+                  stagingMode === "facts"
+                    ? "bg-[rgba(var(--accent),0.25)] border-[rgba(var(--accent),0.55)] text-[rgb(var(--accent))]"
+                    : "bg-[rgba(var(--foreground),0.04)] border-[rgba(var(--border),0.18)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:border-[rgba(var(--accent),0.3)]"
+                )}
               >
-                <Sparkles size={12} />
-                <span>Review Suggestions</span>
-                <span className="text-[10.5px] font-mono text-emerald-400">
-                  ({suggestions.length})
-                </span>
+                <Tag
+                  size={12}
+                  className={stagingMode === "facts" ? "text-[rgb(var(--accent))]" : ""}
+                />
+                <span>{MEMORY_COPY.viewObservations}</span>
+                {unconsolidatedIdentityCount > 0 && (
+                  <span className="text-[10.5px] font-mono text-[rgb(var(--accent))]">
+                    ({unconsolidatedIdentityCount})
+                  </span>
+                )}
               </button>
+            </Tooltip>
+
+            {suggestions.length > 0 && stagingMode !== "suggestions" && (
+              <Tooltip label="Review proposed profile updates">
+                <button
+                  type="button"
+                  onClick={() => setStagingMode("suggestions")}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-mono border border-emerald-500/40 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 transition-all cursor-pointer shadow-sm animate-pulse"
+                >
+                  <Sparkles size={12} />
+                  <span>Review Suggestions</span>
+                  <span className="text-[10.5px] font-mono text-emerald-400">
+                    ({suggestions.length})
+                  </span>
+                </button>
+              </Tooltip>
             )}
 
-            <button
-              type="button"
-              onClick={() => handleConsolidateNow(false)}
-              disabled={consolidating || unconsolidatedIdentityCount === 0}
-              className={cn(
-                "flex items-center gap-2 px-3 py-1.5 rounded-xl text-[11px] font-mono border transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-sm",
-                consolidating
-                  ? "bg-[rgba(var(--accent),0.25)] border-[rgba(var(--accent),0.5)] text-[rgb(var(--accent))]"
-                  : unconsolidatedIdentityCount > 0
-                  ? "bg-[rgba(var(--accent),0.12)] border-[rgba(var(--accent),0.3)] text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.2)] cursor-pointer"
-                  : "bg-[rgba(var(--foreground),0.04)] border border-[rgba(var(--border),0.12)] text-[rgb(var(--foreground-muted))]/40"
-              )}
-            >
-              <Zap
-                size={12}
-                className={cn(consolidating && "animate-pulse text-[rgb(var(--accent))]")}
-              />
-              <span>
-                {consolidating
-                  ? MEMORY_COPY.consolidating
-                  : MEMORY_COPY.consolidate}
-              </span>
-              {unconsolidatedIdentityCount > 0 && (
-                <span className="text-[10.5px] font-mono text-[rgb(var(--accent))]">
-                  ({unconsolidatedIdentityCount})
+            <Tooltip label={unconsolidatedIdentityCount > 0 ? "Integrate staged observations into personal profile" : "No new observations to integrate"}>
+              <button
+                type="button"
+                onClick={() => handleConsolidateNow(false)}
+                disabled={consolidating || unconsolidatedIdentityCount === 0}
+                className={cn(
+                  "flex items-center gap-2 px-3 py-1.5 rounded-xl text-[11px] font-mono border transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-sm",
+                  consolidating
+                    ? "bg-[rgba(var(--accent),0.25)] border-[rgba(var(--accent),0.5)] text-[rgb(var(--accent))]"
+                    : unconsolidatedIdentityCount > 0
+                    ? "bg-[rgba(var(--accent),0.12)] border-[rgba(var(--accent),0.3)] text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.2)] cursor-pointer"
+                    : "bg-[rgba(var(--foreground),0.04)] border border-[rgba(var(--border),0.12)] text-[rgb(var(--foreground-muted))]/40"
+                )}
+              >
+                <Zap
+                  size={12}
+                  className={cn(consolidating && "animate-pulse text-[rgb(var(--accent))]")}
+                />
+                <span>
+                  {consolidating
+                    ? MEMORY_COPY.consolidating
+                    : MEMORY_COPY.consolidate}
                 </span>
-              )}
-            </button>
+                {unconsolidatedIdentityCount > 0 && (
+                  <span className="text-[10.5px] font-mono text-[rgb(var(--accent))]">
+                    ({unconsolidatedIdentityCount})
+                  </span>
+                )}
+              </button>
+            </Tooltip>
           </div>
         }
         bodyClassName="px-4 sm:px-6 py-4 overflow-y-auto lg:overflow-hidden h-full flex flex-col min-h-0"
@@ -1230,35 +1239,6 @@ export const Memory: React.FC = memo(() => {
 
                 {/* Historical-revision bar. Browsing a revision no longer writes,
                     so promoting one to canonical is an explicit labelled action
-                    (memory-spec §5.3.7 revision resolution). Own row above the
-                    header so the title/version/copy cluster is never displaced. */}
-                {isViewingHistorical && displayedRecord && (
-                  <div
-                    role="status"
-                    className="flex items-center gap-2 mb-3 px-3 py-2 rounded-xl border border-[rgba(var(--accent),0.3)] bg-[rgba(var(--accent),0.1)] shrink-0"
-                  >
-                    <History size={13} className="text-[rgb(var(--accent))] shrink-0" />
-                    <span className="text-[11px] font-mono text-[rgb(var(--foreground-muted))] truncate">
-                      {MEMORY_COPY.versions.viewingHistorical} {displayedRecord.version}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => handleRestoreActive(displayedRecord.version)}
-                      disabled={isRestoringVersion}
-                      className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-mono bg-[rgba(var(--accent),0.14)] border border-[rgba(var(--accent),0.35)] text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.22)] transition-colors duration-150 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
-                    >
-                      {isRestoringVersion ? (
-                        <Loader2 size={12} className="animate-spin" />
-                      ) : (
-                        <Undo2 size={12} />
-                      )}
-                      {isRestoringVersion
-                        ? MEMORY_COPY.versions.restoring
-                        : MEMORY_COPY.versions.restoreThisVersion}
-                    </button>
-                  </div>
-                )}
-
                 {/* Dossier Header Bar */}
                 <div className="flex items-center justify-between gap-4 border-b border-[rgba(var(--border),0.12)] pb-3.5 min-h-[44px] shrink-0">
                   <div className="flex items-center gap-3 min-w-0">
@@ -1295,27 +1275,29 @@ export const Memory: React.FC = memo(() => {
                       isRestoring={isRestoringVersion}
                     />
 
-                    <button
-                      type="button"
-                      onClick={handleCopyDoc}
-                      disabled={!displayedRecord?.markdown && !displayedRecord?.content}
-                      className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[11px] font-mono bg-[rgba(var(--foreground),0.05)] border border-[rgba(var(--border),0.14)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors disabled:opacity-40 cursor-pointer shadow-sm"
-                      title={MEMORY_COPY.copyDocTitle}
-                    >
-                      {copied ? <Check size={12} className="text-[rgb(var(--accent))]" /> : <Copy size={12} />}
-                      {copied ? MEMORY_COPY.copied : MEMORY_COPY.copy}
-                    </button>
+                    <Tooltip label={MEMORY_COPY.copyDocTitle}>
+                      <button
+                        type="button"
+                        onClick={handleCopyDoc}
+                        disabled={!displayedRecord?.markdown && !displayedRecord?.content}
+                        className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[11px] font-mono bg-[rgba(var(--foreground),0.05)] border border-[rgba(var(--border),0.14)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors disabled:opacity-40 cursor-pointer shadow-sm"
+                      >
+                        {copied ? <Check size={12} className="text-[rgb(var(--accent))]" /> : <Copy size={12} />}
+                        {copied ? MEMORY_COPY.copied : MEMORY_COPY.copy}
+                      </button>
+                    </Tooltip>
 
-                    <button
-                      type="button"
-                      onClick={handleRegenerateFromFacts}
-                      disabled={isRegenerating || saving}
-                      className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[11px] font-mono bg-[rgba(var(--foreground),0.05)] border border-[rgba(var(--border),0.14)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors disabled:opacity-40 cursor-pointer shadow-sm"
-                      title="Re-synthesize personal memory from all integrated facts"
-                    >
-                      <Sparkles size={12} className={isRegenerating ? "animate-spin text-[rgb(var(--accent))]" : "text-[rgb(var(--accent))]" } />
-                      {isRegenerating ? "Synthesizing..." : "Re-synthesize"}
-                    </button>
+                    <Tooltip label="Regenerate personal profile from all integrated observations">
+                      <button
+                        type="button"
+                        onClick={handleRegenerateFromFacts}
+                        disabled={isRegenerating || saving}
+                        className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[11px] font-mono bg-[rgba(var(--foreground),0.05)] border border-[rgba(var(--border),0.14)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors disabled:opacity-40 cursor-pointer shadow-sm"
+                      >
+                        <RotateCw size={12} className={cn(isRegenerating && "animate-spin text-[rgb(var(--accent))]")} />
+                        {isRegenerating ? MEMORY_COPY.regenerating : MEMORY_COPY.regenerate}
+                      </button>
+                    </Tooltip>
                   </div>
                 </div>
 

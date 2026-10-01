@@ -2,13 +2,7 @@ import { useRef, useEffect, useState, memo } from "react";
 import { type DynamicColors } from "./colorUtils";
 import { cn } from "@/shared/lib/utils";
 import { MONITORING_COPY } from "@/data/monitoringCopy";
-
-/** One loadable model mark on the chamber edge. */
-export interface ModelMark {
-  key: string;
-  name: string;
-  loaded: boolean;
-}
+import { ErrorBoundary } from "@/shared/components/common";
 
 interface LiquidChamberProps {
   colors: DynamicColors;
@@ -19,8 +13,7 @@ interface LiquidChamberProps {
   ramMb?: number;
   ramGb: string;
   ramPct: number;
-  /** Every model that can load; the loaded ones highlight. */
-  modelMarks: ModelMark[];
+  loadedModelNames?: string[];
   popover?: boolean;
   open?: boolean;
 }
@@ -34,7 +27,7 @@ export const LiquidChamber = memo<LiquidChamberProps>(({
   ramMb = 0,
   ramGb,
   ramPct,
-  modelMarks,
+  loadedModelNames = [],
   popover = false,
   open = true,
 }) => {
@@ -283,7 +276,6 @@ export const LiquidChamber = memo<LiquidChamberProps>(({
       ctx.fillStyle = innerSpec;
       ctx.fillRect(0, 0, width, height);
 
-
       // Bottom Base Glow
       const baseGlow = ctx.createRadialGradient(
         width / 2,
@@ -349,103 +341,82 @@ export const LiquidChamber = memo<LiquidChamberProps>(({
   }, [open, popover]);
 
   return (
-    <div
-      ref={chamberContainerRef}
-      className={cn(
-        "flex-1 relative rounded-3xl overflow-hidden min-h-[320px] my-1 flex flex-col items-center justify-between p-5 transition-shadow",
-        isLightMode
-          ? "bg-[rgba(var(--card),0.25)] backdrop-blur-xl shadow-xl shadow-slate-200/40 border border-[rgba(var(--border),0.12)]"
-          : "shadow-2xl border border-white/5"
-      )}
-    >
-      {/* Background Liquid Canvas */}
-      <canvas
-        ref={chamberCanvasRef}
-        className="absolute inset-0 w-full h-full block pointer-events-none z-0"
-      />
-
-      {/* Top Header Layer Inside Container: CPU % on Top-Left & RAM GB on Top-Right */}
-      <div className="relative z-10 w-full flex items-center justify-between px-2">
-        {/* Top-Left CPU Indicator */}
-        <div
-          className="text-[11px] font-mono font-bold select-none drop-shadow-xs"
-          style={{ color: `rgb(${colors.complementary})` }}
-        >
-          <span>CPU {cpuPct.toFixed(1)}%</span>
-        </div>
-
-        {/* Top-Right RAM Indicator */}
-        <div
-          className="text-[11px] font-mono font-bold select-none drop-shadow-xs"
-          style={{ color: `rgb(${colors.primary})` }}
-        >
-          <span>RAM {ramGb} GB</span>
-        </div>
-      </div>
-
-      {/* Center: Futuristic Model Resident Counter */}
-      <div className="relative z-10 flex flex-col items-center justify-center text-center my-auto pointer-events-none">
-        <div className="flex items-baseline gap-1.5">
-          <span
-            style={{
-              color: isEngineLoaded ? `rgb(${colors.primary})` : "rgb(var(--foreground))",
-              textShadow: isEngineLoaded
-                ? `0 0 35px rgba(${colors.primary}, 0.6)`
-                : "none",
-            }}
-            className="text-7xl font-display font-black tracking-tighter leading-none"
-          >
-            {activeModelsCount}
-          </span>
-          <span className="text-2xl font-mono font-bold text-[rgb(var(--foreground-muted))] tracking-tight">
-            / {totalModelsCount}
-          </span>
-        </div>
-
-        <div className="mt-2 flex items-center gap-2">
-          <span className="text-[12px] font-bold tracking-[0.25em] uppercase text-[rgb(var(--foreground))] drop-shadow-sm">
-            {activeModelsCount === 1 ? MONITORING_COPY.modelInMemory : MONITORING_COPY.modelsInMemory}
-          </span>
-        </div>
-        <span className="text-[11px] font-sans text-[rgb(var(--foreground-muted))] tracking-wider mt-0.5 max-w-[240px]">
-          {MONITORING_COPY.chamberSubtitle}
-        </span>
-      </div>
-
-      {/* Bottom edge: loadable-model marks. Every model that can load gets a
-          mark with its name; the loaded ones highlight. (The old 3-tile
-          residency grid moved above the chamber.) */}
+    <ErrorBoundary name="LiquidChamberView">
       <div
-        role="list"
-        aria-label={MONITORING_COPY.modelMarksLabel}
-        className="relative z-10 grid grid-cols-3 sm:grid-cols-6 gap-1.5 w-full max-w-md"
+        ref={chamberContainerRef}
+        className={cn(
+          "flex-1 relative rounded-3xl overflow-hidden min-h-[220px] my-1 flex flex-col items-center justify-between p-4 transition-shadow select-none",
+          isLightMode
+            ? "bg-[rgba(var(--card),0.25)] backdrop-blur-xl shadow-xl shadow-slate-200/40 border border-[rgba(var(--border),0.12)]"
+            : "shadow-2xl border border-white/5"
+        )}
       >
-        {modelMarks.map((m) => (
+        {/* Background Liquid Canvas */}
+        <canvas
+          ref={chamberCanvasRef}
+          className="absolute inset-0 w-full h-full block pointer-events-none z-0"
+        />
+
+        {/* Top Header Layer Inside Container: CPU % on Top-Left & RAM GB on Top-Right */}
+        <div className="relative z-10 w-full flex items-center justify-between px-2">
+          {/* Top-Left CPU Indicator */}
           <div
-            key={m.key}
-            role="listitem"
-            title={m.name}
-            aria-label={`${m.name} ${m.loaded ? MONITORING_COPY.modelLoaded : MONITORING_COPY.modelNotLoaded}`}
-            className={cn(
-              "flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-xl border text-[10px] font-mono font-bold uppercase tracking-wider truncate transition-colors duration-300",
-              m.loaded
-                ? "border-[rgba(var(--accent),0.55)] bg-[rgba(var(--accent),0.12)] text-[rgb(var(--accent))]"
-                : "border-[rgba(var(--border),0.12)] bg-[rgba(var(--foreground),0.03)] text-[rgb(var(--foreground-muted))]/60"
-            )}
-            style={m.loaded ? { boxShadow: `0 0 12px rgba(${colors.primary}, 0.25)` } : undefined}
+            className="text-[11px] font-mono font-bold select-none drop-shadow-xs"
+            style={{ color: `rgb(${colors.complementary})` }}
           >
-            <span
-              className="w-1.5 h-1.5 rounded-full shrink-0"
-              style={{
-                background: m.loaded ? `rgb(${colors.primary})` : "rgb(var(--foreground-muted))",
-                opacity: m.loaded ? 1 : 0.4,
-              }}
-            />
-            <span className="truncate">{m.name}</span>
+            <span>CPU {cpuPct.toFixed(1)}%</span>
           </div>
-        ))}
+
+          {/* Top-Right RAM Indicator */}
+          <div
+            className="text-[11px] font-mono font-bold select-none drop-shadow-xs"
+            style={{ color: `rgb(${colors.primary})` }}
+          >
+            <span>RAM {ramGb} GB</span>
+          </div>
+        </div>
+
+        {/* Center: Futuristic Model Resident Counter */}
+        <div className="relative z-10 flex flex-col items-center justify-center text-center my-auto pointer-events-none">
+          <div className="flex items-baseline gap-1.5">
+            <span
+              style={{
+                color: isEngineLoaded ? `rgb(${colors.primary})` : "rgb(var(--foreground))",
+                textShadow: isEngineLoaded
+                  ? `0 0 35px rgba(${colors.primary}, 0.6)`
+                  : "none",
+              }}
+              className="text-6xl sm:text-7xl font-display font-black tracking-tighter leading-none"
+            >
+              {activeModelsCount}
+            </span>
+            <span className="text-xl sm:text-2xl font-mono font-bold text-[rgb(var(--foreground-muted))] tracking-tight">
+              / {totalModelsCount}
+            </span>
+          </div>
+
+          <div className="mt-2 flex items-center gap-2">
+            <span className="text-[11px] sm:text-[12px] font-bold tracking-[0.25em] uppercase text-[rgb(var(--foreground))] drop-shadow-sm">
+              {activeModelsCount === 1 ? MONITORING_COPY.modelInMemory : MONITORING_COPY.modelsInMemory}
+            </span>
+          </div>
+          <div className="mt-1 flex items-center justify-center max-w-[280px] px-2 text-center pointer-events-auto">
+            {loadedModelNames.length > 0 ? (
+              <span
+                className="text-[10px] sm:text-[11px] font-mono font-medium text-[rgb(var(--accent))] tracking-wider truncate"
+                title={loadedModelNames.join(" • ")}
+              >
+                {loadedModelNames.join(" • ")}
+              </span>
+            ) : (
+              <span className="text-[10px] sm:text-[11px] font-sans text-[rgb(var(--foreground-muted))] tracking-wider opacity-75">
+                {isEngineLoaded ? "Awaiting model load" : "No models loaded"}
+              </span>
+            )}
+          </div>
+        </div>
       </div>
-    </div>
+    </ErrorBoundary>
   );
 });
 
