@@ -187,7 +187,7 @@ Deduplication runs via an event-driven lifecycle (Boot Sweep and Session End Swe
     ]
   }
   ```
-- **Block Identity**: A block is a semantic unit — 1–3 sentences expressing one coherent idea, chosen by the LLM. Block boundaries are part of the semantic structure that consolidation maintains. IDs are persistent: if `blk_x7y8z9` is rewritten, its ID is preserved. If a block needs to become two independent ideas, the LLM proposes `delete_block` + `create_block` × 2.
+- **Block Identity**: A block is a semantic unit — 1–3 sentences expressing one coherent idea, chosen by the LLM. Block boundaries are part of the semantic structure that consolidation maintains. IDs are persistent: if `blk_x7y8z9` is rewritten, its ID is preserved. If a block needs to become two independent ideas, the LLM proposes `update` on the existing block plus `add` of the additional block, which preserves the identity of the retained idea. `delete_block` + `create_block` × 2 remains available when the original block genuinely no longer exists on its own, subject to INVARIANT 5.1-A.
 - **ID Assignment**: The application assigns all persistent IDs. The LLM never sees or generates persistent IDs. Format: `sec_{timestamp_hex}_{4-char-uuid}` and `blk_{timestamp_hex}_{4-char-uuid}`.
 - **Structure Contract (enforced, not advisory)**: Every committed version MUST satisfy all four conditions:
   1. **Non-empty section titles**: every section has a non-empty, non-whitespace title.
@@ -200,6 +200,9 @@ Deduplication runs via an event-driven lifecycle (Boot Sweep and Session End Swe
 - **Version Navigation & Activation**: The Memory Drawer UI provides an interactive version carousel (`[ < ] v{X} [ > ]`) allowing users to inspect older archived versions and promote any historical version back to `is_active = 1` via `set_active_personal_memory_version`.
 - **System Prompt Injection**: Only the currently active version (`is_active = 1`) is rendered to Markdown via `PersonalMemory::render_to_markdown()` and injected into the conversational system prompt.
 - **Empty-Section Auto-Pruning**: After any mutation that deletes blocks, sections with zero remaining blocks are automatically pruned. No explicit `delete_section` operation exists.
+- **INVARIANT 5.1-A (Last-Block Deletion Refused)**: An operation that would leave a section with zero blocks is refused. This covers `delete_block` targeting a section's only block, and applies on every mutation path (`apply_operations`, revision acceptance, and any future batch path). The refusal reason is surfaced through `ApplyReport::rejected` and logged; the rest of the batch still applies.
+  - Rationale: a topical section holds exactly the blocks for one subject. Removing its last block would silently destroy the section and therefore the subject it represented — a total loss with no surviving representation anywhere in the document, recoverable only by regenerating from integrated observations. Refusing forces the author to use `update` (which preserves block identity) or to delete a block while a sibling block remains.
+  - Pruning therefore only fires on a path that leaves a section empty through some means other than a refused `delete_block`; it remains a structural safety net, not the primary deletion mechanism.
 
 ### 5.2 User Interaction Modes
 1. **View & Copy**: User views rendered Markdown in the UI and can copy the raw text directly to their clipboard.
@@ -244,16 +247,17 @@ Consolidates personal knowledge through dedicated LLM passes tailored to memory 
    All four passes share the same `OutputConstraint::JsonSchema` with flat grouped arrays:
    ```json
    {
-     "new_sections": [{ "title": "...", "blocks": ["...", "..."] }],
-     "creates": [{ "section": "s1", "text": "..." }],
-     "updates": [{ "block": "b2", "text": "..." }],
-     "deletes": [{ "block": "b3" }]
+     "new": [{ "title": "...", "blocks": ["...", "..."] }],
+     "add": [{ "section": "s1", "text": "..." }],
+     "update": [{ "block": "b2", "text": "..." }],
+     "delete": [{ "block": "b3" }]
    }
    ```
-   - `new_sections`: create a new section with title and initial blocks. Application assigns `sec_*` and `blk_*` IDs.
-   - `creates`: append a new block to an existing section identified by handle. Application assigns `blk_*` ID.
-   - `updates`: replace the text of an existing block identified by handle. ID is preserved.
-   - `deletes`: remove an existing block identified by handle.
+   The LLM-facing wire keys are single imperative verbs (`new`, `add`, `update`, `delete`). The persisted `personal_memory_revisions.op` values and the internal `ResolvedOp` variant names remain the compound engine names (`create_section`, `create_block`, `update_block`, `delete_block`); the rename is wire-format only.
+   - `new`: create a new section with title and initial blocks. Application assigns `sec_*` and `blk_*` IDs.
+   - `add`: append a new block to an existing section identified by handle. Application assigns `blk_*` ID.
+   - `update`: replace the text of an existing block identified by handle. ID is preserved.
+   - `delete`: remove an existing block identified by handle. Refused when it would empty its section (INVARIANT 5.1-A).
    - **Deferred operations**: `delete_section` (auto-pruning replaces it), `update_section` / rename (regeneration handles it), `move_block` (regeneration handles it).
    - **No inter-operation dependencies**: each operation is independently applicable. No `temp_id`, no `after_block_id`. `create_block` appends to the end of its target section.
 
@@ -262,21 +266,22 @@ Consolidates personal knowledge through dedicated LLM passes tailored to memory 
      - *Trigger*: Invoked when no personal memory exists yet (empty content / version 0).
      - *Input*: Active personal observations.
      - *Task*: Synthesize a coherent semantic memory model. The LLM performs holistic knowledge synthesis across observations (understanding links, domain context, and thematic relationships), groups related concepts into coherent prose blocks (1–3 sentences each), and structures them into emergent sections.
-     - *Output*: Dedicated whole-memory JSON schema: `{"sections": [{"title": "...", "blocks": ["..."]}]}`. No artificial delta arrays (`creates`, `updates`, `deletes`).
-     - *Validation*: `PersonalMemory::validate()` — non-empty titles, unique titles, at least one section, non-empty blocks.
-     - *Commit*: Application assigns all IDs, serializes to JSON, saves as version 1 with `is_active = 1`. Candidate observations transition to `'integrated'`.
+- *Output*: Dedicated whole-memory JSON schema: `{"sections": [{"title": "...", "blocks": ["..."]}]}`. No artificial delta arrays (`add`, `update`, `delete`).
+      - *Validation*: `PersonalMemory::validate()` — non-empty titles, unique titles, at least one section, non-empty blocks.
+      - *Commit*: Application assigns all IDs, serializes to JSON, saves as version 1 with `is_active = 1`. Candidate observations transition to `'integrated'` per INVARIANT 5.3-B.
+      - *Section Shape*: Sections are umbrella areas of a person's life (`Career`, `About Them`, `Habits`, `Interests`, `Plans`, `Health`), never per-subject sections. A subject lives inside an umbrella and is carried by the block text. This is prompt-level guidance, not an engine constraint.
    - **Incremental Observation Integration**:
      - *Trigger*: Invoked when an active personal memory exists and active personal observations are available.
      - *Input*: Current memory in handle format + active personal observations as a bullet list.
-     - *Task*: Propose the minimal set of semantic operations to integrate new observations. If observations update or supersede existing blocks, emit `updates`. If they expand existing topics, emit `creates`. When observations introduce a distinct new area or topic not covered by existing sections, emit `new_sections`. Never discard observations or force unrelated concepts into existing sections.
-     - *Output*: Flat grouped delta JSON with `new_sections`, `creates`, `updates`, `deletes`.
+- *Task*: Integrate new observations into the existing model with the fewest operations that achieve complete, non-destructive coverage. If an observation refines or supersedes an existing block, emit `update`. If it is new and an existing umbrella covers its subject, emit `add`. Only when no umbrella covers the subject does it emit `new`. Emit `delete` only when an observation proves an existing block false, with the replacement written in the same pass. Never discard an observation and never force an unrelated concept into an existing section.
+      - *Output*: Flat grouped delta JSON with `new`, `add`, `update`, `delete`.
      - *Handle Resolution*: Engine maps per-request handles to persistent IDs. Unresolvable handles are rejected per-operation; the rest of the batch is applied.
      - *Staging*: Resolved operations are persisted as `personal_memory_revisions` rows with `status = 'pending'`.
    - **Comment-Directed Edits**:
      - *Trigger*: Invoked when the user submits directive comments on the active memory.
      - *Input*: Current memory in handle format + user comment directives.
      - *Task*: Propose semantic operations applying the user directives.
-     - *Output*: Flat grouped delta JSON (`new_sections`, `creates`, `updates`, `deletes`), staged as pending revisions.
+     - *Output*: Flat grouped delta JSON (`new`, `add`, `update`, `delete`), staged as pending revisions.
    - **Regeneration (Reformat Existing Memory)**:
      - *Trigger*: User-initiated "Regenerate" / "Reformat Memory" action.
      - *Input*: Current semantic memory in handle format.
@@ -284,14 +289,18 @@ Consolidates personal knowledge through dedicated LLM passes tailored to memory 
      - *Output*: Dedicated whole-memory JSON schema (`{"sections": [{"title": "...", "blocks": ["..."]}]}`). All IDs are fresh — application assigns new `sec_*` and `blk_*` IDs to every entity.
      - *Commit*: Saved as version `max_version + 1` with `is_active = 1`. Pending revisions targeting old IDs are bulk-rejected as stale.
    - **Generation Settings (all passes)**:
-     - *JSON Schema Mode*: **`OutputConstraint::JsonSchema` for all passes.** Cold generation and regeneration use the pure whole-memory schema (`cold_consolidation_json_schema`) emitting `{"sections": [...]}`. Incremental integration and comment-directed edits use the delta schema (`delta_consolidation_json_schema`) emitting `{new_sections, creates, updates, deletes}`.
+     - *JSON Schema Mode*: **`OutputConstraint::JsonSchema` for all passes.** Cold generation and regeneration use the pure whole-memory schema (`whole_memory_json_schema`) emitting `{"sections": [...]}`. Incremental integration and comment-directed edits use the delta schema (`delta_consolidation_json_schema`) emitting `{new, add, update, delete}`.
      - *Reasoning*: **Disabled** for every pass. Measured against `qwen3.5:9b`: reasoning ON consumed the entire output budget with zero content tokens at every ceiling tried (512 / 1024 / 4096). The schema is compact, so this is strictly safer.
      - *Temperature*: `0.2`. Separate from the compaction temperature: consolidation runs at most once per session, where a reproducible diff matters more than variety.
      - *Output ceiling*: 4096 tokens, generous headroom for structured consolidation output.
 
 6. **Staging & Revision Lifecycle**:
    - Generated operations from incremental integration or comment-directed edits are persisted in `personal_memory_revisions` with `status = 'pending'`.
-   - **INVARIANT 5.3-A (Simplified Observation Transition)**: All candidate personal observations presented to consolidation transition from `status = 'active'` to `status = 'integrated'` immediately upon staging the revisions. No observations are trapped in an intermediate state, and candidate observations do not depend on individual revision acceptance.
+   - **INVARIANT 5.3-A (Simplified Observation Transition)**: Candidate personal observations presented to consolidation transition from `status = 'active'` to `status = 'integrated'` immediately upon staging the revisions. No observations are trapped in an intermediate state, and candidate observations do not depend on individual revision acceptance.
+   - **INVARIANT 5.3-B (Grounded Observation Integration)**: Only observations demonstrably represented in the resulting memory transition to `integrated`. After the operations are applied, each candidate observation's text is checked against the text the pass produced. An observation whose content words are not sufficiently covered by the resulting document returns to `status = 'active'` and is offered again on the next pass. An observation can therefore never be marked `integrated` while absent from the memory.
+     - Coverage is measured as lexical word overlap between the observation text and the resulting document, a monotonic and interpretable test — not a similarity threshold, which would cliff at any chosen cutoff. The threshold is a subsystem constant.
+     - Rationale: the LLM may return a valid operation set that omits an observation entirely. Marking the whole candidate set `integrated` on the strength of "at least one operation landed" strands the omitted observation permanently: `fetch_active_observations_by_type` only returns `active` rows, so no later incremental pass can ever offer it again, and the omission is invisible.
+     - The unintegrated remainder is logged per pass with its ID and measured coverage so a persistent omission is visible in telemetry.
    - While pending revisions exist, direct manual editing is locked in the UI to prevent concurrent write races.
 
 7. **Revision Resolution**:
@@ -303,7 +312,7 @@ Consolidates personal knowledge through dedicated LLM passes tailored to memory 
       3. Applies operations:
          - `create_block`: append block to target section (by persistent ID), assign new `blk_*` ID.
          - `update_block`: find block by persistent ID, replace text.
-         - `delete_block`: find block by persistent ID, remove. Auto-prune empty sections.
+         - `delete_block`: find block by persistent ID, remove. Auto-prune empty sections. Refused when it would empty its section (INVARIANT 5.1-A).
          - `create_section`: append section with blocks, assign `sec_*` and `blk_*` IDs.
       4. **Per-operation rejection**: If an operation targets an ID that no longer exists (deleted by another accepted operation in the same batch, or by a prior accept), that operation is auto-rejected with a reason. The rest of the batch is still applied.
       5. Validates the result with `PersonalMemory::validate()`.

@@ -1,5 +1,4 @@
 import React, { useRef, useState, useEffect, useCallback, lazy, Suspense } from "react";
-import { motion } from "framer-motion";
 import { EdgeNav } from "./EdgeNav";
 import { LAYOUT_COPY } from "@/data/layoutCopy";
 import { TitleBar } from "./TitleBar";
@@ -26,19 +25,6 @@ interface ResponsiveLayoutProps {
   children?: React.ReactNode;
 }
 
-// ── Route transition + document title ─────────────────────────────────────
-// ONE thing, done correctly: when the route changes, fade the incoming page in.
-// No exit animation, no `mode="wait"`.
-//
-// Why there is no exit animation: `AnimatePresence mode="wait"` holds the INCOMING
-// route until the outgoing exit completes, which produces exit → blank stage →
-// enter. That blank gap reads as a flash/flicker, and with lazy chunks it also
-// exposed the Suspense fallback. Cross-fading a fade-out into a fade-in needs no
-// gap at all: the incoming page mounts immediately and fades up over the stage.
-//
-// The 200ms fade also serves as the loader handoff — chunks are preloaded in
-// App.tsx after first paint, so by the time a route is clicked the module is
-// resolved and the page mounts synchronously.
 const PAGE_TITLES: Record<string, string> = {
   "/": "Vox",
   "/history": "Vox — History",
@@ -46,17 +32,6 @@ const PAGE_TITLES: Record<string, string> = {
   "/settings": "Vox — Settings",
   "/monitoring": "Vox — Monitoring",
 };
-
-const PageTransition: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <motion.div
-    initial={{ opacity: 0 }}
-    animate={{ opacity: 1 }}
-    transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-    style={{ height: "100%", width: "100%", minHeight: 0, display: "flex", flexDirection: "column" }}
-  >
-    {children}
-  </motion.div>
-);
 
 export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) => {
   const location = useLocation();
@@ -84,6 +59,7 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
   }, [isHelpOpen]);
 
   const sessionsOpen = isPanelOpen("sessions");
+  const isRightPanelOpen = isHelpOpen || isPanelOpen("notifications");
 
   // Ref to track compact state across renders during window resize
   const wasCompactRef = useRef(window.innerWidth < 1024);
@@ -331,9 +307,13 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
 
   const isSettings = location.pathname === "/settings";
   const isHome = location.pathname === "/";
+  const isHistory = location.pathname === "/history";
+  const isMemory = location.pathname === "/memory";
   const isMonitoring = location.pathname === "/monitoring";
-  const rippleSpeedMultiplier = isSettings ? 1.5 : location.pathname === "/history" ? 1.25 : 1.0;
-  // Ambient origin — standardized across all views (Home, History, Settings, Memory) to calc(50% - 36px)
+
+  // Ambient background logic: slow on home, slower on history/settings, disabled on memory/monitoring
+  const ambientDisabled = isMemory || isMonitoring;
+  const rippleSpeedMultiplier = isSettings || isHistory ? 2.2 : 1.4;
   const ambientOriginY = "calc(50% - 36px)";
 
   return (
@@ -351,30 +331,20 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
 
       {/* ── Content Area ──────────────────────────────────────────────────── */}
       <div data-spatial-zone="stage" style={{ flex: 1, display: "flex", overflow: "hidden", position: "relative", minHeight: 0 }}>
-        {/* Resize Handles (Invisible, for cursor hit-testing on Linux) */}
-        <div className="absolute top-0 left-0 w-full h-[3px] cursor-ns-resize z-[100]" />
-        <div className="absolute bottom-0 left-0 w-full h-[3px] cursor-ns-resize z-[100]" />
-        <div className="absolute top-0 left-0 h-full w-[3px] cursor-ew-resize z-[100]" />
-        <div className="absolute top-0 right-0 h-full w-[3px] cursor-ew-resize z-[100]" />
-
-        {/* Corner Handles */}
-        <div className="absolute top-0 left-0 w-2 h-2 cursor-nwse-resize z-[110]" />
-        <div className="absolute top-0 right-0 w-2 h-2 cursor-nesw-resize z-[110]" />
-        <div className="absolute bottom-0 left-0 w-2 h-2 cursor-nesw-resize z-[110]" />
-        <div className="absolute bottom-0 right-0 w-2 h-2 cursor-nwse-resize z-[110]" />
-
-        {/* Ambient Background — visible on every page */}
-        <AmbientBackground
-          instanceId="layout"
-          originY={ambientOriginY}
-          paused={interactionState === "Speaking"}
-          rippleSpeedMultiplier={rippleSpeedMultiplier}
-          rippleShape={
-            location.pathname === "/history" && historyDisplayMode === "orbit"
-              ? "orbit"
-              : "circle"
-          }
-        />
+        {/* Ambient Background — visible on Home, History, Settings; disabled on Memory & Monitoring */}
+        {!ambientDisabled && (
+          <AmbientBackground
+            instanceId="layout"
+            originY={ambientOriginY}
+            paused={interactionState === "Speaking"}
+            rippleSpeedMultiplier={rippleSpeedMultiplier}
+            rippleShape={
+              isHistory && historyDisplayMode === "orbit"
+                ? "orbit"
+                : "circle"
+            }
+          />
+        )}
 
         {/* Page content */}
         <main
@@ -398,12 +368,7 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
                 </div>
               }
             >
-              {/* No AnimatePresence here on purpose — see PageTransition above.
-                  Keying the wrapper on pathname remounts it per route, which is
-                  what triggers the fade-in. */}
-              <PageTransition key={location.pathname}>
-                {children || <Outlet />}
-              </PageTransition>
+              {children || <Outlet />}
             </Suspense>
           </div>
         </main>
@@ -459,9 +424,9 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
 
         {/* ── Engine Monitor Area — bottom-left ───────────────────────────── */}
         <div className="hidden lg:flex fixed bottom-4 left-4 z-40 items-center gap-2.5 pointer-events-none">
-          {/* Standard bottom-dock feather: dissolves scrolled content above the monitor button */}
-          <BottomDockFeather className="absolute -inset-x-6 bottom-[calc(100%-2px)] h-10" />
-          {/* relative: keeps the positioned feather painted underneath the controls */}
+          {sessionsOpen && (
+            <BottomDockFeather className="absolute -left-4 -bottom-4 -top-12 w-[340px] pointer-events-none" />
+          )}
           <div className="relative pointer-events-auto flex items-center gap-2.5">
             {/* Monitor toggle button */}
             <button
@@ -513,7 +478,9 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
         {interactionState !== "Idle" ? (
           /* ── Turn Performance & Context Utilization Metrics — active session ── */
           <div className="hidden lg:flex fixed bottom-4 right-4 z-40 pointer-events-none items-center">
-            <BottomDockFeather className="absolute -inset-x-6 bottom-[calc(100%-2px)] h-10" />
+            {isRightPanelOpen && (
+              <BottomDockFeather className="absolute -right-4 -bottom-4 -top-12 w-[340px] pointer-events-none" />
+            )}
             <div className="relative pointer-events-auto">
               <TurnMetricsBadge />
             </div>
@@ -521,7 +488,9 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
         ) : isHome || isSettings ? (
           /* ── Home & Settings View (Idle): Model Status Overlay in same consistent corner ── */
           <div className="hidden lg:flex fixed bottom-4 right-4 z-40 pointer-events-none items-center">
-            <BottomDockFeather className="absolute -inset-x-8 -bottom-4 -top-10" />
+            {isRightPanelOpen && (
+              <BottomDockFeather className="absolute -right-4 -bottom-4 -top-12 w-[340px] pointer-events-none" />
+            )}
             <div className="relative pointer-events-auto flex items-center px-3 lg:px-4 py-2.5 bg-transparent border-transparent shadow-none">
               <ModelStatusOverlay />
             </div>

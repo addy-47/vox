@@ -3,57 +3,38 @@ import { Sparkles, LucideIcon } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 
 export interface OrbitalLoaderProps {
-  /** Main title / action label e.g. "Building memory graph...", "Synchronizing...", "Loading history..." */
   title?: string;
-  /** Primary subtitle e.g. "12,450 nodes · 48,200 edges" */
   subtitle?: string;
-  /** Secondary micro-text e.g. "Optimizing layout and relationships" */
   statusText?: string;
-  /** Size variant: "sm" (compact card/popover), "md" (standard), "lg" (full screen/page) */
   size?: "sm" | "md" | "lg";
-  /** Optional custom center icon (defaults to Sparkles) */
   icon?: LucideIcon;
-  /** Whether to render as a full-screen fixed/absolute backdrop overlay */
   overlay?: boolean;
-  /** Custom className for the container */
   className?: string;
 }
 
 export const OrbitalLoader: React.FC<OrbitalLoaderProps> = memo(
   ({
-    title = "Loading...",
-    subtitle,
-    statusText,
     size = "md",
     icon: IconComponent = Sparkles,
     overlay = false,
     className,
   }) => {
-    // Sizing scale maps
+    // Sizing scale maps (centered with no bottom margin offset)
     const sizeConfig = {
       sm: {
-        container: "w-16 h-16 mb-4",
+        container: "w-16 h-16",
         innerP: "p-2.5",
         iconSize: 18,
-        titleClass: "text-[13px]",
-        subtitleClass: "text-[11px]",
-        statusClass: "text-[11px] mt-1",
       },
       md: {
-        container: "w-24 h-24 mb-6",
+        container: "w-24 h-24",
         innerP: "p-3.5",
         iconSize: 24,
-        titleClass: "text-[14px]",
-        subtitleClass: "text-[12px]",
-        statusClass: "text-[11px] mt-1.5",
       },
       lg: {
-        container: "w-28 h-28 mb-8",
+        container: "w-28 h-28",
         innerP: "p-4",
         iconSize: 30,
-        titleClass: "text-[15px]",
-        subtitleClass: "text-[12px]",
-        statusClass: "text-[11px] mt-2",
       },
     }[size];
 
@@ -80,42 +61,6 @@ export const OrbitalLoader: React.FC<OrbitalLoaderProps> = memo(
             <IconComponent size={sizeConfig.iconSize} className="animate-pulse text-[rgb(var(--accent))]" />
           </div>
         </div>
-
-        {/* Clean Borderless Modern Typography */}
-        {(title || subtitle || statusText) && (
-          <div className="flex flex-col items-center text-center gap-1">
-            {title && (
-              <h3
-                className={cn(
-                  "font-display font-black tracking-wide text-[rgb(var(--foreground))] drop-shadow-sm",
-                  sizeConfig.titleClass
-                )}
-              >
-                {title}
-              </h3>
-            )}
-            {subtitle && (
-              <p
-                className={cn(
-                  "font-sans font-medium text-[rgb(var(--foreground-muted))]",
-                  sizeConfig.subtitleClass
-                )}
-              >
-                {subtitle}
-              </p>
-            )}
-            {statusText && (
-              <p
-                className={cn(
-                  "font-mono font-semibold text-[rgb(var(--accent))] tracking-wider uppercase opacity-80",
-                  sizeConfig.statusClass
-                )}
-              >
-                {statusText}
-              </p>
-            )}
-          </div>
-        )}
       </div>
     );
 

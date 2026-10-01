@@ -1,4 +1,5 @@
 import React, { memo, useState, useMemo } from "react";
+import { motion } from "framer-motion";
 import { Check, X, Trash2, ChevronLeft, ChevronRight, Search, MessageSquare, Filter } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { formatDateTime, resolveSessionTitle, type SessionRow } from "@/services/historyService";
@@ -318,8 +319,10 @@ export const HistoryListView: React.FC<HistoryListViewProps> = memo(
             const title = resolveSessionTitle(session);
 
             return (
-              <div
+              <motion.div
                 key={session.id}
+                layoutId={`session-card-${session.id}`}
+                layout
                 role="button"
                 tabIndex={0}
                 aria-pressed={isSelected}
@@ -335,7 +338,7 @@ export const HistoryListView: React.FC<HistoryListViewProps> = memo(
                   }
                 }}
                 className={cn(
-                  "w-full rounded-2xl p-4 flex flex-col text-left transition-all duration-200 select-none cursor-pointer relative group glass-card",
+                  "w-full rounded-2xl p-4 flex flex-col text-left transition-colors duration-200 select-none cursor-pointer relative group glass-card",
                   "border-[rgba(var(--border),0.15)] bg-[rgb(var(--card))]/80 hover:border-[rgba(var(--accent),0.55)] hover:bg-[rgb(var(--card))]/95 hover:shadow-[0_0_20px_rgba(var(--accent),0.15)]",
                   isSelected && "border-[rgb(var(--accent))] bg-[rgb(var(--card))] shadow-[0_0_25px_rgba(var(--accent),0.35)]"
                 )}
@@ -397,7 +400,7 @@ export const HistoryListView: React.FC<HistoryListViewProps> = memo(
                     </button>
                   )}
                 </div>
-              </div>
+              </motion.div>
             );
           })
         )}

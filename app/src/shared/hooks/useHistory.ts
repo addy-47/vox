@@ -335,19 +335,20 @@ export function useHistory() {
     setConfirmDeleteId(null);
   }, []);
 
+  // Chevron navigation: Left (prev) goes back in time (older), Right (next) goes forward in time (newer)
   const handlePrevDate = useCallback(() => {
-    setSelectedSession(null);
-    if (effectiveSessionWindowIndex > 0) {
-      setDayWindowIndex(effectiveSessionWindowIndex - 1);
-    }
-  }, [effectiveSessionWindowIndex]);
-
-  const handleNextDate = useCallback(() => {
     setSelectedSession(null);
     if (effectiveSessionWindowIndex < sessionWindows.length - 1) {
       setDayWindowIndex(effectiveSessionWindowIndex + 1);
     }
   }, [effectiveSessionWindowIndex, sessionWindows.length]);
+
+  const handleNextDate = useCallback(() => {
+    setSelectedSession(null);
+    if (effectiveSessionWindowIndex > 0) {
+      setDayWindowIndex(effectiveSessionWindowIndex - 1);
+    }
+  }, [effectiveSessionWindowIndex]);
 
   const handleGoToday = useCallback(() => {
     setSelectedSession(null);
@@ -357,16 +358,6 @@ export function useHistory() {
 
   const handlePrevMonth = useCallback(() => {
     setSelectedSession(null);
-    if (effectiveMonthWindowIndex > 0) {
-      setMonthWindowIndex(effectiveMonthWindowIndex - 1);
-    } else {
-      setMonthWindowIndex(0);
-      setMonthIndex((idx) => Math.max(0, idx - 1));
-    }
-  }, [effectiveMonthWindowIndex]);
-
-  const handleNextMonth = useCallback(() => {
-    setSelectedSession(null);
     if (effectiveMonthWindowIndex < monthWindows.length - 1) {
       setMonthWindowIndex(effectiveMonthWindowIndex + 1);
     } else {
@@ -374,6 +365,16 @@ export function useHistory() {
       setMonthIndex((idx) => Math.min(totalMonths - 1, idx + 1));
     }
   }, [effectiveMonthWindowIndex, monthWindows.length, totalMonths]);
+
+  const handleNextMonth = useCallback(() => {
+    setSelectedSession(null);
+    if (effectiveMonthWindowIndex > 0) {
+      setMonthWindowIndex(effectiveMonthWindowIndex - 1);
+    } else {
+      setMonthWindowIndex(0);
+      setMonthIndex((idx) => Math.max(0, idx - 1));
+    }
+  }, [effectiveMonthWindowIndex]);
 
   const handleBackToMonth = useCallback(() => {
     openMonthOf(effectiveDateIndex);

@@ -25,7 +25,6 @@ import {
   hslToRgb,
   ModelResidencyTiles,
   LiquidChamber,
-  type ModelMark,
 } from "@/shared/components/monitoring";
 import { Tooltip } from "@/shared/ui/Tooltip";
 import { ErrorBoundary } from "@/shared/components/common";
@@ -154,31 +153,37 @@ export const Monitoring: React.FC<MonitoringProps> = ({
     );
   }, [activeModelsCount, latest]);
 
-  // Edge marks for the chamber: every model that can load, with the loaded
-  // ones highlighted. Names resolve best-effort from the catalog/settings and
-  // truncate via CSS; unresolvable roles fall back to the role name.
-  const modelMarks = useMemo((): ModelMark[] => {
-    const groups = modelCatalog?.model_groups ?? [];
-    const groupName = (category: string, fallback: string) =>
-      groups.find((g) => g.category === category)?.name ?? fallback;
-    const llmName =
-      llmProvider === "embedded"
-        ? llmEmbeddedModel || "LLM"
-        : llmProvider === "server"
-          ? llmServerModel || "LLM"
-          : llmCloudModel || "LLM";
-    return [
-      { key: "vad", name: activeVadGroup?.name ?? "VAD", loaded: isVadModel && !!latest?.is_vad_loaded },
-      { key: "stt", name: sttProvider === "embedded" ? sttEmbeddedModel || "Embedded STT" : "Cloud STT", loaded: isSttModel && !!latest?.is_stt_loaded },
-      { key: "llm", name: llmName, loaded: isLlmModel && !!latest?.is_llm_loaded },
-      { key: "tts", name: activeTtsGroup?.name ?? ttsProvider ?? "TTS", loaded: isTtsModel && !!latest?.is_tts_loaded },
-      { key: "embedder", name: groupName("embedding", "Embedder"), loaded: isEmbedderModel && !!latest?.is_embedder_loaded },
-      { key: "translit", name: groupName("translit", "Translit"), loaded: isTranslitModel && !!latest?.is_translit_loaded },
-    ];
+  // Dynamically resolve loaded model names to display in chamber
+  const loadedModelNames = useMemo((): string[] => {
+    if (!latest) return [];
+    const list: string[] = [];
+    if (latest.is_llm_loaded) {
+      const llmName =
+        llmProvider === "embedded"
+          ? llmEmbeddedModel || "LLM"
+          : llmProvider === "server"
+            ? llmServerModel || "LLM Server"
+            : llmCloudModel || "LLM Cloud";
+      list.push(llmName);
+    }
+    if (latest.is_stt_loaded) {
+      list.push(sttProvider === "embedded" ? sttEmbeddedModel || "STT" : "Cloud STT");
+    }
+    if (latest.is_tts_loaded) {
+      list.push(activeTtsGroup?.name ?? ttsProvider ?? "TTS");
+    }
+    if (latest.is_vad_loaded && isVadModel) {
+      list.push(activeVadGroup?.name ?? "VAD");
+    }
+    if (latest.is_embedder_loaded && isEmbedderModel) {
+      list.push("Embedder");
+    }
+    if (latest.is_translit_loaded && isTranslitModel) {
+      list.push("Transliteration");
+    }
+    return list;
   }, [
-    modelCatalog,
-    activeVadGroup,
-    activeTtsGroup,
+    latest,
     llmProvider,
     sttProvider,
     ttsProvider,
@@ -186,13 +191,11 @@ export const Monitoring: React.FC<MonitoringProps> = ({
     llmServerModel,
     llmCloudModel,
     sttEmbeddedModel,
+    activeTtsGroup,
+    activeVadGroup,
     isVadModel,
-    isSttModel,
-    isLlmModel,
-    isTtsModel,
     isEmbedderModel,
     isTranslitModel,
-    latest,
   ]);
 
   // Derive model variant labels (thinking, hearing, speaking)
@@ -287,9 +290,9 @@ export const Monitoring: React.FC<MonitoringProps> = ({
   const ramPct = Math.min(100, Math.max(0, (ramMb / totalRamMb) * 100));
 
   const containerContent = (
-    <div className="flex flex-col h-full w-full select-none">
+    <div className="flex flex-col h-full w-full select-none gap-2.5">
       {/* ── 1. Top Header Bar ── */}
-      <div className="flex items-center justify-between pb-3 border-b border-[rgba(var(--accent),0.12)] shrink-0 mb-3">
+      <div className="flex items-center justify-between pb-2.5 border-b border-[rgba(var(--accent),0.12)] shrink-0">
         <div className="flex items-center gap-3">
           <div className="flex flex-col">
             <h1 className="text-[15px] sm:text-[16px] font-display font-black uppercase tracking-[0.2em] text-[rgb(var(--foreground))]">
@@ -302,11 +305,6 @@ export const Monitoring: React.FC<MonitoringProps> = ({
         </div>
 
         <div className="flex items-center gap-2">
-          {/* NOTE: the profiler launch button that used to sit here was behind a
-              hardcoded `{false && …}`, so 18 lines never rendered and the only
-              path to the profiler was the shell's footprint HUD (Shift+Up). The
-              dead block is deleted rather than left as dead-but-wired JSX. */}
-
           {/* Unload / Load Models Button with Skull Icon when Loaded */}
           <Tooltip
             label={isEngineLoaded ? MONITORING_COPY.forceOffloadDesc : MONITORING_COPY.reloadModelsDesc}
@@ -345,9 +343,9 @@ export const Monitoring: React.FC<MonitoringProps> = ({
         </div>
       </div>
 
-      {/* ── 2. Model Residency Tiles (moved up from the chamber bottom) ── */}
+      {/* ── 2. Model Residency Tiles ── */}
       <ErrorBoundary name="MonitoringResidency">
-        <div className="flex justify-center">
+        <div className="flex justify-center w-full">
           <ModelResidencyTiles
             latest={latest}
             colors={colors}
@@ -368,7 +366,7 @@ export const Monitoring: React.FC<MonitoringProps> = ({
           ramMb={ramMb}
           ramGb={ramGb}
           ramPct={ramPct}
-          modelMarks={modelMarks}
+          loadedModelNames={loadedModelNames}
           popover={popover}
           open={open}
         />
@@ -376,7 +374,7 @@ export const Monitoring: React.FC<MonitoringProps> = ({
     </div>
   );
 
-  // If Popover mode: wrap in animated floating container with 10% reduced width (414px)
+  // If Popover mode: wrap in animated floating container
   if (popover) {
     return (
       <AnimatePresence>
@@ -387,7 +385,7 @@ export const Monitoring: React.FC<MonitoringProps> = ({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 14, scale: 0.98 }}
             transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-            className="fixed z-[200] bottom-[72px] left-4 w-[414px] max-w-[calc(100vw-32px)] h-[580px] max-h-[calc(100vh-96px)] glass-card p-4 flex flex-col shadow-2xl rounded-3xl"
+            className="fixed z-[200] bottom-[72px] left-4 w-[386px] max-w-[calc(100vw-32px)] h-[458px] max-h-[calc(100vh-96px)] glass-card p-3.5 flex flex-col shadow-2xl rounded-3xl"
             role="dialog"
             aria-label={MONITORING_COPY.monitorAria}
           >

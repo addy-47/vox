@@ -14,21 +14,17 @@ const navItems = [
 ];
 
 export const EdgeNav: React.FC = () => {
-  // NOTE: the click-time `navigatingTo` state and its three decorative rings
-  // were removed. The flag was cleared in a useEffect on the same commit that
-  // set it, so for a loaded route it lasted exactly one frame and never painted
-  // three elements. Route feedback is now the route cross-fade + page loader in
-  // ResponsiveLayout / App.
   return (
     <>
-      {/* Standard bottom-dock feather: dissolves scrolled content behind the floating nav */}
-      <BottomDockFeather className="fixed bottom-0 left-0 right-0 h-[110px] z-[38]" />
+      {/* Full-width dissolve only in compact layout where monitoring lives in EdgeNav */}
+      <BottomDockFeather className="lg:hidden fixed bottom-0 left-0 right-0 h-[110px] z-[38]" />
 
       <nav
         data-edge-nav
         data-spatial-zone="dock"
         className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[60] pointer-events-auto flex items-center gap-2 px-3 py-1.5 h-[56px] glass-card border border-[rgba(var(--accent),0.15)] rounded-full shadow-2xl"
       >
+        <BottomDockFeather className="hidden lg:block absolute -inset-x-8 -bottom-3 -top-6 rounded-full" />
         {navItems.map((item) => (
           <Tooltip key={item.label} label={item.label} side="top">
             <NavLink

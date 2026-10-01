@@ -27,12 +27,17 @@ if [ ! -f "$DB_FILE" ]; then
     echo "Warning: Database '$DB_FILE' not found in run directory."
 fi
 
-SESSION_ID="${2:-ses_f0a042890ffewjzCFWe6kq8h27}"
+SESSION_ARG=()
+if [ -n "${2:-}" ]; then
+    SESSION_ARG=(-s "$2")
+    echo "Session ID     : $2 (resuming)"
+else
+    echo "Session ID     : (fresh subagent)"
+fi
 
 echo "================================================================================"
 echo "Launching OpenCode QA Auditor Subagent for Master Synthesis"
 echo "Target Run Dir : $RUN_DIR"
-echo "Session ID     : $SESSION_ID"
 echo "Model          : opencode/space-bunny-free (--variant max)"
 echo "================================================================================"
 
@@ -45,7 +50,7 @@ Your task:
    - Cross-check against the runtime artifacts in case_*/raw_llm_traces.json (request parameters, conversation history, verbatim model outputs).
 3. Check for false positives and false negatives in deduplication, and verify whether any dropped observation truly represents semantic loss.
 4. Author a rigorous, evidence-based Master Evaluation Report saved to $RUN_DIR/master_synthesis_report.md covering cross-case evolution, causal failure breakdowns, threshold sensitivity, and actionable recommendations." \
-  -s "$SESSION_ID" \
+  "${SESSION_ARG[@]}" \
   -m opencode/space-bunny-free \
   --variant max \
   --format json \

@@ -17,11 +17,19 @@ interface ProfilerDrawerContextValue {
   isProfilerOpen: boolean;
 }
 
+const DEFAULT_PROFILER_CONTEXT: ProfilerDrawerContextValue = {
+  openProfiler: () => {},
+  closeProfiler: () => {},
+  isProfilerOpen: false,
+};
+
 const ProfilerDrawerContext = createContext<ProfilerDrawerContextValue | null>(null);
 
 export function useProfilerDrawer(): ProfilerDrawerContextValue {
   const ctx = useContext(ProfilerDrawerContext);
-  if (!ctx) throw new Error("useProfilerDrawer must be used within ProfilerDrawerProvider");
+  if (!ctx) {
+    return DEFAULT_PROFILER_CONTEXT;
+  }
   return ctx;
 }
 

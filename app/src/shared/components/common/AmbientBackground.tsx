@@ -75,9 +75,9 @@ export const AmbientBackground = React.memo(({
     return () => observer.disconnect();
   }, []);
 
-  const blobOpacityMultiplier = isLight ? 4.5 : 2.5;
-  const glowOpacityMultiplier = isLight ? 3.0 : 2.0;
-  const rippleOpacityMultiplier = isLight ? 2.5 : 1.8;
+  const blobOpacityMultiplier = isLight ? 2.5 : 1.5;
+  const glowOpacityMultiplier = isLight ? 1.8 : 1.2;
+  const rippleOpacityMultiplier = isLight ? 1.8 : 1.2;
 
   const blobRefs = React.useRef<(HTMLDivElement | null)[]>([]);
 
@@ -225,11 +225,12 @@ export const AmbientBackground = React.memo(({
       <div ref={rippleRef} className="rp-wrapper">
         {/* Outward layer */}
         <div
+          key={rippleShape}
           className="rp-layer"
         >
           {Array.from({ length: RIPPLE_COUNT }, (_, i) => (
             <div
-              key={`out-${i}`}
+              key={`${rippleShape}-out-${i}`}
               className={rippleShape === "orbit" ? "rp-ring rp-ring-out rp-ring-orbit" : "rp-ring rp-ring-out"}
               style={{
                 animationDelay: `${(i * effectiveRippleDuration) / RIPPLE_COUNT}s`,

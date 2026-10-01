@@ -3,6 +3,7 @@ import {
   Upload,
   Edit3,
   X,
+  RotateCw,
   Sparkles,
   ArrowLeft,
   MessageSquare,
@@ -16,6 +17,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { MEMORY_COPY } from "@/data/memoryCopy";
+import { Tooltip } from "@/shared/ui/Tooltip";
 import type { StagingMode } from "../stagingTypes";
 import type { ObservationFilter } from "@/shared/hooks/useObservationsList";
 
@@ -191,15 +193,16 @@ export const StagingHeader: React.FC<StagingHeaderProps> = memo(
                 )}
               </div>
 
-              <button
-                type="button"
-                onClick={() => onModeChange("idle")}
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-mono border border-[rgba(var(--border),0.18)] bg-[rgba(var(--foreground),0.04)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:border-[rgba(var(--accent),0.3)] transition-colors duration-150 cursor-pointer"
-                title="Return to Staging Mirror"
-              >
-                <X size={12} />
-                <span>Close</span>
-              </button>
+              <Tooltip label="Return to Staging Mirror">
+                <button
+                  type="button"
+                  onClick={() => onModeChange("idle")}
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-mono border border-[rgba(var(--border),0.18)] bg-[rgba(var(--foreground),0.04)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:border-[rgba(var(--accent),0.3)] transition-colors duration-150 cursor-pointer"
+                >
+                  <X size={12} />
+                  <span>Close</span>
+                </button>
+              </Tooltip>
             </div>
           ) : isSuggestionsActive ? (
             /* Bulk selectors only. The primary apply action lives in the review
@@ -225,15 +228,17 @@ export const StagingHeader: React.FC<StagingHeaderProps> = memo(
             </div>
           ) : mode === "comment" ? (
             <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={onRegenerate}
-                disabled={isSaving || commentsCount === 0}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-mono bg-[rgba(var(--accent),0.2)] border border-[rgba(var(--accent),0.4)] text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.3)] transition-colors duration-150 disabled:opacity-40 cursor-pointer shadow-sm"
-              >
-                <Sparkles size={13} className={cn(isSaving && "animate-spin")} />
-                <span>{isSaving ? MEMORY_COPY.regenerating : MEMORY_COPY.regenerate}</span>
-              </button>
+              <Tooltip label="Regenerate profile with applied comments">
+                <button
+                  type="button"
+                  onClick={onRegenerate}
+                  disabled={isSaving || commentsCount === 0}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-mono bg-[rgba(var(--accent),0.2)] border border-[rgba(var(--accent),0.4)] text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.3)] transition-colors duration-150 disabled:opacity-40 cursor-pointer shadow-sm"
+                >
+                  <RotateCw size={13} className={cn(isSaving && "animate-spin")} />
+                  <span>{isSaving ? MEMORY_COPY.regenerating : MEMORY_COPY.regenerate}</span>
+                </button>
+              </Tooltip>
               <button
                 type="button"
                 onClick={() => {

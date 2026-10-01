@@ -1,12 +1,7 @@
-import { useState, useMemo, memo, lazy, Suspense } from "react";
+import { useState, useMemo, memo } from "react";
 import { SETTINGS_PAGE_HELP, type SettingsCardId } from "@/data/helpCopy";
 import { HelpControlCard } from "./HelpControlCard";
 import { cn } from "@/shared/lib/utils";
-import { ErrorBoundary } from "@/shared/components/common";
-
-const HelpPipelineDiagram = lazy(() => import("./HelpPipelineDiagram").then((m) => ({ default: m.HelpPipelineDiagram })));
-const HelpInteractionDiagram = lazy(() => import("./HelpInteractionDiagram").then((m) => ({ default: m.HelpInteractionDiagram })));
-const HelpMemoryKnobsDiagram = lazy(() => import("./HelpMemoryKnobsDiagram").then((m) => ({ default: m.HelpMemoryKnobsDiagram })));
 
 interface SettingsHelpContentProps {
   initialCardId?: SettingsCardId;
@@ -62,7 +57,7 @@ export const SettingsHelpContent = memo(({ initialCardId = "models" }: SettingsH
       <div className="h-px bg-gradient-to-r from-[rgba(var(--accent),0.45)] via-[rgba(var(--accent),0.2)] to-transparent my-0.5" />
 
       {/* ── Main Section Container (Subtle minimal border providing structure) ── */}
-      <div className="rounded-xl border border-[rgba(var(--border),0.14)] bg-[rgba(var(--foreground),0.015)] p-3.5 flex flex-col gap-3.5">
+      <div className="p-3.5 flex flex-col gap-3.5">
         {/* ── Active Category Overview ── */}
         <div className="flex flex-col gap-1">
           <div className="flex items-baseline justify-between gap-2 flex-wrap">
@@ -78,20 +73,6 @@ export const SettingsHelpContent = memo(({ initialCardId = "models" }: SettingsH
             {activeCard.overview}
           </p>
         </div>
-
-        {/* ── Visual Diagrams for Key Categories (Lazy Loaded with internal grey divider) ── */}
-        {(selectedCardId === "models" || selectedCardId === "interaction" || selectedCardId === "memory") && (
-          <>
-            <div className="h-px bg-[rgba(var(--border),0.10)]" />
-            <ErrorBoundary name={`SettingsDiagram:${selectedCardId}`}>
-              <Suspense fallback={null}>
-                {selectedCardId === "models" && <HelpPipelineDiagram />}
-                {selectedCardId === "interaction" && <HelpInteractionDiagram />}
-                {selectedCardId === "memory" && <HelpMemoryKnobsDiagram />}
-              </Suspense>
-            </ErrorBoundary>
-          </>
-        )}
 
         {/* ── Internal Grey Divider before Controls ── */}
         <div className="h-px bg-[rgba(var(--border),0.10)]" />
@@ -122,7 +103,7 @@ export const SettingsHelpContent = memo(({ initialCardId = "models" }: SettingsH
             <div className="border-l-2 border-[rgb(var(--accent))] bg-[rgba(var(--accent),0.04)] pl-3.5 pr-3 py-2 rounded-r-xl flex flex-col gap-1 text-[12px] text-[rgb(var(--foreground-muted))] border-y border-r border-[rgba(var(--border),0.08)]">
               {activeCard.tips.map((tip) => (
                 <p key={tip} className="leading-relaxed">
-                  💡 {tip}
+                  {tip}
                 </p>
               ))}
             </div>

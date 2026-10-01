@@ -18,12 +18,6 @@ interface ModelResidencyTilesProps {
   isLight: boolean;
 }
 
-/**
- * The 3 core-model residency tiles (LLM/STT/TTS residency + loaded state).
- * Moved here from the bottom of LiquidChamber so the chamber keeps only its
- * fluid + counter + edge marks; these tiles now sit above it where the metric
- * carousel used to be.
- */
 export const ModelResidencyTiles = memo<ModelResidencyTilesProps>(({
   latest,
   colors,

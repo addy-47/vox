@@ -5,7 +5,6 @@ import {
   History as HistoryIcon,
   Brain,
   SlidersHorizontal,
-  Activity,
   Key,
 } from "lucide-react";
 import { ErrorBoundary } from "./ErrorBoundary";
@@ -63,14 +62,6 @@ export const HelpPanel = memo(({ onClose: _onClose, initialShortcuts = false }: 
         title: "Settings Guide",
         routeBadge: "/settings",
         icon: SlidersHorizontal,
-      };
-    }
-    if (pathname.startsWith("/monitoring")) {
-      return {
-        id: "monitoring",
-        title: "Monitoring Guide",
-        routeBadge: "/monitoring",
-        icon: Activity,
       };
     }
     return {
@@ -161,7 +152,7 @@ export const HelpPanel = memo(({ onClose: _onClose, initialShortcuts = false }: 
             {pageMeta.id === "history" && <HistoryHelpContent />}
             {pageMeta.id === "memory" && <MemoryHelpContent />}
             {pageMeta.id === "settings" && <SettingsHelpContent />}
-            {(pageMeta.id === "home" || pageMeta.id === "monitoring") && <HomeHelpContent />}
+            {pageMeta.id === "home" && <HomeHelpContent />}
           </Suspense>
         )}
       </div>

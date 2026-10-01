@@ -129,12 +129,14 @@ const NotificationItem = memo(
   ({
     group,
     isWorking,
+    isInitialUnread,
     onPrimary,
     onDismiss,
     onOpen,
   }: {
     group: RolledUpNotification;
     isWorking: boolean;
+    isInitialUnread?: boolean;
     onPrimary: (notif: NotificationRecord) => void;
     onDismiss: (groupKey: string) => void;
     onOpen: (notif: NotificationRecord) => void;
@@ -144,7 +146,7 @@ const NotificationItem = memo(
     const visual = CATEGORY_VISUALS[category] ?? CATEGORY_VISUALS.pipeline;
     const Icon = visual.icon;
     const receipt = isReceipt(notif);
-    const unread = group.hasUnread && !receipt;
+    const unread = (isInitialUnread ?? group.hasUnread) && !receipt;
     const isCritical = notif.severity === "critical";
     const isWarning = notif.severity === "warning";
     const hasSession = notif.session_id !== null && notif.session_id !== undefined;
@@ -354,6 +356,15 @@ export const NotificationPanel = memo(({ onClose }: NotificationPanelProps) => {
   const loading = useNotificationStore((s) => s.loading);
   const error = useNotificationStore((s) => s.error);
   const fetchNotifications = useNotificationStore((s) => s.fetchNotifications);
+
+  // Snapshot unread group keys upon initial mount of the panel so visual styling
+  // remains completely stable without mid-slide flickering when markAllRead resolves.
+  const unreadSnapshotRef = useRef<Set<string> | null>(null);
+  if (!unreadSnapshotRef.current && (tasks.length > 0 || updates.length > 0)) {
+    unreadSnapshotRef.current = new Set(
+      [...tasks, ...updates].filter((n) => n.hasUnread).map((n) => n.key)
+    );
+  }
 
   // Deferred past the 220ms rail slide so the IPC round-trip + store
   // churn never lands inside the open animation's frame budget.
@@ -620,6 +631,7 @@ export const NotificationPanel = memo(({ onClose }: NotificationPanelProps) => {
                     key={item.key}
                     group={item}
                     isWorking={activeActionIds.includes(item.latest.id)}
+                    isInitialUnread={unreadSnapshotRef.current ? unreadSnapshotRef.current.has(item.key) : item.hasUnread}
                     onPrimary={handlePrimary}
                     onDismiss={dismissGroup}
                     onOpen={handleOpen}
