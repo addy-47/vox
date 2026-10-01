@@ -10,14 +10,16 @@ import {
 export type { InteractionState };
 
 import {
-  toMood,
   toStatusLabel,
   isDotActive,
   type AmbientMood,
 } from "@/shared/lib/voiceDisplay";
 
 export type { InteractionMode, DialogueTurn, AmbientMood };
-export { toMood, toStatusLabel, isDotActive };
+/* `toMood` was removed from this barrel: it is defined in voiceDisplay and
+   re-exported here, but nothing imports it — the orb derives mood from the
+   backend event stream, not from a local mapping. */
+export { toStatusLabel, isDotActive };
 
 export function useHomePage() {
   const session = useVoiceSession();
@@ -43,7 +45,6 @@ export function useHomePage() {
     isEngaged,
     isSleeping,
     isPaused,
-    hasCachedSession,
     pttStatus,
     transcript,
     assistantText,
@@ -113,7 +114,6 @@ export function useHomePage() {
     isEngaged,
     isSleeping,
     isPaused,
-    hasCachedSession,
     pttStatus,
     transcript,
     assistantText,

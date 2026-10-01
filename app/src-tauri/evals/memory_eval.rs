@@ -11,15 +11,12 @@
 
 mod common;
 
-use std::{
-    fs,
-    path::PathBuf,
-};
+use std::{fs, path::PathBuf};
 
 use anyhow::{anyhow, Result};
 use clap::Parser;
 use common::{
-    compaction_eval::evaluate_compaction_stage,
+    compaction_eval::{evaluate_compaction_stage, run_compaction_and_persist},
     consolidation_eval::evaluate_consolidation_stage,
     datasets::load_eval_case,
     db::EvalDbGuard,
@@ -27,6 +24,7 @@ use common::{
     llm_client::{create_pipeline_provider, NvidiaJudgeClient, RecordingLlmProvider},
     reporting::{create_case_directory, create_run_directory, generate_run_id},
 };
+use vox_lib::services::memory::ingestion::run_ingestion_cycle;
 
 #[derive(Parser, Debug)]
 #[command(
@@ -50,13 +48,17 @@ struct CliArgs {
     #[arg(long, default_value = "qwen3.5:9b")]
     pipeline_model: String,
 
-    /// Evaluation Judge model slug on NVIDIA NIM
-    #[arg(long, default_value = "nvidia/nemotron-3-super-120b-a12b")]
+    /// Evaluation Judge model slug on OpenRouter / NVIDIA
+    #[arg(long, default_value = "google/gemini-2.5-flash")]
     judge_model: String,
 
-    /// Explicit NVIDIA API key (if omitted, falls back to NVIDIA_API_KEY env or temp/.env)
+    /// Explicit Judge API key (if omitted, falls back to OPENROUTER_API_KEY or NVIDIA_API_KEY in env or temp/.env)
     #[arg(long)]
     judge_key: Option<String>,
+
+    /// Optional path to an existing evaluation database (e.g. from a prior layer 1 run)
+    #[arg(long)]
+    db: Option<PathBuf>,
 
     /// Destination directory for evaluation reports
     #[arg(long)]
@@ -67,11 +69,17 @@ struct CliArgs {
     bench: bool,
 }
 
-/// Resolves the NVIDIA API key from CLI args, environment variables, or `temp/.env`.
-fn resolve_nvidia_api_key(cli_key: Option<&str>) -> Result<String> {
+/// Resolves the Judge API key from CLI args, environment variables, or `temp/.env`.
+fn resolve_judge_api_key(cli_key: Option<&str>) -> Result<String> {
     if let Some(key) = cli_key {
         if !key.trim().is_empty() {
             return Ok(key.trim().to_string());
+        }
+    }
+
+    if let Ok(env_key) = std::env::var("OPENROUTER_API_KEY") {
+        if !env_key.trim().is_empty() {
+            return Ok(env_key.trim().to_string());
         }
     }
 
@@ -90,6 +98,17 @@ fn resolve_nvidia_api_key(cli_key: Option<&str>) -> Result<String> {
     for p in &env_paths {
         if p.exists() {
             if let Ok(content) = fs::read_to_string(p) {
+                // First check OPENROUTER_API_KEY
+                for line in content.lines() {
+                    let trimmed = line.trim();
+                    if trimmed.starts_with("OPENROUTER_API_KEY=") {
+                        let key = trimmed.trim_start_matches("OPENROUTER_API_KEY=").trim();
+                        if !key.is_empty() {
+                            return Ok(key.to_string());
+                        }
+                    }
+                }
+                // Fallback to NVIDIA_API_KEY
                 for line in content.lines() {
                     let trimmed = line.trim();
                     if trimmed.starts_with("NVIDIA_API_KEY=") {
@@ -104,7 +123,7 @@ fn resolve_nvidia_api_key(cli_key: Option<&str>) -> Result<String> {
     }
 
     Err(anyhow!(
-        "NVIDIA API Key not found. Provide --judge-key, set NVIDIA_API_KEY, or populate temp/.env"
+        "Judge API Key not found. Provide --judge-key, set OPENROUTER_API_KEY / NVIDIA_API_KEY, or populate temp/.env"
     ))
 }
 
@@ -122,7 +141,7 @@ async fn main() -> Result<()> {
     println!("  Judge Model      : {}", args.judge_model);
     println!("================================================================================");
 
-    let judge_key = resolve_nvidia_api_key(args.judge_key.as_deref())?;
+    let judge_key = resolve_judge_api_key(args.judge_key.as_deref())?;
     let run_id = generate_run_id();
 
     let base_dir = args
@@ -130,31 +149,59 @@ async fn main() -> Result<()> {
         .unwrap_or_else(|| PathBuf::from("evals/results/memory_eval"));
 
     let run_dir = create_run_directory(&base_dir, &run_id)?;
-    let db_path = run_dir.join("eval_vox.db");
 
-    println!(">>> Initializing isolated evaluation database at {:?}", db_path);
+    let (db_path, is_shared_db) = if let Some(ref custom_db) = args.db {
+        if !custom_db.exists() {
+            return Err(anyhow!(
+                "Provided database file {:?} does not exist",
+                custom_db
+            ));
+        }
+        (custom_db.clone(), true)
+    } else {
+        (run_dir.join("eval_vox.db"), false)
+    };
+
+    println!(
+        ">>> Initializing evaluation database at {:?} (Shared: {})",
+        db_path, is_shared_db
+    );
     let eval_db = EvalDbGuard::new(&db_path).await?;
 
-    println!(">>> Initializing recording pipeline LLM provider ({})", args.pipeline_model);
+    println!(
+        ">>> Initializing recording pipeline LLM provider ({})",
+        args.pipeline_model
+    );
     let raw_provider = create_pipeline_provider(&args.pipeline_url, &args.pipeline_model, None);
     let recording_provider = RecordingLlmProvider::new(raw_provider, args.pipeline_model.clone());
 
-    println!(">>> Initializing NVIDIA Judge client ({})", args.judge_model);
+    println!(
+        ">>> Initializing Judge client ({})",
+        args.judge_model
+    );
     let judge = NvidiaJudgeClient::new(judge_key, args.judge_model.clone());
 
     let target_layer = args.layer.to_lowercase();
     let run_all = target_layer == "full" || target_layer == "all";
 
     for case_idx in 1..=args.cases {
-        println!("\n--------------------------------------------------------------------------------");
+        println!(
+            "\n--------------------------------------------------------------------------------"
+        );
         println!("Evaluating Case {:02} / {:02}...", case_idx, args.cases);
-        println!("--------------------------------------------------------------------------------");
+        println!(
+            "--------------------------------------------------------------------------------"
+        );
 
         let (case_name, turns) = load_eval_case(case_idx)?;
         let case_dir = create_case_directory(&run_dir, case_idx)?;
         let session_id = case_idx as i64 * 1000;
 
-        println!("Loaded case '{}' with {} conversation turns", case_name, turns.len());
+        println!(
+            "Loaded case '{}' with {} conversation turns",
+            case_name,
+            turns.len()
+        );
 
         // Stage 1: Compaction
         if run_all || target_layer == "compaction" {
@@ -177,6 +224,33 @@ async fn main() -> Result<()> {
 
         // Stage 2: Ingestion
         if run_all || target_layer == "ingestion" {
+            // Prerequisite fallback if running standalone ingestion on an empty DB
+            if target_layer == "ingestion" && !is_shared_db {
+                let conn = eval_db.conn()?;
+                let mut check_stmt = conn
+                    .query(
+                        "SELECT COUNT(*) FROM memory_ingestion_queue WHERE status = 'pending'",
+                        (),
+                    )
+                    .await?;
+                let pending_count: i64 = if let Some(row) = check_stmt.next().await? {
+                    row.get(0)?
+                } else {
+                    0
+                };
+                if pending_count == 0 {
+                    println!("    [Prerequisite] Seeding memory_ingestion_queue via unjudged compaction for case '{}'...", case_name);
+                    run_compaction_and_persist(
+                        &eval_db,
+                        session_id,
+                        &case_name,
+                        &turns,
+                        &recording_provider,
+                    )
+                    .await?;
+                }
+            }
+
             println!(">>> Running Ingestion Deduplication Cycle & Ingestion Judge...");
             let ingestion_summary =
                 evaluate_ingestion_stage(&eval_db, &case_name, &judge, &case_dir).await?;
@@ -191,6 +265,31 @@ async fn main() -> Result<()> {
 
         // Stage 3: Consolidation
         if run_all || target_layer == "consolidation" {
+            // Prerequisite fallback if running standalone consolidation on an empty DB
+            if target_layer == "consolidation" && !is_shared_db {
+                let conn = eval_db.conn()?;
+                let mut check_stmt = conn
+                    .query("SELECT COUNT(*) FROM observations WHERE status = 'active' AND type = 'personal'", ())
+                    .await?;
+                let active_count: i64 = if let Some(row) = check_stmt.next().await? {
+                    row.get(0)?
+                } else {
+                    0
+                };
+                if active_count == 0 {
+                    println!("    [Prerequisite] Seeding active observations via unjudged compaction + ingestion for case '{}'...", case_name);
+                    run_compaction_and_persist(
+                        &eval_db,
+                        session_id,
+                        &case_name,
+                        &turns,
+                        &recording_provider,
+                    )
+                    .await?;
+                    run_ingestion_cycle(&conn).await?;
+                }
+            }
+
             println!(">>> Running Personal Memory Consolidation & Consolidation Judge...");
             let consolidation_summary = evaluate_consolidation_stage(
                 &eval_db,
@@ -212,7 +311,10 @@ async fn main() -> Result<()> {
 
         // Flush runtime traces for this case
         recording_provider.flush_case_traces(&case_dir)?;
-        println!(">>> Flushed runtime LLM traces to {:?}", case_dir.join("raw_llm_traces.json"));
+        println!(
+            ">>> Flushed runtime LLM traces to {:?}",
+            case_dir.join("raw_llm_traces.json")
+        );
     }
 
     println!("\n================================================================================");
@@ -221,7 +323,10 @@ async fn main() -> Result<()> {
     println!("Run ID           : {}", run_id);
     println!("Run Directory    : {:?}", run_dir);
     println!("Preserved DB     : {:?}", db_path);
-    println!("Subagent Audit   : Run './evals/audit_run.sh {}' to generate master synthesis report", run_id);
+    println!(
+        "Subagent Audit   : Run './evals/audit_run.sh {}' to generate master synthesis report",
+        run_id
+    );
     println!("================================================================================");
 
     Ok(())

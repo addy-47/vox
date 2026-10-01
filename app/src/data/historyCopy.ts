@@ -51,6 +51,11 @@ export const HISTORY_COPY = {
   sessionTranscript: "Session transcript",
   accessingHistory: "Accessing local voice history",
   loadingConversations: "Loading conversations...",
+  /** Honest loader status. Previously "SYNCHRONIZING ORBIT" — no orbital sync
+   *  is in flight; the data is already local. */
+  loadingSessions: "LOADING SESSIONS",
+  sessionsInWindow: (label: string) => `Sessions (${label})`,
+  allSessionsLabel: "All Sessions",
   clockMemories: "MEMORIES",
   clockMonth: "MONTH",
   clockSessions: "SESSIONS",

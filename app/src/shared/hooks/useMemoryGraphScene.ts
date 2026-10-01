@@ -887,9 +887,30 @@ export function useMemoryGraphScene({
     cameraRef.current = camera;
 
     // 3. Renderer
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    // ── PERF: software-rasteriser gating (same rationale as AdvancedOrb) ──
+    // REVERT: set APPLY_GRAPH_SOFTWARE_GATING = false to restore
+    // antialias:true / dpr:min(dpr,1.5) on all hardware.
+    const APPLY_GRAPH_SOFTWARE_GATING = true;
+    const isGraphSoftwareRaster = (() => {
+      if (!APPLY_GRAPH_SOFTWARE_GATING || typeof document === "undefined") return false;
+      try {
+        const gl = document.createElement("canvas").getContext("webgl");
+        if (!gl) return false;
+        const ext = gl.getExtension("WEBGL_debug_renderer_info");
+        const s = ext ? String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)) : "";
+        gl.getExtension("WEBGL_lose_context")?.loseContext();
+        return /llvmpipe|softpipe|swiftshader|software|basic render/i.test(s);
+      } catch {
+        return false;
+      }
+    })();
+    const renderer = new THREE.WebGLRenderer({
+      antialias: !isGraphSoftwareRaster,
+      alpha: true,
+      powerPreference: isGraphSoftwareRaster ? "low-power" : "high-performance",
+    });
     renderer.setSize(initialWidth, initialHeight);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, isGraphSoftwareRaster ? 1 : 1.5));
     renderer.setClearColor(0x000000, 0);
     container.appendChild(renderer.domElement);
     rendererRef.current = renderer;
@@ -1063,6 +1084,21 @@ export function useMemoryGraphScene({
     let lastActivityTimestamp = performance.now();
     let isSuspended = false;
 
+    // ── PERF: idle settle (B4 — user-signed-off, revertible) ──────────
+    // The graph now stops breathing AND stops rendering after
+    // IDLE_SUSPEND_MS without interaction. Pointermove alone no longer keeps
+    // it awake — only real intent does (drag with buttons held, wheel, touch,
+    // camera change, fly-to, or data change via wakeLoopRef).
+    // Previously the core pulse, wireframe rotation, nucleus pulse and both
+    // rings ran unconditionally for 300ms→4000ms after every interaction, and
+    // any cursor resting on the canvas held the loop at 30 FPS forever.
+    // REVERT: set GRAPH_SETTLES_WHEN_IDLE = false to restore perpetual
+    // breathing + the old 4000ms suspend / 300ms move window.
+    // ─────────────────────────────────────────────────────────────────
+    const GRAPH_SETTLES_WHEN_IDLE = true;
+    const IDLE_SUSPEND_MS = GRAPH_SETTLES_WHEN_IDLE ? 2000 : 4000;
+    const MOVE_WINDOW_MS = GRAPH_SETTLES_WHEN_IDLE ? 150 : 300;
+
     const wakeLoop = () => {
       if (pausedRef.current) return;
       lastActivityTimestamp = performance.now();
@@ -1080,7 +1116,13 @@ export function useMemoryGraphScene({
     controls.addEventListener("change", onControlsChange);
 
     const domEl = renderer.domElement;
-    domEl.addEventListener("pointermove", wakeLoop, { passive: true });
+    // A cursor merely crossing the canvas is not intent — only a drag
+    // (buttons held) re-arms the loop. Wheel/touch/pointerdown below and
+    // camera-change above are always intent.
+    const onPointerMoveWake = (e: PointerEvent) => {
+      if (e.buttons & 1) wakeLoop();
+    };
+    domEl.addEventListener("pointermove", onPointerMoveWake, { passive: true });
     domEl.addEventListener("pointerdown", wakeLoop, { passive: true });
     domEl.addEventListener("wheel", wakeLoop, { passive: true });
     domEl.addEventListener("touchstart", wakeLoop, { passive: true });
@@ -1095,10 +1137,17 @@ export function useMemoryGraphScene({
       }
 
       // Check if actively moving via flyTo lerp or recent control change
-      const isMoving = Boolean(flyToTargetRef.current) || (timestamp - lastActivityTimestamp < 300);
+      const isMoving = Boolean(flyToTargetRef.current) || (timestamp - lastActivityTimestamp < MOVE_WINDOW_MS);
 
-      // Suspend render loop after 4 seconds of inactivity
-      if (!isMoving && (timestamp - lastActivityTimestamp > 4000)) {
+      // Settled = no fly-to and no recent interaction. When settled (and the
+      // settle behaviour is enabled), the breathing core and rings hold still
+      // instead of animating — the visible "graph goes to sleep" state. The
+      // loop itself still runs at 30 FPS until the suspend below fires, then
+      // renders one final frame and stops.
+      const settled = GRAPH_SETTLES_WHEN_IDLE && !isMoving;
+
+      // Suspend render loop after IDLE_SUSPEND_MS of inactivity
+      if (!isMoving && (timestamp - lastActivityTimestamp > IDLE_SUSPEND_MS)) {
         isSuspended = true;
         animFrameRef.current = null;
         controls.update();
@@ -1115,25 +1164,25 @@ export function useMemoryGraphScene({
 
       const time = timestamp * 0.001;
 
-      // Sentient breathing core
-      if (coreMeshRef.current) {
+      // Sentient breathing core — frozen when settled (see above).
+      if (!settled && coreMeshRef.current) {
         const pulse = 1 + 0.035 * Math.sin(time * 2.2);
         coreMeshRef.current.scale.set(pulse, pulse, pulse);
       }
-      if (coreWireMeshRef.current) {
+      if (!settled && coreWireMeshRef.current) {
         coreWireMeshRef.current.rotation.y = time * 0.12;
         coreWireMeshRef.current.rotation.x = time * 0.08;
       }
-      if (coreNucleusMeshRef.current) {
+      if (!settled && coreNucleusMeshRef.current) {
         const nucPulse = 1 + 0.06 * Math.sin(time * 3.0);
         coreNucleusMeshRef.current.scale.set(nucPulse, nucPulse, nucPulse);
       }
 
-      // Smooth harmonic counter-rotating rings
-      if (coreInnerRingRef.current) {
+      // Smooth harmonic counter-rotating rings — frozen when settled.
+      if (!settled && coreInnerRingRef.current) {
         coreInnerRingRef.current.rotation.y = time * 0.22;
       }
-      if (coreOuterRingRef.current) {
+      if (!settled && coreOuterRingRef.current) {
         coreOuterRingRef.current.rotation.y = -time * 0.16;
         coreOuterRingRef.current.rotation.x = Math.sin(time * 0.1) * 0.2;
       }
@@ -1165,7 +1214,7 @@ export function useMemoryGraphScene({
     return () => {
       wakeLoopRef.current = () => {};
       controls.removeEventListener("change", onControlsChange);
-      domEl.removeEventListener("pointermove", wakeLoop);
+      domEl.removeEventListener("pointermove", onPointerMoveWake);
       domEl.removeEventListener("pointerdown", wakeLoop);
       domEl.removeEventListener("wheel", wakeLoop);
       domEl.removeEventListener("touchstart", wakeLoop);

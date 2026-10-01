@@ -1,4 +1,4 @@
-import React, { memo, useCallback, useEffect, useRef } from "react";
+import React, { memo, useCallback } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import type { PersonalMemoryRecord } from "@/services/memoryService";
@@ -19,20 +19,14 @@ export const PersonalMemoryVersionNav: React.FC<PersonalMemoryVersionNavProps> =
     activeVersionRecord,
     displayedRecord,
     onSelectVersion,
-    onCommitActiveVersion,
-    isRestoring = false,
+    // NOTE: `onCommitActiveVersion` is still declared on the props interface but
+    // this component no longer calls it. Browsing is preview-only; promoting a
+    // revision to canonical is an explicit user action (the dossier's Restore
+    // button). Previously a 500ms debounce fired the DB write on *browse*, so a
+    // stray double-click silently rewrote the user's active profile.
+    // REVERT: restore the debounce in navigateToRecord below.
+    onCommitActiveVersion: _onCommitActiveVersion,
   }) => {
-    const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-    // Clean up pending debounce on unmount
-    useEffect(() => {
-      return () => {
-        if (debounceTimerRef.current) {
-          clearTimeout(debounceTimerRef.current);
-        }
-      };
-    }, []);
-
     const currentRecord = displayedRecord ?? activeVersionRecord;
     const currentVersion = currentRecord?.version ?? 1;
 
@@ -41,49 +35,37 @@ export const PersonalMemoryVersionNav: React.FC<PersonalMemoryVersionNavProps> =
     const hasOlder = currentIndex >= 0 && currentIndex < versions.length - 1;
     const hasNewer = currentIndex > 0;
 
+    // Preview only. No IPC, no debounce, no write.
     const navigateToRecord = useCallback(
       (targetRecord: PersonalMemoryRecord) => {
-        // 1. Immediately preview the target version content
         onSelectVersion(targetRecord);
-
-        // 2. Clear existing debounce timer
-        if (debounceTimerRef.current) {
-          clearTimeout(debounceTimerRef.current);
-        }
-
-        // 3. Debounce setting active version directly after 500ms
-        debounceTimerRef.current = setTimeout(() => {
-          onCommitActiveVersion(targetRecord.version).catch((e) => {
-            console.error("[PersonalMemoryVersionNav] Failed to set active version:", e);
-          });
-        }, 500);
       },
-      [onSelectVersion, onCommitActiveVersion]
+      [onSelectVersion]
     );
 
     const handleOlder = useCallback(() => {
-      if (hasOlder && !isRestoring) {
+      if (hasOlder) {
         navigateToRecord(versions[currentIndex + 1]);
       }
-    }, [hasOlder, isRestoring, versions, currentIndex, navigateToRecord]);
+    }, [hasOlder, versions, currentIndex, navigateToRecord]);
 
     const handleNewer = useCallback(() => {
-      if (hasNewer && !isRestoring) {
+      if (hasNewer) {
         navigateToRecord(versions[currentIndex - 1]);
       }
-    }, [hasNewer, isRestoring, versions, currentIndex, navigateToRecord]);
+    }, [hasNewer, versions, currentIndex, navigateToRecord]);
 
     return (
       <div className="flex items-center gap-1.5 text-[12px] font-mono text-[rgb(var(--foreground-muted))] select-none">
         <button
           type="button"
           onClick={handleOlder}
-          disabled={!hasOlder || isRestoring}
+          disabled={!hasOlder}
           aria-label={MEMORY_COPY.versions.prevVersion}
           title={MEMORY_COPY.versions.prevVersion}
           className={cn(
             "p-1 rounded text-[rgb(var(--foreground-muted))] transition-colors",
-            hasOlder && !isRestoring
+            hasOlder
               ? "hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.06)] cursor-pointer"
               : "opacity-30 cursor-not-allowed"
           )}
@@ -96,12 +78,12 @@ export const PersonalMemoryVersionNav: React.FC<PersonalMemoryVersionNavProps> =
         <button
           type="button"
           onClick={handleNewer}
-          disabled={!hasNewer || isRestoring}
+          disabled={!hasNewer}
           aria-label={MEMORY_COPY.versions.nextVersion}
           title={MEMORY_COPY.versions.nextVersion}
           className={cn(
             "p-1 rounded text-[rgb(var(--foreground-muted))] transition-colors",
-            hasNewer && !isRestoring
+            hasNewer
               ? "hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.06)] cursor-pointer"
               : "opacity-30 cursor-not-allowed"
           )}

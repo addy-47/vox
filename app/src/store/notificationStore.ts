@@ -23,6 +23,9 @@ interface NotificationStoreState {
   notifications: NotificationRecord[];
   activeActionIds: string[];
   loading: boolean;
+  /** Populated when a fetch rejects. Never conflated with "no notifications" —
+   *  notifications are where pipeline failures are reported. */
+  error: string | null;
   fetchNotifications: () => Promise<void>;
   markAllRead: (filter?: NotificationFilter) => Promise<void>;
   dismissGroup: (groupKey: string) => Promise<void>;
@@ -36,15 +39,19 @@ export const useNotificationStore = create<NotificationStoreState>((set, get) =>
   notifications: [],
   activeActionIds: [],
   loading: false,
+  error: null,
 
   fetchNotifications: async () => {
     try {
-      set({ loading: true });
+      set({ loading: true, error: null });
       const records = await getNotifications();
-      set({ notifications: records, loading: false });
+      set({ notifications: records, loading: false, error: null });
     } catch (e) {
+      // Previously this left the array untouched and the panel rendered the
+      // "all caught up" empty state — a confident lie exactly when the backend
+      // was unhealthy.
       logError("Failed to fetch notifications", e);
-      set({ loading: false });
+      set({ loading: false, error: String(e) });
     }
   },
 

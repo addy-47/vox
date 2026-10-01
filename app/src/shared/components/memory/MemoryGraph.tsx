@@ -1,5 +1,6 @@
 import React, {
   useCallback,
+  useMemo,
   useRef,
   useImperativeHandle,
   forwardRef,
@@ -56,7 +57,7 @@ class GraphErrorBoundary extends Component<GraphErrorBoundaryProps, GraphErrorBo
     if (this.state.hasError) {
       return (
         <div className="w-full h-full flex items-center justify-center p-6">
-          <div className="glass-card max-w-sm w-full p-6 text-center space-y-4 rounded-2xl border border-[rgba(var(--accent),0.12)] bg-[rgb(var(--card))]/85 backdrop-blur-[20px] shadow-2xl">
+          <div className="glass-card max-w-sm w-full p-6 text-center space-y-4 rounded-2xl border border-[rgba(var(--accent),0.12)] bg-[rgb(var(--card))]/85 backdrop-blur-xl shadow-2xl">
             <div className="mx-auto w-12 h-12 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center justify-center text-red-400">
               <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <circle cx="12" cy="12" r="10" />
@@ -161,6 +162,19 @@ export const MemoryGraph = memo(
         flyToNode,
       }));
 
+      // Screen-reader summary of the WebGL surface. The canvas itself is not
+      // keyboard-interactive (by design — picking would fight OrbitControls),
+      // but the details drawer it opens IS reachable via Shift+Up, and every
+      // fact is also listed in the session rail. This label keeps the canvas
+      // from being a silent hole in the accessibility tree.
+      const graphAriaLabel = useMemo(() => {
+        if (facts.length === 0) return "Memory graph: no memories loaded yet.";
+        const counts = new Map<string, number>();
+        for (const f of facts) counts.set(f.fact_type, (counts.get(f.fact_type) ?? 0) + 1);
+        const parts = [...counts.entries()].map(([t, n]) => `${n} ${t}`);
+        return `Memory graph: ${facts.length} memories (${parts.join(", ")}). Open details with Shift+Up.`;
+      }, [facts]);
+
       // Raycaster + Proximity Picking on Node or Core Click
       const handlePointerDown = useCallback(
         (e: React.PointerEvent<HTMLDivElement>) => {
@@ -254,6 +268,8 @@ export const MemoryGraph = memo(
           <div
             ref={canvasContainerRef}
             onPointerDown={handlePointerDown}
+            role="img"
+            aria-label={graphAriaLabel}
             className={cn(
               "relative w-full h-full select-none transition-cursor",
               selectModeEnabled

@@ -98,8 +98,9 @@ export const ActiveSessionHeader: React.FC<ActiveSessionHeaderProps> = ({
         return;
       }
 
-      // 60ms delay to ensure asynchronous SQLite worker commit finishes
-      await new Promise((resolve) => setTimeout(resolve, 60));
+      // NOTE: no artificial delay here. sessions_changed is coalesced with a
+      // 250ms trailing edge in eventsService, which already covers the SQLite
+      // worker commit lag the old 60ms sleep was waiting out.
       if (!isMounted) return;
 
       try {

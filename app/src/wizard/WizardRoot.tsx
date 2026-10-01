@@ -100,7 +100,7 @@ export const WizardRoot: React.FC = () => {
 
   return (
     <div className="flex flex-col h-screen w-full bg-[rgb(var(--background))] text-[rgb(var(--foreground))] overflow-hidden font-sans selection:bg-[rgb(var(--accent))]/30">
-      <AmbientBackground />
+      <AmbientBackground instanceId="wizard" />
       <TitleBar />
       <div className="flex-1 flex relative overflow-hidden">
         {/* Sidebar Navigation */}

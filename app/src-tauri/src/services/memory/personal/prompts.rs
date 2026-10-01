@@ -32,7 +32,7 @@ Output only the raw JSON object. No Markdown, no bullets, no code fences, no pre
 2. Each block is a semantic unit: 1 to 3 sentences expressing a coherent, complete idea with relevant context. Write natural prose; never write bullet points or fragmented phrases.
 3. Emergent taxonomy: Choose section titles that genuinely reflect the user's specific context. Avoid generic or empty catch-all buckets.
 4. Eliminate duplication and redundancy: If observations express overlapping or repeated information, synthesize them into one definitive block.
-5. Absolute fidelity: Retain all factual information present in the input. Never invent, extrapolate, or embellish facts that are not grounded in the observations.
+5. Absolute fidelity & Zero Extrapolation: Retain all factual information present in the input. NEVER invent, extrapolate, or embellish facts, motives, or rationale. Do NOT infer unstated goals, architecture motivations, or domain significance (e.g. if the input states the user works on ownership in Rust, state only that fact; do NOT extrapolate that it 'reflects a focus on robust architecture' or 'resource lifetimes'). Every detail in every block MUST be directly grounded in the text of the provided observations.
 6. Non-empty and unique: Every section must contain at least one block, and every section title must be distinctive and non-empty. Never emit two sections with the same title.
 </rules>"###;
 
@@ -78,7 +78,7 @@ Output only the raw JSON object. No Markdown, no bullets, no code fences, no pre
 3. CRITICAL — Handle fidelity: The `creates` array accepts ONLY section handles that appear in the `<memory_view>` above (e.g. `s1`, `s2` … up to the last section listed). NEVER invent a handle like `s5` when only `s1`–`s4` exist — if the observation belongs to a new topic, use `new_sections` instead.
 4. Synthesize into prose: Each block must express a coherent, complete idea in 1 to 3 sentences of natural prose. Never emit bullet points or fragmented notes.
 5. Splitting blocks: If an existing block must split into two independent ideas, emit an update for the existing block plus a create for the new block into that section.
-6. Absolute fidelity: Do NOT invent observations that are not present in the new observations list.
+6. Absolute fidelity & Zero Extrapolation: Retain all factual information present in the input. NEVER invent, extrapolate, or embellish facts, motives, or rationale. Do NOT infer unstated goals, architecture motivations, or domain significance. Every statement proposed must be strictly grounded in the new observations.
 7. Empty arrays are valid and preferred when an operation type is not needed (e.g. "deletes": []).
 </rules>"###;
 
@@ -127,37 +127,6 @@ Output only the raw JSON object. No Markdown, no bullets, no code fences, no pre
 6. Empty arrays are valid and preferred when an operation type is not needed.
 </rules>"###;
 
-/// Regeneration: full reorganization and elevated synthesis of the existing semantic memory.
-pub(super) const PERSONAL_REGENERATION_SYSTEM_PROMPT: &str = r###"<role>
-You are an expert personal memory synthesis engine for an AI assistant.
-You receive the user's existing Personal Memory as handle-labelled sections and blocks.
-Your task is to re-synthesize and elevate the memory into a complete, better-organized replacement structure.
-</role>
-
-<output_format>
-A single JSON object with a "sections" array:
-{
-  "sections": [
-    {
-      "title": "...",
-      "blocks": [
-        "...",
-        "..."
-      ]
-    }
-  ]
-}
-Output only the raw JSON object. No Markdown, no bullets, no code fences, no preamble.
-</output_format>
-
-<rules>
-1. Full preservation: Preserve all information present in the current memory. This is a synthesis and reorganization pass; no factual knowledge may be discarded.
-2. Deep consolidation: Merge fragmented blocks that belong to the same topic into cohesive 1 to 3 sentence prose units. Eliminate redundancies, repetition, and awkward phrasing.
-3. Improve taxonomy: Merge overlapping sections, split sections that cover distinct themes, and assign descriptive, precise section titles.
-4. Absolute fidelity: Do NOT invent new facts. Every statement must be grounded in the existing memory.
-5. All IDs will be fresh: There is no need to reference handles; you are emitting the clean, canonical target structure.
-6. Non-empty and unique: Every section must have at least one block, and titles must be unique and non-empty.
-</rules>"###;
 
 /// Whole-memory schema for cold generation and full regeneration passes.
 pub fn whole_memory_json_schema() -> serde_json::Value {

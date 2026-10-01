@@ -1,12 +1,9 @@
-use std::{
-    sync::{
-        atomic::{AtomicBool, AtomicU64},
-        Arc,
-    },
-    time::Duration,
+use std::sync::{
+    atomic::{AtomicBool, AtomicU64},
+    Arc,
 };
 
-use crate::core::state::{AppState, InteractionState};
+use crate::core::state::AppState;
 
 /// Shared runtime state for the memory subsystem.
 pub struct MemoryAppState {
@@ -38,7 +35,10 @@ pub mod personal;
 pub mod scheduler;
 
 pub use compaction::{run_compaction, CompactionResult, COMPACTION_SYSTEM_PROMPT};
-pub use ingestion::QueueStatus;
+pub use ingestion::{
+    drain_ingestion_queue, reconcile_crashed_queue_on_boot, run_ingestion_cycle, IngestionCycleSummary,
+    QueueStatus,
+};
 pub(crate) use ml::trim_heap;
 pub use ml::{
     embedder::{
@@ -56,88 +56,59 @@ pub use scheduler::{
     check_missed_consolidation_on_boot, spawn_consolidation_scheduler,
     start_consolidation_scheduler, stop_consolidation_scheduler,
 };
-
 pub use crate::{core::error::MemoryError, persistence::has_unfinished_items};
 
-pub const QUIET_INGESTION_DEBOUNCE_SECS: u64 = 30;
 pub const COMPACTION_SENTINEL_TURN_ID: u32 = 999_999;
 
-fn is_quiet_state(state: InteractionState) -> bool {
-    matches!(
-        state,
-        InteractionState::Idle
-            | InteractionState::Ready
-            | InteractionState::Paused
-            | InteractionState::Sleeping
-    )
-}
+/// Spawns a background task that executes an ingestion sweep draining all pending/unfinished
+/// items in `memory_ingestion_queue` if pipeline processing is enabled.
+/// Registers the cancellation token in `state.ingestion_cancel` so that active sessions can abort it immediately.
+pub fn spawn_ingestion_sweep(
+    state: Arc<AppState>,
+    cancel_token: Option<tokio_util::sync::CancellationToken>,
+) {
+    let is_enabled = state
+        .settings
+        .read()
+        .map(|s| s.personal_memory.pipeline_processing_enabled)
+        .unwrap_or(true);
 
-/// Spawns a background observer task that watches for sustained 30-second quiet periods in {Idle, Ready, Paused, Sleeping}
-/// and executes an ingestion deduplication cycle on the database when pending items exist and pipeline processing is enabled.
-pub fn spawn_quiet_ingestion_observer(state: Arc<AppState>) {
+    if !is_enabled {
+        log::debug!("[Memory::Ingestion] Ingestion sweep skipped: pipeline_processing_enabled is false");
+        return;
+    }
+
+    let token = cancel_token.unwrap_or_default();
+    *state.ingestion_cancel.lock() = Some(token.clone());
+
+    let db = state.db.clone();
+    let state_arc = Arc::clone(&state);
+
     tauri::async_runtime::spawn(async move {
-        let mut state_rx = state.pipeline.state_rx.clone();
-        let db = state.db.clone();
-        log::info!("[Memory::Ingestion] Quiet idle observer spawned.");
+        let conn = match db.connect() {
+            Ok(c) => c,
+            Err(e) => {
+                log::warn!("[Memory::Ingestion] Failed to vend connection for sweep: {}", e);
+                *state_arc.ingestion_cancel.lock() = None;
+                return;
+            }
+        };
 
-        loop {
-            let current = *state_rx.borrow_and_update();
-            let is_enabled = state
-                .settings
-                .read()
-                .map(|s| s.personal_memory.pipeline_processing_enabled)
-                .unwrap_or(true);
-
-            if is_enabled && is_quiet_state(current) {
-                tokio::select! {
-                    _ = tokio::time::sleep(Duration::from_secs(QUIET_INGESTION_DEBOUNCE_SECS)) => {
-                        let latest = state.pipeline.state();
-                        let still_enabled = state
-                            .settings
-                            .read()
-                            .map(|s| s.personal_memory.pipeline_processing_enabled)
-                            .unwrap_or(true);
-
-                        if still_enabled && is_quiet_state(latest) {
-                            match db.connect() {
-                                Ok(conn) => {
-                                    match has_unfinished_items(&conn).await {
-                                        Ok(true) => {
-                                            log::info!("[Memory::Ingestion] 30s sustained quiet state reached. Running ingestion deduplication cycle.");
-                                            if let Err(e) = ingestion::run_ingestion_cycle(&conn).await {
-                                                log::warn!("[Memory::Ingestion] Background ingestion cycle error: {}", e);
-                                            }
-                                        }
-                                        Ok(false) => {
-                                            // Queue is quiescent; no deduplication needed.
-                                        }
-                                        Err(e) => {
-                                            log::warn!("[Memory::Ingestion] Failed to check queue status: {}", e);
-                                        }
-                                    }
-                                }
-                                Err(e) => {
-                                    log::warn!("[Memory::Ingestion] Failed to vend connection for ingestion: {}", e);
-                                }
-                            }
-                        }
-                    }
-                    res = state_rx.changed() => {
-                        if res.is_err() {
-                            break;
-                        }
-                    }
-                }
-            } else {
-                tokio::select! {
-                    res = state_rx.changed() => {
-                        if res.is_err() {
-                            break;
-                        }
-                    }
-                    _ = tokio::time::sleep(Duration::from_secs(10)) => {}
+        match has_unfinished_items(&conn).await {
+            Ok(true) => {
+                log::info!("[Memory::Ingestion] Unfinished queue items found; starting ingestion sweep.");
+                if let Err(e) = ingestion::drain_ingestion_queue(&conn, Some(&token)).await {
+                    log::warn!("[Memory::Ingestion] Ingestion sweep error: {}", e);
                 }
             }
+            Ok(false) => {
+                log::debug!("[Memory::Ingestion] Queue is quiescent; no sweep needed.");
+            }
+            Err(e) => {
+                log::warn!("[Memory::Ingestion] Failed to check queue status: {}", e);
+            }
         }
+
+        *state_arc.ingestion_cancel.lock() = None;
     });
 }

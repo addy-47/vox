@@ -82,6 +82,15 @@ export const History: React.FC = () => {
     setDisplayMode(isOrbitViewport ? "orbit" : "list");
   }, [isOrbitViewport, setDisplayMode]);
 
+  // Shared orbit-stage element (carousel + hub). Only one of the month/day
+  // stages mounts at a time, so a single callback ref covers both. Passed to
+  // OrbitCarousel as blurTargetRef so no-blur lands where the backdrop-filters
+  // actually live (the hub), not the filter-free card layer.
+  const orbitStageRef = React.useRef<HTMLElement | null>(null);
+  const setOrbitStageRef = React.useCallback((el: HTMLElement | null) => {
+    orbitStageRef.current = el;
+  }, []);
+
   // Unified toggle selection: click a session to open its detail; re-click the
   // same session (or Escape / backdrop / close) to dismiss it.
   const handleSelectSession = React.useCallback(
@@ -121,22 +130,17 @@ export const History: React.FC = () => {
 
       if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
         if (!isOrbitViewport || currentWindowSessions.length === 0) return;
+        // Never navigate away from an open transcript: the ring is already
+        // paused while a session is open, so the arrows had no purpose there
+        // and a stray keypress destroyed reading position with no way back.
+        if (selectedSession) return;
         e.preventDefault();
         e.stopPropagation();
 
-        const currentId = selectedSession?.id;
-        const currentIndex = currentWindowSessions.findIndex((s) => s.id === currentId);
-
-        let nextIndex: number;
-        if (currentIndex === -1) {
-          nextIndex = e.key === "ArrowRight" ? 0 : currentWindowSessions.length - 1;
-        } else {
-          nextIndex =
-            e.key === "ArrowRight"
-              ? (currentIndex + 1) % currentWindowSessions.length
-              : (currentIndex - 1 + currentWindowSessions.length) % currentWindowSessions.length;
-        }
-
+        // No session is open here (guarded above), so there is no reading
+        // position to move from: pick the first or last card in the window.
+        const nextIndex =
+          e.key === "ArrowRight" ? 0 : currentWindowSessions.length - 1;
         setSelectedSession(currentWindowSessions[nextIndex]);
       }
     };
@@ -269,6 +273,7 @@ export const History: React.FC = () => {
           {effectiveView === "month" && isOrbitViewport ? (
             // ── Month View (Calendar Orbit) — Exactly vertically centered matching Home.tsx Orb ──
             <div
+              ref={setOrbitStageRef}
               className="absolute left-1/2 flex items-center justify-center z-20"
               style={{
                 top: "calc(50% - 36px)",
@@ -284,6 +289,7 @@ export const History: React.FC = () => {
                 paused={Boolean(selectedSession) || isProfilerOpen || isPanelOpen("help") || isPanelOpen("notifications")}
                 onDragStateChange={handleDragState}
                 renderNode={renderMonthNode}
+                blurTargetRef={orbitStageRef}
               />
 
               <CentralClockNode
@@ -311,6 +317,7 @@ export const History: React.FC = () => {
           ) : isOrbitViewport ? (
             // ── Day View — Exactly vertically centered matching Home.tsx Orb ──
             <div
+              ref={setOrbitStageRef}
               className="absolute left-1/2 flex items-center justify-center z-20"
               style={{
                 top: "calc(50% - 36px)",
@@ -326,6 +333,7 @@ export const History: React.FC = () => {
                 paused={Boolean(selectedSession) || isProfilerOpen || isPanelOpen("help") || isPanelOpen("notifications")}
                 onDragStateChange={handleDragState}
                 renderNode={renderDayNode}
+                blurTargetRef={orbitStageRef}
               />
 
               <CentralClockNode
@@ -336,7 +344,7 @@ export const History: React.FC = () => {
                 secondaryLabel={formatDayYearLabel(currentGroup.dayKey)}
                 dayHeroParts={formatDayHeroParts(currentGroup.dayKey)}
                 dateSpanLabel={currentWindow?.dateSpanLabel}
-                weekdayLabel={currentWindow?.dateSpanLabel ? "RECENT SESSIONS" : formatWeekdayLabel(currentGroup.dayKey)}
+                weekdayLabel={formatWeekdayLabel(currentGroup.dayKey)}
                 metaLabel={dayMetaLabel}
                 sessionsCount={currentWindowSessions.length}
                 memoriesCount={dayTurnsCount}
@@ -352,7 +360,11 @@ export const History: React.FC = () => {
           ) : (
             // ── Mobile Responsive Fallback List: Full scrollable session history ──
             <HistoryListView
-              dayLabel={currentWindow?.dateSpanLabel ? `Sessions (${currentWindow.dateSpanLabel})` : "All Sessions"}
+              dayLabel={
+                currentWindow?.dateSpanLabel
+                  ? HISTORY_COPY.sessionsInWindow(currentWindow.dateSpanLabel)
+                  : HISTORY_COPY.allSessionsLabel
+              }
               sessions={sessions}
               selectedSession={selectedSession}
               confirmDeleteId={confirmDeleteId}
@@ -377,7 +389,7 @@ export const History: React.FC = () => {
               size="md"
               title={HISTORY_COPY.loadingConversations}
               subtitle={HISTORY_COPY.accessingHistory}
-              statusText="SYNCHRONIZING ORBIT"
+              statusText={HISTORY_COPY.loadingSessions}
             />
           </motion.div>
         )}

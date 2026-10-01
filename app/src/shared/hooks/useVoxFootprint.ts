@@ -23,5 +23,10 @@ export function useVoxFootprint(): VoxFootprint {
   if (!snap) {
     return { voxCpu: 0, voxRam: 0, isReady: false };
   }
-  return { voxCpu: snap.vox_cpu_usage, voxRam: snap.vox_ram_mb, isReady: true };
+  // Coerce to finite numbers: a snapshot that omits these fields (stubbed IPC,
+  // older backend) previously produced NaN, and `NaN.toFixed(1)` threw inside
+  // the shell render — blanking the whole app.
+  const voxCpu = Number.isFinite(snap.vox_cpu_usage) ? snap.vox_cpu_usage : 0;
+  const voxRam = Number.isFinite(snap.vox_ram_mb) ? snap.vox_ram_mb : 0;
+  return { voxCpu, voxRam, isReady: true };
 }

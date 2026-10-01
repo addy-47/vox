@@ -15,7 +15,9 @@ export const useVisibility = () => {
   const appearTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isHoveredRef = useRef(false);
   const stateRef = useRef<VisibilityState>('HIDDEN');
-  stateRef.current = state;
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
 
   const setIsHoveredWithRef = useCallback((hovered: boolean) => {
     isHoveredRef.current = hovered;

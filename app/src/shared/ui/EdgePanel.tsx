@@ -4,6 +4,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { cn } from "@/shared/lib/utils";
 import { useOverlay } from "@/shared/hooks/useOverlay";
 import { Tooltip } from "@/shared/ui/Tooltip";
+import { LAYOUT_COPY } from "@/data/layoutCopy";
 
 export interface EdgePanelProps {
   side: "left" | "right";
@@ -82,8 +83,11 @@ const EdgePanelInner = memo(
         }, 60);
         cleanup = () => { if (focusTimerRef.current) clearTimeout(focusTimerRef.current); };
       } else if (focusedBeforeRef.current) {
-        try { focusedBeforeRef.current.focus(); } catch {}
+        const prev = focusedBeforeRef.current;
         focusedBeforeRef.current = null;
+        try {
+          if (document.contains(prev)) prev.focus({ preventScroll: true });
+        } catch {}
       }
       return cleanup;
     }, [open]);
@@ -104,14 +108,14 @@ const EdgePanelInner = memo(
           <motion.aside
             ref={panelRef}
             role="dialog"
-            aria-label={title || "Panel"}
+            aria-label={title || LAYOUT_COPY.panel.fallback}
             data-edge-panel={side}
             initial={{ opacity: 0, x: isLeft ? "-100%" : "100%" }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: isLeft ? "-100%" : "100%" }}
             transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
             className={cn(
-              "absolute top-0 bottom-0 z-[35] flex flex-col bg-[rgb(var(--card))]/90 backdrop-blur-md overflow-hidden pointer-events-auto select-auto border-[rgba(var(--border),0.06)] transform-gpu will-change-transform contain-paint",
+              "absolute top-0 bottom-0 z-[35] flex flex-col bg-[rgb(var(--card))]/90 backdrop-blur-md overflow-hidden pointer-events-auto select-auto border-[rgba(var(--border),0.06)] transform-gpu will-change-transform",
               isLeft ? "left-0 border-r" : "right-0 border-l",
               "w-[330px] max-w-[92vw]",
               className
@@ -123,11 +127,11 @@ const EdgePanelInner = memo(
                  When panel is RIGHT: close button on the LEFT (standard convention). */
               <div className={`flex items-center px-5 pt-4 pb-2 h-14 shrink-0 ${isLeft ? "flex-row-reverse" : ""}`}>
                 <div className="flex items-center gap-1.5 shrink-0">
-                  <Tooltip label="Close" side={isLeft ? "left" : "right"}>
+                  <Tooltip label={LAYOUT_COPY.panel.close} side={isLeft ? "left" : "right"}>
                     <button
                       onClick={onClose}
                       className="flex items-center justify-center w-8 h-8 rounded-lg text-[rgb(var(--foreground-muted))]/70 hover:bg-[rgba(var(--foreground),0.06)] hover:text-[rgb(var(--foreground))] transition-colors cursor-pointer"
-                      aria-label="Close panel"
+                      aria-label={LAYOUT_COPY.panel.close}
                     >
                       <X size={16} />
                     </button>
@@ -145,11 +149,11 @@ const EdgePanelInner = memo(
                 )}
                 <div className="flex items-center gap-1 shrink-0 ml-auto">
                   {headerActions}
-                  <Tooltip label="Close" side="bottom">
+                  <Tooltip label={LAYOUT_COPY.panel.close} side="bottom">
                     <button
                       onClick={onClose}
                       className="flex items-center justify-center w-7 h-7 rounded-lg text-[rgb(var(--foreground-muted))] hover:bg-[rgba(var(--foreground),0.06)] hover:text-[rgb(var(--foreground))] transition-colors cursor-pointer"
-                      aria-label="Close panel"
+                      aria-label={LAYOUT_COPY.panel.close}
                     >
                       <X size={15} />
                     </button>

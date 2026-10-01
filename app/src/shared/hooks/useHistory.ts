@@ -4,6 +4,7 @@ import {
   getTurns,
   deleteSession,
   formatDateTime,
+  sortSessionsNewestFirst,
   type SessionRow,
   type TurnRow,
 } from "@/services/historyService";
@@ -99,7 +100,9 @@ export function useHistory() {
     setError(null);
     try {
       const data = await getSessions();
-      setSessions(data.sort((a, b) => b.created_at - a.created_at));
+      // Same ordering as every other session list (Home, Memory rail):
+      // pinned first, then by last activity — not bare created_at.
+      setSessions(sortSessionsNewestFirst(data));
     } catch (e: unknown) {
       console.error("Failed to fetch sessions:", e);
       setError(getErrorMessage(e, HISTORY_COPY.failedFallback));

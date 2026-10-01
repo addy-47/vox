@@ -39,14 +39,15 @@ The complete JSON object becomes the session's working context after the raw tur
 - "personal": Explicit user identity, durable background, habits, goals, or preferences.
 - "objective": The mission or topic being addressed, including a request for information or suggestions.
 - "workdone": Only completed, explicitly supported progress, decisions, or answers.
-- "blocker": Something unresolved, missing, waiting for clarification, or preventing progress.
-- "next_step": A concrete future action, intention, commitment, or scheduled follow-up.
+- "blocker": Something currently unresolved, missing, waiting for clarification, or actively preventing progress.
+- "next_step": A concrete future action, intention, commitment, or scheduled follow-up not yet completed.
 - "pitfall": A user correction, failed approach, or constraint explicitly recorded in the dialogue.
 </definitions>
 
 <precision_rules>
 - Use concise third-person declarative statements without conversational filler.
 - Deduplicate repeated statements while preserving distinct supported facts.
+- Temporal Resolution & Recency: Only extract blockers and next steps that remain UNRESOLVED at the conclusion of the session. If an obstacle, bug, or question was encountered earlier but subsequently solved, answered, or fixed in a later turn, do NOT record it as an active blocker or next_step; record the resolved progress under "workdone" only.
 - Prefer an empty array over an uncertain or weakly supported claim.
 - Do not invent details, completion status, preferences, locations, identities, or external side effects.
 - If <prior_summary> is present, update it incrementally without duplicating unchanged facts.

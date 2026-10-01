@@ -158,6 +158,7 @@ pub struct AppState {
     pub restart_runner: Arc<AtomicBool>,
     pub worker_warmup_claimed: Arc<AtomicBool>,
     pub restart_in_flight: Arc<AtomicBool>,
+    pub ingestion_cancel: Arc<ParkingMutex<Option<tokio_util::sync::CancellationToken>>>,
 }
 
 impl AppState {
@@ -209,6 +210,7 @@ impl AppState {
             restart_runner: Arc::new(AtomicBool::new(false)),
             worker_warmup_claimed: Arc::new(AtomicBool::new(false)),
             restart_in_flight: Arc::new(AtomicBool::new(false)),
+            ingestion_cancel: Arc::new(ParkingMutex::new(None)),
         }
     }
 

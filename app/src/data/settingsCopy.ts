@@ -281,6 +281,7 @@ export const PERSONA_COPY = {
   realtimePlaceholder: "Realtime instruction prompt...",
   realtimeFooterHint: "Instructions supplied to duplex cloud speech-to-speech models (e.g. Gemini Live).",
   emptyPrompt: "No instructions defined. Switch to Edit to write prompt directives.",
+  tagsProtectedHint: "That edit touches protected system tags, so it wasn't saved.",
 };
 
 export const INTERACTION_CONFIG_DESK_COPY = {

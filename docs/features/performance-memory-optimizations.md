@@ -19,9 +19,34 @@
 
 Both are destroyed (`.close()`) when their owning feature is inactive:
 - Tray HUD destroyed when `dictation.enabled == false` or `output_mode != Tray`.
-- Wizard closed after setup completion.
+- Wizard destroyed after setup completion (`destroy()`, not `close()` — see note).
 
-**Impact**: ~490MB RAM saved on cold boot.
+**Anti-pattern recorded 2026-10-01:** an attempt was made to disable `backdrop-filter` across an entire
+drawer/panel subtree during its slide-in via a `.no-blur-subtree, .no-blur-subtree * { backdrop-filter: none !important }`
+rule. This was reverted. The `*` descendant selector forces a style invalidation plus re-raster of every
+blurred descendant on both toggle and untoggle, which on llvmpipe cost more than the blur it saved and produced
+a visible "blur snaps on a second later" artefact on every drawer open. **Do not suppress backdrop-filter by
+descendant selector.** If a blurred element is too expensive to move, stop moving it — promote the moving
+element instead.
+
+**Notes added 2026-10-01:**
+- The wizard was **not** actually torn down before this date. `complete_setup_wizard`
+  only ever touched the `main` webview; a 900x650 "Setup Complete" window stayed
+  mapped and its WebKit allocation (`wizard_webview_ram_mb` in
+  `get_profiler_snapshot`) was never returned. It now calls `destroy()` ~750ms
+  after `main` is focused, which releases the webview process rather than only
+  hiding the surface.
+- The setup flow also **double-mounted**: `main` is configured `visible: true`
+  and routed its own `setupCompleted === false` into `<WizardRoot />` while the
+  dedicated `wizard` webview mounted it again. Both copies ran the full app boot
+  (`MemoryProfilerProvider`, `VoiceSessionProvider` = 6 pipeline listeners + 3 IPC
+  calls, `initSpatialNavigation()` = 4 window listeners, `installOverlayStack()`).
+  Fixed by probing the current webview label (`getCurrentWindowLabel`) so the
+  `wizard` webview renders only the setup flow, and by replacing `main`'s
+  duplicate `WizardRoot` route with a `WizardStandIn` that surfaces the real
+  window instead of re-mounting it.
+
+**Impact**: ~490MB RAM saved on cold boot; on first run the setup flow now runs in exactly one webview instead of two.
 
 **Files**: [`app/src-tauri/src/tray.rs`](file:///home/addy/projects/apps/vox/app/src-tauri/src/tray.rs), [`app/src-tauri/src/wizard.rs`](file:///home/addy/projects/apps/vox/app/src-tauri/src/wizard.rs)
 
@@ -98,7 +123,9 @@ Vox embeds a production memory profiler (`ProfilerDrawer`) sampling four indepen
 2. **JS Heap Sampling (`sampleJSHeap`)**: Reads `window.performance.memory` (`usedMb`, `totalMb`, `limitMb`).
 3. **DOM & Resource Telemetry (`sampleDOMStats`)**: Measures live DOM element count (`querySelectorAll("*").length`), font face count (`document.fonts.size`), and decoded resource footprint.
 4. **CSS Compositing Layers (`sampleCSSIndicators`)**: Queries GPU blur filters (`backdropFilterCount`), compositor layers (`willChangeCount`), and `<canvas>` elements without layout-thrashing `getComputedStyle` calls.
-5. **Per-Route Memory Lifecycle (`PageMemoryRecord`)**: Tracks `baseline` $\to$ `peak` $\to$ `retained` RSS per route to flag monotonic memory growth.
+5. **Per-Route Memory Lifecycle (`PageMemoryRecord`)**: Declares `baseline` -> `peak` -> `retained` per route. **`retained` / `retainedDeltaMb` / `unmountedAt` are NOT MEASURED** - they are declared on the type and copied forward as `null`, so the Retained/Risk columns stay empty and section 3.2 triage step 3 ("check `retainedDeltaMb`") is not executable. Risk thresholds are defined (`> 15MB` suspicious, `> 40MB` critical) but unreachable; the UI states "Not measured" rather than claiming "Normal".
+
+> **2026-10-01 - a first attempt at real sampling was REVERTED.** Sampling a full `get_profiler_snapshot()` process-tree walk 2.5s after every route unmount measurably regressed navigation, because the sampler competed with the route change on the same frame budget. Do NOT re-add an always-on retention sampler on the route-change path. If this is ever implemented it must be opt-in and run off the navigation path.
 
 **Files**: [`app/src/services/memoryProfilerService.ts`](file:///home/addy/projects/apps/vox/app/src/services/memoryProfilerService.ts), [`app/src/shared/hooks/useMemoryProfiler.ts`](file:///home/addy/projects/apps/vox/app/src/shared/hooks/useMemoryProfiler.ts), [`app/src/shared/components/profiler/ProfilerDrawer.tsx`](file:///home/addy/projects/apps/vox/app/src/shared/components/profiler/ProfilerDrawer.tsx)
 

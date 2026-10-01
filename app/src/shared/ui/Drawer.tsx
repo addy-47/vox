@@ -78,7 +78,9 @@ export const Drawer = memo(
     const [isDragging, setIsDragging] = useState(false);
     const sheetRef = useRef<HTMLDivElement>(null);
     const currentHeightRef = useRef(heightPercent);
-    currentHeightRef.current = heightPercent;
+    useEffect(() => {
+      currentHeightRef.current = heightPercent;
+    }, [heightPercent]);
 
     useEffect(() => {
       if (open) setHeightPercent(height);
@@ -99,9 +101,46 @@ export const Drawer = memo(
       previouslyFocusedRef.current = document.activeElement as HTMLElement | null;
       sheetRef.current?.focus();
       return () => {
-        previouslyFocusedRef.current?.focus?.();
+        const prev = previouslyFocusedRef.current;
+        previouslyFocusedRef.current = null;
+        // Restore focus only if the trigger is still in the document and was
+        // genuinely focusable. Otherwise blur so focus doesn't get stranded
+        // inside the unmounting sheet (previously it landed on <body>).
+        if (prev && document.contains(prev)) {
+          const focusable =
+            prev.tabIndex >= 0 || /^(BUTTON|INPUT|SELECT|TEXTAREA|A)$/.test(prev.tagName);
+          if (focusable) {
+            prev.focus({ preventScroll: true });
+            return;
+          }
+        }
+        (document.activeElement as HTMLElement | null)?.blur?.();
       };
     }, [open]);
+
+    // Focus trap: Tab cycles inside the modal sheet; focus never escapes to
+    // the page behind while the drawer is open (aria-modal="true").
+    const handleSheetKeyDown = useCallback((e: React.KeyboardEvent) => {
+      if (e.key !== "Tab" || !sheetRef.current) return;
+      const items = Array.from(
+        sheetRef.current.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        )
+      ).filter((el) => el.offsetWidth > 0 || el.offsetHeight > 0);
+      if (items.length === 0) return;
+      const first = items[0];
+      const last = items[items.length - 1];
+      const active = document.activeElement as HTMLElement | null;
+      if (e.shiftKey) {
+        if (active === first || !sheetRef.current.contains(active)) {
+          e.preventDefault();
+          last.focus();
+        }
+      } else if (active === last || !sheetRef.current.contains(active)) {
+        e.preventDefault();
+        first.focus();
+      }
+    }, []);
 
     const dragCleanupRef = useRef<(() => void) | null>(null);
     useEffect(() => {
@@ -199,6 +238,7 @@ export const Drawer = memo(
               animate={{ y: 0 }}
               exit={{ y: "100%" }}
               transition={{ duration: 0.38, ease: [0.16, 1, 0.3, 1] }}
+              onKeyDown={handleSheetKeyDown}
               style={{ height: `${heightPercent}%` }}
               className={cn(
                 "absolute bottom-0 left-0 right-0 flex flex-col rounded-t-3xl overflow-hidden border-t border-[rgba(var(--accent),0.12)] [text-shadow:none] outline-none pointer-events-auto transform-gpu will-change-transform contain-paint",
@@ -235,7 +275,7 @@ export const Drawer = memo(
                     <button
                       onClick={onClose}
                       className="flex items-center justify-center w-8 h-8 rounded-full glass-card text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))]"
-                      aria-label="Close drawer"
+                      aria-label={LAYOUT_COPY.drawer.close}
                     >
                       <X size={18} />
                     </button>

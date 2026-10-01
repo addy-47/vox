@@ -1,8 +1,6 @@
 import { memo, useState, useEffect, useCallback } from "react";
 import { checkModelExists } from "@/services/setupService";
-import { getProviderCaps } from "@/services/settingsService";
-import type { ProviderCaps } from "@/store/settingsStore";
-import { useSettings } from "@/shared/hooks/useSettings";
+import { useSettingsStore } from "@/store/settingsStore";
 import { Ear, BrainCircuit, AudioLines, AlertTriangle, AlertCircle } from "lucide-react";
 import { MODEL_HUB_COPY } from "@/data/settingsCopy";
 
@@ -23,10 +21,14 @@ const compactModelName = (name: string): string => {
 };
 
 export const ModelStatusOverlay = memo(() => {
-  const { settings, draftSettings, modelCatalog } = useSettings();
+  // Atomic selectors, not the whole settings context: this overlay is mounted
+  // app-wide, so a whole-context destructure re-rendered it (and re-fired the
+  // presence check below) on every settings keystroke.
+  const settings = useSettingsStore((s) => s.settings);
+  const draftSettings = useSettingsStore((s) => s.draftSettings);
+  const modelCatalog = useSettingsStore((s) => s.modelCatalog);
   const activeSettings = settings || draftSettings;
   const [presence, setPresence] = useState<Record<string, boolean>>({});
-  const [, setTtsCaps] = useState<ProviderCaps | null>(null);
   const [vw, setVw] = useState(typeof window !== "undefined" ? window.innerWidth : 1200);
 
   useEffect(() => {
@@ -54,12 +56,19 @@ export const ModelStatusOverlay = memo(() => {
 
   const ttsKind = activeSettings?.tts?.active || "";
 
+  // Keyed ONLY on the model identities that presence actually depends on.
+  // Previously this callback closed over the whole settings object, so every
+  // settings change (each persona keystroke, each slider tick) re-fired two
+  // sequential checkModelExists IPCs.
   const checkPresence = useCallback(async () => {
-    if (!activeSettings) return;
     const items = [
       !isRemoteLlm ? llmId : "",
       !isCloudStt ? asrId : "",
     ].filter(Boolean);
+    if (items.length === 0) {
+      setPresence({});
+      return;
+    }
     const results: Record<string, boolean> = {};
 
     for (const id of items) {
@@ -71,30 +80,11 @@ export const ModelStatusOverlay = memo(() => {
       }
     }
     setPresence(results);
-  }, [llmId, asrId, isRemoteLlm, isCloudStt, activeSettings]);
+  }, [llmId, asrId, isRemoteLlm, isCloudStt]);
 
   useEffect(() => {
     checkPresence();
   }, [checkPresence]);
-
-  useEffect(() => {
-    let isMounted = true;
-    if (!ttsKind) {
-      setTtsCaps(null);
-      return;
-    }
-    getProviderCaps(ttsKind)
-      .then((caps) => {
-        if (isMounted) setTtsCaps(caps);
-      })
-      .catch(() => {
-        if (isMounted) setTtsCaps(null);
-      });
-
-    return () => {
-      isMounted = false;
-    };
-  }, [ttsKind]);
 
   if (!activeSettings || !modelCatalog) return null;
 

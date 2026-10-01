@@ -51,7 +51,6 @@ export interface VoiceSessionContextValue {
   restoreError: string | null;
   restoreSignal: number;
   sessionListVersion: number;
-  hasCachedSession: boolean;
   pttStatus: "IDLE" | "RECORDING" | "PROCESSING";
   engage: () => Promise<void>;
   disengage: () => Promise<void>;
@@ -94,6 +93,7 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
   const dialogueHistory = useSessionStore((s) => s.dialogueHistory);
   const activeSessionId = useSessionStore((s) => s.activeSessionId);
   const isRestoring = useSessionStore((s) => s.isRestoring);
+  const restoringSessionId = useSessionStore((s) => s.restoringSessionId);
   const restoreError = useSessionStore((s) => s.restoreError);
   const restoreSignal = useSessionStore((s) => s.restoreSignal);
   const sessionListVersion = useSessionStore((s) => s.sessionListVersion);
@@ -127,6 +127,11 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
     (payload: StateChangedPayload) => {
       storeApi().setInteractionState(payload.state as InteractionState);
       const next = payload.state as InteractionState;
+      // An engage failure is stale the moment the pipeline leaves Idle —
+      // otherwise the banner outlives the condition it reports.
+      if (next !== "Idle" && next !== "Error") {
+        storeApi().setSessionError(null);
+      }
       if (next === "Ready") {
         commitTurn();
         if (!storeApi().activeSessionId) {
@@ -385,6 +390,7 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
     const api = storeApi();
     api.setActiveSessionId(sessionId);
     api.setIsRestoring(true);
+    api.setRestoringSessionId(sessionId);
     try {
       // Scenarios 2 & 3: continueSessionIpc handles clean disengagement (if active),
       // database continuation retrieval, and auto-engagement into Ready state
@@ -404,6 +410,7 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
       storeApi().setRestoreError(err instanceof Error ? err.message : SESSION_COPY.restoreFailedFallback);
     } finally {
       storeApi().setIsRestoring(false);
+      storeApi().setRestoringSessionId(null);
     }
   }, [clearTranscript]);
 
@@ -449,11 +456,10 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
       dialogueHistory,
       activeSessionId,
       isRestoring,
-      restoringSessionId: null,
+      restoringSessionId,
       restoreError,
       restoreSignal,
       sessionListVersion,
-      hasCachedSession: false,
       pttStatus,
       engage,
       disengage,
@@ -495,6 +501,7 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
       dialogueHistory,
       activeSessionId,
       isRestoring,
+      restoringSessionId,
       restoreError,
       restoreSignal,
       sessionListVersion,

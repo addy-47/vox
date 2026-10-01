@@ -138,19 +138,24 @@ export const VoiceCarousel = memo(function VoiceCarousel({
     let interval: ReturnType<typeof setInterval> | undefined;
     if (isRecording) {
       interval = setInterval(() => {
-        setRecordingDuration((prev) => {
-          if (prev >= 30) {
-            handleStopRecording();
-            return 30;
-          }
-          return prev + 1;
-        });
+        // Pure updater — no side effects (the 30s auto-stop lives in the
+        // effect below, never inside an updater).
+        setRecordingDuration((prev) => (prev >= 30 ? 30 : prev + 1));
       }, 1000);
     } else {
       clearInterval(interval);
     }
     return () => clearInterval(interval);
   }, [isRecording]);
+
+  // Auto-stop at 30s: side effect keyed on the value, not buried in an updater.
+  // (React 19 double-invokes updaters in StrictMode; the old code fired
+  // stopBackendRecording() twice on a live audio recorder.)
+  useEffect(() => {
+    if (isRecording && recordingDuration >= 30) {
+      handleStopRecording();
+    }
+  }, [isRecording, recordingDuration]);
 
   const handleStartRecording = async () => {
     setRecordingError(null);
@@ -276,6 +281,7 @@ export const VoiceCarousel = memo(function VoiceCarousel({
                   type="button"
                   onClick={handleSelectFile}
                   disabled={isRecording}
+                  aria-label={selectedFile ? `${VOICE_CAROUSEL_COPY.fileSelected} ${selectedFile.split(/[/\\]/).pop()}` : VOICE_CAROUSEL_COPY.chooseFile}
                   className={cn(
                     "p-1 rounded-md transition-colors hover:bg-[rgb(var(--foreground))]/5 cursor-pointer",
                     selectedFile
@@ -291,6 +297,7 @@ export const VoiceCarousel = memo(function VoiceCarousel({
                 <button
                   type="button"
                   onClick={isRecording ? handleStopRecording : handleStartRecording}
+                  aria-label={isRecording ? VOICE_CAROUSEL_COPY.stopRecording : VOICE_CAROUSEL_COPY.recordVoice}
                   className={cn(
                     "p-1 rounded-md transition-colors relative cursor-pointer",
                     isRecording
@@ -353,7 +360,7 @@ export const VoiceCarousel = memo(function VoiceCarousel({
                 !newVoiceName.trim() ||
                 (activeTab === "upload" && !selectedFile) ||
                 (activeTab === "record" && (!recordedPcm || recordingDuration < 10)) ||
-                cloningStatus === "Cloning..." ||
+                cloningStatus === VOICE_CAROUSEL_COPY.cloning ||
                 isRecording
               }
               className="flex-[2] py-1 rounded-lg text-[11px] font-bold uppercase tracking-wider bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] hover:brightness-110 active:scale-95 disabled:opacity-40 disabled:pointer-events-none transition-all cursor-pointer"
@@ -481,6 +488,7 @@ export const VoiceCarousel = memo(function VoiceCarousel({
                     <button
                       type="button"
                       onClick={() => setIsAdding(true)}
+                      aria-label={VOICE_CAROUSEL_COPY.cloneVoiceProfile}
                       className="p-1 text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.1)] rounded transition-all duration-150 cursor-pointer shrink-0"
                     >
                       <Sparkles size={12} />

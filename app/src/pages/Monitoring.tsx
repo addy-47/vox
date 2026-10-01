@@ -6,13 +6,11 @@ import React, {
   useCallback,
 } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { useProfilerDrawer } from "@/shared/components/profiler/ProfilerDrawer";
 import { useOverlay } from "@/shared/hooks/useOverlay";
 import {
   RefreshCw,
   X,
   Skull,
-  Layers,
 } from "lucide-react";
 import {
   stopEngine,
@@ -25,8 +23,9 @@ import {
   parseRgb,
   rgbToHsl,
   hslToRgb,
-  MetricCarousel,
+  ModelResidencyTiles,
   LiquidChamber,
+  type ModelMark,
 } from "@/shared/components/monitoring";
 import { Tooltip } from "@/shared/ui/Tooltip";
 import { ErrorBoundary } from "@/shared/components/common";
@@ -46,7 +45,6 @@ export const Monitoring: React.FC<MonitoringProps> = ({
   anchorRef,
 }) => {
   const modalRef = useRef<HTMLDivElement>(null);
-  const { openProfiler } = useProfilerDrawer();
 
   // Subscribe to settings store to inspect exact variants and reactive theme
   const accentSeed = useSettingsStore((s) => s.settings?.appearance.accent_seed);
@@ -62,6 +60,11 @@ export const Monitoring: React.FC<MonitoringProps> = ({
     (s) => s.settings?.stt?.transliterate_enabled ?? true
   );
   const modelCatalog = useSettingsStore((s) => s.modelCatalog);
+  const llmEmbeddedModel = useSettingsStore((s) => s.settings?.llm?.embedded?.model ?? "");
+  const llmServerModel = useSettingsStore((s) => s.settings?.llm?.server?.model ?? "");
+  const llmCloudModel = useSettingsStore((s) => s.settings?.llm?.cloud?.model ?? "");
+  const sttEmbeddedModel = useSettingsStore((s) => s.settings?.stt?.embedded?.model ?? "");
+  const themeIsLight = theme === "light";
 
   // Dynamic CSS variable observer state
   const [accentRgbStr, setAccentRgbStr] = useState<string>("0, 219, 233");
@@ -89,7 +92,6 @@ export const Monitoring: React.FC<MonitoringProps> = ({
     latest,
     engineToggling: togglingEngine,
     setEngineToggling: setTogglingEngine,
-    formatLatency,
   } = useMonitoringMetrics(!popover || open);
 
   // Residency is a property of the manifest group, not of provider names.
@@ -151,6 +153,47 @@ export const Monitoring: React.FC<MonitoringProps> = ({
       )
     );
   }, [activeModelsCount, latest]);
+
+  // Edge marks for the chamber: every model that can load, with the loaded
+  // ones highlighted. Names resolve best-effort from the catalog/settings and
+  // truncate via CSS; unresolvable roles fall back to the role name.
+  const modelMarks = useMemo((): ModelMark[] => {
+    const groups = modelCatalog?.model_groups ?? [];
+    const groupName = (category: string, fallback: string) =>
+      groups.find((g) => g.category === category)?.name ?? fallback;
+    const llmName =
+      llmProvider === "embedded"
+        ? llmEmbeddedModel || "LLM"
+        : llmProvider === "server"
+          ? llmServerModel || "LLM"
+          : llmCloudModel || "LLM";
+    return [
+      { key: "vad", name: activeVadGroup?.name ?? "VAD", loaded: isVadModel && !!latest?.is_vad_loaded },
+      { key: "stt", name: sttProvider === "embedded" ? sttEmbeddedModel || "Embedded STT" : "Cloud STT", loaded: isSttModel && !!latest?.is_stt_loaded },
+      { key: "llm", name: llmName, loaded: isLlmModel && !!latest?.is_llm_loaded },
+      { key: "tts", name: activeTtsGroup?.name ?? ttsProvider ?? "TTS", loaded: isTtsModel && !!latest?.is_tts_loaded },
+      { key: "embedder", name: groupName("embedding", "Embedder"), loaded: isEmbedderModel && !!latest?.is_embedder_loaded },
+      { key: "translit", name: groupName("translit", "Translit"), loaded: isTranslitModel && !!latest?.is_translit_loaded },
+    ];
+  }, [
+    modelCatalog,
+    activeVadGroup,
+    activeTtsGroup,
+    llmProvider,
+    sttProvider,
+    ttsProvider,
+    llmEmbeddedModel,
+    llmServerModel,
+    llmCloudModel,
+    sttEmbeddedModel,
+    isVadModel,
+    isSttModel,
+    isLlmModel,
+    isTtsModel,
+    isEmbedderModel,
+    isTranslitModel,
+    latest,
+  ]);
 
   // Derive model variant labels (thinking, hearing, speaking)
   const variants = useMemo(() => {
@@ -259,26 +302,10 @@ export const Monitoring: React.FC<MonitoringProps> = ({
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Memory Profiler Quick Launch Button (Disabled by default, can be toggled on for diagnostic sessions) */}
-          {false && (
-            <Tooltip label={MONITORING_COPY.openProfiler}>
-              <button
-                onClick={() => {
-                  onClose?.();
-                  openProfiler();
-                }}
-                style={{
-                  backgroundColor: `rgba(${colors.primary}, 0.10)`,
-                  borderColor: `rgba(${colors.primary}, 0.25)`,
-                  color: `rgb(${colors.primary})`,
-                }}
-                className="px-2.5 py-1.5 rounded-xl border transition-all duration-300 flex items-center gap-1.5 text-[11px] font-bold tracking-wider uppercase cursor-pointer shadow-md hover:scale-[1.02]"
-              >
-                <Layers size={13} />
-                <span>{MONITORING_COPY.profilerBadge}</span>
-              </button>
-            </Tooltip>
-          )}
+          {/* NOTE: the profiler launch button that used to sit here was behind a
+              hardcoded `{false && …}`, so 18 lines never rendered and the only
+              path to the profiler was the shell's footprint HUD (Shift+Up). The
+              dead block is deleted rather than left as dead-but-wired JSX. */}
 
           {/* Unload / Load Models Button with Skull Icon when Loaded */}
           <Tooltip
@@ -318,19 +345,21 @@ export const Monitoring: React.FC<MonitoringProps> = ({
         </div>
       </div>
 
-      {/* ── 2. Top Metric Cards Carousel ── */}
-      <ErrorBoundary name="MonitoringMetrics">
-        <MetricCarousel
-          latest={latest}
-          colors={colors}
-          formatLatency={formatLatency}
-        />
+      {/* ── 2. Model Residency Tiles (moved up from the chamber bottom) ── */}
+      <ErrorBoundary name="MonitoringResidency">
+        <div className="flex justify-center">
+          <ModelResidencyTiles
+            latest={latest}
+            colors={colors}
+            variants={variants}
+            isLight={themeIsLight}
+          />
+        </div>
       </ErrorBoundary>
 
       {/* ── 3. Central Liquid Chamber Container ── */}
       <ErrorBoundary name="LiquidChamber">
         <LiquidChamber
-          latest={latest}
           colors={colors}
           isEngineLoaded={isEngineLoaded}
           activeModelsCount={activeModelsCount}
@@ -339,7 +368,7 @@ export const Monitoring: React.FC<MonitoringProps> = ({
           ramMb={ramMb}
           ramGb={ramGb}
           ramPct={ramPct}
-          variants={variants}
+          modelMarks={modelMarks}
           popover={popover}
           open={open}
         />

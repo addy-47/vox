@@ -35,6 +35,7 @@ export interface SessionStoreState {
 
   // Session Continuation / Restore State
   isRestoring: boolean;
+  restoringSessionId: number | null;
   restoreError: string | null;
   restoreSignal: number;
   sessionListVersion: number;
@@ -57,6 +58,7 @@ export interface SessionStoreState {
   setTurnIdCounter: (counter: number | ((prev: number) => number)) => void;
   setLatestTurnMetrics: (metrics: TurnMetricsPayload | null) => void;
   setIsRestoring: (restoring: boolean) => void;
+  setRestoringSessionId: (id: number | null) => void;
   setRestoreError: (error: string | null) => void;
   setRestoreSignal: (signal: number) => void;
   bumpSessionListVersion: () => void;
@@ -84,6 +86,7 @@ const INITIAL_STATE = {
   turnIdCounter: 0,
   latestTurnMetrics: null as TurnMetricsPayload | null,
   isRestoring: false,
+  restoringSessionId: null,
   restoreError: null,
   restoreSignal: 0,
   sessionListVersion: 0,
@@ -122,6 +125,7 @@ export const useSessionStore = create<SessionStoreState>((set) => ({
     })),
   setLatestTurnMetrics: (latestTurnMetrics) => set({ latestTurnMetrics }),
   setIsRestoring: (isRestoring) => set({ isRestoring }),
+  setRestoringSessionId: (restoringSessionId) => set({ restoringSessionId }),
   setRestoreError: (restoreError) => set({ restoreError }),
   setRestoreSignal: (restoreSignal) => set({ restoreSignal }),
   bumpSessionListVersion: () => set((state) => ({ sessionListVersion: state.sessionListVersion + 1 })),

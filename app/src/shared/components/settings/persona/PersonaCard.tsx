@@ -1,4 +1,4 @@
-import { useState, memo, useCallback, useMemo, useRef } from "react";
+import { useState, memo, useCallback, useMemo, useRef, useEffect } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
 import { CircleUserRound, Code2, Eye, Sparkles } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
@@ -224,8 +224,23 @@ export const PersonaCard = memo(({ layoutMode = "full-max" }: PersonaCardProps) 
 
   const activePrompt = activeTab === "modular" ? modularPrompt : realtimePrompt;
 
-  const tagSpans = useMemo(() => getProtectedXmlTagSpans(activePrompt), [activePrompt]);
-  const highlightedContent = useMemo(() => renderSyntaxHighlightedText(activePrompt), [activePrompt]);
+  // Local keystroke draft: the textarea commits to the store on a 200ms
+  // trailing debounce instead of per keystroke. Previously every character
+  // rebuilt the full syntax-highlight tree AND updated the store, re-rendering
+  // every settings consumer on each keypress.
+  const [promptDraft, setPromptDraft] = useState<string | null>(null);
+  const promptDraftRef = useRef<string | null>(null);
+  const commitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [tagViolation, setTagViolation] = useState(false);
+  useEffect(() => {
+    return () => {
+      if (commitTimerRef.current) clearTimeout(commitTimerRef.current);
+    };
+  }, []);
+
+  const shownPrompt = promptDraft ?? activePrompt;
+  const tagSpans = useMemo(() => getProtectedXmlTagSpans(shownPrompt), [shownPrompt]);
+  const highlightedContent = useMemo(() => renderSyntaxHighlightedText(shownPrompt), [shownPrompt]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -259,21 +274,72 @@ export const PersonaCard = memo(({ layoutMode = "full-max" }: PersonaCardProps) 
     [tagSpans]
   );
 
-  const handlePromptChange = useCallback(
-    (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-      const nextValue = e.target.value;
-      const prevTags = tagSpans.map((s) => s.tag);
+  const commitDraft = useCallback(
+    (nextValue: string) => {
+      // Verify tag integrity against the COMMITTED prompt — if protected tags
+      // were modified or stripped, say so visibly instead of silently
+      // swallowing the keystroke (the old behaviour, with zero diagnostics).
+      const prevTags = getProtectedXmlTagSpans(activePrompt).map((s) => s.tag);
       const nextTags = getProtectedXmlTagSpans(nextValue).map((s) => s.tag);
-
-      // Verify tag integrity — if tags were modified or stripped, reject the mutation
       if (prevTags.length > 0 && JSON.stringify(prevTags) !== JSON.stringify(nextTags)) {
+        setTagViolation(true);
         return;
       }
-
+      setTagViolation(false);
+      setPromptDraft(null);
+      promptDraftRef.current = null;
       const field = activeTab === "modular" ? "modular_prompt" : "realtime_prompt";
       updateDraft("persona", field, nextValue);
     },
-    [activeTab, tagSpans, updateDraft]
+    [activePrompt, activeTab, updateDraft]
+  );
+
+  const handlePromptChange = useCallback(
+    (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+      const nextValue = e.target.value;
+      // Instant, local, no IPC — the store commit happens on pause (below).
+      setPromptDraft(nextValue);
+      promptDraftRef.current = nextValue;
+      if (commitTimerRef.current) clearTimeout(commitTimerRef.current);
+      commitTimerRef.current = setTimeout(() => commitDraft(nextValue), 200);
+    },
+    [commitDraft]
+  );
+
+  const handlePromptBlur = useCallback(() => {
+    // Flush any pending debounced commit so tabbing away never loses typing.
+    if (commitTimerRef.current) {
+      clearTimeout(commitTimerRef.current);
+      commitTimerRef.current = null;
+    }
+    const pending = promptDraftRef.current;
+    if (pending !== null) {
+      commitDraft(pending);
+    }
+  }, [commitDraft]);
+
+  const handleTabChange = useCallback(
+    (tab: "modular" | "realtime") => {
+      // Commit (don't drop) any pending draft before switching tabs.
+      if (commitTimerRef.current) {
+        clearTimeout(commitTimerRef.current);
+        commitTimerRef.current = null;
+      }
+      const pending = promptDraftRef.current;
+      promptDraftRef.current = null;
+      setPromptDraft(null);
+      setTagViolation(false);
+      if (pending !== null) {
+        const prevTags = getProtectedXmlTagSpans(activePrompt).map((s) => s.tag);
+        const nextTags = getProtectedXmlTagSpans(pending).map((s) => s.tag);
+        if (prevTags.length === 0 || JSON.stringify(prevTags) === JSON.stringify(nextTags)) {
+          const field = activeTab === "modular" ? "modular_prompt" : "realtime_prompt";
+          updateDraft("persona", field, pending);
+        }
+      }
+      setActiveTab(tab);
+    },
+    [activePrompt, activeTab, updateDraft]
   );
 
   const handleScroll = useCallback(() => {
@@ -284,8 +350,8 @@ export const PersonaCard = memo(({ layoutMode = "full-max" }: PersonaCardProps) 
   }, []);
 
   const parsedSections = useMemo(() => {
-    return parseXmlToSections(activePrompt);
-  }, [activePrompt]);
+    return parseXmlToSections(shownPrompt);
+  }, [shownPrompt]);
 
   const isSmall = layoutMode === "small";
 
@@ -311,7 +377,7 @@ export const PersonaCard = memo(({ layoutMode = "full-max" }: PersonaCardProps) 
         </div>
         
         <div className="flex items-center gap-1.5 shrink-0">
-          <SegmentedControl options={INSTRUCTION_TABS} value={activeTab} onChange={setActiveTab} size="sm" />
+          <SegmentedControl options={INSTRUCTION_TABS} value={activeTab} onChange={handleTabChange} size="sm" />
           <SegmentedControl options={VIEW_TABS} value={viewMode} onChange={setViewMode} size="sm" />
         </div>
       </div>
@@ -319,6 +385,7 @@ export const PersonaCard = memo(({ layoutMode = "full-max" }: PersonaCardProps) 
       {/* Main Body */}
       <div className="flex-1 flex flex-col w-full">
         {viewMode === "edit" ? (
+          <>
           <div className="relative w-full rounded-xl overflow-hidden border border-[rgba(var(--accent),0.12)] bg-[rgba(var(--foreground),0.02)] focus-within:border-[rgba(var(--accent),0.35)] transition-colors">
             {/* Syntax Highlight Backdrop Layer */}
             <div
@@ -335,8 +402,9 @@ export const PersonaCard = memo(({ layoutMode = "full-max" }: PersonaCardProps) 
             {/* Foreground Editable Transparent Textarea */}
             <textarea
               ref={textareaRef}
-              value={activePrompt}
+              value={promptDraft ?? activePrompt}
               onChange={handlePromptChange}
+              onBlur={handlePromptBlur}
               onKeyDown={handleKeyDown}
               onBeforeInput={handleBeforeInput}
               onScroll={handleScroll}
@@ -348,6 +416,12 @@ export const PersonaCard = memo(({ layoutMode = "full-max" }: PersonaCardProps) 
               )}
             />
           </div>
+          {tagViolation && (
+            <p role="alert" className="text-[11px] font-mono text-[rgb(var(--warning))] mt-1.5">
+              {PERSONA_COPY.tagsProtectedHint}
+            </p>
+          )}
+          </>
         ) : (
           /* Preview Mode: XML Stripped & Rendered as Structured Headings */
           <div 

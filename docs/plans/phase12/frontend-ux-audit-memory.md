@@ -12,6 +12,15 @@ related_docs:
   - ".agents/skills/review-ui/ — deterministic audit scripts"
 ---
 
+## Correction (2026-09-30, post-implementation)
+
+> **C3 ("no keyboard route to the personal-memory drawer") was wrong.** `Shift+Up`
+> already opens the page drawer (`ResponsiveLayout.tsx:265-270` →
+> `Memory.tsx:124 useRegisterPageDrawer`), so no new shortcut was added. The
+> narrower canvas-surface annotation (`role="img"` + summary label on
+> `MemoryGraph.tsx`) shipped instead. Heuristic #7, P2-6, the persona findings
+> citing "mouse-only", and tier-table row 32 should be read with this correction.
+
 ## How to read this doc
 
 - **Audience:** Frontend engineer or design reviewer picking up the fix list.

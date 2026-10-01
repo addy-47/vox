@@ -355,6 +355,13 @@ export interface SettingsState {
     explicitDomainId?: SettingsDomainId
   ) => void;
   commitChanges: () => Promise<void>;
+  /**
+   * Commit any pending autosave immediately (same guards as the 600ms timer).
+   * Called when a settings card closes so hot changes survive instead of
+   * dying with the timer. Restart-classified dirty state is left untouched
+   * in the draft — survive, not apply, not prompt.
+   */
+  flushPendingAutosave: () => void;
   trackRestartCompletion: () => void;
   discardChanges: () => void;
   isDomainDirty: (domainId: string) => boolean;
@@ -469,6 +476,18 @@ export function isRestartKey(scope: string, key: string): boolean {
   )
     return true;
   if (scope === "vad" && key === "vad_backend") return true;
+  // INTERIM: the backend owns the restart policy (get_setting_reload_policy is
+  // the SSOT), but update_setting's per-key reload_policy is not yet plumbed
+  // into isDomainRequiringRestart — so this table still drives the footer.
+  // interaction.pipeline_mode tears down and rebuilds the entire audio pipeline
+  // (it was missing here, so the heaviest operation auto-committed with
+  // "CHANGES SAVED" before freezing); dictation.hotkey re-registers a global
+  // grab; every realtime.* key reconfigures the live session. Widening this
+  // table is the stopgap, not the fix — the fix is deriving it from the
+  // backend's reload_policy.
+  if (scope === "interaction" && key === "pipeline_mode") return true;
+  if (scope === "dictation" && key === "hotkey") return true;
+  if (scope === "realtime") return true;
   return false;
 }
 
@@ -929,6 +948,28 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     } finally {
       set({ isCommitting: false });
     }
+  },
+
+  flushPendingAutosave: () => {
+    if (!settingsAutoSaveTimer) return;
+    clearTimeout(settingsAutoSaveTimer);
+    settingsAutoSaveTimer = null;
+    const anyNeedsRestart = [
+      "models",
+      "persona",
+      "working_memory",
+      "personal_memory",
+      "appearance",
+      "interaction",
+    ].some((d) => get().isDomainRequiringRestart(d));
+    if (anyNeedsRestart) {
+      return;
+    }
+    // No toast here: the card is closing, so there is nothing to flash it on.
+    // The persisted values are visible when the card reopens.
+    get()
+      .commitChanges()
+      .catch(console.error);
   },
 
   /**

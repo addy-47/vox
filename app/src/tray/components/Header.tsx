@@ -12,11 +12,13 @@ interface HeaderProps {
   onCopy: () => void;
   onClose: () => void;
   onTogglePtt: () => void;
+  pttBusy?: boolean;
+  micError?: string | null;
 }
 
-export const Header: React.FC<HeaderProps> = React.memo(({ 
+export const Header: React.FC<HeaderProps> = React.memo(({
   isListening, hasContent, copied, interactionMode, silenceAutoStopMs,
-  onCopy, onClose, onTogglePtt
+  onCopy, onClose, onTogglePtt, pttBusy = false, micError = null
 }) => {
   return (
     <div className="px-6 py-4 flex items-center justify-between relative z-10" data-tauri-drag-region>
@@ -50,9 +52,12 @@ export const Header: React.FC<HeaderProps> = React.memo(({
       
       <div className="flex items-center gap-1">
         {interactionMode?.toUpperCase() === 'PTT' && (
-          <button 
+          <button
             onClick={(e) => { e.stopPropagation(); onTogglePtt(); }}
-            className={`p-2 rounded-lg transition-all active:scale-90 ${isListening ? 'text-[rgb(var(--accent))]' : 'text-[rgb(var(--foreground))]/60 hover:text-[rgb(var(--foreground))]/90'}`}
+            disabled={pttBusy}
+            aria-label={isListening ? TRAY_COPY.stopRecording : TRAY_COPY.startRecording}
+            title={micError ?? undefined}
+            className={`p-2 rounded-lg transition-all active:scale-90 ${pttBusy ? 'opacity-50 animate-pulse pointer-events-none' : ''} ${micError ? 'text-red-400' : isListening ? 'text-[rgb(var(--accent))]' : 'text-[rgb(var(--foreground))]/60 hover:text-[rgb(var(--foreground))]/90'}`}
           >
             <Mic size={16} />
           </button>

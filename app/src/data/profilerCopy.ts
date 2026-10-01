@@ -95,6 +95,8 @@ export const PROFILER_COPY = {
     current: "Current",
     peak: "Peak (Δ)",
     retained: "Retained (Δ)",
+    retainedHint: "Sampled 2.5s after you leave a route — memory still held by that page.",
+    retainedSampleFailed: "Sample failed",
     riskObservation: "Risk / Observation",
     statusActive: "Active",
     statusUnmounted: "Unmounted",
@@ -103,6 +105,10 @@ export const PROFILER_COPY = {
     riskNormal: "Normal",
     riskCritical: "Critical Retention",
     riskSuspicious: "Suspicious",
+    /** Risk is only stated once a retention sample exists. */
+    riskPendingExit: "Measures on exit",
+    riskNotMeasured: "Not measured",
+    riskNoVisit: "No visit",
   },
   insights: {
     sectionTitle: "Root Cause Analysis & Heuristics",

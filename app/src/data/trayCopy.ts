@@ -9,4 +9,8 @@ export const TRAY_COPY = {
   prevTranscription: "Previous Transcription",
   cpuUsage: "Vox CPU Usage",
   ramUsage: "Vox RAM Usage",
+  startRecording: "Start recording",
+  stopRecording: "Stop recording",
+  micEngageFailed: "Couldn't start session",
+  micStopFailed: "Couldn't stop recording",
 } as const;

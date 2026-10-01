@@ -1,5 +1,5 @@
 import React, { memo } from "react";
-import { Check, X, RotateCw, TriangleAlert } from "lucide-react";
+import { Check, X, RotateCw, TriangleAlert, Loader2 } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { MEMORY_COPY } from "@/data/memoryCopy";
 import {
@@ -42,6 +42,13 @@ interface DecisionButtonsProps {
   failed?: boolean;
 }
 
+/**
+ * Two-tone decision language, no per-state palette invention:
+ *   accept  → accent (the primary action)
+ *   reject  → danger (red), matching the red strikethrough it produces
+ * Resting (undecided) controls are token-neutral so the only colour on a clean
+ * document is the one that means something.
+ */
 const DecisionButtons = memo(function DecisionButtons({
   revisionId,
   decisions,
@@ -51,7 +58,7 @@ const DecisionButtons = memo(function DecisionButtons({
   disabled,
   failed,
 }: DecisionButtonsProps) {
-  const decision = decisions[revisionId];
+const decision = decisions[revisionId];
   return (
     <div className="flex items-center gap-1 shrink-0">
       <button
@@ -62,7 +69,7 @@ const DecisionButtons = memo(function DecisionButtons({
         aria-label={acceptTitle}
         title={acceptTitle}
         className={cn(
-          "w-5 h-5 rounded flex items-center justify-center transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed",
+          "w-5 h-5 rounded flex items-center justify-center cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed",
           "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[rgb(var(--accent))]",
           decision === "accept"
             ? "bg-[rgba(var(--accent),0.18)] text-[rgb(var(--accent))] border border-[rgba(var(--accent),0.4)]"
@@ -79,11 +86,11 @@ const DecisionButtons = memo(function DecisionButtons({
         aria-label={rejectTitle}
         title={rejectTitle}
         className={cn(
-          "w-5 h-5 rounded flex items-center justify-center transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed",
-          "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[rgb(var(--accent))]",
+          "w-5 h-5 rounded flex items-center justify-center cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed",
+          "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[rgb(var(--danger))]",
           decision === "reject"
-            ? "bg-[rgba(var(--foreground),0.1)] text-[rgb(var(--foreground-muted))] border border-[rgba(var(--border),0.3)]"
-            : "border border-[rgba(var(--border),0.2)] text-[rgb(var(--foreground-muted))] hover:border-[rgba(var(--border),0.4)] hover:bg-[rgba(var(--foreground),0.06)]"
+            ? "bg-[rgba(var(--danger),0.16)] text-[rgb(var(--danger))] border border-[rgba(var(--danger),0.45)]"
+            : "border border-[rgba(var(--border),0.2)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--danger))] hover:border-[rgba(var(--danger),0.4)] hover:bg-[rgba(var(--danger),0.08)]"
         )}
       >
         <X size={11} strokeWidth={2.5} />
@@ -91,7 +98,8 @@ const DecisionButtons = memo(function DecisionButtons({
       {failed && (
         <TriangleAlert
           size={11}
-          className="ml-0.5 text-[rgb(var(--foreground-muted))] shrink-0"
+          className="ml-0.5 text-[rgb(var(--danger))] shrink-0"
+          role="img"
           aria-label={MEMORY_COPY.applyFailed}
         />
       )}
@@ -166,12 +174,17 @@ export const SuggestionsReviewView: React.FC<SuggestionsReviewViewProps> = memo(
             key={entry.key}
             className="group flex items-start justify-between gap-2 py-0.5"
           >
-            {/* inline diff text — no card, no border */}
+            {/* inline diff text — no card, no border. Removed text is red
+                strikethrough; inserted/replaced text is the accent colour.
+                On reject the whole row desaturates to token-neutral grey. */}
             <p className="flex-1 text-[12.5px] leading-relaxed select-text font-sans text-[rgb(var(--foreground))]/80">
               {entry.tokens.map((token, i) => {
                 if (token.type === "same") {
                   return (
-                    <span key={i} className="text-[rgb(var(--foreground))]/80">
+                    <span
+                      key={i}
+                      className={decision === "reject" ? "text-[rgb(var(--foreground-muted))]/55" : "text-[rgb(var(--foreground))]/80"}
+                    >
                       {token.value}
                     </span>
                   );
@@ -180,11 +193,13 @@ export const SuggestionsReviewView: React.FC<SuggestionsReviewViewProps> = memo(
                   return (
                     <del
                       key={i}
+                      /* Declined rows lose all colour: the change is not
+                         happening, so there is nothing left to signal. */
                       className={cn(
-                        "line-through decoration-[rgb(var(--foreground-muted))]",
+                        "line-through",
                         decision === "reject"
-                          ? "text-[rgb(var(--foreground-muted))]/40"
-                          : "text-[rgb(var(--foreground-muted))]/70"
+                          ? "decoration-[rgb(var(--foreground-muted))]/50 text-[rgb(var(--foreground-muted))]/45"
+                          : "decoration-[rgb(var(--danger))] text-[rgb(var(--danger))]"
                       )}
                     >
                       {token.value}
@@ -197,8 +212,8 @@ export const SuggestionsReviewView: React.FC<SuggestionsReviewViewProps> = memo(
                     className={cn(
                       "no-underline",
                       decision === "reject"
-                        ? "line-through text-[rgb(var(--foreground-muted))]/40"
-                        : "text-[rgb(var(--foreground))]"
+                        ? "text-[rgb(var(--foreground-muted))]/55"
+                        : "text-[rgb(var(--accent))]"
                     )}
                   >
                     {token.value}
@@ -206,7 +221,7 @@ export const SuggestionsReviewView: React.FC<SuggestionsReviewViewProps> = memo(
                 );
               })}
               <span className="ml-1.5 text-[10px] font-mono text-[rgb(var(--foreground-muted))]/50 tracking-wide uppercase align-middle">
-                [Replace]
+                {MEMORY_COPY.changeLabelReplace}
               </span>
             </p>
             <span className="shrink-0 mt-0.5">{buttons}</span>
@@ -222,15 +237,15 @@ export const SuggestionsReviewView: React.FC<SuggestionsReviewViewProps> = memo(
           >
             <p
               className={cn(
-                "flex-1 text-[12.5px] leading-relaxed select-text font-sans line-through decoration-[rgb(var(--foreground-muted))]/60",
+                "flex-1 text-[12.5px] leading-relaxed select-text font-sans line-through",
                 decision === "reject"
-                  ? "text-[rgb(var(--foreground-muted))]/40"
-                  : "text-[rgb(var(--foreground-muted))]/70"
+                  ? "decoration-[rgb(var(--foreground-muted))]/50 text-[rgb(var(--foreground-muted))]/45"
+                  : "decoration-[rgb(var(--danger))] text-[rgb(var(--danger))]"
               )}
             >
               {entry.text}
               <span className="ml-1.5 no-underline text-[10px] font-mono text-[rgb(var(--foreground-muted))]/50 tracking-wide uppercase align-middle">
-                [Delete]
+                {MEMORY_COPY.changeLabelDelete}
               </span>
             </p>
             <span className="shrink-0 mt-0.5">{buttons}</span>
@@ -244,17 +259,17 @@ export const SuggestionsReviewView: React.FC<SuggestionsReviewViewProps> = memo(
           key={entry.key}
           className="group flex items-start justify-between gap-2 py-0.5"
         >
-          <p
-            className={cn(
-              "flex-1 text-[12.5px] leading-relaxed select-text font-sans",
-              decision === "reject"
-                ? "line-through text-[rgb(var(--foreground-muted))]/40 decoration-[rgb(var(--foreground-muted))]/60"
-                : "text-[rgb(var(--foreground))]"
-            )}
-          >
-            {entry.text}
+<p
+              className={cn(
+                "flex-1 text-[12.5px] leading-relaxed select-text font-sans",
+                decision === "reject"
+                  ? "line-through decoration-[rgb(var(--foreground-muted))]/50 text-[rgb(var(--foreground-muted))]/45"
+                  : "text-[rgb(var(--accent))]"
+              )}
+            >
+              {entry.text}
             <span className="ml-1.5 text-[10px] font-mono text-[rgb(var(--foreground-muted))]/50 tracking-wide uppercase align-middle">
-              [New fact]
+              {MEMORY_COPY.changeLabelAdd}
             </span>
           </p>
           <span className="shrink-0 mt-0.5">{buttons}</span>
@@ -274,7 +289,7 @@ export const SuggestionsReviewView: React.FC<SuggestionsReviewViewProps> = memo(
                     <span>{sec.title}</span>
                     {sec.isNew && (
                       <span className="text-[10px] font-mono font-normal normal-case tracking-normal text-[rgb(var(--foreground-muted))]/60">
-                        [New section]
+                        {MEMORY_COPY.changeLabelNewSection}
                       </span>
                     )}
                     {sec.key === "sec_orphaned" && (
@@ -325,12 +340,12 @@ export const SuggestionsReviewView: React.FC<SuggestionsReviewViewProps> = memo(
               className={cn(
                 "flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-mono font-medium shrink-0",
                 "bg-[rgba(var(--accent),0.15)] border border-[rgba(var(--accent),0.35)] text-[rgb(var(--accent))]",
-                "hover:bg-[rgba(var(--accent),0.25)] transition-colors",
+                "hover:bg-[rgba(var(--accent),0.25)] transition-colors duration-150",
                 "disabled:opacity-40 disabled:cursor-not-allowed",
                 "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(var(--accent))] focus-visible:ring-offset-1 focus-visible:ring-offset-[rgb(var(--card))]"
               )}
             >
-              <Check size={12} className={cn(isApplying && "animate-spin")} />
+              <Loader2 size={12} className={cn(isApplying && "animate-spin")} />
               <span>
                 {isApplying
                   ? MEMORY_COPY.applyingDecisions

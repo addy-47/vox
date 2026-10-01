@@ -24,6 +24,12 @@ export interface OrbitCarouselProps {
   onDragStateChange?: (moved: boolean) => void;
   /** Renders the card body for a node id; the carousel owns positioning/depth styling. */
   renderNode?: (id: string) => React.ReactNode;
+  /**
+   * Shared stage element that actually carries backdrop-filter (e.g. the hub).
+   * The carousel's own card layer has no backdrop-filter, so toggling no-blur
+   * on it alone was a no-op — the class must land where the filters live.
+   */
+  blurTargetRef?: React.RefObject<HTMLElement | null>;
 }
 
 const MOMENTUM_DAMPING = 0.94;
@@ -39,6 +45,7 @@ export const OrbitCarousel = memo(({
   paused = false,
   onDragStateChange,
   renderNode,
+  blurTargetRef,
 }: OrbitCarouselProps) => {
   useMemoryTrace("OrbitCarousel (3D Ellipse)");
   const containerRef = useRef<HTMLDivElement>(null);
@@ -72,16 +79,19 @@ export const OrbitCarousel = memo(({
   const onDragStateChangeRef = useRef(onDragStateChange);
   onDragStateChangeRef.current = onDragStateChange;
 
-  // Toggle no-blur class on card layer to disable expensive backdrop-filter during rotation
+  // Toggle no-blur to disable expensive backdrop-filter during rotation.
+  // Targets the injected stage element (hub + cards) when provided — the
+  // carousel's own card layer carries no backdrop-filter, so toggling there
+  // alone disabled exactly zero filters.
   const setBlurDisabled = useCallback((disabled: boolean) => {
-    const el = cardsContainerRef.current;
+    const el = blurTargetRef?.current ?? cardsContainerRef.current;
     if (!el) return;
     if (disabled) {
       el.classList.add("no-blur");
     } else {
       el.classList.remove("no-blur");
     }
-  }, []);
+  }, [blurTargetRef]);
 
   // ── Deterministic base angles — newest-first, front slot = newest ──────────
   const rebuildBaseAngles = useCallback((ids: string[]) => {

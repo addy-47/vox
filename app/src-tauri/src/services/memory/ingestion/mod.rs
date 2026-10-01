@@ -51,22 +51,66 @@ pub struct IngestionCycleSummary {
     pub stage2: Stage2Summary,
 }
 
-/// Executes a complete deduplication cycle: Stage 1 exact Jaccard dedup followed by Stage 2 semantic cosine dedup.
-pub async fn run_ingestion_cycle(conn: &Connection) -> Result<IngestionCycleSummary> {
+/// Drains all items from the ingestion queue, looping Stage 1 and Stage 2 batches until empty or cancelled.
+pub async fn drain_ingestion_queue(
+    conn: &Connection,
+    cancel: Option<&tokio_util::sync::CancellationToken>,
+) -> Result<IngestionCycleSummary> {
     let started = Instant::now();
-    let stage1 = run_stage1_exact_dedup(conn).await?;
-    let stage2 = run_stage2_cosine_dedup(conn).await?;
-    let summary = IngestionCycleSummary { stage1, stage2 };
+    let mut total_summary = IngestionCycleSummary::default();
+
+    loop {
+        if let Some(c) = cancel {
+            if c.is_cancelled() {
+                log::info!("[Memory::Ingestion] Ingestion drain cancelled.");
+                break;
+            }
+        }
+
+        let stage1 = run_stage1_exact_dedup(conn).await?;
+        total_summary.stage1.processed += stage1.processed;
+        total_summary.stage1.errors += stage1.errors;
+
+        let mut stage2_drained = 0;
+        loop {
+            if let Some(c) = cancel {
+                if c.is_cancelled() {
+                    break;
+                }
+            }
+
+            let s2 = run_stage2_cosine_dedup(conn).await?;
+            if s2.processed == 0 {
+                break;
+            }
+            stage2_drained += s2.processed;
+            total_summary.stage2.processed += s2.processed;
+            total_summary.stage2.inserted += s2.inserted;
+            total_summary.stage2.duplicates_deactivated += s2.duplicates_deactivated;
+            total_summary.stage2.errors += s2.errors;
+        }
+
+        // If neither Stage 1 nor Stage 2 made progress, the queue is drained
+        if stage1.processed == 0 && stage2_drained == 0 {
+            break;
+        }
+    }
+
     log::info!(
-        "[Memory::Ingestion] Cycle completed in {:?}; stage1_processed={} stage2_processed={} stage2_inserted={} stage1_errors={} stage2_errors={}",
+        "[Memory::Ingestion] Drain completed in {:?}; stage1_processed={} stage2_processed={} stage2_inserted={} stage2_dedup={}",
         started.elapsed(),
-        summary.stage1.processed,
-        summary.stage2.processed,
-        summary.stage2.inserted,
-        summary.stage1.errors,
-        summary.stage2.errors,
+        total_summary.stage1.processed,
+        total_summary.stage2.processed,
+        total_summary.stage2.inserted,
+        total_summary.stage2.duplicates_deactivated,
     );
-    Ok(summary)
+
+    Ok(total_summary)
+}
+
+/// Executes a complete deduplication cycle: drains Stage 1 and Stage 2 batches to completion.
+pub async fn run_ingestion_cycle(conn: &Connection) -> Result<IngestionCycleSummary> {
+    drain_ingestion_queue(conn, None).await
 }
 
 /// Executes an ingestion cycle using an injected embedding function for deterministic testing.
@@ -75,12 +119,25 @@ pub async fn run_ingestion_cycle_with_embedder<F>(
     embed_fn: F,
 ) -> Result<IngestionCycleSummary>
 where
-    F: Fn(&str) -> Result<Option<Vec<f32>>> + Send + Sync + 'static,
+    F: Fn(&str) -> Result<Option<Vec<f32>>> + Send + Sync + 'static + Clone,
 {
     let stage1 = run_stage1_exact_dedup(conn).await?;
-    let stage2 = run_stage2_cosine_dedup_with_embedder(conn, embed_fn).await?;
+    let mut total_s2 = Stage2Summary::default();
+    loop {
+        let s2 = run_stage2_cosine_dedup_with_embedder(conn, embed_fn.clone()).await?;
+        if s2.processed == 0 {
+            break;
+        }
+        total_s2.processed += s2.processed;
+        total_s2.inserted += s2.inserted;
+        total_s2.duplicates_deactivated += s2.duplicates_deactivated;
+        total_s2.errors += s2.errors;
+    }
 
-    Ok(IngestionCycleSummary { stage1, stage2 })
+    Ok(IngestionCycleSummary {
+        stage1,
+        stage2: total_s2,
+    })
 }
 
 /// Reconciles crashed queue items on application boot.

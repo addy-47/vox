@@ -72,6 +72,52 @@ pub async fn fetch_active_observations_by_type(
     Ok(observations)
 }
 
+/// Fetches all already integrated personal observations for whole-memory re-synthesis / regeneration.
+pub async fn fetch_integrated_personal_facts(
+    conn: &Connection,
+    project_id: Option<&str>,
+) -> Result<Vec<ObservationRecord>> {
+    let mut rows = match project_id {
+        Some(pid) => {
+            conn.query(
+                "SELECT f.id, f.session_id, f.compaction_id, f.type, f.text, f.status, f.created_at, f.updated_at
+                 FROM memory_facts f
+                 JOIN sessions s ON s.id = f.session_id
+                 WHERE f.type = 'personal' AND f.status = 'integrated' AND s.project_id = ?
+                 ORDER BY f.created_at ASC",
+                (pid.to_string(),),
+            )
+            .await?
+        }
+        None => {
+            conn.query(
+                "SELECT id, session_id, compaction_id, type, text, status, created_at, updated_at
+                 FROM memory_facts
+                 WHERE type = 'personal' AND status = 'integrated'
+                 ORDER BY created_at ASC",
+                (),
+            )
+            .await?
+        }
+    };
+
+    let mut observations = Vec::new();
+    while let Some(row) = rows.next().await? {
+        observations.push(ObservationRecord {
+            id: row.get(0)?,
+            session_id: row.get(1).ok(),
+            compaction_id: row.get(2)?,
+            observation_type: row.get(3)?,
+            text: row.get(4)?,
+            status: row.get(5)?,
+            created_at: row.get(6)?,
+            updated_at: row.get(7)?,
+        });
+    }
+
+    Ok(observations)
+}
+
 /// Fetches observations across every type, optionally filtered by status, project, and observation type, with limit and offset.
 pub async fn fetch_all_observations(
     conn: &Connection,

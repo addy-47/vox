@@ -12,7 +12,7 @@ use super::{
     prompts::{
         delta_consolidation_json_schema, whole_memory_json_schema,
         COMMENT_DIRECTED_EDIT_SYSTEM_PROMPT, PERSONAL_COLD_GENERATION_SYSTEM_PROMPT,
-        PERSONAL_INCREMENTAL_INTEGRATION_SYSTEM_PROMPT, PERSONAL_REGENERATION_SYSTEM_PROMPT,
+        PERSONAL_INCREMENTAL_INTEGRATION_SYSTEM_PROMPT,
     },
     revisions::stage_revisions,
 };
@@ -20,7 +20,8 @@ use crate::{
     config::settings::PersonalMemorySettings,
     persistence::{
         facts::{
-            fetch_active_observations_by_type, mark_observations_integrated, ObservationRecord,
+            fetch_active_observations_by_type, fetch_integrated_personal_facts,
+            mark_observations_integrated, ObservationRecord,
         },
         has_in_progress_compaction,
         personal_memory::{
@@ -297,7 +298,7 @@ async fn stage_comment_directed_edits(
     Ok(ConsolidateOutcome::completed(pass.current_record.clone()))
 }
 
-/// Regeneration: replace the entire structure with a freshly organized one, all persistent IDs new.
+/// Regeneration: re-synthesize the entire structure from all already integrated personal facts using cold generation.
 pub async fn regenerate_personal_memory(
     conn: &Connection,
     llm_provider: &dyn LlmProvider,
@@ -309,8 +310,9 @@ pub async fn regenerate_personal_memory(
     let effective_settings = llm_settings.unwrap_or(&fallback_settings);
     let current_record = get_personal_memory(conn, project_id).await?;
 
-    if stored_sections(&current_record).is_empty() {
-        log::info!("[Memory::Personal] Current memory is empty, nothing to regenerate.");
+    let candidates = fetch_integrated_personal_facts(conn, project_id).await?;
+    if candidates.is_empty() {
+        log::info!("[Memory::Personal] No integrated personal facts available to regenerate.");
         return Ok(current_record);
     }
 
@@ -323,17 +325,15 @@ pub async fn regenerate_personal_memory(
         llm_settings: effective_settings,
     };
 
-    let memory = PersonalMemory::from_json(&current_record.content)?;
-    let (handle_view, _) = memory.to_handle_format();
     let user_content = format!(
-        "<current_memory>\n{}\n</current_memory>\n\n\
-         Re-synthesize and reorganize this memory into an elevated, coherent structure. Preserve all factual information.",
-        handle_view
+        "<learned_observations>\n{}\n</learned_observations>\n\n\
+         Synthesize a complete structured personal memory from these observations.",
+        render_observation_bullets(&candidates)
     );
 
     let drafts = run_whole_memory_pass(
         &pass,
-        PERSONAL_REGENERATION_SYSTEM_PROMPT,
+        PERSONAL_COLD_GENERATION_SYSTEM_PROMPT,
         &user_content,
         "regeneration",
     )
