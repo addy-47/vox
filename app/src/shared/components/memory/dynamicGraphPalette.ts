@@ -72,22 +72,34 @@ export function getActiveDynamicPalette(isLight: boolean): DynamicGraphPalette {
   const hsl = { h: 0, s: 0, l: 0 };
   accentColor.getHSL(hsl);
 
-  // If accent is near monochrome (e.g. grayscale), use pleasant default base hue
+  // If accent is near monochrome (e.g. grayscale), use pleasant default base hue.
+  // D2: previously the whole palette then went full-saturation anyway, so a gray
+  // accent silently produced vivid colors the user never chose. Now the palette
+  // desaturates toward the accent instead: a gray accent yields a muted graph.
+  // REVERT: set GRAY_ACCENT_SAT_SCALE = 1 to restore full saturation on gray.
+  const GRAY_ACCENT_SAT_SCALE = 0.3;
+  const satScale = hsl.s < 0.1 ? GRAY_ACCENT_SAT_SCALE : 1;
   const baseH = hsl.s < 0.1 ? 0.55 : hsl.h;
+  const sat = (light: number, dark: number) => (isLight ? light : dark) * satScale;
+  const lit = (light: number, dark: number) => (isLight ? light : dark);
 
   // Deriving 6 harmonious categories dynamically from accent hue:
   // 1. personal: Exact primary accent (Ground Truth identity core)
   // 2. objective: +32deg analogous shift (Harmonious violet/indigo/blue depending on accent)
   // 3. workdone: +122deg triadic harmony (Vibrant fresh mint/emerald/green)
   // 4. blocker: +180deg complementary opposite (Bold contrast crimson/coral/rose)
-  // 5. next_step: +245deg harmonic direction (Luminous amber/gold/orange)
-  // 6. pitfall: +310deg analogous warm balance (Warm amber-coral/canary)
+  // 5. next_step: +230deg harmonic direction (Luminous amber/gold/orange)
+  //    (was +245deg — moved so it no longer collides with pitfall; see D1)
+  // 6. pitfall: +324deg warm balance (Warm amber-coral/canary), darkened a step
+  //    (was +310deg — separated from next_step AND given lower lightness so the
+  //    two urgency levels differ in more than hue; see D1)
+  // D1 REVERT: restore 0.68 / 0.90 and the pitfall lightness below to undo.
   const personalColor = accentColor;
-  const objectiveColor = createHarmonicColor(baseH, 0.09, isLight, isLight ? 0.88 : 0.94, isLight ? 0.44 : 0.52);
-  const workdoneColor = createHarmonicColor(baseH, 0.34, isLight, isLight ? 0.86 : 0.92, isLight ? 0.39 : 0.48);
-  const blockerColor = createHarmonicColor(baseH, 0.50, isLight, isLight ? 0.92 : 0.96, isLight ? 0.45 : 0.52);
-  const nextStepColor = createHarmonicColor(baseH, 0.68, isLight, isLight ? 0.90 : 0.95, isLight ? 0.42 : 0.50);
-  const pitfallColor = createHarmonicColor(baseH, 0.86, isLight, isLight ? 0.92 : 0.96, isLight ? 0.46 : 0.52);
+  const objectiveColor = createHarmonicColor(baseH, 0.09, isLight, sat(0.88, 0.94), lit(0.44, 0.52));
+  const workdoneColor = createHarmonicColor(baseH, 0.34, isLight, sat(0.86, 0.92), lit(0.39, 0.48));
+  const blockerColor = createHarmonicColor(baseH, 0.50, isLight, sat(0.92, 0.96), lit(0.45, 0.52));
+  const nextStepColor = createHarmonicColor(baseH, 0.64, isLight, sat(0.90, 0.95), lit(0.42, 0.50));
+  const pitfallColor = createHarmonicColor(baseH, 0.90, isLight, sat(0.92, 0.96), lit(0.42, 0.47));
 
   const glowAlpha = isLight ? 0.35 : 0.45;
 

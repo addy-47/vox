@@ -20,6 +20,7 @@ import {
   Clock,
   Calendar,
   ChevronRight,
+  RotateCw,
   type LucideIcon,
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
@@ -351,6 +352,8 @@ export const NotificationPanel = memo(({ onClose }: NotificationPanelProps) => {
   const dismissTab = useNotificationStore((s) => s.dismissTab);
   const executeAction = useNotificationStore((s) => s.executeAction);
   const loading = useNotificationStore((s) => s.loading);
+  const error = useNotificationStore((s) => s.error);
+  const fetchNotifications = useNotificationStore((s) => s.fetchNotifications);
 
   // Deferred past the 220ms rail slide so the IPC round-trip + store
   // churn never lands inside the open animation's frame budget.
@@ -547,7 +550,35 @@ export const NotificationPanel = memo(({ onClose }: NotificationPanelProps) => {
       </div>
 
       {/* Content list */}
-      {loading && displayedItems.length === 0 ? (
+      {error && displayedItems.length === 0 ? (
+        /* A failed fetch is not an empty list. This panel is where pipeline
+           failures surface, so it must not claim there is nothing to report. */
+        <div
+          id="notification-tabpanel"
+          aria-labelledby="notification-tab-tasks"
+          role="alert"
+          className="flex flex-col items-center justify-center py-16 px-4 text-center gap-3"
+        >
+          <div className="w-14 h-14 rounded-2xl border border-[rgba(var(--danger),0.25)] bg-[rgba(var(--danger),0.07)] flex items-center justify-center mb-1">
+            <Bell size={24} className="text-[rgb(var(--danger))]/70" />
+          </div>
+          <h3 className="font-display text-[16px] font-black uppercase tracking-[0.12em] text-[rgb(var(--foreground))]">
+            {NOTIFICATION_COPY.fetchFailedTitle}
+          </h3>
+          <p className="text-[12px] text-[rgb(var(--foreground-muted))]/70 max-w-[240px] leading-relaxed">
+            {NOTIFICATION_COPY.fetchFailedSubtitle}
+          </p>
+          <button
+            type="button"
+            onClick={() => void fetchNotifications()}
+            disabled={loading}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-mono border border-[rgba(var(--border),0.3)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:border-[rgba(var(--accent),0.4)] hover:bg-[rgba(var(--accent),0.08)] transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <RotateCw size={11} className={loading ? "animate-spin" : undefined} />
+            {NOTIFICATION_COPY.fetchFailedRetry}
+          </button>
+        </div>
+      ) : loading && displayedItems.length === 0 ? (
         <div id="notification-tabpanel" role="tabpanel" aria-labelledby="notification-tab-tasks" className="flex flex-col gap-2.5" aria-hidden="true">
           {[0, 1, 2].map((i) => (
             <div

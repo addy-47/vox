@@ -17,6 +17,9 @@ import {
   MessageSquare,
   Hand,
   Tag,
+  History,
+  Undo2,
+  Loader2,
 } from "lucide-react";
 import {
   getPersonalMemory,
@@ -24,6 +27,7 @@ import {
   setActivePersonalMemoryVersion,
   savePersonalMemory,
   consolidatePersonalMemory,
+  regeneratePersonalMemory,
   getActiveObservations,
   getMemoryRevisions,
   resolveMemoryRevisions,
@@ -33,7 +37,7 @@ import {
   type ConfirmationReason,
 } from "@/services/memoryService";
 import { useObservationsList } from "@/shared/hooks/useObservationsList";
-import { AmbientBackground, ErrorBoundary, OrbitalLoader } from "@/shared/components/common";
+import { ErrorBoundary, OrbitalLoader } from "@/shared/components/common";
 import { Drawer } from "@/shared/ui/Drawer";
 import { EdgePanel, Tooltip, Markdown, BottomDockFeather } from "@/shared/ui";
 import { usePanelStateContext } from "@/shared/hooks/usePanelState";
@@ -87,6 +91,80 @@ export const Memory: React.FC = memo(() => {
   const [facts, setFacts] = useState<ObservationRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [isRegenerating, setIsRegenerating] = useState(false);
+  // Load failure is a first-class state (never rendered as "no memories").
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  // Loader display state: enters immediately, exits with a fade, and never
+  // flashes for less than MIN_LOADER_MS (avoids a sub-frame spinner blink on
+  // warm-cache loads, and a mid-fade hard cut on slow ones).
+  const MIN_LOADER_MS = 400;
+  const [loaderShown, setLoaderShown] = useState(false);
+  const loaderShownAtRef = useRef(0);
+  useEffect(() => {
+    if (loading) {
+      loaderShownAtRef.current = Date.now();
+      setLoaderShown(true);
+      return;
+    }
+    const wait = Math.max(0, MIN_LOADER_MS - (Date.now() - loaderShownAtRef.current));
+    if (wait === 0) {
+      setLoaderShown(false);
+      return;
+    }
+    const id = setTimeout(() => setLoaderShown(false), wait);
+    return () => clearTimeout(id);
+  }, [loading]);
+
+  // Tracked timers (style-guide §4.4): every setTimeout below registers here
+  // and all are cleared on unmount. Previously 8 untracked timeouts.
+  const timersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
+  useEffect(() => {
+    const timers = timersRef.current;
+    return () => {
+      timers.forEach((id) => clearTimeout(id));
+      timers.clear();
+    };
+  }, []);
+  const later = useCallback((fn: () => void, ms: number) => {
+    const id = setTimeout(() => {
+      timersRef.current.delete(id);
+      fn();
+    }, ms);
+    timersRef.current.add(id);
+    return id;
+  }, []);
+
+  // Commit-veil sequencing: dossier content swaps only when the veil is fully
+  // opaque (framer onAnimationComplete), never on a wall-clock sleep.
+  // Previously `await sleep(250)` swapped content at ~71% veil opacity.
+  const [veilCycle, setVeilCycle] = useState(0);
+  const pendingSwapRef = useRef<PersonalMemoryRecord | null>(null);
+  const veilReadyRef = useRef(false);
+  const handleVeilReady = useCallback(() => {
+    veilReadyRef.current = true;
+    const pending = pendingSwapRef.current;
+    if (pending) {
+      pendingSwapRef.current = null;
+      setPersonalMemory(pending);
+      setDisplayedRecord(pending);
+    }
+  }, []);
+  const stageSwap = useCallback((rec: PersonalMemoryRecord) => {
+    if (veilReadyRef.current) {
+      setPersonalMemory(rec);
+      setDisplayedRecord(rec);
+    } else {
+      pendingSwapRef.current = rec;
+    }
+  }, []);
+  const raiseVeil = useCallback(() => {
+    veilReadyRef.current = false;
+    pendingSwapRef.current = null;
+    setVeilCycle((c) => c + 1);
+    setLeftFlash(true);
+    setIsCommitting(true);
+  }, []);
 
   // Filtering & Selection
   const [searchQuery, setSearchQuery] = useState("");
@@ -142,7 +220,9 @@ export const Memory: React.FC = memo(() => {
   const [selectionAnchor, setSelectionAnchor] = useState<SelectionAnchor | null>(null);
   const [isComposingComment, setIsComposingComment] = useState(false);
   const isComposingCommentRef = useRef(false);
-  isComposingCommentRef.current = isComposingComment;
+  useEffect(() => {
+    isComposingCommentRef.current = isComposingComment;
+  }, [isComposingComment]);
   const dossierContainerRef = useRef<HTMLDivElement>(null);
 
   // Comments persisted in Zustand store (survive page navigation)
@@ -155,10 +235,9 @@ export const Memory: React.FC = memo(() => {
   const storeSetReopenToComments = useMemoryStore((s) => s.setReopenToComments);
 
   // ── Measure Container ──────────────────────────────────────────────────────
-  const hasMountedRef = useRef(false);
-  if (dims.w > 0) {
-    hasMountedRef.current = true;
-  }
+  // The graph mounts once real dimensions exist (dims stay > 0 afterwards,
+  // so no separate "has mounted" flag is needed — and ref writes do not
+  // belong in the render body).
 
   useEffect(() => {
     const el = containerRef.current;
@@ -182,6 +261,15 @@ export const Memory: React.FC = memo(() => {
     };
   }, []);
 
+  // Mounted guard for the async load below (style-guide §4.3).
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
   // ── Load Memory Data ───────────────────────────────────────────────────────
   const refresh = useCallback(async (isSilent = false) => {
     if (!isSilent) setLoading(true);
@@ -193,17 +281,23 @@ export const Memory: React.FC = memo(() => {
         getPersonalMemoryVersions(),
         getMemoryRevisions().catch(() => []),
       ]);
+      if (!mountedRef.current) return;
       setPersonalMemory(mem);
       setDisplayedRecord(mem);
       setVersions(allVersions);
       setFacts(activeFacts);
       setSuggestions(allSuggestions);
+      setLoadError(null);
       if (allSuggestions.length > 0) {
         setStagingMode("suggestions");
       }
     } catch (e) {
       console.error("[Memory] Failed to load data:", e);
+      // Failure is an error state, never an empty state.
+      if (!mountedRef.current) return;
+      setLoadError(MEMORY_COPY.loadFailedDesc);
     } finally {
+      if (!mountedRef.current) return;
       setLoading(false);
       setRefreshing(false);
     }
@@ -325,11 +419,11 @@ export const Memory: React.FC = memo(() => {
         const restored = await setActivePersonalMemoryVersion(version);
         setPersonalMemory(restored);
         setDisplayedRecord(restored);
-        const allVersions = await getPersonalMemoryVersions();
-        setVersions(allVersions);
+        // refresh(true) refetches versions too — no separate versions call.
         await refresh(true);
       } catch (e) {
         console.error("[Memory] Restore version failed:", e);
+        setLoadError(MEMORY_COPY.loadFailedDesc);
       } finally {
         setIsRestoringVersion(false);
       }
@@ -342,37 +436,35 @@ export const Memory: React.FC = memo(() => {
       if (!personalMemory) return;
       setSaving(true);
       // 1. Smoothly fade overlay in over old content
-      setIsCommitting(true);
-      setLeftFlash(true);
+      raiseVeil();
 
       try {
         const updated = await savePersonalMemory(content, personalMemory.version);
-        // 2. Wait until overlay is opaque (250ms) before swapping document content
-        await new Promise((resolve) => setTimeout(resolve, 250));
-        setPersonalMemory(updated);
-        setDisplayedRecord(updated);
+        // 2. Swap only when the veil reports opaque (handleVeilReady).
+        stageSwap(updated);
         const allVersions = await getPersonalMemoryVersions();
         setVersions(allVersions);
 
         // 3. Reset right card staging editor
-        setTimeout(() => {
+        later(() => {
           setStagingMode("idle");
         }, 300);
 
         // 4. Smoothly fade overlay out to reveal new content
-        setTimeout(() => {
+        later(() => {
           setIsCommitting(false);
           setLeftFlash(false);
         }, 900);
       } catch (e) {
         console.error("[Memory] Save failed:", e);
+        pendingSwapRef.current = null;
         setIsCommitting(false);
         setLeftFlash(false);
       } finally {
         setSaving(false);
       }
     },
-    [personalMemory]
+    [personalMemory, later, raiseVeil, stageSwap]
   );
 
   const handleConsolidateNow = useCallback(
@@ -380,6 +472,7 @@ export const Memory: React.FC = memo(() => {
       if (consolidating) return;
       setPendingActionType("consolidate");
       setConsolidating(true);
+      raiseVeil();
 
       try {
         const outcome = await consolidatePersonalMemory(
@@ -389,9 +482,8 @@ export const Memory: React.FC = memo(() => {
         );
 
         if (outcome.status === "completed") {
-          await new Promise((resolve) => setTimeout(resolve, 250));
-          setPersonalMemory(outcome.record);
-          setDisplayedRecord(outcome.record);
+          // Swap only when the veil reports opaque (handleVeilReady).
+          stageSwap(outcome.record);
 
           const [allVersions, pendingSuggestions] = await Promise.all([
             getPersonalMemoryVersions(),
@@ -407,10 +499,14 @@ export const Memory: React.FC = memo(() => {
             setStagingMode("suggestions");
           }
 
-          setTimeout(() => {
+          later(() => {
             setIsCommitting(false);
+            setLeftFlash(false);
           }, 900);
         } else if (outcome.status === "confirmation_required") {
+          pendingSwapRef.current = null;
+          setIsCommitting(false);
+          setLeftFlash(false);
           setPendingConfirmation({
             reason: outcome.reason,
             pendingCount: outcome.pending_count,
@@ -418,11 +514,14 @@ export const Memory: React.FC = memo(() => {
         }
       } catch (e: unknown) {
         console.error("[Memory] Consolidate failed:", e);
+        pendingSwapRef.current = null;
+        setIsCommitting(false);
+        setLeftFlash(false);
       } finally {
         setConsolidating(false);
       }
     },
-    [consolidating, refresh]
+    [consolidating, refresh, later, raiseVeil, stageSwap]
   );
 
   const handleApplySuggestions = useCallback(
@@ -433,15 +532,15 @@ export const Memory: React.FC = memo(() => {
       }));
       if (decisionList.length === 0) return;
       setIsApplyingSuggestions(true);
-      setLeftFlash(true);
+      raiseVeil();
 
       try {
         const updated = await resolveMemoryRevisions({
           projectId: undefined,
           decisions: decisionList,
         });
-        setPersonalMemory(updated);
-        setDisplayedRecord(updated);
+        // Swap only when the veil reports opaque (handleVeilReady).
+        stageSwap(updated);
 
         const [allVersions, remainingSuggestions] = await Promise.all([
           getPersonalMemoryVersions(),
@@ -457,19 +556,27 @@ export const Memory: React.FC = memo(() => {
           setStagingMode("idle");
         }
 
-        setTimeout(() => {
+        later(() => {
           setIsCommitting(false);
           setLeftFlash(false);
         }, 900);
       } catch (e) {
         console.error("[Memory] Apply suggestions failed:", e);
+        pendingSwapRef.current = null;
+        setIsCommitting(false);
         setLeftFlash(false);
         throw e;
       } finally {
         setIsApplyingSuggestions(false);
       }
     },
-    [refresh]
+    [refresh, later, raiseVeil, stageSwap]
+  );
+
+  // Browsing a revision is preview-only, so the historical bar appears whenever
+  // the displayed record is not the active one.
+  const isViewingHistorical = Boolean(
+    displayedRecord && personalMemory && displayedRecord.version !== personalMemory.version
   );
 
   const handleCopyDoc = useCallback(async () => {
@@ -478,83 +585,144 @@ export const Memory: React.FC = memo(() => {
     const ok = await copyToClipboard(text);
     if (ok) {
       setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      later(() => setCopied(false), 2000);
     }
-  }, [personalMemory?.markdown, personalMemory?.content]);
+  }, [personalMemory?.markdown, personalMemory?.content, later]);
+
+  const handleRegenerateFromFacts = useCallback(async () => {
+    if (isRegenerating || saving) return;
+    setIsRegenerating(true);
+    raiseVeil();
+    try {
+      const record = await regeneratePersonalMemory();
+      stageSwap(record);
+      const allVersions = await getPersonalMemoryVersions();
+      setVersions(allVersions);
+      setIsCommitting(true);
+      later(() => {
+        setIsCommitting(false);
+        setLeftFlash(false);
+      }, 700);
+      await refresh(true);
+    } catch (e) {
+      pendingSwapRef.current = null;
+      setIsCommitting(false);
+      setLeftFlash(false);
+      console.error("[Memory] Failed to regenerate memory from integrated facts:", e);
+    } finally {
+      setIsRegenerating(false);
+    }
+  }, [isRegenerating, saving, raiseVeil, stageSwap, later, refresh]);
+
+  // Fast line-number lookup: precomputed line-start offset table over the
+  // dossier source, binary-searched per event. Previously every
+  // selectionchange event sliced + split the entire document string.
+  const lineStartsRef = useRef<number[]>([0]);
+  const dossierContentRef = useRef("");
+  useEffect(() => {
+    const content = personalMemory?.content ?? "";
+    dossierContentRef.current = content;
+    const starts: number[] = [0];
+    for (let i = 0; i < content.length; i++) {
+      if (content.charCodeAt(i) === 10) starts.push(i + 1);
+    }
+    lineStartsRef.current = starts;
+  }, [personalMemory?.content]);
+
+  const lineNumberForIndex = useCallback((idx: number): number => {
+    const starts = lineStartsRef.current;
+    let lo = 0;
+    let hi = starts.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (starts[mid] <= idx) lo = mid + 1;
+      else hi = mid;
+    }
+    return lo; // 1-based: count of line starts at or before idx
+  }, []);
 
   useEffect(() => {
+    // rAF-throttled: selectionchange fires continuously during drag-select.
+    let rafId: number | null = null;
     const handleSelectionChange = () => {
-      // Do NOT clear or collapse anchor if the user is currently typing/composing in the popover
-      if (isComposingCommentRef.current) {
-        return;
-      }
-
-      const sel = window.getSelection();
-      if (!sel || sel.isCollapsed || !sel.rangeCount) {
-        setSelectionAnchor(null);
-        return;
-      }
-      const container = dossierContainerRef.current;
-      if (!container) return;
-
-      const anchorNode = sel.anchorNode;
-      if (!anchorNode || !container.contains(anchorNode)) {
-        setSelectionAnchor(null);
-        return;
-      }
-
-      const text = sel.toString().trim();
-      if (!text || text.length < 2) {
-        setSelectionAnchor(null);
-        return;
-      }
-
-      const range = sel.getRangeAt(0);
-      const rect = range.getBoundingClientRect();
-      const containerRect = container.getBoundingClientRect();
-
-      if (rect.width === 0 || rect.height === 0) {
-        setSelectionAnchor(null);
-        return;
-      }
-
-      // Compute client rects for multi-line highlight persistence
-      const clientRects = Array.from(range.getClientRects());
-      const selectionRects = clientRects.map((cr) => ({
-        top: cr.top - containerRect.top + container.scrollTop,
-        left: cr.left - containerRect.left,
-        width: cr.width,
-        height: cr.height,
-      }));
-
-      // Fast line number lookup
-      const fullContent = personalMemory?.content || "";
-      const snippetIdx = fullContent.indexOf(text);
-      let lineNumber = 1;
-      if (snippetIdx !== -1) {
-        lineNumber = fullContent.slice(0, snippetIdx).split("\n").length;
-      } else {
-        const firstWord = text.split(/\s+/)[0];
-        const wordIdx = fullContent.indexOf(firstWord);
-        if (wordIdx !== -1) {
-          lineNumber = fullContent.slice(0, wordIdx).split("\n").length;
+      if (rafId !== null) return;
+      rafId = requestAnimationFrame(() => {
+        rafId = null;
+        // Do NOT clear or collapse anchor if the user is currently typing/composing in the popover
+        if (isComposingCommentRef.current) {
+          return;
         }
-      }
 
-      setSelectionAnchor({
-        line: lineNumber,
-        quotedText: text.length > 80 ? `${text.slice(0, 77)}…` : text,
-        top: rect.top - containerRect.top + container.scrollTop,
-        bottom: rect.bottom - containerRect.top + container.scrollTop,
-        left: rect.left - containerRect.left,
-        right: rect.right - containerRect.left,
-        rects: selectionRects,
+        const sel = window.getSelection();
+        if (!sel || sel.isCollapsed || !sel.rangeCount) {
+          setSelectionAnchor(null);
+          return;
+        }
+        const container = dossierContainerRef.current;
+        if (!container) return;
+
+        const anchorNode = sel.anchorNode;
+        if (!anchorNode || !container.contains(anchorNode)) {
+          setSelectionAnchor(null);
+          return;
+        }
+
+        const text = sel.toString().trim();
+        if (!text || text.length < 2) {
+          setSelectionAnchor(null);
+          return;
+        }
+
+        const range = sel.getRangeAt(0);
+        const rect = range.getBoundingClientRect();
+        const containerRect = container.getBoundingClientRect();
+
+        if (rect.width === 0 || rect.height === 0) {
+          setSelectionAnchor(null);
+          return;
+        }
+
+        // Compute client rects for multi-line highlight persistence
+        const clientRects = Array.from(range.getClientRects());
+        const selectionRects = clientRects.map((cr) => ({
+          top: cr.top - containerRect.top + container.scrollTop,
+          left: cr.left - containerRect.left,
+          width: cr.width,
+          height: cr.height,
+        }));
+
+        // Line number via the precomputed offset table (binary search).
+        const fullContent = dossierContentRef.current;
+        const snippetIdx = fullContent.indexOf(text);
+        let lineNumber = 1;
+        if (snippetIdx !== -1) {
+          lineNumber = lineNumberForIndex(snippetIdx);
+        } else {
+          const firstWord = text.split(/\s+/)[0];
+          const wordIdx = fullContent.indexOf(firstWord);
+          if (wordIdx !== -1) {
+            lineNumber = lineNumberForIndex(wordIdx);
+          }
+        }
+
+        setSelectionAnchor({
+          line: lineNumber,
+          quotedText: text.length > 80 ? `${text.slice(0, 77)}…` : text,
+          top: rect.top - containerRect.top + container.scrollTop,
+          bottom: rect.bottom - containerRect.top + container.scrollTop,
+          left: rect.left - containerRect.left,
+          right: rect.right - containerRect.left,
+          rects: selectionRects,
+        });
       });
     };
 
     document.addEventListener("selectionchange", handleSelectionChange);
-    return () => document.removeEventListener("selectionchange", handleSelectionChange);
-  }, [personalMemory?.content, drawerOpen]);
+    return () => {
+      document.removeEventListener("selectionchange", handleSelectionChange);
+      if (rafId !== null) cancelAnimationFrame(rafId);
+    };
+  }, [drawerOpen, lineNumberForIndex]);
 
   const handleAddComment = useCallback(
     (newComment: { line: number; quotedText: string; text: string; top: number }) => {
@@ -598,7 +766,7 @@ export const Memory: React.FC = memo(() => {
       if (!commentsToApply.length) return;
       setPendingActionType("regenerate");
       setSaving(true);
-      setLeftFlash(true);
+      raiseVeil();
       try {
         const formattedComments = commentsToApply.map(
           (c) => `Line ${c.line} ("${c.quotedText}"): ${c.text}`
@@ -610,8 +778,8 @@ export const Memory: React.FC = memo(() => {
         );
 
         if (outcome.status === "completed") {
-          setPersonalMemory(outcome.record);
-          setDisplayedRecord(outcome.record);
+          // Swap only when the veil reports opaque (handleVeilReady).
+          stageSwap(outcome.record);
           const [allVersions, pendingSuggestions] = await Promise.all([
             getPersonalMemoryVersions(),
             getMemoryRevisions().catch(() => []),
@@ -628,12 +796,14 @@ export const Memory: React.FC = memo(() => {
             setStagingMode("idle");
           }
 
-          setTimeout(() => {
+          later(() => {
             setIsCommitting(false);
             setLeftFlash(false);
           }, 700);
           await refresh(true);
         } else if (outcome.status === "confirmation_required") {
+          pendingSwapRef.current = null;
+          setIsCommitting(false);
           setLeftFlash(false);
           setPendingConfirmation({
             reason: outcome.reason,
@@ -641,13 +811,15 @@ export const Memory: React.FC = memo(() => {
           });
         }
       } catch (e) {
+        pendingSwapRef.current = null;
+        setIsCommitting(false);
         setLeftFlash(false);
         throw e;
       } finally {
         setSaving(false);
       }
     },
-    [refresh, storeClearComments]
+    [refresh, storeClearComments, later, raiseVeil, stageSwap]
   );
 
   const handleConfirmPendingIntegration = useCallback(() => {
@@ -661,6 +833,16 @@ export const Memory: React.FC = memo(() => {
   const handleCancelPendingConfirmation = useCallback(() => {
     setPendingConfirmation(null);
   }, []);
+
+  // Stable callback into the memo'd staging card (an inline arrow here would
+  // defeat its memo on every parent render — style-guide §4.5).
+  const handleStagingModeChange = useCallback(
+    (m: StagingMode) => {
+      setStagingMode(m);
+      if (justCommitted) setJustCommitted(false);
+    },
+    [justCommitted]
+  );
 
   const handleRecenter = useCallback(() => graphRef.current?.recenter(), []);
   const handleZoomIn = useCallback(() => graphRef.current?.zoomIn(), []);
@@ -743,9 +925,9 @@ export const Memory: React.FC = memo(() => {
       ref={containerRef}
       className="relative flex-1 flex flex-col h-full w-full overflow-hidden bg-transparent select-none"
     >
-      {/* Sentient Liquid Space Ambient Background */}
-      <AmbientBackground originX="50%" originY="50%" rippleSpeedMultiplier={1.0} paused />
-
+      {/* NOTE: no page-level AmbientBackground here. ResponsiveLayout renders one
+          app-wide instance (standardised origin); a second frozen copy used to
+          mount here, doubling overdraw with a competing ripple centre. */}
 
       {/* ── Top Bar Search: Dynamic width with generous gap to triggers on both sides ── */}
       <div className="absolute top-4 left-24 right-32 z-30 pointer-events-auto flex justify-center">
@@ -825,7 +1007,7 @@ export const Memory: React.FC = memo(() => {
       </EdgePanel>
 
       {/* ── 3D Dynamic WebGL Graph Canvas ── */}
-      {(hasMountedRef.current || dims.w > 0) && (
+      {dims.w > 0 && (
         <ErrorBoundary name="Memory3DGraph">
           <MemoryGraph
             ref={graphRef}
@@ -853,19 +1035,49 @@ export const Memory: React.FC = memo(() => {
         />
       )}
 
-      {/* ── Ambient Orbital Loading State ── */}
-      {loading && (
-        <div className="absolute inset-0 z-20 flex flex-col items-center justify-center pointer-events-none animate-in fade-in duration-300">
-          <OrbitalLoader
-            size="md"
-            title={MEMORY_COPY.graphLoadingTitle}
-            subtitle={MEMORY_COPY.graphLoadingSubtitle}
-          />
+      {/* ── Ambient Orbital Loading State (enter + exit, min dwell) ── */}
+      <AnimatePresence>
+        {loaderShown && (
+          <motion.div
+            key="memory-loader"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.25, ease: "easeOut" }}
+            className="absolute inset-0 z-20 flex flex-col items-center justify-center pointer-events-none"
+          >
+            <OrbitalLoader
+              size="md"
+              title={MEMORY_COPY.graphLoadingTitle}
+              subtitle={MEMORY_COPY.graphLoadingSubtitle}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Load Error State (failure is never rendered as emptiness) ── */}
+      {!loading && loadError && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+          <div className="rounded-3xl bg-[rgba(var(--card),0.85)] border border-[rgba(var(--border),0.12)] backdrop-blur-xl p-8 max-w-sm text-center shadow-2xl">
+            <h3 className="font-display text-[14px] font-bold text-[rgb(var(--foreground))] mb-1">
+              {MEMORY_COPY.loadFailedTitle}
+            </h3>
+            <p className="text-[12px] text-[rgb(var(--foreground-muted))] leading-relaxed mb-4">
+              {loadError}
+            </p>
+            <button
+              type="button"
+              onClick={() => refresh()}
+              className="pointer-events-auto px-4 py-2 rounded-xl text-[12px] font-bold bg-[rgba(var(--accent),0.12)] border border-[rgba(var(--accent),0.3)] text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.2)] transition-colors cursor-pointer"
+            >
+              {MEMORY_COPY.loadFailedRetry}
+            </button>
+          </div>
         </div>
       )}
 
       {/* ── Empty State ── */}
-      {!loading && facts.length === 0 && (
+      {!loading && !loadError && facts.length === 0 && (
         <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
           <div className="rounded-3xl bg-[rgba(var(--card),0.85)] border border-[rgba(var(--border),0.12)] backdrop-blur-xl p-8 max-w-sm text-center shadow-2xl">
             <Sparkles size={28} className="mx-auto text-[rgb(var(--accent))] mb-3 opacity-80" />
@@ -996,14 +1208,19 @@ export const Memory: React.FC = memo(() => {
               <div
                 className="relative w-full h-full min-h-0 flex flex-col glass-card rounded-2xl border border-[rgba(var(--accent),0.18)] bg-[rgba(var(--card),0.65)] backdrop-blur-sm p-5 sm:p-6 shadow-2xl overflow-hidden"
               >
-                {/* Computational Pixel Reconstruction Overlay — smooth Framer Motion crossfade */}
+                {/* Computational Pixel Reconstruction Overlay — smooth Framer Motion crossfade.
+                    Content swaps only via handleVeilReady (onAnimationComplete),
+                    never on a timer. The key remounts the veil per commit so the
+                    completion callback always fires for the fresh animation. */}
                 <AnimatePresence>
                   {leftFlash && (
                     <motion.div
+                      key={`veil-${veilCycle}`}
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
                       exit={{ opacity: 0 }}
                       transition={{ duration: 0.35, ease: "easeInOut" }}
+                      onAnimationComplete={handleVeilReady}
                       className="absolute inset-0 z-30 rounded-2xl overflow-hidden bg-[rgba(var(--card),0.85)] backdrop-blur-md pointer-events-none"
                     >
                       <PixelSynthesisCanvas active={leftFlash} />
@@ -1011,9 +1228,40 @@ export const Memory: React.FC = memo(() => {
                   )}
                 </AnimatePresence>
 
+                {/* Historical-revision bar. Browsing a revision no longer writes,
+                    so promoting one to canonical is an explicit labelled action
+                    (memory-spec §5.3.7 revision resolution). Own row above the
+                    header so the title/version/copy cluster is never displaced. */}
+                {isViewingHistorical && displayedRecord && (
+                  <div
+                    role="status"
+                    className="flex items-center gap-2 mb-3 px-3 py-2 rounded-xl border border-[rgba(var(--accent),0.3)] bg-[rgba(var(--accent),0.1)] shrink-0"
+                  >
+                    <History size={13} className="text-[rgb(var(--accent))] shrink-0" />
+                    <span className="text-[11px] font-mono text-[rgb(var(--foreground-muted))] truncate">
+                      {MEMORY_COPY.versions.viewingHistorical} {displayedRecord.version}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleRestoreActive(displayedRecord.version)}
+                      disabled={isRestoringVersion}
+                      className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-mono bg-[rgba(var(--accent),0.14)] border border-[rgba(var(--accent),0.35)] text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.22)] transition-colors duration-150 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+                    >
+                      {isRestoringVersion ? (
+                        <Loader2 size={12} className="animate-spin" />
+                      ) : (
+                        <Undo2 size={12} />
+                      )}
+                      {isRestoringVersion
+                        ? MEMORY_COPY.versions.restoring
+                        : MEMORY_COPY.versions.restoreThisVersion}
+                    </button>
+                  </div>
+                )}
+
                 {/* Dossier Header Bar */}
                 <div className="flex items-center justify-between gap-4 border-b border-[rgba(var(--border),0.12)] pb-3.5 min-h-[44px] shrink-0">
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
                     <div className="w-8 h-8 rounded-xl bg-[rgba(var(--accent),0.12)] border border-[rgba(var(--accent),0.25)] flex items-center justify-center text-[rgb(var(--accent))] shadow-sm">
                       <FileText size={16} />
                     </div>
@@ -1056,6 +1304,17 @@ export const Memory: React.FC = memo(() => {
                     >
                       {copied ? <Check size={12} className="text-[rgb(var(--accent))]" /> : <Copy size={12} />}
                       {copied ? MEMORY_COPY.copied : MEMORY_COPY.copy}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleRegenerateFromFacts}
+                      disabled={isRegenerating || saving}
+                      className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[11px] font-mono bg-[rgba(var(--foreground),0.05)] border border-[rgba(var(--border),0.14)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors disabled:opacity-40 cursor-pointer shadow-sm"
+                      title="Re-synthesize personal memory from all integrated facts"
+                    >
+                      <Sparkles size={12} className={isRegenerating ? "animate-spin text-[rgb(var(--accent))]" : "text-[rgb(var(--accent))]" } />
+                      {isRegenerating ? "Synthesizing..." : "Re-synthesize"}
                     </button>
                   </div>
                 </div>
@@ -1132,10 +1391,7 @@ export const Memory: React.FC = memo(() => {
                 canonicalMarkdown={displayedRecord?.markdown ?? ""}
                 activeVersion={personalMemory?.version ?? 1}
                 mode={stagingMode}
-                onModeChange={(m) => {
-                  setStagingMode(m);
-                  if (justCommitted) setJustCommitted(false);
-                }}
+                onModeChange={handleStagingModeChange}
                 onSave={handleSaveStaging}
                 onRegenerateWithComments={handleRegenerateWithComments}
                 comments={comments}
@@ -1148,6 +1404,7 @@ export const Memory: React.FC = memo(() => {
                 isCommitting={isCommitting}
                 suggestions={suggestions}
                 onApplySuggestions={handleApplySuggestions}
+                onDismissCommitted={() => setJustCommitted(false)}
                 isApplyingSuggestions={isApplyingSuggestions}
                 candidateFacts={identityCandidateFacts}
                 observations={paginatedObservations}

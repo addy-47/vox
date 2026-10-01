@@ -1,5 +1,5 @@
 import React from "react";
-import { Layers, AlertTriangle, Code, Palette, Box, Activity } from "lucide-react";
+import { Layers, AlertTriangle, Code, Palette, Box, Activity, ShieldCheck } from "lucide-react";
 import type { PageMemoryRecord } from "@/shared/hooks/useMemoryProfiler";
 import type { JSHeapSample, DOMSample, CSSIndicatorsSample } from "@/services/monitoringService";
 import { AccuracyBadge } from "./AccuracyBadge";
@@ -137,7 +137,11 @@ export const PagesTab: React.FC<PagesTabProps> = ({
                 <th className="pb-3 font-semibold">{PROFILER_COPY.pages.baseline}</th>
                 <th className="pb-3 font-semibold">{PROFILER_COPY.pages.current}</th>
                 <th className="pb-3 font-semibold">{PROFILER_COPY.pages.peak}</th>
-                <th className="pb-3 font-semibold">{PROFILER_COPY.pages.retained}</th>
+                <th className="pb-3 font-semibold">
+                  <span title={PROFILER_COPY.pages.retainedHint}>
+                    {PROFILER_COPY.pages.retained}
+                  </span>
+                </th>
                 <th className="pb-3 font-semibold">{PROFILER_COPY.pages.riskObservation}</th>
               </tr>
             </thead>
@@ -152,23 +156,46 @@ export const PagesTab: React.FC<PagesTabProps> = ({
                 const retainedMb = rec?.retained?.total_vox_ram_mb;
                 const retainedDelta = rec?.retainedDeltaMb;
 
-                let riskBadge = (
-                  <span className="text-[rgb(var(--accent))] font-sans text-[11px] font-medium">{PROFILER_COPY.pages.riskNormal}</span>
-                );
-                if (retainedDelta !== null && retainedDelta !== undefined) {
-                  if (retainedDelta > 40) {
-                    riskBadge = (
-                      <span className="text-[rgb(var(--accent))] font-sans text-[11px] font-bold flex items-center gap-1">
-                        <AlertTriangle size={12} /> {PROFILER_COPY.pages.riskCritical} (+{retainedDelta}MB)
-                      </span>
-                    );
-                  } else if (retainedDelta > 15) {
-                    riskBadge = (
-                      <span className="text-[rgb(var(--foreground))] font-sans text-[11px] font-semibold flex items-center gap-1">
-                        <AlertTriangle size={12} /> {PROFILER_COPY.pages.riskSuspicious} (+{retainedDelta}MB)
-                      </span>
-                    );
-                  }
+                // Risk is only stated once a retention sample exists. Before
+                // that this rendered a confident "Normal" over a number that had
+                // never been measured. NOTE: the sample itself is NOT taken —
+                // an earlier attempt sampled the full process tree on every
+                // route change, which made navigation visibly lag. Until that
+                // cost is re-solved, an unmeasured route says so.
+                const hasRetention = retainedDelta !== null && retainedDelta !== undefined;
+                let riskBadge: React.ReactNode;
+                if (!hasRetention) {
+                  riskBadge = isCurrent ? (
+                    <span className="text-[11px] text-[rgb(var(--foreground-muted))] font-sans italic">
+                      {PROFILER_COPY.pages.riskPendingExit}
+                    </span>
+                  ) : rec ? (
+                    <span className="text-[11px] text-[rgb(var(--foreground-muted))] font-sans italic">
+                      {PROFILER_COPY.pages.riskNotMeasured}
+                    </span>
+                  ) : (
+                    <span className="text-[rgb(var(--foreground-muted))] font-sans text-[11px] font-medium">
+                      {PROFILER_COPY.pages.riskNoVisit}
+                    </span>
+                  );
+                } else if (retainedDelta! > 40) {
+                  riskBadge = (
+                    <span className="text-[rgb(var(--danger))] font-sans text-[11px] font-bold flex items-center gap-1">
+                      <AlertTriangle size={12} /> {PROFILER_COPY.pages.riskCritical} (+{retainedDelta!.toFixed(1)}MB)
+                    </span>
+                  );
+                } else if (retainedDelta! > 15) {
+                  riskBadge = (
+                    <span className="text-[rgb(var(--warning))] font-sans text-[11px] font-semibold flex items-center gap-1">
+                      <AlertTriangle size={12} /> {PROFILER_COPY.pages.riskSuspicious} (+{retainedDelta!.toFixed(1)}MB)
+                    </span>
+                  );
+                } else {
+                  riskBadge = (
+                    <span className="text-[rgb(var(--success))] font-sans text-[11px] font-medium flex items-center gap-1">
+                      <ShieldCheck size={12} /> {PROFILER_COPY.pages.riskNormal}
+                    </span>
+                  );
                 }
 
                 return (
@@ -232,16 +259,14 @@ export const PagesTab: React.FC<PagesTabProps> = ({
                             <span
                               className={cn(
                                 "text-[11px]",
-                                retainedDelta > 15 ? "text-[rgb(var(--accent))] font-bold" : "text-[rgb(var(--foreground-muted))]"
+                                retainedDelta > 15
+                                  ? "text-[rgb(var(--warning))] font-bold"
+                                  : "text-[rgb(var(--success))]"
                               )}
                             >
                               ({retainedDelta >= 0 ? `+${retainedDelta.toFixed(1)}` : retainedDelta.toFixed(1)})
                             </span>
                           )}
-                        </span>
-                      ) : isCurrent ? (
-                        <span className="text-[11px] text-[rgb(var(--foreground-muted))] font-sans italic">
-                          {PROFILER_COPY.pages.measuringOnExit}
                         </span>
                       ) : (
                         "--"

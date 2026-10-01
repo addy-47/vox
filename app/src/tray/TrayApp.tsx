@@ -8,8 +8,10 @@ import { useInteraction } from "@/shared/hooks/useInteraction";
 import { useStreamingRenderer } from "@/shared/hooks/useStreamingRenderer";
 import { useTelemetry } from "@/shared/hooks/useTelemetry";
 import { hideTrayWindow, setWindowClickThrough } from "@/services/windowService";
-import { pttStart, pttStop } from "@/services/pipelineService";
+import { pttStart, pttStop, engageSession, resumeSession } from "@/services/pipelineService";
+import { getRuntimeSnapshot } from "@/services/monitoringService";
 import { getTranscriptHistory } from "@/services/historyService";
+import { TRAY_COPY } from "@/data/trayCopy";
 import { useSettings } from "@/shared/hooks/useSettings";
 import { ErrorBoundary } from "@/shared/components/common";
 import {
@@ -27,6 +29,22 @@ interface SystemStats {
   vox_cpu: number;
   vox_ram_mb: number;
   threads: number;
+}
+
+// Snapshot poll for the tray's engage-then-start path. The tray is a HUD, so
+// this polls gently (500ms) — unlike the main app's 100ms engage poll.
+async function waitForTrayReady(timeoutMs: number): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    try {
+      const snap = await getRuntimeSnapshot();
+      if (snap?.pipeline_state === "Ready") return true;
+    } catch {
+      // Best-effort; keep polling until deadline.
+    }
+    if (Date.now() >= deadline) return false;
+    await new Promise((r) => setTimeout(r, 500));
+  }
 }
 
 export const TrayApp: React.FC = () => {
@@ -63,6 +81,24 @@ export const TrayApp: React.FC = () => {
   const [interactionState, setInteractionState] = useState<InteractionState>("Idle");
   const [copied, setCopied] = useState(false);
   const [stats, setStats] = useState<SystemStats | null>(null);
+  const [pttBusy, setPttBusy] = useState(false);
+  const [micError, setMicError] = useState<string | null>(null);
+
+  const pttBusyRef = useRef(false);
+  const micErrorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (micErrorTimerRef.current) clearTimeout(micErrorTimerRef.current);
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+    };
+  }, []);
+
+  const flashMicError = useCallback((msg: string) => {
+    setMicError(msg);
+    if (micErrorTimerRef.current) clearTimeout(micErrorTimerRef.current);
+    micErrorTimerRef.current = setTimeout(() => setMicError(null), 2500);
+  }, []);
 
   // Sync React state to OS Window and Backend state
   useEffect(() => {
@@ -135,7 +171,8 @@ export const TrayApp: React.FC = () => {
     try {
       await navigator.clipboard.writeText(textToCopy);
       setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+      copyTimerRef.current = setTimeout(() => setCopied(false), 2000);
     } catch (err) {
       console.error("[TrayApp] Failed to copy text: ", err);
     }
@@ -170,17 +207,45 @@ export const TrayApp: React.FC = () => {
     });
   }, [history]);
 
-  const togglePtt = async () => {
-    try {
-      if (interactionState === 'Listening') {
-        pttStop();
-      } else {
-        pttStart();
+  // State-dependent mic: Listening -> stop; otherwise ensure an engaged
+  // session first, then start. The backend drops PttStart unless a session is
+  // active (Idle/Paused/Sleeping are all dropped) and ptt_start still resolves
+  // Ok — so without the engage path below, the button silently did nothing.
+  const handleMicPress = useCallback(async () => {
+    if (pttBusyRef.current) return;
+    if (interactionState === "Listening") {
+      try {
+        await pttStop();
+      } catch (e) {
+        console.error("[TrayApp] PTT stop failed:", e);
+        flashMicError(TRAY_COPY.micStopFailed);
       }
-    } catch (e) {
-      console.error("[TrayApp] Failed to toggle PTT:", e);
+      return;
     }
-  };
+    pttBusyRef.current = true;
+    setPttBusy(true);
+    try {
+      if (interactionState === "Idle") {
+        // Manual-open path: no session exists yet. Same semantics as the main
+        // app's Engage (waits for Ready, up to 8s), then starts PTT.
+        const result = await engageSession((s) => setInteractionState(s), 8000);
+        if (!result.success) throw new Error(result.reason ?? "engage-failed");
+      } else if (interactionState === "Paused" || interactionState === "Sleeping") {
+        await resumeSession();
+        const ready = await waitForTrayReady(5000);
+        if (!ready) throw new Error("resume-timeout");
+      }
+      // Ready/Thinking/Speaking/Working fall through to a direct start
+      // (barge-in is handled backend-side).
+      await pttStart();
+    } catch (e) {
+      console.error("[TrayApp] Mic press failed:", e);
+      flashMicError(TRAY_COPY.micEngageFailed);
+    } finally {
+      pttBusyRef.current = false;
+      setPttBusy(false);
+    }
+  }, [interactionState, flashMicError]);
 
   useEffect(() => {
     let active = true;
@@ -194,11 +259,21 @@ export const TrayApp: React.FC = () => {
           const canonicalState = (payload.state.charAt(0).toUpperCase() + payload.state.slice(1).toLowerCase()) as InteractionState;
           
           if (canonicalState === "Listening") {
+            // Wake up if fading (user resumed mid-fade), then existing behaviour.
+            stateRef.current.callbacks.cancelFade();
             stateRef.current.callbacks.reset();
             setViewingHistory(false);
             if (stateRef.current.visibilityState === 'HIDDEN') {
               stateRef.current.callbacks.show();
             }
+          } else if (
+            canonicalState === "Ready" ||
+            canonicalState === "Idle" ||
+            canonicalState === "Sleeping"
+          ) {
+            // Auto-sleep: the tray earned its ambient dismissal. Hover-pause
+            // inside startFade keeps the card while the user is reading it.
+            stateRef.current.callbacks.startFade();
           }
           
           if (stateRef.current.visibilityState !== 'HIDDEN' || canonicalState === "Listening") {
@@ -301,9 +376,11 @@ export const TrayApp: React.FC = () => {
                 copied={copied} 
                 interactionMode={String(settings.dictation?.interaction_mode || "ptt").toUpperCase()}
                 silenceAutoStopMs={settings.dictation?.silence_auto_stop_ms ?? 1200}
-                onCopy={copyToClipboard} 
+                onCopy={copyToClipboard}
                 onClose={handleClose}
-                onTogglePtt={togglePtt}
+                onTogglePtt={handleMicPress}
+                pttBusy={pttBusy}
+                micError={micError}
               />
 
               <div className="flex-1 flex flex-col relative overflow-hidden group">

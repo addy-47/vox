@@ -116,6 +116,7 @@ export const RotaryKnob = memo(({
           type="button"
           onClick={stepDown}
           disabled={value <= min}
+          aria-label={LAYOUT_COPY.knob.decrease}
           className="w-7 h-7 rounded-lg bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--border),0.1)] hover:border-[rgb(var(--accent))] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] disabled:opacity-30 disabled:pointer-events-none flex items-center justify-center transition-all cursor-pointer"
         >
           <Minus size={13} />
@@ -166,7 +167,9 @@ export const RotaryKnob = memo(({
           </svg>
 
           {/* Center Knob Hub with Value Display */}
-          <div className="absolute inset-2.5 rounded-full bg-[rgba(var(--surface-bg),0.9)] border border-[rgba(var(--accent),0.25)] group-hover:border-[rgb(var(--accent))] flex items-center justify-center shadow-inner transition-colors">
+          {/* NOTE: was var(--surface-bg), which is not a declared token anywhere —
+              the background silently dropped. --card matches sibling control faces. */}
+          <div className="absolute inset-2.5 rounded-full bg-[rgba(var(--card),0.9)] border border-[rgba(var(--accent),0.25)] group-hover:border-[rgb(var(--accent))] flex items-center justify-center shadow-inner transition-colors">
             <span className="text-[14px] font-mono font-black text-[rgb(var(--foreground))]">
               {formatValue(value)}
             </span>
@@ -180,6 +183,7 @@ export const RotaryKnob = memo(({
           type="button"
           onClick={stepUp}
           disabled={value >= max}
+          aria-label={LAYOUT_COPY.knob.increase}
           className="w-7 h-7 rounded-lg bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--border),0.1)] hover:border-[rgb(var(--accent))] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] disabled:opacity-30 disabled:pointer-events-none flex items-center justify-center transition-all cursor-pointer"
         >
           <Plus size={13} />

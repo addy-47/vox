@@ -115,7 +115,13 @@ impl LlmProvider for RecordingLlmProvider {
 
     fn list_models<'a>(
         &'a self,
-    ) -> Pin<Box<dyn Future<Output = Result<Vec<vox_lib::services::llm::LlmModelInfo>, LlmError>> + Send + 'a>> {
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<Vec<vox_lib::services::llm::LlmModelInfo>, LlmError>>
+                + Send
+                + 'a,
+        >,
+    > {
         self.inner.list_models()
     }
 
@@ -164,7 +170,10 @@ impl LlmProvider for RecordingLlmProvider {
                 let _ = done_tx.send(accumulated);
             });
 
-            let res = self.inner.generate(request, turn_id, cancel, &inter_tx).await;
+            let res = self
+                .inner
+                .generate(request, turn_id, cancel, &inter_tx)
+                .await;
             drop(inter_tx);
 
             let raw_response = done_rx.await.unwrap_or_default();
@@ -217,12 +226,18 @@ pub struct NvidiaJudgeClient {
 
 impl NvidiaJudgeClient {
     pub fn new(api_key: String, model: String) -> Self {
+        let api_url = if api_key.starts_with("nvapi-") {
+            "https://integrate.api.nvidia.com/v1/chat/completions".to_string()
+        } else {
+            "https://openrouter.ai/api/v1/chat/completions".to_string()
+        };
+
         Self {
             client: reqwest::Client::builder()
                 .timeout(std::time::Duration::from_secs(120))
                 .build()
                 .unwrap_or_default(),
-            api_url: "https://integrate.api.nvidia.com/v1/chat/completions".to_string(),
+            api_url,
             api_key,
             model,
         }
@@ -240,7 +255,7 @@ impl NvidiaJudgeClient {
             ],
             "temperature": 0.1,
             "top_p": 0.9,
-            "max_tokens": 4096
+            "max_tokens": 16384
         });
 
         let resp = self
@@ -248,25 +263,43 @@ impl NvidiaJudgeClient {
             .post(&self.api_url)
             .header("Authorization", format!("Bearer {}", self.api_key))
             .header("Content-Type", "application/json")
+            .header("HTTP-Referer", "https://github.com/addy-47/vox")
+            .header("X-Title", "Vox Memory Eval")
             .json(&payload)
             .send()
             .await
-            .map_err(|e| anyhow!("NVIDIA Judge HTTP request failed: {}", e))?;
+            .map_err(|e| anyhow!("Judge HTTP request failed (is_timeout: {}, is_connect: {}): {}", e.is_timeout(), e.is_connect(), e))?;
 
         if !resp.status().is_success() {
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
-            return Err(anyhow!("NVIDIA Judge returned error {}: {}", status, body));
+            return Err(anyhow!("Judge returned error {}: {}", status, body));
         }
 
         let resp_json: serde_json::Value = resp
             .json()
             .await
-            .map_err(|e| anyhow!("Failed to parse NVIDIA Judge JSON response: {}", e))?;
+            .map_err(|e| anyhow!("Failed to parse Judge JSON response: {}", e))?;
 
-        let content = resp_json["choices"][0]["message"]["content"]
+        let choice = &resp_json["choices"][0];
+        let finish_reason = choice["finish_reason"].as_str().unwrap_or("unknown");
+        if finish_reason == "length" {
+            return Err(anyhow!(
+                "Judge output was truncated by LLM provider (finish_reason = length). Full evaluation report was not generated."
+            ));
+        }
+
+        let choice_msg = &choice["message"];
+        let content = choice_msg["content"]
             .as_str()
-            .ok_or_else(|| anyhow!("Missing content in NVIDIA Judge response choices"))?;
+            .filter(|s| !s.trim().is_empty())
+            .or_else(|| choice_msg["reasoning_content"].as_str())
+            .ok_or_else(|| {
+                anyhow!(
+                    "Missing content in NVIDIA Judge response choices: {:?}",
+                    choice_msg
+                )
+            })?;
 
         Ok(content.to_string())
     }

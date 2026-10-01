@@ -30,10 +30,23 @@ export function useObservationsList(
   const offsetRef = useRef(0);
   const hasMoreRef = useRef(true);
   const isFetchingRef = useRef(false);
+  // Monotonic request id: only the latest fetch may commit. A filter change
+  // during an in-flight fetch previously hit the mutex below and was silently
+  // dropped, leaving the previous filter's rows under the new tab label.
+  const seqRef = useRef(0);
+  // Mounted guard (style-guide §4.3). NOTE: no AbortController — Tauri's
+  // invoke() accepts no abort signal, so guard-on-commit is the complete fix.
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   const fetchBatch = useCallback(
     async (filter: ObservationFilter, offset: number, append: boolean) => {
-      if (isFetchingRef.current) return;
+      const seq = ++seqRef.current;
       isFetchingRef.current = true;
 
       if (offset === 0) {
@@ -46,6 +59,9 @@ export function useObservationsList(
         const statusParam = filter === "all" ? undefined : filter;
         const typeParam = observationType === "all" ? undefined : observationType;
         const batch = await getObservations(projectId, statusParam, PAGE_SIZE, offset, typeParam);
+
+        // Stale (superseded) or unmounted: commit nothing.
+        if (!mountedRef.current || seq !== seqRef.current) return;
 
         if (batch.length < PAGE_SIZE) {
           hasMoreRef.current = false;
@@ -67,11 +83,15 @@ export function useObservationsList(
           setObservations(batch);
         }
       } catch (err) {
+        if (!mountedRef.current || seq !== seqRef.current) return;
         console.error("[useObservationsList] Failed to fetch observations:", err);
       } finally {
-        setIsLoading(false);
-        setIsLoadingMore(false);
-        isFetchingRef.current = false;
+        // Only the latest request clears the flags.
+        if (mountedRef.current && seq === seqRef.current) {
+          setIsLoading(false);
+          setIsLoadingMore(false);
+          isFetchingRef.current = false;
+        }
       }
     },
     [projectId, observationType]

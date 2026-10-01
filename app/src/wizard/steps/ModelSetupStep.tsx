@@ -2,10 +2,10 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { startModelSetup, fetchManifest, getRuntimeReport, type VoxManifest } from '@/services/setupService';
 import { onModelProgress, type ModelProgressPayload } from '@/services/eventsService';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  Database, BrainCircuit, Mic, 
+import {
+  Database, BrainCircuit, Mic,
   Check, ArrowRight, Languages,
-  Layers, ShieldCheck, Filter
+  Layers
 } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
 import { WIZARD_CTA_LABELS, WIZARD_STEP_HEADERS, MODEL_SETUP_COPY } from '@/data/welcomeCopy';
@@ -135,83 +135,41 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
+  // Categories are derived from the manifest, not a hardcoded list: only
+  // categories the manifest actually ships render, and `required` reflects
+  // whether any file in the category is required (never a literal). This
+  // previously rendered phantom "Mandatory" rows for categories with no
+  // models, and labelled the (required) LLM download "Optional".
   const categories = useMemo(() => {
     if (!manifest || !manifest.model_groups) return [];
 
-    const getSubLabel = (category: string, defaultFallback: string) => {
-      const groups = manifest.model_groups.filter((g) => g.category === category);
-      if (groups.length > 0) {
-        return groups.map((g) => g.name).join(" / ");
-      }
-      return defaultFallback;
-    };
-
-    return [
-      {
-        id: "vad",
-        label: "Speech Detection",
-        subLabel: getSubLabel("vad", "Knows when you start and stop speaking"),
-        icon: <Mic />,
-        required: true,
-        groups: manifest.model_groups.filter((g) => g.category === "vad"),
-      },
-      {
-        id: "stt",
-        label: "Speech to Text",
-        subLabel: getSubLabel("stt", "Turns your speech into words"),
-        icon: <Database />,
-        required: true,
-        groups: manifest.model_groups.filter((g) => g.category === "stt"),
-      },
-      {
-        id: "translit",
-        label: "Hindi & English Spelling",
-        subLabel: getSubLabel("translit", "Writes spoken Hindi in English letters"),
-        icon: <Languages />,
-        required: true,
-        groups: manifest.model_groups.filter((g) => g.category === "translit"),
-      },
-      {
-        id: "embedding",
-        label: "Memory Understanding",
-        subLabel: getSubLabel("embedding", "Helps Vox connect related memories"),
-        icon: <Layers />,
-        required: true,
-        groups: manifest.model_groups.filter((g) => g.category === "embedding"),
-      },
-      {
-        id: "nli",
-        label: "Memory Checking",
-        subLabel: getSubLabel("nli", "Checks new memories against old ones"),
-        icon: <ShieldCheck />,
-        required: true,
-        groups: manifest.model_groups.filter((g) => g.category === "nli"),
-      },
-      {
-        id: "classifier",
-        label: "Smart Sorting",
-        subLabel: getSubLabel("classifier", "Keeps memories organized and relevant"),
-        icon: <Filter />,
-        required: true,
-        groups: manifest.model_groups.filter((g) => g.category === "classifier"),
-      },
-      {
-        id: "llm",
-        label: "Conversation Brain",
-        subLabel: getSubLabel("llm", "Generates Vox's replies"),
-        icon: <BrainCircuit />,
-        required: false,
-        groups: manifest.model_groups.filter((g) => g.category === "llm"),
-      },
-      {
-        id: "tts",
-        label: "Voice Generator",
-        subLabel: getSubLabel("tts", "Speaks Vox's replies aloud"),
-        icon: <VolumeIcon />,
-        required: false,
-        groups: manifest.model_groups.filter((g) => g.category === "tts"),
-      },
+    const meta: Array<{
+      id: string;
+      label: string;
+      fallback: string;
+      icon: React.ReactElement<{ className?: string }>;
+    }> = [
+      { id: "vad", label: "Speech Detection", fallback: "Knows when you start and stop speaking", icon: <Mic /> },
+      { id: "stt", label: "Speech to Text", fallback: "Turns your speech into words", icon: <Database /> },
+      { id: "translit", label: "Hindi & English Spelling", fallback: "Writes spoken Hindi in English letters", icon: <Languages /> },
+      { id: "embedding", label: "Memory Understanding", fallback: "Helps Vox connect related memories", icon: <Layers /> },
+      { id: "llm", label: "Conversation Brain", fallback: "Generates Vox's replies", icon: <BrainCircuit /> },
+      { id: "tts", label: "Voice Generator", fallback: "Speaks Vox's replies aloud", icon: <VolumeIcon /> },
     ];
+
+    return meta
+      .map((m) => {
+        const groups = manifest.model_groups.filter((g) => g.category === m.id);
+        return {
+          id: m.id,
+          label: m.label,
+          subLabel: groups.length > 0 ? groups.map((g) => g.name).join(" / ") : m.fallback,
+          icon: m.icon,
+          required: groups.some((g) => g.files.some((f) => f.required)),
+          groups,
+        };
+      })
+      .filter((c) => c.groups.length > 0);
   }, [manifest]);
 
   return (
@@ -279,6 +237,9 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
             </div>
 
             <div className="mt-8 pt-8 border-t border-[rgba(var(--foreground),0.1)]">
+                <p className="text-center text-[11px] text-[rgb(var(--foreground-muted))]/70 mb-4">
+                    {MODEL_SETUP_COPY.changeLaterNote}
+                </p>
                 <div className="flex gap-4">
                     <button onClick={onBack} className="px-8 py-5 text-[12px] font-black uppercase tracking-[0.3em] text-[rgb(var(--foreground-muted))]/70 hover:text-[rgb(var(--foreground))] transition-colors">
                         {MODEL_SETUP_COPY.back}

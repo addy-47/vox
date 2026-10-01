@@ -33,25 +33,15 @@ pub fn create_run_directory(base_dir: &Path, run_id: &str) -> Result<PathBuf> {
 /// Creates a sub-directory for a specific case: `<run_dir>/case_XX`.
 pub fn create_case_directory(run_dir: &Path, case_idx: usize) -> Result<PathBuf> {
     let case_dir = run_dir.join(format!("case_{:02}", case_idx));
-    fs::create_dir_all(&case_dir).map_err(|e| {
-        anyhow!(
-            "Failed to create case directory at {:?}: {}",
-            case_dir,
-            e
-        )
-    })?;
+    fs::create_dir_all(&case_dir)
+        .map_err(|e| anyhow!("Failed to create case directory at {:?}: {}", case_dir, e))?;
     Ok(case_dir)
 }
 
 /// Writes a Markdown report file in `<case_dir>/<filename>`.
 pub fn write_markdown_report(case_dir: &Path, filename: &str, content: &str) -> Result<PathBuf> {
     let file_path = case_dir.join(filename);
-    fs::write(&file_path, content).map_err(|e| {
-        anyhow!(
-            "Failed to write markdown report to {:?}: {}",
-            file_path,
-            e
-        )
-    })?;
+    fs::write(&file_path, content)
+        .map_err(|e| anyhow!("Failed to write markdown report to {:?}: {}", file_path, e))?;
     Ok(file_path)
 }

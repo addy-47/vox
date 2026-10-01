@@ -134,6 +134,22 @@ pub async fn complete_setup_wizard<R: tauri::Runtime + 'static>(
                 log::warn!("[Setup] Failed to focus main window: {}", e);
             }
         }
+
+        // Destroy the wizard webview once the main window is live. Previously
+        // this command only ever touched `main`, so a 900x650 "Setup Complete"
+        // window stayed on screen (reading on a first run as "the app failed to
+        // launch") and its WebKit allocation — reported as `wizard_webview_ram_mb`
+        // by get_profiler_snapshot — was never returned. A short delay lets the
+        // wizard webview flush before teardown; `destroy()` (not `close()`)
+        // releases the webview process rather than only hiding the surface.
+        tokio::time::sleep(std::time::Duration::from_millis(750)).await;
+        if let Some(wizard_win) = app_clone.get_webview_window("wizard") {
+            if let Err(e) = wizard_win.destroy() {
+                log::warn!("[Setup] Failed to destroy wizard window: {}", e);
+            } else {
+                log::info!("[Setup] Wizard webview destroyed; its RAM is returned to the OS.");
+            }
+        }
     });
 
     Ok(())

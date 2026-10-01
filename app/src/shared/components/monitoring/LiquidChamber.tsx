@@ -1,12 +1,16 @@
 import { useRef, useEffect, useState, memo } from "react";
-import { Brain, Mic, Volume2 } from "lucide-react";
-import { type RuntimeSnapshot } from "@/services/pipelineService";
 import { type DynamicColors } from "./colorUtils";
 import { cn } from "@/shared/lib/utils";
 import { MONITORING_COPY } from "@/data/monitoringCopy";
 
+/** One loadable model mark on the chamber edge. */
+export interface ModelMark {
+  key: string;
+  name: string;
+  loaded: boolean;
+}
+
 interface LiquidChamberProps {
-  latest: RuntimeSnapshot | null;
   colors: DynamicColors;
   isEngineLoaded: boolean;
   activeModelsCount: number;
@@ -15,17 +19,13 @@ interface LiquidChamberProps {
   ramMb?: number;
   ramGb: string;
   ramPct: number;
-  variants: {
-    llm: string;
-    tts: string;
-    stt: string;
-  };
+  /** Every model that can load; the loaded ones highlight. */
+  modelMarks: ModelMark[];
   popover?: boolean;
   open?: boolean;
 }
 
 export const LiquidChamber = memo<LiquidChamberProps>(({
-  latest,
   colors,
   isEngineLoaded,
   activeModelsCount,
@@ -34,7 +34,7 @@ export const LiquidChamber = memo<LiquidChamberProps>(({
   ramMb = 0,
   ramGb,
   ramPct,
-  variants,
+  modelMarks,
   popover = false,
   open = true,
 }) => {
@@ -412,102 +412,38 @@ export const LiquidChamber = memo<LiquidChamberProps>(({
         </span>
       </div>
 
-      {/* Bottom: 3 Core Model Variant HUD Indicators (LLM, STT, TTS) - Lighter Glass Pills */}
-      <div className="relative z-10 grid grid-cols-3 gap-2.5 w-full max-w-md">
-        {/* LLM Variant */}
-        <div
-          style={{
-            borderColor: latest?.is_llm_loaded
-              ? `rgba(${colors.primary}, 0.65)`
-              : "rgba(var(--border), 0.12)",
-            boxShadow: latest?.is_llm_loaded
-              ? `0 0 16px rgba(${colors.primary}, 0.20), inset 0 1px 1px rgba(var(--card), 0.25)`
-              : "none",
-          }}
-          className={cn(
-            "px-3 py-2 rounded-2xl border backdrop-blur-md flex flex-col items-center text-center shadow-md transition-colors duration-300",
-            isLightMode
-              ? "bg-[rgba(var(--card),0.55)] hover:bg-[rgba(var(--card),0.75)]"
-              : "bg-[rgba(var(--card),0.80)] hover:bg-[rgba(var(--card),0.95)]"
-          )}
-        >
-          <div className="flex items-center gap-1.5 text-[11px] font-mono font-bold text-[rgb(var(--foreground-muted))] uppercase">
-            <Brain size={11} style={{ color: `rgb(${colors.primary})` }} />
-            <span>{MONITORING_COPY.chamberThinking}</span>
-          </div>
-          <span
-            style={{
-              color: latest?.is_llm_loaded ? `rgb(${colors.primary})` : "rgb(var(--foreground))",
-            }}
-            className="text-[12px] font-sans font-black tracking-wide uppercase mt-0.5 truncate max-w-full"
+      {/* Bottom edge: loadable-model marks. Every model that can load gets a
+          mark with its name; the loaded ones highlight. (The old 3-tile
+          residency grid moved above the chamber.) */}
+      <div
+        role="list"
+        aria-label={MONITORING_COPY.modelMarksLabel}
+        className="relative z-10 grid grid-cols-3 sm:grid-cols-6 gap-1.5 w-full max-w-md"
+      >
+        {modelMarks.map((m) => (
+          <div
+            key={m.key}
+            role="listitem"
+            title={m.name}
+            aria-label={`${m.name} ${m.loaded ? MONITORING_COPY.modelLoaded : MONITORING_COPY.modelNotLoaded}`}
+            className={cn(
+              "flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-xl border text-[10px] font-mono font-bold uppercase tracking-wider truncate transition-colors duration-300",
+              m.loaded
+                ? "border-[rgba(var(--accent),0.55)] bg-[rgba(var(--accent),0.12)] text-[rgb(var(--accent))]"
+                : "border-[rgba(var(--border),0.12)] bg-[rgba(var(--foreground),0.03)] text-[rgb(var(--foreground-muted))]/60"
+            )}
+            style={m.loaded ? { boxShadow: `0 0 12px rgba(${colors.primary}, 0.25)` } : undefined}
           >
-            {variants.llm}
-          </span>
-        </div>
-
-        {/* STT Variant */}
-        <div
-          style={{
-            borderColor: latest?.is_stt_loaded
-              ? `rgba(${colors.complementary}, 0.65)`
-              : "rgba(var(--border), 0.12)",
-            boxShadow: latest?.is_stt_loaded
-              ? `0 0 16px rgba(${colors.complementary}, 0.20), inset 0 1px 1px rgba(var(--card), 0.25)`
-              : "none",
-          }}
-          className={cn(
-            "px-3 py-2 rounded-2xl border backdrop-blur-md flex flex-col items-center text-center shadow-md transition-colors duration-300",
-            isLightMode
-              ? "bg-[rgba(var(--card),0.55)] hover:bg-[rgba(var(--card),0.75)]"
-              : "bg-[rgba(var(--card),0.80)] hover:bg-[rgba(var(--card),0.95)]"
-          )}
-        >
-          <div className="flex items-center gap-1.5 text-[11px] font-mono font-bold text-[rgb(var(--foreground-muted))] uppercase">
-            <Mic size={11} style={{ color: `rgb(${colors.complementary})` }} />
-            <span>{MONITORING_COPY.chamberHearing}</span>
+            <span
+              className="w-1.5 h-1.5 rounded-full shrink-0"
+              style={{
+                background: m.loaded ? `rgb(${colors.primary})` : "rgb(var(--foreground-muted))",
+                opacity: m.loaded ? 1 : 0.4,
+              }}
+            />
+            <span className="truncate">{m.name}</span>
           </div>
-          <span
-            style={{
-              color: latest?.is_stt_loaded
-                ? `rgb(${colors.complementary})`
-                : "rgb(var(--foreground))",
-            }}
-            className="text-[12px] font-sans font-black tracking-wide uppercase mt-0.5 truncate max-w-full"
-          >
-            {variants.stt}
-          </span>
-        </div>
-
-        {/* TTS Variant */}
-        <div
-          style={{
-            borderColor: latest?.is_tts_loaded
-              ? `rgba(${colors.primary}, 0.65)`
-              : "rgba(var(--border), 0.12)",
-            boxShadow: latest?.is_tts_loaded
-              ? `0 0 16px rgba(${colors.primary}, 0.20), inset 0 1px 1px rgba(var(--card), 0.25)`
-              : "none",
-          }}
-          className={cn(
-            "px-3 py-2 rounded-2xl border backdrop-blur-md flex flex-col items-center text-center shadow-md transition-colors duration-300",
-            isLightMode
-              ? "bg-[rgba(var(--card),0.55)] hover:bg-[rgba(var(--card),0.75)]"
-              : "bg-[rgba(var(--card),0.80)] hover:bg-[rgba(var(--card),0.95)]"
-          )}
-        >
-          <div className="flex items-center gap-1.5 text-[11px] font-mono font-bold text-[rgb(var(--foreground-muted))] uppercase">
-            <Volume2 size={11} style={{ color: `rgb(${colors.primary})` }} />
-            <span>{MONITORING_COPY.chamberSpeaking}</span>
-          </div>
-          <span
-            style={{
-              color: latest?.is_tts_loaded ? `rgb(${colors.primary})` : "rgb(var(--foreground))",
-            }}
-            className="text-[12px] font-sans font-black tracking-wide uppercase mt-0.5 truncate max-w-full"
-          >
-            {variants.tts}
-          </span>
-        </div>
+        ))}
       </div>
     </div>
   );

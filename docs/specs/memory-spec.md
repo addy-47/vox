@@ -137,12 +137,13 @@ A per-item failure requeues the item at the same stage's input (`pending` after 
 On application boot, crash reconciliation resets any `Stage1Processing` or `Stage2Processing` items back to `Pending` or `Stage1Done`.
 
 ### 4.3 Deduplication Workflow & Batching Logic
-Deduplication runs via a background quiet ingestion observer task (`spawn_quiet_ingestion_observer`):
-- **Setting Gate**: Gated strictly by `settings.personal_memory.pipeline_processing_enabled == true`. When disabled, the background observer suppresses all deduplication cycles.
-- **Quiet State Contract**: The observer watches the pipeline state and triggers only after a sustained 30-second quiet debounce window (`QUIET_INGESTION_DEBOUNCE_SECS = 30`).
-  - **Quiet States (Eligible)**: `InteractionState::Idle`, `InteractionState::Ready`, `InteractionState::Paused`, `InteractionState::Sleeping`.
-  - **Active States (Ineligible / Abort)**: `Listening`, `Thinking`, `Speaking`, `Working`, `Error`. Transitioning into any active state immediately aborts or resets the debounce window to protect the audio/inference path.
-- **Quiescence Pre-Check**: Before executing Stage 1 and Stage 2 deduplication, the observer queries `has_unfinished_items(conn)`. If `memory_ingestion_queue` contains 0 pending or processing items, the cycle returns cleanly without log spam or compute allocation.
+Deduplication runs via an event-driven lifecycle (Boot Sweep and Session End Sweep) with zero background polling or debounce observers:
+- **Setting Gate**: Gated strictly by `settings.personal_memory.pipeline_processing_enabled == true`. When disabled, all background ingestion sweeps are suppressed.
+- **Event-Driven Execution Triggers**:
+  1. **Boot Sweep**: On application startup, after `reconcile_crashed_queue_on_boot` recovers indeterminate rows, a background task queries `has_unfinished_items(conn)`. If true, it drains the queue in batches to clean up prior shutdown residue.
+  2. **Session Start (Cancellation)**: When a new assistant session starts (`on_start`), any active background ingestion sweep is immediately aborted via a `CancellationToken` to guarantee zero CPU, memory, or ONNX inference contention against live user speech/audio.
+  3. **Session End (Sweep)**: When an assistant session ends (`on_end`), post-session compaction enqueues extracted facts into `memory_ingestion_queue`. Upon compaction completion (or if uncompacted items exist), a background task spawns to drain all pending queue items in batches.
+- **Quiescence Pre-Check**: Before executing Stage 1 and Stage 2 deduplication, the sweep queries `has_unfinished_items(conn)`. If `memory_ingestion_queue` contains 0 pending or processing items, the sweep returns cleanly without log spam or compute allocation.
 
 1. **Stage 1 — Exact Match Dedup (`STAGE1_BATCH_CEILING = 128`)**:
    - Atomically claims up to 128 `pending` items (`UPDATE ... WHERE status = 'pending' RETURNING ...`).
@@ -151,9 +152,10 @@ Deduplication runs via a background quiet ingestion observer task (`spawn_quiet_
      - On exact match: The **incoming fact becomes active**; the existing older matching fact in `memory_facts` is updated to `status = 'inactive'`.
      - Unique facts proceed to `Stage1Done`.
 
-2. **Stage 2 — Semantic Cosine Match (`STAGE2_BATCH_SIZE = 16`)**:
-   - Atomically claims up to 16 `stage1_done` items to prevent ONNX CPU/RAM contention.
-   - Generates 384-dim embedding via MiniLM-L12 ONNX engine.
+2. **Stage 2 — Semantic Cosine Match (`STAGE2_BATCH_SIZE = 16` with Full Draining Loop)**:
+   - Claims `stage1_done` items in batches of 16 to prevent ONNX CPU/RAM contention during batch vectorization.
+   - **Full Draining Invariant**: The ingestion sweep loops Stage 2 across batches until all `stage1_done` items in the active queue are processed and transitioned to `Completed`. No items remain stranded in `stage1_done`.
+   - Generates 384-dim embedding via MiniLM-L12 ONNX engine (or remote embedder).
    - Queries active vectors in `memory_facts_vectors` with the same `type`.
    - **Winner-Takes-All Policy**:
      - If cosine similarity $\ge 0.95$: Incoming fact is inserted with `status = 'active'`, and the older matching fact is updated to `status = 'inactive'`.
@@ -203,7 +205,7 @@ Deduplication runs via a background quiet ingestion observer task (`spawn_quiet_
 1. **View & Copy**: User views rendered Markdown in the UI and can copy the raw text directly to their clipboard.
 2. **Comment-Driven Structured Edits**: User leaves directive comments. The backend triggers the comment-directed LLM pass taking `[Current Memory in handle format] + [User Comments]` to generate targeted semantic operation revisions displayed on the staging slate for user review.
 3. **Version Carousel Navigation**: User flips between previous versions of personal memory to inspect changes over time or restore an earlier version as the active document.
-4. **Regeneration (User-Triggered Reorganization)**: User triggers a full reorganization of the existing Personal Memory. The backend runs the regeneration LLM pass on the current semantic memory, producing a complete new structure with fresh IDs, and saves the result as a new active version. Regeneration operates strictly on the existing semantic memory, NOT on raw observations.
+4. **Regeneration (User-Triggered Re-synthesis)**: User triggers a full re-synthesis of Personal Memory. The backend queries all already-integrated personal observations from `memory_facts` and runs the cold whole-memory synthesis pass (`run_cold_generation`) over them, producing a complete, freshly organized structure with new IDs directly grounded in the ground-truth facts. Regeneration shares the exact same prompt (`PERSONAL_COLD_GENERATION_SYSTEM_PROMPT`) and whole-memory schema (`whole_memory_json_schema`) as cold generation, eliminating prompt duplication and generational loss.
 5. **Direct Document Save (Deterministic Markdown Parse)**: User edits the rendered Markdown document in place, or pastes a replacement document. The backend parses it back into the canonical semantic model with a deterministic converter — `## Title` becomes a section, each paragraph becomes a prose block, and the application assigns fresh persistent IDs. No LLM is invoked. Block boundaries are therefore re-derived by the LLM on the next consolidation pass, which is the accepted cost of keeping direct editing available. The result is validated by `PersonalMemory::validate()` and committed as a new active version under the same optimistic version check as every other write.
 
 ### 5.3 Personal Memory Consolidation Pipeline (Semantic Operations)
@@ -220,7 +222,7 @@ Consolidates personal knowledge through dedicated LLM passes tailored to memory 
    - **5.3.2 Pending Ingestion Items — confirm-to-proceed, never blocked**:
      Pending or in-flight items in `memory_ingestion_queue` never block consolidation. The IPC command carries a `forced` flag.
      - `forced = false` (default): if unfinished queue items exist, the backend returns `ConsolidateOutcome::ConfirmationRequired { reason: PendingQueueItems, pending_count }` and performs no work. The frontend surfaces a toast with a confirm affordance.
-     - `forced = true`: consolidation proceeds immediately. Only the personal observations that are `status = 'active'` at the instant the generation request is built are used as candidates. Pending queue items are left `pending` and continue to drain through the normal quiet ingestion observer. The backend never runs an inline ingestion cycle.
+     - `forced = true`: consolidation proceeds immediately. Only the personal observations that are `status = 'active'` at the instant the generation request is built are used as candidates. Pending queue items are left `pending` and continue to drain through the background ingestion sweep. The backend never runs an inline ingestion cycle.
    - **5.3.3 INVARIANT 5.3-C (Observation Snapshot)**: The candidate observation ID set is snapshotted exactly once, immediately before the LLM pass is issued. On commit, precisely that snapshot transitions `active → integrated`. Observations that reach `active` mid-pass remain `active` and are picked up by the next run. No observation is ever stranded in an intermediate state.
    - **5.3.4 Comment-Driven Edits**: Execute immediately. Never gated by compaction state, queue state, or `forced`. The `forced` flag is ignored on this path.
    - **5.3.5 Headless Scheduled Runs**: The daily scheduler issues its request with `forced = true` and tolerates a `ConfirmationRequired` outcome by leaving the missed-run notification to the user. It never raises a UI-facing error.

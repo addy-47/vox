@@ -24,20 +24,26 @@ export const MemoryNodeTooltip = memo(({
   // Escape + outside-click dismissal via global overlay stack
   useOverlay({ onClose, ref: tooltipRef, dismissOnOutside: true });
 
-  if (!pos || !factDetail) return null;
-
-  const colStyle = getCollectionColor(factDetail.fact_type, false, isLightMode);
+  // NOTE: no early return here. AnimatePresence needs the tree mounted for the
+  // exit animation to play — returning null first unmounts everything and the
+  // `exit` below could never fire (the tooltip previously vanished instantly).
+  const colStyle = factDetail
+    ? getCollectionColor(factDetail.fact_type, false, isLightMode)
+    : null;
   const isMobile = typeof window !== "undefined" ? window.innerWidth < 640 : false;
   const tooltipWidth = 360;
-  const clampedX = isMobile
-    ? 16
-    : Math.min(window.innerWidth - tooltipWidth - 24, Math.max(24, pos.x + 16));
-  const clampedY = isMobile
-    ? 90
-    : Math.min(window.innerHeight - 280, Math.max(80, pos.y - 16));
+  const clampedX =
+    !pos || isMobile
+      ? 16
+      : Math.min(window.innerWidth - tooltipWidth - 24, Math.max(24, pos.x + 16));
+  const clampedY =
+    !pos || isMobile
+      ? 90
+      : Math.min(window.innerHeight - 280, Math.max(80, pos.y - 16));
 
   return (
     <AnimatePresence>
+      {pos && factDetail && colStyle && (
       <div
         ref={tooltipRef}
         style={{ left: `${clampedX}px`, top: `${clampedY}px` }}
@@ -72,7 +78,7 @@ export const MemoryNodeTooltip = memo(({
                 </span>
               ) : (
                 <span className="text-[9px] font-mono px-2 py-0.5 rounded-full bg-[rgba(var(--accent),0.15)] text-[rgb(var(--accent))]">
-                  Identity Core
+                  {MEMORY_COPY.identityLayer}
                 </span>
               )}
               <button
@@ -104,6 +110,7 @@ export const MemoryNodeTooltip = memo(({
           </div>
         </motion.div>
       </div>
+      )}
     </AnimatePresence>
   );
 });

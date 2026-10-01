@@ -189,6 +189,7 @@ export const MODEL_SETUP_COPY = {
   back: "Back",
   downloadError: "Download Error",
   totalSuffix: "Total",
+  changeLaterNote: "You can add or remove models later in Settings.",
 } as const;
 
 export const MODEL_CATEGORY_COPY = {

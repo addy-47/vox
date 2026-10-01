@@ -10,7 +10,6 @@ interface VoxOrbProps {
   amplitude?: number;
   interactionState?: InteractionState;
   isSleeping?: boolean;
-  isTesting?: boolean;
   paused?: boolean;
 }
 
@@ -26,6 +25,36 @@ const SHELL_R = 2.30;
 
 /** Number of silk-sheet disc layers. */
 const NUM_SHEETS = 7;
+
+/** Reduced sheet count on software rasterisers (fewer alpha-overdraw layers). */
+const NUM_SHEETS_SOFTWARE = 4;
+
+// ── PERF: software-rasteriser gating ──────────────────────────────────
+// On llvmpipe / SwiftShader / softpipe (Tier 1A, CPU-only) MSAA is a software
+// resolve of a 4x-multisampled buffer, dpr 2 doubles every dimension, and each
+// alpha-blended sheet is full-screen overdraw with no depth rejection. All three
+// are gated on a one-time renderer-string probe. The shader is untouched, so
+// real GPUs see zero difference.
+// REVERT: set APPLY_SOFTWARE_RASTER_GATING = false to restore
+// antialias:true / dpr:min(dpr,2) / 7 sheets on all hardware.
+// ─────────────────────────────────────────────────────────────────────
+const APPLY_SOFTWARE_RASTER_GATING = true;
+
+function detectSoftwareRaster(): boolean {
+  if (typeof document === "undefined") return false;
+  try {
+    const gl = document.createElement("canvas").getContext("webgl");
+    if (!gl) return false;
+    const ext = gl.getExtension("WEBGL_debug_renderer_info");
+    const rendererStr = ext
+      ? String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL))
+      : "";
+    gl.getExtension("WEBGL_lose_context")?.loseContext();
+    return /llvmpipe|softpipe|swiftshader|software|basic render/i.test(rendererStr);
+  } catch {
+    return false;
+  }
+}
 
 /**
  * State-dependent scale target for the root group.
@@ -362,7 +391,6 @@ export const VoxOrb = React.memo(({
   amplitude = 0.0,
   interactionState = 'Idle',
   isSleeping = false,
-  isTesting = false,
   paused = false,
 }: VoxOrbProps) => {
   useMemoryTrace("VoxOrb (Three.js Shader)");
@@ -371,12 +399,10 @@ export const VoxOrb = React.memo(({
   const stateRef     = useRef(interactionState);
   const sleepingRef  = useRef(isSleeping);
   const amplitudeRef = useRef(amplitude);
-  const testingRef   = useRef(isTesting);
 
   useEffect(() => { stateRef.current     = interactionState; }, [interactionState]);
   useEffect(() => { sleepingRef.current  = isSleeping;       }, [isSleeping]);
   useEffect(() => { amplitudeRef.current = amplitude;         }, [amplitude]);
-  useEffect(() => { testingRef.current   = isTesting;         }, [isTesting]);
 
   // ── Page visibility tracking ─────────────────────────────────────────────
   const [isPageVisible, setIsPageVisible] = useState(
@@ -650,7 +676,9 @@ export const VoxOrb = React.memo(({
 
     // 8. Mid & Energy drive rotational drift across sheets
     const speedMult = 1.0 + audioEnergy * 0.6 + ctx.smoothedMid * 0.5;
-    for (let i = 0; i < NUM_SHEETS; i++) {
+    // Bound by live child count, not the module constant, so the
+    // software-rasteriser sheet reduction (see sheetCount) stays in sync.
+    for (let i = 0; i < ctx.discGroup.children.length; i++) {
       const mesh = ctx.discGroup.children[i] as THREE.Mesh;
       const anim = ctx.discAnims[i];
       mesh.rotation.x += anim.speedX * speedMult;
@@ -684,9 +712,15 @@ export const VoxOrb = React.memo(({
 
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
-    const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+    const isSoftwareRaster = APPLY_SOFTWARE_RASTER_GATING && detectSoftwareRaster();
+    const sheetCount = isSoftwareRaster ? NUM_SHEETS_SOFTWARE : NUM_SHEETS;
+    const renderer = new THREE.WebGLRenderer({
+      alpha: true,
+      antialias: !isSoftwareRaster,
+      powerPreference: isSoftwareRaster ? "low-power" : "high-performance",
+    });
     renderer.setSize(width, height, false);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, isSoftwareRaster ? 1 : 2));
     renderer.setClearColor(0x000000, 0);
     renderer.domElement.style.cssText =
       'position:absolute;top:0;left:0;width:100%;height:100%;margin:0;padding:0;';
@@ -726,10 +760,10 @@ export const VoxOrb = React.memo(({
     type DiscAnim = { speedX: number; speedY: number; speedZ: number };
     const discAnims: DiscAnim[] = [];
 
-    // Share a single BufferGeometry across all 7 silk-sheet meshes
+    // Share a single BufferGeometry across all silk-sheet meshes
     const sharedDiscGeo = createDiscGeometry(DISC_R, 36, 12);
 
-    for (let i = 0; i < NUM_SHEETS; i++) {
+    for (let i = 0; i < sheetCount; i++) {
       const mat = new THREE.ShaderMaterial({
         uniforms: {
           u_time: sharedUni.u_time,

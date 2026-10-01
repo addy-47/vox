@@ -12,6 +12,7 @@ import {
   Filter,
   ChevronDown,
   Check,
+  Loader2,
 } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { MEMORY_COPY } from "@/data/memoryCopy";
@@ -107,11 +108,11 @@ export const StagingHeader: React.FC<StagingHeaderProps> = memo(
 
           <div className="flex flex-col">
             <span className="text-[13px] font-semibold tracking-wide text-[rgb(var(--foreground))]">
-              {mode === "facts" ? "Observations" : MEMORY_COPY.stagingMirror}
+              {mode === "facts" ? MEMORY_COPY.observationsTitleLabel : MEMORY_COPY.stagingMirror}
             </span>
             <span className="text-[11px] font-mono text-[rgb(var(--foreground-muted))]">
               {justCommitted
-                ? "All changes integrated"
+                ? MEMORY_COPY.allChangesIntegratedShort
                 : isSuggestionsActive
                 ? `${decisionStats.total} ${
                     decisionStats.total === 1
@@ -121,14 +122,16 @@ export const StagingHeader: React.FC<StagingHeaderProps> = memo(
                     decisionStats.pending
                   } pending)`
                 : mode === "comment"
-                ? `${commentsCount} line-anchored comments queued`
+                ? MEMORY_COPY.commentsQueued(commentsCount)
                 : mode === "edit"
-                ? "Direct in-place edits"
+                ? MEMORY_COPY.directEditsDesc
                 : mode === "import"
-                ? "Paste markdown to replace current profile"
+                ? MEMORY_COPY.pasteMarkdownDesc
                 : mode === "facts"
-                ? `${observationCount !== undefined ? `${observationCount} ` : ""}Extracted knowledge and behavioral observations`
-                : "No pending suggestions"}
+                ? observationCount !== undefined
+                  ? MEMORY_COPY.observationsDesc(observationCount)
+                  : MEMORY_COPY.observationsDescBare
+                : MEMORY_COPY.noPendingSuggestionsTitle}
             </span>
           </div>
         </div>
@@ -143,7 +146,7 @@ export const StagingHeader: React.FC<StagingHeaderProps> = memo(
                   type="button"
                   onClick={() => setIsFilterOpen((prev) => !prev)}
                   className={cn(
-                    "flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-mono border transition-all cursor-pointer",
+                    "flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-mono border transition-colors duration-150 cursor-pointer",
                     isFilterOpen || (observationFilter && observationFilter !== "all")
                       ? "bg-[rgba(var(--accent),0.12)] border-[rgba(var(--accent),0.35)] text-[rgb(var(--accent))]"
                       : "border-[rgba(var(--border),0.18)] bg-[rgba(var(--foreground),0.04)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:border-[rgba(var(--accent),0.3)]"
@@ -191,7 +194,7 @@ export const StagingHeader: React.FC<StagingHeaderProps> = memo(
               <button
                 type="button"
                 onClick={() => onModeChange("idle")}
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-mono border border-[rgba(var(--border),0.18)] bg-[rgba(var(--foreground),0.04)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:border-[rgba(var(--accent),0.3)] transition-all cursor-pointer"
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-mono border border-[rgba(var(--border),0.18)] bg-[rgba(var(--foreground),0.04)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:border-[rgba(var(--accent),0.3)] transition-colors duration-150 cursor-pointer"
                 title="Return to Staging Mirror"
               >
                 <X size={12} />
@@ -207,7 +210,7 @@ export const StagingHeader: React.FC<StagingHeaderProps> = memo(
                 type="button"
                 onClick={onAcceptAll}
                 disabled={isApplyingSuggestions}
-                className="px-2.5 py-1 rounded-lg text-[11px] font-mono text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.1)] transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(var(--accent))]"
+                className="px-2.5 py-1 rounded-lg text-[11px] font-mono text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.1)] transition-colors duration-150 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(var(--accent))]"
               >
                 {MEMORY_COPY.acceptAll}
               </button>
@@ -215,7 +218,7 @@ export const StagingHeader: React.FC<StagingHeaderProps> = memo(
                 type="button"
                 onClick={onRejectAll}
                 disabled={isApplyingSuggestions}
-                className="px-2.5 py-1 rounded-lg text-[11px] font-mono text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.06)] transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(var(--accent))]"
+                className="px-2.5 py-1 rounded-lg text-[11px] font-mono text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--danger),0.08)] hover:text-[rgb(var(--danger))] transition-colors duration-150 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(var(--danger))]"
               >
                 {MEMORY_COPY.rejectAll}
               </button>
@@ -226,7 +229,7 @@ export const StagingHeader: React.FC<StagingHeaderProps> = memo(
                 type="button"
                 onClick={onRegenerate}
                 disabled={isSaving || commentsCount === 0}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-mono bg-[rgba(var(--accent),0.2)] border border-[rgba(var(--accent),0.4)] text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.3)] transition-colors disabled:opacity-40 cursor-pointer shadow-sm"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-mono bg-[rgba(var(--accent),0.2)] border border-[rgba(var(--accent),0.4)] text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.3)] transition-colors duration-150 disabled:opacity-40 cursor-pointer shadow-sm"
               >
                 <Sparkles size={13} className={cn(isSaving && "animate-spin")} />
                 <span>{isSaving ? MEMORY_COPY.regenerating : MEMORY_COPY.regenerate}</span>
@@ -247,13 +250,17 @@ export const StagingHeader: React.FC<StagingHeaderProps> = memo(
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={onCommit}
-                disabled={isSaving || draftEmpty}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-mono bg-[rgba(var(--accent),0.2)] border border-[rgba(var(--accent),0.4)] text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.3)] transition-colors disabled:opacity-40 cursor-pointer shadow-sm"
-              >
-                <ArrowLeft size={13} className={cn(isSaving && "animate-pulse")} />
-                <span>{isSaving ? "Saving…" : "Save & Commit"}</span>
-              </button>
+onClick={onCommit}
+              disabled={isSaving || draftEmpty}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-mono bg-[rgba(var(--accent),0.2)] border border-[rgba(var(--accent),0.4)] text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.3)] transition-colors duration-150 disabled:opacity-40 cursor-pointer shadow-sm"
+            >
+              {isSaving ? (
+                <Loader2 size={13} className="animate-spin" />
+              ) : (
+                <ArrowLeft size={13} />
+              )}
+              <span>{isSaving ? MEMORY_COPY.saving : MEMORY_COPY.saveAndCommit}</span>
+            </button>
               <button
                 type="button"
                 onClick={() => onModeChange("idle")}

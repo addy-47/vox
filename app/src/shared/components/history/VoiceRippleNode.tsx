@@ -15,12 +15,6 @@ export interface VoiceRippleNodeProps {
   onCancelDelete: (e: React.MouseEvent) => void;
 }
 
-/** Deterministic pseudo-random bar height in [0, 1] from the turn count. */
-function barHeight(turnCount: number, index: number): number {
-  const seed = Math.sin(turnCount * (index + 1) * 12.9898) * 43758.5453;
-  return 0.3 + (seed - Math.floor(seed)) * 0.7;
-}
-
 export const VoiceRippleNode = memo(
   ({
     session,
@@ -39,11 +33,6 @@ export const VoiceRippleNode = memo(
 
     // Duration label removed in v2 — sessions no longer carry an ended_at timestamp.
     // Session length is not tracked at the persistence layer.
-
-    const bars = useMemo(
-      () => Array.from({ length: 4 }, (_, i) => barHeight(session.turn_count, i)),
-      [session.turn_count]
-    );
 
     const handleKeyDown = (e: React.KeyboardEvent) => {
       if (e.key === "Enter" || e.key === " ") {
@@ -115,21 +104,6 @@ export const VoiceRippleNode = memo(
               </div>
             ) : (
               <>
-                {/* Default: bars icon (hidden on group-hover / group-focus-within) */}
-                <div className="flex items-end gap-[2.5px] h-3 group-hover:hidden group-focus-within:hidden">
-                  {bars.map((h, i) => (
-                    <span
-                      key={i}
-                      className="w-[2.5px] rounded-full"
-                      style={{
-                        height: `${Math.round(h * 11)}px`,
-                        backgroundColor: "rgb(var(--accent))",
-                        opacity: 0.4 + h * 0.6,
-                      }}
-                    />
-                  ))}
-                </div>
-
                 {/* Hover: Trash icon (hidden by default, shown on group-hover / group-focus-within) */}
                 <div className="hidden group-hover:block group-focus-within:block">
                   <Tooltip label={HISTORY_COPY.deleteSession}>

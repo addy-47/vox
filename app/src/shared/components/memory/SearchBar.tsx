@@ -28,22 +28,40 @@ export const SearchBar = memo<SearchBarProps>(({
   const inputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const blurTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const palette = useMemo(() => getActiveDynamicPalette(isLightMode), [isLightMode]);
+
+  // Lowercased haystack, recomputed only when `facts` changes. The filter below
+  // used to call toLowerCase() on every fact for every keystroke.
+  const searchIndex = useMemo(
+    () =>
+      facts.map((f) => ({
+        fact: f,
+        haystack: `${f.text} ${f.fact_type}`.toLowerCase(),
+      })),
+    [facts]
+  );
 
   useEffect(() => {
     return () => {
       if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+      if (blurTimerRef.current) clearTimeout(blurTimerRef.current);
     };
   }, []);
 
   const results = useMemo(() => {
     const q = value.trim().toLowerCase();
     if (!q) return [];
-    return facts
-      .filter((f) => f.text.toLowerCase().includes(q) || f.fact_type.toLowerCase().includes(q))
-      .slice(0, 6);
-  }, [value, facts]);
+    const hits: FactRecord[] = [];
+    for (const { fact, haystack } of searchIndex) {
+      if (haystack.includes(q)) {
+        hits.push(fact);
+        if (hits.length === 6) break;
+      }
+    }
+    return hits;
+  }, [value, searchIndex]);
 
   useEffect(() => {
     setActiveIndex(-1);
@@ -75,10 +93,19 @@ export const SearchBar = memo<SearchBarProps>(({
     if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
   }, [onCommitSearch]);
 
+  // Tracked so it cannot setState after unmount (style-guide §4.4).
+  const handleBlur = useCallback(() => {
+    if (blurTimerRef.current) clearTimeout(blurTimerRef.current);
+    blurTimerRef.current = setTimeout(() => {
+      blurTimerRef.current = null;
+      setFocused(false);
+    }, 200);
+  }, []);
+
   const isTopDropdown = dropdownPlacement === "top";
 
   return (
-    <div className={cn("relative pointer-events-auto flex flex-col items-center w-full", className)} data-arrow-nav role="combobox">
+    <div className={cn("relative pointer-events-auto flex flex-col items-center w-full", className)} data-arrow-nav>
       {/* ── Underline Search Input: Clean, responsive, zero pill or bulky borders ── */}
       <div className="flex items-center gap-2 py-1 border-b border-[rgba(var(--foreground),0.18)] focus-within:border-[rgba(var(--accent),0.8)] transition-colors duration-200 w-full">
         <Search size={13} className="text-[rgb(var(--accent))] shrink-0 opacity-70" />
@@ -89,7 +116,7 @@ export const SearchBar = memo<SearchBarProps>(({
           value={value}
           onChange={handleChange}
           onFocus={() => setFocused(true)}
-          onBlur={() => setTimeout(() => setFocused(false), 200)}
+          onBlur={handleBlur}
           onKeyDown={(e) => {
             if (results.length === 0) return;
             if (e.key === "ArrowDown") {
@@ -117,10 +144,16 @@ export const SearchBar = memo<SearchBarProps>(({
               onCommitSearch("");
             }
           }}
+          /* role="combobox" belongs on the input that owns the textbox, not on the
+             wrapper div — the wrapper form announced a broken widget. */
+          role="combobox"
+          aria-label={MEMORY_COPY.searchInputLabel}
           aria-expanded={focused && results.length > 0}
           aria-controls="search-listbox"
           aria-activedescendant={activeIndex >= 0 ? `search-option-${results[activeIndex]?.id}` : undefined}
           aria-haspopup="listbox"
+          aria-autocomplete="list"
+          autoComplete="off"
           placeholder={MEMORY_COPY.searchPlaceholder}
           className="flex-1 min-w-0 bg-transparent text-[12px] font-mono text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/60 focus:outline-none"
         />
@@ -129,7 +162,7 @@ export const SearchBar = memo<SearchBarProps>(({
             type="button"
             onClick={handleClear}
             className="p-0.5 rounded text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))] cursor-pointer shrink-0 transition-colors"
-            aria-label="Clear search"
+            aria-label={MEMORY_COPY.clearSearch}
           >
             <X size={12} />
           </button>

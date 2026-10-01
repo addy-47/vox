@@ -16,6 +16,13 @@ interface AmbientBackgroundProps {
   rippleShape?: RippleShape;
   /** When true, freezes the rAF loop and CSS animations to preserve GPU budget */
   paused?: boolean;
+  /**
+   * Distinguishes concurrent mounts in the memory profiler. Two instances
+   * (e.g. the layout-level field plus a page-level one) previously shared one
+   * trace key, so mount/unmount counts were wrong for the most-suspected
+   * component on the page.
+   */
+  instanceId?: string;
 }
 
 /** Fixed ambient tuning. The mood prop never had a caller, so the four mood
@@ -48,8 +55,9 @@ export const AmbientBackground = React.memo(({
   rippleSpeedMultiplier = 1.0,
   rippleShape = "circle",
   paused = false,
+  instanceId = "default",
 }: AmbientBackgroundProps) => {
-  useMemoryTrace("AmbientBackground (rAF Dynamic Glow)");
+  useMemoryTrace(`AmbientBackground (${instanceId})`);
 
   const effectiveRippleDuration = RIPPLE_DURATION * rippleSpeedMultiplier;
   const telemetryRef = useTelemetry();

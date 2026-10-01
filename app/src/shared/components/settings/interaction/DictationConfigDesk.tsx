@@ -50,7 +50,21 @@ export const DictationConfigDesk = memo(({ layoutMode, disabled = false }: Dicta
   const [isEditingHotkey, setIsEditingHotkey] = useState(false);
   const [tempHotkey, setTempHotkey] = useState(dictation.hotkey || DEFAULT_HOTKEY);
   const [savedToast, setSavedToast] = useState(false);
+  const [hotkeyError, setHotkeyError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  // Tracked toast timer (style-guide §4.4 — previously two untracked setTimeouts).
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    };
+  }, []);
+  const flashSavedToast = useCallback(() => {
+    setHotkeyError(null);
+    setSavedToast(true);
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = setTimeout(() => setSavedToast(false), 2200);
+  }, []);
 
   const outputMode = dictation.output_mode || "paste";
   const isSmall = layoutMode === "small";
@@ -70,15 +84,17 @@ export const DictationConfigDesk = memo(({ layoutMode, disabled = false }: Dicta
     }
   }, [isAutoStopEnabled, autoStopMs]);
 
+  // Draft-only: the store's 600ms debounced autosave persists. The old code also
+  // fired updateSetting per interaction — a Tauri IPC round trip per keystroke on
+  // a CPU-first box — and a rejected write left this optimistic local state
+  // showing a value the backend never accepted.
   const handleAutoStopToggle = useCallback(() => {
     if (isAutoStopEnabled) {
       updateDraft("dictation", "silence_auto_stop_ms", 0);
-      updateSetting("dictation", "silence_auto_stop_ms", 0).catch(console.error);
     } else {
       const num = parseFloat(secondsDraft);
       const fallbackMs = !isNaN(num) && num > 0 ? Math.round(num * 1000) : 1200;
       updateDraft("dictation", "silence_auto_stop_ms", fallbackMs);
-      updateSetting("dictation", "silence_auto_stop_ms", fallbackMs).catch(console.error);
     }
   }, [isAutoStopEnabled, secondsDraft, updateDraft]);
 
@@ -94,7 +110,6 @@ export const DictationConfigDesk = memo(({ layoutMode, disabled = false }: Dicta
       if (!isNaN(num) && num > 0 && num <= 30) {
         const ms = Math.round(num * 1000);
         updateDraft("dictation", "silence_auto_stop_ms", ms);
-        updateSetting("dictation", "silence_auto_stop_ms", ms).catch(console.error);
       }
     },
     [updateDraft]
@@ -106,17 +121,14 @@ export const DictationConfigDesk = memo(({ layoutMode, disabled = false }: Dicta
     if (isNaN(num) || num <= 0) {
       setSecondsDraft("1.2");
       updateDraft("dictation", "silence_auto_stop_ms", 1200);
-      updateSetting("dictation", "silence_auto_stop_ms", 1200).catch(console.error);
     } else if (num > 30) {
       setSecondsDraft("30.0");
       updateDraft("dictation", "silence_auto_stop_ms", 30000);
-      updateSetting("dictation", "silence_auto_stop_ms", 30000).catch(console.error);
     } else {
       const cleanStr = num.toFixed(1);
       setSecondsDraft(cleanStr);
       const ms = Math.round(num * 1000);
       updateDraft("dictation", "silence_auto_stop_ms", ms);
-      updateSetting("dictation", "silence_auto_stop_ms", ms).catch(console.error);
     }
   }, [secondsDraft, updateDraft]);
 
@@ -136,14 +148,15 @@ export const DictationConfigDesk = memo(({ layoutMode, disabled = false }: Dicta
       updateDraft("dictation", "hotkey", cleanKey);
       try {
         await updateSetting("dictation", "hotkey", cleanKey);
-        setSavedToast(true);
-        setTimeout(() => setSavedToast(false), 2200);
+        flashSavedToast();
       } catch (err) {
-        console.error("Failed to persist dictation hotkey via IPC:", err);
+        // Visible, not console-only: the field would otherwise keep showing a
+        // hotkey the backend rejected.
+        setHotkeyError(err instanceof Error ? err.message : String(err));
       }
     }
     setIsEditingHotkey(false);
-  }, [tempHotkey, updateDraft]);
+  }, [tempHotkey, updateDraft, flashSavedToast]);
 
   const handleHotkeyCancel = useCallback(() => {
     setTempHotkey(dictation.hotkey || DEFAULT_HOTKEY);
@@ -155,13 +168,12 @@ export const DictationConfigDesk = memo(({ layoutMode, disabled = false }: Dicta
     updateDraft("dictation", "hotkey", DEFAULT_HOTKEY);
     try {
       await updateSetting("dictation", "hotkey", DEFAULT_HOTKEY);
-      setSavedToast(true);
-      setTimeout(() => setSavedToast(false), 2200);
+      flashSavedToast();
     } catch (err) {
-      console.error("Failed to reset dictation hotkey via IPC:", err);
+      setHotkeyError(err instanceof Error ? err.message : String(err));
     }
     setIsEditingHotkey(false);
-  }, [updateDraft]);
+  }, [updateDraft, flashSavedToast]);
 
   const handleKeyDownRecorder = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -453,6 +465,10 @@ export const DictationConfigDesk = memo(({ layoutMode, disabled = false }: Dicta
                   <span className="flex items-center gap-1 text-emerald-400 text-[10px] font-mono font-bold animate-fade-in">
                     <CheckCircle2 size={11} strokeWidth={2.5} />
                     <span>{DICTATION_COPY.savedFeedback}</span>
+                  </span>
+                ) : hotkeyError ? (
+                  <span role="alert" className="text-[10px] font-mono font-bold text-red-400 max-w-[220px] truncate" title={hotkeyError}>
+                    {hotkeyError}
                   </span>
                 ) : !isEditingHotkey && (dictation.hotkey || DEFAULT_HOTKEY) !== DEFAULT_HOTKEY ? (
                   <button

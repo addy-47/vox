@@ -8,8 +8,6 @@ export const GOVERNOR_LABELS: Record<string, string> = {
 export const HOME_CONTROLS_COPY = {
   engage: {
     ariaLabel: "Engage Vox",
-    resumeAriaLabel: "Resume Vox Session",
-    resumeBadge: "Resume Session",
     stopAriaLabel: "Stop Vox",
   },
   passive: {
@@ -49,6 +47,8 @@ export const HOME_CONTROLS_COPY = {
     toggleTooltip: "Temporary Session (Memory Only)",
     activeBadge: "Temporary",
   },
+  /** Accessible name for the pipeline status capsule. */
+  statusAriaLabel: (label: string) => `Vox Status: ${label}`,
 } as const;
 
 export const ERROR_BANNER_COPY = {

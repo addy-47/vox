@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, memo } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef, memo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Sparkles } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
@@ -10,7 +10,7 @@ import type { StagingMode, MemoryComment, PendingConfirmation } from "./stagingT
 import type { ObservationFilter } from "@/shared/hooks/useObservationsList";
 
 import { StagingHeader } from "./staging/StagingHeader";
-import { CommitSuccessView } from "./staging/CommitSuccessView";
+import { CommitBanner } from "./staging/CommitBanner";
 import { SuggestionsReviewView } from "./staging/SuggestionsReviewView";
 import { ActionHubView } from "./staging/ActionHubView";
 import { CommentsQueueView } from "./staging/CommentsQueueView";
@@ -18,6 +18,7 @@ import { RawEditorView } from "./staging/RawEditorView";
 import { LearnedFactsList } from "./LearnedFactsList";
 import { PendingConfirmationBanner } from "./staging/PendingConfirmationBanner";
 import { PixelSynthesisCanvas } from "./PixelSynthesisCanvas";
+import { MEMORY_COPY } from "@/data/memoryCopy";
 
 export * from "./stagingTypes";
 
@@ -47,6 +48,9 @@ export interface PersonalMemoryStagingCardProps {
   isApplyingSuggestions?: boolean;
   candidateFacts?: ObservationRecord[];
   justCommitted?: boolean;
+  /** Dismisses the post-commit banner. Owned by the page so the banner's
+   *  lifetime is not owned by this card. */
+  onDismissCommitted?: () => void;
   onViewVersionHistory?: () => void;
   // Observation pagination props
   observations?: ObservationRecord[];
@@ -141,6 +145,7 @@ export const PersonalMemoryStagingCard: React.FC<PersonalMemoryStagingCardProps>
     isApplyingSuggestions,
     candidateFacts = [],
     justCommitted = false,
+    onDismissCommitted,
     onViewVersionHistory,
     observations = [],
     observationFilter = "staged",
@@ -186,6 +191,57 @@ export const PersonalMemoryStagingCard: React.FC<PersonalMemoryStagingCardProps>
       return { accepted, rejected, pending, total: suggestions.length };
     }, [suggestions, decisions]);
 
+    const applyDecisionsRef = useRef(onApplySuggestions);
+    useEffect(() => {
+      applyDecisionsRef.current = onApplySuggestions;
+    }, [onApplySuggestions]);
+
+    /* Auto-finalise when the last suggestion is decided. Previously this fired
+       from inside a setState updater via an untracked 200ms setTimeout, which
+       (a) breached the updater-purity rule and (b) made the last accept feel
+       broken — the row dimmed to 50%, killed pointer events on the whole card,
+       and the visible footer CTA then did nothing for 200ms. Auto-apply is now
+       an effect keyed on the decision state, with a tracked timer. */
+    const allDecided =
+      suggestions.length > 0 &&
+      suggestions.every((s) => decisions[s.id] === "accept" || decisions[s.id] === "reject");
+    const autoApplyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    useEffect(() => {
+      if (!allDecided) return;
+      if (!applyDecisionsRef.current) return;
+      // Re-apply the same decision set the user just built. No IPC from an
+      // updater, and no window where the UI is inert.
+      autoApplyTimerRef.current = setTimeout(() => {
+        autoApplyTimerRef.current = null;
+        const payload = { ...decisions };
+        void applyDecisionsRef.current?.(payload)
+          .then(() => {
+            setDecisions({});
+            setFailedRevisionIds(new Set());
+          })
+          .catch((e) => {
+            console.error("[PersonalMemoryStagingCard] Auto-finalising suggestions failed:", e);
+            setFailedRevisionIds(new Set(Object.keys(payload)));
+          });
+      }, 120);
+      return () => {
+        if (autoApplyTimerRef.current) {
+          clearTimeout(autoApplyTimerRef.current);
+          autoApplyTimerRef.current = null;
+        }
+      };
+      // `decisions` intentionally excluded: the timer must not restart on every
+      // keystroke of state churn; the allDecided transition is the trigger.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [allDecided]);
+
+    useEffect(() => {
+      return () => {
+        if (autoApplyTimerRef.current) clearTimeout(autoApplyTimerRef.current);
+      };
+    }, []);
+
     const handleSelectDecision = (id: string, action: "accept" | "reject") => {
       setDecisions((prev) => {
         if (prev[id] === action) {
@@ -193,28 +249,14 @@ export const PersonalMemoryStagingCard: React.FC<PersonalMemoryStagingCardProps>
           delete next[id];
           return next;
         }
-        const next = { ...prev, [id]: action };
-        const allDecided =
-          suggestions.length > 0 &&
-          suggestions.every((s) => next[s.id] === "accept" || next[s.id] === "reject");
-
-        if (allDecided && onApplySuggestions) {
-          setTimeout(() => {
-            void onApplySuggestions(next)
-              .then(() => {
-                setDecisions({});
-                setFailedRevisionIds(new Set());
-              })
-              .catch((e) => {
-                console.error("[PersonalMemoryStagingCard] Auto-finalising suggestions failed:", e);
-                setFailedRevisionIds(new Set(Object.keys(next)));
-              });
-          }, 200);
-        }
-
-        return next;
+        return { ...prev, [id]: action };
       });
     };
+
+    // Stable no-op default so the banner's dismiss prop is always callable.
+    const handleDismissCommitted = useCallback(() => {
+      if (onDismissCommitted) onDismissCommitted();
+    }, [onDismissCommitted]);
 
     const handleAcceptAll = async () => {
       const all: Record<string, "accept" | "reject"> = {};
@@ -302,13 +344,18 @@ export const PersonalMemoryStagingCard: React.FC<PersonalMemoryStagingCardProps>
     return (
       <div
         className={cn(
-          "relative w-full h-full min-h-0 rounded-2xl p-5 sm:p-6 flex flex-col transition-all duration-500 overflow-hidden",
+          "relative w-full h-full min-h-0 rounded-2xl p-5 sm:p-6 flex flex-col overflow-hidden",
           "glass-card border bg-[rgba(var(--card),0.45)] backdrop-blur-sm contain-paint transform-gpu",
           isSuggestionsActive
             ? "border-[rgba(var(--accent),0.35)] shadow-xl"
-            : "border-[rgba(var(--accent),0.18)] hover:border-[rgba(var(--accent),0.35)] shadow-2xl",
-          (isSaving || isCommitting || isApplyingSuggestions) &&
-            "opacity-50 pointer-events-none select-none"
+            : "border-[rgba(var(--accent),0.18)] hover:border-[rgba(var(--accent),0.35)] shadow-2xl"
+          // NOTE: the container previously carried `transition-all duration-500`
+          // plus `opacity-50 pointer-events-none` while saving. Animating
+          // border/shadow/background together on a backdrop-blur element forced a
+          // full re-raster every frame for 500ms, and dimming + disabling the
+          // WHOLE card (including the confirmation banner) is what made the
+          // post-commit transition feel broken. The busy dim now lives on the
+          // review body only, and there is no long container transition.
         )}
       >
         {/* Organic Synthesis Overlay on Right Card while consolidating/integrating */}
@@ -327,10 +374,10 @@ export const PersonalMemoryStagingCard: React.FC<PersonalMemoryStagingCardProps>
                   <Sparkles size={20} />
                 </div>
                 <h4 className="text-[13px] font-semibold text-[rgb(var(--foreground))] mb-1">
-                  Synthesizing Profile Updates…
+                  {MEMORY_COPY.synthesizingTitle}
                 </h4>
                 <p className="text-[11px] font-mono text-[rgb(var(--foreground-muted))] max-w-xs">
-                  Analyzing observations against your personal memory structure.
+                  {MEMORY_COPY.synthesizingDesc}
                 </p>
               </div>
             </motion.div>
@@ -365,12 +412,20 @@ export const PersonalMemoryStagingCard: React.FC<PersonalMemoryStagingCardProps>
           />
         )}
 
-        {justCommitted ? (
-          <CommitSuccessView
-            activeVersion={activeVersion}
-            onViewVersionHistory={onViewVersionHistory}
-          />
-        ) : isSuggestionsActive ? (
+        {/* Post-commit confirmation is a slim banner over the card, not a
+            full-body takeover — the user keeps their place and the CTA below
+            stays clickable. */}
+        {justCommitted && (
+          <div className="mb-3 shrink-0">
+            <CommitBanner
+              activeVersion={activeVersion}
+              onViewVersionHistory={onViewVersionHistory}
+              onDismiss={handleDismissCommitted}
+            />
+          </div>
+        )}
+
+        {isSuggestionsActive ? (
           <SuggestionsReviewView
             baseSections={baseSections}
             revisions={suggestions}

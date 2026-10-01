@@ -240,11 +240,55 @@ export function onNotificationUpdated(handler: (payload: NotificationRecord) => 
   return on("notification_updated", handler);
 }
 
-export function onSessionsChanged(handler: () => void): () => void {
-  return on("sessions_changed", () => {
+// ── sessions_changed coalescing ─────────────────────────────────────────
+// The backend can emit sessions_changed in bursts (e.g. once per persisted
+// turn — title updates surface here since session_title_updated was removed
+// in v2). Two components subscribe independently (useSessionPanel.refresh =
+// getSessions+getProjects, ActiveSessionHeader = snapshot+getSessions+
+// getProjects), so one burst used to cost 4+ full-list IPC queries plus a
+// 60ms artificial delay. This single trailing timer fans one notification out
+// to all subscribers per burst instead of one per event.
+// REVERT: delete this block and call handler() directly in onSessionsChanged.
+// ─────────────────────────────────────────────────────────────────────────
+const SESSIONS_CHANGED_COALESCE_MS = 250;
+const sessionsChangedHandlers = new Set<() => void>();
+let sessionsChangedTimer: ReturnType<typeof setTimeout> | null = null;
+let sessionsChangedUnlisten: (() => void) | null = null;
+
+function ensureSessionsChangedListener(): void {
+  if (sessionsChangedUnlisten !== null) return;
+  sessionsChangedUnlisten = on("sessions_changed", () => {
     console.info("[Events] sessions_changed received");
-    handler();
+    if (sessionsChangedTimer !== null) clearTimeout(sessionsChangedTimer);
+    sessionsChangedTimer = setTimeout(() => {
+      sessionsChangedTimer = null;
+      sessionsChangedHandlers.forEach((h) => {
+        try {
+          h();
+        } catch (e) {
+          console.error("[Events] sessions_changed handler failed:", e);
+        }
+      });
+    }, SESSIONS_CHANGED_COALESCE_MS);
   });
+}
+
+export function onSessionsChanged(handler: () => void): () => void {
+  ensureSessionsChangedListener();
+  sessionsChangedHandlers.add(handler);
+  return () => {
+    sessionsChangedHandlers.delete(handler);
+    if (sessionsChangedHandlers.size === 0) {
+      if (sessionsChangedTimer !== null) {
+        clearTimeout(sessionsChangedTimer);
+        sessionsChangedTimer = null;
+      }
+      if (sessionsChangedUnlisten !== null) {
+        sessionsChangedUnlisten();
+        sessionsChangedUnlisten = null;
+      }
+    }
+  };
 }
 
 export function onPersonalMemoryUpdated(

@@ -80,13 +80,16 @@ export const InsightsTab: React.FC<InsightsTabProps> = ({
     }
   });
 
-  // 4. Compositor indicators
-  if (cssStats.backdropFilterCount > 15) {
+  // 4. Compositor indicators. Threshold was 15 against a real count of 44, so
+  // this insight was permanently lit — an alarm that is always on is decoration,
+  // not a finding. The threshold now tracks the actual distribution: warn only
+  // when blur layers are genuinely excessive.
+  if (cssStats.backdropFilterCount > 40) {
     insights.push({
       id: "css-backdrop-filters",
       title: "Excessive Backdrop Filter Layers",
       description: `Detected ${cssStats.backdropFilterCount} elements with CSS backdrop-filter, increasing compositor GPU buffers.`,
-      severity: "medium",
+      severity: cssStats.backdropFilterCount > 60 ? "high" : "medium",
       recommendation: "Replace nested backdrop-filter elements with semi-opaque card backgrounds.",
     });
   }

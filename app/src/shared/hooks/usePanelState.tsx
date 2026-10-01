@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useCallback, useMemo, useState, useEffect, memo } from "react";
+import React, { createContext, useContext, useCallback, useMemo, useState, useEffect, useRef, memo } from "react";
 
 export type PanelId = "help" | "notifications" | "sessions";
 export type PanelEdge = "left" | "right";
@@ -37,6 +37,13 @@ export const PanelStateProvider: React.FC<PanelStateProviderProps> = memo(({ chi
   const [leftPanel, setLeftPanel] = useState<PanelId | null>(null);
   const [rightPanel, setRightPanel] = useState<PanelId | null>(null);
 
+  // Ref mirror of leftPanel so the resize handler can read it without a
+  // setState updater function (updaters must stay pure — no setTimeout inside).
+  const leftPanelRef = useRef<PanelId | null>(null);
+  useEffect(() => {
+    leftPanelRef.current = leftPanel;
+  }, [leftPanel]);
+
   /**
    * Panel Exclusivity Threshold:
    * On viewports < 1280px (mobile, tablet, and compact/standard desktop windows),
@@ -58,14 +65,10 @@ export const PanelStateProvider: React.FC<PanelStateProviderProps> = memo(({ chi
       rAfId = requestAnimationFrame(() => {
         rAfId = null;
         if (typeof window !== "undefined" && window.innerWidth < THRESHOLD_DUAL_PANEL_WIDTH) {
-          // Read current left panel value synchronously, then set outside updater
-          setLeftPanel((currentLeft) => {
-            if (currentLeft !== null) {
-              // Schedule right panel clear outside updater to keep it pure
-              setTimeout(() => setRightPanel(null), 0);
-            }
-            return currentLeft;
-          });
+          // Read via ref — no updater, no timer, still a single rAF.
+          // (Previously a setTimeout() inside a setState updater, which violates
+          // the updater-purity rule and left an untracked macrotask per frame.)
+          if (leftPanelRef.current !== null) setRightPanel(null);
         }
       });
     };

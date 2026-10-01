@@ -74,12 +74,22 @@ export const LiveWaveform = memo(({
   // ── Dynamic FPS: tick function stored in ref ──
   const tickRef = useRef<(dt: number) => void>(() => {})
 
+  // ── PERF: observe container + page visibility ─────────────────────────
+  // Previously the RAF loop scheduled at display rate while the element was
+  // scrolled out of view or the tab was hidden (the hook never built the
+  // IntersectionObserver its contract claimed).
+  // REVERT: set to false to restore unconditional scheduling.
+  // ─────────────────────────────────────────────────────────────────────
+  const APPLY_OBSERVED_VISIBILITY = true;
+
   useDynamicFPS({
     onFrame: (dt) => tickRef.current(dt),
     isActive: active || processing,
     isPaused: !active && !processing,
     fpsActive: 60,
     fpsIdle: 0,
+    observeRef: APPLY_OBSERVED_VISIBILITY ? containerRef : undefined,
+    trackPageVisibility: APPLY_OBSERVED_VISIBILITY,
   })
 
   // Handle canvas resizing

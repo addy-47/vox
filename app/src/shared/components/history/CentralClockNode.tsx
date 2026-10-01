@@ -2,7 +2,7 @@ import { memo, useState, useEffect } from "react";
 import { ChevronLeft, ChevronRight, MessageSquare, Brain, Clock } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { HISTORY_COPY } from "@/data/historyCopy";
-import { type HistoryView } from "./ViewSelector";
+import { ViewSelector, type HistoryView } from "./ViewSelector";
 
 export interface WindowProgress {
   /** 0-based index of the visible window. */
@@ -82,8 +82,27 @@ export const CentralClockNode = memo(
       return () => observer.disconnect();
     }, []);
 
-    // 48 Perimeter dial ticks around the sphere rim
-    const totalTicks = 48;
+    // 48 perimeter dial ticks around the sphere rim. Precomputed once at module
+    // scope: these 48 <line> elements were previously rebuilt on every render.
+    const DIAL_TICKS = 48;
+    const DIAL_TICK_ELEMENTS = Array.from({ length: DIAL_TICKS }, (_, i) => {
+      const angle = (i * 360) / DIAL_TICKS;
+      const isQuarter = i % (DIAL_TICKS / 4) === 0;
+      const isEighth = i % (DIAL_TICKS / 8) === 0;
+      const length = isQuarter ? 8 : isEighth ? 5 : 3;
+      return (
+        <line
+          key={i}
+          x1={100}
+          y1={2}
+          x2={100}
+          y2={2 + length}
+          stroke={isQuarter ? "rgb(var(--accent))" : "rgba(var(--foreground-muted), 0.6)"}
+          strokeWidth={isQuarter ? 2 : 1}
+          transform={`rotate(${angle} 100 100)`}
+        />
+      );
+    });
 
     return (
       <div
@@ -142,29 +161,7 @@ export const CentralClockNode = memo(
             viewBox="0 0 200 200"
             aria-hidden
           >
-            {Array.from({ length: totalTicks }, (_, i) => {
-              const angle = (i * 360) / totalTicks;
-              const isQuarter = i % (totalTicks / 4) === 0;
-              const isEighth = i % (totalTicks / 8) === 0;
-              const length = isQuarter ? 8 : isEighth ? 5 : 3;
-              const strokeColor = isQuarter
-                ? "rgb(var(--accent))"
-                : "rgba(var(--foreground-muted), 0.6)";
-              const strokeWidth = isQuarter ? 2 : 1;
-
-              return (
-                <line
-                  key={i}
-                  x1={100}
-                  y1={2}
-                  x2={100}
-                  y2={2 + length}
-                  stroke={strokeColor}
-                  strokeWidth={strokeWidth}
-                  transform={`rotate(${angle} 100 100)`}
-                />
-              );
-            })}
+            {DIAL_TICK_ELEMENTS}
           </svg>
 
           {/* Active window arc directly on outer sphere boundary */}
@@ -174,12 +171,17 @@ export const CentralClockNode = memo(
               viewBox="0 0 200 200"
               aria-hidden
             >
-              {Array.from({ length: windowProgress.count }, (_, i) => {
+              {/* Only the active window renders. This previously mapped the whole window
+                set, computed 4 trig values per entry, then returned null for
+                every non-current one — 208 wasted paths' worth of arithmetic
+                plus 208 null children on a 208-window month view. */}
+              {(() => {
+                const i = windowProgress.index;
+                if (i < 0 || i >= windowProgress.count) return null;
                 const anglePerSegment = 360 / windowProgress.count;
                 const startAngle = i * anglePerSegment - 90;
                 const endAngle = (i + 1) * anglePerSegment - 90 - 4;
                 const r = 97.5;
-                const isCurrent = i === windowProgress.index;
                 const startRad = (startAngle * Math.PI) / 180;
                 const endRad = (endAngle * Math.PI) / 180;
                 const x1 = 100 + r * Math.cos(startRad);
@@ -187,11 +189,8 @@ export const CentralClockNode = memo(
                 const x2 = 100 + r * Math.cos(endRad);
                 const y2 = 100 + r * Math.sin(endRad);
 
-                if (!isCurrent) return null;
-
                 return (
                   <path
-                    key={i}
                     d={`M ${x1} ${y1} A ${r} ${r} 0 0 1 ${x2} ${y2}`}
                     fill="none"
                     stroke="rgb(var(--accent))"
@@ -200,50 +199,27 @@ export const CentralClockNode = memo(
                     className="drop-shadow-[0_0_8px_rgba(var(--accent),0.6)]"
                   />
                 );
-              })}
+              })()}
             </svg>
           )}
 
 
           {/* ── Inner Circular Safe Zone: Centered Content with Perfect Breathing Room ── */}
           <div className="relative z-20 flex flex-col items-center justify-between w-[82%] h-[82%] pt-1.5 pb-2.5 select-none">
-            {/* 1. Top Section: Mode Pill Toggle */}
+            {/* 1. Top Section: Mode Toggle — the shared ViewSelector (correct
+                 role="tablist"/"tab", aria-selected, arrow-key roving focus).
+                 This node previously hand-rolled two unlabelled rounded-full
+                 buttons and hardcoded "DAY" while pulling "MONTH" from copy. */}
             <div
               className={cn(
-                "flex items-center gap-1 p-0.5 rounded-full border shadow-inner transition-colors",
+                "flex items-center gap-4 rounded-full px-4 py-1 shadow-inner transition-colors",
                 isLightMode
-                  ? "bg-white/45 border-[rgba(var(--accent),0.25)] shadow-slate-200/50"
-                  : "bg-black/40 border-[rgba(var(--accent),0.2)]"
+                  ? "bg-white/45 border border-[rgba(var(--accent),0.25)] shadow-slate-200/50"
+                  : "bg-black/40 border border-[rgba(var(--accent),0.2)]"
               )}
+              onClick={(e) => e.stopPropagation()}
             >
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onViewChange("day");
-                }}
-                className={cn(
-                  "px-3.5 py-0.5 rounded-full text-[11px] font-mono font-bold tracking-[0.18em] uppercase transition-all duration-200 cursor-pointer",
-                  view === "day"
-                    ? "bg-[rgba(var(--accent),0.25)] text-[rgb(var(--accent))] border border-[rgba(var(--accent),0.6)] shadow-[0_0_10px_rgba(var(--accent),0.4)]"
-                    : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] opacity-60 hover:opacity-100 border border-transparent"
-                )}
-              >
-                DAY
-              </button>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onViewChange("month");
-                }}
-                className={cn(
-                  "px-3.5 py-0.5 rounded-full text-[11px] font-mono font-bold tracking-[0.18em] uppercase transition-all duration-200 cursor-pointer",
-                  view === "month"
-                    ? "bg-[rgba(var(--accent),0.25)] text-[rgb(var(--accent))] border border-[rgba(var(--accent),0.6)] shadow-[0_0_10px_rgba(var(--accent),0.4)]"
-                    : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] opacity-60 hover:opacity-100 border border-transparent"
-                )}
-              >
-                {HISTORY_COPY.clockMonth}
-              </button>
+              <ViewSelector view={view} onChange={onViewChange} />
             </div>
 
             {/* 2. Middle Row: Centered Hero Date + Metrics Stack */}
@@ -339,9 +315,13 @@ export const CentralClockNode = memo(
                   </span>
                 )}
               </div>
-              <span className="text-[10px] sm:text-[10.5px] font-mono font-bold text-[rgb(var(--foreground))] tracking-tight whitespace-nowrap">
-                {timeSpanLabel || windowLabel || "00:00 – 23:59"}
-              </span>
+              {/* No fabricated fallback: without a measured span, show nothing
+                  rather than a "00:00 – 23:59" the clock never computed. */}
+              {(timeSpanLabel || windowLabel) && (
+                <span className="text-[10px] sm:text-[10.5px] font-mono font-bold text-[rgb(var(--foreground))] tracking-tight whitespace-nowrap">
+                  {timeSpanLabel || windowLabel}
+                </span>
+              )}
             </div>
           </div>
         </div>

@@ -1,4 +1,5 @@
 import React, { useRef, useState, useEffect, useCallback, lazy, Suspense } from "react";
+import { motion } from "framer-motion";
 import { EdgeNav } from "./EdgeNav";
 import { LAYOUT_COPY } from "@/data/layoutCopy";
 import { TitleBar } from "./TitleBar";
@@ -24,6 +25,38 @@ const Monitoring = lazy(() => import("@/pages/Monitoring").then((m) => ({ defaul
 interface ResponsiveLayoutProps {
   children?: React.ReactNode;
 }
+
+// ── Route transition + document title ─────────────────────────────────────
+// ONE thing, done correctly: when the route changes, fade the incoming page in.
+// No exit animation, no `mode="wait"`.
+//
+// Why there is no exit animation: `AnimatePresence mode="wait"` holds the INCOMING
+// route until the outgoing exit completes, which produces exit → blank stage →
+// enter. That blank gap reads as a flash/flicker, and with lazy chunks it also
+// exposed the Suspense fallback. Cross-fading a fade-out into a fade-in needs no
+// gap at all: the incoming page mounts immediately and fades up over the stage.
+//
+// The 200ms fade also serves as the loader handoff — chunks are preloaded in
+// App.tsx after first paint, so by the time a route is clicked the module is
+// resolved and the page mounts synchronously.
+const PAGE_TITLES: Record<string, string> = {
+  "/": "Vox",
+  "/history": "Vox — History",
+  "/memory": "Vox — Memory",
+  "/settings": "Vox — Settings",
+  "/monitoring": "Vox — Monitoring",
+};
+
+const PageTransition: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <motion.div
+    initial={{ opacity: 0 }}
+    animate={{ opacity: 1 }}
+    transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+    style={{ height: "100%", width: "100%", minHeight: 0, display: "flex", flexDirection: "column" }}
+  >
+    {children}
+  </motion.div>
+);
 
 export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) => {
   const location = useLocation();
@@ -60,6 +93,13 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
   // Sync refs via effects — never write to refs in the render body (concurrent-mode safe)
   useEffect(() => { pathnameRef.current = location.pathname; }, [location.pathname]);
   useEffect(() => { monitorOpenRef.current = monitorOpen; }, [monitorOpen]);
+
+  // Route side effects: window title + scroll reset on navigation.
+  // Previously neither existed — every route shared one static title.
+  useEffect(() => {
+    document.title = PAGE_TITLES[location.pathname] ?? "Vox";
+    window.scrollTo(0, 0);
+  }, [location.pathname]);
 
   // Bidirectional viewport transition: compact (EdgeNav route) ↔ full-max (corner popover)
   useEffect(() => {
@@ -325,6 +365,7 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
 
         {/* Ambient Background — visible on every page */}
         <AmbientBackground
+          instanceId="layout"
           originY={ambientOriginY}
           paused={interactionState === "Speaking"}
           rippleSpeedMultiplier={rippleSpeedMultiplier}
@@ -357,7 +398,12 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
                 </div>
               }
             >
-              {children || <Outlet />}
+              {/* No AnimatePresence here on purpose — see PageTransition above.
+                  Keying the wrapper on pathname remounts it per route, which is
+                  what triggers the fade-in. */}
+              <PageTransition key={location.pathname}>
+                {children || <Outlet />}
+              </PageTransition>
             </Suspense>
           </div>
         </main>

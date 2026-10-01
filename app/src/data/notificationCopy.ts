@@ -13,6 +13,10 @@ export const NOTIFICATION_COPY = {
   dismissAllTooltip: "Dismiss all in this tab",
   emptyTitle: "All caught up",
   emptySubtitle: "Session reminders and background updates will appear here.",
+  fetchFailedTitle: "Couldn't load notifications",
+  fetchFailedSubtitle:
+    "Vox couldn't reach the notification service. This is not an empty list — retry once the backend responds.",
+  fetchFailedRetry: "Retry",
   tasksEmptyTitle: "No pending tasks",
   tasksEmptySubtitle: "All session compactions and actionable alerts are complete.",
   updatesEmptyTitle: "No updates",

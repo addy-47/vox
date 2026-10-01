@@ -93,8 +93,9 @@ use crate::{
         dictation::init_dictation_hotkey_listener,
         memory::{
             compaction::reconcile_uncompacted_sessions_on_boot,
+            reconcile_crashed_queue_on_boot,
             scheduler::{check_missed_consolidation_on_boot, spawn_consolidation_scheduler},
-            spawn_quiet_ingestion_observer, warmup_tokenizer,
+            spawn_ingestion_sweep, warmup_tokenizer,
         },
         stt::SttCommand,
         vad::VadCommand,
@@ -387,7 +388,12 @@ pub fn run() {
             spawn_monitoring_collector(Arc::clone(&state_arc));
             spawn_system_monitor(app.handle().clone());
             spawn_telemetry_emitter(app.handle().clone());
-            spawn_quiet_ingestion_observer(Arc::clone(&state_arc));
+            if let Ok(conn) = state_arc.db.connect() {
+                tauri::async_runtime::spawn(async move {
+                    let _ = reconcile_crashed_queue_on_boot(&conn).await;
+                });
+            }
+            spawn_ingestion_sweep(Arc::clone(&state_arc), None);
             let is_daily_cadence = state_arc
                 .settings
                 .read()

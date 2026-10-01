@@ -48,6 +48,7 @@ export const SettingsCardWrapper = memo(({ domain, isActive, layoutMode, childre
   const isAutoSavedHere = useSettingsStore((s) => s.autoSavedDomain === domain.id);
   const saveFailure = useSettingsStore((s) => s.failedSaveDomains[domain.id]);
   const failedKeys = useSettingsStore((s) => s.failedSaveKeys);
+  const restartInFlight = useSettingsStore((s) => s.restartInFlight);
 
   return (
     <AnimatePresence>
@@ -150,6 +151,28 @@ export const SettingsCardWrapper = memo(({ domain, isActive, layoutMode, childre
                       <Check size={14} /> {SETTINGS_COPY.changesSaved}
                     </span>
                     <span className="text-[11px] text-[rgb(var(--accent))]/70 font-mono">{SETTINGS_COPY.autoSynced}</span>
+                  </motion.div>
+                )}
+
+                {/* Mode E: the backend is rebuilding the engine right now.
+                    Previously this state existed in the store but nothing
+                    rendered it on desktop (the only spinner lived in the
+                    mobile branch), so Apply & Restart froze the UI silently. */}
+                {!hasChanges && restartInFlight && (
+                  <motion.div
+                    key="restarting-footer"
+                    role="status"
+                    aria-live="polite"
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: "auto" }}
+                    exit={{ opacity: 0, height: 0 }}
+                    transition={{ duration: 0.2 }}
+                    className="w-full py-2 px-5 rounded-b-[1.25rem] rounded-t-none bg-[rgba(var(--accent),0.08)] dark:bg-[rgba(var(--accent),0.12)] border border-t-0 border-[rgba(var(--accent),0.2)] flex items-center gap-2 overflow-hidden text-[12px]"
+                  >
+                    <RefreshCw size={13} className="animate-spin shrink-0" />
+                    <span className="font-bold uppercase tracking-wider text-[rgb(var(--accent))]">
+                      {SETTINGS_COPY.restartingEngine}
+                    </span>
                   </motion.div>
                 )}
 

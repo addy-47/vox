@@ -125,6 +125,27 @@ export const Settings: React.FC = () => {
     return () => window.removeEventListener("keydown", handleKey);
   }, [activeDomains.length, setActiveDomains]);
 
+  // Eagerly prewarm the 7 card chunks after first paint so the first radial
+  // click is warm. (The loaders above previously claimed prewarming but
+  // nothing ever called them — the cold fetch started at the click.)
+  useEffect(() => {
+    const idle = window.requestIdleCallback ?? ((fn: () => void) => setTimeout(fn, 400));
+    const id = idle(() => {
+      void Promise.all([
+        loadPersona(),
+        loadModels(),
+        loadRealtime(),
+        loadWorkingMemory(),
+        loadPersonalMemory(),
+        loadAppearance(),
+        loadInteraction(),
+      ]).catch(() => {});
+    });
+    return () => {
+      if (window.cancelIdleCallback && typeof id === "number") window.cancelIdleCallback(id);
+    };
+  }, []);
+
   if (!draftSettings) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center min-w-0 z-10 h-full relative overflow-hidden bg-transparent px-6 md:px-10 py-6 md:py-10">

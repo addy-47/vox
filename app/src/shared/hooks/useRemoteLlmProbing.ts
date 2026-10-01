@@ -46,6 +46,17 @@ export function useRemoteLlmProbing(
   }, [capabilitiesCache]);
 
   const lastFetchedKeyRef = useRef<string>("");
+  // Mounted guard (style-guide §4.3) + monotonic request id so only the latest
+  // list fetch may commit (rapid provider switches previously let a stale
+  // response win). NOTE: no AbortController — Tauri's invoke() accepts none.
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+  const listSeqRef = useRef(0);
 
   const fetchRemoteModels = useCallback(async (force = false) => {
     if (!provider || provider.kind === "embedded" || !provider.base_url) return;
@@ -54,16 +65,21 @@ export function useRemoteLlmProbing(
       return;
     }
     lastFetchedKeyRef.current = fetchKey;
+    const seq = ++listSeqRef.current;
     setLoadingRemoteModels(true);
     setRemoteModelsError(null);
     try {
       const list = await listLlmModels(provider);
+      if (!mountedRef.current || seq !== listSeqRef.current) return;
       setRemoteModels(list);
     } catch (err) {
+      if (!mountedRef.current || seq !== listSeqRef.current) return;
       console.error("Failed to list remote models:", err);
       setRemoteModelsError(err instanceof Error ? err.message : String(err));
     } finally {
-      setLoadingRemoteModels(false);
+      if (mountedRef.current && seq === listSeqRef.current) {
+        setLoadingRemoteModels(false);
+      }
     }
   }, [provider, remoteModels.length]);
 
@@ -86,6 +102,10 @@ export function useRemoteLlmProbing(
 
       try {
         const caps = await probeModelCapabilities(provider, targetId);
+        // Unmount-guarded (no seq gate here on purpose: concurrent probes for
+        // different models must all commit; a global seq would strand one in
+        // "testing" forever).
+        if (!mountedRef.current) return;
         setProbingMap((prev) => ({
           ...prev,
           [targetId]: { status: "success", capabilities: caps },
@@ -100,6 +120,7 @@ export function useRemoteLlmProbing(
           },
         }));
       } catch (err) {
+        if (!mountedRef.current) return;
         console.error("[CapabilityProbe] Failed to probe model:", err);
         setProbingMap((prev) => ({
           ...prev,
@@ -119,6 +140,7 @@ export function useRemoteLlmProbing(
 
     try {
       const caps = await probeModelCapabilities(provider, mId);
+      if (!mountedRef.current) return;
       if (activeLlm === "server" && draft?.llm?.server) {
         updateDraft("llm", "server", { ...draft.llm.server, model: mId });
       } else if (activeLlm === "cloud" && draft?.llm?.cloud) {
@@ -134,6 +156,7 @@ export function useRemoteLlmProbing(
       }));
       setCustomModelStatus("valid");
     } catch (_) {
+      if (!mountedRef.current) return;
       if (activeLlm === "server" && draft?.llm?.server) {
         updateDraft("llm", "server", { ...draft.llm.server, model: mId });
       } else if (activeLlm === "cloud" && draft?.llm?.cloud) {

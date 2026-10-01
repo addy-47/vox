@@ -1435,3 +1435,332 @@ Hardcoded strings: `TranscriptRenderer.tsx:65` (`"Listening"`/`"Processing"` whi
 `LiveTestStep.tsx:138` (a three-branch inline ternary where
 `LIVE_TEST_COPY.voiceDetected` at `:179` already exists). Census for wizard+tray is
 **6 hardcoded literals** against ~60 centralised. **Tier 2.**
+
+### A5 cognitive load: 4 of 8 FAIL -> HIGH
+
+Dark band: cognitive load exceeds working memory during a first-run flow where the cost of
+a wrong decision is 10GB and 20 minutes.
+
+Fails: (2) step 3 shows **8 category rows**; expanding `tts` reveals 6 more = **14 checkboxes
+on screen**. (4) "Memory Checking" (NLI entailment) and "Smart Sorting" (classifier) are
+internal subsystem names presented to a first-timer. (7) `ModelSetupStep.tsx:54` "Failed to
+load model catalog." — no cause, no next step. (8) the size total at `:240` is the only
+cumulative signal and it **resets on every `view` change**.
+
+Also: 6 groups auto-selected (`:48-51`) totalling 9.85GB with **no confirmation step** and
+no "this is X GB" until *after* clicking. `setView('catalog')` at `:80` throws away all
+progress with no resume, and the "Retry Load" button is `window.location.reload()` (`:252`)
+which **nukes the whole wizard including the XState machine**. Download progress has **no
+ETA, no throughput, no `aria-live`** (`:330-361`) — Casey cannot tell a 3-minute download
+from a 30-minute one.
+
+**Tray cognitive load: low and correct.** Three states, one text surface, two scrubbers. The
+only load is `Header.tsx:40-46` showing `1.2s Pause` / `Manual` as a bare badge with no
+affordance — the user can't tell if it's information or a setting (it is a read-only echo of
+`settings.dictation.silence_auto_stop_ms`).
+
+### A5 emotional journey
+
+**Wizard (Jordan, first-timer):** the first 2 seconds land well — `index.html:100-255` boot
+orb -> `WizardRoot.tsx:103` `AmbientBackground` -> glass sidebar, clean, no flash. **The
+best cold open in the product.** Welcome sub-steps 1 and 2 are well-written plain honest
+copy with a working `VoxOrb` at `:140`. Sub-step 3 is the teaching moment and it is
+**hover-only** — on a keyboard or touchscreen Jordan gets a static card and an instruction
+they cannot follow. System Check is the **best-engineered step** (4 `StatusCard`s with real
+IPC data, honest `INSUFFICIENT`/`NOT FOUND`, and a **Skip when only the mic is missing**
+at `:117-118` — the first real act of user control in the flow). **Model Setup is the
+turn:** 8 rows, 2 phantom, 6 pre-checked, 9.85GB, a raw `~/.vox/models` path printed as
+the page's right-aligned header content (`:235`). Downloading works (per-category bars, real
+percentages, correct `Queued`/`Ready`) but no ETA. Audio Setup is good. Live Test is the
+emotional payoff and it works. **Complete over-claims:** four `StatusCard`s with `ok={true}`
+**hardcoded** (`CompletedStep.tsx:37`) while `welcomeCopy.ts:150-153` asserts *"Runs
+completely offline"* and *"100% private & safe"* **regardless of actual state.** If TTS
+failed to load, Jordan is told it didn't. Then `completeSetupWizard()` focuses the main
+window and **the wizard window is never closed** (P0-1).
+
+**Arc: strong open, mid-flow collapse at the cost decision, honest recovery, a finale that
+over-claims.**
+
+**Tray (Casey, interrupted mid-flow):** dictation starts -> `show()` (`TrayApp.tsx:199-201`)
+-> `ACTIVE` in 50ms, status dot pulses. **Faster than the user finishes the word.**
+Speaking: the type-on renderer is the right call — it makes speech feel instant when the
+transcript arrives in 200ms chunks. Interrupting: **exemplary** — hover freezes the fade
+(`useVisibility.ts:80-85`), the history scrubber is bounded (`:157-171`), `reset()` on new
+`Listening` wipes partials (`:197`). **After speech: nothing happens.** Casey finishes a
+sentence and the card just stays. Casey must reach for the X. **The tray is not ambient;
+it is a modal that won't dismiss itself.**
+
+**Ambient cost, always:** 1 rAF (`useStreamingRenderer`, self-terminating), 1 rAF
+(`LiveWaveform`, paused at `fpsIdle: 0` when not listening), 6 `listen()` subscriptions,
+1 `getTranscriptHistory()` on mount, **0 polling**. `setWindowClickThrough` fires only on
+state transitions. **This is genuinely well-behaved — the tray is near-free, as required.**
+
+---
+
+## 8. Consolidated Priority Register (app-wide)
+
+Ordered by severity then blast radius. Tier = review-ui classification.
+
+### P0 — Blocking
+
+| # | Issue | Domain | Tier |
+|---|---|---|:--:|
+| 1 | Version browse silently overwrites the active DB record (500 ms debounce) | Memory | **3** |
+| 2 | `get_onboarding_status` failure **inescapably** routes a configured install into the wizard (`App.tsx:88,167`) | App | **3** |
+| 3 | Profiler leak detection structurally dead; every Risk cell reads "Normal" forever | Monitoring | **3** |
+| 4 | Engine restart invisible on desktop — multi-second dead UI after a green "Saved" | Settings | **3** |
+| 5 | Closing a settings card silently reverts uncommitted changes (incl. the 600 ms autosave window) | Settings | **3** |
+| 6 | `sessionError` written by 0 readers — a failed Engage does nothing, visibly | Home | **1** |
+| 7 | Notification fetch failure renders "You're all caught up" | Common | **3** |
+| 8 | `interaction.pipeline_mode` misclassified hot — app freezes after asserting success | Settings | **3** |
+| 9 | IPC call inside a `setState` updater (`VoiceCarousel.tsx:143`) | Primitives | **1** |
+| 10 | Tray HUD can never auto-fade — `FADING` state entirely unreachable | Tray | **3** |
+| 11 | Wizard webview never destroyed + wizard double-mounts on first run | Wizard | **3** |
+| 12 | `prefers-reduced-motion` cannot reach ~90 framer-motion sites or any rAF loop | Global | **2** |
+| 13 | 4 of 11 fetch hooks have no `isMounted` guard; `AbortController` = 0 app-wide | Hooks | **1** |
+| 14 | No error state on 3+ surfaces — failure renders as emptiness | Memory/History/Common | **3** |
+
+### P1 — Major
+
+| # | Issue | Domain | Tier |
+|---|---|---|:--:|
+| 15 | `DictationConfigDesk` writes to backend per keystroke; field then lies on failure | Settings | **2**/**3** |
+| 16 | Two uncapped rAF loops driving React reconciliation, no visibility gate | Home | **2** |
+| 17 | Orb + graph configured for a GPU, running on llvmpipe (`antialias`, `dpr 2`, no `powerPreference`) | Home/Memory | **1**/**2** |
+| 18 | `.no-blur` applied to the one subtree containing zero `backdrop-filter`s | History | **3** |
+| 19 | Arrow keys silently replace the transcript you are reading | History | **3** |
+| 20 | History orders sessions differently from all 4 other session lists | History | **3** |
+| 21 | The clock reports numbers it did not measure (fake span, fake waveform) | History | **2**/**3** |
+| 22 | Design system unenforced: 38 `glass-card` bypasses, 12% `Card` adoption, 10 phantom levels | Global | **3** |
+| 23 | 43 backdrop blurs / 8 values / 1 mitigation used once | Global | **2**/**3** |
+| 24 | Two hardcoded constants disable two authored Home affordances | Home | **1**/**3** |
+| 25 | 4 IPC list queries + 60 ms sleep per `sessions_changed` | Home | **1** |
+| 26 | 2 of 8 "Mandatory" wizard model categories do not exist in the manifest | Wizard | **2** |
+| 27 | Calendar is 42 tab stops with no grid semantics and no way out | History | **3** |
+| 28 | Six icon-only buttons unnamed; every settings text input has no accessible name | Primitives | **1** |
+| 29 | Perf ledger documents 3 optimisations that do not exist in code | Docs | **1** |
+| 30 | `useSettings()` context elimination (ledger SS2.4) never completed | Settings | **1** |
+
+### P2 / P3 — Minor & Polish (selected)
+
+`PersonaCard` silently swallows keystrokes on tag edit (**3**) · 12 blurred transcript
+bubbles re-compositing per streaming frame (**1**/**3**) · 25 Home buttons with no
+`focus-visible` (**2**) · 6 measurable controls with no `aria-live` region (**1**) ·
+undeletable numeric inputs in 4 places (**2**) · `ModelStatusOverlay` re-firing 2 IPCs on
+every store change (**1**) · `Badge.tsx` has zero importers (**1**) · `ViewSelector.tsx`
+built correctly and bypassed (**1**) · unreachable `exit` animations in 3 primitives (**2**) ·
+`Tooltip.tsx:143` white-on-light `<kbd>` in light mode (**3**) · 400+ dead copy keys (**1**) ·
+9 dead npm dependencies (**1**) · `document.title` never written (**1**) ·
+`Monitoring.tsx:263` dead 18-line JSX block (**1**) ·
+`useMemoryProfiler.ts:163` 350 ms artificial delay per manual snapshot (**1**).
+
+---
+
+## 9. Detector Results & False Positives
+
+`impeccable detect --json app/src` -> **6 findings, all false positives.** No
+`.impeccable/` dir existed, `impeccable ignores list` was empty for rules/files/values,
+and no `impeccable-disable*` comments exist in `app/src`. The detector is functional; the
+surface is genuinely clean of *visual* defects.
+
+| Rule | Count | Why it is a false positive |
+|---|--:|---|
+| `side-tab` | 6 | All six are a blockquote/callout left-rail — `border-l-2` on blockquote-styled elements is standard Markdown convention, not a card accent tab. `Markdown.tsx:123,260` are the blockquote and code-block rails |
+| `ai-color-palette` "Cyan neon text" | 15/route | Measured on the **wizard**, and cyan `#00dbe9` is the declared `--accent` (`index.css:9`). The rule fires on the project's own design token |
+| `radial-spotlight-glow` | 3 | `AmbientBackground` is spec-mandated (`design-spec.md` SS8). Fires by construction |
+| `dark-glow` | — | `--accent` and `--signal`-family tokens (`index.css:9,20`). Token-derived |
+| `cramped-padding` | all routes | Heuristic assumes a bordered/bg container with children flush on 4 edges. Blind to Tailwind `gap-*`/flexbox |
+| `buried-raster` "opacity 0.04" | 2 | The `.amb-noise` grain overlay that `design-spec.md` SS2 explicitly requires |
+| `low-contrast` "on backdrop filter" | 8 | Screenshot pixel-sampling cannot resolve a `backdrop-filter` composite — it samples the blurred backdrop, not the effective surface |
+| `tiny-text` "11px body text" | — | Fires at **exactly** 11px, which `design-spec.md` SS4.2 defines as the floor. Off-by-one at the boundary |
+| `gpt-thin-border-wide-shadow` | 1 | 1px border + 16px blur is exactly what `design-spec.md` SS2 prescribes |
+| `marquee` on shimmer/ribbon | all routes | Keys on the `infinite` keyword. A loading skeleton shimmer is a *reduced-motion-friendly* pattern |
+| `cramped-padding` on `Memory.tsx:874` | — | The element declares `p-8`. The rule mis-parsed `bg-[rgba(var(--card),0.85)]` |
+
+**Read:** the detector's rule vocabulary is visual (colour, contrast, padding, gradient,
+motion). It has **no rule for state-machine or data-integrity defects** — "a DB write hidden
+behind a debounce", "an error branch that renders the empty state", "a Suspense fallback
+that can never fire". Every P0 in this register came from human review. **A source-only
+detector gate on this repo is close to a no-op.**
+
+---
+
+## 10. Perf Ledger Verification (SS1 & SS2)
+
+**Tally: 22 HOLDS · 7 PARTIAL · 6 FAILS · 4 unverified.**
+
+### FAILS
+
+| # | Claim | Reality |
+|---|---|---|
+| SS1.3 | Profiler queries live window handles in `ipc/memory_profiler.rs` and `monitoring/system_monitor.rs` | **Both files do not exist.** `get_profiler_snapshot` is in `ipc/monitoring.rs`; `monitoring/` is a directory |
+| SS2.3.1 | `ticks < 100`, `alpha=0.08`, `repulsion=1200`, `damping=0.85`, `maxNodes=10000`, `maxEdges=20000` | `maxNodes` is **12000** (`:1011`). `repulsion` -> **0 hits**. `20000` -> **0 hits**. `0.08` is `controls.dampingFactor` (`:902`); `0.85` is `zoomSpeed` (`:905`). No `ticks` gate. See run 1 for the full physics audit |
+| SS2.3.4 | `relationAdjacencyMap` for O(1) `isNodeVisible` | **0 hits** in both `useMemoryGraphScene.ts` and `MemoryGraph.tsx` |
+| SS2.3.5 | `nodeById` Map + badge setState throttled to <= 8 Hz | **`nodeById` -> 0 hits** |
+| SS2.4.1 | `useSettings()` context eliminated | `shared/hooks/useSettings.ts:4` still exists, consumed by `tray/TrayApp.tsx:13,33`, `RestoreDefaultsButton.tsx:3,14`, `ModelStatusOverlay.tsx:5,26` — `const { settings, draftSettings, modelCatalog } = useSettings()`, exactly the whole-context read the claim says was removed |
+| SS2.6.5 | `Markdown` fast path `!/[*_#\[\]]/.test(content)` in `DetailPanel.tsx` | **The regex appears nowhere in `app/src`.** `Markdown.tsx:300` calls `<ReactMarkdown>` unconditionally. Every plain-text turn still pays full AST parse |
+| SS2.7.4c | `react-scan` integrated in `index.html` | `app/index.html:280-286` — the entire `react-scan` `<script>` is **inside an HTML comment**. Never loads |
+
+### PARTIAL
+
+| # | Claim | Reality |
+|---|---|---|
+| SS1.2 | Unified `trim_heap` in `services/memory/mod.rs` | Function is in `services/memory/ml/mod.rs`, **not** the documented path. Mechanisms present |
+| SS2.2.1 | `useDynamicFPS` cancels RAF when hidden via `IntersectionObserver` | 60/15 tier values **hold**; `rafRef` nulling **holds**. But the hook **never constructs an `IntersectionObserver`** despite its own `:8` docstring, and `LiveWaveform.tsx:77-83` passes `fpsIdle: 0` and neither `isVisible` nor `isPageVisible` — both default `true`, so **RAF keeps scheduling at display rate while the tab is hidden** |
+| SS2.2.4 | Honours `prefers-reduced-motion` | 3 CSS blocks neutralise ambient/ripple/orbit/wave CSS animation. But `useDynamicFPS` has **0** reduced-motion input and the framer-motion `repeat: Infinity` loops are uncovered |
+| SS2.5.5 | `React.memo` on 8 named leaf components | `SegmentedControl`, `ApiKeyField`, `OrbitCarousel` memo'd. **`ToggleTile`, `LiquidChamber`, `MetricCarousel`, `Card` are not.** `SliderField` and `SearchInput` **do not exist in `app/src`** |
+| SS2.6.1 | `<EdgeNav/>`, `<EngineMonitor/>`, `ModelStatusOverlay` after `<main>` | DOM order correct (`ResponsiveLayout.tsx:339` -> `:480` -> `:486`) but **`<EngineMonitor/>` does not exist** — only a label string |
+| SS2.7.1 | Canvas collapsed 1x1 + `forceContextLoss` before `dispose()` | `AdvancedOrb.tsx:867-871` and `useMemoryGraphScene.ts:1178-1182` both correct. `PixelSynthesisCanvas.tsx:133-134` has `width=1/height=1` but **`forceContextLoss` and `dispose` -> 0 hits** |
+
+### HOLDS (22)
+
+`SS1.1` on-demand Tray+Wizard windows (but the **close-after-completion** clause FAILS — see
+A5 P0-1) · `SS1.5` `ensure_main_window` + `main_window_destroyed` · `SS2.1` 5 memory vectors
+incl. `sampleCSSIndicators` · `SS2.2.2` `LiquidChamber` 30 FPS · `SS2.2.3` ambient layer
+demotion *(unverified on the threshold itself)* · `SS2.3.3` Three.js object hoisting ·
+`SS2.3.6` `forceContextLoss` in unmounts · `SS2.4.3` `AppearanceCard` pointerup commit ·
+`SS2.4.5` functional `setLines` updaters · `SS2.5.1` context `useMemo` ·
+`SS2.5.3` `targetTextRef` catch-up guard · `SS2.5.4` timer cleanup ·
+`SS2.6.2` `Drawer position="global"` portal · `SS2.7.2` **`MemoryProfilerContext`
+actions/data split — verified correct, including the `queueMicrotask` coalesce at `:36-43`** ·
+`SS2.7.3` array/buffer nulling · `SS2.7.4a` visualizer · `SS2.7.4b` vite-plugin-inspect ·
+`SS2.7.4d` `dateTime.ts` extraction · `SS2.7.4e` 4 pruned deps · `SS2.7.4f` crawler script.
+
+**Important nuance:** `SS2.7.2` (the profiler context split) and `SS2.2.2` (LiquidChamber)
+are the ledger's best work and genuinely hold. But **`SS2.7.1`'s profiler half does not** —
+the *tool* is correct while the *instrument it reports into* is dead (A4 P0-1). Fixing the
+context was the easy half.
+
+---
+
+## 11. Spec Contradiction Table
+
+| Rule | Spec | Code | Violated? |
+|---|---|---|:--:|
+| Type floor: "nothing renders below 11px" | `design-spec.md` SS4.2, SS11 | **153** `text-[Npx]` sites — `tray/components/Header.tsx:40,44` (8.5px), `SessionContextMenu.tsx:188` (9px), `ToggleTile.tsx:83` (10px), `Memory.tsx:939,954,983` (10.5px) | **YES (153)** |
+| Pill invariant: `rounded-full` **strictly reserved for clickable controls** | SS5.1 | **166** on non-`button`/`a`/`input` owners — `TitleBar.tsx:147,198` (status dots), `EdgeNav.tsx:72,73,74,80,120,121,122` (decorative rings on `span`), `Home.tsx:229` | **YES (166)** |
+| Micro-interactions 150-300 ms | SS7 | **54** >= 400 ms — `duration-500`(32) `duration-700`(6) `duration-1000`(4) `duration-400`(12) | **YES (54)** |
+| "never use hard 1px white borders as the primary separation mechanism" | SS2 | `Tooltip.tsx:143` `bg-white/10`; `LiquidChamber.tsx:358` `border border-white/5` | **YES (2)** |
+| 4 elevation levels `.glass-whisper`(8px) / `.glass-surface`(16px) / `.glass-card`(24px) | SS2 table | `.glass-whisper` -> **0 rules, 0 uses**. `.glass-surface` -> **0 rules, 0 uses** (name collides with the `--glass-surface` RGB token at `:25`). Only `.glass-card` exists (3 rules). **Table declares 4, lists 3, code implements 1** | **YES** |
+| `.glass-card` blur = 24px | SS2 table | `index.css:199-200` `blur(20px)` | **YES** |
+| Borders from `--border` at `rgba(var(--border), 0.08-0.15)` | SS2 | `index.css` hardcodes **31** literals incl. `rgba(255,255,255,*)` at `:189,203,206,208` and `hsl(230 30% 6%)` at `:561-563` — light/dark theming cannot reach them | **YES (31)** |
+| Colours as RGB-triplet vars `rgb(var(--token))` | SS3 | 48 six-digit hex in `.ts`/`.tsx` + 302 raw Tailwind palette classes; 17 declared tokens never `var()`-referenced | **YES** |
+| Radii from the `rounded` scale only (tops at `2xl`=1.75rem) | SS5 | `rounded-3xl`: `Memory.tsx:870`, `Monitoring.tsx:361`, `LiquidChamber.tsx:355`, `MemoryNodeTooltip.tsx:51` | **YES (4)** |
+| Drawers **trap focus** | SS11 | `Drawer.tsx` — the app's only `aria-modal` (`:195`) has **0** Tab-key handling and **0** `tabIndex={-1}` | **YES** |
+| "all interactive elements enforce a visible `focus-visible` ring" | SS11 | **35** `focus-visible` vs **258 `<button>`** + **25 `<input>`**; **53** `outline-none` | **YES** |
+| "Surfaces do not install their own Escape or outside-click listeners" | SS13 | **27** own keydown/Escape sites outside the single authority | **YES (27)** |
+| Frameless SVG linework — no heavy bordered container box | SS5.2 | **0** inline `<svg>` carrying a border class | no |
+
+---
+
+## 12. Proposed Execution Order
+
+### Batch 1 — invisible, no sign-off needed
+
+Data integrity and lifecycle. **Do these first regardless of tier.**
+
+1. Version-nav DB write (Memory) · 2. `VoiceCarousel` IPC-in-updater · 3. `usePanelState`
+setTimeout-in-updater · 4. `AbortController` + `isMounted` in 4 hooks · 5. All 8 untracked
+timers in `Memory.tsx` + `HistoryListView`/`SessionPanel`/`TitleBar`/`DictationConfigDesk`
+untracked timers · 6. Selection handler offset table + rAF throttle · 7. Search caches and
+debounces · 8. `voxCpu?.toFixed(1)` · 9. Ref-writes-in-render · 10. `useCallback` the inline
+arrow · 11. Delete 9 dead deps (`pnpm lint:dead`) · 12. `sortSessionsNewestFirst` ·
+13. Delete the unreachable `exit` wrappers in 3 primitives · 14. Delete `ViewSelector`
+bypass / adopt it · 15. Delete `Monitoring.tsx:263` dead JSX · 16. Delete the 350 ms artificial
+snapshot delay · 17. Delete `toMood`, the dead test-mode scaffolding, and 3 Tauri listeners.
+**Then:** `pnpm lint`, `pnpm build`, `check_invariants.mjs`.
+
+### Batch 2 — correctness, small visible change
+
+`sessionError` banner · notification error state · notification retry · tracker-type audio ·
+route exit animation + `document.title` + scroll restoration + focus-to-main (all four are
+the same `RouteShell` wrapper) · loader exit + minimum dwell on Memory · tooltip
+focus-fix + `ApiKeyField` positioning · 6 unnamed buttons + `UnderlineInput` `<label>` ·
+`role="log"` on the transcript (**after** the rAF throttle) · `role="grid"` + roving tabindex
+on the calendar · arrow-key guard in History · Space guard on `<button>` in Home ·
+`isRestartKey` replaced by backend `reload_policy` · remove the 24-entry restart list ·
+desktop restart state · stop discarding on card close · `PersonaCard` silent swallow →
+visible reason · `Settings.tsx` real prewarm · fix the manifest-driven category list ·
+drive the tray fade from the state machine · close the wizard webview + stop the double
+mount · `VoiceRippleNode` remove the fake waveform · `CentralClockNode` stop fabricating
+`00:00 - 23:59` · `HelpPanel` correct the content/heading pairing · `Tooltip` `<kbd>` token ·
+`RotaryKnob` `--surface-bg` -> `var(--card)` · `useReducedMotion` + `<MotionConfig>` ·
+apply `.no-blur` to the elements that actually need it · close the 8 double-escape capture
+listeners.
+
+### Batch 3 — needs your decision
+
+- **Route cross-fade** (160 ms out / 200 ms in) — new motion on every page change
+- **Graph stops breathing when idle** — deletes ~30 FPS of constant load but removes the
+  only continuously-alive element on the Memory page
+- **Category palette re-derivation** — `next_step` vs `pitfall` are 65 deg apart and
+  indistinguishable at 8 px
+- **`Card` elevation migration** — 38 surfaces will visibly shift border alpha, blur, and
+  background opacity at once
+- **`PersonaCard` debounce** — the visible caret-step cost
+- **Resume Session pill** on Home — a new element in the Idle composition
+- **Wizard flow reorder** (voice before cost) — **Tier 3**, the largest single change, and
+  the only one that alters the *product*, not the pixels
+
+### Batch 4 — structural
+
+Split `Memory.tsx` (1,182) and `History.tsx` (412) per `frontend-style-guide.md:31` ·
+extract `usePersonalMemoryDossier` · extract the 4 unguarded fetch hooks' guards into one
+`useGuardedFetch` hook · a single `SaveState` state machine for Settings · virtualize
+`HistoryListView` at >500 sessions · introduce motion + z-index + spacing tokens and migrate
+the 219 durations · a lint rule banning `glass-card` outside `Card.tsx` · reconcile the
+perf ledger against SS10.
+
+---
+
+## 13. Open Questions
+
+1. **Does "alive" need continuous GPU work, or liveness of *response*?** (Memory + Home.)
+   The perpetual breathing core and the never-resting 30 FPS loop are why the app feels
+   heavy — but they are also the only thing on screen that is provably alive, which is the
+   product thesis. A core that dilates on `Thinking`, sharpens on `Speaking`, stills on
+   `Idle`, and renders once per state change would delete ~30 FPS of constant load **and**
+   give a stronger aliveness signal. Which is the more honest expression of "sentient
+   surface"?
+2. **Should the wizard make the user speak before asking for 10GB?** The ordering is
+   backwards: the biggest commitment precedes the smallest delight. Would a re-order
+   (system check -> one-word demo -> cost decision) improve completion, or does the current
+   order exist because models must be present to demo?
+3. **Should the transcript rail exist on Home at all?** (Home.) It duplicates
+   `/history`'s `DetailPanel`, costs 12 backdrop-filter regions, duplicates 60 fps
+   reconciliation, and disappears below 768 px. If the orb is the interface and the
+   transcript is a destination, deleting `Home.tsx:245-269` eliminates two P0/P1 findings in
+   one stroke. **Right now it's neither.**
+4. **Is `isRestartKey` deleting the backend's answer, or finally adopting it?** (Settings.)
+   The store comment asserts backend ownership and the ledger claims it was completed, yet a
+   24-entry frontend table still decides when the engine freezes — and it has been
+   mis-classifying `pipeline_mode` the whole time. **That is either dead-but-load-bearing
+   code or an unadopted backend capability, and the answer determines whether the fix is a
+   one-line `stopgap or a real refactor.**
+5. **What is the durable shape of async state?** Every surface hand-rolls
+   `loading`/`refreshing`/`error`/`empty`/`busy` as independent booleans, which is why every
+   surface gets the states wrong in a different way. A single `<AsyncBoundary>` with an
+   exhaustive state union would make the missing states *impossible* to omit rather than
+   merely absent today. **Would that be the highest-leverage single change in this audit?**
+
+---
+
+## 14. Verification & Provenance
+
+| Claim class | How verified |
+|---|---|
+| Source citations | Direct reads by six isolated agents; cross-checked where two agents touched the same file |
+| Line numbers into `memory.rs` / `memoryService.ts` / `useObservationsList.ts` | **Post-change** — those files were modified during the run by something other than these agents. Re-verify before acting |
+| Numeric counts (43 blurs, 219 durations, 48 hex, 302 palette, 153 tiny-text, 166 pill, 54 slow, 31 literals, 17 dead tokens, 40 tokens, 9 dead deps) | `rg`/`grep` counts by Assessment B, whole-tree |
+| Browser measurements (DOM counts, computed `backdrop-filter`, `will-change`, canvas sizes, `document.title`, live-route detector findings) | Headless Chrome over CDP **with `window.__TAURI_INTERNALS__.invoke` stubbed before page load.** Honest caveat: real DOM/CSS/geometry/computed-styles are faithful; **the data is synthetic.** Settings failed to load on 4 of 5 routes, so appearance-driven styling (accent seed, light/dark) is **unmeasured** |
+| Visual overlays | `impeccable live-server --background` injection succeeded (verified by `document.title` mutation + `<script>` execution; 14 `__IMPECCABLE_*` globals live). It is a *variant/copy editor* bar, not the detection engine, and emitted no findings. Server stopped; ports verified down |
+| Repo state | **No file was modified, created, or deleted by any audit agent.** Only the two report docs in `docs/plans/phase12/` were written, by the parent. The working tree's 19 pre-existing modifications are the user's |
+| Servers | Any dev server started for evidence was stopped and its port verified down before this report was finalised |
+
+**Status:** findings only. **No code was modified. No commits made.**
+
+🐛 **Bug** — The two highest-severity classes are identical in shape: *a state was modelled, the UI was built for it, and the wire was never connected.* `sessionError` (0 readers), `restoringSessionId` (hardcoded `null`), `hasCachedSession` (hardcoded `false`), `retainedDeltaMb` (never written), `startFade` (never called), `useSettings()` (never removed). Six surfaces, one failure mode, all silent, all on the primary path. The codebase is disciplined about *listener* lifecycle — `useSessionPanel.ts:87-97`, `useTelemetry.ts:14-36`, `eventsService.ts:164-196`, `MemoryProfilerContext.tsx:26-99`, and `useMemoryProfiler.ts:270-279` are exemplary — and careless about *state* lifecycle. **Same rigour, different target.**
+
+💡 **Improvement** — The best code in this repo is the code nobody notices: `AdvancedOrb.tsx:853-872`, `LiquidChamber.tsx:339-348`, `AmbientBackground.tsx:100-157`, `OrbitCarousel.tsx:169-204`, `notificationStore.ts:202-353`, `settingsStore.ts:869-911`, `SettingsCardWrapper.tsx:62-67`, `ToggleTile.tsx:44-56`, `BottomDockFeather.tsx:20-25`, `SegmentedControl.tsx:38-61`, `ProjectContextMenu.tsx:184-208`. Every one of them has a comment explaining *why*, at the point of use. **The gap is not knowledge — it is that nobody measures these surfaces.** `impeccable detect` found 6 false positives and 0 real defects; `check_invariants.mjs` passes 5/5; `test/invariants.test.ts:178-199` asserts one `transform-gpu`. The instrumentation to catch this class of bug exists and is green, which is worse than not having it.
+
+⚖️ **Trade-off** — Three Tier-3 fixes *replace* a currently-reassuring display with a scarier one: "Measuring on exit..." becomes "no data" (A4 P0-1), "You're all caught up" becomes a red error panel (A4 P1-6), and "CHANGES SAVED" becomes a 4-second "REBUILDING ENGINE" banner (A3 P1-4). **All three are correct and all three will make the app look worse in the exact screenshots a demo captures** — unless the underlying data path is fixed in the same pass. That coupling is the real trade-off: you cannot ship the honest UI without also making the thing it reports about actually work.

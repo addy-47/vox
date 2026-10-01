@@ -159,8 +159,8 @@ export function useMemoryProfiler(enabled = true) {
             process_tree: snap.process_tree,
           });
 
-          // Ensure visual feedback on button
-          await new Promise((res) => setTimeout(res, 350));
+          // No artificial delay: the button already has `disabled` + `animate-spin`,
+          // so 350ms of sleep per snapshot bought nothing.
         }
 
         return snap;
@@ -201,8 +201,8 @@ export function useMemoryProfiler(enabled = true) {
             baseline: snap,
             peak: prevRec?.peak || snap,
             current: snap,
-            retained: prevRec?.retained || null,
-            retainedDeltaMb: prevRec?.retainedDeltaMb || null,
+            retained: null,
+            retainedDeltaMb: null,
             peakDeltaMb: 0,
             activeComponentsOnMount: activeComponents,
           },

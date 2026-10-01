@@ -5,3 +5,4 @@ export * from "./EmptyState";
 export * from "./OrbitalLoader";
 export * from "./HelpPanel";
 export * from "./NotificationPanel";
+export * from "./WizardStandIn";

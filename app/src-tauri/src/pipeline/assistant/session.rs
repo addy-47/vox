@@ -39,7 +39,7 @@ use crate::{
             },
             LlmActiveProvider,
         },
-        memory::{compaction::coordinator::CompactionCoordinator, trim_heap},
+        memory::{compaction::coordinator::CompactionCoordinator,spawn_ingestion_sweep, trim_heap},
         notifications::{Action, ActionPayload, NotificationCategory, NotificationParams},
         realtime::{create_realtime_provider, purge_session_cache, RealtimeActor},
         tts::actor::cool_down_tts,
@@ -202,6 +202,12 @@ pub fn on_session_start<R: Runtime + 'static>(
 
     state.owner.store(owner as u32, Ordering::Relaxed);
     state.pipeline.cancel_flag.store(false, Ordering::Relaxed);
+
+    // Cancel any in-flight background ingestion sweep to avoid CPU/ONNX contention during session
+    if let Some(token) = state.ingestion_cancel.lock().take() {
+        log::info!("[Pipeline::Session] Cancelling background ingestion sweep for session start.");
+        token.cancel();
+    }
 
     let session_ctx = RoutingContext::from_app_state(state);
 
@@ -702,6 +708,10 @@ pub fn on_end<R: Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &RoutingCon
                 }
             }
         }
+
+        // Trigger background ingestion sweep to drain all facts enqueued during session
+        let state_handle: State<'_, Arc<AppState>> = app_handle.state();
+        spawn_ingestion_sweep(Arc::clone(state_handle.inner()), None);
     });
 }
 

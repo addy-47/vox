@@ -2,10 +2,7 @@
 //! evals/common/datasets.rs — Multi-turn Session Dataset Loader
 //! ============================================================================
 
-use std::{
-    fs,
-    path::PathBuf,
-};
+use std::{fs, path::PathBuf};
 
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
@@ -44,13 +41,8 @@ pub fn resolve_case_file(case_idx: usize) -> Result<(String, PathBuf)> {
     let base = resolve_eval_sessions_dir()?;
     let prefix = format!("case_{:02}", case_idx);
 
-    let entries = fs::read_dir(&base).map_err(|e| {
-        anyhow!(
-            "Failed to read eval-sessions directory {:?}: {}",
-            base,
-            e
-        )
-    })?;
+    let entries = fs::read_dir(&base)
+        .map_err(|e| anyhow!("Failed to read eval-sessions directory {:?}: {}", base, e))?;
 
     for entry in entries.flatten() {
         let name = entry.file_name().to_string_lossy().to_string();
@@ -70,13 +62,8 @@ pub fn resolve_case_file(case_idx: usize) -> Result<(String, PathBuf)> {
 /// Loads turns for a specific evaluation case by index (1..=14).
 pub fn load_eval_case(case_idx: usize) -> Result<(String, Vec<SessionTurn>)> {
     let (case_name, case_path) = resolve_case_file(case_idx)?;
-    let content = fs::read_to_string(&case_path).map_err(|e| {
-        anyhow!(
-            "Failed to read case file {:?}: {}",
-            case_path,
-            e
-        )
-    })?;
+    let content = fs::read_to_string(&case_path)
+        .map_err(|e| anyhow!("Failed to read case file {:?}: {}", case_path, e))?;
 
     let turns: Vec<SessionTurn> = serde_json::from_str(&content).map_err(|e| {
         anyhow!(

@@ -100,7 +100,9 @@ pub async fn evaluate_consolidation_stage(
     let post_blocks_count: usize = post_model.sections.iter().map(|s| s.blocks.len()).sum();
     let post_markdown = post_model.render_to_markdown();
 
-    let pending_revisions = fetch_pending_revisions(&conn, None).await.unwrap_or_default();
+    let pending_revisions = fetch_pending_revisions(&conn, None)
+        .await
+        .unwrap_or_default();
 
     // 6. Build Consolidation Judge Prompt
     let mut obs_rendered = String::new();
@@ -127,8 +129,14 @@ pub async fn evaluate_consolidation_stage(
         ConsolidateOutcome::Completed { record } => {
             format!("Completed with memory version v{}", record.version)
         }
-        ConsolidateOutcome::ConfirmationRequired { reason, pending_count } => {
-            format!("Confirmation required: {:?} (pending: {})", reason, pending_count)
+        ConsolidateOutcome::ConfirmationRequired {
+            reason,
+            pending_count,
+        } => {
+            format!(
+                "Confirmation required: {:?} (pending: {})",
+                reason, pending_count
+            )
         }
     };
 
@@ -147,6 +155,7 @@ Analyze the following personal memory consolidation pass:
 <input_candidate_observations>
 {}
 </input_candidate_observations>
+*(Note: Personal memory consolidates facts strictly scoped to the 'personal' domain. These are the active personal facts from the database.)*
 
 <consolidation_outcome>
 {} | Pending Revisions In DB: {}
@@ -161,35 +170,43 @@ Produce a comprehensive evaluation report in clean Markdown format with the foll
 # Consolidation Evaluation Report — {}
 
 ## 1. Executive Scorecard
-- **Observation Coverage / Retention**: [0-100%]
+*(Note: Every percentage score MUST explicitly state its formula with exact counts: `X / Y = Z%`)*
+- **Observation Coverage / Retention**: [X / Y = Z%]
+- **Ungrounded Hallucinations / Extrapolations**: [None / Count with severity]
 - **Taxonomy & Domain Structure Quality**: [1-10]
-- **Prose Coherence & Context Density**: [1-10]
-- **Delta Operation Fidelity**: [0-100%] (or N/A for cold start)
+- **Prose Coherence & Block Fidelity**: [1-10] (Penalize heavily if ungrounded rationales are invented)
+- **Delta Operation Fidelity**: [X / Y = Z%] (or N/A for cold start)
 - **Temporal Consistency**: [High / Medium / Low]
 
-## 2. Semantic Loss & Omission Audit
+## 2. Provenance & Hallucination Audit (CRITICAL)
+Inspect every sentence in `<resulting_personal_memory>` against `<input_candidate_observations>`:
+- **Zero Extrapolation Check**: Does the memory introduce any technical motivations, architectural rationale, or philosophical goals absent from the input facts?
+  *(CRITICAL: Stating that a project 'reflects a focus on robust architecture where control over resource lifetimes is paramount' when input facts only stated 'working on Rust ownership logic' is a CRITICAL HALLUCINATION. Do NOT praise extrapolation as 'a layer of interpretation' or 'insight'. Penalize it as an ungrounded hallucination).*
+- **Provenance Breakdown**: Map each emitted memory block to the specific input candidate observations that ground it. Quote any fabricated or extrapolated phrases.
+
+## 3. Semantic Loss & Omission Audit
 Inspect every input candidate observation:
 - List which observations were successfully incorporated into the memory model.
 - Explicitly list any **dropped observations** (observations left unrepresented in the memory).
 
-## 3. Taxonomy & Section Emergence Assessment
+## 4. Taxonomy & Section Emergence Assessment
 - Audit the section titles (e.g. `Career & Technical Stack`, `Dietary Preferences & Health`).
 - Penalize generic dump buckets (like `General`, `User Info`, `Notes`, `Miscellaneous`).
 - Evaluate whether related blocks are clustered logically.
 
-## 4. Prose Coherence & Block Quality
+## 5. Prose Coherence & Block Quality
 - Audit the prose quality of each block. Blocks should be coherent 1-3 sentence statements providing clear context rather than fragmented bullet scraps.
 - Highlight any awkward phrasing, truncated statements, or low-information content.
 
-## 5. Delta Operation & Preservation Audit
+## 6. Delta Operation & Preservation Audit
 (If cold generation, assess structure generation; if incremental delta, assess delta operations):
 - Verify whether operations appropriately selected `creates` for existing sections, `new_sections` for novel domains, and `updates` for evolving facts.
 - Check whether stable existing knowledge was preserved or unnecessarily rewritten/deleted.
 
-## 6. Contradiction & Temporal Resolution
+## 7. Contradiction & Temporal Resolution
 - Check if updated facts superseded older ones cleanly, or if contradictory information is present in the final memory.
 
-## 7. Actionable Architectural Feedback
+## 8. Actionable Architectural Feedback
 Provide 2-3 specific improvements for consolidation prompts or schema rules.
 "#,
         mode,

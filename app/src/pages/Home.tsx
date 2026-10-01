@@ -16,6 +16,7 @@ import { cn } from "@/shared/lib/utils";
 
 
 import { useProfilerDrawer } from "@/shared/components/profiler/ProfilerDrawer";
+import { useSessionStore } from "@/store/sessionStore";
 import { useRegisterPageDrawer } from "@/shared/context/PageDrawerContext";
 import {
   useHomePage,
@@ -42,7 +43,6 @@ export const Home = memo(() => {
     isEngaged,
     isSleeping,
     isPaused,
-    hasCachedSession,
     pttStatus,
     transcript,
     assistantText,
@@ -75,7 +75,7 @@ export const Home = memo(() => {
     shouldAutoScrollRef,
   } = useHomePage();
 
-  const { openProfiler, closeProfiler, isProfilerOpen } = useProfilerDrawer();
+  const { openProfiler, closeProfiler } = useProfilerDrawer();
   const drawerHandlers = useMemo(() => ({
     open: openProfiler,
     close: closeProfiler,
@@ -111,6 +111,11 @@ export const Home = memo(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (isEditable(document.activeElement)) return;
       if (e.repeat) return;
+      // Space on a focused button must activate the button, never PTT:
+      // native button activation would otherwise race handlePttStart.
+      // (Ctrl+Space is an explicit chord and keeps working everywhere.)
+      const spaceOnButton =
+        e.key === " " && (document.activeElement as HTMLElement | null)?.tagName === "BUTTON";
 
       if ((e.key === "m" || e.key === "M") && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
         e.preventDefault();
@@ -139,12 +144,14 @@ export const Home = memo(() => {
         if (isEngaged) setTextModeOpen(true);
         return;
       }
-      if (e.key === "Escape" && (interactionState === "Speaking" || interactionState === "Thinking")) {
+      // Escape while the text bar is open belongs to the text bar (it closes it);
+      // pausing here as well would fire two actions from one key.
+      if (e.key === "Escape" && !isTextModeOpen && (interactionState === "Speaking" || interactionState === "Thinking")) {
         e.preventDefault();
         pause();
         return;
       }
-      if (e.key === " " && !e.ctrlKey && !e.metaKey && interactionMode === "PTT" && isEngaged && !isPaused && !isSleeping && interactionState !== "Error") {
+      if (e.key === " " && !spaceOnButton && !e.ctrlKey && !e.metaKey && interactionMode === "PTT" && isEngaged && !isPaused && !isSleeping && interactionState !== "Error") {
         e.preventDefault();
         handlePttStart();
       }
@@ -152,7 +159,9 @@ export const Home = memo(() => {
 
     const onKeyUp = (e: KeyboardEvent) => {
       if (e.key === " " && !e.ctrlKey && !e.metaKey) {
-        if (interactionMode === "PTT" && isEngaged && !isPaused && !isSleeping && interactionState !== "Error") {
+        const endOnButton =
+          (document.activeElement as HTMLElement | null)?.tagName === "BUTTON";
+        if (!endOnButton && interactionMode === "PTT" && isEngaged && !isPaused && !isSleeping && interactionState !== "Error") {
           if (pttStatus === "RECORDING") handlePttStop();
           else handlePttCancel();
         }
@@ -165,11 +174,19 @@ export const Home = memo(() => {
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
     };
-  }, [toggleMicMute, togglePlaybackMute, isPaused, pause, resume, isEngaged, engage, disengage, setTextModeOpen, interactionMode, isSleeping, interactionState, handlePttStart, handlePttStop, handlePttCancel, pttStatus]);
+  }, [toggleMicMute, togglePlaybackMute, isPaused, pause, resume, isEngaged, engage, disengage, setTextModeOpen, interactionMode, isSleeping, interactionState, handlePttStart, handlePttStop, handlePttCancel, pttStatus, isTextModeOpen]);
 
   const { isPanelOpen, closePanel } = usePanelStateContext();
+  // Engage-failure banner: sessionError previously had zero readers, so a
+  // failed Engage spun and stopped with no feedback. role="alert" announces it.
+  const sessionError = useSessionStore((s) => s.sessionError);
+  const clearSessionError = useSessionStore((s) => s.setSessionError);
   const closeSessions = () => closePanel("sessions");
-  const isAnyOverlayOpen = isProfilerOpen || isPanelOpen("sessions") || isPanelOpen("help") || isPanelOpen("notifications");
+  // NOTE: the orb is deliberately NOT paused when a panel/drawer opens. Wiring
+  // `paused={isAnyOverlayOpen}` toggled the WebGL rAF loop on every panel
+  // open/close: the loop cancels mid-frame, `useDynamicFPS` reseeds
+  // `lastFrameTimeRef` on resume, and the orb visibly jumps/flickers. Overlays
+  // are separate compositing layers; the orb keeps rendering underneath them.
 
   const statusLabel = toStatusLabel(
     interactionState,
@@ -206,6 +223,24 @@ export const Home = memo(() => {
             </p>
             <button
               onClick={() => dismissRestoreError()}
+              className="text-[11px] font-black uppercase tracking-wider text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))] cursor-pointer"
+            >
+              {ERROR_BANNER_COPY.dismissButton}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Session error banner (failed Engage) ── */}
+      {sessionError && (
+        <div role="alert" className="absolute top-[116px] left-1/2 -translate-x-1/2 z-[100] pointer-events-auto">
+          <div className="glass-card px-4 py-2.5 rounded-xl flex items-center gap-2.5 border border-red-500/30 shadow-2xl bg-black/40 backdrop-blur-md">
+            <AlertCircle className="text-red-400 shrink-0" size={16} />
+            <p className="text-[12px] text-[rgb(var(--foreground))]/90 break-words select-text">
+              {sessionError}
+            </p>
+            <button
+              onClick={() => clearSessionError(null)}
               className="text-[11px] font-black uppercase tracking-wider text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))] cursor-pointer"
             >
               {ERROR_BANNER_COPY.dismissButton}
@@ -296,8 +331,6 @@ export const Home = memo(() => {
               telemetryRef={telemetryRef}
               interactionState={interactionState}
               isSleeping={isSleeping}
-              isTesting={false}
-              paused={isAnyOverlayOpen}
             />
           </ErrorBoundary>
         </div>
@@ -419,11 +452,6 @@ export const Home = memo(() => {
               <React.Fragment>
                 {/* Engage */}
                 <div className="relative flex flex-col items-center">
-                  {hasCachedSession && (
-                    <span className="absolute -top-7 text-[11px] tracking-widest text-[rgb(var(--accent))]/85 uppercase animate-pulse whitespace-nowrap bg-[rgb(var(--accent))]/5 px-2 py-0.5 rounded-full border border-[rgb(var(--accent))]/15">
-                      {HOME_CONTROLS_COPY.engage.resumeBadge}
-                    </span>
-                  )}
                   <button
                     onClick={engage}
                     tabIndex={0}
@@ -432,7 +460,7 @@ export const Home = memo(() => {
                       isLaunching && "animate-spin"
                     )}
                     disabled={isLaunching}
-                    aria-label={hasCachedSession ? HOME_CONTROLS_COPY.engage.resumeAriaLabel : HOME_CONTROLS_COPY.engage.ariaLabel}
+                    aria-label={HOME_CONTROLS_COPY.engage.ariaLabel}
                   >
                     {isLaunching ? (
                       <Power size={28} className="animate-pulse-slow" />

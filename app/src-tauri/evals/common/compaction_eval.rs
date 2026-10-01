@@ -30,16 +30,14 @@ pub struct CompactionEvalSummary {
     pub report_path: std::path::PathBuf,
 }
 
-/// Executes compaction for a session, persists results into the eval DB, and runs the LLM Judge.
-pub async fn evaluate_compaction_stage(
+/// Runs compaction and commits output to the database without invoking the LLM Judge.
+pub async fn run_compaction_and_persist(
     eval_db: &EvalDbGuard,
     session_id: i64,
     case_id: &str,
     turns: &[SessionTurn],
     provider: &RecordingLlmProvider,
-    judge: &NvidiaJudgeClient,
-    case_dir: &Path,
-) -> Result<CompactionEvalSummary> {
+) -> Result<vox_lib::services::memory::compaction::CompactionResult> {
     provider.set_context(case_id, "compaction");
     let conn = eval_db.conn()?;
 
@@ -79,6 +77,22 @@ pub async fn evaluate_compaction_stage(
     .await
     .map_err(|e| anyhow!("Failed to commit compaction output: {}", e))?;
 
+    Ok(compaction_res)
+}
+
+/// Executes compaction for a session, persists results into the eval DB, and runs the LLM Judge.
+pub async fn evaluate_compaction_stage(
+    eval_db: &EvalDbGuard,
+    session_id: i64,
+    case_id: &str,
+    turns: &[SessionTurn],
+    provider: &RecordingLlmProvider,
+    judge: &NvidiaJudgeClient,
+    case_dir: &Path,
+) -> Result<CompactionEvalSummary> {
+    let compaction_res =
+        run_compaction_and_persist(eval_db, session_id, case_id, turns, provider).await?;
+
     // 6. Assemble Judge prompt
     let mut turns_rendered = String::new();
     for t in turns {
@@ -87,8 +101,13 @@ pub async fn evaluate_compaction_stage(
     }
 
     let mut facts_rendered = String::new();
-    for (category, fact_text) in &compaction_res.facts {
-        facts_rendered.push_str(&format!("- [{}] {}\n", category, fact_text));
+    for (idx, (category, fact_text)) in compaction_res.facts.iter().enumerate() {
+        facts_rendered.push_str(&format!(
+            "[FACT-{:02}] ({}) {}\n",
+            idx + 1,
+            category,
+            fact_text
+        ));
     }
 
     let judge_prompt = format!(
@@ -100,51 +119,49 @@ Analyze the following session turns and the resulting LLM compaction output.
 </session_turns>
 
 <compaction_output>
-Context Summary:
-{}
-
 Extracted Categorized Facts (Count: {}):
 {}
 </compaction_output>
+
+CRITICAL INSTRUCTION: When referencing extracted facts in your report, you MUST ALWAYS cite their explicit identifier exactly as given (e.g. `[FACT-01]`, `[FACT-02]`). NEVER invent or use alternate numbering schemes.
 
 Produce a comprehensive evaluation report in clean Markdown format with the following exact sections:
 
 # Compaction Evaluation Report — {}
 
 ## 1. Executive Scorecard
-- **Fact Coverage / Recall**: [0-100%]
-- **Fact Precision**: [0-100%]
-- **Category Routing Accuracy**: [0-100%]
-- **Context Summary Fidelity**: [0-100%]
-- **Hallucination Rate**: [0-100%]
+*(Note: Every percentage score MUST explicitly state its formula with exact counts: `X / Y = Z%`. Never output an ungrounded percentage).*
+- **Fact Coverage / Recall**: [X / Y = Z%]
+- **Fact Precision**: [X / Y = Z%]
+- **Category Routing Accuracy**: [X / Y = Z%]
+- **Hallucination / Stale Fact Rate**: [X / Y = Z%]
 - **Noise / Chit-chat Rejection**: [High / Medium / Low]
 
 ## 2. Fact Coverage & Completeness Analysis
 List all durable factual declarations made by the user in the session turns (preferences, project statuses, decisions, personal background).
-- Identify which facts were successfully captured.
-- Identify which facts were missed (false negatives).
+- Identify which user declarations were successfully captured, citing the matching `[FACT-XX]` identifier.
+- Identify which user declarations were missed (false negatives).
 
 ## 3. Category Classification Audit
 Verify whether facts were routed into their correct schema buckets (`personal`, `objective`, `workdone`, `blocker`, `next_step`, `pitfall`):
-- Highlight any misclassified facts (e.g. personal preferences categorized as workdone).
+- Highlight any misclassified facts (e.g. personal preferences categorized as workdone or vice versa).
 
 ## 4. Atomic Granularity & Information Density
 - Identify whether facts are individual atomic assertions or rambling composite sentences.
 - Flag any fragmented or incomplete statements.
 
-## 5. Context Summary Fidelity & Hallucination Check
-- Audit the `Context Summary` against the session turns.
-- Explicitly flag any hallucinated statements or ungrounded claims.
+## 5. Hallucination, Stale Facts & Grounding Check
+- **Ungrounded Facts Check**: Explicitly flag any hallucinated statements or ungrounded claims in the extracted facts.
+- **Temporal Resolution Check**: Verify whether any extracted `blocker` or `next_step` was already resolved/fixed by later dialogue turns. If a resolved bug or obstacle is extracted as an active blocker, flag it as a Stale Fact defect.
 
 ## 6. Duplicate Facts & Noise Filtering Audit
 - Check if identical or redundant facts were emitted multiple times in this slice.
-- Verify whether conversational filler (greetings, acknowledgements) was properly filtered.
+- Verify whether conversational filler (greetings, acknowledgements, transient breaks) was properly filtered.
 
 ## 7. Final Verdict & Architectural Recommendations
 Provide 2-3 concise, actionable improvements for the compaction prompt or pipeline.
 "#,
         turns_rendered,
-        compaction_res.session_context,
         compaction_res.facts.len(),
         facts_rendered,
         case_id
