@@ -1,7 +1,7 @@
 import { useMemo, useCallback, memo } from "react";
 import { AlertCircle, Check, RefreshCw } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
-import { useSettingsStore, type SettingsState } from "@/store/settingsStore";
+import { useSettingsStore, type SettingsState, SETTINGS_DOMAIN_TO_UI } from "@/store/settingsStore";
 import { ErrorBoundary } from "@/shared/components/common";
 import { AnimatePresence, motion } from "framer-motion";
 import type { SettingsDomain as Domain } from "@/data/settingsCopy";
@@ -24,9 +24,6 @@ export const SettingsCardWrapper = memo(({ domain, isActive, layoutMode, childre
   const isCloudLlmMissingKey =
     draftSettings?.llm?.active === "cloud" &&
     !draftSettings?.llm?.cloud?.api_key?.trim();
-  // TODO: re-enable when STT cloud config desk exists (LlmConfigDesk.tsx placeholder at :364).
-  // Selecting "cloud" STT currently puts the user in an unconfigurable dead-end with no
-  // inputs to supply a key, making this banner unresolvable. Suppress until the desk is built.
   const isCloudSttMissingKey = false;
   const isRealtimeMissingKey =
     draftSettings?.interaction?.pipeline_mode === "realtime" &&
@@ -48,7 +45,20 @@ export const SettingsCardWrapper = memo(({ domain, isActive, layoutMode, childre
   const isAutoSavedHere = useSettingsStore((s) => s.autoSavedDomain === domain.id);
   const saveFailure = useSettingsStore((s) => s.failedSaveDomains[domain.id]);
   const failedKeys = useSettingsStore((s) => s.failedSaveKeys);
-  const restartInFlight = useSettingsStore((s) => s.restartInFlight);
+  const isRestartHere = useSettingsStore(
+    useCallback(
+      (s: SettingsState) => {
+        if (!s.restartInFlight) return false;
+        if (s.restartKeys.length === 0) return domain.id === "models";
+        return s.restartKeys.some((k) => {
+          const scope = k.split(".")[0];
+          const targetUi = SETTINGS_DOMAIN_TO_UI[scope] || "models";
+          return targetUi === domain.id;
+        });
+      },
+      [domain.id]
+    )
+  );
 
   return (
     <AnimatePresence>
@@ -122,9 +132,8 @@ export const SettingsCardWrapper = memo(({ domain, isActive, layoutMode, childre
                     <div className="flex items-center gap-2">
                       <button
                         onClick={() => useSettingsStore.getState().commitChanges()}
-                        className="px-3 py-1 rounded-lg bg-[rgb(var(--accent))]/20 hover:bg-[rgb(var(--accent))]/30 text-[rgb(var(--accent))] border border-[rgb(var(--accent))]/35 font-bold text-[12px] uppercase tracking-wider flex items-center gap-1.5 transition-all cursor-pointer shadow-xs"
+                        className="px-3 py-1 text-[rgb(var(--accent))] font-bold text-[12px] uppercase tracking-wider flex items-center gap-1.5 transition-all cursor-pointer shadow-xs"
                       >
-                        <RefreshCw size={12} />
                         {SETTINGS_COPY.applyAndRestart}
                       </button>
                       <button
@@ -158,7 +167,7 @@ export const SettingsCardWrapper = memo(({ domain, isActive, layoutMode, childre
                     Previously this state existed in the store but nothing
                     rendered it on desktop (the only spinner lived in the
                     mobile branch), so Apply & Restart froze the UI silently. */}
-                {!hasChanges && restartInFlight && (
+                {!hasChanges && isRestartHere && (
                   <motion.div
                     key="restarting-footer"
                     role="status"

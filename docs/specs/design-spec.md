@@ -316,8 +316,8 @@ All vector illustrations, domain diagrams, and custom toggle widgets (e.g. `WebS
 
 * **Dynamic FPS** (`useDynamicFPS`): heavy visual loops (Three.js WebGL orb, canvas waveform)
   throttle to 60/15/0 fps by activity tier (active / idle / sleep).
-* Mood sync is universal — any element meant to feel "alive" responds to the pipeline mood
-  cycle (calm / active / thinking / speaking).
+* Mood sync is universal — any element meant to feel "alive" responds to the pipeline state
+  cycle and, while `Working`, to the resolved activity (§8.2).
 * Micro-interactions are short and eased (150–300 ms, ease-out). Avoid continuous looping
   animations on functional UI (no `animate-bounce` on buttons).
 * Respect `prefers-reduced-motion`: reduce or pause decorative loops.
@@ -328,14 +328,58 @@ All vector illustrations, domain diagrams, and custom toggle widgets (e.g. `WebS
 
 The background is a reactive canvas representing the voice engine's state.
 
-### Mood synchronization
+### 8.1 Status Surface
 
-| Mood | Phase | Treatment |
+The pipeline status surface is a **frameless typographic line** centered above the orb. It is static text plus an optional gradient shimmer sweep. It is never enclosed in a pill, border, background tint, or backdrop blur — per `.agents/rules/frontend-style-guide.md` §5, faux-pill containers are reserved for interactive controls only, and a status label is not one.
+
+| `interactionState` | Label | Tone | Shimmer |
+| :--- | :--- | :--- | :--- |
+| `Idle` (disengaged) | `Dormant` | `dormant` | no |
+| `Ready` | `Ready` | `live` | yes |
+| `Listening` | `Listening` | `live` | yes |
+| `Thinking` | `Thinking` | `live` | yes |
+| `Speaking` | `Speaking` | `live` | yes |
+| `Paused` | `Paused` | `dormant` | no |
+| `Sleeping` | `Sleeping` | `dormant` | no |
+| `Error` | `Error` | `alert` | no |
+| `Working` (no activity) | `Working` | `live` | yes |
+
+Tone constrains typography only — it is never expressed as a coloured container. `dormant` and `alert` render static text; a shimmer sweep on `Dormant` would animate something that is intentionally still. The surface carries `role="status"` and `aria-live="polite"` so label changes are announced.
+
+When the pipeline is in `Working`, the label is overridden by the resolved **activity** (§8.2).
+
+### 8.2 Activity Resolution & Orb Motion
+
+`Working` covers multiple distinct operations. The `activity` envelope (`ipc-spec.md` §4.1) identifies which. Resolution is a **three-tier cascade**, evaluated in order, with the first hit winning:
+
+1. **`activity.name`** — e.g. `web_search`, `search_memory`, `compaction`.
+2. **`activity.kind`** — `tool` or `compaction`. Catches any newly added operation with no registry edit.
+3. **`interactionState`** — the §8.1 default, which also supplies the orb motion when no activity is present.
+
+A tier-3 fallback guarantees that adding a backend operation never requires a frontend change and never produces an empty label.
+
+| Tier-1 key (`activity.name`) | Label | Orb motion preset |
 | :--- | :--- | :--- |
-| `calm` | Idle / sleep | Low-energy deep obsidian, slow organic blobs, minimal ripple rings |
-| `active` | Listening / user speaking | High frequency, expanded glow, fast morphing |
-| `thinking` | LLM generation | Swirling cyan/violet orbits, pulsing central energy |
-| `speaking` | TTS playback | Fluid ripple waves spreading from the central core |
+| `web_search` | `Searching web` | `globe` |
+| `search_memory` | `Recalling memory` | `web` |
+| `compaction` | `Compacting context` | `morph` |
+
+| Tier-2 key (`activity.kind`) | Label | Orb motion preset |
+| :--- | :--- | :--- |
+| `tool` | `Working` | `orbits` |
+| `compaction` | `Compacting context` | `morph` |
+
+Orb motion presets are named for the motion grammar ported from the `thinking-orbs` engine:
+
+| Preset | Motion |
+| :--- | :--- |
+| `silk` | Default. Silk-sheet noise displacement only — today's behaviour. |
+| `orbits` | Particles travelling tilted orbital planes around the silk core. |
+| `globe` | A vertical meridian scan band sweeping the particle field; dots brighten as it passes. |
+| `web` | A constellation wiring itself — nearest-neighbour edge pulses converging inward. |
+| `morph` | The silk sheets dissolve as particles re-boundary (circle → triangle → square). |
+
+Entering `Working` drives a **sheet-to-particle cross-dissolve** (~300 ms): silk opacity falls as particle alpha rises, so the orb visibly decompresses into its activity-specific form and re-compresses on completion. The particle layer is omitted entirely on software rasterisers, where `morph` degrades to `silk`.
 
 ### Sentient membrane (`PipelineField`)
 

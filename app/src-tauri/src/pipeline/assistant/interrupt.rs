@@ -55,7 +55,7 @@ pub fn on_interrupt<R: tauri::Runtime>(
 
     let (new_turn_id, _) = state.pipeline.next_turn();
     state.pipeline.cancel_flag.store(false, Ordering::Relaxed);
-    transition(InteractionState::Listening, ctx, app, state);
+    transition(InteractionState::Listening, None, ctx, app, state);
     state.turn_metrics.start_turn(new_turn_id);
 
     log::info!(

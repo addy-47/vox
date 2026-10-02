@@ -90,7 +90,7 @@ pub fn on_text_input<R: tauri::Runtime + 'static>(
 
     state.pipeline.set_turn_open(true);
     state.pipeline.clear_drained_while_open();
-    transition(InteractionState::Thinking, ctx, app, state);
+    transition(InteractionState::Thinking, None, ctx, app, state);
 
     match ctx.pipeline_mode {
         PipelineMode::Modular => {

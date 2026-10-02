@@ -373,7 +373,7 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
           </div>
         </main>
 
-        {/* ── Session toggle (top-left) — Home only; z-[60] so always above EdgePanel z-[35] ── */}
+        {/* ── Session toggle (top-left) — Home only; z-[60] (EdgePanel slides on top at z-[70]) ── */}
         {isHome && (
           <div className="absolute top-4 left-5 z-[60] pointer-events-none flex items-center gap-2.5">
             <Tooltip label={SESSION_COPY.railTitle} side="bottom">
@@ -402,7 +402,7 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
           </div>
         )}
 
-        {/* ── Help + Notifications cluster (top-right) — hidden on /monitoring; z-[60] so always above EdgePanel z-[35] ── */}
+        {/* ── Help + Notifications cluster (top-right) — hidden on /monitoring; z-[60] (EdgePanel slides on top at z-[70]) ── */}
         {!isMonitoring && (
           <div className="absolute top-0 right-0 z-[60] pointer-events-none">
             {/* Feathering haze: dissolves panel content around trigger buttons with zero GPU blur overhead */}

@@ -46,7 +46,7 @@ pub fn on_error<R: tauri::Runtime + 'static>(
                 .pending_synthesis_jobs
                 .store(0, Ordering::Relaxed);
             state.pipeline.reset_turn_guards();
-            transition(InteractionState::Ready, ctx, app, state);
+            transition(InteractionState::Ready, None, ctx, app, state);
         }
         PipelineImpact::SessionHalted => {
             // Unrecoverable breakdown: Cancel playback, trip token, transition to Error.
@@ -61,7 +61,7 @@ pub fn on_error<R: tauri::Runtime + 'static>(
                 .pending_synthesis_jobs
                 .store(0, Ordering::Relaxed);
             state.pipeline.reset_turn_guards();
-            transition(InteractionState::Error, ctx, app, state);
+            transition(InteractionState::Error, None, ctx, app, state);
         }
     }
 
@@ -202,5 +202,5 @@ pub fn on_cancelled<R: tauri::Runtime>(
         }
     }
 
-    transition(InteractionState::Ready, ctx, app, state);
+    transition(InteractionState::Ready, None, ctx, app, state);
 }

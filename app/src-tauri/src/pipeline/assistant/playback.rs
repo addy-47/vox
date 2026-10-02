@@ -38,7 +38,7 @@ pub fn on_playback_started<R: tauri::Runtime>(
         return;
     }
 
-    transition(InteractionState::Speaking, ctx, app, state);
+    transition(InteractionState::Speaking, None, ctx, app, state);
     let metrics_payload = state
         .turn_metrics
         .record_playback_started(turn_id, &state.telemetry);
@@ -103,7 +103,7 @@ pub fn on_playback_finished<R: tauri::Runtime>(
     }
 
     state.pipeline.clear_drained_while_open();
-    transition(InteractionState::Ready, ctx, app, state);
+    transition(InteractionState::Ready, None, ctx, app, state);
     state.turn_metrics.record_playback_finished(turn_id);
     log::info!(
         "[Pipeline::Playback] Playback finished -> Ready (turn: {})",

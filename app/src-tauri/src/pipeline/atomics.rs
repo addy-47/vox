@@ -6,7 +6,7 @@ use std::{
     },
 };
 
-use crate::core::state::InteractionState;
+use crate::core::{events::ActivityEnvelope, state::InteractionState};
 
 /// Centralized atomic primitives, watch channels, and token lifecycles for pipeline execution.
 pub struct PipelineAtomics {
@@ -26,6 +26,7 @@ pub struct PipelineAtomics {
     pub turn_open: Arc<AtomicBool>,
     pub drained_while_open: Arc<AtomicBool>,
     pub engine_shutdown: Arc<AtomicBool>,
+    pub active_activity: Arc<parking_lot::RwLock<Option<ActivityEnvelope>>>,
 }
 
 impl Default for PipelineAtomics {
@@ -58,6 +59,7 @@ impl PipelineAtomics {
             turn_open: Arc::new(AtomicBool::new(false)),
             drained_while_open: Arc::new(AtomicBool::new(false)),
             engine_shutdown: Arc::new(AtomicBool::new(false)),
+            active_activity: Arc::new(parking_lot::RwLock::new(None)),
         }
     }
 
@@ -186,5 +188,15 @@ impl PipelineAtomics {
     pub fn reset_turn_guards(&self) {
         self.turn_open.store(false, Ordering::SeqCst);
         self.drained_while_open.store(false, Ordering::SeqCst);
+    }
+
+    /// Returns the currently active non-terminal activity envelope, if any.
+    pub fn active_activity(&self) -> Option<ActivityEnvelope> {
+        self.active_activity.read().clone()
+    }
+
+    /// Sets the currently active non-terminal activity envelope.
+    pub fn set_active_activity(&self, activity: Option<&ActivityEnvelope>) {
+        *self.active_activity.write() = activity.cloned();
     }
 }

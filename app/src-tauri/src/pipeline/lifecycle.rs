@@ -63,6 +63,7 @@ pub fn spawn_idle_monitor<R: tauri::Runtime>(app: AppHandle<R>, state: Arc<AppSt
                                 owner: InteractionOwner::Assistant,
                                 state: "Sleeping".to_string(),
                                 turn_id,
+                                activity: None,
                             };
                             if let Err(e) = emit_ipc_to(
                                 &app,

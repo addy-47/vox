@@ -9,7 +9,8 @@ use super::ROUTER_THREAD_NAME;
 use crate::{
     core::{
         events::{
-            emit_ipc_to, InteractionMode, IpcEvent, PipelineMode, StateChangedPayload, VoxEvent,
+            emit_ipc_to, ActivityEnvelope, InteractionMode, IpcEvent, PipelineMode,
+            StateChangedPayload, VoxEvent,
         },
         state::{AppState, AppWindow, InteractionOwner, InteractionState},
     },
@@ -61,24 +62,54 @@ pub fn target_window(owner: InteractionOwner) -> AppWindow {
 /// Transitions the pipeline turn state, updates atomic flags, and emits state_changed events.
 pub fn transition<R: tauri::Runtime>(
     new_state: InteractionState,
+    activity: Option<&ActivityEnvelope>,
     ctx: &RoutingContext,
     app: &AppHandle<R>,
     state: &AppState,
 ) {
+    let activity = match (new_state, activity) {
+        (InteractionState::Working, Some(act)) => Some(act),
+        (InteractionState::Working, None) => None,
+        (_, Some(act)) => {
+            log::warn!(
+                "[Pipeline] Discarding activity {:?} on non-Working state {:?}",
+                act.name,
+                new_state
+            );
+            None
+        }
+        (_, None) => None,
+    };
+
     let previous = state.pipeline.state();
     if previous == new_state {
-        return;
+        let activity_unchanged = match (activity, state.pipeline.active_activity()) {
+            (None, None) => true,
+            (Some(next), Some(current)) => current.kind == next.kind && current.name == next.name,
+            _ => false,
+        };
+        if activity_unchanged {
+            return;
+        }
+        log::info!(
+            "[Pipeline] Re-entering {:?} with new activity {:?}",
+            new_state,
+            activity.map(|a| a.name.as_str())
+        );
+    } else {
+        state.pipeline.set_state(new_state);
     }
+    state.pipeline.set_active_activity(activity);
 
-    state.pipeline.set_state(new_state);
     log::info!(
-        "[Pipeline] State {:?} -> {:?} (owner {:?}, mode {:?}/{:?}, turn {})",
+        "[Pipeline] State {:?} -> {:?} (owner {:?}, mode {:?}/{:?}, turn {}, activity {:?})",
         previous,
         new_state,
         ctx.owner,
         ctx.pipeline_mode,
         ctx.interaction_mode,
-        state.pipeline.peek_turn_id()
+        state.pipeline.peek_turn_id(),
+        activity.map(|a| a.name.as_str())
     );
     let target = target_window(ctx.owner);
     let turn_id = state.pipeline.peek_turn_id();
@@ -97,6 +128,7 @@ pub fn transition<R: tauri::Runtime>(
         owner: ctx.owner,
         state: state_str.to_string(),
         turn_id,
+        activity: activity.cloned(),
     };
 
     if let Err(e) = emit_ipc_to(app, target, IpcEvent::StateChanged(payload)) {

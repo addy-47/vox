@@ -126,6 +126,7 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
   const handleStateChanged = useCallback(
     (payload: StateChangedPayload) => {
       storeApi().setInteractionState(payload.state as InteractionState);
+      storeApi().setActiveActivity(payload.activity ?? null);
       const next = payload.state as InteractionState;
       // An engage failure is stale the moment the pipeline leaves Idle —
       // otherwise the banner outlives the condition it reports.
@@ -256,6 +257,7 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
     api.setAssistantText("");
     api.setDialogueHistory([]);
     api.setActiveSessionId(null);
+    api.setActiveSessionLabel({ sessionTitle: null, projectName: null });
     api.setTurnIdCounter(0);
     api.setLatestTurnMetrics(null);
     api.bumpSessionListVersion();
@@ -423,6 +425,7 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
     api.setDialogueHistory([]);
     api.setTurnIdCounter(0);
     api.setActiveSessionId(null);
+    api.setActiveSessionLabel({ sessionTitle: null, projectName: null });
     api.setRestoreError(null);
     try {
       await createSessionIpc(projectId, (state) => storeApi().setInteractionState(state));

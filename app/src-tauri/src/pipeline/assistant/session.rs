@@ -240,7 +240,7 @@ pub fn on_session_start<R: Runtime + 'static>(
 
     if let Err(e) = start_res {
         log::error!("[Pipeline::Session] Session start failed: {}", e);
-        transition(InteractionState::Error, &session_ctx, app, state);
+        transition(InteractionState::Error, None, &session_ctx, app, state);
 
         let app_handle = app.clone();
         let db = state.db.clone();
@@ -359,7 +359,7 @@ pub fn on_session_start<R: Runtime + 'static>(
     spawn_idle_monitor(app.clone(), Arc::clone(state_arc.inner()));
 
     state.pipeline_accumulator.lock().clear();
-    transition(InteractionState::Ready, &session_ctx, app, state);
+    transition(InteractionState::Ready, None, &session_ctx, app, state);
     log::info!(
         "[Pipeline::Session] Session started (ID: {}, mode: {:?})",
         conv_id,
@@ -434,7 +434,7 @@ pub fn on_pause<R: Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &RoutingC
         owner: InteractionOwner::Assistant,
         ..ctx.clone()
     };
-    transition(InteractionState::Paused, &assistant_ctx, app, state);
+    transition(InteractionState::Paused, None, &assistant_ctx, app, state);
     log::info!("[Pipeline::Session] Session paused");
 }
 
@@ -490,7 +490,7 @@ pub fn on_resume<R: Runtime>(app: &AppHandle<R>, state: &AppState, _ctx: &Routin
 
     if let Err(e) = resume_res {
         log::error!("[Pipeline::Session] Resumption failed: {}", e);
-        transition(InteractionState::Error, &assistant_ctx, app, state);
+        transition(InteractionState::Error, None, &assistant_ctx, app, state);
 
         let app_handle = app.clone();
         let db = state.db.clone();
@@ -525,7 +525,7 @@ pub fn on_resume<R: Runtime>(app: &AppHandle<R>, state: &AppState, _ctx: &Routin
         return;
     }
 
-    transition(InteractionState::Ready, &assistant_ctx, app, state);
+    transition(InteractionState::Ready, None, &assistant_ctx, app, state);
     log::info!("[Pipeline::Session] Session resumed -> Ready");
 }
 
@@ -627,7 +627,7 @@ pub fn on_end<R: Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &RoutingCon
         trim_heap("session_end_dictation_standby");
     }
 
-    transition(InteractionState::Idle, ctx, app, state);
+    transition(InteractionState::Idle, None, ctx, app, state);
     log::info!("[Pipeline::Session] Session ended -> Idle");
 
     // Check compaction for the completed session

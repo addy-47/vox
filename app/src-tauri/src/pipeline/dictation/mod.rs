@@ -39,6 +39,7 @@ pub fn transition_dictation<R: tauri::Runtime>(
         owner: InteractionOwner::Dictation,
         state: state_str.to_string(),
         turn_id,
+        activity: None,
     };
     if let Err(e) = emit_ipc_to(app, AppWindow::Tray, IpcEvent::StateChanged(payload)) {
         log::warn!("[Dictation] Failed to emit state_changed: {}", e);
