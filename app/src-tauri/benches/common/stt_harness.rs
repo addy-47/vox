@@ -28,7 +28,7 @@ use vox_lib::{
 
 use super::{
     reporting::{get_process_memory_mb, ClipBenchmarkResult, EngineBenchmarkRun},
-    scoring::levenshtein_similarity,
+    scoring::{levenshtein_similarity, raw_levenshtein_similarity},
 };
 
 /// Input ground truth clip definition.
@@ -267,23 +267,32 @@ pub fn benchmark_streaming_provider(
         } else {
             0.0
         };
-        let similarity = if clip.expected_text.is_empty() {
+        let norm_sim = if clip.expected_text.is_empty() {
             1.0
         } else {
             levenshtein_similarity(&final_transcript, &clip.expected_text)
         };
+        let raw_sim = if clip.expected_text.is_empty() {
+            1.0
+        } else {
+            raw_levenshtein_similarity(&final_transcript, &clip.expected_text)
+        };
 
         println!(
-            "[{}] {:<24} | Aud: {:>4.2}s | Stream: {:>6.2}s | FinalPost: {:>6.0}ms | RTF: {:>5.3}x | Partials: {:>2} | Sim: {:>5.1}%",
+            "[{}] {:<24} | Aud: {:>4.2}s | Stream: {:>6.2}s | FinalPost: {:>6.0}ms | RTF: {:>5.3}x | RawSim: {:>5.1}% | NormSim: {:>5.1}%",
             clip.lang,
             clip.filename,
             clip.duration_s,
             total_stream_time.as_secs_f64(),
             final_post_speech_latency.as_secs_f64() * 1000.0,
             rtf,
-            partials_count,
-            similarity * 100.0
+            raw_sim * 100.0,
+            norm_sim * 100.0
         );
+        println!("     Hyp: \"{}\"", final_transcript);
+        if !clip.expected_text.is_empty() {
+            println!("     Ref: \"{}\"", clip.expected_text);
+        }
 
         clip_results.push(ClipBenchmarkResult {
             filename: clip.filename.clone(),
@@ -294,7 +303,8 @@ pub fn benchmark_streaming_provider(
             rtf,
             throughput_spl_s: throughput,
             partials_emitted: partials_count,
-            similarity,
+            similarity: norm_sim,
+            raw_similarity: raw_sim,
             hypothesis: final_transcript,
             ground_truth: clip.expected_text.clone(),
             stt_latency_ms: final_post_speech_latency.as_secs_f64() * 1000.0,
@@ -326,6 +336,7 @@ pub fn benchmark_streaming_provider(
         / count as f64;
     let avg_rtf = clip_results.iter().map(|r| r.rtf).sum::<f64>() / count as f64;
     let avg_sim = clip_results.iter().map(|r| r.similarity).sum::<f64>() / count as f64;
+    let avg_raw_sim = clip_results.iter().map(|r| r.raw_similarity).sum::<f64>() / count as f64;
     let total_samples: usize = (total_audio_s * 16000.0) as usize;
     let overall_throughput = if total_stream_ms > 0.0 {
         total_samples as f64 / (total_stream_ms / 1000.0)
@@ -349,7 +360,8 @@ pub fn benchmark_streaming_provider(
         overall_throughput,
         if avg_rtf > 0.0 { 1.0 / avg_rtf } else { 0.0 }
     );
-    println!("Average Character Accuracy: {:.1}%", avg_sim * 100.0);
+    println!("Average Raw Similarity (Verbatim): {:.1}%", avg_raw_sim * 100.0);
+    println!("Average Normalized Similarity (ASR): {:.1}%", avg_sim * 100.0);
     println!("Active Working Set Memory : ~{} MB RSS", mem_after_init);
 
     EngineBenchmarkRun {
@@ -363,6 +375,7 @@ pub fn benchmark_streaming_provider(
         avg_rtf,
         overall_throughput_spl_s: overall_throughput,
         avg_similarity: avg_sim,
+        avg_raw_similarity: avg_raw_sim,
         clips: clip_results,
     }
 }

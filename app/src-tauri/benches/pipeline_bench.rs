@@ -529,6 +529,7 @@ fn main() {
         throughput_spl_s: audio_24k.len() as f64 / total_elapsed,
         partials_emitted: 0,
         similarity,
+        raw_similarity: similarity,
         hypothesis: format!(
             "STT=\"{}\" | STT={:.1}ms LLM={:.1}ms TTS={:.1}ms E2E={:.1}ms | SynthAudio={:.2}s | WAV={:?}",
             captured_transcript, stt_latency_ms, llm_latency_ms, tts_latency_ms, e2e_response_time_ms, synth_duration_s, wav_path
@@ -560,6 +561,7 @@ fn main() {
             avg_rtf: total_elapsed / (duration_s as f64),
             overall_throughput_spl_s: audio_24k.len() as f64 / total_elapsed,
             avg_similarity: similarity,
+            avg_raw_similarity: similarity,
             clips: vec![result],
         }],
     };

@@ -6,7 +6,7 @@ use super::{
     nemotron::SttEngine as NemotronEngine, qwen::SttEngine as QwenEngine, SttEngine, SttProvider,
     SttProviderKind,
 };
-use crate::services::stt::stitcher::stitch_transcripts;
+use crate::services::stt::{itn::apply_tier1_refinement, stitcher::stitch_transcripts};
 
 struct EmbeddedSttProviderInner {
     model_path: PathBuf,
@@ -83,7 +83,8 @@ impl SttProvider for EmbeddedSttProvider {
             };
 
             inner.stitched_transcript.clear();
-            Ok(transcript)
+            let refined = apply_tier1_refinement(&transcript);
+            Ok(refined)
         } else if let Some(ref engine) = inner.nemotron_engine {
             engine.accept_audio_chunk(chunk)?;
             let partial = engine.get_partial_result()?;

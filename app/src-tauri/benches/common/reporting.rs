@@ -62,6 +62,8 @@ pub struct ClipBenchmarkResult {
     pub throughput_spl_s: f64,
     pub partials_emitted: usize,
     pub similarity: f64,
+    #[serde(default)]
+    pub raw_similarity: f64,
     pub hypothesis: String,
     pub ground_truth: String,
     /// Per-stage latencies in ms (§4: record T_stt/T_llm/T_tts, not only E2E).
@@ -94,6 +96,8 @@ pub struct EngineBenchmarkRun {
     pub avg_rtf: f64,
     pub overall_throughput_spl_s: f64,
     pub avg_similarity: f64,
+    #[serde(default)]
+    pub avg_raw_similarity: f64,
     pub clips: Vec<ClipBenchmarkResult>,
 }
 

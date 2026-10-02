@@ -9,7 +9,8 @@ use crate::services::{
     audio::SAMPLE_RATE,
     stt::{
         MODEL_FILE_ASR_DECODER, MODEL_FILE_ASR_ENCODER, MODEL_FILE_ASR_JOINER,
-        MODEL_FILE_ASR_TOKENS, NEMOTRON_WARMUP_SILENCE_SAMPLES,
+        MODEL_FILE_ASR_TOKENS, NEMOTRON_TRAILING_SILENCE_SAMPLES,
+        NEMOTRON_WARMUP_SILENCE_SAMPLES,
     },
 };
 
@@ -105,6 +106,8 @@ impl SttEngineTrait for SttEngine {
         let mut inner = self.inner.lock();
         let stream = inner.stream.take();
         let full_text = if let Some(stream) = stream {
+            let trailing = vec![0.0f32; NEMOTRON_TRAILING_SILENCE_SAMPLES];
+            stream.accept_waveform(SAMPLE_RATE as i32, &trailing);
             stream.input_finished();
             while inner.recognizer.is_ready(&stream) {
                 inner.recognizer.decode(&stream);
@@ -167,6 +170,8 @@ impl SttEngineTrait for SttEngine {
             stream
         };
 
+        let trailing = vec![0.0f32; NEMOTRON_TRAILING_SILENCE_SAMPLES];
+        stream.accept_waveform(SAMPLE_RATE as i32, &trailing);
         stream.input_finished();
 
         while inner.recognizer.is_ready(&stream) {
