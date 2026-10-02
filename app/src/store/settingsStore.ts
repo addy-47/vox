@@ -386,7 +386,7 @@ export interface SettingsState {
  * Single definition: the auto-save toast and the save-failure banner must
  * agree on which card a rejected key belongs to.
  */
-const SETTINGS_DOMAIN_TO_UI: Record<string, SettingsDomainId> = {
+export const SETTINGS_DOMAIN_TO_UI: Record<string, SettingsDomainId> = {
   persona: "persona",
   working_memory: "working_memory",
   personal_memory: "personal_memory",

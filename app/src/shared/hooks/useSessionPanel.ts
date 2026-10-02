@@ -247,6 +247,11 @@ export function useSessionPanel(): UseSessionPanelReturn {
     try {
       const { deleteSession } = await import("@/services/historyService");
       await deleteSession(sessionId, false);
+      const activeId = useSessionStore.getState().activeSessionId;
+      if (activeId === sessionId) {
+        useSessionStore.getState().setActiveSessionId(null);
+        useSessionStore.getState().setActiveSessionLabel({ sessionTitle: null, projectName: null });
+      }
     } catch (e) {
       console.error("[SessionPanel] Failed to delete session:", e);
     }

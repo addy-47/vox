@@ -89,12 +89,12 @@ pub(crate) fn spawn_harness_turn_task<R: tauri::Runtime + 'static>(
             TurnOutcome::DuplicateIgnored { turn_id } => {
                 log::info!("[Pipeline::Transcript] Duplicate turn {} ignored", turn_id);
                 app_state.pipeline.reset_turn_guards();
-                transition(InteractionState::Ready, &ctx_clone, &app_clone, &app_state);
+                transition(InteractionState::Ready, None, &ctx_clone, &app_clone, &app_state);
             }
             TurnOutcome::Cancelled { turn_id } => {
                 log::info!("[Pipeline::Transcript] Turn {} cancelled", turn_id);
                 app_state.pipeline.reset_turn_guards();
-                transition(InteractionState::Ready, &ctx_clone, &app_clone, &app_state);
+                transition(InteractionState::Ready, None, &ctx_clone, &app_clone, &app_state);
             }
             TurnOutcome::Error { turn_id, message } => {
                 log::error!(
@@ -103,7 +103,7 @@ pub(crate) fn spawn_harness_turn_task<R: tauri::Runtime + 'static>(
                     message
                 );
                 app_state.pipeline.reset_turn_guards();
-                transition(InteractionState::Ready, &ctx_clone, &app_clone, &app_state);
+                transition(InteractionState::Ready, None, &ctx_clone, &app_clone, &app_state);
             }
         }
     });
@@ -140,7 +140,7 @@ pub fn on_transcript_final<R: tauri::Runtime>(
             turn_id
         );
         state.pipeline_accumulator.lock().clear();
-        transition(InteractionState::Ready, ctx, app, state);
+        transition(InteractionState::Ready, None, ctx, app, state);
 
         let app_handle = app.clone();
         let db = state.db.clone();
@@ -204,7 +204,7 @@ pub fn on_transcript_final<R: tauri::Runtime>(
 
     state.pipeline.set_turn_open(true);
     state.pipeline.clear_drained_while_open();
-    transition(InteractionState::Thinking, ctx, app, state);
+    transition(InteractionState::Thinking, None, ctx, app, state);
 
     match ctx.pipeline_mode {
         PipelineMode::Modular => spawn_harness_turn_task(turn_id, query, app, state, ctx),

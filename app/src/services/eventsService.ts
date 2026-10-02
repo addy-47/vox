@@ -31,11 +31,20 @@ export const VALID_INTERACTION_STATES = new Set<InteractionState>([
 /** Canonical Rust `InteractionOwner` enum (core/state.rs). */
 export type InteractionOwner = "Assistant" | "Dictation";
 
+export type ActivityKind = "tool" | "compaction";
+
+export interface ActivityEnvelope {
+  kind: ActivityKind;
+  name: string;
+  call_id?: string | null;
+}
+
 /** Payload emitted on `state_changed` event. */
 export interface StateChangedPayload {
   owner: InteractionOwner;
   state: string;
   turn_id: number;
+  activity?: ActivityEnvelope | null;
 }
 
 /** `transcript_partial` / `transcript_final` payload. */

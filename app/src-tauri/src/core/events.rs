@@ -85,12 +85,33 @@ pub enum VoxEvent {
     Shutdown,
 }
 
+pub const ACTIVITY_COMPACTION: &str = "compaction";
+
+/// Discriminator for non-terminal operational activity holding the pipeline in Working state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ActivityKind {
+    Tool,
+    Compaction,
+}
+
+/// Strongly-typed envelope identifying the active non-terminal operation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ActivityEnvelope {
+    pub kind: ActivityKind,
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub call_id: Option<String>,
+}
+
 /// Unified payload emitted on `state_changed` — SSOT for all pipeline + dictation state transitions.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct StateChangedPayload {
     pub owner: InteractionOwner,
     pub state: String,
     pub turn_id: u32,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub activity: Option<ActivityEnvelope>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -1,5 +1,4 @@
 import React, { memo } from "react";
-import { useStreamingRenderer } from "@/shared/hooks/useStreamingRenderer";
 import { DialogueBubble } from "./DialogueBubble";
 
 interface ActiveTranscriptProps {
@@ -8,19 +7,16 @@ interface ActiveTranscriptProps {
 }
 
 export const ActiveTranscript: React.FC<ActiveTranscriptProps> = memo(({ transcript, assistantText }) => {
-  const streamedTranscript = useStreamingRenderer(transcript);
-  const streamedAssistantText = useStreamingRenderer(assistantText);
-
-  if (!streamedTranscript && !streamedAssistantText) return null;
+  if (!transcript && !assistantText) return null;
 
   return (
     <div className="w-full flex flex-col gap-4 items-center select-text">
-      {streamedTranscript && (
-        <DialogueBubble role="user" content={streamedTranscript} />
+      {transcript && (
+        <DialogueBubble role="user" content={transcript} />
       )}
 
-      {streamedAssistantText && (
-        <DialogueBubble role="assistant" content={streamedAssistantText} />
+      {assistantText && (
+        <DialogueBubble role="assistant" content={assistantText} />
       )}
     </div>
   );

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect } from "react";
 import { motion } from "framer-motion";
 import { useSessionStore } from "@/store/sessionStore";
 import { onSessionsChanged } from "@/services/eventsService";
@@ -24,57 +24,13 @@ export const ActiveSessionHeader: React.FC<ActiveSessionHeaderProps> = ({
   isHome,
   onOpenPanel,
 }) => {
+  const activeSessionId = useSessionStore((s) => s.activeSessionId);
   const activeSessionLabel = useSessionStore((s) => s.activeSessionLabel);
   const setActiveSessionLabel = useSessionStore((s) => s.setActiveSessionLabel);
 
   const { projectName, sessionTitle } = activeSessionLabel;
 
-  // ── Typewriter effect state ──
-  const [displayedTitle, setDisplayedTitle] = useState(() => sessionTitle || "");
-  const [isTyping, setIsTyping] = useState(false);
-  const previousTitleRef = useRef<string | null>(sessionTitle || null);
 
-  // Typewriter effect triggered when sessionTitle arrives or changes
-  useEffect(() => {
-    if (!sessionTitle) {
-      setDisplayedTitle("");
-      setIsTyping(false);
-      previousTitleRef.current = null;
-      return;
-    }
-
-    // If panel is open, keep title fully displayed in memory without typewriter
-    if (panelOpen) {
-      previousTitleRef.current = sessionTitle;
-      setDisplayedTitle(sessionTitle);
-      setIsTyping(false);
-      return;
-    }
-
-    // Panel closed and title has not changed: keep full title stable
-    if (previousTitleRef.current === sessionTitle) {
-      setDisplayedTitle(sessionTitle);
-      setIsTyping(false);
-      return;
-    }
-
-    // Genuine new title arriving while on Home with panel closed: start typewriter
-    previousTitleRef.current = sessionTitle;
-    setDisplayedTitle("");
-    setIsTyping(true);
-
-    let currentIndex = 0;
-    const interval = window.setInterval(() => {
-      currentIndex++;
-      setDisplayedTitle(sessionTitle.slice(0, currentIndex));
-      if (currentIndex >= sessionTitle.length) {
-        window.clearInterval(interval);
-        setIsTyping(false);
-      }
-    }, 28);
-
-    return () => window.clearInterval(interval);
-  }, [sessionTitle, panelOpen]);
 
   // ── Listen for backend session updates to dynamically update title and project ──
   useEffect(() => {
@@ -93,10 +49,11 @@ export const ActiveSessionHeader: React.FC<ActiveSessionHeaderProps> = ({
           // ignore
         }
       }
-      if (!currentActiveId || !isMounted) {
-        console.info("[Header] sessions_changed: early return", { currentActiveId, isMounted });
+      if (!currentActiveId) {
+        setActiveSessionLabel({ projectName: null, sessionTitle: null });
         return;
       }
+      if (!isMounted) return;
 
       // NOTE: no artificial delay here. sessions_changed is coalesced with a
       // 250ms trailing edge in eventsService, which already covers the SQLite
@@ -150,8 +107,8 @@ export const ActiveSessionHeader: React.FC<ActiveSessionHeaderProps> = ({
     };
   }, [setActiveSessionLabel]);
 
-  // Only hide when not on Home or no label at all.
-  if (!isHome || (!projectName && !sessionTitle)) {
+  // Only hide when not on Home, or no active session, or no label at all.
+  if (!isHome || !activeSessionId || (!projectName && !sessionTitle)) {
     return null;
   }
 
@@ -181,10 +138,7 @@ export const ActiveSessionHeader: React.FC<ActiveSessionHeaderProps> = ({
 
       {sessionTitle && (
         <span className="font-medium text-[rgb(var(--foreground))] truncate max-w-[200px] text-[12px] leading-tight inline-flex items-center">
-          <span className="truncate">{displayedTitle}</span>
-          {isTyping && (
-            <span className="inline-block w-1 h-3 ml-0.5 bg-[rgb(var(--accent))] animate-pulse shrink-0" />
-          )}
+          <span className="truncate">{sessionTitle}</span>
         </span>
       )}
     </motion.div>

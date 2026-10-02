@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { type InteractionState } from "@/services/eventsService";
 import { useTelemetry } from "@/shared/hooks/useTelemetry";
 import {
@@ -14,12 +14,11 @@ import {
   isDotActive,
   type AmbientMood,
 } from "@/shared/lib/voiceDisplay";
+import { useSessionStore } from "@/store/sessionStore";
+import { resolveActivityDisplay, type ActivityDisplayConfig } from "@/shared/lib/activityRegistry";
 
-export type { InteractionMode, DialogueTurn, AmbientMood };
-/* `toMood` was removed from this barrel: it is defined in voiceDisplay and
-   re-exported here, but nothing imports it — the orb derives mood from the
-   backend event stream, not from a local mapping. */
-export { toStatusLabel, isDotActive };
+export type { InteractionMode, DialogueTurn, AmbientMood, ActivityDisplayConfig };
+export { toStatusLabel, isDotActive, resolveActivityDisplay };
 
 export function useHomePage() {
   const session = useVoiceSession();
@@ -72,6 +71,13 @@ export function useHomePage() {
     togglePlaybackMute,
     toggleMicMute,
   } = session;
+
+  const activeActivity = useSessionStore((s) => s.activeActivity);
+
+  const activityDisplay = useMemo(
+    () => resolveActivityDisplay(interactionState, activeActivity, isEngaged, isSleeping, isPaused),
+    [interactionState, activeActivity, isEngaged, isSleeping, isPaused]
+  );
 
   const shouldAutoScrollRef = useRef(true);
 
@@ -147,5 +153,7 @@ export function useHomePage() {
     handleDialogueScroll,
     shouldAutoScrollRef,
     isMobileScreen,
+    activityDisplay,
+    activeActivity,
   };
 }

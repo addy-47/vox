@@ -71,7 +71,7 @@ pub fn on_ptt_start<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, ctx
         // Mirrors on_speech_start / on_interrupt ordering.
         state.pipeline.cancel_flag.store(false, Ordering::Relaxed);
 
-        transition(InteractionState::Listening, ctx, app, state);
+        transition(InteractionState::Listening, None, ctx, app, state);
         new_turn_id
     };
 
@@ -108,7 +108,7 @@ fn dispatch_ptt_speech_audio<R: tauri::Runtime>(
         audio.len() as f32 / SAMPLE_RATE as f32,
         ctx.pipeline_mode
     );
-    transition(InteractionState::Thinking, ctx, app, state);
+    transition(InteractionState::Thinking, None, ctx, app, state);
 
     if ctx.pipeline_mode == PipelineMode::Modular {
         if let Err(e) = stt_tx.send(SttCommand::Final {
@@ -117,7 +117,7 @@ fn dispatch_ptt_speech_audio<R: tauri::Runtime>(
             owner: InteractionOwner::Assistant,
         }) {
             log::warn!("[Pipeline::Ptt] Failed to send Final to STT: {}", e);
-            transition(InteractionState::Ready, ctx, app, state);
+            transition(InteractionState::Ready, None, ctx, app, state);
         }
     } else if ctx.pipeline_mode == PipelineMode::Realtime {
         let i16_samples: Vec<i16> = audio
@@ -158,7 +158,7 @@ pub fn on_ptt_stop<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, ctx:
             },
             Err(_) => {
                 log::warn!("[Pipeline::Ptt] Engine lock contended on PTT stop; discarding hold");
-                transition(InteractionState::Ready, ctx, app, state);
+                transition(InteractionState::Ready, None, ctx, app, state);
                 return;
             }
         }
@@ -167,7 +167,7 @@ pub fn on_ptt_stop<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, ctx:
     let (response_tx, response_rx) = mpsc::channel();
     if let Err(e) = vad_tx.send(VadCommand::StopWindowValidation { response_tx }) {
         log::warn!("[Pipeline::Ptt] Failed to stop window validation: {}", e);
-        transition(InteractionState::Ready, ctx, app, state);
+        transition(InteractionState::Ready, None, ctx, app, state);
         return;
     }
 
@@ -185,7 +185,7 @@ pub fn on_ptt_stop<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, ctx:
             "[Pipeline::Ptt] Non-speech PTT hold discarded (turn: {})",
             turn_id
         );
-        transition(InteractionState::Ready, ctx, app, state);
+        transition(InteractionState::Ready, None, ctx, app, state);
         return;
     }
 
@@ -234,7 +234,7 @@ pub fn on_ptt_cancel<R: tauri::Runtime>(
         }
     }
 
-    transition(InteractionState::Ready, ctx, app, state);
+    transition(InteractionState::Ready, None, ctx, app, state);
     log::info!(
         "[Pipeline::Ptt] PTT recording cancelled (turn: {})",
         state.pipeline.peek_turn_id()

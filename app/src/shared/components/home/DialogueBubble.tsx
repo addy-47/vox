@@ -1,7 +1,7 @@
 import React, { memo, useState, useRef, useEffect } from "react";
 import { cn } from "@/shared/lib/utils";
 import { DIALOGUE_COPY } from "@/data/homeCopy";
-import { Markdown } from "@/shared/ui/Markdown";
+import { Message, MessageContent, MessageResponse } from "@/shared/components/ai-elements";
 
 interface DialogueBubbleProps {
   role: "user" | "assistant";
@@ -33,60 +33,59 @@ export const DialogueBubble: React.FC<DialogueBubbleProps> = memo(({
   }, [content, isExpanded]);
 
   return (
-    <div
-      className={cn(
-        "w-full max-w-[280px] break-words text-left font-medium text-[13px] leading-relaxed select-text p-3 rounded-2xl transition-all duration-300",
-        isUser
-          // NOTE: no backdrop-blur on the user bubble (F5). It sits at 80%
-          // card opacity over a near-flat field, so the blur was pure
-          // compositor cost with nothing visible to show for it.
-          ? "text-[rgb(var(--foreground-muted))] font-normal bg-[rgb(var(--card))]/80 border border-[rgba(var(--border),0.15)] shadow-md"
-          : "text-[rgb(var(--accent))] bg-[rgb(var(--card))]/90 border border-[rgba(var(--accent),0.25)] shadow-xl backdrop-blur-xl",
-        className
-      )}
-    >
-      <span
+    <Message from={role} className={cn("w-full max-w-[280px]", className)}>
+      <MessageContent
+        from={role}
         className={cn(
-          "text-[11px] font-mono tracking-widest uppercase block mb-1 font-bold",
-          isUser ? "text-[rgb(var(--foreground-muted))]/80" : "text-[rgb(var(--accent))]/80"
+          "w-full break-words text-left font-medium text-[13px] leading-relaxed select-text p-3 rounded-2xl transition-all duration-300",
+          isUser
+            ? "text-[rgb(var(--foreground-muted))] font-normal bg-[rgb(var(--card))]/80 border border-[rgba(var(--border),0.15)] shadow-md"
+            : "text-[rgb(var(--accent))] bg-[rgb(var(--card))]/90 border border-[rgba(var(--accent),0.25)] shadow-xl backdrop-blur-xl"
         )}
       >
-        {displayBadge}
-      </span>
-
-      <div
-        ref={contentRef}
-        className={cn(
-          "transition-all duration-300 overflow-hidden",
-          !isExpanded && "line-clamp-4"
-        )}
-      >
-        <Markdown content={content} variant="bubble" />
-      </div>
-
-      {isOverflowing && (
-        <button
-          type="button"
-          onClick={() => setIsExpanded((prev) => !prev)}
+        <span
           className={cn(
-            "inline-flex items-center gap-1 mt-1.5 text-[11px] font-mono tracking-wider font-semibold transition-opacity hover:opacity-100 cursor-pointer",
-            isUser
-              ? "text-[rgb(var(--foreground-muted))] opacity-75"
-              : "text-[rgb(var(--accent))] opacity-85"
+            "text-[11px] font-mono tracking-widest uppercase block mb-1 font-bold",
+            isUser ? "text-[rgb(var(--foreground-muted))]/80" : "text-[rgb(var(--accent))]/80"
           )}
-          aria-expanded={isExpanded}
         >
-          {isExpanded ? (
-            <span>{DIALOGUE_COPY.readLess}</span>
-          ) : (
-            <React.Fragment>
-              <span className="font-bold tracking-normal opacity-60">...</span>
-              <span className="underline underline-offset-2">{DIALOGUE_COPY.readMore}</span>
-            </React.Fragment>
+          {displayBadge}
+        </span>
+
+        <div
+          ref={contentRef}
+          className={cn(
+            "transition-all duration-300 overflow-hidden",
+            !isExpanded && "line-clamp-4"
           )}
-        </button>
-      )}
-    </div>
+        >
+          <MessageResponse content={content} variant="bubble" />
+        </div>
+
+        {isOverflowing && (
+          <button
+            type="button"
+            onClick={() => setIsExpanded((prev) => !prev)}
+            className={cn(
+              "inline-flex items-center gap-1 mt-1.5 text-[11px] font-mono tracking-wider font-semibold transition-opacity hover:opacity-100 cursor-pointer",
+              isUser
+                ? "text-[rgb(var(--foreground-muted))] opacity-75"
+                : "text-[rgb(var(--accent))] opacity-85"
+            )}
+            aria-expanded={isExpanded}
+          >
+            {isExpanded ? (
+              <span>{DIALOGUE_COPY.readLess}</span>
+            ) : (
+              <React.Fragment>
+                <span className="font-bold tracking-normal opacity-60">...</span>
+                <span className="underline underline-offset-2">{DIALOGUE_COPY.readMore}</span>
+              </React.Fragment>
+            )}
+          </button>
+        )}
+      </MessageContent>
+    </Message>
   );
 });
 

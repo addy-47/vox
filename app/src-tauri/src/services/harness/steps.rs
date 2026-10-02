@@ -8,7 +8,10 @@ use tokio_util::sync::CancellationToken;
 
 use crate::{
     core::{
-        events::{emit_ipc_to, AudioIntent, IpcEvent, LlmTokenPayload, PipelineMode},
+        events::{
+            emit_ipc_to, ActivityEnvelope, ActivityKind, AudioIntent, IpcEvent, LlmTokenPayload,
+            PipelineMode, ACTIVITY_COMPACTION,
+        },
         state::{AppState, AppWindow, InteractionState},
     },
     persistence::PersistenceEvent,
@@ -100,6 +103,24 @@ pub enum NonTerminalTrigger {
     NonTerminalTool { tool_name: String, call_id: String },
 }
 
+impl NonTerminalTrigger {
+
+    pub fn activity(&self) -> ActivityEnvelope {
+        match self {
+            NonTerminalTrigger::Compaction => ActivityEnvelope {
+                kind: ActivityKind::Compaction,
+                name: ACTIVITY_COMPACTION.to_string(),
+                call_id: None,
+            },
+            NonTerminalTrigger::NonTerminalTool { tool_name, call_id } => ActivityEnvelope {
+                kind: ActivityKind::Tool,
+                name: tool_name.clone(),
+                call_id: Some(call_id.clone()),
+            },
+        }
+    }
+}
+
 /// Description of a non-terminal operational phase (compaction, tool execution, etc.).
 #[derive(Debug, Clone)]
 pub struct NonTerminalPhase {
@@ -147,6 +168,7 @@ pub fn enter_non_terminal_phase<R: tauri::Runtime>(
     phase: &NonTerminalPhase,
     ctx: &NonTerminalContext<'_, R>,
 ) {
+    let activity = phase.trigger.activity();
     log::info!(
         "[Harness::NonTerminal] Entering working phase: trigger={:?}",
         phase.trigger
@@ -154,6 +176,7 @@ pub fn enter_non_terminal_phase<R: tauri::Runtime>(
 
     transition(
         InteractionState::Working,
+        Some(&activity),
         ctx.routing_ctx,
         ctx.app,
         ctx.app_state,

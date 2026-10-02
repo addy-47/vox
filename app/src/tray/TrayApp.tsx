@@ -5,7 +5,6 @@ import { TranscriptRenderer } from "./components/TranscriptRenderer";
 import { Footer } from "./components/Footer";
 import { useVisibility } from "@/shared/hooks/useVisibility";
 import { useInteraction } from "@/shared/hooks/useInteraction";
-import { useStreamingRenderer } from "@/shared/hooks/useStreamingRenderer";
 import { useTelemetry } from "@/shared/hooks/useTelemetry";
 import { hideTrayWindow, setWindowClickThrough } from "@/services/windowService";
 import { pttStart, pttStop, engageSession, resumeSession } from "@/services/pipelineService";
@@ -72,7 +71,7 @@ export const TrayApp: React.FC = () => {
     return liveTargetText;
   }, [viewingHistory, historyIndex, history, liveTargetText]);
 
-  const displayText = useStreamingRenderer(currentTargetText);
+  const displayText = currentTargetText;
   
   const { 
     state: visibilityState, setIsHovered, show, startFade, cancelFade, hideImmediately 

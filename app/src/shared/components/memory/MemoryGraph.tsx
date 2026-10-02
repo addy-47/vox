@@ -175,23 +175,28 @@ export const MemoryGraph = memo(
         return `Memory graph: ${facts.length} memories (${parts.join(", ")}). Open details with Shift+Up.`;
       }, [facts]);
 
-      // Raycaster + Proximity Picking on Node or Core Click
-      const handlePointerDown = useCallback(
+      const pointerDownPosRef = useRef<{ x: number; y: number } | null>(null);
+
+      // Distinguish intentional clicks from drag/orbit camera gestures
+      const handlePointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+        pointerDownPosRef.current = { x: e.clientX, y: e.clientY };
+      }, []);
+
+      const handlePointerUp = useCallback(
         (e: React.PointerEvent<HTMLDivElement>) => {
-          if (
-            (e.target as HTMLElement).closest(".pointer-events-auto") &&
-            (e.target as HTMLElement) !== canvasContainerRef.current
-          ) {
-            return;
-          }
+          const startPos = pointerDownPosRef.current;
+          pointerDownPosRef.current = null;
+          if (!startPos) return;
+
+          // If moved > 6px, the user was orbiting/dragging the camera
+          const moveDist = Math.hypot(e.clientX - startPos.x, e.clientY - startPos.y);
+          if (moveDist > 6) return;
 
           const renderer = rendererRef.current;
           const camera = cameraRef.current;
-          const instancedMesh = instancedMeshRef.current;
           const coreMesh = coreMeshRef.current;
-          const gNodes = gNodesRef.current;
 
-          if (!renderer || !camera || !instancedMesh || gNodes.length === 0) return;
+          if (!renderer || !camera) return;
 
           const rect = renderer.domElement.getBoundingClientRect();
           const clickX = e.clientX - rect.left;
@@ -203,17 +208,40 @@ export const MemoryGraph = memo(
           const raycaster = raycasterRef.current;
           raycaster.setFromCamera(mouse, camera);
 
-          // 1. Raycast against Central Core (Always accessible regardless of select mode)
-          if (coreMesh && onCoreClick) {
-            const coreIntersects = raycaster.intersectObject(coreMesh);
-            if (coreIntersects.length > 0) {
+          // 1. Central Core Hit Test (Raycast + Screen-Space Proximity Fallback)
+          if (onCoreClick) {
+            let hitCore = false;
+            if (coreMesh) {
+              const coreIntersects = raycaster.intersectObject(coreMesh);
+              if (coreIntersects.length > 0) {
+                hitCore = true;
+              }
+            }
+
+            if (!hitCore) {
+              // Screen-space proximity fallback around the core's center projection (65px radius)
+              const tempVec = tempVecRef.current;
+              tempVec.set(0, 0, 0);
+              tempVec.project(camera);
+              if (tempVec.z <= 1) {
+                const coreScreenX = ((tempVec.x + 1) * width) / 2;
+                const coreScreenY = ((-tempVec.y + 1) * height) / 2;
+                if (Math.hypot(clickX - coreScreenX, clickY - coreScreenY) <= 65) {
+                  hitCore = true;
+                }
+              }
+            }
+
+            if (hitCore) {
               onCoreClick();
               return;
             }
           }
 
           // If Select Mode is not active, skip node picking so orbiting/panning is 100% misclick-free
-          if (!selectModeEnabled) {
+          const instancedMesh = instancedMeshRef.current;
+          const gNodes = gNodesRef.current;
+          if (!selectModeEnabled || !instancedMesh || gNodes.length === 0) {
             return;
           }
 
@@ -268,6 +296,7 @@ export const MemoryGraph = memo(
           <div
             ref={canvasContainerRef}
             onPointerDown={handlePointerDown}
+            onPointerUp={handlePointerUp}
             role="img"
             aria-label={graphAriaLabel}
             className={cn(

@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { InteractionState, TurnMetricsPayload } from "@/services/eventsService";
+import type { InteractionState, TurnMetricsPayload, ActivityEnvelope } from "@/services/eventsService";
 import type { InteractionModeUpper } from "@/shared/lib/interactionMode";
 
 export interface DialogueTurn {
@@ -14,6 +14,7 @@ export interface SessionStoreState {
   interactionMode: InteractionModeUpper;
   pipelineMode: "modular" | "realtime";
   isLaunching: boolean;
+  activeActivity: ActivityEnvelope | null;
 
   // Streaming Text & Diagnostics
   transcript: string;
@@ -53,6 +54,7 @@ export interface SessionStoreState {
   setIsTextModeOpen: (isTextModeOpen: boolean) => void;
   setIsPlaybackMuted: (isPlaybackMuted: boolean) => void;
   setIsMicMuted: (isMicMuted: boolean) => void;
+  setActiveActivity: (activity: ActivityEnvelope | null) => void;
   setActiveSessionId: (id: number | null) => void;
   setDialogueHistory: (history: DialogueTurn[] | ((prev: DialogueTurn[]) => DialogueTurn[])) => void;
   setTurnIdCounter: (counter: number | ((prev: number) => number)) => void;
@@ -73,6 +75,7 @@ const INITIAL_STATE = {
   interactionMode: "PASSIVE" as InteractionModeUpper,
   pipelineMode: "modular" as const,
   isLaunching: false,
+  activeActivity: null as ActivityEnvelope | null,
   transcript: "",
   assistantText: "",
   sessionError: null,
@@ -97,6 +100,7 @@ export const useSessionStore = create<SessionStoreState>((set) => ({
   ...INITIAL_STATE,
 
   setInteractionState: (interactionState) => set({ interactionState }),
+  setActiveActivity: (activeActivity) => set({ activeActivity }),
   setInteractionMode: (interactionMode) => set({ interactionMode }),
   setPipelineMode: (pipelineMode) => set({ pipelineMode }),
   setIsLaunching: (isLaunching) => set({ isLaunching }),

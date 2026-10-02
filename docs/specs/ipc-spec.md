@@ -329,7 +329,7 @@ Every event emitted by the backend via `emit_ipc` or `emit_ipc_to` is mapped dir
 
 | Event Name | Payload Struct | Description |
 |---|---|---|
-| `state_changed` | `StateChangedPayload { owner, state, turn_id }` | SSOT for all pipeline & dictation FSM transitions (`Idle`, `Ready`, `Listening`, `Thinking`, `Speaking`, `Paused`, `Error`, `Sleeping`, `Working`). |
+| `state_changed` | `StateChangedPayload { owner, state, turn_id, activity? }` | SSOT for all pipeline & dictation FSM transitions (`Idle`, `Ready`, `Listening`, `Thinking`, `Speaking`, `Paused`, `Error`, `Sleeping`, `Working`). The optional `activity` envelope identifies the non-terminal operation in progress — see §4.1. |
 | `transcript_partial` | `TranscriptPayload { turn_id, text, owner? }` | Real-time interim streaming transcription for subtitle display. |
 | `transcript_final` | `TranscriptPayload { turn_id, text, owner? }` | Finalized turn STT transcript. |
 | `llm_token` | `LlmTokenPayload { turn_id, token }` | High-frequency streaming text token delta for live assistant response render. |
@@ -343,6 +343,23 @@ Every event emitted by the backend via `emit_ipc` or `emit_ipc_to` is mapped dir
 | `sessions_changed` | `void` | Signals frontend when sessions are updated asynchronously / out-of-band by the backend (e.g. session title assignment via `respond_and_set_title` or compaction cleanup). Frontend refetches the session list. |
 | `settings-updated` | `void` | Signals frontend that application settings were hot-reloaded. |
 | `toggle_tray` | `void` | Toggles tray drawer visibility. |
+
+### 4.1 The `activity` Envelope
+
+`StateChangedPayload.activity` identifies **which non-terminal operation** holds the pipeline in `Working`. It exists because `Working` covers more than tool calls: inline context compaction is a Harness stage with no `ToolFlow` and no `ToolRegistry` entry, so a `tool_name` field would be structurally wrong for it. The envelope is deliberately generic — a new non-terminal operation requires no schema change.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `kind` | `ActivityKind` = `"tool"` \| `"compaction"` | Discriminator for the operation class. `tool` for any registered `ToolFlow::NonTerminal` invocation; `compaction` for the Harness inline-compaction stage. |
+| `name` | `String` | Free-form operation identity. For `kind: "tool"` this is the canonical `ToolDefinition::name()` (e.g. `web_search`, `search_memory`). For `kind: "compaction"` it is `compaction`. |
+| `call_id` | `Option<String>` | The originating model tool-call id, present only for `kind: "tool"`. Omitted entirely when `None`. |
+
+**Invariants:**
+
+1. `activity` is `Some` **if and only if** `state === "Working"`. Every other state serializes it as absent.
+2. `activity` is owned by the `InteractionOwner` that is `Working`. Dictation never enters `Working`, so dictation `state_changed` events always carry `None`.
+3. Consumers MUST NOT branch on `name` alone. The display layer resolves activity through a three-tier cascade (`name` → `kind` → `interactionState`) so an unknown `name` degrades to its `kind` default rather than failing.
+4. `kind` is additive. Adding a new member is permitted; consumers keyed on existing members are unaffected.
 
 ### Permanently Decommissioned IPC Events
 The following backend-to-frontend echo events are permanently deleted:

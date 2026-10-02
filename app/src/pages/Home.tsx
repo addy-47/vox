@@ -1,5 +1,5 @@
 import React, { memo, useMemo, useRef, useEffect } from "react";
-import { VoxOrb, PipelineField, StatusCapsule, RestorePulse, SessionPanel, DialogueBubble } from "@/shared/components/home";
+import { VoxOrb, PipelineField, DynamicStatusBadge, RestorePulse, SessionPanel, DialogueBubble } from "@/shared/components/home";
 import { TextInputBar } from "@/shared/components/home/TextInputBar";
 import { ActiveTranscript } from "@/shared/components/home/ActiveTranscript";
 import { ErrorBoundary } from "@/shared/components/common";
@@ -18,11 +18,7 @@ import { cn } from "@/shared/lib/utils";
 import { useProfilerDrawer } from "@/shared/components/profiler/ProfilerDrawer";
 import { useSessionStore } from "@/store/sessionStore";
 import { useRegisterPageDrawer } from "@/shared/context/PageDrawerContext";
-import {
-  useHomePage,
-  toStatusLabel,
-  isDotActive,
-} from "@/shared/hooks/useHomePage";
+import { useHomePage } from "@/shared/hooks/useHomePage";
 
 const DialogueTurn = memo(({ turn }: { turn: { user: string; assistant: string; id: number } }) => (
   <React.Fragment>
@@ -73,6 +69,7 @@ export const Home = memo(() => {
     dialogueScrollRef,
     handleDialogueScroll,
     shouldAutoScrollRef,
+    activityDisplay,
   } = useHomePage();
 
   const { openProfiler, closeProfiler } = useProfilerDrawer();
@@ -181,13 +178,6 @@ export const Home = memo(() => {
   const clearSessionError = useSessionStore((s) => s.setSessionError);
   const closeSessions = () => closePanel("sessions");
 
-  const statusLabel = toStatusLabel(
-    interactionState,
-    isEngaged,
-    isSleeping,
-    isPaused
-  );
-  const dotActive = isDotActive(isEngaged, interactionState, isSleeping);
 
   // Bound visible dialogue history to recent turns to prevent unbounded DOM accumulation
   const visibleDialogueTurns = useMemo(() => {
@@ -262,9 +252,10 @@ export const Home = memo(() => {
             </span>
           </div>
         ) : (
-          <StatusCapsule
-            label={statusLabel}
-            dotActive={dotActive}
+          <DynamicStatusBadge
+            label={activityDisplay.label}
+            orbState={activityDisplay.orbState}
+            shimmer={activityDisplay.shimmer}
           />
         )}
       </div>

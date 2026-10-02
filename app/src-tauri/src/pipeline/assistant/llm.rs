@@ -120,7 +120,7 @@ fn evaluate_synthesis_latch<R: tauri::Runtime>(
             }
         }
         if let Some(app_handle) = app {
-            transition(InteractionState::Ready, ctx, app_handle, state);
+            transition(InteractionState::Ready, None, ctx, app_handle, state);
         } else {
             state.pipeline.set_state(InteractionState::Ready);
         }
