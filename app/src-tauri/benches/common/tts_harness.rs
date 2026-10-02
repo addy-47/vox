@@ -269,6 +269,7 @@ pub fn benchmark_tts_provider(
             throughput_spl_s: throughput,
             partials_emitted: voice_for_clip as usize,
             similarity: if samples.is_empty() { 0.0 } else { 1.0 },
+            raw_similarity: if samples.is_empty() { 0.0 } else { 1.0 },
             hypothesis: format!(
                 "voice={} samples={} wav={:?}",
                 voice_for_clip,
@@ -360,6 +361,7 @@ pub fn benchmark_tts_provider(
         avg_rtf,
         overall_throughput_spl_s: overall_throughput,
         avg_similarity: 1.0,
+        avg_raw_similarity: 1.0,
         clips: clip_results,
     }
 }

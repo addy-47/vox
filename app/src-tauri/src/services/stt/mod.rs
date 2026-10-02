@@ -1,6 +1,7 @@
 pub mod actor;
 pub mod config;
 pub mod factory;
+pub mod itn;
 pub mod providers;
 pub mod stitcher;
 
@@ -9,6 +10,7 @@ pub use config::{
     SttActiveProvider, SttCloudConfig, SttEmbeddedConfig, SttProviderConfig, SttSettings,
 };
 pub use factory::{create_stt_instance_from_settings, create_stt_provider};
+pub use itn::apply_tier1_refinement;
 pub use providers::{
     EmbeddedSttProvider, NemotronEngine, QwenEngine, SttEngine, SttProvider, SttProviderKind,
 };
@@ -37,3 +39,7 @@ pub const STT_WORKER_THREAD_PRIORITY: u8 = 80;
 /// Leading silence (samples at 16kHz) priming each fresh Nemotron streaming
 /// session so the chunked encoder opens with acoustic context on abrupt onsets.
 pub const NEMOTRON_WARMUP_SILENCE_SAMPLES: usize = 4800;
+
+/// Trailing silence (samples at 16kHz, ~300ms) appended prior to stream finalization
+/// so the chunked encoder and RNN-T joiner register post-speech boundary and emit closing punctuation.
+pub const NEMOTRON_TRAILING_SILENCE_SAMPLES: usize = 4800;

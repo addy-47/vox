@@ -65,6 +65,52 @@ pub fn levenshtein_similarity(hyp: &str, ref_str: &str) -> f64 {
     1.0 - (distance as f64 / max_len as f64)
 }
 
+/// Computes raw Levenshtein similarity [0.0, 1.0] without stripping punctuation or casing.
+pub fn raw_levenshtein_similarity(hyp: &str, ref_str: &str) -> f64 {
+    let clean_hyp = hyp.split_whitespace().collect::<Vec<_>>().join(" ");
+    let clean_ref = ref_str.split_whitespace().collect::<Vec<_>>().join(" ");
+
+    let hyp_chars: Vec<char> = clean_hyp.chars().collect();
+    let ref_chars: Vec<char> = clean_ref.chars().collect();
+
+    let len1 = hyp_chars.len();
+    let len2 = ref_chars.len();
+
+    if len1 == 0 && len2 == 0 {
+        return 1.0;
+    }
+    if len1 == 0 || len2 == 0 {
+        return 0.0;
+    }
+
+    let mut dp = vec![vec![0usize; len2 + 1]; len1 + 1];
+    for (i, row) in dp.iter_mut().enumerate().take(len1 + 1) {
+        row[0] = i;
+    }
+    if let Some(first_row) = dp.first_mut() {
+        for (j, cell) in first_row.iter_mut().enumerate().take(len2 + 1) {
+            *cell = j;
+        }
+    }
+
+    for i in 1..=len1 {
+        for j in 1..=len2 {
+            let cost = if hyp_chars[i - 1] == ref_chars[j - 1] {
+                0
+            } else {
+                1
+            };
+            dp[i][j] = (dp[i - 1][j] + 1)
+                .min(dp[i][j - 1] + 1)
+                .min(dp[i - 1][j - 1] + cost);
+        }
+    }
+
+    let distance = dp[len1][len2];
+    let max_len = len1.max(len2);
+    1.0 - (distance as f64 / max_len as f64)
+}
+
 /// Returns the labelled ground-truth transcript for a golden test clip.
 /// Mirrors `tests/common/mod.rs` ground truths so the bench verifies STT output
 /// against the same fixtures the integration suite gates at ≥ 0.90 similarity.
