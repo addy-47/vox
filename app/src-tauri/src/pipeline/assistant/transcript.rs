@@ -89,12 +89,24 @@ pub(crate) fn spawn_harness_turn_task<R: tauri::Runtime + 'static>(
             TurnOutcome::DuplicateIgnored { turn_id } => {
                 log::info!("[Pipeline::Transcript] Duplicate turn {} ignored", turn_id);
                 app_state.pipeline.reset_turn_guards();
-                transition(InteractionState::Ready, None, &ctx_clone, &app_clone, &app_state);
+                transition(
+                    InteractionState::Ready,
+                    None,
+                    &ctx_clone,
+                    &app_clone,
+                    &app_state,
+                );
             }
             TurnOutcome::Cancelled { turn_id } => {
                 log::info!("[Pipeline::Transcript] Turn {} cancelled", turn_id);
                 app_state.pipeline.reset_turn_guards();
-                transition(InteractionState::Ready, None, &ctx_clone, &app_clone, &app_state);
+                transition(
+                    InteractionState::Ready,
+                    None,
+                    &ctx_clone,
+                    &app_clone,
+                    &app_state,
+                );
             }
             TurnOutcome::Error { turn_id, message } => {
                 log::error!(
@@ -103,7 +115,13 @@ pub(crate) fn spawn_harness_turn_task<R: tauri::Runtime + 'static>(
                     message
                 );
                 app_state.pipeline.reset_turn_guards();
-                transition(InteractionState::Ready, None, &ctx_clone, &app_clone, &app_state);
+                transition(
+                    InteractionState::Ready,
+                    None,
+                    &ctx_clone,
+                    &app_clone,
+                    &app_state,
+                );
             }
         }
     });

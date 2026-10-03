@@ -6,7 +6,7 @@ import {
   resetSettings,
   probeModelCapabilitiesFull,
 } from "@/services/settingsService";
-import { hexToRgb } from "@/shared/lib/utils";
+import { applyTheme } from "@/shared/theme";
 import { DOMAIN_DIRTY_KEYS, SETTINGS_SCOPE_KEYS, type SettingsDomainId, type SettingsScope } from "@/data/settingsCopy";
 
 /** Reads a settings scope as a key-value map for dynamic key access. The
@@ -402,33 +402,6 @@ export const SETTINGS_DOMAIN_TO_UI: Record<string, SettingsDomainId> = {
   system: "models",
 };
 
-function applyAppearance(appearance?: AppearanceSettings) {
-  if (!appearance) return;
-  if (typeof document !== "undefined") {
-    document.documentElement.setAttribute("data-theme", appearance.theme);
-    document.documentElement.style.setProperty("--accent", hexToRgb(appearance.accent_seed));
-    if (appearance.theme === "light") {
-      document.documentElement.classList.add("light");
-      document.documentElement.classList.remove("dark");
-    } else {
-      document.documentElement.classList.add("dark");
-      document.documentElement.classList.remove("light");
-    }
-
-    // Persist to localStorage so the boot inline script in index.html can
-    // apply the user's theme + accent_seed before React mounts, eliminating
-    // the default-cyan -> configured-accent flash on first paint. Added 2026-09-03.
-    try {
-      localStorage.setItem(
-        "vox_appearance",
-        JSON.stringify({ theme: appearance.theme, accent_seed: appearance.accent_seed })
-      );
-    } catch {
-      /* localStorage unavailable; first-paint flash will be a no-op */
-    }
-  }
-}
-
 let appearanceDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 let settingsAutoSaveTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -476,15 +449,6 @@ export function isRestartKey(scope: string, key: string): boolean {
   )
     return true;
   if (scope === "vad" && key === "vad_backend") return true;
-  // INTERIM: the backend owns the restart policy (get_setting_reload_policy is
-  // the SSOT), but update_setting's per-key reload_policy is not yet plumbed
-  // into isDomainRequiringRestart — so this table still drives the footer.
-  // interaction.pipeline_mode tears down and rebuilds the entire audio pipeline
-  // (it was missing here, so the heaviest operation auto-committed with
-  // "CHANGES SAVED" before freezing); dictation.hotkey re-registers a global
-  // grab; every realtime.* key reconfigures the live session. Widening this
-  // table is the stopgap, not the fix — the fix is deriving it from the
-  // backend's reload_policy.
   if (scope === "interaction" && key === "pipeline_mode") return true;
   if (scope === "dictation" && key === "hotkey") return true;
   if (scope === "realtime") return true;
@@ -521,7 +485,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
           error: null,
         };
       });
-      applyAppearance(fetched.appearance);
+      applyTheme(fetched.appearance, { animate: false });
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
       console.error("Failed to load settings:", err);
@@ -595,7 +559,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     };
 
     if (domain === "appearance" && (key === "theme" || key === "accent_seed")) {
-      applyAppearance(newDraft.appearance);
+      applyTheme(newDraft.appearance);
 
       if (appearanceDebounceTimer) {
         clearTimeout(appearanceDebounceTimer);
@@ -818,7 +782,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     }
 
     if (domainId === "appearance") {
-      applyAppearance(settings.appearance);
+      applyTheme(settings.appearance);
     }
 
     set({ draftSettings: newDraft, autoSavedDomain: null });
@@ -1001,7 +965,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     const { settings } = get();
     if (!settings) return;
     const cloned = structuredClone(settings);
-    applyAppearance(settings.appearance);
+    applyTheme(settings.appearance);
     set({ draftSettings: cloned, hasChanges: false, autoSavedDomain: null });
   },
 
@@ -1010,7 +974,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       const res = await resetSettings();
       const defaults = res.settings;
       const cloned = structuredClone(defaults);
-      applyAppearance(defaults.appearance);
+      applyTheme(defaults.appearance);
       // `restart_scheduled` is the backend's own verdict; `["all"]` is only a
       // display placeholder for a reset that touched every domain.
       const restartKeys = res.reload_policy === "restart" ? ["all"] : [];

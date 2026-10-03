@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from "react";
 import { type InteractionState } from "@/services/eventsService";
+import { useMemoryTrace } from "@/shared/hooks/useMemoryTrace";
 
 interface PipelineFieldProps {
   state: InteractionState;
@@ -7,6 +8,7 @@ interface PipelineFieldProps {
 }
 
 export const PipelineField = React.memo(({ state, volume = 0 }: PipelineFieldProps) => {
+  useMemoryTrace("PipelineField");
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -46,7 +48,7 @@ export const PipelineField = React.memo(({ state, volume = 0 }: PipelineFieldPro
   return (
     <div
       ref={containerRef}
-      className="absolute inset-0 pointer-events-none transition-all duration-700 ease-out overflow-hidden"
+      className="absolute inset-0 pointer-events-none overflow-hidden"
       style={{
         zIndex: 1,
         ["--field-energy"]: "0.12",
@@ -56,7 +58,7 @@ export const PipelineField = React.memo(({ state, volume = 0 }: PipelineFieldPro
     >
       {/* Sentient Field Ambient Heatmap */}
       <div
-        className="absolute w-[80vw] h-[80vw] max-w-[800px] max-h-[800px] rounded-full blur-[120px] opacity-[var(--field-energy)] transition-all duration-700 ease-out"
+        className="absolute w-[80vw] h-[80vw] max-w-[800px] max-h-[800px] rounded-full blur-[120px] opacity-[var(--field-energy)] transition-[opacity] duration-700 ease-out"
         style={{
           left: "50%",
           top: "55%",
@@ -68,7 +70,7 @@ export const PipelineField = React.memo(({ state, volume = 0 }: PipelineFieldPro
 
       {/* Outer Field Ring Membrane */}
       <div
-        className="absolute w-[70vw] h-[70vw] max-w-[700px] max-h-[700px] rounded-full border border-dashed transition-all duration-1000 ease-out"
+        className="absolute w-[70vw] h-[70vw] max-w-[700px] max-h-[700px] rounded-full border border-dashed transition-[transform,opacity] duration-1000 ease-out"
         style={{
           left: "50%",
           top: "55%",

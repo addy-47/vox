@@ -33,7 +33,7 @@ export const RadialNode = memo(({ domain, isActive, onSelect, radiusX, radiusY }
         id={`node-${domain.id}`}
         onClick={() => onSelect(domain.id)}
         className={cn(
-          "relative w-10 h-10 rounded-full flex items-center justify-center border transition-all duration-400 hover:scale-[1.06] backdrop-blur-sm",
+          "relative w-10 h-10 rounded-full flex items-center justify-center border transition-colors duration-200 hover:scale-[1.06]",
           isActive
             ? "text-[rgb(var(--accent))] bg-[rgba(var(--accent),0.15)] border-[rgba(var(--accent),0.4)] shadow-[0_0_12px_rgba(var(--accent),0.2)]"
             : "text-[rgb(var(--foreground-muted))] dark:text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))] bg-[rgba(var(--foreground),0.04)] border-[rgba(var(--border),0.15)] dark:border-[rgba(var(--border),0.08)] hover:border-[rgba(var(--accent),0.25)] hover:bg-[rgba(var(--accent),0.06)]"
@@ -43,7 +43,7 @@ export const RadialNode = memo(({ domain, isActive, onSelect, radiusX, radiusY }
         <Icon size={20} strokeWidth={isActive ? 2.5 : 1.5} />
         <span 
           className={cn(
-            "absolute left-1/2 -translate-x-1/2 text-[10.5px] sm:text-[11px] font-bold uppercase tracking-[0.16em] leading-none whitespace-nowrap pointer-events-none text-center transition-all duration-400 px-1.5 py-0.5",
+            "absolute left-1/2 -translate-x-1/2 text-[10.5px] sm:text-[11px] font-bold uppercase tracking-[0.16em] leading-none whitespace-nowrap pointer-events-none text-center transition-opacity duration-200 px-1.5 py-0.5",
             isUpper ? "bottom-[calc(100%+10px)]" : "top-[calc(100%+10px)]",
             isActive ? "opacity-0 scale-90" : "opacity-100 scale-100"
           )}
@@ -123,23 +123,23 @@ export const HubConnectors = memo(({ activeDomains, radiusX, radiusY }: HubConne
         const t65_2_y = py65 - ny * halfLen65;
         
         return (
-          <g key={d.id} className="transition-all duration-400">
+          <g key={d.id}>
             <line
               x1={lineX1}
               y1={lineY1}
               x2={lineX2}
               y2={lineY2}
-              className="transition-all duration-400"
+              className="transition-[stroke] duration-200"
               stroke={isActive ? "rgba(var(--accent), var(--hub-connector-active-opacity, 0.55))" : "rgba(var(--accent), 0.12)"}
               strokeWidth={isActive ? 1.5 : 1}
-              strokeDasharray={isActive ? "none" : "3 5"}
+              strokeDasharray={isActive ? undefined : "3 5"}
             />
             <line
               x1={t35_1_x}
               y1={t35_1_y}
               x2={t35_2_x}
               y2={t35_2_y}
-              className="transition-all duration-400"
+              className="transition-[stroke,opacity] duration-200"
               stroke={isActive ? "rgba(var(--accent), var(--hub-connector-tick35-opacity, 0.45))" : "rgba(var(--accent), 0.25)"}
               strokeWidth={1}
               opacity={isActive ? 1 : 0.4}
@@ -149,7 +149,7 @@ export const HubConnectors = memo(({ activeDomains, radiusX, radiusY }: HubConne
               y1={t65_1_y}
               x2={t65_2_x}
               y2={t65_2_y}
-              className="transition-all duration-400"
+              className="transition-[stroke,opacity] duration-200"
               stroke={isActive ? "rgba(var(--accent), var(--hub-connector-tick65-opacity, 0.35))" : "rgba(var(--accent), 0.20)"}
               strokeWidth={1}
               opacity={isActive ? 1 : 0.4}

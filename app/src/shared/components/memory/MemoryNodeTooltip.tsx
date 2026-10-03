@@ -36,9 +36,19 @@ export const MemoryNodeTooltip = memo(({
     !pos || isMobile
       ? 16
       : Math.min(window.innerWidth - tooltipWidth - 24, Math.max(24, pos.x + 16));
+
+  const isUpperHalf = pos && typeof window !== "undefined" ? pos.y < window.innerHeight / 2 : true;
+  const mobileTop = isUpperHalf
+    ? 80
+    : typeof window !== "undefined"
+    ? Math.max(80, window.innerHeight - 300)
+    : 80;
+
   const clampedY =
-    !pos || isMobile
-      ? 90
+    !pos
+      ? 80
+      : isMobile
+      ? mobileTop
       : Math.min(window.innerHeight - 280, Math.max(80, pos.y - 16));
 
   return (
@@ -54,7 +64,7 @@ export const MemoryNodeTooltip = memo(({
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.94, y: 6 }}
           transition={{ duration: 0.15, ease: "easeOut" }}
-          className="w-[340px] rounded-3xl glass-card border border-[rgba(var(--border),0.18)] bg-[rgba(var(--card),0.96)] backdrop-blur-2xl p-4 shadow-2xl"
+          className="w-[340px] max-w-[calc(100vw-32px)] rounded-3xl glass-card border border-[rgba(var(--border),0.18)] bg-[rgba(var(--card),0.96)] backdrop-blur-2xl p-4 shadow-2xl"
         >
           {/* Header */}
           <div className="flex items-center justify-between pb-2.5 mb-2.5 border-b border-[rgba(var(--border),0.10)]">

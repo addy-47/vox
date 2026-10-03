@@ -86,6 +86,4 @@ impl AudioBridge {
     pub fn get_sender(&self) -> Option<Sender<Vec<i16>>> {
         self.tx.clone()
     }
-
-
 }

@@ -55,7 +55,7 @@ export const WizardFooter: React.FC<WizardFooterProps> = ({
         {showSkip && onSkip && (
           <button
             onClick={onSkip}
-            className="px-6 py-5 text-[12px] font-black uppercase tracking-[0.3em] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] transition-colors border border-dashed border-[rgba(var(--border),0.08)] hover:border-[rgb(var(--accent))]/30 rounded-2xl glass transition-all duration-300"
+            className="px-6 py-5 text-[12px] font-black uppercase tracking-[0.3em] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] transition-colors border border-dashed border-[rgba(var(--border),0.08)] hover:border-[rgb(var(--accent))]/30 rounded-2xl glass transition-all"
           >
             {WIZARD_CTA_LABELS.skip}
           </button>

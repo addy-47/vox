@@ -262,7 +262,16 @@ fn extend_boundary(buffer: &str, pos: usize, initial_len: usize, mark: char) -> 
 fn is_conjunction_seam(text_after: &str) -> bool {
     let lower = text_after.trim_start().to_lowercase();
     const CONJUNCTIONS: &[&str] = &[
-        "and ", "but ", "so ", "because ", "which ", "however ", "although ", "yet ", "or ", "then ",
+        "and ",
+        "but ",
+        "so ",
+        "because ",
+        "which ",
+        "however ",
+        "although ",
+        "yet ",
+        "or ",
+        "then ",
     ];
     CONJUNCTIONS.iter().any(|&conj| lower.starts_with(conj))
 }
@@ -329,11 +338,19 @@ mod tests {
     fn test_chunker_commas_preserved_in_normal_sentences() {
         let mut c = ClauseChunker::new();
         let chunks = c.push_str("Hello, world here. Next sentence begins now.");
-        assert_eq!(chunks, vec!["Hello, world here.", "Next sentence begins now."]);
+        assert_eq!(
+            chunks,
+            vec!["Hello, world here.", "Next sentence begins now."]
+        );
 
         let mut c2 = ClauseChunker::new();
-        let chunks2 = c2.push_str("This is a longer sentence, with multiple commas, and it continues to the end.");
-        assert_eq!(chunks2, vec!["This is a longer sentence, with multiple commas, and it continues to the end."]);
+        let chunks2 = c2.push_str(
+            "This is a longer sentence, with multiple commas, and it continues to the end.",
+        );
+        assert_eq!(
+            chunks2,
+            vec!["This is a longer sentence, with multiple commas, and it continues to the end."]
+        );
     }
 
     /// Tests dynamic conjunction seam split on long runaway sentences (>= 22 words).
@@ -360,7 +377,10 @@ mod tests {
     fn test_chunker_prosody_preserves_periods() {
         let mut c = ClauseChunker::new();
         let chunks = c.push_str("Hai Addy. I'm Vox. I help you do things today.");
-        assert_eq!(chunks, vec!["Hai Addy.", "I'm Vox.", "I help you do things today."]);
+        assert_eq!(
+            chunks,
+            vec!["Hai Addy.", "I'm Vox.", "I help you do things today."]
+        );
         assert_eq!(c.flush(), None);
     }
 
@@ -395,7 +415,10 @@ mod tests {
             .join(" ");
         let mut c = ClauseChunker::new();
         let chunks = c.push_str(&long);
-        assert!(!chunks.is_empty(), "bloat guard must emit chunk on >= 38 words");
+        assert!(
+            !chunks.is_empty(),
+            "bloat guard must emit chunk on >= 38 words"
+        );
         assert_eq!(chunks[0].split_whitespace().count(), 30);
     }
 

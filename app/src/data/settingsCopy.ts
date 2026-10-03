@@ -67,18 +67,17 @@ export const SETTINGS_SCOPE_KEYS: Partial<Record<SettingsScope, readonly string[
     "cloud",
     "cloud_keys",
   ],
-  tts: [
-    "active",
-    "voice_index",
-    "speed",
-    "threads",
-    "zipvoice",
-    "kokoro",
-    "edge_tts",
-    "supertonic",
-    "chatterbox",
-    "chatterbox_remote",
-  ],
+  // `tts` deliberately has NO declared key list. Every TTS provider owns a
+  // named sub-object of the scope, so any such list is a hardcoded roster of
+  // provider ids — exactly what Invariant 6 forbids, and it goes stale the
+  // moment the backend adds a provider. Omitting the entry routes `tts`
+  // through the generic whole-scope paths every consumer already implements:
+  //   isCategoryDirty / isDomainDirty -> deep scope comparison
+  //   isDomainRequiringRestart       -> Object.keys(scope) filtered by
+  //                                     isRestartKey, so a new provider's
+  //                                     restart key is picked up for free
+  //   discardCategoryChanges / discardDomainChanges -> whole-scope restore
+  // That is strictly more coverage than an allowlist, with zero provider names.
   interaction: ["mode", "pipeline_mode"],
   dictation: ["enabled", "interaction_mode", "hotkey", "output_mode", "silence_auto_stop_ms"],
   working_memory: ["private_mode", "auto_compaction", "max_context_share", "web_search_enabled"],

@@ -18,12 +18,12 @@ export const HubCenter = memo(({ onClick, hasActiveCards }: HubCenterProps) => (
     <button
       id="center-node"
       onClick={onClick}
-      className="relative w-16 h-16 rounded-full flex items-center justify-center transition-all duration-400 cursor-pointer"
+      className="relative w-16 h-16 rounded-full flex items-center justify-center transition-colors duration-200 cursor-pointer"
       aria-label={hasActiveCards ? SETTINGS_COPY.closeAllDomains : SETTINGS_COPY.openAllDomains}
     >
       {/* Layer 1 (outermost): A circle ~52px diameter */}
       <div
-        className="absolute rounded-full border border-dashed transition-all duration-400"
+        className="absolute rounded-full border border-dashed transition-colors duration-200"
         style={{
           width: "52px",
           height: "52px",
@@ -35,7 +35,7 @@ export const HubCenter = memo(({ onClick, hasActiveCards }: HubCenterProps) => (
 
       {/* Layer 2: A circle ~38px diameter */}
       <div
-        className="absolute rounded-full border transition-all duration-400"
+        className="absolute rounded-full border transition-colors duration-200"
         style={{
           width: "38px",
           height: "38px",
@@ -47,7 +47,7 @@ export const HubCenter = memo(({ onClick, hasActiveCards }: HubCenterProps) => (
 
       {/* Layer 3: A circle ~22px diameter */}
       <div
-        className="absolute rounded-full border transition-all duration-400"
+        className="absolute rounded-full border transition-colors duration-200"
         style={{
           width: "22px",
           height: "22px",
@@ -60,7 +60,7 @@ export const HubCenter = memo(({ onClick, hasActiveCards }: HubCenterProps) => (
 
       {/* Layer 4 (innermost dot): Circle 6px */}
       <div
-        className="absolute rounded-full transition-all duration-400"
+        className="absolute rounded-full transition-colors duration-200"
         style={{
           width: "6px",
           height: "6px",

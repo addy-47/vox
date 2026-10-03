@@ -1,6 +1,7 @@
 import React from "react";
 import { Ghost, X, AlertCircle, RotateCcw, Hand } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
+import { cn } from "@/shared/lib/utils";
 import {
   VoiceRippleNode,
   DetailPanel,
@@ -8,9 +9,11 @@ import {
   OrbitCarousel,
   MonthDayCard,
   HistoryListView,
+  HistorySearchBar,
 } from "@/shared/components/history";
 import { useHistory } from "@/shared/hooks/useHistory";
 import { EmptyState, OrbitalLoader, ErrorBoundary } from "@/shared/components/common";
+import { ThemeToggleButton } from "@/shared/ui";
 import { HISTORY_COPY } from "@/data/historyCopy";
 import { useHistoryFilterStore } from "@/store/historyFilterStore";
 import type { SessionRow } from "@/services/historyService";
@@ -20,7 +23,7 @@ import { useProfilerDrawer } from "@/shared/components/profiler/ProfilerDrawer";
 
 export const History: React.FC = () => {
   const setDisplayMode = useHistoryFilterStore((s) => s.setDisplayMode);
-  const { isPanelOpen } = usePanelStateContext();
+  const { isPanelOpen, rightPanel } = usePanelStateContext();
   const { isProfilerOpen } = useProfilerDrawer();
   const {
     sessions,
@@ -94,6 +97,16 @@ export const History: React.FC = () => {
       setSelectedSession((prev) => (prev?.id === session.id ? null : session));
     },
     [setSelectedSession]
+  );
+
+  const handleSearchSelectSession = React.useCallback(
+    (session: SessionRow) => {
+      const date = new Date(session.created_at);
+      const dayKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+      handleDrillIntoDay(dayKey);
+      setSelectedSession(session);
+    },
+    [handleDrillIntoDay, setSelectedSession]
   );
 
   const drawerHandlers = React.useMemo(() => ({
@@ -207,6 +220,31 @@ export const History: React.FC = () => {
       onClick={handleStageClick}
       className="relative flex-1 flex flex-col items-center justify-between h-full w-full overflow-hidden bg-transparent select-none"
     >
+      {/* ── Top Bar Search: Active in Orbit View; suppressed in List View (which has dedicated fixed search) ── */}
+      {isOrbitViewport && (
+        <div className="absolute top-4 left-24 right-32 z-30 pointer-events-auto flex justify-center">
+          <HistorySearchBar
+            sessions={sessions}
+            onSelectSession={handleSearchSelectSession}
+            className="w-full max-w-[280px]"
+          />
+        </div>
+      )}
+
+      {/* ── Top Left: Theme Toggle (Orbit view only; list view renders theme toggle on the right header) ── */}
+      {isOrbitViewport && (
+        <div
+          className={cn(
+            "absolute top-4 left-5 z-[60] transition-opacity duration-200",
+            Boolean(rightPanel) && (typeof window !== "undefined" && window.innerWidth < 480)
+              ? "opacity-0 pointer-events-none invisible"
+              : "pointer-events-auto"
+          )}
+        >
+          <ThemeToggleButton />
+        </div>
+      )}
+
       {/* Delete Error Notification Banner */}
       <AnimatePresence>
         {deleteError && (

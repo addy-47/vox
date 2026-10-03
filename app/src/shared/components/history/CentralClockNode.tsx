@@ -1,6 +1,5 @@
-import { memo, useState, useEffect } from "react";
+import { memo } from "react";
 import { ChevronLeft, ChevronRight, MessageSquare, Brain, Clock } from "lucide-react";
-import { cn } from "@/shared/lib/utils";
 import { HISTORY_COPY } from "@/data/historyCopy";
 import { ViewSelector, type HistoryView } from "./ViewSelector";
 
@@ -65,22 +64,6 @@ export const CentralClockNode = memo(
     onNext,
   }: CentralClockNodeProps) => {
     const showArc = windowProgress && windowProgress.count > 1;
-    const [isLightMode, setIsLightMode] = useState(false);
-
-    useEffect(() => {
-      const checkTheme = () => {
-        const theme = document.documentElement.getAttribute("data-theme");
-        setIsLightMode(theme === "light");
-      };
-      checkTheme();
-
-      const observer = new MutationObserver(checkTheme);
-      observer.observe(document.documentElement, {
-        attributes: true,
-        attributeFilter: ["data-theme", "class"],
-      });
-      return () => observer.disconnect();
-    }, []);
 
     // 48 perimeter dial ticks around the sphere rim. Precomputed once at module
     // scope: these 48 <line> elements were previously rebuilt on every render.
@@ -136,7 +119,7 @@ export const CentralClockNode = memo(
 
         {/* Central Session Hub Node — Perfectly Centered 3D Acoustic Core */}
         <div
-          className="relative rounded-full flex flex-col items-center justify-center text-center transition-all duration-300 overflow-hidden isolate backdrop-blur-md"
+          className="theme-flip-surface clock-hub glass-keep-blur relative rounded-full flex flex-col items-center justify-center text-center transition-all overflow-hidden isolate glass-card"
           style={{
             width: "clamp(250px, 26vw, 320px)",
             height: "clamp(250px, 26vw, 320px)",
@@ -144,15 +127,6 @@ export const CentralClockNode = memo(
             minHeight: "240px",
             maxWidth: "330px",
             maxHeight: "330px",
-            background: isLightMode
-              ? "radial-gradient(circle at 50% 30%, rgba(255, 255, 255, 0.7) 0%, rgba(255, 255, 255, 0.4) 60%, rgba(var(--accent), 0.04) 100%)"
-              : "radial-gradient(circle at 50% 35%, rgba(var(--card), 0.98) 0%, rgba(10, 14, 18, 0.98) 72%, rgba(var(--accent), 0.08) 100%)",
-            border: isLightMode
-              ? "1px solid rgba(var(--border), 0.4)"
-              : "1px solid rgba(var(--border), 0.4)",
-            boxShadow: isLightMode
-              ? "0 10px 30px -10px rgba(15, 23, 42, 0.04), 0 0 20px rgba(var(--accent), 0.06), inset 0 2px 8px rgba(255, 255, 255, 0.8)"
-              : "0 20px 50px -10px rgba(0, 0, 0, 0.8), 0 0 35px rgba(var(--accent), 0.12), inset 0 2px 14px rgba(255, 255, 255, 0.08)",
           }}
         >
           {/* Perimeter Dial Ticks on Outer Sphere Rim */}
@@ -211,12 +185,7 @@ export const CentralClockNode = memo(
                  This node previously hand-rolled two unlabelled rounded-full
                  buttons and hardcoded "DAY" while pulling "MONTH" from copy. */}
             <div
-              className={cn(
-                "flex items-center gap-4 rounded-full px-4 py-1 shadow-inner transition-colors",
-                isLightMode
-                  ? "bg-white/45 border border-[rgba(var(--accent),0.25)] shadow-slate-200/50"
-                  : "bg-black/40 border border-[rgba(var(--accent),0.2)]"
-              )}
+              className="clock-pill theme-flip-surface flex items-center gap-4 rounded-full px-4 py-1 shadow-inner transition-colors"
               onClick={(e) => e.stopPropagation()}
             >
               <ViewSelector view={view} onChange={onViewChange} />

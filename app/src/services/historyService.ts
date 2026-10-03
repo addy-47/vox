@@ -70,14 +70,39 @@ export function getSessions(projectId?: string): Promise<SessionRow[]> {
 }
 
 const turnsInFlight = new Map<number, Promise<TurnRow[]>>();
+const turnsCache = new Map<number, TurnRow[]>();
+const MAX_TURNS_CACHE = 20;
 
-/** Returns all turns for a session, oldest first. */
+/** Number of sessions currently pinned in the turns cache. */
+export function getTurnsCacheSize(): number {
+  return turnsCache.size;
+};
+
+/** Returns all cached turns synchronously if already fetched. */
+export function getCachedTurns(sessionId: number): TurnRow[] | undefined {
+  return turnsCache.get(sessionId);
+}
+
+/** Returns all turns for a session, oldest first, backed by an in-memory session cache. */
 export function getTurns(sessionId: number): Promise<TurnRow[]> {
+  const cached = turnsCache.get(sessionId);
+  if (cached) {
+    return Promise.resolve(cached);
+  }
   const existing = turnsInFlight.get(sessionId);
   if (existing) {
     return existing;
   }
   const promise = invoke<TurnRow[]>("get_turns", { sessionId })
+    .then((turns) => {
+      turnsCache.set(sessionId, turns);
+      while (turnsCache.size > MAX_TURNS_CACHE) {
+        const oldest = turnsCache.keys().next();
+        if (oldest.done) break;
+        turnsCache.delete(oldest.value);
+      }
+      return turns;
+    })
     .finally(() => {
       turnsInFlight.delete(sessionId);
     });
@@ -103,6 +128,7 @@ export function updateSession(sessionId: number, updates: SessionUpdate): Promis
  * Emits `SessionsChanged` on success.
  */
 export function deleteSession(sessionId: number, hard = false): Promise<void> {
+  turnsCache.delete(sessionId);
   return invoke("delete_session", { sessionId, hard });
 }
 

@@ -4,7 +4,7 @@ import { LAYOUT_COPY } from "@/data/layoutCopy";
 import { TitleBar } from "./TitleBar";
 import { AmbientBackground, HelpPanel, NotificationPanel, ErrorBoundary, OrbitalLoader } from "@/shared/components/common";
 import { ActiveSessionHeader, TurnMetricsBadge } from "@/shared/components/home";
-import { EdgePanel, TopRightCluster, BottomDockFeather } from "@/shared/ui";
+import { EdgePanel, TopRightCluster, BottomDockFeather, ThemeToggleButton } from "@/shared/ui";
 import { usePanelStateContext } from "@/shared/hooks/usePanelState";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { Activity, PanelLeft } from "lucide-react";
@@ -20,6 +20,20 @@ import { useSessionStore } from "@/store/sessionStore";
 import { getStackSize } from "@/shared/lib/overlayStack";
 
 const Monitoring = lazy(() => import("@/pages/Monitoring").then((m) => ({ default: m.Monitoring })));
+
+// Preload the monitoring chunk on the first idle frame so the popover
+// opens without any JS-module loading lag on first click.
+if (typeof window !== "undefined") {
+  const preloadMonitoring = () => import("@/pages/Monitoring");
+  const idleWindow = window as Window & {
+    requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
+  };
+  if (typeof idleWindow.requestIdleCallback === "function") {
+    idleWindow.requestIdleCallback(preloadMonitoring, { timeout: 2000 });
+  } else {
+    setTimeout(preloadMonitoring, 1500);
+  }
+}
 
 interface ResponsiveLayoutProps {
   children?: React.ReactNode;
@@ -41,7 +55,7 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
   const { voxCpu, voxRam, isReady } = useVoxFootprint();
   const { openProfiler } = useProfilerDrawer();
   const { openActiveDrawer, closeActiveDrawer } = usePageDrawer();
-  const { isPanelOpen, closePanel, openPanel, togglePanel } = usePanelStateContext();
+  const { isPanelOpen, closePanel, openPanel, togglePanel, leftPanel, rightPanel } = usePanelStateContext();
   const historyDisplayMode = useHistoryFilterStore((s) => s.displayMode);
   const interactionState = useSessionStore((s) => s.interactionState);
 
@@ -61,6 +75,18 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
   const sessionsOpen = isPanelOpen("sessions");
   const isRightPanelOpen = isHelpOpen || isPanelOpen("notifications");
 
+  // Track window width for dynamic collision threshold
+  const [windowWidth, setWindowWidth] = useState(
+    typeof window !== "undefined" ? window.innerWidth : 1200
+  );
+
+  // Opposite trigger collision threshold:
+  // Panel width is 340px; opposite corner cluster is ~80px + 20px padding (100px).
+  // Below 480px, there is insufficient gap (< 40px) between an open panel and opposite triggers.
+  const isOppositeCollision = windowWidth < 480;
+  const hideRightCluster = Boolean(leftPanel) && isOppositeCollision;
+  const hideLeftCluster = Boolean(rightPanel) && isOppositeCollision;
+
   // Ref to track compact state across renders during window resize
   const wasCompactRef = useRef(window.innerWidth < 1024);
   const pathnameRef = useRef(location.pathname);
@@ -75,6 +101,9 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
   useEffect(() => {
     document.title = PAGE_TITLES[location.pathname] ?? "Vox";
     window.scrollTo(0, 0);
+    import("@/services/historyService").then(({ getTurnsCacheSize }) => {
+      console.info(`[route-nav] -> ${location.pathname} turnsCache=${getTurnsCacheSize()}`);
+    }).catch(() => {});
   }, [location.pathname]);
 
   // Bidirectional viewport transition: compact (EdgeNav route) ↔ full-max (corner popover)
@@ -84,6 +113,7 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
       if (rAfId !== null) return;
       rAfId = requestAnimationFrame(() => {
         rAfId = null;
+        setWindowWidth(window.innerWidth);
         const isCompact = window.innerWidth < 1024;
         if (wasCompactRef.current && !isCompact) {
           // Compact → Full-max: switch from route page to popover
@@ -375,7 +405,14 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
 
         {/* ── Session toggle (top-left) — Home only; z-[60] (EdgePanel slides on top at z-[70]) ── */}
         {isHome && (
-          <div className="absolute top-4 left-5 z-[60] pointer-events-none flex items-center gap-2.5">
+          <div
+            className={cn(
+              "absolute top-4 left-5 z-[60] flex items-center gap-2.5 transition-opacity duration-200",
+              hideLeftCluster
+                ? "opacity-0 pointer-events-none invisible"
+                : "pointer-events-none"
+            )}
+          >
             <Tooltip label={SESSION_COPY.railTitle} side="bottom">
               <button
                 onClick={() => togglePanel("sessions")}
@@ -393,6 +430,8 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
               </button>
             </Tooltip>
 
+            <ThemeToggleButton />
+
             {/* Active Session & Project Header Breadcrumb (shown on Home when panel is closed) */}
             <ActiveSessionHeader
               panelOpen={sessionsOpen}
@@ -404,20 +443,15 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
 
         {/* ── Help + Notifications cluster (top-right) — hidden on /monitoring; z-[60] (EdgePanel slides on top at z-[70]) ── */}
         {!isMonitoring && (
-          <div className="absolute top-0 right-0 z-[60] pointer-events-none">
-            {/* Feathering haze: dissolves panel content around trigger buttons with zero GPU blur overhead */}
-            <div
-              aria-hidden="true"
-              className="absolute top-0 right-0 w-44 h-28 pointer-events-none"
-              style={{
-                background:
-                  "radial-gradient(ellipse 100% 90% at 100% 0%, rgb(var(--card)) 20%, rgba(var(--card), 0.75) 50%, transparent 80%)",
-              }}
-            />
-            {/* Buttons sit above the haze */}
-            <div className="relative pt-4 pr-5 pointer-events-auto">
-              <TopRightCluster />
-            </div>
+          <div
+            className={cn(
+              "absolute top-4 right-5 z-[60] transition-opacity duration-200",
+              hideRightCluster
+                ? "opacity-0 pointer-events-none invisible"
+                : "opacity-100 pointer-events-auto"
+            )}
+          >
+            <TopRightCluster />
           </div>
         )}
 
@@ -431,9 +465,10 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
             {/* Monitor toggle button */}
             <button
               ref={monitorBtnRef}
+              data-flip-trace="monitor-btn"
               onClick={() => setMonitorOpen((v) => !v)}
               className={cn(
-                "relative flex items-center justify-center w-11 h-11 rounded-full border transition-all duration-300 hover:scale-105 cursor-pointer glass-card",
+        "relative flex items-center justify-center w-11 h-11 rounded-full border transition-all hover:scale-105 cursor-pointer glass-card glass-keep-blur",
                 monitorOpen
                   ? "bg-[rgb(var(--accent))]/20 text-[rgb(var(--accent))] border-[rgb(var(--accent))]/60"
                   : "bg-transparent border-[rgb(var(--accent))]/25 text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/10"

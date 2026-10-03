@@ -4,6 +4,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { cn } from "@/shared/lib/utils";
 import { useOverlay } from "@/shared/hooks/useOverlay";
 import { Tooltip } from "@/shared/ui/Tooltip";
+import { BottomDockFeather } from "@/shared/ui/BottomDockFeather";
 import { LAYOUT_COPY } from "@/data/layoutCopy";
 
 export interface EdgePanelProps {
@@ -101,33 +102,45 @@ const EdgePanelInner = memo(
 
     const isLeft = side === "left";
 
-    // Vertical mask (top & bottom soft fade) — single-pass hardware-accelerated without composite intersection
+    // Subtle top & bottom edge mask so items fade gently right at panel boundaries (increased by 60%)
     const maskStyles: React.CSSProperties = {
       WebkitMaskImage:
-        "linear-gradient(to bottom, transparent 0px, black 16px, black calc(100% - 32px), transparent 100%)",
+        "linear-gradient(to bottom, transparent 0px, black 14px, black calc(100% - 160px), transparent 100%)",
       maskImage:
-        "linear-gradient(to bottom, transparent 0px, black 16px, black calc(100% - 32px), transparent 100%)",
+        "linear-gradient(to bottom, transparent 0px, black 14px, black calc(100% - 160px), transparent 100%)",
     };
 
     return (
       <AnimatePresence>
         {open && (
-          <motion.aside
-            ref={panelRef}
-            role="dialog"
-            aria-label={title || LAYOUT_COPY.panel.fallback}
-            data-edge-panel={side}
-            initial={{ opacity: 0, x: isLeft ? "-100%" : "100%" }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: isLeft ? "-100%" : "100%" }}
-            transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
-            className={cn(
-              "absolute top-0 bottom-0 z-[70] flex flex-col bg-[rgb(var(--card))]/90 backdrop-blur-md overflow-hidden pointer-events-auto select-auto border-[rgba(var(--border),0.06)] transform-gpu will-change-transform",
-              isLeft ? "left-0 border-r" : "right-0 border-l",
-              "w-[340px] max-w-[92vw]",
-              className
-            )}
-          >
+          <>
+            {/* Backdrop dimming for small / compact layouts (< 1024px) where monitoring shifts to EdgeNav */}
+            <motion.div
+              key={`edge-backdrop-${side}`}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              onClick={onClose}
+              className="lg:hidden fixed inset-0 z-[34] bg-black/50 backdrop-blur-[2px] pointer-events-auto"
+              aria-hidden="true"
+            />
+            <motion.aside
+              ref={panelRef}
+              role="dialog"
+              aria-label={title || LAYOUT_COPY.panel.fallback}
+              data-edge-panel={side}
+              initial={{ opacity: 0, x: isLeft ? "-100%" : "100%" }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: isLeft ? "-100%" : "100%" }}
+              transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+              className={cn(
+                "absolute top-0 bottom-0 z-[35] flex flex-col bg-[rgb(var(--card))]/90 backdrop-blur-md overflow-hidden pointer-events-auto select-auto border-[rgba(var(--border),0.06)] transform-gpu will-change-transform",
+                isLeft ? "left-0 border-r" : "right-0 border-l",
+                "w-[340px] max-w-[92vw]",
+                className
+              )}
+            >
             {/* Header: Minimal anchor row or classic titled bar */}
             {minimalHeader ? (
               /* When panel is LEFT: close button on the RIGHT so it doesn't collide with the trigger.
@@ -169,13 +182,18 @@ const EdgePanelInner = memo(
               </div>
             )}
 
-            {/* Content Body — extends down smoothly with vertical fade mask for scrolling contents */}
-            <div className="flex-1 min-h-0 flex flex-col overflow-hidden" style={maskStyles}>
-              {children}
+            {/* Content Body — strictly self-contained with internal scroll dissolve */}
+            <div className="flex-1 min-h-0 flex flex-col overflow-hidden relative">
+              <div className="flex-1 min-h-0 flex flex-col overflow-hidden" style={maskStyles}>
+                {children}
+              </div>
+              {/* Internal bottom dissolve strictly bounded to panel (increased by 60% from 64px to 102px) */}
+              <BottomDockFeather className="absolute bottom-0 left-0 right-0 h-[102px] pointer-events-none z-10" />
             </div>
           </motion.aside>
-        )}
-      </AnimatePresence>
+        </>
+      )}
+    </AnimatePresence>
     );
   }
 );

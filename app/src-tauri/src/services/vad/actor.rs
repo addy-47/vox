@@ -154,8 +154,6 @@ impl VadActorState {
         let speech_end_frames = (silence_duration_ms as usize / 16).max(1);
         let speech_start_frames = (speech_onset_ms as usize / 16).max(1);
 
-
-
         Self {
             threshold,
             noise_gate,
@@ -581,7 +579,7 @@ mod tests {
         assert_eq!(sliced.last().copied(), Some(899.0));
 
         s.window_first_speech_sample = 10;
-        s.window_last_speech_sample = 200; 
+        s.window_last_speech_sample = 200;
         let fallback = trim_window(&s, raw_len);
         assert_eq!(
             fallback.len(),

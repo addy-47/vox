@@ -57,6 +57,7 @@ DomainContent.displayName = "DomainContent";
 
 import { RadialNode, HubConnectors } from "@/shared/components/settings/RadialHub";
 import { Tooltip } from "@/shared/ui/Tooltip";
+import { BottomDockFeather } from "@/shared/ui/BottomDockFeather";
 import {
   HubCenter,
   SettingsConnectorsOverlay,
@@ -64,10 +65,16 @@ import {
 
 import { SettingsCardWrapper } from "@/shared/components/settings/SettingsCardWrapper";
 import { useSettingsPage } from "@/shared/hooks/useSettingsPage";
+import { useMemoryTrace } from "@/shared/hooks/useMemoryTrace";
 
 export const Settings: React.FC = () => {
+  useMemoryTrace("Settings");
   const draftSettings = useSettingsStore((s) => s.draftSettings);
+  useEffect(() => {
+    console.info(`[theme-flip] draftSettings React commit @${performance.now().toFixed(1)}ms`);
+  }, [draftSettings]);
   const commitChanges = useSettingsStore((s) => s.commitChanges);
+  // (theme-flip React commit trace; remove once the flip is smooth)
   const discardChanges = useSettingsStore((s) => s.discardChanges);
   const hasChanges = useSettingsStore((s) => s.hasChanges);
   const autoSavedDomain = useSettingsStore((s) => s.autoSavedDomain);
@@ -368,17 +375,21 @@ export const Settings: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex-1 w-full overflow-y-auto custom-scrollbar pb-[95px] space-y-5 sm:space-y-6 animate-fade-in pr-0.5">
-            {[...DOMAINS].sort((a, b) => {
-              const order = ["interaction", "models", "appearance", "working_memory", "personal_memory", "persona"];
-              return order.indexOf(a.id) - order.indexOf(b.id);
-            }).map((domain) => (
-              <div key={domain.id} className="w-full glass-card rounded-2xl p-4 sm:p-5">
-                <ErrorBoundary name={`SettingsMobile:${domain.id}`}>
-                  <DomainContent domain={domain.id} layoutMode="small" />
-                </ErrorBoundary>
-              </div>
-            ))}
+          <div className="flex-1 w-full relative overflow-hidden flex flex-col min-h-0">
+            <div className="flex-1 w-full overflow-y-auto custom-scrollbar pb-[95px] space-y-5 sm:space-y-6 animate-fade-in pr-0.5">
+              {[...DOMAINS].sort((a, b) => {
+                const order = ["interaction", "models", "appearance", "working_memory", "personal_memory", "persona"];
+                return order.indexOf(a.id) - order.indexOf(b.id);
+              }).map((domain) => (
+                <div key={domain.id} className="w-full glass-card rounded-2xl p-4 sm:p-5">
+                  <ErrorBoundary name={`SettingsMobile:${domain.id}`}>
+                    <DomainContent domain={domain.id} layoutMode="small" />
+                  </ErrorBoundary>
+                </div>
+              ))}
+            </div>
+            {/* Selective bottom dissolve for small-screen settings card list */}
+            <BottomDockFeather className="absolute bottom-0 left-0 right-0 h-[80px] pointer-events-none z-10" />
           </div>
         </div>
       )}

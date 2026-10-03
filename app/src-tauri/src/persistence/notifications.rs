@@ -173,7 +173,8 @@ async fn update_notifications_status(
                 "UPDATE notifications SET status = ?, updated_at = ? WHERE group_key = ? AND {}",
                 status_filter_clause
             );
-            conn.execute(&sql, (target_status.to_string(), now, group_key.clone())).await?;
+            conn.execute(&sql, (target_status.to_string(), now, group_key.clone()))
+                .await?;
             return Ok(());
         }
         if let Some(ref category) = f.category {
@@ -181,7 +182,8 @@ async fn update_notifications_status(
                 "UPDATE notifications SET status = ?, updated_at = ? WHERE category = ? AND {}",
                 status_filter_clause
             );
-            conn.execute(&sql, (target_status.to_string(), now, category.clone())).await?;
+            conn.execute(&sql, (target_status.to_string(), now, category.clone()))
+                .await?;
             return Ok(());
         }
         if let Some(ref action_type) = f.action_type {
@@ -189,7 +191,8 @@ async fn update_notifications_status(
                 "UPDATE notifications SET status = ?, updated_at = ? WHERE action_type = ? AND {}",
                 status_filter_clause
             );
-            conn.execute(&sql, (target_status.to_string(), now, action_type.clone())).await?;
+            conn.execute(&sql, (target_status.to_string(), now, action_type.clone()))
+                .await?;
             return Ok(());
         }
     }
@@ -217,7 +220,6 @@ pub async fn dismiss_notifications(
 ) -> Result<()> {
     update_notifications_status(conn, "dismissed", "status != 'dismissed'", filter).await
 }
-
 
 /// Marks active interactive task cards for an entity-scoped group key as dismissed.
 pub async fn dismiss_interactive_by_entity(conn: &Connection, group_key: &str) -> Result<()> {

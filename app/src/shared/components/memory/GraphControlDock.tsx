@@ -28,7 +28,7 @@ export const GraphControlDock = memo(
     return (
       <aside
         aria-label="Graph Navigation Controls"
-        className="fixed right-2 sm:right-5 top-1/2 -translate-y-1/2 z-30 flex flex-col items-center gap-1 sm:gap-1.5 p-1 sm:p-1.5 rounded-xl sm:rounded-2xl bg-[rgba(var(--card),0.75)] backdrop-blur-2xl border border-[rgba(var(--border),0.14)] shadow-2xl pointer-events-auto transition-all"
+        className="fixed right-2 sm:right-5 top-1/2 -translate-y-1/2 z-30 flex flex-col items-center gap-1 sm:gap-1.5 p-1 sm:p-1.5 rounded-xl sm:rounded-2xl bg-[rgba(var(--card),0.75)] backdrop-blur-2xl border border-[rgba(var(--border),0.14)] shadow-2xl pointer-events-auto transition-colors"
       >
         {/* Recenter View */}
         <Tooltip label={MEMORY_COPY.recenterView} shortcutId="memory.recenter" side="left">

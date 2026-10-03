@@ -18,6 +18,10 @@ if (isTray) {
   import("./tray/TrayApp").catch(() => {});
 }
 
+document.addEventListener("visibilitychange", () => {
+  document.body.classList.toggle("is-paused", document.hidden);
+});
+
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
     <ErrorBoundary name="Root">

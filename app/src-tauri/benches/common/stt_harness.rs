@@ -360,8 +360,14 @@ pub fn benchmark_streaming_provider(
         overall_throughput,
         if avg_rtf > 0.0 { 1.0 / avg_rtf } else { 0.0 }
     );
-    println!("Average Raw Similarity (Verbatim): {:.1}%", avg_raw_sim * 100.0);
-    println!("Average Normalized Similarity (ASR): {:.1}%", avg_sim * 100.0);
+    println!(
+        "Average Raw Similarity (Verbatim): {:.1}%",
+        avg_raw_sim * 100.0
+    );
+    println!(
+        "Average Normalized Similarity (ASR): {:.1}%",
+        avg_sim * 100.0
+    );
     println!("Active Working Set Memory : ~{} MB RSS", mem_after_init);
 
     EngineBenchmarkRun {

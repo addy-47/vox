@@ -20,7 +20,7 @@ import {
 import { usePersonalMemoryDrawer } from "@/shared/hooks/usePersonalMemoryDrawer";
 import { ErrorBoundary, OrbitalLoader } from "@/shared/components/common";
 import { Drawer } from "@/shared/ui/Drawer";
-import { EdgePanel, Tooltip, BottomDockFeather } from "@/shared/ui";
+import { EdgePanel, Tooltip, BottomDockFeather, ThemeToggleButton } from "@/shared/ui";
 import { usePanelStateContext } from "@/shared/hooks/usePanelState";
 import { MEMORY_COPY } from "@/data/memoryCopy";
 import { cn } from "@/shared/lib/utils";
@@ -83,7 +83,7 @@ export const Memory: React.FC = memo(() => {
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [selectedFact, setSelectedFact] = useState<ObservationRecord | null>(null);
   const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null);
-  const { isPanelOpen, closePanel, togglePanel } = usePanelStateContext();
+  const { isPanelOpen, closePanel, togglePanel, rightPanel } = usePanelStateContext();
   const sessionRailOpen = isPanelOpen("sessions");
   const isRightPanelOpen = isPanelOpen("help") || isPanelOpen("notifications");
   const setSessionRailOpen = (v: boolean) => {
@@ -91,6 +91,10 @@ export const Memory: React.FC = memo(() => {
   };
   const [selectModeEnabled, setSelectModeEnabled] = useState(false);
   const [isLightMode, setIsLightMode] = useState(false);
+
+  // Dynamic collision threshold between right panel and left triggers
+  const isNarrowCollision = dims.w > 0 ? dims.w < 480 : (typeof window !== "undefined" ? window.innerWidth < 480 : false);
+  const hideLeftCluster = Boolean(rightPanel) && isNarrowCollision;
 
   useEffect(() => {
     const checkTheme = () => {
@@ -304,37 +308,51 @@ export const Memory: React.FC = memo(() => {
           app-wide instance (standardised origin); a second frozen copy used to
           mount here, doubling overdraw with a competing ripple centre. */}
 
-      {/* ── Top Bar Search: Dynamic width with generous gap to triggers on both sides ── */}
-      <div className="absolute top-4 left-24 right-32 z-30 pointer-events-auto flex justify-center">
-        <SearchBar
-          facts={facts}
-          isLightMode={isLightMode}
-          onCommitSearch={setSearchQuery}
-          onSelectNode={handleSelectSearchNode}
-          dropdownPlacement="bottom"
-          className="w-full max-w-[280px]"
-        />
-      </div>
+      {/* ── Top Header Bar: Unified flex container with relative balance and guaranteed gap ── */}
+      <header className="absolute top-0 left-0 right-0 h-16 px-4 sm:px-5 flex items-center justify-between z-40 pointer-events-none">
+        {/* Left: Session Rail Trigger & Theme Toggle */}
+        <div
+          className={cn(
+            "flex items-center gap-2.5 shrink-0 z-[60] transition-opacity duration-200",
+            hideLeftCluster
+              ? "opacity-0 pointer-events-none invisible"
+              : "pointer-events-auto"
+          )}
+        >
+          <Tooltip label="Session history" side="bottom">
+            <button
+              onClick={() => togglePanel("sessions")}
+              aria-label="Open session rail"
+              aria-expanded={sessionRailOpen}
+              data-edge-trigger="left"
+              className={cn(
+                "inline-flex items-center justify-center w-8 h-8 rounded-xl border transition-all cursor-pointer shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))]",
+                sessionRailOpen
+                  ? "border-[rgba(var(--accent),0.5)] bg-[rgba(var(--accent),0.12)] text-[rgb(var(--accent))] shadow-[0_0_12px_rgba(var(--accent),0.2)]"
+                  : "border-[rgba(var(--border),0.15)] bg-[rgba(var(--card),0.5)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:border-[rgba(var(--accent),0.3)] hover:bg-[rgba(var(--accent),0.06)]"
+              )}
+            >
+              <PanelLeft size={14} strokeWidth={1.75} />
+            </button>
+          </Tooltip>
+          <ThemeToggleButton />
+        </div>
 
-      {/* ── Top Left: Session Rail Trigger — mirrors Home trigger, self-contained in Memory ── */}
-      <div className="absolute top-4 left-5 z-[60] pointer-events-auto">
-        <Tooltip label="Session history" side="bottom">
-          <button
-            onClick={() => togglePanel("sessions")}
-            aria-label="Open session rail"
-            aria-expanded={sessionRailOpen}
-            data-edge-trigger="left"
-            className={cn(
-              "inline-flex items-center justify-center w-8 h-8 rounded-xl border transition-all cursor-pointer shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))]",
-              sessionRailOpen
-                ? "border-[rgba(var(--accent),0.5)] bg-[rgba(var(--accent),0.12)] text-[rgb(var(--accent))] shadow-[0_0_12px_rgba(var(--accent),0.2)]"
-                : "border-[rgba(var(--border),0.15)] bg-[rgba(var(--card),0.5)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:border-[rgba(var(--accent),0.3)] hover:bg-[rgba(var(--accent),0.06)]"
-            )}
-          >
-            <PanelLeft size={14} strokeWidth={1.75} />
-          </button>
-        </Tooltip>
-      </div>
+        {/* Center: Search Bar (Responsive width, strictly centered between corner clusters with safety gap) */}
+        <div className="flex-1 flex justify-center px-3 sm:px-6 min-w-0 pointer-events-auto">
+          <SearchBar
+            facts={facts}
+            isLightMode={isLightMode}
+            onCommitSearch={setSearchQuery}
+            onSelectNode={handleSelectSearchNode}
+            dropdownPlacement="bottom"
+            className="w-full max-w-[280px]"
+          />
+        </div>
+
+        {/* Right Spacer: Symmetrically mirrors TopRightCluster width so center stays dead-center */}
+        <div className="w-[76px] shrink-0 pointer-events-none" aria-hidden="true" />
+      </header>
 
 
 

@@ -30,12 +30,12 @@ const ShimmerComponent: React.FC<TextShimmerProps> = ({
       initial={{ backgroundPosition: "100% center" }}
       transition={{
         duration,
-        ease: "linear",
+        ease: "easeInOut",
         repeat: Number.POSITIVE_INFINITY,
       }}
       className={cn(
-        "relative inline-block bg-[length:250%_100%,auto] bg-clip-text text-transparent select-none",
-        "[--bg:linear-gradient(90deg,transparent_calc(50%-var(--spread)),rgba(255,255,255,0.95)_50%,transparent_calc(50%+var(--spread)))]",
+        "relative inline-block bg-[length:200%_100%,auto] bg-clip-text text-transparent select-none",
+        "[--bg:linear-gradient(90deg,transparent_calc(50%-var(--spread)),white_50%,transparent_calc(50%+var(--spread)))]",
         className
       )}
       style={

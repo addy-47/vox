@@ -189,7 +189,10 @@ fn load_benchmark_prompts(args: &CliArgs) -> Vec<TtsBenchmarkPrompt> {
     // Priority: --text-file > --text > --clip > canonical all
     if let Some(ref text_file) = args.text_file {
         let raw = std::fs::read_to_string(text_file).unwrap_or_else(|e| {
-            panic!("[TTS Bench] Failed to read --text-file {:?}: {}", text_file, e)
+            panic!(
+                "[TTS Bench] Failed to read --text-file {:?}: {}",
+                text_file, e
+            )
         });
         let lines: Vec<String> = raw
             .lines()

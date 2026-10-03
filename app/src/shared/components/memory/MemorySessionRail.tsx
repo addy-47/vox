@@ -1,13 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, memo } from "react";
 import {
-  Search,
-  X,
   ArrowLeft,
-  ChevronDown,
-  GitBranch,
-  Layers,
   Sparkles,
-  MessageSquare,
 } from "lucide-react";
 import {
   getSessions,
@@ -17,13 +11,8 @@ import {
   type SessionRow,
 } from "@/services/historyService";
 import { ObservationRecord } from "@/services/memoryService";
-import { MEMORY_COPY } from "@/data/memoryCopy";
 import { cn } from "@/shared/lib/utils";
-import {
-  getActiveDynamicPalette,
-  getCollectionIcon,
-  toMemoryCategory,
-} from "./memoryGraphTypes";
+import { toMemoryCategory } from "./memoryGraphTypes";
 
 interface MemorySessionRailProps {
   facts: ObservationRecord[];
@@ -41,24 +30,18 @@ export const MemorySessionRail = memo<MemorySessionRailProps>(({
   selectedFactId,
   onSelectSession,
   onSelectFact,
-  isLightMode = false,
 }) => {
   const [sessions, setSessions] = useState<SessionRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filterQuery, setFilterQuery] = useState("");
   const [activeDrillSession, setActiveDrillSession] = useState<SessionRow | null>(null);
-  const [expandedCompactions, setExpandedCompactions] = useState<Set<number>>(new Set());
 
-  const palette = useMemo(() => getActiveDynamicPalette(isLightMode), [isLightMode]);
-
-  // Load sessions once
+  // Load sessions
   useEffect(() => {
     let isMounted = true;
     getSessions()
       .then((data) => {
         if (isMounted) {
-          const sorted = sortSessionsNewestFirst(data);
-          setSessions(sorted);
+          setSessions(sortSessionsNewestFirst(data));
         }
       })
       .catch((err) => {
@@ -73,18 +56,20 @@ export const MemorySessionRail = memo<MemorySessionRailProps>(({
     };
   }, []);
 
-  // Map session ID to facts count
-  const sessionFactCounts = useMemo(() => {
-    const map = new Map<number, number>();
+  // Map session ID to facts
+  const sessionFactsMap = useMemo(() => {
+    const map = new Map<number, ObservationRecord[]>();
     for (const f of facts) {
       if (f.session_id !== null) {
-        map.set(f.session_id, (map.get(f.session_id) || 0) + 1);
+        const list = map.get(f.session_id) || [];
+        list.push(f);
+        map.set(f.session_id, list);
       }
     }
     return map;
   }, [facts]);
 
-  // Sync active drill session when selectedSessionId changes from external source
+  // Sync active drill session when selectedSessionId changes externally
   useEffect(() => {
     if (selectedSessionId && sessions.length > 0) {
       const match = sessions.find((s) => String(s.id) === selectedSessionId);
@@ -94,38 +79,10 @@ export const MemorySessionRail = memo<MemorySessionRailProps>(({
     }
   }, [selectedSessionId, sessions, activeDrillSession]);
 
-  // Filtered session list
-  const filteredSessions = useMemo(() => {
-    const q = filterQuery.trim().toLowerCase();
-    if (!q) return sessions;
-    return sessions.filter((s) => {
-      const title = resolveSessionTitle(s).toLowerCase();
-      const idMatch = String(s.id).includes(q);
-      return title.includes(q) || idMatch;
-    });
-  }, [sessions, filterQuery]);
-
-  // Compaction groups for active drilled session
-  const compactionGroups = useMemo(() => {
+  const activeDrillFacts = useMemo(() => {
     if (!activeDrillSession) return [];
-    const sessionFacts = facts.filter((f) => f.session_id === activeDrillSession.id);
-    const groupsMap = new Map<number, ObservationRecord[]>();
-    for (const f of sessionFacts) {
-      const list = groupsMap.get(f.compaction_id) || [];
-      list.push(f);
-      groupsMap.set(f.compaction_id, list);
-    }
-    return Array.from(groupsMap.entries())
-      .map(([cId, fList]) => ({ compactionId: cId, facts: fList }))
-      .sort((a, b) => b.compactionId - a.compactionId);
-  }, [activeDrillSession, facts]);
-
-  // Expand latest compaction by default when entering drill view
-  useEffect(() => {
-    if (activeDrillSession && compactionGroups.length > 0) {
-      setExpandedCompactions(new Set([compactionGroups[0].compactionId]));
-    }
-  }, [activeDrillSession, compactionGroups]);
+    return sessionFactsMap.get(activeDrillSession.id) || [];
+  }, [activeDrillSession, sessionFactsMap]);
 
   const handleSelectSessionCard = useCallback(
     (session: SessionRow) => {
@@ -141,262 +98,136 @@ export const MemorySessionRail = memo<MemorySessionRailProps>(({
     onSelectSession(null);
   }, [onSelectSession]);
 
-  const toggleCompaction = useCallback((cId: number) => {
-    setExpandedCompactions((prev) => {
-      const next = new Set(prev);
-      if (next.has(cId)) {
-        next.delete(cId);
-      } else {
-        next.add(cId);
-      }
-      return next;
-    });
-  }, []);
-
   return (
     <div className="flex flex-col h-full w-full bg-transparent overflow-hidden select-none font-sans">
-      {/* ── View 1: Level 2 Compactions Drill-Down ── */}
+      {/* ── View 1: Drilled Session Memory Details ── */}
       {activeDrillSession ? (
         <div className="flex flex-col h-full overflow-hidden">
-          {/* Top Drill Bar — matches SessionPanel section header language */}
-          <div className="px-3 py-2.5 shrink-0 border-b border-[rgba(var(--border),0.08)] bg-[rgba(var(--background),0.2)] flex flex-col gap-2">
-            <div className="flex items-center justify-between">
-              <button
-                type="button"
-                onClick={handleBackToSessions}
-                className="flex items-center gap-1.5 text-[11px] font-mono text-[rgb(var(--accent))] hover:text-[rgb(var(--foreground))] transition-colors cursor-pointer"
-              >
-                <ArrowLeft size={13} />
-                <span>{MEMORY_COPY.backToSessions}</span>
-              </button>
-
-              <span className="text-[10px] font-mono text-[rgb(var(--foreground-muted))]/70">
-                #{activeDrillSession.id}
-              </span>
-            </div>
+          {/* Minimal Header */}
+          <div className="px-4 pt-3 pb-2.5 shrink-0 border-b border-[rgba(var(--border),0.08)] flex flex-col gap-1.5">
+            <button
+              type="button"
+              onClick={handleBackToSessions}
+              className="flex items-center gap-1.5 text-[11px] font-mono text-[rgb(var(--accent))] hover:underline cursor-pointer w-fit"
+            >
+              <ArrowLeft size={12} />
+              <span>Back to sessions</span>
+            </button>
 
             <div className="flex flex-col">
-              <h3 className="text-[13px] font-semibold text-[rgb(var(--foreground))] truncate">
+              <h3 className="text-[13px] font-medium text-[rgb(var(--foreground))] truncate">
                 {resolveSessionTitle(activeDrillSession)}
               </h3>
-              <div className="flex items-center gap-2 mt-1 text-[10px] font-mono text-[rgb(var(--foreground-muted))]">
-                <span>{formatSessionRecency(activeDrillSession.updated_at)}</span>
-                <span>•</span>
-                <span>{activeDrillSession.turn_count} {MEMORY_COPY.turnsLabel.toLowerCase()}</span>
-                <span>•</span>
-                <span>{sessionFactCounts.get(activeDrillSession.id) ?? 0} {MEMORY_COPY.factsLabel.toLowerCase()}</span>
-              </div>
+              <p className="text-[10px] font-mono text-[rgb(var(--foreground-muted))] mt-0.5">
+                {formatSessionRecency(activeDrillSession.updated_at)} · {activeDrillSession.turn_count} turns · {activeDrillFacts.length} memories
+              </p>
             </div>
           </div>
 
-          {/* Compaction Accordions List */}
-          <div className="flex-1 overflow-y-auto custom-scrollbar p-3 pb-16 space-y-2.5 scrollbar-thin scrollbar-thumb-[rgba(var(--foreground),0.15)] scrollbar-track-transparent">
-            {compactionGroups.length === 0 ? (
+          {/* Facts List — Zero pill containers, clean flat cards */}
+          <div className="flex-1 overflow-y-auto custom-scrollbar px-3 py-2 pb-28 space-y-2 scrollbar-thin scrollbar-thumb-[rgba(var(--foreground),0.15)] scrollbar-track-transparent">
+            {activeDrillFacts.length === 0 ? (
               <div className="flex flex-col items-center justify-center p-8 text-center">
-                <Sparkles size={24} className="text-[rgb(var(--foreground-muted))] opacity-40 mb-2" />
-                <p className="text-[12px] font-mono text-[rgb(var(--foreground-muted))]">
-                  {MEMORY_COPY.noCompactions}
+                <Sparkles size={18} className="text-[rgb(var(--foreground-muted))] opacity-40 mb-2" />
+                <p className="text-[11.5px] font-mono text-[rgb(var(--foreground))]">
+                  No memories recorded
+                </p>
+                <p className="text-[10.5px] text-[rgb(var(--foreground-muted))] mt-0.5">
+                  This session did not produce permanent graph observations.
                 </p>
               </div>
             ) : (
-              compactionGroups.map((group) => {
-                const isExpanded = expandedCompactions.has(group.compactionId);
+              activeDrillFacts.map((fact) => {
+                const isFactSelected = selectedFactId === fact.id;
+                const kind = toMemoryCategory(fact.fact_type) || "objective";
+
                 return (
-                  <div
-                    key={group.compactionId}
-                    className="rounded-xl border border-[rgba(var(--border),0.12)] bg-[rgba(var(--card),0.55)] backdrop-blur-md overflow-hidden transition-all"
-                  >
-                    {/* Accordion Header */}
-                    <button
-                      type="button"
-                      onClick={() => toggleCompaction(group.compactionId)}
-                      className="w-full flex items-center justify-between px-3.5 py-2.5 hover:bg-[rgba(var(--foreground),0.04)] transition-colors cursor-pointer text-left"
-                    >
-                      <div className="flex items-center gap-2">
-                        <div className="p-1 rounded-md bg-[rgba(var(--accent),0.12)] text-[rgb(var(--accent))]">
-                          <Layers size={13} />
-                        </div>
-                        <span className="text-[11px] font-mono font-bold text-[rgb(var(--foreground))]">
-                          {MEMORY_COPY.compactionLabel} #{group.compactionId}
-                        </span>
-                      </div>
-
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] font-mono text-[rgb(var(--foreground-muted))]/70">
-                          {group.facts.length} {MEMORY_COPY.factsLabel.toLowerCase()}
-                        </span>
-                        <ChevronDown
-                          size={13}
-                          className={cn(
-                            "text-[rgb(var(--foreground-muted))] transition-transform duration-200",
-                            isExpanded && "rotate-180"
-                          )}
-                        />
-                      </div>
-                    </button>
-
-                    {/* Accordion Facts List */}
-                    {isExpanded && (
-                      <div className="p-2 border-t border-[rgba(var(--border),0.08)] bg-[rgba(var(--background),0.25)] space-y-1.5">
-                        {group.facts.map((fact) => {
-                          const isFactSelected = selectedFactId === fact.id;
-                          const kind = toMemoryCategory(fact.fact_type);
-                          const col = (kind !== undefined ? palette[kind] : undefined) ?? palette.objective;
-                          const Icon = getCollectionIcon(fact.fact_type);
-                          const catLabel = (kind !== undefined ? MEMORY_COPY.categories[kind] : undefined) || fact.fact_type;
-
-                          return (
-                            <button
-                              key={fact.id}
-                              type="button"
-                              onClick={() => onSelectFact(fact)}
-                              className={cn(
-                                "group w-full text-left p-2.5 rounded-xl border transition-all cursor-pointer flex flex-col gap-1.5",
-                                isFactSelected
-                                  ? "border-[rgba(var(--accent),0.5)] bg-[rgba(var(--accent),0.12)] shadow-sm"
-                                  : "border-[rgba(var(--border),0.08)] bg-[rgba(var(--card),0.4)] hover:border-[rgba(var(--accent),0.3)] hover:bg-[rgba(var(--card),0.8)]"
-                              )}
-                            >
-                              <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-1.5">
-                                  <span
-                                    className="w-2 h-2 rounded-full shrink-0"
-                                    style={{ background: col.main }}
-                                  />
-                                  <span
-                                    className="text-[10px] font-mono uppercase font-semibold"
-                                    style={{ color: col.main }}
-                                  >
-                                    {catLabel}
-                                  </span>
-                                </div>
-                                <Icon size={12} className="text-[rgb(var(--foreground-muted))] opacity-70 group-hover:text-[rgb(var(--accent))] transition-colors" />
-                              </div>
-
-                              <p className="text-[11px] font-sans text-[rgb(var(--foreground))] line-clamp-3 leading-relaxed m-0">
-                                {fact.text}
-                              </p>
-                            </button>
-                          );
-                        })}
-                      </div>
+                  <button
+                    key={fact.id}
+                    type="button"
+                    onClick={() => onSelectFact(fact)}
+                    className={cn(
+                      "w-full text-left p-3 rounded-lg border transition-colors cursor-pointer flex flex-col gap-1.5",
+                      isFactSelected
+                        ? "border-[rgba(var(--accent),0.4)] bg-[rgba(var(--accent),0.08)]"
+                        : "border-[rgba(var(--border),0.07)] bg-[rgba(var(--card),0.3)] hover:bg-[rgba(var(--card),0.6)] hover:border-[rgba(var(--accent),0.2)]"
                     )}
-                  </div>
+                  >
+                    <span className="text-[9.5px] font-mono uppercase tracking-wider text-[rgb(var(--foreground-muted))] font-medium">
+                      {kind.replace("_", " ")}
+                    </span>
+                    <p className="text-[12px] font-sans text-[rgb(var(--foreground))] line-clamp-3 leading-relaxed m-0">
+                      {fact.text}
+                    </p>
+                  </button>
                 );
               })
             )}
           </div>
         </div>
       ) : (
-        /* ── View 2: Level 1 Sessions List ── */
-        <div className="flex flex-col h-full overflow-hidden">
-          {/* Search Filter Header — underline search input UI */}
-          <div className="px-4 py-2 shrink-0 border-b border-[rgba(var(--border),0.08)] bg-[rgba(var(--background),0.2)]">
-            <div className="flex items-center gap-2 py-1.5 border-b border-[rgba(var(--foreground),0.15)] focus-within:border-[rgba(var(--accent),0.7)] transition-colors">
-              <Search size={13} className="text-[rgb(var(--accent))] opacity-70 shrink-0" />
-              <input
-                type="text"
-                value={filterQuery}
-                onChange={(e) => setFilterQuery(e.target.value)}
-                placeholder={MEMORY_COPY.filterSessionsPlaceholder}
-                className="w-full bg-transparent text-[11.5px] font-mono text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/60 focus:outline-none"
-              />
-              {filterQuery && (
-                <button
-                  type="button"
-                  onClick={() => setFilterQuery("")}
-                  className="p-0.5 rounded text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))] cursor-pointer transition-colors"
-                  aria-label="Clear filter"
-                >
-                  <X size={12} />
-                </button>
-              )}
+        /* ── View 2: Sessions List — Zero heading, zero search pill, clean rows ── */
+        <div className="flex-1 overflow-y-auto custom-scrollbar px-3 pt-3 pb-28 space-y-1 scrollbar-thin scrollbar-thumb-[rgba(var(--foreground),0.15)] scrollbar-track-transparent">
+          {loading ? (
+            <div className="flex items-center justify-center p-8">
+              <span className="text-[11px] font-mono text-[rgb(var(--foreground-muted))] animate-pulse">
+                Loading sessions…
+              </span>
             </div>
-          </div>
+          ) : sessions.length === 0 ? (
+            <div className="flex flex-col items-center justify-center p-8 text-center">
+              <p className="text-[11.5px] font-mono text-[rgb(var(--foreground-muted))]">
+                No sessions available
+              </p>
+            </div>
+          ) : (
+            sessions.map((session) => {
+              const sIdStr = String(session.id);
+              const isSelected = selectedSessionId === sIdStr;
+              const sessionFacts = sessionFactsMap.get(session.id) || [];
+              const factCount = sessionFacts.length;
+              const title = resolveSessionTitle(session);
+              const recency = formatSessionRecency(session.updated_at);
 
-          {/* Sessions List — custom-scrollbar + bottom cushion like SessionPanel */}
-          <div className="flex-1 overflow-y-auto custom-scrollbar p-3 pb-16 space-y-2 scrollbar-thin scrollbar-thumb-[rgba(var(--foreground),0.15)] scrollbar-track-transparent">
-            {loading ? (
-              <div className="flex items-center justify-center p-8">
-                <span className="text-[11px] font-mono text-[rgb(var(--foreground-muted))] animate-pulse">
-                  Loading sessions…
-                </span>
-              </div>
-            ) : filteredSessions.length === 0 ? (
-              <div className="flex flex-col items-center justify-center p-8 text-center">
-                <MessageSquare size={24} className="text-[rgb(var(--foreground-muted))] opacity-40 mb-2" />
-                <p className="text-[12px] font-mono text-[rgb(var(--foreground))] font-semibold">
-                  {MEMORY_COPY.noSessions}
-                </p>
-                <p className="text-[11px] text-[rgb(var(--foreground-muted))] mt-1">
-                  {MEMORY_COPY.noSessionsDesc}
-                </p>
-              </div>
-            ) : (
-              filteredSessions.map((session) => {
-                const sIdStr = String(session.id);
-                const isSelected = selectedSessionId === sIdStr;
-                const factCount = sessionFactCounts.get(session.id) ?? 0;
-                const title = resolveSessionTitle(session);
-                const recency = formatSessionRecency(session.updated_at);
+              return (
+                <button
+                  key={session.id}
+                  type="button"
+                  onClick={() => handleSelectSessionCard(session)}
+                  className={cn(
+                    "w-full text-left px-3 py-2.5 rounded-lg border transition-colors cursor-pointer flex flex-col gap-0.5",
+                    isSelected
+                      ? "border-[rgba(var(--accent),0.4)] bg-[rgba(var(--accent),0.08)]"
+                      : "border-transparent hover:bg-[rgba(var(--foreground),0.04)]"
+                  )}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span
+                      className={cn(
+                        "text-[12.5px] font-medium truncate",
+                        isSelected ? "text-[rgb(var(--accent))]" : "text-[rgb(var(--foreground))]"
+                      )}
+                    >
+                      {title}
+                    </span>
+                    <span className="text-[9.5px] font-mono text-[rgb(var(--foreground-muted))]/70 shrink-0">
+                      {recency}
+                    </span>
+                  </div>
 
-                return (
-                  <button
-                    key={session.id}
-                    type="button"
-                    onClick={() => handleSelectSessionCard(session)}
-                    className={cn(
-                      "group w-full text-left p-3 rounded-xl border transition-all cursor-pointer flex flex-col gap-2",
-                      isSelected
-                        ? "border-[rgba(var(--accent),0.55)] bg-[rgba(var(--accent),0.12)] shadow-md ring-1 ring-[rgba(var(--accent),0.3)]"
-                        : "border-[rgba(var(--border),0.10)] bg-[rgba(var(--card),0.5)] hover:border-[rgba(var(--accent),0.35)] hover:bg-[rgba(var(--card),0.85)]"
+                  <div className="flex items-center gap-2 text-[10px] font-mono text-[rgb(var(--foreground-muted))]">
+                    <span>{session.turn_count} turns</span>
+                    {factCount > 0 && (
+                      <>
+                        <span>·</span>
+                        <span className="text-[rgb(var(--accent))]">{factCount} memories</span>
+                      </>
                     )}
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <div
-                          className={cn(
-                            "p-1.5 rounded-lg transition-colors shrink-0",
-                            isSelected
-                              ? "bg-[rgb(var(--accent))]/20 text-[rgb(var(--accent))]"
-                              : "bg-[rgba(var(--foreground),0.05)] text-[rgb(var(--foreground-muted))] group-hover:text-[rgb(var(--accent))]"
-                          )}
-                        >
-                          <GitBranch size={13} />
-                        </div>
-                        <span
-                          className={cn(
-                            "text-[12.5px] font-semibold truncate transition-colors",
-                            isSelected ? "text-[rgb(var(--accent))]" : "text-[rgb(var(--foreground))] group-hover:text-[rgb(var(--accent))]"
-                          )}
-                        >
-                          {title}
-                        </span>
-                      </div>
-
-                      <span className="text-[10px] font-mono text-[rgb(var(--foreground-muted))]/70 shrink-0 mt-0.5">
-                        {recency}
-                      </span>
-                    </div>
-
-                    {/* Meta Row: Turns + Facts — plain text, no badge chrome */}
-                    <div className="flex items-center justify-between pt-1 border-t border-[rgba(var(--border),0.06)] text-[10px] font-mono text-[rgb(var(--foreground-muted))]/80">
-                      <div className="flex items-center gap-2">
-                        <span>{session.turn_count} {MEMORY_COPY.turnsLabel.toLowerCase()}</span>
-                        {factCount > 0 && (
-                          <span className="text-[rgb(var(--accent))]/80">{factCount} {MEMORY_COPY.factsLabel.toLowerCase()}</span>
-                        )}
-                      </div>
-
-                      <span className="text-[9px] opacity-40">
-                        #{session.id}
-                      </span>
-                    </div>
-                  </button>
-                );
-              })
-            )}
-          </div>
+                  </div>
+                </button>
+              );
+            })
+          )}
         </div>
       )}
     </div>

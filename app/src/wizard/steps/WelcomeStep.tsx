@@ -346,7 +346,7 @@ const FEATURE_CARD_ICON_CLASS = [
 ];
 
 const FeatureCard = ({ icon, title, desc }: { icon: React.ReactNode, title: string, desc: string }) => (
-  <div className="glass px-5 py-5 group transition-all duration-500 hover:bg-[rgba(var(--foreground),0.06)]">
+ <div className="glass px-5 py-5 group transition-all hover:bg-[rgba(var(--foreground),0.06)]">
     <div className="mb-3 w-8 h-8 rounded-lg bg-[rgba(var(--foreground),0.05)] flex items-center justify-center group-hover:bg-[rgba(var(--foreground),0.1)] transition-colors">
       {icon}
     </div>

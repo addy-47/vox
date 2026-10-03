@@ -48,7 +48,7 @@ export const TopRightCluster: React.FC<TopRightClusterProps> = memo(
               aria-pressed={isTemporarySession}
               data-edge-trigger="right"
               className={cn(
-                "inline-flex items-center justify-center w-8 h-8 rounded-xl border transition-all shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))] cursor-pointer",
+                "inline-flex items-center justify-center w-8 h-8 rounded-xl border transition-colors shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))] cursor-pointer",
                 isTemporarySession
                   ? "border-[rgba(var(--accent),0.5)] bg-[rgba(var(--accent),0.12)] text-[rgb(var(--accent))] shadow-[0_0_12px_rgba(var(--accent),0.2)] hover:bg-[rgba(var(--accent),0.18)]"
                   : "border-[rgba(var(--border),0.15)] bg-[rgba(var(--card),0.5)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:border-[rgba(var(--accent),0.3)] hover:bg-[rgba(var(--accent),0.06)]"
@@ -66,7 +66,7 @@ export const TopRightCluster: React.FC<TopRightClusterProps> = memo(
             disabled={isHelpOpen}
             data-edge-trigger="right"
             className={cn(
-              "relative inline-flex items-center justify-center w-8 h-8 rounded-xl border transition-all shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))]",
+              "relative inline-flex items-center justify-center w-8 h-8 rounded-xl border transition-colors shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))]",
               isNotifsOpen
                 ? "border-[rgba(var(--accent),0.5)] bg-[rgba(var(--accent),0.12)] text-[rgb(var(--accent))] shadow-[0_0_12px_rgba(var(--accent),0.2)] cursor-pointer"
                 : isHelpOpen
@@ -90,7 +90,7 @@ export const TopRightCluster: React.FC<TopRightClusterProps> = memo(
             disabled={isNotifsOpen}
             data-edge-trigger="right"
             className={cn(
-              "inline-flex items-center justify-center w-8 h-8 rounded-xl border transition-all shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))]",
+              "inline-flex items-center justify-center w-8 h-8 rounded-xl border transition-colors shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))]",
               isHelpOpen
                 ? "border-[rgba(var(--accent),0.5)] bg-[rgba(var(--accent),0.12)] text-[rgb(var(--accent))] shadow-[0_0_12px_rgba(var(--accent),0.2)] cursor-pointer"
                 : isNotifsOpen

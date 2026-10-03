@@ -104,7 +104,6 @@ pub enum NonTerminalTrigger {
 }
 
 impl NonTerminalTrigger {
-
     pub fn activity(&self) -> ActivityEnvelope {
         match self {
             NonTerminalTrigger::Compaction => ActivityEnvelope {

@@ -80,7 +80,7 @@ export const PipelineFlow = memo(({ active }: { active: boolean }) => {
               className="absolute inset-x-0 h-[2px] rounded-full"
               style={{
                 background:
-                  "linear-gradient(90deg, transparent 0%, rgba(var(--accent-rgb),0.6) 30%, rgba(var(--accent-rgb),0.3) 60%, transparent 100%)",
+                  "linear-gradient(90deg, transparent 0%, rgba(var(--accent),0.6) 30%, rgba(var(--accent),0.3) 60%, transparent 100%)",
                 backgroundSize: "200% 100%",
                 animation: "ribbon-flow 2s linear infinite",
                 filter: "blur(2px)",
@@ -171,7 +171,7 @@ export const PipelineFlow = memo(({ active }: { active: boolean }) => {
               className="absolute inset-x-0 h-[2px] rounded-full"
               style={{
                 background:
-                  "linear-gradient(90deg, transparent 0%, rgba(var(--accent-rgb),0.6) 30%, rgba(var(--accent-rgb),0.3) 60%, transparent 100%)",
+                  "linear-gradient(90deg, transparent 0%, rgba(var(--accent),0.6) 30%, rgba(var(--accent),0.3) 60%, transparent 100%)",
                 backgroundSize: "200% 100%",
                 animation: "ribbon-flow 2s linear infinite",
                 filter: "blur(2px)",

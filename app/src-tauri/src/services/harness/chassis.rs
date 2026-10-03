@@ -20,9 +20,7 @@ use crate::{
             },
             ChatMessage,
         },
-        llm::{
-            actor::LlmCommand, GenerationOptions, ReasoningMode,
-        },
+        llm::{actor::LlmCommand, GenerationOptions, ReasoningMode},
         memory::compaction::CompactionResult,
     },
 };
@@ -245,13 +243,11 @@ impl Harness {
         }
     }
 
-
     pub fn fallback_fifo_shift(&mut self) {
         if let Some(ref budget) = self.budget {
             budget.execute_fifo_shift(&mut self.history);
         }
     }
-
 
     pub fn check_quiet_compaction_eligibility(&self) -> Option<Vec<ChatMessage>> {
         let budget = self.budget.as_ref()?;
@@ -271,7 +267,6 @@ impl Harness {
     pub fn apply_quiet_compaction_summary(&mut self, session_context: &str) {
         self.apply_session_context(session_context, "");
     }
-
 
     pub fn on_turn_completed(
         &mut self,
@@ -322,11 +317,9 @@ impl Harness {
         &self.tool_registry
     }
 
-
     pub fn title_set(&self) -> bool {
         self.title_set
     }
-
 
     pub fn memory_retrieval_enabled(&self) -> bool {
         self.memory_retrieval_enabled

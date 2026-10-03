@@ -6,6 +6,7 @@ import { ErrorBoundary } from "@/shared/components/common";
 import { AnimatePresence, motion } from "framer-motion";
 import type { SettingsDomain as Domain } from "@/data/settingsCopy";
 import { SETTINGS_COPY } from "@/data/settingsCopy";
+import { useMemoryTrace } from "@/shared/hooks/useMemoryTrace";
 
 
 export interface SettingsCardWrapperProps {
@@ -16,6 +17,7 @@ export interface SettingsCardWrapperProps {
 }
 
 export const SettingsCardWrapper = memo(({ domain, isActive, layoutMode, children }: SettingsCardWrapperProps) => {
+  useMemoryTrace(`SettingsCard (${domain.id})`);
   const draftSettings = useSettingsStore((s) => s.draftSettings);
 
   const hasChanges = useSettingsStore(useCallback((s: SettingsState) => Boolean(s.isDomainDirty(domain.id)), [domain.id]));

@@ -30,7 +30,7 @@ export const WorkingMemoryCard = memo(({ layoutMode = "full-max" }: WorkingMemor
         isSmall
           ? "bg-transparent p-0 h-auto"
           : cn(
-              "glass-card p-5 lg:h-[340px] justify-between transition-all duration-300",
+              "glass-card p-5 lg:h-[340px] justify-between",
               isMin ? "lg:w-[360px] xl:w-[420px] 2xl:w-[520px]" : "lg:w-[520px]"
             )
       )}

@@ -22,13 +22,15 @@ export function useSettingsPage() {
     }
     return [];
   });
-  const [windowWidth, setWindowWidth] = useState(
+  const [windowWidth, setWindowWidth] = useState(() =>
     typeof window !== "undefined" ? window.innerWidth : 1280
   );
-  const [windowHeight, setWindowHeight] = useState(
+  const [windowHeight, setWindowHeight] = useState(() =>
     typeof window !== "undefined" ? window.innerHeight : 800
   );
-  const [isCompact, setIsCompact] = useState(false);
+  const [isCompact, setIsCompact] = useState(() =>
+    typeof window !== "undefined" ? window.innerWidth < 1024 : false
+  );
 
   const [lines, setLines] = useState<Record<DomainId, { x1: number; y1: number; x2: number; y2: number } | null>>({
     persona: null,

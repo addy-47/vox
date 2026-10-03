@@ -1,6 +1,7 @@
 import React, { createContext, useEffect, useMemo } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
 import { onSettingsUpdated } from "@/services/eventsService";
+import { getThemeTransitioning } from "@/shared/theme";
 
 export type { VoxSettings, ModelMetadata, VoiceProfile, ModelCatalog } from "@/store/settingsStore";
 import type { VoxSettings, ModelCatalog } from "@/store/settingsStore";
@@ -34,10 +35,10 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     try {
       unlisteners.push(
         onSettingsUpdated(() => {
-          if (!isMounted || useSettingsStore.getState().isCommitting) return;
+          if (!isMounted || useSettingsStore.getState().isCommitting || getThemeTransitioning()) return;
           if (debounceTimer) clearTimeout(debounceTimer);
           debounceTimer = setTimeout(() => {
-            if (!isMounted || useSettingsStore.getState().isCommitting) return;
+            if (!isMounted || useSettingsStore.getState().isCommitting || getThemeTransitioning()) return;
             useSettingsStore.getState().loadSettings();
           }, 80);
         })

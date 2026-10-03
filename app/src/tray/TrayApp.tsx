@@ -359,7 +359,7 @@ export const TrayApp: React.FC = () => {
             animate={visibilityState}
             exit="HIDDEN"
             transition={{ duration: 0.15, ease: "easeOut" }}
-            className="w-[380px] h-[250px] flex flex-col glass-card overflow-hidden rounded-2xl transition-all duration-1000"
+      className="w-[380px] h-[250px] flex flex-col glass-card overflow-hidden rounded-2xl transition-all "
             onMouseEnter={() => setIsHovered(true)}
             onMouseLeave={() => setIsHovered(false)}
             style={{ 

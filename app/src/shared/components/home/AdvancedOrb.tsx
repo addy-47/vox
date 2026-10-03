@@ -12,6 +12,7 @@ interface VoxOrbProps {
   interactionState?: InteractionState;
   isSleeping?: boolean;
   paused?: boolean;
+  onFirstFrame?: () => void;
 }
 
 
@@ -364,8 +365,12 @@ export const VoxOrb = React.memo(({
   interactionState = 'Idle',
   isSleeping = false,
   paused = false,
+  onFirstFrame,
 }: VoxOrbProps) => {
   useMemoryTrace("VoxOrb (Three.js Shader)");
+  const onFirstFrameRef = useRef(onFirstFrame);
+  onFirstFrameRef.current = onFirstFrame;
+  const firstFrameFiredRef = useRef(false);
 
   const mountRef     = useRef<HTMLDivElement>(null);
   const stateRef     = useRef(interactionState);
@@ -662,6 +667,10 @@ export const VoxOrb = React.memo(({
     ctx.group.rotation.x = Math.sin(t * 0.021) * 0.055;
 
     ctx.renderer.render(ctx.scene, ctx.camera);
+    if (!firstFrameFiredRef.current) {
+      firstFrameFiredRef.current = true;
+      onFirstFrameRef.current?.();
+    }
   }, [telemetryRef]);
 
   useDynamicFPS({
