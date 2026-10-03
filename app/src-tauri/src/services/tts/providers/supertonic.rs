@@ -229,7 +229,7 @@ impl TtsProvider for TtsEngine {
             sid,
             num_steps: SUPERTONIC_STEPS,
             speed,
-            silence_scale: 0.1,
+            silence_scale: 0.85,
             extra: Some(extra),
             ..Default::default()
         };

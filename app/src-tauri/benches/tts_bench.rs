@@ -7,9 +7,14 @@
 //! Execution    : cargo test --bench tts_bench --release -- --model supertonic --clip clip_01_en_briefing.wav
 //!                cargo bench --bench tts_bench -- --model all
 //! Metrics      : Synthesis Latency (ms), Audio Duration (s), RTF, Throughput (spl/s), Memory (MB)
-//! Artifacts    : benches/results/tts_bench/<run_id>/report.json + wav/*.wav + latest.json
+//! Artifacts    : benches/results/tts_bench/<run_id>/report.json + wav/[label/]/*.wav + latest.json
 //! Notes        : Uses max quality steps (Supertonic 16, Chatterbox 10, speed 1.0).
 //!                Kokoro uses diff voice per clip (voice = clip_idx % 10). Wavs @ 24 kHz.
+//! ZipVoice sweep flags (bench-only surface):
+//!   --zv-model-dir <dir>   weight precision A/B (zipvoice | zipvoice-fp32 | zipvoice-fp16)
+//!   --zv-pack-dir <dir>    candidate voice pack in sandbox; live pack never mutated
+//!   --text-file <file>     one synthesis text per line ('#' comments skipped)
+//!   --label <tag>          run label; wavs land in wav/<tag>/ and names are prefixed
 //! ============================================================================
 
 mod common;
@@ -56,20 +61,28 @@ struct CliArgs {
     #[arg(long)]
     slug: Option<String>,
 
-    /// ZipVoice-only: flow-matching steps (default 4).
-    #[arg(long, default_value_t = 4)]
+    /// ZipVoice-only: flow-matching steps (defaults to the engine's ZIPVOICE_STEPS).
+    #[arg(long, default_value_t = vox_lib::services::tts::providers::zipvoice::ZIPVOICE_STEPS)]
     zv_steps: i32,
 
-    /// ZipVoice-only: classifier-free guidance scale (default 1.0).
-    #[arg(long, default_value_t = 1.0)]
+    /// ZipVoice-only: classifier-free guidance scale. Defaults to the engine's
+    /// ZIPVOICE_GUIDANCE_SCALE so a "default" bench run measures what production runs.
+    #[arg(
+        long,
+        default_value_t = vox_lib::services::tts::providers::zipvoice::ZIPVOICE_GUIDANCE_SCALE
+    )]
     zv_guidance: f32,
 
     /// ZipVoice-only: prompt mel log scaling factor (default 0.1).
     #[arg(long, default_value_t = 0.1)]
     zv_feat_scale: f32,
 
-    /// ZipVoice-only: decoder timestep shift (default 0.5).
-    #[arg(long, default_value_t = 0.5)]
+    /// ZipVoice-only: decoder timestep shift. Defaults to the engine's
+    /// DEFAULT_ZIPVOICE_T_SHIFT so bench and production cannot diverge.
+    #[arg(
+        long,
+        default_value_t = vox_lib::services::tts::providers::zipvoice::DEFAULT_ZIPVOICE_T_SHIFT
+    )]
     zv_t_shift: f32,
 
     /// ZipVoice-only: prompt RMS normalization target (default 0.1).
@@ -83,6 +96,29 @@ struct CliArgs {
     /// ZipVoice-only: ONNX threads per provider (default 2).
     #[arg(long, default_value_t = 2)]
     zv_threads: u32,
+
+    /// ZipVoice-only: override the model directory (e.g. .../zipvoice-fp32, .../zipvoice-fp16).
+    /// Defaults to ~/.vox/models/tts/zipvoice. Enables A/B of weight precision without
+    /// mutating the live model directory.
+    #[arg(long)]
+    zv_model_dir: Option<PathBuf>,
+
+    /// ZipVoice-only: override the voice-pack directory (dir containing voices.json + slug dirs).
+    /// Defaults to <zv-model-dir>/voices. Lets candidate prompt packs in sandbox be benched
+    /// without touching the live pack.
+    #[arg(long)]
+    zv_pack_dir: Option<PathBuf>,
+
+    /// Load synthesis texts from a file, one per line (blank lines and lines starting with
+    /// '#' are skipped). Overrides --clip/--text. Intended for ZipVoice prompt sweeps where a
+    /// single run must cover several distinct input texts.
+    #[arg(long)]
+    text_file: Option<PathBuf>,
+
+    /// Run label stamped into engine-run names and wav filenames so concurrent or repeated
+    /// sweeps never collide on disk.
+    #[arg(long, default_value = "")]
+    label: String,
 
     /// Passed by cargo bench harness runner (ignored)
     #[arg(long, hide = true)]
@@ -150,7 +186,38 @@ const CANONICAL_TTS_PROMPTS: &[CanonicalPromptDef] = &[
 ];
 
 fn load_benchmark_prompts(args: &CliArgs) -> Vec<TtsBenchmarkPrompt> {
-    // Priority: --text > --clip > canonical all
+    // Priority: --text-file > --text > --clip > canonical all
+    if let Some(ref text_file) = args.text_file {
+        let raw = std::fs::read_to_string(text_file).unwrap_or_else(|e| {
+            panic!("[TTS Bench] Failed to read --text-file {:?}: {}", text_file, e)
+        });
+        let lines: Vec<String> = raw
+            .lines()
+            .map(str::trim)
+            .filter(|l| !l.is_empty() && !l.starts_with('#'))
+            .map(str::to_string)
+            .collect();
+        if lines.is_empty() {
+            panic!(
+                "[TTS Bench] --text-file {:?} contained no usable lines",
+                text_file
+            );
+        }
+        return lines
+            .into_iter()
+            .enumerate()
+            .map(|(i, text)| TtsBenchmarkPrompt {
+                filename: format!("text{:02}", i + 1),
+                lang: if vox_lib::services::translit::is_devanagari(&text) {
+                    "HI".to_string()
+                } else {
+                    "EN".to_string()
+                },
+                text,
+            })
+            .collect();
+    }
+
     if let Some(ref custom) = args.text {
         let filename = args
             .clip
@@ -243,17 +310,29 @@ fn main() {
     let supertonic_dir = home.join(".vox/models/tts/supertonic-3");
     let kokoro_dir = home.join(".vox/models/tts/kokoro");
     let chatterbox_dir = home.join(".vox/models/tts/chatterbox");
-    let zipvoice_dir = home.join(".vox/models/tts/zipvoice");
+    let zipvoice_dir = args
+        .zv_model_dir
+        .clone()
+        .unwrap_or_else(|| home.join(".vox/models/tts/zipvoice"));
+    // Pack dir defaults to <model-dir>/voices but is independently overridable so a
+    // candidate prompt pack in sandbox can be benched against any weight precision.
+    let zipvoice_pack_dir = args
+        .zv_pack_dir
+        .clone()
+        .unwrap_or_else(|| zipvoice_dir.join("voices"));
 
     println!("Model Paths:");
     println!("  Supertonic (16 steps) : {:?}", supertonic_dir);
     println!("  Kokoro v1.1 (multi)   : {:?}", kokoro_dir);
     println!("  Chatterbox (10 steps) : {:?}", chatterbox_dir);
     println!("  ZipVoice (4 steps)    : {:?}", zipvoice_dir);
+    println!("  ZipVoice pack dir     : {:?}", zipvoice_pack_dir);
     println!("Configuration:");
     println!("  Target Model : {}", args.model);
     println!("  Clip Filter  : {:?}", args.clip);
     println!("  Custom Text  : {:?}", args.text);
+    println!("  Text File    : {:?}", args.text_file);
+    println!("  Run Label    : {:?}", args.label);
     println!("  Voice (base) : {}", args.voice);
     println!("  Output Dir   : {:?}", args.output_dir);
     println!("  WAV Dir      : {:?}", args.wav_dir);
@@ -290,7 +369,12 @@ fn main() {
         .unwrap_or_else(|| PathBuf::from("benches/results/tts_bench"));
     let run_id = generate_run_id();
     let run_dir = base_output_dir.join(&run_id);
-    let wav_run_dir = run_dir.join("wav");
+    // A label gets its own wav subdir so repeated prompt/param sweeps stay separable.
+    let wav_run_dir = if args.label.is_empty() {
+        run_dir.join("wav")
+    } else {
+        run_dir.join("wav").join(&args.label)
+    };
     std::fs::create_dir_all(&wav_run_dir).expect("Failed to create wav run dir");
 
     let mut engine_runs = Vec::new();
@@ -379,7 +463,7 @@ fn main() {
         if zipvoice_dir.exists() && zipvoice_dir.join("decoder.int8.onnx").exists() {
             let zd_str = zipvoice_dir.to_string_lossy().to_string();
             let voice = base_voice;
-            let voices_dir = zipvoice_dir.join("voices");
+            let voices_dir = zipvoice_pack_dir.clone();
             let pack = vox_lib::services::tts::providers::zipvoice::load_voice_pack(&voices_dir)
                 .unwrap_or_default();
             if pack.is_empty() {
@@ -419,14 +503,40 @@ fn main() {
                 engine.set_tuning(&tuning);
                 let provider: Box<dyn vox_lib::services::tts::providers::TtsProvider> =
                     Box::new(engine);
+                // Precision tag derived from the model dir so fp32/fp16 runs are never
+                // mistaken for the default int8 run in reports or wav filenames.
+                let precision = zipvoice_dir
+                    .file_name()
+                    .map(|s| s.to_string_lossy().to_string())
+                    .unwrap_or_else(|| "zipvoice".to_string());
+                let label_tag = if args.label.is_empty() {
+                    String::new()
+                } else {
+                    format!("{}_", args.label)
+                };
                 let run = benchmark_tts_provider(
                     &format!(
-                        "ZipVoice Distill Int8 [{}] (steps {}, guidance {:.1}, threads {})",
-                        entry.slug, args.zv_steps, args.zv_guidance, args.zv_threads
+                        "ZipVoice {} [{}] (steps {}, guidance {:.1}, t_shift {}, feat_scale {}, rms {}, min_char {}, threads {})",
+                        precision,
+                        entry.slug,
+                        args.zv_steps,
+                        args.zv_guidance,
+                        args.zv_t_shift,
+                        args.zv_feat_scale,
+                        args.zv_target_rms,
+                        args.zv_min_char,
+                        args.zv_threads
                     ),
                     &format!(
-                        "zipvoice_{}_s{}_g{:.1}",
-                        entry.slug, args.zv_steps, args.zv_guidance
+                        "{}{}_{}_s{}_g{:.1}_ts{}_fs{}_t{}",
+                        label_tag,
+                        precision,
+                        entry.slug,
+                        args.zv_steps,
+                        args.zv_guidance,
+                        args.zv_t_shift,
+                        args.zv_feat_scale,
+                        args.zv_min_char
                     ),
                     &zd_str,
                     &prompts,
