@@ -213,11 +213,15 @@ The `Harness` orchestrator coordinates six distinct, decoupled functional stages
 
 ### 4.5 Egress Stream Processing (`streaming/chunker.rs` & `streaming/router.rs`)
 - **ClauseChunker (`chunker.rs`)**:
-  - Accumulates incoming token fragments into text.
-  - Splits on primary terminators (`\n`, `?`, `!`) and sub-clause boundaries (`,`, `;`, `:`, `—`, `–`) once minimum word thresholds are satisfied.
-  - Enforces adaptive word counts based on clause index: clause 0 targets 5–12 words for low TTFA; clause 1 targets 10–20 words; steady state targets 16–32 words.
-  - Applies prosody morphing: premature periods (`< 5` words) are rewritten to commas so speech engines maintain rising pitch contours.
-  - Prevents splits across standard abbreviations and decimals.
+  - Accumulates incoming token fragments into text and extracts speakable sentence units.
+  - Prioritizes complete sentence boundaries (`.`, `?`) with guards for decimals (`3.14`), abbreviations (`Dr.`, `e.g.`, `i.e.`), and trailing closing delimiters (`."`, `?'`, `.)`).
+  - Gated exclamation splitting: `!` triggers a chunk split only if the preceding clause has sufficient context ($\ge 4$ words); short conversational openers (`"Hey!"`, `"Sure!"`) remain glued to the subsequent sentence.
+  - Structural linebreaks: splits on `\n\n` or `\n` if the preceding line meets minimum substantive context ($\ge 2$–$3$ words), ensuring markdown lists and paragraphs remain distinct.
+  - Dynamic compound runaway handling: if accumulated buffer exceeds 22 words without terminal punctuation, scans backwards for the strongest syntactic seam (semicolon, colon, em-dash, or comma before coordinating conjunctions `, and`, `, but`, `, because`, `, so`) before falling back to a hard safety ceiling (38 words).
+  - Eliminates micro-clause comma splitting and artificial sub-clause TTFA schedules that fragment neural TTS prosody.
+- **Acoustic Silence & Pacing Architecture**:
+  - Neural TTS providers preserve natural vocoder decay and cadence at sentence boundaries without intra-sentence trimming.
+  - Eliminates destructive mid-sentence callback fading, trimming, and zero-padding in streaming providers.
 - **StreamRouter (`router.rs`)**:
   - Routes finished clauses to `TtsActor` as `TtsCommand::Generate`.
   - Dispatches `IpcEvent::LlmToken` subtitle events to the UI.

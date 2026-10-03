@@ -9,6 +9,15 @@ static NON_LEXICAL_FILLER_RE: Lazy<Regex> = Lazy::new(|| {
         .expect("Failed to compile non-lexical filler regex")
 });
 
+static CURRENCY_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"(?i)\b((?:(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|million|billion|trillion|and|a)[,\s\-]+)+)dollars?(?:\s+and\s+((?:(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)[,\s\-]*)+)\s+cents?)?\b")
+        .expect("Failed to compile currency regex")
+});
+
+static UNFORMATTED_DOLLARS_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"\$(\d{4,})\b").expect("Failed to compile unformatted dollars regex")
+});
+
 /// Applies Tier-1 deterministic speech-to-written cleanup and Inverse Text Normalization.
 pub fn apply_tier1_refinement(raw: &str) -> String {
     let trimmed = raw.trim();
@@ -18,15 +27,69 @@ pub fn apply_tier1_refinement(raw: &str) -> String {
 
     let without_fillers = strip_non_lexical_fillers(trimmed);
     let deduplicated = collapse_verbatim_stutters(&without_fillers);
-    let itn_result = text_processing_rs::normalize(&deduplicated);
+    let currency_preprocessed = normalize_currency(&deduplicated);
+    let itn_result = text_processing_rs::normalize_sentence(&currency_preprocessed);
+    let currency_formatted = format_unformatted_currency(&itn_result);
 
     // INVARIANT: Fail-open to raw transcript if normalization produces empty output on non-empty input.
-    if itn_result.trim().is_empty() && !trimmed.is_empty() {
+    if currency_formatted.trim().is_empty() && !trimmed.is_empty() {
         log::warn!("[ITN] Normalization yielded empty string, failing open to raw transcript");
         return trimmed.to_string();
     }
 
-    clean_residual_whitespace(&itn_result)
+    clean_residual_whitespace(&currency_formatted)
+}
+
+/// Normalizes spoken currency expressions (e.g., "one thousand eight hundred dollars" -> "$1,800").
+fn normalize_currency(text: &str) -> String {
+    CURRENCY_RE
+        .replace_all(text, |caps: &regex::Captures| {
+            let dollars_str = caps.get(1).map(|m| m.as_str().trim()).unwrap_or("");
+            let cleaned_dollars = dollars_str.replace(['-', ','], " ");
+            let Some(dollars_digits) = text_processing_rs::itn::en::cardinal::parse(&cleaned_dollars) else {
+                return caps.get(0).map(|m| m.as_str()).unwrap_or("").to_string();
+            };
+
+            let formatted_dollars = format_number_with_commas(&dollars_digits);
+
+            if let Some(cents_match) = caps.get(2) {
+                let cents_str = cents_match.as_str().trim().replace(['-', ','], " ");
+                if let Some(cents_digits) = text_processing_rs::itn::en::cardinal::parse(&cents_str) {
+                    if let Ok(cents_num) = cents_digits.parse::<u32>() {
+                        return format!("${}.{:02}", formatted_dollars, cents_num);
+                    }
+                }
+            }
+
+            format!("${}", formatted_dollars)
+        })
+        .to_string()
+}
+
+/// Inserts thousands commas into bare 4+ digit dollar amounts (e.g., "$1800" -> "$1,800").
+fn format_unformatted_currency(text: &str) -> String {
+    UNFORMATTED_DOLLARS_RE
+        .replace_all(text, |caps: &regex::Captures| {
+            let digits = caps.get(1).map(|m| m.as_str()).unwrap_or("");
+            format!("${}", format_number_with_commas(digits))
+        })
+        .to_string()
+}
+
+/// Formats a pure digit string with standard thousands commas.
+fn format_number_with_commas(digits: &str) -> String {
+    if !digits.chars().all(|c| c.is_ascii_digit()) {
+        return digits.to_string();
+    }
+    let len = digits.len();
+    let mut result = String::with_capacity(len + (len.saturating_sub(1)) / 3);
+    for (i, ch) in digits.chars().enumerate() {
+        if i > 0 && (len - i).is_multiple_of(3) {
+            result.push(',');
+        }
+        result.push(ch);
+    }
+    result
 }
 
 /// Strips unambiguous phonetic hesitation markers from the text.
@@ -55,7 +118,10 @@ fn collapse_verbatim_stutters(text: &str) -> String {
 
 /// Normalizes spacing around punctuation introduced by token edits.
 fn clean_residual_whitespace(text: &str) -> String {
-    let mut s = text.replace("  ", " ");
+    let mut s = text.to_string();
+    while s.contains("  ") {
+        s = s.replace("  ", " ");
+    }
     s = s.replace(" ,", ",");
     s = s.replace(" .", ".");
     s = s.replace(" ?", "?");

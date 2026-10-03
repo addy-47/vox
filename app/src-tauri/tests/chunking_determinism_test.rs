@@ -123,21 +123,19 @@ fn test_chunking_determinism_across_fragmentations() {
     assert!(acc_a.chunker.is_empty());
 }
 
-/// Subtest 2: Unpunctuated stream exceeding the adaptive word-count target is force-chunked.
-/// `ClauseChunker::current_word_thresholds` escalates the `w_target` by chunk index:
-/// 8 -> 15 -> 24. Testing across two fragmentations proves the forced chunk and its
-/// remainder are identical. (An earlier revision of this comment claimed a fixed
-/// "20-word cap"; no such constant exists in `chunker.rs`.)
+/// Subtest 2: Unpunctuated runaway stream exceeding the hard ceiling (>= 38 words)
+/// is force-chunked at word 30 to prevent buffer bloat while maintaining determinism across tokenizations.
 #[test]
 fn test_chunking_determinism_emergency_cap() {
-    // 30 unpunctuated words
+    // 42 unpunctuated words
     let words = vec![
         "alpha", "bravo", "charlie", "delta", "echo", "foxtrot", "golf", "hotel", "india",
         "juliet", "kilo", "lima", "mike", "november", "oscar", "papa", "quebec", "romeo", "sierra",
         "tango", "uniform", "victor", "whiskey", "xray", "yankee", "zulu", "one", "two", "three",
-        "four",
+        "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve", "thirteen",
+        "fourteen", "fifteen", "sixteen",
     ];
-    assert_eq!(words.len(), 30);
+    assert_eq!(words.len(), 42);
 
     // Fragmentation A: 1 word per token
     let tokens_a: Vec<String> = words.iter().map(|w| format!("{} ", w)).collect();
@@ -169,14 +167,13 @@ fn test_chunking_determinism_emergency_cap() {
         }
     }
 
-    // Both must yield exactly 3 chunks under the 3-tier adaptive schedule:
-    // Chunk 0: 8 words (tier 0 emergency split at w_target = 8)
-    // Chunk 1: 15 words (tier 1 emergency split at w_target = 15)
-    // Chunk 2: 7 words (flushed remainder)
+    // Both must yield exactly 2 chunks under the >= 38 word safety ceiling:
+    // Chunk 0: 30 words (emergency split at word 30)
+    // Chunk 1: 12 words (flushed remainder)
     assert_eq!(
         chunks_a.len(),
-        3,
-        "30-word unpunctuated input must produce exactly 3 chunks under 3-tier schedule (got {})",
+        2,
+        "42-word unpunctuated input must produce exactly 2 chunks under safety ceiling (got {})",
         chunks_a.len()
     );
     assert_eq!(
@@ -186,28 +183,23 @@ fn test_chunking_determinism_emergency_cap() {
 
     let chunk_0_word_count = chunks_a[0].split_whitespace().count();
     let chunk_1_word_count = chunks_a[1].split_whitespace().count();
-    let chunk_2_word_count = chunks_a[2].split_whitespace().count();
 
     assert_eq!(
-        chunk_0_word_count, 8,
-        "First chunk must have exactly 8 words from tier 0 emergency cap"
+        chunk_0_word_count, 30,
+        "First chunk must have exactly 30 words from emergency cap"
     );
     assert_eq!(
-        chunk_1_word_count, 15,
-        "Second chunk must have exactly 15 words from tier 1 emergency cap"
-    );
-    assert_eq!(
-        chunk_2_word_count, 7,
-        "Third chunk must have remaining 7 words"
+        chunk_1_word_count, 12,
+        "Second chunk must have remaining 12 words"
     );
 }
 
-/// Subtest 3: Comma prosody gating stability.
-/// Commas preceded by < 5 words must NOT split; commas preceded by >= 5 words MUST split.
-/// Fragmenting tokens around the comma must not alter this behavior.
+/// Subtest 3: Comma prosody preservation & dynamic conjunction seam split.
+/// Normal sentences with commas must NOT split at commas.
+/// Compound runaway sentences (>= 22 words) split at coordinating conjunction seams.
 #[test]
 fn test_chunking_determinism_comma_gate_stable() {
-    // Case 1: Short prefix (3 words) -> comma does not split
+    // Case 1: Standard sentence with comma -> comma does NOT split
     let _short_sentence = "Hello my friend, how are you today?";
     let tokens_short_1 = vec!["Hello my friend, ", "how are you today?"];
     let tokens_short_2 = vec!["Hello", " my ", "friend", ",", " how are you today?"];
@@ -231,27 +223,25 @@ fn test_chunking_determinism_comma_gate_stable() {
     }
 
     assert_eq!(res1, res2);
-    // Because "how are you today?" has '?', it will split at '?'.
-    // The comma had only 3 words before it ("Hello my friend"), so it did NOT split at comma!
     assert_eq!(
         res1.len(),
         1,
-        "Short prefix comma must not split before the full question mark clause"
+        "Standard sentence with comma must not split at comma, preserving natural prosody"
     );
+    assert_eq!(res1[0], "Hello my friend, how are you today?");
 
-    // Case 2: Long prefix (6 words) -> comma DOES split
-    let _long_sentence = "This is a longer prefix before comma, and here is the remainder.";
+    // Case 2: Runaway compound sentence (>= 22 words) with conjunction seam -> DOES split at seam
+    let _long_sentence = "We have carefully verified that all system components and background services are running smoothly, and we can proceed with the live rollout now.";
     let tokens_long_1 = vec![
-        "This is a longer prefix before comma, ",
-        "and here is the remainder.",
+        "We have carefully verified that all system components and background services are running smoothly, ",
+        "and we can proceed with the live rollout now.",
     ];
     let tokens_long_2 = vec![
-        "This",
-        " is a ",
-        "longer prefix ",
-        "before comma",
-        ",",
-        " and here is the remainder.",
+        "We have carefully ",
+        "verified that all system components ",
+        "and background services are running smoothly,",
+        " and we can proceed with ",
+        "the live rollout now.",
     ];
 
     let mut c3 = ClauseChunker::new();
@@ -276,8 +266,14 @@ fn test_chunking_determinism_comma_gate_stable() {
     assert_eq!(
         res3.len(),
         2,
-        "Long prefix comma (>= 5 words) must split into 2 clauses"
+        "Long compound sentence (>= 22 words) must split into 2 clauses at conjunction seam"
     );
-    assert_eq!(res3[0], "This is a longer prefix before comma,");
-    assert_eq!(res3[1], "and here is the remainder.");
+    assert_eq!(
+        res3[0],
+        "We have carefully verified that all system components and background services are running smoothly,"
+    );
+    assert_eq!(
+        res3[1],
+        "and we can proceed with the live rollout now."
+    );
 }

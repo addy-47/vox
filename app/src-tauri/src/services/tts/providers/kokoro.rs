@@ -34,8 +34,8 @@ pub const MODEL_FILE_TTS_KOKORO_VOICES: &str = "voices.bin";
 pub const MODEL_FILE_TTS_KOKORO_TOKENS: &str = "tokens.txt";
 pub const MODEL_DIRNAME_TTS_KOKORO_ESPEAK: &str = "espeak-ng-data";
 pub const MODEL_FILE_TTS_KOKORO_LEXICON_US: &str = "lexicon-us-en.txt";
-/// Inter-phrase silence scale matching the sherpa-onnx crate default (0.2).
-pub const KOKORO_SILENCE_SCALE: f32 = 0.2;
+/// Natural inter-sentence silence scale for complete sentences.
+pub const KOKORO_SILENCE_SCALE: f32 = 0.85;
 /// Stride of one voice row in voices.bin (511 frames x 256 dims x f32), from model metadata style_dim.
 pub const KOKORO_VOICE_ROW_BYTES: u64 = 523264;
 
@@ -213,9 +213,8 @@ impl TtsProvider for KokoroEngine {
                     return true;
                 }
                 streamed_count_cb.fetch_add(raw_samples.len(), Ordering::Relaxed);
-                let processed = trim_and_fade_samples(raw_samples, sample_rate);
-                if !processed.is_empty() && !cancel_cb.load(Ordering::Relaxed) {
-                    playback_cb.ingest_chunk_with_intent(&processed, intent);
+                if !cancel_cb.load(Ordering::Relaxed) {
+                    playback_cb.ingest_chunk_with_intent(raw_samples, intent);
                 }
                 true
             }),
@@ -229,8 +228,8 @@ impl TtsProvider for KokoroEngine {
         let streamed_total = streamed_samples_count.load(Ordering::Relaxed);
         let mut total_samples_count = streamed_total;
         if streamed_total == 0 {
-            let (samples, sr) = match audio {
-                Some(ref audio_data) => (audio_data.samples(), audio_data.sample_rate() as usize),
+            let samples = match audio {
+                Some(ref audio_data) => audio_data.samples(),
                 None => {
                     if !ctx.cancel.load(Ordering::Relaxed) {
                         return Err(anyhow!("[Kokoro] Generation failed"));
@@ -239,11 +238,10 @@ impl TtsProvider for KokoroEngine {
                 }
             };
 
-            let processed = trim_and_fade_samples(samples, sr);
-            if !processed.is_empty() && !ctx.cancel.load(Ordering::Relaxed) {
-                ctx.playback.ingest_chunk_with_intent(&processed, intent);
+            if !samples.is_empty() && !ctx.cancel.load(Ordering::Relaxed) {
+                ctx.playback.ingest_chunk_with_intent(samples, intent);
             }
-            total_samples_count = processed.len();
+            total_samples_count = samples.len();
         }
 
         let elapsed = start.elapsed().as_secs_f32();

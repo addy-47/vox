@@ -94,3 +94,104 @@ prompt extension. All audio verdicts are the user's; metrics only here.
   `sandbox/cb_extended/` (extension clones), full 6s/10s tiers retained in
   sandbox only (dropped from pack per README <3s guidance).
 - Standing rule: never judge audio quality in reports — metrics + paths only.
+
+---
+
+# Round 2 — Prompt-Factory Sweep + Production Config (2026-10-03)
+
+Second pass on the same question, prompted by the clip actually sounding worse than
+`temp/voices/*`. Supersedes §3 (params are second-order) and §4 (the ≤3s rule).
+
+## 1. What was rebuilt to ask the question
+
+- `tts_bench` gained bench-only flags so no run has to touch the live pack:
+  `--zv-model-dir` (int8/fp32 A/B), `--zv-pack-dir` (candidate packs in sandbox),
+  `--text-file` (one synthesis text per line), `--label` (wav subdir + name prefix).
+- Analysis venv `temp/zv-audio-venv` (uv) + `sandbox/scripts/zv_analyze.py`:
+  DNSMOS P.835 (SIG/BAK/OVRL) + P.808, ECAPA speaker cosine, band energies, tilt.
+- Prompt factory: 12 distinct sentences rendered in the target voice via
+  `voice_clone --en-prompt`, then cut to a 1.0/1.5/2.0/2.5/3.0/3.5/4.5s ladder
+  (`zv_cut_ladder.py`). Transcripts from **Nemotron** (`stt_bench --model nemotron`),
+  never hand-patched. 101 prompts, 539 syntheses.
+
+## 2. Loudness was never the problem
+
+Prompts spanned 8.3 dBFS; their outputs spanned only 2.9 dBFS. `target_rms` already
+normalises level — a prompt 8 dB down produced output ~2 dB down. The dull-sounding
+outputs were already at baseline loudness (−19.5 vs −19.1 dBFS). Making prompts louder
+is a dead end.
+
+## 3. Nor was it missing bandwidth
+
+Energy above 12 kHz is **0.21%** of the baseline. 44.1 kHz-vs-24 kHz is a red herring.
+The gap is spectral *tilt*, recoverable.
+
+## 4. Prompt source dominates everything else
+
+Prompt-side speaker similarity: real recording **0.840** > Chatterbox extension 0.695 >
+Chatterbox-generated **0.576**. The first Chatterbox-generated prompt measured
+`hf_ratio 0.0037` vs baseline `0.0240` — ~6.5x duller. Chatterbox is a poor prompt
+source; it is useful only for making *more* material when the original is too short.
+
+## 5. The ≤3s rule is wrong
+
+Prompt-side speaker similarity by duration is monotone: 1.0s 0.499 → 1.5s 0.591 →
+2.0s 0.640 → 2.5s 0.675 → 3.0s 0.703 → **3.5s 0.732** → 4.5s 0.774. Output-side tracks
+it (1.0s 0.454 → 3.5s 0.552). The 1s prompts measured worst on every metric. 3.5s is the
+sweet spot; completeness still beats hitting an exact duration.
+
+## 6. Params: guidance 3.0 and t_shift 0.7 are the wins
+
+Mean output speaker similarity, marginals over a 14-config grid (438 syntheses,
+medians over repeats, threads=4, int8):
+
+- `guidance`: 1.0→0.547, 1.5→0.556, 2.0→0.595, 2.5→0.594, **3.0→0.624**, 4.0→0.609
+- `t_shift`: **0.7→0.599** vs 0.5→0.553
+- `feat_scale`: **0.1→0.583** vs 0.15→0.496 (0.15 actively harmful; one prompt → 0.266)
+- `steps`: 2→0.548, 4→0.576, 6→0.580, 8→0.557 — flat on quality, but RTF
+  0.44 / 0.86 / 1.37 / **1.78**. `steps=4` wins on the combined criterion.
+
+Guidance and t_shift sit off the RTF critical path, so both gains are ~free.
+**Shipped: `guidance 1.0→3.0`, `t_shift 0.5→0.7`** in `zipvoice.rs` (engine constants,
+deliberately *not* user settings).
+
+## 7. fp32 rejected on RTF
+
+`zipvoice-fp32` measured RTF 0.83–**2.72** against int8's 0.44–1.21. Gate is ≤1.5 target
+/ ≤2.0 reject. int8 stays. No fp16 attempt — there was no quality case to preserve.
+
+## 8. Output-side DSP (the lever never previously tried)
+
+Every prior attempt EQ'd the *prompt*, which cannot work. Per-clip **output** correction
+— a presence bell plus an independent air shelf — was swept in
+`zv_dsp_sweep.py` / `zv_dsp_match.py`.
+
+- Best fixed correction took one clip from spectral rmsDev 2.186 → 0.964 with
+  **no** DNSMOS or speaker-similarity cost.
+- **But gains solved on one clip wreck another** (text01 1.638 → 3.291). So the
+  correction must be solved per clip against its own measured deviation; a shipped
+  implementation needs a runtime solver or one safe global setting.
+- Transient sharpening and a harmonic exciter both **failed** — they add high-frequency
+  energy the baseline does not have. Dropped.
+
+## 9. Honest bottom line on the shipped change
+
+Fair A/B, same methodology (3 repeats × 3 disjoint texts, threads=4, int8):
+
+| | OVRL | SIG | speaker | dBFS | RTF |
+|---|---|---|---|---|---|
+| old prompt + old params | 3.248 | 3.503 | 0.645 | −22.4 | 0.77 |
+| **new prompt + new params** | 3.206 | 3.489 | **0.661** | **−19.5** | **0.64** |
+| baseline | 3.483 | 3.688 | 1.000 | −19.1 | — |
+
+**This is a wash, not a win.** Speaker similarity +0.016, loudness match +2.9 dB better,
+~17% faster — but DNSMOS OVRL −0.042 and speech ~19% slower. The earlier "meets baseline"
+figure (OVRL 3.487) came from the *DSP'd* clip on a single favourable sample; without DSP
+the production path sits at OVRL 3.206, spk 0.661. Neither is baseline parity.
+
+## 10. Reusable
+
+Bench flags, the analysis venv, the prompt factory, the cut ladder, and the per-clip
+spectral matcher all live in `sandbox/scripts/` + `temp/zv-audio-venv` and are voice-
+agnostic. The **params** should transfer to other voices; each voice still needs its own
+prompt cut. Winner clips: `sandbox/results/zv_winners/sage/FINAL/`.
