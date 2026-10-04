@@ -64,6 +64,7 @@ export interface PersonalMemoryStagingCardProps {
   pendingConfirmation?: PendingConfirmation | null;
   onConfirmPendingIntegration?: () => void;
   onCancelPendingConfirmation?: () => void;
+  embedded?: boolean;
 }
 
 function parseOpPayload(content?: string): {
@@ -157,6 +158,7 @@ export const PersonalMemoryStagingCard: React.FC<PersonalMemoryStagingCardProps>
     pendingConfirmation = null,
     onConfirmPendingIntegration,
     onCancelPendingConfirmation,
+    embedded = false,
   }) => {
     const [draft, setDraft] = useState("");
     const [decisions, setDecisions] = useState<Record<string, "accept" | "reject">>({});
@@ -344,18 +346,15 @@ export const PersonalMemoryStagingCard: React.FC<PersonalMemoryStagingCardProps>
     return (
       <div
         className={cn(
-          "relative w-full h-full min-h-0 rounded-2xl p-5 sm:p-6 flex flex-col overflow-hidden",
-          "glass-card border bg-[rgba(var(--card),0.45)] backdrop-blur-sm contain-paint transform-gpu",
-          isSuggestionsActive
-            ? "border-[rgba(var(--accent),0.35)] shadow-xl"
-            : "border-[rgba(var(--accent),0.18)] hover:border-[rgba(var(--accent),0.35)] shadow-2xl"
-          // NOTE: the container previously carried `transition-all duration-500`
-          // plus `opacity-50 pointer-events-none` while saving. Animating
-          // border/shadow/background together on a backdrop-blur element forced a
-          // full re-raster every frame for 500ms, and dimming + disabling the
-          // WHOLE card (including the confirmation banner) is what made the
-          // post-commit transition feel broken. The busy dim now lives on the
-          // review body only, and there is no long container transition.
+          "relative w-full h-full min-h-0 flex flex-col overflow-hidden",
+          embedded
+            ? "border-none bg-transparent shadow-none p-0"
+            : cn(
+                "rounded-2xl p-5 sm:p-6 glass-card border bg-[rgba(var(--card),0.45)] backdrop-blur-sm contain-paint transform-gpu",
+                isSuggestionsActive
+                  ? "border-[rgba(var(--accent),0.35)] shadow-xl"
+                  : "border-[rgba(var(--accent),0.18)] hover:border-[rgba(var(--accent),0.35)] shadow-2xl"
+              )
         )}
       >
         {/* Organic Synthesis Overlay on Right Card while consolidating/integrating */}

@@ -1,0 +1,98 @@
+[
+  {
+    "id": "news_01",
+    "query": "Federal Reserve interest rate decision September 2026"
+  },
+  {
+    "id": "news_02",
+    "query": "latest global technology and science news roundup"
+  },
+  {
+    "id": "news_03",
+    "query": "OpenAI announcement this week"
+  },
+  {
+    "id": "news_04",
+    "query": "European Central Bank rate decision summary"
+  },
+  {
+    "id": "tech_01",
+    "query": "Rust 2024 edition migration guide breaking changes"
+  },
+  {
+    "id": "tech_02",
+    "query": "tokio structured concurrency shutdown graceful pattern"
+  },
+  {
+    "id": "tech_03",
+    "query": "ONNX Runtime int8 quantization accuracy loss benchmarks"
+  },
+  {
+    "id": "tech_04",
+    "query": "crates.io nexuss documentation TextEmbedder trait"
+  },
+  {
+    "id": "tech_05",
+    "query": "CSS backdrop-filter performance GPU compositing"
+  },
+  {
+    "id": "tech_06",
+    "query": "SQLite FTS5 bm25 ranking versus vector search hybrid"
+  },
+  {
+    "id": "cmp_01",
+    "query": "Burn and Candle web framework comparison benchmarks 2026"
+  },
+  {
+    "id": "cmp_02",
+    "query": "Tavily Exa Brave Search API pricing and rate limits compared"
+  },
+  {
+    "id": "cmp_03",
+    "query": "cross encoder reranking versus bi-encoder retrieval NDCG"
+  },
+  {
+    "id": "cmp_04",
+    "query": "SearXNG self hosted versus keyless SERP scraping reliability"
+  },
+  {
+    "id": "ent_01",
+    "query": "all-MiniLM-L6-v2 embedding dimensions and max sequence length"
+  },
+  {
+    "id": "ent_02",
+    "query": "bge-m3 model size parameters hidden size"
+  },
+  {
+    "id": "ent_03",
+    "query": "ms-marco-MiniLM-L-6-v2 cross encoder NDCG@10 TREC DL 2019"
+  },
+  {
+    "id": "ent_04",
+    "query": "Google mobile WML search endpoint deprecated status"
+  },
+  {
+    "id": "wall_01",
+    "query": "gemini.google.com product capabilities overview"
+  },
+  {
+    "id": "wall_02",
+    "query": "reddit discussion best local speech to speech models"
+  },
+  {
+    "id": "wall_03",
+    "query": "stackoverflow answer rust async trait object lifetime elision"
+  },
+  {
+    "id": "long_01",
+    "query": "polyc-egress socket pinning DNS rebinding rust reqwest"
+  },
+  {
+    "id": "long_02",
+    "query": "WebKitGTK backdrop-filter blur repaint jank profiling"
+  },
+  {
+    "id": "long_03",
+    "query": "primp rust TLS impersonation JA3 fingerprint fidelity"
+  }
+]

@@ -8,11 +8,11 @@ import React, {
 } from "react";
 import { createPortal } from "react-dom";
 import {
-  Zap,
-  Sparkles,
   PanelLeft,
-  Tag,
 } from "lucide-react";
+import { useViewportResize } from "@/shared/hooks/useViewportResize";
+import { subscribeViewportFrame, subscribeViewportGate } from "@/layout/viewportResize";
+import { BREAKPOINT_OPPOSITE_COLLISION_MAX } from "@/layout/breakpoints";
 import {
   getActiveObservations,
   type ObservationRecord,
@@ -20,6 +20,7 @@ import {
 import { usePersonalMemoryDrawer } from "@/shared/hooks/usePersonalMemoryDrawer";
 import { ErrorBoundary, OrbitalLoader } from "@/shared/components/common";
 import { Drawer } from "@/shared/ui/Drawer";
+import { Modal } from "@/shared/ui/Modal";
 import { EdgePanel, Tooltip, BottomDockFeather, ThemeToggleButton } from "@/shared/ui";
 import { usePanelStateContext } from "@/shared/hooks/usePanelState";
 import { MEMORY_COPY } from "@/data/memoryCopy";
@@ -35,8 +36,9 @@ import {
   GraphControlDock,
   MemoryCategory,
   toMemoryCategory,
-  PersonalMemoryDossierCard,
-  PersonalMemoryStagingCard,
+  PersonalMemoryHeaderActions,
+  PersonalMemoryBody,
+  PersonalMemoryModalView,
   MemoryErrorState,
   MemoryEmptyState,
   MemoryHint,
@@ -93,7 +95,7 @@ export const Memory: React.FC = memo(() => {
   const [isLightMode, setIsLightMode] = useState(false);
 
   // Dynamic collision threshold between right panel and left triggers
-  const isNarrowCollision = dims.w > 0 ? dims.w < 480 : (typeof window !== "undefined" ? window.innerWidth < 480 : false);
+  const isNarrowCollision = dims.w > 0 ? dims.w < BREAKPOINT_OPPOSITE_COLLISION_MAX : (typeof window !== "undefined" ? window.innerWidth < BREAKPOINT_OPPOSITE_COLLISION_MAX : false);
   const hideLeftCluster = Boolean(rightPanel) && isNarrowCollision;
 
   useEffect(() => {
@@ -114,21 +116,43 @@ export const Memory: React.FC = memo(() => {
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
+
     let rAfId: number | null = null;
+    const updateDims = () => {
+      const rect = el.getBoundingClientRect();
+      const w = Math.round(rect.width);
+      const h = Math.round(rect.height);
+      if (w > 0 && h > 0) {
+        setDims((prev) => (prev.w === w && prev.h === h ? prev : { w, h }));
+      }
+    };
+
+    updateDims();
+
     const obs = new ResizeObserver((entries) => {
       if (entries.length > 0) {
         const { width, height } = entries[0].contentRect;
-        if (width > 0 && height > 0) {
+        const w = Math.round(width);
+        const h = Math.round(height);
+        if (w > 0 && h > 0) {
           if (rAfId !== null) cancelAnimationFrame(rAfId);
           rAfId = requestAnimationFrame(() => {
-            setDims({ w: width, h: height });
+            setDims((prev) => (prev.w === w && prev.h === h ? prev : { w, h }));
           });
         }
       }
     });
     obs.observe(el);
+
+    const unsubFrame = subscribeViewportFrame(updateDims);
+    const unsubGate = subscribeViewportGate((active) => {
+      if (!active) updateDims();
+    });
+
     return () => {
       obs.disconnect();
+      unsubFrame();
+      unsubGate();
       if (rAfId !== null) cancelAnimationFrame(rAfId);
     };
   }, []);
@@ -174,6 +198,24 @@ export const Memory: React.FC = memo(() => {
     onError: setLoadError,
   });
   const { drawerOpen } = drawer;
+
+  // Compact viewports render Personal Memory as a centered modal (Tier 2b);
+  // wide viewports keep the bottom drawer. Single source: the viewport gate.
+  const { layout } = useViewportResize();
+  const isCompactLayout = layout === "compact";
+
+  const personalMemoryTitle = (
+    <div className="flex items-center gap-2.5">
+      <span className="text-[13px] font-display font-black tracking-[0.16em] uppercase text-[rgb(var(--accent))]">
+        {MEMORY_COPY.personalMemory}
+      </span>
+    </div>
+  );
+  const personalMemorySubtitle = (
+    <span className="text-[11px] text-[rgb(var(--foreground-muted))]">
+      {MEMORY_COPY.drawerSubtitle}
+    </span>
+  );
 
   // Counts per category for the Legend
   const categoryCounts = useMemo(() => {
@@ -302,7 +344,7 @@ export const Memory: React.FC = memo(() => {
   return (
     <div
       ref={containerRef}
-      className="relative flex-1 flex flex-col h-full w-full overflow-hidden bg-transparent select-none"
+      className="relative flex-1 flex flex-col min-w-0 min-h-0 h-full w-full overflow-hidden bg-transparent select-none"
     >
       {/* NOTE: no page-level AmbientBackground here. ResponsiveLayout renders one
           app-wide instance (standardised origin); a second frozen copy used to
@@ -428,7 +470,7 @@ export const Memory: React.FC = memo(() => {
               onSelectNode={handleSelectNode}
               onCoreClick={handleCoreClick}
               selectModeEnabled={selectModeEnabled}
-              paused={false}
+              paused={drawerOpen}
             />
           </ErrorBoundary>
         </motion.div>
@@ -461,11 +503,7 @@ export const Memory: React.FC = memo(() => {
               transition={{ duration: 0.35, ease: "easeOut" }}
               className="flex flex-col items-center justify-center"
             >
-              <OrbitalLoader
-                size="md"
-                title={MEMORY_COPY.graphLoadingTitle}
-                subtitle={MEMORY_COPY.graphLoadingSubtitle}
-              />
+              <OrbitalLoader size="md" />
             </motion.div>
           )}
         </AnimatePresence>
@@ -486,174 +524,37 @@ export const Memory: React.FC = memo(() => {
         <MemoryHint />
       )}
 
-      {/* ── Bottom-Sheet Personal Memory Drawer ── */}
-      <Drawer
-        open={drawerOpen}
-        onClose={drawer.closeDrawer}
-        position="global"
-        ariaLabel={MEMORY_COPY.personalMemory}
-        height={65}
-        title={
-          <div className="flex items-center gap-2.5">
-            <span className="text-[13px] font-display font-black tracking-[0.16em] uppercase text-[rgb(var(--accent))]">
-              {MEMORY_COPY.personalMemory}
-            </span>
-          </div>
-        }
-        subtitle={
-          <span className="text-[11px] text-[rgb(var(--foreground-muted))]">
-            {MEMORY_COPY.drawerSubtitle}
-          </span>
-        }
-        headerActions={
-          <div className="flex items-center gap-2 flex-wrap">
-            <Tooltip label="View candidate and historical observations">
-              <button
-                type="button"
-                onClick={() =>
-                  drawer.setStagingMode((prev) => (prev === "facts" ? "idle" : "facts"))
-                }
-                className={cn(
-                  "flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-mono border transition-all cursor-pointer shadow-sm",
-                  drawer.stagingMode === "facts"
-                    ? "bg-[rgba(var(--accent),0.25)] border-[rgba(var(--accent),0.55)] text-[rgb(var(--accent))]"
-                    : "bg-[rgba(var(--foreground),0.04)] border-[rgba(var(--border),0.18)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:border-[rgba(var(--accent),0.3)]"
-                )}
-              >
-                <Tag
-                  size={12}
-                  className={drawer.stagingMode === "facts" ? "text-[rgb(var(--accent))]" : ""}
-                />
-                <span>{MEMORY_COPY.viewObservations}</span>
-                {drawer.unconsolidatedIdentityCount > 0 && (
-                  <span className="text-[10.5px] font-mono text-[rgb(var(--accent))]">
-                    ({drawer.unconsolidatedIdentityCount})
-                  </span>
-                )}
-              </button>
-            </Tooltip>
-
-            {drawer.suggestions.length > 0 && drawer.stagingMode !== "suggestions" && (
-              <Tooltip label="Review proposed profile updates">
-                <button
-                  type="button"
-                  onClick={() => drawer.setStagingMode("suggestions")}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-mono border border-emerald-500/40 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 transition-all cursor-pointer shadow-sm animate-pulse"
-                >
-                  <Sparkles size={12} />
-                  <span>Review Suggestions</span>
-                  <span className="text-[10.5px] font-mono text-emerald-400">
-                    ({drawer.suggestions.length})
-                  </span>
-                </button>
-              </Tooltip>
-            )}
-
-            <Tooltip label={drawer.unconsolidatedIdentityCount > 0 ? "Integrate staged observations into personal profile" : "No new observations to integrate"}>
-              <button
-                type="button"
-                onClick={() => drawer.handleConsolidateNow(false)}
-                disabled={drawer.consolidating || drawer.unconsolidatedIdentityCount === 0}
-                className={cn(
-                  "flex items-center gap-2 px-3 py-1.5 rounded-xl text-[11px] font-mono border transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-sm",
-                  drawer.consolidating
-                    ? "bg-[rgba(var(--accent),0.25)] border-[rgba(var(--accent),0.5)] text-[rgb(var(--accent))]"
-                    : drawer.unconsolidatedIdentityCount > 0
-                    ? "bg-[rgba(var(--accent),0.12)] border-[rgba(var(--accent),0.3)] text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.2)] cursor-pointer"
-                    : "bg-[rgba(var(--foreground),0.04)] border border-[rgba(var(--border),0.12)] text-[rgb(var(--foreground-muted))]/40"
-                )}
-              >
-                <Zap
-                  size={12}
-                  className={cn(drawer.consolidating && "animate-pulse text-[rgb(var(--accent))]")}
-                />
-                <span>
-                  {drawer.consolidating
-                    ? MEMORY_COPY.consolidating
-                    : MEMORY_COPY.consolidate}
-                </span>
-                {drawer.unconsolidatedIdentityCount > 0 && (
-                  <span className="text-[10.5px] font-mono text-[rgb(var(--accent))]">
-                    ({drawer.unconsolidatedIdentityCount})
-                  </span>
-                )}
-              </button>
-            </Tooltip>
-          </div>
-        }
-        bodyClassName="px-4 sm:px-6 py-4 overflow-y-auto lg:overflow-hidden h-full flex flex-col min-h-0"
-      >
-        <ErrorBoundary name="MemoryDrawerContent">
-          <div className="w-full h-full flex-1 min-h-0">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 h-full min-h-0 w-full items-stretch">
-              {/* Left Column: Canonical Persistent Memory (DB Ground Truth) */}
-              <PersonalMemoryDossierCard
-                personalMemory={drawer.personalMemory}
-                displayedRecord={drawer.displayedRecord}
-                versions={drawer.versions}
-                onSelectVersion={drawer.handleSelectVersion}
-                onCommitActiveVersion={drawer.handleRestoreActive}
-                isRestoringVersion={drawer.isRestoringVersion}
-                onCopyDoc={drawer.handleCopyDoc}
-                copied={drawer.copied}
-                onRegenerateFromFacts={drawer.handleRegenerateFromFacts}
-                isRegenerating={drawer.isRegenerating}
-                saving={drawer.saving}
-                leftFlash={drawer.leftFlash}
-                veilCycle={drawer.veilCycle}
-                onVeilReady={drawer.handleVeilReady}
-                dossierContainerRef={drawer.dossierContainerRef}
-                selectionAnchor={drawer.selectionAnchor}
-                onAddComment={drawer.handleAddComment}
-                onCancelComment={drawer.handleCancelComment}
-                setIsComposingComment={drawer.setIsComposingComment}
-                comments={drawer.comments}
-                onSelectComment={() => drawer.setStagingMode("comment")}
-                drawerOpen={drawerOpen}
-                drawerBodyReady={drawer.drawerBodyReady}
-              />
-
-              {/* Right Column: Dynamic Workspace / Staging Slate */}
-              <PersonalMemoryStagingCard
-                canonicalContent={drawer.displayedRecord?.content ?? ""}
-                canonicalMarkdown={drawer.displayedRecord?.markdown ?? ""}
-                activeVersion={drawer.personalMemory?.version ?? 1}
-                mode={drawer.stagingMode}
-                onModeChange={drawer.handleStagingModeChange}
-                onSave={drawer.handleSaveStaging}
-                onRegenerateWithComments={drawer.handleRegenerateWithComments}
-                comments={drawer.comments}
-                onDeleteComment={drawer.handleDeleteComment}
-                onUpdateComment={drawer.handleUpdateComment}
-                onClearComments={drawer.handleClearComments}
-                unconsolidatedCount={drawer.unconsolidatedIdentityCount}
-                isSaving={drawer.saving}
-                isConsolidating={drawer.consolidating}
-                isCommitting={drawer.isCommitting}
-                suggestions={drawer.suggestions}
-                onApplySuggestions={drawer.handleApplySuggestions}
-                onDismissCommitted={() => drawer.setJustCommitted(false)}
-                isApplyingSuggestions={drawer.isApplyingSuggestions}
-                candidateFacts={drawer.identityCandidateFacts}
-                observations={drawer.paginatedObservations}
-                observationFilter={drawer.obsStatusFilter}
-                onObservationFilterChange={drawer.setObsStatusFilter}
-                isLoadingObservations={drawer.obsLoading}
-                isLoadingMoreObservations={drawer.obsLoadingMore}
-                hasMoreObservations={drawer.obsHasMore}
-                onLoadMoreObservations={drawer.obsLoadMore}
-                pendingConfirmation={drawer.pendingConfirmation}
-                onConfirmPendingIntegration={drawer.handleConfirmPendingIntegration}
-                onCancelPendingConfirmation={drawer.handleCancelPendingConfirmation}
-                justCommitted={drawer.justCommitted}
-                onViewVersionHistory={() => {
-                  drawer.setJustCommitted(false);
-                }}
-              />
-            </div>
-          </div>
-        </ErrorBoundary>
-      </Drawer>
+      {/* ── Personal Memory Surface: bottom drawer on wide, centered modal on compact ── */}
+      {isCompactLayout ? (
+        <Modal
+          open={drawerOpen}
+          onClose={drawer.closeDrawer}
+          position="global"
+          ariaLabel={MEMORY_COPY.personalMemory}
+          className="w-[min(920px,94vw)] h-[min(780px,88vh)]"
+          bodyClassName="h-full flex flex-col min-h-0 overflow-hidden p-0"
+        >
+          <ErrorBoundary name="MemoryModalContent">
+            <PersonalMemoryModalView drawer={drawer} onClose={drawer.closeDrawer} />
+          </ErrorBoundary>
+        </Modal>
+      ) : (
+        <Drawer
+          open={drawerOpen}
+          onClose={drawer.closeDrawer}
+          position="global"
+          ariaLabel={MEMORY_COPY.personalMemory}
+          height={65}
+          title={personalMemoryTitle}
+          subtitle={personalMemorySubtitle}
+          headerActions={<PersonalMemoryHeaderActions drawer={drawer} />}
+          bodyClassName="px-4 sm:px-6 py-4 overflow-y-auto lg:overflow-hidden h-full flex flex-col min-h-0"
+        >
+          <ErrorBoundary name="MemoryDrawerContent">
+            <PersonalMemoryBody drawer={drawer} />
+          </ErrorBoundary>
+        </Drawer>
+      )}
 
     </div>
   );

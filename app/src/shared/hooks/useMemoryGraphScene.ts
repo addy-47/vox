@@ -47,6 +47,7 @@ interface ConduitSegment {
 const SCRATCH_COLOR_1 = new THREE.Color();
 const SCRATCH_COLOR_2 = new THREE.Color();
 const SCRATCH_START_COLOR = new THREE.Color();
+const SCRATCH_RING_COLOR = new THREE.Color();
 const LIGHT_BG_COLOR = new THREE.Color(0xf8fafc);
 
 export function useMemoryGraphScene({
@@ -252,8 +253,10 @@ export function useMemoryGraphScene({
         radius = 0.001;
         colHex = colHexMain;
       } else if (isSelected) {
-        radius = 12;
-        colHex = isLight ? "#000000" : "#ffffff";
+        // Industry-standard selection: preserve semantic category color with refined ~30% enlargement
+        const isAnchor = node.id.startsWith("anchor_");
+        radius = isAnchor ? 8.8 : node.collection === "personal" ? 7.6 : 5.6;
+        colHex = colHexMain;
       } else if (hasSearch && !matchesSearch) {
         radius = 1.2;
         colHex = isLight ? "#94a3b8" : "#283344";
@@ -285,12 +288,17 @@ export function useMemoryGraphScene({
 
       // Ring Halo Matrix (only active for selected facts or highlighted nodes)
       if (isSelected || (isSessionSelected && node.collection === "personal")) {
-        const ringScale = radius * 2.8;
+        const ringScale = isSelected ? radius * 1.55 : radius * 1.35;
+        dummy.position.set(node.x, node.y, node.z);
         dummy.scale.set(ringScale, ringScale, ringScale);
         dummy.lookAt(cameraRef.current ? cameraRef.current.position : new THREE.Vector3(0, 0, 3000));
         dummy.updateMatrix();
         instancedRing.setMatrixAt(i, dummy.matrix);
+
+        SCRATCH_RING_COLOR.set(colHexMain);
+        instancedRing.setColorAt(i, SCRATCH_RING_COLOR);
       } else {
+        dummy.position.set(node.x, node.y, node.z);
         dummy.scale.set(0.001, 0.001, 0.001);
         dummy.updateMatrix();
         instancedRing.setMatrixAt(i, dummy.matrix);
@@ -302,6 +310,7 @@ export function useMemoryGraphScene({
     if (instancedMesh.instanceMatrix) instancedMesh.instanceMatrix.needsUpdate = true;
     if (instancedMesh.instanceColor) instancedMesh.instanceColor.needsUpdate = true;
     if (instancedRing.instanceMatrix) instancedRing.instanceMatrix.needsUpdate = true;
+    if (instancedRing.instanceColor) instancedRing.instanceColor.needsUpdate = true;
   }, [isNodeMatchingSearch, isNodeVisible]);
 
   // Update Line Conduits Highlighting & Colors
@@ -314,11 +323,15 @@ export function useMemoryGraphScene({
     if (!lineSegments || (conduits.length === 0 && gLinks.length === 0)) return;
 
     const selSessionId = selectedSessionIdRef.current;
+    const selFactId = selectedFactIdRef.current;
     const selCollection = selectedCollectionRef.current;
     const sq = searchQueryRef.current.trim().toLowerCase();
     const hasSearch = sq.length > 0;
     const hasCollectionFilter = selCollection !== "all";
     const isLight = isLightModeRef.current;
+
+    const selNode = selFactId ? gNodes.find((n) => n.id === selFactId) : null;
+    const selNodeSessionId = selNode?.sessionId ?? null;
 
     const totalLines = conduits.length + gLinks.length;
     const requiredFloats = totalLines * 6;
@@ -375,8 +388,11 @@ export function useMemoryGraphScene({
       posArray[writePtr + 4] = cond.p1.y;
       posArray[writePtr + 5] = cond.p1.z;
 
-      const isHighlight = selSessionId !== null && cond.sessionId === selSessionId;
-      const isDimmed = selSessionId !== null && cond.sessionId !== selSessionId;
+      const isFactSession = selNodeSessionId !== null && cond.sessionId === selNodeSessionId;
+      const isHighlight = (selSessionId !== null && cond.sessionId === selSessionId) || isFactSession;
+      const isDimmed =
+        (selSessionId !== null && cond.sessionId !== selSessionId) ||
+        (selNodeSessionId !== null && cond.sessionId !== selNodeSessionId);
 
       SCRATCH_COLOR_1.set(cond.col0);
       SCRATCH_COLOR_2.set(cond.col1);
@@ -456,7 +472,10 @@ export function useMemoryGraphScene({
         link.fromId === `anchor_${selSessionId}` ||
         link.toId === `anchor_${selSessionId}`
       );
-      const isDimmed = selSessionId !== null && !isSessionBranch && link.relation !== "CORE_IDENTITY";
+      const isFactConnected = selFactId !== null && (link.fromId === selFactId || link.toId === selFactId);
+      const isDimmed =
+        (selSessionId !== null && !isSessionBranch && link.relation !== "CORE_IDENTITY") ||
+        (selFactId !== null && !isFactConnected && link.relation !== "CORE_IDENTITY");
 
       SCRATCH_COLOR_1.set(link.color);
 
@@ -470,6 +489,15 @@ export function useMemoryGraphScene({
         colArray[writePtr + 3] = SCRATCH_COLOR_1.r * dimFactor;
         colArray[writePtr + 4] = SCRATCH_COLOR_1.g * dimFactor;
         colArray[writePtr + 5] = SCRATCH_COLOR_1.b * dimFactor;
+      } else if (isFactConnected) {
+        // Boost selected fact link vibrancy
+        SCRATCH_START_COLOR.copy(SCRATCH_COLOR_1).multiplyScalar(1.5);
+        colArray[writePtr + 0] = SCRATCH_START_COLOR.r;
+        colArray[writePtr + 1] = SCRATCH_START_COLOR.g;
+        colArray[writePtr + 2] = SCRATCH_START_COLOR.b;
+        colArray[writePtr + 3] = SCRATCH_COLOR_1.r;
+        colArray[writePtr + 4] = SCRATCH_COLOR_1.g;
+        colArray[writePtr + 5] = SCRATCH_COLOR_1.b;
       } else if (isSessionBranch) {
         // Boost selected branch link vibrancy
         SCRATCH_START_COLOR.copy(SCRATCH_COLOR_1).multiplyScalar(1.25);
@@ -816,9 +844,17 @@ export function useMemoryGraphScene({
     const anchor = anchors.find((a) => a.sId === sessionId);
     if (!anchor) return;
 
+    const cam = cameraRef.current;
+    const camPos = cam ? cam.position : new THREE.Vector3(0, 0, 3100);
+    const anchorVec = new THREE.Vector3(anchor.x, anchor.y, anchor.z);
+    const dir = new THREE.Vector3().subVectors(camPos, anchorVec);
+    if (dir.lengthSq() < 1) dir.set(0, 0, 1);
+    else dir.normalize();
+    const camTarget = anchorVec.clone().addScaledVector(dir, 460);
+
     flyToTargetRef.current = {
-      cam: { x: anchor.x, y: anchor.y, z: anchor.z + 450 },
-      target: { x: 0, y: 0, z: 0 },
+      cam: { x: camTarget.x, y: camTarget.y, z: camTarget.z },
+      target: { x: anchor.x, y: anchor.y, z: anchor.z },
     };
     wakeLoopRef.current();
   }, []);
@@ -828,20 +864,18 @@ export function useMemoryGraphScene({
     const node = gNodes.find((n) => n.id === factId);
     if (!node) return;
 
-    const dist = Math.hypot(node.x, node.y, node.z);
-    if (dist < 10) {
-      flyToTargetRef.current = {
-        cam: { x: 0, y: 0, z: 650 },
-        target: { x: 0, y: 0, z: 0 },
-      };
-    } else {
-      const offset = 420;
-      const factor = (dist + offset) / dist;
-      flyToTargetRef.current = {
-        cam: { x: node.x * factor, y: node.y * factor, z: node.z * factor },
-        target: { x: 0, y: 0, z: 0 },
-      };
-    }
+    const cam = cameraRef.current;
+    const camPos = cam ? cam.position : new THREE.Vector3(0, 0, 3100);
+    const nodeVec = new THREE.Vector3(node.x, node.y, node.z);
+    const dir = new THREE.Vector3().subVectors(camPos, nodeVec);
+    if (dir.lengthSq() < 1) dir.set(0, 0, 1);
+    else dir.normalize();
+    const camTarget = nodeVec.clone().addScaledVector(dir, 380);
+
+    flyToTargetRef.current = {
+      cam: { x: camTarget.x, y: camTarget.y, z: camTarget.z },
+      target: { x: node.x, y: node.y, z: node.z },
+    };
     wakeLoopRef.current();
   }, []);
 
@@ -898,9 +932,12 @@ export function useMemoryGraphScene({
       alpha: true,
       powerPreference: isGraphSoftwareRaster ? "low-power" : "high-performance",
     });
-    renderer.setSize(initialWidth, initialHeight);
+    renderer.setSize(initialWidth, initialHeight, false);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, isGraphSoftwareRaster ? 1 : 1.5));
     renderer.setClearColor(0x000000, 0);
+    renderer.domElement.style.display = "block";
+    renderer.domElement.style.width = "100%";
+    renderer.domElement.style.height = "100%";
     container.appendChild(renderer.domElement);
     rendererRef.current = renderer;
 
@@ -1025,19 +1062,21 @@ export function useMemoryGraphScene({
       opacity: isLightModeRef.current ? 0.98 : 0.92,
     });
     const instancedMesh = new THREE.InstancedMesh(sphereGeo, nodeMat, maxNodes);
+    instancedMesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(maxNodes * 3), 3);
     instancedMesh.count = 0;
     instancedMesh.frustumCulled = false;
     scene.add(instancedMesh);
     instancedMeshRef.current = instancedMesh;
 
     // 8. InstancedMesh for Glow Rings (Capacity 12,000)
-    const ringGeo = new THREE.RingGeometry(1, 1.45, 24);
+    const ringGeo = new THREE.RingGeometry(1.18, 1.36, 32);
     const ringMat = new THREE.MeshBasicMaterial({
       transparent: true,
-      opacity: isLightModeRef.current ? 0.50 : 0.42,
+      opacity: isLightModeRef.current ? 0.85 : 0.75,
       side: THREE.DoubleSide,
     });
     const instancedRing = new THREE.InstancedMesh(ringGeo, ringMat, maxNodes);
+    instancedRing.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(maxNodes * 3), 3);
     instancedRing.count = 0;
     instancedRing.frustumCulled = false;
     scene.add(instancedRing);
@@ -1231,16 +1270,47 @@ export function useMemoryGraphScene({
     };
   }, []);
 
-  // Resize Effect
+  // Resize Effect: guarantees distortion-free aspect ratio during maximize, restore, or window resize
   useEffect(() => {
-    const renderer = rendererRef.current;
-    const camera = cameraRef.current;
-    if (!renderer || !camera || width === 0 || height === 0) return;
+    const updateSize = () => {
+      const renderer = rendererRef.current;
+      const camera = cameraRef.current;
+      const scene = sceneRef.current;
+      const container = canvasContainerRef.current;
+      if (!renderer || !camera || !scene) return;
 
-    camera.aspect = width / height;
-    camera.setViewOffset(width, height, 0, 36, width, height);
-    camera.updateProjectionMatrix();
-    renderer.setSize(width, height);
+      const w = container?.clientWidth || width;
+      const h = container?.clientHeight || height;
+      if (w <= 0 || h <= 0) return;
+
+      camera.aspect = w / h;
+      camera.setViewOffset(w, h, 0, 36, w, h);
+      camera.updateProjectionMatrix();
+      renderer.setSize(w, h, false);
+      const isGraphSoftwareRaster = isSoftwareRasterizer();
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, isGraphSoftwareRaster ? 1 : 1.5));
+
+      // Immediate render of the new frame prevents stretched bitmap artifacts
+      renderer.render(scene, camera);
+      wakeLoopRef.current();
+    };
+
+    updateSize();
+
+    const container = canvasContainerRef.current;
+    if (!container) return;
+
+    let rAfId: number | null = null;
+    const ro = new ResizeObserver(() => {
+      if (rAfId !== null) cancelAnimationFrame(rAfId);
+      rAfId = requestAnimationFrame(updateSize);
+    });
+    ro.observe(container);
+
+    return () => {
+      ro.disconnect();
+      if (rAfId !== null) cancelAnimationFrame(rAfId);
+    };
   }, [width, height]);
 
   return {

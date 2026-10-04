@@ -16,6 +16,8 @@ import {
 } from "@/shared/lib/voiceDisplay";
 import { useSessionStore } from "@/store/sessionStore";
 import { resolveActivityDisplay, type ActivityDisplayConfig } from "@/shared/lib/activityRegistry";
+import { isMobileWidth } from "@/layout/breakpoints";
+import { installViewportResizeGate, subscribeViewportFrame } from "@/layout/viewportResize";
 
 export type { InteractionMode, DialogueTurn, AmbientMood, ActivityDisplayConfig };
 export { toStatusLabel, isDotActive, resolveActivityDisplay };
@@ -24,14 +26,22 @@ export function useHomePage() {
   const session = useVoiceSession();
   const [historyOpen, setHistoryOpen] = useState(false);
   const [isMobileScreen, setIsMobileScreen] = useState(
-    typeof window !== "undefined" ? window.innerWidth < 768 : false
+    typeof window !== "undefined" ? isMobileWidth() : false
   );
 
+  // Coalesced through the single viewport-resize gate (no private listener).
   useEffect(() => {
-    const checkMobile = () => setIsMobileScreen(window.innerWidth < 768);
+    let isMounted = true;
+    installViewportResizeGate();
+    const checkMobile = () => {
+      if (isMounted) setIsMobileScreen(isMobileWidth());
+    };
     checkMobile();
-    window.addEventListener("resize", checkMobile);
-    return () => window.removeEventListener("resize", checkMobile);
+    const unsubscribe = subscribeViewportFrame(checkMobile);
+    return () => {
+      isMounted = false;
+      unsubscribe();
+    };
   }, []);
 
   const telemetryRef = useTelemetry();

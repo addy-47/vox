@@ -206,6 +206,20 @@ pub struct TurnMetricsPayload {
     pub context_window: u32,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CompactionStartedPayload {
+    pub session_id: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CompactionFinishedPayload {
+    pub session_id: i64,
+    pub success: bool,
+    pub facts_enqueued: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
 /// Strongly-typed universal Tauri IPC event enum.
 /// Every IPC event emitted to any webview window must have a canonical entry here.
 #[derive(Debug, Clone, Serialize)]
@@ -225,6 +239,8 @@ pub enum IpcEvent {
     NotificationUpdated(NotificationRecord),
     PersonalMemoryUpdated(PersonalMemoryRecord),
     SessionsChanged,
+    CompactionStarted(CompactionStartedPayload),
+    CompactionFinished(CompactionFinishedPayload),
 }
 
 impl From<u8> for AudioIntent {
@@ -263,6 +279,8 @@ impl IpcEvent {
             Self::NotificationUpdated(_) => "notification_updated",
             Self::PersonalMemoryUpdated(_) => "personal_memory_updated",
             Self::SessionsChanged => "sessions_changed",
+            Self::CompactionStarted(_) => "compaction_started",
+            Self::CompactionFinished(_) => "compaction_finished",
         }
     }
 }
@@ -285,6 +303,8 @@ pub fn emit_ipc<R: Runtime>(app: &AppHandle<R>, event: IpcEvent) -> Result<(), t
         IpcEvent::NotificationUpdated(payload) => app.emit(name, payload),
         IpcEvent::PersonalMemoryUpdated(payload) => app.emit(name, payload),
         IpcEvent::SessionsChanged => app.emit(name, ()),
+        IpcEvent::CompactionStarted(payload) => app.emit(name, payload),
+        IpcEvent::CompactionFinished(payload) => app.emit(name, payload),
     }
 }
 
@@ -311,5 +331,7 @@ pub fn emit_ipc_to<R: Runtime>(
         IpcEvent::NotificationUpdated(payload) => app.emit_to(target_str, name, payload),
         IpcEvent::PersonalMemoryUpdated(payload) => app.emit_to(target_str, name, payload),
         IpcEvent::SessionsChanged => app.emit_to(target_str, name, ()),
+        IpcEvent::CompactionStarted(payload) => app.emit_to(target_str, name, payload),
+        IpcEvent::CompactionFinished(payload) => app.emit_to(target_str, name, payload),
     }
 }

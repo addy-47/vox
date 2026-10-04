@@ -81,8 +81,8 @@ export const StagingHeader: React.FC<StagingHeaderProps> = memo(
       return () => document.removeEventListener("mousedown", handleClickOutside);
     }, [isFilterOpen]);
     return (
-      <div className="flex items-center justify-between gap-4 border-b border-[rgba(var(--border),0.12)] pb-3.5 min-h-[44px] shrink-0">
-        <div className="flex items-center gap-3">
+      <div className="flex items-center justify-between gap-x-4 gap-y-2 flex-wrap border-b border-[rgba(var(--border),0.12)] pb-3.5 min-h-[44px] shrink-0">
+        <div className="flex items-center gap-3 min-w-0 flex-1">
           <div
             className={cn(
               "w-8 h-8 rounded-xl border flex items-center justify-center transition-colors shadow-sm",
@@ -108,11 +108,11 @@ export const StagingHeader: React.FC<StagingHeaderProps> = memo(
             )}
           </div>
 
-          <div className="flex flex-col">
-            <span className="text-[13px] font-semibold tracking-wide text-[rgb(var(--foreground))]">
+          <div className="flex flex-col min-w-0">
+            <span className="text-[13px] font-semibold tracking-wide text-[rgb(var(--foreground))] truncate">
               {mode === "facts" ? MEMORY_COPY.observationsTitleLabel : MEMORY_COPY.stagingMirror}
             </span>
-            <span className="text-[11px] font-mono text-[rgb(var(--foreground-muted))]">
+            <span className="text-[11px] font-mono text-[rgb(var(--foreground-muted))] truncate">
               {justCommitted
                 ? MEMORY_COPY.allChangesIntegratedShort
                 : isSuggestionsActive
@@ -139,7 +139,7 @@ export const StagingHeader: React.FC<StagingHeaderProps> = memo(
         </div>
 
         {/* Action controls in header */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           {mode === "facts" ? (
             <div className="flex items-center gap-1.5">
               {/* Filter dropdown */}
@@ -153,11 +153,11 @@ export const StagingHeader: React.FC<StagingHeaderProps> = memo(
                       ? "bg-[rgba(var(--accent),0.12)] border-[rgba(var(--accent),0.35)] text-[rgb(var(--accent))]"
                       : "border-[rgba(var(--border),0.18)] bg-[rgba(var(--foreground),0.04)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:border-[rgba(var(--accent),0.3)]"
                   )}
-                  title="Filter observations"
+                  title={MEMORY_COPY.filterObservations}
                   aria-expanded={isFilterOpen}
                 >
                   <Filter size={11} className={observationFilter && observationFilter !== "all" ? "text-[rgb(var(--accent))]" : undefined} />
-                  <span className="capitalize">{observationFilter === "staged" ? "Staged" : observationFilter === "pending" ? "Pending" : observationFilter === "integrated" ? "Integrated" : "All"}</span>
+                  <span className="capitalize">{observationFilter === "staged" ? MEMORY_COPY.observationFilterStaged : observationFilter === "pending" ? MEMORY_COPY.observationFilterPending : observationFilter === "integrated" ? MEMORY_COPY.observationFilterIntegrated : MEMORY_COPY.observationFilterAll}</span>
                   <ChevronDown size={11} className={cn("transition-transform duration-150 opacity-70", isFilterOpen && "rotate-180")} />
                 </button>
 
@@ -165,10 +165,10 @@ export const StagingHeader: React.FC<StagingHeaderProps> = memo(
                   <div className="absolute right-0 top-full mt-1.5 w-36 py-1 rounded-xl bg-[rgb(var(--card))] border border-[rgba(var(--border),0.2)] shadow-xl z-50 backdrop-blur-md">
                     {(
                       [
-                        { id: "staged", label: "Staged" },
-                        { id: "pending", label: "Pending" },
-                        { id: "integrated", label: "Integrated" },
-                        { id: "all", label: "All" },
+                        { id: "staged", label: MEMORY_COPY.observationFilterStaged },
+                        { id: "pending", label: MEMORY_COPY.observationFilterPending },
+                        { id: "integrated", label: MEMORY_COPY.observationFilterIntegrated },
+                        { id: "all", label: MEMORY_COPY.observationFilterAll },
                       ] as const
                     ).map((item) => (
                       <button
@@ -193,14 +193,14 @@ export const StagingHeader: React.FC<StagingHeaderProps> = memo(
                 )}
               </div>
 
-              <Tooltip label="Return to Staging Mirror">
+              <Tooltip label={MEMORY_COPY.returnToStaging}>
                 <button
                   type="button"
                   onClick={() => onModeChange("idle")}
                   className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-mono border border-[rgba(var(--border),0.18)] bg-[rgba(var(--foreground),0.04)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:border-[rgba(var(--accent),0.3)] transition-colors duration-150 cursor-pointer"
                 >
                   <X size={12} />
-                  <span>Close</span>
+                  <span>{MEMORY_COPY.closeView}</span>
                 </button>
               </Tooltip>
             </div>
@@ -228,7 +228,7 @@ export const StagingHeader: React.FC<StagingHeaderProps> = memo(
             </div>
           ) : mode === "comment" ? (
             <div className="flex items-center gap-2">
-              <Tooltip label="Regenerate profile with applied comments">
+              <Tooltip label={MEMORY_COPY.regenerateWithCommentsTooltip}>
                 <button
                   type="button"
                   onClick={onRegenerate}

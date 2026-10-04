@@ -54,7 +54,7 @@ export const CommentsQueueView: React.FC<CommentsQueueViewProps> = memo(
                         setEditingCommentText(c.text);
                       }}
                       className="p-1 rounded-lg text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.12)] opacity-60 group-hover:opacity-100 transition-all cursor-pointer"
-                      title="Edit comment"
+                      title={MEMORY_COPY.editComment}
                     >
                       <Edit3 size={13} />
                     </button>
@@ -99,7 +99,7 @@ export const CommentsQueueView: React.FC<CommentsQueueViewProps> = memo(
                         onClick={() => setEditingCommentId(null)}
                         className="px-2 py-0.5 rounded text-[11px] font-mono text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.05)] cursor-pointer transition-colors"
                       >
-                        Cancel
+                        {MEMORY_COPY.cancel}
                       </button>
                       <button
                         type="button"
@@ -112,7 +112,7 @@ export const CommentsQueueView: React.FC<CommentsQueueViewProps> = memo(
                         disabled={!editingCommentText.trim()}
                         className="px-2.5 py-0.5 rounded text-[11px] font-mono font-medium bg-[rgba(var(--accent),0.2)] border border-[rgba(var(--accent),0.4)] text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.3)] disabled:opacity-40 cursor-pointer transition-colors shadow-xs"
                       >
-                        Save
+                        {MEMORY_COPY.saveComment}
                       </button>
                     </div>
                   </div>
@@ -128,7 +128,7 @@ export const CommentsQueueView: React.FC<CommentsQueueViewProps> = memo(
 
         {comments.length > 0 && (
           <div className="shrink-0 flex items-center justify-between text-[10px] font-mono text-[rgb(var(--foreground-muted))] pt-3 border-t border-[rgba(var(--border),0.08)]">
-            <span>{comments.length} comments queued</span>
+            <span>{MEMORY_COPY.commentsQueuedShort(comments.length)}</span>
             {onClearComments && (
               <button
                 type="button"

@@ -136,6 +136,17 @@ export interface TurnMetricsPayload {
   context_window: number;
 }
 
+export interface CompactionStartedPayload {
+  session_id: number;
+}
+
+export interface CompactionFinishedPayload {
+  session_id: number;
+  success: boolean;
+  facts_enqueued: number;
+  error?: string | null;
+}
+
 /**
  * Canonical IPC Event Map mirroring Rust `IpcEvent` registry in `core/events.rs`.
  */
@@ -155,6 +166,8 @@ export interface IpcEventMap {
   session_title_updated?: never; // removed in v2 — title changes surface via sessions_changed
   sessions_changed: void;
   personal_memory_updated: PersonalMemoryRecord;
+  compaction_started: CompactionStartedPayload;
+  compaction_finished: CompactionFinishedPayload;
 }
 
 /**
@@ -314,4 +327,16 @@ export function onSessionsChanged(handler: () => void): () => void {
 
 export function onTurnMetrics(handler: (payload: TurnMetricsPayload) => void): () => void {
   return on("turn_metrics", handler);
+}
+
+export function onCompactionStarted(
+  handler: (payload: CompactionStartedPayload) => void
+): () => void {
+  return on("compaction_started", handler);
+}
+
+export function onCompactionFinished(
+  handler: (payload: CompactionFinishedPayload) => void
+): () => void {
+  return on("compaction_finished", handler);
 }

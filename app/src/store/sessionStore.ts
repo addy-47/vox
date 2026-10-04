@@ -1,5 +1,7 @@
 import { create } from "zustand";
 import type { InteractionState, TurnMetricsPayload, ActivityEnvelope } from "@/services/eventsService";
+import { onCompactionStarted, onCompactionFinished } from "@/services/eventsService";
+import { compactSession } from "@/services/historyService";
 import type { InteractionModeUpper } from "@/shared/lib/interactionMode";
 
 export interface DialogueTurn {
@@ -41,6 +43,9 @@ export interface SessionStoreState {
   restoreSignal: number;
   sessionListVersion: number;
 
+  // Compaction State
+  compactingSessionId: number | null;
+
   // Actions
   setInteractionState: (state: InteractionState) => void;
   setInteractionMode: (mode: InteractionModeUpper) => void;
@@ -64,6 +69,8 @@ export interface SessionStoreState {
   setRestoreError: (error: string | null) => void;
   setRestoreSignal: (signal: number) => void;
   bumpSessionListVersion: () => void;
+  setCompactingSessionId: (id: number | null) => void;
+  executeCompaction: (sessionId: number) => Promise<void>;
   resetSessionState: () => void;
   /** Breadcrumb shown in layout when panel is closed: { sessionTitle, projectName } */
   activeSessionLabel: { sessionTitle: string | null; projectName: string | null };
@@ -93,6 +100,7 @@ const INITIAL_STATE = {
   restoreError: null,
   restoreSignal: 0,
   sessionListVersion: 0,
+  compactingSessionId: null as number | null,
   activeSessionLabel: { sessionTitle: null, projectName: null },
 };
 
@@ -134,6 +142,17 @@ export const useSessionStore = create<SessionStoreState>((set) => ({
   setRestoreSignal: (restoreSignal) => set({ restoreSignal }),
   bumpSessionListVersion: () => set((state) => ({ sessionListVersion: state.sessionListVersion + 1 })),
   setActiveSessionLabel: (activeSessionLabel) => set({ activeSessionLabel }),
+  setCompactingSessionId: (compactingSessionId) => set({ compactingSessionId }),
+  executeCompaction: async (sessionId: number) => {
+    if (useSessionStore.getState().compactingSessionId !== null) return;
+    set({ compactingSessionId: sessionId });
+    try {
+      await compactSession(sessionId);
+    } catch (e) {
+      console.error("[SessionStore] Failed to trigger compaction:", e);
+      set({ compactingSessionId: null });
+    }
+  },
   resetSessionState: () =>
     set({
       interactionState: "Idle",
@@ -146,3 +165,14 @@ export const useSessionStore = create<SessionStoreState>((set) => ({
       latestTurnMetrics: null,
     }),
 }));
+
+if (typeof window !== "undefined") {
+  onCompactionStarted((payload) => {
+    useSessionStore.getState().setCompactingSessionId(payload.session_id);
+  });
+  onCompactionFinished((payload) => {
+    if (useSessionStore.getState().compactingSessionId === payload.session_id) {
+      useSessionStore.getState().setCompactingSessionId(null);
+    }
+  });
+}

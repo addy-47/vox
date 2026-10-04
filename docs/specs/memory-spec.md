@@ -119,7 +119,7 @@ Compaction execution operates with dedicated, deterministic generation parameter
 - **Execution Routing**:
   - If `settings.history.auto_compaction == true`: The backend automatically executes the background compaction slice against the pre-created notification. On completion, notification status transitions to `'completed'` (or `'failed'` with the error).
   - If `settings.history.auto_compaction == false`: The notification waits for user action via the Compact action button in the notification drawer or session rail.
-- **Mutual Exclusion**: Exactly one compaction run may execute per session at any time, enforced by a partial unique index (`one in_progress run per session_id`); concurrent duplicate runs are rejected at insert time, not just by pre-check.
+- **Mutual Exclusion**: Universal Global Compaction Mutual Exclusion. Exactly one compaction run may execute across the entire application at any time, enforced upstream in the backend (`CompactionCoordinator` global concurrency lock in `AppState` and database partial unique index `idx_compactions_one_global_in_progress`); concurrent duplicate runs across any session are rejected with an operational busy status (`VoxIpcError::Busy`) at insert and coordinator entrance time.
 - **Prior Summary Seeding**: Boundary runs must seed the turn slice with the latest completed run's `compaction_output` formatted as `<session_context>` in a `Role::System` message, ensuring subsequent slices update the cumulative session state rather than compacting in a vacuum.
 
 ---

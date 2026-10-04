@@ -33,10 +33,10 @@ export const ActionHubView: React.FC<ActionHubViewProps> = memo(
               <MessageSquare size={15} />
             </div>
             <span className="text-[12px] font-semibold text-[rgb(var(--foreground))] mb-0.5">
-              Comment
+              {MEMORY_COPY.comment}
             </span>
             <span className="text-[10px] font-mono text-[rgb(var(--foreground-muted))]">
-              {commentsCount > 0 ? `${commentsCount} ready` : "Line directives"}
+              {commentsCount > 0 ? MEMORY_COPY.hubCommentReady(commentsCount) : MEMORY_COPY.hubCommentDesc}
             </span>
           </button>
 
@@ -49,10 +49,10 @@ export const ActionHubView: React.FC<ActionHubViewProps> = memo(
               <Upload size={15} />
             </div>
             <span className="text-[12px] font-semibold text-[rgb(var(--foreground))] mb-0.5">
-              Import
+              {MEMORY_COPY.hubImportTitle}
             </span>
             <span className="text-[10px] font-mono text-[rgb(var(--foreground-muted))]">
-              Paste markdown
+              {MEMORY_COPY.hubImportDesc}
             </span>
           </button>
 
@@ -65,10 +65,10 @@ export const ActionHubView: React.FC<ActionHubViewProps> = memo(
               <Edit3 size={15} />
             </div>
             <span className="text-[12px] font-semibold text-[rgb(var(--foreground))] mb-0.5">
-              Edit
+              {MEMORY_COPY.hubEditTitle}
             </span>
             <span className="text-[10px] font-mono text-[rgb(var(--foreground-muted))]">
-              In-place editor
+              {MEMORY_COPY.hubEditDesc}
             </span>
           </button>
         </div>

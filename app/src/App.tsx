@@ -38,12 +38,7 @@ const Monitoring = lazy(() => import("@/pages/Monitoring").then(m => ({ default:
 // Premium Shared Orbital Loading Screen
 const PageLoader = () => (
   <div className="flex h-screen w-full items-center justify-center bg-[rgb(var(--background))]">
-    <OrbitalLoader
-      size="lg"
-      title={LAYOUT_COPY.boot.title}
-      subtitle={LAYOUT_COPY.boot.subtitle}
-      statusText={LAYOUT_COPY.boot.status}
-    />
+    <OrbitalLoader size="lg" />
   </div>
 );
 

@@ -1,29 +1,40 @@
 //! ============================================================================
-//! memory_eval.rs — Vox Memory Pipeline Comprehensive Evaluation Harness
+//! evals/memory-pipeline/main.rs — Vox Memory Pipeline Evaluation Harness
 //! ============================================================================
 //! Category     : Evaluation Suite
 //! Component    : services/memory (Compaction, Ingestion, Consolidation)
-//! Execution    : cargo bench --bench memory_eval --release -- [FLAGS]
+//! Execution    : cargo bench --bench memory_pipeline_eval --release -- [FLAGS]
 //! Metrics      : Compaction Coverage, Ingestion Dedup Precision/Recall, Consolidation Semantic Loss
-//! Output       : evals/results/memory_eval/<run_id>/ (raw_llm_traces.json, *.md, eval_vox.db)
-//! Post-run     : OpenCode Subagent master synthesis with opencode/space-bunny-free --variant max
+//! Output       : evals/results/memory-pipeline/<run_id>/
+//!                  manifest.json, cases/<case>/, eval_vox.db
+//! Post-run     : cargo bench --bench memory_pipeline_eval -- --audit <run_id>
 //! ============================================================================
 
+#[path = "../common/mod.rs"]
 mod common;
 
-use std::{fs, path::PathBuf};
+mod compaction;
+mod consolidation;
+mod ingestion;
+
+use std::path::PathBuf;
 
 use anyhow::{anyhow, Result};
 use clap::Parser;
 use common::{
-    compaction_eval::{evaluate_compaction_stage, run_compaction_and_persist},
-    consolidation_eval::evaluate_consolidation_stage,
     datasets::load_eval_case,
     db::EvalDbGuard,
-    ingestion_eval::evaluate_ingestion_stage,
+    keys::resolve_api_key,
     llm_client::{create_pipeline_provider, NvidiaJudgeClient, RecordingLlmProvider},
-    reporting::{create_case_directory, create_run_directory, generate_run_id},
+    reporting::{
+        create_case_directory, create_run_directory, generate_run_id, markdown_table,
+        resolve_output_dir, write_summary_markdown,
+    },
+    stage_dump::{build_run_manifest, write_json},
 };
+use compaction::{evaluate_compaction_stage, run_compaction_and_persist};
+use consolidation::evaluate_consolidation_stage;
+use ingestion::evaluate_ingestion_stage;
 use vox_lib::services::memory::ingestion::run_ingestion_cycle;
 
 #[derive(Parser, Debug)]
@@ -67,64 +78,10 @@ struct CliArgs {
     /// Internal bench flag passed by cargo harness
     #[arg(long, hide = true)]
     bench: bool,
-}
 
-/// Resolves the Judge API key from CLI args, environment variables, or `temp/.env`.
-fn resolve_judge_api_key(cli_key: Option<&str>) -> Result<String> {
-    if let Some(key) = cli_key {
-        if !key.trim().is_empty() {
-            return Ok(key.trim().to_string());
-        }
-    }
-
-    if let Ok(env_key) = std::env::var("OPENROUTER_API_KEY") {
-        if !env_key.trim().is_empty() {
-            return Ok(env_key.trim().to_string());
-        }
-    }
-
-    if let Ok(env_key) = std::env::var("NVIDIA_API_KEY") {
-        if !env_key.trim().is_empty() {
-            return Ok(env_key.trim().to_string());
-        }
-    }
-
-    let env_paths = [
-        PathBuf::from("temp/.env"),
-        PathBuf::from("../../temp/.env"),
-        PathBuf::from("../../../temp/.env"),
-    ];
-
-    for p in &env_paths {
-        if p.exists() {
-            if let Ok(content) = fs::read_to_string(p) {
-                // First check OPENROUTER_API_KEY
-                for line in content.lines() {
-                    let trimmed = line.trim();
-                    if trimmed.starts_with("OPENROUTER_API_KEY=") {
-                        let key = trimmed.trim_start_matches("OPENROUTER_API_KEY=").trim();
-                        if !key.is_empty() {
-                            return Ok(key.to_string());
-                        }
-                    }
-                }
-                // Fallback to NVIDIA_API_KEY
-                for line in content.lines() {
-                    let trimmed = line.trim();
-                    if trimmed.starts_with("NVIDIA_API_KEY=") {
-                        let key = trimmed.trim_start_matches("NVIDIA_API_KEY=").trim();
-                        if !key.is_empty() {
-                            return Ok(key.to_string());
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    Err(anyhow!(
-        "Judge API Key not found. Provide --judge-key, set OPENROUTER_API_KEY / NVIDIA_API_KEY, or populate temp/.env"
-    ))
+    /// Skip cases that already have artifacts in the run directory.
+    #[arg(long, default_value_t = false)]
+    resume: bool,
 }
 
 #[tokio::main]
@@ -141,14 +98,25 @@ async fn main() -> Result<()> {
     println!("  Judge Model      : {}", args.judge_model);
     println!("================================================================================");
 
-    let judge_key = resolve_judge_api_key(args.judge_key.as_deref())?;
+    let judge_key = resolve_api_key(args.judge_key.as_deref())?;
     let run_id = generate_run_id();
-
-    let base_dir = args
-        .output_dir
-        .unwrap_or_else(|| PathBuf::from("evals/results/memory_eval"));
-
+    let base_dir = resolve_output_dir(args.output_dir.as_deref(), "memory-pipeline");
     let run_dir = create_run_directory(&base_dir, &run_id)?;
+
+    // Written before any pipeline work so a crashed run is still auditable.
+    let manifest = build_run_manifest(
+        "memory-pipeline",
+        &run_id,
+        &std::env::args().collect::<Vec<_>>(),
+        serde_json::json!({
+            "layer": args.layer,
+            "cases": args.cases,
+            "pipeline_url": args.pipeline_url,
+            "pipeline_model": args.pipeline_model,
+            "judge_model": args.judge_model,
+        }),
+    )?;
+    write_json(&run_dir, common::stage_dump::names::MANIFEST, &manifest)?;
 
     let (db_path, is_shared_db) = if let Some(ref custom_db) = args.db {
         if !custom_db.exists() {
@@ -191,8 +159,22 @@ async fn main() -> Result<()> {
         );
 
         let (case_name, turns) = load_eval_case(case_idx)?;
-        let case_dir = create_case_directory(&run_dir, case_idx)?;
+        // Case directories are named from the dataset file stem so artifacts stay
+        // self-describing when the tree is opened cold.
+        let case_stem = case_name
+            .strip_suffix(".json")
+            .unwrap_or(&case_name)
+            .to_string();
+        let case_dir = create_case_directory(&run_dir, &case_stem)?;
         let session_id = case_idx as i64 * 1000;
+
+        if args.resume && case_dir.join("raw_llm_traces.json").exists() {
+            println!(
+                "    [Resume] '{}' already has artifacts; skipping.",
+                case_stem
+            );
+            continue;
+        }
 
         println!(
             "Loaded case '{}' with {} conversation turns",
@@ -314,16 +296,54 @@ async fn main() -> Result<()> {
         );
     }
 
+    // Run-level summary is intentionally a manifest plus an index of per-case
+    // reports. The per-stage judges own their own verdicts; duplicating them here
+    // would create a second source of truth that can silently drift.
+    let case_rows: Vec<String> = std::fs::read_dir(&run_dir)
+        .map_err(|e| anyhow!("Failed to list run directory {:?}: {}", run_dir, e))?
+        .flatten()
+        .filter(|e| e.path().is_dir())
+        .map(|e| {
+            let name = e.file_name().to_string_lossy().to_string();
+            let reports = std::fs::read_dir(e.path())
+                .map(|rd| {
+                    rd.flatten()
+                        .filter(|f| f.path().extension().is_some_and(|x| x == "md"))
+                        .count()
+                })
+                .unwrap_or(0);
+            format!("{} | {} | `{}`", name, reports, name)
+        })
+        .collect();
+
+    let preamble = format!(
+        "Run ID `{}` · git `{}`{} · layer `{}` · {} case(s).\n\nPer-stage judges write their verdicts into each case directory. \
+         This file indexes them; it does not restate them. Audit with:\n\n```\ncargo bench --bench memory_pipeline_eval --release -- --audit {}\n```",
+        run_id,
+        manifest["git"]["sha"],
+        if manifest["git"]["dirty"] == serde_json::json!(true) { " (dirty)" } else { "" },
+        args.layer,
+        case_rows.len(),
+        run_id,
+    );
+
+    write_summary_markdown(
+        &run_dir,
+        "Memory Pipeline Evaluation Summary",
+        &preamble,
+        &[(
+            "Cases".to_string(),
+            markdown_table(&["case", "reports", "dir"], &case_rows),
+        )],
+    )?;
+
     println!("\n================================================================================");
     println!("Evaluation Suite Run Complete!");
     println!("================================================================================");
     println!("Run ID           : {}", run_id);
     println!("Run Directory    : {:?}", run_dir);
     println!("Preserved DB     : {:?}", db_path);
-    println!(
-        "Subagent Audit   : Run './evals/audit_run.sh {}' to generate master synthesis report",
-        run_id
-    );
+    println!("QA Prompt       : evals/common/qa_prompts.yaml (id: memory_pipeline)");
     println!("================================================================================");
 
     Ok(())

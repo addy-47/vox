@@ -16,7 +16,7 @@ use vox_lib::{
     },
 };
 
-use super::{
+use crate::common::{
     db::EvalDbGuard,
     llm_client::{NvidiaJudgeClient, RecordingLlmProvider},
     reporting::write_markdown_report,

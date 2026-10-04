@@ -7,7 +7,9 @@ use turso::Connection;
 
 use crate::{
     core::{
-        events::{emit_ipc, IpcEvent, Severity},
+        events::{
+            emit_ipc, CompactionFinishedPayload, CompactionStartedPayload, IpcEvent, Severity,
+        },
         state::{AppState, InteractionState},
     },
     persistence::{
@@ -63,6 +65,17 @@ impl CompactionCoordinator {
                 return Ok(None);
             }
         }
+
+        let _lock_guard = match state.compaction_lock.try_lock() {
+            Ok(guard) => guard,
+            Err(_) => {
+                log::info!(
+                    "[CompactionCoordinator] Global compaction lock held; deferring/rejecting compaction for session {}",
+                    session_id
+                );
+                return Ok(None);
+            }
+        };
 
         let conn = state.db.connect()?;
 
@@ -120,6 +133,13 @@ impl CompactionCoordinator {
             Err(e) => return Err(e),
         };
 
+        if let Err(e) = emit_ipc(
+            app,
+            IpcEvent::CompactionStarted(CompactionStartedPayload { session_id }),
+        ) {
+            log::warn!("[CompactionCoordinator] Failed to emit CompactionStarted: {}", e);
+        }
+
         let prior_summary = latest_run.as_ref().and_then(|run| {
             let trimmed = run.compaction_output.trim();
             if trimmed.is_empty() || trimmed == "{}" {
@@ -158,6 +178,15 @@ impl CompactionCoordinator {
                         e
                     );
                 }
+                let _ = emit_ipc(
+                    app,
+                    IpcEvent::CompactionFinished(CompactionFinishedPayload {
+                        session_id,
+                        success: false,
+                        facts_enqueued: 0,
+                        error: Some(err_msg.to_string()),
+                    }),
+                );
                 return Err(anyhow!(err_msg));
             }
         };
@@ -195,6 +224,15 @@ impl CompactionCoordinator {
                     );
                 }
                 emit_session_compaction_failure_receipt(app, &state.db, session_id, &err_str).await;
+                let _ = emit_ipc(
+                    app,
+                    IpcEvent::CompactionFinished(CompactionFinishedPayload {
+                        session_id,
+                        success: false,
+                        facts_enqueued: 0,
+                        error: Some(err_str),
+                    }),
+                );
                 return Err(e);
             }
         };
@@ -211,6 +249,17 @@ impl CompactionCoordinator {
 
         emit_session_compaction_success_receipt(app, &state.db, &conn, session_id, facts_count)
             .await;
+
+        let _ = emit_ipc(
+            app,
+            IpcEvent::CompactionFinished(CompactionFinishedPayload {
+                session_id,
+                success: true,
+                facts_enqueued: facts_count,
+                error: None,
+            }),
+        );
+        let _ = emit_ipc(app, IpcEvent::SessionsChanged);
 
         log::info!(
             "[CompactionCoordinator] Successfully compacted session {} (enqueued {} facts)",

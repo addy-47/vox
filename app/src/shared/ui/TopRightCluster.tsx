@@ -11,6 +11,8 @@ import { setSessionPrivateMode } from "@/services/pipelineService";
 import { NOTIFICATION_COPY } from "@/data/notificationCopy";
 import { HOME_CONTROLS_COPY } from "@/data/homeCopy";
 import { RestoreDefaultsButton } from "@/shared/components/settings/RestoreDefaultsButton";
+import { useHistoryFilterStore } from "@/store/historyFilterStore";
+import { CompactSessionButton } from "@/shared/components/history/CompactSessionButton";
 
 interface TopRightClusterProps {
   className?: string;
@@ -23,6 +25,8 @@ export const TopRightCluster: React.FC<TopRightClusterProps> = memo(
     const location = useLocation();
     const isHome = location.pathname === "/";
     const isSettings = location.pathname === "/settings";
+    const isHistory = location.pathname === "/history";
+    const drillDownSession = useHistoryFilterStore((s) => s.drillDownSession);
     const isTemporarySession = useSessionStore((s) => s.isTemporarySession);
 
     const toggleTemporarySession = useCallback(async () => {
@@ -58,6 +62,13 @@ export const TopRightCluster: React.FC<TopRightClusterProps> = memo(
               <TemporaryChatIcon size={14} strokeWidth={1.75} checked={isTemporarySession} />
             </button>
           </Tooltip>
+        )}
+        {isHistory && drillDownSession && (
+          <CompactSessionButton
+            sessionId={drillDownSession.id}
+            uncompactedTurns={drillDownSession.uncompacted_turns}
+            variant="icon"
+          />
         )}
         <Tooltip label={NOTIFICATION_COPY.title} shortcutId="global.notifications" side="bottom">
           <button

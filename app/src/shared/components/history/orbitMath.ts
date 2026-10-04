@@ -17,7 +17,11 @@ export const ORBIT_RADIUS_MIN = 360;
 /** Maximum ring radius in px — fills wide desktop screens gracefully. */
 export const ORBIT_RADIUS_MAX = 720;
 
-/** Page margin subtracted from the half-min-dimension when sizing the ring. */
+/**
+ * Page margin subtracted from the half-min-dimension when sizing the ring.
+ * Superseded by card-geometry clearance inside `ringRadiusFor` (kept exported
+ * for external readers; no longer the sizing term).
+ */
 export const ORBIT_RADIUS_MARGIN = 20;
 
 /** Card angular clearance — circumference slot = card width × this factor. */
@@ -80,7 +84,11 @@ export function zIndexForAngle(angle: number, isSelected: boolean): number {
 export function ringRadiusFor(width: number, height: number): number {
   const horizontalBase = width * 0.46;
   const verticalBase = (height * 0.54) / ORBIT_TILT_COMPRESSION;
-  const base = Math.min(horizontalBase, verticalBase) - ORBIT_RADIUS_MARGIN;
+  // Reserve the faintest card's projected half-width (the ring's side sits at
+  // ORBIT_CARD_SCALE_MIN) so the outermost card edge lands inside the
+  // viewport instead of clipping at the stage's `overflow-hidden`.
+  const cardClearance = (ORBIT_CARD_WIDTH / 2) * ORBIT_CARD_SCALE_MIN;
+  const base = Math.min(horizontalBase, verticalBase) - cardClearance;
   return clamp(
     base,
     ORBIT_RADIUS_MIN,

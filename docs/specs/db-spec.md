@@ -104,6 +104,11 @@ Represents an ongoing or historical conversation session.
 - **Soft Delete**: `UPDATE sessions SET deleted_at = ? WHERE id = ?`. Default queries filter `WHERE deleted_at IS NULL`.
 - **Hard Delete**: `DELETE FROM sessions WHERE id = ?`. Cascades strictly down to `turns` and `session_compactions` (`ON DELETE CASCADE`). It does **NOT** delete extracted observations, vectors, or personal memory.
 
+*Derived Query Projections (`SessionRow`):*
+- `turn_count`: `(SELECT COUNT(*) FROM turns t WHERE t.session_id = s.id)`
+- `first_message`: `(SELECT t.user_text FROM turns t WHERE t.session_id = s.id ORDER BY t.turn_id ASC LIMIT 1)`
+- `uncompacted_turns`: `(SELECT COUNT(*) FROM turns t WHERE t.session_id = s.id) - (SELECT COALESCE(MAX(c.to_turn_id), 0) FROM session_compactions c WHERE c.session_id = s.id AND c.status = 'completed')` (number of turns pending compaction; drives UI compaction triggers).
+
 *Indexes:*
 - `idx_sessions_project_updated`: `(project_id, updated_at DESC)`
 - `idx_sessions_active`: `(deleted_at)`
@@ -145,7 +150,7 @@ Tracks rolling compaction-of-compactions passes and retains raw outputs for roll
 
 *Indexes:*
 - `idx_compactions_session_status`: `(session_id, status)`
-- `idx_compactions_one_in_progress`: partial unique `(session_id) WHERE status = 'in_progress'` (mutual exclusion: at most one running compaction per session; concurrent duplicates fail at insert)
+- `idx_compactions_one_global_in_progress`: partial unique `(status) WHERE status = 'in_progress'` (universal global mutual exclusion: at most one running compaction across the entire application/database at any time; concurrent duplicates fail at insert)
 
 ---
 

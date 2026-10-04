@@ -14,3 +14,5 @@ export * from "./SuggestionCard";
 export * from "./LearnedFactsList";
 export * from "./MemoryStates";
 export * from "./PersonalMemoryDossierCard";
+export * from "./PersonalMemorySurface";
+export * from "./PersonalMemoryModalView";

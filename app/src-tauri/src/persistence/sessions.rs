@@ -35,6 +35,7 @@ pub struct SessionRow {
     pub updated_at: i64,
     pub turn_count: i64,
     pub first_message: Option<String>,
+    pub uncompacted_turns: u32,
 }
 
 /// Representation of a single conversation turn in a session.
@@ -111,7 +112,8 @@ async fn execute_fetch_sessions(
         conn.query(
             "SELECT s.id, s.project_id, s.title, s.is_pinned, s.deleted_at, s.created_at, s.updated_at,
                     (SELECT COUNT(*) FROM turns t WHERE t.session_id = s.id) as turn_count,
-                    (SELECT t.user_text FROM turns t WHERE t.session_id = s.id ORDER BY t.turn_id ASC LIMIT 1) as first_message
+                    (SELECT t.user_text FROM turns t WHERE t.session_id = s.id ORDER BY t.turn_id ASC LIMIT 1) as first_message,
+                    ((SELECT COUNT(*) FROM turns t WHERE t.session_id = s.id) - (SELECT COALESCE(MAX(c.to_turn_id), 0) FROM session_compactions c WHERE c.session_id = s.id AND c.status = 'completed')) as uncompacted_turns
              FROM sessions s
              WHERE s.deleted_at IS NULL AND s.project_id = ?
              ORDER BY s.is_pinned DESC, s.updated_at DESC",
@@ -122,7 +124,8 @@ async fn execute_fetch_sessions(
         conn.query(
             "SELECT s.id, s.project_id, s.title, s.is_pinned, s.deleted_at, s.created_at, s.updated_at,
                     (SELECT COUNT(*) FROM turns t WHERE t.session_id = s.id) as turn_count,
-                    (SELECT t.user_text FROM turns t WHERE t.session_id = s.id ORDER BY t.turn_id ASC LIMIT 1) as first_message
+                    (SELECT t.user_text FROM turns t WHERE t.session_id = s.id ORDER BY t.turn_id ASC LIMIT 1) as first_message,
+                    ((SELECT COUNT(*) FROM turns t WHERE t.session_id = s.id) - (SELECT COALESCE(MAX(c.to_turn_id), 0) FROM session_compactions c WHERE c.session_id = s.id AND c.status = 'completed')) as uncompacted_turns
              FROM sessions s
              WHERE s.deleted_at IS NULL
              ORDER BY s.is_pinned DESC, s.updated_at DESC",
@@ -139,6 +142,7 @@ async fn collect_session_rows(rows: &mut turso::Rows) -> Result<Vec<SessionRow>>
     let mut sessions = Vec::new();
     while let Some(row) = rows.next().await? {
         let is_pinned_int: i64 = row.get(3).unwrap_or(0);
+        let uncompacted_raw: i64 = row.get(9).unwrap_or(0);
         sessions.push(SessionRow {
             id: row.get(0)?,
             project_id: row.get(1)?,
@@ -149,6 +153,7 @@ async fn collect_session_rows(rows: &mut turso::Rows) -> Result<Vec<SessionRow>>
             updated_at: row.get(6)?,
             turn_count: row.get(7)?,
             first_message: row.get(8).ok(),
+            uncompacted_turns: uncompacted_raw.max(0) as u32,
         });
     }
     Ok(sessions)
@@ -197,7 +202,8 @@ async fn execute_fetch_session_by_id(
         .query(
             "SELECT s.id, s.project_id, s.title, s.is_pinned, s.deleted_at, s.created_at, s.updated_at,
                     (SELECT COUNT(*) FROM turns t WHERE t.session_id = s.id) as turn_count,
-                    (SELECT t.user_text FROM turns t WHERE t.session_id = s.id ORDER BY t.turn_id ASC LIMIT 1) as first_message
+                    (SELECT t.user_text FROM turns t WHERE t.session_id = s.id ORDER BY t.turn_id ASC LIMIT 1) as first_message,
+                    ((SELECT COUNT(*) FROM turns t WHERE t.session_id = s.id) - (SELECT COALESCE(MAX(c.to_turn_id), 0) FROM session_compactions c WHERE c.session_id = s.id AND c.status = 'completed')) as uncompacted_turns
              FROM sessions s
              WHERE s.id = ?",
             (session_id,),
@@ -206,6 +212,7 @@ async fn execute_fetch_session_by_id(
 
     if let Some(row) = rows.next().await? {
         let is_pinned_int: i64 = row.get(3).unwrap_or(0);
+        let uncompacted_raw: i64 = row.get(9).unwrap_or(0);
         Ok(Some(SessionRow {
             id: row.get(0)?,
             project_id: row.get(1)?,
@@ -216,6 +223,7 @@ async fn execute_fetch_session_by_id(
             updated_at: row.get(6)?,
             turn_count: row.get(7)?,
             first_message: row.get(8).ok(),
+            uncompacted_turns: uncompacted_raw.max(0) as u32,
         }))
     } else {
         Ok(None)

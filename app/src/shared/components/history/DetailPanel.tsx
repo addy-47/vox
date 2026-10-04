@@ -1,13 +1,13 @@
 import { memo, useState, useEffect, useCallback } from "react";
-import { Ghost, AlertCircle, RotateCcw, Sparkles, Loader2 } from "lucide-react";
+import { Ghost, AlertCircle, RotateCcw, Sparkles } from "lucide-react";
 import { formatDateTime, resolveSessionTitle, type SessionRow, type TurnRow } from "@/services/historyService";
 import { EmptyState, OrbitalLoader } from "@/shared/components/common";
 import { HISTORY_COPY } from "@/data/historyCopy";
 import { Drawer } from "@/shared/ui/Drawer";
-import { Tooltip } from "@/shared/ui/Tooltip";
 import { Markdown } from "@/shared/ui/Markdown";
 import { useNotificationStore } from "@/store/notificationStore";
 import { metadataResolution } from "@/services/notificationService";
+import { CompactSessionButton } from "./CompactSessionButton";
 
 function formatTime(ms: number): string {
   return new Date(ms).toLocaleTimeString(undefined, {
@@ -24,6 +24,12 @@ export interface DetailPanelProps {
   error?: string | null;
   onClose: () => void;
   onRetry?: () => void;
+  /**
+   * "drawer" — the bottom-sheet presentation (default). "inline" — renders
+   * only the transcript body, no overlay chrome, for in-place page views on
+   * compact viewports. The parent owns scroll and padding in inline mode.
+   */
+  variant?: "drawer" | "inline";
 }
 
 const INITIAL_VISIBLE_TURNS = 20;
@@ -71,7 +77,7 @@ const TurnBubble = memo(({ turn }: { turn: TurnRow }) => {
 TurnBubble.displayName = "TurnBubble";
 
 export const DetailPanel = memo(
-  ({ open, session, turns, loading, error, onClose, onRetry }: DetailPanelProps) => {
+  ({ open, session, turns, loading, error, onClose, onRetry, variant = "drawer" }: DetailPanelProps) => {
     const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE_TURNS);
 
     useEffect(() => {
@@ -97,101 +103,11 @@ export const DetailPanel = memo(
       )
     );
 
-    const isCompacting = useNotificationStore(
-      useCallback(
-        (s) => {
-          if (!session?.id) return false;
-          const notif = s.notifications.find(
-            (n) =>
-              n.category === "session_compaction" &&
-              n.session_id === session.id &&
-              n.status !== "dismissed" &&
-              metadataResolution(n) !== "resolved"
-          );
-          return notif ? s.activeActionIds.includes(notif.id) : false;
-        },
-        [session?.id]
-      )
-    );
-
-    const executeCompaction = useNotificationStore(
-      (s) => s.executeCompactionForSession
-    );
-
-    return (
-      <Drawer
-        open={open}
-        onClose={onClose}
-        position="global"
-        ariaLabel={HISTORY_COPY.sessionTranscript}
-        resizeHint={HISTORY_COPY.resizeHint}
-        bodyClassName="px-6 py-4"
-        title={
-          session ? (
-            <div className="flex items-center gap-1.5 min-w-0 pr-2 [text-shadow:none]">
-              <span className="text-[14px] font-display font-bold tracking-tight text-[rgb(var(--accent))] shrink-0">
-                {session.project_id || "default"}
-              </span>
-              <span className="text-[14px] font-display font-bold text-[rgb(var(--foreground-muted))]">
-                :
-              </span>
-              <span
-                className="text-[14px] font-display font-bold tracking-tight text-[rgb(var(--foreground))] truncate max-w-[240px] sm:max-w-[380px]"
-                title={resolveSessionTitle(session)}
-              >
-                {resolveSessionTitle(session)}
-              </span>
-              {isUncompacted && (
-                <span
-                  className="w-2 h-2 rounded-full bg-[rgb(var(--accent))] shadow-[0_0_8px_rgba(var(--accent),0.7)] animate-pulse shrink-0 ml-1"
-                  title={HISTORY_COPY.uncompactedTurnsTooltip}
-                />
-              )}
-            </div>
-          ) : undefined
-        }
-        headerActions={
-          isUncompacted && session ? (
-            <Tooltip label={isCompacting ? HISTORY_COPY.compactingSession : HISTORY_COPY.compactSession}>
-              <button
-                type="button"
-                disabled={isCompacting}
-                onClick={() => executeCompaction(session.id)}
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg glass-card border border-[rgba(var(--accent),0.3)] text-[11px] font-bold text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.1)] transition-colors cursor-pointer disabled:opacity-50"
-                aria-label={isCompacting ? HISTORY_COPY.compactingSession : HISTORY_COPY.compactSession}
-              >
-                {isCompacting ? (
-                  <Loader2 size={12} className="animate-spin text-[rgb(var(--accent))]" />
-                ) : (
-                  <Sparkles size={12} className="text-[rgb(var(--accent))]" />
-                )}
-                <span>{isCompacting ? HISTORY_COPY.compactingSession : HISTORY_COPY.compactSession}</span>
-              </button>
-            </Tooltip>
-          ) : undefined
-        }
-        subtitle={
-          session ? (
-            <div className="flex items-center gap-1.5 text-[11px] font-mono font-medium text-[rgb(var(--foreground-muted))] mt-0.5 [text-shadow:none]">
-              <span>#{session.id}</span>
-              <span>·</span>
-              <span>{formatDateTime(session.created_at)}</span>
-              <span>·</span>
-              <span>
-                {session.turn_count}{" "}
-                {session.turn_count === 1 ? HISTORY_COPY.turnSingular : HISTORY_COPY.turnPlural}
-              </span>
-            </div>
-          ) : undefined
-        }
-      >
+    const detailBody = (
+      <>
         {loading ? (
           <div className="flex justify-center py-12">
-            <OrbitalLoader
-              size="sm"
-              title={HISTORY_COPY.loadingTranscript}
-              subtitle={HISTORY_COPY.fetchingTurns}
-            />
+            <OrbitalLoader size="sm" />
           </div>
         ) : error ? (
           <div className="flex flex-col items-center justify-center py-12 px-4 text-center gap-3">
@@ -231,6 +147,71 @@ export const DetailPanel = memo(
             )}
           </div>
         )}
+      </>
+    );
+
+    if (variant === "inline") {
+      if (!open) return null;
+      return <>{detailBody}</>;
+    }
+
+    return (
+      <Drawer
+        open={open}
+        onClose={onClose}
+        position="global"
+        ariaLabel={HISTORY_COPY.sessionTranscript}
+        resizeHint={HISTORY_COPY.resizeHint}
+        bodyClassName="px-6 py-4"
+        title={
+          session ? (
+            <div className="flex items-center gap-1.5 min-w-0 pr-2 [text-shadow:none]">
+              <span className="text-[14px] font-display font-bold tracking-tight text-[rgb(var(--accent))] shrink-0">
+                {session.project_id || "default"}
+              </span>
+              <span className="text-[14px] font-display font-bold text-[rgb(var(--foreground-muted))]">
+                :
+              </span>
+              <span
+                className="text-[14px] font-display font-bold tracking-tight text-[rgb(var(--foreground))] truncate max-w-[240px] sm:max-w-[380px]"
+                title={resolveSessionTitle(session)}
+              >
+                {resolveSessionTitle(session)}
+              </span>
+              {isUncompacted && (
+                <span
+                  className="w-2 h-2 rounded-full bg-[rgb(var(--accent))] shadow-[0_0_8px_rgba(var(--accent),0.7)] animate-pulse shrink-0 ml-1"
+                  title={HISTORY_COPY.uncompactedTurnsTooltip}
+                />
+              )}
+            </div>
+          ) : undefined
+        }
+        headerActions={
+          session ? (
+            <CompactSessionButton
+              sessionId={session.id}
+              uncompactedTurns={session.uncompacted_turns}
+              variant="button"
+            />
+          ) : undefined
+        }
+        subtitle={
+          session ? (
+            <div className="flex items-center gap-1.5 text-[11px] font-mono font-medium text-[rgb(var(--foreground-muted))] mt-0.5 [text-shadow:none]">
+              <span>#{session.id}</span>
+              <span>·</span>
+              <span>{formatDateTime(session.created_at)}</span>
+              <span>·</span>
+              <span>
+                {session.turn_count}{" "}
+                {session.turn_count === 1 ? HISTORY_COPY.turnSingular : HISTORY_COPY.turnPlural}
+              </span>
+            </div>
+          ) : undefined
+        }
+      >
+        {detailBody}
       </Drawer>
     );
   }

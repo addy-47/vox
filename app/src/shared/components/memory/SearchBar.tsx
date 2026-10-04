@@ -132,9 +132,16 @@ export const SearchBar = memo<SearchBarProps>(({
                 const fact = results[activeIndex];
                 onSelectNode(fact.id);
                 onCommitSearch(value);
+              } else if (results.length > 0) {
+                const fact = results[0];
+                onSelectNode(fact.id);
+                onCommitSearch(value);
               } else {
                 onCommitSearch(value);
               }
+              setFocused(false);
+              setActiveIndex(-1);
+              inputRef.current?.blur();
             } else if (e.key === "Escape") {
               e.preventDefault();
               setFocused(false);
@@ -201,6 +208,8 @@ export const SearchBar = memo<SearchBarProps>(({
                   setActiveIndex(index);
                   onSelectNode(fact.id);
                   onCommitSearch(value);
+                  setFocused(false);
+                  inputRef.current?.blur();
                 }}
                 className="flex flex-col text-left p-2 rounded-xl hover:bg-[rgba(var(--foreground),0.05)] transition-colors cursor-pointer"
                 style={index === activeIndex ? { background: `rgba(var(--accent),0.08)` } : undefined}
