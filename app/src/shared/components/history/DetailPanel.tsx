@@ -199,8 +199,6 @@ export const DetailPanel = memo(
         subtitle={
           session ? (
             <div className="flex items-center gap-1.5 text-[11px] font-mono font-medium text-[rgb(var(--foreground-muted))] mt-0.5 [text-shadow:none]">
-              <span>#{session.id}</span>
-              <span>·</span>
               <span>{formatDateTime(session.created_at)}</span>
               <span>·</span>
               <span>

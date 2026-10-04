@@ -53,7 +53,7 @@ export function countsTowardBadge(notif: NotificationRecord): boolean {
   if (notif.action_type === "interactive") {
     return metadataResolution(notif) !== "resolved";
   }
-  return notif.severity === "warning" || notif.severity === "critical";
+  return true;
 }
 
 /** Resolves task resolution state from metadata ("pending" | "resolved" | "failed"). */

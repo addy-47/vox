@@ -74,7 +74,17 @@ pub async fn execute_notification_action<R: tauri::Runtime + 'static>(
                             e
                         );
                         if let Ok(conn) = db.connect() {
-                            let msg = format!("Failed to compact session #{}: {}", session_id, e);
+                            let msg = if let Ok(Some(row)) =
+                                crate::persistence::sessions::fetch_session_by_id(&conn, session_id).await
+                            {
+                                if let Some(t) = row.title.filter(|t| !t.trim().is_empty()) {
+                                    format!("Failed to compact \"{}\": {}", t.trim(), e)
+                                } else {
+                                    format!("Failed to compact session: {}", e)
+                                }
+                            } else {
+                                format!("Failed to compact session: {}", e)
+                            };
                             if let Ok(Some(updated)) = resolve_notification_in_place(
                                 &conn,
                                 &notif_id,

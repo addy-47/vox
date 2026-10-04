@@ -133,11 +133,18 @@ export function deleteSession(sessionId: number, hard = false): Promise<void> {
   return invoke("delete_session", { sessionId, hard });
 }
 
+export interface CompactionIpcResult {
+  session_id: number;
+  status: "compacted" | "no_op" | "failed";
+  facts_enqueued: number;
+  error?: string | null;
+}
+
 /**
  * Triggers manual compaction for a session.
- * Compaction progress and completion are broadcast via `compaction_started` and `compaction_finished`.
+ * Directly awaits backend compaction execution and returns the final status.
  */
-export function compactSession(sessionId: number): Promise<void> {
+export function compactSession(sessionId: number): Promise<CompactionIpcResult> {
   return invoke("compact_session", { sessionId });
 }
 

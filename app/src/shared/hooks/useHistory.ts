@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useLocation } from "react-router-dom";
 import {
   getSessions,
   getTurns,
@@ -8,6 +9,7 @@ import {
   type SessionRow,
   type TurnRow,
 } from "@/services/historyService";
+import { onSessionsChanged } from "@/services/eventsService";
 import { BREAKPOINT_COMPACT_HEIGHT_MAX, BREAKPOINT_COMPACT_MAX } from "@/layout/breakpoints";
 import {
   chunkDaysIntoWindows,
@@ -51,6 +53,7 @@ function getErrorMessage(e: unknown, fallback: string): string {
 }
 
 export function useHistory() {
+  const location = useLocation();
   const [sessions, setSessions] = useState<SessionRow[]>([]);
   const [sessionsLoading, setSessionsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -121,16 +124,11 @@ export function useHistory() {
   }, [loadSessions]);
 
   useEffect(() => {
-    if (sessions.length === 0) return;
-    const params = new URLSearchParams(window.location.search);
-    const targetSessionId = params.get("sessionId");
-    if (targetSessionId) {
-      const target = sessions.find((s) => s.id === Number(targetSessionId));
-      if (target) {
-        setSelectedSession(target);
-      }
-    }
-  }, [sessions]);
+    const unlisten = onSessionsChanged(() => {
+      fetchSessions();
+    });
+    return () => unlisten();
+  }, [fetchSessions]);
 
   // Groupings
   const dayGroups = useMemo(() => groupSessionsByDay(sessions), [sessions]);
@@ -166,6 +164,39 @@ export function useHistory() {
     () => chunkDaysIntoWindows(currentMonthGroup?.days ?? [], capacity),
     [currentMonthGroup, capacity]
   );
+
+  // Sync selected session from router query params and ensure window + day view alignment
+  useEffect(() => {
+    if (sessions.length === 0) return;
+    const params = new URLSearchParams(location.search);
+    const targetSessionId = params.get("sessionId");
+    if (targetSessionId) {
+      const target = sessions.find((s) => s.id === Number(targetSessionId));
+      if (target) {
+        setSelectedSession(target);
+        const winIdx = sessionWindows.findIndex((w) =>
+          w.sessions.some((s) => s.id === target.id)
+        );
+        if (winIdx !== -1) {
+          setDayWindowIndex(winIdx);
+        }
+        setView("day");
+        return;
+      }
+    }
+    // Keep currently selectedSession reference fresh if it exists in the updated sessions list
+    if (selectedSessionRef.current) {
+      const updated = sessions.find((s) => s.id === selectedSessionRef.current?.id);
+      if (
+        updated &&
+        (updated.uncompacted_turns !== selectedSessionRef.current.uncompacted_turns ||
+          updated.title !== selectedSessionRef.current.title ||
+          updated.updated_at !== selectedSessionRef.current.updated_at)
+      ) {
+        setSelectedSession(updated);
+      }
+    }
+  }, [sessions, location.search, sessionWindows]);
 
   const effectiveSessionWindowIndex = Math.min(
     dayWindowIndex,

@@ -198,19 +198,6 @@ pub fn build_compaction_request(
         request.input.messages.get(1).map_or(0, |message| message.content.len()),
     );
 
-    if let (Some(sys), Some(usr)) = (
-        request.input.messages.first(),
-        request.input.messages.get(1),
-    ) {
-        log::info!(
-            "[CompactionLLM::Input] (chars: {}, max_tokens: {:?})\n--- SYSTEM PROMPT ---\n{}\n--- USER PROMPT ---\n{}",
-            sys.content.len() + usr.content.len(),
-            request.options.max_output_tokens,
-            sys.content,
-            usr.content
-        );
-    }
-
     request
 }
 

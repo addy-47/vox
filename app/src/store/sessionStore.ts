@@ -1,6 +1,5 @@
 import { create } from "zustand";
 import type { InteractionState, TurnMetricsPayload, ActivityEnvelope } from "@/services/eventsService";
-import { onCompactionStarted, onCompactionFinished } from "@/services/eventsService";
 import { compactSession } from "@/services/historyService";
 import type { InteractionModeUpper } from "@/shared/lib/interactionMode";
 
@@ -147,9 +146,13 @@ export const useSessionStore = create<SessionStoreState>((set) => ({
     if (useSessionStore.getState().compactingSessionId !== null) return;
     set({ compactingSessionId: sessionId });
     try {
-      await compactSession(sessionId);
+      const res = await compactSession(sessionId);
+      if (res && res.status === "failed") {
+        console.warn("[SessionStore] Compaction returned failure:", res.error);
+      }
     } catch (e) {
       console.error("[SessionStore] Failed to trigger compaction:", e);
+    } finally {
       set({ compactingSessionId: null });
     }
   },
@@ -165,14 +168,3 @@ export const useSessionStore = create<SessionStoreState>((set) => ({
       latestTurnMetrics: null,
     }),
 }));
-
-if (typeof window !== "undefined") {
-  onCompactionStarted((payload) => {
-    useSessionStore.getState().setCompactingSessionId(payload.session_id);
-  });
-  onCompactionFinished((payload) => {
-    if (useSessionStore.getState().compactingSessionId === payload.session_id) {
-      useSessionStore.getState().setCompactingSessionId(null);
-    }
-  });
-}

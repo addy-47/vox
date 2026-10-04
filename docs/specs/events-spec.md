@@ -98,11 +98,8 @@ This document establishes the **target behavioral, concurrency, and resilience s
 - **`SessionResumptionHandle { handle, model }`**: Session cache token $\to$ written to disk non-blocking.
 
 ### Canonical Tauri IPC Events (`IpcEvent`)
-All broadcast messages between the Rust backend and the frontend webview are strongly typed through `IpcEvent` (`core/events.rs`):
-- **`compaction_started`**: Emitted when a background or manual session compaction starts. Payload: `{ session_id: i64 }`.
-- **`compaction_finished`**: Emitted when a compaction run concludes. Payload: `{ session_id: i64, success: bool, facts_enqueued: u32, error: Option<String> }`.
 - **`sessions_changed`**: Broadcast when session rows, metadata, or uncompacted turn counts are committed/updated, signalling the frontend to invalidate session lists.
-- **`compact_session(session_id: i64)` (IPC Command)**: Initiates an explicit compaction run for a target session. Subject to Universal Global Compaction Mutual Exclusion (`AppState.compaction_lock`); returns `VoxIpcError::Busy` if any compaction is currently running.
+- **`compact_session(session_id: i64)` (IPC Command)**: Initiates an explicit compaction run for a target session, directly awaiting execution and returning typed `CompactionIpcResult { session_id: i64, status: String, facts_enqueued: u32, error: Option<String> }`. Subject to Universal Global Compaction Mutual Exclusion (`AppState.compaction_lock`). Automated/background compactions signal state transitions exclusively via `sessions_changed` and receipt notifications.
 
 ---
 

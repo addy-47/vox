@@ -6,7 +6,7 @@ import {
   FolderInput,
   Folder,
   Trash2,
-  Sparkles,
+  Shrink,
   Loader2,
   ChevronRight,
 } from "lucide-react";
@@ -244,7 +244,7 @@ export const SessionContextMenu: React.FC<SessionContextMenuProps> = memo(
                     {isCompacting ? (
                       <Loader2 size={12} className="animate-spin text-[rgb(var(--accent))]" />
                     ) : (
-                      <Sparkles size={12} className="text-[rgb(var(--accent))]" />
+                      <Shrink size={12} className="text-[rgb(var(--accent))]" />
                     )}
                     <span>
                       {isCompacting

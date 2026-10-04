@@ -148,34 +148,55 @@ pub async fn delete_session(
     Ok(())
 }
 
-/// Triggers manual compaction for a session.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct CompactionIpcResult {
+    pub session_id: i64,
+    pub status: String,
+    pub facts_enqueued: u32,
+    pub error: Option<String>,
+}
+
+/// Triggers manual compaction for a session, directly awaiting execution and returning the final status.
 #[tauri::command]
 pub async fn compact_session(
     app: AppHandle,
     session_id: i64,
     state: State<'_, Arc<AppState>>,
-) -> Result<(), VoxIpcError> {
-    let app_clone = app.clone();
-    let state_arc = Arc::clone(&*state);
-
-    tokio::spawn(async move {
-        if let Err(e) =
-            crate::services::memory::compaction::coordinator::CompactionCoordinator::run_compaction_slice(
-                &app_clone,
-                &state_arc,
-                session_id,
-                "manual",
-                None,
-            )
-            .await
-        {
+) -> Result<CompactionIpcResult, VoxIpcError> {
+    match crate::services::memory::compaction::coordinator::CompactionCoordinator::run_compaction_slice(
+        &app,
+        &state,
+        session_id,
+        "manual",
+        None,
+    )
+    .await
+    {
+        Ok(Some(summary)) => Ok(CompactionIpcResult {
+            session_id,
+            status: "compacted".to_string(),
+            facts_enqueued: summary.facts_enqueued,
+            error: None,
+        }),
+        Ok(None) => Ok(CompactionIpcResult {
+            session_id,
+            status: "no_op".to_string(),
+            facts_enqueued: 0,
+            error: None,
+        }),
+        Err(e) => {
+            let err_msg = e.to_string();
             log::error!(
                 "[IPC::compact_session] Compaction failed for session {}: {}",
                 session_id,
-                e
+                err_msg
             );
+            Ok(CompactionIpcResult {
+                session_id,
+                status: "failed".to_string(),
+                facts_enqueued: 0,
+                error: Some(err_msg),
+            })
         }
-    });
-
-    Ok(())
+    }
 }
