@@ -17,4 +17,6 @@ export * from "./ProjectContextMenu";
 export * from "./Markdown";
 export * from "./TriangularLoopSelector";
 export * from "./KeyboardHotkeySkeleton";
+export * from "./ThemeToggleButton";
+export * from "./HighlightMatch";
 

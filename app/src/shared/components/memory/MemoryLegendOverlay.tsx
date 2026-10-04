@@ -1,11 +1,11 @@
 import { memo, useMemo } from "react";
-import { RotateCcw } from "lucide-react";
+// import { RotateCcw } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { Tooltip } from "@/shared/ui/Tooltip";
 import { MEMORY_COPY } from "@/data/memoryCopy";
 import {
   getActiveDynamicPalette,
-  toMemoryCategory,
+  // toMemoryCategory,
   type MemoryCategory,
 } from "./memoryGraphTypes";
 
@@ -37,10 +37,10 @@ export const MemoryLegendOverlay = memo<MemoryLegendOverlayProps>(({
   isLightMode = false,
 }) => {
   const isFiltered = selectedCollection !== "all";
-  const filteredKind = toMemoryCategory(selectedCollection);
-  const filteredLabel =
-    (filteredKind !== undefined ? MEMORY_COPY.categories[filteredKind] : undefined) ||
-    selectedCollection;
+  // const filteredKind = toMemoryCategory(selectedCollection);
+  // const filteredLabel =
+  //   (filteredKind !== undefined ? MEMORY_COPY.categories[filteredKind] : undefined) ||
+  //   selectedCollection;
   const palette = useMemo(() => getActiveDynamicPalette(isLightMode), [isLightMode]);
 
   return (
@@ -101,7 +101,7 @@ export const MemoryLegendOverlay = memo<MemoryLegendOverlayProps>(({
       </div>
 
       {/* Active Filter Clear Prompt (Subtle inline text when filtered) */}
-      {isFiltered && (
+      {/* {isFiltered && (
         <div className="flex items-center gap-2 pt-0.5">
           <span className="text-[10px] font-mono text-[rgb(var(--accent))] font-medium">
             Filtered: {filteredLabel}
@@ -115,7 +115,7 @@ export const MemoryLegendOverlay = memo<MemoryLegendOverlayProps>(({
             <span>{MEMORY_COPY.clearSearch}</span>
           </button>
         </div>
-      )}
+      )} */}
     </div>
   );
 });

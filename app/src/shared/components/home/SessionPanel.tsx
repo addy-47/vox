@@ -1,4 +1,5 @@
 import React, { memo, useCallback, useMemo, useState, useRef, useEffect } from "react";
+import { useMemoryTrace } from "@/shared/hooks/useMemoryTrace";
 import {
   Plus,
   Pin,
@@ -436,16 +437,21 @@ const ProjectRowItem = memo(
         }}
         onDragEnd={() => {
           setIsDragging(false);
-          setTimeout(() => {
-            isDraggingRef.current = false;
-          }, 80);
+          isDraggingRef.current = false;
           onDragEndCommit?.();
+        }}
+        onPointerUp={() => {
+          if (isDraggingRef.current) {
+            setIsDragging(false);
+            isDraggingRef.current = false;
+            onDragEndCommit?.();
+          }
         }}
         onDragOver={(e) => onDragOver(e, group.project.id)}
         onDragLeave={() => onDragLeave(group.project.id)}
         onDrop={(e) => onDrop(e, group.project.id)}
         className={cn(
-          "flex flex-col rounded-lg transition-colors border border-transparent select-none relative",
+          "flex flex-col rounded-lg border border-transparent select-none relative",
           isDragging &&
             "z-50 bg-[rgb(var(--card))] shadow-[0_16px_36px_-4px_rgba(0,0,0,0.45),0_0_0_1px_rgba(var(--accent),0.4),0_0_24px_-2px_rgba(var(--accent),0.2)]",
           isDragTarget &&
@@ -455,7 +461,7 @@ const ProjectRowItem = memo(
           scale: 1.01,
           cursor: "grabbing",
         }}
-        transition={{ type: "spring", stiffness: 300, damping: 35 }}
+        transition={{ type: "spring", stiffness: 350, damping: 30 }}
       >
         {/* Project Header Row: Flat folder, title / rename input, hover + to add session, hover 3-dots */}
         <div
@@ -615,6 +621,7 @@ ProjectRowItem.displayName = "ProjectRowItem";
  * Antigravity IDE-style sidebar with + New conversation, History toggle, Pinned, and Projects.
  */
 export const SessionPanel = memo(({ onClose }: SessionPanelProps) => {
+  useMemoryTrace("SessionPanel");
   const {
     pinnedSessions,
     projects,
@@ -736,15 +743,21 @@ export const SessionPanel = memo(({ onClose }: SessionPanelProps) => {
     }
   }, [projects]);
 
+  const projectIdsRef = useRef(projectIds);
+  useEffect(() => {
+    projectIdsRef.current = projectIds;
+  }, [projectIds]);
+
   const handleReorderProjectIds = useCallback((newIds: string[]) => {
     isDraggingProjectRef.current = true;
+    projectIdsRef.current = newIds;
     setProjectIds(newIds);
   }, []);
 
   const handleDragEndCommit = useCallback(() => {
     isDraggingProjectRef.current = false;
-    reorderProjects(projectIds);
-  }, [projectIds, reorderProjects]);
+    reorderProjects(projectIdsRef.current);
+  }, [reorderProjects]);
 
   // Fast O(1) project group lookup by ID
   const projectGroupMap = useMemo(() => {
@@ -784,14 +797,14 @@ export const SessionPanel = memo(({ onClose }: SessionPanelProps) => {
   );
 
   return (
-    <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar flex flex-col gap-3 px-3 pt-1 pb-16 select-none font-sans">
+    <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar flex flex-col gap-3 px-3 pt-3 pb-16 select-none font-sans">
       {/* ── Top Actions: + New Conversation & Conversation History ── */}
-      <div className="flex flex-col gap-0.5 shrink-0">
+      <div className="flex flex-col gap-1 shrink-0">
         <button
           type="button"
           onClick={handleNew}
           aria-label={SESSION_COPY.newConversationAriaLabel}
-          className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-left cursor-pointer transition-colors text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.06)] bg-[rgba(var(--foreground),0.03)]"
+          className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-left cursor-pointer transition-colors text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.04)] bg-transparent"
         >
           <Plus size={14} className="shrink-0 text-[rgb(var(--accent))]" strokeWidth={2} />
           <span className="text-[13.5px] font-medium tracking-normal">
@@ -806,15 +819,10 @@ export const SessionPanel = memo(({ onClose }: SessionPanelProps) => {
           type="button"
           onClick={() => setViewMode((m) => (m === "history" ? "projects" : "history"))}
           aria-pressed={viewMode === "history"}
-          className={cn(
-            "w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-left cursor-pointer transition-colors text-[13.5px] font-medium tracking-normal",
-            viewMode === "history"
-              ? "text-[rgb(var(--accent))] bg-[rgba(var(--accent),0.08)]"
-              : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.04)]"
-          )}
+          className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-left cursor-pointer transition-colors text-[13.5px] font-medium tracking-normal text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.04)] bg-transparent"
         >
           {viewMode === "history" ? (
-            <FolderGit2 size={14} className="shrink-0 text-[rgb(var(--accent))]" />
+            <FolderGit2 size={14} className="shrink-0 text-[rgb(var(--foreground-muted))]" />
           ) : (
             <History size={14} className="shrink-0 text-[rgb(var(--foreground-muted))]" />
           )}

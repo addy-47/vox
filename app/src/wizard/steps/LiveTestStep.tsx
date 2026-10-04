@@ -143,7 +143,7 @@ export const LiveTestStep: React.FC<Props> = ({ onNext, onBack }) => {
 
         {/* Live Transcript Display Box */}
         <div className={cn(
-            "relative z-10 glass p-5 flex flex-col justify-center flex-1 min-h-[90px] max-h-[140px] transition-all duration-500",
+            "relative z-10 glass p-5 flex flex-col justify-center flex-1 min-h-[90px] max-h-[140px] transition-all",
             testComplete ? "border-emerald-500/20 shadow-[0_0_30px_rgba(16,185,129,0.04)]" : ""
         )}>
             <div className="flex items-center justify-between mb-2">

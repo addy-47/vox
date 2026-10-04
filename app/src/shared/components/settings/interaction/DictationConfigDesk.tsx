@@ -556,7 +556,7 @@ export const DictationConfigDesk = memo(({ layoutMode, disabled = false }: Dicta
                           setIsEditingHotkey(true);
                           inputRef.current?.focus();
                         }}
-                        className="group/hk flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[rgba(var(--foreground),0.03)] hover:bg-[rgba(var(--accent),0.08)] border border-[rgba(var(--accent),0.12)] hover:border-[rgba(var(--accent),0.35)] transition-all duration-200 cursor-pointer shadow-sm"
+                        className="group/hk flex items-center gap-1.5 px-2.5 py-0.5 rounded-full transition-all duration-200 cursor-pointer "
                         title={DICTATION_COPY.rebindHint}
                         aria-label={`${DICTATION_COPY.hotkeyTitle}: ${dictation.hotkey || DEFAULT_HOTKEY}. Click to edit.`}
                       >

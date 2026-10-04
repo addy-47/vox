@@ -3,6 +3,8 @@ import { type DynamicColors } from "./colorUtils";
 import { cn } from "@/shared/lib/utils";
 import { MONITORING_COPY } from "@/data/monitoringCopy";
 import { ErrorBoundary } from "@/shared/components/common";
+import { useMemoryTrace } from "@/shared/hooks/useMemoryTrace";
+import { getThemeTransitioning, subscribeThemeTransition } from "@/shared/theme";
 
 interface LiquidChamberProps {
   colors: DynamicColors;
@@ -31,12 +33,16 @@ export const LiquidChamber = memo<LiquidChamberProps>(({
   popover = false,
   open = true,
 }) => {
+  useMemoryTrace("LiquidChamber");
   const chamberContainerRef = useRef<HTMLDivElement>(null);
   const chamberCanvasRef = useRef<HTMLCanvasElement>(null);
   const [isLightMode, setIsLightMode] = useState(false);
 
   useEffect(() => {
     const checkTheme = () => {
+      // During a flip the canvas would snap to the new palette at t=0 while
+      // the page fades over 200ms. Defer the swap to flip end instead.
+      if (getThemeTransitioning()) return;
       const theme = document.documentElement.getAttribute("data-theme");
       setIsLightMode(theme === "light");
     };
@@ -47,7 +53,11 @@ export const LiquidChamber = memo<LiquidChamberProps>(({
       attributes: true,
       attributeFilter: ["data-theme", "class"],
     });
-    return () => observer.disconnect();
+    const unsubscribe = subscribeThemeTransition(checkTheme);
+    return () => {
+      observer.disconnect();
+      unsubscribe();
+    };
   }, []);
 
   const isLightModeRef = useRef(isLightMode);
@@ -79,7 +89,6 @@ export const LiquidChamber = memo<LiquidChamberProps>(({
     let running = true;
     let time = 0;
     let lastFrameTime = 0;
-    const targetInterval = 1000 / 30; // 30 FPS for fluid sinusoidal waves
 
     const initialRamPct = Math.min(100, Math.max(0, metricsRef.current.ramPct || 0));
     let curRamFill = 0.10 + (initialRamPct / 100) * 0.75;
@@ -96,6 +105,7 @@ export const LiquidChamber = memo<LiquidChamberProps>(({
 
     let logicalWidth = container.clientWidth || 380;
     let logicalHeight = container.clientHeight || 280;
+    let settledFrames = 0;
 
     const syncCanvasSize = () => {
       const rect = container.getBoundingClientRect();
@@ -123,11 +133,13 @@ export const LiquidChamber = memo<LiquidChamberProps>(({
 
       rafId = requestAnimationFrame(render);
 
+      const interval = settledFrames > 45 ? 1000 / 15 : 1000 / 30;
+
       const elapsed = now - lastFrameTime;
-      if (elapsed < targetInterval) {
+      if (elapsed < interval) {
         return;
       }
-      lastFrameTime = now - (elapsed % targetInterval);
+      lastFrameTime = now - (elapsed % interval);
 
       time += 0.035;
 
@@ -154,6 +166,12 @@ export const LiquidChamber = memo<LiquidChamberProps>(({
 
       curRamFill += (targetRamFill - curRamFill) * 0.05;
       curCpuFill += (targetCpuFill - curCpuFill) * 0.05;
+
+      const settling =
+        Math.abs(targetRamFill - curRamFill) < 0.0005 &&
+        Math.abs(targetCpuFill - curCpuFill) < 0.0005;
+      if (settling) settledFrames += 1;
+      else settledFrames = 0;
 
       ctx.clearRect(0, 0, width, height);
 

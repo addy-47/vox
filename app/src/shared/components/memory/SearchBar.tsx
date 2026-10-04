@@ -4,6 +4,7 @@ import { ObservationRecord } from "@/services/memoryService";
 import { getActiveDynamicPalette, toMemoryCategory } from "./memoryGraphTypes";
 import { cn } from "@/shared/lib/utils";
 import { MEMORY_COPY } from "@/data/memoryCopy";
+import { HighlightMatch } from "@/shared/ui";
 
 interface SearchBarProps {
   facts: ObservationRecord[];
@@ -216,7 +217,7 @@ export const SearchBar = memo<SearchBarProps>(({
                   )}
                 </div>
                 <p className="text-[12px] text-[rgb(var(--foreground))] line-clamp-2 leading-tight m-0 font-sans">
-                  {fact.text}
+                  <HighlightMatch text={fact.text} query={value} />
                 </p>
               </button>
             );

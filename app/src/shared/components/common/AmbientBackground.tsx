@@ -1,6 +1,7 @@
 import React from "react";
 import { useTelemetry } from "@/shared/hooks/useTelemetry";
 import { useMemoryTrace } from "@/shared/hooks/useMemoryTrace";
+import { getThemeTransitioning, subscribeThemeTransition } from "@/shared/theme";
 import { cn } from "@/shared/lib/utils";
 
 type RippleShape = "circle" | "orbit";
@@ -31,7 +32,7 @@ const RIPPLE_DURATION = 28; // seconds per ripple cycle
 const RIPPLE_OPACITY = 0.10; // max opacity at ring origin
 const GLOW_OPACITY = 0.05; // core glow under the orb
 
-const RIPPLE_COUNT = 5;
+const RIPPLE_COUNT = 3;
 
 export const AmbientBackground = React.memo(({
   originX = "50%",
@@ -62,18 +63,28 @@ export const AmbientBackground = React.memo(({
   const glowOpacityMultiplier = isLight ? 1.8 : 1.2;
   const rippleOpacityMultiplier = isLight ? 1.8 : 1.2;
 
-  React.useEffect(() => {
-    if (paused) {
-      return;
-    }
+  /**
+   * Park the loop while a theme flip animates. The glow and ripple layers are
+   * full-viewport (60vmax / inset:0) and sit behind every glass surface, so
+   * writing inline opacity on them for the length of the fade forces a full
+   * ambient repaint plus a re-blur of every `backdrop-filter` region above it —
+   * the single largest source of the laggy, desynchronized flip.
+   *
+   * Reading `isFrozen` through a ref (not an effect dependency) keeps the
+   * 39-62s ripple animation clock and the smoothed-energy integrator intact
+   * across the freeze, so nothing snaps when the loop resumes.
+   */
+  const frozenRef = React.useRef(getThemeTransitioning());
 
+  React.useEffect(() => {
+    const isFrozen = () => frozenRef.current || paused;
     let animId: number | null = null;
     let smoothedEnergy = 0;
     let isRunning = false;
     let isSettled = false;
 
     const startLoop = () => {
-      if (isRunning || document.hidden) return;
+      if (isRunning || document.hidden || isFrozen()) return;
       isRunning = true;
       isSettled = false;
       if (rippleRef.current) {
@@ -91,7 +102,7 @@ export const AmbientBackground = React.memo(({
     };
 
     const update = () => {
-      if (document.hidden) {
+      if (document.hidden || isFrozen()) {
         stopLoop();
         return;
       }
@@ -145,13 +156,27 @@ export const AmbientBackground = React.memo(({
       }
     };
 
+    // Park on theme flip, resume on completion. `smoothedEnergy` and
+    // `isSettled` survive, so the loop picks up mid-interpolation.
+    const onThemeTransition = () => {
+      frozenRef.current = getThemeTransitioning();
+      if (frozenRef.current) {
+        stopLoop();
+      } else {
+        startLoop();
+      }
+    };
+
+    frozenRef.current = getThemeTransitioning();
     startLoop();
     document.addEventListener("visibilitychange", onVisibilityChange);
+    const unsubscribe = subscribeThemeTransition(onThemeTransition);
 
     return () => {
       stopLoop();
       clearInterval(checkInterval);
       document.removeEventListener("visibilitychange", onVisibilityChange);
+      unsubscribe();
     };
   }, [glowOpacityMultiplier, rippleOpacityMultiplier, telemetryRef, paused]);
 

@@ -115,16 +115,16 @@ export const WorkingMemoryConfigDesk = memo(({ layoutMode }: WorkingMemoryConfig
               </p>
             </div>
 
-            <div className="shrink-0 grid grid-cols-4 gap-1.5 w-[164px]">
+            <div className="shrink-0 grid grid-cols-2 gap-1.5 w-[100px] sm:w-[116px]">
               {[10, 15, 25].map((pct) => (
                 <button
                   key={pct}
                   type="button"
                   onClick={() => updateDraft("working_memory", "max_context_share", pct / 100)}
                   className={cn(
-                    "min-h-[32px] py-1.5 rounded-lg text-[11px] font-mono font-bold transition-all duration-200 cursor-pointer flex items-center justify-center border",
+                    "py-1 rounded-lg border text-[11px] font-mono font-bold transition-all duration-200 cursor-pointer flex items-center justify-center",
                     budgetPct === pct && !isBudgetCustom
-                      ? "border-[rgb(var(--accent))] bg-[rgba(var(--accent),0.18)] text-[rgb(var(--accent))] shadow-[0_0_12px_rgba(var(--accent),0.25)]"
+                      ? "border-[rgb(var(--accent))] bg-[rgba(var(--accent),0.15)] text-[rgb(var(--accent))] shadow-[0_0_12px_rgba(var(--accent),0.25)]"
                       : "border-[rgba(var(--accent),0.08)] bg-[rgba(var(--foreground),0.02)] text-[rgb(var(--foreground-muted))]/80 hover:border-[rgba(var(--accent),0.2)] hover:text-[rgb(var(--foreground))]"
                   )}
                 >
@@ -133,9 +133,9 @@ export const WorkingMemoryConfigDesk = memo(({ layoutMode }: WorkingMemoryConfig
               ))}
               <div
                 className={cn(
-                  "min-h-[32px] rounded-lg border flex items-center justify-center transition-all duration-200 overflow-hidden",
+                  "rounded-lg border flex items-center justify-center transition-all overflow-hidden",
                   isBudgetCustom
-                    ? "border-[rgb(var(--accent))] bg-[rgba(var(--accent),0.15)] shadow-[0_0_12px_rgba(var(--accent),0.25)]"
+                    ? "border-[rgb(var(--accent))] bg-[rgba(var(--accent),0.15)] text-[rgb(var(--accent))] shadow-[0_0_12px_rgba(var(--accent),0.25)]"
                     : "border-[rgba(var(--accent),0.08)] bg-[rgba(var(--foreground),0.02)] focus-within:border-[rgba(var(--accent),0.35)]"
                 )}
               >
@@ -145,10 +145,7 @@ export const WorkingMemoryConfigDesk = memo(({ layoutMode }: WorkingMemoryConfig
                   value={isBudgetCustom ? budgetPct : ""}
                   onChange={handleCustomBudgetChange}
                   placeholder={COMPUTE_PROFILE_COPY.custom}
-                  className={cn(
-                    "w-full text-center text-[11px] font-mono font-bold bg-transparent outline-none py-1.5 appearance-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none placeholder:text-[rgb(var(--foreground-muted))]/40 placeholder:font-sans placeholder:font-normal",
-                    isBudgetCustom ? "text-[rgb(var(--accent))]" : "text-[rgb(var(--foreground))]"
-                  )}
+                  className="w-full text-center text-[10.5px] font-mono font-bold bg-transparent outline-none text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40 placeholder:font-sans placeholder:font-normal py-1 appearance-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 />
               </div>
             </div>

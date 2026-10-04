@@ -17,9 +17,7 @@ use sherpa_onnx::{
     OfflineTtsZipvoiceModelConfig,
 };
 
-use super::{
-    edge_tts::EdgeTtsProvider, speed_range, SynthesisContext, TtsProvider,
-};
+use super::{edge_tts::EdgeTtsProvider, speed_range, SynthesisContext, TtsProvider};
 use crate::{
     core::{
         error::{PipelineError, PipelineImpact},

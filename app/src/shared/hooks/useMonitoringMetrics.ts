@@ -17,6 +17,22 @@ export function useMonitoringMetrics(enabled = true) {
 
   const inFlightRef = useRef(false);
 
+  // Warmup: fetch one snapshot immediately on mount so the popover renders
+  // with real data on first open rather than showing a cold empty state.
+  useEffect(() => {
+    let cancelled = false;
+    getRuntimeSnapshot()
+      .then((snap) => {
+        if (snap && !cancelled) {
+          setHistory([{ ...snap, localTime: performance.now() }]);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []); // runs exactly once on mount
+
   // Background Polling Loop (only while monitoring is visible and window is focused/visible)
   useEffect(() => {
     if (!enabled) return;

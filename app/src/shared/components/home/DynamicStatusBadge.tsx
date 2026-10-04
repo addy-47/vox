@@ -28,7 +28,8 @@ export const DynamicStatusBadge = memo<DynamicStatusBadgeProps>(({
       <div className="text-[14px] sm:text-[15px] font-mono font-bold tracking-[0.18em] uppercase flex items-center">
         {shimmer ? (
           <Shimmer
-            duration={2.0}
+            duration={0.9}
+            spread={3.5}
             className="text-[14px] sm:text-[15px] font-mono font-bold tracking-[0.18em] uppercase text-[rgb(var(--accent))]"
           >
             {label}

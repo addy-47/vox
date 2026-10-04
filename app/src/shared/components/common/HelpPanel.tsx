@@ -3,7 +3,7 @@ import { useLocation } from "react-router-dom";
 import {
   Sparkles,
   History as HistoryIcon,
-  Brain,
+  Network,
   SlidersHorizontal,
   Key,
 } from "lucide-react";
@@ -53,7 +53,7 @@ export const HelpPanel = memo(({ onClose: _onClose, initialShortcuts = false }: 
         id: "memory",
         title: "Memory Guide",
         routeBadge: "/memory",
-        icon: Brain,
+        icon: Network,
       };
     }
     if (pathname.startsWith("/settings")) {

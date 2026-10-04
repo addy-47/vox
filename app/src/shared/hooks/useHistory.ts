@@ -474,6 +474,8 @@ export function useHistory() {
     monthWindowIndex: effectiveMonthWindowIndex,
     dayWindows: sessionWindows,
     monthWindows,
+    dayGroups,
+    monthGroups,
     totalDates,
     totalMonths,
     dateIndex: effectiveDateIndex,

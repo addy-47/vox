@@ -1,4 +1,5 @@
 import React, { useRef, useEffect } from "react";
+import { useMemoryTrace } from "@/shared/hooks/useMemoryTrace";
 
 interface PixelSynthesisCanvasProps {
   className?: string;
@@ -15,6 +16,7 @@ export const PixelSynthesisCanvas: React.FC<PixelSynthesisCanvasProps> = ({
   className = "",
   active = true,
 }) => {
+  useMemoryTrace("PixelSynthesisCanvas");
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   useEffect(() => {
@@ -129,8 +131,11 @@ export const PixelSynthesisCanvas: React.FC<PixelSynthesisCanvasProps> = ({
     };
 
     const render = (now: number) => {
+      if (document.hidden) {
+        animId = 0;
+        return;
+      }
       animId = requestAnimationFrame(render);
-      if (document.hidden) return;
       if (APPLY_BATCHED_MATRIX && now - lastMatrixFrame < MATRIX_FRAME_INTERVAL) return;
       lastMatrixFrame = now;
 
@@ -235,8 +240,16 @@ export const PixelSynthesisCanvas: React.FC<PixelSynthesisCanvasProps> = ({
 
     animId = requestAnimationFrame(render);
 
+    const onVisibility = () => {
+      if (!document.hidden && animId === 0) {
+        animId = requestAnimationFrame(render);
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+
     return () => {
-      cancelAnimationFrame(animId);
+      if (animId) cancelAnimationFrame(animId);
+      document.removeEventListener("visibilitychange", onVisibility);
       resizeObserver.disconnect();
       if (canvas) {
         canvas.width = 1;

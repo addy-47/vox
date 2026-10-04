@@ -31,7 +31,7 @@ export const Card: React.FC<CardProps> = ({
     <div
       className={cn(
         getElevationClass(),
-        "rounded-xl transition-all duration-400 ease-in-out",
+        "rounded-xl",
         blur === "sm" && "backdrop-blur-sm",
         blur === "md" && "backdrop-blur-md",
         blur === "lg" && "backdrop-blur-lg",

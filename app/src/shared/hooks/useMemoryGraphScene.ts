@@ -185,7 +185,10 @@ export function useMemoryGraphScene({
     };
 
     updateTheme();
-    const observer = new MutationObserver(updateTheme);
+    const observer = new MutationObserver(() => {
+      updateTheme();
+      wakeLoopRef.current();
+    });
     observer.observe(document.documentElement, {
       attributes: true,
       attributeFilter: ["data-theme"],
@@ -1095,6 +1098,10 @@ export function useMemoryGraphScene({
     controls.addEventListener("change", onControlsChange);
 
     const domEl = renderer.domElement;
+    const onVisibilityChange = () => {
+      if (!document.hidden) wakeLoop();
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
     // Drag with buttons held, wheel, touch, pointerdown, or camera change triggers active pacing
     const onPointerMoveWake = (e: PointerEvent) => {
       if (e.buttons & 1) wakeLoop();
@@ -1107,17 +1114,24 @@ export function useMemoryGraphScene({
     const render = (timestamp: number) => {
       // Skip render when tab/window is hidden
       if (document.hidden) {
-        animFrameRef.current = requestAnimationFrame(render);
+        animFrameRef.current = null;
+        return;
+      }
+
+      // Check if actively moving via flyTo lerp or recent control change
+      const isMoving = Boolean(flyToTargetRef.current) || (timestamp - lastActivityTimestamp < MOVE_WINDOW_MS);
+
+      // Idle suspend: park the loop entirely when nothing is moving. Pointer
+      // intent (drag/wheel/touch/fly-to/data change) or a theme change wakes it.
+      if (!isMoving) {
+        animFrameRef.current = null;
         return;
       }
 
       animFrameRef.current = requestAnimationFrame(render);
 
-      // Check if actively moving via flyTo lerp or recent control change
-      const isMoving = Boolean(flyToTargetRef.current) || (timestamp - lastActivityTimestamp < MOVE_WINDOW_MS);
-
-      // Dynamic frame pacing: 60 FPS (16ms) during interaction / flyTo; 30 FPS (32ms) when resting
-      const minInterval = isMoving ? 16 : 32;
+      // 60 FPS while moving / flyTo; nothing to pace when idle (we are parked)
+      const minInterval = 16;
       if (timestamp - lastRenderTimestamp < minInterval) return;
       lastRenderTimestamp = timestamp;
 
@@ -1177,6 +1191,7 @@ export function useMemoryGraphScene({
       domEl.removeEventListener("pointerdown", wakeLoop);
       domEl.removeEventListener("wheel", wakeLoop);
       domEl.removeEventListener("touchstart", wakeLoop);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
       if (animFrameRef.current !== null) {
         cancelAnimationFrame(animFrameRef.current);
         animFrameRef.current = null;

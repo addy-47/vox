@@ -338,7 +338,6 @@ fn collect_snapshot(
         cpu_governor: state.cpu_governor.lock().clone(),
         cpu_governor_optimal: state.cpu_governor_optimal.load(Ordering::Relaxed),
 
-
         timestamp_ms: now,
     }
 }

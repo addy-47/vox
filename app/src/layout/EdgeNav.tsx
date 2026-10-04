@@ -15,16 +15,13 @@ const navItems = [
 
 export const EdgeNav: React.FC = () => {
   return (
-    <>
-      {/* Full-width dissolve only in compact layout where monitoring lives in EdgeNav */}
-      <BottomDockFeather className="lg:hidden fixed bottom-0 left-0 right-0 h-[110px] z-[38]" />
-
-      <nav
-        data-edge-nav
-        data-spatial-zone="dock"
-        className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[60] pointer-events-auto flex items-center gap-2 px-3 py-1.5 h-[56px] glass-card border border-[rgba(var(--accent),0.15)] rounded-full shadow-2xl"
-      >
-        <BottomDockFeather className="hidden lg:block absolute -inset-x-8 -bottom-3 -top-6 rounded-full" />
+    <nav
+      data-edge-nav
+      data-spatial-zone="dock"
+      className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[60] pointer-events-auto flex items-center gap-2 px-3 py-1.5 h-[56px] glass-card glass-keep-blur border border-[rgba(var(--accent),0.15)] rounded-full"
+    >
+      {/* Localized feather directly behind floating dock nav */}
+      <BottomDockFeather className="absolute -inset-x-6 -bottom-3 -top-6 rounded-full pointer-events-none" />
         {navItems.map((item) => (
           <Tooltip key={item.label} label={item.label} side="top">
             <NavLink
@@ -90,6 +87,5 @@ export const EdgeNav: React.FC = () => {
           </NavLink>
         </Tooltip>
       </nav>
-    </>
   );
 };

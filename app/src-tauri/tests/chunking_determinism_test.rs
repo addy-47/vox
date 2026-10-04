@@ -272,8 +272,5 @@ fn test_chunking_determinism_comma_gate_stable() {
         res3[0],
         "We have carefully verified that all system components and background services are running smoothly,"
     );
-    assert_eq!(
-        res3[1],
-        "and we can proceed with the live rollout now."
-    );
+    assert_eq!(res3[1], "and we can proceed with the live rollout now.");
 }

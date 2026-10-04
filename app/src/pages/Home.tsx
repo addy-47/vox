@@ -1,4 +1,4 @@
-import React, { memo, useMemo, useRef, useEffect } from "react";
+import React, { memo, useMemo, useRef, useEffect, useState, useCallback } from "react";
 import { VoxOrb, PipelineField, DynamicStatusBadge, RestorePulse, SessionPanel, DialogueBubble } from "@/shared/components/home";
 import { TextInputBar } from "@/shared/components/home/TextInputBar";
 import { ActiveTranscript } from "@/shared/components/home/ActiveTranscript";
@@ -13,12 +13,14 @@ import {
 
 import { Power, Mic, Keyboard, Play, Pause, X, AlertCircle, RotateCcw } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
+import { OrbitalLoader } from "@/shared/components/common";
 
 
 import { useProfilerDrawer } from "@/shared/components/profiler/ProfilerDrawer";
 import { useSessionStore } from "@/store/sessionStore";
 import { useRegisterPageDrawer } from "@/shared/context/PageDrawerContext";
 import { useHomePage } from "@/shared/hooks/useHomePage";
+import { useMemoryTrace } from "@/shared/hooks/useMemoryTrace";
 
 const DialogueTurn = memo(({ turn }: { turn: { user: string; assistant: string; id: number } }) => (
   <React.Fragment>
@@ -71,6 +73,7 @@ export const Home = memo(() => {
     shouldAutoScrollRef,
     activityDisplay,
   } = useHomePage();
+  useMemoryTrace("Home");
 
   const { openProfiler, closeProfiler } = useProfilerDrawer();
   const drawerHandlers = useMemo(() => ({
@@ -80,6 +83,20 @@ export const Home = memo(() => {
   useRegisterPageDrawer(drawerHandlers);
 
   const contentInnerRef = useRef<HTMLDivElement>(null);
+
+  // Boot gate: Home remounts on every visit and the orb's scene build +
+  // shader compile blocks first paint. Show a loader until the first frame.
+  const mountAtRef = useRef(0);
+  const [orbReady, setOrbReady] = useState(false);
+  useEffect(() => {
+    mountAtRef.current = performance.now();
+    console.info(`[route-nav] Home mount @${mountAtRef.current.toFixed(1)}ms`);
+  }, []);
+  const handleOrbFirstFrame = useCallback(() => {
+    const dt = performance.now() - mountAtRef.current;
+    console.info(`[route-nav] Home orb first frame +${dt.toFixed(1)}ms`);
+    setOrbReady(true);
+  }, []);
 
   // Auto-scroll follower: keep pinned to bottom as text streams in or messages are sent
   useEffect(() => {
@@ -240,17 +257,11 @@ export const Home = memo(() => {
           </span>
         )}
         {isTemporarySession && !isEngaged ? (
-          <div
-            role="status"
-            aria-live="polite"
-            aria-label="Vox Status: Temporary"
-            className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-[rgba(var(--border),0.25)] bg-[rgb(var(--foreground-muted))]/[0.06] dark:bg-[rgba(10,12,14,0.40)] dark:backdrop-blur-md pointer-events-none grayscale"
-          >
-            <span className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--foreground-muted))] opacity-30" />
-            <span className="text-[11px] font-mono font-bold tracking-[0.2em] uppercase text-[rgb(var(--foreground-muted))]/70">
-              {HOME_CONTROLS_COPY.temporary.activeBadge}
-            </span>
-          </div>
+          <DynamicStatusBadge
+            label={HOME_CONTROLS_COPY.temporary.activeBadge}
+            shimmer={false}
+            className="opacity-50 grayscale"
+          />
         ) : (
           <DynamicStatusBadge
             label={activityDisplay.label}
@@ -315,8 +326,14 @@ export const Home = memo(() => {
               telemetryRef={telemetryRef}
               interactionState={interactionState}
               isSleeping={isSleeping}
+              onFirstFrame={handleOrbFirstFrame}
             />
           </ErrorBoundary>
+          {!orbReady && (
+            <div className="absolute inset-0 z-30 flex items-center justify-center bg-[rgb(var(--background))]">
+              <OrbitalLoader size="md" />
+            </div>
+          )}
         </div>
       </div>
 

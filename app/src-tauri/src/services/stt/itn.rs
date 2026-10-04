@@ -14,9 +14,8 @@ static CURRENCY_RE: Lazy<Regex> = Lazy::new(|| {
         .expect("Failed to compile currency regex")
 });
 
-static UNFORMATTED_DOLLARS_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"\$(\d{4,})\b").expect("Failed to compile unformatted dollars regex")
-});
+static UNFORMATTED_DOLLARS_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"\$(\d{4,})\b").expect("Failed to compile unformatted dollars regex"));
 
 /// Applies Tier-1 deterministic speech-to-written cleanup and Inverse Text Normalization.
 pub fn apply_tier1_refinement(raw: &str) -> String {
@@ -46,7 +45,9 @@ fn normalize_currency(text: &str) -> String {
         .replace_all(text, |caps: &regex::Captures| {
             let dollars_str = caps.get(1).map(|m| m.as_str().trim()).unwrap_or("");
             let cleaned_dollars = dollars_str.replace(['-', ','], " ");
-            let Some(dollars_digits) = text_processing_rs::itn::en::cardinal::parse(&cleaned_dollars) else {
+            let Some(dollars_digits) =
+                text_processing_rs::itn::en::cardinal::parse(&cleaned_dollars)
+            else {
                 return caps.get(0).map(|m| m.as_str()).unwrap_or("").to_string();
             };
 
@@ -54,7 +55,8 @@ fn normalize_currency(text: &str) -> String {
 
             if let Some(cents_match) = caps.get(2) {
                 let cents_str = cents_match.as_str().trim().replace(['-', ','], " ");
-                if let Some(cents_digits) = text_processing_rs::itn::en::cardinal::parse(&cents_str) {
+                if let Some(cents_digits) = text_processing_rs::itn::en::cardinal::parse(&cents_str)
+                {
                     if let Ok(cents_num) = cents_digits.parse::<u32>() {
                         return format!("${}.{:02}", formatted_dollars, cents_num);
                     }
