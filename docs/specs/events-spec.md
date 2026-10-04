@@ -95,8 +95,14 @@ This document establishes the **target behavioral, concurrency, and resilience s
 - **`LlmToken { turn_id, token }`**: Streamed assistant text tokens $\to$ emitted directly to UI via IPC (bypasses Router).
 - **`LlmFinished { turn_id }`**: Model generation complete marker $\to$ translated to `VoxEvent::LlmFinished`.
 - **`ToolCall { id, name, args }`**: Server-initiated function call request parsed from provider wire format (e.g. Gemini `serverContent.toolCall` or Deepgram `FunctionCallRequest`). Dispatched by `RealtimeActor` loop to asynchronous `ToolExecutor`, persisted to `session_tool_calls`, and answered via `OutboundCommand::ToolResponse` / `RealtimeSession::send_tool_response`.
-- **`Error { turn_id, message, impact, actionability }`**: Provider network/protocol error $\to$ translated directly to `VoxEvent::Error(PipelineError)`.
 - **`SessionResumptionHandle { handle, model }`**: Session cache token $\to$ written to disk non-blocking.
+
+### Canonical Tauri IPC Events (`IpcEvent`)
+All broadcast messages between the Rust backend and the frontend webview are strongly typed through `IpcEvent` (`core/events.rs`):
+- **`compaction_started`**: Emitted when a background or manual session compaction starts. Payload: `{ session_id: i64 }`.
+- **`compaction_finished`**: Emitted when a compaction run concludes. Payload: `{ session_id: i64, success: bool, facts_enqueued: u32, error: Option<String> }`.
+- **`sessions_changed`**: Broadcast when session rows, metadata, or uncompacted turn counts are committed/updated, signalling the frontend to invalidate session lists.
+- **`compact_session(session_id: i64)` (IPC Command)**: Initiates an explicit compaction run for a target session. Subject to Universal Global Compaction Mutual Exclusion (`AppState.compaction_lock`); returns `VoxIpcError::Busy` if any compaction is currently running.
 
 ---
 

@@ -6,6 +6,7 @@ import { HISTORY_COPY } from "@/data/historyCopy";
 import { useHistoryFilterStore } from "@/store/historyFilterStore";
 import { ThemeToggleButton, HighlightMatch, BottomDockFeather } from "@/shared/ui";
 import { CalendarPicker, toDateKey } from "./CalendarPicker";
+import { CompactSessionButton } from "./CompactSessionButton";
 
 export interface HistoryListViewProps {
   dayLabel: string;
@@ -112,8 +113,10 @@ export const HistoryListView: React.FC<HistoryListViewProps> = memo(
       <div className="w-full h-full flex flex-col min-h-0 overflow-hidden z-20">
         {/* Fixed Header Section: Title + Chevrons + Theme Toggle, Search Input, and Date Filter Pills */}
         <div className="shrink-0 px-4 pt-4 pb-2.5 space-y-2.5 border-b border-[rgba(var(--border),0.12)] bg-[rgb(var(--background))]/80 backdrop-blur-md">
-          {/* Header Row: Title & Day on Left, Chevrons & Theme Toggle on Right */}
-          <div className="flex items-center justify-between px-1">
+          {/* Header Row: Title & Day on Left, Chevrons & Theme Toggle on Right.
+              items-start pins button tops to the container top (same 16px as
+              the corner clusters) instead of centering against the title. */}
+          <div className="flex items-start justify-between px-1">
             <div className="flex flex-col">
               <h1 className="text-[15px] sm:text-[16px] font-display font-black uppercase tracking-[0.2em] text-[rgb(var(--foreground))]">
                 {HISTORY_COPY.historyAndSessions}
@@ -346,6 +349,16 @@ export const HistoryListView: React.FC<HistoryListViewProps> = memo(
                         <Trash2 size={13} />
                       </button>
                     )}
+                  </div>
+
+                  {/* Compaction Action at bottom-right corner, visible always when uncompacted */}
+                  <div className="absolute bottom-3.5 right-3.5 z-20">
+                    <CompactSessionButton
+                      sessionId={session.id}
+                      uncompactedTurns={session.uncompacted_turns}
+                      variant="icon"
+                      className="w-7 h-7 rounded-full glass-card border border-[rgba(var(--accent),0.25)] text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/15 shadow-xs"
+                    />
                   </div>
                 </div>
               );

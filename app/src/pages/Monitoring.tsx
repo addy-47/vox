@@ -291,8 +291,9 @@ export const Monitoring: React.FC<MonitoringProps> = ({
 
   const containerContent = (
     <div className="flex flex-col h-full w-full select-none gap-2.5">
-      {/* ── 1. Top Header Bar ── */}
-      <div className="flex items-center justify-between pb-2.5 border-b border-[rgba(var(--accent),0.12)] shrink-0">
+      {/* ── 1. Top Header Bar (items-start: button tops share the 16px
+          container top with every other header on the page) ── */}
+      <div className="flex items-start justify-between pb-2.5 border-b border-[rgba(var(--accent),0.12)] shrink-0">
         <div className="flex items-center gap-3">
           <div className="flex flex-col">
             <h1 className="text-[15px] sm:text-[16px] font-display font-black uppercase tracking-[0.2em] text-[rgb(var(--foreground))]">
@@ -334,7 +335,7 @@ export const Monitoring: React.FC<MonitoringProps> = ({
           {popover && onClose && (
             <button
               onClick={onClose}
-              className="p-1.5 rounded-xl text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.08)] transition-colors cursor-pointer"
+              className="w-8 h-8 flex items-center justify-center rounded-xl text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.08)] transition-colors cursor-pointer shrink-0"
               aria-label={MONITORING_COPY.closeMonitor}
             >
               <X size={16} />

@@ -156,12 +156,7 @@ export const Settings: React.FC = () => {
   if (!draftSettings) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center min-w-0 z-10 h-full relative overflow-hidden bg-transparent px-6 md:px-10 py-6 md:py-10">
-        <OrbitalLoader
-          size="md"
-          title={SETTINGS_COPY.loadingSettings}
-          subtitle={SETTINGS_COPY.loadingHint}
-          statusText={SETTINGS_COPY.initializingEngine}
-        />
+        <OrbitalLoader size="md" />
       </div>
     );
   }
@@ -254,9 +249,11 @@ export const Settings: React.FC = () => {
         </div>
       ) : (
         /* ── Mobile & Compact Layout (Single vertical scroll list) ─────────── */
-        <div className="flex-1 flex flex-col min-h-0 overflow-hidden w-full px-3.5 sm:px-5 pt-3.5 sm:pt-4">
-          {/* Sticky Header - Standardized Across All Pages */}
-          <div className="flex items-center justify-between pb-3 sm:pb-3.5 border-b border-[rgba(var(--accent),0.12)] mb-4 sm:mb-5 shrink-0">
+        <div className="flex-1 flex flex-col min-h-0 overflow-hidden w-full px-4 sm:px-5 pt-4">
+          {/* Sticky Header - Standardized Across All Pages: items-start pins
+              every button top to the container top (same 16px as the corner
+              clusters); 32px boxes meet the §6 minimum touch target. */}
+          <div className="flex items-start justify-between pb-3 sm:pb-3.5 border-b border-[rgba(var(--accent),0.12)] mb-4 sm:mb-5 shrink-0">
             <div className="flex flex-col">
               <h1 className="text-[15px] sm:text-[16px] font-display font-black uppercase tracking-[0.2em] text-[rgb(var(--foreground))]">
                 {SETTINGS_COPY.settingsTitle}
@@ -320,7 +317,7 @@ export const Settings: React.FC = () => {
                       onClick={() => commitChanges()}
                       disabled={isMissingCloudKey}
                       className={cn(
-                        "p-1.5 rounded-xl border transition-all cursor-pointer flex items-center justify-center shrink-0",
+                        "w-8 h-8 rounded-xl border transition-all cursor-pointer flex items-center justify-center shrink-0",
                         isMissingCloudKey
                           ? "border-[rgba(var(--border),0.1)] bg-[rgba(var(--foreground),0.03)] text-[rgb(var(--foreground-muted))]/30 cursor-not-allowed"
                           : anyNeedsRestart
@@ -337,7 +334,7 @@ export const Settings: React.FC = () => {
                   <Tooltip label={SETTINGS_COPY.discardChanges} side="bottom">
                     <button
                       onClick={() => discardChanges()}
-                      className="p-1.5 rounded-xl border border-rose-500/20 bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 transition-all cursor-pointer flex items-center justify-center shrink-0"
+                      className="w-8 h-8 rounded-xl border border-rose-500/20 bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 transition-all cursor-pointer flex items-center justify-center shrink-0"
                       aria-label={SETTINGS_COPY.discardChanges}
                     >
                       <X size={14} />
@@ -362,7 +359,7 @@ export const Settings: React.FC = () => {
                     }
                   }}
                   className={cn(
-                    "p-1.5 rounded-xl border transition-all duration-300 cursor-pointer flex items-center justify-center shrink-0",
+                      "w-8 h-8 rounded-xl border transition-all duration-300 cursor-pointer flex items-center justify-center shrink-0",
                     isMobileConfirmRestore
                       ? "bg-[rgba(var(--danger),0.18)] border-[rgb(var(--danger))]/60 text-[rgb(var(--danger))]"
                       : "bg-[rgb(var(--foreground))]/[0.03] border-[rgba(var(--accent),0.15)] text-[rgb(var(--foreground-muted))] hover:bg-[rgb(var(--accent))]/10 hover:text-[rgb(var(--accent))]"

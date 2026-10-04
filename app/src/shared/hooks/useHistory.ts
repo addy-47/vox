@@ -8,6 +8,7 @@ import {
   type SessionRow,
   type TurnRow,
 } from "@/services/historyService";
+import { BREAKPOINT_COMPACT_HEIGHT_MAX, BREAKPOINT_COMPACT_MAX } from "@/layout/breakpoints";
 import {
   chunkDaysIntoWindows,
   chunkSessionsIntoWindows,
@@ -184,9 +185,12 @@ export function useHistory() {
     [currentWindowSessions]
   );
 
-  const isCompactHeight = dimensions.height < 640;
+  const isCompactHeight = dimensions.height < BREAKPOINT_COMPACT_HEIGHT_MAX;
 
-  const isOrbitViewport = dimensions.width >= 680;
+  // The orbit ring needs ~940px of stage (ORBIT_RADIUS_MIN + card half-width
+  // at min scale); below the compact threshold it would clip, so the list
+  // view owns every viewport under it. Single source: breakpoints.ts.
+  const isOrbitViewport = dimensions.width >= BREAKPOINT_COMPACT_MAX;
   const effectiveView: HistoryView = isOrbitViewport ? view : "day";
 
   const openMonthOf = useCallback(

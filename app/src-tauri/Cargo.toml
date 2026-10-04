@@ -156,8 +156,13 @@ name = "llm_bench"
 harness = false
 
 [[bench]]
-name = "memory_eval"
-path = "evals/memory_eval.rs"
+name = "memory_pipeline_eval"
+path = "evals/memory-pipeline/main.rs"
+harness = false
+
+[[bench]]
+name = "agentic_tool_eval"
+path = "evals/agentic-tool/main.rs"
 harness = false
 
 

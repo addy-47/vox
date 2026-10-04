@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useCallback, useMemo, useState, useEffect, useRef, memo } from "react";
+import { BREAKPOINT_DUAL_PANEL_MIN } from "@/layout/breakpoints";
 
 export type PanelId = "help" | "notifications" | "sessions";
 export type PanelEdge = "left" | "right";
@@ -45,13 +46,13 @@ export const PanelStateProvider: React.FC<PanelStateProviderProps> = memo(({ chi
   }, [leftPanel]);
 
   /**
-   * Panel Exclusivity Threshold:
+   * Panel Exclusivity Threshold (SSOT: BREAKPOINT_DUAL_PANEL_MIN):
    * On viewports < 1280px (mobile, tablet, and compact/standard desktop windows),
    * only ONE panel edge may be open across the entire page. Opening or toggling
    * any panel closes the opposite edge.
    * On extra-wide viewports (≥ 1280px), left and right rails may coexist.
    */
-  const THRESHOLD_DUAL_PANEL_WIDTH = 1280;
+  const THRESHOLD_DUAL_PANEL_WIDTH = BREAKPOINT_DUAL_PANEL_MIN;
 
   const isNarrowViewport = useCallback(() => {
     return typeof window !== "undefined" && window.innerWidth < THRESHOLD_DUAL_PANEL_WIDTH;

@@ -1,5 +1,7 @@
 import React, { useRef, useState, useEffect, useCallback, lazy, Suspense } from "react";
 import { EdgeNav } from "./EdgeNav";
+import { subscribeViewportFrame, subscribeViewportGate } from "./viewportResize";
+import { useViewportResize } from "@/shared/hooks/useViewportResize";
 import { LAYOUT_COPY } from "@/data/layoutCopy";
 import { TitleBar } from "./TitleBar";
 import { AmbientBackground, HelpPanel, NotificationPanel, ErrorBoundary, OrbitalLoader } from "@/shared/components/common";
@@ -18,6 +20,7 @@ import { SESSION_COPY } from "@/data/sessionCopy";
 import { useHistoryFilterStore } from "@/store/historyFilterStore";
 import { useSessionStore } from "@/store/sessionStore";
 import { getStackSize } from "@/shared/lib/overlayStack";
+import { BREAKPOINT_OPPOSITE_COLLISION_MAX, isCompactWidth } from "./breakpoints";
 
 const Monitoring = lazy(() => import("@/pages/Monitoring").then((m) => ({ default: m.Monitoring })));
 
@@ -80,15 +83,20 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
     typeof window !== "undefined" ? window.innerWidth : 1200
   );
 
-  // Opposite trigger collision threshold:
+  // Viewport-resize gate: while a resize is in flight, CSS transitions /
+  // animations / backdrop-filter are suspended app-wide and the ambient
+  // field parks (see viewportResize.ts + index.css).
+  const { isResizing } = useViewportResize();
+
+  // Opposite trigger collision threshold (SSOT: BREAKPOINT_OPPOSITE_COLLISION_MAX):
   // Panel width is 340px; opposite corner cluster is ~80px + 20px padding (100px).
-  // Below 480px, there is insufficient gap (< 40px) between an open panel and opposite triggers.
-  const isOppositeCollision = windowWidth < 480;
+  // Below it, there is insufficient gap (< 40px) between an open panel and opposite triggers.
+  const isOppositeCollision = windowWidth < BREAKPOINT_OPPOSITE_COLLISION_MAX;
   const hideRightCluster = Boolean(leftPanel) && isOppositeCollision;
   const hideLeftCluster = Boolean(rightPanel) && isOppositeCollision;
 
   // Ref to track compact state across renders during window resize
-  const wasCompactRef = useRef(window.innerWidth < 1024);
+  const wasCompactRef = useRef(isCompactWidth());
   const pathnameRef = useRef(location.pathname);
   const monitorOpenRef = useRef(monitorOpen);
 
@@ -106,36 +114,47 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
     }).catch(() => {});
   }, [location.pathname]);
 
-  // Bidirectional viewport transition: compact (EdgeNav route) ↔ full-max (corner popover)
+  // Bidirectional viewport transition: compact (EdgeNav route) ↔ full-max (corner popover).
+  // A mode *cross* during a resize only records intent; the navigate commits
+  // after the resize gate settles, so dragging across the compact boundary
+  // never remounts the page mid-gesture (which would recompile WebGL shaders
+  // and re-arm every boot gate). The commit raises the mode-flip loader,
+  // which clears after the new route's first paint (see below).
+  const pendingFlipRef = useRef<{ toCompact: boolean } | null>(null);
   useEffect(() => {
-    let rAfId: number | null = null;
-    const handleResize = () => {
-      if (rAfId !== null) return;
-      rAfId = requestAnimationFrame(() => {
-        rAfId = null;
-        setWindowWidth(window.innerWidth);
-        const isCompact = window.innerWidth < 1024;
-        if (wasCompactRef.current && !isCompact) {
-          // Compact → Full-max: switch from route page to popover
-          if (pathnameRef.current === "/monitoring") {
-            navigate("/", { replace: true });
-            setMonitorOpen(true);
-          }
-        } else if (!wasCompactRef.current && isCompact) {
-          // Full-max → Compact: switch from popover to route page
-          if (monitorOpenRef.current) {
-            setMonitorOpen(false);
-            navigate("/monitoring");
-          }
-        }
-        wasCompactRef.current = isCompact;
-      });
-    };
+    const unsubFrame = subscribeViewportFrame(() => {
+      setWindowWidth(window.innerWidth);
+      const isCompact = isCompactWidth();
+      if (wasCompactRef.current !== isCompact) {
+        // Latest cross wins; an A→B→A wiggle before settle commits nothing.
+        pendingFlipRef.current = { toCompact: isCompact };
+      }
+      wasCompactRef.current = isCompact;
+    });
 
-    window.addEventListener("resize", handleResize, { passive: true });
+    const unsubGate = subscribeViewportGate((active) => {
+      if (active) return;
+      const pending = pendingFlipRef.current;
+      pendingFlipRef.current = null;
+      if (!pending) return;
+      if (!pending.toCompact) {
+        // Compact → Full-max: switch from route page to popover
+        if (pathnameRef.current === "/monitoring") {
+          navigate("/", { replace: true });
+          setMonitorOpen(true);
+        }
+      } else {
+        // Full-max → Compact: switch from popover to route page
+        if (monitorOpenRef.current && pathnameRef.current !== "/monitoring") {
+          setMonitorOpen(false);
+          navigate("/monitoring");
+        }
+      }
+    });
+
     return () => {
-      window.removeEventListener("resize", handleResize);
-      if (rAfId !== null) cancelAnimationFrame(rAfId);
+      unsubFrame();
+      unsubGate();
     };
   }, [navigate]);
 
@@ -293,7 +312,7 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
       // Page Navigation: Shift + Left / Right (always wins outside editables)
       if (shift && (key === "ArrowRight" || key === "ArrowLeft")) {
         e.preventDefault();
-        const isCompact = window.innerWidth < 1024;
+        const isCompact = isCompactWidth();
         const routes = isCompact ? ["/", "/history", "/memory", "/settings", "/monitoring"] : ["/", "/history", "/memory", "/settings"];
         const currentIndex = routes.indexOf(location.pathname);
         if (currentIndex !== -1) {
@@ -366,7 +385,7 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
           <AmbientBackground
             instanceId="layout"
             originY={ambientOriginY}
-            paused={interactionState === "Speaking"}
+            paused={interactionState === "Speaking" || isResizing}
             rippleSpeedMultiplier={rippleSpeedMultiplier}
             rippleShape={
               isHistory && historyDisplayMode === "orbit"
@@ -390,11 +409,7 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
             <Suspense
               fallback={
                 <div className="flex-1 w-full h-full flex flex-col items-center justify-center p-6 animate-in fade-in duration-200">
-                  <OrbitalLoader
-                    size="md"
-                    title={LAYOUT_COPY.nav.loadingSurface}
-                    subtitle={LAYOUT_COPY.nav.preparingEnvironment}
-                  />
+                  <OrbitalLoader size="md" />
                 </div>
               }
             >

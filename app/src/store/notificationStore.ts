@@ -11,6 +11,7 @@ import {
   listenNotificationCreated,
   listenNotificationUpdated,
 } from "@/services/notificationService";
+import { compactSession } from "@/services/historyService";
 
 export interface RolledUpNotification {
   key: string;
@@ -124,6 +125,12 @@ export const useNotificationStore = create<NotificationStoreState>((set, get) =>
     );
     if (notif) {
       await get().executeAction(notif, onNavigate);
+    } else {
+      try {
+        await compactSession(sessionId);
+      } catch (err) {
+        logError(`Failed to trigger direct compaction for session ${sessionId}`, err);
+      }
     }
   },
 

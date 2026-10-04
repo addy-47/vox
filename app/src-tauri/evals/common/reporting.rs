@@ -1,5 +1,11 @@
 //! ============================================================================
-//! evals/common/reporting.rs — Evaluation Reporting & Run Directory Management
+//! evals/common/reporting.rs — Run/case directories, report and summary writing
+//! ============================================================================
+//! Category     : Utility Module
+//! Component    : evals harness
+//! Prerequisites: see evals/README.md
+//! Execution    : cargo bench --bench agentic_tool_eval --release -- --help
+//! Metrics      : see summary.md in the run directory
 //! ============================================================================
 
 use std::{
@@ -7,41 +13,99 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 
-/// Generates a timestamped evaluation run ID: `YYYYMMDD_HHMMSS_<short_uuid>`.
 pub fn generate_run_id() -> String {
     let now = chrono::Utc::now();
-    let uuid_str = uuid::Uuid::new_v4().to_string();
-    let short_uuid = &uuid_str[..8];
-    format!("{}_{}", now.format("%Y%m%d_%H%M%S"), short_uuid)
+    format!(
+        "{}_{}",
+        now.format("%Y%m%d_%H%M%S"),
+        &uuid::Uuid::new_v4().to_string()[..8]
+    )
 }
 
-/// Creates the base run directory `<base_dir>/<run_id>`.
 pub fn create_run_directory(base_dir: &Path, run_id: &str) -> Result<PathBuf> {
-    let run_dir = base_dir.join(run_id);
-    fs::create_dir_all(&run_dir).map_err(|e| {
-        anyhow!(
-            "Failed to create evaluation run directory at {:?}: {}",
-            run_dir,
-            e
-        )
-    })?;
-    Ok(run_dir)
+    let d = base_dir.join(run_id);
+    fs::create_dir_all(&d).with_context(|| format!("Failed to create {:?}", d))?;
+    Ok(d)
 }
 
-/// Creates a sub-directory for a specific case: `<run_dir>/case_XX`.
-pub fn create_case_directory(run_dir: &Path, case_idx: usize) -> Result<PathBuf> {
-    let case_dir = run_dir.join(format!("case_{:02}", case_idx));
-    fs::create_dir_all(&case_dir)
-        .map_err(|e| anyhow!("Failed to create case directory at {:?}: {}", case_dir, e))?;
-    Ok(case_dir)
+pub fn create_case_directory(run_dir: &Path, case_name: &str) -> Result<PathBuf> {
+    let d = run_dir.join(case_name);
+    fs::create_dir_all(&d).with_context(|| format!("Failed to create {:?}", d))?;
+    Ok(d)
 }
 
-/// Writes a Markdown report file in `<case_dir>/<filename>`.
 pub fn write_markdown_report(case_dir: &Path, filename: &str, content: &str) -> Result<PathBuf> {
-    let file_path = case_dir.join(filename);
-    fs::write(&file_path, content)
-        .map_err(|e| anyhow!("Failed to write markdown report to {:?}: {}", file_path, e))?;
-    Ok(file_path)
+    let p = case_dir.join(filename);
+    fs::write(&p, content).with_context(|| format!("Failed to write {:?}", p))?;
+    Ok(p)
+}
+
+pub fn write_report(
+    eval_name: &str,
+    run_id: &str,
+    payload: &serde_json::Value,
+) -> Result<Vec<PathBuf>> {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("evals/results")
+        .join(eval_name)
+        .join(run_id)
+        .join("report.json");
+    let body = serde_json::to_string_pretty(payload)?;
+    if let Some(p) = path.parent() {
+        fs::create_dir_all(p)?;
+    }
+    fs::write(&path, body).with_context(|| format!("Failed to write {:?}", path))?;
+    Ok(vec![path])
+}
+
+pub fn markdown_table(headers: &[&str], rows: &[String]) -> String {
+    if rows.is_empty() {
+        return String::new();
+    }
+    let sep: Vec<&str> = headers.iter().map(|_| "---").collect();
+    let mut out = format!("| {} |\n| {} |\n", headers.join(" | "), sep.join(" | "));
+    for r in rows {
+        out.push_str(&format!("| {} |\n", r));
+    }
+    out
+}
+
+pub fn write_summary_markdown(
+    run_dir: &Path,
+    title: &str,
+    preamble: &str,
+    sections: &[(String, String)],
+) -> Result<PathBuf> {
+    let mut out = format!("# {}\n\n", title);
+    if !preamble.trim().is_empty() {
+        out.push_str(preamble.trim());
+        out.push_str("\n\n");
+    }
+    for (h, b) in sections {
+        if b.trim().is_empty() {
+            continue;
+        }
+        out.push_str(&format!("## {}\n\n{}\n\n", h, b.trim()));
+    }
+    write_markdown_report(run_dir, "summary.md", &out)
+}
+
+/// Anchored to the manifest dir so invocation from the repo root and from
+/// `app/src-tauri/` land in the same place.
+pub fn resolve_output_dir(explicit: Option<&Path>, eval_name: &str) -> PathBuf {
+    match explicit {
+        Some(p) => p.to_path_buf(),
+        None => PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("evals/results")
+            .join(eval_name),
+    }
+}
+
+pub fn require_dir(path: &Path) -> Result<()> {
+    if !path.is_dir() {
+        return Err(anyhow!("Expected directory {:?} does not exist", path));
+    }
+    Ok(())
 }

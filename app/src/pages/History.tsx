@@ -1,5 +1,5 @@
 import React from "react";
-import { Ghost, X, AlertCircle, RotateCcw, Hand } from "lucide-react";
+import { Ghost, X, AlertCircle, RotateCcw, Hand, ArrowLeft } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { cn } from "@/shared/lib/utils";
 import {
@@ -12,17 +12,20 @@ import {
   HistorySearchBar,
 } from "@/shared/components/history";
 import { useHistory } from "@/shared/hooks/useHistory";
+import { useOverlay } from "@/shared/hooks/useOverlay";
+import { BREAKPOINT_OPPOSITE_COLLISION_MAX } from "@/layout/breakpoints";
 import { EmptyState, OrbitalLoader, ErrorBoundary } from "@/shared/components/common";
-import { ThemeToggleButton } from "@/shared/ui";
+import { ThemeToggleButton, BottomDockFeather } from "@/shared/ui";
 import { HISTORY_COPY } from "@/data/historyCopy";
 import { useHistoryFilterStore } from "@/store/historyFilterStore";
-import type { SessionRow } from "@/services/historyService";
+import { formatDateTime, resolveSessionTitle, type SessionRow } from "@/services/historyService";
 import { useRegisterPageDrawer } from "@/shared/context/PageDrawerContext";
 import { usePanelStateContext } from "@/shared/hooks/usePanelState";
 import { useProfilerDrawer } from "@/shared/components/profiler/ProfilerDrawer";
 
 export const History: React.FC = () => {
   const setDisplayMode = useHistoryFilterStore((s) => s.setDisplayMode);
+  const setDrillDownSession = useHistoryFilterStore((s) => s.setDrillDownSession);
   const { isPanelOpen, rightPanel } = usePanelStateContext();
   const { isProfilerOpen } = useProfilerDrawer();
   const {
@@ -99,6 +102,15 @@ export const History: React.FC = () => {
     [setSelectedSession]
   );
 
+  const handleBackToList = React.useCallback(() => {
+    setSelectedSession(null);
+  }, [setSelectedSession]);
+
+  useOverlay({
+    onClose: handleBackToList,
+    active: !isOrbitViewport && Boolean(selectedSession),
+  });
+
   const handleSearchSelectSession = React.useCallback(
     (session: SessionRow) => {
       const date = new Date(session.created_at);
@@ -167,6 +179,17 @@ export const History: React.FC = () => {
     return (currentMonthWindow?.days ?? []).map((d) => d.dayKey);
   }, [currentMonthWindow?.days]);
 
+  React.useEffect(() => {
+    if (!isOrbitViewport && selectedSession) {
+      setDrillDownSession(selectedSession);
+    } else {
+      setDrillDownSession(null);
+    }
+    return () => {
+      setDrillDownSession(null);
+    };
+  }, [isOrbitViewport, selectedSession, setDrillDownSession]);
+
   const dayNodeIds = React.useMemo(() => {
     return currentWindowSessions.map((s) => String(s.id));
   }, [currentWindowSessions]);
@@ -217,7 +240,7 @@ export const History: React.FC = () => {
   return (
     <div
       ref={containerRef}
-      onClick={handleStageClick}
+      onClick={isOrbitViewport ? handleStageClick : undefined}
       className="relative flex-1 flex flex-col items-center justify-between h-full w-full overflow-hidden bg-transparent select-none"
     >
       {/* ── Top Bar Search: Active in Orbit View; suppressed in List View (which has dedicated fixed search) ── */}
@@ -236,7 +259,7 @@ export const History: React.FC = () => {
         <div
           className={cn(
             "absolute top-4 left-5 z-[60] transition-opacity duration-200",
-            Boolean(rightPanel) && (typeof window !== "undefined" && window.innerWidth < 480)
+            Boolean(rightPanel) && (typeof window !== "undefined" && window.innerWidth < BREAKPOINT_OPPOSITE_COLLISION_MAX)
               ? "opacity-0 pointer-events-none invisible"
               : "pointer-events-auto"
           )}
@@ -397,20 +420,81 @@ export const History: React.FC = () => {
               />
             </div>
           ) : (
-            // ── Mobile Responsive Fallback List: Full scrollable session history ──
-            <HistoryListView
-              dayLabel={
-                currentWindow?.dateSpanLabel
-                  ? HISTORY_COPY.sessionsInWindow(currentWindow.dateSpanLabel)
-                  : HISTORY_COPY.allSessionsLabel
-              }
-              sessions={sessions}
-              selectedSession={selectedSession}
-              confirmDeleteId={confirmDeleteId}
-              onSelect={handleSelectSession}
-              onDelete={handleDelete}
-              onCancelDelete={handleCancelDelete}
-            />
+            // ── Compact Viewport: In-Place Session Drill-Down or Full Scrollable List ──
+            <div className="w-full h-full flex flex-col min-h-0 overflow-hidden relative">
+              <div className={cn("w-full h-full flex flex-col min-h-0", selectedSession ? "hidden" : "flex")}>
+                <HistoryListView
+                  dayLabel={
+                    currentWindow?.dateSpanLabel
+                      ? HISTORY_COPY.sessionsInWindow(currentWindow.dateSpanLabel)
+                      : HISTORY_COPY.allSessionsLabel
+                  }
+                  sessions={sessions}
+                  selectedSession={selectedSession}
+                  confirmDeleteId={confirmDeleteId}
+                  onSelect={handleSelectSession}
+                  onDelete={handleDelete}
+                  onCancelDelete={handleCancelDelete}
+                />
+              </div>
+
+              {selectedSession && (
+                <div
+                  onClick={(e) => e.stopPropagation()}
+                  className="absolute inset-0 z-20 w-full h-full flex flex-col min-h-0 overflow-hidden bg-[rgb(var(--background))] select-text animate-in fade-in duration-200"
+                >
+                  {/* Top Navigation Bar: Simple Arrow Back + Wrapped Title + Session Actions (pr-28 sm:pr-32 reserves clear space for TopRightCluster) */}
+                  <div className="shrink-0 px-4 sm:px-6 pt-4 pb-3 border-b border-[rgba(var(--border),0.12)] bg-[rgb(var(--background))]/80 backdrop-blur-md flex items-start justify-between gap-3 pr-28 sm:pr-32">
+                    <div className="flex items-start gap-3 min-w-0 flex-1">
+                      <button
+                        type="button"
+                        onClick={handleBackToList}
+                        className="flex items-center justify-center w-8 h-8 rounded-xl text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.06)] transition-colors cursor-pointer shrink-0 mt-0.5"
+                        aria-label={HISTORY_COPY.allSessionsLabel}
+                      >
+                        <ArrowLeft size={18} />
+                      </button>
+                      <div className="flex flex-col min-w-0 flex-1">
+                        <h2 className="text-[14px] sm:text-[15px] font-semibold text-[rgb(var(--foreground))] leading-snug break-words">
+                          {resolveSessionTitle(selectedSession)}
+                        </h2>
+                        <div className="flex items-center gap-1.5 text-[11px] font-mono text-[rgb(var(--foreground-muted))] mt-1">
+                          <span>#{selectedSession.id}</span>
+                          <span>·</span>
+                          <span>{formatDateTime(selectedSession.created_at)}</span>
+                          <span>·</span>
+                          <span>
+                            {selectedSession.turn_count}{" "}
+                            {selectedSession.turn_count === 1 ? HISTORY_COPY.turnSingular : HISTORY_COPY.turnPlural}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Full Transcript Body (full viewport width, no gaps on sides) */}
+                  <div className="relative flex-1 min-h-0 w-full flex flex-col overflow-hidden">
+                    <div className="flex-1 min-h-0 w-full overflow-y-auto px-4 sm:px-8 py-5 pb-28 custom-scrollbar">
+                      <ErrorBoundary name="HistoryPanelDetail">
+                        <DetailPanel
+                          open
+                          variant="inline"
+                          session={selectedSession}
+                          turns={turns}
+                          loading={turnsLoading}
+                          error={turnsError}
+                          onClose={handleBackToList}
+                          onRetry={retryFetchTurns}
+                        />
+                      </ErrorBoundary>
+                    </div>
+
+                    {/* Full-width bottom dock feather dissolve identical to parent HistoryListView */}
+                    <BottomDockFeather className="absolute bottom-0 left-0 right-0 h-[72px] pointer-events-none z-10" />
+                  </div>
+                </div>
+              )}
+            </div>
           )}
         </ErrorBoundary>
       )}
@@ -449,18 +533,21 @@ export const History: React.FC = () => {
         </div>
       )}
 
-      {/* Slide-up Detail Transcript Panel (shared Drawer: backdrop + Escape handled internally) */}
-      <ErrorBoundary name="HistoryDetailPanel">
-        <DetailPanel
-          open={!!selectedSession}
-          session={selectedSession}
-          turns={turns}
-          loading={turnsLoading}
-          error={turnsError}
-          onClose={() => setSelectedSession(null)}
-          onRetry={retryFetchTurns}
-        />
-      </ErrorBoundary>
+      {/* Slide-up Detail Transcript Panel (wide viewports only; compact uses
+          the in-place drill-down view above. Backdrop + Escape handled internally.) */}
+      {isOrbitViewport && (
+        <ErrorBoundary name="HistoryDetailPanel">
+          <DetailPanel
+            open={!!selectedSession}
+            session={selectedSession}
+            turns={turns}
+            loading={turnsLoading}
+            error={turnsError}
+            onClose={() => setSelectedSession(null)}
+            onRetry={retryFetchTurns}
+          />
+        </ErrorBoundary>
+      )}
     </div>
   );
 };

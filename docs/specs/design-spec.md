@@ -291,7 +291,15 @@ Pill-shaped containers (`rounded-full` / `rounded-pill` with background, border,
   2. **No Redundant Value / Status Badges Next to Titles:** Never add a pill badge next to a section or card title that parrots adjacent control settings (e.g. repeating `"300 ms"`, `"1.05x"`, `"Active"`, `"Manual"`). When an active control, button grid, or toggle switch is visible on the card, any duplicate status pill is redundant visual clutter and strictly banned.
   3. Static readouts, kickers, and titles must render as clean, unboxed typography (using font weight, tracking, opacity, or accent text color directly on the card surface).
 
-### 5.2 Clean Vector SVG Pattern (Frameless Linework)
+### 5.2 Navigation Tabs Invariant: Simple Underline Tabs Only (Zero Pill Tabs)
+
+All multi-tab navigation strips across the application (in modals, config desks, or page views) MUST be simple underline tabs (matching the canonical config desk components, e.g., `PersonalMemoryConfigDesk` and `CategorySelector`). Pill-shaped buttons or capsule wrappers are strictly prohibited for tab navigation.
+
+* **Container Grammar**: Flex container with a subtle bottom border (`border-b border-[rgba(var(--accent),0.08)] mb-2 px-0.5 select-none overflow-x-auto no-scrollbar`), with no capsule styling or enclosed pill track.
+* **Tab Elements**: Clean text (`text-[11px] sm:text-[11.5px] font-mono font-bold uppercase tracking-[0.06em]`) with an active bottom underline indicator (`border-b-2 border-[rgb(var(--accent))] text-[rgb(var(--accent))]`) and inactive transparent border (`text-[rgb(var(--foreground-muted))]/60 border-transparent hover:text-[rgb(var(--foreground))]`).
+* **Subtle Dividers**: Delicate vertical dividers between sibling tabs (`<span className="text-[10px] text-[rgb(var(--foreground-muted))]/25 select-none pb-1.5 px-1 sm:px-2">|</span>`).
+
+### 5.3 Clean Vector SVG Pattern (Frameless Linework)
 
 All vector illustrations, domain diagrams, and custom toggle widgets (e.g. `WebSearchGlobe`, `TransliterationToggle`, `RemoteComputeGraphic`, `ManagedContextGraphic`):
 
@@ -321,6 +329,20 @@ All vector illustrations, domain diagrams, and custom toggle widgets (e.g. `WebS
 * Micro-interactions are short and eased (150–300 ms, ease-out). Avoid continuous looping
   animations on functional UI (no `animate-bounce` on buttons).
 * Respect `prefers-reduced-motion`: reduce or pause decorative loops.
+* **Viewport-resize gate** (`data-viewport-resize` on `<html>`, `app/src/layout/viewportResize.ts`):
+  while the window is being resized, app-wide CSS transitions are suspended,
+  keyframe animations are paused, and `backdrop-filter` is dropped — the same
+  suspension contract as the theme-flip gate, but unconditional (it is a
+  performance gate, not a motion preference). Drastic vw/vh changes (minimize,
+  maximize, crossing the 1024px compact boundary) reflow as an instantaneous
+  static layout instead of a 60 fps compositing storm, without flashing modal
+  loader overlays during standard window resizing.
+
+### 7.1 Orbital Loader Invariant (Zero Typography & Particle Core)
+
+* **Zero Typography**: `OrbitalLoader` is a purely visual, ambient loading component. It MUST NOT render any text (no title, subtitle, or status text) across any page or view.
+* **Particle Core**: The central core consists of a frameless, stroke-style particle orb SVG (`rgb(var(--accent))` stroke, ~1px weight, orbital ellipse paths with focal particle nodes) instead of third-party icon libraries.
+* **Concentric Rings**: Retains the ambient outer pulse aura, clockwise rotating ring, and counter-clockwise dashed resonance ring.
 
 ---
 
@@ -408,24 +430,6 @@ Rather than standard conversation logs, Vox renders a holographic dialogue strea
   `title` only for component props, truncated-text ellipsis, and shared primitives.
 * Icon-only buttons **must** have a tooltip.
 
-### Settings topology subtab icons (Model Hub — Settings mode)
-
-| Pipeline domain | Subtab | Icon | Notes |
-| :--- | :--- | :--- | :--- |
-| VAD | Sensitivity | `AudioWaveform` | |
-| VAD | Silence Cutoff | `Hourglass` | |
-| VAD | Noise Gate | `SlidersHorizontal` | |
-| STT | Streaming Rate | `Zap` | |
-| STT | Transliterate | `Languages` | |
-| STT | **Compute Allocation** | **`Microchip`** | Presets Auto/Eco/Max/Custom; maps to `stt.embedded.threads`; SettingReloadPolicy::Restart |
-| LLM | Compute Allocation | `Microchip` | Presets Auto/Eco/Max/Custom; maps to `llm.threads` |
-| LLM | Response | `TextCursorInput` | |
-| LLM | Context | `Layers2` | |
-| LLM | Creativity | `WandSparkles` | |
-| TTS | Voice | `AudioLines` | |
-| TTS | Speech Rate | `Metronome` | |
-| TTS | **Compute Allocation** | **`Microchip`** | Presets Auto/Eco/Max/Custom; maps to `tts.threads`; SettingReloadPolicy::Restart |
-
 ---
 
 ## 11. Accessibility
@@ -452,6 +456,7 @@ per-surface listeners.
 | **Tier 0** | settings accordion cards | inline | expand / collapse |
 | **Tier 1** | popovers & micro-panels (Memory node tooltip, Home test-clip menu, Monitoring popover) | bottom corner / hover / click | scale-fade, transient |
 | **Tier 2** | bottom drawers (History detail, Memory pipeline, Memory profiler) | bottom sheet | translate-Y, spring ease |
+| **Tier 2b** | centered modal (Personal Memory on compact viewports `< 1024px`) | screen center | scale-fade, transient |
 | **Tier 3** | edge rails (Help, Notifications, Conversations) | top corner trigger | width-collapse / expand |
 
 ### Overlay topology
@@ -460,7 +465,7 @@ Vox uses one overlay grammar across the shipped interface:
 
 - **Top-corner triggers open edge rails.** Help and Notifications share one right-edge rail group; only one is open at a time. Conversations uses an independent left-edge rail on Home.
 - **Bottom-corner triggers open popovers.** Monitoring remains a bottom-left popover on desktop and a route on compact viewports.
-- **Central cards and nodes open bottom drawers.** The existing `Drawer` remains the single bottom-sheet primitive for these surfaces.
+- **Central cards and nodes open bottom drawers.** The existing `Drawer` remains the single bottom-sheet primitive for these surfaces. Below the 1024px compact threshold, where a full-bleed sheet crushes two-column content, the Personal Memory surface renders as a Tier 2b centered modal instead, and the History detail renders as a right-edge panel (`EdgePanel`, same dim/surface/spring as every other rail) over the dimmed session list instead of a drawer.
 - **Dismissal is centralized.** Escape closes the topmost surface first (FILO), and outside pointer-down closes the topmost dismissible surface. Surfaces do not install their own Escape or outside-click listeners.
 - **The memory profiler is a debug surface.** It is not part of the shipped overlay contract.
 
@@ -476,207 +481,90 @@ Vox uses one overlay grammar across the shipped interface:
   Escape listeners. Exceptions that legitimately stay local (non-dismissal): the
   dictation hotkey recorder, search-input clear, inline editing.
 
-### Implementation
+### Implementation & Stacking Contracts
 
-- `shared/lib/overlayStack.ts` — global FILO registry (`registerOverlay`,
-  `closeTopmost`, `getStackSize`); installed once in `App.tsx` via
-  `installOverlayStack()`. Capture-phase `keydown` (Escape) + `pointerdown`
-  (outside-click on the topmost overlay).
+- **Backdrop Dimming Contract**: Centered dialogs (`Modal.tsx`) and full edge rails (`EdgePanel.tsx`) requiring focus isolation use the unified dark dim token `bg-black/50 backdrop-blur-[2px]`. Bottom sheets (`Drawer.tsx`) remain unaffected and preserve page ambience using `bg-[rgb(var(--background))]/60 backdrop-blur-sm`.
+- **Layering & Z-Index Hierarchy**:
+  - `z-[70]`: Global overlays, modals, and open edge rails (including History detail `EdgePanel`).
+  - `z-[60]`: Top chrome clusters (`TopRightCluster`, top-left session triggers). Open right-edge rails must layer above or suppress `TopRightCluster` to prevent visual overlap.
+  - `z-[50]`: Floating bottom navigation (`EdgeNav`).
+  - `z-[40]`: Page headers and stationary HUD bars.
+  - `z-[30]`: Page stage content and interactive canvas.
+- `shared/lib/overlayStack.ts` — global FILO registry (`registerOverlay`, `closeTopmost`, `getStackSize`); installed once in `App.tsx` via `installOverlayStack()`. Capture-phase `keydown` (Escape) + `pointerdown` (outside-click on the topmost overlay).
 - `shared/hooks/useOverlay.ts` — registers on `active`, unregisters on close.
-- `shared/ui/Drawer.tsx` — the shared bottom-sheet for all Tier 2 surfaces
-  (backdrop, resize handle, double-click expand, focus restore, `footer`,
-  `position="page" | "global"`).
-- Settings cards collapse via local Escape (mirrors the outside-click FILO pop).
+- `shared/ui/Drawer.tsx` — the shared bottom-sheet for all Tier 2 surfaces (`bg-[rgb(var(--background))]/60 backdrop-blur-sm` backdrop).
+- `shared/ui/Modal.tsx` — the shared centered dialog for Tier 2b surfaces (`bg-black/50 backdrop-blur-[2px]` dim, scale-fade motion, focus trap + restore, `footer`, `position="page" | "global"`).
+- `shared/ui/EdgePanel.tsx` — side-docked sliding rail with unified `bg-black/50 backdrop-blur-[2px]` backdrop.
 
-### Tier 2 surfaces
+### Tier 2 & Tier 2b surfaces
 
-- **History detail** — `DetailPanel` inside a `Drawer` (`position="global"`, `z-60` layering over `EdgeNav` `z-50`). By design, bottom sheet bodies are transparent overlays allowing the ambient page field and dialog bubbles to breathe without opaque solid backgrounds, backed only by the ambient dimmed backdrop.
+- **History detail** — `DetailPanel` inside a bottom `Drawer` on wide orbit viewports (`> 1024px`). On list/compact viewports (`< 1024px`), clicking a session performs an **in-place page drill-down**: the session list transitions in-place into the full-width session transcript view with a top breadcrumb (`← All Sessions`), timestamp, turn count, and actions. Pressing `Escape` or clicking `← All Sessions` returns immediately to the preserved list view without clumsy overlay drawers.
+- **Personal Memory Compact Modal (Tier 2b)** — On viewports `< 1024px`, Personal Memory renders as a unified single-entity modal (no nested card-inside-a-card borders or double headers). Features an integrated top masthead with actions (Copy, Regenerate, Consolidate) and underline tabs (`Memory`, `Observations`, `Staging`). The workspace below forms one cohesive surface with distinct inner section headers (`Core Dossier`, `Observations`, `Staging`), synchronized 32px icon badges, and status filter parity. Actions affecting persistent memory auto-redirect to `Memory` for instant feedback.
 - **Memory pipeline** — horizontal, left-to-right stage flow inside a global drawer.
-- **Memory profiler** — converted from a route to a global bottom drawer
-  (`ProfilerDrawer`); sampling is lazy (starts on open, persists across cycles).
-  The bottom-left HUD button and the Monitoring popover open it via the
-  `openProfiler()` handle.
+- **Memory profiler** — converted from a route to a global bottom drawer (`ProfilerDrawer`).
+
+### 13.1 Session Compaction Triggers (History)
+
+Compaction extracts structured semantic memory facts from uncompacted session turns. Compaction triggers are rendered across four canonical History surfaces, strictly gated by `session.uncompacted_turns > 0`:
+
+1. **Details Panel Header (`DetailPanel`)**: Action button positioned left of the close (`X`) icon in `Drawer:headerActions`, rendering text `"Compact session"` (`variant="button"`).
+2. **Orbital View Session Card (`VoiceRippleNode`)**: Tactile circular glass icon button (`variant="icon"`, Sparkles icon) positioned in the card's top right corner, left of the delete trash button, visible on hover/focus-within (`group-hover:flex`).
+3. **List View Session Card (`HistoryListView`)**: Circular glass icon button positioned in the bottom right corner of each card, visible always alongside the delete action.
+4. **Step 2 Drill-Down Top Right Cluster (`TopRightCluster` / `History`)**: Icon button mounted directly to the left of the Notification (`Bell`) icon when an in-place session drill-down is open.
+
+*Dynamic State & Mutual Exclusion Invariants:*
+- **Active Compaction**: When compaction is initiated, the target session trigger transitions immediately into a spinning loader (`Loader2` spin).
+- **Universal Mutual Exclusion**: When compaction is in progress on any session, all other compaction triggers across the UI are disabled (`opacity-50 cursor-not-allowed`).
+- **Completion Transition**: When compaction concludes, the backend emits `CompactionFinished` and `SessionsChanged`, a receipt notification is pushed, `uncompacted_turns` drops to 0, and the trigger button smoothly unmounts/disappears.
 
 ---
 
 
-## 14. Vox Keyboard Interaction, Spatial Navigation & Tooltip System
+## 14. Keyboard Interaction, Spatial Navigation & Tooltip Contract
 
-- **Status:** Proposed Target Spec
-- **Domain:** Frontend / Interaction UX / Voice Pipeline
-- **Owner:** Frontend Engineering
-- **Core Dependencies Added:** `@floating-ui/react`, `@norigin-media/norigin-spatial-navigation`
+### 14.1 Key Hierarchy & Modifiers Contract
 
----
-
-### 1. Executive Summary & Core Philosophy
-
-Vox is an ultra-fast, voice-first desktop application built for ambient intelligence. Every user interaction must feel optimistic, immediate, and predictable. 
-
-The previous keyboard implementation suffered from several critical flaws:
-1. **Key Overloading & Collisions:** The four arrow keys (`←`, `→`, `↑`, `↓`) were asked to handle three conflicting roles simultaneously: page navigation, widget item roving, and 2D spatial focus navigation. This resulted in erratic jumps where spatial navigation leaped from in-page canvas items down to the bottom dock (as seen in Image 1).
-2. **Disconnected Focus Rings vs. State:** Browser `:focus-visible` rings became stranded on navigation icons without changing route or updating state, confusing visual active state with keyboard focus state.
-3. **Fragile Tooltips:** An ad-hoc coordinate calculation tooltip caused clipping, missed flip directions, lack of pointer anchors, and intrusive popups during rapid keyboard navigation.
-4. **Missing Voice & Application Lifecycle Hotkeys:** Missing explicit Pause/Resume toggles, and missing standard desktop Close Window (`Ctrl+W`) and Quit Application (`Ctrl+Q`) shortcuts.
-
-This specification establishes a **Zero-Ambiguity Keyboard Contract** built upon clear modifier hierarchy, industry-standard spatial navigation via `@norigin-media/norigin-spatial-navigation`, an industry-standard tooltip system via `@floating-ui/react`, and a complete Voice Pipeline lifecycle.
-
----
-
-### 2. Key Hierarchy & Modifiers Philosophy
-
-To prevent clashes and make interactions immediately intuitive, keys are categorized into strict functional tiers:
+Keys are categorized into strict functional tiers to eliminate collision between global navigation and in-page navigation:
 
 | Modifier Level | Scope | Primary Purpose | Example |
 | :--- | :--- | :--- | :--- |
 | **`Shift + Arrow`** | Application Navigation | Global page cycling (`←` / `→`) and contextual drawer expanding (`↑` / `↓`) | `Shift + Right` (Next Page) |
 | **`Ctrl / Cmd + Key`** | Rails & Window Lifecycle | Toggling persistent side rails, window close, and app quit | `Ctrl + S` (Sessions), `Ctrl + W` (Close), `Ctrl + Q` (Quit) |
-| **Plain Arrows (`↑ ↓ ← →`)** | In-Page Spatial Navigation | Moving focus between cards/widgets strictly within the active zone via `@norigin-media/norigin-spatial-navigation` | Navigating session nodes in History orbit |
+| **Plain Arrows (`↑ ↓ ← →`)** | In-Page Spatial Navigation | Moving focus between cards/widgets strictly within the active zone | Navigating session nodes in History orbit |
 | **Single Alpha (`M`, `T`, `P`)** | Voice Pipeline Direct Controls | Immediate single-stroke voice pipeline controls when not typing | `M` (Mute Mic), `P` (Pause/Resume), `T` (Text Mode) |
 | **`Space` / `Enter` / `Esc`** | Primaries | PTT hold-to-talk, selection activation, and hierarchical overlay dismissal | `Space` (Hold to Talk), `Escape` (Dismiss) |
 
----
+### 14.2 Shortcuts Matrix
 
-### 3. Comprehensive Shortcuts Matrix
-
-#### 3.1 Application & Window Lifecycle
-
-| Shortcut | Action | Scope | Behavior & Invariants |
+| Shortcut | Action | Scope | Invariant |
 | :--- | :--- | :--- | :--- |
-| **`Ctrl + W`** (or `Cmd + W`) | Close / Hide Window | Global | Closes the active window to the system tray (`getCurrentWindow().close()`). Voice agent continues running in background. |
-| **`Ctrl + Q`** (or `Cmd + Q`) | Quit Application | Global | Terminates the Vox application and backend process entirely (`exit(0)` via `@tauri-apps/plugin-process`). Intercepts default browser behavior. |
+| **`Ctrl + W`** (`Cmd + W`) | Close / Hide Window | Global | Closes window to tray; voice engine continues background operation. |
+| **`Ctrl + Q`** (`Cmd + Q`) | Quit Application | Global | Terminates backend process and UI entirely. |
+| **`Shift + →` / `←`** | Page Cycle | Global | Forward: `Home` → `History` → `Memory` → `Settings` (→ `Monitoring` if compact). Backward in reverse. |
+| **`Shift + ↑` / `↓`** | Context Drawer Expand/Collapse | Contextual | Home: Profiler. History: Session Detail. Memory: Personal Memory. Settings: Domain Cards. |
+| **`Ctrl + S`** (`Cmd + S`) | Toggle Sessions Rail | Global | Left docked session list. |
+| **`Ctrl + N`** (`Cmd + N`) | Toggle Notifications Rail | Global | Right docked notifications. |
+| **`Ctrl + /`** (`Cmd + /`) | Toggle Help Panel | Global | Route guide. |
+| **`?`** (`Shift + /`) | Shortcuts Cheat Sheet | Global | Direct cheat sheet overlay. |
+| **`Space` (Hold)** | Push-To-Talk | Engaged + PTT | Starts audio capture on keydown; commits on keyup. Cancels if <200ms. |
+| **`M`** | Toggle Mic Mute | Non-editable | Toggles microphone capture stream. |
+| **`Shift + M`** | Toggle Speaker Mute | Non-editable | Toggles TTS / playback output. |
+| **`P`** | Pause / Resume Voice | Non-editable | Toggles voice pipeline paused vs. active. |
+| **`T`** | Open Text Input Mode | Non-editable | Focuses bottom text prompt input. |
+| **`Ctrl + Space`** | Engage / Disengage | Global | Wakes or sleeps the ambient assistant. |
+| **`Escape`** | Hierarchical Dismissal | Global | Dismisses top overlay in reverse FILO order; barges into speaking voice agent. |
 
----
+### 14.3 Spatial Navigation Invariants
 
-#### 3.2 Global & Page Navigation
+* **Container Isolation**: 2D directional arrows are scoped to explicit zones: `STAGE_CONTAINER` (in-page content), `DOCK_CONTAINER` (`EdgeNav`), `CLUSTER_CONTAINER` (top chrome), `RAIL_CONTAINER` (active side rail).
+* **Zero Accidental Escape**: Navigating directional arrows within a stage cannot accidentally hop across containers into the bottom dock or top header without deliberate border rules or `Tab`.
+* **Focus-State Sync**: Spatial focus synchronization immediately updates selection state (e.g. focused orbit card becomes selected session).
 
-| Shortcut | Action | Scope / Context | Behavior & Invariants |
-| :--- | :--- | :--- | :--- |
-| **`Shift + →`** | Navigate to Next Page | Global | Cycles forward: `Home` → `History` → `Memory` → `Settings` (→ `Monitoring` if compact). Never conflicts with in-page left/right arrows. |
-| **`Shift + ←`** | Navigate to Previous Page | Global | Cycles backward: `Settings` → `Memory` → `History` → `Home`. |
-| **`Shift + ↑`** | Open / Expand Context Drawer | Contextual by Route | **Home:** Opens UI Profiler drawer.<br>**History:** Opens Session Detail drawer (for selected session).<br>**Memory:** Opens Personal Memory drawer / staging.<br>**Settings:** Expands all domain configuration cards. |
-| **`Shift + ↓`** | Close / Collapse Context Drawer | Contextual by Route | **Home:** Closes UI Profiler drawer.<br>**History:** Closes Session Detail drawer.<br>**Memory:** Closes Personal Memory drawer.<br>**Settings:** Collapses all domain configuration cards. |
+### 14.4 Tooltip Invariants
 
----
-
-#### 3.3 Persistent Rails & Overlays
-
-| Shortcut | Action | Scope | Behavior & Invariants |
-| :--- | :--- | :--- | :--- |
-| **`Ctrl + S`** (or `Cmd + S`) | Toggle Sessions Rail | Global | Toggles docked left rail. Intercepts default browser "Save Page As" dialog via `e.preventDefault()`. |
-| **`Ctrl + N`** (or `Cmd + N`) | Toggle Notifications Rail | Global | Toggles docked right rail. Intercepts browser "New Window" via `e.preventDefault()`. |
-| **`Ctrl + /`** (or `Cmd + /`) | Toggle Help Panel | Global | Opens / closes Help Panel in Route Guide mode. |
-| **`?`** (`Shift + /`) | Toggle Keyboard Shortcuts Matrix | Global | Toggles Help Panel directly in the interactive **Keyboard Shortcuts cheat sheet** mode (bypassing guide). |
-| **`Ctrl + M`** (or `Cmd + M`) | Toggle Engine Monitor Popover | Global (Desktop) | Opens quick-look engine telemetry popover in top-left header. |
-
----
-
-#### 3.4 Voice Pipeline Lifecycle Hotkeys
-
-| Shortcut | Pipeline Action | Context Condition | Detailed Behavior |
-| :--- | :--- | :--- | :--- |
-| **`Space` (Hold)** | Push-To-Talk (PTT) | Engaged + PTT Mode | `keydown`: Enters `Listening` state immediately, starts audio streaming.<br>`keyup`: Commits audio turn to STT/LLM pipeline.<br>If released in <200ms, treated as accidental tap and cancelled (`handlePttCancel()`). |
-| **`M`** | Toggle Mic Mute | Outside Editables | Toggles physical microphone stream capture (`toggleMicMute()`). Visualized by muted microphone icon badge. |
-| **`Shift + M`** | Toggle Speaker Mute | Outside Editables | Toggles audio output playback / TTS mute (`togglePlaybackMute()`). Visualized by muted speaker badge. |
-| **`P`** | Pause / Resume Voice Pipeline | Outside Editables | **If Active/Listening/Speaking:** Pauses pipeline (`pause()`), transitioning state to `Paused`.<br>**If Paused:** Resumes pipeline (`resume()`), returning to `Ready`/`Listening`. |
-| **`T`** | Open Text Input Mode | Outside Editables | Activates bottom text input bar and automatically focuses the input field for silent text querying. |
-| **`Ctrl + Space`** | Engage / Disengage Agent | Global | Toggles voice agent awake vs. sleeping (`engage()` / `disengage()`). |
-| **`Escape`** (Voice) | Barge-In / Stop Generation | Speaking or Thinking | If agent is currently `Speaking`, immediately cuts off audio playback.<br>If agent is `Thinking`, cancels LLM streaming and returns pipeline to `Ready`. |
-
----
-
-#### 3.5 Universal Primaries & Editors
-
-| Shortcut | Action | Detailed Behavior |
-| :--- | :--- | :--- |
-| **`Escape`** | Hierarchical Dismissal (`OverlayStack`) | Closes topmost active layer in exact reverse stack order:<br>1. Tooltip / Comment Popover<br>2. Active Page Drawer (`Shift+Down`)<br>3. Docked Edge Rail (Sessions/Notifications/Help)<br>4. Text Input Bar (discards draft)<br>5. Active Voice Turn (cancels turn)<br>6. Blurs focused element. |
-| **`Enter`** | Activate / Commit | • On buttons/links: executes click.<br>• On History session card: selects session and opens transcript drawer.<br>• In single-line Text Input Bar: sends message. |
-| **`Shift + Enter`** | Soft Linebreak | Inserts newline in multi-line prompt fields, memory notes, and comment popovers without triggering submit. |
-| **`Ctrl + Enter`** (or `Cmd + Enter`) | Save & Commit | Commits multi-line edits immediately (Personal Memory document, System Prompt, Comment additions). |
-| **`Tab` / `Shift + Tab`** | Sequential Focus Navigation | Standard browser sequential focus navigation fallback across interactive DOM elements. |
-
----
-
-### 4. Spatial Navigation Architecture: `@norigin-media/norigin-spatial-navigation`
-
-#### 4.1 Root Cause of Image 1 Bug
-In Image 1, naive geometric calculation scored the bottom dock's Settings `<NavLink>` as the closest element downward from the active History orbit cards. Focus hopped to Settings, causing a red outline (`:focus-visible`) on Settings while History remained the active page (red dot).
-
-#### 4.2 Library Adoption: `@norigin-media/norigin-spatial-navigation`
-We adopt `@norigin-media/norigin-spatial-navigation`, the industry standard for 2D spatial navigation in complex web and desktop interfaces:
-- **Spatial Focus Containers (`FocusContext.Provider`)**:
-  - `STAGE_CONTAINER`: Scopes all in-page content (Home stage, History orbit/carousel cards, Memory nodes, Settings domain cards).
-  - `DOCK_CONTAINER`: Scopes bottom floating navigation (`EdgeNav`).
-  - `CLUSTER_CONTAINER`: Scopes top-right header utilities.
-  - `RAIL_CONTAINER`: Scopes open side panels (Sessions, Notifications, Help).
-- **Invariants**:
-  1. Directional arrow presses navigate strictly within the active `FocusContext`. Focus will NEVER accidentally hop from an orbit card to the bottom navigation bar.
-  2. Crossing between containers (e.g. from `STAGE_CONTAINER` to `DOCK_CONTAINER`) requires explicit edge boundary rules or `Tab`/`Shift+Tab`.
-  3. Seamless focus synchronizes with state: navigating to an orbit card automatically marks that card active and selected.
-
----
-
-### 5. Tooltip System Overhaul: `@floating-ui/react`
-
-#### 5.1 Library Adoption: `@floating-ui/react`
-We adopt `@floating-ui/react` to completely replace the manual math in `Tooltip.tsx`.
-
-#### 5.2 Floating Tooltip Architecture
-- **Placement & Collision:**
-  ```tsx
-  import { useFloating, autoUpdate, offset, flip, shift, arrow, FloatingArrow, FloatingPortal } from "@floating-ui/react";
-
-  const { refs, floatingStyles, context } = useFloating({
-    placement: side, // "top" | "bottom" | "left" | "right"
-    middleware: [
-      offset(8),
-      flip({ fallbackAxisSideDirection: "start" }),
-      shift({ padding: 8 }),
-      arrow({ element: arrowRef })
-    ],
-    whileElementsMounted: autoUpdate,
-  });
-  ```
-- **Visual Design (Matching Image 2):**
-  - Container: Sleek dark glass card (`glass-card px-3 py-1.5 rounded-lg border border-[rgba(var(--accent),0.2)] bg-[rgb(var(--card))]/95 backdrop-blur-md shadow-2xl text-[12px] text-[rgb(var(--foreground))]`).
-  - Arrow: `FloatingArrow` component with matching fill and border stroke.
-  - Shortcut Badge: Formatted `<kbd>` badge:
-    ```tsx
-    <div className="flex items-center gap-2">
-      <span className="font-medium">{label}</span>
-      {keys && (
-        <kbd className="px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold bg-white/10 text-[rgb(var(--foreground-muted))] border border-white/10">
-          {keys}
-        </kbd>
-      )}
-    </div>
-    ```
-- **Keyboard Navigation Silence:**
-  - While navigating via arrow keys (managed by `@norigin-media/norigin-spatial-navigation`), a global `isSpatialNavigating` signal silences tooltips. Tooltips only appear on mouse hover or deliberate 600ms focus pause.
-- **Universal Rollout:**
-  - Standardizes tooltips across `EdgeNav`, `TopRightCluster`, and all action buttons, removing brittle inline hover spans.
-
----
-
-### 6. Implementation Stages
-
-1. **Stage 1 — Dependencies Installation:**
-   - Install `@floating-ui/react` and `@norigin-media/norigin-spatial-navigation` in `app/`.
-2. **Stage 2 — Specification & Contract Registry:**
-   - Update `app/src/data/shortcuts.ts` with complete SSOT definitions (including `Ctrl+W`, `Ctrl+Q`, and `P` Pause/Resume).
-3. **Stage 3 — Application Lifecycle & Page Navigation:**
-   - Implement `Ctrl+W` (hide to tray) and `Ctrl+Q` (quit app).
-   - Implement `Shift + Left` / `Shift + Right` for page navigation in `ResponsiveLayout.tsx`.
-   - Implement route-aware `Shift + Up` / `Shift + Down` drawer dispatcher (Home: Profiler, History: Detail, Memory: Personal Drawer, Settings: All Cards).
-4. **Stage 4 — Spatial Navigation (`@norigin-media/norigin-spatial-navigation`):**
-   - Initialize spatial navigation and wrap layout zones in `FocusContext.Provider`.
-   - Fix History orbit/carousel cards to sync selection with focus.
-5. **Stage 5 — Floating Tooltip (`@floating-ui/react`):**
-   - Implement modern `Tooltip.tsx` with floating arrow, collision detection, and shortcut badges matching Image 2.
-   - Silence tooltips during spatial navigation.
-6. **Stage 6 — Voice Pipeline Flow:**
-   - Implement `P` (Pause/Resume), `Space` (PTT), `M`, `Shift + M`, `T`, `Ctrl + Space`, and `Escape` (Barge-in).
-   - Verify all TypeScript types and test suites pass.
+* **Floating Architecture**: Powered by `@floating-ui/react` with smart boundary collision, flip, and offset handling.
+* **Navigation Silence**: Directional arrow navigation temporarily silences tooltips (`isSpatialNavigating`) to prevent intrusive popup flickering during rapid keyboard navigation.
+* **Surface Grammar**: Dark glass card, 11px uppercase label, optional `<kbd>` shortcut badge. Native `title` tooltips remain banned.
 
 ---
 
@@ -696,4 +584,4 @@ We adopt `@floating-ui/react` to completely replace the manual math in `Tooltip.
 ---
 
 
-**Last Updated:** 2026-08-20
+**Last Updated:** 2026-10-04

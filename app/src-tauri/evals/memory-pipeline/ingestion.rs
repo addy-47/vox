@@ -10,7 +10,9 @@ use vox_lib::{
     services::memory::ingestion::{run_ingestion_cycle, IngestionCycleSummary},
 };
 
-use super::{db::EvalDbGuard, llm_client::NvidiaJudgeClient, reporting::write_markdown_report};
+use crate::common::{
+    db::EvalDbGuard, llm_client::NvidiaJudgeClient, reporting::write_markdown_report,
+};
 
 /// Summary metrics resulting from an ingestion cycle evaluation.
 #[derive(Debug, Clone)]

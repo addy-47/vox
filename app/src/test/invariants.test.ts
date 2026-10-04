@@ -181,6 +181,7 @@ describe("Frontend Architectural & Performance Invariants", () => {
     const overlayFiles = [
       path.join(SRC_DIR, "shared/ui/Drawer.tsx"),
       path.join(SRC_DIR, "shared/ui/EdgePanel.tsx"),
+      path.join(SRC_DIR, "shared/ui/Modal.tsx"),
     ];
 
     for (const file of overlayFiles) {
@@ -849,5 +850,74 @@ snap no matter what transition-property says.`
         "transition-duration: 0s"
       );
     });
+  });
+
+  it("Invariant 26 (Breakpoint SSOT): the compact threshold is declared once and matches Tailwind lg", () => {
+    const configPath = path.join(SRC_DIR, "..", "tailwind.config.js");
+    const config = fs.readFileSync(configPath, "utf-8");
+    const lgMatch = config.match(/lg:\s*['"](\d+)px['"]/);
+    expect(lgMatch, "tailwind.config.js must declare screens.lg explicitly").not.toBeNull();
+
+    const breakpointsPath = path.join(SRC_DIR, "layout", "breakpoints.ts");
+    const breakpoints = fs.readFileSync(breakpointsPath, "utf-8");
+    const constMatch = breakpoints.match(/BREAKPOINT_COMPACT_MAX\s*=\s*(\d+)/);
+    expect(constMatch, "breakpoints.ts must declare BREAKPOINT_COMPACT_MAX").not.toBeNull();
+
+    expect(
+      Number(constMatch![1]),
+      `BREAKPOINT_COMPACT_MAX (${constMatch![1]}) must equal Tailwind screens.lg (${lgMatch![1]}px)`
+    ).toBe(Number(lgMatch![1]));
+
+    // No bare width-vs-1024 comparisons outside the SSOT module. (Unrelated
+    // 1024s — byte math, timeouts, token counts — are not width comparisons
+    // and are intentionally not matched.)
+    const widthCompare =
+      /(innerWidth|clientWidth|outerWidth)\s*[<>]=?\s*1024|1024\s*[<>]=?\s*(innerWidth|clientWidth|outerWidth)/;
+    const violations: { file: string; line: number; match: string }[] = [];
+    for (const file of tsFiles) {
+      const relPath = path.relative(SRC_DIR, file);
+      if (relPath === path.join("layout", "breakpoints.ts")) continue;
+      if (relPath.startsWith("test" + path.sep)) continue;
+      const lines = fs.readFileSync(file, "utf-8").split("\n");
+      lines.forEach((line, idx) => {
+        if (widthCompare.test(line)) {
+          violations.push({ file: relPath, line: idx + 1, match: line.trim() });
+        }
+      });
+    }
+
+    expect(
+      violations,
+      `Bare width-vs-1024 comparisons outside layout/breakpoints.ts (use isCompactWidth()):\n${violations
+        .map((v) => `  ${v.file}:${v.line} -> ${v.match}`)
+        .join("\n")}`
+    ).toEqual([]);
+  });
+
+  it("Invariant 27 (Single Dismissal Authority): every role=dialog surface registers with the overlay stack", () => {
+    // Dialog surfaces must dismiss through overlayStack (useOverlay) — never
+    // through a private Escape listener. Local Escape handlers for inline
+    // editing, search-input clear, and similar non-dismissal flows are out of
+    // scope; only `role="dialog"` claimants are checked.
+    const violations: string[] = [];
+    for (const file of tsFiles) {
+      const relPath = path.relative(SRC_DIR, file);
+      if (relPath.startsWith("test" + path.sep)) continue;
+      if (relPath === path.join("shared", "lib", "overlayStack.ts")) continue;
+      if (relPath === path.join("shared", "hooks", "useOverlay.ts")) continue;
+      const content = fs.readFileSync(file, "utf-8");
+      const claimsDialog =
+        content.includes('role="dialog"') || content.includes("role={'dialog'}");
+      if (claimsDialog && !content.includes("useOverlay")) {
+        violations.push(relPath);
+      }
+    }
+
+    expect(
+      violations,
+      `role="dialog" surfaces without overlay-stack registration (use useOverlay):\n${violations
+        .map((v) => `  ${v}`)
+        .join("\n")}`
+    ).toEqual([]);
   });
 });

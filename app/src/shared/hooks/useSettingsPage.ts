@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { SETTINGS_DOMAINS as DOMAINS, type SettingsDomainId as DomainId } from "@/data/settingsCopy";
 import { useSettingsStore } from "@/store/settingsStore";
+import { isCompactWidth } from "@/layout/breakpoints";
 
 interface LineCoords {
   x1: number;
@@ -29,7 +30,7 @@ export function useSettingsPage() {
     typeof window !== "undefined" ? window.innerHeight : 800
   );
   const [isCompact, setIsCompact] = useState(() =>
-    typeof window !== "undefined" ? window.innerWidth < 1024 : false
+    typeof window !== "undefined" ? isCompactWidth() : false
   );
 
   const [lines, setLines] = useState<Record<DomainId, { x1: number; y1: number; x2: number; y2: number } | null>>({
@@ -62,7 +63,7 @@ export function useSettingsPage() {
       rafId = requestAnimationFrame(() => {
         setWindowWidth(window.innerWidth);
         setWindowHeight(window.innerHeight);
-        setIsCompact(window.innerWidth < 1024);
+        setIsCompact(isCompactWidth());
       });
     };
     checkSize();

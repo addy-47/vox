@@ -35,6 +35,9 @@ export interface PersonalMemoryDossierCardProps {
   onSelectComment: () => void;
   drawerOpen: boolean;
   drawerBodyReady: boolean;
+  hideActions?: boolean;
+  title?: string;
+  embedded?: boolean;
 }
 
 export const PersonalMemoryDossierCard: React.FC<PersonalMemoryDossierCardProps> = memo(({
@@ -61,6 +64,9 @@ export const PersonalMemoryDossierCard: React.FC<PersonalMemoryDossierCardProps>
   onSelectComment,
   drawerOpen,
   drawerBodyReady,
+  hideActions = false,
+  title,
+  embedded = false,
 }) => {
   // Scoped Lenis smooth scrolling for personal memory dossier
   useEffect(() => {
@@ -82,8 +88,17 @@ export const PersonalMemoryDossierCard: React.FC<PersonalMemoryDossierCardProps>
     };
   }, [drawerOpen, drawerBodyReady, dossierContainerRef]);
 
+  const displayTitle = title ?? (embedded ? MEMORY_COPY.coreDossier : MEMORY_COPY.personalMemory);
+
   return (
-    <div className="relative w-full h-full min-h-0 flex flex-col glass-card rounded-2xl border border-[rgba(var(--accent),0.18)] bg-[rgba(var(--card),0.65)] backdrop-blur-sm p-5 sm:p-6 shadow-2xl overflow-hidden">
+    <div
+      className={cn(
+        "relative w-full h-full min-h-0 flex flex-col overflow-hidden",
+        embedded
+          ? "border-none bg-transparent shadow-none p-0"
+          : "glass-card rounded-2xl border border-[rgba(var(--accent),0.18)] bg-[rgba(var(--card),0.65)] backdrop-blur-sm p-5 sm:p-6 shadow-2xl"
+      )}
+    >
       <AnimatePresence>
         {leftFlash && (
           <motion.div
@@ -93,26 +108,30 @@ export const PersonalMemoryDossierCard: React.FC<PersonalMemoryDossierCardProps>
             exit={{ opacity: 0 }}
             transition={{ duration: 0.35, ease: "easeInOut" }}
             onAnimationComplete={onVeilReady}
-            className="absolute inset-0 z-30 rounded-2xl overflow-hidden bg-[rgba(var(--card),0.85)] backdrop-blur-md pointer-events-none"
+            className={cn(
+              "absolute inset-0 z-30 overflow-hidden bg-[rgba(var(--card),0.85)] backdrop-blur-md pointer-events-none",
+              !embedded && "rounded-2xl"
+            )}
           >
             <PixelSynthesisCanvas active={leftFlash} />
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Dossier Header Bar */}
-      <div className="flex items-center justify-between gap-4 border-b border-[rgba(var(--border),0.12)] pb-3.5 min-h-[44px] shrink-0">
-        <div className="flex items-center gap-3 min-w-0">
-          <div className="w-8 h-8 rounded-xl bg-[rgba(var(--accent),0.12)] border border-[rgba(var(--accent),0.25)] flex items-center justify-center text-[rgb(var(--accent))] shadow-sm">
+      {/* Dossier Header Bar — icon-only trailing actions with tooltips so the
+          row survives narrow (modal) widths without crushing the title. */}
+      <div className="flex items-center justify-between gap-3 border-b border-[rgba(var(--border),0.12)] pb-3.5 min-h-[44px] shrink-0">
+        <div className="flex items-center gap-3 min-w-0 flex-1">
+          <div className="w-8 h-8 rounded-xl bg-[rgba(var(--accent),0.12)] border border-[rgba(var(--accent),0.25)] flex items-center justify-center text-[rgb(var(--accent))] shadow-sm shrink-0">
             <FileText size={16} />
           </div>
-          <div className="flex flex-col">
+          <div className="flex flex-col min-w-0">
             <div className="flex items-center gap-2">
-              <span className="text-[13px] font-semibold tracking-wide text-[rgb(var(--foreground))]">
-                {MEMORY_COPY.personalMemory}
+              <span className="text-[13px] font-semibold tracking-wide text-[rgb(var(--foreground))] truncate">
+                {displayTitle}
               </span>
             </div>
-            <span className="text-[11px] font-mono text-[rgb(var(--foreground-muted))]">
+            <span className="text-[11px] font-mono text-[rgb(var(--foreground-muted))] truncate">
               {personalMemory
                 ? `${MEMORY_COPY.lastUpdated} ${new Date(personalMemory.updated_at).toLocaleDateString(undefined, {
                     month: "short",
@@ -126,7 +145,7 @@ export const PersonalMemoryDossierCard: React.FC<PersonalMemoryDossierCardProps>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 shrink-0">
           <PersonalMemoryVersionNav
             versions={versions}
             activeVersionRecord={personalMemory}
@@ -136,36 +155,40 @@ export const PersonalMemoryDossierCard: React.FC<PersonalMemoryDossierCardProps>
             isRestoring={isRestoringVersion}
           />
 
-          <Tooltip label={MEMORY_COPY.copyDocTitle}>
-            <button
-              type="button"
-              onClick={onCopyDoc}
-              disabled={!displayedRecord?.markdown && !displayedRecord?.content}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[11px] font-mono bg-[rgba(var(--foreground),0.05)] border border-[rgba(var(--border),0.14)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors disabled:opacity-40 cursor-pointer shadow-sm"
-            >
-              {copied ? <Check size={12} className="text-[rgb(var(--accent))]" /> : <Copy size={12} />}
-              {copied ? MEMORY_COPY.copied : MEMORY_COPY.copy}
-            </button>
-          </Tooltip>
+          {!hideActions && (
+            <>
+              <Tooltip label={copied ? MEMORY_COPY.copied : MEMORY_COPY.copyDocTitle}>
+                <button
+                  type="button"
+                  onClick={onCopyDoc}
+                  disabled={!displayedRecord?.markdown && !displayedRecord?.content}
+                  aria-label={MEMORY_COPY.copyDocTitle}
+                  className="flex items-center justify-center w-7 h-7 rounded-xl text-[rgb(var(--foreground-muted))] bg-[rgba(var(--foreground),0.05)] border border-[rgba(var(--border),0.14)] hover:text-[rgb(var(--foreground))] transition-colors disabled:opacity-40 cursor-pointer shadow-sm"
+                >
+                  {copied ? <Check size={13} className="text-[rgb(var(--accent))]" /> : <Copy size={13} />}
+                </button>
+              </Tooltip>
 
-          <Tooltip label="Regenerate personal profile from all integrated observations">
-            <button
-              type="button"
-              onClick={onRegenerateFromFacts}
-              disabled={isRegenerating || saving}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[11px] font-mono bg-[rgba(var(--foreground),0.05)] border border-[rgba(var(--border),0.14)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors disabled:opacity-40 cursor-pointer shadow-sm"
-            >
-              <RotateCw size={12} className={cn(isRegenerating && "animate-spin text-[rgb(var(--accent))]")} />
-              {isRegenerating ? MEMORY_COPY.regenerating : MEMORY_COPY.regenerate}
-            </button>
-          </Tooltip>
+              <Tooltip label={isRegenerating ? MEMORY_COPY.regenerating : MEMORY_COPY.regenerateTooltip}>
+                <button
+                  type="button"
+                  onClick={onRegenerateFromFacts}
+                  disabled={isRegenerating || saving}
+                  aria-label={MEMORY_COPY.regenerateTooltip}
+                  className="flex items-center justify-center w-7 h-7 rounded-xl text-[rgb(var(--foreground-muted))] bg-[rgba(var(--foreground),0.05)] border border-[rgba(var(--border),0.14)] hover:text-[rgb(var(--foreground))] transition-colors disabled:opacity-40 cursor-pointer shadow-sm"
+                >
+                  <RotateCw size={13} className={cn(isRegenerating && "animate-spin text-[rgb(var(--accent))]")} />
+                </button>
+              </Tooltip>
+            </>
+          )}
         </div>
       </div>
 
       {/* Dossier Document Content with Inner Scrolling */}
       <div
         ref={dossierContainerRef}
-        className="relative flex-1 min-h-0 overflow-y-auto custom-scrollbar px-6 pt-6 pb-8 leading-relaxed max-w-none select-text"
+        className="relative flex-1 min-h-0 overflow-y-auto custom-scrollbar px-4 sm:px-6 pt-5 sm:pt-6 pb-8 leading-relaxed max-w-none select-text"
       >
         {/* Inline text selection comment popover */}
         <PersonalMemoryCommentPopover
@@ -196,7 +219,7 @@ export const PersonalMemoryDossierCard: React.FC<PersonalMemoryDossierCardProps>
             className="absolute right-1 z-30 pointer-events-auto transition-transform hover:scale-110"
             style={{ top: `${Math.max(4, c.top)}px` }}
           >
-            <Tooltip label={`Line ${c.line}: ${c.text}`} side="left">
+              <Tooltip label={`${MEMORY_COPY.linePrefix} ${c.line}: ${c.text}`} side="left">
               <button
                 type="button"
                 onClick={onSelectComment}

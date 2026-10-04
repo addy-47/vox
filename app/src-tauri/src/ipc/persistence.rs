@@ -147,3 +147,35 @@ pub async fn delete_session(
 
     Ok(())
 }
+
+/// Triggers manual compaction for a session.
+#[tauri::command]
+pub async fn compact_session(
+    app: AppHandle,
+    session_id: i64,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), VoxIpcError> {
+    let app_clone = app.clone();
+    let state_arc = Arc::clone(&*state);
+
+    tokio::spawn(async move {
+        if let Err(e) =
+            crate::services::memory::compaction::coordinator::CompactionCoordinator::run_compaction_slice(
+                &app_clone,
+                &state_arc,
+                session_id,
+                "manual",
+                None,
+            )
+            .await
+        {
+            log::error!(
+                "[IPC::compact_session] Compaction failed for session {}: {}",
+                session_id,
+                e
+            );
+        }
+    });
+
+    Ok(())
+}

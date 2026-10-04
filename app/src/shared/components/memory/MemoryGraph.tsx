@@ -300,7 +300,7 @@ export const MemoryGraph = memo(
             role="img"
             aria-label={graphAriaLabel}
             className={cn(
-              "relative w-full h-full select-none transition-cursor",
+              "relative w-full h-full min-w-0 min-h-0 overflow-hidden select-none transition-cursor",
               selectModeEnabled
                 ? "cursor-crosshair active:cursor-crosshair"
                 : "cursor-grab active:cursor-grabbing"

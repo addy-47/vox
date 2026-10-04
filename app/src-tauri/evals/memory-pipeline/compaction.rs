@@ -13,7 +13,7 @@ use vox_lib::{
     },
 };
 
-use super::{
+use crate::common::{
     datasets::SessionTurn,
     db::EvalDbGuard,
     llm_client::{NvidiaJudgeClient, RecordingLlmProvider},

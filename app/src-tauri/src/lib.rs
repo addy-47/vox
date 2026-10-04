@@ -56,7 +56,8 @@ use crate::{
             mark_notifications_read,
         },
         persistence::{
-            delete_session, get_sessions, get_transcript_history, get_turns, update_session,
+            compact_session, delete_session, get_sessions, get_transcript_history, get_turns,
+            update_session,
         },
         pipeline::{
             continue_session, create_session, end_session, launch_engine, pause_session,
@@ -684,6 +685,7 @@ pub fn run() {
             get_turns,
             update_session,
             delete_session,
+            compact_session,
             get_transcript_history,
             // Personal Memory
             get_personal_memory,

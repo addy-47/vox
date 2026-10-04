@@ -233,6 +233,26 @@ body:not(.is-tray) {
   }
 }
 
+[data-viewport-resize] *,
+[data-viewport-resize] *::before,
+[data-viewport-resize] *::after {
+  transition-property: none !important;
+  transition-duration: 0s !important;
+  animation-play-state: paused !important;
+}
+
+[data-viewport-resize] .glass,
+[data-viewport-resize] .glass-card,
+[data-viewport-resize] [class*="backdrop-blur"],
+[data-viewport-resize] [style*="backdrop-filter"] {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+[data-viewport-resize] #root::after {
+  opacity: 0;
+}
+
 body.is-paused * {
   animation-play-state: paused !important;
 }

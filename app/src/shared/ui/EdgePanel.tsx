@@ -1,4 +1,5 @@
 import React, { memo, useRef, useCallback, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { cn } from "@/shared/lib/utils";
@@ -21,6 +22,13 @@ export interface EdgePanelProps {
    * the docked corner trigger icon.
    */
   minimalHeader?: boolean;
+  /**
+   * "page" — the panel layers under app chrome (default z-35).
+   * "global" — rendered in document.body via createPortal (default z-70),
+   * layering above all chrome and clusters.
+   */
+  position?: "page" | "global";
+  zIndex?: number;
 }
 
 const EdgePanelInner = memo(
@@ -33,6 +41,8 @@ const EdgePanelInner = memo(
     className,
     children,
     minimalHeader = false,
+    position = "page",
+    zIndex,
   }: EdgePanelProps) => {
     const panelRef = useRef<HTMLElement>(null);
 
@@ -110,11 +120,15 @@ const EdgePanelInner = memo(
         "linear-gradient(to bottom, transparent 0px, black 14px, black calc(100% - 160px), transparent 100%)",
     };
 
-    return (
+    const isGlobal = position === "global";
+    const effectiveZ = zIndex ?? (isGlobal ? 70 : 35);
+    const effectiveBackdropZ = effectiveZ - 1;
+
+    const panelNode = (
       <AnimatePresence>
         {open && (
           <>
-            {/* Backdrop dimming for small / compact layouts (< 1024px) where monitoring shifts to EdgeNav */}
+            {/* Backdrop dimming: universal bg-black/50 backdrop-blur-[2px] */}
             <motion.div
               key={`edge-backdrop-${side}`}
               initial={{ opacity: 0 }}
@@ -122,7 +136,11 @@ const EdgePanelInner = memo(
               exit={{ opacity: 0 }}
               transition={{ duration: 0.2 }}
               onClick={onClose}
-              className="lg:hidden fixed inset-0 z-[34] bg-black/50 backdrop-blur-[2px] pointer-events-auto"
+              style={{ zIndex: effectiveBackdropZ }}
+              className={cn(
+                "fixed inset-0 bg-black/50 backdrop-blur-[2px] pointer-events-auto",
+                !isGlobal && "lg:hidden"
+              )}
               aria-hidden="true"
             />
             <motion.aside
@@ -134,8 +152,10 @@ const EdgePanelInner = memo(
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: isLeft ? "-100%" : "100%" }}
               transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+              style={{ zIndex: effectiveZ }}
               className={cn(
-                "absolute top-0 bottom-0 z-[35] flex flex-col bg-[rgb(var(--card))]/90 backdrop-blur-md overflow-hidden pointer-events-auto select-auto border-[rgba(var(--border),0.06)] transform-gpu will-change-transform",
+                isGlobal ? "fixed top-0 bottom-0" : "absolute top-0 bottom-0",
+                "flex flex-col bg-[rgb(var(--card))]/90 backdrop-blur-md overflow-hidden pointer-events-auto select-auto border-[rgba(var(--border),0.06)] transform-gpu will-change-transform",
                 isLeft ? "left-0 border-r" : "right-0 border-l",
                 "w-[340px] max-w-[92vw]",
                 className
@@ -194,7 +214,12 @@ const EdgePanelInner = memo(
         </>
       )}
     </AnimatePresence>
-    );
+  );
+
+  if (isGlobal && typeof document !== "undefined") {
+    return createPortal(panelNode, document.body);
+  }
+  return panelNode;
   }
 );
 EdgePanelInner.displayName = "EdgePanel";

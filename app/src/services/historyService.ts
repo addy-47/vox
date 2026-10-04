@@ -16,6 +16,7 @@ export interface SessionRow {
   updated_at: number;
   turn_count: number;
   first_message: string | null;
+  uncompacted_turns: number;
 }
 
 /**
@@ -130,6 +131,14 @@ export function updateSession(sessionId: number, updates: SessionUpdate): Promis
 export function deleteSession(sessionId: number, hard = false): Promise<void> {
   turnsCache.delete(sessionId);
   return invoke("delete_session", { sessionId, hard });
+}
+
+/**
+ * Triggers manual compaction for a session.
+ * Compaction progress and completion are broadcast via `compaction_started` and `compaction_finished`.
+ */
+export function compactSession(sessionId: number): Promise<void> {
+  return invoke("compact_session", { sessionId });
 }
 
 // ─── Presentation Utilities ──────────────────────────────────────────────────

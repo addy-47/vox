@@ -4,6 +4,7 @@ import { cn } from "@/shared/lib/utils";
 import { Tooltip } from "@/shared/ui/Tooltip";
 import { resolveSessionTitle, formatDateShort, type SessionRow } from "@/services/historyService";
 import { HISTORY_COPY } from "@/data/historyCopy";
+import { CompactSessionButton } from "./CompactSessionButton";
 import { formatClockTime, ORBIT_CARD_WIDTH } from "./orbitMath";
 
 export interface VoiceRippleNodeProps {
@@ -104,8 +105,14 @@ export const VoiceRippleNode = memo(
               </div>
             ) : (
               <>
-                {/* Hover: Trash icon (hidden by default, shown on group-hover / group-focus-within) */}
-                <div className="hidden group-hover:block group-focus-within:block">
+                {/* Hover: Compact & Trash icons (hidden by default, shown on group-hover / group-focus-within) */}
+                <div className="hidden group-hover:flex group-focus-within:flex items-center gap-1">
+                  <CompactSessionButton
+                    sessionId={session.id}
+                    uncompactedTurns={session.uncompacted_turns}
+                    variant="icon"
+                    className="w-6 h-6 rounded-full border border-[rgba(var(--border),0.2)] hover:border-[rgba(var(--accent),0.4)] bg-white/80 dark:bg-black/60 shadow-xs"
+                  />
                   <Tooltip label={HISTORY_COPY.deleteSession}>
                     <button
                       onClick={(e) => onDelete(e, session.id)}

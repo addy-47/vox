@@ -6,6 +6,10 @@ export const LAYOUT_COPY = {
     loadingSurface: "Loading surface...",
     preparingEnvironment: "Preparing neural environment",
   },
+  layoutFlip: {
+    title: "Adjusting layout…",
+    subtitle: "Settling into the new view",
+  },
   titleBar: {
     close: "Close",
     minimize: "Minimize",
@@ -59,6 +63,10 @@ export const LAYOUT_COPY = {
     defaultAria: "Drawer",
     resizeFallback: "Resize drawer",
     close: "Close drawer",
+  },
+  modal: {
+    defaultAria: "Dialog",
+    close: "Close dialog",
   },
   panel: {
     close: "Close panel",

@@ -99,7 +99,7 @@ export const Markdown = memo(
           ),
           code: ({ children, ...props }) => (
             <code
-              className="px-1 py-0.5 rounded bg-[rgba(var(--foreground),0.08)] border border-[rgba(var(--border),0.12)] font-mono text-[11px] text-[rgb(var(--accent))]"
+              className="px-1 py-0.5 rounded font-mono text-[11px] text-[rgb(var(--accent))]"
               {...props}
             >
               {children}
