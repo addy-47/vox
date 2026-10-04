@@ -8,8 +8,11 @@ import {
   AlertCircle, ArrowLeft, Server, Search, Check, X, ArrowUpDown, Pencil
 } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
-import { ApiKeyField, UnderlineInput } from "@/shared/ui";
+import { ApiKeyField, ExpandableList, UnderlineInput } from "@/shared/ui";
 import { ProviderTier } from "./ProviderSelectorView";
+import { RemoteModelsModalView } from "@/shared/components/settings/models/LlmCatalogView";
+import { CloudProvidersModalView } from "@/shared/components/settings/models/CloudProvidersModalView";
+import { useRemoteLlmProbing } from "@/shared/hooks/useRemoteLlmProbing";
 
 interface LlmConfigDeskProps {
   activeCategory: "STT" | "LLM" | "TTS";
@@ -38,6 +41,7 @@ export const LlmConfigDesk = memo(({
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
   const [editingProviderId, setEditingProviderId] = useState<string | null>(null);
   const [editingKeyValue, setEditingKeyValue] = useState("");
+  const [modalView, setModalView] = useState<"providers" | "models">("providers");
 
   const activeLlmProvider = draftSettings?.llm?.active || "embedded";
   const currentRemoteConfig =
@@ -74,6 +78,12 @@ export const LlmConfigDesk = memo(({
     currentRemoteConfig?.api_key,
     currentRemoteConfig?.provider_name,
   ]);
+
+  const {
+    remoteModels,
+    probingMap,
+    handleProbeCapabilities,
+  } = useRemoteLlmProbing(currentProvider, "llm", activePill === "cloud" || activePill === "server");
 
 
   const activeCloudProviderId = useMemo(() => {
@@ -281,6 +291,12 @@ export const LlmConfigDesk = memo(({
     setEditingKeyValue("");
   }, []);
 
+  const openSearch = useCallback(() => setIsSearchOpen(true), []);
+  const closeSearch = useCallback(() => {
+    setIsSearchOpen(false);
+    setSearchQuery("");
+  }, []);
+
   const handleSaveInlineKey = useCallback(
     (providerId: string) => {
       const trimmed = editingKeyValue.trim();
@@ -319,6 +335,162 @@ export const LlmConfigDesk = memo(({
   );
 
   if (!draftSettings) return null;
+
+  const ProviderSearchField = ({ autoFocus = false }: { autoFocus?: boolean }) => (
+    <div className="flex items-center gap-1.5 w-full min-w-0 border-b border-[rgb(var(--accent))] pb-0.5 animate-fade-in">
+      <Search size={12} className="text-[rgb(var(--accent))] shrink-0" />
+      <input
+        type="text"
+        autoFocus={autoFocus}
+        value={searchQuery}
+        onChange={(e) => setSearchQuery(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") closeSearch();
+        }}
+        placeholder={INTERACTION_CONFIG_DESK_COPY.llm.cloud.searchPlaceholder}
+        aria-label={INTERACTION_CONFIG_DESK_COPY.llm.cloud.searchPlaceholder}
+        className="flex-1 min-w-0 bg-transparent text-[11px] outline-none text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40"
+      />
+      <button
+        type="button"
+        onClick={closeSearch}
+        className="text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))] transition-colors p-0.5 shrink-0"
+        title={INTERACTION_CONFIG_DESK_COPY.llm.cloud.closeSearch}
+        aria-label={INTERACTION_CONFIG_DESK_COPY.llm.cloud.closeSearch}
+      >
+        <X size={12} />
+      </button>
+    </div>
+  );
+
+  /** The provider grid. Height-driven so the same element serves both the
+   * constrained inline slot and the full-height expand modal. */
+  const ProviderRows = () => (
+    <div className="h-full overflow-y-auto pr-1 grid grid-cols-1 sm:grid-cols-2 gap-2 content-start custom-scrollbar">
+      {filteredProviders.length === 0 ? (
+        <div className="col-span-full flex flex-col items-center justify-center gap-2 py-10 text-center">
+          <p className="text-[12px] font-semibold text-[rgb(var(--foreground))]/80">
+            {INTERACTION_CONFIG_DESK_COPY.llm.cloud.noProvidersMatch}
+          </p>
+          <button
+            type="button"
+            onClick={closeSearch}
+            className="px-3 py-1 rounded-lg text-[11px] font-bold text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/10 border border-[rgba(var(--accent),0.25)] hover:bg-[rgb(var(--accent))]/20 transition-all cursor-pointer"
+          >
+            {INTERACTION_CONFIG_DESK_COPY.llm.cloud.clearSearch}
+          </button>
+        </div>
+      ) : (
+        filteredProviders.map((provider) => {
+          const isSelected = activeCloudProviderId === provider.id;
+          const savedKey = getProviderKey(provider.id);
+          const isEditing = editingProviderId === provider.id;
+          const hasKey = Boolean(savedKey?.trim());
+
+          return (
+            <div
+              key={provider.id}
+              onClick={() => {
+                if (!isEditing) {
+                  handleSelectCloudProvider(provider);
+                }
+              }}
+              className={cn(
+                "group flex items-center justify-between gap-2 px-2.5 py-2 rounded-lg transition-all cursor-pointer select-none border min-h-[38px]",
+                isSelected
+                  ? "bg-[rgba(var(--accent),0.08)] border-[rgba(var(--accent),0.25)] text-[rgb(var(--foreground))]"
+                  : "bg-[rgba(var(--foreground),0.015)] border-[rgba(var(--accent),0.05)] hover:border-[rgba(var(--accent),0.15)] hover:bg-[rgba(var(--foreground),0.03)] text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--foreground))]"
+              )}
+            >
+              {isEditing ? (
+                <div
+                  className="w-full flex items-center gap-1.5 border-b border-[rgb(var(--accent))] pb-0.5 animate-fade-in"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <input
+                    type="password"
+                    autoFocus
+                    value={editingKeyValue}
+                    onChange={(e) => setEditingKeyValue(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") handleSaveInlineKey(provider.id);
+                      if (e.key === "Escape") handleCancelInlineKey();
+                    }}
+                    placeholder={provider.keyPlaceholder}
+                    className="w-full bg-transparent text-[11px] font-mono outline-none text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/30"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => handleSaveInlineKey(provider.id)}
+                    title={INTERACTION_CONFIG_DESK_COPY.llm.cloud.saveKey}
+                    aria-label={INTERACTION_CONFIG_DESK_COPY.llm.cloud.saveKey}
+                    className="text-[rgb(var(--accent))] hover:opacity-75 transition-opacity p-0.5 shrink-0"
+                  >
+                    <Check size={13} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleCancelInlineKey}
+                    title={INTERACTION_CONFIG_DESK_COPY.llm.cloud.cancelKey}
+                    aria-label={INTERACTION_CONFIG_DESK_COPY.llm.cloud.cancelKey}
+                    className="text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))] transition-colors p-0.5 shrink-0"
+                  >
+                    <X size={13} />
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span
+                      className={cn(
+                        "w-3.5 h-3.5 rounded-full border flex items-center justify-center shrink-0 transition-colors",
+                        isSelected
+                          ? "border-[rgb(var(--accent))]"
+                          : "border-[rgba(var(--foreground),0.25)] group-hover:border-[rgba(var(--foreground),0.4)]"
+                      )}
+                    >
+                      {isSelected && (
+                        <span className="w-2 h-2 rounded-full bg-[rgb(var(--accent))] animate-scale-in" />
+                      )}
+                    </span>
+                    <span className={cn(
+                      "text-[13px] truncate leading-none",
+                      isSelected ? "font-semibold text-[rgb(var(--foreground))]" : "font-medium"
+                    )}>
+                      {provider.name}
+                    </span>
+                  </div>
+
+                  <div className="shrink-0 flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                    {hasKey ? (
+                      <button
+                        type="button"
+                        onClick={() => handleStartInlineEdit(provider.id, savedKey)}
+                        className="p-1 rounded text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] transition-colors cursor-pointer"
+                        title={INTERACTION_CONFIG_DESK_COPY.llm.cloud.editKey}
+                        aria-label={INTERACTION_CONFIG_DESK_COPY.llm.cloud.editKey}
+                      >
+                        <Pencil size={12} />
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => handleStartInlineEdit(provider.id, "")}
+                        className="text-[10.5px] font-medium text-[rgb(var(--accent))] hover:underline transition-all"
+                      >
+                        {INTERACTION_CONFIG_DESK_COPY.llm.cloud.connect}
+                      </button>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          );
+        })
+      )}
+    </div>
+  );
+
 
   // ── Standard Level-2 Header ──────────────────────────────────────────────
   // Left: breadcrumb back button + stage/modality title
@@ -361,7 +533,6 @@ export const LlmConfigDesk = memo(({
               aria-label={INTERACTION_CONFIG_DESK_COPY.status.backToProviders}
             >
               <ArrowLeft size={12} strokeWidth={2.5} className="group-hover:-translate-x-0.5 transition-transform" />
-              <span>{INTERACTION_CONFIG_DESK_COPY.status.providers}</span>
             </button>
           )}
           {onBack && <span className="text-[rgb(var(--foreground-muted))]/30 text-[10px] shrink-0">/</span>}
@@ -503,167 +674,101 @@ export const LlmConfigDesk = memo(({
           {renderHeader(
             <Cloud size={14} className="text-[rgb(var(--accent))]" />,
             copy.llm.cloud.title,
-            <div className="flex items-center gap-1.5 shrink-0">
-              {isSearchOpen ? (
-                <div className="flex items-center gap-1.5 border-b border-[rgb(var(--accent))] pb-0.5 animate-fade-in">
-                  <Search size={12} className="text-[rgb(var(--accent))] shrink-0" />
-                  <input
-                    type="text"
-                    autoFocus
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder={copy.llm.cloud.searchPlaceholder}
-                    className="w-28 sm:w-36 bg-transparent text-[11px] outline-none text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsSearchOpen(false);
-                      setSearchQuery("");
-                    }}
-                    className="text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))] transition-colors p-0.5"
-                    title="Close search"
-                  >
-                    <X size={12} />
-                  </button>
-                </div>
-              ) : (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => setSortOrder((prev) => (prev === "asc" ? "desc" : "asc"))}
-                    className="p-1 rounded text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] transition-colors cursor-pointer flex items-center"
-                    title={sortOrder === "asc" ? copy.llm.cloud.sortAsc : copy.llm.cloud.sortDesc}
-                    aria-label={sortOrder === "asc" ? copy.llm.cloud.sortAsc : copy.llm.cloud.sortDesc}
-                  >
-                    <ArrowUpDown size={14} />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setIsSearchOpen(true)}
-                    className="p-1 rounded text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] transition-colors cursor-pointer flex items-center"
-                    title="Search providers"
-                    aria-label="Search providers"
-                  >
-                    <Search size={14} />
-                  </button>
-                </>
-              )}
+            <div className="flex items-center gap-1 shrink-0">
+              <button
+                type="button"
+                onClick={() => setSortOrder((prev) => (prev === "asc" ? "desc" : "asc"))}
+                className="w-7 h-7 flex items-center justify-center rounded-md text-[rgb(var(--foreground-muted))]/70 hover:text-[rgb(var(--accent))] transition-colors cursor-pointer"
+                title={sortOrder === "asc" ? copy.llm.cloud.sortAsc : copy.llm.cloud.sortDesc}
+                aria-label={sortOrder === "asc" ? copy.llm.cloud.sortAsc : copy.llm.cloud.sortDesc}
+              >
+                <ArrowUpDown size={13} strokeWidth={1.75} />
+              </button>
+              <button
+                type="button"
+                onClick={() => (isSearchOpen ? closeSearch() : openSearch())}
+                className={cn(
+                  "w-7 h-7 flex items-center justify-center rounded-md transition-colors cursor-pointer",
+                  isSearchOpen || searchQuery
+                    ? "text-[rgb(var(--accent))]"
+                    : "text-[rgb(var(--foreground-muted))]/70 hover:text-[rgb(var(--accent))]"
+                )}
+                title={copy.llm.cloud.searchPlaceholder}
+                aria-label={copy.llm.cloud.searchPlaceholder}
+              >
+                <Search size={13} strokeWidth={1.75} />
+              </button>
             </div>
           )}
 
-          {/* 2-Column Inner-Scrolling Provider List */}
-          <div className="flex-1 min-h-0 overflow-y-auto max-h-[160px] sm:max-h-[180px] pr-1 grid grid-cols-1 sm:grid-cols-2 gap-2 content-start custom-scrollbar">
-            {filteredProviders.map((provider) => {
-              const isSelected = activeCloudProviderId === provider.id;
-              const savedKey = getProviderKey(provider.id);
-              const isEditing = editingProviderId === provider.id;
-              const hasKey = Boolean(savedKey?.trim());
-
-              return (
-                <div
-                  key={provider.id}
-                  onClick={() => {
-                    if (!isEditing) {
-                      handleSelectCloudProvider(provider);
+          {/* 2-Column Provider List — inline at card height, full-bleed in the expand modal */}
+          <ExpandableList
+            className="flex-1 min-h-0"
+            triggerPlacement="floating"
+            inlineMaxHeightClass="max-h-[160px] sm:max-h-[180px]"
+            icon={modalView === "models" ? <Network size={16} className="text-[rgb(var(--accent))]" /> : <Cloud size={16} className="text-[rgb(var(--accent))]" />}
+            onBack={modalView === "models" ? () => setModalView("providers") : undefined}
+            title={
+              <span className="font-display text-[15px] font-bold tracking-tight text-[rgb(var(--foreground))]">
+                {modalView === "models" ? "Available Models" : copy.llm.cloud.title}
+              </span>
+            }
+            subtitle={
+              modalView === "models" ? (
+                <span className="font-mono text-[11px] text-[rgb(var(--foreground-muted))]">
+                  {remoteModels.length} models
+                </span>
+              ) : (
+                <span className="text-[11px] text-[rgb(var(--foreground-muted))]">
+                  {copy.llm.cloud.providerLabel} · {filteredProviders.length}
+                </span>
+              )
+            }
+            expandLabel={copy.llm.cloud.expandLabel}
+            ariaLabel={copy.llm.cloud.expandAriaLabel}
+            headerActions={modalView === "models" ? undefined : (isSearchOpen || searchQuery ? <div className="w-[200px] sm:w-[260px]"><ProviderSearchField /></div> : undefined)}
+            modalContent={
+              modalView === "models" ? (
+                <RemoteModelsModalView
+                  remoteModels={remoteModels}
+                  selectedModelId={draftSettings?.llm?.cloud?.model}
+                  probingMap={probingMap}
+                  capabilitiesCache={useSettingsStore.getState().capabilitiesCache}
+                  onSelectModel={(modelId) => {
+                    const cur = draftSettings?.llm?.cloud;
+                    if (cur) {
+                      updateDraft("llm", "cloud", {
+                        ...cur,
+                        model: modelId,
+                      });
                     }
                   }}
-                  className={cn(
-                    "group flex items-center justify-between gap-2 px-2.5 py-2 rounded-lg transition-all cursor-pointer select-none border min-h-[38px]",
-                    isSelected
-                      ? "bg-[rgba(var(--accent),0.08)] border-[rgba(var(--accent),0.25)] text-[rgb(var(--foreground))]"
-                      : "bg-[rgba(var(--foreground),0.015)] border-[rgba(var(--accent),0.05)] hover:border-[rgba(var(--accent),0.15)] hover:bg-[rgba(var(--foreground),0.03)] text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--foreground))]"
-                  )}
-                >
-                  {isEditing ? (
-                    /* In-place full-pill underline input replacing the title */
-                    <div
-                      className="w-full flex items-center gap-1.5 border-b border-[rgb(var(--accent))] pb-0.5 animate-fade-in"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <input
-                        type="password"
-                        autoFocus
-                        value={editingKeyValue}
-                        onChange={(e) => setEditingKeyValue(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") handleSaveInlineKey(provider.id);
-                          if (e.key === "Escape") handleCancelInlineKey();
-                        }}
-                        placeholder={provider.keyPlaceholder}
-                        className="w-full bg-transparent text-[11px] font-mono outline-none text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/30"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => handleSaveInlineKey(provider.id)}
-                        title="Save API Key"
-                        className="text-[rgb(var(--accent))] hover:opacity-75 transition-opacity p-0.5 shrink-0"
-                      >
-                        <Check size={13} />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleCancelInlineKey}
-                        title="Cancel"
-                        className="text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))] transition-colors p-0.5 shrink-0"
-                      >
-                        <X size={13} />
-                      </button>
-                    </div>
-                  ) : (
-                    <>
-                      {/* Left: Radio circle + Provider name */}
-                      <div className="flex items-center gap-2 min-w-0">
-                        <span
-                          className={cn(
-                            "w-3.5 h-3.5 rounded-full border flex items-center justify-center shrink-0 transition-colors",
-                            isSelected
-                              ? "border-[rgb(var(--accent))]"
-                              : "border-[rgba(var(--foreground),0.25)] group-hover:border-[rgba(var(--foreground),0.4)]"
-                          )}
-                        >
-                          {isSelected && (
-                            <span className="w-2 h-2 rounded-full bg-[rgb(var(--accent))] animate-scale-in" />
-                          )}
-                        </span>
-                        <div className="flex items-center gap-1.5 min-w-0">
-                          <span className={cn(
-                            "text-[13px] truncate leading-none",
-                            isSelected ? "font-semibold text-[rgb(var(--foreground))]" : "font-medium"
-                          )}>
-                            {provider.name}
-                          </span>
-                        </div>
-                      </div>
+                  onProbeCapabilities={handleProbeCapabilities}
+                />
+              ) : (
+                <CloudProvidersModalView
+                  activeCloudProviderId={activeCloudProviderId}
+                  getProviderKey={getProviderKey}
+                  onSelectProvider={handleSelectCloudProvider}
+                  editingProviderId={editingProviderId}
+                  editingKeyValue={editingKeyValue}
+                  setEditingKeyValue={setEditingKeyValue}
+                  onStartInlineEdit={handleStartInlineEdit}
+                  onCancelInlineKey={handleCancelInlineKey}
+                  onSaveInlineKey={handleSaveInlineKey}
+                  onNavigateToModels={() => setModalView("models")}
+                />
+              )
+            }
+          >
+            <ProviderRows />
+          </ExpandableList>
 
-                      {/* Right: + Connect OR simple pencil edit icon */}
-                      <div className="shrink-0 flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-                        {hasKey ? (
-                          <button
-                            type="button"
-                            onClick={() => handleStartInlineEdit(provider.id, savedKey)}
-                            className="p-1 rounded text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] transition-colors cursor-pointer"
-                            title="Edit API key"
-                            aria-label="Edit API key"
-                          >
-                            <Pencil size={12} />
-                          </button>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => handleStartInlineEdit(provider.id, "")}
-                            className="text-[10.5px] font-medium text-[rgb(var(--accent))] hover:underline transition-all"
-                          >
-                            + Connect
-                          </button>
-                        )}
-                      </div>
-                    </>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+          {isSearchOpen && (
+            <div className="shrink-0">
+              <ProviderSearchField autoFocus />
+            </div>
+          )}
 
           {modelsError && (
             <span className="text-[10px] text-[rgb(var(--accent))] flex items-center gap-1 ml-0.5 shrink-0 font-mono">

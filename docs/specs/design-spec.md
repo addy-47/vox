@@ -338,11 +338,12 @@ All vector illustrations, domain diagrams, and custom toggle widgets (e.g. `WebS
   static layout instead of a 60 fps compositing storm, without flashing modal
   loader overlays during standard window resizing.
 
-### 7.1 Orbital Loader Invariant (Zero Typography & Particle Core)
+### 7.1 Vox Logo Loader Invariant (Minimal Stroke Waveform & Zero Typography)
 
-* **Zero Typography**: `OrbitalLoader` is a purely visual, ambient loading component. It MUST NOT render any text (no title, subtitle, or status text) across any page or view.
-* **Particle Core**: The central core consists of a frameless, stroke-style particle orb SVG (`rgb(var(--accent))` stroke, ~1px weight, orbital ellipse paths with focal particle nodes) instead of third-party icon libraries.
-* **Concentric Rings**: Retains the ambient outer pulse aura, clockwise rotating ring, and counter-clockwise dashed resonance ring.
+* **Zero Typography**: `OrbitalLoader` and boot loader are purely visual, ambient loading components. They MUST NOT render any text (no title, subtitle, or status text) across any page or view.
+* **Minimalist Stroke Logo**: The loading graphic consists of a clean, minimal, stroke-style SVG of the official Vox audio waveform logo (`rgb(var(--accent))` stroke, ~1.5px weight). It renders the 5 vertical sound equalizer lines overlaid with the signature central waveform featuring the deep "V" dip and terminal node dots. Heavy orb silhouettes, outer rotating rings, and ping auras are eliminated in favor of an ultra-lean, single-element SVG.
+* **Motion & Performance Budget**: Animates purely through hardware-accelerated CSS `stroke-dashoffset` flow and gentle breathing glow (`opacity` / `filter`). Zero JavaScript animation loops or `requestAnimationFrame` hooks are permitted. Idle loops pause under `prefers-reduced-motion` and `data-viewport-resize`.
+
 
 ---
 
@@ -456,7 +457,7 @@ per-surface listeners.
 | **Tier 0** | settings accordion cards | inline | expand / collapse |
 | **Tier 1** | popovers & micro-panels (Memory node tooltip, Home test-clip menu, Monitoring popover) | bottom corner / hover / click | scale-fade, transient |
 | **Tier 2** | bottom drawers (History detail, Memory pipeline, Memory profiler) | bottom sheet | translate-Y, spring ease |
-| **Tier 2b** | centered modal (Personal Memory on compact viewports `< 1024px`) | screen center | scale-fade, transient |
+| **Tier 2b** | centered modal (Personal Memory on compact viewports `< 1024px`; dense list expansion) | screen center | scale-fade, transient |
 | **Tier 3** | edge rails (Help, Notifications, Conversations) | top corner trigger | width-collapse / expand |
 
 ### Overlay topology
@@ -466,6 +467,7 @@ Vox uses one overlay grammar across the shipped interface:
 - **Top-corner triggers open edge rails.** Help and Notifications share one right-edge rail group; only one is open at a time. Conversations uses an independent left-edge rail on Home.
 - **Bottom-corner triggers open popovers.** Monitoring remains a bottom-left popover on desktop and a route on compact viewports.
 - **Central cards and nodes open bottom drawers.** The existing `Drawer` remains the single bottom-sheet primitive for these surfaces. Below the 1024px compact threshold, where a full-bleed sheet crushes two-column content, the Personal Memory surface renders as a Tier 2b centered modal instead, and the History detail renders as a right-edge panel (`EdgePanel`, same dim/surface/spring as every other rail) over the dimmed session list instead of a drawer.
+- **Dense lists expand in place via Tier 2b.** Where a card body holds a selection list too long to scan or operate at its inline height, the card keeps its constrained inline list and exposes a single expand affordance that presents the same list in a centered modal. The inline list stays authoritative for selection and never becomes disabled or stale while the modal is open; the modal is a larger viewport onto the same state, not a second editor. The expand affordance is an icon-only control and therefore requires a `Tooltip`.
 - **Dismissal is centralized.** Escape closes the topmost surface first (FILO), and outside pointer-down closes the topmost dismissible surface. Surfaces do not install their own Escape or outside-click listeners.
 - **The memory profiler is a debug surface.** It is not part of the shipped overlay contract.
 
@@ -500,6 +502,7 @@ Vox uses one overlay grammar across the shipped interface:
 
 - **History detail** — `DetailPanel` inside a bottom `Drawer` on wide orbit viewports (`> 1024px`). On list/compact viewports (`< 1024px`), clicking a session performs an **in-place page drill-down**: the session list transitions in-place into the full-width session transcript view with a top breadcrumb (`← All Sessions`), timestamp, turn count, and actions. Pressing `Escape` or clicking `← All Sessions` returns immediately to the preserved list view without clumsy overlay drawers.
 - **Personal Memory Compact Modal (Tier 2b)** — On viewports `< 1024px`, Personal Memory renders as a unified single-entity modal (no nested card-inside-a-card borders or double headers). Features an integrated top masthead with actions (Copy, Regenerate, Consolidate) and underline tabs (`Memory`, `Observations`, `Staging`). The workspace below forms one cohesive surface with distinct inner section headers (`Core Dossier`, `Observations`, `Staging`), synchronized 32px icon badges, and status filter parity. Actions affecting persistent memory auto-redirect to `Memory` for instant feedback.
+- **Expanded List Modal (Tier 2b)** — When dense, compact inline card lists (`ExpandableList` in settings, catalogs, providers) are expanded into full modals (`w-[min(920px,94vw)] h-[min(720px,88vh)]`), they must not render squished compact rows in a large void. Instead, they transition into a spacious, tailored UI: an integrated toolbar with real-time search and filter chips, multi-column responsive cards (`grid-cols-1 md:grid-cols-2 lg:grid-cols-3`), and directly visible telemetry (speed/TPS, context window, VRAM footprint, capability badges) with zero reliance on hover-only tooltips.
 - **Memory pipeline** — horizontal, left-to-right stage flow inside a global drawer.
 - **Memory profiler** — converted from a route to a global bottom drawer (`ProfilerDrawer`).
 
@@ -513,9 +516,11 @@ Compaction extracts structured semantic memory facts from uncompacted session tu
 4. **Step 2 Drill-Down Top Right Cluster (`TopRightCluster` / `History`)**: Icon button mounted directly to the left of the Notification (`Bell`) icon when an in-place session drill-down is open.
 
 *Dynamic State & Mutual Exclusion Invariants:*
+- **Single Authority**: `uncompacted_turns` is the only source of truth for trigger visibility, on every surface. Notification state is never a second gate — a card whose `uncompacted_turns` is zero is never shown, and a card with uncompacted turns is always shown, regardless of notification rollup or resolution.
 - **Active Compaction**: When compaction is initiated, the target session trigger transitions immediately into a spinning loader (`Loader2` spin).
-- **Universal Mutual Exclusion**: When compaction is in progress on any session, all other compaction triggers across the UI are disabled (`opacity-50 cursor-not-allowed`).
-- **Completion Transition**: When compaction concludes, the backend emits `CompactionFinished` and `SessionsChanged`, a receipt notification is pushed, `uncompacted_turns` drops to 0, and the trigger button smoothly unmounts/disappears.
+- **Universal Mutual Exclusion**: When compaction is in progress on any session, all other compaction triggers across the UI are disabled (`opacity-50 cursor-not-allowed`) — not only those on the initiating surface.
+- **Completion Transition**: When compaction concludes, the backend commits the session's compaction output, emits `NotificationUpdated` (resolving the task card) then `NotificationCreated` (the receipt), then `SessionsChanged`. There is no dedicated compaction event; `SessionsChanged` is the sole signal that `uncompacted_turns` has changed.
+- **No Transient Identity Swap**: A completion refresh must not re-key any session-scoped resource on anything other than the session's identity. Refreshing a session in place (new counts, new title, new timestamp) must never cause its transcript, detail surface, or drill-down to unmount, reload, or drop back to a closed state.
 
 ---
 

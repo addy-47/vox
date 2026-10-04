@@ -12,6 +12,7 @@ import {
   MoreVertical,
   History,
   FolderGit2,
+  Shrink,
 } from "lucide-react";
 import { AnimatePresence, motion, Reorder, useDragControls } from "framer-motion";
 import { cn } from "@/shared/lib/utils";
@@ -34,6 +35,10 @@ import {
   selectActiveCompactionSessionIds,
 } from "@/store/notificationStore";
 import { useSessionStore } from "@/store/sessionStore";
+import {
+  useSessionPanelUiStore,
+  sessionPanelScrollTop,
+} from "@/store/sessionPanelUiStore";
 
 interface SessionPanelProps {
   onClose: () => void;
@@ -229,15 +234,16 @@ const SessionRowItem = memo(
           ) : (
             <div className="flex flex-col min-w-0 flex-1">
               <div className="flex items-center gap-1.5 min-w-0">
-                <span className="truncate text-[13.5px] tracking-normal leading-tight font-sans">
+                <span
+                  className={cn(
+                    "truncate text-[13.5px] font-medium tracking-normal leading-tight font-sans",
+                    active
+                      ? "text-[rgb(var(--accent))]"
+                      : "text-[rgb(var(--foreground))]"
+                  )}
+                >
                   {title}
                 </span>
-                {isUncompacted && (
-                  <span
-                    className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--accent))] shadow-[0_0_6px_rgba(var(--accent),0.6)] shrink-0 animate-pulse"
-                    title={SESSION_COPY.actions.uncompactedTurnsTooltip}
-                  />
-                )}
               </div>
               {projectTag && (
                 <span className="text-[11px] font-mono text-[rgb(var(--foreground-muted))]/60 flex items-center gap-1 mt-0.5">
@@ -271,6 +277,27 @@ const SessionRowItem = memo(
                 menuOpen ? "flex" : "hidden group-hover:flex"
               )}
             >
+              {/* Compact Trigger (uncompacted sessions only) */}
+              {isUncompacted && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    executeCompaction(session.id);
+                  }}
+                  aria-label={SESSION_COPY.actions.uncompactedTurnsTooltip}
+                  title={SESSION_COPY.actions.uncompactedTurnsTooltip}
+                  className="flex items-center justify-center w-5 h-5 rounded hover:bg-[rgba(var(--accent),0.12)] transition-all cursor-pointer text-[rgb(var(--accent))] opacity-60 hover:!opacity-100"
+                >
+                  {isCompacting ? (
+                    <Loader2 size={12} className="animate-spin" />
+                  ) : (
+                    <Shrink size={12} />
+                  )}
+                </button>
+              )}
+
               {/* Pin Toggle */}
               <button
                 type="button"
@@ -372,7 +399,13 @@ const ProjectRowItem = memo(
     onDrop,
     onDragEndCommit,
   }: ProjectRowItemProps) => {
-    const [expanded, setExpanded] = useState(false);
+    const projectId = group.project.id;
+    const expanded = useSessionPanelUiStore((s) =>
+      s.expandedProjectIds.includes(projectId)
+    );
+    const toggleProjectExpanded = useSessionPanelUiStore(
+      (s) => s.toggleProjectExpanded
+    );
     const [isDragging, setIsDragging] = useState(false);
     const [isRenaming, setIsRenaming] = useState(false);
     const [renameName, setRenameName] = useState("");
@@ -384,8 +417,8 @@ const ProjectRowItem = memo(
 
     const handleToggleExpand = useCallback(() => {
       if (isDraggingRef.current || isRenaming || menuOpen) return;
-      setExpanded((prev) => !prev);
-    }, [isRenaming, menuOpen]);
+      toggleProjectExpanded(projectId);
+    }, [isRenaming, menuOpen, toggleProjectExpanded, projectId]);
 
     const handleCreateInProject = useCallback(
       (e: React.MouseEvent) => {
@@ -644,7 +677,8 @@ export const SessionPanel = memo(({ onClose }: SessionPanelProps) => {
   const { activeSessionId, isRestoring, restoringSessionId } = useVoiceSession();
   const setActiveSessionLabel = useSessionStore((s) => s.setActiveSessionLabel);
 
-  const [viewMode, setViewMode] = useState<"projects" | "history">("projects");
+  const viewMode = useSessionPanelUiStore((s) => s.viewMode);
+  const setViewMode = useSessionPanelUiStore((s) => s.setViewMode);
   const [isCreatingProject, setIsCreatingProject] = useState(false);
   const [projectName, setProjectName] = useState("");
   const [dragOverProjectId, setDragOverProjectId] = useState<string | null>(null);
@@ -796,8 +830,29 @@ export const SessionPanel = memo(({ onClose }: SessionPanelProps) => {
     [moveSessionToProject]
   );
 
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Persist scroll offset across panel close/reopen (panel unmounts on close).
+  const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    if (loading) return;
+    sessionPanelScrollTop.value = e.currentTarget.scrollTop;
+  }, [loading]);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const raf = requestAnimationFrame(() => {
+      el.scrollTop = sessionPanelScrollTop.value;
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [loading]);
+
   return (
-    <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar flex flex-col gap-3 px-3 pt-3 pb-16 select-none font-sans">
+    <div
+      ref={scrollRef}
+      onScroll={handleScroll}
+      className="flex-1 min-h-0 overflow-y-auto custom-scrollbar flex flex-col gap-3 px-3 pt-3 pb-16 select-none font-sans"
+    >
       {/* ── Top Actions: + New Conversation & Conversation History ── */}
       <div className="flex flex-col gap-1 shrink-0">
         <button
@@ -817,14 +872,14 @@ export const SessionPanel = memo(({ onClose }: SessionPanelProps) => {
 
         <button
           type="button"
-          onClick={() => setViewMode((m) => (m === "history" ? "projects" : "history"))}
+          onClick={() => setViewMode(viewMode === "history" ? "projects" : "history")}
           aria-pressed={viewMode === "history"}
           className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-left cursor-pointer transition-colors text-[13.5px] font-medium tracking-normal text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.04)] bg-transparent"
         >
           {viewMode === "history" ? (
-            <FolderGit2 size={14} className="shrink-0 text-[rgb(var(--foreground-muted))]" />
+            <FolderGit2 size={14} className="shrink-0 text-[rgb(var(--accent))]" />
           ) : (
-            <History size={14} className="shrink-0 text-[rgb(var(--foreground-muted))]" />
+            <History size={14} className="shrink-0 text-[rgb(var(--accent))]" />
           )}
           <span>
             {viewMode === "history" ? SESSION_COPY.projectsSection : SESSION_COPY.conversationHistory}

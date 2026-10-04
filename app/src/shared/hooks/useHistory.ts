@@ -268,9 +268,13 @@ export function useHistory() {
     [dayGroups]
   );
 
-  // Turn fetching
+  // Turn fetching. Keyed on the session id alone: an in-place refresh of the
+  // same session (new turn/uncompacted counts, title, timestamp) must not
+  // re-enter the loading branch and blank the transcript.
+  const selectedSessionId = selectedSession?.id ?? null;
+
   useEffect(() => {
-    if (!selectedSession) {
+    if (selectedSessionId === null) {
       setTurns([]);
       setTurnsError(null);
       return;
@@ -280,7 +284,7 @@ export function useHistory() {
       setTurnsLoading(true);
       setTurnsError(null);
       try {
-        const data = await getTurns(selectedSession.id);
+        const data = await getTurns(selectedSessionId);
         if (!isCancelled) {
           setTurns(data);
         }
@@ -300,11 +304,11 @@ export function useHistory() {
     return () => {
       isCancelled = true;
     };
-  }, [selectedSession]);
+  }, [selectedSessionId]);
 
   const retryFetchTurns = useCallback(() => {
-    if (!selectedSession) return;
-    const targetSessionId = selectedSession.id;
+    if (selectedSessionId === null) return;
+    const targetSessionId = selectedSessionId;
     setTurnsLoading(true);
     setTurnsError(null);
     getTurns(targetSessionId)
@@ -324,7 +328,7 @@ export function useHistory() {
           setTurnsLoading(false);
         }
       });
-  }, [selectedSession]);
+  }, [selectedSessionId]);
 
   const handleDelete = useCallback(
     async (e: React.MouseEvent, id: number) => {

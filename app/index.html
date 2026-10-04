@@ -108,89 +108,34 @@
         background: var(--bg-boot, #050505);
         pointer-events: none;
       }
-      html.light #vox-boot-loader .vox-label {
-        color: rgba(var(--accent, 14 116 144), 0.90);
-      }
-      #vox-boot-loader .vox-orb {
-        position: relative;
-        width: 112px;           /* Match OrbitalLoader lg: w-28 (112px) */
-        height: 112px;          /* Match OrbitalLoader lg: h-28 (112px) */
-        display: flex;
-        align-items: center;
-        justify-content: center;
-      }
-      #vox-boot-loader .vox-orb::before,
-      #vox-boot-loader .vox-orb::after {
-        content: "";
-        position: absolute;
-        inset: 0;
-        border-radius: 50%;
-      }
-      /* Outer ping aura */
-      #vox-boot-loader .vox-orb::before {
-        background: rgba(var(--accent, 0 219 233), 0.10);
-        animation: vox-orb-ping 1.6s cubic-bezier(0, 0, 0.2, 1) infinite;
-      }
-      #vox-boot-loader .vox-ring-1,
-      #vox-boot-loader .vox-ring-2 {
-        position: absolute;
-        border-radius: 50%;
-      }
-      /* Counter-rotating rings with proportional spacing */
-      #vox-boot-loader .vox-ring-1 {
-        /* Original: inset: 8px (for 96px orb). New: inset: 9.33px (for 112px orb) */
-        inset: 9.33px;
-        border: 1px solid rgba(var(--accent, 0 219 233), 0.25);
-        animation: vox-orb-spin 6s linear infinite;
-      }
-      #vox-boot-loader .vox-ring-2 {
-        /* Original: inset: 20px (for 96px orb). New: inset: 23.56px (for 112px orb) */
-        inset: 23.56px;
-        border: 1px dashed rgba(var(--accent, 0 219 233), 0.40);
-        animation: vox-orb-spin 10s linear infinite reverse;
-      }
-      /* Center orb - proportional to 112px orb size */
-      #vox-boot-loader .vox-core {
-        position: relative;
-        z-index: 1;
-        /* Original: 40px for 96px orb. Scaled proportionally for 112px orb: 40 * (112/96) = 46.67px */
-        width: 46.67px;
-        height: 46.67px;
-        border-radius: 50%;
-        background: rgba(var(--accent, 0 219 233), 0.15);
-        border: 1px solid rgba(var(--accent, 0 219 233), 0.30);
-        box-shadow: 0 0 32px rgba(var(--accent, 0 219 233), 0.35);
-        display: flex;
-        align-items: center;
-        justify-content: center;
+      #vox-boot-loader .vox-boot-icon {
+        width: 64px;
+        height: 64px;
         color: rgb(var(--accent, 0 219 233));
-        font-size: 16px;          /* Original font-size for 96px orb. Adjusted proportionally */
-        font-family: "Sora", system-ui, sans-serif;
-        font-weight: 800;
-        letter-spacing: 0.04em;
-        animation: vox-core-pulse 2s ease-in-out infinite;
+        animation: vox-boot-breath 2.4s ease-in-out infinite;
+        will-change: transform, opacity;
       }
-      #vox-boot-loader .vox-label {
-        /* Original: margin-top: 28px. Maintained for consistency */
-        margin-top: 28px;
-        font-family: "JetBrains Mono", ui-monospace, monospace;
-        font-size: 11px;
-        font-weight: 600;
-        letter-spacing: 0.18em;
-        text-transform: uppercase;
-        color: rgba(var(--accent, 0 219 233), 0.80);
+      #vox-boot-loader .vox-boot-wave {
+        stroke-dasharray: 48;
+        stroke-dashoffset: 48;
+        animation: vox-boot-draw 2.4s ease-in-out infinite alternate;
       }
-      @keyframes vox-orb-ping {
-        0%   { transform: scale(1);    opacity: 0.6; }
-        80%, 100% { transform: scale(1.5); opacity: 0; }
+      @keyframes vox-boot-breath {
+        0%, 100% {
+          transform: scale(0.96);
+          opacity: 0.82;
+          filter: drop-shadow(0 0 4px rgba(var(--accent, 0 219 233), 0.2));
+        }
+        50% {
+          transform: scale(1.03);
+          opacity: 1;
+          filter: drop-shadow(0 0 14px rgba(var(--accent, 0 219 233), 0.6));
+        }
       }
-      @keyframes vox-orb-spin {
-        from { transform: rotate(0deg); }
-        to   { transform: rotate(360deg); }
-      }
-      @keyframes vox-core-pulse {
-        0%, 100% { transform: scale(1);    opacity: 1; }
-        50%      { transform: scale(1.08); opacity: 0.85; }
+      @keyframes vox-boot-draw {
+        0% { stroke-dashoffset: 48; opacity: 0.6; }
+        50% { stroke-dashoffset: 0; opacity: 1; }
+        100% { stroke-dashoffset: -48; opacity: 0.85; }
       }
       /* Fade-out when React takes over */
       #vox-boot-loader.vox-fade-out {
@@ -246,21 +191,26 @@
          React's App.tsx mount effect calls window.__VOX_HIDE_BOOT_LOADER() to
          fade and remove this element. -->
     <div id="vox-boot-loader" aria-hidden="true">
-      <div class="vox-orb">
-        <div class="vox-ring-1"></div>
-        <div class="vox-ring-2"></div>
-        <div class="vox-core">
-          <svg width="30" height="30" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="color:rgb(var(--accent, 0 219 233));">
-            <circle cx="12" cy="12" r="2" fill="currentColor" opacity="0.9" />
-            <circle cx="12" cy="12" r="4.5" stroke="currentColor" stroke-width="1" stroke-dasharray="2 3" opacity="0.6" />
-            <ellipse cx="12" cy="12" rx="9" ry="3.8" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" transform="rotate(-30 12 12)" opacity="0.85" />
-            <circle cx="19.8" cy="7.5" r="1.2" fill="currentColor" />
-            <ellipse cx="12" cy="12" rx="9" ry="3.8" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" transform="rotate(30 12 12)" opacity="0.85" />
-            <circle cx="4.2" cy="7.5" r="1.2" fill="currentColor" />
-            <ellipse cx="12" cy="12" rx="8.5" ry="3.2" stroke="currentColor" stroke-width="0.9" stroke-dasharray="3 2" transform="rotate(90 12 12)" opacity="0.5" />
-            <circle cx="12" cy="20.5" r="1" fill="currentColor" opacity="0.75" />
-          </svg>
-        </div>
+      <div class="vox-boot-icon">
+        <svg width="64" height="64" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:100%;">
+          <g opacity="0.35" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+            <line x1="8" y1="12" x2="8" y2="20" />
+            <line x1="12" y1="8" x2="12" y2="24" />
+            <line x1="16" y1="5" x2="16" y2="27" />
+            <line x1="20" y1="8" x2="20" y2="24" />
+            <line x1="24" y1="12" x2="24" y2="20" />
+          </g>
+          <path
+            class="vox-boot-wave"
+            d="M 6.5 16 C 8 16 8.5 11 10 11 C 11.5 11 12 18.5 13.5 18.5 C 14.5 18.5 15.2 24 16 24 C 16.8 24 17.5 18.5 18.5 18.5 C 20 18.5 20.5 11 22 11 C 23.5 11 24 16 25.5 16"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+          <circle cx="4.5" cy="16" r="1.15" fill="currentColor" opacity="0.85" />
+          <circle cx="27.5" cy="16" r="1.15" fill="currentColor" opacity="0.85" />
+        </svg>
       </div>
     </div>
     <script>

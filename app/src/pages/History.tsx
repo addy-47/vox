@@ -185,15 +185,11 @@ export const History: React.FC = () => {
     return (currentMonthWindow?.days ?? []).map((d) => d.dayKey);
   }, [currentMonthWindow?.days]);
 
+  // Publish the drill-down row, never un-publish on cleanup. A nulling cleanup
+  // made the store oscillate null -> row -> null on every in-place session
+  // refresh, remounting the drill-down subtree and its top-right triggers.
   React.useEffect(() => {
-    if (!isOrbitViewport && selectedSession) {
-      setDrillDownSession(selectedSession);
-    } else {
-      setDrillDownSession(null);
-    }
-    return () => {
-      setDrillDownSession(null);
-    };
+    setDrillDownSession(!isOrbitViewport && selectedSession ? selectedSession : null);
   }, [isOrbitViewport, selectedSession, setDrillDownSession]);
 
   const dayNodeIds = React.useMemo(() => {

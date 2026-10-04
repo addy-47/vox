@@ -322,8 +322,17 @@ export const INTERACTION_CONFIG_DESK_COPY = {
       providerLabel: "Cloud Provider",
       apiKeyLabel: "API Key (Required)",
       searchPlaceholder: "Search providers...",
+      closeSearch: "Close search",
       sortAsc: "Sort A-Z",
       sortDesc: "Sort Z-A",
+      noProvidersMatch: "No providers match your search",
+      clearSearch: "Clear search",
+      connect: "+ Connect",
+      editKey: "Edit API key",
+      saveKey: "Save API key",
+      cancelKey: "Cancel",
+      expandLabel: "Expand provider list",
+      expandAriaLabel: "Browse all cloud providers",
     },
   },
   status: {
@@ -468,6 +477,10 @@ export const VOICE_CAROUSEL_COPY = {
 
 export const LLM_CATALOG_COPY = {
   connectedServer: "Connected Server",
+  catalogTitle: "Available Models",
+  catalogAriaLabel: "Browse all available models",
+  expandLabel: "Expand model list",
+  modelCountLabel: "models",
   serverErrorTooltip: "Connection failed or invalid API key. Ensure the server is online and credentials are correct.",
   fetching: "Fetching...",
   customModelPlaceholder: "Enter custom model ID (e.g. mistralai/mistral-large)...",

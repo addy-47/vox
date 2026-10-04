@@ -817,6 +817,87 @@ input[type="range"]:active::-webkit-slider-thumb {
 .animate-wave-bar-4 { animation: wave-bar-4 1.1s ease-in-out infinite 0.3s; }
 .animate-flow-dot { animation: flow-dot 1.5s infinite linear; }
 
+/* ── Orbital loader core ──
+   Rotation rides an HTML wrapper (not an SVG <g>) so it needs no
+   transform-box/transform-origin, which WebKitGTK does not honour reliably. */
+.orb-core-spin {
+  animation: orb-core-spin 26s linear infinite;
+}
+
+@keyframes orb-core-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* Satellites: translate-only, so origin-independent and safe everywhere. */
+.orb-satellite-a,
+.orb-satellite-b {
+  will-change: transform;
+}
+
+.orb-satellite-a { animation: orb-float-a 5.5s ease-in-out infinite; }
+.orb-satellite-b { animation: orb-float-b 7.5s ease-in-out infinite; }
+
+@keyframes orb-float-a {
+  0%, 100% { transform: translate(0, 0); opacity: 0.8; }
+  50% { transform: translate(1.6px, -1.8px); opacity: 1; }
+}
+
+@keyframes orb-float-b {
+  0%, 100% { transform: translate(0, 0); opacity: 0.65; }
+  50% { transform: translate(-1.9px, 1.5px); opacity: 1; }
+}
+
+/* ── Vox Logo Loader (Minimal Stroke Waveform) ── */
+.vox-logo-breathing {
+  animation: vox-logo-breath 2.4s ease-in-out infinite;
+  will-change: transform, opacity;
+}
+
+.vox-logo-wave-path {
+  stroke-dasharray: 48;
+  stroke-dashoffset: 48;
+  animation: vox-logo-draw 2.4s ease-in-out infinite alternate;
+}
+
+@keyframes vox-logo-breath {
+  0%, 100% {
+    transform: scale(0.96);
+    opacity: 0.82;
+    filter: drop-shadow(0 0 4px rgba(var(--accent), 0.2));
+  }
+  50% {
+    transform: scale(1.03);
+    opacity: 1;
+    filter: drop-shadow(0 0 12px rgba(var(--accent), 0.6));
+  }
+}
+
+@keyframes vox-logo-draw {
+  0% {
+    stroke-dashoffset: 48;
+    opacity: 0.6;
+  }
+  50% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+  100% {
+    stroke-dashoffset: -48;
+    opacity: 0.85;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vox-logo-breathing,
+  .vox-logo-wave-path,
+  .orb-core-spin,
+  .orb-satellite-a,
+  .orb-satellite-b {
+    animation: none !important;
+  }
+}
+
 
 .has-unsaved-changes > div:first-child {
   border-bottom-left-radius: 0px !important;

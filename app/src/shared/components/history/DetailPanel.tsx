@@ -1,12 +1,10 @@
-import { memo, useState, useEffect, useCallback } from "react";
+import { memo, useState, useEffect } from "react";
 import { Ghost, AlertCircle, RotateCcw, Sparkles } from "lucide-react";
 import { formatDateTime, resolveSessionTitle, type SessionRow, type TurnRow } from "@/services/historyService";
 import { EmptyState, OrbitalLoader } from "@/shared/components/common";
 import { HISTORY_COPY } from "@/data/historyCopy";
 import { Drawer } from "@/shared/ui/Drawer";
 import { Markdown } from "@/shared/ui/Markdown";
-import { useNotificationStore } from "@/store/notificationStore";
-import { metadataResolution } from "@/services/notificationService";
 import { CompactSessionButton } from "./CompactSessionButton";
 
 function formatTime(ms: number): string {
@@ -87,22 +85,6 @@ export const DetailPanel = memo(
     const visibleTurns = turns.slice(0, visibleCount);
     const hasMoreTurns = turns.length > visibleCount;
 
-    const isUncompacted = useNotificationStore(
-      useCallback(
-        (s) =>
-          session?.id
-            ? s.notifications.some(
-                (n) =>
-                  n.category === "session_compaction" &&
-                  n.session_id === session.id &&
-                  n.status !== "dismissed" &&
-                  metadataResolution(n) !== "resolved"
-              )
-            : false,
-        [session?.id]
-      )
-    );
-
     const detailBody = (
       <>
         {loading ? (
@@ -178,12 +160,6 @@ export const DetailPanel = memo(
               >
                 {resolveSessionTitle(session)}
               </span>
-              {isUncompacted && (
-                <span
-                  className="w-2 h-2 rounded-full bg-[rgb(var(--accent))] shadow-[0_0_8px_rgba(var(--accent),0.7)] animate-pulse shrink-0 ml-1"
-                  title={HISTORY_COPY.uncompactedTurnsTooltip}
-                />
-              )}
             </div>
           ) : undefined
         }

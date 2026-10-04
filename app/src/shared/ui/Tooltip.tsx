@@ -30,6 +30,7 @@ export interface TooltipProps {
   wrapperStyle?: React.CSSProperties;
   children: React.ReactNode;
   disabled?: boolean;
+  asChild?: boolean;
 }
 
 export const Tooltip: React.FC<TooltipProps> = React.memo(({
@@ -43,6 +44,7 @@ export const Tooltip: React.FC<TooltipProps> = React.memo(({
   wrapperStyle,
   children,
   disabled = false,
+  asChild = false,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const arrowRef = useRef<SVGSVGElement>(null);
@@ -105,8 +107,38 @@ export const Tooltip: React.FC<TooltipProps> = React.memo(({
     return <>{children}</>;
   }
 
-  return (
-    <>
+  const renderReference = () => {
+    if (asChild && React.isValidElement(children)) {
+      const child = children as React.ReactElement<Record<string, unknown>>;
+      const childWithRef = child as unknown as { ref?: React.Ref<HTMLElement | SVGSVGElement> };
+      const existingRef = childWithRef.ref;
+      const mergedRef = (node: HTMLElement | SVGSVGElement | null) => {
+        refs.setReference(node);
+        if (typeof existingRef === "function") {
+          existingRef(node);
+        } else if (existingRef && typeof existingRef === "object" && "current" in existingRef) {
+          (existingRef as React.MutableRefObject<HTMLElement | SVGSVGElement | null>).current = node;
+        }
+      };
+
+      const childClassName = typeof child.props.className === "string" ? child.props.className : undefined;
+      const childStyle = typeof child.props.style === "object" && child.props.style !== null ? (child.props.style as React.CSSProperties) : undefined;
+
+      const referenceProps = getReferenceProps({
+        ...child.props,
+        ref: mergedRef,
+        className: wrapperClassName
+          ? cn(childClassName, wrapperClassName)
+          : childClassName,
+        style: wrapperStyle
+          ? { ...childStyle, ...wrapperStyle }
+          : childStyle,
+      });
+
+      return React.cloneElement(child, referenceProps);
+    }
+
+    return (
       <span
         ref={refs.setReference}
         {...getReferenceProps()}
@@ -115,6 +147,12 @@ export const Tooltip: React.FC<TooltipProps> = React.memo(({
       >
         {children}
       </span>
+    );
+  };
+
+  return (
+    <>
+      {renderReference()}
       {isOpen && !spatialNavigating && (
         <FloatingPortal>
           <div

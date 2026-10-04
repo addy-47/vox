@@ -122,8 +122,10 @@ To keep domain boundaries pristine, responsibilities are partitioned strictly be
 ### 4.1 Universal Severity
 Represents visual urgency, badge weight, and priority across all surfaces:
 - **`Info`**: Normal operations, successful dictation output, non-blocking receipts. Visual language: neutral border, violet accent tile.
-- **`Warning`**: Recoverable degradation, dropped audio buffer, high system load, missed schedules. Visual language: amber border and amber warning pill.
-- **`Critical`**: Unrecoverable breakdowns, authentication failures, hardware disconnects, missing model assets. Visual language: pulsing red/rose border and high-contrast alert badge.
+- **`Warning`**: Recoverable degradation, dropped audio buffer, high system load, missed schedules. Visual language: amber border and amber warning word.
+- **`Critical`**: Unrecoverable breakdowns, authentication failures, hardware disconnects, missing model assets. Visual language: red/rose border and high-contrast alert word.
+
+Severity is orthogonal to category: it must never be expressed by the category's icon or tile colour, or the two axes become indistinguishable.
 
 ### 4.2 Universal Action Taxonomy
 Represents retention in storage and expected user interaction:
@@ -299,13 +301,21 @@ When an error occurs during a voice turn, the runtime error boundary must execut
 - **Two-Tab Drawer (`Tasks` vs `Updates`)**:
   - **`Tasks` Tab**: Shows actionable interactive cards requiring user remediation (`action_type == 'interactive'` and `metadata.resolution != 'resolved'`).
   - **`Updates` Tab**: Shows passive historical receipts and resolved tasks (`action_type == 'receipt'` or `metadata.resolution == 'resolved'`), rolled up with `(×N)` counters.
-- **Bell Badge Counter Contract**: The UI notification bell badge counter in the top-right cluster reflects all unread attention items according to the deterministic rule:
-  $$\text{countsTowardBadge} = (\text{status} == \text{'unread'}) \land ((\text{action\_type} == \text{'interactive'} \land \text{metadata.resolution} \neq \text{'resolved'}) \lor \text{severity} \in \{\text{'warning'}, \text{'critical'}\})$$
-  This guarantees that unresolved tasks always alert the user, system warnings and critical receipts are not hidden, and resolved interactive tasks do not artificially inflate the badge.
+- **Bell Badge Counter Contract**: The UI notification bell badge counter in the top-right cluster reflects every unread attention item:
+  $$\text{countsTowardBadge} = (\text{status} == \text{'unread'})$$
+  Unread work is never hidden regardless of severity or action type; a resolved or read item contributes nothing.
+- **Card Anatomy Contract**: Every drawer card must be identifiable at a glance without hovering. Cards render in this fixed vertical order:
+  1. **Type kicker** — the closed category (§4.5) as unboxed typography (uppercase, mono, tracked). Never a hover-only affordance, and never a pill or bordered container (design-spec §5.1).
+  2. **Severity word** — `Warning` / `Critical` appended to the kicker line for those severities only. `Info` renders no severity word.
+  3. **Heading** — the card `title` at its designated type-scale role (`lg`), in `font-display`. Never truncated below legibility without an ellipsis affordance.
+  4. **Content block** — the `message`, separated from the heading by a hairline divider.
+  5. **Footer meta** — recency, turn count, and any primary action / navigation affordance.
+  - The type kicker is the sole carrier of category identity. A tooltip may repeat it, never substitute for it.
+  - Each of the seven categories must be distinguishable from the others without relying on glyph shape alone.
 - **Auto-Mark as Read**: Opening/mounting the drawer automatically marks unread notifications as read and clears the unread badge counter.
-- **Scoped Dismiss All**: A single `[Dismiss All]` header action is strictly scoped to the active tab (`filter: { action_type: activeTab }`).
+- **Scoped Dismiss All**: A single `[Dismiss All]` header action clears every card in the active tab, including resolved interactive cards held there by the tab partition above.
 - **Icon Action Buttons**: Action buttons are minimal, sleek icon buttons (e.g. `Sparkles` for compaction, `Database` for consolidation, `RotateCcw` for retry) with hover tooltips indicating the action. No loud text buttons (e.g. no `[Tidy Now]`).
-- **Action Execution State**: When a user clicks an action button, the icon displays an inline loading spinner (`Loader2`). Upon backend resolution, the button resolves into a checkmark (`Check`).
+- **Action Execution State**: When a user clicks an action button, the icon displays an inline loading spinner (`Loader2`). `metadata.resolution` of `"resolved"` resolves the button into a checkmark (`Check`); `"failed"` must be visually distinct from both `"pending"` and `"resolved"`.
 - **Uncompacted Session Visual Cues**: Sessions with uncompacted turns show an accent highlight dot/glow in the session rail and detail drawer with a compact icon action.
 
 ---
