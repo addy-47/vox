@@ -5,10 +5,9 @@ import {
   Check,
   X,
   Loader2,
-  Sparkles,
+  Shrink,
   RotateCcw,
   Settings,
-  Layers,
   Brain,
   Activity,
   FileText,
@@ -55,8 +54,8 @@ interface CategoryVisual {
 
 const CATEGORY_VISUALS: Record<NotificationCategory, CategoryVisual> = {
   session_compaction: {
-    icon: Layers,
-    tile: "bg-[rgba(var(--violet),0.12)] text-[rgb(var(--violet))] border-[rgba(var(--violet),0.30)]",
+    icon: Shrink,
+    tile: "bg-[rgba(var(--accent),0.12)] text-[rgb(var(--accent))] border-[rgba(var(--accent),0.30)]",
   },
   memory_consolidation: {
     icon: Brain,
@@ -76,7 +75,7 @@ const CATEGORY_VISUALS: Record<NotificationCategory, CategoryVisual> = {
   },
   models: {
     icon: Cpu,
-    tile: "bg-[rgba(var(--violet),0.12)] text-[rgb(var(--violet))] border-[rgba(var(--violet),0.30)]",
+    tile: "bg-[rgba(var(--accent),0.10)] text-[rgb(var(--accent))] border-[rgba(var(--accent),0.25)]",
   },
   storage: {
     icon: Database,
@@ -146,7 +145,7 @@ const NotificationItem = memo(
     const visual = CATEGORY_VISUALS[category] ?? CATEGORY_VISUALS.pipeline;
     const Icon = visual.icon;
     const receipt = isReceipt(notif);
-    const unread = (isInitialUnread ?? group.hasUnread) && !receipt;
+    const unread = isInitialUnread ?? group.hasUnread;
     const isCritical = notif.severity === "critical";
     const isWarning = notif.severity === "warning";
     const hasSession = notif.session_id !== null && notif.session_id !== undefined;
@@ -171,7 +170,7 @@ const NotificationItem = memo(
 
     const { ActionIcon, actionTooltip } = useMemo(() => {
       if (!isInteractive) {
-        return { ActionIcon: Sparkles, actionTooltip: NOTIFICATION_COPY.compactTooltip };
+        return { ActionIcon: Shrink, actionTooltip: NOTIFICATION_COPY.compactTooltip };
       }
       let parsedAction: { action?: string; target?: string } = {};
       try {
@@ -181,7 +180,7 @@ const NotificationItem = memo(
       }
 
       if (category === "session_compaction" || parsedAction.action === "compact_session") {
-        return { ActionIcon: Sparkles, actionTooltip: NOTIFICATION_COPY.compactTooltip };
+        return { ActionIcon: Shrink, actionTooltip: NOTIFICATION_COPY.compactTooltip };
       }
       if (
         category === "memory_consolidation" ||
@@ -195,7 +194,7 @@ const NotificationItem = memo(
       if (parsedAction.action === "navigate" || parsedAction.target) {
         return { ActionIcon: Settings, actionTooltip: NOTIFICATION_COPY.settingsTooltip };
       }
-      return { ActionIcon: Sparkles, actionTooltip: NOTIFICATION_COPY.compactTooltip };
+      return { ActionIcon: Shrink, actionTooltip: NOTIFICATION_COPY.compactTooltip };
     }, [isInteractive, category, notif.action_payload]);
 
     return (
@@ -209,7 +208,7 @@ const NotificationItem = memo(
           unread
             ? "border-[rgba(var(--accent),0.25)] bg-[rgba(var(--card),0.75)] hover:border-[rgba(var(--accent),0.40)] hover:bg-[rgba(var(--card),0.9)]"
             : "border-[rgba(var(--border),0.1)] bg-[rgba(var(--card),0.4)] hover:border-[rgba(var(--border),0.18)] hover:bg-[rgba(var(--card),0.55)]",
-          receipt && "opacity-70 hover:opacity-90"
+          receipt && !unread && "opacity-75 hover:opacity-95"
         )}
       >
         <Tooltip label={blurb} side="top">

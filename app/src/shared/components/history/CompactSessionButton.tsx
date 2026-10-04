@@ -1,5 +1,5 @@
 import { memo, useCallback } from "react";
-import { Loader2, Sparkles } from "lucide-react";
+import { Loader2, Shrink } from "lucide-react";
 import { HISTORY_COPY } from "@/data/historyCopy";
 import { Tooltip } from "@/shared/ui/Tooltip";
 import { useNotificationStore } from "@/store/notificationStore";
@@ -80,7 +80,7 @@ export const CompactSessionButton = memo(({
           {isCompacting ? (
             <Loader2 size={13} className="animate-spin text-[rgb(var(--accent))]" />
           ) : (
-            <Sparkles size={13} className="text-[rgb(var(--accent))]" />
+            <Shrink size={13} className="text-[rgb(var(--accent))]" />
           )}
         </button>
       </Tooltip>
@@ -102,7 +102,7 @@ export const CompactSessionButton = memo(({
         {isCompacting ? (
           <Loader2 size={12} className="animate-spin text-[rgb(var(--accent))]" />
         ) : (
-          <Sparkles size={12} className="text-[rgb(var(--accent))]" />
+          <Shrink size={12} className="text-[rgb(var(--accent))]" />
         )}
         <span>{label}</span>
       </button>

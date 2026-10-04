@@ -7,9 +7,7 @@ use turso::Connection;
 
 use crate::{
     core::{
-        events::{
-            emit_ipc, CompactionFinishedPayload, CompactionStartedPayload, IpcEvent, Severity,
-        },
+        events::{emit_ipc, IpcEvent, Severity},
         state::{AppState, InteractionState},
     },
     persistence::{
@@ -18,6 +16,7 @@ use crate::{
             record_compaction_finish, record_compaction_start,
         },
         notifications::{find_notification_by_group, resolve_notification_in_place},
+        sessions::fetch_session_by_id,
         TurnRow, VoxDb,
     },
     services::{
@@ -133,13 +132,6 @@ impl CompactionCoordinator {
             Err(e) => return Err(e),
         };
 
-        if let Err(e) = emit_ipc(
-            app,
-            IpcEvent::CompactionStarted(CompactionStartedPayload { session_id }),
-        ) {
-            log::warn!("[CompactionCoordinator] Failed to emit CompactionStarted: {}", e);
-        }
-
         let prior_summary = latest_run.as_ref().and_then(|run| {
             let trimmed = run.compaction_output.trim();
             if trimmed.is_empty() || trimmed == "{}" {
@@ -178,15 +170,6 @@ impl CompactionCoordinator {
                         e
                     );
                 }
-                let _ = emit_ipc(
-                    app,
-                    IpcEvent::CompactionFinished(CompactionFinishedPayload {
-                        session_id,
-                        success: false,
-                        facts_enqueued: 0,
-                        error: Some(err_msg.to_string()),
-                    }),
-                );
                 return Err(anyhow!(err_msg));
             }
         };
@@ -224,15 +207,6 @@ impl CompactionCoordinator {
                     );
                 }
                 emit_session_compaction_failure_receipt(app, &state.db, session_id, &err_str).await;
-                let _ = emit_ipc(
-                    app,
-                    IpcEvent::CompactionFinished(CompactionFinishedPayload {
-                        session_id,
-                        success: false,
-                        facts_enqueued: 0,
-                        error: Some(err_str),
-                    }),
-                );
                 return Err(e);
             }
         };
@@ -250,15 +224,6 @@ impl CompactionCoordinator {
         emit_session_compaction_success_receipt(app, &state.db, &conn, session_id, facts_count)
             .await;
 
-        let _ = emit_ipc(
-            app,
-            IpcEvent::CompactionFinished(CompactionFinishedPayload {
-                session_id,
-                success: true,
-                facts_enqueued: facts_count,
-                error: None,
-            }),
-        );
         let _ = emit_ipc(app, IpcEvent::SessionsChanged);
 
         log::info!(
@@ -284,11 +249,27 @@ impl CompactionCoordinator {
         uncompacted_turns: u32,
     ) -> Result<Option<String>> {
         let group_key = format!("session_compaction:{}", session_id);
-        let title = format!("Session #{} Ready to Compact", session_id);
-        let message = format!(
-            "Session ended with {} uncompacted turn(s). Compact to extract personal memory facts.",
-            uncompacted_turns
-        );
+        let display_name = if let Ok(conn) = db.connect() {
+            resolve_session_display_name(&conn, session_id).await
+        } else {
+            None
+        };
+        let (title, message) = match display_name {
+            Some(name) => (
+                format!("\"{}\" Ready to Compact", name),
+                format!(
+                    "\"{}\" ended with {} uncompacted turn(s). Compact to extract personal memory facts.",
+                    name, uncompacted_turns
+                ),
+            ),
+            None => (
+                "Session Ready to Compact".to_string(),
+                format!(
+                    "Session ended with {} uncompacted turn(s). Compact to extract personal memory facts.",
+                    uncompacted_turns
+                ),
+            ),
+        };
         let metadata = format!(
             "{{\"uncompacted_turns\": {}, \"resolution\": \"pending\"}}",
             uncompacted_turns
@@ -309,6 +290,25 @@ impl CompactionCoordinator {
 
         notify(app, db, params).await
     }
+}
+
+async fn resolve_session_display_name(conn: &Connection, session_id: i64) -> Option<String> {
+    if let Ok(Some(row)) = fetch_session_by_id(conn, session_id).await {
+        if let Some(t) = row.title {
+            let trimmed = t.trim();
+            if !trimmed.is_empty() {
+                return Some(trimmed.to_string());
+            }
+        }
+        if let Some(fm) = row.first_message {
+            let trimmed = fm.trim();
+            if !trimmed.is_empty() {
+                let snippet: String = trimmed.chars().take(40).collect();
+                return Some(snippet);
+            }
+        }
+    }
+    None
 }
 
 /// Helper building ChatMessage list from turns with optional prior summary.
@@ -342,7 +342,7 @@ fn resolve_llm_provider(settings: &LlmSettings) -> Option<Box<dyn LlmProvider>> 
     create_llm_provider_from_llm_settings(settings, &llm_path).ok()
 }
 
-/// Resolves interactive card in-place on compaction success, or emits passive receipt if none exists.
+/// Resolves any interactive card in-place and always creates a receipt notification on compaction success.
 async fn emit_session_compaction_success_receipt<R: tauri::Runtime>(
     app: &AppHandle<R>,
     db: &VoxDb,
@@ -351,10 +351,23 @@ async fn emit_session_compaction_success_receipt<R: tauri::Runtime>(
     facts_count: u32,
 ) {
     let group_key = format!("session_compaction:{}", session_id);
-    let message = format!(
-        "Successfully compacted session #{} and extracted {} memory facts.",
-        session_id, facts_count
-    );
+    let display_name = resolve_session_display_name(conn, session_id).await;
+    let (title, message) = match display_name {
+        Some(name) => (
+            format!("\"{}\" Compacted", name),
+            format!(
+                "Successfully compacted \"{}\" and extracted {} memory facts.",
+                name, facts_count
+            ),
+        ),
+        None => (
+            "Session Compacted".to_string(),
+            format!(
+                "Successfully compacted session and extracted {} memory facts.",
+                facts_count
+            ),
+        ),
+    };
 
     // If an interactive card exists, update it in-place to resolved
     if let Ok(Some(existing)) = find_notification_by_group(conn, &group_key).await {
@@ -362,12 +375,10 @@ async fn emit_session_compaction_success_receipt<R: tauri::Runtime>(
             resolve_notification_in_place(conn, &existing.id, "resolved", Some(&message)).await
         {
             let _ = emit_ipc(app, IpcEvent::NotificationUpdated(updated));
-            return;
         }
     }
 
-    // Otherwise (background run with no pending card), append passive receipt:
-    let title = format!("Session #{} Compacted", session_id);
+    // Always emit a visible receipt notification to the notification tray
     let receipt_group = format!("compaction_receipt:{}", session_id);
 
     let params = NotificationParams {
@@ -391,7 +402,7 @@ async fn emit_session_compaction_success_receipt<R: tauri::Runtime>(
     }
 }
 
-/// Resolves interactive card in-place on compaction failure, or emits passive warning receipt if none exists.
+/// Resolves any interactive card in-place and always creates a receipt notification on compaction failure.
 async fn emit_session_compaction_failure_receipt<R: tauri::Runtime>(
     app: &AppHandle<R>,
     db: &VoxDb,
@@ -399,7 +410,21 @@ async fn emit_session_compaction_failure_receipt<R: tauri::Runtime>(
     err_str: &str,
 ) {
     let group_key = format!("session_compaction:{}", session_id);
-    let message = format!("Failed to compact session #{}: {}", session_id, err_str);
+    let display_name = if let Ok(conn) = db.connect() {
+        resolve_session_display_name(&conn, session_id).await
+    } else {
+        None
+    };
+    let (title, message) = match display_name {
+        Some(name) => (
+            format!("\"{}\" Compaction Failed", name),
+            format!("Failed to compact \"{}\": {}", name, err_str),
+        ),
+        None => (
+            "Session Compaction Failed".to_string(),
+            format!("Failed to compact session: {}", err_str),
+        ),
+    };
 
     if let Ok(conn) = db.connect() {
         if let Ok(Some(existing)) = find_notification_by_group(&conn, &group_key).await {
@@ -407,12 +432,10 @@ async fn emit_session_compaction_failure_receipt<R: tauri::Runtime>(
                 resolve_notification_in_place(&conn, &existing.id, "failed", Some(&message)).await
             {
                 let _ = emit_ipc(app, IpcEvent::NotificationUpdated(updated));
-                return;
             }
         }
     }
 
-    let title = format!("Session #{} Compaction Failed", session_id);
     let receipt_group = format!("compaction_receipt:{}", session_id);
 
     let params = NotificationParams {

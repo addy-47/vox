@@ -73,9 +73,10 @@ async fn execute_compaction_attempt(
                 }
             }
             log::info!(
-                "[MemoryCompaction] Generation completed in {:?}; output_chars={}",
+                "[MemoryCompaction] Generation completed in {:?}; output_chars={}\n[CompactionLLM::Output]\n{}",
                 gen_started.elapsed(),
-                summary_content.len()
+                summary_content.len(),
+                summary_content.trim()
             );
         }
         Ok(Err(e)) => {

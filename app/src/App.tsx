@@ -63,13 +63,8 @@ const App: React.FC = () => {
   const [setupRetryAttempt, setSetupRetryAttempt] = useState(0);
   const [userChoseRoute, setUserChoseRoute] = useState<"wizard" | "app" | null>(null);
 
-  // Fade and remove the pre-React boot loader (rendered by index.html's
-  // #vox-boot-loader element) as soon as the App component mounts. This
-  // ensures the user sees the animated loader during Vite cold start and
-  // React tree mount, with a smooth cross-fade to the React OrbitalLoader.
-  useEffect(() => {
-    window.__VOX_HIDE_BOOT_LOADER?.();
-  }, []);
+  // Boot loader fade is deferred until the app shell has finished initial routing
+  // and is ready to display content, avoiding the blank screen gap.
 
   /**
    * True when this bundle is executing inside the dedicated `wizard` webview.
@@ -216,6 +211,13 @@ const App: React.FC = () => {
 
   const isLoading =
     (setupCompleted === null && !setupUnreachable) || !readyToTransition;
+
+  // Once the app shell is loaded and readyToTransition is satisfied, smoothly fade out the HTML boot loader
+  useEffect(() => {
+    if (!isLoading) {
+      window.__VOX_HIDE_BOOT_LOADER?.();
+    }
+  }, [isLoading]);
 
   // Single app-level notification fetch + listener lifecycle. Panels are
   // pure lists; this effect runs once (store actions are stable references).

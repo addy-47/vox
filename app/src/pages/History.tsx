@@ -1,4 +1,5 @@
 import React from "react";
+import { useNavigate, useLocation } from "react-router-dom";
 import { Ghost, X, AlertCircle, RotateCcw, Hand, ArrowLeft } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { cn } from "@/shared/lib/utils";
@@ -24,6 +25,8 @@ import { usePanelStateContext } from "@/shared/hooks/usePanelState";
 import { useProfilerDrawer } from "@/shared/components/profiler/ProfilerDrawer";
 
 export const History: React.FC = () => {
+  const navigate = useNavigate();
+  const location = useLocation();
   const setDisplayMode = useHistoryFilterStore((s) => s.setDisplayMode);
   const setDrillDownSession = useHistoryFilterStore((s) => s.setDrillDownSession);
   const { isPanelOpen, rightPanel } = usePanelStateContext();
@@ -104,7 +107,10 @@ export const History: React.FC = () => {
 
   const handleBackToList = React.useCallback(() => {
     setSelectedSession(null);
-  }, [setSelectedSession]);
+    if (location.search.includes("sessionId")) {
+      navigate("/history", { replace: true });
+    }
+  }, [setSelectedSession, location.search, navigate]);
 
   useOverlay({
     onClose: handleBackToList,
@@ -459,8 +465,6 @@ export const History: React.FC = () => {
                           {resolveSessionTitle(selectedSession)}
                         </h2>
                         <div className="flex items-center gap-1.5 text-[11px] font-mono text-[rgb(var(--foreground-muted))] mt-1">
-                          <span>#{selectedSession.id}</span>
-                          <span>·</span>
                           <span>{formatDateTime(selectedSession.created_at)}</span>
                           <span>·</span>
                           <span>
@@ -543,7 +547,7 @@ export const History: React.FC = () => {
             turns={turns}
             loading={turnsLoading}
             error={turnsError}
-            onClose={() => setSelectedSession(null)}
+            onClose={handleBackToList}
             onRetry={retryFetchTurns}
           />
         </ErrorBoundary>

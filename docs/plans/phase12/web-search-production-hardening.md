@@ -107,6 +107,17 @@ Self::GoogleWml => "google",   // dead (F1)
 
 With Mojeek and Google dead, **only the `"bing"` family remains**, therefore `consensus_urls` is *always empty*, therefore the `consensus_multiplier = 1.5` boost at `hybrid.rs:82-86` **never fires**. The headline ranking feature documented in both `web-search.md` §7.1 and `web-search-nexus-rs.md` §"2-Stage Re-Ranking" is inert.
 
+> **CORRIGENDUM 2026-10-04 — the collapse above is CORRECT; do not "fix" it.**
+> DonSeTch (95.5% measured answer-in-snippet, verified from its README 2026-10-04) lists its
+> backends as **"Bing family (Bing, DuckDuckGo, Yahoo), Brave, Mojeek, Google"** — the identical
+> collapse, deliberate. Yahoo's index genuinely *is* Bing's; un-collapsing would let DDG↔Bing
+> agreement (one upstream) fire the "corroboration" boost, which is worse than inert.
+> The true root cause of F2 is **family count, not family mapping**: we have 3 families with 2
+> dead, leaving exactly 1 live family. The fix is to **add genuinely independent families**
+> (keyless Brave scrape + keyless verticals as independent families — W1), **not** to
+> un-collapse `index_family()`. A regression test must assert
+> `Duckduckgo == Bing == Yahoo` under `index_family()` so no future reader re-breaks this.
+
 Compounding: `search.yahoo.com` → `curl: (56) Failure when receiving data from the peer`. Yahoo never appears in the logs at all because the quorum early-exit (`engines/mod.rs:126-133`) fires after Bing + DDG and drops it mid-flight. **Correct behavior masking a third dead engine.**
 
 > `grep -n "index_family\|consensus" submodules/nexus-rs/tests/*.rs` → **0 hits.** Entirely untested.
@@ -272,7 +283,7 @@ This section is the answer to "how does this make web search better", expressed 
 
 **Today.** Passages are ranked against the **original** query embedding. A follow-up ("tell me more about the second point's methodology") either re-runs the whole pipeline against a badly-diluted search query, or gets answered from the 5 passages already in context — which may not contain the answer, because they were selected for a different question.
 
-**After.** `focus: "<aspect>"` re-scores the **retained corpus embeddings** against the *follow-up* embedding (`web_search.rs` currently discards the corpus entirely at `render_evidence_xml`, `&scored_passages[..effective_k]`). `must_contain: ["..."]` verifies a specific claim against full page text and returns `MATCH` / `NO-MATCH` plus ≤3 excerpts — ~60 tokens instead of 4k.
+**After.** `focus: "<aspect>"` scores the **retained corpus blocks** against the *follow-up* with **BM25 block relevance** — DonSeTch's approach (12-language tokenizer: CJK uni+bi-grams, stemming, accent folding), zero extra inference, claimed 80%+ context reduction (`web_search.rs` currently discards the corpus entirely at `render_evidence_xml`, `&scored_passages[..effective_k]`). Embedding re-score is reserved as a fallback, gated on eval evidence that BM25 misses. `must_contain: ["..."]` verifies a specific claim against full page text and returns `MATCH` / `NO-MATCH` plus ≤3 excerpts — ~60 tokens instead of 4k.
 
 **Net effect on the LLM.** The 30%-budget evidence block gets *re-used* rather than re-fetched, and re-used *against the actual question being asked*. This is the mechanism that makes "tell me more" work without `web_search_more`.
 
@@ -281,7 +292,7 @@ This section is the answer to "how does this make web search better", expressed 
 | Failure observed | Evidence | Lever | Batch | Model-visible improvement |
 |---|---|---|---|---|
 | Mojeek + Google dead, 539–830 ms/query wasted | `vox.log.2026-10-03:212,439,501,820` | Health + quarantine | W1 | Faster, and a live engine pool |
-| Consensus never fires | `model.rs:335-340` + `engines/mod.rs:158-170` | Fix `index_family` | W1 | Cross-source corroboration becomes a real ranking signal |
+| Consensus never fires | `model.rs:335-340` + `engines/mod.rs:158-170` | Add 4th family (keyless Brave + verticals); `index_family()` deliberately unchanged (see F2 corrigendum) | W1 | Cross-source corroboration becomes a real ranking signal |
 | 2/3 pages fail to fetch | `vox.log.2026-10-03:228-236` | Fetcher TLS stealth | W2 | 3 pages of evidence instead of 1 |
 | 75 passages → 5, no dedup | `vox.log.2026-10-02:268` | Semantic dedup + MMR | W3 | 5 distinct facts instead of 5 adjacent windows |
 | 1 passage returned as 200 OK | `vox.log.2026-02:1465` | `fetch_slack` over-fetch | W2 | Non-empty evidence on hard queries |
@@ -314,6 +325,16 @@ This section is the answer to "how does this make web search better", expressed 
 
 **Conclusion.** DonSeTch is an *algorithm catalog*, not a dependency. Its own README states the transport is built from scratch — which is *why* its search quality is high. You cannot lift the search without the transport. Every feature worth having is portable logic: health EWMA (200 LoC), quarantine (80 LoC), cross-encoder rerank (150 LoC), block-typed extraction with focus (600 LoC), keyless verticals (400 LoC), consensus scoring (already present, just broken).
 
+> **VERIFIED 2026-10-04 (from the DonSeTch README, primary source).** Additionally portable, in priority order:
+> 1. **`deadline_ms` on every tool + real cancellation + `code`/`errorKind`/`next_action` structured failures** — `deadline.hit` as a *result*, not an exception. This is the deadline contract adopted in Part 11.
+> 2. **Honest stop reasons** (`FrontierEmpty`, `MaxPages`, `CharBudget`, `DepthLimit`, `Deadline`, `ThrottledOut`) — adopted in Part 11.
+> 3. **Entity-coverage penalty** — anchor entities (versions, years, proper nouns) checked against results; wrong entity → 0.3×. NOT previously in this plan; added to W3. Fixture test must assert no fire on abstract queries.
+> 4. **Google profile rotation** — 7 Nokia profiles; the succeeding profile stays preferred per egress; CAPTCHA advances the cursor circularly. Replaces our single hardcoded UA (W1).
+> 5. **Warm handoff** — search pre-fetches top results so the next `fetch S1` serves from cache in ~3ms. Validates the W5/W6 corpus design.
+> 6. **Token handles** — results as `S1…Sn`, fetchable by handle in 3 tokens instead of 80. Added to W3.
+> 7. **`dns_cache_ttl_secs = 30`** — already in W2.
+> 8. **Benchmark shape to mirror** — 110 questions / 11 niches / answer-in-snippet vs a keyed baseline (theirs: 95.5% vs Tavily 93.3%, LLM-graded, reproducible script). Our eval's QA subagent plays Tavily's role.
+
 *Optional, out of scope, noted for the record:* a user-installed **optional MCP sidecar** behind a settings toggle, for "deep research" turns only, never on the hot path. AGPL isolation is acceptable for an opt-in separate process. Not in this plan.
 
 ---
@@ -344,7 +365,7 @@ The embedder is called in **exactly one place** — `score_dense()` at `ranking/
 |---|---|---|---|
 | **A1** | **Semantic cache lookup** | F4 waste, duplicate queries | Cache keyed on `(intent, query_embedding)`, not string equality. Cosine ≥ ~0.92 against cached query embeddings = hit. A paraphrase costs 0 tokens and 0 network. |
 | **A2** | **Semantic near-duplicate collapse + MMR** | F4 flood, §2.2 | Collapse passages with pairwise cosine ≥ 0.95. Then MMR so selected passages are maximally diverse. |
-| **A3** | **Embedding-scored block focus** | §2.2, biggest token win | Score extracted blocks against the query embedding, keep top-N. Turns 30,000 chars into ~4k of on-topic text. |
+| **A3** | **BM25-scored block focus (DECIDED 2026-10-04)** | §2.2, biggest token win | Score typed blocks against the query/`focus` with 12-language BM25 (CJK uni+bi-grams, stemming, accent folding), keep top-N. DonSeTch's approach, claimed 80%+ cut, zero extra inference. Embedding re-score kept as fallback only, gated on eval evidence that BM25 misses. |
 | **A4** | **Corpus re-rank against the focus** | §2.4, "dig deeper" | Embed the follow-up and re-score the **retained corpus embeddings**. Do not reuse the original query embedding. |
 | **A5** | **Embedding-cluster `max_per_domain`** | F4 domain waste | Cap per *topical cluster* rather than per domain. Catches `gemini.google.com/?hl=en-IN`. |
 | **A6** | **Answer-span windowing** | §2.2 density | Slide a ~40-word window to the locally-maximal query similarity inside the top chunk. |
@@ -472,14 +493,21 @@ Build and run the baseline evaluation harness. See **Part 8**. No production cod
 **Crate only. No Vox changes, no schema change, no model-visible change.**
 Spec: amend `web-search-nexus-rs.md` §Core Pipeline to document the health subsystem.
 
-1. **`model.rs`** — fix `index_family()`. `Duckduckgo`, `Bing` and `Yahoo` must not collapse into one family; corroboration is meaningless if the "independent" indexes are the same index. This is the root cause of F2.
+1. **`model.rs`** — **`index_family()` deliberately UNCHANGED** (see F2 corrigendum). `Duckduckgo == Bing == Yahoo` under `index_family()` is correct — Yahoo's index is Bing's. The root cause of F2 is family *count*: add genuinely independent families instead — keyless Brave scrape via the existing `primp` client (the declared-but-unimplemented `Engine::Brave`) plus the W1 verticals below, each its own family. With ≥2 live families, `consensus_multiplier` fires for the first time.
 2. **New `engines/health.rs`** — per-engine **EWMA trust** (success / failure / latency) plus **quarantine** with exponential backoff (`15m → 2h` cap). Quarantined engines are skipped *before* the `FuturesUnordered` set is built, so they never consume a fanout slot or deadline. Every quarantine transition logs loudly.
 3. **New `engines/verticals/{arxiv,stackexchange,github,hn,mdn}.rs`** — keyless REST/JSON adapters behind the existing `EngineHit` contract. Each is a real API: no scraping, no CAPTCHA, no fingerprint battle.
 4. **New `engines/registry.rs`** — per-engine endpoint, rate budget and User-Agent, replacing the hardcoded `NOKIA_USER_AGENT` at `google_wml.rs:10`.
 5. **`engines/mod.rs`** — skip quarantined engines pre-dispatch; report `quarantined: Vec<Engine>` in `FanoutOutcome`; enforce `max_per_domain` during candidate selection.
 6. **`model.rs`** — `consensus_multiplier` must **degrade to 1.0 with an explicit log** when fewer than 2 families are live, so the next reader does not mistake a silent no-op for a working feature.
 
-**Verification.** New `tests/engine_health_test.rs`: EWMA/quarantine/backoff transitions; `index_family` distinctness (asserts `Duckduckgo != Bing`, closing the F2 test gap); vertical parsers against recorded fixtures; `max_per_domain`. Live smoke: `examples/basic_search.rs` ×3, assert Mojeek/Google are quarantined after attempt 1 and the fanout budget drops by the reclaimed 539–830 ms.
+**Verification.** New `tests/engine_health_test.rs`: EWMA/quarantine/backoff transitions; `index_family` collapse asserted in the correct direction (`Duckduckgo == Bing == Yahoo`, closing the F2 test gap without re-breaking it); Brave + vertical parsers against recorded fixtures; `max_per_domain`. Live smoke: `examples/basic_search.rs` ×3, assert Mojeek/Google are quarantined after attempt 1 and the fanout budget drops by the reclaimed 539–830 ms.
+
+> **TEST OWNERSHIP (2026-10-04, user directive).** All `nexus-rs` tests are written by a
+> **testing subagent** (spawned via the `opencode-subagent` / `agy` / `kilo` skill with a QA
+> persona), NOT by the implementing agent. The implementing agent writes production code and
+> fixtures only; the testing subagent owns `tests/`, asserts the verification criteria in each
+> batch, and must independently reproduce at least one forensic finding (e.g. F2's empty
+> `consensus_urls`) as a failing-before-fixed test.
 
 ---
 
@@ -510,7 +538,9 @@ Spec: amend `web-search.md` §4.2 (chunking and ranking become embedding-aware) 
 5. **`extraction/cleaner.rs`** — A3 block focus + A6 answer-span windowing; strip links by default (~30% token reduction).
 6. **`ranking/hybrid.rs`** — A1 semantic cache-lookup hook; log `cache: hit_semantic | hit_exact | miss` plus the cosine that decided it.
 7. **F5 fix** — `app/src-tauri/src/services/memory/ml/embedder.rs`: exclude special-token positions from the mean. **Isolated commit.** This changes `search_memory` results too; re-run the memory eval before and after.
-8. **F7 fix** — `web_search.rs`: `tokio::task::spawn_blocking` around `generate_embeddings_batch` with a bounded pool, so ONNX never occupies a tokio worker (also satisfies Axiom 4).
+8. **F7 fix** — `web_search.rs`: `tokio::task::spawn_blocking` around `generate_embeddings_batch` with a bounded pool, so ONNX never occupies a tokio worker (also satisfies Axiom 4). **This is the prerequisite that makes the Part 11 deadline contract enforceable — without it, `deadline_ms` cannot fire during dense/hybrid ranking.**
+9. **Entity-coverage penalty (new, from DonSeTch, DECIDED 2026-10-04).** Extract anchor entities (version numbers, years, proper nouns) from the query; multiply passages whose entities contradict the query's anchors by 0.3×. Fixture test must assert the penalty does **not** fire on abstract queries. Small code, high precision value.
+10. **Token handles.** Render results with compact handles `S1…Sn` so `focus` follow-ups and `web_fetch` can address a result in ~3 tokens instead of an 80-token URL. Handles are turn-scoped and resolve against the retained corpus (W4/W5).
 
 **Verification.** `tests/semantic_ranking_test.rs`: near-duplicate collapse; MMR diversity invariant (no two selected passages > 0.9 cosine); answer-span token savings; **special-token pooling regression** (an input differing only by explicit special tokens must produce the same vector). Vox-side: the 75-passage case delivers 5 *distinct* passages; the 1-passage case disappears.
 
@@ -805,7 +835,7 @@ own search.
 
 1. **F5 (pooling) changes `search_memory` for every user.** Two lines, widest blast radius in the plan. Isolated commit, memory eval re-baselined either side, expect movement.
 2. **W2 may not fix F3.** TLS fingerprinting is an arms race; `primp`'s Chrome tables rot. **Gate V3 exists precisely to check this before W2 is built.** If `gemini.google.com` still fails, the honest fallback is to *deprioritize walled hosts at candidate-selection time* — they will fail anyway — and spend the slot on a fetchable source. Budget one repro cycle.
-3. **Fixing F2 changes ranking for every query.** Once `index_family` is corrected, `consensus_multiplier = 1.5` starts firing and reorders results. Re-baseline the eval before and after; **do not ship W1's family fix and W3's ranking changes in the same measured window.**
+3. **Adding families changes ranking for every query.** Once ≥2 families are live, `consensus_multiplier = 1.5` starts firing for the first time and reorders results. Re-baseline the eval before and after; **do not ship W1's family additions and W3's ranking changes in the same measured window.**
 4. **Dead engines are a permanent tax.** Engines die on a schedule — 2 of 5 already have. W1 makes that survivable, not solved. The moment a real search API key is acceptable, BYOK ends the treadmill, at the cost of a key-management surface, third-party egress and per-query cost. **That is a product decision and is deliberately out of scope.**
 5. **Burst of new schema surface.** Part 6 adds five parameters plus one tool. Schema tokens cost context on every request. Mitigation: keep descriptions terse; the `depth` enum replaces what would otherwise have been a whole extra tool schema. Measure schema token cost in the eval.
 
@@ -822,3 +852,138 @@ BYOK providers (Tavily / Exa / Serper / Brave). DonSeTch-as-MCP-sidecar. Self-ho
 3. **Intent TTLs** — news 15 m / general 1 h / docs 4 h (DonSeTch's). For a *voice* assistant where a user may ask "what's the latest on X" across three consecutive turns, is 15 m right or too aggressive?
 4. **`bge-m3` adoption bar** — what magnitude of `answer_in_snippet_rate` gain justifies a 543 MB resident model? Recommend: adopt only on a **signed, repeatable** gain, judged with the QA subagent, not a single run.
 5. **Corpus retention TTL** — how long should a turn-scoped corpus live? One turn (spec §6.1 ephemerality) or the whole session?
+
+> **ANSWERED 2026-10-04 (moved here from open; see Part 11 for the binding form):**
+> deadline default/ceiling = **5500ms / 12000ms** · on deadline hit = **partial evidence +
+> `next_action`** · `focus` = **BM25 block relevance** (embeddings as gated fallback) ·
+> 4th family = **keyless Brave scrape** · ranking default = crate `Sparse`, Vox overrides to
+> `Hybrid` (document + validate) · publish = **single 0.1.2 at the end, explicit approval** ·
+> Mojeek/GoogleWml = **decide from baseline data** · nexus-rs tests = **testing subagent**.
+
+---
+
+## Part 11 — Consolidated execution plan (2026-10-04, SUPERSEDES the ordering in Part 7)
+
+> **Any agent working this thread: read this Part first.** Parts 0–10 are the forensics and the
+> design rationale. This Part is the *order of execution*, the *decisions already taken*, and the
+> *rules that bind every implementer*. It supersedes Part 7's ordering wherever they differ.
+
+### 11.1 Decisions already taken (do not re-litigate)
+
+| # | Decision | Value | Effect on the plan |
+|---|---|---|---|
+| D1 | Deadline is a parameter | `deadline_ms`, default **5500ms**, hard ceiling **12000ms** | §11.2 contract; N1 implements, V1 enforces |
+| D2 | On deadline hit | **Partial evidence + `next_action`**, never a bare error | §11.2 outcome enum |
+| D3 | `focus` mechanism | **BM25 block relevance** (DonSeTch approach), embeddings as gated fallback | A3, §2.4 amended |
+| D4 | 4th index family | **Keyless Brave scrape** via primp, no API key | W1 item 1 amended |
+| D5 | Ranking default | Crate `Sparse`, Vox overrides to `Hybrid` — document, plus enum validation against silent fallthrough | G1 spec, V1 code |
+| D6 | `nexus-rs` wiring | Bump → publish → bump Vox. **Single publish, version 0.1.2, at the very end. Explicit user approval required before `cargo publish`.** | §11.3 flow |
+| D7 | Mojeek / GoogleWml | **Decide from baseline data**, not the forensic estimate | G3 decides |
+| D8 | Test ownership | **All `nexus-rs` tests written by a testing subagent**, not the implementing agent | §11.4 rule |
+
+### 11.2 The deadline contract (N1 design, normative)
+
+A timeout is a *result*, not an exception. `NexusSearch::search` returns:
+
+```rust
+pub enum RetrievalOutcome {
+    Complete { result: NexusSearchResult },
+    Partial  { result: NexusSearchResult, degraded: Vec<Degradation>, stop: StopReason },
+    Failed   { stop: StopReason, recoverable: bool, next_action: NextAction },
+}
+
+pub enum StopReason {  // honest set, mirrors DonSeTch
+    Deadline { budget_ms: u64, elapsed_ms: u64, stage: PipelineStage },
+    QuorumUnmet { reporting: usize, required: usize },
+    AllEnginesDown { per_engine: Vec<EngineStatus> },
+    SsrfBlocked { url: String }, BudgetExhausted, Cancelled, FrontierEmpty,
+}
+// stage = Fanout | Fetch | Extract | Chunk | Rank
+```
+
+Vox renders any non-`Complete` outcome as actionable XML the LLM can branch on:
+
+```xml
+<web_search_status code="deadline.hit" error_kind="transient" stop="Deadline" stage="dense_ranking">
+  <partial>…passages ranked before cutoff…</partial>
+  <engine_status>Bing ok 210ms · Yahoo ok 340ms · Mojeek quarantined</engine_status>
+  <next_action>Deadline 5500ms hit during dense ranking; 2 of 5 engines answered.
+    Retry with ranking_mode="sparse" (no embedding, ~1.4s), or narrow the query.</next_action>
+</web_search_status>
+```
+
+Mirroring DonSeTch exactly: stable `code`, `errorKind` (`permanent` / `transient` / `walled`),
+`next_action`. Transport telemetry (tier, timings, profiles) stays under `_meta`, never in the
+model surface. Partial evidence is **kept**, never discarded — F4 already showed we starve for
+evidence. The 12s ceiling is load-bearing: without it the LLM can request 600s and stall the
+turn. This contract is **unenforceable until V1's `spawn_blocking` lands** — an ONNX call on a
+tokio worker cannot be preempted by any timer.
+
+### 11.3 The publish-once flow (normative, no deviations)
+
+```
+G0  orphan files deleted, full clippy green (Vox, mechanical)
+ └─► G1  spec amendments FIRST (AGENTS.md §4.3 gate — no code until this lands)
+      └─► G3  eval baseline: 1 case → 24-case batch → QA subagent report
+           │   (decides D7; produces the numbers every later batch is judged against)
+           └─► N0+N1  never-crash + deadline contract      (nexus-rs, in-repo)
+                └─► V1  Vox seams: spawn_blocking, pooling, enum validation, outcome render
+                     └─► N2  health + Brave + verticals + UA rotation
+                          └─► N3  fetcher stealth + fetch_slack
+                               └─► N4  semantic ranking + entity penalty + handles
+                                    └─► V2  depth params + corpora + warm handoff
+                                         └─► V3  web_fetch
+                                              └─► PUBLISH 0.1.2 (single, explicit approval)
+```
+
+**Local-path rule.** From the first nexus-rs code change until the publish gate, Vox builds
+against the fork, not crates.io:
+
+```toml
+# app/src-tauri/Cargo.toml — TEMPORARY, dev/eval only. Reverted at the publish gate.
+nexus = { package = "nexuss", path = "../../submodules/nexus-rs" }
+```
+
+All eval benches run against this path build. At the publish gate the line reverts to
+`version = "0.1.2"` and the full `--all-targets --release` clippy + both eval benches re-run
+green before `cargo publish` is even asked for.
+
+**Publish gate (ALL must hold, single 0.1.2, one shot):**
+1. Vox code + nexus-rs code both complete per W1–W4 + V1.
+2. nexus-rs test suite green, written per §11.4, including at least one failing-before-fixed
+   reproduction of a forensic finding.
+3. `cargo clippy --all-targets --release` zero errors/warnings on the Vox tree with the
+   path dep, and again after the version bump.
+4. Eval baseline re-run against the new code; QA subagent report filed; no regression vs G3
+   numbers outside the expected ranking-reorder window (§9.3).
+5. **Explicit user approval.** Then and only then: bump `0.1.1 → 0.1.2` in
+   `submodules/nexus-rs/Cargo.toml`, commit + push in the nexus-rs repo
+   (`submodules/` is gitignored in Vox — the work survives only there),
+   `cargo publish`, bump Vox to `version = "0.1.2"`, re-verify.
+
+**Panic-hardening gate (part of N0, blocks publish).** The crate must be panic-free on
+adversarial input: P1 `cleaner.rs:27-32` (`&html[..65536]` byte index — remote panic on any
+non-ASCII page >64 KB), P2 `embedder.rs:205` (`shape[2]`, no len check), P3
+`embedder.rs:221` (unguarded tensor index), P5 `with_fetch_concurrency` (no ceiling), plus
+`catch_unwind` at the Vox tool boundary and an explicit verification of the effective panic
+strategy (`panic = "abort"` in the nexus-rs manifest is ignored for non-root crates — verify
+what actually governs). No batch past N0 may introduce a new `expect`/`unwrap` on a
+network- or model-shaped input.
+
+### 11.4 Implementer rules (bind every agent on this thread)
+
+1. **Spec first.** AGENTS.md §4.3 holds for the whole thread: any behavior in §11.2/§11.3 or the
+   batches that is not in `docs/specs/tools-specs/web-search.md` must be written into the spec
+   BEFORE code. The crate-side contract lives in `docs/specs/tools-specs/web-search-nexus-rs.md`.
+2. **Test ownership.** The implementing agent writes production code + recorded fixtures only.
+   All `nexus-rs` `tests/` are owned by a testing subagent (spawned via the
+   `opencode-subagent` / `agy` / `kilo` skill with a QA persona), which asserts each batch's
+   verification criteria independently.
+3. **No silent simplification.** Never bypass a blocker with a mock, stub, or skipped stage.
+   Report blocker / cause / attempts / what is needed.
+4. **Named evidence only.** Every batch's verification criteria name the log line, the metric,
+   or the artifact — no "should improve" prose.
+5. **One embedder per process.** The eval's testing-style-guide §3/§7.3 stands: concurrent ONNX
+   sessions invalidate latency comparisons. Ablations are separate processes.
+6. **No eval runs without the baseline gate.** G3 runs 1 case first; the 24-case batch only
+   after the single case's artifacts are inspected and sane.
