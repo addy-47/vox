@@ -124,7 +124,11 @@ struct ToolArgs {
     #[arg(long, default_value_t = 20)]
     tts_timeout_s: u64,
     /// Text the mock returns on the follow-up turn once the tool observation landed.
-    #[arg(long, default_value = "Here is what I found.")]
+    /// E1: a realistic two-sentence grounded-style answer (not a stub) so the
+    /// eval exercises the answer-render path at realistic length. Still canned —
+    /// the mock cannot ground against an observation it has not seen yet — but
+    /// no longer a 5-word constant that hides render regressions.
+    #[arg(long, default_value = "Based on what I found, here is the answer in brief. The top sources agree on the key facts, with details and caveats as cited above.")]
     final_text: String,
 
     #[arg(long)]
@@ -371,12 +375,13 @@ async fn run_cases(
         match run_one(entry, script, &case_dir, cfg).await {
             Ok(summary) => {
                 println!(
-                    "  {:<24} tool={}ms ctx={}B filler={} audio={}",
+                    "  {:<24} tool={}ms ctx={}B filler={} audio={} retrieval={}",
                     entry.id,
                     summary.tool_duration_ms,
                     summary.context_bytes,
                     summary.filler_chars,
-                    summary.audio_clips
+                    summary.audio_clips,
+                    if summary.retrieval_ok { "ok" } else { "FAIL" },
                 );
                 rows.push(summary);
             }
@@ -439,7 +444,10 @@ async fn run_one(
     let results_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("evals/results");
     let ctx = harness_ctx::setup_isolated_eval_context(&hcfg, &results_root).await?;
     let case_run_dir = ctx.results_dir.clone();
-    let _ = std::fs::remove_dir_all(&case_run_dir); // artifacts are written by this fn
+    // The harness writes its own `pipeline_events.json` into this dir during the
+    // turn and `persist_event_trace` writes the eval's trace here too — it must
+    // exist (it was previously deleted here, which broke the trace write ENOENT).
+    std::fs::create_dir_all(&case_run_dir)?;
 
     // 3. Real TTS into a device-free playback engine.
     let tts = tts_capture::start(&ctx.tts_settings, ctx.event_tx.clone())?;
@@ -485,8 +493,17 @@ async fn run_one(
     stage_dump::write_verbatim(case_dir, names::EVIDENCE, &observation)?;
 
     // 6. Tool-call ledger: latency and the arguments the harness actually received.
+    // The persistence worker writes asynchronously, so poll briefly for the row
+    // instead of assuming it landed before the query.
     let conn = ctx.db.connect().map_err(|e| anyhow!("{e}"))?;
-    let tool_calls = fetch_tool_calls(&conn, ctx.session_id, 1).await?;
+    let mut tool_calls = fetch_tool_calls(&conn, ctx.session_id, 1).await?;
+    let ledger_deadline = Instant::now() + Duration::from_secs(5);
+    while tool_calls.as_array().map(|a| a.is_empty()).unwrap_or(true)
+        && Instant::now() < ledger_deadline
+    {
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        tool_calls = fetch_tool_calls(&conn, ctx.session_id, 1).await?;
+    }
     stage_dump::write_json(case_dir, names::TOOL_CALLS, &tool_calls)?;
     let received = mock_llm::tool_call_from_request(&final_request);
 
@@ -522,24 +539,41 @@ async fn run_one(
         Err(_) => "[TIMEOUT]".to_string(),
     };
 
+    let sources = count_attr(&observation, "total_sources");
+    let passages = count_attr(&observation, "total_passages");
+    // E3: filler credibility from measured audio, not synthesis wall time. The
+    // first clip is the interim filler (dispatched before the tool ran); its
+    // measured length minus tool latency is the overrun QA §4.6 caught.
+    let filler_overrun_ms = stage_dump::read_json(case_dir, names::AUDIO_SUMMARY)
+        .ok()
+        .and_then(|v| {
+            v.get("clips_detail")?
+                .as_array()?
+                .first()?
+                .get("seconds")?
+                .as_f64()
+        })
+        .map(|secs| (secs * 1000.0) as i64 - tool_duration_ms as i64);
     let summary = CaseSummary {
         id: entry.id.clone(),
         query: entry.query.clone(),
         ok: true,
+        retrieval_ok: retrieval_gate(passages, sources, &observation),
         error: None,
         turn_ms,
         tool_duration_ms,
         timed_out: outcome.is_err(),
         context_bytes: observation.len(),
         observation_chars: observation.chars().count(),
-        sources: count_attr(&observation, "total_sources"),
-        passages: count_attr(&observation, "total_passages"),
+        sources,
+        passages,
         tool_args_match: received
             .as_ref()
             .map(|c| c.name == script.tool)
             .unwrap_or(false),
         filler_chars: filler.as_ref().map(|f| f.chars).unwrap_or(0),
         filler_ms: filler.as_ref().map(|f| f.duration_ms).unwrap_or(0),
+        filler_overrun_ms,
         tts_jobs: render_log.len(),
         audio_clips: clips.len(),
         tts_drained,
@@ -604,7 +638,11 @@ async fn fetch_tool_calls(
 struct CaseSummary {
     id: String,
     query: String,
+    /// Execution plumbing succeeded (turn ran, artifacts written).
     ok: bool,
+    /// P0-1: retrieval actually produced answer-bearing evidence. Separate from
+    /// `ok` — G3 scored `ok:true` for 0-passage cases and a 42KB JS dump.
+    retrieval_ok: bool,
     error: Option<String>,
     turn_ms: u64,
     tool_duration_ms: u64,
@@ -616,6 +654,10 @@ struct CaseSummary {
     tool_args_match: bool,
     filler_chars: usize,
     filler_ms: u64,
+    /// E3: filler audio length minus tool latency, in ms. Positive means the
+    /// filler outlives the tool call it covers (G3 `wall_02`: +126ms).
+    /// `None` when no filler clip was captured.
+    filler_overrun_ms: Option<i64>,
     tts_jobs: usize,
     audio_clips: usize,
     tts_drained: bool,
@@ -624,12 +666,36 @@ struct CaseSummary {
     wall_ms: u64,
 }
 
+/// P0-1: retrieval-quality gate. Execution success (`ok`) is plumbing;
+/// this decides whether the model received anything answer-bearing.
+fn retrieval_gate(passages: u64, sources: u64, observation: &str) -> bool {
+    if passages == 0 || sources == 0 {
+        return false;
+    }
+    if observation.chars().count() < 500 {
+        return false;
+    }
+    // Degraded plain-text messages carry no evidence, however wordy.
+    const DEGRADED_MARKERS: &[&str] = &[
+        "No relevant web results could be retrieved",
+        "network connection could not be established",
+        "exceeded the context budget and were withheld",
+    ];
+    if observation.starts_with("Web search completed for")
+        && DEGRADED_MARKERS.iter().any(|m| observation.contains(m))
+    {
+        return false;
+    }
+    true
+}
+
 impl CaseSummary {
     fn failed(id: &str, error: String) -> Self {
         Self {
             id: id.to_string(),
             query: String::new(),
             ok: false,
+            retrieval_ok: false,
             error: Some(error),
             turn_ms: 0,
             tool_duration_ms: 0,
@@ -641,6 +707,7 @@ impl CaseSummary {
             tool_args_match: false,
             filler_chars: 0,
             filler_ms: 0,
+            filler_overrun_ms: None,
             tts_jobs: 0,
             audio_clips: 0,
             tts_drained: false,
@@ -679,8 +746,15 @@ fn write_summary(
         ok.iter().map(|r| f(r)).sum::<f64>() / ok.len() as f64
     };
 
+    // P0-1: retrieval quality is reported separately from execution plumbing.
+    let retrieval_ok_count = ok.iter().filter(|r| r.retrieval_ok).count();
     let health_rows = vec![
         format!("cases ok | {}/{}", ok.len(), rows.len()),
+        format!(
+            "cases retrieval_ok | {}/{} (P0-1: content-bearing evidence, not just plumbing)",
+            retrieval_ok_count,
+            ok.len()
+        ),
         format!(
             "tool args echoed correctly | {}",
             ok.iter().filter(|r| r.tool_args_match).count()
@@ -715,14 +789,18 @@ fn write_summary(
         .iter()
         .map(|r| {
             format!(
-                "`{}` | {} | {} | {} | {} | {} | {}",
+                "`{}` | {} | {} | {} | {} | {} | {} | {} | {}",
                 r.id,
                 if r.ok { "ok" } else { "FAIL" },
+                if r.retrieval_ok { "ok" } else { "FAIL" },
                 r.tool_duration_ms,
                 r.passages,
                 r.sources,
                 r.filler_chars,
-                r.audio_clips
+                r.audio_clips,
+                r.filler_overrun_ms
+                    .map(|o| format!("{o}ms"))
+                    .unwrap_or_else(|| "n/a".to_string()),
             )
         })
         .collect();
@@ -732,6 +810,7 @@ fn write_summary(
         "wall_seconds": wall_s,
         "cases": rows.len(),
         "ok_cases": ok.len(),
+        "retrieval_ok_cases": retrieval_ok_count,
         "turn_latency": turn,
         "tool_latency": tool,
         "mean_observation_chars": mean(&|r| r.observation_chars as f64),
@@ -750,13 +829,14 @@ fn write_summary(
     stage_dump::write_latest(results_root, EVAL_NAME, &summary)?;
 
     let preamble = format!(
-        "Run `{run_id}`. {} of {} cases succeeded. Wall clock {wall_s:.1}s.\n\n\
+        "Run `{run_id}`. {} of {} cases succeeded ({} retrieval_ok). Wall clock {wall_s:.1}s.\n\n\
          The eval input was a scripted tool call served by a mock LLM; the output is the \
          final request body captured in `cases/*/context_llm_saw.json`.\n\n\
          Quality judgement is NOT done here. Read `evals/common/qa_prompts.yaml`, take the \
          prompt matching this eval, substitute the placeholders, and launch a subagent.",
         ok.len(),
-        rows.len()
+        rows.len(),
+        retrieval_ok_count
     );
 
     write_summary_markdown(
@@ -784,11 +864,13 @@ fn write_summary(
                     &[
                         "case",
                         "status",
+                        "retrieval",
                         "tool ms",
                         "passages",
                         "sources",
                         "filler chars",
                         "audio clips",
+                        "filler overrun",
                     ],
                     &per_case,
                 ),

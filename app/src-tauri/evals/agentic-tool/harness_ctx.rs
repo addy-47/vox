@@ -162,12 +162,29 @@ pub async fn setup_isolated_eval_context(
         .map_err(|e| anyhow!("Failed to build mock Tauri app: {}", e))?;
     let tauri_app: tauri::AppHandle<tauri::test::MockRuntime> = app.handle().clone();
 
+    let telemetry = build_telemetry_state();
     let state = Arc::new(AppState::new(
         &tauri_app,
         None,
-        build_telemetry_state(),
+        Arc::clone(&telemetry),
         Arc::clone(&db),
     ));
+    // Production spawns the persistence worker at boot (`lib.rs:358-372`); without
+    // it `persist_tx` stays `None` and `ToolCallExecuted` events are silently
+    // dropped, leaving `session_tool_calls` empty and the latency ledger blind.
+    let persist_tx = vox_lib::persistence::worker::spawn_persistence_worker(
+        Arc::clone(&db),
+        Arc::clone(&telemetry.is_db_healthy),
+        Arc::clone(&telemetry.latest_persistence_rate),
+        Arc::clone(&telemetry.is_private_mode),
+    );
+    *state.persist_tx.lock() = Some(persist_tx);
+    // E1: the shipped default `max_output_tokens` (120) cannot hold a grounded
+    // spoken answer and would truncate the mock's follow-up text, so the eval
+    // could never exercise the answer path. Eval-scoped override only.
+    if let Ok(mut settings) = state.settings.write() {
+        settings.llm.max_output_tokens = 2000;
+    }
     state.conversation_id.store(1, Relaxed);
 
     let (event_tx, event_rx) = mpsc::channel::<VoxEvent>();
@@ -180,7 +197,14 @@ pub async fn setup_isolated_eval_context(
     );
     let llm_provider: Arc<dyn LlmProvider> = Arc::new(RemoteTransport::new(conn_cfg));
     let (llm_tx, llm_rx) = mpsc::channel::<LlmCommand>();
-    spawn_llm_worker(llm_rx, Arc::clone(&llm_provider));
+    // `spawn_llm_worker` runs its `rx.recv()` loop INLINE on the caller's thread
+    // (production wraps it in a dedicated thread at `llm/actor.rs:387-391`). Calling
+    // it directly here would park a tokio worker forever, so mirror production.
+    let worker_provider = Arc::clone(&llm_provider);
+    std::thread::Builder::new()
+        .name("eval-llm-worker".to_string())
+        .spawn(move || spawn_llm_worker(llm_rx, worker_provider))
+        .map_err(|e| anyhow!("Failed to spawn eval LLM worker thread: {e}"))?;
 
     let tts_settings = state
         .settings

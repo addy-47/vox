@@ -192,20 +192,14 @@ pub fn run() {
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(window_customizer::PinchZoomDisablePlugin)
         .setup(|app| {
-            // Synchronous window reveal — runs before any async bootstrap so the
-            // main window is mapped immediately. The window is configured
-            // visible+maximized in tauri.conf.json, so there is no withdrawn ->
-            // normal WM transition to animate on first launch.
-            if let Some(main_win) = app.get_webview_window("main") {
-                if let Err(e) = main_win.show() {
-                    log::warn!("[Vox] Failed to show main window in setup: {}", e);
-                }
-                if let Err(e) = main_win.set_focus() {
-                    log::debug!("[Vox] Failed to focus main window in setup: {}", e);
-                }
-            } else {
-                log::warn!("[Vox] 'main' window not found at boot");
-            }
+            // The `main` webview is constructed LAZILY, never at startup. It was
+            // previously declared in tauri.conf.json (`visible: true`), so Tauri
+            // built it during bootstrap even on a first run — which put a second
+            // window (the "setup not complete" placeholder) on screen beside the
+            // wizard. `main` is now created by `window_main::ensure_main_window`
+            // only once setup is complete (see bootstrap step 3 and the tray
+            // "Launch" action).
+            log::info!("[Vox] Bootstrap: deferring 'main' webview construction until setup completes.");
 
             // Capture the Tokio runtime handle early
             tauri::async_runtime::spawn(async {
@@ -574,6 +568,14 @@ pub fn run() {
                     state.pipeline.set_dictation_state(InteractionState::Idle);
                 }
 
+                if setup_completed {
+                    // `main` is no longer declared in tauri.conf.json, so this is
+                    // the first and only construction point on a normal launch.
+                    if let Err(e) = window_main::ensure_main_window(&handle) {
+                        log::error!("[BOOTSTRAP] Failed to construct main window: {}", e);
+                    }
+                }
+
                 if setup_completed && dictation_enabled && dictation_mode == DictationInteractionMode::Passive {
                     log::info!("[BOOTSTRAP] Passive Dictation enabled. Auto-launching audio/STT engine...");
                     if let Err(e) = launch_engine(handle).await {
@@ -584,9 +586,21 @@ pub fn run() {
                 } else if !setup_completed {
                     log::info!("[BOOTSTRAP] Setup not completed. Launching onboarding wizard...");
                     if let Ok(wizard_win) = ensure_wizard_window(&handle) {
-                        if let Err(e) = wizard_win.show() {
-                            log::warn!("[BOOTSTRAP] Failed to show wizard window: {}", e);
-                        }
+                        // Deliberately NOT shown here. Mapping the window before
+                        // the webview's first paint showed an unpainted white
+                        // surface for a few frames. The frontend reveals itself
+                        // through `revealWizard()` once React + CSS are mounted;
+                        // this fallback only covers the case where that call
+                        // never arrives (renderer failure).
+                        let fallback_win = wizard_win.clone();
+                        tauri::async_runtime::spawn(async move {
+                            tokio::time::sleep(std::time::Duration::from_millis(2500)).await;
+                            if let Err(e) = fallback_win.show() {
+                                log::warn!("[BOOTSTRAP] Fallback wizard reveal failed: {}", e);
+                            } else {
+                                log::warn!("[BOOTSTRAP] Wizard revealed by fallback; frontend reveal did not fire.");
+                            }
+                        });
                     }
                 } else {
                     log::info!("[BOOTSTRAP] Dictation disabled. Skipping engine auto-launch to save resources.");

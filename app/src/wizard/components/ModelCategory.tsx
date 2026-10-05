@@ -33,14 +33,14 @@ interface CategoryProps {
     onToggleModel: (id: string) => void;
 }
 
-export const ModelCategory = ({ 
-    label, 
-    subLabel, 
-    icon, 
-    groups, 
-    selected, 
-    required, 
-    onToggle, 
+export const ModelCategory = React.memo(({
+    label,
+    subLabel,
+    icon,
+    groups,
+    selected,
+    required,
+    onToggle,
     formatSize,
     selectedIds,
     onToggleModel
@@ -71,7 +71,7 @@ export const ModelCategory = ({
                 role="button"
                 tabIndex={0}
                 onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setIsExpanded(!isExpanded); } }}
-                aria-label={isExpanded ? `Collapse ${label}` : `Expand ${label}`}
+                aria-label={isExpanded ? `${MODEL_CATEGORY_COPY.collapsePrefix} ${label}` : `${MODEL_CATEGORY_COPY.expandPrefix} ${label}`}
             >
                 <div className="flex items-center gap-4 flex-1 min-w-0">
                     <div className={cn(
@@ -192,7 +192,7 @@ export const ModelCategory = ({
                                                     {group.name}
                                                 </span>
                                                 <span className="text-[rgb(var(--foreground-muted))]/40 text-[12px] font-mono">
-                                                    Version {group.version}
+                                                    {MODEL_CATEGORY_COPY.versionPrefix} {group.version}
                                                 </span>
                                             </div>
                                         </div>
@@ -208,4 +208,5 @@ export const ModelCategory = ({
             </AnimatePresence>
         </div>
     );
-};
+});
+ModelCategory.displayName = "ModelCategory";

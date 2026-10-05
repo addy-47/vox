@@ -72,7 +72,7 @@ function parseOpPayload(content?: string): {
   section_id?: string;
   block_id?: string;
   title?: string;
-  blocks?: Array<{ id?: string; text?: string }>;
+  blocks?: Array<string | { id?: string; text?: string }>;
 } {
   if (!content) return {};
   try {

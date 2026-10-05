@@ -30,6 +30,10 @@ pub const DEFAULT_TWO_STAGE_RERANK: bool = true;
 pub const MAX_CONTEXT_SHARE_CAP: f32 = 0.30;
 pub const HARD_TOKEN_CEILING: usize = 2000;
 pub const AVERAGE_PASSAGE_TOKENS: usize = 250;
+/// P0-2: hard per-passage character cap. The count budget (`budget_k`) assumes
+/// ~250 tokens/passage but never measures length (G3: one rank-1 passage was
+/// 30,076 chars ≈ 122× the assumption). Truncated at a word boundary.
+pub const MAX_PASSAGE_CHARS: usize = 2000;
 
 pub const TIMEOUT_SPARSE_MS: u64 = 4000;
 pub const TIMEOUT_DENSE_MS: u64 = 5000;
@@ -200,12 +204,13 @@ impl ToolDefinition for WebSearchTool {
                 ..Default::default()
             };
 
+            // D7 (G3 baseline): Mojeek (CAPTCHA wall) and GoogleWml (HTTP 403)
+            // burned ~40% of the fanout budget for zero results. Removed until
+            // N2 engine health + Brave can restore a second live index family.
             let search_client = match nexus::NexusSearch::builder()
                 .with_engines(vec![
                     nexus::Engine::Duckduckgo,
                     nexus::Engine::Bing,
-                    nexus::Engine::GoogleWml,
-                    nexus::Engine::Mojeek,
                     nexus::Engine::Yahoo,
                 ])
                 .with_fanout_policy(fanout_policy)
@@ -443,28 +448,126 @@ async fn render_evidence_xml(
         metrics_attr
     ));
 
-    for source in &sources_list {
-        xml.push_str(&format!(
+    // P0-2: assemble greedily within the token ceiling instead of trusting the
+    // count budget. Passages are capped individually, then admitted best-first
+    // until the ceiling is reached; the remainder are dropped, never truncated
+    // mid-passage. The header/footer overhead is accounted up front.
+    let header = format!(
+        "<web_search_evidence query=\"{}\" ranking_mode=\"{}\" total_sources=\"{}\" total_passages=\"{}\"{}>\n",
+        xml_escape(query),
+        ranking_str,
+        sources_list.len(),
+        selected.len(),
+        metrics_attr
+    );
+    let footer = "</web_search_evidence>";
+    let mut budget = token_ceiling.saturating_sub(estimate_tokens(&header) + estimate_tokens(footer));
+
+    // Per-source blocks are built independently so a source with zero surviving
+    // passages (all over budget) is omitted entirely rather than emitted empty.
+    let mut admitted_sources = 0usize;
+    let mut admitted_passages = 0usize;
+    let mut body = String::new();
+    'outer: for source in &sources_list {
+        let source_open = format!(
             "  <source id=\"{}\" title=\"{}\" url=\"{}\">\n",
             source.id,
             xml_escape(source.title),
             xml_escape(source.url)
-        ));
-
+        );
+        let source_open_cost = estimate_tokens(&source_open);
+        if source_open_cost + estimate_tokens("  </source>\n") >= budget {
+            break 'outer;
+        }
+        let mut source_body = String::new();
+        let mut kept = 0usize;
         for (rank, score, text) in &source.passages {
-            xml.push_str(&format!(
+            let capped = cap_passage_text(text);
+            let frag = format!(
                 "    <passage rank=\"{}\" score=\"{:.3}\">\n      {}\n    </passage>\n",
                 rank,
                 score,
-                xml_escape(text.trim())
-            ));
+                xml_escape(&capped)
+            );
+            let cost = estimate_tokens(&frag);
+            if cost >= budget {
+                break 'outer;
+            }
+            budget -= cost;
+            source_body.push_str(&frag);
+            kept += 1;
         }
-
-        xml.push_str("  </source>\n");
+        if kept == 0 {
+            continue;
+        }
+        budget = budget.saturating_sub(source_open_cost + estimate_tokens("  </source>\n"));
+        body.push_str(&source_open);
+        body.push_str(&source_body);
+        body.push_str("  </source>\n");
+        admitted_sources += 1;
+        admitted_passages += kept;
     }
 
-    xml.push_str("</web_search_evidence>");
+    xml.push_str(&header);
+    // Rewrite the header counts to reflect what was actually admitted, so the
+    // model is never told "5 passages" while reading 2.
+    let xml = xml.replacen(
+        &format!("total_sources=\"{}\" total_passages=\"{}\"", sources_list.len(), selected.len()),
+        &format!("total_sources=\"{admitted_sources}\" total_passages=\"{admitted_passages}\""),
+        1,
+    );
+    let mut xml = xml;
+    xml.push_str(&body);
+    xml.push_str(footer);
+
+    // Pre-flight assertion (P0-2): the clamped observation must fit the ceiling
+    // it was built against. If it does not, something is wrong with the
+    // accounting above — fail loudly instead of shipping a 400-class rejection
+    // downstream (`ent_01` reached ≥11,538 tokens against an 8192 window).
+    let final_tokens = estimate_tokens(&xml);
+    if final_tokens > token_ceiling {
+        log::error!(
+            "[WebSearchTool] Clamped observation ({} tokens) exceeds ceiling ({}); returning degraded message instead",
+            final_tokens,
+            token_ceiling
+        );
+        return format!(
+            "Web search completed for '{}'. Relevant results were found but exceeded the context budget and were withheld.",
+            xml_escape(query)
+        );
+    }
+    if admitted_passages == 0 {
+        log::warn!("[WebSearchTool] Budget admitted zero passages for '{}'", query);
+        return format!(
+            "Web search completed for '{}'. No relevant web results could be retrieved.",
+            xml_escape(query)
+        );
+    }
     xml
+}
+
+/// Caps a single passage at [`MAX_PASSAGE_CHARS`], cutting at a word boundary
+/// and marking the cut. P0-2: unbounded passages (G3 max: 30,076 chars) are what
+/// defeat the count-based budget.
+fn cap_passage_text(text: &str) -> String {
+    let trimmed = text.trim();
+    if trimmed.chars().count() <= MAX_PASSAGE_CHARS {
+        return trimmed.to_string();
+    }
+    let mut end = 0usize;
+    for (count, (i, c)) in trimmed.char_indices().enumerate() {
+        if count >= MAX_PASSAGE_CHARS {
+            break;
+        }
+        end = i + c.len_utf8();
+    }
+    let mut cut = trimmed[..end].to_string();
+    // Back off to the last word boundary so we never end mid-token.
+    if let Some(ws) = cut.rfind(char::is_whitespace) {
+        cut.truncate(ws);
+    }
+    cut.push('…');
+    cut
 }
 
 /// Escapes standard XML entity delimiters to prevent structural corruption and prompt boundary attacks.

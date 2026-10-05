@@ -21,14 +21,14 @@ export const WizardFooter: React.FC<WizardFooterProps> = ({
   onBack,
   onNext,
   onSkip,
-  nextLabel = "Proceed",
+  nextLabel = WIZARD_CTA_LABELS.proceed,
   isNextDisabled = false,
   isNextLoading = false,
   showBack = true,
   showSkip = false,
   className,
   error,
-  errorLabel = "Error"
+  errorLabel = WIZARD_CTA_LABELS.errorTitle
 }) => {
   return (
     <div className={cn("mt-auto pt-8 border-t border-[rgba(var(--border),0.05)]", className)}>

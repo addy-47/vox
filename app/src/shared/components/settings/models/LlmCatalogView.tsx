@@ -3,11 +3,14 @@ import Lenis from "lenis";
 import { useSettingsStore, type LlmModelInfo, type ModelCapabilities, type LlmProviderConfig } from "@/store/settingsStore";
 import { SubModelCard } from "../SubModelCard";
 import type { ModelStatus } from "@/shared/hooks/useModelDownloads";
-import { Loader2, Network, Cloud, RefreshCw, AlertCircle, Sparkles, Search, X, Plus, Check, Copy, Zap, Layers, Cpu, Wrench } from "lucide-react";
+import { Loader2, ServerCog, Cloud, RefreshCw, AlertCircle, Sparkles, Search, X, Plus, Check, Copy, Zap, Layers, Cpu, Wrench } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { Tooltip } from "@/shared/ui/Tooltip";
 import { ExpandableList } from "@/shared/ui/ExpandableList";
+import { SettingsCommitControls } from "@/shared/components/settings/SettingsCommitControls";
 import { fzfMultiTermScore } from "@/shared/lib/fuzzy";
+import { useScrollTopOnChange } from "@/shared/hooks/useScrollTopOnChange";
+import { useLenisScrollContainer } from "@/shared/hooks/useLenisScrollContainer";
 import { LLM_CATALOG_COPY } from "@/data/settingsCopy";
 import { CLOUD_PROVIDERS } from "@/data/providersCopy";
 import { CloudProvidersModalView, useCloudProvidersModalState } from "./CloudProvidersModalView";
@@ -256,6 +259,8 @@ RemoteModelCard.displayName = "RemoteModelCard";
 export interface RemoteModelsModalViewProps {
   remoteModels: LlmModelInfo[];
   selectedModelId?: string;
+  /** Committed (saved) model id driving list order; selection highlight stays on the draft id. */
+  pinnedModelId?: string;
   probingMap: Record<string, { status: 'idle' | 'testing' | 'success' | 'error'; capabilities?: ModelCapabilities; error?: string }>;
   capabilitiesCache?: Record<string, ModelCapabilities>;
   onSelectModel: (id: string) => void;
@@ -265,6 +270,7 @@ export interface RemoteModelsModalViewProps {
 export const RemoteModelsModalView = memo(({
   remoteModels,
   selectedModelId,
+  pinnedModelId,
   probingMap,
   capabilitiesCache,
   onSelectModel,
@@ -275,6 +281,7 @@ export const RemoteModelsModalView = memo(({
   const [filterCategory, setFilterCategory] = useState<"all" | "benchmarked" | "tools" | "vision" | "fast">("all");
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const lenisRef = useRef<Lenis | null>(null);
 
   // Smooth Lenis scrolling on the contained viewport
   useEffect(() => {
@@ -289,11 +296,15 @@ export const RemoteModelsModalView = memo(({
       autoRaf: true,
       duration: 0.75,
     });
+    lenisRef.current = lenis;
 
     return () => {
+      lenisRef.current = null;
       lenis.destroy();
     };
   }, []);
+
+  useScrollTopOnChange(scrollContainerRef, pinnedModelId, lenisRef);
 
   const handleCopyId = useCallback((id: string) => {
     navigator.clipboard.writeText(id);
@@ -358,8 +369,8 @@ export const RemoteModelsModalView = memo(({
       });
     }
 
-    if (selectedModelId) {
-      const idx = list.findIndex((m) => m.id === selectedModelId);
+    if (pinnedModelId) {
+      const idx = list.findIndex((m) => m.id === pinnedModelId);
       if (idx > 0) {
         const copy = [...list];
         const [selected] = copy.splice(idx, 1);
@@ -369,7 +380,7 @@ export const RemoteModelsModalView = memo(({
     }
 
     return list;
-  }, [remoteModels, deferredSearch, filterCategory, probingMap, capabilitiesCache, selectedModelId]);
+  }, [remoteModels, deferredSearch, filterCategory, probingMap, capabilitiesCache, pinnedModelId]);
 
   return (
     <div className="flex flex-col h-full min-h-0 gap-3">
@@ -544,6 +555,20 @@ export const LlmCatalogView = memo(({
 
   const selectedModelId = provider && "model" in provider ? provider.model : undefined;
 
+  // Save-gated pinning: list order follows the COMMITTED model, so selecting
+  // only re-highlights. The reorder (with smooth scroll) lands on save.
+  const committedSettings = useSettingsStore((s) => s.settings);
+  const committedRemoteModelId = useMemo(() => {
+    const active = committedSettings?.llm?.active || "embedded";
+    if (active === "server") return committedSettings?.llm?.server?.model;
+    if (active === "cloud") return committedSettings?.llm?.cloud?.model;
+    return committedSettings?.llm?.embedded?.model;
+  }, [committedSettings]);
+  const committedLocalModelId = useMemo(
+    () => committedSettings?.llm?.embedded?.model,
+    [committedSettings]
+  );
+
   // Filtered Remote Models with fzf-style fuzzy matching and selected model prioritized first
   const filteredRemoteModels = useMemo(() => {
     const trimmed = searchQuery.trim();
@@ -573,9 +598,9 @@ export const LlmCatalogView = memo(({
       }
     }
 
-    // Pinned: The selected model is placed first in the list
-    if (selectedModelId) {
-      const selectedIndex = models.findIndex((m) => m.id === selectedModelId);
+    // Pinned: The saved (committed) model is placed first in the list
+    if (committedRemoteModelId) {
+      const selectedIndex = models.findIndex((m) => m.id === committedRemoteModelId);
       if (selectedIndex > 0) {
         const copy = [...models];
         const [selected] = copy.splice(selectedIndex, 1);
@@ -585,7 +610,7 @@ export const LlmCatalogView = memo(({
     }
 
     return models;
-  }, [remoteModels, searchQuery, selectedModelId]);
+  }, [remoteModels, searchQuery, committedRemoteModelId]);
 
   const handleApplyCustomModel = () => {
     const modelId = customModelId.trim();
@@ -604,18 +629,18 @@ export const LlmCatalogView = memo(({
 
   const capabilitiesCache = useSettingsStore((s) => s.capabilitiesCache);
 
-  // Model Tab: Local GGUF Model Grid (Pinned: selected model first)
+  // Model Tab: Local GGUF Model Grid (Pinned: saved model first)
   const sortedLocalModels = useMemo(() => {
     const list = [...(modelCatalog?.llm || [])];
-    if (selectedLlmId) {
-      const idx = list.findIndex((m) => m.id === selectedLlmId);
+    if (committedLocalModelId) {
+      const idx = list.findIndex((m) => m.id === committedLocalModelId);
       if (idx > 0) {
         const [selected] = list.splice(idx, 1);
         list.unshift(selected);
       }
     }
     return list;
-  }, [modelCatalog?.llm, selectedLlmId]);
+  }, [modelCatalog?.llm, committedLocalModelId]);
 
   const handleSelectModel = useCallback((modelId: string) => {
     const draft = useSettingsStore.getState().draftSettings;
@@ -630,8 +655,17 @@ export const LlmCatalogView = memo(({
   }, [updateDraft]);
 
   // Remote / OpenAI-Compat Server Catalog
+  // Inline render helper (NOT a component): invoke as {RemoteModelRows()} so the
+  // grid DOM (and its scroll offset) survives parent re-renders instead of remounting.
+  const { containerRef: inlineRowsRef, lenisRef: inlineLenisRef } =
+    useLenisScrollContainer<HTMLDivElement>();
+  useScrollTopOnChange(inlineRowsRef, committedRemoteModelId, inlineLenisRef);
+  const { containerRef: localGridRef, lenisRef: localLenisRef } =
+    useLenisScrollContainer<HTMLDivElement>();
+  useScrollTopOnChange(localGridRef, committedLocalModelId, localLenisRef);
   const RemoteModelRows = () => (
     <div
+      ref={inlineRowsRef}
       className={cn(
         "h-full overflow-y-auto pr-1 grid auto-rows-max content-start gap-2 custom-scrollbar",
         layoutMode === "small" ? "grid-cols-1" : "grid-cols-1 sm:grid-cols-2"
@@ -989,7 +1023,7 @@ export const LlmCatalogView = memo(({
             <>
               <div className="flex flex-col min-w-0">
                 <span className="font-bold text-[rgb(var(--foreground))] text-[13px] flex items-center gap-1.5 truncate">
-                  <Network size={15} className="text-[rgb(var(--accent))] shrink-0" />
+                  <ServerCog size={15} className="text-[rgb(var(--accent))] shrink-0" />
                   <span>{LLM_CATALOG_COPY.connectedServer}</span>
                   {remoteModelsError && (
                     <span
@@ -1049,7 +1083,7 @@ export const LlmCatalogView = memo(({
           triggerPlacement="floating"
           inlineMaxHeightClass={layoutMode === "small" ? "max-h-[235px]" : undefined}
           onBack={() => setCatalogModalView(catalogModalView === "models" ? "providers" : "models")}
-          icon={catalogModalView === "models" ? <Network size={16} className="text-[rgb(var(--accent))]" /> : <Cloud size={16} className="text-[rgb(var(--accent))]" />}
+          icon={catalogModalView === "models" ? <ServerCog size={16} className="text-[rgb(var(--accent))]" /> : <Cloud size={16} className="text-[rgb(var(--accent))]" />}
           title={
             <span className="font-display text-[15px] font-bold tracking-tight text-[rgb(var(--foreground))]">
               {catalogModalView === "models" ? LLM_CATALOG_COPY.catalogTitle : "Cloud Providers"}
@@ -1068,11 +1102,13 @@ export const LlmCatalogView = memo(({
           }
           expandLabel={LLM_CATALOG_COPY.expandLabel}
           ariaLabel={LLM_CATALOG_COPY.catalogAriaLabel}
+          headerActions={<SettingsCommitControls domainId="models" />}
           modalContent={
             catalogModalView === "models" ? (
               <RemoteModelsModalView
                 remoteModels={remoteModels}
                 selectedModelId={selectedModelId}
+                pinnedModelId={committedRemoteModelId}
                 probingMap={probingMap}
                 capabilitiesCache={capabilitiesCache}
                 onSelectModel={handleSelectModel}
@@ -1083,13 +1119,14 @@ export const LlmCatalogView = memo(({
             )
           }
         >
-          <RemoteModelRows />
+          {RemoteModelRows()}
         </ExpandableList>
       </div>
     );
   }
   return (
     <div
+      ref={localGridRef}
       className={cn(
         "grid gap-2.5 flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-1 h-full",
         sortedLocalModels.length <= 2

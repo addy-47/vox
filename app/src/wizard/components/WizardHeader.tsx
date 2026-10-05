@@ -23,8 +23,7 @@ export const WizardHeader: React.FC<WizardHeaderProps> = ({
     <header className="mb-8 relative shrink-0">
       <div className="flex justify-between items-start">
         <div className="flex-1">
-          <div className="flex items-center gap-4 mb-4">
-            <div className="h-[1px] w-8" style={{ backgroundColor: `${effectiveColor}4D` }} />
+          <div className="mb-4">
             <span className={cn(
               "inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-[12px] font-black tracking-[0.4em] uppercase glass"
             )} style={{ color: effectiveColor }}>

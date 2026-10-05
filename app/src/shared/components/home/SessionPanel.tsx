@@ -10,7 +10,7 @@ import {
   Check,
   X,
   MoreVertical,
-  History,
+  MessagesSquare,
   FolderGit2,
   Shrink,
 } from "lucide-react";
@@ -879,7 +879,7 @@ export const SessionPanel = memo(({ onClose }: SessionPanelProps) => {
           {viewMode === "history" ? (
             <FolderGit2 size={14} className="shrink-0 text-[rgb(var(--accent))]" />
           ) : (
-            <History size={14} className="shrink-0 text-[rgb(var(--accent))]" />
+            <MessagesSquare size={14} className="shrink-0 text-[rgb(var(--accent))]" />
           )}
           <span>
             {viewMode === "history" ? SESSION_COPY.projectsSection : SESSION_COPY.conversationHistory}

@@ -1,7 +1,9 @@
-import { useMemo, useCallback, memo } from "react";
+import { memo } from "react";
 import { AlertCircle, Check, RefreshCw } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
-import { useSettingsStore, type SettingsState, SETTINGS_DOMAIN_TO_UI } from "@/store/settingsStore";
+import { useSettingsStore } from "@/store/settingsStore";
+import { useExpandedModalStore } from "@/store/expandedModalStore";
+import { useDomainCommitState } from "./SettingsCommitControls";
 import { ErrorBoundary } from "@/shared/components/common";
 import { AnimatePresence, motion } from "framer-motion";
 import type { SettingsDomain as Domain } from "@/data/settingsCopy";
@@ -18,49 +20,15 @@ export interface SettingsCardWrapperProps {
 
 export const SettingsCardWrapper = memo(({ domain, isActive, layoutMode, children }: SettingsCardWrapperProps) => {
   useMemoryTrace(`SettingsCard (${domain.id})`);
-  const draftSettings = useSettingsStore((s) => s.draftSettings);
+  const { mode, hasChanges } = useDomainCommitState(domain.id);
 
-  const hasChanges = useSettingsStore(useCallback((s: SettingsState) => Boolean(s.isDomainDirty(domain.id)), [domain.id]));
-  const isDomainRequiringRestart = useSettingsStore(useCallback((s: SettingsState) => Boolean(s.isDomainRequiringRestart(domain.id)), [domain.id]));
-
-  const isCloudLlmMissingKey =
-    draftSettings?.llm?.active === "cloud" &&
-    !draftSettings?.llm?.cloud?.api_key?.trim();
-  const isCloudSttMissingKey = false;
-  const isRealtimeMissingKey =
-    draftSettings?.interaction?.pipeline_mode === "realtime" &&
-    ((draftSettings?.realtime?.active === "gemini_live" && !(draftSettings?.realtime?.gemini_live?.api_key)?.trim()) ||
-     (draftSettings?.realtime?.active === "deepgram_voice_agent" && !(draftSettings?.realtime?.deepgram_voice_agent?.api_key)?.trim()));
-
-  const isDomainMissingCloudKey = useMemo(() => {
-    if (domain.id === "models") {
-      const isRealtime = draftSettings?.interaction?.pipeline_mode === "realtime";
-      return isRealtime ? isRealtimeMissingKey : (isCloudLlmMissingKey || isCloudSttMissingKey);
-    }
-    if (domain.id === "interaction") {
-      const isRealtime = draftSettings?.interaction?.pipeline_mode === "realtime";
-      return isRealtime ? isRealtimeMissingKey : false;
-    }
-    return false;
-  }, [domain.id, draftSettings?.interaction?.pipeline_mode, isRealtimeMissingKey, isCloudLlmMissingKey, isCloudSttMissingKey]);
-
-  const isAutoSavedHere = useSettingsStore((s) => s.autoSavedDomain === domain.id);
-  const saveFailure = useSettingsStore((s) => s.failedSaveDomains[domain.id]);
+  const isMissingKey = mode === "missing-key";
+  const requiresRestart = mode === "restart";
+  const isAutoSavedHere = mode === "saved";
+  const isRestartHere = mode === "restarting";
+  const saveFailure = mode === "failed";
   const failedKeys = useSettingsStore((s) => s.failedSaveKeys);
-  const isRestartHere = useSettingsStore(
-    useCallback(
-      (s: SettingsState) => {
-        if (!s.restartInFlight) return false;
-        if (s.restartKeys.length === 0) return domain.id === "models";
-        return s.restartKeys.some((k) => {
-          const scope = k.split(".")[0];
-          const targetUi = SETTINGS_DOMAIN_TO_UI[scope] || "models";
-          return targetUi === domain.id;
-        });
-      },
-      [domain.id]
-    )
-  );
+  const expandModalOpen = useExpandedModalStore((s) => s.openCount > 0);
 
   return (
     <AnimatePresence>
@@ -92,7 +60,7 @@ export const SettingsCardWrapper = memo(({ domain, isActive, layoutMode, childre
             <AnimatePresence>
               {/* Mode A: A required credential is missing, so the commit cannot
                   succeed. Save stays disabled; only Discard is actionable. */}
-              {hasChanges && isDomainMissingCloudKey && (
+              {!expandModalOpen && hasChanges && isMissingKey && (
                 <motion.div
                   key="missing-key-footer"
                   initial={{ opacity: 0, height: 0 }}
@@ -123,7 +91,7 @@ export const SettingsCardWrapper = memo(({ domain, isActive, layoutMode, childre
               )}
 
               {/* Mode B: Unsaved changes requiring engine restart -> Explicit "Apply & Restart" */}
-              {hasChanges && !isDomainMissingCloudKey && isDomainRequiringRestart && (
+              {!expandModalOpen && hasChanges && !isMissingKey && requiresRestart && (
                 <motion.div
                   key="apply-restart-footer"
                   initial={{ opacity: 0, height: 0 }}
@@ -132,50 +100,17 @@ export const SettingsCardWrapper = memo(({ domain, isActive, layoutMode, childre
                   transition={{ duration: 0.2 }}
                   className="w-full p-2.5 px-4 sm:px-5 rounded-b-[1.25rem] rounded-t-none bg-[rgba(var(--accent),0.08)] dark:bg-[rgba(var(--accent),0.12)] border border-t-0 border-[rgba(var(--accent),0.2)] flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 sm:gap-2 overflow-hidden text-[12px]"
                 >
-                  <span className="font-bold uppercase tracking-wider text-[rgb(var(--accent))] flex items-center gap-1.5 shrink-0">
-                    <RefreshCw size={13} className="shrink-0" />
-                    <span className="truncate">{SETTINGS_COPY.restartRequired}</span>
-                  </span>
-                  <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
+                  <div className="flex items-center gap-2 self-start sm:self-auto shrink-0">
                     <button
                       onClick={() => useSettingsStore.getState().commitChanges()}
-                      className="px-3 py-1 rounded-lg bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] font-bold text-[12px] uppercase tracking-wider flex items-center gap-1.5 transition-all cursor-pointer shadow-xs hover:brightness-110"
+                      className="px-3 py-1 rounded-lg border font-bold text-[12px] uppercase tracking-wider flex items-center gap-1.5 transition-all cursor-pointer bg-transparent text-[rgb(var(--accent))] border-[rgba(var(--accent),0.45)] hover:bg-[rgb(var(--accent))] hover:text-[rgb(var(--accent-foreground))] hover:border-[rgb(var(--accent))]"
                     >
                       <RefreshCw size={12} className="shrink-0" />
                       <span>{SETTINGS_COPY.applyAndRestart}</span>
                     </button>
-                    <button
-                      onClick={() => useSettingsStore.getState().discardDomainChanges(domain.id)}
-                      className="px-3 py-1 rounded-lg bg-transparent text-[rgb(var(--foreground-muted))] hover:text-rose-400 hover:bg-rose-500/10 border border-transparent hover:border-rose-500/20 text-[12px] font-bold uppercase tracking-wider transition-all cursor-pointer"
-                    >
-                      {SETTINGS_COPY.discardChanges}
-                    </button>
                   </div>
-                </motion.div>
-              )}
-
-              {/* Mode C: Routine Unsaved Changes */}
-              {hasChanges && !isDomainMissingCloudKey && !isDomainRequiringRestart && (
-                <motion.div
-                  key="unsaved-changes-footer"
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: "auto" }}
-                  exit={{ opacity: 0, height: 0 }}
-                  transition={{ duration: 0.2 }}
-                  className="w-full p-2.5 px-4 sm:px-5 rounded-b-[1.25rem] rounded-t-none bg-[rgba(var(--accent),0.08)] dark:bg-[rgba(var(--accent),0.12)] border border-t-0 border-[rgba(var(--accent),0.2)] flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 sm:gap-2 overflow-hidden text-[12px]"
-                >
-                  <span className="font-bold uppercase tracking-wider text-[rgb(var(--accent))] flex items-center gap-1.5 shrink-0">
-                    <span className="w-2 h-2 rounded-full bg-[rgb(var(--accent))] animate-pulse shrink-0" />
-                    <span className="truncate">{SETTINGS_COPY.saveChanges}</span>
-                  </span>
                   <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
                     <button
-                      onClick={() => useSettingsStore.getState().commitChanges()}
-                      className="px-3 py-1 rounded-lg bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] font-bold text-[12px] uppercase tracking-wider transition-all cursor-pointer shadow-xs hover:brightness-110"
-                    >
-                      {SETTINGS_COPY.saveChanges}
-                    </button>
-                    <button
                       onClick={() => useSettingsStore.getState().discardDomainChanges(domain.id)}
                       className="px-3 py-1 rounded-lg bg-transparent text-[rgb(var(--foreground-muted))] hover:text-rose-400 hover:bg-rose-500/10 border border-transparent hover:border-rose-500/20 text-[12px] font-bold uppercase tracking-wider transition-all cursor-pointer"
                     >
@@ -185,8 +120,10 @@ export const SettingsCardWrapper = memo(({ domain, isActive, layoutMode, childre
                 </motion.div>
               )}
 
+              {/* Routine hot-save changes have no footer: the autosave toast follows. */}
+
               {/* Mode D: Debounced "Changes Saved" Auto-Toast (Only on the specific modified card) */}
-              {!hasChanges && !saveFailure && isAutoSavedHere && (
+              {!expandModalOpen && !hasChanges && !saveFailure && isAutoSavedHere && (
                 <motion.div
                   key="saved-toast-footer"
                   initial={{ opacity: 0, height: 0 }}
@@ -204,7 +141,7 @@ export const SettingsCardWrapper = memo(({ domain, isActive, layoutMode, childre
               )}
 
               {/* Mode E: the backend is rebuilding the engine right now */}
-              {!hasChanges && isRestartHere && (
+              {!expandModalOpen && !hasChanges && isRestartHere && (
                 <motion.div
                   key="restarting-footer"
                   role="status"
@@ -223,7 +160,7 @@ export const SettingsCardWrapper = memo(({ domain, isActive, layoutMode, childre
               )}
 
               {/* Mode F: Backend rejected the write */}
-              {!hasChanges && saveFailure && (
+              {!expandModalOpen && !hasChanges && saveFailure && (
                 <motion.div
                   key="save-failed-footer"
                   role="alert"

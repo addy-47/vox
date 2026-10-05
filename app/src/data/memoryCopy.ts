@@ -3,7 +3,7 @@ export const MEMORY_COPY = {
   graphLoadingTitle: "Building memory graph...",
   graphLoadingSubtitle: "Synthesizing personal knowledge topology",
   personalMemory: "Personal Memory",
-  coreDossier: "Core Dossier",
+  dossierTitle: "About You",
   identityLayer: "About You & Preferences",
   sessionsLayer: "Past Conversations",
   recenterView: "Recenter View",
@@ -64,6 +64,9 @@ export const MEMORY_COPY = {
   observationsDescBare: "Extracted knowledge and behavioral observations",
   allChangesIntegratedShort: "All changes integrated",
   suggestionsTitle: "Suggested Profile Updates",
+  /** Staging header title while reviewing suggestions, with live count. */
+  suggestionsTitleCount: (n: number) =>
+    n === 1 ? "1 Suggestion" : `${n} Suggestions`,
   suggestionsDesc: "Review additions, replacements, or deletions proposed by integrating learned facts.",
   applyDecisions: "Apply Decisions",
   applyingDecisions: "Applying…",

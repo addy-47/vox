@@ -71,6 +71,17 @@
   --muted: 100, 116, 139;
   --muted-soft: 148, 163, 184;
 
+  /* ── Notification category tokens (accent-derived; notifications-spec §4.7).
+       Defaults for the default cyan accent — recomputed at runtime by
+       shared/theme/notificationCategoryTokens.ts on every theme/accent write. */
+  --notif-session-compaction: 77, 136, 249;
+  --notif-memory-consolidation: 143, 77, 249;
+  --notif-pipeline: 249, 77, 232;
+  --notif-dictation: 249, 77, 118;
+  --notif-hardware: 249, 149, 77;
+  --notif-models: 205, 249, 77;
+  --notif-storage: 77, 249, 115;
+
   --connection-glow: rgba(var(--accent), 0.15);
   --connection-core: rgba(var(--accent), 0.45);
   --hub-connector-active-opacity: 0.28;
@@ -130,6 +141,15 @@ body:not(.is-tray) {
   --pink: 190, 24, 93;
   --muted: 71, 85, 105;
   --muted-soft: 100, 116, 139;
+
+  /* ── Notification category tokens (accent-derived) — light defaults ── */
+  --notif-session-compaction: 13, 50, 211;
+  --notif-memory-consolidation: 119, 13, 211;
+  --notif-pipeline: 211, 13, 161;
+  --notif-dictation: 211, 13, 30;
+  --notif-hardware: 211, 127, 13;
+  --notif-models: 129, 211, 13;
+  --notif-storage: 13, 211, 88;
 }
 
 @layer base {

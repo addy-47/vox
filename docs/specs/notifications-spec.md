@@ -121,11 +121,11 @@ To keep domain boundaries pristine, responsibilities are partitioned strictly be
 
 ### 4.1 Universal Severity
 Represents visual urgency, badge weight, and priority across all surfaces:
-- **`Info`**: Normal operations, successful dictation output, non-blocking receipts. Visual language: neutral border, violet accent tile.
-- **`Warning`**: Recoverable degradation, dropped audio buffer, high system load, missed schedules. Visual language: amber border and amber warning word.
-- **`Critical`**: Unrecoverable breakdowns, authentication failures, hardware disconnects, missing model assets. Visual language: red/rose border and high-contrast alert word.
+- **`Info`**: Normal operations, successful dictation output, non-blocking receipts. Visual language: neutral card border.
+- **`Warning`**: Recoverable degradation, dropped audio buffer, high system load, missed schedules. Visual language: amber card border.
+- **`Critical`**: Unrecoverable breakdowns, authentication failures, hardware disconnects, missing model assets. Visual language: red/rose card border.
 
-Severity is orthogonal to category: it must never be expressed by the category's icon or tile colour, or the two axes become indistinguishable.
+Severity is expressed on the card **border only** — never as a word, badge, or icon in the card header, and never by the category's icon or tile colour, or the two axes become indistinguishable.
 
 ### 4.2 Universal Action Taxonomy
 Represents retention in storage and expected user interaction:
@@ -171,6 +171,13 @@ Every notification written to SQLite contains the following attributes:
 - `metadata`: Serialized read-only display context.
 - `created_at`: Creation timestamp in millisecond epoch.
 - `updated_at`: Last update timestamp in millisecond epoch.
+
+### 4.7 Notification Category Tokens
+Category colour is carried by a dedicated CSS token family, one per closed category (§4.5), named `--notif-session-compaction`, `--notif-memory-consolidation`, `--notif-pipeline`, `--notif-dictation`, `--notif-hardware`, `--notif-models`, `--notif-storage` (RGB triplets, consumed as `rgb(var(--notif-<category>))` / `rgba(var(--notif-<category>), α)`).
+- **Derivation**: Every token is derived at runtime from the live `--accent` HSL base via harmonic hue rotation (the legend palette approach) and recomputed on every theme/accent write, so a theme flip interpolates them with the rest of the token set.
+- **Accent Exclusion Invariant**: A category token must never resolve to the main `--accent` colour — the accent remains reserved for global/primary affordances, and every category (including `SessionCompaction`) has its own hue.
+- **Scope**: Category tokens are the colour authority for the card kicker (icon + label) and the card's primary action button. Severity keeps its independent family (`--warning` / `--error`) and is expressed on the card border only (§4.1).
+- **Fallbacks**: `index.css` declares static `:root` defaults for all seven so the drawer never renders an undefined colour before the theme module boots.
 
 
 ---
@@ -306,10 +313,10 @@ When an error occurs during a voice turn, the runtime error boundary must execut
   Unread work is never hidden regardless of severity or action type; a resolved or read item contributes nothing.
 - **Card Anatomy Contract**: Every drawer card must be identifiable at a glance without hovering. Cards render in this fixed vertical order:
   1. **Type kicker** — the closed category (§4.5) as unboxed typography (uppercase, mono, tracked). Never a hover-only affordance, and never a pill or bordered container (design-spec §5.1).
-  2. **Severity word** — `Warning` / `Critical` appended to the kicker line for those severities only. `Info` renders no severity word.
-  3. **Heading** — the card `title` at its designated type-scale role (`lg`), in `font-display`. Never truncated below legibility without an ellipsis affordance.
-  4. **Content block** — the `message`, separated from the heading by a hairline divider.
-  5. **Footer meta** — recency, turn count, and any primary action / navigation affordance.
+  2. **Heading** — the card `title` at its designated type-scale role (`lg`), in `font-display`. Never truncated below legibility without an ellipsis affordance.
+  3. **Content block** — the `message`, separated from the heading by a hairline divider.
+  4. **Footer meta** — recency, turn count, and any primary action / navigation affordance.
+  - There is no severity word, badge, or icon in the header: severity is carried exclusively by the card border tint (§4.1).
   - The type kicker is the sole carrier of category identity. A tooltip may repeat it, never substitute for it.
   - Each of the seven categories must be distinguishable from the others without relying on glyph shape alone.
 - **Auto-Mark as Read**: Opening/mounting the drawer automatically marks unread notifications as read and clears the unread badge counter.
@@ -345,6 +352,7 @@ When an error occurs during a voice turn, the runtime error boundary must execut
 | **Compaction** | `coordinator.rs` | `SessionCompaction` | `None` | `Warning` | `Receipt` | Title: `"Session #X Compaction Failed"`<br/>Msg: Error description |
 | **Scheduler** | `scheduler.rs` | `MemoryConsolidation`| `None` | `Warning` | `Interactive(ConsolidateMemory)` | Title: `"Memory Consolidation Missed"`<br/>Msg: `"Scheduled daily run missed."` |
 | **Scheduler** | `scheduler.rs` | `MemoryConsolidation`| `None` | `Info` | `Receipt` | Title: `"Memory Consolidated"`<br/>Msg: `"Daily profile updated."` |
+| **Memory Integration** | `ipc/memory.rs` | `MemoryConsolidation`| `None` | `Warning` | `Transient` | Title: `"Memory integration failed"`<br/>Msg: One-line failure reason (capability gate or unparseable model output) |
 
 ---
 

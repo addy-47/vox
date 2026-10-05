@@ -9,10 +9,13 @@ import {
 } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { ApiKeyField, ExpandableList, UnderlineInput } from "@/shared/ui";
+import { SettingsCommitControls } from "@/shared/components/settings/SettingsCommitControls";
 import { ProviderTier } from "./ProviderSelectorView";
 import { RemoteModelsModalView } from "@/shared/components/settings/models/LlmCatalogView";
 import { CloudProvidersModalView } from "@/shared/components/settings/models/CloudProvidersModalView";
 import { useRemoteLlmProbing } from "@/shared/hooks/useRemoteLlmProbing";
+import { useScrollTopOnChange } from "@/shared/hooks/useScrollTopOnChange";
+import { useLenisScrollContainer } from "@/shared/hooks/useLenisScrollContainer";
 
 interface LlmConfigDeskProps {
   activeCategory: "STT" | "LLM" | "TTS";
@@ -114,6 +117,29 @@ export const LlmConfigDesk = memo(({
     [cloudKeys, activeCloudProviderId, draftSettings?.llm?.cloud?.api_key]
   );
 
+  /** Committed (saved) active provider: list order follows this, so selecting
+   * only re-highlights. The reorder (with smooth scroll) lands on save. */
+  const committedSettings = useSettingsStore((s) => s.settings);
+  const committedActiveCloudProviderId = useMemo(() => {
+    const cloudName = (committedSettings?.llm?.cloud?.provider_name || "").toLowerCase();
+    const cloudUrl = committedSettings?.llm?.cloud?.base_url || "";
+    const match = CLOUD_PROVIDERS.find(
+      (p) =>
+        p.id.toLowerCase() === cloudName ||
+        p.name.toLowerCase() === cloudName ||
+        (cloudUrl && p.url && cloudUrl.startsWith(p.url))
+    );
+    return match?.id || "openai";
+  }, [committedSettings?.llm?.cloud?.base_url, committedSettings?.llm?.cloud?.provider_name]);
+
+  const getCommittedProviderKey = useCallback(
+    (providerId: string) =>
+      committedSettings?.llm?.cloud_keys?.[providerId] ||
+      (committedActiveCloudProviderId === providerId ? committedSettings?.llm?.cloud?.api_key : "") ||
+      "",
+    [committedSettings?.llm?.cloud_keys, committedActiveCloudProviderId, committedSettings?.llm?.cloud?.api_key]
+  );
+
   const filteredProviders = useMemo(() => {
     let list = CLOUD_PROVIDERS;
     if (searchQuery.trim()) {
@@ -126,8 +152,8 @@ export const LlmConfigDesk = memo(({
       );
     }
     return [...list].sort((a, b) => {
-      const aKey = Boolean(getProviderKey(a.id)?.trim());
-      const bKey = Boolean(getProviderKey(b.id)?.trim());
+      const aKey = Boolean(getCommittedProviderKey(a.id)?.trim());
+      const bKey = Boolean(getCommittedProviderKey(b.id)?.trim());
 
       // Connected / configured providers appear at top
       if (aKey && !bKey) return -1;
@@ -137,7 +163,19 @@ export const LlmConfigDesk = memo(({
       const cmp = a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
       return sortOrder === "asc" ? cmp : -cmp;
     });
-    }, [searchQuery, sortOrder, getProviderKey]);
+    }, [searchQuery, sortOrder, getCommittedProviderKey]);
+
+  const { containerRef: providerGridRef, lenisRef: providerLenisRef } =
+    useLenisScrollContainer<HTMLDivElement>();
+  // Save-gated reorder glide: fires when a save changes the committed order.
+  const providerOrderFingerprint = useMemo(
+    () =>
+      `${committedActiveCloudProviderId}|${CLOUD_PROVIDERS.map((p) =>
+        getCommittedProviderKey(p.id)?.trim() ? "1" : "0"
+      ).join("")}`,
+    [committedActiveCloudProviderId, getCommittedProviderKey]
+  );
+  useScrollTopOnChange(providerGridRef, providerOrderFingerprint, providerLenisRef);
 
   const url = currentRemoteConfig?.base_url ?? "";
   const apiKey = currentRemoteConfig?.api_key ?? "";
@@ -336,6 +374,9 @@ export const LlmConfigDesk = memo(({
 
   if (!draftSettings) return null;
 
+  /** Inline render helper (NOT a component): defined per-render, so it must be
+   * invoked as a function — rendering as <ProviderSearchField /> would remount
+   * the input (and reset scroll/focus) on every parent render. */
   const ProviderSearchField = ({ autoFocus = false }: { autoFocus?: boolean }) => (
     <div className="flex items-center gap-1.5 w-full min-w-0 border-b border-[rgb(var(--accent))] pb-0.5 animate-fade-in">
       <Search size={12} className="text-[rgb(var(--accent))] shrink-0" />
@@ -365,8 +406,10 @@ export const LlmConfigDesk = memo(({
 
   /** The provider grid. Height-driven so the same element serves both the
    * constrained inline slot and the full-height expand modal. */
+  /** Inline render helper (NOT a component): invoke as {ProviderRows()} so list
+   * DOM (and its scroll offset) survives parent re-renders instead of remounting. */
   const ProviderRows = () => (
-    <div className="h-full overflow-y-auto pr-1 grid grid-cols-1 sm:grid-cols-2 gap-2 content-start custom-scrollbar">
+    <div ref={providerGridRef} className="h-full overflow-y-auto pr-1 grid grid-cols-1 sm:grid-cols-2 gap-2 content-start custom-scrollbar">
       {filteredProviders.length === 0 ? (
         <div className="col-span-full flex flex-col items-center justify-center gap-2 py-10 text-center">
           <p className="text-[12px] font-semibold text-[rgb(var(--foreground))]/80">
@@ -726,12 +769,18 @@ export const LlmConfigDesk = memo(({
             }
             expandLabel={copy.llm.cloud.expandLabel}
             ariaLabel={copy.llm.cloud.expandAriaLabel}
-            headerActions={modalView === "models" ? undefined : (isSearchOpen || searchQuery ? <div className="w-[200px] sm:w-[260px]"><ProviderSearchField /></div> : undefined)}
+            headerActions={
+              <div className="flex items-center gap-2 min-w-0">
+                {modalView === "models" ? null : (isSearchOpen || searchQuery ? <div className="w-[200px] sm:w-[260px]">{ProviderSearchField({})}</div> : null)}
+                <SettingsCommitControls domainId="models" />
+              </div>
+            }
             modalContent={
               modalView === "models" ? (
                 <RemoteModelsModalView
                   remoteModels={remoteModels}
                   selectedModelId={draftSettings?.llm?.cloud?.model}
+                  pinnedModelId={committedSettings?.llm?.cloud?.model}
                   probingMap={probingMap}
                   capabilitiesCache={useSettingsStore.getState().capabilitiesCache}
                   onSelectModel={(modelId) => {
@@ -749,6 +798,8 @@ export const LlmConfigDesk = memo(({
                 <CloudProvidersModalView
                   activeCloudProviderId={activeCloudProviderId}
                   getProviderKey={getProviderKey}
+                  pinnedProviderId={committedActiveCloudProviderId}
+                  getCommittedProviderKey={getCommittedProviderKey}
                   onSelectProvider={handleSelectCloudProvider}
                   editingProviderId={editingProviderId}
                   editingKeyValue={editingKeyValue}
@@ -761,12 +812,12 @@ export const LlmConfigDesk = memo(({
               )
             }
           >
-            <ProviderRows />
+            {ProviderRows()}
           </ExpandableList>
 
           {isSearchOpen && (
             <div className="shrink-0">
-              <ProviderSearchField autoFocus />
+              {ProviderSearchField({ autoFocus: true })}
             </div>
           )}
 

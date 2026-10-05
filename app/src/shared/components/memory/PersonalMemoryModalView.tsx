@@ -290,7 +290,7 @@ export const PersonalMemoryModalView: React.FC<PersonalMemoryModalViewProps> = m
           {activeTab === "memory" && (
             <div className="h-full w-full min-h-0 flex flex-col animate-in fade-in duration-200">
               <PersonalMemoryDossierCard
-                title={MEMORY_COPY.coreDossier}
+                title={MEMORY_COPY.dossierTitle}
                 embedded={true}
                 personalMemory={drawer.personalMemory}
                 displayedRecord={drawer.displayedRecord}

@@ -10,25 +10,7 @@
     "frontendDist": "../dist"
   },
   "app": {
-    "windows": [
-      {
-        "label": "main",
-        "title": "Vox",
-        "maximized": true,
-        "visible": true,
-        "width": 1280,
-        "height": 800,
-        "minWidth": 400,
-        "minHeight": 600,
-        "center": true,
-        "backgroundColor": "#050505",
-        "transparent": false,
-        "decorations": false,
-        "alwaysOnTop": false,
-        "resizable": true,
-        "zoomHotkeysEnabled": false
-      }
-    ],
+    "windows": [],
     "security": {
       "csp": null
     }

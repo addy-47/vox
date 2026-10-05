@@ -14,7 +14,6 @@ import {
   Headphones,
   Cpu,
   Database,
-  AlertTriangle,
   AlertCircle,
   Clock,
   Calendar,
@@ -49,36 +48,71 @@ interface NotificationPanelProps {
 interface CategoryVisual {
   icon: LucideIcon;
   accent: string;
+  action: string;
+  actionWorking: string;
 }
 
+/**
+ * Single source of category colour: the accent-derived `--notif-*` family
+ * (notifications-spec §4.7). Never `--accent` itself. Full literal class
+ * strings so Tailwind's scanner sees every arbitrary value.
+ */
 const CATEGORY_VISUALS: Record<NotificationCategory, CategoryVisual> = {
   session_compaction: {
     icon: Shrink,
-    accent: "text-[rgb(var(--accent))]",
+    accent: "text-[rgb(var(--notif-session-compaction))]",
+    action:
+      "border-[rgba(var(--notif-session-compaction),0.35)] bg-[rgba(var(--notif-session-compaction),0.10)] text-[rgb(var(--notif-session-compaction))] hover:bg-[rgba(var(--notif-session-compaction),0.20)] hover:border-[rgba(var(--notif-session-compaction),0.5)] active:scale-95",
+    actionWorking:
+      "border-[rgba(var(--notif-session-compaction),0.4)] bg-[rgba(var(--notif-session-compaction),0.15)] text-[rgb(var(--notif-session-compaction))] cursor-wait",
   },
   memory_consolidation: {
     icon: Brain,
-    accent: "text-[rgb(var(--violet))]",
+    accent: "text-[rgb(var(--notif-memory-consolidation))]",
+    action:
+      "border-[rgba(var(--notif-memory-consolidation),0.35)] bg-[rgba(var(--notif-memory-consolidation),0.10)] text-[rgb(var(--notif-memory-consolidation))] hover:bg-[rgba(var(--notif-memory-consolidation),0.20)] hover:border-[rgba(var(--notif-memory-consolidation),0.5)] active:scale-95",
+    actionWorking:
+      "border-[rgba(var(--notif-memory-consolidation),0.4)] bg-[rgba(var(--notif-memory-consolidation),0.15)] text-[rgb(var(--notif-memory-consolidation))] cursor-wait",
   },
   pipeline: {
     icon: Activity,
-    accent: "text-[rgb(var(--info))]",
+    accent: "text-[rgb(var(--notif-pipeline))]",
+    action:
+      "border-[rgba(var(--notif-pipeline),0.35)] bg-[rgba(var(--notif-pipeline),0.10)] text-[rgb(var(--notif-pipeline))] hover:bg-[rgba(var(--notif-pipeline),0.20)] hover:border-[rgba(var(--notif-pipeline),0.5)] active:scale-95",
+    actionWorking:
+      "border-[rgba(var(--notif-pipeline),0.4)] bg-[rgba(var(--notif-pipeline),0.15)] text-[rgb(var(--notif-pipeline))] cursor-wait",
   },
   dictation: {
     icon: FileText,
-    accent: "text-[rgb(var(--pink))]",
+    accent: "text-[rgb(var(--notif-dictation))]",
+    action:
+      "border-[rgba(var(--notif-dictation),0.35)] bg-[rgba(var(--notif-dictation),0.10)] text-[rgb(var(--notif-dictation))] hover:bg-[rgba(var(--notif-dictation),0.20)] hover:border-[rgba(var(--notif-dictation),0.5)] active:scale-95",
+    actionWorking:
+      "border-[rgba(var(--notif-dictation),0.4)] bg-[rgba(var(--notif-dictation),0.15)] text-[rgb(var(--notif-dictation))] cursor-wait",
   },
   hardware: {
     icon: Headphones,
-    accent: "text-[rgb(var(--warning))]",
+    accent: "text-[rgb(var(--notif-hardware))]",
+    action:
+      "border-[rgba(var(--notif-hardware),0.35)] bg-[rgba(var(--notif-hardware),0.10)] text-[rgb(var(--notif-hardware))] hover:bg-[rgba(var(--notif-hardware),0.20)] hover:border-[rgba(var(--notif-hardware),0.5)] active:scale-95",
+    actionWorking:
+      "border-[rgba(var(--notif-hardware),0.4)] bg-[rgba(var(--notif-hardware),0.15)] text-[rgb(var(--notif-hardware))] cursor-wait",
   },
   models: {
     icon: Cpu,
-    accent: "text-[rgb(var(--violet))]",
+    accent: "text-[rgb(var(--notif-models))]",
+    action:
+      "border-[rgba(var(--notif-models),0.35)] bg-[rgba(var(--notif-models),0.10)] text-[rgb(var(--notif-models))] hover:bg-[rgba(var(--notif-models),0.20)] hover:border-[rgba(var(--notif-models),0.5)] active:scale-95",
+    actionWorking:
+      "border-[rgba(var(--notif-models),0.4)] bg-[rgba(var(--notif-models),0.15)] text-[rgb(var(--notif-models))] cursor-wait",
   },
   storage: {
     icon: Database,
-    accent: "text-[rgb(var(--success))]",
+    accent: "text-[rgb(var(--notif-storage))]",
+    action:
+      "border-[rgba(var(--notif-storage),0.35)] bg-[rgba(var(--notif-storage),0.10)] text-[rgb(var(--notif-storage))] hover:bg-[rgba(var(--notif-storage),0.20)] hover:border-[rgba(var(--notif-storage),0.5)] active:scale-95",
+    actionWorking:
+      "border-[rgba(var(--notif-storage),0.4)] bg-[rgba(var(--notif-storage),0.15)] text-[rgb(var(--notif-storage))] cursor-wait",
   },
 };
 
@@ -163,18 +197,6 @@ const NotificationItem = memo(
     const isInteractive = notif.action_type === "interactive";
     const message = notif.message.trim();
 
-    const severityWord = isCritical ? (
-      <span className="inline-flex items-center gap-1 text-[rgb(var(--error))]">
-        <AlertCircle size={10} strokeWidth={2.5} />
-        {NOTIFICATION_COPY.severityCritical}
-      </span>
-    ) : isWarning ? (
-      <span className="inline-flex items-center gap-1 text-[rgb(var(--warning))]">
-        <AlertTriangle size={10} strokeWidth={2.5} />
-        {NOTIFICATION_COPY.severityWarning}
-      </span>
-    ) : null;
-
     const { ActionIcon, actionTooltip } = useMemo(() => {
       if (!isInteractive) {
         return { ActionIcon: Shrink, actionTooltip: NOTIFICATION_COPY.compactTooltip };
@@ -211,12 +233,15 @@ const NotificationItem = memo(
           unread
             ? "border-[rgba(var(--accent),0.25)] bg-[rgba(var(--card),0.75)] hover:border-[rgba(var(--accent),0.40)] hover:bg-[rgba(var(--card),0.9)]"
             : "border-[rgba(var(--border),0.1)] bg-[rgba(var(--card),0.4)] hover:border-[rgba(var(--border),0.18)] hover:bg-[rgba(var(--card),0.55)]",
-          isCritical && unread && "border-[rgba(var(--error),0.45)]",
-          isWarning && unread && "border-[rgba(var(--warning),0.4)]",
+          isCritical &&
+            "border-[rgba(var(--error),0.65)] shadow-[0_0_12px_-4px_rgba(var(--error),0.4)]",
+          isWarning &&
+            "border-[rgba(var(--warning),0.55)] shadow-[0_0_12px_-4px_rgba(var(--warning),0.35)]",
           receipt && !unread && "opacity-75 hover:opacity-95"
         )}
       >
-        {/* Kicker: category identity + severity. Unboxed typography per design-spec 5.1. */}
+        {/* Kicker: category identity. Unboxed typography per design-spec 5.1.
+            Severity lives on the card border only (notifications-spec §4.1). */}
         <div className="flex items-center gap-1.5 min-w-0">
           <Tooltip label={blurb} side="top">
             <span className="flex items-center gap-1.5 min-w-0 cursor-help">
@@ -231,17 +256,12 @@ const NotificationItem = memo(
               </span>
             </span>
           </Tooltip>
-          {severityWord && <span className="shrink-0 text-[11px] font-bold uppercase tracking-[0.1em]">|</span>}
-          {severityWord}
           {group.count > 1 && (
             <span className="shrink-0 font-mono tabular-nums text-[11px] text-[rgb(var(--foreground-muted))]/70">
               ×{group.count}
             </span>
           )}
           <div className="flex-1" aria-hidden="true" />
-          {unread && (
-            <span className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--accent))] shrink-0" aria-label={NOTIFICATION_COPY.unread} />
-          )}
           <Tooltip label={NOTIFICATION_COPY.dismiss} side="left">
             <button
               type="button"
@@ -277,7 +297,12 @@ const NotificationItem = memo(
 
           {resolution === "resolved" ? (
             <Tooltip label={NOTIFICATION_COPY.resolvedTooltip} side="top">
-              <span className="flex items-center justify-center w-8 h-8 rounded-md border border-[rgba(var(--accent),0.3)] bg-[rgba(var(--accent),0.08)] text-[rgb(var(--accent))]">
+              <span
+                className={cn(
+                  "flex items-center justify-center w-8 h-8 rounded-md border transition-colors",
+                  visual.action
+                )}
+              >
                 <Check size={13} />
               </span>
             </Tooltip>
@@ -296,9 +321,7 @@ const NotificationItem = memo(
                 aria-label={actionTooltip}
                 className={cn(
                   "flex items-center justify-center w-8 h-8 rounded-md border transition-colors cursor-pointer",
-                  isWorking
-                    ? "border-[rgba(var(--accent),0.4)] bg-[rgba(var(--accent),0.15)] text-[rgb(var(--accent))] cursor-wait"
-                    : "border-[rgba(var(--accent),0.35)] bg-[rgba(var(--accent),0.10)] text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.20)] hover:border-[rgba(var(--accent),0.5)] active:scale-95"
+                  isWorking ? visual.actionWorking : visual.action
                 )}
               >
                 {isWorking ? (

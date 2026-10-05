@@ -1,5 +1,6 @@
 import { memo, useState, useRef, useEffect, useMemo, useCallback, useDeferredValue } from "react";
 import Lenis from "lenis";
+import { useScrollTopOnChange } from "@/shared/hooks/useScrollTopOnChange";
 import { CLOUD_PROVIDERS, type CloudProvider } from "@/data/providersCopy";
 import { INTERACTION_CONFIG_DESK_COPY } from "@/data/settingsCopy";
 import { useSettingsStore } from "@/store/settingsStore";
@@ -173,6 +174,9 @@ CloudProviderCard.displayName = "CloudProviderCard";
 export interface CloudProvidersModalViewProps {
   activeCloudProviderId: string;
   getProviderKey: (id: string) => string | undefined;
+  /** Committed (saved) active provider + key lookup driving list order; selection highlight stays on draft ids. */
+  pinnedProviderId: string | undefined;
+  getCommittedProviderKey: (id: string) => string | undefined;
   onSelectProvider: (provider: CloudProvider) => void;
   editingProviderId: string | null;
   editingKeyValue: string;
@@ -186,6 +190,8 @@ export interface CloudProvidersModalViewProps {
 export const CloudProvidersModalView = memo(({
   activeCloudProviderId,
   getProviderKey,
+  pinnedProviderId,
+  getCommittedProviderKey,
   onSelectProvider,
   editingProviderId,
   editingKeyValue,
@@ -199,6 +205,7 @@ export const CloudProvidersModalView = memo(({
   const deferredSearch = useDeferredValue(modalSearch);
   const [filterCategory, setFilterCategory] = useState<"all" | "configured" | "popular" | "unconfigured">("all");
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const lenisRef = useRef<Lenis | null>(null);
 
   useEffect(() => {
     const el = scrollContainerRef.current;
@@ -212,11 +219,23 @@ export const CloudProvidersModalView = memo(({
       autoRaf: true,
       duration: 0.75,
     });
+    lenisRef.current = lenis;
 
     return () => {
+      lenisRef.current = null;
       lenis.destroy();
     };
   }, []);
+
+  // Save-gated reorder glide: fires when a save changes the committed order.
+  const orderFingerprint = useMemo(
+    () =>
+      `${pinnedProviderId ?? ""}|${CLOUD_PROVIDERS.map((p) =>
+        getCommittedProviderKey(p.id)?.trim() ? "1" : "0"
+      ).join("")}`,
+    [pinnedProviderId, getCommittedProviderKey]
+  );
+  useScrollTopOnChange(scrollContainerRef, orderFingerprint, lenisRef);
 
   const configuredCount = useMemo(() => {
     return CLOUD_PROVIDERS.filter((p) => Boolean(getProviderKey(p.id)?.trim())).length;
@@ -252,13 +271,13 @@ export const CloudProvidersModalView = memo(({
     }
 
     return [...list].sort((a, b) => {
-      const aKey = Boolean(getProviderKey(a.id)?.trim());
-      const bKey = Boolean(getProviderKey(b.id)?.trim());
+      const aKey = Boolean(getCommittedProviderKey(a.id)?.trim());
+      const bKey = Boolean(getCommittedProviderKey(b.id)?.trim());
       if (aKey && !bKey) return -1;
       if (!aKey && bKey) return 1;
       return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
     });
-  }, [deferredSearch, filterCategory, getProviderKey]);
+  }, [deferredSearch, filterCategory, getProviderKey, getCommittedProviderKey]);
 
   return (
     <div className="flex flex-col h-full min-h-0 gap-3">
@@ -376,6 +395,7 @@ CloudProvidersModalView.displayName = "CloudProvidersModalView";
 
 export function useCloudProvidersModalState(options?: { onNavigateToModels?: (provider: CloudProvider) => void }) {
   const draftSettings = useSettingsStore((s) => s.draftSettings);
+  const committedSettings = useSettingsStore((s) => s.settings);
   const updateDraft = useSettingsStore((s) => s.updateDraft);
   const [editingProviderId, setEditingProviderId] = useState<string | null>(null);
   const [editingKeyValue, setEditingKeyValue] = useState<string>("");
@@ -402,6 +422,32 @@ export function useCloudProvidersModalState(options?: { onNavigateToModels?: (pr
       return undefined;
     },
     [draftSettings?.llm?.cloud_keys, draftSettings?.llm?.cloud?.api_key, draftSettings?.llm?.cloud?.provider_name]
+  );
+
+  // Save-gated ordering: the sort follows committed keys so selecting only
+  // re-highlights; the reorder (with smooth scroll) lands on save.
+  const pinnedProviderId = useMemo(() => {
+    const pName = committedSettings?.llm?.cloud?.provider_name;
+    if (!pName) return undefined;
+    const found = CLOUD_PROVIDERS.find((p) => p.name.toLowerCase() === pName.toLowerCase());
+    return found ? found.id : undefined;
+  }, [committedSettings?.llm?.cloud?.provider_name]);
+
+  const getCommittedProviderKey = useCallback(
+    (providerId: string) => {
+      const keys = committedSettings?.llm?.cloud_keys;
+      if (keys && keys[providerId]) return keys[providerId];
+      const target = CLOUD_PROVIDERS.find((p) => p.id === providerId);
+      if (
+        committedSettings?.llm?.cloud?.api_key &&
+        target &&
+        committedSettings.llm.cloud.provider_name?.toLowerCase() === target.name.toLowerCase()
+      ) {
+        return committedSettings.llm.cloud.api_key;
+      }
+      return undefined;
+    },
+    [committedSettings?.llm?.cloud_keys, committedSettings?.llm?.cloud?.api_key, committedSettings?.llm?.cloud?.provider_name]
   );
 
   const handleSelectProvider = useCallback(
@@ -467,6 +513,8 @@ export function useCloudProvidersModalState(options?: { onNavigateToModels?: (pr
   return {
     activeCloudProviderId,
     getProviderKey,
+    pinnedProviderId,
+    getCommittedProviderKey,
     onSelectProvider: handleSelectProvider,
     editingProviderId,
     editingKeyValue,

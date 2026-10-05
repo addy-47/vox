@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { launchEngine, stopEngine } from '@/services/pipelineService';
 import { onTranscriptPartial, onTranscriptFinal, onTelemetry } from '@/services/eventsService';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Check, Activity, X, MessageSquare, Sparkles } from 'lucide-react';
+import { Check, Activity, X, MessageSquare, Hourglass } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
 
 import { WizardHeader } from '../components/WizardHeader';
@@ -13,6 +13,34 @@ interface Props {
   onNext: () => void;
   onBack: () => void;
 }
+
+/**
+ * Isolated, memoized waveform strip: re-renders on energy ticks without
+ * touching the transcript or status cards, and drives the bars with
+ * `scaleY` (compositor-only) instead of layout-triggering `height`.
+ */
+const WaveformBars = React.memo(({ energy }: { energy: number }) => (
+  <div className="flex items-center gap-1.5 h-8">
+    {/* Array of sleek vertical wave bars responding to energy */}
+    {Array.from({ length: 15 }).map((_, i) => {
+      const centerDist = Math.abs(i - 7);
+      const multiplier = Math.max(0.15, 1 - centerDist * 0.12);
+      const heightPercent = energy > 2 ? Math.min(100, Math.max(12, energy * 3.5 * multiplier)) : 12;
+
+      return (
+        <div
+          key={i}
+          className={cn(
+            "w-1 h-full rounded-full origin-center transition-colors duration-300 transform-gpu",
+            energy > 2 ? "bg-[rgb(var(--accent))] shadow-[0_0_10px_rgba(var(--accent),0.5)]" : "bg-[rgba(var(--foreground),0.1)]"
+          )}
+          style={{ transform: `scaleY(${heightPercent / 100})` }}
+        />
+      );
+    })}
+  </div>
+));
+WaveformBars.displayName = "WaveformBars";
 
 export const LiveTestStep: React.FC<Props> = ({ onNext, onBack }) => {
   const [transcript, setTranscript] = useState('');
@@ -112,31 +140,11 @@ export const LiveTestStep: React.FC<Props> = ({ onNext, onBack }) => {
               </div>
           ) : (
               <div className="flex flex-col items-center justify-center w-full h-full relative z-10">
-                  <div className="flex items-center gap-1.5 h-8">
-                    {/* Array of sleek vertical wave bars responding to energy */}
-                    {Array.from({ length: 15 }).map((_, i) => {
-                      const centerDist = Math.abs(i - 7);
-                      const multiplier = Math.max(0.15, 1 - centerDist * 0.12);
-                      const heightPercent = energy > 2 ? Math.min(100, Math.max(12, energy * 3.5 * multiplier)) : 12;
-                      
-                      return (
-                        <motion.div
-                          key={i}
-                          animate={{ height: `${heightPercent}%` }}
-                          transition={{ type: "spring", stiffness: 350, damping: 25 }}
-                          className={cn(
-                            "w-1 rounded-full transition-colors duration-300",
-                            energy > 2 ? "bg-[rgb(var(--accent))] shadow-[0_0_10px_rgba(var(--accent),0.5)]" : "bg-[rgba(var(--foreground),0.1)]"
-                          )}
-                          style={{ minHeight: "3px" }}
-                        />
-                      );
-                    })}
-                  </div>
+                   <WaveformBars energy={energy} />
                   
-                  <span className="text-[12px] font-black text-[rgb(var(--foreground-muted))]/50 uppercase tracking-[0.3em] mt-4">
-                    {isEngineReady ? (energy > 2 ? "Voice detected" : "Waiting for your voice") : "Starting the voice engine"}
-                  </span>
+                   <span className="text-[12px] font-black text-[rgb(var(--foreground-muted))]/50 uppercase tracking-[0.3em] mt-4">
+                     {isEngineReady ? (energy > 2 ? LIVE_TEST_COPY.voiceDetected : LIVE_TEST_COPY.waitingForVoice) : LIVE_TEST_COPY.engineStarting}
+                   </span>
               </div>
           )}
         </div>
@@ -180,7 +188,7 @@ export const LiveTestStep: React.FC<Props> = ({ onNext, onBack }) => {
                             animate={{ opacity: 1 }}
                             className="text-[rgb(var(--foreground-muted))]/60 italic font-medium text-sm"
                         >
-                            {isEngineReady ? "Speak now — your words will appear here." : "Starting local voice models..."}
+                            {isEngineReady ? LIVE_TEST_COPY.speakNow : LIVE_TEST_COPY.startingModels}
                         </motion.p>
                     )}
                 </AnimatePresence>
@@ -208,7 +216,7 @@ export const LiveTestStep: React.FC<Props> = ({ onNext, onBack }) => {
                     "w-8 h-8 rounded-lg flex items-center justify-center transition-all duration-300 shrink-0",
                     testComplete ? "bg-emerald-500/10 text-emerald-400 scale-105" : "bg-[rgba(var(--foreground),0.05)] text-[rgb(var(--foreground-muted))]/60"
                 )}>
-                    {testComplete ? <Check className="w-4 h-4" /> : <Sparkles className="w-4 h-4 animate-pulse" />}
+                    {testComplete ? <Check className="w-4 h-4" /> : <Hourglass className="w-4 h-4 animate-pulse" />}
                 </div>
                 <div className="flex flex-col min-w-0">
                     <span className="text-[11px] font-bold text-[rgb(var(--foreground-muted))]/70 uppercase tracking-widest truncate">{LIVE_TEST_COPY.demoHint}</span>

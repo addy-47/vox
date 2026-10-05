@@ -61,6 +61,15 @@ colors:
   pink-dark: '#be185d'
   muted: '#64748b'
   muted-soft: '#94a3b8'
+  # ── Notification category tokens (derived from accent at runtime;
+  #    dark-theme defaults shown — notifications-spec §4.7) ──────
+  notif-session-compaction: '#4d88f9'
+  notif-memory-consolidation: '#8f4df9'
+  notif-pipeline: '#f94de8'
+  notif-dictation: '#f94d76'
+  notif-hardware: '#f9954d'
+  notif-models: '#cdf94d'
+  notif-storage: '#4df973'
   # ── Neutral & glass ────────────────────────────────────
   white: '#ffffff'
   black: '#000000'
@@ -189,6 +198,16 @@ Used for live status/telemetry only (memory health, model state, ingestion resul
 - **Info** `#38bdf8` · **Info deep** `#0369a1`
 - **Violet** `#a78bfa` / `#7c3aed` · **Pink** `#f472b6` / `#be185d`
 - **Muted** `#64748b` / `#94a3b8`
+
+### Notification category tokens
+
+`--notif-<category>` (one per closed notification category) is **derived at runtime** from the
+live `--accent` HSL base via harmonic hue rotation — the same mechanism as the memory legend
+palette — and recomputed on every theme/accent write so it flips with the rest of the token set.
+`index.css` declares static dark/light defaults (`#4d88f9`, `#8f4df9`, `#f94de8`, `#f94d76`,
+`#f9954d`, `#cdf94d`, `#4df973` for the default cyan accent). No category token may ever equal
+`--accent`; the card kicker and its primary action button are the only surfaces they colour
+(notifications-spec §4.7).
 
 ### Rules
 
@@ -501,8 +520,8 @@ Vox uses one overlay grammar across the shipped interface:
 ### Tier 2 & Tier 2b surfaces
 
 - **History detail** — `DetailPanel` inside a bottom `Drawer` on wide orbit viewports (`> 1024px`). On list/compact viewports (`< 1024px`), clicking a session performs an **in-place page drill-down**: the session list transitions in-place into the full-width session transcript view with a top breadcrumb (`← All Sessions`), timestamp, turn count, and actions. Pressing `Escape` or clicking `← All Sessions` returns immediately to the preserved list view without clumsy overlay drawers.
-- **Personal Memory Compact Modal (Tier 2b)** — On viewports `< 1024px`, Personal Memory renders as a unified single-entity modal (no nested card-inside-a-card borders or double headers). Features an integrated top masthead with actions (Copy, Regenerate, Consolidate) and underline tabs (`Memory`, `Observations`, `Staging`). The workspace below forms one cohesive surface with distinct inner section headers (`Core Dossier`, `Observations`, `Staging`), synchronized 32px icon badges, and status filter parity. Actions affecting persistent memory auto-redirect to `Memory` for instant feedback.
-- **Expanded List Modal (Tier 2b)** — When dense, compact inline card lists (`ExpandableList` in settings, catalogs, providers) are expanded into full modals (`w-[min(920px,94vw)] h-[min(720px,88vh)]`), they must not render squished compact rows in a large void. Instead, they transition into a spacious, tailored UI: an integrated toolbar with real-time search and filter chips, multi-column responsive cards (`grid-cols-1 md:grid-cols-2 lg:grid-cols-3`), and directly visible telemetry (speed/TPS, context window, VRAM footprint, capability badges) with zero reliance on hover-only tooltips.
+- **Personal Memory Compact Modal (Tier 2b)** — On viewports `< 1024px`, Personal Memory renders as a unified single-entity modal (no nested card-inside-a-card borders or double headers). Features an integrated top masthead with actions (Copy, Regenerate, Consolidate) and underline tabs (`Memory`, `Observations`, `Staging`). The workspace below forms one cohesive surface with distinct inner section headers (`About You`, `Observations`, `Staging`), synchronized 32px icon badges, and status filter parity. Actions affecting persistent memory auto-redirect to `Memory` for instant feedback.
+- **Expanded List Modal (Tier 2b)** — When dense, compact inline card lists (`ExpandableList` in settings, catalogs, providers) are expanded into full modals (`w-[min(920px,94vw)] h-[min(720px,88vh)]`), they must not render squished compact rows in a large void. Instead, they transition into a spacious, tailored UI: an integrated toolbar with real-time search and filter chips, multi-column responsive cards (`grid-cols-1 md:grid-cols-2 lg:grid-cols-3`), and directly visible telemetry (speed/TPS, context window, VRAM footprint, capability badges) with zero reliance on hover-only tooltips. The modal header hosts domain commit controls only for states needing action or status (missing credential, apply-restart, saved/restarting/failed), using the same logic as the card footer, while any open modal suppresses the background card footer. Routine hot-save changes show no intermediate Save/Cancel and resolve directly to the saved state. List order follows committed (saved) state only: selecting re-highlights immediately but re-sorts on save, gliding the list to top with a smooth scroll.
 - **Memory pipeline** — horizontal, left-to-right stage flow inside a global drawer.
 - **Memory profiler** — converted from a route to a global bottom drawer (`ProfilerDrawer`).
 

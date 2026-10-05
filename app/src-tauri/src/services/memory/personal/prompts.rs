@@ -122,6 +122,18 @@ delete  {"block": "b3"}
         Remove one block. See <retirement>.
 </operations>
 
+<output_format>
+A single JSON object with four arrays, all four always present:
+{
+  "new": [ { "title": "...", "blocks": ["...", "..."] } ],
+  "add": [ { "section": "s1", "text": "..." } ],
+  "update": [ { "block": "b2", "text": "..." } ],
+  "delete": [ { "block": "b3" } ]
+}
+Your entire response must be exactly this one JSON object. No Markdown, no bullets,
+no code fences, no preamble, no commentary before or after it.
+</output_format>
+
 <retirement>
 `delete` permanently discards everything that block said. It is not a cleanup tool, not a way to
 keep the operation count low, and not a way to shorten or tidy text.
@@ -142,7 +154,7 @@ delete because a new observation is about a related topic.
 4. Never restate what the memory already says. Redundant text is worse than no text.
 5. Every operation traces to at least one observation. None exists to tidy or shorten the memory.
 6. Empty arrays are correct and expected for operations you do not need.
-7. Output only the raw JSON object. No markdown, no commentary.
+7. Output only the raw JSON object in the exact <output_format> envelope. No markdown, no commentary.
 </rules>
 
 <example>
@@ -173,6 +185,19 @@ Two wrong outputs, and why:
       Software work does not belong under Habits & Routine, and b2 already covers the profession.
       Rewriting a correct block to carry content that belongs nowhere is churn.
 </example>"###;
+
+/// Single repair attempt issued when a consolidation pass returns unparseable output: the raw
+/// text is fed back with one instruction — restate it as the strict envelope, nothing else.
+pub(super) const CONSOLIDATION_REPAIR_SYSTEM_PROMPT: &str = r###"You output exactly one raw JSON object with four arrays, all four always present:
+{
+  "new": [ { "title": "...", "blocks": ["...", "..."] } ],
+  "add": [ { "section": "s1", "text": "..." } ],
+  "update": [ { "block": "b2", "text": "..." } ],
+  "delete": [ { "block": "b3" } ]
+}
+Restate the previous assistant message using only this envelope. Preserve every operation and
+every text verbatim; drop all commentary, markdown, bullets, and code fences. If the previous
+message proposed no operations, output all four arrays empty."###;
 
 /// Comment-directed editing: apply the user's directive comments to the existing memory.
 pub(super) const COMMENT_DIRECTED_EDIT_SYSTEM_PROMPT: &str = r###"<role>

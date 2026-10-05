@@ -25,6 +25,7 @@
  */
 
 import { hexToRgb } from "@/shared/lib/utils";
+import { applyNotificationCategoryTokens } from "./notificationCategoryTokens";
 import { beginFlipTrace, endFlipTrace, traceFlipTargets } from "./trace";
 
 /**
@@ -45,6 +46,9 @@ const FLIP_TOKEN_KEYS = [
   "warning", "warning-dark", "warn-soft", "info", "info-dark", "violet",
   "violet-dark", "pink", "muted", "muted-soft",
   "shadow-color", "shadow-alpha", "highlight-color", "highlight-alpha",
+  // Accent-derived notification category family (notifications-spec §4.7)
+  "notif-session-compaction", "notif-memory-consolidation", "notif-pipeline",
+  "notif-dictation", "notif-hardware", "notif-models", "notif-storage",
 ];
 
 type TokenValue =
@@ -267,6 +271,10 @@ function writeThemeToDom(appearance: ThemeAppearance) {
   const root = document.documentElement;
   root.setAttribute("data-theme", appearance.theme);
   root.style.setProperty("--accent", hexToRgb(appearance.accent_seed));
+  applyNotificationCategoryTokens(
+    hexToRgb(appearance.accent_seed),
+    appearance.theme === "light"
+  );
   if (appearance.theme === "light") {
     root.classList.add("light");
     root.classList.remove("dark");

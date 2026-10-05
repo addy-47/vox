@@ -1,9 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { launchEngine, stopEngine } from '@/services/pipelineService';
 import { listInputDevices, getSettings, updateSetting, type AudioDevice } from '@/services/settingsService';
 import { onTelemetry } from '@/services/eventsService';
 import { motion } from 'framer-motion';
-import { Mic, Check, Volume2, Activity } from 'lucide-react';
+import { Mic, Check, AudioWaveform, Activity } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
 
 import { WizardHeader } from '../components/WizardHeader';
@@ -14,6 +14,30 @@ interface Props {
   onNext: () => void;
   onBack: () => void;
 }
+
+/** Memoized so the 60ms energy meter ticks never re-render the device list. */
+const DeviceRow = React.memo(({ name, selected, onSelect }: {
+  name: string;
+  selected: boolean;
+  onSelect: (name: string) => void;
+}) => (
+  <button
+    onClick={() => onSelect(name)}
+    className={cn(
+      "w-full p-4 rounded-xl transition-all text-left flex items-center justify-between group",
+      selected
+        ? "glass text-[rgb(var(--foreground))]"
+        : "glass text-[rgb(var(--foreground-muted))]"
+    )}
+  >
+    <div className="flex items-center gap-3">
+      <Mic className={cn("w-4 h-4 transition-colors", selected ? "text-[rgb(var(--accent))]" : "text-[rgb(var(--foreground-muted))]/40")} />
+      <span className="text-[12px] font-bold truncate max-w-[280px] uppercase tracking-tight">{name}</span>
+    </div>
+    {selected && <Check className="w-4 h-4 text-[rgb(var(--accent))]" />}
+  </button>
+));
+DeviceRow.displayName = "DeviceRow";
 
 export const AudioSetupStep: React.FC<Props> = ({ onNext, onBack }) => {
   const [devices, setDevices] = useState<AudioDevice[]>([]);
@@ -77,7 +101,7 @@ export const AudioSetupStep: React.FC<Props> = ({ onNext, onBack }) => {
     };
   }, []);
 
-  const handleSelect = async (name: string) => {
+  const handleSelect = useCallback(async (name: string) => {
     setSelected(name);
     try {
       await updateSetting('audio', 'input_device', name);
@@ -87,7 +111,7 @@ export const AudioSetupStep: React.FC<Props> = ({ onNext, onBack }) => {
     } catch (e) {
       console.error('Failed to update audio device', e);
     }
-  };
+  }, []);
 
   return (
     <div className="flex flex-col h-full relative">
@@ -117,7 +141,7 @@ export const AudioSetupStep: React.FC<Props> = ({ onNext, onBack }) => {
                     ? "bg-[rgb(var(--accent))]/10 border-[rgb(var(--accent))]/20 text-[rgb(var(--accent))] shadow-[0_0_20px_rgba(var(--accent),0.15)]" 
                     : "bg-[rgba(var(--foreground),0.05)] border-transparent text-[rgb(var(--foreground-muted))]/50"
                 )}>
-                  <Mic className="w-7 h-7" />
+                  <AudioWaveform className="w-7 h-7" />
                 </div>
             </div>
     
@@ -143,22 +167,12 @@ export const AudioSetupStep: React.FC<Props> = ({ onNext, onBack }) => {
             <span className="text-[12px] font-bold text-[rgb(var(--foreground-muted))]/70 uppercase tracking-widest px-1">{AUDIO_SETUP_COPY.listTitle}</span>
             <div className="space-y-2">
             {devices.map(device => (
-                <button
-                key={device.name}
-                onClick={() => handleSelect(device.name)}
-                className={cn(
-                    "w-full p-4 rounded-xl transition-all text-left flex items-center justify-between group",
-                    selected === device.name 
-                    ? "glass text-[rgb(var(--foreground))]" 
-                    : "glass text-[rgb(var(--foreground-muted))]"
-                )}
-                >
-                <div className="flex items-center gap-3">
-                    <Volume2 className={cn("w-4 h-4 transition-colors", selected === device.name ? "text-[rgb(var(--accent))]" : "text-[rgb(var(--foreground-muted))]/40")} />
-                    <span className="text-[12px] font-bold truncate max-w-[280px] uppercase tracking-tight">{device.name}</span>
-                </div>
-                {selected === device.name && <Check className="w-4 h-4 text-[rgb(var(--accent))]" />}
-                </button>
+                <DeviceRow
+                  key={device.name}
+                  name={device.name}
+                  selected={selected === device.name}
+                  onSelect={handleSelect}
+                />
             ))}
             {devices.length === 0 && (
                 <div className="p-8 text-center border border-dashed border-[rgba(var(--border),0.08)] rounded-xl glass">

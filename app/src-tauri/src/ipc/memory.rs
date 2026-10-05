@@ -5,14 +5,14 @@ use tauri::{AppHandle, State};
 use crate::{
     core::{
         error::VoxIpcError,
-        events::{emit_ipc, IpcEvent},
+        events::{emit_ipc, IpcEvent, Severity},
         state::AppState,
     },
     persistence::{
         fetch_all_observations, fetch_pending_queue_observations, list_personal_memory_versions,
         personal_memory::get_personal_memory as db_get_personal_memory,
         set_active_personal_memory_version as db_set_active_version, ObservationRecord,
-        PersonalMemoryRecord, RevisionDecision,
+        PersonalMemoryRecord, RevisionDecision, VoxDb,
     },
     services::{
         llm::{
@@ -27,6 +27,7 @@ use crate::{
             save_personal_memory_from_markdown, ConsolidateOutcome, ConsolidationRequest,
             MemoryRevisionError, MemoryRevisionView,
         },
+        notifications::{notify, Action, NotificationCategory, NotificationParams},
     },
     utils::paths,
 };
@@ -101,7 +102,7 @@ pub async fn consolidate_personal_memory(
         log::error!("[IPC::Memory] Database connection error: {}", e);
         VoxIpcError::Database(e.to_string())
     })?;
-    let outcome = service_consolidate_personal_memory(ConsolidationRequest {
+    let outcome = match service_consolidate_personal_memory(ConsolidationRequest {
         conn: &conn,
         llm_provider: provider.as_ref(),
         comments,
@@ -111,10 +112,14 @@ pub async fn consolidate_personal_memory(
         forced: forced.unwrap_or(false),
     })
     .await
-    .map_err(|e| {
-        log::error!("[IPC::Memory] consolidate_personal_memory failed: {}", e);
-        VoxIpcError::Engine(e.to_string())
-    })?;
+    {
+        Ok(outcome) => outcome,
+        Err(e) => {
+            log::error!("[IPC::Memory] consolidate_personal_memory failed: {}", e);
+            notify_consolidation_failure(&app, &state.db, &e.to_string()).await;
+            return Err(VoxIpcError::Engine(e.to_string()));
+        }
+    };
 
     if let ConsolidateOutcome::Completed { record } = &outcome {
         if let Err(e) = emit_ipc(&app, IpcEvent::PersonalMemoryUpdated(record.clone())) {
@@ -122,6 +127,36 @@ pub async fn consolidate_personal_memory(
         }
     }
     Ok(outcome)
+}
+
+/// Fires a Transient toast for a consolidation failure; toast delivery itself never fails the IPC error.
+async fn notify_consolidation_failure(app: &AppHandle, db: &VoxDb, reason: &str) {
+    let one_line: String = reason.split_whitespace().collect::<Vec<_>>().join(" ");
+    let trimmed: String = one_line.chars().take(180).collect();
+    let message = format!("Memory integration failed: {}", trimmed);
+    if let Err(e) = notify(
+        app,
+        db,
+        NotificationParams {
+            group_key: Some("memory_integration:failure"),
+            category: NotificationCategory::MemoryConsolidation,
+            severity: Severity::Warning,
+            impact: None,
+            action: Action::Transient,
+            title: "Memory integration failed",
+            message: &message,
+            session_id: None,
+            metadata: None,
+            duration_ms: None,
+        },
+    )
+    .await
+    {
+        log::warn!(
+            "[IPC::Memory] Failed to dispatch consolidation failure toast: {}",
+            e
+        );
+    }
 }
 
 /// Retrieves all historical versions of Personal Memory, each rendered as Markdown.

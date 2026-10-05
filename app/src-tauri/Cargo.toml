@@ -43,7 +43,10 @@ ort = { version = "2.0.0-rc.13", features = ["download-binaries", "ndarray"] }  
 ndarray = "0.17.2"                                                                            # N-dimensional array processing for ONNX tensors
 chatterbox-rs = { git = "https://github.com/addy-47/chatterbox-rs.git", rev = "2fa6883", default-features = false } # Local voice cloning TTS
 query-sieve = { git = "https://github.com/addy-47/query-sieve-rs.git" }                       # ModernBERT intent classifier
-nexus = { package = "nexuss", version = "0.1.1" } # Local multi-engine web search, DOM extraction, and RRF hybrid ranking
+# TEMPORARY path dep per web-search-production-hardening.md §11.3 (local-path rule).
+# Reverts to `version = "0.1.2"` at the single-publish gate. Fork == crates.io 0.1.1
+# plus the N0/P1 char-boundary fix only (cleaner.rs `floor_char_boundary`).
+nexus = { package = "nexuss", path = "../../submodules/nexus-rs" } # Local multi-engine web search, DOM extraction, and RRF hybrid ranking
 tokenizers = { version = "0.21.0", default-features = false, features = ["fancy-regex"] }    # HuggingFace tokenizers (BPE / WordPiece)
 tiktoken-rs = "0.6.0"                                                                         # OpenAI BPE tokenizer for context budgeting
 

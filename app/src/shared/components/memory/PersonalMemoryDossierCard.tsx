@@ -88,7 +88,7 @@ export const PersonalMemoryDossierCard: React.FC<PersonalMemoryDossierCardProps>
     };
   }, [drawerOpen, drawerBodyReady, dossierContainerRef]);
 
-  const displayTitle = title ?? (embedded ? MEMORY_COPY.coreDossier : MEMORY_COPY.personalMemory);
+  const displayTitle = title ?? MEMORY_COPY.dossierTitle;
 
   return (
     <div
