@@ -72,7 +72,7 @@ The tool is governed by four system axioms:
 
 ### 3.2 Authority Model
 - **Model Owns**: Search query formulation, temporal recency filter, preference for retrieval ranking algorithm (`sparse` / `dense` / `hybrid`), requested passage target count (`max_passages`), and the interim speech filler.
-- **Harness & Settings Own**: Engine fanout subset (DuckDuckGo, Bing, Yahoo, Mojeek), HTTP client configuration, network timeouts, SSRF policy, DNS pinning, page download byte limits, chunk sizing, and the live context token ceiling.
+- **Harness & Settings Own**: Engine fanout subset (DuckDuckGo, Bing, Yahoo — Mojeek and GoogleWml removed per G3 baseline evidence: CAPTCHA wall + HTTP 403 on every query, ~40% of fanout budget burned for zero results), HTTP client configuration, network timeouts, SSRF policy, DNS pinning, page download byte limits, chunk sizing, and the live context token ceiling.
 
 ---
 
@@ -128,6 +128,8 @@ The tool runtime decouples retrieval into three distinct operational phases:
    - Recovers malformed HTML trees via DOM parsing.
    - Strips non-content selectors (`head`, `script`, `style`, `svg`, `nav`, `header`, `footer`, `aside`, `form`, cookie modals).
    - Converts clean DOM nodes to formatted Markdown using `html-to-markdown-rs`.
+   - **Code-like passage rejection (P0-3):** any extracted block whose text is dominated by source code (brace/`;` density, camelCase identifier density, minified-JS shape) is dropped before chunking. Rationale: G3 delivered 22,540 + 41,930 chars of page JavaScript as evidence.
+   - **Challenge/error page rejection (P0-4):** pages whose title or body matches bot-challenge markers ("request has been blocked", "automated process", CAPTCHA interstitials) or HTTP error shells are rejected before they can become a `<source>`, regardless of score.
 
 ### 4.2 Stage 2: Passage Chunking & Full Corpus Ranking
 1. **Deterministic Passage Chunking**:
@@ -136,10 +138,15 @@ The tool runtime decouples retrieval into three distinct operational phases:
    - Passages maintain metadata: `source_url`, `source_title`, `passage_index`.
 2. **Relevance Scoring**:
    - **`sparse`**: Computes BM25 score of each passage against the user's `query`.
-   - **`dense`**: Encodes `query` and passages into normalized dense vectors using the local ONNX embedding model (`all-MiniLM-L6-v2`) and computes cosine similarities.
+   - **`dense`**: Encodes `query` and passages into normalized dense vectors using the local ONNX embedding model (`minilm-l12-v2`, 384-dim — corrects the previously documented `all-MiniLM-L6-v2`) and computes cosine similarities.
    - **`hybrid`**: Evaluates both BM25 and dense cosine similarity, merging rankings via Reciprocal Rank Fusion:
      $$\text{RRF\_Score}(p) = \frac{1}{60 + \text{rank}_{\text{bm25}}(p)} + \frac{1}{60 + \text{rank}_{\text{dense}}(p)}$$
+   - **Relevance floor (P0-8):** passages below a minimum fused-score threshold are rejected rather than delivered. A score that cannot discriminate central-bank data from hotel JavaScript (G3: all 103 passages in [0.030, 0.033]) must not gate delivery.
 3. **Corpus Retention**: The entire ranked sequence of passages (`Vec<ScoredPassage>`) is preserved in memory during the execution turn.
+4. **Source Quality Gates (P0-5)** — applied at candidate selection, before fetch slots are spent:
+   - **Language match:** candidate pages whose detected language contradicts the query language (e.g. `?hl=ru` for an English query) are deprioritized below any same-language candidate.
+   - **Domain intent:** when the query names a community or property (e.g. "reddit discussion"), candidates on the matching apex/community domain outrank same-brand corporate properties (`reddit.com` over `redditinc.com`).
+   - **Entity anchoring:** when the query contains a quoted or version-shaped identifier (e.g. `"all-MiniLM-L6-v2"`), candidates must contain that identifier verbatim before a fetch slot is spent on them.
 
 ### 4.3 Stage 3: Context-Bounded Evidence Delivery
 1. **Dynamic Token Ceiling Calculation**:
@@ -151,6 +158,11 @@ The tool runtime decouples retrieval into three distinct operational phases:
 2. **Clamped Top-K Selection**:
    $$\text{effective\_k} = \min\left(\text{max\_passages}, \left\lfloor\frac{\text{token\_ceiling}}{\text{average\_passage\_tokens}}\right\rfloor, \|\text{scored\_passages}\|\right)$$
 3. **Selection**: The top `effective_k` passages are extracted and serialized into the turn observation.
+4. **Length enforcement (P0-2)** — the count budget above assumes ~250 tokens/passage and never measures length (G3: one rank-1 passage was 30,076 chars ≈ 122× the assumption; 9/24 observations exceeded the 2000-token ceiling). Therefore:
+   - Each delivered passage is hard-capped at a maximum character length (truncated at a word boundary, marked with an ellipsis).
+   - The assembled `<web_search_evidence>` string is hard-clamped to the token ceiling's character equivalent; overflow passages are dropped lowest-rank-first, never mid-passage.
+   - **Pre-flight assertion:** before the observation enters the scratchpad, `est_tokens(observation) + est_tokens(tools) + est_tokens(system) < context_window` must hold. Violation is a turn error, never a silent 400-class rejection downstream (`ent_01` reached ≥11,538 tokens against an 8192 window and was scored `ok`).
+5. **Spoken-output sanitization (P0-6):** passage text is stripped of Markdown link syntax (`[text](url)` → `text`), decoded from HTML entities exactly once (`&apos;` → `'`, `&gt;` → `>`), and fenced-code blocks plus flattened table skeletons are dropped. Rationale: the observation is vocalized; `[Skip to main content](#content)` and `\u002D` are unspeakable.
 
 ---
 

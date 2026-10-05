@@ -939,6 +939,15 @@ G0  orphan files deleted, full clippy green (Vox, mechanical)
 **Local-path rule.** From the first nexus-rs code change until the publish gate, Vox builds
 against the fork, not crates.io:
 
+> **DEVIATION RECORDED 2026-10-04.** The G3 batch panicked on case 1 before any nexus-rs
+> work began: a PDF served as a search result hit P1 (`cleaner.rs:29`, byte index 65536
+> inside a multi-byte char — process abort, exit 101). A baseline that crashes on
+> real-world input measures nothing, so the path switch + the single N0/P1 fix
+> (`floor_char_boundary`, behavior-preserving) moved *ahead* of G3. The fork is
+> byte-identical to crates.io 0.1.1 plus that one fix; all other N0–N4 work still follows
+> G3. Required regression test (testing-subagent owned): non-ASCII input >64 KB must not
+> panic `fast_scan_tag`.
+
 ```toml
 # app/src-tauri/Cargo.toml — TEMPORARY, dev/eval only. Reverted at the publish gate.
 nexus = { package = "nexuss", path = "../../submodules/nexus-rs" }
@@ -987,3 +996,74 @@ network- or model-shaped input.
    sessions invalidate latency comparisons. Ablations are separate processes.
 6. **No eval runs without the baseline gate.** G3 runs 1 case first; the 24-case batch only
    after the single case's artifacts are inspected and sane.
+
+### 11.6 Round-2 results: fixes landed, QA swept all 24 (2026-10-04)
+
+**Batch:** `evals/results/agentic-tool/20261004_183456_a5512497` — 24/24 ok, **23/24
+retrieval_ok**, 127.2s, mean tool 2537ms, 0 timeouts. Built on the path dep with D7 + P0-2/3/4/5/6/8.
+**QA:** 4 native subagents × 6 cases = all 24 queries audited, each with own-search-first ground
+truth. Reports: `qa_report_full_A/B/C/D.md` (plus round-1 `qa_report.md`, `qa_report_native.md`).
+
+**What the fixes achieved (measured):** `cmp_03` (was 23KB Russian YouTube JS → 5 passages,
+6389B), `ent_01` (was 42KB hotel JS → 5 passages, 5844B, exact 384/256 delivered),
+`long_01` (was 0 passages → 3 passages), `wall_02` (was redditinc → 5 passages). No observation
+exceeds ~6KB (P0-2 clamp holds). Filler overruns negative everywhere except +31/+2/+74ms edges.
+49/49 new nexus-rs tests green (testing-subagent authored, `tests/page_quality_gates_test.rs` +
+`tests/cleaner_ranking_gates_test.rs`).
+
+**What QA proved still broken (binds the next work — supersedes optimistic readings above):**
+
+| # | Finding | Status |
+|---|---|---|
+| R2-1 | `retrieval_ok` is a false-positive machine: `news_04` (EU-Wikipedia for ECB), `ent_04` (google.com nav), `long_01` (Blogger nav ×3 locales), `cmp_01` (medical burns for ML frameworks), `tech_05` (w3schools nav) all `retrieval_ok=true` with zero answer content | MUST redefine on query-entity coverage of the body, then recompute the batch |
+| R2-2 | Doubled `<web_search_evidence>` envelope open tag in 6/6 (malformed XML to the model); `ent_03` outer/inner counts disagree | MUST fix seam to single envelope, counts from delivered |
+| R2-3 | `fanout_ms` = 1200–1202 in 22/24 then ~1201 constantly — the deadline floor, exhausted every call; corroboration truncated before collection | D7 helped (no more 539–830ms waste) but single-sourcing persists: 4th family (Brave, N2) still required |
+| R2-4 | `score=0.000` passages delivered (`cmp_02` rank 5, `ent_02`/`ent_04` tails); dual-1.000 ties make order arbitrary | MUST filter `score ≤ ε` + deterministic tie-break (P0-8 follow-up) |
+| R2-5 | Byte-identical + near-duplicate passages delivered as distinct (`ent_04` rank1==rank2; wall_01 benchmark table; wall_03 Reference rules) | MUST add post-extraction text-sim dedup (`url_dedup` is URL-level, pre-extraction) |
+| R2-6 | Modality substitution: S2S asked, TTS delivered (`wall_02`); product substitution (`wall_01` model page for product query); sense substitution (`cmp_01` burns) | MUST add query→expected-entity-class check with mismatch penalty; abstain-or-clarify path for disjoint-domain tops |
+| R2-7 | Staleness: 2023 GPT-4 page dominant for "this week" (`news_03`); no recency demotion under `time_filter=any` | MUST default news-ish queries to week/month or add recency boost |
+| R2-8 | Index pages preferred over fact pages (tavily homepage over /pricing; w3schools index over reference) | MUST skip nav-listing blocks / downrank them |
+| R2-9 | `audio_summary.json` totals (193090 samples) disagree with clip sums (163043) in 6/6; `render_log.duration_ms` is synthesis wall, not audio length | MUST fix accounting; field already documented, values still wrong |
+| R2-10 | `pipeline_events.json` holds only `PlaybackStarted`+`LlmFinished` — Q10 unverifiable | MUST emit Thinking/Working or amend the prompt (E4 partial: glob fixed, emitter not) |
+| R2-11 | `max_tokens: 120` raised to 2000 in eval settings; mock final answer realistic-length but still canned — answer path exercised for length, not groundedness | Accepted limitation, recorded |
+| R2-12 | Digit-stripper (P0-7): NOT a filter — static HTML contains `<span class="purecounter" …>0</span>M+`; numbers are JS-animated. No code fix; browser tier remains out of scope | Closed as investigated |
+| R2-13 | `cmp_04` starved (0 passages) under DDG-challenge pressure + gates; empty results carry zero stage telemetry so RCA is impossible from artifacts | MUST emit per-engine/gate-rejection accounting on empty results |
+| R2-14 | Inflated claims delivered as fact (`cmp_03`: 10–15pt BEIR vs published ~4); LaTeX/table fragments unspeakable (`ent_02`); entity anchors miss quoted multiword spans | Backlog for N4 ranking work |
+
+**Consequence for the flow in §11.3:** N2 (Brave 4th family) is now the critical path to diversity
+— gates alone cannot conjure a second source. N4 must include: post-extraction dedup, score
+floor >0, primary-source preference, recency boost, nav-listing skip, abstain-or-clarify. V2
+(depth params) stays gated behind N2+N4 evidence. The single 0.1.2 publish gate is unchanged.
+
+### 11.5 G3 baseline results + QA verdicts (2026-10-04, SUPERSEDES Part 7 priorities)
+
+**Batch:** 24/24 ok, 114.6s wall, mean tool 2441ms (p50 2201, p95 4253), 0 timeouts.
+Run dir: `app/src-tauri/evals/results/agentic-tool/20261004_130926_6d0d4ec2/`.
+**QA:** two independent auditors, 60/66 agreement. Reports: `qa_report.md`, `qa_report_native.md`.
+**Verdicts: 40 FAIL · 15 PARTIAL · 11 PASS.** Real pass rate ≈ 13/24 — the batch headline
+measures plumbing, not retrieval.
+
+**What outranks the planned batches.** The following P0 items were NOT in Parts 0–10 and now
+take precedence over W1–W4 ordering wherever they conflict:
+
+| # | Finding | Fix location | Supersedes |
+|---|---|---|---|
+| P0-1 | `ok:true` for 0-answer cases | Eval scoring: separate `retrieval_ok` from `execution_ok` | G3 metrics |
+| P0-2 | 42KB observation vs 2000-char ceiling; `ent_01` ≥11,538 tokens vs 8192 window | Vox `render_evidence_xml`: per-passage cap + final clamp + pre-flight assert | §2.2, W3 |
+| P0-3 | 22,540 + 41,930 chars of page JavaScript delivered as evidence | nexus-rs extraction: strip `<script>`/`<style>`, reject code-like passages | W3 item 5 |
+| P0-4 | `ent_03`: block page ("Your request has been blocked") scored 0.033, delivered | nexus-rs: reject challenge/error pages pre-source | (new) |
+| P0-5 | `?hl=ru` for English query; `redditinc.com` for "reddit discussion"; hotel brand on token `all` | nexus-rs: language + domain-intent + entity-anchor filters | W1 verticals |
+| P0-6 | `[Skip to main content](#content)`, `&apos;`, `\u002D` in spoken output | nexus-rs cleaner + Vox render: strip link syntax, decode entities once | W3 item 5 |
+| P0-7 | Digits stripped from stats (`0M+`/`0K+`/`0B+`) — owner + repro needed | Investigate before fixing | (new) |
+| P0-8 | All 103 passages score in [0.030, 0.033] — ranking is decoration | Emit sparse/dense/RRF components; add relevance floor | W3 ranking |
+| P0-9 | `fanout_ms` = 1200–1202 in 22/24 (deadline exhausted, 28–83% of every call) | D7: drop Mojeek + GoogleWml (decided from this data) | W1, F1 |
+| P0-10 | `chunk_ms=0` + `url_dedup_ms=0` in 23/23 — stages uninstrumented or no-ops | Instrument or delete | W3 |
+
+**Eval integrity fixes (required before the next baseline can measure answers):**
+E1. `max_tokens: 120` → raise; mock LLM must emit a real grounded answer, not `"Here is what
+I found."` (all 48 WAVs byte-identical).
+E2. `render_log.duration_ms` is 203–970ms short of real audio in 48/48; `audio_summary.json`
+over-reports 18.4% and is identical across cases — compute per case, define the field.
+E3. Filler must be gated on measured tool latency (`wall_02`: filler outlives the tool call).
+E4. `pipeline_events.json` holds only `PlaybackStarted` + `LlmFinished` — emit the lifecycle or
+update `qa_prompts.yaml` Q10 (and fix its `filler_*.wav` glob, which matches nothing).

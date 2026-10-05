@@ -1,7 +1,7 @@
 import { memo, useEffect, useRef, useCallback, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
-import { X } from "lucide-react";
+import { X, ArrowLeft } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { useOverlay } from "@/shared/hooks/useOverlay";
 import { LAYOUT_COPY } from "@/data/layoutCopy";
@@ -9,6 +9,7 @@ import { LAYOUT_COPY } from "@/data/layoutCopy";
 export interface ModalProps {
   open: boolean;
   onClose: () => void;
+  onBack?: () => void;
   title?: React.ReactNode;
   subtitle?: React.ReactNode;
   icon?: React.ReactNode;
@@ -46,6 +47,7 @@ export const Modal = memo(
   ({
     open,
     onClose,
+    onBack,
     title,
     subtitle,
     icon,
@@ -157,11 +159,22 @@ export const Modal = memo(
               )}
               onClick={(e) => e.stopPropagation()}
             >
-              {(title || icon || headerActions) && (
+              {(title || icon || headerActions || onBack) && (
                 <div className="flex items-center justify-between px-6 pt-4 pb-3 border-b border-[rgba(var(--accent),0.08)] shrink-0">
-                  <div className="flex items-center gap-3 min-w-0">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    {onBack && (
+                      <button
+                        type="button"
+                        onClick={onBack}
+                        className="p-1.5 -ml-1 rounded-lg text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.1)] transition-colors cursor-pointer shrink-0"
+                        title="Back"
+                        aria-label="Back"
+                      >
+                        <ArrowLeft size={16} strokeWidth={2.25} />
+                      </button>
+                    )}
                     {icon}
-                    <div className="min-w-0">
+                    <div className="min-w-0 flex items-center gap-2">
                       {title}
                       {subtitle}
                     </div>

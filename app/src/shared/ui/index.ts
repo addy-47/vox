@@ -1,6 +1,7 @@
 export * from "./Card";
 export * from "./Drawer";
 export * from "./Modal";
+export * from "./ExpandableList";
 export * from "./SegmentedControl";
 export * from "./ToggleTile";
 export * from "./ApiKeyField";

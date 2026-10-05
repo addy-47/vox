@@ -525,8 +525,8 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
         </ErrorBoundary>
 
         {/* ── Status Info & Default Reset Controls Area — bottom-right ── */}
-        {interactionState !== "Idle" ? (
-          /* ── Turn Performance & Context Utilization Metrics — active session ── */
+        {isHome && interactionState !== "Idle" ? (
+          /* ── Turn Performance & Context Utilization Metrics — active session (Home only) ── */
           <div className="hidden lg:flex fixed bottom-4 right-4 z-40 pointer-events-none items-center">
             {isRightPanelOpen && (
               <BottomDockFeather className="absolute -right-4 -bottom-4 -top-12 w-[340px] pointer-events-none" />

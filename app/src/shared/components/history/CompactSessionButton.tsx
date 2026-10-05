@@ -1,24 +1,21 @@
-import { memo, useCallback } from "react";
+import { memo } from "react";
 import { Loader2, Shrink } from "lucide-react";
 import { HISTORY_COPY } from "@/data/historyCopy";
 import { Tooltip } from "@/shared/ui/Tooltip";
-import { useNotificationStore } from "@/store/notificationStore";
 import { useSessionStore } from "@/store/sessionStore";
-import { metadataResolution } from "@/services/notificationService";
 import { cn } from "@/shared/lib/utils";
 
 export interface CompactSessionButtonProps {
   sessionId: number;
-  uncompactedTurns?: number;
+  uncompactedTurns: number;
   variant?: "button" | "icon";
   className?: string;
 }
 
 /**
- * "Compact session" trigger.
- * Renders in button or icon variant, strictly gated by whether the session has
- * uncompacted turns. During active compaction, shows a spinning loader and disables
- * other session compaction triggers across the app.
+ * "Compact session" trigger. `uncompacted_turns` is the sole visibility
+ * authority — notification state is not a second gate. During active
+ * compaction it shows a spinner and disables every other trigger.
  */
 export const CompactSessionButton = memo(({
   sessionId,
@@ -26,23 +23,6 @@ export const CompactSessionButton = memo(({
   variant = "button",
   className,
 }: CompactSessionButtonProps) => {
-  const hasUncompactedNotif = useNotificationStore(
-    useCallback(
-      (s) =>
-        s.notifications.some(
-          (n) =>
-            n.category === "session_compaction" &&
-            n.session_id === sessionId &&
-            n.status !== "dismissed" &&
-            metadataResolution(n) !== "resolved"
-        ),
-      [sessionId]
-    )
-  );
-
-  const isUncompacted =
-    uncompactedTurns !== undefined ? uncompactedTurns > 0 : hasUncompactedNotif;
-
   const compactingSessionId = useSessionStore((s) => s.compactingSessionId);
   const isCompacting = compactingSessionId === sessionId;
   const isAnyCompacting = compactingSessionId !== null;
@@ -50,7 +30,7 @@ export const CompactSessionButton = memo(({
 
   const executeCompaction = useSessionStore((s) => s.executeCompaction);
 
-  if (!isUncompacted) return null;
+  if (uncompactedTurns <= 0) return null;
 
   const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation();

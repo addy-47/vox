@@ -70,13 +70,17 @@ export const SettingsCardWrapper = memo(({ domain, isActive, layoutMode, childre
           animate={{ opacity: 1, scale: 1 }}
           exit={{ opacity: 0, scale: 0.96 }}
           transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
-          className="w-full h-full flex items-center justify-center pointer-events-auto"
+          className={cn(
+            "w-full pointer-events-auto",
+            layoutMode === "small" ? "h-auto" : "h-full flex items-center justify-center"
+          )}
         >
           <div
             id={`card-${domain.id}`}
             className={cn(
-              "shrink-0 flex flex-col gap-0",
-              hasChanges && "has-unsaved-changes"
+              "flex flex-col gap-0",
+              layoutMode === "small" ? "w-full" : "shrink-0",
+              (hasChanges || isAutoSavedHere || isRestartHere || saveFailure) && "has-unsaved-changes"
             )}
           >
             {/* Actual Card content */}
@@ -84,133 +88,162 @@ export const SettingsCardWrapper = memo(({ domain, isActive, layoutMode, childre
               {children}
             </ErrorBoundary>
 
-            {/* ─── Dynamic Footer: one of four mutually exclusive states ─── */}
-            {(layoutMode === "full-max" || layoutMode === "full-min") && (
-              <AnimatePresence>
-                {/* Mode A: A required credential is missing, so the commit cannot
-                    succeed. Save stays disabled; only Discard is actionable. */}
-                {hasChanges && isDomainMissingCloudKey && (
-                  <motion.div
-                    key="missing-key-footer"
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: "auto" }}
-                    exit={{ opacity: 0, height: 0 }}
-                    transition={{ duration: 0.2 }}
-                    className="w-full p-3 px-5 rounded-b-[1.25rem] rounded-t-none bg-[rgba(var(--accent),0.08)] dark:bg-[rgba(var(--accent),0.12)] border border-t-0 border-[rgba(var(--accent),0.2)] flex items-center justify-between overflow-hidden text-[12px]"
-                  >
-                    <span className="font-bold uppercase tracking-wider text-rose-400 flex items-center gap-1.5">
-                      <AlertCircle size={14} /> {SETTINGS_COPY.apiKeyRequired}
-                    </span>
-                    <div className="flex gap-2">
-                      <button
-                        disabled
-                        className="px-3.5 py-1 rounded-lg bg-[rgba(var(--foreground),0.05)] text-[rgb(var(--foreground-muted))]/40 font-black text-[12px] uppercase tracking-wider cursor-not-allowed border border-[rgba(var(--border),0.1)]"
-                      >
-                        {SETTINGS_COPY.saveChanges}
-                      </button>
-                      <button
-                        onClick={() => useSettingsStore.getState().discardDomainChanges(domain.id)}
-                        className="px-3 py-1 rounded-lg bg-transparent text-[rgb(var(--foreground-muted))] hover:text-rose-400 hover:bg-rose-500/10 border border-transparent hover:border-rose-500/20 text-[12px] font-bold uppercase tracking-wider transition-all cursor-pointer"
-                      >
-                        {SETTINGS_COPY.discardChanges}
-                      </button>
-                    </div>
-                  </motion.div>
-                )}
+            {/* ─── Dynamic Footer: one of five mutually exclusive states ─── */}
+            <AnimatePresence>
+              {/* Mode A: A required credential is missing, so the commit cannot
+                  succeed. Save stays disabled; only Discard is actionable. */}
+              {hasChanges && isDomainMissingCloudKey && (
+                <motion.div
+                  key="missing-key-footer"
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: "auto" }}
+                  exit={{ opacity: 0, height: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className="w-full p-2.5 sm:p-3 px-4 sm:px-5 rounded-b-[1.25rem] rounded-t-none bg-[rgba(var(--accent),0.08)] dark:bg-[rgba(var(--accent),0.12)] border border-t-0 border-[rgba(var(--accent),0.2)] flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 sm:gap-2 overflow-hidden text-[12px]"
+                >
+                  <span className="font-bold uppercase tracking-wider text-rose-400 flex items-center gap-1.5 shrink-0">
+                    <AlertCircle size={14} className="shrink-0" />
+                    <span className="truncate">{SETTINGS_COPY.apiKeyRequired}</span>
+                  </span>
+                  <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
+                    <button
+                      disabled
+                      className="px-3.5 py-1 rounded-lg bg-[rgba(var(--foreground),0.05)] text-[rgb(var(--foreground-muted))]/40 font-black text-[12px] uppercase tracking-wider cursor-not-allowed border border-[rgba(var(--border),0.1)]"
+                    >
+                      {SETTINGS_COPY.saveChanges}
+                    </button>
+                    <button
+                      onClick={() => useSettingsStore.getState().discardDomainChanges(domain.id)}
+                      className="px-3 py-1 rounded-lg bg-transparent text-[rgb(var(--foreground-muted))] hover:text-rose-400 hover:bg-rose-500/10 border border-transparent hover:border-rose-500/20 text-[12px] font-bold uppercase tracking-wider transition-all cursor-pointer"
+                    >
+                      {SETTINGS_COPY.discardChanges}
+                    </button>
+                  </div>
+                </motion.div>
+              )}
 
-                {/* Mode B: Unsaved changes requiring engine restart -> Explicit "Apply & Restart" */}
-                {hasChanges && !isDomainMissingCloudKey && isDomainRequiringRestart && (
-                  <motion.div
-                    key="apply-restart-footer"
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: "auto" }}
-                    exit={{ opacity: 0, height: 0 }}
-                    transition={{ duration: 0.2 }}
-                    className="w-full p-2.5 px-5 rounded-b-[1.25rem] rounded-t-none bg-[rgba(var(--accent),0.08)] dark:bg-[rgba(var(--accent),0.12)] border border-t-0 border-[rgba(var(--accent),0.2)] flex items-center justify-between overflow-hidden text-[12px]"
-                  >
-                    <span className="font-bold uppercase tracking-wider text-[rgb(var(--accent))] flex items-center gap-1.5">
-                      <RefreshCw size={13} /> {SETTINGS_COPY.restartRequired}
-                    </span>
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => useSettingsStore.getState().commitChanges()}
-                        className="px-3 py-1 text-[rgb(var(--accent))] font-bold text-[12px] uppercase tracking-wider flex items-center gap-1.5 transition-all cursor-pointer shadow-xs"
-                      >
-                        {SETTINGS_COPY.applyAndRestart}
-                      </button>
-                      <button
-                        onClick={() => useSettingsStore.getState().discardDomainChanges(domain.id)}
-                        className="px-3 py-1 rounded-lg bg-transparent text-[rgb(var(--foreground-muted))] hover:text-rose-400 hover:bg-rose-500/10 border border-transparent hover:border-rose-500/20 text-[12px] font-bold uppercase tracking-wider transition-all cursor-pointer"
-                      >
-                        {SETTINGS_COPY.discardChanges}
-                      </button>
-                    </div>
-                  </motion.div>
-                )}
+              {/* Mode B: Unsaved changes requiring engine restart -> Explicit "Apply & Restart" */}
+              {hasChanges && !isDomainMissingCloudKey && isDomainRequiringRestart && (
+                <motion.div
+                  key="apply-restart-footer"
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: "auto" }}
+                  exit={{ opacity: 0, height: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className="w-full p-2.5 px-4 sm:px-5 rounded-b-[1.25rem] rounded-t-none bg-[rgba(var(--accent),0.08)] dark:bg-[rgba(var(--accent),0.12)] border border-t-0 border-[rgba(var(--accent),0.2)] flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 sm:gap-2 overflow-hidden text-[12px]"
+                >
+                  <span className="font-bold uppercase tracking-wider text-[rgb(var(--accent))] flex items-center gap-1.5 shrink-0">
+                    <RefreshCw size={13} className="shrink-0" />
+                    <span className="truncate">{SETTINGS_COPY.restartRequired}</span>
+                  </span>
+                  <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
+                    <button
+                      onClick={() => useSettingsStore.getState().commitChanges()}
+                      className="px-3 py-1 rounded-lg bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] font-bold text-[12px] uppercase tracking-wider flex items-center gap-1.5 transition-all cursor-pointer shadow-xs hover:brightness-110"
+                    >
+                      <RefreshCw size={12} className="shrink-0" />
+                      <span>{SETTINGS_COPY.applyAndRestart}</span>
+                    </button>
+                    <button
+                      onClick={() => useSettingsStore.getState().discardDomainChanges(domain.id)}
+                      className="px-3 py-1 rounded-lg bg-transparent text-[rgb(var(--foreground-muted))] hover:text-rose-400 hover:bg-rose-500/10 border border-transparent hover:border-rose-500/20 text-[12px] font-bold uppercase tracking-wider transition-all cursor-pointer"
+                    >
+                      {SETTINGS_COPY.discardChanges}
+                    </button>
+                  </div>
+                </motion.div>
+              )}
 
-                {/* Mode D: Debounced "Changes Saved" Auto-Toast (Only on the specific modified card) */}
-                {!hasChanges && !saveFailure && isAutoSavedHere && (
-                  <motion.div
-                    key="saved-toast-footer"
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: "auto" }}
-                    exit={{ opacity: 0, height: 0 }}
-                    transition={{ duration: 0.2 }}
-                    className="w-full py-2 px-5 rounded-b-[1.25rem] rounded-t-none bg-[rgba(var(--accent),0.08)] dark:bg-[rgba(var(--accent),0.12)] border border-t-0 border-[rgba(var(--accent),0.2)] flex items-center justify-between overflow-hidden text-[12px]"
-                  >
-                    <span className="font-bold uppercase tracking-wider text-[rgb(var(--accent))] flex items-center gap-1.5">
-                      <Check size={14} /> {SETTINGS_COPY.changesSaved}
-                    </span>
-                    <span className="text-[11px] text-[rgb(var(--accent))]/70 font-mono">{SETTINGS_COPY.autoSynced}</span>
-                  </motion.div>
-                )}
+              {/* Mode C: Routine Unsaved Changes */}
+              {hasChanges && !isDomainMissingCloudKey && !isDomainRequiringRestart && (
+                <motion.div
+                  key="unsaved-changes-footer"
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: "auto" }}
+                  exit={{ opacity: 0, height: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className="w-full p-2.5 px-4 sm:px-5 rounded-b-[1.25rem] rounded-t-none bg-[rgba(var(--accent),0.08)] dark:bg-[rgba(var(--accent),0.12)] border border-t-0 border-[rgba(var(--accent),0.2)] flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 sm:gap-2 overflow-hidden text-[12px]"
+                >
+                  <span className="font-bold uppercase tracking-wider text-[rgb(var(--accent))] flex items-center gap-1.5 shrink-0">
+                    <span className="w-2 h-2 rounded-full bg-[rgb(var(--accent))] animate-pulse shrink-0" />
+                    <span className="truncate">{SETTINGS_COPY.saveChanges}</span>
+                  </span>
+                  <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
+                    <button
+                      onClick={() => useSettingsStore.getState().commitChanges()}
+                      className="px-3 py-1 rounded-lg bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] font-bold text-[12px] uppercase tracking-wider transition-all cursor-pointer shadow-xs hover:brightness-110"
+                    >
+                      {SETTINGS_COPY.saveChanges}
+                    </button>
+                    <button
+                      onClick={() => useSettingsStore.getState().discardDomainChanges(domain.id)}
+                      className="px-3 py-1 rounded-lg bg-transparent text-[rgb(var(--foreground-muted))] hover:text-rose-400 hover:bg-rose-500/10 border border-transparent hover:border-rose-500/20 text-[12px] font-bold uppercase tracking-wider transition-all cursor-pointer"
+                    >
+                      {SETTINGS_COPY.discardChanges}
+                    </button>
+                  </div>
+                </motion.div>
+              )}
 
-                {/* Mode E: the backend is rebuilding the engine right now.
-                    Previously this state existed in the store but nothing
-                    rendered it on desktop (the only spinner lived in the
-                    mobile branch), so Apply & Restart froze the UI silently. */}
-                {!hasChanges && isRestartHere && (
-                  <motion.div
-                    key="restarting-footer"
-                    role="status"
-                    aria-live="polite"
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: "auto" }}
-                    exit={{ opacity: 0, height: 0 }}
-                    transition={{ duration: 0.2 }}
-                    className="w-full py-2 px-5 rounded-b-[1.25rem] rounded-t-none bg-[rgba(var(--accent),0.08)] dark:bg-[rgba(var(--accent),0.12)] border border-t-0 border-[rgba(var(--accent),0.2)] flex items-center gap-2 overflow-hidden text-[12px]"
-                  >
-                    <RefreshCw size={13} className="animate-spin shrink-0" />
-                    <span className="font-bold uppercase tracking-wider text-[rgb(var(--accent))]">
-                      {SETTINGS_COPY.restartingEngine}
-                    </span>
-                  </motion.div>
-                )}
+              {/* Mode D: Debounced "Changes Saved" Auto-Toast (Only on the specific modified card) */}
+              {!hasChanges && !saveFailure && isAutoSavedHere && (
+                <motion.div
+                  key="saved-toast-footer"
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: "auto" }}
+                  exit={{ opacity: 0, height: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className="w-full py-2 px-4 sm:px-5 rounded-b-[1.25rem] rounded-t-none bg-[rgba(var(--accent),0.08)] dark:bg-[rgba(var(--accent),0.12)] border border-t-0 border-[rgba(var(--accent),0.2)] flex items-center justify-between overflow-hidden text-[12px]"
+                >
+                  <span className="font-bold uppercase tracking-wider text-[rgb(var(--accent))] flex items-center gap-1.5 truncate">
+                    <Check size={14} className="shrink-0" />
+                    <span className="truncate">{SETTINGS_COPY.changesSaved}</span>
+                  </span>
+                  <span className="text-[11px] text-[rgb(var(--accent))]/70 font-mono shrink-0 ml-2">{SETTINGS_COPY.autoSynced}</span>
+                </motion.div>
+              )}
 
-                {/* Mode C: Backend rejected the write. Without this the card
-                    showed a green "Saved" tick for a value that was dropped. */}
-                {!hasChanges && saveFailure && (
-                  <motion.div
-                    key="save-failed-footer"
-                    role="alert"
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: "auto" }}
-                    exit={{ opacity: 0, height: 0 }}
-                    transition={{ duration: 0.2 }}
-                    className="w-full py-2 px-5 rounded-b-[1.25rem] rounded-t-none bg-rose-500/10 border border-t-0 border-rose-500/25 flex items-center justify-between gap-4 overflow-hidden text-[12px]"
-                  >
-                    <span className="font-bold uppercase tracking-wider text-rose-400 flex items-center gap-1.5 shrink-0">
-                      <AlertCircle size={14} /> {SETTINGS_COPY.saveFailedTitle}
-                    </span>
-                    <span className="text-[11px] text-rose-300/80 font-mono truncate">
-                      {failedKeys.length > 0
-                        ? `${SETTINGS_COPY.saveFailedHint} ${failedKeys.join(", ")}`
-                        : SETTINGS_COPY.saveFailedNone}
-                    </span>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            )}
+              {/* Mode E: the backend is rebuilding the engine right now */}
+              {!hasChanges && isRestartHere && (
+                <motion.div
+                  key="restarting-footer"
+                  role="status"
+                  aria-live="polite"
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: "auto" }}
+                  exit={{ opacity: 0, height: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className="w-full py-2 px-4 sm:px-5 rounded-b-[1.25rem] rounded-t-none bg-[rgba(var(--accent),0.08)] dark:bg-[rgba(var(--accent),0.12)] border border-t-0 border-[rgba(var(--accent),0.2)] flex items-center gap-2 overflow-hidden text-[12px]"
+                >
+                  <RefreshCw size={13} className="animate-spin shrink-0 text-[rgb(var(--accent))]" />
+                  <span className="font-bold uppercase tracking-wider text-[rgb(var(--accent))] truncate">
+                    {SETTINGS_COPY.restartingEngine}
+                  </span>
+                </motion.div>
+              )}
+
+              {/* Mode F: Backend rejected the write */}
+              {!hasChanges && saveFailure && (
+                <motion.div
+                  key="save-failed-footer"
+                  role="alert"
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: "auto" }}
+                  exit={{ opacity: 0, height: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className="w-full py-2 px-4 sm:px-5 rounded-b-[1.25rem] rounded-t-none bg-rose-500/10 border border-t-0 border-rose-500/25 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-1.5 sm:gap-4 overflow-hidden text-[12px]"
+                >
+                  <span className="font-bold uppercase tracking-wider text-rose-400 flex items-center gap-1.5 shrink-0">
+                    <AlertCircle size={14} className="shrink-0" /> {SETTINGS_COPY.saveFailedTitle}
+                  </span>
+                  <span className="text-[11px] text-rose-300/80 font-mono truncate">
+                    {failedKeys.length > 0
+                      ? `${SETTINGS_COPY.saveFailedHint} ${failedKeys.join(", ")}`
+                      : SETTINGS_COPY.saveFailedNone}
+                  </span>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
         </motion.div>
       )}

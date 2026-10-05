@@ -272,43 +272,62 @@ export function onNotificationUpdated(handler: (payload: NotificationRecord) => 
 // REVERT: delete this block and call handler() directly in onSessionsChanged.
 // ─────────────────────────────────────────────────────────────────────────
 const SESSIONS_CHANGED_COALESCE_MS = 250;
+const SESSIONS_CHANGED_TEARDOWN_MS = 1000;
 const sessionsChangedHandlers = new Set<() => void>();
 let sessionsChangedTimer: ReturnType<typeof setTimeout> | null = null;
 let sessionsChangedUnlisten: (() => void) | null = null;
+let sessionsChangedTeardownTimer: ReturnType<typeof setTimeout> | null = null;
+
+function flushSessionsChanged(): void {
+  if (sessionsChangedTimer !== null) {
+    clearTimeout(sessionsChangedTimer);
+    sessionsChangedTimer = null;
+  }
+  sessionsChangedHandlers.forEach((h) => {
+    try {
+      h();
+    } catch (e) {
+      console.error("[Events] sessions_changed handler failed:", e);
+    }
+  });
+}
 
 function ensureSessionsChangedListener(): void {
+  if (sessionsChangedTeardownTimer !== null) {
+    clearTimeout(sessionsChangedTeardownTimer);
+    sessionsChangedTeardownTimer = null;
+  }
   if (sessionsChangedUnlisten !== null) return;
   sessionsChangedUnlisten = on("sessions_changed", () => {
     console.info("[Events] sessions_changed received");
     if (sessionsChangedTimer !== null) clearTimeout(sessionsChangedTimer);
-    sessionsChangedTimer = setTimeout(() => {
-      sessionsChangedTimer = null;
-      sessionsChangedHandlers.forEach((h) => {
-        try {
-          h();
-        } catch (e) {
-          console.error("[Events] sessions_changed handler failed:", e);
-        }
-      });
-    }, SESSIONS_CHANGED_COALESCE_MS);
+    sessionsChangedTimer = setTimeout(flushSessionsChanged, SESSIONS_CHANGED_COALESCE_MS);
   });
 }
 
 export function onSessionsChanged(handler: () => void): () => void {
   ensureSessionsChangedListener();
   sessionsChangedHandlers.add(handler);
+  let released = false;
   return () => {
+    if (released) return;
+    released = true;
     sessionsChangedHandlers.delete(handler);
-    if (sessionsChangedHandlers.size === 0) {
-      if (sessionsChangedTimer !== null) {
-        clearTimeout(sessionsChangedTimer);
-        sessionsChangedTimer = null;
-      }
+    if (sessionsChangedHandlers.size > 0) return;
+    // Last subscriber left. Leave any in-flight burst queued rather than
+    // discarding it, and hold the listener open briefly so a same-tick
+    // re-subscribe reuses it instead of racing a fresh registration.
+    if (sessionsChangedTeardownTimer !== null) {
+      clearTimeout(sessionsChangedTeardownTimer);
+    }
+    sessionsChangedTeardownTimer = setTimeout(() => {
+      sessionsChangedTeardownTimer = null;
+      if (sessionsChangedHandlers.size > 0) return;
       if (sessionsChangedUnlisten !== null) {
         sessionsChangedUnlisten();
         sessionsChangedUnlisten = null;
       }
-    }
+    }, SESSIONS_CHANGED_TEARDOWN_MS);
   };
 }
 
