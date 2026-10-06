@@ -226,6 +226,11 @@ export const LlmConfigDesk = memo(({
           if (!isMounted) return;
           setIsHealthy(res.healthy);
           setDetectedDialect(res.dialect ?? null);
+          // Surface the backend's reason verbatim when unhealthy; only fall
+          // back to the generic label when the backend said nothing.
+          setModelsError(
+            res.healthy ? null : (res.reason ?? INTERACTION_CONFIG_DESK_COPY.status.connectionFailed)
+          );
 
           if (res.healthy && res.dialect && activeLlmProvider === "server") {
             const currentServer = useSettingsStore.getState().draftSettings?.llm?.server;
@@ -241,7 +246,7 @@ export const LlmConfigDesk = memo(({
           console.error(err);
           setIsHealthy(false);
           setDetectedDialect(null);
-          setModelsError("Connection failed");
+          setModelsError(INTERACTION_CONFIG_DESK_COPY.status.connectionFailed);
         } finally {
           if (isMounted) {
             setCheckingHealth(false);
@@ -441,7 +446,7 @@ export const LlmConfigDesk = memo(({
               className={cn(
                 "group flex items-center justify-between gap-2 px-2.5 py-2 rounded-lg transition-all cursor-pointer select-none border min-h-[38px]",
                 isSelected
-                  ? "bg-[rgba(var(--accent),0.08)] border-[rgba(var(--accent),0.25)] text-[rgb(var(--foreground))]"
+                  ? "bg-[rgba(var(--foreground),0.015)] border-[rgb(var(--accent))] shadow-[0_0_12px_rgba(var(--accent),0.12)] text-[rgb(var(--foreground))]"
                   : "bg-[rgba(var(--foreground),0.015)] border-[rgba(var(--accent),0.05)] hover:border-[rgba(var(--accent),0.15)] hover:bg-[rgba(var(--foreground),0.03)] text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--foreground))]"
               )}
             >

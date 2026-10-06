@@ -74,7 +74,10 @@ export const LlmSettingsView = memo(({
     );
   }, [activeModel, capabilitiesCache]);
 
-  const maxContextCeiling = activeCapabilities?.context_window || 131072;
+  // Spec §7.1: the ceiling comes from the resolved capability. Unknown stays
+  // at the floor — never a fabricated 128k. Remote models without a probed
+  // window show "Server Managed" with no manual input (see the context tab).
+  const maxContextCeiling = activeCapabilities?.context_window || MIN_CONTEXT_WINDOW;
   const contextPresets = useMemo(() => {
     return [8192, 16384, 32768].filter((size) => size <= maxContextCeiling);
   }, [maxContextCeiling]);

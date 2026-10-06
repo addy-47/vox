@@ -1,4 +1,7 @@
-use std::{collections::BTreeMap, sync::mpsc};
+use std::{
+    collections::{BTreeMap, HashMap},
+    sync::mpsc,
+};
 
 use futures_util::StreamExt;
 use serde::Deserialize;
@@ -34,7 +37,7 @@ struct ChunkDelta {
 }
 
 #[derive(Deserialize, Clone)]
-struct ChunkDeltaToolCall {
+pub(crate) struct ChunkDeltaToolCall {
     index: Option<usize>,
     id: Option<String>,
     #[serde(default)]
@@ -100,6 +103,61 @@ impl PendingToolCall {
             name: self.name,
             arguments,
         })
+    }
+}
+
+/// Streaming tool-call accumulator shared by the transport and the capability probe.
+/// Keys fragments by (index, id) per spec §4.1: a fragment carrying an id addresses
+/// that id directly, id-less fragments route to the last id seen for their index.
+#[derive(Default)]
+pub(crate) struct ToolCallAccumulator {
+    pending: BTreeMap<(usize, String), PendingToolCall>,
+    index_ids: HashMap<usize, String>,
+}
+
+impl ToolCallAccumulator {
+    /// Folds one parsed tool-call delta fragment into the accumulator.
+    pub(crate) fn feed_delta(&mut self, tc: ChunkDeltaToolCall) {
+        let idx = tc.index.unwrap_or(0);
+        if let Some(id) = tc.id.clone() {
+            if !id.is_empty() {
+                self.index_ids.insert(idx, id);
+            }
+        }
+        let id = tc
+            .id
+            .clone()
+            .filter(|s| !s.is_empty())
+            .or_else(|| self.index_ids.get(&idx).cloned())
+            .unwrap_or_default();
+        self.pending.entry((idx, id)).or_default().apply_delta(tc);
+    }
+
+    /// Parses one SSE line and accumulates any tool-call deltas it carries.
+    pub(crate) fn feed_line(&mut self, line: &str) {
+        if let Ok(chunk) = serde_json::from_str::<ChatCompletionChunk>(line) {
+            if let Some(choice) = chunk.choices.first() {
+                if let Some(ref tc_list) = choice.delta.tool_calls {
+                    for tc in tc_list {
+                        self.feed_delta(tc.clone());
+                    }
+                }
+            }
+        }
+    }
+
+    /// Drains fully assembled tool calls, dropping fragments with no name.
+    pub(crate) fn drain(&mut self) -> Vec<CanonicalToolCall> {
+        let keys: Vec<(usize, String)> = self.pending.keys().cloned().collect();
+        let mut out = Vec::new();
+        for key in keys {
+            if let Some(pending) = self.pending.remove(&key) {
+                if let Some(call) = pending.into_canonical() {
+                    out.push(call);
+                }
+            }
+        }
+        out
     }
 }
 
@@ -282,33 +340,28 @@ pub fn resolve_url(base_url: &str) -> String {
 }
 
 fn flush_pending_tool_calls(
-    pending_map: &mut BTreeMap<usize, PendingToolCall>,
+    accumulator: &mut ToolCallAccumulator,
     tx: &mpsc::Sender<super::super::LlmStreamEvent>,
 ) {
-    let keys: Vec<usize> = pending_map.keys().copied().collect();
-    for key in keys {
-        if let Some(pending) = pending_map.remove(&key) {
-            if let Some(call) = pending.into_canonical() {
-                log::info!(
-                    "[ChatCompletions] Emitting tool call: {} (id: {})",
-                    call.name,
-                    call.id
-                );
-                if let Err(e) = tx.send(super::super::LlmStreamEvent::ToolCall(call)) {
-                    log::warn!("[ChatCompletions] Failed to send ToolCall event: {}", e);
-                }
-            }
+    for call in accumulator.drain() {
+        log::info!(
+            "[ChatCompletions] Emitting tool call: {} (id: {})",
+            call.name,
+            call.id
+        );
+        if let Err(e) = tx.send(super::super::LlmStreamEvent::ToolCall(call)) {
+            log::warn!("[ChatCompletions] Failed to send ToolCall event: {}", e);
         }
     }
 }
 
 fn process_sse_line(
     line: &str,
-    pending_tool_calls: &mut BTreeMap<usize, PendingToolCall>,
+    accumulator: &mut ToolCallAccumulator,
     tx: &mpsc::Sender<super::super::LlmStreamEvent>,
 ) -> bool {
     if line == "[DONE]" {
-        flush_pending_tool_calls(pending_tool_calls, tx);
+        flush_pending_tool_calls(accumulator, tx);
         if let Err(e) = tx.send(super::super::LlmStreamEvent::Finished) {
             log::warn!("[ChatCompletions] Send finished event error: {}", e);
         }
@@ -326,14 +379,12 @@ fn process_sse_line(
             }
             if let Some(ref tc_list) = choice.delta.tool_calls {
                 for tc in tc_list {
-                    let idx = tc.index.unwrap_or(0);
-                    let pending = pending_tool_calls.entry(idx).or_default();
-                    pending.apply_delta(tc.clone());
+                    accumulator.feed_delta(tc.clone());
                 }
             }
             if let Some(ref reason) = choice.finish_reason {
                 if reason == "tool_calls" {
-                    flush_pending_tool_calls(pending_tool_calls, tx);
+                    flush_pending_tool_calls(accumulator, tx);
                 }
             }
         }
@@ -387,7 +438,7 @@ pub async fn stream_chat_completions(
 
     let mut decoder = SseDecoder::new();
     let mut byte_stream = response.bytes_stream();
-    let mut pending_tool_calls = BTreeMap::new();
+    let mut accumulator = ToolCallAccumulator::default();
 
     loop {
         if cancel.is_cancelled() {
@@ -417,7 +468,7 @@ pub async fn stream_chat_completions(
             Some(Ok(bytes)) => {
                 let lines = decoder.decode_chunk(&bytes);
                 for line in lines {
-                    if process_sse_line(&line, &mut pending_tool_calls, tx) {
+                    if process_sse_line(&line, &mut accumulator, tx) {
                         return Ok(());
                     }
                 }
@@ -428,10 +479,10 @@ pub async fn stream_chat_completions(
     }
 
     if let Some(line) = decoder.flush() {
-        process_sse_line(&line, &mut pending_tool_calls, tx);
+        process_sse_line(&line, &mut accumulator, tx);
     }
 
-    flush_pending_tool_calls(&mut pending_tool_calls, tx);
+    flush_pending_tool_calls(&mut accumulator, tx);
 
     if let Err(e) = tx.send(super::super::LlmStreamEvent::Finished) {
         log::warn!("[ChatCompletions] Send final finished event error: {}", e);

@@ -12,8 +12,9 @@ pub use actor::{
 };
 pub use catalog::{
     list_models, list_presets, lookup_preset, probe_capabilities, provider_catalog,
-    CapabilityProbeEngine, CapabilityProvenance, LlmModelInfo, ModelCapabilities, ModelProbeResult,
-    ModelSpec, ProviderPresetMeta, CAP_KIND_CLOUD, CAP_KIND_EMBEDDED, CAP_KIND_SERVER,
+    read_capabilities_cache, CapabilityCacheRead, CapabilityProbeEngine, CapabilityProvenance,
+    LlmModelInfo, ModelCapabilities, ModelProbeResult, ModelSpec, ProbeCheck, ProbeOutcome,
+    ProviderPresetMeta, CAP_KIND_CLOUD, CAP_KIND_EMBEDDED, CAP_KIND_SERVER,
 };
 pub use config::{
     LlmActiveProvider, LlmEmbeddedConfig, LlmProviderConfig, LlmRemoteConfig, LlmSettings,

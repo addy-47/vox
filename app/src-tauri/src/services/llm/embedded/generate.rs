@@ -495,7 +495,11 @@ impl LlmEngine for LlmWorker {
         }
 
         let elapsed = start_time.elapsed().as_secs_f32();
-        let tps = tokens_generated as f32 / elapsed;
+        let tps = if elapsed > 0.0 {
+            tokens_generated as f32 / elapsed
+        } else {
+            0.0
+        };
 
         log::info!(
             "[LLM] Generation complete (turn: {}). Tokens: {}, TTFT: {:?}, TPS: {:.2}",

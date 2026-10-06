@@ -20,6 +20,7 @@ pub struct RuntimeReport {
     pub total_space_gb: f32,
     pub required_space_gb: f32,
     pub disk_space_ok: bool,
+    pub disk_space_unknown: bool,
     pub mic_access: bool,
     pub ram_gb: f32,
     pub cpu_cores: u32,
@@ -29,6 +30,15 @@ pub struct RuntimeReport {
     pub models_missing: Vec<String>,
     pub models_verified: bool,
     pub setup_completed: bool,
+}
+
+/// Disk space reading. `known` is false when no mount point matched the path,
+/// in which case the numbers are zero and `ok` must not be read as a verdict.
+struct DiskSpace {
+    available_gb: f32,
+    total_gb: f32,
+    ok: bool,
+    known: bool,
 }
 
 /// Performs system validation.
@@ -42,7 +52,7 @@ pub fn verify_runtime(manifest: Option<&VoxManifest>) -> RuntimeReport {
         .map(|m| m.calculate_required_space())
         .unwrap_or(6 * 1024 * 1024 * 1024);
     let required_gb = required_bytes as f32 / 1024.0 / 1024.0 / 1024.0;
-    let (available_gb, total_gb, space_ok) = check_disk_space(&p.root, required_bytes);
+    let disk = check_disk_space(&p.root, required_bytes);
     let mic_access = check_mic_access();
     let (ram_gb, cpu_cores) = get_system_info();
     let settings_exists = p.settings.exists();
@@ -55,10 +65,11 @@ pub fn verify_runtime(manifest: Option<&VoxManifest>) -> RuntimeReport {
 
     RuntimeReport {
         write_access,
-        available_space_gb: available_gb,
-        total_space_gb: total_gb,
+        available_space_gb: disk.available_gb,
+        total_space_gb: disk.total_gb,
         required_space_gb: required_gb,
-        disk_space_ok: space_ok,
+        disk_space_ok: disk.ok,
+        disk_space_unknown: !disk.known,
         mic_access,
         ram_gb,
         cpu_cores,
@@ -91,7 +102,7 @@ fn check_write_access(path: &Path) -> bool {
     }
 }
 
-fn check_disk_space(path: &Path, required_bytes: u64) -> (f32, f32, bool) {
+fn check_disk_space(path: &Path, required_bytes: u64) -> DiskSpace {
     let disks = Disks::new_with_refreshed_list();
 
     let mut best_match: Option<(&Path, u64, u64)> = None;
@@ -109,21 +120,35 @@ fn check_disk_space(path: &Path, required_bytes: u64) -> (f32, f32, bool) {
     if let Some((_, available, total)) = best_match {
         let available_gb = available as f32 / 1024.0 / 1024.0 / 1024.0;
         let total_gb = total as f32 / 1024.0 / 1024.0 / 1024.0;
-        (available_gb, total_gb, available >= required_bytes)
-    } else {
-        for disk in &disks {
-            if disk.mount_point() == Path::new("/") {
-                let available = disk.available_space();
-                let available_gb = available as f32 / 1024.0 / 1024.0 / 1024.0;
-                let total_gb = disk.total_space() as f32 / 1024.0 / 1024.0 / 1024.0;
-                return (available_gb, total_gb, available >= required_bytes);
-            }
+        return DiskSpace {
+            available_gb,
+            total_gb,
+            ok: available >= required_bytes,
+            known: true,
+        };
+    }
+    for disk in &disks {
+        if disk.mount_point() == Path::new("/") {
+            let available = disk.available_space();
+            let available_gb = available as f32 / 1024.0 / 1024.0 / 1024.0;
+            let total_gb = disk.total_space() as f32 / 1024.0 / 1024.0 / 1024.0;
+            return DiskSpace {
+                available_gb,
+                total_gb,
+                ok: available >= required_bytes,
+                known: true,
+            };
         }
-        log::warn!(
-            "[verify_runtime] Could not determine disk space for path {:?}. Failing verification.",
-            path
-        );
-        (0.0, 0.0, false)
+    }
+    log::warn!(
+        "[verify_runtime] Could not determine disk space for path {:?}. Failing verification.",
+        path
+    );
+    DiskSpace {
+        available_gb: 0.0,
+        total_gb: 0.0,
+        ok: false,
+        known: false,
     }
 }
 

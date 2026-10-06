@@ -4,7 +4,7 @@ import {
   requestModelCatalog,
   updateSetting,
   resetSettings,
-  probeModelCapabilitiesFull,
+  readModelCapabilitiesCache,
   listLlmModels,
 } from "@/services/settingsService";
 import { applyTheme } from "@/shared/theme";
@@ -44,13 +44,35 @@ export interface SttProviderConfig {
   model_type?: string;
 }
 
+export type CapabilitySupport = "supported" | "unsupported" | "unknown";
+
+export type CapabilityProvenance =
+  | "catalog_baseline"
+  | "family_baseline"
+  | "probed_server"
+  | "declared_static"
+  | "user_configured"
+  | "unknown";
+
+export type ProbeOutcome = "measured" | "unsupported" | "failed" | "skipped";
+
+export interface ProbeCheck {
+  id: string;
+  label: string;
+  outcome: ProbeOutcome;
+  detail?: string | null;
+  duration_ms?: number | null;
+}
+
 export interface ModelCapabilities {
   model_id: string;
   provider_kind: string;
-  supports_tools: boolean;
-  supports_latin: boolean;
-  supports_devanagari: boolean;
+  supports_tools: CapabilitySupport;
+  supports_latin: CapabilitySupport;
+  supports_devanagari: CapabilitySupport;
   context_window?: number | null;
+  max_output_tokens?: number | null;
+  provenance: CapabilityProvenance;
   tps?: number | null;
   ttft_ms?: number | null;
   server_has_gpu: boolean;
@@ -61,6 +83,7 @@ export interface ModelCapabilities {
   quantization?: string | null;
   family?: string | null;
   tested_at_epoch: number;
+  checks: ProbeCheck[];
 }
 
 export interface LlmModelInfo {
@@ -344,6 +367,7 @@ export interface SettingsState {
   remoteModelsError: string | null;
   remoteModelsFetchedKey: string | null;
   capabilitiesCache: Record<string, ModelCapabilities>;
+  capabilitiesCacheError: string | null;
   isLoading: boolean;
   hasChanges: boolean;
   /**
@@ -360,6 +384,7 @@ export interface SettingsState {
   loadModelCatalog: () => Promise<void>;
   loadRemoteModels: (providerConfig?: LlmProviderConfig, force?: boolean) => Promise<void>;
   loadCapabilitiesCache: () => Promise<void>;
+  patchRemoteModelCapabilities: (modelId: string, caps: ModelCapabilities) => void;
   updateDraft: (
     domain: keyof VoxSettings,
     key: string,
@@ -531,6 +556,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   remoteModelsError: null,
   remoteModelsFetchedKey: null,
   capabilitiesCache: {},
+  capabilitiesCacheError: null,
   isLoading: true,
   hasChanges: false,
   restartKeys: [],
@@ -641,11 +667,31 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
   loadCapabilitiesCache: async () => {
     try {
-      const res = await probeModelCapabilitiesFull();
-      set({ capabilitiesCache: res.cached_map || {} });
+      const res = await readModelCapabilitiesCache();
+      set({
+        capabilitiesCache: res.cached_map || {},
+        capabilitiesCacheError: res.cache_error || null,
+      });
+      if (res.cache_error) {
+        console.error("Capabilities cache unreadable:", res.cache_error);
+      }
     } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
       console.error("Failed to load capabilities cache:", err);
+      set({ capabilitiesCacheError: msg });
     }
+  },
+
+  patchRemoteModelCapabilities: (modelId, caps) => {
+    set((state) => ({
+      remoteModels: state.remoteModels.map((m) =>
+        m.id === modelId ? { ...m, capabilities: caps } : m
+      ),
+      capabilitiesCache: {
+        ...state.capabilitiesCache,
+        [`${caps.provider_kind}:${caps.model_id}`]: caps,
+      },
+    }));
   },
 
   lastSavedTimestamp: 0,

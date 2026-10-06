@@ -204,8 +204,11 @@ pub fn benchmark_llm_provider(
         let ttft_ms = ttft.as_secs_f64() * 1000.0;
         let gen_time_ms = generation_time.as_secs_f64() * 1000.0;
         let total_time_ms = total_elapsed.as_secs_f64() * 1000.0;
-        let tokens_per_sec = if generation_time.as_secs_f64() > 0.0 {
-            token_count as f64 / generation_time.as_secs_f64()
+        // Tokens-per-second convention (unified 2026-10-06): tokens divided by total
+        // generation wall clock, matching the capability probe and runtime telemetry.
+        // Reports before this date divided by post-TTFT time and read higher.
+        let tokens_per_sec = if total_elapsed.as_secs_f64() > 0.0 {
+            token_count as f64 / total_elapsed.as_secs_f64()
         } else {
             0.0
         };

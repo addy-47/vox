@@ -28,6 +28,7 @@ pub enum ProviderConfigPayload {
 pub struct ProviderHealthCheckResult {
     pub healthy: bool,
     pub dialect: Option<String>,
+    pub reason: Option<String>,
 }
 
 /// Verify health status across LLM, STT, and TTS providers.
@@ -43,6 +44,7 @@ pub async fn check_health(
             Ok(ProviderHealthCheckResult {
                 healthy,
                 dialect: None,
+                reason: None,
             })
         }
         "tts" => {
@@ -50,6 +52,7 @@ pub async fn check_health(
             Ok(ProviderHealthCheckResult {
                 healthy,
                 dialect: None,
+                reason: None,
             })
         }
         _ => Err(format!("Unknown provider health check kind: {}", kind)),
@@ -98,6 +101,11 @@ pub async fn check_llm_health(
                 } else {
                     None
                 },
+                reason: if healthy {
+                    None
+                } else {
+                    Some(format!("Model file not found: {:?}", llm_path))
+                },
             })
         }
         LlmProviderConfig::Server {
@@ -121,12 +129,23 @@ pub async fn check_llm_health(
                 provider_name.as_deref(),
             );
             let provider = RemoteTransport::new(conn_cfg.clone());
-            let healthy = provider.health_check().await.is_ok();
+            let health_error = provider.health_check().await.err();
+            let healthy = health_error.is_none();
+            let reason = health_error.map(|err| err.to_string());
             let dialect = if healthy {
-                let client = reqwest::Client::builder()
+                let client = match reqwest::Client::builder()
                     .timeout(Duration::from_secs(2))
                     .build()
-                    .unwrap_or_default();
+                {
+                    Ok(client) => client,
+                    Err(err) => {
+                        log::warn!(
+                            "[Health] Dialect probe HTTP client failed to build: {}",
+                            err
+                        );
+                        reqwest::Client::new()
+                    }
+                };
                 let discovered = crate::services::llm::catalog::discover_server_dialect(
                     &client,
                     &base_url,
@@ -137,7 +156,11 @@ pub async fn check_llm_health(
             } else {
                 None
             };
-            Ok(ProviderHealthCheckResult { healthy, dialect })
+            Ok(ProviderHealthCheckResult {
+                healthy,
+                dialect,
+                reason,
+            })
         }
     }
 }

@@ -37,7 +37,7 @@ use crate::{
                 probe_capabilities, ModelCapabilities, CAP_KIND_CLOUD, CAP_KIND_EMBEDDED,
                 CAP_KIND_SERVER,
             },
-            LlmActiveProvider,
+            LlmActiveProvider, Support,
         },
         memory::{
             compaction::coordinator::CompactionCoordinator, spawn_ingestion_sweep, trim_heap,
@@ -737,15 +737,30 @@ fn resolve_model_tool_support<R: Runtime + 'static>(
         if let Ok(content) = fs::read_to_string(&cache_file) {
             if let Ok(map) = from_str::<HashMap<String, ModelCapabilities>>(&content) {
                 if let Some(caps) = map.get(&key) {
-                    log::info!(
-                        "[Pipeline::Session] Cached capability for {}: supports_tools = {}",
-                        key,
-                        caps.supports_tools
-                    );
-                    if !caps.supports_tools {
-                        emit_tool_unsupported_notification(app, state, active_model);
+                    match caps.supports_tools {
+                        Support::Supported => {
+                            log::info!(
+                                "[Pipeline::Session] Cached capability for {}: tools supported",
+                                key
+                            );
+                            return true;
+                        }
+                        Support::Unsupported => {
+                            log::info!(
+                                "[Pipeline::Session] Cached capability for {}: tools unsupported",
+                                key
+                            );
+                            emit_tool_unsupported_notification(app, state, active_model);
+                            return false;
+                        }
+                        Support::Unknown => {
+                            log::info!(
+                                "[Pipeline::Session] Cached capability for {} is unknown; leaving tools enabled",
+                                key
+                            );
+                            return true;
+                        }
                     }
-                    return caps.supports_tools;
                 }
             }
         }
@@ -768,39 +783,54 @@ fn resolve_model_tool_support<R: Runtime + 'static>(
         .await;
 
         let supported = match probe_res {
-            Ok(Ok(probe_result)) => {
-                let s = probe_result.capabilities.supports_tools;
-                log::info!(
-                    "[Pipeline::Session] Background probe resolved for {}: supports_tools = {}",
-                    key,
-                    s
-                );
-                s
-            }
+            Ok(Ok(probe_result)) => match probe_result.capabilities.supports_tools {
+                Support::Supported => {
+                    log::info!(
+                        "[Pipeline::Session] Background probe resolved for {}: tools supported",
+                        key
+                    );
+                    Some(true)
+                }
+                Support::Unsupported => {
+                    log::info!(
+                        "[Pipeline::Session] Background probe resolved for {}: tools unsupported",
+                        key
+                    );
+                    Some(false)
+                }
+                Support::Unknown => {
+                    log::warn!(
+                        "[Pipeline::Session] Background probe for {} could not determine tool support; leaving tools enabled",
+                        key
+                    );
+                    None
+                }
+            },
             Ok(Err(err)) => {
                 log::warn!(
                     "[Pipeline::Session] Background probe failed for {}: {}",
                     key,
                     err
                 );
-                false
+                None
             }
             Err(_) => {
                 log::warn!(
                     "[Pipeline::Session] Background probe timed out (4s) for {}",
                     key
                 );
-                false
+                None
             }
         };
 
-        let mut guard = state_arc.harness.lock();
-        if let Some(ref mut harness) = *guard {
-            harness.supports_tools = supported;
-        }
-
-        if !supported {
-            emit_tool_unsupported_notification(&app_handle, &state_arc, &model_name);
+        if let Some(enabled) = supported {
+            let mut guard = state_arc.harness.lock();
+            if let Some(ref mut harness) = *guard {
+                harness.supports_tools = enabled;
+            }
+            if !enabled {
+                emit_tool_unsupported_notification(&app_handle, &state_arc, &model_name);
+            }
         }
     });
 

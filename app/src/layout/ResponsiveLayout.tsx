@@ -8,8 +8,8 @@ import { AmbientBackground, HelpPanel, NotificationPanel, ErrorBoundary, Orbital
 import { ActiveSessionHeader, TurnMetricsBadge } from "@/shared/components/home";
 import { EdgePanel, TopRightCluster, BottomDockFeather, ThemeToggleButton } from "@/shared/ui";
 import { usePanelStateContext } from "@/shared/hooks/usePanelState";
-import { Outlet, useLocation, useNavigate, useOutlet } from "react-router-dom";
-import { AnimatePresence, motion } from "framer-motion";
+import { useLocation, useNavigate, useOutlet } from "react-router-dom";
+import { motion } from "framer-motion";
 import { Activity, PanelLeft } from "lucide-react";
 import { useVoxFootprint } from "@/shared/hooks/useVoxFootprint";
 import { cn } from "@/shared/lib/utils";

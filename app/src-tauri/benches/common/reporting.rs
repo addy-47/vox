@@ -147,7 +147,9 @@ pub fn save_json_report<T: Serialize>(
 
     // Also update/overwrite latest.json in base_dir
     let latest_path = base_dir.join("latest.json");
-    let _ = fs::write(&latest_path, &json_data);
+    if let Err(err) = fs::write(&latest_path, &json_data) {
+        log::warn!("Failed to update latest benchmark report at {:?}: {}", latest_path, err);
+    }
 
     Ok(report_path)
 }

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::services::llm::transport::TransportType;
+use crate::services::llm::{provider::Support, transport::TransportType};
 
 /// Canonical capability-cache provider-kind labels. Writer (probe) and reader (session boot) must agree.
 pub const CAP_KIND_EMBEDDED: &str = "embedded";
@@ -13,12 +13,12 @@ pub const CAP_KIND_CLOUD: &str = "cloud";
 pub struct ModelCapabilities {
     pub model_id: String,
     pub provider_kind: String,
-    pub supports_tools: bool,
-    pub supports_latin: bool,
-    pub supports_devanagari: bool,
+    pub supports_tools: Support,
+    pub supports_latin: Support,
+    pub supports_devanagari: Support,
     pub context_window: Option<u32>,
     pub max_output_tokens: Option<u32>,
-    pub provenance: Option<String>,
+    pub provenance: CapabilityProvenance,
     pub tps: Option<f32>,
     pub ttft_ms: Option<u32>,
     pub server_has_gpu: bool,
@@ -29,6 +29,7 @@ pub struct ModelCapabilities {
     pub quantization: Option<String>,
     pub family: Option<String>,
     pub tested_at_epoch: u64,
+    pub checks: Vec<ProbeCheck>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -52,6 +53,8 @@ pub enum CapabilityProvenance {
     FamilyBaseline,
     /// Empirically verified or reported by the active runtime or provider endpoint.
     ProbedServer,
+    /// Authored per-model static declaration (embedded manifests / weight headers).
+    DeclaredStatic,
     /// Explicitly overridden by the user in settings.
     UserConfigured,
     /// Explicitly unobservable and unverified.
@@ -65,10 +68,35 @@ impl CapabilityProvenance {
             Self::CatalogBaseline => "catalog_baseline",
             Self::FamilyBaseline => "family_baseline",
             Self::ProbedServer => "probed_server",
+            Self::DeclaredStatic => "declared_static",
             Self::UserConfigured => "user_configured",
             Self::Unknown => "unknown",
         }
     }
+}
+
+/// Outcome of one independently fallible probe check (spec §6.4).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProbeOutcome {
+    /// The check ran and produced an observation.
+    Measured,
+    /// The endpoint answered normally but lacks the capability.
+    Unsupported,
+    /// The check could not run to completion; `detail` carries the reason.
+    Failed,
+    /// The check is inapplicable; `detail` states why.
+    Skipped,
+}
+
+/// One recorded sub-probe result with its evidence (spec §6.4).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ProbeCheck {
+    pub id: String,
+    pub label: String,
+    pub outcome: ProbeOutcome,
+    pub detail: Option<String>,
+    pub duration_ms: Option<u32>,
 }
 
 /// Normalized model specification from catalog or capability discovery.
@@ -129,7 +157,6 @@ pub enum ResponseEnvelope {
 pub enum ToolStreamShape {
     OpenaiDelta,
     OllamaNdjson,
-    OpenaiDeltaWithXmlFallback,
 }
 
 /// Metadata and wire mapping for a curated provider preset.
@@ -193,4 +220,12 @@ pub struct ModelProbeResult {
     pub capabilities: ModelCapabilities,
     pub validated_cap: Option<u32>,
     pub cached_map: HashMap<String, ModelCapabilities>,
+    pub cache_error: Option<String>,
+}
+
+/// Read-only view of the on-disk capability cache. No endpoint is contacted.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CapabilityCacheRead {
+    pub cached_map: HashMap<String, ModelCapabilities>,
+    pub cache_error: Option<String>,
 }

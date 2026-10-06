@@ -40,6 +40,27 @@ struct OllamaFunctionCall {
     arguments: serde_json::Value,
 }
 
+/// Parses tool calls from one NDJSON line. Shared by the transport and the capability probe.
+pub(crate) fn parse_tool_calls_in_line(line: &str) -> Vec<CanonicalToolCall> {
+    let mut out = Vec::new();
+    if let Ok(chunk) = serde_json::from_str::<OllamaChatChunk>(line) {
+        if let Some(msg) = chunk.message {
+            if let Some(tool_calls) = msg.tool_calls {
+                for tc in tool_calls {
+                    out.push(CanonicalToolCall {
+                        id: tc.id.unwrap_or_else(|| {
+                            format!("call_{}", uuid::Uuid::new_v4().simple())
+                        }),
+                        name: tc.function.name,
+                        arguments: tc.function.arguments,
+                    });
+                }
+            }
+        }
+    }
+    out
+}
+
 /// Builds the HTTP POST request payload for Ollama `/api/chat`.
 pub fn build_request_body(
     config: &ConnectionConfig,
@@ -218,29 +239,18 @@ pub async fn stream_ollama(
             Some(Ok(bytes)) => {
                 let lines = decoder.decode_chunk(&bytes);
                 for line in lines {
+                    for call in parse_tool_calls_in_line(&line) {
+                        log::info!(
+                            "[OllamaTransport] Emitting tool call: {} (id: {})",
+                            call.name,
+                            call.id
+                        );
+                        if let Err(e) = tx.send(super::super::LlmStreamEvent::ToolCall(call)) {
+                            log::warn!("[OllamaTransport] Send tool call error: {}", e);
+                        }
+                    }
                     if let Ok(chunk) = serde_json::from_str::<OllamaChatChunk>(&line) {
                         if let Some(msg) = chunk.message {
-                            if let Some(tool_calls) = msg.tool_calls {
-                                for tc in tool_calls {
-                                    let call = CanonicalToolCall {
-                                        id: tc.id.unwrap_or_else(|| {
-                                            format!("call_{}", uuid::Uuid::new_v4().simple())
-                                        }),
-                                        name: tc.function.name,
-                                        arguments: tc.function.arguments,
-                                    };
-                                    log::info!(
-                                        "[OllamaTransport] Emitting tool call: {} (id: {})",
-                                        call.name,
-                                        call.id
-                                    );
-                                    if let Err(e) =
-                                        tx.send(super::super::LlmStreamEvent::ToolCall(call))
-                                    {
-                                        log::warn!("[OllamaTransport] Send tool call error: {}", e);
-                                    }
-                                }
-                            }
                             if let Some(content) = msg.content {
                                 if !content.is_empty() {
                                     if let Err(e) =
@@ -266,20 +276,11 @@ pub async fn stream_ollama(
     }
 
     if let Some(line) = decoder.flush() {
+        for call in parse_tool_calls_in_line(&line) {
+            let _ = tx.send(super::super::LlmStreamEvent::ToolCall(call));
+        }
         if let Ok(chunk) = serde_json::from_str::<OllamaChatChunk>(&line) {
             if let Some(msg) = chunk.message {
-                if let Some(tool_calls) = msg.tool_calls {
-                    for tc in tool_calls {
-                        let call = CanonicalToolCall {
-                            id: tc.id.unwrap_or_else(|| {
-                                format!("call_{}", uuid::Uuid::new_v4().simple())
-                            }),
-                            name: tc.function.name,
-                            arguments: tc.function.arguments,
-                        };
-                        let _ = tx.send(super::super::LlmStreamEvent::ToolCall(call));
-                    }
-                }
                 if let Some(content) = msg.content {
                     if !content.is_empty() {
                         if let Err(e) = tx.send(super::super::LlmStreamEvent::Token(content)) {

@@ -11,7 +11,7 @@ use crate::{
     services::{
         health::{self as health_svc, ProviderConfigPayload},
         llm::{
-            catalog::{self as llm_catalog, LlmModelInfo, ModelProbeResult},
+            catalog::{self as llm_catalog, CapabilityCacheRead, LlmModelInfo, ModelProbeResult},
             LlmProviderConfig,
         },
         tts::{
@@ -245,6 +245,15 @@ pub async fn probe_model_capabilities(
     target_cap: Option<u32>,
 ) -> Result<ModelProbeResult, VoxIpcError> {
     llm_catalog::probe_capabilities(&state, provider, model_id, target_cap)
+        .await
+        .map_err(VoxIpcError::Engine)
+}
+
+/// Read the on-disk capability cache without probing any endpoint.
+/// Mounting a settings surface must never trigger a live probe as a side effect.
+#[tauri::command]
+pub async fn get_model_capabilities_cache() -> Result<CapabilityCacheRead, VoxIpcError> {
+    llm_catalog::read_capabilities_cache()
         .await
         .map_err(VoxIpcError::Engine)
 }

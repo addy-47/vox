@@ -31,7 +31,6 @@ pub struct ConnectionConfig {
     pub auth: AuthScheme,
     pub provider_preset: Option<String>,
     pub policy: ProviderPresetMeta,
-    pub provider_kind: String,
 }
 
 impl ConnectionConfig {
@@ -69,7 +68,6 @@ impl ConnectionConfig {
             auth,
             provider_preset: provider_preset.map(|s| s.to_string()),
             policy: preset,
-            provider_kind: "server".to_string(),
         }
     }
 }

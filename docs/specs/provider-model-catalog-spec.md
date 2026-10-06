@@ -93,8 +93,8 @@ This specification establishes a language-agnostic contract for:
      (gateways that 503 on the flag set `false`).
    - `response_envelope`: `chat` (`response_format`) | `native` (`format`) |
      `text` (`text.format`) — selects the `OutputConstraint` envelope.
-   - `tool_stream`: `openai_delta` | `ollama_ndjson` | `openai_delta_with_xml_fallback`
-     — declares which parser owns the stream.
+    - `tool_stream`: `openai_delta` | `ollama_ndjson`
+      — declares which parser owns the stream.
    - `top_k_field`: dotted path allowed for `top_k` (e.g. `extra_body.top_k` for
      vLLM class), or `null` = drop `top_k`, never forward speculatively.
    - `catalog`: modelparams.dev provider slug when covered (`openai`, `nvidia`,
@@ -169,10 +169,11 @@ This specification establishes a language-agnostic contract for:
    `arguments` objects, `message.content`, `message.thinking`, `done`). No cross-line
    accumulation. `thinking` must route to a thinking channel or drop per settings —
    never concatenate into speakable text.
-3. `openai_delta_with_xml_fallback`: run the `openai_delta` parser first; if a turn
-   yields `delta.content` containing `<tool_call>` with zero `delta.tool_calls`,
-   run the XML fallback parser over the accumulated content buffer. The fallback is
-   a declared manifest shape, not a sniff.
+3. `openai_delta_with_xml_fallback` is removed (2026-10-06). No confirmed real
+   provider needs an XML tool-call fallback; every provider in the manifest
+   speaks OpenAI delta or Ollama NDJSON. `ToolStreamShape` keeps exactly the
+   two implemented variants. If a provider ever requires XML fallback, it must
+   be re-specified with a golden fixture before any parser is written.
 4. Debug `println!` of raw SSE lines and request bodies is forbidden in production
    transports. Wire observability goes through `log::debug!` behind a single
    `VoxSettings.llm.wire_debug` flag (off by default, never in hot path).
@@ -192,16 +193,46 @@ This specification establishes a language-agnostic contract for:
 ### 6. Hierarchical Capability Resolution with Provenance (models, unchanged)
 
 1. Every capability attribute (`context_window`, `max_output_tokens`) carries a
-   provenance tier: `CatalogBaseline` > `FamilyBaseline`, with `ProbedServer`
-   winning when empirically verified, `UserConfigured` winning when explicitly set,
-   else `Unknown`. Precedence:
-   $$\text{UserConfigured} > \text{ProbedServer} > \text{CatalogBaseline} > \text{FamilyBaseline} > \text{Unknown}$$
-2. Embedded models: read from local manifests/headers. Ollama native: query
+   provenance tier. Support flags (`supports_tools`, `supports_latin`,
+   `supports_devanagari`) are **tri-state** (`yes` | `no` | `unknown`), never
+   plain booleans: a probe that could not run must emit `unknown`, never `no`.
+   Provenance precedence:
+   $$\text{UserConfigured} > \text{ProbedServer} > \text{CatalogBaseline} > \text{DeclaredStatic} > \text{FamilyBaseline} > \text{Unknown}$$
+   `DeclaredStatic` (added 2026-10-06) covers embedded models whose capabilities
+   are authored per-model and static: read from the local manifest / weight
+   header, labelled as declared — never probed, never guessed from a name.
+2. Embedded models: read from local manifests/headers, per model. Ollama native: query
    `/api/show` + `/api/ps`. Cloud endpoints without metadata: catalog hypothesis +
    connectivity probe. Unknown stays `Unknown` — never fabricate defaults.
+   Fabricated constants (`context_window: 8192`, `family: "qwen2.5"`,
+   unconditional script-support flags) under a `probed_server` label are
+   forbidden: they are invented values wearing a measurement's provenance.
 3. `probe.rs` owns all empirical probing. Transports own serialization. Probes call
    transports; transports never call probes (no cycle, no transport-internal 400
    scraping duplicated in probe code).
+
+### 6.4 Probe Diagnostics (added 2026-10-06)
+
+1. Every probe result carries a `checks[]` array of
+   `{id, label, outcome, detail, duration_ms}` with
+   `outcome ∈ {measured, unsupported, failed, skipped}`. Each independently
+   fallible sub-probe (streaming generation, tool calls, Ollama metadata,
+   Ollama GPU state, dialect detection, baseline lookup, token-cap validation,
+   cache read/write) records exactly one entry.
+2. `failed` entries must carry the real reason in `detail`: HTTP status plus a
+   body excerpt, or the transport error string. Collapsing distinct failures
+   (network error, HTTP 401, HTTP 429, timeout) into a single `false` value
+   with no record is forbidden.
+3. `skipped` entries must state why the check could not run
+   (e.g. "Responses transport cannot declare tools" — until it can;
+   "embedded throughput requires loading the model").
+4. The UI is contractually required to render `detail` for every `failed` and
+   `skipped` check. A probe result with no `checks` is not displayable as a
+   measurement.
+5. Partial results are returnable: a failed GPU check must not discard a good
+   TPS measurement. But a check that did not complete must never contribute a
+   value: no tokens-per-second computed from a truncated stream, no `false`
+   persisted from a failed tool probe.
 
 ### 7. User Setting Boundaries (Code Floor vs. Probed Ceiling)
 
@@ -224,8 +255,13 @@ This specification establishes a language-agnostic contract for:
 1. Every manifest row needs a golden `build_request_body` unit test (canonical in →
    exact JSON out, asserting absent keys too: no `tool_choice` on Ollama rows, no
    `think` on `/v1` rows).
-2. Every `tool_stream_shape` needs a golden SSE/NDJSON fixture replay test
-   (including Ollama `index:0` duplication and `<tool_call>` XML fallback).
+2. Every `tool_stream_shape` needs a golden SSE/NDJSON fixture replay test.
+3. The tool probe must declare **production tool definitions** via
+   `ToolRegistry` + `canonical_tools_json` — byte-identical to what the
+   harness sends. Fabricated probe-only tools (`get_weather`) and raw
+   substring detection (`body.contains("tool_calls")`) are forbidden. Detection
+   must reuse the production stream parsers and assert the emitted call names
+   a declared tool with parseable arguments.
 3. Live provider tests (`#[ignore]`, explicit approval only) hit real Nvidia NIM +
    Ollama endpoints and assert `session_tool_calls` persistence. Mock-stream tests
    cover harness routing only and must be named as such — they never count as
@@ -250,6 +286,12 @@ This specification establishes a language-agnostic contract for:
 10. **No transport→probe imports.** Probes call transports, never the reverse.
 11. **No mock-stream test counted as transport coverage.** Names must say `mock_`
     vs `live_` vs `golden_`.
+12. **No fabricated probe tools.** The tool probe must declare production tool
+    definitions; probe-only fixture tools and substring-match detection are
+    forbidden (§9.3).
+13. **No failure persisted as a negative.** A failed or timed-out probe must
+    never write `supports_tools: false` to the cache or fire
+    "unavailable" notifications. Only a confirmed `no` disables tools.
 
 ---
 
@@ -265,7 +307,10 @@ This specification establishes a language-agnostic contract for:
 
 ## Migration Notes (from v1 model-capability spec)
 
-- Sections 1, 6, 7, 8 are carried over (reworded, provenance gains `UserConfigured`).
+- Sections 1, 6, 7, 8 are carried over (reworded, provenance gains `UserConfigured`
+  in v2 and `DeclaredStatic` in the 2026-10-06 probe-transparency amendment;
+  support flags become tri-state; §6.4 adds the probe-diagnostics contract;
+  §9.3 locks the tool probe to production tool definitions).
 - Sections 2–5, 9 are **new**: they codify the provider wire manifest and pipeline
   rules that previously lived as scattered `if/else` across `transport/`.
 - `baseline_providers.json` must grow from 7 display/routing fields to the full
