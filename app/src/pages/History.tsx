@@ -23,6 +23,7 @@ import { formatDateTime, resolveSessionTitle, type SessionRow } from "@/services
 import { useRegisterPageDrawer } from "@/shared/context/PageDrawerContext";
 import { usePanelStateContext } from "@/shared/hooks/usePanelState";
 import { useProfilerDrawer } from "@/shared/components/profiler/ProfilerDrawer";
+import { getThemeTransitioning, subscribeThemeTransition } from "@/shared/theme";
 
 export const History: React.FC = () => {
   const navigate = useNavigate();
@@ -31,6 +32,12 @@ export const History: React.FC = () => {
   const setDrillDownSession = useHistoryFilterStore((s) => s.setDrillDownSession);
   const { isPanelOpen, rightPanel } = usePanelStateContext();
   const { isProfilerOpen } = useProfilerDrawer();
+  const [isThemeTransitioning, setIsThemeTransitioning] = React.useState(getThemeTransitioning);
+  React.useEffect(() => {
+    return subscribeThemeTransition(() => {
+      setIsThemeTransitioning(getThemeTransitioning());
+    });
+  }, []);
   const {
     sessions,
     showLoading,
@@ -350,7 +357,7 @@ export const History: React.FC = () => {
                 nodeIds={monthNodeIds}
                 radius={ringRadius}
                 selectedId={null}
-                paused={Boolean(selectedSession) || isProfilerOpen || isPanelOpen("help") || isPanelOpen("notifications")}
+                paused={Boolean(selectedSession) || isProfilerOpen || isPanelOpen("help") || isPanelOpen("notifications") || isThemeTransitioning}
                 onDragStateChange={handleDragState}
                 renderNode={renderMonthNode}
                 blurTargetRef={orbitStageRef}
@@ -394,7 +401,7 @@ export const History: React.FC = () => {
                 nodeIds={dayNodeIds}
                 radius={ringRadius}
                 selectedId={selectedSession ? String(selectedSession.id) : null}
-                paused={Boolean(selectedSession) || isProfilerOpen || isPanelOpen("help") || isPanelOpen("notifications")}
+                paused={Boolean(selectedSession) || isProfilerOpen || isPanelOpen("help") || isPanelOpen("notifications") || isThemeTransitioning}
                 onDragStateChange={handleDragState}
                 renderNode={renderDayNode}
                 blurTargetRef={orbitStageRef}

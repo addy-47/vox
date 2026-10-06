@@ -84,11 +84,25 @@ export const MEMORY_COPY = {
   undecidedCount: (n: number) =>
     n === 1 ? "1 change undecided" : `${n} changes undecided`,
   undecidedStayPending: "Undecided changes stay pending.",
-  /** Unbordered change-kind labels in the review diff. */
+  /** Unbordered change-kind labels and badges in the review diff. */
   changeLabelReplace: "Replace",
   changeLabelDelete: "Delete",
   changeLabelAdd: "New fact",
   changeLabelNewSection: "New section",
+  changeBadgeNewFact: "New",
+  changeBadgeNewSection: "New Section",
+  changeBadgeDelete: "Delete",
+  changeBadgeReplace: "Replace",
+  headerDecisionSummary: (accepted: number, rejected: number, pending: number) =>
+    `${accepted} accepted · ${rejected} rejected · ${pending} pending`,
+  footerChangeBreakdown: (adds: number, deletes: number, updates: number, sections: number) => {
+    const parts: string[] = [];
+    if (adds > 0) parts.push(`${adds} ${adds === 1 ? "addition" : "additions"}`);
+    if (deletes > 0) parts.push(`${deletes} ${deletes === 1 ? "deletion" : "deletions"}`);
+    if (updates > 0) parts.push(`${updates} ${updates === 1 ? "update" : "updates"}`);
+    if (sections > 0) parts.push(`${sections} new ${sections === 1 ? "section" : "sections"}`);
+    return parts.length > 0 ? parts.join(" · ") : "No changes to review";
+  },
   applyFailed: "Could not apply changes.",
   retryFailed: "Retry",
   unanchoredSection: "Unanchored suggestions",
@@ -218,8 +232,20 @@ export const MEMORY_COPY = {
   compactionRunning: "A session compaction is currently in progress. Please wait a moment.",
   pendingQueueNotice: "There are pending observation items queued for processing. Proceed with integration now?",
   integrateAnyway: "Integrate Anyway",
-  pendingConfirmationTitle: "Ingestion Queue Not Empty",
+  pendingConfirmationTitle: "Queued Turns Pending Extraction",
+  pendingConfirmationTitleDisabled: "Memory Ingestion Disabled",
   pendingConfirmationDesc: "{count} conversation turn(s) are queued for background fact extraction. You can integrate your current staged observations now, or wait for extraction to finish first.",
+  pendingConfirmationDescIngestionOn: (count: number) =>
+    count === 1
+      ? "1 conversation turn is currently queued for fact extraction. You can integrate staged observations now, or wait for extraction to finish."
+      : `${count} conversation turns are currently queued for fact extraction. You can integrate staged observations now, or wait for extraction to finish.`,
+  pendingConfirmationDescIngestionOff: (count: number) =>
+    count === 1
+      ? "1 conversation turn is waiting in queue, but memory ingestion is disabled. Enable it to extract facts first, or proceed with staged observations now."
+      : `${count} conversation turns are waiting in queue, but memory ingestion is disabled. Enable it to extract facts first, or proceed with staged observations now.`,
+  enableAndWait: "Enable & Wait",
+  proceedAnyway: "Proceed Anyway",
+  waitForExtraction: "Wait for Extraction",
   compactionRunningTitle: "Session Compaction In Progress",
   compactionRunningDesc: "A session compaction is currently processing in the background. Observations cannot be integrated until compaction finishes. Please wait a moment and try again.",
   integrateExistingNow: "Integrate Staged Now",

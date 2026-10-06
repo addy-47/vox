@@ -9,14 +9,13 @@
  *  - A category token must never resolve to `--accent` itself: no offset is 0.
  *  - Recomputed on every theme/accent write so the theme flip interpolates
  *    them alongside the rest of the token set.
- *  - Written as a stylesheet rule (not inline props): the flip's end-value
- *    capture drops inline non-accent properties before reading computed
- *    values, so only stylesheet-owned values survive that path.
+ *  - Written as INLINE custom properties on `<html>`, owned here and nowhere
+ *    else. They used to be written as a `<style>` rule; see
+ *    `applyNotificationCategoryTokens` for why that cost more than it was
+ *    worth.
  */
 
 import type { NotificationCategory } from "@/services/notificationService";
-
-const STYLE_ID = "notif-category-tokens";
 
 /** Hue offsets (fraction of the wheel) from the accent hue. None is 0 — the
  *  accent is reserved for global affordances and may not be a category colour. */
@@ -33,6 +32,24 @@ const HUE_OFFSETS: Record<NotificationCategory, number> = {
 export const NOTIFICATION_CATEGORIES = Object.keys(
   HUE_OFFSETS
 ) as NotificationCategory[];
+
+/** CSS custom property names are hyphenated (`--notif-session-compaction`).
+ *  Tailwind arbitrary values turn `_` into a space, so an underscored name
+ *  would break every `var()` reference in a class string. */
+const TOKEN_PROP: Record<NotificationCategory, string> = NOTIFICATION_CATEGORIES.reduce(
+  (acc, c) => {
+    acc[c] = `--notif-${c.replace(/_/g, "-")}`;
+    return acc;
+  },
+  {} as Record<NotificationCategory, string>
+);
+
+/** The seven `--notif-*` property names, in a stable order. Shared with the
+ *  flip interpolation so a category token is treated like any other theme
+ *  token: masked at its start value, then written once per interpolated frame. */
+export const NOTIFICATION_TOKEN_PROPS: string[] = NOTIFICATION_CATEGORIES.map(
+  (c) => TOKEN_PROP[c]
+);
 
 /* ── Colour math (no three.js dependency — pure HSL) ──────────────────── */
 
@@ -111,27 +128,26 @@ export function deriveNotificationCategoryTokens(
 }
 
 /**
- * Writes the derived family into a dedicated stylesheet on the document.
- * Called from the theme module on every theme/accent write.
+ * Writes the derived family as inline custom properties on `<html>`.
+ *
+ * These were a `<style>` rule before. That cost a full stylesheet
+ * re-parse-and-invalidate on every appearance write, because assigning
+ * `textContent` to a live `<style>` element invalidates the match cache for
+ * *every* rule in the document. Measured on the Settings route: the accent
+ * write alone already forces a 683-2772ms document style recalc, and the
+ * stylesheet swap was a second, independent invalidation riding on top.
+ *
+ * Inline props on `<html>` inherit to every descendant, so every existing
+ * `var(--notif-*)` reference keeps resolving unchanged — and the flip's
+ * end-value capture no longer has to strip these before reading them.
  */
 export function applyNotificationCategoryTokens(
   accentTriplet: string,
   isLight: boolean
 ): void {
   const tokens = deriveNotificationCategoryTokens(accentTriplet, isLight);
-  // CSS custom properties are hyphenated (`--notif-session-compaction`):
-  // Tailwind arbitrary values turn `_` into a space, so an underscored name
-  // would break every `var()` reference in a class string.
-  const body = NOTIFICATION_CATEGORIES.map(
-    (c) => `  --notif-${c.replace(/_/g, "-")}: ${tokens[c]};`
-  ).join("\n");
-  const css = `:root {\n${body}\n}\n`;
-
-  let style = document.getElementById(STYLE_ID) as HTMLStyleElement | null;
-  if (!style) {
-    style = document.createElement("style");
-    style.id = STYLE_ID;
-    document.head.appendChild(style);
+  const root = document.documentElement;
+  for (const category of NOTIFICATION_CATEGORIES) {
+    root.style.setProperty(TOKEN_PROP[category], tokens[category]);
   }
-  if (style.textContent !== css) style.textContent = css;
 }

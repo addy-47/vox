@@ -415,28 +415,86 @@ If a field has no consumer, delete it — do not keep an unconsumed capability a
       );
     });
 
-    it("Invariant 12 (Single owner): no component writes the theme attributes directly", () => {
-      // `data-theme` and the --accent custom property are owned solely by
-      // shared/theme. A second writer reintroduces the unsynchronized flip
-      // that motivated the extraction (the old `applyAppearance` in the store).
+    it("Invariant 12 (Single owner): no component writes the theme attributes or tokens directly", () => {
+      // `data-theme`, the `data-theme-transition` gate and the accent custom
+      // properties are owned solely by shared/theme. A second writer
+      // reintroduces the unsynchronized flip that motivated the extraction (the
+      // old `applyAppearance` in the store).
+      //
+      // The accent half of this rule used to be unenforced: the check only
+      // grepped `setAttribute`, so `AppearanceCard.tsx` could write
+      // `documentElement.style.setProperty("--accent", ...)` on every drag
+      // event and pass. That write bypassed the rAF coalescing, the repaint
+      // gate and the `--notif-*` sync that live in shared/theme — and it
+      // measured at a 683-2772ms document style recalc per write.
       const violations: string[] = [];
       for (const file of tsFiles) {
         const relPath = path.relative(SRC_DIR, file);
         if (relPath.startsWith("test/")) continue;
         if (relPath === path.join("shared", "theme", "index.ts")) continue;
+        if (relPath.startsWith(path.join("shared", "theme") + path.sep)) continue;
         const content = fs.readFileSync(file, "utf-8");
-        if (
-          content.includes('setAttribute("data-theme"') ||
-          content.includes('setAttribute("data-theme",') ||
-          content.includes('setAttribute("data-theme-transition"')
-        ) {
-          violations.push(`  ${relPath}`);
+        const checks: Array<[string, RegExp]> = [
+          ["setAttribute(\"data-theme\"", /setAttribute\(\s*["']data-theme["']/],
+          ["setAttribute(\"data-theme-transition\"", /setAttribute\(\s*["']data-theme-transition["']/],
+          ["removeAttribute(\"data-theme-transition\"", /removeAttribute\(\s*["']data-theme-transition["']/],
+          ["--accent write", /setProperty\(\s*["']--accent["']/],
+          ["--notif-* write", /setProperty\(\s*["']--notif-/],
+        ];
+        for (const [label, re] of checks) {
+          if (re.test(content)) violations.push(`  ${relPath} (${label})`);
         }
       }
       expect(
         violations,
-        `Theme attributes written outside shared/theme:\n${violations.join("\n")}`
+        `Theme attributes/tokens written outside shared/theme:\n${violations.join("\n")}\nUse applyTheme / previewAccent / beginAccentPreview / endAccentPreview from shared/theme.`
       ).toEqual([]);
+    });
+
+    it("Invariant 26 (Dev-only flip trace): the theme trace never ships", () => {
+      // trace.ts is a measurement harness, not instrumentation. Ungated it ran
+      // five whole-document querySelectorAll scans, a forced style recalc, a
+      // forced layout, a longtask observer and a 700ms rAF sampler on every
+      // applyTheme call — including every accent-slider release — and on a real
+      // flip it added three further getComputedStyle bursts inside the window.
+      // It is gated on import.meta.env.DEV so the expensive half is
+      // dead-code-eliminated from production bundles.
+      const tracePath = path.join(SRC_DIR, "shared", "theme", "trace.ts");
+      const trace = fs.readFileSync(tracePath, "utf-8");
+      expect(trace, "trace.ts lost its dev gate").toMatch(
+        /const TRACE_ENABLED\s*=\s*import\.meta\.env\.DEV/
+      );
+      for (const [fn, guard] of [
+      ["endFlipTrace", /if \(!TRACE_ENABLED\) return;/],
+      ["traceFlipTargets", /if \(!probeEnabled\) return;/],
+    ] as const) {
+        const decl = trace.indexOf(`export function ${fn}`);
+        expect(decl, `${fn} not found in trace.ts`).toBeGreaterThan(-1);
+        const body = trace.slice(decl);
+        expect(
+          body.slice(0, body.indexOf("}")),
+          `${fn} must bail before doing any work in production`
+        ).toMatch(guard);
+        // The guard must come BEFORE the DOM work, or it is decorative.
+        const guardAt = body.search(guard);
+        const censusAt = body.indexOf("querySelectorAll");
+        if (censusAt > -1) {
+          expect(
+            guardAt,
+            `${fn} reaches DOM queries before its guard`
+          ).toBeLessThan(censusAt);
+        }
+      }
+
+      // The forced-recalc probe causes the recalc it reports; a browser would
+      // flush at paint. It must not be on by default, or the trace distorts the
+      // number it exists to report.
+      expect(trace, "probe must default to off").toMatch(
+        /let probeEnabled\s*=\s*false;/
+      );
+      expect(trace, "probe must be explicitly switchable").toMatch(
+        /export function setThemeTraceProbe/
+      );
     });
 
     it("Invariant 13 (UA surfaces): color-scheme is declared for both themes", () => {

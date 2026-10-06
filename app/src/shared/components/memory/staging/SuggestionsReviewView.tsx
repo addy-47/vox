@@ -1,5 +1,6 @@
-import React, { memo } from "react";
+import React, { memo, useEffect, useRef, useMemo } from "react";
 import { Check, X, RotateCw, TriangleAlert, Loader2 } from "lucide-react";
+import Lenis from "lenis";
 import { cn } from "@/shared/lib/utils";
 import { MEMORY_COPY } from "@/data/memoryCopy";
 import {
@@ -114,7 +115,7 @@ export const SuggestionsReviewView: React.FC<SuggestionsReviewViewProps> = memo(
     decisions,
     failedRevisionIds,
     decidedCount,
-    undecidedCount,
+    undecidedCount: _undecidedCount,
     onApplyDecisions,
     isApplying,
     onSelectDecision,
@@ -122,10 +123,35 @@ export const SuggestionsReviewView: React.FC<SuggestionsReviewViewProps> = memo(
     actionsDisabled,
     parseOpPayload,
   }) => {
-    const doc = React.useMemo(
+    const doc = useMemo(
       () => buildReviewDocument({ baseSections, revisions, parseOpPayload }),
       [baseSections, revisions, parseOpPayload]
     );
+
+    const scrollRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+      const el = scrollRef.current;
+      if (!el) return undefined;
+
+      const lenis = new Lenis({
+        wrapper: el,
+        content: el,
+        eventsTarget: el,
+        smoothWheel: true,
+        autoRaf: true,
+        duration: 0.8,
+      });
+
+      return () => {
+        lenis.destroy();
+      };
+    }, []);
+
+    const addsCount = useMemo(() => revisions.filter((r) => r.op === "create_block").length, [revisions]);
+    const deletesCount = useMemo(() => revisions.filter((r) => r.op === "delete_block").length, [revisions]);
+    const updatesCount = useMemo(() => revisions.filter((r) => r.op === "update_block").length, [revisions]);
+    const sectionsCount = useMemo(() => revisions.filter((r) => r.op === "create_section").length, [revisions]);
 
     const anyFailed = Boolean(failedRevisionIds && failedRevisionIds.size > 0);
 
@@ -220,8 +246,15 @@ export const SuggestionsReviewView: React.FC<SuggestionsReviewViewProps> = memo(
                   </ins>
                 );
               })}
-              <span className="ml-1.5 text-[10px] font-mono text-[rgb(var(--foreground-muted))]/50 tracking-wide uppercase align-middle">
-                {MEMORY_COPY.changeLabelReplace}
+              <span
+                className={cn(
+                  "inline-flex items-center px-1.5 py-0.5 rounded-md text-[9.5px] font-mono font-medium tracking-wide uppercase align-middle ml-2 border",
+                  decision === "reject"
+                    ? "bg-[rgba(var(--foreground-muted),0.08)] text-[rgb(var(--foreground-muted))]/50 border-transparent"
+                    : "bg-amber-500/12 text-amber-400 border-amber-500/30"
+                )}
+              >
+                {MEMORY_COPY.changeBadgeReplace}
               </span>
             </p>
             <span className="shrink-0 mt-0.5">{buttons}</span>
@@ -244,8 +277,15 @@ export const SuggestionsReviewView: React.FC<SuggestionsReviewViewProps> = memo(
               )}
             >
               {entry.text}
-              <span className="ml-1.5 no-underline text-[10px] font-mono text-[rgb(var(--foreground-muted))]/50 tracking-wide uppercase align-middle">
-                {MEMORY_COPY.changeLabelDelete}
+              <span
+                className={cn(
+                  "inline-flex items-center px-1.5 py-0.5 rounded-md text-[9.5px] font-mono font-medium tracking-wide uppercase align-middle ml-2 border no-underline",
+                  decision === "reject"
+                    ? "bg-[rgba(var(--foreground-muted),0.08)] text-[rgb(var(--foreground-muted))]/50 border-transparent"
+                    : "bg-[rgba(var(--danger),0.12)] text-[rgb(var(--danger))] border-[rgba(var(--danger),0.3)]"
+                )}
+              >
+                {MEMORY_COPY.changeBadgeDelete}
               </span>
             </p>
             <span className="shrink-0 mt-0.5">{buttons}</span>
@@ -259,17 +299,24 @@ export const SuggestionsReviewView: React.FC<SuggestionsReviewViewProps> = memo(
           key={entry.key}
           className="group flex items-start justify-between gap-2 py-0.5"
         >
-<p
+          <p
+            className={cn(
+              "flex-1 text-[12.5px] leading-relaxed select-text font-sans",
+              decision === "reject"
+                ? "line-through decoration-[rgb(var(--foreground-muted))]/50 text-[rgb(var(--foreground-muted))]/45"
+                : "text-[rgb(var(--accent))]"
+            )}
+          >
+            {entry.text}
+            <span
               className={cn(
-                "flex-1 text-[12.5px] leading-relaxed select-text font-sans",
+                "inline-flex items-center px-1.5 py-0.5 rounded-md text-[9.5px] font-mono font-medium tracking-wide uppercase align-middle ml-2 border",
                 decision === "reject"
-                  ? "line-through decoration-[rgb(var(--foreground-muted))]/50 text-[rgb(var(--foreground-muted))]/45"
-                  : "text-[rgb(var(--accent))]"
+                  ? "bg-[rgba(var(--foreground-muted),0.08)] text-[rgb(var(--foreground-muted))]/50 border-transparent"
+                  : "bg-[rgba(var(--accent),0.12)] text-[rgb(var(--accent))] border-[rgba(var(--accent),0.28)]"
               )}
             >
-              {entry.text}
-            <span className="ml-1.5 text-[10px] font-mono text-[rgb(var(--foreground-muted))]/50 tracking-wide uppercase align-middle">
-              {MEMORY_COPY.changeLabelAdd}
+              {MEMORY_COPY.changeBadgeNewFact}
             </span>
           </p>
           <span className="shrink-0 mt-0.5">{buttons}</span>
@@ -279,17 +326,34 @@ export const SuggestionsReviewView: React.FC<SuggestionsReviewViewProps> = memo(
 
     return (
       <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-        {/* Document body */}
-        <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-1 pt-3 select-text">
+        {/* Document body with scoped Lenis */}
+        <div
+          ref={scrollRef}
+          className="flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-1 pt-3 select-text"
+        >
           <div className="space-y-6 pb-2">
             {doc.sections.map((sec) => (
               <section key={sec.key} className="space-y-2">
-                <h3 className="text-[12px] font-semibold uppercase tracking-wider text-[rgb(var(--foreground-muted))] border-b border-[rgba(var(--border),0.1)] pb-1.5 flex items-center justify-between gap-2">
+                <h3
+                  className={cn(
+                    "font-display text-[13px] font-bold uppercase tracking-wider border-b border-[rgba(var(--border),0.1)] pb-1.5 flex items-center justify-between gap-2",
+                    sec.isNew
+                      ? "text-[rgb(var(--accent))]"
+                      : "text-[rgb(var(--foreground))]"
+                  )}
+                >
                   <div className="flex items-center gap-2">
                     <span>{sec.title}</span>
                     {sec.isNew && (
-                      <span className="text-[10px] font-mono font-normal normal-case tracking-normal text-[rgb(var(--foreground-muted))]/60">
-                        {MEMORY_COPY.changeLabelNewSection}
+                      <span
+                        className={cn(
+                          "inline-flex items-center px-1.5 py-0.5 rounded-md text-[9.5px] font-mono font-medium tracking-wide uppercase normal-case align-middle border",
+                          decisions[sec.revisionId!] === "reject"
+                            ? "bg-[rgba(var(--foreground-muted),0.08)] text-[rgb(var(--foreground-muted))]/50 border-transparent"
+                            : "bg-[rgba(var(--accent),0.18)] text-[rgb(var(--accent))] border-[rgba(var(--accent),0.35)]"
+                        )}
+                      >
+                        {MEMORY_COPY.changeBadgeNewSection}
                       </span>
                     )}
                     {sec.key === "sec_orphaned" && (
@@ -329,9 +393,7 @@ export const SuggestionsReviewView: React.FC<SuggestionsReviewViewProps> = memo(
         <div className="shrink-0 border-t border-[rgba(var(--border),0.1)] pt-2.5 mt-1 flex flex-col gap-2">
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <span className="text-[11px] font-mono text-[rgb(var(--foreground-muted))] min-w-0">
-              {undecidedCount > 0 ? MEMORY_COPY.undecidedCount(undecidedCount) : ""}
-              {undecidedCount > 0 && " · "}
-              {MEMORY_COPY.undecidedStayPending}
+              {MEMORY_COPY.footerChangeBreakdown(addsCount, deletesCount, updatesCount, sectionsCount)}
             </span>
             <button
               type="button"

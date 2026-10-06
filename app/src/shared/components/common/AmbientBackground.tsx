@@ -49,20 +49,6 @@ export const AmbientBackground = React.memo(({
   const glowRef = React.useRef<HTMLDivElement>(null);
   const rippleRef = React.useRef<HTMLDivElement>(null);
 
-  const [isLight, setIsLight] = React.useState(false);
-  React.useEffect(() => {
-    const checkTheme = () => {
-      setIsLight(document.documentElement.getAttribute('data-theme') === 'light');
-    };
-    checkTheme();
-    const observer = new MutationObserver(checkTheme);
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
-    return () => observer.disconnect();
-  }, []);
-
-  const glowOpacityMultiplier = isLight ? 1.8 : 1.2;
-  const rippleOpacityMultiplier = isLight ? 1.8 : 1.2;
-
   /**
    * Park the loop while a theme flip animates. The glow and ripple layers are
    * full-viewport (60vmax / inset:0) and sit behind every glass surface, so
@@ -110,6 +96,12 @@ export const AmbientBackground = React.memo(({
       const energy = telemetryRef.current?.energy || 0;
       // organic, fluid interpolation
       smoothedEnergy += (energy - smoothedEnergy) * 0.15;
+
+      const isLight =
+        typeof document !== "undefined" &&
+        document.documentElement.getAttribute("data-theme") === "light";
+      const glowOpacityMultiplier = isLight ? 1.8 : 1.2;
+      const rippleOpacityMultiplier = isLight ? 1.8 : 1.2;
 
       const baseGlow = GLOW_OPACITY * glowOpacityMultiplier;
       const dynamicGlow = baseGlow + smoothedEnergy * 0.12 * glowOpacityMultiplier;
@@ -178,7 +170,7 @@ export const AmbientBackground = React.memo(({
       document.removeEventListener("visibilitychange", onVisibilityChange);
       unsubscribe();
     };
-  }, [glowOpacityMultiplier, rippleOpacityMultiplier, telemetryRef, paused]);
+  }, [telemetryRef, paused]);
 
   return (
     <div

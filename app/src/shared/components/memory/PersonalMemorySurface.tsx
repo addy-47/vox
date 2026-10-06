@@ -57,7 +57,7 @@ export function PersonalMemoryHeaderActions({ drawer, layout = "wrap" }: Persona
           <button
             type="button"
             onClick={() => drawer.setStagingMode("suggestions")}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-mono border border-emerald-500/40 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 transition-all cursor-pointer shadow-sm animate-pulse"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-mono border border-[rgba(var(--accent),0.35)] bg-[rgba(var(--accent),0.12)] text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.2)] transition-all cursor-pointer shadow-sm animate-pulse"
           >
             <ClipboardCheck size={12} />
             <span>{MEMORY_COPY.reviewSuggestions}</span>

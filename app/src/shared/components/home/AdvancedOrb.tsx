@@ -4,6 +4,7 @@ import { useDynamicFPS } from '@/shared/hooks/useDynamicFPS';
 import { type InteractionState } from '@/services/eventsService';
 import { useMemoryTrace } from '@/shared/hooks/useMemoryTrace';
 import { isSoftwareRasterizer } from '@/shared/lib/glUtils';
+import { getThemeTransitioning, subscribeThemeTransition } from '@/shared/theme';
 
 
 interface VoxOrbProps {
@@ -60,7 +61,8 @@ const BASE_AMP: Record<string, number> = {
 
 function getCSSColor(varName: string, fallbackHex: string): THREE.Color {
   if (typeof window === 'undefined') return new THREE.Color(fallbackHex);
-  const val = getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+  const root = document.documentElement;
+  const val = root.style.getPropertyValue(varName).trim() || getComputedStyle(root).getPropertyValue(varName).trim();
   if (!val) {
     return new THREE.Color(fallbackHex);
   }
@@ -400,8 +402,10 @@ export const VoxOrb = React.memo(({
 
     const updateTheme = () => {
       if (typeof document === 'undefined') return;
-      const currentTheme = document.documentElement.getAttribute('data-theme') || 'dark';
-      const rawAccent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim();
+      if (getThemeTransitioning()) return;
+      const root = document.documentElement;
+      const currentTheme = root.getAttribute('data-theme') || 'dark';
+      const rawAccent = root.style.getPropertyValue('--accent').trim() || (typeof window !== 'undefined' ? getComputedStyle(root).getPropertyValue('--accent').trim() : '');
       if (currentTheme === lastTheme && rawAccent === lastAccentStr) return;
       lastTheme = currentTheme;
       lastAccentStr = rawAccent;
@@ -417,15 +421,23 @@ export const VoxOrb = React.memo(({
 
     updateTheme();
 
+    // Subscribe to theme transition settlement so final values commit once without per-frame thrash
+    const unsubTransition = subscribeThemeTransition(() => {
+      if (!getThemeTransitioning()) {
+        updateTheme();
+      }
+    });
+
     if (typeof window !== 'undefined') {
       observer = new MutationObserver(updateTheme);
       observer.observe(document.documentElement, {
         attributes: true,
-        attributeFilter: ["data-theme", "style"]
+        attributeFilter: ["data-theme"]
       });
     }
 
     return () => {
+      unsubTransition();
       if (observer) {
         observer.disconnect();
       }

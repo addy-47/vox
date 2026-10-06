@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef, memo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Sparkles } from "lucide-react";
+import { Sparkles, Loader2 } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import type {
   MemoryRevisionView,
@@ -381,6 +381,23 @@ export const PersonalMemoryStagingCard: React.FC<PersonalMemoryStagingCardProps>
               </div>
             </motion.div>
           )}
+
+          {isApplyingSuggestions && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.25, ease: "easeInOut" }}
+              className="absolute inset-0 z-40 rounded-2xl overflow-hidden bg-[rgba(var(--card),0.75)] backdrop-blur-xs flex flex-col items-center justify-center pointer-events-auto"
+            >
+              <div className="flex flex-col items-center text-center p-6">
+                <Loader2 size={24} className="animate-spin text-[rgb(var(--accent))] mb-2.5" />
+                <span className="text-[12px] font-mono font-medium text-[rgb(var(--foreground))]">
+                  {MEMORY_COPY.applyingDecisions}
+                </span>
+              </div>
+            </motion.div>
+          )}
         </AnimatePresence>
         <StagingHeader
           mode={mode}
@@ -401,15 +418,6 @@ export const PersonalMemoryStagingCard: React.FC<PersonalMemoryStagingCardProps>
           onObservationFilterChange={onObservationFilterChange}
           observationCount={(observations.length > 0 ? observations : candidateFacts).length}
         />
-
-        {pendingConfirmation && (
-          <PendingConfirmationBanner
-            confirmation={pendingConfirmation}
-            isConsolidating={isConsolidating}
-            onConfirm={onConfirmPendingIntegration ?? (() => {})}
-            onDismiss={onCancelPendingConfirmation ?? (() => {})}
-          />
-        )}
 
         {/* Post-commit confirmation is a slim banner over the card, not a
             full-body takeover — the user keeps their place and the CTA below
@@ -438,6 +446,13 @@ export const PersonalMemoryStagingCard: React.FC<PersonalMemoryStagingCardProps>
             onApplyDecisions={handleApplySelectedDecisions}
             onSelectDecision={handleSelectDecision}
             parseOpPayload={parseOpPayload}
+          />
+        ) : pendingConfirmation ? (
+          <PendingConfirmationBanner
+            confirmation={pendingConfirmation}
+            isConsolidating={isConsolidating}
+            onConfirm={onConfirmPendingIntegration ?? (() => {})}
+            onDismiss={onCancelPendingConfirmation ?? (() => {})}
           />
         ) : mode === "idle" ? (
           <ActionHubView

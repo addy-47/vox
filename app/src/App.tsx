@@ -396,8 +396,8 @@ const App: React.FC = () => {
                     <motion.div
                       key="boot-loader"
                       initial={{ opacity: 1 }}
-                      exit={{ opacity: 0, scale: 0.98 }}
-                      transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
+                      exit={{ opacity: 0 }}
+                      transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
                       className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-[rgb(var(--background))]"
                     >
                       <TitleBar />

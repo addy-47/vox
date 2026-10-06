@@ -66,9 +66,6 @@ import { useMemoryTrace } from "@/shared/hooks/useMemoryTrace";
 export const Settings: React.FC = () => {
   useMemoryTrace("Settings");
   const draftSettings = useSettingsStore((s) => s.draftSettings);
-  useEffect(() => {
-    console.info(`[theme-flip] draftSettings React commit @${performance.now().toFixed(1)}ms`);
-  }, [draftSettings]);
 
   const {
     containerRef,
@@ -99,9 +96,8 @@ export const Settings: React.FC = () => {
     return () => window.removeEventListener("keydown", handleKey);
   }, [activeDomains.length, setActiveDomains]);
 
-  // Eagerly prewarm the 7 card chunks after first paint so the first radial
-  // click is warm. (The loaders above previously claimed prewarming but
-  // nothing ever called them — the cold fetch started at the click.)
+  // Eagerly prewarm the 7 card chunks and remote model catalog after first paint
+  // so opening radial cards is completely warm with zero cold fetch delay.
   useEffect(() => {
     const idle = window.requestIdleCallback ?? ((fn: () => void) => setTimeout(fn, 400));
     const id = idle(() => {
@@ -114,6 +110,9 @@ export const Settings: React.FC = () => {
         loadAppearance(),
         loadInteraction(),
       ]).catch(() => {});
+
+      // Prewarm remote LLM catalog into store cache
+      void useSettingsStore.getState().loadRemoteModels().catch(() => {});
     });
     return () => {
       if (window.cancelIdleCallback && typeof id === "number") window.cancelIdleCallback(id);

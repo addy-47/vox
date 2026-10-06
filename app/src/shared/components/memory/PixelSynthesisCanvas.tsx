@@ -149,14 +149,19 @@ export const PixelSynthesisCanvas: React.FC<PixelSynthesisCanvasProps> = ({
         if (APPLY_BATCHED_MATRIX) refreshBucketStyles();
       }
 
-      // Dynamic wandering liquid orb position (smooth multi-harmonic continuous path)
+      // Dynamic wandering liquid orb positions (two orbs interacting organically)
       const orbX =
         width * (0.5 + 0.34 * Math.sin(t * 0.95) + 0.12 * Math.sin(t * 1.8 + 1.2));
       const orbY =
         height * (0.5 + 0.34 * Math.cos(t * 0.75) + 0.12 * Math.cos(t * 1.4 + 0.8));
-
-      // Organic fluid orb influence radius with gentle breathing/wobble
       const baseRadius = Math.min(width, height) * 0.42;
+
+      // Second wandering orb with offset phase and complementary harmonic path (~62% radius)
+      const orb2X =
+        width * (0.5 + 0.30 * Math.sin(t * 0.7 + 2.5) + 0.14 * Math.cos(t * 1.3));
+      const orb2Y =
+        height * (0.5 + 0.28 * Math.cos(t * 0.85 + 1.8) + 0.10 * Math.sin(t * 1.6 + 0.4));
+      const baseRadius2 = baseRadius * 0.62;
 
       const cols = Math.ceil(width / DOT_SPACING) + 1;
       const rows = Math.ceil(height / DOT_SPACING) + 1;
@@ -190,6 +195,7 @@ export const PixelSynthesisCanvas: React.FC<PixelSynthesisCanvasProps> = ({
       for (let r = 0; r < rows; r++) {
         const y = offsetY + r * DOT_SPACING;
         const dy0 = y - orbY;
+        const dy2 = y - orb2Y;
         for (let c = 0; c < cols; c++) {
           const x = offsetX + c * DOT_SPACING;
           const dx = x - orbX;
@@ -209,17 +215,25 @@ export const PixelSynthesisCanvas: React.FC<PixelSynthesisCanvasProps> = ({
           const contourWobble = 1 + 0.12 * sin3p + 0.08 * cos2m;
           const effectiveOrbRadius = baseRadius * contourWobble;
 
-          // Proximity factor: 1 at orb center, smoothly decreasing to 0 at edge
+          // Orb 1 proximity factor: 1 at orb center, smoothly decreasing to 0 at edge
           const normDist = Math.min(1, dist / effectiveOrbRadius);
           const proximity = (Math.cos(normDist * Math.PI) + 1) / 2;
+          const influence1 = proximity * Math.sqrt(proximity);
 
-          // Non-linear falloff curve (x^1.5 as x*sqrt(x) — no Math.pow)
-          const influence = proximity * Math.sqrt(proximity);
+          // Orb 2 proximity factor (additive influence)
+          const dx2 = x - orb2X;
+          const dist2 = Math.sqrt(dx2 * dx2 + dy2 * dy2);
+          const normDist2 = Math.min(1, dist2 / baseRadius2);
+          const proximity2 = (Math.cos(normDist2 * Math.PI) + 1) / 2;
+          const influence2 = proximity2 * Math.sqrt(proximity2);
+
+          // Additive combined influence capped at 1
+          const totalInfluence = Math.min(1, influence1 + influence2);
 
           dotX[n] = x;
           dotY[n] = y;
-          dotR[n] = BASE_RADIUS + radiusSpan * influence;
-          const band = (influence * ALPHA_BANDS) | 0;
+          dotR[n] = BASE_RADIUS + radiusSpan * totalInfluence;
+          const band = (totalInfluence * ALPHA_BANDS) | 0;
           dotBand[n] = band > ALPHA_BANDS - 1 ? ALPHA_BANDS - 1 : band;
           n++;
         }

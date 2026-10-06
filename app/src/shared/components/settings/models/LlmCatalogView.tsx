@@ -15,6 +15,22 @@ import { LLM_CATALOG_COPY } from "@/data/settingsCopy";
 import { CLOUD_PROVIDERS } from "@/data/providersCopy";
 import { CloudProvidersModalView, useCloudProvidersModalState } from "./CloudProvidersModalView";
 
+/**
+ * How many catalog rows to mount before asking the user to narrow the list.
+ *
+ * Each `RemoteModelRow` is ~34 JSX nodes and the list was uncapped. A remote
+ * server advertising a few hundred models put several thousand nodes into a
+ * card that already sits behind four `backdrop-filter` regions. Node count is
+ * the multiplier on every full-document style recalc in the app — measured on
+ * the Settings route, one appearance write cost 0.0ms against a 315-node
+ * document and 683-2772ms against a 9,606-node one — so an unbounded catalog
+ * list silently taxed every theme flip and accent drag app-wide.
+ *
+ * `remoteModels` is a server-advertised list, so this cap is the only thing
+ * between one remote host and a four-figure DOM.
+ */
+const REMOTE_MODEL_PAGE_SIZE = 40;
+
 export interface LlmCatalogViewProps {
   layoutMode?: "full-max" | "full-min" | "small";
   selectedLlmId: string;
@@ -382,6 +398,20 @@ export const RemoteModelsModalView = memo(({
     return list;
   }, [remoteModels, deferredSearch, filterCategory, probingMap, capabilitiesCache, pinnedModelId]);
 
+  // Mounted window over the filtered list. Slicing here rather than inside the
+  // map keeps the `.length` readouts honest — they still report the true match
+  // count, not the capped one.
+  const [visibleModalModelCount, setVisibleModalModelCount] = useState(REMOTE_MODEL_PAGE_SIZE);
+  useEffect(() => {
+    setVisibleModalModelCount(REMOTE_MODEL_PAGE_SIZE);
+  }, [modalSearch, deferredSearch, filterCategory, remoteModels]);
+
+  const visibleModalModels = useMemo(
+    () => modalFilteredModels.slice(0, visibleModalModelCount),
+    [modalFilteredModels, visibleModalModelCount]
+  );
+  const modalHiddenCount = modalFilteredModels.length - visibleModalModels.length;
+
   return (
     <div className="flex flex-col h-full min-h-0 gap-3">
       {/* Modal Toolbar: Clean Search + Filter Chips Bar (Zero native dropdown) */}
@@ -467,7 +497,7 @@ export const RemoteModelsModalView = memo(({
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
-              {modalFilteredModels.map((model) => {
+              {visibleModalModels.map((model) => {
                 const isSelected = selectedModelId === model.id;
                 const probed =
                   probingMap[model.id]?.capabilities ||
@@ -492,6 +522,19 @@ export const RemoteModelsModalView = memo(({
                   />
                 );
               })}
+              {modalHiddenCount > 0 && (
+                <div className="col-span-full flex items-center justify-center pt-1">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setVisibleModalModelCount((c) => c + REMOTE_MODEL_PAGE_SIZE)
+                    }
+                    className="px-3 py-1.5 rounded-lg text-[11px] font-bold uppercase tracking-wider text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/10 border border-[rgba(var(--accent),0.25)] hover:bg-[rgb(var(--accent))]/20 transition-colors cursor-pointer"
+                  >
+                    {`Show ${modalHiddenCount} more`}
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -612,6 +655,21 @@ export const LlmCatalogView = memo(({
     return models;
   }, [remoteModels, searchQuery, committedRemoteModelId]);
 
+  // Capped render window for the inline grid (see REMOTE_MODEL_PAGE_SIZE).
+  // Reset when the query or the list changes so narrowing shows the new top
+  // slice rather than the tail of the old one.
+  const [visibleModelCount, setVisibleModelCount] = useState(REMOTE_MODEL_PAGE_SIZE);
+  useEffect(() => {
+    setVisibleModelCount(REMOTE_MODEL_PAGE_SIZE);
+  }, [searchQuery, committedRemoteModelId, remoteModels]);
+
+  // Mounted window over the inline filtered list (see REMOTE_MODEL_PAGE_SIZE).
+  const visibleInlineModels = useMemo(
+    () => filteredRemoteModels.slice(0, visibleModelCount),
+    [filteredRemoteModels, visibleModelCount]
+  );
+  const inlineHiddenCount = filteredRemoteModels.length - visibleInlineModels.length;
+
   const handleApplyCustomModel = () => {
     const modelId = customModelId.trim();
     if (!modelId) return;
@@ -688,7 +746,7 @@ export const LlmCatalogView = memo(({
           </button>
         </div>
       ) : (
-        filteredRemoteModels.map((model) => {
+        visibleInlineModels.map((model) => {
           const isSelected = selectedModelId === model.id;
           const probed =
             probingMap[model.id]?.capabilities ||
@@ -921,6 +979,19 @@ export const LlmCatalogView = memo(({
             </div>
           );
         })
+      )}
+      {inlineHiddenCount > 0 && (
+        <div className="col-span-full flex items-center justify-center py-2 mt-1">
+          <button
+            type="button"
+            onClick={() =>
+              setVisibleModelCount((c) => c + REMOTE_MODEL_PAGE_SIZE)
+            }
+            className="px-3 py-1.5 rounded-lg text-[11px] font-bold uppercase tracking-wider text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/10 border border-[rgba(var(--accent),0.25)] hover:bg-[rgb(var(--accent))]/20 transition-colors cursor-pointer"
+          >
+            {`Show ${inlineHiddenCount} more`}
+          </button>
+        </div>
       )}
     </div>
   );

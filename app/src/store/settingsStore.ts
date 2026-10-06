@@ -5,6 +5,7 @@ import {
   updateSetting,
   resetSettings,
   probeModelCapabilitiesFull,
+  listLlmModels,
 } from "@/services/settingsService";
 import { applyTheme } from "@/shared/theme";
 import { DOMAIN_DIRTY_KEYS, SETTINGS_SCOPE_KEYS, type SettingsDomainId, type SettingsScope } from "@/data/settingsCopy";
@@ -328,10 +329,20 @@ export interface VoxSettings {
   system: SystemSettings;
 }
 
+/** Per-domain commit state, derived once per store mutation. */
+export interface DomainFlags {
+  dirty: boolean;
+  requiresRestart: boolean;
+}
+
 export interface SettingsState {
   settings: VoxSettings | null;
   draftSettings: VoxSettings | null;
   modelCatalog: ModelCatalog | null;
+  remoteModels: LlmModelInfo[];
+  loadingRemoteModels: boolean;
+  remoteModelsError: string | null;
+  remoteModelsFetchedKey: string | null;
   capabilitiesCache: Record<string, ModelCapabilities>;
   isLoading: boolean;
   hasChanges: boolean;
@@ -347,6 +358,7 @@ export interface SettingsState {
 
   loadSettings: () => Promise<void>;
   loadModelCatalog: () => Promise<void>;
+  loadRemoteModels: (providerConfig?: LlmProviderConfig, force?: boolean) => Promise<void>;
   loadCapabilitiesCache: () => Promise<void>;
   updateDraft: (
     domain: keyof VoxSettings,
@@ -375,10 +387,29 @@ export interface SettingsState {
   autoSavedDomain: string | null;
   lastSavedTimestamp: number;
   triggerAutoSaveToast: (domainId: string) => void;
-  /** Domains whose most recent commit was rejected by the backend. */
-  failedSaveDomains: Record<string, true>;
-  failedSaveKeys: string[];
+  /**
+   * Domains whose most recent commit was rejected by the backend.
+   * Value is the rejected key list for that domain — it was a single flat
+   * `failedSaveKeys` array shared by every domain, so two simultaneous
+   * failures made one card's banner print the other card's key names.
+   */
+  failedSaveDomains: Record<string, string[]>;
   triggerSaveFailure: (domainId: string, keys: string[]) => void;
+  /**
+   * Per-domain dirty / restart-required flags, recomputed ONCE per store
+   * mutation instead of once per subscriber.
+   *
+   * `isDomainDirty` and `isDomainRequiringRestart` are `JSON.stringify` walks
+   * over ~57 declared keys plus a whole-scope TTS comparison. They were invoked
+   * directly as Zustand selectors, so every one of the six always-mounted
+   * `SettingsCardWrapper`s ran both on every `set()` — roughly 1,100 stringify
+   * calls per keystroke, inside the same task as a theme flip. Selectors are
+   * now O(1) lookups against this snapshot.
+   */
+  domainFlags: Record<string, DomainFlags>;
+  /** Recomputes `domainFlags` + `hasChanges` from current state. Call once per
+   *  mutation, after the state it describes has been written. */
+  recomputeDomainFlags: () => Record<string, DomainFlags>;
 }
 
 /**
@@ -403,12 +434,45 @@ export const SETTINGS_DOMAIN_TO_UI: Record<string, SettingsDomainId> = {
 };
 
 let appearanceDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+let appearanceDebounceGeneration = 0;
 let settingsAutoSaveTimer: ReturnType<typeof setTimeout> | null = null;
+let autoSaveToastTimer: ReturnType<typeof setTimeout> | null = null;
+let saveFailureTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 /** Poll cadence for mirroring the backend's restart progress. */
 const RESTART_POLL_INTERVAL_MS = 400;
 /** Upper bound so a failed restart cannot wedge the UI in "restarting". */
 const RESTART_POLL_MAX_TICKS = 30;
+
+/** The six card domains that own a commit footer. */
+export const COMMIT_DOMAIN_IDS = [
+  "models",
+  "persona",
+  "working_memory",
+  "personal_memory",
+  "appearance",
+  "interaction",
+] as const;
+
+/**
+ * Settings scopes whose values feed `get_model_catalog`.
+ *
+ * `loadModelCatalog` re-reads and re-parses the model manifest and, for the
+ * ZipVoice and Chatterbox providers, opens the Turso database to resolve voices
+ * (`ipc/catalog.rs:131-139`, `:166-184`). `commitChanges` used to await it on
+ * every single commit, so a hot autosave of one unrelated toggle paid a full
+ * catalog re-read plus a possible database round trip. Committing a persona
+ * prompt does not change which models exist.
+ */
+const MODEL_CATALOG_SCOPES: ReadonlySet<string> = new Set([
+  "audio",
+  "vad",
+  "stt",
+  "llm",
+  "tts",
+  "realtime",
+  "system",
+]);
 
 /** Checks if a setting key requires an engine restart according to the backend policy table */
 export function isRestartKey(scope: string, key: string): boolean {
@@ -455,16 +519,42 @@ export function isRestartKey(scope: string, key: string): boolean {
   return false;
 }
 
+/** Empty flag set used before any settings are loaded. */
+const EMPTY_DOMAIN_FLAGS: Record<string, DomainFlags> = {};
+
 export const useSettingsStore = create<SettingsState>((set, get) => ({
   settings: null,
   draftSettings: null,
   modelCatalog: null,
+  remoteModels: [],
+  loadingRemoteModels: false,
+  remoteModelsError: null,
+  remoteModelsFetchedKey: null,
   capabilitiesCache: {},
   isLoading: true,
   hasChanges: false,
   restartKeys: [],
   restartInFlight: false,
   error: null,
+  domainFlags: EMPTY_DOMAIN_FLAGS,
+
+  /**
+   * Recomputes the per-domain dirty/restart snapshot from the CURRENT state.
+   * Called once per mutation, never inside a `set()` updater — reading the
+   * store from an updater would be a side effect in a pure callback.
+   */
+  recomputeDomainFlags: () => {
+    const flags: Record<string, DomainFlags> = {};
+    for (const id of COMMIT_DOMAIN_IDS) {
+      flags[id] = {
+        dirty: get().isDomainDirty(id),
+        requiresRestart: get().isDomainRequiringRestart(id),
+      };
+    }
+    const hasChanges = COMMIT_DOMAIN_IDS.some((id) => flags[id].dirty);
+    set({ domainFlags: flags, hasChanges });
+    return flags;
+  },
 
   loadSettings: async () => {
     try {
@@ -485,6 +575,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
           error: null,
         };
       });
+      get().recomputeDomainFlags();
       applyTheme(fetched.appearance, { animate: false });
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
@@ -504,6 +595,50 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     }
   },
 
+  loadRemoteModels: async (providerConfig?: LlmProviderConfig, force = false) => {
+    const draft = get().draftSettings || get().settings;
+    const active = draft?.llm?.active || "embedded";
+    let provider = providerConfig;
+    if (!provider) {
+      if (active === "server" && draft?.llm?.server) {
+        provider = {
+          kind: "server",
+          base_url: draft.llm.server.base_url,
+          model: draft.llm.server.model,
+          api_key: draft.llm.server.api_key || undefined,
+          provider_name: draft.llm.server.provider_name || undefined,
+        };
+      } else if (active === "cloud" && draft?.llm?.cloud) {
+        provider = {
+          kind: "cloud",
+          base_url: draft.llm.cloud.base_url,
+          model: draft.llm.cloud.model,
+          api_key: draft.llm.cloud.api_key || undefined,
+          provider_name: draft.llm.cloud.provider_name || undefined,
+        };
+      }
+    }
+    if (!provider || provider.kind === "embedded" || !provider.base_url) return;
+    const fetchKey = `${provider.base_url}:${provider.api_key || ""}`;
+    if (!force && get().remoteModelsFetchedKey === fetchKey && get().remoteModels.length > 0) {
+      return;
+    }
+    set({ loadingRemoteModels: true, remoteModelsError: null });
+    try {
+      const list = await listLlmModels(provider);
+      set({
+        remoteModels: list,
+        remoteModelsFetchedKey: fetchKey,
+        loadingRemoteModels: false,
+        remoteModelsError: null,
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error("Failed to list remote models:", err);
+      set({ loadingRemoteModels: false, remoteModelsError: msg });
+    }
+  },
+
   loadCapabilitiesCache: async () => {
     try {
       const res = await probeModelCapabilitiesFull();
@@ -515,26 +650,39 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
   lastSavedTimestamp: 0,
   autoSavedDomain: null as string | null,
-  failedSaveDomains: {} as Record<string, true>,
-  failedSaveKeys: [] as string[],
+  failedSaveDomains: {} as Record<string, string[]>,
   triggerSaveFailure: (domainId: string, keys: string[]) => {
     set((state) => ({
-      failedSaveDomains: { ...state.failedSaveDomains, [domainId]: true },
-      failedSaveKeys: keys,
+      failedSaveDomains: { ...state.failedSaveDomains, [domainId]: keys },
     }));
-    setTimeout(() => {
-      set((state) => {
-        if (!state.failedSaveDomains[domainId]) return {};
-        const next = { ...state.failedSaveDomains };
-        delete next[domainId];
-        return { failedSaveDomains: next };
-      });
-    }, 6000);
+    // Re-arming without clearing the old timer let an earlier failure's timer
+    // clear a newer failure's banner early.
+    const existing = saveFailureTimers.get(domainId);
+    if (existing) clearTimeout(existing);
+    saveFailureTimers.set(
+      domainId,
+      setTimeout(() => {
+        saveFailureTimers.delete(domainId);
+        set((state) => {
+          if (!state.failedSaveDomains[domainId]) return {};
+          const next = { ...state.failedSaveDomains };
+          delete next[domainId];
+          return { failedSaveDomains: next };
+        });
+      }, 6000)
+    );
   },
   triggerAutoSaveToast: (domainId: string) => {
     set({ autoSavedDomain: domainId, lastSavedTimestamp: Date.now() });
-    setTimeout(() => {
-      set((state) => (state.autoSavedDomain === domainId ? { autoSavedDomain: null } : {}));
+    // Same re-arm bug as above: toggling the theme twice inside 1800ms had the
+    // first timer clear the second toast 800ms early, so the "Changes Saved"
+    // footer visibly truncated on rapid edits.
+    if (autoSaveToastTimer) clearTimeout(autoSaveToastTimer);
+    autoSaveToastTimer = setTimeout(() => {
+      autoSaveToastTimer = null;
+      set((state) =>
+        state.autoSavedDomain === domainId ? { autoSavedDomain: null } : {}
+      );
     }, 1800);
   },
 
@@ -564,9 +712,17 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       if (appearanceDebounceTimer) {
         clearTimeout(appearanceDebounceTimer);
       }
+      // Generation stamp: a second edit while the first IPC is in flight must
+      // not have the older response overwrite `settings` with a stale value.
+      // The old code nulled the timer handle inside the fired callback, so a
+      // concurrent update started an unguarded second timer, and a late
+      // resolution left the card permanently dirty.
+      const generation = ++appearanceDebounceGeneration;
       appearanceDebounceTimer = setTimeout(() => {
+        appearanceDebounceTimer = null;
         updateSetting("appearance", key, value)
           .then(() => {
+            if (generation !== appearanceDebounceGeneration) return;
             const curSettings = get().settings;
             if (curSettings) {
               set({
@@ -582,25 +738,19 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
             get().triggerAutoSaveToast("appearance");
           })
           .catch(console.error);
-        appearanceDebounceTimer = null;
       }, 200);
 
+      // Derived flags first, then a single write, so subscribers see the draft
+      // and its dirty state in one render rather than two.
       set({ draftSettings: newDraft });
+      get().recomputeDomainFlags();
       return;
     }
 
     set({ draftSettings: newDraft });
-    const hasChanges = [
-      "models",
-      "persona",
-      "working_memory",
-      "personal_memory",
-      "appearance",
-      "interaction",
-    ].some((d) => get().isDomainDirty(d));
-    set({ hasChanges });
+    const flags = get().recomputeDomainFlags();
 
-    if (!hasChanges) {
+    if (!flags || !COMMIT_DOMAIN_IDS.some((d) => flags[d]?.dirty)) {
       if (settingsAutoSaveTimer) {
         clearTimeout(settingsAutoSaveTimer);
         settingsAutoSaveTimer = null;
@@ -609,7 +759,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     }
 
     const targetDomainId = explicitDomainId || SETTINGS_DOMAIN_TO_UI[domain as string] || "models";
-    const needsRestart = get().isDomainRequiringRestart(targetDomainId);
+    const needsRestart = flags[targetDomainId]?.requiresRestart ?? false;
 
     // If this change or domain requires an engine restart, do NOT auto-commit.
     // Leave the card dirty with "Apply & Restart" button visible.
@@ -626,14 +776,10 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       clearTimeout(settingsAutoSaveTimer);
     }
     settingsAutoSaveTimer = setTimeout(() => {
-      const anyNeedsRestart = [
-        "models",
-        "persona",
-        "working_memory",
-        "personal_memory",
-        "appearance",
-        "interaction",
-      ].some((d) => get().isDomainRequiringRestart(d));
+      settingsAutoSaveTimer = null;
+      const anyNeedsRestart = COMMIT_DOMAIN_IDS.some(
+        (d) => get().domainFlags[d]?.requiresRestart
+      );
       if (anyNeedsRestart) {
         return;
       }
@@ -643,7 +789,6 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
           get().triggerAutoSaveToast(targetDomainId);
         })
         .catch(console.error);
-      settingsAutoSaveTimer = null;
     }, 600);
   },
 
@@ -786,16 +931,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     }
 
     set({ draftSettings: newDraft, autoSavedDomain: null });
-
-    const hasChanges = [
-      "models",
-      "persona",
-      "working_memory",
-      "personal_memory",
-      "appearance",
-      "interaction",
-    ].some((d) => get().isDomainDirty(d));
-    set({ hasChanges });
+    get().recomputeDomainFlags();
   },
 
   isCommitting: false,
@@ -807,6 +943,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     const promises: Promise<unknown>[] = [];
     const restartKeys: string[] = [];
     const failures: { domain: string; key: string; reason: string }[] = [];
+    const touchedScopes = new Set<string>();
     let restartScheduled = false;
 
     const canonicalDomains: (keyof VoxSettings)[] = [
@@ -839,6 +976,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
         if (JSON.stringify(val) === JSON.stringify(oldVal)) continue;
 
+        touchedScopes.add(domain);
         promises.push(
           updateSetting(domain, key, val).then(
             (res) => {
@@ -881,6 +1019,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
           hasChanges: false,
           isLoading: false,
         });
+        get().recomputeDomainFlags();
         const failedByUiDomain = new Map<string, string[]>();
         for (const f of failures) {
           const uiDomain = SETTINGS_DOMAIN_TO_UI[f.domain] ?? "models";
@@ -899,7 +1038,18 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       const fetched = bootState.settings;
       const cloned = structuredClone(fetched);
       set({ settings: fetched, draftSettings: cloned, hasChanges: false, isLoading: false });
-      await get().loadModelCatalog().catch(console.error);
+      get().recomputeDomainFlags();
+
+      // Only re-read the catalog when a scope that feeds it actually changed.
+      // It re-parses the whole model manifest and, for ZipVoice/Chatterbox,
+      // opens the Turso database — so paying it for a persona-prompt edit was
+      // a database round trip to learn nothing had changed.
+      const catalogAffected = [...touchedScopes].some((scope) =>
+        MODEL_CATALOG_SCOPES.has(scope)
+      );
+      if (catalogAffected) {
+        await get().loadModelCatalog().catch(console.error);
+      }
 
       // Replace wholesale rather than merging: a key that stopped being
       // restart-classified must not linger in the banner on the next commit.
@@ -918,14 +1068,9 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     if (!settingsAutoSaveTimer) return;
     clearTimeout(settingsAutoSaveTimer);
     settingsAutoSaveTimer = null;
-    const anyNeedsRestart = [
-      "models",
-      "persona",
-      "working_memory",
-      "personal_memory",
-      "appearance",
-      "interaction",
-    ].some((d) => get().isDomainRequiringRestart(d));
+    const anyNeedsRestart = COMMIT_DOMAIN_IDS.some(
+      (d) => get().domainFlags[d]?.requiresRestart
+    );
     if (anyNeedsRestart) {
       return;
     }
@@ -967,6 +1112,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     const cloned = structuredClone(settings);
     applyTheme(settings.appearance);
     set({ draftSettings: cloned, hasChanges: false, autoSavedDomain: null });
+    get().recomputeDomainFlags();
   },
 
   restoreDefaults: async () => {
@@ -985,6 +1131,9 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         restartKeys,
         restartInFlight: res.restart_scheduled,
       });
+      get().recomputeDomainFlags();
+      // A reset restores every default, so the catalog is always affected.
+      await get().loadModelCatalog().catch(console.error);
       if (res.restart_scheduled) {
         get().trackRestartCompletion();
       }
