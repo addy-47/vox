@@ -4,7 +4,7 @@ import {
   Edit3,
   X,
   RotateCw,
-  Sparkles,
+  ClipboardCheck,
   ArrowLeft,
   MessageSquare,
   Layers,
@@ -94,7 +94,7 @@ export const StagingHeader: React.FC<StagingHeaderProps> = memo(
             {justCommitted ? (
               <CheckCircle2 size={16} className="text-[rgb(var(--accent))]" />
             ) : isSuggestionsActive ? (
-              <Sparkles size={16} className="text-[rgb(var(--accent))]" />
+              <ClipboardCheck size={16} className="text-[rgb(var(--accent))]" />
             ) : mode === "comment" ? (
               <MessageSquare size={16} className="text-[rgb(var(--accent))]" />
             ) : mode === "edit" ? (
@@ -110,7 +110,11 @@ export const StagingHeader: React.FC<StagingHeaderProps> = memo(
 
           <div className="flex flex-col min-w-0">
             <span className="text-[13px] font-semibold tracking-wide text-[rgb(var(--foreground))] truncate">
-              {mode === "facts" ? MEMORY_COPY.observationsTitleLabel : MEMORY_COPY.stagingMirror}
+              {mode === "facts"
+                ? MEMORY_COPY.observationsTitleLabel
+                : isSuggestionsActive
+                ? MEMORY_COPY.suggestionsTitleCount(decisionStats.total)
+                : MEMORY_COPY.stagingMirror}
             </span>
             <span className="text-[11px] font-mono text-[rgb(var(--foreground-muted))] truncate">
               {justCommitted

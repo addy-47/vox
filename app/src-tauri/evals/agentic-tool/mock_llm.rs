@@ -30,7 +30,7 @@ use std::{
     io::{Read, Write},
     net::TcpListener,
     sync::{
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
         mpsc, Arc,
     },
     thread::JoinHandle,
@@ -109,6 +109,9 @@ pub struct MockLlmServer {
     /// The server thread. Joined on [`Drop`] so a panic is never silent.
     handle: Arc<Mutex<Option<JoinHandle<()>>>>,
     port: u16,
+    /// Tells the accept loop to exit after the current connection, so `shutdown`
+    /// can join instead of parking forever back in `accept()`.
+    shutdown: Arc<AtomicBool>,
 }
 
 #[allow(dead_code)]
@@ -119,6 +122,20 @@ impl MockLlmServer {
     /// loops more than expected still gets a valid response rather than hanging.
     pub fn start(scripts: Vec<TurnScript>) -> Result<Self> {
         anyhow::ensure!(!scripts.is_empty(), "Mock LLM script cannot be empty");
+
+        // Flatten chains so consecutive requests advance through the script:
+        // `ToolCallThenText` serves the call on request N and the text on N+1.
+        // Without this, every request re-serves the call part and the harness
+        // re-executes the tool once per loop iteration until MAX_TOOL_ITERATIONS.
+        let scripts: Vec<TurnScript> = scripts
+            .into_iter()
+            .flat_map(|s| match s {
+                TurnScript::ToolCallThenText { call, final_text } => {
+                    vec![*call, TurnScript::Text(final_text)]
+                }
+                other => vec![other],
+            })
+            .collect();
 
         let listener = TcpListener::bind("127.0.0.1:0")
             .context("Mock LLM server failed to bind an ephemeral loopback port")?;
@@ -132,10 +149,13 @@ impl MockLlmServer {
 
         let thread_requests = Arc::clone(&requests);
         let thread_counter = Arc::clone(&counter);
+        let thread_shutdown = Arc::new(AtomicBool::new(false));
+        let loop_shutdown = Arc::clone(&thread_shutdown);
         let handle = std::thread::spawn(move || {
-            // Serving runs on its own thread and terminates when the process exits;
-            // each connection is handled inline, which is sufficient because the
-            // harness issues requests sequentially.
+            // Serving runs on its own thread; each connection is handled inline,
+            // which is sufficient because the harness issues requests sequentially.
+            // The payload is framed as a real HTTP/1.1 response — the production
+            // transport is a real HTTP client and cannot parse bare SSE bytes.
             for stream in listener.incoming() {
                 let Ok(mut stream) = stream else { continue };
                 let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(30)));
@@ -149,12 +169,20 @@ impl MockLlmServer {
 
                 let script = scripts.get(idx).or_else(|| scripts.last()).unwrap();
                 let (this_turn, chained) = resolve(script);
-                let payload = render_sse(this_turn, idx);
+                let sse = render_sse(this_turn, idx);
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    sse.len(),
+                    sse
+                );
 
-                let _ = stream.write_all(payload.as_bytes());
+                let _ = stream.write_all(response.as_bytes());
                 let _ = stream.flush();
                 let _ = stream.shutdown(std::net::Shutdown::Both);
 
+                if loop_shutdown.load(Ordering::SeqCst) {
+                    break;
+                }
                 if chained.is_none() {
                     // A terminal text turn ends the loop; nothing more is expected.
                     if matches!(this_turn, TurnScript::Text(_)) {
@@ -169,6 +197,7 @@ impl MockLlmServer {
             requests,
             handle: Arc::new(Mutex::new(Some(handle))),
             port,
+            shutdown: thread_shutdown,
         })
     }
 
@@ -191,7 +220,11 @@ impl MockLlmServer {
 
     /// Stops accepting connections and joins the server thread.
     pub fn shutdown(&self) {
-        // Unblock `incoming()` by connecting once, then join.
+        // Set the exit flag first, then unblock `incoming()` by connecting once.
+        // The thread serves the dummy connection, sees the flag, and breaks —
+        // without the flag it would loop straight back into `accept()` and the
+        // join below would hang forever.
+        self.shutdown.store(true, Ordering::SeqCst);
         let _ = TcpStream::connect(("127.0.0.1", self.port));
         if let Some(h) = self.handle.lock().take() {
             let _ = h.join();
@@ -361,10 +394,16 @@ fn render_sse(script: &TurnScript, idx: usize) -> String {
 /// Turns a captured request body into a `CanonicalToolCall` for cross-checking.
 ///
 /// The transport already produced one during the run; this lets the eval assert
-/// that what it *asked for* matches what the harness *received*.
+/// that what it *asked for* matches what the harness *received*. Searches for
+/// the assistant stub carrying `tool_calls` — the last message is the tool-role
+/// observation, which carries none.
 #[allow(dead_code)]
 pub fn tool_call_from_request(body: &serde_json::Value) -> Option<CanonicalToolCall> {
-    let msg = body.get("messages")?.as_array()?.last()?;
+    let msgs = body.get("messages")?.as_array()?;
+    let msg = msgs
+        .iter()
+        .rev()
+        .find(|m| m.get("tool_calls").and_then(|t| t.as_array()).is_some())?;
     let call = msg.get("tool_calls")?.as_array()?.first()?;
     Some(CanonicalToolCall {
         id: call.get("id")?.as_str()?.to_string(),

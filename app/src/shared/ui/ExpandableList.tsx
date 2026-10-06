@@ -1,8 +1,9 @@
-import { createContext, memo, useCallback, useContext, useMemo, useState } from "react";
+import { createContext, memo, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { Maximize2 } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { Modal } from "@/shared/ui/Modal";
 import { Tooltip } from "@/shared/ui/Tooltip";
+import { useExpandedModalStore } from "@/store/expandedModalStore";
 
 export interface ExpandableListContextValue {
   isExpanded: boolean;
@@ -78,6 +79,17 @@ export const ExpandableList = memo(
 
     const open = useCallback(() => setExpanded(true), []);
     const close = useCallback(() => setExpanded(false), []);
+
+    // While the modal owns the commit flow, background card footers stand down.
+    const pushModal = useExpandedModalStore((s) => s.pushModal);
+    const popModal = useExpandedModalStore((s) => s.popModal);
+    useEffect(() => {
+      if (!expanded) return;
+      pushModal();
+      return () => {
+        popModal();
+      };
+    }, [expanded, pushModal, popModal]);
 
     const inlineContext = useMemo(
       () => ({ isExpanded: false, close, open }),

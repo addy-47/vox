@@ -1,26 +1,29 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useCallback, useEffect, useState, useMemo } from 'react';
 import { startModelSetup, fetchManifest, getRuntimeReport, type VoxManifest } from '@/services/setupService';
 import { onModelProgress, type ModelProgressPayload } from '@/services/eventsService';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Database, BrainCircuit, Mic,
-  Check, ArrowRight, Languages,
-  Layers
+  AudioLines,
+  AudioWaveform,
+  BrainCircuit,
+  Check, ArrowRight, Ear,
+  Languages,
+  Network
 } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
-import { WIZARD_CTA_LABELS, WIZARD_STEP_HEADERS, MODEL_SETUP_COPY } from '@/data/welcomeCopy';
+import { WIZARD_CTA_LABELS, WIZARD_STEP_HEADERS, MODEL_SETUP_COPY, MODEL_CATEGORY_META, MODEL_PROGRESS_STEPS } from '@/data/welcomeCopy';
 
 import { WizardHeader } from '../components/WizardHeader';
 import { WizardFooter } from '../components/WizardFooter';
 import { ModelCategory } from '../components/ModelCategory';
 
-const VolumeIcon = ({ className }: { className?: string }) => (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
-        <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
-        <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
-    </svg>
-);
+const formatSize = (bytes: number) => {
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+};
 
 interface Props {
   onNext: () => void;
@@ -36,7 +39,6 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
   const [progress, setProgress] = useState<Record<string, ModelProgressPayload>>({});
   const [isFetching, setIsFetching] = useState(false);
   const [internalError, setInternalError] = useState<string | null>(null);
-  const [installPath, setInstallPath] = useState<string>('Detecting path...');
   const [isFinished, setIsFinished] = useState(false);
 
   useEffect(() => {
@@ -51,7 +53,7 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
         setSelectedIds(new Set(required));
       } catch (e) {
         console.error('Failed to load model catalog', e);
-        setInternalError('Failed to load model catalog.');
+        setInternalError(MODEL_SETUP_COPY.catalogLoadError);
       } finally {
         setIsFetching(false);
       }
@@ -62,9 +64,6 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
         if (report.models_verified && !isAlreadyComplete) {
             setIsFinished(true);
             setView('complete');
-        }
-        if (report.models_dir) {
-            setInstallPath(report.models_dir);
         }
     }).catch(() => {});
   }, [isAlreadyComplete]);
@@ -86,7 +85,7 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
     };
   }, []);
 
-  const toggleCategory = (ids: string[]) => {
+  const toggleCategory = useCallback((ids: string[]) => {
     setSelectedIds(prev => {
         const next = new Set(prev);
         const anyPresent = ids.some(id => next.has(id));
@@ -97,9 +96,9 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
         }
         return next;
     });
-  };
+  }, []);
 
-  const toggleModel = (id: string) => {
+  const toggleModel = useCallback((id: string) => {
     setSelectedIds(prev => {
         const next = new Set(prev);
         if (next.has(id)) {
@@ -109,7 +108,7 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
         }
         return next;
     });
-  };
+  }, []);
 
   const startSetup = async () => {
     setView('progress');
@@ -127,50 +126,51 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
         .reduce((acc, g) => acc + g.files.reduce((sum, f) => sum + f.size, 0), 0);
   }, [manifest, selectedIds]);
 
-  const formatSize = (bytes: number) => {
-    if (bytes === 0) return '0 B';
-    const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-  };
-
   // Categories are derived from the manifest, not a hardcoded list: only
   // categories the manifest actually ships render, and `required` reflects
   // whether any file in the category is required (never a literal). This
   // previously rendered phantom "Mandatory" rows for categories with no
   // models, and labelled the (required) LLM download "Optional".
+  // Labels/fallbacks live in `welcomeCopy` (MODEL_CATEGORY_META) so the
+  // user-facing wording is written in one place; only the icons are bound here.
   const categories = useMemo(() => {
     if (!manifest || !manifest.model_groups) return [];
 
-    const meta: Array<{
-      id: string;
-      label: string;
-      fallback: string;
-      icon: React.ReactElement<{ className?: string }>;
-    }> = [
-      { id: "vad", label: "Speech Detection", fallback: "Knows when you start and stop speaking", icon: <Mic /> },
-      { id: "stt", label: "Speech to Text", fallback: "Turns your speech into words", icon: <Database /> },
-      { id: "translit", label: "Hindi & English Spelling", fallback: "Writes spoken Hindi in English letters", icon: <Languages /> },
-      { id: "embedding", label: "Memory Understanding", fallback: "Helps Vox connect related memories", icon: <Layers /> },
-      { id: "llm", label: "Conversation Brain", fallback: "Generates Vox's replies", icon: <BrainCircuit /> },
-      { id: "tts", label: "Voice Generator", fallback: "Speaks Vox's replies aloud", icon: <VolumeIcon /> },
-    ];
+    const icons: Record<string, React.ReactElement<{ className?: string }>> = {
+      vad: <AudioWaveform />,
+      stt: <Ear />,
+      translit: <Languages />,
+      embedding: <Network />,
+      llm: <BrainCircuit />,
+      tts: <AudioLines />,
+    };
 
-    return meta
+    return MODEL_CATEGORY_META
       .map((m) => {
         const groups = manifest.model_groups.filter((g) => g.category === m.id);
         return {
           id: m.id,
           label: m.label,
           subLabel: groups.length > 0 ? groups.map((g) => g.name).join(" / ") : m.fallback,
-          icon: m.icon,
+          icon: icons[m.id],
           required: groups.some((g) => g.files.some((f) => f.required)),
           groups,
         };
       })
       .filter((c) => c.groups.length > 0);
   }, [manifest]);
+
+  // Stable per-category toggle handlers: progress events must not re-create
+  // props (and therefore re-render rows). Rebuilt only when the manifest's
+  // category list changes, never on selection or download progress.
+  const toggleByCategory = useMemo(() => {
+    const handlers = new Map<string, () => void>();
+    for (const cat of categories) {
+      const ids = cat.groups.map((g) => g.id);
+      handlers.set(cat.id, () => toggleCategory(ids));
+    }
+    return handlers;
+  }, [categories, toggleCategory]);
 
   return (
     <div className="flex flex-col h-full relative">
@@ -188,16 +188,11 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
                 title={WIZARD_STEP_HEADERS.selection.title}
                 description={WIZARD_STEP_HEADERS.selection.description}
                 rightContent={
-                    <div className="flex flex-col items-end">
-                        <span className="text-[14px] font-bold text-[rgb(var(--foreground))]/80  tracking-tight mb-1">
-                            {installPath}
+                    <div className="flex items-center gap-2">
+                        <div className="h-1.5 w-1.5 rounded-full bg-[rgb(var(--accent))] shadow-[0_0_8px_rgba(var(--accent),0.8)]" />
+                        <span className="text-[13px] font-black text-[rgb(var(--accent))] tracking-widest">
+                            {formatSize(totalSize)} {MODEL_SETUP_COPY.totalSuffix}
                         </span>
-                        <div className="flex items-center gap-2">
-                            <div className="h-1.5 w-1.5 rounded-full bg-[rgb(var(--accent))] shadow-[0_0_8px_rgba(var(--accent),0.8)]" />
-                            <span className="text-[13px] font-black text-[rgb(var(--accent))]  tracking-widest">
-                                {formatSize(totalSize)} {MODEL_SETUP_COPY.totalSuffix}
-                            </span>
-                        </div>
                     </div>
                 }
             />
@@ -227,7 +222,7 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
                             groups={cat.groups}
                             selected={cat.groups.length > 0 && cat.groups.some(g => selectedIds.has(g.id))}
                             required={cat.required}
-                            onToggle={() => toggleCategory(cat.groups.map(g => g.id))}
+                            onToggle={toggleByCategory.get(cat.id) ?? (() => {})}
                             formatSize={formatSize}
                             selectedIds={selectedIds}
                             onToggleModel={toggleModel}
@@ -284,9 +279,12 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
 
                     const groupProgress = allFiles.reduce((acc, m) => acc + (progress[m.id]?.progress || 0), 0) / allFiles.length;
                     const isDone = allFiles.every(m => progress[m.id]?.step === 'completed');
-                    const activeStep = allFiles
+                    const rawStep = allFiles
                         .map(m => progress[m.id])
-                        .find(p => p && p.step !== 'completed')?.step || (isDone ? 'Ready' : 'Queued');
+                        .find(p => p && p.step !== 'completed')?.step;
+                    const activeStep = MODEL_PROGRESS_STEPS[
+                        (rawStep ?? (isDone ? 'completed' : 'queued')).toLowerCase()
+                    ] ?? MODEL_PROGRESS_STEPS.unknown;
 
                     return (
                         <div key={cat.id} className="p-4 glass">

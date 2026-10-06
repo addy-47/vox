@@ -106,8 +106,8 @@ pub async fn get_onboarding_status(state: State<'_, Arc<AppState>>) -> Result<bo
 
 /// Mark onboarding setup as completed, persist configuration, and focus main window.
 #[tauri::command]
-pub async fn complete_setup_wizard<R: tauri::Runtime + 'static>(
-    app: AppHandle<R>,
+pub async fn complete_setup_wizard(
+    app: AppHandle,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), VoxIpcError> {
     {
@@ -123,16 +123,20 @@ pub async fn complete_setup_wizard<R: tauri::Runtime + 'static>(
 
     let app_clone = app.clone();
     tauri::async_runtime::spawn(async move {
-        if let Some(main_win) = app_clone.get_webview_window("main") {
-            if let Err(e) = main_win.eval("window.location.replace('/')") {
-                log::warn!("[Setup] Failed to eval replace on main window: {}", e);
+        // `main` is constructed lazily (it is no longer declared in
+        // tauri.conf.json), so completing setup is what brings it into
+        // existence. `ensure_main_window` builds it at `/` when absent and
+        // unminimise/show/focus when already present.
+        match crate::window_main::ensure_main_window(&app_clone) {
+            Ok(main_win) => {
+                if let Err(e) = main_win.eval("window.location.replace('/')") {
+                    log::warn!("[Setup] Failed to eval replace on main window: {}", e);
+                }
+                if let Err(e) = main_win.set_focus() {
+                    log::warn!("[Setup] Failed to focus main window: {}", e);
+                }
             }
-            if let Err(e) = main_win.show() {
-                log::warn!("[Setup] Failed to show main window: {}", e);
-            }
-            if let Err(e) = main_win.set_focus() {
-                log::warn!("[Setup] Failed to focus main window: {}", e);
-            }
+            Err(e) => log::error!("[Setup] Failed to create main window: {}", e),
         }
 
         // Destroy the wizard webview once the main window is live. Previously

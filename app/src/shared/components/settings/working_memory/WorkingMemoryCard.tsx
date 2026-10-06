@@ -1,6 +1,6 @@
 import { memo } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
-import { History, ShieldOff, FoldVertical } from "lucide-react";
+import { NotebookTabs, ShieldOff, FoldVertical } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { Card, ToggleTile } from "@/shared/ui";
 import { WORKING_MEMORY_SETTINGS_COPY } from "@/data/settingsCopy";
@@ -38,7 +38,7 @@ export const WorkingMemoryCard = memo(({ layoutMode = "full-max" }: WorkingMemor
       {/* Header */}
       <div className="flex items-center justify-between mb-3 shrink-0 border-b border-[rgba(var(--accent),0.08)] pb-2 w-full">
         <div className="flex items-center gap-2">
-          <History className="text-[rgb(var(--accent))]" size={17} />
+          <NotebookTabs className="text-[rgb(var(--accent))]" size={17} />
           <span className="font-display text-[13px] font-black uppercase tracking-[0.2em] text-[rgb(var(--foreground))]">
             {copy.cardTitle}
           </span>

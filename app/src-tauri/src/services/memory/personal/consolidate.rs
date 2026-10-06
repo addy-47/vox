@@ -11,7 +11,8 @@ use super::{
     },
     prompts::{
         delta_consolidation_json_schema, whole_memory_json_schema,
-        COMMENT_DIRECTED_EDIT_SYSTEM_PROMPT, PERSONAL_COLD_GENERATION_SYSTEM_PROMPT,
+        COMMENT_DIRECTED_EDIT_SYSTEM_PROMPT, CONSOLIDATION_REPAIR_SYSTEM_PROMPT,
+        PERSONAL_COLD_GENERATION_SYSTEM_PROMPT,
         PERSONAL_INCREMENTAL_INTEGRATION_SYSTEM_PROMPT,
     },
     revisions::stage_revisions,
@@ -30,7 +31,7 @@ use crate::{
         },
         queue::{count_unfinished_items, has_unfinished_items},
     },
-    services::llm::{LlmProvider, LlmSettings},
+    services::llm::{catalog::get_baseline_spec, LlmProvider, LlmSettings},
 };
 
 const SUGGESTION_POLICY_AUTO_APPLY: &str = "auto_apply";
@@ -102,6 +103,8 @@ pub async fn consolidate_personal_memory(
         memory_settings: request.memory_settings,
         llm_settings: effective_settings,
     };
+
+    gate_on_structured_output_support(effective_settings.active_model())?;
 
     if let Some(user_comments) = request.comments {
         return stage_comment_directed_edits(&pass, &user_comments).await;
@@ -177,6 +180,24 @@ async fn gate_on_compaction_and_queue(
     Ok(None)
 }
 
+/// Refuses the run before any LLM call when the active model cannot guarantee strict JSON output (memory-spec §5.3.6).
+fn gate_on_structured_output_support(active_model: &str) -> Result<()> {
+    let supported = get_baseline_spec(active_model)
+        .map(|spec| spec.supports_structured)
+        .unwrap_or(true);
+    if supported {
+        return Ok(());
+    }
+    log::warn!(
+        "[Memory::Personal] Model {} lacks structured-output support; refusing consolidation without enforced JSON.",
+        active_model
+    );
+    Err(anyhow!(
+        "Model {} cannot guarantee strict JSON output; switch to a structured-output-capable model to integrate observations",
+        active_model
+    ))
+}
+
 /// Cold generation: synthesize a complete semantic model from the candidate observations.
 async fn run_cold_generation(
     pass: &ConsolidationPass<'_>,
@@ -223,7 +244,9 @@ async fn run_incremental_integration(
          <new_observations>\n{}\n</new_observations>\n\n\
          Propose the operations that integrate every new observation into the memory. \
          For `add`, only use section handles listed in <valid_section_handles_for_add>. \
-         Use `new` only when no existing section covers an observation's subject.",
+         Use `new` only when no existing section covers an observation's subject. \
+         Your entire response must be exactly one JSON object with the four arrays \
+         `new`, `add`, `update`, `delete` — nothing before it, nothing after it.",
         handle_view,
         valid_section_handles,
         render_observation_bullets(candidates)
@@ -505,7 +528,27 @@ async fn run_structured_pass(
         delta_consolidation_json_schema(),
     )
     .await?;
-    serde_json::from_str(extract_json_payload(&raw)).map_err(|e| {
+    if let Ok(output) = parse_delta_output(&raw, pass_name) {
+        return Ok(output);
+    }
+    log::warn!(
+        "[Memory::Personal] {} output unparseable; issuing one repair pass.",
+        pass_name
+    );
+    let repaired = execute_personal_llm_pass(
+        pass.llm_provider,
+        CONSOLIDATION_REPAIR_SYSTEM_PROMPT,
+        &raw,
+        pass.llm_settings,
+        delta_consolidation_json_schema(),
+    )
+    .await?;
+    parse_delta_output(&repaired, pass_name)
+}
+
+/// Parses one delta payload, reporting the pass name and raw text on failure.
+fn parse_delta_output(raw: &str, pass_name: &str) -> Result<ConsolidationOutput> {
+    serde_json::from_str(extract_json_payload(raw)).map_err(|e| {
         anyhow!(
             "Failed to parse {} JSON output: {} (raw: {})",
             pass_name,
@@ -567,5 +610,75 @@ fn log_operation_rejections(pass_name: &str, rejected: &[RejectedOperation]) {
             rejection.operation.op_name(),
             rejection.reason
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const PROSE_OUTPUT_A: &str = r###"Based on the provided current memory and new observations, the following operations are proposed to integrate every new observation into the memory:
+
+1. Update [b1] in section [s1] to include the new information about the twelve keyboard shortcuts:
+   - `update`: [{ "block": "b1", "text": "Addy is a systems engineer. He keeps a laminated card in his wallet." }]
+
+2. Add a new block to section [s4] about the whistle while waiting for builds to finish:
+   - `add`: [{ "section": "s4", "text": "He whistles the Jeopardy theme while waiting for builds to finish." }]
+
+The operations do not include any `delete` operations, as none of the new observations directly contradict existing information in the memory."###;
+
+    const PROSE_OUTPUT_B: &str = r###"Based on the provided current memory and new observations, the following operations can be proposed to integrate every new observation into the memory:
+
+1. Update [s1] About & Core Focus:
+   - [O1] He keeps a laminated card in his wallet listing the twelve keyboard shortcuts he refuses to forget.
+
+   update: [{ "block": "b1", "text": "Addy is a systems engineer, and maintains a laminated card in his wallet." }]
+
+No new sections need to be created as all observations can be integrated into the existing sections."###;
+
+    const STRICT_ENVELOPE: &str = r###"{"new": [], "add": [{"section": "s1", "text": "Loves hiking."}], "update": [], "delete": []}"###;
+
+    #[test]
+    fn test_capability_gate_refuses_model_without_structured_output() {
+        let err =
+            gate_on_structured_output_support("meta/llama-3.2-11b-vision-instruct").unwrap_err();
+        assert!(
+            err.to_string().contains("cannot guarantee strict JSON output"),
+            "unexpected gate error: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_capability_gate_permits_structured_capable_model() {
+        gate_on_structured_output_support("gpt-4o")
+            .expect("gpt-4o must pass the structured-output gate");
+    }
+
+    #[test]
+    fn test_capability_gate_permits_unknown_model() {
+        gate_on_structured_output_support("not-a-real-model-xyz")
+            .expect("unknown models default to permitted");
+    }
+
+    #[test]
+    fn test_parse_delta_output_accepts_strict_envelope() {
+        let output = parse_delta_output(STRICT_ENVELOPE, "incremental integration")
+            .expect("strict envelope must parse");
+        assert_eq!(output.add.len(), 1);
+        assert!(output.new.is_empty() && output.update.is_empty() && output.delete.is_empty());
+    }
+
+    #[test]
+    fn test_parse_delta_output_rejects_prose() {
+        for raw in [PROSE_OUTPUT_A, PROSE_OUTPUT_B] {
+            let err = parse_delta_output(raw, "incremental integration").unwrap_err();
+            assert!(
+                err.to_string()
+                    .contains("Failed to parse incremental integration JSON output"),
+                "unexpected parse error: {}",
+                err
+            );
+        }
     }
 }

@@ -1,6 +1,6 @@
 import { memo, useCallback } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
-import { Archive, Brain, Workflow } from "lucide-react";
+import { BookOpenText, Brain, Workflow } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { Card, ToggleTile } from "@/shared/ui";
 import { PersonalMemoryConfigDesk } from "./PersonalMemoryConfigDesk";
@@ -49,7 +49,7 @@ export const PersonalMemoryCard = memo(({ layoutMode = "full-max" }: PersonalMem
       {/* Header */}
       <div className="flex items-center justify-between mb-3 shrink-0 border-b border-[rgba(var(--accent),0.08)] pb-2 w-full">
         <div className="flex items-center gap-2">
-          <Archive className="text-[rgb(var(--accent))]" size={17} />
+          <BookOpenText className="text-[rgb(var(--accent))]" size={17} />
           <span className="font-display text-[13px] font-black uppercase tracking-[0.2em] text-[rgb(var(--foreground))]">
             {copy.cardTitle}
           </span>

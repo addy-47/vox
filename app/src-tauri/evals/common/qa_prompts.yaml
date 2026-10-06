@@ -91,7 +91,9 @@ prompts:
 
       8. FILLER. Did an interim filler fire before the tool returned? Is its text
          natural for speech, and is its duration plausible for the tool latency?
-         Check `render_log.json` against `filler_*.wav` actual duration.
+         Check `render_log.json` against `tts_*.wav` actual duration
+         (`tts_01.wav` is the interim filler — there is no `filler_*.wav` file;
+         per-clip measured seconds live in `audio_summary.json` `clips_detail`).
       9. AUDIO SANITY. Do the WAV files contain real speech (non-trivial RMS, not
          silence, not a click)? Report duration and RMS for each.
       10. STATE TRANSITIONS. Does `pipeline_events.json` show

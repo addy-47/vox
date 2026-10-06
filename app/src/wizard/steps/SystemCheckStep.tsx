@@ -1,12 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { HardDrive, Cpu, Mic, ShieldCheck } from 'lucide-react';
+import { HardDrive, Microchip, Mic, ShieldCheck } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { getRuntimeReport, type RuntimeReport } from '@/services/setupService';
 
 import { WizardHeader } from '../components/WizardHeader';
 import { WizardFooter } from '../components/WizardFooter';
 import { StatusCard } from '../components/StatusCard';
-import { WIZARD_STEP_HEADERS, SYSTEM_CHECK_LABELS, WIZARD_CTA_LABELS } from '@/data/welcomeCopy';
+import { WIZARD_STEP_HEADERS, SYSTEM_CHECK_LABELS, SYSTEM_CHECK_COPY, WIZARD_CTA_LABELS } from '@/data/welcomeCopy';
 
 interface Props {
   onNext: () => void;
@@ -17,16 +17,19 @@ interface Props {
 export const SystemCheckStep: React.FC<Props> = ({ onNext, onBack, error: externalError }) => {
   const [report, setReport] = useState<RuntimeReport | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [checkError, setCheckError] = useState<string | null>(null);
 
   useEffect(() => {
     const check = async () => {
       setIsLoading(true);
+      setCheckError(null);
       try {
         // fetch_manifest is already called in WizardRoot, avoiding redundant IPC call here
         const r = await getRuntimeReport();
         setReport(r);
       } catch (e) {
         console.error('System check failed', e);
+        setCheckError(e instanceof Error ? e.message : String(e));
       } finally {
         setIsLoading(false);
       }
@@ -57,8 +60,8 @@ export const SystemCheckStep: React.FC<Props> = ({ onNext, onBack, error: extern
                 <StatusCard 
                     icon={<HardDrive className="w-4 h-4" />}
                     label={SYSTEM_CHECK_LABELS[0]}
-                    value={report ? (report.disk_space_ok ? `${report.available_space_gb.toFixed(1)} GB` : "INSUFFICIENT") : "Checking..."}
-                    subValue={report ? (report.disk_space_ok ? "Sufficient for neural models" : "At least 10GB recommended") : "Measuring available space..."}
+                    value={report ? (report.disk_space_ok ? `${report.available_space_gb.toFixed(1)} GB` : SYSTEM_CHECK_COPY.insufficient) : SYSTEM_CHECK_COPY.checkingValue}
+                    subValue={report ? (report.disk_space_ok ? SYSTEM_CHECK_COPY.diskOkSub : SYSTEM_CHECK_COPY.tenGbNote) : SYSTEM_CHECK_COPY.measuringSub}
                     ok={report?.disk_space_ok}
                     loading={isLoading}
                 />
@@ -72,8 +75,8 @@ export const SystemCheckStep: React.FC<Props> = ({ onNext, onBack, error: extern
                 <StatusCard 
                     icon={<Mic className="w-4 h-4" />}
                     label={SYSTEM_CHECK_LABELS[1]}
-                    value={report ? (report.mic_access ? "DETECTED" : "NOT FOUND") : "Checking..."}
-                    subValue={report ? (report.mic_access ? "Audio input available" : "No capture device found") : "Testing audio devices..."}
+                    value={report ? (report.mic_access ? SYSTEM_CHECK_COPY.detected : SYSTEM_CHECK_COPY.missing) : SYSTEM_CHECK_COPY.checkingValue}
+                    subValue={report ? (report.mic_access ? SYSTEM_CHECK_COPY.micOkSub : SYSTEM_CHECK_COPY.micMissingSub) : SYSTEM_CHECK_COPY.testingSub}
                     ok={report?.mic_access}
                     loading={isLoading}
                 />
@@ -87,8 +90,8 @@ export const SystemCheckStep: React.FC<Props> = ({ onNext, onBack, error: extern
                 <StatusCard 
                     icon={<ShieldCheck className="w-4 h-4" />}
                     label={SYSTEM_CHECK_LABELS[2]}
-                    value={report ? (report.write_access ? "GRANTED" : "DENIED") : "Checking..."}
-                    subValue={report ? (report.write_access ? "Sandbox I/O verified" : "Check folder access") : "Verifying access..."}
+                    value={report ? (report.write_access ? SYSTEM_CHECK_COPY.granted : SYSTEM_CHECK_COPY.denied) : SYSTEM_CHECK_COPY.checkingValue}
+                    subValue={report ? (report.write_access ? SYSTEM_CHECK_COPY.writeOkSub : SYSTEM_CHECK_COPY.writeDeniedSub) : SYSTEM_CHECK_COPY.verifyingSub}
                     ok={report?.write_access}
                     loading={isLoading}
                 />
@@ -100,10 +103,10 @@ export const SystemCheckStep: React.FC<Props> = ({ onNext, onBack, error: extern
                 transition={{ delay: 0.25 }}
             >
                 <StatusCard 
-                    icon={<Cpu className="w-4 h-4" />}
+                    icon={<Microchip className="w-4 h-4" />}
                     label={SYSTEM_CHECK_LABELS[3]}
-                    value={report ? `${report.cpu_cores} THREADS` : "Scanning..."}
-                    subValue={report ? `${report.ram_gb.toFixed(1)} GB RAM detected` : "Detecting memory..."}
+                    value={report ? `${report.cpu_cores} ${SYSTEM_CHECK_COPY.threadsSuffix}` : SYSTEM_CHECK_COPY.checkingValue}
+                    subValue={report ? `${report.ram_gb.toFixed(1)} ${SYSTEM_CHECK_COPY.ramDetected}` : SYSTEM_CHECK_COPY.scanningSub}
                     ok={true}
                     loading={isLoading}
                 />
@@ -121,13 +124,14 @@ export const SystemCheckStep: React.FC<Props> = ({ onNext, onBack, error: extern
         showBack={true}
         error={
           externalError ||
+          checkError ||
           (!systemOk && !isLoading
-            ? "Storage or folder permissions need attention"
+            ? SYSTEM_CHECK_COPY.storagePermsError
             : micMissingOnly
-            ? "No microphone detected. You can proceed and configure audio later."
+            ? SYSTEM_CHECK_COPY.micWarnError
             : undefined)
         }
-        errorLabel={micMissingOnly ? "Microphone Warning" : "Setup Check Failed"}
+        errorLabel={micMissingOnly ? SYSTEM_CHECK_COPY.micWarnTitle : SYSTEM_CHECK_COPY.checkFailedTitle}
       />
     </div>
   );

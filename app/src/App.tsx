@@ -271,12 +271,15 @@ const App: React.FC = () => {
         {/* Dedicated setup wizard window */}
         {isWizardWebview === null ? null : isWizardWebview ? (
           <Router>
+            {/* The setup flow honours the OS reduced-motion setting, same as the main app below. */}
+            <MotionConfig reducedMotion="user">
             <Suspense fallback={<PageLoader />}>
               <Routes>
                 <Route path="/wizard" element={<WizardRoot />} />
                 <Route path="*" element={<Navigate to="/wizard" replace />} />
               </Routes>
             </Suspense>
+            </MotionConfig>
           </Router>
         ) : (
         <MemoryProfilerProvider>

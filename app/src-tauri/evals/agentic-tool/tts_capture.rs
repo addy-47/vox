@@ -131,18 +131,28 @@ pub fn start(settings: &TtsSettings, event_tx: mpsc::Sender<VoxEvent>) -> Result
     ));
 
     let (tts_tx, tts_rx) = mpsc::channel::<TtsCommand>();
-    spawn_tts_worker(
-        tts_rx,
-        Box::new(recorder),
-        TtsWorkerHandles {
-            playback: Arc::clone(&playback),
-            event_tx,
-            cancel_flag: Arc::clone(&cancel_flag),
-            pending_synthesis_jobs: Some(Arc::clone(&pending_synthesis_jobs)),
-            telemetry_rtf: Some(telemetry_rtf),
-            turn_metrics: None,
-        },
-    );
+    // Same inline-loop convention as the LLM worker: `spawn_tts_worker` blocks on
+    // `rx.recv()`, so it gets the same dedicated thread production gives it.
+    let worker_playback = Arc::clone(&playback);
+    let worker_cancel = Arc::clone(&cancel_flag);
+    let worker_pending = Arc::clone(&pending_synthesis_jobs);
+    std::thread::Builder::new()
+        .name("eval-tts-worker".to_string())
+        .spawn(move || {
+            spawn_tts_worker(
+                tts_rx,
+                Box::new(recorder),
+                TtsWorkerHandles {
+                    playback: worker_playback,
+                    event_tx,
+                    cancel_flag: worker_cancel,
+                    pending_synthesis_jobs: Some(worker_pending),
+                    telemetry_rtf: Some(telemetry_rtf),
+                    turn_metrics: None,
+                },
+            );
+        })
+        .map_err(|e| anyhow::anyhow!("Failed to spawn eval TTS worker thread: {e}"))?;
 
     Ok(TtsCapture {
         tts_tx,
@@ -205,7 +215,12 @@ pub fn harvest(case_dir: &Path, cap: &TtsCapture) -> Result<Vec<PathBuf>> {
     const GAP_SAMPLES: usize = CAPTURE_SAMPLE_RATE as usize / 5;
     let bursts = split_on_gap(&samples, GAP_SAMPLES);
 
+    // E2: per-clip measured durations (from the WAV samples themselves, not from
+    // synthesis wall time). `render_log.duration_ms` is synthesis latency; audio
+    // length is measured here. Identical summaries across cases mean identical
+    // synthesized text (see E1), not a harvest bug — this summary is per case.
     let mut written = Vec::new();
+    let mut clip_entries = Vec::new();
     for (i, burst) in bursts.iter().enumerate() {
         if burst.len() < 100 {
             continue; // ignore clicks
@@ -216,6 +231,12 @@ pub fn harvest(case_dir: &Path, cap: &TtsCapture) -> Result<Vec<PathBuf>> {
         }
         let path = case_dir.join(format!("tts_{:02}.wav", i));
         write_wav_mono16(&path, burst, CAPTURE_SAMPLE_RATE)?;
+        clip_entries.push(serde_json::json!({
+            "file": path.file_name(),
+            "samples": burst.len(),
+            "seconds": burst.len() as f64 / CAPTURE_SAMPLE_RATE as f64,
+            "rms": rms,
+        }));
         written.push(path);
     }
 
@@ -223,6 +244,7 @@ pub fn harvest(case_dir: &Path, cap: &TtsCapture) -> Result<Vec<PathBuf>> {
         "total_samples": samples.len(),
         "total_seconds": samples.len() as f64 / CAPTURE_SAMPLE_RATE as f64,
         "clips": written.len(),
+        "clips_detail": clip_entries,
         "rms": root_mean_square(&samples),
         "peak": samples.iter().fold(0.0f32, |a, b| a.max(b.abs())),
         "buffer_overflow_risk_samples": PLAYBACK_BUFFER_SAMPLES,
@@ -314,6 +336,10 @@ pub struct RenderRecord {
     pub text: String,
     pub chars: usize,
     pub words: usize,
+    /// Synthesis wall-clock latency in ms. This is NOT the audio length — audio
+    /// duration is measured from WAV samples in `audio_summary.json`
+    /// (`clips_detail[].seconds`). Comparing this field to audio length is a
+    /// category error (QA §4.6).
     pub duration_ms: u64,
     pub ok: bool,
     pub error: Option<String>,

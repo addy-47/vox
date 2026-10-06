@@ -4382,8 +4382,6 @@ checksum = "650eef8c711430f1a879fdd01d4745a7deea475becfb90269c06775983bbf086"
 [[package]]
 name = "nexuss"
 version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "680a6f4cb1536a84d7d9da2b59ac378feb8fac92da27002547b218478c544273"
 dependencies = [
  "async-trait",
  "base64 0.22.1",

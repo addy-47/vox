@@ -1,4 +1,4 @@
-import { Zap, Sparkles, Tag } from "lucide-react";
+import { Zap, ClipboardCheck, Tag } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { Tooltip } from "@/shared/ui";
 import { MEMORY_COPY } from "@/data/memoryCopy";
@@ -49,11 +49,6 @@ export function PersonalMemoryHeaderActions({ drawer, layout = "wrap" }: Persona
             className={drawer.stagingMode === "facts" ? "text-[rgb(var(--accent))]" : ""}
           />
           <span>{MEMORY_COPY.viewObservations}</span>
-          {drawer.unconsolidatedIdentityCount > 0 && (
-            <span className="text-[10.5px] font-mono text-[rgb(var(--accent))]">
-              ({drawer.unconsolidatedIdentityCount})
-            </span>
-          )}
         </button>
       </Tooltip>
 
@@ -64,11 +59,8 @@ export function PersonalMemoryHeaderActions({ drawer, layout = "wrap" }: Persona
             onClick={() => drawer.setStagingMode("suggestions")}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-mono border border-emerald-500/40 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 transition-all cursor-pointer shadow-sm animate-pulse"
           >
-            <Sparkles size={12} />
+            <ClipboardCheck size={12} />
             <span>{MEMORY_COPY.reviewSuggestions}</span>
-            <span className="text-[10.5px] font-mono text-emerald-400">
-              ({drawer.suggestions.length})
-            </span>
           </button>
         </Tooltip>
       )}

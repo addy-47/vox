@@ -1,7 +1,7 @@
 import { memo, useMemo, useState, useEffect, lazy, Suspense } from "react";
 import { useLocation } from "react-router-dom";
+import { VoxLogoLoader } from "@/shared/components/common/VoxLogoLoader";
 import {
-  Sparkles,
   History as HistoryIcon,
   Network,
   SlidersHorizontal,
@@ -28,6 +28,11 @@ export interface HelpPanelProps {
   deepLink?: string | null;
   initialShortcuts?: boolean;
 }
+
+/** Static (non-animating) Vox mark for the Home help header. Accepts and ignores lucide-style icon props. */
+const StaticVoxLogo = ({ size }: { size?: number | string; strokeWidth?: number | string }) => (
+  <VoxLogoLoader size={typeof size === "number" ? size : 13} animated={false} />
+);
 
 export const HelpPanel = memo(({ onClose: _onClose, initialShortcuts = false }: HelpPanelProps) => {
   const { pathname } = useLocation();
@@ -66,9 +71,9 @@ export const HelpPanel = memo(({ onClose: _onClose, initialShortcuts = false }: 
     }
     return {
       id: "home",
-      title: "Workspace Guide",
+      title: "Welcome to Vox",
       routeBadge: "/",
-      icon: Sparkles,
+      icon: StaticVoxLogo,
     };
   }, [pathname]);
 

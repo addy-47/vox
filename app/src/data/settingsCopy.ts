@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import { Archive, CircleUserRound, History, Orbit, Palette, SlidersHorizontal } from "lucide-react";
+import { BookOpenText, CircleUserRound, NotebookTabs, Orbit, Palette, SlidersHorizontal } from "lucide-react";
 
 export type SettingsDomainId = "persona" | "models" | "working_memory" | "personal_memory" | "appearance" | "interaction";
 
@@ -14,9 +14,9 @@ export interface SettingsDomain {
 export const SETTINGS_DOMAINS: SettingsDomain[] = [
   { id: "persona", label: "Persona", sublabel: "Prompts & identity", icon: CircleUserRound, angle: -90 },
   { id: "models", label: "Models", sublabel: "Voice & thinking models", icon: Orbit, angle: -30 },
-  { id: "working_memory", label: "Working", sublabel: "Context, turns & compaction", icon: History, angle: 30 },
+  { id: "working_memory", label: "Working", sublabel: "Context, turns & compaction", icon: NotebookTabs, angle: 30 },
   { id: "appearance", label: "Appearance", sublabel: "Visual theme & colors", icon: Palette, angle: 90 },
-  { id: "personal_memory", label: "Personal", sublabel: "Knowledge, facts & consolidation", icon: Archive, angle: 150 },
+  { id: "personal_memory", label: "Personal", sublabel: "Knowledge, facts & consolidation", icon: BookOpenText, angle: 150 },
   { id: "interaction", label: "Interaction", sublabel: "Activation & cloud key", icon: SlidersHorizontal, angle: -150 },
 ];
 

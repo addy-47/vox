@@ -1,6 +1,6 @@
 import { useState, memo, useCallback, useMemo, useRef, useEffect } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
-import { CircleUserRound, Code2, Eye, Sparkles } from "lucide-react";
+import { CircleUserRound, Code2, Eye } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { Card, SegmentedControl, Markdown } from "@/shared/ui";
 import { PERSONA_COPY } from "@/data/settingsCopy";
@@ -113,7 +113,7 @@ function renderSyntaxHighlightedText(code: string) {
  * Parses XML blocks into clean structured sections for preview
  */
 interface ParsedSection {
-  title: string;
+  title?: string;
   tag?: string;
   content: string;
 }
@@ -131,7 +131,6 @@ function parseXmlToSections(rawPrompt: string): ParsedSection[] {
     const beforeText = rawPrompt.substring(lastIndex, match.index).trim();
     if (beforeText) {
       sections.push({
-        title: "Overview & Directives",
         content: beforeText,
       });
     }
@@ -157,7 +156,6 @@ function parseXmlToSections(rawPrompt: string): ParsedSection[] {
   const remaining = rawPrompt.substring(lastIndex).trim();
   if (remaining) {
     sections.push({
-      title: sections.length === 0 ? "Directives" : "Additional Context",
       content: remaining,
     });
   }
@@ -437,20 +435,19 @@ export const PersonaCard = memo(({ layoutMode = "full-max" }: PersonaCardProps) 
             ) : (
               parsedSections.map((sec, idx) => (
                 <div key={idx} className="flex flex-col gap-1 rounded-lg bg-[rgba(var(--accent),0.03)] border border-[rgba(var(--accent),0.07)] p-2.5">
-                  <div className="flex items-center justify-between border-b border-[rgba(var(--accent),0.08)] pb-1 mb-1">
-                    <span className="text-[11.5px] font-black uppercase tracking-wider text-[rgb(var(--accent))] flex items-center gap-1.5">
-                      <Sparkles size={11} className="text-[rgb(var(--accent))]/70" />
-                      {sec.title}
-                    </span>
-                    {sec.tag && (
-                      <span className="text-[11px] font-mono uppercase font-bold text-[rgb(var(--foreground-muted))]/50 px-1 py-0.2 rounded bg-[rgba(var(--foreground),0.04)]">
-                        &lt;{sec.tag}&gt;
+                  {(sec.title || sec.tag) && (
+                    <div className="flex items-center justify-between border-b border-[rgba(var(--accent),0.08)] pb-1 mb-1">
+                      <span className="text-[11.5px] font-black uppercase tracking-wider text-[rgb(var(--accent))]">
+                        {sec.title}
                       </span>
-                    )}
-                  </div>
-                  <div className="text-[12px] text-[rgb(var(--foreground))]/80 leading-relaxed">
-                    <Markdown content={sec.content} variant="preview" />
-                  </div>
+                      {sec.tag && (
+                        <span className="text-[11px] font-mono uppercase font-bold text-[rgb(var(--foreground-muted))]/50 px-1 py-0.2 rounded bg-[rgba(var(--foreground),0.04)]">
+                          &lt;{sec.tag}&gt;
+                        </span>
+                      )}
+                    </div>
+                  )}
+                  <Markdown content={sec.content} variant="preview" className="text-[12px] text-[rgb(var(--foreground))]/80 leading-relaxed" />
                 </div>
               ))
             )}
