@@ -142,7 +142,12 @@ export const StagingHeader: React.FC<StagingHeaderProps> = memo(
 
         {/* Action controls in header */}
         <div className="flex items-center gap-2 shrink-0">
-          {mode === "facts" ? (
+          {justCommitted ? (
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-mono border border-[rgba(var(--accent),0.3)] bg-[rgba(var(--accent),0.12)] text-[rgb(var(--accent))]">
+              <Check size={11} strokeWidth={2.5} />
+              <span>{MEMORY_COPY.memoryUpdated}</span>
+            </div>
+          ) : mode === "facts" ? (
             <div className="flex items-center gap-1.5">
               {/* Filter dropdown */}
               <div className="relative" ref={filterMenuRef}>

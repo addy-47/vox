@@ -54,6 +54,12 @@ export function getTranscriptHistory(): Promise<string[]> {
 export { createSession, continueSession } from "./pipelineService";
 
 const sessionsInFlight = new Map<string, Promise<SessionRow[]>>();
+let cachedSessions: SessionRow[] | null = null;
+
+/** Returns active sessions synchronously if already cached in memory. */
+export function getCachedSessions(): SessionRow[] | null {
+  return cachedSessions;
+}
 
 /** Returns active sessions optionally filtered by project, pinned-first then newest. */
 export function getSessions(projectId?: string): Promise<SessionRow[]> {
@@ -63,6 +69,12 @@ export function getSessions(projectId?: string): Promise<SessionRow[]> {
     return existing;
   }
   const promise = invoke<SessionRow[]>("get_sessions", { projectId: projectId ?? null })
+    .then((data) => {
+      if (!projectId) {
+        cachedSessions = data;
+      }
+      return data;
+    })
     .finally(() => {
       sessionsInFlight.delete(key);
     });
@@ -116,6 +128,7 @@ export function getTurns(sessionId: number): Promise<TurnRow[]> {
  * Emits `SessionsChanged` on success.
  */
 export function updateSession(sessionId: number, updates: SessionUpdate): Promise<void> {
+  cachedSessions = null;
   return invoke("update_session", {
     sessionId,
     title: updates.title ?? null,
@@ -129,6 +142,7 @@ export function updateSession(sessionId: number, updates: SessionUpdate): Promis
  * Emits `SessionsChanged` on success.
  */
 export function deleteSession(sessionId: number, hard = false): Promise<void> {
+  cachedSessions = null;
   turnsCache.delete(sessionId);
   return invoke("delete_session", { sessionId, hard });
 }

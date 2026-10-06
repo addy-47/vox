@@ -1,5 +1,5 @@
 import React from "react";
-import { NavLink } from "react-router-dom";
+import { NavLink, useLocation } from "react-router-dom";
 import { LAYOUT_COPY } from "@/data/layoutCopy";
 import { SlidersHorizontal, House, Activity, History, Network } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
@@ -14,6 +14,7 @@ const navItems = [
 ];
 
 export const EdgeNav: React.FC = () => {
+  const location = useLocation();
   return (
     <nav
       data-edge-nav
@@ -27,6 +28,11 @@ export const EdgeNav: React.FC = () => {
             <NavLink
               to={item.path}
               end={item.path === "/"}
+              onClick={(e) => {
+                if (location.pathname === item.path) {
+                  e.preventDefault();
+                }
+              }}
               className={({ isActive }) =>
                 cn(
                   "relative flex items-center justify-center w-11 h-11 rounded-full text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-all duration-300 group hover:bg-[rgb(var(--accent))]/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(var(--accent))] focus-visible:ring-offset-2 focus-visible:ring-offset-[rgb(var(--background))]",
@@ -59,6 +65,11 @@ export const EdgeNav: React.FC = () => {
         <Tooltip label={LAYOUT_COPY.nav.monitor} side="top">
           <NavLink
             to="/monitoring"
+            onClick={(e) => {
+              if (location.pathname === "/monitoring") {
+                e.preventDefault();
+              }
+            }}
             className={({ isActive }) =>
               cn(
                 "lg:hidden relative flex items-center justify-center w-11 h-11 rounded-full text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-all duration-300 group hover:bg-[rgb(var(--accent))]/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(var(--accent))] focus-visible:ring-offset-2 focus-visible:ring-offset-[rgb(var(--background))]",

@@ -1,5 +1,15 @@
 import React, { memo, useEffect, useRef, useMemo } from "react";
-import { Check, X, RotateCw, TriangleAlert, Loader2 } from "lucide-react";
+import {
+  Check,
+  X,
+  RotateCw,
+  TriangleAlert,
+  Loader2,
+  Plus,
+  Minus,
+  Diff,
+  SquareDashedPlus,
+} from "lucide-react";
 import Lenis from "lenis";
 import { cn } from "@/shared/lib/utils";
 import { MEMORY_COPY } from "@/data/memoryCopy";
@@ -108,6 +118,35 @@ const decision = decisions[revisionId];
   );
 });
 
+/**
+ * Inline stroke-icon marker that replaces the old pill badges.
+ * Sits inline with the entry text, inherits the entry's colour via `currentColor`,
+ * and only uses accent-derived tones so nothing is hardcoded.
+ */
+interface ChangeMarkerProps {
+  icon: React.ComponentType<{ size?: number; strokeWidth?: number; className?: string }>;
+  label: string;
+  muted?: boolean;
+}
+
+const ChangeMarker = memo(function ChangeMarker({ icon: Icon, label, muted }: ChangeMarkerProps) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center align-middle ml-2 shrink-0",
+        muted
+          ? "text-[rgb(var(--foreground-muted))]/50"
+          : "text-[rgb(var(--accent))]"
+      )}
+      title={label}
+      aria-label={label}
+      role="img"
+    >
+      <Icon size={12} strokeWidth={2.25} />
+    </span>
+  );
+});
+
 export const SuggestionsReviewView: React.FC<SuggestionsReviewViewProps> = memo(
   ({
     baseSections,
@@ -169,6 +208,7 @@ export const SuggestionsReviewView: React.FC<SuggestionsReviewViewProps> = memo(
 
       const decision = decisions[entry.revisionId];
       const failed = Boolean(failedRevisionIds?.has(entry.revisionId));
+      const rejected = decision === "reject";
 
       const buttons = (
         <DecisionButtons
@@ -209,7 +249,7 @@ export const SuggestionsReviewView: React.FC<SuggestionsReviewViewProps> = memo(
                   return (
                     <span
                       key={i}
-                      className={decision === "reject" ? "text-[rgb(var(--foreground-muted))]/55" : "text-[rgb(var(--foreground))]/80"}
+                      className={rejected ? "text-[rgb(var(--foreground-muted))]/55" : "text-[rgb(var(--foreground))]/80"}
                     >
                       {token.value}
                     </span>
@@ -223,7 +263,7 @@ export const SuggestionsReviewView: React.FC<SuggestionsReviewViewProps> = memo(
                          happening, so there is nothing left to signal. */
                       className={cn(
                         "line-through",
-                        decision === "reject"
+                        rejected
                           ? "decoration-[rgb(var(--foreground-muted))]/50 text-[rgb(var(--foreground-muted))]/45"
                           : "decoration-[rgb(var(--danger))] text-[rgb(var(--danger))]"
                       )}
@@ -237,7 +277,7 @@ export const SuggestionsReviewView: React.FC<SuggestionsReviewViewProps> = memo(
                     key={i}
                     className={cn(
                       "no-underline",
-                      decision === "reject"
+                      rejected
                         ? "text-[rgb(var(--foreground-muted))]/55"
                         : "text-[rgb(var(--accent))]"
                     )}
@@ -246,16 +286,11 @@ export const SuggestionsReviewView: React.FC<SuggestionsReviewViewProps> = memo(
                   </ins>
                 );
               })}
-              <span
-                className={cn(
-                  "inline-flex items-center px-1.5 py-0.5 rounded-md text-[9.5px] font-mono font-medium tracking-wide uppercase align-middle ml-2 border",
-                  decision === "reject"
-                    ? "bg-[rgba(var(--foreground-muted),0.08)] text-[rgb(var(--foreground-muted))]/50 border-transparent"
-                    : "bg-amber-500/12 text-amber-400 border-amber-500/30"
-                )}
-              >
-                {MEMORY_COPY.changeBadgeReplace}
-              </span>
+              <ChangeMarker
+                icon={Diff}
+                label={MEMORY_COPY.changeBadgeReplace}
+                muted={rejected}
+              />
             </p>
             <span className="shrink-0 mt-0.5">{buttons}</span>
           </div>
@@ -271,22 +306,17 @@ export const SuggestionsReviewView: React.FC<SuggestionsReviewViewProps> = memo(
             <p
               className={cn(
                 "flex-1 text-[12.5px] leading-relaxed select-text font-sans line-through",
-                decision === "reject"
+                rejected
                   ? "decoration-[rgb(var(--foreground-muted))]/50 text-[rgb(var(--foreground-muted))]/45"
                   : "decoration-[rgb(var(--danger))] text-[rgb(var(--danger))]"
               )}
             >
               {entry.text}
-              <span
-                className={cn(
-                  "inline-flex items-center px-1.5 py-0.5 rounded-md text-[9.5px] font-mono font-medium tracking-wide uppercase align-middle ml-2 border no-underline",
-                  decision === "reject"
-                    ? "bg-[rgba(var(--foreground-muted),0.08)] text-[rgb(var(--foreground-muted))]/50 border-transparent"
-                    : "bg-[rgba(var(--danger),0.12)] text-[rgb(var(--danger))] border-[rgba(var(--danger),0.3)]"
-                )}
-              >
-                {MEMORY_COPY.changeBadgeDelete}
-              </span>
+              <ChangeMarker
+                icon={Minus}
+                label={MEMORY_COPY.changeBadgeDelete}
+                muted={rejected}
+              />
             </p>
             <span className="shrink-0 mt-0.5">{buttons}</span>
           </div>
@@ -302,22 +332,17 @@ export const SuggestionsReviewView: React.FC<SuggestionsReviewViewProps> = memo(
           <p
             className={cn(
               "flex-1 text-[12.5px] leading-relaxed select-text font-sans",
-              decision === "reject"
+              rejected
                 ? "line-through decoration-[rgb(var(--foreground-muted))]/50 text-[rgb(var(--foreground-muted))]/45"
                 : "text-[rgb(var(--accent))]"
             )}
           >
             {entry.text}
-            <span
-              className={cn(
-                "inline-flex items-center px-1.5 py-0.5 rounded-md text-[9.5px] font-mono font-medium tracking-wide uppercase align-middle ml-2 border",
-                decision === "reject"
-                  ? "bg-[rgba(var(--foreground-muted),0.08)] text-[rgb(var(--foreground-muted))]/50 border-transparent"
-                  : "bg-[rgba(var(--accent),0.12)] text-[rgb(var(--accent))] border-[rgba(var(--accent),0.28)]"
-              )}
-            >
-              {MEMORY_COPY.changeBadgeNewFact}
-            </span>
+            <ChangeMarker
+              icon={Plus}
+              label={MEMORY_COPY.changeBadgeNewFact}
+              muted={rejected}
+            />
           </p>
           <span className="shrink-0 mt-0.5">{buttons}</span>
         </div>
@@ -345,16 +370,11 @@ export const SuggestionsReviewView: React.FC<SuggestionsReviewViewProps> = memo(
                   <div className="flex items-center gap-2">
                     <span>{sec.title}</span>
                     {sec.isNew && (
-                      <span
-                        className={cn(
-                          "inline-flex items-center px-1.5 py-0.5 rounded-md text-[9.5px] font-mono font-medium tracking-wide uppercase normal-case align-middle border",
-                          decisions[sec.revisionId!] === "reject"
-                            ? "bg-[rgba(var(--foreground-muted),0.08)] text-[rgb(var(--foreground-muted))]/50 border-transparent"
-                            : "bg-[rgba(var(--accent),0.18)] text-[rgb(var(--accent))] border-[rgba(var(--accent),0.35)]"
-                        )}
-                      >
-                        {MEMORY_COPY.changeBadgeNewSection}
-                      </span>
+                      <ChangeMarker
+                        icon={SquareDashedPlus}
+                        label={MEMORY_COPY.changeBadgeNewSection}
+                        muted={decisions[sec.revisionId!] === "reject"}
+                      />
                     )}
                     {sec.key === "sec_orphaned" && (
                       <span className="text-[10px] font-mono font-normal normal-case tracking-normal text-[rgb(var(--foreground-muted))]/60">

@@ -1,9 +1,9 @@
 import { memo, useState, useEffect, useCallback, useRef } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
 import { HexColorPicker } from "react-colorful";
-import { Palette, Sun, Moon } from "lucide-react";
+import { Palette, Copy, Check } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
-import { Card, SegmentedControl } from "@/shared/ui";
+import { Card } from "@/shared/ui";
 import { beginAccentPreview, endAccentPreview, previewAccent } from "@/shared/theme";
 import { APPEARANCE_COPY } from "@/data/settingsCopy";
 
@@ -11,15 +11,11 @@ interface AppearanceCardProps {
   layoutMode?: "full-max" | "full-min" | "small";
 }
 
-const THEME_OPTIONS = [
-  { id: "dark", icon: Moon, title: APPEARANCE_COPY.darkMode },
-  { id: "light", icon: Sun, title: APPEARANCE_COPY.lightMode },
-];
-
 export const AppearanceCard = memo(({ layoutMode = "full-max" }: AppearanceCardProps) => {
   const appearance = useSettingsStore((s) => s.draftSettings?.appearance);
   const updateDraft = useSettingsStore((s) => s.updateDraft);
   const [localColor, setLocalColor] = useState(appearance?.accent_seed || "#00dbe9");
+  const [copied, setCopied] = useState(false);
   const draggingRef = useRef(false);
   // Live refs: the release listener must read the newest colour without being
   // re-attached on every drag frame.
@@ -91,12 +87,12 @@ export const AppearanceCard = memo(({ layoutMode = "full-max" }: AppearanceCardP
     previewAccent(color);
   }, [commitAccent]);
 
-  const handleThemeChange = useCallback(
-    (theme: string) => {
-      updateDraft("appearance", "theme", theme);
-    },
-    [updateDraft]
-  );
+  const handleCopy = useCallback(() => {
+    navigator.clipboard.writeText(localColor).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  }, [localColor]);
 
   if (!appearance) return null;
 
@@ -117,7 +113,7 @@ export const AppearanceCard = memo(({ layoutMode = "full-max" }: AppearanceCardP
             )
       )}
     >
-      {/* Top Row: Header Title & Simple Theme Mode Switcher side-by-side */}
+      {/* Top Row: Header Title + Hex Copy */}
       <div className="flex items-center justify-between mb-2 shrink-0 border-b border-[rgba(var(--accent),0.08)] pb-2 w-full">
         <div className="flex items-center gap-2">
           <Palette className="text-[rgb(var(--accent))]" size={17} />
@@ -125,14 +121,19 @@ export const AppearanceCard = memo(({ layoutMode = "full-max" }: AppearanceCardP
             {APPEARANCE_COPY.cardTitle}
           </span>
         </div>
-
-        {/* Theme Mode Switcher */}
-        <SegmentedControl
-          options={THEME_OPTIONS}
-          value={appearance.theme}
-          onChange={handleThemeChange}
-          size="sm"
-        />
+        <button
+          type="button"
+          onClick={handleCopy}
+          title="Copy hex code"
+          className="flex items-center gap-1.5 text-[11px] font-mono uppercase tracking-wider text-[rgb(var(--foreground))]/60 hover:text-[rgb(var(--accent))] transition-colors cursor-pointer bg-transparent border-0 outline-none p-0"
+        >
+          <span>{localColor}</span>
+          {copied ? (
+            <Check size={12} className="text-[rgb(var(--accent))]" />
+          ) : (
+            <Copy size={12} />
+          )}
+        </button>
       </div>
 
       {/* Bottom Row: Full card width color picker */}
@@ -152,4 +153,3 @@ export const AppearanceCard = memo(({ layoutMode = "full-max" }: AppearanceCardP
 });
 
 AppearanceCard.displayName = "AppearanceCard";
-

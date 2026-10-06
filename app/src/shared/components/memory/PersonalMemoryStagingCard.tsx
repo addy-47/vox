@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef, memo } from "react";
+import React, { useState, useEffect, useMemo, useRef, memo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Sparkles, Loader2 } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
@@ -10,7 +10,6 @@ import type { StagingMode, MemoryComment, PendingConfirmation } from "./stagingT
 import type { ObservationFilter } from "@/shared/hooks/useObservationsList";
 
 import { StagingHeader } from "./staging/StagingHeader";
-import { CommitBanner } from "./staging/CommitBanner";
 import { SuggestionsReviewView } from "./staging/SuggestionsReviewView";
 import { ActionHubView } from "./staging/ActionHubView";
 import { CommentsQueueView } from "./staging/CommentsQueueView";
@@ -129,7 +128,6 @@ export const PersonalMemoryStagingCard: React.FC<PersonalMemoryStagingCardProps>
   ({
     canonicalContent,
     canonicalMarkdown,
-    activeVersion,
     mode,
     onModeChange,
     onSave,
@@ -146,8 +144,6 @@ export const PersonalMemoryStagingCard: React.FC<PersonalMemoryStagingCardProps>
     isApplyingSuggestions,
     candidateFacts = [],
     justCommitted = false,
-    onDismissCommitted,
-    onViewVersionHistory,
     observations = [],
     observationFilter = "staged",
     onObservationFilterChange,
@@ -255,10 +251,6 @@ export const PersonalMemoryStagingCard: React.FC<PersonalMemoryStagingCardProps>
       });
     };
 
-    // Stable no-op default so the banner's dismiss prop is always callable.
-    const handleDismissCommitted = useCallback(() => {
-      if (onDismissCommitted) onDismissCommitted();
-    }, [onDismissCommitted]);
 
     const handleAcceptAll = async () => {
       const all: Record<string, "accept" | "reject"> = {};
@@ -419,18 +411,6 @@ export const PersonalMemoryStagingCard: React.FC<PersonalMemoryStagingCardProps>
           observationCount={(observations.length > 0 ? observations : candidateFacts).length}
         />
 
-        {/* Post-commit confirmation is a slim banner over the card, not a
-            full-body takeover — the user keeps their place and the CTA below
-            stays clickable. */}
-        {justCommitted && (
-          <div className="mb-3 shrink-0">
-            <CommitBanner
-              activeVersion={activeVersion}
-              onViewVersionHistory={onViewVersionHistory}
-              onDismiss={handleDismissCommitted}
-            />
-          </div>
-        )}
 
         {isSuggestionsActive ? (
           <SuggestionsReviewView

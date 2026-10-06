@@ -336,8 +336,8 @@ export const Home = memo(() => {
                 key="orb-loader"
                 initial={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-                className="absolute inset-0 z-30 flex items-center justify-center bg-[rgb(var(--background))]"
+                transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+                className="absolute inset-0 z-30 flex items-center justify-center bg-transparent pointer-events-none rounded-full"
               >
                 <OrbitalLoader size="md" />
               </motion.div>
