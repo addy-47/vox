@@ -1,7 +1,8 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useState, useEffect, useLayoutEffect, useCallback, useRef, useMemo } from "react";
 import { useLocation } from "react-router-dom";
 import {
   getSessions,
+  getCachedSessions,
   getTurns,
   deleteSession,
   formatDateTime,
@@ -54,8 +55,11 @@ function getErrorMessage(e: unknown, fallback: string): string {
 
 export function useHistory() {
   const location = useLocation();
-  const [sessions, setSessions] = useState<SessionRow[]>([]);
-  const [sessionsLoading, setSessionsLoading] = useState(true);
+  const [sessions, setSessions] = useState<SessionRow[]>(() => {
+    const cached = getCachedSessions();
+    return cached ? sortSessionsNewestFirst(cached) : [];
+  });
+  const [sessionsLoading, setSessionsLoading] = useState(() => !getCachedSessions());
   const [error, setError] = useState<string | null>(null);
   const [selectedSession, setSelectedSession] = useState<SessionRow | null>(null);
   const selectedSessionRef = useRef<SessionRow | null>(selectedSession);
@@ -76,11 +80,22 @@ export function useHistory() {
   const dragMovedRef = useRef(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
-  const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
+  const [dimensions, setDimensions] = useState(() => ({
+    width: typeof window !== "undefined" ? window.innerWidth : BREAKPOINT_COMPACT_MAX,
+    height: typeof window !== "undefined" ? window.innerHeight : 800,
+  }));
 
-  // Viewport resize observer
-  useEffect(() => {
+  // Immediate pre-paint measurement + debounced resize observer
+  useLayoutEffect(() => {
     if (!containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    if (rect.width > 0 && rect.height > 0) {
+      setDimensions({
+        width: rect.width,
+        height: rect.height,
+      });
+    }
+
     let timer: NodeJS.Timeout;
     const observer = new ResizeObserver((entries) => {
       clearTimeout(timer);
@@ -114,7 +129,9 @@ export function useHistory() {
   }, []);
 
   const loadSessions = useCallback(async () => {
-    setSessionsLoading(true);
+    if (!getCachedSessions()) {
+      setSessionsLoading(true);
+    }
     await fetchSessions();
     setSessionsLoading(false);
   }, [fetchSessions]);

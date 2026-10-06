@@ -63,6 +63,7 @@ export const MEMORY_COPY = {
     `${n} extracted knowledge and behavioral observations`,
   observationsDescBare: "Extracted knowledge and behavioral observations",
   allChangesIntegratedShort: "All changes integrated",
+  memoryUpdated: "Memory updated",
   suggestionsTitle: "Suggested Profile Updates",
   /** Staging header title while reviewing suggestions, with live count. */
   suggestionsTitleCount: (n: number) =>

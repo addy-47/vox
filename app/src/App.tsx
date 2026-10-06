@@ -22,6 +22,7 @@ const preloadRouteChunks = () => {
   void import("@/pages/Memory");
   void import("@/pages/Settings");
   void import("@/pages/Monitoring");
+  void import("@/services/historyService").then((m) => m.getSessions()).catch(() => {});
 };
 
 import { Home } from "@/pages/Home";

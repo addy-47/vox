@@ -69,6 +69,14 @@ const FLIP_TOKEN_KEYS = [
   "notif-dictation", "notif-hardware", "notif-models", "notif-storage",
   // Ambient background gradient stops (interpolated continuously to prevent backdrop snap)
   "amb-stop-0", "amb-stop-1", "amb-stop-2",
+  // Glass tokens used by session cards and panels
+  "glass-surface", "glass-deep", "ghost", "glass-tint",
+  // History central clock hub and pill stops
+  "clock-hub-stop-0", "clock-hub-stop-1", "clock-hub-stop-2", "clock-pill-bg",
+  // Clock and orbit card shadow & border alphas
+  "clock-hub-shadow-alpha", "clock-hub-glow-alpha", "clock-hub-inset-alpha",
+  "orbit-card-border-alpha", "orbit-card-shadow-alpha", "orbit-card-inset-alpha",
+  "orbit-card-selected-border-alpha", "orbit-card-selected-glow-alpha",
 ];
 
 type TokenValue =
@@ -112,7 +120,6 @@ function lerpToken(
   e: number,
   accentTriple: string
 ): string {
-  if (from.kind !== to.kind) return "";
   if (from.kind === "triplet" && to.kind === "triplet") {
     return `${Math.round(from.r + (to.r - from.r) * e)}, ${Math.round(
       from.g + (to.g - from.g) * e
@@ -130,7 +137,15 @@ function lerpToken(
     return String(from.v + (to.v - from.v) * e);
   }
   if (from.kind === "alpha" && to.kind === "alpha") {
-    return `rgba(${accentTriple}, ${from.alpha + (to.alpha - from.alpha) * e})`;
+    return `rgba(${accentTriple}, ${(from.alpha + (to.alpha - from.alpha) * e).toFixed(3)})`;
+  }
+  if (
+    (from.kind === "alpha" || from.kind === "rgba") &&
+    (to.kind === "alpha" || to.kind === "rgba")
+  ) {
+    const fromAlpha = from.kind === "alpha" ? from.alpha : from.a;
+    const toAlpha = to.kind === "alpha" ? to.alpha : to.a;
+    return `rgba(${accentTriple}, ${(fromAlpha + (toAlpha - fromAlpha) * e).toFixed(3)})`;
   }
   return "";
 }
@@ -469,12 +484,6 @@ export function applyTheme(
   const preAmbImage =
     ambEl && import.meta.env.DEV ? getComputedStyle(ambEl).backgroundImage.slice(0, 120) : "";
   writeThemeToDom(appearance);
-  if (ambEl && import.meta.env.DEV) {
-    const postAmbImage = getComputedStyle(ambEl).backgroundImage.slice(0, 120);
-    console.info(
-      `[theme-flip] #${trace.id} amb-base same-task snap pre!=post: ${preAmbImage !== postAmbImage} pre=${preAmbImage} post=${postAmbImage}`
-    );
-  }
 
   // Drop any masks left by a burst flip so the new theme's literal values
   // are readable, then snapshot the true targets — unless the cache already
@@ -499,7 +508,14 @@ export function applyTheme(
     root.style.setProperty(`--${key}`, value);
   }
 
-animateTokensToNewTheme(startValues, endValues, newAccentInline, THEME_TRANSITION_MS);
+  if (ambEl && import.meta.env.DEV) {
+    const postAmbImage = getComputedStyle(ambEl).backgroundImage.slice(0, 120);
+    console.info(
+      `[theme-flip] #${trace.id} amb-base same-task snap pre!=post: ${preAmbImage !== postAmbImage} pre=${preAmbImage} post=${postAmbImage}`
+    );
+  }
+
+  animateTokensToNewTheme(startValues, endValues, newAccentInline, THEME_TRANSITION_MS);
   persistForBootScript(appearance);
   const baseTargets = [
     "body",
@@ -509,6 +525,9 @@ animateTokensToNewTheme(startValues, endValues, newAccentInline, THEME_TRANSITIO
     '[data-flip-trace="monitor-btn"]',
     '[data-flip-trace="title-bar-dot"]',
     '[data-spatial-zone="cluster"] button',
+    ".clock-hub",
+    ".clock-pill",
+    ".orbit-card-surface",
   ];
   const cardIds = ["persona", "models", "working_memory", "personal_memory", "appearance", "interaction"];
   const cardTargets = cardIds

@@ -50,6 +50,18 @@
   --glass-deep: 14, 14, 16;
   --glass-navy: 21, 21, 26;
   --ghost: 36, 36, 42;
+  --clock-hub-stop-0: rgba(27, 27, 30, 0.98);
+  --clock-hub-stop-1: rgba(10, 14, 18, 0.98);
+  --clock-hub-stop-2: rgba(var(--accent), 0.08);
+  --clock-pill-bg: rgba(0, 0, 0, 0.4);
+  --clock-hub-shadow-alpha: 0.8;
+  --clock-hub-glow-alpha: 0.12;
+  --clock-hub-inset-alpha: 0.08;
+  --orbit-card-border-alpha: 0.35;
+  --orbit-card-shadow-alpha: 0.6;
+  --orbit-card-inset-alpha: 0.08;
+  --orbit-card-selected-border-alpha: 0.7;
+  --orbit-card-selected-glow-alpha: 0.2;
 
   
   --shadow-color: 0, 0, 0;
@@ -126,6 +138,23 @@ body:not(.is-tray) {
   --hub-connector-active-opacity: 0.50;
   --hub-connector-tick35-opacity: 0.40;
   --hub-connector-tick65-opacity: 0.30;
+  --glass-tint: 247, 246, 242;
+  --glass-surface: 255, 255, 255;
+  --glass-deep: 248, 250, 252;
+  --glass-navy: 240, 238, 235;
+  --ghost: 255, 255, 255;
+  --clock-hub-stop-0: rgba(255, 255, 255, 0.7);
+  --clock-hub-stop-1: rgba(255, 255, 255, 0.4);
+  --clock-hub-stop-2: rgba(var(--accent), 0.04);
+  --clock-pill-bg: rgba(255, 255, 255, 0.45);
+  --clock-hub-shadow-alpha: 0.04;
+  --clock-hub-glow-alpha: 0.06;
+  --clock-hub-inset-alpha: 0.8;
+  --orbit-card-border-alpha: 0.4;
+  --orbit-card-shadow-alpha: 0.04;
+  --orbit-card-inset-alpha: 0.9;
+  --orbit-card-selected-border-alpha: 0.55;
+  --orbit-card-selected-glow-alpha: 0.12;
 
   
   --shadow-alpha: 0.04;
@@ -365,33 +394,36 @@ body.is-tray #root {
   .clock-hub {
     background: radial-gradient(
       circle at 50% 35%,
-      rgba(var(--card), 0.98) 0%,
-      rgba(10, 14, 18, 0.98) 72%,
-      rgba(var(--accent), 0.08) 100%
+      var(--clock-hub-stop-0) 0%,
+      var(--clock-hub-stop-1) 72%,
+      var(--clock-hub-stop-2) 100%
     );
     border: 1px solid rgba(var(--border), 0.4);
-    box-shadow: 0 20px 50px -10px rgba(0, 0, 0, 0.8), 0 0 35px rgba(var(--accent), 0.12),
-      inset 0 2px 14px rgba(255, 255, 255, 0.08);
+    box-shadow: 0 16px 45px -10px rgba(var(--shadow-color), var(--clock-hub-shadow-alpha)),
+      0 0 30px rgba(var(--accent), var(--clock-hub-glow-alpha)),
+      inset 0 2px 12px rgba(255, 255, 255, var(--clock-hub-inset-alpha));
   }
   [data-theme='light'] .clock-hub {
     background: radial-gradient(
       circle at 50% 35%,
-      rgba(255, 255, 255, 0.7) 0%,
-      rgba(255, 255, 255, 0.4) 60%,
-      rgba(var(--accent), 0.04) 100%
+      var(--clock-hub-stop-0) 0%,
+      var(--clock-hub-stop-1) 60%,
+      var(--clock-hub-stop-2) 100%
     );
-    box-shadow: 0 10px 30px -10px rgba(15, 23, 42, 0.04), 0 0 20px rgba(var(--accent), 0.06),
-      inset 0 2px 8px rgba(255, 255, 255, 0.8);
+    border: 1px solid rgba(var(--border), 0.4);
+    box-shadow: 0 16px 45px -10px rgba(var(--shadow-color), var(--clock-hub-shadow-alpha)),
+      0 0 30px rgba(var(--accent), var(--clock-hub-glow-alpha)),
+      inset 0 2px 12px rgba(255, 255, 255, var(--clock-hub-inset-alpha));
   }
   .clock-pill {
-    background: rgba(0, 0, 0, 0.4);
-    border: 1px solid rgba(var(--accent), 0.2);
-    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.2);
+    background: var(--clock-pill-bg);
+    border: 1px solid rgba(var(--accent), 0.22);
+    box-shadow: inset 0 1px 2px rgba(var(--shadow-color), var(--shadow-alpha));
   }
   [data-theme='light'] .clock-pill {
-    background: rgba(255, 255, 255, 0.45);
-    border: 1px solid rgba(var(--accent), 0.25);
-    box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.06);
+    background: var(--clock-pill-bg);
+    border: 1px solid rgba(var(--accent), 0.22);
+    box-shadow: inset 0 1px 2px rgba(var(--shadow-color), var(--shadow-alpha));
   }
 
 }
@@ -663,26 +695,26 @@ input[type="range"]:active::-webkit-slider-thumb {
 
 .orbit-card-surface {
   background: radial-gradient(circle at 50% 30%, rgba(var(--glass-surface), 0.96) 0%, rgba(var(--glass-deep), 0.98) 85%, rgba(var(--accent), 0.05) 100%);
-  border: 1px solid rgba(var(--border), 0.35);
-  box-shadow: 0 10px 30px -8px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(var(--border), var(--orbit-card-border-alpha));
+  box-shadow: 0 10px 30px -8px rgba(var(--shadow-color), var(--orbit-card-shadow-alpha)), inset 0 1px 0 rgba(255, 255, 255, var(--orbit-card-inset-alpha));
 }
 
 [data-theme='light'] .orbit-card-surface {
-  background: radial-gradient(circle at 50% 25%, rgba(255, 255, 255, 0.97) 0%, rgba(248, 250, 252, 0.92) 80%, rgba(var(--accent), 0.03) 100%);
-  border: 1px solid rgba(var(--border), 0.4);
-  box-shadow: 0 6px 20px -4px rgba(15, 23, 42, 0.04), inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  background: radial-gradient(circle at 50% 30%, rgba(var(--glass-surface), 0.97) 0%, rgba(var(--glass-deep), 0.92) 80%, rgba(var(--accent), 0.03) 100%);
+  border: 1px solid rgba(var(--border), var(--orbit-card-border-alpha));
+  box-shadow: 0 10px 30px -8px rgba(var(--shadow-color), var(--orbit-card-shadow-alpha)), inset 0 1px 0 rgba(255, 255, 255, var(--orbit-card-inset-alpha));
 }
 
 .orbit-card-surface-selected {
   background: radial-gradient(circle at 50% 30%, rgba(var(--ghost), 0.98) 0%, rgba(var(--glass-deep), 0.98) 80%, rgba(var(--accent), 0.08) 100%);
-  border: 1.5px solid rgba(var(--accent), 0.7);
-  box-shadow: 0 0 20px rgba(var(--accent), 0.2), 0 12px 32px -8px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  border: 1.5px solid rgba(var(--accent), var(--orbit-card-selected-border-alpha));
+  box-shadow: 0 0 18px rgba(var(--accent), var(--orbit-card-selected-glow-alpha)), 0 10px 28px -6px rgba(var(--shadow-color), var(--orbit-card-shadow-alpha)), inset 0 1px 0 rgba(255, 255, 255, var(--orbit-card-inset-alpha));
 }
 
 [data-theme='light'] .orbit-card-surface-selected {
-  background: radial-gradient(circle at 50% 25%, rgba(255, 255, 255, 0.99) 0%, rgba(248, 250, 252, 0.94) 80%, rgba(var(--accent), 0.04) 100%);
-  border: 1.5px solid rgba(var(--accent), 0.55);
-  box-shadow: 0 0 16px rgba(var(--accent), 0.12), 0 8px 24px -4px rgba(15, 23, 42, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  background: radial-gradient(circle at 50% 30%, rgba(var(--ghost), 0.99) 0%, rgba(var(--glass-deep), 0.94) 80%, rgba(var(--accent), 0.04) 100%);
+  border: 1.5px solid rgba(var(--accent), var(--orbit-card-selected-border-alpha));
+  box-shadow: 0 0 18px rgba(var(--accent), var(--orbit-card-selected-glow-alpha)), 0 10px 28px -6px rgba(var(--shadow-color), var(--orbit-card-shadow-alpha)), inset 0 1px 0 rgba(255, 255, 255, var(--orbit-card-inset-alpha));
 }
 
 .amb-glow {

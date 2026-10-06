@@ -8,7 +8,8 @@ import { AmbientBackground, HelpPanel, NotificationPanel, ErrorBoundary, Orbital
 import { ActiveSessionHeader, TurnMetricsBadge } from "@/shared/components/home";
 import { EdgePanel, TopRightCluster, BottomDockFeather, ThemeToggleButton } from "@/shared/ui";
 import { usePanelStateContext } from "@/shared/hooks/usePanelState";
-import { Outlet, useLocation, useNavigate } from "react-router-dom";
+import { Outlet, useLocation, useNavigate, useOutlet } from "react-router-dom";
+import { AnimatePresence, motion } from "framer-motion";
 import { Activity, PanelLeft } from "lucide-react";
 import { useVoxFootprint } from "@/shared/hooks/useVoxFootprint";
 import { cn } from "@/shared/lib/utils";
@@ -53,6 +54,7 @@ const PAGE_TITLES: Record<string, string> = {
 export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) => {
   const location = useLocation();
   const navigate = useNavigate();
+  const outlet = useOutlet();
   const [monitorOpen, setMonitorOpen] = useState(false);
   const monitorBtnRef = useRef<HTMLButtonElement>(null);
   const { voxCpu, voxRam, isReady } = useVoxFootprint();
@@ -86,7 +88,8 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
   // Viewport-resize gate: while a resize is in flight, CSS transitions /
   // animations / backdrop-filter are suspended app-wide and the ambient
   // field parks (see viewportResize.ts + index.css).
-  const { isResizing } = useViewportResize();
+  const { isResizing, layout } = useViewportResize();
+  const isCompact = layout === "compact";
 
   // Opposite trigger collision threshold (SSOT: BREAKPOINT_OPPOSITE_COLLISION_MAX):
   // Panel width is 340px; opposite corner cluster is ~80px + 20px padding (100px).
@@ -405,17 +408,25 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
             width: "100%",
           }}
         >
-          <div className="h-full w-full overflow-hidden flex flex-col">
-            <Suspense
-              fallback={
-                <div className="flex-1 w-full h-full flex flex-col items-center justify-center p-6 animate-in fade-in duration-200">
-                  <OrbitalLoader size="md" />
-                </div>
-              }
-            >
-              {children || <Outlet />}
-            </Suspense>
-          </div>
+          <Suspense
+            fallback={
+              <div className="flex-1 w-full h-full flex flex-col items-center justify-center p-6 animate-in fade-in duration-200">
+                <OrbitalLoader size="md" />
+              </div>
+            }
+          >
+            {(children || outlet) && (
+              <motion.div
+                key={location.pathname}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ duration: 0.15, ease: [0.16, 1, 0.3, 1] }}
+                className="h-full w-full overflow-hidden flex flex-col"
+              >
+                {children || outlet}
+              </motion.div>
+            )}
+          </Suspense>
         </main>
 
         {/* ── Session toggle (top-left) — Home only; z-[60] (EdgePanel slides on top at z-[70]) ── */}
@@ -453,6 +464,20 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
               isHome={true}
               onOpenPanel={() => togglePanel("sessions")}
             />
+          </div>
+        )}
+
+        {/* ── Settings Theme Toggle (top-left on desktop/wide >= 1024px) ── */}
+        {isSettings && !isCompact && (
+          <div
+            className={cn(
+              "absolute top-4 left-5 z-[60] flex items-center transition-opacity duration-200",
+              hideLeftCluster
+                ? "opacity-0 pointer-events-none invisible"
+                : "pointer-events-auto"
+            )}
+          >
+            <ThemeToggleButton />
           </div>
         )}
 

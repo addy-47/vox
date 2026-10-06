@@ -13,6 +13,8 @@ import { HOME_CONTROLS_COPY } from "@/data/homeCopy";
 import { RestoreDefaultsButton } from "@/shared/components/settings/RestoreDefaultsButton";
 import { useHistoryFilterStore } from "@/store/historyFilterStore";
 import { CompactSessionButton } from "@/shared/components/history/CompactSessionButton";
+import { ThemeToggleButton } from "@/shared/ui/ThemeToggleButton";
+import { useViewportResize } from "@/shared/hooks/useViewportResize";
 
 interface TopRightClusterProps {
   className?: string;
@@ -39,11 +41,15 @@ export const TopRightCluster: React.FC<TopRightClusterProps> = memo(
       }
     }, []);
 
+    const { layout } = useViewportResize();
+    const isCompact = layout === "compact";
+
     const isNotifsOpen = isPanelOpen("notifications");
     const isHelpOpen = isPanelOpen("help");
 
     return (
       <div data-spatial-zone="cluster" className={cn("flex items-center gap-1.5", className)}>
+        {isSettings && isCompact && <ThemeToggleButton />}
         {isSettings && <RestoreDefaultsButton />}
         {isHome && (
           <Tooltip label={HOME_CONTROLS_COPY.temporary.toggleTooltip} side="bottom">

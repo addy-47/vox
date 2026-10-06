@@ -512,8 +512,8 @@ export const History: React.FC = () => {
           <motion.div
             initial={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
-            className="absolute inset-0 z-40 bg-[rgb(var(--background))]/85 backdrop-blur-2xl pointer-events-none select-none"
+            transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+            className="absolute inset-0 z-40 flex items-center justify-center bg-transparent pointer-events-none select-none"
           >
             <div
               className="absolute left-1/2 flex items-center justify-center pointer-events-none"
