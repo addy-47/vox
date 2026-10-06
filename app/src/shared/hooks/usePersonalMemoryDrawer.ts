@@ -367,7 +367,6 @@ export function usePersonalMemoryDrawer({
       if (consolidating) return;
       setPendingActionType("consolidate");
       setConsolidating(true);
-      raiseVeil();
 
       try {
         const outcome = await consolidatePersonalMemory(
@@ -377,8 +376,6 @@ export function usePersonalMemoryDrawer({
         );
 
         if (outcome.status === "completed") {
-          stageSwap(outcome.record);
-
           const [allVersions, pendingSuggestions] = await Promise.all([
             getPersonalMemoryVersions(),
             getMemoryRevisions().catch(() => []),
@@ -386,17 +383,19 @@ export function usePersonalMemoryDrawer({
           setVersions(allVersions);
           setSuggestions(pendingSuggestions);
           await onRefreshFacts?.(true);
-          setIsCommitting(true);
           setPendingConfirmation(null);
 
           if (pendingSuggestions.length > 0) {
             setStagingMode("suggestions");
+          } else {
+            stageSwap(outcome.record);
+            raiseVeil();
+            setIsCommitting(true);
+            later(() => {
+              setIsCommitting(false);
+              setLeftFlash(false);
+            }, 900);
           }
-
-          later(() => {
-            setIsCommitting(false);
-            setLeftFlash(false);
-          }, 900);
         } else if (outcome.status === "confirmation_required") {
           pendingSwapRef.current = null;
           setIsCommitting(false);
@@ -426,7 +425,6 @@ export function usePersonalMemoryDrawer({
       }));
       if (decisionList.length === 0) return;
       setIsApplyingSuggestions(true);
-      raiseVeil();
 
       try {
         const updated = await resolveMemoryRevisions({
@@ -434,6 +432,7 @@ export function usePersonalMemoryDrawer({
           decisions: decisionList,
         });
         stageSwap(updated);
+        raiseVeil();
 
         const [allVersions, remainingSuggestions] = await Promise.all([
           getPersonalMemoryVersions(),
@@ -653,7 +652,6 @@ export function usePersonalMemoryDrawer({
       if (!commentsToApply.length) return;
       setPendingActionType("regenerate");
       setSaving(true);
-      raiseVeil();
       try {
         const formattedComments = commentsToApply.map(
           (c) => `Line ${c.line} ("${c.quotedText}"): ${c.text}`
@@ -665,7 +663,6 @@ export function usePersonalMemoryDrawer({
         );
 
         if (outcome.status === "completed") {
-          stageSwap(outcome.record);
           const [allVersions, pendingSuggestions] = await Promise.all([
             getPersonalMemoryVersions(),
             getMemoryRevisions().catch(() => []),
@@ -673,19 +670,20 @@ export function usePersonalMemoryDrawer({
           setVersions(allVersions);
           setSuggestions(pendingSuggestions);
           storeClearComments();
-          setIsCommitting(true);
           setPendingConfirmation(null);
 
           if (pendingSuggestions.length > 0) {
             setStagingMode("suggestions");
           } else {
+            stageSwap(outcome.record);
+            raiseVeil();
+            setIsCommitting(true);
             setStagingMode("idle");
+            later(() => {
+              setIsCommitting(false);
+              setLeftFlash(false);
+            }, 700);
           }
-
-          later(() => {
-            setIsCommitting(false);
-            setLeftFlash(false);
-          }, 700);
           await onRefreshFacts?.(true);
         } else if (outcome.status === "confirmation_required") {
           pendingSwapRef.current = null;

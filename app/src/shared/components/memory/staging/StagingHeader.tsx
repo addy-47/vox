@@ -120,13 +120,11 @@ export const StagingHeader: React.FC<StagingHeaderProps> = memo(
               {justCommitted
                 ? MEMORY_COPY.allChangesIntegratedShort
                 : isSuggestionsActive
-                ? `${decisionStats.total} ${
-                    decisionStats.total === 1
-                      ? MEMORY_COPY.suggestedChangeCount
-                      : MEMORY_COPY.suggestedChangesCount
-                  } (${decisionStats.accepted} accepted, ${decisionStats.rejected} rejected, ${
+                ? MEMORY_COPY.headerDecisionSummary(
+                    decisionStats.accepted,
+                    decisionStats.rejected,
                     decisionStats.pending
-                  } pending)`
+                  )
                 : mode === "comment"
                 ? MEMORY_COPY.commentsQueued(commentsCount)
                 : mode === "edit"

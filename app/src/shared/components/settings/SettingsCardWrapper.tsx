@@ -27,7 +27,7 @@ export const SettingsCardWrapper = memo(({ domain, isActive, layoutMode, childre
   const isAutoSavedHere = mode === "saved";
   const isRestartHere = mode === "restarting";
   const saveFailure = mode === "failed";
-  const failedKeys = useSettingsStore((s) => s.failedSaveKeys);
+  const failedKeys = useSettingsStore((s) => s.failedSaveDomains[domain.id]);
   const expandModalOpen = useExpandedModalStore((s) => s.openCount > 0);
 
   return (

@@ -24,38 +24,44 @@ export interface DomainCommitState {
  * saved toast, restarting indicator, and save failure.
  */
 export function useDomainCommitState(domainId: string): DomainCommitState {
-  const draftSettings = useSettingsStore((s) => s.draftSettings);
-
-  const hasChanges = useSettingsStore(
-    useCallback((s: SettingsState) => Boolean(s.isDomainDirty(domainId)), [domainId])
+  // Atomic leaf selectors, not `(s) => s.draftSettings`. The whole-object
+  // subscription re-rendered every mounted card wrapper on every keystroke in
+  // any domain, and the derived dirtiness below ran two `JSON.stringify` walks
+  // per store write per wrapper (~1,100 calls). `domainFlags` is recomputed
+  // once per mutation, so these are now O(1) lookups.
+  const llmActive = useSettingsStore((s) => s.draftSettings?.llm?.active);
+  const cloudApiKey = useSettingsStore((s) => s.draftSettings?.llm?.cloud?.api_key);
+  const pipelineMode = useSettingsStore((s) => s.draftSettings?.interaction?.pipeline_mode);
+  const realtimeActive = useSettingsStore((s) => s.draftSettings?.realtime?.active);
+  const geminiApiKey = useSettingsStore(
+    (s) => s.draftSettings?.realtime?.gemini_live?.api_key
   );
+  const deepgramApiKey = useSettingsStore(
+    (s) => s.draftSettings?.realtime?.deepgram_voice_agent?.api_key
+  );
+
+  const hasChanges = useSettingsStore((s) => Boolean(s.domainFlags[domainId]?.dirty));
   const requiresRestart = useSettingsStore(
-    useCallback((s: SettingsState) => Boolean(s.isDomainRequiringRestart(domainId)), [domainId])
+    (s) => Boolean(s.domainFlags[domainId]?.requiresRestart)
   );
 
   const isCloudLlmMissingKey =
-    draftSettings?.llm?.active === "cloud" &&
-    !draftSettings?.llm?.cloud?.api_key?.trim();
+    llmActive === "cloud" && !cloudApiKey?.trim();
   const isRealtimeMissingKey =
-    draftSettings?.interaction?.pipeline_mode === "realtime" &&
-    ((draftSettings?.realtime?.active === "gemini_live" && !(draftSettings?.realtime?.gemini_live?.api_key)?.trim()) ||
-     (draftSettings?.realtime?.active === "deepgram_voice_agent" && !(draftSettings?.realtime?.deepgram_voice_agent?.api_key)?.trim()));
+    pipelineMode === "realtime" &&
+    ((realtimeActive === "gemini_live" && !geminiApiKey?.trim()) ||
+     (realtimeActive === "deepgram_voice_agent" && !deepgramApiKey?.trim()));
 
   const isMissingKey = useMemo(() => {
-    if (domainId === "models") {
-      const isRealtime = draftSettings?.interaction?.pipeline_mode === "realtime";
-      return isRealtime ? isRealtimeMissingKey : isCloudLlmMissingKey;
-    }
-    if (domainId === "interaction") {
-      const isRealtime = draftSettings?.interaction?.pipeline_mode === "realtime";
-      return isRealtime ? isRealtimeMissingKey : false;
+    if (domainId === "models" || domainId === "interaction") {
+      return pipelineMode === "realtime" ? isRealtimeMissingKey : isCloudLlmMissingKey;
     }
     return false;
-  }, [domainId, draftSettings?.interaction?.pipeline_mode, isRealtimeMissingKey, isCloudLlmMissingKey]);
+  }, [domainId, pipelineMode, isRealtimeMissingKey, isCloudLlmMissingKey]);
 
   const autoSaved = useSettingsStore((s) => s.autoSavedDomain === domainId);
   const saveFailure = useSettingsStore((s) => s.failedSaveDomains[domainId]);
-  const failedKeys = useSettingsStore((s) => s.failedSaveKeys);
+  const failedKeys = useSettingsStore((s) => s.failedSaveDomains[domainId]);
   const isRestarting = useSettingsStore(
     useCallback(
       (s: SettingsState) => {
@@ -87,7 +93,7 @@ export function useDomainCommitState(domainId: string): DomainCommitState {
     mode = "failed";
   }
 
-  return { mode, hasChanges, failedKeys };
+  return { mode, hasChanges, failedKeys: failedKeys ?? [] };
 }
 
 export interface SettingsCommitControlsProps {

@@ -191,7 +191,6 @@ export const ModelStatusOverlay = memo(() => {
               {llmId}
             </p>
           )}
-Addy is a systems and product engineer actively developing Vox, a voice-first local AI assistant. He values high performance, clean software architecture, and zero-bullshit engineering with low latency constraints.
           {catalogLlm?.tradeoffs && <p className="mt-1.5 pt-1.5 border-t border-[rgba(var(--accent),0.06)] text-[11px] opacity-75">{catalogLlm.tradeoffs}</p>}
           {!llmExists && (
             <p className="mt-1.5 text-[rgb(var(--danger))] font-semibold text-[11px] flex items-center gap-1">

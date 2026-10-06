@@ -11,9 +11,10 @@ export function useRemoteLlmProbing(
   activePipelineTab: string,
   isRemoteLlm: boolean
 ) {
-  const [remoteModels, setRemoteModels] = useState<LlmModelInfo[]>([]);
-  const [loadingRemoteModels, setLoadingRemoteModels] = useState(false);
-  const [remoteModelsError, setRemoteModelsError] = useState<string | null>(null);
+  const remoteModels = useSettingsStore((s) => s.remoteModels);
+  const loadingRemoteModels = useSettingsStore((s) => s.loadingRemoteModels);
+  const remoteModelsError = useSettingsStore((s) => s.remoteModelsError);
+  const loadRemoteModels = useSettingsStore((s) => s.loadRemoteModels);
   const [probingMap, setProbingMap] = useState<Record<string, { status: 'idle' | 'testing' | 'success' | 'error'; capabilities?: ModelCapabilities; error?: string }>>({});
   const [customModelId, setCustomModelId] = useState("");
   const [customModelStatus, setCustomModelStatus] = useState<'idle' | 'checking' | 'valid' | 'invalid'>('idle');
@@ -45,43 +46,10 @@ export function useRemoteLlmProbing(
     }
   }, [capabilitiesCache]);
 
-  const lastFetchedKeyRef = useRef<string>("");
-  // Mounted guard (style-guide §4.3) + monotonic request id so only the latest
-  // list fetch may commit (rapid provider switches previously let a stale
-  // response win). NOTE: no AbortController — Tauri's invoke() accepts none.
-  const mountedRef = useRef(true);
-  useEffect(() => {
-    mountedRef.current = true;
-    return () => {
-      mountedRef.current = false;
-    };
-  }, []);
-  const listSeqRef = useRef(0);
-
   const fetchRemoteModels = useCallback(async (force = false) => {
     if (!provider || provider.kind === "embedded" || !provider.base_url) return;
-    const fetchKey = `${provider.base_url}:${provider.api_key || ""}`;
-    if (!force && lastFetchedKeyRef.current === fetchKey && remoteModels.length > 0) {
-      return;
-    }
-    lastFetchedKeyRef.current = fetchKey;
-    const seq = ++listSeqRef.current;
-    setLoadingRemoteModels(true);
-    setRemoteModelsError(null);
-    try {
-      const list = await listLlmModels(provider);
-      if (!mountedRef.current || seq !== listSeqRef.current) return;
-      setRemoteModels(list);
-    } catch (err) {
-      if (!mountedRef.current || seq !== listSeqRef.current) return;
-      console.error("Failed to list remote models:", err);
-      setRemoteModelsError(err instanceof Error ? err.message : String(err));
-    } finally {
-      if (mountedRef.current && seq === listSeqRef.current) {
-        setLoadingRemoteModels(false);
-      }
-    }
-  }, [provider, remoteModels.length]);
+    await loadRemoteModels(provider, force);
+  }, [provider, loadRemoteModels]);
 
   useEffect(() => {
     if (activePipelineTab === "llm" && isRemoteLlm && provider && provider.kind !== "embedded" && provider.base_url) {
