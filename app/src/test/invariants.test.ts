@@ -978,4 +978,56 @@ snap no matter what transition-property says.`
         .join("\n")}`
     ).toEqual([]);
   });
+
+  it("Invariant 28 (Probe transparency): the expanded catalog shows no second spinner, no vision-name filter, no hardcoded benchmark copy", () => {
+    const viewPath = path.join(
+      SRC_DIR,
+      "shared",
+      "components",
+      "settings",
+      "models",
+      "LlmCatalogView.tsx"
+    );
+    const content = fs.readFileSync(viewPath, "utf-8");
+
+    // The modal card's Benchmark button already spins while a probe runs; a
+    // second "testing" tile for the same event is redundant by design.
+    expect(
+      content.includes("> testing"),
+      "expanded catalog must not render a redundant testing tile"
+    ).toBe(false);
+
+    // A substring match on the model name is not a probed capability and must
+    // never sit beside real measurements as a filter chip.
+    expect(content.includes("visionCount"), "vision substring count must be gone").toBe(false);
+    expect(
+      content.includes('"vision"'),
+      "vision filter category must be gone"
+    ).toBe(false);
+
+    // Benchmark/modal-card copy lives in LLM_CATALOG_COPY, never inline.
+    for (const literal of ['"Benchmark"', '"Re-probe"', '"Re-run benchmark"', '"Untested"']) {
+      expect(
+        content.includes(`>${literal}<`) || content.includes(` ${literal}`),
+        `hardcoded ${literal} must route through LLM_CATALOG_COPY`
+      ).toBe(false);
+    }
+  });
+
+  it("Invariant 29 (Probe args): probe_model_capabilities is invoked with one casing only", () => {
+    const svcPath = path.join(SRC_DIR, "services", "settingsService.ts");
+    const content = fs.readFileSync(svcPath, "utf-8");
+
+    // Spec Must-Not #2 forbids dual emission: two wire keys for one intent.
+    // Tauri v2 converts camelCase JS args to snake_case Rust args, so the
+    // camelCase spelling is the single canonical one.
+    expect(
+      content.includes("model_id: modelId"),
+      "snake_case model_id duplicate must be gone"
+    ).toBe(false);
+    expect(
+      content.includes("target_cap: targetCap"),
+      "snake_case target_cap duplicate must be gone"
+    ).toBe(false);
+  });
 });

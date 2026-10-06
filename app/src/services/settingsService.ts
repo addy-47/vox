@@ -46,7 +46,7 @@ export function requestModelCatalog(): Promise<ModelCatalog> {
  * fallback would render controls for capabilities that may not exist. */
 export async function getProviderCaps(providerId: string): Promise<ProviderCaps | null> {
   try {
-    return await invoke<ProviderCaps>("get_provider_caps", { providerId, provider_id: providerId });
+    return await invoke<ProviderCaps>("get_provider_caps", { providerId });
   } catch (err) {
     console.error(`[Settings] get_provider_caps failed for ${providerId}:`, err);
     return null;
@@ -82,6 +82,7 @@ export function resetSettings(): Promise<ResetSettingsResult> {
 export interface ProviderHealthCheckResult {
   healthy: boolean;
   dialect?: string | null;
+  reason?: string | null;
 }
 
 /** Check health/connectivity for a specific provider. */
@@ -106,6 +107,12 @@ export interface ModelProbeResult {
   capabilities: ModelCapabilities;
   validated_cap: number | null;
   cached_map: Record<string, ModelCapabilities>;
+  cache_error: string | null;
+}
+
+export interface CapabilityCacheRead {
+  cached_map: Record<string, ModelCapabilities>;
+  cache_error: string | null;
 }
 
 /** Probe capabilities for a remote model (returns ModelCapabilities). */
@@ -118,25 +125,13 @@ export async function probeModelCapabilities(
     provider,
     modelId,
     targetCap,
-    model_id: modelId,
-    target_cap: targetCap,
   });
   return res.capabilities;
 }
 
-/** Probe capabilities for a remote model and return full result including updated cached map. */
-export function probeModelCapabilitiesFull(
-  provider?: LlmProviderConfig,
-  modelId?: string,
-  targetCap?: number
-): Promise<ModelProbeResult> {
-  return invoke<ModelProbeResult>("probe_model_capabilities", {
-    provider,
-    modelId,
-    targetCap,
-    model_id: modelId,
-    target_cap: targetCap,
-  });
+/** Read the on-disk capability cache without probing any endpoint. */
+export function readModelCapabilitiesCache(): Promise<CapabilityCacheRead> {
+  return invoke<CapabilityCacheRead>("get_model_capabilities_cache");
 }
 
 /** List audio input or output devices (ipc/audio.rs). */

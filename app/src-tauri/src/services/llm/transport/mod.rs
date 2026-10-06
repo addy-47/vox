@@ -338,9 +338,27 @@ impl super::LlmProvider for RemoteTransport {
                 let mut builder = self.client.get(&url).timeout(Duration::from_secs(4));
                 builder = inject_auth_headers(builder, &self.config.auth);
 
-                if let Ok(resp) = builder.send().await {
-                    if resp.status().is_success() {
-                        if let Ok(tags) = resp.json::<OllamaTagsResponse>().await {
+                match builder.send().await {
+                    Err(err) => {
+                        log::debug!(
+                            "[RemoteTransport] Ollama /api/tags unreachable, trying OpenAI-compat /models: {}",
+                            err
+                        );
+                    }
+                    Ok(resp) if !resp.status().is_success() => {
+                        log::debug!(
+                            "[RemoteTransport] Ollama /api/tags answered HTTP {}, trying OpenAI-compat /models",
+                            resp.status()
+                        );
+                    }
+                    Ok(resp) => match resp.json::<OllamaTagsResponse>().await {
+                        Err(err) => {
+                            log::debug!(
+                                "[RemoteTransport] Ollama /api/tags returned non-JSON, trying OpenAI-compat /models: {}",
+                                err
+                            );
+                        }
+                        Ok(tags) => {
                             return Ok(tags
                                 .models
                                 .into_iter()
@@ -352,13 +370,15 @@ impl super::LlmProvider for RemoteTransport {
                                         size_bytes: m.size,
                                         quantization: None,
                                         family: None,
-                                        provider_kind: "open_ai_compat".to_string(),
+                                        // Unset: the transport cannot distinguish server from
+                                        // cloud. The catalog layer stamps the true kind.
+                                        provider_kind: String::new(),
                                         capabilities: None,
                                     }
                                 })
                                 .collect());
                         }
-                    }
+                    },
                 }
             }
 
@@ -399,7 +419,9 @@ impl super::LlmProvider for RemoteTransport {
                         size_bytes: None,
                         quantization: None,
                         family: None,
-                        provider_kind: "open_ai_compat".to_string(),
+                        // Unset: the transport cannot distinguish server from
+                        // cloud. The catalog layer stamps the true kind.
+                        provider_kind: String::new(),
                         capabilities: None,
                     }
                 })

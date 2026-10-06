@@ -206,7 +206,7 @@
     "tool_choice": null,
     "stream_usage": true,
     "response_envelope": "chat",
-    "tool_stream": "openai_delta_with_xml_fallback",
+    "tool_stream": "openai_delta",
     "top_k_field": null,
     "catalog": null,
     "context_window": null,

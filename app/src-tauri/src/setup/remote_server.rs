@@ -52,25 +52,25 @@ pub fn resolve_setup_script<R: tauri::Runtime>(
     }
 }
 
-pub fn parse_setup_progress(line: &str) -> (SetupStep, f32) {
+pub fn parse_setup_progress(line: &str) -> Option<(SetupStep, f32)> {
     if line.contains("Phase 1") {
-        (SetupStep::Downloading, 10.0)
+        Some((SetupStep::Downloading, 10.0))
     } else if line.contains("Phase 2") {
-        (SetupStep::Downloading, 25.0)
+        Some((SetupStep::Downloading, 25.0))
     } else if line.contains("Phase 3") {
-        (SetupStep::Downloading, 40.0)
+        Some((SetupStep::Downloading, 40.0))
     } else if line.contains("Phase 4") {
-        (SetupStep::Extracting, 75.0)
+        Some((SetupStep::Extracting, 75.0))
     } else if line.contains("Phase 5") {
-        (SetupStep::Verifying, 85.0)
+        Some((SetupStep::Verifying, 85.0))
     } else if line.contains("Phase 6") {
-        (SetupStep::Verifying, 90.0)
+        Some((SetupStep::Verifying, 90.0))
     } else if line.contains("Phase 7") {
-        (SetupStep::Verifying, 95.0)
+        Some((SetupStep::Verifying, 95.0))
     } else if line.contains("Smoke test passed") {
-        (SetupStep::Completed, 100.0)
+        Some((SetupStep::Completed, 100.0))
     } else {
-        (SetupStep::Downloading, 0.0)
+        None
     }
 }
 
@@ -191,7 +191,9 @@ pub async fn run_remote_ssh_task<R: tauri::Runtime>(
                 let mut reader = BufReader::new(out).lines();
                 while let Ok(Some(line)) = reader.next_line().await {
                     log::info!("[SetupRemote:STDOUT] {}", line);
-                    let (step, progress) = parse_setup_progress(&line);
+                    let Some((step, progress)) = parse_setup_progress(&line) else {
+                        continue;
+                    };
                     if let Err(e) = emit_ipc(
                         &app_clone,
                         IpcEvent::ModelProgress(ModelSetupStatus {
@@ -221,7 +223,9 @@ pub async fn run_remote_ssh_task<R: tauri::Runtime>(
                 let mut reader = BufReader::new(err).lines();
                 while let Ok(Some(line)) = reader.next_line().await {
                     log::warn!("[SetupRemote:STDERR] {}", line);
-                    let (step, progress) = parse_setup_progress(&line);
+                    let Some((step, progress)) = parse_setup_progress(&line) else {
+                        continue;
+                    };
                     if let Err(e) = emit_ipc(
                         &app_clone,
                         IpcEvent::ModelProgress(ModelSetupStatus {

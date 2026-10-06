@@ -8,8 +8,16 @@ pub const BUNDLED_PROVIDERS_JSON: &str = include_str!("baseline_providers.json")
 pub const VENDOR_MODELPARAMS_JSON: &str = include_str!("modelparams_vendor.json");
 
 static PROVIDERS_CACHE: Lazy<RwLock<Vec<ProviderPresetMeta>>> = Lazy::new(|| {
-    let list: Vec<ProviderPresetMeta> =
-        serde_json::from_str(BUNDLED_PROVIDERS_JSON).unwrap_or_default();
+    let list: Vec<ProviderPresetMeta> = match serde_json::from_str(BUNDLED_PROVIDERS_JSON) {
+        Ok(list) => list,
+        Err(err) => {
+            log::error!(
+                "[Catalog::Presets] Bundled provider manifest failed to parse: {}",
+                err
+            );
+            Vec::new()
+        }
+    };
     RwLock::new(list)
 });
 
@@ -18,7 +26,16 @@ pub fn list_presets() -> Vec<ProviderPresetMeta> {
     if let Ok(lock) = PROVIDERS_CACHE.read() {
         lock.clone()
     } else {
-        serde_json::from_str(BUNDLED_PROVIDERS_JSON).unwrap_or_default()
+        match serde_json::from_str(BUNDLED_PROVIDERS_JSON) {
+            Ok(list) => list,
+            Err(err) => {
+                log::error!(
+                    "[Catalog::Presets] Bundled provider manifest failed to parse: {}",
+                    err
+                );
+                Vec::new()
+            }
+        }
     }
 }
 

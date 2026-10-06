@@ -15,11 +15,22 @@ pub struct LocalHardwareGpuInfo {
 pub fn detect_local_gpu() -> LocalHardwareGpuInfo {
     #[cfg(target_os = "macos")]
     {
-        LocalHardwareGpuInfo {
-            has_gpu: true,
-            vendor: "Apple".to_string(),
-            device_name: "Apple Silicon (Metal)".to_string(),
-            resolved_tier: "Tier 1B (Local GPU Available)".to_string(),
+        // Every Mac ships a Metal-capable GPU; the compile-time architecture
+        // distinguishes Apple Silicon from Intel without probing the machine.
+        if std::env::consts::ARCH == "aarch64" {
+            LocalHardwareGpuInfo {
+                has_gpu: true,
+                vendor: "Apple".to_string(),
+                device_name: "Apple Silicon (Metal)".to_string(),
+                resolved_tier: "Tier 1B (Local GPU Available)".to_string(),
+            }
+        } else {
+            LocalHardwareGpuInfo {
+                has_gpu: true,
+                vendor: "Intel".to_string(),
+                device_name: "Intel (Metal)".to_string(),
+                resolved_tier: "Tier 1B (Local GPU Available)".to_string(),
+            }
         }
     }
 
@@ -57,39 +68,44 @@ pub fn detect_local_gpu() -> LocalHardwareGpuInfo {
             .args(["path", "Win32_VideoController", "get", "Name", "/value"])
             .output();
 
-        if let Ok(out) = probe {
-            let text = String::from_utf8_lossy(&out.stdout);
-            for line in text.lines() {
-                let line = line.trim();
-                if let Some(name_raw) = line.strip_prefix("Name=") {
-                    let name = name_raw.trim().to_string();
-                    if name.is_empty() {
-                        continue;
-                    }
-                    let name_lower = name.to_lowercase();
-                    let (has_gpu, vendor, tier) = if name_lower.contains("nvidia") {
-                        (true, "NVIDIA", "Tier 1B (Local GPU Available)")
-                    } else if name_lower.contains("amd") || name_lower.contains("radeon") {
-                        (true, "AMD", "Tier 1B (Local GPU Available)")
-                    } else if name_lower.contains("intel")
-                        && (name_lower.contains("arc") || name_lower.contains("xe"))
-                    {
-                        (true, "Intel", "Tier 1B (Local GPU Available)")
-                    } else if name_lower.contains("microsoft basic")
-                        || name_lower.contains("virtual")
-                        || name_lower.contains("llvm")
-                    {
-                        (false, "Software", "Tier 1A (CPU Only)")
-                    } else {
-                        (true, "Unknown", "Tier 1B (Local GPU Available)")
-                    };
+        match probe {
+            Err(err) => {
+                log::warn!("[Hardware] wmic GPU probe failed to launch: {}", err);
+            }
+            Ok(out) => {
+                let text = String::from_utf8_lossy(&out.stdout);
+                for line in text.lines() {
+                    let line = line.trim();
+                    if let Some(name_raw) = line.strip_prefix("Name=") {
+                        let name = name_raw.trim().to_string();
+                        if name.is_empty() {
+                            continue;
+                        }
+                        let name_lower = name.to_lowercase();
+                        let (has_gpu, vendor, tier) = if name_lower.contains("nvidia") {
+                            (true, "NVIDIA", "Tier 1B (Local GPU Available)")
+                        } else if name_lower.contains("amd") || name_lower.contains("radeon") {
+                            (true, "AMD", "Tier 1B (Local GPU Available)")
+                        } else if name_lower.contains("intel")
+                            && (name_lower.contains("arc") || name_lower.contains("xe"))
+                        {
+                            (true, "Intel", "Tier 1B (Local GPU Available)")
+                        } else if name_lower.contains("microsoft basic")
+                            || name_lower.contains("virtual")
+                            || name_lower.contains("llvm")
+                        {
+                            (false, "Software", "Tier 1A (CPU Only)")
+                        } else {
+                            (true, "Unknown", "Tier 1B (Local GPU Available)")
+                        };
 
-                    return LocalHardwareGpuInfo {
-                        has_gpu,
-                        vendor: vendor.to_string(),
-                        device_name: name,
-                        resolved_tier: tier.to_string(),
-                    };
+                        return LocalHardwareGpuInfo {
+                            has_gpu,
+                            vendor: vendor.to_string(),
+                            device_name: name,
+                            resolved_tier: tier.to_string(),
+                        };
+                    }
                 }
             }
         }

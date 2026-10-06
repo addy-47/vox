@@ -71,7 +71,13 @@ async fn probe_ollama_endpoint(
     let mut builder = client.get(&url).timeout(Duration::from_secs(1));
     builder = inject_auth_headers(builder, auth);
 
-    let resp = builder.send().await.ok()?;
+    let resp = match builder.send().await {
+        Ok(resp) => resp,
+        Err(err) => {
+            log::debug!("[Catalog::Discovery] {} unreachable: {}", url, err);
+            return None;
+        }
+    };
     if resp.status().is_success() {
         let version = resp.json::<serde_json::Value>().await.ok().and_then(|v| {
             v.get("version")
@@ -80,6 +86,11 @@ async fn probe_ollama_endpoint(
         });
         Some(ServerDialect::Ollama { version })
     } else {
+        log::debug!(
+            "[Catalog::Discovery] {} answered HTTP {}",
+            url,
+            resp.status()
+        );
         None
     }
 }
@@ -93,7 +104,13 @@ async fn probe_vllm_endpoint(
     let mut builder = client.get(&url).timeout(Duration::from_secs(1));
     builder = inject_auth_headers(builder, auth);
 
-    let resp = builder.send().await.ok()?;
+    let resp = match builder.send().await {
+        Ok(resp) => resp,
+        Err(err) => {
+            log::debug!("[Catalog::Discovery] {} unreachable: {}", url, err);
+            return None;
+        }
+    };
     if resp.status().is_success() {
         let version = resp.json::<serde_json::Value>().await.ok().and_then(|v| {
             v.get("version")
@@ -102,6 +119,11 @@ async fn probe_vllm_endpoint(
         });
         Some(ServerDialect::Vllm { version })
     } else {
+        log::debug!(
+            "[Catalog::Discovery] {} answered HTTP {}",
+            url,
+            resp.status()
+        );
         None
     }
 }
@@ -115,10 +137,21 @@ async fn probe_llama_endpoint(
     let mut builder = client.get(&url).timeout(Duration::from_secs(1));
     builder = inject_auth_headers(builder, auth);
 
-    let resp = builder.send().await.ok()?;
+    let resp = match builder.send().await {
+        Ok(resp) => resp,
+        Err(err) => {
+            log::debug!("[Catalog::Discovery] {} unreachable: {}", url, err);
+            return None;
+        }
+    };
     if resp.status().is_success() {
         Some(ServerDialect::LlamaCpp)
     } else {
+        log::debug!(
+            "[Catalog::Discovery] {} answered HTTP {}",
+            url,
+            resp.status()
+        );
         None
     }
 }
@@ -137,13 +170,36 @@ async fn probe_models_endpoint(
     let mut builder = client.get(&url).timeout(Duration::from_secs(2));
     builder = inject_auth_headers(builder, auth);
 
-    let resp = builder.send().await.ok()?;
+    let resp = match builder.send().await {
+        Ok(resp) => resp,
+        Err(err) => {
+            log::debug!("[Catalog::Discovery] {} unreachable: {}", url, err);
+            return None;
+        }
+    };
     if !resp.status().is_success() {
+        log::debug!(
+            "[Catalog::Discovery] {} answered HTTP {}",
+            url,
+            resp.status()
+        );
         return None;
     }
 
-    let body = resp.json::<serde_json::Value>().await.ok()?;
-    let data = body.get("data").and_then(|d| d.as_array())?;
+    let body = match resp.json::<serde_json::Value>().await {
+        Ok(body) => body,
+        Err(err) => {
+            log::debug!("[Catalog::Discovery] {} returned non-JSON: {}", url, err);
+            return None;
+        }
+    };
+    let data = match body.get("data").and_then(|d| d.as_array()) {
+        Some(data) => data,
+        None => {
+            log::debug!("[Catalog::Discovery] {} has no data array", url);
+            return None;
+        }
+    };
 
     for item in data {
         if let Some(owned_by) = item.get("owned_by").and_then(|o| o.as_str()) {

@@ -1,4 +1,7 @@
-use std::sync::mpsc;
+use std::{
+    collections::{BTreeMap, HashSet},
+    sync::mpsc,
+};
 
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
@@ -6,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use super::{config::ConnectionConfig, sse::SseDecoder};
 use crate::services::{
     harness::Role,
-    llm::{GenerationRequest, LlmError, OutputConstraint, ReasoningMode},
+    llm::{CanonicalToolCall, GenerationRequest, LlmError, OutputConstraint, ReasoningMode},
 };
 
 #[derive(Serialize)]
@@ -20,6 +23,195 @@ struct ResponsesEvent {
     #[serde(rename = "type")]
     event_type: Option<String>,
     delta: Option<String>,
+    #[serde(default)]
+    output_index: Option<usize>,
+    #[serde(default)]
+    item: Option<ResponsesOutputItem>,
+    #[serde(default)]
+    response: Option<ResponsesCompletedBody>,
+}
+
+#[derive(Deserialize)]
+struct ResponsesOutputItem {
+    #[serde(rename = "type")]
+    item_type: Option<String>,
+    #[serde(default)]
+    call_id: Option<String>,
+    #[serde(default)]
+    id: Option<String>,
+    #[serde(default)]
+    name: Option<String>,
+    #[serde(default)]
+    arguments: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct ResponsesCompletedBody {
+    #[serde(default)]
+    output: Vec<ResponsesOutputItem>,
+}
+
+#[derive(Default)]
+struct ResponsesPendingCall {
+    call_id: String,
+    name: String,
+    arguments: String,
+}
+
+/// Converts one Responses `function_call` output item into a canonical call.
+/// Rejects items with no name or with unparseable argument JSON.
+fn responses_item_to_call(item: &ResponsesOutputItem) -> Option<CanonicalToolCall> {
+    if item.item_type.as_deref() != Some("function_call") {
+        return None;
+    }
+    let name = item.name.clone().filter(|n| !n.is_empty())?;
+    let call_id = item
+        .call_id
+        .clone()
+        .or_else(|| item.id.clone())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| format!("call_{}", uuid::Uuid::new_v4().simple()));
+    let arguments = match item.arguments.as_deref().map(str::trim) {
+        None | Some("") => serde_json::json!({}),
+        Some(text) => match serde_json::from_str::<serde_json::Value>(text) {
+            Ok(value) => value,
+            Err(err) => {
+                log::warn!(
+                    "[ResponsesTransport] Rejecting invalid JSON tool arguments for {}: {}",
+                    name,
+                    err
+                );
+                return None;
+            }
+        },
+    };
+    Some(CanonicalToolCall {
+        id: call_id,
+        name,
+        arguments,
+    })
+}
+
+/// Accumulates Responses function-call events into canonical calls. Shared by the
+/// transport and the capability probe. Deduplicates on (name, arguments): the
+/// terminal `response.completed` payload repeats calls already emitted from
+/// `response.output_item.done`, and executing the same call twice is worse
+/// than dropping a genuinely duplicated emission.
+#[derive(Default)]
+pub(crate) struct ResponsesToolAccumulator {
+    pending: BTreeMap<usize, ResponsesPendingCall>,
+    emitted: HashSet<String>,
+}
+
+impl ResponsesToolAccumulator {
+    /// Feeds one SSE line, returning calls completed by this line.
+    pub(crate) fn feed_line(&mut self, line: &str) -> Vec<CanonicalToolCall> {
+        let mut out = Vec::new();
+        let event = match serde_json::from_str::<ResponsesEvent>(line) {
+            Ok(event) => event,
+            Err(_) => return out,
+        };
+        match event.event_type.as_deref() {
+            Some("response.output_item.added") => {
+                if let Some(item) = event.item {
+                    if item.item_type.as_deref() == Some("function_call") {
+                        let idx = event.output_index.unwrap_or(0);
+                        self.pending.insert(
+                            idx,
+                            ResponsesPendingCall {
+                                call_id: item
+                                    .call_id
+                                    .or(item.id)
+                                    .filter(|s| !s.is_empty())
+                                    .unwrap_or_default(),
+                                name: item.name.unwrap_or_default(),
+                                arguments: String::new(),
+                            },
+                        );
+                    }
+                }
+            }
+            Some("response.function_call_arguments.delta") => {
+                if let Some(delta) = event.delta {
+                    let idx = event.output_index.unwrap_or(0);
+                    self.pending.entry(idx).or_default().arguments.push_str(&delta);
+                }
+            }
+            Some("response.output_item.done") => {
+                if let Some(item) = event.item {
+                    if item.item_type.as_deref() == Some("function_call") {
+                        let idx = event.output_index.unwrap_or(0);
+                        if let Some(call) = responses_item_to_call(&item) {
+                            self.pending.remove(&idx);
+                            self.push_deduped(&mut out, call);
+                        } else if let Some(pending) = self.pending.remove(&idx) {
+                            self.push_pending(&mut out, pending);
+                        }
+                    }
+                }
+            }
+            Some("response.completed") => {
+                if let Some(body) = event.response {
+                    for item in &body.output {
+                        if let Some(call) = responses_item_to_call(item) {
+                            self.push_deduped(&mut out, call);
+                        }
+                    }
+                    self.pending.clear();
+                }
+            }
+            _ => {}
+        }
+        out
+    }
+
+    /// Emits one accumulated pending call, parsing its argument buffer.
+    fn push_pending(&mut self, out: &mut Vec<CanonicalToolCall>, pending: ResponsesPendingCall) {
+        if pending.name.is_empty() {
+            return;
+        }
+        let arguments = if pending.arguments.trim().is_empty() {
+            serde_json::json!({})
+        } else {
+            match serde_json::from_str::<serde_json::Value>(&pending.arguments) {
+                Ok(value) => value,
+                Err(err) => {
+                    log::warn!(
+                        "[ResponsesTransport] Rejecting invalid JSON tool arguments for {}: {}",
+                        pending.name,
+                        err
+                    );
+                    return;
+                }
+            }
+        };
+        let call_id = if pending.call_id.is_empty() {
+            format!("call_{}", uuid::Uuid::new_v4().simple())
+        } else {
+            pending.call_id
+        };
+        self.push_deduped(
+            out,
+            CanonicalToolCall {
+                id: call_id,
+                name: pending.name,
+                arguments,
+            },
+        );
+    }
+
+    /// Emits a call unless an identical (name, arguments) call already went out.
+    fn push_deduped(&mut self, out: &mut Vec<CanonicalToolCall>, call: CanonicalToolCall) {
+        let key = format!("{}:{}", call.name, call.arguments);
+        if self.emitted.insert(key) {
+            out.push(call);
+        } else {
+            log::warn!(
+                "[ResponsesTransport] Dropping duplicate function_call emission: {}",
+                call.name
+            );
+        }
+    }
 }
 
 /// Builds the HTTP POST request payload for the OpenAI Responses API.
@@ -63,6 +255,29 @@ pub fn build_request_body(
             "max_output_tokens".to_string(),
             serde_json::json!(max_tokens),
         );
+    }
+    if let Some(ref tools) = request.tools {
+        if !tools.is_empty() {
+            body.insert(
+                "tools".to_string(),
+                serde_json::Value::Array(
+                    tools
+                        .iter()
+                        .map(|t| {
+                            serde_json::json!({
+                                "type": "function",
+                                "name": t.name,
+                                "description": t.description,
+                                "parameters": t.parameters
+                            })
+                        })
+                        .collect(),
+                ),
+            );
+            if let Some(choice) = config.policy.tool_choice {
+                body.insert("tool_choice".to_string(), serde_json::json!(choice));
+            }
+        }
     }
 
     match &request.output {
@@ -149,6 +364,7 @@ pub async fn stream_responses(
 
     let mut decoder = SseDecoder::new();
     let mut byte_stream = response.bytes_stream();
+    let mut tool_accumulator = ResponsesToolAccumulator::default();
 
     loop {
         if cancel.is_cancelled() {
@@ -185,6 +401,16 @@ pub async fn stream_responses(
                         return Ok(());
                     }
 
+                    for call in tool_accumulator.feed_line(&line) {
+                        log::info!(
+                            "[ResponsesTransport] Emitting tool call: {} (id: {})",
+                            call.name,
+                            call.id
+                        );
+                        if let Err(e) = tx.send(super::super::LlmStreamEvent::ToolCall(call)) {
+                            log::warn!("[Responses] Send tool call error: {}", e);
+                        }
+                    }
                     if let Ok(event) = serde_json::from_str::<ResponsesEvent>(&line) {
                         match event.event_type.as_deref() {
                             Some("response.output_text.delta") => {
@@ -256,7 +482,6 @@ mod tests {
             auth: AuthScheme::Bearer(Some("test".to_string())),
             provider_preset: Some("openai".to_string()),
             policy: ProviderPresetMeta::default(),
-            provider_kind: "cloud".to_string(),
         };
 
         let request = GenerationRequest {

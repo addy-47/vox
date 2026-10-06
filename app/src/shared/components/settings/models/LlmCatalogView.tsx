@@ -1,9 +1,9 @@
-import { memo, useState, useMemo, useRef, useEffect, useCallback, useDeferredValue } from "react";
+import { memo, useState, useMemo, useRef, useEffect, useCallback, useDeferredValue, type ReactNode } from "react";
 import Lenis from "lenis";
-import { useSettingsStore, type LlmModelInfo, type ModelCapabilities, type LlmProviderConfig } from "@/store/settingsStore";
+import { useSettingsStore, type LlmModelInfo, type ModelCapabilities, type LlmProviderConfig, type ProbeCheck } from "@/store/settingsStore";
 import { SubModelCard } from "../SubModelCard";
 import type { ModelStatus } from "@/shared/hooks/useModelDownloads";
-import { Loader2, ServerCog, Cloud, RefreshCw, AlertCircle, Sparkles, Search, X, Plus, Check, Copy, Zap, Layers, Cpu, Wrench } from "lucide-react";
+import { Loader2, ServerCog, Cloud, RefreshCw, AlertCircle, AlertTriangle, Sparkles, Search, X, Plus, Check, Copy, Zap, Layers, Cpu, Wrench } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { Tooltip } from "@/shared/ui/Tooltip";
 import { ExpandableList } from "@/shared/ui/ExpandableList";
@@ -30,6 +30,74 @@ import { CloudProvidersModalView, useCloudProvidersModalState } from "./CloudPro
  * between one remote host and a four-figure DOM.
  */
 const REMOTE_MODEL_PAGE_SIZE = 40;
+
+/** Human source label for a probed capability set. Never renders a measured
+ * value and a baseline guess with the same words. Exported for tests: these
+ * are the exact functions the catalog rows call. */
+export function provenanceLabel(provenance: ModelCapabilities["provenance"]): string {
+  switch (provenance) {
+    case "probed_server":
+      return LLM_CATALOG_COPY.provenanceMeasured;
+    case "catalog_baseline":
+      return LLM_CATALOG_COPY.provenanceCatalog;
+    case "declared_static":
+      return LLM_CATALOG_COPY.provenanceDeclared;
+    case "family_baseline":
+      return LLM_CATALOG_COPY.provenanceFamily;
+    case "user_configured":
+      return LLM_CATALOG_COPY.provenanceUser;
+    default:
+      return LLM_CATALOG_COPY.provenanceUnknown;
+  }
+}
+
+/** Age of a probe result in whole days from its tested_at_epoch. Exported for tests. */
+export function probeAgeDays(testedAtEpoch: number): number {
+  const nowEpoch = Math.floor(Date.now() / 1000);
+  return Math.max(0, Math.floor((nowEpoch - testedAtEpoch) / 86400));
+}
+
+/** Probe checks that failed, newest evidence first. `skipped` checks are
+ * inapplicable, not problems, so they never render as warnings. Exported for tests. */
+export function failedProbeChecks(caps: ModelCapabilities | undefined): ProbeCheck[] {
+  if (!caps || !Array.isArray(caps.checks)) return [];
+  return caps.checks.filter((c) => c.outcome === "failed");
+}
+
+/** Whether a probe failure needs surfacing for these capabilities. */
+export function hasProbeWarning(
+  probeError: string | undefined,
+  caps: ModelCapabilities | undefined
+): boolean {
+  return Boolean(probeError) || failedProbeChecks(caps).length > 0;
+}
+
+/** Hover-revealed probe failure detail for the warning icon by the model name. */
+function probeWarningLabel(
+  probeError: string | undefined,
+  caps: ModelCapabilities | undefined
+): ReactNode | null {
+  const failed = failedProbeChecks(caps);
+  if (!probeError && failed.length === 0) return null;
+  return (
+    <div className="space-y-2 text-[11px] font-sans w-full max-w-[280px]">
+      <div className="font-bold text-[rgb(var(--foreground))] border-b border-[rgba(var(--foreground),0.08)] pb-1">
+        {LLM_CATALOG_COPY.probeFailedNote}
+      </div>
+      {probeError && (
+        <div className="text-red-400 font-mono text-[10.5px] break-words leading-relaxed">{probeError}</div>
+      )}
+      {failed.map((check) => (
+        <div key={check.id} className="space-y-0.5 text-[10.5px]">
+          <div className="text-[rgb(var(--foreground-muted))] font-sans font-medium">{check.label}</div>
+          <div className="text-amber-400/90 font-mono text-[10px] break-words leading-relaxed pl-1.5 border-l-2 border-amber-400/30">
+            {check.detail ?? check.outcome}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 export interface LlmCatalogViewProps {
   layoutMode?: "full-max" | "full-min" | "small";
@@ -59,6 +127,7 @@ interface RemoteModelCardProps {
   isSelected: boolean;
   probed: ModelCapabilities | undefined;
   isTesting: boolean;
+  probeError?: string;
   onSelect: (id: string) => void;
   onProbe: (id: string) => void;
   onCopy: (id: string) => void;
@@ -70,12 +139,14 @@ const RemoteModelCard = memo(({
   isSelected,
   probed,
   isTesting,
+  probeError,
   onSelect,
   onProbe,
   onCopy,
   isCopied,
 }: RemoteModelCardProps) => {
   const isGpu = probed?.is_gpu_accelerated;
+  const ageDays = probed ? probeAgeDays(probed.tested_at_epoch) : 0;
 
   let org = "";
   let shortName = model.name || model.id;
@@ -91,9 +162,9 @@ const RemoteModelCard = memo(({
       className={cn(
         "relative flex flex-col justify-between p-4 rounded-xl border transition-all duration-200 select-none group cursor-pointer transform-gpu will-change-transform",
         isSelected
-          ? "bg-[rgba(var(--accent),0.07)] border-[rgb(var(--accent))] shadow-[0_0_20px_rgba(var(--accent),0.12)] ring-1 ring-[rgb(var(--accent))]/30"
+          ? "bg-[rgba(var(--card),0.5)] border-[rgb(var(--accent))] shadow-[0_0_24px_rgba(var(--accent),0.16)] ring-1 ring-[rgb(var(--accent))]/30"
           : "bg-[rgba(var(--card),0.5)] border-[rgba(var(--foreground),0.06)] hover:border-[rgba(var(--accent),0.35)] hover:bg-[rgba(var(--card),0.85)]",
-        isGpu && !isSelected ? "border-purple-500/25" : ""
+        isGpu && !isSelected ? "border-[rgba(var(--notif-models),0.35)]" : ""
       )}
     >
       <div>
@@ -105,9 +176,26 @@ const RemoteModelCard = memo(({
                 {org}
               </div>
             )}
-            <h4 className="font-display text-[14px] font-bold text-[rgb(var(--foreground))] tracking-tight truncate leading-tight">
-              {shortName}
-            </h4>
+            <div className="flex items-center gap-1 min-w-0">
+              <h4 className="font-display text-[14px] font-bold text-[rgb(var(--foreground))] tracking-tight truncate leading-tight min-w-0">
+                {shortName}
+              </h4>
+              {hasProbeWarning(probeError, probed) && (
+                <Tooltip
+                  side="top"
+                  align="start"
+                  className="p-3 w-[300px] max-w-[340px] whitespace-normal text-left border border-[rgba(var(--foreground),0.14)] bg-[rgb(var(--card))]/98 shadow-2xl backdrop-blur-2xl"
+                  label={probeWarningLabel(probeError, probed)}
+                >
+                  <span
+                    className="inline-flex items-center shrink-0 cursor-help p-1 -m-1"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <AlertTriangle size={13} className="text-amber-400" />
+                  </span>
+                </Tooltip>
+              )}
+            </div>
           </div>
 
           <div className="flex items-center gap-1.5 shrink-0">
@@ -169,30 +257,26 @@ const RemoteModelCard = memo(({
         <div className="mt-3 flex flex-col gap-1.5">
           <div className="grid grid-cols-2 gap-2">
             {/* Speed Tile */}
-            <div className="flex flex-col justify-between p-2 rounded-lg bg-[rgba(var(--foreground),0.025)] border border-[rgba(var(--foreground),0.06)] group-hover:border-[rgba(var(--accent),0.15)] transition-colors">
+            <div className="flex flex-col justify-between p-2 rounded-lg bg-[rgba(var(--foreground),0.04)] border border-[rgba(var(--foreground),0.08)] group-hover:border-[rgba(var(--accent),0.2)] transition-colors">
               <div className="flex items-center gap-1.5 text-[10px] font-mono uppercase tracking-wider text-[rgb(var(--foreground-muted))]/75">
-                <Zap size={11} className="text-emerald-400 shrink-0" />
+                <Zap size={11} className="text-[rgb(var(--accent))] shrink-0" />
                 <span>Speed</span>
               </div>
               <div className="mt-1 text-[12px] font-mono font-bold truncate">
-                {isTesting ? (
-                  <span className="text-[rgb(var(--accent))] flex items-center gap-1 font-bold text-[11px]">
-                    <Loader2 size={10} className="animate-spin" /> testing
-                  </span>
-                ) : probed?.tps ? (
-                  <span className="text-emerald-400">
+                {probed?.tps ? (
+                  <span className="text-[rgb(var(--notif-models))]">
                     {probed.tps.toFixed(1)} <span className="text-[10px] font-normal opacity-70">tps</span>
                   </span>
                 ) : (
-                  <span className="text-[rgb(var(--foreground-muted))]/40 text-[11px] font-normal">Untested</span>
+                  <span className="text-[rgb(var(--foreground-muted))]/40 text-[11px] font-normal">{LLM_CATALOG_COPY.untested}</span>
                 )}
               </div>
             </div>
 
             {/* Context Window Tile */}
-            <div className="flex flex-col justify-between p-2 rounded-lg bg-[rgba(var(--foreground),0.025)] border border-[rgba(var(--foreground),0.06)] group-hover:border-[rgba(var(--accent),0.15)] transition-colors">
+            <div className="flex flex-col justify-between p-2 rounded-lg bg-[rgba(var(--foreground),0.04)] border border-[rgba(var(--foreground),0.08)] group-hover:border-[rgba(var(--accent),0.2)] transition-colors">
               <div className="flex items-center gap-1.5 text-[10px] font-mono uppercase tracking-wider text-[rgb(var(--foreground-muted))]/75">
-                <Layers size={11} className="text-sky-400 shrink-0" />
+                <Layers size={11} className="text-[rgb(var(--accent))] shrink-0" />
                 <span>Context</span>
               </div>
               <div className="mt-1 text-[12px] font-mono font-bold text-[rgb(var(--foreground))] truncate">
@@ -209,20 +293,20 @@ const RemoteModelCard = memo(({
             </div>
 
             {/* Compute / Hardware Tile */}
-            <div className="flex flex-col justify-between p-2 rounded-lg bg-[rgba(var(--foreground),0.025)] border border-[rgba(var(--foreground),0.06)] group-hover:border-[rgba(var(--accent),0.15)] transition-colors">
+            <div className="flex flex-col justify-between p-2 rounded-lg bg-[rgba(var(--foreground),0.04)] border border-[rgba(var(--foreground),0.08)] group-hover:border-[rgba(var(--accent),0.2)] transition-colors">
               <div className="flex items-center gap-1.5 text-[10px] font-mono uppercase tracking-wider text-[rgb(var(--foreground-muted))]/75">
-                <Cpu size={11} className="text-purple-400 shrink-0" />
+                <Cpu size={11} className="text-[rgb(var(--accent))] shrink-0" />
                 <span>Compute</span>
               </div>
               <div className="mt-1 text-[12px] font-mono font-bold truncate">
                 {probed?.vram_bytes ? (
-                  <span className="text-purple-400">
+                  <span className="text-[rgb(var(--notif-models))]">
                     {(probed.vram_bytes / (1024 * 1024)).toFixed(0)}MB <span className="text-[10px] opacity-70">{isGpu ? "GPU" : "CPU"}</span>
                   </span>
                 ) : isGpu ? (
-                  <span className="text-purple-400">GPU Accel</span>
+                  <span className="text-[rgb(var(--notif-models))]">GPU Accel</span>
                 ) : probed?.server_has_gpu ? (
-                  <span className="text-amber-400">Server GPU</span>
+                  <span className="text-[rgb(var(--notif-models))]">Server GPU</span>
                 ) : (
                   <span className="text-[rgb(var(--foreground-muted))]/60 font-normal text-[11px]">Standard</span>
                 )}
@@ -230,16 +314,18 @@ const RemoteModelCard = memo(({
             </div>
 
             {/* Tool Calling / Tools Tile */}
-            <div className="flex flex-col justify-between p-2 rounded-lg bg-[rgba(var(--foreground),0.025)] border border-[rgba(var(--foreground),0.06)] group-hover:border-[rgba(var(--accent),0.15)] transition-colors">
+            <div className="flex flex-col justify-between p-2 rounded-lg bg-[rgba(var(--foreground),0.04)] border border-[rgba(var(--foreground),0.08)] group-hover:border-[rgba(var(--accent),0.2)] transition-colors">
               <div className="flex items-center gap-1.5 text-[10px] font-mono uppercase tracking-wider text-[rgb(var(--foreground-muted))]/75">
-                <Wrench size={11} className="text-indigo-400 shrink-0" />
+                <Wrench size={11} className="text-[rgb(var(--accent))] shrink-0" />
                 <span>Tools</span>
               </div>
               <div className="mt-1 text-[12px] font-mono font-bold truncate">
-                {probed?.supports_tools ? (
-                  <span className="text-blue-400">Supported</span>
+                {probed?.supports_tools === "supported" ? (
+                  <span className="text-[rgb(var(--notif-models))]">{LLM_CATALOG_COPY.toolsSupported}</span>
+                ) : probed?.supports_tools === "unsupported" ? (
+                  <span className="text-[rgb(var(--foreground-muted))]/40 font-normal text-[11px]">{LLM_CATALOG_COPY.toolsNone}</span>
                 ) : (
-                  <span className="text-[rgb(var(--foreground-muted))]/40 font-normal text-[11px]">None</span>
+                  <span className="text-[rgb(var(--foreground-muted))]/40 font-normal text-[11px]">{LLM_CATALOG_COPY.toolsUnknown}</span>
                 )}
               </div>
             </div>
@@ -249,22 +335,26 @@ const RemoteModelCard = memo(({
 
       {/* Card Actions Footer: minimal, tactile Benchmark action on right */}
       <div className="flex items-center justify-between gap-2 mt-3 pt-2.5 border-t border-[rgba(var(--foreground),0.06)]" onClick={(e) => e.stopPropagation()}>
-        <span className="text-[10.5px] font-mono text-[rgb(var(--foreground-muted))]/60">
-          {probed?.ttft_ms ? `TTFT: ${probed.ttft_ms.toFixed(0)}ms` : (isSelected ? "Active selection" : "")}
+        <span className="text-[10.5px] font-mono text-[rgb(var(--foreground-muted))]/60 truncate">
+          {probed ? (
+            `${provenanceLabel(probed.provenance)} · ${ageDays === 0 ? LLM_CATALOG_COPY.measuredToday : `${ageDays}d ${LLM_CATALOG_COPY.measuredAgo}`}${probed.ttft_ms != null ? ` · TTFT ${probed.ttft_ms.toFixed(0)}ms` : ""}${ageDays > 7 ? ` · ${LLM_CATALOG_COPY.staleResult}` : ""}`
+          ) : (
+            isSelected ? "Active selection" : ""
+          )}
         </span>
         <button
           type="button"
           disabled={isTesting}
           onClick={() => onProbe(model.id)}
           className="px-2.5 py-1.5 rounded-lg text-[11px] font-bold text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/10 border border-[rgba(var(--accent),0.25)] hover:bg-[rgb(var(--accent))]/20 transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-          title={probed ? "Re-run benchmark" : "Benchmark model performance"}
+          title={probed ? LLM_CATALOG_COPY.rerunBenchmark : LLM_CATALOG_COPY.runBenchmark}
         >
           {isTesting ? (
             <Loader2 size={12} className="animate-spin" />
           ) : (
             <Sparkles size={12} />
           )}
-          <span>{probed ? "Re-probe" : "Benchmark"}</span>
+          <span>{probed ? LLM_CATALOG_COPY.reprobe : LLM_CATALOG_COPY.benchmark}</span>
         </button>
       </div>
     </div>
@@ -294,7 +384,7 @@ export const RemoteModelsModalView = memo(({
 }: RemoteModelsModalViewProps) => {
   const [modalSearch, setModalSearch] = useState("");
   const deferredSearch = useDeferredValue(modalSearch);
-  const [filterCategory, setFilterCategory] = useState<"all" | "benchmarked" | "tools" | "vision" | "fast">("all");
+  const [filterCategory, setFilterCategory] = useState<"all" | "benchmarked" | "tools" | "fast">("all");
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const lenisRef = useRef<Lenis | null>(null);
@@ -339,13 +429,9 @@ export const RemoteModelsModalView = memo(({
   const toolsCount = useMemo(() => {
     return remoteModels.filter((m) => {
       const probed = probingMap[m.id]?.capabilities || m.capabilities || capabilitiesCache?.[`server:${m.id}`] || capabilitiesCache?.[`cloud:${m.id}`] || capabilitiesCache?.[`embedded:${m.id}`] || capabilitiesCache?.[m.id];
-      return probed?.supports_tools;
+      return probed?.supports_tools === "supported";
     }).length;
   }, [remoteModels, probingMap, capabilitiesCache]);
-
-  const visionCount = useMemo(() => {
-    return remoteModels.filter((m) => m.id.toLowerCase().includes("vision") || (m.name && m.name.toLowerCase().includes("vision"))).length;
-  }, [remoteModels]);
 
   const fastCount = useMemo(() => {
     return remoteModels.filter((m) => {
@@ -374,10 +460,8 @@ export const RemoteModelsModalView = memo(({
     } else if (filterCategory === "tools") {
       list = list.filter((m) => {
         const probed = probingMap[m.id]?.capabilities || m.capabilities || capabilitiesCache?.[`server:${m.id}`] || capabilitiesCache?.[`cloud:${m.id}`] || capabilitiesCache?.[`embedded:${m.id}`] || capabilitiesCache?.[m.id];
-        return probed?.supports_tools;
+        return probed?.supports_tools === "supported";
       });
-    } else if (filterCategory === "vision") {
-      list = list.filter((m) => m.id.toLowerCase().includes("vision") || (m.name && m.name.toLowerCase().includes("vision")));
     } else if (filterCategory === "fast") {
       list = list.filter((m) => {
         const probed = probingMap[m.id]?.capabilities || m.capabilities || capabilitiesCache?.[`server:${m.id}`] || capabilitiesCache?.[`cloud:${m.id}`] || capabilitiesCache?.[`embedded:${m.id}`] || capabilitiesCache?.[m.id];
@@ -451,7 +535,6 @@ export const RemoteModelsModalView = memo(({
               { id: "all", label: `All (${remoteModels.length})` },
               { id: "benchmarked", label: `⚡ Benchmarked (${benchmarkedCount})` },
               { id: "tools", label: `🛠️ Tools (${toolsCount})` },
-              { id: "vision", label: `👁️ Vision (${visionCount})` },
               { id: "fast", label: `🚀 Fast >30 TPS (${fastCount})` },
             ] as const
           ).map((chip) => (
@@ -507,6 +590,7 @@ export const RemoteModelsModalView = memo(({
                   capabilitiesCache?.[`embedded:${model.id}`] ||
                   capabilitiesCache?.[model.id];
                 const isTesting = probingMap[model.id]?.status === "testing";
+                const probeError = probingMap[model.id]?.status === "error" ? probingMap[model.id]?.error : undefined;
 
                 return (
                   <RemoteModelCard
@@ -515,6 +599,7 @@ export const RemoteModelsModalView = memo(({
                     isSelected={isSelected}
                     probed={probed}
                     isTesting={isTesting}
+                    probeError={probeError}
                     onSelect={onSelectModel}
                     onProbe={onProbeCapabilities}
                     onCopy={handleCopyId}
@@ -563,14 +648,19 @@ export const LlmCatalogView = memo(({
   handleProbeCapabilities,
   customModelId,
   setCustomModelId,
-  customModelStatus: _customModelStatus,
-  handleValidateCustomModel: _handleValidateCustomModel,
+  customModelStatus,
+  handleValidateCustomModel,
 }: LlmCatalogViewProps) => {
   const modelCatalog = useSettingsStore((s) => s.modelCatalog);
   const updateDraft = useSettingsStore((s) => s.updateDraft);
 
   // Modal View: "models" | "providers"
   const [catalogModalView, setCatalogModalView] = useState<"models" | "providers">("models");
+  // The providers view lists *cloud* providers. For embedded/server there is
+  // nothing to navigate to, so the breadcrumb stays hidden and the modal is
+  // always the models catalog.
+  const showProvidersView = provider?.kind === "cloud";
+  const activeModalView = showProvidersView ? catalogModalView : "models";
   const cloudProvidersModalProps = useCloudProvidersModalState({
     onNavigateToModels: () => setCatalogModalView("models"),
   });
@@ -670,20 +760,14 @@ export const LlmCatalogView = memo(({
   );
   const inlineHiddenCount = filteredRemoteModels.length - visibleInlineModels.length;
 
-  const handleApplyCustomModel = () => {
-    const modelId = customModelId.trim();
-    if (!modelId) return;
-    const draft = useSettingsStore.getState().draftSettings;
-    const activeLlm = draft?.llm?.active || "embedded";
-    if (activeLlm === "server" && draft?.llm?.server) {
-      updateDraft("llm", "server", { ...draft.llm.server, model: modelId });
-    } else if (activeLlm === "cloud" && draft?.llm?.cloud) {
-      updateDraft("llm", "cloud", { ...draft.llm.cloud, model: modelId });
-    } else if (activeLlm === "embedded" && draft?.llm?.embedded) {
-      updateDraft("llm", "embedded", { ...draft.llm.embedded, model: modelId });
+  // Close the custom-model input once validation succeeds and applies the id.
+  const prevCustomModelStatus = useRef(customModelStatus);
+  useEffect(() => {
+    if (customModelStatus === "valid" && prevCustomModelStatus.current !== "valid") {
+      setIsCustomInputOpen(false);
     }
-    setIsCustomInputOpen(false);
-  };
+    prevCustomModelStatus.current = customModelStatus;
+  }, [customModelStatus]);
 
   const capabilitiesCache = useSettingsStore((s) => s.capabilitiesCache);
 
@@ -756,6 +840,7 @@ export const LlmCatalogView = memo(({
             capabilitiesCache?.[`embedded:${model.id}`] ||
             capabilitiesCache?.[model.id];
           const isTesting = probingMap[model.id]?.status === "testing";
+          const inlineProbeError = probingMap[model.id]?.status === "error" ? probingMap[model.id]?.error : undefined;
           const isGpu = probed?.is_gpu_accelerated;
 
           // Check if name is essentially a duplicate of the raw ID (e.g. "01 ai/yi large" vs "01-ai/yi-large")
@@ -806,9 +891,9 @@ export const LlmCatalogView = memo(({
               className={cn(
                 "group w-full text-left p-3 rounded-xl border transition-all duration-200 relative shrink-0 cursor-pointer min-h-[64px] flex flex-col justify-between hover:z-20",
                 isSelected
-                  ? "bg-[rgba(var(--accent),0.07)] border-[rgb(var(--accent))] shadow-[0_0_16px_rgba(var(--accent),0.12)] ring-1 ring-[rgb(var(--accent))]/40"
+                  ? "bg-[rgba(var(--card),0.5)] border-[rgb(var(--accent))] shadow-[0_0_16px_rgba(var(--accent),0.16)] ring-1 ring-[rgb(var(--accent))]/40"
                   : "bg-[rgba(var(--foreground),0.02)] border-[rgba(var(--foreground),0.06)] hover:border-[rgba(var(--accent),0.35)] hover:bg-[rgba(var(--accent),0.03)]",
-                isGpu && !isSelected ? "border-purple-500/30" : ""
+                isGpu && !isSelected ? "border-[rgba(var(--notif-models),0.35)]" : ""
               )}
             >
               {/* Top Row: Title + Quantization + Reset Icon on Top Right */}
@@ -839,6 +924,22 @@ export const LlmCatalogView = memo(({
                       <span className="text-[10.5px] font-bold font-mono px-1.5 py-0.5 rounded bg-[rgba(var(--foreground),0.05)] text-[rgb(var(--foreground-muted))] border border-[rgba(var(--foreground),0.05)] leading-none">
                         {model.quantization}
                       </span>
+                    )}
+
+                    {hasProbeWarning(inlineProbeError, probed) && (
+                      <Tooltip
+                        side="top"
+                        align="start"
+                        className="p-3 w-[300px] max-w-[340px] whitespace-normal text-left border border-[rgba(var(--foreground),0.14)] bg-[rgb(var(--card))]/98 shadow-2xl backdrop-blur-2xl"
+                        label={probeWarningLabel(inlineProbeError, probed)}
+                      >
+                        <span
+                          className="inline-flex items-center shrink-0 cursor-help p-1 -m-1"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <AlertTriangle size={12} className="text-amber-400" />
+                        </span>
+                      </Tooltip>
                     )}
                   </div>
 
@@ -895,7 +996,7 @@ export const LlmCatalogView = memo(({
                           <div className="font-bold text-[rgb(var(--foreground))] border-b border-[rgba(var(--foreground),0.08)] pb-1 flex items-center justify-between gap-2">
                             <span>{LLM_CATALOG_COPY.modelCapabilities}</span>
                             {isGpu ? (
-                              <span className="text-purple-400 font-mono text-[10px] font-bold shrink-0">{LLM_CATALOG_COPY.gpuBadge}</span>
+                              <span className="text-[rgb(var(--notif-models))] font-mono text-[10px] font-bold shrink-0">{LLM_CATALOG_COPY.gpuBadge}</span>
                             ) : probed?.server_has_gpu ? (
                               <span className="text-amber-400 font-mono text-[10px] font-bold shrink-0">{LLM_CATALOG_COPY.cpuBadge}</span>
                             ) : null}
@@ -904,7 +1005,7 @@ export const LlmCatalogView = memo(({
                             {probed.tps != null && probed.tps > 0 && (
                               <div className="flex items-center justify-between gap-3">
                                 <span className="text-[rgb(var(--foreground-muted))]">{LLM_CATALOG_COPY.speed}</span>
-                                <span className="text-emerald-400 font-bold shrink-0">⚡ {probed.tps.toFixed(1)} tps</span>
+                                <span className="text-[rgb(var(--notif-models))] font-bold shrink-0">⚡ {probed.tps.toFixed(1)} tps</span>
                               </div>
                             )}
                             <div className="flex items-center justify-between gap-3">
@@ -920,24 +1021,42 @@ export const LlmCatalogView = memo(({
                             {probed.vram_bytes ? (
                               <div className="flex items-center justify-between gap-3">
                                 <span className="text-[rgb(var(--foreground-muted))]">{LLM_CATALOG_COPY.vram}</span>
-                                <span className="text-purple-300 shrink-0">{(probed.vram_bytes / (1024 * 1024)).toFixed(0)} MB</span>
+                                <span className="text-[rgb(var(--notif-models))] shrink-0">{(probed.vram_bytes / (1024 * 1024)).toFixed(0)} MB</span>
                               </div>
                             ) : null}
                             <div className="flex items-center justify-between gap-3">
                               <span className="text-[rgb(var(--foreground-muted))]">{LLM_CATALOG_COPY.tools}</span>
-                              <span className={cn("shrink-0", probed.supports_tools ? "text-blue-400 font-bold" : "text-[rgb(var(--foreground-muted))]/60")}>
-                                {probed.supports_tools ? LLM_CATALOG_COPY.toolsSupported : LLM_CATALOG_COPY.toolsNone}
+                              <span className={cn("shrink-0", probed.supports_tools === "supported" ? "text-[rgb(var(--notif-models))] font-bold" : "text-[rgb(var(--foreground-muted))]/60")}>
+                                {probed.supports_tools === "supported"
+                                  ? LLM_CATALOG_COPY.toolsSupported
+                                  : probed.supports_tools === "unsupported"
+                                    ? LLM_CATALOG_COPY.toolsNone
+                                    : LLM_CATALOG_COPY.toolsUnknown}
                               </span>
                             </div>
                             <div className="flex items-center justify-between gap-3">
                               <span className="text-[rgb(var(--foreground-muted))]">{LLM_CATALOG_COPY.languages}</span>
                               <span className="text-[rgb(var(--foreground))] font-bold shrink-0">
                                 {[
-                                  probed.supports_latin && "EN",
-                                  probed.supports_devanagari && "HIN",
-                                ].filter(Boolean).join(", ") || LLM_CATALOG_COPY.languageStandard}
+                                  probed.supports_latin === "supported" && "EN",
+                                  probed.supports_devanagari === "supported" && "HIN",
+                                ].filter(Boolean).join(", ") || LLM_CATALOG_COPY.languagesUnknown}
                               </span>
                             </div>
+                            <div className="flex items-center justify-between gap-3">
+                              <span className="text-[rgb(var(--foreground-muted))]">{LLM_CATALOG_COPY.sourceRow}</span>
+                              <span className="text-[rgb(var(--foreground))] shrink-0">
+                                {provenanceLabel(probed.provenance)}
+                              </span>
+                            </div>
+                            {failedProbeChecks(probed).map((check) => (
+                              <div key={check.id} className="flex items-start justify-between gap-3">
+                                <span className="text-amber-400/90">{check.label}</span>
+                                <span className="text-amber-400/90 text-right shrink-0 max-w-[130px] truncate" title={check.detail ?? check.outcome}>
+                                  {check.detail ?? check.outcome}
+                                </span>
+                              </div>
+                            ))}
                           </div>
                         </div>
                       }
@@ -1016,7 +1135,7 @@ export const LlmCatalogView = memo(({
                     if (e.key === "Escape") {
                       setIsCustomInputOpen(false);
                     } else if (e.key === "Enter" && customModelId.trim()) {
-                      handleApplyCustomModel();
+                      handleValidateCustomModel?.();
                     }
                   }}
                 />
@@ -1032,8 +1151,8 @@ export const LlmCatalogView = memo(({
               </div>
               <button
                 type="button"
-                disabled={!customModelId.trim()}
-                onClick={handleApplyCustomModel}
+                disabled={!customModelId.trim() || customModelStatus === "checking"}
+                onClick={() => handleValidateCustomModel?.()}
                 className="px-3 py-1 rounded-lg bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] text-[11px] font-bold uppercase tracking-wider hover:brightness-110 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer shrink-0"
               >
                 {LLM_CATALOG_COPY.use}
@@ -1045,6 +1164,21 @@ export const LlmCatalogView = memo(({
               >
                 <X size={15} />
               </button>
+              {customModelStatus !== "idle" && (
+                <span
+                  className={cn(
+                    "text-[11px] font-mono shrink-0 flex items-center gap-1",
+                    customModelStatus === "invalid" ? "text-red-400" : "text-[rgb(var(--foreground-muted))]"
+                  )}
+                >
+                  {customModelStatus === "checking" && <Loader2 size={11} className="animate-spin" />}
+                  {customModelStatus === "checking"
+                    ? LLM_CATALOG_COPY.customValidating
+                    : customModelStatus === "invalid"
+                      ? LLM_CATALOG_COPY.customInvalid
+                      : LLM_CATALOG_COPY.customValid}
+                </span>
+              )}
             </div>
           ) : isSearching || searchQuery ? (
             <div className="flex items-center gap-2 w-full animate-fade-in">
@@ -1153,15 +1287,15 @@ export const LlmCatalogView = memo(({
           className="flex-1 min-h-0"
           triggerPlacement="floating"
           inlineMaxHeightClass={layoutMode === "small" ? "max-h-[235px]" : undefined}
-          onBack={() => setCatalogModalView(catalogModalView === "models" ? "providers" : "models")}
-          icon={catalogModalView === "models" ? <ServerCog size={16} className="text-[rgb(var(--accent))]" /> : <Cloud size={16} className="text-[rgb(var(--accent))]" />}
+          onBack={showProvidersView ? () => setCatalogModalView(activeModalView === "models" ? "providers" : "models") : undefined}
+          icon={activeModalView === "models" ? <ServerCog size={16} className="text-[rgb(var(--accent))]" /> : <Cloud size={16} className="text-[rgb(var(--accent))]" />}
           title={
             <span className="font-display text-[15px] font-bold tracking-tight text-[rgb(var(--foreground))]">
-              {catalogModalView === "models" ? LLM_CATALOG_COPY.catalogTitle : "Cloud Providers"}
+              {activeModalView === "models" ? LLM_CATALOG_COPY.catalogTitle : "Cloud Providers"}
             </span>
           }
           subtitle={
-            catalogModalView === "models" ? (
+            activeModalView === "models" ? (
               <span className="font-mono text-[11px] text-[rgb(var(--foreground-muted))]">
                 {remoteModels.length} {LLM_CATALOG_COPY.modelCountLabel}
               </span>
@@ -1175,7 +1309,7 @@ export const LlmCatalogView = memo(({
           ariaLabel={LLM_CATALOG_COPY.catalogAriaLabel}
           headerActions={<SettingsCommitControls domainId="models" />}
           modalContent={
-            catalogModalView === "models" ? (
+            activeModalView === "models" ? (
               <RemoteModelsModalView
                 remoteModels={remoteModels}
                 selectedModelId={selectedModelId}

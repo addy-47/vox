@@ -42,8 +42,8 @@ use crate::{
     ipc::{
         audio::list_audio_devices,
         catalog::{
-            check_provider_health, get_model_catalog, get_provider_caps, list_llm_models,
-            probe_model_capabilities, setup_remote_server,
+            check_provider_health, get_model_capabilities_cache, get_model_catalog,
+            get_provider_caps, list_llm_models, probe_model_capabilities, setup_remote_server,
         },
         memory::{
             consolidate_personal_memory, get_memory_revisions, get_observations,
@@ -90,6 +90,7 @@ use crate::{
     pipeline::dictation::{DictationInteractionMode, DictationOutputMode},
     services::{
         dictation::init_dictation_hotkey_listener,
+        llm::catalog::{load_local_baseline_cache, spawn_catalog_sync},
         memory::{
             compaction::reconcile_uncompacted_sessions_on_boot,
             reconcile_crashed_queue_on_boot,
@@ -373,6 +374,10 @@ pub fn run() {
                 local_gpu_info.device_name,
                 local_gpu_info.resolved_tier
             );
+
+            // ── 0.9 Model Catalog Baseline (bundled snapshot + background models.dev sync)
+            load_local_baseline_cache();
+            spawn_catalog_sync();
 
             // ── 1.5 Monitoring Collector ──────────────────────────────────────────
             let state_arc = Arc::new(app_state);
@@ -681,6 +686,7 @@ pub fn run() {
             check_provider_health,
             list_llm_models,
             probe_model_capabilities,
+            get_model_capabilities_cache,
             setup_remote_server,
             update_setting,
             reset_settings,

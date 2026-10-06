@@ -67,7 +67,7 @@ pub fn parse_catalog_json(json_str: &str) -> HashMap<String, ModelSpec> {
     let raw_map: HashMap<&str, RawModelEntry> = match serde_json::from_str(json_str) {
         Ok(m) => m,
         Err(e) => {
-            eprintln!("[Catalog::Sync] Deserialization error: {}", e);
+            log::warn!("[Catalog::Sync] Deserialization error: {}", e);
             return HashMap::new();
         }
     };
@@ -156,8 +156,10 @@ pub fn get_baseline_spec(model_id: &str) -> Option<ModelSpec> {
 }
 
 /// Spawns a background non-blocking task to synchronize the catalog from models.dev using ETag caching.
+/// Uses the Tauri async runtime: this is called from the synchronous setup closure,
+/// where no Tokio runtime context exists for a bare `tokio::spawn`.
 pub fn spawn_catalog_sync() {
-    tokio::spawn(async move {
+    tauri::async_runtime::spawn(async move {
         if let Err(e) = sync_from_models_dev().await {
             log::debug!(
                 "[Catalog::Sync] Background sync skipped or unavailable: {}",
@@ -214,7 +216,9 @@ async fn sync_from_models_dev() -> anyhow::Result<()> {
         tokio::fs::rename(&tmp_file, &cache_file).await?;
 
         if let Some(etag) = new_etag {
-            let _ = tokio::fs::write(&etag_file, etag).await;
+            if let Err(err) = tokio::fs::write(&etag_file, etag).await {
+                log::warn!("[Catalog::Sync] Failed to persist catalog ETag: {}", err);
+            }
         }
 
         if let Ok(mut lock) = BASELINE_REGISTRY.write() {

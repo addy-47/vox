@@ -53,6 +53,7 @@ export interface RuntimeReport {
   total_space_gb: number;
   required_space_gb: number;
   disk_space_ok: boolean;
+  disk_space_unknown: boolean;
   mic_access: boolean;
   ram_gb: number;
   cpu_cores: number;

@@ -5,6 +5,7 @@ use crate::{
         llm::{QWEN_MODEL_DIR, QWEN_MODEL_FILE},
         memory::{PRIMARY_EMBEDDING_MODEL_DIR, PRIMARY_EMBEDDING_MODEL_FILENAME},
         stt::{MODEL_FILE_ASR_ENCODER, NEMOTRON_MODEL_DIR, QWEN_ASR_MODEL_DIR},
+        tts::{CHATTERBOX_MODEL_DIR, KOKORO_MODEL_DIR, SUPERTONIC_MODEL_DIR, ZIPVOICE_MODEL_DIR},
         vad::{MODEL_DIR_VAD, MODEL_FILE_VAD},
     },
     utils::paths,
@@ -60,7 +61,14 @@ pub fn check_setup_health() -> bool {
         return false;
     }
 
-    let tts_ok = true;
+    let tts_ok = [
+        SUPERTONIC_MODEL_DIR,
+        KOKORO_MODEL_DIR,
+        CHATTERBOX_MODEL_DIR,
+        ZIPVOICE_MODEL_DIR,
+    ]
+    .iter()
+    .any(|dir| dir_has_files(&p.models.join(dir)));
     if !tts_ok {
         return false;
     }
@@ -76,4 +84,27 @@ pub fn check_setup_health() -> bool {
 
     log::info!("[Health] All core models verified in {:?}", p.models);
     true
+}
+
+/// Reports whether a model directory exists and contains at least one file.
+/// Per-entry errors are logged, never silently dropped.
+fn dir_has_files(dir: &std::path::Path) -> bool {
+    match std::fs::read_dir(dir) {
+        Ok(entries) => {
+            for entry in entries {
+                match entry {
+                    Ok(item) => {
+                        if item.path().is_file() {
+                            return true;
+                        }
+                    }
+                    Err(err) => {
+                        log::warn!("[Health] Model dir entry unreadable in {:?}: {}", dir, err);
+                    }
+                }
+            }
+            false
+        }
+        Err(_) => false,
+    }
 }

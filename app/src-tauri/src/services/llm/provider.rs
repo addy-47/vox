@@ -106,12 +106,24 @@ pub struct GenerationRequest {
 }
 
 /// Feature support classification for capabilities.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum Support {
     Supported,
     Unsupported,
+    #[default]
     Unknown,
+}
+
+impl From<bool> for Support {
+    /// Converts an observed boolean into a support verdict.
+    fn from(observed: bool) -> Self {
+        if observed {
+            Self::Supported
+        } else {
+            Self::Unsupported
+        }
+    }
 }
 
 /// Capability matrix for an LLM provider/backend.

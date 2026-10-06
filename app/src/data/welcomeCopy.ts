@@ -156,6 +156,8 @@ export const SYSTEM_CHECK_COPY = {
   diskOkSub: "Plenty of room for everything Vox needs",
   insufficient: "NOT ENOUGH",
   tenGbNote: "Free up around 10 GB to continue",
+  diskUnknown: "UNKNOWN",
+  diskUnknownSub: "Could not measure free space",
   detected: "FOUND",
   missing: "NONE FOUND",
   micOkSub: "Ready to listen",

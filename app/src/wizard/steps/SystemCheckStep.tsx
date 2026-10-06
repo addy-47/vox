@@ -60,9 +60,9 @@ export const SystemCheckStep: React.FC<Props> = ({ onNext, onBack, error: extern
                 <StatusCard 
                     icon={<HardDrive className="w-4 h-4" />}
                     label={SYSTEM_CHECK_LABELS[0]}
-                    value={report ? (report.disk_space_ok ? `${report.available_space_gb.toFixed(1)} GB` : SYSTEM_CHECK_COPY.insufficient) : SYSTEM_CHECK_COPY.checkingValue}
-                    subValue={report ? (report.disk_space_ok ? SYSTEM_CHECK_COPY.diskOkSub : SYSTEM_CHECK_COPY.tenGbNote) : SYSTEM_CHECK_COPY.measuringSub}
-                    ok={report?.disk_space_ok}
+                    value={report ? (report.disk_space_unknown ? SYSTEM_CHECK_COPY.diskUnknown : report.disk_space_ok ? `${report.available_space_gb.toFixed(1)} GB` : SYSTEM_CHECK_COPY.insufficient) : SYSTEM_CHECK_COPY.checkingValue}
+                    subValue={report ? (report.disk_space_unknown ? SYSTEM_CHECK_COPY.diskUnknownSub : report.disk_space_ok ? SYSTEM_CHECK_COPY.diskOkSub : SYSTEM_CHECK_COPY.tenGbNote) : SYSTEM_CHECK_COPY.measuringSub}
+                    ok={report ? (report.disk_space_unknown ? undefined : report.disk_space_ok) : undefined}
                     loading={isLoading}
                 />
             </motion.div>

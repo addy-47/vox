@@ -1,10 +1,12 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
-import {
-  probeModelCapabilities,
-  listLlmModels,
-} from "@/services/settingsService";
-import type { LlmModelInfo, ModelCapabilities, LlmProviderConfig } from "@/store/settingsStore";
+import { probeModelCapabilities } from "@/services/settingsService";
+import type { SettingsDomainId } from "@/data/settingsCopy";
+import type {
+  ModelCapabilities,
+  LlmProviderConfig,
+  VoxSettings,
+} from "@/store/settingsStore";
 
 export function useRemoteLlmProbing(
   provider: LlmProviderConfig | null,
@@ -15,12 +17,21 @@ export function useRemoteLlmProbing(
   const loadingRemoteModels = useSettingsStore((s) => s.loadingRemoteModels);
   const remoteModelsError = useSettingsStore((s) => s.remoteModelsError);
   const loadRemoteModels = useSettingsStore((s) => s.loadRemoteModels);
+  const patchRemoteModelCapabilities = useSettingsStore((s) => s.patchRemoteModelCapabilities);
   const [probingMap, setProbingMap] = useState<Record<string, { status: 'idle' | 'testing' | 'success' | 'error'; capabilities?: ModelCapabilities; error?: string }>>({});
   const [customModelId, setCustomModelId] = useState("");
   const [customModelStatus, setCustomModelStatus] = useState<'idle' | 'checking' | 'valid' | 'invalid'>('idle');
 
   const capabilitiesCache = useSettingsStore((s) => s.capabilitiesCache);
   const updateDraft = useSettingsStore((s) => s.updateDraft);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   // Load disk capabilities cache and model catalog on initial mount
   useEffect(() => {
@@ -30,7 +41,9 @@ export function useRemoteLlmProbing(
     }
   }, []);
 
-  // Sync disk capabilities cache into component state on mount / update
+  // Sync disk capabilities cache into component state on mount / update.
+  // Cached entries render as previously measured, never as a fresh probe:
+  // freshness and provenance come from the capabilities themselves.
   useEffect(() => {
     if (capabilitiesCache && Object.keys(capabilitiesCache).length > 0) {
       setProbingMap((prev) => {
@@ -78,25 +91,17 @@ export function useRemoteLlmProbing(
           ...prev,
           [targetId]: { status: "success", capabilities: caps },
         }));
-        setRemoteModels((prev) =>
-          prev.map((m) => (m.id === targetId ? { ...m, capabilities: caps } : m))
-        );
-        useSettingsStore.setState((state) => ({
-          capabilitiesCache: {
-            ...state.capabilitiesCache,
-            [`${caps.provider_kind}:${caps.model_id}`]: caps,
-          },
-        }));
+        patchRemoteModelCapabilities(targetId, caps);
       } catch (err) {
         if (!mountedRef.current) return;
         console.error("[CapabilityProbe] Failed to probe model:", err);
         setProbingMap((prev) => ({
           ...prev,
-          [targetId]: { status: "error", error: String(err) },
+          [targetId]: { status: "error", error: err instanceof Error ? err.message : String(err) },
         }));
       }
     },
-    [provider]
+    [provider, patchRemoteModelCapabilities]
   );
 
   const handleValidateCustomModel = async () => {
@@ -109,31 +114,20 @@ export function useRemoteLlmProbing(
     try {
       const caps = await probeModelCapabilities(provider, mId);
       if (!mountedRef.current) return;
-      if (activeLlm === "server" && draft?.llm?.server) {
-        updateDraft("llm", "server", { ...draft.llm.server, model: mId });
-      } else if (activeLlm === "cloud" && draft?.llm?.cloud) {
-        updateDraft("llm", "cloud", { ...draft.llm.cloud, model: mId });
-      }
-      if (provider && "base_url" in provider) {
-        updateDraft("llm", "provider", { ...provider, model: mId });
-      }
-      updateDraft("llm", "model", mId);
+      applyCustomModelId(mId, activeLlm, draft, provider, updateDraft);
       setProbingMap((prev) => ({
         ...prev,
         [mId]: { status: "success", capabilities: caps },
       }));
       setCustomModelStatus("valid");
-    } catch (_) {
+    } catch (err) {
       if (!mountedRef.current) return;
-      if (activeLlm === "server" && draft?.llm?.server) {
-        updateDraft("llm", "server", { ...draft.llm.server, model: mId });
-      } else if (activeLlm === "cloud" && draft?.llm?.cloud) {
-        updateDraft("llm", "cloud", { ...draft.llm.cloud, model: mId });
-      }
-      if (provider && "base_url" in provider) {
-        updateDraft("llm", "provider", { ...provider, model: mId });
-      }
-      updateDraft("llm", "model", mId);
+      console.error("[CapabilityProbe] Custom model validation failed:", err);
+      // A failed probe must not apply the model id: nothing verified it exists.
+      setProbingMap((prev) => ({
+        ...prev,
+        [mId]: { status: "error", error: err instanceof Error ? err.message : String(err) },
+      }));
       setCustomModelStatus("invalid");
     }
   };
@@ -150,4 +144,29 @@ export function useRemoteLlmProbing(
     handleProbeCapabilities,
     handleValidateCustomModel,
   };
+}
+
+function applyCustomModelId(
+  mId: string,
+  activeLlm: string,
+  draft: VoxSettings | null,
+  provider: LlmProviderConfig,
+  updateDraft: (
+    domain: keyof VoxSettings,
+    key: string,
+    value: unknown,
+    explicitDomainId?: SettingsDomainId
+  ) => void
+) {
+  if (activeLlm === "server" && draft?.llm?.server) {
+    updateDraft("llm", "server", { ...draft.llm.server, model: mId });
+  } else if (activeLlm === "cloud" && draft?.llm?.cloud) {
+    updateDraft("llm", "cloud", { ...draft.llm.cloud, model: mId });
+  } else if (activeLlm === "embedded" && draft?.llm?.embedded) {
+    updateDraft("llm", "embedded", { ...draft.llm.embedded, model: mId });
+  }
+  if (provider && "base_url" in provider) {
+    updateDraft("llm", "provider", { ...provider, model: mId });
+  }
+  updateDraft("llm", "model", mId);
 }
