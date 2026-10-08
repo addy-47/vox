@@ -196,13 +196,13 @@ impl RealtimeActor {
                                 .pipeline
                                 .turn_id
                                 .load(std::sync::atomic::Ordering::Relaxed);
-                            let tool_ctx = ToolExecutionContext {
-                                app_state: app_state.clone(),
+                            let tool_ctx = ToolExecutionContext::new(
+                                app_state.clone(),
                                 session_id,
                                 turn_id,
-                                cancel: tokio_util::sync::CancellationToken::new(),
-                                on_sessions_changed: cb_clone,
-                            };
+                                tokio_util::sync::CancellationToken::new(),
+                                cb_clone,
+                            );
                             let call = CanonicalToolCall {
                                 id: id.clone(),
                                 name: name.clone(),

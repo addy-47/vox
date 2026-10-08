@@ -6,7 +6,6 @@ use serde_json::{json, Value};
 use super::{ToolDefinition, ToolDomain, ToolError, ToolExecutionContext, ToolResult};
 use crate::{
     core::events::PipelineMode,
-    persistence::compactions,
     services::{
         llm::ToolFlow,
         memory::ml::{embedder, estimate_tokens},
@@ -21,24 +20,19 @@ pub const DEFAULT_MAX_RESPONSE_BYTES: usize = 512_000;
 pub const DEFAULT_CHUNK_SIZE_WORDS: usize = 150;
 pub const DEFAULT_CHUNK_OVERLAP_WORDS: usize = 30;
 
-pub const DEFAULT_MIN_REPORTING_ENGINES: usize = 2;
-pub const DEFAULT_MIN_DISTINCT_DOMAINS: usize = 3;
-pub const DEFAULT_MIN_CANDIDATE_HITS: usize = 8;
-pub const DEFAULT_FANOUT_DEADLINE_MS: u64 = 1200;
-pub const DEFAULT_TWO_STAGE_RERANK: bool = true;
-
-pub const MAX_CONTEXT_SHARE_CAP: f32 = 0.30;
 pub const HARD_TOKEN_CEILING: usize = 2000;
-pub const AVERAGE_PASSAGE_TOKENS: usize = 250;
-/// P0-2: hard per-passage character cap. The count budget (`budget_k`) assumes
-/// ~250 tokens/passage but never measures length (G3: one rank-1 passage was
-/// 30,076 chars ≈ 122× the assumption). Truncated at a word boundary.
 pub const MAX_PASSAGE_CHARS: usize = 2000;
 
 pub const TIMEOUT_SPARSE_MS: u64 = 4000;
 pub const TIMEOUT_DENSE_MS: u64 = 5000;
 pub const TIMEOUT_HYBRID_MS: u64 = 5500;
-pub const TIMEOUT_OUTER_SAFETY_MS: u64 = 10000;
+pub const TIMEOUT_CEILING_MS: u64 = 12000;
+pub const TIMEOUT_FLOOR_MS: u64 = 1000;
+
+/// B1 relevance floor: minimum calibrated passage score for evidence admission.
+/// Must stay in sync with the nexus default; the AppState singleton sets this
+/// explicitly (never rely on `..Default::default()` for this field).
+pub const DEFAULT_MIN_SCORE: f32 = 0.12;
 
 /// Adapter bridging Vox's in-process ONNX MiniLM singleton to the `nexus::traits::TextEmbedder` trait.
 #[derive(Clone, Copy, Debug, Default)]
@@ -47,21 +41,32 @@ pub struct VoxEmbedder;
 #[async_trait::async_trait]
 impl nexus::traits::TextEmbedder for VoxEmbedder {
     async fn embed_text(&self, text: &str) -> Result<Vec<f32>, nexus::NexusError> {
-        let _ = embedder::ensure_embedder_loaded(true);
-        embedder::generate_embedding(text)
-            .map_err(|e| nexus::NexusError::Embedding(e.to_string()))?
-            .ok_or_else(|| {
-                nexus::NexusError::Embedding("Embedder singleton not available".to_string())
-            })
+        let text_owned = text.to_string();
+        tokio::task::spawn_blocking(move || {
+            let _ = embedder::ensure_embedder_loaded(true);
+            embedder::generate_embedding(&text_owned)
+                .map_err(|e| nexus::NexusError::Embedding(e.to_string()))?
+                .ok_or_else(|| {
+                    nexus::NexusError::Embedding("Embedder singleton not available".to_string())
+                })
+        })
+        .await
+        .map_err(|e| nexus::NexusError::Embedding(format!("Spawn blocking task failed: {e}")))?
     }
 
     async fn embed_batch(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>, nexus::NexusError> {
-        let _ = embedder::ensure_embedder_loaded(true);
-        embedder::generate_embeddings_batch(texts)
-            .map_err(|e| nexus::NexusError::Embedding(e.to_string()))?
-            .ok_or_else(|| {
-                nexus::NexusError::Embedding("Embedder singleton not available".to_string())
-            })
+        let texts_owned: Vec<String> = texts.iter().map(|s| s.to_string()).collect();
+        tokio::task::spawn_blocking(move || {
+            let _ = embedder::ensure_embedder_loaded(true);
+            let refs: Vec<&str> = texts_owned.iter().map(|s| s.as_str()).collect();
+            embedder::generate_embeddings_batch(&refs)
+                .map_err(|e| nexus::NexusError::Embedding(e.to_string()))?
+                .ok_or_else(|| {
+                    nexus::NexusError::Embedding("Embedder singleton not available".to_string())
+                })
+        })
+        .await
+        .map_err(|e| nexus::NexusError::Embedding(format!("Spawn blocking task failed: {e}")))?
     }
 }
 
@@ -89,6 +94,10 @@ impl ToolDefinition for WebSearchTool {
                     "type": "string",
                     "description": "The search query optimized for search engines (e.g., 'Federal Reserve interest rate decision September 2026')."
                 },
+                "spoken_filler": {
+                    "type": "string",
+                    "description": "A natural, brief 3 to 5 word spoken filler phrase to say aloud right now while searching (e.g., 'Searching the web now...')."
+                },
                 "time_filter": {
                     "type": "string",
                     "enum": ["any", "day", "week", "month", "year"],
@@ -99,15 +108,15 @@ impl ToolDefinition for WebSearchTool {
                     "enum": ["sparse", "dense", "hybrid"],
                     "description": "Passage relevance ranking strategy: 'sparse' (BM25 keyword matching), 'dense' (neural semantic embedding), or 'hybrid' (RRF fusion of sparse + dense). Default: 'hybrid'."
                 },
+                "deadline_ms": {
+                    "type": "integer",
+                    "description": "Optional execution deadline in milliseconds for this search request (e.g., 5000)."
+                },
                 "max_passages": {
                     "type": "integer",
                     "minimum": 1,
                     "maximum": 10,
                     "description": "Maximum number of distinct evidence passages to return (1-10). Default: 5. Actual returned count may be reduced based on available context budget."
-                },
-                "spoken_filler": {
-                    "type": "string",
-                    "description": "A natural, brief 3 to 5 word spoken filler phrase to say aloud right now while searching (e.g., 'Searching the web now...')."
                 }
             },
             "required": ["query", "spoken_filler"]
@@ -165,71 +174,50 @@ impl ToolDefinition for WebSearchTool {
                 .map(|v| (v as usize).clamp(1, 10))
                 .unwrap_or(DEFAULT_MAX_PASSAGES);
 
-            let adaptive_timeout_ms = match ranking_mode {
+            let requested_deadline = args.get("deadline_ms").and_then(|v| v.as_u64());
+            let default_timeout_ms = match ranking_mode {
                 nexus::RankingMode::Sparse => TIMEOUT_SPARSE_MS,
                 nexus::RankingMode::Dense => TIMEOUT_DENSE_MS,
                 nexus::RankingMode::Hybrid => TIMEOUT_HYBRID_MS,
-            }
-            .min(TIMEOUT_OUTER_SAFETY_MS);
+            };
+            let effective_deadline_ms = requested_deadline
+                .unwrap_or(default_timeout_ms)
+                .clamp(TIMEOUT_FLOOR_MS, TIMEOUT_CEILING_MS);
+            let fanout_budget_ms =
+                ((effective_deadline_ms as f32 * 0.18) as u64).clamp(1000, 3000);
+            let fetch_budget_ms = (effective_deadline_ms.saturating_sub(fanout_budget_ms + 1200))
+                .clamp(1500, DEFAULT_FETCH_TIMEOUT_MS);
 
             log::info!(
-                "[WebSearchTool] Turn {} executing web_search for '{}' (time_filter={:?}, ranking_mode={:?}, max_passages={}, timeout={}ms)",
+                "[WebSearchTool] Turn {} executing web_search for '{}' (time_filter={:?}, ranking_mode={:?}, max_passages={}, deadline={}ms, fanout={}ms, fetch={}ms)",
                 ctx.turn_id,
                 query,
                 time_filter,
                 ranking_mode,
                 max_passages,
-                adaptive_timeout_ms
+                effective_deadline_ms,
+                fanout_budget_ms,
+                fetch_budget_ms
             );
 
             let options = nexus::NexusSearchOptions {
                 time_filter,
                 ranking_mode,
                 max_candidates: DEFAULT_FETCH_CANDIDATES,
-                fetch_timeout_ms: DEFAULT_FETCH_TIMEOUT_MS,
+                fetch_timeout_ms: fetch_budget_ms,
                 max_response_bytes: DEFAULT_MAX_RESPONSE_BYTES,
                 chunk_size_words: DEFAULT_CHUNK_SIZE_WORDS,
                 chunk_overlap_words: DEFAULT_CHUNK_OVERLAP_WORDS,
+                fanout_deadline_ms: Some(fanout_budget_ms),
             };
 
-            let fanout_policy = nexus::model::FanoutPolicy {
-                min_reporting_engines: DEFAULT_MIN_REPORTING_ENGINES,
-                min_distinct_domains: DEFAULT_MIN_DISTINCT_DOMAINS,
-                min_candidate_hits: DEFAULT_MIN_CANDIDATE_HITS,
-                max_fanout_deadline_ms: DEFAULT_FANOUT_DEADLINE_MS,
-            };
+            let search_client = Arc::clone(&ctx.app_state.nexus_search);
+            let query_cloned = query.clone();
+            let token_ceiling = ctx.max_observation_tokens.unwrap_or(HARD_TOKEN_CEILING);
 
-            let ranking_policy = nexus::model::RankingPolicy {
-                two_stage_reranking: DEFAULT_TWO_STAGE_RERANK,
-                ..Default::default()
-            };
-
-            // D7 (G3 baseline): Mojeek (CAPTCHA wall) and GoogleWml (HTTP 403)
-            // burned ~40% of the fanout budget for zero results. Removed until
-            // N2 engine health + Brave can restore a second live index family.
-            let search_client = match nexus::NexusSearch::builder()
-                .with_engines(vec![
-                    nexus::Engine::Duckduckgo,
-                    nexus::Engine::Bing,
-                    nexus::Engine::Yahoo,
-                ])
-                .with_fanout_policy(fanout_policy)
-                .with_ranking_policy(ranking_policy)
-                .with_embedder(Arc::new(VoxEmbedder))
-                .build()
-            {
-                Ok(client) => client,
-                Err(err) => {
-                    log::error!("[WebSearchTool] Failed to initialize NexusSearch client: {err}");
-                    return Ok(ToolResult::new(
-                        "Web search unavailable: network connection could not be established.",
-                    )
-                    .with_spoken_filler(spoken_filler));
-                }
-            };
-
-            let search_and_render = async {
-                let result = search_client.search(&query, &options).await?;
+            let search_start = std::time::Instant::now();
+            let execute_search = async move {
+                let result = search_client.search(&query_cloned, &options).await?;
                 let m = &result.metrics;
                 log::info!(
                     "[WebSearchTool::Metrics] Total: {}ms | Fanout: {}ms (raw={}, dedup={} in {}ms) | Fetch: {}ms ({} pages) | Extract: {}ms ({} pages) | Chunk: {}ms ({} passages) | Rank: {}ms (mode={:?}, sparse={:?}, dense={:?}, rrf={:?})",
@@ -253,80 +241,160 @@ impl ToolDefinition for WebSearchTool {
                 for eng in &m.engines {
                     log::info!(
                         "[WebSearchTool::Engine] {:?}: duration={}ms, hits={}, ok={}, err={:?}",
-                        eng.engine, eng.latency_ms, eng.hit_count, eng.success, eng.error
+                        eng.engine,
+                        eng.latency_ms,
+                        eng.hit_count,
+                        eng.success,
+                        eng.error
                     );
                 }
                 for page in &m.pages_fetched {
                     log::info!(
                         "[WebSearchTool::Fetch] {} -> duration={}ms, bytes={}, hops={}, ok={}, err={:?}",
-                        page.requested_url, page.total_fetch_ms, page.bytes_read, page.hop_count, page.success, page.error
+                        page.requested_url,
+                        page.total_fetch_ms,
+                        page.bytes_read,
+                        page.hop_count,
+                        page.success,
+                        page.error
                     );
                 }
                 for page in &m.pages_extracted {
                     log::info!(
                         "[WebSearchTool::Extract] {} -> duration={}ms, markdown_bytes={}",
-                        page.url, page.extraction_ms, page.markdown_bytes
+                        page.url,
+                        page.extraction_ms,
+                        page.markdown_bytes
                     );
                 }
 
                 if result.scored_passages.is_empty() {
-                    log::info!("[WebSearchTool] Web search returned zero passages for '{}'", query);
-                    Ok(format!(
-                        "Web search completed for '{}'. No relevant web results could be retrieved.",
-                        xml_escape(&query)
-                    ))
-                } else {
-                    let xml_start = std::time::Instant::now();
-                    let rendered = render_evidence_xml(
-                        &query,
-                        ranking_mode,
-                        &result.scored_passages,
-                        max_passages,
-                        ctx,
-                        Some(&result.metrics),
-                    )
-                    .await;
-                    let xml_render_ms = xml_start.elapsed().as_millis() as u64;
                     log::info!(
-                        "[WebSearchTool::XML] Rendered in {}ms (total observation bytes={})",
-                        xml_render_ms,
-                        rendered.len()
+                        "[WebSearchTool] Web search returned zero passages for '{}'",
+                        query_cloned
                     );
-                    Ok(rendered)
+                    return Ok(render_status_xml(
+                        "empty_results",
+                        "not_found",
+                        &format!(
+                            "Web search completed for '{}' but no relevant passages were found.",
+                            xml_escape(&query_cloned)
+                        ),
+                        "Try rephrasing the query with different keywords or broader terms.",
+                        None,
+                    ));
                 }
+
+                // Answer-presence verification gate.
+                //
+                // Mechanism B: the correct page is fetched and ranked, but the answer
+                // sentence never survives chunk selection, so the evidence is topical
+                // background with no answer. Reporting success there invites the model to
+                // answer from parametric memory. The verdict comes from nexuss, which has
+                // the full passage text; this layer only decides what to tell the model.
+                //
+                // The old inline check was too weak: it matched a hardcoded substring list
+                // and accepted any digit anywhere, so a page full of unrelated numerals
+                // passed. See `nexus::answer_presence`.
+                if result.metrics.answer_presence == Some(nexus::AnswerPresence::Absent) {
+                    log::warn!(
+                        "[WebSearchTool] Query '{}' shape={:?} returned {} passages but none carry a candidate answer.",
+                        query_cloned,
+                        result.metrics.answer_shape,
+                        result.scored_passages.len()
+                    );
+                    return Ok(render_status_xml(
+                        "empty_results",
+                        "missing_factual_answer",
+                        &format!(
+                            "Web search found pages about '{}' but none of them state the specific answer. Do not answer from memory; report that the source was not found.",
+                            xml_escape(&query_cloned)
+                        ),
+                        "Try rephrasing with the concrete entity name, or search for the specific quantity.",
+                        None,
+                    ));
+                }
+
+                let xml_start = std::time::Instant::now();
+                let rendered = render_evidence_xml(
+                    &query_cloned,
+                    ranking_mode,
+                    &result.scored_passages,
+                    max_passages,
+                    token_ceiling,
+                    Some(&result.metrics),
+                );
+                let xml_render_ms = xml_start.elapsed().as_millis() as u64;
+                log::info!(
+                    "[WebSearchTool::XML] Rendered in {}ms (total observation bytes={})",
+                    xml_render_ms,
+                    rendered.len()
+                );
+                Ok(rendered)
             };
 
-            let search_result = tokio::time::timeout(
-                Duration::from_millis(adaptive_timeout_ms),
-                search_and_render,
-            )
-            .await;
+            let wrapped_fut = std::panic::AssertUnwindSafe(async {
+                tokio::time::timeout(
+                    Duration::from_millis(effective_deadline_ms),
+                    execute_search,
+                )
+                .await
+            });
 
-            let observation = match search_result {
-                Ok(Ok(rendered)) => rendered,
-                Ok(Err(err)) => {
+            let observation = match wrapped_fut.catch_unwind().await {
+                Ok(Ok(Ok(rendered))) => rendered,
+                Ok(Ok(Err(err))) => {
                     log::warn!("[WebSearchTool] Web search pipeline failed: {err}");
                     match err {
                         nexus::NexusError::PrivateIpBlocked(_)
                         | nexus::NexusError::DnsResolution { .. }
                         | nexus::NexusError::Http(_)
                         | nexus::NexusError::ScraperTransport(_)
-                        | nexus::NexusError::AllProvidersFailed { .. } => {
-                            "Web search unavailable: network connection could not be established.".to_string()
-                        }
-                        _ => {
-                            format!(
-                                "Web search completed for '{}'. No relevant web results could be retrieved.",
+                        | nexus::NexusError::AllProvidersFailed { .. } => render_status_xml(
+                            "network.failed",
+                            "transient",
+                            "The external search providers could not be reached.",
+                            "Inform the user that web search is currently unreachable or try again with a simpler query.",
+                            None,
+                        ),
+                        _ => render_status_xml(
+                            "empty_results",
+                            "not_found",
+                            &format!(
+                                "Web search completed for '{}' but no relevant passages were found.",
                                 xml_escape(&query)
-                            )
-                        }
+                            ),
+                            "Try rephrasing the query with different keywords or broader terms.",
+                            None,
+                        ),
                     }
                 }
-                Err(_) => {
-                    log::warn!("[WebSearchTool] Web search timed out after {}ms for '{}'", adaptive_timeout_ms, query);
-                    format!(
-                        "Web search completed for '{}'. No relevant web results could be retrieved.",
-                        xml_escape(&query)
+                Ok(Err(_timeout)) => {
+                    let elapsed_ms = search_start.elapsed().as_millis() as u64;
+                    log::warn!(
+                        "[WebSearchTool] Web search timed out after {}ms for '{}'",
+                        effective_deadline_ms,
+                        query
+                    );
+                    render_status_xml(
+                        "deadline.hit",
+                        "timeout",
+                        "Web search reached the execution deadline before completing within the deadline.",
+                        "Inform the user or retry with ranking_mode=\"sparse\" for faster results.",
+                        Some(elapsed_ms),
+                    )
+                }
+                Err(_panic) => {
+                    log::error!(
+                        "[WebSearchTool] Panic recovered in web_search for '{}'",
+                        query
+                    );
+                    render_status_xml(
+                        "panic_recovered",
+                        "fatal",
+                        "Web search encountered an internal error and was recovered safely.",
+                        "Rephrase or simplify the search query.",
+                        None,
                     )
                 }
             };
@@ -337,85 +405,43 @@ impl ToolDefinition for WebSearchTool {
     }
 }
 
-/// Computes dynamic context budget clamping and renders bounded XML evidence per Section 4.3 & 5.1.
-async fn render_evidence_xml(
+/// Renders structured XML status blocks for tool errors, timeouts, or empty states.
+fn render_status_xml(
+    code: &str,
+    error_kind: &str,
+    message: &str,
+    next_action: &str,
+    elapsed_ms: Option<u64>,
+) -> String {
+    let elapsed_attr = match elapsed_ms {
+        Some(ms) => format!(" elapsed_ms=\"{}\"", ms),
+        None => String::new(),
+    };
+    format!(
+        "<web_search_status code=\"{}\" error_kind=\"{}\"{}>\n  <message>{}</message>\n  <next_action>{}</next_action>\n</web_search_status>",
+        code, error_kind, elapsed_attr, message, next_action
+    )
+}
+
+/// Computes dynamic context budget clamping with progressive passage popping and renders bounded XML evidence.
+fn render_evidence_xml(
     query: &str,
     ranking_mode: nexus::RankingMode,
     scored_passages: &[nexus::ScoredPassage],
     max_passages: usize,
-    ctx: &ToolExecutionContext,
+    max_observation_tokens: usize,
     metrics: Option<&nexus::NexusSearchMetrics>,
 ) -> String {
-    // 1. Stage 3 dynamic context ceiling computation
-    let (context_window, max_output) = {
-        if let Ok(guard) = ctx.app_state.settings.read() {
-            (
-                guard.llm.context_window as usize,
-                guard.llm.max_output_tokens as usize,
-            )
-        } else {
-            (8192, 120)
-        }
-    };
-    let usable_tokens = context_window.saturating_sub(max_output).max(1);
-
-    let live_tracked = ctx.app_state.turn_metrics.context_tokens_used();
-    let current_tracked_tokens = if live_tracked > 0 {
-        live_tracked
-    } else if let Ok(conn) = ctx.app_state.db.connect() {
-        if let Ok(turns) =
-            compactions::fetch_turns_for_compaction(&conn, ctx.session_id, 1, ctx.turn_id).await
-        {
-            turns
-                .iter()
-                .map(|t| estimate_tokens(&t.user_text) + estimate_tokens(&t.assistant_text))
-                .sum()
-        } else {
-            0
-        }
-    } else {
-        0
-    };
-
-    let remaining_tokens = usable_tokens.saturating_sub(current_tracked_tokens).max(1);
-    let token_ceiling =
-        (((remaining_tokens as f32) * MAX_CONTEXT_SHARE_CAP) as usize).min(HARD_TOKEN_CEILING);
-    let budget_k = (token_ceiling / AVERAGE_PASSAGE_TOKENS).max(1);
-    let effective_k = max_passages.min(budget_k).min(scored_passages.len());
-
-    let selected = &scored_passages[..effective_k];
-
-    // Group selected passages by source URL while strictly preserving rank order
-    struct SourceGroup<'a> {
-        id: usize,
-        title: &'a str,
-        url: &'a str,
-        passages: Vec<(usize, f32, &'a str)>, // (rank, score, text)
-    }
-
-    let mut sources_list: Vec<SourceGroup> = Vec::new();
-    let mut url_to_idx: HashMap<&str, usize> = HashMap::new();
-
-    for (idx, passage) in selected.iter().enumerate() {
-        let rank = idx + 1;
-        let url = passage.source_url.as_str();
-        let title = passage.source_title.as_str();
-
-        if let Some(&source_idx) = url_to_idx.get(url) {
-            sources_list[source_idx]
-                .passages
-                .push((rank, passage.score, &passage.text));
-        } else {
-            let new_id = sources_list.len() + 1;
-            url_to_idx.insert(url, sources_list.len());
-            sources_list.push(SourceGroup {
-                id: new_id,
-                title,
-                url,
-                passages: vec![(rank, passage.score, &passage.text)],
-            });
-        }
-    }
+    let token_ceiling = max_observation_tokens.min(HARD_TOKEN_CEILING);
+    let mut admitted_k = max_passages.min(scored_passages.len());
+    log::info!(
+        "[WebSearchTool::XML] Rendering evidence for query='{}': scored_passages={}, max_passages={}, admitted_k={}, token_ceiling={}",
+        query,
+        scored_passages.len(),
+        max_passages,
+        admitted_k,
+        token_ceiling
+    );
 
     let ranking_str = match ranking_mode {
         nexus::RankingMode::Sparse => "sparse",
@@ -438,117 +464,103 @@ async fn render_evidence_xml(
         String::new()
     };
 
-    let mut xml = String::new();
-    xml.push_str(&format!(
-        "<web_search_evidence query=\"{}\" ranking_mode=\"{}\" total_sources=\"{}\" total_passages=\"{}\"{}>\n",
-        xml_escape(query),
-        ranking_str,
-        sources_list.len(),
-        selected.len(),
-        metrics_attr
-    ));
+    // Progressive passage popping loop:
+    // If the assembled XML observation exceeds token_ceiling, pop the lowest-ranking admitted passage
+    // and re-evaluate until it fits or no passages remain.
+    while admitted_k > 0 {
+        let selected = &scored_passages[..admitted_k];
 
-    // P0-2: assemble greedily within the token ceiling instead of trusting the
-    // count budget. Passages are capped individually, then admitted best-first
-    // until the ceiling is reached; the remainder are dropped, never truncated
-    // mid-passage. The header/footer overhead is accounted up front.
-    let header = format!(
-        "<web_search_evidence query=\"{}\" ranking_mode=\"{}\" total_sources=\"{}\" total_passages=\"{}\"{}>\n",
-        xml_escape(query),
-        ranking_str,
-        sources_list.len(),
-        selected.len(),
-        metrics_attr
-    );
-    let footer = "</web_search_evidence>";
-    let mut budget = token_ceiling.saturating_sub(estimate_tokens(&header) + estimate_tokens(footer));
-
-    // Per-source blocks are built independently so a source with zero surviving
-    // passages (all over budget) is omitted entirely rather than emitted empty.
-    let mut admitted_sources = 0usize;
-    let mut admitted_passages = 0usize;
-    let mut body = String::new();
-    'outer: for source in &sources_list {
-        let source_open = format!(
-            "  <source id=\"{}\" title=\"{}\" url=\"{}\">\n",
-            source.id,
-            xml_escape(source.title),
-            xml_escape(source.url)
-        );
-        let source_open_cost = estimate_tokens(&source_open);
-        if source_open_cost + estimate_tokens("  </source>\n") >= budget {
-            break 'outer;
+        // Group selected passages by source URL while strictly preserving rank order
+        struct SourceGroup<'a> {
+            id: usize,
+            title: &'a str,
+            url: &'a str,
+            passages: Vec<(usize, f32, String)>, // (rank, score, capped_text)
         }
-        let mut source_body = String::new();
-        let mut kept = 0usize;
-        for (rank, score, text) in &source.passages {
-            let capped = cap_passage_text(text);
-            let frag = format!(
-                "    <passage rank=\"{}\" score=\"{:.3}\">\n      {}\n    </passage>\n",
-                rank,
-                score,
-                xml_escape(&capped)
-            );
-            let cost = estimate_tokens(&frag);
-            if cost >= budget {
-                break 'outer;
+
+        let mut sources_list: Vec<SourceGroup> = Vec::new();
+        let mut url_to_idx: HashMap<&str, usize> = HashMap::new();
+
+        for (idx, passage) in selected.iter().enumerate() {
+            let rank = idx + 1;
+            let url = passage.source_url.as_str();
+            let title = passage.source_title.as_str();
+            let capped = cap_passage_text(&passage.text);
+
+            if let Some(&source_idx) = url_to_idx.get(url) {
+                sources_list[source_idx]
+                    .passages
+                    .push((rank, passage.score, capped));
+            } else {
+                let new_id = sources_list.len() + 1;
+                url_to_idx.insert(url, sources_list.len());
+                sources_list.push(SourceGroup {
+                    id: new_id,
+                    title,
+                    url,
+                    passages: vec![(rank, passage.score, capped)],
+                });
             }
-            budget -= cost;
-            source_body.push_str(&frag);
-            kept += 1;
         }
-        if kept == 0 {
-            continue;
+
+        let header = format!(
+            "<web_search_evidence query=\"{}\" ranking_mode=\"{}\" total_sources=\"{}\" total_passages=\"{}\"{}>\n",
+            xml_escape(query),
+            ranking_str,
+            sources_list.len(),
+            admitted_k,
+            metrics_attr
+        );
+        let footer = "</web_search_evidence>";
+
+        let mut xml = String::with_capacity(token_ceiling * 4);
+        xml.push_str(&header);
+        for source in &sources_list {
+            xml.push_str(&format!(
+                "  <source id=\"{}\" title=\"{}\" url=\"{}\">\n",
+                source.id,
+                xml_escape(source.title),
+                xml_escape(source.url)
+            ));
+            for (rank, score, text) in &source.passages {
+                xml.push_str(&format!(
+                    "    <passage rank=\"{}\" score=\"{:.3}\">\n      {}\n    </passage>\n",
+                    rank,
+                    score,
+                    xml_escape(text)
+                ));
+            }
+            xml.push_str("  </source>\n");
         }
-        budget = budget.saturating_sub(source_open_cost + estimate_tokens("  </source>\n"));
-        body.push_str(&source_open);
-        body.push_str(&source_body);
-        body.push_str("  </source>\n");
-        admitted_sources += 1;
-        admitted_passages += kept;
-    }
+        xml.push_str(footer);
 
-    xml.push_str(&header);
-    // Rewrite the header counts to reflect what was actually admitted, so the
-    // model is never told "5 passages" while reading 2.
-    let xml = xml.replacen(
-        &format!("total_sources=\"{}\" total_passages=\"{}\"", sources_list.len(), selected.len()),
-        &format!("total_sources=\"{admitted_sources}\" total_passages=\"{admitted_passages}\""),
-        1,
-    );
-    let mut xml = xml;
-    xml.push_str(&body);
-    xml.push_str(footer);
-
-    // Pre-flight assertion (P0-2): the clamped observation must fit the ceiling
-    // it was built against. If it does not, something is wrong with the
-    // accounting above — fail loudly instead of shipping a 400-class rejection
-    // downstream (`ent_01` reached ≥11,538 tokens against an 8192 window).
-    let final_tokens = estimate_tokens(&xml);
-    if final_tokens > token_ceiling {
-        log::error!(
-            "[WebSearchTool] Clamped observation ({} tokens) exceeds ceiling ({}); returning degraded message instead",
+        let final_tokens = estimate_tokens(&xml);
+        log::info!(
+            "[WebSearchTool::XML] Candidate admitted_k={} produced {} tokens (token_ceiling={})",
+            admitted_k,
             final_tokens,
             token_ceiling
         );
-        return format!(
-            "Web search completed for '{}'. Relevant results were found but exceeded the context budget and were withheld.",
-            xml_escape(query)
-        );
+        if final_tokens <= token_ceiling {
+            return xml;
+        }
+
+        // Exceeded token_ceiling: pop the lowest-ranking passage
+        admitted_k -= 1;
     }
-    if admitted_passages == 0 {
-        log::warn!("[WebSearchTool] Budget admitted zero passages for '{}'", query);
-        return format!(
-            "Web search completed for '{}'. No relevant web results could be retrieved.",
-            xml_escape(query)
-        );
-    }
-    xml
+
+    // If zero passages can fit within the context budget:
+    render_status_xml(
+        "empty_results",
+        "budget_constrained",
+        "Web search completed but available context was insufficient to fit results.",
+        "Try a more specific query.",
+        None,
+    )
 }
 
 /// Caps a single passage at [`MAX_PASSAGE_CHARS`], cutting at a word boundary
-/// and marking the cut. P0-2: unbounded passages (G3 max: 30,076 chars) are what
-/// defeat the count-based budget.
+/// and marking the cut. Unbounded passages are truncated cleanly.
 fn cap_passage_text(text: &str) -> String {
     let trimmed = text.trim();
     if trimmed.chars().count() <= MAX_PASSAGE_CHARS {

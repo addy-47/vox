@@ -89,7 +89,7 @@ pub struct TurnExecutionRequest<R: tauri::Runtime> {
     pub provider: Option<Arc<dyn LlmProvider>>,
 }
 
-pub const TOOL_EXECUTION_TIMEOUT: Duration = Duration::from_secs(10);
+pub const TOOL_EXECUTION_TIMEOUT: Duration = Duration::from_secs(13);
 
 pub const TRANSITION_MESSAGES_EN: &[&str] = &[
     "Give me a moment to gather my thoughts.",

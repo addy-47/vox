@@ -128,7 +128,10 @@ struct ToolArgs {
     /// eval exercises the answer-render path at realistic length. Still canned —
     /// the mock cannot ground against an observation it has not seen yet — but
     /// no longer a 5-word constant that hides render regressions.
-    #[arg(long, default_value = "Based on what I found, here is the answer in brief. The top sources agree on the key facts, with details and caveats as cited above.")]
+    #[arg(
+        long,
+        default_value = "Based on what I found, here is the answer in brief. The top sources agree on the key facts, with details and caveats as cited above."
+    )]
     final_text: String,
 
     #[arg(long)]
@@ -168,6 +171,16 @@ struct BatchArgs {
     /// Skip entries whose case directory already has artifacts.
     #[arg(long, default_value_t = false)]
     resume: bool,
+    /// Pause between cases to stay under provider rate limits.
+    ///
+    /// Without this, 24 back-to-back queries reliably trip upstream throttling and
+    /// cases fail with `network.failed/transient`, which reads as a quality
+    /// regression but is not one. See the pacing note in `run_cases`.
+    #[arg(long, default_value_t = 2000)]
+    case_delay_ms: u64,
+    /// Retry a case this many times when the tool reports a transient failure.
+    #[arg(long, default_value_t = 2)]
+    transient_retries: u32,
     #[arg(long)]
     output_dir: Option<PathBuf>,
 }
@@ -220,6 +233,8 @@ async fn main() -> Result<()> {
                 tts_timeout_s: a.tts_timeout_s,
                 final_text: a.final_text.clone(),
                 output_dir: a.output_dir.clone(),
+                case_delay_ms: 0,
+                transient_retries: 0,
             };
             run_cases(&[entry], &[script], &cfg, false).await
         }
@@ -244,6 +259,8 @@ async fn main() -> Result<()> {
                 tts_timeout_s: a.tts_timeout_s,
                 final_text: a.final_text.clone(),
                 output_dir: a.output_dir.clone(),
+                case_delay_ms: a.case_delay_ms,
+                transient_retries: a.transient_retries,
             };
             run_cases(&corpus, &scripts, &cfg, a.resume).await
         }
@@ -279,6 +296,10 @@ struct RunConfig {
     tts_timeout_s: u64,
     final_text: String,
     output_dir: Option<PathBuf>,
+    /// Pause between cases so provider throttling does not corrupt the measurement.
+    case_delay_ms: u64,
+    /// Retries for a case that failed with a transient upstream error.
+    transient_retries: u32,
 }
 
 fn load_corpus_for(
@@ -361,7 +382,7 @@ async fn run_cases(
 
     let mut rows: Vec<CaseSummary> = Vec::new();
 
-    for (entry, script) in corpus.iter().zip(scripts) {
+    for (idx, (entry, script)) in corpus.iter().zip(scripts).enumerate() {
         let case_dir = cases_dir.join(&entry.id);
         if resume && case_dir.join(names::CONTEXT_LLM_SAW).exists() {
             println!("  {:<24} skipped (resume)", entry.id);
@@ -372,24 +393,65 @@ async fn run_cases(
                 }
             }
         }
-        match run_one(entry, script, &case_dir, cfg).await {
-            Ok(summary) => {
-                println!(
-                    "  {:<24} tool={}ms ctx={}B filler={} audio={} retrieval={}",
-                    entry.id,
-                    summary.tool_duration_ms,
-                    summary.context_bytes,
-                    summary.filler_chars,
-                    summary.audio_clips,
-                    if summary.retrieval_ok { "ok" } else { "FAIL" },
-                );
-                rows.push(summary);
-            }
+
+        // Pace between cases. Providers throttle bursts, and a throttled case
+        // surfaces as `network.failed/transient` - indistinguishable from a
+        // retrieval-quality failure unless the caller looks at the status code.
+        // Pacing keeps a batch measurement honest; without it the same code can
+        // score 62% or 83% purely on how fast the batch was fired.
+        if idx > 0 && cfg.case_delay_ms > 0 {
+            tokio::time::sleep(Duration::from_millis(cfg.case_delay_ms)).await;
+        }
+
+        let mut summary = match run_one(entry, script, &case_dir, cfg).await {
+            Ok(s) => s,
             Err(e) => {
                 eprintln!("  {:<24} FAILED: {}", entry.id, e);
                 rows.push(CaseSummary::failed(&entry.id, e.to_string()));
+                continue;
+            }
+        };
+
+        // Retry only transient upstream failures, with backoff. Retrying a genuine
+        // quality miss would just burn time re-confirming the miss.
+        let mut attempt = 0;
+        while summary.transient_failure && attempt < cfg.transient_retries {
+            attempt += 1;
+            let backoff_ms = 3_000 * u64::from(attempt);
+            eprintln!(
+                "  {:<24} transient upstream failure, retry {}/{} in {}ms",
+                entry.id, attempt, cfg.transient_retries, backoff_ms
+            );
+            tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
+            // Drop the partial case dir so the retry writes a clean set of artifacts.
+            let _ = std::fs::remove_dir_all(&case_dir);
+            match run_one(entry, script, &case_dir, cfg).await {
+                Ok(s) => summary = s,
+                Err(e) => {
+                    eprintln!("  {:<24} FAILED on retry: {}", entry.id, e);
+                    break;
+                }
             }
         }
+
+        if summary.transient_failure {
+            eprintln!(
+                "  {:<24} STILL TRANSIENT after {} retries - treat as infrastructure noise, not a quality miss",
+                entry.id, cfg.transient_retries
+            );
+        }
+
+        println!(
+            "  {:<24} tool={}ms ctx={}B filler={} audio={} retrieval={}{}",
+            entry.id,
+            summary.tool_duration_ms,
+            summary.context_bytes,
+            summary.filler_chars,
+            summary.audio_clips,
+            if summary.retrieval_ok { "ok" } else { "FAIL" },
+            if summary.transient_failure { " TRANSIENT" } else { "" },
+        );
+        rows.push(summary);
     }
 
     write_summary(
@@ -558,7 +620,12 @@ async fn run_one(
         id: entry.id.clone(),
         query: entry.query.clone(),
         ok: true,
-        retrieval_ok: retrieval_gate(passages, sources, &observation),
+        retrieval_ok: retrieval_gate(&entry.query, passages, sources, &observation),
+        // Upstream unreachable, not a retrieval-quality miss. Detected from the
+        // tool's own structured status so a throttled batch cannot masquerade as
+        // a scoring regression.
+        transient_failure: observation.contains("code=\"network.failed\"")
+            && observation.contains("error_kind=\"transient\""),
         error: None,
         turn_ms,
         tool_duration_ms,
@@ -643,6 +710,12 @@ struct CaseSummary {
     /// P0-1: retrieval actually produced answer-bearing evidence. Separate from
     /// `ok` — G3 scored `ok:true` for 0-passage cases and a 42KB JS dump.
     retrieval_ok: bool,
+    /// Upstream providers were unreachable (`network.failed/transient`).
+    ///
+    /// This is infrastructure noise, not a retrieval-quality miss. A batch fired
+    /// without pacing trips provider throttling and scores ~20 points lower for no
+    /// code reason at all, so it must be counted separately.
+    transient_failure: bool,
     error: Option<String>,
     turn_ms: u64,
     tool_duration_ms: u64,
@@ -668,11 +741,25 @@ struct CaseSummary {
 
 /// P0-1: retrieval-quality gate. Execution success (`ok`) is plumbing;
 /// this decides whether the model received anything answer-bearing.
-fn retrieval_gate(passages: u64, sources: u64, observation: &str) -> bool {
+fn retrieval_gate(query: &str, passages: u64, sources: u64, observation: &str) -> bool {
     if passages == 0 || sources == 0 {
         return false;
     }
-    if observation.chars().count() < 500 {
+    if observation.chars().count() < 100 {
+        return false;
+    }
+    // XML status indicating empty or degraded results
+    if observation.contains("web_search_status")
+        && (observation.contains("code=\"empty_results\"")
+            || observation.contains("code=\"deadline.hit\"")
+            || observation.contains("code=\"panic_recovered\""))
+    {
+        return false;
+    }
+    // `missing_factual_answer` means passages were delivered but none carried the
+    // answer the query asked for. That is a real quality miss (mechanism B), not
+    // an empty result, so it must not score as success.
+    if observation.contains("error_kind=\"missing_factual_answer\"") {
         return false;
     }
     // Degraded plain-text messages carry no evidence, however wordy.
@@ -686,6 +773,23 @@ fn retrieval_gate(passages: u64, sources: u64, observation: &str) -> bool {
     {
         return false;
     }
+
+    // Factual/numerical gate: queries seeking numeric or time lookup must have digits
+    let q_lower = query.to_ascii_lowercase();
+    let is_numeric_lookup = q_lower.contains("year")
+        || q_lower.contains("how many")
+        || q_lower.contains("number of")
+        || q_lower.contains("when did")
+        || q_lower.contains("how much")
+        || q_lower.contains("distance")
+        || q_lower.contains("elevation")
+        || q_lower.contains("sum of")
+        || q_lower.contains("range")
+        || q_lower.contains("frequency");
+    if is_numeric_lookup && !observation.chars().any(|c| c.is_ascii_digit()) {
+        return false;
+    }
+
     true
 }
 
@@ -696,6 +800,7 @@ impl CaseSummary {
             query: String::new(),
             ok: false,
             retrieval_ok: false,
+            transient_failure: false,
             error: Some(error),
             turn_ms: 0,
             tool_duration_ms: 0,

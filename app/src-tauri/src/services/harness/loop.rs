@@ -298,6 +298,7 @@ async fn handle_pass_outcome<R: Runtime + 'static>(
                     ctx.harness_arc,
                     turn_id,
                     assistant_text,
+                    scratchpad,
                 ))
             }
         }
@@ -317,6 +318,7 @@ async fn handle_pass_outcome<R: Runtime + 'static>(
                     ctx.harness_arc,
                     turn_id,
                     partial_text,
+                    scratchpad,
                 ));
             }
 

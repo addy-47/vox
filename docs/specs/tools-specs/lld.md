@@ -119,13 +119,14 @@ impl ToolDomain {
 
 ---
 
-## 5. Persistence Scratchpad Ledger
+## 5. Persistence Scratchpad Ledger & Context Retention
 
 ### 5.1 Separation of Spoken Dialogue and Cognitive Scratchpad
 1. Spoken conversation history must be preserved in a dedicated `turns` ledger containing exclusively the user's spoken text, the assistant's spoken text, and sequential turn numbering. It must never contain internal tool syntax or JSON structures.
 2. All tool invocations (both terminal and non-terminal, modular and realtime) must be recorded in an independent `session_tool_calls` scratchpad ledger.
 3. **Self-Healing Foreign Key Invariant**: Any write to `session_tool_calls` (or session metadata) must execute an idempotent `INSERT OR IGNORE INTO sessions (id, project_id, is_pinned, created_at, updated_at) VALUES (?, 'default', 0, ?, ?)` self-heal before writing to prevent foreign key constraint violations if the initial `SessionStarted` persistence event was delayed or dropped under channel backpressure.
-4. **Ephemeral In-Memory Scratchpad**: In active working memory, tool call and observation messages exist exclusively in a turn-local scratchpad owned by `execute_turn` (modular) or active turn state (realtime). Upon turn completion or cancellation, this scratchpad is dropped, ensuring 100% parity between live working memory and DB-restored memory.
+4. **Working Context Tool Retention (Option 1 Full Retention)**: In active working memory, tool calls and admitted observations from completed turns remain retained in `ConversationHistoryStage` across the active session. This enables the model to resolve natural verbal follow-ups ("tell me more") directly from conversation context with zero additional network requests. If a turn is cancelled or interrupted before assistant speech begins, the turn-local scratchpad is rolled back per Invariant 13.
+5. **Context Budget Authority**: Context budget computation belongs strictly to the harness `ContextBudgetStage`. The harness computes the token ceiling and provides it to the tool via `ToolExecutionContext`. Cognitive tools never inspect global settings, never query database compactions, and never estimate history tokens themselves.
 
 ---
 

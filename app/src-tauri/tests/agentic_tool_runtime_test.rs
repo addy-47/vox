@@ -789,13 +789,13 @@ async fn test_web_search_non_terminal_3stage_retrieval() {
         );
 
         // 5. Verify Tool Execution with Valid & Invalid Arguments
-        let ctx = ToolExecutionContext {
-            app_state: Arc::clone(&state),
-            session_id: 12345,
-            turn_id: 1,
-            cancel: tokio_util::sync::CancellationToken::new(),
-            on_sessions_changed: None,
-        };
+        let ctx = ToolExecutionContext::new(
+            Arc::clone(&state),
+            12345,
+            1,
+            tokio_util::sync::CancellationToken::new(),
+            None,
+        );
 
         // Empty query must fail with InvalidArguments
         let empty_result = tool

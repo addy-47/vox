@@ -48,9 +48,9 @@ pub(crate) fn parse_tool_calls_in_line(line: &str) -> Vec<CanonicalToolCall> {
             if let Some(tool_calls) = msg.tool_calls {
                 for tc in tool_calls {
                     out.push(CanonicalToolCall {
-                        id: tc.id.unwrap_or_else(|| {
-                            format!("call_{}", uuid::Uuid::new_v4().simple())
-                        }),
+                        id: tc
+                            .id
+                            .unwrap_or_else(|| format!("call_{}", uuid::Uuid::new_v4().simple())),
                         name: tc.function.name,
                         arguments: tc.function.arguments,
                     });

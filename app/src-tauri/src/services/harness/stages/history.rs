@@ -76,6 +76,12 @@ impl ConversationHistoryStage {
         );
     }
 
+    /// Appends an arbitrary message (e.g., intermediate tool call or observation from scratchpad) to working history.
+    pub fn push_message(&mut self, message: ChatMessage) {
+        self.messages.push(message);
+        self.kv_synced_index = self.messages.len();
+    }
+
     /// Rolls back the most recent user turn if interrupted before assistant generated any response.
     pub fn rollback_last_user_turn(&mut self) -> Option<ChatMessage> {
         if let Some(last) = self.messages.last() {

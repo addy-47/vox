@@ -41,14 +41,13 @@ llama-cpp-4 = { version = "0.2.61", default-features = false, features = ["openm
 llama-cpp-sys-4 = { version = "0.2.61", default-features = false }                             # Low-level llama.cpp C++ bindings
 ort = { version = "2.0.0-rc.13", features = ["download-binaries", "ndarray"] }                # ONNX Runtime bindings (1.28; fixes ReshapeFusion SIGSEGV on MiniLM INT8)
 ndarray = "0.17.2"                                                                            # N-dimensional array processing for ONNX tensors
-chatterbox-rs = { git = "https://github.com/addy-47/chatterbox-rs.git", rev = "2fa6883", default-features = false } # Local voice cloning TTS
+chatterbox-rs = { git = "https://github.com/addy-47/chatterbox-rs.git", rev = "4d84eb3", default-features = false } # Local voice cloning TTS
 query-sieve = { git = "https://github.com/addy-47/query-sieve-rs.git" }                       # ModernBERT intent classifier
-# TEMPORARY path dep per web-search-production-hardening.md §11.3 (local-path rule).
-# Reverts to `version = "0.1.2"` at the single-publish gate. Fork == crates.io 0.1.1
-# plus the N0/P1 char-boundary fix only (cleaner.rs `floor_char_boundary`).
-nexus = { package = "nexuss", path = "../../submodules/nexus-rs" } # Local multi-engine web search, DOM extraction, and RRF hybrid ranking
 tokenizers = { version = "0.21.0", default-features = false, features = ["fancy-regex"] }    # HuggingFace tokenizers (BPE / WordPiece)
 tiktoken-rs = "0.6.0"                                                                         # OpenAI BPE tokenizer for context budgeting
+
+# Web Search Engine - https://github.com/addy-47/nexus-rs
+nexus = { package = "nexuss", version = "0.1.2" } # Multi-engine web search, DOM extraction, weighted hybrid ranking, answer-presence verification
 
 # ─── 4. Concurrency, Async & Threading ──────────────────────────────────────
 tokio = { version = "1", features = ["full"] } # Primary async runtime
@@ -60,17 +59,19 @@ parking_lot = "0.12"                           # Fast, non-poisoning mutexes & R
 thread-priority = "1.1"                        # OS thread priority controls for audio capture
 
 # ─── 5. Networking & Realtime Speech-to-Speech ──────────────────────────────
-reqwest = { version = "0.12", features = ["stream", "rustls-tls", "json", "blocking"] } # HTTP/HTTPS client for cloud LLM/TTS
+# default-features = false drops `default-tls` (OpenSSL -> openssl-sys, which has no Android path).
+# `charset`, `http2` and `system-proxy` are re-listed explicitly because they are also defaults and
+# dropping them would change desktop behavior (Content-Type decoding, HTTP/2, corporate proxies).
+reqwest = { version = "0.12", default-features = false, features = ["stream", "rustls-tls", "charset", "http2", "system-proxy", "json", "blocking"] } # HTTP/HTTPS client for cloud LLM/TTS
 tokio-tungstenite = { version = "0.29.0", features = ["rustls-tls-webpki-roots"] }       # WebSocket client for Gemini Live & Edge-TTS
 rustls = { version = "0.23", features = ["ring"] }                                       # TLS cryptography provider
 
 # ─── 6. System Integration, Clipboard & Input Simulation ────────────────────
 arboard = { version = "3.4", features = ["wayland-data-control"] } # Cross-platform clipboard with native Wayland protocol
 enigo = { version = "0.2", default-features = false }                    # Native OS keyboard & mouse simulation (platform features added per-target below)
-zbus = { version = "4", default-features = false, features = ["tokio"] }    # D-Bus IPC for Wayland XDG Desktop Portal shortcuts
 
 # ─── 7. Database & Persistence ──────────────────────────────────────────────
-turso = { version = "0.8.0-pre.11" } # Embedded libSQL/SQLite database engine
+turso = { version = "0.8.2" } # Embedded libSQL/SQLite database engine
 
 # ─── 8. Observability & Logging ─────────────────────────────────────────────
 log = "0.4"                                                    # Facade for logging

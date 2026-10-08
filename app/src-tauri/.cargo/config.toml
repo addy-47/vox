@@ -10,4 +10,3 @@ rustflags = ["-C", "link-arg=/FORCE:MULTIPLE"]
 [target.i686-pc-windows-msvc]
 rustflags = ["-C", "link-arg=/FORCE:MULTIPLE"]
 
-

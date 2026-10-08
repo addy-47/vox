@@ -160,6 +160,7 @@ pub struct AppState {
     pub restart_in_flight: Arc<AtomicBool>,
     pub ingestion_cancel: Arc<ParkingMutex<Option<tokio_util::sync::CancellationToken>>>,
     pub compaction_lock: Arc<TokioMutex<()>>,
+    pub nexus_search: Arc<nexus::NexusSearch>,
 }
 
 impl AppState {
@@ -213,6 +214,42 @@ impl AppState {
             restart_in_flight: Arc::new(AtomicBool::new(false)),
             ingestion_cancel: Arc::new(ParkingMutex::new(None)),
             compaction_lock: Arc::new(TokioMutex::new(())),
+            nexus_search: {
+                let fanout_policy = nexus::model::FanoutPolicy {
+                    min_reporting_engines: 2,
+                    min_distinct_domains: 2,
+                    min_candidate_hits: 4,
+                    max_fanout_deadline_ms: 2200,
+                };
+                // B1: min_score must be explicit here — WebSearchState::new is no
+                // longer on the execution path, so the AppState singleton is the
+                // only live RankingPolicy. Relying on ..Default::default() would
+                // silently disable the relevance floor if the crate default moves.
+                let ranking_policy = nexus::model::RankingPolicy {
+                    two_stage_reranking: true,
+                    min_score:
+                        crate::services::harness::stages::tools::web_search::DEFAULT_MIN_SCORE,
+                    ..Default::default()
+                };
+                Arc::new(
+                    nexus::NexusSearch::builder()
+                        .with_engines(vec![
+                            nexus::Engine::Duckduckgo,
+                            nexus::Engine::Bing,
+                            nexus::Engine::Yahoo,
+                            nexus::Engine::Brave,
+                            nexus::Engine::Wikipedia,
+                        ])
+                        .with_fanout_policy(fanout_policy)
+                        .with_ranking_policy(ranking_policy)
+                        .with_fetch_concurrency(5)
+                        .with_embedder(Arc::new(
+                            crate::services::harness::stages::tools::web_search::VoxEmbedder,
+                        ))
+                        .build()
+                        .expect("Failed to initialize NexusSearch client"),
+                )
+            },
         }
     }
 
