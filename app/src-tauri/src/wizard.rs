@@ -11,6 +11,12 @@ use crate::{
     utils::paths,
 };
 
+/// Desktop default + ceiling for the wizard window; the minimum is the mobile floor.
+const WIZARD_DEFAULT_WIDTH: f64 = 900.0;
+const WIZARD_DEFAULT_HEIGHT: f64 = 650.0;
+const WIZARD_MIN_WIDTH: f64 = 390.0;
+const WIZARD_MIN_HEIGHT: f64 = 700.0;
+
 /// Lazily constructs the wizard setup window on-demand.
 pub fn ensure_wizard_window(app: &AppHandle) -> Result<WebviewWindow, String> {
     if let Some(existing) = app.get_webview_window("wizard") {
@@ -18,17 +24,21 @@ pub fn ensure_wizard_window(app: &AppHandle) -> Result<WebviewWindow, String> {
     }
 
     log::info!("[Wizard] Lazily constructing 'wizard' setup webview window...");
-    let window = WebviewWindowBuilder::new(app, "wizard", WebviewUrl::App("/wizard".into()))
+    let builder = WebviewWindowBuilder::new(app, "wizard", WebviewUrl::App("/wizard".into()))
         .title("Vox Setup Wizard")
-        .inner_size(900.0, 650.0)
-        .min_inner_size(900.0, 650.0)
-        .max_inner_size(900.0, 650.0)
+        .inner_size(WIZARD_DEFAULT_WIDTH, WIZARD_DEFAULT_HEIGHT)
+        .min_inner_size(WIZARD_MIN_WIDTH, WIZARD_MIN_HEIGHT)
+        .max_inner_size(WIZARD_DEFAULT_WIDTH, WIZARD_DEFAULT_HEIGHT)
         .transparent(false)
         .decorations(false)
         .always_on_top(false)
         .resizable(true)
-        .visible(false)
-        .center()
+        .visible(false);
+    #[cfg(target_os = "android")]
+    let builder = builder.fullscreen(true);
+    #[cfg(not(target_os = "android"))]
+    let builder = builder.center();
+    let window = builder
         .build()
         .map_err(|e| format!("Failed to create wizard window: {}", e))?;
 

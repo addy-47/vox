@@ -11,6 +11,7 @@ import {
   Network
 } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
+import { isCoarsePointer } from '@/lib/capabilities';
 import { WIZARD_CTA_LABELS, WIZARD_STEP_HEADERS, MODEL_SETUP_COPY, MODEL_CATEGORY_META, MODEL_PROGRESS_STEPS } from '@/data/welcomeCopy';
 
 import { WizardHeader } from '../components/WizardHeader';
@@ -196,6 +197,13 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
                     </div>
                 }
             />
+
+            {isCoarsePointer() && (
+                <div className="mx-2 mb-2 p-3 bg-amber-500/10 border border-amber-500/25 rounded-xl flex items-center gap-2.5">
+                    <Network size={14} className="text-amber-400 shrink-0" />
+                    <span className="text-amber-400/90 text-xs font-bold">{MODEL_SETUP_COPY.mobileDataNote}</span>
+                </div>
+            )}
 
             {internalError && (
                 <div className="mx-2 mb-2 p-3 bg-red-500/10 border border-red-500/20 rounded-xl flex items-center justify-between">

@@ -32,7 +32,7 @@ const DeviceRow = React.memo(({ name, selected, onSelect }: {
   >
     <div className="flex items-center gap-3">
       <Mic className={cn("w-4 h-4 transition-colors", selected ? "text-[rgb(var(--accent))]" : "text-[rgb(var(--foreground-muted))]/40")} />
-      <span className="text-[12px] font-bold truncate max-w-[280px] uppercase tracking-tight">{name}</span>
+      <span className="text-[12px] font-bold break-words min-w-0 flex-1 uppercase tracking-tight">{name}</span>
     </div>
     {selected && <Check className="w-4 h-4 text-[rgb(var(--accent))]" />}
   </button>
@@ -43,6 +43,10 @@ export const AudioSetupStep: React.FC<Props> = ({ onNext, onBack }) => {
   const [devices, setDevices] = useState<AudioDevice[]>([]);
   const [selected, setSelected] = useState<string>('');
   const [energy, setEnergy] = useState(0);
+  // Audio init failure (e.g. denied mic permission on mobile) is a warning,
+  // not a blocker: the mic stays configurable in Settings.
+  const [audioError, setAudioError] = useState(false);
+  const [initAttempt, setInitAttempt] = useState(0);
 
   useEffect(() => {
     let isMounted = true;
@@ -55,6 +59,7 @@ export const AudioSetupStep: React.FC<Props> = ({ onNext, onBack }) => {
         const devList = await listInputDevices();
         if (!isMounted) return;
         setDevices(devList);
+        if (isMounted) setAudioError(false);
         
         // Try to get current device from settings first
         try {
@@ -72,6 +77,7 @@ export const AudioSetupStep: React.FC<Props> = ({ onNext, onBack }) => {
         }
       } catch (e) {
         console.error('Audio initialization failed', e);
+        if (isMounted) setAudioError(true);
       }
     };
     init();
@@ -99,7 +105,7 @@ export const AudioSetupStep: React.FC<Props> = ({ onNext, onBack }) => {
       unlisten();
       stopEngine().catch(console.error);
     };
-  }, []);
+  }, [initAttempt]);
 
   const handleSelect = useCallback(async (name: string) => {
     setSelected(name);
@@ -165,6 +171,18 @@ export const AudioSetupStep: React.FC<Props> = ({ onNext, onBack }) => {
     
         <div className="flex-1 flex flex-col gap-3 min-h-0 overflow-y-auto pr-2 custom-scrollbar">
             <span className="text-[12px] font-bold text-[rgb(var(--foreground-muted))]/70 uppercase tracking-widest px-1">{AUDIO_SETUP_COPY.listTitle}</span>
+            {audioError && (
+                <div className="p-3 bg-amber-500/10 border border-amber-500/25 rounded-xl flex items-center justify-between gap-3">
+                    <span className="text-amber-400/90 text-xs font-bold">{AUDIO_SETUP_COPY.initFailed}</span>
+                    <button
+                        type="button"
+                        onClick={() => { setAudioError(false); setInitAttempt((n) => n + 1); }}
+                        className="px-3 py-1.5 min-h-[36px] bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-all shrink-0 cursor-pointer"
+                    >
+                        {AUDIO_SETUP_COPY.retryInit}
+                    </button>
+                </div>
+            )}
             <div className="space-y-2">
             {devices.map(device => (
                 <DeviceRow
@@ -187,7 +205,7 @@ export const AudioSetupStep: React.FC<Props> = ({ onNext, onBack }) => {
         onBack={onBack}
         onNext={onNext}
         nextLabel={WIZARD_CTA_LABELS.continueToVerification}
-        isNextDisabled={!selected}
+        isNextDisabled={!selected && !audioError}
         showBack={true}
       />
     </div>

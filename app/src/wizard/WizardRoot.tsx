@@ -111,8 +111,8 @@ export const WizardRoot: React.FC = () => {
       <AmbientBackground instanceId="wizard" />
       <TitleBar />
       <div className="flex-1 flex relative overflow-hidden">
-        {/* Sidebar Navigation */}
-        <div className="w-[228px] glass border-r border-[rgba(var(--accent),0.06)] flex flex-col p-6 z-10">
+        {/* Sidebar Navigation — hidden on phones; the step header carries progress there */}
+        <div className="hidden md:flex w-[228px] glass border-r border-[rgba(var(--accent),0.06)] flex-col p-6 z-10">
           {/* Step Navigation */}
           <nav className="flex-1 space-y-5 pt-6">
             {STEPS.map((s) => {
@@ -163,8 +163,27 @@ export const WizardRoot: React.FC = () => {
           </div>
         </div>
 
-        {/* Main Content Area */}
-        <main className="flex-1 relative z-10 flex flex-col px-12 py-8 overflow-hidden">
+        {/* Main Content Area — scrolls on small screens, fixed on desktop */}
+        <main className="flex-1 relative z-10 flex flex-col px-4 py-6 sm:px-8 lg:px-12 lg:py-8 overflow-y-auto lg:overflow-hidden">
+          {/* Phone step progress — the sidebar nav is hidden below md */}
+          <div className="md:hidden w-full max-w-2xl mx-auto flex items-center gap-1.5 pb-4 shrink-0" aria-hidden="true">
+            {STEPS.map((s) => {
+              const status = getStepStatus(s.id);
+              return (
+                <div
+                  key={s.id}
+                  className={cn(
+                    "h-1 flex-1 rounded-full transition-colors",
+                    status === "completed"
+                      ? "bg-[rgb(var(--accent))]"
+                      : status === "active"
+                        ? "bg-[rgb(var(--accent))]/60"
+                        : "bg-[rgb(var(--foreground))]/10"
+                  )}
+                />
+              );
+            })}
+          </div>
           <AnimatePresence mode="popLayout">
             <motion.div
               key={state.value}

@@ -59,6 +59,18 @@ const BASE_AMP: Record<string, number> = {
   Error:     0.02,
 };
 
+/**
+ * Last-known-good orb theme, cached at module scope so scene rebuilds
+ * (Home remounts on every visit) never flash hardcoded base tokens while
+ * the async settings store re-applies appearance.
+ */
+interface OrbTheme {
+  theme: string;
+  accent: THREE.Color;
+  glow: THREE.Color;
+}
+let cachedOrbTheme: OrbTheme | null = null;
+
 function getCSSColor(varName: string, fallbackHex: string): THREE.Color {
   if (typeof window === 'undefined') return new THREE.Color(fallbackHex);
   const root = document.documentElement;
@@ -417,6 +429,11 @@ export const VoxOrb = React.memo(({
         accent,
         glow
       };
+      cachedOrbTheme = {
+        theme: currentTheme,
+        accent: accent.clone(),
+        glow: glow.clone(),
+      };
     };
 
     updateTheme();
@@ -432,7 +449,7 @@ export const VoxOrb = React.memo(({
       observer = new MutationObserver(updateTheme);
       observer.observe(document.documentElement, {
         attributes: true,
-        attributeFilter: ["data-theme"]
+        attributeFilter: ["data-theme", "style"]
       });
     }
 
@@ -517,10 +534,14 @@ export const VoxOrb = React.memo(({
   }
 
   const sceneRef = useRef<SceneContext | null>(null);
+  // Seed from the module cache so remounts reuse the last-known-good theme
+  // instead of flashing hardcoded base tokens on the first frames. The
+  // observer effect owns all later updates; only the first kept value matters.
+  const themeSeed = cachedOrbTheme;
   const themeRef = useRef({
-    theme: "",
-    accent: new THREE.Color('#00dbe9'),
-    glow: new THREE.Color('#0891b2'),
+    theme: themeSeed?.theme ?? "",
+    accent: themeSeed?.accent.clone() ?? new THREE.Color('#00dbe9'),
+    glow: themeSeed?.glow.clone() ?? new THREE.Color('#0891b2'),
   });
 
   const tickFn = useCallback((dt: number) => {
@@ -733,6 +754,9 @@ export const VoxOrb = React.memo(({
       };
     }
 
+    // Seed uniforms from a synchronous DOM read so the first frames use
+    // the live theme even when the observer effect has not settled yet.
+    // --accent-dark stays token-sourced to match the pre-existing look.
     const initGlow = getCSSColor('--accent-dark', '#0891b2');
     const initAccent = getCSSColor('--accent', '#00dbe9');
 

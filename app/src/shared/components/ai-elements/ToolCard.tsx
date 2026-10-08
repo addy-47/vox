@@ -1,6 +1,6 @@
 import React, { memo, useState } from "react";
 import { cn } from "@/shared/lib/utils";
-import { Wrench, ChevronDown, CheckCircle, Clock, XCircle } from "lucide-react";
+import { Wrench, ChevronDown, CheckCircle, Loader2, XCircle } from "lucide-react";
 
 export type ToolStatus = "running" | "completed" | "error";
 
@@ -24,7 +24,7 @@ export const ToolCard: React.FC<ToolCardProps> = memo(({
   const [isOpen, setIsOpen] = useState(false);
 
   const statusIcons: Record<ToolStatus, React.ReactNode> = {
-    running: <Clock className="w-3.5 h-3.5 text-[rgb(var(--accent))] animate-spin" />,
+    running: <Loader2 className="w-3.5 h-3.5 text-[rgb(var(--accent))] animate-spin" />,
     completed: <CheckCircle className="w-3.5 h-3.5 text-emerald-400" />,
     error: <XCircle className="w-3.5 h-3.5 text-red-400" />,
   };

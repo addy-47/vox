@@ -10,6 +10,7 @@ import {
   HOME_CONTROLS_COPY,
   ERROR_BANNER_COPY,
 } from "@/data/homeCopy";
+import { shortcutKeysSuffix } from "@/data/shortcuts";
 
 import { Power, Mic, Keyboard, Play, Pause, X, AlertCircle, RotateCcw } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
@@ -253,7 +254,7 @@ export const Home = memo(() => {
       {/* ── Status Capsule: Centered directly above the Orb (matching mobile on all viewports) ── */}
       <div className="absolute top-[10%] left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 pointer-events-none">
         {cpuWarning && (
-          <span className="text-[11px] tracking-widest uppercase text-[rgb(var(--accent))]/70 font-semibold px-2 py-0.5 rounded-full bg-[rgb(var(--accent))]/10 border border-[rgb(var(--accent))]/20">
+          <span className="text-[11px] tracking-widest uppercase text-[rgb(var(--accent))]/70 font-semibold px-2 py-0.5 rounded-md bg-[rgb(var(--accent))]/10 border border-[rgb(var(--accent))]/20">
             Mode: {GOVERNOR_LABELS[cpuWarning.governor] || cpuWarning.governor}
           </span>
         )}
@@ -321,7 +322,13 @@ export const Home = memo(() => {
             isEngaged && interactionState !== "Error" ? "scale-100 opacity-100 animate-field-pulse" : "scale-90 opacity-60"
           )}
         />
-        <div className="relative w-full h-full flex items-center justify-center">
+        {/* Orb crossfades in on first frame; the loader crossfades out over it. */}
+        <motion.div
+          className="relative w-full h-full flex items-center justify-center"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: orbReady ? 1 : 0 }}
+          transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
+        >
           <ErrorBoundary name="VoxOrb">
             <VoxOrb
               telemetryRef={telemetryRef}
@@ -330,6 +337,7 @@ export const Home = memo(() => {
               onFirstFrame={handleOrbFirstFrame}
             />
           </ErrorBoundary>
+        </motion.div>
           <AnimatePresence>
             {!orbReady && (
               <motion.div
@@ -343,7 +351,6 @@ export const Home = memo(() => {
               </motion.div>
             )}
           </AnimatePresence>
-        </div>
       </div>
 
       {/* ── Bottom Controls (Positioned 60% from Sphere bottom edge & 40% from EdgeNav top edge) ── */}
@@ -376,7 +383,7 @@ export const Home = memo(() => {
                   tabIndex={0}
                   className="flex items-center justify-center gap-2.5 px-6 h-14 rounded-full transition-all duration-500 border border-[rgb(var(--accent))]/50 bg-[rgb(var(--accent))]/15 hover:bg-[rgb(var(--accent))]/25 hover:scale-105 active:scale-95 text-[rgb(var(--accent))] shadow-[0_0_24px_rgba(var(--accent),0.25)] cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(var(--accent))] focus-visible:ring-offset-2 focus-visible:ring-offset-[rgb(var(--background))] focus-visible:scale-105"
                   aria-label={HOME_CONTROLS_COPY.error.reconnectAriaLabel}
-                  title={HOME_CONTROLS_COPY.error.reconnectTooltip}
+                  title={HOME_CONTROLS_COPY.error.reconnectTooltip + shortcutKeysSuffix("home.reconnect")}
                 >
                   <RotateCcw size={20} className="transition-transform group-hover:-rotate-45" />
                   <span className="text-xs font-mono font-bold tracking-[0.2em] uppercase">
@@ -398,7 +405,7 @@ export const Home = memo(() => {
                       : "text-[rgb(var(--accent))]"
                   )}
                   aria-label={(isPaused || isSleeping) ? HOME_CONTROLS_COPY.passive.resumeAriaLabel : HOME_CONTROLS_COPY.passive.pauseAriaLabel}
-                  title={(isPaused || isSleeping) ? HOME_CONTROLS_COPY.passive.resumeTooltip : HOME_CONTROLS_COPY.passive.pauseTooltip}
+                  title={(isPaused || isSleeping) ? HOME_CONTROLS_COPY.passive.resumeTooltip + shortcutKeysSuffix("home.pause-resume") : HOME_CONTROLS_COPY.passive.pauseTooltip + shortcutKeysSuffix("home.pause-resume")}
                 >
                   {(isPaused || isSleeping) ? <Play size={28} /> : <Pause size={28} />}
                 </button>
@@ -419,7 +426,7 @@ export const Home = memo(() => {
                       (isPaused || isSleeping) && "opacity-40 cursor-not-allowed hover:bg-transparent hover:scale-100"
                     )}
                     aria-label={HOME_CONTROLS_COPY.ptt.micAriaLabel}
-                    title={HOME_CONTROLS_COPY.ptt.micTooltip}
+                    title={HOME_CONTROLS_COPY.ptt.micTooltip + shortcutKeysSuffix("home.ptt")}
                   >
                     <Mic size={28} className={cn(pttStatus === "RECORDING" && "animate-pulse-slow")} />
                   </button>
@@ -431,7 +438,7 @@ export const Home = memo(() => {
                   tabIndex={0}
                   className="flex items-center justify-center w-14 h-14 rounded-full transition-all duration-500 border border-[rgb(var(--accent))]/25 bg-transparent hover:bg-[rgb(var(--accent))]/10 hover:scale-105 active:scale-95 text-[rgb(var(--accent))] cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(var(--accent))] focus-visible:ring-offset-2 focus-visible:ring-offset-[rgb(var(--background))] focus-visible:scale-105 focus-visible:shadow-[0_0_24px_rgba(var(--accent),0.4)]"
                   aria-label={HOME_CONTROLS_COPY.textMode.toggleAriaLabel}
-                  title={HOME_CONTROLS_COPY.textMode.toggleTooltip}
+                  title={HOME_CONTROLS_COPY.textMode.toggleTooltip + shortcutKeysSuffix("home.text-mode")}
                 >
                   <Keyboard size={26} />
                 </button>

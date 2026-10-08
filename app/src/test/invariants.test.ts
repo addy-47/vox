@@ -1030,4 +1030,62 @@ snap no matter what transition-property says.`
       "snake_case target_cap duplicate must be gone"
     ).toBe(false);
   });
+
+  it("Invariant 30 (Shortcut registry SSOT): tooltip hints resolve through data/shortcuts.ts", () => {
+    const shortcutsSrc = fs.readFileSync(path.join(SRC_DIR, "data", "shortcuts.ts"), "utf-8");
+    const ids = [...shortcutsSrc.matchAll(/\{\s*id:\s*"([^"]+)"/g)].map((m) => m[1]);
+    expect(ids.length).toBeGreaterThan(0);
+    const keys = [...shortcutsSrc.matchAll(/keys:\s*"([^"]+)"/g)].map((m) => m[1]);
+
+    // Triggers with visible buttons must surface their shortcut in a tooltip.
+    // Deliberately keyboard-only ids (no button trigger) are excluded here:
+    // app.close/app.quit (window chrome), history.delete (focused-session arming),
+    // wizard.next (standard focused-button Enter), ctrl-enter-save (editor chord).
+    const EXPECTED_WIRED = [
+      "global.monitor",
+      "global.sessions",
+      "global.notifications",
+      "global.help",
+      "home.profiler",
+      "memory.recenter",
+      "memory.zoomIn",
+      "memory.zoomOut",
+    ];
+    const wired: string[] = [];
+    for (const file of tsFiles) {
+      if (path.relative(SRC_DIR, file).startsWith("test/")) continue;
+      const src = fs.readFileSync(file, "utf-8");
+      for (const m of src.matchAll(/shortcutId="([^"]+)"/g)) wired.push(m[1]);
+    }
+    for (const id of EXPECTED_WIRED) {
+      expect(wired, `shortcut id "${id}" lost its tooltip wiring`).toContain(id);
+    }
+    for (const id of wired) {
+      expect(ids, `shortcutId="${id}" has no registry entry`).toContain(id);
+    }
+
+    // No hand-written key strings through the shortcut= prop that duplicate
+    // a registry keys value — use shortcutId or shortcutKeysSuffix instead.
+    for (const file of tsFiles) {
+      if (file.endsWith("data/shortcuts.ts")) continue;
+      if (path.relative(SRC_DIR, file).startsWith("test/")) continue;
+      const src = fs.readFileSync(file, "utf-8");
+      for (const m of src.matchAll(/shortcut="([^"]+)"/g)) {
+        expect(
+          keys,
+          `${path.relative(SRC_DIR, file)} hand-writes shortcut "${m[1]}"; use shortcutId or shortcutKeysSuffix`
+        ).not.toContain(m[1]);
+      }
+    }
+
+    // Native title=/placeholder hints must compose via the helper, not literals.
+    for (const rel of [
+      "pages/Home.tsx",
+      "shared/components/home/TextInputBar.tsx",
+      "shared/components/memory/SearchBar.tsx",
+    ]) {
+      const src = fs.readFileSync(path.join(SRC_DIR, rel), "utf-8");
+      expect(src.includes("shortcutKeysSuffix"), `${rel} must compose hints via shortcutKeysSuffix`).toBe(true);
+    }
+  });
 });

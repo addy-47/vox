@@ -207,6 +207,8 @@ export const AUDIO_SETUP_COPY = {
   liveLabel: "Your Voice",
   listTitle: "Which microphone?",
   empty: "No microphones found — plug one in, or pick one later in Settings.",
+  initFailed: "Couldn't reach the microphone — check permission, or pick one later in Settings.",
+  retryInit: "Try Again",
 } as const;
 
 export const LIVE_TEST_COPY = {
@@ -235,6 +237,7 @@ export const MODEL_SETUP_COPY = {
   totalSuffix: "total",
   changeLaterNote: "You can add or remove these any time in Settings — nothing here is locked in.",
   catalogLoadError: "Couldn't load the download list.",
+  mobileDataNote: "Large download — connect to Wi-Fi before starting on mobile data.",
 } as const;
 
 /**

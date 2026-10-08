@@ -4,6 +4,7 @@ import { ObservationRecord } from "@/services/memoryService";
 import { getActiveDynamicPalette, toMemoryCategory } from "./memoryGraphTypes";
 import { cn } from "@/shared/lib/utils";
 import { MEMORY_COPY } from "@/data/memoryCopy";
+import { shortcutKeysSuffix } from "@/data/shortcuts";
 import { HighlightMatch } from "@/shared/ui";
 
 interface SearchBarProps {
@@ -162,7 +163,7 @@ export const SearchBar = memo<SearchBarProps>(({
           aria-haspopup="listbox"
           aria-autocomplete="list"
           autoComplete="off"
-          placeholder={MEMORY_COPY.searchPlaceholder}
+          placeholder={MEMORY_COPY.searchPlaceholder + shortcutKeysSuffix("memory.search")}
           className="flex-1 min-w-0 bg-transparent text-[12px] font-mono text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/60 focus:outline-none"
         />
         {value && (

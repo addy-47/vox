@@ -15,7 +15,7 @@ export const MemoryErrorState: React.FC<MemoryErrorStateProps> = memo(({ error, 
       transform: "translate(-50%, -50%)",
     }}
   >
-    <div className="rounded-3xl bg-[rgba(var(--card),0.85)] border border-[rgba(var(--border),0.12)] backdrop-blur-xl p-8 max-w-sm text-center shadow-2xl">
+    <div className="rounded-2xl bg-[rgba(var(--card),0.85)] border border-[rgba(var(--border),0.12)] backdrop-blur-xl p-8 max-w-sm text-center shadow-2xl">
       <h3 className="font-display text-[14px] font-bold text-[rgb(var(--foreground))] mb-1">
         {MEMORY_COPY.loadFailedTitle}
       </h3>
@@ -37,7 +37,7 @@ MemoryErrorState.displayName = "MemoryErrorState";
 
 export const MemoryEmptyState: React.FC = memo(() => (
   <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-    <div className="rounded-3xl bg-[rgba(var(--card),0.85)] border border-[rgba(var(--border),0.12)] backdrop-blur-xl p-8 max-w-sm text-center shadow-2xl">
+    <div className="rounded-2xl bg-[rgba(var(--card),0.85)] border border-[rgba(var(--border),0.12)] backdrop-blur-xl p-8 max-w-sm text-center shadow-2xl">
       <Sparkles size={28} className="mx-auto text-[rgb(var(--accent))] mb-3 opacity-80" />
       <h3 className="font-display text-[14px] font-bold text-[rgb(var(--foreground))] mb-1">
         {MEMORY_COPY.emptyFactsTitle}

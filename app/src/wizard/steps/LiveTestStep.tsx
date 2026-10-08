@@ -111,14 +111,14 @@ export const LiveTestStep: React.FC<Props> = ({ onNext, onBack }) => {
   }, []);
 
   return (
-    <div className="flex flex-col h-full max-h-[100vh] overflow-hidden justify-between relative select-none">
+    <div className="flex flex-col h-full max-h-[100vh] overflow-y-auto lg:overflow-hidden justify-between relative select-none">
       <WizardHeader
         step={WIZARD_STEP_HEADERS.testing.step}
         title={WIZARD_STEP_HEADERS.testing.title}
         description={WIZARD_STEP_HEADERS.testing.description}
       />
 
-      <div className="flex-1 flex flex-col gap-4 min-h-0 overflow-hidden justify-center">
+      <div className="flex-1 flex flex-col gap-4 min-h-0 overflow-visible lg:overflow-hidden justify-center">
         {/* Reactive Flat Waveform Visualization Strip */}
         <div className="glass p-6 flex flex-col items-center justify-center relative overflow-hidden h-28 shrink-0">
           <div className="absolute inset-0 bg-gradient-to-b from-[rgb(var(--accent))]/5 to-transparent opacity-20 pointer-events-none" />

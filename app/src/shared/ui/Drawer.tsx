@@ -98,6 +98,14 @@ export const Drawer = memo(
     const previouslyFocusedRef = useRef<HTMLElement | null>(null);
     useEffect(() => {
       if (!open) return;
+      // [trace-first-open] Intent-to-paint timing for first-open jank RCA. Logs only.
+      const intentAt = performance.now();
+      console.info(`[trace-first-open] Drawer open intent @${intentAt.toFixed(1)}ms`);
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          console.info(`[trace-first-open] Drawer first paint +${(performance.now() - intentAt).toFixed(1)}ms`);
+        });
+      });
       previouslyFocusedRef.current = document.activeElement as HTMLElement | null;
       sheetRef.current?.focus();
       return () => {
