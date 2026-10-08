@@ -220,11 +220,11 @@ export const PagesTab: React.FC<PagesTabProps> = ({
                     </td>
                     <td className="py-3 font-sans">
                       {isCurrent ? (
-                        <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-[rgb(var(--accent))]/20 text-[rgb(var(--accent))] border border-[rgb(var(--accent))]/30">
+                        <span className="text-[11px] font-mono px-2 py-0.5 rounded-md bg-[rgb(var(--accent))]/20 text-[rgb(var(--accent))] border border-[rgb(var(--accent))]/30">
                           {PROFILER_COPY.pages.statusActive}
                         </span>
                       ) : rec?.unmountedAt ? (
-                        <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-[rgba(var(--foreground-muted),0.15)] text-[rgb(var(--foreground-muted))]">
+                        <span className="text-[11px] font-mono px-2 py-0.5 rounded-md bg-[rgba(var(--foreground-muted),0.15)] text-[rgb(var(--foreground-muted))]">
                           {PROFILER_COPY.pages.statusUnmounted}
                         </span>
                       ) : (

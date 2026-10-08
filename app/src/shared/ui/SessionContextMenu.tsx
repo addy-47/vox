@@ -98,6 +98,8 @@ export const SessionContextMenu: React.FC<SessionContextMenuProps> = memo(
 
       window.addEventListener("pointerdown", handlePointerDown, true);
       window.addEventListener("keydown", handleKeyDown, true);
+      // Keyboard users land on the first item; mouse users keep :focus-visible clean.
+      menuRef.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus({ preventScroll: true });
       return () => {
         window.removeEventListener("pointerdown", handlePointerDown, true);
         window.removeEventListener("keydown", handleKeyDown, true);
@@ -142,7 +144,7 @@ export const SessionContextMenu: React.FC<SessionContextMenuProps> = memo(
           role="menu"
           aria-haspopup="menu"
           aria-expanded={open}
-          className="z-[9999] rounded-xl border border-[rgba(var(--border),0.16)] bg-[rgb(var(--card))]/75 backdrop-blur-xl shadow-sm p-1 flex flex-col gap-0.5 text-[11.5px] font-sans select-none"
+          className="z-[9999] rounded-lg border border-[rgba(var(--border),0.16)] bg-[rgb(var(--card))]/75 backdrop-blur-xl shadow-lg p-1 flex flex-col gap-0.5 text-[11.5px] font-sans select-none"
         >
           {isConfirmingDelete ? (
             <div className="p-2 flex flex-col gap-2">
@@ -185,7 +187,7 @@ export const SessionContextMenu: React.FC<SessionContextMenuProps> = memo(
                   tabIndex={-1}
                   data-action="back"
                   onClick={() => setMoveSubmenuOpen(false)}
-                  className="text-[9px] hover:text-[rgb(var(--foreground))] cursor-pointer font-bold text-[rgb(var(--accent))]"
+                  className="min-h-[32px] px-2 flex items-center text-[11px] hover:text-[rgb(var(--foreground))] cursor-pointer font-bold text-[rgb(var(--accent))]"
                 >
                   Back
                 </button>
@@ -199,7 +201,7 @@ export const SessionContextMenu: React.FC<SessionContextMenuProps> = memo(
                   onMoveToProject(null);
                   onClose();
                 }}
-                className="flex items-center gap-2 px-2 py-1.5 rounded-lg text-left hover:bg-[rgba(var(--foreground),0.06)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors cursor-pointer"
+                className="flex items-center gap-2 px-2 py-1.5 min-h-[40px] rounded-lg text-left hover:bg-[rgba(var(--foreground),0.06)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors cursor-pointer"
               >
                 <span className="w-1.5 h-1.5 rounded-full bg-[rgba(var(--foreground),0.3)]" />
                 <span className="truncate">{SESSION_COPY.actions.removeFromProject}</span>
@@ -216,7 +218,7 @@ export const SessionContextMenu: React.FC<SessionContextMenuProps> = memo(
                       onClose();
                     }}
                     className={cn(
-                      "flex items-center gap-2 px-2 py-1.5 rounded-lg text-left hover:bg-[rgba(var(--foreground),0.06)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors cursor-pointer",
+                      "flex items-center gap-2 px-2 py-1.5 min-h-[40px] rounded-lg text-left hover:bg-[rgba(var(--foreground),0.06)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors cursor-pointer",
                       currentProjectId === p.id && "text-[rgb(var(--accent))] font-semibold"
                     )}
                   >
@@ -239,7 +241,7 @@ export const SessionContextMenu: React.FC<SessionContextMenuProps> = memo(
                       onCompact();
                       onClose();
                     }}
-                    className="flex items-center gap-2 px-2 py-1.5 rounded-lg text-left hover:bg-[rgba(var(--accent),0.1)] text-[rgb(var(--accent))] font-medium transition-colors cursor-pointer disabled:opacity-50"
+                    className="flex items-center gap-2 px-2 py-1.5 min-h-[40px] rounded-lg text-left hover:bg-[rgba(var(--accent),0.1)] text-[rgb(var(--accent))] font-medium transition-colors cursor-pointer disabled:opacity-50"
                   >
                     {isCompacting ? (
                       <Loader2 size={12} className="animate-spin text-[rgb(var(--accent))]" />
@@ -265,7 +267,7 @@ export const SessionContextMenu: React.FC<SessionContextMenuProps> = memo(
                   onStartRename();
                   onClose();
                 }}
-                className="flex items-center gap-2 px-2 py-1.5 rounded-lg text-left hover:bg-[rgba(var(--foreground),0.06)] text-[rgb(var(--foreground))] transition-colors cursor-pointer"
+                className="flex items-center gap-2 px-2 py-1.5 min-h-[40px] rounded-lg text-left hover:bg-[rgba(var(--foreground),0.06)] text-[rgb(var(--foreground))] transition-colors cursor-pointer"
               >
                 <Pencil size={12} className="text-[rgb(var(--foreground-muted))]" />
                 <span>{SESSION_COPY.actions.rename}</span>
@@ -277,7 +279,7 @@ export const SessionContextMenu: React.FC<SessionContextMenuProps> = memo(
                 tabIndex={-1}
                 data-action="move-to-project"
                 onClick={() => setMoveSubmenuOpen(true)}
-                className="flex items-center justify-between px-2 py-1.5 rounded-lg text-left hover:bg-[rgba(var(--foreground),0.06)] text-[rgb(var(--foreground))] transition-colors cursor-pointer"
+                className="flex items-center justify-between px-2 py-1.5 min-h-[40px] rounded-lg text-left hover:bg-[rgba(var(--foreground),0.06)] text-[rgb(var(--foreground))] transition-colors cursor-pointer"
               >
                 <div className="flex items-center gap-2">
                   <FolderInput size={12} className="text-[rgb(var(--foreground-muted))]" />
@@ -294,7 +296,7 @@ export const SessionContextMenu: React.FC<SessionContextMenuProps> = memo(
                 tabIndex={-1}
                 data-action="delete"
                 onClick={() => setIsConfirmingDelete(true)}
-                className="flex items-center gap-2 px-2 py-1.5 rounded-lg text-left hover:bg-red-500/10 text-red-400 transition-colors cursor-pointer"
+                className="flex items-center gap-2 px-2 py-1.5 min-h-[40px] rounded-lg text-left hover:bg-red-500/10 text-red-400 transition-colors cursor-pointer"
               >
                 <Trash2 size={12} />
                 <span>{SESSION_COPY.actions.delete}</span>

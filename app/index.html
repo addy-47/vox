@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/png" href="/logo.png" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <title>Vox | Ambient Intelligence</title>
     <script>
       // Pre-React boot: apply the user's saved theme + accent_seed from localStorage
@@ -69,7 +69,13 @@
         width: 100%;
         height: 100%;
         overflow: hidden;
-        touch-action: none;
+      }
+      /* Desktop-only: suppress touch scrolling/zoom gestures on fine-pointer
+         devices. On touch devices (Android) scrolling and pinch must work. */
+      @media (pointer: fine) {
+        html, body, #root {
+          touch-action: none;
+        }
       }
       html:not(.is-tray):not(.is-toast), 
       body:not(.is-tray):not(.is-toast), 
@@ -147,37 +153,49 @@
       }
     </style>
     <script>
-      // Prevent pinch-to-zoom (ctrl + wheel)
-      document.addEventListener('wheel', function(e) {
-        if (e.ctrlKey) {
-          e.preventDefault();
+      // Desktop-only gesture suppression (Batch 5.2). On coarse-pointer
+      // (touch) devices these listeners stay off so scroll/pinch work.
+      (function() {
+        var fine = false;
+        try {
+          fine = window.matchMedia && window.matchMedia('(pointer: fine)').matches;
+        } catch (e) {
+          fine = false;
         }
-      }, { passive: false });
+        if (!fine) return;
 
-      // Prevent multi-touch pinch gestures
-      document.addEventListener('touchstart', function(e) {
-        if (e.touches && e.touches.length > 1) {
-          e.preventDefault();
-        }
-      }, { passive: false });
+        // Prevent pinch-to-zoom (ctrl + wheel)
+        document.addEventListener('wheel', function(e) {
+          if (e.ctrlKey) {
+            e.preventDefault();
+          }
+        }, { passive: false });
 
-      document.addEventListener('touchmove', function(e) {
-        if (e.touches && e.touches.length > 1) {
-          e.preventDefault();
-        }
-      }, { passive: false });
+        // Prevent multi-touch pinch gestures
+        document.addEventListener('touchstart', function(e) {
+          if (e.touches && e.touches.length > 1) {
+            e.preventDefault();
+          }
+        }, { passive: false });
 
-      // Prevent macOS/Safari and WebKitGTK gesture events
-      document.addEventListener('gesturestart', function(e) { e.preventDefault(); });
-      document.addEventListener('gesturechange', function(e) { e.preventDefault(); });
-      document.addEventListener('gestureend', function(e) { e.preventDefault(); });
+        document.addEventListener('touchmove', function(e) {
+          if (e.touches && e.touches.length > 1) {
+            e.preventDefault();
+          }
+        }, { passive: false });
 
-      // Prevent Ctrl + +, Ctrl + -, Ctrl + =, Ctrl + 0 keyboard zoom
-      document.addEventListener('keydown', function(e) {
-        if (e.ctrlKey && (e.key === '+' || e.key === '-' || e.key === '=' || e.key === '0')) {
-          e.preventDefault();
-        }
-      });
+        // Prevent macOS/Safari and WebKitGTK gesture events
+        document.addEventListener('gesturestart', function(e) { e.preventDefault(); });
+        document.addEventListener('gesturechange', function(e) { e.preventDefault(); });
+        document.addEventListener('gestureend', function(e) { e.preventDefault(); });
+
+        // Prevent Ctrl + +, Ctrl + -, Ctrl + =, Ctrl + 0 keyboard zoom
+        document.addEventListener('keydown', function(e) {
+          if (e.ctrlKey && (e.key === '+' || e.key === '-' || e.key === '=' || e.key === '0')) {
+            e.preventDefault();
+          }
+        });
+      })();
     </script>
   </head>
 

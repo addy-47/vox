@@ -1,4 +1,4 @@
-import { memo, useRef } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Clock } from "lucide-react";
 import { ObservationRecord } from "@/services/memoryService";
@@ -30,7 +30,20 @@ export const MemoryNodeTooltip = memo(({
   const colStyle = factDetail
     ? getCollectionColor(factDetail.fact_type, false, isLightMode)
     : null;
-  const isMobile = typeof window !== "undefined" ? window.innerWidth < 640 : false;
+  // Compact placement tracks viewport resizes/rotation instead of a
+  // one-shot innerWidth read that goes stale.
+  const [isCompactViewport, setIsCompactViewport] = useState(
+    () => typeof window !== "undefined" && window.matchMedia("(max-width: 639px)").matches
+  );
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
+    const query = window.matchMedia("(max-width: 639px)");
+    const onChange = (e: MediaQueryListEvent) => setIsCompactViewport(e.matches);
+    setIsCompactViewport(query.matches);
+    query.addEventListener("change", onChange);
+    return () => query.removeEventListener("change", onChange);
+  }, []);
+  const isMobile = isCompactViewport;
   const tooltipWidth = 360;
   const clampedX =
     !pos || isMobile
@@ -64,7 +77,7 @@ export const MemoryNodeTooltip = memo(({
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.94, y: 6 }}
           transition={{ duration: 0.15, ease: "easeOut" }}
-          className="w-[340px] max-w-[calc(100vw-32px)] rounded-3xl glass-card border border-[rgba(var(--border),0.18)] bg-[rgba(var(--card),0.96)] backdrop-blur-2xl p-4 shadow-2xl"
+          className="w-[340px] max-w-[calc(100vw-32px)] rounded-xl glass-card border border-[rgba(var(--border),0.18)] bg-[rgba(var(--card),0.96)] p-4 shadow-2xl"
         >
           {/* Header */}
           <div className="flex items-center justify-between pb-2.5 mb-2.5 border-b border-[rgba(var(--border),0.10)]">
@@ -83,11 +96,11 @@ export const MemoryNodeTooltip = memo(({
 
             <div className="flex items-center gap-2">
               {factDetail.session_id !== null ? (
-                <span className="text-[9px] font-mono px-2 py-0.5 rounded-full bg-[rgba(var(--foreground),0.06)] text-[rgb(var(--foreground-muted))]">
+                <span className="text-[9px] font-mono px-2 py-0.5 rounded-md bg-[rgba(var(--foreground),0.06)] text-[rgb(var(--foreground-muted))]">
                   {MEMORY_COPY.sessionPrefix}{factDetail.session_id}
                 </span>
               ) : (
-                <span className="text-[9px] font-mono px-2 py-0.5 rounded-full bg-[rgba(var(--accent),0.15)] text-[rgb(var(--accent))]">
+                <span className="text-[9px] font-mono px-2 py-0.5 rounded-md bg-[rgba(var(--accent),0.15)] text-[rgb(var(--accent))]">
                   {MEMORY_COPY.identityLayer}
                 </span>
               )}

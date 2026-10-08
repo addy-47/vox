@@ -17,6 +17,7 @@ import {
 import { AnimatePresence, motion, Reorder, useDragControls } from "framer-motion";
 import { cn } from "@/shared/lib/utils";
 import { useSessionPanel, type ProjectGroup } from "@/shared/hooks/useSessionPanel";
+import { useVirtualRows } from "@/shared/hooks/useVirtualRows";
 import { useVoiceSession } from "@/shared/context/VoiceSessionContext";
 import {
   resolveSessionTitle,
@@ -417,8 +418,13 @@ const ProjectRowItem = memo(
 
     const handleToggleExpand = useCallback(() => {
       if (isDraggingRef.current || isRenaming || menuOpen) return;
+      // [trace-first-open] Expand timing + row count for list-lag RCA. Logs only.
+      console.info(`[trace-first-open] Project expand intent project=${projectId} sessions=${group.sessions.length} expanding=${!expanded} @${performance.now().toFixed(1)}ms`);
       toggleProjectExpanded(projectId);
-    }, [isRenaming, menuOpen, toggleProjectExpanded, projectId]);
+    }, [isDraggingRef, isRenaming, menuOpen, toggleProjectExpanded, projectId, group.sessions.length, group.project.id, expanded]);
+
+    const groupListRef = useRef<HTMLDivElement>(null);
+    const groupWindow = useVirtualRows(groupListRef, expanded ? group.sessions.length : 0);
 
     const handleCreateInProject = useCallback(
       (e: React.MouseEvent) => {
@@ -618,10 +624,15 @@ const ProjectRowItem = memo(
               transition={{ duration: 0.16, ease: "easeInOut" }}
               className="flex flex-col overflow-hidden gap-0.5"
             >
+              <div ref={groupListRef} className="flex flex-col gap-0.5">
               {group.sessions.length > 0 ? (
-                group.sessions.map((session) => (
+                <>
+                {groupWindow.topPad > 0 && (
+                  <div style={{ height: groupWindow.topPad }} aria-hidden="true" />
+                )}
+                {group.sessions.slice(groupWindow.start, groupWindow.end).map((session, i) => (
+                  <div key={session.id} ref={groupWindow.itemRef(groupWindow.start + i)}>
                   <SessionRowItem
-                    key={session.id}
                     session={session}
                     active={session.id === activeSessionId}
                     restoring={isRestoring && restoringSessionId === session.id}
@@ -634,12 +645,18 @@ const ProjectRowItem = memo(
                     onDelete={onDeleteSession}
                     allProjects={allProjects}
                   />
-                ))
+                  </div>
+                ))}
+                {groupWindow.bottomPad > 0 && (
+                  <div style={{ height: groupWindow.bottomPad }} aria-hidden="true" />
+                )}
+                </>
               ) : (
                 <span className="pl-6 py-1.5 text-[11px] text-[rgb(var(--foreground-muted))]/40 italic">
                   {SESSION_COPY.noProjectSessions}
                 </span>
               )}
+              </div>
             </motion.div>
           )}
         </AnimatePresence>
@@ -710,6 +727,9 @@ export const SessionPanel = memo(({ onClose }: SessionPanelProps) => {
       (a, b) => sessionLastActivity(b) - sessionLastActivity(a)
     );
   }, [uncategorizedSessions, projects]);
+
+  const historyListRef = useRef<HTMLDivElement>(null);
+  const historyWindow = useVirtualRows(historyListRef, allChronologicalSessions.length);
 
   const handleSelect = useCallback(
     (id: number) => {
@@ -851,6 +871,7 @@ export const SessionPanel = memo(({ onClose }: SessionPanelProps) => {
     <div
       ref={scrollRef}
       onScroll={handleScroll}
+      data-session-scroll
       className="flex-1 min-h-0 overflow-y-auto custom-scrollbar flex flex-col gap-3 px-3 pt-3 pb-16 select-none font-sans"
     >
       {/* ── Top Actions: + New Conversation & Conversation History ── */}
@@ -947,24 +968,33 @@ export const SessionPanel = memo(({ onClose }: SessionPanelProps) => {
           <div className="px-3 py-1 text-[11.5px] font-mono font-bold tracking-wider uppercase text-[rgb(var(--foreground-muted))]/60">
             {SESSION_COPY.conversationHistory}
           </div>
-          <div className="flex flex-col gap-0.5">
+          <div ref={historyListRef} className="flex flex-col gap-0.5">
             {allChronologicalSessions.length > 0 ? (
-              allChronologicalSessions.map((session) => (
-                <SessionRowItem
-                  key={session.id}
-                  session={session}
-                  active={session.id === activeSessionId}
-                  restoring={isRestoring && restoringSessionId === session.id}
-                  pinned={Boolean(session.is_pinned)}
-                  onSelect={handleSelect}
-                  onTogglePin={togglePin}
-                  onRename={renameSession}
-                  onMoveToProject={moveSessionToProject}
-                  onDelete={deleteSession}
-                  allProjects={allProjects}
-                  projectTag={session.project_id ? projectNameMap.get(session.project_id) : undefined}
-                />
-              ))
+              <>
+                {historyWindow.topPad > 0 && (
+                  <div style={{ height: historyWindow.topPad }} aria-hidden="true" />
+                )}
+                {allChronologicalSessions.slice(historyWindow.start, historyWindow.end).map((session, i) => (
+                  <div key={session.id} ref={historyWindow.itemRef(historyWindow.start + i)}>
+                    <SessionRowItem
+                      session={session}
+                      active={session.id === activeSessionId}
+                      restoring={isRestoring && restoringSessionId === session.id}
+                      pinned={Boolean(session.is_pinned)}
+                      onSelect={handleSelect}
+                      onTogglePin={togglePin}
+                      onRename={renameSession}
+                      onMoveToProject={moveSessionToProject}
+                      onDelete={deleteSession}
+                      allProjects={allProjects}
+                      projectTag={session.project_id ? projectNameMap.get(session.project_id) : undefined}
+                    />
+                  </div>
+                ))}
+                {historyWindow.bottomPad > 0 && (
+                  <div style={{ height: historyWindow.bottomPad }} aria-hidden="true" />
+                )}
+              </>
             ) : (
               <span className="px-2 py-1 text-[11.5px] text-[rgb(var(--foreground-muted))]/40 italic">
                 {SESSION_COPY.noSessionsTitle}

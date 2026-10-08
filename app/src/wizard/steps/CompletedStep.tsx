@@ -41,16 +41,16 @@ export const CompletedStep: React.FC<Props> = ({ onBack }) => {
   };
 
   return (
-    <div className="flex flex-col h-full max-h-[100vh] overflow-hidden justify-between relative select-none">
+    <div className="flex flex-col h-full max-h-[100vh] overflow-y-auto lg:overflow-hidden justify-between relative select-none">
       <WizardHeader
         step={WIZARD_STEP_HEADERS.completed.step}
         title={WIZARD_STEP_HEADERS.completed.title}
         description={WIZARD_STEP_HEADERS.completed.description}
       />
 
-      <div className="flex-1 flex flex-col gap-4 min-h-0 overflow-hidden justify-center">
+      <div className="flex-1 flex flex-col gap-4 min-h-0 overflow-visible lg:overflow-hidden justify-center">
         {/* Harmonized Diagnostics Grid */}
-        <div className="grid grid-cols-2 gap-3 shrink-0">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 shrink-0">
           {COMPLETED_STATUS_CARDS.map((card) => (
             <StatusCard
               key={card.label}

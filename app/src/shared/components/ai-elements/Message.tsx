@@ -30,9 +30,9 @@ export const MessageContent: React.FC<MessageContentProps> = memo(({
   <div
     className={cn(
       "w-fit min-w-0 max-w-full flex-col gap-2 overflow-hidden text-[13px] leading-relaxed select-text p-3 rounded-2xl shadow-md",
-      from === "user" || "group-[.is-user]:ml-auto"
-        ? "text-[rgb(var(--foreground-muted))] font-normal bg-[rgb(var(--card))]/80 border border-[rgba(var(--border),0.15)] shadow-md"
-        : "text-[rgb(var(--foreground))] bg-[rgb(var(--card))]/90 border border-[rgba(var(--accent),0.25)] shadow-xl backdrop-blur-xl",
+      from === "user"
+        ? "text-[rgb(var(--foreground-muted))] font-normal bg-[rgb(var(--card))]/80 border border-[rgba(var(--border),0.15)] shadow-md group-[.is-user]:ml-auto"
+        : "text-[rgb(var(--foreground))] bg-[rgb(var(--card))]/90 border border-[rgba(var(--accent),0.25)] shadow-xl",
       className
     )}
     {...props}

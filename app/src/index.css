@@ -348,6 +348,39 @@ body.is-tray #root {
   border: none !important;
 }
 
+/* ── Android preparation (Batch 5.5 safe-area + 5.3 hover) ─────────────────
+ * Zero on desktop (no inset, fine pointer): visually identical.
+ * On notch/gesture-bar devices the root shell pads by the OS inset values. */
+:root {
+  --vox-safe-top: env(safe-area-inset-top, 0px);
+  --vox-safe-right: env(safe-area-inset-right, 0px);
+  --vox-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --vox-safe-left: env(safe-area-inset-left, 0px);
+}
+
+#root {
+  padding-top: var(--vox-safe-top);
+  padding-right: var(--vox-safe-right);
+  padding-bottom: var(--vox-safe-bottom);
+  padding-left: var(--vox-safe-left);
+}
+
+/* Desktop window chrome has no meaning on touch devices. */
+@media (pointer: coarse) {
+  [data-titlebar-window-controls] {
+    display: none !important;
+  }
+}
+
+/* Touch devices have no hover: tap must never depend on a hover reveal.
+ * Hover-only elevation/translation treatments stay desktop-only so the
+ * first tap does not get swallowed by a hover state. */
+@media (hover: none) {
+  .group:hover .group-hover\:translate-x-1 {
+    transform: none !important;
+  }
+}
+
 
 @layer components {
 

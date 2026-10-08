@@ -75,6 +75,8 @@ export const ProjectContextMenu: React.FC<ProjectContextMenuProps> = memo(
 
       window.addEventListener("pointerdown", handlePointerDown, true);
       window.addEventListener("keydown", handleKeyDown, true);
+      // Keyboard users land on the first item; mouse users keep :focus-visible clean.
+      menuRef.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus({ preventScroll: true });
       return () => {
         window.removeEventListener("pointerdown", handlePointerDown, true);
         window.removeEventListener("keydown", handleKeyDown, true);
@@ -98,7 +100,7 @@ export const ProjectContextMenu: React.FC<ProjectContextMenuProps> = memo(
             setErrorMessage(SESSION_COPY.projectActions.notEmptyError);
           }
         } else {
-          setErrorMessage(msg.slice(0, 50));
+          setErrorMessage(msg);
         }
       }
     };
@@ -107,8 +109,8 @@ export const ProjectContextMenu: React.FC<ProjectContextMenuProps> = memo(
       return null;
     }
 
-    const menuWidth = errorMessage ? 210 : (isConfirmingDelete ? 175 : 160);
-    const menuHeight = errorMessage ? 96 : 76;
+    const menuWidth = errorMessage ? 230 : (isConfirmingDelete ? 175 : 160);
+    const menuHeight = errorMessage ? 132 : 76;
 
     let left = anchorRect.right + 6;
     let top = anchorRect.top - 4;
@@ -139,7 +141,7 @@ export const ProjectContextMenu: React.FC<ProjectContextMenuProps> = memo(
           role="menu"
           aria-haspopup="menu"
           aria-expanded={open}
-          className="z-[9999] rounded-xl border border-[rgba(var(--border),0.16)] bg-[rgb(var(--card))]/85 backdrop-blur-xl shadow-lg p-1 flex flex-col gap-0.5 text-[11.5px] font-sans select-none"
+          className="z-[9999] rounded-lg border border-[rgba(var(--border),0.16)] bg-[rgb(var(--card))]/85 backdrop-blur-xl shadow-lg p-1 flex flex-col gap-0.5 text-[11.5px] font-sans select-none"
         >
           {/* Row 1: Rename project */}
           <button
@@ -152,7 +154,7 @@ export const ProjectContextMenu: React.FC<ProjectContextMenuProps> = memo(
               onStartRename();
               onClose();
             }}
-            className="flex items-center gap-2 px-2 py-1.5 rounded-lg text-left hover:bg-[rgba(var(--foreground),0.06)] text-[rgb(var(--foreground))] transition-colors cursor-pointer disabled:opacity-40"
+            className="flex items-center gap-2 px-2 py-1.5 min-h-[40px] rounded-lg text-left hover:bg-[rgba(var(--foreground),0.06)] text-[rgb(var(--foreground))] transition-colors cursor-pointer disabled:opacity-40"
           >
             <Pencil size={12} className="text-[rgb(var(--foreground-muted))]" />
             <span>{SESSION_COPY.projectActions.rename}</span>
@@ -165,7 +167,7 @@ export const ProjectContextMenu: React.FC<ProjectContextMenuProps> = memo(
             <div className="flex flex-col gap-1 p-1.5 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400">
               <div className="flex items-center gap-1.5 text-[10.5px] leading-tight">
                 <AlertCircle size={12} className="shrink-0 text-red-400" />
-                <span>{errorMessage}</span>
+                <span className="break-words min-w-0">{errorMessage}</span>
               </div>
               <button
                 type="button"
@@ -216,7 +218,7 @@ export const ProjectContextMenu: React.FC<ProjectContextMenuProps> = memo(
                 setErrorMessage(null);
                 setIsConfirmingDelete(true);
               }}
-              className="flex items-center gap-2 px-2 py-1.5 rounded-lg text-left hover:bg-red-500/10 text-red-400 transition-colors cursor-pointer"
+              className="flex items-center gap-2 px-2 py-1.5 min-h-[40px] rounded-lg text-left hover:bg-red-500/10 text-red-400 transition-colors cursor-pointer"
             >
               <Trash2 size={12} />
               <span>{SESSION_COPY.projectActions.delete}</span>

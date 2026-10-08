@@ -1,34 +1,46 @@
 import React, { memo, useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useSessionStore } from "@/store/sessionStore";
 
 /**
- * Single reverse-flow ambient animation toward the central orb,
- * communicating that previous context is being ingested on session
- * restore (spec §B.15). Runs once per restore `signal`, never blocks
- * interaction (pointer-events-none), and never replays on subsequent
- * turns — the parent only bumps `signal` on a successful restore.
+ * Ambient ingestion pulse toward the central orb while a previous session
+ * is being continued. Visibility is driven by the live restore state —
+ * never by navigation — with a minimum display floor so fast restores
+ * still read as intentional instead of a flicker. Never blocks
+ * interaction (pointer-events-none).
  */
+const MIN_VISIBLE_MS = 300;
+const RESTORE_STALL_CAP_MS = 8000;
+
 export const RestorePulse: React.FC<{ signal: number }> = memo(({ signal }) => {
   const [visible, setVisible] = useState(false);
-  const mountedRef = useRef(false);
+  const shownAtRef = useRef(0);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isRestoring = useSessionStore((s) => s.isRestoring);
+  const restoringSessionId = useSessionStore((s) => s.restoringSessionId);
 
   useEffect(() => {
-    if (!mountedRef.current) {
-      mountedRef.current = true;
-      return;
+    console.info(`[trace-restore] Pulse state signal=${signal} isRestoring=${isRestoring} restoringSessionId=${restoringSessionId} @${performance.now().toFixed(1)}ms`);
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
     }
-    if (signal <= 0) return;
-    setVisible(true);
-    if (timerRef.current) clearTimeout(timerRef.current);
-    timerRef.current = setTimeout(() => setVisible(false), 2600);
+    if (isRestoring) {
+      shownAtRef.current = performance.now();
+      setVisible(true);
+      // Safety: never trap the pulse on screen if the store stalls mid-restore.
+      timerRef.current = setTimeout(() => setVisible(false), RESTORE_STALL_CAP_MS);
+    } else if (shownAtRef.current > 0) {
+      const wait = Math.max(0, MIN_VISIBLE_MS - (performance.now() - shownAtRef.current));
+      timerRef.current = setTimeout(() => setVisible(false), wait);
+    }
     return () => {
       if (timerRef.current) {
         clearTimeout(timerRef.current);
         timerRef.current = null;
       }
     };
-  }, [signal]);
+  }, [isRestoring, signal, restoringSessionId]);
 
   return (
     <div
@@ -41,7 +53,7 @@ export const RestorePulse: React.FC<{ signal: number }> = memo(({ signal }) => {
             key={signal}
             initial={{ opacity: 0.42, scale: 1.65 }}
             animate={{ opacity: 0, scale: 0.5 }}
-            exit={{ opacity: 0 }}
+            exit={{ opacity: 0, transition: { duration: 0.3 } }}
             transition={{ duration: 2.4, ease: [0.16, 1, 0.3, 1] }}
             className="w-[min(60vw,52vh)] h-[min(60vw,52vh)] max-w-[540px] max-h-[540px] rounded-full border border-[rgba(var(--accent),0.28)] blur-[1px] shadow-[0_0_24px_rgba(var(--accent),0.16),inset_0_0_16px_rgba(var(--accent),0.1)]"
           />

@@ -70,12 +70,27 @@ export const SHORTCUTS: ShortcutDef[] = [
   // ── Wizard ──
   { id: "wizard.next", keys: "Enter", label: "Advance when CTA focused", scope: "page:wizard" },
 
+  // ── Home text-mode + session controls (registry-sourced tooltip hints) ──
+  { id: "home.send", keys: "Enter", label: "Send message", scope: "page:home" },
+  { id: "home.discard", keys: "Esc", label: "Discard and close text input", scope: "page:home" },
+  { id: "home.reconnect", keys: "Enter", label: "Attempt session reconnection", scope: "page:home" },
+
   // ── Universal shortcuts for controls ──
   { id: "ctrl-enter-save", keys: "Ctrl+Enter", label: "Save / commit in multi-line editors", scope: "global" },
 ];
 
 export function getShortcutById(id: string): ShortcutDef | undefined {
   return SHORTCUTS.find((s) => s.id === id);
+}
+
+/**
+ * Registry-sourced `" (Keys)"` suffix for native `title=` hints and
+ * placeholders. Call sites must use this instead of hand-writing key
+ * strings, so the registry stays the single source of truth.
+ */
+export function shortcutKeysSuffix(id: string): string {
+  const keys = getShortcutById(id)?.keys;
+  return keys ? ` (${keys})` : "";
 }
 
 export function getShortcutsGroupedByRoute(): Record<string, ShortcutDef[]> {

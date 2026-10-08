@@ -22,6 +22,7 @@ import { useHistoryFilterStore } from "@/store/historyFilterStore";
 import { useSessionStore } from "@/store/sessionStore";
 import { getStackSize } from "@/shared/lib/overlayStack";
 import { BREAKPOINT_OPPOSITE_COLLISION_MAX, isCompactWidth } from "./breakpoints";
+import { isCoarsePointer } from "@/lib/capabilities";
 
 const Monitoring = lazy(() => import("@/pages/Monitoring").then((m) => ({ default: m.Monitoring })));
 
@@ -268,15 +269,16 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
       const mod = e.ctrlKey || e.metaKey;
       const shift = e.shiftKey;
 
-      // Application Lifecycle (Ctrl+W close, Ctrl+Q quit)
-      if (mod && (key === "w" || key === "W")) {
+      // Application Lifecycle (Ctrl+W close, Ctrl+Q quit) — desktop window
+      // chrome only; inert on touch devices with no window controls.
+      if (!isCoarsePointer() && mod && (key === "w" || key === "W")) {
         e.preventDefault();
         import("@tauri-apps/api/window").then(({ getCurrentWindow }) => {
           getCurrentWindow().close();
         }).catch(() => {});
         return;
       }
-      if (mod && (key === "q" || key === "Q")) {
+      if (!isCoarsePointer() && mod && (key === "q" || key === "Q")) {
         e.preventDefault();
         import("@tauri-apps/plugin-process").then(({ exit }) => {
           exit(0);
@@ -439,7 +441,7 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
                 : "pointer-events-none"
             )}
           >
-            <Tooltip label={SESSION_COPY.railTitle} side="bottom">
+            <Tooltip label={SESSION_COPY.railTitle} shortcutId="global.sessions" side="bottom">
               <button
                 onClick={() => togglePanel("sessions")}
                 aria-label={SESSION_COPY.openRailAriaLabel}
@@ -497,12 +499,13 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
 
 
         {/* ── Engine Monitor Area — bottom-left ───────────────────────────── */}
-        <div className="hidden lg:flex fixed bottom-4 left-4 z-40 items-center gap-2.5 pointer-events-none">
+        <div className="hidden lg:flex fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] left-[max(1rem,env(safe-area-inset-left))] z-40 items-center gap-2.5 pointer-events-none">
           {sessionsOpen && (
             <BottomDockFeather className="absolute -left-4 -bottom-4 -top-12 w-[340px] pointer-events-none" />
           )}
           <div className="relative pointer-events-auto flex items-center gap-2.5">
             {/* Monitor toggle button */}
+            <Tooltip label={LAYOUT_COPY.nav.engineMonitor} shortcutId="global.monitor" side="right">
             <button
               ref={monitorBtnRef}
               data-flip-trace="monitor-btn"
@@ -519,10 +522,11 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
             >
               <Activity size={24} strokeWidth={2} />
             </button>
+            </Tooltip>
 
             {/* Mini footprint HUD — CPU% · RAM MB (Click to launch Memory Profiler) */}
             {isReady && (
-              <Tooltip label={LAYOUT_COPY.nav.openProfiler}>
+              <Tooltip label={LAYOUT_COPY.nav.openProfiler} shortcutId="home.profiler">
                 <button
                   onClick={() => {
                     setMonitorOpen(false);

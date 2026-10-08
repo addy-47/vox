@@ -2,6 +2,7 @@ import React, { memo, useState, useRef, useEffect, useCallback } from "react";
 import { CornerDownLeft, X, Volume2, VolumeX, Mic, MicOff } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { HOME_CONTROLS_COPY } from "@/data/homeCopy";
+import { shortcutKeysSuffix } from "@/data/shortcuts";
 
 export interface TextInputBarProps {
   onSubmit: (text: string) => void;
@@ -121,7 +122,7 @@ export const TextInputBar = memo(({
             : "text-[rgb(var(--accent))]/70 hover:text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/10"
         )}
         aria-label={isMicMuted ? copy.unmuteMicAriaLabel : copy.muteMicAriaLabel}
-        title={isMicMuted ? copy.unmuteMicTooltip : copy.muteMicTooltip}
+        title={(isMicMuted ? copy.unmuteMicTooltip : copy.muteMicTooltip) + shortcutKeysSuffix("home.mute")}
       >
         {isMicMuted ? <MicOff size={17} /> : <Mic size={17} />}
       </button>
@@ -137,7 +138,7 @@ export const TextInputBar = memo(({
             : "text-[rgb(var(--accent))]/70 hover:text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/10"
         )}
         aria-label={isPlaybackMuted ? copy.unmuteSpeakerAriaLabel : copy.muteSpeakerAriaLabel}
-        title={isPlaybackMuted ? copy.unmuteSpeakerTooltip : copy.muteSpeakerTooltip}
+        title={(isPlaybackMuted ? copy.unmuteSpeakerTooltip : copy.muteSpeakerTooltip) + shortcutKeysSuffix("home.speaker-mute")}
       >
         {isPlaybackMuted ? <VolumeX size={17} /> : <Volume2 size={17} />}
       </button>
@@ -168,7 +169,7 @@ export const TextInputBar = memo(({
             : "opacity-30 cursor-not-allowed text-[rgb(var(--accent))]/40 border-transparent"
         )}
         aria-label={copy.sendAriaLabel}
-        title={copy.sendTooltip}
+        title={copy.sendTooltip + shortcutKeysSuffix("home.send")}
       >
         <CornerDownLeft size={16} />
       </button>
@@ -179,7 +180,7 @@ export const TextInputBar = memo(({
         onClick={onClose}
         className="flex items-center justify-center w-9 h-9 rounded-full text-[rgb(var(--foreground))]/60 hover:text-[rgb(var(--foreground))] hover:bg-[rgb(var(--foreground))]/10 transition-colors duration-200 cursor-pointer"
         aria-label={copy.discardAriaLabel}
-        title={copy.discardTooltip}
+        title={copy.discardTooltip + shortcutKeysSuffix("home.discard")}
       >
         <X size={17} />
       </button>

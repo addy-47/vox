@@ -188,7 +188,7 @@ export const ModelCategory = React.memo(({
                                                 )}
                                             </div>
                                             <div className="flex flex-col">
-                                                <span className="text-[rgb(var(--foreground-muted))] group-hover:text-[rgb(var(--foreground))] transition-colors truncate max-w-[280px]">
+                                                <span className="text-[rgb(var(--foreground-muted))] group-hover:text-[rgb(var(--foreground))] transition-colors break-words min-w-0">
                                                     {group.name}
                                                 </span>
                                                 <span className="text-[rgb(var(--foreground-muted))]/40 text-[12px] font-mono">

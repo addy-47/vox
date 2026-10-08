@@ -31,7 +31,7 @@ export const WizardFooter: React.FC<WizardFooterProps> = ({
   errorLabel = WIZARD_CTA_LABELS.errorTitle
 }) => {
   return (
-    <div className={cn("mt-auto pt-8 border-t border-[rgba(var(--border),0.05)]", className)}>
+    <div className={cn("mt-auto pt-8 border-t border-[rgba(var(--border),0.05)] pb-[env(safe-area-inset-bottom)]", className)}>
       {error && (
         <div className="mb-6 p-4 bg-[rgba(var(--danger),0.1)] border border-[rgb(var(--danger))]/20 rounded-xl flex items-center gap-3">
           <div className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--danger))]" />
@@ -42,11 +42,11 @@ export const WizardFooter: React.FC<WizardFooterProps> = ({
         </div>
       )}
       
-      <div className="flex gap-4">
+      <div className="flex flex-col-reverse sm:flex-row gap-4">
         {showBack && (
           <button
             onClick={onBack}
-            className="px-8 py-5 text-[12px] font-black uppercase tracking-[0.3em] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors"
+            className="px-8 py-5 min-h-[44px] text-[12px] font-black uppercase tracking-[0.3em] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors"
           >
             {WIZARD_CTA_LABELS.back}
           </button>

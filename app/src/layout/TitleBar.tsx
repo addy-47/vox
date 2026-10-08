@@ -50,6 +50,30 @@ export const TitleBar: React.FC = () => {
     }
   };
 
+  // Hover cards reveal on hover/focus. Blur-dismiss restores keyboard and
+  // touch parity: Escape or an outside tap drops focus, hiding the card.
+  useEffect(() => {
+    const cardOf = (el: Element | null) => el?.closest?.("[data-hover-card]") ?? null;
+    const dismissIfInside = (target: EventTarget | null) => {
+      const active = document.activeElement as HTMLElement | null;
+      const card = active ? cardOf(active) : null;
+      if (card && target instanceof Node && !card.contains(target)) active?.blur();
+    };
+    const onPointerDown = (e: PointerEvent) => dismissIfInside(e.target);
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        const active = document.activeElement as HTMLElement | null;
+        if (active && cardOf(active)) active.blur();
+      }
+    };
+    window.addEventListener("pointerdown", onPointerDown, true);
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => {
+      window.removeEventListener("pointerdown", onPointerDown, true);
+      window.removeEventListener("keydown", onKeyDown, true);
+    };
+  }, []);
+
   useEffect(() => {
     // Check if we are running in Tauri
     const hasTauri = !!window.__TAURI__ ||
@@ -157,7 +181,7 @@ export const TitleBar: React.FC = () => {
             </button>
             
             {/* Tooltip Hover Card */}
-            <div className="absolute top-6 left-0 w-64 p-4 rounded-xl backdrop-blur-xl bg-[rgb(var(--background))]/95 border border-[rgb(var(--accent))]/20 shadow-2xl opacity-0 translate-y-2 pointer-events-none group-hover/app-pill:opacity-100 group-hover/app-pill:translate-y-0 group-hover/app-pill:pointer-events-auto transition-all duration-300 z-50 text-[13px] text-[rgb(var(--foreground))]">
+            <div data-hover-card className="absolute top-6 left-0 w-64 p-3 rounded-lg backdrop-blur-xl bg-[rgb(var(--background))]/95 border border-[rgb(var(--accent))]/20 shadow-2xl opacity-0 translate-y-2 pointer-events-none group-hover/app-pill:opacity-100 group-hover/app-pill:translate-y-0 group-hover/app-pill:pointer-events-auto group-focus-within/app-pill:opacity-100 group-focus-within/app-pill:translate-y-0 group-focus-within/app-pill:pointer-events-auto transition-all duration-300 z-50 text-[13px] text-[rgb(var(--foreground))]">
               <div className="font-bold text-[rgb(var(--accent))] mb-1">{LAYOUT_COPY.titleBar.appUpdate}</div>
               <div className="text-[12px] text-[rgb(var(--foreground-muted))] mb-2">Upgrade from v{appUpdate.current_version} to v{appUpdate.latest_version}</div>
               
@@ -193,7 +217,7 @@ export const TitleBar: React.FC = () => {
             </button>
             
             {/* Tooltip Hover Card — compact redesign */}
-            <div className="absolute top-6 left-0 w-56 p-3 rounded-xl backdrop-blur-xl bg-[rgb(var(--background))]/95 border border-[rgb(var(--accent))]/20 shadow-2xl opacity-0 translate-y-2 pointer-events-none group-hover/model-pill:opacity-100 group-hover/model-pill:translate-y-0 group-hover/model-pill:pointer-events-auto transition-all duration-300 z-50">
+            <div data-hover-card className="absolute top-6 left-0 w-56 p-3 rounded-lg backdrop-blur-xl bg-[rgb(var(--background))]/95 border border-[rgb(var(--accent))]/20 shadow-2xl opacity-0 translate-y-2 pointer-events-none group-hover/model-pill:opacity-100 group-hover/model-pill:translate-y-0 group-hover/model-pill:pointer-events-auto group-focus-within/model-pill:opacity-100 group-focus-within/model-pill:translate-y-0 group-focus-within/model-pill:pointer-events-auto transition-all duration-300 z-50">
               <div className="flex items-center gap-2 mb-2">
                 <div className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--accent))] animate-pulse shrink-0" />
                 <span className="text-[12px] font-bold text-[rgb(var(--foreground))]">{LAYOUT_COPY.titleBar.modelUpdates}</span>
@@ -222,7 +246,7 @@ export const TitleBar: React.FC = () => {
         )}
       </div>
 
-      <div className="relative z-10 flex items-center h-full">
+      <div className="relative z-10 flex items-center h-full" data-titlebar-window-controls>
         <button 
           onClick={handleMinimize}
           className="flex items-center justify-center w-10 h-full text-[rgb(var(--foreground-muted))] hover:bg-[rgb(var(--foreground))]/5 hover:text-[rgb(var(--foreground))] transition-colors"

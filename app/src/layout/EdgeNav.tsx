@@ -19,7 +19,7 @@ export const EdgeNav: React.FC = () => {
     <nav
       data-edge-nav
       data-spatial-zone="dock"
-      className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[60] pointer-events-auto flex items-center gap-2 px-3 py-1.5 h-[56px] glass-card glass-keep-blur border border-[rgba(var(--accent),0.15)] rounded-full"
+      className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 z-[60] pointer-events-auto flex items-center gap-2 px-3 py-1.5 h-[56px] glass-card glass-keep-blur border border-[rgba(var(--accent),0.15)] rounded-full"
     >
       {/* Localized feather directly behind floating dock nav */}
       <BottomDockFeather className="absolute -inset-x-6 -bottom-3 -top-6 rounded-full pointer-events-none" />

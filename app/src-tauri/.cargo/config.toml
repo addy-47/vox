@@ -10,3 +10,21 @@ rustflags = ["-C", "link-arg=/FORCE:MULTIPLE"]
 [target.i686-pc-windows-msvc]
 rustflags = ["-C", "link-arg=/FORCE:MULTIPLE"]
 
+# ─── Android ────────────────────────────────────────────────────────────────
+# Linker for arm64-v8a. Deliberately a BARE NAME, not an absolute path: cargo
+# resolves a bare linker through $PATH. The NDK provides the driver at
+#   $ANDROID_NDK/toolchains/llvm/prebuilt/<host>/bin/aarch64-linux-android24-clang
+# so exporting that bin directory is the whole setup, and this file stays
+# portable across CI runners and local machines.
+#
+# Cargo does NOT expand environment variables inside config.toml (verified: a
+# literal `$HOME/...` is treated as a path relative to this file), so an absolute
+# path here would hardcode one machine's SDK layout and break CI.
+#
+# A bare `cargo build --target aarch64-linux-android` additionally needs:
+#   ANDROID_NDK                      — llama-cpp-sys build.rs .expect()s this
+#   BINDGEN_EXTRA_CLANG_ARGS_aarch64-linux-android="--sysroot=$SYSROOT -D__ANDROID_API__=24"
+# `pnpm tauri android build` sets the rest itself from ANDROID_HOME.
+[target.aarch64-linux-android]
+linker = "aarch64-linux-android24-clang"
+

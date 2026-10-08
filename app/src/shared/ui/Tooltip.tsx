@@ -160,7 +160,7 @@ export const Tooltip: React.FC<TooltipProps> = React.memo(({
             style={floatingStyles}
             {...getFloatingProps()}
             className={cn(
-              "z-[9999] pointer-events-none flex items-center gap-2 max-w-[280px] w-max select-none rounded-lg px-2.5 py-1.5 text-[11px] font-medium leading-tight shadow-xl backdrop-blur-md transition-opacity duration-150 animate-fade-in",
+              "z-[9999] pointer-events-none flex items-center gap-1.5 max-w-[320px] w-max select-none rounded-md px-2 py-1 text-[12px] font-medium leading-snug shadow-lg transition-opacity duration-150 animate-fade-in",
               "bg-[rgb(var(--card))]/95 text-[rgb(var(--foreground))] border border-[rgba(var(--accent),0.2)]",
               className
             )}
@@ -173,12 +173,12 @@ export const Tooltip: React.FC<TooltipProps> = React.memo(({
               height={5}
             />
             {typeof label === "string" ? (
-              <span className="truncate flex-1 min-w-0">{label}</span>
+              <span className="flex-1 min-w-0 break-words">{label}</span>
             ) : (
               <div className="flex-1 min-w-0 w-full">{label}</div>
             )}
             {resolvedShortcut && (
-              <kbd className="px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold tracking-tight bg-white/10 text-[rgb(var(--foreground-muted))] border border-white/15 shadow-xs shrink-0">
+              <kbd className="font-mono text-[11px] tracking-tight text-[rgb(var(--foreground-muted))]/70 shrink-0">
                 {resolvedShortcut}
               </kbd>
             )}

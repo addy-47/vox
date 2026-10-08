@@ -75,6 +75,14 @@ export const Modal = memo(
     const previouslyFocusedRef = useRef<HTMLElement | null>(null);
     useEffect(() => {
       if (!open) return;
+      // [trace-first-open] Intent-to-paint timing for first-open jank RCA. Logs only.
+      const intentAt = performance.now();
+      console.info(`[trace-first-open] Modal open intent @${intentAt.toFixed(1)}ms`);
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          console.info(`[trace-first-open] Modal first paint +${(performance.now() - intentAt).toFixed(1)}ms`);
+        });
+      });
       previouslyFocusedRef.current = document.activeElement as HTMLElement | null;
       panelRef.current?.focus();
       return () => {
@@ -151,7 +159,7 @@ export const Modal = memo(
               transition={{ duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
               onKeyDown={handlePanelKeyDown}
               className={cn(
-                "relative flex flex-col rounded-3xl overflow-hidden glass-card border border-[rgba(var(--accent),0.12)] [text-shadow:none] outline-none pointer-events-auto transform-gpu will-change-transform contain-paint",
+                "relative flex flex-col rounded-2xl overflow-hidden glass-card border border-[rgba(var(--accent),0.12)] [text-shadow:none] outline-none pointer-events-auto transform-gpu will-change-transform contain-paint",
                 // Responsive default: nearly full-bleed on small screens,
                 // capped on desktop. Consumers override via className.
                 "w-[min(1120px,92vw)] h-[min(760px,88vh)]",
