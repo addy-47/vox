@@ -74,7 +74,31 @@ export interface VoiceSessionContextValue {
   handleResume: () => Promise<void>;
 }
 
+export interface VoiceSessionActionsContextValue {
+  engage: () => Promise<void>;
+  disengage: () => Promise<void>;
+  pause: () => Promise<void>;
+  resume: () => Promise<void>;
+  handlePttStart: () => Promise<void>;
+  handlePttStop: () => Promise<void>;
+  handlePttCancel: () => Promise<void>;
+  togglePtt: () => Promise<void>;
+  submitText: (text: string) => Promise<void>;
+  toggleTemporarySession: () => Promise<void>;
+  setTextModeOpen: (open: boolean) => void;
+  togglePlaybackMute: () => Promise<void>;
+  toggleMicMute: () => Promise<void>;
+  selectSession: (sessionId: number) => Promise<void>;
+  startNewConversation: (projectId?: string) => Promise<void>;
+  dismissRestoreError: () => void;
+  handleEngage: () => Promise<void>;
+  handleEnd: () => Promise<void>;
+  handlePause: () => Promise<void>;
+  handleResume: () => Promise<void>;
+}
+
 const VoiceSessionContext = createContext<VoiceSessionContextValue | null>(null);
+const VoiceSessionActionsContext = createContext<VoiceSessionActionsContextValue | null>(null);
 
 function storeApi() {
   return useSessionStore.getState();
@@ -393,22 +417,42 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
     api.setActiveSessionId(sessionId);
     api.setIsRestoring(true);
     api.setRestoringSessionId(sessionId);
+    api.setRestoreSignal(api.restoreSignal + 1);
+    api.setDialogueHistory([]);
+
+    const restoreStartTime = performance.now();
+    const PULSE_CONVERGE_MS = 1700;
+    console.info(`[trace-restore] selectSession start sessionId=${sessionId} at ${restoreStartTime.toFixed(1)}ms`);
+
     try {
       // Scenarios 2 & 3: continueSessionIpc handles clean disengagement (if active),
       // database continuation retrieval, and auto-engagement into Ready state
-      const result = await continueSessionIpc(sessionId, (state) => storeApi().setInteractionState(state));
+      const result = await continueSessionIpc(sessionId, () => {});
+      const ipcElapsed = performance.now() - restoreStartTime;
+      console.info(`[trace-restore] IPC fetched turns=${result.turns.length} in ${ipcElapsed.toFixed(1)}ms`);
+
       const history: DialogueTurn[] = result.turns.map((t) => ({
         user: t.user_text,
         assistant: t.assistant_text,
         id: t.turn_id,
       }));
-      const api = storeApi();
-      api.setDialogueHistory(history);
-      api.setTurnIdCounter(history.reduce((max, h) => Math.max(max, h.id), 0));
-      api.setActiveSessionId(sessionId);
-      api.setRestoreSignal(api.restoreSignal + 1);
-      api.bumpSessionListVersion();
+
+      // Synchronize with inward pulse convergence so transcript appears precisely when pulse hits orb edge
+      const elapsed = performance.now() - restoreStartTime;
+      const remainingWait = Math.max(0, PULSE_CONVERGE_MS - elapsed);
+      if (remainingWait > 0) {
+        await new Promise((resolve) => setTimeout(resolve, remainingWait));
+      }
+
+      console.info(`[trace-restore] Pulse convergence complete totalElapsed=${(performance.now() - restoreStartTime).toFixed(1)}ms, committing Ready`);
+      const curApi = storeApi();
+      curApi.setDialogueHistory(history);
+      curApi.setTurnIdCounter(history.reduce((max, h) => Math.max(max, h.id), 0));
+      curApi.setActiveSessionId(sessionId);
+      curApi.setInteractionState("Ready");
+      curApi.bumpSessionListVersion();
     } catch (err: unknown) {
+      console.error(`[trace-restore] Error restoring session ${sessionId}:`, err);
       storeApi().setRestoreError(err instanceof Error ? err.message : SESSION_COPY.restoreFailedFallback);
     } finally {
       storeApi().setIsRestoring(false);
@@ -528,11 +572,64 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
     ],
   );
 
-  return <VoiceSessionContext.Provider value={value}>{children}</VoiceSessionContext.Provider>;
+  const actionsValue = useMemo<VoiceSessionActionsContextValue>(
+    () => ({
+      engage,
+      disengage,
+      pause,
+      resume,
+      handlePttStart,
+      handlePttStop,
+      handlePttCancel,
+      togglePtt,
+      submitText,
+      toggleTemporarySession,
+      setTextModeOpen,
+      togglePlaybackMute,
+      toggleMicMute,
+      selectSession,
+      startNewConversation,
+      dismissRestoreError,
+      handleEngage: engage,
+      handleEnd: disengage,
+      handlePause: pause,
+      handleResume: resume,
+    }),
+    [
+      engage,
+      disengage,
+      pause,
+      resume,
+      handlePttStart,
+      handlePttStop,
+      handlePttCancel,
+      togglePtt,
+      submitText,
+      toggleTemporarySession,
+      setTextModeOpen,
+      togglePlaybackMute,
+      toggleMicMute,
+      selectSession,
+      startNewConversation,
+      dismissRestoreError,
+    ],
+  );
+
+  return (
+    <VoiceSessionActionsContext.Provider value={actionsValue}>
+      <VoiceSessionContext.Provider value={value}>{children}</VoiceSessionContext.Provider>
+    </VoiceSessionActionsContext.Provider>
+  );
 };
 
 export function useVoiceSession(): VoiceSessionContextValue {
   const ctx = useContext(VoiceSessionContext);
   if (!ctx) throw new Error("useVoiceSession must be used within VoiceSessionProvider");
+  return ctx;
+}
+
+export function useVoiceSessionActions(): VoiceSessionActionsContextValue {
+  const ctx = useContext(VoiceSessionActionsContext);
+  if (!ctx) throw new Error("useVoiceSessionActions must be used within VoiceSessionProvider");
   return ctx;
 }

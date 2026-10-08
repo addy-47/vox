@@ -713,7 +713,7 @@ pub fn on_end<R: Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &RoutingCon
 
         // Trigger background ingestion sweep to drain all facts enqueued during session
         let state_handle: State<'_, Arc<AppState>> = app_handle.state();
-        spawn_ingestion_sweep(Arc::clone(state_handle.inner()), None);
+        spawn_ingestion_sweep(Arc::clone(state_handle.inner()), Some(app_handle.clone()), None);
     });
 }
 

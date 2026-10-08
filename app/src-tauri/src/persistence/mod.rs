@@ -45,8 +45,9 @@ pub use personal_memory::{
 };
 pub use projects::ProjectRow;
 pub use queue::{
-    count_unfinished_items, enqueue_observation, has_unfinished_items, record_queue_item_failure,
-    update_queue_item_status, QueueItem,
+    count_unfinished_items, enqueue_observation, fetch_ingestion_aggregate_stats,
+    has_unfinished_items, record_queue_item_failure, reset_failed_queue_items,
+    update_queue_item_status, IngestionStatsRecord, QueueItem,
 };
 pub use sessions::{
     ensure_session_exists, fetch_session_project_id, set_session_title, SessionRow, TurnRow,

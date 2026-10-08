@@ -17,6 +17,12 @@ import {
   getActiveObservations,
   type ObservationRecord,
 } from "@/services/memoryService";
+import {
+  getSessions,
+  resolveSessionTitle,
+  type SessionRow,
+} from "@/services/historyService";
+import { onSessionsChanged } from "@/services/eventsService";
 import { usePersonalMemoryDrawer } from "@/shared/hooks/usePersonalMemoryDrawer";
 import { ErrorBoundary, OrbitalLoader } from "@/shared/components/common";
 import { Drawer } from "@/shared/ui/Drawer";
@@ -30,8 +36,9 @@ import {
   MemoryGraph,
   MemoryGraphRef,
   MemoryLegendOverlay,
-  MemorySessionRail,
+  MemoryTimeline,
   MemoryNodeTooltip,
+  SessionNodeTooltip,
   SearchBar,
   GraphControlDock,
   MemoryCategory,
@@ -85,7 +92,12 @@ export const Memory: React.FC = memo(() => {
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [selectedFact, setSelectedFact] = useState<ObservationRecord | null>(null);
   const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null);
-  const { isPanelOpen, closePanel, togglePanel, rightPanel } = usePanelStateContext();
+  const [sessions, setSessions] = useState<SessionRow[]>([]);
+  const [selectedSessionNode, setSelectedSessionNode] = useState<{
+    session: SessionRow;
+    pos: { x: number; y: number };
+  } | null>(null);
+  const { isPanelOpen, closePanel, openPanel, togglePanel, rightPanel } = usePanelStateContext();
   const sessionRailOpen = isPanelOpen("sessions");
   const isRightPanelOpen = isPanelOpen("help") || isPanelOpen("notifications");
   const setSessionRailOpen = (v: boolean) => {
@@ -93,6 +105,52 @@ export const Memory: React.FC = memo(() => {
   };
   const [selectModeEnabled, setSelectModeEnabled] = useState(false);
   const [isLightMode, setIsLightMode] = useState(false);
+
+  // Fetch session list for title resolution and session tooltips
+  const fetchSessions = useCallback(async () => {
+    try {
+      const data = await getSessions();
+      if (mountedRef.current) setSessions(data);
+    } catch (err) {
+      console.warn("[Memory] Failed to load sessions:", err);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchSessions();
+    const unlisten = onSessionsChanged(() => {
+      fetchSessions();
+    });
+    return () => {
+      unlisten();
+    };
+  }, [fetchSessions]);
+
+  const sessionsMap = useMemo(() => {
+    const map = new Map<number, SessionRow>();
+    for (const s of sessions) {
+      map.set(s.id, s);
+    }
+    return map;
+  }, [sessions]);
+
+  const sessionFactsMap = useMemo(() => {
+    const map = new Map<number, ObservationRecord[]>();
+    for (const f of facts) {
+      if (f.session_id !== null) {
+        const list = map.get(f.session_id) || [];
+        list.push(f);
+        map.set(f.session_id, list);
+      }
+    }
+    return map;
+  }, [facts]);
+
+  const selectedFactSessionTitle = useMemo(() => {
+    if (!selectedFact || selectedFact.session_id === null) return null;
+    const s = sessionsMap.get(selectedFact.session_id);
+    return s ? resolveSessionTitle(s) : `${MEMORY_COPY.sessionPrefix}${selectedFact.session_id}`;
+  }, [selectedFact, sessionsMap]);
 
   // Dynamic collision threshold between right panel and left triggers
   const isNarrowCollision = dims.w > 0 ? dims.w < BREAKPOINT_OPPOSITE_COLLISION_MAX : (typeof window !== "undefined" ? window.innerWidth < BREAKPOINT_OPPOSITE_COLLISION_MAX : false);
@@ -230,6 +288,7 @@ export const Memory: React.FC = memo(() => {
   // ── Node & Core Click Handlers ─────────────────────────────────────────────
   const handleSelectNode = useCallback((fact: ObservationRecord | null, pos?: { x: number; y: number }) => {
     setSelectedFact(fact);
+    setSelectedSessionNode(null);
     if (fact && pos) {
       setTooltipPos(pos);
     } else {
@@ -237,27 +296,42 @@ export const Memory: React.FC = memo(() => {
     }
   }, []);
 
+  const handleSelectSessionNode = useCallback((sessionId: string, pos?: { x: number; y: number }) => {
+    setSelectedFact(null);
+    setTooltipPos(null);
+    const sNum = Number(sessionId);
+    const sess = sessions.find((s) => s.id === sNum);
+    if (sess && pos) {
+      setSelectedSessionNode({ session: sess, pos });
+    } else {
+      setSelectedSessionNode(null);
+    }
+  }, [sessions]);
+
   const handleSelectSession = useCallback((sId: string | null) => {
     setSelectedSessionId(sId);
-    if (sId) {
+    if (sId === null) {
+      setSelectedSessionNode(null);
+    } else {
       graphRef.current?.flyToSession(sId);
     }
   }, []);
 
   const handleSelectFactFromRail = useCallback((fact: ObservationRecord) => {
+    setSelectedSessionNode(null);
     setSelectedFact(fact);
     setTooltipPos({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
     graphRef.current?.flyToNode(fact.id);
   }, []);
-
 
   const handleCloseSessionRail = useCallback(() => {
     setSessionRailOpen(false);
   }, []);
 
   const handleCoreClick = useCallback(() => {
-    // Dismiss floating tooltip before opening drawer to release its overlay Escape listener
+    // Dismiss floating tooltips before opening drawer to release overlay Escape listener
     setSelectedFact(null);
+    setSelectedSessionNode(null);
     setTooltipPos(null);
     drawer.openDrawer();
   }, [drawer]);
@@ -266,6 +340,11 @@ export const Memory: React.FC = memo(() => {
   const handleZoomIn = useCallback(() => graphRef.current?.zoomIn(), []);
   const handleZoomOut = useCallback(() => graphRef.current?.zoomOut(), []);
   const handleRefreshDock = useCallback(() => {
+    setSelectedSessionId(null);
+    setSelectedSessionNode(null);
+    setSelectedFact(null);
+    setTooltipPos(null);
+    graphRef.current?.recenter();
     refresh(true);
     drawer.refreshPersonalMemory(true);
   }, [refresh, drawer]);
@@ -361,7 +440,7 @@ export const Memory: React.FC = memo(() => {
               : "pointer-events-auto"
           )}
         >
-          <Tooltip label="Session history" side="bottom">
+          <Tooltip label="Memory Queue" side="bottom">
             <button
               onClick={() => togglePanel("sessions")}
               aria-label="Open session rail"
@@ -429,10 +508,10 @@ export const Memory: React.FC = memo(() => {
           document.body
         )}
 
-      {/* ── Left Edge Rail: Memory Session History & Compactions — minimal header like SessionPanel ── */}
+      {/* ── Left Edge Rail: Ingestion Timeline & Session Episodic Memories ── */}
       <EdgePanel side="left" open={sessionRailOpen} onClose={handleCloseSessionRail} minimalHeader>
-        <ErrorBoundary name="MemorySessionRail">
-          <MemorySessionRail
+        <ErrorBoundary name="MemoryTimeline">
+          <MemoryTimeline
             facts={facts}
             selectedSessionId={selectedSessionId}
             selectedFactId={selectedFact?.id ?? null}
@@ -468,9 +547,10 @@ export const Memory: React.FC = memo(() => {
               selectedFactId={selectedFact?.id ?? null}
               selectedSessionId={selectedSessionId}
               onSelectNode={handleSelectNode}
+              onSelectSessionNode={handleSelectSessionNode}
               onCoreClick={handleCoreClick}
               selectModeEnabled={selectModeEnabled}
-              paused={drawerOpen}
+              paused={drawerOpen || sessionRailOpen}
             />
           </ErrorBoundary>
         </motion.div>
@@ -481,7 +561,24 @@ export const Memory: React.FC = memo(() => {
         <MemoryNodeTooltip
           factDetail={selectedFact}
           pos={tooltipPos}
+          sessionTitle={selectedFactSessionTitle}
           onClose={handleTooltipClose}
+          isLightMode={isLightMode}
+        />
+      )}
+
+      {/* ── Floating Session Node Detail Tooltip ── */}
+      {selectedSessionNode && !drawerOpen && (
+        <SessionNodeTooltip
+          session={selectedSessionNode.session}
+          facts={sessionFactsMap.get(selectedSessionNode.session.id) || []}
+          pos={selectedSessionNode.pos}
+          onClose={() => setSelectedSessionNode(null)}
+          onFocusSession={(sId) => {
+            setSelectedSessionId(sId);
+            openPanel("sessions");
+          }}
+          isLightMode={isLightMode}
         />
       )}
 

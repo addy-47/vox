@@ -79,6 +79,7 @@ export function useMemoryGraphScene({
   const coreInnerRingRef = useRef<THREE.Mesh | null>(null);
   const coreOuterRingRef = useRef<THREE.Mesh | null>(null);
   const wakeLoopRef = useRef<() => void>(() => {});
+  const renderOnceRef = useRef<() => void>(() => {});
 
   // Graph Data Refs
   const gNodesRef = useRef<GNode[]>([]);
@@ -244,7 +245,11 @@ export function useMemoryGraphScene({
       const isSessionSelected = selSessionId !== null && nodeSessionId === selSessionId;
       const isOtherSession = selSessionId !== null && nodeSessionId !== selSessionId && node.collection !== "personal";
 
-      const colHexMain = categoryColorMap[node.collection] ?? dynamicPalette.objective.main;
+      const coreAccentHex = isLight ? "#0891b2" : "#00dbe9";
+      const isAnchor = Boolean(node.isSessionAnchor || node.id.startsWith("anchor_"));
+      const colHexMain = isAnchor
+        ? coreAccentHex
+        : (categoryColorMap[node.collection] ?? dynamicPalette.objective.main);
 
       let radius: number;
       let colHex: string;
@@ -253,27 +258,23 @@ export function useMemoryGraphScene({
         radius = 0.001;
         colHex = colHexMain;
       } else if (isSelected) {
-        // Industry-standard selection: preserve semantic category color with refined ~30% enlargement
-        const isAnchor = node.id.startsWith("anchor_");
-        radius = isAnchor ? 8.8 : node.collection === "personal" ? 7.6 : 5.6;
+        // Selected node: refined enlargement
+        radius = isAnchor ? 9.5 : node.collection === "personal" ? 7.6 : 5.6;
         colHex = colHexMain;
       } else if (hasSearch && !matchesSearch) {
         radius = 1.2;
         colHex = isLight ? "#94a3b8" : "#283344";
       } else if (isOtherSession) {
-        // Dimmed non-selected session facts: smaller radius and muted tone
-        const isAnchor = node.id.startsWith("anchor_");
-        radius = isAnchor ? 2.2 : 1.6;
+        // Non-selected session facts drop to ultra-subtle starlight dots
+        radius = isAnchor ? 1.0 : 0.5;
         colHex = isLight ? "#cbd5e1" : "#1e293b";
       } else if (isSessionSelected) {
         // Vividly highlighted session nodes
-        const isAnchor = node.id.startsWith("anchor_");
-        radius = isAnchor ? 8.0 : node.collection === "personal" ? 6.5 : 5.4;
+        radius = isAnchor ? 8.8 : node.collection === "personal" ? 6.5 : 5.4;
         colHex = colHexMain;
       } else {
         // Normal state
-        const isAnchor = node.id.startsWith("anchor_");
-        radius = isAnchor ? 6.2 : node.collection === "personal" ? 5.5 : 3.8;
+        radius = isAnchor ? 7.2 : node.collection === "personal" ? 5.5 : 3.8;
         colHex = colHexMain;
       }
 
@@ -286,8 +287,8 @@ export function useMemoryGraphScene({
       color.set(colHex);
       instancedMesh.setColorAt(i, color);
 
-      // Ring Halo Matrix (only active for selected facts or highlighted nodes)
-      if (isSelected || (isSessionSelected && node.collection === "personal")) {
+      // Ring Halo Matrix (active for selected facts, highlighted personal nodes, or active session anchor)
+      if (isSelected || (isSessionSelected && (node.collection === "personal" || isAnchor))) {
         const ringScale = isSelected ? radius * 1.55 : radius * 1.35;
         dummy.position.set(node.x, node.y, node.z);
         dummy.scale.set(ringScale, ringScale, ringScale);
@@ -381,6 +382,9 @@ export function useMemoryGraphScene({
       // If a collection filter is active, only show conduits for the selected session's anchor
       if (hasCollectionFilter && selSessionId === null) return;
 
+      // Invariant: When a session is selected, all other session conduits VANISH completely!
+      if (selSessionId !== null && cond.sessionId !== selSessionId) return;
+
       posArray[writePtr + 0] = cond.p0.x;
       posArray[writePtr + 1] = cond.p0.y;
       posArray[writePtr + 2] = cond.p0.z;
@@ -390,21 +394,14 @@ export function useMemoryGraphScene({
 
       const isFactSession = selNodeSessionId !== null && cond.sessionId === selNodeSessionId;
       const isHighlight = (selSessionId !== null && cond.sessionId === selSessionId) || isFactSession;
-      const isDimmed =
-        (selSessionId !== null && cond.sessionId !== selSessionId) ||
-        (selNodeSessionId !== null && cond.sessionId !== selNodeSessionId);
 
       SCRATCH_COLOR_1.set(cond.col0);
       SCRATCH_COLOR_2.set(cond.col1);
 
-      if (isDimmed) {
-        const dimHex = isLight ? "#cbd5e1" : "#1e293b";
-        SCRATCH_COLOR_1.set(dimHex);
-        SCRATCH_COLOR_2.set(dimHex);
-      } else if (isHighlight) {
+      if (isHighlight) {
         // Extra vibrant for active branch
-        SCRATCH_COLOR_1.multiplyScalar(1.2);
-        SCRATCH_COLOR_2.multiplyScalar(1.2);
+        SCRATCH_COLOR_1.multiplyScalar(1.25);
+        SCRATCH_COLOR_2.multiplyScalar(1.25);
       }
 
       colArray[writePtr + 0] = SCRATCH_COLOR_1.r;
@@ -438,6 +435,18 @@ export function useMemoryGraphScene({
         if (!isNodeLive(tgt)) return;
       }
 
+      const tgtSessionId = tgt.sessionId ?? (tgt.factRecord?.session_id !== null ? String(tgt.factRecord.session_id) : null);
+      const isSessionBranch = selSessionId !== null && (
+        tgtSessionId === selSessionId ||
+        link.fromId === `anchor_${selSessionId}` ||
+        link.toId === `anchor_${selSessionId}`
+      );
+
+      // Invariant: When a session is selected, all links outside that session branch (except CORE_IDENTITY) VANISH completely!
+      if (selSessionId !== null && !isSessionBranch && link.relation !== "CORE_IDENTITY") {
+        return;
+      }
+
       let srcX = 0, srcY = 0, srcZ = 0;
       if (link.sourceIndex === -1) {
         srcX = 0;
@@ -466,16 +475,13 @@ export function useMemoryGraphScene({
       posArray[writePtr + 4] = tgt.y;
       posArray[writePtr + 5] = tgt.z;
 
-      const tgtSessionId = tgt.sessionId ?? (tgt.factRecord?.session_id !== null ? String(tgt.factRecord.session_id) : null);
-      const isSessionBranch = selSessionId !== null && (
-        tgtSessionId === selSessionId ||
-        link.fromId === `anchor_${selSessionId}` ||
-        link.toId === `anchor_${selSessionId}`
-      );
       const isFactConnected = selFactId !== null && (link.fromId === selFactId || link.toId === selFactId);
-      const isDimmed =
-        (selSessionId !== null && !isSessionBranch && link.relation !== "CORE_IDENTITY") ||
-        (selFactId !== null && !isFactConnected && link.relation !== "CORE_IDENTITY");
+
+      // Sibling edge within the same session as the selected node
+      const isSameSessionAsSelectedNode = selNodeSessionId !== null && tgtSessionId === selNodeSessionId;
+
+      // Dimming rule: only applies when a fact is selected inside the session
+      const isDimmed = selFactId !== null && isSameSessionAsSelectedNode && !isFactConnected && link.relation !== "CORE_IDENTITY";
 
       SCRATCH_COLOR_1.set(link.color);
 
@@ -652,7 +658,6 @@ export function useMemoryGraphScene({
         const sessionAnchor = new THREE.Vector3(trunkX, trunkY, trunkZ);
 
         const dominantCat = (clusterFacts[0]?.fact_type as MemoryCategory) || "objective";
-        const clusterPalette = dynamicPalette[dominantCat] ?? dynamicPalette.objective;
 
         sessionAnchors.push({
           sId: sKey,
@@ -660,7 +665,7 @@ export function useMemoryGraphScene({
           x: trunkX,
           y: trunkY,
           z: trunkZ,
-          color: clusterPalette.main,
+          color: coreAccentHex,
           timestamp: sessionTime,
         });
 
@@ -701,8 +706,8 @@ export function useMemoryGraphScene({
           conduits.push({
             p0: prevPoint.clone(),
             p1: pt.clone(),
-            col0: t < 0.5 ? coreAccentHex : clusterPalette.main,
-            col1: clusterPalette.main,
+            col0: coreAccentHex,
+            col1: coreAccentHex,
             sessionId: sKey,
           });
           prevPoint = pt;
@@ -717,7 +722,8 @@ export function useMemoryGraphScene({
           status: "active",
           factRecord: clusterFacts[0],
           sessionId: sKey,
-          color: clusterPalette.main,
+          isSessionAnchor: true,
+          color: coreAccentHex,
           degree: nCluster,
           x: trunkX,
           y: trunkY,
@@ -844,17 +850,14 @@ export function useMemoryGraphScene({
     const anchor = anchors.find((a) => a.sId === sessionId);
     if (!anchor) return;
 
-    const cam = cameraRef.current;
-    const camPos = cam ? cam.position : new THREE.Vector3(0, 0, 3100);
     const anchorVec = new THREE.Vector3(anchor.x, anchor.y, anchor.z);
-    const dir = new THREE.Vector3().subVectors(camPos, anchorVec);
-    if (dir.lengthSq() < 1) dir.set(0, 0, 1);
-    else dir.normalize();
-    const camTarget = anchorVec.clone().addScaledVector(dir, 460);
+    const dist = anchorVec.length();
+    const u = dist > 1 ? anchorVec.clone().normalize() : new THREE.Vector3(0, 0, 1);
+    const camTarget = anchorVec.clone().addScaledVector(u, 440);
 
     flyToTargetRef.current = {
       cam: { x: camTarget.x, y: camTarget.y, z: camTarget.z },
-      target: { x: anchor.x, y: anchor.y, z: anchor.z },
+      target: { x: 0, y: 0, z: 0 },
     };
     wakeLoopRef.current();
   }, []);
@@ -864,17 +867,14 @@ export function useMemoryGraphScene({
     const node = gNodes.find((n) => n.id === factId);
     if (!node) return;
 
-    const cam = cameraRef.current;
-    const camPos = cam ? cam.position : new THREE.Vector3(0, 0, 3100);
     const nodeVec = new THREE.Vector3(node.x, node.y, node.z);
-    const dir = new THREE.Vector3().subVectors(camPos, nodeVec);
-    if (dir.lengthSq() < 1) dir.set(0, 0, 1);
-    else dir.normalize();
-    const camTarget = nodeVec.clone().addScaledVector(dir, 380);
+    const dist = nodeVec.length();
+    const u = dist > 1 ? nodeVec.clone().normalize() : new THREE.Vector3(0, 0, 1);
+    const camTarget = nodeVec.clone().addScaledVector(u, 380);
 
     flyToTargetRef.current = {
       cam: { x: camTarget.x, y: camTarget.y, z: camTarget.z },
-      target: { x: node.x, y: node.y, z: node.z },
+      target: { x: 0, y: 0, z: 0 },
     };
     wakeLoopRef.current();
   }, []);
@@ -1121,8 +1121,19 @@ export function useMemoryGraphScene({
     // any cursor resting on the canvas held the loop at 30 FPS forever.
     const MOVE_WINDOW_MS = 300;
 
+    const renderOnce = () => {
+      if (rendererRef.current && sceneRef.current && cameraRef.current) {
+        controls.update();
+        rendererRef.current.render(sceneRef.current, cameraRef.current);
+      }
+    };
+    renderOnceRef.current = renderOnce;
+
     const wakeLoop = () => {
-      if (pausedRef.current) return;
+      if (pausedRef.current) {
+        renderOnce();
+        return;
+      }
       lastActivityTimestamp = performance.now();
       if (animFrameRef.current === null) {
         animFrameRef.current = requestAnimationFrame(render);
@@ -1225,6 +1236,7 @@ export function useMemoryGraphScene({
     // Teardown
     return () => {
       wakeLoopRef.current = () => {};
+      renderOnceRef.current = () => {};
       controls.removeEventListener("change", onControlsChange);
       domEl.removeEventListener("pointermove", onPointerMoveWake);
       domEl.removeEventListener("pointerdown", wakeLoop);
@@ -1240,7 +1252,14 @@ export function useMemoryGraphScene({
         renderer.domElement.width = 1;
         renderer.domElement.height = 1;
       }
-      renderer.forceContextLoss();
+      try {
+        const gl = renderer.getContext();
+        if (gl && !gl.isContextLost()) {
+          renderer.forceContextLoss();
+        }
+      } catch {
+        // Context may already be dropped by browser
+      }
       renderer.dispose();
       if (renderer.domElement.parentNode) {
         renderer.domElement.parentNode.removeChild(renderer.domElement);

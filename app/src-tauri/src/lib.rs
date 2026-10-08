@@ -46,9 +46,10 @@ use crate::{
             get_provider_caps, list_llm_models, probe_model_capabilities, setup_remote_server,
         },
         memory::{
-            consolidate_personal_memory, get_memory_revisions, get_observations,
-            get_personal_memory, get_personal_memory_versions, regenerate_personal_memory,
-            resolve_memory_revisions, save_personal_memory, set_active_personal_memory_version,
+            consolidate_personal_memory, get_ingestion_stats, get_memory_revisions,
+            get_observations, get_personal_memory, get_personal_memory_versions,
+            regenerate_personal_memory, resolve_memory_revisions, save_personal_memory,
+            set_active_personal_memory_version,
         },
         monitoring::{get_profiler_snapshot, get_runtime_snapshot, record_memory_profile_event},
         notifications::{
@@ -391,7 +392,7 @@ pub fn run() {
                     let _ = reconcile_crashed_queue_on_boot(&conn).await;
                 });
             }
-            spawn_ingestion_sweep(Arc::clone(&state_arc), None);
+            spawn_ingestion_sweep(Arc::clone(&state_arc), Some(app.handle().clone()), None);
             let is_daily_cadence = state_arc
                 .settings
                 .read()
@@ -715,6 +716,7 @@ pub fn run() {
             get_personal_memory_versions,
             set_active_personal_memory_version,
             get_observations,
+            get_ingestion_stats,
             get_memory_revisions,
             resolve_memory_revisions,
             // Voices

@@ -204,3 +204,19 @@ export function getActiveObservations(projectId?: string): Promise<ObservationRe
   return getObservations(projectId, "active");
 }
 
+export interface IngestionStats {
+  total: number;
+  pending: number;
+  processing: number;
+  completed: number;
+  failed: number;
+}
+
+/**
+ * Returns aggregate counts of memory ingestion queue and active facts.
+ */
+export function getIngestionStats(): Promise<IngestionStats> {
+  return invoke("get_ingestion_stats");
+}
+
+

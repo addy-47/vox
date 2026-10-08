@@ -334,6 +334,7 @@ export const Home = memo(() => {
               telemetryRef={telemetryRef}
               interactionState={interactionState}
               isSleeping={isSleeping}
+              paused={isPanelOpen("sessions") || isPanelOpen("notifications") || isPanelOpen("help")}
               onFirstFrame={handleOrbFirstFrame}
             />
           </ErrorBoundary>

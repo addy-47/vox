@@ -93,7 +93,12 @@ export const MemoryLegendOverlay = memo<MemoryLegendOverlayProps>(({
                 />
 
                 {/* Category Label */}
-                <span className="truncate">{label}</span>
+                <span className="truncate">
+                  {label}{" "}
+                  <span className="opacity-60 font-normal text-[11px]">
+                    ({count})
+                  </span>
+                </span>
               </button>
             </Tooltip>
           );

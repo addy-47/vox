@@ -17,7 +17,7 @@ use crate::{
     services::{
         dictation::init_dictation_hotkey_listener,
         memory::{
-            start_consolidation_scheduler, stop_consolidation_scheduler,
+            spawn_ingestion_sweep, start_consolidation_scheduler, stop_consolidation_scheduler,
             unload_memory_pipeline_onnx_models,
         },
         tts::TtsCommand,
@@ -345,6 +345,16 @@ pub async fn handle_setting_side_effects<R: tauri::Runtime>(
                     unload_memory_pipeline_onnx_models();
                     log::info!("[Settings] Memory embedder evicted on retrieval disable");
                 });
+            }
+        } else if key == "pipeline_processing_enabled" {
+            let enabled = value.as_bool().unwrap_or(false);
+            if enabled {
+                let state_arc = app.state::<Arc<AppState>>().inner().clone();
+                spawn_ingestion_sweep(state_arc, Some(app.clone()), None);
+                log::info!("[Settings] Pipeline processing enabled; spawned ingestion sweep");
+            } else if let Some(token) = state.ingestion_cancel.lock().take() {
+                token.cancel();
+                log::info!("[Settings] Pipeline processing disabled; cancelled running ingestion sweep");
             }
         }
     } else if domain == "working_memory" && key == "web_search_enabled" {

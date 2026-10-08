@@ -30,8 +30,11 @@ export const TopRightCluster: React.FC<TopRightClusterProps> = memo(
     const isHistory = location.pathname === "/history";
     const drillDownSession = useHistoryFilterStore((s) => s.drillDownSession);
     const isTemporarySession = useSessionStore((s) => s.isTemporarySession);
+    const interactionState = useSessionStore((s) => s.interactionState);
+    const isIdle = interactionState === "Idle";
 
     const toggleTemporarySession = useCallback(async () => {
+      if (!isIdle) return;
       const next = !useSessionStore.getState().isTemporarySession;
       useSessionStore.getState().setIsTemporarySession(next);
       try {
@@ -39,7 +42,7 @@ export const TopRightCluster: React.FC<TopRightClusterProps> = memo(
       } catch {
         // Best-effort IPC notification
       }
-    }, []);
+    }, [isIdle]);
 
     const { layout } = useViewportResize();
     const isCompact = layout === "compact";
@@ -52,16 +55,26 @@ export const TopRightCluster: React.FC<TopRightClusterProps> = memo(
         {isSettings && isCompact && <ThemeToggleButton />}
         {isSettings && <RestoreDefaultsButton />}
         {isHome && (
-          <Tooltip label={HOME_CONTROLS_COPY.temporary.toggleTooltip} side="bottom">
+          <Tooltip
+            label={
+              isIdle
+                ? HOME_CONTROLS_COPY.temporary.toggleTooltip
+                : "Temporary session toggle only available when idle"
+            }
+            side="bottom"
+          >
             <button
               onClick={toggleTemporarySession}
+              disabled={!isIdle}
               aria-pressed={isTemporarySession}
               data-edge-trigger="right"
               className={cn(
-                "inline-flex items-center justify-center w-8 h-8 rounded-xl border transition-colors shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))] cursor-pointer",
-                isTemporarySession
-                  ? "border-[rgba(var(--accent),0.5)] bg-[rgba(var(--accent),0.12)] text-[rgb(var(--accent))] shadow-[0_0_12px_rgba(var(--accent),0.2)] hover:bg-[rgba(var(--accent),0.18)]"
-                  : "border-[rgba(var(--border),0.15)] bg-[rgba(var(--card),0.5)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:border-[rgba(var(--accent),0.3)] hover:bg-[rgba(var(--accent),0.06)]"
+                "inline-flex items-center justify-center w-8 h-8 rounded-xl border transition-colors shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))]",
+                !isIdle
+                  ? "border-[rgba(var(--border),0.08)] bg-[rgba(var(--card),0.25)] text-[rgb(var(--foreground-muted))]/40 opacity-50 cursor-not-allowed pointer-events-none"
+                  : isTemporarySession
+                  ? "border-[rgba(var(--accent),0.5)] bg-[rgba(var(--accent),0.12)] text-[rgb(var(--accent))] shadow-[0_0_12px_rgba(var(--accent),0.2)] hover:bg-[rgba(var(--accent),0.18)] cursor-pointer"
+                  : "border-[rgba(var(--border),0.15)] bg-[rgba(var(--card),0.5)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:border-[rgba(var(--accent),0.3)] hover:bg-[rgba(var(--accent),0.06)] cursor-pointer"
               )}
               aria-label={HOME_CONTROLS_COPY.temporary.toggleAriaLabel}
             >

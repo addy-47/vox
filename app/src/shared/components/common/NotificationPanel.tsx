@@ -17,7 +17,6 @@ import {
   AlertCircle,
   Clock,
   Calendar,
-  ChevronRight,
   RotateCw,
   type LucideIcon,
 } from "lucide-react";
@@ -158,7 +157,7 @@ const NotificationItem = memo(
     isInitialUnread,
     onPrimary,
     onDismiss,
-    onOpen,
+    onOpen: _onOpen,
   }: {
     group: RolledUpNotification;
     isWorking: boolean;
@@ -175,7 +174,6 @@ const NotificationItem = memo(
     const unread = isInitialUnread ?? group.hasUnread;
     const isCritical = notif.severity === "critical";
     const isWarning = notif.severity === "warning";
-    const hasSession = notif.session_id !== null && notif.session_id !== undefined;
     const kicker = NOTIFICATION_COPY.categoryKicker[category] ?? NOTIFICATION_COPY.categoryKicker.pipeline;
     const blurb =
       NOTIFICATION_COPY.categoryBlurb[category] ?? NOTIFICATION_COPY.categoryBlurb.pipeline;
@@ -187,10 +185,6 @@ const NotificationItem = memo(
     const handleDismiss = useCallback(() => {
       onDismiss(group.key);
     }, [onDismiss, group.key]);
-
-    const handleOpen = useCallback(() => {
-      onOpen(notif);
-    }, [onOpen, notif]);
 
     const turnMeta = formatTurnMeta(metadataTurnCount(notif));
     const resolution = metadataResolution(notif);
@@ -333,7 +327,7 @@ const NotificationItem = memo(
             </Tooltip>
           ) : null}
 
-          {(hasSession || !receipt) && (
+          {/* {(hasSession || !receipt) && (
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); handleOpen(); }}
@@ -342,7 +336,7 @@ const NotificationItem = memo(
               {NOTIFICATION_COPY.view}
               <ChevronRight size={10} />
             </button>
-          )}
+          )} */}
         </div>
       </div>
     );

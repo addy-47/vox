@@ -19,6 +19,16 @@ pub struct QueueItem {
     pub processed_at: Option<i64>,
 }
 
+/// Aggregate counters for memory ingestion and active facts.
+#[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]
+pub struct IngestionStatsRecord {
+    pub total: i64,
+    pub pending: i64,
+    pub processing: i64,
+    pub completed: i64,
+    pub failed: i64,
+}
+
 /// Enqueues a newly extracted observation into `memory_ingestion_queue` with status 'pending'.
 pub async fn enqueue_observation(
     conn: &Connection,
@@ -159,32 +169,24 @@ pub async fn update_queue_item_status(
     Ok(())
 }
 
-/// Records a failure on a queue item, incrementing its retry count, requeueing at the same
-/// stage's input (`retry_status`) until 3 failures, then setting status to 'failed'.
+/// Records a failure on a queue item, incrementing its retry count and setting status to 'failed'
+/// for the current sweep with error details. The item will automatically be retried on the next sweep.
 pub async fn record_queue_item_failure(
     conn: &Connection,
     id: i64,
     retry_count: i64,
-    retry_status: &str,
     error_msg: &str,
 ) -> Result<()> {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as i64;
-    let next_retry = retry_count + 1;
-    let new_status = if next_retry >= 3 {
-        "failed"
-    } else {
-        retry_status
-    };
     conn.execute(
         "UPDATE memory_ingestion_queue
-         SET status = ?, retry_count = ?, error_msg = ?, processed_at = ?
+         SET status = 'failed', retry_count = ?, error_msg = ?, processed_at = ?
          WHERE id = ?",
         (
-            new_status.to_string(),
-            next_retry,
+            retry_count + 1,
             Some(error_msg.to_string()),
             now,
             id,
@@ -194,11 +196,28 @@ pub async fn record_queue_item_failure(
     Ok(())
 }
 
-/// Returns true when any ingestion queue item is not yet finished (`completed`/`failed`).
+/// Resets failed queue items back to 'pending' so that the next ingestion sweep retries them automatically.
+pub async fn reset_failed_queue_items(conn: &Connection) -> Result<usize> {
+    let rows_affected = conn
+        .execute(
+            "UPDATE memory_ingestion_queue SET status = 'pending' WHERE status = 'failed'",
+            (),
+        )
+        .await?;
+    if rows_affected > 0 {
+        log::info!(
+            "[Persistence::Queue] Reset {} failed ingestion queue items to pending for sweep retry",
+            rows_affected
+        );
+    }
+    Ok(rows_affected as usize)
+}
+
+/// Returns true when any ingestion queue item is not yet finished (`completed`).
 pub async fn has_unfinished_items(conn: &Connection) -> Result<bool> {
     let mut rows = conn
         .query(
-            "SELECT id FROM memory_ingestion_queue WHERE status NOT IN ('completed', 'failed') LIMIT 1",
+            "SELECT id FROM memory_ingestion_queue WHERE status != 'completed' LIMIT 1",
             (),
         )
         .await?;
@@ -209,7 +228,7 @@ pub async fn has_unfinished_items(conn: &Connection) -> Result<bool> {
 pub async fn count_unfinished_items(conn: &Connection) -> Result<i64> {
     let mut rows = conn
         .query(
-            "SELECT COUNT(*) FROM memory_ingestion_queue WHERE status NOT IN ('completed', 'failed')",
+            "SELECT COUNT(*) FROM memory_ingestion_queue WHERE status != 'completed'",
             (),
         )
         .await?;
@@ -221,25 +240,11 @@ pub async fn count_unfinished_items(conn: &Connection) -> Result<i64> {
 
 /// Reconciles items left in indeterminate processing states on boot.
 pub async fn reconcile_crashed_queue_on_boot(conn: &Connection) -> Result<usize> {
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as i64;
-
-    let reset_failed = conn
-        .execute(
-            "UPDATE memory_ingestion_queue
-             SET status = 'failed', processed_at = ?, error_msg = 'Process crashed while processing batch (max retries exceeded)'
-             WHERE status IN ('stage1_processing', 'stage2_processing') AND retry_count >= 3",
-            (now,),
-        )
-        .await?;
-
     let reset_s1 = conn
         .execute(
             "UPDATE memory_ingestion_queue
              SET status = 'pending', retry_count = retry_count + 1
-             WHERE status = 'stage1_processing' AND retry_count < 3",
+             WHERE status = 'stage1_processing'",
             (),
         )
         .await?;
@@ -248,21 +253,70 @@ pub async fn reconcile_crashed_queue_on_boot(conn: &Connection) -> Result<usize>
         .execute(
             "UPDATE memory_ingestion_queue
              SET status = 'stage1_done', retry_count = retry_count + 1
-             WHERE status = 'stage2_processing' AND retry_count < 3",
+             WHERE status = 'stage2_processing'",
             (),
         )
         .await?;
 
-    let total = reset_failed + reset_s1 + reset_s2;
+    let total = reset_s1 + reset_s2;
     if total > 0 {
         log::info!(
-            "[Persistence::Queue] Reconciled {} crashed queue items ({} failed, {} reset to pending, {} reset to stage1_done)",
+            "[Persistence::Queue] Reconciled {} crashed queue items ({} reset to pending, {} reset to stage1_done)",
             total,
-            reset_failed,
             reset_s1,
             reset_s2
         );
     }
 
     Ok(total as usize)
+}
+
+/// Returns aggregate ingestion queue and active facts counts.
+pub async fn fetch_ingestion_aggregate_stats(conn: &Connection) -> Result<IngestionStatsRecord> {
+    let mut rows = conn
+        .query(
+            "SELECT 
+                COUNT(*) as total,
+                SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending,
+                SUM(CASE WHEN status IN ('stage1_processing', 'stage1_done', 'stage2_processing') THEN 1 ELSE 0 END) as processing,
+                SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed,
+                SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed
+             FROM memory_ingestion_queue",
+            (),
+        )
+        .await?;
+
+    let (pending, processing, q_completed, failed) = if let Some(row) = rows.next().await? {
+        (
+            row.get::<Option<i64>>(1)?.unwrap_or(0),
+            row.get::<Option<i64>>(2)?.unwrap_or(0),
+            row.get::<Option<i64>>(3)?.unwrap_or(0),
+            row.get::<Option<i64>>(4)?.unwrap_or(0),
+        )
+    } else {
+        (0, 0, 0, 0)
+    };
+
+    let mut facts_rows = conn
+        .query(
+            "SELECT COUNT(*) FROM memory_facts WHERE status IN ('active', 'integrated')",
+            (),
+        )
+        .await?;
+    let facts_count = if let Some(r) = facts_rows.next().await? {
+        r.get::<Option<i64>>(0)?.unwrap_or(0)
+    } else {
+        0
+    };
+
+    let completed = q_completed.max(facts_count);
+    let total = pending + processing + completed + failed;
+
+    Ok(IngestionStatsRecord {
+        total,
+        pending,
+        processing,
+        completed,
+        failed,
+    })
 }

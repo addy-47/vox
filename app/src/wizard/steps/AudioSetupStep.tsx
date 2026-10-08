@@ -30,11 +30,11 @@ const DeviceRow = React.memo(({ name, selected, onSelect }: {
         : "glass text-[rgb(var(--foreground-muted))]"
     )}
   >
-    <div className="flex items-center gap-3">
-      <Mic className={cn("w-4 h-4 transition-colors", selected ? "text-[rgb(var(--accent))]" : "text-[rgb(var(--foreground-muted))]/40")} />
-      <span className="text-[12px] font-bold break-words min-w-0 flex-1 uppercase tracking-tight">{name}</span>
+    <div className="flex items-center gap-3 min-w-0 flex-1">
+      <Mic className={cn("w-4 h-4 shrink-0 transition-colors", selected ? "text-[rgb(var(--accent))]" : "text-[rgb(var(--foreground-muted))]/40")} />
+      <span className="text-xs sm:text-[13px] font-medium break-words min-w-0 flex-1">{name}</span>
     </div>
-    {selected && <Check className="w-4 h-4 text-[rgb(var(--accent))]" />}
+    {selected && <Check className="w-4 h-4 text-[rgb(var(--accent))] shrink-0" />}
   </button>
 ));
 DeviceRow.displayName = "DeviceRow";
@@ -129,11 +129,11 @@ export const AudioSetupStep: React.FC<Props> = ({ onNext, onBack }) => {
  
       <div className="flex-1 flex flex-col gap-6 min-h-0">
         {/* Live Analysis Card */}
-        <div className="flex-shrink-0 p-5 glass relative overflow-hidden">
+        <div className="flex-shrink-0 p-4 sm:p-5 glass rounded-xl relative overflow-hidden">
             <div className="absolute inset-0 bg-gradient-to-br from-[rgb(var(--accent))]/5 to-transparent opacity-50 pointer-events-none" />
             
-            <div className="relative z-10 flex items-center gap-6">
-            <div className="relative">
+            <div className="relative z-10 flex items-center gap-4 sm:gap-6">
+            <div className="relative shrink-0">
                 {/* Relaxed steady ambient glow when mic is active */}
                 {selected && (
                   <div 
@@ -142,18 +142,18 @@ export const AudioSetupStep: React.FC<Props> = ({ onNext, onBack }) => {
                   />
                 )}
                 <div className={cn(
-                  "w-14 h-14 rounded-2xl flex items-center justify-center transition-all duration-300 relative z-10 border",
+                  "w-12 h-12 sm:w-14 sm:h-14 rounded-2xl flex items-center justify-center transition-colors relative z-10 border",
                   selected 
                     ? "bg-[rgb(var(--accent))]/10 border-[rgb(var(--accent))]/20 text-[rgb(var(--accent))] shadow-[0_0_20px_rgba(var(--accent),0.15)]" 
                     : "bg-[rgba(var(--foreground),0.05)] border-transparent text-[rgb(var(--foreground-muted))]/50"
                 )}>
-                  <AudioWaveform className="w-7 h-7" />
+                  <AudioWaveform className="w-6 h-6 sm:w-7 sm:h-7" />
                 </div>
             </div>
     
-            <div className="flex-1">
+            <div className="flex-1 min-w-0">
                 <div className="flex items-center justify-between mb-2">
-                <span className="text-[12px] font-black text-[rgb(var(--foreground))]/80 uppercase tracking-widest flex items-center gap-2">
+                <span className="text-[11px] sm:text-[12px] font-bold text-[rgb(var(--foreground))]/80 uppercase tracking-wider flex items-center gap-2">
                     <Activity className="w-3 h-3" /> {AUDIO_SETUP_COPY.liveLabel}
                 </span>
                 <span className="text-[12px] font-bold text-[rgb(var(--accent))] font-mono">{Math.round(energy)}%</span>
@@ -170,14 +170,14 @@ export const AudioSetupStep: React.FC<Props> = ({ onNext, onBack }) => {
         </div>
     
         <div className="flex-1 flex flex-col gap-3 min-h-0 overflow-y-auto pr-2 custom-scrollbar">
-            <span className="text-[12px] font-bold text-[rgb(var(--foreground-muted))]/70 uppercase tracking-widest px-1">{AUDIO_SETUP_COPY.listTitle}</span>
+            <span className="text-[11px] sm:text-[12px] font-bold text-[rgb(var(--foreground-muted))]/70 uppercase tracking-wider px-1">{AUDIO_SETUP_COPY.listTitle}</span>
             {audioError && (
-                <div className="p-3 bg-amber-500/10 border border-amber-500/25 rounded-xl flex items-center justify-between gap-3">
-                    <span className="text-amber-400/90 text-xs font-bold">{AUDIO_SETUP_COPY.initFailed}</span>
+                <div className="p-3 bg-[rgba(var(--warning),0.1)] border border-[rgba(var(--warning),0.25)] rounded-xl flex items-center justify-between gap-3">
+                    <span className="text-[rgb(var(--warning))] text-xs font-semibold">{AUDIO_SETUP_COPY.initFailed}</span>
                     <button
                         type="button"
                         onClick={() => { setAudioError(false); setInitAttempt((n) => n + 1); }}
-                        className="px-3 py-1.5 min-h-[36px] bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-all shrink-0 cursor-pointer"
+                        className="px-3 py-1.5 min-h-[36px] bg-[rgba(var(--warning),0.2)] hover:bg-[rgba(var(--warning),0.3)] text-[rgb(var(--warning))] rounded-lg text-[11px] font-bold uppercase tracking-wider transition-colors shrink-0 cursor-pointer"
                     >
                         {AUDIO_SETUP_COPY.retryInit}
                     </button>

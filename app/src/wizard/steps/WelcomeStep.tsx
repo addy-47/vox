@@ -29,11 +29,11 @@ const SubStep3Panel = React.memo(({ containerRef }: { containerRef: React.RefObj
 
   return (
     <>
-      <div className="flex-1 flex flex-col items-center justify-center relative">
-        <div className="w-[400px] h-[200px] glass-card rounded-2xl border-[rgba(var(--accent),0.15)] overflow-hidden flex flex-col text-left relative z-10">
-          <div className="px-6 py-4 flex items-center justify-between relative z-10 border-b border-[rgba(var(--foreground),0.08)]">
+      <div className="flex-1 flex flex-col items-center justify-center relative w-full px-2">
+        <div className="w-full max-w-[400px] min-h-[190px] glass-card rounded-2xl border-[rgba(var(--accent),0.15)] overflow-hidden flex flex-col text-left relative z-10">
+          <div className="px-4 sm:px-6 py-3.5 sm:py-4 flex items-center justify-between relative z-10 border-b border-[rgba(var(--foreground),0.08)]">
             <div
-              className="flex items-center gap-3 cursor-help group/status"
+              className="flex items-center gap-2.5 sm:gap-3 cursor-pointer select-none group/status"
               onMouseEnter={() => setHoveredElement('status')}
               onMouseLeave={() => setHoveredElement(null)}
               onFocus={() => setHoveredElement('status')}
@@ -42,17 +42,17 @@ const SubStep3Panel = React.memo(({ containerRef }: { containerRef: React.RefObj
               tabIndex={0}
               id="step3-status"
             >
-              <div className="relative flex items-center justify-center">
+              <div className="relative flex items-center justify-center shrink-0">
                 <div className="absolute w-5 h-5 rounded-full bg-[rgb(var(--accent))] blur-md opacity-40 animate-pulse" />
                 <div className="w-2.5 h-2.5 rounded-full bg-[rgb(var(--accent))] shadow-[0_0_10px_rgba(var(--accent),0.8)] z-10" />
               </div>
-              <span className="text-[12px] font-black tracking-[0.4em] text-[rgb(var(--foreground))]/70 uppercase">
+              <span className="text-[11px] sm:text-[12px] font-bold tracking-wider text-[rgb(var(--foreground))]/70 uppercase">
                 {TRAY_COPY.brand} <span className="text-[rgb(var(--accent))]">{TRAY_COPY.live}</span>
               </span>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 sm:gap-2">
               <div
-                className="p-2 rounded-lg bg-[rgb(var(--accent))]/10 text-[rgb(var(--accent))] cursor-help"
+                className="p-1.5 sm:p-2 rounded-lg bg-[rgb(var(--accent))]/10 text-[rgb(var(--accent))] cursor-pointer select-none"
                 onMouseEnter={() => setHoveredElement('mic')}
                 onMouseLeave={() => setHoveredElement(null)}
                 onFocus={() => setHoveredElement('mic')}
@@ -61,10 +61,10 @@ const SubStep3Panel = React.memo(({ containerRef }: { containerRef: React.RefObj
                 tabIndex={0}
                 id="step3-mic"
               >
-                <Mic size={16} />
+                <Mic size={15} />
               </div>
               <Copy
-                className="w-4 h-4 text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] transition-colors cursor-help p-2 box-content rounded-lg hover:bg-[rgba(var(--foreground),0.05)]"
+                className="w-4 h-4 text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] transition-colors cursor-pointer select-none p-1.5 sm:p-2 box-content rounded-lg hover:bg-[rgba(var(--foreground),0.05)]"
                 onMouseEnter={() => setHoveredElement('copy')}
                 onMouseLeave={() => setHoveredElement(null)}
                 onFocus={() => setHoveredElement('copy')}
@@ -73,7 +73,7 @@ const SubStep3Panel = React.memo(({ containerRef }: { containerRef: React.RefObj
                 tabIndex={0}
                 id="step3-copy"
               />
-              <X className="w-4 h-4 text-[rgb(var(--foreground-muted))]/40 p-2 box-content" />
+              <X className="w-4 h-4 text-[rgb(var(--foreground-muted))]/40 p-1.5 sm:p-2 box-content" />
             </div>
           </div>
 
@@ -193,10 +193,10 @@ export const WelcomeStep: React.FC<Props> = ({ onNext }) => {
 
   return (
     <div className="flex flex-col h-full relative" ref={containerRef}>
-      <header className="mb-8">
+      <header className="mb-4 sm:mb-6 lg:mb-8">
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-4">
-            <span className="text-[12px] font-black tracking-[0.4em] text-[rgb(var(--accent))] uppercase">{WELCOME_STEP_LABEL}</span>
+            <span className="text-[11px] sm:text-[12px] font-mono font-bold tracking-[0.14em] text-[rgb(var(--accent))] uppercase">{WELCOME_STEP_LABEL}</span>
           </div>
           
             {/* Sub-step Navigation Controls */}
@@ -206,7 +206,7 @@ export const WelcomeStep: React.FC<Props> = ({ onNext }) => {
                 onClick={prevSubStep}
                 disabled={subStep === 1}
                 aria-label={WELCOME_NAV_COPY.prev}
-                className="p-2 rounded-full glass border border-[rgba(var(--border),0.06)] hover:bg-[rgba(var(--foreground),0.1)] disabled:opacity-20 transition-all"
+                className="p-1.5 sm:p-2 rounded-full glass border border-[rgba(var(--border),0.06)] hover:bg-[rgba(var(--foreground),0.1)] disabled:opacity-20 transition-all"
               >
                 <ChevronLeft className="w-4 h-4 text-[rgb(var(--foreground-muted))]" />
               </button>
@@ -216,7 +216,7 @@ export const WelcomeStep: React.FC<Props> = ({ onNext }) => {
                 onClick={nextSubStep}
                 disabled={subStep === 3}
                 aria-label={WELCOME_NAV_COPY.next}
-                className="p-2 rounded-full glass border border-[rgba(var(--border),0.06)] hover:bg-[rgba(var(--foreground),0.1)] disabled:opacity-20 transition-all"
+                className="p-1.5 sm:p-2 rounded-full glass border border-[rgba(var(--border),0.06)] hover:bg-[rgba(var(--foreground),0.1)] disabled:opacity-20 transition-all"
               >
                 <ChevronRight className="w-4 h-4 text-[rgb(var(--foreground-muted))]" />
               </button>
@@ -231,10 +231,10 @@ export const WelcomeStep: React.FC<Props> = ({ onNext }) => {
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: -10 }}
           >
-            <h1 className="text-4xl font-display font-black text-[rgb(var(--foreground))] tracking-tighter uppercase mb-4">
+            <h1 className="text-2xl sm:text-3xl lg:text-4xl font-display font-bold text-[rgb(var(--foreground))] tracking-tight uppercase mb-2 sm:mb-3">
               {WELCOME_SUBSTEPS[subStep - 1].title}
             </h1>
-            <p className="text-[rgb(var(--foreground-muted))] text-sm leading-relaxed max-w-md">
+            <p className="text-[rgb(var(--foreground-muted))] text-xs sm:text-sm leading-relaxed max-w-md">
               {WELCOME_SUBSTEPS[subStep - 1].tagline}
             </p>
           </motion.div>
@@ -251,7 +251,7 @@ export const WelcomeStep: React.FC<Props> = ({ onNext }) => {
               exit={{ opacity: 0, scale: 0.98 }}
               className="flex-1 flex flex-col justify-center"
             >
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 {WELCOME_FEATURE_CARDS.map((card, i) => {
                   const Icon = card.icon;
                   return (
@@ -331,10 +331,10 @@ export const WelcomeStep: React.FC<Props> = ({ onNext }) => {
         >
           <button
             onClick={onNext}
-            className="group relative w-full py-5 text-[rgb(var(--foreground))] font-black rounded-2xl overflow-hidden border transition-all active:scale-[0.98] glass-card hover:border-[rgb(var(--accent))]/70"
+            className="group relative w-full py-3.5 sm:py-4 min-h-[48px] text-[rgb(var(--foreground))] font-bold rounded-xl overflow-hidden border transition-all active:scale-[0.98] glass-card hover:border-[rgb(var(--accent))]/70"
           >
             <div className="absolute inset-0 bg-gradient-to-r from-[rgb(var(--accent))]/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-            <span className="relative z-10 flex items-center justify-center gap-4 uppercase tracking-[0.4em] text-[12px]">
+            <span className="relative z-10 flex items-center justify-center gap-3 uppercase tracking-widest text-[12px]">
               {WIZARD_CTA_LABELS.beginSetup}
               <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1 text-[rgb(var(--accent))]" />
             </span>
@@ -353,12 +353,12 @@ const FEATURE_CARD_ICON_CLASS = [
 ];
 
 const FeatureCard = ({ icon, title, desc }: { icon: React.ReactNode, title: string, desc: string }) => (
- <div className="glass px-5 py-5 group transition-all hover:bg-[rgba(var(--foreground),0.06)]">
-    <div className="mb-3 w-8 h-8 rounded-lg bg-[rgba(var(--foreground),0.05)] flex items-center justify-center group-hover:bg-[rgba(var(--foreground),0.1)] transition-colors">
+ <div className="glass rounded-xl p-4 sm:p-5 group transition-colors hover:bg-[rgba(var(--foreground),0.06)]">
+    <div className="mb-2 sm:mb-3 w-8 h-8 rounded-lg bg-[rgba(var(--foreground),0.05)] flex items-center justify-center group-hover:bg-[rgba(var(--foreground),0.1)] transition-colors">
       {icon}
     </div>
-    <div className="text-[12px] font-bold text-[rgb(var(--foreground-muted))] tracking-widest uppercase mb-1">{title}</div>
-    <div className="text-[rgb(var(--foreground))] text-sm font-medium">{desc}</div>
+    <div className="text-[11px] sm:text-[12px] font-bold text-[rgb(var(--foreground-muted))] tracking-wider uppercase mb-1">{title}</div>
+    <div className="text-[rgb(var(--foreground))] text-xs sm:text-sm font-medium leading-relaxed">{desc}</div>
   </div>
 );
 

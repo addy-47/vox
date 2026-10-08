@@ -110,25 +110,29 @@ export const ProjectContextMenu: React.FC<ProjectContextMenuProps> = memo(
     }
 
     const menuWidth = errorMessage ? 230 : (isConfirmingDelete ? 175 : 160);
-    const menuHeight = errorMessage ? 132 : 76;
+    const menuHeight = errorMessage ? 110 : (isConfirmingDelete ? 60 : 76);
 
-    let left = anchorRect.right + 6;
-    let top = anchorRect.top - 4;
+    // Anchor below the 3-dot trigger button opening toward bottom-right
+    let left = anchorRect.left;
+    let top = anchorRect.bottom + 4;
 
     if (left + menuWidth > window.innerWidth - 12) {
-      left = anchorRect.left - menuWidth - 6;
+      left = window.innerWidth - menuWidth - 12;
+    }
+    if (left < 12) {
+      left = 12;
     }
     if (top + menuHeight > window.innerHeight - 12) {
-      top = Math.max(12, window.innerHeight - menuHeight - 12);
+      top = Math.max(12, anchorRect.top - menuHeight - 4);
     }
 
     return createPortal(
       <AnimatePresence>
         <motion.div
           ref={menuRef}
-          initial={{ opacity: 0, scale: 0.96, x: -4 }}
-          animate={{ opacity: 1, scale: 1, x: 0 }}
-          exit={{ opacity: 0, scale: 0.96, x: -4 }}
+          initial={{ opacity: 0, scale: 0.96, y: -2 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.96, y: -2 }}
           transition={{ duration: 0.12 }}
           style={{
             position: "fixed",
@@ -141,7 +145,7 @@ export const ProjectContextMenu: React.FC<ProjectContextMenuProps> = memo(
           role="menu"
           aria-haspopup="menu"
           aria-expanded={open}
-          className="z-[9999] rounded-lg border border-[rgba(var(--border),0.16)] bg-[rgb(var(--card))]/85 backdrop-blur-xl shadow-lg p-1 flex flex-col gap-0.5 text-[11.5px] font-sans select-none"
+          className="z-[9999] rounded-xl border border-[rgba(var(--border),0.12)] bg-[rgb(var(--card))] shadow-2xl backdrop-blur-md p-1.5 flex flex-col gap-0.5 text-[12.5px] font-sans select-none"
         >
           {/* Row 1: Rename project */}
           <button
@@ -154,19 +158,19 @@ export const ProjectContextMenu: React.FC<ProjectContextMenuProps> = memo(
               onStartRename();
               onClose();
             }}
-            className="flex items-center gap-2 px-2 py-1.5 min-h-[40px] rounded-lg text-left hover:bg-[rgba(var(--foreground),0.06)] text-[rgb(var(--foreground))] transition-colors cursor-pointer disabled:opacity-40"
+            className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-left hover:bg-[rgba(var(--foreground),0.06)] text-[rgb(var(--foreground))] transition-colors cursor-pointer text-[12.5px] disabled:opacity-40 select-none"
           >
-            <Pencil size={12} className="text-[rgb(var(--foreground-muted))]" />
+            <Pencil size={13.5} className="text-[rgb(var(--foreground-muted))]" />
             <span>{SESSION_COPY.projectActions.rename}</span>
           </button>
 
-          <div className="h-[1px] bg-[rgba(var(--border),0.08)] my-0.5" />
+          <div className="h-[1px] bg-[rgba(var(--border),0.08)] my-0.5 -mx-0.5" />
 
           {/* Row 2: Delete project (transitions in-place) */}
           {errorMessage ? (
-            <div className="flex flex-col gap-1 p-1.5 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400">
-              <div className="flex items-center gap-1.5 text-[10.5px] leading-tight">
-                <AlertCircle size={12} className="shrink-0 text-red-400" />
+            <div className="flex flex-col gap-1 p-1.5 rounded-md bg-red-500/10 border border-red-500/20 text-red-400">
+              <div className="flex items-center gap-1.5 text-[11px] leading-tight">
+                <AlertCircle size={13} className="shrink-0 text-red-400" />
                 <span className="break-words min-w-0">{errorMessage}</span>
               </div>
               <button
@@ -177,14 +181,14 @@ export const ProjectContextMenu: React.FC<ProjectContextMenuProps> = memo(
                   setErrorMessage(null);
                   setIsConfirmingDelete(false);
                 }}
-                className="self-end px-1.5 py-0.5 rounded text-[10px] font-mono text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.06)] cursor-pointer"
+                className="self-end px-2 py-0.5 rounded text-[10.5px] font-mono text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.06)] cursor-pointer"
               >
                 {SESSION_COPY.projectActions.cancel}
               </button>
             </div>
           ) : isConfirmingDelete ? (
-            <div className="flex items-center justify-between gap-1.5 px-2 py-1 rounded-lg bg-red-500/10 text-red-400">
-              <span className="text-[11px] font-semibold">{SESSION_COPY.projectActions.deleteConfirm}</span>
+            <div className="flex items-center justify-between gap-1.5 px-2 py-1 rounded-md bg-red-500/10 text-red-400">
+              <span className="text-[11.5px] font-semibold">{SESSION_COPY.projectActions.deleteConfirm}</span>
               <div className="flex items-center gap-1">
                 <button
                   type="button"
@@ -218,9 +222,9 @@ export const ProjectContextMenu: React.FC<ProjectContextMenuProps> = memo(
                 setErrorMessage(null);
                 setIsConfirmingDelete(true);
               }}
-              className="flex items-center gap-2 px-2 py-1.5 min-h-[40px] rounded-lg text-left hover:bg-red-500/10 text-red-400 transition-colors cursor-pointer"
+              className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-left hover:bg-rose-500/10 text-rose-400 transition-colors cursor-pointer text-[12.5px] select-none"
             >
-              <Trash2 size={12} />
+              <Trash2 size={13.5} />
               <span>{SESSION_COPY.projectActions.delete}</span>
             </button>
           )}

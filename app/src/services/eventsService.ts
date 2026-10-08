@@ -155,6 +155,7 @@ export interface IpcEventMap {
   session_title_updated?: never; // removed in v2 — title changes surface via sessions_changed
   sessions_changed: void;
   personal_memory_updated: PersonalMemoryRecord;
+  memory_ingestion_updated: void;
 }
 
 /**
@@ -333,4 +334,8 @@ export function onSessionsChanged(handler: () => void): () => void {
 
 export function onTurnMetrics(handler: (payload: TurnMetricsPayload) => void): () => void {
   return on("turn_metrics", handler);
+}
+
+export function onMemoryIngestionUpdated(handler: () => void): () => void {
+  return on("memory_ingestion_updated", handler);
 }

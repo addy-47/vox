@@ -1,5 +1,4 @@
 import React from 'react';
-import { cn } from '@/shared/lib/utils';
 
 interface WizardHeaderProps {
   step: string;
@@ -20,25 +19,26 @@ export const WizardHeader: React.FC<WizardHeaderProps> = ({
   const effectiveColor = color || accentVar;
 
   return (
-    <header className="mb-8 relative shrink-0">
-      <div className="flex justify-between items-start">
-        <div className="flex-1">
-          <div className="mb-4">
-            <span className={cn(
-              "inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-[12px] font-black tracking-[0.4em] uppercase glass"
-            )} style={{ color: effectiveColor }}>
+    <header className="mb-4 sm:mb-6 lg:mb-8 relative shrink-0">
+      <div className="flex justify-between items-start gap-4">
+        <div className="flex-1 min-w-0">
+          <div className="mb-2 sm:mb-3">
+            <span
+              className="text-[11px] sm:text-[12px] font-mono font-bold tracking-[0.14em] uppercase"
+              style={{ color: effectiveColor }}
+            >
               {step}
             </span>
           </div>
-          <h1 className="text-4xl font-display font-black text-[rgb(var(--foreground))] tracking-tighter uppercase mb-4">
+          <h1 className="text-2xl sm:text-3xl lg:text-4xl font-display font-bold text-[rgb(var(--foreground))] tracking-tight uppercase mb-2 sm:mb-3">
             {title}
           </h1>
-          <p className="text-[rgb(var(--foreground-muted))] text-sm leading-relaxed max-w-md">
+          <p className="text-[rgb(var(--foreground-muted))] text-xs sm:text-sm leading-relaxed max-w-md">
             {description}
           </p>
         </div>
         {rightContent && (
-          <div className="flex flex-col items-end text-right pt-1">
+          <div className="flex flex-col items-end text-right pt-1 shrink-0">
             {rightContent}
           </div>
         )}

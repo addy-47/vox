@@ -1,4 +1,4 @@
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
@@ -6,14 +6,19 @@ use turso::Connection;
 
 pub mod stage1_dedup;
 pub mod stage2_embed;
+pub mod sweep;
 
 pub use stage1_dedup::{jaccard_similarity, run_stage1_exact_dedup, Stage1Summary};
 pub use stage2_embed::{
     run_stage2_cosine_dedup, run_stage2_cosine_dedup_with_embedder, Stage2Summary,
 };
+pub use sweep::spawn_ingestion_sweep;
 
-use crate::persistence::queue::reconcile_crashed_queue_on_boot as persistence_reconcile;
+use crate::persistence::queue::{
+    reconcile_crashed_queue_on_boot as persistence_reconcile, reset_failed_queue_items,
+};
 
+pub const INGESTION_THROTTLE_DURATION: Duration = Duration::from_millis(1000);
 pub const JACCARD_EXACT_MATCH_THRESHOLD: f32 = 1.0;
 pub const SOFT_VECTOR_DEDUP_THRESHOLD: f32 = 0.95;
 
@@ -104,8 +109,28 @@ pub async fn drain_ingestion_queue(
     conn: &Connection,
     cancel: Option<&tokio_util::sync::CancellationToken>,
 ) -> Result<IngestionCycleSummary> {
+    drain_ingestion_queue_with_progress(conn, cancel, None::<fn()>).await
+}
+
+/// Drains all items from the ingestion queue with an optional progress callback invoked after each batch.
+pub async fn drain_ingestion_queue_with_progress<F>(
+    conn: &Connection,
+    cancel: Option<&tokio_util::sync::CancellationToken>,
+    mut on_progress: Option<F>,
+) -> Result<IngestionCycleSummary>
+where
+    F: FnMut() + Send,
+{
     let started = Instant::now();
     let mut total_summary = IngestionCycleSummary::default();
+
+    // Automatically reset failed queue items to pending so they are retried on this sweep
+    if let Err(e) = reset_failed_queue_items(conn).await {
+        log::warn!(
+            "[Memory::Ingestion] Failed to reset failed items for retry: {}",
+            e
+        );
+    }
 
     loop {
         if let Some(c) = cancel {
@@ -116,6 +141,11 @@ pub async fn drain_ingestion_queue(
         }
 
         let stage1 = run_stage1_exact_dedup(conn).await?;
+        if stage1.processed > 0 {
+            if let Some(ref mut cb) = on_progress {
+                cb();
+            }
+        }
         total_summary.stage1.processed += stage1.processed;
         total_summary.stage1.errors += stage1.errors;
         total_summary.stage1.decisions.extend(stage1.decisions);
@@ -132,6 +162,9 @@ pub async fn drain_ingestion_queue(
             let s2 = run_stage2_cosine_dedup(conn).await?;
             if s2.processed == 0 {
                 break;
+            }
+            if let Some(ref mut cb) = on_progress {
+                cb();
             }
             stage2_drained += s2.processed;
             total_summary.stage2.processed += s2.processed;

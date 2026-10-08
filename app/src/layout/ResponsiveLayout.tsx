@@ -435,7 +435,7 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
         {isHome && (
           <div
             className={cn(
-              "absolute top-4 left-5 z-[60] flex items-center gap-2.5 transition-opacity duration-200",
+              "absolute top-4 left-3 z-[60] flex items-center gap-2.5 transition-opacity duration-200",
               hideLeftCluster
                 ? "opacity-0 pointer-events-none invisible"
                 : "pointer-events-none"

@@ -50,7 +50,7 @@ export const SystemCheckStep: React.FC<Props> = ({ onNext, onBack, error: extern
       />
 
       <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
             <motion.div
                 key="disk"
                 initial={{ opacity: 0, y: 5 }}
