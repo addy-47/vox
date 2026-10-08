@@ -42,6 +42,7 @@ export interface GNode {
   vz: number;
   isCore?: boolean;
   sessionId?: string | null;
+  isSessionAnchor?: boolean;
 }
 
 export interface GLink {

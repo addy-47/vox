@@ -125,12 +125,12 @@ export const WizardRoot: React.FC = () => {
                     if (isReachable) send({ type: 'GO_TO', targetStep: s.id });
                   }}
                   className={cn(
-                    "flex items-center gap-4 transition-all duration-500 w-full text-left outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[rgb(var(--accent))] rounded-lg",
+                    "flex items-center gap-4 transition-transform w-full text-left outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[rgb(var(--accent))] rounded-lg",
                     status === 'pending' ? 'opacity-50 grayscale cursor-not-allowed' : 'opacity-100 hover:scale-[1.02] active:scale-95 cursor-pointer'
                   )}
                 >
                   <div className={cn(
-                    "w-8 h-8 rounded-xl flex items-center justify-center border transition-all duration-500 shrink-0",
+                    "w-8 h-8 rounded-xl flex items-center justify-center border transition-colors shrink-0",
                     status === 'active' 
                       ? 'bg-[rgb(var(--accent))]/10 border-[rgb(var(--accent))]/50 shadow-[0_0_15px_rgba(var(--accent),0.2)]' 
                       : status === 'completed' 
@@ -164,9 +164,9 @@ export const WizardRoot: React.FC = () => {
         </div>
 
         {/* Main Content Area — scrolls on small screens, fixed on desktop */}
-        <main className="flex-1 relative z-10 flex flex-col px-4 py-6 sm:px-8 lg:px-12 lg:py-8 overflow-y-auto lg:overflow-hidden">
+        <main className="flex-1 relative z-10 flex flex-col px-3.5 py-4 sm:px-8 sm:py-6 lg:px-12 lg:py-8 overflow-y-auto lg:overflow-hidden">
           {/* Phone step progress — the sidebar nav is hidden below md */}
-          <div className="md:hidden w-full max-w-2xl mx-auto flex items-center gap-1.5 pb-4 shrink-0" aria-hidden="true">
+          <div className="md:hidden w-full max-w-2xl mx-auto flex items-center gap-1.5 pb-3 sm:pb-4 shrink-0" aria-hidden="true">
             {STEPS.map((s) => {
               const status = getStepStatus(s.id);
               return (

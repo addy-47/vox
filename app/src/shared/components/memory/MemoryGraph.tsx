@@ -95,6 +95,7 @@ interface MemoryGraphProps {
   searchQuery: string;
   selectedCollection: string;
   onSelectNode: (fact: ObservationRecord | null, pos?: { x: number; y: number }) => void;
+  onSelectSessionNode?: (sessionId: string, pos?: { x: number; y: number }) => void;
   onCoreClick?: () => void;
   selectedFactId: string | null;
   selectedSessionId?: string | null;
@@ -113,6 +114,7 @@ export const MemoryGraph = memo(
         searchQuery,
         selectedCollection,
         onSelectNode,
+        onSelectSessionNode,
         onCoreClick,
         selectedFactId,
         selectedSessionId = null,
@@ -251,6 +253,10 @@ export const MemoryGraph = memo(
             const idx = intersects[0].instanceId;
             const node = gNodes[idx];
             if (node) {
+              if (node.isSessionAnchor && node.sessionId) {
+                onSelectSessionNode?.(node.sessionId, { x: e.clientX, y: e.clientY });
+                return;
+              }
               onSelectNode(node.factRecord, { x: e.clientX, y: e.clientY });
               return;
             }
@@ -282,13 +288,17 @@ export const MemoryGraph = memo(
           }
 
           if (closestNode) {
+            if (closestNode.isSessionAnchor && closestNode.sessionId) {
+              onSelectSessionNode?.(closestNode.sessionId, { x: e.clientX, y: e.clientY });
+              return;
+            }
             onSelectNode(closestNode.factRecord, { x: e.clientX, y: e.clientY });
             return;
           }
 
           onSelectNode(null);
         },
-        [onSelectNode, onCoreClick, width, height, rendererRef, cameraRef, instancedMeshRef, coreMeshRef, gNodesRef, selectModeEnabled]
+        [onSelectNode, onSelectSessionNode, onCoreClick, width, height, rendererRef, cameraRef, instancedMeshRef, coreMeshRef, gNodesRef, selectModeEnabled]
       );
 
       return (

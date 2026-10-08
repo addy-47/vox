@@ -120,19 +120,19 @@ export const LiveTestStep: React.FC<Props> = ({ onNext, onBack }) => {
 
       <div className="flex-1 flex flex-col gap-4 min-h-0 overflow-visible lg:overflow-hidden justify-center">
         {/* Reactive Flat Waveform Visualization Strip */}
-        <div className="glass p-6 flex flex-col items-center justify-center relative overflow-hidden h-28 shrink-0">
+        <div className="glass rounded-xl p-4 sm:p-6 flex flex-col items-center justify-center relative overflow-hidden h-24 sm:h-28 shrink-0">
           <div className="absolute inset-0 bg-gradient-to-b from-[rgb(var(--accent))]/5 to-transparent opacity-20 pointer-events-none" />
           
           {error ? (
               <div className="flex items-center gap-4 relative z-10 text-left">
-                  <div className="w-10 h-10 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center justify-center text-red-500 shrink-0">
+                  <div className="w-10 h-10 rounded-xl bg-[rgba(var(--danger),0.1)] border border-[rgba(var(--danger),0.2)] flex items-center justify-center text-[rgb(var(--danger))] shrink-0">
                       <X className="w-5 h-5" />
                   </div>
                   <div className="flex flex-col">
-                      <h3 className="text-[rgb(var(--foreground))] font-black uppercase tracking-widest text-[12px]">{LIVE_TEST_COPY.engineErrorTitle}</h3>
+                      <h3 className="text-[rgb(var(--foreground))] font-bold uppercase tracking-wider text-[12px]">{LIVE_TEST_COPY.engineErrorTitle}</h3>
                       <button 
                           onClick={setup}
-                          className="text-[12px] font-black uppercase tracking-widest text-[rgb(var(--accent))] hover:underline text-left mt-0.5"
+                          className="text-[12px] font-bold uppercase tracking-wider text-[rgb(var(--accent))] hover:underline text-left mt-0.5"
                       >
                           {LIVE_TEST_COPY.tryAgain}
                       </button>
@@ -151,19 +151,20 @@ export const LiveTestStep: React.FC<Props> = ({ onNext, onBack }) => {
 
         {/* Live Transcript Display Box */}
         <div className={cn(
-            "relative z-10 glass p-5 flex flex-col justify-center flex-1 min-h-[90px] max-h-[140px] transition-all",
-            testComplete ? "border-emerald-500/20 shadow-[0_0_30px_rgba(16,185,129,0.04)]" : ""
+            "relative z-10 glass rounded-xl p-4 sm:p-5 flex flex-col justify-center flex-1 min-h-[90px] max-h-[140px] transition-colors",
+            testComplete ? "border-[rgba(var(--accent),0.3)] shadow-[0_0_30px_rgba(var(--accent),0.05)]" : ""
         )}>
             <div className="flex items-center justify-between mb-2">
-                <span className="text-[12px] font-black text-[rgb(var(--foreground-muted))]/50 uppercase tracking-[0.3em] flex items-center gap-2">
-                    <MessageSquare className="w-3.5 h-3.5 text-[rgb(var(--accent))]/60" /> {LIVE_TEST_COPY.demoHint}
+                <span className="text-[11px] sm:text-[12px] font-bold text-[rgb(var(--foreground-muted))]/60 uppercase tracking-wider flex items-center gap-2">
+                    <MessageSquare className="w-3.5 h-3.5 text-[rgb(var(--accent))]/70" /> {LIVE_TEST_COPY.demoHint}
                 </span>
                 {testComplete && (
                     <motion.span 
                         initial={{ opacity: 0, scale: 0.8 }}
                         animate={{ opacity: 1, scale: 1 }}
-                        className="text-[12px] font-black bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full uppercase tracking-tighter"
+                        className="text-[11px] font-mono font-bold text-[rgb(var(--accent))] flex items-center gap-1 uppercase tracking-wider"
                     >
+                        <Check className="w-3.5 h-3.5" />
                         {LIVE_TEST_COPY.processed}
                     </motion.span>
                 )}
@@ -196,31 +197,31 @@ export const LiveTestStep: React.FC<Props> = ({ onNext, onBack }) => {
         </div>
 
         {/* Diagnostics & Verification Cards */}
-        <div className="grid grid-cols-2 gap-3 shrink-0">
-            <div className="p-3 glass flex items-center gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 shrink-0">
+            <div className="p-3 glass rounded-xl flex items-center gap-3">
                 <div className={cn(
-                    "w-8 h-8 rounded-lg flex items-center justify-center transition-all duration-300 shrink-0",
-                    energy > 2 ? "bg-[rgb(var(--accent))]/10 text-[rgb(var(--accent))] scale-105" : "bg-[rgba(var(--foreground),0.05)] text-[rgb(var(--foreground-muted))]/60"
+                    "w-8 h-8 rounded-lg flex items-center justify-center transition-colors shrink-0",
+                    energy > 2 ? "bg-[rgb(var(--accent))]/10 text-[rgb(var(--accent))]" : "bg-[rgba(var(--foreground),0.05)] text-[rgb(var(--foreground-muted))]/60"
                 )}>
                     <Activity className="w-4 h-4" />
                 </div>
                 <div className="flex flex-col min-w-0">
-                    <span className="text-[11px] font-bold text-[rgb(var(--foreground-muted))]/70 uppercase tracking-widest truncate">{LIVE_TEST_COPY.voiceLevel}</span>
-                    <span className="text-xs font-black text-[rgb(var(--foreground))] truncate">
+                    <span className="text-[11px] font-bold text-[rgb(var(--foreground-muted))]/70 uppercase tracking-wider truncate">{LIVE_TEST_COPY.voiceLevel}</span>
+                    <span className="text-xs font-semibold text-[rgb(var(--foreground))] truncate">
                         {isEngineReady ? (energy > 2 ? LIVE_TEST_COPY.voiceDetected : LIVE_TEST_COPY.listening) : "---"}
                     </span>
                 </div>
             </div>
-            <div className="p-3 glass flex items-center gap-3">
+            <div className="p-3 glass rounded-xl flex items-center gap-3">
                 <div className={cn(
-                    "w-8 h-8 rounded-lg flex items-center justify-center transition-all duration-300 shrink-0",
-                    testComplete ? "bg-emerald-500/10 text-emerald-400 scale-105" : "bg-[rgba(var(--foreground),0.05)] text-[rgb(var(--foreground-muted))]/60"
+                    "w-8 h-8 rounded-lg flex items-center justify-center transition-colors shrink-0",
+                    testComplete ? "bg-[rgb(var(--accent))]/10 text-[rgb(var(--accent))]" : "bg-[rgba(var(--foreground),0.05)] text-[rgb(var(--foreground-muted))]/60"
                 )}>
                     {testComplete ? <Check className="w-4 h-4" /> : <Hourglass className="w-4 h-4 animate-pulse" />}
                 </div>
                 <div className="flex flex-col min-w-0">
-                    <span className="text-[11px] font-bold text-[rgb(var(--foreground-muted))]/70 uppercase tracking-widest truncate">{LIVE_TEST_COPY.demoHint}</span>
-                    <span className="text-xs font-black text-[rgb(var(--foreground))] truncate">
+                    <span className="text-[11px] font-bold text-[rgb(var(--foreground-muted))]/70 uppercase tracking-wider truncate">{LIVE_TEST_COPY.demoHint}</span>
+                    <span className="text-xs font-semibold text-[rgb(var(--foreground))] truncate">
                         {testComplete ? LIVE_TEST_COPY.textReceived : LIVE_TEST_COPY.waiting}
                     </span>
                 </div>

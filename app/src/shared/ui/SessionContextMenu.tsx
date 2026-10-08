@@ -112,26 +112,29 @@ export const SessionContextMenu: React.FC<SessionContextMenuProps> = memo(
 
     // Position menu to the RIGHT of the anchor button (opening inward toward the page)
     const menuWidth = 176;
-    const menuHeight = isConfirmingDelete ? 90 : moveSubmenuOpen ? 220 : 160;
+    const menuHeight = isConfirmingDelete ? 72 : moveSubmenuOpen ? 180 : 120;
 
-    let left = anchorRect.right + 6;
-    let top = anchorRect.top - 4;
+    // Position menu below the anchor button opening toward bottom-right
+    let left = anchorRect.left;
+    let top = anchorRect.bottom + 4;
 
-    // Viewport bounds check
     if (left + menuWidth > window.innerWidth - 12) {
-      left = anchorRect.left - menuWidth - 6;
+      left = window.innerWidth - menuWidth - 12;
+    }
+    if (left < 12) {
+      left = 12;
     }
     if (top + menuHeight > window.innerHeight - 12) {
-      top = Math.max(12, window.innerHeight - menuHeight - 12);
+      top = Math.max(12, anchorRect.top - menuHeight - 4);
     }
 
     return createPortal(
       <AnimatePresence>
         <motion.div
           ref={menuRef}
-          initial={{ opacity: 0, scale: 0.96, x: -4 }}
-          animate={{ opacity: 1, scale: 1, x: 0 }}
-          exit={{ opacity: 0, scale: 0.96, x: -4 }}
+          initial={{ opacity: 0, scale: 0.96, y: -2 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.96, y: -2 }}
           transition={{ duration: 0.12 }}
           style={{
             position: "fixed",
@@ -144,11 +147,11 @@ export const SessionContextMenu: React.FC<SessionContextMenuProps> = memo(
           role="menu"
           aria-haspopup="menu"
           aria-expanded={open}
-          className="z-[9999] rounded-lg border border-[rgba(var(--border),0.16)] bg-[rgb(var(--card))]/75 backdrop-blur-xl shadow-lg p-1 flex flex-col gap-0.5 text-[11.5px] font-sans select-none"
+          className="z-[9999] rounded-xl border border-[rgba(var(--border),0.12)] bg-[rgb(var(--card))] shadow-2xl backdrop-blur-md p-1.5 flex flex-col gap-0.5 text-[12.5px] font-sans select-none"
         >
           {isConfirmingDelete ? (
-            <div className="p-2 flex flex-col gap-2">
-              <span className="text-[11px] font-semibold text-red-400 leading-tight">
+            <div className="p-1.5 flex flex-col gap-1.5 rounded-md bg-red-500/10 text-red-400">
+              <span className="text-[11.5px] font-semibold text-red-400 leading-tight">
                 {SESSION_COPY.actions.deleteConfirm}
               </span>
               <div className="flex items-center gap-1.5 justify-end">
@@ -158,7 +161,7 @@ export const SessionContextMenu: React.FC<SessionContextMenuProps> = memo(
                   tabIndex={-1}
                   data-action="cancel"
                   onClick={() => setIsConfirmingDelete(false)}
-                  className="px-2 py-1 rounded text-[10.5px] font-mono text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.06)] cursor-pointer"
+                  className="px-2 py-0.5 rounded text-[10.5px] font-mono text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.06)] cursor-pointer"
                 >
                   {SESSION_COPY.actions.cancel}
                 </button>
@@ -171,14 +174,14 @@ export const SessionContextMenu: React.FC<SessionContextMenuProps> = memo(
                     onDelete();
                     onClose();
                   }}
-                  className="px-2 py-1 rounded text-[10.5px] font-mono font-bold bg-red-500/20 text-red-400 hover:bg-red-500/30 cursor-pointer"
+                  className="px-2 py-0.5 rounded text-[10.5px] font-mono font-bold bg-red-500/20 text-red-400 hover:bg-red-500/30 cursor-pointer"
                 >
                   Delete
                 </button>
               </div>
             </div>
           ) : moveSubmenuOpen ? (
-            <div className="flex flex-col gap-0.5 max-h-[220px] overflow-y-auto custom-scrollbar">
+            <div className="flex flex-col gap-0.5 max-h-[200px] overflow-y-auto custom-scrollbar">
               <div className="px-2 py-1 text-[10px] font-mono uppercase text-[rgb(var(--foreground-muted))]/70 border-b border-[rgba(var(--border),0.08)] flex items-center justify-between">
                 <span>{SESSION_COPY.actions.moveToProject}</span>
                 <button
@@ -187,7 +190,7 @@ export const SessionContextMenu: React.FC<SessionContextMenuProps> = memo(
                   tabIndex={-1}
                   data-action="back"
                   onClick={() => setMoveSubmenuOpen(false)}
-                  className="min-h-[32px] px-2 flex items-center text-[11px] hover:text-[rgb(var(--foreground))] cursor-pointer font-bold text-[rgb(var(--accent))]"
+                  className="px-1.5 py-0.5 rounded flex items-center text-[10.5px] hover:text-[rgb(var(--foreground))] cursor-pointer font-bold text-[rgb(var(--accent))]"
                 >
                   Back
                 </button>
@@ -201,31 +204,31 @@ export const SessionContextMenu: React.FC<SessionContextMenuProps> = memo(
                   onMoveToProject(null);
                   onClose();
                 }}
-                className="flex items-center gap-2 px-2 py-1.5 min-h-[40px] rounded-lg text-left hover:bg-[rgba(var(--foreground),0.06)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors cursor-pointer"
+                className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-left hover:bg-[rgba(var(--foreground),0.06)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors cursor-pointer text-[12.5px]"
               >
-                <span className="w-1.5 h-1.5 rounded-full bg-[rgba(var(--foreground),0.3)]" />
+                <span className="w-1.5 h-1.5 rounded-full bg-[rgba(var(--foreground),0.3)] shrink-0" />
                 <span className="truncate">{SESSION_COPY.actions.removeFromProject}</span>
               </button>
-                {allProjects.map((p) => (
-                  <button
-                    key={p.id}
-                    type="button"
-                    role="menuitem"
-                    tabIndex={-1}
-                    data-action={`move-to-project-${p.id}`}
-                    onClick={() => {
-                      onMoveToProject(p.id);
-                      onClose();
-                    }}
-                    className={cn(
-                      "flex items-center gap-2 px-2 py-1.5 min-h-[40px] rounded-lg text-left hover:bg-[rgba(var(--foreground),0.06)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors cursor-pointer",
-                      currentProjectId === p.id && "text-[rgb(var(--accent))] font-semibold"
-                    )}
-                  >
-                    <Folder size={12} className="shrink-0" />
-                    <span className="truncate">{p.name}</span>
-                  </button>
-                ))}
+              {allProjects.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  role="menuitem"
+                  tabIndex={-1}
+                  data-action={`move-to-project-${p.id}`}
+                  onClick={() => {
+                    onMoveToProject(p.id);
+                    onClose();
+                  }}
+                  className={cn(
+                    "flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-left hover:bg-[rgba(var(--foreground),0.06)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors cursor-pointer text-[12.5px]",
+                    currentProjectId === p.id && "text-[rgb(var(--accent))] font-semibold"
+                  )}
+                >
+                  <Folder size={13} className="shrink-0" />
+                  <span className="truncate">{p.name}</span>
+                </button>
+              ))}
             </div>
           ) : (
             <>
@@ -241,12 +244,12 @@ export const SessionContextMenu: React.FC<SessionContextMenuProps> = memo(
                       onCompact();
                       onClose();
                     }}
-                    className="flex items-center gap-2 px-2 py-1.5 min-h-[40px] rounded-lg text-left hover:bg-[rgba(var(--accent),0.1)] text-[rgb(var(--accent))] font-medium transition-colors cursor-pointer disabled:opacity-50"
+                    className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-left hover:bg-[rgba(var(--accent),0.1)] text-[rgb(var(--accent))] font-medium transition-colors cursor-pointer text-[12.5px] disabled:opacity-50"
                   >
                     {isCompacting ? (
-                      <Loader2 size={12} className="animate-spin text-[rgb(var(--accent))]" />
+                      <Loader2 size={13} className="animate-spin text-[rgb(var(--accent))]" />
                     ) : (
-                      <Shrink size={12} className="text-[rgb(var(--accent))]" />
+                      <Shrink size={13} className="text-[rgb(var(--accent))]" />
                     )}
                     <span>
                       {isCompacting
@@ -254,7 +257,7 @@ export const SessionContextMenu: React.FC<SessionContextMenuProps> = memo(
                         : SESSION_COPY.actions.compactSession}
                     </span>
                   </button>
-                  <div className="h-[1px] bg-[rgba(var(--border),0.08)] my-0.5" />
+                  <div className="h-[1px] bg-[rgba(var(--border),0.08)] my-0.5 -mx-0.5" />
                 </>
               )}
 
@@ -267,9 +270,9 @@ export const SessionContextMenu: React.FC<SessionContextMenuProps> = memo(
                   onStartRename();
                   onClose();
                 }}
-                className="flex items-center gap-2 px-2 py-1.5 min-h-[40px] rounded-lg text-left hover:bg-[rgba(var(--foreground),0.06)] text-[rgb(var(--foreground))] transition-colors cursor-pointer"
+                className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-left hover:bg-[rgba(var(--foreground),0.06)] text-[rgb(var(--foreground))] transition-colors cursor-pointer text-[12.5px]"
               >
-                <Pencil size={12} className="text-[rgb(var(--foreground-muted))]" />
+                <Pencil size={13.5} className="text-[rgb(var(--foreground-muted))]" />
                 <span>{SESSION_COPY.actions.rename}</span>
               </button>
 
@@ -279,16 +282,16 @@ export const SessionContextMenu: React.FC<SessionContextMenuProps> = memo(
                 tabIndex={-1}
                 data-action="move-to-project"
                 onClick={() => setMoveSubmenuOpen(true)}
-                className="flex items-center justify-between px-2 py-1.5 min-h-[40px] rounded-lg text-left hover:bg-[rgba(var(--foreground),0.06)] text-[rgb(var(--foreground))] transition-colors cursor-pointer"
+                className="flex items-center justify-between px-2.5 py-1.5 rounded-md text-left hover:bg-[rgba(var(--foreground),0.06)] text-[rgb(var(--foreground))] transition-colors cursor-pointer text-[12.5px]"
               >
-                <div className="flex items-center gap-2">
-                  <FolderInput size={12} className="text-[rgb(var(--foreground-muted))]" />
+                <div className="flex items-center gap-2.5">
+                  <FolderInput size={13.5} className="text-[rgb(var(--foreground-muted))]" />
                   <span>{SESSION_COPY.actions.moveToProject}</span>
                 </div>
-                <ChevronRight size={12} className="text-[rgb(var(--foreground-muted))]/60" />
+                <ChevronRight size={13} className="text-[rgb(var(--foreground-muted))]/60" />
               </button>
 
-              <div className="h-[1px] bg-[rgba(var(--border),0.08)] my-0.5" />
+              <div className="h-[1px] bg-[rgba(var(--border),0.08)] my-0.5 -mx-0.5" />
 
               <button
                 type="button"
@@ -296,9 +299,9 @@ export const SessionContextMenu: React.FC<SessionContextMenuProps> = memo(
                 tabIndex={-1}
                 data-action="delete"
                 onClick={() => setIsConfirmingDelete(true)}
-                className="flex items-center gap-2 px-2 py-1.5 min-h-[40px] rounded-lg text-left hover:bg-red-500/10 text-red-400 transition-colors cursor-pointer"
+                className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-left hover:bg-rose-500/10 text-rose-400 transition-colors cursor-pointer text-[12.5px]"
               >
-                <Trash2 size={12} />
+                <Trash2 size={13.5} />
                 <span>{SESSION_COPY.actions.delete}</span>
               </button>
             </>

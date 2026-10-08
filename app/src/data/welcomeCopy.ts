@@ -36,7 +36,7 @@ export interface StepHeader {
 export const WIZARD_STEP_HEADERS: Record<string, StepHeader> = {
   checking: {
     step: "Step 2 of 6 · One Quick Check",
-    title: "Let's Check Your Computer",
+    title: "Let's Check Your Device",
     description:
       "A few seconds to confirm Vox has what it needs to run. Nothing is installed yet.",
   },
@@ -44,7 +44,7 @@ export const WIZARD_STEP_HEADERS: Record<string, StepHeader> = {
     step: "Step 3 of 6 · What Vox Needs",
     title: "What Vox Needs to Download",
     description:
-      "Because Vox runs on your own computer, the parts that do the work get downloaded once. Everything below is safe to keep.",
+      "Because Vox runs on your own device, the parts that do the work get downloaded once. Everything below is safe to keep.",
   },
   syncing: {
     step: "Step 3 of 6 · Downloading",
@@ -80,12 +80,12 @@ export const WELCOME_SUBSTEPS: WelcomeSubStep[] = [
   {
     title: "Meet Vox.",
     tagline:
-      "Talk to your computer the way you'd talk to a person. Vox hears you, thinks it over, and answers back.",
+      "Talk to your device the way you'd talk to a person. Vox hears you, thinks it over, and answers back.",
   },
   {
     title: "Nothing Leaves Your Machine",
     tagline:
-      "No account to create, nothing to log in to, no waiting on someone else's computer. Vox works on its own.",
+      "No account to create, nothing to log in to, no waiting on someone else's server. Vox works on its own.",
   },
   {
     title: "You See Every Word",
@@ -101,9 +101,9 @@ export interface FeatureCard {
 }
 
 export const WELCOME_FEATURE_CARDS: FeatureCard[] = [
-  { icon: ShieldCheck, title: "Private", desc: "Stays on your computer" },
+  { icon: ShieldCheck, title: "Private", desc: "Stays on your device" },
   { icon: Gauge, title: "Quick", desc: "Answers while you talk" },
-  { icon: Radio, title: "Always Ready", desc: "One click from your menu bar" },
+  { icon: Radio, title: "Always Ready", desc: "One tap or click away" },
   { icon: Activity, title: "In Your Sight", desc: "You see every word it hears" },
 ];
 
@@ -183,14 +183,14 @@ export interface StatusCardData {
 
 export const COMPLETED_STATUS_CARDS: StatusCardData[] = [
   { label: "VOICE ENGINE", value: "READY", subValue: "Runs here, no internet needed", icon: AudioWaveform },
-  { label: "VOICE MODELS", value: "INSTALLED", subValue: "Already sitting on this computer", icon: Layers },
-  { label: "MENU BAR", value: "READY", subValue: "Vox is waiting for you there", icon: Radio },
-  { label: "PRIVACY", value: "LOCAL ONLY", subValue: "Your voice never leaves this computer", icon: ShieldCheck },
+  { label: "VOICE MODELS", value: "INSTALLED", subValue: "Already sitting on this device", icon: Layers },
+  { label: "APP STATUS", value: "READY", subValue: "Vox is ready whenever you need it", icon: Radio },
+  { label: "PRIVACY", value: "LOCAL ONLY", subValue: "Your voice never leaves this device", icon: ShieldCheck },
 ];
 
 export const COMPLETED_TIP = {
   title: "One Thing to Try",
-  text: "Click the Vox icon in your menu bar and start talking. If you'd rather skip the menu, set a shortcut in Settings.",
+  text: "Tap the microphone icon or engage Vox anytime. You can customize input, models, and gestures in Settings.",
 } as const;
 
 export const WIZARD_STATUS_COPY = {

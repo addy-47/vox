@@ -9,10 +9,11 @@ use crate::{
         state::AppState,
     },
     persistence::{
-        fetch_all_observations, fetch_pending_queue_observations, list_personal_memory_versions,
+        fetch_all_observations, fetch_ingestion_aggregate_stats,
+        fetch_pending_queue_observations, list_personal_memory_versions,
         personal_memory::get_personal_memory as db_get_personal_memory,
-        set_active_personal_memory_version as db_set_active_version, ObservationRecord,
-        PersonalMemoryRecord, RevisionDecision, VoxDb,
+        set_active_personal_memory_version as db_set_active_version, IngestionStatsRecord,
+        ObservationRecord, PersonalMemoryRecord, RevisionDecision, VoxDb,
     },
     services::{
         llm::{
@@ -231,6 +232,20 @@ pub async fn get_observations(
     )
     .await
     .map_err(|e| VoxIpcError::Database(e.to_string()))
+}
+
+/// Returns aggregate counts for memory ingestion and active facts.
+#[tauri::command]
+pub async fn get_ingestion_stats(
+    state: State<'_, Arc<AppState>>,
+) -> Result<IngestionStatsRecord, VoxIpcError> {
+    let conn = state
+        .db
+        .connect()
+        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
+    fetch_ingestion_aggregate_stats(&conn)
+        .await
+        .map_err(|e| VoxIpcError::Database(e.to_string()))
 }
 
 /// Lists all pending semantic memory revisions awaiting review.

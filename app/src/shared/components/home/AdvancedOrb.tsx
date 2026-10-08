@@ -918,7 +918,14 @@ export const VoxOrb = React.memo(({
         renderer.domElement.width = 1;
         renderer.domElement.height = 1;
       }
-      renderer.forceContextLoss();
+      try {
+        const gl = renderer.getContext();
+        if (gl && !gl.isContextLost()) {
+          renderer.forceContextLoss();
+        }
+      } catch {
+        // Context may already be dropped by browser
+      }
       renderer.dispose();
     };
   }, []);

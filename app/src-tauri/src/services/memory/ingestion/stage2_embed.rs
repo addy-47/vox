@@ -144,7 +144,6 @@ where
                     conn,
                     item.id,
                     item.retry_count,
-                    "stage1_done",
                     &e.to_string(),
                 )
                 .await

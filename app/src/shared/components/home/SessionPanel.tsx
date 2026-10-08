@@ -4,6 +4,7 @@ import {
   Plus,
   Pin,
   Folder,
+  FolderOpen,
   FolderPlus,
   Loader2,
   AlertCircle,
@@ -18,7 +19,6 @@ import { AnimatePresence, motion, Reorder, useDragControls } from "framer-motion
 import { cn } from "@/shared/lib/utils";
 import { useSessionPanel, type ProjectGroup } from "@/shared/hooks/useSessionPanel";
 import { useVirtualRows } from "@/shared/hooks/useVirtualRows";
-import { useVoiceSession } from "@/shared/context/VoiceSessionContext";
 import {
   resolveSessionTitle,
   sessionLastActivity,
@@ -181,7 +181,7 @@ const SessionRowItem = memo(
         }}
         aria-current={active ? "true" : undefined}
         className={cn(
-          "group relative flex items-center justify-between gap-1.5 py-2 rounded-lg text-left cursor-pointer transition-all select-none border border-transparent",
+          "group relative flex items-center justify-between gap-1.5 py-2 rounded-sm text-left cursor-pointer transition-all select-none border border-transparent",
           active
             ? "bg-[rgba(var(--accent),0.12)] border-[rgba(var(--accent),0.25)] text-[rgb(var(--accent))] font-medium shadow-sm"
             : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.04)]",
@@ -197,14 +197,7 @@ const SessionRowItem = memo(
               aria-label={SESSION_COPY.restoringAriaLabel}
             />
           ) : (
-            <div
-              className={cn(
-                "w-1.5 h-1.5 rounded-full shrink-0 transition-colors",
-                active
-                  ? "bg-[rgb(var(--accent))] shadow-[0_0_6px_rgba(var(--accent),0.8)]"
-                  : "bg-[rgba(var(--foreground),0.2)] group-hover:bg-[rgba(var(--foreground),0.4)]"
-              )}
-            />
+            <div/>
           )}
 
           {isRenaming ? (
@@ -490,7 +483,7 @@ const ProjectRowItem = memo(
         onDragLeave={() => onDragLeave(group.project.id)}
         onDrop={(e) => onDrop(e, group.project.id)}
         className={cn(
-          "flex flex-col rounded-lg border border-transparent select-none relative",
+          "flex flex-col rounded-sm border border-transparent select-none relative",
           isDragging &&
             "z-50 bg-[rgb(var(--card))] shadow-[0_16px_36px_-4px_rgba(0,0,0,0.45),0_0_0_1px_rgba(var(--accent),0.4),0_0_24px_-2px_rgba(var(--accent),0.2)]",
           isDragTarget &&
@@ -515,18 +508,20 @@ const ProjectRowItem = memo(
           onKeyDown={(e) => {
             if (e.key === "Enter" || e.key === " ") handleToggleExpand();
           }}
-          className="group flex items-center justify-between gap-1.5 px-3 py-2 rounded-lg text-left cursor-grab active:cursor-grabbing hover:bg-[rgba(var(--foreground),0.04)] transition-colors select-none touch-none"
+          className="group flex items-center justify-between gap-1.5 px-3 py-2 rounded-sm text-left cursor-grab active:cursor-grabbing hover:bg-[rgba(var(--foreground),0.04)] transition-colors select-none touch-none"
         >
           <div className="flex items-center gap-2 min-w-0 flex-1">
-            <Folder
-              size={13}
-              className={cn(
-                "shrink-0 transition-colors",
-                expanded
-                  ? "text-[rgb(var(--accent))]"
-                  : "text-[rgb(var(--foreground-muted))]/60 group-hover:text-[rgb(var(--foreground-muted))]"
-              )}
-            />
+            {expanded ? (
+              <FolderOpen
+                size={13}
+                className="shrink-0 text-[rgb(var(--accent))] transition-colors"
+              />
+            ) : (
+              <Folder
+                size={13}
+                className="shrink-0 text-[rgb(var(--foreground-muted))]/60 group-hover:text-[rgb(var(--foreground-muted))] transition-colors"
+              />
+            )}
             {isRenaming ? (
               <div
                 className="flex items-center gap-1 flex-1 min-w-0"
@@ -561,20 +556,8 @@ const ProjectRowItem = memo(
 
           {!isRenaming && (
             <div className="flex items-center gap-1 shrink-0 relative min-w-[36px] justify-end">
-              {/* Hover + button to start conversation in this project */}
-              <Tooltip label={SESSION_COPY.newInProjectAriaLabel} side="left">
-                <button
-                  type="button"
-                  onClick={handleCreateInProject}
-                  className="opacity-0 group-hover:opacity-100 flex items-center justify-center w-5 h-5 rounded hover:bg-[rgba(var(--accent),0.1)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] transition-all cursor-pointer"
-                  aria-label={SESSION_COPY.newInProjectAriaLabel}
-                >
-                  <Plus size={12} />
-                </button>
-              </Tooltip>
-
-              {/* Static Session Count: visible by default, replaced on hover or when menu is open */}
-              {group.sessions.length > 0 && (
+              {/* Static Session Count: visible by default when closed, replaced on expansion, hover, or when menu is open */}
+              {!expanded && group.sessions.length > 0 && (
                 <span
                   className={cn(
                     "text-[11px] font-mono text-[rgb(var(--foreground-muted))]/50 px-1 py-0.2 rounded bg-[rgba(var(--foreground),0.04)] shrink-0 transition-opacity",
@@ -585,15 +568,30 @@ const ProjectRowItem = memo(
                 </span>
               )}
 
-              {/* 3-dot action button: hidden by default, visible on group hover or when menu is open */}
+              {/* + button to start conversation in this project */}
+              <Tooltip label={SESSION_COPY.newInProjectAriaLabel} side="left">
+                <button
+                  type="button"
+                  onClick={handleCreateInProject}
+                  className={cn(
+                    "flex items-center justify-center w-5 h-5 rounded hover:bg-[rgba(var(--accent),0.1)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] transition-all cursor-pointer",
+                    expanded || menuOpen ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+                  )}
+                  aria-label={SESSION_COPY.newInProjectAriaLabel}
+                >
+                  <Plus size={12} />
+                </button>
+              </Tooltip>
+
+              {/* 3-dot action button */}
               <button
                 ref={triggerRef}
                 type="button"
                 onClick={handleMenuClick}
                 className={cn(
                   "items-center justify-center w-5 h-5 rounded hover:bg-[rgba(var(--foreground),0.08)] transition-all cursor-pointer",
-                  menuOpen
-                    ? "flex opacity-100 text-[rgb(var(--foreground))] bg-[rgba(var(--foreground),0.08)]"
+                  expanded || menuOpen
+                    ? "flex opacity-100 text-[rgb(var(--foreground))]"
                     : "hidden group-hover:flex opacity-60 hover:!opacity-100 text-[rgb(var(--foreground-muted))]"
                 )}
                 aria-label={SESSION_COPY.actions.moreOptions}
@@ -691,8 +689,19 @@ export const SessionPanel = memo(({ onClose }: SessionPanelProps) => {
     deleteSession,
     reorderProjects,
   } = useSessionPanel();
-  const { activeSessionId, isRestoring, restoringSessionId } = useVoiceSession();
+  const activeSessionId = useSessionStore((s) => s.activeSessionId);
+  const isRestoring = useSessionStore((s) => s.isRestoring);
+  const restoringSessionId = useSessionStore((s) => s.restoringSessionId);
   const setActiveSessionLabel = useSessionStore((s) => s.setActiveSessionLabel);
+
+  // [trace-session-panel] Diagnostic trace to observe re-renders during active voice session
+  const renderCountRef = useRef(0);
+  renderCountRef.current += 1;
+  if (renderCountRef.current % 10 === 1) {
+    console.info(
+      `[trace-session-panel] SessionPanel render count=${renderCountRef.current} activeSession=${activeSessionId} isRestoring=${isRestoring} @${performance.now().toFixed(1)}ms`
+    );
+  }
 
   const viewMode = useSessionPanelUiStore((s) => s.viewMode);
   const setViewMode = useSessionPanelUiStore((s) => s.setViewMode);
@@ -872,7 +881,7 @@ export const SessionPanel = memo(({ onClose }: SessionPanelProps) => {
       ref={scrollRef}
       onScroll={handleScroll}
       data-session-scroll
-      className="flex-1 min-h-0 overflow-y-auto custom-scrollbar flex flex-col gap-3 px-3 pt-3 pb-16 select-none font-sans"
+      className="flex-1 min-h-0 overflow-y-auto custom-scrollbar flex flex-col gap-3 px-1.5 pt-3 pb-16 select-none font-sans"
     >
       {/* ── Top Actions: + New Conversation & Conversation History ── */}
       <div className="flex flex-col gap-1 shrink-0">
@@ -880,7 +889,7 @@ export const SessionPanel = memo(({ onClose }: SessionPanelProps) => {
           type="button"
           onClick={handleNew}
           aria-label={SESSION_COPY.newConversationAriaLabel}
-          className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-left cursor-pointer transition-colors text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.04)] bg-transparent"
+          className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-sm text-left cursor-pointer transition-colors text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.04)] bg-transparent"
         >
           <Plus size={14} className="shrink-0 text-[rgb(var(--accent))]" strokeWidth={2} />
           <span className="text-[13.5px] font-medium tracking-normal">
@@ -895,7 +904,7 @@ export const SessionPanel = memo(({ onClose }: SessionPanelProps) => {
           type="button"
           onClick={() => setViewMode(viewMode === "history" ? "projects" : "history")}
           aria-pressed={viewMode === "history"}
-          className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-left cursor-pointer transition-colors text-[13.5px] font-medium tracking-normal text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.04)] bg-transparent"
+          className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-sm text-left cursor-pointer transition-colors text-[13.5px] font-medium tracking-normal text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.04)] bg-transparent"
         >
           {viewMode === "history" ? (
             <FolderGit2 size={14} className="shrink-0 text-[rgb(var(--accent))]" />
@@ -910,7 +919,7 @@ export const SessionPanel = memo(({ onClose }: SessionPanelProps) => {
 
       {/* ── Transient Error Banner ── */}
       {error && (
-        <div className="flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg bg-red-500/10 border border-red-500/20 text-[11px] text-red-400 shrink-0">
+        <div className="flex items-center justify-between gap-2 px-2 py-1.5 rounded-sm bg-red-500/10 border border-red-500/20 text-[11px] text-red-400 shrink-0">
           <div className="flex items-center gap-1.5 min-w-0">
             <AlertCircle size={13} className="shrink-0 text-red-400" />
             <span className="truncate">{error}</span>

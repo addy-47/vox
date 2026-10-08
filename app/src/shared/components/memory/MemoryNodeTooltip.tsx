@@ -11,6 +11,7 @@ interface MemoryNodeTooltipProps {
   pos: { x: number; y: number } | null;
   onClose: () => void;
   isLightMode?: boolean;
+  sessionTitle?: string | null;
 }
 
 export const MemoryNodeTooltip = memo(({
@@ -18,6 +19,7 @@ export const MemoryNodeTooltip = memo(({
   pos,
   onClose,
   isLightMode = false,
+  sessionTitle = null,
 }: MemoryNodeTooltipProps) => {
   const tooltipRef = useRef<HTMLDivElement>(null);
 
@@ -94,20 +96,23 @@ export const MemoryNodeTooltip = memo(({
               </span>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 max-w-[190px]">
               {factDetail.session_id !== null ? (
-                <span className="text-[9px] font-mono px-2 py-0.5 rounded-md bg-[rgba(var(--foreground),0.06)] text-[rgb(var(--foreground-muted))]">
-                  {MEMORY_COPY.sessionPrefix}{factDetail.session_id}
+                <span
+                  title={sessionTitle || undefined}
+                  className="truncate text-[11px] font-sans font-medium text-[rgb(var(--foreground-muted))]/80 text-right"
+                >
+                  {sessionTitle || `${MEMORY_COPY.sessionPrefix}${factDetail.session_id}`}
                 </span>
               ) : (
-                <span className="text-[9px] font-mono px-2 py-0.5 rounded-md bg-[rgba(var(--accent),0.15)] text-[rgb(var(--accent))]">
+                <span className="text-[10.5px] font-mono text-[rgb(var(--accent))]">
                   {MEMORY_COPY.identityLayer}
                 </span>
               )}
               <button
                 type="button"
                 onClick={onClose}
-                className="p-1 rounded-lg text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.06)] transition-colors cursor-pointer"
+                className="p-1 rounded-lg text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.06)] transition-colors cursor-pointer shrink-0"
               >
                 <X size={14} />
               </button>
@@ -127,9 +132,6 @@ export const MemoryNodeTooltip = memo(({
               <Clock size={11} />
               <span>{new Date(factDetail.created_at).toLocaleDateString()}</span>
             </div>
-            <span className="opacity-60 uppercase tracking-wider">
-              {factDetail.status}
-            </span>
           </div>
         </motion.div>
       </div>

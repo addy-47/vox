@@ -225,6 +225,7 @@ pub enum IpcEvent {
     NotificationUpdated(NotificationRecord),
     PersonalMemoryUpdated(PersonalMemoryRecord),
     SessionsChanged,
+    MemoryIngestionUpdated,
 }
 
 impl From<u8> for AudioIntent {
@@ -263,6 +264,7 @@ impl IpcEvent {
             Self::NotificationUpdated(_) => "notification_updated",
             Self::PersonalMemoryUpdated(_) => "personal_memory_updated",
             Self::SessionsChanged => "sessions_changed",
+            Self::MemoryIngestionUpdated => "memory_ingestion_updated",
         }
     }
 }
@@ -285,6 +287,7 @@ pub fn emit_ipc<R: Runtime>(app: &AppHandle<R>, event: IpcEvent) -> Result<(), t
         IpcEvent::NotificationUpdated(payload) => app.emit(name, payload),
         IpcEvent::PersonalMemoryUpdated(payload) => app.emit(name, payload),
         IpcEvent::SessionsChanged => app.emit(name, ()),
+        IpcEvent::MemoryIngestionUpdated => app.emit(name, ()),
     }
 }
 
@@ -311,5 +314,6 @@ pub fn emit_ipc_to<R: Runtime>(
         IpcEvent::NotificationUpdated(payload) => app.emit_to(target_str, name, payload),
         IpcEvent::PersonalMemoryUpdated(payload) => app.emit_to(target_str, name, payload),
         IpcEvent::SessionsChanged => app.emit_to(target_str, name, ()),
+        IpcEvent::MemoryIngestionUpdated => app.emit_to(target_str, name, ()),
     }
 }

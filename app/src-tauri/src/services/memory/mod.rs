@@ -1,7 +1,3 @@
-use std::sync::Arc;
-
-use crate::core::state::AppState;
-
 pub struct MemoryAppState {
     pub scheduler_handle: parking_lot::Mutex<Option<tauri::async_runtime::JoinHandle<()>>>,
 }
@@ -55,59 +51,3 @@ pub use crate::{core::error::MemoryError, persistence::has_unfinished_items};
 
 pub const COMPACTION_SENTINEL_TURN_ID: u32 = 999_999;
 
-pub fn spawn_ingestion_sweep(
-    state: Arc<AppState>,
-    cancel_token: Option<tokio_util::sync::CancellationToken>,
-) {
-    let is_enabled = state
-        .settings
-        .read()
-        .map(|s| s.personal_memory.pipeline_processing_enabled)
-        .unwrap_or(true);
-
-    if !is_enabled {
-        log::debug!(
-            "[Memory::Ingestion] Ingestion sweep skipped: pipeline_processing_enabled is false"
-        );
-        return;
-    }
-
-    let token = cancel_token.unwrap_or_default();
-    *state.ingestion_cancel.lock() = Some(token.clone());
-
-    let db = state.db.clone();
-    let state_arc = Arc::clone(&state);
-
-    tauri::async_runtime::spawn(async move {
-        let conn = match db.connect() {
-            Ok(c) => c,
-            Err(e) => {
-                log::warn!(
-                    "[Memory::Ingestion] Failed to vend connection for sweep: {}",
-                    e
-                );
-                *state_arc.ingestion_cancel.lock() = None;
-                return;
-            }
-        };
-
-        match has_unfinished_items(&conn).await {
-            Ok(true) => {
-                log::info!(
-                    "[Memory::Ingestion] Unfinished queue items found; starting ingestion sweep."
-                );
-                if let Err(e) = ingestion::drain_ingestion_queue(&conn, Some(&token)).await {
-                    log::warn!("[Memory::Ingestion] Ingestion sweep error: {}", e);
-                }
-            }
-            Ok(false) => {
-                log::debug!("[Memory::Ingestion] Queue is quiescent; no sweep needed.");
-            }
-            Err(e) => {
-                log::warn!("[Memory::Ingestion] Failed to check queue status: {}", e);
-            }
-        }
-
-        *state_arc.ingestion_cancel.lock() = None;
-    });
-}

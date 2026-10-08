@@ -107,7 +107,6 @@ pub async fn run_stage1_exact_dedup(conn: &Connection) -> Result<Stage1Summary> 
                     conn,
                     item.id,
                     item.retry_count,
-                    "pending",
                     &e.to_string(),
                 )
                 .await

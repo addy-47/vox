@@ -14,7 +14,7 @@ import {
   type ProjectRow,
 } from "@/services/projectService";
 import { onSessionsChanged } from "@/services/eventsService";
-import { useVoiceSession } from "@/shared/context/VoiceSessionContext";
+import { useVoiceSessionActions } from "@/shared/context/VoiceSessionContext";
 import { SESSION_COPY } from "@/data/sessionCopy";
 
 export interface ProjectGroup {
@@ -56,7 +56,7 @@ export function useSessionPanel(): UseSessionPanelReturn {
     }
   });
 
-  const { selectSession, startNewConversation } = useVoiceSession();
+  const { selectSession, startNewConversation } = useVoiceSessionActions();
 
   const refresh = useCallback(async () => {
     setError(null);

@@ -65,13 +65,13 @@ export const CompletedStep: React.FC<Props> = ({ onBack }) => {
         </div>
 
         {/* Tip Card */}
-        <div className="p-4 glass relative overflow-hidden shrink-0">
+        <div className="p-4 glass rounded-xl relative overflow-hidden shrink-0">
           <div className="absolute inset-0 bg-gradient-to-r from-[rgb(var(--accent))]/5 to-transparent opacity-50 pointer-events-none" />
           <div className="flex items-center gap-2 mb-2 relative z-10">
-            <Lightbulb className="w-3 h-3 text-[rgb(var(--accent))]" />
-            <span className="text-[12px] font-black text-[rgb(var(--accent))] uppercase tracking-[0.3em]">{COMPLETED_TIP.title}</span>
+            <Lightbulb className="w-3.5 h-3.5 text-[rgb(var(--accent))]" />
+            <span className="text-[11px] sm:text-[12px] font-bold text-[rgb(var(--accent))] uppercase tracking-wider">{COMPLETED_TIP.title}</span>
           </div>
-          <p className="text-[12px] text-[rgb(var(--foreground-muted))]/80 leading-relaxed relative z-10 font-medium">
+          <p className="text-xs sm:text-[13px] text-[rgb(var(--foreground-muted))]/80 leading-relaxed relative z-10 font-normal">
             {COMPLETED_TIP.text}
           </p>
         </div>

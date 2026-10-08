@@ -199,19 +199,19 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
             />
 
             {isCoarsePointer() && (
-                <div className="mx-2 mb-2 p-3 bg-amber-500/10 border border-amber-500/25 rounded-xl flex items-center gap-2.5">
-                    <Network size={14} className="text-amber-400 shrink-0" />
-                    <span className="text-amber-400/90 text-xs font-bold">{MODEL_SETUP_COPY.mobileDataNote}</span>
+                <div className="mx-2 mb-2 p-3 bg-[rgba(var(--warning),0.1)] border border-[rgba(var(--warning),0.25)] rounded-xl flex items-center gap-2.5">
+                    <Network size={14} className="text-[rgb(var(--warning))] shrink-0" />
+                    <span className="text-[rgb(var(--warning))] text-xs font-semibold">{MODEL_SETUP_COPY.mobileDataNote}</span>
                 </div>
             )}
 
             {internalError && (
-                <div className="mx-2 mb-2 p-3 bg-red-500/10 border border-red-500/20 rounded-xl flex items-center justify-between">
-                    <span className="text-red-400 text-xs font-bold">{internalError}</span>
+                <div className="mx-2 mb-2 p-3 bg-[rgba(var(--danger),0.1)] border border-[rgba(var(--danger),0.2)] rounded-xl flex items-center justify-between">
+                    <span className="text-[rgb(var(--danger))] text-xs font-semibold">{internalError}</span>
                     <button 
                         type="button"
                         onClick={() => window.location.reload()} 
-                        className="px-3 py-1 bg-red-500/20 hover:bg-red-500/30 text-red-300 rounded text-[11px] font-bold uppercase tracking-wider transition-all"
+                        className="px-3 py-1 bg-[rgba(var(--danger),0.2)] hover:bg-[rgba(var(--danger),0.3)] text-[rgb(var(--danger))] rounded text-[11px] font-bold uppercase tracking-wider transition-colors"
                     >
                         {MODEL_SETUP_COPY.retryLoad}
                     </button>
@@ -239,21 +239,21 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
                 </div>
             </div>
 
-            <div className="mt-8 pt-8 border-t border-[rgba(var(--foreground),0.1)]">
-                <p className="text-center text-[11px] text-[rgb(var(--foreground-muted))]/70 mb-4">
+            <div className="mt-auto pt-4 sm:pt-6 border-t border-[rgba(var(--foreground),0.08)] pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+                <p className="text-center text-[11px] text-[rgb(var(--foreground-muted))]/70 mb-3">
                     {MODEL_SETUP_COPY.changeLaterNote}
                 </p>
-                <div className="flex gap-4">
-                    <button onClick={onBack} className="px-8 py-5 text-[12px] font-black uppercase tracking-[0.3em] text-[rgb(var(--foreground-muted))]/70 hover:text-[rgb(var(--foreground))] transition-colors">
+                <div className="flex flex-col-reverse sm:flex-row gap-3 sm:gap-4">
+                    <button onClick={onBack} className="px-4 sm:px-6 py-3.5 sm:py-4 min-h-[44px] text-[12px] font-bold uppercase tracking-wider text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors">
                         {MODEL_SETUP_COPY.back}
                     </button>
                     <button 
                         onClick={startSetup}
                         disabled={isFetching || selectedIds.size === 0}
-                        className="group relative flex-1 py-5 text-[rgb(var(--foreground))] font-black rounded-2xl overflow-hidden border transition-all active:scale-[0.98] glass-card hover:border-[rgb(var(--accent))]/70"
+                        className="group relative flex-1 py-3.5 sm:py-4 min-h-[48px] text-[rgb(var(--foreground))] font-bold rounded-xl overflow-hidden border transition-all active:scale-[0.98] glass-card hover:border-[rgb(var(--accent))]/70"
                     >
                         <div className="absolute inset-0 bg-gradient-to-r from-[rgb(var(--accent))]/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-                        <span className="relative z-10 flex items-center justify-center gap-4 uppercase tracking-[0.4em] text-[12px]">
+                        <span className="relative z-10 flex items-center justify-center gap-3 uppercase tracking-widest text-[12px]">
                             {isFetching ? WIZARD_CTA_LABELS.fetchingCatalog : WIZARD_CTA_LABELS.beginSynchronization}
                             <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1 text-[rgb(var(--accent))]" />
                         </span>
@@ -295,7 +295,7 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
                     ] ?? MODEL_PROGRESS_STEPS.unknown;
 
                     return (
-                        <div key={cat.id} className="p-4 glass">
+                        <div key={cat.id} className="p-4 glass rounded-xl">
                             <div className="flex items-center justify-between mb-3">
                                 <div className="flex items-center gap-3">
                                     <div className={cn(
@@ -359,15 +359,15 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
                     </div>
                 </div>
 
-                <h1 className="text-4xl font-display font-black text-[rgb(var(--foreground))] tracking-tighter uppercase mb-4">{MODEL_SETUP_COPY.readyTitle}</h1>
-                <p className="text-[rgb(var(--foreground-muted))]/80 text-sm max-w-sm leading-relaxed mb-12">
+                <h1 className="text-2xl sm:text-3xl lg:text-4xl font-display font-bold text-[rgb(var(--foreground))] tracking-tight uppercase mb-2 sm:mb-4">{MODEL_SETUP_COPY.readyTitle}</h1>
+                <p className="text-[rgb(var(--foreground-muted))]/80 text-xs sm:text-sm max-w-sm leading-relaxed mb-8 sm:mb-12">
                     {MODEL_SETUP_COPY.readyBody}
                 </p>
 
-                <div className="flex flex-col gap-4 w-full max-w-xs">
+                <div className="flex flex-col gap-3 w-full max-w-xs">
                     <button 
                         onClick={onNext}
-                        className="group relative w-full py-5 text-[rgb(var(--foreground))] font-black rounded-2xl overflow-hidden border transition-all active:scale-[0.98] glass-card hover:border-[rgb(var(--accent))]/70"
+                        className="group relative w-full py-3.5 sm:py-4 min-h-[48px] text-[rgb(var(--foreground))] font-bold rounded-xl overflow-hidden border transition-all active:scale-[0.98] glass-card hover:border-[rgb(var(--accent))]/70"
                     >
                         <div className="absolute inset-0 bg-gradient-to-r from-[rgb(var(--accent))]/10 to-[rgba(var(--accent),0.03)] opacity-0 group-hover:opacity-100 transition-opacity" style={{ background: `linear-gradient(90deg, rgba(var(--accent), 0.1) 0%, rgba(var(--accent), 0.03) 100%)` }} />
                         <span className="relative z-10 flex items-center justify-center gap-3 tracking-widest uppercase text-xs">
