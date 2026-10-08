@@ -12,8 +12,7 @@ use super::{
     prompts::{
         delta_consolidation_json_schema, whole_memory_json_schema,
         COMMENT_DIRECTED_EDIT_SYSTEM_PROMPT, CONSOLIDATION_REPAIR_SYSTEM_PROMPT,
-        PERSONAL_COLD_GENERATION_SYSTEM_PROMPT,
-        PERSONAL_INCREMENTAL_INTEGRATION_SYSTEM_PROMPT,
+        PERSONAL_COLD_GENERATION_SYSTEM_PROMPT, PERSONAL_INCREMENTAL_INTEGRATION_SYSTEM_PROMPT,
     },
     revisions::stage_revisions,
 };
@@ -643,7 +642,8 @@ No new sections need to be created as all observations can be integrated into th
         let err =
             gate_on_structured_output_support("meta/llama-3.2-11b-vision-instruct").unwrap_err();
         assert!(
-            err.to_string().contains("cannot guarantee strict JSON output"),
+            err.to_string()
+                .contains("cannot guarantee strict JSON output"),
             "unexpected gate error: {}",
             err
         );

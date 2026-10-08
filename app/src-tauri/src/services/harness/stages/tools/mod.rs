@@ -47,9 +47,33 @@ pub struct ToolExecutionContext {
     pub turn_id: u32,
     pub cancel: tokio_util::sync::CancellationToken,
     pub on_sessions_changed: Option<Arc<dyn Fn() + Send + Sync>>,
+    pub max_observation_tokens: Option<usize>,
 }
 
 impl ToolExecutionContext {
+    /// Constructs a standard execution context with no observation token budget constraint.
+    pub fn new(
+        app_state: Arc<AppState>,
+        session_id: i64,
+        turn_id: u32,
+        cancel: tokio_util::sync::CancellationToken,
+        on_sessions_changed: Option<Arc<dyn Fn() + Send + Sync>>,
+    ) -> Self {
+        Self {
+            app_state,
+            session_id,
+            turn_id,
+            cancel,
+            on_sessions_changed,
+            max_observation_tokens: None,
+        }
+    }
+
+    /// Attaches an observation token budget ceiling (used by Modular retrieval tools).
+    pub fn with_observation_budget(mut self, max_tokens: usize) -> Self {
+        self.max_observation_tokens = Some(max_tokens);
+        self
+    }
     /// Checks if a non-placeholder title is already persisted for the active session.
     pub async fn is_title_already_set(&self) -> bool {
         if let Ok(conn) = self.app_state.db.connect() {

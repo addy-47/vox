@@ -2,7 +2,9 @@
 
 **Last Updated:** 2026-09-25
 
-The `nexuss` crate (published as `nexuss` on crates.io) is a standalone, zero-bloat Rust library powering Vox's `web_search` tool. It handles the full lifecycle from multi-engine query fanout through SSRF-hardened page extraction to tri-mode relevance ranking. This document focuses on the crate's internal logic and module responsibilities; the Vox-side wiring (tool definition, context budget clamping, XML evidence rendering) is covered in the [tools specification](file:///home/addy/projects/apps/vox/docs/specs/tools-spec.md).
+The `nexus-rs` crate (published as `nexus` in Cargo) is a standalone, stateless Rust library powering Vox's `web_search` tool. It handles the full stateless retrieval lifecycle from multi-engine query fanout through SSRF-hardened page extraction to tri-mode relevance ranking. The crate maintains zero conversational state, zero session scratchpads, and zero query caching / TTLs.
+
+This document focuses on the crate's internal module architecture and algorithmic responsibilities. The Vox-side application wiring (tool registration, session monotonic `tool_id` assignment, Harness scratchpad caching, context budget clamping, and XML evidence rendering) is specified in the [Web Search Tool Specification](file:///home/addy/projects/apps/vox/docs/specs/tools-specs/web-search.md) and [Agentic Tools LLD](file:///home/addy/projects/apps/vox/docs/specs/tools-specs/lld.md).
 
 ---
 
@@ -232,12 +234,10 @@ These metrics are logged by `WebSearchTool` at `info` level and embedded in the 
 
 ## Vox Integration Summary
 
-The `web_search.rs` tool adapter in Vox:
+The `web_search.rs` tool adapter in Vox interacts with `nexus-rs` as a standalone, stateless retrieval crate:
 
-1. **Constructs** a `NexusSearch` via `NexusSearch::builder()` with 5 engines (DuckDuckGo, Bing, GoogleWML, Mojeek, Yahoo), a `VoxEmbedder`, and `FanoutPolicy`/`RankingPolicy` defaults.
-2. **Maps** user-facing parameters (`time_filter`, `ranking_mode`, `max_passages`) to `NexusSearchOptions`.
-3. **Executes** `search_client.search(&query, &options)` with an adaptive timeout (4–5.5s depending on ranking mode, capped at 10s).
-4. **Renders** results into `<web_search_evidence>` XML with context-budget clamping (30% of remaining tokens, hard cap at 2000 tokens).
-5. **Handles** errors by mapping `NexusError` variants to user-facing messages, with network errors producing a "unavailable" response and empty results producing a "no relevant results" response.
-
-Level 3 domain constants in `web_search.rs` (`DEFAULT_MAX_PASSAGES`, `DEFAULT_FETCH_CANDIDATES`, `DEFAULT_CHUNK_SIZE_WORDS`, etc.) mirror the crate defaults and serve as the Vox-side configuration layer.
+1. **Constructs** a `NexusSearch` singleton during initialization via `NexusSearch::builder()` configured with enabled search engines, a `VoxEmbedder` bridging to Vox's in-process ONNX MiniLM embedder, and default `FanoutPolicy` / `RankingPolicy`.
+2. **Maps** model-supplied tool parameters (`query`, `time_filter`, `ranking_mode`, `max_passages`, `deadline_ms`) to `NexusSearchOptions`.
+3. **Executes** `client.search(&query, &options)` under an adaptive Tokio deadline bounded by the harness execution timeout.
+4. **Applies Context Budgeting** by rendering extracted passages into structured `<web_search_evidence>` XML bounded by the harness-assigned token ceiling (`max_observation_tokens`), using progressive passage popping to eliminate overflow without withholding results.
+5. **Handles Failures Gracefully** by translating `NexusError` outcomes into structured XML status blocks (`<web_search_status code="...">`), adhering strictly to the Zero Turn Abort invariant.

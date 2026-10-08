@@ -438,13 +438,13 @@ pub async fn step6_handle_terminal_tool<R: tauri::Runtime + 'static>(
     }
     ctx.stream_stage.emit_finished(ctx.stream_handles);
 
-    let tool_ctx = ToolExecutionContext {
-        app_state: Arc::clone(&ctx.req.app_state),
-        session_id: ctx.session_id,
+    let tool_ctx = ToolExecutionContext::new(
+        Arc::clone(&ctx.req.app_state),
+        ctx.session_id,
         turn_id,
-        cancel: ctx.req.cancel.clone(),
-        on_sessions_changed: make_sessions_changed_callback(&ctx.req.app),
-    };
+        ctx.req.cancel.clone(),
+        make_sessions_changed_callback(&ctx.req.app),
+    );
 
     let outcome =
         ToolExecutor::execute_tool(ctx.tool_registry, PipelineMode::Modular, call, tool_ctx).await;
@@ -550,13 +550,38 @@ pub async fn step6_handle_non_terminal_tool<R: tauri::Runtime + 'static>(
     };
     enter_non_terminal_phase(&non_terminal, &non_term_ctx);
 
-    let tool_ctx = ToolExecutionContext {
-        app_state: Arc::clone(&ctx.req.app_state),
-        session_id: ctx.session_id,
-        turn_id,
-        cancel: ctx.req.cancel.clone(),
-        on_sessions_changed: make_sessions_changed_callback(&ctx.req.app),
+    let max_observation_tokens = {
+        let guard = ctx.harness_arc.lock();
+        if let Some(ref harness) = *guard {
+            if let Some(ref budget) = harness.budget {
+                let filter = ToolFilter {
+                    mode: PipelineMode::Modular,
+                    title_is_unset: !harness.title_set,
+                    memory_retrieval_enabled: harness.memory_retrieval_enabled,
+                    web_search_enabled: harness.web_search_enabled,
+                };
+                let tools = harness.tool_registry.active_definitions(&filter);
+                budget.calculate_max_observation_tokens(
+                    harness.history.messages(),
+                    scratchpad,
+                    Some(&tools),
+                )
+            } else {
+                2000
+            }
+        } else {
+            2000
+        }
     };
+
+    let tool_ctx = ToolExecutionContext::new(
+        Arc::clone(&ctx.req.app_state),
+        ctx.session_id,
+        turn_id,
+        ctx.req.cancel.clone(),
+        make_sessions_changed_callback(&ctx.req.app),
+    )
+    .with_observation_budget(max_observation_tokens);
 
     let outcome = ToolExecutor::execute_tool(
         ctx.tool_registry,
@@ -680,15 +705,20 @@ pub fn step7_commit_completed(
     harness_arc: &Arc<Mutex<Option<Harness>>>,
     turn_id: u32,
     assistant_response: String,
+    scratchpad: &[ChatMessage],
 ) -> TurnOutcome {
     log::info!(
-        "[Harness::Finalize] Committing turn {} ({} chars)",
+        "[Harness::Finalize] Committing turn {} ({} chars, {} scratchpad messages)",
         turn_id,
-        assistant_response.len()
+        assistant_response.len(),
+        scratchpad.len()
     );
 
     let mut guard = harness_arc.lock();
     if let Some(ref mut harness) = *guard {
+        for msg in scratchpad {
+            harness.history.push_message(msg.clone());
+        }
         harness
             .history
             .push_assistant_turn(assistant_response.clone());

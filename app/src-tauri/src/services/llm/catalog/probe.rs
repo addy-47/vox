@@ -16,7 +16,7 @@ use super::{
     presets::lookup_preset,
     sync::get_baseline_spec,
     types::{
-        CapabilityProvenance, CapabilityCacheRead, LlmModelInfo, ModelCapabilities,
+        CapabilityCacheRead, CapabilityProvenance, LlmModelInfo, ModelCapabilities,
         ModelProbeResult, ProbeCheck, ProbeOutcome, CAP_KIND_CLOUD, CAP_KIND_EMBEDDED,
         CAP_KIND_SERVER,
     },
@@ -38,9 +38,9 @@ use crate::{
                 sse::SseDecoder,
                 ConnectionConfig, TransportType,
             },
-            CanonicalToolDefinition, ConversationInput, GenerationOptions, GenerationPurpose,
-            GenerationRequest, OutputConstraint, CanonicalToolCall, EmbeddedProvider, LlmProvider,
-            LlmProviderConfig, RemoteTransport, GEMMA_MODEL_DIR, QWEN_MODEL_DIR,
+            CanonicalToolCall, CanonicalToolDefinition, ConversationInput, EmbeddedProvider,
+            GenerationOptions, GenerationPurpose, GenerationRequest, LlmProvider,
+            LlmProviderConfig, OutputConstraint, RemoteTransport, GEMMA_MODEL_DIR, QWEN_MODEL_DIR,
         },
     },
     setup::manifest::VoxManifest,
@@ -173,14 +173,32 @@ pub async fn list_models(
             api_key,
             provider_name,
             ..
-        } => list_remote_models(&base_url, &model, api_key.as_deref(), provider_name.as_deref(), CAP_KIND_SERVER).await,
+        } => {
+            list_remote_models(
+                &base_url,
+                &model,
+                api_key.as_deref(),
+                provider_name.as_deref(),
+                CAP_KIND_SERVER,
+            )
+            .await
+        }
         LlmProviderConfig::Cloud {
             base_url,
             model,
             api_key,
             provider_name,
             ..
-        } => list_remote_models(&base_url, &model, api_key.as_deref(), provider_name.as_deref(), CAP_KIND_CLOUD).await,
+        } => {
+            list_remote_models(
+                &base_url,
+                &model,
+                api_key.as_deref(),
+                provider_name.as_deref(),
+                CAP_KIND_CLOUD,
+            )
+            .await
+        }
     }
 }
 
@@ -373,10 +391,7 @@ fn tool_verdict(
     if observed.iter().any(|c| c.name == tool_name) {
         return (
             ToolOutcome::Supported,
-            format!(
-                "declared tool '{}' emitted with valid arguments",
-                tool_name
-            ),
+            format!("declared tool '{}' emitted with valid arguments", tool_name),
         );
     }
     if let Some(note) = truncation {
@@ -503,8 +518,15 @@ async fn quarantine_corrupt_cache(cache_file: &std::path::Path) -> String {
     match tokio::fs::rename(cache_file, &backup_file).await {
         Ok(()) => backup_file.display().to_string(),
         Err(err) => {
-            log::warn!("[Catalog::Probe] Failed to quarantine corrupt cache: {}", err);
-            format!("{} (quarantine rename failed: {})", cache_file.display(), err)
+            log::warn!(
+                "[Catalog::Probe] Failed to quarantine corrupt cache: {}",
+                err
+            );
+            format!(
+                "{} (quarantine rename failed: {})",
+                cache_file.display(),
+                err
+            )
         }
     }
 }
@@ -635,7 +657,9 @@ impl CapabilityProbeEngine {
                         "manifest_read",
                         "Embedded models manifest read",
                         ProbeOutcome::Measured,
-                        parameter_size.clone().map(|p| format!("declared parameters: {}", p)),
+                        parameter_size
+                            .clone()
+                            .map(|p| format!("declared parameters: {}", p)),
                         started,
                     );
                 }
@@ -681,8 +705,10 @@ impl CapabilityProbeEngine {
                     (facts.context_length, facts.architecture)
                 }
                 None => {
-                    let detail =
-                        format!("GGUF header of {} is unreadable or unsupported", path.display());
+                    let detail = format!(
+                        "GGUF header of {} is unreadable or unsupported",
+                        path.display()
+                    );
                     log::warn!("[Catalog::Probe] {}", detail);
                     record_check(
                         &mut checks,
@@ -845,7 +871,9 @@ impl CapabilityProbeEngine {
         }
 
         let is_gpu = meta.is_gpu_accelerated || meta.server_has_gpu;
-        let gpu_check_failed = checks.iter().any(|c| c.id == "ollama_gpu" && c.outcome == ProbeOutcome::Failed);
+        let gpu_check_failed = checks
+            .iter()
+            .any(|c| c.id == "ollama_gpu" && c.outcome == ProbeOutcome::Failed);
         let gpu_check_skipped = !checks.iter().any(|c| c.id == "ollama_gpu");
         let gpu_status = if is_gpu {
             if let Some(vram) = meta.vram_bytes {
@@ -1006,9 +1034,7 @@ impl CapabilityProbeEngine {
                         Ok(ps) => {
                             for running in ps.models {
                                 if running.name == config.model
-                                    || running
-                                        .name
-                                        .starts_with(&format!("{}:", config.model))
+                                    || running.name.starts_with(&format!("{}:", config.model))
                                 {
                                     if let Some(vram) = running.size_vram {
                                         if vram > 0 {
@@ -1122,12 +1148,18 @@ impl CapabilityProbeEngine {
         }
 
         if token_count == 0 {
-            return fail("endpoint answered with an empty completion".to_string(), checks);
+            return fail(
+                "endpoint answered with an empty completion".to_string(),
+                checks,
+            );
         }
 
         let elapsed = t_start.elapsed().as_secs_f32();
         if elapsed <= 0.0 {
-            return fail("completion arrived with no measurable duration".to_string(), checks);
+            return fail(
+                "completion arrived with no measurable duration".to_string(),
+                checks,
+            );
         }
         let tps = token_count as f32 / elapsed;
         let ttft_ms = match first_token_time {
@@ -1168,7 +1200,14 @@ impl CapabilityProbeEngine {
                 ToolOutcome::Unsupported => ProbeOutcome::Unsupported,
                 ToolOutcome::Failed => ProbeOutcome::Failed,
             };
-            record_check(checks, "tool_calls", "Tool call probe", kind, Some(detail), started);
+            record_check(
+                checks,
+                "tool_calls",
+                "Tool call probe",
+                kind,
+                Some(detail),
+                started,
+            );
             outcome
         };
 
@@ -1242,24 +1281,21 @@ impl CapabilityProbeEngine {
                     TransportType::OllamaNative => {
                         observed.extend(parse_tool_calls_in_line(&line));
                         if ollama_stream_is_complete(&line) {
-                            let (outcome, detail) =
-                                tool_verdict(&observed, &tool_name, None);
+                            let (outcome, detail) = tool_verdict(&observed, &tool_name, None);
                             return finish(outcome, detail, checks);
                         }
                     }
                     TransportType::Responses => {
                         observed.extend(responses_accumulator.feed_line(&line));
                         if line == "[DONE]" || responses_stream_is_complete(&line) {
-                            let (outcome, detail) =
-                                tool_verdict(&observed, &tool_name, None);
+                            let (outcome, detail) = tool_verdict(&observed, &tool_name, None);
                             return finish(outcome, detail, checks);
                         }
                     }
                     TransportType::ChatCompletions => {
                         if line == "[DONE]" {
                             observed.extend(chat_accumulator.drain());
-                            let (outcome, detail) =
-                                tool_verdict(&observed, &tool_name, None);
+                            let (outcome, detail) = tool_verdict(&observed, &tool_name, None);
                             return finish(outcome, detail, checks);
                         }
                         chat_accumulator.feed_line(&line);
@@ -1280,14 +1316,13 @@ impl CapabilityProbeEngine {
         target_cap: u32,
     ) -> (Option<u32>, ProbeCheck) {
         let started = Instant::now();
-        let done =
-            |outcome: ProbeOutcome, detail: Option<String>| ProbeCheck {
-                id: "token_cap".to_string(),
-                label: "Token cap validation".to_string(),
-                outcome,
-                detail,
-                duration_ms: Some(started.elapsed().as_millis() as u32),
-            };
+        let done = |outcome: ProbeOutcome, detail: Option<String>| ProbeCheck {
+            id: "token_cap".to_string(),
+            label: "Token cap validation".to_string(),
+            outcome,
+            detail,
+            duration_ms: Some(started.elapsed().as_millis() as u32),
+        };
 
         let (base_url, model, api_key, provider_name) = match config {
             LlmProviderConfig::Server {
@@ -1375,7 +1410,10 @@ impl CapabilityProbeEngine {
                     None,
                     done(
                         ProbeOutcome::Failed,
-                        Some(format!("endpoint rejected the cap (context_length_exceeded): {}", error_excerpt(&text))),
+                        Some(format!(
+                            "endpoint rejected the cap (context_length_exceeded): {}",
+                            error_excerpt(&text)
+                        )),
                     ),
                 )
             } else {
@@ -1383,7 +1421,11 @@ impl CapabilityProbeEngine {
                     None,
                     done(
                         ProbeOutcome::Failed,
-                        Some(format!("endpoint returned HTTP {}: {}", status, error_excerpt(&text))),
+                        Some(format!(
+                            "endpoint returned HTTP {}: {}",
+                            status,
+                            error_excerpt(&text)
+                        )),
                     ),
                 )
             }
@@ -1393,9 +1435,12 @@ impl CapabilityProbeEngine {
 
 #[cfg(test)]
 mod tests {
+    use std::{
+        io::{Read, Write},
+        net::TcpListener,
+    };
+
     use super::*;
-    use std::io::{Read, Write};
-    use std::net::TcpListener;
 
     /// Serves canned HTTP responses, one per connection, then exits.
     /// Every response carries `Connection: close` so no keep-alive pooling
@@ -1429,7 +1474,11 @@ mod tests {
 
     /// Serves a response whose declared length exceeds the bytes sent, then
     /// closes the connection: the client observes a mid-stream transport error.
-    fn serve_truncated(status: u16, claimed_len: usize, body: String) -> (String, std::thread::JoinHandle<()>) {
+    fn serve_truncated(
+        status: u16,
+        claimed_len: usize,
+        body: String,
+    ) -> (String, std::thread::JoinHandle<()>) {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind mock server");
         let url = format!(
             "http://{}",
@@ -1581,18 +1630,13 @@ mod tests {
             extract_probe_text(ollama, TransportType::OllamaNative),
             vec!["Hello ".to_string()]
         );
-        let responses =
-            r#"{"type":"response.output_text.delta","delta":"Hello "}"#;
+        let responses = r#"{"type":"response.output_text.delta","delta":"Hello "}"#;
         assert_eq!(
             extract_probe_text(responses, TransportType::Responses),
             vec!["Hello ".to_string()]
         );
         assert!(extract_probe_text("not json", TransportType::ChatCompletions).is_empty());
-        assert!(extract_probe_text(
-            r#"{"choices":[]}"#,
-            TransportType::ChatCompletions
-        )
-        .is_empty());
+        assert!(extract_probe_text(r#"{"choices":[]}"#, TransportType::ChatCompletions).is_empty());
     }
 
     #[test]
@@ -1657,12 +1701,19 @@ mod tests {
         let (url, server) = serve_canned(vec![(401, "unauthorized".to_string())]);
         let (client, config) = mock_setup(&url, None);
         let mut checks = Vec::new();
-        let outcome =
-            run_probed(CapabilityProbeEngine::empirical_streaming_probe(&client, &config, &mut checks)).await;
+        let outcome = run_probed(CapabilityProbeEngine::empirical_streaming_probe(
+            &client,
+            &config,
+            &mut checks,
+        ))
+        .await;
         assert!(matches!(outcome, StreamOutcome::Failed));
         let check = find_check(&checks, "streaming");
         assert_eq!(check.outcome, ProbeOutcome::Failed);
-        let detail = check.detail.as_ref().expect("failed check must carry detail");
+        let detail = check
+            .detail
+            .as_ref()
+            .expect("failed check must carry detail");
         assert!(detail.contains("401"), "detail: {}", detail);
         server.join().expect("mock server panicked");
     }
@@ -1672,11 +1723,18 @@ mod tests {
         let (url, server) = serve_canned(vec![(200, "data: [DONE]\n\n".to_string())]);
         let (client, config) = mock_setup(&url, None);
         let mut checks = Vec::new();
-        let outcome =
-            run_probed(CapabilityProbeEngine::empirical_streaming_probe(&client, &config, &mut checks)).await;
+        let outcome = run_probed(CapabilityProbeEngine::empirical_streaming_probe(
+            &client,
+            &config,
+            &mut checks,
+        ))
+        .await;
         assert!(matches!(outcome, StreamOutcome::Failed));
         let check = find_check(&checks, "streaming");
-        let detail = check.detail.as_ref().expect("failed check must carry detail");
+        let detail = check
+            .detail
+            .as_ref()
+            .expect("failed check must carry detail");
         assert!(detail.contains("empty"), "detail: {}", detail);
         server.join().expect("mock server panicked");
     }
@@ -1687,8 +1745,12 @@ mod tests {
         let (url, server) = serve_canned(vec![(200, body.to_string())]);
         let (client, config) = mock_setup(&url, None);
         let mut checks = Vec::new();
-        let outcome =
-            run_probed(CapabilityProbeEngine::empirical_streaming_probe(&client, &config, &mut checks)).await;
+        let outcome = run_probed(CapabilityProbeEngine::empirical_streaming_probe(
+            &client,
+            &config,
+            &mut checks,
+        ))
+        .await;
         match outcome {
             StreamOutcome::Measured {
                 latin,
@@ -1711,11 +1773,18 @@ mod tests {
         let (url, server) = serve_truncated(200, partial.len() + 5000, partial.to_string());
         let (client, config) = mock_setup(&url, None);
         let mut checks = Vec::new();
-        let outcome =
-            run_probed(CapabilityProbeEngine::empirical_streaming_probe(&client, &config, &mut checks)).await;
+        let outcome = run_probed(CapabilityProbeEngine::empirical_streaming_probe(
+            &client,
+            &config,
+            &mut checks,
+        ))
+        .await;
         assert!(matches!(outcome, StreamOutcome::Failed));
         let check = find_check(&checks, "streaming");
-        let detail = check.detail.as_ref().expect("failed check must carry detail");
+        let detail = check
+            .detail
+            .as_ref()
+            .expect("failed check must carry detail");
         assert!(detail.contains("interrupted"), "detail: {}", detail);
         server.join().expect("mock server panicked");
     }
@@ -1726,8 +1795,12 @@ mod tests {
         let (url, server) = serve_canned(vec![(200, body.to_string())]);
         let (client, config) = mock_setup(&url, None);
         let mut checks = Vec::new();
-        let outcome =
-            run_probed(CapabilityProbeEngine::empirical_tool_probe(&client, &config, &mut checks)).await;
+        let outcome = run_probed(CapabilityProbeEngine::empirical_tool_probe(
+            &client,
+            &config,
+            &mut checks,
+        ))
+        .await;
         assert!(matches!(outcome, ToolOutcome::Supported));
         server.join().expect("mock server panicked");
     }
@@ -1738,8 +1811,12 @@ mod tests {
         let (url, server) = serve_canned(vec![(200, body.to_string())]);
         let (client, config) = mock_setup(&url, None);
         let mut checks = Vec::new();
-        let outcome =
-            run_probed(CapabilityProbeEngine::empirical_tool_probe(&client, &config, &mut checks)).await;
+        let outcome = run_probed(CapabilityProbeEngine::empirical_tool_probe(
+            &client,
+            &config,
+            &mut checks,
+        ))
+        .await;
         assert!(matches!(outcome, ToolOutcome::Unsupported));
         let check = find_check(&checks, "tool_calls");
         assert_eq!(check.outcome, ProbeOutcome::Unsupported);
@@ -1750,12 +1827,15 @@ mod tests {
 
     #[tokio::test]
     async fn tool_probe_rate_limit_is_failed_not_unsupported() {
-        let (url, server) =
-            serve_canned(vec![(429, "{\"error\":\"rate limited\"}".to_string())]);
+        let (url, server) = serve_canned(vec![(429, "{\"error\":\"rate limited\"}".to_string())]);
         let (client, config) = mock_setup(&url, None);
         let mut checks = Vec::new();
-        let outcome =
-            run_probed(CapabilityProbeEngine::empirical_tool_probe(&client, &config, &mut checks)).await;
+        let outcome = run_probed(CapabilityProbeEngine::empirical_tool_probe(
+            &client,
+            &config,
+            &mut checks,
+        ))
+        .await;
         assert!(matches!(outcome, ToolOutcome::Failed));
         let check = find_check(&checks, "tool_calls");
         assert_eq!(check.outcome, ProbeOutcome::Failed);
@@ -1770,8 +1850,12 @@ mod tests {
         let (url, server) = serve_canned(vec![(200, body.to_string())]);
         let (client, config) = mock_setup(&url, None);
         let mut checks = Vec::new();
-        let outcome =
-            run_probed(CapabilityProbeEngine::empirical_tool_probe(&client, &config, &mut checks)).await;
+        let outcome = run_probed(CapabilityProbeEngine::empirical_tool_probe(
+            &client,
+            &config,
+            &mut checks,
+        ))
+        .await;
         assert!(matches!(outcome, ToolOutcome::Unsupported));
         let check = find_check(&checks, "tool_calls");
         let detail = check.detail.as_ref().expect("check must carry detail");
@@ -1790,8 +1874,12 @@ mod tests {
             "ollama preset must resolve to native transport"
         );
         let mut checks = Vec::new();
-        let outcome =
-            run_probed(CapabilityProbeEngine::empirical_tool_probe(&client, &config, &mut checks)).await;
+        let outcome = run_probed(CapabilityProbeEngine::empirical_tool_probe(
+            &client,
+            &config,
+            &mut checks,
+        ))
+        .await;
         assert!(matches!(outcome, ToolOutcome::Supported));
         server.join().expect("mock server panicked");
     }
@@ -1813,13 +1901,10 @@ mod tests {
         ))
         .await;
         assert_eq!(checks.len(), 2);
+        assert!(checks.iter().all(|c| c.outcome == ProbeOutcome::Failed));
         assert!(checks
             .iter()
-            .all(|c| c.outcome == ProbeOutcome::Failed));
-        assert!(checks.iter().all(|c| c
-            .detail
-            .as_ref()
-            .is_some_and(|d| d.contains("404"))));
+            .all(|c| c.detail.as_ref().is_some_and(|d| d.contains("404"))));
         assert_eq!(meta.supports_tools, Support::Unknown);
         server.join().expect("mock server panicked");
     }
@@ -1834,8 +1919,10 @@ mod tests {
             provider_name: None,
             protocol: None,
         };
-        let (validated, check) =
-            run_probed(CapabilityProbeEngine::validate_token_cap(&provider, None, 4096)).await;
+        let (validated, check) = run_probed(CapabilityProbeEngine::validate_token_cap(
+            &provider, None, 4096,
+        ))
+        .await;
         assert_eq!(validated, Some(4096));
         assert_eq!(check.outcome, ProbeOutcome::Measured);
         server.join().expect("mock server panicked");
@@ -1852,12 +1939,18 @@ mod tests {
             provider_name: None,
             protocol: None,
         };
-        let (validated, check) =
-            run_probed(CapabilityProbeEngine::validate_token_cap(&provider, None, 999999)).await;
+        let (validated, check) = run_probed(CapabilityProbeEngine::validate_token_cap(
+            &provider, None, 999999,
+        ))
+        .await;
         assert_eq!(validated, None);
         assert_eq!(check.outcome, ProbeOutcome::Failed);
         let detail = check.detail.expect("failed check must carry detail");
-        assert!(detail.contains("context_length_exceeded"), "detail: {}", detail);
+        assert!(
+            detail.contains("context_length_exceeded"),
+            "detail: {}",
+            detail
+        );
         server.join().expect("mock server panicked");
     }
 }

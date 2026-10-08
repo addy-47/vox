@@ -134,7 +134,11 @@ impl ResponsesToolAccumulator {
             Some("response.function_call_arguments.delta") => {
                 if let Some(delta) = event.delta {
                     let idx = event.output_index.unwrap_or(0);
-                    self.pending.entry(idx).or_default().arguments.push_str(&delta);
+                    self.pending
+                        .entry(idx)
+                        .or_default()
+                        .arguments
+                        .push_str(&delta);
                 }
             }
             Some("response.output_item.done") => {

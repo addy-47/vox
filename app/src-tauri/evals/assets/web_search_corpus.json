@@ -1,98 +1,26 @@
 [
-  {
-    "id": "news_01",
-    "query": "Federal Reserve interest rate decision September 2026"
-  },
-  {
-    "id": "news_02",
-    "query": "latest global technology and science news roundup"
-  },
-  {
-    "id": "news_03",
-    "query": "OpenAI announcement this week"
-  },
-  {
-    "id": "news_04",
-    "query": "European Central Bank rate decision summary"
-  },
-  {
-    "id": "tech_01",
-    "query": "Rust 2024 edition migration guide breaking changes"
-  },
-  {
-    "id": "tech_02",
-    "query": "tokio structured concurrency shutdown graceful pattern"
-  },
-  {
-    "id": "tech_03",
-    "query": "ONNX Runtime int8 quantization accuracy loss benchmarks"
-  },
-  {
-    "id": "tech_04",
-    "query": "crates.io nexuss documentation TextEmbedder trait"
-  },
-  {
-    "id": "tech_05",
-    "query": "CSS backdrop-filter performance GPU compositing"
-  },
-  {
-    "id": "tech_06",
-    "query": "SQLite FTS5 bm25 ranking versus vector search hybrid"
-  },
-  {
-    "id": "cmp_01",
-    "query": "Burn and Candle web framework comparison benchmarks 2026"
-  },
-  {
-    "id": "cmp_02",
-    "query": "Tavily Exa Brave Search API pricing and rate limits compared"
-  },
-  {
-    "id": "cmp_03",
-    "query": "cross encoder reranking versus bi-encoder retrieval NDCG"
-  },
-  {
-    "id": "cmp_04",
-    "query": "SearXNG self hosted versus keyless SERP scraping reliability"
-  },
-  {
-    "id": "ent_01",
-    "query": "all-MiniLM-L6-v2 embedding dimensions and max sequence length"
-  },
-  {
-    "id": "ent_02",
-    "query": "bge-m3 model size parameters hidden size"
-  },
-  {
-    "id": "ent_03",
-    "query": "ms-marco-MiniLM-L-6-v2 cross encoder NDCG@10 TREC DL 2019"
-  },
-  {
-    "id": "ent_04",
-    "query": "Google mobile WML search endpoint deprecated status"
-  },
-  {
-    "id": "wall_01",
-    "query": "gemini.google.com product capabilities overview"
-  },
-  {
-    "id": "wall_02",
-    "query": "reddit discussion best local speech to speech models"
-  },
-  {
-    "id": "wall_03",
-    "query": "stackoverflow answer rust async trait object lifetime elision"
-  },
-  {
-    "id": "long_01",
-    "query": "polyc-egress socket pinning DNS rebinding rust reqwest"
-  },
-  {
-    "id": "long_02",
-    "query": "WebKitGTK backdrop-filter blur repaint jank profiling"
-  },
-  {
-    "id": "long_03",
-    "query": "primp rust TLS impersonation JA3 fingerprint fidelity"
-  }
+  { "id": "geo_01", "query": "Mount Everest elevation above sea level in meters" },
+  { "id": "geo_02", "query": "capital city of Australia" },
+  { "id": "geo_03", "query": "longest river in the world by length" },
+  { "id": "sci_01", "query": "speed of light in vacuum in meters per second" },
+  { "id": "sci_02", "query": "atomic number of gold" },
+  { "id": "sci_03", "query": "number of chromosomes in a human somatic cell" },
+  { "id": "sci_04", "query": "distance from Earth to the Moon in kilometers" },
+  { "id": "math_01", "query": "sum of interior angles of a hexagon in degrees" },
+  { "id": "math_02", "query": "value of pi to ten decimal places" },
+  { "id": "math_03", "query": "number of leap years in a 400 year Gregorian cycle" },
+  { "id": "units_01", "query": "how many fluid ounces in one US gallon" },
+  { "id": "units_02", "query": "temperature at which water boils at sea level in Fahrenheit" },
+  { "id": "hist_01", "query": "year the Berlin Wall fell" },
+  { "id": "hist_02", "query": "year the Titanic sank" },
+  { "id": "lit_01", "query": "how many lines are in Shakespeare's play Hamlet" },
+  { "id": "law_01", "query": "age of majority in most US states" },
+  { "id": "law_02", "query": "number of justices on the United States Supreme Court" },
+  { "id": "med_01", "query": "normal adult resting heart rate range in beats per minute" },
+  { "id": "med_02", "query": "recommended fasting blood glucose range for a non-diabetic adult mg/dL" },
+  { "id": "sport_01", "query": "how many players from each team are on the field in association football" },
+  { "id": "sport_02", "query": "number of rings on a standard Olympic symbol" },
+  { "id": "music_01", "query": "concert tuning reference frequency for note A in hertz" },
+  { "id": "comp_01", "query": "number of hash slots in a Redis Cluster" },
+  { "id": "comp_02", "query": "HTTP status code for too many requests" }
 ]

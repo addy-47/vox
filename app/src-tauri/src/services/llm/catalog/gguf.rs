@@ -18,10 +18,7 @@ pub struct GgufFacts {
 pub fn read_gguf_facts(path: &Path) -> Option<GgufFacts> {
     let file = File::open(path).ok()?;
     let mut buf = Vec::new();
-    file
-        .take(HEADER_READ_LIMIT)
-        .read_to_end(&mut buf)
-        .ok()?;
+    file.take(HEADER_READ_LIMIT).read_to_end(&mut buf).ok()?;
     parse_gguf_header(&buf)
 }
 
