@@ -10,7 +10,9 @@ use std::{
 use crossbeam_channel::Sender as CrossbeamSender;
 use parking_lot::{Mutex as ParkingMutex, RwLock as ParkingRwLock};
 use serde::{Deserialize, Serialize};
-use tauri::{async_runtime::JoinHandle, menu::CheckMenuItem, AppHandle, Runtime, Wry};
+#[cfg(desktop)]
+use tauri::menu::CheckMenuItem;
+use tauri::{async_runtime::JoinHandle, AppHandle, Runtime, Wry};
 use tokio::sync::{Mutex as TokioMutex, RwLock as TokioRwLock};
 use tracing_appender::non_blocking::WorkerGuard;
 
@@ -130,8 +132,11 @@ pub struct AppState {
     pub owner: Arc<AtomicU32>,
     pub hud_visible: Arc<AtomicBool>,
     pub memory: MemoryAppState,
-    pub settings: Arc<RwLock<VoxSettings>>,
+    pub settings: Arc<std::sync::RwLock<VoxSettings>>,
+    #[cfg(desktop)]
     pub hud_menu_item: ParkingMutex<Option<CheckMenuItem<Wry>>>,
+    #[cfg(not(desktop))]
+    pub hud_menu_item: ParkingMutex<Option<()>>,
     pub pipeline: PipelineAtomics,
     pub save_debounce: TokioMutex<Option<JoinHandle<()>>>,
     pub _log_guard: Option<WorkerGuard>,

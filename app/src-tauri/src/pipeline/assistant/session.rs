@@ -713,7 +713,11 @@ pub fn on_end<R: Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &RoutingCon
 
         // Trigger background ingestion sweep to drain all facts enqueued during session
         let state_handle: State<'_, Arc<AppState>> = app_handle.state();
-        spawn_ingestion_sweep(Arc::clone(state_handle.inner()), Some(app_handle.clone()), None);
+        spawn_ingestion_sweep(
+            Arc::clone(state_handle.inner()),
+            Some(app_handle.clone()),
+            None,
+        );
     });
 }
 
@@ -724,7 +728,6 @@ fn resolve_model_tool_support<R: Runtime + 'static>(
     settings: &VoxSettings,
 ) -> bool {
     let active_model = settings.llm.active_model();
-    let is_cloud = matches!(settings.llm.active, LlmActiveProvider::Cloud);
     let provider_kind = match settings.llm.active {
         LlmActiveProvider::Embedded => CAP_KIND_EMBEDDED,
         LlmActiveProvider::Server => CAP_KIND_SERVER,
@@ -834,7 +837,7 @@ fn resolve_model_tool_support<R: Runtime + 'static>(
         }
     });
 
-    is_cloud
+    true
 }
 
 /// Dispatches a warning notification when tool calling is unavailable on the active model.

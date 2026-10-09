@@ -15,9 +15,8 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 # ─── 1. Tauri Framework & Plugins ───────────────────────────────────────────
-tauri = { version = "2", features = ["tray-icon", "test"] }
+tauri = { version = "2", features = ["test"] }
 tauri-plugin-opener = "2"
-tauri-plugin-positioner = { path = "./plugins/tauri-plugin-positioner", features = ["tray-icon"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
@@ -67,8 +66,7 @@ tokio-tungstenite = { version = "0.29.0", features = ["rustls-tls-webpki-roots"]
 rustls = { version = "0.23", features = ["ring"] }                                       # TLS cryptography provider
 
 # ─── 6. System Integration, Clipboard & Input Simulation ────────────────────
-arboard = { version = "3.4", features = ["wayland-data-control"] } # Cross-platform clipboard with native Wayland protocol
-enigo = { version = "0.2", default-features = false }                    # Native OS keyboard & mouse simulation (platform features added per-target below)
+# (Platform-specific drivers defined under cfg(desktop) below)
 
 # ─── 7. Database & Persistence ──────────────────────────────────────────────
 turso = { version = "0.8.2" } # Embedded libSQL/SQLite database engine
@@ -101,6 +99,12 @@ zip = "2.0"                                      # Zip archive extraction
 once_cell = "1.21.4"                             # Lazy static cell initialization
 num2words = "0.4"                                # Spoken number and currency verbalization for TTS
 text-processing-rs = "0.2.2"                      # NVIDIA NeMo Inverse Text Normalization (ITN) port for STT
+ 
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-positioner = { path = "./plugins/tauri-plugin-positioner", features = ["tray-icon"] }
+arboard = { version = "3.4", features = ["wayland-data-control"] }
+enigo = { version = "0.2", default-features = false }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk = { version = "0.18", features = ["v3_24"] }

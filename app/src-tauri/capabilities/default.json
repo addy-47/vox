@@ -19,7 +19,6 @@
     "dialog:allow-message",
     "dialog:allow-ask",
     "fs:default",
-    "process:default",
-    "positioner:allow-move-window"
+    "process:default"
   ]
 }

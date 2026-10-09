@@ -185,12 +185,7 @@ pub async fn record_queue_item_failure(
         "UPDATE memory_ingestion_queue
          SET status = 'failed', retry_count = ?, error_msg = ?, processed_at = ?
          WHERE id = ?",
-        (
-            retry_count + 1,
-            Some(error_msg.to_string()),
-            now,
-            id,
-        ),
+        (retry_count + 1, Some(error_msg.to_string()), now, id),
     )
     .await?;
     Ok(())
@@ -240,11 +235,25 @@ pub async fn count_unfinished_items(conn: &Connection) -> Result<i64> {
 
 /// Reconciles items left in indeterminate processing states on boot.
 pub async fn reconcile_crashed_queue_on_boot(conn: &Connection) -> Result<usize> {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64;
+
+    let reset_failed = conn
+        .execute(
+            "UPDATE memory_ingestion_queue
+             SET status = 'failed', processed_at = ?, error_msg = 'Process crashed while processing batch (max retries exceeded)'
+             WHERE status IN ('stage1_processing', 'stage2_processing') AND retry_count >= 3",
+            (now,),
+        )
+        .await?;
+
     let reset_s1 = conn
         .execute(
             "UPDATE memory_ingestion_queue
              SET status = 'pending', retry_count = retry_count + 1
-             WHERE status = 'stage1_processing'",
+             WHERE status = 'stage1_processing' AND retry_count < 3",
             (),
         )
         .await?;
@@ -253,16 +262,17 @@ pub async fn reconcile_crashed_queue_on_boot(conn: &Connection) -> Result<usize>
         .execute(
             "UPDATE memory_ingestion_queue
              SET status = 'stage1_done', retry_count = retry_count + 1
-             WHERE status = 'stage2_processing'",
+             WHERE status = 'stage2_processing' AND retry_count < 3",
             (),
         )
         .await?;
 
-    let total = reset_s1 + reset_s2;
+    let total = reset_failed + reset_s1 + reset_s2;
     if total > 0 {
         log::info!(
-            "[Persistence::Queue] Reconciled {} crashed queue items ({} reset to pending, {} reset to stage1_done)",
+            "[Persistence::Queue] Reconciled {} crashed queue items ({} failed, {} reset to pending, {} reset to stage1_done)",
             total,
+            reset_failed,
             reset_s1,
             reset_s2
         );

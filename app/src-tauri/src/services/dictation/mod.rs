@@ -1,9 +1,22 @@
+#[cfg(desktop)]
 pub mod clipboard;
+#[cfg(desktop)]
 pub mod hotkey;
+#[cfg(desktop)]
 pub mod input;
+#[cfg(desktop)]
 pub mod output_router;
 
+#[cfg(desktop)]
 pub use hotkey::init_dictation_hotkey_listener;
+
+#[cfg(not(desktop))]
+pub fn init_dictation_hotkey_listener<R: tauri::Runtime>(
+    _app: &tauri::AppHandle<R>,
+    _hotkey: &str,
+) -> Result<(), String> {
+    Ok(())
+}
 
 /// Post-speech silence that auto-finalizes a PTT dictation turn (feature spec §10.3).
 pub const DICTATION_SILENCE_AUTOSTOP_MS: u64 = 1200;

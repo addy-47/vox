@@ -449,7 +449,11 @@ async fn run_cases(
             summary.filler_chars,
             summary.audio_clips,
             if summary.retrieval_ok { "ok" } else { "FAIL" },
-            if summary.transient_failure { " TRANSIENT" } else { "" },
+            if summary.transient_failure {
+                " TRANSIENT"
+            } else {
+                ""
+            },
         );
         rows.push(summary);
     }

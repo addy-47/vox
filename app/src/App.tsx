@@ -308,6 +308,9 @@ const App: React.FC = () => {
                             </>
                           )}
 
+                          {/* Dedicated preview route to view onboarding wizard directly */}
+                          <Route path="/wizard-preview" element={<WizardRoot />} />
+
                           {/* Main App Routes. Also reachable when the user
                               explicitly chose the app from the unreachable
                               screen. */}

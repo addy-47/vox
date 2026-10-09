@@ -23,21 +23,19 @@ pub fn ensure_wizard_window(app: &AppHandle) -> Result<WebviewWindow, String> {
         return Ok(existing);
     }
 
-    log::info!("[Wizard] Lazily constructing 'wizard' setup webview window...");
-    let builder = WebviewWindowBuilder::new(app, "wizard", WebviewUrl::App("/wizard".into()))
+    #[allow(unused_mut)]
+    let mut builder = WebviewWindowBuilder::new(app, "wizard", WebviewUrl::App("/wizard".into()))
         .title("Vox Setup Wizard")
         .inner_size(WIZARD_DEFAULT_WIDTH, WIZARD_DEFAULT_HEIGHT)
         .min_inner_size(WIZARD_MIN_WIDTH, WIZARD_MIN_HEIGHT)
         .max_inner_size(WIZARD_DEFAULT_WIDTH, WIZARD_DEFAULT_HEIGHT)
         .transparent(false)
-        .decorations(false)
-        .always_on_top(false)
         .resizable(true)
         .visible(false);
-    #[cfg(target_os = "android")]
-    let builder = builder.fullscreen(true);
-    #[cfg(not(target_os = "android"))]
-    let builder = builder.center();
+    #[cfg(desktop)]
+    {
+        builder = builder.decorations(false).always_on_top(false).center();
+    }
     let window = builder
         .build()
         .map_err(|e| format!("Failed to create wizard window: {}", e))?;

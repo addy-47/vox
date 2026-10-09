@@ -9,8 +9,8 @@ use crate::{
         state::AppState,
     },
     persistence::{
-        fetch_all_observations, fetch_ingestion_aggregate_stats,
-        fetch_pending_queue_observations, list_personal_memory_versions,
+        fetch_all_observations, fetch_ingestion_aggregate_stats, fetch_pending_queue_observations,
+        list_personal_memory_versions,
         personal_memory::get_personal_memory as db_get_personal_memory,
         set_active_personal_memory_version as db_set_active_version, IngestionStatsRecord,
         ObservationRecord, PersonalMemoryRecord, RevisionDecision, VoxDb,
