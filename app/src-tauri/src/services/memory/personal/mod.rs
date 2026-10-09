@@ -7,8 +7,9 @@ mod prompts;
 mod revisions;
 
 pub use consolidate::{
-    consolidate_personal_memory, regenerate_personal_memory, ConfirmationReason,
-    ConsolidateOutcome, ConsolidationRequest,
+    consolidate_personal_memory, consolidate_personal_memory_with_telemetry,
+    regenerate_personal_memory, ConfirmationReason, ConsolidateOutcome, ConsolidationRequest,
+    ConsolidationTelemetry,
 };
 pub use manual::save_personal_memory_from_markdown;
 pub use model::{

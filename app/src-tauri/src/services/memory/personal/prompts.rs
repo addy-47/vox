@@ -118,8 +118,10 @@ add     {"section": "s2", "text": "..."}
 update  {"block": "b3", "text": "..."}
         Replace one block's text. The new text must describe the SAME subject as the block it
         replaces. If the subject changed, use `add` and leave the old block alone.
-delete  {"block": "b3"}
-        Remove one block. See <retirement>.
+delete  {"block": "b3", "observation": "O2"}
+        Remove one block. "observation" names the [On] observation that states the block
+        is no longer true. A delete without a valid observation is refused outright —
+        never emit one on inference alone. See <retirement>.
 </operations>
 
 <output_format>
@@ -128,7 +130,7 @@ A single JSON object with four arrays, all four always present:
   "new": [ { "title": "...", "blocks": ["...", "..."] } ],
   "add": [ { "section": "s1", "text": "..." } ],
   "update": [ { "block": "b2", "text": "..." } ],
-  "delete": [ { "block": "b3" } ]
+  "delete": [ { "block": "b3", "observation": "O2" } ]
 }
 Your entire response must be exactly this one JSON object. No Markdown, no bullets,
 no code fences, no preamble, no commentary before or after it.
@@ -139,7 +141,8 @@ no code fences, no preamble, no commentary before or after it.
 keep the operation count low, and not a way to shorten or tidy text.
 
 Use it only when an observation states the block is no longer true, and the replacement is written
-in the same pass.
+in the same pass. Name that observation in the operation's "observation" field. A delete that
+names no observation, or names one that does not exist, is discarded without effect.
 
 Prefer `update` whenever a block is being extended, refined, reorganized, or partly wrong. Never
 delete because a new observation is about a related topic.
@@ -177,9 +180,11 @@ Correct:
 
 Two wrong outputs, and why:
 
-  "delete": [{ "block": "b1" }]
+  "delete": [{ "block": "b1", "observation": "O9" }]
       Nothing contradicts the 9 PM reminder. O1 adds to b1, so O1 is an `update`. Deleting also
       removes the only block holding language study — a whole subject lost over phrasing.
+      (And "O9" names no supplied observation, so the delete would be refused even before
+      reaching the merits.)
 
   "update": [{ "block": "b3", "text": "The user bakes sourdough bread with walnuts. The user is a software developer working on a Rust project." }]
       Software work does not belong under Habits & Routine, and b2 already covers the profession.
@@ -193,7 +198,7 @@ pub(super) const CONSOLIDATION_REPAIR_SYSTEM_PROMPT: &str = r###"You output exac
   "new": [ { "title": "...", "blocks": ["...", "..."] } ],
   "add": [ { "section": "s1", "text": "..." } ],
   "update": [ { "block": "b2", "text": "..." } ],
-  "delete": [ { "block": "b3" } ]
+  "delete": [ { "block": "b3", "observation": "O2" } ]
 }
 Restate the previous assistant message using only this envelope. Preserve every operation and
 every text verbatim; drop all commentary, markdown, bullets, and code fences. If the previous
@@ -223,7 +228,7 @@ A single JSON object with four arrays, all four always present:
   "new": [ { "title": "...", "blocks": ["...", "..."] } ],
   "add": [ { "section": "s1", "text": "..." } ],
   "update": [ { "block": "b2", "text": "..." } ],
-  "delete": [ { "block": "b3" } ]
+  "delete": [ { "block": "b3", "observation": "O2" } ]
 }
 Output only the raw JSON object. No Markdown, no bullets, no code fences, no preamble.
 </output_format>
@@ -231,7 +236,9 @@ Output only the raw JSON object. No Markdown, no bullets, no code fences, no pre
 <operations>
 - add: append a new block to the end of an existing section, referenced by its section handle.
 - update: replace the text of an existing block, referenced by its block handle.
-- delete: remove an existing block, referenced by its block handle.
+- delete: remove an existing block, referenced by its block handle. (The shared
+  envelope carries an "observation" field used only by observation-driven passes;
+  leave it empty here — directives, not observations, justify these edits.)
 - new: create a whole new section with initial blocks when a directive introduces an entirely new topic.
 </operations>
 
@@ -319,9 +326,10 @@ pub fn delta_consolidation_json_schema() -> serde_json::Value {
                 "items": {
                     "type": "object",
                     "properties": {
-                        "block": { "type": "string" }
+                        "block": { "type": "string" },
+                        "observation": { "type": "string" }
                     },
-                    "required": ["block"],
+                    "required": ["block", "observation"],
                     "additionalProperties": false
                 }
             }

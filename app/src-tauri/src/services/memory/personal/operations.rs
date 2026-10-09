@@ -42,9 +42,15 @@ pub struct UpdateBlockOutput {
 }
 
 /// A block to remove, addressed by that block's per-request handle.
+///
+/// `observation` names the `[On]` observation that states the block is no longer
+/// true. A delete that cites no observation, or cites one that does not exist,
+/// is refused at resolution: retirement is never inferred, only cited.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeleteBlockOutput {
     pub block: String,
+    #[serde(default)]
+    pub observation: String,
 }
 
 /// A fully resolved semantic operation, addressing persistent IDs rather than LLM handles.
@@ -54,7 +60,12 @@ pub enum ResolvedOp {
     CreateSection { title: String, blocks: Vec<String> },
     CreateBlock { section_id: String, text: String },
     UpdateBlock { block_id: String, text: String },
-    DeleteBlock { block_id: String },
+    DeleteBlock {
+        block_id: String,
+        /// The `[On]` observation that invalidated the block, as cited by the model.
+        #[serde(default)]
+        invalidated_by: String,
+    },
 }
 
 impl ResolvedOp {
@@ -75,13 +86,23 @@ impl ResolvedOp {
             Self::CreateSection { .. } => "",
             Self::CreateBlock { section_id, .. } => section_id,
             Self::UpdateBlock { block_id, .. } => block_id,
-            Self::DeleteBlock { block_id } => block_id,
+            Self::DeleteBlock { block_id, .. } => block_id,
+        }
+    }
+
+    /// The observation cited as invalidating a delete, if this operation is one.
+    pub fn invalidated_by(&self) -> Option<&str> {
+        match self {
+            Self::DeleteBlock { invalidated_by, .. } if !invalidated_by.is_empty() => {
+                Some(invalidated_by)
+            }
+            _ => None,
         }
     }
 }
 
 /// An operation the engine refused to apply, with the reason.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RejectedOperation {
     pub position: usize,
     pub operation: ResolvedOp,
@@ -96,9 +117,15 @@ pub struct ApplyReport {
 }
 
 /// Maps LLM output handles onto persistent IDs, rejecting any unresolvable handle per operation.
+///
+/// `observation_count` is the number of `[On]` observations the model was shown, or
+/// `None` when the pass is not observation-driven (comment-directed edits). A `delete`
+/// under `Some(n)` must cite one of them as its invalidation; a delete with no citation,
+/// a malformed label, or an out-of-range index is refused with its reason.
 pub fn resolve_operations(
     output: &ConsolidationOutput,
     handle_map: &HandleMap,
+    observation_count: Option<usize>,
 ) -> (Vec<ResolvedOp>, Vec<RejectedOperation>) {
     let mut resolved = Vec::new();
     let mut rejected = Vec::new();
@@ -179,21 +206,57 @@ pub fn resolve_operations(
     }
 
     for delete in &output.delete {
-        match handle_map.resolve_block(&delete.block) {
-            Some(block_id) => resolved.push(ResolvedOp::DeleteBlock {
-                block_id: block_id.to_string(),
-            }),
-            None => rejected.push(RejectedOperation {
-                position: resolved.len() + rejected.len(),
+        let position = resolved.len() + rejected.len();
+        let reject = |reason: String| {
+            RejectedOperation {
+                position,
                 operation: ResolvedOp::DeleteBlock {
                     block_id: String::new(),
+                    invalidated_by: delete.observation.clone(),
                 },
-                reason: format!("unknown block handle '{}'", delete.block),
+                reason,
+            }
+        };
+        let Some(block_id) = handle_map.resolve_block(&delete.block) else {
+            rejected.push(reject(format!("unknown block handle '{}'", delete.block)));
+            continue;
+        };
+        match observation_count {
+            // Observation-driven pass: retirement must be cited, never inferred.
+            Some(count) => match parse_observation_ref(&delete.observation, count) {
+                Some(label) => resolved.push(ResolvedOp::DeleteBlock {
+                    block_id: block_id.to_string(),
+                    invalidated_by: label,
+                }),
+                None => rejected.push(reject(format!(
+                    "delete of '{}' cites no valid invalidating observation (got '{}'; expected On with 1 <= n <= {})",
+                    delete.block, delete.observation, count
+                ))),
+            },
+            // Directive-driven pass: no observations exist to cite.
+            None => resolved.push(ResolvedOp::DeleteBlock {
+                block_id: block_id.to_string(),
+                invalidated_by: String::new(),
             }),
         }
     }
 
     (resolved, rejected)
+}
+
+/// Parses an `[On]` observation reference, returning its canonical label when it
+/// addresses one of the supplied observations.
+fn parse_observation_ref(label: &str, observation_count: usize) -> Option<String> {
+    let trimmed = label.trim().trim_start_matches('[').trim_end_matches(']');
+    let digits = trimmed.strip_prefix('O').or_else(|| trimmed.strip_prefix('o'))?;
+    if digits.is_empty() || !digits.chars().all(|c| c.is_ascii_digit()) {
+        return None;
+    }
+    let n: usize = digits.parse().ok()?;
+    if n == 0 || n > observation_count {
+        return None;
+    }
+    Some(format!("O{}", n))
 }
 
 /// Applies resolved semantic operations to a memory model, in order.
@@ -266,7 +329,7 @@ fn apply_one(memory: &mut PersonalMemory, op: &ResolvedOp) -> std::result::Resul
             memory.sections[s_i].blocks[b_i].text = text.trim().to_string();
             Ok(())
         }
-        ResolvedOp::DeleteBlock { block_id } => {
+        ResolvedOp::DeleteBlock { block_id, .. } => {
             let (s_i, b_i) = memory
                 .find_block(block_id)
                 .ok_or_else(|| format!("block '{block_id}' no longer exists"))?;
@@ -353,10 +416,11 @@ mod tests {
             }],
             delete: vec![DeleteBlockOutput {
                 block: "b3".to_string(),
+                observation: "O1".to_string(),
             }],
         };
 
-        let (resolved, rejected) = resolve_operations(&output, &handle_map);
+        let (resolved, rejected) = resolve_operations(&output, &handle_map, Some(1));
         assert!(
             rejected.is_empty(),
             "Expected zero rejections, got: {:?}",
@@ -389,6 +453,7 @@ mod tests {
             resolved[3],
             ResolvedOp::DeleteBlock {
                 block_id: "blk_3".to_string(),
+                invalidated_by: "O1".to_string(),
             }
         );
     }
@@ -426,19 +491,22 @@ mod tests {
             delete: vec![
                 DeleteBlockOutput {
                     block: "b99".to_string(), // unknown block -> reject
+                    observation: "O1".to_string(),
                 },
                 DeleteBlockOutput {
                     block: "b2".to_string(), // valid delete -> resolve!
+                    observation: "O2".to_string(),
                 },
             ],
         };
 
-        let (resolved, rejected) = resolve_operations(&output, &handle_map);
+        let (resolved, rejected) = resolve_operations(&output, &handle_map, Some(2));
         assert_eq!(resolved.len(), 1);
         assert_eq!(
             resolved[0],
             ResolvedOp::DeleteBlock {
                 block_id: "blk_2".to_string(),
+                invalidated_by: "O2".to_string(),
             }
         );
         assert_eq!(rejected.len(), 6);
@@ -509,6 +577,7 @@ mod tests {
             },
             ResolvedOp::DeleteBlock {
                 block_id: "blk_nonexistent".to_string(),
+                invalidated_by: "O1".to_string(),
             },
         ];
 
@@ -525,6 +594,7 @@ mod tests {
         // sec_beta has only blk_3. Deleting blk_3 should auto-prune sec_beta!
         let ops = vec![ResolvedOp::DeleteBlock {
             block_id: "blk_3".to_string(),
+            invalidated_by: "O1".to_string(),
         }];
 
         let report = apply_operations(&memory, &ops).unwrap();

@@ -3,19 +3,34 @@ use std::collections::HashSet;
 use anyhow::Result;
 use turso::Connection;
 
-use super::{JACCARD_EXACT_MATCH_THRESHOLD, STAGE1_BATCH_CEILING};
+use super::{
+    is_near_miss, DedupDecision, DedupNearMiss, DedupStage, JACCARD_EXACT_MATCH_THRESHOLD,
+    STAGE1_BATCH_CEILING,
+};
 use crate::persistence::{
     deactivate_observations_batch, fetch_active_observations_by_type,
     queue::claim_pending_queue_batch, record_queue_item_failure, update_queue_item_status,
     QueueItem,
 };
 
+/// Strongly-typed lifecycle state for a single Stage 1 item's telemetry.
+#[derive(Debug, Clone, Default)]
+pub struct Stage1ItemTelemetry {
+    pub decisions: Vec<DedupDecision>,
+    pub near_misses: Vec<DedupNearMiss>,
+}
+
 /// Summary metrics returned after running a Stage 1 exact Jaccard deduplication pass.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct Stage1Summary {
     pub processed: usize,
     pub duplicates_deactivated: usize,
     pub errors: usize,
+    /// Telemetry only. Records what each merge matched and at what Jaccard, so an
+    /// evaluator does not have to infer the decision from a before/after diff.
+    pub decisions: Vec<DedupDecision>,
+    /// Telemetry only. Records borderline pairs that were deliberately left alone.
+    pub near_misses: Vec<DedupNearMiss>,
 }
 
 /// Computes the word-level Jaccard similarity between two text strings.
@@ -66,7 +81,8 @@ pub async fn run_stage1_exact_dedup(conn: &Connection) -> Result<Stage1Summary> 
 
     for item in items {
         match process_stage1_item(conn, &item).await {
-            Ok(deactivated_count) => {
+            Ok(telemetry) => {
+                let deactivated = telemetry.decisions.len();
                 if let Err(e) = update_queue_item_status(conn, item.id, "stage1_done", None).await {
                     log::warn!(
                         "[Memory::Ingestion::Stage1] Failed to update item {} to stage1_done: {}",
@@ -76,7 +92,9 @@ pub async fn run_stage1_exact_dedup(conn: &Connection) -> Result<Stage1Summary> 
                     summary.errors += 1;
                 } else {
                     summary.processed += 1;
-                    summary.duplicates_deactivated += deactivated_count;
+                    summary.duplicates_deactivated += deactivated;
+                    summary.decisions.extend(telemetry.decisions);
+                    summary.near_misses.extend(telemetry.near_misses);
                 }
             }
             Err(e) => {
@@ -117,12 +135,16 @@ pub async fn run_stage1_exact_dedup(conn: &Connection) -> Result<Stage1Summary> 
 
 /// Compares a single queue item against active observations of the same type and batch-deactivates
 /// exact matches. On an exact match the incoming item wins: the older stored observation is deactivated.
-async fn process_stage1_item(conn: &Connection, item: &QueueItem) -> Result<usize> {
+///
+/// Returns the telemetry for this item so callers can report which pair matched
+/// and at what Jaccard, instead of only a count.
+async fn process_stage1_item(conn: &Connection, item: &QueueItem) -> Result<Stage1ItemTelemetry> {
     let active_observations =
         fetch_active_observations_by_type(conn, &item.observation_type).await?;
+    let mut telemetry = Stage1ItemTelemetry::default();
     let mut duplicate_ids: Vec<String> = Vec::new();
 
-    for existing in active_observations {
+    for existing in &active_observations {
         let similarity = jaccard_similarity(&item.text, &existing.text);
         if similarity >= JACCARD_EXACT_MATCH_THRESHOLD {
             log::info!(
@@ -131,12 +153,30 @@ async fn process_stage1_item(conn: &Connection, item: &QueueItem) -> Result<usiz
                 existing.id,
                 item.id
             );
-            duplicate_ids.push(existing.id);
+            duplicate_ids.push(existing.id.clone());
+            telemetry.decisions.push(DedupDecision {
+                stage: DedupStage::Stage1Exact,
+                incoming_queue_id: item.id,
+                incoming_text: item.text.clone(),
+                incoming_type: item.observation_type.clone(),
+                deactivated_obs_id: existing.id.clone(),
+                deactivated_text: existing.text.clone(),
+                similarity,
+            });
+        } else if is_near_miss(similarity, JACCARD_EXACT_MATCH_THRESHOLD) {
+            telemetry.near_misses.push(DedupNearMiss {
+                stage: DedupStage::Stage1Exact,
+                incoming_queue_id: item.id,
+                incoming_text: item.text.clone(),
+                active_obs_id: existing.id.clone(),
+                active_text: existing.text.clone(),
+                similarity,
+            });
         }
     }
 
-    let deactivated = deactivate_observations_batch(conn, &duplicate_ids).await?;
-    Ok(deactivated)
+    deactivate_observations_batch(conn, &duplicate_ids).await?;
+    Ok(telemetry)
 }
 
 #[cfg(test)]

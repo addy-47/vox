@@ -501,7 +501,7 @@
           "id": "embedding_minilm_l12_onnx",
           "path": "embedding/minilm-l12-v2/model_int8.onnx",
           "size": 118054609,
-          "sha256": "4b76e8b4e72390a880356c38be28b9d363d6642d99dcf5c0c978bb7ecb3df637",
+          "sha256": "d6ea442ff6a891daefed7c83b2f596fc5dc66bf697e4d006236f64f34bbcf4c8",
           "required": true
         },
         {

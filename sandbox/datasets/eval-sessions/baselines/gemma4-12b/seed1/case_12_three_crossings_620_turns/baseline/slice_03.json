@@ -1,0 +1,46 @@
+{
+  "personal": [
+    "User is working on a Rust memory manager project involving slab allocator and buddy allocator [turn 6, turn 8, turn 9, turn 40, turn 43, turn 82, turn 90, turn 92, turn 103, turn 109, turn 119, turn 123, turn 128, turn 129, turn 140, turn 141]",
+    "User is working on a perception software project involving `PerceptionImage` refactoring and SIMD optimizations [turn 24, turn 25, turn 40, turn 45, turn 50, turn 58, turn 59, turn 66, turn 70, turn 84, turn 85, turn 94, turn 95, turn 103, turn 110, turn 123, turn 130, turn 143, turn 144]",
+    "User has pre-diabetes and focuses on low-sugar meals [turn 13, turn 76, turn 100, turn 126]",
+    "User has a severe tree nut allergy (walnuts/cashews) that can cause anaphylaxis [turn 31, turn 32, turn 64, turn 99, turn 137, turn 147]",
+    "User is planning a trip to Mexico City and practicing Spanish for it [turn 15, turn 31, turn 46, turn 47, turn 49, turn 61, turn 120, turn 131, turn 132, turn 133, turn 145]",
+    "User has a pet named Doughvid (baking companion/sourdough starter) [turn 18, turn 35, turn 42, turn 57, turn 97, turn 114, turn 127, turn 139]",
+    "User is reading Kim Stanley Robinson's 'Red Mars' [turn 16, turn 30, turn 68, turn 69, turn 91]",
+    "User wants to optimize Neovim configuration for buffer management and Telescope [turn 9, turn 10, turn 26, turn 74, turn 75, turn 111, turn 112, turn 150, turn 151, turn 152]",
+    "User has a roommate named Jamie [turn 11, turn 142]",
+    "User has a cat named Pixel [turn 12, turn 73, turn 93, turn 118]",
+    "User is practicing 'Blackbird' on the guitar (fingerstyle) [turn 3, turn 21, turn 22, turn 80, turn 81, turn 124]",
+    "User listens to ambient acoustic guitar music while coding [turn 4, turn 54, turn 116, turn 117]",
+    "User wants to buy running shoes and an umbrella [turn 41, turn 56, turn 78, turn 96, turn 102]",
+    "User is interested in orbital mechanics (Hohmann transfers) [turn 17, turn 52, turn 113]",
+    "User watches 'The Expanse' series"
+  ],
+  "objective": [
+    "Implement lock-free deallocation for the slab allocator",
+    "Develop a buddy allocator for the segregated free list",
+    "Refactor `PerceptionImage` using factory patterns and custom error handling",
+    "Optimize Neovim buffer management/Telescope configuration",
+    "Prepare for Mexico City trip (Spanish practice, hotel/transfer confirmation)"
+  ],
+  "workdone": [
+    "Implemented pointer swap for the segregated free list `pop` operation [turn 72, turn 73]",
+    "Defined a `PerceptionError` enum with context [turn 144]",
+    "Progressed on abstract and concrete factory classes for `PerceptionImage` [turn 143]",
+    "Purchased an umbrella [turn 102]"
+  ],
+  "blocker": [
+    "Lock-free deallocation is encountering race conditions under heavy concurrent access",
+    "Buddy allocator merging logic and thread safety are complex hurdles",
+    "Need to finalize hotel reservations near Zócalo and airport transfers for Mexico City trip"
+  ],
+  "next_step": [
+    "Isolate deallocation logic to a separate thread pool [turn 141]",
+    "Refine Telescope configuration (sorting algorithm, directory traversal depth) [turn 152]",
+    "Practice more Spanish phrases for food ordering and allergy communication [turn 146, turn 147]"
+  ],
+  "pitfall": [
+    "Avoid refined sugar due to pre-diabetes [turn 13, turn 76, turn 100, turn 126]",
+    "Severe tree nut allergy (walnuts/cashews) - risk of anaphylaxis [turn 31, turn 32, turn 64, turn 99, turn 137, turn 147]"
+  ]
+}

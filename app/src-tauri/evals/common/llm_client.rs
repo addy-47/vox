@@ -216,55 +216,101 @@ pub fn create_pipeline_provider(
     Arc::new(RemoteTransport::new(conn_cfg))
 }
 
-/// Dedicated HTTP client for querying the NVIDIA NIM Judge LLM API.
-pub struct NvidiaJudgeClient {
+/// Dedicated HTTP client for querying the judge LLM.
+///
+/// Two transports:
+/// - **Local Ollama native** (`http://127.0.0.1:11434/api/chat`) — the default.
+///   Full control over `num_ctx`/`num_predict`, thinking disabled. No auth.
+/// - **Cloud gateways** (OpenRouter / NVIDIA NIM, OpenAI-compatible
+///   `/chat/completions`) — legacy path, selected when an API key is supplied.
+pub struct JudgeClient {
     client: reqwest::Client,
     api_url: String,
-    api_key: String,
+    api_key: Option<String>,
     model: String,
+    seed: Option<u64>,
+    temperature: f32,
+    num_ctx: u32,
+    num_predict: u32,
 }
 
-impl NvidiaJudgeClient {
-    pub fn new(api_key: String, model: String) -> Self {
-        let api_url = if api_key.starts_with("nvapi-") {
-            "https://integrate.api.nvidia.com/v1/chat/completions".to_string()
-        } else {
-            "https://openrouter.ai/api/v1/chat/completions".to_string()
-        };
+impl JudgeClient {
+    pub fn new(api_key: Option<String>, model: String) -> Self {
+        Self::with_endpoint(api_key, model, "http://127.0.0.1:11434/api/chat")
+    }
 
+    /// Builds a judge client against an explicit endpoint. A URL containing
+    /// `/api/chat` selects the native Ollama protocol; anything else is treated
+    /// as OpenAI-compatible `/chat/completions`.
+    pub fn with_endpoint(api_key: Option<String>, model: String, api_url: &str) -> Self {
         Self {
             client: reqwest::Client::builder()
-                .timeout(std::time::Duration::from_secs(120))
+                .timeout(std::time::Duration::from_secs(900))
                 .build()
                 .unwrap_or_default(),
-            api_url,
+            api_url: api_url.to_string(),
             api_key,
             model,
+            seed: None,
+            temperature: 0.0,
+            num_ctx: 32768,
+            num_predict: 16384,
         }
     }
 
-    /// Evaluates a prompt via the judge model and returns the verbatim markdown output.
+    pub fn with_seed(mut self, seed: Option<u64>) -> Self {
+        self.seed = seed;
+        self
+    }
+
+    pub fn with_max_tokens(mut self, max_tokens: u32) -> Self {
+        self.num_predict = max_tokens;
+        self
+    }
+
+    fn is_native(&self) -> bool {
+        self.api_url.contains("/api/chat")
+    }
+
+    fn is_local(&self) -> bool {
+        self.api_key.is_none()
+    }
+
+    /// Evaluates a prompt via the judge model and returns the raw response body.
+    ///
+    /// Temperature is pinned to 0.0 and thinking is disabled on the native
+    /// transport, so the judge is reproducible for a given seed. The judge is
+    /// never asked for markdown: callers parse the body into a typed verdict.
     pub async fn evaluate(&self, prompt: &str) -> Result<String> {
+        if self.is_native() {
+            self.evaluate_native(prompt).await
+        } else {
+            self.evaluate_openai_compat(prompt).await
+        }
+    }
+
+    async fn evaluate_native(&self, prompt: &str) -> Result<String> {
+        let mut options = serde_json::json!({
+            "temperature": self.temperature,
+            "num_ctx": self.num_ctx,
+            "num_predict": self.num_predict,
+        });
+        if let Some(seed) = self.seed {
+            options["seed"] = serde_json::json!(seed);
+        }
+
         let payload = serde_json::json!({
             "model": self.model,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": prompt
-                }
-            ],
-            "temperature": 0.1,
-            "top_p": 0.9,
-            "max_tokens": 8192
+            "messages": [{ "role": "user", "content": prompt }],
+            "stream": false,
+            "think": false,
+            "options": options,
         });
 
         let resp = self
             .client
             .post(&self.api_url)
-            .header("Authorization", format!("Bearer {}", self.api_key))
             .header("Content-Type", "application/json")
-            .header("HTTP-Referer", "https://github.com/addy-47/vox")
-            .header("X-Title", "Vox Memory Eval")
             .json(&payload)
             .send()
             .await
@@ -283,6 +329,69 @@ impl NvidiaJudgeClient {
             return Err(anyhow!("Judge returned error {}: {}", status, body));
         }
 
+        let body: serde_json::Value = resp
+            .json()
+            .await
+            .map_err(|e| anyhow!("Failed to parse Judge response: {}", e))?;
+
+        let done_reason = body["done_reason"].as_str().unwrap_or("unknown");
+        // Native Ollama reports "length" when num_predict (or num_ctx) is exhausted.
+        if done_reason == "length" {
+            return Err(anyhow!(
+                "Judge output was truncated by the model (done_reason = length). Verdict was not produced."
+            ));
+        }
+
+        body["message"]["content"]
+            .as_str()
+            .filter(|s| !s.trim().is_empty())
+            .map(str::to_string)
+            .ok_or_else(|| anyhow!("Missing content in Judge response: {}", body))
+    }
+
+    async fn evaluate_openai_compat(&self, prompt: &str) -> Result<String> {
+        let mut payload = serde_json::json!({
+            "model": self.model,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ],
+            "temperature": self.temperature,
+            "max_tokens": self.num_predict,
+            "stream": false
+        });
+        if let Some(seed) = self.seed {
+            payload["seed"] = serde_json::json!(seed);
+        }
+
+        let mut req = self
+            .client
+            .post(&self.api_url)
+            .header("Content-Type", "application/json");
+        if let Some(key) = &self.api_key {
+            req = req
+                .header("Authorization", format!("Bearer {}", key))
+                .header("HTTP-Referer", "https://github.com/addy-47/vox")
+                .header("X-Title", "Vox Memory Eval");
+        }
+
+        let resp = req.json(&payload).send().await.map_err(|e| {
+            anyhow!(
+                "Judge HTTP request failed (is_timeout: {}, is_connect: {}): {}",
+                e.is_timeout(),
+                e.is_connect(),
+                e
+            )
+        })?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            return Err(anyhow!("Judge returned error {}: {}", status, body));
+        }
+
         let resp_json: serde_json::Value = resp
             .json()
             .await
@@ -292,7 +401,7 @@ impl NvidiaJudgeClient {
         let finish_reason = choice["finish_reason"].as_str().unwrap_or("unknown");
         if finish_reason == "length" {
             return Err(anyhow!(
-                "Judge output was truncated by LLM provider (finish_reason = length). Full evaluation report was not generated."
+                "Judge output was truncated by LLM provider (finish_reason = length). Verdict was not produced."
             ));
         }
 
@@ -300,10 +409,9 @@ impl NvidiaJudgeClient {
         let content = choice_msg["content"]
             .as_str()
             .filter(|s| !s.trim().is_empty())
-            .or_else(|| choice_msg["reasoning_content"].as_str())
             .ok_or_else(|| {
                 anyhow!(
-                    "Missing content in NVIDIA Judge response choices: {:?}",
+                    "Missing content in Judge response choices: {:?}",
                     choice_msg
                 )
             })?;
@@ -311,8 +419,8 @@ impl NvidiaJudgeClient {
         Ok(content.to_string())
     }
 
-    /// Evaluates a prompt via the judge model and returns the verbatim markdown output,
-    /// persisting the prompt, configuration, and raw output to `<case_dir>/judge_traces.json`.
+    /// Evaluates a prompt, persists the full request/response pair to
+    /// `<case_dir>/judge_traces.json`, and returns the raw body.
     pub async fn evaluate_with_trace(
         &self,
         prompt: &str,
@@ -324,9 +432,12 @@ impl NvidiaJudgeClient {
         let trace_entry = serde_json::json!({
             "stage": stage,
             "model": self.model,
-            "temperature": 0.1,
-            "top_p": 0.9,
-            "max_tokens": 8192,
+            "endpoint": if self.is_local() { "local" } else { "cloud" },
+            "transport": if self.is_native() { "ollama_native" } else { "openai_compat" },
+            "temperature": self.temperature,
+            "seed": self.seed,
+            "num_ctx": self.num_ctx,
+            "num_predict": self.num_predict,
             "prompt": prompt,
             "response": content,
             "timestamp_ms": std::time::SystemTime::now()

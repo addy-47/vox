@@ -1,0 +1,49 @@
+{
+  "personal": [
+    "Drinks pour-over, unsweetened coffee",
+    "Practicing Spanish ordering phrases for a trip to Mexico City [turn 38, turn 99]",
+    "Uses Mutex for thread safety in the slab allocator [turn 23, turn 36]",
+    "Defining custom error types like InvalidFormat and ProcessingError [turn 9, turn 79]",
+    "Has a severe tree nut allergy including cashews and walnuts [turn 39, turn 84, turn 126]",
+    "Listens to ambient acoustic guitar music for coding",
+    "Practicing fingerstyle guitar ('Blackbird') [turn 50, turn 86, turn 108]",
+    "Needs new guitar strings [turn 50, turn 87]",
+    "Trying to reduce refined sugar intake [turn 1, turn 110]",
+    "Uses Greek yogurt with berries as a low-sugar snack",
+    "Wants to use Telescope for Neovim buffer management [turn 48, turn 88, turn 131]",
+    "Interested in orbital mechanics and Hohmann transfers [turn 5, turn 102]",
+    "Reading 'Red Mars' by Kim Stanley Robinson [turn 101, turn 117]",
+    "Needs to feed Doughvid (sourdough starter) [turn 18, turn 31, turn 77, turn 109, turn 121, turn 125]",
+    "Has a cat named Pixel who is demanding attention [turn 92, turn 135]",
+    "Needs to buy running shoes and an umbrella [turn 40, turn 71, turn 76, turn 118, turn 119, turn 129]",
+    "Needs to reorder coffee beans [turn 65, turn 95, turn 128]",
+    "Has a roommate named Jamie who might have borrowed a laptop [turn 47, turn 91, turn 112]"
+  ],
+  "objective": [
+    "Implement mutex-protected deallocation for the slab allocator",
+    "Refactor perception software factory pattern and error handling",
+    "Prepare for Mexico City trip (confirm transfer, practice Spanish)",
+    "Optimize color conversions in perception software"
+  ],
+  "workdone": [
+    "Identified issue in pop operation related to pointer swap [turn 139]",
+    "Fixed the pop operation bug and verified with tests [turn 142]",
+    "Added tahini, coffee beans, running shoes, and an umbrella to a shopping list [turn 4]",
+    "Fed Doughvid [turn 121]"
+  ],
+  "blocker": [
+    "Type compatibility issues between simd-pixels and image crate in perception software [turn 80, turn 145]",
+    "Need to confirm airport transfer for Mexico City [turn 10, turn 38, turn 90, turn 111, turn 128]"
+  ],
+  "next_step": [
+    "Implement mutex-protected deallocation for the slab allocator [turn 143]",
+    "Optimize color conversions in perception software [turn 144]",
+    "Practice 'Drifting' by Andy McKee on guitar [turn 51, turn 12]",
+    "Purchase running shoes and an umbrella [turn 119]",
+    "Reorder coffee beans [turn 128]"
+  ],
+  "pitfall": [
+    "Avoid standard Mutex for high-performance pop operations (considering pointer swap) [turn 26]",
+    "Be careful with nut contamination/mole sauces in Mexico City [turn 39, turn 84, turn 126]"
+  ]
+}

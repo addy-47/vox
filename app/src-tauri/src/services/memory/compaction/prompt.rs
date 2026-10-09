@@ -54,7 +54,7 @@ The complete JSON object becomes the session's working context after the raw tur
 - Output only the raw JSON object matching the schema. Do not add markdown, commentary, or provenance fields.
 </precision_rules>"#;
 
-pub const COMPACTION_OUTPUT_RATIO: f32 = 0.15;
+pub const COMPACTION_OUTPUT_RATIO: f32 = 0.165;
 pub const COMPACTION_MIN_OUTPUT_TOKENS: u32 = 256;
 pub const COMPACTION_MAX_OUTPUT_TOKENS: u32 = 16_384;
 pub const DEFAULT_LLM_COMPACTION_TEMPERATURE: f32 = 0.2;
@@ -78,7 +78,7 @@ pub fn compaction_json_schema() -> serde_json::Value {
 }
 
 /// Calculates dynamic max compaction output tokens based on context window and probed ceiling.
-/// Formula: min(slice, probed_max_output) where slice = (ctx_size * 0.15).
+/// Formula: min(slice, probed_max_output) where slice = (ctx_size * COMPACTION_OUTPUT_RATIO).
 pub fn calculate_compaction_max_tokens(ctx_size: u32, probed_max_output: Option<u32>) -> u32 {
     let slice = (ctx_size as f32 * COMPACTION_OUTPUT_RATIO) as u32;
     let clamped_slice = slice.clamp(COMPACTION_MIN_OUTPUT_TOKENS, COMPACTION_MAX_OUTPUT_TOKENS);
@@ -106,33 +106,45 @@ pub fn build_compaction_request(
         _ => String::new(),
     };
 
-    let mut history_text = String::new();
+    let mut user_block = String::new();
+    let mut assistant_block = String::new();
+    let mut turn_no = 0u32;
     for msg in history_messages {
-        if msg.role == Role::System {
-            continue;
-        }
-        let speaker = match msg.role {
-            Role::User => "user",
-            Role::Assistant => "assistant",
+        match msg.role {
+            Role::User => {
+                turn_no += 1;
+                user_block.push_str(&format!(
+                    "<turn n=\"{}\">{}</turn>\n",
+                    turn_no,
+                    msg.content.trim()
+                ));
+            }
+            Role::Assistant => {
+                assistant_block.push_str(&format!(
+                    "<turn n=\"{}\">{}</turn>\n",
+                    turn_no,
+                    msg.content.trim()
+                ));
+            }
             Role::System | Role::Tool => continue,
-        };
-        history_text.push_str(&format!(
-            r#"<turn speaker="{}">{}</turn>
-"#,
-            speaker,
-            msg.content.trim()
-        ));
+        }
     }
 
     let user_content = format!(
         "{}\
-         <dialogue>\n{}</dialogue>\n\n\
+         <user_turns>\n{}</user_turns>\n\n\
+         <assistant_turns>\n{}</assistant_turns>\n\n\
          <task>\n\
-         Analyze the <dialogue> turns above in light of <prior_summary> if present.\n\
-         Extract the user's profile facts into \"personal\", and the assistant's operational session state across \"objective\", \"workdone\", \"blocker\", \"next_step\", and \"pitfall\".\n\
+         Analyze the turns above in light of <prior_summary> if present.\n\
+         Extract the user's profile facts into \"personal\" using ONLY the <user_turns> block: \
+         no personal fact may come from <assistant_turns>, and every personal fact must be traceable to a numbered user turn.\n\
+         End every \"personal\" fact with a citation of the user turn that establishes it, in the exact form \" [turn N]\" \
+         (for example: \"The user bakes sourdough bread [turn 4]\"). A personal fact without a citation is incomplete.\n\
+         Extract the assistant's operational session state across \"objective\", \"workdone\", \"blocker\", \"next_step\", and \"pitfall\" \
+         using both blocks as context.\n\
          Output ONLY the raw JSON object starting with {{ and ending with }}.\n\
          </task>",
-        prior_summary_block, history_text
+        prior_summary_block, user_block, assistant_block
     );
 
     let now_ms = SystemTime::now()
@@ -228,20 +240,20 @@ mod tests {
 
     #[test]
     fn test_calculate_compaction_max_tokens_bounds() {
-        // Standard 8k context window: 8192 * 0.15 = 1228
-        assert_eq!(calculate_compaction_max_tokens(8192, None), 1228);
+        // Standard 8k context window: 8192 * 0.165 = 1351
+        assert_eq!(calculate_compaction_max_tokens(8192, None), 1351);
 
-        // Very small context window: 1000 * 0.15 = 150 -> clamped to 256 floor
+        // Very small context window: 1000 * 0.165 = 165 -> clamped to 256 floor
         assert_eq!(calculate_compaction_max_tokens(1000, None), 256);
 
-        // Huge context window: 200_000 * 0.15 = 30_000 -> clamped to 16_384 ceiling
+        // Huge context window: 200_000 * 0.165 = 33_000 -> clamped to 16_384 ceiling
         assert_eq!(calculate_compaction_max_tokens(200_000, None), 16_384);
 
         // Probed ceiling lower than slice
         assert_eq!(calculate_compaction_max_tokens(8192, Some(512)), 512);
 
         // Probed ceiling higher than slice
-        assert_eq!(calculate_compaction_max_tokens(8192, Some(4096)), 1228);
+        assert_eq!(calculate_compaction_max_tokens(8192, Some(4096)), 1351);
 
         // Probed ceiling below minimum floor (256) -> clamped to 256
         assert_eq!(calculate_compaction_max_tokens(8192, Some(100)), 256);

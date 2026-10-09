@@ -26,10 +26,11 @@ pub mod ml;
 pub mod personal;
 pub mod scheduler;
 
-pub use compaction::{run_compaction, CompactionResult, COMPACTION_SYSTEM_PROMPT};
+pub use compaction::{run_compaction, AttributionFlag, CompactionResult, COMPACTION_SYSTEM_PROMPT, strip_citation};
 pub use ingestion::{
     drain_ingestion_queue, reconcile_crashed_queue_on_boot, run_ingestion_cycle,
-    IngestionCycleSummary, QueueStatus,
+    DedupDecision, DedupNearMiss, DedupStage, IngestionCycleSummary, QueueStatus,
+    NEAR_MISS_REPORT_FLOOR,
 };
 pub(crate) use ml::trim_heap;
 pub use ml::{
@@ -42,7 +43,8 @@ pub use ml::{
 };
 pub use personal::{
     apply_operations, batch_resolve_memory_revisions, consolidate_personal_memory,
-    regenerate_personal_memory, resolve_operations, PersonalMemory, ResolvedOp,
+    consolidate_personal_memory_with_telemetry, regenerate_personal_memory,
+    resolve_operations, ConsolidationTelemetry, PersonalMemory, ResolvedOp,
 };
 pub use scheduler::{
     check_missed_consolidation_on_boot, spawn_consolidation_scheduler,

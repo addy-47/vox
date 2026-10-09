@@ -1,293 +1,200 @@
 //! ============================================================================
-//! evals/common/ingestion_eval.rs — Ingestion Stage Runner & Judge Evaluator
+//! evals/memory-pipeline/ingestion.rs — Ingestion Cycle Runner & Ingestion Judge
 //! ============================================================================
 
 use std::path::Path;
 
 use anyhow::{anyhow, Result};
-use vox_lib::{
-    persistence::facts::fetch_all_observations,
-    services::memory::ingestion::{run_ingestion_cycle, IngestionCycleSummary},
+use vox_lib::services::memory::ingestion::{
+    run_ingestion_cycle, DedupDecision, DedupNearMiss, IngestionCycleSummary,
 };
 
 use crate::common::{
-    db::EvalDbGuard, llm_client::NvidiaJudgeClient, reporting::write_markdown_report,
+    db::EvalDbGuard,
+    llm_client::JudgeClient,
+    verdicts::{count_ingestion, parse_verdict, IngestionCounts, IngestionVerdict, JudgeStatus},
 };
 
-/// Summary metrics resulting from an ingestion cycle evaluation.
+/// Per-case ingestion outcome.
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct IngestionEvalSummary {
     pub stage1_processed: usize,
     pub stage2_processed: usize,
     pub stage2_inserted: usize,
-    pub total_active_observations: usize,
-    pub report_path: std::path::PathBuf,
+    pub stage1_merges: usize,
+    pub stage2_merges: usize,
+    pub judge_parsed: bool,
+    pub counts: IngestionCounts,
 }
 
-#[derive(Debug, Clone)]
-struct QueueSnapshotItem {
-    id: i64,
-    fact_type: String,
-    text: String,
-    status: String,
-}
-
-/// Executes the ingestion deduplication cycle, records telemetry, and runs the LLM Judge.
+/// Runs the ingestion cycle and judges the deduplication decisions it made.
+///
+/// The judge receives every merge and every near-miss with the similarity that
+/// produced it, so it can judge both directions: whether what was merged should
+/// have been, and whether what was left alone should have been merged.
 pub async fn evaluate_ingestion_stage(
     eval_db: &EvalDbGuard,
     case_id: &str,
-    judge: &NvidiaJudgeClient,
+    judge: &JudgeClient,
     case_dir: &Path,
 ) -> Result<IngestionEvalSummary> {
     let conn = eval_db.conn()?;
 
-    // 1. Snapshot pending queue items before ingestion
-    let mut queue_stmt = conn
-        .query(
-            "SELECT id, type, text, status FROM memory_ingestion_queue WHERE status = 'pending' ORDER BY id ASC",
-            (),
-        )
-        .await
-        .map_err(|e| anyhow!("Failed to query pending queue items: {}", e))?;
-
-    let mut pending_items = Vec::new();
-    while let Some(row) = queue_stmt.next().await? {
-        pending_items.push(QueueSnapshotItem {
-            id: row.get(0)?,
-            fact_type: row.get(1)?,
-            text: row.get(2)?,
-            status: row.get(3)?,
-        });
-    }
-
-    // 2. Snapshot existing active observations before ingestion across all types
-    let existing_active = fetch_all_observations(&conn, None, Some("active"), None, None, None)
-        .await
-        .unwrap_or_default();
-
-    // 3. Execute production ingestion cycle (Stage 1 Jaccard + Stage 2 ONNX Cosine Dedup)
-    let cycle_summary: IngestionCycleSummary = run_ingestion_cycle(&conn)
+    let cycle: IngestionCycleSummary = run_ingestion_cycle(&conn)
         .await
         .map_err(|e| anyhow!("Failed to run ingestion cycle: {}", e))?;
 
-    // 4. Snapshot active observations after ingestion across all types
-    let after_active = fetch_all_observations(&conn, None, Some("active"), None, None, None)
-        .await
-        .unwrap_or_default();
+    let stage1_merges = cycle.stage1.decisions.len();
+    let stage2_merges = cycle.stage2.decisions.len();
 
-    // 5. Query updated queue items
-    let mut post_queue_stmt = conn
-        .query(
-            "SELECT id, type, text, status FROM memory_ingestion_queue ORDER BY id ASC",
-            (),
-        )
-        .await
-        .map_err(|e| anyhow!("Failed to query post-ingestion queue items: {}", e))?;
-
-    let mut post_queue_items = Vec::new();
-    while let Some(row) = post_queue_stmt.next().await? {
-        post_queue_items.push(QueueSnapshotItem {
-            id: row.get(0)?,
-            fact_type: row.get(1)?,
-            text: row.get(2)?,
-            status: row.get(3)?,
-        });
-    }
-
-    // 6. Build Ingestion Judge Prompt
-    let mut pending_rendered = String::new();
-    for item in &pending_items {
-        pending_rendered.push_str(&format!(
-            "- [ID {} | {}] {}\n",
-            item.id, item.fact_type, item.text
-        ));
-    }
-    if pending_rendered.is_empty() {
-        pending_rendered = "None (no pending facts in queue)".to_string();
-    }
-
-    let mut existing_rendered = String::new();
-    for obs in &existing_active {
-        existing_rendered.push_str(&format!(
-            "- [ID {} | Type: {}] {}\n",
-            obs.id, obs.observation_type, obs.text
-        ));
-    }
-    if existing_rendered.is_empty() {
-        existing_rendered = "None (database was clean before this cycle)".to_string();
-    }
-
-    let mut post_obs_rendered = String::new();
-    for obs in &after_active {
-        post_obs_rendered.push_str(&format!(
-            "- [ID {} | Type: {}] {}\n",
-            obs.id, obs.observation_type, obs.text
-        ));
-    }
-    if post_obs_rendered.is_empty() {
-        post_obs_rendered = "None (no active observations)".to_string();
-    }
-
-    let mut queue_decisions_rendered = String::new();
-    for item in &post_queue_items {
-        queue_decisions_rendered.push_str(&format!(
-            "- [ID {} | Status: {}] {}\n",
-            item.id, item.status, item.text
-        ));
-    }
-
-    let completed_count = post_queue_items
+    let decisions: Vec<DedupDecision> = cycle
+        .stage1
+        .decisions
         .iter()
-        .filter(|i| i.status == "completed")
-        .count();
-    let pending_count = post_queue_items
+        .chain(cycle.stage2.decisions.iter())
+        .cloned()
+        .collect();
+    let all_near_misses: Vec<DedupNearMiss> = cycle
+        .stage1
+        .near_misses
         .iter()
-        .filter(|i| i.status == "pending")
-        .count();
-    let stage1_done_count = post_queue_items
-        .iter()
-        .filter(|i| i.status == "stage1_done")
-        .count();
-    let failed_count = post_queue_items
-        .iter()
-        .filter(|i| i.status == "failed")
-        .count();
+        .chain(cycle.stage2.near_misses.iter())
+        .cloned()
+        .collect();
 
-    // 5b. Compute same-type similarity table
-    let mut same_type_sim_rendered = String::new();
-    let distinct_types: std::collections::HashSet<String> =
-        pending_items.iter().map(|i| i.fact_type.clone()).collect();
-    for obs_type in distinct_types {
-        let active_vectors =
-            vox_lib::persistence::facts::fetch_active_vectors_by_type(&conn, &obs_type)
-                .await
-                .unwrap_or_default();
-        if active_vectors.len() > 1 {
-            for i in 0..active_vectors.len() {
-                for j in (i + 1)..active_vectors.len() {
-                    let sim = vox_lib::services::memory::cosine_similarity(
-                        &active_vectors[i].1,
-                        &active_vectors[j].1,
-                    );
-                    if sim >= 0.70 {
-                        same_type_sim_rendered.push_str(&format!(
-                            "- Type '{}' | [Fact {}] <-> [Fact {}] | Cosine: {:.4}\n",
-                            obs_type, active_vectors[i].0, active_vectors[j].0, sim
-                        ));
-                    }
-                }
-            }
+    let verdict: JudgeStatus<IngestionVerdict> = if decisions.is_empty() && all_near_misses.is_empty()
+    {
+        JudgeStatus::Invalid {
+            reason: "Ingestion cycle produced no merges and no near-misses to audit. \
+                     An empty case cannot confirm deduplication accuracy."
+                .to_string(),
         }
-    }
-    if same_type_sim_rendered.is_empty() {
-        same_type_sim_rendered =
-            "No same-type pairs observed >= 0.70 cosine similarity.\n".to_string();
-    }
+    } else {
+        let prompt = build_judge_prompt(case_id, &decisions, &all_near_misses);
+        let raw = judge
+            .evaluate_with_trace(&prompt, case_dir, "ingestion")
+            .await?;
+        parse_verdict::<IngestionVerdict>(&raw)
+    };
 
-    let judge_prompt = format!(
-        r#"You are the Vox Senior Memory Ingestion & Deduplication Judge.
-Analyze the following memory ingestion cycle, which uses:
-- Stage 1: Exact token Jaccard similarity (Threshold = 1.0)
-- Stage 2: Dense ONNX MiniLM vector embedding cosine similarity (Threshold = 0.95)
+    let counts = match &verdict {
+        JudgeStatus::Parsed(v) => count_ingestion(v),
+        JudgeStatus::Invalid { .. } => IngestionCounts::default(),
+    };
 
-<architecture_invariant>
-CRITICAL: In Vox, Stage 2 vector deduplication is strictly partitioned by observation category type (`WHERE status = 'active' AND type = ?`).
-Candidate observations are compared ONLY against existing observations of the EXACT SAME TYPE (e.g. personal vs personal, workdone vs workdone).
-Cross-type conceptual overlap (e.g. between an `objective` task and a `workdone` completion, or between a `personal` preference and a `workdone` action) is INTENTIONAL by design — they are stored as separate category nodes in the memory graph and are NEVER merged, deactivated, or suppressed by Stage 2. Do NOT treat cross-type conceptual overlap as duplicate pollution or deduplication failure.
-</architecture_invariant>
-
-<pre_existing_active_observations>
-{}
-</pre_existing_active_observations>
-
-<incoming_queue_facts>
-{}
-</incoming_queue_facts>
-
-<post_cycle_queue_status>
-{}
-</post_cycle_queue_status>
-
-<post_cycle_active_observations>
-{}
-</post_cycle_active_observations>
-
-<same_type_similarity_matrix>
-{}
-</same_type_similarity_matrix>
-
-Cycle Telemetry:
-- Stage 1 Processed: {} | Errors: {}
-- Stage 2 Processed: {} | Inserted: {} | Duplicates Deactivated: {} | Errors: {}
-- Queue Breakdown: Total Ingested Items={}, Completed={}, Remaining Pending={}, Stranded Stage1 Done={}, Failed={}
-- Total Active Observations In Database: {}
-
-Produce a comprehensive evaluation report in clean Markdown format with the following exact sections:
-
-# Ingestion Evaluation Report — {}
-
-## 1. Executive Scorecard
-*(Note: Every percentage score MUST explicitly state its formula with exact counts: `X / Y = Z%`. If 0 candidates were evaluated or merged, report 'N/A (0 candidates)' rather than a vacuous 100% or 0%.)*
-- **Deduplication Precision**: [X / Y = Z% or N/A (0 merged)] (Did merged/deactivated facts truly represent duplicates?)
-- **Deduplication Recall**: [X / Y = Z% or N/A (0 same-type duplicates exist)] (Were all genuine same-type duplicates caught?)
-- **False Merge Rate**: [X / Y = Z%] (Distinct same-type facts incorrectly suppressed as duplicates)
-- **Duplicate Pollution Rate**: [X / Y = Z%] (Duplicate same-type facts erroneously inserted as novel observations)
-- **Queue Pipeline Integrity**: [Pass / Fail]
-
-## 2. Stage 1 Exact Match Audit
-Evaluate lexical/token matching:
-- Were any facts inappropriately marked as exact duplicates?
-
-## 3. Stage 2 Semantic Vector Deduplication Audit
-Analyze same-type facts marked as duplicates vs. inserted:
-- **False Merges Audit**: List any distinct same-type facts that were improperly merged or suppressed because of semantic proximity.
-- **Duplicate Pollution Audit**: List any incoming facts that were inserted as novel but were actually synonymous with pre-existing same-type observations.
-
-## 4. Near-Miss Region & Boundary Analysis
-Inspect borderline same-type candidate pairs (refer to `<same_type_similarity_matrix>` above):
-- Identify where the cosine threshold succeeded or struggled to separate subtle nuances.
-
-## 5. Contradiction & Evolution Handling
-- Were evolving facts (e.g. status changes, location changes, preference shifts) handled appropriately, or do contradictory observations now co-exist?
-
-## 6. Final Verdict & Threshold Calibration
-Provide concise feedback on whether the 0.95 cosine threshold is optimal or requires calibration based on same-type candidate observations.
-"#,
-        existing_rendered,
-        pending_rendered,
-        queue_decisions_rendered,
-        post_obs_rendered,
-        same_type_sim_rendered,
-        cycle_summary.stage1.processed,
-        cycle_summary.stage1.errors,
-        cycle_summary.stage2.processed,
-        cycle_summary.stage2.inserted,
-        cycle_summary.stage2.duplicates_deactivated,
-        cycle_summary.stage2.errors,
-        post_queue_items.len(),
-        completed_count,
-        pending_count,
-        stage1_done_count,
-        failed_count,
-        after_active.len(),
-        case_id
-    );
-
-    // 7. Run Judge evaluation via NVIDIA NIM Judge
-    let judge_report = judge
-        .evaluate_with_trace(&judge_prompt, case_dir, "ingestion")
-        .await
-        .map_err(|e| anyhow!("Ingestion Judge evaluation failed: {}", e))?;
-
-    // 8. Write Markdown report
-    let report_path = write_markdown_report(case_dir, "ingestion.md", &judge_report)?;
+    // Persist the verdict so the QA pass can verify the counts against the trace.
+    let verdict_path = case_dir.join("ingestion_verdict.json");
+    let payload = match &verdict {
+        JudgeStatus::Parsed(v) => serde_json::json!({ "status": "parsed", "verdict": v, "counts": counts }),
+        JudgeStatus::Invalid { reason } => {
+            serde_json::json!({ "status": "invalid", "reason": reason })
+        }
+    };
+    std::fs::write(&verdict_path, serde_json::to_string_pretty(&payload)?)
+        .map_err(|e| anyhow!("Failed to write ingestion verdict: {}", e))?;
 
     Ok(IngestionEvalSummary {
-        stage1_processed: cycle_summary.stage1.processed,
-        stage2_processed: cycle_summary.stage2.processed,
-        stage2_inserted: cycle_summary.stage2.inserted,
-        total_active_observations: after_active.len(),
-        report_path,
+        stage1_processed: cycle.stage1.processed,
+        stage2_processed: cycle.stage2.processed,
+        stage2_inserted: cycle.stage2.inserted,
+        stage1_merges,
+        stage2_merges,
+        judge_parsed: !matches!(verdict, JudgeStatus::Invalid { .. }),
+        counts,
     })
 }
+
+fn build_judge_prompt(
+    case_id: &str,
+    decisions: &[DedupDecision],
+    near_misses: &[DedupNearMiss],
+) -> String {
+    let stage_name = |s: vox_lib::services::memory::ingestion::DedupStage| match s {
+        vox_lib::services::memory::ingestion::DedupStage::Stage1Exact => {
+            "STAGE 1 (exact token Jaccard, threshold 1.0)"
+        }
+        vox_lib::services::memory::ingestion::DedupStage::Stage2Cosine => {
+            "STAGE 2 (MiniLM embedding cosine, threshold 0.95)"
+        }
+    };
+
+    let mut decision_lines = String::new();
+    for d in decisions {
+        decision_lines.push_str(&format!(
+            "  queue_id={}  [{}]\n    INCOMING : {}\n    DEACTIVATED: {}\n    similarity={:.4}\n",
+            d.incoming_queue_id,
+            stage_name(d.stage),
+            d.incoming_text,
+            d.deactivated_text,
+            d.similarity
+        ));
+    }
+    if decision_lines.is_empty() {
+        decision_lines.push_str("  (no merges occurred)\n");
+    }
+
+    let mut near_lines = String::new();
+    for n in near_misses {
+        near_lines.push_str(&format!(
+            "  queue_id={}  [{}]\n    INCOMING : {}\n    KEPT SEPARATE: {}\n    similarity={:.4}\n",
+            n.incoming_queue_id,
+            stage_name(n.stage),
+            n.incoming_text,
+            n.active_text,
+            n.similarity
+        ));
+    }
+    if near_lines.is_empty() {
+        near_lines.push_str("  (no near-miss pairs in the reported band)\n");
+    }
+
+    format!(
+        r#"You are auditing the deduplication decisions of the Vox memory ingestion pipeline.
+
+<case>{}</case>
+
+<merges_that_occurred>
+Each entry is a pair the pipeline collapsed into one stored fact. The incoming
+fact won; the older one was deactivated. Judge whether collapsing them was right.
+{}
+</merges_that_occurred>
+
+<near_miss_pairs_not_merged>
+Each entry is a pair that scored at or above 0.70 but below the merge threshold,
+so they were deliberately kept as two separate stored facts. Judge whether that
+was right.
+{}
+</near_miss_pairs_not_merged>
+
+For every entry in <merges_that_occurred>, return:
+  "correct"    - these two say the same thing, so one stored fact is right.
+  "incorrect"  - these are genuinely different facts and one of them is now lost.
+
+For every entry in <near_miss_pairs_not_merged>, return:
+  "should_have_merged" - these say the same thing and should be one fact.
+  "distinct"           - these are different and staying separate is right.
+
+Return ONLY this JSON object, with no text before or after it:
+
+{{
+  "decisions": [
+    {{"queue_id": 17, "verdict": "correct", "reason": "why"}}
+  ],
+  "near_misses": [
+    {{"queue_id": 28, "verdict": "distinct", "reason": "why"}}
+  ],
+  "summary": "one paragraph"
+}}
+
+Rules:
+- Every queue_id from <merges_that_occurred> must appear exactly once in "decisions".
+- Every queue_id from <near_miss_pairs_not_merged> must appear exactly once in "near_misses".
+- A pair that differs only in a swapped parameter (allergic to shellfish vs
+  allergic to dairy; uses Pop!_OS vs uses Ubuntu) is "distinct", not a duplicate.
+- Judge each pair on its own text. Do not reward or penalise the similarity value
+  itself; it is provided as context, not as the answer.
+"#,
+        case_id, decision_lines, near_lines
+    )
+}
+

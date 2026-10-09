@@ -54,10 +54,38 @@ pub enum ConsolidateOutcome {
     },
 }
 
+/// Everything one consolidation pass decided, exposed for evaluation.
+///
+/// Telemetry only: nothing here participates in deciding what gets written. The
+/// evaluation harness needs the resolved operations and their refusal reasons
+/// because they are otherwise logged and discarded, which leaves an evaluator
+/// unable to tell an intentional `delete` from a mis-handled handle.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ConsolidationTelemetry {
+    pub pass_name: String,
+    /// The handle-labelled memory view the model was shown, so an evaluator can
+    /// resolve the handles the model emitted back to persistent IDs.
+    #[serde(default)]
+    pub handle_view: Option<String>,
+    /// The operations exactly as the model emitted them, before handle resolution.
+    #[serde(default)]
+    pub model_output: Option<ConsolidationOutput>,
+    /// Operations resolved onto persistent `sec_*` / `blk_*` IDs.
+    #[serde(default)]
+    pub resolved_ops: Vec<ResolvedOp>,
+    /// Operations refused during handle resolution, with the reason.
+    #[serde(default)]
+    pub resolve_rejections: Vec<RejectedOperation>,
+    /// Operations refused during application, with the reason.
+    #[serde(default)]
+    pub apply_rejections: Vec<RejectedOperation>,
+}
+
 /// A pass result: the outcome to return, plus whether the pass actually changed the document.
 struct PassResult {
     outcome: ConsolidateOutcome,
     landed: bool,
+    telemetry: ConsolidationTelemetry,
 }
 
 impl ConsolidateOutcome {
@@ -91,6 +119,17 @@ struct ConsolidationPass<'a> {
 pub async fn consolidate_personal_memory(
     request: ConsolidationRequest<'_>,
 ) -> Result<ConsolidateOutcome> {
+    consolidate_personal_memory_with_telemetry(request)
+        .await
+        .map(|(outcome, _)| outcome)
+}
+
+/// Same pass as [`consolidate_personal_memory`], additionally returning the telemetry for the
+/// operations it decided. Behaviour is identical; this exists so evaluation can observe the
+/// operations and refusals without a second, divergent code path.
+pub async fn consolidate_personal_memory_with_telemetry(
+    request: ConsolidationRequest<'_>,
+) -> Result<(ConsolidateOutcome, ConsolidationTelemetry)> {
     let fallback_settings = LlmSettings::default();
     let effective_settings = request.llm_settings.unwrap_or(&fallback_settings);
     let current_record = get_personal_memory(request.conn, request.project_id).await?;
@@ -106,11 +145,12 @@ pub async fn consolidate_personal_memory(
     gate_on_structured_output_support(effective_settings.active_model())?;
 
     if let Some(user_comments) = request.comments {
-        return stage_comment_directed_edits(&pass, &user_comments).await;
+        let result = stage_comment_directed_edits(&pass, &user_comments).await?;
+        return Ok((result.outcome, result.telemetry));
     }
 
     if let Some(blocked) = gate_on_compaction_and_queue(request.conn, request.forced).await? {
-        return Ok(blocked);
+        return Ok((blocked, ConsolidationTelemetry::default()));
     }
 
     let candidates = fetch_active_observations_by_type(request.conn, "personal").await?;
@@ -119,7 +159,10 @@ pub async fn consolidate_personal_memory(
             "[Memory::Personal] No active personal observations to integrate. Memory stays at v{}.",
             current_record.version
         );
-        return Ok(ConsolidateOutcome::completed(current_record));
+        return Ok((
+            ConsolidateOutcome::completed(current_record),
+            ConsolidationTelemetry::default(),
+        ));
     }
 
     let existing_sections = stored_sections(&current_record).len();
@@ -134,7 +177,7 @@ pub async fn consolidate_personal_memory(
             "[Memory::Personal] Pass produced no applicable operation; {} observation(s) left 'active' for the next run.",
             candidates.len()
         );
-        return Ok(pass_result.outcome);
+        return Ok((pass_result.outcome, pass_result.telemetry));
     }
 
     let ids: Vec<String> = candidates
@@ -147,7 +190,7 @@ pub async fn consolidate_personal_memory(
         ids.len(),
         current_record.version
     );
-    Ok(pass_result.outcome)
+    Ok((pass_result.outcome, pass_result.telemetry))
 }
 
 /// Evaluates the two user-controlled gates, returning a `ConfirmationRequired` outcome when one
@@ -226,6 +269,10 @@ async fn run_cold_generation(
     Ok(PassResult {
         outcome: ConsolidateOutcome::completed(saved),
         landed: true,
+        telemetry: ConsolidationTelemetry {
+            pass_name: "cold generation".to_string(),
+            ..Default::default()
+        },
     })
 }
 
@@ -259,11 +306,21 @@ async fn run_incremental_integration(
     )
     .await?;
 
-    let (resolved, rejected) = resolve_operations(&output, &handle_map);
+    let (resolved, rejected) =
+        resolve_operations(&output, &handle_map, Some(candidates.len()));
     log_operation_rejections("incremental integration", &rejected);
 
-    if pass.memory_settings.suggestion_policy == SUGGESTION_POLICY_AUTO_APPLY {
-        auto_apply_operations(pass, resolved).await
+    let mut telemetry = ConsolidationTelemetry {
+        pass_name: "incremental integration".to_string(),
+        handle_view: Some(handle_view),
+        model_output: Some(output),
+        resolved_ops: resolved.clone(),
+        resolve_rejections: rejected,
+        apply_rejections: Vec::new(),
+    };
+
+    let result = if pass.memory_settings.suggestion_policy == SUGGESTION_POLICY_AUTO_APPLY {
+        auto_apply_operations(pass, resolved).await?
     } else {
         let staged = stage_revisions(pass.conn, pass.current_record, resolved).await?;
         log::info!(
@@ -271,24 +328,35 @@ async fn run_incremental_integration(
             staged,
             pass.current_record.version
         );
-        Ok(PassResult {
+        PassResult {
             outcome: ConsolidateOutcome::completed(pass.current_record.clone()),
             landed: staged > 0,
-        })
-    }
+            telemetry: ConsolidationTelemetry::default(),
+        }
+    };
+
+    telemetry.apply_rejections = result.telemetry.apply_rejections;
+    Ok(PassResult {
+        telemetry,
+        ..result
+    })
 }
 
 /// Comment-directed editing: apply the user's own directives to the existing memory.
 async fn stage_comment_directed_edits(
     pass: &ConsolidationPass<'_>,
     comments: &[String],
-) -> Result<ConsolidateOutcome> {
+) -> Result<PassResult> {
     if comments.is_empty() {
         log::info!(
             "[Memory::Personal] Empty comment list; memory unchanged at v{}.",
             pass.current_record.version
         );
-        return Ok(ConsolidateOutcome::completed(pass.current_record.clone()));
+        return Ok(PassResult {
+            outcome: ConsolidateOutcome::completed(pass.current_record.clone()),
+            landed: false,
+            telemetry: ConsolidationTelemetry::default(),
+        });
     }
 
     let memory = PersonalMemory::from_json(&pass.current_record.content)?;
@@ -309,15 +377,26 @@ async fn stage_comment_directed_edits(
     )
     .await?;
 
-    let (resolved, rejected) = resolve_operations(&output, &handle_map);
+    let (resolved, rejected) = resolve_operations(&output, &handle_map, None);
     log_operation_rejections("comment-directed edit", &rejected);
-    let staged = stage_revisions(pass.conn, pass.current_record, resolved).await?;
+    let staged = stage_revisions(pass.conn, pass.current_record, resolved.clone()).await?;
     log::info!(
         "[Memory::Personal] Staged {} comment-driven revision(s) against v{}.",
         staged,
         pass.current_record.version
     );
-    Ok(ConsolidateOutcome::completed(pass.current_record.clone()))
+    Ok(PassResult {
+        outcome: ConsolidateOutcome::completed(pass.current_record.clone()),
+        landed: staged > 0,
+        telemetry: ConsolidationTelemetry {
+            pass_name: "comment-directed edit".to_string(),
+            handle_view: Some(handle_view),
+            model_output: Some(output),
+            resolved_ops: resolved,
+            resolve_rejections: rejected,
+            apply_rejections: Vec::new(),
+        },
+    })
 }
 
 /// Regeneration: re-synthesize the entire structure from all already integrated personal facts using cold generation.
@@ -439,9 +518,14 @@ async fn auto_apply_operations(
         );
     }
 
-    Ok(PassResult {
+Ok(PassResult {
         outcome: ConsolidateOutcome::completed(record),
         landed: applied > 0,
+        telemetry: ConsolidationTelemetry {
+            pass_name: "auto-apply".to_string(),
+            apply_rejections: report.rejected,
+            ..Default::default()
+        },
     })
 }
 

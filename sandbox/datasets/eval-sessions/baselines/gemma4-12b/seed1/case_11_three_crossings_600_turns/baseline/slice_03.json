@@ -1,0 +1,45 @@
+{
+  "personal": [
+    "Has a cat named Pixel",
+    "Owns a sourdough starter named Doughvid [turns 3, 8, 9, 62, 98, 125, 126, 134]",
+    "Allergic to tree nuts (anaphylactic) [turns 18, 59, 60, 75, 97, 104]",
+    "Practicing Spanish for Mexico City trip [turns 1, 2, 58, 65, 113]",
+    "Reading 'Red Mars' and 'Children of Time' [turns 14, 37, 72, 73, 110, 143]",
+    "Plays guitar and is practicing 'Blackbird' [turns 21, 22, 93, 111]",
+    "Uses Neovim for coding [turns 23, 53, 66, 82, 94, 128]",
+    "Trying to cut down on sugar and prefers healthy snacks [turns 27, 96, 97]",
+    "Working on a Rust memory manager project [turns 9, 10, 15, 36, 43, 50, 76, 79, 89, 90, 91, 99, 100, 107, 114, 115, 119, 124, 125, 126, 133, 141]",
+    "Has a friend/partner named Jamie [turns 4, 11, 129, 144]"
+  ],
+  "objective": [
+    "Implement lock-free deallocation for the slab allocator",
+    "Refactor PerceptionImage using a factory pattern with an enum",
+    "Practice Spanish phrases for Mexico City trip",
+    "Optimize Neovim buffer management keybindings",
+    "Develop SimdImageProcessor trait to handle type compatibility issues"
+  ],
+  "workdone": [
+    "Implemented file existence, size, and header validation for image loading",
+    "Implemented SIMD-accelerated grayscale conversion using simd-pixels [turn 87]",
+    "Integrated profiling hooks (using tracing) into the slab allocator [turns 76, 89]",
+    "Added safety check to the bump allocator's reset() function",
+    "Implemented guard bands for segregated free list with byte pattern",
+    "Defined factory function and enum for PerceptionImage refactor [turn 32]",
+    "Completed work on SimdImageProcessor trait [turn 137]"
+  ],
+  "blocker": [
+    "Data race in slab allocator's try_resize function during concurrent testing",
+    "Need to pick up an umbrella [turns 7, 118, 135, 140]",
+    "Lifetime annotation issues with RwLock in the slab allocator [turn 125]"
+  ],
+  "next_step": [
+    "Implement lock-free deallocation for the slab allocator using atomic operations",
+    "Practice Spanish ordering food/directions [turns 1, 2, 58, 65]",
+    "Finalize Mexico City trip preparations [turn 134, 140]",
+    "Refactor PerceptionImage struct with factory pattern [turn 145]"
+  ],
+  "pitfall": [
+    "Avoid tree nuts due to anaphylactic allergy [turns 18, 59, 60, 75, 97, 104]",
+    "Type compatibility issues between simd-pixels and the image crate [turn 69, 130]"
+  ]
+}
