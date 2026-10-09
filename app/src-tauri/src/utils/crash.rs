@@ -1,7 +1,7 @@
+#[cfg(target_os = "linux")]
+use std::{backtrace::Backtrace, sync::Once};
 use std::{
-    backtrace::Backtrace,
     fs::{create_dir_all, write},
-    sync::Once,
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -54,6 +54,7 @@ pub fn write_crash_report(kind: &str, summary: &str, backtrace: &str) -> Option<
 /// ONNX Runtime), the `ort` embedder, and libasound via cpal.
 ///
 /// Installing a handler is what turns "the app vanished" into a frame list.
+#[cfg(target_os = "linux")]
 static INSTALL: Once = Once::new();
 
 /// Installs handlers for the native abort signals that indicate memory

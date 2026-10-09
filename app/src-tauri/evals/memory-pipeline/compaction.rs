@@ -64,32 +64,25 @@ pub async fn run_slices_and_persist(
     for slice in slices {
         let history = slice_to_chat_messages(slice, prior_summary.as_deref());
 
-        let run_id = record_compaction_start(
-            &conn,
-            session_id,
-            "eval",
-            slice.from_turn,
-            slice.to_turn,
-        )
-        .await
-        .map_err(|e| anyhow!("Failed to record compaction start: {}", e))?;
+        let run_id =
+            record_compaction_start(&conn, session_id, "eval", slice.from_turn, slice.to_turn)
+                .await
+                .map_err(|e| anyhow!("Failed to record compaction start: {}", e))?;
 
-        let result = run_compaction(provider, &history, Some(llm_settings), None).await.map_err(|e| {
-            anyhow!(
-                "Compaction failed for session {} slice {}: {}",
-                session_id, slice.slice_index, e
-            )
-        })?;
+        let result = run_compaction(provider, &history, Some(llm_settings), None)
+            .await
+            .map_err(|e| {
+                anyhow!(
+                    "Compaction failed for session {} slice {}: {}",
+                    session_id,
+                    slice.slice_index,
+                    e
+                )
+            })?;
 
-        commit_compaction_output(
-            &conn,
-            run_id,
-            &result.raw_json,
-            &result.facts,
-            session_id,
-        )
-        .await
-        .map_err(|e| anyhow!("Failed to commit compaction output: {}", e))?;
+        commit_compaction_output(&conn, run_id, &result.raw_json, &result.facts, session_id)
+            .await
+            .map_err(|e| anyhow!("Failed to commit compaction output: {}", e))?;
 
         // The next slice sees this slice's summary as `<prior_summary>`, exactly as
         // production does. Each side of the baseline comparison chains its own.
@@ -172,9 +165,7 @@ pub async fn judge_compaction(
     baseline_doc: Option<&serde_json::Value>,
 ) -> Result<JudgeStatus<CompactionVerdict>> {
     let runtime_facts = flatten_compaction(runtime_doc);
-    let baseline_facts = baseline_doc
-        .map(flatten_compaction)
-        .unwrap_or_default();
+    let baseline_facts = baseline_doc.map(flatten_compaction).unwrap_or_default();
 
     if baseline_facts.is_empty() {
         return Ok(JudgeStatus::Invalid {
@@ -187,7 +178,11 @@ pub async fn judge_compaction(
 
     let prompt = build_judge_prompt(case_id, slice, &runtime_facts, &baseline_facts);
     let raw = judge
-        .evaluate_with_trace(&prompt, case_dir, &format!("compaction_slice_{:02}", slice.slice_index))
+        .evaluate_with_trace(
+            &prompt,
+            case_dir,
+            &format!("compaction_slice_{:02}", slice.slice_index),
+        )
         .await?;
     Ok(parse_verdict::<CompactionVerdict>(&raw))
 }

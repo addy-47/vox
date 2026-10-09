@@ -105,10 +105,8 @@ fn check_personal_attribution(
         .filter(|m| m.role == Role::User)
         .map(|m| m.content.clone())
         .collect();
-    let user_words: std::collections::HashSet<String> = user_text
-        .iter()
-        .flat_map(|t| content_words(t))
-        .collect();
+    let user_words: std::collections::HashSet<String> =
+        user_text.iter().flat_map(|t| content_words(t)).collect();
 
     personal_facts
         .iter()

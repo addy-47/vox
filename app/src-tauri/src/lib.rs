@@ -17,9 +17,10 @@ pub mod window_customizer;
 pub mod window_main;
 pub mod wizard;
 
+#[cfg(target_os = "linux")]
+use std::env::set_var;
 use std::{
     backtrace::Backtrace,
-    env::set_var,
     fs::write,
     panic::set_hook,
     sync::{
@@ -32,6 +33,8 @@ use std::{
 
 use tauri::{Manager, State};
 
+#[cfg(desktop)]
+use crate::ipc::tray::toggle_tray_visibility_internal;
 #[cfg(target_os = "linux")]
 use crate::tray::setup_linux_virtual_layer;
 use crate::{
@@ -71,10 +74,7 @@ use crate::{
             check_updates, complete_setup_wizard, fetch_manifest, get_onboarding_status,
             get_runtime_report, manage_models, reveal_wizard,
         },
-        tray::{
-            hide_tray_window, set_window_click_through, show_main_window,
-            toggle_tray_visibility_internal,
-        },
+        tray::{hide_tray_window, set_window_click_through, show_main_window},
         voices::{
             add_voice_from_file, add_voice_from_recording, delete_voice, list_voices, rename_voice,
             start_backend_recording, stop_backend_recording,

@@ -71,9 +71,11 @@ fn extract_registered_commands(lib_rs: &str) -> BTreeSet<String> {
     let mut registered = BTreeSet::new();
 
     let Some(start) = lib_rs.find("generate_handler![") else {
-        panic!("lib.rs: no `tauri::generate_handler![` block found — the IPC\n\
+        panic!(
+            "lib.rs: no `tauri::generate_handler![` block found — the IPC\n\
                 registration block was renamed or removed. This test must be\n\
-                updated to match.");
+                updated to match."
+        );
     };
 
     let body = &lib_rs[start..];
@@ -101,9 +103,7 @@ fn extract_registered_commands(lib_rs: &str) -> BTreeSet<String> {
         if let Some(name) = code.strip_suffix(',') {
             let name = name.trim();
             if !name.is_empty()
-                && name
-                    .chars()
-                    .all(|c| c.is_ascii_alphanumeric() || c == '_')
+                && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
                 && !name.chars().next().is_some_and(|c| c.is_ascii_digit())
             {
                 registered.insert(name.to_string());
@@ -199,10 +199,7 @@ fn extract_defined_commands(ipc_dir: &Path) -> BTreeMap<String, Vec<String>> {
                         if let Some(local) = cmd_local_cfg.take() {
                             parts.push(local);
                         }
-                        defined
-                            .entry(name)
-                            .or_default()
-                            .push(parts.join(" && "));
+                        defined.entry(name).or_default().push(parts.join(" && "));
                     }
                     pending_cmd = false;
                 } else if !code.is_empty() {

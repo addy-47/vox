@@ -31,7 +31,9 @@ use common::{
     datasets::load_eval_case,
     db::EvalDbGuard,
     llm_client::{create_pipeline_provider, JudgeClient, RecordingLlmProvider},
-    reporting::{create_case_directory, create_run_directory, resolve_output_dir, write_summary_markdown},
+    reporting::{
+        create_case_directory, create_run_directory, resolve_output_dir, write_summary_markdown,
+    },
     slices::plan_slices,
     stage_dump::{build_run_manifest, write_json},
     verdicts::ratio_str,
@@ -153,7 +155,11 @@ fn baseline_path(baseline_root: &Path, case_stem: &str, slice_index: usize) -> P
         .join(format!("slice_{:02}.json", slice_index))
 }
 
-fn load_baseline(baseline_root: &Path, case_stem: &str, slice_index: usize) -> Option<serde_json::Value> {
+fn load_baseline(
+    baseline_root: &Path,
+    case_stem: &str,
+    slice_index: usize,
+) -> Option<serde_json::Value> {
     let path = baseline_path(baseline_root, case_stem, slice_index);
     let body = std::fs::read_to_string(path).ok()?;
     serde_json::from_str(&body).ok()
@@ -165,7 +171,12 @@ fn load_baseline(baseline_root: &Path, case_stem: &str, slice_index: usize) -> O
 fn read_baseline_meta(baseline_root: &Path) -> serde_json::Value {
     let mut found: Vec<serde_json::Value> = Vec::new();
     let dirs: Vec<PathBuf> = std::fs::read_dir(baseline_root)
-        .map(|rd| rd.flatten().map(|e| e.path()).filter(|p| p.is_dir()).collect())
+        .map(|rd| {
+            rd.flatten()
+                .map(|e| e.path())
+                .filter(|p| p.is_dir())
+                .collect()
+        })
         .unwrap_or_default();
     for dir in &dirs {
         let meta_path = dir.join("baseline").join("_meta.json");
@@ -175,9 +186,10 @@ fn read_baseline_meta(baseline_root: &Path) -> serde_json::Value {
             }
         }
     }
-    let first = found.first().cloned().unwrap_or_else(|| {
-        serde_json::json!({"backend": "unknown", "model": "unknown"})
-    });
+    let first = found
+        .first()
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!({"backend": "unknown", "model": "unknown"}));
     if found.iter().any(|m| m != &first) {
         log::warn!(
             "[Eval] Baseline _meta.json files disagree within {}; using the first. Mixed-source ceilings are not supported.",
@@ -210,22 +222,43 @@ async fn main() -> Result<()> {
     println!("Vox Memory Pipeline Evaluation");
     println!("================================================================================");
     println!("  Cases          : {}", args.cases);
-    println!("  Mode           : {}", if args.dump_slices { "dump-slices (no LLM calls)" } else { "full pipeline + judges" });
-    println!("  Pipeline       : {} @ {}", args.pipeline_model, args.pipeline_url);
-    println!("  Judge          : {} @ {}", args.judge_model, if judge_local { "local ollama" } else { &judge_url });
+    println!(
+        "  Mode           : {}",
+        if args.dump_slices {
+            "dump-slices (no LLM calls)"
+        } else {
+            "full pipeline + judges"
+        }
+    );
+    println!(
+        "  Pipeline       : {} @ {}",
+        args.pipeline_model, args.pipeline_url
+    );
+    println!(
+        "  Judge          : {} @ {}",
+        args.judge_model,
+        if judge_local {
+            "local ollama"
+        } else {
+            &judge_url
+        }
+    );
     println!("  Seed           : {:?}", args.seed);
     println!("  Run Directory  : {}", run_dir.display());
     println!("================================================================================");
 
-    let baseline_root: PathBuf = args
-        .baseline_dir
-        .clone()
-        .unwrap_or_else(|| run_dir.clone());
+    let baseline_root: PathBuf = args.baseline_dir.clone().unwrap_or_else(|| run_dir.clone());
     let baseline_meta = read_baseline_meta(&baseline_root);
     println!(
         "  Baseline       : {} @ {}",
-        baseline_meta.get("model").and_then(|v| v.as_str()).unwrap_or("unknown"),
-        baseline_meta.get("backend").and_then(|v| v.as_str()).unwrap_or("unknown")
+        baseline_meta
+            .get("model")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown"),
+        baseline_meta
+            .get("backend")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown")
     );
 
     let manifest = build_run_manifest(
@@ -250,7 +283,10 @@ async fn main() -> Result<()> {
 
     let (db_path, _is_shared_db) = if let Some(ref custom_db) = args.db {
         if !custom_db.exists() {
-            return Err(anyhow!("Provided database file {:?} does not exist", custom_db));
+            return Err(anyhow!(
+                "Provided database file {:?} does not exist",
+                custom_db
+            ));
         }
         (custom_db.clone(), true)
     } else {
@@ -260,8 +296,9 @@ async fn main() -> Result<()> {
     let eval_db = EvalDbGuard::new(&db_path).await?;
     let raw_provider = create_pipeline_provider(&args.pipeline_url, &args.pipeline_model, None);
     let recording_provider = RecordingLlmProvider::new(raw_provider, args.pipeline_model.clone());
-    let judge = JudgeClient::with_endpoint(args.judge_key.clone(), args.judge_model.clone(), &judge_url)
-        .with_seed(args.seed);
+    let judge =
+        JudgeClient::with_endpoint(args.judge_key.clone(), args.judge_model.clone(), &judge_url)
+            .with_seed(args.seed);
 
     // The candidate model identity reaches the request builder (catalog lookups,
     // output constraints, seed), not just the transport. Without this the builder
@@ -280,11 +317,19 @@ async fn main() -> Result<()> {
 
     for case_idx in 1..=args.cases {
         let (case_name, turns) = load_eval_case(case_idx)?;
-        let case_stem = case_name.strip_suffix(".json").unwrap_or(&case_name).to_string();
+        let case_stem = case_name
+            .strip_suffix(".json")
+            .unwrap_or(&case_name)
+            .to_string();
         let case_dir = create_case_directory(&run_dir, &case_stem)?;
         let session_id = case_idx as i64 * 1000;
 
-        println!("\n---- Case {:02}: {} ({} turns) ----", case_idx, case_stem, turns.len());
+        println!(
+            "\n---- Case {:02}: {} ({} turns) ----",
+            case_idx,
+            case_stem,
+            turns.len()
+        );
 
         // ---- Pass 1: slice planning -------------------------------------------
         let slices = plan_slices(&turns);
@@ -297,20 +342,32 @@ async fn main() -> Result<()> {
         for s in &slices {
             println!(
                 "    slice {:02}: turns {}..{} ({} turns, {} tokens, {:.0}% of budget)",
-                s.slice_index, s.from_turn, s.to_turn, s.turn_count, s.dialogue_tokens,
+                s.slice_index,
+                s.from_turn,
+                s.to_turn,
+                s.turn_count,
+                s.dialogue_tokens,
                 s.utilization_at_trigger * 100.0
             );
         }
 
         if args.dump_slices {
-            case_rows.push(format!("{} | {} slices dumped | `{}`", case_stem, planned, case_stem));
+            case_rows.push(format!(
+                "{} | {} slices dumped | `{}`",
+                case_stem, planned, case_stem
+            ));
             totals.slices += planned;
             continue;
         }
 
         // ---- Pass 3a: compaction runtime -------------------------------------
         let (documents, slice_telemetry) = run_slices_and_persist(
-            &eval_db, session_id, &case_stem, &slices, &recording_provider, &case_dir,
+            &eval_db,
+            session_id,
+            &case_stem,
+            &slices,
+            &recording_provider,
+            &case_dir,
             &pipeline_settings,
         )
         .await?;
@@ -333,10 +390,9 @@ async fn main() -> Result<()> {
             if let Some(b) = &baseline {
                 case_baseline_facts += common::verdicts::flatten_compaction(b).len();
             }
-            let verdict = judge_compaction(
-                &judge, &case_dir, &case_stem, slice, doc, baseline.as_ref(),
-            )
-            .await?;
+            let verdict =
+                judge_compaction(&judge, &case_dir, &case_stem, slice, doc, baseline.as_ref())
+                    .await?;
 
             match &verdict {
                 common::verdicts::JudgeStatus::Parsed(v) => {
@@ -347,8 +403,8 @@ async fn main() -> Result<()> {
                         .unwrap_or(0);
                     let validation =
                         common::verdicts::validate_compaction_verdict(v, runtime_n, baseline_n);
-                    totals.phantom_verdicts += validation.phantom_runtime
-                        + validation.phantom_baseline;
+                    totals.phantom_verdicts +=
+                        validation.phantom_runtime + validation.phantom_baseline;
                     if validation.phantom_runtime > 0 || validation.phantom_baseline > 0 {
                         println!(
                             "    slice {:02}: {} phantom judge indices excluded from counts",
@@ -377,7 +433,10 @@ async fn main() -> Result<()> {
                 common::verdicts::JudgeStatus::Invalid { reason } => {
                     totals.compaction_judge_invalid += 1;
                     invalid_cases.push(format!("{}/compaction/{}", case_stem, slice.slice_index));
-                    println!("    slice {:02}: INVALID verdict — {}", slice.slice_index, reason);
+                    println!(
+                        "    slice {:02}: INVALID verdict — {}",
+                        slice.slice_index, reason
+                    );
                 }
             }
         }
@@ -387,8 +446,10 @@ async fn main() -> Result<()> {
         totals.baseline_facts += case_baseline_facts;
         println!(
             "  compaction: {} runtime facts vs {} baseline facts ({} valid, {} invalid verdicts)",
-            case_runtime_facts, case_baseline_facts,
-            totals.compaction_judge_parsed, totals.compaction_judge_invalid
+            case_runtime_facts,
+            case_baseline_facts,
+            totals.compaction_judge_parsed,
+            totals.compaction_judge_invalid
         );
 
         if args.compaction_only {
@@ -420,7 +481,11 @@ async fn main() -> Result<()> {
 
         // ---- Pass 3c: consolidation ------------------------------------------
         let con = evaluate_consolidation_stage(
-            &eval_db, &case_stem, &recording_provider, &judge, &case_dir,
+            &eval_db,
+            &case_stem,
+            &recording_provider,
+            &judge,
+            &case_dir,
             &pipeline_settings,
         )
         .await?;
@@ -444,9 +509,13 @@ async fn main() -> Result<()> {
 
         case_rows.push(format!(
             "{} | c:{} facts / b:{} baseline | i:{} merges | n:{} obs ({} dropped) | `{}`",
-            case_stem, case_runtime_facts, case_baseline_facts,
-            ing.counts.merges_total, con.counts.observations_total,
-            con.counts.observations_dropped, case_stem
+            case_stem,
+            case_runtime_facts,
+            case_baseline_facts,
+            ing.counts.merges_total,
+            con.counts.observations_total,
+            con.counts.observations_dropped,
+            case_stem
         ));
     }
 
@@ -456,7 +525,10 @@ async fn main() -> Result<()> {
     if args.dump_slices {
         sections.push((
             "Slices planned".to_string(),
-            format!("Total slices across {} case(s): **{}**", args.cases, totals.slices),
+            format!(
+                "Total slices across {} case(s): **{}**",
+                args.cases, totals.slices
+            ),
         ));
         sections.push((
             "Next step".to_string(),
@@ -552,7 +624,11 @@ async fn main() -> Result<()> {
                     "**{}** judge call(s) produced no usable verdict. These contribute to no \
                      metric and are not passes:\n\n{}",
                     invalid_cases.len(),
-                    invalid_cases.iter().map(|c| format!("- {}", c)).collect::<Vec<_>>().join("\n")
+                    invalid_cases
+                        .iter()
+                        .map(|c| format!("- {}", c))
+                        .collect::<Vec<_>>()
+                        .join("\n")
                 )
             },
         ));
@@ -731,11 +807,10 @@ fn reparse_run(args: &CliArgs) -> Result<()> {
                     JudgeStatus::Parsed(v) => {
                         let counts = count_consolidation(&v);
                         let path = case_dir.join("consolidation_verdict.json");
-                        let mut payload: serde_json::Value =
-                            std::fs::read_to_string(&path)
-                                .ok()
-                                .and_then(|b| serde_json::from_str(&b).ok())
-                                .unwrap_or_else(|| serde_json::json!({}));
+                        let mut payload: serde_json::Value = std::fs::read_to_string(&path)
+                            .ok()
+                            .and_then(|b| serde_json::from_str(&b).ok())
+                            .unwrap_or_else(|| serde_json::json!({}));
                         let was_invalid =
                             payload.get("status") != Some(&serde_json::json!("parsed"));
                         payload["status"] = serde_json::json!("parsed");
@@ -763,11 +838,10 @@ fn reparse_run(args: &CliArgs) -> Result<()> {
                     JudgeStatus::Parsed(v) => {
                         let counts = count_ingestion(&v);
                         let path = case_dir.join("ingestion_verdict.json");
-                        let mut payload: serde_json::Value =
-                            std::fs::read_to_string(&path)
-                                .ok()
-                                .and_then(|b| serde_json::from_str(&b).ok())
-                                .unwrap_or_else(|| serde_json::json!({}));
+                        let mut payload: serde_json::Value = std::fs::read_to_string(&path)
+                            .ok()
+                            .and_then(|b| serde_json::from_str(&b).ok())
+                            .unwrap_or_else(|| serde_json::json!({}));
                         let was_invalid =
                             payload.get("status") != Some(&serde_json::json!("parsed"));
                         payload["status"] = serde_json::json!("parsed");
@@ -791,8 +865,7 @@ fn reparse_run(args: &CliArgs) -> Result<()> {
                 let status: JudgeStatus<CompactionVerdict> = parse_verdict(response);
                 match status {
                     JudgeStatus::Parsed(v) => {
-                        let counts =
-                            common::verdicts::count_compaction(&v, 0);
+                        let counts = common::verdicts::count_compaction(&v, 0);
                         cases.compaction_matched += counts.matched_baseline;
                         cases.compaction_novel += counts.novel_but_valid;
                         cases.compaction_ungrounded += counts.ungrounded;

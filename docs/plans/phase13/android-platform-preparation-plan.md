@@ -1,4 +1,11 @@
-# Phase 12.2 — Android Platform Preparation Plan
+# Phase 13.1 — Android Platform Preparation Plan
+
+> **Re-homed from Phase 12 on 2026-10-09.** This plan began as "Phase 12.2" but
+> Android platform work now lives in Phase 13, alongside the critical feature set
+> (remote control, disfluency ML, speaker lock) that must run on-device. The file
+> moved with `git mv` — history is preserved. Cross-references to
+> `phase12/recent_work.md` were repointed to `phase13/recent_work.md`. The feature
+> WIP documents deliberately remain in `docs/plans/wip/`.
 
 > **Goal:** A single push to `master` builds an installable APK. The app runs on Android end-to-end: first-run wizard completes, models download, mic capture and playback work, and inference runs locally on-device.
 >
@@ -8,7 +15,7 @@
 > - 🟡 **Android-additive** — adds Android-only branches behind a flag, desktop path provably untouched.
 > - ⛔ **Android-necessary** — cannot be avoided to make Android work; desktop must be guarded, not altered.
 >
-> **Companion document:** [`wip/remote-control-android.md`](file:///home/addy/projects/apps/vox/docs/plans/wip/remote-control-android.md). This plan unblocks its execution-environment question; it does not implement it.
+> **Companion document:** [`../wip/remote-control-android.md`](file:///home/addy/projects/apps/vox/docs/plans/wip/remote-control-android.md). This plan unblocks its execution-environment question; it does not implement it.
 
 ---
 
@@ -21,6 +28,35 @@
 | Frontend transport abstraction behind `src/services/` | Same reason. `invoke()` over Tauri's Android bridge is sufficient. Deferred. |
 | Volume-key dictation hotkey | Requires an Android `Service` + `MediaSession`/accessibility layer. Out of scope for "app runs end-to-end." Tracked in §9. |
 | Local *vs* remote mode toggle | Not needed until remote exists. |
+
+---
+
+## Product Decisions (2026-10-09, user-confirmed)
+
+These supersede earlier assumptions in this document.
+
+| Decision | Answer | Consequence |
+|---|---|---|
+| **On-device capability scope** | **Fully local: STT + TTS + VAD on device** | Batch 7 (native packaging) and Batch 8 (model delivery) are both **required**. |
+| **`llama.cpp` on the Android target graph** | **Keep it; cross-compile it now** | The M-L Batch 7 item stands. Do not drop it for a remote-LLM-only Android build. |
+| **Batch ordering** | **Batch 3 before Batch 2** | Do not do the audio seam until a real APK has run on a device. |
+| **CI enforcement** | **Script + rules file only, no CI yet** | Verification is script-driven until Batch 3 lands. |
+| **Remote inference** | Not the Android story | Remote LLM already works over plain HTTP (`services/llm/transport/`). It stays available but is not the mobile path. |
+
+### What `setup/remote_server.rs` actually is — corrected
+
+An earlier revision of this plan described it only as "spawns `ssh`" and implied it was part of the remote-execution story. **That is wrong.**
+
+`setup/remote_server.rs` is a **one-time remote-server provisioning helper**, not the inference path:
+
+1. Takes `connection_string` (`root@IP`), optional port and identity key
+2. Spawns `ssh … bash -s -- <remote_path> <server_port>` (`:88`)
+3. Pipes `setup_server.sh` (5.6K, seven phases: download → extract → verify → smoke test) over stdin
+4. Parses stdout `Phase N` / `Smoke test passed` into `ModelProgress` events (`:55-75`)
+
+**Runtime inference against that box needs no `ssh` at all.** `services/llm/transport/config.rs:8-13` exposes `TransportType::{ChatCompletions, OllamaNative, Responses}` over plain HTTP. An Android build can already talk to a remote box with zero Rust changes.
+
+**Consequence:** provisioning a GPU box is a desktop-admin task — you provision from a laptop, the phone then connects over HTTP. So `remote_server.rs` is correctly gated off mobile (§4.1a). If in-app provisioning is ever wanted, it needs a pure-Rust SSH client (`russh`) replacing the `ssh` subprocess; that is a feature, not a portability fix, and belongs in `wip/remote-control-android.md`.
 
 ---
 
@@ -44,23 +80,27 @@ Established by direct inspection and by an actual cross-compile attempt. Not ass
 
 **Second blocker, discovered during Batch 1 implementation — `enigo` cannot compile for Android.** This is not a Batch 1 item and it invalidates Batch 1's stated gate. See §1.5.
 
+**Both blockers are now resolved.** Commit `6310dacf` re-keyed the `enigo`/`arboard` dependency block on `cfg(not(any(target_os = "android", target_os = "ios")))` and excluded the dictation modules behind `cfg(desktop)`, so `enigo` is off the Android target graph entirely. Verified: `cargo clippy --target aarch64-linux-android --lib --release` exits 0. The open question of *whether dictation should exist on Android at all* (Open Decision 3) is now answered by necessity — it does not, and Android is assistant-only.
+
 ---
 
 ## Sequencing at a Glance
 
-| Batch | Scope | Class | Effort | Gate |
-|---|---|---|---|---|
-| 1 | Dependency hygiene | 🟢 Desktop-neutral | S | `cargo check` green on desktop; `openssl-sys` off the Android target graph (full Android `cargo check` is gated on Batch 4 — see §1.5) |
-| 2 | Audio backend seam | 🟢 Desktop-neutral | M | Desktop audio regression tests pass |
-| 3 | CI APK pipeline | 🟢 Desktop-neutral | M | **APK installs on a physical device** |
-| 4 | Desktop-only code exclusion | 🟡 Android-additive | M | **Android `cargo check` green**; desktop bundles unchanged |
-| 5 | Frontend capability layer | 🟡 Android-additive | M | Desktop visual regression unchanged |
-| 6 | Wizard responsiveness | 🟡 Android-additive | M | First-run completes on a phone |
-| 7 | Native library packaging | ⛔ Android-necessary | M-L | `llama.cpp` + `turso` link for `arm64-v8a` |
-| 8 | Model delivery on mobile | ⛔ Android-necessary | L | Models download and load on-device |
-| 9 | WebGL thermal tuning | 🟡 Android-additive | M | Sustained fps on a mid-range device |
+| Batch | Scope | Class | Effort | Gate | Status |
+|---|---|---|---|---|---|
+| 1 | Dependency hygiene | 🟢 Desktop-neutral | S | `cargo check` green on desktop; `openssl-sys` off the Android target graph | ✅ Done |
+| 4 | Desktop-only code exclusion | 🟡 Android-additive | M | **Android `cargo check` green**; desktop bundles unchanged | ✅ **Done** (compile gate in `6310dacf`; `remote_server` closed in Phase 1) |
+| 2 | Audio backend seam | 🟢 Desktop-neutral | M | Desktop audio regression tests pass | ⬜ Next |
+| 3 | CI APK pipeline | 🟢 Desktop-neutral | M | **APK installs on a physical device** | ⬜ Not started |
+| 5 | Frontend capability layer | 🟡 Android-additive | M | Desktop visual regression unchanged | ⬜ Not started |
+| 6 | Wizard responsiveness | 🟡 Android-additive | M | First-run completes on a phone | 🟡 Partially done (mobile wizard flow shipped in `6310dacf`) |
+| 7 | Native library packaging | ⛔ Android-necessary | M-L | `llama.cpp` + `turso` link for `arm64-v8a` | ⬜ Not started |
+| 8 | Model delivery on mobile | ⛔ Android-necessary | L | Models download and load on-device | ⬜ Not started |
+| 9 | WebGL thermal tuning | 🟡 Android-additive | M | Sustained fps on a mid-range device | ⬜ Not started |
 
 **Critical path:** Batch 3 is the highest-value gate. It converts every subsequent batch from guesswork into a build log. Do not defer it.
+
+**Status legend:** ✅ gate met · 🟡 partial · ⬜ not started. Statuses are set against a re-verification run of both targets (see §Verification).
 
 ---
 
@@ -100,9 +140,18 @@ reqwest = { version = "0.12", default-features = false, features = ["stream", "r
 
 ### 1.3 Android toolchain wiring — no committed config change
 
-**⚠️ The original instruction here was wrong and has been removed.** It said to commit a `[target.aarch64-linux-android]` block to `app/src-tauri/.cargo/config.toml`, and asserted such a block "already received during the spike." Neither was true — the file contains desktop targets only. More importantly, **committing an absolute NDK path is wrong**: it hardcodes `/home/addy/...`, which cannot resolve on a CI runner or any other machine.
+**⚠️ The original instruction here was wrong and has been removed.** It said to commit a `[target.aarch64-linux-android]` block to `app/src-tauri/.cargo/config.toml`, and asserted such a block "already received during the spike." Neither was true at the time — the file contained desktop targets only. More importantly, **committing an absolute NDK path is wrong**: it hardcodes `/home/addy/...`, which cannot resolve on a CI runner or any other machine.
 
-**The linker is supplied by the build driver, not by cargo config.** The Tauri CLI (v2.11.0) resolves the NDK itself and injects the target-specific environment variables:
+**Update (commit `6310dacf`): a block now exists, and it is correct.** `app/src-tauri/.cargo/config.toml:28-29` contains:
+
+```toml
+[target.aarch64-linux-android]
+linker = "aarch64-linux-android24-clang"
+```
+
+The linker is a **bare name**, not an absolute path. Cargo resolves a bare linker through `$PATH`, so exporting the NDK's `prebuilt/<host>/bin` directory is the entire setup and the file stays portable across machines and CI runners. This is the right form of the original instruction and it is now in place.
+
+**The rest of the toolchain is supplied by the build driver, not by cargo config.** The Tauri CLI (v2.11.0) resolves the NDK itself and injects the target-specific environment variables:
 
 - It reads `ANDROID_HOME` / `ANDROID_SDK_ROOT`, and finds the NDK revision from `source.properties` (`Pkg.Revision`) — see `cargo_mobile2::android::{env, ndk, source_props}`.
 - It emits `CARGO_TARGET_<TRIPLE>_LINKER` and `CARGO_TARGET_<TRIPLE>_RUSTFLAGS` (template constant `CARGO_TARGET__LINKER_RUSTFLAGS`).
@@ -134,6 +183,37 @@ Three of these are non-obvious and each one is a hard failure if missing:
 In CI, `tauri android build` sets the first six automatically from `ANDROID_HOME`. **The `-D__ANDROID_API__` bindgen argument is the one thing the CLI does not set**, so a CI job doing a bare `cargo build --target aarch64-linux-android` must export it (or use NDK ≤ 27, whose libc++ predates this symbol).
 
 **Desktop safety:** nothing committed, nothing to regress.
+
+#### ⛔ Do NOT export `SYSROOT` — it breaks every `cargo clippy` invocation
+
+This is a **confirmed** defect in the recipe above, found while re-verifying Batch 4. `SYSROOT` must be inlined into `BINDGEN_EXTRA_CLANG_ARGS` and never exported on its own.
+
+| | Honors the `SYSROOT` env var? |
+|---|---|
+| `rustc` | **No** — ignores it, always uses the host/toolchain sysroot |
+| `clippy-driver` | **Yes** — treats it as an authoritative sysroot override |
+
+Because `cargo clippy` compiles the Vox **build script for the host** with `clippy-driver`, exporting `SYSROOT=<NDK>/.../sysroot` makes clippy look for the *host* `x86_64-unknown-linux-gnu` std inside the *Android* sysroot, and every Android clippy run dies at:
+
+```
+error[E0463]: can't find crate for `std`
+  = note: the `x86_64-unknown-linux-gnu` target may not be installed
+error: could not compile `Vox` (build script) due to 1 previous error
+```
+
+`cargo check --target aarch64-linux-android` is unaffected (it uses `rustc`), which is why the failure went unseen while earlier batches were verified with `cargo check` only. **Verified working env for both cargo and clippy:**
+
+```bash
+NDK=~/Android/Sdk/ndk/29.0.13846066
+NDKB="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
+export ANDROID_NDK="$NDK"
+export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$NDKB/aarch64-linux-android24-clang"
+export CC_aarch64_linux_android="$NDKB/aarch64-linux-android24-clang"
+export CXX_aarch64_linux_android="$NDKB/aarch64-linux-android24-clang++"
+export AR_aarch64_linux_android="$NDKB/llvm-ar"
+# NOTE: sysroot inlined, NOT exported
+export BINDGEN_EXTRA_CLANG_ARGS_aarch64_linux_android="--sysroot=$NDK/toolchains/llvm/prebuilt/linux-x86_64/sysroot -D__ANDROID_API__=24"
+```
 
 ### 1.4 `nexuss` — repinned to 0.1.2 ✅ (was mis-stated as "already applied" at 0.1.1)
 
@@ -167,11 +247,12 @@ That is Batch 4. It is also entangled with **Open Decision 3** (whether dictatio
 
 ---
 
-## Batch 2 — Audio Backend Seam 🟢
+## Batch 2 — Audio Backend Seam 🟢 — **NEXT**
 
 **Class:** Desktop-neutral. Introduces a trait; the cpal implementation is unchanged.
 **Effort:** M
 **Blast radius:** `services/audio/`, `services/tts/voice.rs`, `ipc/audio.rs`
+**Prerequisite:** Batch 4's remaining `remote_server` item (§4.1a) is independent and can proceed in parallel.
 
 ### 2.1 Introduce `AudioCapture` / `AudioSink`
 
@@ -237,11 +318,32 @@ Required steps, modeled on the existing release workflows:
 
 ---
 
-## Batch 4 — Desktop-Only Code Exclusion 🟡
+## Batch 4 — Desktop-Only Code Exclusion 🟡 — **PARTIALLY COMPLETE**
 
 **Class:** Android-additive. Desktop behavior unchanged; Android omits these paths.
 **Effort:** M
 **Blast radius:** broad — **one file per commit**
+
+### 4.0 Actual state as of `6310dacf` — the "Batch 4 complete" claim was wrong
+
+A previous agent reported this batch complete. Re-verification shows the **compile gate is met** but **6 of the 10 paths in §4.1 were never excluded**. Both targets now build clean (0 warnings, 0 errors), so the residue is behavioral, not a build failure.
+
+| §4.1 path | Intended | Actual | Effect on Android |
+|---|---|---|---|
+| `services/dictation/**` | exclude | ✅ `#[cfg(desktop)]` on all 5 submodules + a `#[cfg(not(desktop))]` stub | Correctly absent |
+| `pipeline/dictation/**` | exclude | ✅ `#[cfg(desktop)]` + `#[cfg(not(desktop))]` stub | Correctly absent |
+| `tray.rs` | exclude | ✅ `#[cfg(desktop)]` / `#[cfg(not(desktop))]` | Correctly absent |
+| `ipc/tray.rs` | exclude | ✅ same | Correctly absent |
+| `window_customizer.rs` | exclude | ⚠️ **not excluded** — but self-guards via `#[cfg(target_os = "linux")]` at `:14` | **Harmless.** Compiles, no-op. Exclusion was over-broad. |
+| `toast.rs` | exclude | ⚠️ **not excluded** — falls to the `#[cfg(not(any(linux, macos, windows)))]` no-op branch | **Acceptable** — logs instead of shelling out. `notify-send`/`osascript`/`powershell` are never spawned. |
+| `monitoring/resource_scope.rs` | exclude | ⚠️ **not excluded** — `/proc` + cgroup reads are `#[cfg(target_os = "linux")]`-gated | **Needs review** — see below. |
+| `setup/remote_server.rs` | exclude | ⚠️ **not excluded** — **zero `cfg` tags in the file** | **Live defect.** Spawns `ssh`, which does not exist on Android. Compiles, fails at runtime. |
+| `utils/crash.rs` | exclude | ⚠️ **not excluded** — signal handler is `#[cfg(target_os = "linux")]` | **Acceptable** — no-op on Android; panic hook in `lib.rs` still covers Rust panics. |
+| `utils/hardware.rs` | exclude | ⚠️ **not excluded** — `/dev/nvidia0` probe is `#[cfg(target_os = "linux")]` | **Acceptable** — reports no local GPU. |
+
+Also done: `AppState.hud_menu_item` is guarded (`core/state.rs:13,136`), `router.rs` has **zero** inline `#[cfg]` tags and dispatches straight to `super::dictation::handle_event` / `super::assistant::handle_event`, and all **69** IPC command handlers stay registered on every target. The `Cargo.toml` block at `:103` re-keys `enigo`/`arboard`/`tauri-plugin-positioner` off Android.
+
+**Status: ✅ CLOSED.** Only `setup/remote_server.rs` was a genuine defect, and it is gated as of Phase 1 (§4.1a). The other five unexcluded paths (`toast.rs`, `window_customizer.rs`, `utils/crash.rs`, `utils/hardware.rs`, `monitoring/resource_scope.rs`) compile correctly on Android via existing `#[cfg]` fallback branches — **they should stay, not be excluded.** This batch is done.
 
 ### 4.1 What to exclude
 
@@ -260,6 +362,27 @@ Required steps, modeled on the existing release workflows:
 
 > **⚠️ Correction.** The original LOC column was shifted by one row from `tray.rs` onward: it reported `389 / 64 / 330 / 414 / 350 / 107 / 130` against paths whose real sizes are `234 / 155 / 64 / 330 / 414 / 350 / 107`. `window_customizer.rs` and `monitoring/resource_scope.rs` matched only by coincidence after the shift. All paths exist; no path was missing.
 
+> **⚠️ Second correction (Batch 4 re-verification).** Re-measured on `6310dacf`, the first two rows changed: `services/dictation/**` is **1,146** LOC across 6 files (not 1,133) and `pipeline/dictation/**` is **749** across 6 files (not 741), because the facade work added a non-desktop stub to each `mod.rs`. The remaining figures still hold. The practical correction is not the LOC — it is that **this table should no longer be read as a work list.** Per §4.0, only `setup/remote_server.rs` still needs excluding. The other five unexcluded paths compile correctly on Android via existing `#[cfg]` fallbacks.
+
+### 4.1a Remaining work: `setup/remote_server.rs` — ✅ CLOSED (Phase 1)
+
+`setup/remote_server.rs` (350 LOC) contained **no `cfg` tags at all** and spawned `ssh` to reach remote hosts. On Android, `ssh` does not exist, so any call failed at runtime with an opaque spawn error. It was reachable from the frontend through the `setup_remote_server` IPC command (`lib.rs:46`).
+
+**What shipped:**
+
+1. `setup/mod.rs` — `pub mod remote_server;` is now `#[cfg(desktop)]`, with a `#[cfg(not(desktop))]` inline stub module exposing the identical `start_remote_setup` signature and returning a typed error. Declared **inline** rather than behind a call-site `cfg` so `ipc/catalog.rs` stays free of platform conditionals — the same dual-arm shape as `ipc/tray.rs`.
+2. `ModelsCard.tsx` — the `<RemoteServerSetup>` panel is gated behind `isDesktop()`. Computed as a `showRemoteServerSetup` flag *before* the JSX rather than as a nested ternary, keeping the render structure and diff minimal.
+
+**What deliberately still works on mobile:** pointing TTS at an already-provisioned remote server. That path is plain HTTP via `services::llm::transport` and is unaffected. Only *provisioning* is desktop-only.
+
+**Desktop safety:** the desktop arm is the original module, unmodified. `tsc --noEmit` and `pnpm build` both exit 0.
+
+> **Caveat on `isDesktop()`.** `app/src/lib/capabilities.ts:32-34` defines it as `!isCoarsePointer() && !isTouch()` — a *pointer* heuristic, not a platform check. A touchscreen laptop therefore hides the panel even though it has `ssh`. This is a Batch 5 concern, not a Batch 4 one, but it is a real (minor) false negative. Worth replacing with a platform-derived signal when the IPC boundary gets a real platform channel.
+
+### 4.1b Superseded — the original exclusion list
+
+Options previously offered: (1) gate + typed stub + hide UI, (2) gate + stub only, (3) hide UI only. **Option 1 shipped.** The rationale for "provisioning is a desktop-admin task" is recorded under §Product Decisions.
+
 ### 4.2 Guard `AppState.hud_menu_item`
 
 `core/state.rs:134` declares `hud_menu_item: ParkingMutex<Option<CheckMenuItem<Wry>>>`. `tray.rs:113` is the only **writer**. Readers: `ipc/tray.rs:64`, `ipc/tray.rs:109`, `config/dispatch.rs:141`, `config/dispatch.rs:192`.
@@ -275,6 +398,8 @@ Required steps, modeled on the existing release workflows:
 `Cargo.toml:116,119` splits only on `windows` / `not(windows)`. Android currently falls into the `not(windows)` arm. **However, the two arms are byte-identical** — both are `sherpa-onnx = { version = "1.13.8", default-features = false, features = ["shared"] }`. The split is a pure no-op carrying no information.
 
 Separately, `sherpa-onnx-sys-1.13.8/build.rs` **already handles Android**: line 72 copies the built archive into the Tauri `jniLibs` directory so Gradle bundles it into the APK (see also the ABI-aware lookup at `:171-174`). So the "shared library packaging" path is already implemented upstream. What remains is verifying the `not(windows)` arm actually resolves and links for `arm64-v8a` once Batch 7's blockers clear.
+
+> **Status: still open.** The no-op split is unchanged on `6310dacf` — `Cargo.toml:120-124` still carries two byte-identical arms. This is cosmetic noise rather than a build risk, and it is the natural place to fold in `cfg(not(any(android, ios)))` if the arms ever need to diverge for `arm64-v8a` packaging. Low priority.
 
 ---
 
@@ -339,7 +464,7 @@ No `env(safe-area-inset-*)` usage anywhere. Notches and Android gesture bars wil
 
 `src/test/invariants.test.ts:65-104` already fails the build if `invoke`/`listen` appear outside `src/services/`. All commands and events funnel through 11 files in `src/services/` (1,775 LOC). This boundary is correct and **requires no change**. Do not introduce a transport abstraction for its own sake; that belongs to the remote feature.
 
-> **Two corrections.** (1) Command count: the backend registers **69** `#[tauri::command]` attributes across 12 files in `src-tauri/src/ipc/`, and `generate_handler![]` at `lib.rs:669-745` lists all 69. The original "67" is the count of *frontend-invoked* names; the two with no frontend caller are `get_observations` and `show_main_window`. The "14 events" figure is correct (`IpcEvent` at `core/events.rs:213-227`, `name()` at `:250-267`) — 67/14/11 was otherwise right. (2) The invariant's actual coverage is narrower than its title: despite being labelled "invoke/listen" there is **no `listen(` regex**, only the `@tauri-apps/api/event` import check. A `listen()` call outside `src/services/` that avoids a direct import would slip through. Line 92 also exempts any line containing the substring `services` or `pipelineService`, which is a loose escape hatch. Worth tightening separately; out of scope here.
+> **Two corrections.** (1) Command count: the backend registers **70** `#[tauri::command]` **names** across 12 files in `src-tauri/src/ipc/`, and `generate_handler![]` at `lib.rs:697-776` lists all 70. A raw attribute count gives 72, because `ipc/tray.rs` defines `hide_tray_window` and `set_window_click_through` twice under `#[cfg(desktop)]` / `#[cfg(not(desktop))]` (`:97,167` and `:122,170`) — the dual-arm stub pattern, which is what keeps them registered on Android. This supersedes the "69" figure recorded before `6310dacf` added the mobile onboarding commands. The original "67" was the count of *frontend-invoked* names. The "14 events" figure is correct (`IpcEvent` at `core/events.rs:213-227`, `name()` at `:250-267`). (2) The invariant's actual coverage is narrower than its title: despite being labelled "invoke/listen" there is **no `listen(` regex**, only the `@tauri-apps/api/event` import check. A `listen()` call outside `src/services/` that avoids a direct import would slip through. Line 92 also exempts any line containing the substring `services` or `pipelineService`, which is a loose escape hatch. Worth tightening separately; out of scope here.
 
 ---
 
@@ -414,42 +539,72 @@ Confirm `jniLibs` population for `sherpa-onnx` (`build.rs:64-72` already handles
 
 ---
 
-## Batch 8 — Model Delivery on Mobile ⛔
+## Batch 8 — Model Delivery on Mobile ⛔ — **RE-SCOPED: L → M**
 
 **Class:** Android-necessary.
-**Effort:** L — **this is the true cost of "full local functionality," not any code problem.**
+**Effort:** **M, not L.** See the corrections below — the original "L — this is the true cost of full local functionality" estimate did not survive verification.
 
-### 8.1 What already transfers
+### 8.0 Three corrections — the original framing was wrong
+
+**1. "Flat model layout is the real blocker" is backwards.** It is the reason the code is *already* portable. `paths.rs:347-349`:
+
+```rust
+pub fn model_dir(name: &str) -> PathBuf {
+    get().models.join(name)
+}
+```
+
+Every provider builds from this one function — `chatterbox_path` (`tts/factory.rs:92`), `kokoro_path` (`:81`), qwen encoder/decoder/joiner (`stt/providers/qwen.rs:32-67`). A grep of `services/{stt,llm,tts}/` for `home_dir`, absolute paths, and `CARGO_MANIFEST_DIR` returns **zero hits**. `dirs::data_local_dir()` resolves to app-private storage on Android and the relative layout is identical.
+
+**Download once, then every model loads exactly as it does on desktop.** No asset-pack abstraction, no per-platform path mapping, no loading-side work at all.
+
+**2. The actual defect is narrow and already located.** `setup/model_manager.rs` is not resumable, and is *actively anti-resumable*:
+
+- `download_and_hash:291` issues a bare `self.client.get(url)` — **no `Range` header**
+- `:135` writes to a `.tmp` sibling; the write truncates
+- `:155,189,235,250,256` **delete** the `.tmp` on every failure, cancel, and verification path
+- `:260` `rename(temp, dest)` on success only
+
+So progress is not merely lost — partial bytes are destroyed on every interruption. **Every interrupted download restarts from zero.** On desktop that is an annoyance. On Android, where the OS kills backgrounded processes aggressively, a multi-GB `chatterbox` download is near-guaranteed to be interrupted.
+
+**3. Most of this is a robustness fix, not an Android port.** A download that dies on desktop also restarts from zero today. Android does not introduce the bug; it removes the user's ability to avoid it.
+
+### 8.1 Re-scoped work
+
+| Item | Effort | Notes |
+|---|---|---|
+| Skip `migrate_legacy_layout` (`paths.rs:154`) on fresh devices | XS | Desktop-migration-only; no-op on a clean install |
+| Android arm for the two cfg blocks at `paths.rs:276-281,283-289` | XS | ⚠️ **Already effectively fine** — `#[cfg(unix)]` is *true* on Android and the chmod errors are discarded with `let _ =`; the `#[cfg(target_os="linux")]` icon `include_bytes!` is already dead there |
+| **Resumable transfer** — `Range: bytes=N-`, append instead of truncate, stop deleting `.tmp` | **S** | ~30 lines, all inside `download_and_hash` |
+| **Resume on launch** — scan `models/` for stale `.tmp`, offer resume | **S** | Converts "restart at 0" into "continue where it stopped" |
+| **Storage preflight** — check free headroom before starting | **S** | Android has far less headroom than desktop |
+| **Total** | **M** | ~70% of it also improves desktop |
+
+> **Note:** the original plan also proposed "Wi-Fi-only downloads by default" and "explicit per-model size confirmation." Those remain **open product questions**, not engineering work — see §Open Decisions.
+
+### 8.2 The one thing that would legitimately re-inflate this
+
+Using Android's system `DownloadManager` (native resume across reboot, system notification, no app-process dependency) is a real alternative, but it is a Tauri plugin with more integration work than `Range` + `.tmp`. Recommendation: `Range` + `.tmp` — roughly 95% of the value at S cost — unless system-managed downloads are specifically wanted.
+
+### 8.3 What already transfers — the loading side needs **zero** work
 
 Models are not in the APK and the wizard performs first-install downloads. That architecture is correct and ports directly.
 
-### 8.2 Storage path
+Beyond the path analysis in §8.0(1), the loading side requires **no Android work whatsoever**: no asset-pack abstraction, no platform path mapping, no format changes. Once bytes land in `models/<dir>/<file>`, `stt/`, `llm/`, and `tts/` read them identically on every platform.
 
-`utils/paths.rs` is the single filesystem SSOT, which is exactly right. On Android `dirs::data_local_dir()` resolves to app-private storage, so `~/.vox` does not apply. Two adjustments:
+### 8.4 Storage path — effectively already correct
 
-- `migrate_legacy_layout` (`paths.rs:154-258`) is desktop-migration-only — no-op on a fresh device, and should be skipped rather than run
-- `paths.rs:276-281` does `#[cfg(unix)]` chmod 0700, and `paths.rs:283-289` does a `#[cfg(target_os="linux")] include_bytes!` of a desktop icon — both need an Android arm (⚠️ the original cited the combined range as `276-288`; the two blocks are `276-281` and `283-289`)
+`utils/paths.rs` is the single filesystem SSOT, which is exactly right. On Android `dirs::data_local_dir()` resolves to app-private storage, so `~/.vox` does not apply.
 
-### 8.3 Flat model layout is the real blocker
+Both originally-listed adjustments turned out to be non-issues on inspection:
 
-Models are assumed as plain files at `models/<dir>/<file>` — see `services/stt/mod.rs:23-28`, `services/llm/mod.rs:33,35`, `services/tts/mod.rs:45-46`, `services/tts/providers/kokoro.rs:32-36`. There is no asset-pack abstraction.
+- `migrate_legacy_layout` (`paths.rs:154-258`) is already a no-op on a fresh device, since there is no legacy layout to migrate. It needs no Android arm — it is simply never triggered.
+- `paths.rs:276-281` `#[cfg(unix)]` chmod 0700 — **`cfg(unix)` is *true* on Android**, and the result is already discarded with `let _ =`. It runs and harmlessly does nothing.
+- `paths.rs:283-289` `#[cfg(target_os="linux")]` icon `include_bytes!` — already **dead** on Android (`target_os` is `"android"`, not `"linux"`). No arm needed; the icon simply is not written.
 
-On mobile this must become: storage accounting (does the user have room?), resumable transfers, and progress that survives process death.
+> ⚠️ The original plan listed all three as "need an Android arm." None do. This is the `target_os="linux"` pitfall documented in `.agents/rules/android-pitfalls.md` showing up in our own plan.
 
-### 8.4 `ModelManager` assumes a desktop session
-
-`setup/model_manager.rs` is built for long-lived desktop sessions and is **not resumable**. Android will kill the app mid-download.
-
-> **⚠️ Correction to the original framing.** It does not retain an `AppHandle`: `setup/model_manager.rs:56` takes `app: Option<AppHandle<R>>` and immediately converts it into a boxed `ModelStatusEmitter` closure (57-63) held via `Arc`; `struct ModelManager` (49-53) stores only `app_emitter`, `client`, `cancel_flag`. The real defect is sharper and worse than stated — it is **actively anti-resumable**:
->
-> - `download_and_hash` (284-332) issues a bare `self.client.get(url).send()` with **no `Range` header**.
-> - It writes to a `.tmp` sibling (135), then `File::create(dest)` (299, truncating).
-> - **On failure or cancel it deletes the temp file** (155, 189, 235, 250, 256) instead of preserving it.
-> - Only `rename(temp, dest)` (260) on success.
->
-> So progress is not merely lost — the partial bytes are actively destroyed on every interruption. Preserving the `.tmp` and issuing a `Range` request is the minimum viable fix; that is still Batch 8 scope, not a Batch 1 add.
-
-**Approval gate:** this batch changes download UX and storage semantics. Per AGENTS.md §4.3, confirm scope before implementation.
+**Approval gate:** the resumable-download change alters download UX and storage semantics. Per AGENTS.md §4.3, confirm scope before implementation.
 
 ---
 
@@ -488,12 +643,25 @@ These are tuned for **sustained desktop 60fps**. Phone GPUs thermal-throttle wit
 
 Per AGENTS.md §3, cargo commands run sequentially with `--release`. Tests require explicit approval.
 
+### The canonical dual-target check
+
+Run these **two** commands, not one. Both must be 0 warnings / 0 errors. Use the env recipe from §1.3 — **without** the `SYSROOT` export.
+
+```bash
+cargo clippy --all-targets --release
+cargo clippy --target aarch64-linux-android --lib --release
+```
+
+> **Why clippy and not `cargo check`.** `cargo check --target aarch64-linux-android` was used through Batch 4 and reported success while **14 Android-only warnings** sat in the tree, and while the `SYSROOT` bug (§1.3) went unnoticed because `rustc` ignores that variable. Clippy on the Android target is the only one of the two that (a) surfaces target-specific dead code and (b) exercises `clippy-driver`. Treat **desktop and Android as one gate** — a change is not done until both are clean.
+
+### Per-batch checks
+
 | Batch | Check |
 |---|---|
 | 1 | `cargo check` green for `x86_64-unknown-linux-gnu`; `cargo clippy --all-targets` clean; `cargo tree -e normal -i native-tls` empty (no OpenSSL on the target graph); `cargo check --target aarch64-linux-android` reaches `enigo` and no further |
-| 2 | `cargo nextest run --release --test-threads=1 --no-fail-fast` — full suite, no audio regression |
+| 2 | `cargo nextest run --release --test-threads=1 --no-fail-fast` — full suite, no audio regression; **plus both clippy commands above** |
 | 3 | APK installs and launches on a physical device |
-| 4 | Desktop bundles build unchanged; `cargo nextest` green |
+| 4 | Both clippy commands above clean; desktop bundles build unchanged; `cargo nextest` green |
 | 5 | `pnpm test` green (invariant tests); desktop visual check |
 | 6 | Wizard completes on a physical device, portrait and landscape |
 | 7 | Release build links for `arm64-v8a` |
@@ -511,7 +679,99 @@ These rules exist so no batch silently regresses desktop.
 3. **`#[cfg(desktop)]` over `#[cfg(target_os = "...")]`** for new guards — Tauri normalizes this and it stays correct for iOS if that ever matters.
 4. **Run the frontend invariant suite after any `breakpoints.ts` or `tailwind.config.js` touch.** `invariants.test.ts:921-926` enforces they stay pinned.
 5. **Never widen the 637 hover utilities by hand.** Batch 5 is media-query wrapping, not per-component rewrites.
-6. **Update AGENTS.md §5 and `docs/plans/phase12/recent_work.md`** per the mandatory sync hook.
+6. **Update AGENTS.md §5 and `docs/plans/phase13/recent_work.md`** per the mandatory sync hook.
+
+---
+
+## Execution Order — Phase 0 → 6
+
+**This supersedes the batch numbering for scheduling.** Batches are still identified by number; the phase list is the order they execute in.
+
+| Phase | Work | Effort | Why here |
+|---|---|---|---|
+| **0** | Verification automation (§Verification script, `AGENTS.md` §3 fix, `.agents/rules/android-pitfalls.md`, IPC-registration invariant test) | S | Every later phase is worthless if regressions go unseen. Also retires the two traps that made Batch 4 look complete when it was not. |
+| **1** | Close Batch 4 — `setup/remote_server.rs` only | S | ✅ **Done (Phase 1)**. Last known defect; closed by gating the module behind `#[cfg(desktop)]` with a typed mobile stub, plus an `isDesktop()` gate on the `<RemoteServerSetup>` panel. Desktop arm unmodified. |
+| **2** | **First `arm64-v8a` release LINK** — `tauri android init`, `bundle.android` config, then *link* not *check* | M | ✅ **Done.** Produced a signed, installable APK. Settled both UNVERIFIED claims (`turso` §7.2, `llama.cpp` §7.1) and found six native-toolchain blockers `cargo check` could never see — see §Phase2-Results. |
+| **3** | Batch 7 — fix whatever Phase 2's link exposes | M | Now scoped by evidence rather than speculation. §7.1 is already resolved, so this is smaller than the M-L label. |
+| **4** | APK installs and launches on a physical device | M | First real validation. Confirms `oboe` audio and NNAPI on real hardware — an emulator validates neither. |
+| **5** | Batch 8 — resumable downloads | M | Re-scoped from L. Robustness fix; mostly benefits desktop too. |
+| **6** | Batch 2 — audio backend seam | M | Deliberately last. Its purpose is to make a future Android audio backend "a new file rather than a refactor." Doing it before Phase 4 means refactoring against assumptions instead of observations. |
+
+**Two ordering rules worth keeping:**
+
+1. **Never `cargo check` a cross target as a gate.** `cargo check --target aarch64-linux-android` passes while Android-only dead code sits in the tree, and it structurally cannot catch it. Use `scripts/verify-targets.sh`.
+2. **Reach a link before investing in anything downstream of it.** Phase 2 exists to convert the plan's remaining guesses into build-log fact before Phase 5 spends M on model delivery.
+
+---
+
+## Phase 2 Results — first `arm64-v8a` link ✅
+
+**Outcome:** a signed, installable `arm64-v8a` APK now builds end to end.
+`app-universal-release-unsigned.apk` (207.6 MB), containing only `lib/arm64-v8a/`
+with `libvox_lib.so`, `libc++_shared.so`, `libonnxruntime.so` and the three
+`libsherpa-onnx-*.so`. `minSdk 24`, `targetSdk 36`.
+
+### The core lesson
+
+`cargo check --target aarch64-linux-android` had been green for the whole project.
+It **compiles but never links**, so it structurally cannot see native-toolchain
+failures. Every blocker below was found only by actually producing a binary.
+
+All six are **native-stack** problems, not "Android is hard". A Rust-only Tauri app
+would hit zero of them; a desktop build solved all of them years ago.
+
+| # | Symptom | Root cause | Fix | Location |
+|---|---|---|---|---|
+| 1 | `E0463: can't find crate for std` | `clippy-driver` honors `SYSROOT`; `rustc` ignores it | `unset SYSROOT`, inline sysroot instead | `scripts/android-env.sh` |
+| 2 | `duplicate symbol: ggml_*` | llama.cpp bundled **twice** (llama-cpp-sys + chatterbox), each vendoring its own | `--allow-multiple-definition` | `build.rs` (not config.toml — see below) |
+| 3 | `Library artifact not found: libvox_lib.so` | `crate-type = ["lib"]` emits an rlib only | `["staticlib","cdylib","rlib"]` | `Cargo.toml` |
+| 4 | `bits/wordsize.h file not found` | bindgen had no sysroot inside Gradle | `[env]` written to `$CARGO_HOME/config.toml` | `scripts/android-env.sh` |
+| 5 | `unsupported argument 'native' to '-march='` | chatterbox got no toolchain file; CMake shadowed `CMAKE_SYSTEM_PROCESSOR` and ggml picked x86 | Android toolchain branch | `submodules/chatterbox-rs/build.rs` |
+| 6 | `no prebuilt binaries for armv7-linux-androideabi` | Gradle builds all 4 ABIs by default | `-t aarch64` | build command |
+
+### Three findings worth internalising
+
+**A config-file rustflag is not enough for Android.** Tauri exports
+`CARGO_TARGET_AARCH64_LINUX_ANDROID_RUSTFLAGS`, and per cargo precedence an env
+var beats `config.toml`. A `--allow-multiple-definition` entry in
+`.cargo/config.toml` works for a bare `cargo build` and is **silently ignored**
+under `tauri android build`. It has to be injected from `build.rs`.
+
+**Cargo finds config from CWD, not from `--manifest-path`.** Build scripts run with
+cwd = the crate's own source dir (`~/.cargo/registry/src/...`,
+`submodules/chatterbox-rs`). Neither is under `app/src-tauri/`, so a project-level
+`[env]` block is invisible to them. `$CARGO_HOME` is the only shared ancestor.
+
+**The Gradle env is a hardcoded allowlist.** Tauri spawns `gradlew` with a fixed
+variable set, omitting `BINDGEN_EXTRA_CLANG_ARGS*`, `CC_`/`CXX_`/`AR_*` and
+`ANDROID_NDK`. Gradle also cannot be driven standalone — its task connects back
+to the parent CLI over a WebSocket. There is no `--ci` flag. So the `$CARGO_HOME`
+write is the only injection point that reaches the Gradle cargo pass.
+
+Full detail: `.agents/rules/android-pitfalls.md` traps 11-15.
+
+### Now verified (previously UNVERIFIED)
+
+- ✅ **`turso` / `libsql` (§7.2)** — links for `arm64-v8a`. The plan's caution was warranted but unfounded.
+- ✅ **`llama.cpp` (§7.1)** — links.
+- ✅ **`chatterbox-rs`** — links and builds with correct ARM arch selection.
+- ✅ **`sherpa-onnx`** — links; `jniLibs/arm64-v8a/` populated by its build script.
+
+### Still unverified
+
+- ⛔ **`ort` NNAPI (§7.3)** — `libonnxruntime.so` is packaged, but the `nnapi` feature is still not enabled, so the resolved artifact is not confirmed to be the NNAPI build. Requires real hardware; an emulator validates nothing.
+- ⛔ **Nothing has run on a device.** No APK has ever been installed. Audio (`cpal`/oboe), NNAPI, and thermal behaviour are all unproven.
+
+### Build cost
+
+A cold Android build is ~20-25 min, dominated by the C++ stack. Two things cut it:
+`-t aarch64` (4x less work — Gradle otherwise builds every ABI) and keeping
+`target/aarch64-linux-android/llama-cmake-cache` (3.6 GB, **do not delete**).
+
+`profile.release` has `strip = false`, and `libvox_lib.so` carries ~39 MB of debug
+sections in a 170 MB binary. `strip = "symbols"` would cut roughly 25% off every
+artifact and shrink the APK — not applied, because it costs a full rebuild and
+degrades crash-reporting backtraces.
 
 ---
 
@@ -520,8 +780,8 @@ These rules exist so no batch silently regresses desktop.
 These change scope materially and need an answer before the relevant batch starts.
 
 1. ~~**llama.cpp on Android (§7.1).**~~ **RESOLVED — no decision needed.** `llama-cpp-sys` auto-disables OpenMP on aarch64-Android (`build.rs:1899`) and cross-compiles cleanly. The "fall back to a remote LLM provider" option is off the table.
-2. **Model download UX (§8).** Wi-Fi-only downloads by default? Explicit per-model size confirmation? Resume-after-process-death is mandatory either way — and is strictly more work than the original text implied, because `setup/model_manager.rs` currently *deletes* partial downloads on interrupt (§8.4).
-3. ⛔ **Dictation on Android — now blocking, not hypothetical.** This was listed as a scope preference; §1.5 shows it now gates the Android build entirely. `enigo` has no Android backend, so `services/dictation/**` **must** be excluded to compile. That answers the question by necessity rather than choice: unless dictation is reimplemented against Android's `InputManager`, Android is assistant-only.
+2. **Model download UX (§8.1).** Wi-Fi-only downloads by default? Explicit per-model size confirmation? Both remain open and are **product** calls, not engineering blockers. Resume-after-process-death is now an S item (a `Range` header plus stopping the five `remove_file` calls at `model_manager.rs:155,189,235,250,256`) and is mandatory either way — the original plan's framing of it as a large, architecture-shaped problem did not survive verification (§8.0).
+3. ✅ **Dictation on Android — RESOLVED by necessity.** This was listed as a scope preference; §1.5 shows it now gates the Android build entirely. `enigo` has no Android backend, so `services/dictation/**` **must** be excluded to compile. That answers the question by necessity rather than choice: unless dictation is reimplemented against Android's `InputManager`, Android is assistant-only. **Shipped on `6310dacf`.**
 4. **ORT execution provider on Android (§7.3).** The only prebuilt Android artifact is NNAPI. Enable the `nnapi` feature and validate on real hardware, or supply an XNNPACK/full-EP artifact?
 
 ---
@@ -544,6 +804,6 @@ Recorded here so the work is not lost. **None of it is required for local Androi
 ## Related Documents
 
 - [`wip/remote-control-android.md`](file:///home/addy/projects/apps/vox/docs/plans/wip/remote-control-android.md) — the feature this plan prepares for
-- [`implementation_plan.md`](file:///home/addy/projects/apps/vox/docs/plans/phase12/implementation_plan.md) — Phase 12.1 agentic pipeline plan
+- [`../phase12/implementation_plan.md`](file:///home/addy/projects/apps/vox/docs/plans/phase12/implementation_plan.md) — Phase 12.1 agentic pipeline plan (stays in Phase 12)
 - [`../specs/ipc-spec.md`](file:///home/addy/projects/apps/vox/docs/specs/ipc-spec.md) — IPC contract
 - [`../specs/storage-spec.md`](file:///home/addy/projects/apps/vox/docs/specs/storage-spec.md) — filesystem SSOT

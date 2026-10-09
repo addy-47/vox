@@ -1,5 +1,6 @@
+use std::collections::HashMap;
+#[cfg(target_os = "linux")]
 use std::{
-    collections::HashMap,
     fs,
     path::{Path, PathBuf},
 };
@@ -8,6 +9,7 @@ use sysinfo::{
     CpuRefreshKind, MemoryRefreshKind, Pid, ProcessRefreshKind, RefreshKind, System, UpdateKind,
 };
 
+#[cfg(target_os = "linux")]
 const BYTES_PER_KIB: u64 = 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

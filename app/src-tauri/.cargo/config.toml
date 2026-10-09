@@ -28,3 +28,38 @@ rustflags = ["-C", "link-arg=/FORCE:MULTIPLE"]
 [target.aarch64-linux-android]
 linker = "aarch64-linux-android24-clang"
 
+# `llama-cpp-sys-4` and `chatterbox-rs` each vendor and statically build their OWN
+# copy of llama.cpp/ggml (chatterbox-rs has no Rust deps beyond cc/cmake/libc).
+# Both export the same `ggml_*` symbols, so the final link sees duplicate
+# definitions. The desktop targets above already resolve this the same way, via
+# `--allow-multiple-definition`; Android needs the identical treatment because
+# lld treats duplicate symbols as a hard error rather than a warning.
+#
+# This makes the linker collapse both archives onto ONE ggml. That is the same
+# outcome desktop has shipped with, so it is not a new risk class -- but it does
+# mean both crates must stay ABI-compatible with whichever ggml wins. Verified
+# only at link time; device testing must confirm chatterbox TTS still runs.
+rustflags = ["-C", "link-arg=-Wl,--allow-multiple-definition"]
+
+# ─── Android cross-compile env ───────────────────────────────────────────────
+#
+# The NDK env this target needs (bindgen sysroot, ANDROID_NDK, ANDROID_ABI) is
+# NOT set here. Cargo resolves `.cargo/config.toml` from the CURRENT WORKING
+# DIRECTORY, and build scripts run with cwd = the crate's own source dir:
+#
+#   ~/.cargo/registry/src/.../llama-cpp-sys-4-0.2.61/   (registry dep)
+#   /home/.../submodules/chatterbox-rs/                  (path dep)
+#
+# Neither is under app/src-tauri/, so cargo's upward search from here NEVER
+# reaches this file for them. Verified empirically: with `[env]` declared here,
+# `tauri android build` still failed with
+#   /usr/include/features-time64.h:20:10: fatal error: 'bits/wordsize.h' file not found
+#
+# $CARGO_HOME (~/.cargo/config.toml) is the only ancestor all crates share.
+# `scripts/android-env.sh` writes the `[env]` block there, idempotently. It also
+# exports the same vars for the shell, which covers the direct cargo path.
+#
+# Do NOT duplicate `[env]` into this file — cargo refuses to merge a table-form
+# entry from two config files with different shapes.
+#
+# See .agents/rules/android-pitfalls.md trap 11.

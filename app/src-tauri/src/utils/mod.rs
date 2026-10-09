@@ -6,6 +6,7 @@ pub mod jsonc;
 pub mod logging;
 pub mod paths;
 
+#[cfg(target_os = "linux")]
 use std::{fs::read_to_string, path::Path};
 
 /// Checks the Linux CPU frequency governor. Returns `true` if it's "performance",

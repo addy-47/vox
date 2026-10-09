@@ -12,7 +12,9 @@ use parking_lot::{Mutex as ParkingMutex, RwLock as ParkingRwLock};
 use serde::{Deserialize, Serialize};
 #[cfg(desktop)]
 use tauri::menu::CheckMenuItem;
-use tauri::{async_runtime::JoinHandle, AppHandle, Runtime, Wry};
+#[cfg(desktop)]
+use tauri::Wry;
+use tauri::{async_runtime::JoinHandle, AppHandle, Runtime};
 use tokio::sync::{Mutex as TokioMutex, RwLock as TokioRwLock};
 use tracing_appender::non_blocking::WorkerGuard;
 

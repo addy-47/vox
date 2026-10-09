@@ -306,8 +306,7 @@ async fn run_incremental_integration(
     )
     .await?;
 
-    let (resolved, rejected) =
-        resolve_operations(&output, &handle_map, Some(candidates.len()));
+    let (resolved, rejected) = resolve_operations(&output, &handle_map, Some(candidates.len()));
     log_operation_rejections("incremental integration", &rejected);
 
     let mut telemetry = ConsolidationTelemetry {
@@ -518,7 +517,7 @@ async fn auto_apply_operations(
         );
     }
 
-Ok(PassResult {
+    Ok(PassResult {
         outcome: ConsolidateOutcome::completed(record),
         landed: applied > 0,
         telemetry: ConsolidationTelemetry {

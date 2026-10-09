@@ -162,3 +162,121 @@ Do not assume the platform work is finished. As of the last verification:
 - [ ] Did you add a desktop-only dependency? Re-read trap 4.
 - [ ] Did you touch `model_dir`, `paths.rs`, or model loading? Re-read trap 8 — you probably didn't need to.
 - [ ] Update `AGENTS.md` §5 per the sync hook.
+---
+
+## 11. Cargo finds `.cargo/config.toml` from CWD, not from the manifest
+
+**The subtlest trap here, and the one that cost the most time.**
+
+Cargo resolves config files by walking up from the **current working directory**. Build scripts are executed with cwd = *the crate's own source directory*:
+
+```
+~/.cargo/registry/src/.../llama-cpp-sys-4-0.2.61/     <- registry dep
+<repo>/submodules/chatterbox-rs/                      <- path dep
+```
+
+Neither path is under `app/src-tauri/`. So a `[env]` block placed in
+`app/src-tauri/.cargo/config.toml` is **never read by those crates** — the upward
+search from `~/.cargo/registry/...` stops at `$CARGO_HOME`.
+
+The symptom is that a bare `cargo build --target aarch64-linux-android` succeeds,
+while `pnpm tauri android build` fails inside Gradle with:
+
+```
+/usr/include/features-time64.h:20:10: fatal error: 'bits/wordsize.h' file not found
+```
+
+**Fix:** put `[env]` in `$CARGO_HOME/config.toml` (`~/.cargo/config.toml`). That is
+the only directory every crate's upward search reaches. `scripts/android-env.sh`
+writes the block there idempotently, so an NDK version bump self-heals and CI
+needs no manual step.
+
+**Do not duplicate `[env]` into multiple config files.** Cargo merges them and
+refuses mismatched shapes:
+
+```
+failed to merge key `BINDGEN_EXTRA_CLANG_ARGS_aarch64_linux_android` between
+  app/src-tauri/.cargo/config.toml and ~/.cargo/config.toml
+expected table, but found string
+```
+
+---
+
+## 12. `tauri android build` must be scoped with `-t aarch64`
+
+Without it, Gradle builds **all four ABIs**:
+
+```
+-PabiList=arm64-v8a,armeabi-v7a,x86,x86_64
+-PtargetList=aarch64,armv7,i686,x86_64
+```
+
+`ort-sys` has no prebuilt `armv7-linux-androideabi` binary, so the build dies:
+
+```
+error: ort-sys@2.0.0-rc.13: no prebuilt binaries available for target armv7-linux-androideabi
+```
+
+It also costs ~4x the build time for slices you never ship.
+
+**Always use:** `pnpm tauri android build --apk -t aarch64`
+
+The target-specific bindgen var is named per-triple
+(`BINDGEN_EXTRA_CLANG_ARGS_aarch64_linux_android`), so scoping to one ABI also
+means only one such variable needs to exist.
+
+---
+
+## 13. Gradle cannot be driven standalone — it dials back to the CLI
+
+Do not try to bypass `tauri android build` by invoking `gradlew` directly, even
+with a perfect environment. The Gradle task is a **client**, not a builder:
+
+```
+$ tauri android android-studio-script --release --target aarch64
+panicked at tauri-cli/src/mobile/mod.rs:403:
+failed to read CLI options: Connection refused
+```
+
+Gradle shells out to the Tauri CLI and expects to connect back over a **WebSocket**
+to the still-running parent process. There is no `--ci` or env-passthrough flag,
+and the env Tauri hands to Gradle is a hardcoded allowlist that omits
+`BINDGEN_EXTRA_CLANG_ARGS*`, `CC_`/`CXX_`/`AR_*`, and `ANDROID_NDK`. That is why
+trap 11's `$CARGO_HOME` approach is the only injection point that works.
+
+---
+
+## 14. `chatterbox-rs` needs its own Android toolchain branch
+
+Its vendored ggml calls `ggml_get_system_arch()`
+(`chatterbox-cpp/ggml/cmake/common.cmake`), which keys off `CMAKE_SYSTEM_PROCESSOR`.
+Passing `-DCMAKE_SYSTEM_PROCESSOR=aarch64` is **not enough** — CMake recomputes
+that variable inside `project()` and shadows the cache entry, so ggml sees the
+host and selects its x86 backend:
+
+```
+-- CMAKE_SYSTEM_PROCESSOR: x86_64
+-- x86 detected
+-- Adding CPU backend variant ggml-cpu: -march=native
+clang: error: unsupported argument 'native' to option '-march='
+```
+
+Only a `CMAKE_TOOLCHAIN_FILE` sets it early enough. `llama-cpp-sys-4/build.rs:1885`
+already does this correctly; chatterbox did not. Fixed locally via a `[patch]`
+pending an upstream bump — see §15.
+
+---
+
+## 15. The duplicate-ggml and ABI toolchain fixes live in a submodule
+
+`llama-cpp-sys-4` and `chatterbox-rs` each vendor their own llama.cpp. Two
+verifiers apply:
+
+- `app/src-tauri/build.rs` — emits `cargo:rustc-link-arg=-Wl,--allow-multiple-definition`,
+  scoped to `target_os == "android"`. **Not** `.cargo/config.toml`: Tauri exports
+  `CARGO_TARGET_AARCH64_LINUX_ANDROID_RUSTFLAGS`, and an env var beats config.toml,
+  so a config-file rustflag is silently ignored in the Gradle path.
+- `submodules/chatterbox-rs/build.rs` — the Android toolchain branch from trap 14.
+- `app/src-tauri/Cargo.toml` — a `[patch]` redirecting chatterbox-rs to the local
+  submodule. **It must stay at the end of the file**: a `[patch]` table header
+  terminates `[dependencies]`, so placing it mid-file orphans every later dep.

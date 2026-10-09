@@ -62,20 +62,20 @@ pub async fn evaluate_ingestion_stage(
         .cloned()
         .collect();
 
-    let verdict: JudgeStatus<IngestionVerdict> = if decisions.is_empty() && all_near_misses.is_empty()
-    {
-        JudgeStatus::Invalid {
-            reason: "Ingestion cycle produced no merges and no near-misses to audit. \
+    let verdict: JudgeStatus<IngestionVerdict> =
+        if decisions.is_empty() && all_near_misses.is_empty() {
+            JudgeStatus::Invalid {
+                reason: "Ingestion cycle produced no merges and no near-misses to audit. \
                      An empty case cannot confirm deduplication accuracy."
-                .to_string(),
-        }
-    } else {
-        let prompt = build_judge_prompt(case_id, &decisions, &all_near_misses);
-        let raw = judge
-            .evaluate_with_trace(&prompt, case_dir, "ingestion")
-            .await?;
-        parse_verdict::<IngestionVerdict>(&raw)
-    };
+                    .to_string(),
+            }
+        } else {
+            let prompt = build_judge_prompt(case_id, &decisions, &all_near_misses);
+            let raw = judge
+                .evaluate_with_trace(&prompt, case_dir, "ingestion")
+                .await?;
+            parse_verdict::<IngestionVerdict>(&raw)
+        };
 
     let counts = match &verdict {
         JudgeStatus::Parsed(v) => count_ingestion(v),
@@ -85,7 +85,9 @@ pub async fn evaluate_ingestion_stage(
     // Persist the verdict so the QA pass can verify the counts against the trace.
     let verdict_path = case_dir.join("ingestion_verdict.json");
     let payload = match &verdict {
-        JudgeStatus::Parsed(v) => serde_json::json!({ "status": "parsed", "verdict": v, "counts": counts }),
+        JudgeStatus::Parsed(v) => {
+            serde_json::json!({ "status": "parsed", "verdict": v, "counts": counts })
+        }
         JudgeStatus::Invalid { reason } => {
             serde_json::json!({ "status": "invalid", "reason": reason })
         }
@@ -197,4 +199,3 @@ Rules:
         case_id, decision_lines, near_lines
     )
 }
-
