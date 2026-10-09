@@ -47,6 +47,7 @@ jobs:
           CMAKE_TOOLCHAIN_FILE: "${{ github.workspace }}/.github/cmake/windows-toolchain.cmake"
           CXXFLAGS: "-std:c++17 -EHsc"
           CFLAGS: "-std:c11"
+          RUSTFLAGS: "-C link-arg=/FORCE:MULTIPLE"
           CARGO_PROFILE_RELEASE_LTO: "thin"
           CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "1"
           CARGO_PROFILE_RELEASE_STRIP: "true"
