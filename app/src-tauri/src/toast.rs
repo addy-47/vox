@@ -1,3 +1,4 @@
+#[cfg(desktop)]
 use std::process::Command;
 
 use tauri::AppHandle;
@@ -56,6 +57,9 @@ pub fn dispatch_native_notification(
 
     #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
     {
+        // No native notifier on this platform; the parameter stays part of the
+        // cross-platform signature so desktop callers are unaffected.
+        let _ = duration_ms;
         log::info!(
             "[Notification] Native desktop alert: {} - {}",
             formatted_title,
@@ -224,6 +228,7 @@ pub fn show_replaceable_toast(
 
     #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
     {
+        let _ = duration_ms;
         log::info!(
             "[Notification] Native desktop alert: {} - {}",
             formatted_title,
@@ -255,6 +260,7 @@ pub fn update_replaceable_toast(
 
     #[cfg(not(target_os = "linux"))]
     {
+        let _ = duration_ms;
         log::debug!(
             "[Notification] Replace unsupported on this platform (id {}): {} - {}",
             server_id,

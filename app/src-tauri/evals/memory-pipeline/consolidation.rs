@@ -11,9 +11,7 @@ use vox_lib::{
         facts::{fetch_active_observations_by_type, ObservationRecord},
         personal_memory::get_personal_memory,
     },
-    services::memory::{
-        personal::{ConsolidationRequest, ConsolidationTelemetry, PersonalMemory},
-    },
+    services::memory::personal::{ConsolidationRequest, ConsolidationTelemetry, PersonalMemory},
 };
 
 use crate::common::{
@@ -50,13 +48,11 @@ fn collect_blocks(memory: &PersonalMemory) -> Vec<JudgeBlock> {
         .sections
         .iter()
         .flat_map(|s| {
-            s.blocks
-                .iter()
-                .map(move |b| JudgeBlock {
-                    block_id: b.id.clone(),
-                    section_title: s.title.clone(),
-                    text: b.text.clone(),
-                })
+            s.blocks.iter().map(move |b| JudgeBlock {
+                block_id: b.id.clone(),
+                section_title: s.title.clone(),
+                text: b.text.clone(),
+            })
         })
         .collect()
 }
@@ -169,10 +165,14 @@ pub async fn evaluate_consolidation_stage(
             .collect();
         for op in &telemetry.resolved_ops {
             match op {
-                vox_lib::services::memory::personal::ResolvedOp::UpdateBlock { block_id, .. } => {
+                vox_lib::services::memory::personal::ResolvedOp::UpdateBlock {
+                    block_id, ..
+                } => {
                     set.insert(block_id.clone());
                 }
-                vox_lib::services::memory::personal::ResolvedOp::DeleteBlock { block_id, .. } => {
+                vox_lib::services::memory::personal::ResolvedOp::DeleteBlock {
+                    block_id, ..
+                } => {
                     set.insert(block_id.clone());
                 }
                 _ => {}
@@ -190,7 +190,9 @@ pub async fn evaluate_consolidation_stage(
         }
     } else if is_cold_generation {
         let prompt = build_cold_gen_prompt(case_id, &candidates, &post_blocks);
-        let raw = judge.evaluate_with_trace(&prompt, case_dir, "consolidation").await?;
+        let raw = judge
+            .evaluate_with_trace(&prompt, case_dir, "consolidation")
+            .await?;
         parse_verdict::<ConsolidationVerdict>(&raw)
     } else if telemetry.handle_view.is_none() && telemetry.model_output.is_none() {
         JudgeStatus::Invalid {
@@ -209,7 +211,9 @@ pub async fn evaluate_consolidation_stage(
             &post_blocks,
             &touched_ids,
         );
-        let raw = judge.evaluate_with_trace(&prompt, case_dir, "consolidation").await?;
+        let raw = judge
+            .evaluate_with_trace(&prompt, case_dir, "consolidation")
+            .await?;
         parse_verdict::<ConsolidationVerdict>(&raw)
     };
 

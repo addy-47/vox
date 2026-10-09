@@ -95,4 +95,9 @@ pub(crate) fn trim_heap(caller: &str) {
             caller
         );
     }
+
+    #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
+    {
+        let _ = caller;
+    }
 }

@@ -27,22 +27,24 @@
 | `app/src-tauri/src/`      | Purpose Rust source                                 | No test logic. No benchmarks.                                                                         |
 | `app/src-tauri/tests/`    | Integration tests                                   | Named `<feature>_test.rs`. Tests public API only.                                                     |
 | `app/src-tauri/benches/`  | Performance benchmarks                              | Named `<feature>_bench.rs`. `harness = false` + custom `fn main()`.                                   |
-| `.agents/rules/`          | Role-specific agent instruction files               | Read relevant file before acting in that role.                                                        |
-| `docs/plans/`             | Architecture specs and phase plans                  | Source of truth for specs. Do not contradict.                                                         |
+| `app/src-tauri/scripts/`  | Build & verification scripts                        | `verify-targets.sh` is the compile gate (see §3.0). Env SSOT for the NDK toolchain.                 |
+| `.agents/rules/`          | Role-specific agent instruction files               | Read relevant file before acting in that role. `android-pitfalls.md` is mandatory for Android-touching work (see §4.2). |
+| `docs/plans/`             | Architecture specs and phase plans                  | Source of truth for specs. Do not contradict. `phase13/` is active.                                  |
 | `docs/features/`          | Implemented feature ledgers                         | Update after completing features.                                                                     |
 | `sandbox/`                | Scratch space for experiments, evaluations, scripts | Non-production code. Results in `sandbox/results/`. Datasets in `sandbox/datasets/`.                  |
 | `temp/`                   | Ephemeral runtime files: logs, raw LLM outputs      | `temp/.env` (API keys). `temp/server.txt` (remote GPU server creds). Not versioned.                   |
 | `submodules/`             | Git submodules                                      | `chatterbox-rs`, `query-sieve-rs`, `distilbert-query-classifier`, `vox-models`, `nexus-rs`.       |
 | `~/.vox/models/`          | Local model weights                                 | Canonical manifest: `~/.vox/models/models_manifest.json`.                                             |
-
 **Remote GPU server:** `root@[IP_ADDRESS]` (creds in `temp/server.txt`). Ollama . **Never kill running server processes.**
 
 ---
 
 ## 3 Execution & Testing Invariants (All Agents)
 
-0. **Command Context Gate:** Only use `cargo clippy --all-targets` this to verify syntax no other cmds. Test cmds must not be run without explicit user approval.
-
+0. **Compile Gate — always use the script, never a bare `cargo check` on a cross target:**
+   ```bash
+   cd app/src-tauri && ./scripts/verify-targets.sh
+   ```
 1. **Sequential Execution with Release flag:** Run benchmarks, evals ,test suites or any cargo command strictly one at a time to prevent CPU, memory, and I/O contention and always use the `--release` flag.
 2. **Isolated Test Runner (`cargo-nextest`):** Use the cmd listed below and its variations . 
    ```bash
@@ -68,6 +70,7 @@
 
 > 🛑 **MANDATORY PRE-MODIFICATION HOOK:**
 > - You MUST read the corresponding style guide and engineer rule file for the specific area you are working on located in .agents/rules/.
+> - **If the change touches anything that must compile on Android** — `cpal`, tray/menu, dictation, `utils/paths.rs`, model loading, Cargo.toml target tables, or any `cfg(` — you MUST also read [`.agents/rules/android-pitfalls.md`](file:///home/addy/projects/apps/vox/.agents/rules/android-pitfalls.md). Android support is **incomplete**; several confirmed traps there have already caused false "done" reports.
 
 ### 4.3 Specifications, Behavioral Contracts & Non-Drift Hook [MANDATORY]
 
@@ -81,12 +84,14 @@ Authoritative system specifications reside in [`docs/specs/`](file:///home/addy/
 
 ---
 
-## 5. Phase 12 — Recent Work Summary
+## 5. Current Phase Summary
 
-> 📖 **Full History:** [recent_work.md](file:///home/addy/projects/apps/vox/docs/plans/phase12/recent_work.md) | Phase 11 Archive: [phase11/recent_work.md](file:///home/addy/projects/apps/vox/docs/plans/phase11/recent_work.md)
+> 📖 **Phase 13 (active):** [recent_work.md](file:///home/addy/projects/apps/vox/docs/plans/phase13/recent_work.md)
+> Phase 12 Archive: [recent_work.md](file:///home/addy/projects/apps/vox/docs/plans/phase12/recent_work.md
 
-- **Agentic Vox Runtime:** Tool-calling runtime (`respond_and_set_title`, `search_memory`, `web_search`) with a reentrant loop (max 5 iterations), `session_tool_calls` persistence, and capability gating via `model_capabilities.json`.
-- **Semantic Structured Personal Memory & Dictation:** Canonical JSON memory model with versioning and consolidation; owner-stamped `VoxEvent` dictation pipeline eliminating TOCTOU races, with a 15k disfluency dataset passing the over-deletion gate (1.734% harmful).
-- **Web Retrieval (nexuss 0.1.2, 62%→88% answer-bearing):** Deterministic 24-query multi-domain corpus with self-verified ground truth; answer-presence gate, engine health/circuit breaker, hybrid direct-cosine + BM25 ranking, token handles, and query caching. Published to crates.io.
-- **Frontend Platform & Performance:** Responsive SSOT pinned by invariant tests, touch/coarse-pointer capability layer, safe-area insets, `useVirtualRows` virtualization, theme-transition rAF interpolation, and locked overlay radius scale. `tsc` and `pnpm build` green.
-- **Android Platform Preparation (Batch 1 of 9):** OpenSSL removed from the Android target graph and unused `zbus` deleted; toolchain wired via `CARGO_TARGET_*` env vars with no committed NDK path. **`enigo` blocks the Android build** (no Android input backend) — Android `cargo check` now gates on Batch 4's dictation exclusion. Plan audit corrected ~20 false claims; see the Phase 12.2 doc.
+- **Phase 13 scope:** Android platform preparation (re-homed from Phase 12 on 2026-10-09) plus the critical on-device feature set — remote control, disfluency ML model, speaker lock. Feature designs stay in `docs/plans/wip/`; only the Android plan was promoted into `phase13/`.
+- **Android Batch 4 complete and honestly verified:** Desktop-only crates (`enigo`, `arboard`, `tauri-plugin-positioner`, tray) sit behind platform facades; `router.rs` carries zero inline `#[cfg]`. `setup/remote_server.rs` is gated behind `#[cfg(desktop)]` with a typed mobile stub, while remote *runtime* stays available on mobile over plain HTTP. **Both targets compile at 0 warnings / 0 errors.**
+- **Dual-target gate is now automated:** `app/src-tauri/scripts/verify-targets.sh` is the sole compile gate (both targets, sequential, `--release`, `-D warnings`, defensive `unset SYSROOT`). Verified by mutation in both directions. `.agents/rules/android-pitfalls.md` documents the confirmed traps — notably that `target_os = "linux"` is **false** on Android (61 dead blocks across 14 files) while `cfg(unix)` is true.
+- **Android APK now builds (`arm64-v8a`):** Phase 2 produced a signed, installable 207.6 MB APK — only `lib/arm64-v8a/`, `minSdk 24`. This required six native-toolchain fixes that `cargo check` structurally could not see (it compiles but never links): `clippy-driver` honoring `SYSROOT`, **duplicate `ggml_*` symbols** (llama.cpp is vendored twice), `crate-type` emitting no `.so`, bindgen having no sysroot inside Gradle, chatterbox-rs missing an Android toolchain file, and Gradle building all 4 ABIs. `turso`/`libsql` and `llama.cpp` are now **VERIFIED** for arm64. Three non-obvious rules: a config-file rustflag is silently overridden by Tauri (use `build.rs`); cargo finds config from **CWD**, not `--manifest-path`, so `[env]` must live in `$CARGO_HOME/config.toml`; Gradle's env is a hardcoded allowlist. Always build with `-t aarch64`.
+- **Next up — Phase 3/4 (Batch 7 + device):** enable the `ort` `nnapi` feature, then install the APK on a real phone. Nothing has ever run on hardware — audio (`cpal`/oboe), NNAPI, and thermal behaviour are all unproven, and an emulator validates none of them.
+- **Phase 12 (complete):** Agentic tool-calling runtime, semantic structured personal memory with versioned consolidation, `nexuss` 0.1.2 web retrieval (62%→88% answer-bearing), and the responsive/virtualized frontend platform.

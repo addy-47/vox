@@ -57,9 +57,18 @@ pub struct DeleteBlockOutput {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum ResolvedOp {
-    CreateSection { title: String, blocks: Vec<String> },
-    CreateBlock { section_id: String, text: String },
-    UpdateBlock { block_id: String, text: String },
+    CreateSection {
+        title: String,
+        blocks: Vec<String>,
+    },
+    CreateBlock {
+        section_id: String,
+        text: String,
+    },
+    UpdateBlock {
+        block_id: String,
+        text: String,
+    },
     DeleteBlock {
         block_id: String,
         /// The `[On]` observation that invalidated the block, as cited by the model.
@@ -207,15 +216,13 @@ pub fn resolve_operations(
 
     for delete in &output.delete {
         let position = resolved.len() + rejected.len();
-        let reject = |reason: String| {
-            RejectedOperation {
-                position,
-                operation: ResolvedOp::DeleteBlock {
-                    block_id: String::new(),
-                    invalidated_by: delete.observation.clone(),
-                },
-                reason,
-            }
+        let reject = |reason: String| RejectedOperation {
+            position,
+            operation: ResolvedOp::DeleteBlock {
+                block_id: String::new(),
+                invalidated_by: delete.observation.clone(),
+            },
+            reason,
         };
         let Some(block_id) = handle_map.resolve_block(&delete.block) else {
             rejected.push(reject(format!("unknown block handle '{}'", delete.block)));
@@ -248,7 +255,9 @@ pub fn resolve_operations(
 /// addresses one of the supplied observations.
 fn parse_observation_ref(label: &str, observation_count: usize) -> Option<String> {
     let trimmed = label.trim().trim_start_matches('[').trim_end_matches(']');
-    let digits = trimmed.strip_prefix('O').or_else(|| trimmed.strip_prefix('o'))?;
+    let digits = trimmed
+        .strip_prefix('O')
+        .or_else(|| trimmed.strip_prefix('o'))?;
     if digits.is_empty() || !digits.chars().all(|c| c.is_ascii_digit()) {
         return None;
     }

@@ -8,7 +8,14 @@ default-run = "Vox"
 
 [lib]
 name = "vox_lib"
-crate-type = ["lib"]
+# `staticlib` + `cdylib` are REQUIRED by the Android target: Gradle links the app
+# against `libvox_lib.so`, and `tauri android build` fails with
+# "Library artifact not found .../libvox_lib.so" without them.
+#
+# Note this means `cargo build`/`clippy` now also emit a staticlib and cdylib for
+# the host. That is the standard Tauri layout, not Android-specific bloat, but it
+# does add a little build time on every target.
+crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -174,3 +181,28 @@ path = "evals/agentic-tool/main.rs"
 harness = false
 
 
+
+
+# ─── Local patches ───────────────────────────────────────────────────────────
+#
+# chatterbox-rs Android toolchain fix, applied locally.
+#
+# `chatterbox-rs`'s build.rs at the pinned rev (4d84eb3) does not pass
+# `CMAKE_TOOLCHAIN_FILE` for aarch64-Android. CMake therefore resolves the
+# cross-compile target to the HOST processor, ggml's `ggml_get_system_arch()`
+# selects its x86 backend, and the build dies on:
+#     clang: error: unsupported argument 'native' to option '-march='
+# Passing `-DCMAKE_SYSTEM_PROCESSOR=aarch64` alone does not help — CMake
+# recomputes that variable inside `project()` and shadows the cache entry.
+#
+# llama-cpp-sys-4/build.rs:1885-1901 already handles this correctly; this patch
+# brings chatterbox to parity. The submodule is checked out at exactly the
+# pinned rev, and the patch only ADDS an Android branch to its build.rs.
+#
+# NOTE: must stay at the END of this file. A `[patch]` table header terminates
+# the `[dependencies]` table, so placing it mid-file would orphan every
+# dependency listed after it.
+#
+# Remove once the fix is upstream and the `rev` above is bumped.
+[patch."https://github.com/addy-47/chatterbox-rs.git"]
+chatterbox-rs = { path = "../../submodules/chatterbox-rs" }

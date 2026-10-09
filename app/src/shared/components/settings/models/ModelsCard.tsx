@@ -26,6 +26,7 @@ import { VadWorkspace } from "./VadWorkspace";
 import { AsrWorkspace } from "./AsrWorkspace";
 import { AuxiliaryWorkspace } from "./AuxiliaryWorkspace";
 import { RemoteServerSetup, type RemoteSetupStatus } from "./RemoteServerSetup";
+import { isDesktop } from "@/lib/capabilities";
 import { TtsVoiceManager, type CustomVoice, type TtsSubTab } from "./TtsVoiceManager";
 import { TtsModelWorkspace } from "./TtsModelWorkspace";
 import { LlmCatalogView } from "./LlmCatalogView";
@@ -281,6 +282,12 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
   useEffect(() => {
     localStorage.setItem("vox_ssh_key", sshIdentityKey);
   }, [sshIdentityKey]);
+
+  // Provisioning spawns `ssh`, which stock Android does not ship, so the setup
+  // panel is desktop-only. A mobile user can still point TTS at an
+  // already-provisioned remote server — that path is plain HTTP and works on
+  // every platform (see .agents/rules/android-pitfalls.md trap 7).
+  const showRemoteServerSetup = isRemoteTts && isRemoteTtsHealthy !== true && isDesktop();
 
   const triggerRemoteSetup = async () => {
     if (!isRemoteTts) return;
@@ -550,7 +557,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
               {activePipelineTab === "tts" && (
                 <>
                   {activeCategoryTab === "model" ? (
-                    isRemoteTts && isRemoteTtsHealthy !== true ? (
+                    showRemoteServerSetup ? (
                       <RemoteServerSetup
                         sshConnectionString={sshConnectionString}
                         setSshConnectionString={setSshConnectionString}

@@ -7,7 +7,7 @@ use std::sync::Arc;
 use anyhow::Result;
 pub use coordinator::{CompactionCoordinator, CompactionExecutionSummary};
 pub use prompt::{build_compaction_request, COMPACTION_SYSTEM_PROMPT};
-pub use runner::{run_compaction, AttributionFlag, CompactionResult, strip_citation};
+pub use runner::{run_compaction, strip_citation, AttributionFlag, CompactionResult};
 use tauri::AppHandle;
 
 use crate::{

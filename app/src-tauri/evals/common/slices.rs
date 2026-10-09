@@ -22,9 +22,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 use vox_lib::services::{
-    harness::{
-        ChatMessage, ContextBudgetStage, ContextStatus, PromptTag, Role,
-    },
+    harness::{ChatMessage, ContextBudgetStage, ContextStatus, PromptTag, Role},
     memory::ml::estimate_tokens,
 };
 
@@ -205,9 +203,10 @@ pub fn load_slices(case_dir: &Path) -> std::io::Result<Vec<CompactionSlice>> {
     let mut out = Vec::new();
     for path in paths {
         let body = std::fs::read_to_string(&path)?;
-        out.push(serde_json::from_str(&body).map_err(|e| {
-            std::io::Error::new(std::io::ErrorKind::InvalidData, e)
-        })?);
+        out.push(
+            serde_json::from_str(&body)
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?,
+        );
     }
     Ok(out)
 }
@@ -219,7 +218,10 @@ pub fn load_slices(case_dir: &Path) -> std::io::Result<Vec<CompactionSlice>> {
 /// *same* side of the comparison. It is injected as a `<session_context>`
 /// system message, which is where `build_compaction_request` looks for it
 /// (`harness/mod.rs:198`, `prompt.rs:100`).
-pub fn slice_to_chat_messages(slice: &CompactionSlice, prior_summary: Option<&str>) -> Vec<ChatMessage> {
+pub fn slice_to_chat_messages(
+    slice: &CompactionSlice,
+    prior_summary: Option<&str>,
+) -> Vec<ChatMessage> {
     let mut out = Vec::new();
     if let Some(summary) = prior_summary {
         if !summary.trim().is_empty() {

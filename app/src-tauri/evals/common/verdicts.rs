@@ -316,9 +316,12 @@ pub fn extract_json_object(raw: &str) -> Result<serde_json::Value> {
     let open = candidate
         .find('{')
         .ok_or_else(|| anyhow!("Judge response contains no JSON object: {}", truncate(raw)))?;
-    let close = candidate
-        .rfind('}')
-        .ok_or_else(|| anyhow!("Judge response has an unterminated JSON object: {}", truncate(raw)))?;
+    let close = candidate.rfind('}').ok_or_else(|| {
+        anyhow!(
+            "Judge response has an unterminated JSON object: {}",
+            truncate(raw)
+        )
+    })?;
     if close < open {
         return Err(anyhow!(
             "Judge response JSON braces are inverted: {}",
@@ -338,8 +341,13 @@ pub fn extract_json_object(raw: &str) -> Result<serde_json::Value> {
     // judge pretty-prints, so a trailing comma is almost never adjacent.
     body = strip_trailing_commas(&body);
 
-    serde_json::from_str(&body)
-        .map_err(|e| anyhow!("Judge response is not valid JSON ({}): {}", e, truncate(raw)))
+    serde_json::from_str(&body).map_err(|e| {
+        anyhow!(
+            "Judge response is not valid JSON ({}): {}",
+            e,
+            truncate(raw)
+        )
+    })
 }
 
 /// Removes `,` characters that sit immediately before a closing `}` or `]`,
@@ -371,7 +379,8 @@ fn strip_trailing_commas(body: &str) -> String {
     out
 }
 
-fn truncate(s: &str) -> String {    let t = s.trim();
+fn truncate(s: &str) -> String {
+    let t = s.trim();
     if t.chars().count() <= 400 {
         t.to_string()
     } else {
@@ -380,9 +389,7 @@ fn truncate(s: &str) -> String {    let t = s.trim();
 }
 
 /// Parses and validates a judge response into a typed verdict.
-pub fn parse_verdict<T: serde::de::DeserializeOwned>(
-    raw: &str,
-) -> JudgeStatus<T> {
+pub fn parse_verdict<T: serde::de::DeserializeOwned>(raw: &str) -> JudgeStatus<T> {
     let value = match extract_json_object(raw) {
         Ok(v) => v,
         Err(e) => {
