@@ -212,14 +212,19 @@ pub fn run() {
         };
 
         let backtrace = Backtrace::capture();
-        log::error!(
-            target: "panic",
+        // Always write to stderr. On Android, stderr is surfaced by the platform
+        // under the `RustStdoutStderr` logcat tag, so a panic is always
+        // recoverable via `adb logcat`. `log::error!` below depends on `tracing`
+        // being initialised, which it is NOT during early bootstrap.
+        let report = format!(
             "[FATAL PANIC] Thread '{}' panicked at '{}': {}\nBacktrace:\n{}",
             current().name().unwrap_or("unnamed"),
             location,
             payload,
             backtrace
         );
+        eprintln!("{report}");
+        log::error!("{}", report);
 
         // Emergency write to crashes directory if paths are available
         if let Some(path) = crate::utils::crash::write_crash_report(
@@ -293,16 +298,19 @@ pub fn run() {
                 }
             });
 
+            // ── 0. Paths Singleton & Migration (must be first) ──────────────────────
+            // MUST precede every thread spawn below. Any thread touching
+            // paths::get() races this init and panics; on Android that panic lands
+            // before the panic hook could write a report, so it aborts the process.
+            paths::init();
+            paths::migrate_legacy_layout(&paths::get().root);
+            paths::ensure_dirs().ok();
+
             // Pre-warm BPE tokenizer vocabulary to eliminate Turn 1 dispatch latency
             ThreadBuilder::new()
                 .name("vox-bpe-warmup".into())
                 .spawn(warmup_tokenizer)
                 .ok();
-
-            // ── 0. Paths Singleton & Migration (must be first) ──────────────────────
-            paths::init();
-            paths::migrate_legacy_layout(&paths::get().root);
-            paths::ensure_dirs().ok();
 
             // ── 0.1 Logging (must be initialized immediately after paths) ───────────
             let log_guard = logging::init(paths::logs_dir());

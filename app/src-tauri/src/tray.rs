@@ -235,6 +235,10 @@ mod desktop {
         }
     }
 
+    #[cfg(not(target_os = "linux"))]
+    #[inline]
+    pub fn setup_linux_virtual_layer<R: tauri::Runtime>(_app: &AppHandle<R>, _label: &str) {}
+
     /// Syncs the live tray check item state when dictation settings change.
     pub fn update_tray_menu_state(state: &AppState) {
         let (enabled, is_tray_mode) = state
