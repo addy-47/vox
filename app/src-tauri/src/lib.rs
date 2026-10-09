@@ -30,7 +30,7 @@ use std::{
     time::Duration,
 };
 
-use tauri::{tray::TrayIconBuilder, Manager, State};
+use tauri::{Manager, State};
 
 #[cfg(target_os = "linux")]
 use crate::tray::setup_linux_virtual_layer;
@@ -102,10 +102,93 @@ use crate::{
         vad::VadCommand,
     },
     setup::manifest::{AppManifest, VoxManifest},
-    tray::{build_main_tray_menu, ensure_tray_window, refresh_tray_menu, sync_live_menu_item},
+    tray::{ensure_tray_window, refresh_tray_menu},
     utils::{check_cpu_governor, hardware::detect_local_gpu, logging, paths},
     wizard::ensure_wizard_window,
 };
+
+#[cfg(desktop)]
+fn setup_desktop_plugins<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R> {
+    builder
+        .plugin(tauri_plugin_positioner::init())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .plugin(window_customizer::PinchZoomDisablePlugin)
+}
+
+#[cfg(not(desktop))]
+fn setup_desktop_plugins<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R> {
+    builder
+}
+
+#[cfg(desktop)]
+fn setup_platform_tray(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+    use tauri::tray::TrayIconBuilder;
+
+    use crate::tray::{build_main_tray_menu, sync_live_menu_item};
+
+    let (tray_menu, live_i) = build_main_tray_menu(app.handle())?;
+    sync_live_menu_item(app.handle(), &live_i);
+
+    let mut tray_builder = TrayIconBuilder::with_id("vox-tray").menu(&tray_menu);
+    if let Some(icon) = app.default_window_icon() {
+        tray_builder = tray_builder.icon(icon.clone());
+    } else {
+        log::warn!("[Tray] Default window icon not found. Building tray without explicit icon.");
+    }
+
+    let _tray = tray_builder
+        .on_menu_event(move |app, event| match event.id.as_ref() {
+            "launch" => {
+                let handle = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    if let Err(e) = show_main_window(handle).await {
+                        log::warn!("[Tray] Failed to show main window: {}", e);
+                    }
+                });
+            }
+            "live" => {
+                let handle = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    toggle_tray_visibility_internal(handle).await;
+                });
+            }
+            "quit" => app.exit(0),
+            "restart" => app.restart(),
+            _ => {}
+        })
+        .on_tray_icon_event(|tray, event| {
+            if let tauri::tray::TrayIconEvent::Click {
+                button: tauri::tray::MouseButton::Left,
+                ..
+            } = event
+            {
+                let app = tray.app_handle().clone();
+                let dictation_enabled = {
+                    let state: State<'_, Arc<AppState>> = app.state();
+                    let s = state.settings.read().unwrap_or_else(|p| {
+                        log::warn!("[Tray] Settings RwLock poisoned; recovering inner state.");
+                        p.into_inner()
+                    });
+                    s.dictation.enabled
+                };
+                if dictation_enabled {
+                    tauri::async_runtime::spawn(async move {
+                        if let Err(e) = launch_engine(app).await {
+                            log::warn!("[Tray] Failed to launch engine on tray click: {}", e);
+                        }
+                    });
+                }
+            }
+        })
+        .build(app)?;
+
+    Ok(())
+}
+
+#[cfg(not(desktop))]
+fn setup_platform_tray(_app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+    Ok(())
+}
 
 /// Main entry point for the Vox application.
 ///
@@ -185,14 +268,12 @@ pub fn run() {
         }
     }
 
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    setup_desktop_plugins(builder)
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_positioner::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_fs::init())
-        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
-        .plugin(window_customizer::PinchZoomDisablePlugin)
         .setup(|app| {
             // The `main` webview is constructed LAZILY, never at startup. It was
             // previously declared in tauri.conf.json (`visible: true`), so Tauri
@@ -422,63 +503,7 @@ pub fn run() {
             }
 
             // ── 1. System Tray ───────────────────────────────────────────────────────
-            let (tray_menu, live_i) = build_main_tray_menu(app.handle())?;
-
-            // Store live_i handle in state for synchronization
-            sync_live_menu_item(app.handle(), &live_i);
-
-
-            let mut tray_builder = TrayIconBuilder::with_id("vox-tray").menu(&tray_menu);
-            if let Some(icon) = app.default_window_icon() {
-                tray_builder = tray_builder.icon(icon.clone());
-            } else {
-                log::warn!("[Tray] Default window icon not found. Building tray without explicit icon.");
-            }
-
-            let _tray = tray_builder
-                .on_menu_event(move |app, event| match event.id.as_ref() {
-                    "launch" => {
-                        let handle = app.clone();
-                        tauri::async_runtime::spawn(async move {
-                            if let Err(e) = show_main_window(handle).await {
-                                log::warn!("[Tray] Failed to show main window: {}", e);
-                            }
-                        });
-                    }
-                    "live" => {
-                        let handle = app.clone();
-                        tauri::async_runtime::spawn(async move {
-                            toggle_tray_visibility_internal(handle).await;
-                        });
-                    }
-                    "quit" => app.exit(0),
-                    "restart" => app.restart(),
-                    _ => {}
-                })
-                .on_tray_icon_event(|tray, event| {
-                    if let tauri::tray::TrayIconEvent::Click { button: tauri::tray::MouseButton::Left, .. } = event {
-                        let app = tray.app_handle().clone();
-                        let dictation_enabled = {
-                            let state: State<'_, Arc<AppState>> = app.state();
-                            let s = state
-                                .settings
-                                .read()
-                                .unwrap_or_else(|p| {
-                                    log::warn!("[Tray] Settings RwLock poisoned; recovering inner state.");
-                                    p.into_inner()
-                                });
-                            s.dictation.enabled
-                        };
-                        if dictation_enabled {
-                            tauri::async_runtime::spawn(async move {
-                                if let Err(e) = launch_engine(app).await {
-                                    log::warn!("[Tray] Failed to launch engine on tray click: {}", e);
-                                }
-                            });
-                        }
-                    }
-                })
-                .build(app)?;
+            setup_platform_tray(app)?;
 
 
             // ── 1.7.5 CPU Governor Check (Linux only — warns if not "performance") ──

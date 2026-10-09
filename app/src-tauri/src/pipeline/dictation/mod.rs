@@ -1,7 +1,11 @@
 pub mod config;
+#[cfg(desktop)]
 pub mod error;
+#[cfg(desktop)]
 pub mod ptt;
+#[cfg(desktop)]
 pub mod speech;
+#[cfg(desktop)]
 pub mod transcript;
 
 pub use config::*;
@@ -47,6 +51,7 @@ pub fn transition_dictation<R: tauri::Runtime>(
 }
 
 /// Main event dispatcher for the unified dictation domain.
+#[cfg(desktop)]
 pub fn handle_event<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, event: VoxEvent) {
     match event {
         VoxEvent::SpeechStart { .. } => speech::on_speech_start(app, state),
@@ -62,3 +67,6 @@ pub fn handle_event<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, eve
         _ => {}
     }
 }
+
+#[cfg(not(desktop))]
+pub fn handle_event<R: tauri::Runtime>(_app: &AppHandle<R>, _state: &AppState, _event: VoxEvent) {}

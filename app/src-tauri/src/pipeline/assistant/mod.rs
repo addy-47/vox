@@ -79,3 +79,75 @@ impl TurnAccumulator {
         self.user_transcript.clone()
     }
 }
+
+/// Main event dispatcher for the assistant domain.
+pub fn handle_event<R: tauri::Runtime + 'static>(
+    app: &tauri::AppHandle<R>,
+    state: &crate::core::state::AppState,
+    ctx: &crate::pipeline::router::RoutingContext,
+    event: crate::core::events::VoxEvent,
+) {
+    use crate::core::{events::VoxEvent, state::InteractionOwner};
+
+    match event {
+        VoxEvent::SessionStart { owner, session_id } => {
+            session::on_session_start(owner, session_id, app, state, ctx);
+        }
+        VoxEvent::PauseSession => session::on_pause(app, state, ctx),
+        VoxEvent::ResumeSession => session::on_resume(app, state, ctx),
+        VoxEvent::EndSession => session::on_end(app, state, ctx),
+
+        VoxEvent::PttStart {
+            owner: InteractionOwner::Assistant,
+        } => {
+            ptt::on_ptt_start(app, state, ctx);
+        }
+        VoxEvent::PttStop {
+            owner: InteractionOwner::Assistant,
+        } => {
+            ptt::on_ptt_stop(app, state, ctx);
+        }
+        VoxEvent::PttCancel {
+            owner: InteractionOwner::Assistant,
+        } => {
+            ptt::on_ptt_cancel(app, state, ctx);
+        }
+        VoxEvent::SpeechStart {
+            owner: InteractionOwner::Assistant,
+        } => {
+            speech::on_speech_start(app, state, ctx);
+        }
+        VoxEvent::SpeechEnd {
+            owner: InteractionOwner::Assistant,
+        } => {
+            speech::on_speech_end(app, state, ctx);
+        }
+        VoxEvent::TranscriptFinal {
+            owner: InteractionOwner::Assistant,
+            turn_id,
+            text,
+        } => {
+            transcript::on_transcript_final(turn_id, text, app, state, ctx);
+        }
+        VoxEvent::Cancelled {
+            owner: InteractionOwner::Assistant,
+            turn_id,
+        } => {
+            error::on_cancelled(turn_id, app, state, ctx);
+        }
+
+        VoxEvent::TextInput { text } => {
+            text::on_text_input(text, app, state, ctx);
+        }
+        VoxEvent::LlmFinished { turn_id } => {
+            llm::on_llm_finished(turn_id, Some(app), state, ctx);
+        }
+        VoxEvent::PlaybackStarted { turn_id, intent } => {
+            playback::on_playback_started(turn_id, intent, app, state, ctx);
+        }
+        VoxEvent::PlaybackFinished { turn_id, intent } => {
+            playback::on_playback_finished(turn_id, intent, app, state, ctx);
+        }
+        _ => {}
+    }
+}

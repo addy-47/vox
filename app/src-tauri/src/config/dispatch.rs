@@ -23,7 +23,7 @@ use crate::{
         tts::TtsCommand,
         vad::{VadCommand, VadOperationalMode},
     },
-    tray::{destroy_tray_window, ensure_tray_window},
+    tray::{destroy_tray_window, ensure_tray_window, update_tray_menu_state},
 };
 
 /// Disk write is deferred by this duration after the last setting change.
@@ -132,28 +132,13 @@ async fn handle_dictation_side_effects<R: tauri::Runtime>(
             }
         }
 
+        update_tray_menu_state(state);
+
         let is_tray_mode = state
             .settings
             .read()
             .map(|s| s.dictation.output_mode == DictationOutputMode::Tray)
             .unwrap_or(false);
-        let is_clickable = enabled && is_tray_mode;
-        let menu_item_lock = state.hud_menu_item.lock();
-        if let Some(ref live_i) = *menu_item_lock {
-            if let Err(e) = live_i.set_enabled(is_clickable) {
-                log::warn!(
-                    "[Settings::Mutation] Failed to set menu item enabled: {}",
-                    e
-                );
-            }
-            let hud_visible = state.hud_visible.load(Ordering::Relaxed);
-            if let Err(e) = live_i.set_checked(hud_visible && is_clickable) {
-                log::warn!(
-                    "[Settings::Mutation] Failed to set menu item checked: {}",
-                    e
-                );
-            }
-        }
 
         if !enabled {
             destroy_tray_window(app);
@@ -187,24 +172,7 @@ async fn handle_dictation_side_effects<R: tauri::Runtime>(
             .map(|s| (s.dictation.enabled, s.dictation.output_mode))
             .unwrap_or((false, DictationOutputMode::Paste));
         let is_tray_mode = output_mode == DictationOutputMode::Tray;
-        let is_clickable = enabled && is_tray_mode;
-
-        let menu_item_lock = state.hud_menu_item.lock();
-        if let Some(ref live_i) = *menu_item_lock {
-            if let Err(e) = live_i.set_enabled(is_clickable) {
-                log::warn!(
-                    "[Settings::Mutation] Failed to set menu item enabled: {}",
-                    e
-                );
-            }
-            let hud_visible = state.hud_visible.load(Ordering::Relaxed);
-            if let Err(e) = live_i.set_checked(hud_visible && is_clickable) {
-                log::warn!(
-                    "[Settings::Mutation] Failed to set menu item checked: {}",
-                    e
-                );
-            }
-        }
+        update_tray_menu_state(state);
 
         if enabled && is_tray_mode {
             if let Err(e) = ensure_tray_window(app) {
@@ -354,7 +322,9 @@ pub async fn handle_setting_side_effects<R: tauri::Runtime>(
                 log::info!("[Settings] Pipeline processing enabled; spawned ingestion sweep");
             } else if let Some(token) = state.ingestion_cancel.lock().take() {
                 token.cancel();
-                log::info!("[Settings] Pipeline processing disabled; cancelled running ingestion sweep");
+                log::info!(
+                    "[Settings] Pipeline processing disabled; cancelled running ingestion sweep"
+                );
             }
         }
     } else if domain == "working_memory" && key == "web_search_enabled" {

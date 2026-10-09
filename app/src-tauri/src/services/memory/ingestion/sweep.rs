@@ -60,9 +60,7 @@ pub fn spawn_ingestion_sweep<R: Runtime>(
                     "[Memory::Ingestion] Unfinished queue items found; starting ingestion sweep."
                 );
 
-                let last_emit = Arc::new(Mutex::new(
-                    Instant::now() - Duration::from_secs(10),
-                ));
+                let last_emit = Arc::new(Mutex::new(Instant::now() - Duration::from_secs(10)));
                 let app_progress = app.clone();
                 let progress_cb = move || {
                     let mut last = last_emit.lock();
@@ -79,22 +77,16 @@ pub fn spawn_ingestion_sweep<R: Runtime>(
                     }
                 };
 
-                if let Err(e) = drain_ingestion_queue_with_progress(
-                    &conn,
-                    Some(&token),
-                    Some(progress_cb),
-                )
-                .await
+                if let Err(e) =
+                    drain_ingestion_queue_with_progress(&conn, Some(&token), Some(progress_cb))
+                        .await
                 {
                     log::warn!("[Memory::Ingestion] Ingestion sweep error: {}", e);
                 }
 
                 if let Some(ref a) = app {
                     if let Err(e) = emit_ipc(a, IpcEvent::MemoryIngestionUpdated) {
-                        log::warn!(
-                            "[Memory::Ingestion] Failed to emit completion event: {}",
-                            e
-                        );
+                        log::warn!("[Memory::Ingestion] Failed to emit completion event: {}", e);
                     }
                 }
             }

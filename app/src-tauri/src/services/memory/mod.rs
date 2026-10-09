@@ -50,4 +50,3 @@ pub use scheduler::{
 pub use crate::{core::error::MemoryError, persistence::has_unfinished_items};
 
 pub const COMPACTION_SENTINEL_TURN_ID: u32 = 999_999;
-

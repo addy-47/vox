@@ -21,6 +21,7 @@ pub fn ensure_main_window(app: &AppHandle) -> Result<WebviewWindow, String> {
             pre_inner_size, pre_outer_size, pre_outer_pos
         );
 
+        #[cfg(desktop)]
         if let Err(e) = existing.unminimize() {
             log::debug!("[MainWindow] Failed to unminimize: {}", e);
         }
@@ -45,19 +46,27 @@ pub fn ensure_main_window(app: &AppHandle) -> Result<WebviewWindow, String> {
     log::warn!("[MainWindow] 'main' webview absent — reconstructing fresh window.");
     // Mirrors the former tauri.conf.json `main` window declaration, which was
     // removed so the webview is no longer built at startup on a first run.
-    let window = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("/".into()))
+    #[allow(unused_mut)]
+    let mut builder = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("/".into()))
         .title("Vox")
         .inner_size(1280.0, 800.0)
         .min_inner_size(400.0, 600.0)
-        .maximized(true)
         .visible(true)
-        .center()
         .background_color(tauri::window::Color(5, 5, 5, 255))
         .transparent(false)
-        .decorations(false)
-        .always_on_top(false)
         .resizable(true)
-        .zoom_hotkeys_enabled(false)
+        .zoom_hotkeys_enabled(false);
+
+    #[cfg(desktop)]
+    {
+        builder = builder
+            .center()
+            .maximized(true)
+            .decorations(false)
+            .always_on_top(false);
+    }
+
+    let window = builder
         .build()
         .map_err(|e| format!("Failed to create main window: {}", e))?;
 
