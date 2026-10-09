@@ -1,12 +1,11 @@
 {
-  "latest_version": "0.8.8",
+  "latest_version": "0.8.9",
   "release_notes": [
-    "Modular LLM Agent Harness Architecture: Re-architected harness runtime into a modular stage taxonomy (history, prompt, budget, compaction, streaming) with unified execute_turn orchestration and decoupled NLP clause chunking.",
-    "Harness Production Hardening & Async Resilience: Sealed stage encapsulation, offloaded blocking Turso DB and compaction inference off the Tokio reactor, automated user turn rollback on stream error, and zero-overhead prompt synchronization.",
-    "Universal Compaction Contract & Cognitive Ladder: Shipped strict 6-bucket JsonSchema SSOT with reasoning disabled across Ollama and remote transports, 400-negotiation downgrade, and verified 2-stage memory deduplication (Jaccard + MiniLM ONNX cosine).",
-    "Core Pipeline 4-Pillar Standardization: Standardized TTS, STT, VAD, and LLM services around dedicated OS-thread actors, declarative contracts, and domain-isolated provider factories with zero compiler warnings.",
-    "Text-as-Input & Ephemeral Voice Sessions: Introduced direct keyboard text input with auto-resume from Paused and Sleeping states, mic and speaker mute controls, and zero-persistence Temporary Chat sessions.",
-    "Streaming Audio Prosody & Speech Normalization: Integrated pre-synthesis text normalization for numbers, currencies, and units, refined clause boundary prosody for Kokoro TTS, and verified 11-speaker profile mapping."
+    "Agentic Tool Runtime & Cognitive Loop: Autonomous multi-pass tool execution with loop safeguards; ships native session auto-titling (respond_and_set_title), hybrid RRF episodic memory search (search_memory), and live web search with duplex translation for Gemini Live and Deepgram.",
+    "Empirical Capability Discovery & Model Probing: Automated endpoint capability probing measuring live TTFT, tokens-per-second throughput, and wire-level tool-calling support across 4,500+ catalog models with tri-state provenance and self-healing cache recovery.",
+    "Cognitive Memory v2 & Staging Review: Durable long-term personal profile synthesis with Google Docs-style staging review for approving, editing, and rejecting learned facts; hardened with structured output pre-flight validation and global session compaction locks.",
+    "Streaming Audio Pipeline & Telemetry HUD: Real-time chunked audio synthesis across all TTS engines (Kokoro, Supertonic, Chatterbox, Edge-TTS) with sentence-first clause chunking; live turn telemetry HUD tracking exact TTFT, TTFA, and context token utilization.",
+    "Theme Interpolation & Desktop Polish: Fluid 200ms theme transitions powered by rAF token interpolation and scoped blur suspension; lazy main webview eliminating first-run double-window flash; hardware-accelerated SVG waveform loader replacing particle overhead."
   ],
   "linux": {
     "package": "vox",
