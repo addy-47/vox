@@ -48,7 +48,6 @@ llama-cpp-sys-4 = { version = "0.2.61", default-features = false }              
 ort = { version = "2.0.0-rc.13", features = ["download-binaries", "ndarray"] }                # ONNX Runtime bindings (1.28; fixes ReshapeFusion SIGSEGV on MiniLM INT8)
 ndarray = "0.17.2"                                                                            # N-dimensional array processing for ONNX tensors
 chatterbox-rs = { git = "https://github.com/addy-47/chatterbox-rs.git", rev = "c9d17bd", default-features = false } # Local voice cloning TTS
-query-sieve = { git = "https://github.com/addy-47/query-sieve-rs.git" }                       # ModernBERT intent classifier
 tokenizers = { version = "0.21.0", default-features = false, features = ["fancy-regex"] }    # HuggingFace tokenizers (BPE / WordPiece)
 tiktoken-rs = "0.6.0"                                                                         # OpenAI BPE tokenizer for context budgeting
 
