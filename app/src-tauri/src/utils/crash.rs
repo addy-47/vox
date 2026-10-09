@@ -20,7 +20,17 @@ pub const CRASH_KIND_NATIVE: &str = "native";
 pub fn write_crash_report(kind: &str, summary: &str, backtrace: &str) -> Option<String> {
     let crash_dir = paths::try_get()
         .map(|p| p.crashes)
-        .unwrap_or_else(paths::crashes_dir);
+        .unwrap_or_else(|| {
+            // `crashes_dir()` goes through `paths::get()`, which PANICS if paths is
+            // not initialised. When the panic being reported IS a paths init-order
+            // failure, that panics again inside the panic hook, and Rust aborts
+            // ("thread panicked while processing panic") — losing the message and
+            // the backtrace entirely. Fall back to a std path instead of re-panicking.
+            dirs::data_local_dir()
+                .unwrap_or_else(std::env::temp_dir)
+                .join("vox")
+                .join("crashes")
+        });
 
     if create_dir_all(&crash_dir).is_err() {
         return None;
