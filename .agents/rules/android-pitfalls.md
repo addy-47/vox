@@ -280,3 +280,71 @@ verifiers apply:
 - `app/src-tauri/Cargo.toml` — a `[patch]` redirecting chatterbox-rs to the local
   submodule. **It must stay at the end of the file**: a `[patch]` table header
   terminates `[dependencies]`, so placing it mid-file orphans every later dep.
+
+---
+
+## 16. `ort`'s `nnapi` feature MUST be target-scoped, never global
+
+`ort-sys/build/download/resolve.rs:126` rejects any artifact whose feature set is
+not an **exact** match for the enabled cargo features:
+
+```rust
+if *best_features == feature_set.len() { Ok(best_dist) } else { Err(...) }
+```
+
+`build/download/dist.tsv` has exactly one `aarch64-linux-android` row and its
+feature set is `nnapi`. Every desktop row is `none`, `webgpu`, `directml`, or
+`cuda13,tensorrt,nvrtx`. So enabling `nnapi` in the main `[dependencies]` table
+resolves the *Android* artifact correctly and then **breaks the desktop build**,
+because no `x86_64-unknown-linux-gnu` row carries `nnapi`.
+
+**Fix:** declare it as a target-specific dependency so the feature only exists in
+the Android feature graph:
+
+```toml
+[dependencies]
+ort = { version = "2.0.0-rc.13", features = ["download-binaries", "ndarray"] }
+
+[target.'cfg(target_os = "android")'.dependencies]
+ort = { version = "2.0.0-rc.13", features = ["download-binaries", "ndarray", "nnapi"] }
+```
+
+Cargo unifies features per-target, so desktop keeps `nnapi` off. Verify both ways —
+`cargo tree -e features -i ort-sys --target aarch64-linux-android | grep -c nnapi`
+must be > 0, and the same command without `--target` must be **0**. A non-zero
+desktop count means the scoping is wrong.
+
+### Why the artifact does not change when you add the feature
+
+Before this was fixed, the APK already shipped an ONNX Runtime containing
+`NnapiExecutionProvider`. That looks like the feature was a no-op, and it nearly
+was: with `nnapi` off, `resolve.rs` has an **empty** `feature_set`, and every
+`aarch64-linux-android` candidate intersects it at 0 features, so
+`best_features == feature_set.len()` (0 == 0) passes. The resolver then falls
+through to `candidates.first()` and downloads the NNAPI artifact anyway.
+
+So the packaged `.so` was correct but **unintentionally** so — one added row to
+`dist.tsv` or a changed sort order would have silently broken it. The confirmed
+consequence is that the **Rust-side** `ort::ep::NNAPI` provider was unavailable
+(only present under `#[cfg(feature = "nnapi")]`), so no EP could actually be
+selected at runtime. Enabling the feature is required for the API, not for the
+binary. Do not judge this change by diffing the `.so` — compare the feature graph.
+
+---
+
+## 17. Verify the execution provider, not just the file size
+
+`libonnxruntime.so` existing in `jniLibs/arm64-v8a/` proves nothing about which
+backend it contains. Check the symbols and the arch explicitly:
+
+```bash
+NDK=~/Android/Sdk/ndk/<ver>/toolchains/llvm/prebuilt/linux-x86_64/bin
+$NDK/llvm-nm -D libonnxruntime.so | grep -c Nnapi   # expect >= 1
+file -b libonnxruntime.so                           # expect "ARM aarch64"
+readelf -d libonnxruntime.so | grep NEEDED          # expect liblog/libEGL, no glibc
+```
+
+Unzip from the **built APK**, not from `jniLibs/` — `jniLibs` is populated by
+dependency build scripts and can hold a stale copy from an earlier build. On this
+project the two were byte-identical only after a full clean rebuild; assume they
+differ until hashed.
