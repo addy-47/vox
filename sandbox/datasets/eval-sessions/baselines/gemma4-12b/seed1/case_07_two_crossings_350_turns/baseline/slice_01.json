@@ -1,0 +1,40 @@
+{
+  "personal": [
+    "Working on a Rust memory management project",
+    "Has a sourdough starter named Doughvid",
+    "Learning Spanish for a trip to Mexico City in three weeks",
+    "Has a perception software project involving image processing and color conversion [turn 8, turn 44, turn 60, turn 117]",
+    "Interested in orbital mechanics and terraforming Mars [turn 5, turn 70, turn 108, turn 119, turn 180]",
+    "Plays acoustic guitar (fingerstyle) [turn 33, turn 34, turn 73, turn 74, turn 123, turn 175]",
+    "Has a roommate named Jamie",
+    "Has a pet or device named Pixel",
+    "Trying to cut back on sugar due to pre-diabetes [turn 15, turn 129, turn 130]",
+    "Has a nut allergy",
+    "Lives in Chicago (Logan Square) [turn 1, turn 136]"
+  ],
+  "objective": [
+    "Implement error handling for empty free lists in the Rust memory management module",
+    "Benchmark the slab allocator against the bump allocator",
+    "Optimize color conversion functions in the perception software project",
+    "Practice Spanish vocabulary and phrases for a trip to Mexico City"
+  ],
+  "workdone": [
+    "Implemented error handling for empty free lists [turn 25]",
+    "Identified potential fix for fragmentation in segregated free list [turn 105]",
+    "Added items to shopping/to-do lists (flour, nut-free labels, running shoes)"
+  ],
+  "blocker": [
+    "Need resources on efficient benchmarking in Rust"
+  ],
+  "next_step": [
+    "Call Jamie this evening [turn 19]",
+    "Water the desk plant tomorrow morning [turn 179]",
+    "Practice Spanish for directions [turn 65]",
+    "Bake bread/focaccia",
+    "Check on Pixel [turn 128]"
+  ],
+  "pitfall": [
+    "Avoid refined sugar due to pre-diabetes [turn 130]",
+    "Avoid nuts due to allergy [turn 63]"
+  ]
+}

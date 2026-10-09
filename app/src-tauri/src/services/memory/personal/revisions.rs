@@ -233,7 +233,7 @@ pub async fn list_memory_revision_views(
             let operation = serde_json::from_str::<ResolvedOp>(&revision.content).ok();
             let old_text = match &operation {
                 Some(ResolvedOp::UpdateBlock { block_id, .. })
-                | Some(ResolvedOp::DeleteBlock { block_id }) => model
+                | Some(ResolvedOp::DeleteBlock { block_id, .. }) => model
                     .find_block(block_id)
                     .map(|(s, b)| model.sections[s].blocks[b].text.clone()),
                 _ => None,
@@ -279,7 +279,7 @@ fn render_revision_preview(
         ResolvedOp::UpdateBlock { block_id, text } => {
             format!("Update block {}: {}", short_id(block_id), truncate(text))
         }
-        ResolvedOp::DeleteBlock { block_id } => {
+        ResolvedOp::DeleteBlock { block_id, .. } => {
             let existing = model
                 .find_block(block_id)
                 .map(|(s, b)| model.sections[s].blocks[b].text.trim().to_string());
@@ -476,6 +476,7 @@ mod tests {
         // DeleteBlock preview
         let op3 = ResolvedOp::DeleteBlock {
             block_id: "blk_12345_efgh".to_string(),
+            invalidated_by: "O1".to_string(),
         };
         let rev3 = PersonalMemoryRevisionRecord {
             id: "rev_3".to_string(),

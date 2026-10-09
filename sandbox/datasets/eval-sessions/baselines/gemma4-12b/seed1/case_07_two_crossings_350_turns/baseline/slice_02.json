@@ -1,0 +1,34 @@
+{
+  "personal": [
+    "Working on a Rust memory management project",
+    "Has a sourdough starter named Doughvid",
+    "Learning Spanish for a trip to Mexico City in three weeks",
+    "Has a perception software project involving image processing and color conversion",
+    "Interested in orbital mechanics and terraforming Mars",
+    "Plays acoustic guitar (fingerstyle)",
+    "Has a roommate named Jamie",
+    "Has a cat named Pixel",
+    "Trying to cut back on sugar due to pre-diabetes",
+    "Has a nut allergy"
+  ],
+  "objective": [
+    "Implement tiered segregated free list for Rust memory management module",
+    "Optimize perception software using SIMD instructions",
+    "Practice Spanish vocabulary and phrases for Mexico City trip"
+  ],
+  "workdone": [
+    "Identified sourdough hydration level as 75% [turn 128]",
+    "Confirmed Pixel is a cat [turn 98]"
+  ],
+  "blocker": [],
+  "next_step": [
+    "Check email before bed [turn 1]",
+    "Practice Spanish phrases for ordering food [turn 122]",
+    "Bake sourdough bread [turn 137]",
+    "Check on Pixel [turn 146]"
+  ],
+  "pitfall": [
+    "Avoid refined sugar due to pre-diabetes [turn 145]",
+    "Avoid nuts due to allergy [turn 7]"
+  ]
+}

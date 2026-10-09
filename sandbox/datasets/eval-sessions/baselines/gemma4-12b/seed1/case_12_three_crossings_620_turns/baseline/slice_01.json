@@ -1,0 +1,48 @@
+{
+  "personal": [
+    "User is working on a Rust memory manager project involving slab, segregated free list, and bump allocators [turn 2, turn 13, turn 26, turn 59, turn 73, turn 80, turn 91, turn 102, turn 103, turn 124, turn 130, turn 140, turn 152]",
+    "User is working on a perception software project involving `PerceptionImage` struct refactoring and SIMD optimizations [turn 4, turn 16, turn 24, turn 38, turn 54, turn 62, turn 70, turn 81, turn 101, turn 113, turn 125, turn 141, turn 151, turn 155, turn 158]",
+    "User has pre-diabetes and is focused on reducing refined sugar intake [turn 6, turn 69, turn 84, turn 127]",
+    "User has a severe tree nut allergy (specifically walnuts and cashews) [turn 7, turn 128, turn 165]",
+    "User is practicing the song 'Blackbird' on an acoustic guitar [turn 10, turn 31, turn 49, turn 57, turn 78, turn 119]",
+    "User owns a Martin acoustic guitar",
+    "User prefers ambient and instrumental acoustic guitar music for coding [turn 71, turn 72]",
+    "User is planning a trip to Mexico City (near the Zócalo) [turn 34, turn 35, turn 64, turn 74, turn 94, turn 122, turn 132, turn 143, turn 163]",
+    "User is practicing Spanish for the Mexico City trip [turn 19, turn 20, turn 42, turn 75, turn 95, turn 108, turn 123, turn 148, turn 157, turn 164]",
+    "User has a pet named Doughvid (a baking companion) [turn 17, turn 32, turn 33, turn 43, turn 51, turn 66, turn 83, turn 96, turn 104, turn 105, turn 121, turn 135, turn 147]",
+    "User is reading Kim Stanley Robinson's 'Red Mars' [turn 9, turn 30, turn 45, turn 63, turn 85, turn 111, turn 134]",
+    "User wants to optimize Neovim configuration for buffer management [turn 18, turn 19, turn 33, turn 60, turn 77, turn 97, turn 106, turn 138]",
+    "User has a roommate named Jamie [turn 8, turn 40, turn 41]",
+    "User wants to buy running shoes and an umbrella [turn 12, turn 28, turn 47, turn 58, turn 107, turn 162]"
+  ],
+  "objective": [
+    "Implement a pre-allocation strategy for slab allocator resizing in the Rust memory manager.",
+    "Refactor `PerceptionImage` struct using a factory pattern and custom error handling.",
+    "Resolve SIMD type compatibility issues between `simd-pixels` and the `image` crate.",
+    "Optimize Neovim configuration for buffer management.",
+    "Prepare for Mexico City trip (Spanish practice, hotel confirmation)."
+  ],
+  "workdone": [
+    "Implemented first-fit strategy for fragmentation mitigation in the memory manager [turn 52]",
+    "Ensured thread safety using `std::sync::Mutex` for the segregated free list allocator [turn 13, turn 52, turn 80, turn 103, turn 124]",
+    "Developed a workaround for SIMD type compatibility issues using an adapter layer/casting [turn 25, turn 38, turn 114, turn 141]",
+    "Identified walnuts and cashews as the specific allergens [turn 7, turn 128]"
+  ],
+  "blocker": [
+    "Slab resizing is currently a main blocker in the memory manager project [turn 90, turn 91, turn 130, turn 152]",
+    "Lock-free deallocation for the slab allocator is proving difficult [turn 14, turn 103]"
+  ],
+  "next_step": [
+    "Implement pre-allocation strategy for slab resizing [turn 152]",
+    "Refactor `PerceptionImage` struct with a factory pattern and custom error handling [turn 155, turn 156]",
+    "Clean up the SIMD adapter layer after the factory pattern refactor [turn 160]",
+    "Research buffer management plugins for Neovim [turn 33, turn 78, turn 98]",
+    "Confirm hotel booking near Zócalo and airport transfers [turn 35, turn 64, turn 94, turn 122, turn 143]",
+    "Practice Spanish phrases for food ordering and allergy communication [turn 157, turn 164]",
+    "Buy running shoes and an umbrella [turn 162]"
+  ],
+  "pitfall": [
+    "Avoid refined sugar due to pre-diabetes [turn 6, turn 84, turn 127]",
+    "Be cautious with tree nuts (walnuts/cashews) due to anaphylactic allergy [turn 7, turn 128]"
+  ]
+}

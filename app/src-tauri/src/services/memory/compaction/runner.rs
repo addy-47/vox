@@ -9,7 +9,7 @@ use tokio_util::sync::CancellationToken;
 use super::prompt::build_compaction_request;
 use crate::{
     services::{
-        harness::ChatMessage,
+        harness::{ChatMessage, Role},
         llm::{GenerationRequest, LlmProvider, LlmSettings, LlmStreamEvent},
         memory::COMPACTION_SENTINEL_TURN_ID,
     },
@@ -25,6 +25,102 @@ pub struct CompactionResult {
     pub raw_json: String,
     pub session_context: String,
     pub facts: Vec<(String, String)>,
+    /// Telemetry only. `personal` facts sharing no content word with any user turn
+    /// in the compacted slice. Flag-only: flagged facts are still enqueued exactly
+    /// as before. Absence of overlap proves nothing by itself for inferred facts
+    /// ("lives in Chicago" shares "chicago" with a weather question), so this is
+    /// a floor, not a verdict — but zero overlap is always worth a look.
+    pub attribution_flags: Vec<AttributionFlag>,
+    /// Telemetry only. How many `personal` facts carried a `[turn N]` citation vs
+    /// how many were emitted. Measures whether the citation instruction holds.
+    pub personal_cited: usize,
+    pub personal_total: usize,
+}
+
+/// One `personal` fact with no lexical grounding in the slice's user turns.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct AttributionFlag {
+    pub fact: String,
+    pub user_turns_checked: usize,
+}
+
+/// Strips a trailing `[turn N]` citation — the public alias used by the eval
+/// harness so both sides judge the stored (clean) form.
+pub fn strip_citation(text: &str) -> String {
+    strip_turn_citation(text).0
+}
+
+/// Strips a trailing `[turn N]` citation from a personal fact, returning the
+/// clean text and the cited turn number.
+///
+/// The citation is an eval-and-audit aid, never stored content: memory keeps the
+/// fact, telemetry keeps the citation. A fact with no citation keeps its text
+/// unchanged and reports `None` — flag-only, consistent with the attribution
+/// check. Enforcement (refusing uncited facts) is a later decision with eval
+/// evidence behind it.
+fn strip_turn_citation(text: &str) -> (String, Option<u32>) {
+    let trimmed = text.trim();
+    // Match a trailing "[turn N]" with flexible spacing and case.
+    if let Some(open) = trimmed.rfind('[') {
+        if trimmed.ends_with(']') {
+            let inner = trimmed[open + 1..trimmed.len() - 1].trim();
+            let lower = inner.to_lowercase();
+            if let Some(digits) = lower.strip_prefix("turn") {
+                let digits = digits.trim();
+                if !digits.is_empty() && digits.chars().all(|c| c.is_ascii_digit()) {
+                    if let Ok(n) = digits.parse::<u32>() {
+                        if n > 0 {
+                            return (trimmed[..open].trim_end().to_string(), Some(n));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    (trimmed.to_string(), None)
+}
+
+/// Collects lowercase alphanumeric tokens of length 4+, the working definition
+/// of a content word for the attribution check.
+fn content_words(text: &str) -> std::collections::HashSet<String> {
+    text.split_whitespace()
+        .map(|w| {
+            w.chars()
+                .filter(|c| c.is_alphanumeric())
+                .collect::<String>()
+                .to_lowercase()
+        })
+        .filter(|w| w.len() >= 4)
+        .collect()
+}
+
+/// Flags `personal` facts with no content-word overlap against the slice's user
+/// turns. Deterministic and conservative: it can only under-flag, never over-flag.
+fn check_personal_attribution(
+    personal_facts: &[String],
+    history_messages: &[ChatMessage],
+) -> Vec<AttributionFlag> {
+    let user_text: Vec<String> = history_messages
+        .iter()
+        .filter(|m| m.role == Role::User)
+        .map(|m| m.content.clone())
+        .collect();
+    let user_words: std::collections::HashSet<String> = user_text
+        .iter()
+        .flat_map(|t| content_words(t))
+        .collect();
+
+    personal_facts
+        .iter()
+        .filter(|fact| {
+            let words = content_words(fact);
+            !words.is_empty() && words.is_disjoint(&user_words)
+        })
+        .map(|fact| AttributionFlag {
+            fact: fact.clone(),
+            user_turns_checked: user_text.len(),
+        })
+        .collect()
 }
 
 /// Dispatches a single compaction generation request to the provider and collects streamed tokens asynchronously.
@@ -181,8 +277,17 @@ pub async fn run_compaction(
     };
 
     let mut facts = Vec::new();
-    for item in payload.personal {
-        facts.push(("personal".to_string(), item));
+    let mut personal_texts = Vec::new();
+    let mut personal_cited = 0usize;
+    for item in &payload.personal {
+        // Strip the audit citation before anything is stored: memory keeps the
+        // fact, telemetry keeps the count. Uncited facts are kept (flag-only).
+        let (clean, cited) = strip_turn_citation(item);
+        if cited.is_some() {
+            personal_cited += 1;
+        }
+        facts.push(("personal".to_string(), clean.clone()));
+        personal_texts.push(clean);
     }
     for item in payload.objective {
         facts.push(("objective".to_string(), item));
@@ -204,5 +309,8 @@ pub async fn run_compaction(
         raw_json: summary_content,
         session_context: final_context,
         facts,
+        attribution_flags: check_personal_attribution(&personal_texts, history_messages),
+        personal_cited,
+        personal_total: personal_texts.len(),
     })
 }

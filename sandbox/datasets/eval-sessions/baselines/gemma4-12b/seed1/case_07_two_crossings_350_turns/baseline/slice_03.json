@@ -1,0 +1,31 @@
+{
+  "personal": [
+    "Working on a Rust memory management project",
+    "Uses Neovim for coding",
+    "Runs Pop!_OS",
+    "Has a perception software project involving image processing",
+    "Looking forward to Mexico City trip"
+  ],
+  "objective": [
+    "Make bump allocator more robust",
+    "Integrate SIMD instructions into image processing for perception software",
+    "Write integration tests for the segregated free list in Rust project",
+    "Read about terraforming/space exploration before bed"
+  ],
+  "workdone": [
+    "Identified 'Quisiera pedir' as the phrase for ordering food [turn 7]",
+    "Confirmed Doughvid's feeding schedule is tomorrow morning [turn 11]",
+    "Obtained weather forecast (clear and mild, ~68 degrees) [turn 9]"
+  ],
+  "blocker": [],
+  "next_step": [
+    "Check `image` crate documentation [turn 4]",
+    "Write integration tests for segregated free list after lunch [turn 8]",
+    "Play guitar on the balcony this evening [turn 10]",
+    "Read about terraforming/space exploration before bed [turn 13, turn 14]"
+  ],
+  "pitfall": [
+    "Avoid refined sugar due to pre-diabetes",
+    "Avoid nuts due to allergy"
+  ]
+}

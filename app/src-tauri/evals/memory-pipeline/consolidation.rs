@@ -1,291 +1,467 @@
 //! ============================================================================
-//! evals/common/consolidation_eval.rs — Consolidation Stage Runner & Judge Evaluator
+//! evals/memory-pipeline/consolidation.rs — Consolidation Pass & Consolidation Judge
 //! ============================================================================
 
 use std::path::Path;
 
 use anyhow::{anyhow, Result};
 use vox_lib::{
-    config::PersonalMemorySettings,
+    config::settings::PersonalMemorySettings,
     persistence::{
-        facts::fetch_active_observations_by_type,
-        personal_memory::{fetch_pending_revisions, get_personal_memory},
+        facts::{fetch_active_observations_by_type, ObservationRecord},
+        personal_memory::get_personal_memory,
     },
-    services::memory::personal::{
-        consolidate_personal_memory, ConsolidateOutcome, ConsolidationRequest, PersonalMemory,
+    services::memory::{
+        personal::{ConsolidationRequest, ConsolidationTelemetry, PersonalMemory},
     },
 };
 
 use crate::common::{
     db::EvalDbGuard,
-    llm_client::{NvidiaJudgeClient, RecordingLlmProvider},
-    reporting::write_markdown_report,
+    llm_client::{JudgeClient, RecordingLlmProvider},
+    verdicts::{
+        count_consolidation, parse_verdict, ConsolidationCounts, ConsolidationVerdict, JudgeStatus,
+    },
 };
 
-/// Summary metrics resulting from a consolidation evaluation pass.
+/// Per-case consolidation outcome.
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct ConsolidationEvalSummary {
     pub mode: String,
     pub prior_version: i64,
     pub new_version: i64,
-    pub active_observations_count: usize,
     pub sections_count: usize,
     pub blocks_count: usize,
-    pub report_path: std::path::PathBuf,
+    pub judge_parsed: bool,
+    pub counts: ConsolidationCounts,
 }
 
-/// Executes consolidation with auto_apply, logs raw traces, and invokes the LLM Judge.
+/// A block as the judge sees it: persistent ID plus text, so a deletion can be
+/// joined back to the resulting state.
+#[derive(Debug, Clone)]
+struct JudgeBlock {
+    block_id: String,
+    section_title: String,
+    text: String,
+}
+
+fn collect_blocks(memory: &PersonalMemory) -> Vec<JudgeBlock> {
+    memory
+        .sections
+        .iter()
+        .flat_map(|s| {
+            s.blocks
+                .iter()
+                .map(move |b| JudgeBlock {
+                    block_id: b.id.clone(),
+                    section_title: s.title.clone(),
+                    text: b.text.clone(),
+                })
+        })
+        .collect()
+}
+
+fn render_blocks(blocks: &[JudgeBlock]) -> String {
+    if blocks.is_empty() {
+        return "  (memory is empty)".to_string();
+    }
+    blocks
+        .iter()
+        .map(|b| format!("  {}  [{}]  {}\n", b.block_id, b.section_title, b.text))
+        .collect()
+}
+
+fn render_observations(observations: &[ObservationRecord]) -> String {
+    if observations.is_empty() {
+        return "  (no active personal observations)".to_string();
+    }
+    observations
+        .iter()
+        .map(|o| format!("  {}  {}\n", o.id, o.text))
+        .collect()
+}
+
+/// Runs one consolidation pass and judges the operations it produced.
+///
+/// The judge receives the observations it was given, the handle view the model
+/// saw, the operations it emitted, the operations as resolved onto persistent
+/// IDs together with every refusal and its reason, and the resulting memory with
+/// its block IDs. That is enough to audit a `delete` end to end, which the
+/// previous harness could not do.
 pub async fn evaluate_consolidation_stage(
     eval_db: &EvalDbGuard,
     case_id: &str,
     provider: &RecordingLlmProvider,
-    judge: &NvidiaJudgeClient,
+    judge: &JudgeClient,
     case_dir: &Path,
+    llm_settings: &vox_lib::services::llm::LlmSettings,
 ) -> Result<ConsolidationEvalSummary> {
     provider.set_context(case_id, "consolidation");
     let conn = eval_db.conn()?;
 
-    // 1. Fetch active observations
-    let candidate_observations = fetch_active_observations_by_type(&conn, "personal")
+    let candidates = fetch_active_observations_by_type(&conn, "personal")
         .await
         .map_err(|e| anyhow!("Failed to fetch candidate personal observations: {}", e))?;
 
-    // 2. Fetch current personal memory prior to consolidation
     let prior_record = get_personal_memory(&conn, None)
         .await
         .map_err(|e| anyhow!("Failed to get personal memory record: {}", e))?;
-
     let prior_model = PersonalMemory::from_json(&prior_record.content).unwrap_or_default();
-    let prior_sections_count = prior_model.sections.len();
-    let prior_markdown = prior_model.render_to_markdown();
+    let prior_blocks = collect_blocks(&prior_model);
+    let prior_sections: Vec<String> = prior_model.sections.iter().map(|s| s.id.clone()).collect();
 
-    let mode = if prior_sections_count == 0 {
-        "Cold Generation (Synthesizing new v1 personal memory)".to_string()
+    let mode = if prior_sections.is_empty() {
+        "cold generation".to_string()
     } else {
-        format!(
-            "Incremental Delta (Integrating into existing v{} with {} sections)",
-            prior_record.version, prior_sections_count
-        )
+        "incremental delta".to_string()
     };
 
-    // 3. Configure auto_apply memory settings
+    // The eval runs auto_apply so a harmful delete actually reaches the committed
+    // state and can be measured. Production defaults to manual_review, which
+    // stages the same delete instead. Recorded in the run manifest.
     let memory_settings = PersonalMemorySettings {
         suggestion_policy: "auto_apply".to_string(),
         ..Default::default()
     };
 
-    // 4. Execute consolidation pass
     let request = ConsolidationRequest {
         conn: &conn,
         llm_provider: provider,
         comments: None,
         project_id: None,
         memory_settings: &memory_settings,
-        llm_settings: None,
+        llm_settings: Some(llm_settings),
         forced: true,
     };
 
-    let outcome: ConsolidateOutcome = consolidate_personal_memory(request)
-        .await
-        .map_err(|e| anyhow!("Personal memory consolidation failed: {}", e))?;
+    let (outcome, telemetry) =
+        vox_lib::services::memory::personal::consolidate_personal_memory_with_telemetry(request)
+            .await
+            .map_err(|e| anyhow!("Personal memory consolidation failed: {}", e))?;
 
-    // 5. Fetch updated personal memory record
     let post_record = get_personal_memory(&conn, None)
         .await
         .map_err(|e| anyhow!("Failed to fetch post-consolidation memory: {}", e))?;
-
-    let prior_model = PersonalMemory::from_json(&prior_record.content).unwrap_or_default();
     let post_model = PersonalMemory::from_json(&post_record.content).unwrap_or_default();
-    let post_sections_count = post_model.sections.len();
-    let post_blocks_count: usize = post_model.sections.iter().map(|s| s.blocks.len()).sum();
-    let post_markdown = post_model.render_to_markdown();
+    let post_blocks = collect_blocks(&post_model);
+    let post_sections: Vec<String> = post_model.sections.iter().map(|s| s.id.clone()).collect();
 
-    // Compute block diff between prior and post models
-    let mut deleted_blocks = Vec::new();
-    for p_sec in &prior_model.sections {
-        for p_blk in &p_sec.blocks {
-            let still_exists = post_model
-                .sections
-                .iter()
-                .any(|s| s.blocks.iter().any(|b| b.id == p_blk.id));
-            if !still_exists {
-                deleted_blocks.push(format!(
-                    "- [Block {} | Section '{}'] {}",
-                    p_blk.id, p_sec.title, p_blk.text
-                ));
+    // Section net loss is computed here, from the ID sets. The judge is not
+    // consulted: a section legitimately disappears when its last block is deleted
+    // and a replacement is created, so only net loss is meaningful.
+    let lost_sections: Vec<&String> = prior_sections
+        .iter()
+        .filter(|id| !post_sections.contains(id))
+        .collect();
+
+    let is_cold_generation = telemetry.pass_name == "cold generation";
+
+    // Which blocks this pass created or rewrote. Grounding is scoped to these:
+    // a block inherited untouched from a prior pass is reported separately, never
+    // charged to this pass as a fresh hallucination.
+    let prior_ids: std::collections::HashSet<&str> =
+        prior_blocks.iter().map(|b| b.block_id.as_str()).collect();
+    let touched_ids: std::collections::HashSet<String> = {
+        let mut set: std::collections::HashSet<String> = post_blocks
+            .iter()
+            .filter(|b| !prior_ids.contains(b.block_id.as_str()))
+            .map(|b| b.block_id.clone())
+            .collect();
+        for op in &telemetry.resolved_ops {
+            match op {
+                vox_lib::services::memory::personal::ResolvedOp::UpdateBlock { block_id, .. } => {
+                    set.insert(block_id.clone());
+                }
+                vox_lib::services::memory::personal::ResolvedOp::DeleteBlock { block_id, .. } => {
+                    set.insert(block_id.clone());
+                }
+                _ => {}
             }
         }
-    }
-    let deletions_count = deleted_blocks.len();
-    let deletions_rendered = if deleted_blocks.is_empty() {
-        "None (0 blocks deleted)".to_string()
-    } else {
-        deleted_blocks.join("\n")
+        set
     };
 
-    let pending_revisions = fetch_pending_revisions(&conn, None)
-        .await
-        .unwrap_or_default();
-
-    // 6. Build Consolidation Judge Prompt
-    let mut obs_rendered = String::new();
-    for (idx, obs) in candidate_observations.iter().enumerate() {
-        obs_rendered.push_str(&format!(
-            "- [O{} | Fact {}] {}\n",
-            idx + 1,
-            obs.id,
-            obs.text
-        ));
-    }
-    if obs_rendered.is_empty() {
-        obs_rendered = "None (no active observations)".to_string();
-    }
-
-    let prior_md_rendered = if prior_markdown.trim().is_empty() {
-        "*(Empty - initial clean state)*".to_string()
-    } else {
-        prior_markdown
-    };
-
-    let post_md_rendered = if post_markdown.trim().is_empty() {
-        "*(Empty)*".to_string()
-    } else {
-        post_markdown
-    };
-
-    let outcome_details = match &outcome {
-        ConsolidateOutcome::Completed { record } => {
-            format!("Completed with memory version v{}", record.version)
+    let verdict: JudgeStatus<ConsolidationVerdict> = if candidates.is_empty() {
+        JudgeStatus::Invalid {
+            reason: "No active personal observations were supplied, so the pass had \
+                     nothing to integrate. An empty input proves nothing about \
+                     consolidation accuracy."
+                .to_string(),
         }
-        ConsolidateOutcome::ConfirmationRequired {
-            reason,
-            pending_count,
-        } => {
-            format!(
-                "Confirmation required: {:?} (pending: {})",
-                reason, pending_count
-            )
+    } else if is_cold_generation {
+        let prompt = build_cold_gen_prompt(case_id, &candidates, &post_blocks);
+        let raw = judge.evaluate_with_trace(&prompt, case_dir, "consolidation").await?;
+        parse_verdict::<ConsolidationVerdict>(&raw)
+    } else if telemetry.handle_view.is_none() && telemetry.model_output.is_none() {
+        JudgeStatus::Invalid {
+            reason: format!(
+                "Incremental pass produced no operations to audit (outcome: {:?}).",
+                outcome
+            ),
         }
+    } else {
+        let prompt = build_judge_prompt(
+            case_id,
+            &mode,
+            &candidates,
+            &prior_blocks,
+            &telemetry,
+            &post_blocks,
+            &touched_ids,
+        );
+        let raw = judge.evaluate_with_trace(&prompt, case_dir, "consolidation").await?;
+        parse_verdict::<ConsolidationVerdict>(&raw)
     };
 
-    let judge_prompt = format!(
-        r#"You are the Vox Senior Personal Memory Consolidation Judge.
-Analyze the following personal memory consolidation pass:
+    let counts = match &verdict {
+        JudgeStatus::Parsed(v) => count_consolidation(v),
+        JudgeStatus::Invalid { .. } => ConsolidationCounts::default(),
+    };
 
-<consolidation_mode>
-{}
-</consolidation_mode>
-
-<prior_personal_memory>
-{}
-</prior_personal_memory>
-
-<input_candidate_observations>
-{}
-</input_candidate_observations>
-*(Note: Personal memory consolidates facts strictly scoped to the 'personal' domain. These are the active personal facts from the database.)*
-
-<consolidation_outcome>
-{} | Pending Revisions In DB: {}
-</consolidation_outcome>
-
-<memory_structural_changes>
-- Prior Memory: v{} ({} sections, {} blocks)
-- Resulting Memory: v{} ({} sections, {} blocks)
-- Blocks Deleted from Prior Memory (N={}):
-{}
-</memory_structural_changes>
-
-<resulting_personal_memory>
-{}
-</resulting_personal_memory>
-
-Produce a comprehensive evaluation report in clean Markdown format with the following exact sections:
-
-# Consolidation Evaluation Report — {}
-
-## 1. Executive Scorecard
-*(Note: Every percentage score MUST explicitly state its formula with exact counts: `X / Y = Z%`)*
-- **Observation Coverage / Retention**: [X / Y = Z%] (Denominator Y = {} candidate observations. X = count of candidates demonstrably represented in resulting memory blocks. If any candidate observation is listed under 'Dropped observations' below, X MUST BE STRICTLY LESS THAN Y. Never report 100% when observations are dropped.)
-- **Deletions Audited**: [N = {}] (Count of deleted blocks. Must state whether each deletion was justified by an invalidating observation or was an unjustified deletion).
-- **Ungrounded Hallucinations / Extrapolations**: [None / Count with severity]
-- **Taxonomy & Domain Structure Quality**: [1-10]
-- **Prose Coherence & Block Fidelity**: [1-10] (Penalize heavily if ungrounded rationales are invented)
-- **Delta Operation Fidelity**: [X / Y = Z%] (or N/A for cold start)
-- **Temporal Consistency**: [High / Medium / Low]
-
-## 2. Provenance & Hallucination Audit (CRITICAL)
-Inspect every sentence in `<resulting_personal_memory>` against `<input_candidate_observations>`:
-- **Zero Extrapolation Check**: Does the memory introduce any technical motivations, architectural rationale, or philosophical goals absent from the input facts?
-  *(CRITICAL: Stating that a project 'reflects a focus on robust architecture where control over resource lifetimes is paramount' when input facts only stated 'working on Rust ownership logic' is a CRITICAL HALLUCINATION. Do NOT praise extrapolation as 'a layer of interpretation' or 'insight'. Penalize it as an ungrounded hallucination).*
-- **Provenance Breakdown**: Map each emitted memory block to the specific input candidate observations that ground it. Quote any fabricated or extrapolated phrases.
-
-## 3. Semantic Loss & Omission Audit
-Inspect every input candidate observation:
-- List which observations were successfully incorporated into the memory model.
-- Explicitly list any **dropped observations** (observations left unrepresented in the memory).
-
-## 4. Taxonomy & Section Emergence Assessment
-- Audit the section titles (e.g. `Career`, `About Them`, `Habits & Routine`, `Interests`, `Plans`, `Health`).
-- Penalize generic dump buckets (like `General`, `User Info`, `Notes`, `Miscellaneous`).
-- Evaluate whether related blocks are clustered logically under umbrellas.
-
-## 5. Prose Coherence & Block Quality
-- Audit the prose quality of each block. Blocks should be coherent 1-3 sentence statements providing clear context rather than fragmented bullet scraps.
-- Highlight any awkward phrasing, truncated statements, or low-information content.
-
-## 6. Delta Operation & Preservation Audit
-(If cold generation, assess structure generation; if incremental delta, assess delta operations):
-- Verify whether operations appropriately selected `add` for existing umbrella sections, `new` for novel umbrellas, `update` for evolving facts, and `delete` ONLY when an observation directly invalidated an older statement.
-- Deletions count: N = {}. Check whether stable existing knowledge was preserved or unnecessarily deleted/rewritten.
-
-## 7. Contradiction & Temporal Resolution
-- Check if updated facts superseded older ones cleanly, or if contradictory information is present in the final memory.
-
-## 8. Actionable Architectural Feedback
-Provide 2-3 specific improvements for consolidation prompts or schema rules.
-"#,
-        mode,
-        prior_md_rendered,
-        obs_rendered,
-        outcome_details,
-        pending_revisions.len(),
-        prior_record.version,
-        prior_model.sections.len(),
-        prior_model
-            .sections
-            .iter()
-            .map(|s| s.blocks.len())
-            .sum::<usize>(),
-        post_record.version,
-        post_sections_count,
-        post_blocks_count,
-        deletions_count,
-        deletions_rendered,
-        post_md_rendered,
-        case_id,
-        candidate_observations.len(),
-        deletions_count,
-        deletions_count
-    );
-
-    // 7. Run Judge evaluation via NVIDIA NIM Judge
-    let judge_report = judge
-        .evaluate_with_trace(&judge_prompt, case_dir, "consolidation")
-        .await
-        .map_err(|e| anyhow!("Consolidation Judge evaluation failed: {}", e))?;
-
-    // 8. Write Markdown report
-    let report_path = write_markdown_report(case_dir, "consolidation.md", &judge_report)?;
+    let payload = serde_json::json!({
+        "status": match &verdict {
+            JudgeStatus::Parsed(_) => "parsed",
+            JudgeStatus::Invalid { .. } => "invalid",
+        },
+        "mode": mode,
+        "suggestion_policy": "auto_apply",
+        "suggestion_policy_is_production_default": false,
+        "prior_version": prior_record.version,
+        "new_version": post_record.version,
+        "prior_section_ids": prior_sections,
+        "post_section_ids": post_sections,
+        "sections_lost": lost_sections,
+        "telemetry": telemetry,
+        "verdict": match &verdict {
+            JudgeStatus::Parsed(v) => serde_json::to_value(v)?,
+            JudgeStatus::Invalid { reason } => serde_json::json!({ "reason": reason }),
+        },
+        "counts": counts,
+    });
+    std::fs::write(
+        case_dir.join("consolidation_verdict.json"),
+        serde_json::to_string_pretty(&payload)?,
+    )
+    .map_err(|e| anyhow!("Failed to write consolidation verdict: {}", e))?;
 
     Ok(ConsolidationEvalSummary {
         mode,
         prior_version: prior_record.version,
         new_version: post_record.version,
-        active_observations_count: candidate_observations.len(),
-        sections_count: post_sections_count,
-        blocks_count: post_blocks_count,
-        report_path,
+        sections_count: post_model.sections.len(),
+        blocks_count: post_blocks.len(),
+        judge_parsed: !verdict.is_invalid(),
+        counts,
     })
+}
+
+fn build_cold_gen_prompt(
+    case_id: &str,
+    observations: &[ObservationRecord],
+    post_blocks: &[JudgeBlock],
+) -> String {
+    format!(
+        r#"You are auditing a cold-generation pass of the Vox personal-memory pipeline.
+The pass received a numbered list of observations and produced a complete memory
+from nothing. There are no prior blocks and no edit operations to review.
+
+<case>{}</case>
+
+<observations_supplied>
+Every observation the pass was given. Each must end up represented in the
+resulting memory, exactly once.
+{}
+</observations_supplied>
+
+<memory_produced>
+The committed result. Every block carries its ID.
+{}
+</memory_produced>
+
+Produce two things.
+
+1. COVERAGE. For every observation in <observations_supplied>, decide whether the
+   resulting memory represents it. Use "represented": true only when you can point
+   at a block in <memory_produced> that carries that observation's content.
+   Observations saying the same thing should share one block; none may be dropped.
+
+2. GROUNDING. List any phrase in <memory_produced> that no observation supports:
+   invented attributes, inferred relationships, proximity claims ("near", "close
+   to"), or completion status nobody established. Stating more than the
+   observations is worse than stating less.
+
+Return ONLY this JSON object, with no text before or after it:
+
+{{
+  "observations": [
+    {{"obs_id": "...", "represented": true, "block_id": "...", "reason": "why"}}
+  ],
+  "deletes": [],
+  "updates": [],
+  "hallucinations": [
+    {{"block_id": "...", "phrase": "invented text", "ungrounded": true, "reason": "why"}}
+  ],
+  "summary": "one paragraph"
+}}
+
+Rules:
+- "observations" must contain one entry for every observation supplied, using its
+  exact id. "block_id" is null when represented is false.
+- "deletes" and "updates" stay empty: cold generation emits no operations.
+"#,
+        case_id,
+        render_observations(observations),
+        render_blocks(post_blocks),
+    )
+}
+
+fn build_judge_prompt(
+    case_id: &str,
+    mode: &str,
+    observations: &[ObservationRecord],
+    prior_blocks: &[JudgeBlock],
+    telemetry: &ConsolidationTelemetry,
+    post_blocks: &[JudgeBlock],
+    touched_ids: &std::collections::HashSet<String>,
+) -> String {
+    let ops = telemetry
+        .model_output
+        .as_ref()
+        .map(|o| serde_json::to_string_pretty(o).unwrap_or_default())
+        .unwrap_or_else(|| "(no operations emitted)".to_string());
+
+    let resolved = serde_json::to_string_pretty(&telemetry.resolved_ops).unwrap_or_default();
+    let resolve_rejections =
+        serde_json::to_string_pretty(&telemetry.resolve_rejections).unwrap_or_default();
+    let apply_rejections =
+        serde_json::to_string_pretty(&telemetry.apply_rejections).unwrap_or_default();
+
+    let touched_list = if touched_ids.is_empty() {
+        "(no block was created or rewritten by this pass)".to_string()
+    } else {
+        let mut ids: Vec<&String> = touched_ids.iter().collect();
+        ids.sort();
+        ids.iter().map(|id| format!("  {}\n", id)).collect()
+    };
+
+    format!(
+        r#"You are auditing one personal-memory consolidation pass of the Vox pipeline.
+
+<case>{}</case>
+<mode>{}</mode>
+<suggestion_policy>auto_apply (deletions were committed, not staged)</suggestion_policy>
+
+<observations_supplied>
+Every observation the pass was given. Each must end up represented in the
+resulting memory.
+{}
+</observations_supplied>
+
+<memory_before>
+The memory the model was shown, as handle-labelled blocks.
+{}
+</memory_before>
+
+<memory_view_shown_to_model>
+{}
+</memory_view_shown_to_model>
+
+<model_operations_emitted>
+Exactly what the model returned, before handle resolution.
+{}
+</model_operations_emitted>
+
+<operations_resolved>
+The same operations mapped onto persistent IDs.
+{}
+</operations_resolved>
+
+<operations_refused_at_resolution>
+{}
+</operations_refused_at_resolution>
+
+<operations_refused_at_apply>
+{}
+</operations_refused_at_apply>
+
+<memory_after>
+The committed result. Every block carries its ID.
+{}
+</memory_after>
+
+<blocks_this_pass_created_or_rewrote>
+Only these blocks may be charged to this pass for grounding. Every other block
+is inherited untouched: report it under inherited_concerns, never as a fresh
+hallucination of this pass.
+{}
+</blocks_this_pass_created_or_rewrote>
+
+Produce four things.
+
+1. COVERAGE. For every observation in <observations_supplied>, decide whether
+   <memory_after> represents it. "Represented" means the content is present in
+   <memory_after>, full stop. It does NOT matter which pass created the block,
+   whether this pass touched it, or whether it already existed: presence is
+   presence. Set "represented": true whenever you can point at a block in
+   <memory_after> that carries the observation's content, and name that block.
+
+2. DELETIONS. For every `delete` operation, decide whether it was justified. A
+   delete is justified ONLY when an observation states the deleted block is no
+   longer true. Anything else is unjustified: unrelated subject, better expressed as
+   an update, or no invalidating observation at all. Set "invalidating_obs" to the
+   observation id only when one genuinely invalidates it, otherwise null.
+
+3. UPDATES. For every `update`, decide whether the replacement kept the subject
+   of the block it replaced.
+
+4. GROUNDING, scoped to this pass. List phrases in blocks from
+   <blocks_this_pass_created_or_rewrote> that no observation supports: invented
+   attributes, inferred relationships, proximity claims, or completion status
+   nobody established. Then, separately, list any inherited block (not in that
+   list) whose content no supplied observation supports, under
+   "inherited_concerns". Inherited concerns are reported, never counted as this
+   pass's hallucinations.
+
+Return ONLY this JSON object, with no text before or after it:
+
+{{
+  "observations": [
+    {{"obs_id": "...", "represented": true, "block_id": "...", "reason": "why"}}
+  ],
+  "deletes": [
+    {{"block_id": "...", "justified": false, "invalidating_obs": null, "reason": "why"}}
+  ],
+  "updates": [
+    {{"block_id": "...", "kept_subject": true, "reason": "why"}}
+  ],
+  "hallucinations": [
+    {{"block_id": "...", "phrase": "invented text", "ungrounded": true, "reason": "why"}}
+  ],
+  "inherited_concerns": [
+    {{"block_id": "...", "phrase": "inherited text", "reason": "why this predates the pass"}}
+  ],
+  "summary": "one paragraph"
+}}
+
+Rules:
+- "observations" must contain one entry for every observation supplied, using its
+  exact id. "block_id" is null when represented is false.
+- "deletes" must contain one entry for every delete operation resolved. Use the
+  persistent block ID from <operations_resolved>, not the handle.
+- Blocks created by a `new` operation have no prior text and need no delete entry.
+- Do not reward invented detail. A block that says more than its observation is
+  worse than a block that says less.
+"#,
+        case_id,
+        mode,
+        render_observations(observations),
+        render_blocks(prior_blocks),
+        telemetry.handle_view.as_deref().unwrap_or("(not shown)"),
+        ops,
+        resolved,
+        resolve_rejections,
+        apply_rejections,
+        render_blocks(post_blocks),
+        touched_list,
+    )
 }

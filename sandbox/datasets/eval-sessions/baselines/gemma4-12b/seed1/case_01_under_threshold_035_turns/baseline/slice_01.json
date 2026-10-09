@@ -1,0 +1,30 @@
+{
+  "personal": [
+    "Adds walnuts to sourdough bread [turn 6, turn 33]",
+    "Plans to make rolls instead of a loaf next week",
+    "Looking for hard sci-fi books for the weekend",
+    "Studying Spanish",
+    "Wants to find parks in Chicago tomorrow",
+    "Learning Japanese with a goal of practicing a little bit every day [turn 16, turn 17]",
+    "Has a reminder for Japanese at 9 PM"
+  ],
+  "objective": [
+    "Practice basic Japanese greetings",
+    "Work on the memory management module in a Rust project",
+    "Review reading list for hard sci-fi books"
+  ],
+  "workdone": [
+    "Nailed ownership logic in Rust [turn 2]",
+    "Fixed lifetime issue in the memory management module [turn 26]",
+    "Learned Spanish phrase for baking bread [turn 11, turn 12]",
+    "Set Japanese study reminder at 9 PM [turn 18]"
+  ],
+  "blocker": [
+    "Waiting for yeast to activate for the rolls [turn 31]"
+  ],
+  "next_step": [
+    "Check out suggested parks in Chicago later [turn 15]",
+    "Review reading list for hard sci-fi books [turn 35]"
+  ],
+  "pitfall": []
+}

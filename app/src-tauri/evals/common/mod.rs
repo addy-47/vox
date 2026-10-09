@@ -19,4 +19,6 @@ pub mod keys;
 pub mod llm_client;
 pub mod metrics;
 pub mod reporting;
+pub mod slices;
 pub mod stage_dump;
+pub mod verdicts;

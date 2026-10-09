@@ -1,0 +1,45 @@
+{
+  "personal": [
+    "User is working on a Rust memory manager project involving slab allocator and buddy allocator [turn 3, turn 18, turn 35, turn 108]",
+    "User is working on a perception software project involving `PerceptionImage` refactoring and SIMD optimizations [turn 10, turn 26, turn 39, turn 49, turn 72, turn 93, turn 129, turn 143, turn 145]",
+    "User has pre-diabetes and focuses on low-sugar meals/snacks [turn 1, turn 2, turn 22, turn 105, turn 106]",
+    "User has a severe tree nut allergy (walnuts/cashews) that can cause anaphylaxis [turn 2, turn 42, turn 79, turn 91, turn 139]",
+    "User is planning a trip to Mexico City and practicing Spanish for it [turn 8, turn 23, turn 41, turn 43, turn 54, turn 55, turn 77, turn 110, turn 112, turn 114, turn 132, turn 138]",
+    "User has a pet named Doughvid (sourdough starter) [turn 13, turn 20, turn 22, turn 47, turn 70, turn 86, turn 141]",
+    "User is reading Kim Stanley Robinson's 'Red Mars' [turn 13, turn 14, turn 67, turn 68, turn 96, turn 97, turn 118, turn 151, turn 152]",
+    "User wants to optimize Neovim configuration for buffer management and Telescope [turn 60, turn 74, turn 75, turn 98, turn 115, turn 149]",
+    "User has a cat named Pixel [turn 100, turn 122]",
+    "User is practicing 'Blackbird' on the guitar (fingerstyle) [turn 15, turn 16, turn 29, turn 101, turn 124]",
+    "User wants to buy running shoes and an umbrella [turn 7, turn 30, turn 46, turn 59, turn 85, turn 102, turn 120, turn 121, turn 133, turn 135]",
+    "User is interested in orbital mechanics (Hohmann transfers) [turn 38, turn 119, turn 150]",
+    "User eats Greek yogurt with berries as a go-to snack"
+  ],
+  "objective": [
+    "Implement lock-free deallocation for the slab allocator",
+    "Develop a buddy allocator for the segregated free list",
+    "Refactor `PerceptionImage` using factory patterns and custom error handling",
+    "Optimize Neovim buffer management/Telescope configuration",
+    "Prepare for Mexico City trip (Spanish practice, hotel/transfer confirmation)"
+  ],
+  "workdone": [
+    "Implemented mutex-protected deallocation for the slab allocator [turn 126]",
+    "Fixed race condition in slab allocator with an extra atomic check [turn 109]",
+    "Defined a `PerceptionError` enum and integrated it into the perception module [turn 72, turn 94, turn 146]",
+    "Progressed on factory pattern for `PerceptionImage` [turn 26, turn 145]",
+    "Confirmed hotel reservation near Zócalo [turn 138]"
+  ],
+  "blocker": [
+    "Bug in slab allocator deallocation related to block splitting and pointer integrity [turn 153]",
+    "Finalize airport transfer details for Mexico City trip [turn 132, turn 138]",
+    "Practice more Spanish allergy phrases naturally [turn 139]"
+  ],
+  "next_step": [
+    "Buy running shoes and an umbrella this weekend [turn 121, turn 133]",
+    "Finalize airport transfer details for Mexico City trip [turn 132]",
+    "Refine Telescope configuration (fuzzy finding) [turn 98, turn 115]"
+  ],
+  "pitfall": [
+    "Avoid refined sugar due to pre-diabetes [turn 1, turn 2, turn 105]",
+    "Severe tree nut allergy (walnuts/cashews) - risk of anaphylaxis [turn 2, turn 42, turn 79, turn 139]"
+  ]
+}

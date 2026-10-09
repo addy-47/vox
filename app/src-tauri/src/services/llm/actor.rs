@@ -35,6 +35,7 @@ pub struct GenerationDefaults {
     pub max_output_tokens: u32,
     pub output: OutputConstraint,
     pub reasoning: ReasoningMode,
+    pub seed: Option<u64>,
 }
 
 /// Generation policy engine translating user/system settings into generation requests.
@@ -78,12 +79,14 @@ impl GenerationPolicy {
                 max_output_tokens: settings.max_output_tokens,
                 output: OutputConstraint::Text,
                 reasoning,
+                seed: settings.seed,
             },
             compaction: GenerationDefaults {
                 temperature: settings.compaction_temperature,
                 max_output_tokens: compaction_tokens,
                 output: OutputConstraint::JsonObject,
                 reasoning,
+                seed: settings.seed,
             },
         }
     }
@@ -107,6 +110,7 @@ impl GenerationPolicy {
                 temperature: Some(defaults.temperature),
                 max_output_tokens: Some(defaults.max_output_tokens),
                 reasoning: defaults.reasoning,
+                seed: defaults.seed,
                 ..Default::default()
             },
             output: defaults.output.clone(),

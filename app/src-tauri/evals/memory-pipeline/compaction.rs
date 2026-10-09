@@ -1,5 +1,5 @@
 //! ============================================================================
-//! evals/common/compaction_eval.rs — Compaction Stage Runner & Judge Evaluator
+//! evals/memory-pipeline/compaction.rs — Slice Planner, Runtime Pass, Compaction Judge
 //! ============================================================================
 
 use std::path::Path;
@@ -7,179 +7,296 @@ use std::path::Path;
 use anyhow::{anyhow, Result};
 use vox_lib::{
     persistence::compactions::{commit_compaction_output, record_compaction_start},
-    services::{
-        harness::{ChatMessage, Role},
-        memory::compaction::run_compaction,
-    },
+    services::{llm::LlmSettings, memory::compaction::run_compaction},
 };
 
 use crate::common::{
-    datasets::SessionTurn,
     db::EvalDbGuard,
-    llm_client::{NvidiaJudgeClient, RecordingLlmProvider},
-    reporting::write_markdown_report,
+    llm_client::{JudgeClient, RecordingLlmProvider},
+    slices::{dump_slices, plan_slices, slice_to_chat_messages, CompactionSlice},
+    verdicts::{flatten_compaction, parse_verdict, CompactionVerdict, JudgeStatus},
 };
 
-/// Summary metrics resulting from a single session compaction evaluation.
-#[derive(Debug, Clone)]
-#[allow(dead_code)]
-pub struct CompactionEvalSummary {
-    pub session_id: i64,
-    pub facts_extracted: usize,
-    pub session_context_len: usize,
-    pub report_path: std::path::PathBuf,
+/// Plans slice boundaries for a case and writes them to disk. Makes no LLM calls.
+pub fn dump_case_slices(
+    turns: &[crate::common::datasets::SessionTurn],
+    case_dir: &Path,
+) -> Result<usize> {
+    let slices = plan_slices(turns);
+    dump_slices(&slices, case_dir).map_err(|e| anyhow!("Failed to write slices: {}", e))?;
+    Ok(slices.len())
 }
 
-/// Runs compaction and commits output to the database without invoking the LLM Judge.
-pub async fn run_compaction_and_persist(
+/// Per-case telemetry surfaced for the run summary alongside judge verdicts.
+#[derive(Debug, Clone, Default)]
+pub struct SliceTelemetry {
+    pub attribution_flags: usize,
+    pub personal_cited: usize,
+    pub personal_total: usize,
+}
+
+/// Runs every planned slice against the pipeline provider, persisting each into the
+/// shared database, and chaining each slice's session context into the next.
+///
+/// Each slice's runtime document is also written to `case_dir/runtime/slice_NN.json`
+/// so fact counts never depend on whether the judge parsed its verdict.
+pub async fn run_slices_and_persist(
     eval_db: &EvalDbGuard,
     session_id: i64,
     case_id: &str,
-    turns: &[SessionTurn],
+    slices: &[CompactionSlice],
     provider: &RecordingLlmProvider,
-) -> Result<vox_lib::services::memory::compaction::CompactionResult> {
+    case_dir: &Path,
+    llm_settings: &LlmSettings,
+) -> Result<(Vec<(serde_json::Value, bool)>, SliceTelemetry)> {
     provider.set_context(case_id, "compaction");
     let conn = eval_db.conn()?;
+    let runtime_dir = case_dir.join("runtime");
+    std::fs::create_dir_all(&runtime_dir)
+        .map_err(|e| anyhow!("Failed to create runtime dir: {}", e))?;
 
-    // 1. Seed conversation turns
-    eval_db
-        .seed_turns(session_id, &format!("Eval {}", case_id), turns, 0)
-        .await?;
+    let mut prior_summary: Option<String> = None;
+    let mut documents = Vec::new();
+    let mut attribution_flag_count = 0usize;
+    let mut personal_cited = 0usize;
+    let mut personal_total = 0usize;
 
-    let from_turn_id = turns.first().map(|t| t.turn).unwrap_or(1);
-    let to_turn_id = turns.last().map(|t| t.turn).unwrap_or(1);
+    for slice in slices {
+        let history = slice_to_chat_messages(slice, prior_summary.as_deref());
 
-    // 2. Build conversation history messages
-    let mut history_messages = Vec::new();
-    for t in turns {
-        history_messages.push(ChatMessage::new(Role::User, t.user.clone()));
-        history_messages.push(ChatMessage::new(Role::Assistant, t.assistant.clone()));
-    }
-
-    // 3. Record compaction start
-    let run_id = record_compaction_start(&conn, session_id, "eval", from_turn_id, to_turn_id)
+        let run_id = record_compaction_start(
+            &conn,
+            session_id,
+            "eval",
+            slice.from_turn,
+            slice.to_turn,
+        )
         .await
         .map_err(|e| anyhow!("Failed to record compaction start: {}", e))?;
 
-    // 4. Run compaction via recording LLM provider
-    let compaction_res = run_compaction(provider, &history_messages, None, None)
+        let result = run_compaction(provider, &history, Some(llm_settings), None).await.map_err(|e| {
+            anyhow!(
+                "Compaction failed for session {} slice {}: {}",
+                session_id, slice.slice_index, e
+            )
+        })?;
+
+        commit_compaction_output(
+            &conn,
+            run_id,
+            &result.raw_json,
+            &result.facts,
+            session_id,
+        )
         .await
-        .map_err(|e| anyhow!("Compaction run failed for session {}: {}", session_id, e))?;
+        .map_err(|e| anyhow!("Failed to commit compaction output: {}", e))?;
 
-    // 5. Commit compaction output and enqueue facts into memory_ingestion_queue
-    commit_compaction_output(
-        &conn,
-        run_id,
-        &compaction_res.raw_json,
-        &compaction_res.facts,
-        session_id,
-    )
-    .await
-    .map_err(|e| anyhow!("Failed to commit compaction output: {}", e))?;
+        // The next slice sees this slice's summary as `<prior_summary>`, exactly as
+        // production does. Each side of the baseline comparison chains its own.
+        prior_summary = Some(result.session_context.clone());
 
-    Ok(compaction_res)
+        // Flag-only attribution telemetry: counted here so the eval can measure
+        // whether the deterministic flags predict what the judge finds.
+        attribution_flag_count += result.attribution_flags.len();
+        personal_cited += result.personal_cited;
+        personal_total += result.personal_total;
+
+        // A lenient parse fallback is a real runtime outcome: production preserves
+        // the raw text with zero staged facts (spec 3.75) rather than failing.
+        // The eval mirrors that. The slice is recorded with empty buckets and a
+        // fallback marker so the summary can distinguish "produced nothing" from
+        // "judge failed to parse".
+        match serde_json::from_str::<serde_json::Value>(&result.raw_json) {
+            Ok(mut doc) => {
+                // Judge the stored form: production strips citations before the
+                // facts reach the database, so the comparison uses clean text.
+                if let Some(personal) = doc.get_mut("personal").and_then(|v| v.as_array_mut()) {
+                    for fact in personal.iter_mut() {
+                        if let Some(text) = fact.as_str() {
+                            let clean = vox_lib::services::memory::compaction::strip_citation(text);
+                            *fact = serde_json::Value::String(clean);
+                        }
+                    }
+                }
+                std::fs::write(
+                    runtime_dir.join(format!("slice_{:02}.json", slice.slice_index)),
+                    serde_json::to_string_pretty(&doc).unwrap_or_default(),
+                )
+                .map_err(|e| anyhow!("Failed to write runtime doc: {}", e))?;
+                documents.push((doc, false));
+            }
+            Err(e) => {
+                log::warn!(
+                    "Slice {} produced unparseable compaction output ({}); recording fallback with zero facts.",
+                    slice.slice_index,
+                    e
+                );
+                let fallback = serde_json::json!({
+                    "personal": [], "objective": [], "workdone": [],
+                    "blocker": [], "next_step": [], "pitfall": [],
+                    "_eval_fallback": true,
+                    "_eval_raw": result.raw_json,
+                });
+                std::fs::write(
+                    runtime_dir.join(format!("slice_{:02}.json", slice.slice_index)),
+                    serde_json::to_string_pretty(&fallback).unwrap_or_default(),
+                )
+                .map_err(|e| anyhow!("Failed to write fallback doc: {}", e))?;
+                documents.push((fallback, true));
+            }
+        }
+    }
+
+    Ok((
+        documents,
+        SliceTelemetry {
+            attribution_flags: attribution_flag_count,
+            personal_cited,
+            personal_total,
+        },
+    ))
 }
 
-/// Executes compaction for a session, persists results into the eval DB, and runs the LLM Judge.
-pub async fn evaluate_compaction_stage(
-    eval_db: &EvalDbGuard,
-    session_id: i64,
-    case_id: &str,
-    turns: &[SessionTurn],
-    provider: &RecordingLlmProvider,
-    judge: &NvidiaJudgeClient,
+/// Judges each slice's runtime output against the baseline for the same slice.
+///
+/// The judge receives two documents plus the slice turns. The turns exist for
+/// one purpose only: classifying runtime facts absent from the baseline as
+/// supported or ungrounded. The baseline itself is never re-judged. All counting
+/// happens in [`count_compaction`], never by reading the judge's prose.
+pub async fn judge_compaction(
+    judge: &JudgeClient,
     case_dir: &Path,
-) -> Result<CompactionEvalSummary> {
-    let compaction_res =
-        run_compaction_and_persist(eval_db, session_id, case_id, turns, provider).await?;
+    case_id: &str,
+    slice: &CompactionSlice,
+    runtime_doc: &serde_json::Value,
+    baseline_doc: Option<&serde_json::Value>,
+) -> Result<JudgeStatus<CompactionVerdict>> {
+    let runtime_facts = flatten_compaction(runtime_doc);
+    let baseline_facts = baseline_doc
+        .map(flatten_compaction)
+        .unwrap_or_default();
 
-    // 6. Assemble Judge prompt
+    if baseline_facts.is_empty() {
+        return Ok(JudgeStatus::Invalid {
+            reason: format!(
+                "No baseline document for slice {}. Run generate_baseline.py, then pass its run directory with --baseline-dir.",
+                slice.slice_index
+            ),
+        });
+    }
+
+    let prompt = build_judge_prompt(case_id, slice, &runtime_facts, &baseline_facts);
+    let raw = judge
+        .evaluate_with_trace(&prompt, case_dir, &format!("compaction_slice_{:02}", slice.slice_index))
+        .await?;
+    Ok(parse_verdict::<CompactionVerdict>(&raw))
+}
+
+fn build_judge_prompt(
+    case_id: &str,
+    slice: &CompactionSlice,
+    runtime_facts: &[crate::common::verdicts::FlatFact],
+    baseline_facts: &[crate::common::verdicts::FlatFact],
+) -> String {
+    let render = |facts: &[crate::common::verdicts::FlatFact]| -> String {
+        if facts.is_empty() {
+            return "  (none)".to_string();
+        }
+        facts
+            .iter()
+            .map(|f| format!("  [{}] ({}) {}\n", f.index, f.category, f.text))
+            .collect::<String>()
+    };
+
     let mut turns_rendered = String::new();
-    for t in turns {
-        turns_rendered.push_str(&format!("Turn {} [User]: {}\n", t.turn, t.user));
-        turns_rendered.push_str(&format!("Turn {} [Assistant]: {}\n", t.turn, t.assistant));
+    for m in &slice.messages {
+        if m.role == "system" {
+            continue;
+        }
+        turns_rendered.push_str(&format!("  {}: {}\n", m.role, m.content));
     }
 
-    let mut facts_rendered = String::new();
-    for (idx, (category, fact_text)) in compaction_res.facts.iter().enumerate() {
-        facts_rendered.push_str(&format!(
-            "[FACT-{:02}] ({}) {}\n",
-            idx + 1,
-            category,
-            fact_text
-        ));
-    }
+    format!(
+        r#"You are auditing one compaction pass of the Vox memory pipeline.
 
-    let judge_prompt = format!(
-        r#"You are the Vox Senior Compaction Evaluation Judge.
-Analyze the following session turns and the resulting LLM compaction output.
+<case>{}</case>
+<slice>{} — turns {} through {}</slice>
 
-<session_turns>
+Two documents are given below. Both were produced by the same model from the same
+conversation, using the same extraction prompt. They differ only in how much
+internal reasoning the model was allowed to spend.
+
+<baseline_facts>
+The best available extraction. Acts as the reference ceiling. Every entry is
+numbered. You do NOT judge this document. It is the ruler, not the subject.
 {}
-</session_turns>
+</baseline_facts>
 
-<compaction_output>
-Extracted Categorized Facts (Count: {}):
+<runtime_facts>
+What the pipeline actually produced under its normal operating settings.
 {}
-</compaction_output>
+</runtime_facts>
 
-CRITICAL INSTRUCTION: When referencing extracted facts in your report, you MUST ALWAYS cite their explicit identifier exactly as given (e.g. `[FACT-01]`, `[FACT-02]`). NEVER invent or use alternate numbering schemes.
+<slice_turns>
+The conversation both documents were extracted from. Use it for ONE purpose only:
+deciding whether a runtime fact absent from the baseline is supported by what
+somebody actually said.
+{}
+</slice_turns>
 
-Produce a comprehensive evaluation report in clean Markdown format with the following exact sections:
+Your task is to classify every runtime fact, then report what the runtime missed.
 
-# Compaction Evaluation Report — {}
+Classify each runtime fact into exactly one category:
 
-## 1. Executive Scorecard
-*(Note: Every percentage score MUST explicitly state its formula with exact counts: `X / Y = Z%`. Never output an ungrounded percentage).*
-- **Fact Coverage / Recall**: [X / Y = Z%] (Denominator Y = count of distinct user factual declarations in dialogue turns; Numerator X = successfully captured declarations. NEVER divide extracted facts by extracted facts).
-- **Fact Precision**: [X / Y = Z%]
-- **Category Routing Accuracy**: [X / Y = Z%]
-- **Hallucination / Stale Fact Rate**: [X / Y = Z%]
-- **Noise / Chit-chat Rejection**: [High / Medium / Low]
+  "matched_baseline"   - The baseline contains a fact with the same meaning.
+                         Set "baseline_index" to that baseline fact's number.
+                         You need nothing else for this verdict.
+  "novel_but_valid"    - The baseline does not contain it, BUT <slice_turns> shows
+                         a speaker establishing it. Quote the supporting turn in
+                         "reason". Leave "baseline_index" null.
+  "ungrounded"         - The baseline does not contain it AND <slice_turns> does not
+                         support it: invented, extrapolated, or an attribute no
+                         speaker established. Quote the closest turn and explain the
+                         gap in "reason". Leave "baseline_index" null.
 
-## 2. Fact Coverage & Completeness Analysis
-List all durable factual declarations made by the user in the session turns (preferences, project statuses, decisions, personal background).
-- Identify which user declarations were successfully captured, citing the matching `[FACT-XX]` identifier.
-- Identify which user declarations were missed (false negatives).
+Attribution rules, applied exactly as the extraction prompt states them:
+- Only the USER's explicit statements establish facts. Assistant suggestions,
+  recommendations, examples, and hypothetical answers are not user facts.
+- A question, topic, or location the user mentions does not establish residence,
+  identity, ownership, preference, or habit.
+- Do not convert an assistant claim into a completed action unless the dialogue
+  records it happening.
 
-## 3. Category Classification Audit
-Verify whether facts were routed into their correct schema buckets (`personal`, `objective`, `workdone`, `blocker`, `next_step`, `pitfall`):
-- Highlight any misclassified facts (e.g. personal preferences categorized as workdone or vice versa).
+Also list every baseline fact the runtime did not produce, by number.
 
-## 4. Atomic Granularity & Information Density
-- Identify whether facts are individual atomic assertions or rambling composite sentences.
-- Flag any fragmented or incomplete statements.
+Return ONLY this JSON object, with no text before or after it:
 
-## 5. Hallucination, Stale Facts & Grounding Check
-- **Ungrounded Facts Check**: Explicitly flag any hallucinated statements or ungrounded claims in the extracted facts. For each extracted `personal` fact, cite the dialogue turn number that grounds it. Flag any attribute not explicitly stated by the user (e.g. inventing housing type or residence proximity from an activity/visit).
-- **Temporal Resolution Check**: Verify whether any extracted `blocker` or `next_step` was already resolved/fixed by later dialogue turns. If a resolved bug or obstacle is extracted as an active blocker, flag it as a Stale Fact defect.
+{{
+  "runtime_facts": [
+    {{"index": 1, "verdict": "matched_baseline", "baseline_index": 2, "reason": "why"}},
+    {{"index": 2, "verdict": "novel_but_valid", "baseline_index": null, "reason": "why, quoting turn N"}},
+    {{"index": 3, "verdict": "ungrounded", "baseline_index": null, "reason": "why, quoting turn N"}}
+  ],
+  "baseline_missed": [
+    {{"index": 7, "reason": "why the runtime omitted it"}}
+  ],
+  "summary": "one paragraph"
+}}
 
-## 6. Duplicate Facts & Noise Filtering Audit
-- Check if identical or redundant facts were emitted multiple times in this slice.
-- Verify whether conversational filler (greetings, acknowledgements, transient breaks) was properly filtered.
-
-## 7. Final Verdict & Architectural Recommendations
-Provide 2-3 concise, actionable improvements for the compaction prompt or pipeline.
+Rules:
+- "index" in runtime_facts must be every number from 1 to {}, each exactly once.
+- "index" in baseline_missed must refer only to baseline fact numbers, never to runtime numbers.
+- Use null for "baseline_index" whenever the verdict is not "matched_baseline".
+- Never invent a "No mention" claim. Every novel/ungrounded verdict must quote a
+  turn number from <slice_turns>.
 "#,
+        case_id,
+        slice.slice_index,
+        slice.from_turn,
+        slice.to_turn,
+        render(baseline_facts),
+        render(runtime_facts),
         turns_rendered,
-        compaction_res.facts.len(),
-        facts_rendered,
-        case_id
-    );
-
-    // 7. Execute Judge evaluation via NVIDIA NIM Judge
-    let judge_report = judge
-        .evaluate_with_trace(&judge_prompt, case_dir, "compaction")
-        .await
-        .map_err(|e| anyhow!("Compaction Judge evaluation failed: {}", e))?;
-
-    // 8. Write Markdown report
-    let report_path = write_markdown_report(case_dir, "compaction.md", &judge_report)?;
-
-    Ok(CompactionEvalSummary {
-        session_id,
-        facts_extracted: compaction_res.facts.len(),
-        session_context_len: compaction_res.session_context.len(),
-        report_path,
-    })
+        runtime_facts.len(),
+    )
 }

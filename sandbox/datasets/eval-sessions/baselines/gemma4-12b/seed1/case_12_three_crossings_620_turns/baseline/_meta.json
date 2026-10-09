@@ -1,0 +1,10 @@
+{
+  "backend": "ollama",
+  "model": "gemma4:12b",
+  "seed": 1,
+  "temperature": 0.0,
+  "max_tokens": 16384,
+  "system_prompt_chars": 3115,
+  "system_prompt_source": "/opt/vox/vox/app/src-tauri/src/services/memory/compaction/prompt.rs",
+  "note": "Regenerated at 16384. At 8192 this case returned empty content on every seed: think=True consumed the whole num_predict budget before any JSON was emitted."
+}

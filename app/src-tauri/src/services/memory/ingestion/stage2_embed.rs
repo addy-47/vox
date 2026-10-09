@@ -4,7 +4,10 @@ use anyhow::Result;
 use turso::Connection;
 use uuid::Uuid;
 
-use super::{SOFT_VECTOR_DEDUP_THRESHOLD, STAGE2_BATCH_SIZE};
+use super::{
+    is_near_miss, DedupDecision, DedupNearMiss, DedupStage, SOFT_VECTOR_DEDUP_THRESHOLD,
+    STAGE2_BATCH_SIZE,
+};
 use crate::{
     persistence::{
         deactivate_observation,
@@ -18,13 +21,24 @@ use crate::{
     services::memory::{cosine_similarity, ensure_embedder_loaded, generate_embeddings_batch},
 };
 
+/// Strongly-typed lifecycle state for a single Stage 2 item's telemetry.
+#[derive(Debug, Clone, Default)]
+pub struct Stage2ItemTelemetry {
+    pub decisions: Vec<DedupDecision>,
+    pub near_misses: Vec<DedupNearMiss>,
+}
+
 /// Summary metrics returned after running a Stage 2 semantic cosine deduplication pass.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct Stage2Summary {
     pub processed: usize,
     pub inserted: usize,
     pub duplicates_deactivated: usize,
     pub errors: usize,
+    /// Telemetry only. Records each merge with the cosine that triggered it.
+    pub decisions: Vec<DedupDecision>,
+    /// Telemetry only. Records borderline pairs that were deliberately left alone.
+    pub near_misses: Vec<DedupNearMiss>,
 }
 
 /// Executes Stage 2 semantic deduplication using the default MiniLM ONNX embedder singleton
@@ -101,9 +115,10 @@ where
 
     let mut summary = Stage2Summary::default();
 
-    for (item, embedding) in items.into_iter().zip(embeddings.into_iter()) {
+    for (item, embedding) in items.into_iter().zip(embeddings) {
         match process_stage2_item_with_embedding(conn, &item, &embedding).await {
-            Ok((inserted, deactivated)) => {
+            Ok(telemetry) => {
+                let deactivated = telemetry.decisions.len();
                 if let Err(e) = update_queue_item_status(conn, item.id, "completed", None).await {
                     log::warn!(
                         "[Memory::Ingestion::Stage2] Failed to mark item {} as completed: {}",
@@ -113,8 +128,10 @@ where
                     summary.errors += 1;
                 } else {
                     summary.processed += 1;
-                    summary.inserted += inserted;
+                    summary.inserted += 1;
                     summary.duplicates_deactivated += deactivated;
+                    summary.decisions.extend(telemetry.decisions);
+                    summary.near_misses.extend(telemetry.near_misses);
                 }
             }
             Err(e) => {
@@ -157,14 +174,14 @@ where
 /// Deduplicates against active vectors and commits a single observation and vector to storage.
 ///
 /// On a cosine match the incoming observation wins: the older stored observation is deactivated, and the
-/// incoming one is inserted as `active`.
+/// incoming one is inserted as `active`. Returns the telemetry for this item.
 async fn process_stage2_item_with_embedding(
     conn: &Connection,
     item: &QueueItem,
     embedding: &[f32],
-) -> Result<(usize, usize)> {
+) -> Result<Stage2ItemTelemetry> {
     let active_vectors = fetch_active_vectors_by_type(conn, &item.observation_type).await?;
-    let mut deactivated = 0;
+    let mut telemetry = Stage2ItemTelemetry::default();
 
     for (existing_observation_id, vec) in active_vectors {
         let similarity = cosine_similarity(embedding, &vec);
@@ -175,8 +192,27 @@ async fn process_stage2_item_with_embedding(
                 existing_observation_id,
                 item.id
             );
+            let text = observation_text(conn, &existing_observation_id).await;
             deactivate_observation(conn, &existing_observation_id).await?;
-            deactivated += 1;
+            telemetry.decisions.push(DedupDecision {
+                stage: DedupStage::Stage2Cosine,
+                incoming_queue_id: item.id,
+                incoming_text: item.text.clone(),
+                incoming_type: item.observation_type.clone(),
+                deactivated_obs_id: existing_observation_id,
+                deactivated_text: text,
+                similarity,
+            });
+        } else if is_near_miss(similarity, SOFT_VECTOR_DEDUP_THRESHOLD) {
+            let text = observation_text(conn, &existing_observation_id).await;
+            telemetry.near_misses.push(DedupNearMiss {
+                stage: DedupStage::Stage2Cosine,
+                incoming_queue_id: item.id,
+                incoming_text: item.text.clone(),
+                active_obs_id: existing_observation_id,
+                active_text: text,
+                similarity,
+            });
         }
     }
 
@@ -210,7 +246,44 @@ async fn process_stage2_item_with_embedding(
     )
     .await?;
 
-    Ok((1, deactivated))
+    Ok(telemetry)
+}
+
+/// Reads an observation's text for telemetry reporting.
+///
+/// Telemetry must never be able to fail a deduplication pass, so a lookup
+/// failure degrades to a placeholder rather than propagating.
+async fn observation_text(conn: &Connection, observation_id: &str) -> String {
+    let fallback = format!("<observation {} text unavailable>", observation_id);
+    let mut rows = match conn
+        .query(
+            "SELECT text FROM memory_facts WHERE id = ?",
+            (observation_id.to_string(),),
+        )
+        .await
+    {
+        Ok(r) => r,
+        Err(e) => {
+            log::warn!(
+                "[Memory::Ingestion::Stage2] Telemetry text lookup failed for {}: {}",
+                observation_id,
+                e
+            );
+            return fallback;
+        }
+    };
+    match rows.next().await {
+        Ok(Some(row)) => row.get(0).unwrap_or(fallback),
+        Ok(None) => fallback,
+        Err(e) => {
+            log::warn!(
+                "[Memory::Ingestion::Stage2] Telemetry text row read failed for {}: {}",
+                observation_id,
+                e
+            );
+            fallback
+        }
+    }
 }
 
 /// Queries the parent project ID for a given session ID if present.

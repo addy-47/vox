@@ -117,6 +117,10 @@ pub struct LlmSettings {
     pub cloud: LlmRemoteConfig,
     #[serde(default)]
     pub cloud_keys: HashMap<String, String>,
+    /// Fixed sampling seed for reproducible generation. `None` (the default)
+    /// leaves sampling unseeded. Both transports forward it when set.
+    #[serde(default)]
+    pub seed: Option<u64>,
 }
 
 impl Default for LlmSettings {
@@ -133,6 +137,7 @@ impl Default for LlmSettings {
             server: LlmRemoteConfig::server_default(),
             cloud: LlmRemoteConfig::cloud_default(),
             cloud_keys: HashMap::new(),
+            seed: None,
         }
     }
 }

@@ -1,0 +1,52 @@
+{
+  "personal": [
+    "Drinks pour-over, unsweetened coffee",
+    "Practicing Spanish ordering phrases for a trip to Mexico City [turn 5, turn 6]",
+    "Uses Mutex for thread safety in the slab allocator",
+    "Defining custom error types like InvalidFormat and ProcessingError",
+    "Has a severe tree nut allergy including cashews and walnuts [turn 35, turn 91, turn 92, turn 141]",
+    "Listens to ambient acoustic guitar music for focus",
+    "Practicing fingerstyle guitar ('Blackbird') [turn 17, turn 47, turn 64, turn 152]",
+    "Needs new guitar strings [turn 18, turn 47, turn 66, turn 98, turn 153]",
+    "Trying to reduce refined sugar intake [turn 48, turn 108]",
+    "Uses Greek yogurt with berries as a low-sugar snack",
+    "Wants to use Telescope for Neovim buffer management [turn 54, turn 95, turn 148]",
+    "Interested in orbital mechanics and Hohmann transfers [turn 59, turn 60, turn 72, turn 146]",
+    "Reading 'Red Mars' by Kim Stanley Robinson [turn 61, turn 62, turn 71, turn 105, turn 147]",
+    "Likes the sci-fi series 'The Expanse' for its physics",
+    "Needs to feed Doughvid [turn 32, turn 70, turn 84, turn 123, turn 151]",
+    "Has a cat named Pixel who is demanding attention [turn 42, turn 113, turn 143]",
+    "Needs to buy running shoes and an umbrella [turn 36, turn 67, turn 106, turn 136, turn 137]",
+    "Needs to reorder coffee beans [turn 24, turn 33, turn 118]",
+    "Prefers medium roast whole bean coffee [turn 119, turn 131]",
+    "Has a roommate named Jamie who might have borrowed a laptop [turn 41, turn 142, turn 158]"
+  ],
+  "objective": [
+    "Fix slab allocator bug related to splitting free blocks",
+    "Refactor perception software factory pattern and error handling",
+    "Prepare for Mexico City trip (confirm transfer, practice Spanish)"
+  ],
+  "workdone": [
+    "Refactored deallocation to use a doubly linked list",
+    "Identified off-by-one error in pointer arithmetic for slab allocator splitting",
+    "Defined custom error types InvalidFormat and ProcessingError"
+  ],
+  "blocker": [
+    "Type compatibility issues between simd-pixels and image crate in perception software",
+    "Need to confirm airport transfer booking",
+    "Communicating severe nut allergy naturally in Spanish"
+  ],
+  "next_step": [
+    "Integrate error handling with the factory pattern for PerceptionImage",
+    "Optimize pop operation on segregated free list using pointer swap",
+    "Research Telescope plugins for Neovim",
+    "Practice 'Drifting' by Andy McKee on guitar",
+    "Purchase running shoes and an umbrella",
+    "Reorder coffee beans",
+    "Feed Doughvid"
+  ],
+  "pitfall": [
+    "Avoid standard Mutex for high-performance pop operations (considering pointer swap)",
+    "Be careful with cross-contamination of cashews and walnuts in Mexican food"
+  ]
+}
