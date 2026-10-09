@@ -1174,6 +1174,7 @@ dependencies = [
 [[package]]
 name = "chatterbox-rs"
 version = "0.2.0"
+source = "git+https://github.com/addy-47/chatterbox-rs.git?rev=c9d17bd#c9d17bdb3254453c559a7b43dda6c7137d881c5e"
 dependencies = [
  "cc",
  "cmake",
