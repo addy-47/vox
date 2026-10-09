@@ -58,3 +58,18 @@ Priority: optional
 Description: Vox - A modern desktop voice inference engine built for edge devices.
  (none)
 
+Package: vox
+Version: 0.8.9
+Architecture: amd64
+Maintainer: addy-47
+Installed-Size: 90203
+Depends: libwebkit2gtk-4.1-0, libgtk-3-0
+Filename: pool/main/Vox_0.8.9_amd64.deb
+Size: 43421094
+MD5sum: 66669170ad03b0da15d892f870ef96c0
+SHA1: d55649bee53e62820767fb9aed377797395241d2
+SHA256: f7b9cd16873e518c481f14611b199224a1a987d5229dc149c68823d6da524969
+Priority: optional
+Description: Vox - A modern desktop voice inference engine built for edge devices.
+ (none)
+
