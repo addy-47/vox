@@ -1,5 +1,6 @@
 pub mod audio_filters;
 pub mod crash;
+pub mod disk;
 pub mod hardware;
 pub mod json;
 pub mod jsonc;

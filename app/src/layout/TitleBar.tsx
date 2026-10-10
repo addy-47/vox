@@ -7,6 +7,8 @@ import { copyToClipboard } from "@/shared/lib/clipboard";
 import { isRealMobileDevice } from "@/shared/hooks/useMobileViewport";
 
 export const TitleBar: React.FC = () => {
+  if (isRealMobileDevice()) return null;
+
   const navigate = useNavigate();
   const [isTauri, setIsTauri] = useState(false);
   const [isCloseHovered, setIsCloseHovered] = useState(false);

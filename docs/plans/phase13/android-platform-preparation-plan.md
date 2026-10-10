@@ -86,21 +86,27 @@ Established by direct inspection and by an actual cross-compile attempt. Not ass
 
 ## Sequencing at a Glance
 
-| Batch | Scope | Class | Effort | Gate | Status |
-|---|---|---|---|---|---|
-| 1 | Dependency hygiene | 🟢 Desktop-neutral | S | `cargo check` green on desktop; `openssl-sys` off the Android target graph | ✅ Done |
-| 4 | Desktop-only code exclusion | 🟡 Android-additive | M | **Android `cargo check` green**; desktop bundles unchanged | ✅ **Done** (compile gate in `6310dacf`; `remote_server` closed in Phase 1) |
-| 2 | Audio backend seam | 🟢 Desktop-neutral | M | Desktop audio regression tests pass | ⬜ Next |
-| 3 | CI APK pipeline | 🟢 Desktop-neutral | M | **APK installs on a physical device** | ⬜ Not started |
-| 5 | Frontend capability layer | 🟡 Android-additive | M | Desktop visual regression unchanged | ⬜ Not started |
-| 6 | Wizard responsiveness | 🟡 Android-additive | M | First-run completes on a phone | 🟡 Partially done (mobile wizard flow shipped in `6310dacf`) |
-| 7 | Native library packaging | ⛔ Android-necessary | M-L | `llama.cpp` + `turso` link for `arm64-v8a` | ⬜ Not started |
-| 8 | Model delivery on mobile | ⛔ Android-necessary | L | Models download and load on-device | ⬜ Not started |
-| 9 | WebGL thermal tuning | 🟡 Android-additive | M | Sustained fps on a mid-range device | ⬜ Not started |
+Batch numbering is preserved because §Batch references throughout this document use it. Phase numbers are the execution order (§Execution Order). Batches 1, 3, 4, and 7 are mapped onto Phases 0–4 rather than executing under their own names.
 
-**Critical path:** Batch 3 is the highest-value gate. It converts every subsequent batch from guesswork into a build log. Do not defer it.
+| Batch | Phase | Scope | Class | Effort | Gate | Status |
+|---|---|---|---|---|---|---|
+| 1 | — | Dependency hygiene | 🟢 Desktop-neutral | S | `openssl-sys` off the Android target graph | ✅ Done |
+| 4 | 1 | Desktop-only code exclusion | 🟡 Android-additive | M | Both clippy targets clean; desktop bundles unchanged | ✅ Done (`6310dacf`; `remote_server` closed in Phase 1) |
+| 7 | 2, 3 | Native library packaging | ⛔ Android-necessary | M-L | `llama.cpp` + `turso` + `chatterbox` + `ort` link for `arm64-v8a` | ✅ Done — superseded by the Phase 2 link; `ort` NNAPI closed in Phase 3 |
+| — | 0 | Verification automation (`verify-targets.sh`, style guide) | 🟢 Desktop-neutral | S | Script exits 0 on both targets | ✅ Done |
+| — | 4 | APK runs on a physical device | ⛔ Android-necessary | M | Beyond bootstrap: audio, NNAPI, models | 🟡 **Partial** — boots to `[BOOTSTRAP] Runtime Ready`; nothing past it has run |
+| 3 | — | CI APK pipeline | 🟢 Desktop-neutral | M | — | ❌ **Dropped by user decision (2026-10-10).** See §Batch 3. |
+| 5 | — | Frontend capability layer | 🟡 Android-additive | M | Desktop visual regression unchanged | 🟡 In progress — §5.1/§5.2/§5.5 underway in the frontend workstream |
+| 6 | — | Wizard responsiveness | 🟡 Android-additive | M | First-run completes on a phone | 🟡 In progress — mobile wizard flow shipped, being reworked |
+| 8 | 5 | Model delivery on mobile | ⛔ Android-necessary | M | Models download and load on-device | ⬜ Not started — **planned, see §Batch 8** |
+| 2 | 6 | Audio backend seam | 🟢 Desktop-neutral | M | Desktop audio regression tests pass | ⬜ Not started — **planned, see §Batch 2** |
+| 9 | — | WebGL thermal tuning | 🟡 Android-additive | M | Sustained fps on a mid-range device | ⬜ Not started |
 
-**Status legend:** ✅ gate met · 🟡 partial · ⬜ not started. Statuses are set against a re-verification run of both targets (see §Verification).
+**Critical path — Phase 4 then Phase 5.** Phase 4 (prove runtime on the device) and Phase 5 (Batch 8, resumable downloads) are the only two items standing between "the app launches" and "the app works on a phone." Everything else is either finished, frontend-owned, or speculative.
+
+**Ordering constraint between them.** Phase 5 must land before first-run can ever complete on Android: a multi-GB `chatterbox` download is near-certain to be interrupted by process death, and today every interruption restarts from byte zero. Batch 6's "first-run completes on a phone" gate is unreachable until then.
+
+**Status legend:** ✅ gate met · 🟡 partial / in progress · ⬜ not started · ❌ dropped. Statuses are set against a re-verification run of both targets (see §Verification).
 
 ---
 
@@ -247,45 +253,125 @@ That is Batch 4. It is also entangled with **Open Decision 3** (whether dictatio
 
 ---
 
-## Batch 2 — Audio Backend Seam 🟢 — **NEXT**
+## Batch 2 — Audio Backend Seam 🟢 — **PLANNED, NOT STARTED**
 
-**Class:** Desktop-neutral. Introduces a trait; the cpal implementation is unchanged.
+**Class:** 🟢 Desktop-neutral. Introduces traits; the cpal implementation and behaviour are unchanged.
 **Effort:** M
-**Blast radius:** `services/audio/`, `services/tts/voice.rs`, `ipc/audio.rs`
-**Prerequisite:** Batch 4's remaining `remote_server` item (§4.1a) is independent and can proceed in parallel.
+**Blast radius:** `services/audio/`, `services/tts/voice.rs`, `core/engine.rs`, `ipc/audio.rs`
+**Position:** Phase 6 — deliberately last. Its purpose is to make a future Android audio backend *a new file rather than a refactor*. Doing it before Phase 4 produces real Oboe evidence means refactoring against assumptions.
+**Also serves:** remote execution (`Deferred` §) — remote streams audio instead of opening a local device.
+
+### 2.0 Read this first — Batch 2 is NOT the Android audio work
+
+The plan's framing ("the last structural blocker to swapping audio backends") is accurate but easy to misread. **Batch 2 adds no Android capability.** It does not make audio work on a phone. Two things are needed for that, and neither is in this batch:
+
+1. **A missing permission.** See §2.3. Without it the app cannot open an input stream on Android at all. **This is the single highest-priority item in this batch and it is one line.**
+2. **A format assumption that may not hold.** See §2.4. Capture is hardcoded to `f32`.
+
+Batch 2 makes both of those *fixable without touching the call sites*. That is its actual value right now.
 
 ### 2.1 Introduce `AudioCapture` / `AudioSink`
 
-**Problem:** Vox has traits for STT, TTS, VAD, and LLM. It has **none** for audio. `cpal` is called directly, and worse, the concrete type is baked into struct layouts:
+**Problem (verified 2026-10-10):** Vox has traits for STT, TTS, VAD, and LLM. It has **none** for audio. `cpal` is called directly, and the concrete type is baked into struct layouts:
 
-- `PlaybackEngine` stores `cpal::Stream` inline — `services/audio/playback.rs:36`
-- `AudioStream` stores `Option<cpal::Stream>` — `services/audio/device.rs:20`
-- Both carry `unsafe impl Send/Sync` to cross thread boundaries — `playback.rs:39-40`, `device.rs:23-24`
+| Site | Concrete cpal type baked in | Thread marker |
+|---|---|---|
+| `services/audio/playback.rs:36` | `_stream: Option<cpal::Stream>` | `unsafe impl Send/Sync` at `:39-40` |
+| `services/audio/playback.rs:91` | constructor takes `stream: Option<cpal::Stream>` | — |
+| `services/audio/device.rs:20` | `_stream: Option<cpal::Stream>` | `unsafe impl Send/Sync` at `:23-24` |
+| `services/tts/voice.rs:283` | `_stream: cpal::Stream` in `ActiveRecorder` | `unsafe impl Send/Sync` at `:288-289` |
 
-**Change:** Define the two traits, box the streams behind them. `cpal` becomes an implementation detail of the desktop adapter.
+> ⚠️ **Addition to the original text.** It listed two sites. There are **four** — `ActiveRecorder` in `services/tts/voice.rs:283` was missed. It was already named in the blast radius but never identified as a third concrete-type site.
+
+**Change:** define `AudioCapture` and `AudioSink` traits; box the streams behind them; `cpal` becomes an implementation detail of the desktop adapter.
 
 **Desktop safety:** `services/audio/sink.rs` (the realtime callback) already has **zero** cpal references and is pure DSP — it does not move. Capture and playback keep their existing logic verbatim behind the trait.
 
-**Why now:** this is the last structural blocker to swapping audio backends. Doing it before any Android audio work means Android audio is a new file rather than a refactor of working code.
+**Design constraints from `.agents/rules/backend-style-guide.md`:**
+
+- **§10.1 — generic runtime.** Neither `AudioStream` nor `PlaybackEngine` is currently generic over `R: tauri::Runtime`, and neither needs to be: both are constructed in `core/engine.rs:300` and `:308` from channels and atomics, with no `AppHandle` in scope. Do **not** introduce `AppHandle<R>` into the audio layer to satisfy §10.1 — it would be a speculative parameter. The rule binds where a handle is actually threaded through.
+- **§10.3 — inversion of control.** The trait objects *are* the inversion seam. `AudioStream::mock()` (`device.rs:64`) already exists and is used by `tests/common/harness.rs:557,616,654,698`. Preserve it, and add `AudioSink::mock()` — playback currently has **no** mock, so headless playback tests are not currently possible.
+- **§5 — no synthetic booleans.** `discard_request: Arc<AtomicBool>` and `turn_armed: Arc<AtomicBool>` passed through `build_output_stream` are existing arguments, out of scope. Do not add more while moving the code.
+- **§6 — struct bundling past 5 arguments.** `build_output_stream` (`device.rs:231`) already takes **6** parameters. When its signature changes, bundle them into a typed config struct rather than carrying the violation across.
+- **§7 — no fallback chains.** The trait seam is a single dispatch point. Exactly one impl resolves per runtime; no "try Oboe, else try ALSA".
 
 ### 2.2 Collapse duplicate host resolution
 
 **Problem:** `cpal::default_host()` is called independently at three sites, bypassing the existing `resolve_audio_host()`:
+
 - `services/tts/voice.rs:301` (voice-cloning recorder)
 - `ipc/audio.rs:44` (device enumeration)
 - `setup/runtime_check.rs:166` (runtime report)
 
 **Change:** route all three through `resolve_audio_host()` (`services/audio/device.rs:119`).
 
-> **⚠️ Correction.** The original text listed **four** bypass sites and cited `device.rs:120` as one of them. That line is the *body* of `resolve_audio_host()` itself, not a bypass of it. There are three genuine bypasses.
+> **⚠️ Correction.** The original text listed **four** bypass sites and cited `device.rs:120` as one of them. That line is the *body* of `resolve_audio_host()` itself, not a bypass of it. There are three genuine bypasses. *(Re-verified 2026-10-10 — still exactly three.)*
 
 **Desktop safety:** pure deduplication. No behavior change.
 
+### 2.3 ⛔ `AndroidManifest.xml` has no `RECORD_AUDIO` permission — hard blocker
+
+**Confirmed 2026-10-10 by direct read of `gen/android/app/src/main/AndroidManifest.xml`.** The manifest declares exactly one permission:
+
+```xml
+<uses-permission android:name="android.permission.RECORD_AUDIO" />   <!-- ABSENT -->
+<uses-permission android:name="android.permission.INTERNET" />       <!-- the only one present -->
+```
+
+On Android an app cannot open an input stream without a runtime-granted `RECORD_AUDIO`. Oboe will fail at stream open, not at app start — so this surfaces as a mid-bootstrap audio failure, not a launch crash, and it will not be caught by any compile gate.
+
+**This is not a Rust change and it does not belong to a batch.** It is a manifest fix.
+
+**Work:**
+1. Add `RECORD_AUDIO` to `gen/android/app/src/main/AndroidManifest.xml`. It is a committed, non-generated file and `tauri android init` is no longer re-run (§3.3), so it will not be clobbered.
+2. **Confirm whether Tauri's mobile permission layer also needs an entry.** The frontend permission step (`app/src/wizard/mobile/MobilePermissionStep.tsx`) requests microphone access, so the request path exists — but whether it resolves through the Rust side or a plugin determines whether this is one line or two. **Verify before writing**; do not guess at Tauri 2.11's mobile permission API from memory (global rule 6).
+3. Decide foreground-service behaviour: Android may require a `foregroundService` + `FOREGROUND_SERVICE_MICROPHONE` declaration to keep capture alive when the app is backgrounded. **Defer** — the phone-while-backgrounded case is not in scope yet, and adding it speculatively is worse than discovering the need.
+
+### 2.4 Capture is hardcoded to `f32` — likely device failure
+
+**Confirmed in code (2026-10-10):** `build_input_stream` (`device.rs:140`) instantiates `build_input_stream` with a `move |data: &[f32], ...|` closure, so it is monomorphised for `f32` only. `ActiveRecorder` in `services/tts/voice.rs:319` has the same `&[f32]` input callback.
+
+`resolve_input_device` (`device.rs:114`) takes whatever `device.default_input_config()` reports and does **not** negotiate format.
+
+**Assessment — labelled, because it is not yet device-verified.** Android's Oboe backend advertises whatever the device offers; many phones expose input as `I16`, not `F32`. If the POCO reports `I16`, `build_input_stream::<f32>` returns `UnsupportedStreamConfig`, `AudioStream::new` fails, and `init_audio_engine` (`core/engine.rs:300-305`) returns `Err` — **the engine never comes online**. This is a guess about the device, not a confirmed defect. It is cheap to confirm: `resolve_input_device` already logs the resolved config at `device.rs:41-45`, so the next `android-deploy.sh logs` answers it outright.
+
+**Do this before writing any trait:** run one device cycle and read the logged input config. If it says `F32`, §2.4 is a non-issue on this device and no format negotiation is needed now. If it says anything else, format negotiation becomes a real Batch 2 work item — and note that `services/audio/mod.rs:27-31` already defines `PCM_I16_SCALE`, `PCM_U8_SCALE`, `PCM_U16_SCALE`, `PCM_S16_SCALE`, `PCM_S32_SCALE`, so the conversion constants exist and only the negotiation is missing.
+
+**Order matters here:** negotiating format *before* the trait exists means editing the hot-path callback a second time later. §2.1 first, §2.4 second.
+
+### 2.5 Execution order for Batch 2
+
+| Step | Work | Size | Gate |
+|---|---|---|---|
+| **2.0** | Read the device's logged input config (`device.rs:41-45`) | XS | Determines whether §2.4 is real |
+| **2.1** | `AndroidManifest.xml`: add `RECORD_AUDIO`; verify the runtime-request path | XS | Mic prompt appears on device |
+| **2.2** | Introduce `AudioCapture` + `AudioSink` traits; box the four sites; add `AudioSink::mock()` | M | `verify-targets.sh` both targets clean; full `nextest` green |
+| **2.3** | Format negotiation for capture, **only if 2.0 showed a non-`f32` device** | S–M | Device captures 16 kHz mono correctly |
+| **2.4** | Route `voice.rs:301`, `ipc/audio.rs:44`, `runtime_check.rs:166` through `resolve_audio_host()` | XS | `verify-targets.sh` clean |
+
+**Gates 2.2 and 2.4 are the mandatory ones.** Both run `./scripts/verify-targets.sh` (0 warnings, 0 errors, both targets) plus the full `cargo nextest run --release --test-threads=1 --no-fail-fast` suite. Audio changes are regression-prone on desktop and the existing `services/audio` tests must stay green unchanged.
+
 ---
 
-## Batch 3 — CI APK Pipeline 🟢
+## Batch 3 — CI APK Pipeline 🟢 — ❌ **DROPPED (user decision, 2026-10-10)**
 
-**Class:** Desktop-neutral. Build plumbing only.
+**Status: dropped.** Kept in the document because the reasoning below still records what was given up, and because §3.4 names a gap that outlives this batch.
+
+**Why it was the highest-value gate.** The original plan called Batch 3 the critical path: a build log converts every downstream guess into fact. That reasoning was correct and was in fact **superseded** — `scripts/android-deploy.sh` (Phase 4) fills the same role locally, at lower latency: `sign` with no source change is 19 s, `crash` is 8 s, a Rust-only release rebuild is 4–9 min because the C++ stack is cached.
+
+**Why dropping it is acceptable now.** The pipeline's original purpose was to answer "does this link?" — answered in Phase 2. Its remaining value was regression detection across machines, and a single-device local loop covers that for a one-developer Android effort.
+
+### 3.4 What dropping this costs — one item outlives the batch
+
+**No workflow runs `pnpm test`.** `release-macos.yml:44` and `release-windows.yml:42` run `pnpm build` only (`tsc && vite build`). `src/test/invariants.test.ts` — including **Invariant 26**, which fails if `breakpoints.ts` and `tailwind.config.js` drift apart — therefore **protects nothing in CI today**. This is a *desktop* gap that predates and is independent of the Android work; dropping Batch 3 does not create it and adding Batch 3 would not have fixed it.
+
+**Recommendation:** add a one-line `pnpm test` step to `release-macos.yml` (or any workflow that already runs `pnpm build`). That is S work and unrelated to Android. Deferring it is a decision, not a default.
+
+**Also forgone:** multi-machine NDK reproducibility. Phase 2 found the Android build depends on a machine-local `$CARGO_HOME/config.toml` `[env]` write (§Phase 2, finding 4) that no workflow reproduces yet. If a second machine or a CI runner is ever added, that must be solved first.
+
+<details><summary>Original Batch 3 text (superseded — retained for reasoning only)</summary>
+
+**Class:** 🟢 Desktop-neutral. New file only.
 **Effort:** M
 **Blast radius:** `.github/workflows/`
 
@@ -315,6 +401,10 @@ Required steps, modeled on the existing release workflows:
 - Signing config: start with a debug keystore so the pipeline is green, then add release signing.
 
 **Gate:** an APK installs on a physical device and launches. Even a blank screen is success at this stage.
+
+> ⚠️ **Stale, and left uncorrected above because the batch is dropped.** §3.3's first bullet is now false: `gen/android` **does** exist and is committed, and Phase 2 produced a signed APK without `tauri android init`.
+
+</details>
 
 ---
 
@@ -537,6 +627,12 @@ A prebuilt `aarch64-linux-android` artifact **does** exist: `ort-sys-2.0.0-rc.13
 
 Confirm `jniLibs` population for `sherpa-onnx` (`build.rs:64-72` already handles this) and set `abiFilters` to `arm64-v8a` to avoid shipping unused 32-bit slices.
 
+> ⚠️ **Verified 2026-10-10: `tauri.conf.json` has no `bundle` android block at all.** The file's entire `bundle` section is `active`, `targets`, `icon`, `resources` — desktop-only. No `android` key, no `minSdkVersion`, no `abiFilters`.
+>
+> **Consequence:** the single-ABI outcome described in §Phase 2 Results came from passing `-t aarch64` on the CLI, **not** from configuration. The restriction is not persisted. Any future `pnpm tauri android build` **without** `-t aarch64` will attempt all four ABIs and fail on `armv7-linux-androideabi` (Phase 2 blocker 6).
+>
+> **Action:** either add `bundle.android` to `tauri.conf.json`, or record `-t aarch64` in `scripts/android-deploy.sh` and treat it as mandatory. **The script route is preferred** — it matches how the build is actually invoked and keeps the flag next to its reason. XS work.
+
 ---
 
 ## Batch 8 — Model Delivery on Mobile ⛔ — **RE-SCOPED: L → M**
@@ -567,6 +663,8 @@ Every provider builds from this one function — `chatterbox_path` (`tts/factory
 
 So progress is not merely lost — partial bytes are destroyed on every interruption. **Every interrupted download restarts from zero.** On desktop that is an annoyance. On Android, where the OS kills backgrounded processes aggressively, a multi-GB `chatterbox` download is near-guaranteed to be interrupted.
 
+**⚠️ But "the defect is narrow" is now only half true.** This section was accurate on 2026-10-09 and understated the work. Three further problems were found by direct read of the code on 2026-10-10: the 300 s **total**-request timeout caps every download outright (§8.5); SHA-256 is not resumable over an appended file without first hashing the prefix (§8.6); and a server that ignores `Range` returns `200`, which corrupts the file if appended to silently (§8.6). The full plan is §8.5–§8.11.
+
 **3. Most of this is a robustness fix, not an Android port.** A download that dies on desktop also restarts from zero today. Android does not introduce the bug; it removes the user's ability to avoid it.
 
 ### 8.1 Re-scoped work
@@ -575,9 +673,10 @@ So progress is not merely lost — partial bytes are destroyed on every interrup
 |---|---|---|
 | Skip `migrate_legacy_layout` (`paths.rs:154`) on fresh devices | XS | Desktop-migration-only; no-op on a clean install |
 | Android arm for the two cfg blocks at `paths.rs:276-281,283-289` | XS | ⚠️ **Already effectively fine** — `#[cfg(unix)]` is *true* on Android and the chmod errors are discarded with `let _ =`; the `#[cfg(target_os="linux")]` icon `include_bytes!` is already dead there |
-| **Resumable transfer** — `Range: bytes=N-`, append instead of truncate, stop deleting `.tmp` | **S** | ~30 lines, all inside `download_and_hash` |
-| **Resume on launch** — scan `models/` for stale `.tmp`, offer resume | **S** | Converts "restart at 0" into "continue where it stopped" |
-| **Storage preflight** — check free headroom before starting | **S** | Android has far less headroom than desktop |
+| **8.1a — Replace the 300 s total-request timeout** | **XS** | ⛔ **Blocking, and not in the original plan.** See §8.5 |
+| **8.1b — Resumable transfer** (`Range`, append, hash the prefix, stop deleting `.tmp`) | **S** | See §8.6 |
+| **8.1c — Resume on launch** | **S** | Free — `setup_model` is already re-entrant. See §8.7 |
+| **8.1d — Storage preflight** | **S** | See §8.8 |
 | **Total** | **M** | ~70% of it also improves desktop |
 
 > **Note:** the original plan also proposed "Wi-Fi-only downloads by default" and "explicit per-model size confirmation." Those remain **open product questions**, not engineering work — see §Open Decisions.
@@ -611,9 +710,135 @@ Both originally-listed adjustments turned out to be non-issues on inspection:
 - `paths.rs:276-281` `#[cfg(unix)]` chmod 0700 — **`cfg(unix)` is *true* on Android**, and the result is already discarded with `let _ =`. It runs and harmlessly does nothing.
 - `paths.rs:283-289` `#[cfg(target_os="linux")]` icon `include_bytes!` — already **dead** on Android (`target_os` is `"android"`, not `"linux"`). No arm needed; the icon simply is not written.
 
-> ⚠️ The original plan listed all three as "need an Android arm." None do. This is the `target_os="linux"` pitfall documented in `.agents/rules/android-pitfalls.md` showing up in our own plan.
+> ⚠️ The original plan listed all three as "need an Android arm." None do. This is the `target_os="linux"` pitfall documented in `.agents/rules/android-style-guide.md` (Pitfall 1) showing up in our own plan.
 
-**Approval gate:** the resumable-download change alters download UX and storage semantics. Per AGENTS.md §4.3, confirm scope before implementation.
+**Decision policy:** see §8.11 — approval gate removed 2026-10-10 by user decision.
+
+### 8.5 ⛔ Blocking defect not in the original plan: the download times out at 5 minutes
+
+**Confirmed 2026-10-10.** `setup/model_manager.rs:65-68`:
+
+```rust
+Client::builder()
+    .timeout(Duration::from_secs(MODEL_DOWNLOAD_TIMEOUT_SECS))   // = 300, setup/mod.rs:2
+    .connect_timeout(Duration::from_secs(MODEL_CONNECT_TIMEOUT_SECS))
+```
+
+reqwest's `timeout()` is a **total** deadline on the entire request including body streaming. It is not an idle timeout. A multi-GB `chatterbox` or Qwen download **cannot complete inside 300 seconds** on any connection slower than ~30 MB/s, and on a phone over Wi-Fi it routinely will not.
+
+This is a **desktop bug too**, not an Android-only one — a slow desktop link hits the same wall. It is invisible today because most users download on fast connections and the 5-minute cap rarely binds.
+
+**Fix:** use reqwest's per-read idle timeout instead of the total deadline, so a stalled transfer fails but a slow one survives.
+
+- `ClientBuilder::read_timeout(Duration)` — per-read idle deadline. `connect_timeout` already stays as-is.
+- Raise or remove the total `timeout`. Prefer **remove** it and rely on `connect_timeout` + `read_timeout`; a total cap on a resumable download is now actively harmful, because it fires on downloads that are progressing fine.
+
+**Spec impact:** `MODEL_DOWNLOAD_TIMEOUT_SECS` lives in `setup/mod.rs`, the subsystem constant block required by `backend-style-guide.md` §3. Do not inline a literal at the call site. If the constant becomes unused after this, **delete it** — `backend-style-guide.md` §6 bans `_`-prefixed dead items.
+
+### 8.6 8.1b — Resumable transfer
+
+**Current state (confirmed by direct read of `model_manager.rs`):**
+
+| Line | Behaviour |
+|---|---|
+| `:291` | `self.client.get(url).send()` — **no `Range` header** |
+| `:299` | `tokio::fs::File::create(dest)` — **truncates**, destroying any existing `.tmp` |
+| `:300` | `Sha256::new()` — hashes **only the bytes received this run** |
+| `:292` | status checked for success only; a `206` is accepted as if it were `200` |
+| `:316` | progress computed as `downloaded / expected_size` — **resets to ~0** on resume |
+| `:155,189,235,250,256` | `remove_file(&temp_path)` on cancel, hash-mismatch, extraction failure, extraction panic, and post-extract |
+
+**The hashing problem is the one that makes this non-trivial.** SHA-256 is not resumable over an appended file: resuming from byte `N` yields a hash of bytes `N..end` unless the prefix `0..N` is hashed first. So resume requires **re-reading and hashing the existing `.tmp` before appending**. That is one streaming read pass over the partial file — cheap relative to the download, and strictly required for the `hash != entry.sha256` check at `:170` to remain correct.
+
+**Work, in this order:**
+
+1. **Read the existing prefix.** If `temp_path` exists, stream it through `Sha256` and take `resume_offset` = its length. Open with `OpenOptions::append(true)` instead of `File::create`. If it does not exist, `resume_offset = 0` and create normally.
+2. **Send `Range: bytes={resume_offset}-`** when `resume_offset > 0`.
+3. **Branch on the response status — this is the critical detail:**
+   - `206 Partial Content` → append from `resume_offset`.
+   - `200 OK` → **the server ignored the `Range` header and is sending the whole body.** Truncate the `.tmp` back to zero, restart the hasher, and write from the beginning. Appending here would duplicate bytes and corrupt the file while still producing a plausible-looking download.
+   - `416 Range Not Satisfiable` → the `.tmp` is already ≥ the full size. It is stale or corrupt; delete it and restart from zero once.
+4. **Progress must be absolute.** Seed `downloaded = resume_offset` and seed the progress emitter with it, so the UI resumes at the right percentage instead of snapping to 0. On a `206`, do **not** use `response.content_length()` as the total — it is the *remaining* length. Use `entry.size_bytes`.
+5. **Stop deleting `.tmp` on interruption.** `model_manager.rs:155` (cancel) and the `Err` arm generally must **preserve** the partial file. That is the entire point.
+6. **Keep one deletion: hash mismatch** (`:189`). A `.tmp` that does not match the manifest hash is corrupt — resuming from it would be wrong forever. Delete and let the next run start clean. The same applies to `416` in step 3.
+7. **The extraction paths (`:235,:250,:256`) keep their deletions.** Those run *after* the download is complete and verified, so the `.tmp` is a fully-downloaded archive and there is nothing to resume. Deleting there is correct. **Do not "fix" these** — they are not part of the defect.
+
+**⚠️ Collision risk — verify before relying on the `.tmp` naming.** `temp_path = dest_path.with_extension("tmp")` (`:135`) *replaces* the extension. Any two manifest entries sharing a stem collide: `foo/model.bin` and `foo/model.txt` both map to `foo/model.tmp`, and concurrent downloads would corrupt each other. Check `~/.vox/models/models_manifest.json` for same-stem entries. If any exist, switch to `dest_path.with_extension(format!("{}.tmp", ext))` or a `.partial` sibling keyed on the full filename.
+
+**Desktop safety:** this is strictly an improvement. Desktop currently loses partial bytes on every interruption; after this it does not.
+
+### 8.7 8.1c — Resume on launch: no new work, and no IPC change
+
+**Good news, confirmed by inspection:** the original plan treated this as needing a scan-and-offer flow. It does not. `setup_model` (`model_manager.rs:84-99`) already returns early on a matching `.verified` marker and otherwise re-enters `download_and_hash` unconditionally. Once 8.1b lands, **re-running setup resumes automatically** because the `.tmp` is on disk and gets picked up.
+
+Consequences:
+- **No new `IpcEvent` variant.** `IpcEvent::ModelProgress` already carries `bytes_downloaded` and `total_bytes`, so resume progress needs no contract change. Worth stating explicitly because per AGENTS.md §4.3 that would otherwise be a spec change requiring approval.
+- **No new IPC command.** No `resume_download` surface is needed. The wizard re-running its existing setup path is enough.
+- **Do not add a "stale `.tmp` scan" on launch.** It would duplicate logic that step 1 of 8.1b already performs, and it would need its own error handling for a case the setup path handles.
+
+### 8.8 8.1d — Storage preflight
+
+**Required because Android headroom is small** and the failure mode is ugly: ENOSPC mid-download currently surfaces as a raw `No space left on device` after the user has already waited.
+
+**Check free space before starting, not during.** Mid-download checking adds a `statvfs` syscall per chunk to the hot loop for a condition that a pre-check already prevents in practice.
+
+**Implementation:** `sysinfo` (`Cargo.toml:93`) is already a dependency and provides cross-platform free space with no `cfg` branching — prefer it over `libc::statvfs`, which is `cfg(unix)`-only and would need a Windows path (Windows does not have `statvfs`). One deterministic path, per `backend-style-guide.md` §7.
+
+**Threshold:** compare free space against `entry.size_bytes` plus a margin for extraction. Archives extract to something larger than the download (`manifest.rs:69-70` already models this at `size_bytes` for plain models and `size_bytes / 2` for archives — note that model is for the *required total* across a group, not the post-extraction expansion, so do not reuse it blindly here). **Confirm the real expansion ratio before hardcoding a multiplier.**
+
+**Error shape:** a typed, user-facing error at the IPC boundary per `backend-style-guide.md` §7 and `ipc-spec.md`. "Not enough storage — needs 4.2 GB, has 1.1 GB" is actionable; an errno is not.
+
+### 8.9 Tests — the gap that must be closed first
+
+**Confirmed:** `tests/model_manager_test.rs` (302 lines, 5 tests) exercises **filesystem behaviour only** — marker creation, hash mismatch, Zip-Slip, Tar-Slip, deletion cleanup. **`download_and_hash` has zero test coverage**, and the resumable-transfer logic in 8.1b is entirely inside it.
+
+Building 8.1b with no test harness means shipping data-corruption logic that only ever runs against a real multi-GB download over a real network. On a phone. That is not acceptable.
+
+**There is no HTTP test server dependency** — no `wiremock`, `httpmock`, or `mockito` in `Cargo.toml`.
+
+**Recommendation: hand-roll a test HTTP server in `tests/common/`, do not add a dependency.** Reasons:
+- The codebase already hand-rolls test fixtures in `tests/common/archive.rs`, so this matches the established pattern.
+- The interesting cases are **misbehaving servers** — ignores `Range` and returns `200`, returns `416`, returns `206` with a wrong `Content-Range`, returns a short body. Mocking libraries make awkward work of deliberately-wrong servers; a `tokio::net::TcpListener` writing raw responses makes them trivial and explicit.
+
+**Test matrix (each a separate named test in `tests/model_manager_test.rs`):**
+
+| # | Scenario | Asserts |
+|---|---|---|
+| 1 | Fresh download, server honours nothing special | File content correct; sha matches; `.verified` written |
+| 2 | `.tmp` pre-seeded with prefix `P`, server returns `206` for `Range` | Final file == full payload; **sha matches** (proves prefix hashing) |
+| 3 | `.tmp` pre-seeded, server **ignores `Range`, returns `200`** | Final file == full payload, **not** payload-duplicated; sha matches — this is the corruption case |
+| 4 | Server returns `416` | `.tmp` deleted; next run restarts from zero |
+| 5 | Cancel mid-transfer | `.tmp` **retained** with partial bytes (the regression this batch exists to fix) |
+| 6 | Resume of a `.tmp` larger than the payload | Treated as corrupt; deleted; clean restart |
+| 7 | Progress events during resume | First emitted `bytes_downloaded` > 0 (absolute, not reset) |
+
+Tests 2, 3, 5, and 7 are the ones that would fail if 8.1b were reverted — they are the regression net. Run them with the standard gate: `cargo nextest run --release --test-threads=1 --no-fail-fast`.
+
+**Also required:** `./scripts/verify-targets.sh` clean on both targets after the Rust changes, per the standing dual-target gate.
+
+### 8.10 Execution order for Batch 8
+
+| Step | Work | Size | Gate |
+|---|---|---|---|
+| **8.1a** | Replace the 300 s total timeout with a per-read idle timeout | XS | `verify-targets.sh` clean; a deliberately slow download completes |
+| **8.2** | Stand up the test HTTP server + the 7-test matrix **against the current unresumable code** | S | Tests 2/3/5/7 fail — they must fail first, or they test nothing |
+| **8.3** | Implement 8.1b resumable transfer | S | All 7 tests green; full `nextest` green |
+| **8.4** | Verify the `.tmp` stem-collision risk; fix the naming if it is real | XS | Manifest inspection recorded |
+| **8.5** | Storage preflight | S | Preflight error surfaces on the IPC boundary |
+
+Step 8.2 before 8.3 is deliberate: writing the tests after the implementation is how false-green tests get written.
+
+### 8.11 Decision policy — changed 2026-10-10
+
+**The approval gate is removed by user decision.** The user is informed and consulted, not asked to pre-approve. UX and correctness are the deciding authorities; a rule never outranks them.
+
+What this means for this batch in practice:
+- **Resume must not degrade UX.** A user who cancels and restarts should continue, not lose progress. That is the entire point.
+- **Partial `.tmp` files persisting on disk is correct**, not a side effect to apologize for. They are hidden, live under `models/`, and are removed on success or hash mismatch.
+- **The storage preflight must produce an actionable message**, not an errno. Insufficient storage is a real user situation; "Not enough storage — needs 4.2 GB, has 1.1 GB" is the correct answer to give.
+- **A slow download must never fail silently or corrupt data.** Correctness outranks convenience here without exception.
+
+What still gets surfaced rather than assumed: any change that removes a capability a user currently has, or that alters a spec'd contract. Those are reported, not gated.
 
 ---
 
@@ -669,13 +894,15 @@ cargo clippy --target aarch64-linux-android --lib --release
 |---|---|
 | 1 | `cargo check` green for `x86_64-unknown-linux-gnu`; `cargo clippy --all-targets` clean; `cargo tree -e normal -i native-tls` empty (no OpenSSL on the target graph); `cargo check --target aarch64-linux-android` reaches `enigo` and no further |
 | 2 | `cargo nextest run --release --test-threads=1 --no-fail-fast` — full suite, no audio regression; **plus both clippy commands above** |
-| 3 | APK installs and launches on a physical device |
+| 3 | ❌ Dropped — see §Batch 3 |
 | 4 | Both clippy commands above clean; desktop bundles build unchanged; `cargo nextest` green |
 | 5 | `pnpm test` green (invariant tests); desktop visual check |
 | 6 | Wizard completes on a physical device, portrait and landscape |
 | 7 | Release build links for `arm64-v8a` |
-| 8 | Full model download → load → inference on device |
+| 8 | The 7-test matrix in §8.9 green; full `nextest` green; both clippy targets clean; **plus** a real interrupted-then-resumed download on device (see §8.6) |
 | 9 | 5-minute soak on a mid-range device |
+
+> **Note on Batch 8's gate.** The §8.9 matrix is necessary but not sufficient. Resume logic that passes against a cooperative test server can still fail against a real CDN. The on-device interrupted-download check — kill the app mid-transfer, relaunch, confirm it continues rather than restarting — is the gate that actually proves the feature, and it cannot be automated away.
 
 ---
 
@@ -698,18 +925,24 @@ These rules exist so no batch silently regresses desktop.
 
 | Phase | Work | Effort | Why here |
 |---|---|---|---|
-| **0** | Verification automation (§Verification script, `AGENTS.md` §3 fix, `.agents/rules/android-pitfalls.md`, IPC-registration invariant test) | S | Every later phase is worthless if regressions go unseen. Also retires the two traps that made Batch 4 look complete when it was not. |
+| **0** | Verification automation (§Verification script, `AGENTS.md` §3 fix, `.agents/rules/android-style-guide.md`, IPC-registration invariant test) | S | Every later phase is worthless if regressions go unseen. Also retires the two traps that made Batch 4 look complete when it was not. |
 | **1** | Close Batch 4 — `setup/remote_server.rs` only | S | ✅ **Done (Phase 1)**. Last known defect; closed by gating the module behind `#[cfg(desktop)]` with a typed mobile stub, plus an `isDesktop()` gate on the `<RemoteServerSetup>` panel. Desktop arm unmodified. |
-| **2** | **First `arm64-v8a` release LINK** — `tauri android init`, `bundle.android` config, then *link* not *check* | M | ✅ **Done.** Produced a signed, installable APK. Settled both UNVERIFIED claims (`turso` §7.2, `llama.cpp` §7.1) and found six native-toolchain blockers `cargo check` could never see — see §Phase2-Results. |
+| **2** | **First `arm64-v8a` release LINK** — *link* not *check* | M | ✅ **Done.** Produced a signed, installable APK. Settled both UNVERIFIED claims (`turso` §7.2, `llama.cpp` §7.1) and found six native-toolchain blockers `cargo check` could never see — see §Phase2-Results. |
 | **3** | Batch 7 — fix whatever Phase 2's link exposes | M | ✅ **Done.** Phase 2 *was* the diagnostic; §7.1/§7.2/§7.4 all resolved. §7.3 needed one real fix: `ort`'s `nnapi` feature, and it had to be **target-scoped** — see §Phase3-Results. |
 | **4** | APK installs and launches on a physical device | M | 🟡 **Partially done (2026-10-10).** Installs and reaches `[BOOTSTRAP] Runtime Ready` on a POCO redwoodin / Android 14 after fixing three launch crashes. Runtime behaviour (oboe audio, NNAPI inference, thermals) still unproven. See §Phase4-Results. |
-| **5** | Batch 8 — resumable downloads | M | Re-scoped from L. Robustness fix; mostly benefits desktop too. |
-| **6** | Batch 2 — audio backend seam | M | Deliberately last. Its purpose is to make a future Android audio backend "a new file rather than a refactor." Doing it before Phase 4 means refactoring against assumptions instead of observations. |
+| **5** | Batch 8 — resumable downloads | M | **Next backend work.** Without it first-run cannot complete on Android: an interrupted multi-GB download restarts from byte zero, and Android kills backgrounded processes. Detailed plan in §8.5–§8.11. |
+| **6** | Batch 2 — audio backend seam | M | Deliberately last among backend work. Its purpose is to make a future Android audio backend "a new file rather than a refactor." Doing it before Phase 4 means refactoring against assumptions instead of observations. Detailed plan in §2.0–§2.5. |
+| **7** | Batch 9 — WebGL thermal tuning | M | After backend work; needs a soak, not a device build. |
 
-**Two ordering rules worth keeping:**
+**Backend work order — the two Phase 5/6 batches are independent and may run in either order.** They share no file: Batch 8 touches `setup/model_manager.rs`, Batch 2 touches `services/audio/` and `services/tts/voice.rs`. Both are gated by the same dual-target compile check, so **do not run them concurrently** — `verify-targets.sh` compiles both targets and two concurrent cargo invocations will contend on the same target directory.
+
+**Suggested order:** Phase 5 first. It is the larger correctness risk (data corruption), it is fully testable on desktop, and it blocks the user-visible first-run path. Phase 6 first only if you want audio working on the device sooner.
+
+**Three ordering rules worth keeping:**
 
 1. **Never `cargo check` a cross target as a gate.** `cargo check --target aarch64-linux-android` passes while Android-only dead code sits in the tree, and it structurally cannot catch it. Use `scripts/verify-targets.sh`.
 2. **Reach a link before investing in anything downstream of it.** Phase 2 exists to convert the plan's remaining guesses into build-log fact before Phase 5 spends M on model delivery.
+3. **Both Phase 5 and Phase 6 begin with a one-line observation, not code.** Phase 5 reads the device's interrupted-download behaviour; Phase 6 step 2.0 reads the device's logged input sample format (`services/audio/device.rs:41-45` already logs it). Both answers are free and both change the size of the work that follows.
 
 ---
 
@@ -757,7 +990,7 @@ variable set, omitting `BINDGEN_EXTRA_CLANG_ARGS*`, `CC_`/`CXX_`/`AR_*` and
 to the parent CLI over a WebSocket. There is no `--ci` flag. So the `$CARGO_HOME`
 write is the only injection point that reaches the Gradle cargo pass.
 
-Full detail: `.agents/rules/android-pitfalls.md` traps 11-15.
+Full detail: `.agents/rules/android-style-guide.md` — ⚠️ **these traps are NOT yet written.** See §Doc Debt.
 
 ### Now verified (previously UNVERIFIED)
 
@@ -769,7 +1002,9 @@ Full detail: `.agents/rules/android-pitfalls.md` traps 11-15.
 ### Still unverified
 
 - ⛔ **`ort` NNAPI (§7.3)** — `libonnxruntime.so` is packaged, but the `nnapi` feature is still not enabled, so the resolved artifact is not confirmed to be the NNAPI build. Requires real hardware; an emulator validates nothing.
-- ⛔ **Nothing has run on a device.** No APK has ever been installed. Audio (`cpal`/oboe), NNAPI, and thermal behaviour are all unproven.
+- ✅ ~~**Nothing has run on a device.**~~ **Superseded by Phase 4 (2026-10-10).** An APK now installs and reaches `[BOOTSTRAP] Runtime Ready`. Audio, NNAPI inference, and thermals are still unproven — see §Phase 4 Results.
+- ⛔ **`RECORD_AUDIO` is not declared** (`gen/android/app/src/main/AndroidManifest.xml`) — no input stream can be opened on Android. Discovered 2026-10-10; see §2.3.
+- ⛔ **Capture is hardcoded to `f32`** (`services/audio/device.rs:140`) with no format negotiation. Device-dependent; see §2.4.
 
 ### Build cost
 
@@ -824,7 +1059,7 @@ Verified in the built APK: `ARM aarch64`, `NnapiExecutionProvider` present, no
 `GLIBC` undefined symbols, `liblog`/`libEGL` linkage. Full signed APK rebuilt at
 207.7 MB; both targets clippy clean.
 
-Traps 16-17 in `.agents/rules/android-pitfalls.md`.
+Traps 16-17 — ⚠️ **not yet written**, see §Doc Debt.
 
 ### Also closed: the chatterbox `[patch]`
 
@@ -901,9 +1136,10 @@ per APK.** That duplication is unfixed and is roughly half the Rust-change cost.
 These change scope materially and need an answer before the relevant batch starts.
 
 1. ~~**llama.cpp on Android (§7.1).**~~ **RESOLVED — no decision needed.** `llama-cpp-sys` auto-disables OpenMP on aarch64-Android (`build.rs:1899`) and cross-compiles cleanly. The "fall back to a remote LLM provider" option is off the table.
-2. **Model download UX (§8.1).** Wi-Fi-only downloads by default? Explicit per-model size confirmation? Both remain open and are **product** calls, not engineering blockers. Resume-after-process-death is now an S item (a `Range` header plus stopping the five `remove_file` calls at `model_manager.rs:155,189,235,250,256`) and is mandatory either way — the original plan's framing of it as a large, architecture-shaped problem did not survive verification (§8.0).
+2. **Model download UX (§8.1).** Wi-Fi-only downloads by default? Explicit per-model size confirmation? Both remain open and are **product** calls, not engineering blockers. Resume-after-process-death is an S item and is mandatory either way. Its **full** shape was verified on 2026-10-10 and is materially larger than "a `Range` header": SHA-256 cannot be resumed over an appended file without first hashing the existing prefix (§8.6), the server may ignore `Range` and return `200` (which silently corrupts the file if appended to), progress must be absolute, and **the 300 s total-request timeout at `model_manager.rs:66` caps every download regardless** (§8.5). See §8.5–§8.11 for the plan.
 3. ✅ **Dictation on Android — RESOLVED by necessity.** This was listed as a scope preference; §1.5 shows it now gates the Android build entirely. `enigo` has no Android backend, so `services/dictation/**` **must** be excluded to compile. That answers the question by necessity rather than choice: unless dictation is reimplemented against Android's `InputManager`, Android is assistant-only. **Shipped on `6310dacf`.**
-4. **ORT execution provider on Android (§7.3).** The only prebuilt Android artifact is NNAPI. Enable the `nnapi` feature and validate on real hardware, or supply an XNNPACK/full-EP artifact?
+4. ✅ **ORT execution provider on Android (§7.3).** **RESOLVED (Phase 3).** The `nnapi` feature is enabled via a target-scoped dependency. What remains is **hardware validation**, not a decision: VAD and the memory embedder must be confirmed to run under NNAPI on a real device. An emulator validates nothing.
+5. **✅ Closed 2026-10-10.** Resumable downloads were raised as an open decision. The user removed the approval gate — informed and consulted, not pre-approved. See §8.11.
 
 ---
 
@@ -919,6 +1155,20 @@ Recorded here so the work is not lost. **None of it is required for local Androi
 | `AudioBackend` trait | introduced in **Batch 2** | Remote streams audio instead of opening a local device |
 
 **Note:** Batch 2's `AudioCapture`/`AudioSink` traits are the one item that serves both this plan and remote execution. That is the primary justification for doing Batch 2 now rather than deferring it.
+
+---
+
+## Doc Debt
+
+**The style guide documents 7 pitfalls. Phases 2–4 produced at least 14 more.** `.agents/rules/android-style-guide.md` was renamed and expanded during Phase 4 but stops at Pitfall 7. Everything learned afterwards — the `$CARGO_HOME` config-injection rule, the Tauri-env allowlist, the double link, `stderr` as the only live channel on release builds, `home_dir()` returning `/`, the R8 keep rules — currently lives **only in this plan**, and this plan's own citations to the old `android-pitfalls.md` filename were stale until 2026-10-10.
+
+**Recommendation:** migrate the Phase 2/3/4 findings into `android-style-guide.md` as Pitfalls 8–21 before Phase 5/6 work starts. The frontend agent is currently working from that guide, and it is the document AGENTS.md §4.2 makes mandatory for Android-touching code. Three items from this plan's own backend findings belong there too:
+
+| Candidate | Source | Why it belongs in the guide |
+|---|---|---|
+| No `RECORD_AUDIO` in the manifest | §2.3 | Fails at stream open, not at launch; no compile gate catches it |
+| `reqwest` total timeout vs. per-read timeout on large transfers | §8.5 | A correctness trap, not an Android-specific one |
+| `.tmp` via `with_extension` collides on shared stems | §8.6 | Silent corruption, no error surfaced |
 
 ---
 

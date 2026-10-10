@@ -1,7 +1,6 @@
 export const MEMORY_COPY = {
   memoryTitle: "MEMORY",
   graphLoadingTitle: "Building memory graph...",
-  graphLoadingSubtitle: "Synthesizing personal knowledge topology",
   personalMemory: "Personal Memory",
   dossierTitle: "About You",
   identityLayer: "About You & Preferences",
@@ -9,8 +8,8 @@ export const MEMORY_COPY = {
   recenterView: "Recenter View",
   zoomIn: "Zoom In",
   zoomOut: "Zoom Out",
-  emptyFactsTitle: "No memories saved yet",
-  emptyFactsDesc: "Talk with Vox to help it remember details about you and your work.",
+  emptyFactsTitle: "No memories persist",
+  emptyFactsDesc: "Personal and work related observations will appear here.",
   loadFailedTitle: "Couldn't load your memories",
   loadFailedDesc: "The memory store didn't answer. Your memories are still there — try again.",
   loadFailedRetry: "Retry",

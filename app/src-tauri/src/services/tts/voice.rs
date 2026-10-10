@@ -15,10 +15,13 @@ use serde::{Deserialize, Serialize};
 use symphonia_core::audio::{Audio, GenericAudioBufferRef};
 
 use crate::{
-    services::tts::{
-        providers::edge_tts::get_trusted_client_token, CHATTERBOX_MODEL_DIR, EDGE_TTS_USER_AGENT,
-        EDGE_TTS_VOICES_URL_BASE, MODEL_FILE_TTS_CHATTERBOX_S3GEN, MODEL_FILE_TTS_CHATTERBOX_T3,
-        TTS_SAMPLE_RATE,
+    services::{
+        audio::resolve_audio_host,
+        tts::{
+            providers::edge_tts::get_trusted_client_token, CHATTERBOX_MODEL_DIR,
+            EDGE_TTS_USER_AGENT, EDGE_TTS_VOICES_URL_BASE, MODEL_FILE_TTS_CHATTERBOX_S3GEN,
+            MODEL_FILE_TTS_CHATTERBOX_T3, TTS_SAMPLE_RATE,
+        },
     },
     utils::paths::model_dir,
 };
@@ -298,7 +301,7 @@ pub fn start_recording() -> Result<(), String> {
         return Err("Recording is already in progress".to_string());
     }
 
-    let host = cpal::default_host();
+    let host = resolve_audio_host();
     let device = host
         .default_input_device()
         .ok_or_else(|| "No default input device found".to_string())?;

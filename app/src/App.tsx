@@ -45,14 +45,7 @@ const PageLoader = () => (
 );
 
 const App: React.FC = () => {
-  const [setupCompleted, setSetupCompleted] = useState<boolean | null>(() => {
-    try {
-      const cached = localStorage.getItem("vox_setup_completed");
-      return cached === "true" ? true : null;
-    } catch {
-      return null;
-    }
-  });
+  const [setupCompleted, setSetupCompleted] = useState<boolean | null>(null);
   const [readyToTransition, setReadyToTransition] = useState(false);
   /**
    * Onboarding status is UNKNOWN. Distinct from both `true` and `false`:
@@ -131,8 +124,7 @@ const App: React.FC = () => {
       for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
         try {
           const completed = await getOnboardingStatus();
-          const devBypass = localStorage.getItem("vox_skip_wizard_dev") === "true";
-          const finalStatus = forceWizard ? false : (devBypass || completed);
+          const finalStatus = forceWizard ? false : completed;
           setSetupCompleted(finalStatus);
           setSetupUnreachable(false);
           try {
@@ -140,6 +132,7 @@ const App: React.FC = () => {
               localStorage.setItem("vox_setup_completed", "true");
             } else {
               localStorage.removeItem("vox_setup_completed");
+              localStorage.removeItem("vox_skip_wizard_dev");
             }
           } catch (_) {}
           return;
@@ -269,13 +262,7 @@ const App: React.FC = () => {
   }, [isWizardWebview]);
 
   return (
-    <div className="relative h-[100dvh] w-full bg-[rgb(var(--background))] overflow-hidden"
-      style={{
-        // See WizardRoot: `viewport-fit=cover` extends the page under the system
-        // bars, so the root must supply the insets.
-        paddingTop: 'env(safe-area-inset-top)',
-        paddingBottom: 'env(safe-area-inset-bottom)',
-      }}>
+    <div className="relative h-[100dvh] w-full bg-[rgb(var(--background))] overflow-hidden">
       <ErrorBoundary name="App">
         {/* Dedicated setup wizard window */}
         {isWizardWebview === null ? null : isWizardWebview ? (

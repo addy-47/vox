@@ -1,7 +1,7 @@
 export const HISTORY_COPY = {
   loading: "Loading memories...",
-  noMemoriesTitle: "No memories persisted",
-  noMemoriesDesc: "Transcribed interactions and voice sessions will appear here as memory nodes.",
+  noMemoriesTitle: "No Sessions persist",
+  noMemoriesDesc: "Conversation & Chat history will appear here.",
   failedTitle: "Failed to load history",
   failedFallback: "Failed to load history sessions. Please check backend connection.",
   retry: "Retry",

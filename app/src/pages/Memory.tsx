@@ -9,6 +9,7 @@ import React, {
 import { createPortal } from "react-dom";
 import {
   PanelLeft,
+  Ghost,
 } from "lucide-react";
 import { useViewportResize } from "@/shared/hooks/useViewportResize";
 import { subscribeViewportFrame, subscribeViewportGate } from "@/layout/viewportResize";
@@ -24,7 +25,7 @@ import {
 } from "@/services/historyService";
 import { onSessionsChanged } from "@/services/eventsService";
 import { usePersonalMemoryDrawer } from "@/shared/hooks/usePersonalMemoryDrawer";
-import { ErrorBoundary, OrbitalLoader } from "@/shared/components/common";
+import { ErrorBoundary, OrbitalLoader, EmptyState } from "@/shared/components/common";
 import { Drawer } from "@/shared/ui/Drawer";
 import { Modal } from "@/shared/ui/Modal";
 import { EdgePanel, Tooltip, BottomDockFeather, ThemeToggleButton } from "@/shared/ui";
@@ -47,7 +48,6 @@ import {
   PersonalMemoryBody,
   PersonalMemoryModalView,
   MemoryErrorState,
-  MemoryEmptyState,
   MemoryHint,
 } from "@/shared/components/memory";
 
@@ -88,6 +88,7 @@ export const Memory: React.FC = memo(() => {
 
   // Filtering & Selection
   const [searchQuery, setSearchQuery] = useState("");
+  const [searchModalOpen, setSearchModalOpen] = useState(false);
   const [selectedCollection, setSelectedCollection] = useState("all");
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [selectedFact, setSelectedFact] = useState<ObservationRecord | null>(null);
@@ -459,17 +460,19 @@ export const Memory: React.FC = memo(() => {
           <ThemeToggleButton />
         </div>
 
-        {/* Center: Search Bar (Responsive width, strictly centered between corner clusters with safety gap) */}
-        <div className="flex-1 flex justify-center px-3 sm:px-6 min-w-0 pointer-events-auto">
-          <SearchBar
-            facts={facts}
-            isLightMode={isLightMode}
-            onCommitSearch={setSearchQuery}
-            onSelectNode={handleSelectSearchNode}
-            dropdownPlacement="bottom"
-            className="w-full max-w-[280px]"
-          />
-        </div>
+        {/* Center: Search Bar (Desktop / Wide layout strictly centered between corner clusters with safety gap) */}
+        {!isCompactLayout && (
+          <div className="flex-1 flex justify-center px-3 sm:px-6 min-w-0 pointer-events-auto">
+            <SearchBar
+              facts={facts}
+              isLightMode={isLightMode}
+              onCommitSearch={setSearchQuery}
+              onSelectNode={handleSelectSearchNode}
+              dropdownPlacement="bottom"
+              className="w-full max-w-[280px]"
+            />
+          </div>
+        )}
 
         {/* Right Spacer: Symmetrically mirrors TopRightCluster width so center stays dead-center */}
         <div className="w-[76px] shrink-0 pointer-events-none" aria-hidden="true" />
@@ -477,20 +480,23 @@ export const Memory: React.FC = memo(() => {
 
 
 
-      {/* ── Right Edge: Floating Graph Control Dock ── */}
-      <GraphControlDock
-        onRecenter={handleRecenter}
-        onZoomIn={handleZoomIn}
-        onZoomOut={handleZoomOut}
-        onRefresh={handleRefreshDock}
-        onFocusCore={handleFocusCore}
-        refreshing={refreshing}
-        selectModeEnabled={selectModeEnabled}
-        onToggleSelectMode={handleToggleSelectMode}
-      />
+      {/* ── Right Edge: Floating Graph Control Dock (Rendered when memories exist) ── */}
+      {facts.length > 0 && (
+        <GraphControlDock
+          onRecenter={handleRecenter}
+          onZoomIn={handleZoomIn}
+          onZoomOut={handleZoomOut}
+          onRefresh={handleRefreshDock}
+          onFocusCore={handleFocusCore}
+          refreshing={refreshing}
+          selectModeEnabled={selectModeEnabled}
+          onToggleSelectMode={handleToggleSelectMode}
+          onOpenSearch={isCompactLayout ? () => setSearchModalOpen(true) : undefined}
+        />
+      )}
 
       {/* ── Bottom Right: Category Legend Overlay — matches ModelStatusOverlay dock position & feather ── */}
-      {!drawerOpen && typeof document !== "undefined" &&
+      {!drawerOpen && typeof document !== "undefined" && facts.length > 0 &&
         createPortal(
           <div className="hidden lg:flex fixed bottom-4 right-4 z-40 pointer-events-none items-center">
             {isRightPanelOpen && (
@@ -522,8 +528,8 @@ export const Memory: React.FC = memo(() => {
         </ErrorBoundary>
       </EdgePanel>
 
-      {/* ── 3D Dynamic WebGL Graph Canvas ── */}
-      {dims.w > 0 && (
+      {/* ── 3D Dynamic WebGL Graph Canvas (Rendered when memories exist) ── */}
+      {dims.w > 0 && facts.length > 0 && (
         <motion.div
           className={cn(
             "absolute inset-0 w-full h-full",
@@ -611,9 +617,16 @@ export const Memory: React.FC = memo(() => {
         <MemoryErrorState error={loadError} onRetry={refresh} />
       )}
 
-      {/* ── Empty State ── */}
+      {/* ── Empty State (Matches History.tsx placement, UI, size, icon, and styling) ── */}
       {!loading && !loadError && facts.length === 0 && (
-        <MemoryEmptyState />
+        <div className="absolute inset-0 flex items-center justify-center p-8 z-20 pointer-events-none">
+          <EmptyState
+            icon={Ghost}
+            title={MEMORY_COPY.emptyFactsTitle}
+            description={MEMORY_COPY.emptyFactsDesc}
+            className="max-w-sm border-0 bg-transparent"
+          />
+        </div>
       )}
 
       {/* ── Memory Page Footnote Hint ── */}
@@ -628,7 +641,7 @@ export const Memory: React.FC = memo(() => {
           onClose={drawer.closeDrawer}
           position="global"
           ariaLabel={MEMORY_COPY.personalMemory}
-          className="w-[min(920px,94vw)] h-[min(780px,88vh)]"
+          className="w-[min(920px,86vw)] max-w-[calc(100vw-36px)] h-[min(740px,76vh)] max-h-[calc(100dvh-120px)]"
           bodyClassName="h-full flex flex-col min-h-0 overflow-hidden p-0"
         >
           <ErrorBoundary name="MemoryModalContent">
@@ -651,6 +664,46 @@ export const Memory: React.FC = memo(() => {
             <PersonalMemoryBody drawer={drawer} />
           </ErrorBoundary>
         </Drawer>
+      )}
+
+      {/* ── Search Modal for Mobile / Compact Viewports ── */}
+      {isCompactLayout && (
+        <Modal
+          open={searchModalOpen}
+          onClose={() => setSearchModalOpen(false)}
+          position="global"
+          ariaLabel="Search Memories"
+          className="w-[min(480px,92vw)] p-4 rounded-2xl bg-[rgba(var(--card),0.92)] backdrop-blur-2xl border border-[rgba(var(--border),0.2)] shadow-2xl"
+        >
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center justify-between border-b border-[rgba(var(--accent),0.12)] pb-2">
+              <span className="text-[13px] font-display font-black tracking-wider uppercase text-[rgb(var(--foreground))]">
+                Search Memories
+              </span>
+              <button
+                type="button"
+                onClick={() => setSearchModalOpen(false)}
+                className="text-xs font-mono text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] cursor-pointer bg-transparent border-0"
+              >
+                Close
+              </button>
+            </div>
+            <SearchBar
+              facts={facts}
+              isLightMode={isLightMode}
+              onCommitSearch={(q) => {
+                setSearchQuery(q);
+                setSearchModalOpen(false);
+              }}
+              onSelectNode={(factId) => {
+                handleSelectSearchNode(factId);
+                setSearchModalOpen(false);
+              }}
+              dropdownPlacement="bottom"
+              className="w-full"
+            />
+          </div>
+        </Modal>
       )}
 
     </div>

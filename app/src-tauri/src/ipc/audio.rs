@@ -3,6 +3,8 @@ use std::time::{Duration, Instant};
 use cpal::traits::{DeviceTrait, HostTrait};
 use serde::{Deserialize, Serialize};
 
+use crate::services::audio::resolve_audio_host;
+
 /// System audio device descriptor with default designation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AudioDevice {
@@ -41,7 +43,7 @@ pub async fn list_audio_devices(kind: Option<String>) -> Result<Vec<AudioDevice>
     }
 
     let result = tokio::task::spawn_blocking(move || {
-        let host = cpal::default_host();
+        let host = resolve_audio_host();
         let mut result = Vec::new();
 
         if is_output {

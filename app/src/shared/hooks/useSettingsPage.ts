@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { SETTINGS_DOMAINS as DOMAINS, type SettingsDomainId as DomainId } from "@/data/settingsCopy";
 import { useSettingsStore } from "@/store/settingsStore";
 import { isCompactWidth } from "@/layout/breakpoints";
+import { isRealMobileDevice } from "@/shared/hooks/useMobileViewport";
 
 interface LineCoords {
   x1: number;
@@ -30,7 +31,7 @@ export function useSettingsPage() {
     typeof window !== "undefined" ? window.innerHeight : 800
   );
   const [isCompact, setIsCompact] = useState(() =>
-    typeof window !== "undefined" ? isCompactWidth() : false
+    typeof window !== "undefined" ? isRealMobileDevice() || isCompactWidth() : false
   );
 
   const [lines, setLines] = useState<Record<DomainId, { x1: number; y1: number; x2: number; y2: number } | null>>({

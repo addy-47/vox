@@ -60,6 +60,11 @@
         if (isToast) {
           document.documentElement.classList.add("is-toast");
         }
+        var isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || 
+                       (window.__TAURI_INTERNALS__ && /android/i.test(navigator.userAgent));
+        if (isMobile) {
+          document.documentElement.classList.add("is-mobile");
+        }
       })();
     </script>
     <style>
@@ -71,11 +76,15 @@
         overflow: hidden;
       }
       /* Desktop-only: suppress touch scrolling/zoom gestures on fine-pointer
-         devices. On touch devices (Android) scrolling and pinch must work. */
+         devices. On touch devices (Android) scrolling, touch taps, and gestures must work cleanly. */
       @media (pointer: fine) {
-        html, body, #root {
+        html:not(.is-mobile), body:not(.is-mobile), #root:not(.is-mobile) {
           touch-action: none;
         }
+      }
+      html.is-mobile, body.is-mobile, html.is-mobile * {
+        touch-action: manipulation;
+        -webkit-tap-highlight-color: transparent;
       }
       html:not(.is-tray):not(.is-toast), 
       body:not(.is-tray):not(.is-toast), 
@@ -156,6 +165,7 @@
       // Desktop-only gesture suppression (Batch 5.2). On coarse-pointer
       // (touch) devices these listeners stay off so scroll/pinch work.
       (function() {
+        if (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) return;
         var fine = false;
         try {
           fine = window.matchMedia && window.matchMedia('(pointer: fine)').matches;

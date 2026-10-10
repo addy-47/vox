@@ -54,6 +54,7 @@ do_build() {
         local newest_src
         newest_src="$(find "$ROOT/src" "$ROOT/Cargo.toml" "$ROOT/build.rs" \
             "$ROOT/gen/android/app/build.gradle.kts" \
+            "$APP/src" "$APP/dist" \
             -newer "$newest_apk" -print -quit 2>/dev/null || true)"
         if [[ -z "$newest_src" ]]; then
             echo "==> Nothing newer than $newest_apk — skipping build (~${VOX_SKIP_MIN:-1} min saved)."

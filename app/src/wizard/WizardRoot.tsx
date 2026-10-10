@@ -21,6 +21,9 @@ import { WIZARD_STEPS, WIZARD_STATUS_COPY } from '@/data/welcomeCopy';
 
 import { MobileOnboardingFlow } from './mobile/MobileOnboardingFlow';
 import { Smartphone, Monitor, Maximize2, Minimize2, RotateCcw } from 'lucide-react';
+import { applyTheme } from '@/shared/theme';
+
+const DEFAULT_WIZARD_ACCENT = '#00dbe9';
 
 // Module scope: the step table never changes, so resolve the icon
 // components and index lookup once instead of rebuilding (with JSX +
@@ -48,6 +51,9 @@ export const WizardRoot: React.FC = () => {
   );
   
   React.useEffect(() => {
+    // The onboarding flow always starts with the canonical pre-defined accent color.
+    applyTheme({ theme: 'dark', accent_seed: DEFAULT_WIZARD_ACCENT }, { animate: false });
+
     // Reveal window after a short delay to ensure React is hydrated and CSS is loaded
     // This prevents the initial white flash.
     const timer = setTimeout(() => {
@@ -126,15 +132,21 @@ export const WizardRoot: React.FC = () => {
     return 'pending';
   };
 
+  // On real mobile devices, mount MobileOnboardingFlow directly full-bleed
+  if (isRealMobileDevice()) {
+    return (
+      <div className="w-full h-full flex flex-col bg-[rgb(var(--background))] text-[rgb(var(--foreground))] overflow-hidden select-none">
+        <AmbientBackground instanceId="wizard-mobile" />
+        <MobileOnboardingFlow
+          key={mobileResetKey}
+          onComplete={() => setMobileResetKey((k) => k + 1)}
+        />
+      </div>
+    );
+  }
+
   return (
-    <div className="flex flex-col h-[100dvh] w-full bg-[rgb(var(--background))] text-[rgb(var(--foreground))] overflow-hidden font-sans selection:bg-[rgb(var(--accent))]/30"
-      style={{
-        // `viewport-fit=cover` makes the page extend under the Android status and
-        // navigation bars. Without these insets the first row of content sits
-        // behind the clock and the primary action hides under the gesture bar.
-        paddingTop: 'env(safe-area-inset-top)',
-        paddingBottom: 'env(safe-area-inset-bottom)',
-      }}>
+    <div className="flex flex-col h-full w-full bg-[rgb(var(--background))] text-[rgb(var(--foreground))] overflow-hidden font-sans selection:bg-[rgb(var(--accent))]/30">
       <AmbientBackground instanceId="wizard" />
       <TitleBar />
 

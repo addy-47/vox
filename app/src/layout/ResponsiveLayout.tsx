@@ -23,6 +23,7 @@ import { useSessionStore } from "@/store/sessionStore";
 import { getStackSize } from "@/shared/lib/overlayStack";
 import { BREAKPOINT_OPPOSITE_COLLISION_MAX, isCompactWidth } from "./breakpoints";
 import { isCoarsePointer } from "@/lib/capabilities";
+import { isRealMobileDevice } from "@/shared/hooks/useMobileViewport";
 
 const Monitoring = lazy(() => import("@/pages/Monitoring").then((m) => ({ default: m.Monitoring })));
 
@@ -91,6 +92,41 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
   // field parks (see viewportResize.ts + index.css).
   const { isResizing, layout } = useViewportResize();
   const isCompact = layout === "compact";
+  const isMobile = isRealMobileDevice();
+
+  // Mobile horizontal swipe navigation across primary routes
+  const touchStartX = useRef<number | null>(null);
+  const touchStartY = useRef<number | null>(null);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (!isMobile) return;
+    const target = e.target as HTMLElement | null;
+    if (target?.tagName === "CANVAS" || target?.closest("canvas, input[type='range'], [data-no-swipe]")) {
+      return;
+    }
+    touchStartX.current = e.touches[0].clientX;
+    touchStartY.current = e.touches[0].clientY;
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (!isMobile || touchStartX.current === null || touchStartY.current === null) return;
+    const deltaX = e.changedTouches[0].clientX - touchStartX.current;
+    const deltaY = e.changedTouches[0].clientY - touchStartY.current;
+    touchStartX.current = null;
+    touchStartY.current = null;
+
+    if (Math.abs(deltaX) > 60 && Math.abs(deltaX) > Math.abs(deltaY) * 1.5) {
+      const routes = ["/", "/history", "/memory", "/settings"];
+      const currentIdx = routes.indexOf(location.pathname);
+      if (currentIdx !== -1) {
+        if (deltaX < 0 && currentIdx < routes.length - 1) {
+          navigate(routes[currentIdx + 1]);
+        } else if (deltaX > 0 && currentIdx > 0) {
+          navigate(routes[currentIdx - 1]);
+        }
+      }
+    }
+  };
 
   // Opposite trigger collision threshold (SSOT: BREAKPOINT_OPPOSITE_COLLISION_MAX):
   // Panel width is 340px; opposite corner cluster is ~80px + 20px padding (100px).
@@ -402,12 +438,15 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
 
         {/* Page content */}
         <main
+          onTouchStart={handleTouchStart}
+          onTouchEnd={handleTouchEnd}
           style={{
             position: "relative",
             flex: 1,
             height: "100%",
             overflow: "hidden",
             width: "100%",
+            paddingBottom: isMobile ? "calc(60px + env(safe-area-inset-bottom))" : undefined,
           }}
         >
           <Suspense

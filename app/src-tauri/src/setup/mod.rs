@@ -1,5 +1,11 @@
 // ─── Setup Subsystem Constants ───────────────────────────────────────────────
-pub const MODEL_DOWNLOAD_TIMEOUT_SECS: u64 = 300;
+/// Per-read idle deadline for model downloads.
+///
+/// This is deliberately **not** a total request deadline. Model files run to
+/// multiple gigabytes, and a total deadline would fail any transfer slower than
+/// roughly `size / MODEL_DOWNLOAD_IDLE_TIMEOUT_SECS`. A stalled transfer should
+/// fail; a slow one must not.
+pub const MODEL_DOWNLOAD_IDLE_TIMEOUT_SECS: u64 = 60;
 pub const MODEL_CONNECT_TIMEOUT_SECS: u64 = 10;
 pub const PROGRESS_EMIT_INTERVAL_MS: u64 = 150;
 pub const MANIFEST_FETCH_TIMEOUT_SECS: u64 = 15;
@@ -27,7 +33,7 @@ pub mod update_check;
 /// which works on every platform. Provisioning is a desktop-admin task: set the
 /// box up from a laptop, then point the phone at it.
 ///
-/// See .agents/rules/android-pitfalls.md trap 7.
+/// See `.agents/rules/android-style-guide.md`.
 #[cfg(desktop)]
 pub mod remote_server;
 
