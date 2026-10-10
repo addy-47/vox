@@ -34,10 +34,10 @@ export const SettingsCardWrapper = memo(({ domain, isActive, layoutMode, childre
     <AnimatePresence>
       {isActive && (
         <motion.div
-          initial={{ opacity: 0, scale: 0.96 }}
+          initial={layoutMode === "small" ? { opacity: 0 } : { opacity: 0, scale: 0.96 }}
           animate={{ opacity: 1, scale: 1 }}
-          exit={{ opacity: 0, scale: 0.96 }}
-          transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
+          exit={layoutMode === "small" ? { opacity: 0 } : { opacity: 0, scale: 0.96 }}
+          transition={{ duration: layoutMode === "small" ? 0.15 : 0.28, ease: [0.16, 1, 0.3, 1] }}
           className={cn(
             "w-full pointer-events-auto",
             layoutMode === "small" ? "h-auto" : "h-full flex items-center justify-center"
@@ -48,7 +48,7 @@ export const SettingsCardWrapper = memo(({ domain, isActive, layoutMode, childre
             className={cn(
               "flex flex-col gap-0",
               layoutMode === "small" ? "w-full" : "shrink-0",
-              (hasChanges || isAutoSavedHere || isRestartHere || saveFailure) && "has-unsaved-changes"
+              layoutMode !== "small" && (hasChanges || isAutoSavedHere || isRestartHere || saveFailure) && "has-unsaved-changes"
             )}
           >
             {/* Actual Card content */}
@@ -126,11 +126,16 @@ export const SettingsCardWrapper = memo(({ domain, isActive, layoutMode, childre
               {!expandModalOpen && !hasChanges && !saveFailure && isAutoSavedHere && (
                 <motion.div
                   key="saved-toast-footer"
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: "auto" }}
-                  exit={{ opacity: 0, height: 0 }}
-                  transition={{ duration: 0.2 }}
-                  className="w-full py-2 px-4 sm:px-5 rounded-b-[1.25rem] rounded-t-none bg-[rgba(var(--accent),0.08)] dark:bg-[rgba(var(--accent),0.12)] border border-t-0 border-[rgba(var(--accent),0.2)] flex items-center justify-between overflow-hidden text-[12px]"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.15 }}
+                  className={cn(
+                    "w-full py-2 px-4 sm:px-5 flex items-center justify-between overflow-hidden text-[12px]",
+                    layoutMode === "small"
+                      ? "rounded-xl mt-2 bg-[rgba(var(--accent),0.08)] border border-[rgba(var(--accent),0.2)]"
+                      : "rounded-b-[1.25rem] rounded-t-none bg-[rgba(var(--accent),0.08)] dark:bg-[rgba(var(--accent),0.12)] border border-t-0 border-[rgba(var(--accent),0.2)]"
+                  )}
                 >
                   <span className="font-bold uppercase tracking-wider text-[rgb(var(--accent))] flex items-center gap-1.5 truncate">
                     <Check size={14} className="shrink-0" />

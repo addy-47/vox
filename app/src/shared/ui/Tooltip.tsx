@@ -18,6 +18,7 @@ import {
 import { cn } from "@/shared/lib/utils";
 import { getShortcutById } from "@/data/shortcuts";
 import { isSpatialNavigating, subscribeSpatialNavigating } from "@/shared/lib/spatialNavigation";
+import { isRealMobileDevice } from "@/shared/hooks/useMobileViewport";
 
 export interface TooltipProps {
   label: React.ReactNode;
@@ -103,7 +104,12 @@ export const Tooltip: React.FC<TooltipProps> = React.memo(({
     return undefined;
   }, [shortcut, shortcutId]);
 
-  if (disabled || !label) {
+  const isTouchOrMobile = useMemo(() => {
+    if (typeof window === "undefined") return false;
+    return isRealMobileDevice() || (typeof window.matchMedia === "function" && window.matchMedia("(pointer: coarse)").matches);
+  }, []);
+
+  if (disabled || !label || isTouchOrMobile) {
     return <>{children}</>;
   }
 

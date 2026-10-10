@@ -163,7 +163,7 @@ fn get_system_info() -> (f32, u32) {
 }
 
 fn check_mic_access() -> bool {
-    let host = cpal::default_host();
+    let host = crate::services::audio::resolve_audio_host();
     host.default_input_device().is_some()
 }
 

@@ -7,6 +7,7 @@
 pub mod archive;
 pub mod audio;
 pub mod harness;
+pub mod http_server;
 pub mod paths;
 pub mod scoring;
 pub mod wire;

@@ -26,8 +26,9 @@ pub use compaction::{
     run_compaction, strip_citation, AttributionFlag, CompactionResult, COMPACTION_SYSTEM_PROMPT,
 };
 pub use ingestion::{
-    spawn_ingestion_sweep, drain_ingestion_queue, reconcile_crashed_queue_on_boot, run_ingestion_cycle, DedupDecision,
-    DedupNearMiss, DedupStage, IngestionCycleSummary, QueueStatus, NEAR_MISS_REPORT_FLOOR,
+    drain_ingestion_queue, reconcile_crashed_queue_on_boot, run_ingestion_cycle,
+    spawn_ingestion_sweep, DedupDecision, DedupNearMiss, DedupStage, IngestionCycleSummary,
+    QueueStatus, NEAR_MISS_REPORT_FLOOR,
 };
 pub(crate) use ml::trim_heap;
 pub use ml::{

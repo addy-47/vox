@@ -147,7 +147,7 @@ export const ExpandableList = memo(
           headerActions={headerActions}
           footer={footer}
           ariaLabel={ariaLabel}
-          className="w-[min(1120px,94vw)] h-[min(800px,88vh)]"
+          className="w-[min(1120px,86vw)] max-w-[calc(100vw-36px)] h-[min(760px,76vh)] max-h-[calc(100dvh-120px)]"
           bodyClassName="h-full flex flex-col min-h-0 overflow-hidden p-4 sm:p-5"
         >
           <ExpandableListContext.Provider value={modalContext}>

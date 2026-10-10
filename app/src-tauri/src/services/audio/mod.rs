@@ -46,7 +46,9 @@ pub use decode::{
     decode_bytes_to_24khz_mono, decode_to_24khz_mono, truncate_to, write_wav_f32,
     write_wav_f32_raw, DecodedAudio,
 };
-pub use device::{build_output_stream, resolve_output_device_and_config, AudioStream};
+pub use device::{
+    build_output_stream, resolve_audio_host, resolve_output_device_and_config, AudioStream,
+};
 pub use playback::PlaybackEngine;
 pub use resampler::{upsample_2x, upsample_2x_into, AudioResampler};
 

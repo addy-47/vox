@@ -37,7 +37,7 @@ export interface FlipTraceHandle {
  *  branch is dead-code-eliminated from production bundles. */
 const TRACE_ENABLED = import.meta.env.DEV;
 
-let probeEnabled = TRACE_ENABLED; // TEMP-DIAGNOSTIC: default ON in dev so a plain theme flip emits snap lines. Revert to false after RCA.
+let probeEnabled = false;
 
 /**
  * Opt in to the destructive forced-style-recalc probe. Off by default: it

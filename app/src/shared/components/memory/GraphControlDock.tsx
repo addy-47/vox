@@ -1,5 +1,5 @@
 import { memo } from "react";
-import { Target, Plus, Minus, RefreshCw, MousePointerClick } from "lucide-react";
+import { Target, Plus, Minus, RefreshCw, MousePointerClick, Search } from "lucide-react";
 import { Tooltip } from "@/shared/ui/Tooltip";
 import { cn } from "@/shared/lib/utils";
 import { MEMORY_COPY } from "@/data/memoryCopy";
@@ -13,6 +13,7 @@ interface GraphControlDockProps {
   refreshing?: boolean;
   selectModeEnabled?: boolean;
   onToggleSelectMode?: () => void;
+  onOpenSearch?: () => void;
 }
 
 export const GraphControlDock = memo(
@@ -24,12 +25,27 @@ export const GraphControlDock = memo(
     refreshing = false,
     selectModeEnabled = false,
     onToggleSelectMode,
+    onOpenSearch,
   }: GraphControlDockProps) => {
     return (
       <aside
         aria-label="Graph Navigation Controls"
         className="fixed right-2 sm:right-5 top-1/2 -translate-y-1/2 z-30 flex flex-col items-center gap-1 sm:gap-1.5 p-1 sm:p-1.5 rounded-xl sm:rounded-2xl bg-[rgba(var(--card),0.75)] backdrop-blur-2xl border border-[rgba(var(--border),0.14)] shadow-2xl pointer-events-auto transition-colors"
       >
+        {/* Search Modal Trigger (Compact / Mobile) */}
+        {onOpenSearch && (
+          <Tooltip label="Search Memories" shortcutId="memory.search" side="left">
+            <button
+              type="button"
+              onClick={onOpenSearch}
+              aria-label="Search Memories"
+              className="p-1.5 sm:p-2.5 rounded-lg sm:rounded-xl text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.12)] active:scale-95 transition-all cursor-pointer"
+            >
+              <Search className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+            </button>
+          </Tooltip>
+        )}
+
         {/* Recenter View */}
         <Tooltip label={MEMORY_COPY.recenterView} shortcutId="memory.recenter" side="left">
           <button

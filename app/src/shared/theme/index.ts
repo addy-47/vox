@@ -366,18 +366,28 @@ function prefersReducedMotion(): boolean {
  * costs two extra full-document style recalcs.
  */
 function syncGate() {
-  const shouldBeOpen = flipGateHeld || previewGateHeld;
-  if (shouldBeOpen === isGateOpen) return;
-  isGateOpen = shouldBeOpen;
+  const shouldBeOpen = flipGateHeld;
+  if (shouldBeOpen !== isGateOpen) {
+    isGateOpen = shouldBeOpen;
+    if (typeof document !== "undefined") {
+      const root = document.documentElement;
+      if (shouldBeOpen) {
+        root.setAttribute("data-theme-transition", "true");
+      } else {
+        root.removeAttribute("data-theme-transition");
+      }
+    }
+    setTransitioning(shouldBeOpen);
+  }
+
   if (typeof document !== "undefined") {
     const root = document.documentElement;
-    if (shouldBeOpen) {
-      root.setAttribute("data-theme-transition", "true");
+    if (previewGateHeld) {
+      root.setAttribute("data-accent-preview", "true");
     } else {
-      root.removeAttribute("data-theme-transition");
+      root.removeAttribute("data-accent-preview");
     }
   }
-  setTransitioning(shouldBeOpen);
 }
 
 function closeGate() {

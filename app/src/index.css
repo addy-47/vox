@@ -303,6 +303,13 @@ body:not(.is-tray) {
   [data-theme-transition] #root::after {
     opacity: 0;
   }
+
+  [data-accent-preview] *,
+  [data-accent-preview] *::before,
+  [data-accent-preview] *::after {
+    transition-property: none !important;
+    transition-duration: 0s !important;
+  }
 }
 
 [data-viewport-resize] *,

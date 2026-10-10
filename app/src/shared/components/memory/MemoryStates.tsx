@@ -1,5 +1,5 @@
 import React, { memo } from "react";
-import { Sparkles, Hand } from "lucide-react";
+import { Ghost, Hand } from "lucide-react";
 import { MEMORY_COPY } from "@/data/memoryCopy";
 
 export interface MemoryErrorStateProps {
@@ -36,9 +36,9 @@ export const MemoryErrorState: React.FC<MemoryErrorStateProps> = memo(({ error, 
 MemoryErrorState.displayName = "MemoryErrorState";
 
 export const MemoryEmptyState: React.FC = memo(() => (
-  <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-    <div className="rounded-2xl bg-[rgba(var(--card),0.85)] border border-[rgba(var(--border),0.12)] backdrop-blur-xl p-8 max-w-sm text-center shadow-2xl">
-      <Sparkles size={28} className="mx-auto text-[rgb(var(--accent))] mb-3 opacity-80" />
+  <div className="absolute inset-0 flex flex-col items-center justify-center p-6 pointer-events-none z-20">
+    <div className="max-w-sm text-center border-0 bg-transparent">
+      <Ghost size={36} className="mx-auto text-[rgb(var(--foreground-muted))] mb-3 opacity-50" />
       <h3 className="font-display text-[14px] font-bold text-[rgb(var(--foreground))] mb-1">
         {MEMORY_COPY.emptyFactsTitle}
       </h3>
@@ -52,7 +52,7 @@ export const MemoryEmptyState: React.FC = memo(() => (
 MemoryEmptyState.displayName = "MemoryEmptyState";
 
 export const MemoryHint: React.FC = memo(() => (
-  <div className="absolute bottom-24 left-1/2 -translate-x-1/2 z-30 flex flex-col items-center gap-2 pointer-events-none">
+  <div className="hidden sm:flex absolute bottom-24 left-1/2 -translate-x-1/2 z-30 flex-col items-center gap-2 pointer-events-none">
     <div className="flex items-center gap-1.5 text-[11px] font-mono text-[rgb(var(--foreground-muted))] opacity-60">
       <Hand size={12} className="text-[rgb(var(--accent))]" />
       <span>{MEMORY_COPY.memoryHint}</span>

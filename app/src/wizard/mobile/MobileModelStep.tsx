@@ -1,11 +1,10 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   Wifi,
   ArrowRight,
   Check,
-  CheckSquare2,
-  Square,
+  ChevronDown,
   AudioWaveform,
   Ear,
   Languages,
@@ -22,14 +21,17 @@ import {
 import { onModelProgress, type ModelProgressPayload } from '@/services/eventsService';
 import {
   MOBILE_ONBOARDING_COPY,
-  WIZARD_CTA_LABELS,
   MODEL_CATEGORY_META,
+  MODEL_CATEGORY_COPY,
   MODEL_PROGRESS_STEPS,
 } from '@/data/welcomeCopy';
+import { MobileStepFooter } from './MobileStepFooter';
 
 interface MobileModelStepProps {
   onNext: () => void;
-  onBack: () => void;
+  onBack?: () => void;
+  onSkip?: () => void;
+  onSelectStep?: (index: number) => void;
 }
 
 const formatBytes = (bytes: number): string => {
@@ -40,9 +42,14 @@ const formatBytes = (bytes: number): string => {
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
 };
 
-export const MobileModelStep: React.FC<MobileModelStepProps> = ({ onNext, onBack }) => {
+export const MobileModelStep: React.FC<MobileModelStepProps> = ({
+  onNext,
+  onBack,
+  onSelectStep,
+}) => {
   const [manifest, setManifest] = useState<VoxManifest | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set(['stt', 'llm']));
   const [isDownloading, setIsDownloading] = useState(false);
   const [isDone, setIsDone] = useState(false);
   const [progress, setProgress] = useState<Record<string, ModelProgressPayload>>({});
@@ -80,6 +87,18 @@ export const MobileModelStep: React.FC<MobileModelStepProps> = ({ onNext, onBack
       unlisten();
     };
   }, []);
+
+  const toggleCategoryExpand = (catId: string) => {
+    setExpandedCategories((prev) => {
+      const next = new Set(prev);
+      if (next.has(catId)) {
+        next.delete(catId);
+      } else {
+        next.add(catId);
+      }
+      return next;
+    });
+  };
 
   const toggleModel = useCallback((id: string, isRequired: boolean) => {
     if (isRequired || isDownloading || isDone) return;
@@ -132,7 +151,6 @@ export const MobileModelStep: React.FC<MobileModelStepProps> = ({ onNext, onBack
       .reduce((sum, g) => sum + g.files.reduce((fSum, f) => fSum + f.size, 0), 0);
   }, [manifest, selectedIds]);
 
-  // Overall aggregate percentage
   const overallPercent = useMemo(() => {
     if (isDone) return 100;
     const entries = Object.values(progress);
@@ -146,7 +164,7 @@ export const MobileModelStep: React.FC<MobileModelStepProps> = ({ onNext, onBack
     try {
       await startModelSetup(Array.from(selectedIds));
     } catch {
-      // Simulate progress in offline environment
+      // Graceful offline fallback simulation
       let step = 0;
       const interval = setInterval(() => {
         step += 20;
@@ -159,27 +177,12 @@ export const MobileModelStep: React.FC<MobileModelStepProps> = ({ onNext, onBack
   };
 
   return (
-    <div className="flex flex-col h-full overflow-hidden select-none">
-      {/* Top Header */}
-      <div className="px-5 pt-3 pb-2 shrink-0 flex items-center justify-between border-b border-[rgba(var(--foreground),0.04)]">
-        <button
-          onClick={onBack}
-          disabled={isDownloading && !isDone}
-          className="text-xs font-mono text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] uppercase tracking-wider py-1 px-1 focus:outline-none disabled:opacity-30"
-        >
-          {WIZARD_CTA_LABELS.back}
-        </button>
-        <span className="text-[11px] font-mono font-semibold tracking-wider text-[rgb(var(--accent))] uppercase">
-          {copy.step}
-        </span>
-        <div className="w-8" />
-      </div>
-
+    <div className="flex flex-col h-full w-full overflow-hidden select-none">
       {/* Scrollable Model Catalog & Progress List */}
-      <div className="flex-1 min-h-0 overflow-y-auto px-4 py-3 space-y-3">
-        {/* Step Intro Card */}
-        <div className="space-y-1">
-          <h2 className="text-lg font-display font-bold text-[rgb(var(--foreground))] tracking-tight">
+      <div className="flex-1 min-h-0 overflow-y-auto px-5 py-4 space-y-4">
+        {/* Step Intro Header */}
+        <div className="space-y-1.5 pt-1">
+          <h2 className="text-2xl font-display font-bold text-[rgb(var(--foreground))] tracking-tight">
             {isDone ? copy.readyTitle : copy.title}
           </h2>
           <p className="text-xs text-[rgb(var(--foreground-muted))] leading-relaxed">
@@ -189,9 +192,9 @@ export const MobileModelStep: React.FC<MobileModelStepProps> = ({ onNext, onBack
 
         {/* Wi-Fi recommendation notice */}
         {!isDone && (
-          <div className="glass rounded-xl p-2.5 flex items-center gap-2.5 border border-[rgba(var(--foreground),0.06)]">
+          <div className="glass rounded-2xl p-3 flex items-center gap-3 border border-[rgba(var(--foreground),0.08)]">
             <Wifi className="w-4 h-4 text-[rgb(var(--warning))] shrink-0" />
-            <span className="text-[11px] text-[rgb(var(--foreground-muted))] leading-tight">
+            <span className="text-xs text-[rgb(var(--foreground-muted))] leading-normal">
               {copy.wifiWarning}
             </span>
           </div>
@@ -199,14 +202,14 @@ export const MobileModelStep: React.FC<MobileModelStepProps> = ({ onNext, onBack
 
         {/* Global Progress Bar (visible during download or done) */}
         {(isDownloading || isDone) && (
-          <div className="glass rounded-xl p-3 border border-[rgba(var(--foreground),0.06)] space-y-2">
+          <div className="glass rounded-2xl p-4 border border-[rgba(var(--foreground),0.08)] space-y-2.5">
             <div className="flex justify-between items-center text-xs font-mono">
               <span className="text-[rgb(var(--foreground-muted))] uppercase tracking-wider text-[11px]">
-                {isDone ? WIZARD_CTA_LABELS.continueToVerification : WIZARD_CTA_LABELS.synchronizing}
+                {isDone ? copy.readyTitle : copy.downloadingButton}
               </span>
               <span className="text-[rgb(var(--accent))] font-bold">{overallPercent}%</span>
             </div>
-            <div className="h-1.5 w-full bg-[rgba(var(--foreground),0.08)] rounded-full overflow-hidden">
+            <div className="h-2 w-full bg-[rgba(var(--foreground),0.08)] rounded-full overflow-hidden">
               <motion.div
                 className="h-full bg-[rgb(var(--accent))]"
                 initial={{ width: 0 }}
@@ -218,45 +221,37 @@ export const MobileModelStep: React.FC<MobileModelStepProps> = ({ onNext, onBack
         )}
 
         {/* Total Download Summary Tag */}
-        <div className="flex items-center justify-between text-[11px] font-mono text-[rgb(var(--foreground-muted))] px-1 pt-1">
-          <span className="uppercase tracking-wider">{copy.totalDownload}:</span>
-          <span className="font-semibold text-[rgb(var(--accent))]">{formatBytes(totalSelectedBytes)}</span>
+        <div className="flex items-center justify-between text-xs font-mono text-[rgb(var(--foreground-muted))] px-1">
+          <span className="uppercase tracking-wider">{copy.totalDownload}</span>
+          <span className="font-bold text-[rgb(var(--accent))]">{formatBytes(totalSelectedBytes)}</span>
         </div>
 
-        {/* Full Transparent List of Models */}
-        <div className="space-y-2">
+        {/* Full Transparent Catalog with Expandable Category Accordions */}
+        <div className="space-y-3 pb-2">
           {categories.map((cat) => {
-            const isCategorySelected = cat.groups.some((g) => selectedIds.has(g.id));
-            const activeGroup = cat.groups[0];
-            const modelProg = activeGroup ? progress[activeGroup.id] : undefined;
-            const stepLabel = modelProg?.step
-              ? MODEL_PROGRESS_STEPS[modelProg.step.toLowerCase()] ?? modelProg.step
-              : isDone
-              ? MODEL_PROGRESS_STEPS.completed
-              : undefined;
+            const isExpanded = expandedCategories.has(cat.id);
 
             return (
               <div
                 key={cat.id}
-                onClick={() => activeGroup && toggleModel(activeGroup.id, cat.isRequired)}
-                className={`glass rounded-xl p-3 border transition-all ${
-                  isCategorySelected
-                    ? 'border-[rgba(var(--accent),0.25)] bg-[rgb(var(--accent))]/5'
-                    : 'border-[rgba(var(--foreground),0.06)] opacity-70'
-                } ${!cat.isRequired && !isDownloading && !isDone ? 'cursor-pointer active:scale-[0.99]' : ''}`}
+                className="glass rounded-2xl border border-[rgba(var(--foreground),0.08)] overflow-hidden transition-all"
               >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex items-start gap-2.5">
-                    <div className="mt-0.5 p-1 rounded-lg bg-[rgb(var(--background))] border border-[rgba(var(--foreground),0.08)] shrink-0">
+                {/* Category Header Row */}
+                <div
+                  onClick={() => toggleCategoryExpand(cat.id)}
+                  className="flex items-center justify-between p-3.5 cursor-pointer active:bg-[rgba(var(--foreground),0.03)] transition-colors select-none"
+                >
+                  <div className="flex items-center gap-3 min-w-0 flex-1">
+                    <div className="w-9 h-9 rounded-xl bg-[rgb(var(--accent))]/10 border border-[rgb(var(--accent))]/20 flex items-center justify-center shrink-0">
                       {cat.icon}
                     </div>
-                    <div className="space-y-0.5">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="text-xs font-semibold text-[rgb(var(--foreground))]">
+                    <div className="flex flex-col min-w-0 flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-xs font-display font-bold text-[rgb(var(--foreground))] uppercase tracking-wide truncate">
                           {cat.label}
                         </span>
                         <span
-                          className={`text-[9px] font-mono font-bold uppercase px-1.5 py-0.2 rounded ${
+                          className={`text-[9px] font-mono font-bold uppercase px-1.5 py-0.5 rounded ${
                             cat.isRequired
                               ? 'bg-[rgb(var(--accent))]/15 text-[rgb(var(--accent))] border border-[rgb(var(--accent))]/30'
                               : 'bg-[rgba(var(--foreground),0.08)] text-[rgb(var(--foreground-muted))]'
@@ -265,89 +260,135 @@ export const MobileModelStep: React.FC<MobileModelStepProps> = ({ onNext, onBack
                           {cat.isRequired ? copy.requiredBadge : copy.optionalBadge}
                         </span>
                       </div>
-                      <p className="text-[11px] text-[rgb(var(--foreground-muted))] leading-tight">
-                        {cat.groups.map((g) => g.name).join(' · ') || cat.fallback}
+                      <p className="text-[11px] text-[rgb(var(--foreground-muted))] truncate leading-normal">
+                        {cat.fallback}
                       </p>
                     </div>
                   </div>
 
-                  <div className="flex flex-col items-end shrink-0 gap-1">
-                    <span className="text-[11px] font-mono font-medium text-[rgb(var(--foreground-muted))]">
+                  <div className="flex items-center gap-3 shrink-0 pl-2">
+                    <span className="text-xs font-mono font-bold text-[rgb(var(--accent))]">
                       {formatBytes(cat.size)}
                     </span>
-                    {!isDownloading && !isDone && (
-                      <div className="text-[rgb(var(--accent))]">
-                        {isCategorySelected ? (
-                          <CheckSquare2 className="w-4 h-4" />
-                        ) : (
-                          <Square className="w-4 h-4 text-[rgb(var(--foreground-muted))]/40" />
-                        )}
-                      </div>
-                    )}
-                    {(isDownloading || isDone) && (
-                      <div className="text-[rgb(var(--accent))] text-[11px] font-mono">
-                        {isDone ? (
-                          <Check className="w-4 h-4 text-[rgb(var(--accent))]" />
-                        ) : modelProg ? (
-                          `${modelProg.progress ?? 0}%`
-                        ) : (
-                          '...'
-                        )}
-                      </div>
-                    )}
+                    <div
+                      className={`transition-transform duration-200 text-[rgb(var(--foreground-muted))] ${
+                        isExpanded ? 'rotate-180' : ''
+                      }`}
+                    >
+                      <ChevronDown className="w-4 h-4" />
+                    </div>
                   </div>
                 </div>
 
-                {/* Per-model progress bar during download */}
-                {isDownloading && !isDone && modelProg && (
-                  <div className="mt-2 pt-2 border-t border-[rgba(var(--foreground),0.04)] space-y-1">
-                    <div className="flex justify-between text-[10px] font-mono text-[rgb(var(--foreground-muted))]">
-                      <span>{stepLabel ?? MODEL_PROGRESS_STEPS.downloading}</span>
-                      {modelProg.total_bytes > 0 && (
-                        <span>
-                          {formatBytes(modelProg.bytes_downloaded)} / {formatBytes(modelProg.total_bytes)}
-                        </span>
-                      )}
-                    </div>
-                    <div className="h-1 w-full bg-[rgba(var(--foreground),0.08)] rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-[rgb(var(--accent))] transition-all duration-300"
-                        style={{ width: `${modelProg.progress ?? 0}%` }}
-                      />
-                    </div>
-                  </div>
-                )}
+                {/* Expanded Model Group Rows */}
+                <AnimatePresence>
+                  {isExpanded && (
+                    <motion.div
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: 'auto', opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      transition={{ duration: 0.2 }}
+                      className="border-t border-[rgba(var(--foreground),0.06)] bg-black/25 px-3.5 py-3 space-y-2"
+                    >
+                      {cat.groups.map((group) => {
+                        const isGroupSelected = selectedIds.has(group.id);
+                        const isGroupRequired = group.files.some((f) => f.required);
+                        const groupSize = group.files.reduce((sum, f) => sum + f.size, 0);
+                        const modelProg = progress[group.id];
+                        const stepLabel = modelProg?.step
+                          ? MODEL_PROGRESS_STEPS[modelProg.step.toLowerCase()] ?? modelProg.step
+                          : isDone
+                          ? MODEL_PROGRESS_STEPS.completed
+                          : undefined;
+
+                        return (
+                          <div
+                            key={group.id}
+                            onClick={() => toggleModel(group.id, isGroupRequired)}
+                            className={`p-2.5 rounded-xl border transition-all ${
+                              isGroupSelected
+                                ? 'bg-[rgb(var(--accent))]/8 border-[rgb(var(--accent))]/25'
+                                : 'bg-[rgba(var(--foreground),0.03)] border-[rgba(var(--foreground),0.05)] opacity-60'
+                            } ${!isGroupRequired && !isDownloading && !isDone ? 'cursor-pointer active:scale-[0.99]' : ''}`}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                                <div
+                                  className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors ${
+                                    isGroupSelected
+                                      ? 'bg-[rgb(var(--accent))] border-[rgb(var(--accent))] text-black'
+                                      : 'border-[rgba(var(--foreground),0.2)]'
+                                  }`}
+                                >
+                                  {isGroupSelected && <Check className="w-3 h-3 stroke-[3]" />}
+                                </div>
+                                <div className="flex flex-col min-w-0 flex-1">
+                                  <span className="text-xs font-semibold text-[rgb(var(--foreground))] truncate">
+                                    {group.name}
+                                  </span>
+                                  <span className="text-[10px] font-mono text-[rgb(var(--foreground-muted))]">
+                                    {MODEL_CATEGORY_COPY.versionPrefix} {group.version}
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div className="text-right shrink-0">
+                                <span className="text-[11px] font-mono text-[rgb(var(--foreground-muted))]">
+                                  {formatBytes(groupSize)}
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Group download progress bar if active */}
+                            {isDownloading && !isDone && modelProg && (
+                              <div className="mt-2 pt-2 border-t border-[rgba(var(--foreground),0.04)] space-y-1">
+                                <div className="flex justify-between text-[10px] font-mono text-[rgb(var(--foreground-muted))]">
+                                  <span>{stepLabel ?? MODEL_PROGRESS_STEPS.downloading}</span>
+                                  <span>{modelProg.progress ?? 0}%</span>
+                                </div>
+                                <div className="h-1 w-full bg-[rgba(var(--foreground),0.08)] rounded-full overflow-hidden">
+                                  <div
+                                    className="h-full bg-[rgb(var(--accent))] transition-all duration-300"
+                                    style={{ width: `${modelProg.progress ?? 0}%` }}
+                                  />
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
             );
           })}
         </div>
       </div>
 
-      {/* Sticky Bottom Actions */}
-      <div className="px-5 py-4 shrink-0 border-t border-[rgba(var(--foreground),0.06)] bg-[rgb(var(--background))]/95 backdrop-blur-md">
-        {isDone ? (
-          <button
-            onClick={onNext}
-            className="w-full py-3.5 min-h-[48px] bg-[rgb(var(--accent))] text-black font-display font-bold text-xs uppercase tracking-wider rounded-xl flex items-center justify-center gap-2 shadow-[0_4px_20px_rgba(var(--accent),0.3)] active:scale-[0.98] transition-transform"
-          >
-            {copy.continueButton} <ArrowRight className="w-4 h-4" />
-          </button>
-        ) : isDownloading ? (
-          <button
-            disabled
-            className="w-full py-3.5 min-h-[48px] bg-[rgba(var(--foreground),0.1)] text-[rgb(var(--foreground-muted))] font-display font-bold text-xs uppercase tracking-wider rounded-xl flex items-center justify-center gap-2 cursor-wait"
-          >
-            {copy.downloadingButton} ({overallPercent}%)
-          </button>
-        ) : (
-          <button
-            onClick={handleStartDownload}
-            className="w-full py-3.5 min-h-[48px] bg-[rgb(var(--accent))] text-black font-display font-bold text-xs uppercase tracking-wider rounded-xl flex items-center justify-center gap-2 shadow-[0_4px_20px_rgba(var(--accent),0.3)] active:scale-[0.98] transition-transform"
-          >
-            {copy.downloadButton} ({formatBytes(totalSelectedBytes)}) <ArrowRight className="w-4 h-4" />
-          </button>
-        )}
-      </div>
+      {/* Thumb-Anchored Bottom Action Bar with 5-Step Slider & Buttons */}
+      <MobileStepFooter
+        currentIndex={3}
+        totalSteps={5}
+        onNext={isDone ? onNext : handleStartDownload}
+        onBack={onBack}
+        nextLabel={
+          isDone
+            ? copy.continueButton
+            : isDownloading
+            ? `${copy.downloadingButton} (${overallPercent}%)`
+            : `${copy.downloadButton} (${formatBytes(totalSelectedBytes)})`
+        }
+        nextIcon={
+          isDone ? (
+            <Check className="w-4 h-4 stroke-[3]" />
+          ) : (
+            <ArrowRight className="w-4 h-4" />
+          )
+        }
+        disabled={isDownloading}
+        onSelectStep={onSelectStep}
+      />
     </div>
   );
 };
