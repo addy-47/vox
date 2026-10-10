@@ -1,16 +1,12 @@
 import React from 'react';
-import { ArrowRight } from 'lucide-react';
 import { VoxOrb } from '@/shared/components/home';
 import { MOBILE_ONBOARDING_COPY } from '@/data/welcomeCopy';
-import { MobileStepFooter } from './MobileStepFooter';
 
 interface MobileHeroStepProps {
-  onNext: () => void;
-  onSkip?: () => void;
-  onSelectStep?: (index: number) => void;
+  onNext?: () => void;
 }
 
-export const MobileHeroStep: React.FC<MobileHeroStepProps> = ({ onNext, onSelectStep }) => {
+export const MobileHeroStep: React.FC<MobileHeroStepProps> = () => {
   const copy = MOBILE_ONBOARDING_COPY.hero;
 
   return (
@@ -27,8 +23,8 @@ export const MobileHeroStep: React.FC<MobileHeroStepProps> = ({ onNext, onSelect
           </div>
         </div>
 
-        {/* Headline & Body Copy positioned above step slider */}
-        <div className="space-y-2 max-w-sm mb-2 shrink-0">
+        {/* Headline & Body Copy */}
+        <div className="space-y-2 max-w-sm mb-4 shrink-0">
           <h1 className="text-2xl sm:text-3xl font-display font-bold text-[rgb(var(--foreground))] tracking-tight">
             {copy.title}
           </h1>
@@ -37,17 +33,6 @@ export const MobileHeroStep: React.FC<MobileHeroStepProps> = ({ onNext, onSelect
           </p>
         </div>
       </div>
-
-      {/* Thumb-Anchored Bottom Action Surface with 5-Step Slider & Buttons */}
-      <MobileStepFooter
-        currentIndex={0}
-        totalSteps={5}
-        onNext={onNext}
-        nextLabel={copy.getStarted}
-        nextIcon={<ArrowRight className="w-4 h-4" />}
-        onSelectStep={onSelectStep}
-      />
     </div>
   );
 };
-

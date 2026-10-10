@@ -1,10 +1,12 @@
 pub mod actions;
 pub mod lifecycle;
 pub mod service;
+pub mod transient;
 
 pub use actions::execute_notification_action;
 use serde::{Deserialize, Serialize};
 pub use service::notify;
+pub use transient::{deliver_transient, DeliveryOutcome, TransientAlert};
 
 use crate::core::{error::PipelineImpact, events::Severity};
 
@@ -108,7 +110,6 @@ pub enum DeliveryChannel {
 }
 
 /// Resolves the delivery channel using the deterministic 3D truth table:
-/// (PipelineImpact, Severity, Action) -> DeliveryChannel.
 pub fn resolve_channel(
     impact: Option<PipelineImpact>,
     severity: Severity,

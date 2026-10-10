@@ -39,8 +39,8 @@ pub fn on_transcript_final<R: tauri::Runtime>(
                 &notify_app,
                 &notify_db,
                 LifecycleCard {
-                    title: "🎙️ Dictation",
-                    message: "Dictation disabled",
+                    title: "Dictation Disabled",
+                    message: "Dictation is disabled in settings",
                     severity: Severity::Info,
                     duration_ms: 2000,
                 },
@@ -62,8 +62,8 @@ pub fn on_transcript_final<R: tauri::Runtime>(
                 &notify_app,
                 &notify_db,
                 LifecycleCard {
-                    title: "⚠️ Dictation: No Speech",
-                    message: "<b>No speech recognized</b>\nSpeak clearly into the microphone",
+                    title: "No Speech Detected",
+                    message: "Speak clearly into the microphone",
                     severity: Severity::Warning,
                     duration_ms: 3000,
                 },

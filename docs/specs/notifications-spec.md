@@ -129,7 +129,7 @@ Severity is expressed on the card **border only** — never as a word, badge, or
 
 ### 4.2 Universal Action Taxonomy
 Represents retention in storage and expected user interaction:
-- **`Transient`**: Ephemeral feedback for live interaction (e.g. Dictation Pasted, empty speech). Delivered only to the HUD overlay; never written to SQLite; auto-dismisses after 3 seconds.
+- **`Transient`**: Ephemeral feedback for live interaction (e.g. Dictation Pasted, empty speech). Delivered only to the transient surface; never written to SQLite; auto-dismisses after 3 seconds. **Android divergence (§8.6):** the platform has no true toast, so these are real notifications and leave a trace in Notification History. Routing is identical on both platforms; only the surface differs.
 - **`Receipt`**: Passive historical audit record (e.g. Compaction Finished, Consolidation Succeeded). Persisted to the SQLite drawer as a read/unread log. Never triggers a floating HUD popup over external apps.
 - **`Interactive`**: Actionable task or remediation card. Persisted to the SQLite drawer with a primary action button. Dual-emits to the HUD overlay when severity is Critical or turn-aborting.
 
@@ -293,6 +293,29 @@ When an error occurs during a voice turn, the runtime error boundary must execut
   - **Linux**: First dispatch captures the resident replace ID (`notify-send --print-id`); subsequent phases update in place via `notify-send --replace-id` with throttled (~250ms) partial text. Terminal states replace the same ID one final time with terminal title/body and normal expiry. When no resident card exists, terminal states route through the universal `notify()` front door (plain toast + drawer elevation on dispatch failure).
   - **macOS / Windows**: Dispatchers without replace semantics send a single terminal notification only (no live updates) to avoid popup spam.
   - **Unverified delivery is failure**: If the platform reports success but delivery cannot be verified (e.g. Wayland compositor swallowing synthetic input), the lifecycle terminates on the fallback card (`📋 Dictation Copied (press Ctrl+V)`) with persistent expiry, and clipboard restore is skipped so the transcript stays pastable.
+
+### 8.5 Transient Surface Facade (`ToastOnly` / `ToastAndNotification`)
+- **Routing is unchanged by platform.** `resolve_channel` (§5.1) and the 3D truth table (§5.2) are platform-independent. Which platform is running never alters *whether* an alert is emitted, only *where it is emitted*. This is the "1:1 map" invariant: on Android the same `Action::Transient` produces the same decision it does on desktop.
+- **Facade**: `TransientAlert` (title, message, severity, duration) plus `deliver_transient()` in `services/notifications/mod.rs` resolve to exactly one sink per build:
+  - `services/notifications/transient.rs` — desktop, delegating to the native dispatchers of §8.4.
+  - `services/notifications/android_transient.rs` — Android, described in §8.6.
+- **Title decoration**: titles are sent verbatim. The historical severity-emoji prefixer is removed on every platform; urgency is conveyed by the notification surface, not by glyphs in the title.
+
+### 8.6 Android Notification Surface (`ToastOnly` / `ToastAndNotification`)
+- **No true toast exists on Android.** Every transient alert is a real notification, so this section is a deliberate, documented divergence from the `Transient` "never persisted" contract of §4.2.
+- **Two channels, split on `Severity`** — the only control over whether an alert overlays other apps:
+  | Channel | Importance | Severity | Behaviour |
+  |---|---|---|---|
+  | `vox_info` | `Low` | `Info` | Shade only, silent. Never interrupts. |
+  | `vox_urgent` | `High` | `Warning`, `Critical` | Heads-up banner over other apps, with sound. |
+  `High` is also the only importance the system does not suppress while Vox itself is in the foreground.
+- **Channel importance is write-once.** `createChannel` is idempotent per id; deleting and recreating a channel discards the user's own importance override in Settings. Channels are created once at bootstrap and never recreated.
+- **Auto-dismiss**: the notification is removed `duration_ms` after posting, approximating desktop expiry. This is **best-effort** — if Android kills the process first, the notification remains posted. A lingering notification is preferred to a lost alert.
+- **Icon**: `res/drawable/ic_vox_notification.xml`. Android renders notification icons as an alpha mask, so the launcher adaptive icon is not reusable.
+- **Permission**: `POST_NOTIFICATIONS`, runtime-granted on Android 13+ (API 33). Declared-only below that. IPC: `notification_permission_state` and `request_notification_permission`, both returning `NotApplicable` on desktop. `Unavailable` is distinct from `Denied`: a bridge fault must never be reported as a user choice.
+- **Slot reuse**: routine and urgent alerts each hold a stable notification id, so a newer alert of the same class replaces its predecessor rather than stacking.
+
+---
 
 ---
 

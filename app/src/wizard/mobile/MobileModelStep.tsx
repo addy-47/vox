@@ -2,7 +2,6 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Wifi,
-  ArrowRight,
   Check,
   ChevronDown,
   AudioWaveform,
@@ -25,13 +24,15 @@ import {
   MODEL_CATEGORY_COPY,
   MODEL_PROGRESS_STEPS,
 } from '@/data/welcomeCopy';
-import { MobileStepFooter } from './MobileStepFooter';
 
 interface MobileModelStepProps {
-  onNext: () => void;
-  onBack?: () => void;
-  onSkip?: () => void;
-  onSelectStep?: (index: number) => void;
+  onNext?: () => void;
+  onModelStatusChange?: (status: {
+    isDone: boolean;
+    isDownloading: boolean;
+    label: string;
+    action: () => void;
+  }) => void;
 }
 
 const formatBytes = (bytes: number): string => {
@@ -44,8 +45,7 @@ const formatBytes = (bytes: number): string => {
 
 export const MobileModelStep: React.FC<MobileModelStepProps> = ({
   onNext,
-  onBack,
-  onSelectStep,
+  onModelStatusChange,
 }) => {
   const [manifest, setManifest] = useState<VoxManifest | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -60,8 +60,9 @@ export const MobileModelStep: React.FC<MobileModelStepProps> = ({
     fetchManifest()
       .then((data) => {
         setManifest(data);
+        // Include required models AND built-in system components (like Earshot VAD)
         const required = data.model_groups
-          .filter((g) => g.files.some((f) => f.required))
+          .filter((g) => g.is_built_in || g.files.some((f) => f.required))
           .map((g) => g.id);
         setSelectedIds(new Set(required.length > 0 ? required : data.model_groups.map((g) => g.id)));
       })
@@ -100,8 +101,9 @@ export const MobileModelStep: React.FC<MobileModelStepProps> = ({
     });
   };
 
-  const toggleModel = useCallback((id: string, isRequired: boolean) => {
-    if (isRequired || isDownloading || isDone) return;
+  const toggleModel = useCallback((id: string, isRequired: boolean, isBuiltIn: boolean) => {
+    // Built-in system crates and mandatory models cannot be toggled
+    if (isRequired || isBuiltIn || isDownloading || isDone) return;
     setSelectedIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) {
@@ -127,7 +129,7 @@ export const MobileModelStep: React.FC<MobileModelStepProps> = ({
 
     return MODEL_CATEGORY_META.map((meta) => {
       const groups = manifest.model_groups.filter((g) => g.category === meta.id);
-      const isRequired = groups.some((g) => g.files.some((f) => f.required));
+      const isRequired = groups.some((g) => g.is_built_in || g.files.some((f) => f.required));
       const groupSize = groups.reduce(
         (sum, g) => sum + g.files.reduce((fSum, f) => fSum + f.size, 0),
         0
@@ -159,7 +161,7 @@ export const MobileModelStep: React.FC<MobileModelStepProps> = ({
     return Math.min(100, Math.round(sum / entries.length));
   }, [progress, isDone]);
 
-  const handleStartDownload = async () => {
+  const handleStartDownload = useCallback(async () => {
     setIsDownloading(true);
     try {
       await startModelSetup(Array.from(selectedIds));
@@ -174,27 +176,54 @@ export const MobileModelStep: React.FC<MobileModelStepProps> = ({
         }
       }, 600);
     }
-  };
+  }, [selectedIds]);
+
+  // Sync button action and label with parent footer
+  useEffect(() => {
+    if (!onModelStatusChange) return;
+    if (isDone) {
+      onModelStatusChange({
+        isDone: true,
+        isDownloading: false,
+        label: copy.continueButton,
+        action: () => onNext?.(),
+      });
+    } else if (isDownloading) {
+      onModelStatusChange({
+        isDone: false,
+        isDownloading: true,
+        label: `${copy.downloadingButton} (${overallPercent}%)`,
+        action: () => {},
+      });
+    } else {
+      onModelStatusChange({
+        isDone: false,
+        isDownloading: false,
+        label: `${copy.downloadButton} (${formatBytes(totalSelectedBytes)})`,
+        action: handleStartDownload,
+      });
+    }
+  }, [isDone, isDownloading, overallPercent, totalSelectedBytes, copy, onNext, onModelStatusChange, handleStartDownload]);
 
   return (
-    <div className="flex flex-col h-full w-full overflow-hidden select-none">
+    <div className="flex flex-col h-full w-full overflow-hidden select-none bg-transparent">
       {/* Scrollable Model Catalog & Progress List */}
-      <div className="flex-1 min-h-0 overflow-y-auto px-5 py-4 space-y-4">
+      <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-4">
         {/* Step Intro Header */}
-        <div className="space-y-1.5 pt-1">
-          <h2 className="text-2xl font-display font-bold text-[rgb(var(--foreground))] tracking-tight">
+        <div className="space-y-1.5 pt-1 text-center">
+          <h1 className="text-2xl sm:text-3xl font-display font-bold text-[rgb(var(--foreground))] tracking-tight">
             {isDone ? copy.readyTitle : copy.title}
-          </h2>
-          <p className="text-xs text-[rgb(var(--foreground-muted))] leading-relaxed">
+          </h1>
+          <p className="text-xs text-[rgb(var(--foreground-muted))] leading-relaxed max-w-xs mx-auto">
             {isDone ? copy.readyBody : copy.description}
           </p>
         </div>
 
         {/* Wi-Fi recommendation notice */}
         {!isDone && (
-          <div className="glass rounded-2xl p-3 flex items-center gap-3 border border-[rgba(var(--foreground),0.08)]">
+          <div className="flex items-center gap-2.5 px-3 py-2 rounded-xl bg-white/[0.03] text-left">
             <Wifi className="w-4 h-4 text-[rgb(var(--warning))] shrink-0" />
-            <span className="text-xs text-[rgb(var(--foreground-muted))] leading-normal">
+            <span className="text-[11px] text-[rgb(var(--foreground-muted))] leading-normal">
               {copy.wifiWarning}
             </span>
           </div>
@@ -202,14 +231,14 @@ export const MobileModelStep: React.FC<MobileModelStepProps> = ({
 
         {/* Global Progress Bar (visible during download or done) */}
         {(isDownloading || isDone) && (
-          <div className="glass rounded-2xl p-4 border border-[rgba(var(--foreground),0.08)] space-y-2.5">
+          <div className="p-3.5 rounded-2xl bg-white/[0.03] border border-white/[0.06] space-y-2">
             <div className="flex justify-between items-center text-xs font-mono">
               <span className="text-[rgb(var(--foreground-muted))] uppercase tracking-wider text-[11px]">
                 {isDone ? copy.readyTitle : copy.downloadingButton}
               </span>
               <span className="text-[rgb(var(--accent))] font-bold">{overallPercent}%</span>
             </div>
-            <div className="h-2 w-full bg-[rgba(var(--foreground),0.08)] rounded-full overflow-hidden">
+            <div className="h-1.5 w-full bg-white/[0.06] rounded-full overflow-hidden">
               <motion.div
                 className="h-full bg-[rgb(var(--accent))]"
                 initial={{ width: 0 }}
@@ -226,26 +255,26 @@ export const MobileModelStep: React.FC<MobileModelStepProps> = ({
           <span className="font-bold text-[rgb(var(--accent))]">{formatBytes(totalSelectedBytes)}</span>
         </div>
 
-        {/* Full Transparent Catalog with Expandable Category Accordions */}
-        <div className="space-y-3 pb-2">
+        {/* Catalog Categories */}
+        <div className="space-y-2.5 pb-4">
           {categories.map((cat) => {
             const isExpanded = expandedCategories.has(cat.id);
 
             return (
               <div
                 key={cat.id}
-                className="glass rounded-2xl border border-[rgba(var(--foreground),0.08)] overflow-hidden transition-all"
+                className="rounded-2xl border border-[rgba(var(--foreground),0.06)] bg-white/[0.02] overflow-hidden transition-all"
               >
                 {/* Category Header Row */}
                 <div
                   onClick={() => toggleCategoryExpand(cat.id)}
-                  className="flex items-center justify-between p-3.5 cursor-pointer active:bg-[rgba(var(--foreground),0.03)] transition-colors select-none"
+                  className="flex items-center justify-between p-3 cursor-pointer active:bg-[rgba(var(--foreground),0.03)] transition-colors select-none"
                 >
                   <div className="flex items-center gap-3 min-w-0 flex-1">
-                    <div className="w-9 h-9 rounded-xl bg-[rgb(var(--accent))]/10 border border-[rgb(var(--accent))]/20 flex items-center justify-center shrink-0">
+                    <div className="w-8 h-8 rounded-xl bg-[rgb(var(--accent))]/10 flex items-center justify-center shrink-0">
                       {cat.icon}
                     </div>
-                    <div className="flex flex-col min-w-0 flex-1">
+                    <div className="flex flex-col min-w-0 flex-1 text-left">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-xs font-display font-bold text-[rgb(var(--foreground))] uppercase tracking-wide truncate">
                           {cat.label}
@@ -253,7 +282,7 @@ export const MobileModelStep: React.FC<MobileModelStepProps> = ({
                         <span
                           className={`text-[9px] font-mono font-bold uppercase px-1.5 py-0.5 rounded ${
                             cat.isRequired
-                              ? 'bg-[rgb(var(--accent))]/15 text-[rgb(var(--accent))] border border-[rgb(var(--accent))]/30'
+                              ? 'bg-[rgb(var(--accent))]/15 text-[rgb(var(--accent))]'
                               : 'bg-[rgba(var(--foreground),0.08)] text-[rgb(var(--foreground-muted))]'
                           }`}
                         >
@@ -266,17 +295,15 @@ export const MobileModelStep: React.FC<MobileModelStepProps> = ({
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-3 shrink-0 pl-2">
-                    <span className="text-xs font-mono font-bold text-[rgb(var(--accent))]">
+                  <div className="flex items-center gap-2.5 shrink-0 pl-2">
+                    <span className="text-xs font-mono font-semibold text-[rgb(var(--accent))]">
                       {formatBytes(cat.size)}
                     </span>
-                    <div
-                      className={`transition-transform duration-200 text-[rgb(var(--foreground-muted))] ${
+                    <ChevronDown
+                      className={`w-4 h-4 text-[rgb(var(--foreground-muted))] transition-transform duration-200 ${
                         isExpanded ? 'rotate-180' : ''
                       }`}
-                    >
-                      <ChevronDown className="w-4 h-4" />
-                    </div>
+                    />
                   </div>
                 </div>
 
@@ -288,11 +315,12 @@ export const MobileModelStep: React.FC<MobileModelStepProps> = ({
                       animate={{ height: 'auto', opacity: 1 }}
                       exit={{ height: 0, opacity: 0 }}
                       transition={{ duration: 0.2 }}
-                      className="border-t border-[rgba(var(--foreground),0.06)] bg-black/25 px-3.5 py-3 space-y-2"
+                      className="border-t border-[rgba(var(--foreground),0.05)] bg-black/20 px-3 py-2.5 space-y-1.5"
                     >
                       {cat.groups.map((group) => {
-                        const isGroupSelected = selectedIds.has(group.id);
-                        const isGroupRequired = group.files.some((f) => f.required);
+                        const isBuiltIn = Boolean(group.is_built_in);
+                        const isGroupSelected = isBuiltIn || selectedIds.has(group.id);
+                        const isGroupRequired = isBuiltIn || group.files.some((f) => f.required);
                         const groupSize = group.files.reduce((sum, f) => sum + f.size, 0);
                         const modelProg = progress[group.id];
                         const stepLabel = modelProg?.step
@@ -304,15 +332,15 @@ export const MobileModelStep: React.FC<MobileModelStepProps> = ({
                         return (
                           <div
                             key={group.id}
-                            onClick={() => toggleModel(group.id, isGroupRequired)}
-                            className={`p-2.5 rounded-xl border transition-all ${
+                            onClick={() => toggleModel(group.id, isGroupRequired, isBuiltIn)}
+                            className={`p-2.5 rounded-xl transition-all ${
                               isGroupSelected
-                                ? 'bg-[rgb(var(--accent))]/8 border-[rgb(var(--accent))]/25'
-                                : 'bg-[rgba(var(--foreground),0.03)] border-[rgba(var(--foreground),0.05)] opacity-60'
-                            } ${!isGroupRequired && !isDownloading && !isDone ? 'cursor-pointer active:scale-[0.99]' : ''}`}
+                                ? 'bg-[rgb(var(--accent))]/8 border border-[rgb(var(--accent))]/20'
+                                : 'bg-transparent border border-transparent opacity-60'
+                            } ${!isGroupRequired && !isBuiltIn && !isDownloading && !isDone ? 'cursor-pointer active:scale-[0.99]' : 'cursor-default'}`}
                           >
                             <div className="flex items-center justify-between gap-2">
-                              <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                              <div className="flex items-center gap-2.5 min-w-0 flex-1 text-left">
                                 <div
                                   className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors ${
                                     isGroupSelected
@@ -323,24 +351,31 @@ export const MobileModelStep: React.FC<MobileModelStepProps> = ({
                                   {isGroupSelected && <Check className="w-3 h-3 stroke-[3]" />}
                                 </div>
                                 <div className="flex flex-col min-w-0 flex-1">
-                                  <span className="text-xs font-semibold text-[rgb(var(--foreground))] truncate">
-                                    {group.name}
-                                  </span>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs font-semibold text-[rgb(var(--foreground))] truncate">
+                                      {group.name}
+                                    </span>
+                                    {isBuiltIn && (
+                                      <span className="text-[9px] font-mono px-1 py-0.2 rounded bg-[rgb(var(--accent))]/15 text-[rgb(var(--accent))] uppercase font-bold">
+                                        Built-in
+                                      </span>
+                                    )}
+                                  </div>
                                   <span className="text-[10px] font-mono text-[rgb(var(--foreground-muted))]">
-                                    {MODEL_CATEGORY_COPY.versionPrefix} {group.version}
+                                    {isBuiltIn ? 'Embedded in App Binary' : `${MODEL_CATEGORY_COPY.versionPrefix} ${group.version}`}
                                   </span>
                                 </div>
                               </div>
 
                               <div className="text-right shrink-0">
                                 <span className="text-[11px] font-mono text-[rgb(var(--foreground-muted))]">
-                                  {formatBytes(groupSize)}
+                                  {isBuiltIn ? '0 B' : formatBytes(groupSize)}
                                 </span>
                               </div>
                             </div>
 
                             {/* Group download progress bar if active */}
-                            {isDownloading && !isDone && modelProg && (
+                            {isDownloading && !isDone && modelProg && !isBuiltIn && (
                               <div className="mt-2 pt-2 border-t border-[rgba(var(--foreground),0.04)] space-y-1">
                                 <div className="flex justify-between text-[10px] font-mono text-[rgb(var(--foreground-muted))]">
                                   <span>{stepLabel ?? MODEL_PROGRESS_STEPS.downloading}</span>
@@ -365,30 +400,6 @@ export const MobileModelStep: React.FC<MobileModelStepProps> = ({
           })}
         </div>
       </div>
-
-      {/* Thumb-Anchored Bottom Action Bar with 5-Step Slider & Buttons */}
-      <MobileStepFooter
-        currentIndex={3}
-        totalSteps={5}
-        onNext={isDone ? onNext : handleStartDownload}
-        onBack={onBack}
-        nextLabel={
-          isDone
-            ? copy.continueButton
-            : isDownloading
-            ? `${copy.downloadingButton} (${overallPercent}%)`
-            : `${copy.downloadButton} (${formatBytes(totalSelectedBytes)})`
-        }
-        nextIcon={
-          isDone ? (
-            <Check className="w-4 h-4 stroke-[3]" />
-          ) : (
-            <ArrowRight className="w-4 h-4" />
-          )
-        }
-        disabled={isDownloading}
-        onSelectStep={onSelectStep}
-      />
     </div>
   );
 };
