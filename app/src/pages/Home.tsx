@@ -23,6 +23,7 @@ import { useSessionStore } from "@/store/sessionStore";
 import { useRegisterPageDrawer } from "@/shared/context/PageDrawerContext";
 import { useHomePage } from "@/shared/hooks/useHomePage";
 import { useMemoryTrace } from "@/shared/hooks/useMemoryTrace";
+import { isRealMobileDevice } from "@/shared/hooks/useMobileViewport";
 
 const DialogueTurn = memo(({ turn }: { turn: { user: string; assistant: string; id: number } }) => (
   <React.Fragment>
@@ -251,8 +252,15 @@ export const Home = memo(() => {
         </div>
       )}
 
-      {/* ── Status Capsule: Centered directly above the Orb (matching mobile on all viewports) ── */}
-      <div className="absolute top-[10%] left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 pointer-events-none">
+      {/* ── Status Capsule: Centered directly above the Orb ── */}
+      <div
+        className="absolute left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 pointer-events-none"
+        style={{
+          top: isRealMobileDevice()
+            ? "calc(50% - min(41vw, 25vh) - 28px)"
+            : "10%",
+        }}
+      >
         {cpuWarning && (
           <span className="text-[11px] tracking-widest uppercase text-[rgb(var(--accent))]/70 font-semibold px-2 py-0.5 rounded-md bg-[rgb(var(--accent))]/10 border border-[rgb(var(--accent))]/20">
             Mode: {GOVERNOR_LABELS[cpuWarning.governor] || cpuWarning.governor}
@@ -300,12 +308,12 @@ export const Home = memo(() => {
         </div>
       </div>
 
-      {/* ── Orb Stage (Vertically centered in stage distance between top edge & EdgeNav) ── */}
+      {/* ── Orb Stage (Centered in stage distance between top edge & EdgeNav) ── */}
       <div
         className="absolute z-10 flex items-center justify-center select-none pointer-events-none"
         style={{
           left: "50%",
-          top: "calc(50% - 36px)",
+          top: isRealMobileDevice() ? "50%" : "calc(50% - 36px)",
           transform: "translate(-50%, -50%)",
           width: isMobileScreen ? "min(82vw, 50vh)" : "min(65vw, 56vh)",
           height: isMobileScreen ? "min(82vw, 50vh)" : "min(65vw, 56vh)",

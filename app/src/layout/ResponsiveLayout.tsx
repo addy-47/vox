@@ -4,24 +4,24 @@ import { subscribeViewportFrame, subscribeViewportGate } from "./viewportResize"
 import { useViewportResize } from "@/shared/hooks/useViewportResize";
 import { LAYOUT_COPY } from "@/data/layoutCopy";
 import { TitleBar } from "./TitleBar";
+import { AppHeader } from "./AppHeader";
 import { AmbientBackground, HelpPanel, NotificationPanel, ErrorBoundary, OrbitalLoader } from "@/shared/components/common";
-import { ActiveSessionHeader, TurnMetricsBadge } from "@/shared/components/home";
-import { EdgePanel, TopRightCluster, BottomDockFeather, ThemeToggleButton } from "@/shared/ui";
+import { TurnMetricsBadge } from "@/shared/components/home";
+import { EdgePanel, BottomDockFeather } from "@/shared/ui";
 import { usePanelStateContext } from "@/shared/hooks/usePanelState";
 import { useLocation, useNavigate, useOutlet } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Activity, PanelLeft } from "lucide-react";
+import { Activity } from "lucide-react";
 import { useVoxFootprint } from "@/shared/hooks/useVoxFootprint";
 import { cn } from "@/shared/lib/utils";
 import { ModelStatusOverlay } from "@/shared/components/settings/ModelStatusOverlay";
 import { Tooltip } from "@/shared/ui/Tooltip";
 import { useProfilerDrawer } from "@/shared/components/profiler/ProfilerDrawer";
 import { usePageDrawer } from "@/shared/context/PageDrawerContext";
-import { SESSION_COPY } from "@/data/sessionCopy";
 import { useHistoryFilterStore } from "@/store/historyFilterStore";
 import { useSessionStore } from "@/store/sessionStore";
 import { getStackSize } from "@/shared/lib/overlayStack";
-import { BREAKPOINT_OPPOSITE_COLLISION_MAX, isCompactWidth } from "./breakpoints";
+import { isCompactWidth } from "./breakpoints";
 import { isCoarsePointer } from "@/lib/capabilities";
 import { isRealMobileDevice } from "@/shared/hooks/useMobileViewport";
 
@@ -62,7 +62,7 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
   const { voxCpu, voxRam, isReady } = useVoxFootprint();
   const { openProfiler } = useProfilerDrawer();
   const { openActiveDrawer, closeActiveDrawer } = usePageDrawer();
-  const { isPanelOpen, closePanel, openPanel, togglePanel, leftPanel, rightPanel } = usePanelStateContext();
+  const { isPanelOpen, closePanel, openPanel, togglePanel } = usePanelStateContext();
   const historyDisplayMode = useHistoryFilterStore((s) => s.displayMode);
   const interactionState = useSessionStore((s) => s.interactionState);
 
@@ -82,16 +82,11 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
   const sessionsOpen = isPanelOpen("sessions");
   const isRightPanelOpen = isHelpOpen || isPanelOpen("notifications");
 
-  // Track window width for dynamic collision threshold
-  const [windowWidth, setWindowWidth] = useState(
-    typeof window !== "undefined" ? window.innerWidth : 1200
-  );
 
   // Viewport-resize gate: while a resize is in flight, CSS transitions /
   // animations / backdrop-filter are suspended app-wide and the ambient
   // field parks (see viewportResize.ts + index.css).
-  const { isResizing, layout } = useViewportResize();
-  const isCompact = layout === "compact";
+  const { isResizing } = useViewportResize();
   const isMobile = isRealMobileDevice();
 
   // Mobile horizontal swipe navigation across primary routes
@@ -116,7 +111,7 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
     touchStartY.current = null;
 
     if (Math.abs(deltaX) > 60 && Math.abs(deltaX) > Math.abs(deltaY) * 1.5) {
-      const routes = ["/", "/history", "/memory", "/settings"];
+      const routes = ["/", "/history", "/memory", "/settings", "/monitoring"];
       const currentIdx = routes.indexOf(location.pathname);
       if (currentIdx !== -1) {
         if (deltaX < 0 && currentIdx < routes.length - 1) {
@@ -128,12 +123,6 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
     }
   };
 
-  // Opposite trigger collision threshold (SSOT: BREAKPOINT_OPPOSITE_COLLISION_MAX):
-  // Panel width is 340px; opposite corner cluster is ~80px + 20px padding (100px).
-  // Below it, there is insufficient gap (< 40px) between an open panel and opposite triggers.
-  const isOppositeCollision = windowWidth < BREAKPOINT_OPPOSITE_COLLISION_MAX;
-  const hideRightCluster = Boolean(leftPanel) && isOppositeCollision;
-  const hideLeftCluster = Boolean(rightPanel) && isOppositeCollision;
 
   // Ref to track compact state across renders during window resize
   const wasCompactRef = useRef(isCompactWidth());
@@ -163,7 +152,6 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
   const pendingFlipRef = useRef<{ toCompact: boolean } | null>(null);
   useEffect(() => {
     const unsubFrame = subscribeViewportFrame(() => {
-      setWindowWidth(window.innerWidth);
       const isCompact = isCompactWidth();
       if (wasCompactRef.current !== isCompact) {
         // Latest cross wins; an A→B→A wiggle before settle commits nothing.
@@ -446,9 +434,14 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
             height: "100%",
             overflow: "hidden",
             width: "100%",
+            display: "flex",
+            flexDirection: "column",
             paddingBottom: isMobile ? "calc(60px + env(safe-area-inset-bottom))" : undefined,
           }}
         >
+          {/* Unified App Header for all layouts */}
+          <AppHeader />
+
           <Suspense
             fallback={
               <div className="flex-1 w-full h-full flex flex-col items-center justify-center p-6 animate-in fade-in duration-200">
@@ -462,80 +455,13 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 transition={{ duration: 0.15, ease: [0.16, 1, 0.3, 1] }}
-                className="h-full w-full overflow-hidden flex flex-col"
+                className="flex-1 w-full min-h-0 overflow-hidden flex flex-col"
               >
                 {children || outlet}
               </motion.div>
             )}
           </Suspense>
         </main>
-
-        {/* ── Session toggle (top-left) — Home only; z-[60] (EdgePanel slides on top at z-[70]) ── */}
-        {isHome && (
-          <div
-            className={cn(
-              "absolute top-4 left-3 z-[60] flex items-center gap-2.5 transition-opacity duration-200",
-              hideLeftCluster
-                ? "opacity-0 pointer-events-none invisible"
-                : "pointer-events-none"
-            )}
-          >
-            <Tooltip label={SESSION_COPY.railTitle} shortcutId="global.sessions" side="bottom">
-              <button
-                onClick={() => togglePanel("sessions")}
-                aria-label={SESSION_COPY.openRailAriaLabel}
-                aria-expanded={sessionsOpen}
-                data-edge-trigger="left"
-                className={cn(
-                  "inline-flex items-center justify-center w-8 h-8 rounded-xl border transition-all cursor-pointer pointer-events-auto shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))]",
-                  sessionsOpen
-                    ? "border-[rgba(var(--accent),0.5)] bg-[rgba(var(--accent),0.12)] text-[rgb(var(--accent))] shadow-[0_0_12px_rgba(var(--accent),0.2)]"
-                    : "border-[rgba(var(--border),0.15)] bg-[rgba(var(--card),0.5)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:border-[rgba(var(--accent),0.3)] hover:bg-[rgba(var(--accent),0.06)]"
-                )}
-              >
-                <PanelLeft size={14} strokeWidth={1.75} />
-              </button>
-            </Tooltip>
-
-            <ThemeToggleButton />
-
-            {/* Active Session & Project Header Breadcrumb (shown on Home when panel is closed) */}
-            <ActiveSessionHeader
-              panelOpen={sessionsOpen}
-              isHome={true}
-              onOpenPanel={() => togglePanel("sessions")}
-            />
-          </div>
-        )}
-
-        {/* ── Settings Theme Toggle (top-left on desktop/wide >= 1024px) ── */}
-        {isSettings && !isCompact && (
-          <div
-            className={cn(
-              "absolute top-4 left-5 z-[60] flex items-center transition-opacity duration-200",
-              hideLeftCluster
-                ? "opacity-0 pointer-events-none invisible"
-                : "pointer-events-auto"
-            )}
-          >
-            <ThemeToggleButton />
-          </div>
-        )}
-
-        {/* ── Help + Notifications cluster (top-right) — hidden on /monitoring; z-[60] (EdgePanel slides on top at z-[70]) ── */}
-        {!isMonitoring && (
-          <div
-            className={cn(
-              "absolute top-4 right-5 z-[60] transition-opacity duration-200",
-              hideRightCluster
-                ? "opacity-0 pointer-events-none invisible"
-                : "opacity-100 pointer-events-auto"
-            )}
-          >
-            <TopRightCluster />
-          </div>
-        )}
-
 
         {/* ── Engine Monitor Area — bottom-left ───────────────────────────── */}
         <div className="hidden lg:flex fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] left-[max(1rem,env(safe-area-inset-left))] z-40 items-center gap-2.5 pointer-events-none">

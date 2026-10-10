@@ -1,22 +1,18 @@
 import React, { memo, useState, useMemo } from "react";
-import { Check, X, Trash2, ChevronLeft, ChevronRight, Search, MessageSquare, Filter } from "lucide-react";
+import { Check, X, Trash2, Search, MessageSquare, Filter } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { formatDateTime, resolveSessionTitle, type SessionRow } from "@/services/historyService";
 import { HISTORY_COPY } from "@/data/historyCopy";
 import { useHistoryFilterStore } from "@/store/historyFilterStore";
-import { ThemeToggleButton, HighlightMatch, BottomDockFeather } from "@/shared/ui";
+import { HighlightMatch, BottomDockFeather } from "@/shared/ui";
 import { CalendarPicker, toDateKey } from "./CalendarPicker";
 import { CompactSessionButton } from "./CompactSessionButton";
 
 export interface HistoryListViewProps {
-  dayLabel: string;
+  dayLabel?: string;
   sessions: SessionRow[];
   selectedSession: SessionRow | null;
   confirmDeleteId: number | null;
-  canPrevDate?: boolean;
-  canNextDate?: boolean;
-  onPrevDate?: () => void;
-  onNextDate?: () => void;
   onSelect: (session: SessionRow) => void;
   onDelete: (e: React.MouseEvent, id: number) => void;
   onCancelDelete: (e: React.MouseEvent) => void;
@@ -41,14 +37,9 @@ function fuzzyMatch(needle: string, haystack: string): boolean {
 
 export const HistoryListView: React.FC<HistoryListViewProps> = memo(
   ({
-    dayLabel,
     sessions,
     selectedSession,
     confirmDeleteId,
-    canPrevDate = false,
-    canNextDate = false,
-    onPrevDate,
-    onNextDate,
     onSelect,
     onDelete,
     onCancelDelete,
@@ -111,46 +102,8 @@ export const HistoryListView: React.FC<HistoryListViewProps> = memo(
 
     return (
       <div className="w-full h-full flex flex-col min-h-0 overflow-hidden z-20">
-        {/* Fixed Header Section: Title + Chevrons + Theme Toggle, Search Input, and Date Filter Pills */}
-        <div className="shrink-0 px-4 pt-4 pb-2.5 space-y-2.5 border-b border-[rgba(var(--border),0.12)] bg-[rgb(var(--background))]/80 backdrop-blur-md">
-          {/* Header Row: Title & Day on Left, Chevrons & Theme Toggle on Right.
-              items-start pins button tops to the container top (same 16px as
-              the corner clusters) instead of centering against the title. */}
-          <div className="flex items-start justify-between px-1">
-            <div className="flex flex-col">
-              <h1 className="text-[15px] sm:text-[16px] font-display font-black uppercase tracking-[0.2em] text-[rgb(var(--foreground))]">
-                {HISTORY_COPY.historyAndSessions}
-              </h1>
-              <span className="text-[11px] font-mono font-bold text-[rgb(var(--accent))] uppercase tracking-wider">
-                {dayLabel}
-              </span>
-            </div>
-
-            {/* Navigation Chevrons + Theme Toggle */}
-            <div className="flex items-center gap-2">
-              {onPrevDate && (
-                <button
-                  onClick={onPrevDate}
-                  disabled={!canPrevDate}
-                  className="w-8 h-8 rounded-xl glass-card border border-[rgba(var(--accent),0.15)] flex items-center justify-center text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/15 disabled:opacity-20 disabled:pointer-events-none transition-all cursor-pointer shadow-sm"
-                  aria-label={HISTORY_COPY.prevDay}
-                >
-                  <ChevronLeft size={16} />
-                </button>
-              )}
-              {onNextDate && (
-                <button
-                  onClick={onNextDate}
-                  disabled={!canNextDate}
-                  className="w-8 h-8 rounded-xl glass-card border border-[rgba(var(--accent),0.15)] flex items-center justify-center text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/15 disabled:opacity-20 disabled:pointer-events-none transition-all cursor-pointer shadow-sm"
-                  aria-label={HISTORY_COPY.nextDay}
-                >
-                  <ChevronRight size={16} />
-                </button>
-              )}
-              <ThemeToggleButton />
-            </div>
-          </div>
+        {/* Quick Search and Date Filter Pills */}
+        <div className="shrink-0 px-4 sm:px-5 pt-1.5 pb-2.5 space-y-2.5 border-b border-[rgba(var(--border),0.12)] bg-[rgb(var(--background))]/80 backdrop-blur-md">
 
           {/* Quick Search Input — Underline Style matching Design System */}
           <div className="px-1 pb-0.5">

@@ -2,7 +2,6 @@ import { useMemo, useEffect, memo, Suspense, lazy } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
 import { ErrorBoundary, OrbitalLoader } from "@/shared/components/common";
 import { SETTINGS_DOMAINS as DOMAINS, type SettingsDomainId as DomainId } from "@/data/settingsCopy";
-import { SETTINGS_COPY } from "@/data/settingsCopy";
 import { useRegisterPageDrawer } from "@/shared/context/PageDrawerContext";
 
 // Loader functions for eager prewarming
@@ -215,18 +214,7 @@ export const Settings: React.FC = () => {
         </div>
       ) : (
         /* ── Mobile & Compact Layout (Single vertical scroll list) ─────────── */
-        <div className="flex-1 flex flex-col min-h-0 overflow-hidden w-full px-4 sm:px-5 pt-4">
-          {/* Sticky Header - Clean Title & Subtitle without top-right button conflicts */}
-          <div className="flex items-start justify-between pb-3 sm:pb-3.5 border-b border-[rgba(var(--accent),0.12)] mb-4 sm:mb-5 shrink-0">
-            <div className="flex flex-col">
-              <h1 className="text-[15px] sm:text-[16px] font-display font-black uppercase tracking-[0.2em] text-[rgb(var(--foreground))]">
-                {SETTINGS_COPY.settingsTitle}
-              </h1>
-              <span className="text-[11px] font-mono font-bold text-[rgb(var(--accent))] uppercase tracking-wider">
-                {SETTINGS_COPY.settingsSubtitle}
-              </span>
-            </div>
-          </div>
+        <div className="flex-1 flex flex-col min-h-0 overflow-hidden w-full px-4 sm:px-5 pt-1">
 
           <div className="flex-1 w-full relative overflow-hidden flex flex-col min-h-0">
             <div className="flex-1 w-full overflow-y-auto custom-scrollbar pb-[95px] space-y-5 sm:space-y-6 animate-fade-in pr-0.5">

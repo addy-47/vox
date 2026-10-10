@@ -537,6 +537,19 @@ pub async fn step6_handle_non_terminal_tool<R: tauri::Runtime + 'static>(
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty());
 
+    let should_play_filler = {
+        let mut guard = ctx.harness_arc.lock();
+        if let Some(ref mut harness) = *guard {
+            let play = !harness.has_played_filler;
+            if play {
+                harness.has_played_filler = true;
+            }
+            play
+        } else {
+            true
+        }
+    };
+
     let non_terminal = NonTerminalPhase::tool(&call.name, &call.id, spoken_filler);
     let non_term_ctx = NonTerminalContext {
         query: &ctx.req.query,
@@ -546,7 +559,7 @@ pub async fn step6_handle_non_terminal_tool<R: tauri::Runtime + 'static>(
         app_state: &ctx.req.app_state,
         tts_tx: ctx.req.tts_tx.as_ref(),
         pending_synthesis_jobs: &ctx.req.pending_synthesis_jobs,
-        play_filler: true,
+        play_filler: should_play_filler,
     };
     enter_non_terminal_phase(&non_terminal, &non_term_ctx);
 

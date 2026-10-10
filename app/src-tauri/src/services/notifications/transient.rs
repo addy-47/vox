@@ -159,9 +159,10 @@ fn schedule_dismissal<R: tauri::Runtime>(
 
     let wait = std::time::Duration::from_millis(duration_ms.unwrap_or(DEFAULT_DURATION_MS));
 
+    let app_handle = app.clone();
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(wait).await;
-        if let Err(e) = app.notification().remove_active(&[id]) {
+        if let Err(e) = app_handle.notification().remove_active(vec![id]) {
             log::debug!("[Notification::Android] Dismissal of {} did not apply: {}", id, e);
         }
     });
@@ -178,20 +179,14 @@ pub fn ensure_channels<R: tauri::Runtime>(app: &AppHandle<R>) {
     let notification = app.notification();
 
     for channel in [
-        Channel {
-            id: CHANNEL_INFO.to_string(),
-            name: "Vox updates".to_string(),
-            description: Some("Routine background progress.".to_string()),
-            importance: Importance::Low,
-            ..Default::default()
-        },
-        Channel {
-            id: CHANNEL_URGENT.to_string(),
-            name: "Vox alerts".to_string(),
-            description: Some("Problems that need your attention.".to_string()),
-            importance: Importance::High,
-            ..Default::default()
-        },
+        Channel::builder(CHANNEL_INFO, "Vox updates")
+            .description("Routine background progress.")
+            .importance(Importance::Low)
+            .build(),
+        Channel::builder(CHANNEL_URGENT, "Vox alerts")
+            .description("Problems that need your attention.")
+            .importance(Importance::High)
+            .build(),
     ] {
         if let Err(e) = notification.create_channel(channel) {
             log::warn!("[Notification::Android] Failed to create channel: {}", e);
@@ -206,7 +201,9 @@ pub fn permission_status<R: tauri::Runtime>(app: &AppHandle<R>) -> PermissionSta
     match app.notification().permission_state() {
         Ok(PermissionState::Granted) => PermissionStatus::Granted,
         Ok(PermissionState::Denied) => PermissionStatus::Denied,
-        Ok(PermissionState::Prompt) => PermissionStatus::NotAsked,
+        Ok(PermissionState::Prompt | PermissionState::PromptWithRationale) => {
+            PermissionStatus::NotAsked
+        }
         Err(e) => {
             log::warn!("[Notification::Android] Permission state unavailable: {}", e);
             PermissionStatus::Unavailable
@@ -221,7 +218,9 @@ pub fn request_permission<R: tauri::Runtime>(app: &AppHandle<R>) -> PermissionSt
     match app.notification().request_permission() {
         Ok(PermissionState::Granted) => PermissionStatus::Granted,
         Ok(PermissionState::Denied) => PermissionStatus::Denied,
-        Ok(PermissionState::Prompt) => PermissionStatus::NotAsked,
+        Ok(PermissionState::Prompt | PermissionState::PromptWithRationale) => {
+            PermissionStatus::NotAsked
+        }
         Err(e) => {
             log::warn!("[Notification::Android] Permission request failed: {}", e);
             PermissionStatus::Unavailable

@@ -566,7 +566,7 @@ export const VoxOrb = React.memo(({
       const h = telemetryRef.current.high || 0;
       const v = telemetryRef.current.vad_prob || 0;
       
-      if (state === 'Listening' || state === 'Speaking') {
+      if (state === 'Listening' || state === 'Speaking' || state === 'Working') {
         rawEnergy = e;
         rawLow = l;
         rawMid = m;

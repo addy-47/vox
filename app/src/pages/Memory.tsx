@@ -8,12 +8,11 @@ import React, {
 } from "react";
 import { createPortal } from "react-dom";
 import {
-  PanelLeft,
   Ghost,
+  X,
 } from "lucide-react";
 import { useViewportResize } from "@/shared/hooks/useViewportResize";
 import { subscribeViewportFrame, subscribeViewportGate } from "@/layout/viewportResize";
-import { BREAKPOINT_OPPOSITE_COLLISION_MAX } from "@/layout/breakpoints";
 import {
   getActiveObservations,
   type ObservationRecord,
@@ -28,7 +27,7 @@ import { usePersonalMemoryDrawer } from "@/shared/hooks/usePersonalMemoryDrawer"
 import { ErrorBoundary, OrbitalLoader, EmptyState } from "@/shared/components/common";
 import { Drawer } from "@/shared/ui/Drawer";
 import { Modal } from "@/shared/ui/Modal";
-import { EdgePanel, Tooltip, BottomDockFeather, ThemeToggleButton } from "@/shared/ui";
+import { EdgePanel, BottomDockFeather } from "@/shared/ui";
 import { usePanelStateContext } from "@/shared/hooks/usePanelState";
 import { MEMORY_COPY } from "@/data/memoryCopy";
 import { cn } from "@/shared/lib/utils";
@@ -98,7 +97,7 @@ export const Memory: React.FC = memo(() => {
     session: SessionRow;
     pos: { x: number; y: number };
   } | null>(null);
-  const { isPanelOpen, closePanel, openPanel, togglePanel, rightPanel } = usePanelStateContext();
+  const { isPanelOpen, closePanel, openPanel } = usePanelStateContext();
   const sessionRailOpen = isPanelOpen("sessions");
   const isRightPanelOpen = isPanelOpen("help") || isPanelOpen("notifications");
   const setSessionRailOpen = (v: boolean) => {
@@ -153,9 +152,6 @@ export const Memory: React.FC = memo(() => {
     return s ? resolveSessionTitle(s) : `${MEMORY_COPY.sessionPrefix}${selectedFact.session_id}`;
   }, [selectedFact, sessionsMap]);
 
-  // Dynamic collision threshold between right panel and left triggers
-  const isNarrowCollision = dims.w > 0 ? dims.w < BREAKPOINT_OPPOSITE_COLLISION_MAX : (typeof window !== "undefined" ? window.innerWidth < BREAKPOINT_OPPOSITE_COLLISION_MAX : false);
-  const hideLeftCluster = Boolean(rightPanel) && isNarrowCollision;
 
   useEffect(() => {
     const checkTheme = () => {
@@ -345,6 +341,8 @@ export const Memory: React.FC = memo(() => {
     setSelectedSessionNode(null);
     setSelectedFact(null);
     setTooltipPos(null);
+    setSearchQuery("");
+    setSelectedCollection("all");
     graphRef.current?.recenter();
     refresh(true);
     drawer.refreshPersonalMemory(true);
@@ -430,53 +428,21 @@ export const Memory: React.FC = memo(() => {
           app-wide instance (standardised origin); a second frozen copy used to
           mount here, doubling overdraw with a competing ripple centre. */}
 
-      {/* ── Top Header Bar: Unified flex container with relative balance and guaranteed gap ── */}
-      <header className="absolute top-0 left-0 right-0 h-16 px-4 sm:px-5 flex items-center justify-between z-40 pointer-events-none">
-        {/* Left: Session Rail Trigger & Theme Toggle */}
-        <div
-          className={cn(
-            "flex items-center gap-2.5 shrink-0 z-[60] transition-opacity duration-200",
-            hideLeftCluster
-              ? "opacity-0 pointer-events-none invisible"
-              : "pointer-events-auto"
-          )}
-        >
-          <Tooltip label="Memory Queue" side="bottom">
-            <button
-              onClick={() => togglePanel("sessions")}
-              aria-label="Open session rail"
-              aria-expanded={sessionRailOpen}
-              data-edge-trigger="left"
-              className={cn(
-                "inline-flex items-center justify-center w-8 h-8 rounded-xl border transition-all cursor-pointer shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))]",
-                sessionRailOpen
-                  ? "border-[rgba(var(--accent),0.5)] bg-[rgba(var(--accent),0.12)] text-[rgb(var(--accent))] shadow-[0_0_12px_rgba(var(--accent),0.2)]"
-                  : "border-[rgba(var(--border),0.15)] bg-[rgba(var(--card),0.5)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:border-[rgba(var(--accent),0.3)] hover:bg-[rgba(var(--accent),0.06)]"
-              )}
-            >
-              <PanelLeft size={14} strokeWidth={1.75} />
-            </button>
-          </Tooltip>
-          <ThemeToggleButton />
-        </div>
-
-        {/* Center: Search Bar (Desktop / Wide layout strictly centered between corner clusters with safety gap) */}
-        {!isCompactLayout && (
-          <div className="flex-1 flex justify-center px-3 sm:px-6 min-w-0 pointer-events-auto">
-            <SearchBar
-              facts={facts}
-              isLightMode={isLightMode}
-              onCommitSearch={setSearchQuery}
-              onSelectNode={handleSelectSearchNode}
-              dropdownPlacement="bottom"
-              className="w-full max-w-[280px]"
-            />
-          </div>
+      {/* ── Center Search Bar: Portaled into AppHeader center slot for desktop main layout ── */}
+      {!isCompactLayout && typeof document !== "undefined" && document.getElementById("app-header-center-slot") &&
+        createPortal(
+          <SearchBar
+            facts={facts}
+            searchQuery={searchQuery}
+            isLightMode={isLightMode}
+            onCommitSearch={setSearchQuery}
+            onSelectNode={handleSelectSearchNode}
+            dropdownPlacement="bottom"
+            className="w-full max-w-[280px]"
+          />,
+          document.getElementById("app-header-center-slot")!
         )}
 
-        {/* Right Spacer: Symmetrically mirrors TopRightCluster width so center stays dead-center */}
-        <div className="w-[76px] shrink-0 pointer-events-none" aria-hidden="true" />
-      </header>
 
 
 
@@ -673,34 +639,37 @@ export const Memory: React.FC = memo(() => {
           onClose={() => setSearchModalOpen(false)}
           position="global"
           ariaLabel="Search Memories"
-          className="w-[min(480px,92vw)] p-4 rounded-2xl bg-[rgba(var(--card),0.92)] backdrop-blur-2xl border border-[rgba(var(--border),0.2)] shadow-2xl"
+          className="w-[min(480px,92vw)] h-[min(540px,72vh)] p-4 rounded-2xl bg-[rgba(var(--card),0.92)] backdrop-blur-2xl border border-[rgba(var(--border),0.2)] shadow-2xl"
+          bodyClassName="h-full flex flex-col min-h-0 overflow-hidden"
         >
-          <div className="flex flex-col gap-3">
-            <div className="flex items-center justify-between border-b border-[rgba(var(--accent),0.12)] pb-2">
+          <div className="flex flex-col h-full min-h-0">
+            <div className="flex items-center justify-between border-b border-[rgba(var(--accent),0.12)] pb-2 mb-2 shrink-0">
               <span className="text-[13px] font-display font-black tracking-wider uppercase text-[rgb(var(--foreground))]">
                 Search Memories
               </span>
               <button
                 type="button"
                 onClick={() => setSearchModalOpen(false)}
-                className="text-xs font-mono text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] cursor-pointer bg-transparent border-0"
+                className="p-1 rounded-lg text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.06)] transition-colors cursor-pointer bg-transparent border-0 flex items-center justify-center"
+                aria-label="Close search"
               >
-                Close
+                <X size={15} />
               </button>
             </div>
             <SearchBar
               facts={facts}
+              searchQuery={searchQuery}
               isLightMode={isLightMode}
+              variant="modal"
+              autoFocus
               onCommitSearch={(q) => {
                 setSearchQuery(q);
-                setSearchModalOpen(false);
               }}
               onSelectNode={(factId) => {
                 handleSelectSearchNode(factId);
                 setSearchModalOpen(false);
               }}
-              dropdownPlacement="bottom"
-              className="w-full"
+              className="w-full flex-1 min-h-0"
             />
           </div>
         </Modal>

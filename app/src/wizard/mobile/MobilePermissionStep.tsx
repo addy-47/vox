@@ -1,6 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Mic, Bell, Check } from 'lucide-react';
-import { getRuntimeReport } from '@/services/setupService';
+import {
+  getRuntimeReport,
+  getNotificationPermission,
+  requestNotificationPermission,
+  type NotificationPermission,
+} from '@/services/setupService';
 import { MOBILE_ONBOARDING_COPY } from '@/data/welcomeCopy';
 
 interface MobilePermissionStepProps {
@@ -12,10 +17,12 @@ export const MobilePermissionStep: React.FC<MobilePermissionStepProps> = ({
   onPermissionsChange,
 }) => {
   const [micGranted, setMicGranted] = useState<boolean | null>(null);
-  const [notifsGranted, setNotifsGranted] = useState<boolean | null>(null);
+  const [notifState, setNotifState] = useState<NotificationPermission>('not_asked');
   const [isRequesting, setIsRequesting] = useState(false);
 
   const copy = MOBILE_ONBOARDING_COPY.permission;
+
+  const notifsGranted = notifState === 'granted' || notifState === 'not_applicable' || notifState === 'unavailable';
 
   const checkStatus = useCallback(async () => {
     try {
@@ -25,11 +32,11 @@ export const MobilePermissionStep: React.FC<MobilePermissionStepProps> = ({
       }
     } catch (_) {}
 
-    // Check Notification API
-    if (typeof Notification !== 'undefined') {
-      setNotifsGranted(Notification.permission === 'granted');
-    } else {
-      setNotifsGranted(true);
+    try {
+      const state = await getNotificationPermission().catch(() => 'unavailable' as NotificationPermission);
+      setNotifState(state);
+    } catch (_) {
+      setNotifState('unavailable');
     }
   }, []);
 
@@ -38,9 +45,10 @@ export const MobilePermissionStep: React.FC<MobilePermissionStepProps> = ({
   }, [checkStatus]);
 
   useEffect(() => {
-    const bothGranted = Boolean(micGranted && notifsGranted);
-    onPermissionsChange?.(bothGranted);
-  }, [micGranted, notifsGranted, onPermissionsChange]);
+    // Microphone is required; notification denial or unavailability does not block onboarding
+    const canProceed = Boolean(micGranted);
+    onPermissionsChange?.(canProceed);
+  }, [micGranted, onPermissionsChange]);
 
   const handleGrantAccess = async () => {
     setIsRequesting(true);
@@ -56,16 +64,12 @@ export const MobilePermissionStep: React.FC<MobilePermissionStepProps> = ({
         }
       }
 
-      // 2. Notifications request
-      if (typeof Notification !== 'undefined' && Notification.requestPermission) {
-        try {
-          const perm = await Notification.requestPermission();
-          setNotifsGranted(perm === 'granted');
-        } catch (_) {
-          setNotifsGranted(false);
-        }
-      } else {
-        setNotifsGranted(true);
+      // 2. Android native notification request via IPC (runs sequentially after mic)
+      try {
+        const state = await requestNotificationPermission();
+        setNotifState(state);
+      } catch (_) {
+        setNotifState('unavailable');
       }
 
       await checkStatus();
@@ -179,7 +183,13 @@ export const MobilePermissionStep: React.FC<MobilePermissionStepProps> = ({
                   {copy.notifTitle}
                 </span>
                 <span className="text-[10px] font-mono text-[rgb(var(--foreground-muted))] uppercase">
-                  {notifsGranted ? 'Granted' : 'Optional'}
+                  {notifState === 'granted'
+                    ? 'Granted'
+                    : notifState === 'denied'
+                    ? 'Denied'
+                    : notifState === 'not_applicable' || notifState === 'unavailable'
+                    ? 'Available'
+                    : 'Optional'}
                 </span>
               </div>
               <p className="text-[11px] text-[rgb(var(--foreground-muted))] leading-relaxed mt-0.5">
