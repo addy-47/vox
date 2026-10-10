@@ -20,6 +20,7 @@ export interface ModelGroup {
   category: string;
   version: string;
   files: ModelEntry[];
+  is_built_in?: boolean;
 }
 
 export interface VoxManifest {
@@ -131,4 +132,28 @@ export function getRuntimeReport(): Promise<RuntimeReport> {
 /** Whether the setup wizard has been completed (ipc/setup.rs:171). */
 export function getOnboardingStatus(): Promise<boolean> {
   return invoke("get_onboarding_status");
+}
+
+/**
+ * Notification permission state (ipc/transient.rs).
+ *
+ * `Unavailable` is distinct from `Denied` on purpose: the first means the
+ * bridge could not answer, the second means the user said no. Never render a
+ * bridge fault as a refusal.
+ */
+export type NotificationPermission =
+  | "granted"
+  | "denied"
+  | "not_asked"
+  | "not_applicable"
+  | "unavailable";
+
+/** Reads the notification permission without prompting. */
+export function getNotificationPermission(): Promise<NotificationPermission> {
+  return invoke("notification_permission_state");
+}
+
+/** Prompts for notification permission. Resolves to the resulting state. */
+export function requestNotificationPermission(): Promise<NotificationPermission> {
+  return invoke("request_notification_permission");
 }

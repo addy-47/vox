@@ -3,9 +3,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::AppHandle;
 use turso::Connection;
 
-use super::{resolve_channel, Action, DeliveryChannel, NotificationParams};
+use super::{deliver_transient, resolve_channel, Action, DeliveryChannel, NotificationParams, TransientAlert};
 use crate::{
-    core::events::{emit_ipc, IpcEvent, Severity},
+    core::events::{emit_ipc, IpcEvent},
     persistence::{
         notifications::{
             create_notification, find_active_interactive_by_group, update_interactive_notification,
@@ -13,7 +13,6 @@ use crate::{
         },
         VoxDb,
     },
-    toast::{show_toast, ToastDeliveryOutcome},
 };
 
 /// Universal front door for all user alerting across the Vox application.
@@ -26,21 +25,12 @@ pub async fn notify<R: tauri::Runtime>(
     let channel = resolve_channel(params.impact, params.severity, &params.action);
 
     if channel == DeliveryChannel::ToastOnly || channel == DeliveryChannel::ToastAndNotification {
-        let outcome = dispatch_toast(
-            app,
-            params.title,
-            params.message,
-            params.severity,
-            params.duration_ms,
-        );
-        match outcome {
-            ToastDeliveryOutcome::Shown => {}
-            ToastDeliveryOutcome::Failed => {
-                if channel == DeliveryChannel::ToastOnly {
-                    let conn = db.connect()?;
-                    return elevate_toast_to_drawer(app, &conn, &params).await;
-                }
-            }
+        let outcome = dispatch_toast(app, &params);
+        if outcome == crate::services::notifications::DeliveryOutcome::Failed
+            && channel == DeliveryChannel::ToastOnly
+        {
+            let conn = db.connect()?;
+            return elevate_toast_to_drawer(app, &conn, &params).await;
         }
     }
 
@@ -56,12 +46,15 @@ pub async fn notify<R: tauri::Runtime>(
 
 fn dispatch_toast<R: tauri::Runtime>(
     app: &AppHandle<R>,
-    title: &str,
-    message: &str,
-    severity: Severity,
-    duration_ms: Option<u64>,
-) -> ToastDeliveryOutcome {
-    show_toast(app, title, message, severity, duration_ms)
+    params: &NotificationParams<'_>,
+) -> super::DeliveryOutcome {
+    let alert = TransientAlert {
+        title: params.title,
+        message: params.message,
+        severity: params.severity,
+        duration_ms: params.duration_ms,
+    };
+    deliver_transient(app, &alert)
 }
 
 async fn elevate_toast_to_drawer<R: tauri::Runtime>(

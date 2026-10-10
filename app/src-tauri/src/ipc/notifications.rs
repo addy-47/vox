@@ -10,7 +10,20 @@ use crate::{
         NotificationFilter, NotificationRecord,
     },
     services::notifications::execute_notification_action as svc_execute_action,
+    services::notifications::transient::{self, PermissionStatus},
 };
+
+/// Reports the notification permission state without prompting.
+#[tauri::command]
+pub fn notification_permission_state(app: AppHandle) -> Result<PermissionStatus, VoxIpcError> {
+    Ok(transient::permission_status(&app))
+}
+
+/// Prompts for notification permission, resolving to the resulting state.
+#[tauri::command]
+pub fn request_notification_permission(app: AppHandle) -> Result<PermissionStatus, VoxIpcError> {
+    Ok(transient::request_permission(&app))
+}
 
 /// Retrieves all active notifications ordered newest first.
 #[tauri::command]

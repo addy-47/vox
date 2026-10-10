@@ -555,7 +555,7 @@ const ProjectRowItem = memo(
           </div>
 
           {!isRenaming && (
-            <div className="flex items-center gap-1 shrink-0 relative min-w-[36px] justify-end">
+            <div className="flex items-center gap-1 shrink-0 relative justify-end">
               {/* Static Session Count: visible by default when closed, replaced on expansion, hover, or when menu is open */}
               {!expanded && group.sessions.length > 0 && (
                 <span
@@ -569,13 +569,15 @@ const ProjectRowItem = memo(
               )}
 
               {/* + button to start conversation in this project */}
-              <Tooltip label={SESSION_COPY.newInProjectAriaLabel} side="left">
+              <Tooltip label={SESSION_COPY.newInProjectAriaLabel} side="left" asChild>
                 <button
                   type="button"
                   onClick={handleCreateInProject}
                   className={cn(
-                    "flex items-center justify-center w-5 h-5 rounded hover:bg-[rgba(var(--accent),0.1)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] transition-all cursor-pointer",
-                    expanded || menuOpen ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+                    "items-center justify-center w-5 h-5 rounded hover:bg-[rgba(var(--accent),0.1)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] transition-all cursor-pointer",
+                    expanded || menuOpen
+                      ? "flex opacity-100"
+                      : "hidden group-hover:flex text-[rgb(var(--foreground-muted))]"
                   )}
                   aria-label={SESSION_COPY.newInProjectAriaLabel}
                 >

@@ -55,7 +55,7 @@ async fn dispatch_to_clipboard<R: tauri::Runtime>(
         app,
         db,
         LifecycleCard {
-            title: "📋 Dictation Copied",
+            title: "Dictation Copied",
             message: &msg,
             severity: Severity::Info,
             duration_ms: 3000,
@@ -91,7 +91,7 @@ async fn dispatch_to_paste<R: tauri::Runtime>(
                 app,
                 db,
                 LifecycleCard {
-                    title: "✓ Dictation Pasted",
+                    title: "Dictation Pasted",
                     message: &msg,
                     severity: Severity::Info,
                     duration_ms: 3000,
@@ -111,7 +111,7 @@ async fn dispatch_to_paste<R: tauri::Runtime>(
                 app,
                 db,
                 LifecycleCard {
-                    title: "📋 Dictation Copied",
+                    title: "Dictation Copied",
                     message: &msg,
                     severity: Severity::Warning,
                     duration_ms: 15_000,

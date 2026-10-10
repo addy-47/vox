@@ -34,10 +34,10 @@ pub fn show_toast<R: tauri::Runtime>(
 pub fn dispatch_native_notification(
     title: &str,
     message: &str,
-    severity: Severity,
+    _severity: Severity,
     duration_ms: Option<u64>,
 ) -> ToastDeliveryOutcome {
-    let formatted_title = format_title_with_icon(title, severity);
+    let formatted_title = title.to_string();
     let formatted_message = format_notification_body(message);
 
     #[cfg(target_os = "linux")]
@@ -163,33 +163,6 @@ fn dispatch_windows_notification(title: &str, message: &str) -> ToastDeliveryOut
     }
 }
 
-fn format_title_with_icon(title: &str, severity: Severity) -> String {
-    if title.starts_with('🎙')
-        || title.starts_with('✓')
-        || title.starts_with('⚠')
-        || title.starts_with('📋')
-        || title.starts_with('❌')
-    {
-        title.to_string()
-    } else {
-        match severity {
-            Severity::Info => {
-                if title.to_lowercase().contains("paste") {
-                    format!("✓ {}", title)
-                } else if title.to_lowercase().contains("clip")
-                    || title.to_lowercase().contains("copy")
-                {
-                    format!("📋 {}", title)
-                } else {
-                    format!("🎙️ {}", title)
-                }
-            }
-            Severity::Warning => format!("⚠️ {}", title),
-            Severity::Critical => format!("❌ {}", title),
-        }
-    }
-}
-
 fn format_notification_body(message: &str) -> String {
     if message.starts_with('\n') {
         message.to_string()
@@ -203,10 +176,10 @@ fn format_notification_body(message: &str) -> String {
 pub fn show_replaceable_toast(
     title: &str,
     message: &str,
-    severity: Severity,
+    _severity: Severity,
     duration_ms: u64,
 ) -> u32 {
-    let formatted_title = format_title_with_icon(title, severity);
+    let formatted_title = title.to_string();
     let formatted_message = format_notification_body(message);
 
     #[cfg(target_os = "linux")]
@@ -244,13 +217,13 @@ pub fn update_replaceable_toast(
     server_id: u32,
     title: &str,
     message: &str,
-    severity: Severity,
+    _severity: Severity,
     duration_ms: u64,
 ) {
     if server_id == 0 {
         return;
     }
-    let formatted_title = format_title_with_icon(title, severity);
+    let formatted_title = title.to_string();
     let formatted_message = format_notification_body(message);
 
     #[cfg(target_os = "linux")]

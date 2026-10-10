@@ -57,7 +57,7 @@ use crate::{
         monitoring::{get_profiler_snapshot, get_runtime_snapshot, record_memory_profile_event},
         notifications::{
             dismiss_notifications, execute_notification_action, get_notifications,
-            mark_notifications_read,
+            mark_notifications_read, notification_permission_state, request_notification_permission,
         },
         persistence::{
             compact_session, delete_session, get_sessions, get_transcript_history, get_turns,
@@ -279,6 +279,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             // The `main` webview is constructed LAZILY, never at startup. It was
             // previously declared in tauri.conf.json (`visible: true`), so Tauri
@@ -316,6 +317,11 @@ pub fn run() {
             paths::init();
             paths::migrate_legacy_layout(&paths::get().root);
             paths::ensure_dirs().ok();
+
+            // Notification channels must exist before any transient alert can be
+            // posted; a notification naming an absent channel is silently dropped.
+            #[cfg(target_os = "android")]
+            services::notifications::transient::ensure_channels(app.handle());
 
             // Pre-warm BPE tokenizer vocabulary to eliminate Turn 1 dispatch latency
             ThreadBuilder::new()
@@ -714,6 +720,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             launch_engine,
             stop_engine,
+            notification_permission_state,
+            request_notification_permission,
             start_session,
             end_session,
             pause_session,

@@ -41,7 +41,7 @@ pub fn on_ptt_start<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) {
                 &notify_app,
                 &notify_db,
                 LifecycleCard {
-                    title: "🎙️ Dictation",
+                    title: "Dictation",
                     message: "Assistant is currently active",
                     severity: Severity::Info,
                     duration_ms: 2000,
@@ -85,7 +85,7 @@ pub fn on_ptt_start<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) {
                     &notify_app,
                     &notify_db,
                     LifecycleCard {
-                        title: "🎙️ Dictation",
+                        title: "Dictation",
                         message: "Previous turn transcribing",
                         severity: Severity::Info,
                         duration_ms: 1500,
@@ -220,7 +220,7 @@ pub fn on_ptt_stop_with_sender<R: tauri::Runtime>(
                 &notify_app,
                 &notify_db,
                 LifecycleCard {
-                    title: "⚠️ Dictation: No Speech",
+                    title: "Dictation: No Speech",
                     message: "<b>No speech recognized</b>\nSpeak clearly into the microphone",
                     severity: Severity::Warning,
                     duration_ms: 3000,
@@ -315,7 +315,7 @@ pub fn on_ptt_cancel<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) {
             &notify_app,
             &notify_db,
             LifecycleCard {
-                title: "🎙️ Dictation",
+                title: "Dictation",
                 message: "Dictation cancelled",
                 severity: Severity::Info,
                 duration_ms: 1500,

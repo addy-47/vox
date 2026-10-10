@@ -327,26 +327,31 @@ On Android an app cannot open an input stream without a runtime-granted `RECORD_
 2. **Confirm whether Tauri's mobile permission layer also needs an entry.** The frontend permission step (`app/src/wizard/mobile/MobilePermissionStep.tsx`) requests microphone access, so the request path exists — but whether it resolves through the Rust side or a plugin determines whether this is one line or two. **Verify before writing**; do not guess at Tauri 2.11's mobile permission API from memory (global rule 6).
 3. Decide foreground-service behaviour: Android may require a `foregroundService` + `FOREGROUND_SERVICE_MICROPHONE` declaration to keep capture alive when the app is backgrounded. **Defer** — the phone-while-backgrounded case is not in scope yet, and adding it speculatively is worse than discovering the need.
 
-### 2.4 Capture is hardcoded to `f32` — likely device failure
+### 2.4 ~~Capture is hardcoded to `f32`~~ — **RETRACTED 2026-10-10. This is not a defect.**
 
-**Confirmed in code (2026-10-10):** `build_input_stream` (`device.rs:140`) instantiates `build_input_stream` with a `move |data: &[f32], ...|` closure, so it is monomorphised for `f32` only. `ActiveRecorder` in `services/tts/voice.rs:319` has the same `&[f32]` input callback.
+> **❌ The original finding was wrong.** This section claimed that hardcoding the capture callback to `f32` would break audio on Android, and that `dumpsys media.audio_policy` reporting only `AUDIO_FORMAT_PCM_16_BIT` confirmed it. Both parts are incorrect.
+>
+> **Evidence that disproves it — cpal 0.15.3's Oboe host:**
+> - `src/host/oboe/mod.rs:160` — `const ALL_FORMATS: [oboe::AudioFormat; 2] = [oboe::AudioFormat::I16, oboe::AudioFormat::F32]`. When Oboe reports no formats, cpal falls back to advertising **both**.
+> - `src/host/oboe/mod.rs:107` — the fallback enumerator brute-forces `[SampleFormat::I16, SampleFormat::F32]` identically.
+> - `src/platform/mod.rs:175-187` — only `I16` and `F32` are ever mapped. cpal's Android backend **never advertises any other format**, regardless of the HAL.
+> - `src/host/oboe/mod.rs:36` — `SAMPLE_RATES` contains `48000`, and `CHANNEL_MASKS` allows 2 channels.
+>
+> Oboe performs the format conversion internally. `build_input_stream::<f32>` is the correct and expected call on Android, and 48 kHz stereo `f32` output is within the supported matrix.
+>
+> **Why the original evidence misled:** `dumpsys media.audio_policy` reports what the **Audio HAL** supports, not what Oboe will accept after its conversion layer. Reading HAL formats and concluding "cpal cannot open a stream" was a category error. The correct question is "what does cpal's backend advertise", and that question is answered by the source above, not by a device query.
+>
+> **Consequence:** the format-negotiation implementation built for this finding was written, then reverted. Adding `ToF32`/`FromF32` conversion traits would have been complexity in defence of a non-bug.
 
-`resolve_input_device` (`device.rs:114`) takes whatever `device.default_input_config()` reports and does **not** negotiate format.
-
-**Assessment — labelled, because it is not yet device-verified.** Android's Oboe backend advertises whatever the device offers; many phones expose input as `I16`, not `F32`. If the POCO reports `I16`, `build_input_stream::<f32>` returns `UnsupportedStreamConfig`, `AudioStream::new` fails, and `init_audio_engine` (`core/engine.rs:300-305`) returns `Err` — **the engine never comes online**. This is a guess about the device, not a confirmed defect. It is cheap to confirm: `resolve_input_device` already logs the resolved config at `device.rs:41-45`, so the next `android-deploy.sh logs` answers it outright.
-
-**Do this before writing any trait:** run one device cycle and read the logged input config. If it says `F32`, §2.4 is a non-issue on this device and no format negotiation is needed now. If it says anything else, format negotiation becomes a real Batch 2 work item — and note that `services/audio/mod.rs:27-31` already defines `PCM_I16_SCALE`, `PCM_U8_SCALE`, `PCM_U16_SCALE`, `PCM_S16_SCALE`, `PCM_S32_SCALE`, so the conversion constants exist and only the negotiation is missing.
-
-**Order matters here:** negotiating format *before* the trait exists means editing the hot-path callback a second time later. §2.1 first, §2.4 second.
+**What remains true about audio on Android: nothing is confirmed broken, and nothing has been proven working.** The app has never run past `[BOOTSTRAP] Runtime Ready`. The correct next step is empirical — run the current build with logging and observe — not further static inference from device properties. See §2.5 step 2.0.
 
 ### 2.5 Execution order for Batch 2
 
 | Step | Work | Size | Gate |
 |---|---|---|---|
-| **2.0** | Read the device's logged input config (`device.rs:41-45`) | XS | Determines whether §2.4 is real |
+| **2.0** | **Run the current build on device with logging; observe what actually happens past bootstrap** | XS | Replaces static inference with fact |
 | **2.1** | `AndroidManifest.xml`: add `RECORD_AUDIO`; verify the runtime-request path | XS | Mic prompt appears on device |
 | **2.2** | Introduce `AudioCapture` + `AudioSink` traits; box the four sites; add `AudioSink::mock()` | M | `verify-targets.sh` both targets clean; full `nextest` green |
-| **2.3** | Format negotiation for capture, **only if 2.0 showed a non-`f32` device** | S–M | Device captures 16 kHz mono correctly |
 | **2.4** | Route `voice.rs:301`, `ipc/audio.rs:44`, `runtime_check.rs:166` through `resolve_audio_host()` | XS | `verify-targets.sh` clean |
 
 **Gates 2.2 and 2.4 are the mandatory ones.** Both run `./scripts/verify-targets.sh` (0 warnings, 0 errors, both targets) plus the full `cargo nextest run --release --test-threads=1 --no-fail-fast` suite. Audio changes are regression-prone on desktop and the existing `services/audio` tests must stay green unchanged.
