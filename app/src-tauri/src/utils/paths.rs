@@ -44,6 +44,13 @@ pub const ICON_FILENAME: &str = "vox.png";
 
 /// Initialize the path singleton. Must be called ONCE at startup,
 /// before any call to `paths::get()`.
+///
+/// **On Android this is not usable.** A NativeActivity process has no meaningful
+/// `$HOME`: `dirs::home_dir()` returns `/`, so the fallbacks below resolve to
+/// `/.vox` and every write fails with `Read-only file system`. The only correct
+/// source of app-private storage is the `Context` passed to the Activity, which
+/// Tauri's `app.path().app_data_dir()` reads. Android callers must use
+/// [`init_from_app_data_dir`] instead.
 pub fn init() {
     if PATHS.read().is_some() {
         return;
@@ -74,6 +81,16 @@ pub fn init() {
         }
     };
 
+    init_with_root(root);
+}
+
+/// Initialize paths from the Android app-private data directory.
+///
+/// Android has no usable `$HOME`, so the root cannot be derived from the
+/// environment (see [`init`]). Call this with
+/// `app.path().app_data_dir()`, which resolves through the Activity `Context`
+/// to `/data/user/0/<pkg>/files` — writable, and private to the app.
+pub fn init_from_app_data_dir(root: PathBuf) {
     init_with_root(root);
 }
 

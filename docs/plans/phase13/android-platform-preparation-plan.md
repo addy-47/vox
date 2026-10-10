@@ -592,7 +592,16 @@ Models are not in the APK and the wizard performs first-install downloads. That 
 
 Beyond the path analysis in §8.0(1), the loading side requires **no Android work whatsoever**: no asset-pack abstraction, no platform path mapping, no format changes. Once bytes land in `models/<dir>/<file>`, `stt/`, `llm/`, and `tts/` read them identically on every platform.
 
-### 8.4 Storage path — effectively already correct
+### 8.4 Storage path — **❌ WRONG, corrected on device 2026-10-10**
+
+> **This section was incorrect.** It assumed `dirs::data_local_dir()` would be reached.
+> It is not: `dirs::home_dir()` returns `/` on Android (not `None`), so the `?:`
+> fallback selects `/.vox` and every write fails with `Read-only file system`.
+> `logging::init` *panics* on that, so the app aborts during bootstrap. Real fix is
+> `paths::init_from_app_data_dir(app.path().app_data_dir())`. See Phase 4 Results
+> and pitfalls trap 19. Original text follows for context.
+
+<details><summary>Original (unverified) analysis</summary>
 
 `utils/paths.rs` is the single filesystem SSOT, which is exactly right. On Android `dirs::data_local_dir()` resolves to app-private storage, so `~/.vox` does not apply.
 
@@ -693,7 +702,7 @@ These rules exist so no batch silently regresses desktop.
 | **1** | Close Batch 4 — `setup/remote_server.rs` only | S | ✅ **Done (Phase 1)**. Last known defect; closed by gating the module behind `#[cfg(desktop)]` with a typed mobile stub, plus an `isDesktop()` gate on the `<RemoteServerSetup>` panel. Desktop arm unmodified. |
 | **2** | **First `arm64-v8a` release LINK** — `tauri android init`, `bundle.android` config, then *link* not *check* | M | ✅ **Done.** Produced a signed, installable APK. Settled both UNVERIFIED claims (`turso` §7.2, `llama.cpp` §7.1) and found six native-toolchain blockers `cargo check` could never see — see §Phase2-Results. |
 | **3** | Batch 7 — fix whatever Phase 2's link exposes | M | ✅ **Done.** Phase 2 *was* the diagnostic; §7.1/§7.2/§7.4 all resolved. §7.3 needed one real fix: `ort`'s `nnapi` feature, and it had to be **target-scoped** — see §Phase3-Results. |
-| **4** | APK installs and launches on a physical device | M | First real validation. Confirms `oboe` audio and NNAPI on real hardware — an emulator validates neither. |
+| **4** | APK installs and launches on a physical device | M | 🟡 **Partially done (2026-10-10).** Installs and reaches `[BOOTSTRAP] Runtime Ready` on a POCO redwoodin / Android 14 after fixing three launch crashes. Runtime behaviour (oboe audio, NNAPI inference, thermals) still unproven. See §Phase4-Results. |
 | **5** | Batch 8 — resumable downloads | M | Re-scoped from L. Robustness fix; mostly benefits desktop too. |
 | **6** | Batch 2 — audio backend seam | M | Deliberately last. Its purpose is to make a future Android audio backend "a new file rather than a refactor." Doing it before Phase 4 means refactoring against assumptions instead of observations. |
 
@@ -825,6 +834,65 @@ Traps 16-17 in `.agents/rules/android-pitfalls.md`.
 `Cargo.lock` resolves to `git+...?rev=c9d17bd`. `cargo metadata --locked` passes.
 **A fresh clone can now build the APK without any local submodule state** — that
 was the last reproducibility hole.
+
+---
+
+## Phase 4 Results — first real device run ✅ (partially)
+
+**Date:** 2026-10-10. **Device:** POCO `22101320I` (codename `redwoodin`),
+Android 14, `arm64-v8a`, MIUI/HyperOS.
+
+**Outcome:** the app installs, launches, and reaches
+`[BOOTSTRAP] Runtime Ready` followed by `Launching onboarding wizard...`.
+Three launch crashes were found and fixed in sequence. **Runtime behaviour is
+still unproven** — the app has only reached the onboarding wizard.
+
+### The three crashes, in the order they surfaced
+
+Each one hid the next, which is why this took three build cycles:
+
+| # | Symptom | Root cause | Fix |
+|---|---|---|---|
+| 1 | `panicked at paths.rs:147` — **empty message**, then `thread panicked while processing panic. aborting.` | Thread spawned 3 lines above `paths::init()`, which its own comment calls "must be first". The panic *hook* then called `paths::get()` — the panicking function — so the message was destroyed by a double-panic abort. | Reorder; `crash.rs` falls back to `data_local_dir()` instead of re-panicking; hook writes to **stderr** (Android's `RustStdoutStderr` tag), not `log::error!` |
+| 2 | `tao .../ndk_glue.rs:393: Result::unwrap() on Err: JavaException` | **R8 minification.** Release sets `isMinifyEnabled = true`; Rust resolves `WryActivity.getId()` **by name over JNI**, so R8 renamed it. `NoSuchMethodError` in a JNI callback cannot unwind → abort. | `gen/android/app/jni-keep.pro` (new file; `build.gradle.kts` auto-globs `**/*.pro`, so `tauri android init` won't clobber it) |
+| 3 | `Failed to create log directory "/.vox/diagnostics/logs": Read-only file system` | Android has no `$HOME`; `dirs::home_dir()` returns `/`, so the root was `/.vox`. `logging::init` **panics** when `create_dir_all` fails. | `paths::init_from_app_data_dir(app.path().app_data_dir())` on mobile |
+
+Note that **§8.4's conclusion was wrong.** It claimed the storage path was
+"effectively already correct" because `dirs::data_local_dir()` resolves to
+app-private storage. It does — but only if reached, and `home_dir()` returning `/`
+is *not* `None`, so the `?:` fallback selects the read-only root. This is a case
+where a "verified" claim in this plan needed a device to disprove.
+
+### Debugging that finally worked
+
+Release builds are not debuggable, so `adb pull` of `crashes/` is impossible.
+**stderr is the only always-live channel** — Android surfaces it under the
+`RustStdoutStderr` logcat tag. `./scripts/android-deploy.sh crash` reads it.
+
+Getting the *specific* JNI exception required vendoring `tao` and adding
+`env.exception_describe()` before the `.unwrap()`; `JavaException` alone carries
+no detail and `exception_describe()` is not surfaced by the panic.
+
+### Iteration cost, measured
+
+| Step | Cost |
+|---|---|
+| `android-deploy.sh sign` (no source change) | **19 s** |
+| `android-deploy.sh crash` | **~8 s** |
+| Release rebuild, Rust source change | **~4-9 min** |
+| Cold build (C++ stack invalidated) | ~20 min |
+
+Only ~6-9 crates recompile on a Rust-only change (`tauri`, plugins, `Vox`); the
+C++ stack (llama.cpp ×2, sherpa-onnx, ONNX) is cached. **Note the CLI builds
+once and Gradle's `rustBuild` builds again — `Vox` is compiled and linked twice
+per APK.** That duplication is unfixed and is roughly half the Rust-change cost.
+
+### Tooling added
+
+- `scripts/android-deploy.sh` — `cycle` / `build` / `sign` / `rebuild` / `crash` / `logs` / `pull`.
+  `build` skips the Rust rebuild when no source file is newer than the APK.
+- udev rule `/etc/udev/rules.d/51-android.rules` for Xiaomi vendor `2717` — without
+  it `adb` reports "no permissions" and the device is unusable.
 
 ---
 

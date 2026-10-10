@@ -4,6 +4,7 @@ import { LAYOUT_COPY } from "@/data/layoutCopy";
 import { useNavigate } from "react-router-dom";
 import { checkForUpdates, checkForModelUpdates, type UpdateReport, type ModelUpdateReport } from "@/services/setupService";
 import { copyToClipboard } from "@/shared/lib/clipboard";
+import { isRealMobileDevice } from "@/shared/hooks/useMobileViewport";
 
 export const TitleBar: React.FC = () => {
   const navigate = useNavigate();
@@ -159,10 +160,13 @@ export const TitleBar: React.FC = () => {
     }
   };
 
-  if (!isTauri) return null;
+  if (!isTauri || isRealMobileDevice()) return null;
 
   return (
-    <div className="relative flex items-center justify-between h-7 shrink-0 select-none z-50 bg-transparent border-b border-transparent">
+    // A desktop window titlebar (drag region + minimise/maximise/close) has no
+    // meaning on a handheld OS and is the single most obvious "this is a web app
+    // in a WebView" tell. Android supplies its own system bar and back gesture.
+    <div className={`${isRealMobileDevice() ? 'hidden' : 'relative flex'} items-center justify-between h-7 shrink-0 select-none z-50 bg-transparent border-b border-transparent`}>
       {/* Absolute Drag Region */}
       <div className="absolute inset-0 z-0" data-tauri-drag-region />
 

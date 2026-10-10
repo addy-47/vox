@@ -5,6 +5,7 @@ import { SlidersHorizontal, House, Activity, History, Network } from "lucide-rea
 import { cn } from "@/shared/lib/utils";
 import { BottomDockFeather } from "@/shared/ui";
 import { Tooltip } from "@/shared/ui/Tooltip";
+import { isRealMobileDevice } from "@/shared/hooks/useMobileViewport";
 
 const navItems = [
   { icon: House, label: "Home", path: "/" },
@@ -15,14 +16,23 @@ const navItems = [
 
 export const EdgeNav: React.FC = () => {
   const location = useLocation();
+  const isMobile = isRealMobileDevice();
+
   return (
     <nav
       data-edge-nav
       data-spatial-zone="dock"
-      className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 z-[60] pointer-events-auto flex items-center gap-2 px-3 py-1.5 h-[56px] glass-card glass-keep-blur border border-[rgba(var(--accent),0.15)] rounded-full"
+      className={cn(
+        "z-[60] pointer-events-auto flex items-center justify-around",
+        isMobile
+          ? "fixed bottom-0 inset-x-0 h-[calc(60px+env(safe-area-inset-bottom))] pb-[env(safe-area-inset-bottom)] px-3 bg-[rgb(var(--background))]/95 backdrop-blur-xl border-t border-[rgba(var(--accent),0.15)] shadow-2xl"
+          : "fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 gap-2 px-3 py-1.5 h-[56px] glass-card glass-keep-blur border border-[rgba(var(--accent),0.15)] rounded-full"
+      )}
     >
-      {/* Localized feather directly behind floating dock nav */}
-      <BottomDockFeather className="absolute -inset-x-6 -bottom-3 -top-6 rounded-full pointer-events-none" />
+      {/* Localized feather directly behind floating dock nav (desktop only) */}
+      {!isMobile && (
+        <BottomDockFeather className="absolute -inset-x-6 -bottom-3 -top-6 rounded-full pointer-events-none" />
+      )}
         {navItems.map((item) => (
           <Tooltip key={item.label} label={item.label} side="top">
             <NavLink

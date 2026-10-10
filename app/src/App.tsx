@@ -14,6 +14,7 @@ import { PanelStateProvider } from "@/shared/hooks/usePanelState";
 import { useNotificationStore } from "@/store/notificationStore";
 import { installOverlayStack } from "@/shared/lib/overlayStack";
 import { getCurrentWindowLabel } from "@/services/windowService";
+import { isRealMobileDevice } from "@/shared/hooks/useMobileViewport";
 import { AnimatePresence, motion, MotionConfig } from "framer-motion";
 
 // Route-level preloads
@@ -38,7 +39,7 @@ const Monitoring = lazy(() => import("@/pages/Monitoring").then(m => ({ default:
 
 // Premium Shared Orbital Loading Screen
 const PageLoader = () => (
-  <div className="flex h-screen w-full items-center justify-center bg-[rgb(var(--background))]">
+  <div className="flex h-[100dvh] w-full items-center justify-center bg-[rgb(var(--background))]">
     <OrbitalLoader size="lg" />
   </div>
 );
@@ -130,7 +131,8 @@ const App: React.FC = () => {
       for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
         try {
           const completed = await getOnboardingStatus();
-          const finalStatus = forceWizard ? false : completed;
+          const devBypass = localStorage.getItem("vox_skip_wizard_dev") === "true";
+          const finalStatus = forceWizard ? false : (devBypass || completed);
           setSetupCompleted(finalStatus);
           setSetupUnreachable(false);
           try {
@@ -267,7 +269,13 @@ const App: React.FC = () => {
   }, [isWizardWebview]);
 
   return (
-    <div className="relative h-screen w-full bg-[rgb(var(--background))] overflow-hidden">
+    <div className="relative h-[100dvh] w-full bg-[rgb(var(--background))] overflow-hidden"
+      style={{
+        // See WizardRoot: `viewport-fit=cover` extends the page under the system
+        // bars, so the root must supply the insets.
+        paddingTop: 'env(safe-area-inset-top)',
+        paddingBottom: 'env(safe-area-inset-bottom)',
+      }}>
       <ErrorBoundary name="App">
         {/* Dedicated setup wizard window */}
         {isWizardWebview === null ? null : isWizardWebview ? (
@@ -297,13 +305,15 @@ const App: React.FC = () => {
                       <ProfilerDrawerProvider>
                         <PageDrawerProvider>
                           <Routes>
-                          {/* Setup genuinely not completed. The real setup UI is the dedicated
-                              `wizard` webview; `main` only hosts a stand-in that
-                              surfaces it, so the setup flow is never mounted
-                              twice on a first run. */}
+                          {/* Setup genuinely not completed. The real setup UI on desktop is the dedicated
+                              `wizard` webview; `main` only hosts a stand-in that surfaces it.
+                              On mobile, there is only one window, so we mount WizardRoot directly. */}
                           {routeToWizard && (
                             <>
-                              <Route path="/wizard" element={<WizardStandIn />} />
+                              <Route
+                                path="/wizard"
+                                element={isRealMobileDevice() ? <WizardRoot /> : <WizardStandIn />}
+                              />
                               <Route path="*" element={<Navigate to="/wizard" replace />} />
                             </>
                           )}

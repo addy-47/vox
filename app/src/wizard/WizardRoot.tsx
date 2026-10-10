@@ -10,6 +10,7 @@ import { LiveTestStep } from "./steps/LiveTestStep";
 import { CompletedStep } from "./steps/CompletedStep";
 import { WizardErrorPanel } from "./components/WizardErrorPanel";
 import { revealWizard, fetchManifest } from '@/services/setupService';
+import { isRealMobileDevice } from '@/shared/hooks/useMobileViewport';
 
 
 import { CheckCircle2 } from 'lucide-react';
@@ -32,13 +33,19 @@ export const WizardRoot: React.FC = () => {
   const [mobileResetKey, setMobileResetKey] = React.useState(0);
   const [viewMode, setViewMode] = React.useState<'desktop' | 'mobile'>(() => {
     if (typeof window !== 'undefined') {
+      if (isRealMobileDevice()) return 'mobile';
       const params = new URLSearchParams(window.location.search);
       if (params.get('mode') === 'mobile') return 'mobile';
       if (window.innerWidth < 768) return 'mobile';
     }
     return 'desktop';
   });
-  const [frameMode, setFrameMode] = React.useState<'device' | 'fullscreen'>('device');
+  // On a REAL phone the mockup is nonsense: you get a phone frame rendered
+  // inside the phone, which is exactly the "web app being shown on Android"
+  // look. The frame only makes sense as a desktop-browser preview.
+  const [frameMode, setFrameMode] = React.useState<'device' | 'fullscreen'>(
+    () => (isRealMobileDevice() ? 'fullscreen' : 'device'),
+  );
   
   React.useEffect(() => {
     // Reveal window after a short delay to ensure React is hydrated and CSS is loaded
@@ -120,12 +127,20 @@ export const WizardRoot: React.FC = () => {
   };
 
   return (
-    <div className="flex flex-col h-screen w-full bg-[rgb(var(--background))] text-[rgb(var(--foreground))] overflow-hidden font-sans selection:bg-[rgb(var(--accent))]/30">
+    <div className="flex flex-col h-[100dvh] w-full bg-[rgb(var(--background))] text-[rgb(var(--foreground))] overflow-hidden font-sans selection:bg-[rgb(var(--accent))]/30"
+      style={{
+        // `viewport-fit=cover` makes the page extend under the Android status and
+        // navigation bars. Without these insets the first row of content sits
+        // behind the clock and the primary action hides under the gesture bar.
+        paddingTop: 'env(safe-area-inset-top)',
+        paddingBottom: 'env(safe-area-inset-bottom)',
+      }}>
       <AmbientBackground instanceId="wizard" />
       <TitleBar />
 
-      {/* Mode Switcher Banner on Desktop */}
-      <div className="hidden sm:flex items-center justify-between px-6 py-2 border-b border-[rgba(var(--accent),0.06)] bg-black/20 backdrop-blur-sm z-20 text-xs">
+      {/* Mode Switcher Banner — desktop-only developer chrome. Hidden on a real
+          phone: the device it previews is already the device it's running on. */}
+      <div className={`${isRealMobileDevice() ? 'hidden' : 'hidden sm:flex'} items-center justify-between px-6 py-2 border-b border-[rgba(var(--accent),0.06)] bg-black/20 backdrop-blur-sm z-20 text-xs`}>
         <div className="flex items-center gap-2">
           <span className="text-[11px] font-mono uppercase tracking-widest text-[rgb(var(--foreground-muted))]">
             View Mode:

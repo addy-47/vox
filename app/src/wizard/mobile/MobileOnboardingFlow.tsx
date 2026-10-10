@@ -4,6 +4,7 @@ import { MobileHeroStep } from './MobileHeroStep';
 import { MobilePermissionStep } from './MobilePermissionStep';
 import { MobileModelStep } from './MobileModelStep';
 import { MobileLiveGreetingStep } from './MobileLiveGreetingStep';
+import { completeSetupWizard } from '@/services/setupService';
 
 export type MobileStepId = 'hero' | 'permission' | 'model' | 'greeting';
 
@@ -32,6 +33,26 @@ export const MobileOnboardingFlow: React.FC<MobileOnboardingFlowProps> = ({
 
   return (
     <div className="relative w-full h-full flex flex-col bg-[rgb(var(--background))] text-[rgb(var(--foreground))] overflow-hidden select-none">
+      {/* DEV / Inspection: skip past onboarding to inspect main UI */}
+      {(import.meta.env.DEV || localStorage.getItem("vox_dev_mode") === "true") && (
+        <button
+          onClick={() => {
+            try {
+              localStorage.setItem("vox_skip_wizard_dev", "true");
+              localStorage.setItem("vox_setup_completed", "true");
+            } catch (_) {}
+            void completeSetupWizard().catch(() => {}).finally(() => {
+              window.location.reload();
+            });
+          }}
+          className="absolute top-3 right-3 z-50 px-3 py-1.5 rounded-full
+                     bg-black/80 backdrop-blur-md border border-white/20
+                     text-white text-[11px] font-mono uppercase
+                     tracking-wider active:bg-black cursor-pointer"
+        >
+          Skip Setup
+        </button>
+      )}
       {/* Top step indicator bar (subtle 4-segment bar) */}
       <div className="shrink-0 h-4 flex items-center justify-center px-8 pt-2.5 z-20">
         <div className="flex items-center gap-1.5 w-full max-w-[160px]">
