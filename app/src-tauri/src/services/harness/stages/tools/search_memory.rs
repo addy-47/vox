@@ -45,7 +45,7 @@ impl ToolDefinition for MemorySearchTool {
                         "description": "A brief, natural 3-5 word spoken phrase delivered while memory search is evaluated."
                     }
                 },
-                "required": ["query", "spoken_filler"]
+                "required": ["query"]
             }),
             PipelineMode::Realtime => json!({
                 "type": "object",

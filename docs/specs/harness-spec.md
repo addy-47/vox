@@ -448,9 +448,9 @@ When `LlmActor` returns `LlmResponse::ToolCall(call)` over the duplex pipe, `Str
    - The structured `ToolResult` is appended to the turn-local scratchpad, triggering a reentrant generation pass to produce the final conversational response.
 
 ### 8.3 Interim Filler Source (Non-Terminal Tools)
-- `spoken_filler` is a required parameter in every `NonTerminal` tool schema. The model provides a context-aware 3–5 word filler phrase alongside the tool arguments (e.g. *"Checking your project notes..."*).
-- The Harness dispatches the model-provided `spoken_filler` to `TtsActor` as `AudioIntent::InterimFiller` immediately upon tool invocation, before awaiting the result.
-- If `spoken_filler` is empty or missing (e.g. model failure or compaction path), the Harness falls back to a localized filler phrase set (Devanagari / English).
+- `spoken_filler` is an optional parameter in `NonTerminal` tool schemas. When provided, the model offers a context-aware 3–5 word filler phrase alongside the tool arguments (e.g. *"Checking your project notes..."*).
+- The Harness dispatches the model-provided `spoken_filler` to `TtsActor` as `AudioIntent::InterimFiller` immediately upon the first tool invocation of a turn. If `spoken_filler` is omitted or empty, the Harness falls back to a localized filler phrase set (Devanagari / English) if no filler has played for the current turn.
+- To prevent acoustic queue flooding, repeat non-terminal tool calls within the same turn suppress automatic repeat filler playback unless explicitly differentiated or configured.
 
 ### 8.4 Ingress Tag Demuxer Shim (Local & Non-Native Models)
 - For cloud models with native tool streaming (OpenAI, Gemini), tool calls are parsed directly from structured streaming frames.

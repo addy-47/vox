@@ -1,4 +1,5 @@
 import React from "react";
+import { createPortal } from "react-dom";
 import { useNavigate, useLocation } from "react-router-dom";
 import { Ghost, X, AlertCircle, RotateCcw, Hand, ArrowLeft } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
@@ -14,9 +15,8 @@ import {
 } from "@/shared/components/history";
 import { useHistory } from "@/shared/hooks/useHistory";
 import { useOverlay } from "@/shared/hooks/useOverlay";
-import { BREAKPOINT_OPPOSITE_COLLISION_MAX } from "@/layout/breakpoints";
 import { EmptyState, OrbitalLoader, ErrorBoundary } from "@/shared/components/common";
-import { ThemeToggleButton, BottomDockFeather } from "@/shared/ui";
+import { BottomDockFeather } from "@/shared/ui";
 import { HISTORY_COPY } from "@/data/historyCopy";
 import { useHistoryFilterStore } from "@/store/historyFilterStore";
 import { formatDateTime, resolveSessionTitle, type SessionRow } from "@/services/historyService";
@@ -30,7 +30,7 @@ export const History: React.FC = () => {
   const location = useLocation();
   const setDisplayMode = useHistoryFilterStore((s) => s.setDisplayMode);
   const setDrillDownSession = useHistoryFilterStore((s) => s.setDrillDownSession);
-  const { isPanelOpen, rightPanel } = usePanelStateContext();
+  const { isPanelOpen } = usePanelStateContext();
   const { isProfilerOpen } = useProfilerDrawer();
   const [isThemeTransitioning, setIsThemeTransitioning] = React.useState(getThemeTransitioning);
   React.useEffect(() => {
@@ -252,30 +252,16 @@ export const History: React.FC = () => {
       onClick={isOrbitViewport ? handleStageClick : undefined}
       className="relative flex-1 flex flex-col items-center justify-between h-full w-full overflow-hidden bg-transparent select-none"
     >
-      {/* ── Top Bar Search: Active in Orbit View; suppressed in List View (which has dedicated fixed search) ── */}
-      {isOrbitViewport && (
-        <div className="absolute top-4 left-24 right-32 z-30 pointer-events-auto flex justify-center">
+      {/* ── Top Bar Search in Orbit View portal into AppHeader center slot ── */}
+      {isOrbitViewport && typeof document !== "undefined" && document.getElementById("app-header-center-slot") &&
+        createPortal(
           <HistorySearchBar
             sessions={sessions}
             onSelectSession={handleSearchSelectSession}
             className="w-full max-w-[280px]"
-          />
-        </div>
-      )}
-
-      {/* ── Top Left: Theme Toggle (Orbit view only; list view renders theme toggle on the right header) ── */}
-      {isOrbitViewport && (
-        <div
-          className={cn(
-            "absolute top-4 left-5 z-[60] transition-opacity duration-200",
-            Boolean(rightPanel) && (typeof window !== "undefined" && window.innerWidth < BREAKPOINT_OPPOSITE_COLLISION_MAX)
-              ? "opacity-0 pointer-events-none invisible"
-              : "pointer-events-auto"
-          )}
-        >
-          <ThemeToggleButton />
-        </div>
-      )}
+          />,
+          document.getElementById("app-header-center-slot")!
+        )}
 
       {/* Delete Error Notification Banner */}
       <AnimatePresence>
@@ -433,11 +419,6 @@ export const History: React.FC = () => {
             <div className="w-full h-full flex flex-col min-h-0 overflow-hidden relative">
               <div className={cn("w-full h-full flex flex-col min-h-0", selectedSession ? "hidden" : "flex")}>
                 <HistoryListView
-                  dayLabel={
-                    currentWindow?.dateSpanLabel
-                      ? HISTORY_COPY.sessionsInWindow(currentWindow.dateSpanLabel)
-                      : HISTORY_COPY.allSessionsLabel
-                  }
                   sessions={sessions}
                   selectedSession={selectedSession}
                   confirmDeleteId={confirmDeleteId}
@@ -452,8 +433,8 @@ export const History: React.FC = () => {
                   onClick={(e) => e.stopPropagation()}
                   className="absolute inset-0 z-20 w-full h-full flex flex-col min-h-0 overflow-hidden bg-[rgb(var(--background))] select-text animate-in fade-in duration-200"
                 >
-                  {/* Top Navigation Bar: Simple Arrow Back + Wrapped Title + Session Actions (pr-28 sm:pr-32 reserves clear space for TopRightCluster) */}
-                  <div className="shrink-0 px-4 sm:px-6 pt-4 pb-3 border-b border-[rgba(var(--border),0.12)] bg-[rgb(var(--background))]/80 backdrop-blur-md flex items-start justify-between gap-3 pr-28 sm:pr-32">
+                  {/* Top Navigation Bar: Simple Arrow Back + Wrapped Title + Session Actions (pr-32 sm:pr-36 reserves clear space for TopRightCluster) */}
+                  <div className="shrink-0 px-4 sm:px-6 pt-[max(1rem,env(safe-area-inset-top))] pb-3 border-b border-[rgba(var(--border),0.12)] bg-[rgb(var(--background))]/80 backdrop-blur-md flex items-start justify-between gap-3 pr-32 sm:pr-36">
                     <div className="flex items-start gap-3 min-w-0 flex-1">
                       <button
                         type="button"

@@ -13,6 +13,21 @@ use crate::services::llm::{
 struct OllamaMessage {
     role: String,
     content: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tool_calls: Option<Vec<OllamaOutboundToolCall>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tool_name: Option<String>,
+}
+
+#[derive(Serialize)]
+struct OllamaOutboundToolCall {
+    function: OllamaFunctionCallOutbound,
+}
+
+#[derive(Serialize)]
+struct OllamaFunctionCallOutbound {
+    name: String,
+    arguments: serde_json::Value,
 }
 
 #[derive(Deserialize)]
@@ -70,9 +85,25 @@ pub fn build_request_body(
         .input
         .messages
         .iter()
-        .map(|m| OllamaMessage {
-            role: m.role.to_string(),
-            content: m.content.clone(),
+        .map(|m| {
+            let outbound_calls = m.tool_calls.as_ref().map(|calls| {
+                calls
+                    .iter()
+                    .map(|c| OllamaOutboundToolCall {
+                        function: OllamaFunctionCallOutbound {
+                            name: c.name.clone(),
+                            arguments: c.arguments.clone(),
+                        },
+                    })
+                    .collect()
+            });
+
+            OllamaMessage {
+                role: m.role.to_string(),
+                content: m.content.clone(),
+                tool_calls: outbound_calls,
+                tool_name: None,
+            }
         })
         .collect();
 

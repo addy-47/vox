@@ -41,7 +41,7 @@
         "description": "A natural, brief 3 to 5 word spoken filler phrase to say aloud right now while searching (e.g., 'Checking your notes...')."
       }
     },
-    "required": ["query", "spoken_filler"]
+    "required": ["query"]
   }
 }
 ```

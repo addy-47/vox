@@ -12,7 +12,6 @@ export * from "./Tooltip";
 export * from "./VoiceCarousel";
 export * from "./EdgePanel";
 export * from "./BottomDockFeather";
-export * from "./TopRightCluster";
 export * from "./TemporaryChatIcon";
 export * from "./SessionContextMenu";
 export * from "./ProjectContextMenu";

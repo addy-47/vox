@@ -79,9 +79,9 @@ Every tool registered in the runtime must strictly declare one of two behavioral
 
 ### 4.2 Category B: Non-Terminal Cognitive Tools (`NonTerminal`)
 - **Intent**: Retrieves factual data, queries internal state, or accesses external information that the model requires to formulate its conversational answer.
-- **Spoken Filler Parameter Invariant**: Every `NonTerminal` tool must include a required `spoken_filler: String` parameter in its schema. The model formulates a brief, natural 3-5 word spoken filler (e.g. *"Checking your notes on that..."*) to eliminate dead air while the tool runs.
+- **Spoken Filler Parameter Invariant**: Every `NonTerminal` tool may include an optional `spoken_filler: String` parameter in its schema. The model can formulate a brief, natural 3-5 word spoken filler (e.g. *"Checking your notes on that..."*) to eliminate dead air while the tool runs.
 - **Pipeline State Invariant**: Invocation of a non-terminal tool transitions the conversation pipeline from `Thinking` to `InteractionState::Working` (triggering `NonTerminalPhase`).
-- **Audio Intent Invariant**: The Harness immediately dispatches `spoken_filler` to speech synthesis as `AudioIntent::InterimFiller`. If `spoken_filler` is missing or empty, the Harness falls back to localized phrase selection (`select_filler_phrase`).
+- **Audio Intent Invariant**: When dispatched, `spoken_filler` is synthesized as `AudioIntent::InterimFiller`. If `spoken_filler` is omitted by the model on tool invocation, the Harness may dispatch a fallback localized phrase (`select_filler_phrase`) if no filler has yet been played for the turn. Multiple back-to-back fillers within the same turn are suppressed.
 - **Turn Loop Invariant**: Non-terminal tools trigger a reentrant cognitive pass. The captured tool result is appended to the turn-local ephemeral scratchpad, re-entering Phase 2 Step 4 with the tool observation.
 - **Tool Failure Contract**:
   - If a tool invocation fails (unknown tool, malformed arguments, timeout, or runtime error), the harness must **never** abort the turn. It returns a `ToolResult` with `is_error = true` and a concise, sanitized error string back to the model, allowing the LLM to explain or recover gracefully via speech.

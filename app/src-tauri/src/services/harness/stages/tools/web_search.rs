@@ -119,7 +119,7 @@ impl ToolDefinition for WebSearchTool {
                     "description": "Maximum number of distinct evidence passages to return (1-10). Default: 5. Actual returned count may be reduced based on available context budget."
                 }
             },
-            "required": ["query", "spoken_filler"]
+            "required": ["query"]
         })
     }
 

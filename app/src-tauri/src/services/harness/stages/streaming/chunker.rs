@@ -109,14 +109,28 @@ impl ClauseChunker {
                 } else {
                     false
                 };
-                let next_is_digit = if i + 1 < chars.len() {
-                    chars[i + 1].1.is_ascii_digit()
-                } else {
-                    false
-                };
 
-                if prev_is_digit && next_is_digit {
+                // Decimal guard: if preceded by a digit and either followed by a digit
+                // OR at the very end of the streaming buffer (lookahead needed to confirm decimal vs sentence end).
+                if prev_is_digit && (i + 1 == chars.len() || chars[i + 1].1.is_ascii_digit()) {
                     continue; // Decimal guard
+                }
+
+                // Sentence ending period requires either end-of-sentence closing delimiter or whitespace after period
+                // when not at end of buffer, to avoid splitting mid-token abbreviations or filenames.
+                if i + 1 < chars.len() {
+                    let next_char = chars[i + 1].1;
+                    if !next_char.is_whitespace()
+                        && next_char != '"'
+                        && next_char != '\''
+                        && next_char != '”'
+                        && next_char != '’'
+                        && next_char != ')'
+                        && next_char != ']'
+                        && next_char != '*'
+                    {
+                        continue;
+                    }
                 }
 
                 let text_before = &self.buffer[..pos];
@@ -384,7 +398,7 @@ mod tests {
         assert_eq!(c.flush(), None);
     }
 
-    /// Tests period does not split on decimal like 3.14
+    /// Tests period does not split on decimal like 3.14 or streaming tokens like "1." followed by "5"
     #[test]
     fn test_chunker_period_decimal_guard() {
         let mut c = ClauseChunker::new();
@@ -393,6 +407,13 @@ mod tests {
         let mut c2 = ClauseChunker::new();
         let chunks2 = c2.push_str("Value is 3.14 with enough words. Next sentence");
         assert_eq!(chunks2, vec!["Value is 3.14 with enough words."]);
+
+        // Streaming scenario: "Gemini 1." arrives first, followed by "5 Pro"
+        let mut c3 = ClauseChunker::new();
+        let chunks3_a = c3.push_str("Google rolled out Gemini 1.");
+        assert!(chunks3_a.is_empty(), "Trailing period after digit must not split early during streaming");
+        let chunks3_b = c3.push_str("5 Pro, which features a massive window.");
+        assert_eq!(chunks3_b, vec!["Google rolled out Gemini 1.5 Pro, which features a massive window."]);
     }
 
     /// Tests period does not split after known abbreviation.

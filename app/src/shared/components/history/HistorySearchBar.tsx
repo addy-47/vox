@@ -227,7 +227,7 @@ export const HistorySearchBar = memo<HistorySearchBarProps>(({
   return (
     <div className={cn("relative pointer-events-auto flex flex-col items-center w-full", className)}>
       {/* ── Underline Search Input: Exactly mirrors Memory SearchBar ── */}
-      <div className="flex items-center gap-2 py-1 border-b border-[rgba(var(--foreground),0.18)] focus-within:border-[rgba(var(--accent),0.8)] transition-colors duration-200 w-full">
+      <div className="flex items-center gap-2 py-1.5 border-b border-[rgba(var(--foreground),0.18)] focus-within:border-[rgba(var(--accent),0.8)] transition-colors duration-200 w-full shrink-0">
         <Search size={13} className="text-[rgb(var(--accent))] shrink-0 opacity-70" />
         <input
           ref={inputRef}
