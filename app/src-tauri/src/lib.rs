@@ -302,6 +302,17 @@ pub fn run() {
             // MUST precede every thread spawn below. Any thread touching
             // paths::get() races this init and panics; on Android that panic lands
             // before the panic hook could write a report, so it aborts the process.
+            //
+            // Android needs the root supplied by the caller: the process has no
+            // usable $HOME, so the env-derived fallback resolves to `/.vox` and
+            // every write fails (Read-only file system).
+            #[cfg(mobile)]
+            paths::init_from_app_data_dir(
+                app.path()
+                    .app_data_dir()
+                    .expect("Android: Context-derived app_data_dir must resolve"),
+            );
+            #[cfg(desktop)]
             paths::init();
             paths::migrate_legacy_layout(&paths::get().root);
             paths::ensure_dirs().ok();

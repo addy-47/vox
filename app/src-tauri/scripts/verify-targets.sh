@@ -15,7 +15,7 @@
 # Source that file directly before running `pnpm tauri android build`, which does
 # NOT set BINDGEN_EXTRA_CLANG_ARGS on its own.
 #
-# See .agents/rules/android-pitfalls.md.
+# See .agents/rules/android-style-guide.md.
 
 set -euo pipefail
 
