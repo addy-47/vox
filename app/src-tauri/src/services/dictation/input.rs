@@ -181,9 +181,11 @@ impl AtspiLibrary {
 }
 
 /// Linux Wayland implementation using the AT-SPI accessibility bus for reliable Ctrl+V keystroke injection.
+#[cfg(target_os = "linux")]
 #[derive(Default)]
 pub struct WaylandInputAdapter;
 
+#[cfg(target_os = "linux")]
 impl SystemInputAdapter for WaylandInputAdapter {
     /// Attempts paste simulation on Wayland compositors via AT-SPI, falling back to Enigo.
     fn simulate_paste(&self) -> Result<(), DictationError> {

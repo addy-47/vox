@@ -1,6 +1,6 @@
 [package]
 name = "Vox"
-version = "0.8.8"
+version = "0.8.9"
 description = "Vox - A modern desktop voice inference engine built for edge devices."
 authors = ["addy-47"]
 edition = "2021"
@@ -47,8 +47,7 @@ llama-cpp-4 = { version = "0.2.61", default-features = false, features = ["openm
 llama-cpp-sys-4 = { version = "0.2.61", default-features = false }                             # Low-level llama.cpp C++ bindings
 ort = { version = "2.0.0-rc.13", features = ["download-binaries", "ndarray"] }                # ONNX Runtime bindings (1.28; fixes ReshapeFusion SIGSEGV on MiniLM INT8)
 ndarray = "0.17.2"                                                                            # N-dimensional array processing for ONNX tensors
-chatterbox-rs = { git = "https://github.com/addy-47/chatterbox-rs.git", rev = "4d84eb3", default-features = false } # Local voice cloning TTS
-query-sieve = { git = "https://github.com/addy-47/query-sieve-rs.git" }                       # ModernBERT intent classifier
+chatterbox-rs = { git = "https://github.com/addy-47/chatterbox-rs.git", rev = "c9d17bd", default-features = false } # Local voice cloning TTS
 tokenizers = { version = "0.21.0", default-features = false, features = ["fancy-regex"] }    # HuggingFace tokenizers (BPE / WordPiece)
 tiktoken-rs = "0.6.0"                                                                         # OpenAI BPE tokenizer for context budgeting
 
@@ -124,6 +123,15 @@ enigo = { version = "0.2", default-features = false, features = ["x11rb"] }
 [target.'cfg(target_os = "macos")'.dependencies]
 tauri = { version = "2", features = ["macos-private-api"] }
 
+# ONNX Runtime uses the NNAPI execution provider on Android. This MUST stay
+# target-scoped: `ort-sys/build/download/resolve.rs` requires the downloaded
+# artifact's feature set to match the enabled cargo features EXACTLY, and the
+# only `aarch64-linux-android` row in `dist.tsv` is `nnapi`. Enabling `nnapi`
+# for desktop would break it — every desktop row is `none` or another EP
+# (webgpu / cuda13 / directml), so the exact-match check fails the build.
+[target.'cfg(target_os = "android")'.dependencies]
+ort = { version = "2.0.0-rc.13", features = ["download-binaries", "ndarray", "nnapi"] }
+
 [target.'cfg(not(target_os = "windows"))'.dependencies]
 sherpa-onnx = { version = "1.13.8", default-features = false, features = ["shared"] }
 
@@ -179,30 +187,3 @@ harness = false
 name = "agentic_tool_eval"
 path = "evals/agentic-tool/main.rs"
 harness = false
-
-
-
-
-# ─── Local patches ───────────────────────────────────────────────────────────
-#
-# chatterbox-rs Android toolchain fix, applied locally.
-#
-# `chatterbox-rs`'s build.rs at the pinned rev (4d84eb3) does not pass
-# `CMAKE_TOOLCHAIN_FILE` for aarch64-Android. CMake therefore resolves the
-# cross-compile target to the HOST processor, ggml's `ggml_get_system_arch()`
-# selects its x86 backend, and the build dies on:
-#     clang: error: unsupported argument 'native' to option '-march='
-# Passing `-DCMAKE_SYSTEM_PROCESSOR=aarch64` alone does not help — CMake
-# recomputes that variable inside `project()` and shadows the cache entry.
-#
-# llama-cpp-sys-4/build.rs:1885-1901 already handles this correctly; this patch
-# brings chatterbox to parity. The submodule is checked out at exactly the
-# pinned rev, and the patch only ADDS an Android branch to its build.rs.
-#
-# NOTE: must stay at the END of this file. A `[patch]` table header terminates
-# the `[dependencies]` table, so placing it mid-file would orphan every
-# dependency listed after it.
-#
-# Remove once the fix is upstream and the `rev` above is bumped.
-[patch."https://github.com/addy-47/chatterbox-rs.git"]
-chatterbox-rs = { path = "../../submodules/chatterbox-rs" }

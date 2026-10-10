@@ -531,7 +531,7 @@ A prebuilt `aarch64-linux-android` artifact **does** exist: `ort-sys-2.0.0-rc.13
 
 **The real gap is the feature, not the artifact.** Vox's `ort` dependency (`Cargo.toml:42`) enables only `download-binaries` and `ndarray`; it does **not** enable `nnapi`. Under `resolve.tsv:120-130`, a feature-set miss falls back to `candidates.first()`, so the build would link the NNAPI artifact and only fail later, at runtime feature validation, if the app needs an execution provider other than NNAPI.
 
-**Action:** enable the `nnapi` feature on `ort` for the Android target, then verify VAD (`silero_onnx.rs`, `ten_onnx.rs`) and the memory embedder (`services/memory/ml/embedder.rs`) run under NNAPI. NNAPI is GPU/driver-accelerated and hardware-varied, so this needs a real device — an emulator will not validate it.
+**✅ RESOLVED (Phase 3).** `nnapi` enabled via a `[target.'cfg(target_os = "android")'.dependencies]` entry — a global feature would satisfy Android but break the desktop exact-match check (trap 16). **Still requires a device** to confirm VAD (`silero_onnx.rs`, `ten_onnx.rs`) and the memory embedder (`services/memory/ml/embedder.rs`) run under NNAPI. NNAPI is GPU/driver-accelerated and hardware-varied, so this needs a real device — an emulator will not validate it.
 
 ### 7.4 ABI and packaging
 
@@ -692,7 +692,7 @@ These rules exist so no batch silently regresses desktop.
 | **0** | Verification automation (§Verification script, `AGENTS.md` §3 fix, `.agents/rules/android-pitfalls.md`, IPC-registration invariant test) | S | Every later phase is worthless if regressions go unseen. Also retires the two traps that made Batch 4 look complete when it was not. |
 | **1** | Close Batch 4 — `setup/remote_server.rs` only | S | ✅ **Done (Phase 1)**. Last known defect; closed by gating the module behind `#[cfg(desktop)]` with a typed mobile stub, plus an `isDesktop()` gate on the `<RemoteServerSetup>` panel. Desktop arm unmodified. |
 | **2** | **First `arm64-v8a` release LINK** — `tauri android init`, `bundle.android` config, then *link* not *check* | M | ✅ **Done.** Produced a signed, installable APK. Settled both UNVERIFIED claims (`turso` §7.2, `llama.cpp` §7.1) and found six native-toolchain blockers `cargo check` could never see — see §Phase2-Results. |
-| **3** | Batch 7 — fix whatever Phase 2's link exposes | M | Now scoped by evidence rather than speculation. §7.1 is already resolved, so this is smaller than the M-L label. |
+| **3** | Batch 7 — fix whatever Phase 2's link exposes | M | ✅ **Done.** Phase 2 *was* the diagnostic; §7.1/§7.2/§7.4 all resolved. §7.3 needed one real fix: `ort`'s `nnapi` feature, and it had to be **target-scoped** — see §Phase3-Results. |
 | **4** | APK installs and launches on a physical device | M | First real validation. Confirms `oboe` audio and NNAPI on real hardware — an emulator validates neither. |
 | **5** | Batch 8 — resumable downloads | M | Re-scoped from L. Robustness fix; mostly benefits desktop too. |
 | **6** | Batch 2 — audio backend seam | M | Deliberately last. Its purpose is to make a future Android audio backend "a new file rather than a refactor." Doing it before Phase 4 means refactoring against assumptions instead of observations. |
@@ -772,6 +772,59 @@ A cold Android build is ~20-25 min, dominated by the C++ stack. Two things cut i
 sections in a 170 MB binary. `strip = "symbols"` would cut roughly 25% off every
 artifact and shrink the APK — not applied, because it costs a full rebuild and
 degrades crash-reporting backtraces.
+
+---
+
+## Phase 3 Results — `ort` NNAPI ✅
+
+**Outcome:** the APK ships an ONNX Runtime exposing the NNAPI execution provider,
+and the `ort::ep::NNAPI` Rust API is available. Phase 3 was one real item (§7.3);
+§7.1, §7.2 and §7.4 were already settled by Phase 2's link.
+
+### The fix
+
+`ort` had `["download-binaries", "ndarray"]` but **not** `nnapi`. §7.3's
+correction stands: *the real gap is the feature, not the artifact.*
+
+It could not simply be added to `[dependencies]`. `ort-sys` requires an **exact**
+feature-set match on the downloaded artifact (`build/download/resolve.rs:126`),
+`dist.tsv` has exactly one `aarch64-linux-android` row and it is `nnapi`, and
+every desktop row is `none` / `webgpu` / `directml` / `cuda13`. Enabling it
+globally resolves Android correctly and **breaks the desktop build**. It is
+declared as a `[target.'cfg(target_os = "android")'.dependencies]` entry instead,
+so Cargo unifies the feature only into the Android graph.
+
+### Why the binary did not change
+
+The rebuilt `libonnxruntime.so` is **byte-identical** (sha256 `33847ad43bffe204`,
+22,249,560 B) to the pre-Phase-3 APK. The packaging was already correct — and
+almost accidentally so.
+
+With `nnapi` off, `resolve.rs` builds an empty `feature_set`, every
+`aarch64-linux-android` candidate intersects it at 0, so `0 == 0` passes the
+exact-match check and it falls through to `candidates.first()` — the NNAPI
+artifact. One added row, or a changed sort, would have silently broken it.
+
+The genuine defect was the Rust side: `ort::ep::NNAPI` is gated behind
+`#[cfg(feature = "nnapi")]`, so the provider existed in the binary but was
+unselectable in code. **This change is verified by the feature graph, not by a
+binary diff** — `cargo tree -e features -i ort-sys` returns 3 `nnapi` refs for
+`--target aarch64-linux-android` and **0** for desktop.
+
+Verified in the built APK: `ARM aarch64`, `NnapiExecutionProvider` present, no
+`GLIBC` undefined symbols, `liblog`/`libEGL` linkage. Full signed APK rebuilt at
+207.7 MB; both targets clippy clean.
+
+Traps 16-17 in `.agents/rules/android-pitfalls.md`.
+
+### Also closed: the chatterbox `[patch]`
+
+`chatterbox-rs`'s Android toolchain branch (trap 14) is **upstream** as `c9d17bd`
+(`4d84eb3..c9d17bd` on `origin/main`). The local `[patch]` redirecting to
+`submodules/chatterbox-rs` is **removed**; `Cargo.toml` pins `rev = "c9d17bd"` and
+`Cargo.lock` resolves to `git+...?rev=c9d17bd`. `cargo metadata --locked` passes.
+**A fresh clone can now build the APK without any local submodule state** — that
+was the last reproducibility hole.
 
 ---
 
