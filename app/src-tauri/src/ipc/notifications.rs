@@ -137,35 +137,40 @@ fn probe_is_armed() -> bool {
 /// `Context.getExternalFilesDir()` as a Rust path, or `None` if unreachable.
 #[cfg(not(desktop))]
 fn android_external_files_dir() -> Option<std::path::PathBuf> {
-    let ctx = ndk_context::android_context();
-    // SAFETY: the context handle is initialized by ndk-glue at startup and
-    // outlives this call; every fallible JNI step below is handled.
-    let vm = unsafe { jni::JavaVM::from_raw(ctx.vm().cast()) }.ok()?;
-    let mut env = vm.attach_current_thread().ok()?;
-    let context: jni::objects::JObject =
-        unsafe { jni::objects::JObject::from_raw(ctx.context() as jni::sys::jobject) };
+    std::panic::catch_unwind(|| {
+        let ctx = ndk_context::android_context();
+        // SAFETY: the context handle is initialized by MainActivity.onCreate via
+        // `initAndroidContext` at startup and outlives this call; every fallible
+        // JNI step below is handled.
+        let vm = unsafe { jni::JavaVM::from_raw(ctx.vm().cast()) }.ok()?;
+        let mut env = vm.attach_current_thread().ok()?;
+        let context: jni::objects::JObject =
+            unsafe { jni::objects::JObject::from_raw(ctx.context() as jni::sys::jobject) };
 
-    let dir = env
-        .call_method(&context, "getExternalFilesDir", "()Ljava/io/File;", &[])
-        .and_then(|v| v.l())
-        .ok()?;
-    if dir.is_null() {
-        return None;
-    }
-    let dir: jni::objects::JObject = unsafe { jni::objects::JObject::from_raw(dir.into_raw()) };
+        let dir = env
+            .call_method(&context, "getExternalFilesDir", "()Ljava/io/File;", &[])
+            .and_then(|v| v.l())
+            .ok()?;
+        if dir.is_null() {
+            return None;
+        }
+        let dir: jni::objects::JObject = unsafe { jni::objects::JObject::from_raw(dir.into_raw()) };
 
-    let absolute = env
-        .call_method(&dir, "getAbsolutePath", "()Ljava/lang/String;", &[])
-        .and_then(|v| v.l())
-        .ok()?;
-    if absolute.is_null() {
-        return None;
-    }
-    // Bound to a local so the `JavaStr` cannot outlive the `JString` it borrows.
-    let absolute: jni::objects::JString =
-        unsafe { jni::objects::JString::from_raw(absolute.into_raw()) };
-    let path: String = env.get_string(&absolute).ok()?.into();
-    Some(std::path::PathBuf::from(path))
+        let absolute = env
+            .call_method(&dir, "getAbsolutePath", "()Ljava/lang/String;", &[])
+            .and_then(|v| v.l())
+            .ok()?;
+        if absolute.is_null() {
+            return None;
+        }
+        // Bound to a local so the `JavaStr` cannot outlive the `JString` it borrows.
+        let absolute: jni::objects::JString =
+            unsafe { jni::objects::JString::from_raw(absolute.into_raw()) };
+        let path: String = env.get_string(&absolute).ok()?.into();
+        Some(std::path::PathBuf::from(path))
+    })
+    .ok()
+    .flatten()
 }
 
 /// Result of [`debug_fire_transient`], returned so a caller can assert on it

@@ -36,22 +36,42 @@ export const MobilePermissionStep: React.FC<MobilePermissionStepProps> = ({
 
   const copy = MOBILE_ONBOARDING_COPY.permission;
 
-  const notifsGranted = notifState === 'granted' || notifState === 'not_applicable' || notifState === 'unavailable';
+  const notifsGranted = notifState === 'granted' || notifState === 'not_applicable';
+
+  const isMountedRef = useRef(true);
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      onRequestingChange?.(false);
+    };
+  }, [onRequestingChange]);
 
   const checkStatus = useCallback(async () => {
+    console.log('[PermStep] checkStatus:start');
     try {
       const report = await getRuntimeReport().catch(() => null);
-      if (report) {
+      console.log('[PermStep] runtimeReport:', report ? `mic_access=${report.mic_access}` : 'NULL');
+      if (report && isMountedRef.current) {
         setMicGranted(Boolean(report.mic_access));
       }
-    } catch (_) {}
+    } catch (e) {
+      console.warn('[PermStep] runtimeReport threw:', e);
+    }
 
     try {
       const state = await getNotificationPermission().catch(() => 'unavailable' as NotificationPermission);
-      setNotifState(state);
-    } catch (_) {
-      setNotifState('unavailable');
+      console.log('[PermStep] notifPermission:', state);
+      if (isMountedRef.current) {
+        setNotifState(state);
+      }
+    } catch (e) {
+      console.warn('[PermStep] notifPermission threw:', e);
+      if (isMountedRef.current) {
+        setNotifState('unavailable');
+      }
     }
+    console.log('[PermStep] checkStatus:done');
   }, []);
 
   useEffect(() => {
@@ -65,31 +85,53 @@ export const MobilePermissionStep: React.FC<MobilePermissionStepProps> = ({
   }, [micGranted, onPermissionsChange]);
 
   const handleGrantAccess = async () => {
+    if (isRequesting) return;
+    console.log('[PermStep] grantAccess:enter isRequesting=', isRequesting, 'mic=', micGranted, 'notif=', notifState);
     setIsRequesting(true);
     try {
-      // 1. Microphone request via WebRTC / Android wry WebChromeClient
-      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+      // 1. Microphone request via WebRTC / Android wry WebChromeClient (bounded 6s timeout)
+      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia && !micGranted) {
         try {
-          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-          stream.getTracks().forEach((track) => track.stop());
-          setMicGranted(true);
-        } catch (_) {
-          setMicGranted(false);
+          const streamPromise = navigator.mediaDevices.getUserMedia({ audio: true });
+          const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 6000));
+          const stream = await Promise.race([streamPromise, timeoutPromise]);
+          console.log('[PermStep] mic stream:', stream ? 'granted' : 'timeout/null');
+          if (stream) {
+            stream.getTracks().forEach((track) => track.stop());
+            if (isMountedRef.current) setMicGranted(true);
+          }
+        } catch (e) {
+          console.warn('[PermStep] mic threw:', e);
+          if (isMountedRef.current) setMicGranted(false);
         }
       }
 
-      // 2. Android native notification request via IPC (runs sequentially after mic)
-      try {
-        const state = await requestNotificationPermission();
-        setNotifState(state);
-      } catch (_) {
-        setNotifState('unavailable');
+      // 2. Android native notification request via IPC (only if not already granted, bounded 6s timeout)
+      console.log('[PermStep] notif branch: notifsGranted=', notifsGranted, 'state=', notifState);
+      if (!notifsGranted) {
+        try {
+          const reqPromise = requestNotificationPermission();
+          const timeoutPromise = new Promise<NotificationPermission>((resolve) =>
+            setTimeout(() => resolve('unavailable'), 6000)
+          );
+          const state = await Promise.race([reqPromise, timeoutPromise]);
+          console.log('[PermStep] notif request result:', state);
+          if (isMountedRef.current) setNotifState(state);
+        } catch (e) {
+          console.warn('[PermStep] notif request threw:', e);
+          if (isMountedRef.current) setNotifState('unavailable');
+        }
       }
 
       await checkStatus();
-    } catch (_) {
+      console.log('[PermStep] grantAccess:checkStatus returned');
+    } catch (e) {
+      console.warn('[PermStep] grantAccess outer catch:', e);
     } finally {
-      setIsRequesting(false);
+      console.log('[PermStep] grantAccess:finally mounted=', isMountedRef.current);
+      if (isMountedRef.current) {
+        setIsRequesting(false);
+      }
     }
   };
 
@@ -216,8 +258,10 @@ export const MobilePermissionStep: React.FC<MobilePermissionStepProps> = ({
                     ? 'Granted'
                     : notifState === 'denied'
                     ? 'Denied'
-                    : notifState === 'not_applicable' || notifState === 'unavailable'
-                    ? 'Available'
+                    : notifState === 'unavailable'
+                    ? 'Unavailable'
+                    : notifState === 'not_applicable'
+                    ? 'N/A'
                     : 'Optional'}
                 </span>
               </div>

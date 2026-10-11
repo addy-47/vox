@@ -127,6 +127,74 @@ To inspect the main application shell without downloading multi-gigabyte models:
 
 ---
 
+## 4A. Build & Toolchain Pitfalls (Phases 2–4)
+
+### Pitfall 8: `SYSROOT` Must Never Be Exported
+- **Trap**: `rustc` ignores the `SYSROOT` env var; `clippy-driver` honours it. Exporting `SYSROOT=<NDK>/…/sysroot` makes clippy hunt for host `x86_64` std inside the Android sysroot and fail at `E0463: can't find crate for std`. Build scripts compile for the *host* with `clippy-driver`, so this breaks host crates.
+- **Rule**: Pass the sysroot inline via `BINDGEN_EXTRA_CLANG_ARGS_aarch64_linux_android="--sysroot=…"`. `verify-targets.sh` defensively `unset SYSROOT`.
+
+### Pitfall 9: Config-File rustflags Are Silently Overridden
+- **Trap**: A rustflag in `.cargo/config.toml` is silently replaced by the `CARGO_TARGET_<TRIPLE>_RUSTFLAGS` that the Tauri CLI exports, with no warning.
+- **Rule**: Inject required flags from `build.rs`, which the CLI cannot override.
+
+### Pitfall 10: Cargo Resolves Config From CWD, Not `--manifest-path`
+- **Trap**: Build scripts run with cwd inside `~/.cargo/registry/`, so a project-relative `.cargo/config.toml` is invisible to them.
+- **Rule**: Put `[env]` in `$CARGO_HOME/config.toml`, not the project config.
+
+### Pitfall 11: Gradle Cannot Be Driven Standalone
+- **Trap**: Gradle's task dials back to the Tauri CLI over a WebSocket. Invoking Gradle directly hangs.
+- **Rule**: Build via `pnpm tauri android build --apk -t aarch64`. Always pass `-t aarch64`; the single-ABI build is not persisted in `tauri.conf.json` (there is no `bundle.android` block).
+
+### Pitfall 12: Gradle's Environment Is a Hardcoded Allowlist
+- **Trap**: Gradle does not inherit the full shell environment. Toolchain vars set ad-hoc are missing in the Gradle pass even though they work for the CLI pass.
+- **Rule**: Source `scripts/android-env.sh` before building. This is also why Vox is **compiled and linked twice per APK** (CLI pass + Gradle `rustBuild`) — roughly half the cost of a Rust-only change, and still unfixed.
+
+### Pitfall 13: `llama.cpp` Is Vendored Twice → Duplicate `ggml_*` Symbols
+- **Trap**: `llama-cpp-sys-4` and `chatterbox-rs` each vendor llama.cpp, producing duplicate `ggml_*` symbols at link time. `cargo check` cannot see this because it never links.
+- **Rule**: Reach an actual **link** before declaring native work done. `verify-targets.sh link` builds the bin target, which is what proves it.
+
+### Pitfall 14: CMake Needs an Explicit Android Toolchain File
+- **Trap**: A vendored C++ crate that does not receive `CMAKE_TOOLCHAIN_FILE` lets CMake shadow `CMAKE_SYSTEM_PROCESSOR` with the host value. ggml then selects its x86 backend and fails on `-march=native`.
+- **Rule**: Every vendored C++ crate must receive the Android toolchain file. Fixed upstream in chatterbox-rs `c9d17bd`.
+
+### Pitfall 15: `ort-sys` Requires an EXACT Feature-Set Match
+- **Trap**: `ort-sys/build/download/resolve.rs:126` matches the enabled cargo features against `build/download/dist.tsv` exactly. The only `aarch64-linux-android` row is `nnapi`; every desktop row is `none`/`webgpu`/`directml`/`cuda13`. Enabling `nnapi` globally resolves Android correctly and **breaks the desktop build**.
+- **Rule**: Target-scoped dependencies only (see Pitfall 5).
+- **Trap within the trap**: with `nnapi` off, `resolve.rs` computes an empty feature set, every Android candidate intersects at 0, `0 == 0` passes, and it falls through to `candidates.first()` — the NNAPI artifact anyway. The packaged `.so` is byte-identical either way. **Verify by feature graph, never by binary diff**: `cargo tree -e features -i ort-sys` gives 3 `nnapi` refs on `--target aarch64-linux-android` and 0 on desktop.
+
+### Pitfall 16: `stderr` Is the Only Always-Live Log Channel on Release
+- **Trap**: A release APK is not debuggable, so `adb pull` of its private `crashes/` directory is impossible.
+- **Rule**: Route early-boot panics to **stderr**, which Android surfaces under the `RustStdoutStderr` logcat tag. `tracing` is not initialised during bootstrap.
+
+### Pitfall 17: `dirs::home_dir()` Returns `/` on Android
+- **Trap**: Android has no `$HOME`. `dirs::home_dir()` returns `/`, which is **not** `None`, so a `?:` fallback selects the read-only root and paths resolve to `/.vox`. `create_dir_all` then panics.
+- **Rule**: On mobile use `paths::init_from_app_data_dir(app.path().app_data_dir())`, never `paths::init()`. Related: `paths::init()`'s own comment says "must be first" — spawning a thread above it is a race.
+
+### Pitfall 18: R8 Renames JNI Entry Points (release only)
+- **Trap**: Release sets `isMinifyEnabled = true`. Rust resolves `WryActivity.getId()` **by name over JNI**, so R8 renames it and produces `NoSuchMethodError` inside a JNI callback, where unwinding is forbidden — an abort with no way to catch it.
+- **Rule**: Keep explicit rules in `gen/android/app/jni-keep.pro`. `build.gradle.kts` auto-globs `**/*.pro`, so a separate file survives `tauri android init`.
+- **Corollary**: **debug and release are not at parity. Always smoke-test release.**
+
+### Pitfall 19: A Backend Panic Becomes a Silent Frontend Hang
+- **Trap**: Tauri spawns async commands and returns via `return_result`. A panic unwinds past it, dropping the `OwnedInvokeResponder` **without replying**. The JS `invoke()` promise then **never settles** — no rejection, no error, no timeout. Release uses `panic = "unwind"`, so the process survives and the UI spins forever.
+- **Rule**: The frontend must bound its own IPC calls (timeout + cancel affordance). Never assume the backend will fail politely. See Phase 13.2 D1.3.
+
+### Pitfall 20: A Release APK Can Never Hot-Reload
+- **Trap**: Release embeds `frontendDist` into the APK and **never contacts `devUrl`**. No Vite or `adb reverse` tuning will make HMR work; the reverse tunnel is simply never consulted.
+- **Rule**: HMR requires the DEBUG build, which is compiled against `devUrl` and sets `manifestPlaceholders["usesCleartextTraffic"] = "true"`. Use `scripts/android-dev.sh debug` then `android-dev.sh dev`.
+- **Trap within the trap**: `vite.config.ts` keys the HMR websocket off `TAURI_DEV_HOST`, which nothing set — so HMR advertised `127.0.0.1`, the *phone's* loopback. Reverse **both** 1420 (app) and 1421 (HMR websocket); reversing only 1420 leaves edits invisible until a manual reload.
+
+### Pitfall 21: DEBUG and RELEASE Root at Different Paths
+- **Trap**: DEBUG roots at `/data/user/0/<pkg>`; RELEASE roots at `/data/user/0/<pkg>/files`. A relative `adb shell run-as <pkg> ls models` inspects a different tree than expected and produces plausible, wrong output.
+- **Rule**: Always `cd` to an absolute path and print `pwd` before concluding anything about on-device state.
+
+### Pitfall 22: `ndk_context::android_context()` Panics Unless Explicitly Initialized
+- **Trap**: it is `unsafe { ANDROID_CONTEXT.expect("android context was not initialized") }`. Nothing initializes it unless **`ndk-glue` is in the dependency graph** or `initialize_android_context` is called explicitly. Tauri does **not** do this for you — `run_on_android_context` attaches JNI and passes the activity, but never populates that static.
+- **Consequence**: cpal's Oboe backend calls it during `AudioStream::new`, so **every** audio start panics on Android.
+- **Rule**: Initialize it once from `app.run_on_android_context` (preferred — no new native linkage), guard against double-init (`initialize_android_context` asserts it is called once), and make every JNI helper **fail soft** rather than panic. Never write a `SAFETY` comment asserting an initializer exists without verifying it in `Cargo.lock`.
+
+---
+
 ## 5. UI & Touch Standards on Mobile
 
 1. **System Bar Insets**: Every mobile root container must account for Android 14+ edge-to-edge system bars:

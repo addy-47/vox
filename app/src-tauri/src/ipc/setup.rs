@@ -88,10 +88,11 @@ pub async fn get_runtime_report(
     state: State<'_, Arc<AppState>>,
 ) -> Result<RuntimeReport, VoxIpcError> {
     let manifest_guard = state.manifest.read().await;
-    let manifest = manifest_guard
-        .as_ref()
-        .ok_or_else(|| VoxIpcError::NotFound("Manifest not fetched".to_string()))?;
-    Ok(verify_runtime(Some(manifest)))
+    // `RwLockReadGuard` derefs to `Option<VoxManifest>`; `as_ref()` on the guard
+    // borrows that inner `Option` as `Option<&VoxManifest>`. The plain
+    // `.as_deref()` form does not compile here — it would require `VoxManifest:
+    // Deref`, which it is not.
+    Ok(verify_runtime(manifest_guard.as_ref()))
 }
 
 /// Return whether the first-run onboarding setup wizard has completed.

@@ -94,19 +94,19 @@ Batch numbering is preserved because §Batch references throughout this document
 | 4 | 1 | Desktop-only code exclusion | 🟡 Android-additive | M | Both clippy targets clean; desktop bundles unchanged | ✅ Done (`6310dacf`; `remote_server` closed in Phase 1) |
 | 7 | 2, 3 | Native library packaging | ⛔ Android-necessary | M-L | `llama.cpp` + `turso` + `chatterbox` + `ort` link for `arm64-v8a` | ✅ Done — superseded by the Phase 2 link; `ort` NNAPI closed in Phase 3 |
 | — | 0 | Verification automation (`verify-targets.sh`, style guide) | 🟢 Desktop-neutral | S | Script exits 0 on both targets | ✅ Done |
-| — | 4 | APK runs on a physical device | ⛔ Android-necessary | M | Beyond bootstrap: audio, NNAPI, models | 🟡 **Partial** — boots to `[BOOTSTRAP] Runtime Ready`; nothing past it has run |
+| — | 4 | APK runs on a physical device | ⛔ Android-necessary | M | Beyond bootstrap: audio, NNAPI, models | 🔴 **Blocked** — first full onboarding run completed 2026-10-11, which exposed 7 defects. Audio is unusable (`ndk-context` never initialized → every Engage panics). See [Phase 13.2](./android-device-defect-fixes.md) |
 | 3 | — | CI APK pipeline | 🟢 Desktop-neutral | M | — | ❌ **Dropped by user decision (2026-10-10).** See §Batch 3. |
 | 5 | — | Frontend capability layer | 🟡 Android-additive | M | Desktop visual regression unchanged | 🟡 In progress — §5.1/§5.2/§5.5 underway in the frontend workstream |
-| 6 | — | Wizard responsiveness | 🟡 Android-additive | M | First-run completes on a phone | 🟡 In progress — mobile wizard flow shipped, being reworked |
-| 8 | 5 | Model delivery on mobile | ⛔ Android-necessary | M | Models download and load on-device | ⬜ Not started — **planned, see §Batch 8** |
-| 2 | 6 | Audio backend seam | 🟢 Desktop-neutral | M | Desktop audio regression tests pass | ⬜ Not started — **planned, see §Batch 2** |
+| 6 | — | Wizard responsiveness | 🟡 Android-additive | M | First-run completes on a phone | 🟡 **Partial** — wizard completes on a phone, but reports success falsely (progress marks done on the first model; failures are swallowed). Fixes tracked in Phase 13.2 §D5 |
+| 8 | 5 | Model delivery on mobile | ⛔ Android-necessary | M | Models download and load on-device | ✅ **Shipped** (resumable downloads, storage preflight, idle timeout; 14 mutation-verified tests). 🟡 **On-device behaviour still unproven** — resume has never been exercised against a real CDN. Gate lives in Phase 13.2 §D5 |
+| 2 | 6 | Audio backend seam | 🟢 Desktop-neutral | M | Desktop audio regression tests pass | ⬜ Not started — **planned, see §Batch 2**. Now blocked behind Phase 13.2 D1 (audio cannot start at all) |
 | 9 | — | WebGL thermal tuning | 🟡 Android-additive | M | Sustained fps on a mid-range device | ⬜ Not started |
 
-**Critical path — Phase 4 then Phase 5.** Phase 4 (prove runtime on the device) and Phase 5 (Batch 8, resumable downloads) are the only two items standing between "the app launches" and "the app works on a phone." Everything else is either finished, frontend-owned, or speculative.
+**Critical path — Phase 13.2, then Phase 5.** Phase 4 is **no longer partial — it is blocked.** The 2026-10-11 onboarding run proved the app installs, launches, fetches its manifest, downloads 667 MB of STT weights, and completes the wizard — but the runtime is unusable because `ndk-context` is never initialized, so every Engage tap panics inside a Tauri command and hangs the IPC silently. Until D1 is fixed there is no audio, no inference, and no way to prove Phase 4's gate. All Phase 13.2 defects are catalogued in [android-device-defect-fixes.md](./android-device-defect-fixes.md).
 
-**Ordering constraint between them.** Phase 5 must land before first-run can ever complete on Android: a multi-GB `chatterbox` download is near-certain to be interrupted by process death, and today every interruption restarts from byte zero. Batch 6's "first-run completes on a phone" gate is unreachable until then.
+**Ordering constraint (revised 2026-10-11).** The original claim — "Phase 5 must land before first-run can complete on Android" — is **no longer true and should not be relied on.** Batch 8 shipped and first-run *did* complete on hardware. The real blocker is D1, which is a runtime fault, not a delivery one.
 
-**Status legend:** ✅ gate met · 🟡 partial / in progress · ⬜ not started · ❌ dropped. Statuses are set against a re-verification run of both targets (see §Verification).
+**Status legend:** ✅ gate met · 🟡 partial / in progress · 🔴 blocked / regressed · ⬜ not started · ❌ dropped. Statuses are set against a re-verification run of both targets (see §Verification).
 
 ---
 
@@ -934,19 +934,21 @@ These rules exist so no batch silently regresses desktop.
 | **1** | Close Batch 4 — `setup/remote_server.rs` only | S | ✅ **Done (Phase 1)**. Last known defect; closed by gating the module behind `#[cfg(desktop)]` with a typed mobile stub, plus an `isDesktop()` gate on the `<RemoteServerSetup>` panel. Desktop arm unmodified. |
 | **2** | **First `arm64-v8a` release LINK** — *link* not *check* | M | ✅ **Done.** Produced a signed, installable APK. Settled both UNVERIFIED claims (`turso` §7.2, `llama.cpp` §7.1) and found six native-toolchain blockers `cargo check` could never see — see §Phase2-Results. |
 | **3** | Batch 7 — fix whatever Phase 2's link exposes | M | ✅ **Done.** Phase 2 *was* the diagnostic; §7.1/§7.2/§7.4 all resolved. §7.3 needed one real fix: `ort`'s `nnapi` feature, and it had to be **target-scoped** — see §Phase3-Results. |
-| **4** | APK installs and launches on a physical device | M | 🟡 **Partially done (2026-10-10).** Installs and reaches `[BOOTSTRAP] Runtime Ready` on a POCO redwoodin / Android 14 after fixing three launch crashes. Runtime behaviour (oboe audio, NNAPI inference, thermals) still unproven. See §Phase4-Results. |
-| **5** | Batch 8 — resumable downloads | M | **Next backend work.** Without it first-run cannot complete on Android: an interrupted multi-GB download restarts from byte zero, and Android kills backgrounded processes. Detailed plan in §8.5–§8.11. |
-| **6** | Batch 2 — audio backend seam | M | Deliberately last among backend work. Its purpose is to make a future Android audio backend "a new file rather than a refactor." Doing it before Phase 4 means refactoring against assumptions instead of observations. Detailed plan in §2.0–§2.5. |
+| **4** | APK installs and launches on a physical device | M | 🔴 **Blocked (2026-10-11).** Installs, reaches `[BOOTSTRAP] Runtime Ready`, and now completes the full wizard — but exposed 7 defects. Audio cannot start at all: `ndk-context` is never initialized, so every Engage panics and hangs the IPC. See §Phase4-Results and [Phase 13.2](./android-device-defect-fixes.md). |
+| **4.5** | **On-device defect fixes** — see [android-device-defect-fixes.md](./android-device-defect-fixes.md) | M-L | 🔴 **Next work.** Must land before any further device work: D1 (ndk-context init + bounded engage), D2 (notification permission launcher), D5 (download truthfulness). Nothing else can be validated on hardware while audio is dead. |
+| **5** | Batch 8 — resumable downloads | M | ✅ **Shipped.** Resumable downloads, SHA-256 prefix hashing, retained `.tmp`, storage preflight, per-read idle timeout; 14 mutation-verified tests. 🟡 On-device resume still unproven — gate folded into Phase 13.2 D5. |
+| **6** | Batch 2 — audio backend seam | M | ⬜ Not started. **Now blocked behind Phase 13.2 D1** — there is no working audio path to refactor. Detailed plan in §2.0–§2.5. |
 | **7** | Batch 9 — WebGL thermal tuning | M | After backend work; needs a soak, not a device build. |
 
-**Backend work order — the two Phase 5/6 batches are independent and may run in either order.** They share no file: Batch 8 touches `setup/model_manager.rs`, Batch 2 touches `services/audio/` and `services/tts/voice.rs`. Both are gated by the same dual-target compile check, so **do not run them concurrently** — `verify-targets.sh` compiles both targets and two concurrent cargo invocations will contend on the same target directory.
+**Backend work order — Phase 4.5 first, unconditionally.** Phase 5 shipped and Phases 6/7 remain, but neither is worth starting while D1 makes the app unusable. Phase 4.5 is also the only phase whose work is *validated exclusively on hardware* — no desktop proxy exists for a missing Android JNI context.
 
-**Suggested order:** Phase 5 first. It is the larger correctness risk (data corruption), it is fully testable on desktop, and it blocks the user-visible first-run path. Phase 6 first only if you want audio working on the device sooner.
+**Suggested order:** Phase 4.5 in its five batches, then re-assess Phase 6. Phase 4.5 D1 and D2 must land before the device can be trusted; D5 before any download is attempted again.
 
 **Three ordering rules worth keeping:**
 
 1. **Never `cargo check` a cross target as a gate.** `cargo check --target aarch64-linux-android` passes while Android-only dead code sits in the tree, and it structurally cannot catch it. Use `scripts/verify-targets.sh`.
 2. **Reach a link before investing in anything downstream of it.** Phase 2 exists to convert the plan's remaining guesses into build-log fact before Phase 5 spends M on model delivery.
+3. **🆕 Verify `SAFETY` claims about initialization order.** "This is initialized during startup" is a claim about *wiring*, not about the compiler. `2d10246e` asserted `ndk-glue` initialization that does not exist, and the assertion survived a clean dual-target compile because `cargo` cannot check it. When a comment claims a crate is initialized, verify the initializer is in the dependency graph.
 3. **Both Phase 5 and Phase 6 begin with a one-line observation, not code.** Phase 5 reads the device's interrupted-download behaviour; Phase 6 step 2.0 reads the device's logged input sample format (`services/audio/device.rs:41-45` already logs it). Both answers are free and both change the size of the work that follows.
 
 ---
@@ -1077,7 +1079,14 @@ was the last reproducibility hole.
 
 ---
 
-## Phase 4 Results — first real device run ✅ (partially)
+## Phase 4 Results — first real device run 🔴 (blocked; superseded 2026-10-11)
+
+> **⚠️ Superseded.** The 2026-10-10 result below ("runtime behaviour is still
+> unproven") was overtaken on **2026-10-11**, when a full onboarding run
+> completed on the same device. Runtime behaviour is now **proven broken**, not
+> merely unproven. All follow-up work is tracked in
+> [android-device-defect-fixes.md](./android-device-defect-fixes.md).
+> Kept for the three launch-crash fixes, which remain valid.
 
 **Date:** 2026-10-10. **Device:** POCO `22101320I` (codename `redwoodin`),
 Android 14, `arm64-v8a`, MIUI/HyperOS.
@@ -1136,6 +1145,74 @@ per APK.** That duplication is unfixed and is roughly half the Rust-change cost.
 
 ---
 
+## Phase 4.5 Results — first full onboarding run 🔴 (2026-10-11)
+
+**Outcome: the wizard now completes on hardware, and doing so exposed seven
+defects. Phase 4 is blocked, not partial.**
+
+What genuinely worked: install, launch, manifest fetch, permission request,
+model download (**667 MB of STT weights confirmed on disk**), wizard completion,
+and `turso`/`llama.cpp`/`ort` all loading without a crash.
+
+What is broken is catalogued in full — with root causes, file:line citations and
+fix ordering — in **[android-device-defect-fixes.md](./android-device-defect-fixes.md)**.
+Only the headline is repeated here.
+
+### The blocker: `ndk-context` was never initialized
+
+Twelve instances of this on device:
+
+```
+[FATAL PANIC] Thread 'tokio-rt-worker' panicked at 'ndk-context-0.1.1/src/lib.rs:72:30':
+android context was not initialized
+```
+
+`ndk_context::android_context()` is `unsafe { ANDROID_CONTEXT.expect(...) }`.
+Nothing in this project calls `ndk_context::initialize_android_context`, and
+`ndk-glue` — which would normally do it — is **absent from both `Cargo.toml`
+and `Cargo.lock`**. So every call panics.
+
+This is reached transitively through cpal during `AudioStream::new`
+(`core/engine.rs:300` → `services/audio/device.rs:114` →
+`cpal/host/oboe/mod.rs:288` → `android_media.rs:18`), because cpal's Oboe
+`default_input_device()` returns an unconditional `Some(Device(None))` whose
+config probe brute-forces JNI calls.
+
+**This is a self-inflicted wound.** The Android `ndk-context` dependency and both
+of its call sites were added by Phase 13 work in `2d10246e`, whose `SAFETY`
+comments assert a guarantee that does not exist. Fixing D1 requires both
+initializing the context and **correcting those comments** — a stale `SAFETY`
+comment is a trap for whoever reads it next.
+
+### Why it presents as an unkillable spinner, not a crash
+
+Tauri spawns async commands; the panic unwinds past `return_result`, dropping
+the `OwnedInvokeResponder` without replying. The JS `invoke()` promise **never
+settles**. Combined with `Home.tsx` disabling its only control on `isLaunching`
+and rendering Disengage only when `isEngaged` (never reached), the user has no
+way out. Release uses `panic = "unwind"`, so the process survives.
+
+**Generalisable lesson:** on Tauri, *any* backend panic becomes a silent
+frontend hang. Frontend code must bound its own IPC calls rather than trusting
+the backend to fail politely.
+
+### Two claims in this plan that a device disproved
+
+- **§8.1's "Wi-Fi-only / explicit size confirmation are product calls"** — moot.
+  The wizard's own progress reporting was the real defect (it marked the batch
+  complete on the first of thirteen models).
+- **§Phase-4's "nothing past bootstrap has run"** — now overtaken in the other
+  direction: far more ran than was believed, and it was failing.
+
+### Upstream data fix (done)
+
+`llm/qwen/qwen-3.5-0.8b-q4_k_m.gguf` returned **404** — the manifest pointed at a
+blob that had never been uploaded. Published in `submodules/vox-models` `e24e95b`
+alongside `disfluency/`, `tts/zipvoice/`, `voices/`, with `required` relaxed to
+VAD+STT only. Verified live: all paths now return `302`.
+
+---
+
 ## Open Decisions for the User
 
 These change scope materially and need an answer before the relevant batch starts.
@@ -1145,6 +1222,8 @@ These change scope materially and need an answer before the relevant batch start
 3. ✅ **Dictation on Android — RESOLVED by necessity.** This was listed as a scope preference; §1.5 shows it now gates the Android build entirely. `enigo` has no Android backend, so `services/dictation/**` **must** be excluded to compile. That answers the question by necessity rather than choice: unless dictation is reimplemented against Android's `InputManager`, Android is assistant-only. **Shipped on `6310dacf`.**
 4. ✅ **ORT execution provider on Android (§7.3).** **RESOLVED (Phase 3).** The `nnapi` feature is enabled via a target-scoped dependency. What remains is **hardware validation**, not a decision: VAD and the memory embedder must be confirmed to run under NNAPI on a real device. An emulator validates nothing.
 5. **✅ Closed 2026-10-10.** Resumable downloads were raised as an open decision. The user removed the approval gate — informed and consulted, not pre-approved. See §8.11.
+6. **✅ Closed 2026-10-11 — required-model policy.** The user deliberately relaxed `required` so that **only VAD and STT are mandatory**, since TTS and LLM can be served from the cloud and the user must not be forced to install them. The Qwen blob was published and its flag relaxed in `submodules/vox-models` `e24e95b`. **This has a direct consequence for Batch 8:** `manager_ops.rs:191-195` currently aborts the entire batch on the first failure, which contradicts this policy. Resolving it is Phase 13.2 D5.5 — see the open question there about whether a failed *optional* model should be fatal or merely reported.
+7. **✅ Closed 2026-10-11 — background download.** The user elected to **defer** a real Android foreground service for multi-GB downloads, accepting that an interrupted transfer resumes when the app is reopened (Batch 8 already retains `.tmp` partials). Tracked as Phase 13.2 D7 with a size estimate.
 
 ---
 
@@ -1174,6 +1253,21 @@ Recorded here so the work is not lost. **None of it is required for local Androi
 | No `RECORD_AUDIO` in the manifest | §2.3 | Fails at stream open, not at launch; no compile gate catches it |
 | `reqwest` total timeout vs. per-read timeout on large transfers | §8.5 | A correctness trap, not an Android-specific one |
 | `.tmp` via `with_extension` collides on shared stems | §8.6 | Silent corruption, no error surfaced |
+
+**Update 2026-10-11 — partially discharged.** `android-style-guide.md` now runs
+to **Pitfall 21** (migration completed as part of authoring
+[android-device-defect-fixes.md](./android-device-defect-fixes.md)). Three
+further traps were added from the Phase 4.5 device run:
+
+| Candidate | Source | Why it belongs in the guide |
+|---|---|---|
+| **A release APK can never hot-reload** | Phase 4.5 | It embeds `frontendDist` and never contacts `devUrl`. No amount of Vite/`adb reverse` tuning fixes it; HMR requires a DEBUG build. |
+| **A backend panic becomes a silent frontend hang** | Phase 4.5 | Tauri drops the IPC responder on unwind, so `invoke()` never settles. The UI must bound its own calls. |
+| **DEBUG and RELEASE root at different paths** | Phase 4.5 | `/data/user/0/<pkg>` vs `/data/user/0/<pkg>/files`. Relative `run-as` commands silently inspect the wrong tree. |
+
+One further item is **explicitly not** migrated, because it is a code defect
+rather than a trap: the `SAFETY` comments asserting `ndk-glue` initialization
+are **false** and are corrected as part of Phase 13.2 D1.
 
 ---
 

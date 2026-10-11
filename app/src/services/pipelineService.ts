@@ -119,6 +119,23 @@ export async function continueSession(
   return result;
 }
 
+function promiseWithTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`${label} timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+    promise
+      .then((val) => {
+        clearTimeout(timer);
+        resolve(val);
+      })
+      .catch((err) => {
+        clearTimeout(timer);
+        reject(err);
+      });
+  });
+}
+
 // ── Orchestration Helpers ───────────────────────────────────────────────────
 
 export async function engageSession(
@@ -127,13 +144,15 @@ export async function engageSession(
   sessionId?: number | null,
 ): Promise<SessionOrchestrationResult> {
   try {
-    await startSession(sessionId);
+    await promiseWithTimeout(startSession(sessionId), timeoutMs, "start_session");
   } catch (err: unknown) {
     if (isVoxIpcError(err) && isInvalidStateError(err)) {
       const synced = await resyncFromSnapshot();
       return { success: synced.success, reason: synced.success ? undefined : "invalid_state" };
     }
-    return { success: false, reason: "error" };
+    const isTimeout = err instanceof Error && err.message.includes("timed out");
+    await resyncFromSnapshot();
+    return { success: false, reason: isTimeout ? "timeout" : "error" };
   }
 
   try {
@@ -154,13 +173,15 @@ export async function disengageSession(
   timeoutMs: number = 8000,
 ): Promise<SessionOrchestrationResult> {
   try {
-    await endSession();
+    await promiseWithTimeout(endSession(), timeoutMs, "end_session");
   } catch (err: unknown) {
     if (isVoxIpcError(err) && isInvalidStateError(err)) {
       const synced = await resyncFromSnapshot();
       return { success: synced.success, reason: synced.success ? undefined : "invalid_state" };
     }
-    return { success: false, reason: "error" };
+    const isTimeout = err instanceof Error && err.message.includes("timed out");
+    await resyncFromSnapshot();
+    return { success: false, reason: isTimeout ? "timeout" : "error" };
   }
 
   try {

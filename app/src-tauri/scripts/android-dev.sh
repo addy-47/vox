@@ -66,7 +66,7 @@ do_debug() {
         | tee "$TEMP_DIR/android-debug-build.log"
 
     local apk
-    apk="$(ls -t "$DEBUG_APK_DIR"/*.apk 2>/dev/null | head -1)"
+    apk="$(find "$DEBUG_APK_DIR" -type f -name "*debug*.apk" -printf '%T@ %p\n' 2>/dev/null | sort -nr | head -1 | cut -d' ' -f2-)"
     [[ -n "$apk" ]] || {
         echo "error: no debug APK produced; see $TEMP_DIR/android-debug-build.log" >&2
         exit 1
