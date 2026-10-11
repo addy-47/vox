@@ -66,7 +66,7 @@ export const AppHeader: React.FC = memo(() => {
       className={cn(
         "w-full z-40 shrink-0 select-none transition-all flex items-center justify-between",
         isMobile
-          ? "pt-[max(0.75rem,env(safe-area-inset-top))] px-4 pb-2 h-14 bg-transparent"
+          ? "pt-4 px-4 sm:px-8 pb-2.5 bg-transparent"
           : "h-14 px-5 bg-transparent"
       )}
     >
@@ -142,10 +142,10 @@ export const AppHeader: React.FC = memo(() => {
         {/* History Title in compact & mobile */}
         {isHistory && (isCompact || isMobile) && (
           <div className="flex flex-col min-w-0">
-            <h1 className="text-[14px] sm:text-[15px] font-display font-black uppercase tracking-[0.16em] text-[rgb(var(--foreground))] truncate">
+            <h1 className="text-[15px] sm:text-[16px] font-display font-black uppercase tracking-[0.2em] text-[rgb(var(--foreground))] truncate">
               History
             </h1>
-            <span className="text-[10px] font-mono text-[rgb(var(--foreground-muted))] truncate">
+            <span className="text-[11px] font-mono font-bold text-[rgb(var(--accent))] uppercase tracking-wider truncate">
               Chronological Log
             </span>
           </div>
@@ -154,10 +154,10 @@ export const AppHeader: React.FC = memo(() => {
         {/* Settings Title in compact & mobile */}
         {isSettings && (isCompact || isMobile) && (
           <div className="flex flex-col min-w-0">
-            <h1 className="text-[14px] sm:text-[15px] font-display font-black uppercase tracking-[0.16em] text-[rgb(var(--foreground))] truncate">
+            <h1 className="text-[15px] sm:text-[16px] font-display font-black uppercase tracking-[0.2em] text-[rgb(var(--foreground))] truncate">
               Settings
             </h1>
-            <span className="text-[10px] font-mono text-[rgb(var(--foreground-muted))] truncate">
+            <span className="text-[11px] font-mono font-bold text-[rgb(var(--accent))] uppercase tracking-wider truncate">
               System Configuration
             </span>
           </div>

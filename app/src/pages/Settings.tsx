@@ -214,7 +214,7 @@ export const Settings: React.FC = () => {
         </div>
       ) : (
         /* ── Mobile & Compact Layout (Single vertical scroll list) ─────────── */
-        <div className="flex-1 flex flex-col min-h-0 overflow-hidden w-full px-4 sm:px-5 pt-1">
+        <div className="flex-1 flex flex-col min-h-0 overflow-hidden w-full px-4 sm:px-5 pt-3 sm:pt-4">
 
           <div className="flex-1 w-full relative overflow-hidden flex flex-col min-h-0">
             <div className="flex-1 w-full overflow-y-auto custom-scrollbar pb-[95px] space-y-5 sm:space-y-6 animate-fade-in pr-0.5">

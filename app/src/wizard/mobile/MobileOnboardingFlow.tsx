@@ -24,6 +24,8 @@ export const MobileOnboardingFlow: React.FC<MobileOnboardingFlowProps> = ({
   const stepsOrder: MobileStepId[] = ['hero', 'intelligence', 'permission', 'runtime', 'models', 'ready'];
   const [currentStep, setCurrentStep] = useState<MobileStepId>(initialStep);
   const [permissionsGranted, setPermissionsGranted] = useState(false);
+  const [permissionsRequesting, setPermissionsRequesting] = useState(false);
+  const grantActionRef = useRef<(() => void) | null>(null);
   const [modelStatus, setModelStatus] = useState<{
     isDone: boolean;
     isDownloading: boolean;
@@ -82,12 +84,19 @@ export const MobileOnboardingFlow: React.FC<MobileOnboardingFlowProps> = ({
   }, [currentIndex, stepsOrder]);
 
   const handleNext = useCallback(() => {
+    // The swipe handler below calls this too, so the permission gate cannot live
+    // in the footer alone — a horizontal swipe would otherwise walk straight past
+    // a step whose whole purpose is to obtain the mic permission.
+    if (currentStep === 'permission' && !permissionsGranted) {
+      grantActionRef.current?.();
+      return;
+    }
     if (currentIndex < stepsOrder.length - 1) {
       setCurrentStep(stepsOrder[currentIndex + 1]);
     } else {
       handleFinish();
     }
-  }, [currentIndex, stepsOrder, handleFinish]);
+  }, [currentIndex, stepsOrder, handleFinish, currentStep, permissionsGranted]);
 
   // Fluid touch swipe gestures for natural page paging
   const handleTouchStart = (e: React.TouchEvent) => {
@@ -133,12 +142,15 @@ export const MobileOnboardingFlow: React.FC<MobileOnboardingFlowProps> = ({
         };
       case 'permission':
         return {
+          // Until the mic is genuinely granted, the primary action requests it
+          // rather than advancing. It previously always advanced, so the visible
+          // button never asked for anything.
           label: permissionsGranted
             ? MOBILE_ONBOARDING_COPY.permission.continueButton
             : MOBILE_ONBOARDING_COPY.permission.grantButton,
-          onClick: handleNext,
-          disabled: false,
-          isLoading: false,
+          onClick: permissionsGranted ? handleNext : () => grantActionRef.current?.(),
+          disabled: permissionsRequesting,
+          isLoading: permissionsRequesting,
         };
       case 'runtime':
         return {
@@ -227,6 +239,10 @@ export const MobileOnboardingFlow: React.FC<MobileOnboardingFlowProps> = ({
             <MobilePermissionStep
               onNext={handleNext}
               onPermissionsChange={setPermissionsGranted}
+              onRegisterGrantAction={(grant) => {
+                grantActionRef.current = grant;
+              }}
+              onRequestingChange={setPermissionsRequesting}
             />
           </div>
 

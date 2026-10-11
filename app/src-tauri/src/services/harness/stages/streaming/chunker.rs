@@ -411,9 +411,15 @@ mod tests {
         // Streaming scenario: "Gemini 1." arrives first, followed by "5 Pro"
         let mut c3 = ClauseChunker::new();
         let chunks3_a = c3.push_str("Google rolled out Gemini 1.");
-        assert!(chunks3_a.is_empty(), "Trailing period after digit must not split early during streaming");
+        assert!(
+            chunks3_a.is_empty(),
+            "Trailing period after digit must not split early during streaming"
+        );
         let chunks3_b = c3.push_str("5 Pro, which features a massive window.");
-        assert_eq!(chunks3_b, vec!["Google rolled out Gemini 1.5 Pro, which features a massive window."]);
+        assert_eq!(
+            chunks3_b,
+            vec!["Google rolled out Gemini 1.5 Pro, which features a massive window."]
+        );
     }
 
     /// Tests period does not split after known abbreviation.

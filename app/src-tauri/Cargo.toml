@@ -136,6 +136,15 @@ tauri = { version = "2", features = ["macos-private-api"] }
 [target.'cfg(target_os = "android")'.dependencies]
 ort = { version = "2.0.0-rc.13", features = ["download-binaries", "ndarray", "nnapi"] }
 
+# `check_mic_access` must ask Android whether RECORD_AUDIO is actually held.
+# cpal cannot answer this: its Oboe host implements `default_input_device()` as
+# `Some(Device(None))` unconditionally, so a device probe always reports a mic.
+# `jni` is pinned to 0.21 to match wry's and cpal's existing jni version — a
+# second major would put two incompatible jni types in one build.
+# Both crates are already in Cargo.lock (via cpal/wry/oboe); this makes them direct.
+jni = "0.21"
+ndk-context = "0.1"
+
 [target.'cfg(not(target_os = "windows"))'.dependencies]
 sherpa-onnx = { version = "1.13.8", default-features = false, features = ["shared"] }
 

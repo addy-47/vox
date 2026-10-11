@@ -1,4 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-  <color name="ic_launcher_background">#fff</color>
+  <!--
+    Adaptive-icon background layer.
+
+    MUST match ../../../../../../icons/android/values/ic_launcher_background.xml.
+    That source file is correct; this generated copy had drifted to #fff, which
+    is why the launcher showed the cyan waveform on a white plate on Android 8+
+    (the adaptive icon in mipmap-anydpi-v26 wins over the legacy ic_launcher.png,
+    which has always been dark #090D16).
+
+    The foreground asset is fully transparent outside the glyph, so this colour
+    is the entire plate the icon is drawn on.
+  -->
+  <color name="ic_launcher_background">#090D16</color>
 </resources>

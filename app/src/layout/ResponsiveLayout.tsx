@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect, useCallback, lazy, Suspense } from "react";
+import React, { useRef, useState, useEffect, useCallback, useMemo, lazy, Suspense } from "react";
 import { EdgeNav } from "./EdgeNav";
 import { subscribeViewportFrame, subscribeViewportGate } from "./viewportResize";
 import { useViewportResize } from "@/shared/hooks/useViewportResize";
@@ -92,32 +92,42 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
   // Mobile horizontal swipe navigation across primary routes
   const touchStartX = useRef<number | null>(null);
   const touchStartY = useRef<number | null>(null);
+  const touchStartTime = useRef<number>(0);
+  const [swipeDirection, setSwipeDirection] = useState<number>(0);
+  const PRIMARY_ROUTES = useMemo(() => ["/", "/history", "/memory", "/settings", "/monitoring"], []);
 
   const handleTouchStart = (e: React.TouchEvent) => {
     if (!isMobile) return;
     const target = e.target as HTMLElement | null;
-    if (target?.tagName === "CANVAS" || target?.closest("canvas, input[type='range'], [data-no-swipe]")) {
+    if (target?.tagName === "CANVAS" || target?.closest("canvas, input[type='range'], [data-no-swipe], [role='slider']")) {
       return;
     }
     touchStartX.current = e.touches[0].clientX;
     touchStartY.current = e.touches[0].clientY;
+    touchStartTime.current = Date.now();
   };
 
   const handleTouchEnd = (e: React.TouchEvent) => {
     if (!isMobile || touchStartX.current === null || touchStartY.current === null) return;
     const deltaX = e.changedTouches[0].clientX - touchStartX.current;
     const deltaY = e.changedTouches[0].clientY - touchStartY.current;
+    const elapsed = Math.max(1, Date.now() - touchStartTime.current);
+    const velocityX = Math.abs(deltaX) / elapsed;
+
     touchStartX.current = null;
     touchStartY.current = null;
 
-    if (Math.abs(deltaX) > 60 && Math.abs(deltaX) > Math.abs(deltaY) * 1.5) {
-      const routes = ["/", "/history", "/memory", "/settings", "/monitoring"];
-      const currentIdx = routes.indexOf(location.pathname);
+    // Detect flick velocity or meaningful distance with horizontal angle dominance
+    const isHorizontalSwipe = (Math.abs(deltaX) > 45 || velocityX > 0.35) && Math.abs(deltaX) > Math.abs(deltaY) * 1.3;
+    if (isHorizontalSwipe) {
+      const currentIdx = PRIMARY_ROUTES.indexOf(location.pathname);
       if (currentIdx !== -1) {
-        if (deltaX < 0 && currentIdx < routes.length - 1) {
-          navigate(routes[currentIdx + 1]);
+        if (deltaX < 0 && currentIdx < PRIMARY_ROUTES.length - 1) {
+          setSwipeDirection(1);
+          navigate(PRIMARY_ROUTES[currentIdx + 1]);
         } else if (deltaX > 0 && currentIdx > 0) {
-          navigate(routes[currentIdx - 1]);
+          setSwipeDirection(-1);
+          navigate(PRIMARY_ROUTES[currentIdx - 1]);
         }
       }
     }
@@ -452,10 +462,16 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
             {(children || outlet) && (
               <motion.div
                 key={location.pathname}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ duration: 0.15, ease: [0.16, 1, 0.3, 1] }}
-                className="flex-1 w-full min-h-0 overflow-hidden flex flex-col"
+                initial={{
+                  opacity: isMobile && swipeDirection !== 0 ? 0.8 : 0,
+                  x: isMobile && swipeDirection !== 0 ? (swipeDirection > 0 ? "18%" : "-18%") : 0,
+                }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{
+                  duration: isMobile ? 0.22 : 0.15,
+                  ease: [0.16, 1, 0.3, 1],
+                }}
+                className="flex-1 w-full min-h-0 overflow-hidden flex flex-col transform-gpu"
               >
                 {children || outlet}
               </motion.div>

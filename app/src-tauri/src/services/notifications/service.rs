@@ -3,7 +3,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::AppHandle;
 use turso::Connection;
 
-use super::{deliver_transient, resolve_channel, Action, DeliveryChannel, NotificationParams, TransientAlert};
+use super::{
+    deliver_transient, resolve_channel, Action, DeliveryChannel, NotificationParams, TransientAlert,
+};
 use crate::{
     core::events::{emit_ipc, IpcEvent},
     persistence::{

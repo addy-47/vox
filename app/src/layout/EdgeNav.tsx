@@ -25,7 +25,7 @@ export const EdgeNav: React.FC = () => {
       className={cn(
         "z-[60] pointer-events-auto flex items-center justify-around",
         isMobile
-          ? "fixed bottom-0 inset-x-0 h-[calc(60px+env(safe-area-inset-bottom))] pb-[env(safe-area-inset-bottom)] px-3 bg-[rgb(var(--background))]/95 backdrop-blur-xl border-t border-[rgba(var(--accent),0.15)] shadow-2xl"
+          ? "fixed bottom-0 inset-x-0 h-[calc(60px+env(safe-area-inset-bottom))] pb-[env(safe-area-inset-bottom)] px-3 bg-[rgb(var(--background))] border-t border-[rgba(var(--accent),0.15)] shadow-2xl"
           : "fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 gap-2 px-3 py-1.5 h-[56px] glass-card glass-keep-blur border border-[rgba(var(--accent),0.15)] rounded-full"
       )}
     >
@@ -38,6 +38,11 @@ export const EdgeNav: React.FC = () => {
             <NavLink
               to={item.path}
               end={item.path === "/"}
+              onPointerDown={() => {
+                if (item.path === "/history") void import("@/pages/History");
+                else if (item.path === "/memory") void import("@/pages/Memory");
+                else if (item.path === "/settings") void import("@/pages/Settings");
+              }}
               onClick={(e) => {
                 if (location.pathname === item.path) {
                   e.preventDefault();

@@ -257,7 +257,7 @@ export const Home = memo(() => {
         className="absolute left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 pointer-events-none"
         style={{
           top: isRealMobileDevice()
-            ? "calc(50% - min(41vw, 25vh) - 28px)"
+            ? "calc(50% - min(41vw, 25vh) - 56px)"
             : "10%",
         }}
       >

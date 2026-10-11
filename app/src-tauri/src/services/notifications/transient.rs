@@ -137,7 +137,10 @@ fn deliver_android<R: tauri::Runtime>(
         .show();
 
     if let Err(e) = posted {
-        log::warn!("[Notification::Android] Failed to post transient alert: {}", e);
+        log::warn!(
+            "[Notification::Android] Failed to post transient alert: {}",
+            e
+        );
         return DeliveryOutcome::Failed;
     }
 
@@ -150,11 +153,7 @@ fn deliver_android<R: tauri::Runtime>(
 /// INVARIANT: best-effort. If Android kills the process first the notification
 /// stays posted, which beats losing a real alert.
 #[cfg(target_os = "android")]
-fn schedule_dismissal<R: tauri::Runtime>(
-    app: &AppHandle<R>,
-    id: i32,
-    duration_ms: Option<u64>,
-) {
+fn schedule_dismissal<R: tauri::Runtime>(app: &AppHandle<R>, id: i32, duration_ms: Option<u64>) {
     use tauri_plugin_notification::NotificationExt;
 
     let wait = std::time::Duration::from_millis(duration_ms.unwrap_or(DEFAULT_DURATION_MS));
@@ -163,7 +162,11 @@ fn schedule_dismissal<R: tauri::Runtime>(
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(wait).await;
         if let Err(e) = app_handle.notification().remove_active(vec![id]) {
-            log::debug!("[Notification::Android] Dismissal of {} did not apply: {}", id, e);
+            log::debug!(
+                "[Notification::Android] Dismissal of {} did not apply: {}",
+                id,
+                e
+            );
         }
     });
 }
@@ -205,7 +208,10 @@ pub fn permission_status<R: tauri::Runtime>(app: &AppHandle<R>) -> PermissionSta
             PermissionStatus::NotAsked
         }
         Err(e) => {
-            log::warn!("[Notification::Android] Permission state unavailable: {}", e);
+            log::warn!(
+                "[Notification::Android] Permission state unavailable: {}",
+                e
+            );
             PermissionStatus::Unavailable
         }
     }
