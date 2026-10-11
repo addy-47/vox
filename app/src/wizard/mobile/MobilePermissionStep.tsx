@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Mic, Bell, Check } from 'lucide-react';
 import {
   getRuntimeReport,
@@ -11,10 +11,24 @@ import { MOBILE_ONBOARDING_COPY } from '@/data/welcomeCopy';
 interface MobilePermissionStepProps {
   onNext?: () => void;
   onPermissionsChange?: (granted: boolean) => void;
+  /**
+   * Registers the permission-request action with the parent, which owns the
+   * wizard's single footer button.
+   *
+   * The step used to render its own "Grant Access" button, but the footer button
+   * for this step called `onNext` — so the visible primary action advanced the
+   * wizard without ever asking for anything. Rather than duplicate the CTA, the
+   * step hands its request handler up and the footer drives it.
+   */
+  onRegisterGrantAction?: (grant: () => void) => void;
+  /** True while a system permission dialog is up, so the footer can lock itself. */
+  onRequestingChange?: (requesting: boolean) => void;
 }
 
 export const MobilePermissionStep: React.FC<MobilePermissionStepProps> = ({
   onPermissionsChange,
+  onRegisterGrantAction,
+  onRequestingChange,
 }) => {
   const [micGranted, setMicGranted] = useState<boolean | null>(null);
   const [notifState, setNotifState] = useState<NotificationPermission>('not_asked');
@@ -78,6 +92,21 @@ export const MobilePermissionStep: React.FC<MobilePermissionStepProps> = ({
       setIsRequesting(false);
     }
   };
+
+  // Hand the request action up so the wizard footer can drive it. The ref
+  // indirection keeps `handleGrantAccess` referentially stable across the
+  // `checkStatus` identity changes that would otherwise re-run this every render.
+  const grantRef = useRef(handleGrantAccess);
+  grantRef.current = handleGrantAccess;
+  useEffect(() => {
+    onRegisterGrantAction?.(() => void grantRef.current());
+  }, [onRegisterGrantAction]);
+
+  // Lock the footer's primary button while the OS dialog is up. Without this a
+  // second tap starts a second permission request behind the first.
+  useEffect(() => {
+    onRequestingChange?.(isRequesting);
+  }, [isRequesting, onRequestingChange]);
 
   return (
     <div className="flex flex-col h-full w-full overflow-y-auto px-6 py-4 select-none bg-transparent">
@@ -199,17 +228,11 @@ export const MobilePermissionStep: React.FC<MobilePermissionStepProps> = ({
           </div>
         </div>
 
-        {/* Inline Grant Access Trigger if not fully granted */}
-        {(!micGranted || !notifsGranted) && (
-          <button
-            type="button"
-            onClick={handleGrantAccess}
-            disabled={isRequesting}
-            className="px-4 py-2 text-xs font-mono font-medium text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/10 rounded-xl transition-colors active:scale-95 cursor-pointer disabled:opacity-50"
-          >
-            {isRequesting ? 'Requesting Access...' : copy.grantButton}
-          </button>
-        )}
+        {/* No inline CTA here on purpose. `MobileOnboardingFlow` renders a single
+            footer button for this step and swaps its own label between
+            "Grant Access" and "Continue" based on `onPermissionsChange`. A second
+            button here gave the same action two competing call-to-actions on one
+            screen, and the footer is the one that actually gates progression. */}
       </div>
     </div>
   );

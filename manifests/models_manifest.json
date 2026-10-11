@@ -65,10 +65,10 @@
           "path": "vad/ten_vad.onnx",
           "size": 332211,
           "sha256": "718cb7eef47e3cf5ddbe7e967a7503f46b8b469c0706872f494dfa921b486206",
-          "required": true
+          "required": false
         }
       ],
-      "required": true
+      "required": false
     },
     {
       "id": "vox_translit_rnn",
@@ -235,7 +235,7 @@
           "path": "llm/qwen/qwen-3.5-0.8b-q4_k_m.gguf",
           "size": 532517120,
           "sha256": "bd258782e35f7f458f8aced1adc053e6e92e89bc735ba3be89d38a06121dc517",
-          "required": true
+          "required": false
         }
       ]
     },

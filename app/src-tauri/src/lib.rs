@@ -56,8 +56,9 @@ use crate::{
         },
         monitoring::{get_profiler_snapshot, get_runtime_snapshot, record_memory_profile_event},
         notifications::{
-            dismiss_notifications, execute_notification_action, get_notifications,
-            mark_notifications_read, notification_permission_state, request_notification_permission,
+            debug_fire_transient, dismiss_notifications, execute_notification_action,
+            get_notifications, mark_notifications_read, notification_permission_state,
+            request_notification_permission,
         },
         persistence::{
             compact_session, delete_session, get_sessions, get_transcript_history, get_turns,
@@ -720,8 +721,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             launch_engine,
             stop_engine,
-            notification_permission_state,
+notification_permission_state,
             request_notification_permission,
+            debug_fire_transient,
             start_session,
             end_session,
             pause_session,

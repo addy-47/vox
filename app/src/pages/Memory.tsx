@@ -50,6 +50,7 @@ import {
   MemoryHint,
 } from "@/shared/components/memory";
 
+let isMemoryWarmLoaded = false;
 export const Memory: React.FC = memo(() => {
   const containerRef = useRef<HTMLDivElement>(null);
   const graphRef = useRef<MemoryGraphRef>(null);
@@ -64,10 +65,9 @@ export const Memory: React.FC = memo(() => {
   // Load failure is a first-class state (never rendered as "no memories").
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  // Loader display state: enters immediately, exits with a fade, and never
-  // flashes for less than MIN_LOADER_MS (avoids a sub-frame spinner blink on
-  // warm-cache loads, and a mid-fade hard cut on slow ones).
-  const MIN_LOADER_MS = 400;
+  // Loader display state: on initial cold load, enforce MIN_LOADER_MS to prevent
+  // sub-frame flash; on subsequent warm visits, resolve immediately without delay.
+  const MIN_LOADER_MS = isMemoryWarmLoaded ? 0 : 350;
   const [loaderShown, setLoaderShown] = useState(false);
   const loaderShownAtRef = useRef(0);
   useEffect(() => {
@@ -76,6 +76,7 @@ export const Memory: React.FC = memo(() => {
       setLoaderShown(true);
       return;
     }
+    isMemoryWarmLoaded = true;
     const wait = Math.max(0, MIN_LOADER_MS - (Date.now() - loaderShownAtRef.current));
     if (wait === 0) {
       setLoaderShown(false);
@@ -83,7 +84,7 @@ export const Memory: React.FC = memo(() => {
     }
     const id = setTimeout(() => setLoaderShown(false), wait);
     return () => clearTimeout(id);
-  }, [loading]);
+  }, [loading, MIN_LOADER_MS]);
 
   // Filtering & Selection
   const [searchQuery, setSearchQuery] = useState("");

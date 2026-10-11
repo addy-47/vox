@@ -3,6 +3,10 @@ use std::{
     path::Path,
 };
 
+// Only the desktop `check_mic_access` arm calls cpal's host; the Android arm
+// asks the platform over JNI instead. Gating the trait keeps it off the mobile
+// target graph rather than tripping `-D warnings`.
+#[cfg(desktop)]
 use cpal::traits::HostTrait;
 use serde::{Deserialize, Serialize};
 use sysinfo::{Disks, System};
@@ -162,9 +166,94 @@ fn get_system_info() -> (f32, u32) {
     (total_ram_gb, cpu_cores)
 }
 
+/// Whether the process holds a usable microphone.
+///
+/// Desktop asks cpal whether an input device exists. Android cannot ask that:
+/// cpal's Oboe host implements `default_input_device()` as an unconditional
+/// `Some(Device(None))`, so a device probe answers "yes" even with zero
+/// permissions granted — which would render the permission prompt permanently
+/// satisfied. Android therefore asks the platform for `RECORD_AUDIO` directly.
+///
+/// Both arms report `false` rather than guessing when the check itself cannot
+/// be answered, because this field gates onboarding.
+#[cfg(desktop)]
 fn check_mic_access() -> bool {
     let host = crate::services::audio::resolve_audio_host();
     host.default_input_device().is_some()
+}
+
+#[cfg(not(desktop))]
+fn check_mic_access() -> bool {
+    android_record_audio_granted()
+}
+
+/// `PackageManager.PERMISSION_GRANTED`.
+#[cfg(not(desktop))]
+const ANDROID_PERMISSION_GRANTED: i32 = 0;
+
+#[cfg(not(desktop))]
+fn android_record_audio_granted() -> bool {
+    let ctx = ndk_context::android_context();
+    // SAFETY: `android_context()` is initialized by ndk-glue during Tauri
+    // startup, before any command can run. Both handles are read-only here and
+    // every fallible JNI call below is handled rather than unwrapped.
+    let vm = match unsafe { jni::JavaVM::from_raw(ctx.vm().cast()) } {
+        Ok(vm) => vm,
+        Err(e) => {
+            log::warn!(
+                "[RuntimeCheck] JavaVM unavailable; reporting mic as denied: {}",
+                e
+            );
+            return false;
+        }
+    };
+    let mut env = match vm.attach_current_thread() {
+        Ok(env) => env,
+        Err(e) => {
+            log::warn!(
+                "[RuntimeCheck] JNI attach failed; reporting mic as denied: {}",
+                e
+            );
+            return false;
+        }
+    };
+
+    // `Context.checkSelfPermission(String)` is an instance method on the
+    // application context, added in API 23. minSdk is 24, so it always exists.
+    // jni 0.21 has no `&str -> JValue` conversion, so the `JString` is bound to a
+    // local: dropping it earlier would free the local ref out from under the call.
+    let permission = env.new_string("android.permission.RECORD_AUDIO");
+    let granted = match permission {
+        Ok(permission) => {
+            // SAFETY: `ctx.context()` is the live application `Context` that
+            // ndk-glue initialized at startup; it outlives this call.
+            let context: jni::objects::JObject =
+                unsafe { jni::objects::JObject::from_raw(ctx.context() as jni::sys::jobject) };
+            env.call_method(
+                &context,
+                "checkSelfPermission",
+                "(Ljava/lang/String;)I",
+                &[(&permission).into()],
+            )
+            .and_then(|v| v.i())
+            .map(|code| code == ANDROID_PERMISSION_GRANTED)
+        }
+        Err(e) => {
+            log::warn!("[RuntimeCheck] Could not build permission string: {}", e);
+            return false;
+        }
+    };
+
+    match granted {
+        Ok(yes) => yes,
+        Err(e) => {
+            log::warn!(
+                "[RuntimeCheck] checkSelfPermission failed; reporting mic as denied: {}",
+                e
+            );
+            false
+        }
+    }
 }
 
 /// Checks if all models in the manifest exist and are verified.
