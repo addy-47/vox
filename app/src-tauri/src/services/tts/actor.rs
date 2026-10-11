@@ -107,6 +107,16 @@ pub fn spawn_tts_worker(
                     if prev <= 1 {
                         handles.playback.flush_pre_roll();
                         flushed_pre_roll = true;
+                        if !handles.playback.is_armed() && handles.playback.occupied_len() == 0 {
+                            log::info!(
+                                "[TTS Worker] All jobs drained and no audio armed/queued for turn {} — emitting PlaybackFinished to unblock latch",
+                                turn_id
+                            );
+                            let _ = handles.event_tx.send(VoxEvent::PlaybackFinished {
+                                turn_id,
+                                intent,
+                            });
+                        }
                     }
                 }
                 if let Some(ref tm) = handles.turn_metrics {
@@ -119,7 +129,7 @@ pub fn spawn_tts_worker(
 
                 match res {
                     Ok(Err(e)) => {
-                        log::warn!(
+                        log::error!(
                             "[TTS Worker] Synthesis chunk failed for turn {}: {}",
                             turn_id,
                             e
@@ -129,7 +139,7 @@ pub fn spawn_tts_worker(
                                 turn_id,
                                 message: format!("TTS synthesis failed: {}", e),
                                 source: "tts".into(),
-                                impact: PipelineImpact::Degraded,
+                                impact: PipelineImpact::TurnAborted,
                             }))
                         {
                             log::warn!(
@@ -150,7 +160,7 @@ pub fn spawn_tts_worker(
                                 turn_id,
                                 message: format!("TTS engine panic: {}", msg),
                                 source: "tts".into(),
-                                impact: PipelineImpact::Degraded,
+                                impact: PipelineImpact::TurnAborted,
                             }))
                         {
                             log::warn!(

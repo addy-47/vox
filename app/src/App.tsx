@@ -37,11 +37,15 @@ const Settings = lazy(() => import("@/pages/Settings").then(m => ({ default: m.S
 const Monitoring = lazy(() => import("@/pages/Monitoring").then(m => ({ default: m.Monitoring })));
 
 
+import { DelayedFallback } from "@/shared/components/common";
+
 // Premium Shared Orbital Loading Screen
 const PageLoader = () => (
-  <div className="flex h-[100dvh] w-full items-center justify-center bg-[rgb(var(--background))]">
-    <OrbitalLoader size="lg" />
-  </div>
+  <DelayedFallback delayMs={150}>
+    <div className="flex h-[100dvh] w-full items-center justify-center bg-[rgb(var(--background))]">
+      <OrbitalLoader size="lg" />
+    </div>
+  </DelayedFallback>
 );
 
 const App: React.FC = () => {

@@ -1,24 +1,33 @@
 #!/usr/bin/env bash
 # ─── Vox Android Fast Iteration Helper ─────────────────────────────────────────
 #
-#   ./scripts/android-dev.sh debug     build + install a DEBUG APK (REQUIRED for HMR)
+#   ./scripts/android-dev.sh debug     build + install a DEBUG APK (REQUIRED for HMR, run once)
+#   ./scripts/android-dev.sh dev       reverse ports + start Vite dev server + restart app (HMR)
 #   ./scripts/android-dev.sh reverse   setup adb reverse ports (1420, 1421)
 #   ./scripts/android-dev.sh restart   restart Vox app on connected device
 #   ./scripts/android-dev.sh screen    capture device screenshot to temp/screen.png
 #   ./scripts/android-dev.sh logs      stream relevant Rust/Android logs
-#   ./scripts/android-dev.sh dev       reverse + Vite dev server (HMR)
 #
-# WHY `debug` EXISTS — read before expecting hot reload
-# ------------------------------------------------------
+# HOW HMR WORKS (read once, then just use `dev`)
+# -----------------------------------------------
+# Step 1 — ONCE: install the debug APK:
+#     ./scripts/android-dev.sh debug
+#   This builds a DEBUG variant (HMR-capable) and installs it.
+#   You only redo this when native Rust code changes.
+#
+# Step 2 — every frontend iteration:
+#     ./scripts/android-dev.sh dev
+#   This: (a) checks a debug APK is installed, (b) sets up adb reverse, 
+#   (c) starts Vite, (d) auto-restarts the app once the server is ready.
+#   Vite's HMR websocket then keeps the phone WebView live-updated on every save.
+#   You do NOT need to rebuild the APK for frontend changes.
+#
+# WHY `debug` IS REQUIRED ONCE
+# -----------------------------
 # A RELEASE APK cannot hot-reload, and no amount of Vite/adb tuning will make it.
 # Release builds embed `frontendDist` (the `pnpm build` output) into the APK and
 # never contact `devUrl`, so the WebView loads a frozen asset bundle from inside
 # the package. The reverse tunnel and the dev server are simply never consulted.
-#
-# HMR therefore requires the DEBUG variant, which is compiled against
-# `build.devUrl` (http://localhost:1420) and also sets
-# `manifestPlaceholders["usesCleartextTraffic"] = "true"`, without which Android
-# blocks the plain-HTTP dev server outright.
 #
 # The debug APK is NOT at parity with release — release enables
 # `isMinifyEnabled = true`, so R8 JNI renaming (Pitfall 4) and any other
@@ -40,6 +49,12 @@ require_device() {
         echo "error: No authorized device found. Check 'adb devices'." >&2
         exit 1
     }
+}
+
+# Returns 0 if the installed APK has the DEBUGGABLE flag, 1 otherwise or if not installed.
+is_debug_apk_installed() {
+    adb shell dumpsys package "$PKG" 2>/dev/null \
+        | grep -q "DEBUGGABLE"
 }
 
 do_reverse() {
@@ -103,16 +118,13 @@ do_logs() {
 }
 
 do_dev() {
+    require_device
     do_reverse
-    echo "==> Launching app..."
-    adb shell am start -n "$PKG/.MainActivity" || true
-    # TAURI_DEV_HOST is REQUIRED here. Without it vite.config.ts points the HMR
-    # websocket at 127.0.0.1:1420, which on the phone is the phone's own
-    # loopback — the reverse tunnel does carry it, but the address is fragile
-    # across reconnects. Setting it makes Vite advertise the LAN address on 1421.
-    echo "==> Starting Vite development server (HMR enabled)..."
-    cd "$APP" && TAURI_DEV_HOST="${TAURI_DEV_HOST:-$(hostname -I 2>/dev/null | awk '{print $1}')}" \
-        pnpm dev --host 0.0.0.0 --port 1420
+    echo "==> Sourcing Android NDK environment..."
+    # shellcheck source=scripts/android-env.sh
+    source "$ROOT/scripts/android-env.sh"
+    echo "==> Starting Tauri Android development environment with live HMR..."
+    cd "$APP" && pnpm tauri android dev
 }
 
 case "${1:-dev}" in

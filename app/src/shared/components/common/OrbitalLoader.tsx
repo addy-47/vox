@@ -14,6 +14,8 @@ export interface OrbitalLoaderProps {
   overlay?: boolean;
   /** Custom className for the container */
   className?: string;
+  /** Optional delay threshold in ms before displaying (prevents microsecond flashes). Default: 0. */
+  delayMs?: number;
 }
 
 /**
@@ -26,7 +28,21 @@ export const OrbitalLoader: React.FC<OrbitalLoaderProps> = memo(
     icon: IconComponent = VoxLogoLoader,
     overlay = false,
     className,
+    delayMs = 0,
   }) => {
+    const [visible, setVisible] = React.useState(() => delayMs <= 0);
+
+    React.useEffect(() => {
+      if (delayMs <= 0) {
+        setVisible(true);
+        return;
+      }
+      const timer = setTimeout(() => setVisible(true), delayMs);
+      return () => clearTimeout(timer);
+    }, [delayMs]);
+
+    if (!visible) return null;
+
     const sizeConfig = {
       sm: 28,
       md: 44,

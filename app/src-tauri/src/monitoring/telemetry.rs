@@ -216,9 +216,19 @@ pub fn spawn_system_monitor(app: AppHandle) {
 
             let system_cpu = sys.global_cpu_info().cpu_usage();
             let system_ram_pct = (sys.used_memory() as f32 / sys.total_memory() as f32) * 100.0;
+            let cpu_cores = {
+                let count = sys.cpus().len();
+                if count > 0 {
+                    count
+                } else {
+                    std::thread::available_parallelism()
+                        .map(|n| n.get())
+                        .unwrap_or(1)
+                }
+            };
             let (vox_cpu, vox_ram_mb, thread_count) = match &sampler {
                 Some(sampler) => {
-                    let scope = sampler.sample(&sys, sys.cpus().len());
+                    let scope = sampler.sample(&sys, cpu_cores);
                     (
                         scope.process.cpu_percent,
                         (scope.resident_bytes() / 1024 / 1024) as u32,

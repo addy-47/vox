@@ -64,10 +64,9 @@ export function useSettingsPage() {
       rafId = requestAnimationFrame(() => {
         setWindowWidth(window.innerWidth);
         setWindowHeight(window.innerHeight);
-        setIsCompact(isCompactWidth());
+        setIsCompact(isRealMobileDevice() || isCompactWidth());
       });
     };
-    checkSize();
     window.addEventListener("resize", checkSize);
     return () => {
       window.removeEventListener("resize", checkSize);

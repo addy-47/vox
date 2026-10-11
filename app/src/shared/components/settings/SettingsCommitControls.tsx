@@ -3,6 +3,9 @@ import { AlertCircle, Check, RefreshCw } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { useSettingsStore, type SettingsState, SETTINGS_DOMAIN_TO_UI } from "@/store/settingsStore";
 import { SETTINGS_COPY } from "@/data/settingsCopy";
+import { useExpandableList } from "@/shared/ui/ExpandableList";
+import { useViewportResize } from "@/shared/hooks/useViewportResize";
+import { Tooltip } from "@/shared/ui/Tooltip";
 
 export type DomainCommitMode =
   | "missing-key"
@@ -107,6 +110,8 @@ export interface SettingsCommitControlsProps {
  */
 export const SettingsCommitControls = memo(({ domainId }: SettingsCommitControlsProps) => {
   const { mode } = useDomainCommitState(domainId);
+  const { isExpanded, close } = useExpandableList();
+  const { isMobile, isCompact } = useViewportResize();
 
   if (mode === null) return null;
 
@@ -151,6 +156,42 @@ export const SettingsCommitControls = memo(({ domainId }: SettingsCommitControls
         >
           {SETTINGS_COPY.saveChanges}
         </button>
+        {!isExpanded && (
+          <button
+            type="button"
+            onClick={() => useSettingsStore.getState().discardDomainChanges(domainId)}
+            className="px-2.5 py-1 rounded-lg bg-transparent text-[rgb(var(--foreground-muted))] hover:text-rose-400 hover:bg-rose-500/10 border border-transparent hover:border-rose-500/20 text-[11px] font-bold uppercase tracking-wider transition-all cursor-pointer shrink-0"
+          >
+            {SETTINGS_COPY.discardChanges}
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  const showLabel = !isExpanded && !isMobile && !isCompact;
+
+  return (
+    <div className="flex items-center justify-between gap-2 shrink-0">
+      <Tooltip label={SETTINGS_COPY.applyAndRestart} side="bottom">
+        <button
+          type="button"
+          onClick={async () => {
+            await useSettingsStore.getState().commitChanges();
+            if (isExpanded) close();
+          }}
+          aria-label={SETTINGS_COPY.applyAndRestart}
+          className={cn(
+            "px-2 sm:px-2.5 py-1 rounded-lg border font-bold text-[11px] uppercase tracking-wider transition-all cursor-pointer shrink-0",
+            "flex items-center gap-1.5 bg-transparent text-[rgb(var(--accent))] border-[rgba(var(--accent),0.45)]",
+            "hover:bg-[rgb(var(--accent))] hover:text-[rgb(var(--accent-foreground))] hover:border-[rgb(var(--accent))]"
+          )}
+        >
+          <RefreshCw size={11} className="shrink-0" />
+          {showLabel && <span>{SETTINGS_COPY.applyAndRestart}</span>}
+        </button>
+      </Tooltip>
+      {!isExpanded && (
         <button
           type="button"
           onClick={() => useSettingsStore.getState().discardDomainChanges(domainId)}
@@ -158,31 +199,7 @@ export const SettingsCommitControls = memo(({ domainId }: SettingsCommitControls
         >
           {SETTINGS_COPY.discardChanges}
         </button>
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex items-center justify-between gap-3 shrink-0">
-      <button
-        type="button"
-        onClick={() => useSettingsStore.getState().commitChanges()}
-        className={cn(
-          "px-2.5 py-1 rounded-lg border font-bold text-[11px] uppercase tracking-wider transition-all cursor-pointer shrink-0",
-          "flex items-center gap-1.5 bg-transparent text-[rgb(var(--accent))] border-[rgba(var(--accent),0.45)]",
-          "hover:bg-[rgb(var(--accent))] hover:text-[rgb(var(--accent-foreground))] hover:border-[rgb(var(--accent))]"
-        )}
-      >
-        <RefreshCw size={11} className="shrink-0" />
-        {SETTINGS_COPY.applyAndRestart}
-      </button>
-      <button
-        type="button"
-        onClick={() => useSettingsStore.getState().discardDomainChanges(domainId)}
-        className="px-2.5 py-1 rounded-lg bg-transparent text-[rgb(var(--foreground-muted))] hover:text-rose-400 hover:bg-rose-500/10 border border-transparent hover:border-rose-500/20 text-[11px] font-bold uppercase tracking-wider transition-all cursor-pointer shrink-0"
-      >
-        {SETTINGS_COPY.discardChanges}
-      </button>
+      )}
     </div>
   );
 });

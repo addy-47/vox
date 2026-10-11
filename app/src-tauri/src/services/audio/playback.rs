@@ -237,6 +237,16 @@ impl PlaybackEngine {
         }
     }
 
+    /// Returns true if the playback buffer has satisfied preroll cushion and is currently armed for playback.
+    pub fn is_armed(&self) -> bool {
+        self.turn_armed.load(Ordering::Relaxed)
+    }
+
+    /// Returns the number of unplayed audio samples currently buffered in the playback ring buffer.
+    pub fn occupied_len(&self) -> usize {
+        self.producer.lock().0.occupied_len()
+    }
+
     /// Spawns an async receiver worker reading PCM i16 from a Tokio channel and streaming into PlaybackEngine.
     pub fn spawn_pcm_stream_worker(
         self: &Arc<Self>,

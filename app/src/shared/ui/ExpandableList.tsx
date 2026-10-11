@@ -4,6 +4,7 @@ import { cn } from "@/shared/lib/utils";
 import { Modal } from "@/shared/ui/Modal";
 import { Tooltip } from "@/shared/ui/Tooltip";
 import { useExpandedModalStore } from "@/store/expandedModalStore";
+import { useSettingsStore } from "@/store/settingsStore";
 
 export interface ExpandableListContextValue {
   isExpanded: boolean;
@@ -46,6 +47,10 @@ export interface ExpandableListProps {
   modalContent?: React.ReactNode | ((props: { close: () => void }) => React.ReactNode);
   /** Optional back button handler rendered on the extreme left of the modal header */
   onBack?: () => void;
+  /** Settings domain to discard on modal exit if uncommitted changes exist */
+  domainId?: string;
+  /** Explicit callback when modal closes without committing */
+  onDiscard?: () => void;
 }
 
 /**
@@ -74,11 +79,19 @@ export const ExpandableList = memo(
     children,
     modalContent,
     onBack,
+    domainId,
+    onDiscard,
   }: ExpandableListProps) => {
     const [expanded, setExpanded] = useState(false);
 
     const open = useCallback(() => setExpanded(true), []);
-    const close = useCallback(() => setExpanded(false), []);
+    const handleClose = useCallback(() => {
+      if (domainId) {
+        useSettingsStore.getState().discardDomainChanges(domainId);
+      }
+      onDiscard?.();
+      setExpanded(false);
+    }, [domainId, onDiscard]);
 
     // While the modal owns the commit flow, background card footers stand down.
     const pushModal = useExpandedModalStore((s) => s.pushModal);
@@ -92,13 +105,13 @@ export const ExpandableList = memo(
     }, [expanded, pushModal, popModal]);
 
     const inlineContext = useMemo(
-      () => ({ isExpanded: false, close, open }),
-      [close, open]
+      () => ({ isExpanded: false, close: handleClose, open }),
+      [handleClose, open]
     );
 
     const modalContext = useMemo(
-      () => ({ isExpanded: true, close, open }),
-      [close, open]
+      () => ({ isExpanded: true, close: handleClose, open }),
+      [handleClose, open]
     );
 
     return (
@@ -138,23 +151,29 @@ export const ExpandableList = memo(
 
         <Modal
           open={expanded}
-          onClose={close}
+          onClose={handleClose}
           onBack={onBack}
           position="global"
           icon={icon}
           title={title}
           subtitle={modalSubtitle}
-          headerActions={headerActions}
+          headerActions={
+            headerActions ? (
+              <ExpandableListContext.Provider value={modalContext}>
+                {headerActions}
+              </ExpandableListContext.Provider>
+            ) : undefined
+          }
           footer={footer}
           ariaLabel={ariaLabel}
-          className="w-[min(1120px,86vw)] max-w-[calc(100vw-36px)] h-[min(760px,76vh)] max-h-[calc(100dvh-120px)]"
-          bodyClassName="h-full flex flex-col min-h-0 overflow-hidden p-4 sm:p-5"
+          className="w-[min(480px,92vw)] h-[min(540px,72vh)] lg:w-[min(1120px,86vw)] lg:h-[min(760px,76vh)] max-w-[calc(100vw-32px)] max-h-[calc(100dvh-96px)] rounded-2xl bg-[rgba(var(--card),0.92)] backdrop-blur-2xl border border-[rgba(var(--border),0.2)] shadow-2xl"
+          bodyClassName="h-full flex flex-col min-h-0 overflow-hidden p-3.5 sm:p-5"
         >
           <ExpandableListContext.Provider value={modalContext}>
             <div className="flex-1 min-h-0 flex flex-col">
               {modalContent
                 ? typeof modalContent === "function"
-                  ? modalContent({ close })
+                  ? modalContent({ close: handleClose })
                   : modalContent
                 : children}
             </div>

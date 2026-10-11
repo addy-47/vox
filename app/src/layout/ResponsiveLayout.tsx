@@ -5,7 +5,7 @@ import { useViewportResize } from "@/shared/hooks/useViewportResize";
 import { LAYOUT_COPY } from "@/data/layoutCopy";
 import { TitleBar } from "./TitleBar";
 import { AppHeader } from "./AppHeader";
-import { AmbientBackground, HelpPanel, NotificationPanel, ErrorBoundary, OrbitalLoader } from "@/shared/components/common";
+import { AmbientBackground, HelpPanel, NotificationPanel, ErrorBoundary, OrbitalLoader, DelayedFallback } from "@/shared/components/common";
 import { TurnMetricsBadge } from "@/shared/components/home";
 import { EdgePanel, BottomDockFeather } from "@/shared/ui";
 import { usePanelStateContext } from "@/shared/hooks/usePanelState";
@@ -454,9 +454,11 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
 
           <Suspense
             fallback={
-              <div className="flex-1 w-full h-full flex flex-col items-center justify-center p-6 animate-in fade-in duration-200">
-                <OrbitalLoader size="md" />
-              </div>
+              <DelayedFallback delayMs={150}>
+                <div className="flex-1 w-full h-full flex flex-col items-center justify-center p-6 animate-in fade-in duration-200">
+                  <OrbitalLoader size="md" />
+                </div>
+              </DelayedFallback>
             }
           >
             {(children || outlet) && (
@@ -556,6 +558,9 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
             </div>
           </div>
         ) : null}
+
+        {/* Top-level Stage Slot for edge panels (eliminates 56px page drop) */}
+        <div id="stage-edge-panels" className="absolute inset-0 pointer-events-none z-35" />
 
         {/* Bottom navigation (topmost in bottom layer) */}
         <EdgeNav />

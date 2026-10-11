@@ -62,6 +62,19 @@ import { SettingsCardWrapper } from "@/shared/components/settings/SettingsCardWr
 import { useSettingsPage } from "@/shared/hooks/useSettingsPage";
 import { useMemoryTrace } from "@/shared/hooks/useMemoryTrace";
 
+// Preload settings card chunks so mobile visits do not trigger cascading suspensions
+export const preloadSettingsCards = () =>
+  Promise.all([
+    loadPersona(),
+    loadModels(),
+    loadRealtime(),
+    loadWorkingMemory(),
+    loadPersonalMemory(),
+    loadAppearance(),
+    loadInteraction(),
+    useSettingsStore.getState().loadRemoteModels(),
+  ]);
+
 export const Settings: React.FC = () => {
   useMemoryTrace("Settings");
   const draftSettings = useSettingsStore((s) => s.draftSettings);
@@ -100,18 +113,7 @@ export const Settings: React.FC = () => {
   useEffect(() => {
     const idle = window.requestIdleCallback ?? ((fn: () => void) => setTimeout(fn, 400));
     const id = idle(() => {
-      void Promise.all([
-        loadPersona(),
-        loadModels(),
-        loadRealtime(),
-        loadWorkingMemory(),
-        loadPersonalMemory(),
-        loadAppearance(),
-        loadInteraction(),
-      ]).catch(() => {});
-
-      // Prewarm remote LLM catalog into store cache
-      void useSettingsStore.getState().loadRemoteModels().catch(() => {});
+      void preloadSettingsCards().catch(() => {});
     });
     return () => {
       if (window.cancelIdleCallback && typeof id === "number") window.cancelIdleCallback(id);
@@ -217,7 +219,7 @@ export const Settings: React.FC = () => {
         <div className="flex-1 flex flex-col min-h-0 overflow-hidden w-full px-4 sm:px-5 pt-3 sm:pt-4">
 
           <div className="flex-1 w-full relative overflow-hidden flex flex-col min-h-0">
-            <div className="flex-1 w-full overflow-y-auto custom-scrollbar pb-[95px] space-y-5 sm:space-y-6 animate-fade-in pr-0.5">
+            <div className="flex-1 w-full overflow-y-auto custom-scrollbar pb-[95px] space-y-5 sm:space-y-6 pr-0.5">
               {[...DOMAINS].sort((a, b) => {
                 const order = ["interaction", "models", "appearance", "working_memory", "personal_memory", "persona"];
                 return order.indexOf(a.id) - order.indexOf(b.id);

@@ -1,15 +1,14 @@
 use std::collections::HashMap;
+#[cfg(any(target_os = "linux", target_os = "android"))]
+use std::fs;
 #[cfg(target_os = "linux")]
-use std::{
-    fs,
-    path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
 
 use sysinfo::{
     CpuRefreshKind, MemoryRefreshKind, Pid, ProcessRefreshKind, RefreshKind, System, UpdateKind,
 };
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "android"))]
 const BYTES_PER_KIB: u64 = 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -328,7 +327,7 @@ fn process_command(process: &sysinfo::Process) -> String {
         .join(" ")
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "android"))]
 fn read_process_memory(pid: u32) -> ProcessMemoryBytes {
     let status = fs::read_to_string(format!("/proc/{pid}/status")).unwrap_or_default();
     let smaps = fs::read_to_string(format!("/proc/{pid}/smaps_rollup")).unwrap_or_default();
@@ -343,12 +342,12 @@ fn read_process_memory(pid: u32) -> ProcessMemoryBytes {
     }
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", target_os = "android")))]
 fn read_process_memory(_pid: u32) -> ProcessMemoryBytes {
     ProcessMemoryBytes::default()
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "android"))]
 fn read_kib_field(content: &str, field: &str) -> u64 {
     content
         .lines()

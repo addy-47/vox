@@ -1,4 +1,4 @@
-import React, { memo, useMemo, useRef, useEffect, useState, useCallback } from "react";
+import React, { memo, useMemo, useRef, useEffect } from "react";
 import { VoxOrb, PipelineField, DynamicStatusBadge, RestorePulse, SessionPanel, DialogueBubble } from "@/shared/components/home";
 import { TextInputBar } from "@/shared/components/home/TextInputBar";
 import { ActiveTranscript } from "@/shared/components/home/ActiveTranscript";
@@ -14,8 +14,7 @@ import { shortcutKeysSuffix } from "@/data/shortcuts";
 
 import { Power, Mic, Keyboard, Play, Pause, X, AlertCircle, RotateCcw } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
-import { OrbitalLoader } from "@/shared/components/common";
-import { AnimatePresence, motion } from "framer-motion";
+import { ChapterScrubber, type Chapter } from "@/shared/ui/ChapterScrubber";
 
 
 import { useProfilerDrawer } from "@/shared/components/profiler/ProfilerDrawer";
@@ -88,18 +87,13 @@ export const Home = memo(() => {
 
   const contentInnerRef = useRef<HTMLDivElement>(null);
 
-  // Boot gate: Home remounts on every visit and the orb's scene build +
-  // shader compile blocks first paint. Show a loader until the first frame.
-  const mountAtRef = useRef(0);
-  const [orbReady, setOrbReady] = useState(false);
+  // Diagnostic telemetry: log Home render timing and layout lifecycle
   useEffect(() => {
-    mountAtRef.current = performance.now();
-    console.info(`[route-nav] Home mount @${mountAtRef.current.toFixed(1)}ms`);
-  }, []);
-  const handleOrbFirstFrame = useCallback(() => {
-    const dt = performance.now() - mountAtRef.current;
-    console.info(`[route-nav] Home orb first frame +${dt.toFixed(1)}ms`);
-    setOrbReady(true);
+    const t0 = performance.now();
+    console.info(`[trace-home] Home mounted @${t0.toFixed(1)}ms, docTheme=${document.documentElement.getAttribute("data-theme") || "none"}`);
+    return () => {
+      console.info(`[trace-home] Home unmounted after ${(performance.now() - t0).toFixed(1)}ms`);
+    };
   }, []);
 
   // Auto-scroll follower: keep pinned to bottom as text streams in or messages are sent
@@ -205,6 +199,24 @@ export const Home = memo(() => {
     return dialogueHistory.slice(-10);
   }, [dialogueHistory]);
 
+  const scrubberChapters = useMemo<Chapter[]>(() => {
+    // Show latest conversation turns in chronological order (oldest at top, latest at bottom).
+    // Bound to the 15 most recent turns so scrubber ticks fit comfortably within the 75% orb height cap.
+    const recent = dialogueHistory.slice(-15);
+    const startIdx = Math.max(0, dialogueHistory.length - 15);
+    return recent.map((turn, relIdx) => {
+      const absIdx = startIdx + relIdx;
+      const title = turn.user ? (turn.user.length > 40 ? `${turn.user.slice(0, 40)}...` : turn.user) : `Turn ${absIdx + 1}`;
+      const desc = turn.assistant || undefined;
+      return {
+        id: `dialogue-${turn.id ?? absIdx}`,
+        title,
+        description: desc,
+        meta: `Turn #${absIdx + 1}`,
+      };
+    });
+  }, [dialogueHistory]);
+
 
   return (
     <div className="relative flex-1 flex flex-col items-center justify-between h-full w-full overflow-hidden bg-transparent select-none">
@@ -253,7 +265,7 @@ export const Home = memo(() => {
         </div>
       )}
 
-      {/* ── Status Capsule: Centered directly above the Orb ── */}
+      {/* ── Status Capsule: Fixed top 10% across desktop, adjusted for mobile header padding ── */}
       <div
         className="absolute left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 pointer-events-none"
         style={{
@@ -331,37 +343,43 @@ export const Home = memo(() => {
             isEngaged && interactionState !== "Error" ? "scale-100 opacity-100 animate-field-pulse" : "scale-90 opacity-60"
           )}
         />
-        {/* Orb crossfades in on first frame; the loader crossfades out over it. */}
-        <motion.div
-          className="relative w-full h-full flex items-center justify-center"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: orbReady ? 1 : 0 }}
-          transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
-        >
+        {/* Orb directly renders on Home mount with zero loader flash */}
+        <div className="relative w-full h-full flex items-center justify-center">
           <ErrorBoundary name="VoxOrb">
             <VoxOrb
               telemetryRef={telemetryRef}
               interactionState={interactionState}
               isSleeping={isSleeping}
               paused={isPanelOpen("sessions") || isPanelOpen("notifications") || isPanelOpen("help")}
-              onFirstFrame={handleOrbFirstFrame}
             />
           </ErrorBoundary>
-        </motion.div>
-          <AnimatePresence>
-            {!orbReady && (
-              <motion.div
-                key="orb-loader"
-                initial={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
-                className="absolute inset-0 z-30 flex items-center justify-center bg-transparent pointer-events-none rounded-full"
-              >
-                <OrbitalLoader size="md" />
-              </motion.div>
-            )}
-          </AnimatePresence>
+        </div>
       </div>
+
+      {/* ── Compact & Mobile Dialogue Scrubber (Vertically centered, right edge of screen, ≤75% orb height) ── */}
+      {scrubberChapters.length > 0 && (
+        <div
+          className="absolute z-30 pointer-events-auto md:hidden"
+          style={{
+            right: "max(6px, env(safe-area-inset-right, 6px))",
+            top: isRealMobileDevice() ? "calc(50% - 22.4px)" : "calc(50% - 36px)",
+            transform: "translateY(-50%)",
+            maxHeight: isMobileScreen ? "calc(min(82vw, 50vh) * 0.75)" : "calc(min(65vw, 56vh) * 0.75)",
+            overflow: "visible",
+          }}
+        >
+          <ChapterScrubber
+            chapters={scrubberChapters}
+            side="left"
+            peakLength={38}
+            restLength={10}
+            rowHeight={7}
+            radius={3}
+            currentIndex={scrubberChapters.length - 1}
+            label="Dialogue History Scrubber"
+          />
+        </div>
+      )}
 
       {/* ── Bottom Controls (Positioned 60% from Sphere bottom edge & 40% from EdgeNav top edge) ── */}
       <div

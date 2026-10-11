@@ -7,3 +7,4 @@ export * from "./VoxLogoLoader";
 export * from "./HelpPanel";
 export * from "./NotificationPanel";
 export * from "./WizardStandIn";
+export * from "./DelayedFallback";

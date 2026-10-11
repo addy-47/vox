@@ -7,6 +7,7 @@ import { useOverlay } from "@/shared/hooks/useOverlay";
 import { Tooltip } from "@/shared/ui/Tooltip";
 import { BottomDockFeather } from "@/shared/ui/BottomDockFeather";
 import { LAYOUT_COPY } from "@/data/layoutCopy";
+import { useViewportResize } from "@/shared/hooks/useViewportResize";
 
 export interface EdgePanelProps {
   side: "left" | "right";
@@ -45,6 +46,7 @@ const EdgePanelInner = memo(
     zIndex,
   }: EdgePanelProps) => {
     const panelRef = useRef<HTMLElement>(null);
+    const { isMobile } = useViewportResize();
 
     // Escape key or clicking outside dismisses the panel, but preserves opposing edge panels
     const shouldDismissOnPointerDown = useCallback((target: Node) => {
@@ -164,16 +166,25 @@ const EdgePanelInner = memo(
             {/* Header: Minimal anchor row or classic titled bar */}
             {minimalHeader ? (
               /* When panel is LEFT: close button on the RIGHT so it doesn't collide with the trigger.
-                 When panel is RIGHT: close button on the LEFT (standard convention). */
-              <div className={`flex items-center px-5 pt-4 pb-2 h-14 shrink-0 ${isLeft ? "flex-row-reverse" : ""}`}>
+                 When panel is RIGHT: close button on the LEFT (standard convention).
+                 Padding and height match AppHeader exactly so the close button aligns with the header trigger buttons. */
+              <div
+                className={cn(
+                  "flex items-center shrink-0",
+                  isMobile
+                    ? "pt-4 px-4 sm:px-8 pb-2.5"
+                    : "h-14 px-5",
+                  isLeft ? "flex-row-reverse" : ""
+                )}
+              >
                 <div className="flex items-center gap-1.5 shrink-0">
                   <Tooltip label={LAYOUT_COPY.panel.close} side={isLeft ? "left" : "right"}>
                     <button
                       onClick={onClose}
-                      className="flex items-center justify-center w-8 h-8 rounded-lg text-[rgb(var(--foreground-muted))]/70 hover:bg-[rgba(var(--foreground),0.06)] hover:text-[rgb(var(--foreground))] transition-colors cursor-pointer"
+                      className="inline-flex items-center justify-center w-8 h-8 rounded-xl border border-[rgba(var(--border),0.15)] bg-[rgba(var(--card),0.5)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:border-[rgba(var(--accent),0.3)] hover:bg-[rgba(var(--accent),0.06)] transition-colors cursor-pointer shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))]"
                       aria-label={LAYOUT_COPY.panel.close}
                     >
-                      <X size={16} />
+                      <X size={14} strokeWidth={1.75} />
                     </button>
                   </Tooltip>
                   {headerActions}
@@ -218,6 +229,12 @@ const EdgePanelInner = memo(
 
   if (isGlobal && typeof document !== "undefined") {
     return createPortal(panelNode, document.body);
+  }
+  if (typeof document !== "undefined") {
+    const stageSlot = document.getElementById("stage-edge-panels");
+    if (stageSlot) {
+      return createPortal(panelNode, stageSlot);
+    }
   }
   return panelNode;
   }

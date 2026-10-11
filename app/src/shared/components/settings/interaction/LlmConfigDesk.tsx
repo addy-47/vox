@@ -752,6 +752,7 @@ export const LlmConfigDesk = memo(({
           {/* 2-Column Provider List — inline at card height, full-bleed in the expand modal */}
           <ExpandableList
             className="flex-1 min-h-0"
+            domainId="models"
             triggerPlacement="floating"
             inlineMaxHeightClass="max-h-[160px] sm:max-h-[180px]"
             icon={modalView === "models" ? <Network size={16} className="text-[rgb(var(--accent))]" /> : <Cloud size={16} className="text-[rgb(var(--accent))]" />}

@@ -5,7 +5,6 @@ import { SlidersHorizontal, House, Activity, History, Network } from "lucide-rea
 import { cn } from "@/shared/lib/utils";
 import { BottomDockFeather } from "@/shared/ui";
 import { Tooltip } from "@/shared/ui/Tooltip";
-import { isRealMobileDevice } from "@/shared/hooks/useMobileViewport";
 
 const navItems = [
   { icon: House, label: "Home", path: "/" },
@@ -16,23 +15,14 @@ const navItems = [
 
 export const EdgeNav: React.FC = () => {
   const location = useLocation();
-  const isMobile = isRealMobileDevice();
 
   return (
     <nav
       data-edge-nav
       data-spatial-zone="dock"
-      className={cn(
-        "z-[60] pointer-events-auto flex items-center justify-around",
-        isMobile
-          ? "fixed bottom-0 inset-x-0 h-[calc(60px+env(safe-area-inset-bottom))] pb-[env(safe-area-inset-bottom)] px-3 bg-[rgb(var(--background))] border-t border-[rgba(var(--accent),0.15)] shadow-2xl"
-          : "fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 gap-2 px-3 py-1.5 h-[56px] glass-card glass-keep-blur border border-[rgba(var(--accent),0.15)] rounded-full"
-      )}
+      className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 gap-2 px-3 py-1.5 h-[56px] glass-card glass-keep-blur border border-[rgba(var(--accent),0.15)] rounded-full z-[60] pointer-events-auto flex items-center justify-around max-w-[calc(100vw-2rem)]"
     >
-      {/* Localized feather directly behind floating dock nav (desktop only) */}
-      {!isMobile && (
-        <BottomDockFeather className="absolute -inset-x-6 -bottom-3 -top-6 rounded-full pointer-events-none" />
-      )}
+      <BottomDockFeather className="absolute -inset-x-6 -bottom-3 -top-6 rounded-full pointer-events-none" />
         {navItems.map((item) => (
           <Tooltip key={item.label} label={item.label} side="top">
             <NavLink
@@ -41,7 +31,13 @@ export const EdgeNav: React.FC = () => {
               onPointerDown={() => {
                 if (item.path === "/history") void import("@/pages/History");
                 else if (item.path === "/memory") void import("@/pages/Memory");
-                else if (item.path === "/settings") void import("@/pages/Settings");
+                else if (item.path === "/settings") {
+                  void import("@/pages/Settings").then((m) => {
+                    if ("preloadSettingsCards" in m && typeof m.preloadSettingsCards === "function") {
+                      void m.preloadSettingsCards();
+                    }
+                  }).catch(() => {});
+                }
               }}
               onClick={(e) => {
                 if (location.pathname === item.path) {
