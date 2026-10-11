@@ -5,6 +5,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { cn } from "@/shared/lib/utils";
 import { useOverlay } from "@/shared/hooks/useOverlay";
 import { Tooltip } from "@/shared/ui/Tooltip";
+import { OverlayBackdrop } from "@/shared/ui/OverlayBackdrop";
 import { BottomDockFeather } from "@/shared/ui/BottomDockFeather";
 import { LAYOUT_COPY } from "@/data/layoutCopy";
 import { useViewportResize } from "@/shared/hooks/useViewportResize";
@@ -130,20 +131,11 @@ const EdgePanelInner = memo(
       <AnimatePresence>
         {open && (
           <>
-            {/* Backdrop dimming: universal bg-black/50 backdrop-blur-[2px] */}
-            <motion.div
-              key={`edge-backdrop-${side}`}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.2 }}
-              onClick={onClose}
-              style={{ zIndex: effectiveBackdropZ }}
-              className={cn(
-                "fixed inset-0 bg-black/50 backdrop-blur-[2px] pointer-events-auto",
-                !isGlobal && "lg:hidden"
-              )}
-              aria-hidden="true"
+            {/* Backdrop dimming: shared OverlayBackdrop (single source of truth). */}
+            <OverlayBackdrop
+              onClose={onClose}
+              zIndex={effectiveBackdropZ}
+              className={cn(!isGlobal && "lg:hidden")}
             />
             <motion.aside
               ref={panelRef}
@@ -157,7 +149,7 @@ const EdgePanelInner = memo(
               style={{ zIndex: effectiveZ }}
               className={cn(
                 isGlobal ? "fixed top-0 bottom-0" : "absolute top-0 bottom-0",
-                "flex flex-col bg-[rgb(var(--card))]/90 backdrop-blur-md overflow-hidden pointer-events-auto select-auto border-[rgba(var(--border),0.06)] transform-gpu will-change-transform",
+                "flex flex-col bg-[rgb(var(--card))]/90 backdrop-blur-md overflow-hidden pointer-events-auto select-auto border-[rgba(var(--border),0.06)] transform-gpu",
                 isLeft ? "left-0 border-r" : "right-0 border-l",
                 "w-[340px] max-w-[92vw]",
                 className

@@ -1,5 +1,6 @@
 import { memo, useState, useRef, useEffect, useMemo, useCallback, useDeferredValue } from "react";
-import Lenis from "lenis";
+import type Lenis from "lenis";
+import { createContainedLenis } from "@/shared/lib/lenisScroll";
 import { useScrollTopOnChange } from "@/shared/hooks/useScrollTopOnChange";
 import { CLOUD_PROVIDERS, type CloudProvider } from "@/data/providersCopy";
 import { INTERACTION_CONFIG_DESK_COPY } from "@/data/settingsCopy";
@@ -44,7 +45,7 @@ export const CloudProviderCard = memo(({
         }
       }}
       className={cn(
-        "relative flex flex-col justify-between p-4 rounded-xl border transition-all duration-200 select-none group cursor-pointer transform-gpu will-change-transform",
+        "relative flex flex-col justify-between p-4 rounded-xl border transition-all duration-200 select-none group cursor-pointer transform-gpu",
         isSelected
           ? "bg-[rgba(var(--accent),0.07)] border-[rgb(var(--accent))] shadow-[0_0_20px_rgba(var(--accent),0.12)] ring-1 ring-[rgb(var(--accent))]/30"
           : "bg-[rgba(var(--card),0.5)] border-[rgba(var(--foreground),0.06)] hover:border-[rgba(var(--accent),0.35)] hover:bg-[rgba(var(--card),0.85)]"
@@ -211,14 +212,8 @@ export const CloudProvidersModalView = memo(({
     const el = scrollContainerRef.current;
     if (!el) return undefined;
 
-    const lenis = new Lenis({
-      wrapper: el,
-      content: el,
-      eventsTarget: el,
-      smoothWheel: true,
-      autoRaf: true,
-      duration: 0.75,
-    });
+    const lenis = createContainedLenis(el, { duration: 0.75 });
+    if (!lenis) return undefined;
     lenisRef.current = lenis;
 
     return () => {

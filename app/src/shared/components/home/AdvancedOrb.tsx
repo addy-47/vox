@@ -403,6 +403,7 @@ export const VoxOrb = React.memo(({
   const onFirstFrameRef = useRef(onFirstFrame);
   onFirstFrameRef.current = onFirstFrame;
   const firstFrameFiredRef = useRef(false);
+  const themeApplyLogCountRef = useRef(0); // cyan-flash RCA only — remove with logs
 
   const mountRef     = useRef<HTMLDivElement>(null);
   const stateRef     = useRef(interactionState);
@@ -560,6 +561,11 @@ export const VoxOrb = React.memo(({
   // instead of flashing hardcoded base tokens on the first frames. The
   // observer effect owns all later updates; only the first kept value matters.
   const themeSeed = cachedOrbTheme;
+  try {
+    const r = document.documentElement;
+    const cs = getComputedStyle(r);
+    console.info(`[trace-orb] mount: cachedTheme=${themeSeed ? 'HIT#' + themeSeed.accent.getHexString() : 'MISS'}, cssAccent=[${cs.getPropertyValue('--accent').trim() || 'EMPTY'}], cssAccentDark=[${cs.getPropertyValue('--accent-dark').trim() || 'EMPTY'}], inlineAccent=[${r.style.getPropertyValue('--accent').trim() || 'EMPTY'}], docTheme=${r.getAttribute('data-theme') || 'none'}, state=${stateRef.current}`);
+  } catch {}
   const themeRef = useRef({
     theme: themeSeed?.theme ?? "",
     accent: themeSeed?.accent.clone() ?? getCSSColor('--accent', '#00dbe9'),
@@ -713,6 +719,14 @@ export const VoxOrb = React.memo(({
     // Response morph rate
     ctx.curGlow.lerp(ctx.tgtGlow, rate(5.5));
     ctx.curAccent.lerp(ctx.tgtAccent, rate(5.5));
+    // (cyan-flash RCA: first 3 per-tick target resolutions per mount. Remove once found.)
+    try {
+      const n = themeApplyLogCountRef.current ?? 0;
+      if (n < 3) {
+        themeApplyLogCountRef.current = n + 1;
+        console.info(`[trace-orb] tick-target #${n + 1}: state=${state} theme=${themeRef.current.theme || 'EMPTY'} tgtGlow=#${ctx.tgtGlow.getHexString()} tgtAccent=#${ctx.tgtAccent.getHexString()} firstFrame=${firstFrameFiredRef.current}`);
+      }
+    } catch {}
 
     ctx.sharedUni.u_colorGlow.value.copy(ctx.curGlow);
     ctx.sharedUni.u_colorAccent.value.copy(ctx.curAccent);
@@ -742,6 +756,7 @@ export const VoxOrb = React.memo(({
     ctx.renderer.render(ctx.scene, ctx.camera);
     if (!firstFrameFiredRef.current) {
       firstFrameFiredRef.current = true;
+      try { console.info(`[trace-orb] first-frame painted @${performance.now().toFixed(1)}ms: glow=#${ctx.curGlow.getHexString()} accent=#${ctx.curAccent.getHexString()} state=${state}`); } catch {}
       onFirstFrameRef.current?.();
     }
   }, [telemetryRef]);
@@ -799,6 +814,7 @@ export const VoxOrb = React.memo(({
     // --accent-dark stays token-sourced to match the pre-existing look.
     const initGlow = getCSSColor('--accent-dark', '#0891b2');
     const initAccent = getCSSColor('--accent', '#00dbe9');
+    try { console.info(`[trace-orb] scene-init: accent=#${initAccent.getHexString()} glow=#${initGlow.getHexString()} (fallbacks #00dbe9/#0891b2 = cyan family), state=${stateRef.current}, container=${width}x${height}`); } catch {}
 
     const sharedUni = {
       u_time: { value: 0.0 },
@@ -917,6 +933,13 @@ export const VoxOrb = React.memo(({
     const tgtAccent = new THREE.Color();
     const whiteColor = new THREE.Color(1, 1, 1);
 
+    // Flash fix: seed the live lerp from the muted cached theme (not the vivid
+    // raw token), so the first painted frame already matches the Idle target.
+    // Null only pre-boot (cache always HIT in practice) — fallback keeps old behaviour.
+    if (themeSeed) {
+      curGlow.copy(themeSeed.glow);
+      curAccent.copy(themeSeed.accent);
+    }
     sceneRef.current = {
       renderer,
       scene,

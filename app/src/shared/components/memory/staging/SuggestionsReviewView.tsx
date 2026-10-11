@@ -10,7 +10,7 @@ import {
   Diff,
   SquareDashedPlus,
 } from "lucide-react";
-import Lenis from "lenis";
+import { createContainedLenis } from "@/shared/lib/lenisScroll";
 import { cn } from "@/shared/lib/utils";
 import { MEMORY_COPY } from "@/data/memoryCopy";
 import {
@@ -173,14 +173,8 @@ export const SuggestionsReviewView: React.FC<SuggestionsReviewViewProps> = memo(
       const el = scrollRef.current;
       if (!el) return undefined;
 
-      const lenis = new Lenis({
-        wrapper: el,
-        content: el,
-        eventsTarget: el,
-        smoothWheel: true,
-        autoRaf: true,
-        duration: 0.8,
-      });
+      const lenis = createContainedLenis(el, { duration: 0.8 });
+      if (!lenis) return undefined;
 
       return () => {
         lenis.destroy();

@@ -1,5 +1,20 @@
 import React, { Suspense, lazy } from "react";
 import ReactDOM from "react-dom/client";
+// Self-hosted fonts (bundled by Vite) — replaces the render-blocking remote
+// Google Fonts @import so first paint never waits on a network round-trip.
+import "@fontsource/dm-sans/400.css";
+import "@fontsource/dm-sans/500.css";
+import "@fontsource/dm-sans/600.css";
+import "@fontsource/dm-sans/700.css";
+import "@fontsource/sora/400.css";
+import "@fontsource/sora/500.css";
+import "@fontsource/sora/600.css";
+import "@fontsource/sora/700.css";
+import "@fontsource/sora/800.css";
+import "@fontsource/jetbrains-mono/400.css";
+import "@fontsource/jetbrains-mono/500.css";
+import "@fontsource/jetbrains-mono/600.css";
+import "@fontsource/jetbrains-mono/700.css";
 import "./index.css";
 import App from "./App";
 import { SettingsProvider } from "./shared/context/SettingsContext";

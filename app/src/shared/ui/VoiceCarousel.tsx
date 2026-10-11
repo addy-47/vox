@@ -45,7 +45,7 @@ export const VoiceBars = memo(function VoiceBars({ seed, disabled }: { seed: str
           <div
             key={i}
             className={cn(
-              "w-[3px] rounded-full transition-all duration-300 will-change-transform",
+              "w-[3px] rounded-full transition-all duration-300",
               disabled
                 ? "bg-[rgba(var(--foreground-muted),0.15)]"
                 : "bg-gradient-to-t from-[rgba(var(--accent),0.35)] via-[rgb(var(--accent))] to-[rgba(var(--accent),0.85)] shadow-[0_0_8px_rgba(var(--accent),0.2)]"
