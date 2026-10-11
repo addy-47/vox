@@ -61,6 +61,7 @@ export const Home = memo(() => {
     isThinking,
     isMobileScreen,
     engage,
+    cancelLaunch,
     disengage,
     pause,
     resume,
@@ -257,7 +258,7 @@ export const Home = memo(() => {
         className="absolute left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 pointer-events-none"
         style={{
           top: isRealMobileDevice()
-            ? "calc(50% - min(41vw, 25vh) - 56px)"
+            ? "calc(50% - min(41vw, 25vh) - 112px - 22.4px)"
             : "10%",
         }}
       >
@@ -313,7 +314,7 @@ export const Home = memo(() => {
         className="absolute z-10 flex items-center justify-center select-none pointer-events-none"
         style={{
           left: "50%",
-          top: isRealMobileDevice() ? "50%" : "calc(50% - 36px)",
+          top: isRealMobileDevice() ? "calc(50% - 22.4px)" : "calc(50% - 36px)",
           transform: "translate(-50%, -50%)",
           width: isMobileScreen ? "min(82vw, 50vh)" : "min(65vw, 56vh)",
           height: isMobileScreen ? "min(82vw, 50vh)" : "min(65vw, 56vh)",
@@ -479,17 +480,17 @@ export const Home = memo(() => {
                 {/* Engage */}
                 <div className="relative flex flex-col items-center">
                   <button
-                    onClick={engage}
+                    onClick={isLaunching ? cancelLaunch : engage}
                     tabIndex={0}
                     className={cn(
                       "flex items-center justify-center w-14 h-14 rounded-full transition-all duration-500 border border-[rgb(var(--accent))]/25 bg-transparent hover:bg-[rgb(var(--accent))]/10 hover:scale-105 active:scale-95 text-[rgb(var(--accent))] cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(var(--accent))] focus-visible:ring-offset-2 focus-visible:ring-offset-[rgb(var(--background))] focus-visible:scale-105 focus-visible:shadow-[0_0_24px_rgba(var(--accent),0.4)]",
-                      isLaunching && "animate-spin"
+                      isLaunching && "animate-spin border-[rgb(var(--accent))]/60"
                     )}
-                    disabled={isLaunching}
-                    aria-label={HOME_CONTROLS_COPY.engage.ariaLabel}
+                    aria-label={isLaunching ? "Cancel launching session" : HOME_CONTROLS_COPY.engage.ariaLabel}
+                    title={isLaunching ? "Tap to cancel" : undefined}
                   >
                     {isLaunching ? (
-                      <Power size={28} className="animate-pulse-slow" />
+                      <X size={28} className="animate-pulse-slow text-red-400" />
                     ) : (
                       <Power size={28} className="transition-transform duration-700" />
                     )}

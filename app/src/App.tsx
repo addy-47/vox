@@ -116,7 +116,7 @@ const App: React.FC = () => {
       }
 
       const urlParams = new URLSearchParams(window.location.search);
-      const forceWizard = urlParams.get('wizard') === 'true';
+      const forceWizard = urlParams.get('wizard') === 'true' || localStorage.getItem('vox_force_wizard') === 'true';
 
       const MAX_ATTEMPTS = 3;
       const BACKOFF_MS = [400, 1200, 3000];

@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { MobileHeroStep } from './MobileHeroStep';
 import { MobileIntelligenceStep } from './MobileIntelligenceStep';
@@ -37,6 +37,24 @@ export const MobileOnboardingFlow: React.FC<MobileOnboardingFlowProps> = ({
     label: MOBILE_ONBOARDING_COPY.models.downloadButton,
     action: () => {},
   });
+
+  const handleModelStatusChange = useCallback((nextStatus: {
+    isDone: boolean;
+    isDownloading: boolean;
+    label: string;
+    action: () => void;
+  }) => {
+    setModelStatus((prev) => {
+      if (
+        prev.isDone === nextStatus.isDone &&
+        prev.isDownloading === nextStatus.isDownloading &&
+        prev.label === nextStatus.label
+      ) {
+        return prev;
+      }
+      return nextStatus;
+    });
+  }, []);
 
   const touchStartX = useRef<number | null>(null);
   const touchStartY = useRef<number | null>(null);
@@ -124,7 +142,7 @@ export const MobileOnboardingFlow: React.FC<MobileOnboardingFlowProps> = ({
   };
 
   // Determine current fixed bottom action button properties
-  const getFooterConfig = () => {
+  const footerConfig = useMemo(() => {
     switch (currentStep) {
       case 'hero':
         return {
@@ -142,9 +160,6 @@ export const MobileOnboardingFlow: React.FC<MobileOnboardingFlowProps> = ({
         };
       case 'permission':
         return {
-          // Until the mic is genuinely granted, the primary action requests it
-          // rather than advancing. It previously always advanced, so the visible
-          // button never asked for anything.
           label: permissionsGranted
             ? MOBILE_ONBOARDING_COPY.permission.continueButton
             : MOBILE_ONBOARDING_COPY.permission.grantButton,
@@ -181,9 +196,14 @@ export const MobileOnboardingFlow: React.FC<MobileOnboardingFlowProps> = ({
           isLoading: false,
         };
     }
-  };
-
-  const footerConfig = getFooterConfig();
+  }, [
+    currentStep,
+    handleNext,
+    permissionsGranted,
+    permissionsRequesting,
+    modelStatus,
+    handleFinish,
+  ]);
 
   return (
     <div
@@ -192,7 +212,7 @@ export const MobileOnboardingFlow: React.FC<MobileOnboardingFlowProps> = ({
       onTouchEnd={handleTouchEnd}
     >
       {/* ── Fixed Static Header (Never slides during swipe transitions) ── */}
-      <div className="shrink-0 pt-[max(0.75rem,env(safe-area-inset-top))] px-6 pb-2 z-30 flex items-center justify-between">
+      <div className="shrink-0 pt-4 px-4 sm:px-6 pb-2.5 z-30 flex items-center justify-between">
         {/* Left: App Logo + Wordmark */}
         <div className="flex items-center gap-2.5">
           <img
@@ -205,11 +225,11 @@ export const MobileOnboardingFlow: React.FC<MobileOnboardingFlowProps> = ({
           </span>
         </div>
 
-        {/* Right: Clean Skip Action with Step Counter */}
+        {/* Right: Clean Skip Action with Step Counter (≥48px touch target) */}
         <button
           type="button"
           onClick={handleSkipToVox}
-          className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/[0.04] text-[11px] font-mono uppercase tracking-wider text-[rgb(var(--foreground-muted))] hover:text-white active:scale-95 transition-all touch-manipulation cursor-pointer"
+          className="min-h-[48px] flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/[0.04] text-[11px] font-mono uppercase tracking-wider text-[rgb(var(--foreground-muted))] active:bg-white/[0.08] active:scale-95 transition-all touch-manipulation cursor-pointer"
         >
           <span>{MOBILE_ONBOARDING_COPY.header.skipButton}</span>
           <span className="opacity-40">·</span>
@@ -255,7 +275,7 @@ export const MobileOnboardingFlow: React.FC<MobileOnboardingFlowProps> = ({
           <div className="w-[16.666%] h-full flex flex-col min-h-0 overflow-hidden shrink-0">
             <MobileModelStep
               onNext={handleNext}
-              onModelStatusChange={setModelStatus}
+              onModelStatusChange={handleModelStatusChange}
             />
           </div>
 

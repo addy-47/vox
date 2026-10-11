@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { memo } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 
 interface MobileStepFooterProps {
   currentIndex: number;
@@ -9,7 +10,7 @@ interface MobileStepFooterProps {
   disabled?: boolean;
 }
 
-export const MobileStepFooter: React.FC<MobileStepFooterProps> = ({
+export const MobileStepFooter: React.FC<MobileStepFooterProps> = memo(({
   currentIndex,
   totalSteps,
   label,
@@ -18,9 +19,9 @@ export const MobileStepFooter: React.FC<MobileStepFooterProps> = ({
   disabled = false,
 }) => {
   return (
-    <div className="w-full px-6 pt-2 pb-[max(1.75rem,env(safe-area-inset-bottom))] shrink-0 bg-transparent flex flex-col items-center gap-3.5 select-none z-30 pointer-events-auto">
+    <div className="w-full px-6 pt-2 pb-[max(1.75rem,env(safe-area-inset-bottom))] shrink-0 bg-transparent flex flex-col items-center gap-3.5 select-none z-30 pointer-events-auto transform-gpu">
       {/* Fixed Step Transition Slider (Stays stationary while center content swipes) */}
-      <div className="flex items-center justify-center gap-2 py-1">
+      <div className="h-3 flex items-center justify-center gap-2">
         {Array.from({ length: totalSteps }).map((_, i) => (
           <div
             key={i}
@@ -33,17 +34,30 @@ export const MobileStepFooter: React.FC<MobileStepFooterProps> = ({
         ))}
       </div>
 
-      {/* Contextual Action Button (Clean button without arrows or back button) */}
+      {/* Contextual Action Button */}
       <div className="w-full max-w-sm">
         <button
           type="button"
           onClick={onClick}
           disabled={disabled || isLoading}
-          className="w-full h-12 bg-[rgba(var(--accent),0.14)] hover:bg-[rgba(var(--accent),0.22)] active:bg-[rgba(var(--accent),0.3)] border border-[rgba(var(--accent),0.35)] text-[rgb(var(--foreground))] hover:text-white font-display font-semibold text-[13px] tracking-wide rounded-xl flex items-center justify-center shadow-[0_2px_16px_rgba(var(--accent),0.1)] active:scale-[0.98] transition-all touch-manipulation cursor-pointer disabled:opacity-40"
+          className="w-full h-12 min-h-[48px] bg-[rgba(var(--accent),0.14)] active:bg-[rgba(var(--accent),0.3)] border border-[rgba(var(--accent),0.35)] text-[rgb(var(--foreground))] active:text-white font-display font-semibold text-[13px] tracking-wide rounded-xl flex items-center justify-center shadow-[0_2px_16px_rgba(var(--accent),0.1)] transition-colors duration-150 touch-manipulation cursor-pointer disabled:opacity-40 disabled:pointer-events-none transform-gpu overflow-hidden"
         >
-          <span>{label}</span>
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.span
+              key={label}
+              initial={{ opacity: 0, y: 1 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -1 }}
+              transition={{ duration: 0.12, ease: "easeOut" }}
+              className="truncate px-2"
+            >
+              {label}
+            </motion.span>
+          </AnimatePresence>
         </button>
       </div>
     </div>
   );
-};
+});
+
+MobileStepFooter.displayName = 'MobileStepFooter';

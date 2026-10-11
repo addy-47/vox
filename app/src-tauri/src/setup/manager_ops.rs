@@ -181,6 +181,7 @@ pub async fn execute_model_setup_task<R: tauri::Runtime>(
         return;
     }
 
+    let mut failures: Vec<String> = Vec::new();
     for (idx, model) in target_models.iter().enumerate() {
         log::info!(
             "[SETUP] [{}/{}] Setting up model: {}",
@@ -190,12 +191,19 @@ pub async fn execute_model_setup_task<R: tauri::Runtime>(
         );
         if let Err(e) = manager.setup_model(model, &base_url, &models_dir).await {
             log::error!("[SETUP] Failed to setup model {}: {}", model.id, e);
-            *state.setup_running.lock().await = false;
-            return;
+            failures.push(format!("{}: {}", model.id, e));
         }
     }
 
-    log::info!("[SETUP] All requested models downloaded and verified successfully.");
+    if failures.is_empty() {
+        log::info!("[SETUP] All requested models downloaded and verified successfully.");
+    } else {
+        log::warn!(
+            "[SETUP] Batch download finished with {} failure(s): {:?}",
+            failures.len(),
+            failures
+        );
+    }
     *state.setup_running.lock().await = false;
 }
 

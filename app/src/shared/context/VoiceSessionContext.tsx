@@ -18,6 +18,7 @@ import {
   setSessionPrivateMode,
   continueSession as continueSessionIpc,
   createSession as createSessionIpc,
+  stopEngine,
 } from "@/services/pipelineService";
 import { getRuntimeSnapshot } from "@/services/monitoringService";
 import { getSettings } from "@/services/settingsService";
@@ -53,6 +54,7 @@ export interface VoiceSessionContextValue {
   sessionListVersion: number;
   pttStatus: "IDLE" | "RECORDING" | "PROCESSING";
   engage: () => Promise<void>;
+  cancelLaunch: () => Promise<void>;
   disengage: () => Promise<void>;
   pause: () => Promise<void>;
   resume: () => Promise<void>;
@@ -76,6 +78,7 @@ export interface VoiceSessionContextValue {
 
 export interface VoiceSessionActionsContextValue {
   engage: () => Promise<void>;
+  cancelLaunch: () => Promise<void>;
   disengage: () => Promise<void>;
   pause: () => Promise<void>;
   resume: () => Promise<void>;
@@ -272,6 +275,15 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
       storeApi().setIsLaunching(false);
     }
   }, [clearTranscript]);
+
+  const cancelLaunch = useCallback(async () => {
+    storeApi().setIsLaunching(false);
+    try {
+      await stopEngine();
+    } catch {
+      // Best-effort engine stop
+    }
+  }, []);
 
   const disengage = useCallback(async () => {
     clearTranscript();
@@ -509,6 +521,7 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
       sessionListVersion,
       pttStatus,
       engage,
+      cancelLaunch,
       disengage,
       pause,
       resume,
@@ -554,6 +567,7 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
       sessionListVersion,
       pttStatus,
       engage,
+      cancelLaunch,
       disengage,
       pause,
       resume,
@@ -575,6 +589,7 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
   const actionsValue = useMemo<VoiceSessionActionsContextValue>(
     () => ({
       engage,
+      cancelLaunch,
       disengage,
       pause,
       resume,
@@ -597,6 +612,7 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
     }),
     [
       engage,
+      cancelLaunch,
       disengage,
       pause,
       resume,

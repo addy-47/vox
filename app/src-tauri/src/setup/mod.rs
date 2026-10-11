@@ -22,6 +22,9 @@ pub mod model_manager;
 pub mod runtime_check;
 pub mod update_check;
 
+#[cfg(target_os = "android")]
+pub mod android_init;
+
 /// Remote GPU-box provisioning.
 ///
 /// This spawns `ssh` to run `setup_server.sh` on a remote host and streams

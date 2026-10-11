@@ -10,6 +10,8 @@ import {
   Network,
   BrainCircuit,
   AudioLines,
+  AlertCircle,
+  RotateCcw,
 } from 'lucide-react';
 import {
   fetchManifest,
@@ -35,13 +37,12 @@ interface MobileModelStepProps {
   }) => void;
 }
 
-const formatBytes = (bytes: number): string => {
-  if (bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
-};
+function formatBytes(bytes: number): string {
+  if (bytes <= 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(1024));
+  return `${(bytes / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
+}
 
 export const MobileModelStep: React.FC<MobileModelStepProps> = ({
   onNext,
@@ -52,39 +53,43 @@ export const MobileModelStep: React.FC<MobileModelStepProps> = ({
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set(['stt', 'llm']));
   const [isDownloading, setIsDownloading] = useState(false);
   const [isDone, setIsDone] = useState(false);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
   const [progress, setProgress] = useState<Record<string, ModelProgressPayload>>({});
 
   const copy = MOBILE_ONBOARDING_COPY.models;
 
+  // D5.4: Strictly sequence fetchManifest before getRuntimeReport to avoid manifest race
   useEffect(() => {
+    let isMounted = true;
+
     fetchManifest()
       .then((data) => {
+        if (!isMounted) return;
         setManifest(data);
-        // Include required models AND built-in system components (like Earshot VAD)
         const required = data.model_groups
           .filter((g) => g.is_built_in || g.files.some((f) => f.required))
           .map((g) => g.id);
         setSelectedIds(new Set(required.length > 0 ? required : data.model_groups.map((g) => g.id)));
-      })
-      .catch(console.error);
 
-    getRuntimeReport()
+        return getRuntimeReport();
+      })
       .then((rep) => {
+        if (!isMounted || !rep) return;
         if (rep.models_verified) {
           setIsDone(true);
         }
       })
-      .catch(console.error);
+      .catch((err) => {
+        console.error('[MobileModelStep] Initialization failed:', err);
+      });
 
+    // D5.1 & D5.2: Track progress payloads per model file. Do NOT set isDone on single completed event.
     const unlisten = onModelProgress((p) => {
       setProgress((prev) => ({ ...prev, [p.model_id]: p }));
-      const normalized = typeof p.step === 'string' ? p.step.toLowerCase() : '';
-      if (normalized === 'completed' || normalized === 'complete') {
-        setIsDone(true);
-      }
     });
 
     return () => {
+      isMounted = false;
       unlisten();
     };
   }, []);
@@ -101,20 +106,40 @@ export const MobileModelStep: React.FC<MobileModelStepProps> = ({
     });
   };
 
-  const toggleModel = useCallback((id: string, isRequired: boolean, isBuiltIn: boolean) => {
-    // Built-in system crates and mandatory models cannot be toggled
-    if (isRequired || isBuiltIn || isDownloading || isDone) return;
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
-      return next;
-    });
-  }, [isDownloading, isDone]);
+  const toggleModel = useCallback(
+    (id: string, isRequired: boolean, isBuiltIn: boolean) => {
+      if (isRequired || isBuiltIn || isDownloading || isDone) return;
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        if (next.has(id)) {
+          next.delete(id);
+        } else {
+          next.add(id);
+        }
+        return next;
+      });
+    },
+    [isDownloading, isDone]
+  );
 
+  // List of all non-built-in model files that must be downloaded
+  const selectedFiles = useMemo(() => {
+    if (!manifest || !manifest.model_groups) return [];
+    return manifest.model_groups
+      .filter((g) => !g.is_built_in && selectedIds.has(g.id))
+      .flatMap((g) => g.files);
+  }, [manifest, selectedIds]);
+
+  // List of failed model files
+  const failedFiles = useMemo(() => {
+    return selectedFiles.filter((f) => {
+      const p = progress[f.id];
+      const step = p?.step?.toLowerCase();
+      return step === 'failed' || step === 'cancelled';
+    });
+  }, [selectedFiles, progress]);
+
+  // D4: Per-category sizes must respect selectedIds.has(g.id)
   const categories = useMemo(() => {
     if (!manifest || !manifest.model_groups) return [];
 
@@ -130,10 +155,21 @@ export const MobileModelStep: React.FC<MobileModelStepProps> = ({
     return MODEL_CATEGORY_META.map((meta) => {
       const groups = manifest.model_groups.filter((g) => g.category === meta.id);
       const isRequired = groups.some((g) => g.is_built_in || g.files.some((f) => f.required));
-      const groupSize = groups.reduce(
+      const selectedCategoryGroups = groups.filter((g) => g.is_built_in || selectedIds.has(g.id));
+      const groupSize = selectedCategoryGroups.reduce(
         (sum, g) => sum + g.files.reduce((fSum, f) => fSum + f.size, 0),
         0
       );
+
+      // Check category-level completion status
+      const catFiles = selectedCategoryGroups.flatMap((g) => g.files);
+      const isCatDone =
+        catFiles.length > 0 &&
+        catFiles.every((f) => {
+          const step = progress[f.id]?.step?.toLowerCase();
+          return step === 'completed' || step === 'complete';
+        });
+
       return {
         id: meta.id,
         label: meta.label,
@@ -142,9 +178,10 @@ export const MobileModelStep: React.FC<MobileModelStepProps> = ({
         groups,
         size: groupSize,
         isRequired,
+        isDone: isCatDone,
       };
     }).filter((cat) => cat.groups.length > 0);
-  }, [manifest]);
+  }, [manifest, selectedIds, progress]);
 
   const totalSelectedBytes = useMemo(() => {
     if (!manifest || !manifest.model_groups) return 0;
@@ -153,28 +190,56 @@ export const MobileModelStep: React.FC<MobileModelStepProps> = ({
       .reduce((sum, g) => sum + g.files.reduce((fSum, f) => fSum + f.size, 0), 0);
   }, [manifest, selectedIds]);
 
+  // Truthful bytes downloaded calculation
+  const downloadedBytes = useMemo(() => {
+    return selectedFiles.reduce((sum, f) => {
+      const p = progress[f.id];
+      if (!p) return sum;
+      const step = p.step?.toLowerCase();
+      if (step === 'completed' || step === 'complete') {
+        return sum + f.size;
+      }
+      return sum + (p.bytes_downloaded || (f.size * (p.progress || 0)) / 100);
+    }, 0);
+  }, [selectedFiles, progress]);
+
   const overallPercent = useMemo(() => {
     if (isDone) return 100;
-    const entries = Object.values(progress);
-    if (entries.length === 0) return 0;
-    const sum = entries.reduce((acc, p) => acc + (p.progress || 0), 0);
-    return Math.min(100, Math.round(sum / entries.length));
-  }, [progress, isDone]);
+    const total = selectedFiles.reduce((sum, f) => sum + f.size, 0);
+    if (total === 0) return 0;
+    return Math.min(100, Math.round((downloadedBytes / total) * 100));
+  }, [isDone, selectedFiles, downloadedBytes]);
 
+  // D5.1: isDone is strictly achieved when ALL selected files complete
+  useEffect(() => {
+    if (!isDownloading || isDone || selectedFiles.length === 0) return;
+    const allCompleted = selectedFiles.every((f) => {
+      const step = progress[f.id]?.step?.toLowerCase();
+      return step === 'completed' || step === 'complete';
+    });
+    if (allCompleted) {
+      setIsDone(true);
+      setIsDownloading(false);
+    } else if (
+      selectedFiles.every((f) => {
+        const step = progress[f.id]?.step?.toLowerCase();
+        return step === 'completed' || step === 'complete' || step === 'failed' || step === 'cancelled';
+      })
+    ) {
+      setIsDownloading(false);
+    }
+  }, [isDownloading, isDone, selectedFiles, progress]);
+
+  // D5.3: Honest download triggering. Completely deleted fake interval simulation!
   const handleStartDownload = useCallback(async () => {
+    setDownloadError(null);
     setIsDownloading(true);
     try {
       await startModelSetup(Array.from(selectedIds));
-    } catch {
-      // Graceful offline fallback simulation
-      let step = 0;
-      const interval = setInterval(() => {
-        step += 20;
-        if (step >= 100) {
-          clearInterval(interval);
-          setIsDone(true);
-        }
-      }, 600);
+    } catch (err) {
+      console.error('[MobileModelStep] startModelSetup failed:', err);
+      setIsDownloading(false);
+      setDownloadError(err instanceof Error ? err.message : String(err));
     }
   }, [selectedIds]);
 
@@ -195,6 +260,13 @@ export const MobileModelStep: React.FC<MobileModelStepProps> = ({
         label: `${copy.downloadingButton} (${overallPercent}%)`,
         action: () => {},
       });
+    } else if (failedFiles.length > 0 || downloadError) {
+      onModelStatusChange({
+        isDone: false,
+        isDownloading: false,
+        label: 'Retry Download',
+        action: handleStartDownload,
+      });
     } else {
       onModelStatusChange({
         isDone: false,
@@ -203,7 +275,18 @@ export const MobileModelStep: React.FC<MobileModelStepProps> = ({
         action: handleStartDownload,
       });
     }
-  }, [isDone, isDownloading, overallPercent, totalSelectedBytes, copy, onNext, onModelStatusChange, handleStartDownload]);
+  }, [
+    isDone,
+    isDownloading,
+    overallPercent,
+    totalSelectedBytes,
+    failedFiles.length,
+    downloadError,
+    copy,
+    onNext,
+    onModelStatusChange,
+    handleStartDownload,
+  ]);
 
   return (
     <div className="flex flex-col h-full w-full overflow-hidden select-none bg-transparent">
@@ -226,6 +309,33 @@ export const MobileModelStep: React.FC<MobileModelStepProps> = ({
             <span className="text-[11px] text-[rgb(var(--foreground-muted))] leading-normal">
               {copy.wifiWarning}
             </span>
+          </div>
+        )}
+
+        {/* Surface download error or failed models */}
+        {(downloadError || failedFiles.length > 0) && (
+          <div className="p-3.5 rounded-2xl bg-red-500/10 border border-red-500/20 text-left space-y-2">
+            <div className="flex items-center gap-2 text-xs font-semibold text-red-400">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>
+                {failedFiles.length > 0
+                  ? `${failedFiles.length} model(s) didn't finish downloading`
+                  : 'Download connection failed'}
+              </span>
+            </div>
+            {downloadError && (
+              <p className="text-[11px] font-mono text-red-300/80 break-words">
+                {downloadError}
+              </p>
+            )}
+            <button
+              type="button"
+              onClick={handleStartDownload}
+              className="min-h-[48px] px-4 py-2 rounded-xl bg-red-500/20 text-red-200 text-xs font-medium flex items-center gap-2 touch-manipulation cursor-pointer active:bg-red-500/30 transition-colors"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Retry Download</span>
+            </button>
           </div>
         )}
 
@@ -268,7 +378,7 @@ export const MobileModelStep: React.FC<MobileModelStepProps> = ({
                 {/* Category Header Row */}
                 <div
                   onClick={() => toggleCategoryExpand(cat.id)}
-                  className="flex items-center justify-between p-3 cursor-pointer active:bg-[rgba(var(--foreground),0.03)] transition-colors select-none"
+                  className="flex items-center justify-between p-3 min-h-[48px] cursor-pointer active:bg-[rgba(var(--foreground),0.03)] transition-colors select-none"
                 >
                   <div className="flex items-center gap-3 min-w-0 flex-1">
                     <div className="w-8 h-8 rounded-xl bg-[rgb(var(--accent))]/10 flex items-center justify-center shrink-0">
@@ -322,18 +432,32 @@ export const MobileModelStep: React.FC<MobileModelStepProps> = ({
                         const isGroupSelected = isBuiltIn || selectedIds.has(group.id);
                         const isGroupRequired = isBuiltIn || group.files.some((f) => f.required);
                         const groupSize = group.files.reduce((sum, f) => sum + f.size, 0);
-                        const modelProg = progress[group.id];
-                        const stepLabel = modelProg?.step
-                          ? MODEL_PROGRESS_STEPS[modelProg.step.toLowerCase()] ?? modelProg.step
-                          : isDone
+
+                        // File progress lookup
+                        const firstFile = group.files[0];
+                        const modelProg = firstFile ? progress[firstFile.id] : undefined;
+                        const isGroupFailed = group.files.some((f) => {
+                          const s = progress[f.id]?.step?.toLowerCase();
+                          return s === 'failed' || s === 'cancelled';
+                        });
+                        const isGroupDone = group.files.length > 0 && group.files.every((f) => {
+                          const s = progress[f.id]?.step?.toLowerCase();
+                          return s === 'completed' || s === 'complete';
+                        });
+
+                        const stepLabel = isGroupFailed
+                          ? MODEL_PROGRESS_STEPS.failed
+                          : isGroupDone
                           ? MODEL_PROGRESS_STEPS.completed
+                          : modelProg?.step
+                          ? MODEL_PROGRESS_STEPS[modelProg.step.toLowerCase()] ?? modelProg.step
                           : undefined;
 
                         return (
                           <div
                             key={group.id}
                             onClick={() => toggleModel(group.id, isGroupRequired, isBuiltIn)}
-                            className={`p-2.5 rounded-xl transition-all ${
+                            className={`p-2.5 min-h-[48px] rounded-xl transition-all ${
                               isGroupSelected
                                 ? 'bg-[rgb(var(--accent))]/8 border border-[rgb(var(--accent))]/20'
                                 : 'bg-transparent border border-transparent opacity-60'
@@ -374,17 +498,21 @@ export const MobileModelStep: React.FC<MobileModelStepProps> = ({
                               </div>
                             </div>
 
-                            {/* Group download progress bar if active */}
-                            {isDownloading && !isDone && modelProg && !isBuiltIn && (
+                            {/* Group download progress bar or failure status if active */}
+                            {isDownloading && !isDone && !isBuiltIn && (
                               <div className="mt-2 pt-2 border-t border-[rgba(var(--foreground),0.04)] space-y-1">
                                 <div className="flex justify-between text-[10px] font-mono text-[rgb(var(--foreground-muted))]">
-                                  <span>{stepLabel ?? MODEL_PROGRESS_STEPS.downloading}</span>
-                                  <span>{modelProg.progress ?? 0}%</span>
+                                  <span className={isGroupFailed ? 'text-red-400 font-bold' : ''}>
+                                    {stepLabel ?? MODEL_PROGRESS_STEPS.downloading}
+                                  </span>
+                                  <span>{modelProg?.progress ?? (isGroupDone ? 100 : 0)}%</span>
                                 </div>
                                 <div className="h-1 w-full bg-[rgba(var(--foreground),0.08)] rounded-full overflow-hidden">
                                   <div
-                                    className="h-full bg-[rgb(var(--accent))] transition-all duration-300"
-                                    style={{ width: `${modelProg.progress ?? 0}%` }}
+                                    className={`h-full transition-all duration-300 ${
+                                      isGroupFailed ? 'bg-red-400' : 'bg-[rgb(var(--accent))]'
+                                    }`}
+                                    style={{ width: `${modelProg?.progress ?? (isGroupDone ? 100 : 0)}%` }}
                                   />
                                 </div>
                               </div>

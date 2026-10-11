@@ -193,67 +193,77 @@ const ANDROID_PERMISSION_GRANTED: i32 = 0;
 
 #[cfg(not(desktop))]
 fn android_record_audio_granted() -> bool {
-    let ctx = ndk_context::android_context();
-    // SAFETY: `android_context()` is initialized by ndk-glue during Tauri
-    // startup, before any command can run. Both handles are read-only here and
-    // every fallible JNI call below is handled rather than unwrapped.
-    let vm = match unsafe { jni::JavaVM::from_raw(ctx.vm().cast()) } {
-        Ok(vm) => vm,
-        Err(e) => {
-            log::warn!(
-                "[RuntimeCheck] JavaVM unavailable; reporting mic as denied: {}",
-                e
-            );
-            return false;
-        }
-    };
-    let mut env = match vm.attach_current_thread() {
-        Ok(env) => env,
-        Err(e) => {
-            log::warn!(
-                "[RuntimeCheck] JNI attach failed; reporting mic as denied: {}",
-                e
-            );
-            return false;
-        }
-    };
+    std::panic::catch_unwind(|| {
+        let ctx = ndk_context::android_context();
+        // SAFETY: `android_context()` is initialized by MainActivity.onCreate via
+        // `initAndroidContext` during application startup, before any command runs.
+        // Both handles are read-only here and every fallible JNI call below is
+        // handled rather than unwrapped.
+        let vm = match unsafe { jni::JavaVM::from_raw(ctx.vm().cast()) } {
+            Ok(vm) => vm,
+            Err(e) => {
+                log::warn!(
+                    "[RuntimeCheck] JavaVM unavailable; reporting mic as denied: {}",
+                    e
+                );
+                return false;
+            }
+        };
+        let mut env = match vm.attach_current_thread() {
+            Ok(env) => env,
+            Err(e) => {
+                log::warn!(
+                    "[RuntimeCheck] JNI attach failed; reporting mic as denied: {}",
+                    e
+                );
+                return false;
+            }
+        };
 
-    // `Context.checkSelfPermission(String)` is an instance method on the
-    // application context, added in API 23. minSdk is 24, so it always exists.
-    // jni 0.21 has no `&str -> JValue` conversion, so the `JString` is bound to a
-    // local: dropping it earlier would free the local ref out from under the call.
-    let permission = env.new_string("android.permission.RECORD_AUDIO");
-    let granted = match permission {
-        Ok(permission) => {
-            // SAFETY: `ctx.context()` is the live application `Context` that
-            // ndk-glue initialized at startup; it outlives this call.
-            let context: jni::objects::JObject =
-                unsafe { jni::objects::JObject::from_raw(ctx.context() as jni::sys::jobject) };
-            env.call_method(
-                &context,
-                "checkSelfPermission",
-                "(Ljava/lang/String;)I",
-                &[(&permission).into()],
-            )
-            .and_then(|v| v.i())
-            .map(|code| code == ANDROID_PERMISSION_GRANTED)
-        }
-        Err(e) => {
-            log::warn!("[RuntimeCheck] Could not build permission string: {}", e);
-            return false;
-        }
-    };
+        // `Context.checkSelfPermission(String)` is an instance method on the
+        // application context, added in API 23. minSdk is 24, so it always exists.
+        // jni 0.21 has no `&str -> JValue` conversion, so the `JString` is bound to a
+        // local: dropping it earlier would free the local ref out from under the call.
+        let permission = env.new_string("android.permission.RECORD_AUDIO");
+        let granted = match permission {
+            Ok(permission) => {
+                // SAFETY: `ctx.context()` is the live application `Context` that
+                // MainActivity retained at startup; it outlives this call.
+                let context: jni::objects::JObject =
+                    unsafe { jni::objects::JObject::from_raw(ctx.context() as jni::sys::jobject) };
+                env.call_method(
+                    &context,
+                    "checkSelfPermission",
+                    "(Ljava/lang/String;)I",
+                    &[(&permission).into()],
+                )
+                .and_then(|v| v.i())
+                .map(|code| code == ANDROID_PERMISSION_GRANTED)
+            }
+            Err(e) => {
+                log::warn!("[RuntimeCheck] Could not build permission string: {}", e);
+                return false;
+            }
+        };
 
-    match granted {
-        Ok(yes) => yes,
-        Err(e) => {
-            log::warn!(
-                "[RuntimeCheck] checkSelfPermission failed; reporting mic as denied: {}",
-                e
-            );
-            false
+        match granted {
+            Ok(yes) => yes,
+            Err(e) => {
+                log::warn!(
+                    "[RuntimeCheck] checkSelfPermission failed; reporting mic as denied: {}",
+                    e
+                );
+                false
+            }
         }
-    }
+    })
+    .unwrap_or_else(|e| {
+        log::warn!(
+            "[RuntimeCheck] Caught panic in android_record_audio_granted; reporting mic as denied: {:?}",
+            e
+        );
+        false
+    })
 }
 
 /// Checks if all models in the manifest exist and are verified.

@@ -221,6 +221,11 @@ pub fn permission_status<R: tauri::Runtime>(app: &AppHandle<R>) -> PermissionSta
 pub fn request_permission<R: tauri::Runtime>(app: &AppHandle<R>) -> PermissionStatus {
     use tauri_plugin_notification::{NotificationExt, PermissionState};
 
+    let current = permission_status(app);
+    if current == PermissionStatus::Granted {
+        return PermissionStatus::Granted;
+    }
+
     match app.notification().request_permission() {
         Ok(PermissionState::Granted) => PermissionStatus::Granted,
         Ok(PermissionState::Denied) => PermissionStatus::Denied,
