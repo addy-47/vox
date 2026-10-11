@@ -179,10 +179,10 @@ To inspect the main application shell without downloading multi-gigabyte models:
 - **Trap**: Tauri spawns async commands and returns via `return_result`. A panic unwinds past it, dropping the `OwnedInvokeResponder` **without replying**. The JS `invoke()` promise then **never settles** — no rejection, no error, no timeout. Release uses `panic = "unwind"`, so the process survives and the UI spins forever.
 - **Rule**: The frontend must bound its own IPC calls (timeout + cancel affordance). Never assume the backend will fail politely. See Phase 13.2 D1.3.
 
-### Pitfall 20: A Release APK Can Never Hot-Reload
-- **Trap**: Release embeds `frontendDist` into the APK and **never contacts `devUrl`**. No Vite or `adb reverse` tuning will make HMR work; the reverse tunnel is simply never consulted.
-- **Rule**: HMR requires the DEBUG build, which is compiled against `devUrl` and sets `manifestPlaceholders["usesCleartextTraffic"] = "true"`. Use `scripts/android-dev.sh debug` then `android-dev.sh dev`.
-- **Trap within the trap**: `vite.config.ts` keys the HMR websocket off `TAURI_DEV_HOST`, which nothing set — so HMR advertised `127.0.0.1`, the *phone's* loopback. Reverse **both** 1420 (app) and 1421 (HMR websocket); reversing only 1420 leaves edits invisible until a manual reload.
+### Pitfall 20: `tauri android build` (Even `--debug`) NEVER Hot-Reloads — ONLY `tauri android dev` Connects to `devUrl`
+- **Trap**: **Running `tauri android build --debug --apk` builds a frozen APK with `#[cfg(not(dev))]` and packages `frontendDist`. It NEVER contacts `devUrl` and NEVER hot-reloads.**
+- **Rule**: **You MUST run `pnpm tauri android dev` (or `./scripts/android-dev.sh dev`). This is the ONLY command that compiles with `--cfg dev`, points the Android WebView to `devUrl`, and connects to Vite HMR.**
+- **Host & Port Rule**: **`vite.config.ts` must use `host: "0.0.0.0"` on port `1420`. Do NOT configure dual ports (1421), LAN IP lookups, or `TAURI_DEV_HOST` branching. With `adb reverse tcp:1420 tcp:1420`, port 1420 handles both HTTP and WebSocket HMR simultaneously over USB.**
 
 ### Pitfall 21: DEBUG and RELEASE Root at Different Paths
 - **Trap**: DEBUG roots at `/data/user/0/<pkg>`; RELEASE roots at `/data/user/0/<pkg>/files`. A relative `adb shell run-as <pkg> ls models` inspects a different tree than expected and produces plausible, wrong output.

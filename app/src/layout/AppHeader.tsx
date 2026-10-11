@@ -10,8 +10,7 @@ import { usePanelStateContext } from "@/shared/hooks/usePanelState";
 import { useNotificationStore, selectBadgeCount } from "@/store/notificationStore";
 import { useSessionStore } from "@/store/sessionStore";
 import { setSessionPrivateMode } from "@/services/pipelineService";
-import { isRealMobileDevice } from "@/shared/hooks/useMobileViewport";
-import { isCompactWidth } from "@/layout/breakpoints";
+import { useViewportResize } from "@/shared/hooks/useViewportResize";
 import { NOTIFICATION_COPY } from "@/data/notificationCopy";
 import { HOME_CONTROLS_COPY } from "@/data/homeCopy";
 import { SESSION_COPY } from "@/data/sessionCopy";
@@ -32,8 +31,7 @@ export const AppHeader: React.FC = memo(() => {
     return null;
   }
 
-  const isMobile = isRealMobileDevice() || (typeof window !== "undefined" && window.innerWidth < 768);
-  const isCompact = isCompactWidth() && !isMobile;
+  const { isMobile, isCompact, isNarrow } = useViewportResize();
 
   const { togglePanel, isPanelOpen, closePanel, openPanel, rightPanel } = usePanelStateContext();
   const unreadCount = useNotificationStore(selectBadgeCount);
@@ -46,9 +44,9 @@ export const AppHeader: React.FC = memo(() => {
   const isNotifsOpen = isPanelOpen("notifications");
   const isHelpOpen = isPanelOpen("help");
 
-  // Suppress left cluster if right panel is taking over the screen on narrow widths
-  const hideLeftCluster = Boolean(rightPanel) && (typeof window !== "undefined" && window.innerWidth < 480);
-  const hideRightCluster = Boolean(rightPanel) && (typeof window !== "undefined" && window.innerWidth < 480);
+  // Suppress clusters on narrow widths (< 480px) when opposing panel is active
+  const hideLeftCluster = Boolean(rightPanel) && isNarrow;
+  const hideRightCluster = Boolean(sessionsOpen) && isNarrow;
 
   const toggleTemporarySession = useCallback(async () => {
     if (!isIdle) return;

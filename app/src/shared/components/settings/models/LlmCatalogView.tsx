@@ -334,8 +334,8 @@ const RemoteModelCard = memo(({
       </div>
 
       {/* Card Actions Footer: minimal, tactile Benchmark action on right */}
-      <div className="flex items-center justify-between gap-2 mt-3 pt-2.5 border-t border-[rgba(var(--foreground),0.06)]" onClick={(e) => e.stopPropagation()}>
-        <span className="text-[10.5px] font-mono text-[rgb(var(--foreground-muted))]/60 truncate">
+      <div className="flex items-center justify-between gap-2 mt-3 pt-2.5 border-t border-[rgba(var(--foreground),0.06)] min-w-0" onClick={(e) => e.stopPropagation()}>
+        <span className="text-[10.5px] font-mono text-[rgb(var(--foreground-muted))]/60 truncate shrink min-w-0" title={probed ? `${provenanceLabel(probed.provenance)} · ${ageDays === 0 ? LLM_CATALOG_COPY.measuredToday : `${ageDays}d ${LLM_CATALOG_COPY.measuredAgo}`}${probed.ttft_ms != null ? ` · TTFT ${probed.ttft_ms.toFixed(0)}ms` : ""}` : undefined}>
           {probed ? (
             `${provenanceLabel(probed.provenance)} · ${ageDays === 0 ? LLM_CATALOG_COPY.measuredToday : `${ageDays}d ${LLM_CATALOG_COPY.measuredAgo}`}${probed.ttft_ms != null ? ` · TTFT ${probed.ttft_ms.toFixed(0)}ms` : ""}${ageDays > 7 ? ` · ${LLM_CATALOG_COPY.staleResult}` : ""}`
           ) : (
@@ -508,7 +508,7 @@ export const RemoteModelsModalView = memo(({
               type="text"
               value={modalSearch}
               onChange={(e) => setModalSearch(e.target.value)}
-              placeholder="Search models by name, org, family, quantization..."
+              placeholder="Search models..."
               className="w-full bg-transparent border-none outline-none text-[13px] text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40"
             />
             {modalSearch && (
@@ -529,7 +529,7 @@ export const RemoteModelsModalView = memo(({
         </div>
 
         {/* Filter Chips Bar */}
-        <div className="flex items-center gap-1.5 flex-wrap">
+        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 shrink-0">
           {(
             [
               { id: "all", label: `All (${remoteModels.length})` },
@@ -543,7 +543,7 @@ export const RemoteModelsModalView = memo(({
               type="button"
               onClick={() => setFilterCategory(chip.id)}
               className={cn(
-                "px-2.5 py-1 rounded-md text-[11px] font-mono font-medium transition-all cursor-pointer border",
+                "px-2.5 py-1 rounded-md text-[11px] font-mono font-medium transition-all cursor-pointer border whitespace-nowrap shrink-0",
                 filterCategory === chip.id
                   ? "bg-[rgb(var(--accent))]/15 border-[rgb(var(--accent))]/60 text-[rgb(var(--accent))] shadow-sm"
                   : "bg-[rgba(var(--foreground),0.02)] border-[rgba(var(--foreground),0.06)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:border-[rgba(var(--accent),0.2)]"
@@ -556,10 +556,10 @@ export const RemoteModelsModalView = memo(({
       </div>
 
       {/* Contained Cards Scroll Area with Constant Inset Padding */}
-      <div className="flex-1 min-h-0 rounded-2xl border border-[rgba(var(--foreground),0.07)] bg-[rgba(var(--foreground),0.015)] overflow-hidden flex flex-col relative">
+      <div className="flex-1 min-h-0 overflow-hidden flex flex-col relative">
         <div
           ref={scrollContainerRef}
-          className="flex-1 min-h-0 overflow-y-auto overscroll-contain custom-scrollbar p-3.5 sm:p-4"
+          className="flex-1 min-h-0 overflow-y-auto overscroll-contain custom-scrollbar p-1 sm:p-2"
         >
           {modalFilteredModels.length === 0 ? (
             <div className="h-64 flex flex-col items-center justify-center text-center space-y-2">
@@ -579,7 +579,7 @@ export const RemoteModelsModalView = memo(({
               </button>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+            <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3">
               {visibleModalModels.map((model) => {
                 const isSelected = selectedModelId === model.id;
                 const probed =
@@ -990,6 +990,7 @@ export const LlmCatalogView = memo(({
                     <Tooltip
                       side="top"
                       align="start"
+                      mobileTapEnabled
                       className="p-3 w-[210px] whitespace-normal text-left z-50 border border-[rgba(var(--foreground),0.14)] bg-[rgb(var(--card))]/98 shadow-2xl backdrop-blur-2xl"
                       label={
                         <div className="space-y-1.5 text-[11px] font-sans w-full">
@@ -1285,6 +1286,7 @@ export const LlmCatalogView = memo(({
         {/* Remote Models 2-Column Grid — inline at card height, full-bleed in the expand modal */}
         <ExpandableList
           className="flex-1 min-h-0"
+          domainId="models"
           triggerPlacement="floating"
           inlineMaxHeightClass={layoutMode === "small" ? "max-h-[235px]" : undefined}
           onBack={showProvidersView ? () => setCatalogModalView(activeModalView === "models" ? "providers" : "models") : undefined}

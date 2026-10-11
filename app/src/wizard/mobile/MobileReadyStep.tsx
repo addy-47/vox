@@ -36,7 +36,7 @@ export const MobileReadyStep: React.FC<MobileReadyStepProps> = () => {
 
         {/* System Capabilities Cards */}
         <div className="space-y-2.5 text-left">
-          <div className="p-3.5 rounded-2xl bg-white/[0.03] border border-white/[0.06] flex items-center justify-between gap-3">
+          <div className="p-3.5 rounded-2xl glass-card border border-[rgba(var(--foreground),0.08)] flex items-center justify-between gap-3">
             <div className="flex items-center gap-3 min-w-0">
               <div className="w-9 h-9 rounded-xl bg-[rgb(var(--accent))]/12 flex items-center justify-center shrink-0 text-[rgb(var(--accent))]">
                 <AudioWaveform className="w-4 h-4" />
@@ -56,7 +56,7 @@ export const MobileReadyStep: React.FC<MobileReadyStepProps> = () => {
             </span>
           </div>
 
-          <div className="p-3.5 rounded-2xl bg-white/[0.03] border border-white/[0.06] flex items-center justify-between gap-3">
+          <div className="p-3.5 rounded-2xl glass-card border border-[rgba(var(--foreground),0.08)] flex items-center justify-between gap-3">
             <div className="flex items-center gap-3 min-w-0">
               <div className="w-9 h-9 rounded-xl bg-emerald-500/12 flex items-center justify-center shrink-0 text-emerald-400">
                 <ShieldCheck className="w-4 h-4" />
@@ -76,9 +76,9 @@ export const MobileReadyStep: React.FC<MobileReadyStepProps> = () => {
             </span>
           </div>
 
-          <div className="p-3.5 rounded-2xl bg-white/[0.03] border border-white/[0.06] flex items-center justify-between gap-3">
+          <div className="p-3.5 rounded-2xl glass-card border border-[rgba(var(--foreground),0.08)] flex items-center justify-between gap-3">
             <div className="flex items-center gap-3 min-w-0">
-              <div className="w-9 h-9 rounded-xl bg-indigo-500/12 flex items-center justify-center shrink-0 text-indigo-400">
+              <div className="w-9 h-9 rounded-xl bg-[rgb(var(--accent))]/12 flex items-center justify-center shrink-0 text-[rgb(var(--accent))]">
                 <Sparkles className="w-4 h-4" />
               </div>
               <div className="flex flex-col min-w-0">
@@ -90,7 +90,7 @@ export const MobileReadyStep: React.FC<MobileReadyStepProps> = () => {
                 </span>
               </div>
             </div>
-            <span className="shrink-0 text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded bg-indigo-500/15 text-indigo-400 flex items-center gap-1">
+            <span className="shrink-0 text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded bg-[rgb(var(--accent))]/15 text-[rgb(var(--accent))] flex items-center gap-1">
               <CheckCircle2 className="w-3 h-3 stroke-[2.5]" />
               <span>Ready</span>
             </span>
@@ -98,7 +98,7 @@ export const MobileReadyStep: React.FC<MobileReadyStepProps> = () => {
         </div>
 
         {/* Quick Tips Section */}
-        <div className="p-3.5 rounded-2xl bg-white/[0.02] border border-white/[0.04] space-y-2 text-left">
+        <div className="p-3.5 rounded-2xl glass-card border border-[rgba(var(--foreground),0.08)] space-y-2 text-left">
           <div className="text-[10px] font-mono uppercase tracking-wider text-[rgb(var(--foreground-muted))]">
             Quick Usage Tips
           </div>
@@ -109,7 +109,7 @@ export const MobileReadyStep: React.FC<MobileReadyStepProps> = () => {
             </div>
             <div className="flex items-start gap-2">
               <MessageSquare className="w-3.5 h-3.5 text-[rgb(var(--accent))] shrink-0 mt-0.5" />
-              <span>Speak naturally in English or Hindi with real-time feedback.</span>
+              <span>Speak naturally with ambient hands-free intelligence.</span>
             </div>
           </div>
         </div>

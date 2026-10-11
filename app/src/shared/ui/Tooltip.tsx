@@ -9,6 +9,7 @@ import {
   FloatingArrow,
   FloatingPortal,
   useHover,
+  useClick,
   useFocus,
   useDismiss,
   useRole,
@@ -32,6 +33,8 @@ export interface TooltipProps {
   children: React.ReactNode;
   disabled?: boolean;
   asChild?: boolean;
+  /** Whether tapping the target on mobile/touch should toggle the tooltip. Default: false. Only enable for dedicated info triggers (e.g. LLM capabilities, badges). */
+  mobileTapEnabled?: boolean;
 }
 
 export const Tooltip: React.FC<TooltipProps> = React.memo(({
@@ -46,6 +49,7 @@ export const Tooltip: React.FC<TooltipProps> = React.memo(({
   children,
   disabled = false,
   asChild = false,
+  mobileTapEnabled = false,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const arrowRef = useRef<SVGSVGElement>(null);
@@ -80,16 +84,28 @@ export const Tooltip: React.FC<TooltipProps> = React.memo(({
     ],
   });
 
+  const isTouchOrMobile = useMemo(() => {
+    if (typeof window === "undefined") return false;
+    return isRealMobileDevice() || (typeof window.matchMedia === "function" && window.matchMedia("(pointer: coarse)").matches);
+  }, []);
+
   const hover = useHover(context, {
     move: false,
     delay: { open: 200, close: 100 },
+    enabled: !isTouchOrMobile,
   });
-  const focus = useFocus(context);
+  const click = useClick(context, {
+    enabled: isTouchOrMobile && mobileTapEnabled,
+  });
+  const focus = useFocus(context, {
+    enabled: !isTouchOrMobile,
+  });
   const dismiss = useDismiss(context);
   const role = useRole(context, { role: "tooltip" });
 
   const { getReferenceProps, getFloatingProps } = useInteractions([
     hover,
+    click,
     focus,
     dismiss,
     role,
@@ -104,12 +120,7 @@ export const Tooltip: React.FC<TooltipProps> = React.memo(({
     return undefined;
   }, [shortcut, shortcutId]);
 
-  const isTouchOrMobile = useMemo(() => {
-    if (typeof window === "undefined") return false;
-    return isRealMobileDevice() || (typeof window.matchMedia === "function" && window.matchMedia("(pointer: coarse)").matches);
-  }, []);
-
-  if (disabled || !label || isTouchOrMobile) {
+  if (disabled || !label) {
     return <>{children}</>;
   }
 

@@ -290,7 +290,7 @@ export const CloudProvidersModalView = memo(({
               type="text"
               value={modalSearch}
               onChange={(e) => setModalSearch(e.target.value)}
-              placeholder="Search cloud providers, model ecosystems, endpoints..."
+              placeholder="Search providers..."
               className="w-full bg-transparent border-none outline-none text-[13px] text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40"
             />
             {modalSearch && (
@@ -311,7 +311,7 @@ export const CloudProvidersModalView = memo(({
         </div>
 
         {/* Filter Chips Bar */}
-        <div className="flex items-center gap-1.5 flex-wrap">
+        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 shrink-0">
           {(
             [
               { id: "all", label: `All (${CLOUD_PROVIDERS.length})` },
@@ -325,7 +325,7 @@ export const CloudProvidersModalView = memo(({
               type="button"
               onClick={() => setFilterCategory(chip.id)}
               className={cn(
-                "px-2.5 py-1 rounded-md text-[11px] font-mono font-medium transition-all cursor-pointer border",
+                "px-2.5 py-1 rounded-md text-[11px] font-mono font-medium transition-all cursor-pointer border whitespace-nowrap shrink-0",
                 filterCategory === chip.id
                   ? "bg-[rgb(var(--accent))]/15 border-[rgb(var(--accent))]/60 text-[rgb(var(--accent))] shadow-sm"
                   : "bg-[rgba(var(--foreground),0.02)] border-[rgba(var(--foreground),0.06)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:border-[rgba(var(--accent),0.2)]"
@@ -338,10 +338,10 @@ export const CloudProvidersModalView = memo(({
       </div>
 
       {/* Contained Cards Scroll Area with Constant Inset Padding */}
-      <div className="flex-1 min-h-0 rounded-2xl border border-[rgba(var(--foreground),0.07)] bg-[rgba(var(--foreground),0.015)] overflow-hidden flex flex-col relative">
+      <div className="flex-1 min-h-0 overflow-hidden flex flex-col relative">
         <div
           ref={scrollContainerRef}
-          className="flex-1 min-h-0 overflow-y-auto overscroll-contain custom-scrollbar p-3.5 sm:p-4"
+          className="flex-1 min-h-0 overflow-y-auto overscroll-contain custom-scrollbar p-1 sm:p-2"
         >
           {modalFilteredProviders.length === 0 ? (
             <div className="h-64 flex flex-col items-center justify-center text-center space-y-2">
@@ -361,7 +361,7 @@ export const CloudProvidersModalView = memo(({
               </button>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+            <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3">
               {modalFilteredProviders.map((provider) => {
                 const isSelected = activeCloudProviderId === provider.id;
                 const savedKey = getProviderKey(provider.id);

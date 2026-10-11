@@ -10,7 +10,7 @@ use std::{
 };
 
 use anyhow::Result;
-use chrono::{SecondsFormat, Utc};
+use chrono::Utc;
 use futures_util::{SinkExt, StreamExt};
 use rustls::crypto::ring::default_provider;
 use sha2::{Digest, Sha256};
@@ -187,7 +187,7 @@ async fn connect_edge_websocket(event_tx: &Sender<VoxEvent>, turn_id: u32) -> Op
                         turn_id,
                         message: format!("Edge TTS WebSocket connect error (attempt 3/3): {:?}", e),
                         source: "EdgeTts".to_string(),
-                        impact: PipelineImpact::Degraded,
+                        impact: PipelineImpact::TurnAborted,
                     })) {
                         log::warn!("[EdgeTTS] Failed to emit error event: {}", send_err);
                     }
@@ -200,6 +200,13 @@ async fn connect_edge_websocket(event_tx: &Sender<VoxEvent>, turn_id: u32) -> Op
     None
 }
 
+/// Returns the JavaScript-formatted Date string required by Microsoft Speech Platform.
+pub fn javascript_date_string() -> String {
+    Utc::now()
+        .format("%a %b %d %Y %H:%M:%S GMT+0000 (Coordinated Universal Time)")
+        .to_string()
+}
+
 /// Transmits the initial speech.config and SSML request frames over the WebSocket.
 async fn send_ssml_request(
     ws_stream: &mut EdgeWsStream,
@@ -209,16 +216,18 @@ async fn send_ssml_request(
     event_tx: &Sender<VoxEvent>,
     turn_id: u32,
 ) -> Result<()> {
-    let now = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
+    let js_date = javascript_date_string();
 
-    let speech_config = "Content-Type:application/json; charset=utf-8\r\nPath:speech.config\r\n\r\n{\"context\":{\"synthesis\":{\"audio\":{\"metadataoptions\":{\"sentenceBoundaryEnabled\":\"false\",\"wordBoundaryEnabled\":\"false\"},\"outputFormat\":\"raw-24khz-16bit-mono-pcm\"}}}}";
+    let speech_config = format!(
+        "X-Timestamp:{js_date}\r\nContent-Type:application/json; charset=utf-8\r\nPath:speech.config\r\n\r\n{{\"context\":{{\"synthesis\":{{\"audio\":{{\"metadataoptions\":{{\"sentenceBoundaryEnabled\":\"false\",\"wordBoundaryEnabled\":\"false\"}},\"outputFormat\":\"audio-24khz-48kbitrate-mono-mp3\"}}}}}}}}\r\n"
+    );
 
     if let Err(e) = ws_stream.send(Message::Text(speech_config.into())).await {
         if let Err(send_err) = event_tx.send(VoxEvent::Error(PipelineError {
             turn_id,
             message: format!("Edge TTS config send error: {}", e),
             source: "EdgeTts".to_string(),
-            impact: PipelineImpact::Degraded,
+            impact: PipelineImpact::TurnAborted,
         })) {
             log::warn!("[EdgeTTS] Failed to send error event: {}", send_err);
         }
@@ -235,8 +244,7 @@ async fn send_ssml_request(
         full_voice, speed_pct, escaped_text
     );
     let ssml_msg = format!(
-        "X-RequestId:{}\r\nContent-Type:application/ssml+xml\r\nX-Timestamp:{}Z\r\nPath:ssml\r\n\r\n{}",
-        req_id, now, ssml_body
+        "X-RequestId:{req_id}\r\nContent-Type:application/ssml+xml\r\nX-Timestamp:{js_date}Z\r\nPath:ssml\r\n\r\n{ssml_body}"
     );
 
     if let Err(e) = ws_stream.send(Message::Text(ssml_msg.into())).await {
@@ -244,7 +252,7 @@ async fn send_ssml_request(
             turn_id,
             message: format!("Edge TTS SSML send error: {}", e),
             source: "EdgeTts".to_string(),
-            impact: PipelineImpact::Degraded,
+            impact: PipelineImpact::TurnAborted,
         })) {
             log::warn!("[EdgeTTS] Failed to send error event: {}", send_err);
         }
@@ -254,15 +262,14 @@ async fn send_ssml_request(
     Ok(())
 }
 
-/// Receives Microsoft binary raw-24khz-16bit-mono-pcm frames, streaming directly into PlaybackEngine.
-async fn stream_pcm_payload(
+/// Receives Microsoft binary MP3 frames, decoding them into 24kHz mono PCM via Symphonia.
+async fn stream_mp3_payload(
     ws_stream: &mut EdgeWsStream,
     cancel: &Arc<AtomicBool>,
     playback: &Arc<PlaybackEngine>,
     intent: AudioIntent,
-) -> usize {
-    let mut total_samples = 0;
-    let mut remainder_byte: Option<u8> = None;
+) -> Result<usize> {
+    let mut mp3_bytes = Vec::new();
 
     let res = timeout(Duration::from_secs(30), async {
         while let Some(msg_res) = ws_stream.next().await {
@@ -274,59 +281,66 @@ async fn stream_pcm_payload(
                     if bin.len() >= 2 {
                         let header_len = u16::from_be_bytes([bin[0], bin[1]]) as usize;
                         if bin.len() >= 2 + header_len {
+                            let header_str = String::from_utf8_lossy(&bin[2..2 + header_len]);
                             let payload = &bin[2 + header_len..];
-                            if payload.is_empty() {
-                                continue;
-                            }
-
-                            let mut samples = Vec::with_capacity(payload.len() / 2 + 1);
-                            let mut offset = 0;
-                            if let Some(prev) = remainder_byte.take() {
-                                let s = i16::from_le_bytes([prev, payload[0]]);
-                                samples.push(s as f32 / 32768.0);
-                                offset = 1;
-                            }
-                            while offset + 1 < payload.len() {
-                                let s = i16::from_le_bytes([payload[offset], payload[offset + 1]]);
-                                samples.push(s as f32 / 32768.0);
-                                offset += 2;
-                            }
-                            if offset < payload.len() {
-                                remainder_byte = Some(payload[offset]);
-                            }
-
-                            if !samples.is_empty() && !cancel.load(Ordering::Relaxed) {
-                                total_samples += samples.len();
-                                for chunk in samples.chunks(TTS_CHUNK_SIZE) {
-                                    if cancel.load(Ordering::Relaxed) {
-                                        break;
-                                    }
-                                    playback.ingest_chunk_with_intent(chunk, intent);
-                                }
+                            // Only append if frame path is audio (skip audio.metadata or other binary payloads)
+                            if (header_str.contains("Path:audio") || header_str.contains("audio/mpeg")) && !payload.is_empty() {
+                                mp3_bytes.extend_from_slice(payload);
                             }
                         }
                     }
                 }
                 Ok(Message::Text(txt)) => {
+                    log::debug!("[EdgeTTS] WebSocket text message: {}", txt);
                     if txt.contains("Path:turn.end") {
                         break;
                     }
                 }
+                Ok(Message::Close(frame)) => {
+                    log::warn!("[EdgeTTS] WebSocket closed by server: {:?}", frame);
+                    return Err(anyhow::anyhow!("Edge TTS WebSocket closed by server: {:?}", frame));
+                }
                 Err(e) => {
                     log::warn!("[EdgeTTS] WebSocket receive error: {:?}", e);
-                    break;
+                    return Err(anyhow::anyhow!("WebSocket receive error: {:?}", e));
                 }
                 _ => {}
             }
         }
+        Ok(())
     })
     .await;
 
     if res.is_err() {
-        log::warn!("[EdgeTTS] Timed out waiting for audio frames from Edge TTS server");
+        anyhow::bail!("[EdgeTTS] Timed out waiting for audio frames from Edge TTS server");
+    }
+    res.unwrap()?;
+
+    if cancel.load(Ordering::Relaxed) {
+        return Ok(0);
     }
 
-    total_samples
+    if mp3_bytes.is_empty() {
+        anyhow::bail!("[EdgeTTS] Received 0 audio bytes before turn.end");
+    }
+
+    // Decode accumulated MP3 bytes to 24 kHz mono f32 PCM via Symphonia
+    let decoded = crate::services::audio::decode::decode_bytes_to_24khz_mono(&mp3_bytes, "mp3")
+        .map_err(|e| anyhow::anyhow!("Failed to decode Edge TTS MP3: {}", e))?;
+
+    let total_samples = decoded.samples.len();
+    if total_samples == 0 {
+        anyhow::bail!("[EdgeTTS] Decoded MP3 contained 0 samples");
+    }
+
+    for chunk in decoded.samples.chunks(TTS_CHUNK_SIZE) {
+        if cancel.load(Ordering::Relaxed) {
+            break;
+        }
+        playback.ingest_chunk_with_intent(chunk, intent);
+    }
+
+    Ok(total_samples)
 }
 
 impl TtsProvider for EdgeTtsProvider {
@@ -378,10 +392,10 @@ impl TtsProvider for EdgeTtsProvider {
         EDGE_TTS_RUNTIME.block_on(async move {
             let mut ws_stream = match connect_edge_websocket(&event_tx, turn_id).await {
                 Some(ws) => ws,
-                None => return,
+                None => anyhow::bail!("Edge TTS failed to connect to WebSocket endpoint"),
             };
 
-            if send_ssml_request(
+            send_ssml_request(
                 &mut ws_stream,
                 text_clean,
                 &full_voice,
@@ -389,14 +403,10 @@ impl TtsProvider for EdgeTtsProvider {
                 &event_tx,
                 turn_id,
             )
-            .await
-            .is_err()
-            {
-                return;
-            }
+            .await?;
 
             let total_samples =
-                stream_pcm_payload(&mut ws_stream, &cancel, &playback, intent).await;
+                stream_mp3_payload(&mut ws_stream, &cancel, &playback, intent).await?;
 
             if total_samples > 0 && !cancel.load(Ordering::Relaxed) {
                 let total_dur = total_samples as f32 / TTS_SAMPLE_RATE as f32;
@@ -418,9 +428,9 @@ impl TtsProvider for EdgeTtsProvider {
                     rtf_handle.store(rtf.to_bits(), Ordering::Relaxed);
                 }
             }
-        });
 
-        Ok(())
+            Ok(())
+        })
     }
 
     /// Hot-updates the speech playback speed factor.
@@ -438,5 +448,48 @@ impl TtsProvider for EdgeTtsProvider {
             }
         }
         false
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ringbuf::traits::Split;
+
+    #[test]
+    fn test_edge_tts_live_synthesis() {
+        let (event_tx, _event_rx) = std::sync::mpsc::channel();
+        let cancel = Arc::new(AtomicBool::new(false));
+        let rb = ringbuf::HeapRb::<f32>::new(48000 * 5);
+        let (producer, _consumer) = rb.split();
+        let playback_handles = crate::services::audio::playback::PlaybackEngineHandles {
+            cancel_flag: Arc::clone(&cancel),
+            state_atomic: Arc::new(AtomicU32::new(0)),
+            current_turn_id: Arc::new(AtomicU32::new(1)),
+            pending_synthesis_jobs: Arc::new(AtomicU32::new(1)),
+            playback_intent: Arc::new(std::sync::atomic::AtomicU8::new(0)),
+            event_tx: event_tx.clone(),
+            is_playback_muted: Arc::new(AtomicBool::new(false)),
+            turn_metrics: None,
+        };
+        let playback = Arc::new(PlaybackEngine::from_parts(
+            producer,
+            playback_handles,
+            Arc::new(AtomicBool::new(false)),
+            Arc::new(AtomicBool::new(false)),
+            None,
+        ));
+        let ctx = SynthesisContext {
+            turn_id: 1,
+            intent: AudioIntent::TurnResponse,
+            cancel,
+            playback: &playback,
+            event_tx,
+            telemetry_rtf: None,
+        };
+        let provider = EdgeTtsProvider::new(None);
+        let res = provider.synthesize_chunk("Hey there. What's on your mind?", &ctx);
+        assert!(res.is_ok(), "Edge TTS synthesis failed: {:?}", res.err());
+        assert!(playback.occupied_len() > 0, "Expected buffered audio samples in playback engine");
     }
 }

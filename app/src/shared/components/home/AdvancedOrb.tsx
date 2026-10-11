@@ -51,8 +51,8 @@ const BASE_AMP: Record<string, number> = {
   Idle:      0.02,
   Ready:     0.08,
   Listening: 0.16,
-  Thinking:  0.26,
-  Working:   0.26,
+  Thinking:  0.20,
+  Working:   0.20,
   Speaking:  0.28,
   Paused:    0.02,
   Sleeping:  0.02,
@@ -75,18 +75,36 @@ function getCSSColor(varName: string, fallbackHex: string): THREE.Color {
   if (typeof window === 'undefined') return new THREE.Color(fallbackHex);
   const root = document.documentElement;
   const val = root.style.getPropertyValue(varName).trim() || getComputedStyle(root).getPropertyValue(varName).trim();
-  if (!val) {
-    return new THREE.Color(fallbackHex);
+  if (val) {
+    const parts = val.split(',').map(s => parseInt(s.trim(), 10));
+    if (parts.length === 3 && !parts.some(isNaN)) {
+      return new THREE.Color(parts[0] / 255, parts[1] / 255, parts[2] / 255);
+    }
+    try {
+      return new THREE.Color(val);
+    } catch {
+      // Fall through
+    }
   }
-  const parts = val.split(',').map(s => parseInt(s.trim(), 10));
-  if (parts.length === 3 && !parts.some(isNaN)) {
-    return new THREE.Color(parts[0] / 255, parts[1] / 255, parts[2] / 255);
-  }
+
+  // Pre-boot fallback: check if localStorage has a saved appearance accent before using hardcoded fallbackHex.
+  // This completely eliminates any microsecond cyan flash on cold mount before settingsStore finishes hydration.
   try {
-    return new THREE.Color(val);
+    const raw = localStorage.getItem("vox_appearance");
+    if (raw) {
+      const saved = JSON.parse(raw);
+      if (saved?.accent_seed && typeof saved.accent_seed === "string") {
+        if (varName === '--accent-dark' || varName.includes('glow')) {
+          return new THREE.Color(saved.accent_seed).multiplyScalar(saved.theme === 'light' ? 0.70 : 0.40);
+        }
+        return new THREE.Color(saved.accent_seed);
+      }
+    }
   } catch {
-    return new THREE.Color(fallbackHex);
+    // LocalStorage read failed
   }
+
+  return new THREE.Color(fallbackHex);
 }
 
 
@@ -531,6 +549,10 @@ export const VoxOrb = React.memo(({
     smoothedLow: number;
     smoothedMid: number;
     smoothedHigh: number;
+    baseWave: number[];   // per-sheet original u_waveScale
+    baseOpac: number[];   // per-sheet original u_baseOpacity
+    think: number;        // 0..1 smoothed weight
+    work: number;         // 0..1 smoothed weight
   }
 
   const sceneRef = useRef<SceneContext | null>(null);
@@ -540,8 +562,8 @@ export const VoxOrb = React.memo(({
   const themeSeed = cachedOrbTheme;
   const themeRef = useRef({
     theme: themeSeed?.theme ?? "",
-    accent: themeSeed?.accent.clone() ?? new THREE.Color('#00dbe9'),
-    glow: themeSeed?.glow.clone() ?? new THREE.Color('#0891b2'),
+    accent: themeSeed?.accent.clone() ?? getCSSColor('--accent', '#00dbe9'),
+    glow: themeSeed?.glow.clone() ?? getCSSColor('--accent-dark', '#0891b2'),
   });
 
   const tickFn = useCallback((dt: number) => {
@@ -552,6 +574,11 @@ export const VoxOrb = React.memo(({
     const t = (performance.now() - ctx.t0) / 1000;
     const state = stateRef.current;
     const sleeping = sleepingRef.current;
+
+    // State weights — exponential smoothing for think/work (lambda=2.2 → ~1.5s cross-fade)
+    const k = (l: number) => 1 - Math.exp(-dtSec * l);
+    ctx.think += ((state === 'Thinking' ? 1 : 0) - ctx.think) * k(2.2);
+    ctx.work  += ((state === 'Working'  ? 1 : 0) - ctx.work)  * k(2.2);
 
     // 1. Calculate raw voice/VAD multi-band inputs based on current state
     let rawEnergy = 0;
@@ -585,6 +612,11 @@ export const VoxOrb = React.memo(({
       rawHigh = rawEnergy * 0.3;
     }
 
+    // Synthetic silk drive — Thinking/Working have no mic input to animate the silk
+    rawLow  += ctx.think * (0.22 + 0.16 * Math.sin(t * 1.05)) + ctx.work * 0.12;
+    rawMid  += ctx.work  * (0.30 + 0.18 * Math.sin(t * 2.3));
+    rawHigh += ctx.work  * 0.28 * (0.5 + 0.5 * Math.sin(t * 3.1 + 1.0));
+
     // 2. Smoothed multi-band audio envelopes (dt-normalized attack/decay followers)
     const rate = (lambda: number) => 1 - Math.exp(-dtSec * lambda);
     // Low band (vocal pitch, deep vowel core): slow, warm attack and decay
@@ -611,7 +643,9 @@ export const VoxOrb = React.memo(({
 
     // 3. Critically Damped Spring Scale Transition (silky acceleration & deceleration)
     // Symmetrically guides both expansion and contraction without instantaneous jerk or abrupt snap.
-    const targetScale = TARGET_SCALE[state] ?? 1.0;
+    const targetScale = (TARGET_SCALE[state] ?? 1.0)
+      + ctx.think * 0.022 * Math.sin(t * 2.3)
+      + ctx.work  * 0.018 * Math.pow(Math.abs(Math.sin(t * 2.8)), 3);
     const prevScale = ctx.curScale ?? 1.0;
     const scaleVel = ctx.scaleVelocity ?? 0;
 
@@ -639,14 +673,16 @@ export const VoxOrb = React.memo(({
 
     // 5. Calculate internal vertex deformation amplitude (u_amplitude) from smoothed audio energy
     // Silk deepens fluidly and holds its shape during speech, without rhythmic bouncing.
-    const targetAmp = ctx.curBaseVal + audioEnergy * 0.38;
+    const targetAmp = ctx.curBaseVal + audioEnergy * 0.38
+      + ctx.think * 0.05 * (0.5 + 0.5 * Math.sin(t * 2.3))
+      + ctx.work  * 0.07 * Math.pow(Math.abs(Math.sin(t * 2.8)), 3);
     const curAmp = ctx.sharedUni.u_amplitude.value;
     const ampRate = targetAmp > curAmp ? rate(11) : rate(3.5);
     ctx.sharedUni.u_amplitude.value += (targetAmp - curAmp) * ampRate;
 
     // 6. Internal noise/texture boiling (accelerate time drift based on voice activity & mid frequencies)
     const speedBoost = 1.0 + audioEnergy * 2.2 + ctx.smoothedMid * 1.2;
-    ctx.noiseTime += dtSec * speedBoost;
+    ctx.noiseTime += dtSec * (speedBoost + ctx.think * 0.15 + ctx.work * 0.9);
     ctx.sharedUni.u_time.value = ctx.noiseTime;
 
     // 7. Update multi-band uniforms
@@ -685,15 +721,19 @@ export const VoxOrb = React.memo(({
     ctx.outerMat.uniforms['u_colorAccent'].value.copy(ctx.curAccent);
 
     // 8. Mid & Energy drive rotational drift across sheets
-    const speedMult = 1.0 + audioEnergy * 0.6 + ctx.smoothedMid * 0.5;
+    const speedMult = 1.0 + audioEnergy * 0.6 + ctx.smoothedMid * 0.5 - ctx.think * 0.3 + ctx.work * 0.9;
     // Bound by live child count, not the module constant, so the
     // software-rasteriser sheet reduction (see sheetCount) stays in sync.
     for (let i = 0; i < ctx.discGroup.children.length; i++) {
       const mesh = ctx.discGroup.children[i] as THREE.Mesh;
       const anim = ctx.discAnims[i];
-      mesh.rotation.x += anim.speedX * speedMult;
-      mesh.rotation.y += anim.speedY * speedMult;
-      mesh.rotation.z += anim.speedZ * speedMult;
+      const step = speedMult * dtSec * 60; // frame-rate independent (idle runs at 12fps)
+      mesh.rotation.x += anim.speedX * step;
+      mesh.rotation.y += anim.speedY * step;
+      mesh.rotation.z += anim.speedZ * step;
+      const u = (mesh.material as THREE.ShaderMaterial).uniforms;
+      u.u_waveScale.value = ctx.baseWave[i] * (1 + ctx.think * (0.22 + 0.06 * Math.sin(t * 0.8 + i)) + ctx.work * 0.5);
+      u.u_baseOpacity.value = ctx.baseOpac[i] * (1 + ctx.think * (0.35 + 0.3 * Math.sin(t * 1.2 + i * 0.9)) + ctx.work * (0.45 + 0.4 * Math.sin(t * 2.6 + i * 1.1)));
     }
 
     ctx.group.rotation.y = t * 0.033;
@@ -780,7 +820,13 @@ export const VoxOrb = React.memo(({
     // Share a single BufferGeometry across all silk-sheet meshes
     const sharedDiscGeo = createDiscGeometry(DISC_R, 36, 12);
 
+    const baseWave: number[] = [];
+    const baseOpac: number[] = [];
     for (let i = 0; i < sheetCount; i++) {
+      const waveScale = 0.38 + Math.random() * 0.48;
+      const baseOpacity = 0.11 + Math.random() * 0.28;
+      baseWave.push(waveScale);
+      baseOpac.push(baseOpacity);
       const mat = new THREE.ShaderMaterial({
         uniforms: {
           u_time: sharedUni.u_time,
@@ -792,8 +838,8 @@ export const VoxOrb = React.memo(({
           u_lows: sharedUni.u_lows,
           u_mids: sharedUni.u_mids,
           u_phase: { value: i * 1.73 + Math.random() * 2.1 },
-          u_waveScale: { value: 0.38 + Math.random() * 0.48 },
-          u_baseOpacity: { value: 0.11 + Math.random() * 0.28 },
+          u_waveScale: { value: waveScale },
+          u_baseOpacity: { value: baseOpacity },
         },
         transparent: true,
         depthWrite: false,
@@ -818,7 +864,7 @@ export const VoxOrb = React.memo(({
       });
     }
 
-    const outerGeo = new THREE.SphereGeometry(SHELL_R, 64, 64);
+    const outerGeo = new THREE.SphereGeometry(SHELL_R, 48, 48);
     const outerMat = new THREE.ShaderMaterial({
       uniforms: {
         u_colorGlow: { value: initGlow.clone() },
@@ -899,6 +945,10 @@ export const VoxOrb = React.memo(({
       smoothedLow: 0,
       smoothedMid: 0,
       smoothedHigh: 0,
+      baseWave,
+      baseOpac,
+      think: 0,
+      work: 0,
     };
 
     return () => {

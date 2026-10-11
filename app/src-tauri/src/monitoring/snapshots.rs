@@ -142,7 +142,16 @@ pub fn spawn_monitoring_collector(state: Arc<AppState>) {
             );
             sys.refresh_memory();
             let total_ram_mb = (sys.total_memory() / 1024 / 1024) as u32;
-            let cpu_cores = sys.cpus().len() as u32;
+            let cpu_cores = {
+                let count = sys.cpus().len() as u32;
+                if count > 0 {
+                    count
+                } else {
+                    std::thread::available_parallelism()
+                        .map(|n| n.get() as u32)
+                        .unwrap_or(1)
+                }
+            };
 
             let mut tick_count: u64 = 0;
             loop {

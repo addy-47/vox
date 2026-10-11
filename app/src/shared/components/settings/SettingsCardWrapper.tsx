@@ -67,22 +67,22 @@ export const SettingsCardWrapper = memo(({ domain, isActive, layoutMode, childre
                   animate={{ opacity: 1, height: "auto" }}
                   exit={{ opacity: 0, height: 0 }}
                   transition={{ duration: 0.2 }}
-                  className="w-full p-2.5 sm:p-3 px-4 sm:px-5 rounded-b-[1.25rem] rounded-t-none bg-[rgba(var(--accent),0.08)] dark:bg-[rgba(var(--accent),0.12)] border border-t-0 border-[rgba(var(--accent),0.2)] flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 sm:gap-2 overflow-hidden text-[12px]"
+                  className="w-full p-2.5 sm:p-3 px-4 sm:px-5 rounded-b-[1.25rem] rounded-t-none bg-[rgba(var(--accent),0.08)] dark:bg-[rgba(var(--accent),0.12)] border border-t-0 border-[rgba(var(--accent),0.2)] flex items-center justify-between gap-2 overflow-hidden text-[12px]"
                 >
-                  <span className="font-bold uppercase tracking-wider text-rose-400 flex items-center gap-1.5 shrink-0">
+                  <span className="font-bold uppercase tracking-wider text-rose-400 flex items-center gap-1.5 shrink-0 truncate">
                     <AlertCircle size={14} className="shrink-0" />
                     <span className="truncate">{SETTINGS_COPY.apiKeyRequired}</span>
                   </span>
-                  <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
+                  <div className="flex items-center gap-2 shrink-0">
                     <button
                       disabled
-                      className="px-3.5 py-1 rounded-lg bg-[rgba(var(--foreground),0.05)] text-[rgb(var(--foreground-muted))]/40 font-black text-[12px] uppercase tracking-wider cursor-not-allowed border border-[rgba(var(--border),0.1)]"
+                      className="px-3 py-1 rounded-lg bg-[rgba(var(--foreground),0.05)] text-[rgb(var(--foreground-muted))]/40 font-black text-[12px] uppercase tracking-wider cursor-not-allowed border border-[rgba(var(--border),0.1)] shrink-0"
                     >
                       {SETTINGS_COPY.saveChanges}
                     </button>
                     <button
                       onClick={() => useSettingsStore.getState().discardDomainChanges(domain.id)}
-                      className="px-3 py-1 rounded-lg bg-transparent text-[rgb(var(--foreground-muted))] hover:text-rose-400 hover:bg-rose-500/10 border border-transparent hover:border-rose-500/20 text-[12px] font-bold uppercase tracking-wider transition-all cursor-pointer"
+                      className="px-3 py-1 rounded-lg bg-transparent text-[rgb(var(--foreground-muted))] hover:text-rose-400 hover:bg-rose-500/10 border border-transparent hover:border-rose-500/20 text-[12px] font-bold uppercase tracking-wider transition-all cursor-pointer shrink-0"
                     >
                       {SETTINGS_COPY.discardChanges}
                     </button>
@@ -98,25 +98,21 @@ export const SettingsCardWrapper = memo(({ domain, isActive, layoutMode, childre
                   animate={{ opacity: 1, height: "auto" }}
                   exit={{ opacity: 0, height: 0 }}
                   transition={{ duration: 0.2 }}
-                  className="w-full p-2.5 px-4 sm:px-5 rounded-b-[1.25rem] rounded-t-none bg-[rgba(var(--accent),0.08)] dark:bg-[rgba(var(--accent),0.12)] border border-t-0 border-[rgba(var(--accent),0.2)] flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 sm:gap-2 overflow-hidden text-[12px]"
+                  className="w-full p-2.5 px-4 sm:px-5 rounded-b-[1.25rem] rounded-t-none bg-[rgba(var(--accent),0.08)] dark:bg-[rgba(var(--accent),0.12)] border border-t-0 border-[rgba(var(--accent),0.2)] flex items-center justify-between gap-2 overflow-hidden text-[12px]"
                 >
-                  <div className="flex items-center gap-2 self-start sm:self-auto shrink-0">
-                    <button
-                      onClick={() => useSettingsStore.getState().commitChanges()}
-                      className="px-3 py-1 rounded-lg border font-bold text-[12px] uppercase tracking-wider flex items-center gap-1.5 transition-all cursor-pointer bg-transparent text-[rgb(var(--accent))] border-[rgba(var(--accent),0.45)] hover:bg-[rgb(var(--accent))] hover:text-[rgb(var(--accent-foreground))] hover:border-[rgb(var(--accent))]"
-                    >
-                      <RefreshCw size={12} className="shrink-0" />
-                      <span>{SETTINGS_COPY.applyAndRestart}</span>
-                    </button>
-                  </div>
-                  <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
-                    <button
-                      onClick={() => useSettingsStore.getState().discardDomainChanges(domain.id)}
-                      className="px-3 py-1 rounded-lg bg-transparent text-[rgb(var(--foreground-muted))] hover:text-rose-400 hover:bg-rose-500/10 border border-transparent hover:border-rose-500/20 text-[12px] font-bold uppercase tracking-wider transition-all cursor-pointer"
-                    >
-                      {SETTINGS_COPY.discardChanges}
-                    </button>
-                  </div>
+                  <button
+                    onClick={() => useSettingsStore.getState().commitChanges()}
+                    className="px-3 py-1 rounded-lg border font-bold text-[12px] uppercase tracking-wider flex items-center gap-1.5 transition-all cursor-pointer bg-transparent text-[rgb(var(--accent))] border-[rgba(var(--accent),0.45)] hover:bg-[rgb(var(--accent))] hover:text-[rgb(var(--accent-foreground))] hover:border-[rgb(var(--accent))] shrink-0"
+                  >
+                    <RefreshCw size={12} className="shrink-0" />
+                    <span>{SETTINGS_COPY.applyAndRestart}</span>
+                  </button>
+                  <button
+                    onClick={() => useSettingsStore.getState().discardDomainChanges(domain.id)}
+                    className="px-3 py-1 rounded-lg bg-transparent text-[rgb(var(--foreground-muted))] hover:text-rose-400 hover:bg-rose-500/10 border border-transparent hover:border-rose-500/20 text-[12px] font-bold uppercase tracking-wider transition-all cursor-pointer shrink-0"
+                  >
+                    {SETTINGS_COPY.discardChanges}
+                  </button>
                 </motion.div>
               )}
 

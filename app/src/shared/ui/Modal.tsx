@@ -4,6 +4,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { X, ArrowLeft } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { useOverlay } from "@/shared/hooks/useOverlay";
+import { Tooltip } from "@/shared/ui/Tooltip";
 import { LAYOUT_COPY } from "@/data/layoutCopy";
 
 export interface ModalProps {
@@ -169,7 +170,7 @@ export const Modal = memo(
               onClick={(e) => e.stopPropagation()}
             >
               {(title || icon || headerActions || onBack) && (
-                <div className="flex items-center justify-between px-6 pt-4 pb-3 border-b border-[rgba(var(--accent),0.08)] shrink-0">
+                <div className="flex items-center justify-between px-4 sm:px-6 py-2.5 sm:pt-4 sm:pb-3 border-b border-[rgba(var(--accent),0.08)] shrink-0">
                   <div className="flex items-center gap-2.5 min-w-0">
                     {onBack && (
                       <button
@@ -190,13 +191,15 @@ export const Modal = memo(
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     {headerActions}
-                    <button
-                      onClick={onClose}
-                      className="flex items-center justify-center w-8 h-8 rounded-full glass-card text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))]"
-                      aria-label={LAYOUT_COPY.modal.close}
-                    >
-                      <X size={18} />
-                    </button>
+                    <Tooltip label={LAYOUT_COPY.modal.close} side="bottom">
+                      <button
+                        onClick={onClose}
+                        className="flex items-center justify-center w-8 h-8 rounded-full glass-card text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))]"
+                        aria-label={LAYOUT_COPY.modal.close}
+                      >
+                        <X size={18} />
+                      </button>
+                    </Tooltip>
                   </div>
                 </div>
               )}

@@ -485,13 +485,30 @@ export const MobileModelStep: React.FC<MobileModelStepProps> = ({
                                       </span>
                                     )}
                                   </div>
-                                  <span className="text-[10px] font-mono text-[rgb(var(--foreground-muted))]">
-                                    {isBuiltIn ? 'Embedded in App Binary' : `${MODEL_CATEGORY_COPY.versionPrefix} ${group.version}`}
-                                  </span>
+                                    <span className="text-[10px] font-mono text-[rgb(var(--foreground-muted))]">
+                                      {isBuiltIn ? 'Embedded in App Binary' : `${MODEL_CATEGORY_COPY.versionPrefix} ${group.version}`}
+                                    </span>
+                                    {group.description && (
+                                      <span className="text-[10px] text-[rgb(var(--foreground-muted))]/80 line-clamp-1 mt-0.5">
+                                        {group.description}
+                                      </span>
+                                    )}
+                                    <div className="flex items-center gap-1.5 mt-1">
+                                      {group.parameters && (
+                                        <span className="text-[9px] font-mono px-1 py-0.2 rounded bg-white/[0.04] text-[rgb(var(--foreground-muted))]">
+                                          {group.parameters}
+                                        </span>
+                                      )}
+                                      {group.ram_usage && (
+                                        <span className="text-[9px] font-mono px-1 py-0.2 rounded bg-[rgb(var(--accent))]/10 text-[rgb(var(--accent))]">
+                                          RAM: {group.ram_usage}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
                                 </div>
-                              </div>
 
-                              <div className="text-right shrink-0">
+                                <div className="text-right shrink-0">
                                 <span className="text-[11px] font-mono text-[rgb(var(--foreground-muted))]">
                                   {isBuiltIn ? '0 B' : formatBytes(groupSize)}
                                 </span>

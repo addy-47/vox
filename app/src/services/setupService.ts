@@ -18,9 +18,17 @@ export interface ModelGroup {
   id: string;
   name: string;
   category: string;
+  subcategory?: string;
+  description?: string;
+  parameters?: string;
+  ram_usage?: string;
+  tradeoffs?: string;
   version: string;
   files: ModelEntry[];
   is_built_in?: boolean;
+  is_cloud?: boolean;
+  is_remote?: boolean;
+  required?: boolean;
 }
 
 export interface VoxManifest {

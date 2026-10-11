@@ -71,9 +71,12 @@ pub fn on_playback_finished<R: tauri::Runtime>(
     }
 
     let current_state = state.pipeline.state();
-    if current_state != InteractionState::Speaking {
+    if current_state != InteractionState::Speaking
+        && current_state != InteractionState::Thinking
+        && current_state != InteractionState::Working
+    {
         log::debug!(
-            "[Pipeline::Playback] PlaybackFinished dropped (turn {}): state is {:?}, expected Speaking",
+            "[Pipeline::Playback] PlaybackFinished dropped (turn {}): state is {:?}, expected Speaking, Thinking, or Working",
             turn_id,
             current_state
         );

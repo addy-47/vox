@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { getShortcutsGroupedByRoute } from "@/data/shortcuts";
+import { isRealMobileDevice } from "@/shared/hooks/useMobileViewport";
 
 const HomeHelpContent = lazy(() =>
   import("@/shared/components/help/HomeHelpContent").then((m) => ({ default: m.HomeHelpContent }))
@@ -112,16 +113,18 @@ export const HelpPanel = memo(({ onClose: _onClose, initialShortcuts = false }: 
               {pageMeta.routeBadge}
             </span>
           )}
-          <button
-            type="button"
-            onClick={() => setShowShortcuts((v) => !v)}
-            aria-label={showShortcuts ? "Show route guide" : "Show all shortcuts"}
-            aria-pressed={showShortcuts}
-            className="flex items-center justify-center w-6 h-6 rounded-md border border-[rgba(var(--border),0.15)] hover:border-[rgba(var(--accent),0.3)] hover:bg-[rgba(var(--accent),0.06)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] transition-colors cursor-pointer shrink-0"
-            title={showShortcuts ? "Show guide" : "Show shortcuts"}
-          >
-            <Key size={13} strokeWidth={2} />
-          </button>
+          {!isRealMobileDevice() && (
+            <button
+              type="button"
+              onClick={() => setShowShortcuts((v) => !v)}
+              aria-label={showShortcuts ? "Show route guide" : "Show all shortcuts"}
+              aria-pressed={showShortcuts}
+              className="flex items-center justify-center w-6 h-6 rounded-md border border-[rgba(var(--border),0.15)] hover:border-[rgba(var(--accent),0.3)] hover:bg-[rgba(var(--accent),0.06)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] transition-colors cursor-pointer shrink-0"
+              title={showShortcuts ? "Show guide" : "Show shortcuts"}
+            >
+              <Key size={13} strokeWidth={2} />
+            </button>
+          )}
         </div>
       </div>
 
