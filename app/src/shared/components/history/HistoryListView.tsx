@@ -1,4 +1,5 @@
-import React, { memo, useState, useMemo } from "react";
+import React, { memo, useState, useMemo, useRef } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { Check, X, Trash2, Search, MessageSquare, Filter } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { formatDateTime, resolveSessionTitle, type SessionRow } from "@/services/historyService";
@@ -99,6 +100,16 @@ export const HistoryListView: React.FC<HistoryListViewProps> = memo(
         return true;
       });
     }, [sessions, q, dateFilter, customStartDate, customEndDate]);
+
+    // D1: virtualize the session card list — renders only visible rows +
+    // overscan instead of the full filtered array. Zero visual change.
+    const scrollParentRef = useRef<HTMLDivElement | null>(null);
+    const rowVirtualizer = useVirtualizer({
+      count: filteredSessions.length,
+      getScrollElement: () => scrollParentRef.current,
+      estimateSize: () => 170,
+      overscan: 6,
+    });
 
     return (
       <div className="w-full h-full flex flex-col min-h-0 overflow-hidden z-20">
@@ -202,7 +213,7 @@ export const HistoryListView: React.FC<HistoryListViewProps> = memo(
 
         {/* Scrollable Session List Area with selective bottom dissolve */}
         <div className="flex-1 min-h-0 relative overflow-hidden flex flex-col">
-          <div className="flex-1 min-h-0 overflow-y-auto px-4 pt-3 pb-28 space-y-2.5 custom-scrollbar">
+          <div ref={scrollParentRef} className="flex-1 min-h-0 overflow-y-auto px-4 pt-3 pb-28 custom-scrollbar" style={{ position: "relative" }}>
           {filteredSessions.length === 0 ? (
             <div className="flex flex-col items-center justify-center p-8 text-center">
               <MessageSquare size={24} className="text-[rgb(var(--foreground-muted))] opacity-40 mb-2" />
@@ -211,7 +222,15 @@ export const HistoryListView: React.FC<HistoryListViewProps> = memo(
               </p>
             </div>
           ) : (
-            filteredSessions.map((session) => {
+            <div
+              style={{
+                height: `${rowVirtualizer.getTotalSize()}px`,
+                width: "100%",
+                position: "relative",
+              }}
+            >
+            {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+              const session = filteredSessions[virtualRow.index];
               const isSelected = selectedSession?.id === session.id;
               const isConfirmingDelete = confirmDeleteId === session.id;
               const title = resolveSessionTitle(session);
@@ -219,6 +238,16 @@ export const HistoryListView: React.FC<HistoryListViewProps> = memo(
               return (
                 <div
                   key={session.id}
+                  data-index={virtualRow.index}
+                  ref={rowVirtualizer.measureElement}
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    transform: `translateY(${virtualRow.start}px)`,
+                    paddingBottom: 10,
+                  }}
                   role="button"
                   tabIndex={0}
                   aria-pressed={isSelected}
@@ -315,7 +344,8 @@ export const HistoryListView: React.FC<HistoryListViewProps> = memo(
                   </div>
                 </div>
               );
-            })
+            })}
+            </div>
           )}
           </div>
           {/* Selective bottom dissolve for scrolling session rows */}

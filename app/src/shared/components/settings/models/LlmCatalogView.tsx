@@ -185,7 +185,7 @@ const RemoteModelCard = memo(({
                 <Tooltip
                   side="top"
                   align="start"
-                  className="p-3 w-[300px] max-w-[340px] whitespace-normal text-left border border-[rgba(var(--foreground),0.14)] bg-[rgb(var(--card))]/98 shadow-2xl backdrop-blur-2xl"
+                  className="p-3 w-[300px] max-w-[340px] whitespace-normal text-left border border-[rgba(var(--foreground),0.14)] bg-[rgb(var(--card))]/98 shadow-lg backdrop-blur-md"
                   label={probeWarningLabel(probeError, probed)}
                 >
                   <span
@@ -925,7 +925,7 @@ export const LlmCatalogView = memo(({
                       <Tooltip
                         side="top"
                         align="start"
-                        className="p-3 w-[300px] max-w-[340px] whitespace-normal text-left border border-[rgba(var(--foreground),0.14)] bg-[rgb(var(--card))]/98 shadow-2xl backdrop-blur-2xl"
+                        className="p-3 w-[300px] max-w-[340px] whitespace-normal text-left border border-[rgba(var(--foreground),0.14)] bg-[rgb(var(--card))]/98 shadow-lg backdrop-blur-md"
                         label={probeWarningLabel(inlineProbeError, probed)}
                       >
                         <span
@@ -986,7 +986,7 @@ export const LlmCatalogView = memo(({
                       side="top"
                       align="start"
                       mobileTapEnabled
-                      className="p-3 w-[210px] whitespace-normal text-left z-50 border border-[rgba(var(--foreground),0.14)] bg-[rgb(var(--card))]/98 shadow-2xl backdrop-blur-2xl"
+                      className="p-3 w-[210px] whitespace-normal text-left z-50 border border-[rgba(var(--foreground),0.14)] bg-[rgb(var(--card))]/98 shadow-lg backdrop-blur-md"
                       label={
                         <div className="space-y-1.5 text-[11px] font-sans w-full">
                           <div className="font-bold text-[rgb(var(--foreground))] border-b border-[rgba(var(--foreground),0.08)] pb-1 flex items-center justify-between gap-2">

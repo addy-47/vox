@@ -138,7 +138,7 @@ export const AppearanceCard = memo(({ layoutMode = "full-max" }: AppearanceCardP
 
       {/* Bottom Row: Full card width color picker */}
       <div
-        className="w-full flex items-center justify-center pt-1 pb-1"
+        className="w-full flex items-center justify-center px-1 pt-1 pb-1"
         onPointerUp={commitAccent}
       >
         <HexColorPicker

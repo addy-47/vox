@@ -40,7 +40,13 @@ export const SettingsCardWrapper = memo(({ domain, isActive, layoutMode, childre
           transition={{ duration: layoutMode === "small" ? 0.15 : 0.28, ease: [0.16, 1, 0.3, 1] }}
           className={cn(
             "w-full pointer-events-auto",
-            layoutMode === "small" ? "h-auto" : "h-full flex items-center justify-center"
+            layoutMode === "small"
+              ? "h-auto"
+              : domain.id === "persona"
+              ? "h-full flex items-end justify-center"
+              : domain.id === "appearance"
+              ? "h-full flex items-start justify-center"
+              : "h-full flex items-center justify-center"
           )}
         >
           <div

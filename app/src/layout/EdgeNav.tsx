@@ -5,6 +5,7 @@ import { SlidersHorizontal, House, Activity, History, Network } from "lucide-rea
 import { cn } from "@/shared/lib/utils";
 import { BottomDockFeather } from "@/shared/ui";
 import { Tooltip } from "@/shared/ui/Tooltip";
+import { isRealMobileDevice } from "@/shared/hooks/useMobileViewport";
 
 const navItems = [
   { icon: House, label: "Home", path: "/" },
@@ -72,42 +73,44 @@ export const EdgeNav: React.FC = () => {
           </Tooltip>
         ))}
 
-        {/* Compact layout — monitoring in EdgeNav instead of corner */}
-        <Tooltip label={LAYOUT_COPY.nav.monitor} side="top">
-          <NavLink
-            to="/monitoring"
-            onClick={(e) => {
-              if (location.pathname === "/monitoring") {
-                e.preventDefault();
+        {/* Compact desktop layout only — monitoring omitted on real mobile devices (Android) */}
+        {!isRealMobileDevice() && (
+          <Tooltip label={LAYOUT_COPY.nav.monitor} side="top">
+            <NavLink
+              to="/monitoring"
+              onClick={(e) => {
+                if (location.pathname === "/monitoring") {
+                  e.preventDefault();
+                }
+              }}
+              className={({ isActive }) =>
+                cn(
+                  "lg:hidden relative flex items-center justify-center w-11 h-11 rounded-full text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-all duration-300 group hover:bg-[rgb(var(--accent))]/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(var(--accent))] focus-visible:ring-offset-2 focus-visible:ring-offset-[rgb(var(--background))]",
+                  isActive && "text-[rgb(var(--accent))] bg-transparent"
+                )
               }
-            }}
-            className={({ isActive }) =>
-              cn(
-                "lg:hidden relative flex items-center justify-center w-11 h-11 rounded-full text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-all duration-300 group hover:bg-[rgb(var(--accent))]/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(var(--accent))] focus-visible:ring-offset-2 focus-visible:ring-offset-[rgb(var(--background))]",
-                isActive && "text-[rgb(var(--accent))] bg-transparent"
-              )
-            }
-            aria-label={LAYOUT_COPY.nav.engineMonitor}
-          >
-            {({ isActive }) => (
-              <>
-                <Activity
-                  size={24}
-                  strokeWidth={isActive ? 2 : 1.5}
-                  className={cn(
-                    "transition-transform duration-500",
-                    !isActive && "group-hover:scale-110"
-                  )}
-                />
+              aria-label={LAYOUT_COPY.nav.engineMonitor}
+            >
+              {({ isActive }) => (
+                <>
+                  <Activity
+                    size={24}
+                    strokeWidth={isActive ? 2 : 1.5}
+                    className={cn(
+                      "transition-transform duration-500",
+                      !isActive && "group-hover:scale-110"
+                    )}
+                  />
 
-                {/* Active Indicator dot */}
-                {isActive && (
-                  <div className="absolute -bottom-1 w-1 h-1 rounded-full bg-[rgb(var(--accent))]" />
-                )}
-              </>
-            )}
-          </NavLink>
-        </Tooltip>
+                  {/* Active Indicator dot */}
+                  {isActive && (
+                    <div className="absolute -bottom-1 w-1 h-1 rounded-full bg-[rgb(var(--accent))]" />
+                  )}
+                </>
+              )}
+            </NavLink>
+          </Tooltip>
+        )}
       </nav>
   );
 };

@@ -673,14 +673,14 @@ input[type="range"]:active::-webkit-slider-thumb {
 }
 
 .custom-color-picker .react-colorful__saturation {
-  border-radius: 1rem !important;
+  border-radius: 0.75rem !important;
   border-bottom: none !important;
 }
 
 .custom-color-picker .react-colorful__hue {
   height: 10px !important;
   border-radius: 5px !important;
-  margin-top: 1.25rem !important;
+  margin-top: 1rem !important;
 }
 
 .custom-color-picker.custom-color-picker-min .react-colorful__hue {

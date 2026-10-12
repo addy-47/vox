@@ -179,6 +179,9 @@ export const Tooltip: React.FC<TooltipProps> = React.memo(({
             className={cn(
               "z-[9999] pointer-events-none flex items-center gap-1.5 max-w-[320px] w-max select-none rounded-md px-2 py-1 text-[12px] font-medium leading-snug shadow-lg transition-opacity duration-150 animate-fade-in",
               "bg-[rgb(var(--card))]/95 text-[rgb(var(--foreground))] border border-[rgba(var(--accent),0.2)]",
+              // E3: compact treatment on touch/coarse-pointer devices — smaller
+              // footprint so a tap-triggered tooltip never covers the screen.
+              isTouchOrMobile && "max-w-[240px] px-1.5 text-[11px]",
               className
             )}
           >
