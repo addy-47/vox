@@ -77,13 +77,138 @@ interface SettingsConnectorsOverlayProps {
   domains: readonly Domain[];
   activeDomains: DomainId[];
   lines: Record<string, { x1: number; y1: number; x2: number; y2: number } | null>;
+  isSideCarousel?: boolean;
 }
 
 export const SettingsConnectorsOverlay = memo(({
   domains,
   activeDomains,
   lines,
+  isSideCarousel = false,
 }: SettingsConnectorsOverlayProps) => {
+  if (isSideCarousel) {
+    // ── Side Carousel Mode: Mathematically symmetric converging diagonal paths ──
+    const pathsToRender: { id: string; pathD: string; animDelay: number }[] = [];
+
+    // 1. Persona (12:00) vertical line
+    if (activeDomains.includes("persona") && lines.persona) {
+      const l = lines.persona;
+      pathsToRender.push({
+        id: "persona",
+        pathD: `M ${l.x1} ${l.y1 - 20} L ${l.x2} ${l.y2}`,
+        animDelay: 0,
+      });
+    }
+
+    // 2. Appearance (6:00) vertical line
+    if (activeDomains.includes("appearance") && lines.appearance) {
+      const l = lines.appearance;
+      pathsToRender.push({
+        id: "appearance",
+        pathD: `M ${l.x1} ${l.y1 + 20} L ${l.x2} ${l.y2}`,
+        animDelay: 0.36,
+      });
+    }
+
+    // 3. Left Side: 10:00 (Interaction) and 8:00 (Personal Memory) - Permanent converging fork
+    const line10 = lines.interaction;
+    const line8 = lines.personal_memory;
+    const leftActive = activeDomains.includes("interaction") || activeDomains.includes("personal_memory");
+    if (leftActive && (line10 || line8)) {
+      const nodeX = line10?.x1 ?? line8!.x1;
+      const cardX = line10?.x2 ?? line8!.x2;
+      const cy = (line10 && line8) ? (line10.y1 + line8.y1) / 2 : (line10 ? line10.y1 + 45 : line8!.y1 - 45);
+      const halfH = line10 ? Math.abs(cy - line10.y1) : 45;
+      const deltaX = Math.min(42, Math.max(26, Math.abs(nodeX - cardX) * 0.35));
+      const mergeX = nodeX - deltaX;
+      const diagLen = Math.hypot(deltaX, halfH);
+      const offX = (deltaX / diagLen) * 20;
+      const offY = (halfH / diagLen) * 20;
+
+      const start10X = nodeX - offX;
+      const start10Y = cy - halfH + offY;
+      const start8X = nodeX - offX;
+      const start8Y = cy + halfH - offY;
+
+      // Both diagonal arms converge to (mergeX, cy), then single horizontal feeder to card
+      pathsToRender.push({
+        id: "left-fork-10",
+        pathD: `M ${start10X} ${start10Y} L ${mergeX} ${cy} L ${cardX} ${cy}`,
+        animDelay: 0.12,
+      });
+      pathsToRender.push({
+        id: "left-fork-8",
+        pathD: `M ${start8X} ${start8Y} L ${mergeX} ${cy} L ${cardX} ${cy}`,
+        animDelay: 0.24,
+      });
+    }
+
+    // 4. Right Side: 2:00 (Models) and 4:00 (Working Memory) - Permanent converging fork
+    const line2 = lines.models;
+    const line4 = lines.working_memory;
+    const rightActive = activeDomains.includes("models") || activeDomains.includes("working_memory");
+    if (rightActive && (line2 || line4)) {
+      const nodeX = line2?.x1 ?? line4!.x1;
+      const cardX = line2?.x2 ?? line4!.x2;
+      const cy = (line2 && line4) ? (line2.y1 + line4.y1) / 2 : (line2 ? line2.y1 + 45 : line4!.y1 - 45);
+      const halfH = line2 ? Math.abs(cy - line2.y1) : 45;
+      const deltaX = Math.min(42, Math.max(26, Math.abs(cardX - nodeX) * 0.35));
+      const mergeX = nodeX + deltaX;
+      const diagLen = Math.hypot(deltaX, halfH);
+      const offX = (deltaX / diagLen) * 20;
+      const offY = (halfH / diagLen) * 20;
+
+      const start2X = nodeX + offX;
+      const start2Y = cy - halfH + offY;
+      const start4X = nodeX + offX;
+      const start4Y = cy + halfH - offY;
+
+      // Both diagonal arms converge to (mergeX, cy), then single horizontal feeder to card
+      pathsToRender.push({
+        id: "right-fork-2",
+        pathD: `M ${start2X} ${start2Y} L ${mergeX} ${cy} L ${cardX} ${cy}`,
+        animDelay: 0.12,
+      });
+      pathsToRender.push({
+        id: "right-fork-4",
+        pathD: `M ${start4X} ${start4Y} L ${mergeX} ${cy} L ${cardX} ${cy}`,
+        animDelay: 0.24,
+      });
+    }
+
+    return (
+      <svg className="absolute inset-0 w-full h-full pointer-events-none z-0 overflow-visible">
+        {pathsToRender.map(({ id, pathD, animDelay }) => (
+          <g key={id}>
+            <path
+              d={pathD}
+              fill="none"
+              stroke="var(--connection-glow)"
+              strokeWidth={4.5}
+            />
+            <path
+              d={pathD}
+              fill="none"
+              stroke="var(--connection-core)"
+              strokeWidth={1.5}
+            />
+            <path
+              d={pathD}
+              fill="none"
+              stroke="rgb(var(--accent))"
+              strokeWidth={1.75}
+              strokeLinecap="round"
+              strokeDasharray="4 560"
+              style={{
+                animation: `connector-flow 0.9s ease-out ${animDelay}s forwards`,
+              }}
+            />
+          </g>
+        ))}
+      </svg>
+    );
+  }
+
   return (
     <svg className="absolute inset-0 w-full h-full pointer-events-none z-0 overflow-visible">
       {domains.map((domain) => {

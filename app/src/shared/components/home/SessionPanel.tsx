@@ -18,7 +18,7 @@ import {
 import { AnimatePresence, motion, Reorder, useDragControls } from "framer-motion";
 import { cn } from "@/shared/lib/utils";
 import { useSessionPanel, type ProjectGroup } from "@/shared/hooks/useSessionPanel";
-import { useVirtualRows } from "@/shared/hooks/useVirtualRows";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   resolveSessionTitle,
   sessionLastActivity,
@@ -416,9 +416,6 @@ const ProjectRowItem = memo(
       toggleProjectExpanded(projectId);
     }, [isDraggingRef, isRenaming, menuOpen, toggleProjectExpanded, projectId, group.sessions.length, group.project.id, expanded]);
 
-    const groupListRef = useRef<HTMLDivElement>(null);
-    const groupWindow = useVirtualRows(groupListRef, expanded ? group.sessions.length : 0);
-
     const handleCreateInProject = useCallback(
       (e: React.MouseEvent) => {
         e.stopPropagation();
@@ -624,15 +621,11 @@ const ProjectRowItem = memo(
               transition={{ duration: 0.16, ease: "easeInOut" }}
               className="flex flex-col overflow-hidden gap-0.5"
             >
-              <div ref={groupListRef} className="flex flex-col gap-0.5">
+              <div className="flex flex-col gap-0.5">
               {group.sessions.length > 0 ? (
-                <>
-                {groupWindow.topPad > 0 && (
-                  <div style={{ height: groupWindow.topPad }} aria-hidden="true" />
-                )}
-                {group.sessions.slice(groupWindow.start, groupWindow.end).map((session, i) => (
-                  <div key={session.id} ref={groupWindow.itemRef(groupWindow.start + i)}>
+                group.sessions.map((session) => (
                   <SessionRowItem
+                    key={session.id}
                     session={session}
                     active={session.id === activeSessionId}
                     restoring={isRestoring && restoringSessionId === session.id}
@@ -645,12 +638,7 @@ const ProjectRowItem = memo(
                     onDelete={onDeleteSession}
                     allProjects={allProjects}
                   />
-                  </div>
-                ))}
-                {groupWindow.bottomPad > 0 && (
-                  <div style={{ height: groupWindow.bottomPad }} aria-hidden="true" />
-                )}
-                </>
+                ))
               ) : (
                 <span className="pl-6 py-1.5 text-[11px] text-[rgb(var(--foreground-muted))]/40 italic">
                   {SESSION_COPY.noProjectSessions}
@@ -738,9 +726,6 @@ export const SessionPanel = memo(({ onClose }: SessionPanelProps) => {
       (a, b) => sessionLastActivity(b) - sessionLastActivity(a)
     );
   }, [uncategorizedSessions, projects]);
-
-  const historyListRef = useRef<HTMLDivElement>(null);
-  const historyWindow = useVirtualRows(historyListRef, allChronologicalSessions.length);
 
   const handleSelect = useCallback(
     (id: number) => {
@@ -862,6 +847,12 @@ export const SessionPanel = memo(({ onClose }: SessionPanelProps) => {
   );
 
   const scrollRef = useRef<HTMLDivElement>(null);
+  const rowVirtualizer = useVirtualizer({
+    count: allChronologicalSessions.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => 52,
+    overscan: 16,
+  });
 
   // Persist scroll offset across panel close/reopen (panel unmounts on close).
   const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
@@ -879,268 +870,285 @@ export const SessionPanel = memo(({ onClose }: SessionPanelProps) => {
   }, [loading]);
 
   return (
-    <div
-      ref={scrollRef}
-      onScroll={handleScroll}
-      data-session-scroll
-      className="flex-1 min-h-0 overflow-y-auto custom-scrollbar flex flex-col gap-3 px-1.5 pt-3 pb-16 select-none font-sans"
-    >
-      {/* ── Top Actions: + New Conversation & Conversation History ── */}
-      <div className="flex flex-col gap-1 shrink-0">
-        <button
-          type="button"
-          onClick={handleNew}
-          aria-label={SESSION_COPY.newConversationAriaLabel}
-          className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-sm text-left cursor-pointer transition-colors text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.04)] bg-transparent"
-        >
-          <Plus size={14} className="shrink-0 text-[rgb(var(--accent))]" strokeWidth={2} />
-          <span className="text-[13.5px] font-medium tracking-normal">
-            {SESSION_COPY.newConversation}
-          </span>
-          {loading && (
-            <Loader2 size={12} className="animate-spin text-[rgb(var(--foreground-muted))]/60 ml-auto" />
-          )}
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setViewMode(viewMode === "history" ? "projects" : "history")}
-          aria-pressed={viewMode === "history"}
-          className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-sm text-left cursor-pointer transition-colors text-[13.5px] font-medium tracking-normal text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.04)] bg-transparent"
-        >
-          {viewMode === "history" ? (
-            <FolderGit2 size={14} className="shrink-0 text-[rgb(var(--accent))]" />
-          ) : (
-            <MessagesSquare size={14} className="shrink-0 text-[rgb(var(--accent))]" />
-          )}
-          <span>
-            {viewMode === "history" ? SESSION_COPY.projectsSection : SESSION_COPY.conversationHistory}
-          </span>
-        </button>
-      </div>
-
-      {/* ── Transient Error Banner ── */}
-      {error && (
-        <div className="flex items-center justify-between gap-2 px-2 py-1.5 rounded-sm bg-red-500/10 border border-red-500/20 text-[11px] text-red-400 shrink-0">
-          <div className="flex items-center gap-1.5 min-w-0">
-            <AlertCircle size={13} className="shrink-0 text-red-400" />
-            <span className="truncate">{error}</span>
-          </div>
+    <div className="flex-1 min-h-0 flex flex-col overflow-hidden select-none font-sans">
+      {/* ── Fixed Header: Top Actions + Error Banner + Pinned Section ── */}
+      <div className="shrink-0 flex flex-col gap-1 px-1.5 pt-3 pb-2 border-b border-[rgba(var(--border),0.08)]">
+        {/* Top Actions: + New Conversation & view mode toggle */}
+        <div className="flex flex-col gap-1">
           <button
             type="button"
-            onClick={handleRetry}
-            className="font-bold uppercase tracking-wider text-[rgb(var(--accent))] hover:underline shrink-0 cursor-pointer"
+            onClick={handleNew}
+            aria-label={SESSION_COPY.newConversationAriaLabel}
+            className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-sm text-left cursor-pointer transition-colors text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.04)] bg-transparent"
           >
-            {SESSION_COPY.retry}
+            <Plus size={14} className="shrink-0 text-[rgb(var(--accent))]" strokeWidth={2} />
+            <span className="text-[13.5px] font-medium tracking-normal">
+              {SESSION_COPY.newConversation}
+            </span>
+            {loading && (
+              <Loader2 size={12} className="animate-spin text-[rgb(var(--foreground-muted))]/60 ml-auto" />
+            )}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setViewMode(viewMode === "history" ? "projects" : "history")}
+            aria-pressed={viewMode === "history"}
+            className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-sm text-left cursor-pointer transition-colors text-[13.5px] font-medium tracking-normal text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.04)] bg-transparent"
+          >
+            {viewMode === "history" ? (
+              <FolderGit2 size={14} className="shrink-0 text-[rgb(var(--accent))]" />
+            ) : (
+              <MessagesSquare size={14} className="shrink-0 text-[rgb(var(--accent))]" />
+            )}
+            <span>
+              {viewMode === "history" ? SESSION_COPY.projectsSection : SESSION_COPY.conversationHistory}
+            </span>
           </button>
         </div>
-      )}
 
-      {/* ── Pinned Section — always visible in both modes ── */}
-      <section className="flex flex-col gap-1 shrink-0">
-        <div className="flex items-center gap-1.5 px-2 py-0.5">
-          <span className="text-[11.5px] font-mono font-bold tracking-wider uppercase text-[rgb(var(--foreground-muted))]/60">
-            {SESSION_COPY.pinnedSection}
-          </span>
-          <span className="text-[11px] font-mono text-[rgb(var(--foreground-muted))]/50 ml-auto">
-            {pinnedSessions.length}
-          </span>
-        </div>
-        <div className="flex flex-col gap-0.5">
-          {pinnedSessions.length > 0 ? (
-            pinnedSessions.map((session) => (
-              <SessionRowItem
-                key={session.id}
-                session={session}
-                active={session.id === activeSessionId}
-                restoring={isRestoring && restoringSessionId === session.id}
-                pinned={true}
-                onSelect={handleSelect}
-                onTogglePin={togglePin}
-                onRename={renameSession}
-                onMoveToProject={moveSessionToProject}
-                onDelete={deleteSession}
-                allProjects={allProjects}
-                projectTag={session.project_id ? projectNameMap.get(session.project_id) : undefined}
-              />
-            ))
-          ) : (
-            <span className="px-2 py-1.5 text-[11.5px] text-[rgb(var(--foreground-muted))]/40 italic">
-              {SESSION_COPY.noPinnedSessions}
-            </span>
-          )}
-        </div>
-      </section>
-
-      {/* ── Main Content Area ── */}
-      {viewMode === "history" ? (
-        /* Full Flat Reverse-Chronological Session History */
-        <div className="flex flex-col gap-1 flex-1 min-h-0">
-          <div className="px-3 py-1 text-[11.5px] font-mono font-bold tracking-wider uppercase text-[rgb(var(--foreground-muted))]/60">
-            {SESSION_COPY.conversationHistory}
+        {/* Transient Error Banner */}
+        {error && (
+          <div className="flex items-center justify-between gap-2 px-2 py-1.5 rounded-sm bg-red-500/10 border border-red-500/20 text-[11px] text-red-400">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <AlertCircle size={13} className="shrink-0 text-red-400" />
+              <span className="truncate">{error}</span>
+            </div>
+            <button
+              type="button"
+              onClick={handleRetry}
+              className="font-bold uppercase tracking-wider text-[rgb(var(--accent))] hover:underline shrink-0 cursor-pointer"
+            >
+              {SESSION_COPY.retry}
+            </button>
           </div>
-          <div ref={historyListRef} className="flex flex-col gap-0.5">
+        )}
+
+        {/* Pinned Section — always visible in both modes */}
+        <section className="flex flex-col gap-1">
+          <div className="flex items-center gap-1.5 px-2 py-0.5">
+            <span className="text-[11.5px] font-mono font-bold tracking-wider uppercase text-[rgb(var(--foreground-muted))]/60">
+              {SESSION_COPY.pinnedSection}
+            </span>
+            <span className="text-[11px] font-mono text-[rgb(var(--foreground-muted))]/50 ml-auto">
+              {pinnedSessions.length}
+            </span>
+          </div>
+          <div className="flex flex-col gap-0.5">
+            {pinnedSessions.length > 0 ? (
+              pinnedSessions.map((session) => (
+                <SessionRowItem
+                  key={session.id}
+                  session={session}
+                  active={session.id === activeSessionId}
+                  restoring={isRestoring && restoringSessionId === session.id}
+                  pinned={true}
+                  onSelect={handleSelect}
+                  onTogglePin={togglePin}
+                  onRename={renameSession}
+                  onMoveToProject={moveSessionToProject}
+                  onDelete={deleteSession}
+                  allProjects={allProjects}
+                  projectTag={session.project_id ? projectNameMap.get(session.project_id) : undefined}
+                />
+              ))
+            ) : (
+              <span className="px-2 py-1.5 text-[11.5px] text-[rgb(var(--foreground-muted))]/40 italic">
+                {SESSION_COPY.noPinnedSessions}
+              </span>
+            )}
+          </div>
+        </section>
+      </div>
+
+      {/* ── Scrollable Body: History or Projects list only ── */}
+      <div
+        ref={scrollRef}
+        onScroll={handleScroll}
+        data-session-scroll
+        className="flex-1 min-h-0 overflow-y-auto custom-scrollbar flex flex-col gap-3 px-1.5 pt-2 pb-16"
+      >
+        {/* ── Main Content Area ── */}
+        {viewMode === "history" ? (
+          /* Full Flat Reverse-Chronological Session History */
+          <div className="flex flex-col gap-1 flex-1 min-h-0">
+            <div className="px-3 py-1 text-[11.5px] font-mono font-bold tracking-wider uppercase text-[rgb(var(--foreground-muted))]/60">
+              {SESSION_COPY.conversationHistory}
+            </div>
             {allChronologicalSessions.length > 0 ? (
-              <>
-                {historyWindow.topPad > 0 && (
-                  <div style={{ height: historyWindow.topPad }} aria-hidden="true" />
-                )}
-                {allChronologicalSessions.slice(historyWindow.start, historyWindow.end).map((session, i) => (
-                  <div key={session.id} ref={historyWindow.itemRef(historyWindow.start + i)}>
-                    <SessionRowItem
-                      session={session}
-                      active={session.id === activeSessionId}
-                      restoring={isRestoring && restoringSessionId === session.id}
-                      pinned={Boolean(session.is_pinned)}
-                      onSelect={handleSelect}
-                      onTogglePin={togglePin}
-                      onRename={renameSession}
-                      onMoveToProject={moveSessionToProject}
-                      onDelete={deleteSession}
-                      allProjects={allProjects}
-                      projectTag={session.project_id ? projectNameMap.get(session.project_id) : undefined}
-                    />
-                  </div>
-                ))}
-                {historyWindow.bottomPad > 0 && (
-                  <div style={{ height: historyWindow.bottomPad }} aria-hidden="true" />
-                )}
-              </>
+              <div
+                style={{
+                  height: `${rowVirtualizer.getTotalSize()}px`,
+                  width: "100%",
+                  position: "relative",
+                }}
+              >
+                {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+                  const session = allChronologicalSessions[virtualRow.index];
+                  return (
+                    <div
+                      key={session.id}
+                      data-index={virtualRow.index}
+                      ref={rowVirtualizer.measureElement}
+                      style={{
+                        position: "absolute",
+                        top: 0,
+                        left: 0,
+                        width: "100%",
+                        transform: `translateY(${virtualRow.start}px)`,
+                      }}
+                    >
+                      <SessionRowItem
+                        session={session}
+                        active={session.id === activeSessionId}
+                        restoring={isRestoring && restoringSessionId === session.id}
+                        pinned={Boolean(session.is_pinned)}
+                        onSelect={handleSelect}
+                        onTogglePin={togglePin}
+                        onRename={renameSession}
+                        onMoveToProject={moveSessionToProject}
+                        onDelete={deleteSession}
+                        allProjects={allProjects}
+                        projectTag={session.project_id ? projectNameMap.get(session.project_id) : undefined}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
             ) : (
               <span className="px-2 py-1 text-[11.5px] text-[rgb(var(--foreground-muted))]/40 italic">
                 {SESSION_COPY.noSessionsTitle}
               </span>
             )}
           </div>
-        </div>
-      ) : (
-        /* Default Mode: Projects only (pinned is above, always visible) */
-        <div className="flex flex-col gap-3.5 flex-1 min-h-0">
+        ) : (
+          /* Default Mode: Projects only */
+          <div className="flex flex-col gap-3.5 flex-1 min-h-0">
 
-          {/* ── Projects Section ── */}
+            {/* Projects Section */}
+            <section className="flex flex-col gap-1">
+              <div className="flex items-center justify-between px-2 py-0.5">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[11.5px] font-mono font-bold tracking-wider uppercase text-[rgb(var(--foreground-muted))]/60">
+                    {SESSION_COPY.projectsSection}
+                  </span>
+                  {projects.length > 0 && (
+                    <span className="text-[10px] font-mono text-[rgb(var(--foreground-muted))]/50">
+                      {projects.length}
+                    </span>
+                  )}
+                </div>
+                <Tooltip label={SESSION_COPY.createProjectAriaLabel} side="left">
+                  <button
+                    type="button"
+                    onClick={() => setIsCreatingProject((v) => !v)}
+                    className="flex items-center justify-center w-5 h-5 rounded text-[rgb(var(--foreground-muted))]/70 hover:text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.08)] transition-all cursor-pointer"
+                    aria-label={SESSION_COPY.createProjectAriaLabel}
+                  >
+                    <FolderPlus size={13} />
+                  </button>
+                </Tooltip>
+              </div>
 
-          <section className="flex flex-col gap-1">
-            <div className="flex items-center justify-between px-2 py-0.5">
-              <div className="flex items-center gap-1.5">
-                <span className="text-[11.5px] font-mono font-bold tracking-wider uppercase text-[rgb(var(--foreground-muted))]/60">
-                  {SESSION_COPY.projectsSection}
-                </span>
-                {projects.length > 0 && (
-                  <span className="text-[10px] font-mono text-[rgb(var(--foreground-muted))]/50">
-                    {projects.length}
+              {/* Inline Project Creation */}
+              <AnimatePresence>
+                {isCreatingProject && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: "auto" }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="overflow-hidden px-2 pb-1"
+                  >
+                    <div className="flex items-center gap-1.5 border-b border-[rgba(var(--accent),0.5)] focus-within:border-[rgba(var(--accent),0.9)] transition-colors py-1">
+                      <input
+                        autoFocus
+                        value={projectName}
+                        onChange={(e) => setProjectName(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") handleCreateProject();
+                          if (e.key === "Escape") {
+                            setIsCreatingProject(false);
+                            setProjectName("");
+                          }
+                        }}
+                        placeholder={SESSION_COPY.newProjectPlaceholder}
+                        aria-label={SESSION_COPY.createProjectAriaLabel}
+                        className="flex-1 min-w-0 bg-transparent text-[13px] text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40 focus:outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleCreateProject}
+                        disabled={!projectName.trim()}
+                        className="flex items-center justify-center w-6 h-6 rounded text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.1)] disabled:opacity-30 cursor-pointer transition-colors"
+                      >
+                        <Check size={13} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsCreatingProject(false);
+                          setProjectName("");
+                        }}
+                        className="flex items-center justify-center w-6 h-6 rounded text-[rgb(var(--foreground-muted))] hover:bg-[rgba(var(--foreground),0.08)] cursor-pointer transition-colors"
+                      >
+                        <X size={13} />
+                      </button>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* Projects List */}
+              <div className="flex flex-col gap-0.5">
+                {projectIds.length > 0 ? (
+                  <Reorder.Group
+                    as="div"
+                    axis="y"
+                    values={projectIds}
+                    onReorder={handleReorderProjectIds}
+                    className="flex flex-col gap-0.5"
+                  >
+                    {projectIds.map((id) => {
+                      const group = projectGroupMap.get(id);
+                      if (!group) return null;
+                      return (
+                        <ProjectRowItem
+                          key={id}
+                          group={group}
+                          allProjects={allProjects}
+                          activeSessionId={activeSessionId}
+                          isRestoring={isRestoring}
+                          restoringSessionId={restoringSessionId}
+                          isDragTarget={dragOverProjectId === id}
+                          onSelectSession={handleSelect}
+                          onTogglePinSession={togglePin}
+                          onRenameSession={renameSession}
+                          onMoveSessionToProject={moveSessionToProject}
+                          onDeleteSession={deleteSession}
+                          onCreateSessionInProject={handleCreateInProject}
+                          onRenameProject={renameProject}
+                          onDeleteProject={deleteProject}
+                          onDragOver={handleSessionDragOver}
+                          onDragLeave={handleSessionDragLeave}
+                          onDrop={handleSessionDrop}
+                          onDragEndCommit={handleDragEndCommit}
+                        />
+                      );
+                    })}
+                  </Reorder.Group>
+                ) : (
+                  <span className="px-2 py-1 text-[11px] text-[rgb(var(--foreground-muted))]/35 italic">
+                    {SESSION_COPY.noProjectsYet}
                   </span>
                 )}
               </div>
-              <Tooltip label={SESSION_COPY.createProjectAriaLabel} side="left">
-                <button
-                  type="button"
-                  onClick={() => setIsCreatingProject((v) => !v)}
-                  className="flex items-center justify-center w-5 h-5 rounded text-[rgb(var(--foreground-muted))]/70 hover:text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.08)] transition-all cursor-pointer"
-                  aria-label={SESSION_COPY.createProjectAriaLabel}
-                >
-                  <FolderPlus size={13} />
-                </button>
-              </Tooltip>
-            </div>
+            </section>
 
-            {/* Inline Project Creation — underline style, no pill */}
-            <AnimatePresence>
-              {isCreatingProject && (
-                <motion.div
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: "auto" }}
-                  exit={{ opacity: 0, height: 0 }}
-                  className="overflow-hidden px-2 pb-1"
-                >
-                  <div className="flex items-center gap-1.5 border-b border-[rgba(var(--accent),0.5)] focus-within:border-[rgba(var(--accent),0.9)] transition-colors py-1">
-                    <input
-                      autoFocus
-                      value={projectName}
-                      onChange={(e) => setProjectName(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") handleCreateProject();
-                        if (e.key === "Escape") {
-                          setIsCreatingProject(false);
-                          setProjectName("");
-                        }
-                      }}
-                      placeholder={SESSION_COPY.newProjectPlaceholder}
-                      aria-label={SESSION_COPY.createProjectAriaLabel}
-                      className="flex-1 min-w-0 bg-transparent text-[13px] text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40 focus:outline-none"
-                    />
-                    <button
-                      type="button"
-                      onClick={handleCreateProject}
-                      disabled={!projectName.trim()}
-                      className="flex items-center justify-center w-6 h-6 rounded text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.1)] disabled:opacity-30 cursor-pointer transition-colors"
-                    >
-                      <Check size={13} />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsCreatingProject(false);
-                        setProjectName("");
-                      }}
-                      className="flex items-center justify-center w-6 h-6 rounded text-[rgb(var(--foreground-muted))] hover:bg-[rgba(var(--foreground),0.08)] cursor-pointer transition-colors"
-                    >
-                      <X size={13} />
-                    </button>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            {/* Projects List with Framer Motion Reorder.Group */}
-            <div className="flex flex-col gap-0.5">
-              {projectIds.length > 0 ? (
-                <Reorder.Group
-                  as="div"
-                  axis="y"
-                  values={projectIds}
-                  onReorder={handleReorderProjectIds}
-                  className="flex flex-col gap-0.5"
-                >
-                  {projectIds.map((id) => {
-                    const group = projectGroupMap.get(id);
-                    if (!group) return null;
-                    return (
-                      <ProjectRowItem
-                        key={id}
-                        group={group}
-                        allProjects={allProjects}
-                        activeSessionId={activeSessionId}
-                        isRestoring={isRestoring}
-                        restoringSessionId={restoringSessionId}
-                        isDragTarget={dragOverProjectId === id}
-                        onSelectSession={handleSelect}
-                        onTogglePinSession={togglePin}
-                        onRenameSession={renameSession}
-                        onMoveSessionToProject={moveSessionToProject}
-                        onDeleteSession={deleteSession}
-                        onCreateSessionInProject={handleCreateInProject}
-                        onRenameProject={renameProject}
-                        onDeleteProject={deleteProject}
-                        onDragOver={handleSessionDragOver}
-                        onDragLeave={handleSessionDragLeave}
-                        onDrop={handleSessionDrop}
-                        onDragEndCommit={handleDragEndCommit}
-                      />
-                    );
-                  })}
-                </Reorder.Group>
-              ) : (
-                <span className="px-2 py-1 text-[11px] text-[rgb(var(--foreground-muted))]/35 italic">
-                  {SESSION_COPY.noProjectsYet}
-                </span>
-              )}
-            </div>
-          </section>
-
-          {/* Bottom spacing cushion */}
-          <div className="h-6 shrink-0" aria-hidden="true" />
-        </div>
-      )}
+            {/* Bottom spacing cushion */}
+            <div className="h-6 shrink-0" aria-hidden="true" />
+          </div>
+        )}
+      </div>
     </div>
   );
 });

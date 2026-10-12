@@ -345,7 +345,7 @@ export const PersonalMemoryStagingCard: React.FC<PersonalMemoryStagingCardProps>
                 "rounded-2xl p-5 sm:p-6 glass-card border bg-[rgba(var(--card),0.45)] backdrop-blur-sm contain-paint transform-gpu",
                 isSuggestionsActive
                   ? "border-[rgba(var(--accent),0.35)] shadow-xl"
-                  : "border-[rgba(var(--accent),0.18)] hover:border-[rgba(var(--accent),0.35)] shadow-2xl"
+                  : "border-[rgba(var(--accent),0.18)] hover:border-[rgba(var(--accent),0.35)] shadow-lg"
               )
         )}
       >

@@ -458,187 +458,191 @@ export const NotificationPanel = memo(({ onClose }: NotificationPanelProps) => {
   );
 
   return (
-    <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden custom-scrollbar flex flex-col gap-0 p-3 pb-24 [scrollbar-gutter:stable]">
-
-      {/* ── Masthead ── */}
-      {badgeCount > 0 && (
-        <div className="flex items-baseline justify-end gap-2 shrink-0 mb-2.5">
-          <span className="font-mono tabular-nums text-[11px] text-[rgb(var(--accent))]/80 shrink-0">
-            {NOTIFICATION_COPY.unreadSummary(badgeCount)}
-          </span>
-        </div>
-      )}
-
-      {/* ── Underline tab bar (canonical design-spec 5.2 grammar) ── */}
-      <div
-        className="flex items-end gap-0 mb-2 px-0.5 border-b border-[rgba(var(--accent),0.08)] select-none overflow-x-auto no-scrollbar shrink-0"
-      >
-        <div
-          ref={tabListRef}
-          role="tablist"
-          aria-label={NOTIFICATION_COPY.tabsAriaLabel}
-          className="flex items-end gap-0"
-          onKeyDown={(e) => {
-            if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
-              e.preventDefault();
-              const buttons = tabListRef.current?.querySelectorAll<HTMLButtonElement>('[data-arrow-nav]');
-              if (!buttons || buttons.length === 0) return;
-              const currentIndex = Array.from(buttons).findIndex((b) => b === document.activeElement);
-              let nextIndex: number;
-              if (e.key === "ArrowLeft") {
-                nextIndex = currentIndex <= 0 ? buttons.length - 1 : currentIndex - 1;
-              } else {
-                nextIndex = currentIndex >= buttons.length - 1 ? 0 : currentIndex + 1;
-              }
-              buttons[nextIndex]?.focus();
-              buttons[nextIndex]?.click();
-            }
-          }}
-        >
-          {([
-            { id: "tasks", label: NOTIFICATION_COPY.tasksTab, count: tasks.length },
-            { id: "updates", label: NOTIFICATION_COPY.updatesTab, count: updates.length },
-          ] as const).map((tab, index) => {
-            const isActive = activeTab === tab.id;
-            return (
-              <span key={tab.id} className="flex items-end">
-                {index > 0 && (
-                  <span
-                    className="text-[11px] text-[rgb(var(--foreground-muted))]/25 select-none pb-1.5 px-1 sm:px-2"
-                    aria-hidden="true"
-                  >
-                    |
-                  </span>
-                )}
-                <button
-                  type="button"
-                  id={`notification-tab-${tab.id}`}
-                  role="tab"
-                  aria-selected={isActive}
-                  aria-controls="notification-tabpanel"
-                  tabIndex={isActive ? 0 : -1}
-                  data-arrow-nav
-                  onClick={() => setActiveTab(tab.id)}
-                  className={cn(
-                    "flex items-center gap-1.5 px-2 pb-1.5 pt-1 text-[11px] sm:text-[11.5px] font-mono font-bold uppercase tracking-[0.06em] border-b-2 transition-colors duration-150 cursor-pointer shrink-0",
-                    isActive
-                      ? "border-[rgb(var(--accent))] text-[rgb(var(--accent))]"
-                      : "border-transparent text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))]"
-                  )}
-                >
-                  <span>{tab.label}</span>
-                  {tab.count > 0 && (
-                    <span className="font-mono tabular-nums text-[11px] opacity-70">{tab.count}</span>
-                  )}
-                </button>
-              </span>
-            );
-          })}
-        </div>
-
-        <div className="flex-1" />
-        {displayedItems.length > 0 && (
-          <Tooltip label={NOTIFICATION_COPY.dismissAllTooltip} side="left">
-            <button
-              type="button"
-              onClick={handleDismissAll}
-              className="mb-1 flex items-center gap-1 h-8 px-2 text-[11px] font-medium text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))] transition-colors cursor-pointer rounded-md hover:bg-[rgba(var(--foreground),0.04)]"
-              aria-label={NOTIFICATION_COPY.dismissAllTooltip}
-            >
-              <X size={11} />
-              <span>{NOTIFICATION_COPY.dismissAll}</span>
-            </button>
-          </Tooltip>
+    <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+      {/* ── Fixed Header Area (Masthead + Tab Bar + Dismiss All) ── */}
+      <div className="shrink-0 px-3 pt-3 select-none">
+        {/* ── Masthead ── */}
+        {badgeCount > 0 && (
+          <div className="flex items-baseline justify-end gap-2 shrink-0 mb-2.5">
+            <span className="font-mono tabular-nums text-[11px] text-[rgb(var(--accent))]/80 shrink-0">
+              {NOTIFICATION_COPY.unreadSummary(badgeCount)}
+            </span>
+          </div>
         )}
+
+        {/* ── Underline tab bar & dismiss all on single line ── */}
+        <div className="flex items-end gap-0 border-b border-[rgba(var(--accent),0.08)]">
+          <div className="flex items-end gap-0 overflow-x-auto no-scrollbar">
+            <div
+              ref={tabListRef}
+              role="tablist"
+              aria-label={NOTIFICATION_COPY.tabsAriaLabel}
+              className="flex items-end gap-0"
+              onKeyDown={(e) => {
+                if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+                  e.preventDefault();
+                  const buttons = tabListRef.current?.querySelectorAll<HTMLButtonElement>('[data-arrow-nav]');
+                  if (!buttons || buttons.length === 0) return;
+                  const currentIndex = Array.from(buttons).findIndex((b) => b === document.activeElement);
+                  let nextIndex: number;
+                  if (e.key === "ArrowLeft") {
+                    nextIndex = currentIndex <= 0 ? buttons.length - 1 : currentIndex - 1;
+                  } else {
+                    nextIndex = currentIndex >= buttons.length - 1 ? 0 : currentIndex + 1;
+                  }
+                  buttons[nextIndex]?.focus();
+                  buttons[nextIndex]?.click();
+                }
+              }}
+            >
+              {([
+                { id: "tasks", label: NOTIFICATION_COPY.tasksTab, count: tasks.length },
+                { id: "updates", label: NOTIFICATION_COPY.updatesTab, count: updates.length },
+              ] as const).map((tab, index) => {
+                const isActive = activeTab === tab.id;
+                return (
+                  <span key={tab.id} className="flex items-end">
+                    {index > 0 && (
+                      <span
+                        className="text-[11px] text-[rgb(var(--foreground-muted))]/25 select-none pb-1.5 px-1 sm:px-2"
+                        aria-hidden="true"
+                      >
+                        |
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      id={`notification-tab-${tab.id}`}
+                      role="tab"
+                      aria-selected={isActive}
+                      aria-controls="notification-tabpanel"
+                      tabIndex={isActive ? 0 : -1}
+                      data-arrow-nav
+                      onClick={() => setActiveTab(tab.id)}
+                      className={cn(
+                        "flex items-center gap-1.5 px-2 pb-1.5 pt-1 text-[11px] sm:text-[11.5px] font-mono font-bold uppercase tracking-[0.06em] border-b-2 transition-colors duration-150 cursor-pointer shrink-0",
+                        isActive
+                          ? "border-[rgb(var(--accent))] text-[rgb(var(--accent))]"
+                          : "border-transparent text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))]"
+                      )}
+                    >
+                      <span>{tab.label}</span>
+                      {tab.count > 0 && (
+                        <span className="font-mono tabular-nums text-[11px] opacity-70">{tab.count}</span>
+                      )}
+                    </button>
+                  </span>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="flex-1" />
+          {displayedItems.length > 0 && (
+            <Tooltip label={NOTIFICATION_COPY.dismissAllTooltip} side="left">
+              <button
+                type="button"
+                onClick={handleDismissAll}
+                className="mb-1 flex items-center gap-1 h-8 px-2 text-[11px] font-medium text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))] transition-colors cursor-pointer rounded-md hover:bg-[rgba(var(--foreground),0.04)] shrink-0"
+                aria-label={NOTIFICATION_COPY.dismissAllTooltip}
+              >
+                <X size={11} />
+                <span>{NOTIFICATION_COPY.dismissAll}</span>
+              </button>
+            </Tooltip>
+          )}
+        </div>
       </div>
 
-      {/* Content list */}
-      {error && displayedItems.length === 0 ? (
-        /* A failed fetch is not an empty list. This panel is where pipeline
-           failures surface, so it must not claim there is nothing to report. */
-        <div
-          id="notification-tabpanel"
-          aria-labelledby={`notification-tab-${activeTab}`}
-          role="alert"
-          className="flex flex-col items-center justify-center py-16 px-4 text-center gap-3"
-        >
-          <div className="w-14 h-14 rounded-2xl border border-[rgba(var(--danger),0.25)] bg-[rgba(var(--danger),0.07)] flex items-center justify-center mb-1">
-            <Bell size={24} className="text-[rgb(var(--danger))]/70" />
-          </div>
-          <h3 className="font-display text-[16px] font-black uppercase tracking-[0.12em] text-[rgb(var(--foreground))]">
-            {NOTIFICATION_COPY.fetchFailedTitle}
-          </h3>
-          <p className="text-[12px] text-[rgb(var(--foreground-muted))]/70 max-w-[240px] leading-relaxed">
-            {NOTIFICATION_COPY.fetchFailedSubtitle}
-          </p>
-          <button
-            type="button"
-            onClick={() => void fetchNotifications()}
-            disabled={loading}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-mono border border-[rgba(var(--border),0.3)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:border-[rgba(var(--accent),0.4)] hover:bg-[rgba(var(--accent),0.08)] transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+      {/* ── Scrollable Content list ── */}
+      <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden custom-scrollbar p-3 pb-24 [scrollbar-gutter:stable]">
+        {error && displayedItems.length === 0 ? (
+          /* A failed fetch is not an empty list. This panel is where pipeline
+             failures surface, so it must not claim there is nothing to report. */
+          <div
+            id="notification-tabpanel"
+            aria-labelledby={`notification-tab-${activeTab}`}
+            role="alert"
+            className="flex flex-col items-center justify-center py-16 px-4 text-center gap-3"
           >
-            <RotateCw size={11} className={loading ? "animate-spin" : undefined} />
-            {NOTIFICATION_COPY.fetchFailedRetry}
-          </button>
-        </div>
-      ) : loading && displayedItems.length === 0 ? (
-        <div id="notification-tabpanel" role="tabpanel" aria-labelledby={`notification-tab-${activeTab}`} className="flex flex-col gap-2.5" aria-hidden="true">
-          {[0, 1, 2].map((i) => (
-            <div
-              key={i}
-              className="flex flex-col gap-1.5 p-2.5 rounded-lg border border-[rgba(var(--border),0.1)] bg-[rgba(var(--card),0.4)] animate-pulse"
-            >
-              <div className="flex items-center gap-1.5">
-                <div className="h-2.5 w-2.5 rounded-full bg-[rgba(var(--foreground),0.1)]" />
-                <div className="h-2.5 rounded-md bg-[rgba(var(--foreground),0.08)] w-20" />
-              </div>
-              <div className="h-3.5 rounded-md bg-[rgba(var(--foreground),0.1)] w-3/5" />
-              <div className="h-px w-full bg-[rgba(var(--border),0.08)]" />
-              <div className="h-2.5 rounded-md bg-[rgba(var(--foreground),0.06)] w-full" />
-              <div className="h-2.5 rounded-md bg-[rgba(var(--foreground),0.05)] w-2/5" />
+            <div className="w-14 h-14 rounded-2xl border border-[rgba(var(--danger),0.25)] bg-[rgba(var(--danger),0.07)] flex items-center justify-center mb-1">
+              <Bell size={24} className="text-[rgb(var(--danger))]/70" />
             </div>
-          ))}
-        </div>
-      ) : displayedItems.length === 0 ? (
-        <div id="notification-tabpanel" role="tabpanel" aria-labelledby={`notification-tab-${activeTab}`} className="flex flex-col items-center justify-center py-16 px-4 text-center gap-3">
-          <div className="w-14 h-14 rounded-2xl border border-[rgba(var(--accent),0.2)] bg-[rgba(var(--accent),0.05)] flex items-center justify-center mb-1">
-            <Bell size={24} className="text-[rgb(var(--accent))]/50" />
-          </div>
             <h3 className="font-display text-[16px] font-black uppercase tracking-[0.12em] text-[rgb(var(--foreground))]">
-            {activeTab === "tasks" ? NOTIFICATION_COPY.tasksEmptyTitle : NOTIFICATION_COPY.updatesEmptyTitle}
-          </h3>
-          <p className="text-[12px] text-[rgb(var(--foreground-muted))]/70 max-w-[240px] leading-relaxed">
-            {activeTab === "tasks" ? NOTIFICATION_COPY.tasksEmptySubtitle : NOTIFICATION_COPY.updatesEmptySubtitle}
-          </p>
-        </div>
-      ) : (
-        <motion.div
-          key={activeTab}
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 0.15, ease: "easeOut" }}
-          className="flex flex-col"
-        >
-        <div id="notification-tabpanel" role="tabpanel" aria-labelledby={`notification-tab-${activeTab}`} className="flex flex-col gap-3">
-          {sections.map(({ group, items }) => (
-            <div key={group} className="flex flex-col gap-1.5">
-              <TimeGroupHeader group={group} />
-              {items.map((item) => (
-                <NotificationItem
-                  key={item.key}
-                  group={item}
-                  isWorking={activeActionIds.includes(item.latest.id)}
-                  isInitialUnread={unreadSnapshotRef.current ? unreadSnapshotRef.current.has(item.key) : item.hasUnread}
-                  onPrimary={handlePrimary}
-                  onDismiss={dismissGroup}
-                  onOpen={handleOpen}
-                />
-              ))}
+              {NOTIFICATION_COPY.fetchFailedTitle}
+            </h3>
+            <p className="text-[12px] text-[rgb(var(--foreground-muted))]/70 max-w-[240px] leading-relaxed">
+              {NOTIFICATION_COPY.fetchFailedSubtitle}
+            </p>
+            <button
+              type="button"
+              onClick={() => void fetchNotifications()}
+              disabled={loading}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-mono border border-[rgba(var(--border),0.3)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:border-[rgba(var(--accent),0.4)] hover:bg-[rgba(var(--accent),0.08)] transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <RotateCw size={11} className={loading ? "animate-spin" : undefined} />
+              {NOTIFICATION_COPY.fetchFailedRetry}
+            </button>
+          </div>
+        ) : loading && displayedItems.length === 0 ? (
+          <div id="notification-tabpanel" role="tabpanel" aria-labelledby={`notification-tab-${activeTab}`} className="flex flex-col gap-2.5" aria-hidden="true">
+            {[0, 1, 2].map((i) => (
+              <div
+                key={i}
+                className="flex flex-col gap-1.5 p-2.5 rounded-lg border border-[rgba(var(--border),0.1)] bg-[rgba(var(--card),0.4)] animate-pulse"
+              >
+                <div className="flex items-center gap-1.5">
+                  <div className="h-2.5 w-2.5 rounded-full bg-[rgba(var(--foreground),0.1)]" />
+                  <div className="h-2.5 rounded-md bg-[rgba(var(--foreground),0.08)] w-20" />
+                </div>
+                <div className="h-3.5 rounded-md bg-[rgba(var(--foreground),0.1)] w-3/5" />
+                <div className="h-px w-full bg-[rgba(var(--border),0.08)]" />
+                <div className="h-2.5 rounded-md bg-[rgba(var(--foreground),0.06)] w-full" />
+                <div className="h-2.5 rounded-md bg-[rgba(var(--foreground),0.05)] w-2/5" />
+              </div>
+            ))}
+          </div>
+        ) : displayedItems.length === 0 ? (
+          <div id="notification-tabpanel" role="tabpanel" aria-labelledby={`notification-tab-${activeTab}`} className="flex flex-col items-center justify-center py-16 px-4 text-center gap-3">
+            <div className="w-14 h-14 rounded-2xl border border-[rgba(var(--accent),0.2)] bg-[rgba(var(--accent),0.05)] flex items-center justify-center mb-1">
+              <Bell size={24} className="text-[rgb(var(--accent))]/50" />
             </div>
-          ))}
-        </div>
-        </motion.div>
-      )}
+              <h3 className="font-display text-[16px] font-black uppercase tracking-[0.12em] text-[rgb(var(--foreground))]">
+              {activeTab === "tasks" ? NOTIFICATION_COPY.tasksEmptyTitle : NOTIFICATION_COPY.updatesEmptyTitle}
+            </h3>
+            <p className="text-[12px] text-[rgb(var(--foreground-muted))]/70 max-w-[240px] leading-relaxed">
+              {activeTab === "tasks" ? NOTIFICATION_COPY.tasksEmptySubtitle : NOTIFICATION_COPY.updatesEmptySubtitle}
+            </p>
+          </div>
+        ) : (
+          <motion.div
+            key={activeTab}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.15, ease: "easeOut" }}
+            className="flex flex-col"
+          >
+          <div id="notification-tabpanel" role="tabpanel" aria-labelledby={`notification-tab-${activeTab}`} className="flex flex-col gap-3">
+            {sections.map(({ group, items }) => (
+              <div key={group} className="flex flex-col gap-1.5">
+                <TimeGroupHeader group={group} />
+                {items.map((item) => (
+                  <NotificationItem
+                    key={item.key}
+                    group={item}
+                    isWorking={activeActionIds.includes(item.latest.id)}
+                    isInitialUnread={unreadSnapshotRef.current ? unreadSnapshotRef.current.has(item.key) : item.hasUnread}
+                    onPrimary={handlePrimary}
+                    onDismiss={dismissGroup}
+                    onOpen={handleOpen}
+                  />
+                ))}
+              </div>
+            ))}
+          </div>
+          </motion.div>
+        )}
+      </div>
     </div>
   );
 });

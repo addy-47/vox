@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from "react";
 import { SETTINGS_DOMAINS as DOMAINS, type SettingsDomainId as DomainId } from "@/data/settingsCopy";
 import { useSettingsStore } from "@/store/settingsStore";
 import { isCompactWidth } from "@/layout/breakpoints";
@@ -83,20 +83,122 @@ export function useSettingsPage() {
     return Math.max(0.72, Math.min(1.0, Math.min(widthRatio, heightRatio)));
   }, [windowWidth, windowHeight]);
 
-  const radiusX = useMemo(
+  const baselineRadiusX = useMemo(
     () => Math.round(Math.max(68, Math.min(120, (windowWidth * 0.09 - 10) * dynamicPull))),
     [windowWidth, dynamicPull]
   );
-  const radiusY = useMemo(
+  const baselineRadiusY = useMemo(
     () => Math.round(Math.max(58, Math.min(120, (windowHeight * 0.14 - 8) * dynamicPull))),
     [windowHeight, dynamicPull]
   );
+
+  // Dynamic inward pull states: dynamically pull radial nodes inward if surrounding cards sit close
+  const [dynamicRadiusX, setDynamicRadiusX] = useState<number | null>(null);
+  const [dynamicRadiusY, setDynamicRadiusY] = useState<number | null>(null);
+
+  const radiusX = dynamicRadiusX ?? baselineRadiusX;
+  const radiusY = dynamicRadiusY ?? baselineRadiusY;
 
   const layoutMode = useMemo<"full-max" | "full-min" | "small">( () => {
     if (isCompact) return "small";
     if (windowWidth < 1366 || activeDomains.length > 1) return "full-min";
     return "full-max";
   }, [isCompact, windowWidth, activeDomains.length]);
+
+  // In constrained vertical viewports (like window height < 840), side cards collapse into
+  // a unified carousel card to prevent vertical crowding, converging diagonal connectors.
+  const isSideCarousel = useMemo(() => {
+    if (isCompact) return false;
+    return windowHeight < 840;
+  }, [isCompact, windowHeight]);
+
+  // ── Dedicated Dynamic Radial Hub Clearance Effect ──
+  // Always runs to guarantee that the radial nodes never overlap surrounding cards (such as Persona above).
+  useLayoutEffect(() => {
+    if (isCompact) return;
+
+    const measureClearance = () => {
+      const centerNodeEl = document.getElementById("center-node");
+      if (!centerNodeEl || !containerRef.current) return;
+
+      const centerRect = centerNodeEl.getBoundingClientRect();
+      const cy = (centerRect.top + centerRect.bottom) / 2;
+      const cx = (centerRect.left + centerRect.right) / 2;
+
+      let maxSafeRadiusY = baselineRadiusY;
+      let maxSafeRadiusX = baselineRadiusX;
+
+      // 1. Persona card (12:00 node at cy - radiusY). Node radius is 20px, min gap is 24px => 44px
+      const personaCardEl = document.getElementById("card-persona");
+      if (personaCardEl) {
+        const personaRect = personaCardEl.getBoundingClientRect();
+        const clearanceY = (cy - personaRect.bottom) - 44;
+        if (clearanceY > 15) {
+          maxSafeRadiusY = Math.min(maxSafeRadiusY, Math.round(clearanceY));
+        }
+      }
+
+      // 2. Appearance card (6:00 node at cy + radiusY)
+      const appearanceCardEl = document.getElementById("card-appearance");
+      if (appearanceCardEl) {
+        const appearanceRect = appearanceCardEl.getBoundingClientRect();
+        const clearanceY = (appearanceRect.top - cy) - 44;
+        if (clearanceY > 15) {
+          maxSafeRadiusY = Math.min(maxSafeRadiusY, Math.round(clearanceY));
+        }
+      }
+
+      // 3. Left side cards (10:00 & 8:00 nodes at cx - radiusX * cos(30°))
+      const leftCardEl = document.getElementById("card-left-carousel") || document.getElementById("card-interaction") || document.getElementById("card-personal_memory");
+      if (leftCardEl) {
+        const leftRect = leftCardEl.getBoundingClientRect();
+        const clearanceX = (cx - leftRect.right - 44) / 0.866;
+        if (clearanceX > 25) {
+          maxSafeRadiusX = Math.min(maxSafeRadiusX, Math.round(clearanceX));
+        }
+      }
+
+      // 4. Right side cards (2:00 & 4:00 nodes at cx + radiusX * cos(30°))
+      const rightCardEl = document.getElementById("card-right-carousel") || document.getElementById("card-models") || document.getElementById("card-working_memory");
+      if (rightCardEl) {
+        const rightRect = rightCardEl.getBoundingClientRect();
+        const clearanceX = (rightRect.left - cx - 44) / 0.866;
+        if (clearanceX > 25) {
+          maxSafeRadiusX = Math.min(maxSafeRadiusX, Math.round(clearanceX));
+        }
+      }
+
+      const targetRadiusX = Math.max(50, Math.min(baselineRadiusX, maxSafeRadiusX));
+      const targetRadiusY = Math.max(40, Math.min(baselineRadiusY, maxSafeRadiusY));
+
+      setDynamicRadiusX((prev) => (prev === null || Math.abs(prev - targetRadiusX) > 1.5 ? targetRadiusX : prev));
+      setDynamicRadiusY((prev) => (prev === null || Math.abs(prev - targetRadiusY) > 1.5 ? targetRadiusY : prev));
+    };
+
+    measureClearance();
+    const t1 = setTimeout(measureClearance, 50);
+    const t2 = setTimeout(measureClearance, 220);
+
+    let ro: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== "undefined" && containerRef.current) {
+      ro = new ResizeObserver(measureClearance);
+      ro.observe(containerRef.current);
+      ["persona", "appearance", "interaction", "models", "working_memory", "personal_memory"].forEach((id) => {
+        const el = document.getElementById(`card-${id}`);
+        if (el && ro) ro.observe(el);
+      });
+      const leftCar = document.getElementById("card-left-carousel");
+      if (leftCar && ro) ro.observe(leftCar);
+      const rightCar = document.getElementById("card-right-carousel");
+      if (rightCar && ro) ro.observe(rightCar);
+    }
+
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+      if (ro) ro.disconnect();
+    };
+  }, [isCompact, windowWidth, windowHeight, baselineRadiusX, baselineRadiusY, activeDomains]);
 
   useEffect(() => {
     if (isCompact) return;
@@ -114,7 +216,11 @@ export function useSettingsPage() {
       const centerNodeEl = document.getElementById("center-node");
       const clickedCenter = centerNodeEl && centerNodeEl.contains(target);
 
-      if (!clickedInsideNodeOrCard && !clickedCenter) {
+      const leftCarouselEl = document.getElementById("card-left-carousel");
+      const rightCarouselEl = document.getElementById("card-right-carousel");
+      const clickedCarousel = (leftCarouselEl && leftCarouselEl.contains(target)) || (rightCarouselEl && rightCarouselEl.contains(target));
+
+      if (!clickedInsideNodeOrCard && !clickedCenter && !clickedCarousel) {
         setActiveDomains((prev) => prev.slice(0, -1));
       }
     };
@@ -153,7 +259,14 @@ export function useSettingsPage() {
           }
 
           const nodeEl = document.getElementById(`node-${domain.id}`);
-          const cardEl = document.getElementById(`card-${domain.id}`);
+          let cardEl = document.getElementById(`card-${domain.id}`);
+          if (!cardEl && isSideCarousel) {
+            if (domain.id === "interaction" || domain.id === "personal_memory") {
+              cardEl = document.getElementById("card-left-carousel");
+            } else if (domain.id === "models" || domain.id === "working_memory") {
+              cardEl = document.getElementById("card-right-carousel");
+            }
+          }
 
           if (nodeEl && cardEl) {
             const nodeRect = nodeEl.getBoundingClientRect();
@@ -244,6 +357,10 @@ export function useSettingsPage() {
         const el = document.getElementById(`card-${d.id}`);
         if (el && observer) observer.observe(el);
       });
+      const leftCar = document.getElementById("card-left-carousel");
+      if (leftCar && observer) observer.observe(leftCar);
+      const rightCar = document.getElementById("card-right-carousel");
+      if (rightCar && observer) observer.observe(rightCar);
     }
 
     return () => {
@@ -253,7 +370,7 @@ export function useSettingsPage() {
       cancelAnimationFrame(calcRafId);
       if (observer) observer.disconnect();
     };
-  }, [activeDomains, isCompact, windowWidth, windowHeight]);
+  }, [activeDomains, isCompact, windowWidth, windowHeight, radiusX, radiusY]);
 
   const handleSelect = useCallback((id: DomainId) => {
     setActiveDomains((prev) => {
@@ -281,6 +398,7 @@ export function useSettingsPage() {
     radiusX,
     radiusY,
     layoutMode,
+    isSideCarousel,
     handleSelect,
     handleCenterClick,
   };

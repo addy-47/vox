@@ -1,4 +1,4 @@
-import { useMemo, useEffect, memo, Suspense, lazy } from "react";
+import { useMemo, useEffect, useCallback, memo, Suspense, lazy } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
 import { ErrorBoundary, OrbitalLoader } from "@/shared/components/common";
 import { SETTINGS_DOMAINS as DOMAINS, type SettingsDomainId as DomainId } from "@/data/settingsCopy";
@@ -59,6 +59,7 @@ import {
 } from "@/shared/components/settings/SettingsVisualConnectors";
 
 import { SettingsCardWrapper } from "@/shared/components/settings/SettingsCardWrapper";
+import { SettingsSideCarouselCard } from "@/shared/components/settings/SettingsSideCarouselCard";
 import { useSettingsPage } from "@/shared/hooks/useSettingsPage";
 import { useMemoryTrace } from "@/shared/hooks/useMemoryTrace";
 
@@ -83,6 +84,7 @@ export const Settings: React.FC = () => {
     containerRef,
     activeDomains,
     isCompact,
+    isSideCarousel,
     lines,
     radiusX,
     radiusY,
@@ -97,6 +99,12 @@ export const Settings: React.FC = () => {
     close: () => setActiveDomains([]),
   }), [setActiveDomains]);
   useRegisterPageDrawer(drawerHandlers);
+
+  const handleCarouselSwitch = useCallback((_side: "left" | "right", _nextId: DomainId) => {
+    // No-op: carousel card manages its own currentId locally.
+    // activeDomains keeps BOTH pair domains permanently so the SVG fork
+    // never flickers or recalculates when the user cycles between cards.
+  }, []);
 
   // Escape collapses the topmost active Settings card (mirrors outside-click FILO pop).
   useEffect(() => {
@@ -131,45 +139,92 @@ export const Settings: React.FC = () => {
   const hasSelection = activeDomains.length > 0;
 
   return (
-    <div className="flex-1 flex flex-col min-w-0 z-10 h-full relative overflow-hidden bg-transparent select-none p-0 lg:p-6 lg:pb-[72px]">
+    <div className="flex-1 flex flex-col min-w-0 z-10 h-full relative overflow-hidden bg-transparent select-none p-0 lg:px-6 lg:pt-2 lg:pb-[72px]">
 
 
       {/* ── Desktop & Tablet Hexagon/Grid Layout (>= 1024px) ────────────────── */}
       {!isCompact ? (
-        <div ref={containerRef} className="flex-1 w-full grid grid-cols-12 grid-rows-6 gap-4 items-stretch relative min-h-0">
+        <div ref={containerRef} className="flex-1 w-full grid grid-cols-12 grid-rows-6 gap-4 items-stretch relative min-h-0 overflow-visible">
 
           {/* Dynamic SVG Overlay for Node-to-Card connections (rendered synchronously with active cards) */}
           <SettingsConnectorsOverlay
             domains={DOMAINS}
             activeDomains={activeDomains}
             lines={lines}
+            isSideCarousel={isSideCarousel}
           />
 
-          {/* Top-Left Slot (Col 1-4, Row 1-3) -> 10:00 (Interaction Card) */}
-          <div className="col-start-1 col-span-4 row-start-1 row-span-3 flex items-end justify-end p-2 relative z-10">
-            <SettingsCardWrapper domain={DOMAINS[5]} isActive={activeDomains.includes("interaction")} layoutMode={layoutMode}>
-              <DomainContent domain={DOMAINS[5].id} layoutMode={layoutMode} />
-            </SettingsCardWrapper>
-          </div>
+          {/* Side Cards: Unified Carousel in constrained viewports or independent slots in wide viewports */}
+          {isSideCarousel ? (
+            <>
+              {/* Left Side Carousel Card -> 10:00 (Interaction) & 8:00 (Personal Memory) */}
+              <div
+                id="card-left-carousel"
+                className="col-start-1 col-span-4 row-start-1 row-span-6 flex items-center justify-end p-2 relative z-10 overflow-visible"
+              >
+                <SettingsSideCarouselCard
+                  side="left"
+                  activeDomains={activeDomains}
+                  layoutMode={layoutMode}
+                  onSwitchDomain={(nextId) => handleCarouselSwitch("left", nextId)}
+                  renderDomainContent={(domain, mode) => (
+                    <DomainContent domain={domain} layoutMode={mode} />
+                  )}
+                />
+              </div>
 
-          {/* Top-Center Slot (Col 5-8, Row 1-2) -> 12:00 (Persona Card) */}
-          <div className="col-start-5 col-span-4 row-start-1 row-span-2 flex items-end justify-center p-2 relative z-10">
+              {/* Right Side Carousel Card -> 2:00 (Models) & 4:00 (Working Memory) */}
+              <div
+                id="card-right-carousel"
+                className="col-start-9 col-span-4 row-start-1 row-span-6 flex items-center justify-start p-2 relative z-10 overflow-visible"
+              >
+                <SettingsSideCarouselCard
+                  side="right"
+                  activeDomains={activeDomains}
+                  layoutMode={layoutMode}
+                  onSwitchDomain={(nextId) => handleCarouselSwitch("right", nextId)}
+                  renderDomainContent={(domain, mode) => (
+                    <DomainContent domain={domain} layoutMode={mode} />
+                  )}
+                />
+              </div>
+            </>
+          ) : (
+            <>
+              {/* Top-Left Slot (Col 1-4, Row 1-3) -> 10:00 (Interaction Card) */}
+              <div className="col-start-1 col-span-4 row-start-1 row-span-3 flex items-end justify-end p-2 relative z-10">
+                <SettingsCardWrapper domain={DOMAINS[5]} isActive={activeDomains.includes("interaction")} layoutMode={layoutMode}>
+                  <DomainContent domain={DOMAINS[5].id} layoutMode={layoutMode} />
+                </SettingsCardWrapper>
+              </div>
+
+              {/* Top-Right Slot (Col 9-12, Row 1-3) -> 2:00 (Models Card) */}
+              <div className="col-start-9 col-span-4 row-start-1 row-span-3 flex items-end justify-start p-2 relative z-10">
+                <SettingsCardWrapper domain={DOMAINS[1]} isActive={activeDomains.includes("models")} layoutMode={layoutMode}>
+                  <DomainContent domain={DOMAINS[1].id} layoutMode={layoutMode} />
+                </SettingsCardWrapper>
+              </div>
+
+              {/* Middle-Left Slot (Col 1-4, Row 4-6) -> 8:00 (Personal Memory Card) */}
+              <div className="col-start-1 col-span-4 row-start-4 row-span-3 flex items-start justify-end p-2 relative z-10">
+                <SettingsCardWrapper domain={DOMAINS[4]} isActive={activeDomains.includes("personal_memory")} layoutMode={layoutMode}>
+                  <DomainContent domain={DOMAINS[4].id} layoutMode={layoutMode} />
+                </SettingsCardWrapper>
+              </div>
+
+              {/* Middle-Right Slot (Col 9-12, Row 4-6) -> 4:00 (Working Memory Card) */}
+              <div className="col-start-9 col-span-4 row-start-4 row-span-3 flex items-start justify-start p-2 relative z-10">
+                <SettingsCardWrapper domain={DOMAINS[2]} isActive={activeDomains.includes("working_memory")} layoutMode={layoutMode}>
+                  <DomainContent domain={DOMAINS[2].id} layoutMode={layoutMode} />
+                </SettingsCardWrapper>
+              </div>
+            </>
+          )}
+
+          {/* Top-Center Slot (Col 5-8, Row 1-2) -> 12:00 (Persona Card - elevated to avoid sibling collision & unclipped) */}
+          <div className="col-start-5 col-span-4 row-start-1 row-span-2 flex items-start justify-center p-2 relative z-10 overflow-visible">
             <SettingsCardWrapper domain={DOMAINS[0]} isActive={activeDomains.includes("persona")} layoutMode={layoutMode}>
               <DomainContent domain={DOMAINS[0].id} layoutMode={layoutMode} />
-            </SettingsCardWrapper>
-          </div>
-
-          {/* Top-Right Slot (Col 9-12, Row 1-3) -> 2:00 (Models Card) */}
-          <div className="col-start-9 col-span-4 row-start-1 row-span-3 flex items-end justify-start p-2 relative z-10">
-            <SettingsCardWrapper domain={DOMAINS[1]} isActive={activeDomains.includes("models")} layoutMode={layoutMode}>
-              <DomainContent domain={DOMAINS[1].id} layoutMode={layoutMode} />
-            </SettingsCardWrapper>
-          </div>
-
-          {/* Middle-Left Slot (Col 1-4, Row 4-6) -> 8:00 (Personal Memory Card) */}
-          <div className="col-start-1 col-span-4 row-start-4 row-span-3 flex items-start justify-end p-2 relative z-10">
-            <SettingsCardWrapper domain={DOMAINS[4]} isActive={activeDomains.includes("personal_memory")} layoutMode={layoutMode}>
-              <DomainContent domain={DOMAINS[4].id} layoutMode={layoutMode} />
             </SettingsCardWrapper>
           </div>
 
@@ -197,13 +252,6 @@ export const Settings: React.FC = () => {
 
               <HubCenter onClick={handleCenterClick} hasActiveCards={hasSelection} />
             </div>
-          </div>
-
-          {/* Middle-Right Slot (Col 9-12, Row 4-6) -> 4:00 (Working Memory Card) */}
-          <div className="col-start-9 col-span-4 row-start-4 row-span-3 flex items-start justify-start p-2 relative z-10">
-            <SettingsCardWrapper domain={DOMAINS[2]} isActive={activeDomains.includes("working_memory")} layoutMode={layoutMode}>
-              <DomainContent domain={DOMAINS[2].id} layoutMode={layoutMode} />
-            </SettingsCardWrapper>
           </div>
 
           {/* Bottom-Center Slot (Col 5-8, Row 5-6) -> 6:00 (Appearance Card) */}

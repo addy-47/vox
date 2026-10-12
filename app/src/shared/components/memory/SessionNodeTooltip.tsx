@@ -113,7 +113,7 @@ export const SessionNodeTooltip = memo(({
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.94, y: 6 }}
             transition={{ duration: 0.15, ease: "easeOut" }}
-            className="w-[350px] max-w-[calc(100vw-32px)] rounded-xl glass-card border border-[rgba(var(--accent),0.22)] bg-[rgba(var(--card),0.96)] p-4 shadow-2xl"
+            className="w-[350px] max-w-[calc(100vw-32px)] rounded-xl glass-card border border-[rgba(var(--accent),0.22)] bg-[rgba(var(--card),0.96)] p-4 shadow-lg"
           >
             {/* Header: Pure unboxed typography - Project text then bigger session title (NO PILLS) */}
             <div className="pb-3 border-b border-[rgba(var(--border),0.10)]">

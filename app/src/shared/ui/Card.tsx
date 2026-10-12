@@ -12,7 +12,7 @@ export interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
 export const Card: React.FC<CardProps> = ({
   children,
   className,
-  blur = "2xl",
+  blur,
   elevation,
   elevated = false,
   layoutMode,

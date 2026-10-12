@@ -55,7 +55,7 @@ const TurnBubble = memo(({ turn }: { turn: TurnRow }) => {
           <Sparkles size={11} className="text-[rgb(var(--accent))]" />
           <span>{HISTORY_COPY.voxLabel.toLowerCase()}</span>
         </div>
-        <div className="max-w-[90%] sm:max-w-[80%] w-fit rounded-2xl rounded-bl-xs px-4 py-3 bg-[rgb(var(--card))]/75 backdrop-blur-md border border-[rgba(var(--foreground),0.08)] shadow-xs select-text">
+        <div className="max-w-[90%] sm:max-w-[80%] w-fit rounded-2xl rounded-bl-xs px-4 py-3 bg-[rgb(var(--card))] border border-[rgba(var(--foreground),0.08)] shadow-xs select-text">
           <div className="text-[13.5px] text-[rgb(var(--foreground))] leading-relaxed break-words font-normal">
             <Markdown content={turn.assistant_text} variant="bubble" />
           </div>

@@ -90,7 +90,7 @@ export const PersonalMemoryDossierCard: React.FC<PersonalMemoryDossierCardProps>
         "relative w-full h-full min-h-0 flex flex-col overflow-hidden",
         embedded
           ? "border-none bg-transparent shadow-none p-0"
-          : "glass-card rounded-2xl border border-[rgba(var(--accent),0.18)] bg-[rgba(var(--card),0.65)] backdrop-blur-sm p-5 sm:p-6 shadow-2xl"
+          : "glass-card rounded-2xl border border-[rgba(var(--accent),0.18)] bg-[rgba(var(--card),0.65)] backdrop-blur-sm p-5 sm:p-6 shadow-lg"
       )}
     >
       <AnimatePresence>

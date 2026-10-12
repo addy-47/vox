@@ -29,7 +29,6 @@ import {
 } from "@/services/memoryService";
 import { onMemoryIngestionUpdated, onSessionsChanged } from "@/services/eventsService";
 import { useSettingsStore } from "@/store/settingsStore";
-import { useLenisScrollContainer } from "@/shared/hooks/useLenisScrollContainer";
 import { cn } from "@/shared/lib/utils";
 import {
   getActiveDynamicPalette,
@@ -37,6 +36,8 @@ import {
   type MemoryCategory,
 } from "./memoryGraphTypes";
 import { MEMORY_COPY } from "@/data/memoryCopy";
+
+const memoryTimelineScrollTop = { value: 0 };
 
 export interface MemoryTimelineProps {
   facts: ObservationRecord[];
@@ -286,7 +287,7 @@ const SessionAccordionItem = memo<SessionAccordionItemProps>(({
                   top: `${Math.round(sortAnchor.bottom + 4)}px`,
                   zIndex: 100,
                 }}
-                className="min-w-[145px] p-1.5 bg-[rgb(var(--card))] border border-[rgba(var(--border),0.12)] rounded-xl shadow-2xl backdrop-blur-md text-[12px] font-sans flex flex-col gap-0.5 select-none"
+                className="min-w-[145px] p-1.5 bg-[rgb(var(--card))] border border-[rgba(var(--border),0.12)] rounded-xl shadow-lg backdrop-blur-md text-[12px] font-sans flex flex-col gap-0.5 select-none"
               >
                 <button
                   type="button"
@@ -345,7 +346,7 @@ const SessionAccordionItem = memo<SessionAccordionItemProps>(({
                   top: `${Math.round(filterAnchor.bottom + 4)}px`,
                   zIndex: 100,
                 }}
-                className="min-w-[155px] p-1.5 bg-[rgb(var(--card))] border border-[rgba(var(--border),0.12)] rounded-xl shadow-2xl backdrop-blur-md text-[12px] font-sans flex flex-col gap-0.5 select-none"
+                className="min-w-[155px] p-1.5 bg-[rgb(var(--card))] border border-[rgba(var(--border),0.12)] rounded-xl shadow-lg backdrop-blur-md text-[12px] font-sans flex flex-col gap-0.5 select-none"
               >
                 <button
                   type="button"
@@ -521,8 +522,23 @@ export const MemoryTimeline = memo<MemoryTimelineProps>(({
     (s) => s.settings?.personal_memory?.pipeline_processing_enabled ?? true
   );
 
-  const { containerRef } = useLenisScrollContainer<HTMLDivElement>();
+  const scrollRef = useRef<HTMLDivElement>(null);
   const scrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Persist scroll offset across drawer close/reopen
+  const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    if (loadingSessions) return;
+    memoryTimelineScrollTop.value = e.currentTarget.scrollTop;
+  }, [loadingSessions]);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const raf = requestAnimationFrame(() => {
+      el.scrollTop = memoryTimelineScrollTop.value;
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [loadingSessions]);
 
   // Focus search input when opened
   useEffect(() => {
@@ -644,13 +660,13 @@ export const MemoryTimeline = memo<MemoryTimelineProps>(({
   // unaffected visually (every row is in the window at estimate size).
   const rowVirtualizer = useVirtualizer({
     count: filteredSessions.length,
-    getScrollElement: () => containerRef.current,
-    estimateSize: () => 96,
-    overscan: 6,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => 50,
+    overscan: 16,
   });
 
   return (
-    <div className="flex-1 min-h-0 flex flex-col pt-3 pb-16 select-none font-sans text-[rgb(var(--foreground))]">
+    <div className="flex-1 min-h-0 flex flex-col pt-3 select-none font-sans text-[rgb(var(--foreground))]">
       {/* ── TOP SECTION: Ingestion Pipeline / Memory Queue (Generous Breathing Room) ── */}
       <section className="shrink-0 flex flex-col gap-3.5 px-4.5 pt-1 pb-4.5 border-b border-[rgba(var(--border),0.06)]">
         {/* Header: Title + Pipeline State */}
@@ -803,9 +819,9 @@ export const MemoryTimeline = memo<MemoryTimelineProps>(({
       </section>
 
       {/* ── BOTTOM SECTION: Sessions (Clean list, NO timeline on left) ── */}
-      <section className="flex flex-col flex-1 min-h-0 px-3 pt-3">
+      <section className="flex flex-col flex-1 min-h-0 pl-3 pr-0 pt-3">
         {/* Sessions Header: Title with count immediate right + Expandable Search Icon on right */}
-        <div className="flex items-center justify-between pb-2.5 px-1 shrink-0">
+        <div className="flex items-center justify-between pb-2.5 px-1 pr-3 shrink-0">
           <div className="flex items-center gap-1.5 min-w-0">
             <span className="text-[11.5px] font-mono font-bold tracking-wider uppercase text-[rgb(var(--foreground-muted))]/60">
               {MEMORY_COPY.timeline.sessionsHeader}
@@ -851,10 +867,11 @@ export const MemoryTimeline = memo<MemoryTimelineProps>(({
           </div>
         </div>
 
-        {/* Scrollable Sessions List (NO timeline border on left) */}
+        {/* Scrollable Sessions List — scrollRef flush to right edge */}
         <div
-          ref={containerRef}
-          className="flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-0.5 pr-0.5 pt-1"
+          ref={scrollRef}
+          onScroll={handleScroll}
+          className="flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-0.5 pr-0.5 pt-1 pb-24"
         >
           {loadingSessions ? (
             <div className="flex items-center justify-center p-8">

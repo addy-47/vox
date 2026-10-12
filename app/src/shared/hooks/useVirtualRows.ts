@@ -28,7 +28,7 @@ interface UseVirtualRowsOptions {
 export function useVirtualRows(
   wrapperRef: React.RefObject<HTMLDivElement | null>,
   count: number,
-  { estimate = 52, overscan = 8, threshold = 40 }: UseVirtualRowsOptions = {}
+  { estimate = 52, overscan = 16, threshold = 40 }: UseVirtualRowsOptions = {}
 ): VirtualRowWindow {
   const heightsRef = useRef<Map<number, number>>(new Map());
   const refCacheRef = useRef<Map<number, (el: HTMLDivElement | null) => void>>(new Map());
@@ -72,18 +72,22 @@ export function useVirtualRows(
     const scroller = wrapper.closest("[data-session-scroll]") as HTMLElement | null;
     if (!scroller) return;
 
+    // Synchronous bump on scroll — no rAF delay — so fast inertia flings
+    // never let the scroll position outpace the rendered window.
+    // ResizeObserver still batches through rAF (fine; no fast resize case).
     let raf = 0;
-    const update = () => {
+    const onScroll = () => bump();
+    const onResize = () => {
       cancelAnimationFrame(raf);
       raf = requestAnimationFrame(() => bump());
     };
-    scroller.addEventListener("scroll", update, { passive: true });
-    const ro = new ResizeObserver(update);
+    scroller.addEventListener("scroll", onScroll, { passive: true });
+    const ro = new ResizeObserver(onResize);
     ro.observe(scroller);
-    update();
+    bump();
     return () => {
       cancelAnimationFrame(raf);
-      scroller.removeEventListener("scroll", update);
+      scroller.removeEventListener("scroll", onScroll);
       ro.disconnect();
     };
   }, [wrapperRef, count, threshold, bump]);
