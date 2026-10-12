@@ -158,10 +158,6 @@ export interface ModelCatalog {
 
 export type AudioOutputMode = "Speaker" | "Headset";
 
-export interface AudioSettings {
-  output_mode: AudioOutputMode;
-  input_device: string | null;
-}
 
 export interface VadSettings {
   threshold: number;
@@ -337,7 +333,6 @@ export interface SystemSettings {
 }
 
 export interface VoxSettings {
-  audio: AudioSettings;
   vad: VadSettings;
   stt: SttSettings;
   llm: LlmSettings;
@@ -450,7 +445,6 @@ export const SETTINGS_DOMAIN_TO_UI: Record<string, SettingsDomainId> = {
   interaction: "interaction",
   dictation: "interaction",
   realtime: "models",
-  audio: "models",
   vad: "models",
   stt: "models",
   llm: "models",
@@ -490,7 +484,6 @@ export const COMMIT_DOMAIN_IDS = [
  * prompt does not change which models exist.
  */
 const MODEL_CATALOG_SCOPES: ReadonlySet<string> = new Set([
-  "audio",
   "vad",
   "stt",
   "llm",
@@ -501,7 +494,6 @@ const MODEL_CATALOG_SCOPES: ReadonlySet<string> = new Set([
 
 /** Checks if a setting key requires an engine restart according to the backend policy table */
 export function isRestartKey(scope: string, key: string): boolean {
-  if (scope === "audio" && key === "input_device") return true;
   if (
     scope === "stt" &&
     ["active", "model", "provider", "embedded", "cloud", "threads"].includes(key)
@@ -993,7 +985,6 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     let restartScheduled = false;
 
     const canonicalDomains: (keyof VoxSettings)[] = [
-      "audio",
       "vad",
       "stt",
       "llm",

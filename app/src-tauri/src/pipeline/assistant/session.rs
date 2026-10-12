@@ -58,8 +58,17 @@ fn start_modular_session(state: &AppState, ctx: &RoutingContext) -> Result<(), S
         InteractionMode::PTT => VadOperationalMode::WindowedValidation,
     };
 
+    let detected_audio_mode = crate::services::audio::detect_audio_output_mode();
+    log::info!(
+        "[Pipeline::Session] Probed audio output route: {:?}",
+        detected_audio_mode
+    );
+
     if let Ok(guard) = state.engine.try_lock() {
         if let Some(ref engine) = *guard {
+            let _ = engine
+                .vad_tx
+                .send(VadCommand::UpdateAudioMode(detected_audio_mode));
             if let Err(e) = engine.vad_tx.send(VadCommand::SetOperationalMode(vad_mode)) {
                 log::warn!(
                     "[Pipeline::Session] Failed to set VAD operational mode: {}",

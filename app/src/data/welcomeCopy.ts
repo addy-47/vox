@@ -54,9 +54,9 @@ export const WIZARD_STEP_HEADERS: Record<string, StepHeader> = {
   },
   audio: {
     step: "Step 4 of 6 · Your Microphone",
-    title: "Which Microphone?",
+    title: "Check Your Microphone",
     description:
-      "This is the one Vox will listen through. You can point it somewhere else later in Settings.",
+      "Speak a few words to confirm Vox can hear you through your system microphone.",
   },
   testing: {
     step: "Step 5 of 6 · Say Something",
@@ -205,9 +205,9 @@ export const WIZARD_ERROR_COPY = {
 
 export const AUDIO_SETUP_COPY = {
   liveLabel: "Your Voice",
-  listTitle: "Which microphone?",
-  empty: "No microphones found — plug one in, or pick one later in Settings.",
-  initFailed: "Couldn't reach the microphone — check permission, or pick one later in Settings.",
+  statusReady: "System default microphone active — speak to test voice levels.",
+  statusHeard: "Voice signal detected! Your microphone is working.",
+  initFailed: "Couldn't reach the microphone — check system permissions.",
   retryInit: "Try Again",
 } as const;
 

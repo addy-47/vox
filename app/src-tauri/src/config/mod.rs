@@ -18,7 +18,7 @@ pub use files::{
 };
 pub use mutation::apply_setting_mutation;
 pub use settings::{
-    get_preset_colors, AppearanceSettings, AudioOutputMode, AudioSettings,
+    get_preset_colors, AppearanceSettings, AudioOutputMode,
     DeepgramVoiceAgentConfig, ElevenLabsConvaiConfig, GeminiRealtimeConfig, InteractionSettings,
     OpenAiRealtimeConfig, PersonaSettings, PersonalMemorySettings, RealtimeProviderKind,
     RealtimeSettings, SystemSettings, VoxSettings, WorkingMemorySettings,
@@ -58,7 +58,6 @@ pub fn get_setting_reload_policy(domain: &str, key: &str) -> SettingReloadPolicy
 
 fn classify_known(domain: &str, key: &str) -> Option<SettingReloadPolicy> {
     const WORKER_COMMAND: &[(&str, &[&str])] = &[
-        ("audio", &["output_mode"]),
         (
             "vad",
             &[
@@ -92,7 +91,6 @@ fn classify_known(domain: &str, key: &str) -> Option<SettingReloadPolicy> {
     ];
 
     const KEYED: &[(&str, &str, SettingReloadPolicy)] = &[
-        ("audio", "input_device", SettingReloadPolicy::Restart),
         ("stt", "active", SettingReloadPolicy::Restart),
         ("stt", "model", SettingReloadPolicy::Restart),
         ("stt", "provider", SettingReloadPolicy::Restart),

@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 use super::settings::{
-    AppearanceSettings, AudioSettings, InteractionSettings, PersonaSettings,
+    AppearanceSettings, InteractionSettings, PersonaSettings,
     PersonalMemorySettings, RealtimeSettings, SystemSettings, VoxSettings, WorkingMemorySettings,
 };
 use crate::{
@@ -92,7 +92,6 @@ impl Default for TtsWiringSettings {
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 #[serde(default)]
 pub struct SettingsConfigFile {
-    pub audio: AudioSettings,
     pub vad: VadSettings,
     pub appearance: AppearanceSettings,
     pub interaction: InteractionSettings,
@@ -191,7 +190,6 @@ impl VoxSettings {
 
     pub fn to_settings_config(&self) -> SettingsConfigFile {
         SettingsConfigFile {
-            audio: self.audio.clone(),
             vad: self.vad.clone(),
             appearance: self.appearance.clone(),
             interaction: self.interaction.clone(),
@@ -254,7 +252,6 @@ impl VoxSettings {
     }
 
     pub fn merge_settings_config(&mut self, cfg: SettingsConfigFile) {
-        self.audio = cfg.audio;
         self.vad = cfg.vad;
         self.appearance = cfg.appearance;
         self.interaction = cfg.interaction;

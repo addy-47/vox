@@ -27,13 +27,12 @@ impl AudioStream {
     /// Creates and configures a new hardware audio ingestion stream.
     pub fn new<P>(
         producer: P,
-        device_name: Option<String>,
         ingestion_gate: Arc<AtomicBool>,
     ) -> Result<Self>
     where
         P: Producer<Item = f32> + Send + 'static,
     {
-        let (device, config) = resolve_input_device(device_name.as_deref())?;
+        let (device, config) = resolve_input_device()?;
         let sample_rate = config.sample_rate.0;
         let channels = config.channels as usize;
 
@@ -87,29 +86,14 @@ impl Drop for AudioStream {
     }
 }
 
-/// Resolves the default audio host and queries the requested or fallback input device.
-fn resolve_input_device(device_name: Option<&str>) -> Result<(cpal::Device, cpal::StreamConfig)> {
+/// Resolves the default audio host and queries the default input device.
+fn resolve_input_device() -> Result<(cpal::Device, cpal::StreamConfig)> {
     let host = resolve_audio_host();
     log::info!("[Audio::Device] Using audio host: {:?}", host.id());
 
-    let device = if let Some(name) = device_name {
-        log::info!(
-            "[Audio::Device] Attempting to use requested device: {}",
-            name
-        );
-        host.input_devices()?
-            .find(|d| d.name().map(|n| n == name).unwrap_or(false))
-            .or_else(|| {
-                log::warn!(
-                    "[Audio::Device] Requested device '{}' not found, falling back to default",
-                    name
-                );
-                host.default_input_device()
-            })
-    } else {
-        host.default_input_device()
-    }
-    .ok_or_else(|| anyhow!("No input device found on host {:?}", host.id()))?;
+    let device = host
+        .default_input_device()
+        .ok_or_else(|| anyhow!("No input device found on host {:?}", host.id()))?;
 
     let config: cpal::StreamConfig = device.default_input_config()?.into();
     Ok((device, config))

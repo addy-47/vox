@@ -21,6 +21,7 @@ use crate::{
     pipeline::{dictation::DictationInteractionMode, router::spawn_router, target_window},
     services::{
         audio::{
+            detect_audio_output_mode, spawn_audio_route_watcher,
             playback::{PlaybackEngineHandles, PlaybackTelemetryHandles},
             AudioStream, PlaybackEngine,
         },
@@ -59,6 +60,7 @@ pub struct VoxEngine {
     pub playback_engine: Arc<PlaybackEngine>,
     pub stt_handle: Option<JoinHandle<()>>,
     pub vad_handle: Option<JoinHandle<()>>,
+    pub route_watcher_handle: Option<JoinHandle<()>>,
     pub llm_handle: Option<JoinHandle<()>>,
     pub tts_handle: Option<JoinHandle<()>>,
     pub orchestrator_handle: Option<JoinHandle<()>>,
@@ -184,13 +186,15 @@ pub async fn start_audio_engine<R: tauri::Runtime + 'static>(
             },
             InteractionOwner::Assistant => s.interaction.mode,
         };
+        let audio_mode = detect_audio_output_mode();
+        log::info!("[Core::Engine] Auto-detected audio output route: {:?}", audio_mode);
         (
             s.vad.threshold,
             s.vad.ptt_noise_gate,
             s.vad.silence_duration_ms,
             s.vad.speech_onset_ms,
             mode,
-            s.audio.output_mode.clone(),
+            audio_mode,
         )
     };
 
@@ -290,16 +294,8 @@ pub async fn start_audio_engine<R: tauri::Runtime + 'static>(
     let stt_handle = spawn_stt_worker(stt_channels, stt_provider, stt_handles)
         .map_err(|e| format!("[Core::Engine] Failed to spawn STT worker: {}", e))?;
 
-    let input_device = state
-        .settings
-        .read()
-        .map_err(|e| format!("[Core::Engine] Settings lock poisoned: {}", e))?
-        .audio
-        .input_device
-        .clone();
     let audio_stream = AudioStream::new(
         producer,
-        input_device,
         Arc::clone(&state.pipeline.ingestion_gate),
     )
     .map_err(|e| e.to_string())?;
@@ -307,6 +303,10 @@ pub async fn start_audio_engine<R: tauri::Runtime + 'static>(
 
     let playback_engine = create_playback_engine(state, vox_event_tx.clone())?;
     let orchestrator_handle = spawn_router(app.clone(), vox_event_rx)?;
+    let route_watcher_handle = spawn_audio_route_watcher(
+        vad_tx.clone(),
+        Arc::clone(&state.pipeline.engine_shutdown),
+    );
 
     *lock = Some(VoxEngine {
         audio_stream,
@@ -319,6 +319,7 @@ pub async fn start_audio_engine<R: tauri::Runtime + 'static>(
         playback_engine,
         stt_handle: Some(stt_handle),
         vad_handle: Some(vad_handle),
+        route_watcher_handle,
         llm_handle: None,
         tts_handle: None,
         orchestrator_handle: Some(orchestrator_handle),
@@ -367,6 +368,7 @@ pub async fn stop_audio_engine(state: &AppState) -> Result<(), String> {
     let orch_handle = engine.orchestrator_handle.take();
     let stt_handle = engine.stt_handle.take();
     let vad_handle = engine.vad_handle.take();
+    let route_watcher_handle = engine.route_watcher_handle.take();
 
     let caller_tid = std::thread::current().id();
     let is_caller_router = std::thread::current().name() == Some("vox-router");
@@ -397,6 +399,9 @@ pub async fn stop_audio_engine(state: &AppState) -> Result<(), String> {
         }
         if let Some(h) = vad_handle {
             join_worker(h, "VAD");
+        }
+        if let Some(h) = route_watcher_handle {
+            join_worker(h, "route_watcher");
         }
     })
     .await
@@ -529,6 +534,16 @@ pub async fn ensure_modular_workers(state: &AppState) -> Result<(), String> {
     }
 
     ensure_memory_embedder(&settings);
+
+    // Pre-warm STT worker asynchronously so first spoken turn incurs zero ONNX loading delay
+    {
+        let lock = state.engine.lock().await;
+        if let Some(ref engine) = *lock {
+            if let Err(e) = engine.stt_tx.send(SttCommand::Warmup) {
+                log::debug!("[Core::Engine] Failed to send Warmup to STT worker: {}", e);
+            }
+        }
+    }
 
     Ok(())
 }

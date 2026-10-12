@@ -29,24 +29,6 @@ fn apply_appearance_mutation(
     Ok(true)
 }
 
-fn apply_audio_mutation(
-    settings: &mut VoxSettings,
-    key: &str,
-    value: &serde_json::Value,
-) -> Result<bool, String> {
-    match key {
-        "output_mode" => {
-            settings.audio.output_mode = serde_json::from_value(value.clone())
-                .map_err(|e| format!("Invalid output_mode: {}", e))?;
-        }
-        "input_device" => {
-            settings.audio.input_device = serde_json::from_value(value.clone())
-                .map_err(|e| format!("Invalid input_device: {}", e))?;
-        }
-        _ => return Ok(false),
-    }
-    Ok(true)
-}
 
 fn apply_vad_mutation(
     settings: &mut VoxSettings,
@@ -641,7 +623,6 @@ pub fn apply_setting_mutation(
 ) -> Result<bool, String> {
     match domain {
         "appearance" => apply_appearance_mutation(settings, key, value),
-        "audio" => apply_audio_mutation(settings, key, value),
         "vad" => apply_vad_mutation(settings, key, value),
         "stt" => apply_stt_mutation(settings, key, value),
         "llm" => apply_llm_mutation(settings, key, value),

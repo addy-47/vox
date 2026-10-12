@@ -22,7 +22,6 @@ export const SETTINGS_DOMAINS: SettingsDomain[] = [
 
 export type SettingsScope =
   | "appearance"
-  | "audio"
   | "vad"
   | "stt"
   | "llm"
@@ -37,7 +36,6 @@ export type SettingsScope =
 
 export const SETTINGS_SCOPE_KEYS: Partial<Record<SettingsScope, readonly string[]>> = {
   appearance: ["theme", "accent_seed"],
-  audio: ["output_mode", "input_device"],
   vad: [
     "threshold",
     "ptt_noise_gate",
@@ -109,7 +107,6 @@ export interface DomainDirtyKey {
 
 export const DOMAIN_DIRTY_KEYS: Record<SettingsDomainId, readonly DomainDirtyKey[]> = {
   models: [
-    { scope: "audio", keys: SETTINGS_SCOPE_KEYS.audio },
     { scope: "vad", keys: SETTINGS_SCOPE_KEYS.vad },
     { scope: "stt", keys: SETTINGS_SCOPE_KEYS.stt },
     { scope: "tts", keys: SETTINGS_SCOPE_KEYS.tts },

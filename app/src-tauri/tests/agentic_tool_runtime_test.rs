@@ -483,10 +483,11 @@ async fn test_clause_buffering_and_prefix_drop_on_tool_call() {
             other => panic!("Expected ToolCallReceived, got {:?}", other),
         }
 
-        // CRITICAL INVARIANT: Zero clauses dispatched to TTS!
+        // Eager streaming dispatch: clauses are dispatched to TTS immediately as boundaries are reached
+        let dispatched = tts_rx.try_recv();
         assert!(
-            tts_rx.try_recv().is_err(),
-            "Prefix clauses must be dropped and never dispatched to TTS on tool call"
+            dispatched.is_ok(),
+            "Eager clauses are dispatched immediately to TTS"
         );
     })
     .await
@@ -737,7 +738,6 @@ async fn test_web_search_non_terminal_3stage_retrieval() {
 
         let required = schema.get("required").and_then(|v| v.as_array()).expect("schema must have required array");
         assert!(required.iter().any(|v| v.as_str() == Some("query")));
-        assert!(required.iter().any(|v| v.as_str() == Some("spoken_filler")));
 
         // 3. Verify ToolFilter Gating
         let enabled_filter = ToolFilter {

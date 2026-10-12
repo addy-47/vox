@@ -32,6 +32,7 @@ pub enum SttCommand {
         owner: InteractionOwner,
     },
     ResetStream,
+    Warmup,
     Shutdown,
 }
 
@@ -328,7 +329,7 @@ fn drain_reset_stream(
                 }
                 continue;
             }
-            SttCommand::ResetStream => continue,
+            SttCommand::ResetStream | SttCommand::Warmup => continue,
             SttCommand::Final { .. } => {
                 *pending_cmd = Some(cmd);
                 break;
@@ -412,6 +413,18 @@ fn run_worker_loop(
             SttCommand::ResetStream => {
                 if drain_reset_stream(&channels.rx, ctx.provider, &mut state, &mut pending_cmd) {
                     break;
+                }
+            }
+            SttCommand::Warmup => {
+                log::info!("[STT] Warming up STT engine...");
+                let start = Instant::now();
+                if let Err(e) = ctx.provider.warmup() {
+                    log::warn!("[STT] STT warmup failed: {:?}", e);
+                } else {
+                    log::info!(
+                        "[STT] STT engine warmed up in {}ms",
+                        start.elapsed().as_millis()
+                    );
                 }
             }
         }

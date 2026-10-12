@@ -348,10 +348,22 @@ fn should_suppress_audio(
         return true;
     }
 
-    state.realtime_tx.is_none()
+    let is_suppressed = state.realtime_tx.is_none()
         && InteractionState::from(state_atomic.load(Ordering::Relaxed))
             == InteractionState::Speaking
-        && state.audio_mode == AudioOutputMode::Speaker
+        && state.audio_mode == AudioOutputMode::Speaker;
+
+    if is_suppressed {
+        static SUPPRESS_COUNT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+        let count = SUPPRESS_COUNT.fetch_add(1, Ordering::Relaxed);
+        if count.is_multiple_of(200) {
+            log::info!(
+                "[VAD Actor] Mic input suppressed: state=Speaking, audio_mode=Speaker (barge-in disabled to prevent acoustic loopback)"
+            );
+        }
+    }
+
+    is_suppressed
 }
 
 /// Spawns the synchronous, low-latency VAD actor thread.
