@@ -19,5 +19,6 @@ export * from "./Markdown";
 export * from "./TriangularLoopSelector";
 export * from "./KeyboardHotkeySkeleton";
 export * from "./ThemeToggleButton";
+export * from "./OverlayBackdrop";
 export * from "./HighlightMatch";
 

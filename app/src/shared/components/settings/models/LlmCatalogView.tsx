@@ -1,5 +1,6 @@
 import { memo, useState, useMemo, useRef, useEffect, useCallback, useDeferredValue, type ReactNode } from "react";
-import Lenis from "lenis";
+import type Lenis from "lenis";
+import { createContainedLenis } from "@/shared/lib/lenisScroll";
 import { useSettingsStore, type LlmModelInfo, type ModelCapabilities, type LlmProviderConfig, type ProbeCheck } from "@/store/settingsStore";
 import { SubModelCard } from "../SubModelCard";
 import type { ModelStatus } from "@/shared/hooks/useModelDownloads";
@@ -160,7 +161,7 @@ const RemoteModelCard = memo(({
     <div
       onClick={() => onSelect(model.id)}
       className={cn(
-        "relative flex flex-col justify-between p-4 rounded-xl border transition-all duration-200 select-none group cursor-pointer transform-gpu will-change-transform",
+        "relative flex flex-col justify-between p-4 rounded-xl border transition-all duration-200 select-none group cursor-pointer transform-gpu",
         isSelected
           ? "bg-[rgba(var(--card),0.5)] border-[rgb(var(--accent))] shadow-[0_0_24px_rgba(var(--accent),0.16)] ring-1 ring-[rgb(var(--accent))]/30"
           : "bg-[rgba(var(--card),0.5)] border-[rgba(var(--foreground),0.06)] hover:border-[rgba(var(--accent),0.35)] hover:bg-[rgba(var(--card),0.85)]",
@@ -394,14 +395,8 @@ export const RemoteModelsModalView = memo(({
     const el = scrollContainerRef.current;
     if (!el) return undefined;
 
-    const lenis = new Lenis({
-      wrapper: el,
-      content: el,
-      eventsTarget: el,
-      smoothWheel: true,
-      autoRaf: true,
-      duration: 0.75,
-    });
+    const lenis = createContainedLenis(el, { duration: 0.75 });
+    if (!lenis) return undefined;
     lenisRef.current = lenis;
 
     return () => {

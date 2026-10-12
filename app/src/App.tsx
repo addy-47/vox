@@ -17,13 +17,21 @@ import { getCurrentWindowLabel } from "@/services/windowService";
 import { isRealMobileDevice } from "@/shared/hooks/useMobileViewport";
 import { AnimatePresence, motion, MotionConfig } from "framer-motion";
 
-// Route-level preloads
+// Route-level preloads (desktop-first): secondary chunks warm only when the
+// browser is genuinely idle AND the device is not touch-constrained.
+// History data (getSessions IPC) stays on-demand — the History page fetches
+// it on mount, so warming it at boot only burns IPC + memory on Android.
 const preloadRouteChunks = () => {
+  // Touch devices (Android + iOS WebViews): skip speculative chunk warming.
+  // Route chunks load on demand via Suspense; warming them at boot only
+  // burns radio/CPU on constrained GPUs for routes the user may never open.
+  try {
+    if (typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)").matches) return;
+  } catch {}
   void import("@/pages/History");
   void import("@/pages/Memory");
   void import("@/pages/Settings");
   void import("@/pages/Monitoring");
-  void import("@/services/historyService").then((m) => m.getSessions()).catch(() => {});
 };
 
 import { Home } from "@/pages/Home";

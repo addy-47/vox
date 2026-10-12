@@ -45,7 +45,7 @@ export const RestorePulse: React.FC<{ signal: number }> = memo(({ signal }) => {
               times: [0, 0.15, 0.85, 1],
               ease: [0.22, 1, 0.36, 1], // Natural quintic deceleration terminating cleanly at orb edge
             }}
-            className="w-full h-full rounded-full border border-[rgba(var(--accent),0.4)] transform-gpu will-change-transform shadow-[0_0_14px_rgba(var(--accent),0.25)]"
+            className="w-full h-full rounded-full border border-[rgba(var(--accent),0.4)] transform-gpu shadow-[0_0_14px_rgba(var(--accent),0.25)]"
           />
         )}
       </AnimatePresence>

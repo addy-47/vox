@@ -1,7 +1,7 @@
 import React, { memo, useEffect } from "react";
 import { FileText, Copy, Check, RotateCw, MessageSquare } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
-import Lenis from "lenis";
+import { createContainedLenis } from "@/shared/lib/lenisScroll";
 import { PixelSynthesisCanvas } from "./PixelSynthesisCanvas";
 import { PersonalMemoryVersionNav } from "./PersonalMemoryVersionNav";
 import { PersonalMemoryCommentPopover, type SelectionAnchor } from "./PersonalMemoryCommentPopover";
@@ -74,14 +74,8 @@ export const PersonalMemoryDossierCard: React.FC<PersonalMemoryDossierCardProps>
     const el = dossierContainerRef.current;
     if (!el) return undefined;
 
-    const lenis = new Lenis({
-      wrapper: el,
-      content: el,
-      eventsTarget: el,
-      smoothWheel: true,
-      autoRaf: true,
-      duration: 0.8,
-    });
+    const lenis = createContainedLenis(el, { duration: 0.8 });
+    if (!lenis) return undefined;
 
     return () => {
       lenis.destroy();

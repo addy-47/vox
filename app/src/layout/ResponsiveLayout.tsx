@@ -149,7 +149,14 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
     document.title = PAGE_TITLES[location.pathname] ?? "Vox";
     window.scrollTo(0, 0);
     import("@/services/historyService").then(({ getTurnsCacheSize }) => {
-      console.info(`[route-nav] -> ${location.pathname} turnsCache=${getTurnsCacheSize()}`);
+      // (cyan-flash RCA: theme-token state at every route commit. Remove once found.)
+      try {
+        const r = document.documentElement;
+        const cs = getComputedStyle(r);
+        console.info(`[route-nav] -> ${location.pathname} turnsCache=${getTurnsCacheSize()} docTheme=${r.getAttribute('data-theme') || 'none'} cssAccent=[${cs.getPropertyValue('--accent').trim() || 'EMPTY'}] inlineAccent=[${r.style.getPropertyValue('--accent').trim() || 'EMPTY'}]`);
+      } catch {
+        console.info(`[route-nav] -> ${location.pathname} turnsCache=${getTurnsCacheSize()}`);
+      }
     }).catch(() => {});
   }, [location.pathname]);
 

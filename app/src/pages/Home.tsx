@@ -1,5 +1,10 @@
 import React, { memo, useMemo, useRef, useEffect } from "react";
-import { VoxOrb, PipelineField, DynamicStatusBadge, RestorePulse, SessionPanel, DialogueBubble } from "@/shared/components/home";
+import { VoxOrb } from "@/shared/components/home/AdvancedOrb";
+import { PipelineField } from "@/shared/components/home/PipelineField";
+import { DynamicStatusBadge } from "@/shared/components/home/DynamicStatusBadge";
+import { RestorePulse } from "@/shared/components/home/RestorePulse";
+import { SessionPanel } from "@/shared/components/home/SessionPanel";
+import { DialogueBubble } from "@/shared/components/home/DialogueBubble";
 import { TextInputBar } from "@/shared/components/home/TextInputBar";
 import { ActiveTranscript } from "@/shared/components/home/ActiveTranscript";
 import { ErrorBoundary } from "@/shared/components/common";
@@ -88,9 +93,15 @@ export const Home = memo(() => {
   const contentInnerRef = useRef<HTMLDivElement>(null);
 
   // Diagnostic telemetry: log Home render timing and layout lifecycle
+  // (cyan-flash RCA: full path logging — mount/unmount, orb mount, state,
+  //  theme vars, and cached theme. Remove once the flash source is found.)
   useEffect(() => {
     const t0 = performance.now();
-    console.info(`[trace-home] Home mounted @${t0.toFixed(1)}ms, docTheme=${document.documentElement.getAttribute("data-theme") || "none"}`);
+    const root = document.documentElement;
+    const cs = getComputedStyle(root);
+    console.info(`[trace-home] Home mounted @${t0.toFixed(1)}ms, docTheme=${root.getAttribute("data-theme") || "none"}, cssAccent=[${cs.getPropertyValue("--accent").trim() || "EMPTY"}], cssGlowDark=[${cs.getPropertyValue("--glow-dark").trim() || "EMPTY"}], inlineAccent=[${root.style.getPropertyValue("--accent").trim() || "EMPTY"}], interactionState=${interactionState}, isEngaged=${isEngaged}`);
+    const t1 = performance.now();
+    console.info(`[trace-home] mount-paint-ready @${t1.toFixed(1)}ms (+${(t1 - t0).toFixed(1)}ms after mount effect)`);
     return () => {
       console.info(`[trace-home] Home unmounted after ${(performance.now() - t0).toFixed(1)}ms`);
     };

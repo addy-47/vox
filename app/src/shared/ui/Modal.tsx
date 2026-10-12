@@ -5,6 +5,7 @@ import { X, ArrowLeft } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { useOverlay } from "@/shared/hooks/useOverlay";
 import { Tooltip } from "@/shared/ui/Tooltip";
+import { OverlayBackdrop } from "@/shared/ui/OverlayBackdrop";
 import { LAYOUT_COPY } from "@/data/layoutCopy";
 
 export interface ModalProps {
@@ -138,14 +139,7 @@ export const Modal = memo(
             style={{ ["--modal-z"]: effectiveZ } as CSSProperties}
           >
             {backdrop && (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.2 }}
-                onClick={onClose}
-                className="absolute inset-0 bg-black/50 backdrop-blur-[2px] pointer-events-auto cursor-default"
-              />
+              <OverlayBackdrop onClose={onClose} className="absolute cursor-default" />
             )}
 
             <motion.div
@@ -160,7 +154,7 @@ export const Modal = memo(
               transition={{ duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
               onKeyDown={handlePanelKeyDown}
               className={cn(
-                "relative flex flex-col rounded-2xl overflow-hidden glass-card border border-[rgba(var(--accent),0.12)] [text-shadow:none] outline-none pointer-events-auto transform-gpu will-change-transform contain-paint",
+                "relative flex flex-col rounded-2xl overflow-hidden glass-card border border-[rgba(var(--accent),0.12)] [text-shadow:none] outline-none pointer-events-auto transform-gpu contain-paint",
                 // Responsive default: compact centered modal on mobile, capped on desktop.
                 // Leaves comfortable margins around the viewport (max-w-[calc(100vw-40px)] and max-h-[75vh])
                 // so it presents as a distinct floating dialog card rather than a full page.

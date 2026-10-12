@@ -8,17 +8,23 @@ import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-export default defineConfig(async () => ({
+export default defineConfig(async ({ mode }) => ({
   plugins: [
     react(),
     tailwindcss(),
-    inspect(),
-    visualizer({
-      filename: "dist/stats.html",
-      gzipSize: true,
-      brotliSize: true,
-      open: false,
-    }),
+    // Dev-only: bundle inspection tools. Loading them in production builds
+    // slows `pnpm build` and risks shipping the inspect middleware client.
+    ...(mode === "development"
+      ? [
+          inspect(),
+          visualizer({
+            filename: "dist/stats.html",
+            gzipSize: true,
+            brotliSize: true,
+            open: false,
+          }),
+        ]
+      : []),
   ],
   resolve: {
     alias: {
