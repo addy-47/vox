@@ -90,12 +90,6 @@ impl VoxSettings {
     fn recover_settings_sections(&mut self, val: &serde_json::Value) {
         if let Some(obj) = val.as_object() {
             if let Some(v) = obj
-                .get("audio")
-                .and_then(|v| serde_json::from_value(v.clone()).ok())
-            {
-                self.audio = v;
-            }
-            if let Some(v) = obj
                 .get("vad")
                 .and_then(|v| serde_json::from_value(v.clone()).ok())
             {

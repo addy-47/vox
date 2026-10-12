@@ -89,11 +89,9 @@ impl StreamRoutingStage {
         handles: StreamRoutingHandles<R>,
         response_rx: Receiver<LlmResponse>,
     ) -> Result<StreamPassOutcome, String> {
-        let mut buffered_clauses: Vec<String> = Vec::new();
-        let outcome = self.consume_stream_events(&handles, response_rx, &mut buffered_clauses)?;
+        let outcome = self.consume_stream_events(&handles, response_rx)?;
 
         if let StreamPassOutcome::Completed { .. } = &outcome {
-            self.dispatch_clauses(buffered_clauses, AudioIntent::TurnResponse, &handles);
             self.flush_remainder(&handles);
             self.emit_finished(&handles);
         }
@@ -106,7 +104,6 @@ impl StreamRoutingStage {
         &self,
         handles: &StreamRoutingHandles<R>,
         response_rx: Receiver<LlmResponse>,
-        buffered_clauses: &mut Vec<String>,
     ) -> Result<StreamPassOutcome, String> {
         let mut saw_finished = false;
 
@@ -125,11 +122,10 @@ impl StreamRoutingStage {
             match response {
                 LlmResponse::Token(token) => {
                     handles.turn_metrics.record_llm_first_token();
-                    self.buffer_token(token, handles, buffered_clauses);
+                    self.handle_token(token, handles);
                 }
                 LlmResponse::ToolCall(call) => {
                     handles.turn_metrics.record_llm_first_token();
-                    buffered_clauses.clear();
                     let partial_text = {
                         let mut acc = handles.accumulator.lock();
                         acc.chunker.clear();
@@ -189,16 +185,13 @@ impl StreamRoutingStage {
         })
     }
 
-    /// Emits IPC token event and buffers extracted clauses for pass conclusion.
-    fn buffer_token<R: Runtime>(
-        &self,
-        token: String,
-        handles: &StreamRoutingHandles<R>,
-        buffered_clauses: &mut Vec<String>,
-    ) {
+    /// Emits IPC token event, pushes token to clause chunker, and dispatches clauses to TTS.
+    fn handle_token<R: Runtime>(&self, token: String, handles: &StreamRoutingHandles<R>) {
         self.emit_token_ipc(&token, handles);
         let clauses = handles.accumulator.lock().push_token(&token);
-        buffered_clauses.extend(clauses);
+        if !clauses.is_empty() {
+            self.dispatch_clauses(clauses, AudioIntent::TurnResponse, handles);
+        }
     }
 
     /// Emits a single token to the frontend IPC rail.

@@ -47,7 +47,7 @@ use crate::{
     utils::paths,
 };
 
-pub const DEFAULT_PROBE_TIMEOUT_SECS: u64 = 12;
+pub const DEFAULT_PROBE_TIMEOUT_SECS: u64 = 60;
 pub const DEFAULT_VALIDATION_TIMEOUT_SECS: u64 = 8;
 pub const DEFAULT_PROBE_MAX_TOKENS: u32 = 40;
 pub const DEFAULT_TOOL_PROBE_MAX_TOKENS: u32 = 256;

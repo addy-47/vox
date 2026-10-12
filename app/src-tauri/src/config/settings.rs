@@ -46,21 +46,6 @@ impl Default for AppearanceSettings {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(default)]
-pub struct AudioSettings {
-    pub output_mode: AudioOutputMode,
-    pub input_device: Option<String>,
-}
-
-impl Default for AudioSettings {
-    fn default() -> Self {
-        Self {
-            output_mode: AudioOutputMode::Speaker,
-            input_device: None,
-        }
-    }
-}
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default)]
 #[serde(default)]
@@ -239,7 +224,6 @@ pub struct SystemSettings {
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 #[serde(default)]
 pub struct VoxSettings {
-    pub audio: AudioSettings,
     pub vad: VadSettings,
     pub stt: SttSettings,
     pub llm: LlmSettings,

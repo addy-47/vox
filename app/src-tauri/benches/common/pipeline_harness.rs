@@ -300,6 +300,7 @@ pub fn setup_e2e_pipeline(settings: VoxSettings) -> E2ePipelineSetup {
         playback_engine,
         stt_handle: Some(stt_handle),
         vad_handle: Some(vad_handle),
+        route_watcher_handle: None,
         llm_handle: None,
         tts_handle: None,
         orchestrator_handle: Some(router_handle),

@@ -84,7 +84,14 @@ pub fn step1_intake<R: tauri::Runtime>(
         return IntakeResult::Terminal(TurnOutcome::DuplicateIgnored { turn_id });
     }
 
+    let start_intake = std::time::Instant::now();
     let can_compact = harness.intake_recorded_turn(req.query.clone());
+    log::info!(
+        "[Harness::Intake] Turn {} intake & budget evaluated in {}ms (can_compact: {})",
+        turn_id,
+        start_intake.elapsed().as_millis(),
+        can_compact
+    );
 
     IntakeResult::Proceed {
         can_compact,
@@ -358,12 +365,20 @@ pub fn step4_assemble_request(
         None
     };
 
-    Ok(harness.prompt.build_generation_request(
+    let start_assemble = std::time::Instant::now();
+    let req = harness.prompt.build_generation_request(
         harness.history.messages(),
         scratchpad,
         harness.generation_options.clone(),
         tools,
-    ))
+    );
+    log::info!(
+        "[Harness::Assemble] Turn {} assembled in {}ms (messages: {})",
+        turn_id,
+        start_assemble.elapsed().as_millis(),
+        req.input.messages.len()
+    );
+    Ok(req)
 }
 
 // =========================================================================
@@ -380,6 +395,7 @@ pub fn step5_dispatch_llm(
     let Some(tx) = llm_tx else {
         return Err("No LLM channel available".to_string());
     };
+    let start_dispatch = std::time::Instant::now();
     let (response_tx, response_rx) = mpsc::channel();
     let cmd = LlmCommand::Generate {
         request: Box::new(request),
@@ -390,8 +406,9 @@ pub fn step5_dispatch_llm(
     tx.send(cmd)
         .map_err(|e| format!("Failed to dispatch LlmCommand: {}", e))?;
     log::info!(
-        "[Harness::Dispatch] Turn {} dispatched to LLM actor",
-        turn_id
+        "[Harness::Dispatch] Turn {} dispatched to LLM actor in {}ms",
+        turn_id,
+        start_dispatch.elapsed().as_millis()
     );
     Ok(response_rx)
 }

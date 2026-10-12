@@ -17,7 +17,7 @@ use std::{
 
 use common::paths::TempPathsGuard;
 use vox_lib::{
-    config::{apply_setting_mutation, AudioOutputMode, VoxSettings},
+    config::{apply_setting_mutation, VoxSettings},
     core::events::PipelineMode,
     pipeline::dictation::DictationOutputMode,
     services::{
@@ -60,17 +60,6 @@ fn test_settings_json_roundtrip_persistence() {
         "appearance.accent_seed should be recognized"
     );
 
-    // Audio
-    assert!(
-        apply_setting_mutation(
-            &mut settings,
-            "audio",
-            "output_mode",
-            &serde_json::json!("Headset")
-        )
-        .expect("audio.output_mode mutation failed"),
-        "audio.output_mode should be recognized"
-    );
 
     // VAD
     assert!(
@@ -324,7 +313,6 @@ fn test_settings_json_roundtrip_persistence() {
     // 6. Assert exact field-wise round-trip preservation across all domains
     assert_eq!(reloaded.appearance.theme, "dark");
     assert_eq!(reloaded.appearance.accent_seed, "#8B5CF6");
-    assert_eq!(reloaded.audio.output_mode, AudioOutputMode::Headset);
     assert!((reloaded.vad.threshold - 0.72).abs() < 1e-5);
     assert!((reloaded.vad.ptt_noise_gate - 0.04).abs() < 1e-5);
     assert_eq!(reloaded.vad.vad_backend, VadBackendOption::Earshot);
@@ -370,7 +358,6 @@ fn test_settings_malformed_fallback_to_default() {
     // 1. Assert load does not panic and returns default settings
     let defaults = VoxSettings::default();
     assert_eq!(recovered.appearance.theme, defaults.appearance.theme);
-    assert_eq!(recovered.audio.output_mode, defaults.audio.output_mode);
     assert_eq!(recovered.vad.threshold, defaults.vad.threshold);
     assert_eq!(recovered.llm.active, defaults.llm.active);
     assert_eq!(recovered.tts.voice_index, defaults.tts.voice_index);
@@ -487,11 +474,6 @@ fn test_settings_jsonc_with_comments_support() {
     let settings_jsonc = r##"
     // Global hardware and audio configuration
     {
-        /* Audio output settings */
-        "audio": {
-            "output_mode": "Headset", // User wears headphones
-            "input_device": null
-        },
         // DSP noise gate threshold
         "vad": {
             "threshold": 0.65,
@@ -559,7 +541,6 @@ fn test_settings_jsonc_with_comments_support() {
     let loaded = VoxSettings::load();
 
     // Verify parsed values from JSONC comments files
-    assert_eq!(loaded.audio.output_mode, AudioOutputMode::Headset);
     assert!((loaded.vad.threshold - 0.65).abs() < 1e-5);
     assert_eq!(loaded.vad.vad_backend, VadBackendOption::Earshot);
     assert_eq!(loaded.appearance.theme, "dark_modern");
@@ -598,7 +579,6 @@ fn reload_policy_worker_command_keys_all_have_dispatch_arms() {
         ("vad", "ptt_noise_gate"),
         ("vad", "silence_duration_ms"),
         ("vad", "speech_onset_ms"),
-        ("audio", "output_mode"),
     ];
 
     for (domain, key) in worker_keys {

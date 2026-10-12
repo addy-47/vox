@@ -13,7 +13,7 @@ pub const DEFAULT_VAD_BACKEND: &str = "silero_vad";
 pub const DEFAULT_VAD_THRESHOLD: f32 = 0.5;
 pub const DEFAULT_VAD_PTT_NOISE_GATE: f32 = 0.005;
 pub const DEFAULT_VAD_SILENCE_DURATION_MS: u32 = 400;
-pub const DEFAULT_VAD_SPEECH_ONSET_MS: u32 = 100;
+pub const DEFAULT_VAD_SPEECH_ONSET_MS: u32 = 120;
 pub const DEFAULT_VAD_MAX_SPEECH_DURATION_S: u32 = 30;
 
 pub const DEFAULT_ASR_MODEL: &str = "nvidia_nemotron";

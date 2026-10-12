@@ -38,7 +38,6 @@ import { RemoteModelsModalView } from "./RemoteModelsModalView";
 import {
   REMOTE_MODEL_PAGE_SIZE,
   provenanceLabel,
-  failedProbeChecks,
   hasProbeWarning,
   probeWarningLabel,
 } from "./catalogProbeUtils";
@@ -442,14 +441,6 @@ export const RemoteCatalogSection = memo(({
                                 {provenanceLabel(probed.provenance)}
                               </span>
                             </div>
-                            {failedProbeChecks(probed).map((check) => (
-                              <div key={check.id} className="flex items-start justify-between gap-3">
-                                <span className="text-amber-400/90">{check.label}</span>
-                                <span className="text-amber-400/90 text-right shrink-0 max-w-[130px] truncate" title={check.detail ?? check.outcome}>
-                                  {check.detail ?? check.outcome}
-                                </span>
-                              </div>
-                            ))}
                           </div>
                         </div>
                       }
@@ -700,7 +691,7 @@ export const RemoteCatalogSection = memo(({
         }
         expandLabel={LLM_CATALOG_COPY.expandLabel}
         ariaLabel={LLM_CATALOG_COPY.catalogAriaLabel}
-        headerActions={<SettingsCommitControls domainId="models" />}
+        headerActions={<SettingsCommitControls domainId="models" layoutMode={layoutMode} />}
         modalContent={
           activeModalView === "models" ? (
             <RemoteModelsModalView

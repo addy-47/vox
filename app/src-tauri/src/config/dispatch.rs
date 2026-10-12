@@ -5,7 +5,6 @@ use std::{
 
 use tauri::{AppHandle, Manager, State};
 
-use super::AudioOutputMode;
 use crate::{
     core::{
         engine::{ensure_memory_embedder, start_audio_engine, stop_audio_engine},
@@ -402,17 +401,6 @@ pub async fn dispatch_worker_command<R: tauri::Runtime>(
                     log::debug!("[Settings] VadCommand::UpdateSpeechOnset({}) dispatched", v);
                 }
             }
-            ("audio", "output_mode") => {
-                if let Ok(mode) = serde_json::from_value::<AudioOutputMode>(value.clone()) {
-                    if let Err(e) = engine.vad_tx.send(VadCommand::UpdateAudioMode(mode)) {
-                        log::warn!(
-                            "[Settings] Failed to send VadCommand::UpdateAudioMode: {}",
-                            e
-                        );
-                    }
-                    log::debug!("[Settings] VadCommand::UpdateAudioMode dispatched");
-                }
-            }
             ("tts", "voice_index" | "voice") => {
                 if let Some(ref tts_tx) = engine.tts_tx {
                     let voice_opt = value
@@ -454,7 +442,6 @@ pub fn dispatch_worker_command_has_arm(domain: &str, key: &str) -> bool {
             | ("vad", "ptt_noise_gate")
             | ("vad", "silence_duration_ms")
             | ("vad", "speech_onset_ms")
-            | ("audio", "output_mode")
             | ("tts", "voice_index" | "voice")
             | ("tts", "speed")
     )

@@ -125,4 +125,10 @@ impl SttProvider for EmbeddedSttProvider {
     fn kind(&self) -> SttProviderKind {
         SttProviderKind::Embedded
     }
+
+    /// Pre-loads ONNX speech recognition weights into memory during session initialization.
+    fn warmup(&self) -> anyhow::Result<()> {
+        let mut inner = self.inner.lock();
+        inner.ensure_loaded()
+    }
 }

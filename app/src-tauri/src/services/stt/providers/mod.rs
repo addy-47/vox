@@ -21,6 +21,9 @@ pub trait SttProvider: Send {
     fn reset_state(&self) -> anyhow::Result<()>;
     fn health_check(&self) -> bool;
     fn kind(&self) -> SttProviderKind;
+    fn warmup(&self) -> anyhow::Result<()> {
+        Ok(())
+    }
 }
 
 /// Speech-to-Text inference engine contract for ONNX models.

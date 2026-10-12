@@ -16,7 +16,6 @@ use std::{
 };
 
 use vox_lib::{
-    config::AudioOutputMode,
     core::{
         events::{AudioIntent, InteractionMode, PipelineMode, VoxEvent},
         state::{InteractionOwner, InteractionState},
@@ -53,7 +52,6 @@ async fn test_harness_cognitive_stage_to_tts_matrix() {
             let mut settings = state.settings.write().unwrap();
             settings.interaction.mode = InteractionMode::Passive;
             settings.interaction.pipeline_mode = PipelineMode::Modular;
-            settings.audio.output_mode = AudioOutputMode::Headset;
             settings.llm.active = LlmActiveProvider::Embedded;
             settings.llm.context_window = 8192;
             settings.llm.max_output_tokens = 300;

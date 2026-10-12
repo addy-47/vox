@@ -40,6 +40,7 @@ pub mod decode;
 pub mod device;
 pub mod playback;
 pub mod resampler;
+pub mod route;
 pub mod sink;
 
 pub use decode::{
@@ -51,6 +52,7 @@ pub use device::{
 };
 pub use playback::PlaybackEngine;
 pub use resampler::{upsample_2x, upsample_2x_into, AudioResampler};
+pub use route::{detect_audio_output_mode, spawn_audio_route_watcher};
 
 /// Telemetry and visualization atomics passed to the playback engine.
 #[derive(Clone)]

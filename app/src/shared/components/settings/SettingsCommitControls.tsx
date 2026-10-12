@@ -101,6 +101,7 @@ export function useDomainCommitState(domainId: string): DomainCommitState {
 
 export interface SettingsCommitControlsProps {
   domainId: string;
+  layoutMode?: "full-max" | "full-min" | "small";
 }
 
 /**
@@ -108,7 +109,7 @@ export interface SettingsCommitControlsProps {
  * with the exact card-footer logic, plus saved / restarting / failed states.
  * Renders nothing when the domain is clean and idle.
  */
-export const SettingsCommitControls = memo(({ domainId }: SettingsCommitControlsProps) => {
+export const SettingsCommitControls = memo(({ domainId, layoutMode }: SettingsCommitControlsProps) => {
   const { mode } = useDomainCommitState(domainId);
   const { isExpanded, close } = useExpandableList();
   const { isMobile, isCompact } = useViewportResize();
@@ -169,7 +170,8 @@ export const SettingsCommitControls = memo(({ domainId }: SettingsCommitControls
     );
   }
 
-  const showLabel = !isExpanded && !isMobile && !isCompact;
+  const isSmall = layoutMode === "small" || isMobile || isCompact;
+  const showLabel = !isSmall;
 
   return (
     <div className="flex items-center justify-between gap-2 shrink-0">
