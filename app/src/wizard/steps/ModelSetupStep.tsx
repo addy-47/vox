@@ -352,7 +352,7 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
                     <motion.div 
                         initial={{ scale: 0 }}
                         animate={{ scale: 1 }}
-                        className="absolute inset-0 bg-[rgb(var(--accent))] rounded-full blur-2xl opacity-20"
+                        className="absolute inset-0 bg-[rgb(var(--accent))] rounded-full blur-md opacity-20"
                     />
                     <div className="relative w-full h-full bg-[rgb(var(--accent))]/10 rounded-full border border-[rgb(var(--accent))]/30 flex items-center justify-center">
                         <Check className="w-10 h-10 text-[rgb(var(--accent))]" />

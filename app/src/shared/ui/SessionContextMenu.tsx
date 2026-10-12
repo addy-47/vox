@@ -9,9 +9,12 @@ import {
   Shrink,
   Loader2,
   ChevronRight,
+  Check,
+  X,
 } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { SESSION_COPY } from "@/data/sessionCopy";
+import { Tooltip } from "@/shared/ui/Tooltip";
 import type { ProjectRow } from "@/services/projectService";
 
 export interface SessionContextMenuProps {
@@ -27,6 +30,7 @@ export interface SessionContextMenuProps {
   onStartRename: () => void;
   onMoveToProject: (projectId: string | null) => void;
   onDelete: () => void;
+  triggerRef?: React.RefObject<HTMLElement | null>;
 }
 
 export const SessionContextMenu: React.FC<SessionContextMenuProps> = memo(
@@ -43,6 +47,7 @@ export const SessionContextMenu: React.FC<SessionContextMenuProps> = memo(
     onStartRename,
     onMoveToProject,
     onDelete,
+    triggerRef,
   }) => {
     const [moveSubmenuOpen, setMoveSubmenuOpen] = React.useState(false);
     const [isConfirmingDelete, setIsConfirmingDelete] = React.useState(false);
@@ -61,7 +66,11 @@ export const SessionContextMenu: React.FC<SessionContextMenuProps> = memo(
       if (!open) return;
 
       const handlePointerDown = (e: PointerEvent) => {
-        if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        const target = e.target as Node;
+        if (triggerRef?.current && triggerRef.current.contains(target)) {
+          return;
+        }
+        if (menuRef.current && !menuRef.current.contains(target)) {
           onClose();
         }
       };
@@ -111,8 +120,8 @@ export const SessionContextMenu: React.FC<SessionContextMenuProps> = memo(
     }
 
     // Position menu to the RIGHT of the anchor button (opening inward toward the page)
-    const menuWidth = 176;
-    const menuHeight = isConfirmingDelete ? 72 : moveSubmenuOpen ? 180 : 120;
+    const menuWidth = moveSubmenuOpen ? 180 : 160;
+    const menuHeight = moveSubmenuOpen ? 180 : 130;
 
     // Position menu below the anchor button opening toward bottom-right
     let left = anchorRect.left;
@@ -147,40 +156,9 @@ export const SessionContextMenu: React.FC<SessionContextMenuProps> = memo(
           role="menu"
           aria-haspopup="menu"
           aria-expanded={open}
-          className="z-[9999] rounded-xl border border-[rgba(var(--border),0.12)] bg-[rgb(var(--card))] shadow-lg backdrop-blur-md p-1.5 flex flex-col gap-0.5 text-[12.5px] font-sans select-none"
+          className="z-[9999] rounded-sm border border-[rgba(var(--border),0.12)] bg-[rgb(var(--card))] shadow-lg backdrop-blur-md p-1 flex flex-col gap-0.5 text-[12.5px] font-sans select-none"
         >
-          {isConfirmingDelete ? (
-            <div className="p-1.5 flex flex-col gap-1.5 rounded-md bg-red-500/10 text-red-400">
-              <span className="text-[11.5px] font-semibold text-red-400 leading-tight">
-                {SESSION_COPY.actions.deleteConfirm}
-              </span>
-              <div className="flex items-center gap-1.5 justify-end">
-                <button
-                  type="button"
-                  role="menuitem"
-                  tabIndex={-1}
-                  data-action="cancel"
-                  onClick={() => setIsConfirmingDelete(false)}
-                  className="px-2 py-0.5 rounded text-[10.5px] font-mono text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.06)] cursor-pointer"
-                >
-                  {SESSION_COPY.actions.cancel}
-                </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  tabIndex={-1}
-                  data-action="delete-confirm"
-                  onClick={() => {
-                    onDelete();
-                    onClose();
-                  }}
-                  className="px-2 py-0.5 rounded text-[10.5px] font-mono font-bold bg-red-500/20 text-red-400 hover:bg-red-500/30 cursor-pointer"
-                >
-                  Delete
-                </button>
-              </div>
-            </div>
-          ) : moveSubmenuOpen ? (
+          {moveSubmenuOpen ? (
             <div className="flex flex-col gap-0.5 max-h-[200px] overflow-y-auto custom-scrollbar">
               <div className="px-2 py-1 text-[10px] font-mono uppercase text-[rgb(var(--foreground-muted))]/70 border-b border-[rgba(var(--border),0.08)] flex items-center justify-between">
                 <span>{SESSION_COPY.actions.moveToProject}</span>
@@ -190,7 +168,7 @@ export const SessionContextMenu: React.FC<SessionContextMenuProps> = memo(
                   tabIndex={-1}
                   data-action="back"
                   onClick={() => setMoveSubmenuOpen(false)}
-                  className="px-1.5 py-0.5 rounded flex items-center text-[10.5px] hover:text-[rgb(var(--foreground))] cursor-pointer font-bold text-[rgb(var(--accent))]"
+                  className="px-1.5 py-0.5 rounded-sm flex items-center text-[10.5px] hover:text-[rgb(var(--foreground))] cursor-pointer font-bold text-[rgb(var(--accent))]"
                 >
                   Back
                 </button>
@@ -204,7 +182,7 @@ export const SessionContextMenu: React.FC<SessionContextMenuProps> = memo(
                   onMoveToProject(null);
                   onClose();
                 }}
-                className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-left hover:bg-[rgba(var(--foreground),0.06)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors cursor-pointer text-[12.5px]"
+                className="flex items-center gap-2 px-2 py-1.5 rounded-sm text-left hover:bg-[rgba(var(--foreground),0.06)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors cursor-pointer text-[12.5px]"
               >
                 <span className="w-1.5 h-1.5 rounded-full bg-[rgba(var(--foreground),0.3)] shrink-0" />
                 <span className="truncate">{SESSION_COPY.actions.removeFromProject}</span>
@@ -221,7 +199,7 @@ export const SessionContextMenu: React.FC<SessionContextMenuProps> = memo(
                     onClose();
                   }}
                   className={cn(
-                    "flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-left hover:bg-[rgba(var(--foreground),0.06)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors cursor-pointer text-[12.5px]",
+                    "flex items-center gap-2 px-2 py-1.5 rounded-sm text-left hover:bg-[rgba(var(--foreground),0.06)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors cursor-pointer text-[12.5px]",
                     currentProjectId === p.id && "text-[rgb(var(--accent))] font-semibold"
                   )}
                 >
@@ -244,7 +222,7 @@ export const SessionContextMenu: React.FC<SessionContextMenuProps> = memo(
                       onCompact();
                       onClose();
                     }}
-                    className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-left hover:bg-[rgba(var(--accent),0.1)] text-[rgb(var(--accent))] font-medium transition-colors cursor-pointer text-[12.5px] disabled:opacity-50"
+                    className="flex items-center gap-2 px-2 py-1.5 rounded-sm text-left hover:bg-[rgba(var(--accent),0.1)] text-[rgb(var(--accent))] font-medium transition-colors cursor-pointer text-[12.5px] disabled:opacity-50"
                   >
                     {isCompacting ? (
                       <Loader2 size={13} className="animate-spin text-[rgb(var(--accent))]" />
@@ -270,7 +248,7 @@ export const SessionContextMenu: React.FC<SessionContextMenuProps> = memo(
                   onStartRename();
                   onClose();
                 }}
-                className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-left hover:bg-[rgba(var(--foreground),0.06)] text-[rgb(var(--foreground))] transition-colors cursor-pointer text-[12.5px]"
+                className="flex items-center gap-2 px-2 py-1.5 rounded-sm text-left hover:bg-[rgba(var(--foreground),0.06)] text-[rgb(var(--foreground))] transition-colors cursor-pointer text-[12.5px]"
               >
                 <Pencil size={13.5} className="text-[rgb(var(--foreground-muted))]" />
                 <span>{SESSION_COPY.actions.rename}</span>
@@ -282,9 +260,9 @@ export const SessionContextMenu: React.FC<SessionContextMenuProps> = memo(
                 tabIndex={-1}
                 data-action="move-to-project"
                 onClick={() => setMoveSubmenuOpen(true)}
-                className="flex items-center justify-between px-2.5 py-1.5 rounded-md text-left hover:bg-[rgba(var(--foreground),0.06)] text-[rgb(var(--foreground))] transition-colors cursor-pointer text-[12.5px]"
+                className="flex items-center justify-between px-2 py-1.5 rounded-sm text-left hover:bg-[rgba(var(--foreground),0.06)] text-[rgb(var(--foreground))] transition-colors cursor-pointer text-[12.5px]"
               >
-                <div className="flex items-center gap-2.5">
+                <div className="flex items-center gap-2">
                   <FolderInput size={13.5} className="text-[rgb(var(--foreground-muted))]" />
                   <span>{SESSION_COPY.actions.moveToProject}</span>
                 </div>
@@ -293,17 +271,55 @@ export const SessionContextMenu: React.FC<SessionContextMenuProps> = memo(
 
               <div className="h-[1px] bg-[rgba(var(--border),0.08)] my-0.5 -mx-0.5" />
 
-              <button
-                type="button"
-                role="menuitem"
-                tabIndex={-1}
-                data-action="delete"
-                onClick={() => setIsConfirmingDelete(true)}
-                className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-left hover:bg-rose-500/10 text-rose-400 transition-colors cursor-pointer text-[12.5px]"
-              >
-                <Trash2 size={13.5} />
-                <span>{SESSION_COPY.actions.delete}</span>
-              </button>
+              {isConfirmingDelete ? (
+                <div className="flex items-center justify-between px-2 py-1.5 rounded-sm text-[12.5px] select-none text-rose-400">
+                  <div className="flex items-center gap-2">
+                    <Trash2 size={13.5} />
+                    <span className="font-medium">Delete</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <Tooltip label={SESSION_COPY.projectActions.confirm} side="top">
+                      <button
+                        type="button"
+                        role="menuitem"
+                        tabIndex={-1}
+                        onClick={() => {
+                          onDelete();
+                          onClose();
+                        }}
+                        aria-label={SESSION_COPY.projectActions.confirm}
+                        className="w-5 h-5 flex items-center justify-center rounded-sm text-[rgb(var(--foreground-muted))] hover:text-red-500 hover:bg-red-500/10 transition-colors cursor-pointer"
+                      >
+                        <Check size={13} />
+                      </button>
+                    </Tooltip>
+                    <Tooltip label={SESSION_COPY.actions.cancel} side="top">
+                      <button
+                        type="button"
+                        role="menuitem"
+                        tabIndex={-1}
+                        onClick={() => setIsConfirmingDelete(false)}
+                        aria-label={SESSION_COPY.actions.cancel}
+                        className="w-5 h-5 flex items-center justify-center rounded-sm text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.08)] transition-colors cursor-pointer"
+                      >
+                        <X size={13} />
+                      </button>
+                    </Tooltip>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  role="menuitem"
+                  tabIndex={-1}
+                  data-action="delete"
+                  onClick={() => setIsConfirmingDelete(true)}
+                  className="flex items-center gap-2 px-2 py-1.5 rounded-sm text-left hover:bg-rose-500/10 text-rose-400 transition-colors cursor-pointer text-[12.5px]"
+                >
+                  <Trash2 size={13.5} />
+                  <span>{SESSION_COPY.actions.delete}</span>
+                </button>
+              )}
             </>
           )}
         </motion.div>

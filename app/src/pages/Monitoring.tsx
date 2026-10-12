@@ -398,7 +398,7 @@ export const Monitoring: React.FC<MonitoringProps> = ({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 14, scale: 0.98 }}
             transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-            className="fixed z-[200] bottom-[calc(72px+env(safe-area-inset-bottom))] left-[max(1rem,env(safe-area-inset-left))] w-[386px] max-w-[calc(100vw-32px)] h-[458px] max-h-[calc(100vh-96px)] glass-card p-3.5 flex flex-col shadow-2xl rounded-2xl"
+            className="fixed z-[200] bottom-[calc(72px+env(safe-area-inset-bottom))] left-[max(1rem,env(safe-area-inset-left))] w-[386px] max-w-[calc(100vw-32px)] h-[458px] max-h-[calc(100vh-96px)] glass-card p-3.5 flex flex-col shadow-lg rounded-2xl"
             role="dialog"
             aria-label={MONITORING_COPY.monitorAria}
           >

@@ -310,8 +310,6 @@ export const Memory: React.FC = memo(() => {
     setSelectedSessionId(sId);
     if (sId === null) {
       setSelectedSessionNode(null);
-    } else {
-      graphRef.current?.flyToSession(sId);
     }
   }, []);
 

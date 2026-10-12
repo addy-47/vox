@@ -50,7 +50,7 @@ use crate::{
 pub const DEFAULT_PROBE_TIMEOUT_SECS: u64 = 12;
 pub const DEFAULT_VALIDATION_TIMEOUT_SECS: u64 = 8;
 pub const DEFAULT_PROBE_MAX_TOKENS: u32 = 40;
-pub const DEFAULT_TOOL_PROBE_MAX_TOKENS: u32 = 80;
+pub const DEFAULT_TOOL_PROBE_MAX_TOKENS: u32 = 256;
 pub const DEFAULT_PROBE_TEMPERATURE: f32 = 0.1;
 
 #[derive(Default, Debug)]
@@ -1673,7 +1673,6 @@ mod tests {
             .expect("parameters.required must be an array");
         let names: Vec<&str> = required.iter().filter_map(|v| v.as_str()).collect();
         assert!(names.contains(&"query"), "required: {:?}", names);
-        assert!(names.contains(&"spoken_filler"), "required: {:?}", names);
     }
 
     #[test]

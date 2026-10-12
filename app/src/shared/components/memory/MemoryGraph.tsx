@@ -57,7 +57,7 @@ class GraphErrorBoundary extends Component<GraphErrorBoundaryProps, GraphErrorBo
     if (this.state.hasError) {
       return (
         <div className="w-full h-full flex items-center justify-center p-6">
-          <div className="glass-card max-w-sm w-full p-6 text-center space-y-4 rounded-2xl border border-[rgba(var(--accent),0.12)] bg-[rgb(var(--card))]/85 backdrop-blur-xl shadow-2xl">
+          <div className="glass-card max-w-sm w-full p-6 text-center space-y-4 rounded-2xl border border-[rgba(var(--accent),0.12)] bg-[rgb(var(--card))]/85 backdrop-blur-md shadow-lg">
             <div className="mx-auto w-12 h-12 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center justify-center text-red-400">
               <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <circle cx="12" cy="12" r="10" />

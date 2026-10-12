@@ -115,7 +115,7 @@ export const PersonalMemoryCommentPopover: React.FC<PersonalMemoryCommentPopover
         ) : (
           /* Clean minimal Antigravity-style comment box */
           <div
-            className="w-[280px] sm:w-[320px] rounded-lg border border-[rgba(var(--border),0.2)] shadow-2xl p-2.5 flex flex-col gap-2 animate-in fade-in zoom-in-95 duration-100 text-[rgb(var(--foreground))]"
+            className="w-[280px] sm:w-[320px] rounded-lg border border-[rgba(var(--border),0.2)] shadow-lg p-2.5 flex flex-col gap-2 animate-in fade-in zoom-in-95 duration-100 text-[rgb(var(--foreground))]"
             style={{ backgroundColor: "rgb(var(--card))" }}
           >
             <textarea

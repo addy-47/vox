@@ -200,7 +200,7 @@ export const MobilePermissionStep: React.FC<MobilePermissionStepProps> = ({
           </div>
 
           {/* Soft ambient glow behind icons without hard border/background container */}
-          <div className="absolute inset-0 bg-[rgb(var(--accent))]/10 blur-2xl rounded-full pointer-events-none" />
+          <div className="absolute inset-0 bg-[rgb(var(--accent))]/10 blur-md rounded-full pointer-events-none" />
         </div>
 
         {/* Title & Body */}

@@ -256,7 +256,7 @@ export const HistorySearchBar = memo<HistorySearchBarProps>(({
       {focused && value.trim().length > 0 && (
         <div
           ref={dropdownRef}
-          style={{ width: "min(460px, calc(100vw - 32px))" }}
+          style={{ width: "min(420px, calc(100vw - 32px))" }}
           className={cn(
             "absolute left-1/2 -translate-x-1/2 rounded-2xl glass-card border border-[rgba(var(--accent),0.25)] bg-[rgba(var(--card),0.96)] shadow-lg p-2 z-50 flex flex-col gap-1 overflow-hidden",
             isTopDropdown ? "bottom-[calc(100%+8px)]" : "top-[calc(100%+8px)]"

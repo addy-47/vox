@@ -258,7 +258,7 @@ export const History: React.FC = () => {
           <HistorySearchBar
             sessions={sessions}
             onSelectSession={handleSearchSelectSession}
-            className="w-full max-w-[280px]"
+            className="w-full max-w-[300px]"
           />,
           document.getElementById("app-header-center-slot")!
         )}
