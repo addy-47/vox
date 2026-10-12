@@ -122,7 +122,7 @@ export const CalendarPicker: React.FC<CalendarPickerProps> = memo(
     return (
       <div
         className={cn(
-          "w-full p-2.5 rounded-xl bg-[rgba(var(--card),0.95)] border border-[rgba(var(--accent),0.25)] shadow-xl backdrop-blur-2xl text-[11px] font-mono select-none space-y-2",
+          "w-full p-2.5 rounded-xl bg-[rgba(var(--card),0.96)] border border-[rgba(var(--accent),0.25)] shadow-lg text-[11px] font-mono select-none space-y-2",
           className
         )}
       >

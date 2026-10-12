@@ -272,7 +272,7 @@ export const History: React.FC = () => {
             exit={{ opacity: 0, y: -20, scale: 0.95 }}
             className="absolute top-16 left-1/2 -translate-x-1/2 z-[100] max-w-md w-full px-4 pointer-events-auto"
           >
-            <div className="glass-card p-3.5 rounded-xl flex items-center justify-between gap-3 border border-red-500/30 shadow-2xl bg-[rgb(var(--card))]/90 backdrop-blur-md text-left">
+            <div className="glass-card p-3.5 rounded-xl flex items-center justify-between gap-3 border border-red-500/30 shadow-lg bg-[rgb(var(--card))]/95 text-left">
               <div className="flex items-center gap-2.5 min-w-0">
                 <AlertCircle className="text-red-400 shrink-0" size={16} />
                 <span className="text-[12px] font-medium text-[rgb(var(--foreground))] truncate">
@@ -434,7 +434,7 @@ export const History: React.FC = () => {
                   className="absolute inset-0 z-20 w-full h-full flex flex-col min-h-0 overflow-hidden bg-[rgb(var(--background))] select-text animate-in fade-in duration-200"
                 >
                   {/* Top Navigation Bar: Simple Arrow Back + Wrapped Title + Session Actions (pr-32 sm:pr-36 reserves clear space for TopRightCluster) */}
-                  <div className="shrink-0 px-4 sm:px-6 pt-[max(1rem,env(safe-area-inset-top))] pb-3 border-b border-[rgba(var(--border),0.12)] bg-[rgb(var(--background))]/80 backdrop-blur-md flex items-start justify-between gap-3 pr-32 sm:pr-36">
+                  <div className="shrink-0 px-4 sm:px-6 pt-[max(1rem,env(safe-area-inset-top))] pb-3 border-b border-[rgba(var(--border),0.12)] bg-[rgb(var(--background))] flex items-start justify-between gap-3 pr-32 sm:pr-36">
                     <div className="flex items-start gap-3 min-w-0 flex-1">
                       <button
                         type="button"

@@ -15,7 +15,7 @@ export const MemoryErrorState: React.FC<MemoryErrorStateProps> = memo(({ error, 
       transform: "translate(-50%, -50%)",
     }}
   >
-    <div className="rounded-2xl bg-[rgba(var(--card),0.85)] border border-[rgba(var(--border),0.12)] backdrop-blur-xl p-8 max-w-sm text-center shadow-2xl">
+    <div className="rounded-2xl bg-[rgba(var(--card),0.85)] border border-[rgba(var(--border),0.12)] backdrop-blur-md p-8 max-w-sm text-center shadow-lg">
       <h3 className="font-display text-[14px] font-bold text-[rgb(var(--foreground))] mb-1">
         {MEMORY_COPY.loadFailedTitle}
       </h3>

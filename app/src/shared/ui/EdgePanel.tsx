@@ -114,15 +114,6 @@ const EdgePanelInner = memo(
     }, [open]);
 
     const isLeft = side === "left";
-
-    // Subtle top & bottom edge mask so items fade gently right at panel boundaries (increased by 60%)
-    const maskStyles: React.CSSProperties = {
-      WebkitMaskImage:
-        "linear-gradient(to bottom, transparent 0px, black 14px, black calc(100% - 160px), transparent 100%)",
-      maskImage:
-        "linear-gradient(to bottom, transparent 0px, black 14px, black calc(100% - 160px), transparent 100%)",
-    };
-
     const isGlobal = position === "global";
     const effectiveZ = zIndex ?? (isGlobal ? 70 : 35);
     const effectiveBackdropZ = effectiveZ - 1;
@@ -142,14 +133,14 @@ const EdgePanelInner = memo(
               role="dialog"
               aria-label={title || LAYOUT_COPY.panel.fallback}
               data-edge-panel={side}
-              initial={{ opacity: 0, x: isLeft ? "-100%" : "100%" }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: isLeft ? "-100%" : "100%" }}
+              initial={{ x: isLeft ? "-100%" : "100%" }}
+              animate={{ x: 0 }}
+              exit={{ x: isLeft ? "-100%" : "100%" }}
               transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
               style={{ zIndex: effectiveZ }}
               className={cn(
                 isGlobal ? "fixed top-0 bottom-0" : "absolute top-0 bottom-0",
-                "flex flex-col bg-[rgb(var(--card))]/90 backdrop-blur-md overflow-hidden pointer-events-auto select-auto border-[rgba(var(--border),0.06)] transform-gpu",
+                "flex flex-col bg-[rgb(var(--card))]/96 overflow-hidden pointer-events-auto select-auto border-[rgba(var(--border),0.08)] shadow-lg transform-gpu",
                 isLeft ? "left-0 border-r" : "right-0 border-l",
                 "w-[340px] max-w-[92vw]",
                 className
@@ -207,11 +198,11 @@ const EdgePanelInner = memo(
 
             {/* Content Body — strictly self-contained with internal scroll dissolve */}
             <div className="flex-1 min-h-0 flex flex-col overflow-hidden relative">
-              <div className="flex-1 min-h-0 flex flex-col overflow-hidden" style={maskStyles}>
+              <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
                 {children}
               </div>
-              {/* Internal bottom dissolve strictly bounded to panel (increased by 60% from 64px to 102px) */}
-              <BottomDockFeather className="absolute bottom-0 left-0 right-0 h-[102px] pointer-events-none z-10" />
+              {/* Internal bottom dissolve strictly bounded to panel */}
+              <BottomDockFeather className="absolute bottom-0 left-0 right-0 h-14 pointer-events-none z-10" />
             </div>
           </motion.aside>
         </>

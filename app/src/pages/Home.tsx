@@ -243,7 +243,7 @@ export const Home = memo(() => {
       {/* ── Restore error toast ── */}
       {restoreError && (
         <div className="absolute top-16 left-1/2 -translate-x-1/2 z-[100] pointer-events-auto">
-          <div className="glass-card px-4 py-2.5 rounded-xl flex items-center gap-2.5 border border-red-500/30 shadow-2xl bg-black/40 backdrop-blur-md">
+          <div className="glass-card px-4 py-2.5 rounded-xl flex items-center gap-2.5 border border-red-500/30 shadow-lg bg-[rgb(var(--card))]/95">
             <AlertCircle className="text-red-400 shrink-0" size={16} />
             <p className="text-[12px] text-[rgb(var(--foreground))]/90 break-words select-text">
               {restoreError}
@@ -261,7 +261,7 @@ export const Home = memo(() => {
       {/* ── Session error banner (failed Engage) ── */}
       {sessionError && (
         <div role="alert" className="absolute top-[116px] left-1/2 -translate-x-1/2 z-[100] pointer-events-auto">
-          <div className="glass-card px-4 py-2.5 rounded-xl flex items-center gap-2.5 border border-red-500/30 shadow-2xl bg-black/40 backdrop-blur-md">
+          <div className="glass-card px-4 py-2.5 rounded-xl flex items-center gap-2.5 border border-red-500/30 shadow-lg bg-[rgb(var(--card))]/95">
             <AlertCircle className="text-red-400 shrink-0" size={16} />
             <p className="text-[12px] text-[rgb(var(--foreground))]/90 break-words select-text">
               {sessionError}

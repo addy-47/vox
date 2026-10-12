@@ -414,9 +414,7 @@ body.is-tray #root {
     position: relative;
     isolation: isolate;
     overflow: hidden;
-    background: rgba(var(--card), 0.78);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
+    background: rgba(var(--card), 0.88);
     border: 1px solid rgba(var(--border), 0.08);
     border-radius: 1.25rem;
     box-shadow: 0 1px 3px rgba(var(--shadow-color), var(--shadow-alpha)), inset 0 1px 0 0 rgba(var(--highlight-color), var(--highlight-alpha));
@@ -425,7 +423,7 @@ body.is-tray #root {
     transition-timing-function: var(--theme-ease);
   }
   [data-theme='light'] .glass-card {
-    background: rgba(var(--card), 0.90);
+    background: rgba(var(--card), 0.95);
     border-color: rgba(var(--border), 0.08);
   }
 

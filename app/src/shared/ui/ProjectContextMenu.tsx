@@ -145,7 +145,7 @@ export const ProjectContextMenu: React.FC<ProjectContextMenuProps> = memo(
           role="menu"
           aria-haspopup="menu"
           aria-expanded={open}
-          className="z-[9999] rounded-xl border border-[rgba(var(--border),0.12)] bg-[rgb(var(--card))] shadow-2xl backdrop-blur-md p-1.5 flex flex-col gap-0.5 text-[12.5px] font-sans select-none"
+          className="z-[9999] rounded-xl border border-[rgba(var(--border),0.12)] bg-[rgb(var(--card))] shadow-lg backdrop-blur-md p-1.5 flex flex-col gap-0.5 text-[12.5px] font-sans select-none"
         >
           {/* Row 1: Rename project */}
           <button

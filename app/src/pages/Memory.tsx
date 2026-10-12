@@ -640,7 +640,7 @@ export const Memory: React.FC = memo(() => {
           onClose={() => setSearchModalOpen(false)}
           position="global"
           ariaLabel="Search Memories"
-          className="w-[min(480px,92vw)] h-[min(540px,72vh)] p-4 rounded-2xl bg-[rgba(var(--card),0.92)] backdrop-blur-2xl border border-[rgba(var(--border),0.2)] shadow-2xl"
+          className="w-[min(480px,92vw)] h-[min(540px,72vh)] p-4 rounded-2xl bg-[rgba(var(--card),0.92)] backdrop-blur-md border border-[rgba(var(--border),0.2)] shadow-xl"
           bodyClassName="h-full flex flex-col min-h-0 overflow-hidden"
         >
           <div className="flex flex-col h-full min-h-0">

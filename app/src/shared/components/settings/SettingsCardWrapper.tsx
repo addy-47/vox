@@ -43,7 +43,7 @@ export const SettingsCardWrapper = memo(({ domain, isActive, layoutMode, childre
             layoutMode === "small"
               ? "h-auto"
               : domain.id === "persona"
-              ? "h-full flex items-end justify-center"
+              ? "h-full flex items-start justify-center overflow-visible"
               : domain.id === "appearance"
               ? "h-full flex items-start justify-center"
               : "h-full flex items-center justify-center"

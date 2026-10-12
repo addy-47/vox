@@ -114,7 +114,7 @@ export const HistoryListView: React.FC<HistoryListViewProps> = memo(
     return (
       <div className="w-full h-full flex flex-col min-h-0 overflow-hidden z-20">
         {/* Quick Search and Date Filter Pills */}
-        <div className="shrink-0 px-4 sm:px-5 pt-1.5 pb-2.5 space-y-2.5 border-b border-[rgba(var(--border),0.12)] bg-[rgb(var(--background))]/80 backdrop-blur-md">
+        <div className="shrink-0 px-4 sm:px-5 pt-1.5 pb-2.5 space-y-2.5 border-b]">
 
           {/* Quick Search Input — Underline Style matching Design System */}
           <div className="px-1 pb-0.5">
