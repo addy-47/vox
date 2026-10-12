@@ -36,7 +36,7 @@ export const MobileSkipConfirmModal: React.FC<MobileSkipConfirmModalProps> = mem
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 8 }}
             transition={{ type: 'spring', damping: 25, stiffness: 350 }}
-            className="relative w-full max-w-sm rounded-2xl bg-[rgb(var(--card))] border border-[rgba(var(--foreground),0.1)] p-6 shadow-2xl flex flex-col items-center text-center space-y-4 overflow-hidden z-10"
+            className="relative w-full max-w-sm rounded-2xl bg-[rgb(var(--card))] border border-[rgba(var(--foreground),0.1)] p-6 shadow-lg flex flex-col items-center text-center space-y-4 overflow-hidden z-10"
           >
             {/* Warning Icon Badge */}
             <div className="w-12 h-12 rounded-2xl bg-[rgb(var(--warning))]/12 border border-[rgb(var(--warning))]/25 flex items-center justify-center text-[rgb(var(--warning))] shrink-0">

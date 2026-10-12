@@ -305,7 +305,7 @@ export const SearchBar = memo<SearchBarProps>(({
             "absolute left-1/2 -translate-x-1/2 rounded-2xl glass-card border border-[rgba(var(--accent),0.3)] bg-[rgba(var(--card),0.96)] shadow-lg p-2 z-50 flex flex-col gap-1 overflow-hidden",
             isTopDropdown ? "bottom-[calc(100%+8px)]" : "top-[calc(100%+8px)]"
           )}
-          style={{ width: "min(360px, calc(100vw - 32px))" }}
+          style={{ width: "min(420px, calc(100vw - 32px))" }}
         >
           <div className="px-2 py-1 text-[10px] font-mono uppercase tracking-wider text-[rgb(var(--foreground-muted))] border-b border-[rgba(var(--border),0.10)] flex items-center justify-between">
             <span>{MEMORY_COPY.matchingFacts}</span>

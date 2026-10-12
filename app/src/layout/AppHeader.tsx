@@ -62,7 +62,7 @@ export const AppHeader: React.FC = memo(() => {
   return (
     <header
       className={cn(
-        "w-full z-40 shrink-0 select-none transition-all flex items-center justify-between",
+        "relative w-full z-40 shrink-0 select-none transition-all flex items-center justify-between",
         isMobile
           ? "pt-4 px-4 sm:px-8 pb-2.5 bg-transparent"
           : "h-14 px-5 bg-transparent"
@@ -163,8 +163,11 @@ export const AppHeader: React.FC = memo(() => {
 
       </div>
 
-      {/* ── Center Slot (Reserved for Main layout search in History and Memory) ── */}
-      <div id="app-header-center-slot" className="flex-1 flex justify-center items-center min-w-0 px-4 pointer-events-auto" />
+      {/* ── Center Slot (Reserved for Main layout search in History and Memory, exactly centered at 50vw) ── */}
+      <div
+        id="app-header-center-slot"
+        className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex justify-center items-center pointer-events-none z-30 w-full max-w-[min(320px,calc(100vw-280px))]"
+      />
 
       {/* ── Right Slot (Unified: Context Action + Theme + Notifications + Help) ── */}
       <div

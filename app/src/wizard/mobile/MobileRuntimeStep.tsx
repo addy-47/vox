@@ -44,7 +44,7 @@ export const MobileRuntimeStep: React.FC<MobileRuntimeStepProps> = () => {
               </span>
             </div>
           </div>
-          <div className="absolute inset-0 bg-[rgb(var(--accent))]/10 blur-3xl rounded-full pointer-events-none" />
+          <div className="absolute inset-0 bg-[rgb(var(--accent))]/10 blur-md rounded-full pointer-events-none" />
         </div>
 
         {/* Title & Body */}

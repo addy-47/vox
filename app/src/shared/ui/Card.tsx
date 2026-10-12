@@ -35,9 +35,9 @@ export const Card: React.FC<CardProps> = ({
         blur === "sm" && "backdrop-blur-sm",
         blur === "md" && "backdrop-blur-md",
         blur === "lg" && "backdrop-blur-lg",
-        blur === "xl" && "backdrop-blur-xl",
-        blur === "2xl" && "backdrop-blur-2xl",
-        blur === "3xl" && "backdrop-blur-3xl",
+        blur === "xl" && "backdrop-blur-md",
+        blur === "2xl" && "backdrop-blur-md",
+        blur === "3xl" && "backdrop-blur-md",
         isSmall && "w-full bg-transparent p-0 shadow-none border-transparent",
         className
       )}
