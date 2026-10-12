@@ -1,12 +1,6 @@
 import React from 'react';
-import {
-  CheckCircle2,
-  ShieldCheck,
-  AudioWaveform,
-  Sparkles,
-  Mic,
-  MessageSquare,
-} from 'lucide-react';
+import { Sparkles, ShieldCheck, AudioWaveform } from 'lucide-react';
+import { VoxOrb } from '@/shared/components/home';
 import { MOBILE_ONBOARDING_COPY } from '@/data/welcomeCopy';
 
 interface MobileReadyStepProps {
@@ -17,99 +11,56 @@ export const MobileReadyStep: React.FC<MobileReadyStepProps> = () => {
   const copy = MOBILE_ONBOARDING_COPY.ready;
 
   return (
-    <div className="flex flex-col h-full w-full overflow-y-auto px-6 py-4 select-none bg-transparent">
-      <div className="flex-1 min-h-0 flex flex-col justify-center space-y-6 max-w-sm mx-auto w-full my-auto">
-        {/* Top Status Badge & Title */}
-        <div className="space-y-2 text-left">
-          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[rgb(var(--accent))]/12 border border-[rgb(var(--accent))]/25 text-[10px] font-mono font-bold tracking-wider uppercase text-[rgb(var(--accent))]">
-            <span className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--accent))] animate-pulse" />
-            <span>Setup Complete</span>
-          </div>
-
-          <h1 className="text-2xl sm:text-3xl font-display font-bold text-[rgb(var(--foreground))] tracking-tight">
-            {copy.title}
-          </h1>
-          <p className="text-xs sm:text-sm text-[rgb(var(--foreground-muted))] leading-relaxed">
-            {copy.description}
-          </p>
-        </div>
-
-        {/* System Capabilities Cards */}
-        <div className="space-y-2.5 text-left">
-          <div className="p-3.5 rounded-2xl glass-card border border-[rgba(var(--foreground),0.08)] flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3 min-w-0">
-              <div className="w-9 h-9 rounded-xl bg-[rgb(var(--accent))]/12 flex items-center justify-center shrink-0 text-[rgb(var(--accent))]">
-                <AudioWaveform className="w-4 h-4" />
-              </div>
-              <div className="flex flex-col min-w-0">
-                <span className="text-xs font-semibold text-[rgb(var(--foreground))] truncate">
-                  Audio & Voice Engine
-                </span>
-                <span className="text-[11px] text-[rgb(var(--foreground-muted))] truncate">
-                  Local microphone & speech calibrated
-                </span>
-              </div>
+    <div className="flex flex-col h-full w-full overflow-hidden select-none bg-transparent">
+      {/* Centered Stage: Ambient Glowing Vox Orb & Ready Celebration */}
+      <div className="flex-1 min-h-0 flex flex-col justify-between items-center px-6 py-4 text-center">
+        {/* Glowing Active Vox Orb in Ready/Idle State */}
+        <div className="flex-1 flex items-center justify-center">
+          <div className="relative w-64 h-64 sm:w-72 sm:h-72 flex items-center justify-center shrink-0">
+            <div className="w-full h-full relative z-10 scale-105">
+              <VoxOrb interactionState="Idle" />
             </div>
-            <span className="shrink-0 text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded bg-[rgb(var(--accent))]/15 text-[rgb(var(--accent))] flex items-center gap-1">
-              <CheckCircle2 className="w-3 h-3 stroke-[2.5]" />
-              <span>Ready</span>
-            </span>
-          </div>
-
-          <div className="p-3.5 rounded-2xl glass-card border border-[rgba(var(--foreground),0.08)] flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3 min-w-0">
-              <div className="w-9 h-9 rounded-xl bg-emerald-500/12 flex items-center justify-center shrink-0 text-emerald-400">
-                <ShieldCheck className="w-4 h-4" />
-              </div>
-              <div className="flex flex-col min-w-0">
-                <span className="text-xs font-semibold text-[rgb(var(--foreground))] truncate">
-                  Private & Offline
-                </span>
-                <span className="text-[11px] text-[rgb(var(--foreground-muted))] truncate">
-                  Voice processing stays on your device
-                </span>
-              </div>
-            </div>
-            <span className="shrink-0 text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 flex items-center gap-1">
-              <CheckCircle2 className="w-3 h-3 stroke-[2.5]" />
-              <span>Active</span>
-            </span>
-          </div>
-
-          <div className="p-3.5 rounded-2xl glass-card border border-[rgba(var(--foreground),0.08)] flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3 min-w-0">
-              <div className="w-9 h-9 rounded-xl bg-[rgb(var(--accent))]/12 flex items-center justify-center shrink-0 text-[rgb(var(--accent))]">
-                <Sparkles className="w-4 h-4" />
-              </div>
-              <div className="flex flex-col min-w-0">
-                <span className="text-xs font-semibold text-[rgb(var(--foreground))] truncate">
-                  Neural Models
-                </span>
-                <span className="text-[11px] text-[rgb(var(--foreground-muted))] truncate">
-                  Verified weights ready for conversation
-                </span>
-              </div>
-            </div>
-            <span className="shrink-0 text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded bg-[rgb(var(--accent))]/15 text-[rgb(var(--accent))] flex items-center gap-1">
-              <CheckCircle2 className="w-3 h-3 stroke-[2.5]" />
-              <span>Ready</span>
-            </span>
+            {/* Vibrant celebratory aura */}
+            <div className="absolute inset-0 bg-emerald-500/20 blur-[100px] rounded-full pointer-events-none animate-pulse" />
+            <div className="absolute inset-4 bg-[rgb(var(--accent))]/15 blur-[60px] rounded-full pointer-events-none" />
           </div>
         </div>
 
-        {/* Quick Tips Section */}
-        <div className="p-3.5 rounded-2xl glass-card border border-[rgba(var(--foreground),0.08)] space-y-2 text-left">
-          <div className="text-[10px] font-mono uppercase tracking-wider text-[rgb(var(--foreground-muted))]">
-            Quick Usage Tips
+        {/* Headline, Status Badges & Usage Prompt (Centered) */}
+        <div className="space-y-3 max-w-sm mb-4 shrink-0 text-center">
+          {/* Status Badge Capsule */}
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/12 border border-emerald-500/25 text-[10px] font-mono font-bold tracking-wider uppercase text-emerald-400">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            <span>{copy.statusBadge}</span>
           </div>
-          <div className="space-y-2 text-[11px] text-[rgb(var(--foreground-muted))]">
-            <div className="flex items-start gap-2">
-              <Mic className="w-3.5 h-3.5 text-[rgb(var(--accent))] shrink-0 mt-0.5" />
-              <span>Tap the center orb anytime to start speaking.</span>
+
+          {/* Heading & Body */}
+          <div className="space-y-1.5">
+            <h1 className="text-2xl sm:text-3xl font-display font-bold text-[rgb(var(--foreground))] tracking-tight">
+              {copy.title}
+            </h1>
+            <p className="text-xs sm:text-sm text-[rgb(var(--foreground-muted))] leading-relaxed max-w-xs mx-auto">
+              {copy.description}
+            </p>
+          </div>
+
+          {/* Centered Capabilities Summary Badges */}
+          <div className="flex items-center justify-center gap-2 pt-1 flex-wrap">
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/[0.03] border border-white/[0.06] text-[10px] font-mono text-[rgb(var(--foreground-muted))]">
+              <AudioWaveform className="w-3 h-3 text-[rgb(var(--accent))]" />
+              <span>Voice Calibrated</span>
             </div>
-            <div className="flex items-start gap-2">
-              <MessageSquare className="w-3.5 h-3.5 text-[rgb(var(--accent))] shrink-0 mt-0.5" />
-              <span>Speak naturally with ambient hands-free intelligence.</span>
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/[0.03] border border-white/[0.06] text-[10px] font-mono text-[rgb(var(--foreground-muted))]">
+              <ShieldCheck className="w-3 h-3 text-emerald-400" />
+              <span>100% Private</span>
+            </div>
+          </div>
+
+          {/* Clean Interactive Prompt Callout */}
+          <div className="pt-1">
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[rgb(var(--accent))]/8 border border-[rgb(var(--accent))]/20 text-xs text-[rgb(var(--accent))]">
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>{copy.actionPrompt}</span>
             </div>
           </div>
         </div>

@@ -74,8 +74,23 @@ export function useSettingsPage() {
     };
   }, []);
 
-  const radiusX = useMemo(() => Math.max(90, Math.min(120, windowWidth * 0.09 - 10)), [windowWidth]);
-  const radiusY = useMemo(() => Math.max(75, Math.min(120, windowHeight * 0.14 - 8)), [windowHeight]);
+  // In the current main layout (>= 1440w and >= 850h), the radial hub maintains its standard size.
+  // In constrained / resized window layouts (like second image), the center node dynamically pulls
+  // satellite nodes closer to avoid crowding surrounding cards while strictly preserving the hub shape.
+  const dynamicPull = useMemo(() => {
+    const widthRatio = Math.min(1.0, windowWidth / 1440);
+    const heightRatio = Math.min(1.0, windowHeight / 850);
+    return Math.max(0.72, Math.min(1.0, Math.min(widthRatio, heightRatio)));
+  }, [windowWidth, windowHeight]);
+
+  const radiusX = useMemo(
+    () => Math.round(Math.max(68, Math.min(120, (windowWidth * 0.09 - 10) * dynamicPull))),
+    [windowWidth, dynamicPull]
+  );
+  const radiusY = useMemo(
+    () => Math.round(Math.max(58, Math.min(120, (windowHeight * 0.14 - 8) * dynamicPull))),
+    [windowHeight, dynamicPull]
+  );
 
   const layoutMode = useMemo<"full-max" | "full-min" | "small">( () => {
     if (isCompact) return "small";

@@ -329,7 +329,18 @@ const App: React.FC = () => {
                               <Route path="/history" element={<ErrorBoundary name="History"><History /></ErrorBoundary>} />
                               <Route path="/memory" element={<ErrorBoundary name="Memory"><Memory /></ErrorBoundary>} />
                               <Route path="/settings" element={<ErrorBoundary name="Settings"><Settings /></ErrorBoundary>} />
-                              <Route path="/monitoring" element={<ErrorBoundary name="Monitoring"><Monitoring /></ErrorBoundary>} />
+                              <Route
+                                path="/monitoring"
+                                element={
+                                  isRealMobileDevice() ? (
+                                    <Navigate to="/" replace />
+                                  ) : (
+                                    <ErrorBoundary name="Monitoring">
+                                      <Monitoring />
+                                    </ErrorBoundary>
+                                  )
+                                }
+                              />
                               <Route path="/wizard" element={<Navigate to="/" replace />} />
                               <Route path="*" element={<Navigate to="/" replace />} />
                             </Route>

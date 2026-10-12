@@ -7,6 +7,7 @@ import { MobileRuntimeStep } from './MobileRuntimeStep';
 import { MobileModelStep } from './MobileModelStep';
 import { MobileReadyStep } from './MobileReadyStep';
 import { MobileStepFooter } from './MobileStepFooter';
+import { MobileSkipConfirmModal } from './MobileSkipConfirmModal';
 import { completeSetupWizard } from '@/services/setupService';
 import { MOBILE_ONBOARDING_COPY } from '@/data/welcomeCopy';
 
@@ -25,6 +26,7 @@ export const MobileOnboardingFlow: React.FC<MobileOnboardingFlowProps> = ({
   const [currentStep, setCurrentStep] = useState<MobileStepId>(initialStep);
   const [permissionsGranted, setPermissionsGranted] = useState(false);
   const [permissionsRequesting, setPermissionsRequesting] = useState(false);
+  const [isSkipModalOpen, setIsSkipModalOpen] = useState(false);
   const grantActionRef = useRef<(() => void) | null>(null);
   const [modelStatus, setModelStatus] = useState<{
     isDone: boolean;
@@ -225,15 +227,20 @@ export const MobileOnboardingFlow: React.FC<MobileOnboardingFlowProps> = ({
           </span>
         </div>
 
-        {/* Right: Clean Skip Action with Step Counter (≥48px touch target) */}
+        {/* Center: Dedicated Step Progress Pill */}
+        <div className="px-3 py-1 rounded-full bg-white/[0.03] border border-white/[0.06] text-[11px] font-mono tracking-wider text-[rgb(var(--foreground-muted))] uppercase">
+          <span className="text-[rgb(var(--foreground))] font-semibold">{currentIndex + 1}</span>
+          <span className="opacity-40 mx-1">/</span>
+          <span>{totalSteps}</span>
+        </div>
+
+        {/* Right: Clean Skip Action Trigger (≥48px touch target) */}
         <button
           type="button"
-          onClick={handleSkipToVox}
-          className="min-h-[48px] flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/[0.04] text-[11px] font-mono uppercase tracking-wider text-[rgb(var(--foreground-muted))] active:bg-white/[0.08] active:scale-95 transition-all touch-manipulation cursor-pointer"
+          onClick={() => setIsSkipModalOpen(true)}
+          className="min-h-[48px] px-3 flex items-center justify-center rounded-full text-[11px] font-mono uppercase tracking-wider text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] active:bg-white/[0.06] transition-colors touch-manipulation cursor-pointer"
         >
-          <span>{MOBILE_ONBOARDING_COPY.header.skipButton}</span>
-          <span className="opacity-40">·</span>
-          <span className="opacity-75">{currentIndex + 1}/{totalSteps}</span>
+          {MOBILE_ONBOARDING_COPY.header.skipButton}
         </button>
       </div>
 
@@ -294,6 +301,13 @@ export const MobileOnboardingFlow: React.FC<MobileOnboardingFlowProps> = ({
         onClick={footerConfig.onClick}
         disabled={footerConfig.disabled}
         isLoading={footerConfig.isLoading}
+      />
+
+      {/* ── Skip Confirmation Modal ── */}
+      <MobileSkipConfirmModal
+        isOpen={isSkipModalOpen}
+        onClose={() => setIsSkipModalOpen(false)}
+        onConfirmSkip={handleSkipToVox}
       />
     </div>
   );

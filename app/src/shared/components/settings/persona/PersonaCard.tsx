@@ -424,7 +424,7 @@ export const PersonaCard = memo(({ layoutMode = "full-max" }: PersonaCardProps) 
           /* Preview Mode: XML Stripped & Rendered as Structured Headings */
           <div 
             className={cn(
-              "w-full bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--accent),0.12)] rounded-xl p-3 overflow-y-auto select-text space-y-3.5 scrollbar-thin scrollbar-thumb-[rgba(var(--accent),0.2)] scrollbar-track-transparent",
+              "w-full bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--accent),0.12)] rounded-xl p-3 overflow-y-auto select-text space-y-3 scrollbar-thin scrollbar-thumb-[rgba(var(--accent),0.2)] scrollbar-track-transparent",
               layoutMode === "full-max" ? "h-[200px]" : isSmall ? "h-[200px]" : "h-[150px]"
             )}
           >
@@ -434,7 +434,7 @@ export const PersonaCard = memo(({ layoutMode = "full-max" }: PersonaCardProps) 
               </div>
             ) : (
               parsedSections.map((sec, idx) => (
-                <div key={idx} className="flex flex-col gap-1 rounded-lg bg-[rgba(var(--accent),0.03)] border border-[rgba(var(--accent),0.07)] p-2.5">
+                <div key={idx} className="space-y-1">
                   {(sec.title || sec.tag) && (
                     <div className="flex items-center justify-between border-b border-[rgba(var(--accent),0.08)] pb-1 mb-1">
                       <span className="text-[11.5px] font-black uppercase tracking-wider text-[rgb(var(--accent))]">
@@ -447,7 +447,7 @@ export const PersonaCard = memo(({ layoutMode = "full-max" }: PersonaCardProps) 
                       )}
                     </div>
                   )}
-                  <Markdown content={sec.content} variant="preview" className="text-[12px] text-[rgb(var(--foreground))]/80 leading-relaxed" />
+                  <Markdown content={sec.content} variant="preview" className="text-[12px] sm:text-[12.5px] text-[rgb(var(--foreground))]/80 leading-relaxed" />
                 </div>
               ))
             )}

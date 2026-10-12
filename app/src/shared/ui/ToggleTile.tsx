@@ -56,7 +56,10 @@ export const ToggleTile = memo<ToggleTileProps>(({
       )}
     >
       <div
-        className="flex-1 p-3 rounded-xl group-hover:rounded-r-none border border-[rgba(var(--accent),0.05)] bg-[rgba(var(--foreground),0.01)] group-hover:border-[rgba(var(--accent),0.2)] group-hover:bg-[rgba(var(--accent),0.02)] transition-all duration-300 flex flex-col justify-between h-full min-w-0"
+        className={cn(
+          "flex-1 p-3 rounded-xl border border-[rgba(var(--accent),0.05)] bg-[rgba(var(--foreground),0.01)] transition-all duration-300 flex flex-col justify-between h-full min-w-0",
+          !isSmall && "group-hover:rounded-r-none group-hover:border-[rgba(var(--accent),0.2)] group-hover:bg-[rgba(var(--accent),0.02)]"
+        )}
       >
         <div className="flex items-center justify-between gap-2 min-w-0">
           <span className="text-[11px] sm:text-[11.5px] font-bold tracking-wider text-[rgb(var(--foreground-muted))]/70 uppercase truncate">
@@ -103,14 +106,16 @@ export const ToggleTile = memo<ToggleTileProps>(({
         </div>
       </div>
 
-      {/* Slide-out toggle side panel */}
-      <div
-        className="h-full w-0 group-hover:w-[38px] opacity-0 group-hover:opacity-100 flex items-center justify-center bg-[rgba(var(--accent),0.05)] border border-transparent group-hover:border-[rgba(var(--accent),0.15)] group-hover:border-l-transparent rounded-r-xl transition-all duration-300 overflow-hidden shrink-0"
-      >
-        <span className="text-[11px] font-bold uppercase tracking-[0.15em] text-[rgb(var(--accent))] rotate-90 whitespace-nowrap">
-          {isSmall ? "TAP" : "TOGGLE"}
-        </span>
-      </div>
+      {/* Slide-out toggle side panel (desktop only) */}
+      {!isSmall && (
+        <div
+          className="h-full w-0 group-hover:w-[38px] opacity-0 group-hover:opacity-100 flex items-center justify-center bg-[rgba(var(--accent),0.05)] border border-transparent group-hover:border-[rgba(var(--accent),0.15)] group-hover:border-l-transparent rounded-r-xl transition-all duration-300 overflow-hidden shrink-0"
+        >
+          <span className="text-[11px] font-bold uppercase tracking-[0.15em] text-[rgb(var(--accent))] rotate-90 whitespace-nowrap">
+            TOGGLE
+          </span>
+        </div>
+      )}
     </div>
   );
 });

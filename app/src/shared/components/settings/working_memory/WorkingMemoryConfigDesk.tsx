@@ -85,7 +85,7 @@ export const WorkingMemoryConfigDesk = memo(({ layoutMode }: WorkingMemoryConfig
       >
         {/* TAB 1: WEB SEARCH — title/description left, floating globe toggle right */}
         {activeSubTab === "web_search" && (
-          <div className="flex flex-row items-center justify-between gap-4 h-full p-2.5 sm:p-3 rounded-xl bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--accent),0.08)] animate-fade-in">
+          <div className="flex flex-row items-center justify-between gap-3 h-full p-2 sm:p-3 rounded-xl bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--accent),0.08)] animate-fade-in">
             <div className="flex flex-col gap-1 min-w-0 flex-1">
               <span className="text-[12px] font-bold uppercase tracking-wider text-[rgb(var(--foreground))]">
                 {copy.webSearch.title}
@@ -105,7 +105,7 @@ export const WorkingMemoryConfigDesk = memo(({ layoutMode }: WorkingMemoryConfig
 
         {/* TAB 2: CONTENT SHARE — title/description left, preset grid right (no fill bar) */}
         {activeSubTab === "content_share" && (
-          <div className="flex flex-row items-center justify-between gap-4 h-full p-2.5 sm:p-3 rounded-xl bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--accent),0.08)] animate-fade-in">
+          <div className="flex flex-row items-center justify-between gap-3 h-full p-2 sm:p-3 rounded-xl bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--accent),0.08)] animate-fade-in">
             <div className="flex flex-col gap-1 min-w-0 flex-1">
               <span className="text-[12px] font-bold uppercase tracking-wider text-[rgb(var(--foreground))]">
                 {copy.contentShare.title}

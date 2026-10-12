@@ -509,6 +509,19 @@ export const VoxOrb = React.memo(({
 
   const isActive = (interactionState !== 'Idle' && interactionState !== 'Paused') || isTransitioning;
 
+  // B1: coarse-pointer (touch/Android) low-power arm — when the orb is calm
+  // (Idle/Paused/Sleeping, no transition) and off-screen, fully pause the RAF
+  // loop instead of idling at 12fps. Resume is instant (context kept alive).
+  // Desktop behaviour unchanged.
+  const [isCoarsePointer] = useState(
+    () =>
+      typeof window !== 'undefined' &&
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(pointer: coarse)').matches,
+  );
+  const isCalm = interactionState === 'Idle' || interactionState === 'Paused' || isSleeping;
+  const lowPowerPause = isCoarsePointer && isCalm && !isTransitioning && !isVisible;
+
   /**
    * Runtime scene context — populated by the init effect below.
    * The tick function reads from this ref so it doesn't need closure captures.
@@ -768,7 +781,7 @@ export const VoxOrb = React.memo(({
     fpsActive: 60,
     fpsIdle: 12,
     isActive,
-    isPaused: isSleeping || paused,
+    isPaused: isSleeping || paused || lowPowerPause,
   });
 
   // ── Scene initialisation (runs once) ─────────────────────────────────────

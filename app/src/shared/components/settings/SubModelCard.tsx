@@ -163,7 +163,7 @@ export const SubModelCard = memo<SubModelCardProps>(({
             {hasTooltip && (
               <div className="relative group inline-block">
                 <Info size={16} className="text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] transition-colors cursor-help" />
-                <div className="absolute right-full top-0 mr-2 hidden group-hover:block group-hover:opacity-100 w-52 p-2.5 rounded-lg bg-[rgb(var(--card))]/95 border border-[rgba(var(--accent),0.25)] text-[12px] text-[rgb(var(--foreground-muted))] shadow-2xl leading-normal z-50 transition-opacity duration-200 pointer-events-none">
+                <div className="absolute right-full top-0 mr-2 hidden group-hover:block group-hover:opacity-100 w-52 p-2.5 rounded-lg bg-[rgb(var(--card))]/95 border border-[rgba(var(--accent),0.25)] text-[12px] text-[rgb(var(--foreground-muted))] shadow-md leading-normal z-50 transition-opacity duration-200 pointer-events-none">
                   <div className="space-y-1">
                     <div className="flex justify-between border-b border-[rgba(var(--accent),0.08)] pb-0.5 mb-1 font-bold">
                       <span className="text-[11px] text-[rgb(var(--accent))] uppercase tracking-wider">{MODEL_HUB_COPY.row.specs}</span>

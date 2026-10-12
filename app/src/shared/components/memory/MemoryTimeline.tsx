@@ -14,6 +14,7 @@ import {
   Filter,
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   getSessions,
   resolveSessionTitle,
@@ -637,6 +638,17 @@ export const MemoryTimeline = memo<MemoryTimelineProps>(({
     });
   }, [sessions, sessionSearchQuery]);
 
+  // D1: virtualize the session accordion list — only visible rows mount.
+  // measureElement + ResizeObserver re-measures on expand/collapse, so the
+  // scroll height tracks the open accordion without jumps. Short lists are
+  // unaffected visually (every row is in the window at estimate size).
+  const rowVirtualizer = useVirtualizer({
+    count: filteredSessions.length,
+    getScrollElement: () => containerRef.current,
+    estimateSize: () => 96,
+    overscan: 6,
+  });
+
   return (
     <div className="flex-1 min-h-0 flex flex-col pt-3 pb-16 select-none font-sans text-[rgb(var(--foreground))]">
       {/* ── TOP SECTION: Ingestion Pipeline / Memory Queue (Generous Breathing Room) ── */}
@@ -855,14 +867,33 @@ export const MemoryTimeline = memo<MemoryTimelineProps>(({
               {sessionSearchQuery ? MEMORY_COPY.timeline.noSessionsFound : "No sessions available"}
             </span>
           ) : (
-            filteredSessions.map((session) => {
+            <div
+              style={{
+                height: `${rowVirtualizer.getTotalSize()}px`,
+                width: "100%",
+                position: "relative",
+              }}
+            >
+            {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+              const session = filteredSessions[virtualRow.index];
               const isExpanded = expandedSessionId === session.id;
               const isSelectedSession = selectedSessionId !== null && Number(selectedSessionId) === session.id;
               const sessionFacts = sessionFactsMap.get(session.id) || [];
 
               return (
-                <SessionAccordionItem
+                <div
                   key={session.id}
+                  data-index={virtualRow.index}
+                  ref={rowVirtualizer.measureElement}
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    transform: `translateY(${virtualRow.start}px)`,
+                  }}
+                >
+                  <SessionAccordionItem
                   session={session}
                   facts={sessionFacts}
                   isExpanded={isExpanded}
@@ -872,8 +903,10 @@ export const MemoryTimeline = memo<MemoryTimelineProps>(({
                   onToggle={() => handleToggleSession(session.id)}
                   onSelectFact={onSelectFact}
                 />
+                </div>
               );
-            })
+            })}
+            </div>
           )}
         </div>
       </section>

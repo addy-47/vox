@@ -20,6 +20,13 @@ const compactModelName = (name: string): string => {
   return version ? `${first}${version}` : first;
 };
 
+/** Truncate a label with ellipsis when it exceeds maxLen characters */
+const truncateWithEllipsis = (str: string, maxLen = 16): string => {
+  if (!str) return "—";
+  if (str.length <= maxLen) return str;
+  return `${str.slice(0, maxLen)}...`;
+};
+
 export const ModelStatusOverlay = memo(() => {
   // Atomic selectors, not the whole settings context: this overlay is mounted
   // app-wide, so a whole-context destructure re-rendered it (and re-fired the
@@ -38,6 +45,14 @@ export const ModelStatusOverlay = memo(() => {
   }, []);
 
   const isNarrow = vw < 1200;
+
+  // E3: on touch/coarse-pointer devices these hover-only tooltips are
+  // unreachable — add tap-to-toggle on the chip itself (desktop keeps hover).
+  const isCoarse =
+    typeof window !== "undefined" &&
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(pointer: coarse)").matches;
+  const [tipOpen, setTipOpen] = useState(false);
 
   const isRemoteLlm = activeSettings?.llm?.active === "server" || activeSettings?.llm?.active === "cloud";
   const isCloudStt = activeSettings?.stt?.active === "cloud";
@@ -127,9 +142,19 @@ export const ModelStatusOverlay = memo(() => {
   const llmExists = isRemoteLlm ? true : (presence[llmId] ?? true);
   const asrExists = isCloudStt ? true : (presence[asrId] ?? true);
 
-  const llmName = isNarrow ? compactModelName(llmDisplayName) : llmDisplayName;
-  const asrName = isNarrow ? compactModelName(asrDisplayName) : asrDisplayName;
-  const ttsName = isNarrow && activeTts ? compactModelName(ttsDisplayName) : ttsDisplayName;
+  const maxLen = isNarrow ? 12 : 16;
+  const rawLlm = isNarrow ? compactModelName(llmDisplayName) : llmDisplayName;
+  const rawAsr = isNarrow ? compactModelName(asrDisplayName) : asrDisplayName;
+  const rawTts = isNarrow && activeTts ? compactModelName(ttsDisplayName) : ttsDisplayName;
+
+  const llmName = truncateWithEllipsis(rawLlm, maxLen);
+  const asrName = truncateWithEllipsis(rawAsr, maxLen);
+  const ttsName = truncateWithEllipsis(rawTts, maxLen);
+
+  const subMaxLen = isNarrow ? 14 : 20;
+  const safeLlmSub = truncateWithEllipsis(llmSubtitle, subMaxLen);
+  const safeAsrSub = truncateWithEllipsis(asrSubtitle, subMaxLen);
+  const safeTtsSub = truncateWithEllipsis(ttsSubtitle, subMaxLen);
 
   return (
     <div
@@ -138,23 +163,24 @@ export const ModelStatusOverlay = memo(() => {
     >
       {/* 1. Listening (ASR) Status Chip */}
       {(activeAsr || activeSttKind === "cloud") && (
-        <div className="flex items-center gap-1.5 group relative cursor-help min-w-0 shrink-1">
+        <div className="flex items-center gap-1.5 group relative cursor-help min-w-0 shrink-1"
+        onClick={isCoarse ? () => setTipOpen((v) => !v) : undefined}>
           {asrExists ? (
             <Ear size={isNarrow ? 13 : 17} className="text-[rgb(var(--accent))]/80 shrink-0" />
           ) : (
             <AlertTriangle size={isNarrow ? 13 : 17} className="text-[rgb(var(--danger))] shrink-0" />
           )}
           <div className="min-w-0 overflow-hidden">
-            <div className="text-[12.5px] font-bold text-[rgb(var(--foreground))]/70 leading-none flex items-center gap-1 truncate">
+            <div className="text-[12.5px] font-bold text-[rgb(var(--foreground))]/70 leading-none flex items-center gap-1 truncate max-w-[140px] sm:max-w-[180px]">
               {asrName}
               {!asrExists && <span className="text-[11px] text-[rgb(var(--danger))] font-bold uppercase tracking-wide leading-none shrink-0">{MODEL_HUB_COPY.missing}</span>}
             </div>
-            {!isNarrow && asrSubtitle && (
-              <div className="text-[11.5px] font-mono mt-0.5 leading-none truncate">{asrSubtitle}</div>
+            {!isNarrow && safeAsrSub && (
+              <div className="text-[11.5px] font-mono mt-0.5 leading-none truncate max-w-[140px] sm:max-w-[180px]">{safeAsrSub}</div>
             )}
           </div>
           {/* Tooltip */}
-          <div className="absolute bottom-10 right-0 scale-95 opacity-0 group-hover:scale-100 group-hover:opacity-100 transition-all duration-200 pointer-events-none w-56 p-3 rounded-xl bg-[rgb(var(--background))]/95 border border-[rgba(var(--accent),0.15)] shadow-xl z-50 text-[13px] leading-relaxed text-[rgb(var(--foreground-muted))]/80">
+          <div className={`absolute bottom-10 right-0 scale-95 opacity-0 group-hover:scale-100 group-hover:opacity-100 transition-all duration-200 pointer-events-none w-56 p-3 rounded-xl bg-[rgb(var(--background))]/95 border border-[rgba(var(--accent),0.15)] shadow-xl z-50 text-[13px] leading-relaxed text-[rgb(var(--foreground-muted))]/80 ${isCoarse && tipOpen ? "!opacity-100 !scale-100" : ""}`}>
             <p className="font-bold text-[rgb(var(--foreground))] mb-1">{asrDisplayName}</p>
             {activeAsr?.description || "Speech recognition model"}
             {!asrExists && (
@@ -167,23 +193,24 @@ export const ModelStatusOverlay = memo(() => {
       )}
 
       {/* 2. Reasoning (LLM) Status Chip */}
-      <div className="flex items-center gap-1.5 group relative cursor-help min-w-0 shrink-1">
+      <div className="flex items-center gap-1.5 group relative cursor-help min-w-0 shrink-1"
+        onClick={isCoarse ? () => setTipOpen((v) => !v) : undefined}>
         {llmExists ? (
           <BrainCircuit size={isNarrow ? 13 : 17} className="text-[rgb(var(--accent))]/80 shrink-0" />
         ) : (
           <AlertTriangle size={isNarrow ? 13 : 17} className="text-[rgb(var(--danger))] shrink-0" />
         )}
         <div className="min-w-0 overflow-hidden">
-          <div className="text-[12.5px] font-bold text-[rgb(var(--foreground))]/70 leading-none flex items-center gap-1 truncate">
+          <div className="text-[12.5px] font-bold text-[rgb(var(--foreground))]/70 leading-none flex items-center gap-1 truncate max-w-[140px] sm:max-w-[180px]">
             {llmName}
             {!llmExists && <span className="text-[11px] text-[rgb(var(--danger))] font-bold uppercase tracking-wide leading-none shrink-0">{MODEL_HUB_COPY.missing}</span>}
           </div>
-          {!isNarrow && llmSubtitle && (
-            <div className="text-[11.5px] font-mono mt-0.5 leading-none truncate">{llmSubtitle}</div>
+          {!isNarrow && safeLlmSub && (
+            <div className="text-[11.5px] font-mono mt-0.5 leading-none truncate max-w-[140px] sm:max-w-[180px]">{safeLlmSub}</div>
           )}
         </div>
         {/* Tooltip */}
-        <div className="absolute bottom-10 right-0 scale-95 opacity-0 group-hover:scale-100 group-hover:opacity-100 transition-all duration-200 pointer-events-none w-56 p-3 rounded-xl bg-[rgb(var(--background))]/95 border border-[rgba(var(--accent),0.15)] shadow-xl z-50 text-[13px] leading-relaxed text-[rgb(var(--foreground-muted))]/80">
+        <div className={`absolute bottom-10 right-0 scale-95 opacity-0 group-hover:scale-100 group-hover:opacity-100 transition-all duration-200 pointer-events-none w-56 p-3 rounded-xl bg-[rgb(var(--background))]/95 border border-[rgba(var(--accent),0.15)] shadow-xl z-50 text-[13px] leading-relaxed text-[rgb(var(--foreground-muted))]/80 ${isCoarse && tipOpen ? "!opacity-100 !scale-100" : ""}`}>
           <p className="font-bold text-[rgb(var(--foreground))] mb-1">{llmDisplayName}</p>
           {catalogLlm?.description || MODEL_HUB_COPY.remoteLlmDesc}
           {!catalogLlm && llmId && (
@@ -202,18 +229,19 @@ export const ModelStatusOverlay = memo(() => {
 
       {/* 3. Speaking (TTS) Status Chip */}
       {activeTts && (
-        <div className="flex items-center gap-1.5 group relative cursor-help min-w-0 shrink-1">
+        <div className="flex items-center gap-1.5 group relative cursor-help min-w-0 shrink-1"
+        onClick={isCoarse ? () => setTipOpen((v) => !v) : undefined}>
           <AudioLines size={isNarrow ? 13 : 17} className="text-[rgb(var(--accent))]/80 shrink-0" />
           <div className="min-w-0 overflow-hidden">
-            <div className="text-[12.5px] font-bold text-[rgb(var(--foreground))]/70 leading-none truncate flex items-center gap-1">
+            <div className="text-[12.5px] font-bold text-[rgb(var(--foreground))]/70 leading-none truncate flex items-center gap-1 max-w-[140px] sm:max-w-[180px]">
               {ttsName}
             </div>
-            {!isNarrow && ttsSubtitle && (
-              <div className="text-[11.5px] font-mono mt-0.5 leading-none truncate">{ttsSubtitle}</div>
+            {!isNarrow && safeTtsSub && (
+              <div className="text-[11.5px] font-mono mt-0.5 leading-none truncate max-w-[140px] sm:max-w-[180px]">{safeTtsSub}</div>
             )}
           </div>
           {/* Tooltip */}
-          <div className="absolute bottom-10 right-0 scale-95 opacity-0 group-hover:scale-100 group-hover:opacity-100 transition-all duration-200 pointer-events-none w-56 p-3 rounded-xl bg-[rgb(var(--background))]/95 border border-[rgba(var(--accent),0.15)] shadow-xl z-50 text-[13px] leading-relaxed text-[rgb(var(--foreground-muted))]/80">
+          <div className={`absolute bottom-10 right-0 scale-95 opacity-0 group-hover:scale-100 group-hover:opacity-100 transition-all duration-200 pointer-events-none w-56 p-3 rounded-xl bg-[rgb(var(--background))]/95 border border-[rgba(var(--accent),0.15)] shadow-xl z-50 text-[13px] leading-relaxed text-[rgb(var(--foreground-muted))]/80 ${isCoarse && tipOpen ? "!opacity-100 !scale-100" : ""}`}>
             <p className="font-bold text-[rgb(var(--foreground))] mb-1">{activeTts.name}{activeVoiceName ? `: ${activeVoiceName}` : ""}</p>
             {activeTts.description}
           </div>

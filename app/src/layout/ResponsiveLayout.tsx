@@ -94,7 +94,10 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
   const touchStartY = useRef<number | null>(null);
   const touchStartTime = useRef<number>(0);
   const [swipeDirection, setSwipeDirection] = useState<number>(0);
-  const PRIMARY_ROUTES = useMemo(() => ["/", "/history", "/memory", "/settings", "/monitoring"], []);
+  const PRIMARY_ROUTES = useMemo(
+    () => (isMobile ? ["/", "/history", "/memory", "/settings"] : ["/", "/history", "/memory", "/settings", "/monitoring"]),
+    [isMobile]
+  );
 
   const handleTouchStart = (e: React.TouchEvent) => {
     if (!isMobile) return;
@@ -406,8 +409,9 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
   const isMemory = location.pathname === "/memory";
   const isMonitoring = location.pathname === "/monitoring";
 
-  // Ambient background logic: slow on home, slower on history/settings, disabled on memory/monitoring
-  const ambientDisabled = isMemory || isMonitoring;
+  // Ambient background logic: slow on home, slower on history/settings, disabled on memory/monitoring.
+  // On mobile (Android), ambient field is isolated exclusively to Home (/) to conserve GPU/battery.
+  const ambientDisabled = isMemory || isMonitoring || (isMobile && !isHome);
   const rippleSpeedMultiplier = isSettings || isHistory ? 2.2 : 1.4;
   const ambientOriginY = "calc(50% - 36px)";
 

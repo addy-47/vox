@@ -88,7 +88,7 @@ export const WorkingMemoryCard = memo(({ layoutMode = "full-max" }: WorkingMemor
         {/* Layer 2: Working Memory Config Desk (Web Search | Content Share) */}
         <div
           className={cn(
-            "flex-1 w-full flex flex-col min-h-0 rounded-xl p-2.5 sm:p-3 relative border border-[rgba(var(--accent),0.08)] bg-[rgba(var(--foreground),0.02)] justify-between",
+            "flex-1 w-full flex flex-col min-h-0 rounded-xl p-2 sm:p-3 relative border border-[rgba(var(--accent),0.08)] bg-[rgba(var(--foreground),0.02)] justify-between",
             isSmall ? "h-auto" : "h-full"
           )}
         >

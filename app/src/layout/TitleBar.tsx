@@ -187,7 +187,7 @@ export const TitleBar: React.FC = () => {
             </button>
             
             {/* Tooltip Hover Card */}
-            <div data-hover-card className="absolute top-6 left-0 w-64 p-3 rounded-lg backdrop-blur-xl bg-[rgb(var(--background))]/95 border border-[rgb(var(--accent))]/20 shadow-2xl opacity-0 translate-y-2 pointer-events-none group-hover/app-pill:opacity-100 group-hover/app-pill:translate-y-0 group-hover/app-pill:pointer-events-auto group-focus-within/app-pill:opacity-100 group-focus-within/app-pill:translate-y-0 group-focus-within/app-pill:pointer-events-auto transition-all duration-300 z-50 text-[13px] text-[rgb(var(--foreground))]">
+            <div data-hover-card className="absolute top-6 left-0 w-64 p-3 rounded-lg backdrop-blur-md bg-[rgb(var(--background))]/95 border border-[rgb(var(--accent))]/20 shadow-lg opacity-0 translate-y-2 pointer-events-none group-hover/app-pill:opacity-100 group-hover/app-pill:translate-y-0 group-hover/app-pill:pointer-events-auto group-focus-within/app-pill:opacity-100 group-focus-within/app-pill:translate-y-0 group-focus-within/app-pill:pointer-events-auto transition-all duration-300 z-50 text-[13px] text-[rgb(var(--foreground))]">
               <div className="font-bold text-[rgb(var(--accent))] mb-1">{LAYOUT_COPY.titleBar.appUpdate}</div>
               <div className="text-[12px] text-[rgb(var(--foreground-muted))] mb-2">Upgrade from v{appUpdate.current_version} to v{appUpdate.latest_version}</div>
               
@@ -223,7 +223,7 @@ export const TitleBar: React.FC = () => {
             </button>
             
             {/* Tooltip Hover Card — compact redesign */}
-            <div data-hover-card className="absolute top-6 left-0 w-56 p-3 rounded-lg backdrop-blur-xl bg-[rgb(var(--background))]/95 border border-[rgb(var(--accent))]/20 shadow-2xl opacity-0 translate-y-2 pointer-events-none group-hover/model-pill:opacity-100 group-hover/model-pill:translate-y-0 group-hover/model-pill:pointer-events-auto group-focus-within/model-pill:opacity-100 group-focus-within/model-pill:translate-y-0 group-focus-within/model-pill:pointer-events-auto transition-all duration-300 z-50">
+            <div data-hover-card className="absolute top-6 left-0 w-56 p-3 rounded-lg backdrop-blur-md bg-[rgb(var(--background))]/95 border border-[rgb(var(--accent))]/20 shadow-lg opacity-0 translate-y-2 pointer-events-none group-hover/model-pill:opacity-100 group-hover/model-pill:translate-y-0 group-hover/model-pill:pointer-events-auto group-focus-within/model-pill:opacity-100 group-focus-within/model-pill:translate-y-0 group-focus-within/model-pill:pointer-events-auto transition-all duration-300 z-50">
               <div className="flex items-center gap-2 mb-2">
                 <div className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--accent))] animate-pulse shrink-0" />
                 <span className="text-[12px] font-bold text-[rgb(var(--foreground))]">{LAYOUT_COPY.titleBar.modelUpdates}</span>
