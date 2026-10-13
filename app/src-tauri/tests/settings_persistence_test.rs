@@ -144,9 +144,9 @@ fn test_settings_json_roundtrip_persistence() {
         "tts.active should be recognized"
     );
     assert!(
-        apply_setting_mutation(&mut settings, "tts", "voice_index", &serde_json::json!(42))
-            .expect("tts.voice_index mutation failed"),
-        "tts.voice_index should be recognized"
+        apply_setting_mutation(&mut settings, "tts", "voice_id", &serde_json::json!("aria"))
+            .expect("tts.voice_id mutation failed"),
+        "tts.voice_id should be recognized"
     );
     assert!(
         apply_setting_mutation(&mut settings, "tts", "speed", &serde_json::json!(1.15))
@@ -259,8 +259,8 @@ fn test_settings_json_roundtrip_persistence() {
     let json_val: serde_json::Value = vox_lib::utils::jsonc::from_jsonc_str(&raw_content)
         .expect("settings.jsonc must be valid JSONC");
     assert_eq!(
-        json_val["tts"]["voice_index"], 42,
-        "Raw JSON must contain mutated tts.voice_index == 42"
+        json_val["tts"]["voice_id"], "aria",
+        "Raw JSON must contain mutated tts.voice_id == aria"
     );
     assert_eq!(
         json_val["llm"]["active"], "server",
@@ -322,7 +322,7 @@ fn test_settings_json_roundtrip_persistence() {
     assert!((reloaded.llm.temperature - 0.85).abs() < 1e-5);
     assert_eq!(reloaded.llm.context_window, 16384);
     assert_eq!(reloaded.tts.active, TtsActiveProvider::Supertonic);
-    assert_eq!(reloaded.tts.voice_index, 42);
+    assert_eq!(reloaded.tts.voice_id, "aria");
     assert!((reloaded.tts.speed - 1.15).abs() < 1e-5);
     assert_eq!(reloaded.interaction.pipeline_mode, PipelineMode::Realtime);
     assert!(reloaded.dictation.enabled);
@@ -360,7 +360,7 @@ fn test_settings_malformed_fallback_to_default() {
     assert_eq!(recovered.appearance.theme, defaults.appearance.theme);
     assert_eq!(recovered.vad.threshold, defaults.vad.threshold);
     assert_eq!(recovered.llm.active, defaults.llm.active);
-    assert_eq!(recovered.tts.voice_index, defaults.tts.voice_index);
+    assert_eq!(recovered.tts.voice_id, defaults.tts.voice_id);
     assert_eq!(
         recovered.working_memory.private_mode,
         defaults.working_memory.private_mode
@@ -421,7 +421,7 @@ fn test_settings_partial_section_recovery() {
         },
         "tts": {
             "active": "kokoro",
-            "voice_index": 77,
+            "voice_id": "serene",
             // Stale key from a pre-0.5 settings.jsonc: must be ignored, not fatal.
             "quality_steps": 5,
             "speed": 1.05,
@@ -444,7 +444,7 @@ fn test_settings_partial_section_recovery() {
     // Assert partial valid sections recovered
     assert_eq!(recovered.appearance.theme, "nordic_frost");
     assert_eq!(recovered.appearance.accent_seed, "#00DBE9");
-    assert_eq!(recovered.tts.voice_index, 77);
+    assert_eq!(recovered.tts.voice_id, "serene");
     assert_eq!(recovered.tts.active, TtsActiveProvider::Kokoro);
 
     // Assert missing sections cleanly fell back to defaults without panic
@@ -573,7 +573,7 @@ fn reload_policy_worker_command_keys_all_have_dispatch_arms() {
 
     let worker_keys = [
         ("tts", "speed"),
-        ("tts", "voice_index"),
+        ("tts", "voice_id"),
         ("tts", "voice"),
         ("vad", "threshold"),
         ("vad", "ptt_noise_gate"),

@@ -60,6 +60,18 @@ export const RemoteModelsModalView = memo(({
 
   useScrollTopOnChange(scrollContainerRef, pinnedModelId, lenisRef);
 
+  // Reset scroll to top whenever search or filter changes so the list never
+  // stays locked mid-scroll / shows a blank gap after the visible count resets.
+  useEffect(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    if (lenisRef.current) {
+      lenisRef.current.scrollTo(0, { immediate: true });
+    } else {
+      el.scrollTo({ top: 0, behavior: "auto" });
+    }
+  }, [modalSearch, deferredSearch, filterCategory]);
+
   const handleCopyId = useCallback((id: string) => {
     navigator.clipboard.writeText(id);
     setCopiedId(id);

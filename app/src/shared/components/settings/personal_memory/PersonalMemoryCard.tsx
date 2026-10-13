@@ -89,10 +89,10 @@ export const PersonalMemoryCard = memo(({ layoutMode = "full-max" }: PersonalMem
           />
         </div>
 
-        {/* Layer 2: Dedicated Personal Memory Config Desk with 3 Subtabs */}
+        {/* Layer 2: Dedicated Personal Memory Config Desk with Subtabs */}
         <div
           className={cn(
-            "flex-1 w-full flex flex-col min-h-0 rounded-xl p-2.5 sm:p-3 relative border border-[rgba(var(--accent),0.08)] bg-[rgba(var(--foreground),0.02)] justify-between",
+            "flex-1 w-full flex flex-col min-h-0 rounded-xl p-2 sm:p-3 relative border border-[rgba(var(--accent),0.08)] bg-[rgba(var(--foreground),0.02)] justify-between",
             isSmall ? "h-auto" : "h-full"
           )}
         >

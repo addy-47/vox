@@ -451,7 +451,7 @@ export const RemoteCatalogSection = memo(({
                       </div>
                     </Tooltip>
                   ) : (
-                    <span className="text-[10.5px] text-[rgb(var(--foreground-muted))]/50 font-mono">{LLM_CATALOG_COPY.notBenchmarked}</span>
+                    null
                   )}
                 </div>
 

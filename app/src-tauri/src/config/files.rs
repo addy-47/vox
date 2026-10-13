@@ -66,8 +66,7 @@ impl Default for LlmWiringSettings {
 #[serde(default)]
 pub struct TtsWiringSettings {
     pub active: TtsActiveProvider,
-    #[serde(alias = "voice")]
-    pub voice_index: i32,
+    pub voice_id: String,
     pub speed: f32,
     pub threads: u32,
     pub supertonic: TtsSupertonicConfig,
@@ -79,7 +78,7 @@ impl Default for TtsWiringSettings {
         let d = TtsSettings::default();
         Self {
             active: d.active,
-            voice_index: d.voice_index,
+            voice_id: d.voice_id,
             speed: d.speed,
             threads: d.threads,
             supertonic: d.supertonic,
@@ -207,7 +206,7 @@ impl VoxSettings {
             },
             tts: TtsWiringSettings {
                 active: self.tts.active,
-                voice_index: self.tts.voice_index,
+                voice_id: self.tts.voice_id.clone(),
                 speed: self.tts.speed,
                 threads: self.tts.threads,
                 supertonic: self.tts.supertonic.clone(),
@@ -264,7 +263,7 @@ impl VoxSettings {
         self.llm.threads = cfg.llm.threads;
         self.llm.embedded = cfg.llm.embedded;
         self.tts.active = cfg.tts.active;
-        self.tts.voice_index = cfg.tts.voice_index;
+        self.tts.voice_id = cfg.tts.voice_id;
         self.tts.speed = cfg.tts.speed;
         self.tts.threads = cfg.tts.threads;
         self.tts.supertonic = cfg.tts.supertonic;

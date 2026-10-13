@@ -137,7 +137,7 @@ impl VoxSettings {
                 serde_json::from_value::<super::files::TtsWiringSettings>(v.clone()).ok()
             }) {
                 self.tts.active = v.active;
-                self.tts.voice_index = v.voice_index;
+                self.tts.voice_id = v.voice_id;
                 self.tts.speed = v.speed;
                 self.tts.threads = v.threads;
                 self.tts.supertonic = v.supertonic;

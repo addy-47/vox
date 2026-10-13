@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::core::defaults::{
-    DEFAULT_TTS_SPEED, DEFAULT_TTS_THREADS, DEFAULT_TTS_VOICE_INDEX,
+    DEFAULT_TTS_SPEED, DEFAULT_TTS_THREADS, DEFAULT_TTS_VOICE_ID,
     DEFAULT_TTS_ZIPVOICE_GUIDANCE_SCALE,
 };
 
@@ -140,8 +140,7 @@ pub enum TtsProviderConfig {
 #[serde(default)]
 pub struct TtsSettings {
     pub active: TtsActiveProvider,
-    #[serde(alias = "voice")]
-    pub voice_index: i32,
+    pub voice_id: String,
     pub speed: f32,
     pub threads: u32,
     pub edge_tts: TtsEdgeConfig,
@@ -156,7 +155,7 @@ impl Default for TtsSettings {
     fn default() -> Self {
         Self {
             active: TtsActiveProvider::EdgeTts,
-            voice_index: DEFAULT_TTS_VOICE_INDEX,
+            voice_id: DEFAULT_TTS_VOICE_ID.to_string(),
             speed: DEFAULT_TTS_SPEED,
             threads: DEFAULT_TTS_THREADS,
             edge_tts: TtsEdgeConfig::default(),
@@ -205,7 +204,7 @@ mod tests {
     fn test_tts_settings_defaults() {
         let settings = TtsSettings::default();
         assert_eq!(settings.active, TtsActiveProvider::EdgeTts);
-        assert_eq!(settings.voice_index, DEFAULT_TTS_VOICE_INDEX);
+        assert_eq!(settings.voice_id, DEFAULT_TTS_VOICE_ID);
         assert_eq!(settings.speed, DEFAULT_TTS_SPEED);
         assert_eq!(settings.threads, DEFAULT_TTS_THREADS);
         assert_eq!(settings.edge_tts, TtsEdgeConfig::default());

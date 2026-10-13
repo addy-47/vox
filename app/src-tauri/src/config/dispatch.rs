@@ -401,17 +401,17 @@ pub async fn dispatch_worker_command<R: tauri::Runtime>(
                     log::debug!("[Settings] VadCommand::UpdateSpeechOnset({}) dispatched", v);
                 }
             }
-            ("tts", "voice_index" | "voice") => {
+            ("tts", "voice_id" | "voice") => {
                 if let Some(ref tts_tx) = engine.tts_tx {
-                    let voice_opt = value
-                        .as_i64()
-                        .map(|v| v as i32)
-                        .or_else(|| value.as_str().and_then(|s| s.parse::<i32>().ok()));
-                    if let Some(voice) = voice_opt {
-                        if let Err(e) = tts_tx.send(TtsCommand::SetVoice(voice)) {
+                    if let Some(id) = value.as_str() {
+                        let idx = crate::services::tts::voice::resolve_catalog_index(
+                            &crate::services::tts::voice::get_voice_profiles(),
+                            id,
+                        );
+                        if let Err(e) = tts_tx.send(TtsCommand::SetVoice(idx)) {
                             log::warn!("[Settings] Failed to send TtsCommand::SetVoice: {}", e);
                         }
-                        log::debug!("[Settings] TtsCommand::SetVoice({}) dispatched", voice);
+                        log::debug!("[Settings] TtsCommand::SetVoice({}) dispatched", idx);
                     }
                 }
             }
@@ -442,7 +442,7 @@ pub fn dispatch_worker_command_has_arm(domain: &str, key: &str) -> bool {
             | ("vad", "ptt_noise_gate")
             | ("vad", "silence_duration_ms")
             | ("vad", "speech_onset_ms")
-            | ("tts", "voice_index" | "voice")
+            | ("tts", "voice_id" | "voice")
             | ("tts", "speed")
     )
 }

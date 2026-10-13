@@ -254,6 +254,31 @@ Cognitive scratchpad ledger recording agentic tool invocation payloads, results,
 - Self-healing parent row: Writes to `session_tool_calls` idempotently ensure the parent `sessions` row exists (`INSERT OR IGNORE`) before inserting.
 - Separation of concerns: Decoupled from spoken `turns` to allow speech-only replay while supporting full agent audit trails.
 
+### 5.12 `voices` (Voice Catalog)
+Consolidated registry for all voice profiles across bundled, custom cloned, and remote providers.
+- `id` (TEXT, PK): Canonical voice identifier (e.g., `bella`, `en-US-AriaNeural`, or clone UUID).
+- `provider_id` (TEXT, NOT NULL DEFAULT 'kokoro'): TTS provider identifier (`kokoro`, `supertonic`, `chatterbox`, `zipvoice`, `edge_tts`).
+- `name` (TEXT, NOT NULL): Display voice name.
+- `source_kind` (TEXT, NOT NULL): Declared origin (`bundled`, `custom`, `remote`, `pre_baked`, `zipvoice_pack`, `edge`).
+- `slug` (TEXT, NULLABLE): Subdirectory pack slug for packaged models.
+- `gender` (TEXT, NOT NULL DEFAULT 'neutral'): Normalized gender facet (`female`, `male`, `neutral`).
+- `locale` (TEXT, NOT NULL DEFAULT 'en-US'): BCP-47 locale tag (e.g., `en-US`, `ja-JP`).
+- `accent` (TEXT, NULLABLE): Descriptive accent tag (e.g., `American`, `British`).
+- `description` (TEXT, NULLABLE): Display blurb for catalog modal and selection views.
+- `tags` (TEXT, NOT NULL DEFAULT '[]'): JSON-encoded array of metadata tags.
+- `sample_text` (TEXT, NOT NULL DEFAULT 'Hello, this is a preview of my voice.'): Default test sentence for preview synthesis.
+- `wav_path` (TEXT, NULLABLE): Absolute path to source reference WAV audio.
+- `voice_dir` (TEXT, NULLABLE): Absolute path to pre-baked speaker embedding tensors.
+- `preview_wav` (TEXT, NULLABLE): Absolute path to cached preview audio WAV.
+- `is_favorite` (INTEGER, NOT NULL DEFAULT 0): Starred favorite status (1 = favorited, 0 = default).
+- `last_used_at` (INTEGER, NULLABLE): Millisecond epoch timestamp of last selection or preview.
+- `created_at` (INTEGER, NOT NULL): Creation timestamp in Unix epoch seconds.
+*Indexes*: `(provider_id)`, `(source_kind)`, `(is_favorite)`, `(last_used_at DESC)`, `(created_at DESC)`.
+*Invariants*:
+- Unified storage: Replaces legacy fragmented tables (`voice_favorites`, `voice_recents`, `remote_voice_cache`) in compliance with Zero Backward Compatibility.
+- Offline-first availability: Bundled and manifest voices populate automatically on first run without requiring network connectivity.
+- Non-blocking sync: Remote provider voices (Edge TTS) sync asynchronously and merge via `ON CONFLICT(id) DO UPDATE`.
+
 ---
 
 ## 6. Asynchronous Persistence Event Shapes

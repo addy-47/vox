@@ -7,7 +7,7 @@ use std::{
 
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
-use turso::Connection;
+use turso::{params, Connection};
 
 /// Declared voice origin. Serializes to the exact `source_kind` strings stored
 /// in the `voices` table, so the mapping is compiler-checked instead of an
@@ -15,6 +15,9 @@ use turso::Connection;
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum VoiceSourceKind {
+    Bundled,
+    Custom,
+    Remote,
     PreBaked,
     ZipvoicePack,
     Edge,
@@ -24,6 +27,9 @@ impl VoiceSourceKind {
     /// Returns the stored `source_kind` string for queries and inserts.
     pub fn as_str(&self) -> &'static str {
         match self {
+            VoiceSourceKind::Bundled => "bundled",
+            VoiceSourceKind::Custom => "custom",
+            VoiceSourceKind::Remote => "remote",
             VoiceSourceKind::PreBaked => "pre_baked",
             VoiceSourceKind::ZipvoicePack => "zipvoice_pack",
             VoiceSourceKind::Edge => "edge",
@@ -36,6 +42,9 @@ impl FromStr for VoiceSourceKind {
 
     fn from_str(s: &str) -> Result<Self> {
         match s {
+            "bundled" => Ok(VoiceSourceKind::Bundled),
+            "custom" => Ok(VoiceSourceKind::Custom),
+            "remote" => Ok(VoiceSourceKind::Remote),
             "pre_baked" => Ok(VoiceSourceKind::PreBaked),
             "zipvoice_pack" => Ok(VoiceSourceKind::ZipvoicePack),
             "edge" => Ok(VoiceSourceKind::Edge),
@@ -44,8 +53,7 @@ impl FromStr for VoiceSourceKind {
     }
 }
 
-/// Server-side voice list scope. The frontend never filters by model name;
-/// the backend resolves which rows belong to the requesting provider.
+/// Server-side voice list scope.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VoiceListScope {
     All,
@@ -53,77 +61,130 @@ pub enum VoiceListScope {
     ZipvoicePack,
 }
 
-/// A user-created cloned voice entry.
+/// A unified voice entry stored in the Turso `voices` table.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VoiceEntry {
-    /// UUID — stable identifier used in settings and filesystem paths.
+    /// Unique identifier: e.g. "bella", "en-US-AriaNeural", or UUID.
     pub id: String,
+    /// Owning engine ID: e.g. "kokoro", "supertonic", "zipvoice", "chatterbox", "edge_tts".
+    pub provider_id: String,
     /// User-visible display name.
     pub name: String,
     /// Declared voice origin.
     pub source_kind: VoiceSourceKind,
-    /// Pack subdirectory slug (`atlas`, `pain`) for packaged voices; `None`
-    /// for user-cloned voices. Groundwork for slug-addressed voice ids.
+    /// Pack subdirectory slug for packaged voices; None for user clones.
     pub slug: Option<String>,
-    /// Absolute path to `~/.vox/voices/{id}/source.wav`.
+    /// Normalized gender facet: "female", "male", or "neutral".
+    pub gender: String,
+    /// BCP-47 locale (e.g. "en-US", "en-GB").
+    pub locale: String,
+    /// Display accent label (e.g. "American", "British").
+    pub accent: Option<String>,
+    /// Display description blurb for catalog modal.
+    pub description: Option<String>,
+    /// JSON-encoded tag array.
+    pub tags: String,
+    /// Default preview test sentence.
+    pub sample_text: String,
+    /// Absolute path to source WAV audio.
     pub wav_path: Option<String>,
-    /// Absolute path to `~/.vox/voices/{id}/baked/`.
+    /// Absolute path to pre-baked tensor directory.
     pub voice_dir: Option<String>,
-    /// Unix epoch seconds at creation.
-    pub created_at: i64,
     /// Absolute path to a short synthesized preview WAV.
     pub preview_wav: Option<String>,
+    /// Starred favorite flag.
+    pub is_favorite: bool,
+    /// Epoch millisecond of last selection/preview.
+    pub last_used_at: Option<i64>,
+    /// Unix epoch seconds at creation.
+    pub created_at: i64,
 }
 
-/// Returns voice entries in the given scope ordered by creation date (newest first).
-pub async fn list_voices(conn: &Connection, scope: VoiceListScope) -> Result<Vec<VoiceEntry>> {
-    let predicate = match scope {
-        VoiceListScope::All => "",
-        VoiceListScope::Custom => "WHERE source_kind != 'zipvoice_pack'",
-        VoiceListScope::ZipvoicePack => "WHERE source_kind = 'zipvoice_pack'",
+const SELECT_COLUMNS: &str =
+    "id, provider_id, name, source_kind, slug, gender, locale, accent, description, tags, \
+     sample_text, wav_path, voice_dir, preview_wav, is_favorite, last_used_at, created_at";
+
+/// Decodes one `voices` row into a `VoiceEntry`.
+fn decode_row(row: &turso::Row) -> Result<VoiceEntry> {
+    let kind_str: String = row.get(3)?;
+    Ok(VoiceEntry {
+        id: row.get(0)?,
+        provider_id: row.get(1)?,
+        name: row.get(2)?,
+        source_kind: kind_str.parse()?,
+        slug: row.get(4)?,
+        gender: row.get::<String>(5).unwrap_or_else(|_| "neutral".to_string()),
+        locale: row.get::<String>(6).unwrap_or_else(|_| "en-US".to_string()),
+        accent: row.get(7).ok().flatten(),
+        description: row.get(8).ok().flatten(),
+        tags: row.get::<String>(9).unwrap_or_else(|_| "[]".to_string()),
+        sample_text: row
+            .get::<String>(10)
+            .unwrap_or_else(|_| "Hello, this is a preview of my voice.".to_string()),
+        wav_path: row.get(11)?,
+        voice_dir: row.get(12)?,
+        preview_wav: row.get(13)?,
+        is_favorite: row.get::<i64>(14).unwrap_or(0) == 1,
+        last_used_at: row.get(15)?,
+        created_at: row.get(16)?,
+    })
+}
+
+/// Returns voice entries matching provider and scope, ordered by favorites, recents, and name.
+pub async fn list_voices(
+    conn: &Connection,
+    provider: Option<&str>,
+    scope: VoiceListScope,
+) -> Result<Vec<VoiceEntry>> {
+    let mut conditions = Vec::new();
+
+    match scope {
+        VoiceListScope::All => {}
+        VoiceListScope::Custom => conditions.push("source_kind = 'custom'"),
+        VoiceListScope::ZipvoicePack => conditions.push("source_kind = 'zipvoice_pack'"),
+    }
+
+    let provider_clause = if let Some(p) = provider {
+        if !p.is_empty() {
+            conditions.push("LOWER(provider_id) = LOWER(?)");
+            Some(p.to_string())
+        } else {
+            None
+        }
+    } else {
+        None
     };
-    let mut rows = conn
-        .query(
-            &format!(
-                "SELECT id, name, source_kind, slug, wav_path, voice_dir, created_at, preview_wav
-                 FROM voices
-                 {predicate}
-                 ORDER BY created_at DESC"
-            ),
-            (),
-        )
-        .await?;
+
+    let where_clause = if conditions.is_empty() {
+        String::new()
+    } else {
+        format!("WHERE {}", conditions.join(" AND "))
+    };
+
+    let sql = format!(
+        "SELECT {SELECT_COLUMNS} FROM voices
+         {where_clause}
+         ORDER BY is_favorite DESC, COALESCE(last_used_at, 0) DESC, created_at DESC"
+    );
+
+    let mut rows = if let Some(p) = provider_clause {
+        conn.query(&sql, (p,)).await?
+    } else {
+        conn.query(&sql, ()).await?
+    };
 
     let mut entries = Vec::new();
     while let Some(row) = rows.next().await? {
         entries.push(decode_row(&row)?);
     }
-
     Ok(entries)
-}
-
-/// Decodes one `voices` row, rejecting unrecognised `source_kind` values loudly.
-fn decode_row(row: &turso::Row) -> Result<VoiceEntry> {
-    let kind: String = row.get(2)?;
-    Ok(VoiceEntry {
-        id: row.get(0)?,
-        name: row.get(1)?,
-        source_kind: kind.parse()?,
-        slug: row.get(3)?,
-        wav_path: row.get(4)?,
-        voice_dir: row.get(5)?,
-        created_at: row.get(6)?,
-        preview_wav: row.get(7)?,
-    })
 }
 
 /// Returns a single voice entry by ID, or `None` if not found.
 pub async fn get_voice(conn: &Connection, id: &str) -> Result<Option<VoiceEntry>> {
     let mut rows = conn
         .query(
-            "SELECT id, name, source_kind, slug, wav_path, voice_dir, created_at, preview_wav
-             FROM voices
-             WHERE id = ?",
+            &format!("SELECT {SELECT_COLUMNS} FROM voices WHERE id = ?"),
             (id.to_string(),),
         )
         .await?;
@@ -135,21 +196,33 @@ pub async fn get_voice(conn: &Connection, id: &str) -> Result<Option<VoiceEntry>
     }
 }
 
-/// Inserts a new voice entry.
+/// Inserts a new cloned or custom voice entry.
 pub async fn insert_voice(conn: &Connection, entry: &VoiceEntry) -> Result<()> {
     conn.execute(
-        "INSERT INTO voices (id, name, source_kind, slug, wav_path, voice_dir, created_at, preview_wav)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        (
+        "INSERT INTO voices (
+            id, provider_id, name, source_kind, slug, gender, locale, accent,
+            description, tags, sample_text, wav_path, voice_dir, preview_wav,
+            is_favorite, last_used_at, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        params![
             entry.id.clone(),
+            entry.provider_id.clone(),
             entry.name.clone(),
             entry.source_kind.as_str().to_string(),
             entry.slug.clone(),
+            entry.gender.clone(),
+            entry.locale.clone(),
+            entry.accent.clone(),
+            entry.description.clone(),
+            entry.tags.clone(),
+            entry.sample_text.clone(),
             entry.wav_path.clone(),
             entry.voice_dir.clone(),
-            entry.created_at,
             entry.preview_wav.clone(),
-        ),
+            if entry.is_favorite { 1 } else { 0 },
+            entry.last_used_at,
+            entry.created_at,
+        ],
     )
     .await?;
     Ok(())
@@ -184,6 +257,107 @@ pub async fn rename_voice(conn: &Connection, id: &str, name: &str) -> Result<()>
     Ok(())
 }
 
+/// Atomically toggles the favorite state for a voice. Returns the new state.
+pub async fn toggle_favorite(conn: &Connection, voice_id: &str) -> Result<bool> {
+    let mut rows = conn
+        .query(
+            "SELECT is_favorite FROM voices WHERE id = ?",
+            (voice_id.to_string(),),
+        )
+        .await?;
+    if let Some(row) = rows.next().await? {
+        let current: i64 = row.get(0)?;
+        let new_state = if current == 1 { 0 } else { 1 };
+        conn.execute(
+            "UPDATE voices SET is_favorite = ? WHERE id = ?",
+            (new_state, voice_id.to_string()),
+        )
+        .await?;
+        Ok(new_state == 1)
+    } else {
+        // If voice record does not exist yet (e.g. edge voice not synced), insert stub
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+        conn.execute(
+            "INSERT INTO voices (id, provider_id, name, source_kind, is_favorite, created_at)
+             VALUES (?, 'kokoro', ?, 'bundled', 1, ?)
+             ON CONFLICT(id) DO UPDATE SET is_favorite = 1",
+            (voice_id.to_string(), voice_id.to_string(), now),
+        )
+        .await?;
+        Ok(true)
+    }
+}
+
+/// Records that a voice was selected or used.
+pub async fn record_recent(conn: &Connection, voice_id: &str) -> Result<()> {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64;
+    conn.execute(
+        "UPDATE voices SET last_used_at = ? WHERE id = ?",
+        (now, voice_id.to_string()),
+    )
+    .await?;
+    Ok(())
+}
+
+/// Executes a bulk upsert of voices in a single Turso transaction.
+pub async fn batch_upsert_voices(conn: &Connection, entries: &[VoiceEntry]) -> Result<()> {
+    if entries.is_empty() {
+        return Ok(());
+    }
+    conn.execute("BEGIN TRANSACTION;", ()).await?;
+    for e in entries {
+        conn.execute(
+            "INSERT INTO voices (
+                id, provider_id, name, source_kind, slug, gender, locale, accent,
+                description, tags, sample_text, wav_path, voice_dir, preview_wav,
+                is_favorite, last_used_at, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                provider_id = excluded.provider_id,
+                name = excluded.name,
+                source_kind = excluded.source_kind,
+                slug = excluded.slug,
+                gender = excluded.gender,
+                locale = excluded.locale,
+                accent = excluded.accent,
+                description = excluded.description,
+                tags = excluded.tags,
+                sample_text = excluded.sample_text,
+                wav_path = excluded.wav_path,
+                voice_dir = excluded.voice_dir,
+                preview_wav = excluded.preview_wav",
+            params![
+                e.id.clone(),
+                e.provider_id.clone(),
+                e.name.clone(),
+                e.source_kind.as_str().to_string(),
+                e.slug.clone(),
+                e.gender.clone(),
+                e.locale.clone(),
+                e.accent.clone(),
+                e.description.clone(),
+                e.tags.clone(),
+                e.sample_text.clone(),
+                e.wav_path.clone(),
+                e.voice_dir.clone(),
+                e.preview_wav.clone(),
+                if e.is_favorite { 1 } else { 0 },
+                e.last_used_at,
+                e.created_at,
+            ],
+        )
+        .await?;
+    }
+    conn.execute("COMMIT;", ()).await?;
+    Ok(())
+}
+
 pub async fn seed_packaged_voices(conn: &Connection) -> Result<()> {
     let models_dir = match crate::utils::paths::try_get() {
         Some(p) => p.models,
@@ -195,7 +369,6 @@ pub async fn seed_packaged_voices(conn: &Connection) -> Result<()> {
     }
 
     let entries = read_dir(&packaged_voices_dir)?;
-
     for entry in entries {
         let entry = entry?;
         let path = entry.path();
@@ -205,7 +378,6 @@ pub async fn seed_packaged_voices(conn: &Connection) -> Result<()> {
             }
         }
     }
-
     Ok(())
 }
 
@@ -237,8 +409,8 @@ async fn seed_single_voice(conn: &Connection, name_str: &str, path: &Path) -> Re
             .as_secs() as i64;
 
         conn.execute(
-            "INSERT INTO voices (id, name, source_kind, slug, wav_path, voice_dir, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO voices (id, provider_id, name, source_kind, slug, wav_path, voice_dir, created_at)
+             VALUES (?, 'chatterbox', ?, ?, ?, ?, ?, ?)",
             (
                 id.clone(),
                 name.clone(),
@@ -270,7 +442,6 @@ pub async fn seed_zipvoice_voices(conn: &Connection) -> Result<()> {
     }
 
     let entries = read_dir(&packaged_voices_dir)?;
-
     for entry in entries {
         let entry = entry?;
         let path = entry.path();
@@ -282,7 +453,6 @@ pub async fn seed_zipvoice_voices(conn: &Connection) -> Result<()> {
             }
         }
     }
-
     Ok(())
 }
 
@@ -295,7 +465,6 @@ async fn seed_single_zipvoice(conn: &Connection, slug: &str, path: &Path) -> Res
     let exists = rows.next().await?.is_some();
     if !exists {
         let name = display_name_for_slug(slug);
-
         let wav_path = path.join("clip.wav").to_string_lossy().into_owned();
         let voice_dir = path.to_string_lossy().into_owned();
         let now = SystemTime::now()
@@ -304,8 +473,8 @@ async fn seed_single_zipvoice(conn: &Connection, slug: &str, path: &Path) -> Res
             .as_secs() as i64;
 
         conn.execute(
-            "INSERT INTO voices (id, name, source_kind, slug, wav_path, voice_dir, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO voices (id, provider_id, name, source_kind, slug, wav_path, voice_dir, created_at)
+             VALUES (?, 'zipvoice', ?, ?, ?, ?, ?, ?)",
             (
                 id.clone(),
                 name.clone(),
@@ -326,8 +495,6 @@ async fn seed_single_zipvoice(conn: &Connection, slug: &str, path: &Path) -> Res
     Ok(())
 }
 
-/// Derives the seeded display name from a pack directory slug. The seeded row
-/// is the single source of display names; the frontend holds no fallback list.
 pub fn display_name_for_slug(slug: &str) -> String {
     let mut chars = slug.chars();
     match chars.next() {

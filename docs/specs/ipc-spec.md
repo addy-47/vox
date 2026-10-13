@@ -159,15 +159,22 @@ Settings mutations trigger one of three reload policies returned to the frontend
 | `get_provider_caps` | `providerId: string` | `ProviderCaps` | Returns dynamic capabilities (supported voices, cloning support). Rejects unknown providers with `InvalidArgument`. |
 | `manage_models` | `action: string`, `modelId: string` | `void` | Downloads, verifies SHA-256, or deletes local model weights. Emits `model_progress`. |
 
-### 4.7 Tray & Voice Profiles Domain
-Voice profiles are stored as filesystem directory sidecars under the `voices/<slug>/` storage hierarchy, containing `clip.wav` (acoustic reference sample) and `reference.txt` (reference transcript text). Voice identifiers follow sanitized alphanumeric slugs.
+### 4.7 Voice Catalog & Synthesis Domain
+Unified voice management backed by the local Turso `voices` table, serving bundled profiles, custom user clones, and remote provider voices.
 
 | Command | Arguments | Return Shape | Behavioral Contract |
 | :--- | :--- | :--- | :--- |
-| `toggle_tray_visibility` | None | `void` | Toggles floating tray window visibility. |
-| `list_voices` | `provider?: string` | `Array<VoiceRecord>` | Lists custom or cloned acoustic voice profiles discovered in the voices directory. |
-| `add_voice_from_file` | `name: string`, `filePath: string`, `provider: string` | `VoiceRecord` | Validates WAV audio and reference text, mints unique slug, creates directory sidecar (`clip.wav` and `reference.txt`). |
-| `delete_voice` | `voiceId: string` | `void` | Permanently deletes voice profile directory sidecar. Rejects default voices. |
+| `list_voices` | `provider?: string` | `Array<UnifiedVoiceDto>` | Queries unified voice entries from Turso. Filters by provider slug when provided. Seeds manifest voices automatically if the table is empty. |
+| `toggle_voice_favorite` | `voice_id: string` | `boolean` | Toggles favorite status in Turso `voices` table. Returns the new favorite state. |
+| `record_voice_used` | `voice_id: string` | `void` | Updates the `last_used_at` millisecond epoch timestamp in the `voices` table for recents sorting. |
+| `set_active_voice` | `voice_id: string` | `void` | Persists `tts.voice_id` into `settings.jsonc` and updates the usage timestamp in the database. |
+| `synthesize_voice_preview` | `voice_id: string`, `prompt?: string` | `VoicePreviewResult` | Generates or retrieves cached preview audio WAV. Aborts previous in-flight synthesis. Enforces a 120-character prompt ceiling. |
+| `sync_remote_voices` | None | `number` | Spawns a background task to fetch remote provider voices (e.g. Edge TTS) and bulk-upserts them into Turso in a single transaction. |
+| `start_backend_recording` | None | `void` | Initiates CPAL microphone capture on a dedicated thread for custom voice cloning. |
+| `stop_backend_recording` | None | `[Array<number>, number]` | Terminates CPAL capture and returns audio PCM f32 samples with the native sample rate. |
+| `add_voice_from_file` | `name: string`, `file_path: string` | `UnifiedVoiceDto` | Validates WAV audio, writes reference sample, pre-bakes speaker embedding tensors, and inserts a custom clone record. |
+| `add_voice_from_recording` | `name: string`, `pcm_f32: Array<number>`, `sample_rate: number` | `UnifiedVoiceDto` | Encodes PCM samples to WAV, pre-bakes speaker embedding tensors, and inserts a custom clone record. |
+| `delete_voice` | `voice_id: string` | `void` | Permanently deletes a custom voice record and its associated directory files. Rejects deletion of bundled or remote voices. |
 
 ---
 
@@ -222,3 +229,4 @@ When `state_changed` has `state === "Working"`, it MUST include an `activity` en
 - **Activity Envelope Delivery**: Triggering an agentic tool call verifies that `state_changed` emits with `state: "Working"` and a populated `activity` object, clearing it upon transition to `Speaking`.
 - **Coalesced Settings Restart**: Simultaneously mutating two settings classified as `Restart` verifies that exactly one engine restart cycle executes.
 - **Optimistic Memory Conflict**: Submitting `save_personal_memory` with an outdated `expectedVersion` returns `Conflict` without modifying persistent records.
+- **Voice Preview Cancellation**: Issuing a second `synthesize_voice_preview` before the first completes verifies immediate cancellation of the previous synthesis worker via `AbortHandle`.
