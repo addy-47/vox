@@ -15,8 +15,8 @@ use crate::{
     services::tts::{
         preview::{PreviewSynthesizer, VoicePreviewResult},
         voice::{
-            convert_and_validate_audio, pre_bake_speaker_tensors, start_recording,
-            stop_recording, write_pcm_to_wav, UnifiedVoiceDto,
+            convert_and_validate_audio, pre_bake_speaker_tensors, resolve_voice_scope,
+            start_recording, stop_recording, write_pcm_to_wav, UnifiedVoiceDto, VoiceScopeDto,
         },
     },
     utils::paths::voice_dir,
@@ -65,6 +65,14 @@ pub async fn list_voices(
     crate::services::tts::voice::list_unified_voices(&conn, provider.as_deref())
         .await
         .map_err(|e| VoxIpcError::Database(format!("Failed to list voices: {}", e)))
+}
+
+/// Resolves an active TTS engine id to its voice catalog scope (provider
+/// filter, clone support, cloud-sync hint) without the frontend branching on
+/// provider id literals.
+#[tauri::command]
+pub async fn get_voice_scope(engine: Option<String>) -> Result<VoiceScopeDto, VoxIpcError> {
+    Ok(resolve_voice_scope(engine.as_deref().unwrap_or_default()))
 }
 
 /// Background non-blocking sync for remote voices (e.g. Edge TTS).

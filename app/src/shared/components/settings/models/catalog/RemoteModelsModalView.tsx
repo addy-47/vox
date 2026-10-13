@@ -2,13 +2,11 @@ import {
   memo,
   useState,
   useMemo,
-  useRef,
   useEffect,
   useCallback,
   useDeferredValue,
 } from "react";
-import type Lenis from "lenis";
-import { createContainedLenis } from "@/shared/lib/lenisScroll";
+import { useLenisScrollContainer } from "@/shared/hooks/useLenisScrollContainer";
 import { useScrollTopOnChange } from "@/shared/hooks/useScrollTopOnChange";
 import { Search, X } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
@@ -40,37 +38,20 @@ export const RemoteModelsModalView = memo(({
   const deferredSearch = useDeferredValue(modalSearch);
   const [filterCategory, setFilterCategory] = useState<"all" | "benchmarked" | "tools" | "fast">("all");
   const [copiedId, setCopiedId] = useState<string | null>(null);
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const lenisRef = useRef<Lenis | null>(null);
-
-  // Smooth Lenis scrolling on the contained viewport
-  useEffect(() => {
-    const el = scrollContainerRef.current;
-    if (!el) return undefined;
-
-    const lenis = createContainedLenis(el, { duration: 0.75 });
-    if (!lenis) return undefined;
-    lenisRef.current = lenis;
-
-    return () => {
-      lenisRef.current = null;
-      lenis.destroy();
-    };
-  }, []);
+  // Canonical smooth scroll (SSOT hook — inertial wheel glide, native touch
+  // momentum). The inner content wrapper is the Lenis content element.
+  const { containerRef: scrollContainerRef, lenisRef, scrollToTop } =
+    useLenisScrollContainer<HTMLDivElement>();
 
   useScrollTopOnChange(scrollContainerRef, pinnedModelId, lenisRef);
 
-  // Reset scroll to top whenever search or filter changes so the list never
-  // stays locked mid-scroll / shows a blank gap after the visible count resets.
+  // Reset scroll to top only once the debounced filter settles, so typing
+  // never interrupts the wheel-RAF loop mid-glide (the old per-keystroke
+  // reset is what locked scrolling while searching).
   useEffect(() => {
-    const el = scrollContainerRef.current;
-    if (!el) return;
-    if (lenisRef.current) {
-      lenisRef.current.scrollTo(0, { immediate: true });
-    } else {
-      el.scrollTo({ top: 0, behavior: "auto" });
-    }
-  }, [modalSearch, deferredSearch, filterCategory]);
+    scrollToTop();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deferredSearch, filterCategory]);
 
   const handleCopyId = useCallback((id: string) => {
     navigator.clipboard.writeText(id);
@@ -221,6 +202,9 @@ export const RemoteModelsModalView = memo(({
           ref={scrollContainerRef}
           className="flex-1 min-h-0 overflow-y-auto overscroll-contain custom-scrollbar p-1 sm:p-2"
         >
+          {/* Stable Lenis content wrapper: keeps virtual height measurement
+              correct across filter/empty-state swaps. */}
+          <div className="min-h-full w-full">
           {modalFilteredModels.length === 0 ? (
             <div className="h-64 flex flex-col items-center justify-center text-center space-y-2">
               <p className="text-[14px] font-bold text-[rgb(var(--foreground))]">No models found</p>
@@ -282,6 +266,7 @@ export const RemoteModelsModalView = memo(({
               )}
             </div>
           )}
+          </div>
         </div>
       </div>
     </div>

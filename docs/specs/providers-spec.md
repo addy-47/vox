@@ -148,6 +148,12 @@ On-demand audio previews are managed by `services/tts/preview.rs`:
 - **Prompt Safety**: Prompts are capped at 120 characters to prevent excessive generation latency.
 - **LRU Disk Cache**: Previews are cached at `cache/tts/previews/{hash}.wav` bounded by a 25 MB / 50 files limit with automatic LRU eviction.
 
+### 6.5 Engine-to-Catalog Scope & Clone Capability
+The frontend never branches on provider id literals (Invariant 6: model agnosticism). Engine-to-catalog mapping lives in `services/tts/voice.rs` (`resolve_voice_scope`, surfaced via the `get_voice_scope` IPC command returning `VoiceScopeDto { voice_provider, can_clone, cloud_sync }`):
+- **Voice family scope**: the active engine id maps to its DB `provider_id` filter 1:1, except `chatterbox_remote`, which shares the `chatterbox` voice rows (no `provider_id = 'chatterbox_remote'` rows exist — an unmapped query returns an empty catalog). `list_unified_voices` applies the same normalization.
+- **Clone capability**: `can_clone` mirrors backend `ProviderCaps.clone` (`factory::caps_for_id`). Only the Chatterbox family (local + remote) declares `clone: true` — cloned reference voices are consumed solely by the Chatterbox conditioning path (`resolve_reference_audio` over `voice_dir`). Kokoro/Supertonic resolve integer catalog indices, Zipvoice uses voice packs, Edge TTS is cloud-managed. The clone entry points (header action, Cloned scope chip, `CloneVoiceDrawer`) render only when `can_clone` is true.
+- **Cloud sync hint**: `cloud_sync` mirrors `ProviderCaps.voices == TtsVoiceSource::Edge` and drives the empty-state hint while background sync populates cloud voices.
+
 ---
 
 ## 7. Architectural Decisions & Alternatives

@@ -4,6 +4,28 @@ import { isCoarsePointer } from "@/lib/capabilities";
 type ContainedLenisOptions = Omit<LenisOptions, "wrapper" | "content" | "eventsTarget">;
 
 /**
+ * Canonical smooth-scroll standard for Vox (SSOT).
+ *
+ * Industry pattern (per Lenis docs):
+ * - Wheel input is smoothed with inertial easing (velocity decays, glide
+ *   stops slowly — the "dynamic to touch intensity" feel). Touch/trackpad
+ *   momentum stays native (`smoothTouch` off).
+ * - Exactly ONE Lenis instance per scroll container, created via
+ *   `useLenisScrollContainer`. Never `new Lenis` ad-hoc in components.
+ * - Nested scrollers opt out of the parent via `overscroll-behavior:
+ *   contain` (see SMOOTH_SCROLL_CONTAINER_CLASS) so wheel chaining never
+ *   locks the inner list.
+ * - CSS scroll-snap is INCOMPATIBLE with Lenis virtual scroll — never combine
+ *   `snap-*` classes with a Lenis-managed container.
+ */
+
+export const SMOOTH_SCROLL_DURATION = 0.85;
+
+/** Canonical Tailwind classes for every Lenis-managed scroll container. */
+export const SMOOTH_SCROLL_CONTAINER_CLASS =
+  "overflow-y-auto overscroll-contain custom-scrollbar";
+
+/**
  * Creates a scoped Lenis instance for a contained scroller, or `null` on
  * coarse-pointer (touch) devices.
  *
@@ -11,18 +33,39 @@ type ContainedLenisOptions = Omit<LenisOptions, "wrapper" | "content" | "eventsT
  * phones/tablets the instance contributes nothing but its own autoRaf loop —
  * pure CPU/battery cost against native momentum scrolling. Callers fall back
  * to native scroll; `useScrollTopOnChange` already handles a null lenisRef.
+ *
+ * Correct wrapper/content split: the scrollable element is the wrapper and
+ * its first child is the content Lenis transforms. Passing the same element
+ * for both (the old ad-hoc pattern) breaks height measurement and locks
+ * scrolling whenever content height changes (filtering, pagination).
  */
 export function createContainedLenis(
   el: HTMLElement,
-  options: ContainedLenisOptions,
+  options: ContainedLenisOptions = {},
 ): Lenis | null {
   if (isCoarsePointer()) return null;
-  return new Lenis({
+  const content = (el.firstElementChild as HTMLElement | null) ?? el;
+  const lenis = new Lenis({
     wrapper: el,
-    content: el,
+    content,
     eventsTarget: el,
     smoothWheel: true,
     autoRaf: true,
+    duration: SMOOTH_SCROLL_DURATION,
     ...options,
   });
+  // Keep virtual metrics in sync when list height changes (filtering,
+  // pagination, modal open). Without this a container measured at height 0
+  // (hidden modal) stays locked at 0 forever.
+  if (typeof ResizeObserver !== "undefined") {
+    const ro = new ResizeObserver(() => lenis.resize());
+    ro.observe(el);
+    ro.observe(content);
+    const prevDestroy = lenis.destroy.bind(lenis);
+    lenis.destroy = () => {
+      ro.disconnect();
+      prevDestroy();
+    };
+  }
+  return lenis;
 }

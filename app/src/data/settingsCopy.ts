@@ -453,7 +453,6 @@ export const TTS_VOICE_MANAGER_COPY = {
 
 export const VOICE_CATALOG_COPY = {
   title: "Select a Voice",
-  subtitle: "Choose a voice for the currently selected model. Click play to preview.",
   catalogAriaLabel: "Browse all available voices",
   expandLabel: "Expand voice catalog",
   searchPlaceholder: "Search voices...",
@@ -477,6 +476,14 @@ export const VOICE_CATALOG_COPY = {
   selectVoice: "Select Voice",
   showingOf: "voices",
   previewUnavailableTitle: "Preview is unavailable while a session is active",
+  cloned: "Cloned",
+  cloneVoice: "Clone Voice",
+  cloneVoiceChatterboxNote: "Voice cloning builds a Chatterbox reference voice",
+  edgeSyncHint: "Cloud voices sync in the background when online.",
+  providersFacet: "Providers",
+  languageFacet: "Language",
+  filterAria: "Toggle voice filters",
+  filtersTitle: "Filters",
 } as const;
 
 export const VOICE_CAROUSEL_COPY = {

@@ -221,32 +221,31 @@ export const SessionAccordionItem = memo<SessionAccordionItemProps>(({
             : "hover:bg-[rgba(var(--foreground),0.04)]"
         )}
       >
-        <div className="flex items-center gap-2.5 min-w-0 flex-1">
+        <div className="flex items-start gap-2.5 min-w-0 flex-1">
           {isExpanded ? (
             <MessageSquarePlus
               size={14}
-              className="shrink-0 text-[rgb(var(--accent))] transition-colors"
+              className="shrink-0 text-[rgb(var(--accent))] transition-colors mt-0.5"
             />
           ) : (
             <MessageSquare
               size={14}
-              className="shrink-0 text-[rgb(var(--foreground-muted))]/60 group-hover:text-[rgb(var(--foreground))] transition-colors"
+              className="shrink-0 text-[rgb(var(--foreground-muted))]/60 group-hover:text-[rgb(var(--foreground))] transition-colors mt-0.5"
             />
           )}
 
           <div className="flex flex-col min-w-0 flex-1">
-            <Tooltip label={title} side="top" className="max-w-[280px]">
-              <span
-                className={cn(
-                  "truncate text-[13.5px] font-sans font-medium tracking-normal leading-tight block",
-                  isSelectedSession || isExpanded
-                    ? "text-[rgb(var(--accent))]"
-                    : "text-[rgb(var(--foreground))]"
-                )}
-              >
-                {title}
-              </span>
-            </Tooltip>
+            <span
+              className={cn(
+                "text-[13.5px] font-sans font-medium tracking-normal leading-tight block",
+                isExpanded ? "whitespace-normal break-words" : "truncate",
+                isSelectedSession || isExpanded
+                  ? "text-[rgb(var(--accent))]"
+                  : "text-[rgb(var(--foreground))]"
+              )}
+            >
+              {title}
+            </span>
 
             <span className="text-[11px] font-mono mt-0.5 flex items-center gap-1">
               <span className="text-[rgb(var(--accent))] font-medium">{factCount}</span>

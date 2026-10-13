@@ -266,7 +266,17 @@ pub async fn toggle_favorite(conn: &Connection, voice_id: &str) -> Result<bool> 
         )
         .await?;
     if let Some(row) = rows.next().await? {
-        let current: i64 = row.get(0)?;
+        let current: i64 = row
+            .get::<Option<i64>>(0)
+            .ok()
+            .flatten()
+            .unwrap_or_else(|| {
+                row.get::<Option<bool>>(0)
+                    .ok()
+                    .flatten()
+                    .map(|b| if b { 1 } else { 0 })
+                    .unwrap_or(0)
+            });
         let new_state = if current == 1 { 0 } else { 1 };
         conn.execute(
             "UPDATE voices SET is_favorite = ? WHERE id = ?",

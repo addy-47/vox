@@ -1,9 +1,12 @@
 import { memo, useCallback, useMemo } from "react";
 import { AudioLines } from "lucide-react";
+import { ErrorBoundary } from "@/shared/components/common/ErrorBoundary";
 import { ExpandableList } from "@/shared/ui/ExpandableList";
 import { VOICE_CATALOG_COPY } from "@/data/settingsCopy";
 import { useSessionStore } from "@/store/sessionStore";
 import { useVoiceCatalog } from "@/shared/hooks/useVoiceCatalog";
+import { useLenisScrollContainer } from "@/shared/hooks/useLenisScrollContainer";
+import { useVoiceScope } from "@/shared/hooks/useVoiceScope";
 import { VoiceCard } from "./VoiceCard";
 import { VoiceCatalogModalView } from "./VoiceCatalogModalView";
 
@@ -12,13 +15,17 @@ export interface VoiceCatalogViewProps {
   providerId: string;
 }
 
-const INLINE_WINDOW = 4;
-
 export const VoiceCatalogView = memo(({ layoutMode, providerId }: VoiceCatalogViewProps) => {
-  const catalog = useVoiceCatalog({ provider: providerId || undefined });
+  // Engine -> voice family scope, resolved by the backend (no id literals
+  // in the frontend). The catalog stays suspended until scope resolves so
+  // another engine's (or all providers') voices are never rendered.
+  const { scope, ready } = useVoiceScope(providerId);
+  const catalog = useVoiceCatalog({
+    provider: ready ? scope.voice_provider || undefined : undefined,
+    suspended: !ready,
+  });
   const {
     voices,
-    loading,
     stagedId,
     stageVoice,
     toggleFavorite,
@@ -30,12 +37,15 @@ export const VoiceCatalogView = memo(({ layoutMode, providerId }: VoiceCatalogVi
   const interactionState = useSessionStore((s) => s.interactionState);
   const sessionBusy = interactionState !== "Idle";
 
+  const { containerRef: inlineGridRef } = useLenisScrollContainer<HTMLDivElement>();
+
+  // Every voice of the active engine. No inline cap: the inline list scrolls
+  // (Lenis), so truncating to a window hides voices the user can reach.
   const inlineVoices = useMemo(() => {
-    const sorted = [...voices].sort((a, b) => {
+    return [...voices].sort((a, b) => {
       if (a.is_favorite !== b.is_favorite) return a.is_favorite ? -1 : 1;
       return (b.last_used_at ?? 0) - (a.last_used_at ?? 0);
     });
-    return sorted.slice(0, INLINE_WINDOW);
   }, [voices]);
 
   const handleDiscard = useCallback(() => {
@@ -43,19 +53,7 @@ export const VoiceCatalogView = memo(({ layoutMode, providerId }: VoiceCatalogVi
   }, [stopPreview]);
 
   return (
-    <div className="w-full h-full flex flex-col min-h-0 space-y-2 animate-fade-in">
-      <div className="flex items-center justify-between gap-2 min-h-[34px] pb-1 border-b border-[rgba(var(--foreground),0.04)] shrink-0">
-        <div className="flex flex-col min-w-0">
-          <span className="font-bold text-[rgb(var(--foreground))] text-[13px] flex items-center gap-1.5 truncate">
-            <AudioLines size={15} className="text-[rgb(var(--accent))] shrink-0" />
-            <span>{VOICE_CATALOG_COPY.title}</span>
-          </span>
-        </div>
-        <span className="px-2.5 py-1 rounded-lg bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--foreground),0.06)] text-[rgb(var(--foreground-muted))] text-[11px] font-mono font-medium shrink-0">
-          {loading ? "…" : `${voices.length} voices`}
-        </span>
-      </div>
-
+    <div className="w-full h-full flex flex-col min-h-0 animate-fade-in">
       <ExpandableList
         className="flex-1 min-h-0"
         domainId="tts"
@@ -67,29 +65,37 @@ export const VoiceCatalogView = memo(({ layoutMode, providerId }: VoiceCatalogVi
             {VOICE_CATALOG_COPY.title}
           </span>
         }
-        modalSubtitle={
-          <span className="font-mono text-[11px] text-[rgb(var(--foreground-muted))]">
-            {VOICE_CATALOG_COPY.subtitle}
-          </span>
-        }
         expandLabel={VOICE_CATALOG_COPY.expandLabel}
         ariaLabel={VOICE_CATALOG_COPY.catalogAriaLabel}
         onDiscard={handleDiscard}
         modalContent={({ close }) => (
-          <VoiceCatalogModalView
+          <ErrorBoundary name="VoiceCatalogModalContent">
+            <VoiceCatalogModalView
             catalog={catalog}
+            voiceScope={scope.voice_provider}
+            canClone={scope.can_clone}
+            cloudSync={scope.cloud_sync}
             onCommit={() => close()}
             onCancel={() => close()}
-          />
+            />
+          </ErrorBoundary>
         )}
       >
         <div
+          ref={inlineGridRef}
           className={
             layoutMode === "small"
-              ? "h-full overflow-y-auto pr-1 grid auto-rows-max content-start gap-2 custom-scrollbar grid-cols-1"
-              : "h-full overflow-y-auto pr-1 grid auto-rows-max content-start gap-2 custom-scrollbar grid-cols-1 sm:grid-cols-2"
+              ? "h-full overflow-y-auto overscroll-contain pr-1 custom-scrollbar"
+              : "h-full overflow-y-auto overscroll-contain pr-1 custom-scrollbar"
           }
         >
+          <div
+            className={
+              layoutMode === "small"
+                ? "grid auto-rows-max content-start gap-2 min-h-full w-full grid-cols-1"
+                : "grid auto-rows-max content-start gap-2 min-h-full w-full grid-cols-1 sm:grid-cols-2"
+            }
+          >
           {inlineVoices.map((v) => (
             <VoiceCard
               key={v.id}
@@ -99,11 +105,13 @@ export const VoiceCatalogView = memo(({ layoutMode, providerId }: VoiceCatalogVi
               previewPlaying={playingId === v.id}
               isSynthesizing={catalog.isSynthesizing && playingId === v.id}
               previewDisabled={!v.has_preview && sessionBusy}
+              hideBadges={true}
               onSelect={stageVoice}
               onToggleFavorite={toggleFavorite}
               onPreview={togglePreview}
             />
           ))}
+          </div>
         </div>
       </ExpandableList>
     </div>

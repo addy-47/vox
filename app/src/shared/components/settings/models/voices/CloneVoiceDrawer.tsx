@@ -7,11 +7,11 @@ import {
   Mic,
   RotateCcw,
   Square,
-  X,
 } from "lucide-react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { cn } from "@/shared/lib/utils";
-import { useOverlay } from "@/shared/hooks/useOverlay";
+import { ErrorBoundary } from "@/shared/components/common/ErrorBoundary";
+import { Modal } from "@/shared/ui/Modal";
 import {
   addVoiceFromFile,
   addVoiceFromRecording,
@@ -30,11 +30,6 @@ type Tab = "record" | "upload";
 
 export const CloneVoiceDrawer = memo(
   ({ isOpen, onClose, onCreated }: CloneVoiceDrawerProps) => {
-    useOverlay({
-      onClose,
-      active: isOpen,
-      dismissOnOutside: false,
-    });
     const [tab, setTab] = useState<Tab>("record");
     const [voiceName, setVoiceName] = useState("");
     const [isRecording, setIsRecording] = useState(false);
@@ -178,43 +173,69 @@ export const CloneVoiceDrawer = memo(
         : selectedFilePath != null);
 
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="clone-voice-title"
-          className="w-full max-w-md rounded-2xl border border-[rgba(var(--foreground),0.1)] bg-[rgb(var(--card))] shadow-2xl flex flex-col overflow-hidden"
-        >
-          {/* Header */}
-          <div className="flex items-center justify-between p-4 border-b border-[rgba(var(--foreground),0.06)]">
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-lg bg-[rgb(var(--accent))]/15 text-[rgb(var(--accent))] flex items-center justify-center">
-                <Mic size={18} />
-              </div>
-              <div>
-                <h2
-                  id="clone-voice-title"
-                  className="font-bold text-[15px] text-[rgb(var(--foreground))]"
-                >
-                  Clone New Voice
-                </h2>
-                <p className="text-[11px] text-[rgb(var(--foreground-muted))]">
-                  Record a clear 1–30s audio sample
-                </p>
-              </div>
-            </div>
+      <Modal
+        open={isOpen}
+        onClose={onClose}
+        position="global"
+        icon={
+          <div className="w-8 h-8 rounded-lg bg-[rgb(var(--accent))]/15 text-[rgb(var(--accent))] flex items-center justify-center shrink-0">
+            <Mic size={18} />
+          </div>
+        }
+        title={
+          <div className="min-w-0">
+            <h2
+              id="clone-voice-title"
+              className="font-bold text-[15px] text-[rgb(var(--foreground))] leading-tight"
+            >
+              Clone New Voice
+            </h2>
+            <p className="text-[11px] text-[rgb(var(--foreground-muted))]">
+              Record a clear 1–30s audio sample
+            </p>
+          </div>
+        }
+        ariaLabel="Clone a new voice"
+        className="w-[min(480px,94vw)] max-w-[calc(100vw-36px)]"
+        bodyClassName="p-4"
+        footer={
+          <div className="px-4 py-3 border-t border-[rgba(var(--foreground),0.06)] flex items-center justify-end gap-2 bg-[rgba(var(--foreground),0.01)]">
             <button
               type="button"
               onClick={onClose}
               disabled={isSubmitting}
-              className="p-1 rounded-md text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.04)] transition-all cursor-pointer"
+              className="px-4 py-1.5 rounded-lg text-[12px] font-bold text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-all cursor-pointer"
             >
-              <X size={16} />
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleClone}
+              disabled={!canSubmit}
+              className={cn(
+                "px-4 py-1.5 rounded-lg text-[12px] font-bold transition-all flex items-center gap-1.5 cursor-pointer",
+                canSubmit
+                  ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] hover:brightness-110 active:scale-95 shadow-sm"
+                  : "bg-[rgba(var(--foreground),0.06)] text-[rgb(var(--foreground-muted))]/40 cursor-not-allowed"
+              )}
+            >
+              {isSubmitting ? (
+                <>
+                  <Loader2 size={13} className="animate-spin" />
+                  <span>Processing...</span>
+                </>
+              ) : (
+                <>
+                  <Check size={13} strokeWidth={2.5} />
+                  <span>Clone Voice</span>
+                </>
+              )}
             </button>
           </div>
-
-          {/* Body */}
-          <div className="p-4 flex flex-col gap-4">
+        }
+      >
+        <ErrorBoundary name="CloneVoiceDialog">
+          <div className="flex flex-col gap-4">
             {/* Tabs */}
             <div className="flex rounded-lg bg-[rgba(var(--foreground),0.04)] p-0.5 border border-[rgba(var(--foreground),0.06)]">
               <button
@@ -363,43 +384,8 @@ export const CloneVoiceDrawer = memo(
               </div>
             )}
           </div>
-
-          {/* Footer */}
-          <div className="p-4 border-t border-[rgba(var(--foreground),0.06)] flex items-center justify-end gap-2 bg-[rgba(var(--foreground),0.01)]">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={isSubmitting}
-              className="px-4 py-1.5 rounded-lg text-[12px] font-bold text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-all cursor-pointer"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={handleClone}
-              disabled={!canSubmit}
-              className={cn(
-                "px-4 py-1.5 rounded-lg text-[12px] font-bold transition-all flex items-center gap-1.5 cursor-pointer",
-                canSubmit
-                  ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] hover:brightness-110 active:scale-95 shadow-sm"
-                  : "bg-[rgba(var(--foreground),0.06)] text-[rgb(var(--foreground-muted))]/40 cursor-not-allowed"
-              )}
-            >
-              {isSubmitting ? (
-                <>
-                  <Loader2 size={13} className="animate-spin" />
-                  <span>Processing...</span>
-                </>
-              ) : (
-                <>
-                  <Check size={13} strokeWidth={2.5} />
-                  <span>Clone Voice</span>
-                </>
-              )}
-            </button>
-          </div>
-        </div>
-      </div>
+        </ErrorBoundary>
+      </Modal>
     );
   }
 );
