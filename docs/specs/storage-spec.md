@@ -1,195 +1,175 @@
-# Storage, Filesystem & Configuration Specification (v1)
+# Storage, Filesystem & Configuration Specification
+
+## 1. Intent & Scope
+
+### 1.1 Lane
+Filesystem & Configuration Architecture Specification. This document specifies the on-disk directory hierarchy, permissions matrix, configuration decomposition, reload contracts, and boot migration rules for Vox.
+
+### 1.2 Purpose
+Vox requires a predictable, partitioned filesystem layout that isolates disposable caches from durable databases, decouples multi-gigabyte neural network models, protects cloud credentials, and enforces atomic configuration reload policies.
+
+### 1.3 Out of Scope
+- Database table schemas, indexing, and SQL transactions (governed by `db-spec.md`).
+- Memory retrieval algorithms and consolidation schedules (governed by `memory-spec.md`).
+- Inter-process communication protocol payloads (governed by `ipc-spec.md`).
 
 ---
 
-- **Status:** Approved Target Spec (SSOT for Filesystem Layout, Configuration Decomposition & Runtime Paths)
-- **Policy:** Zero Backward Compatibility (ZBC) with an automated one-way boot migration.
-- **Scope:** Governs the entire on-disk footprint of Vox: directory hierarchy, runtime sockets, configuration decomposition, schema definitions, reload policies, and file format standards.
+## 2. User Stories
+
+| ID | Story |
+| :--- | :--- |
+| **US-STORAGE-01** | As a user, I want heavy model weights stored on a customizable drive, so that my root volume does not run out of space. |
+| **US-STORAGE-02** | As a user clearing disk space, I want to wipe the cache directory without losing transcripts, personal memory, or settings, so that system maintenance is risk-free. |
+| **US-STORAGE-03** | As an external desktop script, I want to read general application settings without exposing cloud API secrets, so that helper scripts remain secure. |
+| **US-STORAGE-04** | As a user tuning agent prompts or temperature, I want changes to apply on the very next turn without restarting the application, so that prompt iteration is instant. |
+| **US-STORAGE-05** | As an OS window manager, I want transient runtime sockets kept in dedicated user runtime directories with restricted permissions, so that multi-user or network mount conflicts are avoided. |
 
 ---
 
-## 1. Executive Summary & Architectural Invariants
+## 3. Architecture Diagrams
 
-Historically, Vox accumulated all persistent state, caches, temporary sockets, crash dumps, and multi-gigabyte models directly in the unpartitioned root of `~/.vox/`. Furthermore, `settings.json` was an unscalable monolith that coupled OS audio device settings, external cloud API secrets, and LLM agent personas into a single rigid struct.
-
-This specification establishes three fundamental architectural boundaries:
-1. **Strict Lifecycle-Tiered Filesystem:** All on-disk files are segregated into six discrete functional tiers: `config/`, `data/`, `models/`, `cache/`, `diagnostics/`, and `run/`.
-2. **Decomposed Configuration (3-Way Split):** Configuration is split by volatility, reload policy, and security into `settings.jsonc` (Host & Hardware), `providers.jsonc` (Infrastructure & Secrets), and `agent.jsonc` (Cognitive Policy & Tools).
-3. **Format & Parsing Standards:** Lenient JSONC (JSON with comments and trailing commas) for human/machine configuration, and JSONL (JSON Lines) for streamable event history.
-
----
-
-## 2. Mandatory Architectural Invariants
-
-### Invariant 1: The Disposable Cache Invariant (`rm -rf ~/.vox/cache`)
-The `cache/` directory contains strictly reproducible or disposable data. If a user or automated cleaner purges `cache/`, Vox **must** boot cleanly, reconstitute temporary assets, and suffer **zero** loss of user data, transcripts, or configuration. Dictation transcripts and dialogue turns are durable state and **must never** reside in `cache/`.
-
-### Invariant 2: Heavy Storage Decoupling (`VOX_MODELS_DIR`)
-Multi-gigabyte static weights (`models/`) are decoupled from user configuration and databases. Vox must support the `VOX_MODELS_DIR` environment variable to allow mounting or relocating models to high-speed NVMe drives or shared network volumes independently of `$VOX_HOME`.
-
-### Invariant 3: Ephemeral Runtime Isolation
-Unix domain sockets (`vox.sock`) and process locks (`vox.pid`) are transient OS primitives. They **must never** be stored in persistent user directories that could be mounted on network shares (NFS/CIFS) or synchronized via cloud drives. On Linux, `$XDG_RUNTIME_DIR` (`/run/user/<uid>/vox/`) is prioritized, with fallback to `~/.vox/run/` with strict `0700` POSIX permissions.
-
-### Invariant 4: Zero Path Leaks & Single Source of Truth
-Direct filesystem traversal via `dirs::home_dir().join(".vox")` anywhere outside `utils/paths.rs` is **strictly prohibited**. All subsystems must query `VoxPaths` accessors (`paths::db()`, `paths::models()`, `paths::config()`, etc.).
-
-### Invariant 5: Plaintext Secret Isolation
-Provider API keys and tokens must reside strictly in `providers.jsonc` (or system keychain), protected with `0600` file permissions. Diagnostic logs, telemetry, and UI settings exports must **never** serialize or log the contents of `providers.jsonc`.
-
----
-
-## 3. Tiered Filesystem Layout (`~/.vox/`)
-
+### 3.1 Configuration Decomposition Decision Tree
+```mermaid
+flowchart TD
+    ConfigInput[Incoming Configuration Mutation] --> CheckSecret{Contains Private API Keys<br/>or Cloud Tokens?}
+    
+    CheckSecret -- Yes --> ProvidersSplit[Route to config/providers.jsonc<br/>Security: Mode 0600<br/>Reload: Instant Hot-Reload or Subsystem Rebind]
+    
+    CheckSecret -- No --> CheckCognitive{Governs Cognitive Persona,<br/>Prompts, or Memory Policies?}
+    
+    CheckCognitive -- Yes --> AgentSplit[Route to config/agent.jsonc<br/>Security: Mode 0644<br/>Reload: Next-Turn Hot-Reload 0ms delay]
+    
+    CheckCognitive -- No --> SettingsSplit[Route to config/settings.jsonc<br/>Security: Mode 0644<br/>Reload: Live Worker Command or Engine Rebuild]
 ```
-~/.vox/                              # Base Root ($VOX_HOME, default ~/.vox)
-├── config/                          # Tier 1: User & Agent Configuration (Human/UI edited)
-│   ├── settings.jsonc               # Host hardware, audio I/O, VAD, UI theme, active engine selectors
-│   ├── providers.jsonc              # Model providers, base URLs, credentials & API keys (chmod 0600)
-│   └── agent.jsonc                  # Cognitive persona, prompt, temperature, memory search, tools/MCP
-│
-├── data/                            # Tier 2: Durable User State (Backup & Sync Target)
-│   ├── db/
-│   │   ├── vox.db                   # Primary Turso/libsql DB (facts, graph, sessions, compactions)
-│   │   ├── vox.db-wal
-│   │   └── vox.db-log
-│   ├── history/
-│   │   └── dictation.jsonl          # Durable dictation transcript history (JSON Lines)
-│   └── voices/                      # User custom/cloned voice assets
-│       └── <voice_id>/
-│           ├── source.wav           # Pristine audio reference sample
-│           └── baked/               # Precomputed acoustic profiles & speaker embeddings
-│
-├── models/                          # Tier 3: Static Model Weights (Overridable via $VOX_MODELS_DIR)
-│   ├── manifests/
-│   │   └── models_manifest.json     # SSOT canonical manifest of verified local & remote models
-│   ├── stt/                         # Streaming transducer & ASR ONNX models (Nemotron 3.5)
-│   ├── tts/                         # Synthesis engines (Kokoro, ZipVoice, Chatterbox voice packs)
-│   ├── vad/                         # Voice activity detectors (Earshot, Silero)
-│   ├── embedding/                   # Dense vector embeddings (MiniLM ONNX)
-│   ├── translit/                    # Script transliteration ONNX models
-│   ├── classifier/                  # Intent & domain router models
-│   └── llm/                         # Local language models (Qwen GGUFs)
-│
-├── cache/                           # Tier 4: Disposable Scratch (Safe to wipe anytime)
-│   ├── catalog/                     # Remote provider model catalog cache
-│   ├── updates/                     # Update check cache (app_manifest.json)
-│   ├── temp/                        # Audio resampling scratch & transient IPC buffers
-│   └── vox.png                      # Materialized desktop icon for Linux notify-send
-│
-├── diagnostics/                     # Tier 5: Observability & Diagnostics
-│   ├── logs/
-│   │   └── vox.log.YYYY-MM-DD       # Daily rolling application logs
-│   └── crashes/
-│       └── crash_<timestamp>.log    # Panic backtraces, minidumps & core reports
-│
-└── run/                             # Tier 6: Ephemeral Runtime State (chmod 0700)
-    ├── vox.sock                     # Unix domain socket (Wayland hotkey trigger IPC)
-    ├── vox.pid                      # Single-instance process lock (flock)
-    └── bin/
-        └── vox-trigger              # Shell script for OS keybind manager invoking vox.sock
+
+### 3.2 Startup Boot & Legacy Migration Protocol
+```mermaid
+flowchart TD
+    BootStart([Application Startup]) --> PathCheck[Resolve Paths Gateway]
+    
+    PathCheck --> LegacyDb{Legacy vox.db exists<br/>in ~/.vox root?}
+    LegacyDb -- Yes --> MigrateDb[Move vox.db* into data/db/<br/>No symlinks created]
+    LegacyDb -- No --> SweepTmp
+    
+    MigrateDb --> SweepTmp[Sweep Stale Config Debris<br/>Purge config/*.tmp and *.corrupt.*]
+    
+    SweepTmp --> LegacyHistory{Legacy dictation_history.jsonl<br/>in ~/.vox/cache/?}
+    LegacyHistory -- Yes --> MigrateHistory[Move to data/history/dictation.jsonl]
+    LegacyHistory -- No --> LegacyCrash
+    
+    MigrateHistory --> LegacyCrash{Legacy crash_reports/<br/>directory exists?}
+    LegacyCrash -- Yes --> MigrateCrash[Move logs to diagnostics/crashes/<br/>Remove legacy folder]
+    LegacyCrash -- No --> PermissionsCheck
+    MigrateCrash --> PermissionsCheck
+    
+    PermissionsCheck[Enforce Security Matrix<br/>Set providers.jsonc 0600<br/>Set run/ & data/db/ 0700] --> EngineBoot([Proceed to Database Open & Engine Bootstrap])
 ```
 
 ---
 
-## 4. Configuration Architecture (The 3-Way Split)
+## 4. Tiered Filesystem Layout
 
-### 4.1 Schema Decomposition & Ownership
+Vox organizes all on-disk artifacts under the root directory (`$VOX_HOME`, defaulting to `~/.vox/`) into six discrete lifecycle tiers:
 
-| Configuration File | Primary Domain | Volatility | Reload Policy | Security Tier |
-| :--- | :--- | :--- | :--- | :--- |
-| **`config/settings.jsonc`** | Hardware, Audio I/O, VAD, Theme, Active Engine Wiring | Low | **Restart / Heavy Reconstruct** | Public / Diagnostics-Safe |
-| **`config/providers.jsonc`** | Cloud/Server Endpoints, Model IDs, API Keys | Medium | **Instant Hot-Reload** | **Restricted (`0600`)** |
-| **`config/agent.jsonc`** | Cognitive Persona, Prompts, Tools, MCP, Memory Policy | High | **Turn-Hot (Per Turn / Session)** | Public / User Profile |
+```
+~/.vox/
+├── config/             # Tier 1: User & Agent Configuration (0644 / 0600)
+│   ├── settings.jsonc  # Host hardware, VAD, UI theme, active engine selections
+│   ├── providers.jsonc # Cloud endpoints, model identifiers, API keys (0600)
+│   └── agent.jsonc     # Cognitive persona, prompt templates, memory policies
+│
+├── data/               # Tier 2: Durable User State (Backup & Sync Target)
+│   ├── db/             # Primary embedded database files (0700)
+│   ├── history/        # Dictation transcripts in JSON Lines format
+│   └── voices/         # Custom acoustic samples and precomputed voice packs
+│
+├── models/             # Tier 3: Static Model Weights (Overridable via VOX_MODELS_DIR)
+│   ├── manifests/      # Model registry manifests
+│   ├── stt/            # Acoustic & ASR models
+│   ├── tts/            # Speech synthesis voice packs
+│   ├── vad/            # Voice activity detection weights
+│   ├── embedding/      # Dense text embedding models
+│   ├── translit/       # Script transliteration models
+│   ├── classifier/     # Intent routing models
+│   └── llm/            # Local LLM quantized weights
+│
+├── cache/              # Tier 4: Disposable Scratch (Wipeable at any time)
+│   ├── catalog/        # Remote provider model catalog cache
+│   ├── updates/        # Update check manifests
+│   ├── temp/           # Transient audio resample buffers
+│   └── assets/         # Materialized desktop notification icons
+│
+├── diagnostics/        # Tier 5: Observability & Diagnostics
+│   ├── logs/           # Rolling daily operational logs
+│   └── crashes/        # Panic backtraces, minidumps, and crash logs
+│
+└── run/                # Tier 6: Ephemeral Runtime State (0700)
+    ├── vox.sock        # Unix domain IPC trigger socket
+    ├── vox.pid         # Single-instance process lock
+    └── bin/            # Desktop keybind integration scripts
+```
 
 ---
 
-### 4.2 `config/settings.jsonc` (Hardware & Runtime Wiring)
+## 5. Behavior Rules & Lifecycle Invariants
 
-Governs physical devices, input/output hardware, audio DSP sensitivity, appearance, and selected engine backends. Mode `0644`.
-- **`appearance`**: UI theme and accent styling.
-- **`audio`**: Output mode (`Speaker` | `Headset`) and audio input device selection.
-- **`vad`**: Sensitivity threshold, PTT noise gate, silence cutoff duration, speech onset pre-roll, and max speech duration.
-- **`interaction`**: Interaction mode (`Passive` | `PTT`) and pipeline mode (`modular` | `realtime`).
-- **`dictation`**: Enablement, interaction mode, global hotkey, output mode (`paste` | `clipboard` | `tray`), and auto-stop silence duration.
-- **`system`**: First-run setup completion state.
-- **`stt` / `llm` / `tts` Wiring**: Active provider selectors and local compute options (thread pools, GPU layers, model references).
+### 5.1 Filesystem Tiers
+- **RULE-STORAGE-01 (Single Path Gateway)**: All path resolution MUST occur through the centralized paths component. Subsystems MUST NOT hardcode string paths or construct paths independently.
+- **RULE-STORAGE-02 (Disposable Cache Invariant)**: The `cache/` directory MUST contain only reproducible or ephemeral assets. If `cache/` is deleted entirely while the application is stopped, Vox MUST boot cleanly, reconstitute temporary assets, and suffer zero loss of user configuration, sessions, or transcripts.
+- **RULE-STORAGE-03 (Model Decoupling)**: Model weights MUST default to `~/.vox/models/` but MUST prioritize the `VOX_MODELS_DIR` environment variable when present.
+- **RULE-STORAGE-04 (Transient Runtime Sockets)**: Unix domain sockets and process locks MUST reside in `$XDG_RUNTIME_DIR/vox/` when available on Linux, falling back to `~/.vox/run/`. These directories MUST be created with POSIX mode `0700`.
+- **RULE-STORAGE-05 (Secret Isolation)**: API keys and server secrets MUST reside strictly in `config/providers.jsonc`. Telemetry, diagnostics, and UI debug logs MUST NEVER record or output the contents of `providers.jsonc`.
 
----
+### 5.2 Field-Level Configuration Schema Mapping
+The configuration is decomposed into three files according to domain volatility, security tier, and reload semantics:
 
-### 4.3 `config/providers.jsonc` (Infrastructure & Credentials, Mode 0600)
-
-Governs network connections to AI model hosts, API tokens, and provider parameters per subsystem. Strictly restricted to POSIX mode `0600`.
-- **`llm`**: Local server endpoints (`ollama`) and cloud provider configurations (`base_url`, `model`, `api_key`).
-- **`stt`**: Cloud STT provider settings and credentials.
-- **`tts`**: Provider configs for EdgeTTS, Chatterbox, remote Chatterbox worker, and ZipVoice synthesis.
-- **`realtime`**: Active provider selector and service credentials (`gemini_live`, `openai_realtime`, `deepgram_voice_agent`, `elevenlabs_convai`).
-
----
-
-### 4.4 `config/agent.jsonc` (Cognitive Policy & Harness)
-
-Governs prompt engineering, LLM reasoning parameters, context share, and memory policies. Mode `0644`.
-- **`persona`**: System prompt definitions (`modular_prompt`, `realtime_prompt`).
-- **`working_memory`**: Privacy mode, automatic background compaction, context budget limit (`max_context_share`), and web search enablement.
-- **`personal_memory`**: Context retrieval enablement, fact count budgets (`top_k_facts`), similarity cutoffs, and consolidation schedule.
-- **`cognitive`**: LLM generation temperature, compaction temperature, output token ceiling, effective context window, and reasoning flag.
-
----
-
-## 5. Reload Policies & Concurrency Invariants
-
-When any configuration file is updated via IPC or external file modification:
-
-| Configuration Target | Reload Trigger | Action Taken by Runtime | Latency Budget |
+| Configuration Target | Contained Domain Field Groups | Security Tier | Reload Action & Timing Budget |
 | :--- | :--- | :--- | :--- |
-| **`settings.jsonc` (Audio/VAD)** | IPC mutate | Sends `VadCommand` to audio DSP worker thread live. | $\le 100\text{ ms}$ |
-| **`settings.jsonc` (Engine Switch)** | IPC mutate | Rebuilds pipeline subsystem on restart or engine re-init. | Restart / Rebind |
-| **`providers.jsonc` (Credentials/URLs)** | IPC mutate | Updates provider records; LLM cloud provider constructed on engine boot. | Restart required |
-| **`agent.jsonc` (Prompt/Temperature)** | IPC mutate | Read live per LLM chassis turn or prompt builder (`Hot`). | **$0\text{ ms}$** |
-| **`agent.jsonc` (Memory Policies)** | IPC mutate | Updates working/personal memory subsystem live via side-effects (`Hot`). | Immediate |
+| **`config/settings.jsonc`** | - `appearance`: Theme, accent styling<br>- `vad`: Energy threshold, PTT gate, silence duration<br>- `interaction`: Mode (`Passive` \| `PTT`), Pipeline (`Modular` \| `Realtime`)<br>- `dictation`: Output mode, silence auto-stop<br>- `system`: Setup completion flag<br>- `engine_selectors`: Active engine provider IDs | Public (`0644`) | - Audio DSP/VAD: Dispatched via worker command ($\le 100\text{ ms}$)<br>- Engine Switch: Coalesced engine restart cycle |
+| **`config/providers.jsonc`** | - `llm`: Cloud/server endpoints, model IDs, API keys<br>- `stt`: Cloud STT credentials, endpoints<br>- `tts`: Remote TTS credentials, worker URLs<br>- `realtime`: Live voice provider credentials and tokens | Restricted (`0600`) | Instant hot-reload or subsystem rebind on change |
+| **`config/agent.jsonc`** | - `persona`: System prompts (`modular_prompt`, `realtime_prompt`)<br>- `working_memory`: Privacy mode, context share ceiling<br>- `personal_memory`: Context retrieval toggle, fact budgets<br>- `cognitive`: LLM temperature, reasoning mode, max tokens | Public (`0644`) | Next-turn hot reload ($0\text{ ms}$ delay; read live on each turn) |
+
+- **RULE-STORAGE-06 (Format Standards)**: Configuration files MUST parse as JSONC (lenient JSON permitting comments and trailing commas). Append-only transcripts MUST use JSONL (JSON Lines).
+- **RULE-STORAGE-07 (Dynamic Audio Routing Exemption)**: Live microphone input and audio output devices are physical transient system states. They MUST NOT be persisted into `settings.jsonc`, but instead dynamically discovered and updated at runtime.
+
+### 5.3 Startup Migration Protocol
+- **RULE-STORAGE-08 (Automated One-Way Migration)**: On startup before opening database connections or loading models, the system MUST execute an automated legacy layout migration:
+  1. If legacy `vox.db` is found in root, move database files into `data/db/`.
+  2. If legacy `cache/dictation_history.jsonl` exists, move it into `data/history/dictation.jsonl`.
+  3. If legacy `crash_reports/` directory exists, move contents into `diagnostics/crashes/` and remove the old directory.
+  4. Sweep and purge abandoned temporary files (`config/*.tmp`, `config/*.corrupt.*`).
+  5. Apply Zero Backward Compatibility: do not create legacy symlinks.
 
 ---
 
-## 6. Migration & Boot Protocol (`paths::migrate_legacy_layout`)
+## 6. Security & Permissions Matrix
 
-During startup, before any database engine or audio stream is mounted, Vox executes an automated one-way migration:
-
-```
-[Start Boot]
-    │
-    ▼
-Is `~/.vox/vox.db` present in root?
-    ├── YES ──► Create `data/db/` ──► Move `vox.db*` to `data/db/` (Zero Backward Compatibility — no symlinks)
-    └── NO  ──► Proceed
-    │
-    ▼
-Sweep stale config debris
-    └── Remove `config/*.tmp` and `config/*.corrupt.*`
-    │
-    ▼
-Is `~/.vox/cache/dictation_history.jsonl` present?
-    ├── YES ──► Create `data/history/` ──► Move to `data/history/dictation.jsonl`
-    └── NO  ──► Proceed
-    │
-    ▼
-Is `~/.vox/crash_reports/` present?
-    ├── YES ──► Create `diagnostics/crashes/` ──► Move crash logs ──► Remove `crash_reports/`
-    └── NO  ──► Proceed
-    │
-    ▼
-Clean up abandoned files (e.g. `~/.vox/lib/libonnxruntime.so`)
-    │
-    ▼
-[Proceed to VoxDb::open(&paths::db()) and AppState initialization]
-```
+| Target Directory / File | POSIX Mode | Required Ownership | Rationale |
+| :--- | :--- | :--- | :--- |
+| `~/.vox/run/` | `0700` (`drwx------`) | Current user | Protects single-instance lock and IPC trigger socket. |
+| `~/.vox/config/providers.jsonc` | `0600` (`-rw-------`) | Current user | Contains private cloud API tokens and endpoints. |
+| `~/.vox/config/*.jsonc` | `0644` (`-rw-r--r--`) | Current user | User settings accessible to companion desktop scripts. |
+| `~/.vox/data/db/` | `0700` (`drwx------`) | Current user | Personal memory, conversation transcripts, and knowledge graph. |
+| `~/.vox/diagnostics/` | `0700` (`drwx------`) | Current user | Prevents unauthorized access to crash dumps and backtraces. |
 
 ---
 
-## 7. Security, Permissions & Access Matrix
+## 7. Architectural Decisions & Alternatives
 
-| Path | POSIX Mode | Rationale |
-| :--- | :--- | :--- |
-| `~/.vox/run/` | `0700` (`drwx------`) | Contains Unix domain socket and PID files; strictly restricted to current user. |
-| `~/.vox/config/providers.jsonc` | `0600` (`-rw-------`) | Contains private API keys and tokens. |
-| `~/.vox/config/*.jsonc` | `0644` (`-rw-r--r--`) | User preferences readable by desktop utility scripts. |
-| `~/.vox/data/db/` | `0700` (`drwx------`) | Local knowledge graph and personal memories. |
+| Decision | Choice | Rationale | Rejected Alternative |
+| :--- | :--- | :--- | :--- |
+| **3-Way Configuration Split** | Separate `settings.jsonc`, `providers.jsonc`, and `agent.jsonc` | Isolates secrets with file permissions (`0600`), decouples slow hardware restarts from fast cognitive prompt changes. | Monolithic `settings.json` (risks accidental credential leakage in diagnostic dumps and requires restarts for prompt tweaks). |
+| **Lenient JSONC Format** | JSON with Comments and Trailing Commas | Human-readable, allows inline documentation and comments, easily parsed and edited by users. | Strict JSON (fails on trailing commas and comments) or YAML/TOML (parsing quirks, type ambiguities). |
+| **Decoupled Model Weights** | `VOX_MODELS_DIR` environment override | Allows multi-gigabyte models to reside on secondary SSDs or shared volumes without filling home partition. | Mandatory fixed location under `~/.vox/models/` (forces full disk fills on smaller root partitions). |
+| **Transient OS Audio State** | Zero persistence for input/output device selections | OS audio routes change dynamically (headsets plug/unplug); saving static device names causes silent failures on disconnect. | Persisting active device IDs in `settings.jsonc` (leads to stale devices and audio dropouts). |
+
+---
+
+## 8. Verification Criteria
+
+- **Cache Wiping Verification**: Execute `rm -rf ~/.vox/cache/` while the application is shut down. Verify that subsequent launch succeeds without errors and that sessions, settings, and personal memory remain fully intact.
+- **Model Path Override**: Set `VOX_MODELS_DIR=/custom/models/` and verify that model loading probes resolve models from the custom directory path.
+- **Permission Enforcement**: File permission checks on startup verify that `config/providers.jsonc` and `run/` have modes `0600` and `0700` respectively; if too permissive, permissions are corrected automatically.
+- **Turn-Hot Agent Reload**: Mutating the prompt in `config/agent.jsonc` during an active session is observed in the prompt sent to the LLM on the immediate subsequent turn without application restart.
+- **Migration Verification**: Creating mock legacy files (`~/.vox/vox.db`, `~/.vox/cache/dictation_history.jsonl`) triggers migration into `data/db/` and `data/history/` on boot with 0 legacy symlinks created.

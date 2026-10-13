@@ -1,18 +1,41 @@
-# Notification & Toast Unified Architectural Specification (Vox v2)
+# Notification & Alerting Specification
 
-- **Status**: Target Specification (SSOT for Notifications, Toasts & Pipeline Errors)
-- **Policy**: Zero Backward Compatibility (ZBC) — Clean architectural break; no legacy wrappers.
-- **Scope**: Replaces legacy `ToastLevel`, `Actionability`, ad-hoc `show_toast` calls, and loose notification writes across the entire Vox application.
+## 1. Intent & Scope
+
+### 1.1 Lane
+Alerting & Task Remediation Behavioral Specification. This document specifies the notification routing engine, delivery channels, user attention states, and task remediation contracts.
+
+### 1.2 Purpose
+Vox requires a deterministic alerting model that separates engine execution flow from visual urgency, delivers non-intrusive alerts outside the application window, and provides actionable background task management without notification clutter.
+
+### 1.3 Out of Scope
+- Database table schemas, indexes, and SQL constraints (governed by `db-spec.md`).
+- Frontend IPC bridge serialization and command signatures (governed by `ipc-spec.md`).
+- Visual CSS themes, spacing tokens, and typography (governed by `design-spec.md`).
+- Pipeline audio processing and error generation (governed by `events-spec.md`).
 
 ---
 
-## 1. The Three Orthogonal Dimensions
+## 2. User Stories
 
-The system separates concerns into three distinct, independent axes. No axis is overloaded to imply another:
+| ID | Story |
+| :--- | :--- |
+| **US-NOTIF-01** | As a user dictating into an external application, I want a transient confirmation toast that auto-dismisses after 3 seconds, so that I know my speech was pasted without switching windows. |
+| **US-NOTIF-02** | As a user managing background tasks, I want compaction and memory consolidation records stored quietly in the drawer with duplicate rollups, so that I have a clean audit history without intrusive popups. |
+| **US-NOTIF-03** | As a user encountering an uncompacted session or a disconnected microphone, I want an actionable drawer card with a single-click action button, so that I can remediate the issue immediately. |
+| **US-NOTIF-04** | As a user who dismissed an actionable notification, I want my dismissal honored permanently across application restarts, so that the system never pesters me with dismissed items. |
+| **US-NOTIF-05** | As an active voice speaker, I want voice turn failures to cancel pending speech cleanly and alert me without freezing the audio loop, so that conversation recovers immediately. |
+| **US-NOTIF-06** | As an Android user, I want background tasks sent to quiet notification channels while critical errors show heads-up banners, so that notification priority matches mobile conventions. |
+
+---
+
+## 3. The Three Orthogonal Dimensions
+
+Alerting separates concerns across three independent dimensions. No dimension implies or overrides another:
 
 ```mermaid
 flowchart TD
-    subgraph Axis 1: Engine Runtime
+    subgraph Axis 1: Engine Control Flow
         PI["PipelineImpact<br/>(None | Degraded | TurnAborted | SessionHalted)"]
     end
 
@@ -20,370 +43,140 @@ flowchart TD
         SV["Severity<br/>(Info | Warning | Critical)"]
     end
 
-    subgraph Axis 3: User Interaction & Retention
+    subgraph Axis 3: Retention & User Action
         AC["Action<br/>(Transient | Receipt | Interactive)"]
     end
 
-    subgraph Deterministic Router
-        RC["resolve_channel(impact, severity, action)"]
+    subgraph Channel Router
+        CR["Resolve Channel"]
     end
 
-    subgraph Output Surfaces
-        SM["Engine State Machine (Ready / Error)"]
-        TO["ToastOnly (Floating HUD Overlay)"]
-        NO["NotificationOnly (Persistent SQLite Drawer)"]
-        TN["ToastAndNotification (HUD Overlay + SQLite Drawer)"]
+    subgraph Delivery Channels
+        TO["ToastOnly<br/>(OS Desktop Notification)"]
+        NO["NotificationOnly<br/>(Drawer Storage)"]
+        TN["ToastAndNotification<br/>(OS Toast + Drawer Card)"]
     end
 
-    PI -->|Drives Execution| SM
-    PI & SV & AC --> RC
-    RC -->|ToastOnly| TO
-    RC -->|NotificationOnly| NO
-    RC -->|ToastAndNotification| TN
+    PI & SV & AC --> CR
+    CR -->|Transient| TO
+    CR -->|Receipt or Routine Task| NO
+    CR -->|Critical or Aborting Task| TN
 ```
 
-### 1.1 `PipelineImpact` (Engine Control Flow)
-- **Question Answered**: *What does the runtime audio engine and state machine do?*
-- **Scope**: Controls Tokio tasks, CPAL audio streams, turn cancellation tokens, and `InteractionState` transitions.
-- **Values**:
-  - `None`: The event does not originate from or affect the voice interaction loop (e.g. Dictation, Memory Compaction, Scheduler, Settings).
-  - `Degraded`: The voice turn continues without stopping. State transition: None. Playback continues with reduced fidelity (e.g. dropped TTS, skipped RAG).
-  - `TurnAborted`: The active voice turn fails cleanly. Turn token is cancelled, pending synthesis is drained, and state machine resets directly to `Ready`.
-  - `SessionHalted`: Unrecoverable breakdown. Playback is cancelled, token tripped, and state machine transitions to `Error`.
+### 3.1 `PipelineImpact` (Engine Flow)
+Answers: *What must the voice runtime do?*
+- `None`: Does not affect the conversational turn loop (e.g., dictation, background compaction, settings).
+- `Degraded`: The voice turn continues. Quality drops (e.g., dropped speech synthesis fallback, skipped memory retrieval).
+- `TurnAborted`: The active turn fails cleanly. Pending speech is cancelled and the assistant resets to ready state.
+- `SessionHalted`: Unrecoverable breakdown. Speech stops, active session ends, and the assistant enters error state.
 
-### 1.2 `Severity` (Visual Urgency & Styling)
-- **Question Answered**: *What visual weight, badge token, and priority does the user see?*
-- **Scope**: Universal across all UI surfaces (HUD toast, Drawer cards, Logs).
-- **Values**:
-  - `Info`: Routine success, normal telemetry, informational audit receipts (Violet / Neutral styling).
-  - `Warning`: Recoverable issues, degraded audio/transcription quality, high system load, missed schedules (Amber styling).
-  - `Critical`: Unrecoverable breakdowns, missing credentials, hardware disconnects, broken invariants (Rose / Red styling).
+### 3.2 `Severity` (Visual Urgency)
+Answers: *What visual priority does the user see?*
+- `Info`: Routine success, normal telemetry, or informational receipts.
+- `Warning`: Recoverable degradation, missed schedules, or high load.
+- `Critical`: Unrecoverable errors, invalid credentials, or disconnected hardware.
 
-### 1.3 `Action` (Retention & Remediation Contract)
-- **Question Answered**: *Where does this event live, and what must the user do?*
-- **Scope**: Determines database persistence and UI interactive controls.
-- **Values**:
-  - `Transient`: Ephemeral real-time feedback for active outside-app interaction. Never written to SQLite; zero persistent drawer clutter. Auto-dismisses after 3s.
-  - `Receipt`: Passive historical record. Written to SQLite drawer; contains no actionable user button. Never triggers a floating HUD popup over external apps.
-  - `Interactive(ActionPayload)`: Actionable task or remediation requiring an action icon button or deep link (e.g. `"Compact"`, `"Consolidate"`, `"Open Settings"`).
+### 3.3 `Action` (Retention & Interaction)
+Answers: *Where does the event live, and what does the user do?*
+- `Transient`: Ephemeral feedback for live interaction. Never saved to the database. Auto-dismisses after 3 seconds.
+- `Receipt`: Passive historical record. Saved to the drawer; contains no action button. Never displays an external OS toast.
+- `Interactive`: Actionable task or remediation card. Saved to the drawer with a primary action button (e.g., Compact, Consolidate, Open Settings).
 
 ---
 
-## 2. Decommission Ledger
+## 4. Behavior Rules & Lifecycle Invariants
 
-The following legacy constructs are permanently removed from Vox:
+### 4.1 Channel Resolution Rules
+- **RULE-NOTIF-01 (Transient Handling)**: When `Action` is `Transient`, the delivery channel MUST be `ToastOnly`. The event MUST NOT be saved to the database.
+- **RULE-NOTIF-02 (Receipt Handling)**: When `Action` is `Receipt`, the delivery channel MUST be `NotificationOnly`. The event MUST be stored in the drawer without displaying an external OS popup.
+- **RULE-NOTIF-03 (Interactive Routing)**: When `Action` is `Interactive`:
+  - If `PipelineImpact` is `SessionHalted` OR `Severity` is `Critical`, the channel MUST be `ToastAndNotification`.
+  - If `PipelineImpact` is `TurnAborted` AND `Severity` is `Warning`, the channel MUST be `ToastAndNotification`.
+  - For all other interactive events, the channel MUST be `NotificationOnly`.
 
-| Legacy Construct | Location | Replacement | Architectural Rationale |
+### 4.2 Deterministic Routing Matrix
+
+| `PipelineImpact` | `Severity` | `Action` | Resolved Channel | System Behavior & UX Contract |
+| :--- | :--- | :--- | :--- | :--- |
+| `None` | `Info` | `Transient` | **`ToastOnly`** | External desktop toast for 3s. No database write. |
+| `None` | `Info` | `Receipt` | **`NotificationOnly`** | Silent drawer record. No toast popup. |
+| `None` | `Info` | `Interactive` | **`NotificationOnly`** | Actionable drawer card with task button. No popup. |
+| `None` | `Warning` | `Receipt` | **`NotificationOnly`** | Silent warning record in drawer. |
+| `None` | `Warning` | `Interactive` | **`NotificationOnly`** | Actionable remediation card in drawer. |
+| `Degraded` | `Warning` | `Transient` | **`ToastOnly`** | External toast warning. Turn continues uninterrupted. |
+| `Degraded` | `Warning` | `Interactive` | **`NotificationOnly`** | Drawer card. Turn continues uninterrupted. |
+| `TurnAborted` | `Warning` | `Transient` | **`ToastOnly`** | External toast alert. Turn resets to ready state. |
+| `TurnAborted` | `Warning` | `Interactive` | **`ToastAndNotification`** | External toast alert and actionable drawer card. |
+| `SessionHalted` | `Critical` | `Transient` | **`ToastOnly`** | External toast alert. Session transitions to error state. |
+| `SessionHalted` | `Critical` | `Interactive` | **`ToastAndNotification`** | External toast alert and actionable drawer card. |
+
+### 4.3 Persistence & Task Idempotency
+- **RULE-NOTIF-04 (Receipt Rollup)**: Receipts sharing a common correlation group key MUST be displayed in the UI as a single card with an occurrence counter `(×N)` and latest timestamp, preserving complete history without drawer spam.
+- **RULE-NOTIF-05 (Interactive Task Idempotency)**: Interactive notifications MUST use an entity-scoped group key (e.g., specific session ID or device name). If an active card already exists for that entity, incoming alerts MUST update the existing card in place rather than creating duplicate buttons.
+- **RULE-NOTIF-06 (In-Place Task Resolution)**: When an actionable remediation finishes or fails, the system MUST update the existing notification card in place (`resolution: resolved` or `failed`). It MUST NOT create a secondary receipt card.
+- **RULE-NOTIF-07 (Dismissal Sovereignty)**: Once a user dismisses a notification, that dismissal MUST be permanent. System startup sweeps and background checkers MUST NEVER recreate or resurrect a dismissed card for that entity.
+- **RULE-NOTIF-08 (Hot-Path Isolation)**: Real-time audio threads and speech detection loops MUST NEVER dispatch notifications or write to the database directly. They MUST emit pipeline events; alerting MUST execute asynchronously.
+
+---
+
+## 5. Platform Delivery Contracts
+
+```mermaid
+flowchart TD
+    In[Notification Dispatch Request] --> Channel{Resolved Delivery Channel}
+    
+    Channel -->|ToastOnly| ToastRouter{Target Platform?}
+    Channel -->|NotificationOnly| DrawerStore[(SQLite Notifications Table)]
+    Channel -->|ToastAndNotification| Split[Dispatch to Both Toast & Drawer]
+    
+    Split --> ToastRouter
+    Split --> DrawerStore
+    
+    ToastRouter -->|Linux Desktop| DBus[Linux D-Bus notify-send]
+    ToastRouter -->|macOS Desktop| NC[Apple Notification Center]
+    ToastRouter -->|Windows Desktop| AC[Windows Action Center]
+    ToastRouter -->|Android Mobile| Channels{Severity Level}
+    
+    Channels -->|Info| VoxInfo[vox_info Channel: Low / Silent]
+    Channels -->|Warning / Critical| VoxUrgent[vox_urgent Channel: High / Heads-Up]
+    
+    DBus & NC & AC --> ToastFallback{Dispatch Succeeded?}
+    ToastFallback -- Yes --> ToastEnd([Toast Rendered])
+    ToastFallback -- No --> DrawerStore
+```
+
+### 5.1 Desktop Notification Surface
+- Desktop toasts MUST use native OS notification dispatchers (Linux D-Bus `notify-send`, macOS Notification Center, Windows Action Center).
+- Desktop toasts MUST NOT steal input focus or open separate webview windows.
+- If native toast dispatch fails, the system MUST automatically save the alert to the persistent drawer (`NotificationOnly`) so that alerts are never lost.
+- Multi-step operations (such as dictation listening $\to$ transcribing $\to$ finished) MUST update a single resident notification in place via platform replace IDs rather than stacking popups.
+
+### 5.2 Android Notification Surface
+- On Android, where transient toasts cannot be updated dynamically, transient alerts are dispatched to native notification channels.
+- Android notifications MUST map to two write-once channels based on `Severity`:
+  - `vox_info`: Low importance (silent, shade only) for `Severity::Info`.
+  - `vox_urgent`: High importance (heads-up banner with sound) for `Severity::Warning` and `Severity::Critical`.
+- Channel importance is write-once and MUST NOT be reset or deleted on startup to preserve user preferences.
+
+---
+
+## 6. Architectural Decisions & Alternatives
+
+| Decision | Choice | Rationale | Rejected Alternative |
 | :--- | :--- | :--- | :--- |
-| `ToastLevel` | `core/events.rs` | `Severity` | Eliminated redundant 4-level styling enum; unified with system severity. |
-| `Actionability` | `core/error.rs` | `Action` | Replaced binary `None/Actionable` trap with 3-way `Transient / Receipt / Interactive`. |
-| `show_toast()` direct calls | Across 8 files | `notify()` front door | Upstream code must not bypass the notification router to spawn windows. |
-| Loose category strings | Across 8 files | `NotificationCategory` | Closed compiler-checked enum prevents typo drift and unhandled categories. |
-| `notifications.is_read` | `schema.rs` | `status = 'read'` | Redundant boolean column dropped in Schema v4. |
-| DB `UNIQUE(group_key)` | Draft plan | Append + Index | Overwriting rows destroys historical event auditability; DB stays append-only. |
-| `trigger_session_compaction` | `ipc/notifications.rs` | `execute_notification_action` | 1-off IPC commands replaced with a polymorphic action execution contract. |
+| **Alerting Dimensions** | 3 independent axes (`PipelineImpact`, `Severity`, `Action`) | Decouples engine execution control from UI visual weight and persistence. | Single overloaded enum (forced styling choices to dictate error recovery behavior). |
+| **Desktop Transient Alerts** | Native OS dispatchers | 0MB additional webview RAM, native OS appearance, and zero window focus stealing. | Custom transparent webview overlay (added 40MB RAM, flickered on Wayland, stole focus). |
+| **Task Idempotency** | Entity-scoped in-place updates via correlation key | Prevents duplicate buttons for the same task in the drawer. | Appending every task event as a new card (flooded drawer with duplicate buttons). |
+| **Task Resolution Model** | In-place status update (`resolution: resolved`) | Converts actionable cards into clean receipts without visual jumping or card deletions. | Deleting actionable card and inserting a separate receipt card (caused UI race conditions). |
+| **Permanent Dismissal** | Dismissed status honored permanently across boots | Respects user intent and avoids re-nagging for previously dismissed items. | Regenerating alerts on every startup (annoyed users by ignoring dismissals). |
+| **Android Channel Model** | Write-once dual channels split by `Severity` | Conforms to mobile notification importance standards while preserving user system overrides. | Recreating channels on boot (wiped user channel customizations). |
 
 ---
 
----
+## 7. Verification Criteria
 
-## 3. System Boundary & Service Structure
-
-To keep domain boundaries pristine, responsibilities are partitioned strictly between three locations:
-
-1. **`core/error.rs` (Data Shapes Only)**:
-   - Contains strictly the data definition of `PipelineError` and domain error enums (`AudioError`, `SttError`, `TtsError`, etc.).
-   - Contains **zero** notification logic, **zero** toast emission, and **zero** persistence queries.
-2. **`services/notifications/` (The Notification Service)**:
-   - Owns the universal `notify()` front door function:
-     ```rust
-     pub async fn notify<R: tauri::Runtime>(
-         app: &AppHandle<R>,
-         db: &turso::Connection,
-         params: NotificationParams,
-     ) -> Result<Option<String>>
-     ```
-   - Owns the 3D routing logic (`resolve_channel`).
-   - Owns task idempotency and entity-scoping checks before writing to SQLite.
-   - Owns the polymorphic backend action execution dispatcher (`execute_notification_action`).
-   - Manages communication with native OS desktop notification dispatchers and `persistence/notifications.rs` (SQLite).
-3. **`pipeline/assistant/error.rs` (The Voice Turn Error Boundary)**:
-   - Receives `PipelineError` on turn failures.
-   - Drives audio engine state machine transitions based on `PipelineImpact`.
-   - Delegates user alerting to the Notification Service via `notify()`.
-4. **Thread Placement Invariant**:
-   - Audio hot path workers (CPAL callback, VAD inference loop, dedicated OS threads) must **NEVER** call `notify()` or acquire database locks directly.
-   - OS workers emit internal pipeline events (`VoxEvent::Error(PipelineError)`). Alerting is delegated to `notify()` strictly within the pipeline router or async handlers where `AppHandle` and Tokio runtimes are available.
-
----
-
-## 4. Canonical Data Contracts
-
-### 4.1 Universal Severity
-Represents visual urgency, badge weight, and priority across all surfaces:
-- **`Info`**: Normal operations, successful dictation output, non-blocking receipts. Visual language: neutral card border.
-- **`Warning`**: Recoverable degradation, dropped audio buffer, high system load, missed schedules. Visual language: amber card border.
-- **`Critical`**: Unrecoverable breakdowns, authentication failures, hardware disconnects, missing model assets. Visual language: red/rose card border.
-
-Severity is expressed on the card **border only** — never as a word, badge, or icon in the card header, and never by the category's icon or tile colour, or the two axes become indistinguishable.
-
-### 4.2 Universal Action Taxonomy
-Represents retention in storage and expected user interaction:
-- **`Transient`**: Ephemeral feedback for live interaction (e.g. Dictation Pasted, empty speech). Delivered only to the transient surface; never written to SQLite; auto-dismisses after 3 seconds. **Android divergence (§8.6):** the platform has no true toast, so these are real notifications and leave a trace in Notification History. Routing is identical on both platforms; only the surface differs.
-- **`Receipt`**: Passive historical audit record (e.g. Compaction Finished, Consolidation Succeeded). Persisted to the SQLite drawer as a read/unread log. Never triggers a floating HUD popup over external apps.
-- **`Interactive`**: Actionable task or remediation card. Persisted to the SQLite drawer with a primary action button. Dual-emits to the HUD overlay when severity is Critical or turn-aborting.
-
-### 4.3 Action Payload Contract (`action_payload`)
-The `action_payload` field contains strictly the executable parameters required when the user clicks the card's primary action:
-- **Backend Dispatched Actions** (Executed via IPC command `execute_notification_action(id)`):
-  - **`CompactSession`**: Carries `session_id` (numeric identifier) to run compaction.
-  - **`ConsolidateMemory`**: Carries no parameters; invokes the consolidation engine.
-  - **`Retry`**: Carries `operation` name and target resource identifier.
-- **Frontend Handled Actions** (Executed client-side; zero backend IPC invocation):
-  - **`Navigate`**: Carries `target` route (e.g. `"settings/audio"`, `"settings/ai"`, `"history?session=12"`). Handled directly by the React client via router navigation (`navigate(payload.target)`).
-
-### 4.4 Card Display Metadata & Task Resolution Contract (`metadata`)
-The `metadata` field is a JSON object containing read-only display context and the orthogonal task resolution lifecycle state:
-- **Lifecycle Attributes**:
-  - `resolution`: Task outcome state (`"pending" | "resolved" | "failed"`). Defaults to `"pending"` on interactive cards; `"resolved"` on receipts.
-- **Display Attributes**:
-  - Session cards: `{"uncompacted_turns": 14, "resolution": "pending"}` (renders turn count pill; drives compaction icon).
-  - Hardware cards: `{"device_name": "USB Audio Interface", "resolution": "pending"}` (renders affected device).
-  - Model cards: `{"model_id": "qwen2.5-0.5b", "resolution": "pending"}` (renders missing model name).
-- **Execution Invariant**: High-frequency execution progress (spinners, percentages) is transient and managed in frontend state. Upon task completion or failure, the backend updates `metadata.resolution` in-place (`"resolved"` or `"failed"`).
-
-### 4.5 Closed Categories
-Categories are strictly constrained to seven domain scopes:
-`SessionCompaction`, `MemoryConsolidation`, `Pipeline`, `Dictation`, `Hardware`, `Models`, `Storage`.
-
-### 4.6 Persisted Notification Entity
-Every notification written to SQLite contains the following attributes:
-- `id`: Globally unique text identifier.
-- `group_key`: Correlation key used for task idempotency and drawer rollup.
-- `category`: Closed domain category.
-- `severity`: Universal severity (`info`, `warning`, `critical`).
-- `action_type`: Interaction classification (`receipt` or `interactive`).
-- `action_payload`: Serialized executable action parameters.
-- `title`: Plain-language card title.
-- `message`: Plain-language description or instructions.
-- `status`: Attention state (`unread`, `read`, or `dismissed`).
-- `session_id`: Optional associated conversation session identifier.
-- `metadata`: Serialized read-only display context.
-- `created_at`: Creation timestamp in millisecond epoch.
-- `updated_at`: Last update timestamp in millisecond epoch.
-
-### 4.7 Notification Category Tokens
-Category colour is carried by a dedicated CSS token family, one per closed category (§4.5), named `--notif-session-compaction`, `--notif-memory-consolidation`, `--notif-pipeline`, `--notif-dictation`, `--notif-hardware`, `--notif-models`, `--notif-storage` (RGB triplets, consumed as `rgb(var(--notif-<category>))` / `rgba(var(--notif-<category>), α)`).
-- **Derivation**: Every token is derived at runtime from the live `--accent` HSL base via harmonic hue rotation (the legend palette approach) and recomputed on every theme/accent write, so a theme flip interpolates them with the rest of the token set.
-- **Accent Exclusion Invariant**: A category token must never resolve to the main `--accent` colour — the accent remains reserved for global/primary affordances, and every category (including `SessionCompaction`) has its own hue.
-- **Scope**: Category tokens are the colour authority for the card kicker (icon + label) and the card's primary action button. Severity keeps its independent family (`--warning` / `--error`) and is expressed on the card border only (§4.1).
-- **Fallbacks**: `index.css` declares static `:root` defaults for all seven so the drawer never renders an undefined colour before the theme module boots.
-
-
----
-
-## 5. The 3D Deterministic Routing Engine
-
-### 5.1 Channel Resolution Rules
-Upstream callers never specify the delivery channel. The Notification Service resolves the channel via the following deterministic rules:
-
-1. **Transient Rule**: If `Action` is `Transient`, the delivery channel is strictly **`ToastOnly`**. Zero database records are written.
-2. **Receipt Rule**: If `Action` is `Receipt`, the delivery channel is strictly **`NotificationOnly`**. A silent record is added to the drawer; no floating HUD popup is shown.
-3. **Interactive Branching Rule**: If `Action` is `Interactive`:
-   - If `PipelineImpact` is `SessionHalted` OR `Severity` is `Critical`: The channel is **`ToastAndNotification`**. The incident halted the session or broke operation, so the user receives an immediate HUD alert outside the app and an actionable card in the drawer.
-   - If `PipelineImpact` is `TurnAborted` AND `Severity` is `Warning`: The channel is **`ToastAndNotification`**. The turn failed due to an actionable reason (e.g. context limit), so the user sees immediate feedback plus a drawer link to fix it.
-   - For all other combinations (e.g. routine background tasks like session compaction): The channel is **`NotificationOnly`**. The card appears in the drawer without interrupting external applications.
-
-### 5.2 The 3D Truth Table
-
-| `PipelineImpact` | `Severity` | `Action` | Resolved Channel | System Behavior & UX Contract | Real Codebase Examples |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| `None` | `Info` | `Transient` | **`ToastOnly`** | HUD overlay for 3s. Zero DB write. | `dictation_pasted` snippet; empty STT notice. |
-| `None` | `Info` | `Receipt` | **`NotificationOnly`** | Silent drawer card. Zero HUD popup. | Session #12 compaction done; consolidation finished. |
-| `None` | `Info` | `Interactive` | **`NotificationOnly`** | In-app task card with action icon button. | Session #12 uncompacted with action icon. |
-| `None` | `Warning` | `Receipt` | **`NotificationOnly`** | Silent warning card in drawer. | Consolidation deferred (system busy). |
-| `None` | `Warning` | `Interactive` | **`NotificationOnly`** | In-app remediation card. | Daily consolidation missed with `[Consolidate]`. |
-| `Degraded` | `Warning` | `Transient` | **`ToastOnly`** | Ephemeral HUD warning. Turn continues. | Dropped audio buffer frame; degraded TTS fallback. |
-| `Degraded` | `Warning` | `Interactive` | **`NotificationOnly`** | In-app drawer card. Turn continues. | Identity memory approaching limit with `[Settings]`. |
-| `TurnAborted` | `Warning` | `Transient` | **`ToastOnly`** | HUD alert. Turn resets to Ready. | Intermittent STT decoding glitch (clean abort). |
-| `TurnAborted` | `Warning` | `Interactive` | **`ToastAndNotification`** | HUD alert + Drawer card. Turn resets to Ready. | Prompt exceeds context window with `[Settings]`. |
-| `SessionHalted` | `Critical` | `Transient` | **`ToastOnly`** | HUD alert. Session halts to Error. | Engine panic / thread crash (no user fix available). |
-| `SessionHalted` | `Critical` | `Interactive` | **`ToastAndNotification`** | HUD alert + Drawer card. Session halts. | Provider 401 Auth fail, Mic unplugged, Model missing. |
-
----
-
-## 6. Pipeline Error Translation & State Machine Invariants
-
-### 6.1 State Machine Execution Contract
-When an error occurs during a voice turn, the runtime error boundary must execute two independent steps:
-
-1. **State Machine Execution (Driven strictly by `PipelineImpact`)**:
-   - `None` or `Degraded`: The voice turn continues uninterrupted. No state transition occurs and no turn tokens are cancelled.
-   - `TurnAborted`: The active turn fails cleanly. The runtime cancels the active turn token, clears pending speech synthesis jobs, and resets the state machine directly to `Ready`.
-   - `SessionHalted`: An unrecoverable breakdown occurred. The runtime stops playback, trips the cancellation token, drains pending jobs, and transitions the state machine to `Error`.
-2. **Notification Delegation**:
-   - The error boundary generates a correlation group key (`pipeline_error:<source>`) and delegates alerting directly to the Notification Service's `notify()` entry point, passing the error's `impact`, `severity`, and `action`.
-   - The error boundary contains no toast window creation or SQLite insertion logic.
-
----
-
-## 7. Persistence Schema & Storage Invariants (Schema v4)
-
-### 7.1 Entity Attributes Table
-
-| Field | Type | Constraints | Description |
-| :--- | :--- | :--- | :--- |
-| `id` | Text | Primary Key | Globally unique notification identifier |
-| `group_key` | Text | Not Null | Correlation key for task idempotency and feed rollup |
-| `category` | Text | Not Null | Closed category (`session_compaction`, `pipeline`, etc.) |
-| `severity` | Text | Not Null | Visual severity (`info`, `warning`, `critical`) |
-| `action_type` | Text | Not Null | Interaction kind (`receipt` or `interactive`) |
-| `action_payload` | Text | Not Null, Default `'{}'` | JSON parameters for polymorphic action execution |
-| `title` | Text | Not Null | Plain-language user-facing title |
-| `message` | Text | Not Null | Plain-language user-facing description |
-| `status` | Text | Not Null, Default `'unread'` | Attention state (`unread`, `read`, `dismissed`) |
-| `session_id` | Integer | Nullable, Foreign Key | Optional associated conversation session |
-| `metadata` | Text | Not Null, Default `'{}'` | Read-only domain display context (e.g. turn counts) |
-| `created_at` | Integer | Not Null | Millisecond epoch timestamp of creation |
-| `updated_at` | Integer | Not Null | Millisecond epoch timestamp of last update |
-
-*Indexes:*
-- Status and creation recency: `(status, created_at DESC)`
-- Group correlation lookup: `(group_key, status)`
-- Session association lookup: `(session_id)`
-
-### 7.2 Storage Invariants
-1. **Receipt Auditing (Append-Only)**: Notifications with `Action::Receipt` (e.g. `Memory Consolidated`) are strictly append-oriented. Every event inserts a new database record under a stream-level `group_key` (e.g. `"memory_consolidation:daily"`). The frontend drawer visualizes these as a single rolled-up card with an occurrence counter `(×N)` and latest timestamp, preserving complete audit history without drawer spam.
-2. **Transient Exclusion**: Events with `Action::Transient` are never committed to SQLite.
-3. **Card Attention Isolation**: Card status is strictly user-governed (`unread`, `read`, `dismissed`). Background job execution progress is transient and must never overwrite card status with job states (e.g. `'completed'`, `'failed'`).
-4. **Interactive Task Idempotency (Entity-Scoped In-Place Update)**: Notifications with `Action::Interactive` must use an entity-scoped `group_key` (e.g. `"session_compaction:12"`, `"hardware_disconnect:mic"`). This isolates separate sessions into distinct actionable cards in the UI. If an active (non-dismissed) card already exists for that entity, the service executes an in-place `UPDATE` (refreshing `metadata`, `message`, and `updated_at`) rather than creating duplicate actionable buttons for the same entity.
-5. **In-Place Task Resolution (Zero Ghost Receipts)**: When a background remediation action (`CompactSession`, `ConsolidateMemory`, `Retry`) completes or fails, the backend updates the existing interactive notification row in-place (`metadata.resolution = 'resolved' | 'failed'`, updated `message`) and emits `NotificationUpdated`. It must **NOT** create a separate receipt notification or delete the card.
-6. **User Dismissal Sovereignty on Boot**: During startup sweeps (such as `reconcile_uncompacted_sessions_on_boot`), if an interactive notification for `group_key` already exists in SQLite (even if `status = 'dismissed'`), the system must **never** resurrect it or insert a duplicate row. The user's dismissal decision is permanent and sovereign.
-
----
-
-## 8. Runtime Delivery Channel Mechanics
-
-### 8.1 Floating HUD Overlay Channel (`ToastOnly`)
-- **Target**: Dispatched to the floating transparent HUD overlay window.
-- **Payload Attributes**: Title, message, severity, and auto-dismiss duration (default 3000ms).
-- **Foreground Focus Suppression**: When the main application window is currently focused and in the foreground, floating OS overlay windows are suppressed to prevent visual jitter.
-- **Text Formatting Contracts**:
-  - Transcribed text paste displays a preview snippet: `“<start_words> ... <end_words>”` (up to 40 characters).
-  - Empty recognition displays: *"Speech detected, but no words recognized."*
-  - Manual text copying produces no toast overlay.
-
-### 8.2 Drawer Channel (`NotificationOnly`)
-- **Target**: Committed to SQLite and emitted to active desktop views via event bus.
-- **Zero Overlay**: Never opens or flashes the HUD overlay window.
-
-### 8.3 Dual Channel (`ToastAndNotification`)
-- **Atomic Dispatch**: Emits simultaneously to the HUD overlay window and commits a persistent record to SQLite.
-
-### 8.4 Native OS Desktop Notification Channel (`ToastOnly` / `ToastAndNotification`)
-- **Native OS Surface**: Ephemeral floating alerts are exclusively delivered via native OS desktop notification dispatchers directly from the Rust backend, completely eliminating custom transparent webviews (`AppWindow::Toast`), Cairo shape masks, and compositor black flashes:
-  - **Linux**: FreeDesktop D-Bus via `notify-send` with `-a Vox`, `-i ~/.vox/icons/vox.png`, and Pango markup (slides down from top-center in GNOME).
-  - **macOS**: Apple Notification Center via built-in `osascript` (slides in from top-right with chime and app title).
-  - **Windows**: Windows Action Center via PowerShell WinRT `[Windows.UI.Notifications.ToastNotificationManager]` (pops up in corner).
-- **Non-Stealing / Non-Intrusive Semantics**: Native OS notifications are managed by the host desktop shell outside the application window, so they never steal input focus, never require foreground window suppression, and consume 0MB additional webview RAM.
-- **Delivery Outcome Semantics**: `show_toast` returns an explicit delivery outcome (`Shown`, `Failed`):
-  - `Shown`: Native OS desktop notification successfully spawned via platform dispatcher.
-  - `Failed`: Subprocess dispatch failed. The Notification Service logs the error and gracefully falls back to persistent drawer storage (`NotificationOnly`) so alerts are never swallowed.
-- **Replaceable Live Notifications (Dictation lifecycle, service-owned)**: Multi-phase lifecycles (`Listening` → live partials → `Transcribing` → `Pasted`/`Copied`/`No Speech`) reuse a single notification card instead of stacking popups. Ownership sits strictly inside the Notification Service (`services/notifications/lifecycle.rs`); upstream dictation code calls only the lifecycle API and never the toast dispatcher directly (§11.1):
-  - **Linux**: First dispatch captures the resident replace ID (`notify-send --print-id`); subsequent phases update in place via `notify-send --replace-id` with throttled (~250ms) partial text. Terminal states replace the same ID one final time with terminal title/body and normal expiry. When no resident card exists, terminal states route through the universal `notify()` front door (plain toast + drawer elevation on dispatch failure).
-  - **macOS / Windows**: Dispatchers without replace semantics send a single terminal notification only (no live updates) to avoid popup spam.
-  - **Unverified delivery is failure**: If the platform reports success but delivery cannot be verified (e.g. Wayland compositor swallowing synthetic input), the lifecycle terminates on the fallback card (`📋 Dictation Copied (press Ctrl+V)`) with persistent expiry, and clipboard restore is skipped so the transcript stays pastable.
-
-### 8.5 Transient Surface Facade (`ToastOnly` / `ToastAndNotification`)
-- **Routing is unchanged by platform.** `resolve_channel` (§5.1) and the 3D truth table (§5.2) are platform-independent. Which platform is running never alters *whether* an alert is emitted, only *where it is emitted*. This is the "1:1 map" invariant: on Android the same `Action::Transient` produces the same decision it does on desktop.
-- **Facade**: `TransientAlert` (title, message, severity, duration) plus `deliver_transient()` in `services/notifications/mod.rs` resolve to exactly one sink per build:
-  - `services/notifications/transient.rs` — desktop, delegating to the native dispatchers of §8.4.
-  - `services/notifications/android_transient.rs` — Android, described in §8.6.
-- **Title decoration**: titles are sent verbatim. The historical severity-emoji prefixer is removed on every platform; urgency is conveyed by the notification surface, not by glyphs in the title.
-
-### 8.6 Android Notification Surface (`ToastOnly` / `ToastAndNotification`)
-- **No true toast exists on Android.** Every transient alert is a real notification, so this section is a deliberate, documented divergence from the `Transient` "never persisted" contract of §4.2.
-- **Two channels, split on `Severity`** — the only control over whether an alert overlays other apps:
-  | Channel | Importance | Severity | Behaviour |
-  |---|---|---|---|
-  | `vox_info` | `Low` | `Info` | Shade only, silent. Never interrupts. |
-  | `vox_urgent` | `High` | `Warning`, `Critical` | Heads-up banner over other apps, with sound. |
-  `High` is also the only importance the system does not suppress while Vox itself is in the foreground.
-- **Channel importance is write-once.** `createChannel` is idempotent per id; deleting and recreating a channel discards the user's own importance override in Settings. Channels are created once at bootstrap and never recreated.
-- **Auto-dismiss**: the notification is removed `duration_ms` after posting, approximating desktop expiry. This is **best-effort** — if Android kills the process first, the notification remains posted. A lingering notification is preferred to a lost alert.
-- **Icon**: `ic_vox_notification` (`res/drawable/ic_vox_notification.xml`). Monochrome white (`#FFFFFFFF`) vector stencil on a transparent 24×24 dp canvas with 2 dp safe padding. Android Notification Manager tints the alpha stencil automatically.
-- **Permission**: `POST_NOTIFICATIONS`, runtime-granted on Android 13+ (API 33). Declared-only below that. IPC: `notification_permission_state` and `request_notification_permission`, both returning `NotApplicable` on desktop. `Unavailable` is distinct from `Denied`: a bridge fault must never be reported as a user choice.
-- **Slot reuse**: routine and urgent alerts each hold a stable notification id, so a newer alert of the same class replaces its predecessor rather than stacking.
-
----
-
----
-
-## 9. IPC & Frontend Service Contracts
-
-### 9.1 Application Interface Endpoints
-- **Fetch Active Notifications**: Returns all records whose status is not dismissed, ordered newest first.
-- **Mark Notifications Read**: Accepts an optional filter targeting specific IDs, an entire correlation group key, a category, an `action_type`, or all unread notifications. Updates matching records to read status.
-- **Dismiss Notifications**: Accepts an optional filter targeting specific IDs, an entire correlation group key, a category, an `action_type`, or all active notifications. Updates matching records to dismissed status.
-- **Execute Notification Action**: Polymorphic action executor accepting a notification ID (`execute_notification_action(id)`). Resolves the action payload and dispatches backend-executable tasks (`CompactSession`, `ConsolidateMemory`, `Retry`). Does not handle `Navigate` (which is executed client-side by the React router). Does not mutate the card's attention status. Updates `metadata.resolution` in-place on completion.
-
-### 9.2 Drawer Presentation, Rollup & Badge Contracts
-- **Two-Tab Drawer (`Tasks` vs `Updates`)**:
-  - **`Tasks` Tab**: Shows actionable interactive cards requiring user remediation (`action_type == 'interactive'` and `metadata.resolution != 'resolved'`).
-  - **`Updates` Tab**: Shows passive historical receipts and resolved tasks (`action_type == 'receipt'` or `metadata.resolution == 'resolved'`), rolled up with `(×N)` counters.
-- **Bell Badge Counter Contract**: The UI notification bell badge counter in the top-right cluster reflects every unread attention item:
-  $$\text{countsTowardBadge} = (\text{status} == \text{'unread'})$$
-  Unread work is never hidden regardless of severity or action type; a resolved or read item contributes nothing.
-- **Card Anatomy Contract**: Every drawer card must be identifiable at a glance without hovering. Cards render in this fixed vertical order:
-  1. **Type kicker** — the closed category (§4.5) as unboxed typography (uppercase, mono, tracked). Never a hover-only affordance, and never a pill or bordered container (design-spec §5.1).
-  2. **Heading** — the card `title` at its designated type-scale role (`lg`), in `font-display`. Never truncated below legibility without an ellipsis affordance.
-  3. **Content block** — the `message`, separated from the heading by a hairline divider.
-  4. **Footer meta** — recency, turn count, and any primary action / navigation affordance.
-  - There is no severity word, badge, or icon in the header: severity is carried exclusively by the card border tint (§4.1).
-  - The type kicker is the sole carrier of category identity. A tooltip may repeat it, never substitute for it.
-  - Each of the seven categories must be distinguishable from the others without relying on glyph shape alone.
-- **Auto-Mark as Read**: Opening/mounting the drawer automatically marks unread notifications as read and clears the unread badge counter.
-- **Scoped Dismiss All**: A single `[Dismiss All]` header action clears every card in the active tab, including resolved interactive cards held there by the tab partition above.
-- **Icon Action Buttons**: Action buttons are minimal, sleek icon buttons (e.g. `Sparkles` for compaction, `Database` for consolidation, `RotateCcw` for retry) with hover tooltips indicating the action. No loud text buttons (e.g. no `[Tidy Now]`).
-- **Action Execution State**: When a user clicks an action button, the icon displays an inline loading spinner (`Loader2`). `metadata.resolution` of `"resolved"` resolves the button into a checkmark (`Check`); `"failed"` must be visually distinct from both `"pending"` and `"resolved"`.
-- **Uncompacted Session Visual Cues**: Sessions with uncompacted turns show an accent highlight dot/glow in the session rail and detail drawer with a compact icon action.
-
----
-
-## 10. Exhaustive Domain Call-Site Inventory
-
-| Subsystem | Call Site File | Category | Impact | Severity | Action | Copy Contract |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Dictation** | `output_router.rs` | `Dictation` | `None` | `Info` | `Transient` | Title: `"Dictation Pasted"`<br/>Msg: `“<snippet>”` |
-| **Dictation** | `transcript.rs` | `Dictation` | `None` | `Info` | `Transient` | Title: `"Dictation"`<br/>Msg: `"Speech detected, but no words recognized."` |
-| **Dictation PTT** | `ptt.rs` | `Dictation` | `None` | `Warning` | `Interactive(Navigate("settings"))` | Title: `"Dictation Disabled"`<br/>Msg: `"Enable dictation in Settings to use Push-To-Talk."` |
-| **Pipeline STT** | `on_error` | `Pipeline` | `TurnAborted` | `Warning` | `Transient` | Title: `"Voice Notice: STT"`<br/>Msg: Error description |
-| **Pipeline TTS** | `on_error` | `Pipeline` | `Degraded` | `Warning` | `Transient` | Title: `"Voice Notice: TTS"`<br/>Msg: Degraded synthesis notice |
-| **Pipeline RAG** | `on_error` | `Pipeline` | `Degraded` | `Warning` | `Transient` | Title: `"Voice Notice: Memory"`<br/>Msg: `"Semantic retrieval skipped for this turn."` |
-| **Pipeline Context**| `on_error` | `Pipeline` | `TurnAborted` | `Warning` | `Interactive(Navigate("settings/ai"))` | Title: `"Voice Notice: Context"`<br/>Msg: `"System prompt exceeds context window."` |
-| **Pipeline Rate Limit**| `on_error` | `Pipeline` | `TurnAborted` | `Warning` | `Interactive(Navigate("settings/ai"))` | Title: `"Voice Notice: Rate Limit"`<br/>Msg: `"Provider rate limit reached."` |
-| **Pipeline Network**| `on_error` | `Pipeline` | `TurnAborted` | `Warning` | `Interactive(Navigate("settings/ai"))` | Title: `"Voice Notice: Network"`<br/>Msg: `"Connection to provider failed or timed out."` |
-| **Pipeline Auth** | `on_error` | `Pipeline` | `SessionHalted` | `Critical` | `Interactive(Navigate("settings/ai"))` | Title: `"Voice Notice: Auth"`<br/>Msg: `"API key invalid, missing, or unauthorized."` |
-| **Hardware** | `on_error` | `Hardware` | `SessionHalted` | `Critical` | `Interactive(Navigate("settings/audio"))` | Title: `"Voice Notice: Audio"`<br/>Msg: `"Microphone device disconnected."` |
-| **Models 404/Missing** | `on_error` | `Models` | `SessionHalted` | `Critical` | `Interactive(Navigate("settings/models"))` | Title: `"Voice Notice: Models"`<br/>Msg: `"Model weights or endpoint not found on server."` |
-| **Models Warmup** | `warm_up_llm` | `Models` | `SessionHalted` | `Critical` | `Interactive(Navigate("settings/models"))` | Title: `"Voice Notice: Models"`<br/>Msg: `"LLM provider initialization failed."` |
-| **Pipeline Memory** | `ConversationManager` | `Pipeline` | `Degraded` | `Warning` | `Interactive(Navigate("settings/memory"))` | Title: `"Memory Limit Notice"`<br/>Msg: `"Memory approaching context limit. Consider increasing context_window."` |
-| **Pipeline Compaction** | `transcript.rs` | `SessionCompaction` | `Degraded` | `Warning` | `Transient` | Title: `"Compaction Degraded"`<br/>Msg: `"Compaction failed; falling back to sliding window."` |
-| **Pipeline Context Slot** | `generate.rs` | `Pipeline` | `TurnAborted` | `Critical` | `Interactive(Navigate("settings/ai"))` | Title: `"Voice Notice: Context Slot"`<br/>Msg: `"Turn exceeded KV cache context window (NoKvCacheSlot)."` |
-| **Compaction** | `coordinator.rs` | `SessionCompaction` | `None` | `Info` | `Interactive(CompactSession(id))` | Title: `"Session #X Ready to Compact"`<br/>Msg: `"X uncompacted turns."` |
-| **Compaction** | `coordinator.rs` | `SessionCompaction` | `None` | `Info` | `Receipt` | Title: `"Session #X Compacted"`<br/>Msg: `"Extracted X memory facts."` |
-| **Compaction** | `coordinator.rs` | `SessionCompaction` | `None` | `Warning` | `Receipt` | Title: `"Session #X Compaction Failed"`<br/>Msg: Error description |
-| **Scheduler** | `scheduler.rs` | `MemoryConsolidation`| `None` | `Warning` | `Interactive(ConsolidateMemory)` | Title: `"Memory Consolidation Missed"`<br/>Msg: `"Scheduled daily run missed."` |
-| **Scheduler** | `scheduler.rs` | `MemoryConsolidation`| `None` | `Info` | `Receipt` | Title: `"Memory Consolidated"`<br/>Msg: `"Daily profile updated."` |
-| **Memory Integration** | `ipc/memory.rs` | `MemoryConsolidation`| `None` | `Warning` | `Transient` | Title: `"Memory integration failed"`<br/>Msg: One-line failure reason (capability gate or unparseable model output) |
-
----
-
-## 11. Strict Invariants & Negative Constraints
-
-1. **No Ad-Hoc Toast Spawning**: Upstream code must never call `show_toast` or create webviews directly; all HUD overlay and drawer card creation routes strictly through `notify()`.
-2. **No DB Storage for Transient Events**: Events with `Action::Transient` must never execute SQLite inserts.
-3. **No HUD Popups for Silent Receipts**: Events with `Action::Receipt` must never open or flash `WINDOW_TOAST`.
-4. **No DB Uniqueness on `group_key`**: SQLite must never enforce `UNIQUE(group_key)`; event logs must remain append-only.
-5. **No Card Status Mutation by Jobs**: Background tasks must never overwrite notification card `status` with job progress (e.g. `'completed'`, `'in_progress'`). Card status is strictly user-attention (`unread`, `read`, `dismissed`).
-6. **No Raw Enums in User Copy**: Category identifiers and raw enum debug strings must never be rendered as text in user-facing UI.
+- **Channel Resolution**: Automated tests verify that every row in the 3D Truth Table maps to the exact expected channel (`ToastOnly`, `NotificationOnly`, `ToastAndNotification`).
+- **Transient Zero-Persistence**: Triggering a `Transient` alert verifies native OS dispatch and confirms zero records are written to the database.
+- **Task In-Place Resolution**: Triggering an actionable compaction card, executing the action, and observing completion confirms the existing card updates in place with `resolution = resolved`, with zero duplicate receipt cards created.
+- **Dismissal Permanence**: Dismiss an actionable card and trigger a system startup sweep. Verify that the dismissed card is neither resurrected nor duplicated.
+- **Hot-Path Isolation**: Static code analysis confirms that audio capture callbacks and voice activity detection threads make zero direct calls to the notification service or database.
