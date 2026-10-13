@@ -6,7 +6,7 @@ use std::{
     mem,
     path::Path,
     sync::Arc,
-    time::Duration,
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -503,6 +503,23 @@ pub fn get_voice_profiles() -> Vec<VoiceProfile> {
     ]
 }
 
+/// Resolves a canonical voice id to a catalog index. Matches by
+/// case-insensitive name first, then numeric parse. Falls back to 0.
+pub fn resolve_catalog_index(profiles: &[VoiceProfile], voice_id: &str) -> i32 {
+    let needle = voice_id.trim().to_lowercase();
+    for p in profiles {
+        if p.name.to_lowercase() == needle {
+            return p.id;
+        }
+    }
+    if let Ok(n) = needle.parse::<i32>() {
+        if profiles.iter().any(|p| p.id == n) {
+            return n;
+        }
+    }
+    profiles.first().map(|p| p.id).unwrap_or(0)
+}
+
 /// Returns default Supertonic voice profiles.
 pub fn get_supertonic_voice_profiles() -> Vec<VoiceProfile> {
     vec![
@@ -577,4 +594,218 @@ pub fn get_supertonic_voice_profiles() -> Vec<VoiceProfile> {
             language: Some("en-US".to_string()),
         },
     ]
+}
+
+pub const VOICES_MANIFEST_JSON: &str = include_str!("voices_manifest.json");
+
+/// Frontend-safe representation of a unified voice entry.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UnifiedVoiceDto {
+    pub id: String,
+    pub provider_id: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub gender: String,
+    pub locale: String,
+    pub accent: Option<String>,
+    pub tags: Vec<String>,
+    pub sample_text: String,
+    pub source_kind: String,
+    pub is_favorite: bool,
+    pub last_used_at: Option<i64>,
+    pub has_preview: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ManifestVoiceEntry {
+    pub id: String,
+    pub provider_id: String,
+    pub name: String,
+    pub gender: String,
+    pub locale: String,
+    pub accent: Option<String>,
+    pub description: Option<String>,
+    pub tags: Vec<String>,
+    pub sample_text: String,
+}
+
+pub fn get_manifest_voices() -> Vec<ManifestVoiceEntry> {
+    serde_json::from_str(VOICES_MANIFEST_JSON).unwrap_or_default()
+}
+
+pub fn split_locale(locale: &str) -> (String, Option<String>) {
+    let mut parts = locale.splitn(2, '-');
+    let lang = parts.next().unwrap_or("en").to_string();
+    match parts.next() {
+        Some(region) => {
+            let accent = match region.to_uppercase().as_str() {
+                "US" => "American",
+                "GB" | "UK" => "British",
+                "AU" => "Australian",
+                "IN" => "Indian",
+                "CA" => "Canadian",
+                _ => return (locale.to_string(), Some(region.to_string())),
+            };
+            (locale.to_string(), Some(accent.to_string()))
+        }
+        None => (lang, None),
+    }
+}
+
+pub fn normalize_gender_str(raw: &str) -> String {
+    match raw.to_lowercase().as_str() {
+        "female" | "f" => "female".to_string(),
+        "male" | "m" => "male".to_string(),
+        _ => "neutral".to_string(),
+    }
+}
+
+pub fn simplify_edge_friendly_name(short_name: &str, friendly_name: &str) -> String {
+    let raw = friendly_name
+        .replace("Microsoft ", "")
+        .replace(" Server Speech Text to Speech Voice", "")
+        .replace(" Online (Natural)", "");
+    let parts: Vec<&str> = raw.split('(').collect();
+    let name_part = parts.first().unwrap_or(&short_name).trim();
+    if name_part.is_empty() {
+        short_name.to_string()
+    } else {
+        name_part.to_string()
+    }
+}
+
+/// Syncs declarative bundled manifest voices into the Turso voices table.
+pub async fn sync_manifest_voices_to_db(conn: &turso::Connection) -> anyhow::Result<()> {
+    let manifest = get_manifest_voices();
+    if manifest.is_empty() {
+        return Ok(());
+    }
+    conn.execute("BEGIN TRANSACTION;", ()).await?;
+    for v in manifest {
+        let tags_json = serde_json::to_string(&v.tags).unwrap_or_else(|_| "[]".to_string());
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+        conn.execute(
+            "INSERT INTO voices (
+                id, provider_id, name, source_kind, gender, locale, accent, description, tags, sample_text, created_at
+            ) VALUES (?, ?, ?, 'bundled', ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                provider_id = excluded.provider_id,
+                name = excluded.name,
+                gender = excluded.gender,
+                locale = excluded.locale,
+                accent = excluded.accent,
+                description = excluded.description,
+                tags = excluded.tags,
+                sample_text = excluded.sample_text",
+            (
+                v.id,
+                v.provider_id,
+                v.name,
+                v.gender,
+                v.locale,
+                v.accent,
+                v.description,
+                tags_json,
+                v.sample_text,
+                now,
+            ),
+        )
+        .await?;
+    }
+    conn.execute("COMMIT;", ()).await?;
+    Ok(())
+}
+
+/// Syncs remote Edge TTS voices into the Turso voices table in a single transaction.
+pub async fn sync_edge_tts_voices_to_db(conn: &turso::Connection) -> anyhow::Result<usize> {
+    let edge_voices = fetch_remote_edge_voices()
+        .await
+        .map_err(|e| anyhow::anyhow!(e))?;
+    let count = edge_voices.len();
+    if count == 0 {
+        return Ok(0);
+    }
+    conn.execute("BEGIN TRANSACTION;", ()).await?;
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
+    for e in edge_voices {
+        let (locale, accent) = split_locale(&e.locale);
+        let gender = normalize_gender_str(&e.gender);
+        let clean_name = simplify_edge_friendly_name(&e.short_name, &e.friendly_name);
+        conn.execute(
+            "INSERT INTO voices (
+                id, provider_id, name, source_kind, gender, locale, accent, description, tags, sample_text, created_at
+            ) VALUES (?, 'edge_tts', ?, 'remote', ?, ?, ?, NULL, '[\"Cloud\",\"Neural\"]', 'Microsoft Edge Neural Text to Speech preview.', ?)
+            ON CONFLICT(id) DO UPDATE SET
+                name = excluded.name,
+                gender = excluded.gender,
+                locale = excluded.locale,
+                accent = excluded.accent",
+            (
+                e.short_name,
+                clean_name,
+                gender,
+                locale,
+                accent,
+                now,
+            ),
+        )
+        .await?;
+    }
+    conn.execute("COMMIT;", ()).await?;
+    Ok(count)
+}
+
+/// Lists unified voices from Turso, ensuring manifest voices are populated offline.
+pub async fn list_unified_voices(
+    conn: &turso::Connection,
+    provider: Option<&str>,
+) -> anyhow::Result<Vec<UnifiedVoiceDto>> {
+    // 1. Query Turso voices table offline-first
+    let mut entries = crate::persistence::voices::list_voices(
+        conn,
+        provider,
+        crate::persistence::voices::VoiceListScope::All,
+    )
+    .await?;
+
+    // 2. If table has not yet been seeded (e.g. fresh ephemeral test DB), seed manifest once
+    if entries.is_empty() {
+        let _ = sync_manifest_voices_to_db(conn).await;
+        entries = crate::persistence::voices::list_voices(
+            conn,
+            provider,
+            crate::persistence::voices::VoiceListScope::All,
+        )
+        .await?;
+    }
+
+    let dtos = entries
+        .into_iter()
+        .map(|e| {
+            let tags: Vec<String> = serde_json::from_str(&e.tags).unwrap_or_default();
+            UnifiedVoiceDto {
+                id: e.id,
+                provider_id: e.provider_id,
+                name: e.name,
+                description: e.description,
+                gender: e.gender,
+                locale: e.locale,
+                accent: e.accent,
+                tags,
+                sample_text: e.sample_text,
+                source_kind: e.source_kind.as_str().to_string(),
+                is_favorite: e.is_favorite,
+                last_used_at: e.last_used_at,
+                has_preview: true,
+            }
+        })
+        .collect();
+
+    Ok(dtos)
 }

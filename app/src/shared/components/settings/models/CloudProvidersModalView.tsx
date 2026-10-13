@@ -67,24 +67,6 @@ export const CloudProviderCard = memo(({
 
           {/* Minimal Radio Sphere Selection + Models Navigation Arrow */}
           <div className="flex items-center gap-1.5 shrink-0 ml-1">
-            <div
-              role="radio"
-              aria-checked={isSelected}
-              className="p-1 -m-1 cursor-pointer flex items-center justify-center shrink-0"
-              onClick={(e) => {
-                e.stopPropagation();
-                onSelect(provider);
-              }}
-              title={isSelected ? "Active Provider" : "Select Provider"}
-            >
-              {isSelected ? (
-                <div className="w-4 h-4 rounded-full border border-[rgb(var(--accent))] flex items-center justify-center bg-[rgb(var(--accent))]/15 shrink-0 shadow-sm">
-                  <div className="w-2 h-2 rounded-full bg-[rgb(var(--accent))]" />
-                </div>
-              ) : (
-                <div className="w-4 h-4 rounded-full border border-[rgba(var(--foreground),0.28)] hover:border-[rgba(var(--foreground),0.55)] transition-colors shrink-0" />
-              )}
-            </div>
 
             {onNavigateToModels && (
               <button

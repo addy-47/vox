@@ -128,10 +128,33 @@ $$\text{effective\_output\_tokens} = \min(\text{slice\_budget},\; \text{probed\_
 
 ---
 
-## 6. Architectural Decisions & Alternatives
+## 6. Voice Providers & Unified Catalog Architecture
+
+### 6.1 Unified Voice Facade
+The TTS subsystem exposes a unified catalog facade in `services/tts/voice.rs` that homogenizes voice profiles across bundled local engines (Kokoro, Supertonic, Zipvoice, Chatterbox) and cloud/remote engines (Edge TTS). All providers emit a standardized `UnifiedVoiceDto` contract.
+
+### 6.2 Declarative Voice Manifest
+A static declarative manifest `voices_manifest.json` embedded into the binary at compile time defines default voices, metadata tags, and sample preview sentences for all local TTS models. On first launch, manifest entries populate the Turso `voices` table automatically to guarantee full offline functionality.
+
+### 6.3 Remote Edge TTS Provider & Synchronization
+Online Edge TTS voices are managed via decoupled non-blocking background synchronization:
+- Network discovery queries the Microsoft ReadAloud endpoint with trusted client token and Chrome/Edge user-agent.
+- Fetched voice records are normalized (locale, accent, gender, display names) and bulk-inserted into the local Turso `voices` table in a single transaction.
+- The UI queries local database state exclusively, ensuring zero UI blocking during network calls.
+
+### 6.4 Preview Synthesis Engine
+On-demand audio previews are managed by `services/tts/preview.rs`:
+- **Single-Flight Cancellation**: A centralized `Mutex<Option<AbortHandle>>` aborts any in-flight synthesis when a new preview is requested.
+- **Prompt Safety**: Prompts are capped at 120 characters to prevent excessive generation latency.
+- **LRU Disk Cache**: Previews are cached at `cache/tts/previews/{hash}.wav` bounded by a 25 MB / 50 files limit with automatic LRU eviction.
+
+---
+
+## 7. Architectural Decisions & Alternatives
 
 | Decision | Choice | Rationale | Rejected Alternative |
 | :--- | :--- | :--- | :--- |
+| **Unified Voice Catalog** | Single `voices` table with engine slugs | Eliminates table fragmentation (`voice_favorites`, `voice_recents`, `remote_voice_cache`) and simplifies UI queries. | Separate tables per provider (caused query divergence and sync bugs). |
 | **Declarative Wire Manifest** | Static JSON manifest declaring paths and values | Decouples wire protocol quirks from code logic; updates without compiling Rust code. | Scattered `if/else` checks across transports (caused silent bugs and HTTP 400 errors). |
 | **Tri-State Capability Flags** | `yes` \| `no` \| `unknown` enum | Prevents failed network probes from disabling tool support or falsifying capabilities. | Binary booleans (a failed probe forced `false`, disabling tools permanently). |
 | **Tool Stream Keying** | `(index, id)` composite key | Accommodates providers (like Ollama `/v1`) that reuse index `0` across parallel tool calls. | Index-only keying (collapses and corrupts parallel tool calls). |
@@ -140,10 +163,12 @@ $$\text{effective\_output\_tokens} = \min(\text{slice\_budget},\; \text{probed\_
 
 ---
 
-## 7. Verification Criteria
+## 8. Verification Criteria
 
 - **Zero URL Sniffing Audit**: Static architectural tests verify that no transport or adapter checks for URL substrings (e.g. `ends_with("/v1")`) to branch serialization logic.
 - **Golden Serialization Fixtures**: Unit tests verify that every provider preset maps canonical parameters to exact golden JSON output and confirms absent keys (e.g. zero `tool_choice` on Ollama presets).
 - **Parallel Tool Stream Accumulation**: Replaying streaming SSE fixtures with repeated indices verifies that parallel tool calls accumulate distinctly into separate tool call objects without corruption.
 - **Offline Startup Verification**: Launching the provider subsystem with network interfaces disabled confirms immediate resolution of bundled catalog models and wire presets.
 - **Probe Failure Non-Degradation**: Simulating a network timeout during a capability probe verifies that `supports_tools` remains `unknown` with logged diagnostics, rather than persisting `false`.
+- **Voice Catalog Offline Seeding**: Cold application startup on an unseeded database confirms that all manifest voice entries populate the `voices` table without network access.
+

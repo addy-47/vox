@@ -166,8 +166,8 @@ async fn test_tts_voice_switch_without_worker_restart() {
         // Send hot-swap command through real Settings IPC entry seam
         vox_lib::ipc::settings::update_setting(
             "tts".to_string(),
-            "voice_index".to_string(),
-            serde_json::json!(2),
+            "voice_id".to_string(),
+            serde_json::json!("nicole"),
             app.clone(),
         )
         .await

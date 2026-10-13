@@ -1,8 +1,9 @@
 import { useState, memo, useCallback, useMemo, useRef, useEffect } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
-import { CircleUserRound, Code2, Eye } from "lucide-react";
+import { CircleUserRound, Pencil, Check } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { Card, SegmentedControl, Markdown } from "@/shared/ui";
+import { Tooltip } from "@/shared/ui/Tooltip";
 import { PERSONA_COPY } from "@/data/settingsCopy";
 
 interface PersonaCardProps {
@@ -14,10 +15,24 @@ const INSTRUCTION_TABS = [
   { id: "realtime" as const, label: PERSONA_COPY.tabRealtime, compactLabel: "R", title: PERSONA_COPY.tabRealtime },
 ];
 
-const VIEW_TABS = [
-  { id: "preview" as const, icon: Eye, label: PERSONA_COPY.viewPreview, title: PERSONA_COPY.viewPreview },
-  { id: "edit" as const, icon: Code2, label: PERSONA_COPY.viewEdit, title: PERSONA_COPY.viewEdit },
-];
+/**
+ * Standardises modular and realtime prompts: extracts user persona text from XML wrapper if present.
+ */
+function extractPersonaText(rawPrompt: string): string {
+  if (!rawPrompt) return "";
+  const match = rawPrompt.match(/<persona>([\s\S]*?)<\/persona>/i);
+  if (match) {
+    return match[1].trim();
+  }
+  return rawPrompt.trim();
+}
+
+function updatePersonaInRawPrompt(rawPrompt: string, newPersona: string): string {
+  if (/<persona>[\s\S]*?<\/persona>/i.test(rawPrompt)) {
+    return rawPrompt.replace(/<persona>[\s\S]*?<\/persona>/i, `<persona>\n${newPersona.trim()}\n</persona>`);
+  }
+  return newPersona.trim();
+}
 
 /**
  * Highlights prompt syntax (XML tags, template variables, comments/headers, bullet dashes, brackets)
@@ -109,59 +124,6 @@ function renderSyntaxHighlightedText(code: string) {
   });
 }
 
-/**
- * Parses XML blocks into clean structured sections for preview
- */
-interface ParsedSection {
-  title?: string;
-  tag?: string;
-  content: string;
-}
-
-function parseXmlToSections(rawPrompt: string): ParsedSection[] {
-  if (!rawPrompt || !rawPrompt.trim()) return [];
-
-  const sections: ParsedSection[] = [];
-  // Match XML blocks: <tag>content</tag>
-  const blockRegex = /<([a-zA-Z0-9_-]+)>([\s\S]*?)<\/\1>/g;
-  let lastIndex = 0;
-  let match: RegExpExecArray | null;
-
-  while ((match = blockRegex.exec(rawPrompt)) !== null) {
-    const beforeText = rawPrompt.substring(lastIndex, match.index).trim();
-    if (beforeText) {
-      sections.push({
-        content: beforeText,
-      });
-    }
-
-    const tagName = match[1];
-    const content = match[2].trim();
-
-    // Format tag name into friendly heading: internal_rules -> Internal Rules
-    const friendlyTitle = tagName
-      .replace(/_/g, " ")
-      .replace(/-/g, " ")
-      .replace(/\b\w/g, (c) => c.toUpperCase());
-
-    sections.push({
-      title: friendlyTitle,
-      tag: tagName,
-      content,
-    });
-
-    lastIndex = blockRegex.lastIndex;
-  }
-
-  const remaining = rawPrompt.substring(lastIndex).trim();
-  if (remaining) {
-    sections.push({
-      content: remaining,
-    });
-  }
-
-  return sections;
-}
 
 
 
@@ -220,21 +182,42 @@ export const PersonaCard = memo(({ layoutMode = "full-max" }: PersonaCardProps) 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const highlightRef = useRef<HTMLDivElement>(null);
 
-  const activePrompt = activeTab === "modular" ? modularPrompt : realtimePrompt;
+  // Standardise modular and realtime: extract user-facing persona text
+  const activeRawPrompt = activeTab === "modular" ? modularPrompt : realtimePrompt;
+  const activePrompt = useMemo(() => extractPersonaText(activeRawPrompt), [activeRawPrompt]);
 
-  // Local keystroke draft: the textarea commits to the store on a 200ms
-  // trailing debounce instead of per keystroke. Previously every character
-  // rebuilt the full syntax-highlight tree AND updated the store, re-rendering
-  // every settings consumer on each keypress.
+  // Local keystroke draft
   const [promptDraft, setPromptDraft] = useState<string | null>(null);
   const promptDraftRef = useRef<string | null>(null);
   const commitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [tagViolation, setTagViolation] = useState(false);
+
   useEffect(() => {
     return () => {
       if (commitTimerRef.current) clearTimeout(commitTimerRef.current);
     };
   }, []);
+
+  // Diagnostics log requested for dark mode rendering artifact inspection
+  useEffect(() => {
+    const isDark = document.documentElement.classList.contains("dark");
+    const cardEl = document.getElementById("card-persona") || textareaRef.current?.parentElement;
+    const computed = cardEl ? window.getComputedStyle(cardEl) : null;
+    console.info("[PersonaCard Diagnostics]", {
+      isDark,
+      htmlClasses: document.documentElement.className,
+      layoutMode,
+      activeTab,
+      viewMode,
+      cardDimensions: cardEl ? { width: cardEl.offsetWidth, height: cardEl.offsetHeight } : null,
+      computedBorder: computed?.border,
+      computedBorderColor: computed?.borderColor,
+      computedOutline: computed?.outline,
+      computedBoxShadow: computed?.boxShadow,
+      computedBg: computed?.backgroundColor,
+      timestamp: Date.now(),
+    });
+  }, [layoutMode, activeTab, viewMode]);
 
   const shownPrompt = promptDraft ?? activePrompt;
   const tagSpans = useMemo(() => getProtectedXmlTagSpans(shownPrompt), [shownPrompt]);
@@ -274,28 +257,22 @@ export const PersonaCard = memo(({ layoutMode = "full-max" }: PersonaCardProps) 
 
   const commitDraft = useCallback(
     (nextValue: string) => {
-      // Verify tag integrity against the COMMITTED prompt — if protected tags
-      // were modified or stripped, say so visibly instead of silently
-      // swallowing the keystroke (the old behaviour, with zero diagnostics).
-      const prevTags = getProtectedXmlTagSpans(activePrompt).map((s) => s.tag);
-      const nextTags = getProtectedXmlTagSpans(nextValue).map((s) => s.tag);
-      if (prevTags.length > 0 && JSON.stringify(prevTags) !== JSON.stringify(nextTags)) {
-        setTagViolation(true);
-        return;
-      }
       setTagViolation(false);
       setPromptDraft(null);
       promptDraftRef.current = null;
-      const field = activeTab === "modular" ? "modular_prompt" : "realtime_prompt";
-      updateDraft("persona", field, nextValue);
+      if (activeTab === "modular") {
+        updateDraft("persona", "modular_prompt", nextValue);
+      } else {
+        const nextRaw = updatePersonaInRawPrompt(realtimePrompt, nextValue);
+        updateDraft("persona", "realtime_prompt", nextRaw);
+      }
     },
-    [activePrompt, activeTab, updateDraft]
+    [activeTab, realtimePrompt, updateDraft]
   );
 
   const handlePromptChange = useCallback(
     (e: React.ChangeEvent<HTMLTextAreaElement>) => {
       const nextValue = e.target.value;
-      // Instant, local, no IPC — the store commit happens on pause (below).
       setPromptDraft(nextValue);
       promptDraftRef.current = nextValue;
       if (commitTimerRef.current) clearTimeout(commitTimerRef.current);
@@ -305,7 +282,6 @@ export const PersonaCard = memo(({ layoutMode = "full-max" }: PersonaCardProps) 
   );
 
   const handlePromptBlur = useCallback(() => {
-    // Flush any pending debounced commit so tabbing away never loses typing.
     if (commitTimerRef.current) {
       clearTimeout(commitTimerRef.current);
       commitTimerRef.current = null;
@@ -318,7 +294,6 @@ export const PersonaCard = memo(({ layoutMode = "full-max" }: PersonaCardProps) 
 
   const handleTabChange = useCallback(
     (tab: "modular" | "realtime") => {
-      // Commit (don't drop) any pending draft before switching tabs.
       if (commitTimerRef.current) {
         clearTimeout(commitTimerRef.current);
         commitTimerRef.current = null;
@@ -328,16 +303,16 @@ export const PersonaCard = memo(({ layoutMode = "full-max" }: PersonaCardProps) 
       setPromptDraft(null);
       setTagViolation(false);
       if (pending !== null) {
-        const prevTags = getProtectedXmlTagSpans(activePrompt).map((s) => s.tag);
-        const nextTags = getProtectedXmlTagSpans(pending).map((s) => s.tag);
-        if (prevTags.length === 0 || JSON.stringify(prevTags) === JSON.stringify(nextTags)) {
-          const field = activeTab === "modular" ? "modular_prompt" : "realtime_prompt";
-          updateDraft("persona", field, pending);
+        if (activeTab === "modular") {
+          updateDraft("persona", "modular_prompt", pending);
+        } else {
+          const nextRaw = updatePersonaInRawPrompt(realtimePrompt, pending);
+          updateDraft("persona", "realtime_prompt", nextRaw);
         }
       }
       setActiveTab(tab);
     },
-    [activePrompt, activeTab, updateDraft]
+    [activeTab, realtimePrompt, updateDraft]
   );
 
   const handleScroll = useCallback(() => {
@@ -346,10 +321,6 @@ export const PersonaCard = memo(({ layoutMode = "full-max" }: PersonaCardProps) 
       highlightRef.current.scrollLeft = textareaRef.current.scrollLeft;
     }
   }, []);
-
-  const parsedSections = useMemo(() => {
-    return parseXmlToSections(shownPrompt);
-  }, [shownPrompt]);
 
   const isSmall = layoutMode === "small";
 
@@ -361,11 +332,11 @@ export const PersonaCard = memo(({ layoutMode = "full-max" }: PersonaCardProps) 
         "@container text-[14px] leading-relaxed text-[rgb(var(--foreground))]/85 transform-gpu flex flex-col",
         !isSmall && cn(
           "p-4 sm:p-5",
-          layoutMode === "full-min" ? "lg:w-[380px] xl:w-[430px] 2xl:w-[480px]" : "lg:w-[480px]"
+          layoutMode === "full-min" ? "lg:w-[350px] xl:w-[370px] 2xl:w-[440px]" : "lg:w-[470px]"
         )
       )}
     >
-      {/* Header & Controls */}
+      {/* Header & Controls: Clean title on left, Modular | Realtime pill on right */}
       <div className="flex items-center justify-between mb-3 shrink-0 border-b border-[rgba(var(--accent),0.08)] pb-2 w-full gap-2 flex-nowrap">
         <div className="flex items-center gap-2 shrink-0">
           <CircleUserRound className="text-[rgb(var(--accent))]" size={17} />
@@ -376,84 +347,89 @@ export const PersonaCard = memo(({ layoutMode = "full-max" }: PersonaCardProps) 
         
         <div className="flex items-center gap-1.5 shrink-0">
           <SegmentedControl options={INSTRUCTION_TABS} value={activeTab} onChange={handleTabChange} size="sm" />
-          <SegmentedControl options={VIEW_TABS} value={viewMode} onChange={setViewMode} size="sm" />
         </div>
       </div>
 
-      {/* Main Body */}
-      <div className="flex-1 flex flex-col w-full">
+      {/* Main Body: Default Preview with Floating Pencil Icon Toggle in Corner */}
+      <div className="flex-1 flex flex-col w-full relative">
+        {/* Floating Pencil / Done Toggle Button in Corner */}
+        <div className="absolute top-2 right-2 z-20">
+          <Tooltip label={viewMode === "edit" ? "Done editing" : "Edit persona"}>
+            <button
+              type="button"
+              onClick={() => setViewMode((m) => (m === "preview" ? "edit" : "preview"))}
+              className={cn(
+                "p-1.5 rounded-lg transition-all duration-200 cursor-pointer flex items-center justify-center",
+                viewMode === "edit"
+                  ? "bg-[rgba(var(--accent),0.15)] text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.25)] border border-[rgba(var(--accent),0.3)] shadow-[0_0_8px_rgba(var(--accent),0.15)]"
+                  : "text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] hover:bg-[rgba(var(--foreground),0.05)] border border-transparent"
+              )}
+              aria-label={viewMode === "edit" ? "Done editing" : "Edit persona"}
+            >
+              {viewMode === "edit" ? <Check size={13} strokeWidth={2.5} /> : <Pencil size={13} />}
+            </button>
+          </Tooltip>
+        </div>
+
         {viewMode === "edit" ? (
           <>
-          <div className="relative w-full rounded-xl overflow-hidden border border-[rgba(var(--accent),0.12)] bg-[rgba(var(--foreground),0.02)] focus-within:border-[rgba(var(--accent),0.35)] transition-colors">
-            {/* Syntax Highlight Backdrop Layer */}
-            <div
-              ref={highlightRef}
-              aria-hidden="true"
-              className={cn(
-                "absolute inset-0 p-3 pointer-events-none overflow-auto font-mono text-[12px] sm:text-[12.5px] leading-relaxed whitespace-pre-wrap break-words select-none",
-                layoutMode === "full-max" ? "h-[200px]" : isSmall ? "h-[200px]" : "h-[150px]"
-              )}
-            >
-              {highlightedContent}
-            </div>
+            <div className="relative w-full rounded-xl overflow-hidden border border-[rgba(var(--accent),0.12)] bg-[rgba(var(--foreground),0.02)] focus-within:border-[rgba(var(--accent),0.35)] transition-colors">
+              {/* Syntax Highlight Backdrop Layer */}
+              <div
+                ref={highlightRef}
+                aria-hidden="true"
+                className={cn(
+                  "absolute inset-0 p-3 pr-9 pointer-events-none overflow-auto font-mono text-[12px] sm:text-[12.5px] leading-relaxed whitespace-pre-wrap break-words select-none",
+                  layoutMode === "full-max" ? "h-[200px]" : isSmall ? "h-[200px]" : "h-[150px]"
+                )}
+              >
+                {highlightedContent}
+              </div>
 
-            {/* Foreground Editable Transparent Textarea */}
-            <textarea
-              ref={textareaRef}
-              value={promptDraft ?? activePrompt}
-              onChange={handlePromptChange}
-              onBlur={handlePromptBlur}
-              onKeyDown={handleKeyDown}
-              onBeforeInput={handleBeforeInput}
-              onScroll={handleScroll}
-              placeholder={activeTab === "modular" ? PERSONA_COPY.modularPlaceholder : PERSONA_COPY.realtimePlaceholder}
-              spellCheck={false}
-              className={cn(
-                "relative z-10 w-full p-3 font-mono text-[12px] sm:text-[12.5px] leading-relaxed text-transparent caret-[rgb(var(--accent))] bg-transparent resize-none focus:outline-none overflow-auto whitespace-pre-wrap break-words selection:bg-[rgba(var(--accent),0.25)] selection:text-[rgb(var(--foreground))]",
-                layoutMode === "full-max" ? "h-[200px]" : isSmall ? "h-[200px]" : "h-[150px]"
-              )}
-            />
-          </div>
-          {tagViolation && (
-            <p role="alert" className="text-[11px] font-mono text-[rgb(var(--warning))] mt-1.5">
-              {PERSONA_COPY.tagsProtectedHint}
-            </p>
-          )}
+              {/* Foreground Editable Transparent Textarea */}
+              <textarea
+                ref={textareaRef}
+                value={promptDraft ?? activePrompt}
+                onChange={handlePromptChange}
+                onBlur={handlePromptBlur}
+                onKeyDown={handleKeyDown}
+                onBeforeInput={handleBeforeInput}
+                onScroll={handleScroll}
+                placeholder={activeTab === "modular" ? PERSONA_COPY.modularPlaceholder : PERSONA_COPY.realtimePlaceholder}
+                spellCheck={false}
+                className={cn(
+                  "relative z-10 w-full p-3 pr-9 font-mono text-[12px] sm:text-[12.5px] leading-relaxed text-transparent caret-[rgb(var(--accent))] bg-transparent resize-none focus:outline-none overflow-auto whitespace-pre-wrap break-words selection:bg-[rgba(var(--accent),0.25)] selection:text-[rgb(var(--foreground))]",
+                  layoutMode === "full-max" ? "h-[200px]" : isSmall ? "h-[200px]" : "h-[150px]"
+                )}
+              />
+            </div>
+            {tagViolation && (
+              <p role="alert" className="text-[11px] font-mono text-[rgb(var(--warning))] mt-1.5">
+                {PERSONA_COPY.tagsProtectedHint}
+              </p>
+            )}
           </>
         ) : (
-          /* Preview Mode: XML Stripped & Rendered as Structured Headings */
+          /* Preview Mode: Clean persona text rendered beautifully */
           <div 
             className={cn(
-              "w-full bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--accent),0.12)] rounded-xl p-3 overflow-y-auto select-text space-y-3 scrollbar-thin scrollbar-thumb-[rgba(var(--accent),0.2)] scrollbar-track-transparent",
+              "w-full bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--accent),0.12)] rounded-xl p-3 pr-9 overflow-y-auto select-text scrollbar-thin scrollbar-thumb-[rgba(var(--accent),0.2)] scrollbar-track-transparent",
               layoutMode === "full-max" ? "h-[200px]" : isSmall ? "h-[200px]" : "h-[150px]"
             )}
           >
-            {parsedSections.length === 0 ? (
+            {!shownPrompt.trim() ? (
               <div className="flex items-center justify-center h-full text-[12px] text-[rgb(var(--foreground-muted))]/50 italic">
                 {PERSONA_COPY.emptyPrompt}
               </div>
             ) : (
-              parsedSections.map((sec, idx) => (
-                <div key={idx} className="space-y-1">
-                  {(sec.title || sec.tag) && (
-                    <div className="flex items-center justify-between border-b border-[rgba(var(--accent),0.08)] pb-1 mb-1">
-                      <span className="text-[11.5px] font-black uppercase tracking-wider text-[rgb(var(--accent))]">
-                        {sec.title}
-                      </span>
-                      {sec.tag && (
-                        <span className="text-[11px] font-mono uppercase font-bold text-[rgb(var(--foreground-muted))]/50 px-1 py-0.2 rounded bg-[rgba(var(--foreground),0.04)]">
-                          &lt;{sec.tag}&gt;
-                        </span>
-                      )}
-                    </div>
-                  )}
-                  <Markdown content={sec.content} variant="preview" className="text-[12px] sm:text-[12.5px] text-[rgb(var(--foreground))]/80 leading-relaxed" />
-                </div>
-              ))
+              <Markdown
+                content={shownPrompt}
+                variant="preview"
+                className="text-[12px] sm:text-[12.5px] text-[rgb(var(--foreground))]/85 leading-relaxed font-medium"
+              />
             )}
           </div>
         )}
-        
       </div>
     </Card>
   );

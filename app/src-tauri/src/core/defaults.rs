@@ -41,7 +41,7 @@ pub const DEFAULT_LLM_CLOUD_BASE_URL: &str = "https://integrate.api.nvidia.com/v
 pub const DEFAULT_LLM_CLOUD_MODEL: &str = "meta/llama-3.1-8b-instruct";
 pub const DEFAULT_LLM_CLOUD_PROVIDER_NAME: &str = "nvidia";
 
-pub const DEFAULT_TTS_VOICE_INDEX: i32 = 10;
+pub const DEFAULT_TTS_VOICE_ID: &str = "bella";
 pub const DEFAULT_TTS_SPEED: f32 = 1.05;
 pub const DEFAULT_TTS_THREADS: u32 = 4;
 pub const DEFAULT_TTS_ZIPVOICE_GUIDANCE_SCALE: f32 = 1.0;

@@ -169,20 +169,18 @@ export const PersonalMemoryConfigDesk = memo(({ layoutMode }: PersonalMemoryConf
       {/* Layer 2: Subtab Workspace */}
       <div
         className={cn(
-          "w-full flex flex-col flex-1 min-h-0 pt-0.5 pb-0.5 justify-between",
-          isSmall ? "h-auto py-1" : "h-[128px] max-h-[128px]"
+          "w-full flex flex-col flex-1 min-h-0 pt-0.5 pb-0.5",
+          isSmall ? "h-auto" : "h-full"
         )}
       >
         {/* TAB 1: CONSOLIDATION */}
         {activeSubTab === "consolidation" && (
-          <div className="flex flex-row items-center justify-between gap-4 h-full p-2.5 sm:p-3 rounded-xl bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--accent),0.08)] animate-fade-in">
+          <div className="flex flex-row items-center justify-between gap-3 h-full p-2 sm:p-3 rounded-xl bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--accent),0.08)] animate-fade-in">
             {/* Left: Title & Description */}
             <div className="flex flex-col gap-1 min-w-0 flex-1">
               <div className="flex items-center gap-2">
                 <span className="text-[12px] font-bold uppercase tracking-wider text-[rgb(var(--foreground))]">
-                  {copy.consolidation.title} <span className="text-[9px] font-bold px-1.5 text-[rgb(var(--accent))]">
-                  {copy.consolidation.sublabel}
-                </span>
+                  {copy.consolidation.title}
                 </span>
               </div>
               <p className="text-[11px] sm:text-[11.5px] text-[rgb(var(--foreground-muted))]/75 leading-relaxed font-medium">
@@ -191,7 +189,7 @@ export const PersonalMemoryConfigDesk = memo(({ layoutMode }: PersonalMemoryConf
               {consolidationCadence === "daily" && nextRunText ? (
                 <div className="flex items-center gap-1.5 text-[10px] sm:text-[10.5px] font-mono text-[rgb(var(--accent))] font-medium pt-0.5">
                   <Clock size={11} className="shrink-0 opacity-85" />
-                  <span>{nextRunText}</span>
+                  <span className="truncate">{nextRunText}</span>
                 </div>
               ) : (
                 <p className="text-[10px] font-mono text-[rgb(var(--foreground-muted))]/50 pt-0.5">
@@ -215,7 +213,7 @@ export const PersonalMemoryConfigDesk = memo(({ layoutMode }: PersonalMemoryConf
                   )
                 }
                 className={cn(
-                  "group flex flex-col items-center select-none cursor-pointer rounded-2xl px-3 py-2 transition-all duration-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(var(--accent))]",
+                  "group flex flex-col items-center shrink-0 select-none cursor-pointer rounded-2xl px-3 py-2 transition-all duration-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(var(--accent))]",
                   consolidationCadence === "daily"
                     ? "text-[rgb(var(--accent))]"
                     : "text-[rgb(var(--foreground-muted))]/40 hover:text-[rgb(var(--foreground-muted))]/70"
@@ -287,53 +285,53 @@ export const PersonalMemoryConfigDesk = memo(({ layoutMode }: PersonalMemoryConf
                   </svg>
                 </div>
 
-                {/* Badge: MANUAL label or nothing (time input is outside the button) */}
-                {consolidationCadence !== "daily" && (
-                  <span className="mt-3 px-2.5 py-0.5 rounded-full text-[9px] font-mono font-bold uppercase tracking-[0.14em] leading-none transition-all duration-300 text-[rgb(var(--foreground-muted))]/50">
-                    {copy.consolidation.manualLabel}
-                  </span>
-                )}
-              </button>
-
-              {/* Time input badge — only in Daily mode, outside the toggle button */}
-              {consolidationCadence === "daily" && (
-                <button
-                  type="button"
-                  onClick={() => timeInputRef.current?.focus()}
-                  className="mt-0 flex items-center gap-1 px-2 py-0.5 rounded-full cursor-text transition-all duration-200 hover:bg-[rgba(var(--accent),0.08)] group/time"
-                  tabIndex={-1}
-                  aria-label={copy.consolidation.timeFormatHint}
+                {/* Label Badge with distinct top padding from clock — identical to WebSearchGlobe */}
+                <span
+                  className={cn(
+                    "mt-3 px-2.5 py-0.5 rounded-full text-[9px] font-mono font-bold uppercase tracking-[0.14em] leading-none transition-all duration-300",
+                    consolidationCadence === "daily"
+                      ? "text-[rgb(var(--accent))]"
+                      : "text-[rgb(var(--foreground-muted))]/50"
+                  )}
                 >
-                  <input
-                    ref={timeInputRef}
-                    type="text"
-                    inputMode="numeric"
-                    value={timeDraft}
-                    onChange={handleTimeChange}
-                    onBlur={handleTimeBlur}
-                    placeholder="09:00"
-                    maxLength={5}
-                    aria-label={copy.consolidation.timeFormatHint}
-                    className="w-[3.2rem] bg-transparent font-mono text-[11px] font-bold outline-none text-[rgb(var(--accent))] text-center tracking-wider caret-[rgb(var(--accent))] selection:bg-[rgba(var(--accent),0.25)] cursor-text"
-                  />
-                  <span className="text-[9px] font-mono font-bold uppercase tracking-[0.12em] text-[rgb(var(--accent))]/70">
-                    {formatTimeDisplay(consolidationTime).split(" ")[1]}
-                  </span>
-                </button>
-              )}
+                  {consolidationCadence === "daily" ? (
+                    <span
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        timeInputRef.current?.focus();
+                      }}
+                      className="inline-flex items-center gap-1 cursor-text"
+                    >
+                      <input
+                        ref={timeInputRef}
+                        type="text"
+                        inputMode="numeric"
+                        value={timeDraft}
+                        onChange={handleTimeChange}
+                        onBlur={handleTimeBlur}
+                        placeholder="02:00"
+                        maxLength={5}
+                        aria-label={copy.consolidation.timeFormatHint}
+                        className="w-[2.8rem] bg-transparent font-mono text-[9px] font-bold outline-none text-[rgb(var(--accent))] text-center tracking-wider caret-[rgb(var(--accent))] cursor-text"
+                      />
+                      <span className="text-[8px] opacity-75">{formatTimeDisplay(consolidationTime).split(" ")[1]}</span>
+                    </span>
+                  ) : (
+                    copy.consolidation.manualLabel
+                  )}
+                </span>
+              </button>
             </div>
           </div>
         )}
 
         {/* TAB 2: DEPTH (FACT LIMIT) */}
         {activeSubTab === "depth" && (
-          <div className="flex flex-row items-center justify-between gap-3 h-full p-2.5 sm:p-3 rounded-xl bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--accent),0.08)] animate-fade-in">
+          <div className="flex flex-row items-center justify-between gap-3 h-full p-2 sm:p-3 rounded-xl bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--accent),0.08)] animate-fade-in">
             <div className="flex flex-col gap-1 min-w-0 flex-1">
-              <div className="flex items-center gap-2">
-                <span className="text-[12px] font-bold uppercase tracking-wider text-[rgb(var(--foreground))]">
-                  {copy.depth.title}
-                </span>
-              </div>
+              <span className="text-[12px] font-bold uppercase tracking-wider text-[rgb(var(--foreground))]">
+                {copy.depth.title}
+              </span>
               <p className="text-[11px] sm:text-[11.5px] text-[rgb(var(--foreground-muted))]/75 leading-relaxed font-medium">
                 {copy.depth.description}
               </p>
@@ -379,13 +377,11 @@ export const PersonalMemoryConfigDesk = memo(({ layoutMode }: PersonalMemoryConf
 
         {/* TAB 3: CUTOFF (RELEVANCE THRESHOLD) */}
         {activeSubTab === "cutoff" && (
-          <div className="flex flex-row items-center justify-between gap-3 h-full p-2.5 sm:p-3 rounded-xl bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--accent),0.08)] animate-fade-in">
+          <div className="flex flex-row items-center justify-between gap-3 h-full p-2 sm:p-3 rounded-xl bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--accent),0.08)] animate-fade-in">
             <div className="flex flex-col gap-1 min-w-0 flex-1">
-              <div className="flex items-center gap-2">
-                <span className="text-[12px] font-bold uppercase tracking-wider text-[rgb(var(--foreground))]">
-                  {copy.cutoff.title}
-                </span>
-              </div>
+              <span className="text-[12px] font-bold uppercase tracking-wider text-[rgb(var(--foreground))]">
+                {copy.cutoff.title}
+              </span>
               <p className="text-[11px] sm:text-[11.5px] text-[rgb(var(--foreground-muted))]/75 leading-relaxed font-medium">
                 {copy.cutoff.description}
               </p>
@@ -431,14 +427,12 @@ export const PersonalMemoryConfigDesk = memo(({ layoutMode }: PersonalMemoryConf
 
         {/* TAB 4: SUGGESTIONS (SUGGESTION POLICY) */}
         {activeSubTab === "suggestions" && (
-          <div className="flex flex-row items-center justify-between gap-3 h-full p-2.5 sm:p-3 rounded-xl bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--accent),0.08)] animate-fade-in">
+          <div className="flex flex-row items-center justify-between gap-3 h-full p-2 sm:p-3 rounded-xl bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--accent),0.08)] animate-fade-in">
             {/* Left: Title & Description */}
             <div className="flex flex-col gap-1 min-w-0 flex-1">
-              <div className="flex items-center gap-2">
-                <span className="text-[12px] font-bold uppercase tracking-wider text-[rgb(var(--foreground))]">
-                  {copy.suggestions.title}
-                </span>
-              </div>
+              <span className="text-[12px] font-bold uppercase tracking-wider text-[rgb(var(--foreground))]">
+                {copy.suggestions.title}
+              </span>
               <p className="text-[11px] sm:text-[11.5px] text-[rgb(var(--foreground-muted))]/75 leading-relaxed font-medium">
                 {copy.suggestions.description}
               </p>
@@ -456,8 +450,10 @@ export const PersonalMemoryConfigDesk = memo(({ layoutMode }: PersonalMemoryConf
                   )
                 }
                 className={cn(
-                  "flex flex-col items-center justify-center cursor-pointer transition-all duration-300 p-1 rounded-xl outline-none group/gate",
-                  "focus-visible:ring-2 focus-visible:ring-[rgb(var(--accent))] focus-visible:ring-offset-1 focus-visible:ring-offset-[rgb(var(--card))]"
+                  "group flex flex-col items-center shrink-0 select-none cursor-pointer rounded-2xl px-3 py-2 transition-all duration-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(var(--accent))]",
+                  suggestionPolicy === "auto_apply"
+                    ? "text-[rgb(var(--accent))]"
+                    : "text-[rgb(var(--foreground-muted))]/40 hover:text-[rgb(var(--foreground-muted))]/70"
                 )}
                 title={
                   suggestionPolicy === "auto_apply"
@@ -465,17 +461,12 @@ export const PersonalMemoryConfigDesk = memo(({ layoutMode }: PersonalMemoryConf
                     : "Click to switch to Auto-Apply"
                 }
               >
-                <div className="relative flex items-center justify-center">
+                <div className="relative w-[48px] h-[48px] transition-transform duration-300 group-hover:scale-105">
                   <svg
-                    width={48}
-                    height={48}
                     viewBox="0 0 48 48"
-                    className={cn(
-                      "transition-all duration-300",
-                      suggestionPolicy === "auto_apply"
-                        ? "text-[rgb(var(--accent))]"
-                        : "text-[rgb(var(--foreground-muted))]"
-                    )}
+                    className="w-full h-full overflow-visible select-none"
+                    fill="none"
+                    xmlns="http://www.w3.org/2000/svg"
                   >
                     {/* Outer gate circle */}
                     <circle

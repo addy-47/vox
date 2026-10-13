@@ -115,7 +115,8 @@ pub async fn get_model_catalog<R: tauri::Runtime>(
         TtsActiveProvider::Supertonic => {
             let p = get_supertonic_voice_profiles();
             let active = p
-                .get(tts_settings.voice_index as usize)
+                .iter()
+                .find(|v| v.name.eq_ignore_ascii_case(&tts_settings.voice_id))
                 .or(p.first())
                 .map(|v| v.name.clone());
             (p, active)
@@ -123,7 +124,8 @@ pub async fn get_model_catalog<R: tauri::Runtime>(
         TtsActiveProvider::Kokoro => {
             let p = get_voice_profiles();
             let active = p
-                .get(tts_settings.voice_index as usize)
+                .iter()
+                .find(|v| v.name.eq_ignore_ascii_case(&tts_settings.voice_id))
                 .or(p.first())
                 .map(|v| v.name.clone());
             (p, active)
@@ -131,7 +133,7 @@ pub async fn get_model_catalog<R: tauri::Runtime>(
         TtsActiveProvider::Zipvoice => {
             let conn = state.db.connect().ok();
             let pack = if let Some(ref conn) = conn {
-                list_db_voices(conn, VoiceListScope::ZipvoicePack)
+                list_db_voices(conn, None, VoiceListScope::ZipvoicePack)
                     .await
                     .unwrap_or_default()
             } else {

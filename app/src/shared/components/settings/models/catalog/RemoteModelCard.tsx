@@ -15,10 +15,8 @@ import { Tooltip } from "@/shared/ui/Tooltip";
 import { LLM_CATALOG_COPY } from "@/data/settingsCopy";
 import type { LlmModelInfo, ModelCapabilities } from "@/store/settingsStore";
 import {
-  probeAgeDays,
   hasProbeWarning,
   probeWarningLabel,
-  provenanceLabel,
 } from "./catalogProbeUtils";
 
 export interface RemoteModelCardProps {
@@ -45,7 +43,6 @@ export const RemoteModelCard = memo(({
   isCopied,
 }: RemoteModelCardProps) => {
   const isGpu = probed?.is_gpu_accelerated;
-  const ageDays = probed ? probeAgeDays(probed.tested_at_epoch) : 0;
 
   let org = "";
   let shortName = model.name || model.id;
@@ -79,6 +76,26 @@ export const RemoteModelCard = memo(({
               <h4 className="font-display text-[14px] font-bold text-[rgb(var(--foreground))] tracking-tight truncate leading-tight min-w-0">
                 {shortName}
               </h4>
+
+              {/* Copy Button */}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onCopy(model.id);
+                }}
+                className="p-1 rounded-md text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.1)] transition-colors shrink-0 cursor-pointer"
+                title={isCopied ? "Copied Model ID" : "Copy Model ID"}
+                aria-label="Copy Model ID"
+              >
+                {isCopied ? (
+                  <Check size={13} className="text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))]" />
+                ) : (
+                  <Copy size={13} />
+                )}
+              </button>
+
+              {/* Warning */}
               {hasProbeWarning(probeError, probed) && (
                 <Tooltip
                   side="top"
@@ -109,46 +126,10 @@ export const RemoteModelCard = memo(({
               </span>
             )}
             {model.size_bytes != null && (
-              <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-[rgba(var(--foreground),0.06)] text-[rgb(var(--foreground-muted))] border border-[rgba(var(--foreground),0.08)]">
+              <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 roundedtext-[rgb(var(--foreground-muted))] ]">
                 {(model.size_bytes / (1024 * 1024 * 1024)).toFixed(1)}GB
               </span>
             )}
-            {/* Copy Button just left of select */}
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                onCopy(model.id);
-              }}
-              className="p-1 rounded-md text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.1)] transition-colors shrink-0 cursor-pointer"
-              title={isCopied ? "Copied Model ID" : "Copy Model ID"}
-              aria-label="Copy Model ID"
-            >
-              {isCopied ? (
-                <Check size={13} className="text-emerald-400" />
-              ) : (
-                <Copy size={13} />
-              )}
-            </button>
-            {/* Minimal Radio Sphere Selection */}
-            <div
-              role="radio"
-              aria-checked={isSelected}
-              className="p-1 -m-1 cursor-pointer flex items-center justify-center shrink-0 ml-0.5"
-              onClick={(e) => {
-                e.stopPropagation();
-                onSelect(model.id);
-              }}
-              title={isSelected ? "Active Model" : "Select Model"}
-            >
-              {isSelected ? (
-                <div className="w-4 h-4 rounded-full border border-[rgb(var(--accent))] flex items-center justify-center bg-[rgb(var(--accent))]/15 shrink-0 shadow-sm">
-                  <div className="w-2 h-2 rounded-full bg-[rgb(var(--accent))]" />
-                </div>
-              ) : (
-                <div className="w-4 h-4 rounded-full border border-[rgba(var(--foreground),0.28)] hover:border-[rgba(var(--foreground),0.55)] transition-colors shrink-0" />
-              )}
-            </div>
           </div>
         </div>
 
@@ -234,13 +215,6 @@ export const RemoteModelCard = memo(({
 
       {/* Card Actions Footer: minimal, tactile Benchmark action on right */}
       <div className="flex items-center justify-between gap-2 mt-3 pt-2.5 border-t border-[rgba(var(--foreground),0.06)] min-w-0" onClick={(e) => e.stopPropagation()}>
-        <span className="text-[10.5px] font-mono text-[rgb(var(--foreground-muted))]/60 truncate shrink min-w-0" title={probed ? `${provenanceLabel(probed.provenance)} · ${ageDays === 0 ? LLM_CATALOG_COPY.measuredToday : `${ageDays}d ${LLM_CATALOG_COPY.measuredAgo}`}${probed.ttft_ms != null ? ` · TTFT ${probed.ttft_ms.toFixed(0)}ms` : ""}` : undefined}>
-          {probed ? (
-            `${provenanceLabel(probed.provenance)} · ${ageDays === 0 ? LLM_CATALOG_COPY.measuredToday : `${ageDays}d ${LLM_CATALOG_COPY.measuredAgo}`}${probed.ttft_ms != null ? ` · TTFT ${probed.ttft_ms.toFixed(0)}ms` : ""}${ageDays > 7 ? ` · ${LLM_CATALOG_COPY.staleResult}` : ""}`
-          ) : (
-            isSelected ? "Active selection" : ""
-          )}
-        </span>
         <button
           type="button"
           disabled={isTesting}

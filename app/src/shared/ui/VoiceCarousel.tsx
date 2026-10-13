@@ -94,10 +94,20 @@ export const VoiceCarousel = memo(function VoiceCarousel({
     );
   }, [voices, searchQuery]);
 
-  const activeList = filteredVoices.length > 0 ? filteredVoices : voices;
+  // When search query is active and yields results, keep activeList to filteredVoices.
+  // If search query yields 0 results, activeList is empty so UI shows clear empty state.
+  const isQueryActive = isSearching && searchQuery.trim().length > 0;
+  const activeList = isQueryActive ? filteredVoices : voices;
   const index = activeList.findIndex((v) => v.id === selected);
   const activeIndex = index === -1 ? 0 : index;
-  const currentVoice = activeList[activeIndex] || activeList[0];
+  const currentVoice = activeList[activeIndex] || (activeList.length > 0 ? activeList[0] : null);
+
+  // Auto-sync selection to first match when searching if current selected voice is filtered out
+  useEffect(() => {
+    if (isQueryActive && filteredVoices.length > 0 && !filteredVoices.some((v) => v.id === selected)) {
+      onChange(filteredVoices[0].id);
+    }
+  }, [isQueryActive, filteredVoices, selected, onChange]);
 
   const cycle = (dir: number) => {
     if (activeList.length <= 1) return;
@@ -375,21 +385,27 @@ export const VoiceCarousel = memo(function VoiceCarousel({
           {/* Top Line: Search Icon + Voice Name or Inline Search Input */}
           <div className="relative w-full h-7 flex items-center justify-center my-0.5 shrink-0 px-1">
             {isSearching ? (
-              <div className="flex items-center gap-1.5 w-full bg-[rgba(var(--foreground),0.04)] border border-[rgba(var(--accent),0.3)] rounded-lg px-2 py-0.5 animate-fade-in">
+              <div className="flex items-center gap-1.5 w-full min-w-0 overflow-hidden bg-[rgba(var(--foreground),0.04)] border border-[rgba(var(--accent),0.3)] rounded-lg px-2 py-0.5 animate-fade-in shadow-[0_0_8px_rgba(var(--accent),0.06)]">
                 <Search size={12} className="text-[rgb(var(--accent))] shrink-0" />
                 <input
                   type="text"
                   value={searchQuery}
                   autoFocus
                   onChange={(e) => setSearchQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape") {
+                      setIsSearching(false);
+                      setSearchQuery("");
+                    }
+                  }}
                   placeholder={VOICE_CAROUSEL_COPY.searchPlaceholder}
-                  className="flex-1 bg-transparent border-none outline-none text-[11.5px] font-mono text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/35"
+                  className="min-w-0 flex-1 bg-transparent border-none outline-none text-[11.5px] font-mono text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40"
                 />
                 {searchQuery && (
                   <button
                     type="button"
                     onClick={() => setSearchQuery("")}
-                    className="text-[10px] font-bold text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))] px-0.5 cursor-pointer"
+                    className="text-[10px] font-bold text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))] px-0.5 cursor-pointer shrink-0"
                   >
                     {VOICE_CAROUSEL_COPY.clear}
                   </button>
@@ -400,7 +416,7 @@ export const VoiceCarousel = memo(function VoiceCarousel({
                     setIsSearching(false);
                     setSearchQuery("");
                   }}
-                  className="p-0.5 text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] transition-colors cursor-pointer"
+                  className="p-0.5 text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] transition-colors cursor-pointer shrink-0"
                   aria-label={VOICE_CAROUSEL_COPY.closeSearch}
                 >
                   <X size={12} />
@@ -499,31 +515,72 @@ export const VoiceCarousel = memo(function VoiceCarousel({
             )}
           </div>
 
-          {/* Bottom Line: Voice Carousel Soundwave with Left / Right Navigation */}
+          {/* Bottom Line: Voice Carousel Navigation */}
           <div className="flex-1 flex items-center justify-between gap-2 w-full px-1 min-h-[38px]">
-            <button
-              type="button"
-              onClick={() => cycle(-1)}
-              disabled={disabled || activeList.length <= 1}
-              className="p-1.5 rounded-lg hover:bg-[rgb(var(--foreground))]/5 text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] transition-all duration-200 shrink-0 disabled:opacity-15 cursor-pointer"
-              aria-label={VOICE_CAROUSEL_COPY.prevVoice}
-            >
-              <ChevronLeft size={16} />
-            </button>
+            {isSearching ? (
+              activeList.length === 0 ? (
+                <div className="flex-1 flex items-center justify-center text-[11px] font-mono text-[rgb(var(--foreground-muted))]/60">
+                  No matching voices
+                </div>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => cycle(-1)}
+                    disabled={disabled || activeList.length <= 1}
+                    className="p-1.5 rounded-lg hover:bg-[rgb(var(--foreground))]/5 text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] transition-all duration-200 shrink-0 disabled:opacity-15 cursor-pointer"
+                    aria-label={VOICE_CAROUSEL_COPY.prevVoice}
+                  >
+                    <ChevronLeft size={16} />
+                  </button>
 
-            <div className="flex-1 flex items-center justify-center min-w-0 h-9">
-              <VoiceBars seed={currentVoice?.name || "default"} disabled={disabled} />
-            </div>
+                  <div className="flex-1 flex items-center justify-center gap-1.5 min-w-0">
+                    <span className="text-[12px] font-black text-[rgb(var(--foreground))] truncate max-w-[130px]">
+                      {currentVoice?.name}
+                    </span>
+                    <span className="text-[10px] font-mono text-[rgb(var(--accent))] font-bold shrink-0">
+                      ({activeIndex + 1}/{activeList.length})
+                    </span>
+                  </div>
 
-            <button
-              type="button"
-              onClick={() => cycle(1)}
-              disabled={disabled || activeList.length <= 1}
-              className="p-1.5 rounded-lg hover:bg-[rgb(var(--foreground))]/5 text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] transition-all duration-200 shrink-0 disabled:opacity-15 cursor-pointer"
-              aria-label={VOICE_CAROUSEL_COPY.nextVoice}
-            >
-              <ChevronRight size={16} />
-            </button>
+                  <button
+                    type="button"
+                    onClick={() => cycle(1)}
+                    disabled={disabled || activeList.length <= 1}
+                    className="p-1.5 rounded-lg hover:bg-[rgb(var(--foreground))]/5 text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] transition-all duration-200 shrink-0 disabled:opacity-15 cursor-pointer"
+                    aria-label={VOICE_CAROUSEL_COPY.nextVoice}
+                  >
+                    <ChevronRight size={16} />
+                  </button>
+                </>
+              )
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={() => cycle(-1)}
+                  disabled={disabled || activeList.length <= 1}
+                  className="p-1.5 rounded-lg hover:bg-[rgb(var(--foreground))]/5 text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] transition-all duration-200 shrink-0 disabled:opacity-15 cursor-pointer"
+                  aria-label={VOICE_CAROUSEL_COPY.prevVoice}
+                >
+                  <ChevronLeft size={16} />
+                </button>
+
+                <div className="flex-1 flex items-center justify-center min-w-0 h-9">
+                  <VoiceBars seed={currentVoice?.name || "default"} disabled={disabled} />
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => cycle(1)}
+                  disabled={disabled || activeList.length <= 1}
+                  className="p-1.5 rounded-lg hover:bg-[rgb(var(--foreground))]/5 text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] transition-all duration-200 shrink-0 disabled:opacity-15 cursor-pointer"
+                  aria-label={VOICE_CAROUSEL_COPY.nextVoice}
+                >
+                  <ChevronRight size={16} />
+                </button>
+              </>
+            )}
           </div>
         </div>
       )}

@@ -9,7 +9,7 @@ use crate::{
 
 pub type Result<T> = std::result::Result<T, PersistenceError>;
 
-pub const SCHEMA_VERSION: u32 = 10;
+pub const SCHEMA_VERSION: u32 = 12;
 
 const PERSONAL_MEMORY_SEMANTIC_SCHEMA_VERSION: u32 = 9;
 const EMPTY_PERSONAL_MEMORY_JSON: &str = r#"{"sections":[]}"#;
@@ -120,12 +120,21 @@ const SCHEMA_TABLE_STATEMENTS: &[&str] = &[
     "CREATE INDEX IF NOT EXISTS idx_notifications_session ON notifications(session_id);",
     "CREATE TABLE IF NOT EXISTS voices (
         id TEXT PRIMARY KEY,
+        provider_id TEXT NOT NULL DEFAULT 'kokoro',
         name TEXT NOT NULL,
         source_kind TEXT NOT NULL,
         slug TEXT,
+        gender TEXT NOT NULL DEFAULT 'neutral',
+        locale TEXT NOT NULL DEFAULT 'en-US',
+        accent TEXT,
+        description TEXT,
+        tags TEXT NOT NULL DEFAULT '[]',
+        sample_text TEXT NOT NULL DEFAULT 'Hello, this is a preview of my voice.',
         wav_path TEXT,
         voice_dir TEXT,
         preview_wav TEXT,
+        is_favorite INTEGER NOT NULL DEFAULT 0,
+        last_used_at INTEGER,
         created_at INTEGER NOT NULL
     );",
     "CREATE INDEX IF NOT EXISTS idx_voices_created ON voices(created_at DESC);",
@@ -187,6 +196,8 @@ pub async fn run_migrations(conn: &Connection) -> Result<()> {
             conn.execute(stmt, ()).await?;
         }
 
+        ensure_voice_metadata_columns(conn).await?;
+
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
@@ -214,6 +225,8 @@ pub async fn run_migrations(conn: &Connection) -> Result<()> {
         );
     }
 
+    ensure_voice_metadata_columns(conn).await?;
+
     if let Err(e) = seed_packaged_voices(conn).await {
         log::warn!(
             "[Persistence::Schema] Failed to seed packaged voices: {}",
@@ -227,6 +240,51 @@ pub async fn run_migrations(conn: &Connection) -> Result<()> {
             e
         );
     }
+
+    if let Err(e) = crate::services::tts::voice::sync_manifest_voices_to_db(conn).await {
+        log::warn!(
+            "[Persistence::Schema] Failed to sync manifest voices: {}",
+            e
+        );
+    }
+
+    Ok(())
+}
+
+/// Adds voice metadata columns to pre-v11 `voices` tables and drops obsolete tables.
+async fn ensure_voice_metadata_columns(conn: &Connection) -> Result<()> {
+    let mut rows = conn.query("PRAGMA table_info(voices);", ()).await?;
+    let mut cols = std::collections::HashSet::new();
+    while let Some(row) = rows.next().await? {
+        let name: String = row.get(1)?;
+        cols.insert(name);
+    }
+    for (col, ddl) in [
+        ("provider_id", "ALTER TABLE voices ADD COLUMN provider_id TEXT NOT NULL DEFAULT 'kokoro';"),
+        ("gender", "ALTER TABLE voices ADD COLUMN gender TEXT NOT NULL DEFAULT 'neutral';"),
+        ("locale", "ALTER TABLE voices ADD COLUMN locale TEXT NOT NULL DEFAULT 'en-US';"),
+        ("accent", "ALTER TABLE voices ADD COLUMN accent TEXT;"),
+        ("description", "ALTER TABLE voices ADD COLUMN description TEXT;"),
+        ("tags", "ALTER TABLE voices ADD COLUMN tags TEXT NOT NULL DEFAULT '[]';"),
+        ("sample_text", "ALTER TABLE voices ADD COLUMN sample_text TEXT NOT NULL DEFAULT 'Hello, this is a preview of my voice.';"),
+        ("is_favorite", "ALTER TABLE voices ADD COLUMN is_favorite INTEGER NOT NULL DEFAULT 0;"),
+        ("last_used_at", "ALTER TABLE voices ADD COLUMN last_used_at INTEGER;"),
+    ] {
+        if !cols.contains(col) {
+            conn.execute(ddl, ()).await?;
+        }
+    }
+
+    // Drop redundant tables if created by intermediate passes
+    conn.execute("DROP TABLE IF EXISTS voice_favorites;", ()).await?;
+    conn.execute("DROP TABLE IF EXISTS voice_recents;", ()).await?;
+    conn.execute("DROP TABLE IF EXISTS remote_voice_cache;", ()).await?;
+
+    // Create indexes now that all columns are guaranteed to exist
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_voices_provider ON voices(provider_id);", ()).await?;
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_voices_source ON voices(source_kind);", ()).await?;
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_voices_favorite ON voices(is_favorite);", ()).await?;
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_voices_last_used ON voices(last_used_at DESC);", ()).await?;
 
     Ok(())
 }

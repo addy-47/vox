@@ -1,6 +1,7 @@
 pub mod actor;
 pub mod config;
 pub mod factory;
+pub mod preview;
 pub mod providers;
 pub mod voice;
 pub use actor::{cool_down_tts, spawn_tts_worker, warm_up_tts, TtsCommand};

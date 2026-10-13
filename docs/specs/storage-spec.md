@@ -98,7 +98,8 @@ Vox organizes all on-disk artifacts under the root directory (`$VOX_HOME`, defau
 │   ├── catalog/        # Remote provider model catalog cache
 │   ├── updates/        # Update check manifests
 │   ├── temp/           # Transient audio resample buffers
-│   └── assets/         # Materialized desktop notification icons
+│   ├── assets/         # Materialized desktop notification icons
+│   └── tts/            # Transient audio preview cache (25MB LRU boundary)
 │
 ├── diagnostics/        # Tier 5: Observability & Diagnostics
 │   ├── logs/           # Rolling daily operational logs
@@ -120,6 +121,12 @@ Vox organizes all on-disk artifacts under the root directory (`$VOX_HOME`, defau
 - **RULE-STORAGE-03 (Model Decoupling)**: Model weights MUST default to `~/.vox/models/` but MUST prioritize the `VOX_MODELS_DIR` environment variable when present.
 - **RULE-STORAGE-04 (Transient Runtime Sockets)**: Unix domain sockets and process locks MUST reside in `$XDG_RUNTIME_DIR/vox/` when available on Linux, falling back to `~/.vox/run/`. These directories MUST be created with POSIX mode `0700`.
 - **RULE-STORAGE-05 (Secret Isolation)**: API keys and server secrets MUST reside strictly in `config/providers.jsonc`. Telemetry, diagnostics, and UI debug logs MUST NEVER record or output the contents of `providers.jsonc`.
+- **RULE-STORAGE-09 (Voice Asset Storage & LRU Cache)**:
+  - Canonical active voice identifier persists as `tts.voice_id` string in `settings.jsonc` (legacy `voice_index` retired with zero backwards compatibility shims).
+  - Bundled voice definitions compile into binary via `voices_manifest.json` under `services/tts/`.
+  - Custom cloned audio samples persist in `data/voices/{id}/source.wav`, and precomputed speaker embedding tensors persist in `data/voices/{id}/baked/speaker.safetensors`.
+  - On-demand synthesized preview audio files reside in disposable cache `cache/tts/previews/{sha256(provider + voice_id + prompt)}.wav` subject to a 25 MB / 50 files LRU cache boundary.
+  - Remote provider catalogs persist directly in Turso database (`voices` table), never in configuration files.
 
 ### 5.2 Field-Level Configuration Schema Mapping
 The configuration is decomposed into three files according to domain volatility, security tier, and reload semantics:
@@ -173,3 +180,4 @@ The configuration is decomposed into three files according to domain volatility,
 - **Permission Enforcement**: File permission checks on startup verify that `config/providers.jsonc` and `run/` have modes `0600` and `0700` respectively; if too permissive, permissions are corrected automatically.
 - **Turn-Hot Agent Reload**: Mutating the prompt in `config/agent.jsonc` during an active session is observed in the prompt sent to the LLM on the immediate subsequent turn without application restart.
 - **Migration Verification**: Creating mock legacy files (`~/.vox/vox.db`, `~/.vox/cache/dictation_history.jsonl`) triggers migration into `data/db/` and `data/history/` on boot with 0 legacy symlinks created.
+- **Voice Cache Boundary Verification**: Synthesizing previews beyond the 25 MB / 50 files limit confirms LRU eviction of the oldest preview audio files without impacting stored voice records.

@@ -1,6 +1,7 @@
 use std::{
     fmt::Write,
     net::{TcpStream, ToSocketAddrs},
+    path::Path,
     sync::{
         atomic::{AtomicBool, AtomicU32, Ordering},
         mpsc::Sender,
@@ -341,6 +342,59 @@ async fn stream_mp3_payload(
     }
 
     Ok(total_samples)
+}
+
+/// Synthesizes text with the given voice directly to an output WAV file for previews.
+pub async fn synthesize_to_wav(voice: &str, text: &str, output_path: &Path) -> Result<()> {
+    let (event_tx, _event_rx) = std::sync::mpsc::channel();
+    let mut ws = connect_edge_websocket(&event_tx, 0)
+        .await
+        .ok_or_else(|| anyhow::anyhow!("Failed to connect to Edge TTS WebSocket"))?;
+
+    let full_voice = resolve_full_voice_name(voice);
+    send_ssml_request(&mut ws, text, &full_voice, "+0%", &event_tx, 0).await?;
+
+    let mut mp3_bytes = Vec::new();
+    let res = timeout(Duration::from_secs(15), async {
+        while let Some(msg_res) = ws.next().await {
+            match msg_res {
+                Ok(Message::Binary(bin)) => {
+                    if bin.len() >= 2 {
+                        let header_len = u16::from_be_bytes([bin[0], bin[1]]) as usize;
+                        if bin.len() >= 2 + header_len {
+                            let header_str = String::from_utf8_lossy(&bin[2..2 + header_len]);
+                            let payload = &bin[2 + header_len..];
+                            if (header_str.contains("Path:audio") || header_str.contains("audio/mpeg")) && !payload.is_empty() {
+                                mp3_bytes.extend_from_slice(payload);
+                            }
+                        }
+                    }
+                }
+                Ok(Message::Text(txt)) => {
+                    if txt.contains("Path:turn.end") {
+                        break;
+                    }
+                }
+                Ok(Message::Close(_)) => break,
+                Err(e) => return Err(anyhow::anyhow!("WebSocket error: {}", e)),
+                _ => {}
+            }
+        }
+        Ok(())
+    }).await;
+
+    res.map_err(|_| anyhow::anyhow!("Timeout waiting for Edge TTS preview audio"))??;
+
+    if mp3_bytes.is_empty() {
+        anyhow::bail!("Received 0 audio bytes from Edge TTS");
+    }
+
+    let decoded = crate::services::audio::decode::decode_bytes_to_24khz_mono(&mp3_bytes, "mp3")
+        .map_err(|e| anyhow::anyhow!("Failed to decode Edge TTS MP3: {}", e))?;
+
+    crate::services::tts::voice::write_pcm_to_wav(&decoded.samples, 24000, output_path)
+        .map_err(|e| anyhow::anyhow!("Failed to write preview WAV: {}", e))?;
+    Ok(())
 }
 
 impl TtsProvider for EdgeTtsProvider {

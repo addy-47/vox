@@ -291,12 +291,12 @@ fn apply_tts_mutation(
             settings.tts.active = serde_json::from_value(value.clone())
                 .map_err(|e| format!("Invalid TTS active provider: {}", e))?;
         }
-        "voice" | "voice_index" => {
-            let val = value.as_i64().ok_or("voice must be an integer")? as i32;
-            if !(0..=1000).contains(&val) {
-                return Err("voice index must be between 0 and 1000".to_string());
+        "voice" | "voice_id" => {
+            let val = value.as_str().ok_or("voice must be a string id")?.to_string();
+            if val.trim().is_empty() || val.len() > 128 {
+                return Err("voice id must be 1..128 chars".to_string());
             }
-            settings.tts.voice_index = val;
+            settings.tts.voice_id = val;
         }
         "speed" => {
             settings.tts.speed = value.as_f64().ok_or("speed must be a number")? as f32;

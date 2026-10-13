@@ -67,7 +67,7 @@ fn classify_known(domain: &str, key: &str) -> Option<SettingReloadPolicy> {
                 "speech_onset_ms",
             ],
         ),
-        ("tts", &["speed", "voice_index", "voice"]),
+        ("tts", &["speed", "voice_id", "voice"]),
     ];
 
     const ALL_HOT: &[&str] = &[

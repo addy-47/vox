@@ -1,6 +1,5 @@
-import { useState, useEffect, useCallback, useMemo, memo } from "react";
+import { useState, useEffect, useMemo, memo } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
-import { listVoices } from "@/services/voiceService";
 import {
   checkTtsProviderHealth,
   getProviderCaps,
@@ -27,7 +26,8 @@ import { AsrWorkspace } from "./AsrWorkspace";
 import { AuxiliaryWorkspace } from "./AuxiliaryWorkspace";
 import { RemoteServerSetup, type RemoteSetupStatus } from "./RemoteServerSetup";
 import { isDesktop } from "@/lib/capabilities";
-import { TtsVoiceManager, type CustomVoice, type TtsSubTab } from "./TtsVoiceManager";
+import { TtsVoiceManager, type TtsSubTab } from "./TtsVoiceManager";
+import { VoiceCatalogView } from "./voices/VoiceCatalogView";
 import { TtsModelWorkspace } from "./TtsModelWorkspace";
 import { LlmCatalogView } from "./LlmCatalogView";
 import { LlmSettingsView, type SettingsSubTab as LlmSubTab } from "./LlmSettingsView";
@@ -72,18 +72,12 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
   const [activeLlmSubTab, setActiveLlmSubTab] = useState<LlmSubTab>("compute");
   const [activeTtsSubTab, setActiveTtsSubTab] = useState<TtsSubTab>("voice");
 
-  const [customVoices, setCustomVoices] = useState<CustomVoice[]>([]);
-  const [chatterboxIsAdding, setChatterboxIsAdding] = useState(false);
   const [isRemoteTtsHealthy, setIsRemoteTtsHealthy] = useState<boolean | null>(null);
   const [checkingTtsHealth, setCheckingTtsHealth] = useState(false);
   const [sshConnectionString, setSshConnectionString] = useState(() => localStorage.getItem("vox_ssh_conn") || "root@localhost");
   const [sshPort, setSshPort] = useState(() => localStorage.getItem("vox_ssh_port") || "22");
   const [sshIdentityKey, setSshIdentityKey] = useState(() => localStorage.getItem("vox_ssh_key") || "~/.ssh/id_rsa");
   const [setupStatus, setSetupStatus] = useState<RemoteSetupStatus | null>(null);
-
-  const [edgeTtsVoices, setEdgeTtsVoices] = useState<Array<{ name: string; short_name: string; gender: string; locale: string; friendly_name: string }>>([]);
-  const [edgeTtsError, setEdgeTtsError] = useState<string | null>(null);
-  const [loadingEdgeVoices, setLoadingEdgeVoices] = useState<boolean>(false);
 
   // Base layout decisions on committed and draft settings
   const activeProviderKind = draftSettings?.llm?.active || "embedded";
@@ -187,52 +181,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
     }
   }, [activePipelineTab]);
 
-  // 2. Custom Voices & Edge TTS
-  // Scoped by the active TTS provider id: the backend resolves which rows
-  // belong to the provider, so the list needs no client-side id filtering.
-  const loadCustomVoices = useCallback(async () => {
-    try {
-      const list = await listVoices(draftSettings?.tts?.active);
-      setCustomVoices(list);
-    } catch (e) {
-      console.error("Failed to list voices", e);
-    }
-  }, [draftSettings?.tts?.active]);
-
-  const loadEdgeVoices = useCallback(async () => {
-    setLoadingEdgeVoices(true);
-    setEdgeTtsError(null);
-    try {
-      const list = await listVoices("edge");
-      const mapped = list.map((v) => ({
-        name: v.id,
-        short_name: v.id,
-        gender: "Unknown",
-        locale: "en-US",
-        friendly_name: v.name,
-      }));
-      setEdgeTtsVoices(mapped);
-    } catch (err) {
-      console.error("Failed to fetch Edge TTS voices:", err);
-      setEdgeTtsError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setLoadingEdgeVoices(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (activePipelineTab === "tts") {
-      loadCustomVoices();
-    }
-  }, [activePipelineTab, loadCustomVoices]);
-
-  useEffect(() => {
-    if (isCloudTts && edgeTtsVoices.length === 0 && !loadingEdgeVoices) {
-      loadEdgeVoices();
-    }
-  }, [isCloudTts, edgeTtsVoices.length, loadingEdgeVoices, loadEdgeVoices]);
-
-  // 3. Remote TTS Health Polling (gated by preview tier, visibility & active tab)
+  // 2. Remote TTS Health Polling (gated by preview tier, visibility & active tab)
   useEffect(() => {
     if (!isRemoteTts) {
       setIsRemoteTtsHealthy(null);
@@ -582,20 +531,15 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
                         checkingTtsHealth={checkingTtsHealth}
                       />
                     )
+                  ) : activeTtsSubTab === "voice" ? (
+                    <VoiceCatalogView
+                      layoutMode={layoutMode}
+                      providerId={draftSettings?.tts?.active || ""}
+                    />
                   ) : (
                     <TtsVoiceManager
                       layoutMode={layoutMode}
-                      providerId={draftSettings?.tts?.active || ""}
                       caps={ttsCaps}
-                      customVoices={customVoices}
-                      loadCustomVoices={loadCustomVoices}
-                      chatterboxIsAdding={chatterboxIsAdding}
-                      setChatterboxIsAdding={setChatterboxIsAdding}
-                      edgeTtsVoices={edgeTtsVoices}
-                      edgeTtsError={edgeTtsError}
-                      loadingEdgeVoices={loadingEdgeVoices}
-                      loadEdgeVoices={loadEdgeVoices}
-                      activeCategoryTab={activeCategoryTab}
                       activeSubTab={activeTtsSubTab}
                     />
                   )}

@@ -241,7 +241,7 @@ export interface TtsZipvoiceConfig {
 
 export interface TtsSettings {
   active: TtsActiveProvider;
-  voice_index: number;
+  voice_id: string;
   speed: number;
   threads: number;
   edge_tts: TtsEdgeTtsConfig;
