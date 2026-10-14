@@ -106,7 +106,7 @@ export const PersonalMemoryDossierCard: React.FC<PersonalMemoryDossierCardProps>
             transition={{ duration: 0.35, ease: "easeInOut" }}
             onAnimationComplete={onVeilReady}
             className={cn(
-              "absolute inset-0 z-30 overflow-hidden bg-[rgba(var(--card),0.85)] backdrop-blur-md pointer-events-none",
+              "absolute inset-0 z-30 overflow-hidden bg-[rgba(var(--card),0.85)] pointer-events-none",
               !embedded && "rounded-2xl"
             )}
           >

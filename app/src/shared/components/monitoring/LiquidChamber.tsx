@@ -365,7 +365,7 @@ export const LiquidChamber = memo<LiquidChamberProps>(({
         className={cn(
           "flex-1 relative rounded-3xl overflow-hidden min-h-[220px] my-1 flex flex-col items-center justify-between p-4 transition-shadow select-none",
           isLightMode
-            ? "bg-[rgba(var(--card),0.25)] backdrop-blur-xl shadow-xl shadow-slate-200/40 border border-[rgba(var(--border),0.12)]"
+            ? "bg-[rgba(var(--card),0.25)] shadow-xl shadow-slate-200/40 border border-[rgba(var(--border),0.12)]"
             : "shadow-lg border border-white/5"
         )}
       >

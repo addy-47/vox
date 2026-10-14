@@ -1,4 +1,4 @@
-import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+import { convertFileSrc, invoke } from "./transport";
 
 export type UnifiedVoiceGender = "female" | "male" | "neutral";
 export type UnifiedVoiceSource =

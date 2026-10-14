@@ -249,7 +249,7 @@ export const RemoteModelsModalView = memo(({
 
           {/* Compact Filter Menu Popover */}
           {isFilterDropdownOpen && (
-            <div className="absolute left-0 top-full mt-2 z-50 w-64 rounded-xl bg-[rgba(var(--card),0.96)] backdrop-blur-xl border border-[rgba(var(--foreground),0.12)] shadow-2xl p-3 flex flex-col gap-1.5 animate-fade-in">
+            <div className="absolute left-0 top-full mt-2 z-50 w-64 rounded-xl bg-[rgba(var(--card),0.96)] border border-[rgba(var(--foreground),0.12)] shadow-2xl p-3 flex flex-col gap-1.5 animate-fade-in">
               <div className="flex items-center justify-between pb-1.5 border-b border-[rgba(var(--foreground),0.06)] px-1">
                 <span className="text-[12px] font-bold text-[rgb(var(--foreground))]">Filters</span>
                 {filterCategory !== "all" && (

@@ -357,7 +357,7 @@ export const PersonalMemoryStagingCard: React.FC<PersonalMemoryStagingCardProps>
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 0.35, ease: "easeInOut" }}
-              className="absolute inset-0 z-40 rounded-2xl overflow-hidden bg-[rgba(var(--card),0.85)] backdrop-blur-sm flex flex-col items-center justify-center pointer-events-auto"
+              className="absolute inset-0 z-40 rounded-2xl overflow-hidden bg-[rgba(var(--card),0.85)] flex flex-col items-center justify-center pointer-events-auto"
             >
               <PixelSynthesisCanvas active={isConsolidating} />
               <div className="relative z-10 flex flex-col items-center text-center p-6">
@@ -380,7 +380,7 @@ export const PersonalMemoryStagingCard: React.FC<PersonalMemoryStagingCardProps>
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 0.25, ease: "easeInOut" }}
-              className="absolute inset-0 z-40 rounded-2xl overflow-hidden bg-[rgba(var(--card),0.75)] backdrop-blur-xs flex flex-col items-center justify-center pointer-events-auto"
+              className="absolute inset-0 z-40 rounded-2xl overflow-hidden bg-[rgba(var(--card),0.75)] flex flex-col items-center justify-center pointer-events-auto"
             >
               <div className="flex flex-col items-center text-center p-6">
                 <Loader2 size={24} className="animate-spin text-[rgb(var(--accent))] mb-2.5" />
