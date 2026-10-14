@@ -86,8 +86,8 @@ const ProfilerDrawer: React.FC<ProfilerDrawerProps> = ({ open, onClose }) => {
       headerActions={
         <>
           {lastManualSnapshot && (
-            <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[11px] font-mono animate-fade-in">
-              <CheckCircle2 size={12} className="shrink-0 text-emerald-400" />
+            <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[rgba(var(--success),0.1)] border border-[rgba(var(--success),0.2)] text-[rgb(var(--success))] text-[11px] font-mono animate-fade-in">
+              <CheckCircle2 size={12} className="shrink-0 text-[rgb(var(--success))]" />
               <span className="truncate max-w-[260px]">
                 temp/{lastManualSnapshot.filename} ({new Date(lastManualSnapshot.timestampMs).toLocaleTimeString()})
               </span>

@@ -195,12 +195,7 @@ export const InteractionCard = memo(
           {activeView === "assistant" ? (
             <>
               {/* Core Assistant Controls */}
-              <div
-                className={cn(
-                  "grid gap-2 shrink-0",
-                  layoutMode === "small" ? "grid-cols-1" : "grid-cols-2"
-                )}
-              >
+              <div className="grid grid-cols-2 gap-2 shrink-0">
                 <TriggerModeCard layoutMode={layoutMode} />
                 <PipelineModeCard layoutMode={layoutMode} />
               </div>
@@ -259,12 +254,7 @@ export const InteractionCard = memo(
 
             <>
               {/* Dictation Mode Controls */}
-              <div
-                className={cn(
-                  "grid gap-2 shrink-0",
-                  layoutMode === "small" ? "grid-cols-1" : "grid-cols-2"
-                )}
-              >
+              <div className="grid grid-cols-2 gap-2 shrink-0">
                 <ToggleTile
                   title={INTERACTION_CARD_COPY.voiceTyping}
                   active={dictationEnabled}

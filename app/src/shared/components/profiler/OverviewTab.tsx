@@ -372,7 +372,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                         proc.is_main_process
                           ? "bg-[rgb(var(--accent))]/20 text-[rgb(var(--accent))] border border-[rgb(var(--accent))]/30"
                           : proc.is_devtools || proc.role.includes("Inspector") || proc.role.includes("DevTools")
-                          ? "bg-amber-500/20 text-amber-300 border border-amber-500/30"
+                          ? "bg-[rgba(var(--warn-soft),0.2)] text-[rgb(var(--warn-soft))]/80 border border-[rgba(var(--warn-soft),0.3)]"
                           : proc.role.includes("Main WebView")
                           ? "bg-[rgb(var(--accent))]/15 text-[rgb(var(--foreground))] border border-[rgba(var(--border),0.25)]"
                           : proc.role.includes("Tray")

@@ -449,9 +449,14 @@ export const DictationConfigDesk = memo(({ layoutMode, disabled = false }: Dicta
       >
         {/* TAB 1: ACTIVATION HOTKEY */}
         {activeSubTab === "hotkey" && (
-          <div className="flex flex-row items-center justify-between gap-4 h-full p-2.5 sm:p-3 rounded-xl bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--accent),0.08)] animate-fade-in">
+          <div
+            className={cn(
+              "items-center justify-between gap-3 h-full p-2.5 sm:p-3 rounded-xl bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--accent),0.08)] animate-fade-in",
+              isSmall ? "flex flex-col text-center" : "flex flex-row"
+            )}
+          >
             {/* Left: Title, Description & Status Line */}
-            <div className="flex flex-col gap-1 min-w-0 flex-1">
+            <div className={cn("flex flex-col gap-1 min-w-0", isSmall ? "w-full items-center" : "flex-1")}>
               <div className="flex items-center gap-2">
                 <span className="text-[12px] font-bold uppercase tracking-wider text-[rgb(var(--foreground))]">
                   {DICTATION_COPY.hotkeyTitle}
@@ -462,12 +467,12 @@ export const DictationConfigDesk = memo(({ layoutMode, disabled = false }: Dicta
                   </span>
                 </Tooltip>
                 {savedToast ? (
-                  <span className="flex items-center gap-1 text-emerald-400 text-[10px] font-mono font-bold animate-fade-in">
+                  <span className="flex items-center gap-1 text-[rgb(var(--success))] text-[10px] font-mono font-bold animate-fade-in">
                     <CheckCircle2 size={11} strokeWidth={2.5} />
                     <span>{DICTATION_COPY.savedFeedback}</span>
                   </span>
                 ) : hotkeyError ? (
-                  <span role="alert" className="text-[10px] font-mono font-bold text-red-400 max-w-[220px] truncate" title={hotkeyError}>
+                  <span role="alert" className="text-[10px] font-mono font-bold text-[rgb(var(--error))] max-w-[220px] truncate" title={hotkeyError}>
                     {hotkeyError}
                   </span>
                 ) : !isEditingHotkey && (dictation.hotkey || DEFAULT_HOTKEY) !== DEFAULT_HOTKEY ? (
@@ -494,7 +499,7 @@ export const DictationConfigDesk = memo(({ layoutMode, disabled = false }: Dicta
             </div>
 
             {/* Right: Dynamic 3D SVG Keyboard Control + Edit / Tick / Cross */}
-            <div className="shrink-0 flex flex-col items-center justify-center">
+            <div className={cn("shrink-0 flex flex-col items-center justify-center", isSmall && "w-full pt-1")}>
               {/* Hidden Keyboard Input */}
               <input
                 ref={inputRef}
@@ -530,7 +535,7 @@ export const DictationConfigDesk = memo(({ layoutMode, disabled = false }: Dicta
                             <button
                               type="button"
                               onClick={handleHotkeySave}
-                              className="p-1 text-emerald-400 hover:text-emerald-300 hover:scale-110 transition-all cursor-pointer rounded"
+                              className="p-1 text-[rgb(var(--success))] hover:text-[rgb(var(--success))]/80 hover:scale-110 transition-all cursor-pointer rounded"
                               aria-label={DICTATION_COPY.saveBtn}
                             >
                               <Check size={12} strokeWidth={2.5} />
@@ -575,9 +580,14 @@ export const DictationConfigDesk = memo(({ layoutMode, disabled = false }: Dicta
 
         {/* TAB 2: OUTPUT MODE */}
         {activeSubTab === "destination" && (
-          <div className="flex flex-row items-center justify-between gap-4 h-full p-2.5 sm:p-3 rounded-xl bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--accent),0.08)] animate-fade-in">
+          <div
+            className={cn(
+              "items-center justify-between gap-3 h-full p-2.5 sm:p-3 rounded-xl bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--accent),0.08)] animate-fade-in",
+              isSmall ? "flex flex-col text-center" : "flex flex-row"
+            )}
+          >
             {/* Left: Heading, dynamic description & delivery status */}
-            <div className="flex flex-col gap-1 min-w-0 flex-1">
+            <div className={cn("flex flex-col gap-1 min-w-0", isSmall ? "w-full items-center" : "flex-1")}>
               <div className="flex items-center gap-2">
                 <span className="text-[12px] font-bold uppercase tracking-wider text-[rgb(var(--foreground))]">
                   {DICTATION_COPY.destinationTitle}
@@ -602,7 +612,7 @@ export const DictationConfigDesk = memo(({ layoutMode, disabled = false }: Dicta
             </div>
 
             {/* Right: Interactive Triangular Loop SVG Selector */}
-            <div className="shrink-0 flex items-center justify-center">
+            <div className={cn("shrink-0 flex items-center justify-center", isSmall && "w-full pt-1")}>
               <TriangularLoopSelector
                 options={OUTPUT_OPTIONS}
                 value={outputMode}

@@ -116,7 +116,7 @@ export const PersonalMemoryModalView: React.FC<PersonalMemoryModalViewProps> = m
                   className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-[11px] font-mono border border-[rgba(var(--border),0.18)] bg-[rgba(var(--foreground),0.04)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:border-[rgba(var(--accent),0.3)] transition-all cursor-pointer shadow-xs disabled:opacity-40"
                   aria-label={MEMORY_COPY.copyDocTitle}
                 >
-                  {drawer.copied ? <Check size={13} className="text-emerald-400" /> : <Copy size={13} />}
+                  {drawer.copied ? <Check size={13} className="text-[rgb(var(--success))]" /> : <Copy size={13} />}
                   <span className="hidden sm:inline">{drawer.copied ? MEMORY_COPY.copied : MEMORY_COPY.copy}</span>
                 </button>
               </Tooltip>
@@ -278,7 +278,7 @@ export const PersonalMemoryModalView: React.FC<PersonalMemoryModalViewProps> = m
                 <Layers size={13} className="shrink-0" />
                 <span className="truncate">{MEMORY_COPY.tabStaging}</span>
                 {hasPendingStaging && (
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_#34d399] animate-pulse shrink-0" />
+                  <span className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--success))] shadow-[0_0_6px_rgba(var(--success),0.8)] animate-pulse shrink-0" />
                 )}
               </button>
             </div>

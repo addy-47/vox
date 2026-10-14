@@ -45,7 +45,7 @@ export const UnderlineInput = forwardRef<HTMLInputElement, UnderlineInputProps>(
               className={cn(
                 "flex items-center gap-1 ml-0.5",
                 error
-                  ? "text-rose-400/85"
+                  ? "text-[rgb(var(--danger))]/85"
                   : "text-[rgb(var(--foreground-muted))]/75"
               )}
             >
@@ -59,7 +59,7 @@ export const UnderlineInput = forwardRef<HTMLInputElement, UnderlineInputProps>(
           className={cn(
             "relative flex items-center border-b transition-all duration-300 pb-0.5",
             error
-              ? "border-rose-500/50 focus-within:border-b-2 focus-within:border-rose-400"
+              ? "border-[rgba(var(--danger),0.5)] focus-within:border-b-2 focus-within:border-[rgb(var(--danger))]"
               : "border-[rgba(var(--border),0.15)] focus-within:border-b-2 focus-within:border-[rgb(var(--accent))]",
             disabled && "opacity-50 pointer-events-none"
           )}
@@ -87,7 +87,7 @@ export const UnderlineInput = forwardRef<HTMLInputElement, UnderlineInputProps>(
         </div>
 
         {errorMessage && (
-          <span id={errorId} className="text-[11px] text-rose-400/90 font-medium flex items-center gap-1 ml-0.5">
+          <span id={errorId} className="text-[11px] text-[rgb(var(--danger))]/90 font-medium flex items-center gap-1 ml-0.5">
             {errorMessage}
           </span>
         )}

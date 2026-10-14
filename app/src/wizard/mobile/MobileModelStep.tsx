@@ -385,8 +385,8 @@ export const MobileModelStep: React.FC<MobileModelStepProps> = ({
 
         {/* Surface download error or failed models */}
         {(downloadError || failedFiles.length > 0) && (
-          <div className="max-w-sm mx-auto p-4 rounded-2xl bg-red-500/10 border border-red-500/20 text-center space-y-2">
-            <div className="flex items-center justify-center gap-2 text-xs font-semibold text-red-400">
+          <div className="max-w-sm mx-auto p-4 rounded-2xl bg-[rgb(var(--error))]/10 border border-[rgba(var(--error),0.2)] text-center space-y-2">
+            <div className="flex items-center justify-center gap-2 text-xs font-semibold text-[rgb(var(--error))]">
               <AlertCircle className="w-4 h-4 shrink-0" />
               <span>
                 {failedFiles.length > 0
@@ -395,14 +395,14 @@ export const MobileModelStep: React.FC<MobileModelStepProps> = ({
               </span>
             </div>
             {downloadError && (
-              <p className="text-[11px] font-mono text-red-300/80 break-words">
+              <p className="text-[11px] font-mono text-[rgb(var(--error))]/80 break-words">
                 {downloadError}
               </p>
             )}
             <button
               type="button"
               onClick={handleStartDownload}
-              className="mx-auto min-h-[48px] px-4 py-2 rounded-xl bg-red-500/20 text-red-200 text-xs font-medium flex items-center justify-center gap-2 touch-manipulation cursor-pointer active:bg-red-500/30 transition-colors"
+              className="mx-auto min-h-[48px] px-4 py-2 rounded-xl bg-[rgb(var(--error))]/20 text-[rgb(var(--error))]/80 text-xs font-medium flex items-center justify-center gap-2 touch-manipulation cursor-pointer active:bg-[rgb(var(--error))]/30 transition-colors"
             >
               <RotateCcw className="w-3.5 h-3.5" />
               <span>Retry Download</span>
@@ -485,7 +485,7 @@ export const MobileModelStep: React.FC<MobileModelStepProps> = ({
               onClick={() => handleSelectPreset('full')}
               className={`p-3.5 rounded-2xl transition-all cursor-pointer touch-manipulation text-left border ${
                 preset === 'full'
-                  ? 'bg-emerald-500/10 border-emerald-500/40 shadow-[0_0_20px_rgba(16,185,129,0.12)]'
+                  ? 'bg-[rgb(var(--success))]/10 border-[rgb(var(--success))]/40 shadow-[0_0_20px_rgba(var(--success),0.12)]'
                   : 'bg-white/[0.02] border-white/[0.06] active:bg-white/[0.05]'
               }`}
             >
@@ -494,7 +494,7 @@ export const MobileModelStep: React.FC<MobileModelStepProps> = ({
                   <div
                     className={`w-5 h-5 rounded-full border flex items-center justify-center shrink-0 transition-colors ${
                       preset === 'full'
-                        ? 'border-emerald-400 bg-emerald-400 text-black'
+                        ? 'border-[rgb(var(--success))] bg-[rgb(var(--success))] text-black'
                         : 'border-[rgba(var(--foreground),0.25)]'
                     }`}
                   >
@@ -505,16 +505,16 @@ export const MobileModelStep: React.FC<MobileModelStepProps> = ({
                       <span className="text-xs font-display font-bold text-[rgb(var(--foreground))]">
                         {copy.presetFullTitle}
                       </span>
-                      <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 uppercase font-bold">
+                      <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-[rgb(var(--success))]/15 text-[rgb(var(--success))] uppercase font-bold">
                         {copy.presetFullTag}
                       </span>
                     </div>
-                    <span className="text-[11px] font-mono text-emerald-400 font-semibold">
+                    <span className="text-[11px] font-mono text-[rgb(var(--success))] font-semibold">
                       {formatBytes(fullSizeBytes)}
                     </span>
                   </div>
                 </div>
-                <Sparkles className="w-4 h-4 text-emerald-400/80 shrink-0 mt-0.5" />
+                <Sparkles className="w-4 h-4 text-[rgb(var(--success))]/80 shrink-0 mt-0.5" />
               </div>
               <p className="text-[11px] text-[rgb(var(--foreground-muted))] leading-relaxed mt-2 pl-8">
                 {copy.presetFullDesc}
@@ -677,12 +677,12 @@ export const MobileModelStep: React.FC<MobileModelStepProps> = ({
                                           </span>
                                         )}
                                         {isCloud && (
-                                          <span className="text-[9px] font-mono px-1 py-0.2 rounded bg-sky-500/15 text-sky-400 uppercase font-bold">
+                                          <span className="text-[9px] font-mono px-1 py-0.2 rounded bg-[rgb(var(--info))]/15 text-[rgb(var(--info))] uppercase font-bold">
                                             {copy.cloudBadge}
                                           </span>
                                         )}
                                         {isRemote && (
-                                          <span className="text-[9px] font-mono px-1 py-0.2 rounded bg-purple-500/15 text-purple-400 uppercase font-bold">
+                                          <span className="text-[9px] font-mono px-1 py-0.2 rounded bg-[rgb(var(--violet))]/15 text-[rgb(var(--violet))] uppercase font-bold">
                                             {copy.remoteBadge}
                                           </span>
                                         )}
@@ -730,7 +730,7 @@ export const MobileModelStep: React.FC<MobileModelStepProps> = ({
                                 {isDownloading && !isDone && !isBuiltIn && !isCloud && (
                                   <div className="mt-2 pt-2 border-t border-[rgba(var(--foreground),0.04)] space-y-1">
                                     <div className="flex justify-between text-[10px] font-mono text-[rgb(var(--foreground-muted))]">
-                                      <span className={isGroupFailed ? 'text-red-400 font-bold' : ''}>
+                                      <span className={isGroupFailed ? 'text-[rgb(var(--error))] font-bold' : ''}>
                                         {stepLabel ?? MODEL_PROGRESS_STEPS.downloading}
                                       </span>
                                       <span>{modelProg?.progress ?? (isGroupDone ? 100 : 0)}%</span>
@@ -738,7 +738,7 @@ export const MobileModelStep: React.FC<MobileModelStepProps> = ({
                                     <div className="h-1 w-full bg-[rgba(var(--foreground),0.08)] rounded-full overflow-hidden">
                                       <div
                                         className={`h-full transition-all duration-300 ${
-                                          isGroupFailed ? 'bg-red-400' : 'bg-[rgb(var(--accent))]'
+                                          isGroupFailed ? 'bg-[rgb(var(--error))]' : 'bg-[rgb(var(--accent))]'
                                         }`}
                                         style={{ width: `${modelProg?.progress ?? (isGroupDone ? 100 : 0)}%` }}
                                       />

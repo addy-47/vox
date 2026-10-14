@@ -93,8 +93,8 @@ export const DetailPanel = memo(
           </div>
         ) : error ? (
           <div className="flex flex-col items-center justify-center py-12 px-4 text-center gap-3">
-            <AlertCircle className="text-red-400 shrink-0" size={24} />
-            <p className="text-[12px] text-red-400 font-medium max-w-xs leading-relaxed">{error}</p>
+            <AlertCircle className="text-[rgb(var(--error))] shrink-0" size={24} />
+            <p className="text-[12px] text-[rgb(var(--error))] font-medium max-w-xs leading-relaxed">{error}</p>
             {onRetry && (
               <button
                 onClick={onRetry}

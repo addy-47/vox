@@ -1,18 +1,29 @@
 import { useState, useEffect, memo, useCallback, useMemo } from "react";
 import { useSettingsStore, LlmProviderConfig } from "@/store/settingsStore";
 import { CLOUD_PROVIDERS, CloudProvider } from "@/data/providersCopy";
-import { INTERACTION_CONFIG_DESK_COPY } from "@/data/settingsCopy";
+import { INTERACTION_CONFIG_DESK_COPY, CATALOG_HEADER_COPY } from "@/data/settingsCopy";
 import { checkLlmProviderHealth } from "@/services/settingsService";
 import {
   Brain, Cloud, Network, Volume2, Sparkles, Mic,
-  AlertCircle, ArrowLeft, Server, Search, Check, X, ArrowUpDown, Pencil
+  AlertCircle, ArrowLeft, Server, Globe, Key, KeyRound, Plus, Check, X, Pencil
 } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
-import { ApiKeyField, ExpandableList, UnderlineInput } from "@/shared/ui";
+import { ApiKeyField, ExpandableList, UnderlineInput, Tooltip } from "@/shared/ui";
 import { SettingsCommitControls } from "@/shared/components/settings/SettingsCommitControls";
 import { ProviderTier } from "./ProviderSelectorView";
 import { RemoteModelsModalView } from "@/shared/components/settings/models/LlmCatalogView";
 import { CloudProvidersModalView } from "@/shared/components/settings/models/CloudProvidersModalView";
+import {
+  CatalogFilterItem,
+  CatalogFilterMenu,
+  CatalogHeader,
+  type CatalogSortOrder,
+} from "@/shared/components/settings/models/catalog/CatalogHeader";
+import {
+  ComingSoonGraphic,
+  EmbeddedComputeGraphic,
+  BuiltinVoiceGraphic,
+} from "@/shared/components/settings/models/CustomSvgs";
 import { useRemoteLlmProbing } from "@/shared/hooks/useRemoteLlmProbing";
 import { useScrollTopOnChange } from "@/shared/hooks/useScrollTopOnChange";
 import { useLenisScrollContainer } from "@/shared/hooks/useLenisScrollContainer";
@@ -32,10 +43,43 @@ export const LlmConfigDesk = memo(({
   onBack,
   layoutMode,
 }: LlmConfigDeskProps) => {
-  const draftLlm = useSettingsStore((s) => s.draftSettings?.llm);
-  const draftChatterboxRemote = useSettingsStore((s) => s.draftSettings?.tts?.chatterbox_remote);
-  const hasDraftSettings = useSettingsStore((s) => Boolean(s.draftSettings));
+  const modelCatalog = useSettingsStore((s) => s.modelCatalog);
+  const draftSettings = useSettingsStore((s) => s.draftSettings);
+  const draftLlm = draftSettings?.llm;
+  const draftChatterboxRemote = draftSettings?.tts?.chatterbox_remote;
+  const hasDraftSettings = Boolean(draftSettings);
   const updateDraft = useSettingsStore((s) => s.updateDraft);
+
+  const isCurrentPillActive = useMemo(() => {
+    if (!draftSettings) return false;
+    if (activeCategory === "STT") {
+      const activeSttTier: ProviderTier =
+        draftSettings.stt?.active === "cloud" ? "cloud" : "embedded";
+      return activePill === activeSttTier;
+    }
+    if (activeCategory === "LLM") {
+      const activeLlmTier: ProviderTier = draftSettings.llm?.active || "embedded";
+      return activePill === activeLlmTier;
+    }
+    if (activeCategory === "TTS") {
+      const activeModelId = draftSettings.tts?.active || "";
+      const model = modelCatalog?.tts?.find((m) => m.id === activeModelId);
+      const activeTtsTier: ProviderTier = model?.is_remote
+        ? "server"
+        : model?.is_cloud || activeModelId === "edge_tts"
+        ? "cloud"
+        : "embedded";
+      return activePill === activeTtsTier;
+    }
+    return false;
+  }, [
+    activeCategory,
+    activePill,
+    draftSettings?.stt?.active,
+    draftSettings?.llm?.active,
+    draftSettings?.tts?.active,
+    modelCatalog?.tts,
+  ]);
 
   const [modelsError, setModelsError] = useState<string | null>(null);
   const [isHealthy, setIsHealthy] = useState<boolean | null>(null);
@@ -43,7 +87,11 @@ export const LlmConfigDesk = memo(({
   const [checkingHealth, setCheckingHealth] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
+  const [sortOrder, setSortOrder] = useState<CatalogSortOrder>("az");
+  const [providerFilter, setProviderFilter] = useState<
+    "all" | "configured" | "popular" | "unconfigured"
+  >("all");
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [editingProviderId, setEditingProviderId] = useState<string | null>(null);
   const [editingKeyValue, setEditingKeyValue] = useState("");
   const [modalView, setModalView] = useState<"providers" | "models">("providers");
@@ -142,6 +190,23 @@ export const LlmConfigDesk = memo(({
     [committedSettings?.llm?.cloud_keys, committedActiveCloudProviderId, committedSettings?.llm?.cloud?.api_key]
   );
 
+  const providerFilterCounts = useMemo(() => {
+    let configured = 0;
+    let unconfigured = 0;
+    let popular = 0;
+    for (const p of CLOUD_PROVIDERS) {
+      if (getProviderKey(p.id)?.trim()) configured += 1;
+      else unconfigured += 1;
+      if (p.popular) popular += 1;
+    }
+    return {
+      all: CLOUD_PROVIDERS.length,
+      configured,
+      popular,
+      unconfigured,
+    };
+  }, [getProviderKey]);
+
   const filteredProviders = useMemo(() => {
     let list = CLOUD_PROVIDERS;
     if (searchQuery.trim()) {
@@ -153,6 +218,15 @@ export const LlmConfigDesk = memo(({
           p.tagline?.toLowerCase().includes(q)
       );
     }
+
+    if (providerFilter === "configured") {
+      list = list.filter((p) => Boolean(getProviderKey(p.id)?.trim()));
+    } else if (providerFilter === "popular") {
+      list = list.filter((p) => p.popular);
+    } else if (providerFilter === "unconfigured") {
+      list = list.filter((p) => !getProviderKey(p.id)?.trim());
+    }
+
     return [...list].sort((a, b) => {
       const aKey = Boolean(getCommittedProviderKey(a.id)?.trim());
       const bKey = Boolean(getCommittedProviderKey(b.id)?.trim());
@@ -163,9 +237,11 @@ export const LlmConfigDesk = memo(({
 
       // Within connected or unconnected group, sort alphabetically
       const cmp = a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
-      return sortOrder === "asc" ? cmp : -cmp;
+      return sortOrder === "az" ? cmp : -cmp;
     });
-    }, [searchQuery, sortOrder, getCommittedProviderKey]);
+    }, [searchQuery, sortOrder, providerFilter, getProviderKey, getCommittedProviderKey]);
+
+  const resetProviderFilter = useCallback(() => setProviderFilter("all"), []);
 
   const { containerRef: providerGridRef, lenisRef: providerLenisRef } =
     useLenisScrollContainer<HTMLDivElement>();
@@ -381,36 +457,6 @@ export const LlmConfigDesk = memo(({
 
   if (!hasDraftSettings) return null;
 
-  /** Inline render helper (NOT a component): defined per-render, so it must be
-   * invoked as a function — rendering as <ProviderSearchField /> would remount
-   * the input (and reset scroll/focus) on every parent render. */
-  const ProviderSearchField = ({ autoFocus = false }: { autoFocus?: boolean }) => (
-    <div className="flex items-center gap-1.5 w-full min-w-0 border-b border-[rgb(var(--accent))] pb-0.5 animate-fade-in">
-      <Search size={12} className="text-[rgb(var(--accent))] shrink-0" />
-      <input
-        type="text"
-        autoFocus={autoFocus}
-        value={searchQuery}
-        onChange={(e) => setSearchQuery(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Escape") closeSearch();
-        }}
-        placeholder={INTERACTION_CONFIG_DESK_COPY.llm.cloud.searchPlaceholder}
-        aria-label={INTERACTION_CONFIG_DESK_COPY.llm.cloud.searchPlaceholder}
-        className="flex-1 min-w-0 bg-transparent text-[11px] outline-none text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40"
-      />
-      <button
-        type="button"
-        onClick={closeSearch}
-        className="text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))] transition-colors p-0.5 shrink-0"
-        title={INTERACTION_CONFIG_DESK_COPY.llm.cloud.closeSearch}
-        aria-label={INTERACTION_CONFIG_DESK_COPY.llm.cloud.closeSearch}
-      >
-        <X size={12} />
-      </button>
-    </div>
-  );
-
   /** The provider grid. Height-driven so the same element serves both the
    * constrained inline slot and the full-height expand modal. */
   /** Inline render helper (NOT a component): invoke as {ProviderRows()} so list
@@ -544,30 +590,48 @@ export const LlmConfigDesk = memo(({
 
   // ── Standard Level-2 Header ──────────────────────────────────────────────
   // Left: breadcrumb back button + stage/modality title
-  // Right: status indicator pill / badge
+  // Right: minimal status sphere (accent on online, grey on offline)
   const renderHeader = (
     icon: React.ReactNode,
     title: string,
     badge?: React.ReactNode
   ) => {
-    const defaultBadge = () => {
-      const baseStatus = checkingHealth
-        ? INTERACTION_CONFIG_DESK_COPY.status.testing
-        : isHealthy === false
-        ? INTERACTION_CONFIG_DESK_COPY.status.offline
-        : isHealthy === true
-        ? INTERACTION_CONFIG_DESK_COPY.status.online
-        : INTERACTION_CONFIG_DESK_COPY.status.active;
+    const defaultSphere = () => {
+      if (!isCurrentPillActive) {
+        return (
+          <Tooltip label="Inactive tier" side="bottom" mobileTapEnabled>
+            <span className="inline-block w-2 h-2 rounded-full shrink-0 transition-all bg-[rgb(var(--foreground-muted))]/40" />
+          </Tooltip>
+        );
+      }
 
-      const statusText =
+      if (checkingHealth) {
+        return (
+          <Tooltip label={INTERACTION_CONFIG_DESK_COPY.status.testing} side="bottom" mobileTapEnabled>
+            <span className="inline-block w-2 h-2 rounded-full shrink-0 transition-all bg-[rgb(var(--accent))]/40 animate-pulse" />
+          </Tooltip>
+        );
+      }
+
+      if (isHealthy === false) {
+        return (
+          <Tooltip label={INTERACTION_CONFIG_DESK_COPY.status.offline} side="bottom" mobileTapEnabled>
+            <span className="inline-block w-2 h-2 rounded-full shrink-0 transition-all bg-[rgb(var(--danger))]" />
+          </Tooltip>
+        );
+      }
+
+      const tooltipLabel =
         isHealthy === true && detectedDialect && activeLlmProvider === "server"
-          ? `${detectedDialect} • ${baseStatus}`
-          : baseStatus;
+          ? `${detectedDialect} • ${INTERACTION_CONFIG_DESK_COPY.status.online}`
+          : activePill === "embedded"
+          ? `${INTERACTION_CONFIG_DESK_COPY.status.active} • On-Device`
+          : INTERACTION_CONFIG_DESK_COPY.status.online;
 
       return (
-        <span className="text-[10px] font-mono font-bold tracking-wider text-[rgb(var(--accent))] uppercase">
-          {statusText}
-        </span>
+        <Tooltip label={tooltipLabel} side="bottom" mobileTapEnabled>
+          <span className="inline-block w-2 h-2 rounded-full shrink-0 transition-all bg-[rgb(var(--accent))] shadow-[0_0_6px_rgba(var(--accent),0.55)]" />
+        </Tooltip>
       );
     };
 
@@ -594,9 +658,9 @@ export const LlmConfigDesk = memo(({
           </div>
         </div>
 
-        {/* Right: Badge */}
-        <div className="shrink-0">
-          {badge !== undefined ? badge : defaultBadge()}
+        {/* Right: Status Sphere or Custom Slot */}
+        <div className="shrink-0 flex items-center">
+          {badge !== undefined ? badge : defaultSphere()}
         </div>
       </div>
     );
@@ -604,44 +668,45 @@ export const LlmConfigDesk = memo(({
 
   const copy = INTERACTION_CONFIG_DESK_COPY;
 
-  /** Static description panel: header + centered copy. The six embedded/cloud
-   * blurbs below share this exact layout; only icon, title, and text vary. */
+  /** Static description panel: header + side-by-side copy (65%) and vector graphic (35%) in all layouts. */
   const renderBlurb = (
     icon: React.ReactNode,
     title: string,
     description: string,
-    badge?: React.ReactNode
-  ) => (
-    <div className="flex flex-col justify-between h-full gap-2 animate-fade-in">
-      {renderHeader(icon, title, badge)}
-      <div className="flex-1 flex items-center p-3 rounded-lg bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--accent),0.06)]">
-        <p className="text-[11.5px] sm:text-[12px] text-[rgb(var(--foreground-muted))]/85 leading-relaxed font-medium">
-          {description}
-        </p>
+    graphic: React.ReactNode
+  ) => {
+    return (
+      <div className="flex flex-col h-auto gap-4 animate-fade-in">
+        {renderHeader(icon, title)}
+        <div className="w-full flex flex-row items-center justify-between gap-4 p-2.5 sm:p-3 select-none">
+          <div className="min-w-0 flex flex-col justify-center gap-1 w-[65%]">
+            <p className="text-[11px] sm:text-[11.5px] text-[rgb(var(--foreground-muted))]/75 leading-relaxed font-medium">
+              {description}
+            </p>
+          </div>
+          <div className="shrink-0 flex items-center justify-center w-[35%]">
+            {graphic}
+          </div>
+        </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   return (
     <div
       className={cn(
         "w-full flex flex-col flex-1 min-h-0 rounded-xl bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--accent),0.08)] p-3 sm:p-3.5 gap-2.5 justify-between animate-fade-in",
-        layoutMode === "small" ? "h-auto min-h-0" : "h-full"
+        layoutMode === "small" ? "h-auto min-h-0 justify-start" : "h-full"
       )}
     >
       {/* ─── SECTION 0: INTEGRATED PIPELINE (MODE = INTEGRATED) ─── */}
       {!isModular && (
-        <div className="flex flex-col justify-between h-full gap-2 animate-fade-in">
-          {renderHeader(
-            <Sparkles size={14} className="text-[rgb(var(--accent))]" />,
-            copy.integrated.title
-          )}
-          <div className="flex-1 flex items-center p-3 rounded-lg bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--accent),0.06)]">
-            <p className="text-[11.5px] sm:text-[12px] text-[rgb(var(--foreground-muted))]/85 leading-relaxed font-medium">
-              {copy.integrated.description}
-            </p>
-          </div>
-        </div>
+        renderBlurb(
+          <Sparkles size={14} className="text-[rgb(var(--accent))]" />,
+          copy.integrated.title,
+          copy.integrated.description,
+          <BuiltinVoiceGraphic />
+        )
       )}
 
       {/* ─── SECTION 1: STT CATEGORY ─── */}
@@ -649,7 +714,8 @@ export const LlmConfigDesk = memo(({
         renderBlurb(
           <Mic size={14} className="text-[rgb(var(--accent))]" />,
           copy.stt.embedded.title,
-          copy.stt.embedded.description
+          copy.stt.embedded.description,
+          <EmbeddedComputeGraphic label="On-Device AI" />
         )
       )}
 
@@ -658,9 +724,7 @@ export const LlmConfigDesk = memo(({
           <Server size={14} className="text-[rgb(var(--accent))]" />,
           copy.stt.server.title,
           copy.stt.server.description,
-          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[rgb(var(--accent))]/10 text-[rgb(var(--accent))] uppercase font-mono border border-[rgb(var(--accent))]/20">
-            {copy.stt.server.badge}
-          </span>
+          <ComingSoonGraphic label="Coming Soon"/>
         )
       )}
 
@@ -669,9 +733,7 @@ export const LlmConfigDesk = memo(({
           <Cloud size={14} className="text-[rgb(var(--accent))]" />,
           copy.stt.cloud.title,
           copy.stt.cloud.description,
-          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[rgb(var(--accent))]/10 text-[rgb(var(--accent))] uppercase font-mono border border-[rgb(var(--accent))]/20">
-            {copy.stt.cloud.badge}
-          </span>
+          <ComingSoonGraphic />
         )
       )}
 
@@ -680,7 +742,8 @@ export const LlmConfigDesk = memo(({
         renderBlurb(
           <Brain size={14} className="text-[rgb(var(--accent))]" />,
           copy.llm.embedded.title,
-          copy.llm.embedded.description
+          copy.llm.embedded.description,
+          <EmbeddedComputeGraphic label="On-Device AI" />
         )
       )}
 
@@ -709,7 +772,7 @@ export const LlmConfigDesk = memo(({
           </div>
 
           {modelsError && (
-            <span className="text-[11px] text-red-400/80 flex items-center gap-1 ml-0.5 shrink-0">
+            <span className="text-[11px] text-[rgb(var(--error))]/80 flex items-center gap-1 ml-0.5 shrink-0">
               <AlertCircle size={13} /> {modelsError}
             </span>
           )}
@@ -718,42 +781,134 @@ export const LlmConfigDesk = memo(({
 
       {isModular && activeCategory === "LLM" && activePill === "cloud" && (
         <div className="flex flex-col gap-2.5 h-full min-h-0 animate-fade-in">
-          {renderHeader(
-            <Cloud size={14} className="text-[rgb(var(--accent))]" />,
-            copy.llm.cloud.title,
-            <div className="flex items-center gap-1 shrink-0">
-              <button
-                type="button"
-                onClick={() => setSortOrder((prev) => (prev === "asc" ? "desc" : "asc"))}
-                className="w-7 h-7 flex items-center justify-center rounded-md text-[rgb(var(--foreground-muted))]/70 hover:text-[rgb(var(--accent))] transition-colors cursor-pointer"
-                title={sortOrder === "asc" ? copy.llm.cloud.sortAsc : copy.llm.cloud.sortDesc}
-                aria-label={sortOrder === "asc" ? copy.llm.cloud.sortAsc : copy.llm.cloud.sortDesc}
+          <CatalogHeader
+            icon={<Cloud size={14} className="text-[rgb(var(--accent))]" />}
+            title={copy.llm.cloud.title}
+            onBack={onBack}
+            status={
+              // Minimal sphere: connection state as one accent-lit dot.
+              <Tooltip
+                label={
+                  !isCurrentPillActive
+                    ? "Inactive tier"
+                    : checkingHealth
+                    ? copy.status.testing
+                    : isHealthy === false
+                    ? copy.status.offline
+                    : copy.status.online
+                }
+                side="bottom"
+                mobileTapEnabled
               >
-                <ArrowUpDown size={13} strokeWidth={1.75} />
-              </button>
-              <button
-                type="button"
-                onClick={() => (isSearchOpen ? closeSearch() : openSearch())}
-                className={cn(
-                  "w-7 h-7 flex items-center justify-center rounded-md transition-colors cursor-pointer",
-                  isSearchOpen || searchQuery
-                    ? "text-[rgb(var(--accent))]"
-                    : "text-[rgb(var(--foreground-muted))]/70 hover:text-[rgb(var(--accent))]"
-                )}
-                title={copy.llm.cloud.searchPlaceholder}
-                aria-label={copy.llm.cloud.searchPlaceholder}
-              >
-                <Search size={13} strokeWidth={1.75} />
-              </button>
-            </div>
-          )}
+                <span
+                  className={cn(
+                    "inline-block w-2 h-2 rounded-full shrink-0 transition-all",
+                    !isCurrentPillActive
+                      ? "bg-[rgb(var(--foreground-muted))]/40"
+                      : checkingHealth
+                      ? "bg-[rgb(var(--accent))]/40 animate-pulse"
+                      : isHealthy === false
+                      ? "bg-[rgb(var(--danger))]"
+                      : "bg-[rgb(var(--accent))] shadow-[0_0_6px_rgba(var(--accent),0.55)]"
+                  )}
+                />
+              </Tooltip>
+            }
+            action={
+              // Stub: the add-provider flow does not exist yet.
+              <Tooltip label={CATALOG_HEADER_COPY.addProviderSoon} side="bottom">
+                <span className="inline-flex">
+                  <button
+                    type="button"
+                    disabled
+                    aria-disabled
+                    className={cn(
+                      "w-7 h-7 flex items-center justify-center rounded-md text-[rgb(var(--foreground-muted))]/50 cursor-not-allowed",
+                      "focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))]"
+                    )}
+                  >
+                    <Plus size={13} strokeWidth={1.75} />
+                  </button>
+                </span>
+              </Tooltip>
+            }
+            filter={{
+              label: copy.llm.cloud.filterAria,
+              open: isFilterOpen,
+              activeCount: providerFilter === "all" ? 0 : 1,
+              onToggle: () => setIsFilterOpen((v) => !v),
+              onClose: () => setIsFilterOpen(false),
+              menu: (
+                <CatalogFilterMenu
+                  title={copy.llm.cloud.filtersTitle}
+                  resetLabel={
+                    providerFilter === "all" ? undefined : copy.llm.cloud.resetFilters
+                  }
+                  onReset={resetProviderFilter}
+                >
+                  {(
+                    [
+                      {
+                        id: "all",
+                        label: copy.llm.cloud.filterAll,
+                        count: providerFilterCounts.all,
+                        Icon: Globe,
+                      },
+                      {
+                        id: "configured",
+                        label: copy.llm.cloud.filterConfigured,
+                        count: providerFilterCounts.configured,
+                        Icon: Key,
+                      },
+                      {
+                        id: "popular",
+                        label: copy.llm.cloud.filterPopular,
+                        count: providerFilterCounts.popular,
+                        Icon: Sparkles,
+                      },
+                      {
+                        id: "unconfigured",
+                        label: copy.llm.cloud.filterUnconfigured,
+                        count: providerFilterCounts.unconfigured,
+                        Icon: KeyRound,
+                      },
+                    ] as const
+                  ).map((item) => (
+                    <CatalogFilterItem
+                      key={item.id}
+                      icon={item.Icon}
+                      label={item.label}
+                      count={item.count}
+                      active={providerFilter === item.id}
+                      onSelect={() => {
+                        setProviderFilter(item.id);
+                        setIsFilterOpen(false);
+                      }}
+                    />
+                  ))}
+                </CatalogFilterMenu>
+              ),
+            }}
+            sort={{
+              order: sortOrder,
+              onToggle: () => setSortOrder((prev) => (prev === "az" ? "za" : "az")),
+            }}
+            search={{
+              open: isSearchOpen,
+              value: searchQuery,
+              placeholder: copy.llm.cloud.searchPlaceholder,
+              onChange: setSearchQuery,
+              onToggle: () => (isSearchOpen ? closeSearch() : openSearch()),
+              onClose: closeSearch,
+            }}
+          />
 
           {/* 2-Column Provider List — inline at card height, full-bleed in the expand modal */}
           <ExpandableList
             className="flex-1 min-h-0"
             domainId="models"
             triggerPlacement="floating"
-            inlineMaxHeightClass="max-h-[160px] sm:max-h-[180px]"
+            inlineMaxHeightClass="max-h-[120px] sm:max-h-[140px]"
             icon={modalView === "models" ? <Network size={16} className="text-[rgb(var(--accent))]" /> : <Cloud size={16} className="text-[rgb(var(--accent))]" />}
             onBack={modalView === "models" ? () => setModalView("providers") : undefined}
             title={
@@ -779,12 +934,7 @@ export const LlmConfigDesk = memo(({
                 ? "Explore, probe, and select remote models for conversation."
                 : "Configure external AI model endpoints and authentication keys."
             }
-            headerActions={
-              <div className="flex items-center gap-2 min-w-0">
-                {modalView === "models" ? null : (isSearchOpen || searchQuery ? <div className="w-[200px] sm:w-[260px]">{ProviderSearchField({})}</div> : null)}
-                <SettingsCommitControls domainId="models" />
-              </div>
-            }
+            headerActions={<SettingsCommitControls domainId="models" />}
             modalContent={
               modalView === "models" ? (
                 <RemoteModelsModalView
@@ -825,12 +975,6 @@ export const LlmConfigDesk = memo(({
             {ProviderRows()}
           </ExpandableList>
 
-          {isSearchOpen && (
-            <div className="shrink-0">
-              {ProviderSearchField({ autoFocus: true })}
-            </div>
-          )}
-
           {modelsError && (
             <span className="text-[10px] text-[rgb(var(--accent))] flex items-center gap-1 ml-0.5 shrink-0 font-mono">
               <AlertCircle size={11} /> {modelsError}
@@ -844,7 +988,8 @@ export const LlmConfigDesk = memo(({
         renderBlurb(
           <Volume2 size={14} className="text-[rgb(var(--accent))]" />,
           copy.tts.embedded.title,
-          copy.tts.embedded.description
+          copy.tts.embedded.description,
+          <EmbeddedComputeGraphic label="On-Device AI" />
         )
       )}
 
@@ -873,7 +1018,8 @@ export const LlmConfigDesk = memo(({
         renderBlurb(
           <Sparkles size={14} className="text-[rgb(var(--accent))]" />,
           copy.tts.cloud.title,
-          copy.tts.cloud.description
+          copy.tts.cloud.description,
+          <BuiltinVoiceGraphic />
         )
       )}
     </div>

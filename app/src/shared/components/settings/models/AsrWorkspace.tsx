@@ -3,9 +3,9 @@ import { useSettingsStore } from "@/store/settingsStore";
 import { SubModelCard } from "../SubModelCard";
 import type { ModelStatus } from "@/shared/hooks/useModelDownloads";
 import { cn } from "@/shared/lib/utils";
-import { Microchip, Zap, Battery, Gauge } from "lucide-react";
+import { Zap, Battery, Gauge } from "lucide-react";
 import { STT_SETTINGS_COPY, COMPUTE_PROFILE_COPY } from "@/data/settingsCopy";
-import { SettingsTabPane, PresetButton, PresetInput } from "./SettingsTabPane";
+import { CustomSvgs, PresetButton, PresetInput } from "./CustomSvgs";
 import { TransliterationToggle } from "./TransliterationToggle";
 
 interface AsrWorkspaceProps {
@@ -46,14 +46,14 @@ export const AsrWorkspace = memo(
     const throttleCustom = ![150, 300, 500].includes(currentThrottle);
 
     return (
-      <div className="flex-1 min-h-0 w-full overflow-y-auto custom-scrollbar pr-1">
+      <div className={cn("flex-1 min-h-0 w-full overflow-y-auto custom-scrollbar pr-1", layoutMode === "small" && "max-h-[220px]")}>
         {activeCategoryTab === "model" ? (
           <div
             className={cn(
               "grid gap-2.5 h-full",
               modelCatalog.stt.length <= 2
                 ? (layoutMode === "small" ? "grid-cols-1 auto-rows-fr" : "grid-cols-2 grid-rows-1")
-                : (layoutMode === "small" ? "grid-cols-1 auto-rows-full snap-y snap-mandatory" : "grid-cols-2 auto-rows-full snap-y snap-mandatory")
+                : (layoutMode === "small" ? "grid-cols-1 auto-rows-max content-start" : "grid-cols-2 auto-rows-max content-start")
             )}
           >
           {modelCatalog.stt.map((model) => {
@@ -99,7 +99,7 @@ export const AsrWorkspace = memo(
         >
           {/* SUBTAB 1: STREAMING CADENCE */}
           {activeSubTab === "streamingRate" && (
-            <SettingsTabPane
+            <CustomSvgs
               title={STT_SETTINGS_COPY.streamingRate.title}
               description={STT_SETTINGS_COPY.streamingRate.description}
               layoutMode={layoutMode}
@@ -138,7 +138,7 @@ export const AsrWorkspace = memo(
 
           {/* SUBTAB 2: TRANSLITERATION */}
           {activeSubTab === "transliteration" && (
-            <SettingsTabPane
+            <CustomSvgs
               title={STT_SETTINGS_COPY.transliteration.title}
               description={STT_SETTINGS_COPY.transliteration.description}
               layoutMode={layoutMode}
@@ -163,8 +163,7 @@ export const AsrWorkspace = memo(
               : currentThreads === ecoThreads ? "eco"
               : "custom";
             return (
-              <SettingsTabPane
-                icon={Microchip}
+              <CustomSvgs
                 title={COMPUTE_PROFILE_COPY.title}
                 description={STT_SETTINGS_COPY.compute.description}
                 layoutMode={layoutMode}
@@ -183,7 +182,7 @@ export const AsrWorkspace = memo(
                       selected={currentProfile === "eco"}
                       onClick={() => updateDraft("stt", "threads", ecoThreads)}
                     >
-                      <Battery size={11} className="text-emerald-400" />
+                      <Battery size={11} className="text-[rgb(var(--success))]" />
                       <span>{COMPUTE_PROFILE_COPY.eco}</span>
                     </PresetButton>
                     <PresetButton
@@ -191,7 +190,7 @@ export const AsrWorkspace = memo(
                       selected={currentProfile === "max"}
                       onClick={() => updateDraft("stt", "threads", totalCores)}
                     >
-                      <Gauge size={11} className="text-amber-400" />
+                      <Gauge size={11} className="text-[rgb(var(--warn-soft))]" />
                       <span>{COMPUTE_PROFILE_COPY.max}</span>
                     </PresetButton>
                     <PresetInput

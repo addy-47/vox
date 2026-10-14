@@ -2,7 +2,6 @@ import {
   memo,
   useState,
   useMemo,
-  useRef,
   useEffect,
   useCallback,
 } from "react";
@@ -14,9 +13,11 @@ import {
   AlertCircle,
   AlertTriangle,
   Sparkles,
-  Search,
-  X,
-  Plus,
+  Cpu,
+  Gauge,
+  Heart,
+  Wrench,
+  Zap,
 } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { Tooltip } from "@/shared/ui/Tooltip";
@@ -25,6 +26,7 @@ import { SettingsCommitControls } from "@/shared/components/settings/SettingsCom
 import { fzfMultiTermScore } from "@/shared/lib/fuzzy";
 import { useScrollTopOnChange } from "@/shared/hooks/useScrollTopOnChange";
 import { useLenisScrollContainer } from "@/shared/hooks/useLenisScrollContainer";
+import { useFavoriteModels } from "@/shared/hooks/useFavoriteModels";
 import { LLM_CATALOG_COPY } from "@/data/settingsCopy";
 import { CLOUD_PROVIDERS } from "@/data/providersCopy";
 import {
@@ -35,6 +37,12 @@ import {
 } from "@/store/settingsStore";
 import { CloudProvidersModalView, useCloudProvidersModalState } from "../CloudProvidersModalView";
 import { RemoteModelsModalView } from "./RemoteModelsModalView";
+import {
+  CatalogFilterItem,
+  CatalogFilterMenu,
+  CatalogHeader,
+  type CatalogSortOrder,
+} from "./CatalogHeader";
 import {
   REMOTE_MODEL_PAGE_SIZE,
   provenanceLabel,
@@ -50,10 +58,6 @@ export interface RemoteCatalogSectionProps {
   remoteModelsError: string | null;
   probingMap: Record<string, { status: 'idle' | 'testing' | 'success' | 'error'; capabilities?: ModelCapabilities; error?: string }>;
   handleProbeCapabilities: (id?: string) => void;
-  customModelId: string;
-  setCustomModelId: (id: string) => void;
-  customModelStatus?: 'idle' | 'checking' | 'valid' | 'invalid';
-  handleValidateCustomModel?: () => void;
 }
 
 export const RemoteCatalogSection = memo(({
@@ -64,10 +68,6 @@ export const RemoteCatalogSection = memo(({
   remoteModelsError,
   probingMap,
   handleProbeCapabilities,
-  customModelId,
-  setCustomModelId,
-  customModelStatus,
-  handleValidateCustomModel,
 }: RemoteCatalogSectionProps) => {
   const updateDraft = useSettingsStore((s) => s.updateDraft);
   const capabilitiesCache = useSettingsStore((s) => s.capabilitiesCache);
@@ -87,23 +87,50 @@ export const RemoteCatalogSection = memo(({
   // Search State for Remote Catalog
   const [searchQuery, setSearchQuery] = useState("");
   const [isSearching, setIsSearching] = useState(false);
-  const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const [sort, setSort] = useState<CatalogSortOrder>("az");
+  const [modelFilter, setModelFilter] = useState<
+    "all" | "favorites" | "benchmarked" | "tools" | "fast"
+  >("all");
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
 
-  // Custom Model ID expandable bar
-  const [isCustomInputOpen, setIsCustomInputOpen] = useState(false);
-  const customInputRef = useRef<HTMLInputElement | null>(null);
+  const { favoriteModelIds } = useFavoriteModels();
 
-  useEffect(() => {
-    if (isSearching && searchInputRef.current) {
-      searchInputRef.current.focus();
+  /** Resolved probe capabilities for a model (live probe → model payload →
+   * capability cache). Single source for the filter predicates below. */
+  const resolveCapabilities = useCallback(
+    (model: LlmModelInfo): ModelCapabilities | undefined =>
+      probingMap[model.id]?.capabilities ||
+      model.capabilities ||
+      capabilitiesCache?.[`server:${model.id}`] ||
+      capabilitiesCache?.[`cloud:${model.id}`] ||
+      capabilitiesCache?.[`embedded:${model.id}`] ||
+      capabilitiesCache?.[model.id],
+    [probingMap, capabilitiesCache]
+  );
+
+  const resetModelFilter = useCallback(() => setModelFilter("all"), []);
+
+  // Facet counts for the header filter popover (mirrors the expand modal).
+  const modelFilterCounts = useMemo(() => {
+    let favorites = 0;
+    let benchmarked = 0;
+    let tools = 0;
+    let fast = 0;
+    for (const model of remoteModels) {
+      if (favoriteModelIds.has(model.id)) favorites += 1;
+      const probed = resolveCapabilities(model);
+      if (probed?.tps != null && probed.tps > 0) benchmarked += 1;
+      if (probed?.supports_tools === "supported") tools += 1;
+      if (probed?.tps != null && probed.tps >= 30) fast += 1;
     }
-  }, [isSearching]);
-
-  useEffect(() => {
-    if (isCustomInputOpen && customInputRef.current) {
-      customInputRef.current.focus();
-    }
-  }, [isCustomInputOpen]);
+    return {
+      all: remoteModels.length,
+      favorites,
+      benchmarked,
+      tools,
+      fast,
+    };
+  }, [remoteModels, favoriteModelIds, resolveCapabilities]);
 
   const selectedModelId = provider && "model" in provider ? provider.model : undefined;
 
@@ -116,7 +143,8 @@ export const RemoteCatalogSection = memo(({
     return committedSettings?.llm?.embedded?.model;
   }, [committedSettings]);
 
-  // Filtered Remote Models with fzf-style fuzzy matching and selected model prioritized first
+  // Filtered Remote Models with fzf-style fuzzy matching, active facets, and
+  // name order. The committed model stays pinned to the top.
   const filteredRemoteModels = useMemo(() => {
     const trimmed = searchQuery.trim();
     let models = remoteModels;
@@ -145,6 +173,25 @@ export const RemoteCatalogSection = memo(({
       }
     }
 
+    if (modelFilter !== "all") {
+      models = models.filter((model) => {
+        if (modelFilter === "favorites") return favoriteModelIds.has(model.id);
+        const probed = resolveCapabilities(model);
+        if (modelFilter === "benchmarked") return probed?.tps != null && probed.tps > 0;
+        if (modelFilter === "tools") return probed?.supports_tools === "supported";
+        return probed?.tps != null && probed.tps >= 30;
+      });
+    }
+
+    const sorted = [...models];
+    sorted.sort((a, b) => {
+      const an = a.name || a.id;
+      const bn = b.name || b.id;
+      const cmp = an.localeCompare(bn, undefined, { sensitivity: "base" });
+      return sort === "az" ? cmp : -cmp;
+    });
+    models = sorted;
+
     // Pinned: The saved (committed) model is placed first in the list
     if (committedRemoteModelId) {
       const selectedIndex = models.findIndex((m) => m.id === committedRemoteModelId);
@@ -157,28 +204,27 @@ export const RemoteCatalogSection = memo(({
     }
 
     return models;
-  }, [remoteModels, searchQuery, committedRemoteModelId]);
+  }, [
+    remoteModels,
+    searchQuery,
+    modelFilter,
+    sort,
+    favoriteModelIds,
+    resolveCapabilities,
+    committedRemoteModelId,
+  ]);
 
   // Capped render window for the inline grid (see REMOTE_MODEL_PAGE_SIZE).
   const [visibleModelCount, setVisibleModelCount] = useState(REMOTE_MODEL_PAGE_SIZE);
   useEffect(() => {
     setVisibleModelCount(REMOTE_MODEL_PAGE_SIZE);
-  }, [searchQuery, committedRemoteModelId, remoteModels]);
+  }, [searchQuery, modelFilter, sort, committedRemoteModelId, remoteModels]);
 
   const visibleInlineModels = useMemo(
     () => filteredRemoteModels.slice(0, visibleModelCount),
     [filteredRemoteModels, visibleModelCount]
   );
   const inlineHiddenCount = filteredRemoteModels.length - visibleInlineModels.length;
-
-  // Close the custom-model input once validation succeeds and applies the id.
-  const prevCustomModelStatus = useRef(customModelStatus);
-  useEffect(() => {
-    if (customModelStatus === "valid" && prevCustomModelStatus.current !== "valid") {
-      setIsCustomInputOpen(false);
-    }
-    prevCustomModelStatus.current = customModelStatus;
-  }, [customModelStatus]);
 
   const handleSelectModel = useCallback((modelId: string) => {
     const draft = useSettingsStore.getState().draftSettings;
@@ -328,7 +374,7 @@ export const RemoteCatalogSection = memo(({
                           className="inline-flex items-center shrink-0 cursor-help p-1 -m-1"
                           onClick={(e) => e.stopPropagation()}
                         >
-                          <AlertTriangle size={12} className="text-amber-400" />
+                          <AlertTriangle size={12} className="text-[rgb(var(--warn-soft))]" />
                         </span>
                       </Tooltip>
                     )}
@@ -382,7 +428,7 @@ export const RemoteCatalogSection = memo(({
                             {isGpu ? (
                               <span className="text-[rgb(var(--notif-models))] font-mono text-[10px] font-bold shrink-0">{LLM_CATALOG_COPY.gpuBadge}</span>
                             ) : probed?.server_has_gpu ? (
-                              <span className="text-amber-400 font-mono text-[10px] font-bold shrink-0">{LLM_CATALOG_COPY.cpuBadge}</span>
+                              <span className="text-[rgb(var(--warn-soft))] font-mono text-[10px] font-bold shrink-0">{LLM_CATALOG_COPY.cpuBadge}</span>
                             ) : null}
                           </div>
                           <div className="space-y-1 font-mono text-[10.5px] w-full">
@@ -487,176 +533,123 @@ export const RemoteCatalogSection = memo(({
 
   return (
     <div className="w-full h-full flex flex-col min-h-0 space-y-2 animate-fade-in">
-      {/* Connected Server Header with Search Bar / Custom Model Input (Fixed/Sticky at top) */}
-      <div className="flex items-center justify-between gap-2 min-h-[34px] pb-1 border-b border-[rgba(var(--foreground),0.04)] shrink-0">
-        {isCustomInputOpen ? (
-          <div className="flex items-center gap-2 w-full animate-fade-in">
-            <div className="flex-1 flex items-center gap-2 px-2.5 py-1 rounded-lg bg-[rgba(var(--foreground),0.04)] border border-[rgba(var(--accent),0.35)] focus-within:border-[rgb(var(--accent))] focus-within:ring-1 focus-within:ring-[rgb(var(--accent))]/30 transition-all">
-              <Plus size={14} className="text-[rgb(var(--accent))] shrink-0" />
-              <input
-                ref={customInputRef}
-                type="text"
-                value={customModelId}
-                onChange={(e) => setCustomModelId(e.target.value)}
-                placeholder={LLM_CATALOG_COPY.customModelPlaceholder}
-                className="w-full bg-transparent border-none outline-none text-[12px] font-mono text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40"
-                onKeyDown={(e) => {
-                  if (e.key === "Escape") {
-                    setIsCustomInputOpen(false);
-                  } else if (e.key === "Enter" && customModelId.trim()) {
-                    handleValidateCustomModel?.();
-                  }
-                }}
-              />
-              {customModelId && (
-                <button
-                  type="button"
-                  onClick={() => setCustomModelId("")}
-                  className="text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] p-0.5 cursor-pointer"
-                >
-                  <X size={13} />
-                </button>
-              )}
-            </div>
-            <button
-              type="button"
-              disabled={!customModelId.trim() || customModelStatus === "checking"}
-              onClick={() => handleValidateCustomModel?.()}
-              className="px-3 py-1 rounded-lg bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] text-[11px] font-bold uppercase tracking-wider hover:brightness-110 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer shrink-0"
+      {/* Standardized catalog header (design-spec §10.1) */}
+      <CatalogHeader
+        icon={<ServerCog size={14} className="text-[rgb(var(--accent))]" />}
+        title={LLM_CATALOG_COPY.connectedServer}
+        status={
+          remoteModelsError ? (
+            <Tooltip
+              label={
+                typeof remoteModelsError === "string" &&
+                !remoteModelsError.includes("[object")
+                  ? remoteModelsError
+                  : LLM_CATALOG_COPY.serverErrorTooltip
+              }
+              side="bottom"
+              mobileTapEnabled
             >
-              {LLM_CATALOG_COPY.use}
-            </button>
-            <button
-              type="button"
-              onClick={() => setIsCustomInputOpen(false)}
-              className="p-1 rounded-lg text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.05)] transition-all cursor-pointer shrink-0"
-            >
-              <X size={15} />
-            </button>
-            {customModelStatus !== "idle" && (
-              <span
-                className={cn(
-                  "text-[11px] font-mono shrink-0 flex items-center gap-1",
-                  customModelStatus === "invalid" ? "text-red-400" : "text-[rgb(var(--foreground-muted))]"
-                )}
-              >
-                {customModelStatus === "checking" && <Loader2 size={11} className="animate-spin" />}
-                {customModelStatus === "checking"
-                  ? LLM_CATALOG_COPY.customValidating
-                  : customModelStatus === "invalid"
-                    ? LLM_CATALOG_COPY.customInvalid
-                    : LLM_CATALOG_COPY.customValid}
+              <span className="inline-flex items-center text-[rgb(var(--warn-soft))] shrink-0 cursor-help">
+                <AlertCircle size={14} />
               </span>
-            )}
-          </div>
-        ) : isSearching || searchQuery ? (
-          <div className="flex items-center gap-2 w-full animate-fade-in">
-            <div className="flex-1 flex items-center gap-2 px-2.5 py-1 rounded-lg bg-[rgba(var(--foreground),0.04)] border border-[rgba(var(--accent),0.35)] focus-within:border-[rgb(var(--accent))] focus-within:ring-1 focus-within:ring-[rgb(var(--accent))]/30 transition-all">
-              <Search size={14} className="text-[rgb(var(--accent))] shrink-0" />
-              <input
-                ref={searchInputRef}
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Escape") {
-                    if (searchQuery) {
-                      setSearchQuery("");
-                    } else {
-                      setIsSearching(false);
-                    }
-                  } else if (e.key === "Enter") {
-                    searchInputRef.current?.blur();
-                  }
-                }}
-                placeholder={LLM_CATALOG_COPY.searchPlaceholder}
-                className="w-full bg-transparent border-none outline-none text-[12px] text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40"
-              />
-              {searchQuery && (
-                <button
-                  type="button"
-                  onClick={() => setSearchQuery("")}
-                  className="text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] p-0.5 cursor-pointer"
-                >
-                  <X size={13} />
-                </button>
-              )}
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                setIsSearching(false);
-                setSearchQuery("");
-              }}
-              className="p-1 rounded-lg text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.05)] transition-all cursor-pointer shrink-0"
+            </Tooltip>
+          ) : loadingRemoteModels ? (
+            <span className="text-[11px] font-bold text-[rgb(var(--accent))] flex items-center gap-1 px-2 py-1 rounded-lg bg-[rgb(var(--accent))]/10 border border-[rgb(var(--accent))]/20 shrink-0">
+              <RefreshCw size={12} className="animate-spin" /> {LLM_CATALOG_COPY.fetching}
+            </span>
+          ) : undefined
+        }
+        filter={{
+          label: LLM_CATALOG_COPY.filterAria,
+          open: isFilterOpen,
+          activeCount: modelFilter === "all" ? 0 : 1,
+          onToggle: () => setIsFilterOpen((v) => !v),
+          onClose: () => setIsFilterOpen(false),
+          menu: (
+            <CatalogFilterMenu
+              title={LLM_CATALOG_COPY.filtersTitle}
+              resetLabel={
+                modelFilter === "all" ? undefined : LLM_CATALOG_COPY.resetFilters
+              }
+              onReset={resetModelFilter}
             >
-              <X size={15} />
-            </button>
-          </div>
-        ) : (
-          <>
-            <div className="flex flex-col min-w-0">
-              <span className="font-bold text-[rgb(var(--foreground))] text-[13px] flex items-center gap-1.5 truncate">
-                <ServerCog size={15} className="text-[rgb(var(--accent))] shrink-0" />
-                <span>{LLM_CATALOG_COPY.connectedServer}</span>
-                {remoteModelsError && (
-                  <span
-                    title={typeof remoteModelsError === "string" && !remoteModelsError.includes("[object") ? remoteModelsError : LLM_CATALOG_COPY.serverErrorTooltip}
-                    className="inline-flex items-center text-amber-400 shrink-0 ml-0.5 cursor-help"
-                  >
-                    <AlertCircle size={14} />
-                  </span>
-                )}
-              </span>
-            </div>
+              {(
+                [
+                  {
+                    id: "all",
+                    label: LLM_CATALOG_COPY.filterAll,
+                    count: modelFilterCounts.all,
+                    Icon: Cpu,
+                  },
+                  {
+                    id: "favorites",
+                    label: LLM_CATALOG_COPY.filterFavorites,
+                    count: modelFilterCounts.favorites,
+                    Icon: Heart,
+                  },
+                  {
+                    id: "benchmarked",
+                    label: LLM_CATALOG_COPY.filterBenchmarked,
+                    count: modelFilterCounts.benchmarked,
+                    Icon: Zap,
+                  },
+                  {
+                    id: "tools",
+                    label: LLM_CATALOG_COPY.filterTools,
+                    count: modelFilterCounts.tools,
+                    Icon: Wrench,
+                  },
+                  {
+                    id: "fast",
+                    label: LLM_CATALOG_COPY.filterFast,
+                    count: modelFilterCounts.fast,
+                    Icon: Gauge,
+                  },
+                ] as const
+              ).map((item) => (
+                <CatalogFilterItem
+                  key={item.id}
+                  icon={item.Icon}
+                  label={item.label}
+                  count={item.count}
+                  active={modelFilter === item.id}
+                  onSelect={() => {
+                    setModelFilter(item.id);
+                    setIsFilterOpen(false);
+                  }}
+                />
+              ))}
+            </CatalogFilterMenu>
+          ),
+        }}
+        sort={{
+          order: sort,
+          onToggle: () => setSort((prev) => (prev === "az" ? "za" : "az")),
+        }}
+        search={{
+          open: isSearching,
+          value: searchQuery,
+          placeholder: LLM_CATALOG_COPY.searchPlaceholder,
+          onChange: setSearchQuery,
+          onToggle: () =>
+            setIsSearching((v) => {
+              if (v) setSearchQuery("");
+              return !v;
+            }),
+          onClose: () => {
+            setIsSearching(false);
+            setSearchQuery("");
+          },
+        }}
+      />
 
-            <div className="flex items-center gap-1.5 shrink-0">
-              {loadingRemoteModels ? (
-                <span className="text-[11px] font-bold text-[rgb(var(--accent))] flex items-center gap-1 px-2 py-1 rounded-lg bg-[rgb(var(--accent))]/10 border border-[rgb(var(--accent))]/20">
-                  <RefreshCw size={12} className="animate-spin" /> {LLM_CATALOG_COPY.fetching}
-                </span>
-              ) : (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsCustomInputOpen(true);
-                      setIsSearching(false);
-                    }}
-                    className="p-1.5 rounded-lg bg-[rgba(var(--foreground),0.04)] border border-[rgba(var(--foreground),0.08)] hover:border-[rgb(var(--accent))]/40 hover:bg-[rgba(var(--accent),0.08)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] transition-all cursor-pointer shadow-sm flex items-center justify-center"
-                    title={LLM_CATALOG_COPY.customModelTitle}
-                    aria-label={LLM_CATALOG_COPY.customModelAria}
-                  >
-                    <Plus size={15} />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsSearching(true);
-                      setIsCustomInputOpen(false);
-                    }}
-                    className="p-1.5 rounded-lg bg-[rgba(var(--foreground),0.04)] border border-[rgba(var(--foreground),0.08)] hover:border-[rgb(var(--accent))]/40 hover:bg-[rgba(var(--accent),0.08)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] transition-all cursor-pointer shadow-sm flex items-center justify-center"
-                    title={LLM_CATALOG_COPY.searchTitle}
-                    aria-label={LLM_CATALOG_COPY.searchAria}
-                  >
-                    <Search size={15} />
-                  </button>
-                  <span className="px-2.5 py-1 rounded-lg bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--foreground),0.06)] text-[rgb(var(--foreground-muted))] text-[11px] font-mono font-medium">
-                    {remoteModels.length} models
-                  </span>
-                </>
-              )}
-            </div>
-          </>
-        )}
-      </div>
 
       {/* Remote Models 2-Column Grid — inline at card height, full-bleed in the expand modal */}
       <ExpandableList
         className="flex-1 min-h-0"
         domainId="models"
         triggerPlacement="floating"
-        inlineMaxHeightClass={layoutMode === "small" ? "max-h-[235px]" : undefined}
+        inlineMaxHeightClass={layoutMode === "small" ? "max-h-[220px]" : undefined}
         onBack={showProvidersView ? () => setCatalogModalView(activeModalView === "models" ? "providers" : "models") : undefined}
         icon={activeModalView === "models" ? <ServerCog size={16} className="text-[rgb(var(--accent))]" /> : <Cloud size={16} className="text-[rgb(var(--accent))]" />}
         title={

@@ -38,10 +38,10 @@ export const ApiKeyField = memo(
             <span
               className={cn(
                 "flex items-center gap-1 ml-0.5",
-                error ? "text-rose-400/85" : "text-[rgb(var(--foreground-muted))]/75"
+                error ? "text-[rgb(var(--danger))]/85" : "text-[rgb(var(--foreground-muted))]/75"
               )}
             >
-              <Key size={12} className={error ? "text-rose-400/70" : "text-[rgb(var(--accent))]"} />
+              <Key size={12} className={error ? "text-[rgb(var(--danger))]/70" : "text-[rgb(var(--accent))]"} />
               {label}
             </span>
             {onTestConnection && (
@@ -65,7 +65,7 @@ export const ApiKeyField = memo(
           className={cn(
             "relative flex items-center border-b transition-all duration-300 pb-0.5",
             error
-              ? "border-rose-500/50 focus-within:border-b-2 focus-within:border-rose-400"
+              ? "border-[rgba(var(--danger),0.5)] focus-within:border-b-2 focus-within:border-[rgb(var(--danger))]"
               : "border-[rgba(var(--border),0.15)] focus-within:border-b-2 focus-within:border-[rgb(var(--accent))]"
           )}
         >
@@ -91,8 +91,8 @@ export const ApiKeyField = memo(
           <div
             className={cn(
               "flex items-center gap-1.5 text-[11.5px] font-medium transition-all pt-0.5",
-              status === "success" && "text-emerald-400",
-              status === "error" && "text-rose-400",
+              status === "success" && "text-[rgb(var(--success))]",
+              status === "error" && "text-[rgb(var(--danger))]",
               status === "idle" && "text-[rgb(var(--foreground-muted))]"
             )}
           >

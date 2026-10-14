@@ -448,6 +448,41 @@ Rather than standard conversation logs, Vox renders a holographic dialogue strea
   `title` only for component props, truncated-text ellipsis, and shared primitives.
 * Icon-only buttons **must** have a tooltip.
 
+### 10.1 Catalog Header Grammar
+
+Every dense catalog rendered inside a settings card (providers, LLM models, voices)
+carries one standardized inline header. The grammar is closed — no catalog adds
+rows, badges, or controls outside it.
+
+```
+[icon] Title  ·  gap  ·  [catalog action] [filter] [sort] [search]
+```
+
+* **Icon + title** on the left, in `font-display`, with an optional breadcrumb
+  back arrow for nested catalogs. The breadcrumb belongs to the header, not to
+  the list: a catalog reachable by drilling in keeps its `←` affordance.
+* **Right cluster** holds at most four slots, in fixed order: catalog action,
+  filter, sort, search. A slot omitted by a catalog collapses; the order never
+  changes.
+* **Catalog action** is catalog-specific (e.g. add-provider). When a catalog has
+  no such action the slot is empty.
+* **Filter** opens a compact popover — the same facets the catalog's expand modal
+  offers — and shows an active-count dot. Filters are real: the inline list
+  narrows to the chosen facet. The popover renders in a portal pinned to the
+  trigger and clamped to the viewport; it is never clipped by the card's scroll
+  container and never exceeds `240px` width or the remaining viewport height.
+  Its internals stay tight (`11.5px` rows, `4px` gaps, glyphless facets allowed)
+  so it reads as a facet menu, not a second card.
+* **Sort** toggles name order, A–Z ⇄ Z–A.
+* **Search** toggles the right cluster into a single underline input that
+  replaces the icons in place. The header row does not grow.
+* Icon controls use the 13px thin-stroke treatment in a `w-7 h-7` rounded-md
+  hit target. Native `title` tooltips are banned here as everywhere else; every
+  slot uses the custom `Tooltip`.
+* Count pills are banned next to the title (design-spec §5, zero redundant
+  value/status badges). Status that must surface (e.g. fetching, connection
+  failure) is a status affordance, not a count.
+
 ---
 
 ## 11. Accessibility

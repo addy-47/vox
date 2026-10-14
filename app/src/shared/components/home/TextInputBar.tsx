@@ -118,7 +118,7 @@ export const TextInputBar = memo(({
         className={cn(
           "flex items-center justify-center w-9 h-9 rounded-full transition-colors duration-200 cursor-pointer",
           isMicMuted
-            ? "text-red-400/90 bg-red-500/15 hover:bg-red-500/25"
+            ? "text-[rgb(var(--error))]/90 bg-[rgba(var(--error),0.15)] hover:bg-[rgba(var(--error),0.25)]"
             : "text-[rgb(var(--accent))]/70 hover:text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/10"
         )}
         aria-label={isMicMuted ? copy.unmuteMicAriaLabel : copy.muteMicAriaLabel}
@@ -134,7 +134,7 @@ export const TextInputBar = memo(({
         className={cn(
           "flex items-center justify-center w-9 h-9 rounded-full transition-colors duration-200 cursor-pointer",
           isPlaybackMuted
-            ? "text-amber-400/90 bg-amber-500/15 hover:bg-amber-500/25"
+            ? "text-[rgb(var(--warn-soft))]/90 bg-[rgba(var(--warn-soft),0.15)] hover:bg-[rgba(var(--warn-soft),0.25)]"
             : "text-[rgb(var(--accent))]/70 hover:text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/10"
         )}
         aria-label={isPlaybackMuted ? copy.unmuteSpeakerAriaLabel : copy.muteSpeakerAriaLabel}

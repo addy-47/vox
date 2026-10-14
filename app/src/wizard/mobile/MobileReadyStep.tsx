@@ -21,7 +21,7 @@ export const MobileReadyStep: React.FC<MobileReadyStepProps> = () => {
               <VoxOrb interactionState="Idle" />
             </div>
             {/* Vibrant celebratory aura */}
-            <div className="absolute inset-0 bg-emerald-500/20 blur-[100px] rounded-full pointer-events-none animate-pulse" />
+            <div className="absolute inset-0 bg-[rgb(var(--success))]/20 blur-[100px] rounded-full pointer-events-none animate-pulse" />
             <div className="absolute inset-4 bg-[rgb(var(--accent))]/15 blur-[60px] rounded-full pointer-events-none" />
           </div>
         </div>
@@ -29,8 +29,8 @@ export const MobileReadyStep: React.FC<MobileReadyStepProps> = () => {
         {/* Headline, Status Badges & Usage Prompt (Centered) */}
         <div className="space-y-3 max-w-sm mb-4 shrink-0 text-center">
           {/* Status Badge Capsule */}
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/12 border border-emerald-500/25 text-[10px] font-mono font-bold tracking-wider uppercase text-emerald-400">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[rgb(var(--success))]/12 border border-[rgb(var(--success))]/25 text-[10px] font-mono font-bold tracking-wider uppercase text-[rgb(var(--success))]">
+            <span className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--success))] animate-pulse" />
             <span>{copy.statusBadge}</span>
           </div>
 
@@ -51,7 +51,7 @@ export const MobileReadyStep: React.FC<MobileReadyStepProps> = () => {
               <span>Voice Calibrated</span>
             </div>
             <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/[0.03] border border-white/[0.06] text-[10px] font-mono text-[rgb(var(--foreground-muted))]">
-              <ShieldCheck className="w-3 h-3 text-emerald-400" />
+              <ShieldCheck className="w-3 h-3 text-[rgb(var(--success))]" />
               <span>100% Private</span>
             </div>
           </div>

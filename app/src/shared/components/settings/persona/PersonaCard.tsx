@@ -79,14 +79,14 @@ function renderSyntaxHighlightedText(code: string) {
       } else if (matchStr === "<lang>" || matchStr === "<script>") {
         // Special template variables
         parts.push(
-          <span key={`${match.index}-var`} className="text-amber-400 font-semibold bg-amber-400/10 px-1 py-0.2 rounded border border-amber-400/20">
+          <span key={`${match.index}-var`} className="text-[rgb(var(--warn-soft))] font-semibold bg-[rgba(var(--warn-soft),0.1)] px-1 py-0.2 rounded border border-[rgba(var(--warn-soft),0.2)]">
             {matchStr}
           </span>
         );
       } else if (matchStr.startsWith("[") && matchStr.endsWith("]")) {
         // [Bracket Headers]
         parts.push(
-          <span key={`${match.index}-bracket`} className="text-sky-400 font-semibold">
+          <span key={`${match.index}-bracket`} className="text-[rgb(var(--info))] font-semibold">
             {matchStr}
           </span>
         );
@@ -99,7 +99,7 @@ function renderSyntaxHighlightedText(code: string) {
         );
       } else {
         parts.push(
-          <span key={`${match.index}-code`} className="text-teal-300 font-mono">
+          <span key={`${match.index}-code`} className="text-[rgb(var(--success))]/80 font-mono">
             {matchStr}
           </span>
         );

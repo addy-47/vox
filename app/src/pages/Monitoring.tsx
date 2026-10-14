@@ -332,7 +332,7 @@ export const Monitoring: React.FC<MonitoringProps> = ({
               className={cn(
                 "px-3 py-1.5 rounded-xl border flex items-center gap-1.5 text-[11px] font-bold tracking-wider uppercase cursor-pointer shadow-md hover:scale-[1.02] transition-transform",
                 isEngineLoaded
-                  ? "bg-red-500/15 border-red-500/40 text-red-400"
+                  ? "bg-[rgb(var(--error))]/15 border-[rgb(var(--error))]/40 text-[rgb(var(--error))]"
                   : "bg-[rgba(var(--accent),0.12)] border-[rgba(var(--accent),0.35)] text-[rgb(var(--accent))]",
                 togglingEngine && "opacity-50 cursor-wait"
               )}
@@ -340,7 +340,7 @@ export const Monitoring: React.FC<MonitoringProps> = ({
               {togglingEngine ? (
                 <RefreshCw size={12} className="animate-spin" />
               ) : isEngineLoaded ? (
-                <Skull size={13} className="text-red-400" />
+                <Skull size={13} className="text-[rgb(var(--error))]" />
               ) : (
                 <RefreshCw size={12} />
               )}
@@ -402,7 +402,7 @@ export const Monitoring: React.FC<MonitoringProps> = ({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 14, scale: 0.98 }}
             transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-            className="fixed z-[200] bottom-[calc(72px+env(safe-area-inset-bottom))] left-[max(1rem,env(safe-area-inset-left))] w-[386px] max-w-[calc(100vw-32px)] h-[458px] max-h-[calc(100vh-96px)] glass-card p-3.5 flex flex-col shadow-lg rounded-2xl"
+            className="fixed z-[200] bottom-[calc(72px+env(safe-area-inset-bottom))] left-[max(1rem,env(safe-area-inset-left))] w-[386px] max-w-[calc(100vw-32px)] h-[458px] max-h-[calc(100vh-96px)] glass-card p-4 flex flex-col shadow-lg rounded-2xl"
             role="dialog"
             aria-label={MONITORING_COPY.monitorAria}
           >
@@ -415,7 +415,7 @@ export const Monitoring: React.FC<MonitoringProps> = ({
 
   // Full-page route mode
   return (
-    <div className="flex-1 flex flex-col h-full overflow-hidden bg-transparent px-4 sm:px-8 pt-4 pb-20 z-10 select-none max-w-4xl mx-auto w-full">
+    <div className="flex-1 flex flex-col h-full overflow-hidden bg-transparent px-4.5 sm:px-8 pt-4.5 pb-20 z-10 select-none max-w-4xl mx-auto w-full">
       {containerContent}
     </div>
   );

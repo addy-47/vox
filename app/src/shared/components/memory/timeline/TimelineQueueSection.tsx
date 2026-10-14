@@ -152,20 +152,20 @@ export const TimelineQueueSection = memo<TimelineQueueSectionProps>(({
         {failedCount > 0 && (
           <div className="flex gap-3 items-stretch min-w-0">
             <div className="flex flex-col items-center shrink-0 w-4.5">
-              <div className="w-4.5 h-4.5 rounded-full border border-rose-400 bg-[rgb(var(--card))] flex items-center justify-center shrink-0 z-10 text-rose-400">
+              <div className="w-4.5 h-4.5 rounded-full border border-[rgb(var(--danger))] bg-[rgb(var(--card))] flex items-center justify-center shrink-0 z-10 text-[rgb(var(--danger))]">
                 <RotateCcw size={9} strokeWidth={2} />
               </div>
             </div>
             <div className="flex-1 min-w-0 flex items-start justify-between">
               <div className="flex flex-col min-w-0 pr-2">
-                <span className="text-[13px] font-sans font-medium leading-snug text-rose-400">
+                <span className="text-[13px] font-sans font-medium leading-snug text-[rgb(var(--danger))]">
                   {MEMORY_COPY.timeline.pipelineStageFailed}
                 </span>
                 <span className="text-[11px] font-mono text-[rgb(var(--foreground-muted))]/55 mt-0.5 leading-tight">
                   {MEMORY_COPY.timeline.pipelineStageFailedDesc}
                 </span>
               </div>
-              <span className="font-mono text-[11.5px] font-medium text-rose-400 shrink-0 pt-0.5">
+              <span className="font-mono text-[11.5px] font-medium text-[rgb(var(--danger))] shrink-0 pt-0.5">
                 {failedCount}
               </span>
             </div>

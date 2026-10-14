@@ -162,9 +162,9 @@ export const TurnMetricsBadge: React.FC<{ className?: string }> = memo(({ classN
               className={cn(
                 "font-semibold",
                 stats.ctxPct >= 85
-                  ? "text-red-400"
+                  ? "text-[rgb(var(--error))]"
                   : stats.ctxPct >= 65
-                  ? "text-amber-400"
+                  ? "text-[rgb(var(--warn-soft))]"
                   : "text-[rgb(var(--foreground))]"
               )}
             >
