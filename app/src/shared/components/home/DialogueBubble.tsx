@@ -37,7 +37,7 @@ export const DialogueBubble: React.FC<DialogueBubbleProps> = memo(({
       <MessageContent
         from={role}
         className={cn(
-          "w-full break-words text-left font-medium text-[13px] leading-relaxed select-text p-3 rounded-2xl transition-all duration-300",
+          "w-full break-words text-left font-medium text-[13px] leading-relaxed select-text p-3 rounded-xl transition-all duration-300",
           isUser
             ? "text-[rgb(var(--foreground-muted))] font-normal bg-[rgb(var(--card))]/80 border border-[rgba(var(--border),0.15)] shadow-md"
             : "text-[rgb(var(--accent))] bg-[rgb(var(--card))]/95 border border-[rgba(var(--accent),0.25)] shadow-md"

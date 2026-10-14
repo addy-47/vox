@@ -1,5 +1,6 @@
-import React, { memo } from "react";
+import React, { memo, useMemo } from "react";
 import { cn } from "@/shared/lib/utils";
+import { isRealMobileDevice } from "@/shared/hooks/useMobileViewport";
 
 export interface ToggleTileProps {
   title: string;
@@ -11,6 +12,7 @@ export interface ToggleTileProps {
   icon?: React.ElementType;
   onToggle: () => void;
   layoutMode?: "full-max" | "full-min" | "small";
+  isMobile?: boolean;
   visualizer?: React.ReactNode;
   disabled?: boolean;
   className?: string;
@@ -25,12 +27,22 @@ export const ToggleTile = memo<ToggleTileProps>(({
   inactiveSublabel,
   icon: Icon,
   onToggle,
-  layoutMode = "full-max",
+  layoutMode: _layoutMode = "full-max",
+  isMobile: isMobileProp,
   visualizer,
   disabled = false,
   className,
 }) => {
-  const isSmall = layoutMode === "small";
+  const isMobileDetected = useMemo(() => {
+    if (typeof window === "undefined") return false;
+    return (
+      isRealMobileDevice() ||
+      (typeof window.matchMedia === "function" &&
+        window.matchMedia("(hover: none)").matches)
+    );
+  }, []);
+
+  const isMobile = isMobileProp ?? isMobileDetected;
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (disabled) return;
@@ -58,7 +70,7 @@ export const ToggleTile = memo<ToggleTileProps>(({
       <div
         className={cn(
           "flex-1 p-3 rounded-xl border border-[rgba(var(--accent),0.05)] bg-[rgba(var(--foreground),0.01)] transition-all duration-300 flex flex-col justify-between h-full min-w-0",
-          !isSmall && "group-hover:rounded-r-none group-hover:border-[rgba(var(--accent),0.2)] group-hover:bg-[rgba(var(--accent),0.02)]"
+          !isMobile && "group-hover:rounded-r-none group-hover:border-[rgba(var(--accent),0.2)] group-hover:bg-[rgba(var(--accent),0.02)]"
         )}
       >
         <div className="flex items-center justify-between gap-2 min-w-0">
@@ -106,8 +118,8 @@ export const ToggleTile = memo<ToggleTileProps>(({
         </div>
       </div>
 
-      {/* Slide-out toggle side panel (desktop only) */}
-      {!isSmall && (
+      {/* Slide-out toggle side panel (gated for mobile only) */}
+      {!isMobile && (
         <div
           className="h-full w-0 group-hover:w-[38px] opacity-0 group-hover:opacity-100 flex items-center justify-center bg-[rgba(var(--accent),0.05)] border border-transparent group-hover:border-[rgba(var(--accent),0.15)] group-hover:border-l-transparent rounded-r-xl transition-all duration-300 overflow-hidden shrink-0"
         >

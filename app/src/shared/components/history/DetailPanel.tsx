@@ -37,7 +37,7 @@ const TurnBubble = memo(({ turn }: { turn: TurnRow }) => {
     <div className="space-y-2 [contain:content] w-full">
       {/* User message */}
       <div className="flex flex-col items-end w-full">
-        <div className="max-w-[85%] sm:max-w-[75%] w-fit rounded-2xl rounded-br-xs px-4 py-2.5 bg-[rgba(var(--accent),0.10)] border border-[rgba(var(--accent),0.22)] shadow-xs select-text">
+        <div className="max-w-[85%] sm:max-w-[75%] w-fit rounded-xl rounded-br-xs px-4 py-2.5 bg-[rgba(var(--accent),0.10)] border border-[rgba(var(--accent),0.22)] shadow-xs select-text">
           <div className="text-[13.5px] text-[rgb(var(--foreground))] leading-relaxed break-words font-medium">
             <Markdown content={turn.user_text} variant="bubble" />
           </div>
@@ -55,7 +55,7 @@ const TurnBubble = memo(({ turn }: { turn: TurnRow }) => {
           <Sparkles size={11} className="text-[rgb(var(--accent))]" />
           <span>{HISTORY_COPY.voxLabel.toLowerCase()}</span>
         </div>
-        <div className="max-w-[90%] sm:max-w-[80%] w-fit rounded-2xl rounded-bl-xs px-4 py-3 bg-[rgb(var(--card))] border border-[rgba(var(--foreground),0.08)] shadow-xs select-text">
+        <div className="max-w-[90%] sm:max-w-[80%] w-fit rounded-xl rounded-bl-xs px-4 py-3 bg-[rgb(var(--card))] border border-[rgba(var(--foreground),0.08)] shadow-xs select-text">
           <div className="text-[13.5px] text-[rgb(var(--foreground))] leading-relaxed break-words font-normal">
             <Markdown content={turn.assistant_text} variant="bubble" />
           </div>

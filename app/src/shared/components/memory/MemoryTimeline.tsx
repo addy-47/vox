@@ -193,16 +193,16 @@ export const MemoryTimeline = memo<MemoryTimelineProps>(({
   });
 
   return (
-    <div className="flex-1 min-h-0 flex flex-col pt-3 select-none font-sans text-[rgb(var(--foreground))]">
+    <div className="flex-1 min-h-0 flex flex-col px-1.5 pt-3 select-none font-sans text-[rgb(var(--foreground))]">
       <TimelineQueueSection
         stats={stats}
         pipelineProcessingEnabled={pipelineProcessingEnabled}
       />
 
-      <section className="flex flex-col flex-1 min-h-0 pl-3 pr-0 pt-3">
-        <div className="flex items-center justify-between pb-2.5 px-1 pr-3 shrink-0">
+      <section className="flex flex-col flex-1 min-h-0 pt-3">
+        <div className="flex items-center justify-between pb-2.5 px-2 shrink-0">
           <div className="flex items-center gap-1.5 min-w-0">
-            <span className="text-[11.5px] font-mono font-bold tracking-wider uppercase text-[rgb(var(--foreground-muted))]/60">
+            <span className="text-[11.5px] font-mono font-bold tracking-wider text-[rgb(var(--foreground-muted))]/60">
               {MEMORY_COPY.timeline.sessionsHeader}
             </span>
             <span className="text-[11px] font-mono text-[rgb(var(--foreground-muted))]/50">

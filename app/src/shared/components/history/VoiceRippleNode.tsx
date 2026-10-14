@@ -49,7 +49,7 @@ export const VoiceRippleNode = memo(
         onKeyDown={handleKeyDown}
         style={{ width: ORBIT_CARD_WIDTH }}
         className={cn(
-          "rounded-2xl p-4 flex flex-col text-left select-none group cursor-pointer transition-all duration-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))]",
+          "rounded-xl p-4 flex flex-col text-left select-none group cursor-pointer transition-all duration-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))]",
           isSelected
             ? "orbit-card-surface-selected scale-[1.03]"
             : "orbit-card-surface hover:border-[rgb(var(--accent))] hover:shadow-[0_0_25px_rgba(var(--accent),0.3)] hover:scale-[1.02]"

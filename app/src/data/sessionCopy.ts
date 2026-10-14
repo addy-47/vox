@@ -17,7 +17,7 @@ export const SESSION_COPY = {
   restoringAriaLabel: "Restoring conversation",
   pinAriaLabel: "Pin conversation",
   unpinAriaLabel: "Unpin conversation",
-  pinnedSection: "Pinned",
+  pinnedSection: "Pinned Conversations",
   projectsSection: "Projects",
   conversationHistory: "Conversation History",
   noPinnedSessions: "No pinned conversations",

@@ -41,6 +41,16 @@ export function requestModelCatalog(): Promise<ModelCatalog> {
   return invoke("get_model_catalog");
 }
 
+/** Lists all persistent favorite model IDs from Turso DB. */
+export function listFavoriteModels(): Promise<string[]> {
+  return invoke("list_favorite_models");
+}
+
+/** Toggles favorite status for an LLM model ID. Returns new favorite boolean. */
+export function toggleModelFavorite(modelId: string): Promise<boolean> {
+  return invoke("toggle_model_favorite", { modelId });
+}
+
 /** Settings capabilities for a TTS provider id (ipc/catalog.rs:51).
  * Returns null when the backend is unreachable or rejects the id. A fabricated
  * fallback would render controls for capabilities that may not exist. */

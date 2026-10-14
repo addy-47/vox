@@ -131,19 +131,14 @@ export const SessionProjectsSection = memo(
     );
 
     return (
-      <div className="flex flex-col gap-3.5 flex-1 min-h-0">
-        {/* Projects Section */}
-        <section className="flex flex-col gap-1">
+      <div className="flex flex-col flex-1 min-h-0">
+        {/* Fixed Projects Section Header */}
+        <section className="shrink-0 flex flex-col gap-1">
           <div className="flex items-center justify-between px-2 py-0.5">
             <div className="flex items-center gap-1.5">
-              <span className="text-[11.5px] font-mono font-bold tracking-wider uppercase text-[rgb(var(--foreground-muted))]/60">
+              <span className="text-[11.5px] font-mono font-bold tracking-wider text-[rgb(var(--foreground-muted))]/60">
                 {SESSION_COPY.projectsSection}
               </span>
-              {projects.length > 0 && (
-                <span className="text-[10px] font-mono text-[rgb(var(--foreground-muted))]/50">
-                  {projects.length}
-                </span>
-              )}
             </div>
             <Tooltip label={SESSION_COPY.createProjectAriaLabel} side="left">
               <button
@@ -204,55 +199,52 @@ export const SessionProjectsSection = memo(
               </motion.div>
             )}
           </AnimatePresence>
-
-          {/* Projects List */}
-          <div className="flex flex-col gap-0.5">
-            {projectIds.length > 0 ? (
-              <Reorder.Group
-                as="div"
-                axis="y"
-                values={projectIds}
-                onReorder={handleReorderProjectIds}
-                className="flex flex-col gap-0.5"
-              >
-                {projectIds.map((id) => {
-                  const group = projectGroupMap.get(id);
-                  if (!group) return null;
-                  return (
-                    <ProjectRowItem
-                      key={id}
-                      group={group}
-                      allProjects={allProjects}
-                      activeSessionId={activeSessionId}
-                      isRestoring={isRestoring}
-                      restoringSessionId={restoringSessionId}
-                      isDragTarget={dragOverProjectId === id}
-                      onSelectSession={onSelectSession}
-                      onTogglePinSession={onTogglePinSession}
-                      onRenameSession={onRenameSession}
-                      onMoveSessionToProject={onMoveSessionToProject}
-                      onDeleteSession={onDeleteSession}
-                      onCreateSessionInProject={onCreateSessionInProject}
-                      onRenameProject={renameProject}
-                      onDeleteProject={deleteProject}
-                      onDragOver={handleSessionDragOver}
-                      onDragLeave={handleSessionDragLeave}
-                      onDrop={handleSessionDrop}
-                      onDragEndCommit={handleDragEndCommit}
-                    />
-                  );
-                })}
-              </Reorder.Group>
-            ) : (
-              <span className="px-2 py-1 text-[11px] text-[rgb(var(--foreground-muted))]/35 italic">
-                {SESSION_COPY.noProjectsYet}
-              </span>
-            )}
-          </div>
         </section>
 
-        {/* Bottom spacing cushion */}
-        <div className="h-6 shrink-0" aria-hidden="true" />
+        {/* Scrollable Projects List */}
+        <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar flex flex-col gap-0.5 pt-1 pb-16">
+          {projectIds.length > 0 ? (
+            <Reorder.Group
+              as="div"
+              axis="y"
+              values={projectIds}
+              onReorder={handleReorderProjectIds}
+              className="flex flex-col gap-0.5"
+            >
+              {projectIds.map((id) => {
+                const group = projectGroupMap.get(id);
+                if (!group) return null;
+                return (
+                  <ProjectRowItem
+                    key={id}
+                    group={group}
+                    allProjects={allProjects}
+                    activeSessionId={activeSessionId}
+                    isRestoring={isRestoring}
+                    restoringSessionId={restoringSessionId}
+                    isDragTarget={dragOverProjectId === id}
+                    onSelectSession={onSelectSession}
+                    onTogglePinSession={onTogglePinSession}
+                    onRenameSession={onRenameSession}
+                    onMoveSessionToProject={onMoveSessionToProject}
+                    onDeleteSession={onDeleteSession}
+                    onCreateSessionInProject={onCreateSessionInProject}
+                    onRenameProject={renameProject}
+                    onDeleteProject={deleteProject}
+                    onDragOver={handleSessionDragOver}
+                    onDragLeave={handleSessionDragLeave}
+                    onDrop={handleSessionDrop}
+                    onDragEndCommit={handleDragEndCommit}
+                  />
+                );
+              })}
+            </Reorder.Group>
+          ) : (
+            <span className="px-2 py-1 text-[11px] text-[rgb(var(--foreground-muted))]/35 italic">
+              {SESSION_COPY.noProjectsYet}
+            </span>
+          )}
+        </div>
       </div>
     );
   }

@@ -37,7 +37,7 @@ export const MonthDayCard = memo(({ day, onOpen }: MonthDayCardProps) => {
       tabIndex={0}
       onKeyDown={handleKeyDown}
       className={cn(
-        "w-48 h-32 rounded-2xl p-4 flex flex-col text-left select-none group cursor-pointer transition-all duration-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))]",
+        "w-48 h-32 rounded-xl p-4 flex flex-col text-left select-none group cursor-pointer transition-all duration-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))]",
         "orbit-card-surface hover:border-[rgb(var(--accent))] hover:shadow-[0_0_30px_rgba(var(--accent),0.35)] hover:scale-[1.03]"
       )}
       onClick={(e) => {

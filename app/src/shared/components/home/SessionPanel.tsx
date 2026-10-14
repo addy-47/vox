@@ -164,7 +164,7 @@ export const SessionPanel = memo(({ onClose }: SessionPanelProps) => {
   return (
     <div className="flex-1 min-h-0 flex flex-col overflow-hidden select-none font-sans">
       {/* ── Fixed Header: Top Actions + Error Banner + Pinned Section ── */}
-      <div className="shrink-0 flex flex-col gap-1 px-1.5 pt-3 pb-2 border-b border-[rgba(var(--border),0.08)]">
+      <div className="shrink-0 flex flex-col gap-5 px-1.5 pt-3 pb-2">
         {/* Top Actions: + New Conversation & view mode toggle */}
         <div className="flex flex-col gap-1">
           <button
@@ -219,11 +219,8 @@ export const SessionPanel = memo(({ onClose }: SessionPanelProps) => {
         {/* Pinned Section — always visible in both modes */}
         <section className="flex flex-col gap-1">
           <div className="flex items-center gap-1.5 px-2 py-0.5">
-            <span className="text-[11.5px] font-mono font-bold tracking-wider uppercase text-[rgb(var(--foreground-muted))]/60">
+            <span className="text-[11.5px] font-mono font-bold tracking-wider text-[rgb(var(--foreground-muted))]/60">
               {SESSION_COPY.pinnedSection}
-            </span>
-            <span className="text-[11px] font-mono text-[rgb(var(--foreground-muted))]/50 ml-auto">
-              {pinnedSessions.length}
             </span>
           </div>
           <div className="flex flex-col gap-0.5">
@@ -253,65 +250,69 @@ export const SessionPanel = memo(({ onClose }: SessionPanelProps) => {
         </section>
       </div>
 
-      {/* ── Scrollable Body: History or Projects list only ── */}
-      <div
-        ref={scrollRef}
-        onScroll={handleScroll}
-        data-session-scroll
-        className="flex-1 min-h-0 overflow-y-auto custom-scrollbar flex flex-col gap-3 px-1.5 pt-2 pb-16"
-      >
-        {/* ── Main Content Area ── */}
+      {/* ── Main Content Area: Fixed Header + Scrollable Content per mode ── */}
+      <div className="flex-1 min-h-0 flex flex-col px-1.5 pt-2">
         {viewMode === "history" ? (
           /* Full Flat Reverse-Chronological Session History */
-          <div className="flex flex-col gap-1 flex-1 min-h-0">
-            <div className="px-3 py-1 text-[11.5px] font-mono font-bold tracking-wider uppercase text-[rgb(var(--foreground-muted))]/60">
+          <div className="flex flex-col flex-1 min-h-0">
+            {/* Fixed Header */}
+            <div className="shrink-0 px-2 py-1 text-[11.5px] font-mono font-bold tracking-wider text-[rgb(var(--foreground-muted))]/60">
               {SESSION_COPY.conversationHistory}
             </div>
-            {allChronologicalSessions.length > 0 ? (
-              <div
-                style={{
-                  height: `${rowVirtualizer.getTotalSize()}px`,
-                  width: "100%",
-                  position: "relative",
-                }}
-              >
-                {rowVirtualizer.getVirtualItems().map((virtualRow) => {
-                  const session = allChronologicalSessions[virtualRow.index];
-                  return (
-                    <div
-                      key={session.id}
-                      data-index={virtualRow.index}
-                      ref={rowVirtualizer.measureElement}
-                      style={{
-                        position: "absolute",
-                        top: 0,
-                        left: 0,
-                        width: "100%",
-                        transform: `translateY(${virtualRow.start}px)`,
-                      }}
-                    >
-                      <SessionRowItem
-                        session={session}
-                        active={session.id === activeSessionId}
-                        restoring={isRestoring && restoringSessionId === session.id}
-                        pinned={Boolean(session.is_pinned)}
-                        onSelect={handleSelect}
-                        onTogglePin={togglePin}
-                        onRename={renameSession}
-                        onMoveToProject={moveSessionToProject}
-                        onDelete={deleteSession}
-                        allProjects={allProjects}
-                        projectTag={session.project_id ? projectNameMap.get(session.project_id) : undefined}
-                      />
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <span className="px-2 py-1 text-[11.5px] text-[rgb(var(--foreground-muted))]/40 italic">
-                {SESSION_COPY.noSessionsTitle}
-              </span>
-            )}
+
+            {/* Scrollable Virtualized History List */}
+            <div
+              ref={scrollRef}
+              onScroll={handleScroll}
+              data-session-scroll
+              className="flex-1 min-h-0 overflow-y-auto custom-scrollbar flex flex-col gap-0.5 pt-1 pb-16"
+            >
+              {allChronologicalSessions.length > 0 ? (
+                <div
+                  style={{
+                    height: `${rowVirtualizer.getTotalSize()}px`,
+                    width: "100%",
+                    position: "relative",
+                  }}
+                >
+                  {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+                    const session = allChronologicalSessions[virtualRow.index];
+                    return (
+                      <div
+                        key={session.id}
+                        data-index={virtualRow.index}
+                        ref={rowVirtualizer.measureElement}
+                        style={{
+                          position: "absolute",
+                          top: 0,
+                          left: 0,
+                          width: "100%",
+                          transform: `translateY(${virtualRow.start}px)`,
+                        }}
+                      >
+                        <SessionRowItem
+                          session={session}
+                          active={session.id === activeSessionId}
+                          restoring={isRestoring && restoringSessionId === session.id}
+                          pinned={Boolean(session.is_pinned)}
+                          onSelect={handleSelect}
+                          onTogglePin={togglePin}
+                          onRename={renameSession}
+                          onMoveToProject={moveSessionToProject}
+                          onDelete={deleteSession}
+                          allProjects={allProjects}
+                          projectTag={session.project_id ? projectNameMap.get(session.project_id) : undefined}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <span className="px-2 py-1 text-[11.5px] text-[rgb(var(--foreground-muted))]/40 italic">
+                  {SESSION_COPY.noSessionsTitle}
+                </span>
+              )}
+            </div>
           </div>
         ) : (
           /* Default Mode: Projects only */

@@ -1,8 +1,9 @@
-import { memo } from "react";
+import { memo, useMemo } from "react";
 import { Heart, Loader2, Pause, Play } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { VOICE_CATALOG_COPY } from "@/data/settingsCopy";
 import type { UnifiedVoiceDto } from "@/services/voiceService";
+import { getVoiceWaveform } from "./VoicePreviewBanner";
 
 export interface VoiceCardProps {
   voice?: UnifiedVoiceDto;
@@ -10,11 +11,13 @@ export interface VoiceCardProps {
   favorited?: boolean;
   previewPlaying?: boolean;
   isSynthesizing?: boolean;
+  previewProgress?: number;
   previewDisabled?: boolean;
   hideBadges?: boolean;
   onSelect?: (id: string) => void;
   onToggleFavorite?: (id: string) => void;
   onPreview?: (voice: UnifiedVoiceDto) => void;
+  onSeekPreview?: (fraction: number) => void;
 }
 
 function tagLabel(tag: string): string {
@@ -35,11 +38,13 @@ export const VoiceCard = memo(
     favorited = false,
     previewPlaying = false,
     isSynthesizing = false,
+    previewProgress = 0,
     previewDisabled = false,
     hideBadges = false,
     onSelect,
     onToggleFavorite,
     onPreview,
+    onSeekPreview,
   }: VoiceCardProps) => {
     if (!voice) return null;
 
@@ -51,6 +56,11 @@ export const VoiceCard = memo(
           voice.accent || voice.locale,
           ...voice.tags.slice(0, 1).map(tagLabel),
         ].filter(Boolean);
+
+    const cardWaveformBars = useMemo(
+      () => (voice && previewPlaying ? getVoiceWaveform(voice.id, 28) : []),
+      [voice, previewPlaying]
+    );
 
     return (
       <div
@@ -64,7 +74,7 @@ export const VoiceCard = memo(
           }
         }}
         className={cn(
-          "group w-full text-left p-4 rounded-2xl border transition-all duration-200 relative shrink-0 cursor-pointer flex items-start gap-3.5 hover:z-20",
+          "group w-full text-left p-4 rounded-xl border transition-all duration-200 relative shrink-0 cursor-pointer flex items-start gap-3.5 hover:z-20",
           selected
             ? "bg-[rgba(var(--card),0.7)] border-[rgb(var(--accent))] shadow-[0_0_20px_rgba(var(--accent),0.18)] ring-1 ring-[rgb(var(--accent))]/40"
             : "bg-[rgba(var(--card),0.35)] border-[rgba(var(--foreground),0.07)] hover:border-[rgba(var(--accent),0.35)] hover:bg-[rgba(var(--card),0.55)]"
@@ -134,18 +144,66 @@ export const VoiceCard = memo(
             {description}
           </p>
 
-          {/* 3 Voice Badges (modal cards show this, inline catalog cards hide this) */}
-          {badges.length > 0 && (
-            <div className="flex items-center gap-1.5 mt-2.5 flex-wrap">
-              {badges.map((b) => (
-                <span
-                  key={b}
-                  className="text-[10px] font-mono font-medium px-2 py-0.5 rounded-md bg-[rgba(var(--foreground),0.05)] text-[rgb(var(--foreground-muted))] border border-[rgba(var(--foreground),0.07)] leading-none"
-                >
-                  {b}
-                </span>
-              ))}
+          {/* If previewPlaying, show the interactive waveform scrubber! Otherwise show badges */}
+          {previewPlaying ? (
+            <div
+              role="slider"
+              aria-label="Seek preview audio"
+              aria-valuenow={Math.round((previewProgress ?? 0) * 100)}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              tabIndex={0}
+              className="mt-2.5 flex items-center gap-[2.5px] h-6 w-full cursor-pointer select-none px-1 rounded hover:bg-[rgba(var(--foreground),0.03)] transition-colors"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (!onSeekPreview) return;
+                const rect = e.currentTarget.getBoundingClientRect();
+                const frac = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+                onSeekPreview(frac);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "ArrowRight") {
+                  e.stopPropagation();
+                  onSeekPreview?.(Math.min(1, (previewProgress ?? 0) + 0.05));
+                } else if (e.key === "ArrowLeft") {
+                  e.stopPropagation();
+                  onSeekPreview?.(Math.max(0, (previewProgress ?? 0) - 0.05));
+                }
+              }}
+              title="Click or arrow keys to seek"
+            >
+              {cardWaveformBars.map((height, i) => {
+                const barProgress = i / cardWaveformBars.length;
+                const isPlayed = (previewProgress ?? 0) > 0 && barProgress <= (previewProgress ?? 0);
+                return (
+                  <div
+                    key={i}
+                    style={{ height: `${Math.round(Math.max(22, height * 100))}%` }}
+                    className={cn(
+                      "flex-1 rounded-full min-w-[2px] max-w-[4px] transition-all duration-75",
+                      isSynthesizing
+                        ? "animate-pulse bg-[rgb(var(--accent))]/40"
+                        : isPlayed
+                          ? "bg-[rgb(var(--accent))] shadow-[0_0_6px_rgba(var(--accent),0.45)]"
+                          : "bg-[rgba(var(--foreground),0.18)] hover:bg-[rgba(var(--foreground),0.35)]"
+                    )}
+                  />
+                );
+              })}
             </div>
+          ) : (
+            badges.length > 0 && (
+              <div className="flex items-center gap-1.5 mt-2.5 flex-wrap">
+                {badges.map((b) => (
+                  <span
+                    key={b}
+                    className="text-[10px] font-mono font-medium px-2 py-0.5 rounded-md bg-[rgba(var(--foreground),0.05)] text-[rgb(var(--foreground-muted))] border border-[rgba(var(--foreground),0.07)] leading-none"
+                  >
+                    {b}
+                  </span>
+                ))}
+              </div>
+            )
           )}
         </div>
       </div>

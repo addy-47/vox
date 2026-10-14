@@ -171,7 +171,7 @@ export const ProjectRowItem = memo(
           onKeyDown={(e) => {
             if (e.key === "Enter" || e.key === " ") handleToggleExpand();
           }}
-          className="group flex items-center justify-between gap-1.5 px-3 py-2 rounded-sm text-left cursor-grab active:cursor-grabbing hover:bg-[rgba(var(--foreground),0.04)] transition-colors select-none touch-none"
+          className="group flex items-center justify-between gap-1.5 px-2 py-2 rounded-sm text-left cursor-grab active:cursor-grabbing hover:bg-[rgba(var(--foreground),0.04)] transition-colors select-none touch-none"
         >
           <div className="flex items-center gap-2 min-w-0 flex-1">
             {expanded ? (
@@ -219,17 +219,6 @@ export const ProjectRowItem = memo(
 
           {!isRenaming && (
             <div className="flex items-center gap-1 shrink-0 relative justify-end">
-              {/* Static Session Count: visible by default when closed, replaced on expansion, hover, or when menu is open */}
-              {!expanded && group.sessions.length > 0 && (
-                <span
-                  className={cn(
-                    "text-[11px] font-mono text-[rgb(var(--foreground-muted))]/50 px-1 py-0.2 rounded bg-[rgba(var(--foreground),0.04)] shrink-0 transition-opacity",
-                    menuOpen ? "hidden" : "group-hover:hidden"
-                  )}
-                >
-                  {group.sessions.length}
-                </span>
-              )}
 
               {/* + button to start conversation in this project */}
               <Tooltip label={SESSION_COPY.newInProjectAriaLabel} side="left" asChild>

@@ -82,13 +82,12 @@ colors:
   border-light-tint: '#e2e8f0'
 rounded:
   sm: 0.25rem
-  base: 0.5rem
-  md: 0.75rem
-  lg: 1rem
-  xl: 1.25rem
-  '2xl': 1.75rem
-  xs: 0.3125rem
-  sm2: 0.5625rem
+  base: 0.375rem
+  md: 0.5rem
+  lg: 0.75rem
+  xl: 1.125rem
+  '2xl': 1.5rem
+  '3xl': 1.75rem
   pill: 9999px
   # ── Doc metadata ──
   title: "Vox Design System Spec — Liquid Space"
@@ -284,14 +283,13 @@ Radii come from the `rounded` scale only (frontmatter `rounded`):
 
 | Token | Value | Use |
 | :--- | :--- | :--- |
-| `xs` | 5px (0.3125rem) | Scrollbars, tiny controls |
-| `sm` | 0.25rem | Checkboxes, small chips |
-| `base` | 0.5rem | Default inputs, small cards |
-| `sm2` | 9px (0.5625rem) | Scrollbar track end caps |
-| `md` | 0.75rem | Cards, popovers |
-| `lg` | 1rem | Large panels, standard buttons |
-| `xl` | 1.25rem | Dialog boxes |
-| `2xl` | 1.75rem | Hero panels, drawers |
+| `sm` | 4px (0.25rem) | Dense session/project rows, context menus, checkboxes |
+| `base` | 6px (0.375rem) | Default base radius |
+| `md` | 8px (0.5rem) | Badges, static metadata chips, compact utility buttons |
+| `lg` | 12px (0.75rem) | Primary action buttons, boxed inputs, nested card panels |
+| `xl` | 18px (1.125rem) | Primary cards, preview banners, dropdown popovers |
+| `2xl` | 24px (1.5rem) | Modals, dialog boxes, hero workspaces |
+| `3xl` | 28px (1.75rem) | Bottom sheet drawer top corners |
 | `pill` | 9999px | **Interactive buttons and controls only** (never static copy) |
 
 Roundness should read as **consistent and calm** — do not mix `rounded-lg` and `rounded-xl`

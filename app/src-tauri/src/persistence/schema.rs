@@ -9,7 +9,7 @@ use crate::{
 
 pub type Result<T> = std::result::Result<T, PersistenceError>;
 
-pub const SCHEMA_VERSION: u32 = 12;
+pub const SCHEMA_VERSION: u32 = 13;
 
 const PERSONAL_MEMORY_SEMANTIC_SCHEMA_VERSION: u32 = 9;
 const EMPTY_PERSONAL_MEMORY_JSON: &str = r#"{"sections":[]}"#;
@@ -166,6 +166,11 @@ const SCHEMA_TABLE_STATEMENTS: &[&str] = &[
     "CREATE INDEX IF NOT EXISTS idx_revisions_pending ON personal_memory_revisions(base_memory_version, status);",
     "CREATE INDEX IF NOT EXISTS idx_revisions_status_proj ON personal_memory_revisions(project_id, status);",
     "CREATE INDEX IF NOT EXISTS idx_revisions_created ON personal_memory_revisions(created_at DESC);",
+    "CREATE TABLE IF NOT EXISTS favorite_models (
+        id TEXT PRIMARY KEY,
+        created_at INTEGER NOT NULL
+    );",
+    "CREATE INDEX IF NOT EXISTS idx_favorite_models_created ON favorite_models(created_at DESC);",
 ];
 
 /// Runs schema migrations, dropping obsolete legacy tables and initializing the current schema.
@@ -285,6 +290,16 @@ async fn ensure_voice_metadata_columns(conn: &Connection) -> Result<()> {
     conn.execute("CREATE INDEX IF NOT EXISTS idx_voices_source ON voices(source_kind);", ()).await?;
     conn.execute("CREATE INDEX IF NOT EXISTS idx_voices_favorite ON voices(is_favorite);", ()).await?;
     conn.execute("CREATE INDEX IF NOT EXISTS idx_voices_last_used ON voices(last_used_at DESC);", ()).await?;
+
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS favorite_models (
+            id TEXT PRIMARY KEY,
+            created_at INTEGER NOT NULL
+        );",
+        (),
+    )
+    .await?;
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_favorite_models_created ON favorite_models(created_at DESC);", ()).await?;
 
     Ok(())
 }

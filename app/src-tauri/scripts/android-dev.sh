@@ -22,12 +22,25 @@
 #   Vite's HMR websocket then keeps the phone WebView live-updated on every save.
 #   You do NOT need to rebuild the APK for frontend changes.
 #
-# WHY `debug` IS REQUIRED ONCE
-# -----------------------------
-# A RELEASE APK cannot hot-reload, and no amount of Vite/adb tuning will make it.
-# Release builds embed `frontendDist` (the `pnpm build` output) into the APK and
-# never contact `devUrl`, so the WebView loads a frozen asset bundle from inside
-# the package. The reverse tunnel and the dev server are simply never consulted.
+# WHY HMR NEEDS `dev`, NOT `debug`  (verified 2026-10-14)
+# --------------------------------------------------------
+# HMR is only reachable through `pnpm tauri android dev`. Two independent traps:
+#
+# 1. `tauri android build --debug --apk` packages NO FRONTEND AT ALL. The resulting
+#    APK contains only `assets/tauri.conf.json` — no index.html, no JS bundle — and
+#    never contacts `devUrl`. The WebView loads nothing and renders a blank white
+#    screen. Verified: `unzip -l app-universal-debug.apk` shows zero frontend assets.
+#
+# 2. `tauri android dev` REWRITES `devUrl` to the host's LAN IP (e.g. 10.109.153.170)
+#    unless `--host` is passed. On a phone that is not on the same LAN the page never
+#    loads. `TAURI_DEV_HOST` does NOT control this — it configures the dev SERVER,
+#    not the devUrl. Only `--host` overrides the substitution:
+#        pnpm tauri android dev --host 127.0.0.1
+#    With `adb reverse tcp:1420 tcp:1420` this routes device-localhost to the laptop.
+#    Measured on POCO 22101320I: device -> 127.0.0.1:1420 = HTTP 200;
+#                                        device -> LAN IP:1420  = unreachable.
+#
+# So: `debug` builds a standalone (frontend-less) APK and `dev` is the HMR path.
 #
 # The debug APK is NOT at parity with release — release enables
 # `isMinifyEnabled = true`, so R8 JNI renaming (Pitfall 4) and any other
@@ -72,7 +85,9 @@ do_reverse() {
 do_debug() {
     require_device
     do_reverse
-    echo "==> Building DEBUG arm64-v8a APK (HMR-capable)..."
+    echo "==> Building DEBUG arm64-v8a APK (standalone; NOT HMR-capable)..."
+    echo "    NOTE: this APK contains no frontend bundle and renders a blank page."
+    echo "    Use './scripts/android-dev.sh dev' for live HMR iteration."
     # source android-env.sh for the NDK toolchain; the Tauri CLI does not set
     # BINDGEN_EXTRA_CLANG_ARGS on its own (see verify-targets.sh).
     # shellcheck source=scripts/android-env.sh
@@ -124,7 +139,10 @@ do_dev() {
     # shellcheck source=scripts/android-env.sh
     source "$ROOT/scripts/android-env.sh"
     echo "==> Starting Tauri Android development environment with live HMR..."
-    cd "$APP" && pnpm tauri android dev
+    # --host 127.0.0.1 is REQUIRED. Without it the CLI rewrites devUrl to this
+    # machine's LAN IP, which a phone on cellular/other-WiFi cannot reach.
+    # See the header comment for the measurement behind this.
+    cd "$APP" && pnpm tauri android dev --host 127.0.0.1
 }
 
 case "${1:-dev}" in

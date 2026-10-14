@@ -182,30 +182,40 @@ fn resample_linear(samples: &[f32], src_rate: u32, target_rate: u32) -> Vec<f32>
     out
 }
 
-fn pad_or_truncate_audio(samples: &[f32], sample_rate: u32, target_duration_secs: f32) -> Vec<f32> {
-    let target_len = (target_duration_secs * sample_rate as f32) as usize;
-    if samples.len() < target_len {
-        samples.iter().copied().cycle().take(target_len).collect()
-    } else if samples.len() > target_len {
-        samples[..target_len].to_vec()
+fn truncate_audio_if_exceeds(samples: &[f32], sample_rate: u32, max_duration_secs: f32) -> &[f32] {
+    let max_len = (max_duration_secs * sample_rate as f32) as usize;
+    if samples.len() > max_len {
+        &samples[..max_len]
     } else {
-        samples.to_vec()
+        samples
     }
 }
 
-/// Write mono 32-bit float samples to a WAV file at the specified sample rate.
+/// Write mono f32 samples to a standard 16-bit PCM WAV file with peak normalization.
+/// Standard 16-bit PCM uses WAVE_FORMAT_PCM (0x0001) without extensible speaker masks,
+/// ensuring both left and right earphones/speakers receive balanced, properly amplified audio.
 pub fn write_f32_wav(dest_path: &Path, samples: &[f32], sample_rate: u32) -> Result<(), String> {
     let spec = hound::WavSpec {
         channels: 1,
         sample_rate,
-        bits_per_sample: 32,
-        sample_format: hound::SampleFormat::Float,
+        bits_per_sample: 16,
+        sample_format: hound::SampleFormat::Int,
     };
     let mut writer = hound::WavWriter::create(dest_path, spec)
         .map_err(|e| format!("Failed to create destination WAV writer: {}", e))?;
+
+    // Find peak magnitude to normalize volume without clipping
+    let peak = samples.iter().copied().map(|s| s.abs()).fold(0.0f32, f32::max);
+    let scale = if peak > 1e-4 && peak < 0.95 {
+        (0.95 / peak) * 32767.0
+    } else {
+        32767.0
+    };
+
     for sample in samples {
+        let scaled = (sample * scale).clamp(-32768.0, 32767.0);
         writer
-            .write_sample(*sample)
+            .write_sample(scaled as i16)
             .map_err(|e| format!("Failed to write sample: {}", e))?;
     }
     writer
@@ -213,7 +223,7 @@ pub fn write_f32_wav(dest_path: &Path, samples: &[f32], sample_rate: u32) -> Res
         .map_err(|e| format!("Failed to finalize WAV file: {}", e))
 }
 
-/// Decode any supported audio file to mono 24kHz f32 WAV with 30s auto-stitching/truncation.
+/// Decode any supported audio file to mono 24kHz f32 WAV capped at 30s without artificial looping.
 pub fn convert_and_validate_audio(src_path: &str, dest_path: &Path) -> Result<(), String> {
     let (raw_samples, src_rate) = decode_audio_stream(src_path)?;
     let resampled = resample_linear(&raw_samples, src_rate, TTS_SAMPLE_RATE);
@@ -226,24 +236,24 @@ pub fn convert_and_validate_audio(src_path: &str, dest_path: &Path) -> Result<()
         ));
     }
 
-    let final_samples = pad_or_truncate_audio(
+    let final_samples = truncate_audio_if_exceeds(
         &resampled,
         TTS_SAMPLE_RATE,
         TARGET_VOICE_SAMPLE_DURATION_SECS,
     );
-    write_f32_wav(dest_path, &final_samples, TTS_SAMPLE_RATE)
+    write_f32_wav(dest_path, final_samples, TTS_SAMPLE_RATE)
 }
 
-/// Write in-memory PCM float samples as a 30s auto-stitched WAV file.
+/// Write in-memory PCM float samples as a WAV file capped at 30s without artificial looping.
 pub fn write_pcm_to_wav(
     pcm_f32: &[f32],
     sample_rate: u32,
     dest_path: &Path,
 ) -> Result<usize, String> {
     let final_samples =
-        pad_or_truncate_audio(pcm_f32, sample_rate, TARGET_VOICE_SAMPLE_DURATION_SECS);
+        truncate_audio_if_exceeds(pcm_f32, sample_rate, TARGET_VOICE_SAMPLE_DURATION_SECS);
     let len = final_samples.len();
-    write_f32_wav(dest_path, &final_samples, sample_rate)?;
+    write_f32_wav(dest_path, final_samples, sample_rate)?;
     Ok(len)
 }
 

@@ -24,10 +24,10 @@ export const TimelineQueueSection = memo<TimelineQueueSectionProps>(({
   const failedCount = stats?.failed ?? 0;
 
   return (
-    <section className="shrink-0 flex flex-col gap-3.5 px-4.5 pt-1 pb-4.5 border-b border-[rgba(var(--border),0.06)]">
+    <section className="shrink-0 flex flex-col gap-4 px-2 pt-1.5 pb-5 border-b border-[rgba(var(--border),0.06)]">
       {/* Header: Title + Pipeline State */}
       <div className="flex items-center justify-between py-1">
-        <span className="text-[12px] font-mono font-bold tracking-wider uppercase text-[rgb(var(--foreground-muted))]/60">
+        <span className="text-[12px] font-mono font-bold tracking-wider text-[rgb(var(--foreground-muted))]/60">
           {MEMORY_COPY.timeline.ingestionTitle}
         </span>
         {!pipelineProcessingEnabled ? (
@@ -56,19 +56,19 @@ export const TimelineQueueSection = memo<TimelineQueueSectionProps>(({
       {/* Continuous Pipeline Timeline Spine */}
       <div
         className={cn(
-          "flex flex-col px-0.5 pt-1 pb-0.5 transition-all duration-300",
+          "flex flex-col px-0.5 pt-1.5 pb-1 transition-all duration-300",
           !pipelineProcessingEnabled && "opacity-35 grayscale pointer-events-none"
         )}
       >
         {/* Stage 1: Ingestion Queue (Pending) */}
-        <div className="flex gap-2.5 items-stretch min-w-0">
+        <div className="flex gap-3 items-stretch min-w-0">
           <div className="flex flex-col items-center shrink-0 w-4.5">
             <div className="w-4.5 h-4.5 rounded-full border border-[rgba(var(--accent),0.35)] bg-[rgb(var(--card))] flex items-center justify-center shrink-0 z-10 text-[rgb(var(--foreground-muted))]/70">
               <Clock size={9} strokeWidth={2} />
             </div>
-            <div className="w-[1.5px] flex-1 my-0.5 bg-[rgba(var(--accent),0.2)]" />
+            <div className="w-[1.5px] flex-1 my-1 bg-[rgba(var(--accent),0.2)]" />
           </div>
-          <div className="flex-1 min-w-0 pb-3 flex items-start justify-between">
+          <div className="flex-1 min-w-0 pb-4 flex items-start justify-between">
             <div className="flex flex-col min-w-0 pr-2">
               <span className="text-[13px] font-sans font-medium leading-snug text-[rgb(var(--foreground))]">
                 {MEMORY_COPY.timeline.pipelineStagePending}
@@ -84,7 +84,7 @@ export const TimelineQueueSection = memo<TimelineQueueSectionProps>(({
         </div>
 
         {/* Stage 2: Semantic Extraction (Processing) */}
-        <div className="flex gap-2.5 items-stretch min-w-0">
+        <div className="flex gap-3 items-stretch min-w-0">
           <div className="flex flex-col items-center shrink-0 w-4.5">
             <div
               className={cn(
@@ -96,9 +96,9 @@ export const TimelineQueueSection = memo<TimelineQueueSectionProps>(({
             >
               <Activity size={9} className={cn(processingCount > 0 && "animate-pulse")} strokeWidth={2.5} />
             </div>
-            <div className={cn("w-[1.5px] flex-1 my-0.5", processingCount > 0 ? "bg-[rgb(var(--accent))]/40" : "bg-[rgba(var(--accent),0.2)]")} />
+            <div className={cn("w-[1.5px] flex-1 my-1", processingCount > 0 ? "bg-[rgb(var(--accent))]/40" : "bg-[rgba(var(--accent),0.2)]")} />
           </div>
-          <div className="flex-1 min-w-0 pb-3 flex items-start justify-between">
+          <div className="flex-1 min-w-0 pb-4 flex items-start justify-between">
             <div className="flex flex-col min-w-0 pr-2">
               <span
                 className={cn(
@@ -124,16 +124,16 @@ export const TimelineQueueSection = memo<TimelineQueueSectionProps>(({
         </div>
 
         {/* Stage 3: Graph Indexed (Completed) */}
-        <div className="flex gap-2.5 items-stretch min-w-0">
+        <div className="flex gap-3 items-stretch min-w-0">
           <div className="flex flex-col items-center shrink-0 w-4.5">
             <div className="w-4.5 h-4.5 rounded-full border border-[rgb(var(--accent))] bg-[rgb(var(--card))] flex items-center justify-center shrink-0 z-10 text-[rgb(var(--accent))]">
               <Check size={9} strokeWidth={2.5} />
             </div>
             {failedCount > 0 && (
-              <div className="w-[1.5px] flex-1 my-0.5 bg-[rgba(var(--accent),0.2)]" />
+              <div className="w-[1.5px] flex-1 my-1 bg-[rgba(var(--accent),0.2)]" />
             )}
           </div>
-          <div className={cn("flex-1 min-w-0 flex items-start justify-between", failedCount > 0 && "pb-3")}>
+          <div className={cn("flex-1 min-w-0 flex items-start justify-between", failedCount > 0 && "pb-4")}>
             <div className="flex flex-col min-w-0 pr-2">
               <span className="text-[13px] font-sans font-medium leading-snug text-[rgb(var(--foreground))]">
                 {MEMORY_COPY.timeline.pipelineStageCompleted}
@@ -150,7 +150,7 @@ export const TimelineQueueSection = memo<TimelineQueueSectionProps>(({
 
         {/* Stage 4: Failed (if present) */}
         {failedCount > 0 && (
-          <div className="flex gap-2.5 items-stretch min-w-0">
+          <div className="flex gap-3 items-stretch min-w-0">
             <div className="flex flex-col items-center shrink-0 w-4.5">
               <div className="w-4.5 h-4.5 rounded-full border border-rose-400 bg-[rgb(var(--card))] flex items-center justify-center shrink-0 z-10 text-rose-400">
                 <RotateCcw size={9} strokeWidth={2} />

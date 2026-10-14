@@ -1,55 +1,71 @@
 import { useCallback, useEffect, useState } from "react";
-
-const STORAGE_KEY = "vox_favorite_models";
-
-function loadFavorites(): Set<string> {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return new Set();
-    const parsed = JSON.parse(raw);
-    return new Set(Array.isArray(parsed) ? parsed : []);
-  } catch {
-    return new Set();
-  }
-}
-
-function saveFavorites(favorites: Set<string>): void {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(Array.from(favorites)));
-  } catch {
-    // localStorage unavailable / quota exceeded
-  }
-}
+import { listFavoriteModels, toggleModelFavorite } from "@/services/settingsService";
 
 export function useFavoriteModels() {
-  const [favorites, setFavorites] = useState<Set<string>>(() => loadFavorites());
+  const [favorites, setFavorites] = useState<Set<string>>(new Set());
 
-  // Listen for storage events across tabs / windows
+  // Load persistent favorites on mount
   useEffect(() => {
-    const handleStorage = (e: StorageEvent) => {
-      if (e.key === STORAGE_KEY) {
-        setFavorites(loadFavorites());
-      }
+    let alive = true;
+    listFavoriteModels()
+      .then((ids) => {
+        if (alive) {
+          setFavorites(new Set(ids));
+        }
+      })
+      .catch((err) => {
+        console.error("[useFavoriteModels] Failed to load favorite models from DB:", err);
+      });
+    return () => {
+      alive = false;
     };
-    window.addEventListener("storage", handleStorage);
-    return () => window.removeEventListener("storage", handleStorage);
   }, []);
 
   const toggleFavorite = useCallback((modelId: string) => {
+    const trimmed = modelId.trim();
+    if (!trimmed) return;
+
+    // Optimistic UI toggle
     setFavorites((prev) => {
       const next = new Set(prev);
-      if (next.has(modelId)) {
-        next.delete(modelId);
+      if (next.has(trimmed)) {
+        next.delete(trimmed);
       } else {
-        next.add(modelId);
+        next.add(trimmed);
       }
-      saveFavorites(next);
       return next;
     });
+
+    // Persistent Turso DB update
+    toggleModelFavorite(trimmed)
+      .then((isFav) => {
+        setFavorites((prev) => {
+          const next = new Set(prev);
+          if (isFav) {
+            next.add(trimmed);
+          } else {
+            next.delete(trimmed);
+          }
+          return next;
+        });
+      })
+      .catch((err) => {
+        console.error("[useFavoriteModels] Failed to toggle model favorite:", err);
+        // Rollback on failure
+        setFavorites((prev) => {
+          const next = new Set(prev);
+          if (next.has(trimmed)) {
+            next.delete(trimmed);
+          } else {
+            next.add(trimmed);
+          }
+          return next;
+        });
+      });
   }, []);
 
   const isFavorite = useCallback(
-    (modelId: string) => favorites.has(modelId),
+    (modelId: string) => favorites.has(modelId.trim()),
     [favorites]
   );
 

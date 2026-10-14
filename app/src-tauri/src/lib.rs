@@ -46,7 +46,8 @@ use crate::{
         audio::list_audio_devices,
         catalog::{
             check_provider_health, get_model_capabilities_cache, get_model_catalog,
-            get_provider_caps, list_llm_models, probe_model_capabilities, setup_remote_server,
+            get_provider_caps, list_favorite_models, list_llm_models, probe_model_capabilities,
+            setup_remote_server, toggle_model_favorite,
         },
         memory::{
             consolidate_personal_memory, get_ingestion_stats, get_memory_revisions,
@@ -753,6 +754,8 @@ notification_permission_state,
             list_llm_models,
             probe_model_capabilities,
             get_model_capabilities_cache,
+            list_favorite_models,
+            toggle_model_favorite,
             setup_remote_server,
             update_setting,
             reset_settings,

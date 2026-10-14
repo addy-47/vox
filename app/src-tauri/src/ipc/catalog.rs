@@ -280,3 +280,80 @@ pub async fn setup_remote_server<R: tauri::Runtime>(
     )
     .map_err(VoxIpcError::Network)
 }
+
+/// Lists all favorited LLM model IDs from the persistent database.
+#[tauri::command]
+pub async fn list_favorite_models(
+    state: State<'_, Arc<AppState>>,
+) -> Result<Vec<String>, VoxIpcError> {
+    let conn = state
+        .db
+        .connect()
+        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
+    let mut rows = conn
+        .query("SELECT id FROM favorite_models ORDER BY created_at DESC", ())
+        .await
+        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
+    let mut model_ids = Vec::new();
+    while let Some(row) = rows
+        .next()
+        .await
+        .map_err(|e| VoxIpcError::Database(e.to_string()))?
+    {
+        if let Ok(id) = row.get::<String>(0) {
+            model_ids.push(id);
+        }
+    }
+    Ok(model_ids)
+}
+
+/// Atomically toggles favorite state for an LLM model ID. Returns true if favorited.
+#[tauri::command]
+pub async fn toggle_model_favorite(
+    model_id: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<bool, VoxIpcError> {
+    let model_id = model_id.trim();
+    if model_id.is_empty() {
+        return Err(VoxIpcError::InvalidArgument("model_id cannot be empty".to_string()));
+    }
+    let conn = state
+        .db
+        .connect()
+        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
+    let mut rows = conn
+        .query(
+            "SELECT id FROM favorite_models WHERE id = ? OR LOWER(id) = LOWER(?) LIMIT 1",
+            (model_id.to_string(), model_id.to_string()),
+        )
+        .await
+        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
+    if let Some(row) = rows
+        .next()
+        .await
+        .map_err(|e| VoxIpcError::Database(e.to_string()))?
+    {
+        let matched_id: String = row.get(0).unwrap_or_else(|_| model_id.to_string());
+        conn.execute(
+            "DELETE FROM favorite_models WHERE id = ?",
+            (matched_id,),
+        )
+        .await
+        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
+        log::info!("[Catalog::IPC] Model unfavorited: {}", model_id);
+        Ok(false)
+    } else {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+        conn.execute(
+            "INSERT INTO favorite_models (id, created_at) VALUES (?, ?)",
+            (model_id.to_string(), now),
+        )
+        .await
+        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
+        log::info!("[Catalog::IPC] Model favorited: {}", model_id);
+        Ok(true)
+    }
+}

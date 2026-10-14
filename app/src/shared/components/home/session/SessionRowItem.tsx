@@ -165,18 +165,16 @@ export const SessionRowItem = memo(
             ? "bg-[rgba(var(--accent),0.12)] border-[rgba(var(--accent),0.25)] text-[rgb(var(--accent))] font-medium shadow-sm"
             : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.04)]",
           restoring && "opacity-60 cursor-wait animate-pulse",
-          nested ? "pl-7 pr-2" : "px-3"
+          nested ? "pl-6 pr-2" : "px-2"
         )}
       >
         <div className="flex items-center gap-2 min-w-0 flex-1">
-          {restoring ? (
+          {restoring && (
             <Loader2
               size={13}
               className="shrink-0 animate-spin text-[rgb(var(--accent))]"
               aria-label={SESSION_COPY.restoringAriaLabel}
             />
-          ) : (
-            <div />
           )}
 
           {isRenaming ? (
