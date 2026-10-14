@@ -65,7 +65,7 @@ export const CommentsQueueView: React.FC<CommentsQueueViewProps> = memo(
                           if (editingCommentId === c.id) setEditingCommentId(null);
                           onDeleteComment(c.id);
                         }}
-                        className="p-1 rounded-lg text-[rgb(var(--foreground-muted))] hover:text-red-400 hover:bg-red-500/10 opacity-60 group-hover:opacity-100 transition-all cursor-pointer"
+                        className="p-1 rounded-lg text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--error))] hover:bg-[rgba(var(--error),0.1)] opacity-60 group-hover:opacity-100 transition-all cursor-pointer"
                         title={MEMORY_COPY.deleteCommentTooltip}
                       >
                         <Trash2 size={13} />
@@ -133,7 +133,7 @@ export const CommentsQueueView: React.FC<CommentsQueueViewProps> = memo(
               <button
                 type="button"
                 onClick={onClearComments}
-                className="text-[11px] text-red-400 hover:underline cursor-pointer"
+                className="text-[11px] text-[rgb(var(--error))] hover:underline cursor-pointer"
               >
                 {MEMORY_COPY.clearAllComments}
               </button>

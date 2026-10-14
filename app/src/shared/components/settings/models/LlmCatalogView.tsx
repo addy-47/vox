@@ -37,10 +37,6 @@ export interface LlmCatalogViewProps {
   remoteModelsError: string | null;
   probingMap: Record<string, { status: 'idle' | 'testing' | 'success' | 'error'; capabilities?: ModelCapabilities; error?: string }>;
   handleProbeCapabilities: (id?: string) => void;
-  customModelId: string;
-  setCustomModelId: (id: string) => void;
-  customModelStatus?: 'idle' | 'checking' | 'valid' | 'invalid';
-  handleValidateCustomModel?: () => void;
 }
 
 export const LlmCatalogView = memo(({
@@ -60,10 +56,6 @@ export const LlmCatalogView = memo(({
   remoteModelsError,
   probingMap,
   handleProbeCapabilities,
-  customModelId,
-  setCustomModelId,
-  customModelStatus,
-  handleValidateCustomModel,
 }: LlmCatalogViewProps) => {
   if (isRemoteLlm) {
     return (
@@ -75,10 +67,6 @@ export const LlmCatalogView = memo(({
         remoteModelsError={remoteModelsError}
         probingMap={probingMap}
         handleProbeCapabilities={handleProbeCapabilities}
-        customModelId={customModelId}
-        setCustomModelId={setCustomModelId}
-        customModelStatus={customModelStatus}
-        handleValidateCustomModel={handleValidateCustomModel}
       />
     );
   }

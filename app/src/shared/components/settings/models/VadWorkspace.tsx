@@ -4,7 +4,7 @@ import { SubModelCard } from "../SubModelCard";
 import type { ModelStatus } from "@/shared/hooks/useModelDownloads";
 import { cn } from "@/shared/lib/utils";
 import { VAD_SETTINGS_COPY, COMPUTE_PROFILE_COPY } from "@/data/settingsCopy";
-import { SettingsTabPane, PresetButton, PresetInput } from "./SettingsTabPane";
+import { CustomSvgs, PresetButton, PresetInput } from "./CustomSvgs";
 
 interface VadWorkspaceProps {
   activeCategoryTab: "model" | "settings";
@@ -52,14 +52,14 @@ export const VadWorkspace = memo(
     const noiseGateCustom = ![0.001, 0.005, 0.020].some((v) => Math.abs(currentNoiseGate - v) < 0.0015);
 
     return (
-      <div className="flex-1 min-h-0 w-full overflow-y-auto custom-scrollbar pr-1">
+      <div className={cn("flex-1 min-h-0 w-full overflow-y-auto custom-scrollbar pr-1", layoutMode === "small" && "max-h-[220px]")}>
         {activeCategoryTab === "model" ? (
           <div
             className={cn(
               "grid gap-2.5",
               vadModels.length <= 2
                 ? (layoutMode === "small" ? "grid-cols-1 auto-rows-fr h-full" : "grid-cols-2 grid-rows-1 h-full")
-                : (layoutMode === "small" ? "grid-cols-1 auto-rows-auto" : "grid-cols-2 auto-rows-auto")
+                : (layoutMode === "small" ? "grid-cols-1 auto-rows-max content-start" : "grid-cols-2 auto-rows-max content-start")
             )}
           >
             {vadModels.map((model) => {
@@ -99,7 +99,7 @@ export const VadWorkspace = memo(
           >
             {/* SUBTAB 1: SENSITIVITY (THRESHOLD) */}
             {activeSubTab === "sensitivity" && (
-              <SettingsTabPane
+              <CustomSvgs
                 title={VAD_SETTINGS_COPY.sensitivity.title}
                 description={VAD_SETTINGS_COPY.sensitivity.description}
                 layoutMode={layoutMode}
@@ -138,7 +138,7 @@ export const VadWorkspace = memo(
 
             {/* SUBTAB 2: SILENCE CUTOFF (DURATION) */}
             {activeSubTab === "silence" && (
-              <SettingsTabPane
+              <CustomSvgs
                 title={VAD_SETTINGS_COPY.silence.title}
                 description={VAD_SETTINGS_COPY.silence.description}
                 layoutMode={layoutMode}
@@ -177,7 +177,7 @@ export const VadWorkspace = memo(
 
             {/* SUBTAB 3: SPEECH ONSET DURATION */}
             {activeSubTab === "speechOnset" && (
-              <SettingsTabPane
+              <CustomSvgs
                 title={VAD_SETTINGS_COPY.speechOnset.title}
                 description={VAD_SETTINGS_COPY.speechOnset.description}
                 layoutMode={layoutMode}
@@ -216,7 +216,7 @@ export const VadWorkspace = memo(
 
             {/* SUBTAB 4: NOISE GATE */}
             {activeSubTab === "noiseGate" && (
-              <SettingsTabPane
+              <CustomSvgs
                 title={VAD_SETTINGS_COPY.noiseGate.title}
                 description={VAD_SETTINGS_COPY.noiseGate.description}
                 layoutMode={layoutMode}

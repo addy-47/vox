@@ -91,10 +91,14 @@ Authoritative system specifications reside in [`docs/specs/`](file:///home/addy/
 - **Natural Dynamic Audio Preview & Stereo Balance:** Standardized audio output to 16-bit PCM WAV with peak normalization (resolving mono imbalance and low volume); purged artificial `.cycle()` looping in `voice.rs` so preview clips play exactly once for their natural dynamic length.
 - **Frontend Optimization & Token Standardization:** Pruned 216+ dead keys; unified context menus into `ContextMenuShell`; calibrated spacing/border radius to tokens (`rounded-xl` for cards, `rounded-md` for tags); real-time interactive waveform scrubbers in `VoiceCard` and preview banner.
 - **System Specifications Overhaul:** Refactored all 10 core system specs against HLD standards with Mermaid sequence and state diagrams.
-- **Settings InteractionCard Toggle Hover Gating:** Decoupled [ToggleTile.tsx](file:///home/addy/projects/apps/vox/app/src/shared/ui/ToggleTile.tsx) slide-out hover affordance from layout mode; gated hover strictly on mobile/touch devices instead of small layouts.
+- **Frontend Density & Radius Calibration:** Standardized border radii to design tokens (`rounded-xl` for cards, `rounded-md` for tags); real-time interactive waveform scrubbers in `VoiceCard`; persistent 2-column mode toggles; mobile padding and catalog height limits (`max-h-[220px]`).
+- **Standardized Catalog Headers & Theme Audit:** `CatalogHeader` grammar across providers, LLM, and voice catalogs; migrated all chromatic colors to semantic theme CSS tokens; clean `tsc` and 0 residual chromatic utility classes repo-wide.
+- **Config Desk Status Spheres & Coming Soon Wireframes:** Replaced text status badges with minimal status spheres in tooltips; added vector wireframe `ComingSoonGraphic` to placeholder tabs; removed duplicate tab icons in Model Hub settings panes (`LlmSettingsView`, `AsrWorkspace`, `TtsVoiceManager`).
+- **Dynamic Mobile Card Height & Config Desk Standardization:** Calibrated active status sphere gating to active provider tier (inactive tiers render grey dot); redesigned `ComingSoonGraphic` as an isometric blueprint module; wired vector graphics across STT/LLM/TTS blurbs with strict 65/35 side-by-side layout in small modes; eliminated artificial `min-h` bounds on mobile settings wrappers allowing cards to shrink dynamically on settings subtabs and expand on model catalogs.
+- **Graphic Label Pruning, Compact Copy & Dictation Stacking:** Pruned bottom text from Remote, Context, Coming Soon, and Builtin graphics; kept clean "EMBEDDED KERNEL" label without subtext on Embedded graphic; compacted STT and LLM embedded copy; calibrated Dictation Hotkey and Output Mode tabs to vertically stack SVG beneath text in small layouts while preserving side-by-side on Auto-Silence.
 
 ---
 
 ## 6. Backlog
 
-- **Light/Dark Semantic Color Audit:** Migrate remaining 128 hardcoded Tailwind color classes (`text-rose-400`, `text-red-400`, `text-amber-400`, and related backgrounds/borders) to theme-aware CSS variable tokens (`var(--danger)`, `var(--error)`, `var(--warn-soft)`) across modals and settings cards in targeted batches with visual verification.
+(none — cleared via §5 entry "Light/Dark Semantic Color Audit".)

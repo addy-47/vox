@@ -119,7 +119,7 @@ export const VoicePreviewBanner = memo(
     if (!voice) return null;
 
     return (
-      <div className="shrink-0 rounded-2xl border border-[rgba(var(--foreground),0.08)] bg-[rgba(var(--card),0.75)] backdrop-blur-xl p-5 md:p-6 lg:py-6 lg:px-7 shadow-lg hidden md:grid md:grid-cols-[auto_1fr_auto] lg:grid-cols-[auto_1fr_auto_auto] items-center gap-x-6 lg:gap-x-8 gap-y-4 md:gap-y-4.5">
+      <div className="shrink-0 rounded-2xl border border-[rgba(var(--foreground),0.08)] bg-[rgba(var(--card),0.75)]  p-5 md:p-6 lg:py-6 lg:px-7 shadow-lg hidden md:grid md:grid-cols-[auto_1fr_auto] lg:grid-cols-[auto_1fr_auto_auto] items-center gap-x-6 lg:gap-x-8 gap-y-4 md:gap-y-4.5">
         {/* Top-Left: Circular Play Button */}
         <button
           type="button"

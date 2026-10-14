@@ -58,12 +58,12 @@ export function probeWarningLabel(
         {LLM_CATALOG_COPY.probeFailedNote}
       </div>
       {probeError && (
-        <div className="text-red-400 font-mono text-[10.5px] break-words leading-relaxed">{probeError}</div>
+        <div className="text-[rgb(var(--error))] font-mono text-[10.5px] break-words leading-relaxed">{probeError}</div>
       )}
       {failed.map((check) => (
         <div key={check.id} className="space-y-0.5 text-[10.5px]">
           <div className="text-[rgb(var(--foreground-muted))] font-sans font-medium">{check.label}</div>
-          <div className="text-amber-400/90 font-mono text-[10px] break-words leading-relaxed pl-1.5 border-l-2 border-amber-400/30">
+          <div className="text-[rgb(var(--warn-soft))]/90 font-mono text-[10px] break-words leading-relaxed pl-1.5 border-l-2 border-[rgba(var(--warn-soft),0.3)]">
             {check.detail ?? check.outcome}
           </div>
         </div>

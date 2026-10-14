@@ -53,13 +53,13 @@ export const TtsModelWorkspace = memo(
     });
 
     return (
-      <div className="flex-1 min-h-0 w-full overflow-y-auto custom-scrollbar pr-1">
+      <div className={cn("flex-1 min-h-0 w-full overflow-y-auto custom-scrollbar pr-1", layoutMode === "small" && "max-h-[220px]")}>
         <div
           className={cn(
             "grid gap-2.5 h-full",
             filteredModels.length <= 2
               ? (layoutMode === "small" ? "grid-cols-1 auto-rows-fr" : "grid-cols-2 grid-rows-1")
-              : (layoutMode === "small" ? "grid-cols-1 auto-rows-full snap-y snap-mandatory" : "grid-cols-2 auto-rows-full snap-y snap-mandatory")
+              : (layoutMode === "small" ? "grid-cols-1 auto-rows-max content-start" : "grid-cols-2 auto-rows-max content-start")
           )}
         >
           {filteredModels.map((model) => {
@@ -97,9 +97,9 @@ export const TtsModelWorkspace = memo(
                     {checkingTtsHealth ? (
                       <Loader2 size={10} className="animate-spin text-[rgb(var(--accent))]" />
                     ) : isRemoteTtsHealthy === true ? (
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.7)]" />
+                      <span className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--success))] shadow-[0_0_6px_rgba(var(--success),0.7)]" />
                     ) : isRemoteTtsHealthy === false ? (
-                      <span className="w-1.5 h-1.5 rounded-full bg-rose-500 shadow-[0_0_6px_rgba(239,68,68,0.7)] animate-pulse" />
+                      <span className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--danger))] shadow-[0_0_6px_rgba(var(--error),0.7)] animate-pulse" />
                     ) : null}
                   </div>
                 )}

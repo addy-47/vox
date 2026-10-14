@@ -272,9 +272,9 @@ export const History: React.FC = () => {
             exit={{ opacity: 0, y: -20, scale: 0.95 }}
             className="absolute top-16 left-1/2 -translate-x-1/2 z-[100] max-w-md w-full px-4 pointer-events-auto"
           >
-            <div className="glass-card p-3.5 rounded-xl flex items-center justify-between gap-3 border border-red-500/30 shadow-lg bg-[rgb(var(--card))]/95 text-left">
+            <div className="glass-card p-3.5 rounded-xl flex items-center justify-between gap-3 border border-[rgba(var(--error),0.3)] shadow-lg bg-[rgb(var(--card))]/95 text-left">
               <div className="flex items-center gap-2.5 min-w-0">
-                <AlertCircle className="text-red-400 shrink-0" size={16} />
+                <AlertCircle className="text-[rgb(var(--error))] shrink-0" size={16} />
                 <span className="text-[12px] font-medium text-[rgb(var(--foreground))] truncate">
                   {deleteError}
                 </span>
@@ -294,8 +294,8 @@ export const History: React.FC = () => {
       {/* ── Main Canvas Stage: Direct on Ambient Field (Mounted underneath loader for instant warm render) ── */}
       {error ? (
         <div className="absolute inset-0 flex items-center justify-center p-8 z-20">
-          <div className="max-w-sm w-full glass-card p-6 rounded-2xl flex flex-col items-center text-center gap-4 border border-red-500/20">
-            <div className="w-10 h-10 rounded-full bg-red-500/10 flex items-center justify-center text-red-400">
+          <div className="max-w-sm w-full glass-card p-6 rounded-2xl flex flex-col items-center text-center gap-4 border border-[rgba(var(--error),0.2)]">
+            <div className="w-10 h-10 rounded-full bg-[rgb(var(--error))]/10 flex items-center justify-center text-[rgb(var(--error))]">
               <AlertCircle size={20} />
             </div>
             <div className="space-y-1">

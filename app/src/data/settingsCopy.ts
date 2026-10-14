@@ -253,23 +253,21 @@ export const INTERACTION_CONFIG_DESK_COPY = {
   stt: {
     embedded: {
       title: "Embedded Speech Recognition",
-      description: "Speech recognition models run 100% locally inside Vox using on-device neural engines. Voice audio is processed entirely on your hardware with zero external network transmission.",
+      description: "Speech recognition runs 100% locally on-device with zero external network transmission.",
     },
     server: {
       title: "Remote Speech Server",
-      badge: "Coming Soon",
       description: "Stream microphone audio frames directly to a self-hosted or dedicated remote ASR inference node over secure WebSocket connection.",
     },
     cloud: {
       title: "Cloud Speech API",
-      badge: "Coming Soon",
       description: "Ultra-low latency streaming cloud transcription powered by hosted speech-to-text API endpoints.",
     },
   },
   llm: {
     embedded: {
       title: "Embedded Neural LLM",
-      description: "Language models run directly on your local hardware using Vox's embedded inference engine. All conversational context and prompt reasoning remain completely offline and private.",
+      description: "Neural language models run directly on-device with completely offline and private reasoning.",
     },
     server: {
       title: "Remote Server",
@@ -283,9 +281,6 @@ export const INTERACTION_CONFIG_DESK_COPY = {
       providerLabel: "Cloud Provider",
       apiKeyLabel: "API Key (Required)",
       searchPlaceholder: "Search providers...",
-      closeSearch: "Close search",
-      sortAsc: "Sort A-Z",
-      sortDesc: "Sort Z-A",
       noProvidersMatch: "No providers match your search",
       clearSearch: "Clear search",
       connect: "+ Connect",
@@ -294,6 +289,13 @@ export const INTERACTION_CONFIG_DESK_COPY = {
       cancelKey: "Cancel",
       expandLabel: "Expand provider list",
       expandAriaLabel: "Browse all cloud providers",
+      filtersTitle: "Filters",
+      filterAria: "Toggle provider filters",
+      filterAll: "All Providers",
+      filterConfigured: "Configured",
+      filterPopular: "Popular",
+      filterUnconfigured: "Needs Key",
+      resetFilters: "Reset Filters",
     },
   },
   status: {
@@ -405,6 +407,16 @@ export const TTS_VOICE_MANAGER_COPY = {
   },
 };
 
+export const CATALOG_HEADER_COPY = {
+  back: "Back",
+  addProviderSoon: "Add provider (coming soon)",
+  sortAsc: "Sort A–Z",
+  sortDesc: "Sort Z–A",
+  search: "Search",
+  closeSearch: "Close search",
+  clearSearch: "Clear search",
+} as const;
+
 export const VOICE_CATALOG_COPY = {
   title: "Select a Voice",
   subtitle: "Browse and audition natural voices for speech synthesis.",
@@ -412,7 +424,6 @@ export const VOICE_CATALOG_COPY = {
   expandLabel: "Expand voice catalog",
   searchPlaceholder: "Search voices...",
   searchAria: "Search voices",
-  sortPopular: "Popular",
   allVoices: "All Voices",
   recent: "Recent",
   favorites: "Favorites",
@@ -476,16 +487,10 @@ export const LLM_CATALOG_COPY = {
   modelCountLabel: "models",
   serverErrorTooltip: "Connection failed or invalid API key. Ensure the server is online and credentials are correct.",
   fetching: "Fetching...",
-  customModelPlaceholder: "Enter custom model ID (e.g. mistralai/mistral-large)...",
-  customModelTitle: "Enter custom model ID",
-  customModelAria: "Custom model ID",
   searchPlaceholder: "Filter models with fuzzy matching (e.g. llama 70b, gemma q4)...",
-  searchTitle: "Search models (fzf fuzzy filter)",
-  searchAria: "Search models",
   emptyTitle: "No remote models loaded",
   emptyHint: "Ensure the remote server is online and configured in the Interaction Card.",
   clearSearch: "Clear Search",
-  use: "Use",
   noModelsMatch: "No models matching",
   toolsSupported: "Supported",
   toolsNone: "None",
@@ -515,9 +520,14 @@ export const LLM_CATALOG_COPY = {
   provenanceUser: "Your setting",
   provenanceUnknown: "Unknown source",
   probeFailedNote: "Probe failed",
-  customValidating: "Validating model…",
-  customInvalid: "Model not verified — not applied",
-  customValid: "Model verified",
+  filtersTitle: "Filters",
+  filterAria: "Toggle model filters",
+  filterAll: "All Models",
+  filterFavorites: "Favorites",
+  filterBenchmarked: "Benchmarked",
+  filterTools: "Tools Support",
+  filterFast: "Fast (>30 TPS)",
+  resetFilters: "Reset Filters",
 } as const;
 
 export const REMOTE_SERVER_COPY = {
@@ -551,6 +561,18 @@ export const REMOTE_SERVER_COPY = {
 
 export const MODEL_HUB_COPY = {
   title: "Model Hub",
+  tabs: {
+    vad: "Voice Detection",
+    vadShort: "Detection",
+    stt: "Listening",
+    sttShort: "Listening",
+    llm: "Reasoning",
+    llmShort: "Reasoning",
+    tts: "Speaking",
+    ttsShort: "Speaking",
+    auxiliary: "Support",
+    auxiliaryShort: "Support",
+  },
   missing: "Missing",
   notDownloadedDesc: "This model file is not downloaded yet.",
   /** Shown under a server/cloud LLM chip, whose weights are not local. */

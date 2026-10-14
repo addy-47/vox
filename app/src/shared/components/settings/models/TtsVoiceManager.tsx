@@ -1,10 +1,10 @@
 import { memo } from "react";
 import { useSettingsStore, type ProviderCaps } from "@/store/settingsStore";
-import { Metronome, Microchip, Zap, Battery, Gauge } from "lucide-react";
+import { Zap, Battery, Gauge } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { RotaryKnob } from "@/shared/ui";
 import { TTS_VOICE_MANAGER_COPY, COMPUTE_PROFILE_COPY } from "@/data/settingsCopy";
-import { SettingsTabPane, PresetButton, PresetInput } from "./SettingsTabPane";
+import { CustomSvgs, PresetButton, PresetInput } from "./CustomSvgs";
 
 export interface TtsVoiceManagerProps {
   layoutMode?: "full-max" | "full-min" | "small";
@@ -40,8 +40,7 @@ export const TtsVoiceManager = memo(({ layoutMode, caps, activeSubTab = "speed" 
         // five of six providers and is replaced when caps arrive.
         const range = caps?.speed_range ?? { min: 0.7, max: 2.0, step: 0.05 };
         return (
-          <SettingsTabPane
-            icon={Metronome}
+          <CustomSvgs
             title={copy.speed.title}
             description={copy.speed.description}
             layoutMode={layoutMode}
@@ -75,8 +74,7 @@ export const TtsVoiceManager = memo(({ layoutMode, caps, activeSubTab = "speed" 
           : currentThreads === ecoThreads ? "eco"
           : "custom";
         return (
-          <SettingsTabPane
-            icon={Microchip}
+          <CustomSvgs
             title={COMPUTE_PROFILE_COPY.title}
             description={copy.compute.description}
             layoutMode={layoutMode}
@@ -95,7 +93,7 @@ export const TtsVoiceManager = memo(({ layoutMode, caps, activeSubTab = "speed" 
                   selected={currentProfile === "eco"}
                   onClick={() => updateDraft("tts", "threads", ecoThreads)}
                 >
-                  <Battery size={11} className="text-emerald-400" />
+                  <Battery size={11} className="text-[rgb(var(--success))]" />
                   <span>{COMPUTE_PROFILE_COPY.eco}</span>
                 </PresetButton>
                 <PresetButton
@@ -103,7 +101,7 @@ export const TtsVoiceManager = memo(({ layoutMode, caps, activeSubTab = "speed" 
                   selected={currentProfile === "max"}
                   onClick={() => updateDraft("tts", "threads", totalCores)}
                 >
-                  <Gauge size={11} className="text-amber-400" />
+                  <Gauge size={11} className="text-[rgb(var(--warn-soft))]" />
                   <span>{COMPUTE_PROFILE_COPY.max}</span>
                 </PresetButton>
                 <PresetInput

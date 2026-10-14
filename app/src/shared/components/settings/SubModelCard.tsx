@@ -85,14 +85,14 @@ export const SubModelCard = memo<SubModelCardProps>(({
     if (isConfirmingDelete) {
       return (
         <div className="flex items-center gap-1.5 transition-all duration-300 shrink-0">
-          <span className="text-[11px] text-rose-400 font-bold uppercase tracking-wider">{MODEL_HUB_COPY.row.deleteConfirm}</span>
+          <span className="text-[11px] text-[rgb(var(--danger))] font-bold uppercase tracking-wider">{MODEL_HUB_COPY.row.deleteConfirm}</span>
           <button
             onClick={(e) => {
               e.stopPropagation();
               deleteModel();
               setConfirmDeleteId(null);
             }}
-            className="p-1.5 rounded-lg bg-rose-500/20 text-rose-400 hover:bg-rose-500/30 transition-colors flex items-center justify-center cursor-pointer"
+            className="p-1.5 rounded-lg bg-[rgba(var(--danger),0.2)] text-[rgb(var(--danger))] hover:bg-[rgba(var(--danger),0.3)] transition-colors flex items-center justify-center cursor-pointer"
             aria-label={MODEL_HUB_COPY.row.confirmDelete}
           >
             <Check size={14} className="font-bold" />
@@ -117,7 +117,7 @@ export const SubModelCard = memo<SubModelCardProps>(({
           e.stopPropagation();
           setConfirmDeleteId(id);
         }}
-        className="p-1.5 rounded-lg text-rose-400 hover:text-rose-300 hover:bg-rose-500/15 transition-colors shrink-0 cursor-pointer"
+        className="p-1.5 rounded-lg text-[rgb(var(--danger))] hover:text-[rgb(var(--danger))]/80 hover:bg-[rgba(var(--danger),0.15)] transition-colors shrink-0 cursor-pointer"
         aria-label={MODEL_HUB_COPY.row.deleteWeights}
       >
         <Trash2 size={16} />

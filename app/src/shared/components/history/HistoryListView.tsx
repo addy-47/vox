@@ -114,7 +114,7 @@ export const HistoryListView: React.FC<HistoryListViewProps> = memo(
     return (
       <div className="w-full h-full flex flex-col min-h-0 overflow-hidden z-20">
         {/* Quick Search and Date Filter Pills */}
-        <div className="shrink-0 px-4 sm:px-5 pt-1.5 pb-2.5 space-y-2.5 border-b]">
+        <div className="shrink-0 px-4.5 sm:px-5.5 pt-2 pb-2.5 space-y-2.5 border-b]">
 
           {/* Quick Search Input — Underline Style matching Design System */}
           <div className="px-1 pb-0.5">
@@ -213,7 +213,7 @@ export const HistoryListView: React.FC<HistoryListViewProps> = memo(
 
         {/* Scrollable Session List Area with selective bottom dissolve */}
         <div className="flex-1 min-h-0 relative overflow-hidden flex flex-col">
-          <div ref={scrollParentRef} className="flex-1 min-h-0 overflow-y-auto px-4 pt-3 pb-28 custom-scrollbar" style={{ position: "relative" }}>
+          <div ref={scrollParentRef} className="flex-1 min-h-0 overflow-y-auto px-4.5 pt-3.5 pb-28 custom-scrollbar" style={{ position: "relative" }}>
           {filteredSessions.length === 0 ? (
             <div className="flex flex-col items-center justify-center p-8 text-center">
               <MessageSquare size={24} className="text-[rgb(var(--foreground-muted))] opacity-40 mb-2" />

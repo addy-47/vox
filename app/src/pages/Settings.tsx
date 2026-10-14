@@ -264,17 +264,17 @@ export const Settings: React.FC = () => {
         </div>
       ) : (
         /* ── Mobile & Compact Layout (Single vertical scroll list) ─────────── */
-        <div className="flex-1 flex flex-col min-h-0 overflow-hidden w-full pt-2 sm:pt-3">
+        <div className="flex-1 flex flex-col min-h-0 overflow-hidden w-full pt-2.5 sm:pt-3.5">
 
           <div className="flex-1 w-full relative overflow-hidden flex flex-col min-h-0">
-            <div className="flex-1 w-full overflow-y-auto custom-scrollbar pb-[120px] space-y-4 sm:space-y-5 px-2.5 sm:px-4">
+            <div className="flex-1 w-full overflow-y-auto custom-scrollbar pb-[130px] space-y-4 px-3 sm:px-4.5">
               {[...DOMAINS].sort((a, b) => {
-                const order = ["interaction", "models", "appearance", "working_memory", "personal_memory", "persona"];
+                const order = ["interaction", "models", "working_memory", "personal_memory", "persona", "appearance"];
                 return order.indexOf(a.id) - order.indexOf(b.id);
               }).map((domain) => (
                 <div key={domain.id} className="w-full">
                   <SettingsCardWrapper domain={domain} isActive={true} layoutMode="small">
-                    <div className="w-full glass-card rounded-2xl p-3 sm:p-5">
+                    <div className="w-full glass-card rounded-2xl p-3.5 sm:p-4.5">
                       <ErrorBoundary name={`SettingsMobile:${domain.id}`}>
                         <DomainContent domain={domain.id} layoutMode="small" />
                       </ErrorBoundary>

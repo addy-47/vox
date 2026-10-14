@@ -136,7 +136,7 @@ export const SettingsCommitControls = memo(({ domainId, layoutMode }: SettingsCo
 
   if (mode === "failed") {
     return (
-      <span role="alert" className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-rose-400 shrink-0">
+      <span role="alert" className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-[rgb(var(--danger))] shrink-0">
         <AlertCircle size={13} className="shrink-0" />
         <span className="hidden sm:inline">{SETTINGS_COPY.saveFailedTitle}</span>
       </span>
@@ -146,7 +146,7 @@ export const SettingsCommitControls = memo(({ domainId, layoutMode }: SettingsCo
   if (mode === "missing-key") {
     return (
       <div className="flex items-center gap-1.5 shrink-0">
-        <span className="flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider text-rose-400 shrink-0">
+        <span className="flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider text-[rgb(var(--danger))] shrink-0">
           <AlertCircle size={13} className="shrink-0" />
           <span className="hidden md:inline">{SETTINGS_COPY.apiKeyRequired}</span>
         </span>
@@ -161,7 +161,7 @@ export const SettingsCommitControls = memo(({ domainId, layoutMode }: SettingsCo
           <button
             type="button"
             onClick={() => useSettingsStore.getState().discardDomainChanges(domainId)}
-            className="px-2.5 py-1 rounded-lg bg-transparent text-[rgb(var(--foreground-muted))] hover:text-rose-400 hover:bg-rose-500/10 border border-transparent hover:border-rose-500/20 text-[11px] font-bold uppercase tracking-wider transition-all cursor-pointer shrink-0"
+            className="px-2.5 py-1 rounded-lg bg-transparent text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--danger))] hover:bg-[rgba(var(--danger),0.1)] border border-transparent hover:border-[rgba(var(--danger),0.2)] text-[11px] font-bold uppercase tracking-wider transition-all cursor-pointer shrink-0"
           >
             {SETTINGS_COPY.discardChanges}
           </button>
@@ -197,7 +197,7 @@ export const SettingsCommitControls = memo(({ domainId, layoutMode }: SettingsCo
         <button
           type="button"
           onClick={() => useSettingsStore.getState().discardDomainChanges(domainId)}
-          className="px-2.5 py-1 rounded-lg bg-transparent text-[rgb(var(--foreground-muted))] hover:text-rose-400 hover:bg-rose-500/10 border border-transparent hover:border-rose-500/20 text-[11px] font-bold uppercase tracking-wider transition-all cursor-pointer shrink-0"
+          className="px-2.5 py-1 rounded-lg bg-transparent text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--danger))] hover:bg-[rgba(var(--danger),0.1)] border border-transparent hover:border-[rgba(var(--danger),0.2)] text-[11px] font-bold uppercase tracking-wider transition-all cursor-pointer shrink-0"
         >
           {SETTINGS_COPY.discardChanges}
         </button>

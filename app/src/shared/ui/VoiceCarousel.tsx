@@ -295,7 +295,7 @@ export const VoiceCarousel = memo(function VoiceCarousel({
                   className={cn(
                     "p-1 rounded-md transition-colors hover:bg-[rgb(var(--foreground))]/5 cursor-pointer",
                     selectedFile
-                      ? "text-emerald-400 bg-emerald-500/10"
+                      ? "text-[rgb(var(--success))] bg-[rgba(var(--success),0.1)]"
                       : "text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))]"
                   )}
                 >
@@ -311,14 +311,14 @@ export const VoiceCarousel = memo(function VoiceCarousel({
                   className={cn(
                     "p-1 rounded-md transition-colors relative cursor-pointer",
                     isRecording
-                      ? "text-rose-400 bg-rose-500/15"
+                      ? "text-[rgb(var(--danger))] bg-[rgba(var(--danger),0.15)]"
                       : recordedPcm
-                      ? "text-emerald-400 bg-emerald-500/10"
+                      ? "text-[rgb(var(--success))] bg-[rgba(var(--success),0.1)]"
                       : "text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] hover:bg-[rgb(var(--foreground))]/5"
                   )}
                 >
                   {isRecording && (
-                    <span className="animate-ping absolute inline-flex h-2 w-2 rounded-full bg-rose-400 opacity-75 top-0.5 right-0.5"></span>
+                    <span className="animate-ping absolute inline-flex h-2 w-2 rounded-full bg-[rgb(var(--danger))] opacity-75 top-0.5 right-0.5"></span>
                   )}
                   <Mic size={14} />
                 </button>
@@ -328,28 +328,28 @@ export const VoiceCarousel = memo(function VoiceCarousel({
 
           <div className="flex-1 flex flex-col justify-center min-h-[30px] my-0.5">
             {isRecording && (
-              <div className="text-[11px] text-rose-400 font-bold flex items-center justify-center gap-1.5 animate-pulse">
-                <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
+              <div className="text-[11px] text-[rgb(var(--danger))] font-bold flex items-center justify-center gap-1.5 animate-pulse">
+                <span className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--danger))]"></span>
                 Recording... {recordingDuration}s / 30s
               </div>
             )}
             {!isRecording && recordedPcm && (
-              <div className="text-[11px] text-emerald-400 font-bold text-center">
+              <div className="text-[11px] text-[rgb(var(--success))] font-bold text-center">
                 ✓ Audio recorded ({recordingDuration}s)
               </div>
             )}
             {!isRecording && selectedFile && (
-              <div className="text-[11px] text-emerald-400 font-bold text-center truncate">
+              <div className="text-[11px] text-[rgb(var(--success))] font-bold text-center truncate">
                 ✓ {selectedFile.split(/[/\\]/).pop()}
               </div>
             )}
             {recordingError && (
-              <div className="text-[11px] text-rose-400 font-medium text-center leading-tight">
+              <div className="text-[11px] text-[rgb(var(--danger))] font-medium text-center leading-tight">
                 {recordingError}
               </div>
             )}
             {cloningStatus && (
-              <div className="text-[11px] text-amber-400 font-bold text-center leading-tight">
+              <div className="text-[11px] text-[rgb(var(--warn-soft))] font-bold text-center leading-tight">
                 {cloningStatus}
               </div>
             )}
@@ -488,7 +488,7 @@ export const VoiceCarousel = memo(function VoiceCarousel({
                           <button
                             type="button"
                             onClick={() => handleDeleteVoice(currentVoice.id)}
-                            className="p-1 text-rose-400 hover:text-rose-300 hover:scale-110 transition-all duration-150 cursor-pointer shrink-0"
+                            className="p-1 text-[rgb(var(--danger))] hover:text-[rgb(var(--danger))]/80 hover:scale-110 transition-all duration-150 cursor-pointer shrink-0"
                             aria-label={VOICE_CAROUSEL_COPY.deleteVoice}
                           >
                             <Trash2 size={12} />

@@ -25,8 +25,8 @@ export const ToolCard: React.FC<ToolCardProps> = memo(({
 
   const statusIcons: Record<ToolStatus, React.ReactNode> = {
     running: <Loader2 className="w-3.5 h-3.5 text-[rgb(var(--accent))] animate-spin" />,
-    completed: <CheckCircle className="w-3.5 h-3.5 text-emerald-400" />,
-    error: <XCircle className="w-3.5 h-3.5 text-red-400" />,
+    completed: <CheckCircle className="w-3.5 h-3.5 text-[rgb(var(--success))]" />,
+    error: <XCircle className="w-3.5 h-3.5 text-[rgb(var(--error))]" />,
   };
 
   const statusLabels: Record<ToolStatus, string> = {

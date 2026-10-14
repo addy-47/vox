@@ -1,19 +1,17 @@
 
 import { useMemo, memo } from "react";
 import { useSettingsStore, LlmProviderConfig } from "@/store/settingsStore";
-import {
-  Microchip, Zap, Battery, TextCursorInput, Layers2, WandSparkles, Gauge, Server
-} from "lucide-react";
+import { Zap, Battery, Gauge } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { LLM_SETTINGS_COPY, COMPUTE_PROFILE_COPY } from "@/data/settingsCopy";
 import {
-  SettingsTabPane,
+  CustomSvgs,
   PresetButton,
   PresetCell,
   PresetInput,
   RemoteComputeGraphic,
   ManagedContextGraphic,
-} from "./SettingsTabPane";
+} from "./CustomSvgs";
 
 export type SettingsSubTab = "compute" | "tokens" | "context" | "creativity";
 
@@ -101,8 +99,7 @@ export const LlmSettingsView = memo(({
       {/* TAB 1: COMPUTE */}
       {activeSubTab === "compute" && (
         !isRemoteLlm ? (
-          <SettingsTabPane
-            icon={Microchip}
+          <CustomSvgs
             title={COMPUTE_PROFILE_COPY.title}
             description={LLM_SETTINGS_COPY.compute.description}
             layoutMode={layoutMode}
@@ -121,7 +118,7 @@ export const LlmSettingsView = memo(({
                   selected={currentProfile === "power"}
                   onClick={() => updateDraft("llm", "threads", powerSaverThreads)}
                 >
-                  <Battery size={11} className="text-emerald-400" />
+                  <Battery size={11} className="text-[rgb(var(--success))]" />
                   <span>{COMPUTE_PROFILE_COPY.eco}</span>
                 </PresetButton>
                 <PresetButton
@@ -129,7 +126,7 @@ export const LlmSettingsView = memo(({
                   selected={currentProfile === "max"}
                   onClick={() => updateDraft("llm", "threads", totalCores)}
                 >
-                  <Gauge size={11} className="text-amber-400" />
+                  <Gauge size={11} className="text-[rgb(var(--warn-soft))]" />
                   <span>{COMPUTE_PROFILE_COPY.max}</span>
                 </PresetButton>
                 <PresetCell>{currentThreads}T</PresetCell>
@@ -137,25 +134,18 @@ export const LlmSettingsView = memo(({
             }
           />
         ) : (
-          <SettingsTabPane
-            icon={Server}
+          <CustomSvgs
             title={isCloudProvider ? LLM_SETTINGS_COPY.compute.remoteTitleLocal : LLM_SETTINGS_COPY.compute.remoteTitleRemote}
             description={LLM_SETTINGS_COPY.compute.remoteDescription}
             layoutMode={layoutMode}
-            emptyGraphic={
-              <RemoteComputeGraphic
-                label={isCloudProvider ? "Cloud Offload" : "Remote Server"}
-                subLabel="Zero Host RAM"
-              />
-            }
+            emptyGraphic={<RemoteComputeGraphic />}
           />
         )
       )}
 
       {/* TAB 2: TOKENS */}
       {activeSubTab === "tokens" && (
-        <SettingsTabPane
-          icon={TextCursorInput}
+        <CustomSvgs
           title={LLM_SETTINGS_COPY.tokens.title}
           description={LLM_SETTINGS_COPY.tokens.description}
           layoutMode={layoutMode}
@@ -194,8 +184,7 @@ export const LlmSettingsView = memo(({
 
       {/* TAB 3: CONTEXT */}
       {activeSubTab === "context" && (
-        <SettingsTabPane
-          icon={Layers2}
+        <CustomSvgs
           title={LLM_SETTINGS_COPY.context.title}
           description={LLM_SETTINGS_COPY.context.description}
           layoutMode={layoutMode}
@@ -228,24 +217,14 @@ export const LlmSettingsView = memo(({
             ) : undefined
           }
           emptyGraphic={
-            isRemoteLlm ? (
-              <ManagedContextGraphic
-                label={
-                  activeCapabilities?.context_window
-                    ? `${activeCapabilities.context_window >= 1024 ? `${activeCapabilities.context_window / 1024}k` : activeCapabilities.context_window} tok max`
-                    : "Server Managed"
-                }
-                subLabel="Dynamic Alloc"
-              />
-            ) : undefined
+            isRemoteLlm ? <ManagedContextGraphic /> : undefined
           }
         />
       )}
 
       {/* TAB 4: CREATIVITY / TEMP */}
       {activeSubTab === "creativity" && (
-        <SettingsTabPane
-          icon={WandSparkles}
+        <CustomSvgs
           title={LLM_SETTINGS_COPY.creativity.title}
           description={LLM_SETTINGS_COPY.creativity.description}
           layoutMode={layoutMode}

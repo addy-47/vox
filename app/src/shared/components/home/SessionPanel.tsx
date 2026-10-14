@@ -201,9 +201,9 @@ export const SessionPanel = memo(({ onClose }: SessionPanelProps) => {
 
         {/* Transient Error Banner */}
         {error && (
-          <div className="flex items-center justify-between gap-2 px-2 py-1.5 rounded-sm bg-red-500/10 border border-red-500/20 text-[11px] text-red-400">
+          <div className="flex items-center justify-between gap-2 px-2 py-1.5 rounded-sm bg-[rgba(var(--error),0.1)] border border-[rgba(var(--error),0.2)] text-[11px] text-[rgb(var(--error))]">
             <div className="flex items-center gap-1.5 min-w-0">
-              <AlertCircle size={13} className="shrink-0 text-red-400" />
+              <AlertCircle size={13} className="shrink-0 text-[rgb(var(--error))]" />
               <span className="truncate">{error}</span>
             </div>
             <button

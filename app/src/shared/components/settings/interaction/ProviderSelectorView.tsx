@@ -116,7 +116,7 @@ export const ProviderSelectorView = memo(
                 onClick={() => onSelectProvider(option.id)}
                 className={cn(
                   "w-full rounded-xl border text-center transition-all duration-200 cursor-pointer flex flex-col items-center justify-center group relative overflow-hidden",
-                  layoutMode === "small" ? "py-2 px-1 gap-0.5" : "py-2.5 px-2 gap-1",
+                  layoutMode === "small" ? "py-2.5 px-1.5 gap-1 min-h-[84px]" : "py-2.5 px-2 gap-1",
                   isActive
                     ? "bg-[rgba(var(--accent),0.08)] border-[rgb(var(--accent))] ring-1 ring-[rgb(var(--accent))]/30 shadow-[0_0_12px_rgba(var(--accent),0.12)]"
                     : "bg-[rgba(var(--foreground),0.02)] border-[rgba(var(--foreground),0.08)] hover:border-[rgba(var(--accent),0.3)] hover:bg-[rgba(var(--accent),0.03)]"
@@ -156,12 +156,10 @@ export const ProviderSelectorView = memo(
                   {option.label}
                 </span>
 
-                {/* Center 3: Subtext (hidden in small layout) */}
-                {layoutMode !== "small" && (
-                  <span className="font-medium text-[rgb(var(--foreground-muted))] group-hover:text-[rgb(var(--foreground))]/80 transition-colors truncate w-full px-0.5 leading-tight text-[9.5px] sm:text-[10px]">
-                    {option.sublabel}
-                  </span>
-                )}
+                {/* Center 3: Subtext */}
+                <span className="font-medium text-[rgb(var(--foreground-muted))] group-hover:text-[rgb(var(--foreground))]/80 transition-colors truncate w-full px-0.5 leading-tight text-[9px] sm:text-[10px]">
+                  {option.sublabel}
+                </span>
               </button>
             </Tooltip>
           );

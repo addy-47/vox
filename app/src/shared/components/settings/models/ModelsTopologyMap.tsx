@@ -3,7 +3,7 @@ import { AudioWaveform, Ear, BrainCircuit, AudioLines, LifeBuoy } from "lucide-r
 import type { LucideIcon } from "lucide-react";
 import { useSettingsStore } from "@/store/settingsStore";
 import { cn } from "@/shared/lib/utils";
-import { DIRTY_STATE_COPY } from "@/data/settingsCopy";
+import { DIRTY_STATE_COPY, MODEL_HUB_COPY } from "@/data/settingsCopy";
 
 export type PipelineTab = "vad" | "stt" | "llm" | "tts" | "auxiliary";
 
@@ -33,12 +33,12 @@ export const ModelsTopologyMap = memo(
   }: ModelsTopologyMapProps) => {
     const isCategoryDirty = useSettingsStore((s) => s.isCategoryDirty);
 
-    const PIPELINE_NODES: Array<{ id: PipelineTab; label: string; Icon: LucideIcon; isVerified: boolean }> = [
-      { id: "vad", label: "Voice Detection", Icon: AudioWaveform, isVerified: isVadVerified },
-      { id: "stt", label: "Listening", Icon: Ear, isVerified: isAsrVerified },
-      { id: "llm", label: "Reasoning", Icon: BrainCircuit, isVerified: isLlmDownloaded },
-      { id: "tts", label: "Speaking", Icon: AudioLines, isVerified: isTtsVerified },
-      { id: "auxiliary", label: "Support", Icon: LifeBuoy, isVerified: isAuxiliaryVerified },
+    const PIPELINE_NODES: Array<{ id: PipelineTab; label: string; shortLabel: string; Icon: LucideIcon; isVerified: boolean }> = [
+      { id: "vad", label: MODEL_HUB_COPY.tabs.vad, shortLabel: MODEL_HUB_COPY.tabs.vadShort, Icon: AudioWaveform, isVerified: isVadVerified },
+      { id: "stt", label: MODEL_HUB_COPY.tabs.stt, shortLabel: MODEL_HUB_COPY.tabs.sttShort, Icon: Ear, isVerified: isAsrVerified },
+      { id: "llm", label: MODEL_HUB_COPY.tabs.llm, shortLabel: MODEL_HUB_COPY.tabs.llmShort, Icon: BrainCircuit, isVerified: isLlmDownloaded },
+      { id: "tts", label: MODEL_HUB_COPY.tabs.tts, shortLabel: MODEL_HUB_COPY.tabs.ttsShort, Icon: AudioLines, isVerified: isTtsVerified },
+      { id: "auxiliary", label: MODEL_HUB_COPY.tabs.auxiliary, shortLabel: MODEL_HUB_COPY.tabs.auxiliaryShort, Icon: LifeBuoy, isVerified: isAuxiliaryVerified },
     ];
 
   const handleKeyDown = useCallback(
@@ -66,7 +66,7 @@ export const ModelsTopologyMap = memo(
       role="tablist"
       aria-label="Pipeline topology"
     >
-      {PIPELINE_NODES.map(({ id, label, Icon }) => {
+      {PIPELINE_NODES.map(({ id, label, shortLabel, Icon }) => {
         const isDirty = isCategoryDirty(id);
         const isActive = activeTab === id;
 
@@ -85,13 +85,13 @@ export const ModelsTopologyMap = memo(
               isActive
                 ? "bg-[rgb(var(--accent))]/10 border-[rgb(var(--accent))] scale-[1.02]"
                 : "bg-transparent border-transparent hover:bg-[rgb(var(--foreground))]/[0.03]",
-              layoutMode === "small" && "min-w-[75px] snap-center flex-1 py-1.5 px-1"
+              layoutMode === "small" && "min-w-[62px] snap-center flex-1 py-1.5 px-0.5"
             )}
           >
               {isDirty && (
                 <span
                   title={DIRTY_STATE_COPY.category}
-                  className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-amber-400 shadow-[0_0_6px_rgba(251,191,36,0.8)] shrink-0"
+                  className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-[rgb(var(--warn-soft))] shadow-[0_0_6px_rgba(var(--warn-soft),0.8)] shrink-0"
                 />
               )}
               <Icon
@@ -103,8 +103,8 @@ export const ModelsTopologyMap = memo(
                     : "text-[rgb(var(--foreground-muted))]/80 group-hover:text-[rgb(var(--foreground))]"
                 )}
               />
-              <span className="text-[11px] font-bold text-[rgb(var(--foreground))] tracking-tight truncate max-w-full leading-tight">
-                {label}
+              <span className="text-[10.5px] sm:text-[11px] font-bold text-[rgb(var(--foreground))] tracking-tight truncate max-w-full leading-tight">
+                {layoutMode === "small" ? shortLabel : label}
               </span>
             </button>
           );

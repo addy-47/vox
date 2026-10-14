@@ -34,7 +34,7 @@ export const RestoreDefaultsButton = memo(() => {
             <button
               type="button"
               onClick={handleConfirm}
-              className="p-1 text-[rgb(var(--danger))] hover:text-rose-400 hover:scale-115 transition-all cursor-pointer"
+              className="p-1 text-[rgb(var(--danger))] hover:text-[rgb(var(--danger))] hover:scale-115 transition-all cursor-pointer"
               aria-label="Confirm restore defaults"
             >
               <Check size={13} strokeWidth={2.5} />

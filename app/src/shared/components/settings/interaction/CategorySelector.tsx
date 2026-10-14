@@ -63,7 +63,7 @@ export const CategorySelector = memo(
                 {isDirty && (
                   <span
                     title={DIRTY_STATE_COPY.stage}
-                    className="w-1.5 h-1.5 rounded-full bg-amber-400 shadow-[0_0_6px_rgba(251,191,36,0.8)] shrink-0"
+                    className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--warn-soft))] shadow-[0_0_6px_rgba(var(--warn-soft),0.8)] shrink-0"
                   />
                 )}
               </button>

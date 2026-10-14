@@ -70,7 +70,7 @@ export const SettingsCardWrapper = memo(({ domain, isActive, layoutMode, childre
                 key="missing-key-footer"
                 className="w-full p-2.5 sm:p-3 px-4 sm:px-5 rounded-b-[1.25rem] rounded-t-none bg-[rgba(var(--accent),0.08)] dark:bg-[rgba(var(--accent),0.12)] border border-t-0 border-[rgba(var(--accent),0.2)] flex items-center justify-between gap-2 overflow-hidden text-[12px] animate-in fade-in duration-150"
               >
-                <span className="font-bold uppercase tracking-wider text-rose-400 flex items-center gap-1.5 shrink-0 truncate">
+                <span className="font-bold uppercase tracking-wider text-[rgb(var(--danger))] flex items-center gap-1.5 shrink-0 truncate">
                   <AlertCircle size={14} className="shrink-0" />
                   <span className="truncate">{SETTINGS_COPY.apiKeyRequired}</span>
                 </span>
@@ -83,7 +83,7 @@ export const SettingsCardWrapper = memo(({ domain, isActive, layoutMode, childre
                   </button>
                   <button
                     onClick={() => useSettingsStore.getState().discardDomainChanges(domain.id)}
-                    className="px-3 py-1 rounded-lg bg-transparent text-[rgb(var(--foreground-muted))] hover:text-rose-400 hover:bg-rose-500/10 border border-transparent hover:border-rose-500/20 text-[12px] font-bold uppercase tracking-wider transition-all cursor-pointer shrink-0"
+                    className="px-3 py-1 rounded-lg bg-transparent text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--danger))] hover:bg-[rgba(var(--danger),0.1)] border border-transparent hover:border-[rgba(var(--danger),0.2)] text-[12px] font-bold uppercase tracking-wider transition-all cursor-pointer shrink-0"
                   >
                     {SETTINGS_COPY.discardChanges}
                   </button>
@@ -106,7 +106,7 @@ export const SettingsCardWrapper = memo(({ domain, isActive, layoutMode, childre
                 </button>
                 <button
                   onClick={() => useSettingsStore.getState().discardDomainChanges(domain.id)}
-                  className="px-3 py-1 rounded-lg bg-transparent text-[rgb(var(--foreground-muted))] hover:text-rose-400 hover:bg-rose-500/10 border border-transparent hover:border-rose-500/20 text-[12px] font-bold uppercase tracking-wider transition-all cursor-pointer shrink-0"
+                  className="px-3 py-1 rounded-lg bg-transparent text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--danger))] hover:bg-[rgba(var(--danger),0.1)] border border-transparent hover:border-[rgba(var(--danger),0.2)] text-[12px] font-bold uppercase tracking-wider transition-all cursor-pointer shrink-0"
                 >
                   {SETTINGS_COPY.discardChanges}
                 </button>
@@ -154,12 +154,12 @@ export const SettingsCardWrapper = memo(({ domain, isActive, layoutMode, childre
               <div
                 key="save-failed-footer"
                 role="alert"
-                className="w-full py-2 px-4 sm:px-5 rounded-b-[1.25rem] rounded-t-none bg-rose-500/10 border border-t-0 border-rose-500/25 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-1.5 sm:gap-4 overflow-hidden text-[12px] animate-in fade-in duration-150"
+                className="w-full py-2 px-4 sm:px-5 rounded-b-[1.25rem] rounded-t-none bg-[rgba(var(--danger),0.1)] border border-t-0 border-[rgba(var(--danger),0.25)] flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-1.5 sm:gap-4 overflow-hidden text-[12px] animate-in fade-in duration-150"
               >
-                <span className="font-bold uppercase tracking-wider text-rose-400 flex items-center gap-1.5 shrink-0">
+                <span className="font-bold uppercase tracking-wider text-[rgb(var(--danger))] flex items-center gap-1.5 shrink-0">
                   <AlertCircle size={14} className="shrink-0" /> {SETTINGS_COPY.saveFailedTitle}
                 </span>
-                <span className="text-[11px] text-rose-300/80 font-mono truncate">
+                <span className="text-[11px] text-[rgb(var(--danger))]/80 font-mono truncate">
                   {failedKeys.length > 0
                     ? `${SETTINGS_COPY.saveFailedHint} ${failedKeys.join(", ")}`
                     : SETTINGS_COPY.saveFailedNone}

@@ -149,11 +149,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
     loadingRemoteModels,
     remoteModelsError,
     probingMap,
-    customModelId,
-    setCustomModelId,
-    customModelStatus,
     handleProbeCapabilities,
-    handleValidateCustomModel,
   } = useRemoteLlmProbing(provider, activePipelineTab, isRemoteLlm);
 
   // 1. Bidirectional Pipeline Tab Synchronization with InteractionCard
@@ -424,7 +420,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
         <div
           className={cn(
             "flex-1 w-full flex flex-col min-h-0 rounded-xl p-3 relative border border-[rgba(var(--accent),0.06)] bg-[rgba(var(--foreground),0.02)]",
-            layoutMode === "small" ? "h-auto max-h-[235px]" : "h-full"
+            layoutMode === "small" ? "h-auto" : "h-full"
           )}
         >
           {!modelCatalog ? (
@@ -495,10 +491,6 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
                     remoteModelsError={remoteModelsError}
                     probingMap={probingMap}
                     handleProbeCapabilities={handleProbeCapabilities}
-                    customModelId={customModelId}
-                    setCustomModelId={setCustomModelId}
-                    customModelStatus={customModelStatus}
-                    handleValidateCustomModel={handleValidateCustomModel}
                   />
                 )
               )}

@@ -112,7 +112,7 @@ export const RemoteModelCard = memo(({
                     className="inline-flex items-center shrink-0 cursor-help p-1 -m-1"
                     onClick={(e) => e.stopPropagation()}
                   >
-                    <AlertTriangle size={13} className="text-amber-400" />
+                    <AlertTriangle size={13} className="text-[rgb(var(--warn-soft))]" />
                   </span>
                 </Tooltip>
               )}

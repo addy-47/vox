@@ -27,7 +27,7 @@ export const AuxiliaryWorkspace = memo(
     const auxiliaryModels = useSettingsStore((s) => s.modelCatalog?.auxiliary) ?? [];
 
     return (
-      <div className="flex-1 min-h-0 w-full overflow-y-auto custom-scrollbar pr-1">
+      <div className={cn("flex-1 min-h-0 w-full overflow-y-auto custom-scrollbar pr-1", layoutMode === "small" && "max-h-[220px]")}>
         <div
           className={cn(
             "grid gap-2.5 auto-rows-max content-start",

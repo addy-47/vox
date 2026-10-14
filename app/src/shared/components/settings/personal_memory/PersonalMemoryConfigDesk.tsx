@@ -1,5 +1,5 @@
 import { useState, memo, useCallback, useEffect, useRef } from "react";
-import { Clock } from "lucide-react";
+// import { Clock } from "lucide-react";
 import { useSettingsStore } from "@/store/settingsStore";
 import { cn } from "@/shared/lib/utils";
 import { PERSONAL_MEMORY_CONFIG_DESK_COPY, COMPUTE_PROFILE_COPY } from "@/data/settingsCopy";
@@ -17,32 +17,32 @@ const TABS: Array<{ id: PersonalMemorySubTab; label: string }> = [
   { id: "suggestions", label: PERSONAL_MEMORY_CONFIG_DESK_COPY.tabs.suggestions },
 ];
 
-function computeNextRunText(
-  cadence: string,
-  timeStr: string,
-  copy: typeof PERSONAL_MEMORY_CONFIG_DESK_COPY.consolidation
-): string | null {
-  if (cadence !== "daily") return null;
-  const parts = timeStr.split(":");
-  if (parts.length !== 2) return null;
-  const hour = parseInt(parts[0], 10);
-  const minute = parseInt(parts[1], 10);
-  if (isNaN(hour) || isNaN(minute)) return null;
+// function computeNextRunText(
+//   cadence: string,
+//   timeStr: string,
+//   copy: typeof PERSONAL_MEMORY_CONFIG_DESK_COPY.consolidation
+// ): string | null {
+//   if (cadence !== "daily") return null;
+//   const parts = timeStr.split(":");
+//   if (parts.length !== 2) return null;
+//   const hour = parseInt(parts[0], 10);
+//   const minute = parseInt(parts[1], 10);
+//   if (isNaN(hour) || isNaN(minute)) return null;
 
-  const now = new Date();
-  const targetToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hour, minute, 0);
+//   const now = new Date();
+//   const targetToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hour, minute, 0);
 
-  if (targetToday.getTime() > now.getTime()) {
-    const diffMs = targetToday.getTime() - now.getTime();
-    const totalMinutes = Math.floor(diffMs / 60000);
-    const h = Math.floor(totalMinutes / 60);
-    const m = totalMinutes % 60;
-    const durationStr = h > 0 ? `${h}${copy.hoursShort} ${m}${copy.minutesShort}` : `${m}${copy.minutesShort}`;
-    return `${copy.nextRunLabel}: ${copy.todayAt} ${timeStr} (${copy.in} ${durationStr})`;
-  } else {
-    return `${copy.nextRunLabel}: ${copy.tomorrowAt} ${timeStr}`;
-  }
-}
+//   if (targetToday.getTime() > now.getTime()) {
+//     const diffMs = targetToday.getTime() - now.getTime();
+//     const totalMinutes = Math.floor(diffMs / 60000);
+//     const h = Math.floor(totalMinutes / 60);
+//     const m = totalMinutes % 60;
+//     const durationStr = h > 0 ? `${h}${copy.hoursShort} ${m}${copy.minutesShort}` : `${m}${copy.minutesShort}`;
+//     return `${copy.nextRunLabel}: ${copy.todayAt} ${timeStr} (${copy.in} ${durationStr})`;
+//   } else {
+//     return `${copy.nextRunLabel}: ${copy.tomorrowAt} ${timeStr}`;
+//   }
+// }
 
 export const PersonalMemoryConfigDesk = memo(({ layoutMode }: PersonalMemoryConfigDeskProps) => {
   const [activeSubTab, setActiveSubTab] = useState<PersonalMemorySubTab>("consolidation");
@@ -120,7 +120,7 @@ export const PersonalMemoryConfigDesk = memo(({ layoutMode }: PersonalMemoryConf
   const cutoffPct = Math.round(semanticSimilarityCutoff * 100);
   const isCutoffCustom = ![25, 40, 70].includes(cutoffPct);
 
-  const nextRunText = computeNextRunText(consolidationCadence, consolidationTime, copy.consolidation);
+  // const nextRunText = computeNextRunText(consolidationCadence, consolidationTime, copy.consolidation);
 
   // Format HH:MM to H:MM AM/PM for display
   const formatTimeDisplay = useCallback((t: string) => {
@@ -175,7 +175,7 @@ export const PersonalMemoryConfigDesk = memo(({ layoutMode }: PersonalMemoryConf
       >
         {/* TAB 1: CONSOLIDATION */}
         {activeSubTab === "consolidation" && (
-          <div className="flex flex-row items-center justify-between gap-3 h-full p-2 sm:p-3 rounded-xl bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--accent),0.08)] animate-fade-in">
+          <div className="flex flex-row items-center justify-between gap-4 h-full p-2 sm:p-3 rounded-xl bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--accent),0.08)] animate-fade-in">
             {/* Left: Title & Description */}
             <div className="flex flex-col gap-1 min-w-0 flex-1">
               <div className="flex items-center gap-2">
@@ -186,16 +186,6 @@ export const PersonalMemoryConfigDesk = memo(({ layoutMode }: PersonalMemoryConf
               <p className="text-[11px] sm:text-[11.5px] text-[rgb(var(--foreground-muted))]/75 leading-relaxed font-medium">
                 {copy.consolidation.description}
               </p>
-              {consolidationCadence === "daily" && nextRunText ? (
-                <div className="flex items-center gap-1.5 text-[10px] sm:text-[10.5px] font-mono text-[rgb(var(--accent))] font-medium pt-0.5">
-                  <Clock size={11} className="shrink-0 opacity-85" />
-                  <span className="truncate">{nextRunText}</span>
-                </div>
-              ) : (
-                <p className="text-[10px] font-mono text-[rgb(var(--foreground-muted))]/50 pt-0.5">
-                  {copy.consolidation.noSchedule}
-                </p>
-              )}
             </div>
 
             {/* Right: Clock SVG schedule control */}
@@ -327,7 +317,7 @@ export const PersonalMemoryConfigDesk = memo(({ layoutMode }: PersonalMemoryConf
 
         {/* TAB 2: DEPTH (FACT LIMIT) */}
         {activeSubTab === "depth" && (
-          <div className="flex flex-row items-center justify-between gap-3 h-full p-2 sm:p-3 rounded-xl bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--accent),0.08)] animate-fade-in">
+          <div className="flex flex-row items-center justify-between gap-4 h-full p-2 sm:p-3 rounded-xl bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--accent),0.08)] animate-fade-in">
             <div className="flex flex-col gap-1 min-w-0 flex-1">
               <span className="text-[12px] font-bold uppercase tracking-wider text-[rgb(var(--foreground))]">
                 {copy.depth.title}
@@ -377,7 +367,7 @@ export const PersonalMemoryConfigDesk = memo(({ layoutMode }: PersonalMemoryConf
 
         {/* TAB 3: CUTOFF (RELEVANCE THRESHOLD) */}
         {activeSubTab === "cutoff" && (
-          <div className="flex flex-row items-center justify-between gap-3 h-full p-2 sm:p-3 rounded-xl bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--accent),0.08)] animate-fade-in">
+          <div className="flex flex-row items-center justify-between gap-4 h-full p-2 sm:p-3 rounded-xl bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--accent),0.08)] animate-fade-in">
             <div className="flex flex-col gap-1 min-w-0 flex-1">
               <span className="text-[12px] font-bold uppercase tracking-wider text-[rgb(var(--foreground))]">
                 {copy.cutoff.title}
@@ -427,7 +417,7 @@ export const PersonalMemoryConfigDesk = memo(({ layoutMode }: PersonalMemoryConf
 
         {/* TAB 4: SUGGESTIONS (SUGGESTION POLICY) */}
         {activeSubTab === "suggestions" && (
-          <div className="flex flex-row items-center justify-between gap-3 h-full p-2 sm:p-3 rounded-xl bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--accent),0.08)] animate-fade-in">
+          <div className="flex flex-row items-center justify-between gap-4 h-full p-2 sm:p-3 rounded-xl bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--accent),0.08)] animate-fade-in">
             {/* Left: Title & Description */}
             <div className="flex flex-col gap-1 min-w-0 flex-1">
               <span className="text-[12px] font-bold uppercase tracking-wider text-[rgb(var(--foreground))]">

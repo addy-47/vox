@@ -48,12 +48,7 @@ export const WorkingMemoryCard = memo(({ layoutMode = "full-max" }: WorkingMemor
       {/* Card Body */}
       <div className="flex-1 flex flex-col justify-between min-h-0 pt-0.5 gap-2.5">
         {/* Layer 1: Top Row Two Toggle Tiles */}
-        <div
-          className={cn(
-            "grid gap-2 shrink-0",
-            isSmall ? "grid-cols-1" : "grid-cols-2"
-          )}
-        >
+        <div className="grid grid-cols-2 gap-2 shrink-0">
           {/* Incognito Mode */}
           <ToggleTile
             title={copy.privateModeTitle}
@@ -89,7 +84,7 @@ export const WorkingMemoryCard = memo(({ layoutMode = "full-max" }: WorkingMemor
         <div
           className={cn(
             "flex-1 w-full flex flex-col min-h-0 rounded-xl p-2 sm:p-3 relative border border-[rgba(var(--accent),0.08)] bg-[rgba(var(--foreground),0.02)] justify-between",
-            isSmall ? "h-auto" : "h-full"
+            isSmall ? "h-auto min-h-[160px]" : "h-full"
           )}
         >
           <WorkingMemoryConfigDesk layoutMode={layoutMode} />

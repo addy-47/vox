@@ -166,7 +166,7 @@ export const Markdown = memo(
             const str = String(children);
             if (str === "<lang>" || str === "<script>") {
               return (
-                <span className="text-amber-400 font-mono font-bold bg-amber-400/10 px-1 py-0.5 rounded border border-amber-400/20 text-[11px]">
+                <span className="text-[rgb(var(--warn-soft))] font-mono font-bold bg-[rgba(var(--warn-soft),0.1)] px-1 py-0.5 rounded border border-[rgba(var(--warn-soft),0.2)] text-[11px]">
                   {str}
                 </span>
               );

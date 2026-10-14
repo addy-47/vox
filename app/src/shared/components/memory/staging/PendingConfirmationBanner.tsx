@@ -45,7 +45,7 @@ export const PendingConfirmationBanner: React.FC<PendingConfirmationBannerProps>
           className={cn(
             "w-12 h-12 rounded-2xl flex items-center justify-center mb-3.5 shadow-sm",
             isCompaction
-              ? "bg-amber-500/15 border border-amber-500/30 text-amber-400"
+              ? "bg-[rgba(var(--warn-soft),0.15)] border border-[rgba(var(--warn-soft),0.3)] text-[rgb(var(--warn-soft))]"
               : "bg-[rgba(var(--accent),0.1)] border border-[rgba(var(--accent),0.25)] text-[rgb(var(--accent))]"
           )}
         >

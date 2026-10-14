@@ -119,7 +119,7 @@ export const RemoteServerSetup = memo(({
               <div
                 className={cn(
                   "h-full transition-all duration-300 rounded-full",
-                  setupStatus.step === "failed" ? "bg-rose-500" : "bg-[rgb(var(--accent))]"
+                  setupStatus.step === "failed" ? "bg-[rgb(var(--danger))]" : "bg-[rgb(var(--accent))]"
                 )}
                 style={{ width: `${setupStatus.progress}%` }}
               />
@@ -143,7 +143,7 @@ export const RemoteServerSetup = memo(({
             className={cn(
               "px-3 py-1.5 rounded-lg text-[10.5px] font-bold uppercase tracking-wider transition-all duration-300 flex items-center gap-1.5 border shadow-[0_0_12px_rgba(var(--accent),0.15)] shrink-0",
               setupStatus?.step === "complete"
-                ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20"
+                ? "bg-[rgba(var(--success),0.1)] border-[rgba(var(--success),0.3)] text-[rgb(var(--success))] hover:bg-[rgba(var(--success),0.2)]"
                 : "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] border-[rgba(var(--accent),0.2)] hover:scale-[1.02] active:scale-95"
             )}
           >

@@ -274,16 +274,16 @@ export const CloneVoiceDrawer = memo(
                 {isRecording ? (
                   <div className="flex flex-col items-center gap-3">
                     <div className="relative flex items-center justify-center">
-                      <span className="absolute w-16 h-16 rounded-full bg-red-500/20 animate-ping" />
+                      <span className="absolute w-16 h-16 rounded-full bg-[rgba(var(--error),0.2)] animate-ping" />
                       <button
                         type="button"
                         onClick={handleStopRecording}
-                        className="relative w-14 h-14 rounded-full bg-red-500 text-white flex items-center justify-center shadow-lg hover:bg-red-600 transition-all cursor-pointer"
+                        className="relative w-14 h-14 rounded-full bg-[rgb(var(--error))] text-white flex items-center justify-center shadow-lg hover:bg-[rgb(var(--error-dark))] transition-all cursor-pointer"
                       >
                         <Square size={20} fill="currentColor" />
                       </button>
                     </div>
-                    <span className="font-mono text-[14px] font-bold text-red-400">
+                    <span className="font-mono text-[14px] font-bold text-[rgb(var(--error))]">
                       00:{duration.toString().padStart(2, "0")} / 00:30
                     </span>
                     <p className="text-[11px] text-[rgb(var(--foreground-muted))] text-center">
@@ -292,7 +292,7 @@ export const CloneVoiceDrawer = memo(
                   </div>
                 ) : recordedPcm ? (
                   <div className="flex flex-col items-center gap-2">
-                    <div className="w-12 h-12 rounded-full bg-emerald-500/15 text-emerald-400 flex items-center justify-center">
+                    <div className="w-12 h-12 rounded-full bg-[rgba(var(--success),0.15)] text-[rgb(var(--success))] flex items-center justify-center">
                       <Check size={22} strokeWidth={2.5} />
                     </div>
                     <span className="font-bold text-[13px] text-[rgb(var(--foreground))]">
@@ -378,7 +378,7 @@ export const CloneVoiceDrawer = memo(
 
             {/* Error banner */}
             {error && (
-              <div className="p-2.5 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-[11px] flex items-center gap-2">
+              <div className="p-2.5 rounded-lg bg-[rgba(var(--error),0.1)] border border-[rgba(var(--error),0.2)] text-[rgb(var(--error))] text-[11px] flex items-center gap-2">
                 <AlertCircle size={14} className="shrink-0" />
                 <span className="flex-1">{error}</span>
               </div>

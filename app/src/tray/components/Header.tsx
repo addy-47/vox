@@ -57,7 +57,7 @@ export const Header: React.FC<HeaderProps> = React.memo(({
             disabled={pttBusy}
             aria-label={isListening ? TRAY_COPY.stopRecording : TRAY_COPY.startRecording}
             title={micError ?? undefined}
-            className={`p-2 rounded-lg transition-all active:scale-90 ${pttBusy ? 'opacity-50 animate-pulse pointer-events-none' : ''} ${micError ? 'text-red-400' : isListening ? 'text-[rgb(var(--accent))]' : 'text-[rgb(var(--foreground))]/60 hover:text-[rgb(var(--foreground))]/90'}`}
+            className={`p-2 rounded-lg transition-all active:scale-90 ${pttBusy ? 'opacity-50 animate-pulse pointer-events-none' : ''} ${micError ? 'text-[rgb(var(--error))]' : isListening ? 'text-[rgb(var(--accent))]' : 'text-[rgb(var(--foreground))]/60 hover:text-[rgb(var(--foreground))]/90'}`}
           >
             <Mic size={16} />
           </button>
