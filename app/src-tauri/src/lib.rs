@@ -77,10 +77,10 @@ use crate::{
         },
         tray::{hide_tray_window, set_window_click_through, show_main_window},
         voices::{
-            add_voice_from_file, add_voice_from_recording, delete_voice, list_voices,
-            record_voice_used, rename_voice, set_active_voice, start_backend_recording,
-            stop_backend_recording, sync_remote_voices, synthesize_voice_preview,
-            toggle_voice_favorite,
+            add_voice_from_file, add_voice_from_recording, delete_voice, get_voice_scope,
+            list_voices, record_voice_used, rename_voice, set_active_voice,
+            start_backend_recording, stop_backend_recording, sync_remote_voices,
+            synthesize_voice_preview, toggle_voice_favorite,
         },
     },
     monitoring::{
@@ -559,6 +559,15 @@ pub fn run() {
                 let state: State<'_, Arc<AppState>> = app.state();
                 state.runtime_status.store(RuntimeStatus::Ready as u32, Ordering::Relaxed);
                 log::info!("[BOOTSTRAP] Runtime Ready.");
+
+                {
+                    let scope = app.asset_protocol_scope();
+                    let cache = crate::utils::paths::cache_dir();
+                    let root = crate::utils::paths::get().root;
+                    let _ = scope.allow_directory(&cache, true);
+                    let _ = scope.allow_directory(&root, true);
+                    log::info!("[BOOTSTRAP] Configured asset protocol scope for cache ({}) and root ({})", cache.display(), root.display());
+                }
             }
 
             // ── 2. Conditionally construct tray HUD on demand ─────────────────────────
@@ -777,6 +786,7 @@ notification_permission_state,
             resolve_memory_revisions,
             // Voices
             list_voices,
+            get_voice_scope,
             sync_remote_voices,
             synthesize_voice_preview,
             toggle_voice_favorite,

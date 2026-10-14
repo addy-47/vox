@@ -598,6 +598,45 @@ pub fn get_supertonic_voice_profiles() -> Vec<VoiceProfile> {
 
 pub const VOICES_MANIFEST_JSON: &str = include_str!("voices_manifest.json");
 
+/// Engine-to-catalog scope resolved by the backend so the frontend never
+/// branches on provider id literals (Invariant 6: model agnosticism).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VoiceScopeDto {
+    /// DB `provider_id` to scope the catalog query. Empty = all providers.
+    pub voice_provider: String,
+    /// Mirrors `ProviderCaps.clone` for the active engine.
+    pub can_clone: bool,
+    /// True when voices arrive via background cloud sync (Edge family).
+    pub cloud_sync: bool,
+}
+
+/// Maps an active TTS engine id to its voice catalog scope.
+///
+/// `chatterbox_remote` shares the `chatterbox` voice family rows: no
+/// `provider_id = 'chatterbox_remote'` rows exist in the voices table, so an
+/// unmapped query would return an empty catalog.
+pub fn resolve_voice_scope(engine: &str) -> VoiceScopeDto {
+    let engine = engine.trim();
+    let voice_provider = if engine.eq_ignore_ascii_case("chatterbox_remote") {
+        "chatterbox".to_string()
+    } else {
+        engine.to_string()
+    };
+    let (can_clone, cloud_sync) =
+        match crate::services::tts::caps_for_id(engine) {
+            Ok(caps) => (
+                caps.clone,
+                caps.voices == crate::services::tts::TtsVoiceSource::Edge,
+            ),
+            Err(_) => (false, false),
+        };
+    VoiceScopeDto {
+        voice_provider,
+        can_clone,
+        cloud_sync,
+    }
+}
+
 /// Frontend-safe representation of a unified voice entry.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UnifiedVoiceDto {
@@ -766,10 +805,20 @@ pub async fn list_unified_voices(
     conn: &turso::Connection,
     provider: Option<&str>,
 ) -> anyhow::Result<Vec<UnifiedVoiceDto>> {
-    // 1. Query Turso voices table offline-first
+    // 1. Query Turso voices table offline-first. The engine id maps through
+    // the same scope resolution as `resolve_voice_scope` so remote-family
+    // engines share their local voice rows.
+    let scoped = provider.map(|p| {
+        if p.eq_ignore_ascii_case("chatterbox_remote") {
+            "chatterbox"
+        } else {
+            p
+        }
+    });
+
     let mut entries = crate::persistence::voices::list_voices(
         conn,
-        provider,
+        scoped,
         crate::persistence::voices::VoiceListScope::All,
     )
     .await?;
@@ -779,7 +828,7 @@ pub async fn list_unified_voices(
         let _ = sync_manifest_voices_to_db(conn).await;
         entries = crate::persistence::voices::list_voices(
             conn,
-            provider,
+            scoped,
             crate::persistence::voices::VoiceListScope::All,
         )
         .await?;

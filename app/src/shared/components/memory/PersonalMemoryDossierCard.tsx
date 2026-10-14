@@ -74,7 +74,10 @@ export const PersonalMemoryDossierCard: React.FC<PersonalMemoryDossierCardProps>
     const el = dossierContainerRef.current;
     if (!el) return undefined;
 
-    const lenis = createContainedLenis(el, { duration: 0.8 });
+    // Canonical smooth scroll via the shared factory (SSOT durations/physics).
+    // Effect is gated on drawer readiness because the container ref is owned
+    // by the parent and measured at height 0 until the drawer body mounts.
+    const lenis = createContainedLenis(el);
     if (!lenis) return undefined;
 
     return () => {

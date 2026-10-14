@@ -58,46 +58,50 @@ export const LocalCatalogSection = memo(({
   return (
     <div
       ref={localGridRef}
-      className={cn(
-        "grid gap-2.5 flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-1 h-full",
-        sortedLocalModels.length <= 2
-          ? (layoutMode === "small" ? "grid-cols-1 auto-rows-fr" : "grid-cols-2 grid-rows-1")
-          : (layoutMode === "small" ? "grid-cols-1 auto-rows-full snap-y snap-mandatory" : "grid-cols-2 auto-rows-full snap-y snap-mandatory")
-      )}
+      className="flex-1 min-h-0 overflow-y-auto overscroll-contain custom-scrollbar pr-1 h-full"
     >
-      {sortedLocalModels.map((model) => {
-        const isSelected = selectedLlmId === model.id;
-        const isDownloaded = modelPresence[model.id];
-        const status = downloadStatuses[model.id];
+      <div
+        className={cn(
+          "grid gap-2.5 min-h-full w-full",
+          sortedLocalModels.length <= 2
+            ? (layoutMode === "small" ? "grid-cols-1 auto-rows-fr" : "grid-cols-2 grid-rows-1")
+            : (layoutMode === "small" ? "grid-cols-1 auto-rows-max content-start" : "grid-cols-2 auto-rows-max content-start")
+        )}
+      >
+        {sortedLocalModels.map((model) => {
+          const isSelected = selectedLlmId === model.id;
+          const isDownloaded = modelPresence[model.id];
+          const status = downloadStatuses[model.id];
 
-        return (
-          <SubModelCard
-            key={model.id}
-            id={model.id}
-            name={model.name}
-            description={model.description || ""}
-            parameters={model.parameters || ""}
-            ramUsage={model.ram_usage}
-            tradeoffs={model.tradeoffs}
-            isDownloaded={isDownloaded}
-            isActive={isSelected}
-            isRequired={isGroupRequired(model.id)}
-            layoutMode={layoutMode}
-            onSelect={() => {
-              const draft = useSettingsStore.getState().draftSettings;
-              if (draft?.llm?.embedded) {
-                updateDraft("llm", "embedded", { ...draft.llm.embedded, model: model.id });
-              }
-            }}
-            confirmDeleteId={confirmDeleteId}
-            setConfirmDeleteId={setConfirmDeleteId}
-            downloadStatus={status}
-            startDownload={() => startDownload(model.id)}
-            deleteModel={() => handleDeleteModelGroup(model.id)}
-            showTooltip={false}
-          />
-        );
-      })}
+          return (
+            <SubModelCard
+              key={model.id}
+              id={model.id}
+              name={model.name}
+              description={model.description || ""}
+              parameters={model.parameters || ""}
+              ramUsage={model.ram_usage}
+              tradeoffs={model.tradeoffs}
+              isDownloaded={isDownloaded}
+              isActive={isSelected}
+              isRequired={isGroupRequired(model.id)}
+              layoutMode={layoutMode}
+              onSelect={() => {
+                const draft = useSettingsStore.getState().draftSettings;
+                if (draft?.llm?.embedded) {
+                  updateDraft("llm", "embedded", { ...draft.llm.embedded, model: model.id });
+                }
+              }}
+              confirmDeleteId={confirmDeleteId}
+              setConfirmDeleteId={setConfirmDeleteId}
+              downloadStatus={status}
+              startDownload={() => startDownload(model.id)}
+              deleteModel={() => handleDeleteModelGroup(model.id)}
+              showTooltip={false}
+            />
+          );
+        })}
+      </div>
     </div>
   );
 });

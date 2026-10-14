@@ -1,6 +1,5 @@
-import { memo, useState, useRef, useEffect, useMemo, useCallback, useDeferredValue } from "react";
-import type Lenis from "lenis";
-import { createContainedLenis } from "@/shared/lib/lenisScroll";
+import { memo, useState, useMemo, useCallback, useDeferredValue } from "react";
+import { useLenisScrollContainer } from "@/shared/hooks/useLenisScrollContainer";
 import { useScrollTopOnChange } from "@/shared/hooks/useScrollTopOnChange";
 import { CLOUD_PROVIDERS, type CloudProvider } from "@/data/providersCopy";
 import { INTERACTION_CONFIG_DESK_COPY } from "@/data/settingsCopy";
@@ -187,22 +186,8 @@ export const CloudProvidersModalView = memo(({
   const [modalSearch, setModalSearch] = useState("");
   const deferredSearch = useDeferredValue(modalSearch);
   const [filterCategory, setFilterCategory] = useState<"all" | "configured" | "popular" | "unconfigured">("all");
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const lenisRef = useRef<Lenis | null>(null);
-
-  useEffect(() => {
-    const el = scrollContainerRef.current;
-    if (!el) return undefined;
-
-    const lenis = createContainedLenis(el, { duration: 0.75 });
-    if (!lenis) return undefined;
-    lenisRef.current = lenis;
-
-    return () => {
-      lenisRef.current = null;
-      lenis.destroy();
-    };
-  }, []);
+  const { containerRef: scrollContainerRef, lenisRef } =
+    useLenisScrollContainer<HTMLDivElement>();
 
   // Save-gated reorder glide: fires when a save changes the committed order.
   const orderFingerprint = useMemo(

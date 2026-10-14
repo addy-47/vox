@@ -12,6 +12,12 @@ import {
 
 export interface UseVoiceCatalogOptions {
   provider?: string;
+  /**
+   * When true, no fetch runs and the list stays empty. Used to hold the
+   * catalog until backend scope resolution lands, so another engine's (or
+   * all providers') voices are never rendered in between.
+   */
+  suspended?: boolean;
 }
 
 export interface UseVoiceCatalogResult {
@@ -45,7 +51,7 @@ const DEFAULT_PREVIEW_PROMPT =
 export function useVoiceCatalog(
   options: UseVoiceCatalogOptions = {}
 ): UseVoiceCatalogResult {
-  const { provider } = options;
+  const { provider, suspended = false } = options;
   const updateDraft = useSettingsStore((s) => s.updateDraft);
   const draftVoiceId = useSettingsStore((s) => s.draftSettings?.tts?.voice_id);
 
@@ -68,9 +74,18 @@ export function useVoiceCatalog(
     let isMounted = true;
     setLoading(true);
     setError(null);
+    // Never render a stale engine's voices: clear the list up front so an
+    // engine switch shows loading, not the previous engine's rows.
+    setVoices([]);
     listVoices(provider)
       .then((list) => {
-        if (isMounted) setVoices(list);
+        if (!isMounted) return;
+        setVoices(list);
+        // Drop a staged id that is not in the newly loaded engine scope;
+        // otherwise the strip shows one voice while Select commits another.
+        setStagedId((prev) =>
+          prev != null && list.some((v) => v.id === prev) ? prev : null
+        );
       })
       .catch((e) => {
         if (isMounted) setError(e instanceof Error ? e.message : String(e));
@@ -84,6 +99,14 @@ export function useVoiceCatalog(
   }, [provider]);
 
   useEffect(() => {
+    let alive = true;
+    if (suspended) {
+      setVoices([]);
+      setLoading(true);
+      return () => {
+        alive = false;
+      };
+    }
     const teardown = reload();
     // Non-blocking background sync of remote voices (Edge TTS) runs once on mount
     if (!remoteSyncedRef.current) {
@@ -91,13 +114,21 @@ export function useVoiceCatalog(
       syncRemoteVoices()
         .then(() => {
           listVoices(provider).then((list) => {
-            setVoices(list);
+            if (alive) {
+              setVoices(list);
+              setStagedId((prev) =>
+                prev != null && list.some((v) => v.id === prev) ? prev : null
+              );
+            }
           }).catch(() => {});
         })
         .catch(() => {});
     }
-    return teardown;
-  }, [reload, provider]);
+    return () => {
+      alive = false;
+      teardown();
+    };
+  }, [reload, provider, suspended]);
 
   useEffect(() => {
     return () => {
@@ -193,7 +224,8 @@ export function useVoiceCatalog(
             setPlayingId(null);
             return;
           }
-          const audio = new Audio(voicePreviewUrl(result.path));
+          const audioSrc = voicePreviewUrl(result.path);
+          const audio = new Audio(audioSrc);
           audioRef.current = audio;
           audio.onloadedmetadata = () => {
             setPreviewDuration(audio.duration || result.duration_ms / 1000);
@@ -203,7 +235,8 @@ export function useVoiceCatalog(
             setPreviewProgress(0);
             setPreviewCurrentTime(0);
           };
-          audio.onerror = () => {
+          audio.onerror = (e) => {
+            console.error("[VoiceCatalog] Audio playback error for", audioSrc, e);
             setPlayingId(null);
             setPreviewProgress(0);
             setIsSynthesizing(false);
@@ -214,12 +247,14 @@ export function useVoiceCatalog(
               setPreviewCurrentTime(audio.currentTime);
             }
           };
-          audio.play().catch(() => {
+          audio.play().catch((err) => {
+            console.error("[VoiceCatalog] Audio play() promise rejected:", err);
             setPlayingId(null);
             setIsSynthesizing(false);
           });
         })
-        .catch(() => {
+        .catch((err) => {
+          console.error("[VoiceCatalog] synthesizeVoicePreview failed:", err);
           setIsSynthesizing(false);
           setPlayingId(null);
         });
@@ -228,8 +263,12 @@ export function useVoiceCatalog(
   );
 
   useEffect(() => {
-    if (!stagedId && draftVoiceId) setStagedId(draftVoiceId);
-  }, [stagedId, draftVoiceId]);
+    // Adopt the persisted draft voice only when it belongs to the currently
+    // loaded engine scope — never stage another engine's voice id.
+    if (!stagedId && draftVoiceId && voices.some((v) => v.id === draftVoiceId)) {
+      setStagedId(draftVoiceId);
+    }
+  }, [stagedId, draftVoiceId, voices]);
 
   return {
     voices,

@@ -2,14 +2,17 @@ import {
   memo,
   useCallback,
   useDeferredValue,
+  useEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
 import {
-  Check,
+  ArrowUpDown,
   Clock,
   Edit3,
+  Filter,
+  Globe,
   Heart,
   Languages,
   Loader2,
@@ -33,6 +36,12 @@ import { CloneVoiceDrawer } from "./CloneVoiceDrawer";
 
 export interface VoiceCatalogModalViewProps {
   catalog: UseVoiceCatalogResult;
+  /** Opaque backend-resolved DB provider filter ("" = all providers). */
+  voiceScope: string;
+  /** Backend-resolved `ProviderCaps.clone` for the active engine. */
+  canClone: boolean;
+  /** Backend-resolved cloud-sync hint for the active engine family. */
+  cloudSync: boolean;
   onCommit: (id: string) => void;
   onCancel: () => void;
 }
@@ -44,12 +53,28 @@ function isEnglish(v: UnifiedVoiceDto): boolean {
   return v.locale.toLowerCase().startsWith("en");
 }
 
-function popularity(a: UnifiedVoiceDto, b: UnifiedVoiceDto): number {
-  if (a.is_favorite !== b.is_favorite) return a.is_favorite ? -1 : 1;
-  const ra = a.last_used_at ?? 0;
-  const rb = b.last_used_at ?? 0;
-  if (ra !== rb) return rb - ra;
-  return a.name.localeCompare(b.name);
+function tagLabel(tag?: string | null): string {
+  if (!tag) return "";
+  const t = tag.trim();
+  if (!t) return t;
+  return t.charAt(0).toUpperCase() + t.slice(1);
+}
+
+function getVoiceWaveform(voiceId: string, count = 44): number[] {
+  let hash = 0;
+  for (let i = 0; i < voiceId.length; i++) {
+    hash = (hash << 5) - hash + voiceId.charCodeAt(i);
+    hash |= 0;
+  }
+  const bars: number[] = [];
+  for (let i = 0; i < count; i++) {
+    const x = Math.sin((i + 1) * 0.45 + Math.abs(hash % 41)) * 10000;
+    const rand = x - Math.floor(x);
+    const envelope = Math.sin((i / (count - 1)) * Math.PI);
+    const height = Math.max(0.2, Math.min(1.0, 0.22 + rand * 0.7 * (0.35 + envelope * 0.65)));
+    bars.push(height);
+  }
+  return bars;
 }
 
 function formatTime(seconds: number): string {
@@ -59,13 +84,12 @@ function formatTime(seconds: number): string {
 }
 
 export const VoiceCatalogModalView = memo(
-  ({ catalog, onCommit, onCancel }: VoiceCatalogModalViewProps) => {
+  ({ catalog, voiceScope: _voiceScope, canClone, cloudSync, onCommit: _onCommit, onCancel: _onCancel }: VoiceCatalogModalViewProps) => {
     const {
       voices,
       loading,
       stagedId,
       stageVoice,
-      commitVoice,
       toggleFavorite,
       playingId,
       isSynthesizing,
@@ -92,9 +116,63 @@ export const VoiceCatalogModalView = memo(
     const [isCloneDrawerOpen, setIsCloneDrawerOpen] = useState(false);
     const [isEditingPrompt, setIsEditingPrompt] = useState(false);
     const [customPromptInput, setCustomPromptInput] = useState(previewPrompt);
+    const [isFilterDropdownOpen, setIsFilterDropdownOpen] = useState(false);
+    const filterDropdownRef = useRef<HTMLDivElement>(null);
 
-    const { containerRef } = useLenisScrollContainer<HTMLDivElement>();
+    // Close compact filter dropdown on outside pointerdown or Escape
+    useEffect(() => {
+      if (!isFilterDropdownOpen) return;
+      const handleClickOutside = (e: MouseEvent | TouchEvent) => {
+        if (filterDropdownRef.current && !filterDropdownRef.current.contains(e.target as Node)) {
+          setIsFilterDropdownOpen(false);
+        }
+      };
+      const handleKeyDown = (e: KeyboardEvent) => {
+        if (e.key === "Escape") {
+          setIsFilterDropdownOpen(false);
+        }
+      };
+      document.addEventListener("pointerdown", handleClickOutside);
+      document.addEventListener("keydown", handleKeyDown);
+      return () => {
+        document.removeEventListener("pointerdown", handleClickOutside);
+        document.removeEventListener("keydown", handleKeyDown);
+      };
+    }, [isFilterDropdownOpen]);
+
+    const activeFilterCount = useMemo(() => {
+      let count = 0;
+      if (scope !== "all") count += 1;
+      if (gender !== null) count += 1;
+      if (accent !== null) count += 1;
+      return count;
+    }, [scope, gender, accent]);
+
+    // Stable snapshot of favorited voice IDs on mount/load. Prevents cards
+    // from jumping to the top in real time when toggling heart, eliminating layout shifts.
+    const initialFavoritesRef = useRef<Set<string>>(new Set());
+    const initializedRef = useRef(false);
+
+    useEffect(() => {
+      if (!initializedRef.current && voices.length > 0) {
+        initialFavoritesRef.current = new Set(
+          voices.filter((v) => v.is_favorite).map((v) => v.id)
+        );
+        initializedRef.current = true;
+      }
+    }, [voices]);
+
+    // Canonical smooth scroll (SSOT hook — inertial wheel glide, native touch
+    // momentum). The inner content wrapper is the Lenis content element.
+    const { containerRef, scrollToTop } =
+      useLenisScrollContainer<HTMLDivElement>();
     const scrubberRef = useRef<HTMLDivElement>(null);
+
+    // Reset scroll only once the debounced filter settles — never per keystroke.
+    useEffect(() => {
+      scrollToTop();
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [deferredSearch, scope, selectedProvider, gender, accent, sort]);
 
     const counts = useMemo(() => {
       const c = {
@@ -104,6 +182,7 @@ export const VoiceCatalogModalView = memo(
         custom: 0,
         female: 0,
         male: 0,
+        neutral: 0,
         english: 0,
         multilingual: 0,
       };
@@ -113,18 +192,11 @@ export const VoiceCatalogModalView = memo(
         if (v.source_kind === "custom") c.custom += 1;
         if (v.gender === "female") c.female += 1;
         else if (v.gender === "male") c.male += 1;
+        else c.neutral += 1;
         if (isEnglish(v)) c.english += 1;
         else c.multilingual += 1;
       }
       return c;
-    }, [voices]);
-
-    const providerList = useMemo(() => {
-      const set = new Set<string>();
-      for (const v of voices) {
-        if (v.provider_id) set.add(v.provider_id);
-      }
-      return Array.from(set).sort();
     }, [voices]);
 
     const filtered = useMemo(() => {
@@ -150,8 +222,19 @@ export const VoiceCatalogModalView = memo(
         );
       }
       const sorted = [...list];
-      if (sort === "popular") sorted.sort(popularity);
-      else sorted.sort((a, b) => a.name.localeCompare(b.name));
+      if (sort === "popular") {
+        sorted.sort((a, b) => {
+          const isFavA = initialFavoritesRef.current.has(a.id);
+          const isFavB = initialFavoritesRef.current.has(b.id);
+          if (isFavA !== isFavB) return isFavA ? -1 : 1;
+          const ra = a.last_used_at ?? 0;
+          const rb = b.last_used_at ?? 0;
+          if (ra !== rb) return rb - ra;
+          return a.name.localeCompare(b.name);
+        });
+      } else {
+        sorted.sort((a, b) => a.name.localeCompare(b.name));
+      }
       return sorted;
     }, [voices, scope, selectedProvider, gender, accent, deferredSearch, sort]);
 
@@ -167,7 +250,14 @@ export const VoiceCatalogModalView = memo(
       [stageVoice]
     );
     const handleCardFavorite = useCallback(
-      (id: string) => toggleFavorite(id),
+      (id: string) => {
+        if (initialFavoritesRef.current.has(id)) {
+          initialFavoritesRef.current.delete(id);
+        } else {
+          initialFavoritesRef.current.add(id);
+        }
+        toggleFavorite(id);
+      },
       [toggleFavorite]
     );
 
@@ -199,194 +289,376 @@ export const VoiceCatalogModalView = memo(
       }
     }, [customPromptInput, setPreviewPrompt, staged, stagedPlaying, togglePreview]);
 
-    const scopeTabs = [
-      { id: "all", label: "All Voices", count: counts.all, Icon: Users },
-      { id: "favorites", label: "Favorites", count: counts.favorites, Icon: Star },
-      { id: "recent", label: "Recent", count: counts.recent, Icon: Clock },
-      { id: "custom", label: "Cloned", count: counts.custom, Icon: Sparkles },
-    ] as const;
+    const handleResetFilters = useCallback(() => {
+      setSearch("");
+      setScope("all");
+      setSelectedProvider(null);
+      setGender(null);
+      setAccent(null);
+    }, []);
+
+    const scopeFilters: Array<{ id: Scope; label: string; count: number; Icon: typeof Users }> = [
+      { id: "all", label: VOICE_CATALOG_COPY.allVoices, count: counts.all, Icon: Users },
+      { id: "favorites", label: VOICE_CATALOG_COPY.favorites, count: counts.favorites, Icon: Star },
+      { id: "recent", label: VOICE_CATALOG_COPY.recent, count: counts.recent, Icon: Clock },
+      ...(canClone
+        ? [{ id: "custom" as Scope, label: VOICE_CATALOG_COPY.cloned, count: counts.custom, Icon: Sparkles }]
+        : []),
+    ];
+
+    const waveformBars = useMemo(
+      () => (staged ? getVoiceWaveform(staged.id, 46) : []),
+      [staged]
+    );
 
     return (
-      <div className="flex flex-col h-full min-h-0 gap-3">
-        {/* Top Control Bar */}
-        <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
-          {/* Search Bar */}
-          <div className="flex-1 min-w-[200px] flex items-center gap-2 px-3 py-2 rounded-xl bg-[rgba(var(--foreground),0.04)] border border-[rgba(var(--foreground),0.08)] focus-within:border-[rgb(var(--accent))] focus-within:ring-1 focus-within:ring-[rgb(var(--accent))]/30 transition-all">
-            <Search size={15} className="text-[rgb(var(--foreground-muted))] shrink-0" />
+      <div className="flex flex-col h-full min-h-0 gap-3.5">
+        {/* Top Toolbar: Search + Gender Chips + Sort Icon + Count + Clone Action */}
+        {/* Top Toolbar: Search + Filter Dropdown (compact) + Gender Chips (desktop) + Sort + Count + Clone */}
+        <div className="flex items-center justify-between gap-2.5 shrink-0 flex-wrap">
+          {/* Mobile/Compact Filter Dropdown Trigger */}
+          <div ref={filterDropdownRef} className="relative md:hidden shrink-0">
+            <button
+              type="button"
+              onClick={() => setIsFilterDropdownOpen((v) => !v)}
+              className={cn(
+                "p-2 rounded-xl border transition-all cursor-pointer flex items-center gap-1.5",
+                isFilterDropdownOpen || activeFilterCount > 0
+                  ? "bg-[rgba(var(--accent),0.15)] text-[rgb(var(--accent))] border-[rgba(var(--accent),0.35)] shadow-xs"
+                  : "bg-[rgba(var(--foreground),0.04)] text-[rgb(var(--foreground-muted))] border-[rgba(var(--foreground),0.08)] hover:text-[rgb(var(--foreground))]"
+              )}
+              aria-label={VOICE_CATALOG_COPY.filterAria}
+              aria-expanded={isFilterDropdownOpen}
+            >
+              <Filter size={15} />
+              {activeFilterCount > 0 && (
+                <span className="w-4 h-4 rounded-full bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] text-[9.5px] font-mono font-bold flex items-center justify-center leading-none">
+                  {activeFilterCount}
+                </span>
+              )}
+            </button>
+
+            {/* Compact Filter Menu Popover */}
+            {isFilterDropdownOpen && (
+              <div className="absolute left-0 top-full mt-2 z-50 w-72 max-h-[75vh] overflow-y-auto rounded-2xl bg-[rgba(var(--card),0.96)] backdrop-blur-xl border border-[rgba(var(--foreground),0.12)] shadow-2xl p-3.5 flex flex-col gap-3 custom-scrollbar animate-fade-in">
+                <div className="flex items-center justify-between pb-2 border-b border-[rgba(var(--foreground),0.06)]">
+                  <span className="text-[13px] font-bold text-[rgb(var(--foreground))]">
+                    {VOICE_CATALOG_COPY.filtersTitle}
+                  </span>
+                  {activeFilterCount > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setScope("all");
+                        setGender(null);
+                        setAccent(null);
+                      }}
+                      className="text-[11px] font-medium text-[rgb(var(--accent))] hover:underline cursor-pointer"
+                    >
+                      {VOICE_CATALOG_COPY.resetFilters}
+                    </button>
+                  )}
+                </div>
+
+                {/* Library Scopes */}
+                <div className="flex flex-col gap-1">
+                  {scopeFilters.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => setScope(item.id)}
+                      className={cn(
+                        "w-full flex items-center justify-between px-3 py-1.5 rounded-xl text-[12.5px] transition-all cursor-pointer font-medium",
+                        scope === item.id
+                          ? "bg-[rgba(var(--accent),0.12)] text-[rgb(var(--accent))] font-bold shadow-xs"
+                          : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.03)]"
+                      )}
+                    >
+                      <div className="flex items-center gap-2 truncate">
+                        <item.Icon size={14} className={cn("shrink-0", scope === item.id ? "text-[rgb(var(--accent))]" : "opacity-60")} />
+                        <span className="truncate">{item.label}</span>
+                      </div>
+                      <span className={cn(
+                        "text-[10px] font-mono px-1.5 py-0.5 rounded-full font-bold shrink-0",
+                        scope === item.id
+                          ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))]"
+                          : "bg-[rgba(var(--foreground),0.06)] text-[rgb(var(--foreground-muted))]"
+                      )}>
+                        {item.count}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+
+                {/* Gender Options */}
+                <div className="pt-2 border-t border-[rgba(var(--foreground),0.06)] flex flex-col gap-1">
+                  <div className="px-1 text-[10.5px] font-mono uppercase tracking-wider text-[rgb(var(--foreground-muted))]/60 font-semibold">
+                    {VOICE_CATALOG_COPY.genderFacet}
+                  </div>
+                  {(
+                    [
+                      { id: "female", label: VOICE_CATALOG_COPY.female, count: counts.female },
+                      { id: "male", label: VOICE_CATALOG_COPY.male, count: counts.male },
+                      ...(counts.neutral > 0
+                        ? [{ id: "neutral" as const, label: "Neutral", count: counts.neutral }]
+                        : []),
+                    ]
+                  ).map((item) => {
+                    const isActive = gender === item.id;
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => setGender(isActive ? null : item.id)}
+                        className={cn(
+                          "w-full flex items-center justify-between px-3 py-1.5 rounded-xl text-[12px] transition-all cursor-pointer font-medium",
+                          isActive
+                            ? "bg-[rgba(var(--accent),0.12)] text-[rgb(var(--accent))] font-bold"
+                            : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.03)]"
+                        )}
+                      >
+                        <span>{item.label}</span>
+                        <span className={cn(
+                          "text-[10px] font-mono px-1.5 py-0.5 rounded-full shrink-0",
+                          isActive
+                            ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] font-bold"
+                            : "bg-[rgba(var(--foreground),0.05)] text-[rgb(var(--foreground-muted))]"
+                        )}>
+                          {item.count}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Accent / Language Options */}
+                <div className="pt-2 border-t border-[rgba(var(--foreground),0.06)] flex flex-col gap-1">
+                  <div className="px-1 text-[10.5px] font-mono uppercase tracking-wider text-[rgb(var(--foreground-muted))]/60 font-semibold">
+                    {VOICE_CATALOG_COPY.accentFacet}
+                  </div>
+                  {(
+                    [
+                      { id: "english", label: VOICE_CATALOG_COPY.english, count: counts.english },
+                      { id: "multilingual", label: VOICE_CATALOG_COPY.multilingual, count: counts.multilingual },
+                    ] as const
+                  ).map((item) => {
+                    const isActive = accent === item.id;
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => setAccent(isActive ? null : item.id)}
+                        className={cn(
+                          "w-full flex items-center justify-between px-3 py-1.5 rounded-xl text-[12px] transition-all cursor-pointer font-medium",
+                          isActive
+                            ? "bg-[rgba(var(--accent),0.12)] text-[rgb(var(--accent))] font-bold"
+                            : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.03)]"
+                        )}
+                      >
+                        <div className="flex items-center gap-1.5 truncate">
+                          <Languages size={13} className={cn("shrink-0", isActive ? "text-[rgb(var(--accent))]" : "opacity-60")} />
+                          <span className="truncate">{item.label}</span>
+                        </div>
+                        <span className={cn(
+                          "text-[10px] font-mono px-1.5 py-0.5 rounded-full shrink-0",
+                          isActive
+                            ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] font-bold"
+                            : "bg-[rgba(var(--foreground),0.05)] text-[rgb(var(--foreground-muted))]"
+                        )}>
+                          {item.count}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Search Box */}
+          <div className="flex-1 min-w-[140px] sm:min-w-[180px] flex items-center gap-2 px-3.5 py-2 rounded-xl bg-[rgba(var(--foreground),0.04)] border border-[rgba(var(--foreground),0.08)] focus-within:border-[rgb(var(--accent))] focus-within:ring-1 focus-within:ring-[rgb(var(--accent))]/30 transition-all">
+            <Search size={14} className="text-[rgb(var(--foreground-muted))] shrink-0" />
             <input
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search voices by name, accent, tag, or locale..."
-              aria-label="Search voices"
-              className="w-full min-w-0 bg-transparent border-none outline-none text-[13px] text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40"
+              placeholder={VOICE_CATALOG_COPY.searchPlaceholder}
+              aria-label={VOICE_CATALOG_COPY.searchAria}
+              className="w-full bg-transparent border-none outline-none text-[13px] text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40"
             />
             {search && (
               <button
                 type="button"
                 onClick={() => setSearch("")}
-                className="text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] p-0.5 cursor-pointer shrink-0"
+                className="text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] p-0.5 cursor-pointer"
               >
-                <X size={14} />
+                <X size={13} />
               </button>
             )}
           </div>
 
-          {/* Scope Filter Tabs */}
-          <div className="flex items-center gap-1 p-1 rounded-xl bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--foreground),0.06)] shrink-0">
-            {scopeTabs.map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setScope(tab.id)}
-                className={cn(
-                  "px-3 py-1.5 rounded-lg text-[12px] font-medium transition-all cursor-pointer flex items-center gap-1.5",
-                  scope === tab.id
-                    ? "bg-[rgb(var(--card))] text-[rgb(var(--foreground))] font-bold shadow-xs border border-[rgba(var(--foreground),0.08)]"
-                    : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.02)]"
-                )}
-              >
-                <tab.Icon size={13} className="shrink-0" />
-                <span>{tab.label}</span>
-                <span className="text-[10px] font-mono opacity-70">({tab.count})</span>
-              </button>
-            ))}
-          </div>
 
-          {/* Sort Selector */}
-          <div className="flex items-center gap-1 px-1 py-1 rounded-xl bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--foreground),0.06)] shrink-0">
-            {(["popular", "az"] as const).map((s) => (
-              <button
-                key={s}
-                type="button"
-                onClick={() => setSort(s)}
-                className={cn(
-                  "px-2.5 py-1 rounded-lg text-[11.5px] font-mono transition-all cursor-pointer",
-                  sort === s
-                    ? "bg-[rgb(var(--accent))]/15 text-[rgb(var(--accent))] font-bold"
-                    : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))]"
-                )}
-              >
-                {s === "popular" ? "Popular" : "A–Z"}
-              </button>
-            ))}
-          </div>
 
-          {/* Clone Voice Header Button */}
+          {/* Sort button */}
           <button
             type="button"
-            onClick={() => setIsCloneDrawerOpen(true)}
-            className="px-3.5 py-2 rounded-xl text-[12.5px] font-bold bg-[rgb(var(--accent))]/15 border border-[rgb(var(--accent))]/40 text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/25 transition-all flex items-center gap-1.5 cursor-pointer shrink-0"
+            onClick={() => setSort((s) => (s === "popular" ? "az" : "popular"))}
+            className="px-2.5 sm:px-3 py-1.5 rounded-xl text-[12px] font-medium bg-[rgba(var(--foreground),0.04)] border border-[rgba(var(--foreground),0.08)] text-[rgb(var(--foreground))] hover:border-[rgb(var(--accent))]/40 flex items-center gap-1.5 cursor-pointer shrink-0 transition-all"
+            title={sort === "popular" ? "Sort: Popular first" : "Sort: Alphabetical (A–Z)"}
           >
-            <Plus size={15} strokeWidth={2.5} />
-            <span>Clone Voice</span>
+            <ArrowUpDown size={13} className="text-[rgb(var(--accent))]" />
+            <span className="font-sans font-medium hidden sm:inline">{sort === "popular" ? VOICE_CATALOG_COPY.sortPopular : "A–Z"}</span>
           </button>
+
+          <div className="text-[11px] font-mono text-[rgb(var(--foreground-muted))] px-2.5 py-1.5 rounded-lg bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--foreground),0.06)] shrink-0">
+            <span className="hidden sm:inline">Showing <span className="text-[rgb(var(--foreground))] font-bold">{filtered.length}</span> of {voices.length} {VOICE_CATALOG_COPY.showingOf}</span>
+            <span className="inline sm:hidden"><span className="text-[rgb(var(--foreground))] font-bold">{filtered.length}</span>/{voices.length}</span>
+          </div>
+
+          {canClone && (
+            <button
+              type="button"
+              onClick={() => setIsCloneDrawerOpen(true)}
+              title={VOICE_CATALOG_COPY.cloneVoiceChatterboxNote}
+              className="px-2.5 sm:px-3 py-1.5 rounded-lg text-[12px] font-bold bg-[rgb(var(--accent))]/15 border border-[rgb(var(--accent))]/40 text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/25 transition-all flex items-center gap-1.5 cursor-pointer shrink-0"
+            >
+              <Plus size={14} strokeWidth={2.5} />
+              <span className="hidden sm:inline">{VOICE_CATALOG_COPY.cloneVoice}</span>
+            </button>
+          )}
         </div>
 
         {/* Main Content Area */}
-        <div className="flex-1 min-h-0 flex gap-3.5 overflow-hidden">
-          {/* Left Facet Sidebar */}
-          <div className="w-[170px] shrink-0 hidden md:flex flex-col gap-2 overflow-y-auto custom-scrollbar pr-1">
-            {/* Providers Facet */}
-            <div className="px-2 text-[10.5px] font-mono uppercase tracking-wider text-[rgb(var(--foreground-muted))]/70 font-semibold">
-              Providers
-            </div>
-            <button
-              type="button"
-              onClick={() => setSelectedProvider(null)}
-              className={cn(
-                "w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-[12.5px] transition-all cursor-pointer",
-                selectedProvider === null
-                  ? "bg-[rgb(var(--accent))]/12 text-[rgb(var(--accent))] font-bold"
-                  : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.03)]"
-              )}
-            >
-              <span>All Providers</span>
-              <span className="text-[10px] font-mono opacity-70">{counts.all}</span>
-            </button>
-            {providerList.map((p) => {
-              const count = voices.filter((v) => v.provider_id === p).length;
-              return (
+        <div className="flex-1 min-h-0 flex gap-4 overflow-hidden">
+          {/* Facet Sidebar: clean categories, gender, languages with count pills (NO sort section) */}
+          <div className="w-[200px] shrink-0 hidden md:flex flex-col gap-3.5 overflow-y-auto overscroll-contain custom-scrollbar pr-2 py-0.5">
+            {/* Library Section */}
+            <div className="flex flex-col gap-1">
+              {scopeFilters.map((item) => (
                 <button
-                  key={p}
+                  key={item.id}
                   type="button"
-                  onClick={() =>
-                    setSelectedProvider(selectedProvider === p ? null : p)
-                  }
+                  onClick={() => setScope(item.id)}
                   className={cn(
-                    "w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-[12.5px] capitalize transition-all cursor-pointer",
-                    selectedProvider === p
-                      ? "bg-[rgb(var(--accent))]/12 text-[rgb(var(--accent))] font-bold"
+                    "w-full flex items-center justify-between px-3 py-2 rounded-xl text-[13px] transition-all cursor-pointer font-medium",
+                    scope === item.id
+                      ? "bg-[rgba(var(--accent),0.12)] text-[rgb(var(--accent))] font-bold shadow-xs"
                       : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.03)]"
                   )}
                 >
-                  <span className="truncate">{p.replace("_", " ")}</span>
-                  <span className="text-[10px] font-mono opacity-70">{count}</span>
+                  <div className="flex items-center gap-2.5 truncate">
+                    <item.Icon size={14} className={cn("shrink-0", scope === item.id ? "text-[rgb(var(--accent))]" : "opacity-60")} />
+                    <span className="truncate">{item.label}</span>
+                  </div>
+                  <span className={cn(
+                    "text-[10px] font-mono px-1.5 py-0.5 rounded-full font-bold shrink-0",
+                    scope === item.id
+                      ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))]"
+                      : "bg-[rgba(var(--foreground),0.06)] text-[rgb(var(--foreground-muted))]"
+                  )}>
+                    {item.count}
+                  </span>
                 </button>
-              );
-            })}
-
-            {/* Gender Facet (Female & Male only) */}
-            <div className="mt-3 px-2 text-[10.5px] font-mono uppercase tracking-wider text-[rgb(var(--foreground-muted))]/70 font-semibold">
-              Gender
+              ))}
             </div>
-            {(
-              [
-                { id: "female", label: "Female", count: counts.female },
-                { id: "male", label: "Male", count: counts.male },
-              ] as const
-            ).map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => setGender(gender === item.id ? null : item.id)}
-                className={cn(
-                  "w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-[12.5px] transition-all cursor-pointer",
-                  gender === item.id
-                    ? "bg-[rgb(var(--accent))]/12 text-[rgb(var(--accent))] font-bold"
-                    : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.03)]"
-                )}
-              >
-                <span>{item.label}</span>
-                <span className="text-[10px] font-mono opacity-70">{item.count}</span>
-              </button>
-            ))}
 
-            {/* Language & Accent Facet */}
-            <div className="mt-3 px-2 text-[10.5px] font-mono uppercase tracking-wider text-[rgb(var(--foreground-muted))]/70 font-semibold">
-              Language
+            {/* Gender Section */}
+            <div className="pt-2 border-t border-[rgba(var(--foreground),0.06)] flex flex-col gap-1">
+              <div className="px-2 pb-1 text-[11px] font-mono uppercase tracking-wider text-[rgb(var(--foreground-muted))]/60 font-semibold">
+                {VOICE_CATALOG_COPY.genderFacet}
+              </div>
+              {(
+                [
+                  { id: "female", label: VOICE_CATALOG_COPY.female, count: counts.female },
+                  { id: "male", label: VOICE_CATALOG_COPY.male, count: counts.male },
+                  ...(counts.neutral > 0
+                    ? [{ id: "neutral" as const, label: "Neutral", count: counts.neutral }]
+                    : []),
+                ]
+              ).map((item) => {
+                const isActive = gender === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => setGender(isActive ? null : item.id)}
+                    className={cn(
+                      "w-full flex items-center justify-between px-3 py-1.5 rounded-xl text-[12.5px] transition-all cursor-pointer font-medium",
+                      isActive
+                        ? "bg-[rgba(var(--accent),0.12)] text-[rgb(var(--accent))] font-bold"
+                        : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.03)]"
+                    )}
+                  >
+                    <span>{item.label}</span>
+                    <span className={cn(
+                      "text-[10px] font-mono px-1.5 py-0.5 rounded-full shrink-0",
+                      isActive
+                        ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] font-bold"
+                        : "bg-[rgba(var(--foreground),0.05)] text-[rgb(var(--foreground-muted))]"
+                    )}>
+                      {item.count}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
-            {(
-              [
-                { id: "english", label: "English", count: counts.english },
-                { id: "multilingual", label: "Multilingual", count: counts.multilingual },
-              ] as const
-            ).map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => setAccent(accent === item.id ? null : item.id)}
-                className={cn(
-                  "w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-[12.5px] transition-all cursor-pointer",
-                  accent === item.id
-                    ? "bg-[rgb(var(--accent))]/12 text-[rgb(var(--accent))] font-bold"
-                    : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.03)]"
-                )}
-              >
-                <div className="flex items-center gap-1.5 truncate">
-                  <Languages size={12} className="opacity-60 shrink-0" />
-                  <span className="truncate">{item.label}</span>
-                </div>
-                <span className="text-[10px] font-mono opacity-70">{item.count}</span>
-              </button>
-            ))}
+
+            {/* Accent / Language Section */}
+            <div className="pt-2 border-t border-[rgba(var(--foreground),0.06)] flex flex-col gap-1">
+              <div className="px-2 pb-1 text-[11px] font-mono uppercase tracking-wider text-[rgb(var(--foreground-muted))]/60 font-semibold">
+                {VOICE_CATALOG_COPY.accentFacet}
+              </div>
+              {(
+                [
+                  { id: "english", label: VOICE_CATALOG_COPY.english, count: counts.english },
+                  { id: "multilingual", label: VOICE_CATALOG_COPY.multilingual, count: counts.multilingual },
+                ] as const
+              ).map((item) => {
+                const isActive = accent === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => setAccent(isActive ? null : item.id)}
+                    className={cn(
+                      "w-full flex items-center justify-between px-3 py-1.5 rounded-xl text-[12.5px] transition-all cursor-pointer font-medium",
+                      isActive
+                        ? "bg-[rgba(var(--accent),0.12)] text-[rgb(var(--accent))] font-bold"
+                        : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.03)]"
+                    )}
+                  >
+                    <div className="flex items-center gap-1.5 truncate">
+                      <Languages size={13} className={cn("shrink-0", isActive ? "text-[rgb(var(--accent))]" : "opacity-60")} />
+                      <span className="truncate">{item.label}</span>
+                    </div>
+                    <span className={cn(
+                      "text-[10px] font-mono px-1.5 py-0.5 rounded-full shrink-0",
+                      isActive
+                        ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] font-bold"
+                        : "bg-[rgba(var(--foreground),0.05)] text-[rgb(var(--foreground-muted))]"
+                    )}>
+                      {item.count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {canClone && (
+              <p className="mt-3 px-2 text-[11px] leading-relaxed text-[rgb(var(--foreground-muted))]/70">
+                {VOICE_CATALOG_COPY.cloneVoiceChatterboxNote}
+              </p>
+            )}
           </div>
 
-          {/* Voice Cards Grid with Lenis Dynamic Scroll */}
+          {/* Voice Cards Grid: 3 cards per row, generous breathing room */}
           <div
             ref={containerRef}
             className="flex-1 min-h-0 overflow-y-auto overscroll-contain custom-scrollbar pr-1.5"
           >
+            {/* Stable Lenis content wrapper: keeps virtual height measurement
+                correct across filter/empty-state swaps. */}
+            <div className="min-h-full w-full">
             {loading ? (
               <div className="h-64 flex flex-col items-center justify-center text-[13px] text-[rgb(var(--foreground-muted))] gap-2">
                 <Loader2 size={24} className="animate-spin text-[rgb(var(--accent))]" />
@@ -398,24 +670,20 @@ export const VoiceCatalogModalView = memo(
                   {VOICE_CATALOG_COPY.emptyTitle}
                 </p>
                 <p className="text-[13px] text-[rgb(var(--foreground-muted))] max-w-sm">
-                  {VOICE_CATALOG_COPY.emptyHint}
+                  {cloudSync
+                    ? VOICE_CATALOG_COPY.edgeSyncHint
+                    : VOICE_CATALOG_COPY.emptyHint}
                 </p>
                 <button
                   type="button"
-                  onClick={() => {
-                    setSearch("");
-                    setScope("all");
-                    setSelectedProvider(null);
-                    setGender(null);
-                    setAccent(null);
-                  }}
+                  onClick={handleResetFilters}
                   className="mt-2 px-3.5 py-1.5 rounded-xl text-[12.5px] font-bold text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/10 border border-[rgba(var(--accent),0.3)] hover:bg-[rgb(var(--accent))]/20 transition-all cursor-pointer"
                 >
                   {VOICE_CATALOG_COPY.resetFilters}
                 </button>
               </div>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3.5">
                 {filtered.map((v) => (
                   <VoiceCard
                     key={v.id}
@@ -430,199 +698,214 @@ export const VoiceCatalogModalView = memo(
                     onPreview={handleCardPreview}
                   />
                 ))}
-
-                {/* Trailing Custom Clone Card Skeleton */}
-                <VoiceCard
-                  isCloneSkeleton={true}
-                  onCloneClick={() => setIsCloneDrawerOpen(true)}
-                />
               </div>
             )}
+            </div>
           </div>
         </div>
 
-        {/* Sticky Bottom Preview & Action Bar */}
+        {/* Longer, Spacious Bottom Preview Banner */}
         {staged && (
-          <div className="shrink-0 rounded-2xl border border-[rgba(var(--foreground),0.1)] bg-[rgb(var(--card))] shadow-xl p-3.5 flex flex-col gap-2.5">
-            {/* Top row: controls + voice info + metadata chips */}
-            <div className="flex items-center gap-3.5 min-w-0">
-              {/* Play / Pause button */}
-              <button
-                type="button"
-                disabled={!staged.has_preview && sessionBusy}
-                onClick={() => togglePreview(staged)}
-                aria-label={stagedPlaying ? "Pause preview" : `Preview ${staged.name}`}
-                className={cn(
-                  "w-11 h-11 rounded-full flex items-center justify-center shrink-0 transition-all",
-                  !staged.has_preview && sessionBusy
-                    ? "bg-[rgba(var(--foreground),0.04)] text-[rgb(var(--foreground-muted))]/40 cursor-not-allowed"
-                    : "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] hover:brightness-110 active:scale-95 shadow-md cursor-pointer"
-                )}
-              >
-                {isSynthesizing && stagedPlaying ? (
-                  <Loader2 size={18} className="animate-spin" />
-                ) : stagedPlaying ? (
-                  <Pause size={18} />
-                ) : (
-                  <Play size={18} className="ml-0.5" />
-                )}
-              </button>
+          <div className="shrink-0 rounded-2xl border border-[rgba(var(--foreground),0.08)] bg-[rgba(var(--card),0.75)] backdrop-blur-xl p-4 sm:p-5 flex flex-col md:flex-row items-center gap-5 sm:gap-6 shadow-lg">
+            {/* Left: Prominent Circular Play Sphere with accent glow */}
+            <button
+              type="button"
+              disabled={!staged.has_preview && sessionBusy}
+              onClick={() => togglePreview(staged)}
+              aria-label={stagedPlaying ? "Pause preview" : `Preview ${staged.name}`}
+              className={cn(
+                "w-16 h-16 rounded-full flex items-center justify-center shrink-0 transition-all shadow-md",
+                !staged.has_preview && sessionBusy
+                  ? "bg-[rgba(var(--foreground),0.04)] text-[rgb(var(--foreground-muted))]/30 cursor-not-allowed"
+                  : stagedPlaying
+                    ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] shadow-[0_0_24px_rgba(var(--accent),0.45)] scale-105"
+                    : "bg-[rgba(var(--foreground),0.06)] text-[rgb(var(--foreground))] hover:bg-[rgb(var(--accent))] hover:text-[rgb(var(--accent-foreground))] hover:shadow-[0_0_16px_rgba(var(--accent),0.3)] hover:scale-105 active:scale-95 cursor-pointer"
+              )}
+            >
+              {isSynthesizing && stagedPlaying ? (
+                <Loader2 size={24} className="animate-spin" />
+              ) : stagedPlaying ? (
+                <Pause size={24} />
+              ) : (
+                <Play size={24} className="ml-1" />
+              )}
+            </button>
 
-              {/* Voice Name & Sample Description */}
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="font-bold text-[14.5px] text-[rgb(var(--foreground))] truncate">
+            {/* Middle: Voice Title, Description, Meta Tags, and Waveform Scrubber */}
+            <div className="flex-1 min-w-0 flex flex-col gap-2.5 w-full">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-baseline gap-2.5 min-w-0">
+                  <span className="font-bold text-[17px] text-[rgb(var(--foreground))] truncate font-sans tracking-tight">
                     {staged.name}
                   </span>
-                  {staged.is_favorite && (
-                    <Heart
-                      size={13}
-                      className="text-[rgb(var(--accent))] shrink-0"
-                      fill="currentColor"
-                    />
-                  )}
-                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-[rgba(var(--foreground),0.05)] text-[rgb(var(--foreground-muted))] uppercase border border-[rgba(var(--foreground),0.08)]">
-                    {staged.provider_id}
+                  <span className="text-[13px] text-[rgb(var(--foreground-muted))] truncate hidden sm:inline leading-relaxed">
+                    {staged.description || VOICE_CATALOG_COPY.fallbackDescription}
                   </span>
                 </div>
-                <div className="flex items-center gap-2 mt-0.5">
-                  <p className="text-[11.5px] text-[rgb(var(--foreground-muted))]/80 truncate">
-                    {staged.source_kind === "custom" ? (
-                      <span className="text-[rgb(var(--foreground-muted))] italic">
-                        Recorded reference speech sample
-                      </span>
-                    ) : isEditingPrompt ? (
-                      <span className="text-[rgb(var(--accent))] font-medium">
-                        Custom prompt active
-                      </span>
-                    ) : (
-                      previewPrompt || staged.description || VOICE_CATALOG_COPY.fallbackDescription
-                    )}
-                  </p>
+
+                <div className="flex items-center gap-2 shrink-0">
                   {staged.source_kind !== "custom" && (
                     <button
                       type="button"
-                      onClick={() => setIsEditingPrompt(!isEditingPrompt)}
-                      title="Customize preview sample text"
-                      className="p-1 rounded text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] transition-colors cursor-pointer"
+                      onClick={() => {
+                        setCustomPromptInput(previewPrompt);
+                        setIsEditingPrompt(true);
+                      }}
+                      title="Customize sample sentence"
+                      className="p-1.5 rounded-lg text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] hover:bg-[rgba(var(--foreground),0.04)] transition-all cursor-pointer"
                     >
-                      <Edit3 size={12} />
+                      <Edit3 size={14} />
                     </button>
                   )}
+                  <button
+                    type="button"
+                    onClick={() => handleCardFavorite(staged.id)}
+                    aria-label={staged.is_favorite ? "Remove favorite" : "Add favorite"}
+                    className={cn(
+                      "p-1.5 rounded-lg transition-transform hover:scale-110 cursor-pointer",
+                      staged.is_favorite
+                        ? "text-[rgb(var(--accent))]"
+                        : "text-[rgb(var(--foreground-muted))]/40 hover:text-[rgb(var(--accent))]"
+                    )}
+                  >
+                    <Heart size={16} fill={staged.is_favorite ? "currentColor" : "none"} strokeWidth={staged.is_favorite ? 2 : 1.75} />
+                  </button>
                 </div>
               </div>
 
-              {/* Metadata chips */}
-              <div className="hidden sm:flex items-center gap-4 shrink-0 text-[11.5px] px-2 py-1 rounded-xl bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--foreground),0.06)]">
-                <span className="flex flex-col">
-                  <span className="text-[rgb(var(--foreground-muted))]/60 font-mono uppercase text-[9px]">
-                    Language
-                  </span>
-                  <span className="font-bold text-[rgb(var(--foreground))]">
-                    {staged.locale}
-                  </span>
+              {/* Tag Badges Row */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-[11px] font-medium font-sans px-2.5 py-0.5 rounded-full bg-[rgba(var(--foreground),0.05)] text-[rgb(var(--foreground-muted))] border border-[rgba(var(--foreground),0.06)] leading-none whitespace-nowrap">
+                  {tagLabel(staged.gender)}
                 </span>
-                <span className="flex flex-col capitalize">
-                  <span className="text-[rgb(var(--foreground-muted))]/60 font-mono uppercase text-[9px]">
-                    Gender
-                  </span>
-                  <span className="font-bold text-[rgb(var(--foreground))]">
-                    {staged.gender}
-                  </span>
+                <span className="text-[11px] font-medium font-sans px-2.5 py-0.5 rounded-full bg-[rgba(var(--foreground),0.05)] text-[rgb(var(--foreground-muted))] border border-[rgba(var(--foreground),0.06)] leading-none whitespace-nowrap">
+                  {staged.accent || staged.locale}
                 </span>
-                <span className="flex flex-col">
-                  <span className="text-[rgb(var(--foreground-muted))]/60 font-mono uppercase text-[9px]">
-                    Style
-                  </span>
-                  <span className="font-bold text-[rgb(var(--foreground))]">
-                    {staged.tags[0] || staged.accent || "Standard"}
-                  </span>
+                <span className="text-[11px] font-medium font-sans px-2.5 py-0.5 rounded-full bg-[rgb(var(--accent))]/10 text-[rgb(var(--accent))] border border-[rgba(var(--accent),0.18)] leading-none whitespace-nowrap">
+                  {tagLabel(staged.tags.find((t) => t.toLowerCase() !== "embedded" && t.toLowerCase() !== "fast") || "Natural")}
                 </span>
               </div>
-            </div>
 
-            {/* Prompt edit box if opened */}
-            {isEditingPrompt && (
-              <div className="flex items-center gap-2 p-2 rounded-xl bg-[rgba(var(--foreground),0.04)] border border-[rgba(var(--foreground),0.08)] animate-fade-in">
-                <input
-                  type="text"
-                  value={customPromptInput}
-                  onChange={(e) => setCustomPromptInput(e.target.value)}
-                  placeholder="Type any phrase for the voice to preview (max 120 chars)..."
-                  maxLength={120}
-                  className="flex-1 bg-transparent border-none outline-none text-[12.5px] text-[rgb(var(--foreground))]"
-                />
-                <button
-                  type="button"
-                  onClick={handleSavePrompt}
-                  className="px-3 py-1 rounded-lg text-[11.5px] font-bold bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] cursor-pointer hover:brightness-110"
-                >
-                  Apply & Hear
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setIsEditingPrompt(false)}
-                  className="p-1 text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] cursor-pointer"
-                >
-                  <X size={14} />
-                </button>
-              </div>
-            )}
+              {isEditingPrompt && (
+                <div className="flex items-center gap-2 animate-fade-in py-1">
+                  <input
+                    type="text"
+                    value={customPromptInput}
+                    onChange={(e) => setCustomPromptInput(e.target.value)}
+                    placeholder="Type phrase to synthesize..."
+                    maxLength={120}
+                    autoFocus
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") handleSavePrompt();
+                      else if (e.key === "Escape") setIsEditingPrompt(false);
+                    }}
+                    className="flex-1 min-w-0 bg-transparent border-b border-[rgb(var(--accent))] text-[12.5px] text-[rgb(var(--foreground))] outline-none py-1"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleSavePrompt}
+                    className="px-2.5 py-1 text-[11px] font-bold rounded-lg bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] cursor-pointer"
+                  >
+                    Apply
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsEditingPrompt(false)}
+                    className="p-1 text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] cursor-pointer"
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              )}
 
-            {/* Middle row: Interactive scrubber with live time */}
-            <div className="flex items-center gap-3">
-              <span className="font-mono text-[11px] text-[rgb(var(--foreground-muted))] w-10 text-right shrink-0">
-                {formatTime(previewCurrentTime)}
-              </span>
+              {/* Waveform Scrubber: skeleton gray when no preview, maps to voice/prompt when preview exists */}
+              <div className="flex items-center gap-3 w-full">
+                <span className="font-mono text-[11px] tabular-nums text-[rgb(var(--foreground-muted))] w-9 text-right shrink-0">
+                  {formatTime(previewCurrentTime)}
+                </span>
 
-              <div
-                ref={scrubberRef}
-                onClick={handleScrubberClick}
-                className="flex-1 h-3 rounded-full bg-[rgba(var(--foreground),0.08)] hover:bg-[rgba(var(--foreground),0.12)] relative cursor-pointer flex items-center transition-all group"
-              >
                 <div
-                  style={{ width: `${Math.round(previewProgress * 100)}%` }}
-                  className="h-full rounded-full bg-[rgb(var(--accent))] transition-all relative"
+                  ref={scrubberRef}
+                  onClick={staged.has_preview || !sessionBusy ? handleScrubberClick : undefined}
+                  className={cn(
+                    "flex-1 h-8 flex items-center gap-[3px] px-1 rounded-lg transition-all select-none",
+                    !staged.has_preview && !stagedPlaying
+                      ? "opacity-35 cursor-not-allowed"
+                      : "cursor-pointer hover:bg-[rgba(var(--foreground),0.03)]"
+                  )}
+                  title={!staged.has_preview && !stagedPlaying ? "No preview synthesized yet" : "Click to seek preview"}
                 >
-                  <span className="absolute right-0 top-1/2 -translate-y-1/2 w-3.5 h-3.5 rounded-full bg-white shadow-md scale-0 group-hover:scale-100 transition-transform" />
+                  {waveformBars.map((height, i) => {
+                    const barProgress = i / waveformBars.length;
+                    const isPlayed = previewProgress > 0 && barProgress <= previewProgress;
+                    const isSkeleton = !staged.has_preview && !stagedPlaying;
+                    return (
+                      <div
+                        key={i}
+                        style={{ height: `${Math.round(isSkeleton ? 26 : height * 100)}%` }}
+                        className={cn(
+                          "flex-1 rounded-full min-w-[2px] max-w-[4px] transition-all duration-75",
+                          isSkeleton
+                            ? "bg-[rgba(var(--foreground),0.2)]"
+                            : isPlayed
+                              ? "bg-[rgb(var(--accent))] shadow-[0_0_6px_rgba(var(--accent),0.4)]"
+                              : "bg-[rgba(var(--foreground),0.18)] hover:bg-[rgba(var(--foreground),0.35)]"
+                        )}
+                      />
+                    );
+                  })}
+                </div>
+
+                <span className="font-mono text-[11px] tabular-nums text-[rgb(var(--foreground-muted))] w-9 shrink-0">
+                  {formatTime(previewDuration)}
+                </span>
+              </div>
+            </div>
+
+            {/* Right: Rich Metadata Indicators (Language, Gender, Style) with vertical divider */}
+            <div className="hidden lg:flex items-center gap-6 border-l border-[rgba(var(--foreground),0.08)] pl-5 shrink-0 text-[12.5px]">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-full bg-[rgba(var(--foreground),0.04)] flex items-center justify-center text-[rgb(var(--accent))] shrink-0">
+                  <Globe size={16} />
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-[10px] font-mono text-[rgb(var(--foreground-muted))]/70 uppercase leading-none">Language</span>
+                  <span className="font-medium text-[rgb(var(--foreground))] leading-tight mt-1">{staged.locale || "English"}</span>
                 </div>
               </div>
 
-              <span className="font-mono text-[11px] text-[rgb(var(--foreground-muted))] w-10 shrink-0">
-                {formatTime(previewDuration)}
-              </span>
-            </div>
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-full bg-[rgba(var(--foreground),0.04)] flex items-center justify-center text-[rgb(var(--accent))] shrink-0">
+                  <Users size={16} />
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-[10px] font-mono text-[rgb(var(--foreground-muted))]/70 uppercase leading-none">Gender</span>
+                  <span className="font-medium text-[rgb(var(--foreground))] capitalize leading-tight mt-1">{tagLabel(staged.gender) || "Neutral"}</span>
+                </div>
+              </div>
 
-            {/* Bottom action row: Discard vs Select */}
-            <div className="flex items-center justify-end gap-2.5 pt-1">
-              <button
-                type="button"
-                onClick={onCancel}
-                className="px-4 py-1.5 rounded-xl text-[12.5px] font-bold text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] border border-[rgba(var(--foreground),0.1)] hover:border-[rgba(var(--foreground),0.2)] transition-all cursor-pointer"
-              >
-                {VOICE_CATALOG_COPY.cancel}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  commitVoice(staged.id);
-                  onCommit(staged.id);
-                }}
-                className="px-5 py-1.5 rounded-xl text-[12.5px] font-bold bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] hover:brightness-110 active:scale-95 transition-all cursor-pointer flex items-center gap-1.5 shadow-md"
-              >
-                <Check size={14} strokeWidth={2.5} />
-                <span>{VOICE_CATALOG_COPY.selectVoice}</span>
-              </button>
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-full bg-[rgba(var(--foreground),0.04)] flex items-center justify-center text-[rgb(var(--accent))] shrink-0">
+                  <Sparkles size={16} />
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-[10px] font-mono text-[rgb(var(--foreground-muted))]/70 uppercase leading-none">Style</span>
+                  <span className="font-medium text-[rgb(var(--foreground))] capitalize leading-tight mt-1">
+                    {tagLabel(staged.tags.find((t) => t.toLowerCase() !== "embedded" && t.toLowerCase() !== "fast") || staged.accent || "Natural")}
+                  </span>
+                </div>
+              </div>
             </div>
           </div>
         )}
 
-        {/* Clone Voice Modal Drawer */}
-        <CloneVoiceDrawer
-          isOpen={isCloneDrawerOpen}
-          onClose={() => setIsCloneDrawerOpen(false)}
-          onCreated={handleVoiceCreated}
-        />
+        {canClone && (
+          <CloneVoiceDrawer
+            isOpen={isCloneDrawerOpen}
+            onClose={() => setIsCloneDrawerOpen(false)}
+            onCreated={handleVoiceCreated}
+          />
+        )}
       </div>
     );
   }

@@ -198,7 +198,7 @@ export const Modal = memo(
                 </div>
               )}
 
-              <div className={cn("flex-1 overflow-y-auto overscroll-contain min-h-0 custom-scrollbar", bodyClassName)}>
+              <div className={cn("flex-1 min-h-0 custom-scrollbar", bodyClassName?.includes("overflow-hidden") ? "overflow-hidden" : "overflow-y-auto overscroll-contain", bodyClassName)}>
                 {children}
               </div>
 

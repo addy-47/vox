@@ -1,4 +1,4 @@
-import React, { memo, useEffect, useRef, useMemo } from "react";
+import React, { memo, useMemo } from "react";
 import {
   Check,
   X,
@@ -10,7 +10,7 @@ import {
   Diff,
   SquareDashedPlus,
 } from "lucide-react";
-import { createContainedLenis } from "@/shared/lib/lenisScroll";
+import { useLenisScrollContainer } from "@/shared/hooks/useLenisScrollContainer";
 import { cn } from "@/shared/lib/utils";
 import { MEMORY_COPY } from "@/data/memoryCopy";
 import {
@@ -167,19 +167,7 @@ export const SuggestionsReviewView: React.FC<SuggestionsReviewViewProps> = memo(
       [baseSections, revisions, parseOpPayload]
     );
 
-    const scrollRef = useRef<HTMLDivElement>(null);
-
-    useEffect(() => {
-      const el = scrollRef.current;
-      if (!el) return undefined;
-
-      const lenis = createContainedLenis(el, { duration: 0.8 });
-      if (!lenis) return undefined;
-
-      return () => {
-        lenis.destroy();
-      };
-    }, []);
+    const { containerRef: scrollRef } = useLenisScrollContainer<HTMLDivElement>();
 
     const addsCount = useMemo(() => revisions.filter((r) => r.op === "create_block").length, [revisions]);
     const deletesCount = useMemo(() => revisions.filter((r) => r.op === "delete_block").length, [revisions]);
