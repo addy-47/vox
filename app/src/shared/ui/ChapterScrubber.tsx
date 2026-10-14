@@ -399,7 +399,7 @@ export function ChapterScrubber({
               : { right: peakLength + GAP }),
           }}
           className={cn(
-            "pointer-events-none absolute z-10 w-[240px] rounded-xl border border-[rgba(var(--accent),0.18)] bg-[rgb(var(--card))]/95 backdrop-blur-md px-3.5 py-3 text-[rgb(var(--foreground))]",
+            "pointer-events-none absolute z-10 w-[240px] rounded-xl border border-[rgba(var(--accent),0.18)] bg-[rgb(var(--card))]/95 px-3.5 py-3 text-[rgb(var(--foreground))]",
             "shadow-[0_4px_20px_rgba(0,0,0,0.4)]",
             resolvedSide === "right" ? "origin-left" : "origin-right",
           )}

@@ -103,6 +103,36 @@ describe("Frontend Architectural & Performance Invariants", () => {
     ).toEqual([]);
   });
 
+  it("Invariant 1b (Transport Decoupling): Only src/services/transport.ts may import @tauri-apps/api/core or @tauri-apps/api/event", () => {
+    const violations: { file: string; line: number; match: string }[] = [];
+
+    for (const file of tsFiles) {
+      const relPath = path.relative(SRC_DIR, file);
+      if (relPath === "services/transport.ts" || relPath.startsWith("test/")) {
+        continue;
+      }
+
+      const content = fs.readFileSync(file, "utf-8");
+      const lines = content.split("\n");
+
+      lines.forEach((line, idx) => {
+        const trimmed = line.trim();
+        if (trimmed.startsWith("//") || trimmed.startsWith("*")) return;
+
+        if (line.includes('from "@tauri-apps/api/core"') || line.includes('from "@tauri-apps/api/event"')) {
+          violations.push({ file: relPath, line: idx + 1, match: line.trim() });
+        }
+      });
+    }
+
+    expect(
+      violations,
+      `Raw @tauri-apps/api/core or event imports detected outside src/services/transport.ts:\n${violations
+        .map((v) => `  ${v.file}:${v.line} -> ${v.match}`)
+        .join("\n")}`
+    ).toEqual([]);
+  });
+
   it("Invariant 2 (Zustand Discipline): No full-store destructuring (must use atomic selectors)", () => {
     const violations: { file: string; line: number; match: string }[] = [];
 

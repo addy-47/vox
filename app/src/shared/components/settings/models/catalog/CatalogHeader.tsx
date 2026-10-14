@@ -295,7 +295,7 @@ const CatalogFilterPopover = memo(function CatalogFilterPopover({
     <div
       ref={panelRef}
       style={style}
-      className="z-[70] overflow-y-auto overscroll-contain rounded-lg bg-[rgba(var(--card),0.97)] backdrop-blur-xl border border-[rgba(var(--accent),0.18)] shadow-xl p-1.5 flex flex-col gap-1 animate-fade-in custom-scrollbar"
+      className="z-[70] overflow-y-auto overscroll-contain rounded-lg bg-[rgba(var(--card),0.97)] border border-[rgba(var(--accent),0.18)] shadow-xl p-1.5 flex flex-col gap-1 animate-fade-in custom-scrollbar"
     >
       {menu}
     </div>,

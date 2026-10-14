@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "./transport";
 
 /** Mirror of `ProjectRow` (persistence/projects.rs). */
 export interface ProjectRow {

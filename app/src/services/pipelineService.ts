@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "./transport";
 import { getRuntimeSnapshot } from "./monitoringService";
 import { type InteractionState, VALID_INTERACTION_STATES } from "@/services/eventsService";
 import type { SessionRow, TurnRow } from "./historyService";

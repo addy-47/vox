@@ -252,7 +252,7 @@ export const VoiceCatalogModalView = memo(
 
             {/* Compact Filter Menu Popover */}
             {isFilterDropdownOpen && (
-              <div className="absolute left-0 top-full mt-2 z-50 w-72 max-h-[75vh] overflow-y-auto rounded-xl bg-[rgba(var(--card),0.96)] backdrop-blur-xl border border-[rgba(var(--foreground),0.12)] shadow-2xl p-3.5 flex flex-col gap-3 custom-scrollbar animate-fade-in">
+              <div className="absolute left-0 top-full mt-2 z-50 w-72 max-h-[75vh] overflow-y-auto rounded-xl bg-[rgba(var(--card),0.96)] border border-[rgba(var(--foreground),0.12)] shadow-2xl p-3.5 flex flex-col gap-3 custom-scrollbar animate-fade-in">
                 <div className="flex items-center justify-between pb-2 border-b border-[rgba(var(--foreground),0.06)]">
                   <span className="text-[13px] font-bold text-[rgb(var(--foreground))]">
                     {VOICE_CATALOG_COPY.filtersTitle}

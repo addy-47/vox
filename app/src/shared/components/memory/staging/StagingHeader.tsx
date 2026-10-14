@@ -169,7 +169,7 @@ export const StagingHeader: React.FC<StagingHeaderProps> = memo(
                 </button>
 
                 {isFilterOpen && (
-                  <div className="absolute right-0 top-full mt-1.5 w-36 py-1 rounded-xl bg-[rgb(var(--card))] border border-[rgba(var(--border),0.2)] shadow-xl z-50 backdrop-blur-md">
+                  <div className="absolute right-0 top-full mt-1.5 w-36 py-1 rounded-xl bg-[rgb(var(--card))] border border-[rgba(var(--border),0.2)] shadow-xl z-50">
                     {(
                       [
                         { id: "staged", label: MEMORY_COPY.observationFilterStaged },

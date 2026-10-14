@@ -30,7 +30,7 @@ export const GraphControlDock = memo(
     return (
       <aside
         aria-label="Graph Navigation Controls"
-        className="fixed right-2 sm:right-5 top-1/2 -translate-y-1/2 z-30 flex flex-col items-center gap-1 sm:gap-1.5 p-1 sm:p-1.5 rounded-xl sm:rounded-2xl bg-[rgba(var(--card),0.75)] backdrop-blur-sm border border-[rgba(var(--border),0.14)] shadow-lg pointer-events-auto transition-colors"
+        className="fixed right-2 sm:right-5 top-1/2 -translate-y-1/2 z-30 flex flex-col items-center gap-1 sm:gap-1.5 p-1 sm:p-1.5 rounded-xl sm:rounded-2xl bg-[rgba(var(--card),0.75)] border border-[rgba(var(--border),0.14)] shadow-lg pointer-events-auto transition-colors"
       >
         {/* Search Modal Trigger (Compact / Mobile) */}
         {onOpenSearch && (

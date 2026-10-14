@@ -96,6 +96,14 @@ infinite decor frozen on coarse pointers · redundant blurs demoted · virtual l
 (TanStack) · Zustand selectors optimised · Lenis disabled on coarse pointers · Google Fonts
 `@import` replaced with bundled `@fontsource` · dead `recharts` dependency removed.
 
+### 2.6 Frontend transport carrier (A4 delivered 2026-10-14)
+
+- **Decoupled carrier layer.** `app/src/services/transport.ts` provides a swappable `Transport`
+  abstraction covering `invoke`, `listen`, and `convertFileSrc`.
+- **Zero raw Tauri imports across services.** All 11 frontend service files migrated behind `Transport`.
+- **Architectural enforcement.** `Invariant 1b` in `app/src/test/invariants.test.ts` fails the build if
+  any file other than `transport.ts` imports `@tauri-apps/api/core` or `@tauri-apps/api/event`.
+
 ---
 
 ## 3. Documentation
@@ -274,15 +282,16 @@ remaining break.** See §6.8.
 
 ---
 
-### 6.4 🔴 A4 — Frontend transport carrier
+### 6.4 🟢 A4 — Frontend transport carrier · ✅ DELIVERED 2026-10-14
 
-**Why it blocks:** remote mode means the phone's UI drives a pipeline elsewhere. Eleven files
-under `app/src/services/` issue raw Tauri `invoke()` calls with no interface to substitute.
-
-**Mini-plan**
-1. Introduce a single `Transport` interface (`request(command, payload)` → Promise).
-2. Implement the Tauri carrier; move existing calls behind it unchanged.
-3. Prove: `pnpm test` + `check_invariants.mjs` unchanged; no desktop behaviour delta.
+**Delivered:**
+- Single `Transport` interface in `app/src/services/transport.ts` implementing `invoke`, `listen`,
+  and `convertFileSrc`.
+- Default `TauriTransport` with runtime swapping (`setTransport()`).
+- All 11 service files in `app/src/services/` moved behind `Transport`.
+- `Invariant 1b` in `app/src/test/invariants.test.ts` guarantees zero product code outside `transport.ts`
+  imports `@tauri-apps/api/core` or `@tauri-apps/api/event`.
+- 61 vitest unit and invariant tests passing.
 
 ---
 
@@ -360,7 +369,7 @@ Remote control may begin when **all** of the following are true:
 - [ ] A1 — a headless pipeline entry point completes a turn with no Tauri window
 - [ ] A2 — audio capture and playback are behind swappable traits
 - [ ] A3 — one full turn proven on hardware
-- [ ] A4 — the frontend reaches the backend through a swappable carrier
+- [x] A4 — the frontend reaches the backend through a swappable carrier
 - [ ] A user decision recorded on pairing, discovery, authentication and reconnect
       (all four remain open questions in `wip/remote-control-android.md`)
 

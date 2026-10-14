@@ -128,7 +128,7 @@ export const ExpandableList = memo(
               type="button"
               onClick={open}
               aria-label={expandLabel}
-              className="absolute -bottom-2 right-1 z-10 w-8 h-8 flex items-center justify-center rounded-lg border border-[rgba(var(--border),0.15)] bg-[rgba(var(--card),0.85)] backdrop-blur-sm text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:border-[rgba(var(--accent),0.35)] hover:bg-[rgba(var(--card),0.95)] transition-colors cursor-pointer shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))] shadow-sm"
+              className="absolute -bottom-2 right-1 z-10 w-8 h-8 flex items-center justify-center rounded-lg border border-[rgba(var(--border),0.15)] bg-[rgba(var(--card),0.85)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:border-[rgba(var(--accent),0.35)] hover:bg-[rgba(var(--card),0.95)] transition-colors cursor-pointer shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))] shadow-sm"
             >
               <Maximize2 size={13} strokeWidth={1.75} />
             </button>

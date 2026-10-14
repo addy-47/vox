@@ -57,7 +57,7 @@ export const OrbitalLoader: React.FC<OrbitalLoaderProps> = memo(
 
     if (overlay) {
       return (
-        <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-[rgb(var(--background))]/90 backdrop-blur-md pointer-events-none select-none">
+        <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-[rgb(var(--background))]/90 pointer-events-none select-none">
           {content}
         </div>
       );

@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "./transport";
 
 /**
  * Mirror of `PersonalMemoryRecord` (persistence/personal_memory.rs).
