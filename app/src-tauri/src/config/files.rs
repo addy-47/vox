@@ -16,8 +16,9 @@ use crate::{
         llm::{LlmActiveProvider, LlmEmbeddedConfig, LlmRemoteConfig, LlmSettings},
         stt::{SttActiveProvider, SttCloudConfig, SttEmbeddedConfig, SttSettings},
         tts::{
-            TtsActiveProvider, TtsChatterboxConfig, TtsChatterboxRemoteConfig, TtsEdgeConfig,
-            TtsKokoroConfig, TtsSettings, TtsSupertonicConfig, TtsZipvoiceConfig,
+            TtsActiveProvider, TtsAzureConfig, TtsChatterboxConfig, TtsChatterboxRemoteConfig,
+            TtsEdgeConfig, TtsGoogleConfig, TtsKokoroConfig, TtsSettings, TtsSupertonicConfig,
+            TtsZipvoiceConfig,
         },
         vad::VadSettings,
     },
@@ -133,6 +134,8 @@ pub struct TtsProvidersConfig {
     pub chatterbox: TtsChatterboxConfig,
     pub chatterbox_remote: TtsChatterboxRemoteConfig,
     pub zipvoice: TtsZipvoiceConfig,
+    pub azure_tts: TtsAzureConfig,
+    pub google_tts: TtsGoogleConfig,
 }
 
 /// Tier 2: Cloud/Server Endpoints, Model IDs, API Keys (`config/providers.jsonc`, chmod 0600)
@@ -230,6 +233,8 @@ impl VoxSettings {
                 chatterbox: self.tts.chatterbox.clone(),
                 chatterbox_remote: self.tts.chatterbox_remote.clone(),
                 zipvoice: self.tts.zipvoice.clone(),
+                azure_tts: self.tts.azure_tts.clone(),
+                google_tts: self.tts.google_tts.clone(),
             },
             realtime: self.realtime.clone(),
         }
@@ -279,6 +284,8 @@ impl VoxSettings {
         self.tts.chatterbox = cfg.tts.chatterbox;
         self.tts.chatterbox_remote = cfg.tts.chatterbox_remote;
         self.tts.zipvoice = cfg.tts.zipvoice;
+        self.tts.azure_tts = cfg.tts.azure_tts;
+        self.tts.google_tts = cfg.tts.google_tts;
         self.realtime = cfg.realtime;
     }
 

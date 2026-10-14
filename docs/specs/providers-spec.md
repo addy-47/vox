@@ -131,7 +131,7 @@ $$\text{effective\_output\_tokens} = \min(\text{slice\_budget},\; \text{probed\_
 ## 6. Voice Providers & Unified Catalog Architecture
 
 ### 6.1 Unified Voice Facade
-The TTS subsystem exposes a unified catalog facade in `services/tts/voice.rs` that homogenizes voice profiles across bundled local engines (Kokoro, Supertonic, Zipvoice, Chatterbox) and cloud/remote engines (Edge TTS). All providers emit a standardized `UnifiedVoiceDto` contract.
+The TTS subsystem exposes a unified catalog facade in `services/tts/voice.rs` that homogenizes voice profiles across bundled local engines (Kokoro, Supertonic, Zipvoice, Chatterbox) and cloud/remote engines (Edge TTS, Azure Speech, Google Cloud TTS). All providers emit a standardized `UnifiedVoiceDto` contract.
 
 ### 6.2 Declarative Voice Manifest
 A static declarative manifest `voices_manifest.json` embedded into the binary at compile time defines default voices, metadata tags, and sample preview sentences for all local TTS models. On first launch, manifest entries populate the Turso `voices` table automatically to guarantee full offline functionality.
@@ -152,7 +152,13 @@ On-demand audio previews are managed by `services/tts/preview.rs`:
 The frontend never branches on provider id literals (Invariant 6: model agnosticism). Engine-to-catalog mapping lives in `services/tts/voice.rs` (`resolve_voice_scope`, surfaced via the `get_voice_scope` IPC command returning `VoiceScopeDto { voice_provider, can_clone, cloud_sync }`):
 - **Voice family scope**: the active engine id maps to its DB `provider_id` filter 1:1, except `chatterbox_remote`, which shares the `chatterbox` voice rows (no `provider_id = 'chatterbox_remote'` rows exist — an unmapped query returns an empty catalog). `list_unified_voices` applies the same normalization.
 - **Clone capability**: `can_clone` mirrors backend `ProviderCaps.clone` (`factory::caps_for_id`). Only the Chatterbox family (local + remote) declares `clone: true` — cloned reference voices are consumed solely by the Chatterbox conditioning path (`resolve_reference_audio` over `voice_dir`). Kokoro/Supertonic resolve integer catalog indices, Zipvoice uses voice packs, Edge TTS is cloud-managed. The clone entry points (header action, Cloned scope chip, `CloneVoiceDrawer`) render only when `can_clone` is true.
-- **Cloud sync hint**: `cloud_sync` mirrors `ProviderCaps.voices == TtsVoiceSource::Edge` and drives the empty-state hint while background sync populates cloud voices.
+- **Cloud sync hint**: `cloud_sync` is true for `TtsVoiceSource::Edge` and `TtsVoiceSource::Cloud` and drives the empty-state hint while background sync populates cloud voices.
+
+### 6.6 Cloud TTS Providers (Azure Speech + Google Cloud TTS)
+Both implement the existing `TtsProvider::synthesize_chunk` contract on the dedicated OS TTS worker thread. No new trait, event, or harness path.
+- **Azure Speech** (`azure_tts`, `TtsVoiceSource::Cloud`, `clone: false`): one REST SSML POST per clause to `{region}.tts.speech.microsoft.com/cognitiveservices/v1` (or custom-domain base), `X-Microsoft-OutputFormat: raw-24khz-16bit-mono-pcm` (headerless s16le → f32, zero decode). Auth resolved once at construction: `providers.jsonc tts.azure_tts.key` → `AZURE_SPEECH_KEY` env → Entra (`tts.azure_tts.resource_id` + `az login`, `aad#resource#token` format, 8-min token cache, one 401 refresh). One bounded 429 backoff honoring `Retry-After` (cap 10 s), then typed `TtsError::RateLimited`. Voice sync: `voices/list` filtered to GA + Neural + `en*` + ≥24000 Hz, rows keyed `provider_id = 'azure_tts'`.
+- **Google Cloud TTS** (`google_tts`, `TtsVoiceSource::Cloud`, `clone: false`): one `StreamingSynthesize` bidi stream per clause via `google-cloud-texttospeech-v1` (config → text → half-close → PCM-24k chunks; server starts only after half-close, so clause granularity is the correct design). Speaking rate set server-side (`speaking_rate`, 0.25–2.0). Auth is local ADC (`gcloud auth application-default login`), optional `tts.google_tts.project_override` as quota project; clauses over 5000 bytes are rejected with an actionable error. RPC codes map to `TtsError::{Auth, RateLimited, VoiceNotFound, Cancelled, SynthesisFailed}`. Voice sync: `voices:list` per `en-{US,GB,AU,IN}` filtered to `Chirp3-HD`, rows keyed `provider_id = 'google_tts'`.
+- Secrets (keys, tokens, SSML bodies) never reach logs or IPC payloads; `check_provider_health` reuses reachability semantics (any non-5xx proves routing).
 
 ---
 

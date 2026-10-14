@@ -332,6 +332,14 @@ fn apply_tts_mutation(
             settings.tts.zipvoice = serde_json::from_value(value.clone())
                 .map_err(|e| format!("Invalid zipvoice config: {}", e))?;
         }
+        "azure_tts" => {
+            settings.tts.azure_tts = serde_json::from_value(value.clone())
+                .map_err(|e| format!("Invalid azure_tts config: {}", e))?;
+        }
+        "google_tts" => {
+            settings.tts.google_tts = serde_json::from_value(value.clone())
+                .map_err(|e| format!("Invalid google_tts config: {}", e))?;
+        }
         "provider" => {
             if let Ok(prov) = serde_json::from_value::<TtsProviderConfig>(value.clone()) {
                 match prov {
@@ -376,6 +384,26 @@ fn apply_tts_mutation(
                         settings.tts.active = TtsActiveProvider::Zipvoice;
                         settings.tts.zipvoice.voice_id = voice_id;
                         settings.tts.zipvoice.guidance_scale = guidance_scale;
+                    }
+                    TtsProviderConfig::AzureTts {
+                        region_or_endpoint,
+                        voice,
+                        key,
+                        resource_id,
+                    } => {
+                        settings.tts.active = TtsActiveProvider::AzureTts;
+                        settings.tts.azure_tts.region_or_endpoint = region_or_endpoint;
+                        settings.tts.azure_tts.voice = voice;
+                        settings.tts.azure_tts.key = key;
+                        settings.tts.azure_tts.resource_id = resource_id;
+                    }
+                    TtsProviderConfig::GoogleTts {
+                        voice,
+                        project_override,
+                    } => {
+                        settings.tts.active = TtsActiveProvider::GoogleTts;
+                        settings.tts.google_tts.voice = voice;
+                        settings.tts.google_tts.project_override = project_override;
                     }
                 }
             }

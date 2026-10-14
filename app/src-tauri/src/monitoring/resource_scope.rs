@@ -290,7 +290,7 @@ fn collect_process_scope(
     snapshot.cpu_percent /= cpu_cores.max(1) as f32;
     snapshot
         .processes
-        .sort_by(|left, right| right.memory.rss.cmp(&left.memory.rss));
+        .sort_by_key(|process| std::cmp::Reverse(process.memory.rss));
     snapshot
 }
 

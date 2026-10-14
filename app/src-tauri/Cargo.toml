@@ -75,6 +75,19 @@ reqwest = { version = "0.12", default-features = false, features = ["stream", "r
 tokio-tungstenite = { version = "0.29.0", features = ["rustls-tls-webpki-roots"] }       # WebSocket client for Gemini Live & Edge-TTS
 rustls = { version = "0.23", features = ["ring"] }                                       # TLS cryptography provider
 
+# ─── 5b. Cloud TTS Providers (Azure Speech + Google Cloud TTS) ───────────────
+# google-cloud-texttospeech-v1: official client (streaming_synthesize bidi gRPC
+# + synthesize_speech + list_voices, ADC default). Must survive verify-targets.sh
+# (desktop + arm64-v8a); if its TLS stack breaks Android, fall back to
+# REST-per-clause via reqwest with identical file layout.
+google-cloud-texttospeech-v1 = "1"
+google-cloud-gax = "1"
+# azure_identity: Entra fallback only (AzureCliCredential / DeveloperToolsCredential
+# for `az login` reuse). Key path uses reqwest. If it breaks the Android gate,
+# cfg-gate Entra to desktop and keep the key path universal.
+azure_identity = "1"
+azure_core = "1"
+
 # ─── 6. System Integration, Clipboard & Input Simulation ────────────────────
 # (Platform-specific drivers defined under cfg(desktop) below)
 
