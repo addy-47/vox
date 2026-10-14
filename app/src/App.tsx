@@ -415,22 +415,17 @@ const App: React.FC = () => {
                 </AnimatePresence>
 
                 {/* Seamless Orbital Loader Overlay that cross-fades out once ready */}
-                <AnimatePresence>
-                  {isLoading && (
-                    <motion.div
-                      key="boot-loader"
-                      initial={{ opacity: 1 }}
-                      exit={{ opacity: 0 }}
-                      transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
-                      className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-[rgb(var(--background))]"
-                    >
-                      <TitleBar />
-                      <div className="flex-1 flex items-center justify-center w-full">
-                        <PageLoader />
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
+                {isLoading && (
+                  <div
+                    key="boot-loader"
+                    className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-[rgb(var(--background))] transition-opacity duration-300 animate-in fade-in"
+                  >
+                    <TitleBar />
+                    <div className="flex-1 flex items-center justify-center w-full">
+                      <PageLoader />
+                    </div>
+                  </div>
+                )}
               </div>
               </MotionConfig>
             </Router>

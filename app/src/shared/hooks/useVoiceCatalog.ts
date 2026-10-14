@@ -18,6 +18,12 @@ export interface UseVoiceCatalogOptions {
    * all providers') voices are never rendered in between.
    */
   suspended?: boolean;
+  /**
+   * Currently selected TTS engine in the settings draft. Threaded into
+   * preview synthesis so the backend previews with the modal context,
+   * not the last saved engine.
+   */
+  engine?: string;
 }
 
 export interface UseVoiceCatalogResult {
@@ -44,6 +50,8 @@ export interface UseVoiceCatalogResult {
 const DEFAULT_PREVIEW_PROMPT =
   "Vox is an on-device personal voice AI that listens and speaks naturally.";
 
+const VOICES_CACHE = new Map<string, UnifiedVoiceDto[]>();
+
 /**
  * Unified voice catalog state: Turso-backed list, draft staging, favorites,
  * on-demand preview synthesis, and interactive playback scrub bar.
@@ -51,12 +59,13 @@ const DEFAULT_PREVIEW_PROMPT =
 export function useVoiceCatalog(
   options: UseVoiceCatalogOptions = {}
 ): UseVoiceCatalogResult {
-  const { provider, suspended = false } = options;
+  const { provider, suspended = false, engine } = options;
   const updateDraft = useSettingsStore((s) => s.updateDraft);
   const draftVoiceId = useSettingsStore((s) => s.draftSettings?.tts?.voice_id);
 
-  const [voices, setVoices] = useState<UnifiedVoiceDto[]>([]);
-  const [loading, setLoading] = useState(true);
+  const cachedVoices = provider ? VOICES_CACHE.get(provider) : undefined;
+  const [voices, setVoices] = useState<UnifiedVoiceDto[]>(cachedVoices ?? []);
+  const [loading, setLoading] = useState(!cachedVoices);
   const [error, setError] = useState<string | null>(null);
   const [stagedId, setStagedId] = useState<string | null>(null);
 
@@ -68,18 +77,22 @@ export function useVoiceCatalog(
   const [previewPrompt, setPreviewPrompt] = useState(DEFAULT_PREVIEW_PROMPT);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const currentBlobUrlRef = useRef<string | null>(null);
   const remoteSyncedRef = useRef(false);
 
   const reload = useCallback(() => {
     let isMounted = true;
     setLoading(true);
     setError(null);
-    // Never render a stale engine's voices: clear the list up front so an
-    // engine switch shows loading, not the previous engine's rows.
-    setVoices([]);
+    if (provider && VOICES_CACHE.has(provider)) {
+      setVoices(VOICES_CACHE.get(provider)!);
+    } else {
+      setVoices([]);
+    }
     listVoices(provider)
       .then((list) => {
         if (!isMounted) return;
+        if (provider) VOICES_CACHE.set(provider, list);
         setVoices(list);
         // Drop a staged id that is not in the newly loaded engine scope;
         // otherwise the strip shows one voice while Select commits another.
@@ -137,6 +150,10 @@ export function useVoiceCatalog(
         audioRef.current.src = "";
         audioRef.current = null;
       }
+      if (currentBlobUrlRef.current) {
+        URL.revokeObjectURL(currentBlobUrlRef.current);
+        currentBlobUrlRef.current = null;
+      }
     };
   }, []);
 
@@ -144,6 +161,11 @@ export function useVoiceCatalog(
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current.src = "";
+      audioRef.current = null;
+    }
+    if (currentBlobUrlRef.current) {
+      URL.revokeObjectURL(currentBlobUrlRef.current);
+      currentBlobUrlRef.current = null;
     }
     setPlayingId(null);
     setIsSynthesizing(false);
@@ -183,23 +205,35 @@ export function useVoiceCatalog(
   );
 
   const toggleFavorite = useCallback((id: string) => {
-    setVoices((prev) =>
-      prev.map((v) => (v.id === id ? { ...v, is_favorite: !v.is_favorite } : v))
-    );
+    console.info("[VoiceCatalog] toggleFavorite initiated for:", id);
+    setVoices((prev) => {
+      const target = prev.find((v) => v.id === id);
+      const nextFav = !target?.is_favorite;
+      console.info("[VoiceCatalog] Optimistic toggle for", id, "->", nextFav);
+      const next = prev.map((v) => (v.id === id ? { ...v, is_favorite: nextFav } : v));
+      if (provider) VOICES_CACHE.set(provider, next);
+      return next;
+    });
     toggleVoiceFavorite(id)
       .then((nowFav) => {
-        setVoices((prev) =>
-          prev.map((v) => (v.id === id ? { ...v, is_favorite: nowFav } : v))
-        );
+        console.info("[VoiceCatalog] toggleVoiceFavorite IPC confirmed for", id, "->", nowFav);
+        setVoices((prev) => {
+          const next = prev.map((v) => (v.id === id ? { ...v, is_favorite: nowFav } : v));
+          if (provider) VOICES_CACHE.set(provider, next);
+          return next;
+        });
       })
-      .catch(() => {
-        setVoices((prev) =>
-          prev.map((v) =>
+      .catch((err) => {
+        console.error("[VoiceCatalog] toggleVoiceFavorite IPC failed for", id, err);
+        setVoices((prev) => {
+          const next = prev.map((v) =>
             v.id === id ? { ...v, is_favorite: !v.is_favorite } : v
-          )
-        );
+          );
+          if (provider) VOICES_CACHE.set(provider, next);
+          return next;
+        });
       });
-  }, []);
+  }, [provider]);
 
   const togglePreview = useCallback(
     (voice: UnifiedVoiceDto) => {
@@ -217,29 +251,58 @@ export function useVoiceCatalog(
           ? previewPrompt
           : voice.sample_text || DEFAULT_PREVIEW_PROMPT;
 
-      synthesizeVoicePreview(voice.id, promptToUse)
-        .then((result) => {
+      console.info("[VoiceCatalog] Requesting preview for voice:", voice.id, "engine:", engine);
+
+      synthesizeVoicePreview(voice.id, promptToUse, engine)
+        .then(async (result) => {
           setIsSynthesizing(false);
+          console.info("[VoiceCatalog] synthesizeVoicePreview result:", result);
           if (!result.path) {
+            console.warn("[VoiceCatalog] Preview returned empty path for voice:", voice.id);
             setPlayingId(null);
             return;
           }
-          const audioSrc = voicePreviewUrl(result.path);
+
+          let audioSrc = voicePreviewUrl(result.path);
+          try {
+            // Read binary bytes directly to construct a standard blob URL.
+            // Completely eliminates WebKitGTK/Linux range-request asset protocol failures.
+            const { readFile } = await import("@tauri-apps/plugin-fs");
+            const fileBytes = await readFile(result.path);
+            const blob = new Blob([fileBytes], { type: "audio/wav" });
+            const blobUrl = URL.createObjectURL(blob);
+            currentBlobUrlRef.current = blobUrl;
+            audioSrc = blobUrl;
+            console.info("[VoiceCatalog] Constructed blob URL for preview playback:", audioSrc);
+          } catch (fsErr) {
+            console.warn("[VoiceCatalog] readFile failed, using asset convertFileSrc fallback:", fsErr);
+          }
+
           const audio = new Audio(audioSrc);
           audioRef.current = audio;
+
+          audio.onloadeddata = () => {
+            console.info("[VoiceCatalog] Audio loaded data for", voice.id);
+          };
           audio.onloadedmetadata = () => {
+            console.info("[VoiceCatalog] Audio metadata loaded. Duration:", audio.duration);
             setPreviewDuration(audio.duration || result.duration_ms / 1000);
           };
+          audio.onplay = () => {
+            console.info("[VoiceCatalog] Audio playback started for", voice.id);
+          };
           audio.onended = () => {
-            setPlayingId(null);
-            setPreviewProgress(0);
-            setPreviewCurrentTime(0);
+            console.info("[VoiceCatalog] Audio playback ended for", voice.id);
+            stopPreview();
           };
           audio.onerror = (e) => {
-            console.error("[VoiceCatalog] Audio playback error for", audioSrc, e);
-            setPlayingId(null);
-            setPreviewProgress(0);
-            setIsSynthesizing(false);
+            const mediaErr = audio.error;
+            console.error("[VoiceCatalog] Audio playback error for", audioSrc, {
+              code: mediaErr?.code,
+              message: mediaErr?.message,
+              event: e,
+            });
+            stopPreview();
           };
           audio.ontimeupdate = () => {
             if (Number.isFinite(audio.duration) && audio.duration > 0) {
@@ -247,10 +310,12 @@ export function useVoiceCatalog(
               setPreviewCurrentTime(audio.currentTime);
             }
           };
-          audio.play().catch((err) => {
+
+          audio.play().then(() => {
+            console.info("[VoiceCatalog] audio.play() succeeded for", voice.id);
+          }).catch((err) => {
             console.error("[VoiceCatalog] Audio play() promise rejected:", err);
-            setPlayingId(null);
-            setIsSynthesizing(false);
+            stopPreview();
           });
         })
         .catch((err) => {
@@ -259,7 +324,7 @@ export function useVoiceCatalog(
           setPlayingId(null);
         });
     },
-    [playingId, previewPrompt, stopPreview]
+    [playingId, previewPrompt, engine, stopPreview]
   );
 
   useEffect(() => {

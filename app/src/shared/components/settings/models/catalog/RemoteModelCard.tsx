@@ -1,5 +1,6 @@
 import { memo } from "react";
 import {
+  Heart,
   Loader2,
   AlertTriangle,
   Sparkles,
@@ -25,9 +26,11 @@ export interface RemoteModelCardProps {
   probed: ModelCapabilities | undefined;
   isTesting: boolean;
   probeError?: string;
+  isFavorite?: boolean;
   onSelect: (id: string) => void;
   onProbe: (id: string) => void;
   onCopy: (id: string) => void;
+  onToggleFavorite?: (id: string) => void;
   isCopied: boolean;
 }
 
@@ -37,9 +40,11 @@ export const RemoteModelCard = memo(({
   probed,
   isTesting,
   probeError,
+  isFavorite = false,
   onSelect,
   onProbe,
   onCopy,
+  onToggleFavorite,
   isCopied,
 }: RemoteModelCardProps) => {
   const isGpu = probed?.is_gpu_accelerated;
@@ -100,7 +105,7 @@ export const RemoteModelCard = memo(({
                 <Tooltip
                   side="top"
                   align="start"
-                  className="p-3 w-[300px] max-w-[340px] whitespace-normal text-left border border-[rgba(var(--foreground),0.14)] bg-[rgb(var(--card))]/98 shadow-lg backdrop-blur-md"
+                  className="p-3 w-[300px] max-w-[340px] whitespace-normal text-left border border-[rgba(var(--foreground),0.14)] bg-[rgb(var(--card))]/98 shadow-lg"
                   label={probeWarningLabel(probeError, probed)}
                 >
                   <span
@@ -126,9 +131,30 @@ export const RemoteModelCard = memo(({
               </span>
             )}
             {model.size_bytes != null && (
-              <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 roundedtext-[rgb(var(--foreground-muted))] ]">
+              <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-[rgba(var(--foreground),0.06)] text-[rgb(var(--foreground-muted))] border border-[rgba(var(--foreground),0.08)]">
                 {(model.size_bytes / (1024 * 1024 * 1024)).toFixed(1)}GB
               </span>
+            )}
+
+            {/* Top-Right Heart Button */}
+            {onToggleFavorite && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  e.preventDefault();
+                  onToggleFavorite(model.id);
+                }}
+                aria-label={isFavorite ? `Remove ${shortName} from favorites` : `Add ${shortName} to favorites`}
+                className={cn(
+                  "p-1 -mr-1 -mt-0.5 rounded-lg shrink-0 transition-all cursor-pointer relative z-10",
+                  isFavorite
+                    ? "text-[rgb(var(--accent))]"
+                    : "text-[rgb(var(--foreground-muted))]/40 hover:text-[rgb(var(--accent))] hover:bg-[rgba(var(--foreground),0.04)]"
+                )}
+              >
+                <Heart size={15} fill={isFavorite ? "currentColor" : "none"} strokeWidth={isFavorite ? 2 : 1.75} />
+              </button>
             )}
           </div>
         </div>
@@ -213,8 +239,8 @@ export const RemoteModelCard = memo(({
         </div>
       </div>
 
-      {/* Card Actions Footer: minimal, tactile Benchmark action on right */}
-      <div className="flex items-center justify-between gap-2 mt-3 pt-2.5 border-t border-[rgba(var(--foreground),0.06)] min-w-0" onClick={(e) => e.stopPropagation()}>
+      {/* Card Actions Footer: tactile Benchmark action on bottom right */}
+      <div className="flex items-center justify-end gap-2 mt-3 pt-2.5 border-t border-[rgba(var(--foreground),0.06)] min-w-0" onClick={(e) => e.stopPropagation()}>
         <button
           type="button"
           disabled={isTesting}

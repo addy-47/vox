@@ -488,26 +488,21 @@ export const History: React.FC = () => {
       )}
 
       {/* Smooth, Ethereal Cross-fade Loader Overlay (Vertically aligned with CentralClockNode) */}
-      <AnimatePresence>
-        {showLoading && (
-          <motion.div
-            initial={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
-            className="absolute inset-0 z-40 flex items-center justify-center bg-transparent pointer-events-none select-none"
+      {showLoading && (
+        <div
+          className="absolute inset-0 z-40 flex items-center justify-center bg-transparent pointer-events-none select-none animate-in fade-in duration-200"
+        >
+          <div
+            className="absolute left-1/2 flex items-center justify-center pointer-events-none"
+            style={{
+              top: "calc(50% - 36px)",
+              transform: "translate(-50%, -50%)",
+            }}
           >
-            <div
-              className="absolute left-1/2 flex items-center justify-center pointer-events-none"
-              style={{
-                top: "calc(50% - 36px)",
-                transform: "translate(-50%, -50%)",
-              }}
-            >
-              <OrbitalLoader size="md" />
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+            <OrbitalLoader size="md" />
+          </div>
+        </div>
+      )}
 
       {/* Floating Micro-interaction Hint */}
       {!showLoading && sessions.length > 0 && isOrbitViewport && (

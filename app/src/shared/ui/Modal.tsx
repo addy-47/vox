@@ -1,9 +1,10 @@
 import { memo, useEffect, useRef, useCallback, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { X, ArrowLeft } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { useOverlay } from "@/shared/hooks/useOverlay";
+import { isCoarsePointer } from "@/lib/capabilities";
 import { Tooltip } from "@/shared/ui/Tooltip";
 import { OverlayBackdrop } from "@/shared/ui/OverlayBackdrop";
 import { LAYOUT_COPY } from "@/data/layoutCopy";
@@ -131,6 +132,10 @@ export const Modal = memo(
 
     const effectiveZ = zIndex ?? (position === "global" ? 60 : 30);
 
+    const shouldReduceMotion = useReducedMotion();
+    const isCoarse = isCoarsePointer();
+    const fastTransition = shouldReduceMotion || isCoarse;
+
     const modalNode = (
       <AnimatePresence>
         {open && (
@@ -151,7 +156,10 @@ export const Modal = memo(
               initial={{ opacity: 0, scale: 0.96, y: 8 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.96, y: 8 }}
-              transition={{ duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
+              transition={{
+                duration: fastTransition ? 0.12 : 0.24,
+                ease: fastTransition ? "easeOut" : [0.16, 1, 0.3, 1],
+              }}
               onKeyDown={handlePanelKeyDown}
               className={cn(
                 "relative flex flex-col rounded-2xl overflow-hidden glass-card border border-[rgba(var(--accent),0.12)] [text-shadow:none] outline-none pointer-events-auto transform-gpu contain-paint",
@@ -178,9 +186,13 @@ export const Modal = memo(
                       </button>
                     )}
                     {icon}
-                    <div className="min-w-0 flex items-center gap-2">
+                    <div className="min-w-0 flex flex-col justify-center">
                       {title}
-                      {subtitle}
+                      {subtitle && (
+                        <div className="hidden sm:block text-[11.5px] text-[rgb(var(--foreground-muted))] leading-tight mt-0.5 truncate">
+                          {subtitle}
+                        </div>
+                      )}
                     </div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">

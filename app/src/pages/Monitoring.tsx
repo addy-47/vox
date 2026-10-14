@@ -58,7 +58,6 @@ export const Monitoring: React.FC<MonitoringProps> = ({
   }, [popover, open]);
 
   // Subscribe to settings store to inspect exact variants and reactive theme
-  const accentSeed = useSettingsStore((s) => s.settings?.appearance.accent_seed);
   const theme = useSettingsStore((s) => s.settings?.appearance.theme);
   const vadBackend = useSettingsStore((s) => s.settings?.vad?.vad_backend);
   const llmProvider = useSettingsStore((s) => s.settings?.llm?.active);
@@ -79,14 +78,19 @@ export const Monitoring: React.FC<MonitoringProps> = ({
 
   // Dynamic CSS variable observer state
   const [accentRgbStr, setAccentRgbStr] = useState<string>("0, 219, 233");
+  const currentAccentRef = useRef<string>("0, 219, 233");
 
   const syncAccent = useCallback(() => {
     if (typeof window === "undefined") return;
-    const val = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim();
-    if (val && val !== accentRgbStr) {
+    const val = (
+      document.documentElement.style.getPropertyValue("--accent").trim() ||
+      getComputedStyle(document.documentElement).getPropertyValue("--accent").trim()
+    );
+    if (val && val !== currentAccentRef.current) {
+      currentAccentRef.current = val;
       setAccentRgbStr(val);
     }
-  }, [accentRgbStr]);
+  }, []);
 
   // Keep colors continuously in sync when theme changes or DOM attribute shifts
   useEffect(() => {
@@ -97,7 +101,7 @@ export const Monitoring: React.FC<MonitoringProps> = ({
       attributeFilter: ["style", "data-theme", "class"],
     });
     return () => observer.disconnect();
-  }, [syncAccent, accentSeed, theme]);
+  }, [syncAccent]);
 
   const {
     latest,

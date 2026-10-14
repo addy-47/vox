@@ -19,7 +19,7 @@ export interface ShortcutDef {
   note?: string;
 }
 
-export const SHORTCUTS: ShortcutDef[] = [
+const SHORTCUTS: ShortcutDef[] = [
   // ── Application & Window Lifecycle ──
   { id: "app.close", keys: "Ctrl+W", label: "Close window to tray", scope: "global" },
   { id: "app.quit", keys: "Ctrl+Q", label: "Quit application", scope: "global" },

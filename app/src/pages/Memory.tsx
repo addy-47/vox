@@ -33,8 +33,7 @@ import { MEMORY_COPY } from "@/data/memoryCopy";
 import { cn } from "@/shared/lib/utils";
 import { AnimatePresence, motion } from "framer-motion";
 import {
-  MemoryGraph,
-  MemoryGraphRef,
+  type MemoryGraphRef,
   MemoryLegendOverlay,
   MemoryTimeline,
   MemoryNodeTooltip,
@@ -49,6 +48,10 @@ import {
   MemoryErrorState,
   MemoryHint,
 } from "@/shared/components/memory";
+
+const MemoryGraph = React.lazy(() =>
+  import("@/shared/components/memory/MemoryGraph").then((m) => ({ default: m.MemoryGraph }))
+);
 
 let isMemoryWarmLoaded = false;
 export const Memory: React.FC = memo(() => {
@@ -508,21 +511,23 @@ export const Memory: React.FC = memo(() => {
           }}
         >
           <ErrorBoundary name="Memory3DGraph">
-            <MemoryGraph
-              ref={graphRef}
-              facts={facts}
-              width={Math.max(dims.w, 1)}
-              height={Math.max(dims.h, 1)}
-              searchQuery={searchQuery}
-              selectedCollection={selectedCollection}
-              selectedFactId={selectedFact?.id ?? null}
-              selectedSessionId={selectedSessionId}
-              onSelectNode={handleSelectNode}
-              onSelectSessionNode={handleSelectSessionNode}
-              onCoreClick={handleCoreClick}
-              selectModeEnabled={selectModeEnabled}
-              paused={drawerOpen || sessionRailOpen}
-            />
+            <React.Suspense fallback={null}>
+              <MemoryGraph
+                ref={graphRef}
+                facts={facts}
+                width={Math.max(dims.w, 1)}
+                height={Math.max(dims.h, 1)}
+                searchQuery={searchQuery}
+                selectedCollection={selectedCollection}
+                selectedFactId={selectedFact?.id ?? null}
+                selectedSessionId={selectedSessionId}
+                onSelectNode={handleSelectNode}
+                onSelectSessionNode={handleSelectSessionNode}
+                onCoreClick={handleCoreClick}
+                selectModeEnabled={selectModeEnabled}
+                paused={drawerOpen || sessionRailOpen}
+              />
+            </React.Suspense>
           </ErrorBoundary>
         </motion.div>
       )}

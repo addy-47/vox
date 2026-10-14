@@ -259,33 +259,37 @@ pub async fn rename_voice(conn: &Connection, id: &str, name: &str) -> Result<()>
 
 /// Atomically toggles the favorite state for a voice. Returns the new state.
 pub async fn toggle_favorite(conn: &Connection, voice_id: &str) -> Result<bool> {
+    let voice_id = voice_id.trim();
     let mut rows = conn
         .query(
-            "SELECT is_favorite FROM voices WHERE id = ?",
-            (voice_id.to_string(),),
+            "SELECT id, is_favorite FROM voices WHERE id = ? OR LOWER(id) = LOWER(?) LIMIT 1",
+            (voice_id.to_string(), voice_id.to_string()),
         )
         .await?;
     if let Some(row) = rows.next().await? {
+        let matched_id: String = row.get(0).unwrap_or_else(|_| voice_id.to_string());
         let current: i64 = row
-            .get::<Option<i64>>(0)
-            .ok()
-            .flatten()
-            .unwrap_or_else(|| {
-                row.get::<Option<bool>>(0)
-                    .ok()
-                    .flatten()
-                    .map(|b| if b { 1 } else { 0 })
-                    .unwrap_or(0)
-            });
+            .get::<i64>(1)
+            .unwrap_or_else(|_| if row.get::<bool>(1).unwrap_or(false) { 1 } else { 0 });
         let new_state = if current == 1 { 0 } else { 1 };
         conn.execute(
             "UPDATE voices SET is_favorite = ? WHERE id = ?",
-            (new_state, voice_id.to_string()),
+            (new_state, matched_id.clone()),
         )
         .await?;
+        log::info!(
+            "[Voices] toggle_favorite voice_id='{}' (matched='{}') current={} -> new_state={}",
+            voice_id,
+            matched_id,
+            current,
+            new_state
+        );
         Ok(new_state == 1)
     } else {
-        // If voice record does not exist yet (e.g. edge voice not synced), insert stub
+        log::warn!(
+            "[Voices] toggle_favorite voice_id='{}' not found in DB, inserting stub with is_favorite=1",
+            voice_id
+        );
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()

@@ -5,11 +5,25 @@ import {
   useEffect,
   useCallback,
   useDeferredValue,
+  useRef,
 } from "react";
 import { useLenisScrollContainer } from "@/shared/hooks/useLenisScrollContainer";
 import { useScrollTopOnChange } from "@/shared/hooks/useScrollTopOnChange";
-import { Search, X } from "lucide-react";
+import {
+  ArrowDownAZ,
+  ArrowUpZA,
+  Cpu,
+  Filter,
+  Gauge,
+  Heart,
+  Search,
+  Wrench,
+  X,
+  Zap,
+} from "lucide-react";
 import { cn } from "@/shared/lib/utils";
+import { useSettingsStore } from "@/store/settingsStore";
+import { useFavoriteModels } from "@/shared/hooks/useFavoriteModels";
 import type { LlmModelInfo, ModelCapabilities } from "@/store/settingsStore";
 import { REMOTE_MODEL_PAGE_SIZE } from "./catalogProbeUtils";
 import { RemoteModelCard } from "./RemoteModelCard";
@@ -25,6 +39,8 @@ export interface RemoteModelsModalViewProps {
   onProbeCapabilities: (id?: string) => void;
 }
 
+type ModelCategory = "all" | "favorites" | "benchmarked" | "tools" | "fast";
+
 export const RemoteModelsModalView = memo(({
   remoteModels,
   selectedModelId,
@@ -36,8 +52,33 @@ export const RemoteModelsModalView = memo(({
 }: RemoteModelsModalViewProps) => {
   const [modalSearch, setModalSearch] = useState("");
   const deferredSearch = useDeferredValue(modalSearch);
-  const [filterCategory, setFilterCategory] = useState<"all" | "benchmarked" | "tools" | "fast">("all");
+  const [filterCategory, setFilterCategory] = useState<ModelCategory>("all");
+  const [sort, setSort] = useState<"az" | "za">("az");
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [isFilterDropdownOpen, setIsFilterDropdownOpen] = useState(false);
+  const filterDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Close compact filter dropdown on outside click or Escape
+  useEffect(() => {
+    if (!isFilterDropdownOpen) return;
+    const handleDown = (e: MouseEvent | TouchEvent) => {
+      if (filterDropdownRef.current && !filterDropdownRef.current.contains(e.target as Node)) {
+        setIsFilterDropdownOpen(false);
+      }
+    };
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setIsFilterDropdownOpen(false);
+    };
+    window.addEventListener("mousedown", handleDown);
+    window.addEventListener("touchstart", handleDown);
+    window.addEventListener("keydown", handleKey);
+    return () => {
+      window.removeEventListener("mousedown", handleDown);
+      window.removeEventListener("touchstart", handleDown);
+      window.removeEventListener("keydown", handleKey);
+    };
+  }, [isFilterDropdownOpen]);
+
   // Canonical smooth scroll (SSOT hook — inertial wheel glide, native touch
   // momentum). The inner content wrapper is the Lenis content element.
   const { containerRef: scrollContainerRef, lenisRef, scrollToTop } =
@@ -45,19 +86,48 @@ export const RemoteModelsModalView = memo(({
 
   useScrollTopOnChange(scrollContainerRef, pinnedModelId, lenisRef);
 
-  // Reset scroll to top only once the debounced filter settles, so typing
-  // never interrupts the wheel-RAF loop mid-glide (the old per-keystroke
-  // reset is what locked scrolling while searching).
   useEffect(() => {
     scrollToTop();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [deferredSearch, filterCategory]);
+  }, [deferredSearch, filterCategory, sort]);
 
   const handleCopyId = useCallback((id: string) => {
     navigator.clipboard.writeText(id);
     setCopiedId(id);
     setTimeout(() => setCopiedId(null), 1800);
   }, []);
+
+  const { favoriteModelIds, toggleFavorite, isFavorite } = useFavoriteModels();
+
+  // Active LLM provider configuration for the bottom-left corner indicator
+  const llmSettings = useSettingsStore((s) => s.draftSettings?.llm);
+  const activeMode = llmSettings?.active ?? "cloud";
+  const activeProviderName = useMemo(() => {
+    if (activeMode === "cloud") {
+      return llmSettings?.cloud?.provider_name || "Cloud";
+    }
+    if (activeMode === "server") {
+      return llmSettings?.server?.provider_name || "Custom Server";
+    }
+    return "Embedded";
+  }, [activeMode, llmSettings]);
+
+  const activeEndpointLabel = useMemo(() => {
+    if (activeMode === "cloud") return "Remote API";
+    if (activeMode === "server") {
+      try {
+        const url = new URL(llmSettings?.server?.base_url || "http://localhost:11434");
+        return url.host || "Localhost";
+      } catch {
+        return llmSettings?.server?.base_url || "Remote Server";
+      }
+    }
+    return "On-Device GGUF";
+  }, [activeMode, llmSettings]);
+
+  const favoritesCount = useMemo(() => {
+    return remoteModels.filter((m) => favoriteModelIds.has(m.id)).length;
+  }, [remoteModels, favoriteModelIds]);
 
   // Compute metrics counts for filter badges
   const benchmarkedCount = useMemo(() => {
@@ -81,6 +151,17 @@ export const RemoteModelsModalView = memo(({
     }).length;
   }, [remoteModels, probingMap, capabilitiesCache]);
 
+  const categoryFilters = useMemo(
+    () => [
+      { id: "all" as const, label: "All Models", count: remoteModels.length, Icon: Cpu },
+      { id: "favorites" as const, label: "Favorites", count: favoritesCount, Icon: Heart },
+      { id: "benchmarked" as const, label: "Benchmarked", count: benchmarkedCount, Icon: Zap },
+      { id: "tools" as const, label: "Tools Support", count: toolsCount, Icon: Wrench },
+      { id: "fast" as const, label: "Fast (>30 TPS)", count: fastCount, Icon: Gauge },
+    ],
+    [remoteModels.length, favoritesCount, benchmarkedCount, toolsCount, fastCount]
+  );
+
   const modalFilteredModels = useMemo(() => {
     let list = remoteModels;
     const query = deferredSearch.trim().toLowerCase();
@@ -93,7 +174,9 @@ export const RemoteModelsModalView = memo(({
       );
     }
 
-    if (filterCategory === "benchmarked") {
+    if (filterCategory === "favorites") {
+      list = list.filter((m) => favoriteModelIds.has(m.id));
+    } else if (filterCategory === "benchmarked") {
       list = list.filter((m) => {
         const probed = probingMap[m.id]?.capabilities || m.capabilities || capabilitiesCache?.[`server:${m.id}`] || capabilitiesCache?.[`cloud:${m.id}`] || capabilitiesCache?.[`embedded:${m.id}`] || capabilitiesCache?.[m.id];
         return probed?.tps && probed.tps > 0;
@@ -110,22 +193,25 @@ export const RemoteModelsModalView = memo(({
       });
     }
 
+    const sorted = [...list];
+    if (sort === "az") {
+      sorted.sort((a, b) => (a.name || a.id).localeCompare(b.name || b.id, undefined, { sensitivity: "base" }));
+    } else {
+      sorted.sort((a, b) => (b.name || b.id).localeCompare(a.name || a.id, undefined, { sensitivity: "base" }));
+    }
+
     if (pinnedModelId) {
-      const idx = list.findIndex((m) => m.id === pinnedModelId);
+      const idx = sorted.findIndex((m) => m.id === pinnedModelId);
       if (idx > 0) {
-        const copy = [...list];
-        const [selected] = copy.splice(idx, 1);
-        copy.unshift(selected);
-        return copy;
+        const [selected] = sorted.splice(idx, 1);
+        sorted.unshift(selected);
       }
     }
 
-    return list;
-  }, [remoteModels, deferredSearch, filterCategory, probingMap, capabilitiesCache, pinnedModelId]);
+    return sorted;
+  }, [remoteModels, deferredSearch, filterCategory, probingMap, capabilitiesCache, pinnedModelId, sort, favoriteModelIds]);
 
-  // Mounted window over the filtered list. Slicing here rather than inside the
-  // map keeps the `.length` readouts honest — they still report the true match
-  // count, not the capped one.
+  // Mounted window over the filtered list
   const [visibleModalModelCount, setVisibleModalModelCount] = useState(REMOTE_MODEL_PAGE_SIZE);
   useEffect(() => {
     setVisibleModalModelCount(REMOTE_MODEL_PAGE_SIZE);
@@ -138,66 +224,172 @@ export const RemoteModelsModalView = memo(({
   const modalHiddenCount = modalFilteredModels.length - visibleModalModels.length;
 
   return (
-    <div className="flex flex-col h-full min-h-0 gap-3">
-      {/* Modal Toolbar: Clean Search + Filter Chips Bar (Zero native dropdown) */}
-      <div className="flex flex-col gap-2.5 shrink-0">
-        <div className="flex items-center justify-between gap-3">
-          {/* Search Input */}
-          <div className="flex-1 flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[rgba(var(--foreground),0.04)] border border-[rgba(var(--foreground),0.08)] focus-within:border-[rgb(var(--accent))] focus-within:ring-1 focus-within:ring-[rgb(var(--accent))]/30 transition-all">
-            <Search size={14} className="text-[rgb(var(--foreground-muted))] shrink-0" />
-            <input
-              type="text"
-              value={modalSearch}
-              onChange={(e) => setModalSearch(e.target.value)}
-              placeholder="Search models..."
-              className="w-full bg-transparent border-none outline-none text-[13px] text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40"
-            />
-            {modalSearch && (
-              <button
-                type="button"
-                onClick={() => setModalSearch("")}
-                className="text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] p-0.5 cursor-pointer"
-              >
-                <X size={13} />
-              </button>
+    <div className="flex flex-col h-full min-h-0 gap-3.5">
+      {/* Top Toolbar: Search + Filter Dropdown (compact) + Sort Icon + Count */}
+      <div className="flex items-center justify-between gap-2.5 shrink-0 flex-wrap">
+        {/* Mobile/Compact Filter Dropdown Trigger */}
+        <div ref={filterDropdownRef} className="relative md:hidden shrink-0">
+          <button
+            type="button"
+            onClick={() => setIsFilterDropdownOpen((v) => !v)}
+            className={cn(
+              "p-2 rounded-xl border transition-all cursor-pointer flex items-center gap-1.5",
+              isFilterDropdownOpen || filterCategory !== "all"
+                ? "bg-[rgba(var(--accent),0.15)] text-[rgb(var(--accent))] border-[rgba(var(--accent),0.35)] shadow-xs"
+                : "bg-[rgba(var(--foreground),0.04)] text-[rgb(var(--foreground-muted))] border-[rgba(var(--foreground),0.08)] hover:text-[rgb(var(--foreground))]"
             )}
-          </div>
+            aria-label="Toggle model filters"
+            aria-expanded={isFilterDropdownOpen}
+          >
+            <Filter size={15} />
+            {filterCategory !== "all" && (
+              <span className="w-2 h-2 rounded-full bg-[rgb(var(--accent))]" />
+            )}
+          </button>
 
-          <div className="text-[11px] font-mono text-[rgb(var(--foreground-muted))] px-2.5 py-1.5 rounded-lg bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--foreground),0.06)] shrink-0">
-            <span className="hidden sm:inline">Showing <span className="text-[rgb(var(--foreground))] font-bold">{modalFilteredModels.length}</span> of {remoteModels.length} models</span>
-            <span className="inline sm:hidden"><span className="text-[rgb(var(--foreground))] font-bold">{modalFilteredModels.length}</span>/{remoteModels.length}</span>
-          </div>
+          {/* Compact Filter Menu Popover */}
+          {isFilterDropdownOpen && (
+            <div className="absolute left-0 top-full mt-2 z-50 w-64 rounded-2xl bg-[rgba(var(--card),0.96)] backdrop-blur-xl border border-[rgba(var(--foreground),0.12)] shadow-2xl p-3 flex flex-col gap-1.5 animate-fade-in">
+              <div className="flex items-center justify-between pb-1.5 border-b border-[rgba(var(--foreground),0.06)] px-1">
+                <span className="text-[12px] font-bold text-[rgb(var(--foreground))]">Filters</span>
+                {filterCategory !== "all" && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFilterCategory("all");
+                      setIsFilterDropdownOpen(false);
+                    }}
+                    className="text-[11px] font-medium text-[rgb(var(--accent))] hover:underline cursor-pointer"
+                  >
+                    Reset
+                  </button>
+                )}
+              </div>
+              {categoryFilters.map((cat) => (
+                <button
+                  key={cat.id}
+                  type="button"
+                  onClick={() => {
+                    setFilterCategory(cat.id);
+                    setIsFilterDropdownOpen(false);
+                  }}
+                  className={cn(
+                    "w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl text-[12px] transition-all cursor-pointer font-medium",
+                    filterCategory === cat.id
+                      ? "bg-[rgba(var(--accent),0.12)] text-[rgb(var(--accent))] font-bold shadow-xs"
+                      : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.03)]"
+                  )}
+                >
+                  <div className="flex items-center gap-2 truncate">
+                    <cat.Icon size={13} className={cn("shrink-0", filterCategory === cat.id ? "text-[rgb(var(--accent))]" : "opacity-60")} />
+                    <span className="truncate">{cat.label}</span>
+                  </div>
+                  <span className={cn(
+                    "text-[10px] font-mono px-1.5 py-0.5 rounded-full font-bold shrink-0",
+                    filterCategory === cat.id
+                      ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))]"
+                      : "bg-[rgba(var(--foreground),0.06)] text-[rgb(var(--foreground-muted))]"
+                  )}>
+                    {cat.count}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
-        {/* Filter Chips Bar */}
-        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 shrink-0">
-          {(
-            [
-              { id: "all", label: `All (${remoteModels.length})` },
-              { id: "benchmarked", label: `⚡ Benchmarked (${benchmarkedCount})` },
-              { id: "tools", label: `🛠️ Tools (${toolsCount})` },
-              { id: "fast", label: `🚀 Fast >30 TPS (${fastCount})` },
-            ] as const
-          ).map((chip) => (
+        {/* Search Input */}
+        <div className="flex-1 min-w-[140px] sm:min-w-[180px] flex items-center gap-2 px-3.5 py-2 rounded-xl bg-[rgba(var(--foreground),0.04)] border border-[rgba(var(--foreground),0.08)] focus-within:border-[rgb(var(--accent))] focus-within:ring-1 focus-within:ring-[rgb(var(--accent))]/30 transition-all">
+          <Search size={14} className="text-[rgb(var(--foreground-muted))] shrink-0" />
+          <input
+            type="text"
+            value={modalSearch}
+            onChange={(e) => setModalSearch(e.target.value)}
+            placeholder="Search models..."
+            aria-label="Search models"
+            className="w-full bg-transparent border-none outline-none text-[13px] text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40"
+          />
+          {modalSearch && (
             <button
-              key={chip.id}
               type="button"
-              onClick={() => setFilterCategory(chip.id)}
-              className={cn(
-                "px-2.5 py-1 rounded-md text-[11px] font-mono font-medium transition-all cursor-pointer border whitespace-nowrap shrink-0",
-                filterCategory === chip.id
-                  ? "bg-[rgb(var(--accent))]/15 border-[rgb(var(--accent))]/60 text-[rgb(var(--accent))] shadow-sm"
-                  : "bg-[rgba(var(--foreground),0.02)] border-[rgba(var(--foreground),0.06)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:border-[rgba(var(--accent),0.2)]"
-              )}
+              onClick={() => setModalSearch("")}
+              className="text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] p-0.5 cursor-pointer"
             >
-              {chip.label}
+              <X size={13} />
             </button>
-          ))}
+          )}
+        </div>
+
+        {/* Sort Button */}
+        <button
+          type="button"
+          onClick={() => setSort((s) => (s === "az" ? "za" : "az"))}
+          className="p-2 rounded-xl text-[12px] font-medium bg-[rgba(var(--foreground),0.04)] border border-[rgba(var(--foreground),0.08)] text-[rgb(var(--foreground))] hover:border-[rgb(var(--accent))]/40 hover:text-[rgb(var(--accent))] flex items-center justify-center cursor-pointer shrink-0 transition-all"
+          title={sort === "az" ? "Sort: A–Z" : "Sort: Z–A"}
+          aria-label="Toggle alphabetical sort order"
+        >
+          {sort === "az" ? (
+            <ArrowDownAZ size={15} className="text-[rgb(var(--accent))]" />
+          ) : (
+            <ArrowUpZA size={15} className="text-[rgb(var(--accent))]" />
+          )}
+        </button>
+
+        {/* Count Pill */}
+        <div className="text-[11px] font-mono text-[rgb(var(--foreground-muted))] px-2.5 py-1.5 rounded-xl bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--foreground),0.06)] shrink-0 select-none">
+          <span className="hidden sm:inline">Showing <span className="text-[rgb(var(--foreground))] font-bold">{modalFilteredModels.length}</span> of {remoteModels.length} models</span>
+          <span className="inline sm:hidden"><span className="text-[rgb(var(--foreground))] font-bold">{modalFilteredModels.length}</span>/{remoteModels.length}</span>
         </div>
       </div>
 
-      {/* Contained Cards Scroll Area with Constant Inset Padding */}
-      <div className="flex-1 min-h-0 overflow-hidden flex flex-col relative">
+      {/* Main Content Area */}
+      <div className="flex-1 min-h-0 flex gap-4 overflow-hidden">
+        {/* Facet Sidebar on Desktop with Active Connector Pin on Bottom Left */}
+        <div className="w-[190px] shrink-0 hidden md:flex flex-col justify-between h-full overflow-y-auto overscroll-contain custom-scrollbar pr-2 py-0.5">
+          <div className="flex flex-col gap-1">
+            {categoryFilters.map((cat) => (
+              <button
+                key={cat.id}
+                type="button"
+                onClick={() => setFilterCategory(cat.id)}
+                className={cn(
+                  "w-full flex items-center justify-between px-3 py-2 rounded-xl text-[12.5px] transition-all cursor-pointer font-medium",
+                  filterCategory === cat.id
+                    ? "bg-[rgba(var(--accent),0.12)] text-[rgb(var(--accent))] font-bold shadow-xs"
+                    : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.03)]"
+                )}
+              >
+                <div className="flex items-center gap-2.5 truncate">
+                  <cat.Icon size={14} className={cn("shrink-0", filterCategory === cat.id ? "text-[rgb(var(--accent))]" : "opacity-60")} />
+                  <span className="truncate">{cat.label}</span>
+                </div>
+                <span className={cn(
+                  "text-[10px] font-mono px-1.5 py-0.5 rounded-full font-bold shrink-0",
+                  filterCategory === cat.id
+                    ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))]"
+                    : "bg-[rgba(var(--foreground),0.06)] text-[rgb(var(--foreground-muted))]"
+                )}>
+                  {cat.count}
+                </span>
+              </button>
+            ))}
+          </div>
+
+          {/* Bottom-Left Connector Indicator */}
+          <div className="mt-4 pt-3 border-t border-[rgba(var(--foreground),0.07)] flex flex-col gap-1.5 px-1 select-none">
+            <div className="flex items-center gap-2 p-2]">
+              <div className="w-2 h-2 rounded-full bg-[rgb(var(--accent))] animate-pulse shrink-0" />
+              <div className="flex flex-col min-w-0">
+                <span className="text-[11.5px] font-bold text-[rgb(var(--foreground))] capitalize truncate">
+                  {activeMode} · {activeProviderName}
+                </span>
+                <span className="text-[10px] font-mono text-[rgb(var(--foreground-muted))]/70 truncate">
+                  {activeEndpointLabel}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
         <div
           ref={scrollContainerRef}
           className="flex-1 min-h-0 overflow-y-auto overscroll-contain custom-scrollbar p-1 sm:p-2"
@@ -244,9 +436,11 @@ export const RemoteModelsModalView = memo(({
                     probed={probed}
                     isTesting={isTesting}
                     probeError={probeError}
+                    isFavorite={isFavorite(model.id)}
                     onSelect={onSelectModel}
                     onProbe={onProbeCapabilities}
                     onCopy={handleCopyId}
+                    onToggleFavorite={toggleFavorite}
                     isCopied={copiedId === model.id}
                   />
                 );

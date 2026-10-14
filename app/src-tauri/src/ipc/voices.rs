@@ -97,6 +97,7 @@ pub async fn sync_remote_voices(
 pub async fn synthesize_voice_preview(
     voice_id: String,
     prompt: Option<String>,
+    engine: Option<String>,
     state: State<'_, Arc<AppState>>,
 ) -> Result<VoicePreviewResult, VoxIpcError> {
     let id = voice_id.trim().to_string();
@@ -105,9 +106,33 @@ pub async fn synthesize_voice_preview(
             "voice_id must not be empty".to_string(),
         ));
     }
-    PreviewSynthesizer::global()
-        .request_preview(&id, prompt.as_deref(), &state)
-        .await
+    log::info!(
+        "[Voices::IPC] synthesize_voice_preview requested voice_id='{}' engine={:?}",
+        id,
+        engine
+    );
+    let res = PreviewSynthesizer::global()
+        .request_preview(&id, prompt.as_deref(), engine.as_deref(), &state)
+        .await;
+    match &res {
+        Ok(preview) => {
+            log::info!(
+                "[Voices::IPC] synthesize_voice_preview succeeded for voice_id='{}': path='{}' duration_ms={} cached={}",
+                id,
+                preview.path,
+                preview.duration_ms,
+                preview.cached
+            );
+        }
+        Err(e) => {
+            log::error!(
+                "[Voices::IPC] synthesize_voice_preview failed for voice_id='{}': {:?}",
+                id,
+                e
+            );
+        }
+    }
+    res
 }
 
 /// Toggles a voice favorite. Returns true when now favorited.
@@ -122,13 +147,26 @@ pub async fn toggle_voice_favorite(
             "voice_id must be 1..256 chars".to_string(),
         ));
     }
+    log::info!("[Voices::IPC] toggle_voice_favorite requested for voice_id='{}'", id);
     let conn = state
         .db
         .connect()
-        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
-    voices::toggle_favorite(&conn, &id)
+        .map_err(|e| {
+            log::error!("[Voices::IPC] Failed to connect to DB: {}", e);
+            VoxIpcError::Database(e.to_string())
+        })?;
+    let result = voices::toggle_favorite(&conn, &id)
         .await
-        .map_err(|e| VoxIpcError::Database(format!("Failed to toggle favorite: {}", e)))
+        .map_err(|e| {
+            log::error!("[Voices::IPC] toggle_favorite failed for id='{}': {}", id, e);
+            VoxIpcError::Database(format!("Failed to toggle favorite: {}", e))
+        })?;
+    log::info!(
+        "[Voices::IPC] toggle_voice_favorite for id='{}' succeeded -> is_favorite={}",
+        id,
+        result
+    );
+    Ok(result)
 }
 
 /// Records a voice use in recents.

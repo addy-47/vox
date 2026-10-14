@@ -350,25 +350,17 @@ export const RemoteCatalogSection = memo(({
                   )}
                 </div>
 
-                {/* Right Top: Reset / Re-run Probe Icon */}
+                {/* Right Top: Family Badge */}
                 <div className="flex items-center gap-1.5 shrink-0">
-                  {probed && !isTesting && (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleProbeCapabilities(model.id);
-                      }}
-                      className="p-1 rounded-md text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.08)] transition-all cursor-pointer"
-                      title={LLM_CATALOG_COPY.rerunBenchmark}
-                    >
-                      <RefreshCw size={12} />
-                    </button>
+                  {model.family && (
+                    <span className="text-[10.5px] font-bold px-2 py-0.5 rounded-md bg-[rgb(var(--accent))]/10 text-[rgb(var(--accent))] border border-[rgba(var(--accent),0.15)] leading-none">
+                      {model.family}
+                    </span>
                   )}
                 </div>
               </div>
 
-              {/* Bottom Row: Unified Capabilities Trigger (Left) & Family Badge or Benchmark (Right) */}
+              {/* Bottom Row: Unified Capabilities Trigger (Left) & Benchmark / Re-probe Action (Right) */}
               <div className="flex items-center justify-between gap-2 mt-2 pt-2 border-t border-[rgba(var(--foreground),0.04)] text-[11px]">
                 {/* Left: Unified Capabilities with Info Tooltip on Hover */}
                 <div className="flex items-center gap-1 min-w-0">
@@ -455,15 +447,9 @@ export const RemoteCatalogSection = memo(({
                   )}
                 </div>
 
-                {/* Right: Family Badge (when probed) OR Benchmark Button (when unprobed) */}
+                {/* Right Bottom: Re-probe / Benchmark Button */}
                 <div className="flex items-center gap-1.5 shrink-0">
-                  {probed && model.family && (
-                    <span className="text-[10.5px] font-bold px-2 py-0.5 rounded-md bg-[rgb(var(--accent))]/10 text-[rgb(var(--accent))] border border-[rgba(var(--accent),0.15)] leading-none">
-                      {model.family}
-                    </span>
-                  )}
-
-                  {!probed && !isTesting && (
+                  {!isTesting && (
                     <button
                       type="button"
                       onClick={(e) => {
@@ -471,10 +457,10 @@ export const RemoteCatalogSection = memo(({
                         handleProbeCapabilities(model.id);
                       }}
                       className="text-[11px] font-bold text-[rgb(var(--accent))] px-2.5 py-0.5 rounded-lg bg-[rgb(var(--accent))]/10 border border-[rgb(var(--accent))]/25 hover:bg-[rgb(var(--accent))]/20 transition-all flex items-center gap-1 cursor-pointer"
-                      title={LLM_CATALOG_COPY.runBenchmark}
+                      title={probed ? LLM_CATALOG_COPY.rerunBenchmark : LLM_CATALOG_COPY.runBenchmark}
                     >
                       <Sparkles size={11} />
-                      <span>{LLM_CATALOG_COPY.benchmark}</span>
+                      <span>{probed ? LLM_CATALOG_COPY.reprobe : LLM_CATALOG_COPY.benchmark}</span>
                     </button>
                   )}
                 </div>
@@ -691,6 +677,11 @@ export const RemoteCatalogSection = memo(({
         }
         expandLabel={LLM_CATALOG_COPY.expandLabel}
         ariaLabel={LLM_CATALOG_COPY.catalogAriaLabel}
+        modalSubtitle={
+          activeModalView === "models"
+            ? "Explore, probe, and select remote models for conversation."
+            : "Configure external AI model endpoints and authentication keys."
+        }
         headerActions={<SettingsCommitControls domainId="models" layoutMode={layoutMode} />}
         modalContent={
           activeModalView === "models" ? (

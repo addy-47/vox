@@ -264,10 +264,10 @@ export const Settings: React.FC = () => {
         </div>
       ) : (
         /* ── Mobile & Compact Layout (Single vertical scroll list) ─────────── */
-        <div className="flex-1 flex flex-col min-h-0 overflow-hidden w-full px-2.5 sm:px-4 pt-2 sm:pt-3">
+        <div className="flex-1 flex flex-col min-h-0 overflow-hidden w-full pt-2 sm:pt-3">
 
           <div className="flex-1 w-full relative overflow-hidden flex flex-col min-h-0">
-            <div className="flex-1 w-full overflow-y-auto custom-scrollbar pb-[120px] space-y-4 sm:space-y-5 pr-0.5">
+            <div className="flex-1 w-full overflow-y-auto custom-scrollbar pb-[120px] space-y-4 sm:space-y-5 px-2.5 sm:px-4">
               {[...DOMAINS].sort((a, b) => {
                 const order = ["interaction", "models", "appearance", "working_memory", "personal_memory", "persona"];
                 return order.indexOf(a.id) - order.indexOf(b.id);

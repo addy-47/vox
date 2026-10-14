@@ -490,9 +490,6 @@ export function applyTheme(
   syncGate();
 
   const startValues = readRootTokenValues();
-  const ambEl = document.querySelector(".amb-base"); // TEMP-DIAGNOSTIC: pre-flip backdrop baseline. Revert with probe default.
-  const preAmbImage =
-    ambEl && import.meta.env.DEV ? getComputedStyle(ambEl).backgroundImage.slice(0, 120) : "";
   writeThemeToDom(appearance);
 
   // Drop any masks left by a burst flip so the new theme's literal values
@@ -516,13 +513,6 @@ export function applyTheme(
   // the first interpolated frame. The rAF loop's first tick overwrites them.
   for (const [key, value] of startValues) {
     root.style.setProperty(`--${key}`, value);
-  }
-
-  if (ambEl && import.meta.env.DEV) {
-    const postAmbImage = getComputedStyle(ambEl).backgroundImage.slice(0, 120);
-    console.info(
-      `[theme-flip] #${trace.id} amb-base same-task snap pre!=post: ${preAmbImage !== postAmbImage} pre=${preAmbImage} post=${postAmbImage}`
-    );
   }
 
   animateTokensToNewTheme(startValues, endValues, newAccentInline, THEME_TRANSITION_MS);

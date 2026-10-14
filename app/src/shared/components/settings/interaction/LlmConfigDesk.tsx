@@ -32,7 +32,9 @@ export const LlmConfigDesk = memo(({
   onBack,
   layoutMode,
 }: LlmConfigDeskProps) => {
-  const draftSettings = useSettingsStore((s) => s.draftSettings);
+  const draftLlm = useSettingsStore((s) => s.draftSettings?.llm);
+  const draftChatterboxRemote = useSettingsStore((s) => s.draftSettings?.tts?.chatterbox_remote);
+  const hasDraftSettings = useSettingsStore((s) => Boolean(s.draftSettings));
   const updateDraft = useSettingsStore((s) => s.updateDraft);
 
   const [modelsError, setModelsError] = useState<string | null>(null);
@@ -46,12 +48,12 @@ export const LlmConfigDesk = memo(({
   const [editingKeyValue, setEditingKeyValue] = useState("");
   const [modalView, setModalView] = useState<"providers" | "models">("providers");
 
-  const activeLlmProvider = draftSettings?.llm?.active || "embedded";
+  const activeLlmProvider = draftLlm?.active || "embedded";
   const currentRemoteConfig =
     activeLlmProvider === "server"
-      ? draftSettings?.llm?.server
+      ? draftLlm?.server
       : activeLlmProvider === "cloud"
-      ? draftSettings?.llm?.cloud
+      ? draftLlm?.cloud
       : null;
 
   const currentProvider: LlmProviderConfig = useMemo(() => {
@@ -90,8 +92,8 @@ export const LlmConfigDesk = memo(({
 
 
   const activeCloudProviderId = useMemo(() => {
-    const cloudName = (draftSettings?.llm?.cloud?.provider_name || "").toLowerCase();
-    const cloudUrl = draftSettings?.llm?.cloud?.base_url || "";
+    const cloudName = (draftLlm?.cloud?.provider_name || "").toLowerCase();
+    const cloudUrl = draftLlm?.cloud?.base_url || "";
     const match = CLOUD_PROVIDERS.find(
       (p) =>
         p.id.toLowerCase() === cloudName ||
@@ -99,11 +101,11 @@ export const LlmConfigDesk = memo(({
         (cloudUrl && p.url && cloudUrl.startsWith(p.url))
     );
     return match?.id || "openai";
-  }, [draftSettings?.llm?.cloud?.base_url, draftSettings?.llm?.cloud?.provider_name]);
+  }, [draftLlm?.cloud?.base_url, draftLlm?.cloud?.provider_name]);
 
   const cloudKeys = useMemo(
-    () => draftSettings?.llm?.cloud_keys ?? {},
-    [draftSettings?.llm?.cloud_keys]
+    () => draftLlm?.cloud_keys ?? {},
+    [draftLlm?.cloud_keys]
   );
 
   /** Resolves the stored API key for a cloud provider: explicit keyring entry
@@ -112,9 +114,9 @@ export const LlmConfigDesk = memo(({
   const getProviderKey = useCallback(
     (providerId: string) =>
       cloudKeys[providerId] ||
-      (activeCloudProviderId === providerId ? draftSettings?.llm?.cloud?.api_key : "") ||
+      (activeCloudProviderId === providerId ? draftLlm?.cloud?.api_key : "") ||
       "",
-    [cloudKeys, activeCloudProviderId, draftSettings?.llm?.cloud?.api_key]
+    [cloudKeys, activeCloudProviderId, draftLlm?.cloud?.api_key]
   );
 
   /** Committed (saved) active provider: list order follows this, so selecting
@@ -180,27 +182,27 @@ export const LlmConfigDesk = memo(({
   const url = currentRemoteConfig?.base_url ?? "";
   const apiKey = currentRemoteConfig?.api_key ?? "";
 
-  const remoteTtsEndpoint = draftSettings?.tts?.chatterbox_remote?.endpoint ?? "";
-  const remoteTtsPath = draftSettings?.tts?.chatterbox_remote?.remote_path ?? "";
+  const remoteTtsEndpoint = draftChatterboxRemote?.endpoint ?? "";
+  const remoteTtsPath = draftChatterboxRemote?.remote_path ?? "";
 
   const handleRemoteTtsEndpointChange = useCallback(
     (val: string) => {
       updateDraft("tts", "chatterbox_remote", {
-        ...draftSettings?.tts?.chatterbox_remote,
+        ...draftChatterboxRemote,
         endpoint: val || "http://127.0.0.1:7860",
       });
     },
-    [draftSettings?.tts?.chatterbox_remote, updateDraft]
+    [draftChatterboxRemote, updateDraft]
   );
 
   const handleRemoteTtsPathChange = useCallback(
     (val: string) => {
       updateDraft("tts", "chatterbox_remote", {
-        ...draftSettings?.tts?.chatterbox_remote,
+        ...draftChatterboxRemote,
         remote_path: val || "~/.vox",
       });
     },
-    [draftSettings?.tts?.chatterbox_remote, updateDraft]
+    [draftChatterboxRemote, updateDraft]
   );
 
   const providerBaseUrl = currentProvider.base_url;
@@ -272,53 +274,53 @@ export const LlmConfigDesk = memo(({
     (val: string) => {
       if (activeLlmProvider === "server") {
         updateDraft("llm", "server", {
-          ...draftSettings?.llm?.server,
+          ...draftLlm?.server,
           base_url: val || "http://127.0.0.1:11434",
         });
       } else if (activeLlmProvider === "cloud") {
         updateDraft("llm", "cloud", {
-          ...draftSettings?.llm?.cloud,
+          ...draftLlm?.cloud,
           base_url: val || CLOUD_PROVIDERS[0].url,
         });
       }
     },
-    [activeLlmProvider, draftSettings?.llm?.server, draftSettings?.llm?.cloud, updateDraft]
+    [activeLlmProvider, draftLlm?.server, draftLlm?.cloud, updateDraft]
   );
 
   const handleApiKeyChange = useCallback(
     (key: string) => {
       if (activeLlmProvider === "server") {
         updateDraft("llm", "server", {
-          ...draftSettings?.llm?.server,
+          ...draftLlm?.server,
           api_key: key || null,
         });
       } else if (activeLlmProvider === "cloud") {
         updateDraft("llm", "cloud", {
-          ...draftSettings?.llm?.cloud,
+          ...draftLlm?.cloud,
           api_key: key || null,
         });
       }
     },
-    [activeLlmProvider, draftSettings?.llm?.server, draftSettings?.llm?.cloud, updateDraft]
+    [activeLlmProvider, draftLlm?.server, draftLlm?.cloud, updateDraft]
   );
 
   const handleSelectCloudProvider = useCallback(
     (provider: CloudProvider) => {
-      const keys = draftSettings?.llm?.cloud_keys ?? {};
+      const keys = draftLlm?.cloud_keys ?? {};
       const savedKey = keys[provider.id] || "";
 
       updateDraft("llm", "cloud", {
-        ...draftSettings?.llm?.cloud,
+        ...draftLlm?.cloud,
         base_url: provider.url,
         provider_name: provider.name,
         api_key: savedKey || null,
       });
 
-      if (draftSettings?.llm?.active !== "cloud") {
+      if (draftLlm?.active !== "cloud") {
         updateDraft("llm", "active", "cloud");
       }
     },
-    [draftSettings?.llm?.cloud, draftSettings?.llm?.cloud_keys, draftSettings?.llm?.active, updateDraft]
+    [draftLlm?.cloud, draftLlm?.cloud_keys, draftLlm?.active, updateDraft]
   );
 
   const handleStartInlineEdit = useCallback(
@@ -343,7 +345,7 @@ export const LlmConfigDesk = memo(({
   const handleSaveInlineKey = useCallback(
     (providerId: string) => {
       const trimmed = editingKeyValue.trim();
-      const currentKeys = { ...(draftSettings?.llm?.cloud_keys ?? {}) };
+      const currentKeys = { ...(draftLlm?.cloud_keys ?? {}) };
       if (trimmed) {
         currentKeys[providerId] = trimmed;
       } else {
@@ -360,11 +362,11 @@ export const LlmConfigDesk = memo(({
       }
       const isCurrentlyActive =
         activeCloudProviderId === providerId ||
-        draftSettings?.llm?.cloud?.provider_name?.toLowerCase() === targetProvider.name.toLowerCase();
+        draftLlm?.cloud?.provider_name?.toLowerCase() === targetProvider.name.toLowerCase();
 
       if (isCurrentlyActive) {
         updateDraft("llm", "cloud", {
-          ...draftSettings?.llm?.cloud,
+          ...draftLlm?.cloud,
           base_url: targetProvider.url,
           provider_name: targetProvider.name,
           api_key: trimmed || null,
@@ -374,10 +376,10 @@ export const LlmConfigDesk = memo(({
       setEditingProviderId(null);
       setEditingKeyValue("");
     },
-    [editingKeyValue, draftSettings?.llm?.cloud_keys, draftSettings?.llm?.cloud, activeCloudProviderId, updateDraft]
+    [editingKeyValue, draftLlm?.cloud_keys, draftLlm?.cloud, activeCloudProviderId, updateDraft]
   );
 
-  if (!draftSettings) return null;
+  if (!hasDraftSettings) return null;
 
   /** Inline render helper (NOT a component): defined per-render, so it must be
    * invoked as a function — rendering as <ProviderSearchField /> would remount
@@ -632,10 +634,7 @@ export const LlmConfigDesk = memo(({
         <div className="flex flex-col justify-between h-full gap-2 animate-fade-in">
           {renderHeader(
             <Sparkles size={14} className="text-[rgb(var(--accent))]" />,
-            copy.integrated.title,
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[rgb(var(--accent))]/10 text-[rgb(var(--accent))] uppercase font-mono border border-[rgb(var(--accent))]/20">
-              {copy.integrated.badge}
-            </span>
+            copy.integrated.title
           )}
           <div className="flex-1 flex items-center p-3 rounded-lg bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--accent),0.06)]">
             <p className="text-[11.5px] sm:text-[12px] text-[rgb(var(--foreground-muted))]/85 leading-relaxed font-medium">
@@ -775,6 +774,11 @@ export const LlmConfigDesk = memo(({
             }
             expandLabel={copy.llm.cloud.expandLabel}
             ariaLabel={copy.llm.cloud.expandAriaLabel}
+            modalSubtitle={
+              modalView === "models"
+                ? "Explore, probe, and select remote models for conversation."
+                : "Configure external AI model endpoints and authentication keys."
+            }
             headerActions={
               <div className="flex items-center gap-2 min-w-0">
                 {modalView === "models" ? null : (isSearchOpen || searchQuery ? <div className="w-[200px] sm:w-[260px]">{ProviderSearchField({})}</div> : null)}
@@ -785,12 +789,12 @@ export const LlmConfigDesk = memo(({
               modalView === "models" ? (
                 <RemoteModelsModalView
                   remoteModels={remoteModels}
-                  selectedModelId={draftSettings?.llm?.cloud?.model}
+                  selectedModelId={draftLlm?.cloud?.model}
                   pinnedModelId={committedSettings?.llm?.cloud?.model}
                   probingMap={probingMap}
                   capabilitiesCache={useSettingsStore.getState().capabilitiesCache}
                   onSelectModel={(modelId) => {
-                    const cur = draftSettings?.llm?.cloud;
+                    const cur = draftLlm?.cloud;
                     if (cur) {
                       updateDraft("llm", "cloud", {
                         ...cur,
@@ -869,10 +873,7 @@ export const LlmConfigDesk = memo(({
         renderBlurb(
           <Sparkles size={14} className="text-[rgb(var(--accent))]" />,
           copy.tts.cloud.title,
-          copy.tts.cloud.description,
-          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[rgb(var(--accent))]/10 text-[rgb(var(--accent))] uppercase font-mono border border-[rgb(var(--accent))]/20">
-            {copy.tts.cloud.badge}
-          </span>
+          copy.tts.cloud.description
         )
       )}
     </div>

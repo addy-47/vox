@@ -165,16 +165,16 @@ Unified voice management backed by the local Turso `voices` table, serving bundl
 | Command | Arguments | Return Shape | Behavioral Contract |
 | :--- | :--- | :--- | :--- |
 | `list_voices` | `provider?: string` | `Array<UnifiedVoiceDto>` | Queries unified voice entries from Turso. Filters by provider slug when provided. Seeds manifest voices automatically if the table is empty. |
-| `toggle_voice_favorite` | `voice_id: string` | `boolean` | Toggles favorite status in Turso `voices` table. Returns the new favorite state. |
-| `record_voice_used` | `voice_id: string` | `void` | Updates the `last_used_at` millisecond epoch timestamp in the `voices` table for recents sorting. |
-| `set_active_voice` | `voice_id: string` | `void` | Persists `tts.voice_id` into `settings.jsonc` and updates the usage timestamp in the database. |
-| `synthesize_voice_preview` | `voice_id: string`, `prompt?: string` | `VoicePreviewResult` | Generates or retrieves cached preview audio WAV. Aborts previous in-flight synthesis. Enforces a 120-character prompt ceiling. |
+| `toggle_voice_favorite` | `voiceId: string` | `boolean` | Toggles favorite status in Turso `voices` table. Returns the new favorite state. |
+| `record_voice_used` | `voiceId: string` | `void` | Updates the `last_used_at` millisecond epoch timestamp in the `voices` table for recents sorting. |
+| `set_active_voice` | `voiceId: string` | `void` | Persists `tts.voice_id` into `settings.jsonc` and updates the usage timestamp in the database. |
+| `synthesize_voice_preview` | `voiceId: string`, `prompt?: string`, `engine?: string` | `VoicePreviewResult` | Resolves the voice's owning provider from the Turso `voices` table (`engine` selects the modal context when the row is absent). Catalog providers (supertonic, kokoro) synthesize locally on a blocking thread; reference-clip families (chatterbox, zipvoice, custom) copy their reference audio; Edge voices synthesize online. Aborts previous in-flight synthesis. Enforces a 120-character prompt ceiling. |
 | `sync_remote_voices` | None | `number` | Spawns a background task to fetch remote provider voices (e.g. Edge TTS) and bulk-upserts them into Turso in a single transaction. |
 | `start_backend_recording` | None | `void` | Initiates CPAL microphone capture on a dedicated thread for custom voice cloning. |
 | `stop_backend_recording` | None | `[Array<number>, number]` | Terminates CPAL capture and returns audio PCM f32 samples with the native sample rate. |
-| `add_voice_from_file` | `name: string`, `file_path: string` | `UnifiedVoiceDto` | Validates WAV audio, writes reference sample, pre-bakes speaker embedding tensors, and inserts a custom clone record. |
-| `add_voice_from_recording` | `name: string`, `pcm_f32: Array<number>`, `sample_rate: number` | `UnifiedVoiceDto` | Encodes PCM samples to WAV, pre-bakes speaker embedding tensors, and inserts a custom clone record. |
-| `delete_voice` | `voice_id: string` | `void` | Permanently deletes a custom voice record and its associated directory files. Rejects deletion of bundled or remote voices. |
+| `add_voice_from_file` | `name: string`, `filePath: string` | `UnifiedVoiceDto` | Validates WAV audio, writes reference sample, pre-bakes speaker embedding tensors, and inserts a custom clone record. |
+| `add_voice_from_recording` | `name: string`, `pcmF32: Array<number>`, `sampleRate: number` | `UnifiedVoiceDto` | Encodes PCM samples to WAV, pre-bakes speaker embedding tensors, and inserts a custom clone record. |
+| `delete_voice` | `voiceId: string` | `void` | Permanently deletes a custom voice record and its associated directory files. Rejects deletion of bundled or remote voices. |
 
 ---
 

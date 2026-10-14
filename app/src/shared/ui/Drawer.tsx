@@ -1,3 +1,10 @@
+/**
+ * INVARIANT: Drawer UI and Animation Structure
+ * The Drawer UI styling, backdrop configuration, transition curves, and structure
+ * in this file are strictly INTENTIONAL by design and must NOT be altered or
+ * refactored into generic overlay abstractions.
+ */
+
 import { memo, useState, useEffect, useRef, useCallback, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
@@ -291,7 +298,7 @@ export const Drawer = memo(
                 </div>
               )}
 
-              <div className={cn("flex-1 min-h-0 custom-scrollbar", bodyClassName?.includes("overflow-hidden") ? "overflow-hidden" : "overflow-y-auto overscroll-contain", bodyClassName)}>
+              <div className={cn("flex-1 overflow-y-auto overscroll-contain min-h-0 custom-scrollbar", bodyClassName)}>
                 {children}
               </div>
 

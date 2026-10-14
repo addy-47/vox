@@ -21,15 +21,25 @@ export interface VoiceScopeState {
  * cloud-sync hint — lives in `services/tts/voice.rs` so the frontend never
  * branches on provider id literals (Invariant 6: model agnosticism).
  */
+const SCOPE_CACHE = new Map<string, VoiceScopeDto>();
+
 export function useVoiceScope(engine: string | undefined | null): VoiceScopeState {
-  const [scope, setScope] = useState<VoiceScopeDto>(FALLBACK_SCOPE);
-  const [ready, setReady] = useState(false);
+  const cached = engine ? SCOPE_CACHE.get(engine) : undefined;
+  const [scope, setScope] = useState<VoiceScopeDto>(cached ?? FALLBACK_SCOPE);
+  const [ready, setReady] = useState(Boolean(cached));
 
   useEffect(() => {
+    const key = engine ?? "";
+    if (SCOPE_CACHE.has(key)) {
+      setScope(SCOPE_CACHE.get(key)!);
+      setReady(true);
+      return;
+    }
     let isMounted = true;
-    setReady(false);
+    if (!cached) setReady(false);
     getVoiceScope(engine ?? undefined)
       .then((s) => {
+        SCOPE_CACHE.set(key, s);
         if (isMounted) {
           setScope(s);
           setReady(true);
@@ -44,7 +54,7 @@ export function useVoiceScope(engine: string | undefined | null): VoiceScopeStat
     return () => {
       isMounted = false;
     };
-  }, [engine]);
+  }, [engine, cached]);
 
   return { scope, ready };
 }

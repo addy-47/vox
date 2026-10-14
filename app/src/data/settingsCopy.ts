@@ -137,11 +137,8 @@ export const REALTIME_CONFIG_DESK_COPY = {
   bannerDescPrefix: "Full duplex speech-to-speech engine with ",
   bannerHighlight: "sub-200ms",
   bannerDescSuffix: " live audio streaming, native grounding, and dynamic turn detection.",
-  duplexBadge: "Direct Voice",
   providerLabel: "Voice Provider",
   apiKeyLabel: "API Key (Required)",
-  prevProvider: "Previous provider",
-  nextProvider: "Next provider",
   stages: {
     capture: "Capture",
     think: "Think",
@@ -186,8 +183,6 @@ export const INTERACTION_CARD_COPY = {
 };
 
 export const SETTINGS_COPY = {
-  settingsTitle: "Settings",
-  settingsSubtitle: "System Configuration",
   saveChanges: "Save",
   discardChanges: "Discard",
   changesSaved: "Changes Saved",
@@ -196,25 +191,14 @@ export const SETTINGS_COPY = {
   saveFailedHint: "These settings were rejected by the backend and were not applied:",
   saveFailedNone: "The setting was rejected by the backend and was not applied.",
   restartingEngine: "Restarting Engine",
-  applyingProviderChanges: "Applying provider changes",
   apiKeyRequired: "API Key Required for Cloud Provider",
-  restartRequired: "Restart Required",
   applyAndRestart: "Apply & Restart",
-  willRestartEngine: "Will reload voice engine",
   restoreDefaults: "Restore All Defaults",
   restoreAria: "Restore default settings",
-  restoreConfirmAria: "Confirm restore defaults",
-  restoreConfirmHint: "Click again to reset",
-  confirmRestoreTitle: "Are you sure you want to restore defaults?",
-  confirmRestoreDesc: "This will reset all persona, model, voice, interaction, and system configurations to default factory settings.",
   openDomain: "Open {label} settings",
   closeDomain: "Close {label} settings",
   openAllDomains: "Open all settings",
   closeAllDomains: "Clear all settings",
-  helpGuideTooltip: "Open help & guide",
-  loadingSettings: "Loading Settings...",
-  loadingHint: "Reading hardware and model configurations",
-  initializingEngine: "INITIALIZING CONFIG ENGINE",
 };
 
 export const DICTATION_COPY = {
@@ -224,58 +208,38 @@ export const DICTATION_COPY = {
   destinationTrayDesc: "Renders live transcription in floating desktop HUD window",
   hotkeyTitle: "Activation Hotkey",
   hotkeySubtitle: "Global shortcut to trigger voice typing",
-  editLabel: "Edit",
-  saveLabel: "Save",
   recordingPrompt: "Press shortcut keys...",
-  cancelLabel: "Esc to cancel",
   modePaste: "Paste",
   modeClipboard: "Clipboard",
   modeTray: "Tray",
-  modePasteLong: "Simulated Keystroke Paste",
-  modeClipboardLong: "Clipboard Only Buffer",
-  modeTrayLong: "Floating Desktop HUD",
   triggerContinuous: "Continuous",
   triggerPtt: "Push-To-Talk",
   triggerContinuousSub: "Always Transcribing",
   triggerPttSub: "Hold Hotkey",
   voiceTypingActive: "Ready to Transcribe",
   voiceTypingInactive: "System Muted",
-  outputTitle: "Output",
   rebindHint: "Click to rebind activation shortcut",
   savedFeedback: "Saved!",
-  hotkeyTip: "Hold modifiers (Ctrl, Alt, Shift) then press your key",
   cancelBtn: "Cancel",
   saveBtn: "Save",
   resetDefault: "Reset (Alt+V)",
   defaultHotkey: "Alt+V",
-  recordingActive: "Press shortcut keys...",
 };
 
 export const CATEGORY_SWITCH_COPY = {
-  switchButton: "Switch",
-  switchTooltip: "Switch between hearing (STT), thinking (LLM), and speaking (TTS)",
-  prevCategory: "Previous category",
-  nextCategory: "Next category",
   tabs: {
     stt: "Listening",
-    sttSub: "Speech Recognition",
     llm: "Reasoning",
-    llmSub: "Language Model",
     tts: "Speaking",
-    ttsSub: "Voice Synthesis",
   },
 };
 
 export const PERSONA_COPY = {
   cardTitle: "Persona",
-  instructionMode: "Instruction Mode",
   tabModular: "Modular",
   tabRealtime: "Realtime",
-  viewEdit: "Edit",
-  viewPreview: "Preview",
   modularPlaceholder: "Modular instruction prompt...",
   realtimePlaceholder: "Realtime instruction prompt...",
-  realtimeFooterHint: "Instructions supplied to duplex cloud speech-to-speech models (e.g. Gemini Live).",
   emptyPrompt: "No instructions defined. Switch to Edit to write prompt directives.",
   tagsProtectedHint: "That edit touches protected system tags, so it wasn't saved.",
 };
@@ -283,8 +247,8 @@ export const PERSONA_COPY = {
 export const INTERACTION_CONFIG_DESK_COPY = {
   integrated: {
     title: "Integrated Voice Engine",
-    badge: "Sub-200ms",
     description: "Streaming STT, LLM inference, and TTS audio synthesis run tightly coupled in unified process memory for minimal perceived latency.",
+
   },
   stt: {
     embedded: {
@@ -348,11 +312,9 @@ export const INTERACTION_CONFIG_DESK_COPY = {
     },
     server: {
       title: "Chatterbox GPU Server",
-      nodeLabel: "Speech Node",
       description: "Connect to a remote speech synthesis node.",
       hostLabel: "IP / Domain",
       portLabel: "Port",
-      advancedLabel: "Advanced",
       urlLabel: "Server HTTP URL",
       urlPlaceholder: "http://127.0.0.1:7860",
       pathLabel: "Remote Path",
@@ -360,9 +322,9 @@ export const INTERACTION_CONFIG_DESK_COPY = {
     },
     cloud: {
       title: "Cloud Voice Engine",
-      badge: "Zero Config",
       description: "Natural multi-voice speech synthesis streamed over the web with high-fidelity pronunciation, global accent selection, and zero API key setup.",
     },
+
   },
 };
 
@@ -392,11 +354,9 @@ export const PERSONAL_MEMORY_CONFIG_DESK_COPY = {
     title: "Update Schedule",
     sublabel: "[ 24h format ]",
     description: "How often Vox updates your personal memory notes with new facts learned from conversations.",
-    cadenceLabel: "Schedule",
     manualLabel: "Manual",
     dailyLabel: "Daily",
     timeFormatHint: "24-hour format (HH:MM)",
-    onDemandStatus: "On-demand only",
     noSchedule: "No automatic schedule",
     nextRunLabel: "Next run",
     todayAt: "Today at",
@@ -413,28 +373,22 @@ export const PERSONAL_MEMORY_CONFIG_DESK_COPY = {
   cutoff: {
     title: "Relevance Threshold",
     description: "How closely a memory must match your current conversation to be remembered.",
-    knobLabel: "Threshold",
   },
   suggestions: {
     title: "Suggestion Policy",
     description: "Determine whether extracted memory suggestions require manual review or are automatically applied.",
     manualLabel: "Manual Review",
     autoLabel: "Auto-Apply",
-    manualStatus: "Staged for Review",
-    autoStatus: "Direct Integration",
   },
 };
 
 export const TTS_VOICE_MANAGER_COPY = {
   tabs: {
     selectVoice: "Select Voice",
-    speechSpeed: "Speech Rate",
   },
   voice: {
     title: "Voice Profile",
     prefix: "Choose an AI voice persona from the",
-    suffix: "region to synthesize natural audio responses.",
-    localDescription: "Select an on-device neural voice profile for offline speech synthesis.",
   },
   speed: {
     title: "Speech Rate",
@@ -453,6 +407,7 @@ export const TTS_VOICE_MANAGER_COPY = {
 
 export const VOICE_CATALOG_COPY = {
   title: "Select a Voice",
+  subtitle: "Browse and audition natural voices for speech synthesis.",
   catalogAriaLabel: "Browse all available voices",
   expandLabel: "Expand voice catalog",
   searchPlaceholder: "Search voices...",
@@ -531,7 +486,6 @@ export const LLM_CATALOG_COPY = {
   emptyHint: "Ensure the remote server is online and configured in the Interaction Card.",
   clearSearch: "Clear Search",
   use: "Use",
-  noServer: "No server configured",
   noModelsMatch: "No models matching",
   toolsSupported: "Supported",
   toolsNone: "None",
@@ -560,9 +514,6 @@ export const LLM_CATALOG_COPY = {
   provenanceFamily: "Family estimate",
   provenanceUser: "Your setting",
   provenanceUnknown: "Unknown source",
-  measuredAgo: "ago",
-  measuredToday: "today",
-  staleResult: "stale — re-run Benchmark",
   probeFailedNote: "Probe failed",
   customValidating: "Validating model…",
   customInvalid: "Model not verified — not applied",
@@ -603,7 +554,6 @@ export const MODEL_HUB_COPY = {
   missing: "Missing",
   notDownloadedDesc: "This model file is not downloaded yet.",
   /** Shown under a server/cloud LLM chip, whose weights are not local. */
-  remoteLlm: "Remote endpoint",
   remoteLlmDesc:
     "Running against a remote provider. The saved model identifier is shown below.",
   row: {
@@ -643,10 +593,8 @@ export const LLM_SETTINGS_COPY = {
     description: "Allocate local CPU worker threads for in-process model reasoning.",
     remoteTitleLocal: "Cloud Infrastructure",
     remoteTitleRemote: "Remote Compute",
-    remoteActive: "Active",
     remoteDescription:
       "Inference computation and KV-cache allocation are offloaded entirely to the remote endpoint.",
-    remoteManaged: "Managed",
   },
   tokens: {
     title: "Token Limit",
@@ -666,8 +614,6 @@ export const LLM_SETTINGS_COPY = {
 
 export const APPEARANCE_COPY = {
   cardTitle: "Appearance",
-  darkMode: "Dark Mode",
-  lightMode: "Light Mode",
 } as const;
 
 export const WORKING_MEMORY_SETTINGS_COPY = {

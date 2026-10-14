@@ -52,7 +52,7 @@ export const CLOUD_PROVIDERS: CloudProvider[] = [
   { id: "custom", name: "Custom OpenAI-compatible", url: "https://api.example.com/v1", keyPlaceholder: "API Key / Token", tagline: "Any standard /v1/chat/completions endpoint" },
 ];
 
-export const GeminiLogo = ({
+const GeminiLogo = ({
   active,
   ...props
 }: { active?: boolean } & React.SVGProps<SVGSVGElement>) => (
@@ -65,7 +65,8 @@ export const GeminiLogo = ({
   </svg>
 );
 
-export const DeepgramLogo = ({
+const DeepgramLogo = ({
+
   active,
   ...props
 }: { active?: boolean } & React.SVGProps<SVGSVGElement>) => (

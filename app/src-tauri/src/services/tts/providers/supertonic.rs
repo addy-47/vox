@@ -36,7 +36,7 @@ pub const MODEL_FILE_TTS_SUPER_VOICE: &str = "voice.bin";
 /// Fixed flow-matching step count for Supertonic.
 pub const SUPERTONIC_STEPS: i32 = 12;
 
-struct BiquadFilter {
+pub(crate) struct BiquadFilter {
     b0: f32,
     b1: f32,
     b2: f32,
@@ -50,7 +50,7 @@ struct BiquadFilter {
 
 impl BiquadFilter {
     /// Creates a 2nd-order Butterworth low-pass filter at 11kHz cutoff for 44.1kHz audio.
-    fn new_lpf_11k() -> Self {
+    pub(crate) fn new_lpf_11k() -> Self {
         Self {
             b0: 0.291851,
             b1: 0.583701,
@@ -79,7 +79,7 @@ impl BiquadFilter {
 }
 
 /// Applies 11kHz anti-aliasing filter and resamples 44.1kHz audio down to standard 24kHz.
-fn resample_44100_to_24000(input: &[f32], lpf: &mut BiquadFilter) -> Vec<f32> {
+pub(crate) fn resample_44100_to_24000(input: &[f32], lpf: &mut BiquadFilter) -> Vec<f32> {
     let ratio = SUPER_SAMPLE_RATE as f32 / TTS_SAMPLE_RATE as f32;
     let out_len = (input.len() as f32 / ratio) as usize;
     let mut output = Vec::with_capacity(out_len);
