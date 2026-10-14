@@ -46,7 +46,6 @@ impl Default for AppearanceSettings {
     }
 }
 
-
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default)]
 #[serde(default)]
 pub struct InteractionSettings {

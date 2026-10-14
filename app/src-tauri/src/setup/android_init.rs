@@ -1,8 +1,12 @@
-use std::ffi::c_void;
-use std::sync::{Once, OnceLock};
+use std::{
+    ffi::c_void,
+    sync::{Once, OnceLock},
+};
 
-use jni::objects::{GlobalRef, JObject};
-use jni::sys::{jobject, JNIEnv};
+use jni::{
+    objects::{GlobalRef, JObject},
+    sys::{jobject, JNIEnv},
+};
 
 static ANDROID_APP_ACTIVITY: OnceLock<GlobalRef> = OnceLock::new();
 static ANDROID_INIT_ONCE: Once = Once::new();
@@ -68,6 +72,8 @@ pub unsafe extern "C" fn Java_com_addy_Vox_MainActivity_initAndroidContext(
 
     ANDROID_INIT_ONCE.call_once(|| {
         ndk_context::initialize_android_context(vm_ptr, activity_ptr);
-        log::info!("[AndroidContext] ndk-context successfully initialized with JavaVM and MainActivity");
+        log::info!(
+            "[AndroidContext] ndk-context successfully initialized with JavaVM and MainActivity"
+        );
     });
 }

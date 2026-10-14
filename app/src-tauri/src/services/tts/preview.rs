@@ -111,7 +111,12 @@ impl PreviewSynthesizer {
             let audio_base64 = std::fs::read(&target_path)
                 .ok()
                 .map(|b| base64::Engine::encode(&base64::prelude::BASE64_STANDARD, &b));
-            log::info!("[Preview] Cache hit voice={} duration_ms={} path={}", voice_id, duration_ms, key);
+            log::info!(
+                "[Preview] Cache hit voice={} duration_ms={} path={}",
+                voice_id,
+                duration_ms,
+                key
+            );
             return Ok(VoicePreviewResult {
                 cached: true,
                 path: target_path.to_string_lossy().into_owned(),
@@ -295,13 +300,20 @@ async fn synthesize_for_provider(
 ) -> Result<()> {
     if let Some(clip) = find_reference_clip(voice_id) {
         std::fs::copy(&clip, target_path).context("Failed to copy reference clip")?;
-        log::info!("[Preview] Reference clip voice={} clip={:?}", voice_id, clip);
+        log::info!(
+            "[Preview] Reference clip voice={} clip={:?}",
+            voice_id,
+            clip
+        );
         return Ok(());
     }
     match provider {
         "supertonic" => {
-            let (voice, text_o, target_o) =
-                (voice_id.to_string(), text.to_string(), target_path.to_path_buf());
+            let (voice, text_o, target_o) = (
+                voice_id.to_string(),
+                text.to_string(),
+                target_path.to_path_buf(),
+            );
             tokio::task::spawn_blocking(move || {
                 synthesize_supertonic_preview(&voice, &text_o, speed, threads, &target_o)
             })
@@ -310,8 +322,11 @@ async fn synthesize_for_provider(
             Ok(())
         }
         "kokoro" => {
-            let (voice, text_o, target_o) =
-                (voice_id.to_string(), text.to_string(), target_path.to_path_buf());
+            let (voice, text_o, target_o) = (
+                voice_id.to_string(),
+                text.to_string(),
+                target_path.to_path_buf(),
+            );
             tokio::task::spawn_blocking(move || {
                 synthesize_kokoro_preview(&voice, &text_o, speed, threads, &target_o)
             })
@@ -340,7 +355,9 @@ async fn synthesize_for_provider(
 
 /// Locates a voice's own reference audio when its family ships or stores one.
 fn find_reference_clip(voice_id: &str) -> Option<PathBuf> {
-    let zipvoice_clip = model_dir("tts/zipvoice/voices").join(voice_id).join("clip.wav");
+    let zipvoice_clip = model_dir("tts/zipvoice/voices")
+        .join(voice_id)
+        .join("clip.wav");
     if zipvoice_clip.exists() {
         return Some(zipvoice_clip);
     }
@@ -350,7 +367,9 @@ fn find_reference_clip(voice_id: &str) -> Option<PathBuf> {
     if zipvoice_fp32_clip.exists() {
         return Some(zipvoice_fp32_clip);
     }
-    let clean_chatterbox_id = voice_id.strip_prefix("chatterbox_voice_").unwrap_or(voice_id);
+    let clean_chatterbox_id = voice_id
+        .strip_prefix("chatterbox_voice_")
+        .unwrap_or(voice_id);
     let chatterbox_source = model_dir("tts/chatterbox/voices")
         .join(clean_chatterbox_id)
         .join("source.wav");
@@ -395,8 +414,7 @@ fn synthesize_supertonic_preview(
         },
         ..Default::default()
     };
-    let tts =
-        OfflineTts::create(&config).context("Supertonic preview engine failed to load")?;
+    let tts = OfflineTts::create(&config).context("Supertonic preview engine failed to load")?;
     let sid = resolve_catalog_index(&get_supertonic_voice_profiles(), voice_id);
     let lang = if is_devanagari(text) { "hi" } else { "en" };
     let mut extra = HashMap::new();
@@ -419,7 +437,11 @@ fn synthesize_supertonic_preview(
     }
     write_f32_wav(target_path, &samples_24k, TTS_SAMPLE_RATE)
         .map_err(|e| anyhow::anyhow!("Failed to write preview WAV: {}", e))?;
-    log::info!("[Preview] Supertonic synthesis voice={} sid={}", voice_id, sid);
+    log::info!(
+        "[Preview] Supertonic synthesis voice={} sid={}",
+        voice_id,
+        sid
+    );
     Ok(())
 }
 

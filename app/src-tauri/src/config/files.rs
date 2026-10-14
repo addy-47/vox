@@ -3,8 +3,8 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 use super::settings::{
-    AppearanceSettings, InteractionSettings, PersonaSettings,
-    PersonalMemorySettings, RealtimeSettings, SystemSettings, VoxSettings, WorkingMemorySettings,
+    AppearanceSettings, InteractionSettings, PersonaSettings, PersonalMemorySettings,
+    RealtimeSettings, SystemSettings, VoxSettings, WorkingMemorySettings,
 };
 use crate::{
     core::defaults::{

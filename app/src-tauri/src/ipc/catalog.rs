@@ -291,7 +291,10 @@ pub async fn list_favorite_models(
         .connect()
         .map_err(|e| VoxIpcError::Database(e.to_string()))?;
     let mut rows = conn
-        .query("SELECT id FROM favorite_models ORDER BY created_at DESC", ())
+        .query(
+            "SELECT id FROM favorite_models ORDER BY created_at DESC",
+            (),
+        )
         .await
         .map_err(|e| VoxIpcError::Database(e.to_string()))?;
     let mut model_ids = Vec::new();
@@ -315,7 +318,9 @@ pub async fn toggle_model_favorite(
 ) -> Result<bool, VoxIpcError> {
     let model_id = model_id.trim();
     if model_id.is_empty() {
-        return Err(VoxIpcError::InvalidArgument("model_id cannot be empty".to_string()));
+        return Err(VoxIpcError::InvalidArgument(
+            "model_id cannot be empty".to_string(),
+        ));
     }
     let conn = state
         .db
@@ -334,12 +339,9 @@ pub async fn toggle_model_favorite(
         .map_err(|e| VoxIpcError::Database(e.to_string()))?
     {
         let matched_id: String = row.get(0).unwrap_or_else(|_| model_id.to_string());
-        conn.execute(
-            "DELETE FROM favorite_models WHERE id = ?",
-            (matched_id,),
-        )
-        .await
-        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
+        conn.execute("DELETE FROM favorite_models WHERE id = ?", (matched_id,))
+            .await
+            .map_err(|e| VoxIpcError::Database(e.to_string()))?;
         log::info!("[Catalog::IPC] Model unfavorited: {}", model_id);
         Ok(false)
     } else {

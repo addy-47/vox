@@ -21,9 +21,9 @@ use crate::{
     pipeline::{dictation::DictationInteractionMode, router::spawn_router, target_window},
     services::{
         audio::{
-            detect_audio_output_mode, spawn_audio_route_watcher,
+            detect_audio_output_mode,
             playback::{PlaybackEngineHandles, PlaybackTelemetryHandles},
-            AudioStream, PlaybackEngine,
+            spawn_audio_route_watcher, AudioStream, PlaybackEngine,
         },
         llm::{
             actor::{cool_down_llm, warm_up_llm, LlmWarmUpHandles},
@@ -187,7 +187,10 @@ pub async fn start_audio_engine<R: tauri::Runtime + 'static>(
             InteractionOwner::Assistant => s.interaction.mode,
         };
         let audio_mode = detect_audio_output_mode();
-        log::info!("[Core::Engine] Auto-detected audio output route: {:?}", audio_mode);
+        log::info!(
+            "[Core::Engine] Auto-detected audio output route: {:?}",
+            audio_mode
+        );
         (
             s.vad.threshold,
             s.vad.ptt_noise_gate,
@@ -294,19 +297,14 @@ pub async fn start_audio_engine<R: tauri::Runtime + 'static>(
     let stt_handle = spawn_stt_worker(stt_channels, stt_provider, stt_handles)
         .map_err(|e| format!("[Core::Engine] Failed to spawn STT worker: {}", e))?;
 
-    let audio_stream = AudioStream::new(
-        producer,
-        Arc::clone(&state.pipeline.ingestion_gate),
-    )
-    .map_err(|e| e.to_string())?;
+    let audio_stream = AudioStream::new(producer, Arc::clone(&state.pipeline.ingestion_gate))
+        .map_err(|e| e.to_string())?;
     audio_stream.start().map_err(|e| e.to_string())?;
 
     let playback_engine = create_playback_engine(state, vox_event_tx.clone())?;
     let orchestrator_handle = spawn_router(app.clone(), vox_event_rx)?;
-    let route_watcher_handle = spawn_audio_route_watcher(
-        vad_tx.clone(),
-        Arc::clone(&state.pipeline.engine_shutdown),
-    );
+    let route_watcher_handle =
+        spawn_audio_route_watcher(vad_tx.clone(), Arc::clone(&state.pipeline.engine_shutdown));
 
     *lock = Some(VoxEngine {
         audio_stream,

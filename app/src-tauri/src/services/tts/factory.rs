@@ -74,8 +74,7 @@ pub fn create_tts_provider(
     match &provider_config {
         TtsProviderConfig::Supertonic => {
             log::info!("[TTS Factory] Initializing Supertonic engine");
-            let voice =
-                resolve_catalog_index(&get_supertonic_voice_profiles(), &settings.voice_id);
+            let voice = resolve_catalog_index(&get_supertonic_voice_profiles(), &settings.voice_id);
             SupertonicEngine::new(super_tts_path, voice, speed, num_threads)
                 .map(|e| Box::new(e) as Box<dyn TtsProvider>)
                 .map_err(|e| format!("Failed to create Supertonic engine: {}", e))

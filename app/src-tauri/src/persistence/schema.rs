@@ -281,15 +281,34 @@ async fn ensure_voice_metadata_columns(conn: &Connection) -> Result<()> {
     }
 
     // Drop redundant tables if created by intermediate passes
-    conn.execute("DROP TABLE IF EXISTS voice_favorites;", ()).await?;
-    conn.execute("DROP TABLE IF EXISTS voice_recents;", ()).await?;
-    conn.execute("DROP TABLE IF EXISTS remote_voice_cache;", ()).await?;
+    conn.execute("DROP TABLE IF EXISTS voice_favorites;", ())
+        .await?;
+    conn.execute("DROP TABLE IF EXISTS voice_recents;", ())
+        .await?;
+    conn.execute("DROP TABLE IF EXISTS remote_voice_cache;", ())
+        .await?;
 
     // Create indexes now that all columns are guaranteed to exist
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_voices_provider ON voices(provider_id);", ()).await?;
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_voices_source ON voices(source_kind);", ()).await?;
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_voices_favorite ON voices(is_favorite);", ()).await?;
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_voices_last_used ON voices(last_used_at DESC);", ()).await?;
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_voices_provider ON voices(provider_id);",
+        (),
+    )
+    .await?;
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_voices_source ON voices(source_kind);",
+        (),
+    )
+    .await?;
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_voices_favorite ON voices(is_favorite);",
+        (),
+    )
+    .await?;
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_voices_last_used ON voices(last_used_at DESC);",
+        (),
+    )
+    .await?;
 
     conn.execute(
         "CREATE TABLE IF NOT EXISTS favorite_models (

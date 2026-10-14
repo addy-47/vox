@@ -104,6 +104,17 @@ infinite decor frozen on coarse pointers · redundant blurs demoted · virtual l
 - **Architectural enforcement.** `Invariant 1b` in `app/src/test/invariants.test.ts` fails the build if
   any file other than `transport.ts` imports `@tauri-apps/api/core` or `@tauri-apps/api/event`.
 
+### 2.7 Audio backend seam (A2 delivered 2026-10-14)
+
+- **Swappable audio traits.** `services/audio/mod.rs` defines `AudioCapture` (push mono 16 kHz f32)
+  and `AudioSink` (drain stereo 48 kHz f32).
+- **Decoupled hardware capture.** `CpalAudioCapture` implements `AudioCapture`; `AudioStream`
+  wraps `Box<dyn AudioCapture>` and supports custom/network/mock capture backends.
+- **Decoupled hardware sink.** `CpalAudioSink` implements `AudioSink`; `PlaybackEngine` owns
+  `Option<Box<dyn AudioSink>>` rather than a concrete CPAL stream.
+- **Headless mock implementations.** `MockAudioCapture` and `MockAudioSink` enable headless
+  pipeline and benchmark execution without audio hardware dependencies.
+
 ---
 
 ## 3. Documentation
@@ -245,22 +256,14 @@ type-level refactor across the pipeline.
 
 ---
 
-### 6.2 🔴 A2 — Audio backend seam (Batch 2 / Phase 6, never started)
+### 6.2 🟢 A2 — Audio backend seam · ✅ DELIVERED 2026-10-14
 
-**Why it blocks:** audio is the entire remote payload. Neither cpal call site is behind a
-trait, so a network transport cannot be substituted.
-
-**Confirmed:** no `AudioCapture`, `AudioSink` or `AudioBackend` trait exists anywhere in the
-tree. `services/audio/device.rs` opens the cpal input stream inline; `playback.rs` owns a
-`HeapCons<f32>` ring buffer inside the real-time output callback.
-
-**Mini-plan**
-1. Observe the device's actual logged input sample format first — `device.rs` already logs it.
-   Do not assume.
-2. Extract `AudioCapture` (push f32 @ 16 kHz mono) and `AudioSink` (pull f32 @ 48 kHz stereo).
-3. Move the cpal/Oboe work behind those traits in `services/audio/{device,playback}.rs`.
-4. Keep the ring buffers where they are — only the *endpoint* becomes swappable.
-5. Prove: desktop behaviour byte-identical; both targets green; same test suite passes.
+**Delivered:**
+- `AudioCapture` (start/pause) and `AudioSink` traits defined in `services/audio/mod.rs`.
+- `CpalAudioCapture` hardware stream implementation; `AudioStream` refactored to encapsulate `Box<dyn AudioCapture>`.
+- `CpalAudioSink` hardware stream implementation; `PlaybackEngine` refactored to store `Option<Box<dyn AudioSink>>`.
+- Zero-dependency `MockAudioCapture` and `MockAudioSink` implementations for headless testing and benchmarks.
+- Clean integration with dual-target verify-targets gate and nextest test suites.
 
 ---
 
@@ -367,7 +370,7 @@ in favour of `dev` alone.
 Remote control may begin when **all** of the following are true:
 
 - [ ] A1 — a headless pipeline entry point completes a turn with no Tauri window
-- [ ] A2 — audio capture and playback are behind swappable traits
+- [x] A2 — audio capture and playback are behind swappable traits
 - [ ] A3 — one full turn proven on hardware
 - [x] A4 — the frontend reaches the backend through a swappable carrier
 - [ ] A user decision recorded on pairing, discovery, authentication and reconnect

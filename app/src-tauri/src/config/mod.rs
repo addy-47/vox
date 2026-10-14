@@ -18,10 +18,10 @@ pub use files::{
 };
 pub use mutation::apply_setting_mutation;
 pub use settings::{
-    get_preset_colors, AppearanceSettings, AudioOutputMode,
-    DeepgramVoiceAgentConfig, ElevenLabsConvaiConfig, GeminiRealtimeConfig, InteractionSettings,
-    OpenAiRealtimeConfig, PersonaSettings, PersonalMemorySettings, RealtimeProviderKind,
-    RealtimeSettings, SystemSettings, VoxSettings, WorkingMemorySettings,
+    get_preset_colors, AppearanceSettings, AudioOutputMode, DeepgramVoiceAgentConfig,
+    ElevenLabsConvaiConfig, GeminiRealtimeConfig, InteractionSettings, OpenAiRealtimeConfig,
+    PersonaSettings, PersonalMemorySettings, RealtimeProviderKind, RealtimeSettings,
+    SystemSettings, VoxSettings, WorkingMemorySettings,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]

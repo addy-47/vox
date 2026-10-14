@@ -77,9 +77,7 @@ pub async fn get_voice_scope(engine: Option<String>) -> Result<VoiceScopeDto, Vo
 
 /// Background non-blocking sync for remote voices (e.g. Edge TTS).
 #[tauri::command]
-pub async fn sync_remote_voices(
-    state: State<'_, Arc<AppState>>,
-) -> Result<usize, VoxIpcError> {
+pub async fn sync_remote_voices(state: State<'_, Arc<AppState>>) -> Result<usize, VoxIpcError> {
     let conn = state
         .db
         .connect()
@@ -147,20 +145,22 @@ pub async fn toggle_voice_favorite(
             "voice_id must be 1..256 chars".to_string(),
         ));
     }
-    log::info!("[Voices::IPC] toggle_voice_favorite requested for voice_id='{}'", id);
-    let conn = state
-        .db
-        .connect()
-        .map_err(|e| {
-            log::error!("[Voices::IPC] Failed to connect to DB: {}", e);
-            VoxIpcError::Database(e.to_string())
-        })?;
-    let result = voices::toggle_favorite(&conn, &id)
-        .await
-        .map_err(|e| {
-            log::error!("[Voices::IPC] toggle_favorite failed for id='{}': {}", id, e);
-            VoxIpcError::Database(format!("Failed to toggle favorite: {}", e))
-        })?;
+    log::info!(
+        "[Voices::IPC] toggle_voice_favorite requested for voice_id='{}'",
+        id
+    );
+    let conn = state.db.connect().map_err(|e| {
+        log::error!("[Voices::IPC] Failed to connect to DB: {}", e);
+        VoxIpcError::Database(e.to_string())
+    })?;
+    let result = voices::toggle_favorite(&conn, &id).await.map_err(|e| {
+        log::error!(
+            "[Voices::IPC] toggle_favorite failed for id='{}': {}",
+            id,
+            e
+        );
+        VoxIpcError::Database(format!("Failed to toggle favorite: {}", e))
+    })?;
     log::info!(
         "[Voices::IPC] toggle_voice_favorite for id='{}' succeeded -> is_favorite={}",
         id,
@@ -203,13 +203,14 @@ pub async fn set_active_voice(
         ));
     }
     {
-        let mut settings = state.settings.write().map_err(|e| {
-            VoxIpcError::Internal(format!("Settings lock poisoned: {}", e))
-        })?;
+        let mut settings = state
+            .settings
+            .write()
+            .map_err(|e| VoxIpcError::Internal(format!("Settings lock poisoned: {}", e)))?;
         settings.tts.voice_id = id.clone();
-        settings.save().map_err(|e| {
-            VoxIpcError::Internal(format!("Failed to persist active voice: {}", e))
-        })?;
+        settings
+            .save()
+            .map_err(|e| VoxIpcError::Internal(format!("Failed to persist active voice: {}", e)))?;
     }
     let conn = state
         .db
@@ -408,10 +409,7 @@ pub async fn add_voice_from_recording(
 
 /// Delete a cloned voice by ID.
 #[tauri::command]
-pub async fn delete_voice(
-    id: String,
-    state: State<'_, Arc<AppState>>,
-) -> Result<(), VoxIpcError> {
+pub async fn delete_voice(id: String, state: State<'_, Arc<AppState>>) -> Result<(), VoxIpcError> {
     let conn = state
         .db
         .connect()

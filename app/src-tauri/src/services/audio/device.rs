@@ -11,24 +11,55 @@ use cpal::{
 use ringbuf::{traits::*, HeapCons};
 
 use super::{
-    sink::PlaybackStreamContext, PlaybackEngineHandles, PlaybackTelemetryHandles,
-    INGESTION_BUFFER_CAPACITY_SAMPLES, INGESTION_OVERFLOW_LOG_INTERVAL, PLAYBACK_CHANNELS,
-    PLAYBACK_SAMPLE_RATE, SAMPLE_RATE,
+    sink::PlaybackStreamContext, AudioCapture, AudioSink, MockAudioCapture, PlaybackEngineHandles,
+    PlaybackTelemetryHandles, INGESTION_BUFFER_CAPACITY_SAMPLES, INGESTION_OVERFLOW_LOG_INTERVAL,
+    PLAYBACK_CHANNELS, PLAYBACK_SAMPLE_RATE, SAMPLE_RATE,
 };
-/// Manages the low-level CPAL hardware audio stream for microphone capture.
+
+/// Hardware audio capture implementation wrapping a live CPAL input stream.
+pub struct CpalAudioCapture {
+    stream: cpal::Stream,
+}
+
+unsafe impl Send for CpalAudioCapture {}
+unsafe impl Sync for CpalAudioCapture {}
+
+impl AudioCapture for CpalAudioCapture {
+    fn start(&self) -> Result<()> {
+        log::info!("[Audio::Device] Starting hardware ingestion");
+        self.stream
+            .play()
+            .map_err(|e| anyhow!("Failed to start ingestion stream: {}", e))
+    }
+
+    fn pause(&self) -> Result<()> {
+        log::info!("[Audio::Device] Pausing hardware ingestion");
+        self.stream
+            .pause()
+            .map_err(|e| anyhow!("Failed to pause ingestion stream: {}", e))
+    }
+}
+
+impl Drop for CpalAudioCapture {
+    fn drop(&mut self) {
+        log::info!("[Audio::Device] Dropping hardware stream. Ensuring mic is released");
+        if let Err(e) = self.stream.pause() {
+            log::warn!("[Audio::Device] Failed to pause stream on drop: {}", e);
+        }
+    }
+}
+
+/// Manages the low-level audio ingestion stream for microphone capture via a pluggable AudioCapture backend.
 pub struct AudioStream {
-    _stream: Option<cpal::Stream>,
+    capture: Box<dyn AudioCapture>,
 }
 
 unsafe impl Send for AudioStream {}
 unsafe impl Sync for AudioStream {}
 
 impl AudioStream {
-    /// Creates and configures a new hardware audio ingestion stream.
-    pub fn new<P>(
-        producer: P,
-        ingestion_gate: Arc<AtomicBool>,
-    ) -> Result<Self>
+    /// Creates and configures a new hardware audio ingestion stream using CPAL.
+    pub fn new<P>(producer: P, ingestion_gate: Arc<AtomicBool>) -> Result<Self>
     where
         P: Producer<Item = f32> + Send + 'static,
     {
@@ -55,34 +86,36 @@ impl AudioStream {
             ingestion_gate,
         )?;
         Ok(Self {
-            _stream: Some(stream),
+            capture: Box::new(CpalAudioCapture { stream }),
         })
+    }
+
+    /// Creates an AudioStream from an arbitrary AudioCapture trait object (network, mock, etc.).
+    pub fn from_capture(capture: Box<dyn AudioCapture>) -> Self {
+        Self { capture }
     }
 
     /// Creates a mock AudioStream for integration testing without audio hardware.
     pub fn mock() -> Self {
-        Self { _stream: None }
+        Self {
+            capture: Box::new(MockAudioCapture),
+        }
     }
 
     /// Starts the hardware audio stream.
     pub fn start(&self) -> Result<()> {
-        if let Some(ref stream) = self._stream {
-            log::info!("[Audio::Device] Starting hardware ingestion");
-            stream.play()?;
-        }
-        Ok(())
+        self.capture.start()
+    }
+
+    /// Pauses the hardware audio stream.
+    pub fn pause(&self) -> Result<()> {
+        self.capture.pause()
     }
 }
 
 impl Drop for AudioStream {
-    /// Ensures the hardware stream is paused cleanly when dropping.
     fn drop(&mut self) {
-        log::info!("[Audio::Device] Dropping hardware stream. Ensuring mic is released");
-        if let Some(ref stream) = self._stream {
-            if let Err(e) = stream.pause() {
-                log::warn!("[Audio::Device] Failed to pause stream on drop: {}", e);
-            }
-        }
+        let _ = self.capture.pause();
     }
 }
 
@@ -211,6 +244,16 @@ pub fn resolve_output_device_and_config(host: &cpal::Host) -> Result<(cpal::Devi
     Ok((device, config))
 }
 
+/// Concrete hardware audio playback sink wrapping a live CPAL stream.
+pub struct CpalAudioSink {
+    _stream: cpal::Stream,
+}
+
+unsafe impl Send for CpalAudioSink {}
+unsafe impl Sync for CpalAudioSink {}
+
+impl AudioSink for CpalAudioSink {}
+
 /// Builds and starts the CPAL 48kHz stereo output stream with the sacred callback sink.
 pub fn build_output_stream(
     consumer: HeapCons<f32>,
@@ -218,7 +261,7 @@ pub fn build_output_stream(
     discard_request: Arc<AtomicBool>,
     turn_armed: Arc<AtomicBool>,
     telemetry: &PlaybackTelemetryHandles,
-) -> Result<cpal::Stream> {
+) -> Result<Box<dyn AudioSink>> {
     let host = resolve_audio_host();
     let (device, config) = resolve_output_device_and_config(&host)?;
 
@@ -246,5 +289,32 @@ pub fn build_output_stream(
         PLAYBACK_SAMPLE_RATE
     );
 
-    Ok(stream)
+    Ok(Box::new(CpalAudioSink { _stream: stream }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::services::audio::{MockAudioCapture, MockAudioSink};
+
+    #[test]
+    fn test_audio_stream_mock_lifecycle() {
+        let stream = AudioStream::mock();
+        assert!(stream.start().is_ok());
+        assert!(stream.pause().is_ok());
+    }
+
+    #[test]
+    fn test_audio_stream_custom_capture() {
+        let capture = Box::new(MockAudioCapture);
+        let stream = AudioStream::from_capture(capture);
+        assert!(stream.start().is_ok());
+        assert!(stream.pause().is_ok());
+    }
+
+    #[test]
+    fn test_audio_sink_mock() {
+        let sink: Box<dyn AudioSink> = Box::new(MockAudioSink);
+        drop(sink);
+    }
 }

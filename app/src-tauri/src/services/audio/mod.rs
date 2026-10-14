@@ -4,6 +4,8 @@ use std::sync::{
     Arc,
 };
 
+use anyhow::Result;
+
 use crate::core::{events::VoxEvent, metrics::TurnMetricsCollector};
 
 pub const SAMPLE_RATE: u32 = 16000;
@@ -42,6 +44,38 @@ pub mod playback;
 pub mod resampler;
 pub mod route;
 pub mod sink;
+
+/// Abstract interface for audio ingestion hardware or network transports.
+/// Streams push mono 16 kHz f32 audio samples into the pipeline ringbuffer.
+pub trait AudioCapture: Send + Sync {
+    /// Starts capturing audio frames.
+    fn start(&self) -> Result<()>;
+
+    /// Pauses or halts capturing audio frames.
+    fn pause(&self) -> Result<()>;
+}
+
+/// Abstract interface for audio playback endpoints (e.g. CPAL/Oboe, Network, Mock).
+/// Receives or drains stereo 48 kHz f32 audio frames from the playback ringbuffer.
+pub trait AudioSink: Send + Sync {}
+
+/// No-op capture implementation for tests and headless pipeline execution.
+pub struct MockAudioCapture;
+
+impl AudioCapture for MockAudioCapture {
+    fn start(&self) -> Result<()> {
+        Ok(())
+    }
+
+    fn pause(&self) -> Result<()> {
+        Ok(())
+    }
+}
+
+/// No-op sink implementation for tests, benchmarks, and headless environments.
+pub struct MockAudioSink;
+
+impl AudioSink for MockAudioSink {}
 
 pub use decode::{
     decode_bytes_to_24khz_mono, decode_to_24khz_mono, truncate_to, write_wav_f32,

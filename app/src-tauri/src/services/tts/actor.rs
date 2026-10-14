@@ -112,10 +112,9 @@ pub fn spawn_tts_worker(
                                 "[TTS Worker] All jobs drained and no audio armed/queued for turn {} — emitting PlaybackFinished to unblock latch",
                                 turn_id
                             );
-                            let _ = handles.event_tx.send(VoxEvent::PlaybackFinished {
-                                turn_id,
-                                intent,
-                            });
+                            let _ = handles
+                                .event_tx
+                                .send(VoxEvent::PlaybackFinished { turn_id, intent });
                         }
                     }
                 }
