@@ -11,20 +11,14 @@ import {
   ArrowDownAZ,
   ArrowUpZA,
   Clock,
-  Cpu,
-  Edit3,
   Filter,
-  Globe,
   Heart,
   Languages,
   Loader2,
   Mic,
-  Pause,
-  Play,
   Plus,
   Search,
   Sparkles,
-  Users,
   X,
 } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
@@ -35,6 +29,7 @@ import type { UseVoiceCatalogResult } from "@/shared/hooks/useVoiceCatalog";
 import { useLenisScrollContainer } from "@/shared/hooks/useLenisScrollContainer";
 import { VoiceCard } from "./VoiceCard";
 import { CloneVoiceDrawer } from "./CloneVoiceDrawer";
+import { VoicePreviewBanner } from "./VoicePreviewBanner";
 
 export interface VoiceCatalogModalViewProps {
   catalog: UseVoiceCatalogResult;
@@ -53,36 +48,6 @@ type Sort = "az" | "za";
 
 function isEnglish(v: UnifiedVoiceDto): boolean {
   return v.locale.toLowerCase().startsWith("en");
-}
-
-function tagLabel(tag?: string | null): string {
-  if (!tag) return "";
-  const t = tag.trim();
-  if (!t) return t;
-  return t.charAt(0).toUpperCase() + t.slice(1);
-}
-
-function getVoiceWaveform(voiceId: string, count = 44): number[] {
-  let hash = 0;
-  for (let i = 0; i < voiceId.length; i++) {
-    hash = (hash << 5) - hash + voiceId.charCodeAt(i);
-    hash |= 0;
-  }
-  const bars: number[] = [];
-  for (let i = 0; i < count; i++) {
-    const x = Math.sin((i + 1) * 0.45 + Math.abs(hash % 41)) * 10000;
-    const rand = x - Math.floor(x);
-    const envelope = Math.sin((i / (count - 1)) * Math.PI);
-    const height = Math.max(0.2, Math.min(1.0, 0.22 + rand * 0.7 * (0.35 + envelope * 0.65)));
-    bars.push(height);
-  }
-  return bars;
-}
-
-function formatTime(seconds: number): string {
-  const m = Math.floor(seconds / 60);
-  const s = Math.floor(seconds % 60);
-  return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
 export const VoiceCatalogModalView = memo(
@@ -116,8 +81,6 @@ export const VoiceCatalogModalView = memo(
     const [accent, setAccent] = useState<"english" | "multilingual" | null>(null);
     const [sort, setSort] = useState<Sort>("az");
     const [isCloneDrawerOpen, setIsCloneDrawerOpen] = useState(false);
-    const [isEditingPrompt, setIsEditingPrompt] = useState(false);
-    const [customPromptInput, setCustomPromptInput] = useState(previewPrompt);
     const [isFilterDropdownOpen, setIsFilterDropdownOpen] = useState(false);
     const filterDropdownRef = useRef<HTMLDivElement>(null);
 
@@ -151,11 +114,8 @@ export const VoiceCatalogModalView = memo(
     }, [scope, gender, accent]);
 
 
-    // Canonical smooth scroll (SSOT hook — inertial wheel glide, native touch
-    // momentum). The inner content wrapper is the Lenis content element.
     const { containerRef, scrollToTop } =
       useLenisScrollContainer<HTMLDivElement>();
-    const scrubberRef = useRef<HTMLDivElement>(null);
 
     // Reset scroll only once the debounced filter settles — never per keystroke.
     useEffect(() => {
@@ -237,17 +197,6 @@ export const VoiceCatalogModalView = memo(
       [toggleFavorite]
     );
 
-    const handleScrubberClick = useCallback(
-      (e: React.MouseEvent<HTMLDivElement>) => {
-        if (!scrubberRef.current) return;
-        const rect = scrubberRef.current.getBoundingClientRect();
-        const clickX = e.clientX - rect.left;
-        const fraction = Math.max(0, Math.min(1, clickX / rect.width));
-        seekPreview(fraction);
-      },
-      [seekPreview]
-    );
-
     const handleVoiceCreated = useCallback(
       (newVoice: UnifiedVoiceDto) => {
         reload();
@@ -256,14 +205,6 @@ export const VoiceCatalogModalView = memo(
       },
       [reload, stageVoice, togglePreview]
     );
-
-    const handleSavePrompt = useCallback(() => {
-      setPreviewPrompt(customPromptInput);
-      setIsEditingPrompt(false);
-      if (staged && stagedPlaying) {
-        togglePreview(staged);
-      }
-    }, [customPromptInput, setPreviewPrompt, staged, stagedPlaying, togglePreview]);
 
     const handleResetFilters = useCallback(() => {
       setSearch("");
@@ -281,11 +222,6 @@ export const VoiceCatalogModalView = memo(
         ? [{ id: "custom" as Scope, label: VOICE_CATALOG_COPY.cloned, count: counts.custom, Icon: Sparkles }]
         : []),
     ];
-
-    const waveformBars = useMemo(
-      () => (staged ? getVoiceWaveform(staged.id, 46) : []),
-      [staged]
-    );
 
     return (
       <div className="flex flex-col h-full min-h-0 gap-3.5">
@@ -316,7 +252,7 @@ export const VoiceCatalogModalView = memo(
 
             {/* Compact Filter Menu Popover */}
             {isFilterDropdownOpen && (
-              <div className="absolute left-0 top-full mt-2 z-50 w-72 max-h-[75vh] overflow-y-auto rounded-2xl bg-[rgba(var(--card),0.96)] backdrop-blur-xl border border-[rgba(var(--foreground),0.12)] shadow-2xl p-3.5 flex flex-col gap-3 custom-scrollbar animate-fade-in">
+              <div className="absolute left-0 top-full mt-2 z-50 w-72 max-h-[75vh] overflow-y-auto rounded-xl bg-[rgba(var(--card),0.96)] backdrop-blur-xl border border-[rgba(var(--foreground),0.12)] shadow-2xl p-3.5 flex flex-col gap-3 custom-scrollbar animate-fade-in">
                 <div className="flex items-center justify-between pb-2 border-b border-[rgba(var(--foreground),0.06)]">
                   <span className="text-[13px] font-bold text-[rgb(var(--foreground))]">
                     {VOICE_CATALOG_COPY.filtersTitle}
@@ -669,10 +605,12 @@ export const VoiceCatalogModalView = memo(
                     favorited={v.is_favorite}
                     previewPlaying={playingId === v.id}
                     isSynthesizing={isSynthesizing && playingId === v.id}
+                    previewProgress={playingId === v.id ? previewProgress : 0}
                     previewDisabled={!v.has_preview && sessionBusy}
                     onSelect={handleCardSelect}
                     onToggleFavorite={handleCardFavorite}
                     onPreview={handleCardPreview}
+                    onSeekPreview={seekPreview}
                   />
                 ))}
               </div>
@@ -681,217 +619,21 @@ export const VoiceCatalogModalView = memo(
           </div>
         </div>
 
-        {/* Longer, Spacious Bottom Preview Banner */}
-        {staged && (
-          <div className="shrink-0 rounded-2xl border border-[rgba(var(--foreground),0.08)] bg-[rgba(var(--card),0.75)] backdrop-blur-xl p-4 sm:p-5 flex flex-col md:flex-row items-center gap-5 sm:gap-6 shadow-lg">
-            {/* Left: Prominent Circular Play Sphere with accent glow */}
-            <button
-              type="button"
-              disabled={!staged.has_preview && sessionBusy}
-              onClick={() => togglePreview(staged)}
-              aria-label={stagedPlaying ? "Pause preview" : `Preview ${staged.name}`}
-              className={cn(
-                "w-16 h-16 rounded-full flex items-center justify-center shrink-0 transition-all shadow-md",
-                !staged.has_preview && sessionBusy
-                  ? "bg-[rgba(var(--foreground),0.04)] text-[rgb(var(--foreground-muted))]/30 cursor-not-allowed"
-                  : stagedPlaying
-                    ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] shadow-[0_0_24px_rgba(var(--accent),0.45)] scale-105"
-                    : "bg-[rgba(var(--foreground),0.06)] text-[rgb(var(--foreground))] hover:bg-[rgb(var(--accent))] hover:text-[rgb(var(--accent-foreground))] hover:shadow-[0_0_16px_rgba(var(--accent),0.3)] hover:scale-105 active:scale-95 cursor-pointer"
-              )}
-            >
-              {isSynthesizing && stagedPlaying ? (
-                <Loader2 size={24} className="animate-spin" />
-              ) : stagedPlaying ? (
-                <Pause size={24} />
-              ) : (
-                <Play size={24} className="ml-1" />
-              )}
-            </button>
-
-            {/* Middle: Voice Title, Description, Meta Tags, and Waveform Scrubber */}
-            <div className="flex-1 min-w-0 flex flex-col gap-2.5 w-full">
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex items-baseline gap-2.5 min-w-0">
-                  <span className="font-bold text-[17px] text-[rgb(var(--foreground))] truncate font-sans tracking-tight">
-                    {staged.name}
-                  </span>
-                  <span className="text-[13px] text-[rgb(var(--foreground-muted))] truncate hidden sm:inline leading-relaxed">
-                    {staged.description || VOICE_CATALOG_COPY.fallbackDescription}
-                  </span>
-                </div>
-
-                <div className="flex items-center gap-2 shrink-0">
-                  {staged.source_kind !== "custom" && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setCustomPromptInput(previewPrompt);
-                        setIsEditingPrompt(true);
-                      }}
-                      title="Customize sample sentence"
-                      className="p-1.5 rounded-lg text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] hover:bg-[rgba(var(--foreground),0.04)] transition-all cursor-pointer"
-                    >
-                      <Edit3 size={14} />
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => handleCardFavorite(staged.id)}
-                    aria-label={staged.is_favorite ? "Remove favorite" : "Add favorite"}
-                    className={cn(
-                      "p-1.5 rounded-lg transition-transform hover:scale-110 cursor-pointer",
-                      staged.is_favorite
-                        ? "text-[rgb(var(--accent))]"
-                        : "text-[rgb(var(--foreground-muted))]/40 hover:text-[rgb(var(--accent))]"
-                    )}
-                  >
-                    <Heart size={16} fill={staged.is_favorite ? "currentColor" : "none"} strokeWidth={staged.is_favorite ? 2 : 1.75} />
-                  </button>
-                </div>
-              </div>
-
-              {/* Tag Badges Row */}
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-[11px] font-medium font-sans px-2.5 py-0.5 rounded-full bg-[rgba(var(--foreground),0.05)] text-[rgb(var(--foreground-muted))] border border-[rgba(var(--foreground),0.06)] leading-none whitespace-nowrap">
-                  {tagLabel(staged.gender)}
-                </span>
-                <span className="text-[11px] font-medium font-sans px-2.5 py-0.5 rounded-full bg-[rgba(var(--foreground),0.05)] text-[rgb(var(--foreground-muted))] border border-[rgba(var(--foreground),0.06)] leading-none whitespace-nowrap">
-                  {staged.accent || staged.locale}
-                </span>
-                <span className="text-[11px] font-medium font-sans px-2.5 py-0.5 rounded-full bg-[rgb(var(--accent))]/10 text-[rgb(var(--accent))] border border-[rgba(var(--accent),0.18)] leading-none whitespace-nowrap">
-                  {tagLabel(staged.tags.find((t) => t.toLowerCase() !== "embedded" && t.toLowerCase() !== "fast") || "Natural")}
-                </span>
-              </div>
-
-              {isEditingPrompt && (
-                <div className="flex items-center gap-2 animate-fade-in py-1">
-                  <input
-                    type="text"
-                    value={customPromptInput}
-                    onChange={(e) => setCustomPromptInput(e.target.value)}
-                    placeholder="Type phrase to synthesize..."
-                    maxLength={120}
-                    autoFocus
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") handleSavePrompt();
-                      else if (e.key === "Escape") setIsEditingPrompt(false);
-                    }}
-                    className="flex-1 min-w-0 bg-transparent border-b border-[rgb(var(--accent))] text-[12.5px] text-[rgb(var(--foreground))] outline-none py-1"
-                  />
-                  <button
-                    type="button"
-                    onClick={handleSavePrompt}
-                    className="px-2.5 py-1 text-[11px] font-bold rounded-lg bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] cursor-pointer"
-                  >
-                    Apply
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setIsEditingPrompt(false)}
-                    className="p-1 text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] cursor-pointer"
-                  >
-                    <X size={14} />
-                  </button>
-                </div>
-              )}
-
-              {/* Waveform Scrubber: skeleton gray when no preview, maps to voice/prompt when preview exists */}
-              <div className="flex items-center gap-3 w-full">
-                <span className="font-mono text-[11px] tabular-nums text-[rgb(var(--foreground-muted))] w-9 text-right shrink-0">
-                  {formatTime(previewCurrentTime)}
-                </span>
-
-                <div
-                  ref={scrubberRef}
-                  onClick={staged.has_preview || !sessionBusy ? handleScrubberClick : undefined}
-                  className={cn(
-                    "flex-1 h-8 flex items-center gap-[3px] px-1 rounded-lg transition-all select-none",
-                    !staged.has_preview && !stagedPlaying
-                      ? "opacity-35 cursor-not-allowed"
-                      : "cursor-pointer hover:bg-[rgba(var(--foreground),0.03)]"
-                  )}
-                  title={!staged.has_preview && !stagedPlaying ? "No preview synthesized yet" : "Click to seek preview"}
-                >
-                  {waveformBars.map((height, i) => {
-                    const barProgress = i / waveformBars.length;
-                    const isPlayed = previewProgress > 0 && barProgress <= previewProgress;
-                    const isSkeleton = !staged.has_preview && !stagedPlaying;
-                    return (
-                      <div
-                        key={i}
-                        style={{ height: `${Math.round(isSkeleton ? 26 : height * 100)}%` }}
-                        className={cn(
-                          "flex-1 rounded-full min-w-[2px] max-w-[4px] transition-all duration-75",
-                          isSkeleton
-                            ? "bg-[rgba(var(--foreground),0.2)]"
-                            : isPlayed
-                              ? "bg-[rgb(var(--accent))] shadow-[0_0_6px_rgba(var(--accent),0.4)]"
-                              : "bg-[rgba(var(--foreground),0.18)] hover:bg-[rgba(var(--foreground),0.35)]"
-                        )}
-                      />
-                    );
-                  })}
-                </div>
-
-                <span className="font-mono text-[11px] tabular-nums text-[rgb(var(--foreground-muted))] w-9 shrink-0">
-                  {formatTime(previewDuration)}
-                </span>
-              </div>
-            </div>
-
-            {/* Right: Rich Metadata Indicators (2x2 Grid) - Language, Gender, Style, Model (Hidden on compact/mobile) */}
-            <div className="hidden lg:grid grid-cols-2 gap-x-6 gap-y-2.5 border-l border-[rgba(var(--foreground),0.08)] pl-5 shrink-0 text-[12px]">
-              <div className="flex items-center gap-2.5 min-w-[110px]">
-                <div className="w-7 h-7 rounded-lg bg-[rgba(var(--foreground),0.04)] flex items-center justify-center text-[rgb(var(--accent))] shrink-0">
-                  <Globe size={14} />
-                </div>
-                <div className="flex flex-col min-w-0">
-                  <span className="text-[9.5px] font-mono text-[rgb(var(--foreground-muted))]/70 uppercase tracking-wider leading-none">Language</span>
-                  <span className="font-semibold text-[rgb(var(--foreground))] leading-tight mt-1 truncate">{staged.locale || "English"}</span>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2.5 min-w-[110px]">
-                <div className="w-7 h-7 rounded-lg bg-[rgba(var(--foreground),0.04)] flex items-center justify-center text-[rgb(var(--accent))] shrink-0">
-                  <Users size={14} />
-                </div>
-                <div className="flex flex-col min-w-0">
-                  <span className="text-[9.5px] font-mono text-[rgb(var(--foreground-muted))]/70 uppercase tracking-wider leading-none">Gender</span>
-                  <span className="font-semibold text-[rgb(var(--foreground))] capitalize leading-tight mt-1 truncate">{tagLabel(staged.gender) || "Neutral"}</span>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2.5 min-w-[110px]">
-                <div className="w-7 h-7 rounded-lg bg-[rgba(var(--foreground),0.04)] flex items-center justify-center text-[rgb(var(--accent))] shrink-0">
-                  <Sparkles size={14} />
-                </div>
-                <div className="flex flex-col min-w-0">
-                  <span className="text-[9.5px] font-mono text-[rgb(var(--foreground-muted))]/70 uppercase tracking-wider leading-none">Style</span>
-                  <span className="font-semibold text-[rgb(var(--foreground))] capitalize leading-tight mt-1 truncate">
-                    {tagLabel(staged.tags.find((t) => t.toLowerCase() !== "embedded" && t.toLowerCase() !== "fast") || staged.accent || "Natural")}
-                  </span>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2.5 min-w-[110px]">
-                <div className="w-7 h-7 rounded-lg bg-[rgba(var(--foreground),0.04)] flex items-center justify-center text-[rgb(var(--accent))] shrink-0">
-                  <Cpu size={14} />
-                </div>
-                <div className="flex flex-col min-w-0">
-                  <span className="text-[9.5px] font-mono text-[rgb(var(--foreground-muted))]/70 uppercase tracking-wider leading-none">Model</span>
-                  <span className="font-semibold text-[rgb(var(--foreground))] capitalize leading-tight mt-1 truncate">
-                    {staged.provider_id
-                      ? staged.provider_id
-                          .split(/[-_]/)
-                          .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
-                          .join(" ")
-                      : "Neural"}
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
+        {/* Decoupled Bottom Voice Preview Banner */}
+        <VoicePreviewBanner
+          voice={staged}
+          isPlaying={stagedPlaying}
+          isSynthesizing={isSynthesizing && stagedPlaying}
+          previewProgress={previewProgress}
+          previewCurrentTime={previewCurrentTime}
+          previewDuration={previewDuration}
+          previewPrompt={previewPrompt}
+          sessionBusy={sessionBusy}
+          onTogglePreview={togglePreview}
+          onToggleFavorite={toggleFavorite}
+          onSeekPreview={seekPreview}
+          onSetPreviewPrompt={setPreviewPrompt}
+        />
 
         {canClone && (
           <CloneVoiceDrawer

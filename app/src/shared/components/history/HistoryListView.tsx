@@ -263,7 +263,7 @@ export const HistoryListView: React.FC<HistoryListViewProps> = memo(
                     }
                   }}
                   className={cn(
-                    "w-full rounded-2xl p-4 flex flex-col text-left transition-colors select-none cursor-pointer relative group glass-card",
+                    "w-full rounded-xl p-4 flex flex-col text-left transition-colors select-none cursor-pointer relative group glass-card",
                     "border-[rgba(var(--border),0.15)] bg-[rgb(var(--card))]/80 hover:border-[rgba(var(--accent),0.55)] hover:bg-[rgb(var(--card))]/95 hover:shadow-[0_0_20px_rgba(var(--accent),0.15)]",
                     isSelected && "border-[rgb(var(--accent))] bg-[rgb(var(--card))] shadow-[0_0_25px_rgba(var(--accent),0.35)]"
                   )}

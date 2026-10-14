@@ -78,6 +78,7 @@ export function useVoiceCatalog(
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const currentBlobUrlRef = useRef<string | null>(null);
+  const activeVoiceRef = useRef<string | null>(null);
   const remoteSyncedRef = useRef(false);
 
   const reload = useCallback(() => {
@@ -158,6 +159,7 @@ export function useVoiceCatalog(
   }, []);
 
   const stopPreview = useCallback(() => {
+    activeVoiceRef.current = null;
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current.src = "";
@@ -205,29 +207,34 @@ export function useVoiceCatalog(
   );
 
   const toggleFavorite = useCallback((id: string) => {
-    console.info("[VoiceCatalog] toggleFavorite initiated for:", id);
+    const trimmedId = id.trim();
+    console.info("[VoiceCatalog] toggleFavorite initiated for:", trimmedId);
     setVoices((prev) => {
-      const target = prev.find((v) => v.id === id);
+      const target = prev.find((v) => v.id.toLowerCase() === trimmedId.toLowerCase());
       const nextFav = !target?.is_favorite;
-      console.info("[VoiceCatalog] Optimistic toggle for", id, "->", nextFav);
-      const next = prev.map((v) => (v.id === id ? { ...v, is_favorite: nextFav } : v));
+      console.info("[VoiceCatalog] Optimistic toggle for", trimmedId, "->", nextFav);
+      const next = prev.map((v) =>
+        v.id.toLowerCase() === trimmedId.toLowerCase() ? { ...v, is_favorite: nextFav } : v
+      );
       if (provider) VOICES_CACHE.set(provider, next);
       return next;
     });
-    toggleVoiceFavorite(id)
+    toggleVoiceFavorite(trimmedId)
       .then((nowFav) => {
-        console.info("[VoiceCatalog] toggleVoiceFavorite IPC confirmed for", id, "->", nowFav);
+        console.info("[VoiceCatalog] toggleVoiceFavorite IPC confirmed for", trimmedId, "->", nowFav);
         setVoices((prev) => {
-          const next = prev.map((v) => (v.id === id ? { ...v, is_favorite: nowFav } : v));
+          const next = prev.map((v) =>
+            v.id.toLowerCase() === trimmedId.toLowerCase() ? { ...v, is_favorite: nowFav } : v
+          );
           if (provider) VOICES_CACHE.set(provider, next);
           return next;
         });
       })
       .catch((err) => {
-        console.error("[VoiceCatalog] toggleVoiceFavorite IPC failed for", id, err);
+        console.error("[VoiceCatalog] toggleVoiceFavorite IPC failed for", trimmedId, err);
         setVoices((prev) => {
           const next = prev.map((v) =>
-            v.id === id ? { ...v, is_favorite: !v.is_favorite } : v
+            v.id.toLowerCase() === trimmedId.toLowerCase() ? { ...v, is_favorite: !v.is_favorite } : v
           );
           if (provider) VOICES_CACHE.set(provider, next);
           return next;
@@ -242,6 +249,7 @@ export function useVoiceCatalog(
         return;
       }
       stopPreview();
+      activeVoiceRef.current = voice.id;
       setPlayingId(voice.id);
       setIsSynthesizing(true);
       setStagedId(voice.id);
@@ -255,6 +263,10 @@ export function useVoiceCatalog(
 
       synthesizeVoicePreview(voice.id, promptToUse, engine)
         .then(async (result) => {
+          if (activeVoiceRef.current !== voice.id) {
+            console.info("[VoiceCatalog] Preview cancelled or voice switched for:", voice.id);
+            return;
+          }
           setIsSynthesizing(false);
           console.info("[VoiceCatalog] synthesizeVoicePreview result:", result);
           if (!result.path) {
@@ -263,22 +275,32 @@ export function useVoiceCatalog(
             return;
           }
 
+          if (result.duration_ms > 0) {
+            setPreviewDuration(result.duration_ms / 1000);
+          }
+
           let audioSrc = voicePreviewUrl(result.path);
-          try {
-            // Read binary bytes directly to construct a standard blob URL.
-            // Completely eliminates WebKitGTK/Linux range-request asset protocol failures.
-            const { readFile } = await import("@tauri-apps/plugin-fs");
-            const fileBytes = await readFile(result.path);
-            const blob = new Blob([fileBytes], { type: "audio/wav" });
-            const blobUrl = URL.createObjectURL(blob);
-            currentBlobUrlRef.current = blobUrl;
-            audioSrc = blobUrl;
-            console.info("[VoiceCatalog] Constructed blob URL for preview playback:", audioSrc);
-          } catch (fsErr) {
-            console.warn("[VoiceCatalog] readFile failed, using asset convertFileSrc fallback:", fsErr);
+          if (result.audio_base64) {
+            audioSrc = `data:audio/wav;base64,${result.audio_base64}`;
+          } else {
+            try {
+              const { readFile } = await import("@tauri-apps/plugin-fs");
+              const fileBytes = await readFile(result.path);
+              const blob = new Blob([fileBytes], { type: "audio/wav" });
+              const blobUrl = URL.createObjectURL(blob);
+              currentBlobUrlRef.current = blobUrl;
+              audioSrc = blobUrl;
+            } catch (fsErr) {
+              console.warn("[VoiceCatalog] readFile failed, using asset convertFileSrc fallback:", fsErr);
+            }
+          }
+
+          if (activeVoiceRef.current !== voice.id) {
+            return;
           }
 
           const audio = new Audio(audioSrc);
+          audio.loop = false;
           audioRef.current = audio;
 
           audio.onloadeddata = () => {
@@ -286,7 +308,9 @@ export function useVoiceCatalog(
           };
           audio.onloadedmetadata = () => {
             console.info("[VoiceCatalog] Audio metadata loaded. Duration:", audio.duration);
-            setPreviewDuration(audio.duration || result.duration_ms / 1000);
+            if (Number.isFinite(audio.duration) && audio.duration > 0) {
+              setPreviewDuration(audio.duration);
+            }
           };
           audio.onplay = () => {
             console.info("[VoiceCatalog] Audio playback started for", voice.id);
@@ -297,7 +321,7 @@ export function useVoiceCatalog(
           };
           audio.onerror = (e) => {
             const mediaErr = audio.error;
-            console.error("[VoiceCatalog] Audio playback error for", audioSrc, {
+            console.error("[VoiceCatalog] Audio playback error for", audioSrc.slice(0, 50), {
               code: mediaErr?.code,
               message: mediaErr?.message,
               event: e,
@@ -320,8 +344,10 @@ export function useVoiceCatalog(
         })
         .catch((err) => {
           console.error("[VoiceCatalog] synthesizeVoicePreview failed:", err);
-          setIsSynthesizing(false);
-          setPlayingId(null);
+          if (activeVoiceRef.current === voice.id) {
+            setIsSynthesizing(false);
+            setPlayingId(null);
+          }
         });
     },
     [playingId, previewPrompt, engine, stopPreview]

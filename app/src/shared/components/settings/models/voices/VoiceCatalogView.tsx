@@ -106,11 +106,13 @@ export const VoiceCatalogView = memo(({ layoutMode, providerId }: VoiceCatalogVi
               favorited={v.is_favorite}
               previewPlaying={playingId === v.id}
               isSynthesizing={catalog.isSynthesizing && playingId === v.id}
+              previewProgress={playingId === v.id ? catalog.previewProgress : 0}
               previewDisabled={!v.has_preview && sessionBusy}
               hideBadges={true}
               onSelect={stageVoice}
               onToggleFavorite={toggleFavorite}
               onPreview={togglePreview}
+              onSeekPreview={catalog.seekPreview}
             />
           ))}
           </div>

@@ -31,6 +31,7 @@ export interface VoicePreviewResult {
   cached: boolean;
   path: string;
   duration_ms: number;
+  audio_base64?: string | null;
 }
 
 /** Lists unified voices filtered by active or specified TTS provider. */

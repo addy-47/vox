@@ -126,12 +126,12 @@ export const RemoteModelCard = memo(({
               </span>
             )}
             {model.quantization && (
-              <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-[rgba(var(--foreground),0.06)] text-[rgb(var(--foreground-muted))] border border-[rgba(var(--foreground),0.08)]">
+              <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded-md bg-[rgba(var(--foreground),0.06)] text-[rgb(var(--foreground-muted))] border border-[rgba(var(--foreground),0.08)]">
                 {model.quantization}
               </span>
             )}
             {model.size_bytes != null && (
-              <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-[rgba(var(--foreground),0.06)] text-[rgb(var(--foreground-muted))] border border-[rgba(var(--foreground),0.08)]">
+              <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded-md bg-[rgba(var(--foreground),0.06)] text-[rgb(var(--foreground-muted))] border border-[rgba(var(--foreground),0.08)]">
                 {(model.size_bytes / (1024 * 1024 * 1024)).toFixed(1)}GB
               </span>
             )}

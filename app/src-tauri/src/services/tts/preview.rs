@@ -53,6 +53,7 @@ pub struct VoicePreviewResult {
     pub cached: bool,
     pub path: String,
     pub duration_ms: u64,
+    pub audio_base64: Option<String>,
 }
 
 static PREVIEW_SYNTHESIZER: once_cell::sync::Lazy<PreviewSynthesizer> =
@@ -107,11 +108,15 @@ impl PreviewSynthesizer {
 
         if target_path.exists() {
             let duration_ms = read_wav_duration_ms(&target_path).unwrap_or(2500);
-            log::info!("[Preview] Cache hit voice={} path={}", voice_id, key);
+            let audio_base64 = std::fs::read(&target_path)
+                .ok()
+                .map(|b| base64::Engine::encode(&base64::prelude::BASE64_STANDARD, &b));
+            log::info!("[Preview] Cache hit voice={} duration_ms={} path={}", voice_id, duration_ms, key);
             return Ok(VoicePreviewResult {
                 cached: true,
                 path: target_path.to_string_lossy().into_owned(),
                 duration_ms,
+                audio_base64,
             });
         }
 
@@ -151,11 +156,21 @@ impl PreviewSynthesizer {
         match task.await {
             Ok(Ok(())) => {
                 let duration_ms = read_wav_duration_ms(&target_path).unwrap_or(2500);
+                let audio_base64 = std::fs::read(&target_path)
+                    .ok()
+                    .map(|b| base64::Engine::encode(&base64::prelude::BASE64_STANDARD, &b));
+                log::info!(
+                    "[Preview] Synthesized voice={} duration_ms={} bytes={}",
+                    voice_id,
+                    duration_ms,
+                    audio_base64.as_ref().map(|s| s.len()).unwrap_or(0)
+                );
                 self.enforce_lru_cache_bounds(&previews_dir).await;
                 Ok(VoicePreviewResult {
                     cached: false,
                     path: target_path.to_string_lossy().into_owned(),
                     duration_ms,
+                    audio_base64,
                 })
             }
             Ok(Err(e)) => Err(VoxIpcError::Engine(format!(

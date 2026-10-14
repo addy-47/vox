@@ -392,7 +392,7 @@ pub async fn synthesize_to_wav(voice: &str, text: &str, output_path: &Path) -> R
     let decoded = crate::services::audio::decode::decode_bytes_to_24khz_mono(&mp3_bytes, "mp3")
         .map_err(|e| anyhow::anyhow!("Failed to decode Edge TTS MP3: {}", e))?;
 
-    crate::services::tts::voice::write_pcm_to_wav(&decoded.samples, 24000, output_path)
+    crate::services::tts::voice::write_f32_wav(output_path, &decoded.samples, 24000)
         .map_err(|e| anyhow::anyhow!("Failed to write preview WAV: {}", e))?;
     Ok(())
 }

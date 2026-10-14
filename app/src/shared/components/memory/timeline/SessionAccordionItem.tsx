@@ -190,7 +190,7 @@ export const SessionAccordionItem = memo<SessionAccordionItemProps>(({
           if (e.key === "Enter" || e.key === " ") onToggle();
         }}
         className={cn(
-          "group relative flex items-center justify-between gap-2 py-2 px-3 rounded-sm text-left cursor-pointer transition-colors select-none",
+          "group relative flex items-center justify-between gap-2 py-2 px-2 rounded-sm text-left cursor-pointer transition-colors select-none",
           isSelectedSession
             ? ""
             : "hover:bg-[rgba(var(--foreground),0.04)]"

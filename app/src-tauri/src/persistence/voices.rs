@@ -260,31 +260,27 @@ pub async fn rename_voice(conn: &Connection, id: &str, name: &str) -> Result<()>
 /// Atomically toggles the favorite state for a voice. Returns the new state.
 pub async fn toggle_favorite(conn: &Connection, voice_id: &str) -> Result<bool> {
     let voice_id = voice_id.trim();
+    // 1. Try atomic update with RETURNING on existing voice
     let mut rows = conn
         .query(
-            "SELECT id, is_favorite FROM voices WHERE id = ? OR LOWER(id) = LOWER(?) LIMIT 1",
+            "UPDATE voices \
+             SET is_favorite = CASE WHEN is_favorite = 1 THEN 0 ELSE 1 END \
+             WHERE id = ? OR LOWER(id) = LOWER(?) \
+             RETURNING is_favorite, id",
             (voice_id.to_string(), voice_id.to_string()),
         )
         .await?;
     if let Some(row) = rows.next().await? {
-        let matched_id: String = row.get(0).unwrap_or_else(|_| voice_id.to_string());
-        let current: i64 = row
-            .get::<i64>(1)
-            .unwrap_or_else(|_| if row.get::<bool>(1).unwrap_or(false) { 1 } else { 0 });
-        let new_state = if current == 1 { 0 } else { 1 };
-        conn.execute(
-            "UPDATE voices SET is_favorite = ? WHERE id = ?",
-            (new_state, matched_id.clone()),
-        )
-        .await?;
+        let new_state_int: i64 = row.get(0)?;
+        let matched_id: String = row.get(1).unwrap_or_else(|_| voice_id.to_string());
+        let new_state = new_state_int == 1;
         log::info!(
-            "[Voices] toggle_favorite voice_id='{}' (matched='{}') current={} -> new_state={}",
+            "[Voices] Atomic toggle_favorite voice_id='{}' (matched='{}') -> new_state={}",
             voice_id,
             matched_id,
-            current,
             new_state
         );
-        Ok(new_state == 1)
+        Ok(new_state)
     } else {
         log::warn!(
             "[Voices] toggle_favorite voice_id='{}' not found in DB, inserting stub with is_favorite=1",
@@ -297,7 +293,7 @@ pub async fn toggle_favorite(conn: &Connection, voice_id: &str) -> Result<bool> 
         conn.execute(
             "INSERT INTO voices (id, provider_id, name, source_kind, is_favorite, created_at)
              VALUES (?, 'kokoro', ?, 'bundled', 1, ?)
-             ON CONFLICT(id) DO UPDATE SET is_favorite = 1",
+             ON CONFLICT(id) DO UPDATE SET is_favorite = CASE WHEN is_favorite = 1 THEN 0 ELSE 1 END",
             (voice_id.to_string(), voice_id.to_string(), now),
         )
         .await?;
