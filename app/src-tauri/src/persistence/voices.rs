@@ -113,7 +113,9 @@ fn decode_row(row: &turso::Row) -> Result<VoiceEntry> {
         name: row.get(2)?,
         source_kind: kind_str.parse()?,
         slug: row.get(4)?,
-        gender: row.get::<String>(5).unwrap_or_else(|_| "neutral".to_string()),
+        gender: row
+            .get::<String>(5)
+            .unwrap_or_else(|_| "neutral".to_string()),
         locale: row.get::<String>(6).unwrap_or_else(|_| "en-US".to_string()),
         accent: row.get(7).ok().flatten(),
         description: row.get(8).ok().flatten(),

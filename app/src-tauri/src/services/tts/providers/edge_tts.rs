@@ -285,7 +285,10 @@ async fn stream_mp3_payload(
                             let header_str = String::from_utf8_lossy(&bin[2..2 + header_len]);
                             let payload = &bin[2 + header_len..];
                             // Only append if frame path is audio (skip audio.metadata or other binary payloads)
-                            if (header_str.contains("Path:audio") || header_str.contains("audio/mpeg")) && !payload.is_empty() {
+                            if (header_str.contains("Path:audio")
+                                || header_str.contains("audio/mpeg"))
+                                && !payload.is_empty()
+                            {
                                 mp3_bytes.extend_from_slice(payload);
                             }
                         }
@@ -299,7 +302,10 @@ async fn stream_mp3_payload(
                 }
                 Ok(Message::Close(frame)) => {
                     log::warn!("[EdgeTTS] WebSocket closed by server: {:?}", frame);
-                    return Err(anyhow::anyhow!("Edge TTS WebSocket closed by server: {:?}", frame));
+                    return Err(anyhow::anyhow!(
+                        "Edge TTS WebSocket closed by server: {:?}",
+                        frame
+                    ));
                 }
                 Err(e) => {
                     log::warn!("[EdgeTTS] WebSocket receive error: {:?}", e);
@@ -364,7 +370,10 @@ pub async fn synthesize_to_wav(voice: &str, text: &str, output_path: &Path) -> R
                         if bin.len() >= 2 + header_len {
                             let header_str = String::from_utf8_lossy(&bin[2..2 + header_len]);
                             let payload = &bin[2 + header_len..];
-                            if (header_str.contains("Path:audio") || header_str.contains("audio/mpeg")) && !payload.is_empty() {
+                            if (header_str.contains("Path:audio")
+                                || header_str.contains("audio/mpeg"))
+                                && !payload.is_empty()
+                            {
                                 mp3_bytes.extend_from_slice(payload);
                             }
                         }
@@ -381,7 +390,8 @@ pub async fn synthesize_to_wav(voice: &str, text: &str, output_path: &Path) -> R
             }
         }
         Ok(())
-    }).await;
+    })
+    .await;
 
     res.map_err(|_| anyhow::anyhow!("Timeout waiting for Edge TTS preview audio"))??;
 
@@ -507,10 +517,12 @@ impl TtsProvider for EdgeTtsProvider {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use ringbuf::traits::Split;
 
+    use super::*;
+
     #[test]
+    #[ignore = "requires external network connection to live Edge TTS endpoints"]
     fn test_edge_tts_live_synthesis() {
         let (event_tx, _event_rx) = std::sync::mpsc::channel();
         let cancel = Arc::new(AtomicBool::new(false));
@@ -544,6 +556,9 @@ mod tests {
         let provider = EdgeTtsProvider::new(None);
         let res = provider.synthesize_chunk("Hey there. What's on your mind?", &ctx);
         assert!(res.is_ok(), "Edge TTS synthesis failed: {:?}", res.err());
-        assert!(playback.occupied_len() > 0, "Expected buffered audio samples in playback engine");
+        assert!(
+            playback.occupied_len() > 0,
+            "Expected buffered audio samples in playback engine"
+        );
     }
 }

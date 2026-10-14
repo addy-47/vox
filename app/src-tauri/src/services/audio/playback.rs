@@ -9,7 +9,7 @@ use parking_lot::Mutex;
 use ringbuf::{traits::*, HeapProd};
 
 use super::{
-    build_output_stream, resampler::upsample_2x_into, AudioResampler,
+    build_output_stream, resampler::upsample_2x_into, AudioResampler, AudioSink,
     MODULAR_PREROLL_THRESHOLD_SAMPLES, PLAYBACK_BUFFER_SAMPLES, PLAYBACK_PRODUCER_SCRATCH_CAPACITY,
     REALTIME_PREROLL_THRESHOLD_SAMPLES, SINC_CHUNK_SIZE_OUTPUT,
 };
@@ -22,7 +22,7 @@ use crate::{
     services::realtime::{RealtimeAudioConfig, DEFAULT_OUTPUT_SAMPLE_RATE},
 };
 
-/// Core audio playback engine managing a CPAL stream, SPSC lock-free ring buffer, and volume ramps.
+/// Core audio playback engine managing an audio sink, SPSC lock-free ring buffer, and volume ramps.
 pub struct PlaybackEngine {
     producer: Mutex<(HeapProd<f32>, Vec<f32>)>,
     cancel_flag: Arc<AtomicBool>,
@@ -33,7 +33,7 @@ pub struct PlaybackEngine {
     pending_synthesis_jobs: Arc<AtomicU32>,
     playback_intent: Arc<AtomicU8>,
     pub turn_metrics: Option<Arc<TurnMetricsCollector>>,
-    _stream: Option<cpal::Stream>,
+    _sink: Option<Box<dyn AudioSink>>,
 }
 
 unsafe impl Send for PlaybackEngine {}
@@ -47,7 +47,7 @@ impl Drop for PlaybackEngine {
 }
 
 impl PlaybackEngine {
-    /// Initialise CPAL output stream at 48kHz without starting playback immediately.
+    /// Initialise audio sink output stream at 48kHz without starting playback immediately.
     pub fn new(
         handles: PlaybackEngineHandles,
         telemetry: PlaybackTelemetryHandles,
@@ -57,7 +57,7 @@ impl PlaybackEngine {
         let discard_request = Arc::new(AtomicBool::new(false));
         let turn_armed = Arc::new(AtomicBool::new(false));
 
-        let stream = build_output_stream(
+        let sink = build_output_stream(
             consumer,
             handles.clone(),
             Arc::clone(&discard_request),
@@ -78,7 +78,7 @@ impl PlaybackEngine {
             pending_synthesis_jobs: handles.pending_synthesis_jobs,
             playback_intent: handles.playback_intent,
             turn_metrics: handles.turn_metrics,
-            _stream: Some(stream),
+            _sink: Some(sink),
         })
     }
 
@@ -88,7 +88,7 @@ impl PlaybackEngine {
         handles: PlaybackEngineHandles,
         discard_request: Arc<AtomicBool>,
         turn_armed: Arc<AtomicBool>,
-        stream: Option<cpal::Stream>,
+        sink: Option<Box<dyn AudioSink>>,
     ) -> Self {
         Self {
             producer: Mutex::new((
@@ -103,7 +103,7 @@ impl PlaybackEngine {
             pending_synthesis_jobs: handles.pending_synthesis_jobs,
             playback_intent: handles.playback_intent,
             turn_metrics: handles.turn_metrics,
-            _stream: stream,
+            _sink: sink,
         }
     }
 

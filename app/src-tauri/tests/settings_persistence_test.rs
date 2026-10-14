@@ -60,7 +60,6 @@ fn test_settings_json_roundtrip_persistence() {
         "appearance.accent_seed should be recognized"
     );
 
-
     // VAD
     assert!(
         apply_setting_mutation(&mut settings, "vad", "threshold", &serde_json::json!(0.72))

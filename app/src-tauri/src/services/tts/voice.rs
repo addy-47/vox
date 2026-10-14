@@ -205,7 +205,11 @@ pub fn write_f32_wav(dest_path: &Path, samples: &[f32], sample_rate: u32) -> Res
         .map_err(|e| format!("Failed to create destination WAV writer: {}", e))?;
 
     // Find peak magnitude to normalize volume without clipping
-    let peak = samples.iter().copied().map(|s| s.abs()).fold(0.0f32, f32::max);
+    let peak = samples
+        .iter()
+        .copied()
+        .map(|s| s.abs())
+        .fold(0.0f32, f32::max);
     let scale = if peak > 1e-4 && peak < 0.95 {
         (0.95 / peak) * 32767.0
     } else {
@@ -632,14 +636,13 @@ pub fn resolve_voice_scope(engine: &str) -> VoiceScopeDto {
     } else {
         engine.to_string()
     };
-    let (can_clone, cloud_sync) =
-        match crate::services::tts::caps_for_id(engine) {
-            Ok(caps) => (
-                caps.clone,
-                caps.voices == crate::services::tts::TtsVoiceSource::Edge,
-            ),
-            Err(_) => (false, false),
-        };
+    let (can_clone, cloud_sync) = match crate::services::tts::caps_for_id(engine) {
+        Ok(caps) => (
+            caps.clone,
+            caps.voices == crate::services::tts::TtsVoiceSource::Edge,
+        ),
+        Err(_) => (false, false),
+    };
     VoiceScopeDto {
         voice_provider,
         can_clone,

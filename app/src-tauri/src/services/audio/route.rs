@@ -210,7 +210,10 @@ fn check_android_audio_route() -> Option<AudioOutputMode> {
     if let Ok(content) = std::fs::read_to_string("/sys/class/switch/h2w/state") {
         let val = content.trim();
         if val == "1" || val == "2" {
-            log::info!("[Audio::Route] Android wired headset switch active: {}", val);
+            log::info!(
+                "[Audio::Route] Android wired headset switch active: {}",
+                val
+            );
             return Some(AudioOutputMode::Headset);
         }
     }

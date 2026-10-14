@@ -29,7 +29,6 @@ fn apply_appearance_mutation(
     Ok(true)
 }
 
-
 fn apply_vad_mutation(
     settings: &mut VoxSettings,
     key: &str,
@@ -292,7 +291,10 @@ fn apply_tts_mutation(
                 .map_err(|e| format!("Invalid TTS active provider: {}", e))?;
         }
         "voice" | "voice_id" => {
-            let val = value.as_str().ok_or("voice must be a string id")?.to_string();
+            let val = value
+                .as_str()
+                .ok_or("voice must be a string id")?
+                .to_string();
             if val.trim().is_empty() || val.len() > 128 {
                 return Err("voice id must be 1..128 chars".to_string());
             }

@@ -152,19 +152,26 @@ async fn test_session_start_modular_sets_ready_and_identity() {
         );
 
         // 5. Assert VAD operational mode configured for Passive mode (ContinuousSegmentation)
-        let vad_cmd = vad_cmd_rx
-            .recv_timeout(Duration::from_millis(500))
-            .expect("VAD command must be sent on session start");
-        match vad_cmd {
-            VadCommand::SetOperationalMode(mode) => {
-                assert_eq!(
-                    mode,
-                    VadOperationalMode::ContinuousSegmentation,
-                    "Passive interaction mode must set VAD to ContinuousSegmentation"
-                );
+        let mut got_operational_mode = false;
+        while let Ok(vad_cmd) = vad_cmd_rx.recv_timeout(Duration::from_millis(500)) {
+            match vad_cmd {
+                VadCommand::SetOperationalMode(mode) => {
+                    assert_eq!(
+                        mode,
+                        VadOperationalMode::ContinuousSegmentation,
+                        "Passive interaction mode must set VAD to ContinuousSegmentation"
+                    );
+                    got_operational_mode = true;
+                    break;
+                }
+                VadCommand::UpdateAudioMode(_) => continue,
+                _ => break,
             }
-            _ => panic!("Expected VadCommand::SetOperationalMode"),
         }
+        assert!(
+            got_operational_mode,
+            "Expected VadCommand::SetOperationalMode on session start"
+        );
 
         // 6. Negative / Idempotency check: Sending SessionStart again while Ready is ignored
         event_tx
