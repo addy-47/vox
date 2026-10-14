@@ -8,20 +8,22 @@ import {
   useState,
 } from "react";
 import {
-  ArrowUpDown,
+  ArrowDownAZ,
+  ArrowUpZA,
   Clock,
+  Cpu,
   Edit3,
   Filter,
   Globe,
   Heart,
   Languages,
   Loader2,
+  Mic,
   Pause,
   Play,
   Plus,
   Search,
   Sparkles,
-  Star,
   Users,
   X,
 } from "lucide-react";
@@ -47,7 +49,7 @@ export interface VoiceCatalogModalViewProps {
 }
 
 type Scope = "all" | "recent" | "favorites" | "custom";
-type Sort = "popular" | "az";
+type Sort = "az" | "za";
 
 function isEnglish(v: UnifiedVoiceDto): boolean {
   return v.locale.toLowerCase().startsWith("en");
@@ -112,7 +114,7 @@ export const VoiceCatalogModalView = memo(
     const [selectedProvider, setSelectedProvider] = useState<string | null>(null);
     const [gender, setGender] = useState<string | null>(null);
     const [accent, setAccent] = useState<"english" | "multilingual" | null>(null);
-    const [sort, setSort] = useState<Sort>("popular");
+    const [sort, setSort] = useState<Sort>("az");
     const [isCloneDrawerOpen, setIsCloneDrawerOpen] = useState(false);
     const [isEditingPrompt, setIsEditingPrompt] = useState(false);
     const [customPromptInput, setCustomPromptInput] = useState(previewPrompt);
@@ -148,19 +150,6 @@ export const VoiceCatalogModalView = memo(
       return count;
     }, [scope, gender, accent]);
 
-    // Stable snapshot of favorited voice IDs on mount/load. Prevents cards
-    // from jumping to the top in real time when toggling heart, eliminating layout shifts.
-    const initialFavoritesRef = useRef<Set<string>>(new Set());
-    const initializedRef = useRef(false);
-
-    useEffect(() => {
-      if (!initializedRef.current && voices.length > 0) {
-        initialFavoritesRef.current = new Set(
-          voices.filter((v) => v.is_favorite).map((v) => v.id)
-        );
-        initializedRef.current = true;
-      }
-    }, [voices]);
 
     // Canonical smooth scroll (SSOT hook — inertial wheel glide, native touch
     // momentum). The inner content wrapper is the Lenis content element.
@@ -222,18 +211,10 @@ export const VoiceCatalogModalView = memo(
         );
       }
       const sorted = [...list];
-      if (sort === "popular") {
-        sorted.sort((a, b) => {
-          const isFavA = initialFavoritesRef.current.has(a.id);
-          const isFavB = initialFavoritesRef.current.has(b.id);
-          if (isFavA !== isFavB) return isFavA ? -1 : 1;
-          const ra = a.last_used_at ?? 0;
-          const rb = b.last_used_at ?? 0;
-          if (ra !== rb) return rb - ra;
-          return a.name.localeCompare(b.name);
-        });
+      if (sort === "az") {
+        sorted.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
       } else {
-        sorted.sort((a, b) => a.name.localeCompare(b.name));
+        sorted.sort((a, b) => b.name.localeCompare(a.name, undefined, { sensitivity: "base" }));
       }
       return sorted;
     }, [voices, scope, selectedProvider, gender, accent, deferredSearch, sort]);
@@ -251,11 +232,6 @@ export const VoiceCatalogModalView = memo(
     );
     const handleCardFavorite = useCallback(
       (id: string) => {
-        if (initialFavoritesRef.current.has(id)) {
-          initialFavoritesRef.current.delete(id);
-        } else {
-          initialFavoritesRef.current.add(id);
-        }
         toggleFavorite(id);
       },
       [toggleFavorite]
@@ -297,9 +273,9 @@ export const VoiceCatalogModalView = memo(
       setAccent(null);
     }, []);
 
-    const scopeFilters: Array<{ id: Scope; label: string; count: number; Icon: typeof Users }> = [
-      { id: "all", label: VOICE_CATALOG_COPY.allVoices, count: counts.all, Icon: Users },
-      { id: "favorites", label: VOICE_CATALOG_COPY.favorites, count: counts.favorites, Icon: Star },
+    const scopeFilters: Array<{ id: Scope; label: string; count: number; Icon: typeof Mic }> = [
+      { id: "all", label: VOICE_CATALOG_COPY.allVoices, count: counts.all, Icon: Mic },
+      { id: "favorites", label: VOICE_CATALOG_COPY.favorites, count: counts.favorites, Icon: Heart },
       { id: "recent", label: VOICE_CATALOG_COPY.recent, count: counts.recent, Icon: Clock },
       ...(canClone
         ? [{ id: "custom" as Scope, label: VOICE_CATALOG_COPY.cloned, count: counts.custom, Icon: Sparkles }]
@@ -502,15 +478,19 @@ export const VoiceCatalogModalView = memo(
           {/* Sort button */}
           <button
             type="button"
-            onClick={() => setSort((s) => (s === "popular" ? "az" : "popular"))}
-            className="px-2.5 sm:px-3 py-1.5 rounded-xl text-[12px] font-medium bg-[rgba(var(--foreground),0.04)] border border-[rgba(var(--foreground),0.08)] text-[rgb(var(--foreground))] hover:border-[rgb(var(--accent))]/40 flex items-center gap-1.5 cursor-pointer shrink-0 transition-all"
-            title={sort === "popular" ? "Sort: Popular first" : "Sort: Alphabetical (A–Z)"}
+            onClick={() => setSort((s) => (s === "az" ? "za" : "az"))}
+            className="p-2 rounded-xl text-[12px] font-medium bg-[rgba(var(--foreground),0.04)] border border-[rgba(var(--foreground),0.08)] text-[rgb(var(--foreground))] hover:border-[rgb(var(--accent))]/40 hover:text-[rgb(var(--accent))] flex items-center justify-center cursor-pointer shrink-0 transition-all"
+            title={sort === "az" ? "Sort: A–Z" : "Sort: Z–A"}
+            aria-label="Toggle alphabetical sort order"
           >
-            <ArrowUpDown size={13} className="text-[rgb(var(--accent))]" />
-            <span className="font-sans font-medium hidden sm:inline">{sort === "popular" ? VOICE_CATALOG_COPY.sortPopular : "A–Z"}</span>
+            {sort === "az" ? (
+              <ArrowDownAZ size={15} className="text-[rgb(var(--accent))]" />
+            ) : (
+              <ArrowUpZA size={15} className="text-[rgb(var(--accent))]" />
+            )}
           </button>
 
-          <div className="text-[11px] font-mono text-[rgb(var(--foreground-muted))] px-2.5 py-1.5 rounded-lg bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--foreground),0.06)] shrink-0">
+          <div className="text-[11px] font-mono text-[rgb(var(--foreground-muted))] px-2.5 py-1.5 rounded-xl bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--foreground),0.06)] shrink-0 select-none">
             <span className="hidden sm:inline">Showing <span className="text-[rgb(var(--foreground))] font-bold">{filtered.length}</span> of {voices.length} {VOICE_CATALOG_COPY.showingOf}</span>
             <span className="inline sm:hidden"><span className="text-[rgb(var(--foreground))] font-bold">{filtered.length}</span>/{voices.length}</span>
           </div>
@@ -627,10 +607,7 @@ export const VoiceCatalogModalView = memo(
                         : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.03)]"
                     )}
                   >
-                    <div className="flex items-center gap-1.5 truncate">
-                      <Languages size={13} className={cn("shrink-0", isActive ? "text-[rgb(var(--accent))]" : "opacity-60")} />
-                      <span className="truncate">{item.label}</span>
-                    </div>
+                    <span className="truncate">{item.label}</span>
                     <span className={cn(
                       "text-[10px] font-mono px-1.5 py-0.5 rounded-full shrink-0",
                       isActive
@@ -862,36 +839,53 @@ export const VoiceCatalogModalView = memo(
               </div>
             </div>
 
-            {/* Right: Rich Metadata Indicators (Language, Gender, Style) with vertical divider */}
-            <div className="hidden lg:flex items-center gap-6 border-l border-[rgba(var(--foreground),0.08)] pl-5 shrink-0 text-[12.5px]">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-full bg-[rgba(var(--foreground),0.04)] flex items-center justify-center text-[rgb(var(--accent))] shrink-0">
-                  <Globe size={16} />
+            {/* Right: Rich Metadata Indicators (2x2 Grid) - Language, Gender, Style, Model (Hidden on compact/mobile) */}
+            <div className="hidden lg:grid grid-cols-2 gap-x-6 gap-y-2.5 border-l border-[rgba(var(--foreground),0.08)] pl-5 shrink-0 text-[12px]">
+              <div className="flex items-center gap-2.5 min-w-[110px]">
+                <div className="w-7 h-7 rounded-lg bg-[rgba(var(--foreground),0.04)] flex items-center justify-center text-[rgb(var(--accent))] shrink-0">
+                  <Globe size={14} />
                 </div>
-                <div className="flex flex-col">
-                  <span className="text-[10px] font-mono text-[rgb(var(--foreground-muted))]/70 uppercase leading-none">Language</span>
-                  <span className="font-medium text-[rgb(var(--foreground))] leading-tight mt-1">{staged.locale || "English"}</span>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-full bg-[rgba(var(--foreground),0.04)] flex items-center justify-center text-[rgb(var(--accent))] shrink-0">
-                  <Users size={16} />
-                </div>
-                <div className="flex flex-col">
-                  <span className="text-[10px] font-mono text-[rgb(var(--foreground-muted))]/70 uppercase leading-none">Gender</span>
-                  <span className="font-medium text-[rgb(var(--foreground))] capitalize leading-tight mt-1">{tagLabel(staged.gender) || "Neutral"}</span>
+                <div className="flex flex-col min-w-0">
+                  <span className="text-[9.5px] font-mono text-[rgb(var(--foreground-muted))]/70 uppercase tracking-wider leading-none">Language</span>
+                  <span className="font-semibold text-[rgb(var(--foreground))] leading-tight mt-1 truncate">{staged.locale || "English"}</span>
                 </div>
               </div>
 
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-full bg-[rgba(var(--foreground),0.04)] flex items-center justify-center text-[rgb(var(--accent))] shrink-0">
-                  <Sparkles size={16} />
+              <div className="flex items-center gap-2.5 min-w-[110px]">
+                <div className="w-7 h-7 rounded-lg bg-[rgba(var(--foreground),0.04)] flex items-center justify-center text-[rgb(var(--accent))] shrink-0">
+                  <Users size={14} />
                 </div>
-                <div className="flex flex-col">
-                  <span className="text-[10px] font-mono text-[rgb(var(--foreground-muted))]/70 uppercase leading-none">Style</span>
-                  <span className="font-medium text-[rgb(var(--foreground))] capitalize leading-tight mt-1">
+                <div className="flex flex-col min-w-0">
+                  <span className="text-[9.5px] font-mono text-[rgb(var(--foreground-muted))]/70 uppercase tracking-wider leading-none">Gender</span>
+                  <span className="font-semibold text-[rgb(var(--foreground))] capitalize leading-tight mt-1 truncate">{tagLabel(staged.gender) || "Neutral"}</span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2.5 min-w-[110px]">
+                <div className="w-7 h-7 rounded-lg bg-[rgba(var(--foreground),0.04)] flex items-center justify-center text-[rgb(var(--accent))] shrink-0">
+                  <Sparkles size={14} />
+                </div>
+                <div className="flex flex-col min-w-0">
+                  <span className="text-[9.5px] font-mono text-[rgb(var(--foreground-muted))]/70 uppercase tracking-wider leading-none">Style</span>
+                  <span className="font-semibold text-[rgb(var(--foreground))] capitalize leading-tight mt-1 truncate">
                     {tagLabel(staged.tags.find((t) => t.toLowerCase() !== "embedded" && t.toLowerCase() !== "fast") || staged.accent || "Natural")}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2.5 min-w-[110px]">
+                <div className="w-7 h-7 rounded-lg bg-[rgba(var(--foreground),0.04)] flex items-center justify-center text-[rgb(var(--accent))] shrink-0">
+                  <Cpu size={14} />
+                </div>
+                <div className="flex flex-col min-w-0">
+                  <span className="text-[9.5px] font-mono text-[rgb(var(--foreground-muted))]/70 uppercase tracking-wider leading-none">Model</span>
+                  <span className="font-semibold text-[rgb(var(--foreground))] capitalize leading-tight mt-1 truncate">
+                    {staged.provider_id
+                      ? staged.provider_id
+                          .split(/[-_]/)
+                          .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+                          .join(" ")
+                      : "Neural"}
                   </span>
                 </div>
               </div>

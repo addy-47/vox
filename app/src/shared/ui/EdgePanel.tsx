@@ -1,9 +1,10 @@
 import React, { memo, useRef, useCallback, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { cn } from "@/shared/lib/utils";
 import { useOverlay } from "@/shared/hooks/useOverlay";
+import { isCoarsePointer } from "@/lib/capabilities";
 import { Tooltip } from "@/shared/ui/Tooltip";
 import { OverlayBackdrop } from "@/shared/ui/OverlayBackdrop";
 import { BottomDockFeather } from "@/shared/ui/BottomDockFeather";
@@ -118,6 +119,10 @@ const EdgePanelInner = memo(
     const effectiveZ = zIndex ?? (isGlobal ? 70 : 35);
     const effectiveBackdropZ = effectiveZ - 1;
 
+    const shouldReduceMotion = useReducedMotion();
+    const isCoarse = isCoarsePointer();
+    const fastTransition = shouldReduceMotion || isCoarse;
+
     const panelNode = (
       <AnimatePresence>
         {open && (
@@ -136,7 +141,10 @@ const EdgePanelInner = memo(
               initial={{ x: isLeft ? "-100%" : "100%" }}
               animate={{ x: 0 }}
               exit={{ x: isLeft ? "-100%" : "100%" }}
-              transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+              transition={{
+                duration: fastTransition ? 0.12 : 0.22,
+                ease: fastTransition ? "easeOut" : [0.16, 1, 0.3, 1],
+              }}
               style={{ zIndex: effectiveZ }}
               className={cn(
                 isGlobal ? "fixed top-0 bottom-0" : "absolute top-0 bottom-0",

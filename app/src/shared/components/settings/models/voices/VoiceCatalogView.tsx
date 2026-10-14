@@ -23,6 +23,7 @@ export const VoiceCatalogView = memo(({ layoutMode, providerId }: VoiceCatalogVi
   const catalog = useVoiceCatalog({
     provider: ready ? scope.voice_provider || undefined : undefined,
     suspended: !ready,
+    engine: providerId,
   });
   const {
     voices,
@@ -67,6 +68,7 @@ export const VoiceCatalogView = memo(({ layoutMode, providerId }: VoiceCatalogVi
         }
         expandLabel={VOICE_CATALOG_COPY.expandLabel}
         ariaLabel={VOICE_CATALOG_COPY.catalogAriaLabel}
+        modalSubtitle={VOICE_CATALOG_COPY.subtitle}
         onDiscard={handleDiscard}
         modalContent={({ close }) => (
           <ErrorBoundary name="VoiceCatalogModalContent">

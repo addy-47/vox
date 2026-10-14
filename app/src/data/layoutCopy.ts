@@ -3,8 +3,6 @@ export const LAYOUT_COPY = {
     monitor: "System Monitor (Ctrl+M)",
     engineMonitor: "Engine Monitor",
     openProfiler: "Open UI Memory Profiler (Shift+Up)",
-    loadingSurface: "Loading surface...",
-    preparingEnvironment: "Preparing neural environment",
   },
   layoutFlip: {
     title: "Adjusting layout…",

@@ -1,3 +1,12 @@
+/**
+ * INVARIANT: Tooltip Mobile Touch Behavior
+ * On touch / mobile devices, tooltips MUST NOT appear on tap for action buttons,
+ * menu items, or interactive controls (`mobileTapEnabled: false` by default).
+ * Showing tooltips on mobile taps intercepts clicks, causing UI glitches.
+ * Only explicit informational icons (e.g. HelpCircle, info pills) may set
+ * `mobileTapEnabled: true`.
+ */
+
 import React, { useState, useRef, useEffect, useMemo } from "react";
 import {
   useFloating,

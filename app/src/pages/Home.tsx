@@ -1,5 +1,7 @@
-import React, { memo, useMemo, useRef, useEffect } from "react";
-import { VoxOrb } from "@/shared/components/home/AdvancedOrb";
+import React, { memo, useMemo, useRef, useEffect, lazy, Suspense } from "react";
+const VoxOrb = lazy(() =>
+  import("@/shared/components/home/AdvancedOrb").then((m) => ({ default: m.VoxOrb }))
+);
 import { PipelineField } from "@/shared/components/home/PipelineField";
 import { DynamicStatusBadge } from "@/shared/components/home/DynamicStatusBadge";
 import { RestorePulse } from "@/shared/components/home/RestorePulse";
@@ -96,6 +98,7 @@ export const Home = memo(() => {
   // (cyan-flash RCA: full path logging — mount/unmount, orb mount, state,
   //  theme vars, and cached theme. Remove once the flash source is found.)
   useEffect(() => {
+    if (!import.meta.env.DEV) return;
     const t0 = performance.now();
     const root = document.documentElement;
     const cs = getComputedStyle(root);
@@ -357,12 +360,14 @@ export const Home = memo(() => {
         {/* Orb directly renders on Home mount with zero loader flash */}
         <div className="relative w-full h-full flex items-center justify-center">
           <ErrorBoundary name="VoxOrb">
-            <VoxOrb
-              telemetryRef={telemetryRef}
-              interactionState={interactionState}
-              isSleeping={isSleeping}
-              paused={isPanelOpen("sessions") || isPanelOpen("notifications") || isPanelOpen("help")}
-            />
+            <Suspense fallback={null}>
+              <VoxOrb
+                telemetryRef={telemetryRef}
+                interactionState={interactionState}
+                isSleeping={isSleeping}
+                paused={isPanelOpen("sessions") || isPanelOpen("notifications") || isPanelOpen("help")}
+              />
+            </Suspense>
           </ErrorBoundary>
         </div>
       </div>

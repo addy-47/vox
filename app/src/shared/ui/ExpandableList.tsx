@@ -66,7 +66,7 @@ export const ExpandableList = memo(
   ({
     title,
     icon,
-    subtitle: _subtitle,
+    subtitle,
     modalSubtitle,
     headerActions,
     footer,
@@ -117,7 +117,7 @@ export const ExpandableList = memo(
     return (
       <div className={cn("relative flex flex-col min-h-0", className)}>
         <ExpandableListContext.Provider value={inlineContext}>
-          <div className={cn("flex-1 min-h-0 overflow-hidden", inlineMaxHeightClass)}>
+          <div className={cn("flex-1 min-h-0 overflow-hidden flex flex-col", inlineMaxHeightClass)}>
             {children}
           </div>
         </ExpandableListContext.Provider>
@@ -156,7 +156,7 @@ export const ExpandableList = memo(
           position="global"
           icon={icon}
           title={title}
-          subtitle={modalSubtitle}
+          subtitle={modalSubtitle ?? subtitle}
           headerActions={
             headerActions ? (
               <ExpandableListContext.Provider value={modalContext}>

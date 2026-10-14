@@ -44,7 +44,10 @@ export function createContainedLenis(
   options: ContainedLenisOptions = {},
 ): Lenis | null {
   if (isCoarsePointer()) return null;
-  const content = (el.firstElementChild as HTMLElement | null) ?? el;
+  const content =
+    el.children.length === 1
+      ? (el.firstElementChild as HTMLElement)
+      : el;
   const lenis = new Lenis({
     wrapper: el,
     content,

@@ -1,5 +1,4 @@
-import { memo, useState, useRef, useEffect, useMemo } from "react";
-import { createPortal } from "react-dom";
+import { memo, useState, useRef, useMemo } from "react";
 import {
   MessageSquare,
   MessageSquarePlus,
@@ -11,6 +10,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { Tooltip } from "@/shared/ui/Tooltip";
+import { ContextMenuShell } from "@/shared/ui/ContextMenuShell";
 import {
   resolveSessionTitle,
   formatSessionRecency,
@@ -80,8 +80,6 @@ export const SessionAccordionItem = memo<SessionAccordionItemProps>(({
 
   const sortBtnRef = useRef<HTMLButtonElement>(null);
   const filterBtnRef = useRef<HTMLButtonElement>(null);
-  const sortMenuRef = useRef<HTMLDivElement>(null);
-  const filterMenuRef = useRef<HTMLDivElement>(null);
 
   const palette = useMemo(() => getActiveDynamicPalette(isLightMode), [isLightMode]);
   const title = resolveSessionTitle(session);
@@ -114,29 +112,6 @@ export const SessionAccordionItem = memo<SessionAccordionItemProps>(({
     setFilterMenuOpen((v) => !v);
     setSortMenuOpen(false);
   };
-
-  useEffect(() => {
-    if (!sortMenuOpen && !filterMenuOpen) return;
-    const handleClickOutside = (e: MouseEvent) => {
-      const target = e.target as Node;
-      if (
-        sortMenuRef.current &&
-        !sortMenuRef.current.contains(target) &&
-        !sortBtnRef.current?.contains(target)
-      ) {
-        setSortMenuOpen(false);
-      }
-      if (
-        filterMenuRef.current &&
-        !filterMenuRef.current.contains(target) &&
-        !filterBtnRef.current?.contains(target)
-      ) {
-        setFilterMenuOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [sortMenuOpen, filterMenuOpen]);
 
   const categoryCounts = useMemo(() => {
     const counts = new Map<MemoryCategory, number>();
@@ -293,123 +268,119 @@ export const SessionAccordionItem = memo<SessionAccordionItemProps>(({
               </button>
             </Tooltip>
 
-            {sortMenuOpen && sortAnchor && createPortal(
-              <div
-                ref={sortMenuRef}
-                data-context-menu
-                style={{
-                  position: "fixed",
-                  left: `${Math.round(sortAnchor.left)}px`,
-                  top: `${Math.round(sortAnchor.bottom + 4)}px`,
-                  zIndex: 100,
+            <ContextMenuShell
+              open={sortMenuOpen}
+              onClose={() => setSortMenuOpen(false)}
+              anchorRect={sortAnchor}
+              triggerRef={sortBtnRef}
+              width={145}
+            >
+              <button
+                type="button"
+                role="menuitem"
+                tabIndex={-1}
+                onClick={() => {
+                  setSortBy("category");
+                  setSortMenuOpen(false);
                 }}
-                className="min-w-[145px] p-1.5 bg-[rgb(var(--card))] border border-[rgba(var(--border),0.12)] rounded-xl shadow-lg backdrop-blur-md text-[12px] font-sans flex flex-col gap-0.5 select-none"
+                className={cn(
+                  "w-full px-2.5 py-1.5 rounded-md text-left flex items-center justify-between transition-colors hover:bg-[rgba(var(--foreground),0.06)] cursor-pointer bg-transparent border-none text-[12px]",
+                  sortBy === "category" ? "text-[rgb(var(--accent))] font-medium" : "text-[rgb(var(--foreground))]"
+                )}
               >
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSortBy("category");
-                    setSortMenuOpen(false);
-                  }}
-                  className={cn(
-                    "w-full px-2.5 py-1.5 rounded-md text-left flex items-center justify-between transition-colors hover:bg-[rgba(var(--foreground),0.06)] cursor-pointer bg-transparent border-none text-[12px]",
-                    sortBy === "category" ? "text-[rgb(var(--accent))] font-medium" : "text-[rgb(var(--foreground))]"
-                  )}
-                >
-                  <span>{MEMORY_COPY.timeline.sortCategory}</span>
-                  {sortBy === "category" && <Check size={12} />}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSortBy("time");
-                    setSortMenuOpen(false);
-                  }}
-                  className={cn(
-                    "w-full px-2.5 py-1.5 rounded-md text-left flex items-center justify-between transition-colors hover:bg-[rgba(var(--foreground),0.06)] cursor-pointer bg-transparent border-none text-[12px]",
-                    sortBy === "time" ? "text-[rgb(var(--accent))] font-medium" : "text-[rgb(var(--foreground))]"
-                  )}
-                >
-                  <span>{MEMORY_COPY.timeline.sortTime}</span>
-                  {sortBy === "time" && <Check size={12} />}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSortBy("alpha");
-                    setSortMenuOpen(false);
-                  }}
-                  className={cn(
-                    "w-full px-2.5 py-1.5 rounded-md text-left flex items-center justify-between transition-colors hover:bg-[rgba(var(--foreground),0.06)] cursor-pointer bg-transparent border-none text-[12px]",
-                    sortBy === "alpha" ? "text-[rgb(var(--accent))] font-medium" : "text-[rgb(var(--foreground))]"
-                  )}
-                >
-                  <span>{MEMORY_COPY.timeline.sortAlphabetical}</span>
-                  {sortBy === "alpha" && <Check size={12} />}
-                </button>
-              </div>,
-              document.body
-            )}
-
-            {filterMenuOpen && filterAnchor && createPortal(
-              <div
-                ref={filterMenuRef}
-                data-context-menu
-                style={{
-                  position: "fixed",
-                  left: `${Math.round(filterAnchor.left)}px`,
-                  top: `${Math.round(filterAnchor.bottom + 4)}px`,
-                  zIndex: 100,
+                <span>{MEMORY_COPY.timeline.sortCategory}</span>
+                {sortBy === "category" && <Check size={12} />}
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                tabIndex={-1}
+                onClick={() => {
+                  setSortBy("time");
+                  setSortMenuOpen(false);
                 }}
-                className="min-w-[155px] p-1.5 bg-[rgb(var(--card))] border border-[rgba(var(--border),0.12)] rounded-xl shadow-lg backdrop-blur-md text-[12px] font-sans flex flex-col gap-0.5 select-none"
+                className={cn(
+                  "w-full px-2.5 py-1.5 rounded-md text-left flex items-center justify-between transition-colors hover:bg-[rgba(var(--foreground),0.06)] cursor-pointer bg-transparent border-none text-[12px]",
+                  sortBy === "time" ? "text-[rgb(var(--accent))] font-medium" : "text-[rgb(var(--foreground))]"
+                )}
               >
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedCategory("all");
-                    setFilterMenuOpen(false);
-                  }}
-                  className={cn(
-                    "w-full px-2.5 py-1.5 rounded-md text-left flex items-center justify-between transition-colors hover:bg-[rgba(var(--foreground),0.06)] cursor-pointer bg-transparent border-none text-[12px]",
-                    selectedCategory === "all" ? "text-[rgb(var(--accent))] font-medium" : "text-[rgb(var(--foreground))]"
-                  )}
-                >
-                  <span>{MEMORY_COPY.timeline.allCategories} ({facts.length})</span>
-                  {selectedCategory === "all" && <Check size={12} />}
-                </button>
-                {presentCategories.map((catKey) => {
-                  const count = categoryCounts.get(catKey) ?? 0;
-                  const catColor = palette[catKey]?.main || "#00dbe9";
-                  const label = MEMORY_COPY.categories[catKey] || catKey;
-                  const isSelected = selectedCategory === catKey;
+                <span>{MEMORY_COPY.timeline.sortTime}</span>
+                {sortBy === "time" && <Check size={12} />}
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                tabIndex={-1}
+                onClick={() => {
+                  setSortBy("alpha");
+                  setSortMenuOpen(false);
+                }}
+                className={cn(
+                  "w-full px-2.5 py-1.5 rounded-md text-left flex items-center justify-between transition-colors hover:bg-[rgba(var(--foreground),0.06)] cursor-pointer bg-transparent border-none text-[12px]",
+                  sortBy === "alpha" ? "text-[rgb(var(--accent))] font-medium" : "text-[rgb(var(--foreground))]"
+                )}
+              >
+                <span>{MEMORY_COPY.timeline.sortAlphabetical}</span>
+                {sortBy === "alpha" && <Check size={12} />}
+              </button>
+            </ContextMenuShell>
 
-                  return (
-                    <button
-                      key={catKey}
-                      type="button"
-                      onClick={() => {
-                        setSelectedCategory(catKey);
-                        setFilterMenuOpen(false);
-                      }}
-                      className={cn(
-                        "w-full px-2.5 py-1.5 rounded-md text-left flex items-center justify-between transition-colors hover:bg-[rgba(var(--foreground),0.06)] cursor-pointer bg-transparent border-none text-[12px]",
-                        isSelected ? "text-[rgb(var(--foreground))] font-medium" : "text-[rgb(var(--foreground-muted))]"
-                      )}
-                    >
-                      <div className="flex items-center gap-2 min-w-0">
-                        <span
-                          className="w-1.5 h-1.5 rounded-full shrink-0"
-                          style={{ backgroundColor: catColor }}
-                        />
-                        <span className="truncate">{label} ({count})</span>
-                      </div>
-                      {isSelected && <Check size={12} className="text-[rgb(var(--accent))] shrink-0" />}
-                    </button>
-                  );
-                })}
-              </div>,
-              document.body
-            )}
+            <ContextMenuShell
+              open={filterMenuOpen}
+              onClose={() => setFilterMenuOpen(false)}
+              anchorRect={filterAnchor}
+              triggerRef={filterBtnRef}
+              width={155}
+            >
+              <button
+                type="button"
+                role="menuitem"
+                tabIndex={-1}
+                onClick={() => {
+                  setSelectedCategory("all");
+                  setFilterMenuOpen(false);
+                }}
+                className={cn(
+                  "w-full px-2.5 py-1.5 rounded-md text-left flex items-center justify-between transition-colors hover:bg-[rgba(var(--foreground),0.06)] cursor-pointer bg-transparent border-none text-[12px]",
+                  selectedCategory === "all" ? "text-[rgb(var(--accent))] font-medium" : "text-[rgb(var(--foreground))]"
+                )}
+              >
+                <span>{MEMORY_COPY.timeline.allCategories} ({facts.length})</span>
+                {selectedCategory === "all" && <Check size={12} />}
+              </button>
+              {presentCategories.map((catKey) => {
+                const count = categoryCounts.get(catKey) ?? 0;
+                const catColor = palette[catKey]?.main || "#00dbe9";
+                const label = MEMORY_COPY.categories[catKey] || catKey;
+                const isSelected = selectedCategory === catKey;
+
+                return (
+                  <button
+                    key={catKey}
+                    type="button"
+                    role="menuitem"
+                    tabIndex={-1}
+                    onClick={() => {
+                      setSelectedCategory(catKey);
+                      setFilterMenuOpen(false);
+                    }}
+                    className={cn(
+                      "w-full px-2.5 py-1.5 rounded-md text-left flex items-center justify-between transition-colors hover:bg-[rgba(var(--foreground),0.06)] cursor-pointer bg-transparent border-none text-[12px]",
+                      isSelected ? "text-[rgb(var(--foreground))] font-medium" : "text-[rgb(var(--foreground-muted))]"
+                    )}
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span
+                        className="w-1.5 h-1.5 rounded-full shrink-0"
+                        style={{ backgroundColor: catColor }}
+                      />
+                      <span className="truncate">{label} ({count})</span>
+                    </div>
+                    {isSelected && <Check size={12} className="text-[rgb(var(--accent))] shrink-0" />}
+                  </button>
+                );
+              })}
+            </ContextMenuShell>
           </div>
         )}
       </div>

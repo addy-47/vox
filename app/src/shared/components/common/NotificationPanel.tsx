@@ -20,7 +20,6 @@ import {
   RotateCw,
   type LucideIcon,
 } from "lucide-react";
-import { motion } from "framer-motion";
 import { cn } from "@/shared/lib/utils";
 import { Tooltip } from "@/shared/ui/Tooltip";
 import { NOTIFICATION_COPY } from "@/data/notificationCopy";
@@ -615,12 +614,9 @@ export const NotificationPanel = memo(({ onClose }: NotificationPanelProps) => {
             </p>
           </div>
         ) : (
-          <motion.div
+          <div
             key={activeTab}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.15, ease: "easeOut" }}
-            className="flex flex-col"
+            className="flex flex-col animate-in fade-in duration-150"
           >
           <div id="notification-tabpanel" role="tabpanel" aria-labelledby={`notification-tab-${activeTab}`} className="flex flex-col gap-3">
             {sections.map(({ group, items }) => (
@@ -640,7 +636,7 @@ export const NotificationPanel = memo(({ onClose }: NotificationPanelProps) => {
               </div>
             ))}
           </div>
-          </motion.div>
+          </div>
         )}
       </div>
     </div>

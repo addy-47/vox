@@ -57,9 +57,10 @@ export function syncRemoteVoices(): Promise<number> {
 /** Synthesizes or retrieves cached audio preview for a voice and prompt. */
 export function synthesizeVoicePreview(
   voiceId: string,
-  prompt?: string
+  prompt?: string,
+  engine?: string
 ): Promise<VoicePreviewResult> {
-  return invoke("synthesize_voice_preview", { voiceId, prompt });
+  return invoke("synthesize_voice_preview", { voiceId, prompt, engine });
 }
 
 /** Toggles favorite state for a voice. Returns the new favorite boolean value. */

@@ -357,7 +357,7 @@ export const PersonalMemoryStagingCard: React.FC<PersonalMemoryStagingCardProps>
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 0.35, ease: "easeInOut" }}
-              className="absolute inset-0 z-40 rounded-2xl overflow-hidden bg-[rgba(var(--card),0.85)] backdrop-blur-md flex flex-col items-center justify-center pointer-events-auto"
+              className="absolute inset-0 z-40 rounded-2xl overflow-hidden bg-[rgba(var(--card),0.85)] backdrop-blur-sm flex flex-col items-center justify-center pointer-events-auto"
             >
               <PixelSynthesisCanvas active={isConsolidating} />
               <div className="relative z-10 flex flex-col items-center text-center p-6">

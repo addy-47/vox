@@ -204,8 +204,8 @@
     "gender": "male",
     "locale": "en-US",
     "accent": "American",
-    "description": "Confident and articulate embedded synthesis.",
-    "tags": ["Embedded", "Fast", "Articulate"],
+    "description": "Confident and articulate conversational synthesis.",
+    "tags": ["Articulate", "Confident"],
     "sample_text": "Supertonic James online and operating at low latency."
   },
   {
@@ -216,7 +216,7 @@
     "locale": "en-US",
     "accent": "American",
     "description": "Warm, measured, and approachable male voice.",
-    "tags": ["Embedded", "Fast", "Approachable"],
+    "tags": ["Approachable", "Warm", "Measured"],
     "sample_text": "David here. Ready for rapid real-time speech."
   },
   {
@@ -227,7 +227,7 @@
     "locale": "en-US",
     "accent": "American",
     "description": "Modern and versatile everyday assistant voice.",
-    "tags": ["Embedded", "Fast", "Versatile"],
+    "tags": ["Versatile", "Modern", "Natural"],
     "sample_text": "Alex standing by. How can I assist you right now?"
   },
   {
@@ -238,7 +238,7 @@
     "locale": "en-US",
     "accent": "American",
     "description": "Energetic, clear, and direct male narrator.",
-    "tags": ["Embedded", "Fast", "Energetic"],
+    "tags": ["Energetic", "Clear", "Direct"],
     "sample_text": "Ryan ready to roll. Let us get straight to it."
   },
   {
@@ -249,7 +249,7 @@
     "locale": "en-US",
     "accent": "American",
     "description": "Clear, professional, and pleasant female voice.",
-    "tags": ["Embedded", "Fast", "Professional"],
+    "tags": ["Professional", "Clear", "Pleasant"],
     "sample_text": "Sophia here. Ready to provide instant vocal feedback."
   },
   {
@@ -260,7 +260,7 @@
     "locale": "en-US",
     "accent": "American",
     "description": "Friendly, expressive, and bright conversational delivery.",
-    "tags": ["Embedded", "Fast", "Friendly"],
+    "tags": ["Friendly", "Expressive", "Bright"],
     "sample_text": "Hi, I am Olivia. Supertonic streaming is ready."
   },
   {
@@ -270,8 +270,8 @@
     "gender": "female",
     "locale": "en-US",
     "accent": "American",
-    "description": "Smooth and calm lightweight neural synthesis.",
-    "tags": ["Embedded", "Fast", "Calm"],
+    "description": "Smooth and calm lightweight conversational voice.",
+    "tags": ["Calm", "Smooth", "Gentle"],
     "sample_text": "Ava online. Listening and responding in real-time."
   },
   {
@@ -282,7 +282,7 @@
     "locale": "en-US",
     "accent": "American",
     "description": "Crisp and cheerful everyday companion voice.",
-    "tags": ["Embedded", "Fast", "Cheerful"],
+    "tags": ["Cheerful", "Crisp", "Companion"],
     "sample_text": "Mia here! Happy to help whenever you need me."
   },
   {

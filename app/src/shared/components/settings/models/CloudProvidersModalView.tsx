@@ -1,10 +1,23 @@
-import { memo, useState, useMemo, useCallback, useDeferredValue } from "react";
+import { memo, useState, useMemo, useCallback, useDeferredValue, useRef, useEffect } from "react";
 import { useLenisScrollContainer } from "@/shared/hooks/useLenisScrollContainer";
 import { useScrollTopOnChange } from "@/shared/hooks/useScrollTopOnChange";
 import { CLOUD_PROVIDERS, type CloudProvider } from "@/data/providersCopy";
 import { INTERACTION_CONFIG_DESK_COPY } from "@/data/settingsCopy";
 import { useSettingsStore } from "@/store/settingsStore";
-import { Search, X, Check, Pencil, ArrowRight } from "lucide-react";
+import {
+  ArrowDownAZ,
+  ArrowUpZA,
+  ArrowRight,
+  Check,
+  Filter,
+  Globe,
+  Key,
+  KeyRound,
+  Pencil,
+  Search,
+  Sparkles,
+  X,
+} from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 
 export interface CloudProviderCardProps {
@@ -186,6 +199,31 @@ export const CloudProvidersModalView = memo(({
   const [modalSearch, setModalSearch] = useState("");
   const deferredSearch = useDeferredValue(modalSearch);
   const [filterCategory, setFilterCategory] = useState<"all" | "configured" | "popular" | "unconfigured">("all");
+  const [sort, setSort] = useState<"az" | "za">("az");
+  const [isFilterDropdownOpen, setIsFilterDropdownOpen] = useState(false);
+  const filterDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Close compact filter dropdown on outside click or Escape
+  useEffect(() => {
+    if (!isFilterDropdownOpen) return;
+    const handleDown = (e: MouseEvent | TouchEvent) => {
+      if (filterDropdownRef.current && !filterDropdownRef.current.contains(e.target as Node)) {
+        setIsFilterDropdownOpen(false);
+      }
+    };
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setIsFilterDropdownOpen(false);
+    };
+    window.addEventListener("mousedown", handleDown);
+    window.addEventListener("touchstart", handleDown);
+    window.addEventListener("keydown", handleKey);
+    return () => {
+      window.removeEventListener("mousedown", handleDown);
+      window.removeEventListener("touchstart", handleDown);
+      window.removeEventListener("keydown", handleKey);
+    };
+  }, [isFilterDropdownOpen]);
+
   const { containerRef: scrollContainerRef, lenisRef } =
     useLenisScrollContainer<HTMLDivElement>();
 
@@ -210,6 +248,16 @@ export const CloudProvidersModalView = memo(({
   const unconfiguredCount = useMemo(() => {
     return CLOUD_PROVIDERS.filter((p) => !getProviderKey(p.id)?.trim()).length;
   }, [getProviderKey]);
+
+  const providerFilters = useMemo(
+    () => [
+      { id: "all" as const, label: "All Providers", count: CLOUD_PROVIDERS.length, Icon: Globe },
+      { id: "configured" as const, label: "Configured", count: configuredCount, Icon: Key },
+      { id: "popular" as const, label: "Popular", count: popularCount, Icon: Sparkles },
+      { id: "unconfigured" as const, label: "Needs Key", count: unconfiguredCount, Icon: KeyRound },
+    ],
+    [configuredCount, popularCount, unconfiguredCount]
+  );
 
   const modalFilteredProviders = useMemo(() => {
     let list = CLOUD_PROVIDERS;
@@ -237,70 +285,162 @@ export const CloudProvidersModalView = memo(({
       const bKey = Boolean(getCommittedProviderKey(b.id)?.trim());
       if (aKey && !bKey) return -1;
       if (!aKey && bKey) return 1;
-      return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+      return sort === "az"
+        ? a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
+        : b.name.localeCompare(a.name, undefined, { sensitivity: "base" });
     });
-  }, [deferredSearch, filterCategory, getProviderKey, getCommittedProviderKey]);
+  }, [deferredSearch, filterCategory, getProviderKey, getCommittedProviderKey, sort]);
 
   return (
-    <div className="flex flex-col h-full min-h-0 gap-3">
-      {/* Modal Toolbar: Search + Filter Chips Bar */}
-      <div className="flex flex-col gap-2.5 shrink-0">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex-1 flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[rgba(var(--foreground),0.04)] border border-[rgba(var(--foreground),0.08)] focus-within:border-[rgb(var(--accent))] focus-within:ring-1 focus-within:ring-[rgb(var(--accent))]/30 transition-all">
-            <Search size={14} className="text-[rgb(var(--foreground-muted))] shrink-0" />
-            <input
-              type="text"
-              value={modalSearch}
-              onChange={(e) => setModalSearch(e.target.value)}
-              placeholder="Search providers..."
-              className="w-full bg-transparent border-none outline-none text-[13px] text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40"
-            />
-            {modalSearch && (
-              <button
-                type="button"
-                onClick={() => setModalSearch("")}
-                className="text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] p-0.5 cursor-pointer"
-              >
-                <X size={13} />
-              </button>
+    <div className="flex flex-col h-full min-h-0 gap-3.5">
+      {/* Top Toolbar: Search + Filter Dropdown (compact) + Sort Icon + Count */}
+      <div className="flex items-center justify-between gap-2.5 shrink-0 flex-wrap">
+        {/* Mobile/Compact Filter Dropdown Trigger */}
+        <div ref={filterDropdownRef} className="relative md:hidden shrink-0">
+          <button
+            type="button"
+            onClick={() => setIsFilterDropdownOpen((v) => !v)}
+            className={cn(
+              "p-2 rounded-xl border transition-all cursor-pointer flex items-center gap-1.5",
+              isFilterDropdownOpen || filterCategory !== "all"
+                ? "bg-[rgba(var(--accent),0.15)] text-[rgb(var(--accent))] border-[rgba(var(--accent),0.35)] shadow-xs"
+                : "bg-[rgba(var(--foreground),0.04)] text-[rgb(var(--foreground-muted))] border-[rgba(var(--foreground),0.08)] hover:text-[rgb(var(--foreground))]"
             )}
-          </div>
+            aria-label="Toggle provider filters"
+            aria-expanded={isFilterDropdownOpen}
+          >
+            <Filter size={15} />
+            {filterCategory !== "all" && (
+              <span className="w-2 h-2 rounded-full bg-[rgb(var(--accent))]" />
+            )}
+          </button>
 
-          <div className="text-[11px] font-mono text-[rgb(var(--foreground-muted))] px-2.5 py-1.5 rounded-lg bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--foreground),0.06)] shrink-0">
-            <span className="hidden sm:inline">Showing <span className="text-[rgb(var(--foreground))] font-bold">{modalFilteredProviders.length}</span> of {CLOUD_PROVIDERS.length} providers</span>
-            <span className="inline sm:hidden"><span className="text-[rgb(var(--foreground))] font-bold">{modalFilteredProviders.length}</span>/{CLOUD_PROVIDERS.length}</span>
-          </div>
+          {/* Compact Filter Menu Popover */}
+          {isFilterDropdownOpen && (
+            <div className="absolute left-0 top-full mt-2 z-50 w-64 rounded-2xl bg-[rgba(var(--card),0.96)] backdrop-blur-xl border border-[rgba(var(--foreground),0.12)] shadow-2xl p-3 flex flex-col gap-1.5 animate-fade-in">
+              <div className="flex items-center justify-between pb-1.5 border-b border-[rgba(var(--foreground),0.06)] px-1">
+                <span className="text-[12px] font-bold text-[rgb(var(--foreground))]">Filters</span>
+                {filterCategory !== "all" && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFilterCategory("all");
+                      setIsFilterDropdownOpen(false);
+                    }}
+                    className="text-[11px] font-medium text-[rgb(var(--accent))] hover:underline cursor-pointer"
+                  >
+                    Reset
+                  </button>
+                )}
+              </div>
+              {providerFilters.map((cat) => (
+                <button
+                  key={cat.id}
+                  type="button"
+                  onClick={() => {
+                    setFilterCategory(cat.id);
+                    setIsFilterDropdownOpen(false);
+                  }}
+                  className={cn(
+                    "w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl text-[12px] transition-all cursor-pointer font-medium",
+                    filterCategory === cat.id
+                      ? "bg-[rgba(var(--accent),0.12)] text-[rgb(var(--accent))] font-bold shadow-xs"
+                      : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.03)]"
+                  )}
+                >
+                  <div className="flex items-center gap-2 truncate">
+                    <cat.Icon size={13} className={cn("shrink-0", filterCategory === cat.id ? "text-[rgb(var(--accent))]" : "opacity-60")} />
+                    <span className="truncate">{cat.label}</span>
+                  </div>
+                  <span className={cn(
+                    "text-[10px] font-mono px-1.5 py-0.5 rounded-full font-bold shrink-0",
+                    filterCategory === cat.id
+                      ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))]"
+                      : "bg-[rgba(var(--foreground),0.06)] text-[rgb(var(--foreground-muted))]"
+                  )}>
+                    {cat.count}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
-        {/* Filter Chips Bar */}
-        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 shrink-0">
-          {(
-            [
-              { id: "all", label: `All (${CLOUD_PROVIDERS.length})` },
-              { id: "configured", label: `Configured (${configuredCount})` },
-              { id: "popular", label: `Popular (${popularCount})` },
-              { id: "unconfigured", label: `Needs Key (${unconfiguredCount})` },
-            ] as const
-          ).map((chip) => (
+        {/* Search Input */}
+        <div className="flex-1 min-w-[140px] sm:min-w-[180px] flex items-center gap-2 px-3.5 py-2 rounded-xl bg-[rgba(var(--foreground),0.04)] border border-[rgba(var(--foreground),0.08)] focus-within:border-[rgb(var(--accent))] focus-within:ring-1 focus-within:ring-[rgb(var(--accent))]/30 transition-all">
+          <Search size={14} className="text-[rgb(var(--foreground-muted))] shrink-0" />
+          <input
+            type="text"
+            value={modalSearch}
+            onChange={(e) => setModalSearch(e.target.value)}
+            placeholder="Search providers..."
+            aria-label="Search providers"
+            className="w-full bg-transparent border-none outline-none text-[13px] text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40"
+          />
+          {modalSearch && (
             <button
-              key={chip.id}
               type="button"
-              onClick={() => setFilterCategory(chip.id)}
-              className={cn(
-                "px-2.5 py-1 rounded-md text-[11px] font-mono font-medium transition-all cursor-pointer border whitespace-nowrap shrink-0",
-                filterCategory === chip.id
-                  ? "bg-[rgb(var(--accent))]/15 border-[rgb(var(--accent))]/60 text-[rgb(var(--accent))] shadow-sm"
-                  : "bg-[rgba(var(--foreground),0.02)] border-[rgba(var(--foreground),0.06)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:border-[rgba(var(--accent),0.2)]"
-              )}
+              onClick={() => setModalSearch("")}
+              className="text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] p-0.5 cursor-pointer"
             >
-              {chip.label}
+              <X size={13} />
             </button>
-          ))}
+          )}
+        </div>
+
+        {/* Sort Button */}
+        <button
+          type="button"
+          onClick={() => setSort((s) => (s === "az" ? "za" : "az"))}
+          className="p-2 rounded-xl text-[12px] font-medium bg-[rgba(var(--foreground),0.04)] border border-[rgba(var(--foreground),0.08)] text-[rgb(var(--foreground))] hover:border-[rgb(var(--accent))]/40 hover:text-[rgb(var(--accent))] flex items-center justify-center cursor-pointer shrink-0 transition-all"
+          title={sort === "az" ? "Sort: A–Z" : "Sort: Z–A"}
+          aria-label="Toggle alphabetical sort order"
+        >
+          {sort === "az" ? (
+            <ArrowDownAZ size={15} className="text-[rgb(var(--accent))]" />
+          ) : (
+            <ArrowUpZA size={15} className="text-[rgb(var(--accent))]" />
+          )}
+        </button>
+
+        {/* Count Pill */}
+        <div className="text-[11px] font-mono text-[rgb(var(--foreground-muted))] px-2.5 py-1.5 rounded-xl bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--foreground),0.06)] shrink-0 select-none">
+          <span className="hidden sm:inline">Showing <span className="text-[rgb(var(--foreground))] font-bold">{modalFilteredProviders.length}</span> of {CLOUD_PROVIDERS.length} providers</span>
+          <span className="inline sm:hidden"><span className="text-[rgb(var(--foreground))] font-bold">{modalFilteredProviders.length}</span>/{CLOUD_PROVIDERS.length}</span>
         </div>
       </div>
 
-      {/* Contained Cards Scroll Area with Constant Inset Padding */}
-      <div className="flex-1 min-h-0 overflow-hidden flex flex-col relative">
+      {/* Main Content Area */}
+      <div className="flex-1 min-h-0 flex gap-4 overflow-hidden">
+        {/* Facet Sidebar on Desktop */}
+        <div className="w-[190px] shrink-0 hidden md:flex flex-col gap-1 overflow-y-auto overscroll-contain custom-scrollbar pr-2 py-0.5">
+          {providerFilters.map((cat) => (
+            <button
+              key={cat.id}
+              type="button"
+              onClick={() => setFilterCategory(cat.id)}
+              className={cn(
+                "w-full flex items-center justify-between px-3 py-2 rounded-xl text-[12.5px] transition-all cursor-pointer font-medium",
+                filterCategory === cat.id
+                  ? "bg-[rgba(var(--accent),0.12)] text-[rgb(var(--accent))] font-bold shadow-xs"
+                  : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.03)]"
+              )}
+            >
+              <div className="flex items-center gap-2.5 truncate">
+                <cat.Icon size={14} className={cn("shrink-0", filterCategory === cat.id ? "text-[rgb(var(--accent))]" : "opacity-60")} />
+                <span className="truncate">{cat.label}</span>
+              </div>
+              <span className={cn(
+                "text-[10px] font-mono px-1.5 py-0.5 rounded-full font-bold shrink-0",
+                filterCategory === cat.id
+                  ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))]"
+                  : "bg-[rgba(var(--foreground),0.06)] text-[rgb(var(--foreground-muted))]"
+              )}>
+                {cat.count}
+              </span>
+            </button>
+          ))}
+        </div>
         <div
           ref={scrollContainerRef}
           className="flex-1 min-h-0 overflow-y-auto overscroll-contain custom-scrollbar p-1 sm:p-2"
