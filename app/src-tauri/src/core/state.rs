@@ -240,13 +240,9 @@ impl AppState {
                 };
                 Arc::new(
                     nexus::NexusSearch::builder()
-                        .with_engines(vec![
-                            nexus::Engine::Duckduckgo,
-                            nexus::Engine::Bing,
-                            nexus::Engine::Yahoo,
-                            nexus::Engine::Brave,
-                            nexus::Engine::Wikipedia,
-                        ])
+                        .with_engines(
+                            crate::services::harness::stages::tools::web_search::default_engines(),
+                        )
                         .with_fanout_policy(fanout_policy)
                         .with_ranking_policy(ranking_policy)
                         .with_fetch_concurrency(5)

@@ -184,11 +184,16 @@ When relevant passages are retrieved, the tool returns a `<web_search_evidence>`
 ```
 
 ### 6.2 Zero Turn Abort Invariant & Structured Error Status
-Network timeouts, DNS resolution failures, SSRF blocks, or empty results must **never** abort or crash the conversational turn. All failure modes return structured `<web_search_status>` blocks:
+Network timeouts, DNS resolution failures, SSRF blocks, or empty results must **never** abort or crash the conversational turn. All failure modes return structured `<web_search_status>` blocks. Every status block carries machine-readable failure attribution:
 
-* **Deadline Exceeded (`deadline.hit`)**:
+* `failure_class`: one of `no_hits` (engines returned nothing), `fetch_starved` (hits existed but too few pages extracted), `answer_absent` (pages exist, specific answer missing), `low_score_floor` (passages existed but all below the relevance floor), `budget_exhausted` (context budget fit zero passages).
+* `retry_recommended`: `"true"` when a rephrased retry could plausibly succeed, `"false"` otherwise.
+* Stage counters on every outcome (success and failure): `raw_hits`, `pages_fetched`, `pages_extracted`, `passages_generated`, `passages_delivered`, plus per-engine `ok`/`fail` counts. Without these, an `empty_results` is unactionable (verified: QA rounds 1–2, baseline runs `20261015_062211_b83025a0` / `20261015_103058_9c6588e3`).
+
+* **Deadline Exceeded (`deadline.hit`)** (`failure_class="fetch_starved"` or the stage reached at kill time):
+  Per-stage splits at kill time are best-effort: the timed-out future cannot report them, so only `elapsed_ms` is guaranteed. A pipeline progress API is required for true splits (deferred).
   ```xml
-  <web_search_status code="deadline.hit" error_kind="timeout" elapsed_ms="5500">
+  <web_search_status code="deadline.hit" error_kind="timeout" elapsed_ms="5500" failure_class="fetch_starved" retry_recommended="true" fanout_ms="..." fetch_ms="..." extract_ms="...">
     <message>Web search reached the execution deadline before completing within the deadline.</message>
     <next_action>Inform the user or retry with ranking_mode="sparse" for faster results.</next_action>
   </web_search_status>
@@ -200,13 +205,14 @@ Network timeouts, DNS resolution failures, SSRF blocks, or empty results must **
     <next_action>Inform the user that web search is currently unreachable or try again with a simpler query.</next_action>
   </web_search_status>
   ```
-* **No Relevant Passages Found (`empty_results`)**:
+* **No Relevant Passages Found (`empty_results`)** (`failure_class` set to the losing stage):
   ```xml
-  <web_search_status code="empty_results" error_kind="not_found">
+  <web_search_status code="empty_results" error_kind="not_found" failure_class="no_hits" retry_recommended="true" raw_hits="0" pages_fetched="0" pages_extracted="0" passages_generated="0">
     <message>Web search completed for 'query' but no relevant passages were found.</message>
     <next_action>Try rephrasing the query with different keywords or broader terms.</next_action>
   </web_search_status>
   ```
+* **Answer Absent (`empty_results`, `missing_factual_answer`)**: pages about the query exist but none state the specific answer. The model must not answer from memory; it must report the source gap and propose a narrower query. `failure_class="answer_absent"`, `retry_recommended="true"`.
 
 ---
 

@@ -34,6 +34,29 @@ pub const TIMEOUT_FLOOR_MS: u64 = 1000;
 /// explicitly (never rely on `..Default::default()` for this field).
 pub const DEFAULT_MIN_SCORE: f32 = 0.12;
 
+/// Single source of truth for the engines Vox enables at startup.
+/// Used by `AppState` and by eval run manifests so the retrieval stack
+/// recorded in a report can never drift from the stack under test.
+///
+/// Keyless verticals ride along gated: each fires only when the query looks
+/// like its material, so general queries cost nothing extra.
+pub fn default_engines() -> Vec<nexus::Engine> {
+    vec![
+        nexus::Engine::Duckduckgo,
+        nexus::Engine::Bing,
+        nexus::Engine::Yahoo,
+        nexus::Engine::Brave,
+        nexus::Engine::Wikipedia,
+        nexus::Engine::Arxiv,
+        nexus::Engine::Scholar,
+        nexus::Engine::StackExchange,
+        nexus::Engine::Mdn,
+        nexus::Engine::Github,
+        nexus::Engine::HackerNews,
+        nexus::Engine::NewsRss,
+    ]
+}
+
 /// Adapter bridging Vox's in-process ONNX MiniLM singleton to the `nexus::traits::TextEmbedder` trait.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct VoxEmbedder;
@@ -208,6 +231,9 @@ impl ToolDefinition for WebSearchTool {
                 max_response_bytes: DEFAULT_MAX_RESPONSE_BYTES,
                 chunk_size_words: DEFAULT_CHUNK_SIZE_WORDS,
                 chunk_overlap_words: DEFAULT_CHUNK_OVERLAP_WORDS,
+                // Pool 6 against fetch_concurrency 5: one extra survivor slot at
+                // ~zero added wall time (single concurrent wave).
+                fetch_slack: 3,
                 fanout_deadline_ms: Some(fanout_budget_ms),
             };
 
@@ -269,19 +295,45 @@ impl ToolDefinition for WebSearchTool {
                 }
 
                 if result.scored_passages.is_empty() {
+                    let class = result
+                        .metrics
+                        .failure_class
+                        .unwrap_or(nexus::FailureClass::NoHits);
+                    let (message, next_action) = match class {
+                        nexus::FailureClass::FetchStarved => (
+                            format!(
+                                "Web search found results for '{}' but too few pages yielded readable text.",
+                                xml_escape(&query_cloned)
+                            ),
+                            "Try a more specific query or a narrower source type.",
+                        ),
+                        nexus::FailureClass::LowScoreFloor => (
+                            format!(
+                                "Web search found pages about '{}' but none scored as relevant.",
+                                xml_escape(&query_cloned)
+                            ),
+                            "Try rephrasing with the concrete entity name, version, date, or number.",
+                        ),
+                        _ => (
+                            format!(
+                                "Web search completed for '{}' but no relevant passages were found.",
+                                xml_escape(&query_cloned)
+                            ),
+                            "Try rephrasing the query with different keywords or broader terms.",
+                        ),
+                    };
                     log::info!(
-                        "[WebSearchTool] Web search returned zero passages for '{}'",
-                        query_cloned
+                        "[WebSearchTool] Web search returned zero passages for '{}' (failure_class={:?})",
+                        query_cloned,
+                        class
                     );
                     return Ok(render_status_xml(
                         "empty_results",
                         "not_found",
-                        &format!(
-                            "Web search completed for '{}' but no relevant passages were found.",
-                            xml_escape(&query_cloned)
-                        ),
-                        "Try rephrasing the query with different keywords or broader terms.",
+                        &message,
+                        next_action,
                         None,
+                        &status_extra(Some(class), true, Some(&result.metrics), 0),
                     ));
                 }
 
@@ -312,6 +364,12 @@ impl ToolDefinition for WebSearchTool {
                         ),
                         "Try rephrasing with the concrete entity name, or search for the specific quantity.",
                         None,
+                        &status_extra(
+                            Some(nexus::FailureClass::AnswerAbsent),
+                            true,
+                            Some(&result.metrics),
+                            result.scored_passages.len(),
+                        ),
                     ));
                 }
 
@@ -346,6 +404,35 @@ impl ToolDefinition for WebSearchTool {
                 Ok(Ok(Err(err))) => {
                     log::warn!("[WebSearchTool] Web search pipeline failed: {err}");
                     match err {
+                        nexus::NexusError::AllProvidersFailed { metrics, .. }
+                            if metrics.iter().all(|m| !m.success) =>
+                        {
+                            // Every engine skipped (quarantined/unconfigured) or
+                            // failed: report what happened per engine instead of
+                            // a bare transport failure.
+                            let skipped = metrics
+                                .iter()
+                                .all(|m| m.error.as_deref() == Some("quarantined") || m.error.as_deref() == Some("unconfigured"));
+                            if skipped {
+                                render_status_xml(
+                                    "empty_results",
+                                    "not_found",
+                                    "No search backend was available: every engine was quarantined or unconfigured.",
+                                    "Wait for quarantine to lift or configure a SearXNG instance, then retry.",
+                                    None,
+                                    &status_extra(Some(nexus::FailureClass::NoHits), false, None, 0),
+                                )
+                            } else {
+                                render_status_xml(
+                                    "network.failed",
+                                    "transient",
+                                    "The external search providers could not be reached.",
+                                    "Inform the user that web search is currently unreachable or try again with a simpler query.",
+                                    None,
+                                    &status_extra(None, true, None, 0),
+                                )
+                            }
+                        }
                         nexus::NexusError::PrivateIpBlocked(_)
                         | nexus::NexusError::DnsResolution { .. }
                         | nexus::NexusError::Http(_)
@@ -356,6 +443,7 @@ impl ToolDefinition for WebSearchTool {
                             "The external search providers could not be reached.",
                             "Inform the user that web search is currently unreachable or try again with a simpler query.",
                             None,
+                            &status_extra(None, true, None, 0),
                         ),
                         _ => render_status_xml(
                             "empty_results",
@@ -366,6 +454,7 @@ impl ToolDefinition for WebSearchTool {
                             ),
                             "Try rephrasing the query with different keywords or broader terms.",
                             None,
+                            &status_extra(Some(nexus::FailureClass::NoHits), true, None, 0),
                         ),
                     }
                 }
@@ -382,6 +471,7 @@ impl ToolDefinition for WebSearchTool {
                         "Web search reached the execution deadline before completing within the deadline.",
                         "Inform the user or retry with ranking_mode=\"sparse\" for faster results.",
                         Some(elapsed_ms),
+                        &status_extra(None, true, None, 0),
                     )
                 }
                 Err(_panic) => {
@@ -395,6 +485,7 @@ impl ToolDefinition for WebSearchTool {
                         "Web search encountered an internal error and was recovered safely.",
                         "Rephrase or simplify the search query.",
                         None,
+                        &status_extra(None, false, None, 0),
                     )
                 }
             };
@@ -412,15 +503,57 @@ fn render_status_xml(
     message: &str,
     next_action: &str,
     elapsed_ms: Option<u64>,
+    extra_attrs: &str,
 ) -> String {
     let elapsed_attr = match elapsed_ms {
         Some(ms) => format!(" elapsed_ms=\"{}\"", ms),
         None => String::new(),
     };
     format!(
-        "<web_search_status code=\"{}\" error_kind=\"{}\"{}>\n  <message>{}</message>\n  <next_action>{}</next_action>\n</web_search_status>",
-        code, error_kind, elapsed_attr, message, next_action
+        "<web_search_status code=\"{}\" error_kind=\"{}\"{}{}>\n  <message>{}</message>\n  <next_action>{}</next_action>\n</web_search_status>",
+        code, error_kind, extra_attrs, elapsed_attr, message, next_action
     )
+}
+
+/// Builds the machine-readable attribution tail for a status block (spec §6.2):
+/// failure class, retry hint, and the stage counters that locate the loss.
+fn status_extra(
+    failure_class: Option<nexus::FailureClass>,
+    retry_recommended: bool,
+    metrics: Option<&nexus::NexusSearchMetrics>,
+    delivered: usize,
+) -> String {
+    let class_attr = match failure_class {
+        Some(c) => format!(" failure_class=\"{}\"", failure_class_str(c)),
+        None => String::new(),
+    };
+    let retry_attr = format!(
+        " retry_recommended=\"{}\"",
+        if retry_recommended { "true" } else { "false" }
+    );
+    let counters = match metrics {
+        Some(m) => format!(
+            " raw_hits=\"{}\" pages_fetched=\"{}\" pages_extracted=\"{}\" passages_generated=\"{}\" passages_delivered=\"{}\"",
+            m.total_raw_hits,
+            m.pages_fetched.len(),
+            m.pages_extracted.len(),
+            m.total_passages_generated,
+            delivered,
+        ),
+        None => String::new(),
+    };
+    format!("{class_attr}{retry_attr}{counters}")
+}
+
+/// Serializes a failure class to its spec §6.2 wire value.
+fn failure_class_str(class: nexus::FailureClass) -> &'static str {
+    match class {
+        nexus::FailureClass::NoHits => "no_hits",
+        nexus::FailureClass::FetchStarved => "fetch_starved",
+        nexus::FailureClass::AnswerAbsent => "answer_absent",
+        nexus::FailureClass::LowScoreFloor => "low_score_floor",
+        nexus::FailureClass::BudgetExhausted => "budget_exhausted",
+    }
 }
 
 /// Computes dynamic context budget clamping with progressive passage popping and renders bounded XML evidence.
@@ -451,7 +584,7 @@ fn render_evidence_xml(
 
     let metrics_attr = if let Some(m) = metrics {
         format!(
-            " total_duration_ms=\"{}\" fanout_ms=\"{}\" url_dedup_ms=\"{}\" fetch_ms=\"{}\" extract_ms=\"{}\" chunk_ms=\"{}\" rank_ms=\"{}\"",
+            " total_duration_ms=\"{}\" fanout_ms=\"{}\" url_dedup_ms=\"{}\" fetch_ms=\"{}\" extract_ms=\"{}\" chunk_ms=\"{}\" rank_ms=\"{}\" raw_hits=\"{}\" pages_fetched=\"{}\" pages_extracted=\"{}\" passages_generated=\"{}\" passages_delivered=\"{}\"",
             m.total_pipeline_ms,
             m.fanout_total_ms,
             m.url_dedup_ms,
@@ -459,6 +592,11 @@ fn render_evidence_xml(
             m.extraction_total_ms,
             m.chunking_total_ms,
             m.ranking_total_ms,
+            m.total_raw_hits,
+            m.pages_fetched.len(),
+            m.pages_extracted.len(),
+            m.total_passages_generated,
+            scored_passages.len(),
         )
     } else {
         String::new()
@@ -556,6 +694,12 @@ fn render_evidence_xml(
         "Web search completed but available context was insufficient to fit results.",
         "Try a more specific query.",
         None,
+        &status_extra(
+            Some(nexus::FailureClass::BudgetExhausted),
+            false,
+            metrics,
+            0,
+        ),
     )
 }
 

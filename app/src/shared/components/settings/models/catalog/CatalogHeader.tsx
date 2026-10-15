@@ -45,7 +45,7 @@ export interface CatalogHeaderSearch {
 }
 
 export interface CatalogHeaderProps {
-  icon: React.ReactNode;
+  icon?: React.ReactNode;
   title: string;
   /** Breadcrumb back arrow for nested catalogs. */
   onBack?: () => void;
@@ -67,7 +67,7 @@ const ICON_BUTTON_IDLE =
 const ICON_BUTTON_ACTIVE = "text-[rgb(var(--accent))]";
 
 export const CatalogHeader = memo(function CatalogHeader({
-  icon,
+  icon: _icon,
   title,
   onBack,
   action,
@@ -115,14 +115,14 @@ export const CatalogHeader = memo(function CatalogHeader({
   const searchActive = search.open || search.value.length > 0;
 
   return (
-    <div className="flex items-center justify-between gap-2 shrink-0 pb-2 border-b border-[rgba(var(--accent),0.08)]">
-      {/* Left: breadcrumb + icon + title */}
-      <div className="flex items-center gap-2 min-w-0">
+    <div className="relative flex items-center justify-between gap-2 shrink-0 border-b border-[rgba(var(--accent),0.08)] min-h-[34px]">
+      {/* Left: onBack + Search (compact, never shifts center title) */}
+      <div className="flex items-center gap-1 shrink-0 z-10 min-w-0">
         {onBack && (
           <button
             type="button"
             onClick={onBack}
-            className="inline-flex items-center gap-1 text-[10.5px] font-bold text-[rgb(var(--foreground-muted))]/70 hover:text-[rgb(var(--accent))] transition-colors cursor-pointer shrink-0 group"
+            className="inline-flex items-center gap-1 text-[10.5px] font-bold text-[rgb(var(--foreground-muted))]/70 hover:text-[rgb(var(--accent))] transition-colors cursor-pointer shrink-0 group mr-0.5"
             aria-label={CATALOG_HEADER_COPY.back}
           >
             <ArrowLeft
@@ -132,23 +132,9 @@ export const CatalogHeader = memo(function CatalogHeader({
             />
           </button>
         )}
-        {onBack && (
-          <span className="text-[rgb(var(--foreground-muted))]/30 text-[10px] shrink-0">/</span>
-        )}
-        <div className="flex items-center gap-1.5 min-w-0">
-          <span className="shrink-0 text-[rgb(var(--accent))]">{icon}</span>
-          <span className="font-display font-bold text-[12px] sm:text-[12.5px] text-[rgb(var(--foreground))]/90 truncate">
-            {title}
-          </span>
-          {status}
-        </div>
-      </div>
-
-      {/* Right: action / filter / sort / search, or the search input in place */}
-      <div className="flex items-center gap-1 min-w-0 ml-auto shrink-0">
         {search.open ? (
-          <div className="flex items-center gap-1.5 w-[140px] sm:w-[200px] lg:w-[260px] min-w-0 border-b border-[rgb(var(--accent))] pb-0.5 animate-fade-in">
-            <Search size={12} className="text-[rgb(var(--accent))] shrink-0" />
+          <div className="flex items-center gap-1 w-[95px] sm:w-[110px] border-b border-[rgb(var(--accent))] pb-0.5 animate-fade-in">
+            <Search size={11} className="text-[rgb(var(--accent))] shrink-0" />
             <input
               ref={searchInputRef}
               type="text"
@@ -164,7 +150,7 @@ export const CatalogHeader = memo(function CatalogHeader({
               }}
               placeholder={search.placeholder}
               aria-label={search.placeholder}
-              className="flex-1 min-w-0 bg-transparent text-[11px] outline-none text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40"
+              className="w-full min-w-0 bg-transparent text-[11px] outline-none text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40"
             />
             <button
               type="button"
@@ -172,75 +158,84 @@ export const CatalogHeader = memo(function CatalogHeader({
               className="text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))] transition-colors p-0.5 shrink-0 cursor-pointer"
               aria-label={CATALOG_HEADER_COPY.closeSearch}
             >
-              <X size={12} />
+              <X size={11} />
             </button>
           </div>
         ) : (
-          <>
-            {action}
-
-            {filter && (
-              <div ref={filterRef} className="relative shrink-0">
-                <Tooltip label={filter.label} side="bottom" asChild>
-                  <button
-                    type="button"
-                    onClick={filter.onToggle}
-                    aria-label={filter.label}
-                    aria-expanded={filter.open}
-                    className={cn(
-                      ICON_BUTTON,
-                      filter.open || filter.activeCount > 0
-                        ? ICON_BUTTON_ACTIVE
-                        : ICON_BUTTON_IDLE
-                    )}
-                  >
-                    <Filter size={13} strokeWidth={1.75} />
-                  </button>
-                </Tooltip>
-
-                {filter.open && (
-                  <CatalogFilterPopover
-                    menu={filter.menu}
-                    anchorRef={filterRef}
-                    panelRef={popoverRef}
-                  />
-                )}
-              </div>
-            )}
-
-            <Tooltip
-              label={sort.order === "az" ? CATALOG_HEADER_COPY.sortDesc : CATALOG_HEADER_COPY.sortAsc}
-              side="bottom"
-              asChild
+          <Tooltip
+            label={searchActive ? CATALOG_HEADER_COPY.clearSearch : CATALOG_HEADER_COPY.search}
+            side="bottom"
+            asChild
+          >
+            <button
+              type="button"
+              onClick={search.onToggle}
+              aria-label={searchActive ? CATALOG_HEADER_COPY.clearSearch : CATALOG_HEADER_COPY.search}
+              className={cn(
+                ICON_BUTTON,
+                searchActive ? ICON_BUTTON_ACTIVE : ICON_BUTTON_IDLE
+              )}
             >
+              <Search size={13} strokeWidth={1.75} />
+            </button>
+          </Tooltip>
+        )}
+      </div>
+
+      {/* Center: title + status, anchored to center so it never moves when search expands */}
+      <div className="absolute left-1/2 -translate-x-1/2 flex items-center justify-center gap-1.5 max-w-[50%] pointer-events-none text-center">
+        <span className="font-display font-bold text-[12.5px] sm:text-[13px] text-[rgb(var(--foreground))]/90 truncate">
+          {title}
+        </span>
+        {status && <div className="pointer-events-auto shrink-0">{status}</div>}
+      </div>
+
+      {/* Right: action / sort / filter */}
+      <div className="flex items-center gap-1 shrink-0 ml-auto z-10">
+        {action}
+
+        <Tooltip
+          label={sort.order === "az" ? CATALOG_HEADER_COPY.sortDesc : CATALOG_HEADER_COPY.sortAsc}
+          side="bottom"
+          asChild
+        >
+          <button
+            type="button"
+            onClick={sort.onToggle}
+            aria-label={sort.order === "az" ? CATALOG_HEADER_COPY.sortAsc : CATALOG_HEADER_COPY.sortDesc}
+            className={cn(ICON_BUTTON, ICON_BUTTON_IDLE)}
+          >
+            <ArrowUpDown size={13} strokeWidth={1.75} />
+          </button>
+        </Tooltip>
+
+        {filter && (
+          <div ref={filterRef} className="relative shrink-0">
+            <Tooltip label={filter.label} side="bottom" asChild>
               <button
                 type="button"
-                onClick={sort.onToggle}
-                aria-label={sort.order === "az" ? CATALOG_HEADER_COPY.sortAsc : CATALOG_HEADER_COPY.sortDesc}
-                className={cn(ICON_BUTTON, ICON_BUTTON_IDLE)}
-              >
-                <ArrowUpDown size={13} strokeWidth={1.75} />
-              </button>
-            </Tooltip>
-
-            <Tooltip
-              label={searchActive ? CATALOG_HEADER_COPY.clearSearch : CATALOG_HEADER_COPY.search}
-              side="bottom"
-              asChild
-            >
-              <button
-                type="button"
-                onClick={search.onToggle}
-                aria-label={searchActive ? CATALOG_HEADER_COPY.clearSearch : CATALOG_HEADER_COPY.search}
+                onClick={filter.onToggle}
+                aria-label={filter.label}
+                aria-expanded={filter.open}
                 className={cn(
                   ICON_BUTTON,
-                  searchActive ? ICON_BUTTON_ACTIVE : ICON_BUTTON_IDLE
+                  filter.open || filter.activeCount > 0
+                    ? ICON_BUTTON_ACTIVE
+                    : ICON_BUTTON_IDLE
                 )}
               >
-                <Search size={13} strokeWidth={1.75} />
+                <Filter size={13} strokeWidth={1.75} />
               </button>
             </Tooltip>
-          </>
+
+            {filter.open && (
+              <CatalogFilterPopover
+                menu={filter.menu}
+                anchorRef={filterRef}
+                panelRef={popoverRef}
+              />
+            )}
+          </div>
         )}
       </div>
     </div>
