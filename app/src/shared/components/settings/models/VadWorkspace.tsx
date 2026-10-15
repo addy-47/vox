@@ -1,10 +1,12 @@
-import { memo } from "react";
+import { memo, useState, useMemo } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
 import { SubModelCard } from "../SubModelCard";
 import type { ModelStatus } from "@/shared/hooks/useModelDownloads";
 import { cn } from "@/shared/lib/utils";
 import { VAD_SETTINGS_COPY, COMPUTE_PROFILE_COPY } from "@/data/settingsCopy";
 import { CustomSvgs, PresetButton, PresetInput } from "./CustomSvgs";
+import { CatalogHeader, type CatalogSortOrder } from "./catalog/CatalogHeader";
+import { AudioWaveform } from "lucide-react";
 
 interface VadWorkspaceProps {
   activeCategoryTab: "model" | "settings";
@@ -34,12 +36,33 @@ export const VadWorkspace = memo(
     const updateDraft = useSettingsStore((s) => s.updateDraft);
     const modelCatalog = useSettingsStore((s) => s.modelCatalog);
 
+    const [searchQuery, setSearchQuery] = useState("");
+    const [isSearchOpen, setIsSearchOpen] = useState(false);
+    const [sortOrder, setSortOrder] = useState<CatalogSortOrder>("az");
+
     if (!vad) return null;
     const activeVadBackend = vad.vad_backend || "earshot";
     const vadModels = modelCatalog?.vad || [];
     if (process.env.NODE_ENV === "development") {
       console.log("[VadWorkspace] Loaded VAD models:", vadModels);
     }
+
+    const filteredVadModels = useMemo(() => {
+      let list = vadModels;
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        list = list.filter(
+          (m) =>
+            m.name.toLowerCase().includes(q) ||
+            m.id.toLowerCase().includes(q) ||
+            (m.description && m.description.toLowerCase().includes(q))
+        );
+      }
+      return [...list].sort((a, b) => {
+        const cmp = a.name.localeCompare(b.name);
+        return sortOrder === "az" ? cmp : -cmp;
+      });
+    }, [vadModels, searchQuery, sortOrder]);
 
     const currentThreshold = vad.threshold ?? 0.5;
     const currentSilenceMs = vad.silence_duration_ms ?? 800;
@@ -52,44 +75,70 @@ export const VadWorkspace = memo(
     const noiseGateCustom = ![0.001, 0.005, 0.020].some((v) => Math.abs(currentNoiseGate - v) < 0.0015);
 
     return (
-      <div className={cn("flex-1 min-h-0 w-full overflow-y-auto custom-scrollbar pr-1", layoutMode === "small" && "max-h-[220px]")}>
+      <div className="flex-1 min-h-0 w-full flex flex-col gap-2">
         {activeCategoryTab === "model" ? (
-          <div
-            className={cn(
-              "grid gap-2.5",
-              vadModels.length <= 2
-                ? (layoutMode === "small" ? "grid-cols-1 auto-rows-fr h-full" : "grid-cols-2 grid-rows-1 h-full")
-                : (layoutMode === "small" ? "grid-cols-1 auto-rows-max content-start" : "grid-cols-2 auto-rows-max content-start")
-            )}
-          >
-            {vadModels.map((model) => {
-              const isBuiltIn = !!model.is_built_in;
-              const isDownloaded = isBuiltIn || !!modelPresence[model.id];
-              const isActive = model.id === activeVadBackend;
+          <>
+            <CatalogHeader
+              icon={<AudioWaveform size={14} className="text-[rgb(var(--accent))]" />}
+              title=""
+              sort={{
+                order: sortOrder,
+                onToggle: () => setSortOrder((o) => (o === "az" ? "za" : "az")),
+              }}
+              search={{
+                open: isSearchOpen,
+                value: searchQuery,
+                placeholder: "Search VAD models...",
+                onChange: setSearchQuery,
+                onToggle: () => {
+                  setIsSearchOpen((o) => !o);
+                  if (isSearchOpen) setSearchQuery("");
+                },
+                onClose: () => {
+                  setIsSearchOpen(false);
+                  setSearchQuery("");
+                },
+              }}
+            />
+            <div className={cn("flex-1 min-h-0 w-full overflow-y-auto custom-scrollbar pr-1", layoutMode === "small" && "max-h-[220px]")}>
+              <div
+                className={cn(
+                  "grid gap-2.5",
+                  filteredVadModels.length <= 2
+                    ? (layoutMode === "small" ? "grid-cols-1 auto-rows-fr h-full" : "grid-cols-2 grid-rows-1 h-full")
+                    : (layoutMode === "small" ? "grid-cols-1 auto-rows-max content-start" : "grid-cols-2 auto-rows-max content-start")
+                )}
+              >
+                {filteredVadModels.map((model) => {
+                  const isBuiltIn = !!model.is_built_in;
+                  const isDownloaded = isBuiltIn || !!modelPresence[model.id];
+                  const isActive = model.id === activeVadBackend;
 
-              return (
-                <SubModelCard
-                  key={model.id}
-                  id={model.id}
-                  name={model.name}
-                  description={model.description || ""}
-                  parameters={model.parameters || (isBuiltIn ? "Built-in" : "ONNX")}
-                  ramUsage={model.ram_usage || "0 MB"}
-                  tradeoffs={model.tradeoffs || ""}
-                  isDownloaded={isDownloaded}
-                  isActive={isActive}
-                  isRequired={isBuiltIn}
-                  layoutMode={layoutMode}
-                  onSelect={() => updateDraft("vad", "vad_backend", model.id)}
-                  confirmDeleteId={confirmDeleteId}
-                  setConfirmDeleteId={setConfirmDeleteId}
-                  downloadStatus={downloadStatuses[model.id]}
-                  startDownload={() => startDownload(model.id)}
-                  deleteModel={() => deleteModel(model.id)}
-                />
-              );
-            })}
-          </div>
+                  return (
+                    <SubModelCard
+                      key={model.id}
+                      id={model.id}
+                      name={model.name}
+                      description={model.description || ""}
+                      parameters={model.parameters || (isBuiltIn ? "Built-in" : "ONNX")}
+                      ramUsage={model.ram_usage || "0 MB"}
+                      tradeoffs={model.tradeoffs || ""}
+                      isDownloaded={isDownloaded}
+                      isActive={isActive}
+                      isRequired={isBuiltIn}
+                      layoutMode={layoutMode}
+                      onSelect={() => updateDraft("vad", "vad_backend", model.id)}
+                      confirmDeleteId={confirmDeleteId}
+                      setConfirmDeleteId={setConfirmDeleteId}
+                      downloadStatus={downloadStatuses[model.id]}
+                      startDownload={() => startDownload(model.id)}
+                      deleteModel={() => deleteModel(model.id)}
+                    />
+                  );
+                })}
+              </div>
+            </div>
+          </>
         ) : (
           <div
             className={cn(

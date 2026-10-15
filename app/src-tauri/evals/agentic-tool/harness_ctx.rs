@@ -186,6 +186,11 @@ pub async fn setup_isolated_eval_context(
         settings.llm.max_output_tokens = 2000;
     }
     state.conversation_id.store(1, Relaxed);
+    // Eval-scoped override only: AppState::new syncs telemetry.is_private_mode
+    // from the real user settings file, and a private_mode=true workstation would
+    // silently drop every persistence event (empty tool_calls.json, blind latency
+    // ledger). The eval measures the pipeline, so it opts out of privacy gating.
+    state.telemetry.is_private_mode.store(false, Relaxed);
 
     let (event_tx, event_rx) = mpsc::channel::<VoxEvent>();
 

@@ -371,13 +371,19 @@ This needs a frontend/backend coordination review, but the plan should include i
 
 Order is load-bearing. No implementation before baseline.
 
-### 9.0 Step 0 — expand eval set + baseline (first task)
+### 9.0 Step 0 — expand eval set + baseline (DONE 2026-10-15)
 
-1. Expand `evals/assets/web_search_corpus.json` to >=24 queries across news, technical, comparative, factual-entity, walled/adversarial, longtail.
-2. Each item: `id`, `category`, `query`, `expected_facts`, `min_distinct_sources`, `max_acceptable_ms`.
-3. Run baseline on current published `nexuss 0.1.2` with local path unchanged. Capture per-stage `NexusSearchMetrics` + Vox XML output.
-4. Spawn QA subagent: independently web-searches each query, records its own evidence/URLs, scores crate result vs independent result on relevance, source diversity, answer presence, and latency.
-5. Baseline report is the gate. No 0.1.3 code until baseline lands.
+1. Corpus expanded to 48 entries: 25 original factual + 23 new across `news` (4), `tech` (6), `cmp` (4), `ent` (4), `adv` (3), `long` (3). Shape stays `{id, query}` only.
+2. Baseline run `20261015_062211_b83025a0` on published `nexuss 0.1.2`, hybrid, 740.8s: **48/48 ok, 44/48 retrieval_ok**, 217 passages (mean 4.52), 95 sources (mean 1.98), turn mean 3335ms. FAILs: `geo_01`, `tech_01`, `cmp_03`, `adv_03`.
+3. QA report `evals/results/agentic-tool/20261015_062211_b83025a0/qa_report.md` (verified by direct read):
+   - `geo_01` = **budget_exhausted** (elapsed 5501ms vs 5500ms hybrid default) — trivial query killed by its own budget. Grounds raising the hybrid default and/or sparse fallback.
+   - `tech_01`, `cmp_03` = retrieval defects (authoritative sources exist live; sibling cases passed).
+   - `adv_03` = suspect PARTIAL (heavily documented domain, zero passages; bypass framing caveat).
+   - Harness gaps (must fix before 0.1.3 delta): `tool_calls.json` empty in all 48 cases, summary tool-latency all zeros, no per-engine/stage counters in artifacts, manifest missing nexus version + engine list + deadlines.
+   - Thin passes unflagged: `law_02` (2 passages, one off-topic 0.326), five single-source cases.
+6. Re-baseline `20261015_103058_9c6588e3` (fixed harness, identical retrieval code): 48/48 ok, **39/48 retrieval_ok** in 374.0s, tool latency now real (mean 3084ms). FAIL set differs from baseline (only `adv_03` repeats; `geo_01` passed at 5323ms — budget edge again). Finding: single-run counts are upstream-noise-dominated; the 0.1.3 delta must be judged on aggregates + failure-class breakdown, not headline counts.
+7. Next increment: §4.3 spec amendment (failure taxonomy + stage counters in `web-search.md`), then crate changes.
+5. QA round 2 `qa_round2.md` (verified by direct read): 20 sampled passes scored vs independent ground truth (17 live fetches) → **10 PASS / 9 PARTIAL / 1 FAIL** (`long_02`, 0.618 on zero-relevance content). Recency 3/4 current (`news_04` stale rumor-tense pricing). No injection found. 8 ranked relevance defects head the 0.1.3 backlog: query-term coverage signal, date-aware ranking, vendor-bias flagging, `retrieval_thin` tier, contradiction timestamps, boilerplate stripping, query-frame coverage, adversarial-premise policy.
 
 ### 9.1 Crate
 
@@ -438,10 +444,12 @@ Corpus retention, `focus`, `must_contain`, sub-query decomposition, token handle
 
 - [ ] 0. Expand eval corpus + baseline on `nexuss 0.1.2` (gate).
 - [ ] 1. QA subagent independent search + scoring (baseline).
-- [ ] 2. Crate: DDG Lite + challenge detection + fallback order.
-- [ ] 3. Crate: SearXNG/custom + arXiv/StackExchange verticals.
-- [ ] 4. Crate: `fetch_slack` over-fetch + domain-cap hardening + transport fallback.
-- [ ] 5. Crate: failure-class taxonomy + metrics/logging.
+- [ ] 2. Crate: DDG Lite + challenge detection + fallback order. (DONE 2026-10-15: Lite primary + HTML fallback live-verified — 10 hits via primp; `engine_parsing_test` 15/15 via testing subagent.)
+- [ ] 3. Crate: SearXNG/custom + arXiv/StackExchange verticals. (DONE 2026-10-15: `Engine::Searxng` + 7 keyless verticals — Arxiv, Scholar, StackExchange, Mdn, Github, HackerNews, NewsRss — each own index family, whole-token query gates, live-shape-verified parsers; `verticals_test` 23/23, full crate suite 137/137 via testing subagent. Vox defaults include them gated.)
+- [ ] 4. Crate: `fetch_slack` over-fetch + domain-cap hardening + transport fallback. (DONE 2026-10-15: `fetch_slack` knob, pool cap 8, uncapped fill pass removed — tiny pools pass through, caps strict otherwise; `candidate_cap_test` 3/3 via testing subagent; full suite 108/108.)
+- [ ] 5. Crate: failure-class taxonomy + metrics/logging. (DONE 2026-10-15: `FailureClass` on metrics, stage counters in evidence header + every status, `retry_recommended`, all-skipped fanout returns reasons; spec §6.2 amended first.)
+- [ ] 6. Vox: temp path dep + `state.rs` builder wiring. (DONE: path dep + `default_engines()` centralization.)
+- [ ] 7. Vox: `web_search.rs` status contract + `prompt.rs` + loop failure counter. (PARTIAL: contract rendered, 3 prompt rules kept; loop counter REMOVED per user direction — loop.rs reverted to original. `fetch_slack` 2→3, pool 6 vs concurrency 5.)
 - [ ] 6. Vox: temp path dep + `state.rs` builder wiring.
 - [ ] 7. Vox: `web_search.rs` status contract + `prompt.rs` + loop failure counter.
 - [ ] 8. Vox: bounded `web_fetch` (only if approved in this release).

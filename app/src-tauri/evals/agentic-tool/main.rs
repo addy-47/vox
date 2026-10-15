@@ -376,6 +376,23 @@ async fn run_cases(
             "cases": corpus,
             "scripts": scripts.iter().map(|s| s.summary()).collect::<Vec<_>>(),
             "seam": "input=scripted tool call via mock LLM; output=final request body",
+            // Pinned retrieval stack: a 0.1.2-vs-0.1.3 comparison must rest on
+            // the run record, not external notes. Values read from the same
+            // constants the production path uses (single source of truth).
+            "retrieval_stack": {
+                "nexus_version": nexus::NEXUS_VERSION,
+                "engines": vox_lib::services::harness::stages::tools::web_search::default_engines()
+                    .iter().map(|e| e.to_string()).collect::<Vec<_>>(),
+                "deadlines_ms": {
+                    "sparse": vox_lib::services::harness::stages::tools::web_search::TIMEOUT_SPARSE_MS,
+                    "dense": vox_lib::services::harness::stages::tools::web_search::TIMEOUT_DENSE_MS,
+                    "hybrid": vox_lib::services::harness::stages::tools::web_search::TIMEOUT_HYBRID_MS,
+                    "floor": vox_lib::services::harness::stages::tools::web_search::TIMEOUT_FLOOR_MS,
+                    "ceiling": vox_lib::services::harness::stages::tools::web_search::TIMEOUT_CEILING_MS,
+                },
+                "min_score": vox_lib::services::harness::stages::tools::web_search::DEFAULT_MIN_SCORE,
+                "fetch_candidates": vox_lib::services::harness::stages::tools::web_search::DEFAULT_FETCH_CANDIDATES,
+            },
         }),
     )?;
     stage_dump::write_json(&run_dir, names::MANIFEST, &manifest)?;

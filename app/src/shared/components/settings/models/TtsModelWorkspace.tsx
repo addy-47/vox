@@ -1,9 +1,10 @@
-import { memo } from "react";
+import { memo, useState, useMemo } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
 import { SubModelCard } from "../SubModelCard";
 import type { ModelStatus } from "@/shared/hooks/useModelDownloads";
-import { Loader2 } from "lucide-react";
+import { Loader2, AudioLines } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
+import { CatalogHeader, type CatalogSortOrder } from "./catalog/CatalogHeader";
 
 interface TtsModelWorkspaceProps {
   layoutMode?: "full-max" | "full-min" | "small";
@@ -33,6 +34,10 @@ export const TtsModelWorkspace = memo(
     const updateDraft = useSettingsStore((s) => s.updateDraft);
     const modelCatalog = useSettingsStore((s) => s.modelCatalog);
 
+    const [searchQuery, setSearchQuery] = useState("");
+    const [isSearchOpen, setIsSearchOpen] = useState(false);
+    const [sortOrder, setSortOrder] = useState<CatalogSortOrder>("az");
+
     if (!draftSettings || !modelCatalog) return null;
 
     // Tier derives from the preview group's manifest flags — never id literals.
@@ -41,7 +46,7 @@ export const TtsModelWorkspace = memo(
     const isCloud = !!previewGroup?.is_cloud;
 
     // Strictly partition models according to the active provider tier (Embedded, Remote, or Cloud) using manifest flags
-    const filteredModels = (modelCatalog.tts || []).filter((model) => {
+    const tierModels = (modelCatalog.tts || []).filter((model) => {
       if (isCloud) {
         return !!model.is_cloud;
       }
@@ -52,16 +57,56 @@ export const TtsModelWorkspace = memo(
       return !model.is_cloud && !model.is_remote;
     });
 
+    const filteredModels = useMemo(() => {
+      let list = tierModels;
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        list = list.filter(
+          (m) =>
+            m.name.toLowerCase().includes(q) ||
+            m.id.toLowerCase().includes(q) ||
+            (m.description && m.description.toLowerCase().includes(q))
+        );
+      }
+      return [...list].sort((a, b) => {
+        const cmp = a.name.localeCompare(b.name);
+        return sortOrder === "az" ? cmp : -cmp;
+      });
+    }, [tierModels, searchQuery, sortOrder]);
+
     return (
-      <div className={cn("flex-1 min-h-0 w-full overflow-y-auto custom-scrollbar pr-1", layoutMode === "small" && "max-h-[220px]")}>
-        <div
-          className={cn(
-            "grid gap-2.5 h-full",
-            filteredModels.length <= 2
-              ? (layoutMode === "small" ? "grid-cols-1 auto-rows-fr" : "grid-cols-2 grid-rows-1")
-              : (layoutMode === "small" ? "grid-cols-1 auto-rows-max content-start" : "grid-cols-2 auto-rows-max content-start")
-          )}
-        >
+      <div className="flex-1 min-h-0 w-full flex flex-col gap-2">
+        <CatalogHeader
+          icon={<AudioLines size={14} className="text-[rgb(var(--accent))]" />}
+          title=""
+          sort={{
+            order: sortOrder,
+            onToggle: () => setSortOrder((o) => (o === "az" ? "za" : "az")),
+          }}
+          search={{
+            open: isSearchOpen,
+            value: searchQuery,
+            placeholder: "Search TTS models...",
+            onChange: setSearchQuery,
+            onToggle: () => {
+              setIsSearchOpen((o) => !o);
+              if (isSearchOpen) setSearchQuery("");
+            },
+            onClose: () => {
+              setIsSearchOpen(false);
+              setSearchQuery("");
+            },
+          }}
+        />
+        <div className={cn("flex-1 min-h-0 w-full overflow-y-auto custom-scrollbar pr-1", layoutMode === "small" && "max-h-[220px]")}>
+          <div
+            className={cn(
+              "grid gap-2.5 h-full",
+              filteredModels.length <= 2
+                ? (layoutMode === "small" ? "grid-cols-1 auto-rows-fr" : "grid-cols-2 grid-rows-1")
+                : (layoutMode === "small" ? "grid-cols-1 auto-rows-max content-start" : "grid-cols-2 auto-rows-max content-start")
+            )}
+          >
           {filteredModels.map((model) => {
             // Single source: manifest group id IS the settings active key.
             const isSelected = model.id === draftSettings.tts.active;
@@ -108,7 +153,8 @@ export const TtsModelWorkspace = memo(
           })}
         </div>
       </div>
-    );
+    </div>
+  );
   }
 );
 
