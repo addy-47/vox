@@ -1,10 +1,13 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::services::{
-    harness::{ChatMessage, PromptTag::SessionContext, Role},
-    llm::{
-        catalog, ConversationInput, GenerationPolicy, GenerationPurpose, GenerationRequest,
-        LlmSettings, OutputConstraint, ReasoningMode,
+use crate::{
+    core::defaults::DEFAULT_LLM_CONTEXT_WINDOW,
+    services::{
+        harness::{ChatMessage, PromptTag::SessionContext, Role},
+        llm::{
+            catalog, ConversationInput, GenerationPolicy, GenerationPurpose, GenerationRequest,
+            LlmSettings, OutputConstraint, ReasoningMode,
+        },
     },
 };
 
@@ -154,7 +157,7 @@ pub fn build_compaction_request(
 
     let default_settings = LlmSettings::default();
     let effective_settings = settings.unwrap_or(&default_settings);
-    let eff_ctx = effective_settings.effective_ctx_size();
+    let eff_ctx = LlmSettings::effective_ctx_size(DEFAULT_LLM_CONTEXT_WINDOW);
     let model = effective_settings.active_model();
     let baseline_spec = catalog::get_baseline_spec(model);
     let probed_max_output = baseline_spec.and_then(|s| s.max_output_tokens);

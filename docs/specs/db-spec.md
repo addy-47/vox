@@ -279,6 +279,22 @@ Consolidated registry for all voice profiles across bundled, custom cloned, and 
 - Offline-first availability: Bundled and manifest voices populate automatically on first run without requiring network connectivity.
 - Non-blocking sync: Remote provider voices (Edge TTS) sync asynchronously and merge via `ON CONFLICT(id) DO UPDATE`.
 
+### 5.13 `models` (Model Registry & Parameter Provenance)
+Unified registry for model metadata, per-model parameter customization, activation timestamps, and persistent favorites.
+- `id` (TEXT, PK): Canonical model identifier (e.g. `meta/llama-3.1-8b-instruct`, `qwen_3_5_0_8b`, `kokoro`).
+- `model_type` (TEXT, NOT NULL): Pipeline domain (`stt`, `llm`, `tts`, `realtime`).
+- `category` (TEXT, NOT NULL): Deployment tier (`embedded`, `server`, `cloud`).
+- `provider` (TEXT, NULLABLE): Provider slug (`nvidia`, `openrouter`), server ID (`ollama`, `home-gpu`), or NULL for embedded local models.
+- `parameters` (TEXT, NOT NULL DEFAULT '{}'): JSON dictionary persisting user overrides for this specific model (e.g. `context_window`, `temperature`, `threads`, `speed`).
+- `is_favorite` (INTEGER, NOT NULL DEFAULT 0): Starred favorite status (1 = favorited, 0 = default). Deprecates and replaces legacy `favorite_models` table.
+- `last_active_at` (INTEGER, NULLABLE): Millisecond epoch timestamp of last runtime activation.
+- `created_at` (INTEGER, NOT NULL): Creation millisecond epoch.
+- `updated_at` (INTEGER, NOT NULL): Last update millisecond epoch.
+*Indexes*: `(model_type, category)`, `(is_favorite)`, `(last_active_at DESC)`.
+*Invariants*:
+- Sparse on-demand storage: Untouched catalog models create zero database rows and resolve from default manifests. Rows are created only on activation, favorite toggle, or parameter tuning.
+- Parameter provenance: Tuning parameters for one model modifies only that model's row, preventing cross-model parameter pollution.
+
 ---
 
 ## 6. Asynchronous Persistence Event Shapes

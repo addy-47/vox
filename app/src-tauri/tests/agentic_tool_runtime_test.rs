@@ -121,6 +121,7 @@ async fn test_terminal_tool_title_and_accumulator_parity() {
             "System prompt".to_string(),
             None,
             &settings,
+            vox_lib::services::harness::LlmExecutionParams::default(),
             llm_tx,
             true,
         );
@@ -321,6 +322,7 @@ async fn test_search_memory_non_terminal_rrf_retrieval() {
             "System prompt".to_string(),
             None,
             &settings,
+            vox_lib::services::harness::LlmExecutionParams::default(),
             llm_tx,
             true,
         );

@@ -39,8 +39,8 @@ use crate::{
                 ConnectionConfig, TransportType,
             },
             CanonicalToolCall, CanonicalToolDefinition, ConversationInput, EmbeddedProvider,
-            GenerationOptions, GenerationPurpose, GenerationRequest, LlmProvider,
-            LlmProviderConfig, OutputConstraint, RemoteTransport, GEMMA_MODEL_DIR, QWEN_MODEL_DIR,
+            GenerationOptions, GenerationPurpose, GenerationRequest, LlmProvider, LlmRuntimeTarget,
+            OutputConstraint, RemoteTransport, GEMMA_MODEL_DIR, QWEN_MODEL_DIR,
         },
     },
     setup::manifest::VoxManifest,
@@ -152,22 +152,24 @@ struct OllamaPsModel {
 /// Lists available models for the given LLM provider configuration or active state.
 pub async fn list_models(
     state: &Arc<AppState>,
-    provider: Option<LlmProviderConfig>,
+    provider: Option<LlmRuntimeTarget>,
 ) -> Result<Vec<LlmModelInfo>, String> {
     let config = match provider {
         Some(prov) => prov,
         None => {
             let settings = state.settings.read().map_err(|e| e.to_string())?;
-            settings.llm.to_provider_config()
+            settings
+                .llm
+                .to_provider_config(Some(&settings.providers.llm))
         }
     };
 
     match config {
-        LlmProviderConfig::Embedded => {
+        LlmRuntimeTarget::Embedded => {
             let llm_dir = paths::get().models.join(QWEN_MODEL_DIR);
             EmbeddedProvider::list_models_in_dir(&llm_dir).map_err(|e| e.to_string())
         }
-        LlmProviderConfig::Server {
+        LlmRuntimeTarget::Server {
             base_url,
             model,
             api_key,
@@ -183,7 +185,7 @@ pub async fn list_models(
             )
             .await
         }
-        LlmProviderConfig::Cloud {
+        LlmRuntimeTarget::Cloud {
             base_url,
             model,
             api_key,
@@ -223,21 +225,25 @@ async fn list_remote_models(
 /// Probes capabilities, validates optional token cap, and persists result to the capabilities cache.
 pub async fn probe_capabilities(
     state: &Arc<AppState>,
-    provider: Option<LlmProviderConfig>,
+    provider: Option<LlmRuntimeTarget>,
     model_id: Option<String>,
     target_cap: Option<u32>,
 ) -> Result<ModelProbeResult, String> {
     let (config, active_model) = {
         let settings = state.settings.read().map_err(|e| e.to_string())?;
         (
-            provider.unwrap_or_else(|| settings.llm.to_provider_config()),
+            provider.unwrap_or_else(|| {
+                settings
+                    .llm
+                    .to_provider_config(Some(&settings.providers.llm))
+            }),
             settings.llm.active_model().to_string(),
         )
     };
     let kind = match config {
-        LlmProviderConfig::Embedded => CAP_KIND_EMBEDDED,
-        LlmProviderConfig::Server { .. } => CAP_KIND_SERVER,
-        LlmProviderConfig::Cloud { .. } => CAP_KIND_CLOUD,
+        LlmRuntimeTarget::Embedded => CAP_KIND_EMBEDDED,
+        LlmRuntimeTarget::Server { .. } => CAP_KIND_SERVER,
+        LlmRuntimeTarget::Cloud { .. } => CAP_KIND_CLOUD,
     };
 
     let target = model_id.or(Some(active_model));
@@ -594,7 +600,7 @@ pub struct CapabilityProbeEngine;
 impl CapabilityProbeEngine {
     /// Probes model capabilities for a specific model override or active configuration.
     pub async fn probe_capabilities(
-        config: &LlmProviderConfig,
+        config: &LlmRuntimeTarget,
         target_model: Option<&str>,
         kind: &str,
     ) -> Result<ModelCapabilities, Box<dyn Error + Send + Sync>> {
@@ -604,18 +610,18 @@ impl CapabilityProbeEngine {
             .as_secs();
 
         match config {
-            LlmProviderConfig::Embedded => {
+            LlmRuntimeTarget::Embedded => {
                 let model_id = target_model.unwrap_or("embedded-default.gguf");
                 Ok(Self::probe_local_embedded(model_id, now))
             }
-            LlmProviderConfig::Server {
+            LlmRuntimeTarget::Server {
                 base_url,
                 model,
                 api_key,
                 provider_name,
                 ..
             }
-            | LlmProviderConfig::Cloud {
+            | LlmRuntimeTarget::Cloud {
                 base_url,
                 model,
                 api_key,
@@ -1311,7 +1317,7 @@ impl CapabilityProbeEngine {
 
     /// Smoke validation for custom token caps without error-text scraping.
     pub async fn validate_token_cap(
-        config: &LlmProviderConfig,
+        config: &LlmRuntimeTarget,
         target_model_id: Option<&str>,
         target_cap: u32,
     ) -> (Option<u32>, ProbeCheck) {
@@ -1325,21 +1331,21 @@ impl CapabilityProbeEngine {
         };
 
         let (base_url, model, api_key, provider_name) = match config {
-            LlmProviderConfig::Server {
+            LlmRuntimeTarget::Server {
                 base_url,
                 model,
                 api_key,
                 provider_name,
                 ..
             }
-            | LlmProviderConfig::Cloud {
+            | LlmRuntimeTarget::Cloud {
                 base_url,
                 model,
                 api_key,
                 provider_name,
                 ..
             } => (base_url, model, api_key, provider_name),
-            LlmProviderConfig::Embedded => {
+            LlmRuntimeTarget::Embedded => {
                 return (
                     None,
                     done(
@@ -1911,7 +1917,7 @@ mod tests {
     #[tokio::test]
     async fn validate_token_cap_accepts_working_cap() {
         let (url, server) = serve_canned(vec![(200, "{}".to_string())]);
-        let provider = LlmProviderConfig::Server {
+        let provider = LlmRuntimeTarget::Server {
             base_url: url.clone(),
             model: "test-model".to_string(),
             api_key: None,
@@ -1931,7 +1937,7 @@ mod tests {
     async fn validate_token_cap_rejects_overlong_cap() {
         let body = "{\"error\":{\"message\":\"context_length_exceeded: too long\",\"type\":\"invalid_request\"}}";
         let (url, server) = serve_canned(vec![(400, body.to_string())]);
-        let provider = LlmProviderConfig::Server {
+        let provider = LlmRuntimeTarget::Server {
             base_url: url.clone(),
             model: "test-model".to_string(),
             api_key: None,

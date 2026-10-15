@@ -9,8 +9,8 @@ use super::ROUTER_THREAD_NAME;
 use crate::{
     core::{
         events::{
-            ActivityEnvelope, InteractionMode, IpcEvent, PipelineMode,
-            StateChangedPayload, VoxEvent,
+            ActivityEnvelope, InteractionMode, IpcEvent, PipelineMode, StateChangedPayload,
+            VoxEvent,
         },
         state::{AppState, AppWindow, InteractionOwner, InteractionState},
     },

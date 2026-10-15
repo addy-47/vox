@@ -5,20 +5,17 @@ use tauri::{AppHandle, Manager, State};
 use crate::{
     config::get_preset_colors,
     core::{error::VoxIpcError, state::AppState},
-    persistence::voices::{
-        display_name_for_slug, get_voice, list_voices as list_db_voices, VoiceListScope,
+    persistence::models::{
+        list_favorite_models as list_db_favorite_models,
+        toggle_model_favorite as toggle_db_model_favorite,
     },
     services::{
         health::{self as health_svc, ProviderConfigPayload},
         llm::{
             catalog::{self as llm_catalog, CapabilityCacheRead, LlmModelInfo, ModelProbeResult},
-            LlmProviderConfig,
+            LlmRuntimeTarget,
         },
-        tts::{
-            factory::caps_for_id,
-            voice::{get_supertonic_voice_profiles, get_voice_profiles},
-            ProviderCaps, TtsActiveProvider, VoiceProfile,
-        },
+        tts::{factory::caps_for_id, ProviderCaps, VoiceProfile},
     },
     setup::{
         manifest::{ModelGroup, VoxManifest},
@@ -103,99 +100,11 @@ pub async fn get_model_catalog<R: tauri::Runtime>(
         .cloned()
         .collect();
 
-    let (tts_active, tts_settings) = {
-        let guard = state
-            .settings
-            .read()
-            .map_err(|e| VoxIpcError::Internal(e.to_string()))?;
-        (guard.tts.active, guard.tts.clone())
-    };
-
-    let (voices, active_voice_name) = match tts_active {
-        TtsActiveProvider::Supertonic => {
-            let p = get_supertonic_voice_profiles();
-            let active = p
-                .iter()
-                .find(|v| v.name.eq_ignore_ascii_case(&tts_settings.voice_id))
-                .or(p.first())
-                .map(|v| v.name.clone());
-            (p, active)
-        }
-        TtsActiveProvider::Kokoro => {
-            let p = get_voice_profiles();
-            let active = p
-                .iter()
-                .find(|v| v.name.eq_ignore_ascii_case(&tts_settings.voice_id))
-                .or(p.first())
-                .map(|v| v.name.clone());
-            (p, active)
-        }
-        TtsActiveProvider::Zipvoice => {
-            let conn = state.db.connect().ok();
-            let pack = if let Some(ref conn) = conn {
-                list_db_voices(conn, None, VoiceListScope::ZipvoicePack)
-                    .await
-                    .unwrap_or_default()
-            } else {
-                Vec::new()
-            };
-
-            let profiles: Vec<VoiceProfile> = pack
-                .iter()
-                .enumerate()
-                .map(|(i, v)| VoiceProfile {
-                    id: i as i32,
-                    name: v.name.clone(),
-                    gender: None,
-                    accent: None,
-                    language: Some("en".to_string()),
-                })
-                .collect();
-
-            let active = if let Some(ref slug) = tts_settings.zipvoice.voice_id {
-                pack.iter()
-                    .find(|v| v.slug.as_deref() == Some(slug) || v.id == *slug)
-                    .map(|v| v.name.clone())
-                    .or_else(|| Some(display_name_for_slug(slug)))
-            } else {
-                pack.first()
-                    .map(|v| v.name.clone())
-                    .or_else(|| Some("Alfred".to_string()))
-            };
-
-            (profiles, active)
-        }
-        TtsActiveProvider::Chatterbox | TtsActiveProvider::ChatterboxRemote => {
-            let voice_id = if tts_active == TtsActiveProvider::Chatterbox {
-                tts_settings.chatterbox.voice_id.as_deref()
-            } else {
-                tts_settings.chatterbox_remote.voice_id.as_deref()
-            };
-
-            let active = if let Some(id) = voice_id {
-                let conn = state.db.connect().ok();
-                if let Some(ref conn) = conn {
-                    get_voice(conn, id).await.ok().flatten().map(|v| v.name)
-                } else {
-                    None
-                }
-            } else {
-                Some("Default".to_string())
-            };
-            (Vec::new(), active)
-        }
-        TtsActiveProvider::EdgeTts => {
-            let active = tts_settings.edge_tts.voice.map(|v| {
-                if let Some(stripped) = v.strip_suffix("Neural") {
-                    if let Some(name) = stripped.rsplit('-').next() {
-                        return name.to_string();
-                    }
-                }
-                v
-            });
-            (Vec::new(), active)
-        }
-    };
+    let active_voice_name = state
+        .settings
+        .read()
+        .ok()
+        .map(|s| s.tts.active_voice_id.clone());
 
     Ok(ModelCatalog {
         llm,
@@ -204,7 +113,7 @@ pub async fn get_model_catalog<R: tauri::Runtime>(
         vad,
         auxiliary,
         model_groups: groups,
-        voices,
+        voices: Vec::new(),
         preset_colors: get_preset_colors(),
         active_voice_name,
     })
@@ -231,7 +140,7 @@ pub async fn check_provider_health(
 #[tauri::command]
 pub async fn list_llm_models(
     state: State<'_, Arc<AppState>>,
-    provider: Option<LlmProviderConfig>,
+    provider: Option<LlmRuntimeTarget>,
 ) -> Result<Vec<LlmModelInfo>, VoxIpcError> {
     llm_catalog::list_models(&state, provider)
         .await
@@ -242,7 +151,7 @@ pub async fn list_llm_models(
 #[tauri::command]
 pub async fn probe_model_capabilities(
     state: State<'_, Arc<AppState>>,
-    provider: Option<LlmProviderConfig>,
+    provider: Option<LlmRuntimeTarget>,
     model_id: Option<String>,
     target_cap: Option<u32>,
 ) -> Result<ModelProbeResult, VoxIpcError> {
@@ -290,24 +199,9 @@ pub async fn list_favorite_models(
         .db
         .connect()
         .map_err(|e| VoxIpcError::Database(e.to_string()))?;
-    let mut rows = conn
-        .query(
-            "SELECT id FROM favorite_models ORDER BY created_at DESC",
-            (),
-        )
+    list_db_favorite_models(&conn)
         .await
-        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
-    let mut model_ids = Vec::new();
-    while let Some(row) = rows
-        .next()
-        .await
-        .map_err(|e| VoxIpcError::Database(e.to_string()))?
-    {
-        if let Ok(id) = row.get::<String>(0) {
-            model_ids.push(id);
-        }
-    }
-    Ok(model_ids)
+        .map_err(|e| VoxIpcError::Database(e.to_string()))
 }
 
 /// Atomically toggles favorite state for an LLM model ID. Returns true if favorited.
@@ -326,36 +220,13 @@ pub async fn toggle_model_favorite(
         .db
         .connect()
         .map_err(|e| VoxIpcError::Database(e.to_string()))?;
-    let mut rows = conn
-        .query(
-            "SELECT id FROM favorite_models WHERE id = ? OR LOWER(id) = LOWER(?) LIMIT 1",
-            (model_id.to_string(), model_id.to_string()),
-        )
+    let is_fav = toggle_db_model_favorite(&conn, model_id)
         .await
         .map_err(|e| VoxIpcError::Database(e.to_string()))?;
-    if let Some(row) = rows
-        .next()
-        .await
-        .map_err(|e| VoxIpcError::Database(e.to_string()))?
-    {
-        let matched_id: String = row.get(0).unwrap_or_else(|_| model_id.to_string());
-        conn.execute("DELETE FROM favorite_models WHERE id = ?", (matched_id,))
-            .await
-            .map_err(|e| VoxIpcError::Database(e.to_string()))?;
-        log::info!("[Catalog::IPC] Model unfavorited: {}", model_id);
-        Ok(false)
-    } else {
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs() as i64;
-        conn.execute(
-            "INSERT INTO favorite_models (id, created_at) VALUES (?, ?)",
-            (model_id.to_string(), now),
-        )
-        .await
-        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
-        log::info!("[Catalog::IPC] Model favorited: {}", model_id);
-        Ok(true)
-    }
+    log::info!(
+        "[Catalog::IPC] Model favorite toggled: id={}, is_favorite={}",
+        model_id,
+        is_fav
+    );
+    Ok(is_fav)
 }

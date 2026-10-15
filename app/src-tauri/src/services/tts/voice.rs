@@ -824,11 +824,13 @@ pub async fn list_unified_voices(
          WHERE (id LIKE 'chatterbox_voice_%' OR id LIKE 'chatterbox_%') AND provider_id != 'chatterbox';",
         (),
     ).await;
-    let _ = conn.execute(
-        "UPDATE voices SET provider_id = 'zipvoice'
+    let _ = conn
+        .execute(
+            "UPDATE voices SET provider_id = 'zipvoice'
          WHERE source_kind = 'zipvoice_pack' AND provider_id != 'zipvoice';",
-        (),
-    ).await;
+            (),
+        )
+        .await;
 
     // 2. Query Turso voices table offline-first. The engine id maps through
     // the same scope resolution as `resolve_voice_scope` so remote-family

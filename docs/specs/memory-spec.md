@@ -32,37 +32,38 @@ Vox requires continuous context compression for long-running voice sessions, dur
 
 ```mermaid
 flowchart TD
-    subgraph Intake Phase
-        Turns[Completed Dialogue Turns] --> Eval{Context Saturated ≥ 85%?}
-        Eval -- Yes --> Inline[Inline Compaction Pass]
-        Eval -- No (Session End / Standby) --> Slice[Soft / Boundary Compaction Slice]
-        Inline & Slice --> Extract[LLM Compaction Pass<br/>Structured JSON 6-Buckets]
+    subgraph IntakePhase ["Intake Phase"]
+        Turns["Completed Dialogue Turns"] --> Eval{"Context Saturated >= 85%?"}
+        Eval -- Yes --> Inline["Inline Compaction Pass"]
+        Eval -- "No (Session End / Standby)" --> Slice["Soft / Boundary Compaction Slice"]
+        Inline & Slice --> Extract["LLM Compaction Pass<br/>Structured JSON 6-Buckets"]
     end
 
-    subgraph Staging & Deduplication
-        Extract --> Staged[(Staged Observations)]
-        Staged --> SweepGate{pipeline_processing_enabled<br/>& Not Live Speech?}
-        SweepGate -- No --> WaitSweep[Wait for Idle / Session End]
-        SweepGate -- Yes --> Stage1[Stage 1: Word-Set Jaccard 1.0<br/>Batch Size 128]
-        Stage1 --> Stage2[Stage 2: 384-dim Cosine ≥ 0.95<br/>Batch Size 16]
-        Stage2 --> ActiveObs[(Active Deduplicated Facts)]
+    subgraph StagingPhase ["Staging & Deduplication"]
+        Extract --> Staged[("Staged Observations")]
+        SweepGate{"pipeline_processing_enabled<br/>& Not Live Speech?"}
+        Staged --> SweepGate
+        SweepGate -- No --> WaitSweep["Wait for Idle / Session End"]
+        SweepGate -- Yes --> Stage1["Stage 1: Word-Set Jaccard 1.0<br/>Batch Size 128"]
+        Stage1 --> Stage2["Stage 2: 384-dim Cosine >= 0.95<br/>Batch Size 16"]
+        Stage2 --> ActiveObs[("Active Deduplicated Facts")]
     end
 
-    subgraph Consolidation Phase
-        ActiveObs --> ConsolidateGate{Cadence Trigger OR Manual Review}
-        ConsolidateGate --> LLMConsolidate[Consolidation Engine<br/>Generate Ephemeral Section/Block Handles]
-        LLMConsolidate --> Policy{suggestion_policy}
-        Policy -- manual_review --> Revisions[(Pending Semantic Revisions)]
-        Policy -- auto_apply --> CommitDoc[Atomic Document Commit]
-        Revisions --> UserReview[User Review Decisions]
+    subgraph ConsolidationPhase ["Consolidation Phase"]
+        ActiveObs --> ConsolidateGate{"Cadence Trigger OR Manual Review"}
+        ConsolidateGate --> LLMConsolidate["Consolidation Engine<br/>Generate Ephemeral Section/Block Handles"]
+        LLMConsolidate --> Policy{"suggestion_policy"}
+        Policy -- manual_review --> Revisions[("Pending Semantic Revisions")]
+        Policy -- auto_apply --> CommitDoc["Atomic Document Commit"]
+        Revisions --> UserReview["User Review Decisions"]
         UserReview --> CommitDoc
-        CommitDoc --> Persist[(Canonical Personal Memory JSON)]
+        CommitDoc --> Persist[("Canonical Personal Memory JSON")]
     end
 
-    subgraph Recall Phase
-        Persist --> PromptInj[Render Markdown -> System Prompt Prefix]
-        ActiveObs --> SearchTool[search_memory Tool<br/>Gated by context_retrieval_enabled]
-        SearchTool --> Dialogue[Dialogue Reasoning Loop]
+    subgraph RecallPhase ["Recall Phase"]
+        Persist --> PromptInj["Render Markdown -> System Prompt Prefix"]
+        ActiveObs --> SearchTool["search_memory Tool<br/>Gated by context_retrieval_enabled"]
+        SearchTool --> Dialogue["Dialogue Reasoning Loop"]
     end
 ```
 

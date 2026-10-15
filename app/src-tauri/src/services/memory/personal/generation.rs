@@ -7,13 +7,16 @@ use anyhow::{anyhow, Result};
 use tokio_util::sync::CancellationToken;
 
 use super::prompts::{CONSOLIDATION_MAX_OUTPUT_TOKENS, PERSONAL_CONSOLIDATION_TEMPERATURE};
-use crate::services::{
-    harness::{ChatMessage, Role},
-    llm::{
-        catalog::get_baseline_spec, ConversationInput, GenerationPolicy, GenerationPurpose,
-        LlmProvider, LlmSettings, LlmStreamEvent, OutputConstraint, ReasoningMode,
+use crate::{
+    core::defaults::DEFAULT_LLM_CONTEXT_WINDOW,
+    services::{
+        harness::{ChatMessage, Role},
+        llm::{
+            catalog::get_baseline_spec, ConversationInput, GenerationPolicy, GenerationPurpose,
+            LlmProvider, LlmSettings, LlmStreamEvent, OutputConstraint, ReasoningMode,
+        },
+        memory::COMPACTION_SENTINEL_TURN_ID,
     },
-    memory::COMPACTION_SENTINEL_TURN_ID,
 };
 
 /// Dispatches an LLM generation pass and gathers streamed tokens into a single text output.
@@ -75,7 +78,7 @@ pub(super) async fn execute_personal_llm_pass(
     request.options.reasoning = ReasoningMode::Disabled;
     request.options.max_output_tokens = Some(CONSOLIDATION_MAX_OUTPUT_TOKENS);
     request.options.temperature = Some(PERSONAL_CONSOLIDATION_TEMPERATURE);
-    request.options.context_window = Some(settings.context_window);
+    request.options.context_window = Some(DEFAULT_LLM_CONTEXT_WINDOW);
 
     log::info!(
         "[Memory::Personal::Request] model={} purpose={:?} output={:?} temperature={:?} max_output_tokens={:?} context_window={:?} reasoning={:?} top_p={:?} top_k={:?} seed={:?} stop_count={} tools_present={} messages={} system_chars={} user_chars={}",

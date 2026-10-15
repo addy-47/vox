@@ -69,18 +69,18 @@ stateDiagram-v2
 
 ```mermaid
 flowchart TD
-    subgraph Hotkey Gating Decision Engine
-        Press[User Presses Dictation Hotkey] --> CheckDiState{Dictation State?}
+    subgraph HotkeyGating ["Hotkey Gating Decision Engine"]
+        Press["User Presses Dictation Hotkey"] --> CheckDiState{"Dictation State?"}
         
-        CheckDiState -- Idle (Disabled) --> DropDisabled[Drop Audio<br/>Toast: 'Dictation is disabled in Settings']
+        CheckDiState -- "Idle (Disabled)" --> DropDisabled["Drop Audio<br/>Toast: 'Dictation is disabled in Settings'"]
         
-        CheckDiState -- Thinking (Transcribing) --> DropBusy[Drop Audio<br/>Toast: 'Previous turn transcribing']
+        CheckDiState -- "Thinking (Transcribing)" --> DropBusy["Drop Audio<br/>Toast: 'Previous turn transcribing'"]
         
-        CheckDiState -- Ready --> CheckAsState{Assistant State?}
+        CheckDiState -- Ready --> CheckAsState{"Assistant State?"}
         
-        CheckAsState -- Listening / Thinking / Speaking / Working --> DropEngaged[Drop Audio<br/>Toast: 'Cannot use dictation hotkey while Assistant is engaged']
+        CheckAsState -- "Listening / Thinking / Speaking / Working" --> DropEngaged["Drop Audio<br/>Toast: 'Cannot use dictation hotkey while Assistant is engaged'"]
         
-        CheckAsState -- Idle / Ready / Paused / Sleeping / Error --> AcceptDictation[Accept Input<br/>Transition Dictation Track to Listening<br/>Session Focus Marker UNTOUCHED]
+        CheckAsState -- "Idle / Ready / Paused / Sleeping / Error" --> AcceptDictation["Accept Input<br/>Transition Dictation Track to Listening<br/>Session Focus Marker UNTOUCHED"]
     end
 ```
 

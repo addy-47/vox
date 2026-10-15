@@ -25,7 +25,7 @@ use vox_lib::{
         harness::{Harness, TRANSITION_MESSAGES_EN},
         llm::{
             actor::{spawn_llm_worker, LlmCommand},
-            EmbeddedProvider, LlmActiveProvider,
+            EmbeddedProvider,
         },
         tts::TtsCommand,
     },
@@ -52,10 +52,11 @@ async fn test_transcript_to_llm_matrix() {
             let mut settings = state.settings.write().unwrap();
             settings.interaction.mode = InteractionMode::Passive;
             settings.interaction.pipeline_mode = PipelineMode::Modular;
-            settings.llm.active = LlmActiveProvider::Embedded;
-            settings.llm.context_window = 8192;
-            settings.llm.max_output_tokens = 512;
-            settings.llm.temperature = 0.7;
+            settings.llm.active = vox_lib::config::ActiveSelection {
+                category: "embedded".to_string(),
+                provider: None,
+                model: "qwen".to_string(),
+            };
             settings.working_memory.auto_compaction = true;
             settings.personal_memory.context_retrieval_enabled = false;
         }
@@ -101,6 +102,12 @@ async fn test_transcript_to_llm_matrix() {
                 prompt,
                 None,
                 &settings,
+                vox_lib::services::harness::LlmExecutionParams {
+                    context_window: 8192,
+                    max_output_tokens: 512,
+                    temperature: 0.7,
+                    reasoning_enabled: false,
+                },
                 llm_tx.clone(),
                 true,
             ));

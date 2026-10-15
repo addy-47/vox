@@ -289,7 +289,6 @@ async fn test_compaction_filler_dispatch_and_pending_accounting() {
         // Calibrate context window to 8192 (>= MIN_LLM_CONTEXT_WINDOW = 8192)
         {
             let mut settings = state.settings.write().unwrap();
-            settings.llm.context_window = 8192;
             settings.working_memory.auto_compaction = true; // required: default is false, compaction won't trigger without this
         }
 
@@ -299,6 +298,12 @@ async fn test_compaction_filler_dispatch_and_pending_accounting() {
             "You are a helpful voice assistant.".to_string(),
             None,
             &settings,
+            vox_lib::services::harness::LlmExecutionParams {
+                context_window: 8192,
+                max_output_tokens: 512,
+                temperature: 0.7,
+                reasoning_enabled: false,
+            },
             llm_tx.clone(),
             true,
         );
@@ -413,6 +418,12 @@ async fn test_compaction_filler_dispatch_and_pending_accounting() {
             "System prompt for new session".to_string(),
             None,
             &settings,
+            vox_lib::services::harness::LlmExecutionParams {
+                context_window: 8192,
+                max_output_tokens: 512,
+                temperature: 0.7,
+                reasoning_enabled: false,
+            },
             llm_tx,
             true,
         );

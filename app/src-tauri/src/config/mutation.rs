@@ -1,12 +1,9 @@
 use super::VoxSettings;
 use crate::{
-    core::defaults::MIN_LLM_CONTEXT_WINDOW,
-    services::{
-        llm::{LlmActiveProvider, LlmProviderConfig, LlmRemoteConfig},
-        memory::scheduler::parse_consolidation_time,
-        stt::{SttActiveProvider, SttCloudConfig, SttProviderConfig},
-        tts::{TtsActiveProvider, TtsProviderConfig},
-    },
+    config::ActiveSelection,
+    core::{events::InteractionMode, state::AppState},
+    persistence::models::update_model_parameters,
+    services::memory::scheduler::parse_consolidation_time,
 };
 
 fn apply_appearance_mutation(
@@ -78,73 +75,21 @@ fn apply_stt_mutation(
 ) -> Result<bool, String> {
     match key {
         "active" => {
-            settings.stt.active = serde_json::from_value(value.clone())
-                .map_err(|e| format!("Invalid STT active provider: {}", e))?;
-        }
-        "model" => {
-            settings.stt.embedded.model =
-                value.as_str().ok_or("model must be a string")?.to_string();
-        }
-        "partial_throttle_ms" => {
-            let throttle = value
-                .as_u64()
-                .ok_or("partial_throttle_ms must be an integer")?;
-            if !(50..=2000).contains(&throttle) {
-                return Err("partial_throttle_ms must be between 50 and 2000 ms".to_string());
+            let active: ActiveSelection = serde_json::from_value(value.clone())
+                .map_err(|e| format!("Invalid STT active selection: {}", e))?;
+            if active.category == "embedded" {
+                settings.stt.last_selected.embedded = Some(active.model.clone());
             }
-            settings.stt.embedded.partial_throttle_ms = throttle;
+            settings.stt.active = active;
         }
-        "threads" => {
-            let t = value.as_u64().ok_or("threads must be a positive integer")? as u32;
-            if !(1..=64).contains(&t) {
-                return Err("stt threads must be between 1 and 64".to_string());
-            }
-            settings.stt.embedded.threads = t;
+        "last_selected" => {
+            settings.stt.last_selected = serde_json::from_value(value.clone())
+                .map_err(|e| format!("Invalid STT last_selected: {}", e))?;
         }
         "transliterate_enabled" => {
             settings.stt.transliterate_enabled = value
                 .as_bool()
                 .ok_or("transliterate_enabled must be a boolean")?;
-        }
-        "embedded" => {
-            settings.stt.embedded = serde_json::from_value(value.clone())
-                .map_err(|e| format!("Invalid STT embedded config: {}", e))?;
-        }
-        "cloud" => {
-            settings.stt.cloud = serde_json::from_value(value.clone())
-                .map_err(|e| format!("Invalid STT cloud config: {}", e))?;
-        }
-        "provider" => {
-            if let Ok(config) = serde_json::from_value::<SttProviderConfig>(value.clone()) {
-                match config {
-                    SttProviderConfig::Embedded { model_type } => {
-                        settings.stt.active = SttActiveProvider::Embedded;
-                        settings.stt.embedded.model = model_type;
-                    }
-                    SttProviderConfig::Cloud {
-                        provider,
-                        model,
-                        language,
-                        region,
-                        sample_rate,
-                        channels,
-                        interim_results,
-                        punctuate,
-                    } => {
-                        settings.stt.active = SttActiveProvider::Cloud;
-                        settings.stt.cloud = SttCloudConfig {
-                            provider,
-                            model,
-                            language,
-                            region,
-                            sample_rate,
-                            channels,
-                            interim_results,
-                            punctuate,
-                        };
-                    }
-                }
-            }
         }
         _ => return Ok(false),
     }
@@ -158,122 +103,27 @@ fn apply_llm_mutation(
 ) -> Result<bool, String> {
     match key {
         "active" => {
-            settings.llm.active = serde_json::from_value(value.clone())
-                .map_err(|e| format!("Invalid LLM active provider: {}", e))?;
-        }
-        "model" => {
-            let model_str = value.as_str().ok_or("model must be a string")?.to_string();
-            match settings.llm.active {
-                LlmActiveProvider::Embedded => {
-                    settings.llm.embedded.model = model_str;
-                }
-                LlmActiveProvider::Server => {
-                    settings.llm.server.model = model_str;
-                }
-                LlmActiveProvider::Cloud => {
-                    settings.llm.cloud.model = model_str;
-                }
+            let active: ActiveSelection = serde_json::from_value(value.clone())
+                .map_err(|e| format!("Invalid LLM active selection: {}", e))?;
+            match active.category.as_str() {
+                "embedded" => settings.llm.last_selected.embedded = Some(active.model.clone()),
+                "server" => settings.llm.last_selected.server = Some(active.model.clone()),
+                "cloud" => settings.llm.last_selected.cloud = Some(active.model.clone()),
+                _ => {}
             }
+            settings.llm.active = active;
         }
-        "temperature" => {
-            settings.llm.temperature = value.as_f64().ok_or("temperature must be a number")? as f32;
+        "last_selected" => {
+            settings.llm.last_selected = serde_json::from_value(value.clone())
+                .map_err(|e| format!("Invalid LLM last_selected: {}", e))?;
         }
-        "compaction_temperature" => {
-            settings.llm.compaction_temperature = value
-                .as_f64()
-                .ok_or("compaction_temperature must be a number")?
-                as f32;
-        }
-        "max_output_tokens" => {
-            let val = value
-                .as_u64()
-                .ok_or("max_output_tokens must be a positive integer")?
-                as u32;
-            if !(1..=32768).contains(&val) {
-                return Err("max_output_tokens must be between 1 and 32768".to_string());
-            }
-            settings.llm.max_output_tokens = val;
-        }
-        "reasoning_enabled" => {
-            settings.llm.reasoning_enabled = value
-                .as_bool()
-                .ok_or("reasoning_enabled must be a boolean")?;
-        }
-        "context_window" => {
-            let val = value
-                .as_u64()
-                .ok_or("context_window must be a positive integer")? as u32;
-            if val < MIN_LLM_CONTEXT_WINDOW {
-                return Err(format!(
-                    "Context window cannot be less than {} tokens",
-                    MIN_LLM_CONTEXT_WINDOW
-                ));
-            }
-            settings.llm.context_window = val;
-        }
-        "threads" => {
-            let val = value.as_u64().ok_or("threads must be a positive integer")? as u32;
-            if !(1..=64).contains(&val) {
-                return Err("threads must be between 1 and 64".to_string());
-            }
-            settings.llm.threads = val;
-        }
-        "embedded" => {
-            settings.llm.embedded = serde_json::from_value(value.clone())
-                .map_err(|e| format!("Invalid LLM embedded config: {}", e))?;
-        }
-        "server" => {
-            settings.llm.server = serde_json::from_value(value.clone())
-                .map_err(|e| format!("Invalid LLM server config: {}", e))?;
-        }
-        "cloud" => {
-            settings.llm.cloud = serde_json::from_value(value.clone())
-                .map_err(|e| format!("Invalid LLM cloud config: {}", e))?;
+        "servers" => {
+            settings.providers.llm.servers = serde_json::from_value(value.clone())
+                .map_err(|e| format!("Invalid LLM servers list: {}", e))?;
         }
         "cloud_keys" => {
-            settings.llm.cloud_keys = serde_json::from_value(value.clone())
+            settings.providers.llm.cloud_keys = serde_json::from_value(value.clone())
                 .map_err(|e| format!("Invalid LLM cloud_keys config: {}", e))?;
-        }
-        "provider" => {
-            if let Ok(prov) = serde_json::from_value::<LlmProviderConfig>(value.clone()) {
-                match prov {
-                    LlmProviderConfig::Embedded => {
-                        settings.llm.active = LlmActiveProvider::Embedded;
-                    }
-                    LlmProviderConfig::Server {
-                        base_url,
-                        model,
-                        provider_name,
-                        protocol,
-                        api_key,
-                    } => {
-                        settings.llm.active = LlmActiveProvider::Server;
-                        settings.llm.server = LlmRemoteConfig {
-                            base_url,
-                            model,
-                            provider_name,
-                            protocol,
-                            api_key,
-                        };
-                    }
-                    LlmProviderConfig::Cloud {
-                        base_url,
-                        model,
-                        provider_name,
-                        protocol,
-                        api_key,
-                    } => {
-                        settings.llm.active = LlmActiveProvider::Cloud;
-                        settings.llm.cloud = LlmRemoteConfig {
-                            base_url,
-                            model,
-                            provider_name,
-                            protocol,
-                            api_key,
-                        };
-                    }
-                }
-            }
         }
         _ => return Ok(false),
     }
@@ -287,10 +137,21 @@ fn apply_tts_mutation(
 ) -> Result<bool, String> {
     match key {
         "active" => {
-            settings.tts.active = serde_json::from_value(value.clone())
-                .map_err(|e| format!("Invalid TTS active provider: {}", e))?;
+            let active: ActiveSelection = serde_json::from_value(value.clone())
+                .map_err(|e| format!("Invalid TTS active selection: {}", e))?;
+            match active.category.as_str() {
+                "embedded" => settings.tts.last_selected.embedded = Some(active.model.clone()),
+                "server" => settings.tts.last_selected.server = Some(active.model.clone()),
+                "cloud" => settings.tts.last_selected.cloud = Some(active.model.clone()),
+                _ => {}
+            }
+            settings.tts.active = active;
         }
-        "voice" | "voice_id" => {
+        "last_selected" => {
+            settings.tts.last_selected = serde_json::from_value(value.clone())
+                .map_err(|e| format!("Invalid TTS last_selected: {}", e))?;
+        }
+        "active_voice_id" | "voice" | "voice_id" => {
             let val = value
                 .as_str()
                 .ok_or("voice must be a string id")?
@@ -298,89 +159,11 @@ fn apply_tts_mutation(
             if val.trim().is_empty() || val.len() > 128 {
                 return Err("voice id must be 1..128 chars".to_string());
             }
-            settings.tts.voice_id = val;
+            settings.tts.active_voice_id = val;
         }
-        "speed" => {
-            settings.tts.speed = value.as_f64().ok_or("speed must be a number")? as f32;
-        }
-        "threads" => {
-            let t = value.as_u64().ok_or("threads must be a positive integer")? as u32;
-            if !(1..=64).contains(&t) {
-                return Err("tts threads must be between 1 and 64".to_string());
-            }
-            settings.tts.threads = t;
-        }
-        "edge_tts" => {
-            settings.tts.edge_tts = serde_json::from_value(value.clone())
-                .map_err(|e| format!("Invalid edge_tts config: {}", e))?;
-        }
-        "supertonic" => {
-            settings.tts.supertonic = serde_json::from_value(value.clone())
-                .map_err(|e| format!("Invalid supertonic config: {}", e))?;
-        }
-        "kokoro" => {
-            settings.tts.kokoro = serde_json::from_value(value.clone())
-                .map_err(|e| format!("Invalid kokoro config: {}", e))?;
-        }
-        "chatterbox" => {
-            settings.tts.chatterbox = serde_json::from_value(value.clone())
-                .map_err(|e| format!("Invalid chatterbox config: {}", e))?;
-        }
-        "chatterbox_remote" => {
-            settings.tts.chatterbox_remote = serde_json::from_value(value.clone())
-                .map_err(|e| format!("Invalid chatterbox_remote config: {}", e))?;
-        }
-        "zipvoice" => {
-            settings.tts.zipvoice = serde_json::from_value(value.clone())
-                .map_err(|e| format!("Invalid zipvoice config: {}", e))?;
-        }
-        "provider" => {
-            if let Ok(prov) = serde_json::from_value::<TtsProviderConfig>(value.clone()) {
-                match prov {
-                    TtsProviderConfig::Supertonic => {
-                        settings.tts.active = TtsActiveProvider::Supertonic;
-                    }
-                    TtsProviderConfig::Kokoro => {
-                        settings.tts.active = TtsActiveProvider::Kokoro;
-                    }
-                    TtsProviderConfig::EdgeTts { voice } => {
-                        settings.tts.active = TtsActiveProvider::EdgeTts;
-                        settings.tts.edge_tts.voice = voice;
-                    }
-                    TtsProviderConfig::Chatterbox {
-                        language,
-                        speed,
-                        voice_id,
-                    } => {
-                        settings.tts.active = TtsActiveProvider::Chatterbox;
-                        settings.tts.chatterbox.language = language;
-                        settings.tts.chatterbox.voice_id = voice_id;
-                        settings.tts.speed = speed;
-                    }
-                    TtsProviderConfig::ChatterboxRemote {
-                        endpoint,
-                        language,
-                        speed,
-                        remote_path,
-                        voice_id,
-                    } => {
-                        settings.tts.active = TtsActiveProvider::ChatterboxRemote;
-                        settings.tts.chatterbox_remote.endpoint = endpoint;
-                        settings.tts.chatterbox_remote.language = language;
-                        settings.tts.chatterbox_remote.remote_path = remote_path;
-                        settings.tts.chatterbox_remote.voice_id = voice_id;
-                        settings.tts.speed = speed;
-                    }
-                    TtsProviderConfig::Zipvoice {
-                        voice_id,
-                        guidance_scale,
-                    } => {
-                        settings.tts.active = TtsActiveProvider::Zipvoice;
-                        settings.tts.zipvoice.voice_id = voice_id;
-                        settings.tts.zipvoice.guidance_scale = guidance_scale;
-                    }
-                }
-            }
+        "servers" => {
+            settings.providers.tts.servers = serde_json::from_value(value.clone())
+                .map_err(|e| format!("Invalid TTS servers list: {}", e))?;
         }
         _ => return Ok(false),
     }
@@ -394,20 +177,19 @@ fn apply_interaction_mutation(
 ) -> Result<bool, String> {
     match key {
         "mode" => {
-            let mode =
-                serde_json::from_value::<crate::core::events::InteractionMode>(value.clone())
-                    .or_else(|_| {
-                        if let Some(s) = value.as_str() {
-                            match s.to_lowercase().as_str() {
-                                "ptt" => Ok(crate::core::events::InteractionMode::PTT),
-                                "passive" => Ok(crate::core::events::InteractionMode::Passive),
-                                _ => Err(format!("Unknown mode string: {}", s)),
-                            }
-                        } else {
-                            Err("mode must be a string".to_string())
+            let mode = serde_json::from_value::<InteractionMode>(value.clone())
+                .or_else(|_| {
+                    if let Some(s) = value.as_str() {
+                        match s.to_lowercase().as_str() {
+                            "ptt" => Ok(InteractionMode::PTT),
+                            "passive" => Ok(InteractionMode::Passive),
+                            _ => Err(format!("Unknown mode string: {}", s)),
                         }
-                    })
-                    .map_err(|e| format!("Invalid interaction mode: {}", e))?;
+                    } else {
+                        Err("mode must be a string".to_string())
+                    }
+                })
+                .map_err(|e| format!("Invalid interaction mode: {}", e))?;
             settings.interaction.mode = mode;
         }
         "pipeline_mode" => {
@@ -510,25 +292,19 @@ fn apply_realtime_mutation(
     value: &serde_json::Value,
 ) -> Result<bool, String> {
     match key {
-        "active" | "provider" => {
+        "active" => {
             settings.realtime.active = serde_json::from_value(value.clone())
-                .map_err(|e| format!("Invalid realtime provider: {}", e))?;
+                .map_err(|e| format!("Invalid realtime active selection: {}", e))?;
         }
-        "gemini" | "gemini_live" => {
-            settings.realtime.gemini_live = serde_json::from_value(value.clone())
-                .map_err(|e| format!("Invalid gemini config: {}", e))?;
+        "active_voice_id" | "voice" | "voice_id" => {
+            settings.realtime.active_voice_id = value
+                .as_str()
+                .ok_or("active_voice_id must be a string")?
+                .to_string();
         }
-        "openai" | "openai_realtime" => {
-            settings.realtime.openai_realtime = serde_json::from_value(value.clone())
-                .map_err(|e| format!("Invalid openai config: {}", e))?;
-        }
-        "deepgram" | "deepgram_voice_agent" => {
-            settings.realtime.deepgram_voice_agent = serde_json::from_value(value.clone())
-                .map_err(|e| format!("Invalid deepgram config: {}", e))?;
-        }
-        "elevenlabs" | "elevenlabs_convai" => {
-            settings.realtime.elevenlabs_convai = serde_json::from_value(value.clone())
-                .map_err(|e| format!("Invalid elevenlabs config: {}", e))?;
+        "api_keys" => {
+            settings.providers.realtime.api_keys = serde_json::from_value(value.clone())
+                .map_err(|e| format!("Invalid realtime api_keys: {}", e))?;
         }
         _ => return Ok(false),
     }
@@ -638,4 +414,24 @@ pub fn apply_setting_mutation(
         "system" => apply_system_mutation(settings, key, value),
         _ => Ok(false),
     }
+}
+
+/// Applies an atomic mutation to per-model parameters stored in the database models table.
+pub async fn apply_model_parameter_mutation(
+    state: &AppState,
+    model_id: &str,
+    patch: &serde_json::Value,
+) -> Result<(), String> {
+    let conn = state
+        .db
+        .connect()
+        .map_err(|e| format!("Database connection error: {}", e))?;
+    update_model_parameters(&conn, model_id, patch)
+        .await
+        .map_err(|e| format!("Failed to update model parameters: {}", e))?;
+    log::info!(
+        "[Config::Mutation] Model parameters updated in database for model={}",
+        model_id
+    );
+    Ok(())
 }

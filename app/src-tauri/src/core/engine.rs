@@ -13,6 +13,7 @@ use tauri::{AppHandle, Manager};
 use crate::{
     config::VoxSettings,
     core::{
+        defaults::{DEFAULT_TTS_SPEED, DEFAULT_TTS_THREADS},
         events::{emit_ipc_to, InteractionMode, IpcEvent, TranscriptPayload, VoxEvent},
         state::{AppState, InteractionOwner, InteractionState},
     },
@@ -37,7 +38,7 @@ use crate::{
         },
         tts::{
             actor::{cool_down_tts, warm_up_tts, TtsWarmUpHandles},
-            resolve_reference_audio, TtsActiveProvider, TtsCommand, SUPERTONIC_MODEL_DIR,
+            resolve_reference_audio, TtsCommand, SUPERTONIC_MODEL_DIR,
         },
         vad::{
             actor::{spawn_vad_actor, VadActorChannels, VadActorConfig, VadActorHandles},
@@ -447,10 +448,10 @@ pub async fn ensure_modular_workers(state: &AppState) -> Result<(), String> {
         (llm, tts, s)
     };
 
-    let voice_id = match settings.tts.active {
-        TtsActiveProvider::Chatterbox => settings.tts.chatterbox.voice_id.as_deref(),
-        TtsActiveProvider::ChatterboxRemote => settings.tts.chatterbox_remote.voice_id.as_deref(),
-        _ => None,
+    let voice_id = if !settings.tts.active_voice_id.is_empty() {
+        Some(settings.tts.active_voice_id.as_str())
+    } else {
+        None
     };
     let conn = state.db.connect().ok();
     let reference_audio = if let Some(ref c) = conn {
@@ -506,8 +507,11 @@ pub async fn ensure_modular_workers(state: &AppState) -> Result<(), String> {
                 turn_metrics: Some(Arc::clone(&state.turn_metrics)),
             },
             &settings.tts,
+            Some(&settings.providers.tts),
             &tts_path,
             reference_audio.as_deref(),
+            DEFAULT_TTS_SPEED,
+            DEFAULT_TTS_THREADS,
             pipeline_tx,
         )?;
     }

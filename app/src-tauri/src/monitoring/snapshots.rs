@@ -8,10 +8,7 @@ use std::{
 use crate::{
     core::state::{AppState, InteractionOwner, InteractionState},
     monitoring::{COLLECTOR_TICK_INTERVAL, MAX_SNAPSHOT_HISTORY},
-    services::{
-        llm::LlmActiveProvider, memory::is_embedder_loaded,
-        translit::is_transliteration_engine_loaded,
-    },
+    services::{memory::is_embedder_loaded, translit::is_transliteration_engine_loaded},
     utils::check_cpu_governor,
 };
 
@@ -208,22 +205,22 @@ fn get_llm_provider_kind(state: &AppState) -> String {
         Ok(s) => s,
         Err(_) => return "embedded".to_string(),
     };
-    match settings.llm.active {
-        LlmActiveProvider::Embedded => "embedded".to_string(),
-        LlmActiveProvider::Server => {
-            if let Some(ref name) = settings.llm.server.provider_name {
+    match settings.llm.active.category.as_str() {
+        "server" => {
+            if let Some(ref name) = settings.llm.active.provider {
                 format!("server:{}", name.to_lowercase())
             } else {
                 "server".to_string()
             }
         }
-        LlmActiveProvider::Cloud => {
-            if let Some(ref name) = settings.llm.cloud.provider_name {
+        "cloud" => {
+            if let Some(ref name) = settings.llm.active.provider {
                 format!("cloud:{}", name.to_lowercase())
             } else {
                 "cloud".to_string()
             }
         }
+        _ => "embedded".to_string(),
     }
 }
 

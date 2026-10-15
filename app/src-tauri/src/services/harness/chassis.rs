@@ -6,7 +6,13 @@ use tokio_util::sync::CancellationToken;
 use super::{execute_turn, PipelineDomain, TurnExecutionRequest, TurnOutcome};
 use crate::{
     config::VoxSettings,
-    core::{events::PipelineMode, state::AppState},
+    core::{
+        defaults::{
+            DEFAULT_LLM_CONTEXT_WINDOW, DEFAULT_LLM_MAX_OUTPUT_TOKENS, DEFAULT_LLM_TEMPERATURE,
+        },
+        events::PipelineMode,
+        state::AppState,
+    },
     persistence::TurnRow,
     services::{
         harness::{
@@ -46,6 +52,26 @@ pub struct Harness {
     pub(crate) has_played_filler: bool,
 }
 
+/// Dynamic per-model execution parameters resolved from database models table.
+#[derive(Debug, Clone, Copy)]
+pub struct LlmExecutionParams {
+    pub context_window: usize,
+    pub max_output_tokens: usize,
+    pub temperature: f32,
+    pub reasoning_enabled: bool,
+}
+
+impl Default for LlmExecutionParams {
+    fn default() -> Self {
+        Self {
+            context_window: DEFAULT_LLM_CONTEXT_WINDOW as usize,
+            max_output_tokens: DEFAULT_LLM_MAX_OUTPUT_TOKENS as usize,
+            temperature: DEFAULT_LLM_TEMPERATURE,
+            reasoning_enabled: false,
+        }
+    }
+}
+
 impl Harness {
     /// Initializes a modular assistant session harness with full stage pipeline.
     pub fn new_modular(
@@ -53,10 +79,11 @@ impl Harness {
         base_prompt: String,
         personal_memory: Option<String>,
         settings: &VoxSettings,
+        params: LlmExecutionParams,
         llm_tx: mpsc::Sender<LlmCommand>,
         supports_tools: bool,
     ) -> Self {
-        let ctx_window = settings.llm.context_window as usize;
+        let ctx_window = params.context_window;
         let max_share = settings.working_memory.max_context_share;
 
         let mut prompt_stage = PromptBuilderStage::new(base_prompt, ctx_window, max_share);
@@ -64,13 +91,12 @@ impl Harness {
         let assembled_prompt = prompt_stage.assemble();
 
         let history_stage = ConversationHistoryStage::with_system_prompt(assembled_prompt);
-        let budget_stage =
-            ContextBudgetStage::new(ctx_window, settings.llm.max_output_tokens as usize);
+        let budget_stage = ContextBudgetStage::new(ctx_window, params.max_output_tokens);
         let compaction_stage = CompactionStage::new(settings.working_memory.auto_compaction);
         let generation_options = GenerationOptions {
-            temperature: Some(settings.llm.temperature),
-            max_output_tokens: Some(settings.llm.max_output_tokens),
-            reasoning: ReasoningMode::from_enabled(settings.llm.reasoning_enabled),
+            temperature: Some(params.temperature),
+            max_output_tokens: Some(params.max_output_tokens as u32),
+            reasoning: ReasoningMode::from_enabled(params.reasoning_enabled),
             ..Default::default()
         };
 
@@ -102,7 +128,7 @@ impl Harness {
         personal_memory: Option<String>,
         settings: &VoxSettings,
     ) -> Self {
-        let ctx_window = settings.llm.context_window as usize;
+        let ctx_window = DEFAULT_LLM_CONTEXT_WINDOW as usize;
         let max_share = settings.working_memory.max_context_share;
 
         let mut prompt_stage = PromptBuilderStage::new(base_prompt, ctx_window, max_share);

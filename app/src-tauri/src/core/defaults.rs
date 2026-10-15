@@ -20,10 +20,6 @@ pub const DEFAULT_ASR_MODEL: &str = "nvidia_nemotron";
 pub const DEFAULT_ASR_TRANSLITERATE_ENABLED: bool = true;
 pub const DEFAULT_STT_PARTIAL_THROTTLE_MS: u64 = 300;
 pub const DEFAULT_STT_THREADS: u32 = 4;
-pub const DEFAULT_STT_CLOUD_PROVIDER: &str = "google";
-pub const DEFAULT_STT_CLOUD_MODEL: &str = "chirp_3";
-pub const DEFAULT_STT_CLOUD_LANGUAGE: &str = "en-US";
-pub const DEFAULT_STT_CLOUD_REGION: &str = "global";
 
 pub const DEFAULT_LLM_MODEL: &str = "qwen_3_5_0_8b";
 pub const MIN_LLM_CONTEXT_WINDOW: u32 = 8192;

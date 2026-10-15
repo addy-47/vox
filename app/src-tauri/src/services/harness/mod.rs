@@ -26,7 +26,7 @@ pub mod r#loop;
 pub mod stages;
 pub mod steps;
 
-pub use chassis::Harness;
+pub use chassis::{Harness, LlmExecutionParams};
 pub use r#loop::execute_turn;
 pub use stages::{
     budget::{ContextBudgetStage, ContextStatus},

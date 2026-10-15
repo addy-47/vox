@@ -403,34 +403,31 @@ async fn seed_single_voice(conn: &Connection, name_str: &str, path: &Path) -> Re
     if exists {
         conn.execute(
             "UPDATE voices SET provider_id = 'chatterbox', source_kind = ? WHERE id = ?",
-            (
-                VoiceSourceKind::PreBaked.as_str().to_string(),
-                id.clone(),
-            ),
+            (VoiceSourceKind::PreBaked.as_str().to_string(), id.clone()),
         )
         .await?;
         return Ok(());
     }
-        let name = match name_str {
-            "pain" => "Pain (Naruto)".to_string(),
-            "madara" => "Madara Uchiha".to_string(),
-            "shreya" => "Shreya Ghoshal".to_string(),
-            "hayami" => "Hayami Saori".to_string(),
-            "ellen" => "Ellen (Serious)".to_string(),
-            "juniper" => "Juniper (Professional)".to_string(),
-            "mark" => "Mark (Conversational)".to_string(),
-            "spuds" => "Spuds Oxley (Wise)".to_string(),
-            other => other.to_string(),
-        };
+    let name = match name_str {
+        "pain" => "Pain (Naruto)".to_string(),
+        "madara" => "Madara Uchiha".to_string(),
+        "shreya" => "Shreya Ghoshal".to_string(),
+        "hayami" => "Hayami Saori".to_string(),
+        "ellen" => "Ellen (Serious)".to_string(),
+        "juniper" => "Juniper (Professional)".to_string(),
+        "mark" => "Mark (Conversational)".to_string(),
+        "spuds" => "Spuds Oxley (Wise)".to_string(),
+        other => other.to_string(),
+    };
 
-        let wav_path = path.join("source.wav").to_string_lossy().into_owned();
-        let voice_dir = path.join("baked").to_string_lossy().into_owned();
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs() as i64;
+    let wav_path = path.join("source.wav").to_string_lossy().into_owned();
+    let voice_dir = path.join("baked").to_string_lossy().into_owned();
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
 
-        conn.execute(
+    conn.execute(
             "INSERT INTO voices (id, provider_id, name, source_kind, slug, wav_path, voice_dir, created_at)
              VALUES (?, 'chatterbox', ?, ?, ?, ?, ?, ?)",
             (
@@ -444,11 +441,11 @@ async fn seed_single_voice(conn: &Connection, name_str: &str, path: &Path) -> Re
             ),
         )
         .await?;
-        log::info!(
-            "[Persistence::Schema] Seeded packaged voice '{}' (id={})",
-            name,
-            id
-        );
+    log::info!(
+        "[Persistence::Schema] Seeded packaged voice '{}' (id={})",
+        name,
+        id
+    );
     Ok(())
 }
 
@@ -495,15 +492,15 @@ async fn seed_single_zipvoice(conn: &Connection, slug: &str, path: &Path) -> Res
         .await?;
         return Ok(());
     }
-        let name = display_name_for_slug(slug);
-        let wav_path = path.join("clip.wav").to_string_lossy().into_owned();
-        let voice_dir = path.to_string_lossy().into_owned();
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs() as i64;
+    let name = display_name_for_slug(slug);
+    let wav_path = path.join("clip.wav").to_string_lossy().into_owned();
+    let voice_dir = path.to_string_lossy().into_owned();
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
 
-        conn.execute(
+    conn.execute(
             "INSERT INTO voices (id, provider_id, name, source_kind, slug, wav_path, voice_dir, created_at)
              VALUES (?, 'zipvoice', ?, ?, ?, ?, ?, ?)",
             (
@@ -517,11 +514,11 @@ async fn seed_single_zipvoice(conn: &Connection, slug: &str, path: &Path) -> Res
             ),
         )
         .await?;
-        log::info!(
-            "[Persistence::Schema] Seeded ZipVoice packaged voice '{}' (id={})",
-            name,
-            id
-        );
+    log::info!(
+        "[Persistence::Schema] Seeded ZipVoice packaged voice '{}' (id={})",
+        name,
+        id
+    );
     Ok(())
 }
 

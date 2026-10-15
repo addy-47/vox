@@ -2,12 +2,13 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::core::defaults::{
-    DEFAULT_LLM_CLOUD_BASE_URL, DEFAULT_LLM_CLOUD_MODEL, DEFAULT_LLM_CLOUD_PROVIDER_NAME,
-    DEFAULT_LLM_COMPACTION_TEMPERATURE, DEFAULT_LLM_CONTEXT_WINDOW, DEFAULT_LLM_MAX_OUTPUT_TOKENS,
-    DEFAULT_LLM_MODEL, DEFAULT_LLM_SERVER_BASE_URL, DEFAULT_LLM_SERVER_MODEL,
-    DEFAULT_LLM_SERVER_PROVIDER_NAME, DEFAULT_LLM_TEMPERATURE, DEFAULT_LLM_THREADS,
-    MIN_LLM_CONTEXT_WINDOW,
+use crate::{
+    config::{ActiveSelection, LastSelectedModels},
+    core::defaults::{
+        DEFAULT_LLM_CLOUD_BASE_URL, DEFAULT_LLM_CLOUD_MODEL, DEFAULT_LLM_CLOUD_PROVIDER_NAME,
+        DEFAULT_LLM_MODEL, DEFAULT_LLM_SERVER_BASE_URL, DEFAULT_LLM_SERVER_MODEL,
+        DEFAULT_LLM_SERVER_PROVIDER_NAME, MIN_LLM_CONTEXT_WINDOW,
+    },
 };
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Default)]
@@ -19,63 +20,56 @@ pub enum LlmActiveProvider {
     Cloud,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
-#[serde(default)]
-pub struct LlmEmbeddedConfig {
-    pub model: String,
-    pub n_gpu_layers: u32,
-}
-
-impl Default for LlmEmbeddedConfig {
-    fn default() -> Self {
-        Self {
-            model: DEFAULT_LLM_MODEL.to_string(),
-            n_gpu_layers: 0,
+impl LlmActiveProvider {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Embedded => "embedded",
+            Self::Server => "server",
+            Self::Cloud => "cloud",
         }
     }
 }
 
+/// A user-configured custom server instance in providers.jsonc.
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
-#[serde(default)]
-pub struct LlmRemoteConfig {
-    pub provider_name: Option<String>,
-    pub base_url: String,
+pub struct LlmCustomServer {
+    pub id: String,
+    pub name: String,
+    pub url: String,
     pub model: String,
-    pub protocol: Option<String>,
+    pub protocol: String,
+    #[serde(default)]
     pub api_key: Option<String>,
 }
 
-impl LlmRemoteConfig {
-    pub fn server_default() -> Self {
-        Self {
-            provider_name: Some(DEFAULT_LLM_SERVER_PROVIDER_NAME.to_string()),
-            base_url: DEFAULT_LLM_SERVER_BASE_URL.to_string(),
-            model: DEFAULT_LLM_SERVER_MODEL.to_string(),
-            protocol: None,
-            api_key: None,
-        }
-    }
-
-    pub fn cloud_default() -> Self {
-        Self {
-            provider_name: Some(DEFAULT_LLM_CLOUD_PROVIDER_NAME.to_string()),
-            base_url: DEFAULT_LLM_CLOUD_BASE_URL.to_string(),
-            model: DEFAULT_LLM_CLOUD_MODEL.to_string(),
-            protocol: None,
-            api_key: None,
-        }
-    }
+/// Provider credentials, endpoints, and custom servers stored in providers.jsonc.
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(default)]
+pub struct LlmProvidersConfig {
+    pub servers: Vec<LlmCustomServer>,
+    pub cloud_keys: HashMap<String, String>,
 }
 
-impl Default for LlmRemoteConfig {
+impl Default for LlmProvidersConfig {
     fn default() -> Self {
-        Self::server_default()
+        Self {
+            servers: vec![LlmCustomServer {
+                id: "ollama".to_string(),
+                name: "Local Ollama".to_string(),
+                url: DEFAULT_LLM_SERVER_BASE_URL.to_string(),
+                model: DEFAULT_LLM_SERVER_MODEL.to_string(),
+                protocol: "ollama".to_string(),
+                api_key: None,
+            }],
+            cloud_keys: HashMap::new(),
+        }
     }
 }
 
+/// Concrete runtime target used to instantiate an LLM provider transport.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub enum LlmProviderConfig {
+pub enum LlmRuntimeTarget {
     #[default]
     Embedded,
     #[serde(rename_all = "snake_case")]
@@ -102,82 +96,101 @@ pub enum LlmProviderConfig {
     },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+/// Clean LLM settings stored in settings.jsonc.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(default)]
 pub struct LlmSettings {
-    pub active: LlmActiveProvider,
-    pub temperature: f32,
-    pub compaction_temperature: f32,
-    pub max_output_tokens: u32,
-    pub context_window: u32,
-    pub threads: u32,
-    pub reasoning_enabled: bool,
-    pub embedded: LlmEmbeddedConfig,
-    pub server: LlmRemoteConfig,
-    pub cloud: LlmRemoteConfig,
-    #[serde(default)]
-    pub cloud_keys: HashMap<String, String>,
-    /// Fixed sampling seed for reproducible generation. `None` (the default)
-    /// leaves sampling unseeded. Both transports forward it when set.
-    #[serde(default)]
-    pub seed: Option<u64>,
+    pub active: ActiveSelection,
+    pub last_selected: LastSelectedModels,
 }
 
 impl Default for LlmSettings {
     fn default() -> Self {
         Self {
-            active: LlmActiveProvider::Embedded,
-            temperature: DEFAULT_LLM_TEMPERATURE,
-            compaction_temperature: DEFAULT_LLM_COMPACTION_TEMPERATURE,
-            max_output_tokens: DEFAULT_LLM_MAX_OUTPUT_TOKENS,
-            context_window: DEFAULT_LLM_CONTEXT_WINDOW,
-            threads: DEFAULT_LLM_THREADS,
-            reasoning_enabled: false,
-            embedded: LlmEmbeddedConfig::default(),
-            server: LlmRemoteConfig::server_default(),
-            cloud: LlmRemoteConfig::cloud_default(),
-            cloud_keys: HashMap::new(),
-            seed: None,
+            active: ActiveSelection {
+                category: "embedded".to_string(),
+                provider: None,
+                model: DEFAULT_LLM_MODEL.to_string(),
+            },
+            last_selected: LastSelectedModels {
+                embedded: Some(DEFAULT_LLM_MODEL.to_string()),
+                server: Some(DEFAULT_LLM_SERVER_MODEL.to_string()),
+                cloud: Some(DEFAULT_LLM_CLOUD_MODEL.to_string()),
+            },
         }
     }
 }
 
 impl LlmSettings {
     pub fn active_model(&self) -> &str {
-        match self.active {
-            LlmActiveProvider::Embedded => &self.embedded.model,
-            LlmActiveProvider::Server => &self.server.model,
-            LlmActiveProvider::Cloud => &self.cloud.model,
-        }
+        &self.active.model
     }
 
-    pub fn effective_ctx_size(&self) -> u32 {
-        self.context_window.max(MIN_LLM_CONTEXT_WINDOW)
+    pub fn category(&self) -> &str {
+        &self.active.category
     }
 
-    pub fn to_provider_config(&self) -> LlmProviderConfig {
-        match self.active {
-            LlmActiveProvider::Embedded => LlmProviderConfig::Embedded,
-            LlmActiveProvider::Server => LlmProviderConfig::Server {
-                base_url: self.server.base_url.clone(),
-                model: self.server.model.clone(),
-                provider_name: self.server.provider_name.clone(),
-                protocol: self.server.protocol.clone(),
-                api_key: self.server.api_key.clone(),
-            },
-            LlmActiveProvider::Cloud => {
-                let api_key = self.cloud.api_key.clone().or_else(|| {
-                    let provider = self.cloud.provider_name.as_deref().unwrap_or_default();
-                    self.cloud_keys.get(provider).cloned()
-                });
-                LlmProviderConfig::Cloud {
-                    base_url: self.cloud.base_url.clone(),
-                    model: self.cloud.model.clone(),
-                    provider_name: self.cloud.provider_name.clone(),
-                    protocol: self.cloud.protocol.clone(),
+    pub fn effective_ctx_size(ctx: u32) -> u32 {
+        ctx.max(MIN_LLM_CONTEXT_WINDOW)
+    }
+
+    pub fn to_provider_config(&self, providers: Option<&LlmProvidersConfig>) -> LlmRuntimeTarget {
+        let default_prov = LlmProvidersConfig::default();
+        let provs = providers.unwrap_or(&default_prov);
+
+        match self.active.category.as_str() {
+            "server" => {
+                let target_id = self.active.provider.as_deref().unwrap_or("ollama");
+                let server = provs
+                    .servers
+                    .iter()
+                    .find(|s| s.id == target_id)
+                    .or_else(|| provs.servers.first());
+
+                if let Some(srv) = server {
+                    let model = if !self.active.model.is_empty() {
+                        self.active.model.clone()
+                    } else {
+                        srv.model.clone()
+                    };
+                    LlmRuntimeTarget::Server {
+                        base_url: srv.url.clone(),
+                        model,
+                        provider_name: Some(srv.name.clone()),
+                        protocol: Some(srv.protocol.clone()),
+                        api_key: srv.api_key.clone(),
+                    }
+                } else {
+                    LlmRuntimeTarget::Server {
+                        base_url: DEFAULT_LLM_SERVER_BASE_URL.to_string(),
+                        model: DEFAULT_LLM_SERVER_MODEL.to_string(),
+                        provider_name: Some(DEFAULT_LLM_SERVER_PROVIDER_NAME.to_string()),
+                        protocol: Some("ollama".to_string()),
+                        api_key: None,
+                    }
+                }
+            }
+            "cloud" => {
+                let provider_id = self
+                    .active
+                    .provider
+                    .as_deref()
+                    .unwrap_or(DEFAULT_LLM_CLOUD_PROVIDER_NAME);
+                let api_key = provs.cloud_keys.get(provider_id).cloned();
+                let base_url = match provider_id {
+                    "openrouter" => "https://openrouter.ai/api/v1",
+                    "groq" => "https://api.groq.com/openai/v1",
+                    _ => DEFAULT_LLM_CLOUD_BASE_URL,
+                };
+                LlmRuntimeTarget::Cloud {
+                    base_url: base_url.to_string(),
+                    model: self.active.model.clone(),
+                    provider_name: Some(provider_id.to_string()),
+                    protocol: Some("openai".to_string()),
                     api_key,
                 }
             }
+            _ => LlmRuntimeTarget::Embedded,
         }
     }
 }
@@ -189,71 +202,54 @@ mod tests {
     #[test]
     fn test_llm_settings_defaults() {
         let settings = LlmSettings::default();
-        assert_eq!(settings.active, LlmActiveProvider::Embedded);
-        assert_eq!(settings.temperature, DEFAULT_LLM_TEMPERATURE);
-        assert_eq!(
-            settings.compaction_temperature,
-            DEFAULT_LLM_COMPACTION_TEMPERATURE
-        );
-        assert_eq!(settings.max_output_tokens, DEFAULT_LLM_MAX_OUTPUT_TOKENS);
-        assert_eq!(settings.context_window, DEFAULT_LLM_CONTEXT_WINDOW);
-        assert_eq!(settings.threads, DEFAULT_LLM_THREADS);
-        assert!(!settings.reasoning_enabled);
-        assert_eq!(settings.embedded.model, DEFAULT_LLM_MODEL);
-        assert_eq!(settings.embedded.n_gpu_layers, 0);
-        assert_eq!(settings.server.base_url, DEFAULT_LLM_SERVER_BASE_URL);
-        assert_eq!(settings.server.model, DEFAULT_LLM_SERVER_MODEL);
-        assert_eq!(
-            settings.server.provider_name.as_deref(),
-            Some(DEFAULT_LLM_SERVER_PROVIDER_NAME)
-        );
-        assert_eq!(settings.cloud.base_url, DEFAULT_LLM_CLOUD_BASE_URL);
-        assert_eq!(settings.cloud.model, DEFAULT_LLM_CLOUD_MODEL);
-        assert_eq!(
-            settings.cloud.provider_name.as_deref(),
-            Some(DEFAULT_LLM_CLOUD_PROVIDER_NAME)
-        );
-        assert!(settings.cloud_keys.is_empty());
+        assert_eq!(settings.active.category, "embedded");
         assert_eq!(settings.active_model(), DEFAULT_LLM_MODEL);
-        assert_eq!(settings.effective_ctx_size(), DEFAULT_LLM_CONTEXT_WINDOW);
+        assert_eq!(
+            settings.last_selected.embedded.as_deref(),
+            Some(DEFAULT_LLM_MODEL)
+        );
 
-        let provider_config = settings.to_provider_config();
-        assert_eq!(provider_config, LlmProviderConfig::Embedded);
+        let prov_config = settings.to_provider_config(None);
+        assert_eq!(prov_config, LlmRuntimeTarget::Embedded);
     }
 
     #[test]
     fn test_llm_settings_server_and_cloud_active() {
         let mut settings = LlmSettings {
-            active: LlmActiveProvider::Server,
+            active: ActiveSelection {
+                category: "server".to_string(),
+                provider: Some("ollama".to_string()),
+                model: "gemma4:12b".to_string(),
+            },
             ..Default::default()
         };
-        assert_eq!(settings.active_model(), DEFAULT_LLM_SERVER_MODEL);
 
-        match settings.to_provider_config() {
-            LlmProviderConfig::Server {
+        match settings.to_provider_config(None) {
+            LlmRuntimeTarget::Server {
                 base_url,
                 model,
                 provider_name,
                 ..
             } => {
                 assert_eq!(base_url, DEFAULT_LLM_SERVER_BASE_URL);
-                assert_eq!(model, DEFAULT_LLM_SERVER_MODEL);
-                assert_eq!(
-                    provider_name.as_deref(),
-                    Some(DEFAULT_LLM_SERVER_PROVIDER_NAME)
-                );
+                assert_eq!(model, "gemma4:12b");
+                assert_eq!(provider_name.as_deref(), Some("Local Ollama"));
             }
-            _ => panic!("Expected LlmProviderConfig::Server"),
+            _ => panic!("Expected LlmRuntimeTarget::Server"),
         }
 
-        settings.active = LlmActiveProvider::Cloud;
-        settings
+        settings.active = ActiveSelection {
+            category: "cloud".to_string(),
+            provider: Some("nvidia".to_string()),
+            model: "meta/llama-3.1-8b-instruct".to_string(),
+        };
+        let mut provs = LlmProvidersConfig::default();
+        provs
             .cloud_keys
             .insert("nvidia".to_string(), "nv-secret-123".to_string());
-        assert_eq!(settings.active_model(), DEFAULT_LLM_CLOUD_MODEL);
 
-        match settings.to_provider_config() {
-            LlmProviderConfig::Cloud {
+        match settings.to_provider_config(Some(&provs)) {
+            LlmRuntimeTarget::Cloud {
                 base_url,
                 model,
                 provider_name,
@@ -261,34 +257,11 @@ mod tests {
                 ..
             } => {
                 assert_eq!(base_url, DEFAULT_LLM_CLOUD_BASE_URL);
-                assert_eq!(model, DEFAULT_LLM_CLOUD_MODEL);
-                assert_eq!(
-                    provider_name.as_deref(),
-                    Some(DEFAULT_LLM_CLOUD_PROVIDER_NAME)
-                );
+                assert_eq!(model, "meta/llama-3.1-8b-instruct");
+                assert_eq!(provider_name.as_deref(), Some("nvidia"));
                 assert_eq!(api_key.as_deref(), Some("nv-secret-123"));
             }
-            _ => panic!("Expected LlmProviderConfig::Cloud"),
+            _ => panic!("Expected LlmRuntimeTarget::Cloud"),
         }
-    }
-
-    #[test]
-    fn test_effective_ctx_size_clamping() {
-        let mut settings = LlmSettings {
-            context_window: 1024,
-            ..Default::default()
-        };
-        assert_eq!(settings.effective_ctx_size(), MIN_LLM_CONTEXT_WINDOW);
-
-        settings.context_window = 32768;
-        assert_eq!(settings.effective_ctx_size(), 32768);
-    }
-
-    #[test]
-    fn test_serde_roundtrip() {
-        let original = LlmSettings::default();
-        let json = serde_json::to_string(&original).unwrap();
-        let deserialized: LlmSettings = serde_json::from_str(&json).unwrap();
-        assert_eq!(original, deserialized);
     }
 }

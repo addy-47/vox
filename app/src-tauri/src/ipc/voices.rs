@@ -207,7 +207,7 @@ pub async fn set_active_voice(
             .settings
             .write()
             .map_err(|e| VoxIpcError::Internal(format!("Settings lock poisoned: {}", e)))?;
-        settings.tts.voice_id = id.clone();
+        settings.tts.active_voice_id = id.clone();
         settings
             .save()
             .map_err(|e| VoxIpcError::Internal(format!("Failed to persist active voice: {}", e)))?;

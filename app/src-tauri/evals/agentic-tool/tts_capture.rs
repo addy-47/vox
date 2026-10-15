@@ -57,7 +57,7 @@ use vox_lib::{
         },
         tts::{
             actor::TtsWorkerHandles, config::ProviderCaps, factory::create_tts_provider,
-            providers::SynthesisContext, spawn_tts_worker, TtsActiveProvider, TtsCommand,
+            providers::SynthesisContext, spawn_tts_worker, TtsCommand,
             TtsProvider, TtsSettings,
         },
     },
@@ -90,9 +90,13 @@ pub struct TtsCapture {
 #[allow(dead_code)]
 pub fn build_provider(settings: &TtsSettings) -> Result<Box<dyn TtsProvider>> {
     let mut s = settings.clone();
-    s.active = TtsActiveProvider::Kokoro;
+    s.active = vox_lib::config::ActiveSelection {
+        category: "embedded".to_string(),
+        provider: None,
+        model: "kokoro".to_string(),
+    };
     let model_dir = vox_lib::utils::paths::model_dir("");
-    create_tts_provider(&s, &model_dir, None)
+    create_tts_provider(&s, None, &model_dir, None, 1.0, 2)
         .map_err(|e| anyhow!("Failed to initialize Kokoro for eval capture: {}", e))
 }
 

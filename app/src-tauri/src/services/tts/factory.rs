@@ -9,9 +9,9 @@ use crate::{
         resolve_zipvoice_reference,
         voice::{get_supertonic_voice_profiles, get_voice_profiles, resolve_catalog_index},
         ChatterboxEngine, ChatterboxRemoteProvider, EdgeTtsProvider, KokoroEngine, ProviderCaps,
-        TtsActiveProvider, TtsEngine as SupertonicEngine, TtsProviderConfig, TtsSettings,
-        ZipvoiceEngine, CHATTERBOX_MODEL_DIR, KOKORO_MODEL_DIR, ZIPVOICE_GUIDANCE_SCALE,
-        ZIPVOICE_MODEL_DIR,
+        TtsActiveProvider, TtsEngine as SupertonicEngine, TtsProviderConfig, TtsProvidersConfig,
+        TtsSettings, ZipvoiceEngine, CHATTERBOX_MODEL_DIR, KOKORO_MODEL_DIR,
+        ZIPVOICE_GUIDANCE_SCALE, ZIPVOICE_MODEL_DIR,
     },
     utils::paths::model_dir,
 };
@@ -64,17 +64,19 @@ pub async fn resolve_reference_audio(conn: &Connection, voice_id: Option<&str>) 
 /// Creates a boxed TTS provider based on settings configuration.
 pub fn create_tts_provider(
     settings: &TtsSettings,
+    providers: Option<&TtsProvidersConfig>,
     super_tts_path: &Path,
     reference_audio: Option<&str>,
+    speed: f32,
+    num_threads: u32,
 ) -> Result<Box<dyn TtsProvider>, String> {
-    let provider_config = settings.to_provider_config();
-    let speed = settings.speed;
-    let num_threads = settings.threads;
+    let provider_config = settings.to_provider_config(providers, speed);
 
     match &provider_config {
         TtsProviderConfig::Supertonic => {
             log::info!("[TTS Factory] Initializing Supertonic engine");
-            let voice = resolve_catalog_index(&get_supertonic_voice_profiles(), &settings.voice_id);
+            let voice =
+                resolve_catalog_index(&get_supertonic_voice_profiles(), &settings.active_voice_id);
             SupertonicEngine::new(super_tts_path, voice, speed, num_threads)
                 .map(|e| Box::new(e) as Box<dyn TtsProvider>)
                 .map_err(|e| format!("Failed to create Supertonic engine: {}", e))
@@ -82,7 +84,7 @@ pub fn create_tts_provider(
         TtsProviderConfig::Kokoro => {
             log::info!("[TTS Factory] Initializing Kokoro Multi-Lang engine");
             let kokoro_path = model_dir(KOKORO_MODEL_DIR);
-            let voice = resolve_catalog_index(&get_voice_profiles(), &settings.voice_id);
+            let voice = resolve_catalog_index(&get_voice_profiles(), &settings.active_voice_id);
             KokoroEngine::new(&kokoro_path, voice, speed, num_threads)
                 .map(|e| Box::new(e) as Box<dyn TtsProvider>)
                 .map_err(|e| format!("Failed to create Kokoro engine: {}", e))

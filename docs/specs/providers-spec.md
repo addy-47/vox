@@ -55,13 +55,13 @@ Vox connects to diverse local engines, self-hosted servers, and cloud providers 
 
 ```mermaid
 flowchart LR
-    Canon[Canonical Request<br/>- max_output_tokens<br/>- reasoning_mode<br/>- tools<br/>- response_format] --> Engine[Manifest-Driven Request Serializer]
-    Manifest[(Declarative Wire Manifest)] --> Engine
+    Canon["Canonical Request<br/>- max_output_tokens<br/>- reasoning_mode<br/>- tools<br/>- response_format"] --> Engine["Manifest-Driven Request Serializer"]
+    Manifest[("Declarative Wire Manifest")] --> Engine
     
-    Engine -->|Preset: ollama_native| Out1[Ollama Native JSON<br/>options.num_predict<br/>think: false<br/>tools[] (no tool_choice)]
-    Engine -->|Preset: ollama_compat| Out2[Ollama /v1 JSON<br/>max_tokens<br/>reasoning_effort: 'none'<br/>tools[] (no tool_choice)]
-    Engine -->|Preset: openai_chat| Out3[OpenAI Chat JSON<br/>max_completion_tokens<br/>tools[] with tool_choice: 'auto']
-    Engine -->|Preset: responses| Out4[Responses JSON<br/>max_output_tokens<br/>envelope-native tools]
+    Engine -->|Preset: ollama_native| Out1["Ollama Native JSON<br/>options.num_predict<br/>think: false<br/>tools[] (no tool_choice)"]
+    Engine -->|Preset: ollama_compat| Out2["Ollama /v1 JSON<br/>max_tokens<br/>reasoning_effort: 'none'<br/>tools[] (no tool_choice)"]
+    Engine -->|Preset: openai_chat| Out3["OpenAI Chat JSON<br/>max_completion_tokens<br/>tools[] with tool_choice: 'auto'"]
+    Engine -->|Preset: responses| Out4["Responses JSON<br/>max_output_tokens<br/>envelope-native tools"]
 ```
 
 ### 4.2 Bounded Wire Negotiation & Fallback Flow

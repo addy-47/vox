@@ -6,12 +6,14 @@ use std::{
 use tauri::{AppHandle, Manager, State};
 
 use crate::{
+    config::types::ActiveSelection,
     core::{
         engine::{ensure_memory_embedder, start_audio_engine, stop_audio_engine},
         events::InteractionMode,
         state::{AppState, InteractionOwner, InteractionState},
     },
     ipc::pipeline::{launch_engine, restart_engine_inner, stop_engine},
+    persistence::models::upsert_model_active,
     pipeline::dictation::{transition_dictation, DictationInteractionMode, DictationOutputMode},
     services::{
         dictation::init_dictation_hotkey_listener,
@@ -19,7 +21,10 @@ use crate::{
             spawn_ingestion_sweep, start_consolidation_scheduler, stop_consolidation_scheduler,
             unload_memory_pipeline_onnx_models,
         },
-        tts::TtsCommand,
+        tts::{
+            voice::{get_voice_profiles, resolve_catalog_index},
+            TtsCommand,
+        },
         vad::{VadCommand, VadOperationalMode},
     },
     tray::{destroy_tray_window, ensure_tray_window, update_tray_menu_state},
@@ -261,6 +266,86 @@ async fn handle_interaction_side_effects<R: tauri::Runtime>(
     }
 }
 
+async fn handle_personal_memory_side_effects<R: tauri::Runtime>(
+    app: &AppHandle<R>,
+    state: &AppState,
+    key: &str,
+    value: &serde_json::Value,
+) {
+    if key == "consolidation_cadence" || key == "consolidation_time" {
+        let cadence = state
+            .settings
+            .read()
+            .map(|s| s.personal_memory.consolidation_cadence.clone())
+            .unwrap_or_default();
+        if cadence == "daily" {
+            let state_arc = app.state::<Arc<AppState>>().inner().clone();
+            start_consolidation_scheduler(app.clone(), state_arc);
+        } else {
+            stop_consolidation_scheduler(state);
+        }
+    } else if key == "context_retrieval_enabled" {
+        let enabled = value.as_bool().unwrap_or(false);
+        if let Some(ref mut h) = *state.harness.lock() {
+            h.set_memory_retrieval_enabled(enabled);
+        }
+        if enabled {
+            let is_active = state.pipeline.state() != InteractionState::Idle;
+            if is_active {
+                let settings = state
+                    .settings
+                    .read()
+                    .unwrap_or_else(|p| p.into_inner())
+                    .clone();
+                ensure_memory_embedder(&settings);
+            }
+        } else {
+            tauri::async_runtime::spawn_blocking(|| {
+                unload_memory_pipeline_onnx_models();
+                log::info!("[Settings] Memory embedder evicted on retrieval disable");
+            });
+        }
+    } else if key == "pipeline_processing_enabled" {
+        let enabled = value.as_bool().unwrap_or(false);
+        if enabled {
+            let state_arc = app.state::<Arc<AppState>>().inner().clone();
+            spawn_ingestion_sweep(state_arc, Some(app.clone()), None);
+            log::info!("[Settings] Pipeline processing enabled; spawned ingestion sweep");
+        } else if let Some(token) = state.ingestion_cancel.lock().take() {
+            token.cancel();
+            log::info!(
+                "[Settings] Pipeline processing disabled; cancelled running ingestion sweep"
+            );
+        }
+    }
+}
+
+async fn handle_active_model_side_effects(
+    state: &AppState,
+    domain: &str,
+    value: &serde_json::Value,
+) {
+    if let Ok(active) = serde_json::from_value::<ActiveSelection>(value.clone()) {
+        if let Ok(conn) = state.db.connect() {
+            if let Err(e) = upsert_model_active(
+                &conn,
+                &active.model,
+                domain,
+                &active.category,
+                active.provider.as_deref(),
+            )
+            .await
+            {
+                log::warn!(
+                    "[Settings] Failed to record active model in database for {}: {}",
+                    domain,
+                    e
+                );
+            }
+        }
+    }
+}
+
 pub async fn handle_setting_side_effects<R: tauri::Runtime>(
     app: &AppHandle<R>,
     state: &AppState,
@@ -280,52 +365,7 @@ pub async fn handle_setting_side_effects<R: tauri::Runtime>(
     } else if domain == "interaction" {
         handle_interaction_side_effects(app, state, key, value).await;
     } else if domain == "personal_memory" {
-        if key == "consolidation_cadence" || key == "consolidation_time" {
-            let cadence = state
-                .settings
-                .read()
-                .map(|s| s.personal_memory.consolidation_cadence.clone())
-                .unwrap_or_default();
-            if cadence == "daily" {
-                let state_arc = app.state::<Arc<AppState>>().inner().clone();
-                start_consolidation_scheduler(app.clone(), state_arc);
-            } else {
-                stop_consolidation_scheduler(state);
-            }
-        } else if key == "context_retrieval_enabled" {
-            let enabled = value.as_bool().unwrap_or(false);
-            if let Some(ref mut h) = *state.harness.lock() {
-                h.set_memory_retrieval_enabled(enabled);
-            }
-            if enabled {
-                let is_active = state.pipeline.state() != InteractionState::Idle;
-                if is_active {
-                    let settings = state
-                        .settings
-                        .read()
-                        .unwrap_or_else(|p| p.into_inner())
-                        .clone();
-                    ensure_memory_embedder(&settings);
-                }
-            } else {
-                tauri::async_runtime::spawn_blocking(|| {
-                    unload_memory_pipeline_onnx_models();
-                    log::info!("[Settings] Memory embedder evicted on retrieval disable");
-                });
-            }
-        } else if key == "pipeline_processing_enabled" {
-            let enabled = value.as_bool().unwrap_or(false);
-            if enabled {
-                let state_arc = app.state::<Arc<AppState>>().inner().clone();
-                spawn_ingestion_sweep(state_arc, Some(app.clone()), None);
-                log::info!("[Settings] Pipeline processing enabled; spawned ingestion sweep");
-            } else if let Some(token) = state.ingestion_cancel.lock().take() {
-                token.cancel();
-                log::info!(
-                    "[Settings] Pipeline processing disabled; cancelled running ingestion sweep"
-                );
-            }
-        }
+        handle_personal_memory_side_effects(app, state, key, value).await;
     } else if domain == "working_memory" && key == "web_search_enabled" {
         let enabled = value.as_bool().unwrap_or(false);
         if let Some(ref mut h) = *state.harness.lock() {
@@ -335,6 +375,8 @@ pub async fn handle_setting_side_effects<R: tauri::Runtime>(
             "[Settings] Working memory web search runtime enabled={}",
             enabled
         );
+    } else if (domain == "llm" || domain == "tts" || domain == "stt") && key == "active" {
+        handle_active_model_side_effects(state, domain, value).await;
     }
 }
 
@@ -401,13 +443,10 @@ pub async fn dispatch_worker_command<R: tauri::Runtime>(
                     log::debug!("[Settings] VadCommand::UpdateSpeechOnset({}) dispatched", v);
                 }
             }
-            ("tts", "voice_id" | "voice") => {
+            ("tts", "voice_id" | "voice" | "active_voice_id") => {
                 if let Some(ref tts_tx) = engine.tts_tx {
                     if let Some(id) = value.as_str() {
-                        let idx = crate::services::tts::voice::resolve_catalog_index(
-                            &crate::services::tts::voice::get_voice_profiles(),
-                            id,
-                        );
+                        let idx = resolve_catalog_index(&get_voice_profiles(), id);
                         if let Err(e) = tts_tx.send(TtsCommand::SetVoice(idx)) {
                             log::warn!("[Settings] Failed to send TtsCommand::SetVoice: {}", e);
                         }
@@ -442,7 +481,7 @@ pub fn dispatch_worker_command_has_arm(domain: &str, key: &str) -> bool {
             | ("vad", "ptt_noise_gate")
             | ("vad", "silence_duration_ms")
             | ("vad", "speech_onset_ms")
-            | ("tts", "voice_id" | "voice")
+            | ("tts", "voice_id" | "voice" | "active_voice_id")
             | ("tts", "speed")
     )
 }

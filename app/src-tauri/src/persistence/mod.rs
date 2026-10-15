@@ -16,6 +16,7 @@ pub const SQLITE_BUSY_TIMEOUT_MS: u32 = 5000;
 
 pub mod compactions;
 pub mod facts;
+pub mod models;
 pub mod notifications;
 pub mod personal_memory;
 pub mod projects;
@@ -34,6 +35,10 @@ pub use facts::{
     deactivate_observation, deactivate_observations_batch, fetch_active_episodic_observations,
     fetch_active_observations_by_type, fetch_all_observations, fetch_pending_queue_observations,
     mark_observations_integrated, EpisodicObservationCandidate, ObservationRecord,
+};
+pub use models::{
+    get_model, get_model_parameters, list_favorite_models, toggle_model_favorite,
+    update_model_parameters, upsert_model_active, ModelRecord,
 };
 pub use notifications::{NewNotification, NotificationRecord};
 pub use personal_memory::{

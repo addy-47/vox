@@ -946,9 +946,19 @@ async fn test_session_boot_capability_probe_and_cache_lifecycle() {
         let test_model = "test-model-404".to_string();
         {
             let mut settings = state.settings.write().unwrap();
-            settings.llm.active = vox_lib::services::llm::LlmActiveProvider::Server;
-            settings.llm.server.model = test_model.clone();
-            settings.llm.server.base_url = "http://127.0.0.1:9999".to_string(); // unresponsive dummy port
+            settings.llm.active = vox_lib::config::ActiveSelection {
+                category: "server".to_string(),
+                provider: Some("ollama".to_string()),
+                model: test_model.clone(),
+            };
+            settings.providers.llm.servers = vec![vox_lib::services::llm::LlmCustomServer {
+                id: "test-server".to_string(),
+                name: "Test Server".to_string(),
+                url: "http://127.0.0.1:9999".to_string(),
+                model: test_model.clone(),
+                protocol: "ollama".to_string(),
+                api_key: None,
+            }];
         }
 
         // Spawn central production router
@@ -1071,7 +1081,7 @@ async fn test_session_boot_capability_probe_and_cache_lifecycle() {
         // Update settings to use the cached model
         {
             let mut settings = state.settings.write().unwrap();
-            settings.llm.server.model = supported_model.clone();
+            settings.llm.active.model = supported_model.clone();
         }
 
         // Re-attach mock engine — EndSession calls stop_audio_engine which

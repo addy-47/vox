@@ -17,6 +17,7 @@ use tokio::sync::Mutex;
 
 use crate::{
     core::{
+        defaults::{DEFAULT_TTS_SPEED, DEFAULT_TTS_THREADS},
         error::VoxIpcError,
         state::{AppState, InteractionState},
     },
@@ -24,6 +25,7 @@ use crate::{
     services::{
         translit::is_devanagari,
         tts::{
+            factory::caps_for_id,
             providers::{
                 edge_tts,
                 kokoro::{
@@ -42,7 +44,7 @@ use crate::{
                 get_supertonic_voice_profiles, get_voice_profiles, resolve_catalog_index,
                 write_f32_wav,
             },
-            KOKORO_MODEL_DIR, MAX_SPEED, MIN_SPEED, SUPERTONIC_MODEL_DIR, TTS_SAMPLE_RATE,
+            KOKORO_MODEL_DIR, SUPERTONIC_MODEL_DIR, TTS_SAMPLE_RATE,
         },
     },
     utils::paths::{cache_dir, model_dir},
@@ -249,12 +251,9 @@ async fn resolve_preview_provider(
         return Ok(normalized);
     }
     if let Ok(settings) = state.settings.read() {
-        if let serde_json::Value::String(active) = serde_json::to_value(settings.tts.active)
-            .unwrap_or(serde_json::Value::String(String::new()))
-        {
-            if !active.trim().is_empty() {
-                return Ok(active);
-            }
+        let active = settings.tts.active.model.clone();
+        if !active.trim().is_empty() {
+            return Ok(active);
         }
     }
     if voice_id.contains('-') {
@@ -272,21 +271,15 @@ fn normalize_engine_id(engine: &str) -> Option<String> {
     if normalized.is_empty() {
         return None;
     }
-    match crate::services::tts::caps_for_id(&normalized) {
+    match caps_for_id(&normalized) {
         Ok(_) => Some(normalized),
         Err(_) => None,
     }
 }
 
-/// Snapshots preview tuning from settings without holding the lock across synthesis.
-fn snapshot_tts_tuning(state: &AppState) -> (f32, u32) {
-    match state.settings.read() {
-        Ok(settings) => (
-            settings.tts.speed.clamp(MIN_SPEED, MAX_SPEED),
-            settings.tts.threads,
-        ),
-        Err(_) => (1.0, 4),
-    }
+/// Snapshots preview tuning from defaults without holding the lock across synthesis.
+fn snapshot_tts_tuning(_state: &AppState) -> (f32, u32) {
+    (DEFAULT_TTS_SPEED, DEFAULT_TTS_THREADS)
 }
 
 /// Dispatches preview synthesis to the voice's owning provider on the correct thread.

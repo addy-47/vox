@@ -17,7 +17,7 @@ pub use catalog::{
     ProviderPresetMeta, CAP_KIND_CLOUD, CAP_KIND_EMBEDDED, CAP_KIND_SERVER,
 };
 pub use config::{
-    LlmActiveProvider, LlmEmbeddedConfig, LlmProviderConfig, LlmRemoteConfig, LlmSettings,
+    LlmActiveProvider, LlmCustomServer, LlmProvidersConfig, LlmRuntimeTarget, LlmSettings,
 };
 pub use embedded::{EmbeddedProvider, LlmWorker, ModelFamily};
 pub use factory::{create_llm_provider, create_llm_provider_from_llm_settings};

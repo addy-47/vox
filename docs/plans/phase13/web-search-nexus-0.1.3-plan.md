@@ -453,7 +453,7 @@ Corpus retention, `focus`, `must_contain`, sub-query decomposition, token handle
 - [ ] 6. Vox: temp path dep + `state.rs` builder wiring.
 - [ ] 7. Vox: `web_search.rs` status contract + `prompt.rs` + loop failure counter.
 - [ ] 8. Vox: bounded `web_fetch` (only if approved in this release).
-- [ ] 9. Re-run eval + QA scoring; final delta report for user approval.
+- [ ] 9. Re-run eval + QA scoring; final delta report for user approval. (DELTA RUN `20261015_120341_ad137700`: 41/48. QA round 3: 7/8/5, NO-GO. RE-PROBE 2026-10-15 overturns the attribution: ent_03/ent_04/news_02/tech_02 + hist_02 control ALL PASS on immediate retry — the "recall collapse" was throttling (429s on Brave/Wikipedia/DDG-challenges), not the stack. adv_02 still fails under throttle. GENUINE stack gaps standing: long_02 deterministic miss (both runs identical 0.618), verticals fired but unproven (no observable contribution under throttle), Sol false-friend. NO PUBLISH until: coverage gate + clean off-peak run + round 4.)
 - [ ] 10. User manual test.
 - [ ] 11. `cargo publish` nexus-rs 0.1.3; Vox `Cargo.toml` to new version + `cargo update`.
 - [ ] 12. Spec updates (mandatory close-out): `docs/specs/tools-specs/web-search.md`, `docs/specs/tools-specs/lld.md`, feature ledger.

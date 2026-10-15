@@ -33,12 +33,12 @@ Vox separates stateless language model compute from conversational orchestration
 
 ```mermaid
 flowchart TD
-    Start([User Utterance Finalized]) --> Dedupe{Duplicate Query?}
+    Start([User Utterance Finalized]) --> Dedupe{"Duplicate Query?"}
     Dedupe -- Yes --> Drop[Ignore Duplicate & Reset]
     Dedupe -- No --> StageUser[Stage User Query in History]
     
     StageUser --> EvalBudget[Evaluate Context Budget]
-    EvalBudget --> CheckCritical{Context Utilization ≥ 85%?}
+    EvalBudget --> CheckCritical{"Context Utilization >= 85%?"}
     
     CheckCritical -- Yes --> InlineCompact[Run Inline Compaction & Prune History]
     CheckCritical -- No --> AssemblePrompt[Assemble System Prompt & Tools]
@@ -46,7 +46,7 @@ flowchart TD
     
     AssemblePrompt --> DispatchModel[Stream Tokens from Model]
     
-    DispatchModel --> StreamDemux{Model Output Type?}
+    DispatchModel --> StreamDemux{"Model Output Type?"}
     
     StreamDemux -- Text Tokens --> EagerChunk[Eager Clause Chunker]
     EagerChunk --> TTS[Dispatch Clause to Speech Synthesis]
@@ -57,7 +57,7 @@ flowchart TD
     
     StreamDemux -- Non-Terminal Tool --> NonTermTool[Transition to Working & Play Filler Speech]
     NonTermTool --> ExecTool[Execute Tool Action]
-    ExecTool --> ReenterLoop{Iterations < 5?}
+    ExecTool --> ReenterLoop{"Iterations < 5?"}
     ReenterLoop -- Yes --> EvalBudget
     ReenterLoop -- No --> ForceText[Final Generation Pass without Tools]
     ForceText --> TTS
@@ -91,13 +91,13 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    Crit[Context Utilization ≥ 85%] --> StartCompact[Trigger Inline Compaction<br/>45s Cancellation Token]
-    StartCompact --> Outcome{Compaction Result}
+    Crit["Context Utilization at least 85%"] --> StartCompact["Trigger Inline Compaction<br/>45s Cancellation Token"]
+    StartCompact --> Outcome{"Compaction Result"}
     
-    Outcome -- Success --> Summary[Generate Summary JSON<br/>Replace Old Turns with session_context<br/>Context Reduced < 65%]
-    Outcome -- Timeout (45s) / Model Error / Bad JSON --> FailFast[Log Degradation Error<br/>Abort Compaction Pass Immediately]
+    Outcome -- Success --> Summary["Generate Summary JSON<br/>Replace Old Turns with session_context<br/>Context Reduced below 65%"]
+    Outcome -- "Timeout (45s) / Model Error / Bad JSON" --> FailFast["Log Degradation Error<br/>Abort Compaction Pass Immediately"]
     
-    FailFast --> FIFOLoop{Context Still ≥ 65%?}
+    FailFast --> FIFOLoop{"Context Still at least 65%?"}
     FIFOLoop -- Yes --> DropTurn[Drop Oldest Turn Pair from In-Memory History]
     DropTurn --> FIFOLoop
     FIFOLoop -- No --> Preserved[Active User Query & Recent Turns Preserved]
