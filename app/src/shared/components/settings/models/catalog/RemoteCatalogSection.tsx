@@ -536,7 +536,7 @@ export const RemoteCatalogSection = memo(({
       {/* Standardized catalog header (design-spec §10.1) */}
       <CatalogHeader
         icon={<ServerCog size={14} className="text-[rgb(var(--accent))]" />}
-        title={LLM_CATALOG_COPY.connectedServer}
+        title=""
         status={
           remoteModelsError ? (
             <Tooltip

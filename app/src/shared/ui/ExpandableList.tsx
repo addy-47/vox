@@ -41,6 +41,8 @@ export interface ExpandableListProps {
   inlineActions?: React.ReactNode;
   /** "floating" overlaps the list's bottom-right corner; "row" appends an action row. */
   triggerPlacement?: "floating" | "row";
+  /** Optional custom trigger render prop instead of default Maximize2 button */
+  customTrigger?: (open: () => void) => React.ReactNode;
   className?: string;
   children: React.ReactNode;
   /** Optional dedicated modal body when expanded. If provided, replaces children inside the modal. */
@@ -75,6 +77,7 @@ export const ExpandableList = memo(
     inlineMaxHeightClass,
     inlineActions,
     triggerPlacement = "row",
+    customTrigger,
     className,
     children,
     modalContent,
@@ -122,7 +125,9 @@ export const ExpandableList = memo(
           </div>
         </ExpandableListContext.Provider>
 
-        {triggerPlacement === "floating" ? (
+        {customTrigger ? (
+          customTrigger(open)
+        ) : triggerPlacement === "floating" ? (
           <Tooltip label={expandLabel} side="top" asChild>
             <button
               type="button"

@@ -10,8 +10,11 @@ use turso::Connection;
 
 use crate::{
     core::state::{AppState, InteractionState},
-    persistence::compactions::{
-        commit_compaction_output, record_compaction_finish, record_compaction_start,
+    persistence::{
+        compactions::{
+            commit_compaction_output, record_compaction_finish, record_compaction_start,
+        },
+        models::get_model_parameters,
     },
     services::{
         harness::{ChatMessage, Harness, PromptTag, Role},
@@ -116,11 +119,22 @@ impl CompactionStage {
             None
         };
 
+        let resolved_ctx = if let Some(settings) = params.llm_settings {
+            let model_id = settings.active_model();
+            get_model_parameters(conn, model_id)
+                .await
+                .ok()
+                .and_then(|p| p.get("context_window").and_then(|v| v.as_u64()).map(|v| v as u32))
+        } else {
+            None
+        };
+
         let result = match run_compaction(
             provider,
             params.history_messages,
             params.llm_settings,
             params.cancel,
+            resolved_ctx,
         )
         .await
         {

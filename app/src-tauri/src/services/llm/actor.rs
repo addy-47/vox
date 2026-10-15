@@ -7,7 +7,7 @@ use std::{
 pub use super::factory::{create_llm_provider, create_llm_provider_from_llm_settings};
 use super::{
     ConversationInput, GenerationOptions, GenerationPurpose, GenerationRequest, LlmProvider,
-    LlmSettings, OutputConstraint, ReasoningMode,
+    OutputConstraint, ReasoningMode,
 };
 use crate::{
     config::VoxSettings,
@@ -18,7 +18,7 @@ use crate::{
         },
         error::{PipelineError, PipelineImpact},
     },
-    services::harness::{ChatMessage, Role},
+    services::harness::{ChatMessage, LlmExecutionParams, Role},
 };
 
 pub type LlmProviderCache = Arc<parking_lot::RwLock<Option<Arc<dyn LlmProvider>>>>;
@@ -74,8 +74,8 @@ pub enum LlmCommand {
 }
 
 impl GenerationPolicy {
-    /// Constructs policy from current `LlmSettings` and optional explicit compaction token ceiling.
-    pub fn from_settings(_settings: &LlmSettings, compaction_max_tokens: Option<u32>) -> Self {
+    /// Constructs default generation policy with an optional compaction token ceiling.
+    pub fn new(compaction_max_tokens: Option<u32>) -> Self {
         let compaction_tokens = compaction_max_tokens.unwrap_or(DEFAULT_LLM_MAX_OUTPUT_TOKENS);
         let reasoning = ReasoningMode::Disabled;
 
@@ -368,6 +368,7 @@ fn classify_llm_error(turn_id: u32, err_str: String) -> PipelineError {
 pub fn warm_up_llm(
     handles: LlmWarmUpHandles<'_>,
     settings: &VoxSettings,
+    params: &LlmExecutionParams,
     llm_path: &Path,
 ) -> Result<(), String> {
     if handles.llm_tx.is_some() {
@@ -376,7 +377,13 @@ pub fn warm_up_llm(
 
     log::info!("[Llm::Actor] Warming up LLM worker");
 
-    let provider = match create_llm_provider(settings, llm_path) {
+    let provider = match create_llm_provider_from_llm_settings(
+        &settings.llm,
+        Some(&settings.providers.llm),
+        llm_path,
+        params.context_window as u32,
+        params.n_threads,
+    ) {
         Ok(p) => p,
         Err(e) => {
             log::error!("[Llm::Actor] Failed to create provider: {}", e);

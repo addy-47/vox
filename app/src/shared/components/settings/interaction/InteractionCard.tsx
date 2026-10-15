@@ -1,12 +1,11 @@
 import { useState, useEffect, useRef, memo, useCallback } from "react";
-import { useSettingsStore, TtsActiveProvider } from "@/store/settingsStore";
+import { useSettingsStore } from "@/store/settingsStore";
 import { SlidersHorizontal, Mic, MicOff, Activity, Radio } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { SegmentedControl, ToggleTile } from "@/shared/ui";
 import { TriggerModeCard } from "./TriggerModeCard";
 import { PipelineModeCard } from "./PipelineModeCard";
-import { CategorySelector } from "./CategorySelector";
-import { ProviderSelectorView, ProviderTier } from "./ProviderSelectorView";
+import { PipelineProvidersDesk } from "./PipelineProvidersDesk";
 import { LlmConfigDesk } from "./LlmConfigDesk";
 import { RealtimeConfigDesk } from "./RealtimeConfigDesk";
 import { DictationConfigDesk } from "./DictationConfigDesk";
@@ -31,33 +30,21 @@ export const InteractionCard = memo(
 
     const [activeView, setActiveView] = useState<"assistant" | "dictation">("assistant");
     const [activeCategory, setActiveCategory] = useState<"STT" | "LLM" | "TTS">("LLM");
-    const [drillDownProvider, setDrillDownProvider] = useState<ProviderTier | null>(null);
-    const [sttPillOverride, setSttPillOverride] = useState<ProviderTier | null>(null);
-    const [ttsPillOverride, setTtsPillOverride] = useState<ProviderTier | null>(null);
+    const [isDrillDownOpen, setIsDrillDownOpen] = useState(false);
 
     const prevCategoryRef = useRef<string>(activeCategory);
 
     // Auto-discard unsaved draft changes when leaving Level 2 back to Level 1
     const handleBackFromLevel2 = useCallback(() => {
       discardCategoryChanges(activeCategory.toLowerCase());
-      setSttPillOverride(null);
-      setTtsPillOverride(null);
-      setDrillDownProvider(null);
+      setIsDrillDownOpen(false);
     }, [activeCategory, discardCategoryChanges]);
 
-    // Auto-discard unsaved draft changes when switching category tabs
-    const handleSetCategory = useCallback(
-      (cat: "STT" | "LLM" | "TTS") => {
-        if (drillDownProvider !== null) {
-          discardCategoryChanges(activeCategory.toLowerCase());
-          setSttPillOverride(null);
-          setTtsPillOverride(null);
-        }
-        setActiveCategory(cat);
-        setDrillDownProvider(null);
-      },
-      [activeCategory, discardCategoryChanges, drillDownProvider]
-    );
+    const handleSelectCategory = useCallback((cat: "STT" | "LLM" | "TTS") => {
+      setActiveCategory(cat);
+      setIsDrillDownOpen(true);
+    }, []);
+
 
     // Guard sync_pipeline_tab event dispatch to prevent ping-pong loop
     useEffect(() => {
@@ -76,89 +63,49 @@ export const InteractionCard = memo(
         if (cat === "stt" || cat === "llm" || cat === "tts") {
           const upperCat = cat.toUpperCase() as "STT" | "LLM" | "TTS";
           if (prevCategoryRef.current !== upperCat) {
-            if (drillDownProvider !== null) {
+            if (isDrillDownOpen) {
               discardCategoryChanges(activeCategory.toLowerCase());
-              setSttPillOverride(null);
-              setTtsPillOverride(null);
             }
             prevCategoryRef.current = upperCat;
             setActiveCategory(upperCat);
-            setDrillDownProvider(null);
           }
         }
       };
       window.addEventListener("sync_interaction_category", handleSync);
       return () => window.removeEventListener("sync_interaction_category", handleSync);
-    }, [activeCategory, discardCategoryChanges, drillDownProvider]);
+    }, [activeCategory, discardCategoryChanges, isDrillDownOpen]);
 
     if (!draftSettings || !settings) return null;
-    const { interaction, llm, dictation } = draftSettings;
+    const { interaction, dictation } = draftSettings;
 
     const dictationEnabled = dictation?.enabled ?? true;
     const dictationInteractionMode = dictation?.interaction_mode ?? "ptt";
     const isModular = interaction.pipeline_mode === "modular";
 
-    const getTtsTier = (modelId: string): ProviderTier => {
-      const model = modelCatalog?.tts?.find((m) => m.id === modelId);
-      if (model?.is_remote) return "server";
-      if (model?.is_cloud) return "cloud";
-      return "embedded";
-    };
+    const activeProviderKind = draftSettings.llm?.active || "embedded";
+    const previewTtsGroup = modelCatalog?.tts?.find((g) => g.id === draftSettings.tts?.active);
+    const activeSttModel = modelCatalog?.stt?.find(
+      (m) => m.id === draftSettings.stt?.embedded?.model
+    );
 
-    const savedLlmPill: ProviderTier = settings.llm?.active || "embedded";
-    const savedSttPill: ProviderTier = settings.stt?.active === "cloud" ? "cloud" : "embedded";
-    const savedTtsPill: ProviderTier = getTtsTier(settings.tts?.active || "");
+    const sttActiveLabel =
+      draftSettings.stt?.active === "cloud"
+        ? "Cloud Speech"
+        : activeSttModel?.name || "On-Device";
 
-    const savedPill: ProviderTier =
-      activeCategory === "STT"
-        ? savedSttPill
-        : activeCategory === "LLM"
-        ? savedLlmPill
-        : savedTtsPill;
+    const llmActiveLabel =
+      activeProviderKind === "embedded"
+        ? draftSettings.llm?.embedded?.model || "On-Device"
+        : activeProviderKind === "server"
+        ? draftSettings.llm?.server?.provider_name || "Custom Server"
+        : draftSettings.llm?.cloud?.provider_name || "Cloud API";
 
-    const draftLlmPill: ProviderTier = llm?.active || "embedded";
-    const draftSttPill: ProviderTier =
-      sttPillOverride || (draftSettings.stt?.active === "cloud" ? "cloud" : "embedded");
-    const draftTtsPill: ProviderTier =
-      ttsPillOverride || getTtsTier(draftSettings.tts?.active || "");
-
-    const draftPill: ProviderTier =
-      activeCategory === "STT"
-        ? draftSttPill
-        : activeCategory === "LLM"
-        ? draftLlmPill
-        : draftTtsPill;
-
-    const handlePillChange = (value: ProviderTier) => {
-      if (activeCategory === "STT") {
-        setSttPillOverride(value === "embedded" ? null : value);
-        if (value === "embedded") {
-          updateDraft("stt", "active", "embedded");
-        }
-      } else if (activeCategory === "LLM") {
-        updateDraft("llm", "active", value);
-      } else if (activeCategory === "TTS") {
-        setTtsPillOverride(null);
-        const currentTier = getTtsTier(draftSettings.tts?.active || "");
-        if (currentTier !== value) {
-          const targetModel = modelCatalog?.tts?.find((m) =>
-            value === "server"
-              ? m.is_remote
-              : value === "cloud"
-              ? m.is_cloud
-              : !m.is_remote && !m.is_cloud
-          );
-          if (targetModel) {
-            updateDraft("tts", "active", targetModel.id as TtsActiveProvider);
-          }
-        }
-      }
-    };
-
-    const handleSelectProvider = (pill: ProviderTier) => {
-      handlePillChange(pill);
-      setDrillDownProvider(pill);
-    };
+    const ttsActiveLabel =
+      previewTtsGroup?.is_cloud
+        ? "Cloud Voices"
+        : previewTtsGroup?.is_remote
+        ? "Remote Server"
+        : previewTtsGroup?.name || "Built-in Voices";
 
     return (
       <div
@@ -202,8 +149,8 @@ export const InteractionCard = memo(
 
               {/* Category & Provider Selector Subcomponent or Realtime Config Desk */}
               {isModular ? (
-                drillDownProvider !== null ? (
-                  /* ── LEVEL 2: Full-height config desk, category selector hidden ── */
+                isDrillDownOpen ? (
+                  /* ── LEVEL 2: Unified Category Provider Desk ── */
                   <div
                     className={cn(
                       "flex-1 w-full flex flex-col min-h-0 rounded-xl relative animate-fade-in",
@@ -212,29 +159,39 @@ export const InteractionCard = memo(
                   >
                     <LlmConfigDesk
                       activeCategory={activeCategory}
-                      activePill={drillDownProvider || draftPill}
                       isModular={isModular}
                       onBack={handleBackFromLevel2}
                       layoutMode={layoutMode}
                     />
                   </div>
                 ) : (
-                  /* ── LEVEL 1: Category carousel + provider pills ── */
+                  /* ── LEVEL 1: Unified Pipeline Stage Cards (STT | LLM | TTS) ── */
                   <div
                     className={cn(
-                      "flex-1 w-full flex flex-col min-h-0 rounded-xl p-2.5 sm:p-3 relative border border-[rgba(var(--accent),0.08)] bg-[rgba(var(--foreground),0.02)] justify-between mt-0.5",
+                      "flex-1 w-full flex flex-col min-h-0 rounded-xl relative animate-fade-in mt-0.5",
                       layoutMode === "small" ? "h-auto" : "h-full"
                     )}
                   >
-                    <CategorySelector
-                      activeCategory={activeCategory}
-                      onSetCategory={handleSetCategory}
-                      layoutMode={layoutMode}
-                    />
-                    <ProviderSelectorView
-                      activeCategory={activeCategory}
-                      activePill={savedPill}
-                      onSelectProvider={handleSelectProvider}
+                    <PipelineProvidersDesk
+                      sttActiveLabel={sttActiveLabel}
+                      llmActiveLabel={llmActiveLabel}
+                      ttsActiveLabel={ttsActiveLabel}
+                      sttProviderId={draftSettings.stt?.active === "cloud" ? "openai" : "embedded"}
+                      llmProviderId={
+                        activeProviderKind === "embedded"
+                          ? "embedded"
+                          : activeProviderKind === "server"
+                          ? "server"
+                          : (draftSettings.llm?.cloud?.provider_name?.toLowerCase() || "cloud")
+                      }
+                      ttsProviderId={
+                        previewTtsGroup?.is_remote
+                          ? "server"
+                          : previewTtsGroup?.is_cloud
+                          ? "microsoft"
+                          : "embedded"
+                      }
+                      onSelectCategory={handleSelectCategory}
                       layoutMode={layoutMode}
                     />
                   </div>

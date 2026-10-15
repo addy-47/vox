@@ -54,7 +54,6 @@ impl Default for SttProviderConfig {
 pub struct SttSettings {
     pub active: ActiveSelection,
     pub last_selected: LastSelectedModels,
-    #[serde(alias = "transliterate")]
     pub transliterate_enabled: bool,
 }
 

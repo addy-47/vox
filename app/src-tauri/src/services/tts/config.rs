@@ -45,34 +45,39 @@ pub enum TtsActiveProvider {
 
 /// A user-configured custom TTS server instance in providers.jsonc.
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(default)]
 pub struct TtsCustomServer {
     pub id: String,
     pub name: String,
     pub url: String,
     pub remote_path: String,
     #[serde(default)]
+    pub model: Option<String>,
+    #[serde(default)]
+    pub protocol: Option<String>,
+    #[serde(default)]
     pub api_key: Option<String>,
 }
 
+impl Default for TtsCustomServer {
+    fn default() -> Self {
+        Self {
+            id: String::new(),
+            name: String::new(),
+            url: String::new(),
+            remote_path: "/opt/chatterbox".to_string(),
+            model: None,
+            protocol: None,
+            api_key: None,
+        }
+    }
+}
+
 /// Custom TTS servers stored in providers.jsonc.
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Default)]
 #[serde(default)]
 pub struct TtsProvidersConfig {
     pub servers: Vec<TtsCustomServer>,
-}
-
-impl Default for TtsProvidersConfig {
-    fn default() -> Self {
-        Self {
-            servers: vec![TtsCustomServer {
-                id: "chatterbox-gpu".to_string(),
-                name: "Chatterbox GPU Server".to_string(),
-                url: "http://100.67.98.126:8000".to_string(),
-                remote_path: "/opt/chatterbox".to_string(),
-                api_key: None,
-            }],
-        }
-    }
 }
 
 /// Concrete runtime configuration used to instantiate a TTS provider engine.
@@ -148,8 +153,7 @@ impl TtsSettings {
                 let server = provs
                     .servers
                     .iter()
-                    .find(|s| s.id == target_id)
-                    .or_else(|| provs.servers.first());
+                    .find(|s| s.id == target_id);
 
                 if let Some(srv) = server {
                     TtsProviderConfig::ChatterboxRemote {
@@ -160,6 +164,10 @@ impl TtsSettings {
                         voice_id: Some(self.active_voice_id.clone()),
                     }
                 } else {
+                    log::warn!(
+                        "[TtsSettings] Target server ID '{}' not found in providers inventory. Using Kokoro fallback.",
+                        target_id
+                    );
                     TtsProviderConfig::Kokoro
                 }
             }
@@ -226,7 +234,17 @@ mod tests {
             model: "chatterbox".to_string(),
         };
 
-        let prov = settings.to_provider_config(None, 1.2);
+        let test_provs = TtsProvidersConfig {
+            servers: vec![TtsCustomServer {
+                id: "chatterbox-gpu".to_string(),
+                name: "Test GPU".to_string(),
+                url: "http://localhost:8000".to_string(),
+                remote_path: "/opt/chatterbox".to_string(),
+                ..Default::default()
+            }],
+        };
+
+        let prov = settings.to_provider_config(Some(&test_provs), 1.2);
         match prov {
             TtsProviderConfig::ChatterboxRemote {
                 endpoint,
@@ -235,7 +253,7 @@ mod tests {
                 remote_path,
                 voice_id,
             } => {
-                assert_eq!(endpoint, "http://100.67.98.126:8000");
+                assert_eq!(endpoint, "http://localhost:8000");
                 assert_eq!(language, "en");
                 assert_eq!(speed, 1.2);
                 assert_eq!(remote_path, "/opt/chatterbox");
@@ -243,5 +261,10 @@ mod tests {
             }
             _ => panic!("Expected ChatterboxRemote"),
         }
+
+        // Without the target server in inventory, fallback to Kokoro
+        let empty_provs = TtsProvidersConfig::default();
+        let fallback_prov = settings.to_provider_config(Some(&empty_provs), 1.2);
+        assert_eq!(fallback_prov, TtsProviderConfig::Kokoro);
     }
 }

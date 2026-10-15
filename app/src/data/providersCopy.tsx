@@ -114,3 +114,42 @@ export const REALTIME_PROVIDERS = [
   },
 ] as const;
 
+export interface TtsProviderEntry {
+  id: string;
+  name: string;
+  category: "local" | "cloud" | "server";
+  tagline: string;
+  url?: string;
+  isFree?: boolean;
+  isComingSoon?: boolean;
+  statusLabel?: string;
+}
+
+export const TTS_MODAL_PROVIDERS: TtsProviderEntry[] = [
+  {
+    id: "edge_speech",
+    name: "Microsoft Edge TTS",
+    category: "cloud",
+    tagline: "400+ neural voices across 100+ languages · Zero configuration",
+    url: "https://speech.platform.bing.com",
+    isFree: true,
+    statusLabel: "Free",
+  },
+  {
+    id: "google_tts",
+    name: "Google Cloud TTS",
+    category: "cloud",
+    tagline: "Studio and Journey natural-sounding neural speech synthesis",
+    isComingSoon: true,
+    statusLabel: "Coming Soon",
+  },
+  {
+    id: "azure_tts",
+    name: "Azure AI Speech",
+    category: "cloud",
+    tagline: "Enterprise neural speech with real-time streaming voice output",
+    isComingSoon: true,
+    statusLabel: "Coming Soon",
+  },
+];
+

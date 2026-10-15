@@ -202,16 +202,20 @@ pub struct TtsWarmUpHandles<'a> {
     pub turn_metrics: Option<Arc<TurnMetricsCollector>>,
 }
 
+/// Immutable configuration parameters for warming up the TTS worker actor.
+pub struct TtsWarmUpConfig<'a> {
+    pub settings: &'a TtsSettings,
+    pub providers: Option<&'a TtsProvidersConfig>,
+    pub super_tts_path: &'a Path,
+    pub reference_audio: Option<&'a str>,
+    pub speed: f32,
+    pub num_threads: u32,
+}
+
 /// Spawns and initializes a persistent TTS worker actor thread.
-#[allow(clippy::too_many_arguments)]
 pub fn warm_up_tts(
     handles: TtsWarmUpHandles<'_>,
-    settings: &TtsSettings,
-    providers: Option<&TtsProvidersConfig>,
-    super_tts_path: &Path,
-    reference_audio: Option<&str>,
-    speed: f32,
-    num_threads: u32,
+    cfg: TtsWarmUpConfig<'_>,
     event_tx: mpsc::Sender<VoxEvent>,
 ) -> Result<(), String> {
     if handles.tts_tx.is_some() {
@@ -220,12 +224,12 @@ pub fn warm_up_tts(
 
     log::info!("[TTS Actor] Warming up TTS worker");
     let provider = create_tts_provider(
-        settings,
-        providers,
-        super_tts_path,
-        reference_audio,
-        speed,
-        num_threads,
+        cfg.settings,
+        cfg.providers,
+        cfg.super_tts_path,
+        cfg.reference_audio,
+        cfg.speed,
+        cfg.num_threads,
     )?;
 
     let (tx, rx) = mpsc::channel::<TtsCommand>();

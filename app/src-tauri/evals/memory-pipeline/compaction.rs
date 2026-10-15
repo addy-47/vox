@@ -69,7 +69,7 @@ pub async fn run_slices_and_persist(
                 .await
                 .map_err(|e| anyhow!("Failed to record compaction start: {}", e))?;
 
-        let result = run_compaction(provider, &history, Some(llm_settings), None)
+        let result = run_compaction(provider, &history, Some(llm_settings), None, None)
             .await
             .map_err(|e| {
                 anyhow!(

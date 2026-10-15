@@ -169,7 +169,7 @@ impl RealtimeActor {
                         }
                     }
                     RealtimeProviderEvent::SessionResumptionHandle { handle, model } => {
-                        write_session_cache_non_blocking(&handle, &model).await;
+                        write_session_cache_non_blocking(&handle, &model, "gemini_live").await;
                     }
                     RealtimeProviderEvent::ToolCall { id, name, args } => {
                         let session_clone = session_arc.clone();
@@ -326,12 +326,12 @@ fn make_sessions_changed_callback<R: tauri::Runtime + 'static>(
 }
 
 /// Asynchronously saves the session resumption handle to disk without blocking the Tokio runtime.
-async fn write_session_cache_non_blocking(handle: &str, model: &str) {
+async fn write_session_cache_non_blocking(handle: &str, model: &str, provider: &str) {
     let cache_path = cache_dir().join(SESSION_CACHE_FILENAME);
     let now_ms = chrono::Utc::now().timestamp_millis() as u64;
     let expires_at = now_ms + SESSION_CACHE_TTL_MS;
     let payload = serde_json::json!({
-        "provider": "gemini_live",
+        "provider": provider,
         "handle": handle,
         "expires_at": expires_at,
         "model": model,
@@ -369,7 +369,12 @@ pub fn create_realtime_provider(
         .clone();
     let assembled_prompt = state.resolve_base_prompt();
 
-    // Check cached session resumption token with 2-hour TTL
+    let provider_kind = RealtimeProviderKind::from_provider_str(
+        settings.realtime.active.provider.as_deref().unwrap_or(""),
+    )
+    .unwrap_or(RealtimeProviderKind::GeminiLive);
+
+    // Check cached session resumption token with 2-hour TTL and exact provider/model match
     let cache_path = cache_dir().join(SESSION_CACHE_FILENAME);
     let mut cached_handle = None;
     if cache_path.exists() {
@@ -377,12 +382,29 @@ pub fn create_realtime_provider(
             if let Ok(cached) = serde_json::from_str::<serde_json::Value>(&data) {
                 let expires_at = cached["expires_at"].as_u64().unwrap_or(0);
                 let now_ms = chrono::Utc::now().timestamp_millis() as u64;
+                let cached_provider = cached["provider"].as_str().unwrap_or("");
+                let cached_model = cached["model"].as_str().unwrap_or("");
+                let matches_provider = cached_provider == provider_kind.as_str();
+                let matches_model = cached_model == settings.realtime.active.model;
+
                 if now_ms < expires_at {
-                    if let Some(handle) = cached["handle"].as_str() {
+                    if matches_provider && matches_model {
+                        if let Some(handle) = cached["handle"].as_str() {
+                            log::info!(
+                                "[RealtimeSession] Found valid unexpired session resumption token for provider={} model={}.",
+                                cached_provider,
+                                cached_model
+                            );
+                            cached_handle = Some(handle.to_string());
+                        }
+                    } else {
                         log::info!(
-                            "[RealtimeSession] Found valid unexpired session resumption token."
+                            "[RealtimeSession] Resumption token mismatch (cached provider={} model={} vs active provider={} model={}). Bypassing.",
+                            cached_provider,
+                            cached_model,
+                            provider_kind.as_str(),
+                            settings.realtime.active.model
                         );
-                        cached_handle = Some(handle.to_string());
                     }
                 } else {
                     log::info!("[RealtimeSession] Cached session resumption token expired (>2 hours). Purging...");
@@ -394,27 +416,23 @@ pub fn create_realtime_provider(
 
     let tools = ToolRegistry::with_default_tools().canonical_definitions(PipelineMode::Realtime);
 
-    let provider_kind = RealtimeProviderKind::from_provider_str(
-        settings.realtime.active.provider.as_deref().unwrap_or(""),
-    )
-    .unwrap_or(RealtimeProviderKind::GeminiLive);
-
     match provider_kind {
         RealtimeProviderKind::GeminiLive => {
             let api_key = settings
                 .providers
                 .realtime
                 .api_keys
-                .get("gemini")
+                .get(provider_kind.as_str())
                 .cloned()
                 .unwrap_or_default();
+            if api_key.trim().is_empty() {
+                return Err("API key for Gemini Live is not configured in providers.jsonc".to_string());
+            }
             let config = GeminiRealtimeConfig {
                 api_key,
                 model: settings.realtime.active.model.clone(),
                 voice_name: settings.realtime.active_voice_id.clone(),
-                language_code: "en-US".to_string(),
-                temperature: 0.7,
-                enable_web_search: true,
+                ..GeminiRealtimeConfig::default()
             };
             Ok(Box::new(GeminiLiveProvider::new(
                 config,
@@ -430,15 +448,17 @@ pub fn create_realtime_provider(
                 .providers
                 .realtime
                 .api_keys
-                .get("deepgram")
+                .get(provider_kind.as_str())
                 .cloned()
                 .unwrap_or_default();
+            if api_key.trim().is_empty() {
+                return Err("API key for Deepgram Voice Agent is not configured in providers.jsonc".to_string());
+            }
             let config = DeepgramVoiceAgentConfig {
                 api_key,
                 model: settings.realtime.active.model.clone(),
                 voice: settings.realtime.active_voice_id.clone(),
-                temperature: 0.7,
-                agent_mode: false,
+                ..DeepgramVoiceAgentConfig::default()
             };
             Ok(Box::new(DeepgramVoiceAgentProvider::new(
                 config,

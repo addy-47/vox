@@ -1,4 +1,4 @@
-use std::{fs::read_to_string, sync::Arc};
+use std::{collections::HashMap, fs::read_to_string, sync::Arc};
 
 use tauri::{AppHandle, Manager, State};
 
@@ -6,7 +6,7 @@ use crate::{
     config::get_preset_colors,
     core::{error::VoxIpcError, state::AppState},
     persistence::models::{
-        list_favorite_models as list_db_favorite_models,
+        get_all_model_parameters, list_favorite_models as list_db_favorite_models,
         toggle_model_favorite as toggle_db_model_favorite,
     },
     services::{
@@ -33,6 +33,7 @@ pub struct ModelCatalog {
     pub vad: Vec<ModelGroup>,
     pub auxiliary: Vec<ModelGroup>,
     pub model_groups: Vec<ModelGroup>,
+    pub model_parameters: HashMap<String, serde_json::Value>,
     pub voices: Vec<VoiceProfile>,
     pub preset_colors: Vec<String>,
     pub active_voice_name: Option<String>,
@@ -106,6 +107,12 @@ pub async fn get_model_catalog<R: tauri::Runtime>(
         .ok()
         .map(|s| s.tts.active_voice_id.clone());
 
+    let model_parameters = if let Ok(conn) = state.db.connect() {
+        get_all_model_parameters(&conn).await.unwrap_or_default()
+    } else {
+        HashMap::new()
+    };
+
     Ok(ModelCatalog {
         llm,
         stt,
@@ -113,6 +120,7 @@ pub async fn get_model_catalog<R: tauri::Runtime>(
         vad,
         auxiliary,
         model_groups: groups,
+        model_parameters,
         voices: Vec::new(),
         preset_colors: get_preset_colors(),
         active_voice_name,

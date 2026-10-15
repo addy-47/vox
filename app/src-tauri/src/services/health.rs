@@ -7,8 +7,8 @@ use crate::{
     },
     services::{
         llm::{
-            ConnectionConfig, LlmProvider, LlmRuntimeTarget, RemoteTransport, QWEN_MODEL_DIR,
-            QWEN_MODEL_FILE,
+            catalog::discover_server_dialect, ConnectionConfig, LlmProvider, LlmRuntimeTarget,
+            RemoteTransport, QWEN_MODEL_DIR, QWEN_MODEL_FILE,
         },
         stt::{create_stt_provider, SttProviderConfig, NEMOTRON_MODEL_DIR, QWEN_ASR_MODEL_DIR},
         tts::{
@@ -151,12 +151,8 @@ pub async fn check_llm_health(
                         reqwest::Client::new()
                     }
                 };
-                let discovered = crate::services::llm::catalog::discover_server_dialect(
-                    &client,
-                    &base_url,
-                    &conn_cfg.auth,
-                )
-                .await;
+                let discovered =
+                    discover_server_dialect(&client, &base_url, &conn_cfg.auth).await;
                 Some(discovered.display_name().to_string())
             } else {
                 None

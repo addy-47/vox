@@ -96,6 +96,7 @@ pub fn calculate_compaction_max_tokens(ctx_size: u32, probed_max_output: Option<
 pub fn build_compaction_request(
     history_messages: &[ChatMessage],
     settings: Option<&LlmSettings>,
+    context_window: Option<u32>,
 ) -> GenerationRequest {
     let prior_summary = history_messages
         .iter()
@@ -157,12 +158,16 @@ pub fn build_compaction_request(
 
     let default_settings = LlmSettings::default();
     let effective_settings = settings.unwrap_or(&default_settings);
-    let eff_ctx = LlmSettings::effective_ctx_size(DEFAULT_LLM_CONTEXT_WINDOW);
     let model = effective_settings.active_model();
     let baseline_spec = catalog::get_baseline_spec(model);
-    let probed_max_output = baseline_spec.and_then(|s| s.max_output_tokens);
+    let probed_ctx = baseline_spec.as_ref().and_then(|s| s.context_window);
+    let ctx_size = context_window
+        .or(probed_ctx)
+        .unwrap_or(DEFAULT_LLM_CONTEXT_WINDOW);
+    let eff_ctx = LlmSettings::effective_ctx_size(ctx_size);
+    let probed_max_output = baseline_spec.as_ref().and_then(|s| s.max_output_tokens);
     let compaction_max_tokens = calculate_compaction_max_tokens(eff_ctx, probed_max_output);
-    let policy = GenerationPolicy::from_settings(effective_settings, Some(compaction_max_tokens));
+    let policy = GenerationPolicy::new(Some(compaction_max_tokens));
 
     let mut request = policy.build_request(
         GenerationPurpose::MemoryCompaction,

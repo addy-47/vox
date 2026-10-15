@@ -1,13 +1,12 @@
-import { memo, useState, useMemo } from "react";
+import { memo } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
 import { SubModelCard } from "../SubModelCard";
 import type { ModelStatus } from "@/shared/hooks/useModelDownloads";
 import { cn } from "@/shared/lib/utils";
-import { Zap, Battery, Gauge, Ear } from "lucide-react";
+import { Zap, Battery, Gauge } from "lucide-react";
 import { STT_SETTINGS_COPY, COMPUTE_PROFILE_COPY } from "@/data/settingsCopy";
 import { CustomSvgs, PresetButton, PresetInput } from "./CustomSvgs";
 import { TransliterationToggle } from "./TransliterationToggle";
-import { CatalogHeader, type CatalogSortOrder } from "./catalog/CatalogHeader";
 
 interface AsrWorkspaceProps {
   activeCategoryTab?: "model" | "settings";
@@ -39,28 +38,7 @@ export const AsrWorkspace = memo(
     const updateDraft = useSettingsStore((s) => s.updateDraft);
     const modelCatalog = useSettingsStore((s) => s.modelCatalog);
 
-    const [searchQuery, setSearchQuery] = useState("");
-    const [isSearchOpen, setIsSearchOpen] = useState(false);
-    const [sortOrder, setSortOrder] = useState<CatalogSortOrder>("az");
-
     if (!draftSettings || !modelCatalog) return null;
-
-    const filteredSttModels = useMemo(() => {
-      let list = modelCatalog.stt || [];
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
-        list = list.filter(
-          (m) =>
-            m.name.toLowerCase().includes(q) ||
-            m.id.toLowerCase().includes(q) ||
-            (m.description && m.description.toLowerCase().includes(q))
-        );
-      }
-      return [...list].sort((a, b) => {
-        const cmp = a.name.localeCompare(b.name);
-        return sortOrder === "az" ? cmp : -cmp;
-      });
-    }, [modelCatalog.stt, searchQuery, sortOrder]);
 
     const currentThrottle = draftSettings.stt?.embedded?.partial_throttle_ms ?? 300;
     const transliterateEnabled = draftSettings.stt?.transliterate_enabled ?? true;
@@ -68,42 +46,24 @@ export const AsrWorkspace = memo(
     const throttleCustom = ![150, 300, 500].includes(currentThrottle);
 
     return (
-      <div className="flex-1 min-h-0 w-full flex flex-col gap-2">
+      <div className={cn("flex-1 min-h-0 w-full overflow-y-auto custom-scrollbar pr-1", layoutMode === "small" && "max-h-[220px]")}>
         {activeCategoryTab === "model" ? (
-          <>
-            <CatalogHeader
-              icon={<Ear size={14} className="text-[rgb(var(--accent))]" />}
-              title=""
-              sort={{
-                order: sortOrder,
-                onToggle: () => setSortOrder((o) => (o === "az" ? "za" : "az")),
-              }}
-              search={{
-                open: isSearchOpen,
-                value: searchQuery,
-                placeholder: "Search STT models...",
-                onChange: setSearchQuery,
-                onToggle: () => {
-                  setIsSearchOpen((o) => !o);
-                  if (isSearchOpen) setSearchQuery("");
-                },
-                onClose: () => {
-                  setIsSearchOpen(false);
-                  setSearchQuery("");
-                },
-              }}
-            />
-            <div className={cn("flex-1 min-h-0 w-full overflow-y-auto custom-scrollbar pr-1", layoutMode === "small" && "max-h-[220px]")}>
-              <div
-                className={cn(
-                  "grid gap-2.5 h-full",
-                  filteredSttModels.length <= 2
-                    ? (layoutMode === "small" ? "grid-cols-1 auto-rows-fr" : "grid-cols-2 grid-rows-1")
-                    : (layoutMode === "small" ? "grid-cols-1 auto-rows-max content-start" : "grid-cols-2 auto-rows-max content-start")
-                )}
-              >
-              {filteredSttModels.map((model) => {
-            const isSelected = draftSettings.stt.embedded.model === model.id;
+          <div
+            className={cn(
+              "grid gap-2.5 h-full",
+              modelCatalog.stt.length <= 2
+                ? (layoutMode === "small" ? "grid-cols-1 auto-rows-fr" : "grid-cols-2 grid-rows-1")
+                : (layoutMode === "small" ? "grid-cols-1 auto-rows-max content-start" : "grid-cols-2 auto-rows-max content-start")
+            )}
+          >
+          {modelCatalog.stt.map((model) => {
+            const rawSttActive = draftSettings.stt?.active as unknown;
+            const activeModel =
+              draftSettings.stt?.embedded?.model ||
+              (rawSttActive as { model?: string })?.model ||
+              (typeof rawSttActive === "string" ? rawSttActive : undefined) ||
+              modelCatalog.stt?.[0]?.id;
+            const isSelected = activeModel === model.id;
             const modelGroupId = model.id;
             const isDownloaded = !!modelPresence[modelGroupId];
             const status = downloadStatuses[modelGroupId];
@@ -123,9 +83,18 @@ export const AsrWorkspace = memo(
                 layoutMode={layoutMode}
                 onSelect={() => {
                   updateDraft("stt", "model", model.id);
-                  updateDraft("stt", "embedded", {
-                    model: model.id,
-                  });
+                  if (typeof draftSettings.stt?.active === "object" && draftSettings.stt?.active !== null) {
+                    updateDraft("stt", "active", {
+                      ...(draftSettings.stt.active as Record<string, unknown>),
+                      model: model.id,
+                    });
+                  }
+                  if (draftSettings.stt?.embedded) {
+                    updateDraft("stt", "embedded", {
+                      ...draftSettings.stt.embedded,
+                      model: model.id,
+                    });
+                  }
                 }}
                 confirmDeleteId={confirmDeleteId}
                 setConfirmDeleteId={setConfirmDeleteId}
@@ -135,10 +104,8 @@ export const AsrWorkspace = memo(
               />
             );
           })}
-              </div>
-            </div>
-          </>
-        ) : (
+        </div>
+      ) : (
         <div
           className={cn(
             "w-full flex flex-col",

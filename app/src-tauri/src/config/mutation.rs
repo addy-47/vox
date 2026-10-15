@@ -177,18 +177,7 @@ fn apply_interaction_mutation(
 ) -> Result<bool, String> {
     match key {
         "mode" => {
-            let mode = serde_json::from_value::<InteractionMode>(value.clone())
-                .or_else(|_| {
-                    if let Some(s) = value.as_str() {
-                        match s.to_lowercase().as_str() {
-                            "ptt" => Ok(InteractionMode::PTT),
-                            "passive" => Ok(InteractionMode::Passive),
-                            _ => Err(format!("Unknown mode string: {}", s)),
-                        }
-                    } else {
-                        Err("mode must be a string".to_string())
-                    }
-                })
+            let mode: InteractionMode = serde_json::from_value(value.clone())
                 .map_err(|e| format!("Invalid interaction mode: {}", e))?;
             settings.interaction.mode = mode;
         }

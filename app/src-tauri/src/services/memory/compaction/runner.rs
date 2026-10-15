@@ -210,6 +210,7 @@ pub async fn run_compaction(
     history_messages: &[ChatMessage],
     settings: Option<&LlmSettings>,
     cancel_token: Option<&CancellationToken>,
+    context_window: Option<u32>,
 ) -> Result<CompactionResult> {
     if history_messages.is_empty() {
         return Err(anyhow!("No history turns to compact."));
@@ -223,7 +224,7 @@ pub async fn run_compaction(
         provider.kind()
     );
 
-    let request = build_compaction_request(history_messages, settings);
+    let request = build_compaction_request(history_messages, settings, context_window);
     let mut summary_content = String::new();
     let mut parsed_payload = None;
     let mut attempts = 0;

@@ -51,7 +51,7 @@ pub(super) async fn execute_personal_llm_pass(
         .unwrap_or_default()
         .as_millis() as u64;
 
-    let policy = GenerationPolicy::from_settings(settings, Some(CONSOLIDATION_MAX_OUTPUT_TOKENS));
+    let policy = GenerationPolicy::new(Some(CONSOLIDATION_MAX_OUTPUT_TOKENS));
     let mut request = policy.build_request(
         GenerationPurpose::StructuredExtraction,
         ConversationInput {

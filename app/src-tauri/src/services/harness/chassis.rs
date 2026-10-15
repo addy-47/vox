@@ -9,6 +9,7 @@ use crate::{
     core::{
         defaults::{
             DEFAULT_LLM_CONTEXT_WINDOW, DEFAULT_LLM_MAX_OUTPUT_TOKENS, DEFAULT_LLM_TEMPERATURE,
+            DEFAULT_LLM_THREADS,
         },
         events::PipelineMode,
         state::AppState,
@@ -59,6 +60,7 @@ pub struct LlmExecutionParams {
     pub max_output_tokens: usize,
     pub temperature: f32,
     pub reasoning_enabled: bool,
+    pub n_threads: u32,
 }
 
 impl Default for LlmExecutionParams {
@@ -68,6 +70,7 @@ impl Default for LlmExecutionParams {
             max_output_tokens: DEFAULT_LLM_MAX_OUTPUT_TOKENS as usize,
             temperature: DEFAULT_LLM_TEMPERATURE,
             reasoning_enabled: false,
+            n_threads: DEFAULT_LLM_THREADS,
         }
     }
 }

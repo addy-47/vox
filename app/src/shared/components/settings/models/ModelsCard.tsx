@@ -19,9 +19,8 @@ import { LlmProviderConfig, ProviderCaps } from "@/store/settingsStore";
 import { useModelDownloads } from "@/shared/hooks/useModelDownloads";
 import { useRemoteLlmProbing } from "@/shared/hooks/useRemoteLlmProbing";
 
-import type { PipelineTab } from "./ModelsTopologyMap";
+import { ModelsTopologyMap, type PipelineTab } from "./ModelsTopologyMap";
 import { SettingsTopologyMap } from "./SettingsTopologyMap";
-import { UnifiedModelHubPanel } from "./UnifiedModelHubPanel";
 import { VadWorkspace } from "./VadWorkspace";
 import { AsrWorkspace } from "./AsrWorkspace";
 import { AuxiliaryWorkspace } from "./AuxiliaryWorkspace";
@@ -81,14 +80,23 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
   const [setupStatus, setSetupStatus] = useState<RemoteSetupStatus | null>(null);
 
   // Base layout decisions on committed and draft settings
-  const activeProviderKind = draftSettings?.llm?.active || "embedded";
+  const rawLlmActive = draftSettings?.llm?.active as unknown;
+  const activeProviderKind =
+    typeof rawLlmActive === "string"
+      ? rawLlmActive
+      : (rawLlmActive as { category?: string })?.category || "embedded";
   const isRemoteLlm = activeProviderKind === "server" || activeProviderKind === "cloud";
   const isCloudLlm = activeProviderKind === "cloud";
 
   // Preview selection: the clicked card's group id IS the settings active key.
   // Tier and health gating derive from manifest flags and backend-derived
   // configs — the backend owns the provider union, the frontend never echoes it.
-  const previewTtsGroup = modelCatalog?.tts?.find((g) => g.id === draftSettings?.tts?.active);
+  const rawTtsActive = draftSettings?.tts?.active as unknown;
+  const activeTtsId =
+    typeof rawTtsActive === "string"
+      ? rawTtsActive
+      : (rawTtsActive as { model?: string })?.model || "";
+  const previewTtsGroup = modelCatalog?.tts?.find((g) => g.id === activeTtsId);
   const isCloudTts = !!previewTtsGroup?.is_cloud;
   const isRemoteTts = !!previewTtsGroup?.is_remote;
 
@@ -97,12 +105,11 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
 
   useEffect(() => {
     let isMounted = true;
-    const previewId = draftSettings?.tts?.active;
-    if (!previewId) {
+    if (!activeTtsId) {
       setTtsCaps(null);
       return;
     }
-    getProviderCaps(previewId).then((caps) => {
+    getProviderCaps(activeTtsId).then((caps) => {
       if (isMounted) setTtsCaps(caps);
     }).catch(() => {
       if (isMounted) setTtsCaps(null);
@@ -110,7 +117,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
     return () => {
       isMounted = false;
     };
-  }, [draftSettings?.tts?.active]);
+  }, [activeTtsId]);
 
   const provider: LlmProviderConfig = useMemo(() => {
     if (activeProviderKind === "embedded") {
@@ -283,10 +290,18 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
     !!modelPresence[draftSettings?.vad?.vad_backend || ""] ||
     !!modelCatalog?.vad?.find((m) => m.is_built_in && m.id === draftSettings?.vad?.vad_backend);
 
+  const rawSttActive = draftSettings?.stt?.active as unknown;
+  const isSttCloud =
+    typeof rawSttActive === "string"
+      ? rawSttActive === "cloud"
+      : (rawSttActive as { category?: string })?.category === "cloud";
+  const activeSttModel =
+    draftSettings?.stt?.embedded?.model ||
+    (rawSttActive as { model?: string })?.model;
   const isAsrVerified =
-    draftSettings?.stt?.active === "cloud"
+    isSttCloud
       ? true
-      : !!(draftSettings?.stt?.embedded?.model && modelPresence[draftSettings.stt.embedded.model]);
+      : !!(activeSttModel && modelPresence[activeSttModel]);
 
   const isLlmDownloaded =
     isRemoteLlm
@@ -299,7 +314,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
     ? true
     : isRemoteTts
     ? isRemoteTtsHealthy === true
-    : !!modelPresence[draftSettings?.tts?.active || ""];
+    : !!modelPresence[activeTtsId];
 
   const isAuxiliaryVerified =
     (modelCatalog?.auxiliary?.length || 0) > 0
@@ -355,54 +370,120 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
           )}
         </div>
 
-        {/* Swapped views: Unified Model Hub (with single continuous SVG contour) vs Settings */}
-        {activeCategoryTab === "model" ? (
-          <UnifiedModelHubPanel
-            activeTab={activePipelineTab}
-            onChangeTab={setActivePipelineTab}
-            layoutMode={layoutMode}
-            isVadVerified={isVadVerified}
-            isAsrVerified={isAsrVerified}
-            isLlmDownloaded={isLlmDownloaded}
-            isTtsVerified={isTtsVerified}
-            isAuxiliaryVerified={isAuxiliaryVerified}
-          >
-            {!modelCatalog ? (
-              <div className="flex-1 flex items-center justify-center py-12">
-                <Loader2 className="animate-spin text-[rgb(var(--accent))]" size={24} />
-              </div>
-            ) : (
-              <>
-                {activePipelineTab === "vad" && (
-                  <VadWorkspace
-                    activeCategoryTab={activeCategoryTab}
-                    activeSubTab={activeVadSubTab}
-                    layoutMode={layoutMode}
-                    confirmDeleteId={confirmDeleteId}
-                    setConfirmDeleteId={setConfirmDeleteId}
-                    modelPresence={modelPresence}
-                    downloadStatuses={downloadStatuses}
-                    startDownload={startDownload}
-                    deleteModel={handleDeleteModelGroup}
-                  />
-                )}
+        {/* Topology Bar: Swapped between Models Topology and Settings Topology */}
+        <div className="shrink-0">
+          {activeCategoryTab === "model" ? (
+            <ModelsTopologyMap
+              activeTab={activePipelineTab}
+              onChangeTab={setActivePipelineTab}
+              layoutMode={layoutMode}
+              isVadVerified={isVadVerified}
+              isAsrVerified={isAsrVerified}
+              isLlmDownloaded={isLlmDownloaded}
+              isTtsVerified={isTtsVerified}
+              isAuxiliaryVerified={isAuxiliaryVerified}
+            />
+          ) : (
+            <SettingsTopologyMap
+              layoutMode={layoutMode}
+              nodes={
+                activePipelineTab === "vad"
+                  ? [
+                      { id: "sensitivity", label: VAD_SETTINGS_COPY.tabs.sensitivity, Icon: AudioWaveform },
+                      { id: "silence", label: VAD_SETTINGS_COPY.tabs.silence, Icon: Hourglass },
+                      { id: "speechOnset", label: VAD_SETTINGS_COPY.tabs.speechOnset, Icon: Zap },
+                      { id: "noiseGate", label: VAD_SETTINGS_COPY.tabs.noiseGate, Icon: SlidersHorizontal },
+                    ]
+                  : activePipelineTab === "stt"
+                  ? [
+                      { id: "streamingRate", label: STT_SETTINGS_COPY.tabs.streamingRate, Icon: Zap },
+                      { id: "transliteration", label: STT_SETTINGS_COPY.tabs.transliteration, Icon: Languages },
+                      { id: "compute", label: "Compute", Icon: Microchip },
+                    ]
+                  : activePipelineTab === "llm"
+                  ? [
+                      { id: "compute", label: LLM_SETTINGS_COPY.tabs.compute, Icon: Microchip },
+                      { id: "tokens", label: LLM_SETTINGS_COPY.tabs.tokens, Icon: TextCursorInput },
+                      { id: "context", label: LLM_SETTINGS_COPY.tabs.context, Icon: Layers2 },
+                      { id: "creativity", label: LLM_SETTINGS_COPY.tabs.creativity, Icon: WandSparkles },
+                    ]
+                  : [
+                      { id: "voice", label: "Voice", Icon: AudioLines },
+                      { id: "speed", label: "Speech Rate", Icon: Metronome },
+                      { id: "compute", label: "Compute", Icon: Microchip },
+                    ]
+              }
+              activeSubTab={
+                activePipelineTab === "vad"
+                  ? activeVadSubTab
+                  : activePipelineTab === "stt"
+                  ? activeSttSubTab
+                  : activePipelineTab === "llm"
+                  ? activeLlmSubTab
+                  : activeTtsSubTab
+              }
+              onChangeSubTab={(id) => {
+                if (activePipelineTab === "vad") setActiveVadSubTab(id);
+                else if (activePipelineTab === "stt") setActiveSttSubTab(id);
+                else if (activePipelineTab === "llm") setActiveLlmSubTab(id as LlmSubTab);
+                else if (activePipelineTab === "tts") setActiveTtsSubTab(id as TtsSubTab);
+              }}
+            />
+          )}
+        </div>
 
-                {activePipelineTab === "stt" && (
-                  <AsrWorkspace
-                    activeCategoryTab={activeCategoryTab}
-                    activeSubTab={activeSttSubTab}
-                    layoutMode={layoutMode}
-                    confirmDeleteId={confirmDeleteId}
-                    setConfirmDeleteId={setConfirmDeleteId}
-                    modelPresence={modelPresence}
-                    downloadStatuses={downloadStatuses}
-                    startDownload={startDownload}
-                    deleteModel={handleDeleteModelGroup}
-                    isGroupRequired={isGroupRequired}
-                  />
-                )}
+        {/* Workspaces by Pipeline Tab: Unified Glass Container */}
+        <div
+          className={cn(
+            "flex-1 w-full flex flex-col min-h-0 rounded-xl p-3 relative border border-[rgba(var(--accent),0.06)] bg-[rgba(var(--foreground),0.02)]",
+            layoutMode === "small" ? "h-auto" : "h-full"
+          )}
+        >
+          {!modelCatalog ? (
+            <div className="flex-1 flex items-center justify-center py-12">
+              <Loader2 className="animate-spin text-[rgb(var(--accent))]" size={24} />
+            </div>
+          ) : (
+            <>
+              {activePipelineTab === "vad" && (
+                <VadWorkspace
+                  activeCategoryTab={activeCategoryTab}
+                  activeSubTab={activeVadSubTab}
+                  layoutMode={layoutMode}
+                  confirmDeleteId={confirmDeleteId}
+                  setConfirmDeleteId={setConfirmDeleteId}
+                  modelPresence={modelPresence}
+                  downloadStatuses={downloadStatuses}
+                  startDownload={startDownload}
+                  deleteModel={handleDeleteModelGroup}
+                />
+              )}
 
-                {activePipelineTab === "llm" && (
+              {activePipelineTab === "stt" && (
+                <AsrWorkspace
+                  activeCategoryTab={activeCategoryTab}
+                  activeSubTab={activeSttSubTab}
+                  layoutMode={layoutMode}
+                  confirmDeleteId={confirmDeleteId}
+                  setConfirmDeleteId={setConfirmDeleteId}
+                  modelPresence={modelPresence}
+                  downloadStatuses={downloadStatuses}
+                  startDownload={startDownload}
+                  deleteModel={handleDeleteModelGroup}
+                  isGroupRequired={isGroupRequired}
+                />
+              )}
+
+              {activePipelineTab === "llm" && (
+                activeCategoryTab === "settings" ? (
+                  <LlmSettingsView
+                    activeSubTab={activeLlmSubTab}
+                    layoutMode={layoutMode}
+                    isRemoteLlm={isRemoteLlm}
+                    isCloud={isCloudLlm}
+                    provider={provider}
+                  />
+                ) : (
                   <LlmCatalogView
                     layoutMode={layoutMode}
                     selectedLlmId={
@@ -427,182 +508,66 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
                     probingMap={probingMap}
                     handleProbeCapabilities={handleProbeCapabilities}
                   />
-                )}
-
-                {activePipelineTab === "tts" && (
-                  showRemoteServerSetup ? (
-                    <RemoteServerSetup
-                      sshConnectionString={sshConnectionString}
-                      setSshConnectionString={setSshConnectionString}
-                      sshPort={sshPort}
-                      setSshPort={setSshPort}
-                      sshIdentityKey={sshIdentityKey}
-                      setSshIdentityKey={setSshIdentityKey}
-                      setupStatus={setupStatus}
-                      triggerRemoteSetup={triggerRemoteSetup}
-                      isRemoteTtsHealthy={isRemoteTtsHealthy}
-                    />
-                  ) : (
-                    <TtsModelWorkspace
-                      layoutMode={layoutMode}
-                      confirmDeleteId={confirmDeleteId}
-                      setConfirmDeleteId={setConfirmDeleteId}
-                      modelPresence={modelPresence}
-                      downloadStatuses={downloadStatuses}
-                      startDownload={startDownload}
-                      deleteModel={handleDeleteModelGroup}
-                      isRemoteTtsHealthy={isRemoteTtsHealthy}
-                      checkingTtsHealth={checkingTtsHealth}
-                    />
-                  )
-                )}
-
-                {activePipelineTab === "auxiliary" && (
-                  <AuxiliaryWorkspace
-                    layoutMode={layoutMode}
-                    confirmDeleteId={confirmDeleteId}
-                    setConfirmDeleteId={setConfirmDeleteId}
-                    modelPresence={modelPresence}
-                    downloadStatuses={downloadStatuses}
-                    startDownload={startDownload}
-                    deleteModel={handleDeleteModelGroup}
-                  />
-                )}
-              </>
-            )}
-          </UnifiedModelHubPanel>
-        ) : (
-          <>
-            <div className="shrink-0 mb-3">
-              <SettingsTopologyMap
-                layoutMode={layoutMode}
-                nodes={
-                  activePipelineTab === "vad"
-                    ? [
-                        { id: "sensitivity", label: VAD_SETTINGS_COPY.tabs.sensitivity, Icon: AudioWaveform },
-                        { id: "silence", label: VAD_SETTINGS_COPY.tabs.silence, Icon: Hourglass },
-                        { id: "speechOnset", label: VAD_SETTINGS_COPY.tabs.speechOnset, Icon: Zap },
-                        { id: "noiseGate", label: VAD_SETTINGS_COPY.tabs.noiseGate, Icon: SlidersHorizontal },
-                      ]
-                    : activePipelineTab === "stt"
-                    ? [
-                        { id: "streamingRate", label: STT_SETTINGS_COPY.tabs.streamingRate, Icon: Zap },
-                        { id: "transliteration", label: STT_SETTINGS_COPY.tabs.transliteration, Icon: Languages },
-                        { id: "compute", label: "Compute", Icon: Microchip },
-                      ]
-                    : activePipelineTab === "llm"
-                    ? [
-                        { id: "compute", label: LLM_SETTINGS_COPY.tabs.compute, Icon: Microchip },
-                        { id: "tokens", label: LLM_SETTINGS_COPY.tabs.tokens, Icon: TextCursorInput },
-                        { id: "context", label: LLM_SETTINGS_COPY.tabs.context, Icon: Layers2 },
-                        { id: "creativity", label: LLM_SETTINGS_COPY.tabs.creativity, Icon: WandSparkles },
-                      ]
-                    : [
-                        { id: "voice", label: "Voice", Icon: AudioLines },
-                        { id: "speed", label: "Speech Rate", Icon: Metronome },
-                        { id: "compute", label: "Compute", Icon: Microchip },
-                      ]
-                }
-                activeSubTab={
-                  activePipelineTab === "vad"
-                    ? activeVadSubTab
-                    : activePipelineTab === "stt"
-                    ? activeSttSubTab
-                    : activePipelineTab === "llm"
-                    ? activeLlmSubTab
-                    : activeTtsSubTab
-                }
-                onChangeSubTab={(id) => {
-                  if (activePipelineTab === "vad") setActiveVadSubTab(id);
-                  else if (activePipelineTab === "stt") setActiveSttSubTab(id);
-                  else if (activePipelineTab === "llm") setActiveLlmSubTab(id as LlmSubTab);
-                  else if (activePipelineTab === "tts") setActiveTtsSubTab(id as TtsSubTab);
-                }}
-              />
-            </div>
-
-            <div
-              className={cn(
-                "flex-1 w-full flex flex-col min-h-0 rounded-xl p-3 relative border border-[rgba(var(--accent),0.06)] bg-[rgba(var(--foreground),0.02)]",
-                layoutMode === "small" ? "h-auto" : "h-full"
+                )
               )}
-            >
-              {!modelCatalog ? (
-                <div className="flex-1 flex items-center justify-center py-12">
-                  <Loader2 className="animate-spin text-[rgb(var(--accent))]" size={24} />
-                </div>
-              ) : (
+
+              {activePipelineTab === "tts" && (
                 <>
-                  {activePipelineTab === "vad" && (
-                    <VadWorkspace
-                      activeCategoryTab={activeCategoryTab}
-                      activeSubTab={activeVadSubTab}
-                      layoutMode={layoutMode}
-                      confirmDeleteId={confirmDeleteId}
-                      setConfirmDeleteId={setConfirmDeleteId}
-                      modelPresence={modelPresence}
-                      downloadStatuses={downloadStatuses}
-                      startDownload={startDownload}
-                      deleteModel={handleDeleteModelGroup}
-                    />
-                  )}
-
-                  {activePipelineTab === "stt" && (
-                    <AsrWorkspace
-                      activeCategoryTab={activeCategoryTab}
-                      activeSubTab={activeSttSubTab}
-                      layoutMode={layoutMode}
-                      confirmDeleteId={confirmDeleteId}
-                      setConfirmDeleteId={setConfirmDeleteId}
-                      modelPresence={modelPresence}
-                      downloadStatuses={downloadStatuses}
-                      startDownload={startDownload}
-                      deleteModel={handleDeleteModelGroup}
-                      isGroupRequired={isGroupRequired}
-                    />
-                  )}
-
-                  {activePipelineTab === "llm" && (
-                    <LlmSettingsView
-                      activeSubTab={activeLlmSubTab}
-                      layoutMode={layoutMode}
-                      isRemoteLlm={isRemoteLlm}
-                      isCloud={isCloudLlm}
-                      provider={provider}
-                    />
-                  )}
-
-                  {activePipelineTab === "tts" && (
-                    activeTtsSubTab === "voice" ? (
-                      <VoiceCatalogView
-                        layoutMode={layoutMode}
-                        providerId={draftSettings?.tts?.active || ""}
+                  {activeCategoryTab === "model" ? (
+                    showRemoteServerSetup ? (
+                      <RemoteServerSetup
+                        sshConnectionString={sshConnectionString}
+                        setSshConnectionString={setSshConnectionString}
+                        sshPort={sshPort}
+                        setSshPort={setSshPort}
+                        sshIdentityKey={sshIdentityKey}
+                        setSshIdentityKey={setSshIdentityKey}
+                        setupStatus={setupStatus}
+                        triggerRemoteSetup={triggerRemoteSetup}
+                        isRemoteTtsHealthy={isRemoteTtsHealthy}
                       />
                     ) : (
-                      <TtsVoiceManager
+                      <TtsModelWorkspace
                         layoutMode={layoutMode}
-                        caps={ttsCaps}
-                        activeSubTab={activeTtsSubTab}
+                        confirmDeleteId={confirmDeleteId}
+                        setConfirmDeleteId={setConfirmDeleteId}
+                        modelPresence={modelPresence}
+                        downloadStatuses={downloadStatuses}
+                        startDownload={startDownload}
+                        deleteModel={handleDeleteModelGroup}
+                        isRemoteTtsHealthy={isRemoteTtsHealthy}
+                        checkingTtsHealth={checkingTtsHealth}
                       />
                     )
-                  )}
-
-                  {activePipelineTab === "auxiliary" && (
-                    <AuxiliaryWorkspace
+                  ) : activeTtsSubTab === "voice" ? (
+                    <VoiceCatalogView
                       layoutMode={layoutMode}
-                      confirmDeleteId={confirmDeleteId}
-                      setConfirmDeleteId={setConfirmDeleteId}
-                      modelPresence={modelPresence}
-                      downloadStatuses={downloadStatuses}
-                      startDownload={startDownload}
-                      deleteModel={handleDeleteModelGroup}
+                      providerId={activeTtsId}
+                    />
+                  ) : (
+                    <TtsVoiceManager
+                      layoutMode={layoutMode}
+                      caps={ttsCaps}
+                      activeSubTab={activeTtsSubTab}
                     />
                   )}
                 </>
               )}
-            </div>
-          </>
-        )}
+
+              {activePipelineTab === "auxiliary" && (
+                <AuxiliaryWorkspace
+                  layoutMode={layoutMode}
+                  confirmDeleteId={confirmDeleteId}
+                  setConfirmDeleteId={setConfirmDeleteId}
+                  modelPresence={modelPresence}
+                  downloadStatuses={downloadStatuses}
+                  startDownload={startDownload}
+                  deleteModel={handleDeleteModelGroup}
+                />
+              )}
+            </>
+          )}
+        </div>
       </div>
     </div>
   );

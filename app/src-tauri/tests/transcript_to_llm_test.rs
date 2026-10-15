@@ -107,6 +107,7 @@ async fn test_transcript_to_llm_matrix() {
                     max_output_tokens: 512,
                     temperature: 0.7,
                     reasoning_enabled: false,
+                    n_threads: 4,
                 },
                 llm_tx.clone(),
                 true,

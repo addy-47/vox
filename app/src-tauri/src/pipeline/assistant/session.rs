@@ -14,6 +14,7 @@ use crate::{
     core::{
         defaults::{
             DEFAULT_LLM_CONTEXT_WINDOW, DEFAULT_LLM_MAX_OUTPUT_TOKENS, DEFAULT_LLM_TEMPERATURE,
+            DEFAULT_LLM_THREADS,
         },
         engine::{ensure_memory_embedder, ensure_modular_workers_sync, stop_audio_engine_sync},
         error::PipelineImpact,
@@ -740,7 +741,7 @@ pub fn on_end<R: Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &RoutingCon
 }
 
 /// Resolves dynamic execution parameters from the models table for the given model ID.
-fn resolve_llm_execution_params(db: &VoxDb, model_id: &str) -> LlmExecutionParams {
+pub(crate) fn resolve_llm_execution_params(db: &VoxDb, model_id: &str) -> LlmExecutionParams {
     let conn = match db.connect() {
         Ok(c) => c,
         Err(e) => {
@@ -778,6 +779,11 @@ fn resolve_llm_execution_params(db: &VoxDb, model_id: &str) -> LlmExecutionParam
                     .get("reasoning_enabled")
                     .and_then(|v| v.as_bool())
                     .unwrap_or(false),
+                n_threads: raw
+                    .get("threads")
+                    .and_then(|v| v.as_u64())
+                    .map(|v| v as u32)
+                    .unwrap_or(DEFAULT_LLM_THREADS),
             }
         })
     })
