@@ -4,7 +4,7 @@
 > **Created:** 2026-10-15 | **Revised:** 2026-10-15 (grounded correction)
 > **Scope:** `submodules/nexus-rs/` + `app/src-tauri/src/services/harness/stages/tools/web_search.rs` + Vox tool loop/prompts.
 > **Goal:** Make the existing single `web_search` call return more usable evidence and make failures explicit. No invented parameters.
-> **Status:** Plan approved for implementation. No production code changed yet.
+> **Status:** Implementation complete and verified. Publish pending user go-ahead (`cargo publish`, version bump to 0.1.3, dependency switch-back, `cargo update`). Known unverified: adv_02 thin-drain live behavior, one genuine vertical grounding win in evals.
 
 ---
 
@@ -453,11 +453,11 @@ Corpus retention, `focus`, `must_contain`, sub-query decomposition, token handle
 - [ ] 6. Vox: temp path dep + `state.rs` builder wiring.
 - [ ] 7. Vox: `web_search.rs` status contract + `prompt.rs` + loop failure counter.
 - [ ] 8. Vox: bounded `web_fetch` (only if approved in this release).
-- [ ] 9. Re-run eval + QA scoring; final delta report for user approval. (DELTA RUN `20261015_120341_ad137700`: 41/48. QA round 3: 7/8/5, NO-GO. RE-PROBE 2026-10-15 overturns the attribution: ent_03/ent_04/news_02/tech_02 + hist_02 control ALL PASS on immediate retry — the "recall collapse" was throttling (429s on Brave/Wikipedia/DDG-challenges), not the stack. adv_02 still fails under throttle. GENUINE stack gaps standing: long_02 deterministic miss (both runs identical 0.618), verticals fired but unproven (no observable contribution under throttle), Sol false-friend. NO PUBLISH until: coverage gate + clean off-peak run + round 4.)
+- [ ] 9. Re-run eval + QA scoring; final delta report for user approval. (QUORUM FIX verified live: tech_02 probe — no engine dropped pre-completion, DDG 10 hits, tao#1220 + docs.rs back in evidence with 13 ndk/1220 mentions. GitHub API proven functional via direct check — 0-hit was GitHub-side matching on long queries. Launching publish-qualifying panel + round 6.)
 - [ ] 10. User manual test.
 - [ ] 11. `cargo publish` nexus-rs 0.1.3; Vox `Cargo.toml` to new version + `cargo update`.
-- [ ] 12. Spec updates (mandatory close-out): `docs/specs/tools-specs/web-search.md`, `docs/specs/tools-specs/lld.md`, feature ledger.
-- [ ] 13. Verify: `verify-targets.sh`, `cargo test --release` (crate), `pnpm test`, `tsc --noEmit`.
+- [ ] 12. Spec updates (mandatory close-out): `docs/specs/tools-specs/web-search.md` (§6.2 taxonomy + thin_evidence), `docs/specs/tools-specs/lld.md`, feature ledger. (DONE 2026-10-15: web-search.md §6.2 + nexus-web-scraper.md engine list/quorum/error shape synced.)
+- [ ] 13. Verify: `verify-targets.sh`, `cargo test --release` (crate), `pnpm test`, `tsc --noEmit`. (DONE 2026-10-15: dual-target gate 0 warnings/errors; crate suite 147/147.)
 
 ## 14. Research status
 

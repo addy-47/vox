@@ -213,6 +213,7 @@ Network timeouts, DNS resolution failures, SSRF blocks, or empty results must **
   </web_search_status>
   ```
 * **Answer Absent (`empty_results`, `missing_factual_answer`)**: pages about the query exist but none state the specific answer. The model must not answer from memory; it must report the source gap and propose a narrower query. `failure_class="answer_absent"`, `retry_recommended="true"`.
+* **Thin Evidence (`empty_results`)**: only a single passage from a single source survived. Below the minimum for grounded delivery; adversarial queries otherwise pass on one decontextualized hit. `failure_class="thin_evidence"`, `retry_recommended="true"`.
 
 ---
 
