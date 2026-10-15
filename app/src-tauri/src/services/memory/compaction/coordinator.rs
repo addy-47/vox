@@ -7,6 +7,7 @@ use turso::Connection;
 
 use crate::{
     core::{
+        defaults::{DEFAULT_LLM_CONTEXT_WINDOW, DEFAULT_LLM_THREADS},
         events::{emit_ipc, IpcEvent, Severity},
         state::{AppState, InteractionState},
     },
@@ -22,8 +23,8 @@ use crate::{
     services::{
         harness::{ChatMessage, PromptTag, Role},
         llm::{
-            actor::create_llm_provider_from_llm_settings, LlmProvider, LlmSettings, QWEN_MODEL_DIR,
-            QWEN_MODEL_FILE,
+            actor::create_llm_provider_from_llm_settings, LlmProvider, LlmProvidersConfig,
+            LlmSettings, QWEN_MODEL_DIR, QWEN_MODEL_FILE,
         },
         memory::compaction::runner::run_compaction,
         notifications::{notify, Action, ActionPayload, NotificationCategory, NotificationParams},
@@ -152,13 +153,13 @@ impl CompactionCoordinator {
         });
 
         let history_messages = build_history_messages(&turns, prior_summary.as_deref());
-        let llm_settings = state
+        let (llm_settings, llm_providers) = state
             .settings
             .read()
-            .map(|s| s.llm.clone())
+            .map(|s| (s.llm.clone(), s.providers.llm.clone()))
             .unwrap_or_default();
 
-        let active_provider = match resolve_llm_provider(&llm_settings) {
+        let active_provider = match resolve_llm_provider(&llm_settings, Some(&llm_providers)) {
             Some(p) => p,
             None => {
                 let err_msg = "Failed to initialize LLM provider for compaction";
@@ -336,10 +337,20 @@ pub fn build_history_messages(turns: &[TurnRow], prior_summary: Option<&str>) ->
 }
 
 /// Resolves the LLM provider for compaction from settings.
-fn resolve_llm_provider(settings: &LlmSettings) -> Option<Box<dyn LlmProvider>> {
+fn resolve_llm_provider(
+    settings: &LlmSettings,
+    providers: Option<&LlmProvidersConfig>,
+) -> Option<Box<dyn LlmProvider>> {
     let models_dir = get().models.clone();
     let llm_path = models_dir.join(QWEN_MODEL_DIR).join(QWEN_MODEL_FILE);
-    create_llm_provider_from_llm_settings(settings, &llm_path).ok()
+    create_llm_provider_from_llm_settings(
+        settings,
+        providers,
+        &llm_path,
+        DEFAULT_LLM_CONTEXT_WINDOW,
+        DEFAULT_LLM_THREADS,
+    )
+    .ok()
 }
 
 /// Resolves any interactive card in-place and always creates a receipt notification on compaction success.

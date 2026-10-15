@@ -27,7 +27,7 @@ use vox_lib::{
     },
     services::{
         harness::stages::compaction::{CompactionStage, MIN_MESSAGES_FOR_COMPACTION},
-        llm::{LlmActiveProvider, LlmRemoteConfig},
+        llm::LlmCustomServer,
         memory::compaction::coordinator::{build_history_messages, CompactionCoordinator},
     },
     utils::json::parse_unified_compaction_json,
@@ -80,15 +80,19 @@ async fn test_memory_compaction_100_turns_live_server() {
     // 1. Point to remote GPU Ollama server with gemma3:12b
     {
         let mut settings = state.settings.write().unwrap();
-        settings.llm.active = LlmActiveProvider::Server;
-        settings.llm.server = LlmRemoteConfig {
-            base_url: REMOTE_OLLAMA_URL.to_string(),
+        settings.llm.active = vox_lib::config::ActiveSelection {
+            category: "server".to_string(),
+            provider: Some("ollama".to_string()),
             model: REMOTE_OLLAMA_MODEL.to_string(),
-            protocol: None,
-            api_key: None,
-            provider_name: Some("ollama".to_string()),
         };
-        settings.llm.context_window = 32768;
+        settings.providers.llm.servers = vec![LlmCustomServer {
+            id: "ollama-server".to_string(),
+            name: "Ollama".to_string(),
+            url: REMOTE_OLLAMA_URL.to_string(),
+            model: REMOTE_OLLAMA_MODEL.to_string(),
+            protocol: "ollama".to_string(),
+            api_key: None,
+        }];
     }
 
     // 2. Seed 100 turns from dataset into Turso SQLite

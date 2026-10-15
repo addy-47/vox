@@ -1,5 +1,6 @@
 pub mod actor;
 pub mod audio_bridge;
+pub mod config;
 pub mod providers;
 pub mod transport;
 
@@ -10,16 +11,17 @@ use std::{
 
 pub use actor::{create_realtime_provider, purge_session_cache, RealtimeActor};
 use anyhow::Result;
+pub use config::{
+    DeepgramVoiceAgentConfig, GeminiRealtimeConfig, RealtimeProviderKind, RealtimeProvidersConfig,
+    RealtimeSettings,
+};
 pub use transport::{
     spawn_harness, FrameAction, HarnessConfig, HarnessHandles, HarnessInit, ProviderDriver,
     ReconnectFn, WsReader, WsWriter,
 };
 
+pub use crate::core::error::{PipelineError, PipelineImpact};
 use crate::core::events::InteractionMode;
-pub use crate::{
-    config::RealtimeProviderKind,
-    core::error::{PipelineError, PipelineImpact},
-};
 
 pub const DEFAULT_INPUT_SAMPLE_RATE: u32 = 16000;
 pub const DEFAULT_OUTPUT_SAMPLE_RATE: u32 = 24000;

@@ -4,9 +4,9 @@ use tauri::{AppHandle, Manager, State};
 
 use crate::{
     config::{
-        apply_setting_mutation, dispatch_worker_command, get_setting_reload_policy,
-        handle_setting_side_effects, request_engine_restart, schedule_debounced_save,
-        SettingReloadPolicy, VoxSettings,
+        apply_model_parameter_mutation, apply_setting_mutation, dispatch_worker_command,
+        get_setting_reload_policy, handle_setting_side_effects, request_engine_restart,
+        schedule_debounced_save, SettingReloadPolicy, VoxSettings,
     },
     core::{
         error::VoxIpcError,
@@ -74,6 +74,23 @@ pub async fn update_setting<R: tauri::Runtime>(
     app: AppHandle<R>,
 ) -> Result<SettingUpdateResult, VoxIpcError> {
     let state: State<'_, Arc<AppState>> = app.state();
+
+    if domain == "model_parameters" {
+        apply_model_parameter_mutation(&state, &key, &value)
+            .await
+            .map_err(VoxIpcError::InvalidArgument)?;
+
+        if let Err(e) = emit_ipc(&app, IpcEvent::SettingsUpdated) {
+            log::warn!("[Settings] Failed to emit settings-updated: {}", e);
+        }
+
+        return Ok(SettingUpdateResult {
+            applied: true,
+            reload_policy: "hot".to_string(),
+            message: format!("model_parameters.{} updated in database", key),
+            restart_scheduled: false,
+        });
+    }
 
     let applied = {
         let mut settings = state

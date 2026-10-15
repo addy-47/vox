@@ -31,13 +31,12 @@ use common::{
 };
 use ringbuf::traits::{Observer, Producer};
 use vox_lib::{
-    config::VoxSettings,
+    config::{ActiveSelection, VoxSettings},
     core::{
         events::{InteractionMode, PipelineMode, VoxEvent},
         state::{InteractionOwner, InteractionState},
     },
     pipeline::{assistant::session::on_session_start, RoutingContext},
-    services::{llm::LlmActiveProvider, tts::TtsActiveProvider},
 };
 
 #[derive(Parser, Debug)]
@@ -141,10 +140,34 @@ fn main() {
     };
 
     match args.tts.to_lowercase().as_str() {
-        "supertonic" => settings.tts.active = TtsActiveProvider::Supertonic,
-        "edge" | "edge_tts" => settings.tts.active = TtsActiveProvider::EdgeTts,
-        "zipvoice" => settings.tts.active = TtsActiveProvider::Zipvoice,
-        _ => settings.tts.active = TtsActiveProvider::Kokoro,
+        "supertonic" => {
+            settings.tts.active = ActiveSelection {
+                category: "embedded".to_string(),
+                provider: None,
+                model: "supertonic".to_string(),
+            };
+        }
+        "edge" | "edge_tts" => {
+            settings.tts.active = ActiveSelection {
+                category: "cloud".to_string(),
+                provider: None,
+                model: "edge_tts".to_string(),
+            };
+        }
+        "zipvoice" => {
+            settings.tts.active = ActiveSelection {
+                category: "embedded".to_string(),
+                provider: None,
+                model: "zipvoice".to_string(),
+            };
+        }
+        _ => {
+            settings.tts.active = ActiveSelection {
+                category: "embedded".to_string(),
+                provider: None,
+                model: "kokoro".to_string(),
+            };
+        }
     }
 
     match args.llm.to_lowercase().as_str() {
@@ -155,15 +178,23 @@ fn main() {
                     "NVIDIA_API_KEY must be provided in environment or temp/.env for --llm nvidia"
                 );
             }
-            settings.llm.active = LlmActiveProvider::Cloud;
-            settings.llm.cloud.provider_name = Some("nvidia".to_string());
-            settings.llm.cloud.base_url = "https://integrate.api.nvidia.com/v1".to_string();
-            settings.llm.cloud.model = args
+            let model = args
                 .model
                 .unwrap_or_else(|| "meta/llama-3.2-11b-vision-instruct".to_string());
-            settings.llm.cloud.api_key = Some(api_key);
+            settings.llm.active = ActiveSelection {
+                category: "cloud".to_string(),
+                provider: Some("nvidia".to_string()),
+                model: model.clone(),
+            };
+            settings.providers.llm.cloud_keys.insert("nvidia".to_string(), api_key);
         }
-        _ => settings.llm.active = LlmActiveProvider::Embedded,
+        _ => {
+            settings.llm.active = ActiveSelection {
+                category: "embedded".to_string(),
+                provider: None,
+                model: "qwen".to_string(),
+            };
+        }
     }
 
     let clip_path = resolve_clip_path(&args.clip, None)

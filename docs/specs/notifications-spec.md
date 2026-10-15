@@ -35,23 +35,23 @@ Alerting separates concerns across three independent dimensions. No dimension im
 
 ```mermaid
 flowchart TD
-    subgraph Axis 1: Engine Control Flow
+    subgraph Axis1 ["Axis 1: Engine Control Flow"]
         PI["PipelineImpact<br/>(None | Degraded | TurnAborted | SessionHalted)"]
     end
 
-    subgraph Axis 2: Visual Urgency
+    subgraph Axis2 ["Axis 2: Visual Urgency"]
         SV["Severity<br/>(Info | Warning | Critical)"]
     end
 
-    subgraph Axis 3: Retention & User Action
+    subgraph Axis3 ["Axis 3: Retention & User Action"]
         AC["Action<br/>(Transient | Receipt | Interactive)"]
     end
 
-    subgraph Channel Router
+    subgraph ChannelRouter ["Channel Router"]
         CR["Resolve Channel"]
     end
 
-    subgraph Delivery Channels
+    subgraph DeliveryChannels ["Delivery Channels"]
         TO["ToastOnly<br/>(OS Desktop Notification)"]
         NO["NotificationOnly<br/>(Drawer Storage)"]
         TN["ToastAndNotification<br/>(OS Toast + Drawer Card)"]
@@ -123,24 +123,24 @@ Answers: *Where does the event live, and what does the user do?*
 
 ```mermaid
 flowchart TD
-    In[Notification Dispatch Request] --> Channel{Resolved Delivery Channel}
+    In["Notification Dispatch Request"] --> Channel{"Resolved Delivery Channel"}
     
-    Channel -->|ToastOnly| ToastRouter{Target Platform?}
-    Channel -->|NotificationOnly| DrawerStore[(SQLite Notifications Table)]
-    Channel -->|ToastAndNotification| Split[Dispatch to Both Toast & Drawer]
+    Channel -->|ToastOnly| ToastRouter{"Target Platform?"}
+    Channel -->|NotificationOnly| DrawerStore[("SQLite Notifications Table")]
+    Channel -->|ToastAndNotification| Split["Dispatch to Both Toast & Drawer"]
     
     Split --> ToastRouter
     Split --> DrawerStore
     
-    ToastRouter -->|Linux Desktop| DBus[Linux D-Bus notify-send]
-    ToastRouter -->|macOS Desktop| NC[Apple Notification Center]
-    ToastRouter -->|Windows Desktop| AC[Windows Action Center]
-    ToastRouter -->|Android Mobile| Channels{Severity Level}
+    ToastRouter -->|Linux Desktop| DBus["Linux D-Bus notify-send"]
+    ToastRouter -->|macOS Desktop| NC["Apple Notification Center"]
+    ToastRouter -->|Windows Desktop| AC["Windows Action Center"]
+    ToastRouter -->|Android Mobile| Channels{"Severity Level"}
     
-    Channels -->|Info| VoxInfo[vox_info Channel: Low / Silent]
-    Channels -->|Warning / Critical| VoxUrgent[vox_urgent Channel: High / Heads-Up]
+    Channels -->|Info| VoxInfo["vox_info Channel: Low / Silent"]
+    Channels -->|Warning / Critical| VoxUrgent["vox_urgent Channel: High / Heads-Up"]
     
-    DBus & NC & AC --> ToastFallback{Dispatch Succeeded?}
+    DBus & NC & AC --> ToastFallback{"Dispatch Succeeded?"}
     ToastFallback -- Yes --> ToastEnd([Toast Rendered])
     ToastFallback -- No --> DrawerStore
 ```

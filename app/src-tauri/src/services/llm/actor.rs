@@ -11,7 +11,13 @@ use super::{
 };
 use crate::{
     config::VoxSettings,
-    core::error::{PipelineError, PipelineImpact},
+    core::{
+        defaults::{
+            DEFAULT_LLM_COMPACTION_TEMPERATURE, DEFAULT_LLM_MAX_OUTPUT_TOKENS,
+            DEFAULT_LLM_TEMPERATURE,
+        },
+        error::{PipelineError, PipelineImpact},
+    },
     services::harness::{ChatMessage, Role},
 };
 
@@ -69,24 +75,24 @@ pub enum LlmCommand {
 
 impl GenerationPolicy {
     /// Constructs policy from current `LlmSettings` and optional explicit compaction token ceiling.
-    pub fn from_settings(settings: &LlmSettings, compaction_max_tokens: Option<u32>) -> Self {
-        let compaction_tokens = compaction_max_tokens.unwrap_or(settings.max_output_tokens);
-        let reasoning = ReasoningMode::from_enabled(settings.reasoning_enabled);
+    pub fn from_settings(_settings: &LlmSettings, compaction_max_tokens: Option<u32>) -> Self {
+        let compaction_tokens = compaction_max_tokens.unwrap_or(DEFAULT_LLM_MAX_OUTPUT_TOKENS);
+        let reasoning = ReasoningMode::Disabled;
 
         Self {
             conversation: GenerationDefaults {
-                temperature: settings.temperature,
-                max_output_tokens: settings.max_output_tokens,
+                temperature: DEFAULT_LLM_TEMPERATURE,
+                max_output_tokens: DEFAULT_LLM_MAX_OUTPUT_TOKENS,
                 output: OutputConstraint::Text,
                 reasoning,
-                seed: settings.seed,
+                seed: None,
             },
             compaction: GenerationDefaults {
-                temperature: settings.compaction_temperature,
+                temperature: DEFAULT_LLM_COMPACTION_TEMPERATURE,
                 max_output_tokens: compaction_tokens,
                 output: OutputConstraint::JsonObject,
                 reasoning,
-                seed: settings.seed,
+                seed: None,
             },
         }
     }

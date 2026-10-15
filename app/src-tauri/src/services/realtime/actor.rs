@@ -8,7 +8,6 @@ use tauri::Manager;
 use tokio::task::JoinHandle;
 
 use crate::{
-    config::RealtimeProviderKind,
     core::{
         error::PipelineError,
         events::{
@@ -25,7 +24,8 @@ use crate::{
         realtime::{
             audio_bridge::AudioBridge,
             providers::{DeepgramVoiceAgentProvider, GeminiLiveProvider},
-            RealtimeProviderEvent, RealtimeSession, RealtimeVoiceProvider, BRIDGE_CHANNEL_CAPACITY,
+            DeepgramVoiceAgentConfig, GeminiRealtimeConfig, RealtimeProviderEvent,
+            RealtimeProviderKind, RealtimeSession, RealtimeVoiceProvider, BRIDGE_CHANNEL_CAPACITY,
             SESSION_CACHE_FILENAME, SESSION_CACHE_TTL_MS,
         },
     },
@@ -394,21 +394,59 @@ pub fn create_realtime_provider(
 
     let tools = ToolRegistry::with_default_tools().canonical_definitions(PipelineMode::Realtime);
 
-    match settings.realtime.active {
-        RealtimeProviderKind::GeminiLive => Ok(Box::new(GeminiLiveProvider::new(
-            settings.realtime.gemini_live.clone(),
-            assembled_prompt,
-            tools,
-            state.pipeline.state_rx.clone(),
-            state.pipeline.turn_id.clone(),
-            cached_handle,
-        ))),
-        RealtimeProviderKind::DeepgramVoiceAgent => Ok(Box::new(DeepgramVoiceAgentProvider::new(
-            settings.realtime.deepgram_voice_agent.clone(),
-            assembled_prompt,
-            state.pipeline.state_rx.clone(),
-            state.pipeline.turn_id.clone(),
-        ))),
+    let provider_kind = RealtimeProviderKind::from_provider_str(
+        settings.realtime.active.provider.as_deref().unwrap_or(""),
+    )
+    .unwrap_or(RealtimeProviderKind::GeminiLive);
+
+    match provider_kind {
+        RealtimeProviderKind::GeminiLive => {
+            let api_key = settings
+                .providers
+                .realtime
+                .api_keys
+                .get("gemini")
+                .cloned()
+                .unwrap_or_default();
+            let config = GeminiRealtimeConfig {
+                api_key,
+                model: settings.realtime.active.model.clone(),
+                voice_name: settings.realtime.active_voice_id.clone(),
+                language_code: "en-US".to_string(),
+                temperature: 0.7,
+                enable_web_search: true,
+            };
+            Ok(Box::new(GeminiLiveProvider::new(
+                config,
+                assembled_prompt,
+                tools,
+                state.pipeline.state_rx.clone(),
+                state.pipeline.turn_id.clone(),
+                cached_handle,
+            )))
+        }
+        RealtimeProviderKind::DeepgramVoiceAgent => {
+            let api_key = settings
+                .providers
+                .realtime
+                .api_keys
+                .get("deepgram")
+                .cloned()
+                .unwrap_or_default();
+            let config = DeepgramVoiceAgentConfig {
+                api_key,
+                model: settings.realtime.active.model.clone(),
+                voice: settings.realtime.active_voice_id.clone(),
+                temperature: 0.7,
+                agent_mode: false,
+            };
+            Ok(Box::new(DeepgramVoiceAgentProvider::new(
+                config,
+                assembled_prompt,
+                state.pipeline.state_rx.clone(),
+                state.pipeline.turn_id.clone(),
+            )))
+        }
         RealtimeProviderKind::OpenAiRealtime => {
             Err("OpenAI Realtime provider is not implemented".to_string())
         }

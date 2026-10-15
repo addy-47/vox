@@ -1,8 +1,10 @@
 use serde::{Deserialize, Serialize};
 
-use crate::core::defaults::{
-    DEFAULT_TTS_SPEED, DEFAULT_TTS_THREADS, DEFAULT_TTS_VOICE_ID,
-    DEFAULT_TTS_ZIPVOICE_GUIDANCE_SCALE,
+use crate::{
+    config::{ActiveSelection, LastSelectedModels},
+    core::defaults::{
+        DEFAULT_TTS_VOICE_ID, DEFAULT_TTS_ZIPVOICE_GUIDANCE_SCALE,
+    },
 };
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -41,70 +43,39 @@ pub enum TtsActiveProvider {
     Zipvoice,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Default)]
-#[serde(default)]
-pub struct TtsEdgeConfig {
-    pub voice: Option<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Default)]
-pub struct TtsSupertonicConfig {}
-
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Default)]
-pub struct TtsKokoroConfig {}
-
+/// A user-configured custom TTS server instance in providers.jsonc.
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
-#[serde(default)]
-pub struct TtsChatterboxConfig {
-    pub language: String,
-    pub voice_id: Option<String>,
-}
-
-impl Default for TtsChatterboxConfig {
-    fn default() -> Self {
-        Self {
-            language: "en".to_string(),
-            voice_id: None,
-        }
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
-#[serde(default)]
-pub struct TtsChatterboxRemoteConfig {
-    pub endpoint: String,
-    pub language: String,
+pub struct TtsCustomServer {
+    pub id: String,
+    pub name: String,
+    pub url: String,
     pub remote_path: String,
-    pub voice_id: Option<String>,
+    #[serde(default)]
+    pub api_key: Option<String>,
 }
 
-impl Default for TtsChatterboxRemoteConfig {
-    fn default() -> Self {
-        Self {
-            endpoint: String::new(),
-            language: "en".to_string(),
-            remote_path: "/opt/chatterbox".to_string(),
-            voice_id: None,
-        }
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+/// Custom TTS servers stored in providers.jsonc.
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 #[serde(default)]
-pub struct TtsZipvoiceConfig {
-    pub voice_id: Option<String>,
-    pub guidance_scale: f32,
+pub struct TtsProvidersConfig {
+    pub servers: Vec<TtsCustomServer>,
 }
 
-impl Default for TtsZipvoiceConfig {
+impl Default for TtsProvidersConfig {
     fn default() -> Self {
         Self {
-            voice_id: None,
-            guidance_scale: DEFAULT_TTS_ZIPVOICE_GUIDANCE_SCALE,
+            servers: vec![TtsCustomServer {
+                id: "chatterbox-gpu".to_string(),
+                name: "Chatterbox GPU Server".to_string(),
+                url: "http://100.67.98.126:8000".to_string(),
+                remote_path: "/opt/chatterbox".to_string(),
+                api_key: None,
+            }],
         }
     }
 }
 
+/// Concrete runtime configuration used to instantiate a TTS provider engine.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum TtsProviderConfig {
@@ -136,61 +107,77 @@ pub enum TtsProviderConfig {
     },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+/// Clean TTS settings stored in settings.jsonc.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(default)]
 pub struct TtsSettings {
-    pub active: TtsActiveProvider,
-    pub voice_id: String,
-    pub speed: f32,
-    pub threads: u32,
-    pub edge_tts: TtsEdgeConfig,
-    pub supertonic: TtsSupertonicConfig,
-    pub kokoro: TtsKokoroConfig,
-    pub chatterbox: TtsChatterboxConfig,
-    pub chatterbox_remote: TtsChatterboxRemoteConfig,
-    pub zipvoice: TtsZipvoiceConfig,
+    pub active: ActiveSelection,
+    pub last_selected: LastSelectedModels,
+    pub active_voice_id: String,
 }
 
 impl Default for TtsSettings {
     fn default() -> Self {
         Self {
-            active: TtsActiveProvider::EdgeTts,
-            voice_id: DEFAULT_TTS_VOICE_ID.to_string(),
-            speed: DEFAULT_TTS_SPEED,
-            threads: DEFAULT_TTS_THREADS,
-            edge_tts: TtsEdgeConfig::default(),
-            supertonic: TtsSupertonicConfig::default(),
-            kokoro: TtsKokoroConfig::default(),
-            chatterbox: TtsChatterboxConfig::default(),
-            chatterbox_remote: TtsChatterboxRemoteConfig::default(),
-            zipvoice: TtsZipvoiceConfig::default(),
+            active: ActiveSelection {
+                category: "embedded".to_string(),
+                provider: None,
+                model: "kokoro".to_string(),
+            },
+            last_selected: LastSelectedModels {
+                embedded: Some("kokoro".to_string()),
+                server: Some("chatterbox-gpu".to_string()),
+                cloud: Some("edge_tts".to_string()),
+            },
+            active_voice_id: DEFAULT_TTS_VOICE_ID.to_string(),
         }
     }
 }
 
 impl TtsSettings {
-    pub fn to_provider_config(&self) -> TtsProviderConfig {
-        match self.active {
-            TtsActiveProvider::EdgeTts => TtsProviderConfig::EdgeTts {
-                voice: self.edge_tts.voice.clone(),
+    pub fn to_provider_config(
+        &self,
+        providers: Option<&TtsProvidersConfig>,
+        speed: f32,
+    ) -> TtsProviderConfig {
+        match self.active.category.as_str() {
+            "server" => {
+                let default_prov = TtsProvidersConfig::default();
+                let provs = providers.unwrap_or(&default_prov);
+                let target_id = self.active.provider.as_deref().unwrap_or("chatterbox-gpu");
+                let server = provs
+                    .servers
+                    .iter()
+                    .find(|s| s.id == target_id)
+                    .or_else(|| provs.servers.first());
+
+                if let Some(srv) = server {
+                    TtsProviderConfig::ChatterboxRemote {
+                        endpoint: srv.url.clone(),
+                        language: "en".to_string(),
+                        speed,
+                        remote_path: srv.remote_path.clone(),
+                        voice_id: Some(self.active_voice_id.clone()),
+                    }
+                } else {
+                    TtsProviderConfig::Kokoro
+                }
+            }
+            "cloud" => TtsProviderConfig::EdgeTts {
+                voice: Some(self.active_voice_id.clone()),
             },
-            TtsActiveProvider::Supertonic => TtsProviderConfig::Supertonic,
-            TtsActiveProvider::Kokoro => TtsProviderConfig::Kokoro,
-            TtsActiveProvider::Chatterbox => TtsProviderConfig::Chatterbox {
-                language: self.chatterbox.language.clone(),
-                speed: self.speed,
-                voice_id: self.chatterbox.voice_id.clone(),
-            },
-            TtsActiveProvider::ChatterboxRemote => TtsProviderConfig::ChatterboxRemote {
-                endpoint: self.chatterbox_remote.endpoint.clone(),
-                language: self.chatterbox_remote.language.clone(),
-                speed: self.speed,
-                remote_path: self.chatterbox_remote.remote_path.clone(),
-                voice_id: self.chatterbox_remote.voice_id.clone(),
-            },
-            TtsActiveProvider::Zipvoice => TtsProviderConfig::Zipvoice {
-                voice_id: self.zipvoice.voice_id.clone(),
-                guidance_scale: self.zipvoice.guidance_scale,
+            _ => match self.active.model.as_str() {
+                "supertonic" => TtsProviderConfig::Supertonic,
+                "chatterbox" => TtsProviderConfig::Chatterbox {
+                    language: "en".to_string(),
+                    speed,
+                    voice_id: Some(self.active_voice_id.clone()),
+                },
+                "zipvoice" => TtsProviderConfig::Zipvoice {
+                    voice_id: Some(self.active_voice_id.clone()),
+                    guidance_scale: DEFAULT_TTS_ZIPVOICE_GUIDANCE_SCALE,
+                },
+                _ => TtsProviderConfig::Kokoro,
             },
         }
     }
@@ -199,86 +186,62 @@ impl TtsSettings {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::defaults::DEFAULT_TTS_SPEED;
 
     #[test]
     fn test_tts_settings_defaults() {
         let settings = TtsSettings::default();
-        assert_eq!(settings.active, TtsActiveProvider::EdgeTts);
-        assert_eq!(settings.voice_id, DEFAULT_TTS_VOICE_ID);
-        assert_eq!(settings.speed, DEFAULT_TTS_SPEED);
-        assert_eq!(settings.threads, DEFAULT_TTS_THREADS);
-        assert_eq!(settings.edge_tts, TtsEdgeConfig::default());
-        assert_eq!(settings.supertonic, TtsSupertonicConfig::default());
-        assert_eq!(settings.kokoro, TtsKokoroConfig::default());
-        assert_eq!(settings.chatterbox, TtsChatterboxConfig::default());
-        assert_eq!(
-            settings.chatterbox_remote,
-            TtsChatterboxRemoteConfig::default()
-        );
-        assert_eq!(settings.zipvoice, TtsZipvoiceConfig::default());
-        assert_eq!(
-            settings.to_provider_config(),
-            TtsProviderConfig::EdgeTts { voice: None }
-        );
+        assert_eq!(settings.active.category, "embedded");
+        assert_eq!(settings.active.model, "kokoro");
+        assert_eq!(settings.active_voice_id, DEFAULT_TTS_VOICE_ID);
+        assert_eq!(settings.last_selected.embedded.as_deref(), Some("kokoro"));
+
+        let provider_config = settings.to_provider_config(None, DEFAULT_TTS_SPEED);
+        assert_eq!(provider_config, TtsProviderConfig::Kokoro);
     }
 
     #[test]
-    fn test_to_provider_config_all_variants() {
+    fn test_tts_settings_server_and_cloud() {
         let mut settings = TtsSettings {
-            active: TtsActiveProvider::Supertonic,
+            active: ActiveSelection {
+                category: "cloud".to_string(),
+                provider: None,
+                model: "edge_tts".to_string(),
+            },
+            active_voice_id: "en-US-AriaNeural".to_string(),
             ..Default::default()
         };
-        assert_eq!(settings.to_provider_config(), TtsProviderConfig::Supertonic);
 
-        settings.active = TtsActiveProvider::Kokoro;
-        assert_eq!(settings.to_provider_config(), TtsProviderConfig::Kokoro);
-
-        settings.active = TtsActiveProvider::Chatterbox;
-        settings.chatterbox.language = "es".to_string();
-        settings.chatterbox.voice_id = Some("voice-123".to_string());
+        let prov = settings.to_provider_config(None, 1.0);
         assert_eq!(
-            settings.to_provider_config(),
-            TtsProviderConfig::Chatterbox {
-                language: "es".to_string(),
-                speed: DEFAULT_TTS_SPEED,
-                voice_id: Some("voice-123".to_string()),
-            }
-        );
-
-        settings.active = TtsActiveProvider::ChatterboxRemote;
-        settings.chatterbox_remote.endpoint = "http://remote:8080".to_string();
-        settings.chatterbox_remote.language = "fr".to_string();
-        settings.chatterbox_remote.remote_path = "/models".to_string();
-        settings.chatterbox_remote.voice_id = Some("voice-456".to_string());
-        assert_eq!(
-            settings.to_provider_config(),
-            TtsProviderConfig::ChatterboxRemote {
-                endpoint: "http://remote:8080".to_string(),
-                language: "fr".to_string(),
-                speed: DEFAULT_TTS_SPEED,
-                remote_path: "/models".to_string(),
-                voice_id: Some("voice-456".to_string()),
-            }
-        );
-
-        settings.active = TtsActiveProvider::Zipvoice;
-        settings.zipvoice.voice_id = Some("zip-voice-1".to_string());
-        settings.zipvoice.guidance_scale = 2.5;
-        assert_eq!(
-            settings.to_provider_config(),
-            TtsProviderConfig::Zipvoice {
-                voice_id: Some("zip-voice-1".to_string()),
-                guidance_scale: 2.5,
-            }
-        );
-
-        settings.active = TtsActiveProvider::EdgeTts;
-        settings.edge_tts.voice = Some("en-US-AriaNeural".to_string());
-        assert_eq!(
-            settings.to_provider_config(),
+            prov,
             TtsProviderConfig::EdgeTts {
                 voice: Some("en-US-AriaNeural".to_string()),
             }
         );
+
+        settings.active = ActiveSelection {
+            category: "server".to_string(),
+            provider: Some("chatterbox-gpu".to_string()),
+            model: "chatterbox".to_string(),
+        };
+
+        let prov = settings.to_provider_config(None, 1.2);
+        match prov {
+            TtsProviderConfig::ChatterboxRemote {
+                endpoint,
+                language,
+                speed,
+                remote_path,
+                voice_id,
+            } => {
+                assert_eq!(endpoint, "http://100.67.98.126:8000");
+                assert_eq!(language, "en");
+                assert_eq!(speed, 1.2);
+                assert_eq!(remote_path, "/opt/chatterbox");
+                assert_eq!(voice_id, Some("en-US-AriaNeural".to_string()));
+            }
+            _ => panic!("Expected ChatterboxRemote"),
+        }
     }
 }

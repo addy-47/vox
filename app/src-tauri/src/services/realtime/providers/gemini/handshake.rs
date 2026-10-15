@@ -4,14 +4,11 @@ use anyhow::{anyhow, Result};
 use futures_util::{SinkExt, StreamExt};
 use tokio_tungstenite::tungstenite::Message;
 
-use crate::{
-    config::GeminiRealtimeConfig,
-    services::{
-        llm::CanonicalToolDefinition,
-        realtime::{
-            transport::{WsReader, WsWriter},
-            GEMINI_DEFAULT_WS_URL_BASE, WS_HANDSHAKE_TIMEOUT,
-        },
+use crate::services::{
+    llm::CanonicalToolDefinition,
+    realtime::{
+        transport::{WsReader, WsWriter},
+        GeminiRealtimeConfig, GEMINI_DEFAULT_WS_URL_BASE, WS_HANDSHAKE_TIMEOUT,
     },
 };
 

@@ -20,10 +20,7 @@ use vox_lib::{
     config::{apply_setting_mutation, VoxSettings},
     core::events::PipelineMode,
     pipeline::dictation::DictationOutputMode,
-    services::{
-        llm::LlmActiveProvider, stt::SttActiveProvider, tts::TtsActiveProvider,
-        vad::VadBackendOption,
-    },
+    services::vad::VadBackendOption,
 };
 
 // ============================================================================
@@ -89,8 +86,17 @@ fn test_settings_json_roundtrip_persistence() {
 
     // STT
     assert!(
-        apply_setting_mutation(&mut settings, "stt", "active", &serde_json::json!("cloud"))
-            .expect("stt.active mutation failed"),
+        apply_setting_mutation(
+            &mut settings,
+            "stt",
+            "active",
+            &serde_json::json!({
+                "category": "cloud",
+                "provider": "deepgram",
+                "model": "nova-3"
+            })
+        )
+        .expect("stt.active mutation failed"),
         "stt.active should be recognized"
     );
     assert!(
@@ -106,29 +112,18 @@ fn test_settings_json_roundtrip_persistence() {
 
     // LLM
     assert!(
-        apply_setting_mutation(&mut settings, "llm", "active", &serde_json::json!("server"))
-            .expect("llm.active mutation failed"),
+        apply_setting_mutation(
+            &mut settings,
+            "llm",
+            "active",
+            &serde_json::json!({
+                "category": "server",
+                "provider": "ollama",
+                "model": "qwen3.5:9b"
+            })
+        )
+        .expect("llm.active mutation failed"),
         "llm.active should be recognized"
-    );
-    assert!(
-        apply_setting_mutation(
-            &mut settings,
-            "llm",
-            "temperature",
-            &serde_json::json!(0.85)
-        )
-        .expect("llm.temperature mutation failed"),
-        "llm.temperature should be recognized"
-    );
-    assert!(
-        apply_setting_mutation(
-            &mut settings,
-            "llm",
-            "context_window",
-            &serde_json::json!(16384)
-        )
-        .expect("llm.context_window mutation failed"),
-        "llm.context_window should be recognized"
     );
 
     // TTS
@@ -137,20 +132,18 @@ fn test_settings_json_roundtrip_persistence() {
             &mut settings,
             "tts",
             "active",
-            &serde_json::json!("supertonic")
+            &serde_json::json!({
+                "category": "embedded",
+                "model": "supertonic"
+            })
         )
         .expect("tts.active mutation failed"),
         "tts.active should be recognized"
     );
     assert!(
-        apply_setting_mutation(&mut settings, "tts", "voice_id", &serde_json::json!("aria"))
-            .expect("tts.voice_id mutation failed"),
-        "tts.voice_id should be recognized"
-    );
-    assert!(
-        apply_setting_mutation(&mut settings, "tts", "speed", &serde_json::json!(1.15))
-            .expect("tts.speed mutation failed"),
-        "tts.speed should be recognized"
+        apply_setting_mutation(&mut settings, "tts", "active_voice_id", &serde_json::json!("aria"))
+            .expect("tts.active_voice_id mutation failed"),
+        "tts.active_voice_id should be recognized"
     );
     // Diffusion steps are a fixed per-provider constant, not a setting.
     // A stale client must not be able to reintroduce the knob.
@@ -258,12 +251,12 @@ fn test_settings_json_roundtrip_persistence() {
     let json_val: serde_json::Value = vox_lib::utils::jsonc::from_jsonc_str(&raw_content)
         .expect("settings.jsonc must be valid JSONC");
     assert_eq!(
-        json_val["tts"]["voice_id"], "aria",
-        "Raw JSON must contain mutated tts.voice_id == aria"
+        json_val["tts"]["active_voice_id"], "aria",
+        "Raw JSON must contain mutated tts.active_voice_id == aria"
     );
     assert_eq!(
-        json_val["llm"]["active"], "server",
-        "Raw JSON must contain mutated llm.active == server"
+        json_val["llm"]["active"]["category"], "server",
+        "Raw JSON must contain mutated llm.active.category == server"
     );
     assert_eq!(
         json_val["appearance"]["accent_seed"], "#8B5CF6",
@@ -287,23 +280,11 @@ fn test_settings_json_roundtrip_persistence() {
         );
     }
 
-    // Verify agent.jsonc contains cognitive params
+    // Verify agent.jsonc exists
     let agent_path = vox_lib::utils::paths::agent_path();
     assert!(
         agent_path.exists(),
         "agent.jsonc must exist at paths::agent_path() after save"
-    );
-    let agent_raw =
-        fs::read_to_string(&agent_path).expect("agent.jsonc must be readable after save");
-    let agent_val: serde_json::Value =
-        vox_lib::utils::jsonc::from_jsonc_str(&agent_raw).expect("agent.jsonc must be valid JSONC");
-    assert_eq!(
-        agent_val["cognitive"]["context_window"], 16384,
-        "Raw JSON must contain mutated cognitive.context_window == 16384"
-    );
-    assert_eq!(
-        agent_val["working_memory"]["private_mode"], true,
-        "Raw JSON must contain mutated working_memory.private_mode == true"
     );
 
     // 5. Reload settings from disk via SUT: VoxSettings::load
@@ -315,14 +296,16 @@ fn test_settings_json_roundtrip_persistence() {
     assert!((reloaded.vad.threshold - 0.72).abs() < 1e-5);
     assert!((reloaded.vad.ptt_noise_gate - 0.04).abs() < 1e-5);
     assert_eq!(reloaded.vad.vad_backend, VadBackendOption::Earshot);
-    assert_eq!(reloaded.stt.active, SttActiveProvider::Cloud);
+    assert_eq!(reloaded.stt.active.category, "cloud");
+    assert_eq!(reloaded.stt.active.provider.as_deref(), Some("deepgram"));
+    assert_eq!(reloaded.stt.active.model, "nova-3");
     assert!(!reloaded.stt.transliterate_enabled);
-    assert_eq!(reloaded.llm.active, LlmActiveProvider::Server);
-    assert!((reloaded.llm.temperature - 0.85).abs() < 1e-5);
-    assert_eq!(reloaded.llm.context_window, 16384);
-    assert_eq!(reloaded.tts.active, TtsActiveProvider::Supertonic);
-    assert_eq!(reloaded.tts.voice_id, "aria");
-    assert!((reloaded.tts.speed - 1.15).abs() < 1e-5);
+    assert_eq!(reloaded.llm.active.category, "server");
+    assert_eq!(reloaded.llm.active.provider.as_deref(), Some("ollama"));
+    assert_eq!(reloaded.llm.active.model, "qwen3.5:9b");
+    assert_eq!(reloaded.tts.active.category, "embedded");
+    assert_eq!(reloaded.tts.active.model, "supertonic");
+    assert_eq!(reloaded.tts.active_voice_id, "aria");
     assert_eq!(reloaded.interaction.pipeline_mode, PipelineMode::Realtime);
     assert!(reloaded.dictation.enabled);
     assert_eq!(reloaded.dictation.output_mode, DictationOutputMode::Tray);
@@ -359,7 +342,7 @@ fn test_settings_malformed_fallback_to_default() {
     assert_eq!(recovered.appearance.theme, defaults.appearance.theme);
     assert_eq!(recovered.vad.threshold, defaults.vad.threshold);
     assert_eq!(recovered.llm.active, defaults.llm.active);
-    assert_eq!(recovered.tts.voice_id, defaults.tts.voice_id);
+    assert_eq!(recovered.tts.active_voice_id, defaults.tts.active_voice_id);
     assert_eq!(
         recovered.working_memory.private_mode,
         defaults.working_memory.private_mode
@@ -419,12 +402,11 @@ fn test_settings_partial_section_recovery() {
             "accent_seed": "#00DBE9"
         },
         "tts": {
-            "active": "kokoro",
-            "voice_id": "serene",
-            // Stale key from a pre-0.5 settings.jsonc: must be ignored, not fatal.
-            "quality_steps": 5,
-            "speed": 1.05,
-            "threads": 4
+            "active": {
+                "category": "embedded",
+                "model": "kokoro"
+            },
+            "active_voice_id": "serene"
         },
         "unknown_junk_section": {
             "garbage": 12345
@@ -443,8 +425,8 @@ fn test_settings_partial_section_recovery() {
     // Assert partial valid sections recovered
     assert_eq!(recovered.appearance.theme, "nordic_frost");
     assert_eq!(recovered.appearance.accent_seed, "#00DBE9");
-    assert_eq!(recovered.tts.voice_id, "serene");
-    assert_eq!(recovered.tts.active, TtsActiveProvider::Kokoro);
+    assert_eq!(recovered.tts.active_voice_id, "serene");
+    assert_eq!(recovered.tts.active.model, "kokoro");
 
     // Assert missing sections cleanly fell back to defaults without panic
     let defaults = VoxSettings::default();
@@ -494,40 +476,28 @@ fn test_settings_jsonc_with_comments_support() {
     {
         /* Remote LLM provider configuration */
         "llm": {
-            "server": {
-                "base_url": "http://100.67.98.126:11435", // Ollama server URL
-                "model": "qwen3.5:9b",
-                "api_key": null,
-                "provider_name": "Ollama"
-            },
-            "cloud": {
-                "base_url": "https://api.together.xyz/v1",
-                "model": "meta/llama-3.1",
-                "api_key": "test-key-12345",
-                "provider_name": "Together"
-            },
-            "cloud_keys": {}
+            "servers": [
+                {
+                    "id": "ollama-server",
+                    "name": "Ollama",
+                    "url": "http://100.67.98.126:11435",
+                    "model": "qwen3.5:9b",
+                    "protocol": "ollama"
+                }
+            ],
+            "cloud_keys": {
+                "together": "test-key-12345"
+            }
         }
     }
     "#;
 
     let agent_jsonc = r#"
-    // Persona and memory policies
+    // Persona prompts
     {
-        /* Cognitive reasoning parameters */
-        "cognitive": {
-            "temperature": 0.42,
-            "compaction_temperature": 0.3,
-            "max_output_tokens": 150,
-            "context_window": 12000,
-            "reasoning_enabled": true
-        },
-        // Incognito mode setting
-        "working_memory": {
-            "private_mode": true,
-            "auto_compaction": true,
-            "max_context_share": 0.25,
-            "web_search_enabled": false
+        "persona": {
+            "modular_prompt": "You are Vox, an AI assistant.",
+            "realtime_prompt": "Be concise and accurate."
         }
     }
     "#;
@@ -545,15 +515,16 @@ fn test_settings_jsonc_with_comments_support() {
     assert_eq!(loaded.appearance.theme, "dark_modern");
     assert_eq!(loaded.appearance.accent_seed, "#10B981");
 
-    assert_eq!(loaded.llm.server.base_url, "http://100.67.98.126:11435");
-    assert_eq!(loaded.llm.server.model, "qwen3.5:9b");
-    assert_eq!(loaded.llm.cloud.api_key.as_deref(), Some("test-key-12345"));
-
-    assert!((loaded.llm.temperature - 0.42).abs() < 1e-5);
-    assert_eq!(loaded.llm.context_window, 12000);
-    assert!(loaded.llm.reasoning_enabled);
-    assert!(loaded.working_memory.private_mode);
-    assert!(loaded.working_memory.auto_compaction);
+    assert_eq!(loaded.providers.llm.servers[0].url, "http://100.67.98.126:11435");
+    assert_eq!(loaded.providers.llm.servers[0].model, "qwen3.5:9b");
+    assert_eq!(
+        loaded.providers.llm.cloud_keys.get("together").map(|s| s.as_str()),
+        Some("test-key-12345")
+    );
+    assert_eq!(
+        loaded.persona.modular_prompt,
+        "You are Vox, an AI assistant."
+    );
 
     assert!(
         Instant::now() < deadline,
@@ -571,7 +542,7 @@ fn reload_policy_worker_command_keys_all_have_dispatch_arms() {
     };
 
     let worker_keys = [
-        ("tts", "speed"),
+        ("tts", "active_voice_id"),
         ("tts", "voice_id"),
         ("tts", "voice"),
         ("vad", "threshold"),
@@ -640,19 +611,16 @@ fn test_settings_3way_partial_corruption_recovery() {
     // Valid providers.jsonc
     let valid_providers = r#"{
         "llm": {
-            "cloud": {
-                "base_url": "https://api.together.xyz/v1",
-                "model": "meta/llama-3.1",
-                "api_key": "my-secret-key-999"
+            "cloud_keys": {
+                "together": "my-secret-key-999"
             }
         }
     }"#;
 
     // Valid agent.jsonc
     let valid_agent = r#"{
-        "cognitive": {
-            "temperature": 0.35,
-            "context_window": 16384
+        "persona": {
+            "modular_prompt": "Custom persona prompt for recovery test"
         }
     }"#;
 
@@ -664,15 +632,15 @@ fn test_settings_3way_partial_corruption_recovery() {
 
     // Valid files should remain intact even if settings.jsonc had a type error
     assert_eq!(
-        loaded.llm.cloud.api_key.as_deref(),
+        loaded.providers.llm.cloud_keys.get("together").map(|s| s.as_str()),
         Some("my-secret-key-999"),
         "Valid providers.jsonc must be preserved during settings type-error recovery"
     );
     assert_eq!(
-        loaded.llm.context_window, 16384,
+        loaded.persona.modular_prompt,
+        "Custom persona prompt for recovery test",
         "Valid agent.jsonc must be preserved during settings type-error recovery"
     );
-    assert!((loaded.llm.temperature - 0.35).abs() < 1e-5);
 
     // Uncorrupted section in settings.jsonc (appearance) should be recovered
     assert_eq!(loaded.appearance.theme, "custom_purple");

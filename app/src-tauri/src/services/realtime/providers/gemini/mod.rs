@@ -8,7 +8,6 @@ use parking_lot::Mutex;
 use session::{GeminiDriver, GeminiLiveSession, GeminiSessionState};
 
 use crate::{
-    config::GeminiRealtimeConfig,
     core::{events::InteractionMode, state::InteractionState},
     services::{
         llm::CanonicalToolDefinition,
@@ -16,9 +15,9 @@ use crate::{
             transport::{
                 resolve_or_fallback, spawn_harness, tcp_health_check, HarnessConfig, HarnessInit,
             },
-            RealtimeAudioConfig, RealtimeProviderEvent, RealtimeProviderKind, RealtimeSession,
-            RealtimeVoiceProvider, BRIDGE_CHANNEL_CAPACITY, DEFAULT_INPUT_SAMPLE_RATE,
-            DEFAULT_OUTPUT_SAMPLE_RATE, GEMINI_HEALTH_CHECK_ADDR,
+            GeminiRealtimeConfig, RealtimeAudioConfig, RealtimeProviderEvent, RealtimeProviderKind,
+            RealtimeSession, RealtimeVoiceProvider, BRIDGE_CHANNEL_CAPACITY,
+            DEFAULT_INPUT_SAMPLE_RATE, DEFAULT_OUTPUT_SAMPLE_RATE, GEMINI_HEALTH_CHECK_ADDR,
             GEMINI_HEALTH_CHECK_FALLBACK_SOCKET_ADDR, MAX_RECONNECT_ATTEMPTS,
             RECONNECT_BASE_DELAY_SECS, RECONNECT_FACTOR_SECS, WS_HEALTH_CHECK_TIMEOUT,
         },

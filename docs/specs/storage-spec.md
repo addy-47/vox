@@ -32,38 +32,38 @@ Vox requires a predictable, partitioned filesystem layout that isolates disposab
 ### 3.1 Configuration Decomposition Decision Tree
 ```mermaid
 flowchart TD
-    ConfigInput[Incoming Configuration Mutation] --> CheckSecret{Contains Private API Keys<br/>or Cloud Tokens?}
+    ConfigInput["Incoming Configuration Mutation"] --> CheckSecret{"Contains Private API Keys<br/>or Cloud Tokens?"}
     
-    CheckSecret -- Yes --> ProvidersSplit[Route to config/providers.jsonc<br/>Security: Mode 0600<br/>Reload: Instant Hot-Reload or Subsystem Rebind]
+    CheckSecret -- Yes --> ProvidersSplit["Route to config/providers.jsonc<br/>Security: Mode 0600<br/>Reload: Instant Hot-Reload or Subsystem Rebind"]
     
-    CheckSecret -- No --> CheckCognitive{Governs Cognitive Persona,<br/>Prompts, or Memory Policies?}
+    CheckSecret -- No --> CheckCognitive{"Governs Cognitive Persona,<br/>Prompts, or Memory Policies?"}
     
-    CheckCognitive -- Yes --> AgentSplit[Route to config/agent.jsonc<br/>Security: Mode 0644<br/>Reload: Next-Turn Hot-Reload 0ms delay]
+    CheckCognitive -- Yes --> AgentSplit["Route to config/agent.jsonc<br/>Security: Mode 0644<br/>Reload: Next-Turn Hot-Reload 0ms delay"]
     
-    CheckCognitive -- No --> SettingsSplit[Route to config/settings.jsonc<br/>Security: Mode 0644<br/>Reload: Live Worker Command or Engine Rebuild]
+    CheckCognitive -- No --> SettingsSplit["Route to config/settings.jsonc<br/>Security: Mode 0644<br/>Reload: Live Worker Command or Engine Rebuild"]
 ```
 
 ### 3.2 Startup Boot & Legacy Migration Protocol
 ```mermaid
 flowchart TD
-    BootStart([Application Startup]) --> PathCheck[Resolve Paths Gateway]
+    BootStart([Application Startup]) --> PathCheck["Resolve Paths Gateway"]
     
-    PathCheck --> LegacyDb{Legacy vox.db exists<br/>in ~/.vox root?}
-    LegacyDb -- Yes --> MigrateDb[Move vox.db* into data/db/<br/>No symlinks created]
+    PathCheck --> LegacyDb{"Legacy vox.db exists<br/>in ~/.vox root?"}
+    LegacyDb -- Yes --> MigrateDb["Move vox.db* into data/db/<br/>No symlinks created"]
     LegacyDb -- No --> SweepTmp
     
-    MigrateDb --> SweepTmp[Sweep Stale Config Debris<br/>Purge config/*.tmp and *.corrupt.*]
+    MigrateDb --> SweepTmp["Sweep Stale Config Debris<br/>Purge config/*.tmp and *.corrupt.*"]
     
-    SweepTmp --> LegacyHistory{Legacy dictation_history.jsonl<br/>in ~/.vox/cache/?}
-    LegacyHistory -- Yes --> MigrateHistory[Move to data/history/dictation.jsonl]
+    SweepTmp --> LegacyHistory{"Legacy dictation_history.jsonl<br/>in ~/.vox/cache/?"}
+    LegacyHistory -- Yes --> MigrateHistory["Move to data/history/dictation.jsonl"]
     LegacyHistory -- No --> LegacyCrash
     
-    MigrateHistory --> LegacyCrash{Legacy crash_reports/<br/>directory exists?}
-    LegacyCrash -- Yes --> MigrateCrash[Move logs to diagnostics/crashes/<br/>Remove legacy folder]
+    MigrateHistory --> LegacyCrash{"Legacy crash_reports/<br/>directory exists?"}
+    LegacyCrash -- Yes --> MigrateCrash["Move logs to diagnostics/crashes/<br/>Remove legacy folder"]
     LegacyCrash -- No --> PermissionsCheck
     MigrateCrash --> PermissionsCheck
     
-    PermissionsCheck[Enforce Security Matrix<br/>Set providers.jsonc 0600<br/>Set run/ & data/db/ 0700] --> EngineBoot([Proceed to Database Open & Engine Bootstrap])
+    PermissionsCheck["Enforce Security Matrix<br/>Set providers.jsonc 0600<br/>Set run/ & data/db/ 0700"] --> EngineBoot([Proceed to Database Open & Engine Bootstrap])
 ```
 
 ---
@@ -122,7 +122,7 @@ Vox organizes all on-disk artifacts under the root directory (`$VOX_HOME`, defau
 - **RULE-STORAGE-04 (Transient Runtime Sockets)**: Unix domain sockets and process locks MUST reside in `$XDG_RUNTIME_DIR/vox/` when available on Linux, falling back to `~/.vox/run/`. These directories MUST be created with POSIX mode `0700`.
 - **RULE-STORAGE-05 (Secret Isolation)**: API keys and server secrets MUST reside strictly in `config/providers.jsonc`. Telemetry, diagnostics, and UI debug logs MUST NEVER record or output the contents of `providers.jsonc`.
 - **RULE-STORAGE-09 (Voice Asset Storage & LRU Cache)**:
-  - Canonical active voice identifier persists as `tts.voice_id` string in `settings.jsonc` (legacy `voice_index` retired with zero backwards compatibility shims).
+  - Canonical active voice identifier persists as `tts.active_voice_id` and `realtime.active_voice_id` strings in `settings.jsonc`.
   - Bundled voice definitions compile into binary via `voices_manifest.json` under `services/tts/`.
   - Custom cloned audio samples persist in `data/voices/{id}/source.wav`, and precomputed speaker embedding tensors persist in `data/voices/{id}/baked/speaker.safetensors`.
   - On-demand synthesized preview audio files reside in disposable cache `cache/tts/previews/{sha256(provider + voice_id + prompt)}.wav` subject to a 25 MB / 50 files LRU cache boundary.
@@ -133,12 +133,13 @@ The configuration is decomposed into three files according to domain volatility,
 
 | Configuration Target | Contained Domain Field Groups | Security Tier | Reload Action & Timing Budget |
 | :--- | :--- | :--- | :--- |
-| **`config/settings.jsonc`** | - `appearance`: Theme, accent styling<br>- `vad`: Energy threshold, PTT gate, silence duration<br>- `interaction`: Mode (`Passive` \| `PTT`), Pipeline (`Modular` \| `Realtime`)<br>- `dictation`: Output mode, silence auto-stop<br>- `system`: Setup completion flag<br>- `engine_selectors`: Active engine provider IDs | Public (`0644`) | - Audio DSP/VAD: Dispatched via worker command ($\le 100\text{ ms}$)<br>- Engine Switch: Coalesced engine restart cycle |
-| **`config/providers.jsonc`** | - `llm`: Cloud/server endpoints, model IDs, API keys<br>- `stt`: Cloud STT credentials, endpoints<br>- `tts`: Remote TTS credentials, worker URLs<br>- `realtime`: Live voice provider credentials and tokens | Restricted (`0600`) | Instant hot-reload or subsystem rebind on change |
-| **`config/agent.jsonc`** | - `persona`: System prompts (`modular_prompt`, `realtime_prompt`)<br>- `working_memory`: Privacy mode, context share ceiling<br>- `personal_memory`: Context retrieval toggle, fact budgets<br>- `cognitive`: LLM temperature, reasoning mode, max tokens | Public (`0644`) | Next-turn hot reload ($0\text{ ms}$ delay; read live on each turn) |
+| **`config/settings.jsonc`** | - `appearance`: Theme, accent styling<br>- `vad`: Energy threshold, PTT gate, silence duration, onset<br>- `interaction`: Mode (`Passive` \| `PTT`), Pipeline (`Modular` \| `Realtime`)<br>- `dictation`: Output mode, silence auto-stop<br>- `system`: Setup completion flag<br>- `working_memory`: Privacy mode, context share ceiling, search toggle<br>- `personal_memory`: Context retrieval toggle, fact budgets, schedule<br>- `engine_selectors`: Uniform `active` (`{ category, provider, model }`) and `last_selected` (`{ embedded, server, cloud }`) across `stt`, `llm`, `tts`, and `realtime` | Public (`0644`) | - Audio DSP/VAD/Memory: Dispatched via worker command ($\le 100\text{ ms}$)<br>- Engine Switch: Coalesced engine restart cycle |
+| **`config/providers.jsonc`** | - `llm.servers`: Inventory of named custom servers (`id`, `name`, `url`, optional `model`/`protocol`/`api_key`)<br>- `llm.cloud_keys`: Provider API keys (`nvidia`, `openrouter`, `groq`)<br>- `tts.servers`: Inventory of named custom TTS servers (`id`, `name`, `url`, `remote_path`, `api_key`)<br>- `realtime.api_keys`: Cloud credentials per provider (`gemini_live`, `deepgram_voice_agent`) | Restricted (`0600`) | Instant hot-reload or subsystem rebind on change |
+| **`config/agent.jsonc`** | - `persona`: System prompts (`modular_prompt`, `realtime_prompt`) (thin file reserved for future MCP tools & agent skills) | Public (`0644`) | Next-turn hot reload ($0\text{ ms}$ delay; read live on each turn) |
 
 - **RULE-STORAGE-06 (Format Standards)**: Configuration files MUST parse as JSONC (lenient JSON permitting comments and trailing commas). Append-only transcripts MUST use JSONL (JSON Lines).
 - **RULE-STORAGE-07 (Dynamic Audio Routing Exemption)**: Live microphone input and audio output devices are physical transient system states. They MUST NOT be persisted into `settings.jsonc`, but instead dynamically discovered and updated at runtime.
+- **RULE-STORAGE-10 (Sparse Model Provenance Invariant)**: Per-model parameter overrides (speed, context window, temperature, threads, layers) MUST NOT be stored in `settings.jsonc` or `providers.jsonc`. They MUST persist sparsely on-demand in the Turso SQLite `models` table (`parameters` JSON column). Untouched catalog models default to catalog parameters without database rows.
 
 ### 5.3 Startup Migration Protocol
 - **RULE-STORAGE-08 (Automated One-Way Migration)**: On startup before opening database connections or loading models, the system MUST execute an automated legacy layout migration:

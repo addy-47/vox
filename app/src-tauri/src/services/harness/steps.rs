@@ -170,10 +170,7 @@ pub struct NonTerminalContext<'a> {
 }
 
 /// Uniformly transitions pipeline to Working and dispatches normalized interim filler audio.
-pub fn enter_non_terminal_phase(
-    phase: &NonTerminalPhase,
-    ctx: &NonTerminalContext<'_>,
-) {
+pub fn enter_non_terminal_phase(phase: &NonTerminalPhase, ctx: &NonTerminalContext<'_>) {
     let activity = phase.trigger.activity();
     log::info!(
         "[Harness::NonTerminal] Entering working phase: trigger={:?}",

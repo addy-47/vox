@@ -16,7 +16,9 @@ use crate::{
     },
     services::{
         audio::PlaybackEngine,
-        tts::{factory::create_tts_provider, providers::TtsProvider, TtsSettings},
+        tts::{
+            factory::create_tts_provider, providers::TtsProvider, TtsProvidersConfig, TtsSettings,
+        },
     },
 };
 
@@ -201,11 +203,15 @@ pub struct TtsWarmUpHandles<'a> {
 }
 
 /// Spawns and initializes a persistent TTS worker actor thread.
+#[allow(clippy::too_many_arguments)]
 pub fn warm_up_tts(
     handles: TtsWarmUpHandles<'_>,
     settings: &TtsSettings,
+    providers: Option<&TtsProvidersConfig>,
     super_tts_path: &Path,
     reference_audio: Option<&str>,
+    speed: f32,
+    num_threads: u32,
     event_tx: mpsc::Sender<VoxEvent>,
 ) -> Result<(), String> {
     if handles.tts_tx.is_some() {
@@ -213,7 +219,14 @@ pub fn warm_up_tts(
     }
 
     log::info!("[TTS Actor] Warming up TTS worker");
-    let provider = create_tts_provider(settings, super_tts_path, reference_audio)?;
+    let provider = create_tts_provider(
+        settings,
+        providers,
+        super_tts_path,
+        reference_audio,
+        speed,
+        num_threads,
+    )?;
 
     let (tx, rx) = mpsc::channel::<TtsCommand>();
     *handles.tts_tx = Some(tx);

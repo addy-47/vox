@@ -152,10 +152,12 @@ Settings mutations trigger one of three reload policies returned to the frontend
 
 | Command | Arguments | Return Shape | Behavioral Contract |
 | :--- | :--- | :--- | :--- |
-| `get_settings` | None | `SettingsObject` | Returns full application settings object. |
-| `update_setting` | `key: string`, `value: unknown` | `{ reloadPolicy, restartScheduled }` | Mutates single setting with strict validation (`InvalidArgument` on unknown keys); applies hot or schedules coalesced restart. |
-| `reset_settings` | None | `{ reloadPolicy, restartScheduled }` | Resets settings to system defaults. |
+| `get_settings` | None | `BootState` | Returns full application settings object, directory health, and active configuration paths. |
+| `update_setting` | `domain: string`, `key: string`, `value: unknown` | `{ applied, reloadPolicy, message, restartScheduled }` | Polymorphic setting mutator. Handles domain selections (`active`, `last_selected`), custom server list (`servers`), active voice (`active_voice_id`), and sparse model parameters (`model_parameters`). Applies hot, worker command, or schedules coalesced restart. |
+| `reset_settings` | None | `{ settings, reloadPolicy, message, restartScheduled }` | Resets settings to system defaults. |
 | `get_model_catalog` | None | `ModelCatalog` | Returns verified model weights manifest. |
+| `list_favorite_models` | None | `Array<string>` | Queries `models` table in Turso SQLite for models with `is_favorite = 1`, ordered newest first. |
+| `toggle_model_favorite` | `modelId: string` | `boolean` | Atomically toggles `is_favorite` flag for model in `models` table. Returns new favorite boolean. |
 | `get_provider_caps` | `providerId: string` | `ProviderCaps` | Returns dynamic capabilities (supported voices, cloning support). Rejects unknown providers with `InvalidArgument`. |
 | `manage_models` | `action: string`, `modelId: string` | `void` | Downloads, verifies SHA-256, or deletes local model weights. Emits `model_progress`. |
 

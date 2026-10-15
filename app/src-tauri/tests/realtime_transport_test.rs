@@ -26,12 +26,11 @@ use futures_util::{SinkExt, StreamExt};
 use tokio::{net::TcpListener, sync::mpsc};
 use tokio_tungstenite::tungstenite::Message;
 use vox_lib::{
-    config::RealtimeProviderKind,
     core::{error::PipelineImpact, events::InteractionMode, state::InteractionState},
     services::realtime::{
         create_realtime_provider, purge_session_cache, spawn_harness, FrameAction, HarnessConfig,
-        HarnessInit, OutboundCommand, ProviderDriver, RealtimeProviderEvent, ReconnectFn, WsReader,
-        WsWriter, SESSION_CACHE_FILENAME,
+        HarnessInit, OutboundCommand, ProviderDriver, RealtimeProviderEvent, ReconnectFn,
+        WsReader, WsWriter, SESSION_CACHE_FILENAME,
     },
     utils::paths::cache_dir,
 };
@@ -529,7 +528,11 @@ async fn test_session_cache_ttl_and_purge() {
         // Trigger create_realtime_provider
         {
             let mut settings = state.settings.write().unwrap();
-            settings.realtime.active = RealtimeProviderKind::GeminiLive;
+            settings.realtime.active = vox_lib::config::ActiveSelection {
+                category: "cloud".to_string(),
+                provider: Some("gemini_live".to_string()),
+                model: "gemini-2.0-flash".to_string(),
+            };
         }
 
         let _ = create_realtime_provider(&state);

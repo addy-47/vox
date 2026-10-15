@@ -57,30 +57,30 @@ Dictation serves as an ambient, operating-system-level speech-to-text utility. I
 
 ```mermaid
 flowchart TD
-    HK([Hotkey Press]) --> Gating{Dictation Active & Idle?}
-    Gating -- No (Assistant Active) --> Reject([Gating Rejection Toast])
-    Gating -- Yes --> Capture[Capture Audio Frames via Lock-Free Gate]
+    HK([Hotkey Press]) --> Gating{"Dictation Active & Idle?"}
+    Gating -- "No (Assistant Active)" --> Reject([Gating Rejection Toast])
+    Gating -- Yes --> Capture["Capture Audio Frames via Lock-Free Gate"]
     
-    Capture --> StopCond{Hotkey Released OR 1200ms Silence?}
+    Capture --> StopCond{"Hotkey Released OR 1200ms Silence?"}
     StopCond -- No --> Capture
-    StopCond -- Yes --> STT[STT Inference Engine <200ms Bypass]
+    StopCond -- Yes --> STT["STT Inference Engine < 200ms Bypass"]
     
-    STT --> Trans[Finalized Transcript]
-    Trans --> Cache[Store in Memory Recovery Cache]
-    Trans --> Route{Configured Output Mode?}
+    STT --> Trans["Finalized Transcript"]
+    Trans --> Cache["Store in Memory Recovery Cache"]
+    Trans --> Route{"Configured Output Mode?"}
     
-    Route -- Tray --> HUD[Append to Floating Tray HUD Ring Buffer]
-    Route -- Clipboard --> ClipOnly[Copy to System Clipboard + 3s Toast]
-    Route -- Paste --> PasteFlow[Paste Output Pipeline]
+    Route -- Tray --> HUD["Append to Floating Tray HUD Ring Buffer"]
+    Route -- Clipboard --> ClipOnly["Copy to System Clipboard + 3s Toast"]
+    Route -- Paste --> PasteFlow["Paste Output Pipeline"]
     
-    PasteFlow --> Backup[Backup Active System Clipboard]
-    Backup --> Inject{Simulate Paste Keystroke}
+    PasteFlow --> Backup["Backup Active System Clipboard"]
+    Backup --> Inject{"Simulate Paste Keystroke"}
     
-    Inject -- Success --> Wait350[Wait 350ms Application Ingestion Delay]
-    Wait350 --> Restore[Restore Original Clipboard Payload]
+    Inject -- Success --> Wait350["Wait 350ms Application Ingestion Delay"]
+    Wait350 --> Restore["Restore Original Clipboard Payload"]
     
-    Inject -- Wayland Block / Fail --> Keeper[Retain Transcript on Clipboard for 30s]
-    Keeper --> WarnToast[Emit Notification: Manual Ctrl+V Required]
+    Inject -- "Wayland Block / Fail" --> Keeper["Retain Transcript on Clipboard for 30s"]
+    Keeper --> WarnToast["Emit Notification: Manual Ctrl+V Required"]
 ```
 
 ### 4.2 Clipboard Safety State Machine

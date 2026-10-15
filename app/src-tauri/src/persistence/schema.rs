@@ -5,11 +5,12 @@ use turso::Connection;
 use crate::{
     core::error::PersistenceError,
     persistence::voices::{seed_packaged_voices, seed_zipvoice_voices},
+    services::tts::voice::sync_manifest_voices_to_db,
 };
 
 pub type Result<T> = std::result::Result<T, PersistenceError>;
 
-pub const SCHEMA_VERSION: u32 = 13;
+pub const SCHEMA_VERSION: u32 = 14;
 
 const PERSONAL_MEMORY_SEMANTIC_SCHEMA_VERSION: u32 = 9;
 const EMPTY_PERSONAL_MEMORY_JSON: &str = r#"{"sections":[]}"#;
@@ -166,11 +167,20 @@ const SCHEMA_TABLE_STATEMENTS: &[&str] = &[
     "CREATE INDEX IF NOT EXISTS idx_revisions_pending ON personal_memory_revisions(base_memory_version, status);",
     "CREATE INDEX IF NOT EXISTS idx_revisions_status_proj ON personal_memory_revisions(project_id, status);",
     "CREATE INDEX IF NOT EXISTS idx_revisions_created ON personal_memory_revisions(created_at DESC);",
-    "CREATE TABLE IF NOT EXISTS favorite_models (
+    "CREATE TABLE IF NOT EXISTS models (
         id TEXT PRIMARY KEY,
-        created_at INTEGER NOT NULL
+        model_type TEXT NOT NULL,
+        category TEXT NOT NULL,
+        provider TEXT,
+        parameters TEXT NOT NULL DEFAULT '{}',
+        is_favorite INTEGER NOT NULL DEFAULT 0,
+        last_active_at INTEGER,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
     );",
-    "CREATE INDEX IF NOT EXISTS idx_favorite_models_created ON favorite_models(created_at DESC);",
+    "CREATE INDEX IF NOT EXISTS idx_models_type_cat ON models(model_type, category);",
+    "CREATE INDEX IF NOT EXISTS idx_models_fav ON models(is_favorite);",
+    "CREATE INDEX IF NOT EXISTS idx_models_last_active ON models(last_active_at DESC);",
 ];
 
 /// Runs schema migrations, dropping obsolete legacy tables and initializing the current schema.
@@ -221,6 +231,19 @@ pub async fn run_migrations(conn: &Connection) -> Result<()> {
         )
         .await?;
 
+        if current_version < 14 {
+            let _ = conn
+                .execute(
+                    "INSERT OR IGNORE INTO models (id, model_type, category, provider, parameters, is_favorite, last_active_at, created_at, updated_at) \
+                     SELECT id, 'llm', 'cloud', NULL, '{}', 1, NULL, created_at, created_at FROM favorite_models;",
+                    (),
+                )
+                .await;
+            let _ = conn
+                .execute("DROP TABLE IF EXISTS favorite_models;", ())
+                .await;
+        }
+
         let pragma_version = format!("PRAGMA user_version = {};", SCHEMA_VERSION);
         conn.execute(&pragma_version, ()).await?;
 
@@ -246,7 +269,7 @@ pub async fn run_migrations(conn: &Connection) -> Result<()> {
         );
     }
 
-    if let Err(e) = crate::services::tts::voice::sync_manifest_voices_to_db(conn).await {
+    if let Err(e) = sync_manifest_voices_to_db(conn).await {
         log::warn!(
             "[Persistence::Schema] Failed to sync manifest voices: {}",
             e

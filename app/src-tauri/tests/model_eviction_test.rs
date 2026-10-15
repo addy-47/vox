@@ -124,7 +124,11 @@ async fn test_tts_worker_cool_down_clears_handles_and_joins() {
         assert!(supertonic_model_dir.exists());
 
         let mut settings = VoxSettings::default();
-        settings.tts.active = vox_lib::services::tts::TtsActiveProvider::Supertonic;
+        settings.tts.active = vox_lib::config::ActiveSelection {
+            category: "embedded".to_string(),
+            provider: None,
+            model: "supertonic".to_string(),
+        };
 
         let (event_tx, _event_rx) = mpsc::channel::<VoxEvent>();
         let (playback_engine, _consumer) = common::harness::create_mock_playback_engine();
@@ -148,8 +152,11 @@ async fn test_tts_worker_cool_down_clears_handles_and_joins() {
         let warm_res = warm_up_tts(
             handles,
             &settings.tts,
+            None,
             &supertonic_model_dir,
             None,
+            1.0,
+            2,
             event_tx,
         );
         assert!(warm_res.is_ok(), "warm_up_tts must return Ok(())");

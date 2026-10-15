@@ -2,12 +2,10 @@ use anyhow::{anyhow, Result};
 use futures_util::{SinkExt, StreamExt};
 use tokio_tungstenite::tungstenite::Message;
 
-use crate::{
-    config::DeepgramVoiceAgentConfig,
-    services::realtime::{
-        transport::{WsReader, WsWriter},
-        DEFAULT_INPUT_SAMPLE_RATE, DEFAULT_OUTPUT_SAMPLE_RATE, WS_HANDSHAKE_TIMEOUT,
-    },
+use crate::services::realtime::{
+    transport::{WsReader, WsWriter},
+    DeepgramVoiceAgentConfig, DEFAULT_INPUT_SAMPLE_RATE, DEFAULT_OUTPUT_SAMPLE_RATE,
+    WS_HANDSHAKE_TIMEOUT,
 };
 
 pub(super) async fn perform_handshake(

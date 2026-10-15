@@ -583,8 +583,21 @@ fn render_evidence_xml(
     };
 
     let metrics_attr = if let Some(m) = metrics {
+        let engines_attr: String = m
+            .engines
+            .iter()
+            .map(|e| {
+                format!(
+                    "{}:{}x{}",
+                    e.engine,
+                    if e.success { "ok" } else { "fail" },
+                    e.hit_count
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(",");
         format!(
-            " total_duration_ms=\"{}\" fanout_ms=\"{}\" url_dedup_ms=\"{}\" fetch_ms=\"{}\" extract_ms=\"{}\" chunk_ms=\"{}\" rank_ms=\"{}\" raw_hits=\"{}\" pages_fetched=\"{}\" pages_extracted=\"{}\" passages_generated=\"{}\" passages_delivered=\"{}\"",
+            " total_duration_ms=\"{}\" fanout_ms=\"{}\" url_dedup_ms=\"{}\" fetch_ms=\"{}\" extract_ms=\"{}\" chunk_ms=\"{}\" rank_ms=\"{}\" raw_hits=\"{}\" pages_fetched=\"{}\" pages_extracted=\"{}\" passages_generated=\"{}\" passages_delivered=\"{}\" engines=\"{}\"",
             m.total_pipeline_ms,
             m.fanout_total_ms,
             m.url_dedup_ms,
@@ -597,6 +610,7 @@ fn render_evidence_xml(
             m.pages_extracted.len(),
             m.total_passages_generated,
             scored_passages.len(),
+            engines_attr,
         )
     } else {
         String::new()

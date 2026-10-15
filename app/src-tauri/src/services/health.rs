@@ -1,10 +1,13 @@
 use std::{path::PathBuf, sync::Arc, time::Duration};
 
 use crate::{
-    core::{defaults::DEFAULT_STT_THREADS, state::AppState},
+    core::{
+        defaults::{DEFAULT_STT_THREADS, DEFAULT_TTS_SPEED},
+        state::AppState,
+    },
     services::{
         llm::{
-            ConnectionConfig, LlmProvider, LlmProviderConfig, RemoteTransport, QWEN_MODEL_DIR,
+            ConnectionConfig, LlmProvider, LlmRuntimeTarget, RemoteTransport, QWEN_MODEL_DIR,
             QWEN_MODEL_FILE,
         },
         stt::{create_stt_provider, SttProviderConfig, NEMOTRON_MODEL_DIR, QWEN_ASR_MODEL_DIR},
@@ -19,7 +22,7 @@ use crate::{
 #[derive(Debug, serde::Deserialize)]
 #[serde(untagged)]
 pub enum ProviderConfigPayload {
-    Llm(LlmProviderConfig),
+    Llm(LlmRuntimeTarget),
     Stt(SttProviderConfig),
     Tts(TtsProviderConfig),
 }
@@ -68,14 +71,16 @@ pub async fn check_llm_health(
         _ => {
             let settings = state.settings.read().map_err(|e| e.to_string())?;
             (
-                settings.llm.to_provider_config(),
+                settings
+                    .llm
+                    .to_provider_config(Some(&settings.providers.llm)),
                 settings.llm.active_model().to_string(),
             )
         }
     };
 
     match config {
-        LlmProviderConfig::Embedded => {
+        LlmRuntimeTarget::Embedded => {
             let models_dir = paths::get().models.clone();
             let manifest_lock = state.manifest.read().await;
 
@@ -108,14 +113,14 @@ pub async fn check_llm_health(
                 },
             })
         }
-        LlmProviderConfig::Server {
+        LlmRuntimeTarget::Server {
             base_url,
             model,
             api_key,
             provider_name,
             ..
         }
-        | LlmProviderConfig::Cloud {
+        | LlmRuntimeTarget::Cloud {
             base_url,
             model,
             api_key,
@@ -208,7 +213,9 @@ pub async fn check_tts_health(
         Some(ProviderConfigPayload::Tts(prov)) => prov,
         _ => {
             let settings = state.settings.read().map_err(|e| e.to_string())?;
-            settings.tts.to_provider_config()
+            settings
+                .tts
+                .to_provider_config(Some(&settings.providers.tts), DEFAULT_TTS_SPEED)
         }
     };
 

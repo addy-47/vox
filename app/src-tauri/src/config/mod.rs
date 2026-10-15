@@ -5,24 +5,20 @@ pub mod files;
 pub mod mutation;
 pub mod persistence;
 pub mod settings;
+pub mod types;
 
 pub use dispatch::{
     dispatch_worker_command, dispatch_worker_command_has_arm, handle_setting_side_effects,
     request_engine_restart, schedule_debounced_save, RESTART_COALESCE_MS,
     SETTINGS_SAVE_DEBOUNCE_MS,
 };
-pub use files::{
-    AgentConfigFile, CognitiveSettings, LlmProvidersConfig, LlmWiringSettings, ProvidersConfigFile,
-    SettingsConfigFile, SttProvidersConfig, SttWiringSettings, TtsProvidersConfig,
-    TtsWiringSettings,
-};
-pub use mutation::apply_setting_mutation;
+pub use files::{AgentConfigFile, ProvidersConfigFile, SettingsConfigFile};
+pub use mutation::{apply_model_parameter_mutation, apply_setting_mutation};
 pub use settings::{
-    get_preset_colors, AppearanceSettings, AudioOutputMode, DeepgramVoiceAgentConfig,
-    ElevenLabsConvaiConfig, GeminiRealtimeConfig, InteractionSettings, OpenAiRealtimeConfig,
-    PersonaSettings, PersonalMemorySettings, RealtimeProviderKind, RealtimeSettings,
-    SystemSettings, VoxSettings, WorkingMemorySettings,
+    get_preset_colors, AppearanceSettings, AudioOutputMode, InteractionSettings, PersonaSettings,
+    PersonalMemorySettings, SystemSettings, VoxSettings, WorkingMemorySettings,
 };
+pub use types::{ActiveSelection, LastSelectedModels};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -67,7 +63,7 @@ fn classify_known(domain: &str, key: &str) -> Option<SettingReloadPolicy> {
                 "speech_onset_ms",
             ],
         ),
-        ("tts", &["speed", "voice_id", "voice"]),
+        ("tts", &["speed", "voice_id", "voice", "active_voice_id"]),
     ];
 
     const ALL_HOT: &[&str] = &[
@@ -100,14 +96,16 @@ fn classify_known(domain: &str, key: &str) -> Option<SettingReloadPolicy> {
         ("llm", "active", SettingReloadPolicy::Restart),
         ("llm", "model", SettingReloadPolicy::Restart),
         ("llm", "provider", SettingReloadPolicy::Restart),
-        ("llm", "server", SettingReloadPolicy::Restart),
-        ("llm", "cloud", SettingReloadPolicy::Restart),
+        ("llm", "servers", SettingReloadPolicy::Restart),
+        ("llm", "api_keys", SettingReloadPolicy::Restart),
         ("llm", "cloud_keys", SettingReloadPolicy::Restart),
         ("llm", "embedded", SettingReloadPolicy::Restart),
         ("llm", "context_window", SettingReloadPolicy::Restart),
         ("llm", "threads", SettingReloadPolicy::Restart),
         ("tts", "active", SettingReloadPolicy::Restart),
         ("tts", "provider", SettingReloadPolicy::Restart),
+        ("tts", "servers", SettingReloadPolicy::Restart),
+        ("tts", "api_keys", SettingReloadPolicy::Restart),
         ("tts", "threads", SettingReloadPolicy::Restart),
         ("tts", "edge_tts", SettingReloadPolicy::Restart),
         ("tts", "supertonic", SettingReloadPolicy::Restart),

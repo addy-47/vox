@@ -1,11 +1,9 @@
 use serde::{Deserialize, Serialize};
 
+use super::files::ProvidersConfigFile;
 use crate::{
     core::{
         defaults::{
-            DEFAULT_DEEPGRAM_MODEL, DEFAULT_DEEPGRAM_TEMP, DEFAULT_DEEPGRAM_VOICE,
-            DEFAULT_GEMINI_REALTIME_LANG, DEFAULT_GEMINI_REALTIME_MODEL,
-            DEFAULT_GEMINI_REALTIME_TEMP, DEFAULT_GEMINI_REALTIME_VOICE,
             DEFAULT_PERSONAL_MEMORY_CONSOLIDATION_CADENCE,
             DEFAULT_PERSONAL_MEMORY_CONSOLIDATION_TIME,
             DEFAULT_PERSONAL_MEMORY_CONTEXT_RETRIEVAL_ENABLED,
@@ -20,7 +18,10 @@ use crate::{
         events::{InteractionMode, PipelineMode},
     },
     pipeline::dictation::DictationSettings,
-    services::{llm::LlmSettings, stt::SttSettings, tts::TtsSettings, vad::VadSettings},
+    services::{
+        llm::LlmSettings, realtime::RealtimeSettings, stt::SttSettings, tts::TtsSettings,
+        vad::VadSettings,
+    },
 };
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default)]
@@ -115,104 +116,6 @@ impl Default for PersonaSettings {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Default)]
-#[serde(rename_all = "snake_case")]
-pub enum RealtimeProviderKind {
-    #[default]
-    GeminiLive,
-    OpenAiRealtime,
-    DeepgramVoiceAgent,
-    ElevenLabsConvai,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(default)]
-pub struct GeminiRealtimeConfig {
-    pub api_key: String,
-    pub model: String,
-    pub voice_name: String,
-    pub language_code: String,
-    pub temperature: f32,
-    pub enable_web_search: bool,
-}
-
-impl Default for GeminiRealtimeConfig {
-    fn default() -> Self {
-        Self {
-            api_key: String::new(),
-            model: DEFAULT_GEMINI_REALTIME_MODEL.to_string(),
-            voice_name: DEFAULT_GEMINI_REALTIME_VOICE.to_string(),
-            language_code: DEFAULT_GEMINI_REALTIME_LANG.to_string(),
-            temperature: DEFAULT_GEMINI_REALTIME_TEMP,
-            enable_web_search: true,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
-#[serde(default)]
-pub struct OpenAiRealtimeConfig {
-    pub api_key: String,
-    pub model: String,
-    pub voice: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(default)]
-pub struct DeepgramVoiceAgentConfig {
-    pub api_key: String,
-    pub model: String,
-    pub voice: String,
-    pub temperature: f32,
-    pub agent_mode: bool,
-}
-
-impl Default for DeepgramVoiceAgentConfig {
-    fn default() -> Self {
-        Self {
-            api_key: String::new(),
-            model: DEFAULT_DEEPGRAM_MODEL.to_string(),
-            voice: DEFAULT_DEEPGRAM_VOICE.to_string(),
-            temperature: DEFAULT_DEEPGRAM_TEMP,
-            agent_mode: false,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
-#[serde(default)]
-pub struct ElevenLabsConvaiConfig {
-    pub api_key: String,
-    pub agent_id: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(default)]
-pub struct RealtimeSettings {
-    #[serde(alias = "provider")]
-    pub active: RealtimeProviderKind,
-    #[serde(alias = "gemini")]
-    pub gemini_live: GeminiRealtimeConfig,
-    #[serde(alias = "openai")]
-    pub openai_realtime: OpenAiRealtimeConfig,
-    #[serde(alias = "deepgram")]
-    pub deepgram_voice_agent: DeepgramVoiceAgentConfig,
-    #[serde(alias = "elevenlabs")]
-    pub elevenlabs_convai: ElevenLabsConvaiConfig,
-}
-
-impl Default for RealtimeSettings {
-    fn default() -> Self {
-        Self {
-            active: RealtimeProviderKind::GeminiLive,
-            gemini_live: GeminiRealtimeConfig::default(),
-            openai_realtime: OpenAiRealtimeConfig::default(),
-            deepgram_voice_agent: DeepgramVoiceAgentConfig::default(),
-            elevenlabs_convai: ElevenLabsConvaiConfig::default(),
-        }
-    }
-}
-
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 #[serde(default)]
 pub struct SystemSettings {
@@ -223,18 +126,19 @@ pub struct SystemSettings {
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 #[serde(default)]
 pub struct VoxSettings {
+    pub appearance: AppearanceSettings,
     pub vad: VadSettings,
+    pub interaction: InteractionSettings,
+    pub dictation: DictationSettings,
+    pub system: SystemSettings,
+    pub working_memory: WorkingMemorySettings,
+    pub personal_memory: PersonalMemorySettings,
+    pub persona: PersonaSettings,
     pub stt: SttSettings,
     pub llm: LlmSettings,
     pub tts: TtsSettings,
     pub realtime: RealtimeSettings,
-    pub interaction: InteractionSettings,
-    pub dictation: DictationSettings,
-    pub working_memory: WorkingMemorySettings,
-    pub appearance: AppearanceSettings,
-    pub personal_memory: PersonalMemorySettings,
-    pub persona: PersonaSettings,
-    pub system: SystemSettings,
+    pub providers: ProvidersConfigFile,
 }
 
 pub fn get_preset_colors() -> Vec<String> {

@@ -179,12 +179,6 @@ pub async fn setup_isolated_eval_context(
         Arc::clone(&telemetry.is_private_mode),
     );
     *state.persist_tx.lock() = Some(persist_tx);
-    // E1: the shipped default `max_output_tokens` (120) cannot hold a grounded
-    // spoken answer and would truncate the mock's follow-up text, so the eval
-    // could never exercise the answer path. Eval-scoped override only.
-    if let Ok(mut settings) = state.settings.write() {
-        settings.llm.max_output_tokens = 2000;
-    }
     state.conversation_id.store(1, Relaxed);
     // Eval-scoped override only: AppState::new syncs telemetry.is_private_mode
     // from the real user settings file, and a private_mode=true workstation would
@@ -249,6 +243,10 @@ pub fn build_modular_harness(
         ctx.state.resolve_base_prompt(),
         None,
         &settings,
+        vox_lib::services::harness::LlmExecutionParams {
+            max_output_tokens: 2000,
+            ..Default::default()
+        },
         ctx.llm_tx.clone(),
         true,
     );

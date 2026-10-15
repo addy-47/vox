@@ -12,6 +12,9 @@ use tokio::time::{sleep, timeout};
 use crate::{
     config::VoxSettings,
     core::{
+        defaults::{
+            DEFAULT_LLM_CONTEXT_WINDOW, DEFAULT_LLM_MAX_OUTPUT_TOKENS, DEFAULT_LLM_TEMPERATURE,
+        },
         engine::{ensure_memory_embedder, ensure_modular_workers_sync, stop_audio_engine_sync},
         error::PipelineImpact,
         events::{InteractionMode, PipelineMode, Severity},
@@ -21,23 +24,25 @@ use crate::{
     persistence::{
         compactions::{fetch_latest_compaction_run, fetch_turns_for_compaction},
         get_tokio_handle,
+        models::get_model_parameters,
         personal_memory::get_personal_memory,
         sessions::fetch_session_continuation,
-        PersistenceEvent,
+        PersistenceEvent, VoxDb,
     },
     pipeline::{
         dictation::DictationInteractionMode, spawn_idle_monitor, transition, RoutingContext,
     },
     services::{
         self,
-        harness::Harness,
+        audio::detect_audio_output_mode,
+        harness::{Harness, LlmExecutionParams},
         llm::{
             actor::{cool_down_llm, LlmCommand},
             catalog::{
                 probe_capabilities, ModelCapabilities, CAP_KIND_CLOUD, CAP_KIND_EMBEDDED,
                 CAP_KIND_SERVER,
             },
-            LlmActiveProvider, Support,
+            Support,
         },
         memory::{
             compaction::coordinator::CompactionCoordinator, spawn_ingestion_sweep, trim_heap,
@@ -58,7 +63,7 @@ fn start_modular_session(state: &AppState, ctx: &RoutingContext) -> Result<(), S
         InteractionMode::PTT => VadOperationalMode::WindowedValidation,
     };
 
-    let detected_audio_mode = crate::services::audio::detect_audio_output_mode();
+    let detected_audio_mode = detect_audio_output_mode();
     log::info!(
         "[Pipeline::Session] Probed audio output route: {:?}",
         detected_audio_mode
@@ -332,12 +337,16 @@ pub fn on_session_start<R: Runtime + 'static>(
                 .ok()
                 .and_then(|g| g.as_ref().and_then(|e| e.llm_tx.clone()));
             if let Some(llm_tx) = llm_tx_opt {
+                let llm_params =
+                    resolve_llm_execution_params(&state.db, settings.llm.active_model());
+
                 let supports_tools = resolve_model_tool_support(app, state, &settings);
                 let mut harness = Harness::new_modular(
                     session_id,
                     prompt,
                     personal_memory,
                     &settings,
+                    llm_params,
                     llm_tx.clone(),
                     supports_tools,
                 );
@@ -730,6 +739,50 @@ pub fn on_end<R: Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &RoutingCon
     });
 }
 
+/// Resolves dynamic execution parameters from the models table for the given model ID.
+fn resolve_llm_execution_params(db: &VoxDb, model_id: &str) -> LlmExecutionParams {
+    let conn = match db.connect() {
+        Ok(c) => c,
+        Err(e) => {
+            log::warn!(
+                "[Pipeline::Session] Failed to connect to db for model params: {}",
+                e
+            );
+            return LlmExecutionParams::default();
+        }
+    };
+
+    tokio::task::block_in_place(|| {
+        let rt = tokio::runtime::Handle::current();
+        rt.block_on(async {
+            let raw = get_model_parameters(&conn, model_id)
+                .await
+                .unwrap_or_default();
+            LlmExecutionParams {
+                context_window: raw
+                    .get("context_window")
+                    .and_then(|v| v.as_u64())
+                    .map(|v| v as usize)
+                    .unwrap_or(DEFAULT_LLM_CONTEXT_WINDOW as usize),
+                max_output_tokens: raw
+                    .get("max_output_tokens")
+                    .and_then(|v| v.as_u64())
+                    .map(|v| v as usize)
+                    .unwrap_or(DEFAULT_LLM_MAX_OUTPUT_TOKENS as usize),
+                temperature: raw
+                    .get("temperature")
+                    .and_then(|v| v.as_f64())
+                    .map(|v| v as f32)
+                    .unwrap_or(DEFAULT_LLM_TEMPERATURE),
+                reasoning_enabled: raw
+                    .get("reasoning_enabled")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false),
+            }
+        })
+    })
+}
+
 /// Resolves tool calling capability for the active model from capability cache or 4s probe.
 fn resolve_model_tool_support<R: Runtime + 'static>(
     app: &AppHandle<R>,
@@ -737,10 +790,10 @@ fn resolve_model_tool_support<R: Runtime + 'static>(
     settings: &VoxSettings,
 ) -> bool {
     let active_model = settings.llm.active_model();
-    let provider_kind = match settings.llm.active {
-        LlmActiveProvider::Embedded => CAP_KIND_EMBEDDED,
-        LlmActiveProvider::Server => CAP_KIND_SERVER,
-        LlmActiveProvider::Cloud => CAP_KIND_CLOUD,
+    let provider_kind = match settings.llm.active.category.as_str() {
+        "server" => CAP_KIND_SERVER,
+        "cloud" => CAP_KIND_CLOUD,
+        _ => CAP_KIND_EMBEDDED,
     };
     let key = format!("{}:{}", provider_kind, active_model);
 

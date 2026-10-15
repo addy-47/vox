@@ -104,13 +104,13 @@ stateDiagram-v2
 
 ```mermaid
 flowchart TD
-    Err[Runtime Exception / Pipeline Error] --> Impact{Classify Impact}
+    Err["Runtime Exception / Pipeline Error"] --> Impact{"Classify Impact"}
     
-    Impact -->|Degraded| DegPath[Log Diagnostic Excerpt<br/>Skip Optional Step e.g. Memory Search<br/>Turn Continues in Current State]
+    Impact -->|Degraded| DegPath["Log Diagnostic Excerpt<br/>Skip Optional Step e.g. Memory Search<br/>Turn Continues in Current State"]
     
-    Impact -->|TurnAborted| AbortPath[Cancel Active Speech & Workers<br/>Discard Ephemeral Turn Scratchpad<br/>Mute Audio Output<br/>Reset State to Ready<br/>Display Non-Intrusive Toast]
+    Impact -->|TurnAborted| AbortPath["Cancel Active Speech & Workers<br/>Discard Ephemeral Turn Scratchpad<br/>Mute Audio Output<br/>Reset State to Ready<br/>Display Non-Intrusive Toast"]
     
-    Impact -->|SessionHalted| HaltPath[Mute Audio Output<br/>Tear Down Hardware & Session Context<br/>Transition State to Error<br/>Issue Actionable Notification Card]
+    Impact -->|SessionHalted| HaltPath["Mute Audio Output<br/>Tear Down Hardware & Session Context<br/>Transition State to Error<br/>Issue Actionable Notification Card"]
     
     DegPath --> TurnContinues([Active Turn Proceeds])
     AbortPath --> ReadyStandby([Ready for Next User Input])

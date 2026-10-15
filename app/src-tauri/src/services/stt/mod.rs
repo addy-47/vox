@@ -6,9 +6,7 @@ pub mod providers;
 pub mod stitcher;
 
 pub use actor::{spawn_stt_worker, SttActorChannels, SttActorHandles, SttCommand};
-pub use config::{
-    SttActiveProvider, SttCloudConfig, SttEmbeddedConfig, SttProviderConfig, SttSettings,
-};
+pub use config::{SttActiveProvider, SttProviderConfig, SttProvidersConfig, SttSettings};
 pub use factory::{create_stt_instance_from_settings, create_stt_provider};
 pub use itn::apply_tier1_refinement;
 pub use providers::{

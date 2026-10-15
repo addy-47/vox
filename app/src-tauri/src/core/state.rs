@@ -27,7 +27,14 @@ use crate::{
     monitoring::snapshots::MonitoringState,
     persistence::{PersistenceEvent, VoxDb},
     pipeline::assistant::TurnAccumulator,
-    services::{harness::Harness, llm::LlmProvider, realtime::RealtimeActor},
+    services::{
+        harness::{
+            stages::tools::web_search::{default_engines, VoxEmbedder, DEFAULT_MIN_SCORE},
+            Harness,
+        },
+        llm::LlmProvider,
+        realtime::RealtimeActor,
+    },
     setup::{manifest::VoxManifest, model_manager::ModelManager},
 };
 pub use crate::{
@@ -234,21 +241,16 @@ impl AppState {
                 // silently disable the relevance floor if the crate default moves.
                 let ranking_policy = nexus::model::RankingPolicy {
                     two_stage_reranking: true,
-                    min_score:
-                        crate::services::harness::stages::tools::web_search::DEFAULT_MIN_SCORE,
+                    min_score: DEFAULT_MIN_SCORE,
                     ..Default::default()
                 };
                 Arc::new(
                     nexus::NexusSearch::builder()
-                        .with_engines(
-                            crate::services::harness::stages::tools::web_search::default_engines(),
-                        )
+                        .with_engines(default_engines())
                         .with_fanout_policy(fanout_policy)
                         .with_ranking_policy(ranking_policy)
                         .with_fetch_concurrency(5)
-                        .with_embedder(Arc::new(
-                            crate::services::harness::stages::tools::web_search::VoxEmbedder,
-                        ))
+                        .with_embedder(Arc::new(VoxEmbedder))
                         .build()
                         .expect("Failed to initialize NexusSearch client"),
                 )

@@ -90,16 +90,16 @@ impl VoxSettings {
     fn recover_settings_sections(&mut self, val: &serde_json::Value) {
         if let Some(obj) = val.as_object() {
             if let Some(v) = obj
-                .get("vad")
-                .and_then(|v| serde_json::from_value(v.clone()).ok())
-            {
-                self.vad = v;
-            }
-            if let Some(v) = obj
                 .get("appearance")
                 .and_then(|v| serde_json::from_value(v.clone()).ok())
             {
                 self.appearance = v;
+            }
+            if let Some(v) = obj
+                .get("vad")
+                .and_then(|v| serde_json::from_value(v.clone()).ok())
+            {
+                self.vad = v;
             }
             if let Some(v) = obj
                 .get("interaction")
@@ -119,72 +119,6 @@ impl VoxSettings {
             {
                 self.system = v;
             }
-            if let Some(v) = obj.get("stt").and_then(|v| {
-                serde_json::from_value::<super::files::SttWiringSettings>(v.clone()).ok()
-            }) {
-                self.stt.active = v.active;
-                self.stt.transliterate_enabled = v.transliterate_enabled;
-                self.stt.embedded = v.embedded;
-            }
-            if let Some(v) = obj.get("llm").and_then(|v| {
-                serde_json::from_value::<super::files::LlmWiringSettings>(v.clone()).ok()
-            }) {
-                self.llm.active = v.active;
-                self.llm.threads = v.threads;
-                self.llm.embedded = v.embedded;
-            }
-            if let Some(v) = obj.get("tts").and_then(|v| {
-                serde_json::from_value::<super::files::TtsWiringSettings>(v.clone()).ok()
-            }) {
-                self.tts.active = v.active;
-                self.tts.voice_id = v.voice_id;
-                self.tts.speed = v.speed;
-                self.tts.threads = v.threads;
-                self.tts.supertonic = v.supertonic;
-                self.tts.kokoro = v.kokoro;
-            }
-        }
-    }
-
-    fn recover_providers_sections(&mut self, val: &serde_json::Value) {
-        if let Some(obj) = val.as_object() {
-            if let Some(v) = obj.get("llm").and_then(|v| {
-                serde_json::from_value::<super::files::LlmProvidersConfig>(v.clone()).ok()
-            }) {
-                self.llm.server = v.server;
-                self.llm.cloud = v.cloud;
-                self.llm.cloud_keys = v.cloud_keys;
-            }
-            if let Some(v) = obj.get("stt").and_then(|v| {
-                serde_json::from_value::<super::files::SttProvidersConfig>(v.clone()).ok()
-            }) {
-                self.stt.cloud = v.cloud;
-            }
-            if let Some(v) = obj.get("tts").and_then(|v| {
-                serde_json::from_value::<super::files::TtsProvidersConfig>(v.clone()).ok()
-            }) {
-                self.tts.edge_tts = v.edge_tts;
-                self.tts.chatterbox = v.chatterbox;
-                self.tts.chatterbox_remote = v.chatterbox_remote;
-                self.tts.zipvoice = v.zipvoice;
-            }
-            if let Some(v) = obj
-                .get("realtime")
-                .and_then(|v| serde_json::from_value(v.clone()).ok())
-            {
-                self.realtime = v;
-            }
-        }
-    }
-
-    fn recover_agent_sections(&mut self, val: &serde_json::Value) {
-        if let Some(obj) = val.as_object() {
-            if let Some(v) = obj
-                .get("persona")
-                .and_then(|v| serde_json::from_value(v.clone()).ok())
-            {
-                self.persona = v;
-            }
             if let Some(v) = obj
                 .get("working_memory")
                 .and_then(|v| serde_json::from_value(v.clone()).ok())
@@ -197,14 +131,69 @@ impl VoxSettings {
             {
                 self.personal_memory = v;
             }
-            if let Some(v) = obj.get("cognitive").and_then(|v| {
-                serde_json::from_value::<super::files::CognitiveSettings>(v.clone()).ok()
-            }) {
-                self.llm.temperature = v.temperature;
-                self.llm.compaction_temperature = v.compaction_temperature;
-                self.llm.max_output_tokens = v.max_output_tokens;
-                self.llm.context_window = v.context_window;
-                self.llm.reasoning_enabled = v.reasoning_enabled;
+            if let Some(v) = obj
+                .get("stt")
+                .and_then(|v| serde_json::from_value(v.clone()).ok())
+            {
+                self.stt = v;
+            }
+            if let Some(v) = obj
+                .get("llm")
+                .and_then(|v| serde_json::from_value(v.clone()).ok())
+            {
+                self.llm = v;
+            }
+            if let Some(v) = obj
+                .get("tts")
+                .and_then(|v| serde_json::from_value(v.clone()).ok())
+            {
+                self.tts = v;
+            }
+            if let Some(v) = obj
+                .get("realtime")
+                .and_then(|v| serde_json::from_value(v.clone()).ok())
+            {
+                self.realtime = v;
+            }
+        }
+    }
+
+    fn recover_providers_sections(&mut self, val: &serde_json::Value) {
+        if let Some(obj) = val.as_object() {
+            if let Some(v) = obj
+                .get("llm")
+                .and_then(|v| serde_json::from_value(v.clone()).ok())
+            {
+                self.providers.llm = v;
+            }
+            if let Some(v) = obj
+                .get("stt")
+                .and_then(|v| serde_json::from_value(v.clone()).ok())
+            {
+                self.providers.stt = v;
+            }
+            if let Some(v) = obj
+                .get("tts")
+                .and_then(|v| serde_json::from_value(v.clone()).ok())
+            {
+                self.providers.tts = v;
+            }
+            if let Some(v) = obj
+                .get("realtime")
+                .and_then(|v| serde_json::from_value(v.clone()).ok())
+            {
+                self.providers.realtime = v;
+            }
+        }
+    }
+
+    fn recover_agent_sections(&mut self, val: &serde_json::Value) {
+        if let Some(obj) = val.as_object() {
+            if let Some(v) = obj
+                .get("persona")
+                .and_then(|v| serde_json::from_value(v.clone()).ok())
+            {
+                self.persona = v;
             }
         }
     }
@@ -259,7 +248,6 @@ impl VoxSettings {
                 }
             }
 
-            settings.normalize_retired_voice_ids();
             log::info!("[Settings] Loaded 3-way decomposed configuration from config/ (settings.jsonc, providers.jsonc, agent.jsonc)");
             return settings;
         }

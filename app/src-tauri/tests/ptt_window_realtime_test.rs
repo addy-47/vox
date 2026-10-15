@@ -19,7 +19,7 @@ use std::{
 };
 
 use vox_lib::{
-    config::{AudioOutputMode, RealtimeProviderKind},
+    config::AudioOutputMode,
     core::{
         events::{InteractionMode, PipelineMode, VoxEvent},
         state::{InteractionOwner, InteractionState},
@@ -59,10 +59,17 @@ async fn test_ptt_realtime_matrix() {
             let mut settings = state.settings.write().unwrap();
             settings.interaction.mode = InteractionMode::PTT;
             settings.interaction.pipeline_mode = PipelineMode::Realtime;
-            settings.realtime.active = RealtimeProviderKind::DeepgramVoiceAgent;
-            settings.realtime.deepgram_voice_agent.api_key = api_key;
-            settings.realtime.deepgram_voice_agent.model = "gpt-4o-mini".to_string();
-            settings.realtime.deepgram_voice_agent.voice = "aura-asteria-en".to_string();
+            settings.realtime.active = vox_lib::config::ActiveSelection {
+                category: "cloud".to_string(),
+                provider: Some("deepgram".to_string()),
+                model: "gpt-4o-mini".to_string(),
+            };
+            settings.realtime.active_voice_id = "aura-asteria-en".to_string();
+            settings
+                .providers
+                .realtime
+                .api_keys
+                .insert("deepgram".to_string(), api_key);
         }
         state
             .owner

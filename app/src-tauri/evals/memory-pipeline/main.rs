@@ -303,13 +303,14 @@ async fn main() -> Result<()> {
     // The candidate model identity reaches the request builder (catalog lookups,
     // output constraints, seed), not just the transport. Without this the builder
     // silently evaluates every candidate under the embedded default's spec.
-    let mut pipeline_settings = vox_lib::services::llm::LlmSettings {
-        active: vox_lib::services::llm::LlmActiveProvider::Server,
-        seed: args.seed,
+    let pipeline_settings = vox_lib::services::llm::LlmSettings {
+        active: vox_lib::config::ActiveSelection {
+            category: "server".to_string(),
+            provider: Some("custom".to_string()),
+            model: args.pipeline_model.clone(),
+        },
         ..Default::default()
     };
-    pipeline_settings.server.model = args.pipeline_model.clone();
-    pipeline_settings.server.base_url = args.pipeline_url.clone();
 
     let mut totals = CaseTotals::default();
     let mut case_rows: Vec<String> = Vec::new();

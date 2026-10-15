@@ -4,6 +4,7 @@ use tauri::{AppHandle, State};
 
 use crate::{
     core::{
+        defaults::{DEFAULT_LLM_CONTEXT_WINDOW, DEFAULT_LLM_THREADS},
         error::VoxIpcError,
         events::{emit_ipc, IpcEvent, Severity},
         state::AppState,
@@ -347,9 +348,17 @@ fn resolve_llm_provider(
     }
     let models_dir = paths::get().models.clone();
     let llm_path = models_dir.join(QWEN_MODEL_DIR).join(QWEN_MODEL_FILE);
-    create_llm_provider_from_llm_settings(llm_settings, &llm_path)
-        .map(Arc::from)
-        .map_err(|e| VoxIpcError::Engine(format!("Failed to initialize LLM provider: {e}")))
+    let providers_guard = state.settings.read().ok();
+    let providers = providers_guard.as_ref().map(|s| &s.providers.llm);
+    create_llm_provider_from_llm_settings(
+        llm_settings,
+        providers,
+        &llm_path,
+        DEFAULT_LLM_CONTEXT_WINDOW,
+        DEFAULT_LLM_THREADS,
+    )
+    .map(Arc::from)
+    .map_err(|e| VoxIpcError::Engine(format!("Failed to initialize LLM provider: {e}")))
 }
 
 /// Maps a manual-save failure onto the IPC error taxonomy, preserving the conflict distinction.
