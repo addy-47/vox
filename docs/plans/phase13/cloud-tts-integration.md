@@ -1,8 +1,7 @@
 # Cloud TTS Integration — Azure Speech + Google Cloud TTS (Phase 13 Feature Document)
 
-> Status: 🟡 IN PROGRESS — base implementation underway. This document is the
-> living record: origin → research → plan → implementation log → testing handoff.
-> Updated as work lands. Last updated: 2026-10-15.
+> Status: ✅ COMPLETE — implemented, reviewed, gated green, committed (`a092a64`)
+> and pushed to `origin/ft/cloud-tts`. Testing handoff in §6 is for the next agent.
 
 ## 1. How it started
 
