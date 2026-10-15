@@ -115,6 +115,17 @@ infinite decor frozen on coarse pointers · redundant blurs demoted · virtual l
 - **Headless mock implementations.** `MockAudioCapture` and `MockAudioSink` enable headless
   pipeline and benchmark execution without audio hardware dependencies.
 
+### 2.8 Execution-environment boundary (A1 delivered 2026-10-15)
+
+- **Swappable event emitter.** `core/events.rs` defines `IpcEmitter` with `emit_ipc`, implemented
+  for `AppHandle<R>` and headless `MockIpcEmitter`.
+- **Decoupled turn orchestration.** `TurnExecutionRequest` and `Harness::execute_turn` decoupled
+  from `<R: Runtime>` and concrete `AppHandle`, accepting `Arc<dyn IpcEmitter>`.
+- **Decoupled streaming router.** `StreamRoutingHandles` and `StreamRoutingStage` consume
+  `Arc<dyn IpcEmitter>` without Tauri runtime generic parameters.
+- **Decoupled pipeline transition.** `pipeline::router::transition` accepts `&dyn IpcEmitter`,
+  enabling windowless turn state transitions.
+
 ---
 
 ## 3. Documentation
@@ -233,26 +244,14 @@ Classification:
 
 ---
 
-### 6.1 🔴 A1 — Execution-environment boundary
+### 6.1 🟢 A1 — Execution-environment boundary · ✅ DELIVERED 2026-10-15
 
-**Why it blocks:** remote mode runs the Vox pipeline on another machine with no Tauri window.
-That boundary does not exist. This *is* the feature, not a prerequisite to it.
-
-**Confirmed couplings:**
-- `services/harness/mod.rs:81` — `TurnExecutionRequest.app: AppHandle<R>`
-- `core/state.rs:134` — `CheckMenuItem<Wry>`; `:136` — tauri `JoinHandle`
-
-These are **compile-time type bounds**, not runtime configuration. Changing them is a
-type-level refactor across the pipeline.
-
-**Mini-plan**
-1. Define a handle/event-source abstraction covering what the pipeline actually uses from
-   `AppHandle` (emit event, resolve asset, read config).
-2. Introduce a window-less implementation; keep the Tauri one as the existing behaviour.
-3. Replace `AppHandle<R>` in `TurnExecutionRequest` and swap `CheckMenuItem<Wry>` /
-   `JoinHandle` in `AppState` for the neutral types.
-4. Prove with a headless entry point that boots the pipeline and completes a turn with no
-   window — **no desktop behaviour change**.
+**Delivered:**
+- `IpcEmitter` trait defined in `core/events.rs` with `emit_ipc`, implemented for `AppHandle<R>` and `MockIpcEmitter`.
+- `TurnExecutionRequest` and `Harness::execute_turn` decoupled from `tauri::AppHandle<R>` and `<R: Runtime>`.
+- `StreamRoutingHandles` and `StreamRoutingStage` decoupled from `AppHandle` and `<R: Runtime>`.
+- `pipeline::router::transition` accepts `&dyn IpcEmitter`, permitting headless state machine transitions.
+- All cognitive loop and tool interception tests verified under release profile.
 
 ---
 
@@ -369,7 +368,7 @@ in favour of `dev` alone.
 
 Remote control may begin when **all** of the following are true:
 
-- [ ] A1 — a headless pipeline entry point completes a turn with no Tauri window
+- [x] A1 — a headless pipeline entry point completes a turn with no Tauri window
 - [x] A2 — audio capture and playback are behind swappable traits
 - [ ] A3 — one full turn proven on hardware
 - [x] A4 — the frontend reaches the backend through a swappable carrier

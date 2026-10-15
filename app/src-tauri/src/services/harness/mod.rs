@@ -72,13 +72,13 @@ pub enum TurnOutcome {
 }
 
 /// Request parameters bundled for executing a conversational turn.
-pub struct TurnExecutionRequest<R: tauri::Runtime> {
+pub struct TurnExecutionRequest {
     pub query: String,
     pub turn_id: u32,
     pub owner: InteractionOwner,
     pub cancel: CancellationToken,
     pub routing_ctx: RoutingContext,
-    pub app: tauri::AppHandle<R>,
+    pub emitter: Arc<dyn crate::core::events::IpcEmitter>,
     pub app_state: Arc<AppState>,
     pub db: Arc<VoxDb>,
     pub accumulator: Arc<Mutex<TurnAccumulator>>,

@@ -135,7 +135,7 @@ async fn test_harness_cognitive_stage_to_tts_matrix() {
             pipeline_tx: Some(pipeline_tx.clone()),
             accumulator: Arc::clone(&accumulator),
             pending_synthesis_jobs: Arc::clone(&pending_jobs),
-            app: app.clone(),
+            emitter: Arc::new(app.clone()),
             routing_ctx: RoutingContext::from_app_state(&state),
             app_state: Arc::clone(&state),
         };

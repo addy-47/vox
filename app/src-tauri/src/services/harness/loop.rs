@@ -4,7 +4,7 @@ use std::sync::{
 };
 
 use parking_lot::Mutex;
-use tauri::{async_runtime::spawn as spawn_task, Runtime};
+use tokio::spawn as spawn_task;
 
 use crate::{
     core::events::PipelineMode,
@@ -29,11 +29,11 @@ use crate::{
 
 const MAX_TOOL_ITERATIONS: usize = 5;
 
-pub struct TurnLoopContext<'a, R: Runtime> {
+pub struct TurnLoopContext<'a> {
     pub harness_arc: &'a Arc<Mutex<Option<Harness>>>,
-    pub req: &'a TurnExecutionRequest<R>,
+    pub req: &'a TurnExecutionRequest,
     pub stream_stage: &'a StreamRoutingStage,
-    pub stream_handles: &'a StreamRoutingHandles<R>,
+    pub stream_handles: &'a StreamRoutingHandles,
     pub tool_registry: &'a ToolRegistry,
     pub session_id: i64,
 }
@@ -44,9 +44,9 @@ enum LoopAction {
 }
 
 /// Primary coordinator entry point: orchestrates the 7-phase conversational turn lifecycle.
-pub async fn execute_turn<R: Runtime + 'static>(
+pub async fn execute_turn(
     harness_arc: &Arc<Mutex<Option<Harness>>>,
-    req: TurnExecutionRequest<R>,
+    req: TurnExecutionRequest,
 ) -> TurnOutcome {
     let turn_id = req.turn_id;
     log::info!(
@@ -75,9 +75,9 @@ pub async fn execute_turn<R: Runtime + 'static>(
 }
 
 /// Orchestrates Step 4 (Assembly), Step 5 (Dispatch), and Step 6 (Reentrant Loop).
-async fn run_cognitive_loop<R: Runtime + 'static>(
+async fn run_cognitive_loop(
     harness_arc: &Arc<Mutex<Option<Harness>>>,
-    req: TurnExecutionRequest<R>,
+    req: TurnExecutionRequest,
     stream_stage: StreamRoutingStage,
     turn_id: u32,
 ) -> TurnOutcome {
@@ -124,7 +124,7 @@ async fn run_cognitive_loop<R: Runtime + 'static>(
         pending_synthesis_jobs: Arc::clone(&req.pending_synthesis_jobs),
         cancel: Arc::clone(&cancel_atomic),
         event_tx: pipeline_tx.clone(),
-        app: req.app.clone(),
+        emitter: Arc::clone(&req.emitter),
         turn_metrics: Arc::clone(&req.app_state.turn_metrics),
     };
 
@@ -144,8 +144,8 @@ async fn run_cognitive_loop<R: Runtime + 'static>(
 }
 
 /// Executes iterative generation and tool interception passes until completion or budget breach.
-async fn execute_loop_iterations<R: Runtime + 'static>(
-    ctx: &TurnLoopContext<'_, R>,
+async fn execute_loop_iterations(
+    ctx: &TurnLoopContext<'_>,
     supports_tools: bool,
     cancel_atomic: &Arc<AtomicBool>,
 ) -> TurnOutcome {
@@ -233,8 +233,8 @@ async fn execute_loop_iterations<R: Runtime + 'static>(
 }
 
 /// Evaluates context budget including history, scratchpad, and tool schemas.
-fn check_loop_budget<R: Runtime>(
-    ctx: &TurnLoopContext<'_, R>,
+fn check_loop_budget(
+    ctx: &TurnLoopContext<'_>,
     scratchpad: &[ChatMessage],
     allow_tools: bool,
     iteration: usize,
@@ -276,8 +276,8 @@ fn check_loop_budget<R: Runtime>(
 }
 
 /// Processes single-pass stream outcomes and branches to terminal resolution or reentrant looping.
-async fn handle_pass_outcome<R: Runtime + 'static>(
-    ctx: &TurnLoopContext<'_, R>,
+async fn handle_pass_outcome(
+    ctx: &TurnLoopContext<'_>,
     pass_outcome: StreamPassOutcome,
     scratchpad: &mut Vec<ChatMessage>,
     cancel_atomic: &Arc<AtomicBool>,
@@ -345,8 +345,8 @@ async fn handle_pass_outcome<R: Runtime + 'static>(
 }
 
 /// Constructs a CancelledTurnContext from active turn loop state.
-fn cancelled_ctx<'a, R: Runtime>(
-    ctx: &'a TurnLoopContext<'_, R>,
+fn cancelled_ctx<'a>(
+    ctx: &'a TurnLoopContext<'_>,
     partial_text: String,
 ) -> CancelledTurnContext<'a> {
     CancelledTurnContext {

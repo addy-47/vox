@@ -27,6 +27,14 @@ export function useVoiceScope(engine: string | undefined | null): VoiceScopeStat
   const cached = engine ? SCOPE_CACHE.get(engine) : undefined;
   const [scope, setScope] = useState<VoiceScopeDto>(cached ?? FALLBACK_SCOPE);
   const [ready, setReady] = useState(Boolean(cached));
+  const [prevEngine, setPrevEngine] = useState(engine);
+
+  if (prevEngine !== engine) {
+    setPrevEngine(engine);
+    const nowCached = engine ? SCOPE_CACHE.get(engine) : undefined;
+    setScope(nowCached ?? FALLBACK_SCOPE);
+    setReady(Boolean(nowCached));
+  }
 
   useEffect(() => {
     const key = engine ?? "";

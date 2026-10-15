@@ -185,10 +185,10 @@ Every AI domain uses a **trait-based provider system** — the pipeline dispatch
 
 ### 4.1 VAD — Voice Activity Detection
 
-| Backend                                                      | Type                          | Latency | Threshold                                              | Notes                                       |
-| ------------------------------------------------------------ | ----------------------------- | ------: | ------------------------------------------------------ | ------------------------------------------- |
-| **SileroVad** (default)  | Rust-native, embedded weights | ~1ms | 0.5 | ~20× faster than TenVAD, zero ONNX overhead |
-| **TenVAD** (legacy)                                          | ONNX via sherpa-onnx          |   ~15ms | 0.5                                                    | Requires `ten_vad.onnx` model file          |
+| Backend                 | Type                          | Latency | Threshold | Notes                                       |
+| ----------------------- | ----------------------------- | ------: | --------- | ------------------------------------------- |
+| **SileroVad** (default) | Rust-native, embedded weights |    ~1ms | 0.5       | ~20× faster than TenVAD, zero ONNX overhead |
+| **TenVAD** (legacy)     | ONNX via sherpa-onnx          |   ~15ms | 0.5       | Requires `ten_vad.onnx` model file          |
 
 Runtime selection via `VadBackendOption` in `services/vad/config.rs:VadSettings`; actor is `services/vad/actor.rs` (high-priority OS thread, emits `VoxEvent::SpeechStart/SpeechEnd`).
 
@@ -230,11 +230,11 @@ Selection is `LlmActiveProvider::{Embedded, Server, Cloud}` (`services/llm/confi
 
 | Provider                     | Type                                      |  Params |    Memory    | Output       | Feature                                                    |
 | ---------------------------- | ----------------------------------------- | ------: | :----------: | ------------ | ---------------------------------------------------------- |
-| **Kokoro** (default)     | ONNX, sherpa-onnx                         |     82M |   ~120 MB    | 24kHz f32    | Multi-lang, 50+ voices                                     |
-| **Supertonic 3** (local) | ONNX INT8, sherpa-onnx                    |     99M |   ~144 MB    | 24kHz f32    | 31 languages, 10 local voices                              |
-| **Edge TTS**             | Pure Rust WebSocket (`tokio-tungstenite`) |  Remote |   **0 MB**   | 24kHz f32    | Free Microsoft Bing ReadAloud, 3.3× RTF, sub-200ms latency |
-| **Chatterbox** (local clone) | GGML, chatterbox-rs                    | 340M Q4 |   ~1.1 GB    | 24kHz native | Voice cloning from 5s reference                            |
-| **Chatterbox Remote**      | reqwest blocking HTTP                     |    340M | 0 MB (local) | 24kHz        | Offloads to remote CUDA GPU                                |
+| **Kokoro** (default)         | ONNX, sherpa-onnx                         |     82M |   ~120 MB    | 24kHz f32    | Multi-lang, 50+ voices                                     |
+| **Supertonic 3** (local)     | ONNX INT8, sherpa-onnx                    |     99M |   ~144 MB    | 24kHz f32    | 31 languages, 10 local voices                              |
+| **Edge TTS**                 | Pure Rust WebSocket (`tokio-tungstenite`) |  Remote |   **0 MB**   | 24kHz f32    | Free Microsoft Bing ReadAloud, 3.3× RTF, sub-200ms latency |
+| **Chatterbox** (local clone) | GGML, chatterbox-rs                       | 340M Q4 |   ~1.1 GB    | 24kHz native | Voice cloning from 5s reference                            |
+| **Chatterbox Remote**        | reqwest blocking HTTP                     |    340M | 0 MB (local) | 24kHz        | Offloads to remote CUDA GPU                                |
 
 Selection is `TtsActiveProvider::{EdgeTts,Supertonic,Kokoro,Chatterbox,ChatterboxRemote,Zipvoice}` (`services/tts/config.rs:TtsSettings`). Speed and voice are `WorkerCommand` hot-reloadable; threads is `Restart`.
 
@@ -342,7 +342,7 @@ Flow:       Cancelled { turn_id }, Error(PipelineError), Shutdown
 | `notification_created` / `notification_updated` | `NotificationRecord`                                      | `ipc/notifications.rs`           | Notification center events                                                                                                       |
 | `personal_memory_updated`                       | `PersonalMemoryRecord`                                    | `ipc/memory.rs`                  | Personal memory mutation                                                                                                         |
 | `sessions_changed`                              | —                                                         | `ipc/memory.rs`                  | Session list change notification                                                                                                 |
-| `turn_metrics`                                | `TurnMetricsPayload`                                   | `playback.rs` / `llm.rs`         | Turn timing metrics (TTFT, TTFA, voice latency, CTX utilization)                                                                 |
+| `turn_metrics`                                  | `TurnMetricsPayload`                                      | `playback.rs` / `llm.rs`         | Turn timing metrics (TTFT, TTFA, voice latency, CTX utilization)                                                                 |
 
 Full consumer map is in `docs/frontend.md:§9` and typed wrappers in `services/eventsService.ts:164-280`.
 
@@ -386,11 +386,11 @@ whether a key is matched by an explicit arm or would fall through to the catch-a
 `tests/settings_persistence_test.rs` asserts that every key `apply_setting_mutation` accepts is
 classified, so the two tables cannot drift apart silently.
 
-| Policy          | Effect                                                                                                             | Examples                                                                                                                                                                                                                            |
-| --------------- | -------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Hot`           | Apply immediately; read from live state on each use                                                                   | UI theme, private mode, prompts, `interaction.*`, `dictation.*`, `llm.temperature`, `llm.compaction_temperature`, `llm.max_output_tokens`, `llm.reasoning_enabled`, `stt.transliterate_enabled`, `stt.partial_throttle_ms`, all of `appearance`/`persona`/`working_memory`/`personal_memory`/`realtime`/`system` |
-| `WorkerCommand` | Forwarded to a live worker over its command channel (`dispatch_worker_command`)                                       | `vad.threshold`, `vad.ptt_noise_gate`, `vad.silence_duration_ms`, `vad.speech_onset_ms`, `audio.output_mode`, `tts.speed`, `tts.voice_index`                                                                                           |
-| `Restart`       | **Executed by the backend**: `stop_audio_engine` → `start_audio_engine` via `ipc/pipeline.rs:restart_engine_inner`   | `tts.active`, `tts.provider`, `tts.threads`, `tts.{edge_tts,supertonic,kokoro,chatterbox,chatterbox_remote,zipvoice}`, `stt.active`, `stt.provider`, `stt.model`, `stt.threads`, `stt.embedded`, `stt.cloud`, `llm.active`, `llm.provider`, `llm.model`, `llm.threads`, `llm.context_window`, `llm.{server,cloud,cloud_keys,embedded}`, `vad.vad_backend`, `vad.max_speech_duration_s`, `audio.input_device` |
+| Policy          | Effect                                                                                                             | Examples                                                                                                                                                                                                                                                                                                                                                                                                     |
+| --------------- | ------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `Hot`           | Apply immediately; read from live state on each use                                                                | UI theme, private mode, prompts, `interaction.*`, `dictation.*`, `llm.temperature`, `llm.compaction_temperature`, `llm.max_output_tokens`, `llm.reasoning_enabled`, `stt.transliterate_enabled`, `stt.partial_throttle_ms`, all of `appearance`/`persona`/`working_memory`/`personal_memory`/`realtime`/`system`                                                                                             |
+| `WorkerCommand` | Forwarded to a live worker over its command channel (`dispatch_worker_command`)                                    | `vad.threshold`, `vad.ptt_noise_gate`, `vad.silence_duration_ms`, `vad.speech_onset_ms`, `audio.output_mode`, `tts.speed`, `tts.voice_index`                                                                                                                                                                                                                                                                 |
+| `Restart`       | **Executed by the backend**: `stop_audio_engine` → `start_audio_engine` via `ipc/pipeline.rs:restart_engine_inner` | `tts.active`, `tts.provider`, `tts.threads`, `tts.{edge_tts,supertonic,kokoro,chatterbox,chatterbox_remote,zipvoice}`, `stt.active`, `stt.provider`, `stt.model`, `stt.threads`, `stt.embedded`, `stt.cloud`, `llm.active`, `llm.provider`, `llm.model`, `llm.threads`, `llm.context_window`, `llm.{server,cloud,cloud_keys,embedded}`, `vad.vad_backend`, `vad.max_speech_duration_s`, `audio.input_device` |
 
 `Restart` is not advisory. Providers cache their wiring (model path, credentials, thread pool,
 reference voice) for the engine's whole lifetime, so a `Restart`-classified write that is merely

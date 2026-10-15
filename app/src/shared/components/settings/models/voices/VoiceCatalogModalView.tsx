@@ -51,7 +51,7 @@ function isEnglish(v: UnifiedVoiceDto): boolean {
 }
 
 export const VoiceCatalogModalView = memo(
-  ({ catalog, voiceScope: _voiceScope, canClone, cloudSync, onCommit: _onCommit, onCancel: _onCancel }: VoiceCatalogModalViewProps) => {
+  ({ catalog, voiceScope, canClone, cloudSync, onCommit: _onCommit, onCancel: _onCancel }: VoiceCatalogModalViewProps) => {
     const {
       voices,
       loading,
@@ -76,7 +76,6 @@ export const VoiceCatalogModalView = memo(
     const [search, setSearch] = useState("");
     const deferredSearch = useDeferredValue(search);
     const [scope, setScope] = useState<Scope>("all");
-    const [selectedProvider, setSelectedProvider] = useState<string | null>(null);
     const [gender, setGender] = useState<string | null>(null);
     const [accent, setAccent] = useState<"english" | "multilingual" | null>(null);
     const [sort, setSort] = useState<Sort>("az");
@@ -113,6 +112,11 @@ export const VoiceCatalogModalView = memo(
       return count;
     }, [scope, gender, accent]);
 
+    const normalizedScope = (voiceScope || "").toLowerCase();
+    const scopedVoices = useMemo(() => {
+      if (!normalizedScope) return voices;
+      return voices.filter((v) => v.provider_id.toLowerCase() === normalizedScope);
+    }, [voices, normalizedScope]);
 
     const { containerRef, scrollToTop } =
       useLenisScrollContainer<HTMLDivElement>();
@@ -121,11 +125,11 @@ export const VoiceCatalogModalView = memo(
     useEffect(() => {
       scrollToTop();
       // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [deferredSearch, scope, selectedProvider, gender, accent, sort]);
+    }, [deferredSearch, scope, gender, accent, sort]);
 
     const counts = useMemo(() => {
       const c = {
-        all: voices.length,
+        all: scopedVoices.length,
         recent: 0,
         favorites: 0,
         custom: 0,
@@ -135,7 +139,7 @@ export const VoiceCatalogModalView = memo(
         english: 0,
         multilingual: 0,
       };
-      for (const v of voices) {
+      for (const v of scopedVoices) {
         if (v.last_used_at != null) c.recent += 1;
         if (v.is_favorite) c.favorites += 1;
         if (v.source_kind === "custom") c.custom += 1;
@@ -146,16 +150,15 @@ export const VoiceCatalogModalView = memo(
         else c.multilingual += 1;
       }
       return c;
-    }, [voices]);
+    }, [scopedVoices]);
 
     const filtered = useMemo(() => {
       const q = deferredSearch.trim().toLowerCase();
-      let list = voices;
+      let list = scopedVoices;
       if (scope === "recent") list = list.filter((v) => v.last_used_at != null);
       else if (scope === "favorites") list = list.filter((v) => v.is_favorite);
       else if (scope === "custom") list = list.filter((v) => v.source_kind === "custom");
 
-      if (selectedProvider) list = list.filter((v) => v.provider_id === selectedProvider);
       if (gender) list = list.filter((v) => v.gender === gender);
       if (accent === "english") list = list.filter(isEnglish);
       else if (accent === "multilingual") list = list.filter((v) => !isEnglish(v));
@@ -177,9 +180,9 @@ export const VoiceCatalogModalView = memo(
         sorted.sort((a, b) => b.name.localeCompare(a.name, undefined, { sensitivity: "base" }));
       }
       return sorted;
-    }, [voices, scope, selectedProvider, gender, accent, deferredSearch, sort]);
+    }, [scopedVoices, scope, gender, accent, deferredSearch, sort]);
 
-    const staged = voices.find((v) => v.id === stagedId) || voices[0] || null;
+    const staged = scopedVoices.find((v) => v.id === stagedId) || scopedVoices[0] || null;
     const stagedPlaying = staged != null && playingId === staged.id;
 
     const handleCardPreview = useCallback(
@@ -209,7 +212,6 @@ export const VoiceCatalogModalView = memo(
     const handleResetFilters = useCallback(() => {
       setSearch("");
       setScope("all");
-      setSelectedProvider(null);
       setGender(null);
       setAccent(null);
     }, []);
@@ -427,8 +429,8 @@ export const VoiceCatalogModalView = memo(
           </button>
 
           <div className="text-[11px] font-mono text-[rgb(var(--foreground-muted))] px-2.5 py-1.5 rounded-xl bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--foreground),0.06)] shrink-0 select-none">
-            <span className="hidden sm:inline">Showing <span className="text-[rgb(var(--foreground))] font-bold">{filtered.length}</span> of {voices.length} {VOICE_CATALOG_COPY.showingOf}</span>
-            <span className="inline sm:hidden"><span className="text-[rgb(var(--foreground))] font-bold">{filtered.length}</span>/{voices.length}</span>
+            <span className="hidden sm:inline">Showing <span className="text-[rgb(var(--foreground))] font-bold">{filtered.length}</span> of {scopedVoices.length} {VOICE_CATALOG_COPY.showingOf}</span>
+            <span className="inline sm:hidden"><span className="text-[rgb(var(--foreground))] font-bold">{filtered.length}</span>/{scopedVoices.length}</span>
           </div>
 
           {canClone && (

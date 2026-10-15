@@ -9,7 +9,7 @@ use tokio_util::sync::CancellationToken;
 use crate::{
     core::{
         events::{
-            emit_ipc_to, ActivityEnvelope, ActivityKind, AudioIntent, IpcEvent, LlmTokenPayload,
+            ActivityEnvelope, ActivityKind, AudioIntent, IpcEmitter, IpcEvent, LlmTokenPayload,
             PipelineMode, ACTIVITY_COMPACTION,
         },
         state::{AppState, AppWindow, InteractionState},
@@ -53,9 +53,9 @@ pub enum IntakeResult {
 }
 
 /// Evaluates Phase 1 (Intake & Deduplication) and Phase 2 (Staging & Budget Evaluation).
-pub fn step1_intake<R: tauri::Runtime>(
+pub fn step1_intake(
     harness_arc: &Arc<Mutex<Option<Harness>>>,
-    req: &TurnExecutionRequest<R>,
+    req: &TurnExecutionRequest,
 ) -> IntakeResult {
     let turn_id = req.turn_id;
 
@@ -158,11 +158,11 @@ impl NonTerminalPhase {
 }
 
 /// Bundled handles and contextual metadata for entering a non-terminal operational phase.
-pub struct NonTerminalContext<'a, R: tauri::Runtime> {
+pub struct NonTerminalContext<'a> {
     pub query: &'a str,
     pub turn_id: u32,
     pub routing_ctx: &'a RoutingContext,
-    pub app: &'a tauri::AppHandle<R>,
+    pub emitter: &'a Arc<dyn IpcEmitter>,
     pub app_state: &'a Arc<AppState>,
     pub tts_tx: Option<&'a mpsc::Sender<TtsCommand>>,
     pub pending_synthesis_jobs: &'a Arc<AtomicU32>,
@@ -170,9 +170,9 @@ pub struct NonTerminalContext<'a, R: tauri::Runtime> {
 }
 
 /// Uniformly transitions pipeline to Working and dispatches normalized interim filler audio.
-pub fn enter_non_terminal_phase<R: tauri::Runtime>(
+pub fn enter_non_terminal_phase(
     phase: &NonTerminalPhase,
-    ctx: &NonTerminalContext<'_, R>,
+    ctx: &NonTerminalContext<'_>,
 ) {
     let activity = phase.trigger.activity();
     log::info!(
@@ -184,7 +184,7 @@ pub fn enter_non_terminal_phase<R: tauri::Runtime>(
         InteractionState::Working,
         Some(&activity),
         ctx.routing_ctx,
-        ctx.app,
+        &**ctx.emitter,
         ctx.app_state,
     );
 
@@ -216,9 +216,9 @@ pub fn enter_non_terminal_phase<R: tauri::Runtime>(
 }
 
 /// Executes Phase 3: Generic Non-Terminal Phase (Inline compaction & maintenance).
-pub async fn step3_execute_compaction<R: tauri::Runtime + 'static>(
+pub async fn step3_execute_compaction(
     harness_arc: &Arc<Mutex<Option<Harness>>>,
-    req: &TurnExecutionRequest<R>,
+    req: &TurnExecutionRequest,
 ) {
     let should_play_filler = {
         let mut guard = harness_arc.lock();
@@ -238,7 +238,7 @@ pub async fn step3_execute_compaction<R: tauri::Runtime + 'static>(
         query: &req.query,
         turn_id: req.turn_id,
         routing_ctx: &req.routing_ctx,
-        app: &req.app,
+        emitter: &req.emitter,
         app_state: &req.app_state,
         tts_tx: req.tts_tx.as_ref(),
         pending_synthesis_jobs: &req.pending_synthesis_jobs,
@@ -418,9 +418,9 @@ pub fn step5_dispatch_llm(
 // =========================================================================
 
 /// Executes a single streaming pass on an isolated blocking thread.
-pub async fn step6_run_stream_pass<R: tauri::Runtime + 'static>(
+pub async fn step6_run_stream_pass(
     stream_stage: &StreamRoutingStage,
-    stream_handles: &StreamRoutingHandles<R>,
+    stream_handles: &StreamRoutingHandles,
     response_rx: mpsc::Receiver<LlmResponse>,
 ) -> Result<StreamPassOutcome, String> {
     let handles_clone = stream_handles.clone();
@@ -431,8 +431,8 @@ pub async fn step6_run_stream_pass<R: tauri::Runtime + 'static>(
 }
 
 /// Handles Phase 6 Case B: Terminal tool execution (single pass, voice + action, commit).
-pub async fn step6_handle_terminal_tool<R: tauri::Runtime + 'static>(
-    ctx: &TurnLoopContext<'_, R>,
+pub async fn step6_handle_terminal_tool(
+    ctx: &TurnLoopContext<'_>,
     call: CanonicalToolCall,
 ) -> TurnOutcome {
     let turn_id = ctx.req.turn_id;
@@ -460,7 +460,7 @@ pub async fn step6_handle_terminal_tool<R: tauri::Runtime + 'static>(
         ctx.session_id,
         turn_id,
         ctx.req.cancel.clone(),
-        make_sessions_changed_callback(&ctx.req.app),
+        make_sessions_changed_callback(&ctx.req.emitter),
     );
 
     let outcome =
@@ -506,8 +506,7 @@ pub async fn step6_handle_terminal_tool<R: tauri::Runtime + 'static>(
     );
 
     if !final_response.is_empty() {
-        if let Err(e) = emit_ipc_to(
-            &ctx.req.app,
+        if let Err(e) = ctx.req.emitter.emit_ipc(
             AppWindow::Main,
             IpcEvent::LlmToken(LlmTokenPayload {
                 turn_id,
@@ -534,8 +533,8 @@ pub async fn step6_handle_terminal_tool<R: tauri::Runtime + 'static>(
 }
 
 /// Handles Phase 6 Case B: Non-terminal tool execution (interim filler, Working state, scratchpad).
-pub async fn step6_handle_non_terminal_tool<R: tauri::Runtime + 'static>(
-    ctx: &TurnLoopContext<'_, R>,
+pub async fn step6_handle_non_terminal_tool(
+    ctx: &TurnLoopContext<'_>,
     call: CanonicalToolCall,
     partial_text: &str,
     scratchpad: &mut Vec<ChatMessage>,
@@ -572,7 +571,7 @@ pub async fn step6_handle_non_terminal_tool<R: tauri::Runtime + 'static>(
         query: &ctx.req.query,
         turn_id,
         routing_ctx: &ctx.req.routing_ctx,
-        app: &ctx.req.app,
+        emitter: &ctx.req.emitter,
         app_state: &ctx.req.app_state,
         tts_tx: ctx.req.tts_tx.as_ref(),
         pending_synthesis_jobs: &ctx.req.pending_synthesis_jobs,
@@ -609,7 +608,7 @@ pub async fn step6_handle_non_terminal_tool<R: tauri::Runtime + 'static>(
         ctx.session_id,
         turn_id,
         ctx.req.cancel.clone(),
-        make_sessions_changed_callback(&ctx.req.app),
+        make_sessions_changed_callback(&ctx.req.emitter),
     )
     .with_observation_budget(max_observation_tokens);
 
@@ -646,12 +645,12 @@ pub async fn step6_handle_non_terminal_tool<R: tauri::Runtime + 'static>(
     false
 }
 
-fn make_sessions_changed_callback<R: tauri::Runtime + 'static>(
-    app: &tauri::AppHandle<R>,
+fn make_sessions_changed_callback(
+    emitter: &Arc<dyn IpcEmitter>,
 ) -> Option<Arc<dyn Fn() + Send + Sync>> {
-    let app_clone = app.clone();
+    let emitter_clone = Arc::clone(emitter);
     Some(Arc::new(move || {
-        if let Err(e) = emit_ipc_to(&app_clone, AppWindow::Main, IpcEvent::SessionsChanged) {
+        if let Err(e) = emitter_clone.emit_ipc(AppWindow::Main, IpcEvent::SessionsChanged) {
             log::warn!("[Harness::Tools] Failed to emit SessionsChanged IPC: {}", e);
         } else {
             log::info!("[Harness::Tools] Emitted SessionsChanged IPC");

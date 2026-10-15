@@ -24,7 +24,10 @@ export interface UseVoiceCatalogOptions {
    * not the last saved engine.
    */
   engine?: string;
+  /** True when the active engine family syncs voices remotely (e.g. cloud_sync). */
+  cloudSync?: boolean;
 }
+
 
 export interface UseVoiceCatalogResult {
   voices: UnifiedVoiceDto[];
@@ -59,7 +62,7 @@ const VOICES_CACHE = new Map<string, UnifiedVoiceDto[]>();
 export function useVoiceCatalog(
   options: UseVoiceCatalogOptions = {}
 ): UseVoiceCatalogResult {
-  const { provider, suspended = false, engine } = options;
+  const { provider, suspended = false, engine, cloudSync = false } = options;
   const updateDraft = useSettingsStore((s) => s.updateDraft);
   const draftVoiceId = useSettingsStore((s) => s.draftSettings?.tts?.voice_id);
 
@@ -93,12 +96,16 @@ export function useVoiceCatalog(
     listVoices(provider)
       .then((list) => {
         if (!isMounted) return;
-        if (provider) VOICES_CACHE.set(provider, list);
-        setVoices(list);
+        const target = provider?.toLowerCase();
+        const filtered = target
+          ? list.filter((v) => v.provider_id.toLowerCase() === target)
+          : list;
+        if (provider) VOICES_CACHE.set(provider, filtered);
+        setVoices(filtered);
         // Drop a staged id that is not in the newly loaded engine scope;
         // otherwise the strip shows one voice while Select commits another.
         setStagedId((prev) =>
-          prev != null && list.some((v) => v.id === prev) ? prev : null
+          prev != null && filtered.some((v) => v.id === prev) ? prev : null
         );
       })
       .catch((e) => {
@@ -122,16 +129,21 @@ export function useVoiceCatalog(
       };
     }
     const teardown = reload();
-    // Non-blocking background sync of remote voices (Edge TTS) runs once on mount
-    if (!remoteSyncedRef.current) {
+    // Non-blocking background sync of remote voices runs once on mount when cloudSync is enabled
+    if (cloudSync && !remoteSyncedRef.current) {
       remoteSyncedRef.current = true;
       syncRemoteVoices()
         .then(() => {
           listVoices(provider).then((list) => {
             if (alive) {
-              setVoices(list);
+              const target = provider?.toLowerCase();
+              const scoped = target
+                ? list.filter((v) => v.provider_id.toLowerCase() === target)
+                : list;
+              if (provider) VOICES_CACHE.set(provider, scoped);
+              setVoices(scoped);
               setStagedId((prev) =>
-                prev != null && list.some((v) => v.id === prev) ? prev : null
+                prev != null && scoped.some((v) => v.id === prev) ? prev : null
               );
             }
           }).catch(() => {});
@@ -142,7 +154,7 @@ export function useVoiceCatalog(
       alive = false;
       teardown();
     };
-  }, [reload, provider, suspended]);
+  }, [reload, provider, suspended, cloudSync]);
 
   useEffect(() => {
     return () => {

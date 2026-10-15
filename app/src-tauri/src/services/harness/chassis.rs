@@ -389,9 +389,9 @@ impl Harness {
         );
     }
 
-    pub async fn execute_turn<R: tauri::Runtime + 'static>(
+    pub async fn execute_turn(
         harness_arc: &Arc<Mutex<Option<Harness>>>,
-        req: TurnExecutionRequest<R>,
+        req: TurnExecutionRequest,
     ) -> TurnOutcome {
         execute_turn(harness_arc, req).await
     }
