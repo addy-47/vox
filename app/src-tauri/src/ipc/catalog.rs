@@ -195,6 +195,14 @@ pub async fn get_model_catalog<R: tauri::Runtime>(
             });
             (Vec::new(), active)
         }
+        TtsActiveProvider::AzureTts => (
+            Vec::new(),
+            Some(tts_settings.azure_tts.voice.clone()),
+        ),
+        TtsActiveProvider::GoogleTts => (
+            Vec::new(),
+            Some(tts_settings.google_tts.voice.clone()),
+        ),
     };
 
     Ok(ModelCatalog {

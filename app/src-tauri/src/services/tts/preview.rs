@@ -327,6 +327,11 @@ async fn synthesize_for_provider(
             "Voice preview unavailable for '{}': reference audio is not installed.",
             voice_id
         )),
+        "azure_tts" | "google_tts" => Err(anyhow::anyhow!(
+            "Voice preview unavailable for '{}' (provider '{}'): cloud preview is not implemented.",
+            voice_id,
+            provider
+        )),
         _ if voice_id.contains('-') => {
             edge_tts::synthesize_to_wav(voice_id, text, target_path).await
         }

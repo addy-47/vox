@@ -45,6 +45,9 @@ pub const DEFAULT_TTS_VOICE_ID: &str = "bella";
 pub const DEFAULT_TTS_SPEED: f32 = 1.05;
 pub const DEFAULT_TTS_THREADS: u32 = 4;
 pub const DEFAULT_TTS_ZIPVOICE_GUIDANCE_SCALE: f32 = 1.0;
+pub const DEFAULT_TTS_AZURE_REGION: &str = "eastus";
+pub const DEFAULT_TTS_AZURE_VOICE: &str = "en-US-JennyNeural";
+pub const DEFAULT_TTS_GOOGLE_VOICE: &str = "en-US-Chirp3-HD-Kore";
 
 pub const DEFAULT_PERSONAL_MEMORY_CONTEXT_RETRIEVAL_ENABLED: bool = true;
 pub const DEFAULT_PERSONAL_MEMORY_PIPELINE_PROCESSING_ENABLED: bool = true;

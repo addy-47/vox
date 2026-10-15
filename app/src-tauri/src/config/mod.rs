@@ -115,6 +115,8 @@ fn classify_known(domain: &str, key: &str) -> Option<SettingReloadPolicy> {
         ("tts", "chatterbox", SettingReloadPolicy::Restart),
         ("tts", "chatterbox_remote", SettingReloadPolicy::Restart),
         ("tts", "zipvoice", SettingReloadPolicy::Restart),
+        ("tts", "azure_tts", SettingReloadPolicy::Restart),
+        ("tts", "google_tts", SettingReloadPolicy::Restart),
         ("vad", "vad_backend", SettingReloadPolicy::Restart),
         ("vad", "max_speech_duration_s", SettingReloadPolicy::Restart),
     ];

@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::core::defaults::{
+    DEFAULT_TTS_AZURE_REGION, DEFAULT_TTS_AZURE_VOICE, DEFAULT_TTS_GOOGLE_VOICE,
     DEFAULT_TTS_SPEED, DEFAULT_TTS_THREADS, DEFAULT_TTS_VOICE_ID,
     DEFAULT_TTS_ZIPVOICE_GUIDANCE_SCALE,
 };
@@ -11,6 +12,7 @@ pub enum TtsVoiceSource {
     Catalog,
     Custom,
     Edge,
+    Cloud,
     None,
 }
 
@@ -39,6 +41,8 @@ pub enum TtsActiveProvider {
     Chatterbox,
     ChatterboxRemote,
     Zipvoice,
+    AzureTts,
+    GoogleTts,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Default)]
@@ -105,6 +109,47 @@ impl Default for TtsZipvoiceConfig {
     }
 }
 
+/// Cloud Azure Speech configuration. The key rests in `providers.jsonc`
+/// (0600) and is redacted from setting-update logs and restart reasons,
+/// but it travels inside the settings object like other provider secrets.
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(default)]
+pub struct TtsAzureConfig {
+    pub region_or_endpoint: String,
+    pub voice: String,
+    pub key: String,
+    pub resource_id: Option<String>,
+}
+
+impl Default for TtsAzureConfig {
+    fn default() -> Self {
+        Self {
+            region_or_endpoint: DEFAULT_TTS_AZURE_REGION.to_string(),
+            voice: DEFAULT_TTS_AZURE_VOICE.to_string(),
+            key: String::new(),
+            resource_id: None,
+        }
+    }
+}
+
+/// Cloud Google Text-to-Speech configuration. Authentication uses local ADC;
+/// only an optional quota-project override lives here.
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(default)]
+pub struct TtsGoogleConfig {
+    pub voice: String,
+    pub project_override: Option<String>,
+}
+
+impl Default for TtsGoogleConfig {
+    fn default() -> Self {
+        Self {
+            voice: DEFAULT_TTS_GOOGLE_VOICE.to_string(),
+            project_override: None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum TtsProviderConfig {
@@ -134,6 +179,19 @@ pub enum TtsProviderConfig {
         voice_id: Option<String>,
         guidance_scale: f32,
     },
+    AzureTts {
+        region_or_endpoint: String,
+        voice: String,
+        #[serde(default)]
+        key: String,
+        #[serde(default)]
+        resource_id: Option<String>,
+    },
+    GoogleTts {
+        voice: String,
+        #[serde(default)]
+        project_override: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -149,6 +207,8 @@ pub struct TtsSettings {
     pub chatterbox: TtsChatterboxConfig,
     pub chatterbox_remote: TtsChatterboxRemoteConfig,
     pub zipvoice: TtsZipvoiceConfig,
+    pub azure_tts: TtsAzureConfig,
+    pub google_tts: TtsGoogleConfig,
 }
 
 impl Default for TtsSettings {
@@ -164,6 +224,8 @@ impl Default for TtsSettings {
             chatterbox: TtsChatterboxConfig::default(),
             chatterbox_remote: TtsChatterboxRemoteConfig::default(),
             zipvoice: TtsZipvoiceConfig::default(),
+            azure_tts: TtsAzureConfig::default(),
+            google_tts: TtsGoogleConfig::default(),
         }
     }
 }
@@ -192,6 +254,16 @@ impl TtsSettings {
                 voice_id: self.zipvoice.voice_id.clone(),
                 guidance_scale: self.zipvoice.guidance_scale,
             },
+            TtsActiveProvider::AzureTts => TtsProviderConfig::AzureTts {
+                region_or_endpoint: self.azure_tts.region_or_endpoint.clone(),
+                voice: self.azure_tts.voice.clone(),
+                key: self.azure_tts.key.clone(),
+                resource_id: self.azure_tts.resource_id.clone(),
+            },
+            TtsActiveProvider::GoogleTts => TtsProviderConfig::GoogleTts {
+                voice: self.google_tts.voice.clone(),
+                project_override: self.google_tts.project_override.clone(),
+            },
         }
     }
 }
@@ -216,6 +288,8 @@ mod tests {
             TtsChatterboxRemoteConfig::default()
         );
         assert_eq!(settings.zipvoice, TtsZipvoiceConfig::default());
+        assert_eq!(settings.azure_tts, TtsAzureConfig::default());
+        assert_eq!(settings.google_tts, TtsGoogleConfig::default());
         assert_eq!(
             settings.to_provider_config(),
             TtsProviderConfig::EdgeTts { voice: None }
@@ -278,6 +352,32 @@ mod tests {
             settings.to_provider_config(),
             TtsProviderConfig::EdgeTts {
                 voice: Some("en-US-AriaNeural".to_string()),
+            }
+        );
+
+        settings.active = TtsActiveProvider::AzureTts;
+        settings.azure_tts.region_or_endpoint = "westeurope".to_string();
+        settings.azure_tts.voice = "en-US-AriaNeural".to_string();
+        settings.azure_tts.key = "k".to_string();
+        settings.azure_tts.resource_id = Some("res".to_string());
+        assert_eq!(
+            settings.to_provider_config(),
+            TtsProviderConfig::AzureTts {
+                region_or_endpoint: "westeurope".to_string(),
+                voice: "en-US-AriaNeural".to_string(),
+                key: "k".to_string(),
+                resource_id: Some("res".to_string()),
+            }
+        );
+
+        settings.active = TtsActiveProvider::GoogleTts;
+        settings.google_tts.voice = "en-US-Chirp3-HD-Charon".to_string();
+        settings.google_tts.project_override = Some("my-project".to_string());
+        assert_eq!(
+            settings.to_provider_config(),
+            TtsProviderConfig::GoogleTts {
+                voice: "en-US-Chirp3-HD-Charon".to_string(),
+                project_override: Some("my-project".to_string()),
             }
         );
     }

@@ -167,6 +167,8 @@ impl VoxSettings {
                 self.tts.chatterbox = v.chatterbox;
                 self.tts.chatterbox_remote = v.chatterbox_remote;
                 self.tts.zipvoice = v.zipvoice;
+                self.tts.azure_tts = v.azure_tts;
+                self.tts.google_tts = v.google_tts;
             }
             if let Some(v) = obj
                 .get("realtime")

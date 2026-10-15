@@ -156,7 +156,7 @@ Settings mutations trigger one of three reload policies returned to the frontend
 | `update_setting` | `key: string`, `value: unknown` | `{ reloadPolicy, restartScheduled }` | Mutates single setting with strict validation (`InvalidArgument` on unknown keys); applies hot or schedules coalesced restart. |
 | `reset_settings` | None | `{ reloadPolicy, restartScheduled }` | Resets settings to system defaults. |
 | `get_model_catalog` | None | `ModelCatalog` | Returns verified model weights manifest. |
-| `get_provider_caps` | `providerId: string` | `ProviderCaps` | Returns dynamic capabilities (supported voices, cloning support). Rejects unknown providers with `InvalidArgument`. |
+| `get_provider_caps` | `providerId: string` | `ProviderCaps` | Returns dynamic capabilities (supported voices, cloning support). Valid ids: `supertonic`, `kokoro`, `chatterbox`, `chatterbox_remote`, `edge_tts`, `zipvoice`, `azure_tts`, `google_tts`; cloud ids report `voices: Cloud`, `clone: false`. Rejects unknown providers with `InvalidArgument`. |
 | `manage_models` | `action: string`, `modelId: string` | `void` | Downloads, verifies SHA-256, or deletes local model weights. Emits `model_progress`. |
 
 ### 4.7 Voice Catalog & Synthesis Domain
@@ -169,7 +169,7 @@ Unified voice management backed by the local Turso `voices` table, serving bundl
 | `record_voice_used` | `voiceId: string` | `void` | Updates the `last_used_at` millisecond epoch timestamp in the `voices` table for recents sorting. |
 | `set_active_voice` | `voiceId: string` | `void` | Persists `tts.voice_id` into `settings.jsonc` and updates the usage timestamp in the database. |
 | `synthesize_voice_preview` | `voiceId: string`, `prompt?: string`, `engine?: string` | `VoicePreviewResult` | Resolves the voice's owning provider from the Turso `voices` table (`engine` selects the modal context when the row is absent). Catalog providers (supertonic, kokoro) synthesize locally on a blocking thread; reference-clip families (chatterbox, zipvoice, custom) copy their reference audio; Edge voices synthesize online. Aborts previous in-flight synthesis. Enforces a 120-character prompt ceiling. |
-| `sync_remote_voices` | None | `number` | Spawns a background task to fetch remote provider voices (e.g. Edge TTS) and bulk-upserts them into Turso in a single transaction. |
+| `sync_remote_voices` | None | `number` | Spawns a background task to fetch remote provider voices (Edge TTS always; Azure when `tts.azure_tts.key` is set and active; Google when active with ADC) and bulk-upserts them into Turso in single transactions. |
 | `start_backend_recording` | None | `void` | Initiates CPAL microphone capture on a dedicated thread for custom voice cloning. |
 | `stop_backend_recording` | None | `[Array<number>, number]` | Terminates CPAL capture and returns audio PCM f32 samples with the native sample rate. |
 | `add_voice_from_file` | `name: string`, `filePath: string` | `UnifiedVoiceDto` | Validates WAV audio, writes reference sample, pre-bakes speaker embedding tensors, and inserts a custom clone record. |
