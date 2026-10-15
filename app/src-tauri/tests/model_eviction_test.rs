@@ -27,7 +27,7 @@ use vox_lib::{
             unload_memory_pipeline_onnx_models,
         },
         translit::{init_transliteration_engine, is_transliteration_engine_loaded},
-        tts::actor::{cool_down_tts, warm_up_tts, TtsCommand, TtsWarmUpHandles},
+        tts::actor::{cool_down_tts, warm_up_tts, TtsCommand, TtsWarmUpConfig, TtsWarmUpHandles},
     },
 };
 
@@ -151,12 +151,14 @@ async fn test_tts_worker_cool_down_clears_handles_and_joins() {
 
         let warm_res = warm_up_tts(
             handles,
-            &settings.tts,
-            None,
-            &supertonic_model_dir,
-            None,
-            1.0,
-            2,
+            TtsWarmUpConfig {
+                settings: &settings.tts,
+                providers: None,
+                super_tts_path: &supertonic_model_dir,
+                reference_audio: None,
+                speed: 1.0,
+                num_threads: 2,
+            },
             event_tx,
         );
         assert!(warm_res.is_ok(), "warm_up_tts must return Ok(())");

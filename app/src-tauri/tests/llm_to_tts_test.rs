@@ -108,6 +108,7 @@ async fn test_harness_cognitive_stage_to_tts_matrix() {
                     max_output_tokens: 300,
                     temperature: 0.7,
                     reasoning_enabled: false,
+                    n_threads: 4,
                 },
                 llm_tx.clone(),
                 true,

@@ -29,11 +29,12 @@ fn now_ms() -> i64 {
 
 /// Retrieves a model record by ID, if present.
 pub async fn get_model(conn: &Connection, id: &str) -> Result<Option<ModelRecord>> {
+    let clean_id = id.trim();
     let mut rows = conn
         .query(
             "SELECT id, model_type, category, provider, parameters, is_favorite, last_active_at, created_at, updated_at \
-             FROM models WHERE id = ? OR LOWER(id) = LOWER(?) LIMIT 1",
-            (id.to_string(), id.to_string()),
+             FROM models WHERE id = ?1 LIMIT 1",
+            (clean_id.to_string(),),
         )
         .await?;
 
@@ -68,6 +69,30 @@ pub async fn get_model_parameters(conn: &Connection, id: &str) -> Result<serde_j
     }
 }
 
+/// Returns all non-empty per-model parameter overrides indexed by model ID.
+pub async fn get_all_model_parameters(
+    conn: &Connection,
+) -> Result<std::collections::HashMap<String, serde_json::Value>> {
+    let mut rows = conn
+        .query(
+            "SELECT id, parameters FROM models WHERE parameters != '{}' AND parameters != ''",
+            (),
+        )
+        .await?;
+
+    let mut map = std::collections::HashMap::new();
+    while let Some(row) = rows.next().await? {
+        if let (Ok(id), Ok(raw_params)) = (row.get::<String>(0), row.get::<String>(1)) {
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&raw_params) {
+                if val.as_object().is_some_and(|o| !o.is_empty()) {
+                    map.insert(id, val);
+                }
+            }
+        }
+    }
+    Ok(map)
+}
+
 /// Records a model as recently activated, creating the row if it does not exist.
 pub async fn upsert_model_active(
     conn: &Connection,
@@ -76,6 +101,7 @@ pub async fn upsert_model_active(
     category: &str,
     provider: Option<&str>,
 ) -> Result<()> {
+    let clean_id = id.trim();
     let now = now_ms();
     let prov = provider.map(|s| s.to_string());
     conn.execute(
@@ -86,7 +112,7 @@ pub async fn upsert_model_active(
             updated_at = ?5, \
             category = ?3, \
             provider = COALESCE(?4, models.provider);",
-        (id.to_string(), model_type.to_string(), category.to_string(), prov, now),
+        (clean_id.to_string(), model_type.to_string(), category.to_string(), prov, now),
     )
     .await?;
     Ok(())
@@ -98,20 +124,25 @@ pub async fn update_model_parameters(
     id: &str,
     params: &serde_json::Value,
 ) -> Result<()> {
+    let clean_id = id.trim();
     let now = now_ms();
-    let existing = get_model(conn, id).await?;
+    let existing = get_model(conn, clean_id).await?;
     let (model_type, category, provider, merged_params) = if let Some(rec) = existing {
         let mut base = rec.parameters;
         if let (Some(base_obj), Some(patch_obj)) = (base.as_object_mut(), params.as_object()) {
             for (k, v) in patch_obj {
-                base_obj.insert(k.clone(), v.clone());
+                if v.is_null() {
+                    base_obj.remove(k);
+                } else {
+                    base_obj.insert(k.clone(), v.clone());
+                }
             }
         } else {
             base = params.clone();
         }
         (rec.model_type, rec.category, rec.provider, base)
     } else {
-        ("llm".to_string(), "cloud".to_string(), None, params.clone())
+        ("custom".to_string(), "custom".to_string(), None, params.clone())
     };
 
     let params_str = serde_json::to_string(&merged_params).unwrap_or_else(|_| "{}".to_string());
@@ -121,7 +152,7 @@ pub async fn update_model_parameters(
          ON CONFLICT(id) DO UPDATE SET \
             parameters = ?5, \
             updated_at = ?6;",
-        (id.to_string(), model_type, category, provider, params_str, now),
+        (clean_id.to_string(), model_type, category, provider, params_str, now),
     )
     .await?;
     Ok(())
@@ -129,19 +160,20 @@ pub async fn update_model_parameters(
 
 /// Atomically toggles favorite status for a model in the `models` table. Returns new favorite boolean.
 pub async fn toggle_model_favorite(conn: &Connection, id: &str) -> Result<bool> {
+    let clean_id = id.trim();
     let now = now_ms();
-    let existing = get_model(conn, id).await?;
+    let existing = get_model(conn, clean_id).await?;
     let (model_type, category, provider) = if let Some(rec) = existing {
         (rec.model_type, rec.category, rec.provider)
     } else {
-        ("llm".to_string(), "cloud".to_string(), None)
+        ("custom".to_string(), "custom".to_string(), None)
     };
 
     conn.execute(
         "INSERT INTO models (id, model_type, category, provider, parameters, is_favorite, last_active_at, created_at, updated_at) \
          VALUES (?1, ?2, ?3, ?4, '{}', 0, NULL, ?5, ?5) \
          ON CONFLICT(id) DO NOTHING;",
-        (id.to_string(), model_type, category, provider, now),
+        (clean_id.to_string(), model_type, category, provider, now),
     )
     .await?;
 
@@ -150,9 +182,9 @@ pub async fn toggle_model_favorite(conn: &Connection, id: &str) -> Result<bool> 
             "UPDATE models SET \
                 is_favorite = CASE WHEN is_favorite = 1 THEN 0 ELSE 1 END, \
                 updated_at = ?2 \
-             WHERE id = ?1 OR LOWER(id) = LOWER(?1) \
+             WHERE id = ?1 \
              RETURNING is_favorite;",
-            (id.to_string(), now),
+            (clean_id.to_string(), now),
         )
         .await?;
 

@@ -19,7 +19,10 @@ use crate::{
     },
     monitoring::TelemetryEvent,
     persistence::{get_tokio_handle, worker::spawn_persistence_worker, PersistenceEvent},
-    pipeline::{dictation::DictationInteractionMode, router::spawn_router, target_window},
+    pipeline::{
+        assistant::session::resolve_llm_execution_params, dictation::DictationInteractionMode,
+        router::spawn_router, target_window,
+    },
     services::{
         audio::{
             detect_audio_output_mode,
@@ -37,7 +40,7 @@ use crate::{
             create_stt_instance_from_settings, SttProvider,
         },
         tts::{
-            actor::{cool_down_tts, warm_up_tts, TtsWarmUpHandles},
+            actor::{cool_down_tts, warm_up_tts, TtsWarmUpConfig, TtsWarmUpHandles},
             resolve_reference_audio, TtsCommand, SUPERTONIC_MODEL_DIR,
         },
         vad::{
@@ -482,6 +485,7 @@ pub async fn ensure_modular_workers(state: &AppState) -> Result<(), String> {
     let mut new_llm_tx = None;
     let mut new_llm_handle = None;
     if needs_llm {
+        let llm_params = resolve_llm_execution_params(&state.db, settings.llm.active_model());
         warm_up_llm(
             LlmWarmUpHandles {
                 llm_tx: &mut new_llm_tx,
@@ -489,6 +493,7 @@ pub async fn ensure_modular_workers(state: &AppState) -> Result<(), String> {
                 llm_provider_cache: Some(Arc::clone(&state.llm_provider)),
             },
             &settings,
+            &llm_params,
             &llm_path,
         )?;
     }
@@ -506,12 +511,14 @@ pub async fn ensure_modular_workers(state: &AppState) -> Result<(), String> {
                 telemetry_rtf: Some(Arc::clone(&state.telemetry.latest_tts_rtf)),
                 turn_metrics: Some(Arc::clone(&state.turn_metrics)),
             },
-            &settings.tts,
-            Some(&settings.providers.tts),
-            &tts_path,
-            reference_audio.as_deref(),
-            DEFAULT_TTS_SPEED,
-            DEFAULT_TTS_THREADS,
+            TtsWarmUpConfig {
+                settings: &settings.tts,
+                providers: Some(&settings.providers.tts),
+                super_tts_path: &tts_path,
+                reference_audio: reference_audio.as_deref(),
+                speed: DEFAULT_TTS_SPEED,
+                num_threads: DEFAULT_TTS_THREADS,
+            },
             pipeline_tx,
         )?;
     }

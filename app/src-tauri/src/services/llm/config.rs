@@ -32,6 +32,7 @@ impl LlmActiveProvider {
 
 /// A user-configured custom server instance in providers.jsonc.
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(default)]
 pub struct LlmCustomServer {
     pub id: String,
     pub name: String,
@@ -40,6 +41,19 @@ pub struct LlmCustomServer {
     pub protocol: String,
     #[serde(default)]
     pub api_key: Option<String>,
+}
+
+impl Default for LlmCustomServer {
+    fn default() -> Self {
+        Self {
+            id: String::new(),
+            name: String::new(),
+            url: String::new(),
+            model: DEFAULT_LLM_SERVER_MODEL.to_string(),
+            protocol: "ollama".to_string(),
+            api_key: None,
+        }
+    }
 }
 
 /// Provider credentials, endpoints, and custom servers stored in providers.jsonc.
@@ -144,8 +158,7 @@ impl LlmSettings {
                 let server = provs
                     .servers
                     .iter()
-                    .find(|s| s.id == target_id)
-                    .or_else(|| provs.servers.first());
+                    .find(|s| s.id == target_id);
 
                 if let Some(srv) = server {
                     let model = if !self.active.model.is_empty() {
@@ -161,6 +174,10 @@ impl LlmSettings {
                         api_key: srv.api_key.clone(),
                     }
                 } else {
+                    log::warn!(
+                        "[LlmSettings] Target server ID '{}' not found in providers inventory. Using default server fallback.",
+                        target_id
+                    );
                     LlmRuntimeTarget::Server {
                         base_url: DEFAULT_LLM_SERVER_BASE_URL.to_string(),
                         model: DEFAULT_LLM_SERVER_MODEL.to_string(),

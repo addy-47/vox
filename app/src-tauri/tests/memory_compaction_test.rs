@@ -490,6 +490,7 @@ async fn test_compaction_boundary_multi_slice_preserves_prior_summary() {
     let request = vox_lib::services::memory::compaction::prompt::build_compaction_request(
         &history_messages,
         None,
+        None,
     );
     let user_msg = request
         .input

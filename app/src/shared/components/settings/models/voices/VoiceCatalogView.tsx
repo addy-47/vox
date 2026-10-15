@@ -40,14 +40,22 @@ export const VoiceCatalogView = memo(({ layoutMode, providerId }: VoiceCatalogVi
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isFilterOpen, setIsFilterOpen] = useState(false);
 
+  const rawProviderId = providerId as unknown;
+  const normalizedProviderId =
+    typeof rawProviderId === "string"
+      ? rawProviderId
+      : (rawProviderId && typeof rawProviderId === "object" && "model" in rawProviderId && typeof (rawProviderId as { model?: unknown }).model === "string")
+        ? (rawProviderId as { model: string }).model
+        : "";
+
   // Engine -> voice family scope, resolved by the backend (no id literals
   // in the frontend). The catalog stays suspended until scope resolves so
   // another engine's (or all providers') voices are never rendered.
-  const { scope, ready } = useVoiceScope(providerId);
+  const { scope, ready } = useVoiceScope(normalizedProviderId);
   const catalog = useVoiceCatalog({
     provider: ready ? scope.voice_provider || undefined : undefined,
     suspended: !ready,
-    engine: providerId,
+    engine: normalizedProviderId,
     cloudSync: ready ? scope.cloud_sync : false,
   });
   const {
@@ -65,11 +73,12 @@ export const VoiceCatalogView = memo(({ layoutMode, providerId }: VoiceCatalogVi
 
   const { containerRef: inlineGridRef } = useLenisScrollContainer<HTMLDivElement>();
 
-  const targetProvider = (scope.voice_provider || providerId || "").toLowerCase();
+  const rawTarget = scope?.voice_provider || normalizedProviderId || "";
+  const targetProvider = typeof rawTarget === "string" ? rawTarget.toLowerCase() : "";
 
   const scopedVoices = useMemo(() => {
     if (!targetProvider) return voices;
-    return voices.filter((v) => v.provider_id.toLowerCase() === targetProvider);
+    return voices.filter((v) => (v.provider_id || "").toLowerCase() === targetProvider);
   }, [voices, targetProvider]);
 
   // Facet counts for the header filter popover.

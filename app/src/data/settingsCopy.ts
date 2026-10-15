@@ -480,7 +480,6 @@ export const VOICE_CAROUSEL_COPY = {
 } as const;
 
 export const LLM_CATALOG_COPY = {
-  connectedServer: "Connected Server",
   catalogTitle: "Available Models",
   catalogAriaLabel: "Browse all available models",
   expandLabel: "Expand model list",
@@ -712,4 +711,100 @@ export const STT_SETTINGS_COPY = {
     description: "Converts recognized regional scripts into phonetic Latin text in real-time.",
   },
 };
+
+export const PROVIDERS_HEADER_COPY = {
+  customButton: "+ Custom",
+  customAria: "Configure custom server endpoint",
+  comingSoon: "Coming soon",
+  customConfigTitle: "Custom Server Endpoint",
+  customConfigSubtitle: "Connect to a self-hosted or dedicated inference node",
+  filterAria: "Toggle provider filters",
+  sortAsc: "Sort A to Z",
+  sortDesc: "Sort Z to A",
+  searchPlaceholder: "Search providers...",
+  back: "Back",
+  closeSearch: "Close search",
+  clearSearch: "Clear search",
+  search: "Search",
+} as const;
+
+export const PIPELINE_PROVIDERS_DESK_COPY = {
+  sectionTitle: "Inference Pipeline",
+  sectionSubtitle: "Configure stages for listening, reasoning, and speaking.",
+  cards: {
+    stt: {
+      title: "Speech Recognition",
+      shortLabel: "Listening",
+      role: "Acoustic Hearing",
+      defaultOnDevice: "On-Device",
+      cloud: "Cloud Speech",
+    },
+    llm: {
+      title: "Language Intelligence",
+      shortLabel: "Reasoning",
+      role: "Knowledge & Logic",
+      defaultOnDevice: "On-Device GGUF",
+      server: "Custom Server",
+      cloud: "Cloud Provider",
+    },
+    tts: {
+      title: "Voice Synthesis",
+      shortLabel: "Speaking",
+      role: "Speech Generation",
+      defaultOnDevice: "Built-in Voices",
+      remote: "Remote GPU",
+      cloud: "Cloud Voices",
+    },
+  },
+} as const;
+
+export const PROVIDER_GUIDE_COPY = {
+  guideTitle: "Provider & Connection Guide",
+  guideSubtitle: "Understand how Vox connects to local AI models, private servers, and cloud gateways.",
+  backToProviders: "Back to Providers",
+  sections: [
+    {
+      id: "provider",
+      title: "What is a Provider?",
+      description:
+        "A provider is an execution backend that powers one stage of Vox. It can run 100% locally on your machine with zero external network calls, or connect over the internet to high-throughput cloud endpoints.",
+    },
+    {
+      id: "url",
+      title: "What is an Endpoint URL?",
+      description:
+        "An endpoint URL is the network address where the AI model accepts requests. Cloud providers use secure web addresses like https://api.openai.com/v1. Local servers running on your machine use local loopback URLs like http://127.0.0.1:11434.",
+    },
+    {
+      id: "port",
+      title: "What is a Port Number?",
+      description:
+        "A port number identifies the specific communication channel on your host. Standard ports include 11434 for Ollama, 8000 for vLLM or LocalAI, and 7860 for Chatterbox or Gradio speech servers.",
+    },
+    {
+      id: "apikey",
+      title: "What is an API Key?",
+      description:
+        "An API key is your personal secret token issued by the provider. It authorizes Vox to generate tokens or synthesis on your account. Keys are saved locally on your computer with restricted 0600 file permissions and never shared.",
+    },
+  ],
+  steps: [
+    {
+      number: "1",
+      title: "Select Your Pipeline Stage",
+      body: "Choose whether you are configuring Speech-to-Text (STT), Intelligence (LLM), or Voice Output (TTS).",
+    },
+    {
+      number: "2",
+      title: "Pick On-Device or Remote",
+      body: "Keep the first On-Device option for total privacy with zero setup, or tap '+ Custom' to point Vox at your local Ollama or GPU server.",
+    },
+    {
+      number: "3",
+      title: "Paste Credentials & Connect",
+      body: "Enter your endpoint URL and API key if required. The status indicator will verify when your endpoint is online.",
+    },
+  ],
+} as const;
+
 

@@ -24,10 +24,10 @@ pub enum RealtimeProviderKind {
 impl RealtimeProviderKind {
     pub fn from_provider_str(s: &str) -> Option<Self> {
         match s.to_ascii_lowercase().as_str() {
-            "gemini_live" | "gemini" => Some(Self::GeminiLive),
-            "deepgram_voice_agent" | "deepgram" => Some(Self::DeepgramVoiceAgent),
-            "openai_realtime" | "openai" => Some(Self::OpenAiRealtime),
-            "elevenlabs_convai" | "elevenlabs" => Some(Self::ElevenLabsConvai),
+            "gemini_live" => Some(Self::GeminiLive),
+            "deepgram_voice_agent" => Some(Self::DeepgramVoiceAgent),
+            "openai_realtime" => Some(Self::OpenAiRealtime),
+            "elevenlabs_convai" => Some(Self::ElevenLabsConvai),
             _ => None,
         }
     }

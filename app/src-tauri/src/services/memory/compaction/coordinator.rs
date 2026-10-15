@@ -16,6 +16,7 @@ use crate::{
             commit_compaction_output, fetch_latest_compaction_run, fetch_turns_for_compaction,
             record_compaction_finish, record_compaction_start,
         },
+        models::get_model_parameters,
         notifications::{find_notification_by_group, resolve_notification_in_place},
         sessions::fetch_session_by_id,
         TurnRow, VoxDb,
@@ -183,11 +184,17 @@ impl CompactionCoordinator {
             trigger_kind
         );
 
+        let resolved_ctx = get_model_parameters(&conn, llm_settings.active_model())
+            .await
+            .ok()
+            .and_then(|p| p.get("context_window").and_then(|v| v.as_u64()).map(|v| v as u32));
+
         let compaction_res = match run_compaction(
             active_provider.as_ref(),
             &history_messages,
             Some(&llm_settings),
             cancel_token,
+            resolved_ctx,
         )
         .await
         {

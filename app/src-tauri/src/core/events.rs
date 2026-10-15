@@ -20,9 +20,8 @@ pub enum PipelineMode {
 #[serde(rename_all = "snake_case")]
 pub enum InteractionMode {
     #[default]
-    #[serde(alias = "Passive", alias = "PASSIVE")]
     Passive,
-    #[serde(rename = "ptt", alias = "PTT", alias = "Ptt", alias = "p_t_t")]
+    #[serde(rename = "ptt")]
     PTT,
 }
 

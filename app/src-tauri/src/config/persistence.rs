@@ -160,29 +160,41 @@ impl VoxSettings {
 
     fn recover_providers_sections(&mut self, val: &serde_json::Value) {
         if let Some(obj) = val.as_object() {
-            if let Some(v) = obj
-                .get("llm")
-                .and_then(|v| serde_json::from_value(v.clone()).ok())
-            {
-                self.providers.llm = v;
+            if let Some(v) = obj.get("llm") {
+                match serde_json::from_value(v.clone()) {
+                    Ok(parsed) => self.providers.llm = parsed,
+                    Err(e) => log::error!(
+                        "[Settings] Failed to parse providers.llm section: {}. Preserving defaults for unparsed fields.",
+                        e
+                    ),
+                }
             }
-            if let Some(v) = obj
-                .get("stt")
-                .and_then(|v| serde_json::from_value(v.clone()).ok())
-            {
-                self.providers.stt = v;
+            if let Some(v) = obj.get("stt") {
+                match serde_json::from_value(v.clone()) {
+                    Ok(parsed) => self.providers.stt = parsed,
+                    Err(e) => log::error!(
+                        "[Settings] Failed to parse providers.stt section: {}.",
+                        e
+                    ),
+                }
             }
-            if let Some(v) = obj
-                .get("tts")
-                .and_then(|v| serde_json::from_value(v.clone()).ok())
-            {
-                self.providers.tts = v;
+            if let Some(v) = obj.get("tts") {
+                match serde_json::from_value(v.clone()) {
+                    Ok(parsed) => self.providers.tts = parsed,
+                    Err(e) => log::error!(
+                        "[Settings] Failed to parse providers.tts section: {}. Preserving defaults for unparsed fields.",
+                        e
+                    ),
+                }
             }
-            if let Some(v) = obj
-                .get("realtime")
-                .and_then(|v| serde_json::from_value(v.clone()).ok())
-            {
-                self.providers.realtime = v;
+            if let Some(v) = obj.get("realtime") {
+                match serde_json::from_value(v.clone()) {
+                    Ok(parsed) => self.providers.realtime = parsed,
+                    Err(e) => log::error!(
+                        "[Settings] Failed to parse providers.realtime section: {}.",
+                        e
+                    ),
+                }
             }
         }
     }

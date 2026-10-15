@@ -332,6 +332,36 @@ export interface SystemSettings {
   setup_completed: boolean;
 }
 
+export interface LlmCustomServer {
+  id: string;
+  name: string;
+  url: string;
+  model: string;
+  protocol: string;
+  api_key?: string | null;
+}
+
+export interface TtsCustomServer {
+  id: string;
+  name: string;
+  url: string;
+  remote_path: string;
+  api_key?: string | null;
+}
+
+export interface ProvidersConfigFile {
+  llm: {
+    servers: LlmCustomServer[];
+    cloud_keys: Record<string, string>;
+  };
+  tts: {
+    servers: TtsCustomServer[];
+  };
+  realtime: {
+    api_keys: Record<string, string>;
+  };
+}
+
 export interface VoxSettings {
   vad: VadSettings;
   stt: SttSettings;
@@ -345,6 +375,7 @@ export interface VoxSettings {
   personal_memory: PersonalMemorySettings;
   persona: PersonaSettings;
   system: SystemSettings;
+  providers?: ProvidersConfigFile;
 }
 
 /** Per-domain commit state, derived once per store mutation. */

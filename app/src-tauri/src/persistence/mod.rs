@@ -37,8 +37,8 @@ pub use facts::{
     mark_observations_integrated, EpisodicObservationCandidate, ObservationRecord,
 };
 pub use models::{
-    get_model, get_model_parameters, list_favorite_models, toggle_model_favorite,
-    update_model_parameters, upsert_model_active, ModelRecord,
+    get_all_model_parameters, get_model, get_model_parameters, list_favorite_models,
+    toggle_model_favorite, update_model_parameters, upsert_model_active, ModelRecord,
 };
 pub use notifications::{NewNotification, NotificationRecord};
 pub use personal_memory::{

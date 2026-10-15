@@ -23,21 +23,27 @@ export interface VoiceScopeState {
  */
 const SCOPE_CACHE = new Map<string, VoiceScopeDto>();
 
-export function useVoiceScope(engine: string | undefined | null): VoiceScopeState {
-  const cached = engine ? SCOPE_CACHE.get(engine) : undefined;
+export function useVoiceScope(engine: string | undefined | null | unknown): VoiceScopeState {
+  const resolvedEngine =
+    typeof engine === "string"
+      ? engine
+      : (engine && typeof engine === "object" && "model" in engine && typeof (engine as { model?: unknown }).model === "string")
+        ? (engine as { model: string }).model
+        : "";
+  const cached = resolvedEngine ? SCOPE_CACHE.get(resolvedEngine) : undefined;
   const [scope, setScope] = useState<VoiceScopeDto>(cached ?? FALLBACK_SCOPE);
   const [ready, setReady] = useState(Boolean(cached));
-  const [prevEngine, setPrevEngine] = useState(engine);
+  const [prevEngine, setPrevEngine] = useState(resolvedEngine);
 
-  if (prevEngine !== engine) {
-    setPrevEngine(engine);
-    const nowCached = engine ? SCOPE_CACHE.get(engine) : undefined;
+  if (prevEngine !== resolvedEngine) {
+    setPrevEngine(resolvedEngine);
+    const nowCached = resolvedEngine ? SCOPE_CACHE.get(resolvedEngine) : undefined;
     setScope(nowCached ?? FALLBACK_SCOPE);
     setReady(Boolean(nowCached));
   }
 
   useEffect(() => {
-    const key = engine ?? "";
+    const key = resolvedEngine;
     if (SCOPE_CACHE.has(key)) {
       setScope(SCOPE_CACHE.get(key)!);
       setReady(true);
@@ -45,7 +51,7 @@ export function useVoiceScope(engine: string | undefined | null): VoiceScopeStat
     }
     let isMounted = true;
     if (!cached) setReady(false);
-    getVoiceScope(engine ?? undefined)
+    getVoiceScope(resolvedEngine || undefined)
       .then((s) => {
         SCOPE_CACHE.set(key, s);
         if (isMounted) {
@@ -62,7 +68,7 @@ export function useVoiceScope(engine: string | undefined | null): VoiceScopeStat
     return () => {
       isMounted = false;
     };
-  }, [engine, cached]);
+  }, [resolvedEngine, cached]);
 
   return { scope, ready };
 }

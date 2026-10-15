@@ -128,7 +128,7 @@ impl PreviewSynthesizer {
         }
 
         let provider = resolve_preview_provider(state, voice_id, engine).await?;
-        let (speed, threads) = snapshot_tts_tuning(state);
+        let (speed, threads) = (DEFAULT_TTS_SPEED, DEFAULT_TTS_THREADS);
         log::info!(
             "[Preview] Synthesizing voice={} provider={} engine_hint={:?}",
             voice_id,
@@ -275,11 +275,6 @@ fn normalize_engine_id(engine: &str) -> Option<String> {
         Ok(_) => Some(normalized),
         Err(_) => None,
     }
-}
-
-/// Snapshots preview tuning from defaults without holding the lock across synthesis.
-fn snapshot_tts_tuning(_state: &AppState) -> (f32, u32) {
-    (DEFAULT_TTS_SPEED, DEFAULT_TTS_THREADS)
 }
 
 /// Dispatches preview synthesis to the voice's owning provider on the correct thread.
