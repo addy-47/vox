@@ -4,7 +4,7 @@
 > **Created:** 2026-10-15 | **Revised:** 2026-10-15 (grounded correction)
 > **Scope:** `submodules/nexus-rs/` + `app/src-tauri/src/services/harness/stages/tools/web_search.rs` + Vox tool loop/prompts.
 > **Goal:** Make the existing single `web_search` call return more usable evidence and make failures explicit. No invented parameters.
-> **Status:** Implementation complete and verified. Publish pending user go-ahead (`cargo publish`, version bump to 0.1.3, dependency switch-back, `cargo update`). Known unverified: adv_02 thin-drain live behavior, one genuine vertical grounding win in evals.
+> **Status:** Published as `nexuss 0.1.3` on crates.io; Vox on registry dep. Spot-check with the published artifact: pipeline + taxonomy verified working (long_02 honest LowScoreFloor on 80 generated; 3 deadline.hit under throttling). Known unverified: adv_02 thin-drain live behavior, one genuine vertical grounding win in evals.
 
 ---
 
