@@ -314,6 +314,13 @@ impl ToolDefinition for WebSearchTool {
                             ),
                             "Try rephrasing with the concrete entity name, version, date, or number.",
                         ),
+                        nexus::FailureClass::ThinEvidence => (
+                            format!(
+                                "Web search found only a single passage from a single source for '{}', which is below the minimum for a grounded answer.",
+                                xml_escape(&query_cloned)
+                            ),
+                            "Try rephrasing with more distinctive terms, or ask about a broader topic.",
+                        ),
                         _ => (
                             format!(
                                 "Web search completed for '{}' but no relevant passages were found.",
@@ -553,6 +560,7 @@ fn failure_class_str(class: nexus::FailureClass) -> &'static str {
         nexus::FailureClass::AnswerAbsent => "answer_absent",
         nexus::FailureClass::LowScoreFloor => "low_score_floor",
         nexus::FailureClass::BudgetExhausted => "budget_exhausted",
+        nexus::FailureClass::ThinEvidence => "thin_evidence",
     }
 }
 

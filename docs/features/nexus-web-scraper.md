@@ -85,7 +85,7 @@ All enabled engines are queried concurrently via `FuturesUnordered` with a deadl
 **Consensus Corroboration:** After all queries complete, URLs are normalized via `helpers::norm_url_key()` (strips `www.`, trailing slashes, UTM parameters, tracking fragments). A URL enters the `consensus_urls` set if it appears across ≥2 distinct `Engine::index_family()` groups. This consensus set later drives the `consensus_multiplier` in ranking.
 
 **Adaptive Quorum Early-Exit:** The fanout loop checks after each completed engine whether:
-- `successful_queries >= min_reporting_engines` (default: 2)
+- `contributing_engines >= min_reporting_engines` (default: 2; only engines returning candidates count — empty responses never satisfy quorum)
 - `seen_domains.len() >= min_distinct_domains` (default: 3)
 - `seen_canonical.len() >= min_candidate_hits` (default: 8)
 
@@ -174,7 +174,7 @@ Controls the ranking behavior:
 
 ### `Engine` Enum
 
-Six providers are supported: `Duckduckgo`, `Bing`, `Yahoo`, `Mojeek`, `GoogleWml`, `Brave`. Each has an `index_family()` method used for consensus corroboration. `Brave` is defined but returns `InvalidConfiguration` at dispatch time (not yet implemented).
+Thirteen engines are supported: `Duckduckgo` (Lite-first with HTML fallback), `Bing`, `Yahoo`, `Mojeek`, `GoogleWml`, `Brave`, `Wikipedia`, `Searxng` (self-hosted, skipped without an instance URL), and seven gated keyless verticals — `Arxiv`, `Scholar`, `StackExchange`, `Mdn`, `Github`, `HackerNews`, `NewsRss` — each firing only when the query matches its material. Each has an `index_family()` method used for consensus corroboration; verticals each form their own family, so corroboration fires across genuinely independent sources. Empty-but-successful engines never satisfy the early-exit quorum — only engines returning candidates count.
 
 ---
 
@@ -224,7 +224,7 @@ These metrics are logged by `WebSearchTool` at `info` level and embedded in the 
 | `ScraperTransport(String)` | Engine query | SERP fetch via primp failed |
 | `SerpParse { engine, message }` | Engine query | SERP HTML structure unrecognized |
 | `HttpStatus { status, url }` | Fetch | Non-success HTTP response |
-| `AllProvidersFailed { attempted }` | Fanout | Zero engines returned results |
+| `AllProvidersFailed { attempted, metrics }` | Fanout | Zero engines returned results; carries per-engine outcomes |
 | `Timeout { url, timeout_ms }` | Fetch | Request exceeded deadline |
 | `Embedding(String)` | TextEmbedder | Downstream embedding failure |
 | `InvalidConfiguration(String)` | Builder / ranking | Invalid parameter configuration |
