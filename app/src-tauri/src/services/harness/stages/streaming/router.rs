@@ -5,11 +5,10 @@ use std::sync::{
 };
 
 use parking_lot::Mutex;
-use tauri::{AppHandle, Runtime};
 
 use crate::{
     core::{
-        events::{emit_ipc_to, AudioIntent, IpcEvent, LlmTokenPayload, VoxEvent},
+        events::{AudioIntent, IpcEmitter, IpcEvent, LlmTokenPayload, VoxEvent},
         metrics::TurnMetricsCollector,
         state::InteractionOwner,
     },
@@ -38,7 +37,7 @@ pub enum StreamPassOutcome {
 }
 
 /// Bundled handles and shared state required to route streaming LLM responses.
-pub struct StreamRoutingHandles<R: Runtime> {
+pub struct StreamRoutingHandles {
     pub turn_id: u32,
     pub owner: InteractionOwner,
     pub accumulator: Arc<Mutex<TurnAccumulator>>,
@@ -46,11 +45,11 @@ pub struct StreamRoutingHandles<R: Runtime> {
     pub pending_synthesis_jobs: Arc<AtomicU32>,
     pub cancel: Arc<AtomicBool>,
     pub event_tx: Sender<VoxEvent>,
-    pub app: AppHandle<R>,
+    pub emitter: Arc<dyn IpcEmitter>,
     pub turn_metrics: Arc<TurnMetricsCollector>,
 }
 
-impl<R: Runtime> Clone for StreamRoutingHandles<R> {
+impl Clone for StreamRoutingHandles {
     fn clone(&self) -> Self {
         Self {
             turn_id: self.turn_id,
@@ -60,7 +59,7 @@ impl<R: Runtime> Clone for StreamRoutingHandles<R> {
             pending_synthesis_jobs: Arc::clone(&self.pending_synthesis_jobs),
             cancel: Arc::clone(&self.cancel),
             event_tx: self.event_tx.clone(),
-            app: self.app.clone(),
+            emitter: Arc::clone(&self.emitter),
             turn_metrics: Arc::clone(&self.turn_metrics),
         }
     }
@@ -84,9 +83,9 @@ impl StreamRoutingStage {
 
     /// Consumes incoming tokens over the duplex pipe, chunks into clauses for TTS,
     /// emits IPC token events, and routes streaming outcomes.
-    pub fn route_stream<R: Runtime + 'static>(
+    pub fn route_stream(
         &self,
-        handles: StreamRoutingHandles<R>,
+        handles: StreamRoutingHandles,
         response_rx: Receiver<LlmResponse>,
     ) -> Result<StreamPassOutcome, String> {
         let outcome = self.consume_stream_events(&handles, response_rx)?;
@@ -100,9 +99,9 @@ impl StreamRoutingStage {
     }
 
     /// Consumes stream responses until completion, tool call, cancellation, or error.
-    fn consume_stream_events<R: Runtime + 'static>(
+    fn consume_stream_events(
         &self,
-        handles: &StreamRoutingHandles<R>,
+        handles: &StreamRoutingHandles,
         response_rx: Receiver<LlmResponse>,
     ) -> Result<StreamPassOutcome, String> {
         let mut saw_finished = false;
@@ -186,7 +185,7 @@ impl StreamRoutingStage {
     }
 
     /// Emits IPC token event, pushes token to clause chunker, and dispatches clauses to TTS.
-    fn handle_token<R: Runtime>(&self, token: String, handles: &StreamRoutingHandles<R>) {
+    fn handle_token(&self, token: String, handles: &StreamRoutingHandles) {
         self.emit_token_ipc(&token, handles);
         let clauses = handles.accumulator.lock().push_token(&token);
         if !clauses.is_empty() {
@@ -195,23 +194,23 @@ impl StreamRoutingStage {
     }
 
     /// Emits a single token to the frontend IPC rail.
-    fn emit_token_ipc<R: Runtime>(&self, token: &str, handles: &StreamRoutingHandles<R>) {
+    fn emit_token_ipc(&self, token: &str, handles: &StreamRoutingHandles) {
         let target = target_window(handles.owner);
         let payload = IpcEvent::LlmToken(LlmTokenPayload {
             turn_id: handles.turn_id,
             token: token.to_string(),
         });
-        if let Err(e) = emit_ipc_to(&handles.app, target, payload) {
+        if let Err(e) = handles.emitter.emit_ipc(target, payload) {
             log::trace!("[Harness::Stream] Failed to emit LlmToken IPC: {}", e);
         }
     }
 
     /// Dispatches extracted text clauses to the TTS synthesis worker with the requested intent.
-    fn dispatch_clauses<R: Runtime>(
+    fn dispatch_clauses(
         &self,
         clauses: Vec<String>,
         intent: AudioIntent,
-        handles: &StreamRoutingHandles<R>,
+        handles: &StreamRoutingHandles,
     ) {
         let Some(ref tx) = handles.tts_tx else {
             return;
@@ -256,11 +255,11 @@ impl StreamRoutingStage {
     }
 
     /// Dispatches a complete text string through speech normalization and clause chunking to TTS.
-    pub fn dispatch_spoken_response<R: Runtime>(
+    pub fn dispatch_spoken_response(
         &self,
         text: &str,
         intent: AudioIntent,
-        handles: &StreamRoutingHandles<R>,
+        handles: &StreamRoutingHandles,
     ) {
         let mut chunker = ClauseChunker::default();
         let clauses = chunker.push_str(text);
@@ -271,7 +270,7 @@ impl StreamRoutingStage {
     }
 
     /// Flushes unpunctuated tail remainder to the TTS worker.
-    fn flush_remainder<R: Runtime>(&self, handles: &StreamRoutingHandles<R>) {
+    fn flush_remainder(&self, handles: &StreamRoutingHandles) {
         let remainder = handles.accumulator.lock().flush_chunker();
         let Some(remainder_text) = remainder else {
             return;
@@ -318,7 +317,7 @@ impl StreamRoutingStage {
     }
 
     /// Emits `VoxEvent::Cancelled` if turn was aborted during stream.
-    fn emit_cancelled<R: Runtime>(&self, handles: &StreamRoutingHandles<R>) {
+    fn emit_cancelled(&self, handles: &StreamRoutingHandles) {
         let event = VoxEvent::Cancelled {
             turn_id: handles.turn_id,
             owner: InteractionOwner::Assistant,
@@ -329,7 +328,7 @@ impl StreamRoutingStage {
     }
 
     /// Emits `VoxEvent::LlmFinished` upon complete stream consumption.
-    pub fn emit_finished<R: Runtime>(&self, handles: &StreamRoutingHandles<R>) {
+    pub fn emit_finished(&self, handles: &StreamRoutingHandles) {
         if handles.cancel.load(Ordering::Relaxed) {
             return;
         }

@@ -281,14 +281,14 @@ pub fn build_turn_request(
     query: String,
     tts_tx: &mpsc::Sender<vox_lib::services::tts::TtsCommand>,
     pending_synthesis_jobs: &Arc<std::sync::atomic::AtomicU32>,
-) -> TurnExecutionRequest<tauri::test::MockRuntime> {
+) -> TurnExecutionRequest {
     TurnExecutionRequest {
         query,
         turn_id,
         owner: vox_lib::core::state::InteractionOwner::Assistant,
         cancel: tokio_util::sync::CancellationToken::new(),
         routing_ctx: RoutingContext::from_app_state(&ctx.state),
-        app: ctx.tauri_app.clone(),
+        emitter: Arc::new(ctx.tauri_app.clone()),
         app_state: Arc::clone(&ctx.state),
         db: Arc::clone(&ctx.db),
         accumulator: Arc::new(Mutex::new(TurnAccumulator::new())),

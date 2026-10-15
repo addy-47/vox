@@ -400,7 +400,17 @@ async fn seed_single_voice(conn: &Connection, name_str: &str, path: &Path) -> Re
         .await?;
 
     let exists = rows.next().await?.is_some();
-    if !exists {
+    if exists {
+        conn.execute(
+            "UPDATE voices SET provider_id = 'chatterbox', source_kind = ? WHERE id = ?",
+            (
+                VoiceSourceKind::PreBaked.as_str().to_string(),
+                id.clone(),
+            ),
+        )
+        .await?;
+        return Ok(());
+    }
         let name = match name_str {
             "pain" => "Pain (Naruto)".to_string(),
             "madara" => "Madara Uchiha".to_string(),
@@ -439,7 +449,6 @@ async fn seed_single_voice(conn: &Connection, name_str: &str, path: &Path) -> Re
             name,
             id
         );
-    }
     Ok(())
 }
 
@@ -475,7 +484,17 @@ async fn seed_single_zipvoice(conn: &Connection, slug: &str, path: &Path) -> Res
         .await?;
 
     let exists = rows.next().await?.is_some();
-    if !exists {
+    if exists {
+        conn.execute(
+            "UPDATE voices SET provider_id = 'zipvoice', source_kind = ? WHERE id = ?",
+            (
+                VoiceSourceKind::ZipvoicePack.as_str().to_string(),
+                id.clone(),
+            ),
+        )
+        .await?;
+        return Ok(());
+    }
         let name = display_name_for_slug(slug);
         let wav_path = path.join("clip.wav").to_string_lossy().into_owned();
         let voice_dir = path.to_string_lossy().into_owned();
@@ -503,7 +522,6 @@ async fn seed_single_zipvoice(conn: &Connection, slug: &str, path: &Path) -> Res
             name,
             id
         );
-    }
     Ok(())
 }
 

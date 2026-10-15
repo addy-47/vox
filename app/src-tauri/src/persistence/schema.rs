@@ -265,7 +265,7 @@ async fn ensure_voice_metadata_columns(conn: &Connection) -> Result<()> {
         cols.insert(name);
     }
     for (col, ddl) in [
-        ("provider_id", "ALTER TABLE voices ADD COLUMN provider_id TEXT NOT NULL DEFAULT 'kokoro';"),
+        ("provider_id", "ALTER TABLE voices ADD COLUMN provider_id TEXT NOT NULL DEFAULT '';"),
         ("gender", "ALTER TABLE voices ADD COLUMN gender TEXT NOT NULL DEFAULT 'neutral';"),
         ("locale", "ALTER TABLE voices ADD COLUMN locale TEXT NOT NULL DEFAULT 'en-US';"),
         ("accent", "ALTER TABLE voices ADD COLUMN accent TEXT;"),
@@ -279,6 +279,20 @@ async fn ensure_voice_metadata_columns(conn: &Connection) -> Result<()> {
             conn.execute(ddl, ()).await?;
         }
     }
+
+    // Heal legacy rows misattributed by pre-v13 default 'kokoro'
+    conn.execute(
+        "UPDATE voices SET provider_id = 'chatterbox', source_kind = 'pre_baked'
+         WHERE id LIKE 'chatterbox_voice_%' OR id LIKE 'chatterbox_%';",
+        (),
+    )
+    .await?;
+    conn.execute(
+        "UPDATE voices SET provider_id = 'zipvoice'
+         WHERE source_kind = 'zipvoice_pack';",
+        (),
+    )
+    .await?;
 
     // Drop redundant tables if created by intermediate passes
     conn.execute("DROP TABLE IF EXISTS voice_favorites;", ())

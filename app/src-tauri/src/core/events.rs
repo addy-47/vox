@@ -317,3 +317,24 @@ pub fn emit_ipc_to<R: Runtime>(
         IpcEvent::MemoryIngestionUpdated => app.emit_to(target_str, name, ()),
     }
 }
+
+/// Abstract sink for dispatching IPC events to specific windows, remote clients, or CLI consoles.
+pub trait IpcEmitter: Send + Sync {
+    fn emit_ipc(&self, target: AppWindow, event: IpcEvent) -> Result<(), String>;
+}
+
+impl<R: Runtime> IpcEmitter for AppHandle<R> {
+    fn emit_ipc(&self, target: AppWindow, event: IpcEvent) -> Result<(), String> {
+        emit_ipc_to(self, target, event).map_err(|e| e.to_string())
+    }
+}
+
+/// No-op IPC emitter for headless pipeline execution, CLI sessions, and integration testing.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct MockIpcEmitter;
+
+impl IpcEmitter for MockIpcEmitter {
+    fn emit_ipc(&self, _target: AppWindow, _event: IpcEvent) -> Result<(), String> {
+        Ok(())
+    }
+}

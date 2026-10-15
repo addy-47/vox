@@ -818,7 +818,19 @@ pub async fn list_unified_voices(
     conn: &turso::Connection,
     provider: Option<&str>,
 ) -> anyhow::Result<Vec<UnifiedVoiceDto>> {
-    // 1. Query Turso voices table offline-first. The engine id maps through
+    // 1. Self-healing: ensure packaged chatterbox and zipvoice voices have their correct provider_id
+    let _ = conn.execute(
+        "UPDATE voices SET provider_id = 'chatterbox', source_kind = 'pre_baked'
+         WHERE (id LIKE 'chatterbox_voice_%' OR id LIKE 'chatterbox_%') AND provider_id != 'chatterbox';",
+        (),
+    ).await;
+    let _ = conn.execute(
+        "UPDATE voices SET provider_id = 'zipvoice'
+         WHERE source_kind = 'zipvoice_pack' AND provider_id != 'zipvoice';",
+        (),
+    ).await;
+
+    // 2. Query Turso voices table offline-first. The engine id maps through
     // the same scope resolution as `resolve_voice_scope` so remote-family
     // engines share their local voice rows.
     let scoped = provider.map(|p| {
@@ -836,7 +848,7 @@ pub async fn list_unified_voices(
     )
     .await?;
 
-    // 2. If table has not yet been seeded (e.g. fresh ephemeral test DB), seed manifest once
+    // 3. If table has not yet been seeded (e.g. fresh ephemeral test DB), seed manifest once
     if entries.is_empty() {
         let _ = sync_manifest_voices_to_db(conn).await;
         entries = crate::persistence::voices::list_voices(

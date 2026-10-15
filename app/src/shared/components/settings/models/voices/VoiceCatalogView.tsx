@@ -48,6 +48,7 @@ export const VoiceCatalogView = memo(({ layoutMode, providerId }: VoiceCatalogVi
     provider: ready ? scope.voice_provider || undefined : undefined,
     suspended: !ready,
     engine: providerId,
+    cloudSync: ready ? scope.cloud_sync : false,
   });
   const {
     voices,
@@ -64,10 +65,17 @@ export const VoiceCatalogView = memo(({ layoutMode, providerId }: VoiceCatalogVi
 
   const { containerRef: inlineGridRef } = useLenisScrollContainer<HTMLDivElement>();
 
+  const targetProvider = (scope.voice_provider || providerId || "").toLowerCase();
+
+  const scopedVoices = useMemo(() => {
+    if (!targetProvider) return voices;
+    return voices.filter((v) => v.provider_id.toLowerCase() === targetProvider);
+  }, [voices, targetProvider]);
+
   // Facet counts for the header filter popover.
   const facetCounts = useMemo(() => {
     const c = {
-      all: voices.length,
+      all: scopedVoices.length,
       recent: 0,
       favorites: 0,
       custom: 0,
@@ -77,7 +85,7 @@ export const VoiceCatalogView = memo(({ layoutMode, providerId }: VoiceCatalogVi
       english: 0,
       multilingual: 0,
     };
-    for (const v of voices) {
+    for (const v of scopedVoices) {
       if (v.last_used_at != null) c.recent += 1;
       if (v.is_favorite) c.favorites += 1;
       if (v.source_kind === "custom") c.custom += 1;
@@ -88,7 +96,7 @@ export const VoiceCatalogView = memo(({ layoutMode, providerId }: VoiceCatalogVi
       else c.multilingual += 1;
     }
     return c;
-  }, [voices]);
+  }, [scopedVoices]);
 
   const activeFilterCount =
     (scopeFilter === "all" ? 0 : 1) +
@@ -105,7 +113,7 @@ export const VoiceCatalogView = memo(({ layoutMode, providerId }: VoiceCatalogVi
   // cap: the inline list scrolls (Lenis), so truncating to a window hides
   // voices the user can reach.
   const inlineVoices = useMemo(() => {
-    let list = voices;
+    let list = scopedVoices;
 
     if (scopeFilter === "recent") list = list.filter((v) => v.last_used_at != null);
     else if (scopeFilter === "favorites") list = list.filter((v) => v.is_favorite);
@@ -133,7 +141,7 @@ export const VoiceCatalogView = memo(({ layoutMode, providerId }: VoiceCatalogVi
       return sort === "az" ? cmp : -cmp;
     });
     return sorted;
-  }, [voices, scopeFilter, genderFilter, accentFilter, search, sort]);
+  }, [scopedVoices, scopeFilter, genderFilter, accentFilter, search, sort]);
 
   const closeSearch = useCallback(() => {
     setIsSearchOpen(false);
@@ -271,7 +279,7 @@ export const VoiceCatalogView = memo(({ layoutMode, providerId }: VoiceCatalogVi
           <ErrorBoundary name="VoiceCatalogModalContent">
             <VoiceCatalogModalView
             catalog={catalog}
-            voiceScope={scope.voice_provider}
+            voiceScope={targetProvider}
             canClone={scope.can_clone}
             cloudSync={scope.cloud_sync}
             onCommit={() => close()}

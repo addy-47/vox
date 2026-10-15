@@ -9,7 +9,7 @@ use super::ROUTER_THREAD_NAME;
 use crate::{
     core::{
         events::{
-            emit_ipc_to, ActivityEnvelope, InteractionMode, IpcEvent, PipelineMode,
+            ActivityEnvelope, InteractionMode, IpcEvent, PipelineMode,
             StateChangedPayload, VoxEvent,
         },
         state::{AppState, AppWindow, InteractionOwner, InteractionState},
@@ -60,11 +60,11 @@ pub fn target_window(owner: InteractionOwner) -> AppWindow {
 }
 
 /// Transitions the pipeline turn state, updates atomic flags, and emits state_changed events.
-pub fn transition<R: tauri::Runtime>(
+pub fn transition(
     new_state: InteractionState,
     activity: Option<&ActivityEnvelope>,
     ctx: &RoutingContext,
-    app: &AppHandle<R>,
+    emitter: &dyn crate::core::events::IpcEmitter,
     state: &AppState,
 ) {
     let activity = match (new_state, activity) {
@@ -131,7 +131,7 @@ pub fn transition<R: tauri::Runtime>(
         activity: activity.cloned(),
     };
 
-    if let Err(e) = emit_ipc_to(app, target, IpcEvent::StateChanged(payload)) {
+    if let Err(e) = emitter.emit_ipc(target, IpcEvent::StateChanged(payload)) {
         log::warn!(
             "[Pipeline] Failed to emit state_changed to {}: {}",
             target,

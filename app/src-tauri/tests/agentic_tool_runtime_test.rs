@@ -107,7 +107,7 @@ async fn test_terminal_tool_title_and_accumulator_parity() {
             pending_synthesis_jobs: Arc::clone(&pending_jobs),
             cancel: cancel_atomic,
             event_tx: pipeline_tx,
-            app: app.clone(),
+            emitter: Arc::new(app.clone()),
             turn_metrics: Arc::new(TurnMetricsCollector::new()),
         };
 
@@ -131,7 +131,7 @@ async fn test_terminal_tool_title_and_accumulator_parity() {
             turn_id: 1,
             query: "Let's discuss Rust async concurrency".to_string(),
             cancel: CancellationToken::new(),
-            app: app.clone(),
+            emitter: Arc::new(app.clone()),
             app_state: Arc::clone(&state),
             routing_ctx,
             owner: vox_lib::core::state::InteractionOwner::Assistant,
@@ -307,7 +307,7 @@ async fn test_search_memory_non_terminal_rrf_retrieval() {
             pending_synthesis_jobs: Arc::clone(&pending_jobs),
             cancel: cancel_atomic,
             event_tx: pipeline_tx,
-            app: app.clone(),
+            emitter: Arc::new(app.clone()),
             turn_metrics: Arc::new(TurnMetricsCollector::new()),
         };
 
@@ -331,7 +331,7 @@ async fn test_search_memory_non_terminal_rrf_retrieval() {
             turn_id: 1,
             query: "What graphics card do I have?".to_string(),
             cancel: CancellationToken::new(),
-            app: app.clone(),
+            emitter: Arc::new(app.clone()),
             app_state: Arc::clone(&state),
             routing_ctx,
             owner: vox_lib::core::state::InteractionOwner::Assistant,
@@ -438,7 +438,7 @@ async fn test_clause_buffering_and_prefix_drop_on_tool_call() {
             pending_synthesis_jobs: Arc::clone(&pending_jobs),
             cancel: cancel_atomic,
             event_tx: pipeline_tx,
-            app: app.clone(),
+            emitter: Arc::new(app.clone()),
             turn_metrics: Arc::new(TurnMetricsCollector::new()),
         };
 

@@ -64,7 +64,7 @@ pub(crate) fn spawn_harness_turn_task<R: tauri::Runtime + 'static>(
             pipeline_tx,
             accumulator,
             pending_synthesis_jobs: pending_jobs,
-            app: app_clone.clone(),
+            emitter: Arc::new(app_clone.clone()),
             routing_ctx: ctx_clone.clone(),
             app_state: Arc::clone(&app_state),
         };
