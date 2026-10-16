@@ -1,10 +1,17 @@
 use serde::{Deserialize, Serialize};
 
+<<<<<<< HEAD
 use crate::{
     config::{ActiveSelection, LastSelectedModels},
     core::defaults::{
         DEFAULT_TTS_VOICE_ID, DEFAULT_TTS_ZIPVOICE_GUIDANCE_SCALE,
     },
+=======
+use crate::core::defaults::{
+    DEFAULT_TTS_AZURE_REGION, DEFAULT_TTS_AZURE_VOICE, DEFAULT_TTS_GOOGLE_VOICE,
+    DEFAULT_TTS_SPEED, DEFAULT_TTS_THREADS, DEFAULT_TTS_VOICE_ID,
+    DEFAULT_TTS_ZIPVOICE_GUIDANCE_SCALE,
+>>>>>>> 9f33678c7501617c5deaaef228bd20ea673f7f8a
 };
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -13,6 +20,7 @@ pub enum TtsVoiceSource {
     Catalog,
     Custom,
     Edge,
+    Cloud,
     None,
 }
 
@@ -41,6 +49,8 @@ pub enum TtsActiveProvider {
     Chatterbox,
     ChatterboxRemote,
     Zipvoice,
+    AzureTts,
+    GoogleTts,
 }
 
 /// A user-configured custom TTS server instance in providers.jsonc.
@@ -73,11 +83,51 @@ impl Default for TtsCustomServer {
     }
 }
 
-/// Custom TTS servers stored in providers.jsonc.
+/// Cloud Azure Speech configuration.
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(default)]
+pub struct TtsAzureConfig {
+    pub region_or_endpoint: String,
+    pub voice: String,
+    pub key: String,
+    pub resource_id: Option<String>,
+}
+
+impl Default for TtsAzureConfig {
+    fn default() -> Self {
+        Self {
+            region_or_endpoint: DEFAULT_TTS_AZURE_REGION.to_string(),
+            voice: DEFAULT_TTS_AZURE_VOICE.to_string(),
+            key: String::new(),
+            resource_id: None,
+        }
+    }
+}
+
+/// Cloud Google Text-to-Speech configuration.
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(default)]
+pub struct TtsGoogleConfig {
+    pub voice: String,
+    pub project_override: Option<String>,
+}
+
+impl Default for TtsGoogleConfig {
+    fn default() -> Self {
+        Self {
+            voice: DEFAULT_TTS_GOOGLE_VOICE.to_string(),
+            project_override: None,
+        }
+    }
+}
+
+/// Custom TTS servers and cloud settings stored in providers.jsonc.
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Default)]
 #[serde(default)]
 pub struct TtsProvidersConfig {
     pub servers: Vec<TtsCustomServer>,
+    pub azure_tts: TtsAzureConfig,
+    pub google_tts: TtsGoogleConfig,
 }
 
 /// Concrete runtime configuration used to instantiate a TTS provider engine.
@@ -109,6 +159,19 @@ pub enum TtsProviderConfig {
         #[serde(default)]
         voice_id: Option<String>,
         guidance_scale: f32,
+    },
+    AzureTts {
+        region_or_endpoint: String,
+        voice: String,
+        #[serde(default)]
+        key: String,
+        #[serde(default)]
+        resource_id: Option<String>,
+    },
+    GoogleTts {
+        voice: String,
+        #[serde(default)]
+        project_override: Option<String>,
     },
 }
 
@@ -171,9 +234,33 @@ impl TtsSettings {
                     TtsProviderConfig::Kokoro
                 }
             }
-            "cloud" => TtsProviderConfig::EdgeTts {
-                voice: Some(self.active_voice_id.clone()),
-            },
+            "cloud" => {
+                let default_prov = TtsProvidersConfig::default();
+                let provs = providers.unwrap_or(&default_prov);
+                match self.active.model.as_str() {
+                    "azure_tts" | "azure" => TtsProviderConfig::AzureTts {
+                        region_or_endpoint: provs.azure_tts.region_or_endpoint.clone(),
+                        voice: if !self.active_voice_id.is_empty() {
+                            self.active_voice_id.clone()
+                        } else {
+                            provs.azure_tts.voice.clone()
+                        },
+                        key: provs.azure_tts.key.clone(),
+                        resource_id: provs.azure_tts.resource_id.clone(),
+                    },
+                    "google_tts" | "google" => TtsProviderConfig::GoogleTts {
+                        voice: if !self.active_voice_id.is_empty() {
+                            self.active_voice_id.clone()
+                        } else {
+                            provs.google_tts.voice.clone()
+                        },
+                        project_override: provs.google_tts.project_override.clone(),
+                    },
+                    _ => TtsProviderConfig::EdgeTts {
+                        voice: Some(self.active_voice_id.clone()),
+                    },
+                }
+            }
             _ => match self.active.model.as_str() {
                 "supertonic" => TtsProviderConfig::Supertonic,
                 "chatterbox" => TtsProviderConfig::Chatterbox {
@@ -199,6 +286,17 @@ mod tests {
     #[test]
     fn test_tts_settings_defaults() {
         let settings = TtsSettings::default();
+<<<<<<< HEAD
+        assert_eq!(settings.active.category, "embedded");
+        assert_eq!(settings.active.model, "kokoro");
+        assert_eq!(settings.active_voice_id, DEFAULT_TTS_VOICE_ID);
+        assert_eq!(settings.last_selected.embedded.as_deref(), Some("kokoro"));
+
+        let provider_config = settings.to_provider_config(None, DEFAULT_TTS_SPEED);
+        assert_eq!(provider_config, TtsProviderConfig::Kokoro);
+=======
+        assert_eq!(settings.active, TtsActiveProvider::EdgeTts);
+        assert_eq!(settings.voice_id, DEFAULT_TTS_VOICE_ID);
         assert_eq!(settings.active.category, "embedded");
         assert_eq!(settings.active.model, "kokoro");
         assert_eq!(settings.active_voice_id, DEFAULT_TTS_VOICE_ID);
@@ -242,6 +340,7 @@ mod tests {
                 remote_path: "/opt/chatterbox".to_string(),
                 ..Default::default()
             }],
+            ..Default::default()
         };
 
         let prov = settings.to_provider_config(Some(&test_provs), 1.2);
@@ -262,9 +361,42 @@ mod tests {
             _ => panic!("Expected ChatterboxRemote"),
         }
 
-        // Without the target server in inventory, fallback to Kokoro
-        let empty_provs = TtsProvidersConfig::default();
-        let fallback_prov = settings.to_provider_config(Some(&empty_provs), 1.2);
-        assert_eq!(fallback_prov, TtsProviderConfig::Kokoro);
+        // Test Cloud Azure TTS
+        settings.active = ActiveSelection {
+            category: "cloud".to_string(),
+            provider: None,
+            model: "azure_tts".to_string(),
+        };
+        settings.active_voice_id = "en-US-AriaNeural".to_string();
+        let mut azure_provs = TtsProvidersConfig::default();
+        azure_provs.azure_tts.region_or_endpoint = "westeurope".to_string();
+        azure_provs.azure_tts.key = "test-key".to_string();
+        azure_provs.azure_tts.resource_id = Some("res".to_string());
+        assert_eq!(
+            settings.to_provider_config(Some(&azure_provs), 1.0),
+            TtsProviderConfig::AzureTts {
+                region_or_endpoint: "westeurope".to_string(),
+                voice: "en-US-AriaNeural".to_string(),
+                key: "test-key".to_string(),
+                resource_id: Some("res".to_string()),
+            }
+        );
+
+        // Test Cloud Google TTS
+        settings.active = ActiveSelection {
+            category: "cloud".to_string(),
+            provider: None,
+            model: "google_tts".to_string(),
+        };
+        settings.active_voice_id = "en-US-Chirp3-HD-Charon".to_string();
+        let mut google_provs = TtsProvidersConfig::default();
+        google_provs.google_tts.project_override = Some("my-project".to_string());
+        assert_eq!(
+            settings.to_provider_config(Some(&google_provs), 1.0),
+            TtsProviderConfig::GoogleTts {
+                voice: "en-US-Chirp3-HD-Charon".to_string(),
+                project_override: Some("my-project".to_string()),
+            }
+        );
     }
 }

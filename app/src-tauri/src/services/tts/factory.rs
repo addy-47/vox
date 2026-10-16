@@ -8,10 +8,11 @@ use crate::{
         providers::TtsProvider,
         resolve_zipvoice_reference,
         voice::{get_supertonic_voice_profiles, get_voice_profiles, resolve_catalog_index},
-        ChatterboxEngine, ChatterboxRemoteProvider, EdgeTtsProvider, KokoroEngine, ProviderCaps,
-        TtsActiveProvider, TtsEngine as SupertonicEngine, TtsProviderConfig, TtsProvidersConfig,
-        TtsSettings, ZipvoiceEngine, CHATTERBOX_MODEL_DIR, KOKORO_MODEL_DIR,
-        ZIPVOICE_GUIDANCE_SCALE, ZIPVOICE_MODEL_DIR,
+        AzureTtsProvider, ChatterboxEngine, ChatterboxRemoteProvider, EdgeTtsProvider,
+        GoogleTtsProvider, KokoroEngine, ProviderCaps, TtsActiveProvider,
+        TtsEngine as SupertonicEngine, TtsProviderConfig, TtsProvidersConfig, TtsSettings,
+        ZipvoiceEngine, CHATTERBOX_MODEL_DIR, KOKORO_MODEL_DIR, ZIPVOICE_GUIDANCE_SCALE,
+        ZIPVOICE_MODEL_DIR,
     },
     utils::paths::model_dir,
 };
@@ -24,7 +25,7 @@ pub fn caps_for_id(provider_id: &str) -> Result<ProviderCaps, String> {
     .map_err(|_| {
         format!(
             "Unknown TTS provider id: {provider_id} (expected one of supertonic, kokoro, \
-             chatterbox, chatterbox_remote, edge_tts, zipvoice)"
+             chatterbox, chatterbox_remote, edge_tts, zipvoice, azure_tts, google_tts)"
         )
     })?;
     Ok(match provider {
@@ -34,6 +35,8 @@ pub fn caps_for_id(provider_id: &str) -> Result<ProviderCaps, String> {
         TtsActiveProvider::ChatterboxRemote => ChatterboxRemoteProvider::caps(),
         TtsActiveProvider::EdgeTts => EdgeTtsProvider::caps(),
         TtsActiveProvider::Zipvoice => ZipvoiceEngine::caps(),
+        TtsActiveProvider::AzureTts => AzureTtsProvider::caps(),
+        TtsActiveProvider::GoogleTts => GoogleTtsProvider::caps(),
     })
 }
 
@@ -116,6 +119,26 @@ pub fn create_tts_provider(
             log::info!("[TTS Factory] Initializing EdgeTTS provider");
             Ok(Box::new(EdgeTtsProvider::new(edge_voice.as_deref())))
         }
+        TtsProviderConfig::AzureTts {
+            region_or_endpoint,
+            voice,
+            key,
+            resource_id,
+        } => {
+            log::info!("[TTS Factory] Initializing AzureTTS provider");
+            AzureTtsProvider::new(region_or_endpoint, voice, key, resource_id.as_deref())
+                .map(|p| Box::new(p) as Box<dyn TtsProvider>)
+                .map_err(|e| format!("Failed to create AzureTTS provider: {}", e))
+        }
+        TtsProviderConfig::GoogleTts {
+            voice,
+            project_override,
+        } => {
+            log::info!("[TTS Factory] Initializing GoogleTTS provider");
+            GoogleTtsProvider::new(voice, project_override.as_deref())
+                .map(|p| Box::new(p) as Box<dyn TtsProvider>)
+                .map_err(|e| format!("Failed to create GoogleTTS provider: {}", e))
+        }
         TtsProviderConfig::Zipvoice {
             voice_id,
             guidance_scale: _,
@@ -180,6 +203,12 @@ mod tests {
         let zipvoice = caps_for_id("zipvoice").expect("zipvoice caps");
         assert_eq!(zipvoice.voices, TtsVoiceSource::Custom);
         assert!(!zipvoice.clone);
+        let azure = caps_for_id("azure_tts").expect("azure_tts caps");
+        assert_eq!(azure.voices, TtsVoiceSource::Cloud);
+        assert!(!azure.clone);
+        let google = caps_for_id("google_tts").expect("google_tts caps");
+        assert_eq!(google.voices, TtsVoiceSource::Cloud);
+        assert!(!google.clone);
     }
 
     #[test]
