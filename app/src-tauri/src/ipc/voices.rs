@@ -82,20 +82,23 @@ pub async fn sync_remote_voices(state: State<'_, Arc<AppState>>) -> Result<usize
         .db
         .connect()
         .map_err(|e| VoxIpcError::Database(e.to_string()))?;
-    let (active, azure_base, azure_key, sync_google) = {
+    let (active_category, active_model, azure_base, azure_key) = {
         let guard = state
             .settings
             .read()
             .map_err(|e| VoxIpcError::Internal(e.to_string()))?;
         (
-            guard.tts.active,
-            guard.tts.azure_tts.region_or_endpoint.clone(),
-            guard.tts.azure_tts.key.clone(),
-            guard.tts.active == crate::services::tts::TtsActiveProvider::GoogleTts,
+            guard.tts.active.category.clone(),
+            guard.tts.active.model.clone(),
+            guard.providers.tts.azure_tts.region_or_endpoint.clone(),
+            guard.providers.tts.azure_tts.key.clone(),
         )
     };
-    let sync_azure = active == crate::services::tts::TtsActiveProvider::AzureTts
+    let is_cloud = active_category == "cloud";
+    let sync_azure = is_cloud
+        && (active_model == "azure_tts" || active_model == "azure")
         && !azure_key.trim().is_empty();
+    let sync_google = is_cloud && (active_model == "google_tts" || active_model == "google");
     tokio::task::spawn(async move {
         if let Err(e) = crate::services::tts::voice::sync_edge_tts_voices_to_db(&conn).await {
             log::warn!("[Voices] Background Edge TTS sync failed: {}", e);

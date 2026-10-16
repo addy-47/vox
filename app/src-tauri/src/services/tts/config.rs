@@ -1,17 +1,11 @@
 use serde::{Deserialize, Serialize};
 
-<<<<<<< HEAD
 use crate::{
     config::{ActiveSelection, LastSelectedModels},
     core::defaults::{
+        DEFAULT_TTS_AZURE_REGION, DEFAULT_TTS_AZURE_VOICE, DEFAULT_TTS_GOOGLE_VOICE,
         DEFAULT_TTS_VOICE_ID, DEFAULT_TTS_ZIPVOICE_GUIDANCE_SCALE,
     },
-=======
-use crate::core::defaults::{
-    DEFAULT_TTS_AZURE_REGION, DEFAULT_TTS_AZURE_VOICE, DEFAULT_TTS_GOOGLE_VOICE,
-    DEFAULT_TTS_SPEED, DEFAULT_TTS_THREADS, DEFAULT_TTS_VOICE_ID,
-    DEFAULT_TTS_ZIPVOICE_GUIDANCE_SCALE,
->>>>>>> 9f33678c7501617c5deaaef228bd20ea673f7f8a
 };
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -286,17 +280,6 @@ mod tests {
     #[test]
     fn test_tts_settings_defaults() {
         let settings = TtsSettings::default();
-<<<<<<< HEAD
-        assert_eq!(settings.active.category, "embedded");
-        assert_eq!(settings.active.model, "kokoro");
-        assert_eq!(settings.active_voice_id, DEFAULT_TTS_VOICE_ID);
-        assert_eq!(settings.last_selected.embedded.as_deref(), Some("kokoro"));
-
-        let provider_config = settings.to_provider_config(None, DEFAULT_TTS_SPEED);
-        assert_eq!(provider_config, TtsProviderConfig::Kokoro);
-=======
-        assert_eq!(settings.active, TtsActiveProvider::EdgeTts);
-        assert_eq!(settings.voice_id, DEFAULT_TTS_VOICE_ID);
         assert_eq!(settings.active.category, "embedded");
         assert_eq!(settings.active.model, "kokoro");
         assert_eq!(settings.active_voice_id, DEFAULT_TTS_VOICE_ID);
