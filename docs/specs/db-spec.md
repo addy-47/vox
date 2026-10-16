@@ -257,7 +257,7 @@ Cognitive scratchpad ledger recording agentic tool invocation payloads, results,
 ### 5.12 `voices` (Voice Catalog)
 Consolidated registry for all voice profiles across bundled, custom cloned, and remote providers.
 - `id` (TEXT, PK): Canonical voice identifier (e.g., `bella`, `en-US-AriaNeural`, or clone UUID).
-- `provider_id` (TEXT, NOT NULL DEFAULT 'kokoro'): TTS provider identifier (`kokoro`, `supertonic`, `chatterbox`, `zipvoice`, `edge_tts`).
+- `provider_id` (TEXT, NOT NULL DEFAULT 'kokoro'): TTS provider identifier (`kokoro`, `supertonic`, `chatterbox`, `zipvoice`, `edge_tts`, `azure_tts`, `google_tts`). Cloud rows (`azure_tts`, `google_tts`) are populated exclusively by live provider sync — no bundled manifest rows exist for them (no migration; row keying only).
 - `name` (TEXT, NOT NULL): Display voice name.
 - `source_kind` (TEXT, NOT NULL): Declared origin (`bundled`, `custom`, `remote`, `pre_baked`, `zipvoice_pack`, `edge`).
 - `slug` (TEXT, NULLABLE): Subdirectory pack slug for packaged models.

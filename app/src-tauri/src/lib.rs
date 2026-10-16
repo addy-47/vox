@@ -874,19 +874,19 @@ notification_permission_state,
                     // Allow time for threads to join
                     sleep(Duration::from_millis(150));
                 }
-                tauri::RunEvent::WindowEvent { label, event: win_event, .. } => {
-                    if label == "main" {
-                        if let tauri::WindowEvent::Destroyed = win_event {
-                            log::warn!(
-                                "[Vox] Main window destroyed (renderer crash?). Marking for rebuild on next Launch."
-                            );
-                            let state = app_handle.state::<Arc<AppState>>();
-                            state
-                                .main_window_destroyed
-                                .store(true, Ordering::Relaxed);
-                            refresh_tray_menu(app_handle);
-                        }
-                    }
+                tauri::RunEvent::WindowEvent {
+                    label,
+                    event: tauri::WindowEvent::Destroyed,
+                    ..
+                } if label == "main" => {
+                    log::warn!(
+                        "[Vox] Main window destroyed (renderer crash?). Marking for rebuild on next Launch."
+                    );
+                    let state = app_handle.state::<Arc<AppState>>();
+                    state
+                        .main_window_destroyed
+                        .store(true, Ordering::Relaxed);
+                    refresh_tray_menu(app_handle);
                 }
                 _ => {}
             }

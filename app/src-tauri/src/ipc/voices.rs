@@ -75,16 +75,46 @@ pub async fn get_voice_scope(engine: Option<String>) -> Result<VoiceScopeDto, Vo
     Ok(resolve_voice_scope(engine.as_deref().unwrap_or_default()))
 }
 
-/// Background non-blocking sync for remote voices (e.g. Edge TTS).
+/// Background non-blocking sync for remote voices (Edge, Azure, Google cloud).
 #[tauri::command]
 pub async fn sync_remote_voices(state: State<'_, Arc<AppState>>) -> Result<usize, VoxIpcError> {
     let conn = state
         .db
         .connect()
         .map_err(|e| VoxIpcError::Database(e.to_string()))?;
+    let (active, azure_base, azure_key, sync_google) = {
+        let guard = state
+            .settings
+            .read()
+            .map_err(|e| VoxIpcError::Internal(e.to_string()))?;
+        (
+            guard.tts.active,
+            guard.tts.azure_tts.region_or_endpoint.clone(),
+            guard.tts.azure_tts.key.clone(),
+            guard.tts.active == crate::services::tts::TtsActiveProvider::GoogleTts,
+        )
+    };
+    let sync_azure = active == crate::services::tts::TtsActiveProvider::AzureTts
+        && !azure_key.trim().is_empty();
     tokio::task::spawn(async move {
         if let Err(e) = crate::services::tts::voice::sync_edge_tts_voices_to_db(&conn).await {
             log::warn!("[Voices] Background Edge TTS sync failed: {}", e);
+        }
+        if sync_azure {
+            let base =
+                crate::services::tts::auth::normalize_azure_endpoint(&azure_base);
+            if let Err(e) =
+                crate::services::tts::voice::sync_azure_tts_voices_to_db(&conn, &base, &azure_key)
+                    .await
+            {
+                log::warn!("[Voices] Background Azure TTS sync failed: {}", e);
+            }
+        }
+        if sync_google {
+            if let Err(e) = crate::services::tts::voice::sync_google_tts_voices_to_db(&conn).await
+            {
+                log::warn!("[Voices] Background Google TTS sync failed: {}", e);
+            }
         }
     });
     Ok(0)

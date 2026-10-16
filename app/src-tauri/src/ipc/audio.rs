@@ -90,7 +90,7 @@ pub async fn list_audio_devices(kind: Option<String>) -> Result<Vec<AudioDevice>
             }
         }
 
-        result.sort_by(|a, b| b.is_default.cmp(&a.is_default));
+        result.sort_by_key(|device| std::cmp::Reverse(device.is_default));
         Ok::<Vec<AudioDevice>, VoxIpcError>(result)
     })
     .await

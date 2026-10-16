@@ -65,6 +65,21 @@ pub async fn get_settings<R: tauri::Runtime>(app: AppHandle<R>) -> Result<BootSt
     })
 }
 
+/// Redacts secret-bearing setting values for logs and restart reasons.
+/// The true value is still applied and persisted; only its display is masked.
+fn redact_setting_value(domain: &str, key: &str, value: &serde_json::Value) -> serde_json::Value {
+    let secret = domain == "tts" && (key == "azure_tts" || key == "provider")
+        || domain == "llm" && (key == "cloud" || key == "cloud_keys" || key == "provider")
+        || domain == "stt" && (key == "cloud" || key == "provider");
+    if secret {
+        serde_json::Value::String(
+            crate::services::tts::auth::redact_secret().to_string(),
+        )
+    } else {
+        value.clone()
+    }
+}
+
 /// Generic settings update command.
 #[tauri::command]
 pub async fn update_setting<R: tauri::Runtime>(
@@ -127,7 +142,8 @@ pub async fn update_setting<R: tauri::Runtime>(
     }
 
     let restart_scheduled = if policy == SettingReloadPolicy::Restart {
-        let reason = format!("{}.{} = {}", domain, key, value);
+        let logged = redact_setting_value(&domain, &key, &value);
+        let reason = format!("{}.{} = {}", domain, key, logged);
         request_engine_restart(&app, state.inner(), &reason)
     } else {
         false
@@ -142,7 +158,13 @@ pub async fn update_setting<R: tauri::Runtime>(
         SettingReloadPolicy::Restart => "restart required",
     };
 
-    let message = format!("{}.{} = {} — {}", domain, key, value, action_label);
+    let message = format!(
+        "{}.{} = {} — {}",
+        domain,
+        key,
+        redact_setting_value(&domain, &key, &value),
+        action_label
+    );
     log::info!("[Settings] Updated: {}", message);
 
     if let Err(e) = emit_ipc(&app, IpcEvent::SettingsUpdated) {

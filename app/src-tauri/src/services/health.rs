@@ -12,8 +12,8 @@ use crate::{
         },
         stt::{create_stt_provider, SttProviderConfig, NEMOTRON_MODEL_DIR, QWEN_ASR_MODEL_DIR},
         tts::{
-            TtsProviderConfig, CHATTERBOX_MODEL_DIR, KOKORO_MODEL_DIR, SUPERTONIC_MODEL_DIR,
-            ZIPVOICE_MODEL_DIR,
+            TtsProviderConfig, AZURE_TTS_VOICES_PATH, CHATTERBOX_MODEL_DIR, KOKORO_MODEL_DIR,
+            SUPERTONIC_MODEL_DIR, ZIPVOICE_MODEL_DIR,
         },
     },
     utils::paths,
@@ -265,6 +265,44 @@ pub async fn check_tts_health(
         TtsProviderConfig::Zipvoice { .. } => {
             let models_dir = paths::get().models.clone();
             Ok(models_dir.join(ZIPVOICE_MODEL_DIR).exists())
+        }
+        TtsProviderConfig::AzureTts {
+            region_or_endpoint,
+            key,
+            ..
+        } => {
+            if key.trim().is_empty() {
+                return Ok(false);
+            }
+            let base =
+                crate::services::tts::auth::normalize_azure_endpoint(&region_or_endpoint);
+            let url = format!("{}{}", base.trim_end_matches('/'), AZURE_TTS_VOICES_PATH);
+            let client = reqwest::Client::builder()
+                .timeout(Duration::from_secs(2))
+                .build()
+                .map_err(|e| e.to_string())?;
+            match client
+                .get(&url)
+                .header("Ocp-Apim-Subscription-Key", key.trim())
+                .send()
+                .await
+            {
+                Ok(resp) => Ok(resp.status().is_success()),
+                _ => Ok(false),
+            }
+        }
+        TtsProviderConfig::GoogleTts { .. } => {
+            let client = match google_cloud_texttospeech_v1::client::TextToSpeech::builder()
+                .build()
+                .await
+            {
+                Ok(client) => client,
+                Err(_) => return Ok(false),
+            };
+            match client.list_voices().set_language_code("en-US").send().await {
+                Ok(_) => Ok(true),
+                _ => Ok(false),
+            }
         }
     }
 }

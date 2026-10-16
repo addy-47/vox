@@ -88,6 +88,21 @@ pub enum TtsError {
     #[error("TTS synthesis failed: {message}")]
     SynthesisFailed { message: String },
 
+    #[error("TTS cloud authentication failed: {message}")]
+    Auth { message: String },
+
+    #[error("TTS cloud quota exhausted: {message}")]
+    Quota { message: String },
+
+    #[error("TTS cloud rate limited: {message}")]
+    RateLimited { message: String },
+
+    #[error("TTS voice not found: {voice}")]
+    VoiceNotFound { voice: String },
+
+    #[error("TTS synthesis cancelled")]
+    Cancelled,
+
     #[error("Mutex lock poisoned on TTS provider: {0}")]
     LockPoisoned(String),
 }

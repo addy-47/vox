@@ -120,7 +120,7 @@ Vox organizes all on-disk artifacts under the root directory (`$VOX_HOME`, defau
 - **RULE-STORAGE-02 (Disposable Cache Invariant)**: The `cache/` directory MUST contain only reproducible or ephemeral assets. If `cache/` is deleted entirely while the application is stopped, Vox MUST boot cleanly, reconstitute temporary assets, and suffer zero loss of user configuration, sessions, or transcripts.
 - **RULE-STORAGE-03 (Model Decoupling)**: Model weights MUST default to `~/.vox/models/` but MUST prioritize the `VOX_MODELS_DIR` environment variable when present.
 - **RULE-STORAGE-04 (Transient Runtime Sockets)**: Unix domain sockets and process locks MUST reside in `$XDG_RUNTIME_DIR/vox/` when available on Linux, falling back to `~/.vox/run/`. These directories MUST be created with POSIX mode `0700`.
-- **RULE-STORAGE-05 (Secret Isolation)**: API keys and server secrets MUST reside strictly in `config/providers.jsonc`. Telemetry, diagnostics, and UI debug logs MUST NEVER record or output the contents of `providers.jsonc`.
+- **RULE-STORAGE-05 (Secret Isolation)**: API keys and server secrets MUST reside strictly in `config/providers.jsonc`. Telemetry, diagnostics, and UI debug logs MUST NEVER record or output the contents of `providers.jsonc`. Cloud TTS credentials follow this rule: `tts.azure_tts.key` (Speech resource key) lives in `providers.jsonc` only; Google uses local ADC with no stored secret; `tts.google_tts.project_override` is a non-secret quota hint.
 - **RULE-STORAGE-09 (Voice Asset Storage & LRU Cache)**:
   - Canonical active voice identifier persists as `tts.active_voice_id` and `realtime.active_voice_id` strings in `settings.jsonc`.
   - Bundled voice definitions compile into binary via `voices_manifest.json` under `services/tts/`.
