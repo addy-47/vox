@@ -7,47 +7,10 @@ export interface CloudProvider {
   keyPlaceholder: string;
   popular?: boolean;
   tagline?: string;
+  logo?: string;
 }
 
-export const CLOUD_PROVIDERS: CloudProvider[] = [
-  // Popular / Recommended
-  { id: "opencode_zen", name: "OpenCode Zen", url: "https://api.opencode.ai/v1", keyPlaceholder: "zen_...", popular: true, tagline: "Reliable optimized models" },
-  { id: "opencode_go", name: "OpenCode Go", url: "https://api.opencode.ai/v1", keyPlaceholder: "go_...", popular: true, tagline: "Low cost subscription for everyone" },
-  { id: "openai", name: "OpenAI", url: "https://api.openai.com/v1", keyPlaceholder: "sk-proj-...", popular: true, tagline: "GPT-4o, o1, o3-mini" },
-  { id: "anthropic", name: "Anthropic", url: "https://api.anthropic.com/v1", keyPlaceholder: "sk-ant-...", popular: true, tagline: "Claude 3.7 Sonnet, Claude 3.5 Haiku" },
-  { id: "gemini", name: "Google Gemini", url: "https://generativelanguage.googleapis.com/v1beta/openai", keyPlaceholder: "AIzaSy...", popular: true, tagline: "Gemini 2.5 Flash & Pro" },
-  { id: "openrouter", name: "OpenRouter", url: "https://openrouter.ai/api/v1", keyPlaceholder: "sk-or-v1-...", popular: true, tagline: "Unified multi-model routing gateway" },
-  { id: "vercel", name: "Vercel AI Gateway", url: "https://gateway.ai.vercel.dev/v1", keyPlaceholder: "vcl_...", popular: true, tagline: "Edge AI gateway" },
-  { id: "groq", name: "Groq", url: "https://api.groq.com/openai/v1", keyPlaceholder: "gsk_...", popular: true, tagline: "Ultra-fast LPU inference" },
-  { id: "deepseek", name: "DeepSeek", url: "https://api.deepseek.com/v1", keyPlaceholder: "sk-...", popular: true, tagline: "DeepSeek-V3 & DeepSeek-R1" },
-  { id: "together", name: "Together AI", url: "https://api.together.xyz/v1", keyPlaceholder: "tog_...", popular: true, tagline: "High-performance open source models" },
-  { id: "mistral", name: "Mistral AI", url: "https://api.mistral.ai/v1", keyPlaceholder: "mis_...", popular: true, tagline: "Mistral Large, Codestral, Pixtral" },
-  { id: "nvidia", name: "NVIDIA NIM", url: "https://integrate.api.nvidia.com/v1", keyPlaceholder: "nvapi-...", popular: true, tagline: "Enterprise NIM microservices" },
-  { id: "cerebras", name: "Cerebras", url: "https://api.cerebras.ai/v1", keyPlaceholder: "csk-...", popular: true, tagline: "Wafer-scale high-throughput inference" },
-  { id: "fireworks", name: "Fireworks AI", url: "https://api.fireworks.ai/inference/v1", keyPlaceholder: "fw_...", popular: true, tagline: "Fast production inference platform" },
-  { id: "perplexity", name: "Perplexity", url: "https://api.perplexity.ai", keyPlaceholder: "pplx-...", popular: true, tagline: "Sonar search-grounded LLMs" },
-  { id: "xai", name: "xAI (Grok)", url: "https://api.x.ai/v1", keyPlaceholder: "xai-...", popular: true, tagline: "Grok-2 & Grok-beta" },
-  { id: "cohere", name: "Cohere", url: "https://api.cohere.com/v2", keyPlaceholder: "coh_...", popular: true, tagline: "Command R+ enterprise intelligence" },
-
-  // Specialized / Gateways / Cloud Providers
-  { id: "siliconflow", name: "SiliconFlow", url: "https://api.siliconflow.cn/v1", keyPlaceholder: "sk-...", tagline: "Fast cloud inference across top OSS models" },
-  { id: "moonshot", name: "Moonshot AI (Kimi)", url: "https://api.moonshot.cn/v1", keyPlaceholder: "sk-...", tagline: "Kimi long-context models" },
-  { id: "minimax", name: "MiniMax", url: "https://api.minimax.chat/v1", keyPlaceholder: "mm_...", tagline: "MiniMax-01 reasoning and dialogue" },
-  { id: "alibaba", name: "Alibaba DashScope", url: "https://dashscope.aliyuncs.com/compatible-mode/v1", keyPlaceholder: "sk-...", tagline: "Qwen 2.5 series" },
-  { id: "zhipu", name: "Zhipu AI (GLM)", url: "https://open.bigmodel.cn/api/paas/v4", keyPlaceholder: "glm_...", tagline: "GLM-4 foundation models" },
-  { id: "deepinfra", name: "Deep Infra", url: "https://api.deepinfra.com/v1/openai", keyPlaceholder: "di_...", tagline: "Serverless model inference" },
-  { id: "novita", name: "Novita AI", url: "https://api.novita.ai/v3/openai", keyPlaceholder: "nov_...", tagline: "Low latency serverless GPU inference" },
-  { id: "chutes", name: "Chutes", url: "https://chutes.ai/v1", keyPlaceholder: "ch_...", tagline: "Decentralized GPU inference" },
-  { id: "baseten", name: "Baseten", url: "https://bridge.baseten.co/v1", keyPlaceholder: "base_...", tagline: "Dedicated model deployments" },
-  { id: "databricks", name: "Databricks", url: "https://<workspace>.databricks.com/serving-endpoints", keyPlaceholder: "dapi...", tagline: "Enterprise lakehouse model serving" },
-  { id: "cloudflare", name: "Cloudflare AI Gateway", url: "https://gateway.ai.cloudflare.com/v1", keyPlaceholder: "cf_...", tagline: "Universal proxy with caching & guardrails" },
-  { id: "friendli", name: "Friendli", url: "https://inference.friendli.ai/v1", keyPlaceholder: "flp_...", tagline: "Optimized throughput engine" },
-  { id: "modal", name: "Modal", url: "https://<app>.modal.run/v1", keyPlaceholder: "mod_...", tagline: "Serverless custom cloud functions" },
-  { id: "stepfun", name: "StepFun", url: "https://api.stepfun.com/v1", keyPlaceholder: "step_...", tagline: "Step-1 & Step-2 multimodal models" },
-  { id: "ai21", name: "AI21 Labs", url: "https://api.ai21.com/studio/v1", keyPlaceholder: "ai21_...", tagline: "Jamba hybrid architecture models" },
-  { id: "huggingface", name: "Hugging Face", url: "https://api-inference.huggingface.co/v1", keyPlaceholder: "hf_...", tagline: "Serverless inference API" },
-  { id: "ollama_cloud", name: "Ollama Cloud", url: "https://ollama.ai/api/v1", keyPlaceholder: "ollama_...", tagline: "Managed Ollama endpoints" },
-];
+export const CLOUD_PROVIDERS: CloudProvider[] = [];
 
 const GeminiLogo = ({
   active,
@@ -77,28 +40,7 @@ const DeepgramLogo = ({
 
 
 
-export const REALTIME_PROVIDERS = [
-  {
-    id: "gemini_live",
-    name: "Gemini Live",
-    subkey: "gemini_live",
-    icon: GeminiLogo,
-    desc: "Live Speech",
-    url: "https://aistudio.google.com/apikey",
-    tagline: "Google's direct live speech model with search grounding",
-    keyPlaceholder: "AIzaSy...",
-  },
-  {
-    id: "deepgram_voice_agent",
-    name: "Deepgram Agent",
-    subkey: "deepgram_voice_agent",
-    icon: DeepgramLogo,
-    desc: "Voice Assistant",
-    url: "https://console.deepgram.com/",
-    tagline: "Deepgram's real-time conversational voice agent",
-    keyPlaceholder: "Token...",
-  },
-] as const;
+export const REALTIME_PROVIDERS = [] as const;
 
 export interface TtsProviderEntry {
   id: string;
@@ -106,36 +48,85 @@ export interface TtsProviderEntry {
   category: "local" | "cloud" | "server";
   tagline: string;
   url?: string;
+  logo?: string;
   isFree?: boolean;
   isComingSoon?: boolean;
   statusLabel?: string;
 }
 
-export const TTS_MODAL_PROVIDERS: TtsProviderEntry[] = [
-  {
-    id: "edge_speech",
-    name: "Microsoft Edge TTS",
-    category: "cloud",
-    tagline: "400+ neural voices across 100+ languages · Zero configuration",
-    url: "https://speech.platform.bing.com",
-    isFree: true,
-    statusLabel: "Free",
-  },
-  {
-    id: "google_tts",
-    name: "Google Cloud TTS",
-    category: "cloud",
-    tagline: "High-definition Chirp 3 neural speech synthesis with multi-dialect support",
-    url: "https://cloud.google.com/text-to-speech",
-    statusLabel: "Ready",
-  },
-  {
-    id: "azure_tts",
-    name: "Azure AI Speech",
-    category: "cloud",
-    tagline: "Enterprise neural speech with low-latency 24 kHz streaming voice output",
-    url: "https://azure.microsoft.com/products/cognitive-services/text-to-speech",
-    statusLabel: "Ready",
-  },
-];
+export const TTS_MODAL_PROVIDERS: TtsProviderEntry[] = [];
+
+/**
+ * Synchronizes the module-level CLOUD_PROVIDERS array from the backend contract.
+ */
+export function updateCloudProvidersFromContract(
+  providers: Array<{
+    id: string;
+    name: string;
+    base_url?: string;
+    url?: string;
+    key_placeholder?: string;
+    keyPlaceholder?: string;
+    popular?: boolean;
+    tagline?: string;
+    logo?: string;
+  }>
+) {
+  if (!providers || providers.length === 0) return;
+  CLOUD_PROVIDERS.length = 0;
+  for (const p of providers) {
+    CLOUD_PROVIDERS.push({
+      id: p.id,
+      name: p.name,
+      url: p.base_url || p.url || "",
+      keyPlaceholder: p.key_placeholder || p.keyPlaceholder || "sk-...",
+      popular: p.popular,
+      tagline: p.tagline,
+      logo: p.logo,
+    });
+  }
+}
+
+/**
+ * Synchronizes the module-level TTS_MODAL_PROVIDERS array from the backend contract.
+ */
+export function updateTtsProvidersFromContract(
+  providers: Array<{
+    id: string;
+    name: string;
+    category: string;
+    subcategory?: string;
+    description?: string;
+    tagline?: string;
+    url?: string;
+    logo?: string;
+    is_cloud?: boolean;
+    is_free?: boolean;
+    isFree?: boolean;
+    status_label?: string;
+    statusLabel?: string;
+  }>
+) {
+  if (!providers || providers.length === 0) return;
+  const cloudOnes = providers.filter(
+    (t) => t.category === "cloud" || t.is_cloud || t.subcategory === "cloud"
+  );
+  if (cloudOnes.length === 0) return;
+  TTS_MODAL_PROVIDERS.length = 0;
+  for (const p of cloudOnes) {
+    TTS_MODAL_PROVIDERS.push({
+      id: p.id,
+      name: p.name,
+      category: "cloud",
+      tagline: p.tagline || p.description || "",
+      url: p.url,
+      logo: p.logo,
+      isFree: p.is_free ?? p.isFree ?? p.id.includes("edge"),
+      statusLabel:
+        p.status_label ||
+        p.statusLabel ||
+        (p.id.includes("edge") ? "Free" : "Ready"),
+    });
+  }
+}
 

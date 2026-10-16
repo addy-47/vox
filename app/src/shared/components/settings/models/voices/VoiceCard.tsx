@@ -2,7 +2,7 @@ import { memo, useMemo } from "react";
 import { Heart, Loader2, Pause, Play } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { VOICE_CATALOG_COPY } from "@/data/settingsCopy";
-import type { UnifiedVoiceDto } from "@/services/voiceService";
+import type { UnifiedVoiceDto } from "@/services/voicesService";
 import { getVoiceWaveform } from "./VoicePreviewBanner";
 
 export interface VoiceCardProps {

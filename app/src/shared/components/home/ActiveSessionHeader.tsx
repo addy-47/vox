@@ -2,8 +2,8 @@ import React, { useEffect } from "react";
 import { motion } from "framer-motion";
 import { useSessionStore } from "@/store/sessionStore";
 import { onSessionsChanged } from "@/services/eventsService";
-import { getSessions, resolveSessionTitle } from "@/services/historyService";
-import { getProjects } from "@/services/projectService";
+import { getSessions, resolveSessionTitle } from "@/services/persistenceService";
+import { getProjects } from "@/services/projectsService";
 import { getRuntimeSnapshot } from "@/services/monitoringService";
 
 interface ActiveSessionHeaderProps {

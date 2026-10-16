@@ -1,6 +1,6 @@
 import { memo, useState, useEffect } from "react";
 import { Ghost, AlertCircle, RotateCcw, Sparkles } from "lucide-react";
-import { formatDateTime, resolveSessionTitle, type SessionRow, type TurnRow } from "@/services/historyService";
+import { formatDateTime, resolveSessionTitle, type SessionRow, type TurnRow } from "@/services/persistenceService";
 import { EmptyState, OrbitalLoader } from "@/shared/components/common";
 import { HISTORY_COPY } from "@/data/historyCopy";
 import { Drawer } from "@/shared/ui/Drawer";

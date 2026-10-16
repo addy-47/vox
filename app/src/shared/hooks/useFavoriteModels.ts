@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { listFavoriteModels, toggleModelFavorite } from "@/services/settingsService";
+import { listFavoriteModels, toggleModelFavorite } from "@/services/catalogService";
 
 export function useFavoriteModels() {
   const [favorites, setFavorites] = useState<Set<string>>(new Set());

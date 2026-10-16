@@ -13,7 +13,7 @@ import {
   resolveSessionTitle,
   sessionLastActivity,
   type SessionRow,
-} from "@/services/historyService";
+} from "@/services/persistenceService";
 import { SESSION_COPY } from "@/data/sessionCopy";
 import { useSessionStore } from "@/store/sessionStore";
 import {

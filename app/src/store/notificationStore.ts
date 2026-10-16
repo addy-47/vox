@@ -10,8 +10,8 @@ import {
   executeNotificationAction,
   listenNotificationCreated,
   listenNotificationUpdated,
-} from "@/services/notificationService";
-import { compactSession } from "@/services/historyService";
+} from "@/services/notificationsService";
+import { compactSession } from "@/services/persistenceService";
 
 export interface RolledUpNotification {
   key: string;

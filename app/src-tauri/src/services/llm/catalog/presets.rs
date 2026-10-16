@@ -46,11 +46,15 @@ pub fn provider_catalog() -> Vec<ProviderPresetMeta> {
 
 /// Looks up a provider preset by identifier.
 pub fn lookup_preset(id: &str) -> Option<ProviderPresetMeta> {
-    let lower = id.to_lowercase();
+    let lower = id.trim().to_lowercase();
     let presets = list_presets();
     presets
         .into_iter()
-        .find(|p| p.id == lower || p.name.to_lowercase() == lower)
+        .find(|p| {
+            p.id == lower
+                || p.name.to_lowercase() == lower
+                || (p.id == "nvidia_nim" && lower == "nvidia")
+        })
 }
 
 #[cfg(test)]
@@ -87,6 +91,10 @@ mod tests {
     /// Validates the bundled manifest parses with every row sourced and unique.
     #[test]
     fn test_bundled_provider_manifest_is_sourced_ssot() {
+        let res: Result<Vec<ProviderPresetMeta>, _> = serde_json::from_str(BUNDLED_PROVIDERS_JSON);
+        if let Err(ref e) = res {
+            eprintln!("DESERIALIZATION ERROR: {:?}", e);
+        }
         let presets = list_presets();
         assert!(
             presets.len() >= 14,

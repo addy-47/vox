@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     config::{ActiveSelection, LastSelectedModels},
     core::defaults::{
-        DEFAULT_LLM_CLOUD_BASE_URL, DEFAULT_LLM_CLOUD_MODEL, DEFAULT_LLM_CLOUD_PROVIDER_NAME,
+        DEFAULT_LLM_CLOUD_MODEL, DEFAULT_LLM_CLOUD_PROVIDER_NAME,
         DEFAULT_LLM_MODEL, DEFAULT_LLM_SERVER_BASE_URL, DEFAULT_LLM_SERVER_MODEL,
         DEFAULT_LLM_SERVER_PROVIDER_NAME, MIN_LLM_CONTEXT_WINDOW,
     },
@@ -86,6 +86,9 @@ impl Default for LlmProvidersConfig {
 pub enum LlmRuntimeTarget {
     #[default]
     Embedded,
+    /// Cloud provider id could not be resolved against the declarative manifest.
+    /// RULE-PROV-01: never silently fall back to an unrelated endpoint.
+    Unresolved { provider_id: String },
     #[serde(rename_all = "snake_case")]
     Server {
         base_url: String,
@@ -119,6 +122,7 @@ impl LlmRuntimeTarget {
             Self::Embedded => "embedded",
             Self::Server { .. } => "server",
             Self::Cloud { .. } => "cloud",
+            Self::Unresolved { .. } => "unresolved",
         }
     }
 }
@@ -159,6 +163,10 @@ impl LlmSettings {
 
     pub fn effective_ctx_size(ctx: u32) -> u32 {
         ctx.max(MIN_LLM_CONTEXT_WINDOW)
+    }
+
+    pub fn runtime_target(&self, providers: Option<&LlmProvidersConfig>) -> LlmRuntimeTarget {
+        self.to_provider_config(providers)
     }
 
     pub fn to_provider_config(&self, providers: Option<&LlmProvidersConfig>) -> LlmRuntimeTarget {
@@ -208,23 +216,38 @@ impl LlmSettings {
                 }
             }
             "cloud" => {
-                let provider_id = self
-                    .active
-                    .provider
-                    .as_deref()
-                    .unwrap_or(DEFAULT_LLM_CLOUD_PROVIDER_NAME);
-                let api_key = provs.cloud_keys.get(provider_id).cloned();
-                let base_url = match provider_id {
-                    "openrouter" => "https://openrouter.ai/api/v1",
-                    "groq" => "https://api.groq.com/openai/v1",
-                    _ => DEFAULT_LLM_CLOUD_BASE_URL,
+                let provider_id = match self.active.provider.as_deref() {
+                    Some(id) if !id.trim().is_empty() => id.trim(),
+                    _ => DEFAULT_LLM_CLOUD_PROVIDER_NAME,
                 };
-                LlmRuntimeTarget::Cloud {
-                    base_url: base_url.to_string(),
-                    model: self.active.model.clone(),
-                    provider_name: Some(provider_id.to_string()),
-                    protocol: Some("openai".to_string()),
-                    api_key,
+                let api_key = provs.cloud_keys.get(provider_id).cloned().or_else(|| {
+                    if provider_id == "nvidia" {
+                        provs.cloud_keys.get("nvidia_nim").cloned()
+                    } else if provider_id == "nvidia_nim" {
+                        provs.cloud_keys.get("nvidia").cloned()
+                    } else {
+                        None
+                    }
+                });
+                use crate::services::llm::catalog::lookup_preset;
+                let preset = lookup_preset(provider_id);
+                match preset {
+                    Some(p) => LlmRuntimeTarget::Cloud {
+                        base_url: p.base_url.to_string(),
+                        model: self.active.model.clone(),
+                        provider_name: Some(provider_id.to_string()),
+                        protocol: Some("openai".to_string()),
+                        api_key,
+                    },
+                    None => {
+                        log::error!(
+                            "[LlmSettings] Cloud provider id '{}' is not in the declarative wire manifest (RULE-PROV-01). Refusing to silently fall back to an unrelated endpoint.",
+                            provider_id
+                        );
+                        LlmRuntimeTarget::Unresolved {
+                            provider_id: provider_id.to_string(),
+                        }
+                    }
                 }
             }
             _ => LlmRuntimeTarget::Embedded,
@@ -248,6 +271,7 @@ mod tests {
 
         let prov_config = settings.to_provider_config(None);
         assert_eq!(prov_config, LlmRuntimeTarget::Embedded);
+        assert_eq!(settings.runtime_target(None), LlmRuntimeTarget::Embedded);
     }
 
     #[test]
@@ -293,7 +317,7 @@ mod tests {
                 api_key,
                 ..
             } => {
-                assert_eq!(base_url, DEFAULT_LLM_CLOUD_BASE_URL);
+                assert_eq!(base_url, "https://integrate.api.nvidia.com/v1");
                 assert_eq!(model, "meta/llama-3.1-8b-instruct");
                 assert_eq!(provider_name.as_deref(), Some("nvidia"));
                 assert_eq!(api_key.as_deref(), Some("nv-secret-123"));
@@ -301,4 +325,152 @@ mod tests {
             _ => panic!("Expected LlmRuntimeTarget::Cloud"),
         }
     }
+
+    #[test]
+    fn test_llm_settings_cloud_provider_resolution() {
+        let mut settings = LlmSettings {
+            active: ActiveSelection {
+                category: "cloud".to_string(),
+                provider: Some("anthropic".to_string()),
+                model: "claude-3-5-sonnet-20241022".to_string(),
+            },
+            ..Default::default()
+        };
+        let mut provs = LlmProvidersConfig::default();
+        provs
+            .cloud_keys
+            .insert("anthropic".to_string(), "sk-ant-test".to_string());
+
+        // Anthropic resolution: must match anthropic endpoint, never NVIDIA
+        match settings.runtime_target(Some(&provs)) {
+            LlmRuntimeTarget::Cloud {
+                base_url,
+                model,
+                provider_name,
+                api_key,
+                ..
+            } => {
+                assert_eq!(base_url, "https://api.anthropic.com/v1");
+                assert_eq!(model, "claude-3-5-sonnet-20241022");
+                assert_eq!(provider_name.as_deref(), Some("anthropic"));
+                assert_eq!(api_key.as_deref(), Some("sk-ant-test"));
+            }
+            other => panic!("Expected Cloud target for anthropic, got {:?}", other),
+        }
+
+        // Gemini resolution
+        settings.active.provider = Some("gemini".to_string());
+        settings.active.model = "gemini-2.5-flash".to_string();
+        match settings.runtime_target(None) {
+            LlmRuntimeTarget::Cloud {
+                base_url,
+                model,
+                provider_name,
+                ..
+            } => {
+                assert_eq!(
+                    base_url,
+                    "https://generativelanguage.googleapis.com/v1beta/openai"
+                );
+                assert_eq!(model, "gemini-2.5-flash");
+                assert_eq!(provider_name.as_deref(), Some("gemini"));
+            }
+            other => panic!("Expected Cloud target for gemini, got {:?}", other),
+        }
+
+        // OpenRouter resolution
+        settings.active.provider = Some("openrouter".to_string());
+        settings.active.model = "meta-llama/llama-3.3-70b-instruct".to_string();
+        match settings.runtime_target(None) {
+            LlmRuntimeTarget::Cloud {
+                base_url,
+                model,
+                provider_name,
+                ..
+            } => {
+                assert_eq!(base_url, "https://openrouter.ai/api/v1");
+                assert_eq!(model, "meta-llama/llama-3.3-70b-instruct");
+                assert_eq!(provider_name.as_deref(), Some("openrouter"));
+            }
+            other => panic!("Expected Cloud target for openrouter, got {:?}", other),
+        }
+
+        // Groq resolution
+        settings.active.provider = Some("groq".to_string());
+        settings.active.model = "llama-3.3-70b-versatile".to_string();
+        match settings.runtime_target(None) {
+            LlmRuntimeTarget::Cloud {
+                base_url,
+                model,
+                provider_name,
+                ..
+            } => {
+                assert_eq!(base_url, "https://api.groq.com/openai/v1");
+                assert_eq!(model, "llama-3.3-70b-versatile");
+                assert_eq!(provider_name.as_deref(), Some("groq"));
+            }
+            other => panic!("Expected Cloud target for groq, got {:?}", other),
+        }
+
+        // Together AI resolution
+        settings.active.provider = Some("together".to_string());
+        settings.active.model = "meta-llama/Llama-3-70b-chat-hf".to_string();
+        match settings.runtime_target(None) {
+            LlmRuntimeTarget::Cloud {
+                base_url,
+                model,
+                provider_name,
+                ..
+            } => {
+                assert_eq!(base_url, "https://api.together.xyz/v1");
+                assert_eq!(model, "meta-llama/Llama-3-70b-chat-hf");
+                assert_eq!(provider_name.as_deref(), Some("together"));
+            }
+            other => panic!("Expected Cloud target for together, got {:?}", other),
+        }
+
+        // DeepSeek resolution
+        settings.active.provider = Some("deepseek".to_string());
+        settings.active.model = "deepseek-chat".to_string();
+        match settings.runtime_target(None) {
+            LlmRuntimeTarget::Cloud {
+                base_url,
+                model,
+                provider_name,
+                ..
+            } => {
+                assert_eq!(base_url, "https://api.deepseek.com/v1");
+                assert_eq!(model, "deepseek-chat");
+                assert_eq!(provider_name.as_deref(), Some("deepseek"));
+            }
+            other => panic!("Expected Cloud target for deepseek, got {:?}", other),
+        }
+
+        // Mistral resolution
+        settings.active.provider = Some("mistral".to_string());
+        settings.active.model = "mistral-large-latest".to_string();
+        match settings.runtime_target(None) {
+            LlmRuntimeTarget::Cloud {
+                base_url,
+                model,
+                provider_name,
+                ..
+            } => {
+                assert_eq!(base_url, "https://api.mistral.ai/v1");
+                assert_eq!(model, "mistral-large-latest");
+                assert_eq!(provider_name.as_deref(), Some("mistral"));
+            }
+            other => panic!("Expected Cloud target for mistral, got {:?}", other),
+        }
+
+        // Unknown vendor resolution: MUST be Unresolved, NEVER fall back to NVIDIA
+        settings.active.provider = Some("non_existent_provider_xyz".to_string());
+        match settings.runtime_target(None) {
+            LlmRuntimeTarget::Unresolved { provider_id } => {
+                assert_eq!(provider_id, "non_existent_provider_xyz");
+            }
+            other => panic!("Expected Unresolved target for unknown provider, got {:?}", other),
+        }
+    }
 }
+

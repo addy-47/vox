@@ -1,11 +1,14 @@
 use serde::Serialize;
 
+pub mod contract;
 pub mod dispatch;
 pub mod files;
 pub mod mutation;
 pub mod persistence;
 pub mod settings;
 pub mod types;
+
+pub use contract::*;
 
 pub use dispatch::{
     dispatch_worker_command, dispatch_worker_command_has_arm, handle_setting_side_effects,
@@ -52,7 +55,7 @@ pub fn get_setting_reload_policy(domain: &str, key: &str) -> SettingReloadPolicy
     SettingReloadPolicy::Restart
 }
 
-fn classify_known(domain: &str, key: &str) -> Option<SettingReloadPolicy> {
+pub fn classify_known(domain: &str, key: &str) -> Option<SettingReloadPolicy> {
     const WORKER_COMMAND: &[(&str, &[&str])] = &[
         (
             "vad",
@@ -66,6 +69,12 @@ fn classify_known(domain: &str, key: &str) -> Option<SettingReloadPolicy> {
         ("tts", &["voice_id", "voice", "active_voice_id"]),
     ];
 
+    // `realtime` used to live in ALL_HOT, which silently classified
+    // every `realtime.*` key as Hot and applied nothing — provider/voice
+    // changes were persisted to disk and never reached the running actor.
+    // Realtime runs on its own actor; provider/voice/key changes require a
+    // restart to take effect, so they are classified Restart. If a
+    // worker-command channel for realtime is added later, reclassify here.
     const ALL_HOT: &[&str] = &[
         "appearance",
         "interaction",
@@ -74,7 +83,6 @@ fn classify_known(domain: &str, key: &str) -> Option<SettingReloadPolicy> {
         "persona",
         "personal_memory",
         "system",
-        "realtime",
     ];
 
     const KEYED: &[(&str, &str, SettingReloadPolicy)] = &[
@@ -84,11 +92,20 @@ fn classify_known(domain: &str, key: &str) -> Option<SettingReloadPolicy> {
         ("llm", "active", SettingReloadPolicy::Restart),
         ("llm", "last_selected", SettingReloadPolicy::Restart),
         ("llm", "servers", SettingReloadPolicy::Restart),
-        ("llm", "cloud_keys", SettingReloadPolicy::Restart),
+        ("llm", "cloud_keys", SettingReloadPolicy::Hot),
         ("tts", "active", SettingReloadPolicy::Restart),
         ("tts", "last_selected", SettingReloadPolicy::Restart),
         ("tts", "servers", SettingReloadPolicy::Restart),
+        ("tts", "azure_tts", SettingReloadPolicy::Restart),
+        ("tts", "google_tts", SettingReloadPolicy::Restart),
         ("vad", "vad_backend", SettingReloadPolicy::Restart),
+        // realtime provider/voice keys require a restart — the running realtime actor does
+        // not apply hot. API keys apply hot without cycling the engine.
+        ("realtime", "active", SettingReloadPolicy::Restart),
+        ("realtime", "active_voice_id", SettingReloadPolicy::Restart),
+        ("realtime", "voice", SettingReloadPolicy::Restart),
+        ("realtime", "voice_id", SettingReloadPolicy::Restart),
+        ("realtime", "api_keys", SettingReloadPolicy::Hot),
     ];
 
     if WORKER_COMMAND
@@ -109,9 +126,62 @@ fn classify_known(domain: &str, key: &str) -> Option<SettingReloadPolicy> {
     None
 }
 
+/// Canonical, strongly-typed list of every setting key that carries secret
+/// material. This is the SINGLE SOURCE OF TRUTH for secret classification.
+/// `ipc/settings.rs::redact_setting_value` and any contract emission MUST
+/// consult this through `is_secret_key`. Adding a secret-bearing key to
+/// `mutation::supported_keys_for_domain` without adding it here is a bug.
+pub fn secret_keys() -> &'static [(&'static str, &'static str)] {
+    &[
+        ("llm", "cloud_keys"),
+        ("llm", "servers"), // embedded `api_key` on LlmCustomServer
+        ("tts", "servers"), // embedded `api_key` on TtsCustomServer
+        ("realtime", "api_keys"),
+    ]
+}
+
+pub fn is_secret_key(domain: &str, key: &str) -> bool {
+    secret_keys().iter().any(|(d, k)| *d == domain && *k == key)
+}
+
+/// Invariant: every secret-bearing key must be a supported key (so a mutation
+/// can write it) and must be classified so that at least one dispatcher exists.
+/// This is checked at compile-test time to prevent drift.
+pub fn secret_keys_are_supported() -> bool {
+    use crate::config::mutation::supported_keys_for_domain;
+    secret_keys().iter().all(|(d, k)| {
+        supported_keys_for_domain(d).contains(k)
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn secret_keys_are_supported_keys() {
+        assert!(secret_keys_are_supported());
+    }
+
+    #[test]
+    fn realtime_keys_are_restart_not_hot() {
+        // B-04 regression guard: realtime provider/voice keys MUST NOT be
+        // classified Hot, or the running actor won't observe changes.
+        // API keys apply hot without cycling the engine.
+        for k in ["active", "active_voice_id", "voice", "voice_id"] {
+            match classify_known("realtime", k) {
+                Some(SettingReloadPolicy::Hot) => {
+                    panic!("realtime.{k} still classified Hot (B-04)")
+                }
+                None => panic!("realtime.{k} unclassified (B-04)"),
+                _ => {}
+            }
+        }
+        assert_eq!(
+            classify_known("realtime", "api_keys"),
+            Some(SettingReloadPolicy::Hot)
+        );
+    }
 
     #[test]
     fn policy_table_matches_mutation_contract() {
@@ -121,7 +191,7 @@ mod tests {
         );
         assert_eq!(
             get_setting_reload_policy("llm", "cloud_keys"),
-            SettingReloadPolicy::Restart
+            SettingReloadPolicy::Hot
         );
         for phantom in ["server", "cloud", "embedded", "temperature", "threads"] {
             assert!(

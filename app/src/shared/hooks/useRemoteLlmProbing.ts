@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
-import { probeModelCapabilities } from "@/services/settingsService";
+import { probeModelCapabilities } from "@/services/catalogService";
 import type {
   ModelCapabilities,
   LlmProviderConfig,

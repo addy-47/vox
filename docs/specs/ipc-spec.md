@@ -153,6 +153,7 @@ Settings mutations trigger one of three reload policies returned to the frontend
 | Command | Arguments | Return Shape | Behavioral Contract |
 | :--- | :--- | :--- | :--- |
 | `get_settings` | None | `BootState` | Returns full application settings object, directory health, and active configuration paths. |
+| `get_settings_contract` | None | `SettingsContract` | Returns canonical settings classification contract: supported keys by domain, reload policies, secret keys, cloud providers, TTS providers, and numeric defaults. |
 | `update_setting` | `domain: string`, `key: string`, `value: unknown` | `{ applied, reloadPolicy, message, restartScheduled }` | Polymorphic setting mutator. Handles domain selections (`active`, `last_selected`), custom server list (`servers`), active voice (`active_voice_id`), and sparse model parameters (`model_parameters`). Applies hot, worker command, or schedules coalesced restart. |
 | `reset_settings` | None | `{ settings, reloadPolicy, message, restartScheduled }` | Resets settings to system defaults. |
 | `get_model_catalog` | None | `ModelCatalog` | Returns verified model weights manifest. |

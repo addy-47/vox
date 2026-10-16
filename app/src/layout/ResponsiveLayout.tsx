@@ -151,7 +151,7 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
   useEffect(() => {
     document.title = PAGE_TITLES[location.pathname] ?? "Vox";
     window.scrollTo(0, 0);
-    import("@/services/historyService").then(({ getTurnsCacheSize }) => {
+    import("@/services/persistenceService").then(({ getTurnsCacheSize }) => {
       // (cyan-flash RCA: theme-token state at every route commit. Remove once found.)
       try {
         const r = document.documentElement;

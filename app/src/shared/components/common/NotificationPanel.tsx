@@ -37,7 +37,7 @@ import {
   metadataResolution,
   type NotificationRecord,
   type NotificationCategory,
-} from "@/services/notificationService";
+} from "@/services/notificationsService";
 
 interface NotificationPanelProps {
   onClose: () => void;

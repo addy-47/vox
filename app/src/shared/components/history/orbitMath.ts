@@ -1,4 +1,4 @@
-import type { SessionRow } from "@/services/historyService";
+import type { SessionRow } from "@/services/persistenceService";
 
 // One tilted ring, rendered as a CSS ellipse; cards travel along it like an
 // infinite circular carousel. Angle 0 = right side, +π/2 = bottom (front).

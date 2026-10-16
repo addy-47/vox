@@ -30,6 +30,8 @@ pub fn supported_keys_for_domain(domain: &str) -> &'static [&'static str] {
             "voice",
             "voice_id",
             "servers",
+            "azure_tts",
+            "google_tts",
         ],
         "interaction" => &["mode", "pipeline_mode"],
         "dictation" => &[
@@ -285,6 +287,33 @@ fn apply_tts_mutation(
                 .map_err(|e| format!("Invalid TTS servers list: {}", e))?;
             validate_tts_server_list(&mut servers)?;
             settings.providers.tts.servers = servers;
+        }
+        "azure_tts" => {
+            let cfg: crate::services::tts::config::TtsAzureConfig = serde_json::from_value(value.clone())
+                .map_err(|e| format!("Invalid Azure TTS config: {}", e))?;
+            if cfg.region_or_endpoint.trim().is_empty() {
+                return Err("azure region_or_endpoint must not be empty".to_string());
+            }
+            if cfg.voice.trim().is_empty() {
+                return Err("azure voice must not be empty".to_string());
+            }
+            if !cfg.key.trim().is_empty() && cfg.key.trim().len() < 8 {
+                return Err("azure key must be at least 8 chars".to_string());
+            }
+            settings.providers.tts.azure_tts = cfg;
+        }
+        "google_tts" => {
+            let cfg: crate::services::tts::config::TtsGoogleConfig = serde_json::from_value(value.clone())
+                .map_err(|e| format!("Invalid Google TTS config: {}", e))?;
+            if cfg.voice.trim().is_empty() {
+                return Err("google voice must not be empty".to_string());
+            }
+            if let Some(ref p) = cfg.project_override {
+                if p.trim().is_empty() {
+                    return Err("google project_override must not be empty when provided".to_string());
+                }
+            }
+            settings.providers.tts.google_tts = cfg;
         }
         _ => return Ok(false),
     }

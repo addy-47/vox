@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { SessionRow } from "@/services/historyService";
+import type { SessionRow } from "@/services/persistenceService";
 
 export type HistoryDateFilter = "all" | "today" | "week" | "month" | "custom";
 export type HistoryDisplayMode = "orbit" | "list";

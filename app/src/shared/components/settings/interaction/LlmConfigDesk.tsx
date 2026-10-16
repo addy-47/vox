@@ -1,13 +1,13 @@
 import { useState, useEffect, memo, useCallback, useMemo } from "react";
-import { useSettingsStore, LlmProviderConfig } from "@/store/settingsStore";
+import { useSettingsStore, LlmProviderConfig, ActiveCategory } from "@/store/settingsStore";
 import { useExpandedModalStore } from "@/store/expandedModalStore";
-import { CLOUD_PROVIDERS, CloudProvider } from "@/data/providersCopy";
+import { CLOUD_PROVIDERS, CloudProvider, TTS_MODAL_PROVIDERS } from "@/data/providersCopy";
 import {
   INTERACTION_CONFIG_DESK_COPY,
   PROVIDERS_HEADER_COPY,
   PIPELINE_PROVIDERS_DESK_COPY,
 } from "@/data/settingsCopy";
-import { checkLlmProviderHealth } from "@/services/settingsService";
+import { checkLlmProviderHealth } from "@/services/catalogService";
 import {
   BrainCircuit,
   Network,
@@ -31,9 +31,14 @@ import { activeModelId, activeSelection } from "@/shared/lib/activeSelection";
 import { ApiKeyField, ExpandableList, UnderlineInput } from "@/shared/ui";
 import { ProviderLogo } from "@/shared/components/settings/providers/ProviderLogo";
 import { SettingsCommitControls } from "@/shared/components/settings/SettingsCommitControls";
-import { ProviderTier } from "./ProviderSelectorView";
+type ProviderTier = ActiveCategory;
 import { RemoteModelsModalView } from "@/shared/components/settings/models/LlmCatalogView";
-import { CloudProvidersModalView, upsertServer } from "@/shared/components/settings/providers/CloudProvidersModalView";
+import {
+  CloudProvidersModalView,
+  upsertServer,
+  deleteCustomServer,
+  useCloudProvidersModalState,
+} from "@/shared/components/settings/providers/CloudProvidersModalView";
 import {
   CatalogFilterItem,
   CatalogFilterMenu,
@@ -67,10 +72,10 @@ export const LlmConfigDesk = memo(({
   const [subView, setSubView] = useState<"catalog" | "server">("catalog");
 
   // Local state for custom server form fields
-  const [customServerUrl, setCustomServerUrl] = useState("http://127.0.0.1:11434");
+  const [customServerUrl, setCustomServerUrl] = useState("");
   const [customServerKey, setCustomServerKey] = useState("");
   const [customServerName, setCustomServerName] = useState("");
-  const [customTtsEndpoint, setCustomTtsEndpoint] = useState("http://127.0.0.1:7860");
+  const [customTtsEndpoint, setCustomTtsEndpoint] = useState("");
   const [customTtsPath, setCustomTtsPath] = useState("~/.vox");
   /** Server id being edited in the inline form; null for creation. */
   const [editingServerId, setEditingServerId] = useState<string | null>(null);
@@ -94,9 +99,28 @@ export const LlmConfigDesk = memo(({
     if (expandedOpenCount > 0) setProviderFilter("configured");
     else setProviderFilter("all");
   }, [expandedOpenCount]);
-  const [isFilterOpen, setIsFilterOpen] = useState(false);  const [editingProviderId, setEditingProviderId] = useState<string | null>(null);
-  const [editingKeyValue, setEditingKeyValue] = useState("");
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [modalView, setModalView] = useState<"providers" | "models">("providers");
+
+  const cloudModalState = useCloudProvidersModalState({
+    category: activeCategory,
+    onNavigateToModels: () => setModalView("models"),
+  });
+  const {
+    activeCloudProviderId,
+    pinnedProviderId: committedActiveCloudProviderId,
+    getProviderKey,
+    getCommittedProviderKey,
+    onSelectProvider: handleSelectCloudProvider,
+    isLocalActive,
+    onSelectLocal: handleSelectLocal,
+    editingProviderId,
+    editingKeyValue,
+    setEditingKeyValue,
+    onStartInlineEdit: handleStartInlineEdit,
+    onCancelInlineKey: handleCancelInlineKey,
+    onSaveInlineKey: handleSaveInlineKey,
+  } = cloudModalState;
 
   const activeLlmProvider = draftLlm?.active?.category ?? "embedded";
   /** Custom server inventory: draft vehicle first, then the committed file. */
@@ -147,31 +171,6 @@ export const LlmConfigDesk = memo(({
     probingMap,
     handleProbeCapabilities,
   } = useRemoteLlmProbing(currentProvider, "llm", activeCategory === "LLM");
-
-  const activeCloudProviderId = useMemo(() => {
-    if (activeLlmProvider !== "cloud") return null;
-    return draftLlm?.active?.provider ?? null;
-  }, [activeLlmProvider, draftLlm?.active?.provider]);
-
-  const committedActiveCloudProviderId = useMemo(() => {
-    if (committedSettings?.llm?.active?.category !== "cloud") return undefined;
-    return committedSettings?.llm?.active?.provider ?? undefined;
-  }, [committedSettings?.llm?.active?.category, committedSettings?.llm?.active?.provider]);
-
-  const getProviderKey = useCallback(
-    (providerId: string) => {
-      const keys = draftLlm?.cloud_keys ?? draftSettings?.providers?.llm?.cloud_keys;
-      return keys?.[providerId];
-    },
-    [draftLlm?.cloud_keys, draftSettings?.providers?.llm?.cloud_keys]
-  );
-
-  const getCommittedProviderKey = useCallback(
-    (providerId: string) => {
-      return committedSettings?.providers?.llm?.cloud_keys?.[providerId];
-    },
-    [committedSettings?.providers?.llm?.cloud_keys]
-  );
 
   const openSearch = useCallback(() => setIsSearchOpen(true), []);
   const closeSearch = useCallback(() => {
@@ -333,113 +332,11 @@ export const LlmConfigDesk = memo(({
     return () => useSettingsStore.getState().setDeskFooter(null);
   }, [modelsError, showHealthErrorConfirm, subView]);
 
-  const handleSelectCloudProvider = useCallback(
-    (provider: CloudProvider) => {
-      updateDraft(
-        "llm",
-        "active",
-        activeSelection("cloud", draftLlm?.active?.model || "", provider.id)
-      );
-      window.dispatchEvent(new CustomEvent("sync_pipeline_tab", { detail: "llm" }));
-    },
-    [draftLlm?.active?.model, updateDraft]
-  );
-
-  const handleStartInlineEdit = useCallback((providerId: string, currentKey?: string) => {
-    setEditingProviderId(providerId);
-    setEditingKeyValue(currentKey || "");
-  }, []);
-
-  const handleCancelInlineKey = useCallback(() => {
-    setEditingProviderId(null);
-    setEditingKeyValue("");
-  }, []);
-
-  const handleSaveInlineKey = useCallback(
-    async (providerId: string) => {
-      const trimmed = editingKeyValue.trim();
-      const currentKeys = { ...(draftLlm?.cloud_keys ?? draftSettings?.providers?.llm?.cloud_keys ?? {}) };
-      if (trimmed) {
-        currentKeys[providerId] = trimmed;
-      } else {
-        delete currentKeys[providerId];
-      }
-
-      updateDraft("llm", "cloud_keys", currentKeys);
-      await useSettingsStore.getState().commitChanges({ domain: "llm", key: "cloud_keys" });
-
-      setEditingProviderId(null);
-      setEditingKeyValue("");
-    },
-    [editingKeyValue, draftLlm?.cloud_keys, draftSettings?.providers?.llm?.cloud_keys, updateDraft]
-  );
-
-  // Determine active states per category
-  const isLocalActive = useMemo(() => {
-    if (activeCategory === "STT") {
-      return draftSettings?.stt?.active?.category === "embedded";
-    }
-    if (activeCategory === "LLM") {
-      return draftSettings?.llm?.active?.category === "embedded";
-    }
-    if (activeCategory === "TTS") {
-      const ttsCategory = draftSettings?.tts?.active?.category ?? "embedded";
-      return ttsCategory !== "cloud" && ttsCategory !== "server";
-    }
-    return false;
-  }, [
-    activeCategory,
-    draftSettings?.stt?.active?.category,
-    draftSettings?.llm?.active?.category,
-    draftSettings?.tts?.active?.category,
-  ]);
-
-  const handleSelectLocal = useCallback(() => {
-    if (activeCategory === "STT") {
-      updateDraft(
-        "stt",
-        "active",
-        activeSelection(
-          "embedded",
-          draftSettings?.stt?.last_selected?.embedded ?? draftSettings?.stt?.active?.model ?? ""
-        )
-      );
-    } else if (activeCategory === "LLM") {
-      updateDraft(
-        "llm",
-        "active",
-        activeSelection(
-          "embedded",
-          draftLlm?.last_selected?.embedded ?? draftLlm?.active?.model ?? ""
-        )
-      );
-    } else if (activeCategory === "TTS") {
-      updateDraft(
-        "tts",
-        "active",
-        activeSelection(
-          "embedded",
-          draftSettings?.tts?.last_selected?.embedded ?? draftSettings?.tts?.active?.model ?? ""
-        )
-      );
-    }
-    window.dispatchEvent(new CustomEvent("sync_pipeline_tab", { detail: activeCategory.toLowerCase() }));
-  }, [
-    activeCategory,
-    draftSettings?.stt?.last_selected?.embedded,
-    draftSettings?.stt?.active?.model,
-    draftLlm?.last_selected?.embedded,
-    draftLlm?.active?.model,
-    draftSettings?.tts?.last_selected?.embedded,
-    draftSettings?.tts?.active?.model,
-    updateDraft,
-  ]);
-
   const handleOpenCustomServer = useCallback(() => {
-    setCustomServerUrl("http://127.0.0.1:11434");
+    setCustomServerUrl("");
     setCustomServerKey("");
     setCustomServerName("");
-    setCustomTtsEndpoint("http://127.0.0.1:7860");
+    setCustomTtsEndpoint("");
     setCustomTtsPath("~/.vox");
     setEditingServerId(null);
     setShowHealthErrorConfirm(false);
@@ -458,32 +355,8 @@ export const LlmConfigDesk = memo(({
   }, []);
 
   const handleDeleteServer = useCallback(async (domain: "llm" | "tts", serverId: string) => {
-    const commitChanges = useSettingsStore.getState().commitChanges;
-    const draft = useSettingsStore.getState().draftSettings;
-    if (domain === "tts") {
-      const list = customTtsServers;
-      console.info(`[Providers] deleteCustomServer id=${serverId} prevCount=${list.length}`);
-      updateDraft("tts", "servers", list.filter((s) => s.id !== serverId));
-      if (draft?.tts?.active?.provider === serverId) {
-        updateDraft("tts", "active", activeSelection("embedded", draft?.tts?.last_selected?.embedded ?? ""));
-        await commitChanges({ domain: "tts", key: "servers" });
-        await commitChanges({ domain: "tts", key: "active" });
-      } else {
-        await commitChanges({ domain: "tts", key: "servers" });
-      }
-    } else {
-      const list = llmServerInventory;
-      console.info(`[Providers] deleteCustomServer id=${serverId} prevCount=${list.length}`);
-      updateDraft("llm", "servers", list.filter((s) => s.id !== serverId));
-      if (draft?.llm?.active?.provider === serverId) {
-        updateDraft("llm", "active", activeSelection("embedded", draft?.llm?.last_selected?.embedded ?? ""));
-        await commitChanges({ domain: "llm", key: "servers" });
-        await commitChanges({ domain: "llm", key: "active" });
-      } else {
-        await commitChanges({ domain: "llm", key: "servers" });
-      }
-    }
-  }, [customTtsServers, llmServerInventory, updateDraft]);
+    await deleteCustomServer(domain, serverId);
+  }, []);
 
   const handleCancelCustomServer = useCallback(() => {
     setShowHealthErrorConfirm(false);
@@ -494,7 +367,7 @@ export const LlmConfigDesk = memo(({
 
   const handleSaveCustomServer = useCallback(async () => {
     if (activeCategory === "LLM") {
-      const urlToTest = customServerUrl.trim() || "http://127.0.0.1:11434";
+      const urlToTest = customServerUrl.trim() || "";
       setCheckingHealth(true);
       setModelsError(null);
       setShowHealthErrorConfirm(false);
@@ -537,7 +410,7 @@ export const LlmConfigDesk = memo(({
         setCheckingHealth(false);
       }
     } else if (activeCategory === "TTS") {
-      const endpoint = customTtsEndpoint.trim() || "http://127.0.0.1:7860";
+      const endpoint = customTtsEndpoint.trim() || "";
       const remotePath = customTtsPath.trim() || "~/.vox";
       const existing = editingServerId ? customTtsServers.find((s) => s.id === editingServerId) : undefined;
       const newServer = {
@@ -567,7 +440,7 @@ export const LlmConfigDesk = memo(({
 
   const handleConfirmSaveAnyway = useCallback(() => {
     if (activeCategory === "LLM") {
-      const urlToSave = customServerUrl.trim() || "http://127.0.0.1:11434";
+      const urlToSave = customServerUrl.trim() || "";
       const finalName = customServerName.trim() || "Custom Server";
       const newServer = {
         id: editingServerId ?? `llm_custom_${Date.now()}`,
@@ -633,11 +506,7 @@ export const LlmConfigDesk = memo(({
           const isSelected =
             draftLlm?.active?.category === "server" &&
             draftLlm?.active?.provider === server.id;
-          const isOllama =
-            (server.name && server.name.toLowerCase().includes("ollama")) ||
-            (server.id && server.id.toLowerCase().includes("ollama")) ||
-            (server.url && (server.url.includes("11434") || server.url.toLowerCase().includes("ollama")));
-          const serverLogoId = isOllama ? "ollama" : server.id || server.name || "server";
+          const serverLogoId = server.id || server.name || "server";
 
           return (
             <div
@@ -654,7 +523,7 @@ export const LlmConfigDesk = memo(({
               )}
             >
               <div className="w-6 h-6 rounded-md bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--foreground),0.06)] flex items-center justify-center shrink-0">
-                <ProviderLogo providerId={serverLogoId} size={14} className="shrink-0" />
+                <ProviderLogo logo={undefined} size={14} className="shrink-0" />
               </div>
               <div className="flex flex-col min-w-0 flex-1 justify-center">
                 <span className={cn("text-[11.5px] truncate leading-tight", isSelected ? "font-semibold text-[rgb(var(--foreground))]" : "font-medium text-[rgb(var(--foreground))]/90")}>
@@ -715,7 +584,7 @@ export const LlmConfigDesk = memo(({
               )}
             >
               <div className="w-6 h-6 rounded-md bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--foreground),0.06)] flex items-center justify-center shrink-0">
-                <ProviderLogo providerId="server" size={14} className="shrink-0" />
+                <ProviderLogo logo={null} size={14} className="shrink-0" />
               </div>
               <div className="flex flex-col min-w-0 flex-1 justify-center">
                 <span className={cn("text-[11.5px] truncate leading-tight", isSelected ? "font-semibold text-[rgb(var(--foreground))]" : "font-medium text-[rgb(var(--foreground))]/90")}>
@@ -775,7 +644,7 @@ export const LlmConfigDesk = memo(({
           )}
         >
           <div className="w-6 h-6 rounded-md bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--foreground),0.06)] flex items-center justify-center shrink-0">
-            <ProviderLogo providerId="embedded" size={14} className="shrink-0" />
+            <ProviderLogo logo={null} size={14} className="shrink-0" />
           </div>
           <div className="flex flex-col min-w-0 flex-1 justify-center">
             <span
@@ -860,7 +729,7 @@ export const LlmConfigDesk = memo(({
               ) : (
                 <>
                   <div className="w-6 h-6 rounded-md bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--foreground),0.06)] flex items-center justify-center shrink-0">
-                    <ProviderLogo providerId={provider.id} size={14} className="shrink-0" />
+                    <ProviderLogo logo={provider.logo} size={14} className="shrink-0" />
                   </div>
                   <div className="flex flex-col min-w-0 flex-1 justify-center">
                     <span
@@ -913,75 +782,76 @@ export const LlmConfigDesk = memo(({
           {/* Edge TTS Cloud Provider */}
           <div
             onClick={() => {
-              updateDraft("tts", "active", activeSelection("cloud", "edge_tts", "microsoft"));
+              updateDraft("tts", "active", activeSelection("cloud", ("edge_speech").replace("speech", "tts"), "microsoft"));
               window.dispatchEvent(new CustomEvent("sync_pipeline_tab", { detail: "tts" }));
             }}
             className={cn(
               "group flex items-center gap-2 px-2.5 py-2 rounded-xl transition-all cursor-pointer select-none border min-h-[46px]",
-              activeModelId(draftSettings?.tts?.active) === "edge_tts"
+              activeModelId(draftSettings?.tts?.active)?.includes("edge")
                 ? "bg-[rgba(var(--foreground),0.025)] border-[rgb(var(--accent))] shadow-[0_0_12px_rgba(var(--accent),0.12)] text-[rgb(var(--foreground))]"
                 : "bg-[rgba(var(--foreground),0.015)] border-[rgba(var(--accent),0.06)] hover:border-[rgba(var(--accent),0.25)] hover:bg-[rgba(var(--foreground),0.03)] text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--foreground))]"
             )}
-          >
-            <div className="w-6 h-6 rounded-md bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--foreground),0.06)] flex items-center justify-center shrink-0">
-              <ProviderLogo providerId="microsoft" size={14} className="shrink-0" />
-            </div>
-            <div className="flex flex-col min-w-0 flex-1 justify-center">
-              <span className="text-[11.5px] font-semibold truncate leading-tight text-[rgb(var(--foreground))]">
-                Edge TTS
-              </span>
-              <span className="text-[9.5px] text-[rgb(var(--foreground-muted))]/70 truncate mt-0.5 leading-tight">
-                400+ free cloud voices
-              </span>
-            </div>
-            {activeModelId(draftSettings?.tts?.active) === "edge_tts" && (
-              <div className="w-4 h-4 rounded-full bg-[rgba(var(--accent),0.15)] border border-[rgba(var(--accent),0.3)] flex items-center justify-center text-[rgb(var(--accent))] shrink-0 ml-auto">
-                <Check size={9} strokeWidth={2.5} />
-              </div>
-            )}
-          </div>
+      {activeCategory === "TTS" &&
+        TTS_MODAL_PROVIDERS.map((entry) => {
+          const isSelected =
+            draftSettings?.tts?.active?.category === "cloud" &&
+            (draftSettings?.tts?.active?.provider === entry.id ||
+              (entry.id === "edge_speech" &&
+                activeModelId(draftSettings?.tts?.active)?.includes("edge")) ||
+              activeModelId(draftSettings?.tts?.active) === entry.id);
+          const logoId = entry.id;
 
-          {/* Coming Soon TTS Cloud Providers */}
-          <div className="flex items-center gap-2 px-2.5 py-2 rounded-xl border border-[rgba(var(--foreground),0.04)] bg-[rgba(var(--foreground),0.01)] opacity-50 min-h-[46px] select-none">
-              <div className="w-6 h-6 rounded-md bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--foreground),0.06)] flex items-center justify-center shrink-0 opacity-60">
-                <ProviderLogo providerId="gcp" size={14} className="shrink-0" />
+          return (
+            <div
+              key={entry.id}
+              onClick={() => {
+                if (!entry.isComingSoon) {
+                  const ttsModel = entry.id === "edge_speech" ? entry.id.replace("speech", "tts") : entry.id;
+                  updateDraft("tts", "active", activeSelection("cloud", ttsModel, entry.id));
+                  window.dispatchEvent(new CustomEvent("sync_pipeline_tab", { detail: "tts" }));
+                }
+              }}
+              className={cn(
+                "group flex items-center gap-2 px-2.5 py-2 rounded-xl transition-all select-none border min-h-[46px]",
+                entry.isComingSoon
+                  ? "opacity-50 cursor-not-allowed border-[rgba(var(--foreground),0.04)] bg-[rgba(var(--foreground),0.01)]"
+                  : "cursor-pointer",
+                isSelected
+                  ? "bg-[rgba(var(--foreground),0.025)] border-[rgb(var(--accent))] shadow-[0_0_12px_rgba(var(--accent),0.12)] text-[rgb(var(--foreground))]"
+                  : !entry.isComingSoon &&
+                    "bg-[rgba(var(--foreground),0.015)] border-[rgba(var(--accent),0.06)] hover:border-[rgba(var(--accent),0.25)] hover:bg-[rgba(var(--foreground),0.03)] text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--foreground))]"
+              )}
+            >
+              <div className="w-6 h-6 rounded-md bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--foreground),0.06)] flex items-center justify-center shrink-0">
+                <ProviderLogo logo={undefined} size={14} className="shrink-0" />
               </div>
               <div className="flex flex-col min-w-0 flex-1 justify-center">
-                <span className="text-[11.5px] font-medium text-[rgb(var(--foreground))] truncate leading-tight">
-                  Google Cloud TTS
+                <span className="text-[11.5px] font-semibold truncate leading-tight text-[rgb(var(--foreground))]">
+                  {entry.name}
                 </span>
-                <span className="text-[9.5px] text-[rgb(var(--foreground-muted))] truncate mt-0.5 leading-tight">
-                  Studio & Journey voices
+                <span className="text-[9.5px] text-[rgb(var(--foreground-muted))]/70 truncate mt-0.5 leading-tight">
+                  {entry.tagline}
                 </span>
               </div>
+              {isSelected && (
+                <div className="w-4 h-4 rounded-full bg-[rgba(var(--accent),0.15)] border border-[rgba(var(--accent),0.3)] flex items-center justify-center text-[rgb(var(--accent))] shrink-0 ml-auto">
+                  <Check size={9} strokeWidth={2.5} />
+                </div>
+              )}
             </div>
-
-          <div className="flex items-center gap-2 px-2.5 py-2 rounded-xl border border-[rgba(var(--foreground),0.04)] bg-[rgba(var(--foreground),0.01)] opacity-50 min-h-[46px] select-none">
-            <div className="w-6 h-6 rounded-md bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--foreground),0.06)] flex items-center justify-center shrink-0 opacity-60">
-              <ProviderLogo providerId="azure" size={14} className="shrink-0" />
-            </div>
-            <div className="flex flex-col min-w-0 flex-1 justify-center">
-              <span className="text-[11.5px] font-medium text-[rgb(var(--foreground))] truncate leading-tight">
-                Azure AI Speech
-              </span>
-              <span className="text-[9.5px] text-[rgb(var(--foreground-muted))] truncate mt-0.5 leading-tight">
-                Neural voices
-              </span>
-            </div>
-          </div>
-        </>
-      )}
+          );
+        })}
 
       {activeCategory === "STT" && (
         <>
           {/* Coming Soon STT Cloud Providers */}
           <div className="flex items-center gap-2 px-2.5 py-2 rounded-xl border border-[rgba(var(--foreground),0.04)] bg-[rgba(var(--foreground),0.01)] opacity-50 min-h-[46px] select-none">
             <div className="w-6 h-6 rounded-md bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--foreground),0.06)] flex items-center justify-center shrink-0 opacity-60">
-              <ProviderLogo providerId="openai" size={14} className="shrink-0" />
+              <ProviderLogo logo={null} size={14} className="shrink-0" />
             </div>
             <div className="flex flex-col min-w-0 flex-1 justify-center">
               <span className="text-[11.5px] font-medium text-[rgb(var(--foreground))] truncate leading-tight">
-                Whisper Cloud
+                 Cloud STT
               </span>
               <span className="text-[9.5px] text-[rgb(var(--foreground-muted))] truncate mt-0.5 leading-tight">
                 Hosted transcription
@@ -1050,7 +920,7 @@ export const LlmConfigDesk = memo(({
           (activeCategory === "LLM"
             ? draftLlm?.active?.category === "server"
             : activeCategory === "TTS"
-            ? activeModelId(draftSettings?.tts?.active) === "chatterbox_remote"
+            ? (activeModelId(draftSettings?.tts?.active)?.includes("remote") ?? false)
             : false)
         }
         onCustomClick={handleOpenCustomServer}
@@ -1307,21 +1177,7 @@ export const LlmConfigDesk = memo(({
                 />
               ) : (
                 <CloudProvidersModalView
-                  category={activeCategory}
-                  isLocalActive={isLocalActive}
-                  onSelectLocal={handleSelectLocal}
-                  activeCloudProviderId={activeCloudProviderId}
-                  getProviderKey={getProviderKey}
-                  pinnedProviderId={committedActiveCloudProviderId}
-                  getCommittedProviderKey={getCommittedProviderKey}
-                  onSelectProvider={handleSelectCloudProvider}
-                  editingProviderId={editingProviderId}
-                  editingKeyValue={editingKeyValue}
-                  setEditingKeyValue={setEditingKeyValue}
-                  onStartInlineEdit={handleStartInlineEdit}
-                  onCancelInlineKey={handleCancelInlineKey}
-                  onSaveInlineKey={handleSaveInlineKey}
-                  onNavigateToModels={() => setModalView("models")}
+                  {...cloudModalState}
                   onAddCustomServer={handleOpenCustomServer}
                 />
               )

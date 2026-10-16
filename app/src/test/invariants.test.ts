@@ -16,18 +16,7 @@ const MANIFEST = path.join(REPO_DIR, "manifests", "models_manifest.json");
  * to it is a regression, so every entry is a promise to delete it. Anything not
  * listed must render from capabilities and manifest flags alone.
  */
-const ALLOWED_MODEL_NAME_SITES: Record<string, string> = {
-  "shared/components/settings/models/TtsVoiceManager.tsx":
-    "Settings-key writes still name the edge_tts sub-key; voice-list branching is shape-driven since Batch 5.1.",
-  "store/settingsStore.ts":
-    "TtsActiveProvider / VadSettings mirror the backend enums for the active-id fields. TtsProviderConfig union and tts phantoms deleted in Batch 5.5.",
-  "shared/components/settings/models/ModelsCard.tsx":
-    "chatterbox_remote remote-deploy branch. Deferred to Batch 6 pending a second remote model.",
-  "shared/components/settings/interaction/LlmConfigDesk.tsx":
-    "chatterbox_remote endpoint fields. Same remote-deploy deferral as ModelsCard.",
-  "shared/components/settings/models/VadWorkspace.tsx":
-    "vad_backend fallback default. Derivable from is_built_in once Batch 5 lands.",
-};
+const ALLOWED_MODEL_NAME_SITES: Record<string, string> = {};
 
 /**
  * Every provider id in the manifest, so the check stays correct as models are

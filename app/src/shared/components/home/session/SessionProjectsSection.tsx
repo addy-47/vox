@@ -2,7 +2,7 @@ import React, { memo, useCallback, useMemo, useState, useRef, useEffect } from "
 import { FolderPlus, Check, X } from "lucide-react";
 import { AnimatePresence, motion, Reorder } from "framer-motion";
 import { type ProjectGroup } from "@/shared/hooks/useSessionPanel";
-import { type ProjectRow } from "@/services/projectService";
+import { type ProjectRow } from "@/services/projectsService";
 import { SESSION_COPY } from "@/data/sessionCopy";
 import { Tooltip } from "@/shared/ui/Tooltip";
 import { ProjectRowItem } from "./ProjectRowItem";

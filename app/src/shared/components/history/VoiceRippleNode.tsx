@@ -2,7 +2,7 @@ import React, { useMemo, memo } from "react";
 import { Trash2, Check, X } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { Tooltip } from "@/shared/ui/Tooltip";
-import { resolveSessionTitle, formatDateShort, type SessionRow } from "@/services/historyService";
+import { resolveSessionTitle, formatDateShort, type SessionRow } from "@/services/persistenceService";
 import { HISTORY_COPY } from "@/data/historyCopy";
 import { CompactSessionButton } from "./CompactSessionButton";
 import { formatClockTime, ORBIT_CARD_WIDTH } from "./orbitMath";

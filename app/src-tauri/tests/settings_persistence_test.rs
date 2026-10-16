@@ -573,10 +573,10 @@ fn reload_policy_worker_command_keys_all_have_dispatch_arms() {
         SettingReloadPolicy::WorkerCommand,
         "vad.max_speech_duration_s must not be WorkerCommand until a VadCommand variant exists"
     );
-    assert_ne!(
+    assert_eq!(
         get_setting_reload_policy("llm", "cloud_keys"),
         SettingReloadPolicy::Hot,
-        "llm.cloud_keys must be Restart because LLM provider is cached for engine lifetime"
+        "llm.cloud_keys must be Hot so saving a key does not cycle the engine"
     );
 }
 

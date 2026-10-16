@@ -1,15 +1,26 @@
 import { create } from "zustand";
 import {
   getSettings,
-  requestModelCatalog,
+  getRestartStatus,
   updateSetting,
   resetSettings,
+} from "@/services/settingsService";
+import {
   readModelCapabilitiesCache,
   listLlmModels,
-} from "@/services/settingsService";
+  requestModelCatalog,
+} from "@/services/catalogService";
 import { applyTheme } from "@/shared/theme";
 import { ipcErrorMessage } from "@/shared/lib/ipcError";
 import { DOMAIN_DIRTY_KEYS, SETTINGS_SCOPE_KEYS, type SettingsDomainId, type SettingsScope } from "@/data/settingsCopy";
+import {
+  settingsContractService,
+  type SettingsContract,
+} from "@/services/settingsService";
+import {
+  updateCloudProvidersFromContract,
+  updateTtsProvidersFromContract,
+} from "@/data/providersCopy";
 
 /** Reads a settings scope as a key-value map for dynamic key access. The
  * single guarded cast in the store; every dynamic read funnels through here. */
@@ -42,11 +53,7 @@ export interface LastSelectedModels {
 }
 
 /** Realtime configuration subkey (the `realtime.<subkey>` settings object). */
-export type RealtimeSubkey =
-  | "gemini_live"
-  | "openai_realtime"
-  | "deepgram_voice_agent"
-  | "elevenlabs_convai";
+export type RealtimeSubkey = string;
 
 export type LlmProviderKind = ActiveCategory;
 
@@ -187,7 +194,7 @@ export type AudioOutputMode = "Speaker" | "Headset";
 export interface VadSettings {
   threshold: number;
   ptt_noise_gate: number;
-  vad_backend: "earshot" | "ten_vad" | "silero_vad";
+  vad_backend: string;
   silence_duration_ms: number;
   speech_onset_ms: number;
   max_speech_duration_s: number;
@@ -372,7 +379,10 @@ export interface SettingsState {
   /** True while the backend's coalesced engine restart is running. */
   restartInFlight: boolean;
   error: string | null;
+  /** Canonical settings contract from backend (supported keys, reload policies, providers, defaults). */
+  contract: SettingsContract | null;
 
+  loadContract: () => Promise<SettingsContract | null>;
   loadSettings: () => Promise<void>;
   loadModelCatalog: () => Promise<void>;
   loadRemoteModels: (providerConfig?: LlmProviderConfig, force?: boolean) => Promise<void>;
@@ -474,9 +484,11 @@ let saveFailureTimers = new Map<string, ReturnType<typeof setTimeout>>();
  * permanently mounted probing hooks share one request per endpoint. */
 const remoteModelsInflight = new Map<string, Promise<LlmModelInfo[]>>();
 
+let restartPollInterval: ReturnType<typeof setInterval> | null = null;
+
 /** Poll cadence for mirroring the backend's restart progress. */
-const RESTART_POLL_INTERVAL_MS = 400;
-/** Upper bound so a failed restart cannot wedge the UI in "restarting". */
+const RESTART_POLL_INTERVAL_MS = 500;
+/** Upper bound so a failed restart cannot wedge the UI in "restarting" (30 * 500ms = 15s). */
 const RESTART_POLL_MAX_TICKS = 30;
 
 /** The six card domains that own a commit footer. */
@@ -501,24 +513,11 @@ const MODEL_CATALOG_SCOPES: ReadonlySet<string> = new Set([
   "system",
 ]);
 
-/** Checks if a setting key requires an engine restart. Mirror of the backend
- * `classify_known` table (`config/mod.rs`): only keys the backend accepts AND
- * classifies `Restart` are listed. Anything else autosaves. */
+/** Checks if a setting key requires an engine restart.
+ * @deprecated Use `settingsContractService.isRestartKey(scope, key)` or backend contract reload policies.
+ */
 export function isRestartKey(scope: string, key: string): boolean {
-  if (scope === "stt" && ["active", "last_selected", "transliterate_enabled"].includes(key))
-    return true;
-  if (
-    scope === "llm" &&
-    ["active", "last_selected", "servers", "cloud_keys"].includes(key)
-  )
-    return true;
-  if (
-    scope === "tts" &&
-    ["active", "last_selected", "servers"].includes(key)
-  )
-    return true;
-  if (scope === "vad" && key === "vad_backend") return true;
-  return false;
+  return settingsContractService.isRestartKey(scope, key);
 }
 
 /** Empty flag set used before any settings are loaded. */
@@ -539,7 +538,23 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   restartKeys: [],
   restartInFlight: false,
   error: null,
+  contract: null,
   domainFlags: EMPTY_DOMAIN_FLAGS,
+
+  loadContract: async () => {
+    try {
+      const contract = await settingsContractService.getSettingsContract();
+      if (contract) {
+        updateCloudProvidersFromContract(contract.llm_cloud_providers);
+        updateTtsProvidersFromContract(contract.tts_providers);
+        set({ contract });
+      }
+      return contract;
+    } catch (err) {
+      console.warn("[SettingsStore] Failed to load settings contract:", err);
+      return null;
+    }
+  },
 
   /**
    * Recomputes the per-domain dirty/restart snapshot from the CURRENT state.
@@ -561,6 +576,10 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
   loadSettings: async () => {
     try {
+      get().loadContract().catch((err) => {
+        console.warn("[SettingsStore] Non-blocking contract load error:", err);
+      });
+
       const bootState = await getSettings();
       const fetched = bootState.settings;
       const cloned = structuredClone(fetched);
@@ -947,7 +966,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     if (!draftScope && !savedScope) return false;
     if (!draftScope || !savedScope) return true;
 
-    const keys = SETTINGS_SCOPE_KEYS[scope as SettingsScope];
+    const contractKeys = settingsContractService.getSupportedKeys(scope);
+    const keys = contractKeys && contractKeys.length > 0 ? contractKeys : SETTINGS_SCOPE_KEYS[scope as SettingsScope];
     if (keys && keys.length > 0) {
       for (const k of keys) {
         const draftVal = draftScope[k];
@@ -969,7 +989,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     const savedScope = scopeEntries(settings?.[scope]);
     if (!savedScope) return;
 
-    const keys = SETTINGS_SCOPE_KEYS[scope as SettingsScope];
+    const contractKeys = settingsContractService.getSupportedKeys(scope);
+    const keys = contractKeys && contractKeys.length > 0 ? contractKeys : SETTINGS_SCOPE_KEYS[scope as SettingsScope];
     if (keys && keys.length > 0) {
       keys.forEach((k) => updateDraft(scope, k as DraftKeyMap[typeof scope], savedScope[k]));
     } else {
@@ -1195,22 +1216,45 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   },
 
   /**
-   * Mirrors the backend's `restart_in_flight` flag into the store.
+   * Mirrors the backend's `restart_in_flight` / `restart_requested` flag into the store.
    *
-   * The restart runs on a spawned task with no completion event, so this polls
-   * the `SettingsUpdated` IPC event (re-emitted as the engine comes back) to
-   * clear the flag. Bounded so a failed restart cannot wedge the UI in
-   * "restarting" forever.
+   * Polls `getRestartStatus()` every 500ms while restarting is in flight. Clears
+   * `restartInFlight` as soon as the engine has restarted or after a 15-second
+   * safety timeout so a failed restart cannot wedge the UI in "restarting".
    */
   trackRestartCompletion: () => {
+    if (restartPollInterval) {
+      clearInterval(restartPollInterval);
+      restartPollInterval = null;
+    }
+
     let ticks = 0;
-    const poll = setInterval(() => {
+    restartPollInterval = setInterval(async () => {
       ticks += 1;
       if (ticks > RESTART_POLL_MAX_TICKS || !get().restartInFlight) {
-        clearInterval(poll);
+        if (restartPollInterval) {
+          clearInterval(restartPollInterval);
+          restartPollInterval = null;
+        }
         if (get().restartInFlight) {
           set({ restartInFlight: false });
         }
+        return;
+      }
+
+      try {
+        const status = await getRestartStatus();
+        if (!status.restarting) {
+          if (restartPollInterval) {
+            clearInterval(restartPollInterval);
+            restartPollInterval = null;
+          }
+          if (get().restartInFlight) {
+            set({ restartInFlight: false });
+          }
+        }
+      } catch (err) {
+        console.warn("[SettingsStore] Failed to poll restart status:", err);
       }
     }, RESTART_POLL_INTERVAL_MS);
   },
@@ -1264,6 +1308,10 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   },
 
   clearRestartKeys: () => {
+    if (restartPollInterval) {
+      clearInterval(restartPollInterval);
+      restartPollInterval = null;
+    }
     set({ restartKeys: [], restartInFlight: false });
   },
 }));

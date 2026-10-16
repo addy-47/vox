@@ -9,7 +9,7 @@ import {
   sortSessionsNewestFirst,
   type SessionRow,
   type TurnRow,
-} from "@/services/historyService";
+} from "@/services/persistenceService";
 import { onSessionsChanged } from "@/services/eventsService";
 import { BREAKPOINT_COMPACT_HEIGHT_MAX, BREAKPOINT_COMPACT_MAX } from "@/layout/breakpoints";
 import {

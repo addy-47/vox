@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import type { InteractionState, TurnMetricsPayload, ActivityEnvelope } from "@/services/eventsService";
-import { compactSession } from "@/services/historyService";
+import { compactSession } from "@/services/persistenceService";
 import type { InteractionModeUpper } from "@/shared/lib/interactionMode";
 
 export interface DialogueTurn {

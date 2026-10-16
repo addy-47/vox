@@ -23,6 +23,10 @@ pub fn create_llm_provider_from_llm_settings(
     let effective_ctx = LlmSettings::effective_ctx_size(ctx_size);
 
     match provider_config {
+        LlmRuntimeTarget::Unresolved { provider_id } => Err(format!(
+            "cannot create LLM provider: cloud provider '{}' is not in the declarative manifest (RULE-PROV-01)",
+            provider_id
+        )),
         LlmRuntimeTarget::Embedded => EmbeddedProvider::new(llm_path, effective_ctx, n_threads)
             .map(|p| Box::new(p) as Box<dyn LlmProvider>)
             .map_err(|e| e.to_string()),

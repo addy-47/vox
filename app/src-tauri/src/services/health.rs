@@ -113,6 +113,14 @@ pub async fn check_llm_health(
                 },
             })
         }
+        LlmRuntimeTarget::Unresolved { provider_id } => Ok(ProviderHealthCheckResult {
+            healthy: false,
+            dialect: None,
+            reason: Some(format!(
+                "cloud provider '{}' is not in the declarative manifest (RULE-PROV-01)",
+                provider_id
+            )),
+        }),
         LlmRuntimeTarget::Server {
             base_url,
             model,
@@ -306,3 +314,188 @@ pub async fn check_tts_health(
         }
     }
 }
+
+/// Structured outcome of probing an arbitrary provider target.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ProbeProviderTargetResult {
+    pub healthy: bool,
+    pub dialect: Option<String>,
+    pub reason: Option<String>,
+    #[serde(default)]
+    pub models: Vec<crate::services::llm::catalog::LlmModelInfo>,
+}
+
+/// Dedicated probe and model discovery for an arbitrary or unsaved provider target.
+pub async fn probe_target(
+    state: &Arc<AppState>,
+    kind: &str,
+    provider_id: Option<String>,
+    base_url: Option<String>,
+    api_key: Option<String>,
+    model: Option<String>,
+) -> Result<ProbeProviderTargetResult, String> {
+    match kind.to_lowercase().as_str() {
+        "tts" => {
+            let endpoint = base_url.unwrap_or_default();
+            let trimmed = endpoint.trim().trim_end_matches('/');
+            if trimmed.is_empty() {
+                return Ok(ProbeProviderTargetResult {
+                    healthy: false,
+                    dialect: Some("Chatterbox Remote".to_string()),
+                    reason: Some("No base URL specified".to_string()),
+                    models: Vec::new(),
+                });
+            }
+            let client = match reqwest::Client::builder()
+                .timeout(Duration::from_secs(3))
+                .build()
+            {
+                Ok(c) => c,
+                Err(e) => {
+                    return Ok(ProbeProviderTargetResult {
+                        healthy: false,
+                        dialect: Some("Chatterbox Remote".to_string()),
+                        reason: Some(e.to_string()),
+                        models: Vec::new(),
+                    });
+                }
+            };
+            let health_url = format!("{}/health", trimmed);
+            match client.get(&health_url).send().await {
+                Ok(resp) => {
+                    let healthy = resp.status().is_success();
+                    let reason = if healthy {
+                        None
+                    } else {
+                        Some(format!("HTTP {}", resp.status()))
+                    };
+                    Ok(ProbeProviderTargetResult {
+                        healthy,
+                        dialect: Some("Chatterbox Remote".to_string()),
+                        reason,
+                        models: Vec::new(),
+                    })
+                }
+                Err(err) => Ok(ProbeProviderTargetResult {
+                    healthy: false,
+                    dialect: Some("Chatterbox Remote".to_string()),
+                    reason: Some(err.to_string()),
+                    models: Vec::new(),
+                }),
+            }
+        }
+        "stt" => {
+            let healthy = check_stt_health(state, None).await.unwrap_or(false);
+            Ok(ProbeProviderTargetResult {
+                healthy,
+                dialect: None,
+                reason: None,
+                models: Vec::new(),
+            })
+        }
+        _ => {
+            // "llm", "server", "cloud"
+            let trimmed_url = base_url.as_deref().map(|s| s.trim()).filter(|s| !s.is_empty());
+            let (effective_url, effective_provider_name) = if let Some(url) = trimmed_url {
+                (url.to_string(), provider_id.clone())
+            } else if let Some(pid) = provider_id.as_deref().filter(|s| !s.trim().is_empty()) {
+                if let Some(preset) = crate::services::llm::catalog::lookup_preset(pid) {
+                    (preset.base_url.to_string(), Some(pid.to_string()))
+                } else {
+                    return Ok(ProbeProviderTargetResult {
+                        healthy: false,
+                        dialect: None,
+                        reason: Some(format!("Unknown provider preset '{}'", pid)),
+                        models: Vec::new(),
+                    });
+                }
+            } else {
+                return Ok(ProbeProviderTargetResult {
+                    healthy: false,
+                    dialect: None,
+                    reason: Some("Neither baseUrl nor providerId specified".to_string()),
+                    models: Vec::new(),
+                });
+            };
+
+            let effective_api_key = api_key
+                .filter(|k| !k.trim().is_empty())
+                .or_else(|| {
+                    if let Some(ref pid) = provider_id {
+                        state.settings.read().ok().and_then(|s| {
+                            s.providers.llm.cloud_keys.get(pid).cloned()
+                        })
+                    } else {
+                        None
+                    }
+                });
+
+            let effective_model = model.unwrap_or_default();
+            let conn_cfg = ConnectionConfig::new(
+                &effective_url,
+                &effective_model,
+                effective_api_key.as_deref(),
+                effective_provider_name.as_deref(),
+            );
+
+            let client = match reqwest::Client::builder()
+                .timeout(Duration::from_secs(3))
+                .build()
+            {
+                Ok(c) => c,
+                Err(e) => {
+                    log::warn!("[Probe] Dialect probe HTTP client failed to build: {}", e);
+                    reqwest::Client::new()
+                }
+            };
+
+            let dialect = discover_server_dialect(&client, &effective_url, &conn_cfg.auth).await;
+            let transport = RemoteTransport::new(conn_cfg);
+            let health_res = transport.health_check().await;
+
+            let models = match transport.list_models().await {
+                Ok(mut m) => {
+                    let kind_str = if kind.eq_ignore_ascii_case("cloud") {
+                        crate::services::llm::catalog::CAP_KIND_CLOUD
+                    } else {
+                        crate::services::llm::catalog::CAP_KIND_SERVER
+                    };
+                    for item in &mut m {
+                        item.provider_kind = kind_str.to_string();
+                    }
+                    m
+                }
+                Err(err) => {
+                    log::info!("[Probe] list_models returned non-fatal error: {}", err);
+                    Vec::new()
+                }
+            };
+
+            let reason = match health_res {
+                Ok(_) => None,
+                Err(ref err) => {
+                    let msg = err.to_string();
+                    let lower = msg.to_lowercase();
+                    if lower.contains("connection refused") {
+                        Some(format!("unreachable: {}", msg))
+                    } else if lower.contains("timed out") || lower.contains("timeout") {
+                        Some(format!("timed out: {}", msg))
+                    } else {
+                        Some(msg)
+                    }
+                }
+            };
+
+            let healthy = reason.is_none() || !models.is_empty();
+            let reason = if healthy { None } else { reason };
+
+            Ok(ProbeProviderTargetResult {
+                healthy,
+                dialect: Some(dialect.display_name().to_string()),
+                reason,
+                models,
+            })
+        }
+    }
+}
+

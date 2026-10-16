@@ -461,20 +461,10 @@ pub async fn dispatch_worker_command<R: tauri::Runtime>(
                     }
                 }
             }
-            ("tts", "speed") => {
-                if let Some(ref tts_tx) = engine.tts_tx {
-                    let speed_opt = value
-                        .as_f64()
-                        .map(|v| v as f32)
-                        .or_else(|| value.as_str().and_then(|s| s.parse::<f32>().ok()));
-                    if let Some(speed) = speed_opt {
-                        if let Err(e) = tts_tx.send(TtsCommand::SetSpeed(speed)) {
-                            log::warn!("[Settings] Failed to send TtsCommand::SetSpeed: {}", e);
-                        }
-                        log::debug!("[Settings] TtsCommand::SetSpeed({}) dispatched", speed);
-                    }
-                }
-            }
+            // `(tts, "speed")` was a dead setting-mutation arm: `tts.speed` is not
+            // a writable setting key (see mutation::supported_keys_for_domain).
+            // Runtime speed changes arrive via TtsCommand::SetSpeed from the
+            // speed-param subsystem, not from the settings mutation path.
             _ => {}
         }
     }
@@ -489,7 +479,6 @@ pub fn dispatch_worker_command_has_arm(domain: &str, key: &str) -> bool {
             | ("vad", "silence_duration_ms")
             | ("vad", "speech_onset_ms")
             | ("tts", "voice_id" | "voice" | "active_voice_id")
-            | ("tts", "speed")
     )
 }
 

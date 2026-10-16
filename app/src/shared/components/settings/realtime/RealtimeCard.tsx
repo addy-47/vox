@@ -41,7 +41,10 @@ function UnifiedConfig({
   const activeModel = draftSettings.realtime?.active?.model || null;
   const { params, setParam } = useModelParameters(activeModel);
 
-  const voiceField = subkey === "gemini_live" ? "voice_name" : "voice";
+  const realtimeProvider = contract?.realtime_providers?.find((p) => p.id === subkey);
+  const voiceField = realtimeProvider?.voice_field ?? "voice";
+  const supportsWebSearch = realtimeProvider?.supports_web_search ?? false;
+  const supportsAgentMode = realtimeProvider?.supports_agent_mode ?? false;
   const strParam = (v: unknown): string | undefined =>
     typeof v === "string" && v.length > 0 ? v : undefined;
   const currentVoice = strParam(params[voiceField]) || VOICE_OPTIONS[0];
@@ -87,7 +90,7 @@ function UnifiedConfig({
         />
 
         {/* Toggle (only rendered when the provider family supports the flag) */}
-        {subkey === "gemini_live" ? (
+        {supportsWebSearch ? (
           <ToggleRow
             label="Google Search"
             sub="Live web grounding"
@@ -101,7 +104,8 @@ function UnifiedConfig({
             }
             disabled={disabled}
           />
-        ) : subkey === "deepgram_voice_agent" ? (
+        ) : null}
+        {supportsAgentMode ? (
           <ToggleRow
             label="Agent Mode"
             sub="AI agent routing"
@@ -143,11 +147,13 @@ interface RealtimeCardProps {
 export const RealtimeCard = memo(
   ({ layoutMode = "full-max" }: RealtimeCardProps) => {
     const draftSettings = useSettingsStore((s) => s.draftSettings);
+    const contract = useSettingsStore((s) => s.contract);
     const updateDraft = useSettingsStore((s) => s.updateDraft);
 
     if (!draftSettings) return null;
 
-    const providerId = draftSettings.realtime?.active?.provider ?? "gemini_live";
+    const fallbackProvider = contract?.realtime_providers?.[0]?.id ?? "";
+    const providerId = draftSettings.realtime?.active?.provider ?? fallbackProvider;
 
     const subkey = resolveRealtimeSubkey(providerId);
     const disabled = isRealtimeProviderDisabled(providerId);

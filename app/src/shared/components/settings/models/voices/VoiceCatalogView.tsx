@@ -7,7 +7,7 @@ import { useSessionStore } from "@/store/sessionStore";
 import { useVoiceCatalog } from "@/shared/hooks/useVoiceCatalog";
 import { useLenisScrollContainer } from "@/shared/hooks/useLenisScrollContainer";
 import { useVoiceScope } from "@/shared/hooks/useVoiceScope";
-import type { UnifiedVoiceDto } from "@/services/voiceService";
+import type { UnifiedVoiceDto } from "@/services/voicesService";
 import {
   CatalogFilterItem,
   CatalogFilterMenu,

@@ -6,7 +6,7 @@ import {
   type SessionRow,
   resolveSessionTitle,
   formatSessionRecency,
-} from "@/services/historyService";
+} from "@/services/persistenceService";
 import {
   getActiveDynamicPalette,
   toMemoryCategory,

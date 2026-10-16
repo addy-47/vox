@@ -35,7 +35,7 @@ export const VadWorkspace = memo(
     const modelCatalog = useSettingsStore((s) => s.modelCatalog);
 
     if (!vad) return null;
-    const activeVadBackend = vad.vad_backend || "earshot";
+    const activeVadBackend = vad.vad_backend || "";
     const vadModels = modelCatalog?.vad || [];
     if (process.env.NODE_ENV === "development") {
       console.log("[VadWorkspace] Loaded VAD models:", vadModels);

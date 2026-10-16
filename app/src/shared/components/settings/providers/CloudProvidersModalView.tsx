@@ -4,7 +4,7 @@ import { useScrollTopOnChange } from "@/shared/hooks/useScrollTopOnChange";
 import { CLOUD_PROVIDERS, type CloudProvider } from "@/data/providersCopy";
 import { INTERACTION_CONFIG_DESK_COPY, SETTINGS_COPY } from "@/data/settingsCopy";
 import { useSettingsStore, type LlmCustomServer, type TtsCustomServer } from "@/store/settingsStore";
-import { checkLlmProviderHealth } from "@/services/settingsService";
+import { probeProviderTarget } from "@/services/catalogService";
 import { ipcErrorMessage } from "@/shared/lib/ipcError";
 import { activeSelection } from "@/shared/lib/activeSelection";
 import { SettingsFooterBanner } from "@/shared/components/settings/SettingsCommitControls";
@@ -79,6 +79,11 @@ export const CloudProviderCard = memo(({
       )}
     >
       <div className="absolute top-3 right-3 flex items-center gap-1.5 z-10">
+        {isSelected && (
+          <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded-md bg-[rgba(var(--accent),0.12)] text-[rgb(var(--accent))] border border-[rgba(var(--accent),0.25)] flex items-center gap-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--accent))]" /> Active
+          </span>
+        )}
         {onNavigateToModels && (
           <button
             type="button"
@@ -103,7 +108,7 @@ export const CloudProviderCard = memo(({
             ? "bg-[rgba(var(--accent),0.12)] border-[rgba(var(--accent),0.3)] shadow-[0_0_12px_rgba(var(--accent),0.15)]"
             : "bg-[rgba(var(--foreground),0.04)] border-[rgba(var(--foreground),0.07)] group-hover:border-[rgba(var(--accent),0.25)]"
         )}>
-          <ProviderLogo providerId={provider.id} size={24} />
+          <ProviderLogo providerId={provider.id} logo={provider.logo} size={24} />
         </div>
         <h4 className="font-bold text-[14.5px] text-[rgb(var(--foreground))] tracking-tight truncate w-full text-center mt-2.5 leading-tight group-hover:text-[rgb(var(--accent))] transition-colors">
           {provider.name}
@@ -218,6 +223,14 @@ export const LocalProviderCard = memo(({
           : "bg-[rgba(var(--card),0.4)] border-[rgba(var(--foreground),0.07)] hover:border-[rgba(var(--accent),0.35)] hover:bg-[rgba(var(--card),0.65)]"
       )}
     >
+      <div className="absolute top-3 right-3 flex items-center gap-1.5 z-10">
+        {isSelected && (
+          <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded-md bg-[rgba(var(--accent),0.12)] text-[rgb(var(--accent))] border border-[rgba(var(--accent),0.25)] flex items-center gap-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--accent))]" /> Active
+          </span>
+        )}
+      </div>
+
       <div className="flex flex-col items-center text-center my-auto px-1 pt-1">
         <div className={cn(
           "w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 border transition-all",
@@ -239,7 +252,7 @@ export const LocalProviderCard = memo(({
         <span className="text-[rgb(var(--foreground-muted))]/70">Local Hardware</span>
         <span className="text-[rgb(var(--accent))] font-bold flex items-center gap-1.5">
           <span className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--accent))]" />
-          Offline Ready
+          {isSelected ? "Active" : "Offline Ready"}
         </span>
       </div>
     </div>
@@ -306,11 +319,7 @@ export const SavedCustomServerCard = memo(({
   onDelete,
   onEdit,
 }: SavedCustomServerCardProps) => {
-  const isOllama =
-    (server.name && server.name.toLowerCase().includes("ollama")) ||
-    (server.id && server.id.toLowerCase().includes("ollama")) ||
-    (server.url && (server.url.includes("11434") || server.url.toLowerCase().includes("ollama")));
-  const serverLogoId = isOllama ? "ollama" : server.id || server.name || "server";
+  const serverLogoId = server.id || server.name || "server";
 
   return (
     <div
@@ -322,7 +331,12 @@ export const SavedCustomServerCard = memo(({
           : "bg-[rgba(var(--card),0.4)] border-[rgba(var(--foreground),0.07)] hover:border-[rgba(var(--accent),0.35)] hover:bg-[rgba(var(--card),0.65)]"
       )}
     >
-      <div className="absolute top-3 right-3 flex items-center gap-1 z-10" onClick={(e) => e.stopPropagation()}>
+      <div className="absolute top-3 right-3 flex items-center gap-1.5 z-10" onClick={(e) => e.stopPropagation()}>
+        {isSelected && (
+          <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded-md bg-[rgba(var(--accent),0.12)] text-[rgb(var(--accent))] border border-[rgba(var(--accent),0.25)] flex items-center gap-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--accent))]" /> Active
+          </span>
+        )}
         <div className="flex items-center gap-1 [@media(hover:hover)]:hidden [@media(hover:hover)]:group-hover:flex">
           <Tooltip label="Edit Server" side="top">
             <button
@@ -356,7 +370,7 @@ export const SavedCustomServerCard = memo(({
               : "bg-[rgba(var(--foreground),0.04)] border-[rgba(var(--foreground),0.07)] group-hover:border-[rgba(var(--accent),0.25)]"
           )}
         >
-          <ProviderLogo providerId={serverLogoId} size={24} />
+          <ProviderLogo logo={undefined} size={24} />
         </div>
         <h4 className="font-bold text-[14.5px] text-[rgb(var(--foreground))] tracking-tight truncate w-full text-center mt-2.5 leading-tight group-hover:text-[rgb(var(--accent))] transition-colors">
           {server.name || "Custom Server"}
@@ -370,7 +384,7 @@ export const SavedCustomServerCard = memo(({
         <span className="text-[rgb(var(--foreground-muted))]/70">Self-Hosted</span>
         <span className="text-[rgb(var(--accent))] font-bold flex items-center gap-1.5">
           <span className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--accent))]" />
-          Connected
+          {isSelected ? "Active" : "Connected"}
         </span>
       </div>
     </div>
@@ -383,6 +397,38 @@ export function upsertServer<T extends { id: string }>(list: T[], server: T): T[
   return list.some((s) => s.id === server.id)
     ? list.map((s) => (s.id === server.id ? server : s))
     : [...list, server];
+}
+
+/** Deletes a custom server by ID and reverts to embedded if active. */
+export async function deleteCustomServer(domain: "llm" | "tts", serverId: string): Promise<void> {
+  const store = useSettingsStore.getState();
+  const commitChanges = store.commitChanges;
+  const draft = store.draftSettings;
+  const updateDraft = store.updateDraft;
+
+  if (domain === "tts") {
+    const list = draft?.tts?.servers ?? draft?.providers?.tts?.servers ?? [];
+    console.info(`[Providers] deleteCustomServer domain=tts id=${serverId} prevCount=${list.length}`);
+    updateDraft("tts", "servers", list.filter((s: { id: string }) => s.id !== serverId));
+    if (draft?.tts?.active?.provider === serverId) {
+      updateDraft("tts", "active", activeSelection("embedded", draft?.tts?.last_selected?.embedded ?? ""));
+      await commitChanges({ domain: "tts", key: "servers" });
+      await commitChanges({ domain: "tts", key: "active" });
+    } else {
+      await commitChanges({ domain: "tts", key: "servers" });
+    }
+  } else {
+    const list = draft?.llm?.servers ?? draft?.providers?.llm?.servers ?? [];
+    console.info(`[Providers] deleteCustomServer domain=llm id=${serverId} prevCount=${list.length}`);
+    updateDraft("llm", "servers", list.filter((s: { id: string }) => s.id !== serverId));
+    if (draft?.llm?.active?.provider === serverId) {
+      updateDraft("llm", "active", activeSelection("embedded", draft?.llm?.last_selected?.embedded ?? ""));
+      await commitChanges({ domain: "llm", key: "servers" });
+      await commitChanges({ domain: "llm", key: "active" });
+    } else {
+      await commitChanges({ domain: "llm", key: "servers" });
+    }
+  }
 }
 
 export interface CustomServerFormCardProps {
@@ -400,7 +446,7 @@ export const CustomServerFormCard = memo(({
   initial = null,
 }: CustomServerFormCardProps) => {
   const isTts = category === "TTS";
-  const initialUrl = initial?.url ?? (isTts ? "http://127.0.0.1:7860" : "http://127.0.0.1:11434");
+  const initialUrl = initial?.url ?? (isTts ? "" : "");
   const [url, setUrl] = useState(initialUrl);
   const [apiKey, setApiKey] = useState(initial?.api_key ?? "");
   const [name, setName] = useState(initial?.name ?? "");
@@ -420,20 +466,15 @@ export const CustomServerFormCard = memo(({
 
     try {
       if (isTts) {
-        let healthy = false;
-        let reason = "Endpoint unreachable";
-        try {
-          const resp = await fetch(`${trimmedUrl.replace(/\/$/, "")}/health`, {
-            signal: AbortSignal.timeout(2000),
-          });
-          healthy = resp.ok;
-          if (!healthy) reason = `HTTP ${resp.status}`;
-        } catch (e) {
-          reason = ipcErrorMessage(e);
-        }
+        const res = await probeProviderTarget({
+          kind: "tts",
+          baseUrl: trimmedUrl,
+          apiKey: apiKey.trim() || undefined,
+          providerId: initial?.id,
+        });
 
-        if (healthy) {
-          const resolvedName = name.trim() || "Chatterbox Remote";
+        if (res.healthy) {
+          const resolvedName = name.trim() || "Remote";
           const newServer: TtsCustomServer = {
             id: initial?.id ?? `tts_custom_${Date.now()}`,
             name: resolvedName,
@@ -450,19 +491,18 @@ export const CustomServerFormCard = memo(({
           onServerSaved(newServer);
           await commitChanges({ domain: "tts", key: "servers" });
         } else {
-          setUnhealthyReason(reason);
+          setUnhealthyReason(res.reason || "Connection failed");
         }
       } else {
-        const res = await checkLlmProviderHealth({
+        const res = await probeProviderTarget({
           kind: "server",
-          base_url: trimmedUrl,
-          model: "",
-          api_key: apiKey.trim() || undefined,
-          provider_name: name.trim() || undefined,
+          baseUrl: trimmedUrl,
+          apiKey: apiKey.trim() || undefined,
+          providerId: name.trim() || undefined,
         });
 
         if (res.healthy) {
-          const resolvedName = name.trim() || res.dialect || "Ollama";
+          const resolvedName = name.trim() || res.dialect || "Remote";
           const newServer: LlmCustomServer = {
             id: initial?.id ?? `llm_custom_${Date.now()}`,
             name: resolvedName,
@@ -492,7 +532,7 @@ export const CustomServerFormCard = memo(({
   };
 
   const handleSaveAnyway = async () => {
-    const trimmedUrl = url.trim() || (isTts ? "http://127.0.0.1:7860" : "http://127.0.0.1:11434");
+    const trimmedUrl = url.trim() || (isTts ? "" : "");
     const fallbackName = name.trim() || "Custom Server";
 
     if (isTts) {
@@ -605,7 +645,7 @@ export const CustomServerFormCard = memo(({
             value={url}
             autoFocus
             onChange={(e) => setUrl(e.target.value)}
-            placeholder={isTts ? "http://127.0.0.1:7860" : "http://127.0.0.1:11434"}
+            placeholder={isTts ? "" : ""}
             className="w-full text-[11.5px] font-mono pb-1 bg-transparent border-b border-[rgba(var(--foreground),0.12)] focus:border-[rgb(var(--accent))] outline-none text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40 transition-colors"
           />
           <div className="flex gap-2">
@@ -680,7 +720,11 @@ export const TtsModalCard = memo(({
       )}
     >
       <div className="absolute top-3 right-3 flex items-center gap-1.5 z-10">
-        {entry.isFree ? (
+        {isSelected ? (
+          <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded-md bg-[rgba(var(--accent),0.12)] text-[rgb(var(--accent))] border border-[rgba(var(--accent),0.25)] flex items-center gap-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--accent))]" /> Active
+          </span>
+        ) : entry.isFree ? (
           <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded-md bg-[rgba(var(--accent),0.12)] text-[rgb(var(--accent))] border border-[rgba(var(--accent),0.2)]">
             Free
           </span>
@@ -699,7 +743,7 @@ export const TtsModalCard = memo(({
             : "bg-[rgba(var(--foreground),0.04)] border-[rgba(var(--foreground),0.07)] group-hover:border-[rgba(var(--accent),0.25)]"
         )}>
           <ProviderLogo
-            providerId={entry.id.includes("edge") ? "microsoft" : entry.id.includes("google") ? "google" : "azure"}
+            logo={entry.logo}
             size={24}
           />
         </div>
@@ -797,7 +841,12 @@ export const CloudProvidersModalView = memo(({
   }, [category, draftSettings?.stt?.active?.category, draftSettings?.tts?.active?.category, draftSettings?.llm?.active?.category]);
 
   const isLocalSelected = activeCategoryType === "embedded";
-  const activeCloudId = activeCategoryType === "cloud" ? activeCloudProviderId : null;
+  const activeCloudId = useMemo(() => {
+    if (activeCategoryType !== "cloud") return null;
+    if (activeCloudProviderId) return activeCloudProviderId;
+    if (isTts) return draftSettings?.tts?.active?.provider ?? null;
+    return draftSettings?.llm?.active?.provider ?? null;
+  }, [activeCategoryType, activeCloudProviderId, isTts, draftSettings?.tts?.active?.provider, draftSettings?.llm?.active?.provider]);
   const activeServerId =
     activeCategoryType === "server"
       ? (isTts ? draftSettings?.tts?.active?.provider : draftSettings?.llm?.active?.provider)
@@ -820,36 +869,9 @@ export const CloudProvidersModalView = memo(({
 
   const handleDeleteServer = useCallback(
     async (serverId: string) => {
-      const commitChanges = useSettingsStore.getState().commitChanges;
-      if (isTts) {
-        const currentList = draftSettings?.tts?.servers ?? draftSettings?.providers?.tts?.servers ?? [];
-        console.info(
-          `[Providers] deleteCustomServer id=${serverId} prevCount=${currentList.length}`
-        );
-        updateDraft("tts", "servers", currentList.filter((s) => s.id !== serverId));
-        if (draftSettings?.tts?.active?.provider === serverId) {
-          updateDraft("tts", "active", activeSelection("embedded", draftSettings?.tts?.last_selected?.embedded ?? ""));
-          await commitChanges({ domain: "tts", key: "servers" });
-          await commitChanges({ domain: "tts", key: "active" });
-        } else {
-          await commitChanges({ domain: "tts", key: "servers" });
-        }
-      } else {
-        const currentList = draftSettings?.llm?.servers ?? draftSettings?.providers?.llm?.servers ?? [];
-        console.info(
-          `[Providers] deleteCustomServer id=${serverId} prevCount=${currentList.length}`
-        );
-        updateDraft("llm", "servers", currentList.filter((s) => s.id !== serverId));
-        if (draftSettings?.llm?.active?.provider === serverId) {
-          updateDraft("llm", "active", activeSelection("embedded", draftSettings?.llm?.last_selected?.embedded ?? ""));
-          await commitChanges({ domain: "llm", key: "servers" });
-          await commitChanges({ domain: "llm", key: "active" });
-        } else {
-          await commitChanges({ domain: "llm", key: "servers" });
-        }
-      }
+      await deleteCustomServer(isTts ? "tts" : "llm", serverId);
     },
-    [isTts, draftSettings?.tts?.servers, draftSettings?.providers?.tts?.servers, draftSettings?.llm?.servers, draftSettings?.providers?.llm?.servers, draftSettings?.tts?.active?.provider, draftSettings?.tts?.last_selected?.embedded, draftSettings?.llm?.active?.provider, draftSettings?.llm?.last_selected?.embedded, updateDraft]
+    [isTts]
   );
 
   const handleSelectLocalProvider = useCallback(() => {
@@ -897,10 +919,10 @@ export const CloudProvidersModalView = memo(({
   // Save-gated reorder glide: fires when a save changes the committed order.
   const orderFingerprint = useMemo(
     () =>
-      `${pinnedProviderId ?? ""}|${CLOUD_PROVIDERS.map((p) =>
+      `${activeCloudId ?? ""}|${activeServerId ?? ""}|${isLocalSelected ? "local" : ""}|${pinnedProviderId ?? ""}|${CLOUD_PROVIDERS.map((p) =>
         getCommittedProviderKey(p.id)?.trim() ? "1" : "0"
       ).join("")}`,
-    [pinnedProviderId, getCommittedProviderKey]
+    [activeCloudId, activeServerId, isLocalSelected, pinnedProviderId, getCommittedProviderKey]
   );
   useScrollTopOnChange(scrollContainerRef, orderFingerprint, lenisRef);
 
@@ -928,8 +950,21 @@ export const CloudProvidersModalView = memo(({
     if (filterCategory === "configured") {
       list = list.filter((p) => p.isFree || Boolean(getProviderKey(p.id)?.trim()));
     }
-    return list;
-  }, [deferredSearch, filterCategory, getProviderKey, isTts]);
+    const sorted = [...list].sort((a, b) => {
+      return sort === "az"
+        ? a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
+        : b.name.localeCompare(a.name, undefined, { sensitivity: "base" });
+    });
+    // Active cloud provider primacy for TTS
+    if (activeCloudId) {
+      const idx = sorted.findIndex((p) => p.id === activeCloudId);
+      if (idx > 0) {
+        const [active] = sorted.splice(idx, 1);
+        sorted.unshift(active);
+      }
+    }
+    return sorted;
+  }, [deferredSearch, filterCategory, getProviderKey, isTts, sort, activeCloudId]);
 
   const ttsAvailableCount = useMemo(() => {
     return TTS_MODAL_PROVIDERS.filter((p) => p.isFree || Boolean(getProviderKey(p.id)?.trim())).length;
@@ -975,7 +1010,7 @@ export const CloudProvidersModalView = memo(({
       list = [];
     }
 
-    return [...list].sort((a, b) => {
+    const sorted = [...list].sort((a, b) => {
       const aKey = Boolean(getCommittedProviderKey(a.id)?.trim());
       const bKey = Boolean(getCommittedProviderKey(b.id)?.trim());
       if (aKey && !bKey) return -1;
@@ -984,7 +1019,18 @@ export const CloudProvidersModalView = memo(({
         ? a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
         : b.name.localeCompare(a.name, undefined, { sensitivity: "base" });
     });
-  }, [deferredSearch, filterCategory, getProviderKey, getCommittedProviderKey, sort]);
+
+    // Active cloud provider primacy: sort activeCloudId to index 0
+    if (activeCloudId) {
+      const idx = sorted.findIndex((p) => p.id === activeCloudId);
+      if (idx > 0) {
+        const [active] = sorted.splice(idx, 1);
+        sorted.unshift(active);
+      }
+    }
+
+    return sorted;
+  }, [deferredSearch, filterCategory, getProviderKey, getCommittedProviderKey, sort, activeCloudId]);
 
   const matchesLocal = useMemo(() => {
     const q = deferredSearch.trim().toLowerCase();
@@ -1015,23 +1061,20 @@ export const CloudProvidersModalView = memo(({
             (s.url && s.url.toLowerCase().includes(q)) ||
             (s.id && s.id.toLowerCase().includes(q))
         );
-    // Save-gated pinning: the COMMITTED-active server moves first, so cards
-    // only reshuffle after Apply & Restart — never on draft selection.
+    // Active server primacy: activeServerId or committed server moves to index 0
     const committedId = isTts
       ? committedSettings?.tts?.active?.provider
       : committedSettings?.llm?.active?.provider;
-    const committedCategory = isTts
-      ? committedSettings?.tts?.active?.category
-      : committedSettings?.llm?.active?.category;
-    if (committedCategory === "server" && committedId) {
-      const idx = list.findIndex((s) => s.id === committedId);
+    const targetServerId = activeServerId || committedId;
+    if (targetServerId) {
+      const idx = list.findIndex((s) => s.id === targetServerId);
       if (idx > 0) {
         const [pinned] = list.splice(idx, 1);
         list.unshift(pinned);
       }
     }
     return list;
-  }, [showCustomSection, deferredSearch, customServers, isTts, committedSettings?.tts?.active, committedSettings?.llm?.active]);
+  }, [showCustomSection, deferredSearch, customServers, activeServerId, isTts, committedSettings?.tts?.active?.provider, committedSettings?.llm?.active?.provider]);
 
   const totalVisibleCount =
     (showLocalCard ? 1 : 0) +
@@ -1309,103 +1352,151 @@ export const CloudProvidersModalView = memo(({
               </div>
             ) : (
               <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3">
-                {showLocalCard && (
-                  <LocalProviderCard
-                    category={category}
-                    isSelected={isLocalSelected}
-                    onSelect={handleSelectLocalProvider}
-                  />
-                )}
-                {isTts
-                  ? ttsFilteredProviders.map((entry) => {
-                      const isSelected = activeCloudId === entry.id;
+                {(() => {
+                  const localCard = showLocalCard ? (
+                    <LocalProviderCard
+                      key="local-provider-card"
+                      category={category}
+                      isSelected={isLocalSelected}
+                      onSelect={handleSelectLocalProvider}
+                    />
+                  ) : null;
+
+                  const cloudCards = isTts
+                    ? ttsFilteredProviders.map((entry) => {
+                        const isSelected =
+                          activeCloudId === entry.id ||
+                          (entry.id === "edge_speech" &&
+                            (activeCloudId?.includes("edge") ||
+                              draftSettings?.tts?.active?.model?.includes("edge")));
+                        return (
+                          <TtsModalCard
+                            key={entry.id}
+                            entry={entry}
+                            isSelected={isSelected}
+                            onSelect={() => {
+                              if (!entry.isComingSoon) {
+                                useSettingsStore.getState().clearRemoteModelsError();
+                                const ttsModel = entry.id === "edge_speech" ? entry.id.replace("speech", "tts") : entry.id;
+                                updateDraft("tts", "active", activeSelection("cloud", ttsModel, entry.id));
+                                window.dispatchEvent(new CustomEvent("sync_pipeline_tab", { detail: "tts" }));
+                                onSelectProvider({
+                                  id: entry.id,
+                                  name: entry.name,
+                                  url: entry.url || "",
+                                  popular: true,
+                                  keyPlaceholder: "API Key (Optional)...",
+                                });
+                              }
+                            }}
+                          />
+                        );
+                      })
+                    : modalFilteredProviders.map((provider) => {
+                        const isSelected = activeCloudId === provider.id;
+                        const savedKey = getProviderKey(provider.id);
+                        const isEditing = editingProviderId === provider.id;
+
+                        return (
+                          <CloudProviderCard
+                            key={provider.id}
+                            provider={provider}
+                            isSelected={isSelected}
+                            savedKey={savedKey}
+                            isEditing={isEditing}
+                            editingKeyValue={editingKeyValue}
+                            setEditingKeyValue={setEditingKeyValue}
+                            onSelect={onSelectProvider}
+                            onStartInlineEdit={onStartInlineEdit}
+                            onCancelInlineKey={onCancelInlineKey}
+                            onSaveInlineKey={onSaveInlineKey}
+                            onNavigateToModels={onNavigateToModels}
+                          />
+                        );
+                      });
+
+                  const customCards = filteredCustomServers.map((server) => {
+                    if (editingServer?.id === server.id) {
                       return (
-                        <TtsModalCard
-                          key={entry.id}
-                          entry={entry}
-                          isSelected={isSelected}
-                          onSelect={() => {
-                            if (!entry.isComingSoon) {
-                              onSelectProvider({
-                                id: entry.id,
-                                name: entry.name,
-                                url: entry.url || "",
-                                popular: true,
-                                keyPlaceholder: "API Key (Optional)...",
-                              });
-                            }
-                          }}
+                        <CustomServerFormCard
+                          key={server.id}
+                          category={category}
+                          initial={server}
+                          onClose={() => setEditingServer(null)}
+                          onServerSaved={() => {}}
                         />
                       );
-                    })
-                  : modalFilteredProviders.map((provider) => {
-                      const isSelected = activeCloudId === provider.id;
-                      const savedKey = getProviderKey(provider.id);
-                      const isEditing = editingProviderId === provider.id;
-
-                      return (
-                        <CloudProviderCard
-                          key={provider.id}
-                          provider={provider}
-                          isSelected={isSelected}
-                          savedKey={savedKey}
-                          isEditing={isEditing}
-                          editingKeyValue={editingKeyValue}
-                          setEditingKeyValue={setEditingKeyValue}
-                          onSelect={onSelectProvider}
-                          onStartInlineEdit={onStartInlineEdit}
-                          onCancelInlineKey={onCancelInlineKey}
-                          onSaveInlineKey={onSaveInlineKey}
-                          onNavigateToModels={onNavigateToModels}
-                        />
-                      );
-                    })}
-
-                {filteredCustomServers.map((server) => {
-                  if (editingServer?.id === server.id) {
+                    }
+                    const isSelected =
+                      activeCategoryType === "server" && activeServerId === server.id;
                     return (
-                      <CustomServerFormCard
-                        key={server.id}
-                        category={category}
-                        initial={server}
-                        onClose={() => setEditingServer(null)}
-                        onServerSaved={() => {}}
+                      <SavedCustomServerCard
+                        key={server.id || server.url}
+                        server={server}
+                        isSelected={isSelected}
+                        onSelect={() => handleSelectServer(server)}
+                        onDelete={() => handleDeleteServer(server.id)}
+                        onEdit={() => {
+                          setEditingServer(server);
+                          setIsCreatingCustomServer(false);
+                        }}
                       />
                     );
-                  }
-                  const isSelected =
-                    activeCategoryType === "server" && activeServerId === server.id;
-                  return (
-                    <SavedCustomServerCard
-                      key={server.id || server.url}
-                      server={server}
-                      isSelected={isSelected}
-                      onSelect={() => handleSelectServer(server)}
-                      onDelete={() => handleDeleteServer(server.id)}
-                      onEdit={() => {
-                        setEditingServer(server);
-                        setIsCreatingCustomServer(false);
-                      }}
-                    />
+                  });
+
+                  const creationCard = (
+                    <>
+                      {showCustomSection && isCreatingCustomServer && (
+                        <CustomServerFormCard
+                          key="new"
+                          category={category}
+                          initial={null}
+                          onClose={() => setIsCreatingCustomServer(false)}
+                          onServerSaved={() => {}}
+                        />
+                      )}
+
+                      {showCustomCreationCard && !isCreatingCustomServer && !editingServer && (
+                        <CustomProviderCreationCard
+                          key="create-custom"
+                          category={category}
+                          onClick={() => setIsCreatingCustomServer(true)}
+                        />
+                      )}
+                    </>
                   );
-                })}
 
-                {showCustomSection && isCreatingCustomServer && (
-                  <CustomServerFormCard
-                    key="new"
-                    category={category}
-                    initial={null}
-                    onClose={() => setIsCreatingCustomServer(false)}
-                    onServerSaved={() => {}}
-                  />
-                )}
+                  if (activeCategoryType === "server" && activeServerId) {
+                    return (
+                      <>
+                        {customCards}
+                        {localCard}
+                        {cloudCards}
+                        {creationCard}
+                      </>
+                    );
+                  }
 
-                {showCustomCreationCard && !isCreatingCustomServer && !editingServer && (
-                  <CustomProviderCreationCard
-                    category={category}
-                    onClick={() => setIsCreatingCustomServer(true)}
-                  />
-                )}
+                  if (activeCategoryType === "cloud" && activeCloudId) {
+                    return (
+                      <>
+                        {cloudCards}
+                        {localCard}
+                        {customCards}
+                        {creationCard}
+                      </>
+                    );
+                  }
+
+                  return (
+                    <>
+                      {localCard}
+                      {cloudCards}
+                      {customCards}
+                      {creationCard}
+                    </>
+                  );
+                })()}
               </div>
             )}
           </div>
@@ -1421,7 +1512,8 @@ CloudProvidersModalView.displayName = "CloudProvidersModalView";
 /** Failure + transient-error footer for the providers modal, which has no
  * card footer of its own. Same grammar as every other settings banner. */
 const ModalProviderFooter = memo(({ category }: { category: "STT" | "LLM" | "TTS" }) => {
-  const failedKeys = useSettingsStore((s) => s.failedSaveDomains["models"]);
+  const isTts = category === "TTS";
+  const failedKeys = useSettingsStore((s) => s.failedSaveDomains[isTts ? "tts" : "models"]);
   const remoteModelsError = useSettingsStore((s) => s.remoteModelsError);
   const llmCategory = useSettingsStore((s) => s.draftSettings?.llm?.active?.category);
   const llmActiveProvider = useSettingsStore((s) => s.draftSettings?.llm?.active?.provider);
@@ -1462,40 +1554,103 @@ const ModalProviderFooter = memo(({ category }: { category: "STT" | "LLM" | "TTS
 });
 ModalProviderFooter.displayName = "ModalProviderFooter";
 
-export function useCloudProvidersModalState(options?: { onNavigateToModels?: (provider: CloudProvider) => void }) {
+export interface UseCloudProvidersModalStateOptions {
+  category?: "STT" | "LLM" | "TTS";
+  onNavigateToModels?: (provider: CloudProvider) => void;
+  onSelectProvider?: (provider: CloudProvider) => void;
+}
+
+export function useCloudProvidersModalState(options?: UseCloudProvidersModalStateOptions) {
+  const category = options?.category ?? "LLM";
+  const isTts = category === "TTS";
+  const isStt = category === "STT";
+
   const draftSettings = useSettingsStore((s) => s.draftSettings);
   const committedSettings = useSettingsStore((s) => s.settings);
   const updateDraft = useSettingsStore((s) => s.updateDraft);
   const [editingProviderId, setEditingProviderId] = useState<string | null>(null);
   const [editingKeyValue, setEditingKeyValue] = useState<string>("");
 
-  const activeCategory = draftSettings?.llm?.active?.category ?? "embedded";
+  const activeCategoryType = isTts
+    ? (draftSettings?.tts?.active?.category ?? "embedded")
+    : isStt
+    ? (draftSettings?.stt?.active?.category ?? "embedded")
+    : (draftSettings?.llm?.active?.category ?? "embedded");
 
   const activeCloudProviderId = useMemo(() => {
-    if (activeCategory !== "cloud") return null;
+    if (activeCategoryType !== "cloud") return null;
+    if (isTts) {
+      return draftSettings?.tts?.active?.provider ?? draftSettings?.tts?.active?.model ?? null;
+    }
+    if (isStt) {
+      return draftSettings?.stt?.active?.provider ?? draftSettings?.stt?.active?.model ?? null;
+    }
     return draftSettings?.llm?.active?.provider ?? null;
-  }, [activeCategory, draftSettings?.llm?.active?.provider]);
+  }, [
+    activeCategoryType,
+    isTts,
+    isStt,
+    draftSettings?.tts?.active?.provider,
+    draftSettings?.tts?.active?.model,
+    draftSettings?.stt?.active?.provider,
+    draftSettings?.stt?.active?.model,
+    draftSettings?.llm?.active?.provider,
+  ]);
 
   const getProviderKey = useCallback(
     (providerId: string) => {
+      if (isTts) {
+        return (
+          (draftSettings as Record<string, any>)?.tts?.[providerId]?.key ??
+          (draftSettings as Record<string, any>)?.providers?.tts?.[providerId]?.key
+        );
+      }
       const keys = draftSettings?.llm?.cloud_keys ?? draftSettings?.providers?.llm?.cloud_keys;
       return keys?.[providerId];
     },
-    [draftSettings?.llm?.cloud_keys, draftSettings?.providers?.llm?.cloud_keys]
+    [
+      isTts,
+      draftSettings?.tts,
+      draftSettings?.providers?.tts,
+      draftSettings?.llm?.cloud_keys,
+      draftSettings?.providers?.llm?.cloud_keys,
+    ]
   );
 
   // Save-gated ordering: the sort follows committed keys so selecting only
   // re-highlights; the reorder (with smooth scroll) lands on save.
   const pinnedProviderId = useMemo(() => {
+    if (isTts) {
+      if (committedSettings?.tts?.active?.category !== "cloud") return undefined;
+      return committedSettings?.tts?.active?.provider ?? committedSettings?.tts?.active?.model ?? undefined;
+    }
+    if (isStt) {
+      if (committedSettings?.stt?.active?.category !== "cloud") return undefined;
+      return committedSettings?.stt?.active?.provider ?? committedSettings?.stt?.active?.model ?? undefined;
+    }
     if (committedSettings?.llm?.active?.category !== "cloud") return undefined;
     return committedSettings?.llm?.active?.provider ?? undefined;
-  }, [committedSettings?.llm?.active?.category, committedSettings?.llm?.active?.provider]);
+  }, [
+    isTts,
+    isStt,
+    committedSettings?.tts?.active?.category,
+    committedSettings?.tts?.active?.provider,
+    committedSettings?.tts?.active?.model,
+    committedSettings?.stt?.active?.category,
+    committedSettings?.stt?.active?.provider,
+    committedSettings?.stt?.active?.model,
+    committedSettings?.llm?.active?.category,
+    committedSettings?.llm?.active?.provider,
+  ]);
 
   const getCommittedProviderKey = useCallback(
     (providerId: string) => {
+      if (isTts) {
+        return committedSettings?.providers?.tts?.[providerId]?.key;
+      }
       return committedSettings?.providers?.llm?.cloud_keys?.[providerId];
     },
-    [committedSettings?.providers?.llm?.cloud_keys]
+    [isTts, committedSettings?.providers?.tts, committedSettings?.providers?.llm?.cloud_keys]
   );
 
   useEffect(() => {
@@ -1507,28 +1662,78 @@ export function useCloudProvidersModalState(options?: { onNavigateToModels?: (pr
   const handleSelectProvider = useCallback(
     (provider: CloudProvider) => {
       useSettingsStore.getState().clearRemoteModelsError();
+      if (isTts) {
+        const ttsModel = provider.id === "edge_speech" ? provider.id.replace("speech", "tts") : provider.id;
+        updateDraft("tts", "active", activeSelection("cloud", ttsModel, provider.id));
+        window.dispatchEvent(new CustomEvent("sync_pipeline_tab", { detail: "tts" }));
+      } else if (isStt) {
+        updateDraft(
+          "stt",
+          "active",
+          activeSelection("cloud", draftSettings?.stt?.active?.model || "", provider.id)
+        );
+        window.dispatchEvent(new CustomEvent("sync_pipeline_tab", { detail: "stt" }));
+      } else {
+        updateDraft(
+          "llm",
+          "active",
+          activeSelection("cloud", draftSettings?.llm?.active?.model || "", provider.id)
+        );
+        window.dispatchEvent(new CustomEvent("sync_pipeline_tab", { detail: "llm" }));
+      }
+      options?.onSelectProvider?.(provider);
+    },
+    [isTts, isStt, draftSettings?.llm?.active?.model, draftSettings?.stt?.active?.model, updateDraft, options]
+  );
+
+  const isLocalActive = isTts
+    ? activeCategoryType !== "cloud" && activeCategoryType !== "server"
+    : activeCategoryType === "embedded";
+
+  const handleSelectLocal = useCallback(() => {
+    useSettingsStore.getState().clearRemoteModelsError();
+    if (isTts) {
+      updateDraft(
+        "tts",
+        "active",
+        activeSelection(
+          "embedded",
+          draftSettings?.tts?.last_selected?.embedded ?? draftSettings?.tts?.active?.model ?? ""
+        )
+      );
+      window.dispatchEvent(new CustomEvent("sync_pipeline_tab", { detail: "tts" }));
+    } else if (isStt) {
+      updateDraft(
+        "stt",
+        "active",
+        activeSelection(
+          "embedded",
+          draftSettings?.stt?.last_selected?.embedded ?? draftSettings?.stt?.active?.model ?? ""
+        )
+      );
+      window.dispatchEvent(new CustomEvent("sync_pipeline_tab", { detail: "stt" }));
+    } else {
       updateDraft(
         "llm",
         "active",
-        activeSelection("cloud", draftSettings?.llm?.active?.model || "", provider.id)
+        activeSelection(
+          "embedded",
+          draftSettings?.llm?.last_selected?.embedded ?? draftSettings?.llm?.active?.model ?? ""
+        )
       );
       window.dispatchEvent(new CustomEvent("sync_pipeline_tab", { detail: "llm" }));
-    },
-    [draftSettings?.llm?.active?.model, updateDraft]
-  );
-
-  const isLocalActive = activeCategory === "embedded";
-  const handleSelectLocal = useCallback(() => {
-    useSettingsStore.getState().clearRemoteModelsError();
-    updateDraft(
-      "llm",
-      "active",
-      activeSelection(
-        "embedded",
-        draftSettings?.llm?.last_selected?.embedded ?? draftSettings?.llm?.active?.model ?? ""
-      )
-    );
-  }, [draftSettings?.llm?.last_selected?.embedded, draftSettings?.llm?.active?.model, updateDraft]);
+    }
+  }, [
+    isTts,
+    isStt,
+    draftSettings?.tts?.last_selected?.embedded,
+    draftSettings?.tts?.active?.model,
+    draftSettings?.stt?.last_selected?.embedded,
+    draftSettings?.stt?.active?.model,
+    draftSettings?.llm?.last_selected?.embedded,
+    draftSettings?.llm?.active?.model,
+    updateDraft,
+  ]);
 
   const handleStartInlineEdit = useCallback((id: string, currentKey: string) => {
     setEditingProviderId(id);
@@ -1543,23 +1748,48 @@ export function useCloudProvidersModalState(options?: { onNavigateToModels?: (pr
   const handleSaveInlineKey = useCallback(
     async (providerId: string) => {
       const trimmed = editingKeyValue.trim();
-      const currentKeys = { ...(draftSettings?.llm?.cloud_keys ?? draftSettings?.providers?.llm?.cloud_keys ?? {}) };
-      if (trimmed) {
-        currentKeys[providerId] = trimmed;
+      if (isTts) {
+        const current = {
+          ...(draftSettings?.tts?.[providerId] ??
+            draftSettings?.providers?.tts?.[providerId] ?? {
+              region_or_endpoint: "eastus",
+              key: "",
+              voice: "",
+            }),
+        };
+        current.key = trimmed;
+        updateDraft("tts", providerId, current);
+        await useSettingsStore.getState().commitChanges({ domain: "tts", key: providerId });
       } else {
-        delete currentKeys[providerId];
-      }
+        const currentKeys = {
+          ...(draftSettings?.llm?.cloud_keys ?? draftSettings?.providers?.llm?.cloud_keys ?? {}),
+        };
+        if (trimmed) {
+          currentKeys[providerId] = trimmed;
+        } else {
+          delete currentKeys[providerId];
+        }
 
-      updateDraft("llm", "cloud_keys", currentKeys);
-      await useSettingsStore.getState().commitChanges({ domain: "llm", key: "cloud_keys" });
+        updateDraft("llm", "cloud_keys", currentKeys);
+        await useSettingsStore.getState().commitChanges({ domain: "llm", key: "cloud_keys" });
+      }
 
       setEditingProviderId(null);
       setEditingKeyValue("");
     },
-    [editingKeyValue, draftSettings?.llm?.cloud_keys, draftSettings?.providers?.llm?.cloud_keys, updateDraft]
+    [
+      isTts,
+      editingKeyValue,
+      draftSettings?.tts?.azure_tts,
+      draftSettings?.providers?.tts?.azure_tts,
+      draftSettings?.llm?.cloud_keys,
+      draftSettings?.providers?.llm?.cloud_keys,
+      updateDraft,
+    ]
   );
 
   return {
+    category,
     activeCloudProviderId,
     isLocalActive,
     onSelectLocal: handleSelectLocal,

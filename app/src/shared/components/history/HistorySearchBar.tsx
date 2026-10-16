@@ -5,7 +5,7 @@ import {
   getTurns,
   getCachedTurns,
   type SessionRow,
-} from "@/services/historyService";
+} from "@/services/persistenceService";
 import { cn } from "@/shared/lib/utils";
 import { HighlightMatch } from "@/shared/ui";
 

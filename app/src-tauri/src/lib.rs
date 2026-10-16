@@ -47,7 +47,7 @@ use crate::{
         catalog::{
             check_provider_health, get_model_capabilities_cache, get_model_catalog,
             get_provider_caps, list_favorite_models, list_llm_models, probe_model_capabilities,
-            setup_remote_server, toggle_model_favorite,
+            probe_provider_target, setup_remote_server, toggle_model_favorite,
         },
         memory::{
             consolidate_personal_memory, get_ingestion_stats, get_memory_revisions,
@@ -71,7 +71,9 @@ use crate::{
             set_session_private_mode, start_session, stop_engine, submit_text_input,
         },
         projects::{create_project, delete_project, get_projects, rename_project},
-        settings::{get_settings, reset_settings, update_setting},
+        settings::{
+            get_restart_status, get_settings, get_settings_contract, reset_settings, update_setting,
+        },
         setup::{
             check_updates, complete_setup_wizard, fetch_manifest, get_onboarding_status,
             get_runtime_report, manage_models, reveal_wizard,
@@ -748,9 +750,12 @@ notification_permission_state,
             set_window_click_through,
             show_main_window,
             get_settings,
+            get_restart_status,
+            get_settings_contract,
             get_model_catalog,
             get_provider_caps,
             check_provider_health,
+            probe_provider_target,
             list_llm_models,
             probe_model_capabilities,
             get_model_capabilities_cache,

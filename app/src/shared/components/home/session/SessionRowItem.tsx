@@ -15,8 +15,8 @@ import {
   sessionLastActivity,
   formatSessionRecency,
   type SessionRow,
-} from "@/services/historyService";
-import { type ProjectRow } from "@/services/projectService";
+} from "@/services/persistenceService";
+import { type ProjectRow } from "@/services/projectsService";
 import { SESSION_COPY } from "@/data/sessionCopy";
 import {
   useNotificationStore,

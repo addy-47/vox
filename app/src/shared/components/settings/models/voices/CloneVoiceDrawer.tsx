@@ -18,7 +18,7 @@ import {
   startBackendRecording,
   stopBackendRecording,
   type UnifiedVoiceDto,
-} from "@/services/voiceService";
+} from "@/services/voicesService";
 
 export interface CloneVoiceDrawerProps {
   isOpen: boolean;

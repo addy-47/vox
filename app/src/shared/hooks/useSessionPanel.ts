@@ -5,14 +5,14 @@ import {
   sortSessionsNewestFirst,
   updateSession,
   type SessionRow,
-} from "@/services/historyService";
+} from "@/services/persistenceService";
 import {
   getProjects,
   createProject,
   renameProject,
   deleteProject,
   type ProjectRow,
-} from "@/services/projectService";
+} from "@/services/projectsService";
 import { onSessionsChanged } from "@/services/eventsService";
 import { useVoiceSessionActions } from "@/shared/context/VoiceSessionContext";
 import { SESSION_COPY } from "@/data/sessionCopy";
@@ -245,7 +245,7 @@ export function useSessionPanel(): UseSessionPanelReturn {
 
   const deleteSessionHandle = useCallback(async (sessionId: number) => {
     try {
-      const { deleteSession } = await import("@/services/historyService");
+      const { deleteSession } = await import("@/services/persistenceService");
       await deleteSession(sessionId, false);
       const activeId = useSessionStore.getState().activeSessionId;
       if (activeId === sessionId) {
