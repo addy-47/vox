@@ -1,0 +1,12 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": ["src/main.tsx", "src/App.tsx"],
+  "project": ["src/**/*.{ts,tsx}"],
+  "ignore": ["src/test/**", "**/*.test.*", "src/vite-env.d.ts"],
+  "paths": {
+    "@/*": ["src/*"],
+    "@shared/*": ["src/shared/*"],
+    "@services/*": ["src/services/*"]
+  },
+  "ignoreBinaries": []
+}

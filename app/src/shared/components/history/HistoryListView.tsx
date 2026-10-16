@@ -2,7 +2,7 @@ import React, { memo, useState, useMemo, useRef } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { Check, X, Trash2, Search, MessageSquare, Filter } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
-import { formatDateTime, resolveSessionTitle, type SessionRow } from "@/services/historyService";
+import { formatDateTime, resolveSessionTitle, type SessionRow } from "@/services/persistenceService";
 import { HISTORY_COPY } from "@/data/historyCopy";
 import { useHistoryFilterStore } from "@/store/historyFilterStore";
 import { HighlightMatch, BottomDockFeather } from "@/shared/ui";

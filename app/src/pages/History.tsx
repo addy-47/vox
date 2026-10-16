@@ -19,7 +19,7 @@ import { EmptyState, OrbitalLoader, ErrorBoundary } from "@/shared/components/co
 import { BottomDockFeather } from "@/shared/ui";
 import { HISTORY_COPY } from "@/data/historyCopy";
 import { useHistoryFilterStore } from "@/store/historyFilterStore";
-import { formatDateTime, resolveSessionTitle, type SessionRow } from "@/services/historyService";
+import { formatDateTime, resolveSessionTitle, type SessionRow } from "@/services/persistenceService";
 import { useRegisterPageDrawer } from "@/shared/context/PageDrawerContext";
 import { usePanelStateContext } from "@/shared/hooks/usePanelState";
 import { useProfilerDrawer } from "@/shared/components/profiler/ProfilerDrawer";

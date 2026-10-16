@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{atomic::Ordering, Arc};
 
 use tauri::{AppHandle, Manager, State};
 
@@ -24,6 +24,13 @@ pub struct BootState {
     pub settings_path: String,
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct RestartStatusDto {
+    pub restarting: bool,
+    pub target: Option<String>,
+    pub timestamp: u64,
+}
+
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct SettingUpdateResult {
     pub applied: bool,
@@ -38,6 +45,30 @@ pub struct ResetSettingsResult {
     pub reload_policy: String,
     pub message: String,
     pub restart_scheduled: bool,
+}
+
+/// Queries the active engine restart status.
+#[tauri::command]
+pub async fn get_restart_status(
+    state: State<'_, Arc<AppState>>,
+) -> Result<RestartStatusDto, VoxIpcError> {
+    let in_flight = state.restart_in_flight.load(Ordering::Relaxed);
+    let requested = state.restart_requested.load(Ordering::Relaxed);
+    let restarting = in_flight || requested;
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+
+    Ok(RestartStatusDto {
+        restarting,
+        target: if restarting {
+            Some("engine".to_string())
+        } else {
+            None
+        },
+        timestamp,
+    })
 }
 
 /// Called by the frontend on mount to load initial settings snapshot and model paths.
@@ -65,13 +96,27 @@ pub async fn get_settings<R: tauri::Runtime>(app: AppHandle<R>) -> Result<BootSt
     })
 }
 
+/// Returns the canonical settings contract including supported keys, reload policies,
+/// secret keys, LLM cloud providers, TTS providers, and numeric defaults.
+#[tauri::command]
+pub async fn get_settings_contract() -> Result<crate::config::SettingsContract, VoxIpcError> {
+    Ok(crate::config::build_settings_contract())
+}
+
+/// Strongly-typed classification of whether a `(domain, key)` setting
+/// carries secret material. The catalog here MUST agree with
+/// `config::secret_keys()` and `config::mutation::supported_keys_for_domain`
+/// — drift between any of those three is a bug, and is guarded by the
+/// `redact_and_supported_key_sets_agree` test. This is the ONLY place in the
+/// system that answers the question "is this setting a secret?".
+fn is_secret_setting(domain: &str, key: &str) -> bool {
+    crate::config::is_secret_key(domain, key)
+}
+
 /// Redacts secret-bearing setting values for logs and restart reasons.
 /// The true value is still applied and persisted; only its display is masked.
 fn redact_setting_value(domain: &str, key: &str, value: &serde_json::Value) -> serde_json::Value {
-    let secret = domain == "tts" && (key == "azure_tts" || key == "provider")
-        || domain == "llm" && (key == "cloud" || key == "cloud_keys" || key == "provider")
-        || domain == "stt" && (key == "cloud" || key == "provider");
-    if secret {
+    if is_secret_setting(domain, key) {
         serde_json::Value::String(
             crate::services::tts::auth::redact_secret().to_string(),
         )

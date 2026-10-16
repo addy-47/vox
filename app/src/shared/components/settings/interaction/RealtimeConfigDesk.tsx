@@ -125,7 +125,7 @@ export const RealtimeConfigDesk = memo(({ layoutMode }: RealtimeConfigDeskProps)
                     : "bg-[rgba(var(--foreground),0.03)] border-[rgba(var(--foreground),0.06)]"
                 )}
               >
-                <ProviderLogo providerId={provider.id} size={16} className="shrink-0" />
+                <ProviderLogo logo={provider.logo} size={16} className="shrink-0" />
               </div>
 
               {isEditing ? (

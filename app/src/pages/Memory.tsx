@@ -21,7 +21,7 @@ import {
   getSessions,
   resolveSessionTitle,
   type SessionRow,
-} from "@/services/historyService";
+} from "@/services/persistenceService";
 import { onSessionsChanged } from "@/services/eventsService";
 import { usePersonalMemoryDrawer } from "@/shared/hooks/usePersonalMemoryDrawer";
 import { ErrorBoundary, OrbitalLoader, EmptyState } from "@/shared/components/common";

@@ -15,7 +15,7 @@ import {
   resolveSessionTitle,
   formatSessionRecency,
   type SessionRow,
-} from "@/services/historyService";
+} from "@/services/persistenceService";
 import { type ObservationRecord } from "@/services/memoryService";
 import {
   getActiveDynamicPalette,

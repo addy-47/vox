@@ -24,7 +24,7 @@ import {
 import { cn } from "@/shared/lib/utils";
 import { VOICE_CATALOG_COPY } from "@/data/settingsCopy";
 import { useSessionStore } from "@/store/sessionStore";
-import type { UnifiedVoiceDto } from "@/services/voiceService";
+import type { UnifiedVoiceDto } from "@/services/voicesService";
 import type { UseVoiceCatalogResult } from "@/shared/hooks/useVoiceCatalog";
 import { useLenisScrollContainer } from "@/shared/hooks/useLenisScrollContainer";
 import { VoiceCard } from "./VoiceCard";

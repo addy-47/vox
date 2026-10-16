@@ -170,6 +170,52 @@ pub async fn check_provider_health(
     }
 }
 
+/// Dedicated probe and model discovery for an arbitrary or unsaved provider target.
+#[tauri::command]
+pub async fn probe_provider_target(
+    state: State<'_, Arc<AppState>>,
+    kind: String,
+    provider_id: Option<String>,
+    base_url: Option<String>,
+    api_key: Option<String>,
+    model: Option<String>,
+) -> Result<health_svc::ProbeProviderTargetResult, VoxIpcError> {
+    let started = std::time::Instant::now();
+    match health_svc::probe_target(
+        &state,
+        &kind,
+        provider_id.clone(),
+        base_url.clone(),
+        api_key,
+        model,
+    )
+    .await
+    {
+        Ok(res) => {
+            log::info!(
+                "[Catalog::ProbeTarget] kind={} provider={:?} url={:?} healthy={} models={} elapsed_ms={}",
+                kind,
+                provider_id,
+                base_url,
+                res.healthy,
+                res.models.len(),
+                started.elapsed().as_millis()
+            );
+            Ok(res)
+        }
+        Err(e) => {
+            log::warn!(
+                "[Catalog::ProbeTarget] kind={} provider={:?} failed elapsed_ms={}: {}",
+                kind,
+                provider_id,
+                started.elapsed().as_millis(),
+                e
+            );
+            Err(VoxIpcError::Engine(e))
+        }
+    }
+}
+
 /// List available LLM models for embedded GGUFs or OpenAI-compatible remote servers.
 #[tauri::command]
 pub async fn list_llm_models(

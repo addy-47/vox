@@ -4,7 +4,6 @@ import { cn } from "@/shared/lib/utils";
 import { Modal } from "@/shared/ui/Modal";
 import { Tooltip } from "@/shared/ui/Tooltip";
 import { useExpandedModalStore } from "@/store/expandedModalStore";
-import { useSettingsStore } from "@/store/settingsStore";
 
 export interface ExpandableListContextValue {
   isExpanded: boolean;
@@ -49,9 +48,11 @@ export interface ExpandableListProps {
   modalContent?: React.ReactNode | ((props: { close: () => void }) => React.ReactNode);
   /** Optional back button handler rendered on the extreme left of the modal header */
   onBack?: () => void;
-  /** Settings domain to discard on modal exit if uncommitted changes exist */
+  /** Settings domain associated with the expandable modal (preserved in draft state across open/close). */
   domainId?: string;
-  /** Explicit callback when modal closes without committing */
+  /** Optional callback when modal closes */
+  onClose?: () => void;
+  /** Explicit callback when modal closes (preserved for caller compatibility) */
   onDiscard?: () => void;
 }
 
@@ -82,19 +83,20 @@ export const ExpandableList = memo(
     children,
     modalContent,
     onBack,
-    domainId,
+    domainId: _domainId,
+    onClose,
     onDiscard,
   }: ExpandableListProps) => {
     const [expanded, setExpanded] = useState(false);
 
     const open = useCallback(() => setExpanded(true), []);
     const handleClose = useCallback(() => {
-      if (domainId) {
-        useSettingsStore.getState().discardDomainChanges(domainId);
-      }
+      // Unsaved draft edits are preserved in draft state across modal open/close (design-spec §13);
+      // drafts are only committed or discarded via explicit user actions (e.g. SettingsCommitControls).
+      onClose?.();
       onDiscard?.();
       setExpanded(false);
-    }, [domainId, onDiscard]);
+    }, [onClose, onDiscard]);
 
     // While the modal owns the commit flow, background card footers stand down.
     const pushModal = useExpandedModalStore((s) => s.pushModal);

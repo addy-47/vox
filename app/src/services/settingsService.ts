@@ -8,66 +8,33 @@ import type {
   ProviderCaps,
 } from "@/store/settingsStore";
 
-/** Mirror of `BootState` (ipc/settings.rs:17). */
 export interface BootState {
   settings: VoxSettings;
   models_dir_exists: boolean;
   settings_path: string;
 }
 
-/** Mirror of `SettingUpdateResult` (ipc/settings.rs:33). */
 export interface SettingUpdateResult {
   applied: boolean;
   reload_policy: string;
   message: string;
-  /** The backend has taken responsibility for rebuilding the engine because
-   *  this key is `SettingReloadPolicy::Restart`. The frontend must render from
-   *  this rather than from its own list of keys. */
   restart_scheduled: boolean;
 }
 
-export interface AudioDevice {
-  name: string;
-  is_default: boolean;
+export interface RestartStatusDto {
+  restarting: boolean;
+  target: string | null;
+  timestamp: number;
 }
 
-/** Full settings snapshot, model paths, and directory health (ipc/settings.rs:36). */
+export function getRestartStatus(): Promise<RestartStatusDto> {
+  return invoke<RestartStatusDto>("get_restart_status");
+}
+
 export function getSettings(): Promise<BootState> {
   return invoke("get_settings");
 }
 
-/** Model catalog (ipc/catalog.rs:24). */
-export function requestModelCatalog(): Promise<ModelCatalog> {
-  return invoke("get_model_catalog");
-}
-
-/** Lists all persistent favorite model IDs from Turso DB. */
-export function listFavoriteModels(): Promise<string[]> {
-  return invoke("list_favorite_models");
-}
-
-/** Toggles favorite status for an LLM model ID. Returns new favorite boolean. */
-export function toggleModelFavorite(modelId: string): Promise<boolean> {
-  return invoke("toggle_model_favorite", { modelId });
-}
-
-/** Settings capabilities for a TTS provider id (ipc/catalog.rs:51).
- * Returns null when the backend is unreachable or rejects the id. A fabricated
- * fallback would render controls for capabilities that may not exist. */
-export async function getProviderCaps(providerId: string): Promise<ProviderCaps | null> {
-  try {
-    return await invoke<ProviderCaps>("get_provider_caps", { providerId });
-  } catch (err) {
-    console.error(`[Settings] get_provider_caps failed for ${providerId}:`, err);
-    return null;
-  }
-}
-
-/**
- * Persist a single setting. Domain/key must match the backend convention
- * (e.g. "ui"/"theme", snake_case keys). Returns the reload policy.
- * (ipc/settings.rs:59)
- */
 export function updateSetting(
   domain: string,
   key: string,
@@ -76,78 +43,6 @@ export function updateSetting(
   return invoke<SettingUpdateResult>("update_setting", { domain, key, value });
 }
 
-export interface ResetSettingsResult {
-  settings: VoxSettings;
-  reload_policy: string;
-  message: string;
-  /** The backend has taken responsibility for rebuilding the engine. */
-  restart_scheduled: boolean;
-}
-
-/** Reset all settings to factory defaults. (ipc/settings.rs:118) */
-export function resetSettings(): Promise<ResetSettingsResult> {
-  return invoke<ResetSettingsResult>("reset_settings");
-}
-
-export interface ProviderHealthCheckResult {
-  healthy: boolean;
-  dialect?: string | null;
-  reason?: string | null;
-}
-
-/** Check health/connectivity for a specific provider. */
-export async function checkLlmProviderHealth(
-  provider?: LlmProviderConfig
-): Promise<ProviderHealthCheckResult> {
-  return invoke<ProviderHealthCheckResult>("check_provider_health", { kind: "llm", provider });
-}
-
-/** Check health/connectivity for the saved active TTS provider. No payload:
- * the backend derives the config from its own settings via to_provider_config. */
-export async function checkTtsProviderHealth(): Promise<ProviderHealthCheckResult> {
-  return invoke<ProviderHealthCheckResult>("check_provider_health", { kind: "tts" });
-}
-
-/** Fetch dynamic list of models available from a remote or local LLM server. */
-export async function listLlmModels(provider?: LlmProviderConfig): Promise<LlmModelInfo[]> {
-  return invoke<LlmModelInfo[]>("list_llm_models", { provider });
-}
-
-export interface ModelProbeResult {
-  capabilities: ModelCapabilities;
-  validated_cap: number | null;
-  cached_map: Record<string, ModelCapabilities>;
-  cache_error: string | null;
-}
-
-export interface CapabilityCacheRead {
-  cached_map: Record<string, ModelCapabilities>;
-  cache_error: string | null;
-}
-
-/** Probe capabilities for a remote model (returns ModelCapabilities). */
-export async function probeModelCapabilities(
-  provider?: LlmProviderConfig,
-  modelId?: string,
-  targetCap?: number
-): Promise<ModelCapabilities> {
-  const res = await invoke<ModelProbeResult>("probe_model_capabilities", {
-    provider,
-    modelId,
-    targetCap,
-  });
-  return res.capabilities;
-}
-
-/** Read the on-disk capability cache without probing any endpoint. */
-export function readModelCapabilitiesCache(): Promise<CapabilityCacheRead> {
-  return invoke<CapabilityCacheRead>("get_model_capabilities_cache");
-}
-
-/** Persist per-model parameter overrides to the `models` table.
- * Routes to `update_setting("model_parameters", modelId, patch)` — the only
- * channel for parameters the config refactor moved out of `settings.jsonc`.
- * A null value for a key removes that override. */
 export function updateModelParameters(
   modelId: string,
   patch: Record<string, unknown>
@@ -155,30 +50,139 @@ export function updateModelParameters(
   return updateSetting("model_parameters", modelId, patch);
 }
 
-/** List audio input or output devices (ipc/audio.rs). */
-export function listAudioDevices(kind: "input" | "output" = "input"): Promise<AudioDevice[]> {
-  return invoke("list_audio_devices", { kind });
+export interface ResetSettingsResult {
+  settings: VoxSettings;
+  reload_policy: string;
+  message: string;
+  restart_scheduled: boolean;
 }
 
-export function listInputDevices(): Promise<AudioDevice[]> {
-  return listAudioDevices("input");
+export function resetSettings(): Promise<ResetSettingsResult> {
+  return invoke<ResetSettingsResult>("reset_settings");
 }
 
-export interface RemoteServerConfig {
-  connectionString: string;
-  sshPort: number | null;
-  identityKeyPath: string | null;
-  remotePath: string;
-  serverPort: number;
+
+
+// Merged from former settingsContractService.ts (settings.rs -> settingsService.ts)
+import type { ModelGroup } from "./setupService";
+
+export type SettingReloadPolicy = "hot" | "worker_command" | "restart";
+
+export interface SecretKeyContract {
+  domain: string;
+  key: string;
 }
 
-export function setupRemoteServer(config: RemoteServerConfig): Promise<void> {
-  return invoke("setup_remote_server", {
-    connection_string: config.connectionString,
-    ssh_port: config.sshPort,
-    identity_key_path: config.identityKeyPath,
-    remote_path: config.remotePath,
-    server_port: config.serverPort,
-  });
+export interface LlmCloudProviderContract {
+  id: string;
+  name: string;
+  base_url: string;
+  key_placeholder?: string;
+  popular?: boolean;
+  tagline?: string;
+  logo?: string;
+  url?: string;
+  keyPlaceholder?: string;
 }
+
+export interface NumericDefaultsContract {
+  temperature: number;
+  max_output_tokens: number;
+  max_tokens: number;
+  speed: number;
+}
+
+export interface SettingsContract {
+  supported_keys: Record<string, string[]>;
+  supported_keys_by_domain?: Record<string, string[]>;
+  reload_policies: Record<string, Record<string, SettingReloadPolicy>>;
+  secret_keys: SecretKeyContract[];
+  llm_cloud_providers: LlmCloudProviderContract[];
+  tts_providers: ModelGroup[];
+  tts_models?: ModelGroup[];
+  realtime_providers?: Array<{
+    id: string;
+    voice_field: string;
+    supports_web_search: boolean;
+    supports_agent_mode: boolean;
+  }>;
+  defaults: NumericDefaultsContract;
+  numeric_defaults?: NumericDefaultsContract;
+}
+
+let cachedContract: SettingsContract | null = null;
+let contractFetchPromise: Promise<SettingsContract> | null = null;
+
+export async function getSettingsContract(): Promise<SettingsContract> {
+  if (cachedContract) return cachedContract;
+  if (!contractFetchPromise) {
+    contractFetchPromise = invoke<SettingsContract>("get_settings_contract")
+      .then((contract) => {
+        if (contract.llm_cloud_providers) {
+          for (const p of contract.llm_cloud_providers) {
+            p.url = p.base_url;
+            p.keyPlaceholder = p.key_placeholder ?? "sk-...";
+          }
+        }
+        cachedContract = contract;
+        return contract;
+      })
+      .finally(() => {
+        contractFetchPromise = null;
+      });
+  }
+  return contractFetchPromise;
+}
+
+export function getCachedSettingsContract(): SettingsContract | null {
+  return cachedContract;
+}
+
+export function isRestartKey(domain: string, key: string): boolean {
+  if (cachedContract?.reload_policies?.[domain]) {
+    return cachedContract.reload_policies[domain][key] === "restart";
+  }
+  const restartScopes: Record<string, string[]> = {
+    stt: ["active", "last_selected", "transliterate_enabled"],
+    llm: ["active", "last_selected", "servers", "cloud_keys"],
+    tts: ["active", "last_selected", "servers"],
+    vad: ["vad_backend"],
+    realtime: ["active", "active_voice_id", "voice", "voice_id", "api_keys"],
+  };
+  return Boolean(restartScopes[domain]?.includes(key));
+}
+
+export function getReloadPolicy(domain: string, key: string): SettingReloadPolicy {
+  if (cachedContract?.reload_policies?.[domain]?.[key]) {
+    return cachedContract.reload_policies[domain][key];
+  }
+  return isRestartKey(domain, key) ? "restart" : "hot";
+}
+
+export function getSupportedKeys(domain: string): readonly string[] {
+  if (cachedContract?.supported_keys?.[domain]) {
+    return cachedContract.supported_keys[domain];
+  }
+  return [];
+}
+
+export function isSecretKey(domain: string, key: string): boolean {
+  if (cachedContract?.secret_keys) {
+    return cachedContract.secret_keys.some((s) => s.domain === domain && s.key === key);
+  }
+  return (
+    (domain === "llm" && (key === "cloud_keys" || key === "servers")) ||
+    (domain === "tts" && key === "servers") ||
+    (domain === "realtime" && key === "api_keys")
+  );
+}
+
+export const settingsContractService = {
+  getSettingsContract,
+  getCachedSettingsContract,
+  isRestartKey,
+  getReloadPolicy,
+  getSupportedKeys,
+  isSecretKey,
+};
 

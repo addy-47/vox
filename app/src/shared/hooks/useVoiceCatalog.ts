@@ -9,7 +9,7 @@ import {
   toggleVoiceFavorite,
   voicePreviewUrl,
   type UnifiedVoiceDto,
-} from "@/services/voiceService";
+} from "@/services/voicesService";
 
 export interface UseVoiceCatalogOptions {
   provider?: string;

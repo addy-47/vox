@@ -189,9 +189,10 @@ export const RemoteCatalogSection = memo(({
     });
     models = sorted;
 
-    // Pinned: The saved (committed) model is placed first in the list
-    if (committedRemoteModelId) {
-      const selectedIndex = models.findIndex((m) => m.id === committedRemoteModelId);
+    // Active card primacy: selectedModelId or committedRemoteModelId is placed first in the list
+    const activeModelId = selectedModelId || committedRemoteModelId;
+    if (activeModelId) {
+      const selectedIndex = models.findIndex((m) => m.id === activeModelId);
       if (selectedIndex > 0) {
         const copy = [...models];
         const [selected] = copy.splice(selectedIndex, 1);
@@ -208,6 +209,7 @@ export const RemoteCatalogSection = memo(({
     sort,
     favoriteModelIds,
     resolveCapabilities,
+    selectedModelId,
     committedRemoteModelId,
   ]);
 
@@ -215,7 +217,7 @@ export const RemoteCatalogSection = memo(({
   const [visibleModelCount, setVisibleModelCount] = useState(REMOTE_MODEL_PAGE_SIZE);
   useEffect(() => {
     setVisibleModelCount(REMOTE_MODEL_PAGE_SIZE);
-  }, [searchQuery, modelFilter, sort, committedRemoteModelId, remoteModels]);
+  }, [searchQuery, modelFilter, sort, selectedModelId, committedRemoteModelId, remoteModels]);
 
   const visibleInlineModels = useMemo(
     () => filteredRemoteModels.slice(0, visibleModelCount),
@@ -232,7 +234,7 @@ export const RemoteCatalogSection = memo(({
 
   const { containerRef: inlineRowsRef, lenisRef: inlineLenisRef } =
     useLenisScrollContainer<HTMLDivElement>();
-  useScrollTopOnChange(inlineRowsRef, committedRemoteModelId, inlineLenisRef);
+  useScrollTopOnChange(inlineRowsRef, selectedModelId || committedRemoteModelId, inlineLenisRef);
 
   const RemoteModelRows = () => (
     <div
@@ -381,8 +383,13 @@ export const RemoteCatalogSection = memo(({
                   )}
                 </div>
 
-                {/* Right Top: Family Badge */}
+                {/* Right Top: Active Badge + Family Badge */}
                 <div className="flex items-center gap-1.5 shrink-0">
+                  {isSelected && (
+                    <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded-md bg-[rgba(var(--accent),0.12)] text-[rgb(var(--accent))] border border-[rgba(var(--accent),0.25)] flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--accent))]" /> Active
+                    </span>
+                  )}
                   {model.family && (
                     <span className="text-[10.5px] font-bold px-2 py-0.5 rounded-md bg-[rgb(var(--accent))]/10 text-[rgb(var(--accent))] border border-[rgba(var(--accent),0.15)] leading-none">
                       {model.family}

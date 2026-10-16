@@ -34,17 +34,12 @@ export type SettingsScope =
   | "realtime"
   | "system";
 
+/**
+ * @deprecated Use `settingsContractService.getSupportedKeys(scope)` or backend contract `supported_keys`.
+ * Maintained as static fallback during bootstrap.
+ */
 export const SETTINGS_SCOPE_KEYS: Partial<Record<SettingsScope, readonly string[]>> = {
   appearance: ["theme", "accent_seed"],
-  // `vad`, `stt`, `llm`, and `tts` deliberately have NO declared key lists.
-  // The backend owns the key contract (`config/mutation.rs`); any frontend
-  // roster goes stale the moment a key is added or removed — exactly how
-  // `llm.server` survived the config refactor as a phantom write. Omitting
-  // the entry routes these scopes through the generic whole-scope paths:
-  //   isCategoryDirty / isDomainDirty -> deep scope comparison
-  //   isDomainRequiringRestart       -> Object.keys(scope) filtered by
-  //                                     isRestartKey
-  //   discardCategoryChanges / discardDomainChanges -> whole-scope restore
   interaction: ["mode", "pipeline_mode"],
   dictation: ["enabled", "interaction_mode", "hotkey", "output_mode", "silence_auto_stop_ms"],
   working_memory: ["private_mode", "auto_compaction", "max_context_share", "web_search_enabled"],
@@ -157,7 +152,7 @@ export const SETTINGS_COPY = {
   saveFailedTitle: "Could Not Save",
   saveFailedHint: "These settings were rejected by the backend and were not applied:",
   saveFailedNone: "The setting was rejected by the backend and was not applied.",
-  restartingEngine: "Restarting Engine",
+  restartingEngine: "Restarting engine...",
   apiKeyRequired: "API Key Required for Cloud Provider",
   applyAndRestart: "Apply & Restart",
   restoreDefaults: "Restore All Defaults",

@@ -9,7 +9,7 @@ import {
 import { AnimatePresence, motion, Reorder, useDragControls } from "framer-motion";
 import { cn } from "@/shared/lib/utils";
 import { type ProjectGroup } from "@/shared/hooks/useSessionPanel";
-import { type ProjectRow } from "@/services/projectService";
+import { type ProjectRow } from "@/services/projectsService";
 import { SESSION_COPY } from "@/data/sessionCopy";
 import { Tooltip } from "@/shared/ui/Tooltip";
 import { ProjectContextMenu } from "@/shared/ui/ProjectContextMenu";

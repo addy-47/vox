@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getVoiceScope, type VoiceScopeDto } from "@/services/voiceService";
+import { getVoiceScope, type VoiceScopeDto } from "@/services/voicesService";
 
 export type { VoiceScopeDto };
 

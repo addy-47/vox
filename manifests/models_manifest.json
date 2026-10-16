@@ -428,7 +428,40 @@
       "is_built_in": false,
       "is_cloud": true,
       "is_remote": false,
-      "files": []
+      "files": [],
+      "logo": "data:image/svg+xml;base64,PHN2ZwogICAgICAgIHdpZHRoPSIyNCIKICAgICAgICBoZWlnaHQ9IjI0IgogICAgICAgIHZpZXdCb3g9IjAgMCAyNCAyNCIKICAgICAgPgogICAgICAgIDxyZWN0IHg9IjIiIHk9IjIiIHdpZHRoPSI5LjUiIGhlaWdodD0iOS41IiBmaWxsPSIjRjI1MDIyIiAvPgogICAgICAgIDxyZWN0IHg9IjEyLjUiIHk9IjIiIHdpZHRoPSI5LjUiIGhlaWdodD0iOS41IiBmaWxsPSIjN0ZCQTAwIiAvPgogICAgICAgIDxyZWN0IHg9IjIiIHk9IjEyLjUiIHdpZHRoPSI5LjUiIGhlaWdodD0iOS41IiBmaWxsPSIjMDBBNEVGIiAvPgogICAgICAgIDxyZWN0IHg9IjEyLjUiIHk9IjEyLjUiIHdpZHRoPSI5LjUiIGhlaWdodD0iOS41IiBmaWxsPSIjRkZCOTAwIiAvPgogICAgICA8L3N2Zz4="
+    },
+    {
+      "id": "google_tts",
+      "name": "google",
+      "category": "tts",
+      "subcategory": "cloud",
+      "description": "Google Cloud Text-to-Speech with Chirp 3 HD and Neural voices.",
+      "parameters": "Cloud Neural",
+      "ram_usage": "0 MB (Cloud)",
+      "tradeoffs": "Zero local RAM load; requires active internet and credentials",
+      "version": "1.0.0",
+      "is_built_in": false,
+      "is_cloud": true,
+      "is_remote": false,
+      "files": [],
+      "logo": "data:image/svg+xml;base64,PHN2ZwogICAgICAgIHdpZHRoPSIyNCIKICAgICAgICBoZWlnaHQ9IjI0IgogICAgICAgIHZpZXdCb3g9IjAgMCAyNCAyNCIKICAgICAgICBmaWxsPSJub25lIgogICAgICA+CiAgICAgICAgPHBhdGgKICAgICAgICAgIGQ9Ik0xMS4wNCAxOS4zMlExMiAyMS41MSAxMiAyNHEwLTIuNDkuOTMtNC42OC45Ni0yLjE5IDIuNTgtMy44MXQzLjgxLTIuNThRMjEuNTEgMTIgMjQgMTJxLTIuNDkgMC00LjY4LS45My0yLjE5LS45Ni0zLjgxLTIuNTh0LTIuNTgtMy44MVExMiAyLjQ5IDEyIDBxMCAyLjQ5LS45MyA0LjY4LS45NiAyLjE5LTIuNTggMy44MVQ0LjY4IDExLjA3UTIuNDkgMTIgMCAxMnEyLjQ5IDAgNC42OC45MyAyLjE5Ljk2IDMuODEgMi41OHQyLjU4IDMuODF6IgogICAgICAgICAgZmlsbD0idXJsKCNnZW1pbmktZ3JhZCkiCiAgICAgICAgLz4KICAgICAgICA8ZGVmcz4KICAgICAgICAgIDxsaW5lYXJHcmFkaWVudCBpZD0iZ2VtaW5pLWdyYWQiIHgxPSIwIiB5MT0iMCIgeDI9IjI0IiB5Mj0iMjQiIGdyYWRpZW50VW5pdHM9InVzZXJTcGFjZU9uVXNlIj4KICAgICAgICAgICAgPHN0b3Agb2Zmc2V0PSIwJSIgc3RvcENvbG9yPSIjMUJBMUUzIiAvPgogICAgICAgICAgICA8c3RvcCBvZmZzZXQ9IjM1JSIgc3RvcENvbG9yPSIjNUI3N0Y2IiAvPgogICAgICAgICAgICA8c3RvcCBvZmZzZXQ9IjcwJSIgc3RvcENvbG9yPSIjOUI2MEVEIiAvPgogICAgICAgICAgICA8c3RvcCBvZmZzZXQ9IjEwMCUiIHN0b3BDb2xvcj0iI0UwNTI4NiIgLz4KICAgICAgICAgIDwvbGluZWFyR3JhZGllbnQ+CiAgICAgICAgPC9kZWZzPgogICAgICA8L3N2Zz4="
+    },
+    {
+      "id": "azure_tts",
+      "name": "azure",
+      "category": "tts",
+      "subcategory": "cloud",
+      "description": "Azure AI Speech with neural voices and 24 kHz streaming.",
+      "parameters": "Cloud Neural",
+      "ram_usage": "0 MB (Cloud)",
+      "tradeoffs": "Zero local RAM load; requires active internet and credentials",
+      "version": "1.0.0",
+      "is_built_in": false,
+      "is_cloud": true,
+      "is_remote": false,
+      "files": [],
+      "logo": "data:image/svg+xml;base64,PHN2ZwogICAgICAgIHdpZHRoPSIyNCIKICAgICAgICBoZWlnaHQ9IjI0IgogICAgICAgIHZpZXdCb3g9IjAgMCAyNCAyNCIKICAgICAgICBmaWxsPSIjMDA3OEQ0IgogICAgICA+CiAgICAgICAgPHBhdGggZD0iTTEzLjA1IDIuMTJsLTcuMzkgMTMuOWEuNzguNzggMCAwIDAgLjY5IDEuMTVoNC42M0w3LjMzIDIxLjg4aDkuMzRsNS4zLTE5Ljc2aC04LjkyeiIgLz4KICAgICAgPC9zdmc+"
     },
     {
       "id": "chatterbox",

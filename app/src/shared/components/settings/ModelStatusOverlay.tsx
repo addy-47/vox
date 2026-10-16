@@ -111,7 +111,7 @@ export const ModelStatusOverlay = memo(() => {
 
   if (activeLlmKind === "server") {
     llmDisplayName = llmId || "Server LLM";
-    llmSubtitle = llmServerEntry?.name || "Ollama / Remote";
+    llmSubtitle = llmServerEntry?.name || "Remote";
   } else if (activeLlmKind === "cloud") {
     llmDisplayName = llmId || "Cloud LLM";
     llmSubtitle = activeSettings?.llm?.active?.provider || "Cloud API";

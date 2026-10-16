@@ -8,7 +8,7 @@ import {
   getSessions,
   sortSessionsNewestFirst,
   type SessionRow,
-} from "@/services/historyService";
+} from "@/services/persistenceService";
 import {
   getIngestionStats,
   type IngestionStats,

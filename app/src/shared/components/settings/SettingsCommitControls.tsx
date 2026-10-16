@@ -54,9 +54,7 @@ export function useDomainCommitState(domainId: string): DomainCommitState {
   const realtimeKeyFor = (id: string | null | undefined) =>
     id ? (realtimeKeys?.[id] ?? realtimeProvidersKeys?.[id]) : undefined;
   const isRealtimeMissingKey =
-    pipelineMode === "realtime" &&
-    ((realtimeProvider === "gemini_live" && !realtimeKeyFor("gemini_live")?.trim()) ||
-     (realtimeProvider === "deepgram_voice_agent" && !realtimeKeyFor("deepgram_voice_agent")?.trim()));
+    pipelineMode === "realtime" && !realtimeKeyFor(realtimeProvider)?.trim();
 
   const isMissingKey = useMemo(() => {
     if (domainId === "models" || domainId === "interaction") {

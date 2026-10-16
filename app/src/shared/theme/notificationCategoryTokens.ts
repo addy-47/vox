@@ -15,7 +15,7 @@
  *    worth.
  */
 
-import type { NotificationCategory } from "@/services/notificationService";
+import type { NotificationCategory } from "@/services/notificationsService";
 
 /** Hue offsets (fraction of the wheel) from the accent hue. None is 0 — the
  *  accent is reserved for global affordances and may not be a category colour. */

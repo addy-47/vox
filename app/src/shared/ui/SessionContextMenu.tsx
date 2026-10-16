@@ -14,7 +14,7 @@ import { cn } from "@/shared/lib/utils";
 import { SESSION_COPY } from "@/data/sessionCopy";
 import { Tooltip } from "@/shared/ui/Tooltip";
 import { ContextMenuShell } from "@/shared/ui/ContextMenuShell";
-import type { ProjectRow } from "@/services/projectService";
+import type { ProjectRow } from "@/services/projectsService";
 
 export interface SessionContextMenuProps {
   open: boolean;

@@ -1,10 +1,12 @@
 import { useState, useEffect, useMemo, memo } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
 import {
-  checkTtsProviderHealth,
-  getProviderCaps,
   setupRemoteServer,
 } from "@/services/settingsService";
+import {
+  checkTtsProviderHealth,
+  getProviderCaps,
+} from "@/services/catalogService";
 import * as eventsService from "@/services/eventsService";
 import {
   MODEL_HUB_COPY,
@@ -207,7 +209,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
 
   useEffect(() => {
     return eventsService.onModelProgress((payload) => {
-      if (payload?.model_id === "chatterbox_remote_server") {
+      if (payload?.model_id?.endsWith("_remote_server")) {
         setSetupStatus({
           step: payload.step,
           progress: payload.progress,
@@ -243,7 +245,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
     try {
       const ttsServers = draftSettings?.tts?.servers ?? draftSettings?.providers?.tts?.servers ?? [];
       const remoteCfg = ttsServers.find((s) => s.id === draftSettings?.tts?.active?.provider);
-      const endpoint = remoteCfg?.url || "http://127.0.0.1:7860";
+      const endpoint = remoteCfg?.url || "";
       const remotePath = remoteCfg?.remote_path || "~/.vox";
 
       let srvPort = 7860;

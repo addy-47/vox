@@ -85,7 +85,7 @@ export const RemoteModelsModalView = memo(({
   const { containerRef: scrollContainerRef, lenisRef, scrollToTop } =
     useLenisScrollContainer<HTMLDivElement>();
 
-  useScrollTopOnChange(scrollContainerRef, pinnedModelId, lenisRef);
+  useScrollTopOnChange(scrollContainerRef, selectedModelId || pinnedModelId, lenisRef);
 
   useEffect(() => {
     scrollToTop();
@@ -207,8 +207,10 @@ export const RemoteModelsModalView = memo(({
       sorted.sort((a, b) => (b.name || b.id).localeCompare(a.name || a.id, undefined, { sensitivity: "base" }));
     }
 
-    if (pinnedModelId) {
-      const idx = sorted.findIndex((m) => m.id === pinnedModelId);
+    // Active card primacy: selectedModelId or committed/pinned model is placed at index 0
+    const activeModelId = selectedModelId || pinnedModelId;
+    if (activeModelId) {
+      const idx = sorted.findIndex((m) => m.id === activeModelId);
       if (idx > 0) {
         const [selected] = sorted.splice(idx, 1);
         sorted.unshift(selected);
@@ -216,13 +218,13 @@ export const RemoteModelsModalView = memo(({
     }
 
     return sorted;
-  }, [remoteModels, deferredSearch, filterCategory, probingMap, capabilitiesCache, pinnedModelId, sort, favoriteModelIds]);
+  }, [remoteModels, deferredSearch, filterCategory, probingMap, capabilitiesCache, selectedModelId, pinnedModelId, sort, favoriteModelIds]);
 
   // Mounted window over the filtered list
   const [visibleModalModelCount, setVisibleModalModelCount] = useState(REMOTE_MODEL_PAGE_SIZE);
   useEffect(() => {
     setVisibleModalModelCount(REMOTE_MODEL_PAGE_SIZE);
-  }, [modalSearch, deferredSearch, filterCategory, remoteModels]);
+  }, [modalSearch, deferredSearch, filterCategory, selectedModelId, pinnedModelId, remoteModels]);
 
   const visibleModalModels = useMemo(
     () => modalFilteredModels.slice(0, visibleModalModelCount),

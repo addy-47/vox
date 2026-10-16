@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { VOICE_CATALOG_COPY } from "@/data/settingsCopy";
-import type { UnifiedVoiceDto } from "@/services/voiceService";
+import type { UnifiedVoiceDto } from "@/services/voicesService";
 
 export interface VoicePreviewBannerProps {
   voice: UnifiedVoiceDto | null;

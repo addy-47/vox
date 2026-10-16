@@ -48,6 +48,8 @@ pub struct ModelGroup {
     pub is_remote: bool,
     #[serde(default)]
     pub required: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub logo: Option<String>,
     pub files: Vec<ModelEntry>,
 }
 
@@ -59,7 +61,16 @@ pub struct VoxManifest {
     pub model_groups: Vec<ModelGroup>,
 }
 
+pub const BUNDLED_MODELS_MANIFEST_JSON: &str =
+    include_str!("../../../../manifests/models_manifest.json");
+
 impl VoxManifest {
+    /// Loads the bundled models manifest embedded in the application binary.
+    pub fn bundled() -> Self {
+        serde_json::from_str(BUNDLED_MODELS_MANIFEST_JSON)
+            .expect("Bundled models_manifest.json must parse")
+    }
+
     /// Calculates total required space including extraction overhead and safety buffer.
     pub fn calculate_required_space(&self) -> u64 {
         let mut required = 0;

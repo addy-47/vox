@@ -4,7 +4,7 @@ import {
   metadataResolution,
   metadataTurnCount,
   toCategory,
-} from "@/services/notificationService";
+} from "@/services/notificationsService";
 import {
   selectBadgeCount,
   selectRolledUpNotifications,

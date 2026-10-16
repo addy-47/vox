@@ -135,6 +135,11 @@ export const RemoteModelCard = memo(({
                 {(model.size_bytes / (1024 * 1024 * 1024)).toFixed(1)}GB
               </span>
             )}
+            {isSelected && (
+              <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded-md bg-[rgba(var(--accent),0.12)] text-[rgb(var(--accent))] border border-[rgba(var(--accent),0.25)] flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--accent))]" /> Active
+              </span>
+            )}
 
             {/* Top-Right Heart Button */}
             {onToggleFavorite && (

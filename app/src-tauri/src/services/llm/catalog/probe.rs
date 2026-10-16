@@ -201,6 +201,12 @@ pub async fn list_models(
             )
             .await
         }
+        LlmRuntimeTarget::Unresolved { provider_id } => {
+            Err(format!(
+                "catalog provider '{}' is not in the declarative manifest (RULE-PROV-01)",
+                provider_id
+            ))
+        }
     }
 }
 
@@ -266,6 +272,7 @@ pub async fn probe_capabilities(
         LlmRuntimeTarget::Embedded => CAP_KIND_EMBEDDED,
         LlmRuntimeTarget::Server { .. } => CAP_KIND_SERVER,
         LlmRuntimeTarget::Cloud { .. } => CAP_KIND_CLOUD,
+        LlmRuntimeTarget::Unresolved { .. } => CAP_KIND_CLOUD,
     };
 
     let target = model_id.or(Some(active_model));
@@ -635,6 +642,13 @@ impl CapabilityProbeEngine {
             LlmRuntimeTarget::Embedded => {
                 let model_id = target_model.unwrap_or("embedded-default.gguf");
                 Ok(Self::probe_local_embedded(model_id, now))
+            }
+            LlmRuntimeTarget::Unresolved { provider_id } => {
+                Err(format!(
+                    "catalog provider '{}' is not in the declarative manifest (RULE-PROV-01)",
+                    provider_id
+                )
+                .into())
             }
             LlmRuntimeTarget::Server {
                 base_url,
@@ -1373,6 +1387,18 @@ impl CapabilityProbeEngine {
                     done(
                         ProbeOutcome::Skipped,
                         Some("token-cap validation needs a remote endpoint".to_string()),
+                    ),
+                )
+            }
+            LlmRuntimeTarget::Unresolved { provider_id } => {
+                return (
+                    None,
+                    done(
+                        ProbeOutcome::Failed,
+                        Some(format!(
+                            "catalog provider '{}' is not in the declarative manifest (RULE-PROV-01)",
+                            provider_id
+                        )),
                     ),
                 )
             }
