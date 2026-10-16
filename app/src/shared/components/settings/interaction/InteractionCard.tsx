@@ -24,7 +24,6 @@ export const InteractionCard = memo(
   ({ layoutMode = "full-max" }: InteractionCardProps) => {
     const settings = useSettingsStore((s) => s.settings);
     const draftSettings = useSettingsStore((s) => s.draftSettings);
-    const modelCatalog = useSettingsStore((s) => s.modelCatalog);
     const updateDraft = useSettingsStore((s) => s.updateDraft);
     const discardCategoryChanges = useSettingsStore((s) => s.discardCategoryChanges);
 
@@ -81,31 +80,6 @@ export const InteractionCard = memo(
     const dictationEnabled = dictation?.enabled ?? true;
     const dictationInteractionMode = dictation?.interaction_mode ?? "ptt";
     const isModular = interaction.pipeline_mode === "modular";
-
-    const activeProviderKind = draftSettings.llm?.active || "embedded";
-    const previewTtsGroup = modelCatalog?.tts?.find((g) => g.id === draftSettings.tts?.active);
-    const activeSttModel = modelCatalog?.stt?.find(
-      (m) => m.id === draftSettings.stt?.embedded?.model
-    );
-
-    const sttActiveLabel =
-      draftSettings.stt?.active === "cloud"
-        ? "Cloud Speech"
-        : activeSttModel?.name || "On-Device";
-
-    const llmActiveLabel =
-      activeProviderKind === "embedded"
-        ? draftSettings.llm?.embedded?.model || "On-Device"
-        : activeProviderKind === "server"
-        ? draftSettings.llm?.server?.provider_name || "Custom Server"
-        : draftSettings.llm?.cloud?.provider_name || "Cloud API";
-
-    const ttsActiveLabel =
-      previewTtsGroup?.is_cloud
-        ? "Cloud Voices"
-        : previewTtsGroup?.is_remote
-        ? "Remote Server"
-        : previewTtsGroup?.name || "Built-in Voices";
 
     return (
       <div
@@ -173,24 +147,9 @@ export const InteractionCard = memo(
                     )}
                   >
                     <PipelineProvidersDesk
-                      sttActiveLabel={sttActiveLabel}
-                      llmActiveLabel={llmActiveLabel}
-                      ttsActiveLabel={ttsActiveLabel}
-                      sttProviderId={draftSettings.stt?.active === "cloud" ? "openai" : "embedded"}
-                      llmProviderId={
-                        activeProviderKind === "embedded"
-                          ? "embedded"
-                          : activeProviderKind === "server"
-                          ? "server"
-                          : (draftSettings.llm?.cloud?.provider_name?.toLowerCase() || "cloud")
-                      }
-                      ttsProviderId={
-                        previewTtsGroup?.is_remote
-                          ? "server"
-                          : previewTtsGroup?.is_cloud
-                          ? "microsoft"
-                          : "embedded"
-                      }
+                      sttActive={draftSettings.stt?.active}
+                      llmActive={draftSettings.llm?.active}
+                      ttsActive={draftSettings.tts?.active}
                       onSelectCategory={handleSelectCategory}
                       layoutMode={layoutMode}
                     />
@@ -199,7 +158,7 @@ export const InteractionCard = memo(
               ) : (
                 <div
                   className={cn(
-                    "flex-1 w-full flex flex-col min-h-0 rounded-xl p-3 relative border border-[rgba(var(--accent),0.06)] bg-[rgba(var(--foreground),0.02)]",
+                    "flex-1 w-full flex flex-col min-h-0 rounded-xl p-3 relative border border-[rgba(var(--accent),0.06)] bg-[rgba(var(--foreground),0.02)] overflow-hidden",
                     layoutMode === "small" ? "h-auto" : "h-full"
                   )}
                 >

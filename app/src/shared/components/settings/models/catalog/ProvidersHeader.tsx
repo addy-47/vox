@@ -48,8 +48,8 @@ export interface ProvidersHeaderProps {
   inlineCustomActions?: InlineCustomActions | null;
   status?: React.ReactNode;
   filter?: ProvidersHeaderFilter;
-  sort: ProvidersHeaderSort;
-  search: ProvidersHeaderSearch;
+  sort?: ProvidersHeaderSort;
+  search?: ProvidersHeaderSearch;
 }
 
 const ICON_BUTTON =
@@ -79,8 +79,8 @@ export const ProvidersHeader = memo(function ProvidersHeader({
   const popoverRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    if (search.open) searchInputRef.current?.focus();
-  }, [search.open]);
+    if (search?.open) searchInputRef.current?.focus();
+  }, [search?.open]);
 
   const onFilterCloseRef = useRef<(() => void) | null>(null);
   onFilterCloseRef.current = filter?.onClose ?? null;
@@ -129,7 +129,7 @@ export const ProvidersHeader = memo(function ProvidersHeader({
     });
   }, [filterOpen]);
 
-  const searchActive = search.open || search.value.length > 0;
+  const searchActive = !!search && (search!.open || search!.value.length > 0);
   const filterActive = (filter?.activeCount ?? 0) > 0;
 
   return (
@@ -175,13 +175,13 @@ export const ProvidersHeader = memo(function ProvidersHeader({
                 type="button"
                 onClick={inlineCustomActions.onSave}
                 disabled={inlineCustomActions.isSaving}
+                aria-label="Save custom provider"
                 className={cn(
-                  "h-6 px-2 flex items-center gap-1 rounded-md text-[10.5px] font-bold bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] hover:brightness-110 transition-all cursor-pointer shadow-xs",
+                  "h-6 w-6 flex items-center justify-center rounded-md border border-[rgba(var(--accent),0.35)] text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.12)] transition-all cursor-pointer",
                   inlineCustomActions.isSaving && "opacity-60 cursor-wait"
                 )}
               >
-                <Check size={11} strokeWidth={2.5} />
-                <span>Save</span>
+                <Check size={13} strokeWidth={2.2} />
               </button>
             </Tooltip>
             <Tooltip label="Discard changes" side="bottom">
@@ -202,10 +202,10 @@ export const ProvidersHeader = memo(function ProvidersHeader({
                 type="button"
                 disabled
                 aria-disabled
-                className="h-6 px-2 flex items-center gap-1 rounded-md text-[10.5px] font-bold text-[rgb(var(--foreground-muted))]/40 bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--foreground),0.06)] cursor-not-allowed select-none"
+                className="h-6 px-1.5 sm:px-2 flex items-center gap-1 rounded-md text-[10.5px] font-bold text-[rgb(var(--foreground-muted))]/40 bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--foreground),0.06)] cursor-not-allowed select-none"
               >
                 <Plus size={11} strokeWidth={2.2} />
-                <span>Custom</span>
+                <span className="hidden sm:inline">Custom</span>
               </button>
             </span>
           </Tooltip>
@@ -220,14 +220,14 @@ export const ProvidersHeader = memo(function ProvidersHeader({
               onClick={onCustomClick}
               aria-label={customTooltip || PROVIDERS_HEADER_COPY.customAria}
               className={cn(
-                "h-6 px-2 flex items-center gap-1 rounded-md text-[10.5px] font-bold transition-all cursor-pointer",
+                "h-6 px-1.5 sm:px-2 flex items-center gap-1 rounded-md text-[10.5px] font-bold transition-all cursor-pointer",
                 isCustomActive
                   ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] shadow-[0_0_8px_rgba(var(--accent),0.35)]"
                   : "bg-[rgba(var(--accent),0.08)] text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.16)] border border-[rgba(var(--accent),0.25)]"
               )}
             >
               <Plus size={11} strokeWidth={2.2} />
-              <span>Custom</span>
+              <span className="hidden sm:inline">Custom</span>
             </button>
           </Tooltip>
         )}
@@ -259,7 +259,7 @@ export const ProvidersHeader = memo(function ProvidersHeader({
                 <div
                   ref={popoverRef}
                   style={popoverStyle}
-                  className="rounded-xl bg-[rgba(var(--card),0.96)] border border-[rgba(var(--foreground),0.12)] shadow-2xl p-2.5 flex flex-col gap-1 animate-fade-in backdrop-blur-md"
+                  className="rounded-xl bg-[rgba(var(--card),0.96)] border border-[rgba(var(--foreground),0.12)] shadow-2xl p-2.5 flex flex-col gap-1 animate-fade-in "
                 >
                   {filter.menu}
                 </div>,
@@ -268,46 +268,46 @@ export const ProvidersHeader = memo(function ProvidersHeader({
           </div>
         )}
 
-        {/* 3. Sort */}
+{/* 3. Sort */}
+        {sort && (
         <Tooltip
-          label={sort.order === "az" ? PROVIDERS_HEADER_COPY.sortDesc : PROVIDERS_HEADER_COPY.sortAsc}
+          label={sort!.order === "az" ? PROVIDERS_HEADER_COPY.sortDesc : PROVIDERS_HEADER_COPY.sortAsc}
           side="bottom"
           asChild
         >
           <button
             type="button"
-            onClick={sort.onToggle}
-            aria-label={sort.order === "az" ? PROVIDERS_HEADER_COPY.sortAsc : PROVIDERS_HEADER_COPY.sortDesc}
+            onClick={sort!.onToggle}
+            aria-label={sort!.order === "az" ? PROVIDERS_HEADER_COPY.sortAsc : PROVIDERS_HEADER_COPY.sortDesc}
             className={cn(ICON_BUTTON, ICON_BUTTON_IDLE)}
           >
             <ArrowUpDown size={13} strokeWidth={1.75} />
           </button>
         </Tooltip>
-
-        {/* 4. Search */}
-        {search.open ? (
+        )}
+        {search && (search!.open ? (
           <div className="flex items-center gap-1 w-[95px] sm:w-[115px] border-b border-[rgb(var(--accent))] pb-0.5 animate-fade-in">
             <Search size={11} className="text-[rgb(var(--accent))] shrink-0" />
             <input
               ref={searchInputRef}
               type="text"
-              value={search.value}
-              onChange={(e) => search.onChange(e.target.value)}
+              value={search!.value}
+              onChange={(e) => search!.onChange(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Escape") {
-                  if (search.value) search.onChange("");
-                  else search.onClose();
+                  if (search!.value) search!.onChange("");
+                  else search!.onClose();
                 } else if (e.key === "Enter") {
                   searchInputRef.current?.blur();
                 }
               }}
-              placeholder={search.placeholder || PROVIDERS_HEADER_COPY.searchPlaceholder}
-              aria-label={search.placeholder || PROVIDERS_HEADER_COPY.searchPlaceholder}
+              placeholder={search!.placeholder || PROVIDERS_HEADER_COPY.searchPlaceholder}
+              aria-label={search!.placeholder || PROVIDERS_HEADER_COPY.searchPlaceholder}
               className="w-full min-w-0 bg-transparent text-[11px] outline-none text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40"
             />
             <button
               type="button"
-              onClick={search.onClose}
+              onClick={search!.onClose}
               className="text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))] transition-colors p-0.5 shrink-0 cursor-pointer"
               aria-label={PROVIDERS_HEADER_COPY.closeSearch}
             >
@@ -322,7 +322,7 @@ export const ProvidersHeader = memo(function ProvidersHeader({
           >
             <button
               type="button"
-              onClick={search.onToggle}
+              onClick={search!.onToggle}
               aria-label={searchActive ? PROVIDERS_HEADER_COPY.clearSearch : PROVIDERS_HEADER_COPY.search}
               className={cn(
                 ICON_BUTTON,
@@ -332,6 +332,7 @@ export const ProvidersHeader = memo(function ProvidersHeader({
               <Search size={13} strokeWidth={1.75} />
             </button>
           </Tooltip>
+        )
         )}
       </div>
     </div>

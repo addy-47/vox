@@ -1,6 +1,6 @@
 import { memo, useState, useCallback } from "react";
 import { RotateCcw, Check, X } from "lucide-react";
-import { useSettings } from "@/shared/hooks/useSettings";
+import { useSettingsStore } from "@/store/settingsStore";
 import { Tooltip } from "@/shared/ui/Tooltip";
 import { SETTINGS_COPY } from "@/data/settingsCopy";
 
@@ -11,7 +11,7 @@ import { SETTINGS_COPY } from "@/data/settingsCopy";
  *         red tick (confirm), and grey cross (cancel). Zero pill container, zero red background.
  */
 export const RestoreDefaultsButton = memo(() => {
-  const { restoreDefaults } = useSettings();
+  const restoreDefaults = useSettingsStore.getState().restoreDefaults;
   const [isConfirming, setIsConfirming] = useState(false);
 
   const handleConfirm = useCallback(() => {

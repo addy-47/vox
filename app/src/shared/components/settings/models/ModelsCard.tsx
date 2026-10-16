@@ -80,22 +80,14 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
   const [setupStatus, setSetupStatus] = useState<RemoteSetupStatus | null>(null);
 
   // Base layout decisions on committed and draft settings
-  const rawLlmActive = draftSettings?.llm?.active as unknown;
-  const activeProviderKind =
-    typeof rawLlmActive === "string"
-      ? rawLlmActive
-      : (rawLlmActive as { category?: string })?.category || "embedded";
+  const activeProviderKind = draftSettings?.llm?.active?.category ?? "embedded";
   const isRemoteLlm = activeProviderKind === "server" || activeProviderKind === "cloud";
   const isCloudLlm = activeProviderKind === "cloud";
 
   // Preview selection: the clicked card's group id IS the settings active key.
   // Tier and health gating derive from manifest flags and backend-derived
   // configs — the backend owns the provider union, the frontend never echoes it.
-  const rawTtsActive = draftSettings?.tts?.active as unknown;
-  const activeTtsId =
-    typeof rawTtsActive === "string"
-      ? rawTtsActive
-      : (rawTtsActive as { model?: string })?.model || "";
+  const activeTtsId = draftSettings?.tts?.active?.model ?? "";
   const previewTtsGroup = modelCatalog?.tts?.find((g) => g.id === activeTtsId);
   const isCloudTts = !!previewTtsGroup?.is_cloud;
   const isRemoteTts = !!previewTtsGroup?.is_remote;
@@ -208,7 +200,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
     checkHealth();
     const interval = setInterval(checkHealth, 5000);
     return () => clearInterval(interval);
-  }, [isRemoteTts, activePipelineTab, draftSettings?.tts?.active]);
+  }, [isRemoteTts, activePipelineTab, draftSettings?.tts?.active?.model]);
 
   useEffect(() => {
     return eventsService.onModelProgress((payload) => {
@@ -290,14 +282,9 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
     !!modelPresence[draftSettings?.vad?.vad_backend || ""] ||
     !!modelCatalog?.vad?.find((m) => m.is_built_in && m.id === draftSettings?.vad?.vad_backend);
 
-  const rawSttActive = draftSettings?.stt?.active as unknown;
-  const isSttCloud =
-    typeof rawSttActive === "string"
-      ? rawSttActive === "cloud"
-      : (rawSttActive as { category?: string })?.category === "cloud";
+  const isSttCloud = draftSettings?.stt?.active?.category === "cloud";
   const activeSttModel =
-    draftSettings?.stt?.embedded?.model ||
-    (rawSttActive as { model?: string })?.model;
+    draftSettings?.stt?.active?.model || draftSettings?.stt?.embedded?.model;
   const isAsrVerified =
     isSttCloud
       ? true
@@ -487,11 +474,9 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
                   <LlmCatalogView
                     layoutMode={layoutMode}
                     selectedLlmId={
-                      (draftSettings?.llm?.active === "embedded"
-                        ? draftSettings.llm.embedded?.model
-                        : draftSettings?.llm?.active === "server"
-                        ? draftSettings.llm.server?.model
-                        : draftSettings?.llm?.cloud?.model) || ""
+                      draftSettings?.llm?.active?.model ||
+                      draftSettings?.llm?.cloud?.model ||
+                      ""
                     }
                     modelPresence={modelPresence}
                     downloadStatuses={downloadStatuses}

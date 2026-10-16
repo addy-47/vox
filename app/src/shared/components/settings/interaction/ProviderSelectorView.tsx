@@ -2,9 +2,9 @@ import { memo } from "react";
 import { Brain, Server, Cloud, ChevronRight } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { Tooltip } from "@/shared/ui";
-import { LlmActiveProvider } from "@/store/settingsStore";
+import { ActiveCategory } from "@/store/settingsStore";
 
-export type ProviderTier = LlmActiveProvider;
+export type ProviderTier = ActiveCategory;
 
 export interface ProviderOption {
   id: ProviderTier;

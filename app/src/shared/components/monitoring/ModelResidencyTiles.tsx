@@ -37,7 +37,7 @@ export const ModelResidencyTiles = memo<ModelResidencyTilesProps>(({
             : "none",
         }}
         className={cn(
-          "px-3 py-2 rounded-2xl border backdrop-blur-md flex flex-col items-center text-center shadow-md transition-colors duration-300",
+          "px-3 py-2 rounded-2xl border flex flex-col items-center text-center shadow-md transition-colors duration-300",
           isLight
             ? "bg-[rgba(var(--card),0.55)] hover:bg-[rgba(var(--card),0.75)]"
             : "bg-[rgba(var(--card),0.80)] hover:bg-[rgba(var(--card),0.95)]"
@@ -68,7 +68,7 @@ export const ModelResidencyTiles = memo<ModelResidencyTilesProps>(({
             : "none",
         }}
         className={cn(
-          "px-3 py-2 rounded-2xl border backdrop-blur-md flex flex-col items-center text-center shadow-md transition-colors duration-300",
+          "px-3 py-2 rounded-2xl border flex flex-col items-center text-center shadow-md transition-colors duration-300",
           isLight
             ? "bg-[rgba(var(--card),0.55)] hover:bg-[rgba(var(--card),0.75)]"
             : "bg-[rgba(var(--card),0.80)] hover:bg-[rgba(var(--card),0.95)]"
@@ -101,7 +101,7 @@ export const ModelResidencyTiles = memo<ModelResidencyTilesProps>(({
             : "none",
         }}
         className={cn(
-          "px-3 py-2 rounded-2xl border backdrop-blur-md flex flex-col items-center text-center shadow-md transition-colors duration-300",
+          "px-3 py-2 rounded-2xl border flex flex-col items-center text-center shadow-md transition-colors duration-300",
           isLight
             ? "bg-[rgba(var(--card),0.55)] hover:bg-[rgba(var(--card),0.75)]"
             : "bg-[rgba(var(--card),0.80)] hover:bg-[rgba(var(--card),0.95)]"

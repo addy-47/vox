@@ -47,9 +47,6 @@ export const CLOUD_PROVIDERS: CloudProvider[] = [
   { id: "ai21", name: "AI21 Labs", url: "https://api.ai21.com/studio/v1", keyPlaceholder: "ai21_...", tagline: "Jamba hybrid architecture models" },
   { id: "huggingface", name: "Hugging Face", url: "https://api-inference.huggingface.co/v1", keyPlaceholder: "hf_...", tagline: "Serverless inference API" },
   { id: "ollama_cloud", name: "Ollama Cloud", url: "https://ollama.ai/api/v1", keyPlaceholder: "ollama_...", tagline: "Managed Ollama endpoints" },
-
-  // Custom
-  { id: "custom", name: "Custom OpenAI-compatible", url: "https://api.example.com/v1", keyPlaceholder: "API Key / Token", tagline: "Any standard /v1/chat/completions endpoint" },
 ];
 
 const GeminiLogo = ({

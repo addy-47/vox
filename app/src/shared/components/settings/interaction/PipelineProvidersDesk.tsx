@@ -1,130 +1,91 @@
 import { memo } from "react";
-import { Mic, BrainCircuit, AudioLines, ChevronRight } from "lucide-react";
+import { AudioLines, BrainCircuit, ChevronRight, Ear } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { Tooltip } from "@/shared/ui";
-import { ProviderLogo } from "@/shared/components/settings/models/ProviderLogo";
+import { PIPELINE_PROVIDERS_DESK_COPY } from "@/data/settingsCopy";
+import type { ActiveSelection } from "@/store/settingsStore";
 
 export interface PipelineProvidersDeskProps {
-  sttActiveLabel: string;
-  llmActiveLabel: string;
-  ttsActiveLabel: string;
-  sttProviderId?: string;
-  llmProviderId?: string;
-  ttsProviderId?: string;
+  /** Verbatim `settings.<domain>.active`. Every rendered value is read from it. */
+  sttActive?: ActiveSelection;
+  llmActive?: ActiveSelection;
+  ttsActive?: ActiveSelection;
   onSelectCategory: (category: "STT" | "LLM" | "TTS") => void;
   layoutMode?: "full-max" | "full-min" | "small";
 }
 
 export const PipelineProvidersDesk = memo(({
-  sttActiveLabel,
-  llmActiveLabel,
-  ttsActiveLabel,
-  sttProviderId,
-  llmProviderId,
-  ttsProviderId,
+  sttActive,
+  llmActive,
+  ttsActive,
   onSelectCategory,
   layoutMode = "full-max",
 }: PipelineProvidersDeskProps) => {
+  const copy = PIPELINE_PROVIDERS_DESK_COPY;
+  const compact = layoutMode === "small";
+
   const STAGES = [
-    {
-      id: "STT" as const,
-      title: "Listening",
-      role: "Acoustic hearing",
-      activeLabel: sttActiveLabel,
-      icon: Mic,
-      providerId:
-        sttProviderId ||
-        (sttActiveLabel.toLowerCase().includes("cloud") ? "openai" : "embedded"),
-    },
-    {
-      id: "LLM" as const,
-      title: "Reasoning",
-      role: "Thinking & logic",
-      activeLabel: llmActiveLabel,
-      icon: BrainCircuit,
-      providerId:
-        llmProviderId ||
-        (llmActiveLabel.toLowerCase().includes("server")
-          ? "server"
-          : llmActiveLabel.toLowerCase().includes("device")
-          ? "embedded"
-          : llmActiveLabel.toLowerCase()),
-    },
-    {
-      id: "TTS" as const,
-      title: "Speaking",
-      role: "Voice synthesis",
-      activeLabel: ttsActiveLabel,
-      icon: AudioLines,
-      providerId:
-        ttsProviderId ||
-        (ttsActiveLabel.toLowerCase().includes("remote")
-          ? "server"
-          : ttsActiveLabel.toLowerCase().includes("edge")
-          ? "microsoft"
-          : "embedded"),
-    },
+    { id: "STT" as const, card: copy.cards.stt, Icon: Ear, active: sttActive },
+    { id: "LLM" as const, card: copy.cards.llm, Icon: BrainCircuit, active: llmActive },
+    { id: "TTS" as const, card: copy.cards.tts, Icon: AudioLines, active: ttsActive },
   ];
 
+  const iconSize = compact ? 16 : 26;
+  const chevronSize = compact ? 12 : 14;
+  const textSize = compact ? "text-[11px]" : "text-[14px]";
+
   return (
-    <div className="grid grid-cols-3 gap-2.5 w-full h-full items-stretch select-none">
+    <div className="grid grid-cols-3 gap-2 w-full flex-1 min-h-0 select-none">
       {STAGES.map((stage) => {
-        const IconComponent = stage.icon;
+        const IconComponent = stage.Icon;
+        const category = stage.active?.category ?? "";
+        const provider = stage.active?.provider ?? "";
+        const model = stage.active?.model ?? "";
 
         return (
           <Tooltip
             key={stage.id}
-            label={`Configure ${stage.title}`}
+            label={`${copy.configureAriaPrefix} ${stage.card.title}`}
             side="top"
-            wrapperClassName="w-full h-full flex-1"
+            asChild
           >
             <button
               type="button"
               onClick={() => onSelectCategory(stage.id)}
+              aria-label={`${copy.configureAriaPrefix} ${stage.card.title}`}
               className={cn(
-                "group relative flex flex-col justify-between w-full h-full text-left transition-all duration-200 cursor-pointer overflow-hidden rounded-xl border",
+                "group relative h-full w-full min-h-0 flex flex-col items-center justify-center gap-1.5 overflow-hidden text-center cursor-pointer rounded-xl border transition-colors duration-200",
+                compact ? "px-4 py-3" : "px-5 py-3.5",
                 "border-[rgba(var(--accent),0.06)] bg-[rgba(var(--foreground),0.015)]",
-                "hover:border-[rgba(var(--accent),0.3)] hover:bg-[rgba(var(--accent),0.03)] hover:shadow-xs",
-                "focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(var(--accent))]",
-                layoutMode === "small" ? "p-2.5" : "p-3 sm:p-3.5"
+                "hover:border-[rgba(var(--accent),0.25)] hover:bg-[rgba(var(--accent),0.03)]",
+                "focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[rgb(var(--accent))]"
               )}
             >
-              {/* Row 1: Icon on left, Title immediately to right of icon on same row, Chevron on top right */}
-              <div className="w-full flex items-center justify-between gap-1.5">
-                <div className="flex items-center gap-2 min-w-0 flex-1">
-                  <div className="w-6 h-6 rounded-md flex items-center justify-center shrink-0 bg-[rgba(var(--accent),0.08)] text-[rgb(var(--accent))] group-hover:bg-[rgba(var(--accent),0.16)] group-hover:scale-105 transition-all">
-                    <IconComponent size={13} strokeWidth={2.2} />
-                  </div>
-                  <span className="font-display font-bold text-[13px] tracking-tight text-[rgb(var(--foreground))] group-hover:text-[rgb(var(--accent))] transition-colors truncate">
-                    {stage.title}
-                  </span>
-                </div>
-                <ChevronRight
-                  size={13}
-                  className="text-[rgb(var(--foreground-muted))]/40 group-hover:text-[rgb(var(--accent))] group-hover:translate-x-0.5 transition-all shrink-0"
-                />
-              </div>
+              <ChevronRight
+                size={chevronSize}
+                strokeWidth={2.2}
+                className="absolute top-2 right-2 text-[rgb(var(--foreground-muted))]/35 transition-all duration-200 group-hover:translate-x-0.5 group-hover:text-[rgb(var(--accent))]"
+              />
 
-              {/* Row 2: Subtext directly below title */}
-              <div className="w-full mt-1 min-w-0">
-                <p className="text-[10.5px] text-[rgb(var(--foreground-muted))]/70 truncate leading-tight">
-                  {stage.role}
-                </p>
-              </div>
+              <IconComponent size={iconSize} strokeWidth={2} className="shrink-0 text-[rgb(var(--accent))]" />
 
-              {/* Row 3: Bottom line with active provider and status indicator (zero nested pill/badge) */}
-              <div className="mt-2.5 pt-2 border-t border-[rgba(var(--foreground),0.06)] flex items-center justify-between gap-1.5 w-full min-w-0">
-                <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                  <ProviderLogo providerId={stage.providerId} size={13} className="shrink-0" />
-                  <span className="text-[11px] font-medium text-[rgb(var(--foreground))]/90 truncate">
-                    {stage.activeLabel}
+              <span className="flex flex-col items-center gap-0 max-w-full">
+                {category && (
+                  <span className={cn("max-w-full leading-tight truncate", textSize, "text-[rgb(var(--foreground))]/85")}>
+                    {category}
                   </span>
-                </div>
-                <span
-                  className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--accent))] shadow-[0_0_6px_rgba(var(--accent),0.8)] shrink-0"
-                  aria-hidden="true"
-                />
-              </div>
+                )}
+                {provider && (
+                  <span className={cn("max-w-full leading-tight truncate", textSize, "text-[rgb(var(--foreground-muted))]/80")}>
+                    {provider}
+                  </span>
+                )}
+                {model && (
+                  <span className={cn("max-w-full leading-tight truncate", textSize, "text-[rgb(var(--foreground-muted))]/80")}>
+                    {model}
+                  </span>
+                )}
+              </span>
             </button>
           </Tooltip>
         );
@@ -133,4 +94,4 @@ export const PipelineProvidersDesk = memo(({
   );
 });
 
-PipelineProvidersDesk.displayName = "PipelineProvidersDesk";
+PipelineProvidersDesk.displayName = "PipelineProvidersDesk"

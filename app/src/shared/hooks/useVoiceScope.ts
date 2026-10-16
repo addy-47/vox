@@ -23,13 +23,8 @@ export interface VoiceScopeState {
  */
 const SCOPE_CACHE = new Map<string, VoiceScopeDto>();
 
-export function useVoiceScope(engine: string | undefined | null | unknown): VoiceScopeState {
-  const resolvedEngine =
-    typeof engine === "string"
-      ? engine
-      : (engine && typeof engine === "object" && "model" in engine && typeof (engine as { model?: unknown }).model === "string")
-        ? (engine as { model: string }).model
-        : "";
+export function useVoiceScope(engine: string | undefined | null): VoiceScopeState {
+  const resolvedEngine = engine ?? "";
   const cached = resolvedEngine ? SCOPE_CACHE.get(resolvedEngine) : undefined;
   const [scope, setScope] = useState<VoiceScopeDto>(cached ?? FALLBACK_SCOPE);
   const [ready, setReady] = useState(Boolean(cached));

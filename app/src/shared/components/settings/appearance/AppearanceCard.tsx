@@ -3,7 +3,7 @@ import { useSettingsStore } from "@/store/settingsStore";
 import { HexColorPicker } from "react-colorful";
 import { Palette, Copy, Check } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
-import { Card } from "@/shared/ui";
+import { Card, Tooltip } from "@/shared/ui";
 import { beginAccentPreview, endAccentPreview, previewAccent } from "@/shared/theme";
 import { APPEARANCE_COPY } from "@/data/settingsCopy";
 
@@ -121,19 +121,24 @@ export const AppearanceCard = memo(({ layoutMode = "full-max" }: AppearanceCardP
             {APPEARANCE_COPY.cardTitle}
           </span>
         </div>
-        <button
-          type="button"
-          onClick={handleCopy}
-          title="Copy hex code"
-          className="flex items-center gap-1.5 text-[11px] font-mono uppercase tracking-wider text-[rgb(var(--foreground))]/60 hover:text-[rgb(var(--accent))] transition-colors cursor-pointer bg-transparent border-0 outline-none p-0"
+        <Tooltip
+          label={copied ? APPEARANCE_COPY.copiedHex : APPEARANCE_COPY.copyHex}
+          side="bottom"
+          asChild
         >
-          <span>{localColor}</span>
-          {copied ? (
-            <Check size={12} className="text-[rgb(var(--accent))]" />
-          ) : (
-            <Copy size={12} />
-          )}
-        </button>
+          <button
+            type="button"
+            onClick={handleCopy}
+            className="flex items-center gap-1.5 text-[11px] font-mono uppercase tracking-wider text-[rgb(var(--foreground))]/60 hover:text-[rgb(var(--accent))] transition-colors cursor-pointer bg-transparent border-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))] p-0"
+          >
+            <span>{localColor}</span>
+            {copied ? (
+              <Check size={12} className="text-[rgb(var(--accent))]" />
+            ) : (
+              <Copy size={12} />
+            )}
+          </button>
+        </Tooltip>
       </div>
 
       {/* Bottom Row: Full card width color picker */}

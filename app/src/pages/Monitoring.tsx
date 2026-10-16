@@ -60,9 +60,9 @@ export const Monitoring: React.FC<MonitoringProps> = ({
   // Subscribe to settings store to inspect exact variants and reactive theme
   const theme = useSettingsStore((s) => s.settings?.appearance.theme);
   const vadBackend = useSettingsStore((s) => s.settings?.vad?.vad_backend);
-  const llmProvider = useSettingsStore((s) => s.settings?.llm?.active);
-  const ttsProvider = useSettingsStore((s) => s.settings?.tts?.active);
-  const sttProvider = useSettingsStore((s) => s.settings?.stt?.active);
+  const llmProvider = useSettingsStore((s) => s.settings?.llm?.active?.category);
+  const ttsProvider = useSettingsStore((s) => s.settings?.tts?.active?.model);
+  const sttProvider = useSettingsStore((s) => s.settings?.stt?.active?.category);
   const contextRetrievalEnabled = useSettingsStore(
     (s) => s.settings?.personal_memory?.context_retrieval_enabled ?? true
   );

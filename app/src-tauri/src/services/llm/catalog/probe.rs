@@ -213,13 +213,35 @@ async fn list_remote_models(
     provider_name: Option<&str>,
     kind: &str,
 ) -> Result<Vec<LlmModelInfo>, String> {
+    let started = std::time::Instant::now();
     let conn_cfg = ConnectionConfig::new(base_url, model, api_key, provider_name);
+    let transport_kind = conn_cfg.transport;
     let transport = RemoteTransport::new(conn_cfg);
-    let mut models = transport.list_models().await.map_err(|e| e.to_string())?;
-    for entry in &mut models {
-        entry.provider_kind = kind.to_string();
+    match transport.list_models().await {
+        Ok(mut models) => {
+            for entry in &mut models {
+                entry.provider_kind = kind.to_string();
+            }
+            log::info!(
+                "[Catalog::Probe] list_remote_models url='{}' transport={:?} count={} elapsed_ms={}",
+                base_url,
+                transport_kind,
+                models.len(),
+                started.elapsed().as_millis()
+            );
+            Ok(models)
+        }
+        Err(e) => {
+            log::warn!(
+                "[Catalog::Probe] list_remote_models url='{}' transport={:?} failed elapsed_ms={}: {}",
+                base_url,
+                transport_kind,
+                started.elapsed().as_millis(),
+                e
+            );
+            Err(e.to_string())
+        }
     }
-    Ok(models)
 }
 
 /// Probes capabilities, validates optional token cap, and persists result to the capabilities cache.

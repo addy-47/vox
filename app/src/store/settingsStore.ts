@@ -18,16 +18,36 @@ function scopeEntries(scope: unknown): Record<string, unknown> {
 }
 
 export type PipelineMode = "modular" | "realtime";
-export type LlmActiveProvider = "embedded" | "server" | "cloud";
-export type SttActiveProvider = "embedded" | "cloud";
-export type TtsActiveProvider = "edge_tts" | "supertonic" | "kokoro" | "chatterbox" | "chatterbox_remote" | "zipvoice";
-export type RealtimeActiveProvider =
+
+/** Primary runtime tier shared by every model domain. */
+export type ActiveCategory = "embedded" | "server" | "cloud";
+
+/**
+ * Mirrors the backend `ActiveSelection` (`app/src-tauri/src/config/types.rs`).
+ * `provider` is null for plain embedded models, otherwise a provider name or a
+ * server id from `providers.*.servers`.
+ */
+export interface ActiveSelection {
+  category: ActiveCategory;
+  provider: string | null;
+  model: string;
+}
+
+/** Mirrors the backend `LastSelectedModels` (`config/types.rs`). */
+export interface LastSelectedModels {
+  embedded?: string;
+  server?: string;
+  cloud?: string;
+}
+
+/** Realtime configuration subkey (the `realtime.<subkey>` settings object). */
+export type RealtimeSubkey =
   | "gemini_live"
   | "openai_realtime"
   | "deepgram_voice_agent"
   | "elevenlabs_convai";
 
-export type LlmProviderKind = "embedded" | "server" | "cloud";
+export type LlmProviderKind = ActiveCategory;
 
 export interface LlmProviderConfig {
   kind: LlmProviderKind;
@@ -184,7 +204,8 @@ export interface SttCloudConfig {
 }
 
 export interface SttSettings {
-  active: SttActiveProvider;
+  active: ActiveSelection;
+  last_selected: LastSelectedModels;
   transliterate_enabled: boolean;
   embedded: SttEmbeddedConfig;
   cloud: SttCloudConfig;
@@ -202,7 +223,8 @@ export interface LlmRemoteConfig {
 }
 
 export interface LlmSettings {
-  active: LlmActiveProvider;
+  active: ActiveSelection;
+  last_selected: LastSelectedModels;
   temperature: number;
   compaction_temperature: number;
   max_output_tokens: number;
@@ -240,7 +262,8 @@ export interface TtsZipvoiceConfig {
 }
 
 export interface TtsSettings {
-  active: TtsActiveProvider;
+  active: ActiveSelection;
+  last_selected: LastSelectedModels;
   voice_id: string;
   speed: number;
   threads: number;
@@ -281,7 +304,7 @@ export interface ElevenLabsConvaiConfig {
 }
 
 export interface RealtimeSettings {
-  active: RealtimeActiveProvider;
+  active: ActiveSelection;
   gemini_live: GeminiRealtimeConfig;
   openai_realtime: OpenAiRealtimeConfig;
   deepgram_voice_agent: DeepgramVoiceAgentConfig;
@@ -646,7 +669,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
   loadRemoteModels: async (providerConfig?: LlmProviderConfig, force = false) => {
     const draft = get().draftSettings || get().settings;
-    const active = draft?.llm?.active || "embedded";
+    const active = draft?.llm?.active?.category ?? "embedded";
     let provider = providerConfig;
     if (!provider) {
       if (active === "server" && draft?.llm?.server) {
@@ -672,9 +695,15 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     if (!force && get().remoteModelsFetchedKey === fetchKey && get().remoteModels.length > 0) {
       return;
     }
+    console.info(
+      `[Providers] loadRemoteModels kind=${provider.kind} url=${provider.base_url} hasKey=${Boolean(provider.api_key)} force=${force}`
+    );
     set({ loadingRemoteModels: true, remoteModelsError: null });
     try {
       const list = await listLlmModels(provider);
+      console.info(
+        `[Providers] loadRemoteModels ok kind=${provider.kind} url=${provider.base_url} count=${list.length}`
+      );
       set({
         remoteModels: list,
         remoteModelsFetchedKey: fetchKey,

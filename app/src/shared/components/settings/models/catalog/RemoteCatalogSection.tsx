@@ -137,7 +137,7 @@ export const RemoteCatalogSection = memo(({
   // Save-gated pinning: list order follows the COMMITTED model, so selecting
   // only re-highlights. The reorder (with smooth scroll) lands on save.
   const committedRemoteModelId = useMemo(() => {
-    const active = committedSettings?.llm?.active || "embedded";
+    const active = committedSettings?.llm?.active?.category ?? "embedded";
     if (active === "server") return committedSettings?.llm?.server?.model;
     if (active === "cloud") return committedSettings?.llm?.cloud?.model;
     return committedSettings?.llm?.embedded?.model;
@@ -228,7 +228,7 @@ export const RemoteCatalogSection = memo(({
 
   const handleSelectModel = useCallback((modelId: string) => {
     const draft = useSettingsStore.getState().draftSettings;
-    const activeLlm = draft?.llm?.active || "embedded";
+    const activeLlm = draft?.llm?.active?.category ?? "embedded";
     if (activeLlm === "server" && draft?.llm?.server) {
       updateDraft("llm", "server", { ...draft.llm.server, model: modelId });
     } else if (activeLlm === "cloud" && draft?.llm?.cloud) {
@@ -245,11 +245,14 @@ export const RemoteCatalogSection = memo(({
   const RemoteModelRows = () => (
     <div
       ref={inlineRowsRef}
-      className={cn(
-        "h-full overflow-y-auto pr-1 grid auto-rows-max content-start gap-2 custom-scrollbar",
-        layoutMode === "small" ? "grid-cols-1" : "grid-cols-1 sm:grid-cols-2"
-      )}
+      className="h-full overflow-y-auto pr-1 custom-scrollbar"
     >
+      <div
+        className={cn(
+          "grid auto-rows-max content-start gap-2 w-full",
+          layoutMode === "small" ? "grid-cols-1" : "grid-cols-1 sm:grid-cols-2"
+        )}
+      >
       {remoteModels.length === 0 ? (
         <div className="col-span-full text-center py-8 text-[12px] text-[rgb(var(--foreground-muted))]/70 space-y-1">
           <p className="font-semibold text-[rgb(var(--foreground))]/80">{LLM_CATALOG_COPY.emptyTitle}</p>
@@ -302,7 +305,7 @@ export const RemoteCatalogSection = memo(({
               tabIndex={0}
               onClick={() => {
                 const draft = useSettingsStore.getState().draftSettings;
-                const activeLlm = draft?.llm?.active || "embedded";
+                const activeLlm = draft?.llm?.active?.category ?? "embedded";
                 if (activeLlm === "server" && draft?.llm?.server) {
                   updateDraft("llm", "server", { ...draft.llm.server, model: model.id });
                 } else if (activeLlm === "cloud" && draft?.llm?.cloud) {
@@ -315,7 +318,7 @@ export const RemoteCatalogSection = memo(({
                 if (e.key === "Enter" || e.key === " ") {
                   e.preventDefault();
                   const draft = useSettingsStore.getState().draftSettings;
-                  const activeLlm = draft?.llm?.active || "embedded";
+                  const activeLlm = draft?.llm?.active?.category ?? "embedded";
                   if (activeLlm === "server" && draft?.llm?.server) {
                     updateDraft("llm", "server", { ...draft.llm.server, model: model.id });
                   } else if (activeLlm === "cloud" && draft?.llm?.cloud) {
@@ -519,15 +522,17 @@ export const RemoteCatalogSection = memo(({
         <div className="col-span-full flex items-center justify-center py-2 mt-1">
           <button
             type="button"
-            onClick={() =>
-              setVisibleModelCount((c) => c + REMOTE_MODEL_PAGE_SIZE)
-            }
+            onClick={() => {
+              setVisibleModelCount((c) => c + REMOTE_MODEL_PAGE_SIZE);
+              setTimeout(() => inlineLenisRef.current?.resize(), 50);
+            }}
             className="px-3 py-1.5 rounded-lg text-[11px] font-bold uppercase tracking-wider text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/10 border border-[rgba(var(--accent),0.25)] hover:bg-[rgb(var(--accent))]/20 transition-colors cursor-pointer"
           >
             {`Show ${inlineHiddenCount} more`}
           </button>
         </div>
       )}
+      </div>
     </div>
   );
 
@@ -536,7 +541,7 @@ export const RemoteCatalogSection = memo(({
       {/* Standardized catalog header (design-spec §10.1) */}
       <CatalogHeader
         icon={<ServerCog size={14} className="text-[rgb(var(--accent))]" />}
-        title=""
+        title="Connected Server"
         status={
           remoteModelsError ? (
             <Tooltip
@@ -649,7 +654,7 @@ export const RemoteCatalogSection = memo(({
         className="flex-1 min-h-0"
         domainId="models"
         triggerPlacement="floating"
-        inlineMaxHeightClass={layoutMode === "small" ? "max-h-[220px]" : undefined}
+        inlineMaxHeightClass={layoutMode === "small" ? "max-h-[220px]" : "max-h-[480px]"}
         onBack={showProvidersView ? () => setCatalogModalView(activeModalView === "models" ? "providers" : "models") : undefined}
         icon={activeModalView === "models" ? <ServerCog size={16} className="text-[rgb(var(--accent))]" /> : <Cloud size={16} className="text-[rgb(var(--accent))]" />}
         title={

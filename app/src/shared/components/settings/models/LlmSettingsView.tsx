@@ -57,11 +57,12 @@ export const LlmSettingsView = memo(({
   const MIN_CONTEXT_WINDOW = 8192;
   const capabilitiesCache = useSettingsStore((s) => s.capabilitiesCache);
   const activeModel = useMemo(() => {
-    if (llmSettings?.active === "embedded") return llmSettings?.embedded?.model;
-    if (llmSettings?.active === "server") return llmSettings?.server?.model;
-    if (llmSettings?.active === "cloud") return llmSettings?.cloud?.model;
+    const category = llmSettings?.active?.category;
+    if (category === "embedded") return llmSettings?.active?.model;
+    if (category === "server") return llmSettings?.server?.model;
+    if (category === "cloud") return llmSettings?.cloud?.model;
     return undefined;
-  }, [llmSettings?.active, llmSettings?.embedded?.model, llmSettings?.server?.model, llmSettings?.cloud?.model]);
+  }, [llmSettings?.active?.category, llmSettings?.active?.model]);
 
   const activeCapabilities = useMemo(() => {
     if (!activeModel) return undefined;

@@ -139,9 +139,35 @@ pub async fn check_provider_health(
     kind: String,
     provider: Option<ProviderConfigPayload>,
 ) -> Result<health_svc::ProviderHealthCheckResult, VoxIpcError> {
-    health_svc::check_health(&state, &kind, provider)
-        .await
-        .map_err(VoxIpcError::Engine)
+    let started = std::time::Instant::now();
+    let payload_variant = match &provider {
+        None => "active",
+        Some(ProviderConfigPayload::Llm(_)) => "llm-explicit",
+        Some(ProviderConfigPayload::Stt(_)) => "stt-explicit",
+        Some(ProviderConfigPayload::Tts(_)) => "tts-explicit",
+    };
+    match health_svc::check_health(&state, &kind, provider).await {
+        Ok(res) => {
+            log::info!(
+                "[Catalog::Health] kind={} provider={} healthy={} elapsed_ms={}",
+                kind,
+                payload_variant,
+                res.healthy,
+                started.elapsed().as_millis()
+            );
+            Ok(res)
+        }
+        Err(e) => {
+            log::warn!(
+                "[Catalog::Health] kind={} provider={} failed elapsed_ms={}: {}",
+                kind,
+                payload_variant,
+                started.elapsed().as_millis(),
+                e
+            );
+            Err(VoxIpcError::Engine(e))
+        }
+    }
 }
 
 /// List available LLM models for embedded GGUFs or OpenAI-compatible remote servers.
@@ -150,9 +176,31 @@ pub async fn list_llm_models(
     state: State<'_, Arc<AppState>>,
     provider: Option<LlmRuntimeTarget>,
 ) -> Result<Vec<LlmModelInfo>, VoxIpcError> {
-    llm_catalog::list_models(&state, provider)
-        .await
-        .map_err(VoxIpcError::Engine)
+    let started = std::time::Instant::now();
+    let provider_kind = match &provider {
+        None => "active".to_string(),
+        Some(target) => format!("explicit:{}", target.kind_label()),
+    };
+    match llm_catalog::list_models(&state, provider).await {
+        Ok(models) => {
+            log::info!(
+                "[Catalog::Models] provider={} count={} elapsed_ms={}",
+                provider_kind,
+                models.len(),
+                started.elapsed().as_millis()
+            );
+            Ok(models)
+        }
+        Err(e) => {
+            log::warn!(
+                "[Catalog::Models] provider={} failed elapsed_ms={}: {}",
+                provider_kind,
+                started.elapsed().as_millis(),
+                e
+            );
+            Err(VoxIpcError::Engine(e))
+        }
+    }
 }
 
 /// Probe capabilities for an LLM model and return capabilities, ceiling token cap, and cached map.
@@ -163,9 +211,27 @@ pub async fn probe_model_capabilities(
     model_id: Option<String>,
     target_cap: Option<u32>,
 ) -> Result<ModelProbeResult, VoxIpcError> {
-    llm_catalog::probe_capabilities(&state, provider, model_id, target_cap)
-        .await
-        .map_err(VoxIpcError::Engine)
+    let started = std::time::Instant::now();
+    match llm_catalog::probe_capabilities(&state, provider, model_id.clone(), target_cap).await {
+        Ok(res) => {
+            log::info!(
+                "[Catalog::Probe] model={} target_cap={:?} elapsed_ms={}",
+                model_id.as_deref().unwrap_or("<active>"),
+                target_cap,
+                started.elapsed().as_millis()
+            );
+            Ok(res)
+        }
+        Err(e) => {
+            log::warn!(
+                "[Catalog::Probe] model={} failed elapsed_ms={}: {}",
+                model_id.as_deref().unwrap_or("<active>"),
+                started.elapsed().as_millis(),
+                e
+            );
+            Err(VoxIpcError::Engine(e))
+        }
+    }
 }
 
 /// Read the on-disk capability cache without probing any endpoint.

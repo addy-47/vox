@@ -1,6 +1,6 @@
 import { memo } from "react";
 import { cn } from "@/shared/lib/utils";
-import { Check, ArrowLeft, Trash2, Info, Lock, Download } from "lucide-react";
+import { Check, ArrowLeft, Trash2, Info, Lock, Download, Cpu } from "lucide-react";
 import { Tooltip } from "@/shared/ui/Tooltip";
 import { MODEL_HUB_COPY } from "@/data/settingsCopy";
 
@@ -13,7 +13,9 @@ interface SubModelCardProps {
   tradeoffs?: string;
   isDownloaded: boolean;
   isActive: boolean;
-  isRequired: boolean;
+  isRequired?: boolean;
+  /** Model shipped inside the app binary (no weights on disk). Renders a "Built in" chip and blocks deletion. */
+  isBuiltIn?: boolean;
   layoutMode?: "full-max" | "full-min" | "small";
   onSelect: () => void;
   confirmDeleteId: string | null;
@@ -33,7 +35,8 @@ export const SubModelCard = memo<SubModelCardProps>(({
   tradeoffs,
   isDownloaded,
   isActive,
-  isRequired,
+  isRequired = false,
+  isBuiltIn = false,
   layoutMode,
   onSelect,
   confirmDeleteId,
@@ -66,6 +69,17 @@ export const SubModelCard = memo<SubModelCardProps>(({
         >
           <Download size={16} />
         </button>
+      );
+    }
+
+    if (isBuiltIn) {
+      return (
+        <Tooltip label={MODEL_HUB_COPY.row.builtInNote}>
+          <div className="p-1.5 rounded-lg bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--border),0.1)] text-[rgb(var(--foreground-muted))] cursor-not-allowed shrink-0 flex items-center gap-1">
+            <Cpu size={12} className="opacity-70" />
+            <span className="text-[11px] font-mono font-bold uppercase tracking-wider">{MODEL_HUB_COPY.row.builtIn}</span>
+          </div>
+        </Tooltip>
       );
     }
 

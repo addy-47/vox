@@ -3,6 +3,7 @@ import { useSettingsStore } from "@/store/settingsStore";
 import { SubModelCard } from "../SubModelCard";
 import type { ModelStatus } from "@/shared/hooks/useModelDownloads";
 import { cn } from "@/shared/lib/utils";
+import { activeSelection } from "@/shared/lib/activeSelection";
 import { Zap, Battery, Gauge } from "lucide-react";
 import { STT_SETTINGS_COPY, COMPUTE_PROFILE_COPY } from "@/data/settingsCopy";
 import { CustomSvgs, PresetButton, PresetInput } from "./CustomSvgs";
@@ -57,12 +58,7 @@ export const AsrWorkspace = memo(
             )}
           >
           {modelCatalog.stt.map((model) => {
-            const rawSttActive = draftSettings.stt?.active as unknown;
-            const activeModel =
-              draftSettings.stt?.embedded?.model ||
-              (rawSttActive as { model?: string })?.model ||
-              (typeof rawSttActive === "string" ? rawSttActive : undefined) ||
-              modelCatalog.stt?.[0]?.id;
+            const activeModel = draftSettings.stt?.active?.model ?? modelCatalog.stt?.[0]?.id;
             const isSelected = activeModel === model.id;
             const modelGroupId = model.id;
             const isDownloaded = !!modelPresence[modelGroupId];
@@ -82,13 +78,7 @@ export const AsrWorkspace = memo(
                 isRequired={isGroupRequired(model.id)}
                 layoutMode={layoutMode}
                 onSelect={() => {
-                  updateDraft("stt", "model", model.id);
-                  if (typeof draftSettings.stt?.active === "object" && draftSettings.stt?.active !== null) {
-                    updateDraft("stt", "active", {
-                      ...(draftSettings.stt.active as Record<string, unknown>),
-                      model: model.id,
-                    });
-                  }
+                  updateDraft("stt", "active", activeSelection("embedded", model.id));
                   if (draftSettings.stt?.embedded) {
                     updateDraft("stt", "embedded", {
                       ...draftSettings.stt.embedded,

@@ -5,6 +5,7 @@ import { useLenisScrollContainer } from "@/shared/hooks/useLenisScrollContainer"
 import { useScrollTopOnChange } from "@/shared/hooks/useScrollTopOnChange";
 import { SubModelCard } from "../../SubModelCard";
 import type { ModelStatus } from "@/shared/hooks/useModelDownloads";
+import { activeSelection } from "@/shared/lib/activeSelection";
 
 export interface LocalCatalogSectionProps {
   layoutMode?: "full-max" | "full-min" | "small";
@@ -34,7 +35,7 @@ export const LocalCatalogSection = memo(({
   const committedSettings = useSettingsStore((s) => s.settings);
 
   const committedLocalModelId = useMemo(
-    () => committedSettings?.llm?.embedded?.model,
+    () => committedSettings?.llm?.active?.model,
     [committedSettings]
   );
 
@@ -87,10 +88,7 @@ export const LocalCatalogSection = memo(({
               isRequired={isGroupRequired(model.id)}
               layoutMode={layoutMode}
               onSelect={() => {
-                const draft = useSettingsStore.getState().draftSettings;
-                if (draft?.llm?.embedded) {
-                  updateDraft("llm", "embedded", { ...draft.llm.embedded, model: model.id });
-                }
+                updateDraft("llm", "active", activeSelection("embedded", model.id));
               }}
               confirmDeleteId={confirmDeleteId}
               setConfirmDeleteId={setConfirmDeleteId}

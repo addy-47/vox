@@ -78,7 +78,7 @@ export const VadWorkspace = memo(
                   tradeoffs={model.tradeoffs || ""}
                   isDownloaded={isDownloaded}
                   isActive={isActive}
-                  isRequired={isBuiltIn}
+                  isBuiltIn={isBuiltIn}
                   layoutMode={layoutMode}
                   onSelect={() => updateDraft("vad", "vad_backend", model.id)}
                   confirmDeleteId={confirmDeleteId}

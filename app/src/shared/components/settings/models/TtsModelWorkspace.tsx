@@ -4,6 +4,7 @@ import { SubModelCard } from "../SubModelCard";
 import type { ModelStatus } from "@/shared/hooks/useModelDownloads";
 import { Loader2 } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
+import { activeSelection } from "@/shared/lib/activeSelection";
 
 interface TtsModelWorkspaceProps {
   layoutMode?: "full-max" | "full-min" | "small";
@@ -36,11 +37,7 @@ export const TtsModelWorkspace = memo(
     if (!draftSettings || !modelCatalog) return null;
 
     // Tier derives from the preview group's manifest flags — never id literals.
-    const rawTtsActive = draftSettings.tts?.active as unknown;
-    const activeTtsId =
-      typeof rawTtsActive === "string"
-        ? rawTtsActive
-        : (rawTtsActive as { model?: string })?.model || "";
+    const activeTtsId = draftSettings.tts?.active?.model ?? "";
     const previewGroup = modelCatalog?.tts?.find((m) => m.id === activeTtsId);
     const isRemote = !!previewGroup?.is_remote;
     const isCloud = !!previewGroup?.is_cloud;
@@ -89,14 +86,15 @@ export const TtsModelWorkspace = memo(
                   isRequired={false}
                   layoutMode={layoutMode}
                   onSelect={() => {
-                    if (typeof draftSettings.tts.active === "object" && draftSettings.tts.active !== null) {
-                      updateDraft("tts", "active", {
-                        ...(draftSettings.tts.active as Record<string, unknown>),
-                        model: model.id,
-                      });
-                    } else {
-                      updateDraft("tts", "active", model.id);
-                    }
+                    updateDraft(
+                      "tts",
+                      "active",
+                      activeSelection(
+                        model.is_cloud ? "cloud" : model.is_remote ? "server" : "embedded",
+                        model.id,
+                        model.is_remote ? model.id : null
+                      )
+                    );
                   }}
                   confirmDeleteId={confirmDeleteId}
                   setConfirmDeleteId={setConfirmDeleteId}
