@@ -98,10 +98,14 @@ pub async fn update_setting<R: tauri::Runtime>(
             .write()
             .map_err(|e| VoxIpcError::Internal(e.to_string()))?;
         apply_setting_mutation(&mut settings, &domain, &key, &value)
-            .map_err(VoxIpcError::InvalidArgument)?
+            .map_err(|e| {
+                log::warn!("[Settings::Mutation] Rejected {}.{}: {}", domain, key, e);
+                VoxIpcError::InvalidArgument(e)
+            })?
     };
 
     if !applied {
+        log::warn!("[Settings::Mutation] Unknown setting: {}.{}", domain, key);
         return Err(VoxIpcError::InvalidArgument(format!(
             "Unknown setting: {}.{}",
             domain, key

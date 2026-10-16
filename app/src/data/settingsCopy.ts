@@ -292,7 +292,7 @@ export const INTERACTION_CONFIG_DESK_COPY = {
       filtersTitle: "Filters",
       filterAria: "Toggle provider filters",
       filterAll: "All Providers",
-      filterConfigured: "Configured",
+      filterConfigured: "Available",
       filterPopular: "Popular",
       filterUnconfigured: "Needs Key",
       resetFilters: "Reset Filters",
@@ -585,6 +585,8 @@ export const MODEL_HUB_COPY = {
     downloadModel: "Download model",
     mandatoryNote: "Mandatory core model (cannot be deleted)",
     required: "Required",
+    builtIn: "Built in",
+    builtInNote: "Built into the app binary (cannot be deleted)",
     specs: "Specs",
   },
 };
@@ -635,6 +637,8 @@ export const LLM_SETTINGS_COPY = {
 
 export const APPEARANCE_COPY = {
   cardTitle: "Appearance",
+  copyHex: "Copy hex code",
+  copiedHex: "Copied",
 } as const;
 
 export const WORKING_MEMORY_SETTINGS_COPY = {
@@ -731,6 +735,7 @@ export const PROVIDERS_HEADER_COPY = {
 export const PIPELINE_PROVIDERS_DESK_COPY = {
   sectionTitle: "Inference Pipeline",
   sectionSubtitle: "Configure stages for listening, reasoning, and speaking.",
+  configureAriaPrefix: "Configure",
   cards: {
     stt: {
       title: "Speech Recognition",
@@ -740,7 +745,7 @@ export const PIPELINE_PROVIDERS_DESK_COPY = {
       cloud: "Cloud Speech",
     },
     llm: {
-      title: "Language Intelligence",
+      title: "Intelligence",
       shortLabel: "Reasoning",
       role: "Knowledge & Logic",
       defaultOnDevice: "On-Device GGUF",

@@ -32,10 +32,10 @@ export function useDomainCommitState(domainId: string): DomainCommitState {
   // any domain, and the derived dirtiness below ran two `JSON.stringify` walks
   // per store write per wrapper (~1,100 calls). `domainFlags` is recomputed
   // once per mutation, so these are now O(1) lookups.
-  const llmActive = useSettingsStore((s) => s.draftSettings?.llm?.active);
+  const llmCategory = useSettingsStore((s) => s.draftSettings?.llm?.active?.category);
   const cloudApiKey = useSettingsStore((s) => s.draftSettings?.llm?.cloud?.api_key);
   const pipelineMode = useSettingsStore((s) => s.draftSettings?.interaction?.pipeline_mode);
-  const realtimeActive = useSettingsStore((s) => s.draftSettings?.realtime?.active);
+  const realtimeProvider = useSettingsStore((s) => s.draftSettings?.realtime?.active?.provider);
   const geminiApiKey = useSettingsStore(
     (s) => s.draftSettings?.realtime?.gemini_live?.api_key
   );
@@ -49,11 +49,11 @@ export function useDomainCommitState(domainId: string): DomainCommitState {
   );
 
   const isCloudLlmMissingKey =
-    llmActive === "cloud" && !cloudApiKey?.trim();
+    llmCategory === "cloud" && !cloudApiKey?.trim();
   const isRealtimeMissingKey =
     pipelineMode === "realtime" &&
-    ((realtimeActive === "gemini_live" && !geminiApiKey?.trim()) ||
-     (realtimeActive === "deepgram_voice_agent" && !deepgramApiKey?.trim()));
+    ((realtimeProvider === "gemini_live" && !geminiApiKey?.trim()) ||
+     (realtimeProvider === "deepgram_voice_agent" && !deepgramApiKey?.trim()));
 
   const isMissingKey = useMemo(() => {
     if (domainId === "models" || domainId === "interaction") {

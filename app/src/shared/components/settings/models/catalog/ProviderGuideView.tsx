@@ -1,8 +1,8 @@
 import { memo } from "react";
 import { ArrowLeft, BookOpen, Globe, Key, Network, Server } from "lucide-react";
 import { PROVIDER_GUIDE_COPY } from "@/data/settingsCopy";
+import { useLenisScrollContainer } from "@/shared/hooks/useLenisScrollContainer";
 import { ProviderArchitectureGraphic } from "./ProviderArchitectureGraphic";
-
 
 export interface ProviderGuideViewProps {
   onBackToProviders: () => void;
@@ -14,6 +14,7 @@ export const ProviderGuideView = memo(function ProviderGuideView({
   category = "LLM",
 }: ProviderGuideViewProps) {
   const { guideTitle, guideSubtitle, backToProviders, sections, steps } = PROVIDER_GUIDE_COPY;
+  const { containerRef } = useLenisScrollContainer<HTMLDivElement>();
 
   const sectionIcons: Record<string, typeof Globe> = {
     provider: Globe,
@@ -23,7 +24,11 @@ export const ProviderGuideView = memo(function ProviderGuideView({
   };
 
   return (
-    <div className="flex flex-col h-full min-h-0 gap-4 overflow-y-auto overscroll-contain custom-scrollbar p-1 sm:p-2 animate-fade-in select-none">
+    <div
+      ref={containerRef}
+      className="h-full overflow-y-auto overflow-x-hidden overscroll-contain custom-scrollbar p-1.5 sm:p-2.5 pr-2.5 sm:pr-4 select-none"
+    >
+      <div className="flex flex-col gap-4 animate-fade-in pb-4">
       {/* Top Banner / Navigation */}
       <div className="flex items-center justify-between gap-3 p-3 rounded-xl bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--accent),0.12)]">
         <div className="flex items-center gap-2.5 min-w-0">
@@ -108,6 +113,7 @@ export const ProviderGuideView = memo(function ProviderGuideView({
         </div>
       </div>
     </div>
+  </div>
   );
 });
 

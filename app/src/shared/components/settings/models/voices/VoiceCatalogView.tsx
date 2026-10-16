@@ -40,13 +40,7 @@ export const VoiceCatalogView = memo(({ layoutMode, providerId }: VoiceCatalogVi
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isFilterOpen, setIsFilterOpen] = useState(false);
 
-  const rawProviderId = providerId as unknown;
-  const normalizedProviderId =
-    typeof rawProviderId === "string"
-      ? rawProviderId
-      : (rawProviderId && typeof rawProviderId === "object" && "model" in rawProviderId && typeof (rawProviderId as { model?: unknown }).model === "string")
-        ? (rawProviderId as { model: string }).model
-        : "";
+  const normalizedProviderId = providerId ?? "";
 
   // Engine -> voice family scope, resolved by the backend (no id literals
   // in the frontend). The catalog stays suspended until scope resolves so
@@ -73,8 +67,7 @@ export const VoiceCatalogView = memo(({ layoutMode, providerId }: VoiceCatalogVi
 
   const { containerRef: inlineGridRef } = useLenisScrollContainer<HTMLDivElement>();
 
-  const rawTarget = scope?.voice_provider || normalizedProviderId || "";
-  const targetProvider = typeof rawTarget === "string" ? rawTarget.toLowerCase() : "";
+  const targetProvider = (scope?.voice_provider || normalizedProviderId || "").toLowerCase();
 
   const scopedVoices = useMemo(() => {
     if (!targetProvider) return voices;

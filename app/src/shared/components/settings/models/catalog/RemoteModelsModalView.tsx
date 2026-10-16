@@ -101,7 +101,7 @@ export const RemoteModelsModalView = memo(({
 
   // Active LLM provider configuration for the bottom-left corner indicator
   const llmSettings = useSettingsStore((s) => s.draftSettings?.llm);
-  const activeMode = llmSettings?.active ?? "cloud";
+  const activeMode = llmSettings?.active?.category ?? "cloud";
   const activeProviderName = useMemo(() => {
     if (activeMode === "cloud") {
       return llmSettings?.cloud?.provider_name || "Cloud";

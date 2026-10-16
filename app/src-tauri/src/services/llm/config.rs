@@ -89,6 +89,7 @@ pub enum LlmRuntimeTarget {
     #[serde(rename_all = "snake_case")]
     Server {
         base_url: String,
+        #[serde(default)]
         model: String,
         #[serde(default)]
         provider_name: Option<String>,
@@ -100,6 +101,7 @@ pub enum LlmRuntimeTarget {
     #[serde(rename_all = "snake_case")]
     Cloud {
         base_url: String,
+        #[serde(default)]
         model: String,
         #[serde(default)]
         provider_name: Option<String>,
@@ -108,6 +110,17 @@ pub enum LlmRuntimeTarget {
         #[serde(default)]
         api_key: Option<String>,
     },
+}
+
+impl LlmRuntimeTarget {
+    /// Short kind label for logs without leaking endpoint or credential fields.
+    pub fn kind_label(&self) -> &'static str {
+        match self {
+            Self::Embedded => "embedded",
+            Self::Server { .. } => "server",
+            Self::Cloud { .. } => "cloud",
+        }
+    }
 }
 
 /// Clean LLM settings stored in settings.jsonc.
@@ -166,6 +179,12 @@ impl LlmSettings {
                     } else {
                         srv.model.clone()
                     };
+                    log::info!(
+                        "[LlmSettings] Resolved server id='{}' url='{}' model='{}'",
+                        srv.id,
+                        srv.url,
+                        model
+                    );
                     LlmRuntimeTarget::Server {
                         base_url: srv.url.clone(),
                         model,
@@ -175,8 +194,9 @@ impl LlmSettings {
                     }
                 } else {
                     log::warn!(
-                        "[LlmSettings] Target server ID '{}' not found in providers inventory. Using default server fallback.",
-                        target_id
+                        "[LlmSettings] Target server ID '{}' not found in providers inventory ({} servers). Using default server fallback.",
+                        target_id,
+                        provs.servers.len()
                     );
                     LlmRuntimeTarget::Server {
                         base_url: DEFAULT_LLM_SERVER_BASE_URL.to_string(),

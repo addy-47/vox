@@ -7,7 +7,7 @@ use crate::{
     },
     services::{
         llm::{
-            catalog::discover_server_dialect, ConnectionConfig, LlmProvider, LlmRuntimeTarget,
+            catalog::{discover_server_dialect, ServerDialect}, ConnectionConfig, LlmProvider, LlmRuntimeTarget,
             RemoteTransport, QWEN_MODEL_DIR, QWEN_MODEL_FILE,
         },
         stt::{create_stt_provider, SttProviderConfig, NEMOTRON_MODEL_DIR, QWEN_ASR_MODEL_DIR},
@@ -133,30 +133,33 @@ pub async fn check_llm_health(
                 api_key.as_deref(),
                 provider_name.as_deref(),
             );
+            let client = match reqwest::Client::builder()
+                .timeout(Duration::from_secs(2))
+                .build()
+            {
+                Ok(client) => client,
+                Err(err) => {
+                    log::warn!(
+                        "[Health] Dialect probe HTTP client failed to build: {}",
+                        err
+                    );
+                    reqwest::Client::new()
+                }
+            };
+            let discovered =
+                discover_server_dialect(&client, &base_url, &conn_cfg.auth).await;
+
             let provider = RemoteTransport::new(conn_cfg.clone());
             let health_error = provider.health_check().await.err();
-            let healthy = health_error.is_none();
-            let reason = health_error.map(|err| err.to_string());
-            let dialect = if healthy {
-                let client = match reqwest::Client::builder()
-                    .timeout(Duration::from_secs(2))
-                    .build()
-                {
-                    Ok(client) => client,
-                    Err(err) => {
-                        log::warn!(
-                            "[Health] Dialect probe HTTP client failed to build: {}",
-                            err
-                        );
-                        reqwest::Client::new()
-                    }
+
+            let (healthy, reason, dialect) =
+                if discovered != ServerDialect::GenericOpenAiCompat || health_error.is_none() {
+                    (true, None, Some(discovered.display_name().to_string()))
+                } else {
+                    let reason = health_error.map(|err| err.to_string());
+                    (false, reason, None)
                 };
-                let discovered =
-                    discover_server_dialect(&client, &base_url, &conn_cfg.auth).await;
-                Some(discovered.display_name().to_string())
-            } else {
-                None
-            };
+
             Ok(ProviderHealthCheckResult {
                 healthy,
                 dialect,

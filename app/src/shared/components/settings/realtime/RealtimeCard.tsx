@@ -1,5 +1,5 @@
 import { memo } from "react";
-import { useSettingsStore, type VoxSettings, type SettingsState, type RealtimeActiveProvider } from "@/store/settingsStore";
+import { useSettingsStore, type VoxSettings, type SettingsState, type RealtimeSubkey } from "@/store/settingsStore";
 import { Search, Cpu } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { REALTIME_CONFIG_DESK_COPY } from "@/data/settingsCopy";
@@ -27,7 +27,7 @@ function UnifiedConfig({
   disabled,
   layoutMode = "full-max",
 }: {
-  subkey: RealtimeActiveProvider;
+  subkey: RealtimeSubkey;
   draftSettings: VoxSettings;
   updateDraft: SettingsState["updateDraft"];
   disabled: boolean;
@@ -35,17 +35,34 @@ function UnifiedConfig({
 }) {
   // Config shape — not the provider name — drives every rendering decision.
   // The subkey is only the settings address it was loaded from.
-  const config = draftSettings.realtime[subkey];
+  const fallbackConfig =
+    subkey === "gemini_live"
+      ? {
+          api_key: "",
+          model: "",
+          voice_name: VOICE_OPTIONS[0],
+          language_code: "",
+          temperature: 0.7,
+          enable_web_search: true,
+        }
+      : {
+          api_key: "",
+          model: "",
+          voice: VOICE_OPTIONS[0],
+          temperature: 0.7,
+          agent_mode: false,
+        };
+  const config = draftSettings.realtime?.[subkey] ?? fallbackConfig;
 
-  const voiceField = "voice_name" in config ? "voice_name" : "voice";
+  const voiceField = config && "voice_name" in config ? "voice_name" : "voice";
   const currentVoice =
-    ("voice_name" in config
-      ? config.voice_name
-      : "voice" in config
-        ? config.voice
+    (config && "voice_name" in config
+      ? (config as { voice_name?: string }).voice_name
+      : config && "voice" in config
+        ? (config as { voice?: string }).voice
         : undefined) || VOICE_OPTIONS[0];
-  const model = "model" in config ? config.model : "";
-  const temperature = "temperature" in config ? (config.temperature ?? 0.7) : 0.7;
+  const model = config && "model" in config ? (config as { model?: string }).model ?? "" : "";
+  const temperature = config && "temperature" in config ? ((config as { temperature?: number }).temperature ?? 0.7) : 0.7;
 
   return (
     <div
@@ -83,16 +100,17 @@ function UnifiedConfig({
         />
 
         {/* Toggle (only rendered when the config carries a supported boolean flag) */}
-        {"enable_web_search" in config ? (
+        {"enable_web_search" in (config || {}) ? (
           <ToggleRow
             label="Google Search"
             sub="Live web grounding"
-            enabled={config.enable_web_search}
+            enabled={Boolean((config as { enable_web_search?: boolean }).enable_web_search)}
             onChange={() => {
               if (disabled) return;
+              const cur = Boolean((config as { enable_web_search?: boolean }).enable_web_search);
               updateDraft("realtime", subkey, {
                 ...config,
-                enable_web_search: !config.enable_web_search,
+                enable_web_search: !cur,
               });
             }}
             icon={
@@ -100,16 +118,17 @@ function UnifiedConfig({
             }
             disabled={disabled}
           />
-        ) : "agent_mode" in config ? (
+        ) : "agent_mode" in (config || {}) ? (
           <ToggleRow
             label="Agent Mode"
             sub="AI agent routing"
-            enabled={config.agent_mode}
+            enabled={Boolean((config as { agent_mode?: boolean }).agent_mode)}
             onChange={() => {
               if (disabled) return;
+              const cur = Boolean((config as { agent_mode?: boolean }).agent_mode);
               updateDraft("realtime", subkey, {
                 ...config,
-                agent_mode: !config.agent_mode,
+                agent_mode: !cur,
               });
             }}
             disabled={disabled}
@@ -149,7 +168,7 @@ export const RealtimeCard = memo(
 
     if (!draftSettings) return null;
 
-    const providerId = draftSettings.realtime?.active || "gemini_live";
+    const providerId = draftSettings.realtime?.active?.provider ?? "gemini_live";
 
     const subkey = resolveRealtimeSubkey(providerId);
     const disabled = isRealtimeProviderDisabled(providerId);

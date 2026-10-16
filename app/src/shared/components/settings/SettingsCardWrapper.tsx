@@ -154,12 +154,12 @@ export const SettingsCardWrapper = memo(({ domain, isActive, layoutMode, childre
               <div
                 key="save-failed-footer"
                 role="alert"
-                className="w-full py-2 px-4 sm:px-5 rounded-b-[1.25rem] rounded-t-none bg-[rgba(var(--danger),0.1)] border border-t-0 border-[rgba(var(--danger),0.25)] flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-1.5 sm:gap-4 overflow-hidden text-[12px] animate-in fade-in duration-150"
+                className="w-full py-2 px-4 sm:px-5 rounded-b-[1.25rem] rounded-t-none bg-[rgba(var(--danger),0.1)] border border-t-0 border-[rgba(var(--danger),0.25)] flex flex-col sm:flex-row sm:items-start lg:items-center justify-between gap-1 sm:gap-4 overflow-hidden text-[12px] animate-in fade-in duration-150"
               >
-                <span className="font-bold uppercase tracking-wider text-[rgb(var(--danger))] flex items-center gap-1.5 shrink-0">
-                  <AlertCircle size={14} className="shrink-0" /> {SETTINGS_COPY.saveFailedTitle}
+                <span className="font-bold uppercase tracking-wider text-[rgb(var(--danger))] flex items-start gap-1.5 shrink-0">
+                  <AlertCircle size={14} className="shrink-0 mt-px" /> <span className="min-w-0 break-words">{SETTINGS_COPY.saveFailedTitle}</span>
                 </span>
-                <span className="text-[11px] text-[rgb(var(--danger))]/80 font-mono truncate">
+                <span className="text-[11px] text-[rgb(var(--danger))]/80 font-mono min-w-0 break-words leading-snug [overflow-wrap:anywhere] sm:text-right">
                   {failedKeys.length > 0
                     ? `${SETTINGS_COPY.saveFailedHint} ${failedKeys.join(", ")}`
                     : SETTINGS_COPY.saveFailedNone}

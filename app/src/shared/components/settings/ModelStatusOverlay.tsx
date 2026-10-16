@@ -54,22 +54,24 @@ export const ModelStatusOverlay = memo(() => {
     window.matchMedia("(pointer: coarse)").matches;
   const [tipOpen, setTipOpen] = useState(false);
 
-  const isRemoteLlm = activeSettings?.llm?.active === "server" || activeSettings?.llm?.active === "cloud";
-  const isCloudStt = activeSettings?.stt?.active === "cloud";
+  const llmCategory = activeSettings?.llm?.active?.category;
+  const sttCategory = activeSettings?.stt?.active?.category;
+  const isRemoteLlm = llmCategory === "server" || llmCategory === "cloud";
+  const isCloudStt = sttCategory === "cloud";
 
   const llmId =
-    activeSettings?.llm?.active === "embedded"
+    llmCategory === "embedded"
       ? activeSettings?.llm?.embedded?.model || ""
-      : activeSettings?.llm?.active === "server"
+      : llmCategory === "server"
       ? activeSettings?.llm?.server?.model || ""
       : activeSettings?.llm?.cloud?.model || "";
 
   const asrId =
-    activeSettings?.stt?.active === "embedded"
+    sttCategory === "embedded"
       ? activeSettings?.stt?.embedded?.model || ""
       : activeSettings?.stt?.cloud?.model || "";
 
-  const ttsKind = activeSettings?.tts?.active || "";
+  const ttsKind = activeSettings?.tts?.active?.model || "";
 
   // Keyed ONLY on the model identities that presence actually depends on.
   // Previously this callback closed over the whole settings object, so every
@@ -103,8 +105,8 @@ export const ModelStatusOverlay = memo(() => {
 
   if (!activeSettings || !modelCatalog) return null;
 
-  const activeLlmKind = activeSettings?.llm?.active || "embedded";
-  const activeSttKind = activeSettings?.stt?.active || "embedded";
+  const activeLlmKind = llmCategory ?? "embedded";
+  const activeSttKind = sttCategory ?? "embedded";
 
   const catalogLlm = modelCatalog.llm.find((m) => m.id === llmId);
 

@@ -1,5 +1,6 @@
 import { useState, useEffect, memo, useCallback, useMemo } from "react";
 import { useSettingsStore, LlmProviderConfig } from "@/store/settingsStore";
+import { useExpandedModalStore } from "@/store/expandedModalStore";
 import { CLOUD_PROVIDERS, CloudProvider } from "@/data/providersCopy";
 import {
   INTERACTION_CONFIG_DESK_COPY,
@@ -8,11 +9,9 @@ import {
 } from "@/data/settingsCopy";
 import { checkLlmProviderHealth } from "@/services/settingsService";
 import {
-  Brain,
-  Cloud,
+  BrainCircuit,
   Network,
-  Volume2,
-  Sparkles,
+  AudioLines,
   Mic,
   AlertCircle,
   Server,
@@ -24,8 +23,10 @@ import {
   Pencil,
   HardDrive,
   ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
+import { activeModelId, activeSelection } from "@/shared/lib/activeSelection";
 import { ApiKeyField, ExpandableList, UnderlineInput } from "@/shared/ui";
 import { ProviderLogo } from "@/shared/components/settings/models/ProviderLogo";
 import { SettingsCommitControls } from "@/shared/components/settings/SettingsCommitControls";
@@ -81,14 +82,22 @@ export const LlmConfigDesk = memo(({
   const [searchQuery, setSearchQuery] = useState("");
   const [sortOrder, setSortOrder] = useState<CatalogSortOrder>("az");
   const [providerFilter, setProviderFilter] = useState<
-    "all" | "local" | "cloud" | "configured" | "popular" | "unconfigured"
+    "all" | "local" | "cloud" | "configured" | "unconfigured"
   >("all");
+  const [showAllInline, setShowAllInline] = useState(false);
+  const expandedOpenCount = useExpandedModalStore((s) => s.openCount);
+  // Compact inline view defaults to "all" providers; the expanded modal view
+  // defaults to the "available" (configured) filter.
+  useEffect(() => {
+    if (expandedOpenCount > 0) setProviderFilter("configured");
+    else setProviderFilter("all");
+  }, [expandedOpenCount]);
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [editingProviderId, setEditingProviderId] = useState<string | null>(null);
   const [editingKeyValue, setEditingKeyValue] = useState("");
   const [modalView, setModalView] = useState<"providers" | "models">("providers");
 
-  const activeLlmProvider = draftLlm?.active || "embedded";
+  const activeLlmProvider = draftLlm?.active?.category ?? "embedded";
   const currentRemoteConfig =
     activeLlmProvider === "server"
       ? draftLlm?.server
@@ -131,18 +140,20 @@ export const LlmConfigDesk = memo(({
   } = useRemoteLlmProbing(currentProvider, "llm", activeCategory === "LLM");
 
   const activeCloudProviderId = useMemo(() => {
+    if (activeLlmProvider !== "cloud") return null;
     const pName = draftLlm?.cloud?.provider_name;
     if (!pName) return "custom";
     const found = CLOUD_PROVIDERS.find((p) => p.name.toLowerCase() === pName.toLowerCase());
     return found ? found.id : "custom";
-  }, [draftLlm?.cloud?.provider_name]);
+  }, [activeLlmProvider, draftLlm?.cloud?.provider_name]);
 
   const committedActiveCloudProviderId = useMemo(() => {
+    if (committedSettings?.llm?.active?.category !== "cloud") return undefined;
     const pName = committedSettings?.llm?.cloud?.provider_name;
-    if (!pName) return "custom";
+    if (!pName) return undefined;
     const found = CLOUD_PROVIDERS.find((p) => p.name.toLowerCase() === pName.toLowerCase());
-    return found ? found.id : "custom";
-  }, [committedSettings?.llm?.cloud?.provider_name]);
+    return found ? found.id : undefined;
+  }, [committedSettings?.llm?.active?.category, committedSettings?.llm?.cloud?.provider_name]);
 
   const getProviderKey = useCallback(
     (providerId: string) => {
@@ -186,18 +197,15 @@ export const LlmConfigDesk = memo(({
 
   const providerFilterCounts = useMemo(() => {
     let configured = 0;
-    let popular = 0;
     let unconfigured = 0;
     for (const p of CLOUD_PROVIDERS) {
       const key = getProviderKey(p.id);
       if (key && key.trim().length > 0) configured += 1;
       else unconfigured += 1;
-      if (p.popular) popular += 1;
     }
     return {
       all: CLOUD_PROVIDERS.length + 1,
       configured,
-      popular,
       unconfigured,
     };
   }, [getProviderKey]);
@@ -216,8 +224,6 @@ export const LlmConfigDesk = memo(({
 
     if (providerFilter === "configured") {
       list = list.filter((p) => Boolean(getProviderKey(p.id)?.trim()));
-    } else if (providerFilter === "popular") {
-      list = list.filter((p) => p.popular);
     } else if (providerFilter === "unconfigured") {
       list = list.filter((p) => !getProviderKey(p.id)?.trim());
     } else if (providerFilter === "local") {
@@ -235,6 +241,23 @@ export const LlmConfigDesk = memo(({
       return sortOrder === "az" ? cmp : -cmp;
     });
   }, [searchQuery, sortOrder, providerFilter, getProviderKey, getCommittedProviderKey]);
+
+  const customLlmServers = useMemo(() => {
+    return draftSettings?.providers?.llm?.servers || committedSettings?.providers?.llm?.servers || [];
+  }, [draftSettings?.providers?.llm?.servers, committedSettings?.providers?.llm?.servers]);
+
+  const customTtsServers = useMemo(() => {
+    return draftSettings?.providers?.tts?.servers || committedSettings?.providers?.tts?.servers || [];
+  }, [draftSettings?.providers?.tts?.servers, committedSettings?.providers?.tts?.servers]);
+
+  const curatedLlmProviders = useMemo(() => {
+    if (showAllInline) return filteredProviders;
+    return filteredProviders.filter((p) => {
+      const isConfigured = Boolean(getProviderKey(p.id)?.trim());
+      const isActive = activeCloudProviderId === p.id;
+      return isConfigured || isActive;
+    });
+  }, [filteredProviders, showAllInline, getProviderKey, activeCloudProviderId]);
 
   const resetProviderFilter = useCallback(() => setProviderFilter("all"), []);
 
@@ -320,7 +343,11 @@ export const LlmConfigDesk = memo(({
   const handleSelectCloudProvider = useCallback(
     (provider: CloudProvider) => {
       const savedKey = getProviderKey(provider.id);
-      updateDraft("llm", "active", "cloud");
+      updateDraft(
+        "llm",
+        "active",
+        activeSelection("cloud", draftLlm?.cloud?.model || "", provider.name)
+      );
       updateDraft("llm", "cloud", {
         base_url: provider.url,
         provider_name: provider.name,
@@ -381,27 +408,62 @@ export const LlmConfigDesk = memo(({
   // Determine active states per category
   const isLocalActive = useMemo(() => {
     if (activeCategory === "STT") {
-      return draftSettings?.stt?.active === "embedded";
+      return draftSettings?.stt?.active?.category === "embedded";
     }
     if (activeCategory === "LLM") {
-      return draftSettings?.llm?.active === "embedded";
+      return draftSettings?.llm?.active?.category === "embedded";
     }
     if (activeCategory === "TTS") {
-      const ttsId = draftSettings?.tts?.active || "";
-      return ttsId !== "edge_tts" && ttsId !== "chatterbox_remote";
+      const ttsCategory = draftSettings?.tts?.active?.category ?? "embedded";
+      return ttsCategory !== "cloud" && ttsCategory !== "server";
     }
     return false;
-  }, [activeCategory, draftSettings?.stt?.active, draftSettings?.llm?.active, draftSettings?.tts?.active]);
+  }, [
+    activeCategory,
+    draftSettings?.stt?.active?.category,
+    draftSettings?.llm?.active?.category,
+    draftSettings?.tts?.active?.category,
+  ]);
 
   const handleSelectLocal = useCallback(() => {
     if (activeCategory === "STT") {
-      updateDraft("stt", "active", "embedded");
+      updateDraft(
+        "stt",
+        "active",
+        activeSelection(
+          "embedded",
+          draftSettings?.stt?.last_selected?.embedded ?? draftSettings?.stt?.active?.model ?? ""
+        )
+      );
     } else if (activeCategory === "LLM") {
-      updateDraft("llm", "active", "embedded");
+      updateDraft(
+        "llm",
+        "active",
+        activeSelection(
+          "embedded",
+          draftLlm?.last_selected?.embedded ?? draftLlm?.active?.model ?? ""
+        )
+      );
     } else if (activeCategory === "TTS") {
-      updateDraft("tts", "active", "kokoro");
+      updateDraft(
+        "tts",
+        "active",
+        activeSelection(
+          "embedded",
+          draftSettings?.tts?.last_selected?.embedded ?? draftSettings?.tts?.active?.model ?? ""
+        )
+      );
     }
-  }, [activeCategory, updateDraft]);
+  }, [
+    activeCategory,
+    draftSettings?.stt?.last_selected?.embedded,
+    draftSettings?.stt?.active?.model,
+    draftLlm?.last_selected?.embedded,
+    draftLlm?.active?.model,
+    draftSettings?.tts?.last_selected?.embedded,
+    draftSettings?.tts?.active?.model,
+    updateDraft,
+  ]);
 
   const handleOpenCustomServer = useCallback(() => {
     if (activeCategory === "LLM") {
@@ -444,7 +506,11 @@ export const LlmConfigDesk = memo(({
             provider_name: finalName,
             model: draftLlm?.server?.model || "",
           });
-          updateDraft("llm", "active", "server");
+          updateDraft(
+            "llm",
+            "active",
+            activeSelection("server", draftLlm?.server?.model || "", finalName)
+          );
           setIsHealthy(true);
           setDetectedDialect(res.dialect ?? null);
           setSubView("catalog");
@@ -470,7 +536,7 @@ export const LlmConfigDesk = memo(({
         endpoint,
         remote_path: remotePath,
       });
-      updateDraft("tts", "active", "chatterbox_remote");
+      updateDraft("tts", "active", activeSelection("server", "chatterbox_remote"));
       setSubView("catalog");
     }
   }, [
@@ -494,7 +560,11 @@ export const LlmConfigDesk = memo(({
         provider_name: finalName,
         model: draftLlm?.server?.model || "",
       });
-      updateDraft("llm", "active", "server");
+      updateDraft(
+        "llm",
+        "active",
+        activeSelection("server", draftLlm?.server?.model || "", finalName)
+      );
     }
     setShowHealthErrorConfirm(false);
     setSubView("catalog");
@@ -515,29 +585,18 @@ export const LlmConfigDesk = memo(({
     activeCategory === "STT" ? (
       <Mic size={14} className="text-[rgb(var(--accent))]" />
     ) : activeCategory === "TTS" ? (
-      <Volume2 size={14} className="text-[rgb(var(--accent))]" />
+      <AudioLines size={14} className="text-[rgb(var(--accent))]" />
     ) : (
-      <Brain size={14} className="text-[rgb(var(--accent))]" />
+      <BrainCircuit size={14} className="text-[rgb(var(--accent))]" />
     );
 
-  const localCardTitle =
-    activeCategory === "STT"
-      ? "Built-in Speech Recognition"
-      : activeCategory === "TTS"
-      ? "Built-in Neural Voices"
-      : "Built-in Language Model";
-
-  const localCardSubtitle =
-    activeCategory === "STT"
-      ? "Whisper & Nemotron (100% Offline)"
-      : activeCategory === "TTS"
-      ? "Kokoro / Supertonic (Offline)"
-      : "On-Device GGUF Engine";
+  const localCardTitle = "On-Device";
+  const localCardSubtitle = "100% offline";
 
   const matchesLocalSearch = useMemo(() => {
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase().trim();
-    return "built-in on-device local neural whisper gguf kokoro vox offline".includes(q);
+    return "on-device local offline vox".includes(q);
   }, [searchQuery]);
 
   const showLocalCard =
@@ -550,46 +609,141 @@ export const LlmConfigDesk = memo(({
   const ProviderRows = () => (
     <div
       ref={providerGridRef}
-      className="h-full overflow-y-auto pr-1 grid grid-cols-1 sm:grid-cols-2 gap-2 content-start custom-scrollbar"
+      className="h-full overflow-y-auto pr-1 pb-6 custom-scrollbar overflow-x-hidden"
     >
-      {/* 1. On-Device Local Option (Always 1st in all categories) */}
+      <div className="grid grid-cols-2 gap-2 content-start w-full">
+      {/* 1. Custom created models / servers */}
+      {activeCategory === "LLM" &&
+        customLlmServers.map((server) => {
+          const isSelected =
+            draftLlm?.active?.category === "server" &&
+            (draftLlm?.server?.provider_name === server.name || draftLlm?.server?.base_url === server.url);
+          const isOllama =
+            (server.name && server.name.toLowerCase().includes("ollama")) ||
+            (server.id && server.id.toLowerCase().includes("ollama")) ||
+            (server.url && (server.url.includes("11434") || server.url.toLowerCase().includes("ollama")));
+          const serverLogoId = isOllama ? "ollama" : server.id || server.name || "server";
+
+          return (
+            <div
+              key={server.id || server.url}
+              onClick={() => {
+                updateDraft("llm", "active", activeSelection("server", server.model || "", server.name));
+                updateDraft("llm", "server", {
+                  base_url: server.url,
+                  provider_name: server.name,
+                  api_key: server.api_key || null,
+                  model: server.model || "",
+                });
+              }}
+              className={cn(
+                "group flex items-center gap-2 px-2.5 py-2 rounded-xl transition-all cursor-pointer select-none border min-h-[46px]",
+                isSelected
+                  ? "bg-[rgba(var(--foreground),0.025)] border-[rgb(var(--accent))] shadow-[0_0_12px_rgba(var(--accent),0.12)] text-[rgb(var(--foreground))]"
+                  : "bg-[rgba(var(--foreground),0.015)] border-[rgba(var(--accent),0.06)] hover:border-[rgba(var(--accent),0.25)] hover:bg-[rgba(var(--foreground),0.03)] text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--foreground))]"
+              )}
+            >
+              <div className="w-6 h-6 rounded-md bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--foreground),0.06)] flex items-center justify-center shrink-0">
+                <ProviderLogo providerId={serverLogoId} size={14} className="shrink-0" />
+              </div>
+              <div className="flex flex-col min-w-0 flex-1 justify-center">
+                <span className={cn("text-[11.5px] truncate leading-tight", isSelected ? "font-semibold text-[rgb(var(--foreground))]" : "font-medium text-[rgb(var(--foreground))]/90")}>
+                  {server.name || "Custom Server"}
+                </span>
+                <span className="text-[9.5px] text-[rgb(var(--foreground-muted))]/70 truncate font-mono mt-0.5 leading-tight">
+                  {server.url}
+                </span>
+              </div>
+              {isSelected && (
+                <div className="w-4 h-4 rounded-full bg-[rgba(var(--accent),0.15)] border border-[rgba(var(--accent),0.3)] flex items-center justify-center text-[rgb(var(--accent))] shrink-0 ml-auto">
+                  <Check size={9} strokeWidth={2.5} />
+                </div>
+              )}
+            </div>
+          );
+        })}
+
+      {activeCategory === "TTS" &&
+        customTtsServers.map((server) => {
+          const isSelected =
+            draftSettings?.tts?.active?.category === "server" &&
+            draftChatterboxRemote?.endpoint === server.url;
+          return (
+            <div
+              key={server.id || server.url}
+              onClick={() => {
+                updateDraft("tts", "active", activeSelection("server", server.id || "chatterbox_remote", server.name));
+                updateDraft("tts", "chatterbox_remote", {
+                  endpoint: server.url,
+                  remote_path: server.remote_path || "~/.vox",
+                });
+              }}
+              className={cn(
+                "group flex items-center gap-2 px-2.5 py-2 rounded-xl transition-all cursor-pointer select-none border min-h-[46px]",
+                isSelected
+                  ? "bg-[rgba(var(--foreground),0.025)] border-[rgb(var(--accent))] shadow-[0_0_12px_rgba(var(--accent),0.12)] text-[rgb(var(--foreground))]"
+                  : "bg-[rgba(var(--foreground),0.015)] border-[rgba(var(--accent),0.06)] hover:border-[rgba(var(--accent),0.25)] hover:bg-[rgba(var(--foreground),0.03)] text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--foreground))]"
+              )}
+            >
+              <div className="w-6 h-6 rounded-md bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--foreground),0.06)] flex items-center justify-center shrink-0">
+                <ProviderLogo providerId="server" size={14} className="shrink-0" />
+              </div>
+              <div className="flex flex-col min-w-0 flex-1 justify-center">
+                <span className={cn("text-[11.5px] truncate leading-tight", isSelected ? "font-semibold text-[rgb(var(--foreground))]" : "font-medium text-[rgb(var(--foreground))]/90")}>
+                  {server.name || "Voice Server"}
+                </span>
+                <span className="text-[9.5px] text-[rgb(var(--foreground-muted))]/70 truncate font-mono mt-0.5 leading-tight">
+                  {server.url}
+                </span>
+              </div>
+              {isSelected && (
+                <div className="w-4 h-4 rounded-full bg-[rgba(var(--accent),0.15)] border border-[rgba(var(--accent),0.3)] flex items-center justify-center text-[rgb(var(--accent))] shrink-0 ml-auto">
+                  <Check size={9} strokeWidth={2.5} />
+                </div>
+              )}
+            </div>
+          );
+        })}
+
+      {/* 2. On-Device Local Option */}
       {showLocalCard && (
         <div
           onClick={handleSelectLocal}
           className={cn(
-            "group flex items-center justify-between gap-2.5 px-3 py-2.5 rounded-xl transition-all cursor-pointer select-none border min-h-[44px]",
+            "group flex items-center gap-2 px-2.5 py-2 rounded-xl transition-all cursor-pointer select-none border min-h-[46px]",
             isLocalActive
               ? "bg-[rgba(var(--foreground),0.025)] border-[rgb(var(--accent))] shadow-[0_0_12px_rgba(var(--accent),0.12)] text-[rgb(var(--foreground))]"
               : "bg-[rgba(var(--foreground),0.015)] border-[rgba(var(--accent),0.06)] hover:border-[rgba(var(--accent),0.25)] hover:bg-[rgba(var(--foreground),0.03)] text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--foreground))]"
           )}
         >
-          <div className="flex items-center gap-2.5 min-w-0">
-            <ProviderLogo providerId="embedded" size={16} className="shrink-0" />
-            <div className="flex flex-col min-w-0">
-              <span
-                className={cn(
-                  "text-[13px] truncate leading-tight",
-                  isLocalActive ? "font-semibold text-[rgb(var(--foreground))]" : "font-medium"
-                )}
-              >
-                {localCardTitle}
-              </span>
-              <span className="text-[10.5px] text-[rgb(var(--foreground-muted))]/70 truncate">
-                {localCardSubtitle}
-              </span>
-            </div>
+          <div className="w-6 h-6 rounded-md bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--foreground),0.06)] flex items-center justify-center shrink-0">
+            <ProviderLogo providerId="embedded" size={14} className="shrink-0" />
           </div>
-
-          <span className="text-[9.5px] font-mono px-1.5 py-0.5 rounded font-bold bg-[rgba(var(--accent),0.12)] text-[rgb(var(--accent))] shrink-0">
-            On-Device
-          </span>
+          <div className="flex flex-col min-w-0 flex-1 justify-center">
+            <span
+              className={cn(
+                "text-[11.5px] truncate leading-tight",
+                isLocalActive ? "font-semibold text-[rgb(var(--foreground))]" : "font-medium text-[rgb(var(--foreground))]/90"
+              )}
+            >
+              {localCardTitle}
+            </span>
+            <span className="text-[9.5px] text-[rgb(var(--foreground-muted))]/70 truncate mt-0.5 leading-tight">
+              {localCardSubtitle}
+            </span>
+          </div>
+          {isLocalActive && (
+            <div className="w-4 h-4 rounded-full bg-[rgba(var(--accent),0.15)] border border-[rgba(var(--accent),0.3)] flex items-center justify-center text-[rgb(var(--accent))] shrink-0 ml-auto">
+              <Check size={9} strokeWidth={2.5} />
+            </div>
+          )}
         </div>
       )}
 
-      {/* 2. Category-Specific Cloud Providers */}
+      {/* 3. Category-Specific Cloud Providers (Curated by default, all when showAllInline) */}
       {activeCategory === "LLM" &&
-        filteredProviders.map((provider) => {
-          const isSelected = activeCloudProviderId === provider.id && draftLlm?.active === "cloud";
+        (showAllInline ? filteredProviders : curatedLlmProviders).map((provider) => {
+          const isSelected = activeCloudProviderId === provider.id && draftLlm?.active?.category === "cloud";
           const savedKey = getProviderKey(provider.id);
           const isEditing = editingProviderId === provider.id;
           const hasKey = Boolean(savedKey?.trim());
@@ -603,7 +757,7 @@ export const LlmConfigDesk = memo(({
                 }
               }}
               className={cn(
-                "group flex items-center justify-between gap-2.5 px-3 py-2.5 rounded-xl transition-all cursor-pointer select-none border min-h-[44px]",
+                "group flex items-center gap-2 px-2.5 py-2 rounded-xl transition-all cursor-pointer select-none border min-h-[46px]",
                 isSelected
                   ? "bg-[rgba(var(--foreground),0.025)] border-[rgb(var(--accent))] shadow-[0_0_12px_rgba(var(--accent),0.12)] text-[rgb(var(--foreground))]"
                   : "bg-[rgba(var(--foreground),0.015)] border-[rgba(var(--accent),0.06)] hover:border-[rgba(var(--accent),0.25)] hover:bg-[rgba(var(--foreground),0.03)] text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--foreground))]"
@@ -647,19 +801,23 @@ export const LlmConfigDesk = memo(({
                 </div>
               ) : (
                 <>
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <ProviderLogo providerId={provider.id} size={16} className="shrink-0" />
+                  <div className="w-6 h-6 rounded-md bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--foreground),0.06)] flex items-center justify-center shrink-0">
+                    <ProviderLogo providerId={provider.id} size={14} className="shrink-0" />
+                  </div>
+                  <div className="flex flex-col min-w-0 flex-1 justify-center">
                     <span
                       className={cn(
-                        "text-[13px] truncate leading-none",
-                        isSelected ? "font-semibold text-[rgb(var(--foreground))]" : "font-medium"
+                        "text-[11.5px] truncate leading-tight",
+                        isSelected ? "font-semibold text-[rgb(var(--foreground))]" : "font-medium text-[rgb(var(--foreground))]/90"
                       )}
                     >
                       {provider.name}
                     </span>
+                    <span className="text-[9.5px] text-[rgb(var(--foreground-muted))]/70 truncate mt-0.5 leading-tight">
+                      {provider.tagline || "Cloud API"}
+                    </span>
                   </div>
-
-                  <div className="shrink-0 flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                  <div className="shrink-0 flex items-center gap-1 ml-auto" onClick={(e) => e.stopPropagation()}>
                     {hasKey ? (
                       <button
                         type="button"
@@ -668,16 +826,22 @@ export const LlmConfigDesk = memo(({
                         title={copy.llm.cloud.editKey}
                         aria-label={copy.llm.cloud.editKey}
                       >
-                        <Pencil size={12} />
+                        <Pencil size={11} />
                       </button>
                     ) : (
                       <button
                         type="button"
                         onClick={() => handleStartInlineEdit(provider.id, "")}
-                        className="text-[10.5px] font-medium text-[rgb(var(--accent))] hover:underline transition-all"
+                        className="w-4 h-4 rounded flex items-center justify-center text-[13px] font-bold text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.12)] transition-all leading-none cursor-pointer"
+                        aria-label="Connect provider"
                       >
-                        {copy.llm.cloud.connect}
+                        +
                       </button>
+                    )}
+                    {isSelected && (
+                      <div className="w-4 h-4 rounded-full bg-[rgba(var(--accent),0.15)] border border-[rgba(var(--accent),0.3)] flex items-center justify-center text-[rgb(var(--accent))] shrink-0">
+                        <Check size={9} strokeWidth={2.5} />
+                      </div>
                     )}
                   </div>
                 </>
@@ -690,46 +854,59 @@ export const LlmConfigDesk = memo(({
         <>
           {/* Edge TTS Cloud Provider */}
           <div
-            onClick={() => updateDraft("tts", "active", "edge_tts")}
+            onClick={() => updateDraft("tts", "active", activeSelection("cloud", "edge_tts", "microsoft"))}
             className={cn(
-              "group flex items-center justify-between gap-2.5 px-3 py-2.5 rounded-xl transition-all cursor-pointer select-none border min-h-[44px]",
-              draftSettings?.tts?.active === "edge_tts"
+              "group flex items-center gap-2 px-2.5 py-2 rounded-xl transition-all cursor-pointer select-none border min-h-[46px]",
+              activeModelId(draftSettings?.tts?.active) === "edge_tts"
                 ? "bg-[rgba(var(--foreground),0.025)] border-[rgb(var(--accent))] shadow-[0_0_12px_rgba(var(--accent),0.12)] text-[rgb(var(--foreground))]"
                 : "bg-[rgba(var(--foreground),0.015)] border-[rgba(var(--accent),0.06)] hover:border-[rgba(var(--accent),0.25)] hover:bg-[rgba(var(--foreground),0.03)] text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--foreground))]"
             )}
           >
-            <div className="flex items-center gap-2.5 min-w-0">
-              <ProviderLogo providerId="microsoft" size={16} className="shrink-0" />
-              <div className="flex flex-col min-w-0">
-                <span className="text-[13px] font-semibold truncate leading-tight text-[rgb(var(--foreground))]">
-                  Microsoft Edge TTS
-                </span>
-                <span className="text-[10.5px] text-[rgb(var(--foreground-muted))]/70 truncate">
-                  400+ Cloud Voices · Free & Keyless
-                </span>
-              </div>
+            <div className="w-6 h-6 rounded-md bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--foreground),0.06)] flex items-center justify-center shrink-0">
+              <ProviderLogo providerId="microsoft" size={14} className="shrink-0" />
             </div>
-            <span className="text-[9.5px] font-mono px-1.5 py-0.5 rounded font-bold bg-[rgba(var(--accent),0.12)] text-[rgb(var(--accent))] shrink-0">
-              Cloud
-            </span>
+            <div className="flex flex-col min-w-0 flex-1 justify-center">
+              <span className="text-[11.5px] font-semibold truncate leading-tight text-[rgb(var(--foreground))]">
+                Edge TTS
+              </span>
+              <span className="text-[9.5px] text-[rgb(var(--foreground-muted))]/70 truncate mt-0.5 leading-tight">
+                400+ free cloud voices
+              </span>
+            </div>
+            {activeModelId(draftSettings?.tts?.active) === "edge_tts" && (
+              <div className="w-4 h-4 rounded-full bg-[rgba(var(--accent),0.15)] border border-[rgba(var(--accent),0.3)] flex items-center justify-center text-[rgb(var(--accent))] shrink-0 ml-auto">
+                <Check size={9} strokeWidth={2.5} />
+              </div>
+            )}
           </div>
 
           {/* Coming Soon TTS Cloud Providers */}
-          <div className="flex items-center justify-between gap-2.5 px-3 py-2.5 rounded-xl border border-[rgba(var(--foreground),0.04)] bg-[rgba(var(--foreground),0.01)] opacity-50 min-h-[44px] select-none">
-            <div className="flex items-center gap-2.5 min-w-0">
-              <ProviderLogo providerId="google" size={16} className="shrink-0 opacity-60" />
-              <div className="flex flex-col min-w-0">
-                <span className="text-[13px] font-medium text-[rgb(var(--foreground))] truncate">
+          <div className="flex items-center gap-2 px-2.5 py-2 rounded-xl border border-[rgba(var(--foreground),0.04)] bg-[rgba(var(--foreground),0.01)] opacity-50 min-h-[46px] select-none">
+              <div className="w-6 h-6 rounded-md bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--foreground),0.06)] flex items-center justify-center shrink-0 opacity-60">
+                <ProviderLogo providerId="gcp" size={14} className="shrink-0" />
+              </div>
+              <div className="flex flex-col min-w-0 flex-1 justify-center">
+                <span className="text-[11.5px] font-medium text-[rgb(var(--foreground))] truncate leading-tight">
                   Google Cloud TTS
                 </span>
-                <span className="text-[10.5px] text-[rgb(var(--foreground-muted))] truncate">
-                  Studio and Journey natural neural synthesis
+                <span className="text-[9.5px] text-[rgb(var(--foreground-muted))] truncate mt-0.5 leading-tight">
+                  Studio & Journey voices
                 </span>
               </div>
             </div>
-            <span className="text-[9.5px] font-mono px-1.5 py-0.5 rounded font-bold bg-[rgba(var(--foreground),0.06)] text-[rgb(var(--foreground-muted))] shrink-0">
-              Coming Soon
-            </span>
+
+          <div className="flex items-center gap-2 px-2.5 py-2 rounded-xl border border-[rgba(var(--foreground),0.04)] bg-[rgba(var(--foreground),0.01)] opacity-50 min-h-[46px] select-none">
+            <div className="w-6 h-6 rounded-md bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--foreground),0.06)] flex items-center justify-center shrink-0 opacity-60">
+              <ProviderLogo providerId="azure" size={14} className="shrink-0" />
+            </div>
+            <div className="flex flex-col min-w-0 flex-1 justify-center">
+              <span className="text-[11.5px] font-medium text-[rgb(var(--foreground))] truncate leading-tight">
+                Azure AI Speech
+              </span>
+              <span className="text-[9.5px] text-[rgb(var(--foreground-muted))] truncate mt-0.5 leading-tight">
+                Neural voices
+              </span>
+            </div>
           </div>
         </>
       )}
@@ -737,24 +914,49 @@ export const LlmConfigDesk = memo(({
       {activeCategory === "STT" && (
         <>
           {/* Coming Soon STT Cloud Providers */}
-          <div className="flex items-center justify-between gap-2.5 px-3 py-2.5 rounded-xl border border-[rgba(var(--foreground),0.04)] bg-[rgba(var(--foreground),0.01)] opacity-50 min-h-[44px] select-none">
-            <div className="flex items-center gap-2.5 min-w-0">
-              <ProviderLogo providerId="openai" size={16} className="shrink-0 opacity-60" />
-              <div className="flex flex-col min-w-0">
-                <span className="text-[13px] font-medium text-[rgb(var(--foreground))] truncate">
-                  OpenAI Whisper Cloud
-                </span>
-                <span className="text-[10.5px] text-[rgb(var(--foreground-muted))] truncate">
-                  Hosted speech transcription endpoint
-                </span>
-              </div>
+          <div className="flex items-center gap-2 px-2.5 py-2 rounded-xl border border-[rgba(var(--foreground),0.04)] bg-[rgba(var(--foreground),0.01)] opacity-50 min-h-[46px] select-none">
+            <div className="w-6 h-6 rounded-md bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--foreground),0.06)] flex items-center justify-center shrink-0 opacity-60">
+              <ProviderLogo providerId="openai" size={14} className="shrink-0" />
             </div>
-            <span className="text-[9.5px] font-mono px-1.5 py-0.5 rounded font-bold bg-[rgba(var(--foreground),0.06)] text-[rgb(var(--foreground-muted))] shrink-0">
-              Coming Soon
-            </span>
+            <div className="flex flex-col min-w-0 flex-1 justify-center">
+              <span className="text-[11.5px] font-medium text-[rgb(var(--foreground))] truncate leading-tight">
+                Whisper Cloud
+              </span>
+              <span className="text-[9.5px] text-[rgb(var(--foreground-muted))] truncate mt-0.5 leading-tight">
+                Hosted transcription
+              </span>
+            </div>
           </div>
         </>
       )}
+
+      {/* 4. Bottom Inline Expand/Collapse Toggle */}
+      {activeCategory === "LLM" && filteredProviders.length > curatedLlmProviders.length && (
+        <div className="col-span-2 pt-2 pb-1 flex flex-col items-center justify-center">
+          <button
+            type="button"
+            onClick={() => {
+              setShowAllInline((v) => {
+                const next = !v;
+                setProviderFilter(next ? "all" : "configured");
+                return next;
+              });
+              setTimeout(() => providerLenisRef.current?.resize(), 50);
+            }}
+            className="flex flex-col items-center justify-center gap-0.5 text-[rgb(var(--accent))] hover:opacity-80 transition-opacity cursor-pointer select-none group"
+          >
+            <span className="text-[11.5px] font-semibold tracking-tight">
+              {showAllInline ? "Show less" : `Show all ${filteredProviders.length} providers`}
+            </span>
+            {showAllInline ? (
+              <ChevronUp size={13} strokeWidth={2.5} className="group-hover:-translate-y-0.5 transition-transform" />
+            ) : (
+              <ChevronDown size={13} strokeWidth={2.5} className="group-hover:translate-y-0.5 transition-transform" />
+            )}
+          </button>
+        </div>
+      )}
+      </div>
     </div>
   );
 
@@ -785,9 +987,9 @@ export const LlmConfigDesk = memo(({
         isCustomActive={
           subView === "server" ||
           (activeCategory === "LLM"
-            ? draftLlm?.active === "server"
+            ? draftLlm?.active?.category === "server"
             : activeCategory === "TTS"
-            ? draftSettings?.tts?.active === "chatterbox_remote"
+            ? activeModelId(draftSettings?.tts?.active) === "chatterbox_remote"
             : false)
         }
         onCustomClick={handleOpenCustomServer}
@@ -851,12 +1053,6 @@ export const LlmConfigDesk = memo(({
                           Icon: Key,
                         },
                         {
-                          id: "popular",
-                          label: copy.llm.cloud.filterPopular,
-                          count: providerFilterCounts.popular,
-                          Icon: Sparkles,
-                        },
-                        {
                           id: "unconfigured",
                           label: copy.llm.cloud.filterUnconfigured,
                           count: providerFilterCounts.unconfigured,
@@ -882,7 +1078,7 @@ export const LlmConfigDesk = memo(({
         }
         sort={
           subView === "server"
-            ? { order: sortOrder, onToggle: () => {} }
+            ? undefined
             : {
                 order: sortOrder,
                 onToggle: () => setSortOrder((prev) => (prev === "az" ? "za" : "az")),
@@ -890,13 +1086,7 @@ export const LlmConfigDesk = memo(({
         }
         search={
           subView === "server"
-            ? {
-                open: false,
-                value: "",
-                onChange: () => {},
-                onToggle: () => {},
-                onClose: () => {},
-              }
+            ? undefined
             : {
                 open: isSearchOpen,
                 value: searchQuery,
@@ -910,7 +1100,7 @@ export const LlmConfigDesk = memo(({
 
       {/* ─── 2. BODY CONTENT: SERVER FORM OR COMPACT CATALOG ─── */}
       {subView === "server" ? (
-        <div className="flex flex-col gap-3 flex-1 min-h-0 justify-between animate-fade-in pt-1">
+        <div className="flex flex-col gap-3 flex-1 min-h-0 overflow-y-auto custom-scrollbar justify-start animate-fade-in pt-1">
           {activeCategory === "LLM" && (
             <div
               className={cn(
@@ -995,33 +1185,18 @@ export const LlmConfigDesk = memo(({
           <ExpandableList
             className="flex-1 min-h-0"
             domainId="models"
-            triggerPlacement="row"
-            customTrigger={
-              activeCategory === "STT"
-                ? () => null
-                : (open) => (
-                    <div className="pt-2 border-t border-[rgba(var(--foreground),0.06)] mt-auto shrink-0 flex items-center justify-center">
-                      <button
-                        type="button"
-                        onClick={open}
-                        className="w-full flex items-center justify-center gap-1.5 py-1 text-[11px] font-medium text-[rgb(var(--foreground-muted))]/75 hover:text-[rgb(var(--accent))] transition-colors cursor-pointer group select-none"
-                      >
-                        <span>Show all {activeCategory} providers</span>
-                        <ChevronDown size={13} className="group-hover:translate-y-0.5 transition-transform" />
-                      </button>
-                    </div>
-                  )
-            }
-            inlineMaxHeightClass="max-h-[140px] sm:max-h-[160px]"
+            triggerPlacement="floating"
+            customTrigger={activeCategory === "STT" ? () => null : undefined}
+            inlineMaxHeightClass="max-h-[160px] sm:max-h-[180px]"
             icon={
               modalView === "models" ? (
                 <Network size={16} className="text-[rgb(var(--accent))]" />
               ) : activeCategory === "STT" ? (
                 <Mic size={16} className="text-[rgb(var(--accent))]" />
               ) : activeCategory === "TTS" ? (
-                <Volume2 size={16} className="text-[rgb(var(--accent))]" />
+                <AudioLines size={16} className="text-[rgb(var(--accent))]" />
               ) : (
-                <Cloud size={16} className="text-[rgb(var(--accent))]" />
+                <BrainCircuit size={16} className="text-[rgb(var(--accent))]" />
               )
             }
             onBack={modalView === "models" ? () => setModalView("providers") : undefined}

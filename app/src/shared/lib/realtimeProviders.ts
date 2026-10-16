@@ -3,9 +3,9 @@
  * Bridges alias IDs ("gemini", "openai", "deepgram", "elevenlabs")
  * to their concrete configuration subkeys.
  */
-import type { RealtimeActiveProvider } from "@/store/settingsStore";
+import type { RealtimeSubkey } from "@/store/settingsStore";
 
-export const REALTIME_SUBKEY_MAP: Record<string, RealtimeActiveProvider> = {
+export const REALTIME_SUBKEY_MAP: Record<string, RealtimeSubkey> = {
   gemini_live: "gemini_live",
   gemini: "gemini_live",
   openai_realtime: "openai_realtime",
@@ -20,7 +20,7 @@ export const REALTIME_SUBKEY_MAP: Record<string, RealtimeActiveProvider> = {
  * Resolves any provider id or alias into a canonical realtime configuration subkey.
  * Defaults safely to "gemini_live".
  */
-export function resolveRealtimeSubkey(providerId?: string | null): RealtimeActiveProvider {
+export function resolveRealtimeSubkey(providerId?: string | null): RealtimeSubkey {
   if (!providerId) return "gemini_live";
   return REALTIME_SUBKEY_MAP[providerId] || "gemini_live";
 }
