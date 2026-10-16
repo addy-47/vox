@@ -144,6 +144,17 @@ export function readModelCapabilitiesCache(): Promise<CapabilityCacheRead> {
   return invoke<CapabilityCacheRead>("get_model_capabilities_cache");
 }
 
+/** Persist per-model parameter overrides to the `models` table.
+ * Routes to `update_setting("model_parameters", modelId, patch)` — the only
+ * channel for parameters the config refactor moved out of `settings.jsonc`.
+ * A null value for a key removes that override. */
+export function updateModelParameters(
+  modelId: string,
+  patch: Record<string, unknown>
+): Promise<SettingUpdateResult> {
+  return updateSetting("model_parameters", modelId, patch);
+}
+
 /** List audio input or output devices (ipc/audio.rs). */
 export function listAudioDevices(kind: "input" | "output" = "input"): Promise<AudioDevice[]> {
   return invoke("list_audio_devices", { kind });

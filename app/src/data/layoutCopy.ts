@@ -17,6 +17,9 @@ export const LAYOUT_COPY = {
     modelsUpdate: "Models Update",
     copyCommand: "Copy command",
     whatsNew: "What's New:",
+    openModels: "Open Models",
+    updateAvailable: "Update available",
+    modelsOutdatedCount: (count: number) => `${count} model${count > 1 ? "s" : ""} outdated`,
   },
   errorBoundary: {
     title: "Render Error",

@@ -1,11 +1,10 @@
 import { memo, useCallback, useState } from "react";
-import { useSettingsStore, type RealtimeSubkey } from "@/store/settingsStore";
+import { useSettingsStore } from "@/store/settingsStore";
 import { REALTIME_PROVIDERS } from "@/data/providersCopy";
 import { REALTIME_CONFIG_DESK_COPY } from "@/data/settingsCopy";
 import { Radio, Check, X, Pencil } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
-import { ProviderLogo } from "@/shared/components/settings/models/ProviderLogo";
-import { resolveRealtimeSubkey } from "@/shared/lib/realtimeProviders";
+import { ProviderLogo } from "@/shared/components/settings/providers/ProviderLogo";
 
 interface RealtimeConfigDeskProps {
   layoutMode?: "full-max" | "full-min" | "small";
@@ -21,13 +20,15 @@ export const RealtimeConfigDesk = memo(({ layoutMode }: RealtimeConfigDeskProps)
   const currentProviderId =
     draftSettings?.realtime?.active?.provider || "gemini_live";
 
+  /** API keys: draft vehicle first, then the committed providers file. */
+  const realtimeKeys =
+    draftSettings?.realtime?.api_keys ?? draftSettings?.providers?.realtime?.api_keys ?? {};
+
   const getProviderKey = useCallback(
     (providerId: string) => {
-      const subkey = resolveRealtimeSubkey(providerId);
-      const conf = draftSettings?.realtime?.[subkey];
-      return conf && "api_key" in conf ? (conf as { api_key?: string }).api_key || "" : "";
+      return realtimeKeys[providerId] || "";
     },
-    [draftSettings?.realtime]
+    [realtimeKeys]
   );
 
   const handleSelectProvider = useCallback(
@@ -61,17 +62,18 @@ export const RealtimeConfigDesk = memo(({ layoutMode }: RealtimeConfigDeskProps)
 
   const handleSaveInlineKey = useCallback(
     (providerId: string) => {
-      const subkey = resolveRealtimeSubkey(providerId);
-      const currentConf = draftSettings?.realtime?.[subkey] || {};
-      const updated = {
-        ...currentConf,
-        api_key: editingKeyValue.trim(),
-      };
-      updateDraft("realtime", subkey as RealtimeSubkey, updated, "interaction");
+      const currentKeys = { ...realtimeKeys };
+      const trimmed = editingKeyValue.trim();
+      if (trimmed) {
+        currentKeys[providerId] = trimmed;
+      } else {
+        delete currentKeys[providerId];
+      }
+      updateDraft("realtime", "api_keys", currentKeys, "interaction");
       setEditingProviderId(null);
       setEditingKeyValue("");
     },
-    [draftSettings?.realtime, editingKeyValue, updateDraft]
+    [realtimeKeys, editingKeyValue, updateDraft]
   );
 
   if (!draftSettings) return null;
@@ -79,17 +81,17 @@ export const RealtimeConfigDesk = memo(({ layoutMode }: RealtimeConfigDeskProps)
   return (
     <div className="flex flex-col w-full mt-0.5 animate-fade-in flex-1 min-h-0">
       {/* ─── Clean Mode Title Banner ─── */}
-      <div className="flex items-center gap-1.5 px-1 shrink-0 pb-1.5">
+      <div className="flex items-center gap-1.5 px-1 shrink-0 pb-2">
         <Radio size={14} className="text-[rgb(var(--accent))] animate-pulse shrink-0" />
         <span className="text-[13px] font-bold text-[rgb(var(--foreground))]">
           {REALTIME_CONFIG_DESK_COPY.title}
         </span>
       </div>
 
-      {/* ─── 2-Column Grid: Same Provider Cards as Modal ─── */}
+      {/* ─── 2-Column Grid: Sleek Horizontal Cards ─── */}
       <div
         className={cn(
-          "grid gap-2.5 flex-1 min-h-0 overflow-y-auto custom-scrollbar overscroll-contain px-1 py-1 pb-4",
+          "grid gap-2.5 content-start w-full px-1",
           layoutMode === "small" ? "grid-cols-1" : "grid-cols-1 sm:grid-cols-2"
         )}
       >
@@ -109,105 +111,108 @@ export const RealtimeConfigDesk = memo(({ layoutMode }: RealtimeConfigDeskProps)
                 }
               }}
               className={cn(
-                "relative flex flex-col justify-between p-4.5 rounded-xl border transition-all duration-200 select-none group cursor-pointer transform-gpu h-[188px]",
+                "group flex items-center gap-2.5 px-3 py-2.5 rounded-xl transition-all cursor-pointer select-none border min-h-[52px]",
                 isSelected
-                  ? "bg-[rgba(var(--card),0.7)] border-[rgb(var(--accent))] shadow-[0_0_20px_rgba(var(--accent),0.18)] ring-1 ring-[rgb(var(--accent))]/30"
-                  : "bg-[rgba(var(--card),0.4)] border-[rgba(var(--foreground),0.07)] hover:border-[rgba(var(--accent),0.35)] hover:bg-[rgba(var(--card),0.65)]"
+                  ? "bg-[rgba(var(--foreground),0.025)] border-[rgb(var(--accent))] shadow-[0_0_12px_rgba(var(--accent),0.12)] text-[rgb(var(--foreground))]"
+                  : "bg-[rgba(var(--foreground),0.015)] border-[rgba(var(--accent),0.06)] hover:border-[rgba(var(--accent),0.25)] hover:bg-[rgba(var(--foreground),0.03)] text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--foreground))]"
               )}
             >
-              {isSelected && (
-                <div className="absolute top-3 right-3 w-5 h-5 rounded-full bg-[rgba(var(--accent),0.15)] border border-[rgba(var(--accent),0.3)] flex items-center justify-center text-[rgb(var(--accent))] z-10">
-                  <Check size={12} strokeWidth={2.5} />
-                </div>
-              )}
-
-              <div className="flex flex-col items-center text-center my-auto px-1 pt-1">
-                <div
-                  className={cn(
-                    "w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 border transition-all",
-                    isSelected
-                      ? "bg-[rgba(var(--accent),0.12)] border-[rgba(var(--accent),0.3)] shadow-[0_0_12px_rgba(var(--accent),0.15)]"
-                      : "bg-[rgba(var(--foreground),0.04)] border-[rgba(var(--foreground),0.07)] group-hover:border-[rgba(var(--accent),0.25)]"
-                  )}
-                >
-                  <ProviderLogo providerId={provider.id} size={24} />
-                </div>
-                <h4 className="font-bold text-[14.5px] text-[rgb(var(--foreground))] tracking-tight truncate w-full text-center mt-2.5 leading-tight group-hover:text-[rgb(var(--accent))] transition-colors">
-                  {provider.name}
-                </h4>
-                <p className="text-[12px] text-[rgb(var(--foreground-muted))] mt-1 line-clamp-2 leading-relaxed text-center px-1 h-[36px]">
-                  {provider.tagline}
-                </p>
+              <div
+                className={cn(
+                  "w-7 h-7 rounded-lg flex items-center justify-center shrink-0 border transition-all",
+                  isSelected
+                    ? "bg-[rgba(var(--accent),0.12)] border-[rgba(var(--accent),0.25)] text-[rgb(var(--accent))]"
+                    : "bg-[rgba(var(--foreground),0.03)] border-[rgba(var(--foreground),0.06)]"
+                )}
+              >
+                <ProviderLogo providerId={provider.id} size={16} className="shrink-0" />
               </div>
 
-              <div
-                className="mt-auto pt-2.5 border-t border-[rgba(var(--foreground),0.06)] h-[28px] flex items-center justify-between"
-                onClick={(e) => e.stopPropagation()}
-              >
-                {isEditing ? (
-                  <div className="flex items-center gap-1.5 border-b border-[rgb(var(--accent))] pb-0.5 w-full bg-transparent animate-fade-in">
-                    <input
-                      type="password"
-                      autoFocus
-                      value={editingKeyValue}
-                      onChange={(e) => setEditingKeyValue(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") handleSaveInlineKey(provider.id);
-                        if (e.key === "Escape") handleCancelInlineKey();
-                      }}
-                      placeholder={provider.keyPlaceholder}
-                      className="w-full bg-transparent text-[11px] font-mono outline-none text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/30"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => handleSaveInlineKey(provider.id)}
-                      title="Save API Key"
-                      aria-label="Save API Key"
-                      className="text-[rgb(var(--accent))] hover:opacity-75 transition-opacity p-0.5 shrink-0 bg-transparent cursor-pointer"
+              {isEditing ? (
+                <div
+                  className="flex-1 flex items-center gap-1.5 border-b border-[rgb(var(--accent))] pb-0.5 animate-fade-in min-w-0"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <input
+                    type="password"
+                    autoFocus
+                    value={editingKeyValue}
+                    onChange={(e) => setEditingKeyValue(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") handleSaveInlineKey(provider.id);
+                      if (e.key === "Escape") handleCancelInlineKey();
+                    }}
+                    placeholder={provider.keyPlaceholder}
+                    className="w-full bg-transparent text-[11px] font-mono outline-none text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/30"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => handleSaveInlineKey(provider.id)}
+                    title="Save API Key"
+                    aria-label="Save API Key"
+                    className="text-[rgb(var(--accent))] hover:opacity-75 transition-opacity p-0.5 shrink-0 bg-transparent cursor-pointer"
+                  >
+                    <Check size={13} strokeWidth={2.2} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleCancelInlineKey}
+                    title="Cancel"
+                    aria-label="Cancel"
+                    className="text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))] transition-colors p-0.5 shrink-0 bg-transparent cursor-pointer"
+                  >
+                    <X size={13} />
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <div className="flex flex-col min-w-0 flex-1 justify-center">
+                    <span
+                      className={cn(
+                        "text-[12px] truncate leading-tight",
+                        isSelected
+                          ? "font-semibold text-[rgb(var(--foreground))]"
+                          : "font-medium text-[rgb(var(--foreground))]/90"
+                      )}
                     >
-                      <Check size={13} strokeWidth={2.2} />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleCancelInlineKey}
-                      title="Cancel"
-                      aria-label="Cancel"
-                      className="text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))] transition-colors p-0.5 shrink-0 bg-transparent cursor-pointer"
-                    >
-                      <X size={13} />
-                    </button>
+                      {provider.name}
+                    </span>
+                    <span className="text-[10px] text-[rgb(var(--foreground-muted))]/70 truncate mt-0.5 leading-tight font-sans">
+                      {provider.tagline}
+                    </span>
                   </div>
-                ) : (
-                  <div className="flex items-center justify-between text-[11px] font-mono w-full">
-                    <span className="text-[rgb(var(--foreground-muted))]/70">Realtime Voice</span>
+
+                  <div className="shrink-0 flex items-center gap-1.5 ml-auto" onClick={(e) => e.stopPropagation()}>
                     {hasKey ? (
-                      <div className="flex items-center gap-1.5">
-                        <span className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--accent))] shrink-0" />
-                        <span className="text-[rgb(var(--foreground-muted))]">
-                          ••••••••{savedKey?.slice(-4)}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => handleStartInlineEdit(provider.id, savedKey ?? "")}
-                          className="p-1 rounded hover:bg-white/[0.08] hover:text-[rgb(var(--accent))] transition-colors text-[rgb(var(--foreground-muted))]/60 cursor-pointer shrink-0"
-                          title="Edit API Key"
-                          aria-label="Edit API Key"
-                        >
-                          <Pencil size={11} />
-                        </button>
-                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleStartInlineEdit(provider.id, savedKey)}
+                        className="px-1.5 py-0.5 rounded text-[10px] font-mono text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.08)] transition-all cursor-pointer flex items-center gap-1"
+                        title="Edit API Key"
+                        aria-label="Edit API Key"
+                      >
+                        <span className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--accent))]" />
+                        <span>••••{savedKey.slice(-4)}</span>
+                        <Pencil size={9} className="opacity-60" />
+                      </button>
                     ) : (
                       <button
                         type="button"
                         onClick={() => handleStartInlineEdit(provider.id, "")}
-                        className="text-[rgb(var(--accent))] hover:underline cursor-pointer font-medium flex items-center gap-1"
+                        className="px-2 py-0.5 rounded-md text-[10px] font-medium text-[rgb(var(--accent))] border border-[rgba(var(--accent),0.3)] hover:bg-[rgba(var(--accent),0.1)] transition-all cursor-pointer"
                       >
-                        + Connect Key
+                        + Key
                       </button>
                     )}
+
+                    {isSelected && (
+                      <div className="w-4 h-4 rounded-full bg-[rgba(var(--accent),0.15)] border border-[rgba(var(--accent),0.3)] flex items-center justify-center text-[rgb(var(--accent))] shrink-0">
+                        <Check size={9} strokeWidth={2.5} />
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
+                </>
+              )}
             </div>
           );
         })}

@@ -35,14 +35,14 @@ import {
   type ModelCapabilities,
   type LlmProviderConfig,
 } from "@/store/settingsStore";
-import { CloudProvidersModalView, useCloudProvidersModalState } from "../CloudProvidersModalView";
-import { RemoteModelsModalView } from "./RemoteModelsModalView";
+import { CloudProvidersModalView, useCloudProvidersModalState } from "../../providers/CloudProvidersModalView";
+import { RemoteModelsModalView } from "../../providers/RemoteModelsModalView";
 import {
   CatalogFilterItem,
   CatalogFilterMenu,
   CatalogHeader,
   type CatalogSortOrder,
-} from "./CatalogHeader";
+} from "../../providers/CatalogHeader";
 import {
   REMOTE_MODEL_PAGE_SIZE,
   provenanceLabel,
@@ -137,11 +137,8 @@ export const RemoteCatalogSection = memo(({
   // Save-gated pinning: list order follows the COMMITTED model, so selecting
   // only re-highlights. The reorder (with smooth scroll) lands on save.
   const committedRemoteModelId = useMemo(() => {
-    const active = committedSettings?.llm?.active?.category ?? "embedded";
-    if (active === "server") return committedSettings?.llm?.server?.model;
-    if (active === "cloud") return committedSettings?.llm?.cloud?.model;
-    return committedSettings?.llm?.embedded?.model;
-  }, [committedSettings]);
+    return committedSettings?.llm?.active?.model || undefined;
+  }, [committedSettings?.llm?.active?.model]);
 
   // Filtered Remote Models with fzf-style fuzzy matching, active facets, and
   // name order. The committed model stays pinned to the top.
@@ -227,14 +224,9 @@ export const RemoteCatalogSection = memo(({
   const inlineHiddenCount = filteredRemoteModels.length - visibleInlineModels.length;
 
   const handleSelectModel = useCallback((modelId: string) => {
-    const draft = useSettingsStore.getState().draftSettings;
-    const activeLlm = draft?.llm?.active?.category ?? "embedded";
-    if (activeLlm === "server" && draft?.llm?.server) {
-      updateDraft("llm", "server", { ...draft.llm.server, model: modelId });
-    } else if (activeLlm === "cloud" && draft?.llm?.cloud) {
-      updateDraft("llm", "cloud", { ...draft.llm.cloud, model: modelId });
-    } else if (activeLlm === "embedded" && draft?.llm?.embedded) {
-      updateDraft("llm", "embedded", { ...draft.llm.embedded, model: modelId });
+    const active = useSettingsStore.getState().draftSettings?.llm?.active;
+    if (active && (active.category === "server" || active.category === "cloud")) {
+      updateDraft("llm", "active", { ...active, model: modelId });
     }
   }, [updateDraft]);
 
@@ -304,27 +296,17 @@ export const RemoteCatalogSection = memo(({
               role="button"
               tabIndex={0}
               onClick={() => {
-                const draft = useSettingsStore.getState().draftSettings;
-                const activeLlm = draft?.llm?.active?.category ?? "embedded";
-                if (activeLlm === "server" && draft?.llm?.server) {
-                  updateDraft("llm", "server", { ...draft.llm.server, model: model.id });
-                } else if (activeLlm === "cloud" && draft?.llm?.cloud) {
-                  updateDraft("llm", "cloud", { ...draft.llm.cloud, model: model.id });
-                } else if (activeLlm === "embedded" && draft?.llm?.embedded) {
-                  updateDraft("llm", "embedded", { ...draft.llm.embedded, model: model.id });
+                const active = useSettingsStore.getState().draftSettings?.llm?.active;
+                if (active && (active.category === "server" || active.category === "cloud")) {
+                  updateDraft("llm", "active", { ...active, model: model.id });
                 }
               }}
               onKeyDown={(e) => {
                 if (e.key === "Enter" || e.key === " ") {
                   e.preventDefault();
-                  const draft = useSettingsStore.getState().draftSettings;
-                  const activeLlm = draft?.llm?.active?.category ?? "embedded";
-                  if (activeLlm === "server" && draft?.llm?.server) {
-                    updateDraft("llm", "server", { ...draft.llm.server, model: model.id });
-                  } else if (activeLlm === "cloud" && draft?.llm?.cloud) {
-                    updateDraft("llm", "cloud", { ...draft.llm.cloud, model: model.id });
-                  } else if (activeLlm === "embedded" && draft?.llm?.embedded) {
-                    updateDraft("llm", "embedded", { ...draft.llm.embedded, model: model.id });
+                  const active = useSettingsStore.getState().draftSettings?.llm?.active;
+                  if (active && (active.category === "server" || active.category === "cloud")) {
+                    updateDraft("llm", "active", { ...active, model: model.id });
                   }
                 }
               }}

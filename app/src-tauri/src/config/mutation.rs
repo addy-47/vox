@@ -3,8 +3,125 @@ use crate::{
     config::ActiveSelection,
     core::{events::InteractionMode, state::AppState},
     persistence::models::update_model_parameters,
-    services::memory::scheduler::parse_consolidation_time,
+    services::{
+        llm::LlmCustomServer,
+        memory::scheduler::parse_consolidation_time,
+        tts::TtsCustomServer,
+    },
 };
+
+/// Lists every key `apply_setting_mutation` accepts for a domain, used in rejection messages.
+pub fn supported_keys_for_domain(domain: &str) -> &'static [&'static str] {
+    match domain {
+        "appearance" => &["theme", "accent_seed"],
+        "vad" => &[
+            "threshold",
+            "ptt_noise_gate",
+            "silence_duration_ms",
+            "speech_onset_ms",
+            "vad_backend",
+        ],
+        "stt" => &["active", "last_selected", "transliterate_enabled"],
+        "llm" => &["active", "last_selected", "servers", "cloud_keys"],
+        "tts" => &[
+            "active",
+            "last_selected",
+            "active_voice_id",
+            "voice",
+            "voice_id",
+            "servers",
+        ],
+        "interaction" => &["mode", "pipeline_mode"],
+        "dictation" => &[
+            "enabled",
+            "interaction_mode",
+            "hotkey",
+            "output_mode",
+            "silence_auto_stop_ms",
+        ],
+        "working_memory" => &[
+            "private_mode",
+            "auto_compaction",
+            "max_context_share",
+            "web_search_enabled",
+        ],
+        "persona" => &["modular_prompt", "realtime_prompt"],
+        "realtime" => &["active", "active_voice_id", "voice", "voice_id", "api_keys"],
+        "personal_memory" => &[
+            "context_retrieval_enabled",
+            "pipeline_processing_enabled",
+            "top_k_facts",
+            "semantic_similarity_cutoff",
+            "consolidation_cadence",
+            "consolidation_time",
+            "suggestion_policy",
+        ],
+        "system" => &["setup_completed"],
+        _ => &[],
+    }
+}
+
+/// Normalizes one custom server URL in place (trim, strip trailing slash).
+fn normalize_server_url(url: &str) -> Result<String, String> {
+    let trimmed = url.trim().trim_end_matches('/');
+    if trimmed.is_empty() {
+        return Err("server url must not be empty".to_string());
+    }
+    if !(trimmed.starts_with("http://") || trimmed.starts_with("https://")) {
+        return Err(format!("server url must start with http:// or https://: {}", trimmed));
+    }
+    if trimmed.contains(char::is_whitespace) {
+        return Err(format!("server url must not contain whitespace: {}", trimmed));
+    }
+    Ok(trimmed.to_string())
+}
+
+/// Validates an LLM custom server list: non-empty ids, well-formed normalized URLs, no duplicate ids or URLs.
+fn validate_llm_server_list(servers: &mut [LlmCustomServer]) -> Result<(), String> {
+    for server in servers.iter_mut() {
+        if server.id.trim().is_empty() {
+            return Err("server id must not be empty".to_string());
+        }
+        server.url = normalize_server_url(&server.url)?;
+    }
+    let mut seen_ids = std::collections::HashSet::new();
+    let mut seen_urls = std::collections::HashSet::new();
+    for server in servers.iter() {
+        if !seen_ids.insert(server.id.clone()) {
+            return Err(format!("duplicate server id: {}", server.id));
+        }
+        let url_key = server.url.to_lowercase();
+        if !seen_urls.insert(url_key) {
+            return Err(format!("duplicate server url: {}", server.url));
+        }
+    }
+    Ok(())
+}
+
+/// Validates a TTS custom server list: non-empty ids, well-formed normalized URLs and paths, no duplicate ids or URLs.
+fn validate_tts_server_list(servers: &mut [TtsCustomServer]) -> Result<(), String> {
+    for server in servers.iter_mut() {
+        if server.id.trim().is_empty() {
+            return Err("server id must not be empty".to_string());
+        }
+        server.url = normalize_server_url(&server.url)?;
+        if server.remote_path.trim().is_empty() {
+            return Err(format!("server '{}' remote_path must not be empty", server.id));
+        }
+    }
+    let mut seen_ids = std::collections::HashSet::new();
+    let mut seen_urls = std::collections::HashSet::new();
+    for server in servers.iter() {
+        if !seen_ids.insert(server.id.clone()) {
+            return Err(format!("duplicate server id: {}", server.id));
+        }
+        let url_key = server.url.to_lowercase();
+        if !seen_urls.insert(url_key) {
+            return Err(format!("duplicate server url: {}", server.url));
+        }
+    }
+    Ok(())
+}
 
 fn apply_appearance_mutation(
     settings: &mut VoxSettings,
@@ -118,8 +235,10 @@ fn apply_llm_mutation(
                 .map_err(|e| format!("Invalid LLM last_selected: {}", e))?;
         }
         "servers" => {
-            settings.providers.llm.servers = serde_json::from_value(value.clone())
+            let mut servers: Vec<LlmCustomServer> = serde_json::from_value(value.clone())
                 .map_err(|e| format!("Invalid LLM servers list: {}", e))?;
+            validate_llm_server_list(&mut servers)?;
+            settings.providers.llm.servers = servers;
         }
         "cloud_keys" => {
             settings.providers.llm.cloud_keys = serde_json::from_value(value.clone())
@@ -162,8 +281,10 @@ fn apply_tts_mutation(
             settings.tts.active_voice_id = val;
         }
         "servers" => {
-            settings.providers.tts.servers = serde_json::from_value(value.clone())
+            let mut servers: Vec<TtsCustomServer> = serde_json::from_value(value.clone())
                 .map_err(|e| format!("Invalid TTS servers list: {}", e))?;
+            validate_tts_server_list(&mut servers)?;
+            settings.providers.tts.servers = servers;
         }
         _ => return Ok(false),
     }
@@ -423,4 +544,64 @@ pub async fn apply_model_parameter_mutation(
         model_id
     );
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn llm_contract_accepts_inventory_keys_only() {
+        let keys = supported_keys_for_domain("llm");
+        for expected in ["active", "last_selected", "servers", "cloud_keys"] {
+            assert!(keys.contains(&expected), "missing {}", expected);
+        }
+        for phantom in ["server", "cloud", "embedded", "model", "provider", "temperature", "threads", "context_window"] {
+            assert!(!keys.contains(&phantom), "phantom key accepted: {}", phantom);
+        }
+    }
+
+    #[test]
+    fn server_list_validation_rejects_duplicates_and_bad_urls() {
+        let mut servers = vec![
+            LlmCustomServer {
+                id: "a".to_string(),
+                name: "A".to_string(),
+                url: "http://10.0.0.1:11434/".to_string(),
+                model: String::new(),
+                protocol: "openai".to_string(),
+                api_key: None,
+            },
+            LlmCustomServer {
+                id: "b".to_string(),
+                name: "B".to_string(),
+                url: "http://10.0.0.1:11434".to_string(),
+                model: String::new(),
+                protocol: "openai".to_string(),
+                api_key: None,
+            },
+        ];
+        assert!(validate_llm_server_list(&mut servers).is_err());
+
+        let mut bad_scheme = vec![LlmCustomServer {
+            id: "a".to_string(),
+            name: "A".to_string(),
+            url: "10.0.0.1:11434".to_string(),
+            model: String::new(),
+            protocol: "openai".to_string(),
+            api_key: None,
+        }];
+        assert!(validate_llm_server_list(&mut bad_scheme).is_err());
+
+        let mut ok = vec![LlmCustomServer {
+            id: "a".to_string(),
+            name: "A".to_string(),
+            url: "http://10.0.0.1:11434/".to_string(),
+            model: String::new(),
+            protocol: "openai".to_string(),
+            api_key: None,
+        }];
+        assert!(validate_llm_server_list(&mut ok).is_ok());
+        assert_eq!(ok[0].url, "http://10.0.0.1:11434");
+    }
 }

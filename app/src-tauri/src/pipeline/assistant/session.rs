@@ -338,8 +338,10 @@ pub fn on_session_start<R: Runtime + 'static>(
                 .ok()
                 .and_then(|g| g.as_ref().and_then(|e| e.llm_tx.clone()));
             if let Some(llm_tx) = llm_tx_opt {
-                let llm_params =
-                    resolve_llm_execution_params(&state.db, settings.llm.active_model());
+                let llm_params = tokio_handle.block_on(resolve_llm_execution_params(
+                    &state.db,
+                    settings.llm.active_model(),
+                ));
 
                 let supports_tools = resolve_model_tool_support(app, state, &settings);
                 let mut harness = Harness::new_modular(
@@ -741,7 +743,10 @@ pub fn on_end<R: Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &RoutingCon
 }
 
 /// Resolves dynamic execution parameters from the models table for the given model ID.
-pub(crate) fn resolve_llm_execution_params(db: &VoxDb, model_id: &str) -> LlmExecutionParams {
+pub(crate) async fn resolve_llm_execution_params(
+    db: &VoxDb,
+    model_id: &str,
+) -> LlmExecutionParams {
     let conn = match db.connect() {
         Ok(c) => c,
         Err(e) => {
@@ -753,13 +758,10 @@ pub(crate) fn resolve_llm_execution_params(db: &VoxDb, model_id: &str) -> LlmExe
         }
     };
 
-    tokio::task::block_in_place(|| {
-        let rt = tokio::runtime::Handle::current();
-        rt.block_on(async {
-            let raw = get_model_parameters(&conn, model_id)
-                .await
-                .unwrap_or_default();
-            LlmExecutionParams {
+    let raw = get_model_parameters(&conn, model_id)
+        .await
+        .unwrap_or_default();
+    LlmExecutionParams {
                 context_window: raw
                     .get("context_window")
                     .and_then(|v| v.as_u64())
@@ -785,8 +787,6 @@ pub(crate) fn resolve_llm_execution_params(db: &VoxDb, model_id: &str) -> LlmExe
                     .map(|v| v as u32)
                     .unwrap_or(DEFAULT_LLM_THREADS),
             }
-        })
-    })
 }
 
 /// Resolves tool calling capability for the active model from capability cache or 4s probe.

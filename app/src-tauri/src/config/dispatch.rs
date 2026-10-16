@@ -326,6 +326,13 @@ async fn handle_active_model_side_effects(
     value: &serde_json::Value,
 ) {
     if let Ok(active) = serde_json::from_value::<ActiveSelection>(value.clone()) {
+        if active.model.trim().is_empty() {
+            log::warn!(
+                "[Settings] Skipping models-table upsert for {} with empty model id",
+                domain
+            );
+            return;
+        }
         if let Ok(conn) = state.db.connect() {
             if let Err(e) = upsert_model_active(
                 &conn,

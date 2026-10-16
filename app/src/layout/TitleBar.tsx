@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Minus, Square, X, ArrowUpCircle, Copy, Check } from "lucide-react";
+import { Minus, Square, X, ArrowUpCircle, Copy, Check, Sparkles, Cpu, ChevronRight } from "lucide-react";
 import { LAYOUT_COPY } from "@/data/layoutCopy";
 import { useNavigate } from "react-router-dom";
 import { checkForUpdates, checkForModelUpdates, type UpdateReport, type ModelUpdateReport } from "@/services/setupService";
@@ -15,6 +15,7 @@ export const TitleBar: React.FC = () => {
   const [appUpdate, setAppUpdate] = useState<UpdateReport | null>(null);
   const [modelUpdate, setModelUpdate] = useState<ModelUpdateReport | null>(null);
   const [copied, setCopied] = useState(false);
+  const [modelCardOpen, setModelCardOpen] = useState(false);
 
   useEffect(() => {
     if (!isTauri) return;
@@ -187,27 +188,35 @@ export const TitleBar: React.FC = () => {
             </button>
             
             {/* Tooltip Hover Card */}
-            <div data-hover-card className="absolute top-6 left-0 w-64 p-3 rounded-lg bg-[rgb(var(--background))]/95 border border-[rgb(var(--accent))]/20 shadow-lg opacity-0 translate-y-2 pointer-events-none group-hover/app-pill:opacity-100 group-hover/app-pill:translate-y-0 group-hover/app-pill:pointer-events-auto group-focus-within/app-pill:opacity-100 group-focus-within/app-pill:translate-y-0 group-focus-within/app-pill:pointer-events-auto transition-all duration-300 z-50 text-[13px] text-[rgb(var(--foreground))]">
-              <div className="font-bold text-[rgb(var(--accent))] mb-1">{LAYOUT_COPY.titleBar.appUpdate}</div>
-              <div className="text-[12px] text-[rgb(var(--foreground-muted))] mb-2">Upgrade from v{appUpdate.current_version} to v{appUpdate.latest_version}</div>
+            <div
+              data-hover-card
+              className="absolute top-7 left-0 w-80 p-3 rounded-xl bg-[rgba(var(--card),0.96)] dark:bg-[rgba(var(--card),0.98)] backdrop-blur-md border border-[rgba(var(--foreground),0.08)] shadow-[0_4px_16px_rgba(0,0,0,0.08)] dark:shadow-[0_4px_20px_rgba(0,0,0,0.25)] opacity-0 translate-y-1 pointer-events-none group-hover/app-pill:opacity-100 group-hover/app-pill:translate-y-0 group-hover/app-pill:pointer-events-auto group-focus-within/app-pill:opacity-100 group-focus-within/app-pill:translate-y-0 group-focus-within/app-pill:pointer-events-auto transition-all duration-200 z-50 text-[12px] text-[rgb(var(--foreground))] flex flex-col gap-2.5"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <div className="font-bold text-[13px] text-[rgb(var(--foreground))]">{LAYOUT_COPY.titleBar.appUpdate}</div>
+                <span className="text-[10.5px] font-mono font-semibold px-1.5 py-0.5 rounded-md bg-[rgba(var(--accent),0.1)] text-[rgb(var(--accent))] border border-[rgba(var(--accent),0.2)]">
+                  v{appUpdate.latest_version}
+                </span>
+              </div>
+              <div className="text-[11.5px] text-[rgb(var(--foreground-muted))]">Upgrade from v{appUpdate.current_version} to v{appUpdate.latest_version}</div>
               
-              <div className="mb-3">
-                <div className="font-black text-[12px] uppercase tracking-wider text-[rgb(var(--foreground-muted))] mb-1">{LAYOUT_COPY.titleBar.whatsNew}</div>
-                <ul className="list-disc pl-3 space-y-1 text-[12px] text-[rgb(var(--foreground))]/80">
+              <div>
+                <div className="font-semibold text-[10.5px] uppercase tracking-wider text-[rgb(var(--foreground-muted))]/80 mb-1">{LAYOUT_COPY.titleBar.whatsNew}</div>
+                <ul className="list-disc pl-3 space-y-0.5 text-[11.5px] text-[rgb(var(--foreground))]/85">
                   {appUpdate.release_notes.map((note: string, idx: number) => (
                     <li key={idx}>{note}</li>
                   ))}
                 </ul>
               </div>
               
-              <div className="p-2 rounded bg-[rgb(var(--foreground))]/5 border border-[rgba(var(--border),0.1)] flex items-center justify-between gap-2">
-                <code className="text-[12px] font-mono text-[rgb(var(--foreground))]/80 select-all truncate block flex-1">{appUpdate.update_command}</code>
+              <div className="p-2 rounded-md bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--foreground),0.06)] flex items-center justify-between gap-2">
+                <code className="text-[11px] font-mono text-[rgb(var(--foreground))]/80 select-all truncate block flex-1">{appUpdate.update_command}</code>
                 <button 
                   onClick={() => handleCopyCommand(appUpdate.update_command)}
-                  className="p-1 hover:bg-[rgb(var(--foreground))]/10 rounded text-[rgb(var(--accent))] transition-colors shrink-0"
+                  className="p-1 hover:bg-[rgba(var(--accent),0.15)] rounded text-[rgb(var(--accent))] transition-colors shrink-0 cursor-pointer"
                   aria-label={LAYOUT_COPY.titleBar.copyCommand}
                 >
-                  {copied ? <Check size={11} /> : <Copy size={11} />}
+                  {copied ? <Check size={12} /> : <Copy size={12} />}
                 </button>
               </div>
             </div>
@@ -217,35 +226,73 @@ export const TitleBar: React.FC = () => {
         {/* Model Update Pill */}
         {modelUpdate && (
           <div className="relative group/model-pill pointer-events-auto flex items-center">
-            <button className="flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[12px] font-black uppercase tracking-wider bg-gradient-to-r from-[rgb(var(--accent))]/10 to-[rgb(var(--accent))]/20 border border-[rgb(var(--accent))]/30 text-[rgb(var(--accent))] hover:from-[rgb(var(--accent))]/20 hover:to-[rgb(var(--accent))]/30 transition-all duration-300">
+            <button
+              onClick={() => setModelCardOpen((v) => !v)}
+              aria-expanded={modelCardOpen}
+              className="flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[12px] font-black uppercase tracking-wider bg-gradient-to-r from-[rgb(var(--accent))]/10 to-[rgb(var(--accent))]/20 border border-[rgb(var(--accent))]/30 text-[rgb(var(--accent))] hover:from-[rgb(var(--accent))]/20 hover:to-[rgb(var(--accent))]/30 transition-all duration-300"
+            >
               <ArrowUpCircle size={10} className="shrink-0" />
               <span className="hidden sm:inline">{LAYOUT_COPY.titleBar.modelsUpdate}</span>
             </button>
-            
-            {/* Tooltip Hover Card — compact redesign */}
-            <div data-hover-card className="absolute top-6 left-0 w-56 p-3 rounded-lg bg-[rgb(var(--background))]/95 border border-[rgb(var(--accent))]/20 shadow-lg opacity-0 translate-y-2 pointer-events-none group-hover/model-pill:opacity-100 group-hover/model-pill:translate-y-0 group-hover/model-pill:pointer-events-auto group-focus-within/model-pill:opacity-100 group-focus-within/model-pill:translate-y-0 group-focus-within/model-pill:pointer-events-auto transition-all duration-300 z-50">
-              <div className="flex items-center gap-2 mb-2">
-                <div className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--accent))] animate-pulse shrink-0" />
-                <span className="text-[12px] font-bold text-[rgb(var(--foreground))]">{LAYOUT_COPY.titleBar.modelUpdates}</span>
+
+            {/* Model updates popover */}
+            <div
+              data-hover-card
+              className={`absolute top-7 left-0 w-80 max-w-[calc(100vw-2rem)] rounded-xl bg-[rgba(var(--card),0.96)] dark:bg-[rgba(var(--card),0.98)] backdrop-blur-md border border-[rgba(var(--foreground),0.08)] shadow-[0_4px_16px_rgba(0,0,0,0.08)] dark:shadow-[0_4px_20px_rgba(0,0,0,0.25)] z-50 overflow-hidden transition-all duration-200 p-3 flex flex-col gap-2.5 ${
+                modelCardOpen
+                  ? "opacity-100 translate-y-0 pointer-events-auto"
+                  : "opacity-0 translate-y-1 pointer-events-none group-hover/model-pill:opacity-100 group-hover/model-pill:translate-y-0 group-hover/model-pill:pointer-events-auto group-focus-within/model-pill:opacity-100 group-focus-within/model-pill:translate-y-0 group-focus-within/model-pill:pointer-events-auto"
+              }`}
+            >
+              <div className="flex items-center justify-between gap-2.5">
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className="w-7 h-7 rounded-md bg-[rgba(var(--accent),0.1)] border border-[rgba(var(--accent),0.2)] flex items-center justify-center text-[rgb(var(--accent))] shrink-0">
+                    <Sparkles size={14} />
+                  </div>
+                  <div className="flex flex-col min-w-0">
+                    <span className="text-[13px] font-bold text-[rgb(var(--foreground))] tracking-tight truncate leading-tight">
+                      {LAYOUT_COPY.titleBar.modelUpdates}
+                    </span>
+                    <span className="text-[11px] text-[rgb(var(--foreground-muted))]/80 truncate mt-0.5 leading-tight">
+                      {LAYOUT_COPY.titleBar.modelsOutdatedCount(modelUpdate.outdated_models.length)}
+                    </span>
+                  </div>
+                </div>
+                <span className="text-[10.5px] font-mono font-semibold px-1.5 py-0.5 rounded-md bg-[rgba(var(--accent),0.1)] text-[rgb(var(--accent))] border border-[rgba(var(--accent),0.2)] shrink-0">
+                  v{modelUpdate.remote_version}
+                </span>
               </div>
 
-              <div className="text-[12px] text-[rgb(var(--foreground-muted))] mb-2 leading-relaxed">
-                v{modelUpdate.remote_version} available · {modelUpdate.outdated_models.length} model{modelUpdate.outdated_models.length > 1 ? 's' : ''} outdated
-              </div>
-
-              <div className="mb-2">
+              <ul className="max-h-44 overflow-y-auto overscroll-contain custom-scrollbar flex flex-col gap-1 pr-0.5">
                 {modelUpdate.outdated_models.map((m: string) => (
-                  <span key={m} className="inline-block px-1.5 py-0.5 rounded text-[12px] font-mono text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/8 border border-[rgb(var(--accent))]/15 mr-1 mb-0.5">
-                    {m}
-                  </span>
+                  <li
+                    key={m}
+                    className="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-md bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--foreground),0.05)] hover:border-[rgba(var(--accent),0.25)] transition-all min-w-0"
+                  >
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                      <Cpu size={12} className="text-[rgb(var(--accent))] shrink-0 opacity-80" />
+                      <span className="text-[11.5px] font-mono font-medium text-[rgb(var(--foreground))] truncate min-w-0">
+                        {m}
+                      </span>
+                    </div>
+                    <span className="text-[9.5px] font-mono font-bold uppercase tracking-wider text-[rgb(var(--accent))] bg-[rgba(var(--accent),0.1)] px-1.5 py-0.5 rounded-sm border border-[rgba(var(--accent),0.2)] shrink-0">
+                      {LAYOUT_COPY.titleBar.updateAvailable}
+                    </span>
+                  </li>
                 ))}
-              </div>
+              </ul>
 
               <button
-                onClick={() => navigate('/settings?tab=models')}
-                className="text-[12px] font-bold text-[rgb(var(--accent))] hover:text-[rgb(var(--accent))]/80 transition-colors tracking-wide"
+                type="button"
+                onClick={() => {
+                  setModelCardOpen(false);
+                  navigate("/settings");
+                  window.dispatchEvent(new CustomEvent("sync_pipeline_tab", { detail: "models" }));
+                }}
+                className="w-full py-1.5 px-3 rounded-lg bg-[rgba(var(--accent),0.1)] hover:bg-[rgb(var(--accent))] text-[rgb(var(--accent))] hover:text-[rgb(var(--accent-foreground))] font-bold text-[11px] tracking-wide uppercase transition-all flex items-center justify-center gap-1.5 cursor-pointer border border-[rgba(var(--accent),0.2)] hover:border-[rgb(var(--accent))]"
               >
-                Manage Models →
+                <span>Manage in Model Hub</span>
+                <ChevronRight size={13} />
               </button>
             </div>
           </div>

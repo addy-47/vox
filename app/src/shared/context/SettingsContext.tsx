@@ -4,14 +4,14 @@ import { onSettingsUpdated } from "@/services/eventsService";
 import { getThemeTransitioning } from "@/shared/theme";
 
 export type { VoxSettings, ModelMetadata, VoiceProfile, ModelCatalog } from "@/store/settingsStore";
-import type { VoxSettings, ModelCatalog } from "@/store/settingsStore";
+import type { VoxSettings, ModelCatalog, SettingsState } from "@/store/settingsStore";
 
 interface SettingsContextType {
   settings: VoxSettings | null;
   draftSettings: VoxSettings | null;
   isLoading: boolean;
   hasChanges: boolean;
-  updateDraft: (domain: keyof VoxSettings, key: string, value: unknown) => void;
+  updateDraft: SettingsState["updateDraft"];
   commitChanges: () => Promise<void>;
   discardChanges: () => void;
   restoreDefaults: () => Promise<void>;

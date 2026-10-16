@@ -63,26 +63,15 @@ const GeminiLogo = ({
 );
 
 const DeepgramLogo = ({
-
   active,
   ...props
 }: { active?: boolean } & React.SVGProps<SVGSVGElement>) => (
   <svg
     viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2.5"
-    strokeLinecap="round"
-    strokeLinejoin="round"
+    fill="#13EF93"
     {...props}
   >
-    <polygon
-      points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5"
-      opacity={active ? 0.95 : 0.5}
-    />
-    <path d="M12 22V12" opacity={active ? 0.95 : 0.5} />
-    <path d="M12 12L22 8.5" opacity={active ? 0.95 : 0.5} />
-    <path d="M12 12L2 8.5" opacity={active ? 0.95 : 0.5} />
+    <path d="M11.203 24H1.517a.364.364 0 0 1-.258-.62l6.239-6.275a.37.37 0 0 1 .259-.108h3.52c2.723 0 5.025-2.127 5.107-4.845a5.004 5.004 0 0 0-4.999-5.148H7.613v4.646c0 .2-.164.364-.365.364H.968a.365.365 0 0 1-.363-.364V.364C.605.164.768 0 .969 0h10.416c6.684 0 12.111 5.485 12.01 12.187C23.293 18.77 17.794 24 11.202 24z" />
   </svg>
 );
 

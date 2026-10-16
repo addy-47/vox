@@ -347,16 +347,6 @@ async fn ensure_voice_metadata_columns(conn: &Connection) -> Result<()> {
     )
     .await?;
 
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS favorite_models (
-            id TEXT PRIMARY KEY,
-            created_at INTEGER NOT NULL
-        );",
-        (),
-    )
-    .await?;
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_favorite_models_created ON favorite_models(created_at DESC);", ()).await?;
-
     Ok(())
 }
 

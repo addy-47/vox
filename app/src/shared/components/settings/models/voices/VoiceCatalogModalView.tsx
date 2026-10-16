@@ -182,7 +182,7 @@ export const VoiceCatalogModalView = memo(
       return sorted;
     }, [scopedVoices, scope, gender, accent, deferredSearch, sort]);
 
-    const staged = scopedVoices.find((v) => v.id === stagedId) || scopedVoices[0] || null;
+    const staged = (stagedId && scopedVoices.find((v) => v.id === stagedId)) || null;
     const stagedPlaying = staged != null && playingId === staged.id;
 
     const handleCardPreview = useCallback(

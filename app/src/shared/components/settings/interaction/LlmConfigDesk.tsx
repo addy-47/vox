@@ -21,6 +21,7 @@ import {
   Check,
   X,
   Pencil,
+  Trash2,
   HardDrive,
   ChevronDown,
   ChevronUp,
@@ -28,17 +29,17 @@ import {
 import { cn } from "@/shared/lib/utils";
 import { activeModelId, activeSelection } from "@/shared/lib/activeSelection";
 import { ApiKeyField, ExpandableList, UnderlineInput } from "@/shared/ui";
-import { ProviderLogo } from "@/shared/components/settings/models/ProviderLogo";
+import { ProviderLogo } from "@/shared/components/settings/providers/ProviderLogo";
 import { SettingsCommitControls } from "@/shared/components/settings/SettingsCommitControls";
 import { ProviderTier } from "./ProviderSelectorView";
 import { RemoteModelsModalView } from "@/shared/components/settings/models/LlmCatalogView";
-import { CloudProvidersModalView } from "@/shared/components/settings/models/CloudProvidersModalView";
+import { CloudProvidersModalView, upsertServer } from "@/shared/components/settings/providers/CloudProvidersModalView";
 import {
   CatalogFilterItem,
   CatalogFilterMenu,
   type CatalogSortOrder,
-} from "@/shared/components/settings/models/catalog/CatalogHeader";
-import { ProvidersHeader } from "@/shared/components/settings/models/catalog/ProvidersHeader";
+} from "@/shared/components/settings/providers/CatalogHeader";
+import { ProvidersHeader } from "@/shared/components/settings/providers/ProvidersHeader";
 import { useRemoteLlmProbing } from "@/shared/hooks/useRemoteLlmProbing";
 import { useScrollTopOnChange } from "@/shared/hooks/useScrollTopOnChange";
 import { useLenisScrollContainer } from "@/shared/hooks/useLenisScrollContainer";
@@ -59,7 +60,6 @@ export const LlmConfigDesk = memo(({
   const draftSettings = useSettingsStore((s) => s.draftSettings);
   const committedSettings = useSettingsStore((s) => s.settings);
   const draftLlm = draftSettings?.llm;
-  const draftChatterboxRemote = draftSettings?.tts?.chatterbox_remote;
   const hasDraftSettings = Boolean(draftSettings);
   const updateDraft = useSettingsStore((s) => s.updateDraft);
 
@@ -67,11 +67,13 @@ export const LlmConfigDesk = memo(({
   const [subView, setSubView] = useState<"catalog" | "server">("catalog");
 
   // Local state for custom server form fields
-  const [customServerUrl, setCustomServerUrl] = useState(draftLlm?.server?.base_url || "http://127.0.0.1:11434");
-  const [customServerKey, setCustomServerKey] = useState(draftLlm?.server?.api_key || "");
-  const [customServerName, setCustomServerName] = useState(draftLlm?.server?.provider_name || "");
-  const [customTtsEndpoint, setCustomTtsEndpoint] = useState(draftChatterboxRemote?.endpoint || "http://127.0.0.1:7860");
-  const [customTtsPath, setCustomTtsPath] = useState(draftChatterboxRemote?.remote_path || "~/.vox");
+  const [customServerUrl, setCustomServerUrl] = useState("http://127.0.0.1:11434");
+  const [customServerKey, setCustomServerKey] = useState("");
+  const [customServerName, setCustomServerName] = useState("");
+  const [customTtsEndpoint, setCustomTtsEndpoint] = useState("http://127.0.0.1:7860");
+  const [customTtsPath, setCustomTtsPath] = useState("~/.vox");
+  /** Server id being edited in the inline form; null for creation. */
+  const [editingServerId, setEditingServerId] = useState<string | null>(null);
   const [showHealthErrorConfirm, setShowHealthErrorConfirm] = useState(false);
 
   const [modelsError, setModelsError] = useState<string | null>(null);
@@ -92,18 +94,21 @@ export const LlmConfigDesk = memo(({
     if (expandedOpenCount > 0) setProviderFilter("configured");
     else setProviderFilter("all");
   }, [expandedOpenCount]);
-  const [isFilterOpen, setIsFilterOpen] = useState(false);
-  const [editingProviderId, setEditingProviderId] = useState<string | null>(null);
+  const [isFilterOpen, setIsFilterOpen] = useState(false);  const [editingProviderId, setEditingProviderId] = useState<string | null>(null);
   const [editingKeyValue, setEditingKeyValue] = useState("");
   const [modalView, setModalView] = useState<"providers" | "models">("providers");
 
   const activeLlmProvider = draftLlm?.active?.category ?? "embedded";
-  const currentRemoteConfig =
-    activeLlmProvider === "server"
-      ? draftLlm?.server
-      : activeLlmProvider === "cloud"
-      ? draftLlm?.cloud
-      : null;
+  /** Custom server inventory: draft vehicle first, then the committed file. */
+  const llmServerInventory = useMemo(() => {
+    return draftLlm?.servers ?? draftSettings?.providers?.llm?.servers ?? [];
+  }, [draftLlm?.servers, draftSettings?.providers?.llm?.servers]);
+  const activeServerEntry = useMemo(() => {
+    if (activeLlmProvider !== "server") return null;
+    const id = draftLlm?.active?.provider;
+    if (!id) return null;
+    return llmServerInventory.find((s) => s.id === id) ?? null;
+  }, [activeLlmProvider, draftLlm?.active?.provider, llmServerInventory]);
 
   const currentProvider: LlmProviderConfig = useMemo(() => {
     if (activeLlmProvider === "embedded") {
@@ -112,25 +117,29 @@ export const LlmConfigDesk = memo(({
     if (activeLlmProvider === "server") {
       return {
         kind: "server",
-        base_url: currentRemoteConfig?.base_url || "",
-        model: currentRemoteConfig?.model || "",
-        api_key: currentRemoteConfig?.api_key || undefined,
-        provider_name: currentRemoteConfig?.provider_name || undefined,
+        provider_id: draftLlm?.active?.provider ?? undefined,
+        base_url: activeServerEntry?.url || "",
+        model: draftLlm?.active?.model || "",
+        api_key: activeServerEntry?.api_key || undefined,
+        provider_name: activeServerEntry?.name || undefined,
       };
     }
+    const cloudId = draftLlm?.active?.provider ?? undefined;
+    const cloudEntry = CLOUD_PROVIDERS.find((p) => p.id === cloudId);
     return {
       kind: "cloud",
-      base_url: currentRemoteConfig?.base_url || "",
-      model: currentRemoteConfig?.model || "",
-      api_key: currentRemoteConfig?.api_key || undefined,
-      provider_name: currentRemoteConfig?.provider_name || undefined,
+      provider_id: cloudId,
+      base_url: cloudEntry?.url || "",
+      model: draftLlm?.active?.model || "",
+      api_key: (cloudId && draftLlm?.cloud_keys?.[cloudId]) || undefined,
+      provider_name: cloudEntry?.name || undefined,
     };
   }, [
     activeLlmProvider,
-    currentRemoteConfig?.base_url,
-    currentRemoteConfig?.model,
-    currentRemoteConfig?.api_key,
-    currentRemoteConfig?.provider_name,
+    activeServerEntry,
+    draftLlm?.active?.provider,
+    draftLlm?.active?.model,
+    draftLlm?.cloud_keys,
   ]);
 
   const {
@@ -141,52 +150,27 @@ export const LlmConfigDesk = memo(({
 
   const activeCloudProviderId = useMemo(() => {
     if (activeLlmProvider !== "cloud") return null;
-    const pName = draftLlm?.cloud?.provider_name;
-    if (!pName) return "custom";
-    const found = CLOUD_PROVIDERS.find((p) => p.name.toLowerCase() === pName.toLowerCase());
-    return found ? found.id : "custom";
-  }, [activeLlmProvider, draftLlm?.cloud?.provider_name]);
+    return draftLlm?.active?.provider ?? null;
+  }, [activeLlmProvider, draftLlm?.active?.provider]);
 
   const committedActiveCloudProviderId = useMemo(() => {
     if (committedSettings?.llm?.active?.category !== "cloud") return undefined;
-    const pName = committedSettings?.llm?.cloud?.provider_name;
-    if (!pName) return undefined;
-    const found = CLOUD_PROVIDERS.find((p) => p.name.toLowerCase() === pName.toLowerCase());
-    return found ? found.id : undefined;
-  }, [committedSettings?.llm?.active?.category, committedSettings?.llm?.cloud?.provider_name]);
+    return committedSettings?.llm?.active?.provider ?? undefined;
+  }, [committedSettings?.llm?.active?.category, committedSettings?.llm?.active?.provider]);
 
   const getProviderKey = useCallback(
     (providerId: string) => {
-      const keys = draftLlm?.cloud_keys;
-      if (keys && keys[providerId]) return keys[providerId];
-      const target = CLOUD_PROVIDERS.find((p) => p.id === providerId);
-      if (
-        draftLlm?.cloud?.api_key &&
-        target &&
-        draftLlm.cloud.provider_name?.toLowerCase() === target.name.toLowerCase()
-      ) {
-        return draftLlm.cloud.api_key;
-      }
-      return undefined;
+      const keys = draftLlm?.cloud_keys ?? draftSettings?.providers?.llm?.cloud_keys;
+      return keys?.[providerId];
     },
-    [draftLlm?.cloud_keys, draftLlm?.cloud]
+    [draftLlm?.cloud_keys, draftSettings?.providers?.llm?.cloud_keys]
   );
 
   const getCommittedProviderKey = useCallback(
     (providerId: string) => {
-      const keys = committedSettings?.llm?.cloud_keys;
-      if (keys && keys[providerId]) return keys[providerId];
-      const target = CLOUD_PROVIDERS.find((p) => p.id === providerId);
-      if (
-        committedSettings?.llm?.cloud?.api_key &&
-        target &&
-        committedSettings.llm.cloud.provider_name?.toLowerCase() === target.name.toLowerCase()
-      ) {
-        return committedSettings.llm.cloud.api_key;
-      }
-      return undefined;
+      return committedSettings?.providers?.llm?.cloud_keys?.[providerId];
     },
-    [committedSettings?.llm?.cloud_keys, committedSettings?.llm?.cloud]
+    [committedSettings?.providers?.llm?.cloud_keys]
   );
 
   const openSearch = useCallback(() => setIsSearchOpen(true), []);
@@ -242,13 +226,11 @@ export const LlmConfigDesk = memo(({
     });
   }, [searchQuery, sortOrder, providerFilter, getProviderKey, getCommittedProviderKey]);
 
-  const customLlmServers = useMemo(() => {
-    return draftSettings?.providers?.llm?.servers || committedSettings?.providers?.llm?.servers || [];
-  }, [draftSettings?.providers?.llm?.servers, committedSettings?.providers?.llm?.servers]);
+  const customLlmServers = llmServerInventory;
 
   const customTtsServers = useMemo(() => {
-    return draftSettings?.providers?.tts?.servers || committedSettings?.providers?.tts?.servers || [];
-  }, [draftSettings?.providers?.tts?.servers, committedSettings?.providers?.tts?.servers]);
+    return draftSettings?.tts?.servers ?? draftSettings?.providers?.tts?.servers ?? [];
+  }, [draftSettings?.tts?.servers, draftSettings?.providers?.tts?.servers]);
 
   const curatedLlmProviders = useMemo(() => {
     if (showAllInline) return filteredProviders;
@@ -280,7 +262,11 @@ export const LlmConfigDesk = memo(({
   const providerKind = currentProvider.kind;
 
   useEffect(() => {
-    if (providerKind === "embedded" || !providerBaseUrl) {
+    if (
+      providerKind === "embedded" ||
+      !providerBaseUrl ||
+      (providerKind === "cloud" && !providerApiKey?.trim())
+    ) {
       setIsHealthy(null);
       setDetectedDialect(null);
       setModelsError(null);
@@ -301,16 +287,6 @@ export const LlmConfigDesk = memo(({
           setModelsError(
             res.healthy ? null : (res.reason ?? INTERACTION_CONFIG_DESK_COPY.status.connectionFailed)
           );
-
-          if (res.healthy && res.dialect && activeLlmProvider === "server") {
-            const currentServer = useSettingsStore.getState().draftSettings?.llm?.server;
-            if (currentServer && currentServer.provider_name !== res.dialect) {
-              updateDraft("llm", "server", {
-                ...currentServer,
-                provider_name: res.dialect,
-              });
-            }
-          }
         } catch (err) {
           if (!isMounted) return;
           console.error(err);
@@ -340,22 +316,33 @@ export const LlmConfigDesk = memo(({
 
 
 
+  // Route transient health errors to the card footer, never inline in the
+  // desk. Clears on provider switch (new check resets the error), on leaving
+  // the view, and on unmount.
+  useEffect(() => {
+    const store = useSettingsStore.getState();
+    if (modelsError && !showHealthErrorConfirm && subView === "catalog") {
+      store.setDeskFooter({
+        domain: "interaction",
+        title: INTERACTION_CONFIG_DESK_COPY.status.connectionFailed,
+        detail: modelsError,
+      });
+    } else {
+      store.setDeskFooter(null);
+    }
+    return () => useSettingsStore.getState().setDeskFooter(null);
+  }, [modelsError, showHealthErrorConfirm, subView]);
+
   const handleSelectCloudProvider = useCallback(
     (provider: CloudProvider) => {
-      const savedKey = getProviderKey(provider.id);
       updateDraft(
         "llm",
         "active",
-        activeSelection("cloud", draftLlm?.cloud?.model || "", provider.name)
+        activeSelection("cloud", draftLlm?.active?.model || "", provider.id)
       );
-      updateDraft("llm", "cloud", {
-        base_url: provider.url,
-        provider_name: provider.name,
-        api_key: savedKey || null,
-        model: draftLlm?.cloud?.model || "",
-      });
+      window.dispatchEvent(new CustomEvent("sync_pipeline_tab", { detail: "llm" }));
     },
-    [getProviderKey, draftLlm?.cloud?.model, updateDraft]
+    [draftLlm?.active?.model, updateDraft]
   );
 
   const handleStartInlineEdit = useCallback((providerId: string, currentKey?: string) => {
@@ -369,9 +356,9 @@ export const LlmConfigDesk = memo(({
   }, []);
 
   const handleSaveInlineKey = useCallback(
-    (providerId: string) => {
+    async (providerId: string) => {
       const trimmed = editingKeyValue.trim();
-      const currentKeys = { ...(draftLlm?.cloud_keys || {}) };
+      const currentKeys = { ...(draftLlm?.cloud_keys ?? draftSettings?.providers?.llm?.cloud_keys ?? {}) };
       if (trimmed) {
         currentKeys[providerId] = trimmed;
       } else {
@@ -379,30 +366,12 @@ export const LlmConfigDesk = memo(({
       }
 
       updateDraft("llm", "cloud_keys", currentKeys);
-
-      const targetProvider = CLOUD_PROVIDERS.find((p) => p.id === providerId);
-      if (!targetProvider) {
-        setEditingProviderId(null);
-        setEditingKeyValue("");
-        return;
-      }
-      const isCurrentlyActive =
-        activeCloudProviderId === providerId ||
-        draftLlm?.cloud?.provider_name?.toLowerCase() === targetProvider.name.toLowerCase();
-
-      if (isCurrentlyActive) {
-        updateDraft("llm", "cloud", {
-          ...draftLlm?.cloud,
-          base_url: targetProvider.url,
-          provider_name: targetProvider.name,
-          api_key: trimmed || null,
-        });
-      }
+      await useSettingsStore.getState().commitChanges({ domain: "llm", key: "cloud_keys" });
 
       setEditingProviderId(null);
       setEditingKeyValue("");
     },
-    [editingKeyValue, draftLlm?.cloud_keys, draftLlm?.cloud, activeCloudProviderId, updateDraft]
+    [editingKeyValue, draftLlm?.cloud_keys, draftSettings?.providers?.llm?.cloud_keys, updateDraft]
   );
 
   // Determine active states per category
@@ -454,6 +423,7 @@ export const LlmConfigDesk = memo(({
         )
       );
     }
+    window.dispatchEvent(new CustomEvent("sync_pipeline_tab", { detail: activeCategory.toLowerCase() }));
   }, [
     activeCategory,
     draftSettings?.stt?.last_selected?.embedded,
@@ -466,22 +436,59 @@ export const LlmConfigDesk = memo(({
   ]);
 
   const handleOpenCustomServer = useCallback(() => {
-    if (activeCategory === "LLM") {
-      setCustomServerUrl(draftLlm?.server?.base_url || "http://127.0.0.1:11434");
-      setCustomServerKey(draftLlm?.server?.api_key || "");
-      setCustomServerName(draftLlm?.server?.provider_name || "");
-    } else if (activeCategory === "TTS") {
-      setCustomTtsEndpoint(draftChatterboxRemote?.endpoint || "http://127.0.0.1:7860");
-      setCustomTtsPath(draftChatterboxRemote?.remote_path || "~/.vox");
-    }
+    setCustomServerUrl("http://127.0.0.1:11434");
+    setCustomServerKey("");
+    setCustomServerName("");
+    setCustomTtsEndpoint("http://127.0.0.1:7860");
+    setCustomTtsPath("~/.vox");
+    setEditingServerId(null);
     setShowHealthErrorConfirm(false);
     setModelsError(null);
     setSubView("server");
-  }, [activeCategory, draftLlm?.server, draftChatterboxRemote]);
+  }, []);
+
+  const handleEditServer = useCallback((id: string, url: string, apiKey: string | null, displayName: string) => {
+    setCustomServerUrl(url);
+    setCustomServerKey(apiKey ?? "");
+    setCustomServerName(displayName);
+    setEditingServerId(id);
+    setShowHealthErrorConfirm(false);
+    setModelsError(null);
+    setSubView("server");
+  }, []);
+
+  const handleDeleteServer = useCallback(async (domain: "llm" | "tts", serverId: string) => {
+    const commitChanges = useSettingsStore.getState().commitChanges;
+    const draft = useSettingsStore.getState().draftSettings;
+    if (domain === "tts") {
+      const list = customTtsServers;
+      console.info(`[Providers] deleteCustomServer id=${serverId} prevCount=${list.length}`);
+      updateDraft("tts", "servers", list.filter((s) => s.id !== serverId));
+      if (draft?.tts?.active?.provider === serverId) {
+        updateDraft("tts", "active", activeSelection("embedded", draft?.tts?.last_selected?.embedded ?? ""));
+        await commitChanges({ domain: "tts", key: "servers" });
+        await commitChanges({ domain: "tts", key: "active" });
+      } else {
+        await commitChanges({ domain: "tts", key: "servers" });
+      }
+    } else {
+      const list = llmServerInventory;
+      console.info(`[Providers] deleteCustomServer id=${serverId} prevCount=${list.length}`);
+      updateDraft("llm", "servers", list.filter((s) => s.id !== serverId));
+      if (draft?.llm?.active?.provider === serverId) {
+        updateDraft("llm", "active", activeSelection("embedded", draft?.llm?.last_selected?.embedded ?? ""));
+        await commitChanges({ domain: "llm", key: "servers" });
+        await commitChanges({ domain: "llm", key: "active" });
+      } else {
+        await commitChanges({ domain: "llm", key: "servers" });
+      }
+    }
+  }, [customTtsServers, llmServerInventory, updateDraft]);
 
   const handleCancelCustomServer = useCallback(() => {
     setShowHealthErrorConfirm(false);
     setModelsError(null);
+    setEditingServerId(null);
     setSubView("catalog");
   }, []);
 
@@ -500,17 +507,17 @@ export const LlmConfigDesk = memo(({
         });
         if (res.healthy) {
           const finalName = customServerName.trim() || res.dialect || "Custom Server";
-          updateDraft("llm", "server", {
-            base_url: urlToTest,
+          const newServer = {
+            id: editingServerId ?? `llm_custom_${Date.now()}`,
+            name: finalName,
+            url: urlToTest,
+            model: "",
+            protocol: "openai",
             api_key: customServerKey.trim() || null,
-            provider_name: finalName,
-            model: draftLlm?.server?.model || "",
-          });
-          updateDraft(
-            "llm",
-            "active",
-            activeSelection("server", draftLlm?.server?.model || "", finalName)
-          );
+          };
+          updateDraft("llm", "servers", upsertServer(llmServerInventory, newServer));
+          await useSettingsStore.getState().commitChanges();
+          setEditingServerId(null);
           setIsHealthy(true);
           setDetectedDialect(res.dialect ?? null);
           setSubView("catalog");
@@ -532,11 +539,17 @@ export const LlmConfigDesk = memo(({
     } else if (activeCategory === "TTS") {
       const endpoint = customTtsEndpoint.trim() || "http://127.0.0.1:7860";
       const remotePath = customTtsPath.trim() || "~/.vox";
-      updateDraft("tts", "chatterbox_remote", {
-        endpoint,
+      const existing = editingServerId ? customTtsServers.find((s) => s.id === editingServerId) : undefined;
+      const newServer = {
+        id: editingServerId ?? `tts_custom_${Date.now()}`,
+        name: existing?.name ?? "Voice Server",
+        url: endpoint,
         remote_path: remotePath,
-      });
-      updateDraft("tts", "active", activeSelection("server", "chatterbox_remote"));
+        api_key: existing?.api_key ?? null,
+      };
+      updateDraft("tts", "servers", upsertServer(customTtsServers, newServer));
+      await useSettingsStore.getState().commitChanges();
+      setEditingServerId(null);
       setSubView("catalog");
     }
   }, [
@@ -546,7 +559,9 @@ export const LlmConfigDesk = memo(({
     customServerName,
     customTtsEndpoint,
     customTtsPath,
-    draftLlm?.server?.model,
+    editingServerId,
+    llmServerInventory,
+    customTtsServers,
     updateDraft,
   ]);
 
@@ -554,21 +569,21 @@ export const LlmConfigDesk = memo(({
     if (activeCategory === "LLM") {
       const urlToSave = customServerUrl.trim() || "http://127.0.0.1:11434";
       const finalName = customServerName.trim() || "Custom Server";
-      updateDraft("llm", "server", {
-        base_url: urlToSave,
+      const newServer = {
+        id: editingServerId ?? `llm_custom_${Date.now()}`,
+        name: finalName,
+        url: urlToSave,
+        model: "",
+        protocol: "openai",
         api_key: customServerKey.trim() || null,
-        provider_name: finalName,
-        model: draftLlm?.server?.model || "",
-      });
-      updateDraft(
-        "llm",
-        "active",
-        activeSelection("server", draftLlm?.server?.model || "", finalName)
-      );
+      };
+      console.info(`[Providers] saveCustomServerAnyway url=${urlToSave} id=${newServer.id}`);
+      updateDraft("llm", "servers", upsertServer(llmServerInventory, newServer));
+      void useSettingsStore.getState().commitChanges().then(() => setEditingServerId(null));
     }
     setShowHealthErrorConfirm(false);
     setSubView("catalog");
-  }, [activeCategory, customServerUrl, customServerKey, customServerName, draftLlm?.server?.model, updateDraft]);
+  }, [activeCategory, customServerUrl, customServerKey, customServerName, editingServerId, llmServerInventory, updateDraft]);
 
   if (!hasDraftSettings) return null;
 
@@ -617,7 +632,7 @@ export const LlmConfigDesk = memo(({
         customLlmServers.map((server) => {
           const isSelected =
             draftLlm?.active?.category === "server" &&
-            (draftLlm?.server?.provider_name === server.name || draftLlm?.server?.base_url === server.url);
+            draftLlm?.active?.provider === server.id;
           const isOllama =
             (server.name && server.name.toLowerCase().includes("ollama")) ||
             (server.id && server.id.toLowerCase().includes("ollama")) ||
@@ -628,13 +643,8 @@ export const LlmConfigDesk = memo(({
             <div
               key={server.id || server.url}
               onClick={() => {
-                updateDraft("llm", "active", activeSelection("server", server.model || "", server.name));
-                updateDraft("llm", "server", {
-                  base_url: server.url,
-                  provider_name: server.name,
-                  api_key: server.api_key || null,
-                  model: server.model || "",
-                });
+                updateDraft("llm", "active", activeSelection("server", server.model || "", server.id));
+                window.dispatchEvent(new CustomEvent("sync_pipeline_tab", { detail: "llm" }));
               }}
               className={cn(
                 "group flex items-center gap-2 px-2.5 py-2 rounded-xl transition-all cursor-pointer select-none border min-h-[46px]",
@@ -654,11 +664,33 @@ export const LlmConfigDesk = memo(({
                   {server.url}
                 </span>
               </div>
-              {isSelected && (
-                <div className="w-4 h-4 rounded-full bg-[rgba(var(--accent),0.15)] border border-[rgba(var(--accent),0.3)] flex items-center justify-center text-[rgb(var(--accent))] shrink-0 ml-auto">
-                  <Check size={9} strokeWidth={2.5} />
+              <div className="shrink-0 flex items-center gap-0.5 ml-auto" onClick={(e) => e.stopPropagation()}>
+                <div className="flex items-center gap-0.5 [@media(hover:hover)]:hidden [@media(hover:hover)]:group-hover:flex">
+                  <button
+                    type="button"
+                    onClick={() => handleEditServer(server.id, server.url, server.api_key ?? null, server.name)}
+                    className="p-1 rounded text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] transition-all cursor-pointer"
+                    title="Edit Server"
+                    aria-label="Edit Server"
+                  >
+                    <Pencil size={11} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteServer("llm", server.id)}
+                    className="p-1 rounded text-[rgb(var(--foreground-muted))]/40 hover:text-[rgb(var(--warn-soft))] transition-all cursor-pointer"
+                    title="Delete Server"
+                    aria-label="Delete Server"
+                  >
+                    <Trash2 size={11} />
+                  </button>
                 </div>
-              )}
+                {isSelected && (
+                  <div className="w-4 h-4 rounded-full bg-[rgba(var(--accent),0.15)] border border-[rgba(var(--accent),0.3)] flex items-center justify-center text-[rgb(var(--accent))] shrink-0 [@media(hover:hover)]:group-hover:hidden">
+                    <Check size={9} strokeWidth={2.5} />
+                  </div>
+                )}
+              </div>
             </div>
           );
         })}
@@ -667,16 +699,13 @@ export const LlmConfigDesk = memo(({
         customTtsServers.map((server) => {
           const isSelected =
             draftSettings?.tts?.active?.category === "server" &&
-            draftChatterboxRemote?.endpoint === server.url;
+            draftSettings?.tts?.active?.provider === server.id;
           return (
             <div
               key={server.id || server.url}
               onClick={() => {
-                updateDraft("tts", "active", activeSelection("server", server.id || "chatterbox_remote", server.name));
-                updateDraft("tts", "chatterbox_remote", {
-                  endpoint: server.url,
-                  remote_path: server.remote_path || "~/.vox",
-                });
+                updateDraft("tts", "active", activeSelection("server", "", server.id));
+                window.dispatchEvent(new CustomEvent("sync_pipeline_tab", { detail: "tts" }));
               }}
               className={cn(
                 "group flex items-center gap-2 px-2.5 py-2 rounded-xl transition-all cursor-pointer select-none border min-h-[46px]",
@@ -696,11 +725,40 @@ export const LlmConfigDesk = memo(({
                   {server.url}
                 </span>
               </div>
-              {isSelected && (
-                <div className="w-4 h-4 rounded-full bg-[rgba(var(--accent),0.15)] border border-[rgba(var(--accent),0.3)] flex items-center justify-center text-[rgb(var(--accent))] shrink-0 ml-auto">
-                  <Check size={9} strokeWidth={2.5} />
+              <div className="shrink-0 flex items-center gap-0.5 ml-auto" onClick={(e) => e.stopPropagation()}>
+                <div className="flex items-center gap-0.5 [@media(hover:hover)]:hidden [@media(hover:hover)]:group-hover:flex">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCustomTtsEndpoint(server.url);
+                      setCustomTtsPath(server.remote_path || "~/.vox");
+                      setEditingServerId(server.id);
+                      setShowHealthErrorConfirm(false);
+                      setModelsError(null);
+                      setSubView("server");
+                    }}
+                    className="p-1 rounded text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] transition-all cursor-pointer"
+                    title="Edit Server"
+                    aria-label="Edit Server"
+                  >
+                    <Pencil size={11} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteServer("tts", server.id)}
+                    className="p-1 rounded text-[rgb(var(--foreground-muted))]/40 hover:text-[rgb(var(--warn-soft))] transition-all cursor-pointer"
+                    title="Delete Server"
+                    aria-label="Delete Server"
+                  >
+                    <Trash2 size={11} />
+                  </button>
                 </div>
-              )}
+                {isSelected && (
+                  <div className="w-4 h-4 rounded-full bg-[rgba(var(--accent),0.15)] border border-[rgba(var(--accent),0.3)] flex items-center justify-center text-[rgb(var(--accent))] shrink-0 [@media(hover:hover)]:group-hover:hidden">
+                    <Check size={9} strokeWidth={2.5} />
+                  </div>
+                )}
+              </div>
             </div>
           );
         })}
@@ -854,7 +912,10 @@ export const LlmConfigDesk = memo(({
         <>
           {/* Edge TTS Cloud Provider */}
           <div
-            onClick={() => updateDraft("tts", "active", activeSelection("cloud", "edge_tts", "microsoft"))}
+            onClick={() => {
+              updateDraft("tts", "active", activeSelection("cloud", "edge_tts", "microsoft"));
+              window.dispatchEvent(new CustomEvent("sync_pipeline_tab", { detail: "tts" }));
+            }}
             className={cn(
               "group flex items-center gap-2 px-2.5 py-2 rounded-xl transition-all cursor-pointer select-none border min-h-[46px]",
               activeModelId(draftSettings?.tts?.active) === "edge_tts"
@@ -1149,10 +1210,13 @@ export const LlmConfigDesk = memo(({
           )}
 
           {showHealthErrorConfirm && modelsError && (
-            <div className="p-2.5 rounded-lg border border-[rgba(var(--error),0.3)] bg-[rgba(var(--error),0.06)] flex flex-col gap-2 shrink-0 animate-fade-in">
-              <div className="flex items-center gap-1.5 text-[11px] text-[rgb(var(--error))]">
-                <AlertCircle size={13} className="shrink-0" />
-                <span>Could not reach server: {modelsError}</span>
+            <div className="p-2.5 rounded-lg border border-[rgba(var(--error),0.3)] bg-[rgba(var(--error),0.06)] flex flex-col gap-2 shrink-0 min-w-0 overflow-hidden animate-fade-in">
+              <div className="flex items-start gap-1.5 text-[11px] text-[rgb(var(--error))] min-w-0">
+                <AlertCircle size={13} className="shrink-0 mt-px" />
+                <span className="min-w-0 flex-1">
+                  <span className="font-bold">Server unreachable. </span>
+                  <span className="font-mono [overflow-wrap:anywhere]">{modelsError}</span>
+                </span>
               </div>
               <div className="flex items-center justify-end gap-2">
                 <button
@@ -1174,8 +1238,9 @@ export const LlmConfigDesk = memo(({
           )}
 
           {modelsError && !showHealthErrorConfirm && (
-            <span className="text-[11px] text-[rgb(var(--error))]/80 flex items-center gap-1 ml-0.5 shrink-0">
-              <AlertCircle size={13} /> {modelsError}
+            <span className="text-[11px] text-[rgb(var(--error))]/80 flex items-start gap-1 ml-0.5 shrink-0 min-w-0">
+              <AlertCircle size={13} className="shrink-0 mt-px" />
+              <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">{modelsError}</span>
             </span>
           )}
         </div>
@@ -1228,17 +1293,14 @@ export const LlmConfigDesk = memo(({
               activeCategory === "STT" ? undefined : modalView === "models" ? (
                 <RemoteModelsModalView
                   remoteModels={remoteModels}
-                  selectedModelId={draftLlm?.cloud?.model}
-                  pinnedModelId={committedSettings?.llm?.cloud?.model}
+                  selectedModelId={draftLlm?.active?.model}
+                  pinnedModelId={committedSettings?.llm?.active?.model}
                   probingMap={probingMap}
                   capabilitiesCache={useSettingsStore.getState().capabilitiesCache}
                   onSelectModel={(modelId) => {
-                    const cur = draftLlm?.cloud;
-                    if (cur) {
-                      updateDraft("llm", "cloud", {
-                        ...cur,
-                        model: modelId,
-                      });
+                    const cur = useSettingsStore.getState().draftSettings?.llm?.active;
+                    if (cur && (cur.category === "server" || cur.category === "cloud")) {
+                      updateDraft("llm", "active", { ...cur, model: modelId });
                     }
                   }}
                   onProbeCapabilities={handleProbeCapabilities}
@@ -1267,12 +1329,6 @@ export const LlmConfigDesk = memo(({
           >
             {ProviderRows()}
           </ExpandableList>
-
-          {modelsError && !showHealthErrorConfirm && (
-            <span className="text-[10px] text-[rgb(var(--accent))] flex items-center gap-1 ml-0.5 shrink-0 font-mono">
-              <AlertCircle size={11} /> {modelsError}
-            </span>
-          )}
         </div>
       )}
     </div>

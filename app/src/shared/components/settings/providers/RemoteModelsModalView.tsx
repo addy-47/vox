@@ -22,11 +22,12 @@ import {
   Zap,
 } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
+import { CLOUD_PROVIDERS } from "@/data/providersCopy";
 import { useSettingsStore } from "@/store/settingsStore";
 import { useFavoriteModels } from "@/shared/hooks/useFavoriteModels";
 import type { LlmModelInfo, ModelCapabilities } from "@/store/settingsStore";
-import { REMOTE_MODEL_PAGE_SIZE } from "./catalogProbeUtils";
-import { RemoteModelCard } from "./RemoteModelCard";
+import { REMOTE_MODEL_PAGE_SIZE } from "../models/catalog/catalogProbeUtils";
+import { RemoteModelCard } from "../models/catalog/RemoteModelCard";
 
 export interface RemoteModelsModalViewProps {
   remoteModels: LlmModelInfo[];
@@ -99,31 +100,37 @@ export const RemoteModelsModalView = memo(({
 
   const { favoriteModelIds, toggleFavorite, isFavorite } = useFavoriteModels();
 
-  // Active LLM provider configuration for the bottom-left corner indicator
+  // Active LLM provider configuration for the bottom-left corner indicator.
+  // Resolved from the inventory by id: names are not unique and URLs change.
   const llmSettings = useSettingsStore((s) => s.draftSettings?.llm);
+  const llmServers = useSettingsStore((s) => s.draftSettings?.providers?.llm?.servers);
   const activeMode = llmSettings?.active?.category ?? "cloud";
   const activeProviderName = useMemo(() => {
     if (activeMode === "cloud") {
-      return llmSettings?.cloud?.provider_name || "Cloud";
+      const entry = CLOUD_PROVIDERS.find((p) => p.id === llmSettings?.active?.provider);
+      return entry?.name || "Cloud";
     }
     if (activeMode === "server") {
-      return llmSettings?.server?.provider_name || "Custom Server";
+      const entry = llmServers?.find((s) => s.id === llmSettings?.active?.provider);
+      return entry?.name || "Custom Server";
     }
     return "Embedded";
-  }, [activeMode, llmSettings]);
+  }, [activeMode, llmSettings?.active?.provider, llmServers]);
 
   const activeEndpointLabel = useMemo(() => {
     if (activeMode === "cloud") return "Remote API";
     if (activeMode === "server") {
+      const entry = llmServers?.find((s) => s.id === llmSettings?.active?.provider);
+      if (!entry?.url) return "Remote Server";
       try {
-        const url = new URL(llmSettings?.server?.base_url || "http://localhost:11434");
+        const url = new URL(entry.url);
         return url.host || "Localhost";
       } catch {
-        return llmSettings?.server?.base_url || "Remote Server";
+        return entry.url;
       }
     }
     return "On-Device GGUF";
-  }, [activeMode, llmSettings]);
+  }, [activeMode, llmSettings?.active?.provider, llmServers]);
 
   const favoritesCount = useMemo(() => {
     return remoteModels.filter((m) => favoriteModelIds.has(m.id)).length;

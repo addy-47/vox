@@ -8,6 +8,7 @@ import {
   listLlmModels,
 } from "@/services/settingsService";
 import { applyTheme } from "@/shared/theme";
+import { ipcErrorMessage } from "@/shared/lib/ipcError";
 import { DOMAIN_DIRTY_KEYS, SETTINGS_SCOPE_KEYS, type SettingsDomainId, type SettingsScope } from "@/data/settingsCopy";
 
 /** Reads a settings scope as a key-value map for dynamic key access. The
@@ -51,6 +52,8 @@ export type LlmProviderKind = ActiveCategory;
 
 export interface LlmProviderConfig {
   kind: LlmProviderKind;
+  /** Inventory id (`providers.llm.servers[].id`) or cloud provider id. Never a display name. */
+  provider_id?: string;
   base_url?: string;
   model?: string;
   api_key?: string;
@@ -174,6 +177,8 @@ export interface ModelCatalog {
   voices: VoiceProfile[];
   preset_colors: string[];
   active_voice_name?: string | null;
+  /** Per-model parameter overrides from the `models` table (`ipc/catalog.rs`). */
+  model_parameters: Record<string, Record<string, unknown>>;
 }
 
 export type AudioOutputMode = "Speaker" | "Headset";
@@ -188,127 +193,43 @@ export interface VadSettings {
   max_speech_duration_s: number;
 }
 
-export interface SttEmbeddedConfig {
-  model: string;
-  partial_throttle_ms: number;
-  threads: number;
-}
-
-export interface SttCloudConfig {
-  provider: string;
-  model: string;
-  language: string;
-  region: string;
-  project_id?: string | null;
-  endpoint?: string | null;
-}
-
 export interface SttSettings {
   active: ActiveSelection;
   last_selected: LastSelectedModels;
   transliterate_enabled: boolean;
-  embedded: SttEmbeddedConfig;
-  cloud: SttCloudConfig;
-}
-
-export interface LlmEmbeddedConfig {
-  model: string;
-}
-
-export interface LlmRemoteConfig {
-  base_url: string;
-  model: string;
-  api_key?: string | null;
-  provider_name?: string | null;
 }
 
 export interface LlmSettings {
   active: ActiveSelection;
   last_selected: LastSelectedModels;
-  temperature: number;
-  compaction_temperature: number;
-  max_output_tokens: number;
-  context_window: number;
-  threads: number;
-  reasoning_enabled: boolean;
-  embedded: LlmEmbeddedConfig;
-  server: LlmRemoteConfig;
-  cloud: LlmRemoteConfig;
   cloud_keys: Record<string, string>;
-}
-
-export interface TtsEdgeTtsConfig {
-  voice: string | null;
-}
-
-export interface TtsSupertonicConfig {}
-export interface TtsKokoroConfig {}
-
-export interface TtsChatterboxConfig {
-  language: string;
-  voice_id?: string | null;
-}
-
-export interface TtsChatterboxRemoteConfig {
-  endpoint: string;
-  language: string;
-  remote_path: string;
-  voice_id?: string | null;
-}
-
-export interface TtsZipvoiceConfig {
-  voice_id?: string | null;
-  guidance_scale: number;
+  /**
+   * Draft-only vehicle for the custom server inventory. The backend persists
+   * it to `providers.jsonc` (`update_setting("llm","servers",…)`); it is never
+   * part of `settings.jsonc`, so it stays undefined until the user edits it.
+   */
+  servers?: LlmCustomServer[];
 }
 
 export interface TtsSettings {
   active: ActiveSelection;
   last_selected: LastSelectedModels;
-  voice_id: string;
-  speed: number;
-  threads: number;
-  edge_tts: TtsEdgeTtsConfig;
-  supertonic: TtsSupertonicConfig;
-  kokoro: TtsKokoroConfig;
-  chatterbox: TtsChatterboxConfig;
-  chatterbox_remote: TtsChatterboxRemoteConfig;
-  zipvoice: TtsZipvoiceConfig;
-}
-
-export interface GeminiRealtimeConfig {
-  api_key: string;
-  model: string;
-  voice_name: string;
-  language_code: string;
-  temperature: number;
-  enable_web_search: boolean;
-}
-
-export interface OpenAiRealtimeConfig {
-  api_key: string;
-  model: string;
-  voice: string;
-}
-
-export interface DeepgramVoiceAgentConfig {
-  api_key: string;
-  model: string;
-  voice: string;
-  temperature: number;
-  agent_mode: boolean;
-}
-
-export interface ElevenLabsConvaiConfig {
-  api_key: string;
-  agent_id: string;
+  active_voice_id: string;
+  /**
+   * Draft-only vehicle for the TTS server inventory, persisted to
+   * `providers.jsonc` like `LlmSettings.servers`.
+   */
+  servers?: TtsCustomServer[];
 }
 
 export interface RealtimeSettings {
   active: ActiveSelection;
-  gemini_live: GeminiRealtimeConfig;
-  openai_realtime: OpenAiRealtimeConfig;
-  deepgram_voice_agent: DeepgramVoiceAgentConfig;
-  elevenlabs_convai: ElevenLabsConvaiConfig;
+  active_voice_id: string;
+  /**
+   * Draft-only vehicle for realtime provider API keys, persisted to
+   * `providers.jsonc` (`update_setting("realtime","api_keys",…)`).
+   */
+  api_keys?: Record<string, string>;
 }
 
 export interface InteractionSettings {
@@ -407,6 +328,29 @@ export interface DomainFlags {
   requiresRestart: boolean;
 }
 
+/**
+ * Every `(domain, key)` pair the backend `apply_setting_mutation` accepts
+ * (`app/src-tauri/src/config/mutation.rs`). `updateDraft` only compiles for
+ * these keys, so a phantom write like `("llm","server")` is a build error,
+ * not a runtime rejection. `providers` maps to `never`: inventory writes go
+ * through their domain vehicle (`llm.servers`, `llm.cloud_keys`, …).
+ */
+export interface DraftKeyMap {
+  appearance: "theme" | "accent_seed";
+  vad: "threshold" | "ptt_noise_gate" | "silence_duration_ms" | "speech_onset_ms" | "vad_backend";
+  stt: "active" | "last_selected" | "transliterate_enabled";
+  llm: "active" | "last_selected" | "servers" | "cloud_keys";
+  tts: "active" | "last_selected" | "active_voice_id" | "voice" | "voice_id" | "servers";
+  realtime: "active" | "active_voice_id" | "api_keys";
+  interaction: "mode" | "pipeline_mode";
+  dictation: "enabled" | "interaction_mode" | "hotkey" | "output_mode" | "silence_auto_stop_ms";
+  working_memory: "private_mode" | "auto_compaction" | "max_context_share" | "web_search_enabled";
+  personal_memory: "context_retrieval_enabled" | "pipeline_processing_enabled" | "top_k_facts" | "semantic_similarity_cutoff" | "consolidation_cadence" | "consolidation_time" | "suggestion_policy";
+  persona: "modular_prompt" | "realtime_prompt";
+  system: "setup_completed";
+  providers: never;
+}
+
 export interface SettingsState {
   settings: VoxSettings | null;
   draftSettings: VoxSettings | null;
@@ -432,15 +376,21 @@ export interface SettingsState {
   loadSettings: () => Promise<void>;
   loadModelCatalog: () => Promise<void>;
   loadRemoteModels: (providerConfig?: LlmProviderConfig, force?: boolean) => Promise<void>;
+  clearRemoteModelsError: () => void;
   loadCapabilitiesCache: () => Promise<void>;
   patchRemoteModelCapabilities: (modelId: string, caps: ModelCapabilities) => void;
-  updateDraft: (
-    domain: keyof VoxSettings,
-    key: string,
+  updateDraft: <D extends keyof VoxSettings>(
+    domain: D,
+    key: DraftKeyMap[D],
     value: unknown,
     explicitDomainId?: SettingsDomainId
   ) => void;
-  commitChanges: () => Promise<void>;
+  /**
+   * Persists draft changes. Without `only`, commits every dirty key.
+   * With `only`, commits exactly one key (e.g. an inventory delete from a
+   * trash icon) so unrelated half-typed edits are never swept along.
+   */
+  commitChanges: (only?: { domain: keyof VoxSettings; key: string }) => Promise<void>;
   /**
    * Commit any pending autosave immediately (same guards as the 600ms timer).
    * Called when a settings card closes so hot changes survive instead of
@@ -469,6 +419,14 @@ export interface SettingsState {
    */
   failedSaveDomains: Record<string, string[]>;
   triggerSaveFailure: (domainId: string, keys: string[]) => void;
+  /**
+   * Transient desk-level error (provider health / model-list failure) shown
+   * in the card footer like every other banner — never inline inside the
+   * desk, which clutters the card. Owned by the desk that sets it; the card
+   * wrapper only renders the entry matching its own domain.
+   */
+  deskFooter: { domain: string; title: string; detail: string } | null;
+  setDeskFooter: (entry: { domain: string; title: string; detail: string } | null) => void;
   /**
    * Per-domain dirty / restart-required flags, recomputed ONCE per store
    * mutation instead of once per subscriber.
@@ -512,6 +470,10 @@ let settingsAutoSaveTimer: ReturnType<typeof setTimeout> | null = null;
 let autoSaveToastTimer: ReturnType<typeof setTimeout> | null = null;
 let saveFailureTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
+/** In-flight `list_llm_models` promises keyed by fetch key, so the two
+ * permanently mounted probing hooks share one request per endpoint. */
+const remoteModelsInflight = new Map<string, Promise<LlmModelInfo[]>>();
+
 /** Poll cadence for mirroring the backend's restart progress. */
 const RESTART_POLL_INTERVAL_MS = 400;
 /** Upper bound so a failed restart cannot wedge the UI in "restarting". */
@@ -528,65 +490,34 @@ export const COMMIT_DOMAIN_IDS = [
 ] as const;
 
 /**
- * Settings scopes whose values feed `get_model_catalog`.
- *
- * `loadModelCatalog` re-reads and re-parses the model manifest and, for the
- * ZipVoice and Chatterbox providers, opens the Turso database to resolve voices
- * (`ipc/catalog.rs:131-139`, `:166-184`). `commitChanges` used to await it on
- * every single commit, so a hot autosave of one unrelated toggle paid a full
- * catalog re-read plus a possible database round trip. Committing a persona
- * prompt does not change which models exist.
+ * Catalog-affecting scopes for `commitChanges`. The catalog is manifest +
+ * voices + model parameters + the TTS `active_voice_id`; `llm`/`tts`
+ * inventory, selections, and keys never appear in it (see the `touchedKeys`
+ * check at the reload site). `restoreDefaults` always reloads separately.
  */
 const MODEL_CATALOG_SCOPES: ReadonlySet<string> = new Set([
   "vad",
   "stt",
-  "llm",
-  "tts",
-  "realtime",
   "system",
 ]);
 
-/** Checks if a setting key requires an engine restart according to the backend policy table */
+/** Checks if a setting key requires an engine restart. Mirror of the backend
+ * `classify_known` table (`config/mod.rs`): only keys the backend accepts AND
+ * classifies `Restart` are listed. Anything else autosaves. */
 export function isRestartKey(scope: string, key: string): boolean {
-  if (
-    scope === "stt" &&
-    ["active", "model", "provider", "embedded", "cloud", "threads"].includes(key)
-  )
+  if (scope === "stt" && ["active", "last_selected", "transliterate_enabled"].includes(key))
     return true;
   if (
     scope === "llm" &&
-    [
-      "active",
-      "model",
-      "provider",
-      "server",
-      "cloud",
-      "cloud_keys",
-      "embedded",
-      "context_window",
-      "threads",
-    ].includes(key)
+    ["active", "last_selected", "servers", "cloud_keys"].includes(key)
   )
     return true;
   if (
     scope === "tts" &&
-    [
-      "active",
-      "provider",
-      "threads",
-      "edge_tts",
-      "supertonic",
-      "kokoro",
-      "chatterbox",
-      "chatterbox_remote",
-      "zipvoice",
-    ].includes(key)
+    ["active", "last_selected", "servers"].includes(key)
   )
     return true;
   if (scope === "vad" && key === "vad_backend") return true;
-  if (scope === "interaction" && key === "pipeline_mode") return true;
-  if (scope === "dictation" && key === "hotkey") return true;
-  if (scope === "realtime") return true;
   return false;
 }
 
@@ -650,7 +581,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       get().recomputeDomainFlags();
       applyTheme(fetched.appearance, { animate: false });
     } catch (err) {
-      const reason = err instanceof Error ? err.message : String(err);
+      const reason = ipcErrorMessage(err);
       console.error("Failed to load settings:", err);
       set({ isLoading: false, error: reason || "Failed to load settings" });
     }
@@ -661,7 +592,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       const catalog = await requestModelCatalog();
       set({ modelCatalog: catalog, error: null });
     } catch (err) {
-      const reason = err instanceof Error ? err.message : String(err);
+      const reason = ipcErrorMessage(err);
       console.error("Failed to load model catalog:", err);
       set({ error: reason || "Failed to load model catalog" });
     }
@@ -669,38 +600,65 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
   loadRemoteModels: async (providerConfig?: LlmProviderConfig, force = false) => {
     const draft = get().draftSettings || get().settings;
-    const active = draft?.llm?.active?.category ?? "embedded";
+    const activeSel = draft?.llm?.active;
+    const active = activeSel?.category ?? "embedded";
     let provider = providerConfig;
-    if (!provider) {
-      if (active === "server" && draft?.llm?.server) {
-        provider = {
-          kind: "server",
-          base_url: draft.llm.server.base_url,
-          model: draft.llm.server.model,
-          api_key: draft.llm.server.api_key || undefined,
-          provider_name: draft.llm.server.provider_name || undefined,
-        };
-      } else if (active === "cloud" && draft?.llm?.cloud) {
+    if (!provider && draft && active !== "embedded") {
+      if (active === "server") {
+        const entry = draft.providers?.llm?.servers?.find((s) => s.id === activeSel?.provider);
+        if (entry) {
+          provider = {
+            kind: "server",
+            provider_id: entry.id,
+            base_url: entry.url,
+            model: activeSel?.model || "",
+            api_key: entry.api_key || undefined,
+            provider_name: entry.name || undefined,
+          };
+        }
+      } else if (active === "cloud") {
+        const cloudKeys = draft.llm?.cloud_keys ?? draft.providers?.llm?.cloud_keys;
         provider = {
           kind: "cloud",
-          base_url: draft.llm.cloud.base_url,
-          model: draft.llm.cloud.model,
-          api_key: draft.llm.cloud.api_key || undefined,
-          provider_name: draft.llm.cloud.provider_name || undefined,
+          provider_id: activeSel?.provider ?? undefined,
+          base_url: "",
+          model: activeSel?.model || "",
+          api_key: (activeSel?.provider && cloudKeys?.[activeSel.provider]) || undefined,
+          provider_name: activeSel?.provider ?? undefined,
         };
       }
     }
-    if (!provider || provider.kind === "embedded" || !provider.base_url) return;
-    const fetchKey = `${provider.base_url}:${provider.api_key || ""}`;
+    if (!provider || provider.kind === "embedded" || !provider.base_url) {
+      if (get().remoteModelsError) set({ remoteModelsError: null, loadingRemoteModels: false });
+      return;
+    }
+    // Cloud providers require an API key to list models. If the key is not yet configured,
+    // wait for the user to add and save their key — do not probe and fail.
+    if (provider.kind === "cloud" && !provider.api_key?.trim()) {
+      if (get().remoteModelsError) set({ remoteModelsError: null, loadingRemoteModels: false });
+      return;
+    }
+    const fetchKey = `${provider.kind}|${provider.provider_id ?? ""}|${provider.base_url}|${provider.api_key ? "key" : "nokey"}`;
     if (!force && get().remoteModelsFetchedKey === fetchKey && get().remoteModels.length > 0) {
+      return;
+    }
+    const inflight = remoteModelsInflight.get(fetchKey);
+    if (!force && inflight) {
+      try {
+        await inflight;
+      } catch {
+        // The owning request records the error state; followers just rejoin.
+      }
       return;
     }
     console.info(
       `[Providers] loadRemoteModels kind=${provider.kind} url=${provider.base_url} hasKey=${Boolean(provider.api_key)} force=${force}`
     );
     set({ loadingRemoteModels: true, remoteModelsError: null });
+    const request = listLlmModels(provider);
+    remoteModelsInflight.set(fetchKey, request);
     try {
-      const list = await listLlmModels(provider);
+      const list = await request;
       console.info(
         `[Providers] loadRemoteModels ok kind=${provider.kind} url=${provider.base_url} count=${list.length}`
       );
@@ -711,9 +669,19 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         remoteModelsError: null,
       });
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.error("Failed to list remote models:", err);
+      const msg = ipcErrorMessage(err);
+      console.error("[Providers] loadRemoteModels failed:", err);
       set({ loadingRemoteModels: false, remoteModelsError: msg });
+    } finally {
+      if (remoteModelsInflight.get(fetchKey) === request) {
+        remoteModelsInflight.delete(fetchKey);
+      }
+    }
+  },
+
+  clearRemoteModelsError: () => {
+    if (get().remoteModelsError) {
+      set({ remoteModelsError: null });
     }
   },
 
@@ -728,7 +696,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         console.error("Capabilities cache unreadable:", res.cache_error);
       }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = ipcErrorMessage(err);
       console.error("Failed to load capabilities cache:", err);
       set({ capabilitiesCacheError: msg });
     }
@@ -749,6 +717,18 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   lastSavedTimestamp: 0,
   autoSavedDomain: null as string | null,
   failedSaveDomains: {} as Record<string, string[]>,
+  deskFooter: null as { domain: string; title: string; detail: string } | null,
+  setDeskFooter: (entry) => {
+    const cur = get().deskFooter;
+    if (
+      cur?.domain === entry?.domain &&
+      cur?.title === entry?.title &&
+      cur?.detail === entry?.detail
+    ) {
+      return;
+    }
+    set({ deskFooter: entry });
+  },
   triggerSaveFailure: (domainId: string, keys: string[]) => {
     set((state) => ({
       failedSaveDomains: { ...state.failedSaveDomains, [domainId]: keys },
@@ -784,9 +764,9 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     }, 1800);
   },
 
-  updateDraft: (
-    domain: keyof VoxSettings,
-    key: string,
+  updateDraft: <D extends keyof VoxSettings>(
+    domain: D,
+    key: DraftKeyMap[D],
     value: unknown,
     explicitDomainId?: SettingsDomainId
   ) => {
@@ -845,7 +825,11 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       return;
     }
 
-    set({ draftSettings: newDraft });
+    const clearsRemoteError = key === "active" && Boolean(get().remoteModelsError);
+    set({
+      draftSettings: newDraft,
+      ...(clearsRemoteError ? { remoteModelsError: null } : {}),
+    });
     const flags = get().recomputeDomainFlags();
 
     if (!flags || !COMMIT_DOMAIN_IDS.some((d) => flags[d]?.dirty)) {
@@ -987,9 +971,9 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
     const keys = SETTINGS_SCOPE_KEYS[scope as SettingsScope];
     if (keys && keys.length > 0) {
-      keys.forEach((k: string) => updateDraft(scope, k, savedScope[k]));
+      keys.forEach((k) => updateDraft(scope, k as DraftKeyMap[typeof scope], savedScope[k]));
     } else {
-      Object.keys(savedScope).forEach((k: string) => updateDraft(scope, k, savedScope[k]));
+      Object.keys(savedScope).forEach((k) => updateDraft(scope, k as DraftKeyMap[typeof scope], savedScope[k]));
     }
   },
 
@@ -1033,7 +1017,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   },
 
   isCommitting: false,
-  commitChanges: async () => {
+  commitChanges: async (only) => {
     const { settings, draftSettings } = get();
     if (!settings || !draftSettings) return;
 
@@ -1042,6 +1026,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     const restartKeys: string[] = [];
     const failures: { domain: string; key: string; reason: string }[] = [];
     const touchedScopes = new Set<string>();
+    const touchedKeys = new Set<string>();
     let restartScheduled = false;
 
     const canonicalDomains: (keyof VoxSettings)[] = [
@@ -1072,8 +1057,10 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         const oldVal = savedMap.get(key);
 
         if (JSON.stringify(val) === JSON.stringify(oldVal)) continue;
+        if (only && (domain !== only.domain || key !== only.key)) continue;
 
         touchedScopes.add(domain);
+        touchedKeys.add(`${domain}.${key}`);
         promises.push(
           updateSetting(domain, key, val).then(
             (res) => {
@@ -1092,7 +1079,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
               // The backend rejects unknown or invalid keys. Recording the
               // failure instead of swallowing it is what stops a silently
               // dropped setting from looking like a successful save.
-              const reason = err instanceof Error ? err.message : String(err);
+              const reason = ipcErrorMessage(err);
               failures.push({ domain, key, reason });
               console.error(`[Settings] Failed to persist ${domain}.${key}:`, err);
             }
@@ -1106,14 +1093,23 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
       if (failures.length > 0) {
         // Re-read from the backend so the draft reflects what was actually
-        // stored. A rejected key must not linger in the draft, or the next
-        // commit retries it forever and the UI keeps showing it as changed.
+        // stored, but keep ONLY the rejected keys from the pre-commit draft so
+        // they can be retried. Every other key landed and must not linger as
+        // dirty — and unrelated edits must never be discarded with them.
         const bootState = await getSettings();
         const fetched = bootState.settings;
+        const merged = structuredClone(fetched);
+        for (const f of failures) {
+          const draftScope = scopeEntries(draftSettings[f.domain as keyof VoxSettings]);
+          const mergedScope = scopeEntries(merged[f.domain as keyof VoxSettings]);
+          if (draftScope && mergedScope && f.key in draftScope) {
+            mergedScope[f.key] = structuredClone(draftScope[f.key]);
+          }
+        }
         set({
           settings: fetched,
-          draftSettings: structuredClone(fetched),
-          hasChanges: false,
+          draftSettings: merged as VoxSettings,
+          hasChanges: true,
           isLoading: false,
         });
         get().recomputeDomainFlags();
@@ -1134,16 +1130,36 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       const bootState = await getSettings();
       const fetched = bootState.settings;
       const cloned = structuredClone(fetched);
+      if (only) {
+        // A scoped commit must not discard other dirty keys: restore every
+        // pre-commit draft value that differs from the fresh snapshot except
+        // the key just committed.
+        const preDraft = draftSettings;
+        for (const domain of canonicalDomains) {
+          const preScope = scopeEntries(preDraft[domain]);
+          const savedScope = scopeEntries(settings[domain]);
+          const clonedScope = scopeEntries(cloned[domain]);
+          if (!preScope || !clonedScope) continue;
+          for (const key of Object.keys(preScope)) {
+            if (domain === only.domain && key === only.key) continue;
+            if (JSON.stringify(preScope[key]) !== JSON.stringify(savedScope?.[key])) {
+              clonedScope[key] = structuredClone(preScope[key]);
+            }
+          }
+        }
+      }
       set({ settings: fetched, draftSettings: cloned, hasChanges: false, isLoading: false });
       get().recomputeDomainFlags();
 
-      // Only re-read the catalog when a scope that feeds it actually changed.
-      // It re-parses the whole model manifest and, for ZipVoice/Chatterbox,
-      // opens the Turso database — so paying it for a persona-prompt edit was
-      // a database round trip to learn nothing had changed.
-      const catalogAffected = [...touchedScopes].some((scope) =>
-        MODEL_CATALOG_SCOPES.has(scope)
-      );
+      // Only re-read the catalog when a committed key actually feeds it. The
+      // catalog is manifest + voices + model parameters + the TTS
+      // active_voice_id; provider inventory, selections, keys, and prompts
+      // never appear in it, so reloading for those is a full manifest
+      // re-parse plus database round trips that remount the catalog views
+      // (the visible flicker after every server save).
+      const catalogAffected =
+        touchedKeys.has("tts.active_voice_id") ||
+        [...touchedScopes].some((scope) => MODEL_CATALOG_SCOPES.has(scope));
       if (catalogAffected) {
         await get().loadModelCatalog().catch(console.error);
       }

@@ -56,11 +56,13 @@ export function useRemoteLlmProbing(
 
   const fetchRemoteModels = useCallback(async (force = false) => {
     if (!provider || provider.kind === "embedded" || !provider.base_url) return;
+    if (provider.kind === "cloud" && !provider.api_key?.trim()) return;
     await loadRemoteModels(provider, force);
   }, [provider, loadRemoteModels]);
 
   useEffect(() => {
     if (activePipelineTab === "llm" && isRemoteLlm && provider && provider.kind !== "embedded" && provider.base_url) {
+      if (provider.kind === "cloud" && !provider.api_key?.trim()) return;
       fetchRemoteModels();
     }
   }, [activePipelineTab, isRemoteLlm, provider, fetchRemoteModels]);

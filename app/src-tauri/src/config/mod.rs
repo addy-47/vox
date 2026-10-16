@@ -13,7 +13,7 @@ pub use dispatch::{
     SETTINGS_SAVE_DEBOUNCE_MS,
 };
 pub use files::{AgentConfigFile, ProvidersConfigFile, SettingsConfigFile};
-pub use mutation::{apply_model_parameter_mutation, apply_setting_mutation};
+pub use mutation::{apply_model_parameter_mutation, apply_setting_mutation, supported_keys_for_domain};
 pub use settings::{
     get_preset_colors, AppearanceSettings, AudioOutputMode, InteractionSettings, PersonaSettings,
     PersonalMemorySettings, SystemSettings, VoxSettings, WorkingMemorySettings,
@@ -63,7 +63,7 @@ fn classify_known(domain: &str, key: &str) -> Option<SettingReloadPolicy> {
                 "speech_onset_ms",
             ],
         ),
-        ("tts", &["speed", "voice_id", "voice", "active_voice_id"]),
+        ("tts", &["voice_id", "voice", "active_voice_id"]),
     ];
 
     const ALL_HOT: &[&str] = &[
@@ -77,44 +77,18 @@ fn classify_known(domain: &str, key: &str) -> Option<SettingReloadPolicy> {
         "realtime",
     ];
 
-    const HOT_KEYED: &[(&str, &str)] = &[
-        ("llm", "temperature"),
-        ("llm", "compaction_temperature"),
-        ("llm", "max_output_tokens"),
-        ("llm", "reasoning_enabled"),
-        ("stt", "transliterate_enabled"),
-        ("stt", "partial_throttle_ms"),
-    ];
-
     const KEYED: &[(&str, &str, SettingReloadPolicy)] = &[
         ("stt", "active", SettingReloadPolicy::Restart),
-        ("stt", "model", SettingReloadPolicy::Restart),
-        ("stt", "provider", SettingReloadPolicy::Restart),
-        ("stt", "embedded", SettingReloadPolicy::Restart),
-        ("stt", "cloud", SettingReloadPolicy::Restart),
-        ("stt", "threads", SettingReloadPolicy::Restart),
+        ("stt", "last_selected", SettingReloadPolicy::Restart),
+        ("stt", "transliterate_enabled", SettingReloadPolicy::Restart),
         ("llm", "active", SettingReloadPolicy::Restart),
-        ("llm", "model", SettingReloadPolicy::Restart),
-        ("llm", "provider", SettingReloadPolicy::Restart),
+        ("llm", "last_selected", SettingReloadPolicy::Restart),
         ("llm", "servers", SettingReloadPolicy::Restart),
-        ("llm", "api_keys", SettingReloadPolicy::Restart),
         ("llm", "cloud_keys", SettingReloadPolicy::Restart),
-        ("llm", "embedded", SettingReloadPolicy::Restart),
-        ("llm", "context_window", SettingReloadPolicy::Restart),
-        ("llm", "threads", SettingReloadPolicy::Restart),
         ("tts", "active", SettingReloadPolicy::Restart),
-        ("tts", "provider", SettingReloadPolicy::Restart),
+        ("tts", "last_selected", SettingReloadPolicy::Restart),
         ("tts", "servers", SettingReloadPolicy::Restart),
-        ("tts", "api_keys", SettingReloadPolicy::Restart),
-        ("tts", "threads", SettingReloadPolicy::Restart),
-        ("tts", "edge_tts", SettingReloadPolicy::Restart),
-        ("tts", "supertonic", SettingReloadPolicy::Restart),
-        ("tts", "kokoro", SettingReloadPolicy::Restart),
-        ("tts", "chatterbox", SettingReloadPolicy::Restart),
-        ("tts", "chatterbox_remote", SettingReloadPolicy::Restart),
-        ("tts", "zipvoice", SettingReloadPolicy::Restart),
         ("vad", "vad_backend", SettingReloadPolicy::Restart),
-        ("vad", "max_speech_duration_s", SettingReloadPolicy::Restart),
     ];
 
     if WORKER_COMMAND
@@ -128,13 +102,49 @@ fn classify_known(domain: &str, key: &str) -> Option<SettingReloadPolicy> {
         return Some(*policy);
     }
 
-    if HOT_KEYED.iter().any(|(d, k)| *d == domain && *k == key) {
-        return Some(SettingReloadPolicy::Hot);
-    }
-
     if ALL_HOT.contains(&domain) {
         return Some(SettingReloadPolicy::Hot);
     }
 
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn policy_table_matches_mutation_contract() {
+        assert_eq!(
+            get_setting_reload_policy("llm", "servers"),
+            SettingReloadPolicy::Restart
+        );
+        assert_eq!(
+            get_setting_reload_policy("llm", "cloud_keys"),
+            SettingReloadPolicy::Restart
+        );
+        for phantom in ["server", "cloud", "embedded", "temperature", "threads"] {
+            assert!(
+                classify_known("llm", phantom).is_none(),
+                "policy names unappliable key llm.{}",
+                phantom
+            );
+        }
+        for (domain, key) in [
+            ("stt", "active"),
+            ("stt", "last_selected"),
+            ("llm", "active"),
+            ("llm", "last_selected"),
+            ("tts", "active"),
+            ("tts", "servers"),
+            ("vad", "vad_backend"),
+        ] {
+            assert!(
+                supported_keys_for_domain(domain).contains(&key),
+                "policy key {}.{} missing from mutation contract",
+                domain,
+                key
+            );
+        }
+    }
 }

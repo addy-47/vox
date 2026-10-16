@@ -3,7 +3,7 @@ import { AlertCircle, Check, RefreshCw } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { useSettingsStore } from "@/store/settingsStore";
 import { useExpandedModalStore } from "@/store/expandedModalStore";
-import { useDomainCommitState } from "./SettingsCommitControls";
+import { useDomainCommitState, SettingsFooterBanner } from "./SettingsCommitControls";
 import { ErrorBoundary } from "@/shared/components/common";
 import { AnimatePresence, motion } from "framer-motion";
 import type { SettingsDomain as Domain } from "@/data/settingsCopy";
@@ -18,6 +18,17 @@ export interface SettingsCardWrapperProps {
   children: React.ReactNode;
 }
 
+const getDomainCardWidth = (domainId: string, layoutMode: "full-max" | "full-min" | "small"): string => {
+  if (layoutMode === "small") return "w-full";
+  if (domainId === "persona") {
+    return layoutMode === "full-min" ? "lg:w-[350px] xl:w-[370px] 2xl:w-[440px]" : "lg:w-[470px]";
+  }
+  if (domainId === "appearance") {
+    return layoutMode === "full-min" ? "lg:w-[240px] xl:w-[260px] 2xl:w-[280px]" : "lg:w-[290px] xl:w-[310px]";
+  }
+  return layoutMode === "full-min" ? "lg:w-[360px] xl:w-[420px] 2xl:w-[520px]" : "lg:w-[520px]";
+};
+
 export const SettingsCardWrapper = memo(({ domain, isActive, layoutMode, children }: SettingsCardWrapperProps) => {
   useMemoryTrace(`SettingsCard (${domain.id})`);
   const { mode, hasChanges } = useDomainCommitState(domain.id);
@@ -28,7 +39,9 @@ export const SettingsCardWrapper = memo(({ domain, isActive, layoutMode, childre
   const isRestartHere = mode === "restarting";
   const saveFailure = mode === "failed";
   const failedKeys = useSettingsStore((s) => s.failedSaveDomains[domain.id]);
+  const deskFooter = useSettingsStore((s) => s.deskFooter);
   const expandModalOpen = useExpandedModalStore((s) => s.openCount > 0);
+  const showDeskFooter = !expandModalOpen && !hasChanges && deskFooter?.domain === domain.id;
 
   return (
     <AnimatePresence>
@@ -52,8 +65,8 @@ export const SettingsCardWrapper = memo(({ domain, isActive, layoutMode, childre
           <div
             id={`card-${domain.id}`}
             className={cn(
-              "flex flex-col gap-0",
-              layoutMode === "small" ? "w-full" : "shrink-0",
+              "flex flex-col gap-0 max-w-full",
+              layoutMode === "small" ? "w-full" : cn("shrink-0", getDomainCardWidth(domain.id, layoutMode)),
               layoutMode !== "small" && (hasChanges || isAutoSavedHere || isRestartHere || saveFailure) && "has-unsaved-changes"
             )}
           >
@@ -70,7 +83,7 @@ export const SettingsCardWrapper = memo(({ domain, isActive, layoutMode, childre
                 key="missing-key-footer"
                 className="w-full p-2.5 sm:p-3 px-4 sm:px-5 rounded-b-[1.25rem] rounded-t-none bg-[rgba(var(--accent),0.08)] dark:bg-[rgba(var(--accent),0.12)] border border-t-0 border-[rgba(var(--accent),0.2)] flex items-center justify-between gap-2 overflow-hidden text-[12px] animate-in fade-in duration-150"
               >
-                <span className="font-bold uppercase tracking-wider text-[rgb(var(--danger))] flex items-center gap-1.5 shrink-0 truncate">
+                <span className="font-bold uppercase tracking-wider text-[rgb(var(--danger))] flex items-center gap-1.5 min-w-0 flex-1">
                   <AlertCircle size={14} className="shrink-0" />
                   <span className="truncate">{SETTINGS_COPY.apiKeyRequired}</span>
                 </span>
@@ -95,7 +108,7 @@ export const SettingsCardWrapper = memo(({ domain, isActive, layoutMode, childre
             {!expandModalOpen && hasChanges && !isMissingKey && requiresRestart && (
               <div
                 key="apply-restart-footer"
-                className="w-full p-2.5 px-4 sm:px-5 rounded-b-[1.25rem] rounded-t-none bg-[rgba(var(--accent),0.08)] dark:bg-[rgba(var(--accent),0.12)] border border-t-0 border-[rgba(var(--accent),0.2)] flex items-center justify-between gap-2 overflow-hidden text-[12px] animate-in fade-in duration-150"
+                className="w-full p-2.5 px-4 sm:px-5 rounded-b-[1.25rem] rounded-t-none bg-[rgba(var(--accent),0.08)] dark:bg-[rgba(var(--accent),0.12)] border border-t-0 border-[rgba(var(--accent),0.2)] flex items-center justify-between gap-2 flex-wrap overflow-hidden text-[12px] animate-in fade-in duration-150"
               >
                 <button
                   onClick={() => useSettingsStore.getState().commitChanges()}
@@ -154,17 +167,27 @@ export const SettingsCardWrapper = memo(({ domain, isActive, layoutMode, childre
               <div
                 key="save-failed-footer"
                 role="alert"
-                className="w-full py-2 px-4 sm:px-5 rounded-b-[1.25rem] rounded-t-none bg-[rgba(var(--danger),0.1)] border border-t-0 border-[rgba(var(--danger),0.25)] flex flex-col sm:flex-row sm:items-start lg:items-center justify-between gap-1 sm:gap-4 overflow-hidden text-[12px] animate-in fade-in duration-150"
+                className="w-full max-w-full py-2 px-4 sm:px-5 rounded-b-[1.25rem] rounded-t-none bg-[rgba(var(--danger),0.1)] border border-t-0 border-[rgba(var(--danger),0.25)] flex flex-col sm:flex-row sm:items-start lg:items-center justify-between gap-1 sm:gap-4 overflow-hidden text-[12px] animate-in fade-in duration-150 box-border"
               >
-                <span className="font-bold uppercase tracking-wider text-[rgb(var(--danger))] flex items-start gap-1.5 shrink-0">
-                  <AlertCircle size={14} className="shrink-0 mt-px" /> <span className="min-w-0 break-words">{SETTINGS_COPY.saveFailedTitle}</span>
+                <span className="font-bold uppercase tracking-wider text-[rgb(var(--danger))] flex items-start gap-1.5 min-w-0 flex-1">
+                  <AlertCircle size={14} className="shrink-0 mt-px" /> <span className="min-w-0 [overflow-wrap:anywhere] break-words">{SETTINGS_COPY.saveFailedTitle}</span>
                 </span>
-                <span className="text-[11px] text-[rgb(var(--danger))]/80 font-mono min-w-0 break-words leading-snug [overflow-wrap:anywhere] sm:text-right">
+                <span className="text-[11px] text-[rgb(var(--danger))]/80 font-mono min-w-0 flex-1 [overflow-wrap:anywhere] break-all leading-snug sm:text-right">
                   {failedKeys.length > 0
                     ? `${SETTINGS_COPY.saveFailedHint} ${failedKeys.join(", ")}`
                     : SETTINGS_COPY.saveFailedNone}
                 </span>
               </div>
+            )}
+
+            {/* Mode G: Transient desk error (provider health / model list) */}
+            {showDeskFooter && deskFooter && (
+              <SettingsFooterBanner
+                key="desk-error-footer"
+                title={deskFooter.title}
+                detail={deskFooter.detail}
+                className="rounded-b-[1.25rem] rounded-t-none border-t-0"
+              />
             )}
           </div>
         </motion.div>
