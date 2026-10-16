@@ -364,6 +364,8 @@ fn main() {
     let run_chatterbox = matches!(model_arg.as_str(), "chatterbox" | "cb" | "all");
     let run_zipvoice = matches!(model_arg.as_str(), "zipvoice" | "zv" | "all");
     let run_edge = matches!(model_arg.as_str(), "edge" | "edge_tts");
+    let run_azure = matches!(model_arg.as_str(), "azure" | "azure_tts");
+    let run_google = matches!(model_arg.as_str(), "google" | "google_tts");
 
     // Wav persistence: per-run wav dir under report dir + optional extra dir
     let base_output_dir = args
@@ -556,6 +558,73 @@ fn main() {
 
     if run_edge {
         eprintln!("[INFO] EdgeTTS is cloud and requires network; skipping bench by default (use --model edge explicitly if needed)");
+    }
+
+    if run_google {
+        let google_voices = [
+            ("en-US-Chirp3-HD-Kore", "Google Cloud TTS (Chirp 3 HD Kore)"),
+            ("en-US-Chirp3-HD-Fenrir", "Google Cloud TTS (Chirp 3 HD Fenrir)"),
+            ("en-US-Chirp3-HD-Puck", "Google Cloud TTS (Chirp 3 HD Puck)"),
+            ("en-US-Chirp3-HD-Aoede", "Google Cloud TTS (Chirp 3 HD Aoede)"),
+        ];
+
+        for (voice_name, desc) in google_voices {
+            if let Ok(provider_impl) = vox_lib::services::tts::GoogleTtsProvider::new(voice_name, Some("vox-agent-001")) {
+                let provider: Box<dyn vox_lib::services::tts::providers::TtsProvider> = Box::new(provider_impl);
+                let tag = format!("google_tts_{}", voice_name.replace("en-US-Chirp3-HD-", ""));
+                let run = benchmark_tts_provider(
+                    desc,
+                    &tag,
+                    "https://texttospeech.googleapis.com",
+                    &prompts,
+                    provider,
+                    Some(&wav_run_dir),
+                    base_voice,
+                );
+                engine_runs.push(run);
+            } else {
+                eprintln!("[WARN] Failed to initialize GoogleTtsProvider for voice {}", voice_name);
+            }
+        }
+    }
+
+    if run_azure {
+        let key = std::env::var("AZURE_SPEECH_KEY").unwrap_or_default();
+        let region = std::env::var("AZURE_SPEECH_REGION").unwrap_or_else(|_| "eastus".to_string());
+        let azure_voices = [
+            ("en-US-JennyNeural", "Azure AI Speech (JennyNeural)"),
+            ("en-US-GuyNeural", "Azure AI Speech (GuyNeural)"),
+            ("en-US-AvaMultilingualNeural", "Azure AI Speech (AvaMultilingualNeural)"),
+            ("en-US-AndrewMultilingualNeural", "Azure AI Speech (AndrewMultilingualNeural)"),
+        ];
+
+        if key.is_empty() {
+            eprintln!("[WARN] AZURE_SPEECH_KEY not set; set AZURE_SPEECH_KEY to benchmark Azure AI Speech");
+        } else {
+            for (voice_name, desc) in azure_voices {
+                if let Ok(provider_impl) = vox_lib::services::tts::AzureTtsProvider::new(
+                    &region,
+                    voice_name,
+                    &key,
+                    None,
+                ) {
+                    let provider: Box<dyn vox_lib::services::tts::providers::TtsProvider> = Box::new(provider_impl);
+                    let tag = format!("azure_tts_{}", voice_name.replace("en-US-", ""));
+                    let run = benchmark_tts_provider(
+                        desc,
+                        &tag,
+                        &region,
+                        &prompts,
+                        provider,
+                        Some(&wav_run_dir),
+                        base_voice,
+                    );
+                    engine_runs.push(run);
+                } else {
+                    eprintln!("[WARN] Failed to initialize AzureTtsProvider for voice {}", voice_name);
+                }
+            }
+        }
     }
 
     if engine_runs.is_empty() {

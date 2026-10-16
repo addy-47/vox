@@ -125,17 +125,17 @@ export const TTS_MODAL_PROVIDERS: TtsProviderEntry[] = [
     id: "google_tts",
     name: "Google Cloud TTS",
     category: "cloud",
-    tagline: "Studio and Journey natural-sounding neural speech synthesis",
-    isComingSoon: true,
-    statusLabel: "Coming Soon",
+    tagline: "High-definition Chirp 3 neural speech synthesis with multi-dialect support",
+    url: "https://cloud.google.com/text-to-speech",
+    statusLabel: "Ready",
   },
   {
     id: "azure_tts",
     name: "Azure AI Speech",
     category: "cloud",
-    tagline: "Enterprise neural speech with real-time streaming voice output",
-    isComingSoon: true,
-    statusLabel: "Coming Soon",
+    tagline: "Enterprise neural speech with low-latency 24 kHz streaming voice output",
+    url: "https://azure.microsoft.com/products/cognitive-services/text-to-speech",
+    statusLabel: "Ready",
   },
 ];
 
