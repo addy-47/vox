@@ -12,6 +12,7 @@ import {
   STT_SETTINGS_COPY,
   LLM_SETTINGS_COPY,
 } from "@/data/settingsCopy";
+import { CLOUD_PROVIDERS } from "@/data/providersCopy";
 import { Orbit, Loader2 } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { SegmentedControl } from "@/shared/ui";
@@ -116,31 +117,33 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
       return { kind: "embedded" };
     }
     if (activeProviderKind === "server") {
+      const serverId = draftSettings?.llm?.active?.provider;
+      const entry = draftSettings?.providers?.llm?.servers?.find((s) => s.id === serverId);
       return {
         kind: "server",
-        base_url: draftSettings?.llm?.server?.base_url || "",
-        model: draftSettings?.llm?.server?.model || "",
-        api_key: draftSettings?.llm?.server?.api_key || undefined,
-        provider_name: draftSettings?.llm?.server?.provider_name || undefined,
+        provider_id: serverId ?? undefined,
+        base_url: entry?.url || "",
+        model: draftSettings?.llm?.active?.model || "",
+        api_key: entry?.api_key || undefined,
+        provider_name: entry?.name || undefined,
       };
     }
+    const cloudId = draftSettings?.llm?.active?.provider;
+    const cloudEntry = CLOUD_PROVIDERS.find((p) => p.id === cloudId);
     return {
       kind: "cloud",
-      base_url: draftSettings?.llm?.cloud?.base_url || "",
-      model: draftSettings?.llm?.cloud?.model || "",
-      api_key: draftSettings?.llm?.cloud?.api_key || undefined,
-      provider_name: draftSettings?.llm?.cloud?.provider_name || undefined,
+      provider_id: cloudId ?? undefined,
+      base_url: cloudEntry?.url || "",
+      model: draftSettings?.llm?.active?.model || "",
+      api_key: (cloudId && draftSettings?.llm?.cloud_keys?.[cloudId]) || undefined,
+      provider_name: cloudEntry?.name || undefined,
     };
   }, [
     activeProviderKind,
-    draftSettings?.llm?.server?.base_url,
-    draftSettings?.llm?.server?.model,
-    draftSettings?.llm?.server?.api_key,
-    draftSettings?.llm?.server?.provider_name,
-    draftSettings?.llm?.cloud?.base_url,
-    draftSettings?.llm?.cloud?.model,
-    draftSettings?.llm?.cloud?.api_key,
-    draftSettings?.llm?.cloud?.provider_name,
+    draftSettings?.llm?.active?.provider,
+    draftSettings?.llm?.active?.model,
+    draftSettings?.llm?.cloud_keys,
+    draftSettings?.providers?.llm?.servers,
   ]);
 
 
@@ -238,8 +241,9 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
     if (!isRemoteTts) return;
     setSetupStatus({ progress: 10, step: "initiating", log_line: "Starting connection..." });
     try {
-      const remoteCfg = draftSettings?.tts?.chatterbox_remote;
-      const endpoint = remoteCfg?.endpoint || "http://127.0.0.1:7860";
+      const ttsServers = draftSettings?.tts?.servers ?? draftSettings?.providers?.tts?.servers ?? [];
+      const remoteCfg = ttsServers.find((s) => s.id === draftSettings?.tts?.active?.provider);
+      const endpoint = remoteCfg?.url || "http://127.0.0.1:7860";
       const remotePath = remoteCfg?.remote_path || "~/.vox";
 
       let srvPort = 7860;
@@ -283,8 +287,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
     !!modelCatalog?.vad?.find((m) => m.is_built_in && m.id === draftSettings?.vad?.vad_backend);
 
   const isSttCloud = draftSettings?.stt?.active?.category === "cloud";
-  const activeSttModel =
-    draftSettings?.stt?.active?.model || draftSettings?.stt?.embedded?.model;
+  const activeSttModel = draftSettings?.stt?.active?.model;
   const isAsrVerified =
     isSttCloud
       ? true
@@ -293,7 +296,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
   const isLlmDownloaded =
     isRemoteLlm
       ? true
-      : !!(draftSettings?.llm?.embedded?.model && modelPresence[draftSettings.llm.embedded.model]);
+      : !!(draftSettings?.llm?.active?.model && modelPresence[draftSettings.llm.active.model]);
 
   // The preview active id IS the manifest group id — direct presence lookup.
   // Cloud needs nothing on disk; remote needs a healthy server.
@@ -474,9 +477,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
                   <LlmCatalogView
                     layoutMode={layoutMode}
                     selectedLlmId={
-                      draftSettings?.llm?.active?.model ||
-                      draftSettings?.llm?.cloud?.model ||
-                      ""
+                      draftSettings?.llm?.active?.model || ""
                     }
                     modelPresence={modelPresence}
                     downloadStatuses={downloadStatuses}

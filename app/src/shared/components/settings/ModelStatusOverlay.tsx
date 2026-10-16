@@ -59,17 +59,9 @@ export const ModelStatusOverlay = memo(() => {
   const isRemoteLlm = llmCategory === "server" || llmCategory === "cloud";
   const isCloudStt = sttCategory === "cloud";
 
-  const llmId =
-    llmCategory === "embedded"
-      ? activeSettings?.llm?.embedded?.model || ""
-      : llmCategory === "server"
-      ? activeSettings?.llm?.server?.model || ""
-      : activeSettings?.llm?.cloud?.model || "";
+  const llmId = activeSettings?.llm?.active?.model || "";
 
-  const asrId =
-    sttCategory === "embedded"
-      ? activeSettings?.stt?.embedded?.model || ""
-      : activeSettings?.stt?.cloud?.model || "";
+  const asrId = activeSettings?.stt?.active?.model || "";
 
   const ttsKind = activeSettings?.tts?.active?.model || "";
 
@@ -113,14 +105,18 @@ export const ModelStatusOverlay = memo(() => {
   let llmDisplayName = "";
   let llmSubtitle = "";
 
+  const llmServerEntry = activeSettings?.providers?.llm?.servers?.find(
+    (s) => s.id === activeSettings?.llm?.active?.provider
+  );
+
   if (activeLlmKind === "server") {
-    llmDisplayName = activeSettings?.llm?.server?.model || "Server LLM";
-    llmSubtitle = activeSettings?.llm?.server?.provider_name || "Ollama / Remote";
+    llmDisplayName = llmId || "Server LLM";
+    llmSubtitle = llmServerEntry?.name || "Ollama / Remote";
   } else if (activeLlmKind === "cloud") {
-    llmDisplayName = activeSettings?.llm?.cloud?.model || "Cloud LLM";
-    llmSubtitle = activeSettings?.llm?.cloud?.provider_name || "Cloud API";
+    llmDisplayName = llmId || "Cloud LLM";
+    llmSubtitle = activeSettings?.llm?.active?.provider || "Cloud API";
   } else {
-    llmDisplayName = catalogLlm?.name || activeSettings?.llm?.embedded?.model || "Embedded LLM";
+    llmDisplayName = catalogLlm?.name || llmId || "Embedded LLM";
     llmSubtitle = catalogLlm?.parameters || "On-Device GGUF";
   }
 
@@ -129,8 +125,8 @@ export const ModelStatusOverlay = memo(() => {
   let asrSubtitle = "";
 
   if (activeSttKind === "cloud") {
-    asrDisplayName = activeSettings?.stt?.cloud?.model || "Cloud STT";
-    asrSubtitle = activeSettings?.stt?.cloud?.provider || "Cloud API";
+    asrDisplayName = asrId || "Cloud STT";
+    asrSubtitle = activeSettings?.stt?.active?.provider || "Cloud API";
   } else {
     asrDisplayName = activeAsr?.name || asrId || "Nemotron";
     asrSubtitle = activeAsr?.parameters || "ASR";

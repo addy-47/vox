@@ -6,7 +6,7 @@ use crate::{
     config::{
         apply_model_parameter_mutation, apply_setting_mutation, dispatch_worker_command,
         get_setting_reload_policy, handle_setting_side_effects, request_engine_restart,
-        schedule_debounced_save, SettingReloadPolicy, VoxSettings,
+        schedule_debounced_save, supported_keys_for_domain, SettingReloadPolicy, VoxSettings,
     },
     core::{
         error::VoxIpcError,
@@ -105,10 +105,17 @@ pub async fn update_setting<R: tauri::Runtime>(
     };
 
     if !applied {
-        log::warn!("[Settings::Mutation] Unknown setting: {}.{}", domain, key);
+        let valid = supported_keys_for_domain(&domain).join(", ");
+        log::warn!(
+            "[Settings::Mutation] Unknown setting: {}.{} (valid {} keys: {})",
+            domain,
+            key,
+            domain,
+            valid
+        );
         return Err(VoxIpcError::InvalidArgument(format!(
-            "Unknown setting: {}.{}",
-            domain, key
+            "Unknown setting: {}.{} (valid {} keys: {})",
+            domain, key, domain, valid
         )));
     }
 

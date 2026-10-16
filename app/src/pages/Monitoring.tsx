@@ -70,10 +70,9 @@ export const Monitoring: React.FC<MonitoringProps> = ({
     (s) => s.settings?.stt?.transliterate_enabled ?? true
   );
   const modelCatalog = useSettingsStore((s) => s.modelCatalog);
-  const llmEmbeddedModel = useSettingsStore((s) => s.settings?.llm?.embedded?.model ?? "");
-  const llmServerModel = useSettingsStore((s) => s.settings?.llm?.server?.model ?? "");
-  const llmCloudModel = useSettingsStore((s) => s.settings?.llm?.cloud?.model ?? "");
-  const sttEmbeddedModel = useSettingsStore((s) => s.settings?.stt?.embedded?.model ?? "");
+  const llmActiveModel = useSettingsStore((s) => s.settings?.llm?.active?.model ?? "");
+  const llmActiveProvider = useSettingsStore((s) => s.settings?.llm?.active?.provider ?? "");
+  const sttActiveModel = useSettingsStore((s) => s.settings?.stt?.active?.model ?? "");
   const themeIsLight = theme === "light";
 
   // Dynamic CSS variable observer state
@@ -176,14 +175,14 @@ export const Monitoring: React.FC<MonitoringProps> = ({
     if (latest.is_llm_loaded) {
       const llmName =
         llmProvider === "embedded"
-          ? llmEmbeddedModel || "LLM"
+          ? llmActiveModel || "LLM"
           : llmProvider === "server"
-            ? llmServerModel || "LLM Server"
-            : llmCloudModel || "LLM Cloud";
-      list.push(llmName);
+            ? llmActiveModel || "LLM Server"
+            : llmActiveModel || "LLM Cloud";
+      list.push(llmActiveProvider ? `${llmName} (${llmActiveProvider})` : llmName);
     }
     if (latest.is_stt_loaded) {
-      list.push(sttProvider === "embedded" ? sttEmbeddedModel || "STT" : "Cloud STT");
+      list.push(sttProvider === "embedded" ? sttActiveModel || "STT" : "Cloud STT");
     }
     if (latest.is_tts_loaded) {
       list.push(activeTtsGroup?.name ?? ttsProvider ?? "TTS");
@@ -203,10 +202,9 @@ export const Monitoring: React.FC<MonitoringProps> = ({
     llmProvider,
     sttProvider,
     ttsProvider,
-    llmEmbeddedModel,
-    llmServerModel,
-    llmCloudModel,
-    sttEmbeddedModel,
+    llmActiveModel,
+    llmActiveProvider,
+    sttActiveModel,
     activeTtsGroup,
     activeVadGroup,
     isVadModel,

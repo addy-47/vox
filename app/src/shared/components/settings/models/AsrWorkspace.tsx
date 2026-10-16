@@ -1,5 +1,6 @@
 import { memo } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
+import { useModelParameters } from "@/shared/hooks/useModelParameters";
 import { SubModelCard } from "../SubModelCard";
 import type { ModelStatus } from "@/shared/hooks/useModelDownloads";
 import { cn } from "@/shared/lib/utils";
@@ -38,10 +39,14 @@ export const AsrWorkspace = memo(
     const draftSettings = useSettingsStore((s) => s.draftSettings);
     const updateDraft = useSettingsStore((s) => s.updateDraft);
     const modelCatalog = useSettingsStore((s) => s.modelCatalog);
+    const activeSttModel = draftSettings?.stt?.active?.model || null;
+    const { params, setParam } = useModelParameters(activeSttModel);
 
     if (!draftSettings || !modelCatalog) return null;
 
-    const currentThrottle = draftSettings.stt?.embedded?.partial_throttle_ms ?? 300;
+    const numParam = (v: unknown): number | undefined =>
+      typeof v === "number" && !Number.isNaN(v) ? v : undefined;
+    const currentThrottle = numParam(params.partial_throttle_ms) ?? 300;
     const transliterateEnabled = draftSettings.stt?.transliterate_enabled ?? true;
 
     const throttleCustom = ![150, 300, 500].includes(currentThrottle);
@@ -79,12 +84,6 @@ export const AsrWorkspace = memo(
                 layoutMode={layoutMode}
                 onSelect={() => {
                   updateDraft("stt", "active", activeSelection("embedded", model.id));
-                  if (draftSettings.stt?.embedded) {
-                    updateDraft("stt", "embedded", {
-                      ...draftSettings.stt.embedded,
-                      model: model.id,
-                    });
-                  }
                 }}
                 confirmDeleteId={confirmDeleteId}
                 setConfirmDeleteId={setConfirmDeleteId}
@@ -118,7 +117,7 @@ export const AsrWorkspace = memo(
                     <PresetButton
                       key={val}
                       selected={currentThrottle === val}
-                      onClick={() => updateDraft("stt", "partial_throttle_ms", val)}
+                      onClick={() => setParam("partial_throttle_ms", val)}
                     >
                       {label}
                     </PresetButton>
@@ -132,7 +131,7 @@ export const AsrWorkspace = memo(
                       if (!clean) return;
                       const num = parseInt(clean, 10);
                       if (!isNaN(num) && num >= 50 && num <= 1500) {
-                        updateDraft("stt", "partial_throttle_ms", num);
+                        setParam("partial_throttle_ms", num);
                       }
                     }}
                   />
@@ -161,7 +160,7 @@ export const AsrWorkspace = memo(
             const totalCores = (typeof navigator !== "undefined" ? navigator.hardwareConcurrency : undefined) || 4;
             const optimalThreads = Math.max(2, totalCores - 2);
             const ecoThreads = Math.max(1, Math.floor(totalCores / 2));
-            const currentThreads = draftSettings.stt?.embedded?.threads ?? 4;
+            const currentThreads = numParam(params.threads) ?? 4;
             const currentProfile =
               currentThreads === totalCores ? "max"
               : currentThreads === optimalThreads ? "auto"
@@ -177,7 +176,7 @@ export const AsrWorkspace = memo(
                     <PresetButton
                       mono={false}
                       selected={currentProfile === "auto"}
-                      onClick={() => updateDraft("stt", "threads", optimalThreads)}
+                      onClick={() => setParam("threads", optimalThreads)}
                     >
                       <Zap size={11} className="text-[rgb(var(--accent))]" />
                       <span>{COMPUTE_PROFILE_COPY.auto}</span>
@@ -185,7 +184,7 @@ export const AsrWorkspace = memo(
                     <PresetButton
                       mono={false}
                       selected={currentProfile === "eco"}
-                      onClick={() => updateDraft("stt", "threads", ecoThreads)}
+                      onClick={() => setParam("threads", ecoThreads)}
                     >
                       <Battery size={11} className="text-[rgb(var(--success))]" />
                       <span>{COMPUTE_PROFILE_COPY.eco}</span>
@@ -193,7 +192,7 @@ export const AsrWorkspace = memo(
                     <PresetButton
                       mono={false}
                       selected={currentProfile === "max"}
-                      onClick={() => updateDraft("stt", "threads", totalCores)}
+                      onClick={() => setParam("threads", totalCores)}
                     >
                       <Gauge size={11} className="text-[rgb(var(--warn-soft))]" />
                       <span>{COMPUTE_PROFILE_COPY.max}</span>
@@ -207,7 +206,7 @@ export const AsrWorkspace = memo(
                         if (!clean) return;
                         const num = parseInt(clean, 10);
                         if (!isNaN(num) && num >= 1 && num <= 64) {
-                          updateDraft("stt", "threads", num);
+                          setParam("threads", num);
                         }
                       }}
                     />

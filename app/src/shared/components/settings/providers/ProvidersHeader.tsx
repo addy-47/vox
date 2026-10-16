@@ -222,8 +222,8 @@ export const ProvidersHeader = memo(function ProvidersHeader({
               className={cn(
                 "h-6 px-1.5 sm:px-2 flex items-center gap-1 rounded-md text-[10.5px] font-bold transition-all cursor-pointer",
                 isCustomActive
-                  ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] shadow-[0_0_8px_rgba(var(--accent),0.35)]"
-                  : "bg-[rgba(var(--accent),0.08)] text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.16)] border border-[rgba(var(--accent),0.25)]"
+                  ? "bg-[rgba(var(--accent),0.16)] text-[rgb(var(--accent))] border border-dashed border-[rgb(var(--accent))]"
+                  : "bg-[rgba(var(--accent),0.08)] text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.16)] border border-dashed border-[rgba(var(--accent),0.35)]"
               )}
             >
               <Plus size={11} strokeWidth={2.2} />

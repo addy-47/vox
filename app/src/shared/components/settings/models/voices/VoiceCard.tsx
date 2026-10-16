@@ -51,11 +51,15 @@ export const VoiceCard = memo(
     const description = voice.description || VOICE_CATALOG_COPY.fallbackDescription;
     const badges = hideBadges
       ? []
-      : [
-          tagLabel(voice.gender),
-          voice.accent || voice.locale,
-          ...voice.tags.slice(0, 1).map(tagLabel),
-        ].filter(Boolean);
+      : Array.from(
+          new Set(
+            [
+              tagLabel(voice.gender),
+              voice.accent || voice.locale,
+              ...voice.tags.slice(0, 1).map(tagLabel),
+            ].filter(Boolean)
+          )
+        );
 
     const cardWaveformBars = useMemo(
       () => (voice && previewPlaying ? getVoiceWaveform(voice.id, 28) : []),

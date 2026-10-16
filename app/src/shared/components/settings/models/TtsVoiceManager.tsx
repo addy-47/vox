@@ -1,5 +1,6 @@
 import { memo } from "react";
 import { useSettingsStore, type ProviderCaps } from "@/store/settingsStore";
+import { useModelParameters } from "@/shared/hooks/useModelParameters";
 import { Zap, Battery, Gauge } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { RotaryKnob } from "@/shared/ui";
@@ -21,10 +22,37 @@ export type TtsSubTab = "voice" | "speed" | "compute";
  */
 export const TtsVoiceManager = memo(({ layoutMode, caps, activeSubTab = "speed" }: TtsVoiceManagerProps) => {
   const draftSettings = useSettingsStore((s) => s.draftSettings);
-  const updateDraft = useSettingsStore((s) => s.updateDraft);
 
   if (!draftSettings) return null;
 
+  const ttsModelId =
+    draftSettings.tts?.active?.model || draftSettings.tts?.active_voice_id || null;
+  return (
+    <TtsVoiceManagerBody
+      layoutMode={layoutMode}
+      caps={caps}
+      activeSubTab={activeSubTab}
+      modelId={ttsModelId}
+    />
+  );
+});
+
+TtsVoiceManager.displayName = "TtsVoiceManager";
+
+const TtsVoiceManagerBody = memo(({
+  layoutMode,
+  caps,
+  activeSubTab,
+  modelId,
+}: {
+  layoutMode: TtsVoiceManagerProps["layoutMode"];
+  caps: ProviderCaps | null;
+  activeSubTab: "voice" | "speed" | "compute";
+  modelId: string | null;
+}) => {
+  const { params, setParam } = useModelParameters(modelId);
+  const numParam = (v: unknown): number | undefined =>
+    typeof v === "number" && !Number.isNaN(v) ? v : undefined;
   const copy = TTS_VOICE_MANAGER_COPY;
 
   return (
@@ -47,13 +75,13 @@ export const TtsVoiceManager = memo(({ layoutMode, caps, activeSubTab = "speed" 
             rightSlot={
               <div className="w-full flex items-center justify-center">
                 <RotaryKnob
-                  value={draftSettings.tts.speed || 1.0}
+                  value={numParam(params.speed) ?? 1.0}
                   min={range.min}
                   max={range.max}
                   step={range.step}
                   formatValue={(v) => `${v.toFixed(2)}x`}
                   formatPreset={(v) => `${v}x`}
-                  onChange={(v) => updateDraft("tts", "speed", v)}
+                  onChange={(v) => setParam("speed", v)}
                   presetSteps={[0.8, 1.0, 1.25]}
                 />
               </div>
@@ -67,7 +95,7 @@ export const TtsVoiceManager = memo(({ layoutMode, caps, activeSubTab = "speed" 
         const totalCores = (typeof navigator !== "undefined" ? navigator.hardwareConcurrency : undefined) || 4;
         const balancedThreads = Math.max(1, Math.floor(totalCores / 2));
         const ecoThreads = Math.max(1, Math.floor(totalCores / 4));
-        const currentThreads = draftSettings.tts.threads ?? 6;
+        const currentThreads = numParam(params.threads) ?? 6;
         const currentProfile =
           currentThreads === totalCores ? "max"
           : currentThreads === balancedThreads ? "balanced"
@@ -83,7 +111,7 @@ export const TtsVoiceManager = memo(({ layoutMode, caps, activeSubTab = "speed" 
                 <PresetButton
                   mono={false}
                   selected={currentProfile === "balanced"}
-                  onClick={() => updateDraft("tts", "threads", balancedThreads)}
+                  onClick={() => setParam("threads", balancedThreads)}
                 >
                   <Zap size={11} className="text-[rgb(var(--accent))]" />
                   <span>{COMPUTE_PROFILE_COPY.auto}</span>
@@ -91,7 +119,7 @@ export const TtsVoiceManager = memo(({ layoutMode, caps, activeSubTab = "speed" 
                 <PresetButton
                   mono={false}
                   selected={currentProfile === "eco"}
-                  onClick={() => updateDraft("tts", "threads", ecoThreads)}
+                  onClick={() => setParam("threads", ecoThreads)}
                 >
                   <Battery size={11} className="text-[rgb(var(--success))]" />
                   <span>{COMPUTE_PROFILE_COPY.eco}</span>
@@ -99,7 +127,7 @@ export const TtsVoiceManager = memo(({ layoutMode, caps, activeSubTab = "speed" 
                 <PresetButton
                   mono={false}
                   selected={currentProfile === "max"}
-                  onClick={() => updateDraft("tts", "threads", totalCores)}
+                  onClick={() => setParam("threads", totalCores)}
                 >
                   <Gauge size={11} className="text-[rgb(var(--warn-soft))]" />
                   <span>{COMPUTE_PROFILE_COPY.max}</span>
@@ -113,7 +141,7 @@ export const TtsVoiceManager = memo(({ layoutMode, caps, activeSubTab = "speed" 
                     if (!clean) return;
                     const num = parseInt(clean, 10);
                     if (!isNaN(num) && num >= 1 && num <= 64) {
-                      updateDraft("tts", "threads", num);
+                      setParam("threads", num);
                     }
                   }}
                 />
@@ -126,4 +154,4 @@ export const TtsVoiceManager = memo(({ layoutMode, caps, activeSubTab = "speed" 
   );
 });
 
-TtsVoiceManager.displayName = "TtsVoiceManager";
+TtsVoiceManagerBody.displayName = "TtsVoiceManagerBody";

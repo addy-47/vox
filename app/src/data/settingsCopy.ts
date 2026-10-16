@@ -36,46 +36,15 @@ export type SettingsScope =
 
 export const SETTINGS_SCOPE_KEYS: Partial<Record<SettingsScope, readonly string[]>> = {
   appearance: ["theme", "accent_seed"],
-  vad: [
-    "threshold",
-    "ptt_noise_gate",
-    "silence_duration_ms",
-    "speech_onset_ms",
-    "vad_backend",
-  ],
-  stt: [
-    "active",
-    "model",
-    "threads",
-    "transliterate_enabled",
-    "partial_throttle_ms",
-    "embedded",
-    "cloud",
-  ],
-  llm: [
-    "active",
-    "model",
-    "temperature",
-    "compaction_temperature",
-    "max_output_tokens",
-    "context_window",
-    "threads",
-    "embedded",
-    "server",
-    "cloud",
-    "cloud_keys",
-  ],
-  // `tts` deliberately has NO declared key list. Every TTS provider owns a
-  // named sub-object of the scope, so any such list is a hardcoded roster of
-  // provider ids — exactly what Invariant 6 forbids, and it goes stale the
-  // moment the backend adds a provider. Omitting the entry routes `tts`
-  // through the generic whole-scope paths every consumer already implements:
+  // `vad`, `stt`, `llm`, and `tts` deliberately have NO declared key lists.
+  // The backend owns the key contract (`config/mutation.rs`); any frontend
+  // roster goes stale the moment a key is added or removed — exactly how
+  // `llm.server` survived the config refactor as a phantom write. Omitting
+  // the entry routes these scopes through the generic whole-scope paths:
   //   isCategoryDirty / isDomainDirty -> deep scope comparison
   //   isDomainRequiringRestart       -> Object.keys(scope) filtered by
-  //                                     isRestartKey, so a new provider's
-  //                                     restart key is picked up for free
+  //                                     isRestartKey
   //   discardCategoryChanges / discardDomainChanges -> whole-scope restore
-  // That is strictly more coverage than an allowlist, with zero provider names.
   interaction: ["mode", "pipeline_mode"],
   dictation: ["enabled", "interaction_mode", "hotkey", "output_mode", "silence_auto_stop_ms"],
   working_memory: ["private_mode", "auto_compaction", "max_context_share", "web_search_enabled"],
@@ -91,10 +60,8 @@ export const SETTINGS_SCOPE_KEYS: Partial<Record<SettingsScope, readonly string[
   persona: ["modular_prompt", "realtime_prompt"],
   realtime: [
     "active",
-    "gemini_live",
-    "openai_realtime",
-    "deepgram_voice_agent",
-    "elevenlabs_convai",
+    "active_voice_id",
+    "api_keys",
   ],
   system: ["setup_completed"],
 };

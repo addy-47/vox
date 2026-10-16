@@ -33,15 +33,16 @@ export function useDomainCommitState(domainId: string): DomainCommitState {
   // per store write per wrapper (~1,100 calls). `domainFlags` is recomputed
   // once per mutation, so these are now O(1) lookups.
   const llmCategory = useSettingsStore((s) => s.draftSettings?.llm?.active?.category);
-  const cloudApiKey = useSettingsStore((s) => s.draftSettings?.llm?.cloud?.api_key);
+  const llmActiveProvider = useSettingsStore((s) => s.draftSettings?.llm?.active?.provider);
+  const llmCloudKeys = useSettingsStore((s) => s.draftSettings?.llm?.cloud_keys);
+  const llmProvidersKeys = useSettingsStore((s) => s.draftSettings?.providers?.llm?.cloud_keys);
+  const cloudApiKey = llmActiveProvider
+    ? (llmCloudKeys?.[llmActiveProvider] ?? llmProvidersKeys?.[llmActiveProvider])
+    : undefined;
   const pipelineMode = useSettingsStore((s) => s.draftSettings?.interaction?.pipeline_mode);
   const realtimeProvider = useSettingsStore((s) => s.draftSettings?.realtime?.active?.provider);
-  const geminiApiKey = useSettingsStore(
-    (s) => s.draftSettings?.realtime?.gemini_live?.api_key
-  );
-  const deepgramApiKey = useSettingsStore(
-    (s) => s.draftSettings?.realtime?.deepgram_voice_agent?.api_key
-  );
+  const realtimeKeys = useSettingsStore((s) => s.draftSettings?.realtime?.api_keys);
+  const realtimeProvidersKeys = useSettingsStore((s) => s.draftSettings?.providers?.realtime?.api_keys);
 
   const hasChanges = useSettingsStore((s) => Boolean(s.domainFlags[domainId]?.dirty));
   const requiresRestart = useSettingsStore(
@@ -50,10 +51,12 @@ export function useDomainCommitState(domainId: string): DomainCommitState {
 
   const isCloudLlmMissingKey =
     llmCategory === "cloud" && !cloudApiKey?.trim();
+  const realtimeKeyFor = (id: string | null | undefined) =>
+    id ? (realtimeKeys?.[id] ?? realtimeProvidersKeys?.[id]) : undefined;
   const isRealtimeMissingKey =
     pipelineMode === "realtime" &&
-    ((realtimeProvider === "gemini_live" && !geminiApiKey?.trim()) ||
-     (realtimeProvider === "deepgram_voice_agent" && !deepgramApiKey?.trim()));
+    ((realtimeProvider === "gemini_live" && !realtimeKeyFor("gemini_live")?.trim()) ||
+     (realtimeProvider === "deepgram_voice_agent" && !realtimeKeyFor("deepgram_voice_agent")?.trim()));
 
   const isMissingKey = useMemo(() => {
     if (domainId === "models" || domainId === "interaction") {
@@ -98,6 +101,71 @@ export function useDomainCommitState(domainId: string): DomainCommitState {
 
   return { mode, hasChanges, failedKeys: failedKeys ?? [] };
 }
+
+/**
+ * Shared footer banner grammar for every settings surface: card footers,
+ * inline desks, and expanded modals render failures and transient provider
+ * errors in this one shape, so copy wraps inside the parent width instead of
+ * overflowing it. Title and detail both shrink and wrap; only the icon is
+ * fixed.
+ */
+export interface SettingsFooterBannerProps {
+  title: string;
+  detail?: string | null;
+  tone?: "danger" | "accent";
+  icon?: "alert" | "check" | "restart";
+  className?: string;
+}
+
+export const SettingsFooterBanner = memo(({
+  title,
+  detail,
+  tone = "danger",
+  icon = "alert",
+  className,
+}: SettingsFooterBannerProps) => {
+  const danger = tone === "danger";
+  return (
+    <div
+      role={danger ? "alert" : "status"}
+      className={cn(
+        "w-full max-w-full py-2 px-4 flex flex-col gap-0.5 overflow-hidden text-[12px] animate-in fade-in duration-150 box-border",
+        danger
+          ? "bg-[rgba(var(--danger),0.1)] border border-[rgba(var(--danger),0.25)]"
+          : "bg-[rgba(var(--accent),0.08)] border border-[rgba(var(--accent),0.2)]",
+        className
+      )}
+    >
+      <span
+        className={cn(
+          "font-bold uppercase tracking-wider flex items-center gap-1.5 min-w-0 w-full",
+          danger ? "text-[rgb(var(--danger))]" : "text-[rgb(var(--accent))]"
+        )}
+      >
+        {icon === "check" ? (
+          <Check size={14} className="shrink-0" />
+        ) : icon === "restart" ? (
+          <RefreshCw size={13} className="shrink-0" />
+        ) : (
+          <AlertCircle size={14} className="shrink-0" />
+        )}
+        <span className="min-w-0 flex-1 [overflow-wrap:anywhere] break-words">{title}</span>
+      </span>
+      {detail ? (
+        <span
+          className={cn(
+            "text-[11px] font-mono min-w-0 w-full [overflow-wrap:anywhere] break-all leading-snug",
+            danger ? "text-[rgb(var(--danger))]/80" : "text-[rgb(var(--accent))]/80"
+          )}
+        >
+          {detail}
+        </span>
+      ) : null}
+    </div>
+  );
+});
+
+SettingsFooterBanner.displayName = "SettingsFooterBanner";
 
 export interface SettingsCommitControlsProps {
   domainId: string;
@@ -144,6 +212,11 @@ export const SettingsCommitControls = memo(({ domainId, layoutMode }: SettingsCo
   }
 
   if (mode === "missing-key") {
+    if (isExpanded) {
+      // In modal headers, do not render dead Save buttons or header alerts.
+      // Missing API key alerts are rendered via the unified footer banner at the bottom.
+      return null;
+    }
     return (
       <div className="flex items-center gap-1.5 shrink-0">
         <span className="flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider text-[rgb(var(--danger))] shrink-0">

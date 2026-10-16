@@ -1,5 +1,6 @@
 import { memo } from "react";
 import { useSettingsStore, type VoxSettings, type SettingsState, type RealtimeSubkey } from "@/store/settingsStore";
+import { useModelParameters } from "@/shared/hooks/useModelParameters";
 import { Search, Cpu } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { REALTIME_CONFIG_DESK_COPY } from "@/data/settingsCopy";
@@ -34,35 +35,21 @@ function UnifiedConfig({
   layoutMode?: "full-max" | "full-min" | "small";
 }) {
   // Config shape — not the provider name — drives every rendering decision.
-  // The subkey is only the settings address it was loaded from.
-  const fallbackConfig =
-    subkey === "gemini_live"
-      ? {
-          api_key: "",
-          model: "",
-          voice_name: VOICE_OPTIONS[0],
-          language_code: "",
-          temperature: 0.7,
-          enable_web_search: true,
-        }
-      : {
-          api_key: "",
-          model: "",
-          voice: VOICE_OPTIONS[0],
-          temperature: 0.7,
-          agent_mode: false,
-        };
-  const config = draftSettings.realtime?.[subkey] ?? fallbackConfig;
+  // The subkey only selects the provider family's field layout. Values live
+  // in the `models` table per active model; the model id itself is the
+  // realtime active selection.
+  const activeModel = draftSettings.realtime?.active?.model || null;
+  const { params, setParam } = useModelParameters(activeModel);
 
-  const voiceField = config && "voice_name" in config ? "voice_name" : "voice";
-  const currentVoice =
-    (config && "voice_name" in config
-      ? (config as { voice_name?: string }).voice_name
-      : config && "voice" in config
-        ? (config as { voice?: string }).voice
-        : undefined) || VOICE_OPTIONS[0];
-  const model = config && "model" in config ? (config as { model?: string }).model ?? "" : "";
-  const temperature = config && "temperature" in config ? ((config as { temperature?: number }).temperature ?? 0.7) : 0.7;
+  const voiceField = subkey === "gemini_live" ? "voice_name" : "voice";
+  const strParam = (v: unknown): string | undefined =>
+    typeof v === "string" && v.length > 0 ? v : undefined;
+  const currentVoice = strParam(params[voiceField]) || VOICE_OPTIONS[0];
+  const model = activeModel ?? "";
+  const rawTemp = params.temperature;
+  const temperature = typeof rawTemp === "number" && !Number.isNaN(rawTemp) ? rawTemp : 0.7;
+  const webSearch = params.enable_web_search !== false;
+  const agentMode = params.agent_mode === true;
 
   return (
     <div
@@ -81,8 +68,9 @@ function UnifiedConfig({
           label={REALTIME_CONFIG_DESK_COPY.modelLabel}
           value={model}
           onChange={(v) => {
-            if (!disabled)
-              updateDraft("realtime", subkey, { ...config, model: v });
+            if (disabled) return;
+            const cur = draftSettings.realtime?.active;
+            if (cur) updateDraft("realtime", "active", { ...cur, model: v });
           }}
           placeholder={REALTIME_CONFIG_DESK_COPY.modelPlaceholder}
           disabled={disabled}
@@ -93,43 +81,34 @@ function UnifiedConfig({
           label={REALTIME_CONFIG_DESK_COPY.temperature}
           value={temperature}
           onChange={(v) => {
-            if (!disabled)
-              updateDraft("realtime", subkey, { ...config, temperature: v });
+            if (!disabled) setParam("temperature", v);
           }}
           disabled={disabled}
         />
 
-        {/* Toggle (only rendered when the config carries a supported boolean flag) */}
-        {"enable_web_search" in (config || {}) ? (
+        {/* Toggle (only rendered when the provider family supports the flag) */}
+        {subkey === "gemini_live" ? (
           <ToggleRow
             label="Google Search"
             sub="Live web grounding"
-            enabled={Boolean((config as { enable_web_search?: boolean }).enable_web_search)}
+            enabled={webSearch}
             onChange={() => {
               if (disabled) return;
-              const cur = Boolean((config as { enable_web_search?: boolean }).enable_web_search);
-              updateDraft("realtime", subkey, {
-                ...config,
-                enable_web_search: !cur,
-              });
+              setParam("enable_web_search", !webSearch);
             }}
             icon={
               <Search size={11} className="text-[rgb(var(--accent))]" />
             }
             disabled={disabled}
           />
-        ) : "agent_mode" in (config || {}) ? (
+        ) : subkey === "deepgram_voice_agent" ? (
           <ToggleRow
             label="Agent Mode"
             sub="AI agent routing"
-            enabled={Boolean((config as { agent_mode?: boolean }).agent_mode)}
+            enabled={agentMode}
             onChange={() => {
               if (disabled) return;
-              const cur = Boolean((config as { agent_mode?: boolean }).agent_mode);
-              updateDraft("realtime", subkey, {
-                ...config,
-                agent_mode: !cur,
-              });
+              setParam("agent_mode", !agentMode);
             }}
             disabled={disabled}
           />
@@ -147,7 +126,7 @@ function UnifiedConfig({
           selected={currentVoice}
           onChange={(v) => {
             if (disabled) return;
-            updateDraft("realtime", subkey, { ...config, [voiceField]: v });
+            setParam(voiceField, v);
           }}
           disabled={disabled}
         />

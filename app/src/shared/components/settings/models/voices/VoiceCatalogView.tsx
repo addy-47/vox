@@ -13,7 +13,7 @@ import {
   CatalogFilterMenu,
   CatalogHeader,
   type CatalogSortOrder,
-} from "../catalog/CatalogHeader";
+} from "../../providers/CatalogHeader";
 import { VoiceCard } from "./VoiceCard";
 import { VoiceCatalogModalView } from "./VoiceCatalogModalView";
 

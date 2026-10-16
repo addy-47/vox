@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { ipcErrorMessage } from "@/shared/lib/ipcError";
 import { useSettingsStore } from "@/store/settingsStore";
 import {
   listVoices,
@@ -64,7 +65,7 @@ export function useVoiceCatalog(
 ): UseVoiceCatalogResult {
   const { provider, suspended = false, engine, cloudSync = false } = options;
   const updateDraft = useSettingsStore((s) => s.updateDraft);
-  const draftVoiceId = useSettingsStore((s) => s.draftSettings?.tts?.voice_id);
+  const draftVoiceId = useSettingsStore((s) => s.draftSettings?.tts?.active_voice_id);
 
   const cachedVoices = provider ? VOICES_CACHE.get(provider) : undefined;
   const [voices, setVoices] = useState<UnifiedVoiceDto[]>(cachedVoices ?? []);
@@ -109,7 +110,7 @@ export function useVoiceCatalog(
         );
       })
       .catch((e) => {
-        if (isMounted) setError(e instanceof Error ? e.message : String(e));
+        if (isMounted) setError(ipcErrorMessage(e));
       })
       .finally(() => {
         if (isMounted) setLoading(false);
@@ -204,7 +205,7 @@ export function useVoiceCatalog(
   const stageVoice = useCallback(
     (id: string) => {
       setStagedId(id);
-      updateDraft("tts", "voice_id", id);
+      updateDraft("tts", "active_voice_id", id);
     },
     [updateDraft]
   );

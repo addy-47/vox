@@ -16,7 +16,7 @@ export {
 
 // Re-export subcomponents
 export { RemoteModelCard, type RemoteModelCardProps } from "./catalog/RemoteModelCard";
-export { RemoteModelsModalView, type RemoteModelsModalViewProps } from "./catalog/RemoteModelsModalView";
+export { RemoteModelsModalView, type RemoteModelsModalViewProps } from "../providers/RemoteModelsModalView";
 export { LocalCatalogSection, type LocalCatalogSectionProps } from "./catalog/LocalCatalogSection";
 export { RemoteCatalogSection, type RemoteCatalogSectionProps } from "./catalog/RemoteCatalogSection";
 

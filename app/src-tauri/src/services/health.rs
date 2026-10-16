@@ -7,7 +7,7 @@ use crate::{
     },
     services::{
         llm::{
-            catalog::{discover_server_dialect, ServerDialect}, ConnectionConfig, LlmProvider, LlmRuntimeTarget,
+            catalog::discover_server_dialect, ConnectionConfig, LlmProvider, LlmRuntimeTarget,
             RemoteTransport, QWEN_MODEL_DIR, QWEN_MODEL_FILE,
         },
         stt::{create_stt_provider, SttProviderConfig, NEMOTRON_MODEL_DIR, QWEN_ASR_MODEL_DIR},
@@ -152,17 +152,21 @@ pub async fn check_llm_health(
             let provider = RemoteTransport::new(conn_cfg.clone());
             let health_error = provider.health_check().await.err();
 
-            let (healthy, reason, dialect) =
-                if discovered != ServerDialect::GenericOpenAiCompat || health_error.is_none() {
-                    (true, None, Some(discovered.display_name().to_string()))
+            let reason = health_error.map(|err| {
+                let msg = err.to_string();
+                let lower = msg.to_lowercase();
+                if lower.contains("connection refused") {
+                    format!("unreachable: {}", msg)
+                } else if lower.contains("timed out") || lower.contains("timeout") {
+                    format!("timed out: {}", msg)
                 } else {
-                    let reason = health_error.map(|err| err.to_string());
-                    (false, reason, None)
-                };
+                    msg
+                }
+            });
 
             Ok(ProviderHealthCheckResult {
-                healthy,
-                dialect,
+                healthy: reason.is_none(),
+                dialect: Some(discovered.display_name().to_string()),
                 reason,
             })
         }

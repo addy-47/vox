@@ -1,6 +1,7 @@
 
 import { useMemo, memo } from "react";
 import { useSettingsStore, LlmProviderConfig } from "@/store/settingsStore";
+import { useModelParameters } from "@/shared/hooks/useModelParameters";
 import { Zap, Battery, Gauge } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { LLM_SETTINGS_COPY, COMPUTE_PROFILE_COPY } from "@/data/settingsCopy";
@@ -30,7 +31,12 @@ export const LlmSettingsView = memo(({
   isCloud,
 }: LlmSettingsViewProps) => {
   const llmSettings = useSettingsStore((s) => s.draftSettings?.llm);
-  const updateDraft = useSettingsStore((s) => s.updateDraft);
+  const activeModelId = llmSettings?.active?.model || null;
+  // Per-model overrides from the `models` table; catalog defaults apply untouched.
+  const { params, setParam } = useModelParameters(activeModelId);
+
+  const numParam = (v: unknown): number | undefined =>
+    typeof v === "number" && !Number.isNaN(v) ? v : undefined;
 
   // CPU Core configuration
   const totalCores = (typeof navigator !== "undefined" ? navigator.hardwareConcurrency : undefined) || 4;
@@ -38,7 +44,7 @@ export const LlmSettingsView = memo(({
   const powerSaverThreads = Math.max(1, Math.floor(totalCores / 2));
 
   // Determine current CPU profile
-  const currentThreads = llmSettings?.threads || optimalThreads;
+  const currentThreads = numParam(params.threads) || optimalThreads;
   const currentProfile = useMemo(() => {
     if (currentThreads === optimalThreads) return "auto";
     if (currentThreads === powerSaverThreads) return "power";
@@ -47,32 +53,24 @@ export const LlmSettingsView = memo(({
   }, [currentThreads, optimalThreads, powerSaverThreads, totalCores]);
 
   // Determine token budget (default: 300)
-  const currentTokens = llmSettings?.max_output_tokens ?? 300;
+  const currentTokens = numParam(params.max_output_tokens) ?? 300;
 
   // Determine creativity / temperature (default: 0.7)
-  const currentTemp = llmSettings?.temperature ?? 0.7;
-  const currentContext = Math.max(8192, llmSettings?.context_window ?? 8192);
+  const currentTemp = numParam(params.temperature) ?? 0.7;
+  const currentContext = Math.max(8192, numParam(params.context_window) ?? 8192);
 
   // Active capabilities and dynamic bounds
   const MIN_CONTEXT_WINDOW = 8192;
   const capabilitiesCache = useSettingsStore((s) => s.capabilitiesCache);
-  const activeModel = useMemo(() => {
-    const category = llmSettings?.active?.category;
-    if (category === "embedded") return llmSettings?.active?.model;
-    if (category === "server") return llmSettings?.server?.model;
-    if (category === "cloud") return llmSettings?.cloud?.model;
-    return undefined;
-  }, [llmSettings?.active?.category, llmSettings?.active?.model]);
-
   const activeCapabilities = useMemo(() => {
-    if (!activeModel) return undefined;
+    if (!activeModelId) return undefined;
     return (
-      capabilitiesCache?.[`server:${activeModel}`] ||
-      capabilitiesCache?.[`cloud:${activeModel}`] ||
-      capabilitiesCache?.[`embedded:${activeModel}`] ||
-      capabilitiesCache?.[activeModel]
+      capabilitiesCache?.[`server:${activeModelId}`] ||
+      capabilitiesCache?.[`cloud:${activeModelId}`] ||
+      capabilitiesCache?.[`embedded:${activeModelId}`] ||
+      capabilitiesCache?.[activeModelId]
     );
-  }, [activeModel, capabilitiesCache]);
+  }, [activeModelId, capabilitiesCache]);
 
   // Spec §7.1: the ceiling comes from the resolved capability. Unknown stays
   // at the floor — never a fabricated 128k. Remote models without a probed
@@ -109,7 +107,7 @@ export const LlmSettingsView = memo(({
                 <PresetButton
                   mono={false}
                   selected={currentProfile === "auto"}
-                  onClick={() => updateDraft("llm", "threads", optimalThreads)}
+                  onClick={() => setParam("threads", optimalThreads)}
                 >
                   <Zap size={11} className="text-[rgb(var(--accent))]" />
                   <span>{COMPUTE_PROFILE_COPY.auto}</span>
@@ -117,7 +115,7 @@ export const LlmSettingsView = memo(({
                 <PresetButton
                   mono={false}
                   selected={currentProfile === "power"}
-                  onClick={() => updateDraft("llm", "threads", powerSaverThreads)}
+                  onClick={() => setParam("threads", powerSaverThreads)}
                 >
                   <Battery size={11} className="text-[rgb(var(--success))]" />
                   <span>{COMPUTE_PROFILE_COPY.eco}</span>
@@ -125,7 +123,7 @@ export const LlmSettingsView = memo(({
                 <PresetButton
                   mono={false}
                   selected={currentProfile === "max"}
-                  onClick={() => updateDraft("llm", "threads", totalCores)}
+                  onClick={() => setParam("threads", totalCores)}
                 >
                   <Gauge size={11} className="text-[rgb(var(--warn-soft))]" />
                   <span>{COMPUTE_PROFILE_COPY.max}</span>
@@ -160,7 +158,7 @@ export const LlmSettingsView = memo(({
                 <PresetButton
                   key={label}
                   selected={currentTokens === val}
-                  onClick={() => updateDraft("llm", "max_output_tokens", val)}
+                  onClick={() => setParam("max_output_tokens", val)}
                 >
                   {label}
                 </PresetButton>
@@ -174,7 +172,7 @@ export const LlmSettingsView = memo(({
                   if (!clean) return;
                   const num = parseInt(clean, 10);
                   if (!isNaN(num) && num >= 50 && num <= 128000) {
-                    updateDraft("llm", "max_output_tokens", num);
+                    setParam("max_output_tokens", num);
                   }
                 }}
               />
@@ -196,7 +194,7 @@ export const LlmSettingsView = memo(({
                   <PresetButton
                     key={size}
                     selected={currentContext === size}
-                    onClick={() => updateDraft("llm", "context_window", size)}
+                    onClick={() => setParam("context_window", size)}
                   >
                     {size / 1024}k
                   </PresetButton>
@@ -210,7 +208,7 @@ export const LlmSettingsView = memo(({
                     if (!clean) return;
                     const num = parseInt(clean, 10);
                     if (!isNaN(num) && num >= MIN_CONTEXT_WINDOW && num <= maxContextCeiling) {
-                      updateDraft("llm", "context_window", num);
+                      setParam("context_window", num);
                     }
                   }}
                 />
@@ -239,7 +237,7 @@ export const LlmSettingsView = memo(({
                 <PresetButton
                   key={label}
                   selected={Math.abs(currentTemp - val) < 0.05}
-                  onClick={() => updateDraft("llm", "temperature", val)}
+                  onClick={() => setParam("temperature", val)}
                 >
                   {label}
                 </PresetButton>
@@ -254,7 +252,7 @@ export const LlmSettingsView = memo(({
                   if (!clean) return;
                   const num = parseFloat(clean);
                   if (!isNaN(num) && num >= 0.0 && num <= 2.0) {
-                    updateDraft("llm", "temperature", num);
+                    setParam("temperature", num);
                   }
                 }}
               />
