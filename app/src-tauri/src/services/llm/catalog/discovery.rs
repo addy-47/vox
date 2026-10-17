@@ -71,28 +71,29 @@ async fn probe_ollama_endpoint(
     let mut builder = client.get(&url).timeout(Duration::from_secs(1));
     builder = inject_auth_headers(builder, auth);
 
-    let resp = match builder.send().await {
-        Ok(resp) => resp,
-        Err(err) => {
-            log::debug!("[Catalog::Discovery] {} unreachable: {}", url, err);
-            return None;
+    if let Ok(resp) = builder.send().await {
+        if resp.status().is_success() {
+            let version = resp.json::<serde_json::Value>().await.ok().and_then(|v| {
+                v.get("version")
+                    .and_then(|s| s.as_str())
+                    .map(ToString::to_string)
+            });
+            return Some(ServerDialect::Ollama { version });
         }
-    };
-    if resp.status().is_success() {
-        let version = resp.json::<serde_json::Value>().await.ok().and_then(|v| {
-            v.get("version")
-                .and_then(|s| s.as_str())
-                .map(ToString::to_string)
-        });
-        Some(ServerDialect::Ollama { version })
-    } else {
-        log::debug!(
-            "[Catalog::Discovery] {} answered HTTP {}",
-            url,
-            resp.status()
-        );
-        None
     }
+
+    // Fallback: check /api/tags which is always supported by Ollama
+    let tags_url = format!("{}/api/tags", root);
+    let mut tags_builder = client.get(&tags_url).timeout(Duration::from_secs(1));
+    tags_builder = inject_auth_headers(tags_builder, auth);
+
+    if let Ok(resp) = tags_builder.send().await {
+        if resp.status().is_success() {
+            return Some(ServerDialect::Ollama { version: None });
+        }
+    }
+
+    None
 }
 
 async fn probe_vllm_endpoint(

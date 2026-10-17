@@ -52,7 +52,6 @@ const DomainContent = memo(({ domain, layoutMode }: { domain: DomainId; layoutMo
 DomainContent.displayName = "DomainContent";
 
 import { RadialHub, SettingsConnectorsOverlay } from "@/shared/components/settings/RadialHub";
-import { RestoreDefaultsButton } from "@/shared/components/settings/RestoreDefaultsButton";
 import { BottomDockFeather } from "@/shared/ui/BottomDockFeather";
 
 import { SettingsCardWrapper } from "@/shared/components/settings/SettingsCardWrapper";
@@ -149,10 +148,7 @@ export const Settings: React.FC = () => {
       {/* ── Desktop & Tablet Hexagon/Grid Layout (>= 1024px) ────────────────── */}
       {!isCompact ? (
         <div ref={containerRef} className="flex-1 w-full grid grid-cols-12 grid-rows-6 gap-4 items-stretch relative min-h-0 overflow-visible">
-          {/* Direct Page-Level Restore Control */}
-          <div className="absolute top-0 right-2 z-30 hidden lg:block">
-            <RestoreDefaultsButton />
-          </div>
+          {/* Restore-defaults control lives in AppHeader (right slot); page-level duplicate removed. */}
 
           {/* Dynamic SVG Overlay for Node-to-Card connections (rendered synchronously with active cards) */}
           <SettingsConnectorsOverlay
@@ -255,11 +251,10 @@ export const Settings: React.FC = () => {
       ) : (
         /* ── Mobile & Compact Layout (Single vertical scroll list) ─────────── */
         <div className="flex-1 flex flex-col min-h-0 overflow-hidden w-full pt-2.5 sm:pt-3.5">
-          <div className="flex items-center justify-between px-3 sm:px-4.5 pb-2 shrink-0">
+          <div className="flex items-center px-3 sm:px-4.5 pb-2 shrink-0">
             <span className="text-xs font-semibold uppercase tracking-wider text-[rgb(var(--foreground-muted))]">
               Settings
             </span>
-            <RestoreDefaultsButton />
           </div>
 
           <div className="flex-1 w-full relative overflow-hidden flex flex-col min-h-0">

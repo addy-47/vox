@@ -24,3 +24,27 @@ export function activeSelection(
 ): ActiveSelection {
   return { category, provider, model };
 }
+
+/**
+ * Resolves the effective API key for a cloud provider across draft and committed settings.
+ * Checks draft.llm.cloud_keys, draft.providers.llm.cloud_keys, and committed.providers.llm.cloud_keys.
+ */
+export function getEffectiveCloudApiKey(
+  draft?: {
+    llm?: { cloud_keys?: Record<string, string> };
+    providers?: { llm?: { cloud_keys?: Record<string, string> } };
+  } | null,
+  committed?: {
+    llm?: { cloud_keys?: Record<string, string> };
+    providers?: { llm?: { cloud_keys?: Record<string, string> } };
+  } | null,
+  providerId?: string | null
+): string | undefined {
+  if (!providerId) return undefined;
+  const key =
+    draft?.llm?.cloud_keys?.[providerId] ??
+    draft?.providers?.llm?.cloud_keys?.[providerId] ??
+    committed?.providers?.llm?.cloud_keys?.[providerId] ??
+    committed?.llm?.cloud_keys?.[providerId];
+  return key?.trim() || undefined;
+}

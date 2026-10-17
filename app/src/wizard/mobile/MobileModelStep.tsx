@@ -29,6 +29,7 @@ import {
   MODEL_CATEGORY_COPY,
   MODEL_PROGRESS_STEPS,
 } from '@/data/welcomeCopy';
+import { formatBytes } from '@/shared/lib/format';
 
 interface MobileModelStepProps {
   onNext?: () => void;
@@ -41,13 +42,6 @@ interface MobileModelStepProps {
 }
 
 type PresetType = 'minimal' | 'full' | 'custom';
-
-function formatBytes(bytes: number): string {
-  if (bytes <= 0) return '0 B';
-  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(1024));
-  return `${(bytes / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
-}
 
 export const MobileModelStep: React.FC<MobileModelStepProps> = ({
   onNext,

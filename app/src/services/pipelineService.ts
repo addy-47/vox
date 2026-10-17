@@ -1,10 +1,16 @@
-import { invoke } from "./transport";
+import { invoke, invokeWithTimeout } from "./transport";
 import { getRuntimeSnapshot } from "./monitoringService";
-import { type InteractionState, VALID_INTERACTION_STATES } from "@/services/eventsService";
+import { type InteractionState, type InteractionOwner, VALID_INTERACTION_STATES } from "@/services/eventsService";
 import type { SessionRow, TurnRow } from "./persistenceService";
 import { useSessionStore } from "@/store/sessionStore";
 
-export type InteractionOwner = "Assistant" | "Dictation";
+// Canonical Rust `InteractionOwner` enum lives in eventsService.ts (core/state.rs).
+export type { InteractionOwner };
+
+/** Shared predicate: true when a pipeline event belongs to the dictation owner. */
+export function isDictationOwner(owner?: InteractionOwner): boolean {
+  return owner === "Dictation";
+}
 
 export type VoxIpcError = {
   readonly error_type: string;
@@ -119,24 +125,35 @@ export async function continueSession(
   return result;
 }
 
-function promiseWithTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => {
-      reject(new Error(`${label} timed out after ${timeoutMs}ms`));
-    }, timeoutMs);
-    promise
-      .then((val) => {
-        clearTimeout(timer);
-        resolve(val);
-      })
-      .catch((err) => {
-        clearTimeout(timer);
-        reject(err);
-      });
-  });
-}
-
 // ── Orchestration Helpers ───────────────────────────────────────────────────
+
+/**
+ * Shared pipeline readiness poll. Single loop for every readiness check:
+ * the main app's engage/disengage waits and the tray's engage-then-start path.
+ * Polls `getRuntimeSnapshot` until `pipeline_state` matches `target` or the
+ * deadline expires. Failures are best-effort — polling continues until timeout.
+ */
+export async function waitForPipelineState(
+  target: InteractionState,
+  options?: { timeoutMs?: number; intervalMs?: number },
+): Promise<boolean> {
+  const timeoutMs = options?.timeoutMs ?? 8000;
+  const intervalMs = options?.intervalMs ?? 100;
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    try {
+      const snap = await getRuntimeSnapshot();
+      const state = snap?.pipeline_state as InteractionState | undefined;
+      if (state === target) {
+        return true;
+      }
+    } catch {
+      // Best-effort; keep polling until deadline.
+    }
+    if (Date.now() >= deadline) return false;
+    await new Promise((r) => setTimeout(r, intervalMs));
+  }
+}
 
 export async function engageSession(
   notifyState: (state: InteractionState) => void,
@@ -144,7 +161,7 @@ export async function engageSession(
   sessionId?: number | null,
 ): Promise<SessionOrchestrationResult> {
   try {
-    await promiseWithTimeout(startSession(sessionId), timeoutMs, "start_session");
+    await invokeWithTimeout("start_session", { sessionId: sessionId ?? null }, timeoutMs);
   } catch (err: unknown) {
     if (isVoxIpcError(err) && isInvalidStateError(err)) {
       const synced = await resyncFromSnapshot();
@@ -173,7 +190,7 @@ export async function disengageSession(
   timeoutMs: number = 8000,
 ): Promise<SessionOrchestrationResult> {
   try {
-    await promiseWithTimeout(endSession(), timeoutMs, "end_session");
+    await invokeWithTimeout("end_session", undefined, timeoutMs);
   } catch (err: unknown) {
     if (isVoxIpcError(err) && isInvalidStateError(err)) {
       const synced = await resyncFromSnapshot();
@@ -202,27 +219,18 @@ async function waitForState(
   notifyState: (state: InteractionState) => void,
   timeoutMs: number,
 ): Promise<boolean> {
-  const deadline = Date.now() + timeoutMs;
-  for (;;) {
-    // 1. Fast-path: check if push event already reached the target state
-    if (useSessionStore.getState().interactionState === target) {
-      return true;
-    }
-
-    try {
-      const snap = await getRuntimeSnapshot();
-      const state = snap?.pipeline_state as InteractionState | undefined;
-      // Only notify when target is actually confirmed — never push stale intermediate states back to the store
-      if (state === target) {
-        notifyState(target);
-        return true;
-      }
-    } catch {
-      // Best-effort; keep polling until deadline.
-    }
-    if (Date.now() >= deadline) return false;
-    await new Promise((r) => setTimeout(r, 100));
+  // Fast-path: the push event already reached the target state.
+  if (useSessionStore.getState().interactionState === target) {
+    return true;
   }
+
+  // Only notify when the target is actually confirmed — never push stale
+  // intermediate states back to the store.
+  const reached = await waitForPipelineState(target, { timeoutMs });
+  if (reached) {
+    notifyState(target);
+  }
+  return reached;
 }
 
 async function resyncFromSnapshot(): Promise<{ success: boolean }> {

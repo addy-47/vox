@@ -1,7 +1,7 @@
 import { memo, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { CSSProperties } from "react";
-import { ArrowLeft, ArrowUpDown, Filter, Search, X } from "lucide-react";
+import { ArrowDownAZ, ArrowLeft, ArrowUpAZ, Filter, Search, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { Tooltip } from "@/shared/ui/Tooltip";
@@ -54,8 +54,8 @@ export interface CatalogHeaderProps {
   /** Status affordance after the title (fetching, connection failure). */
   status?: React.ReactNode;
   filter?: CatalogHeaderFilter;
-  sort: CatalogHeaderSort;
-  search: CatalogHeaderSearch;
+  sort?: CatalogHeaderSort;
+  search?: CatalogHeaderSearch;
 }
 
 const ICON_BUTTON =
@@ -84,8 +84,8 @@ export const CatalogHeader = memo(function CatalogHeader({
 
   // The search input replaces the icon cluster, so it must take focus itself.
   useEffect(() => {
-    if (search.open) searchInputRef.current?.focus();
-  }, [search.open]);
+    if (search?.open) searchInputRef.current?.focus();
+  }, [search?.open]);
 
   // Latest filter callbacks without re-binding the listeners every render.
   const onFilterCloseRef = useRef<(() => void) | null>(null);
@@ -112,12 +112,12 @@ export const CatalogHeader = memo(function CatalogHeader({
     };
   }, [filterOpen]);
 
-  const searchActive = search.open || search.value.length > 0;
+  const searchActive = Boolean(search && (search.open || search.value.length > 0));
 
   return (
     <div className="flex items-center justify-between gap-2 shrink-0 pb-2 border-b border-[rgba(var(--accent),0.08)]">
       {/* Left: breadcrumb + icon + title */}
-      <div className="flex items-center gap-2 min-w-0">
+      <div className="flex items-center gap-1 min-w-0">
         {onBack && (
           <button
             type="button"
@@ -146,7 +146,7 @@ export const CatalogHeader = memo(function CatalogHeader({
 
       {/* Right: action / filter / sort / search, or the search input in place */}
       <div className="flex items-center gap-1 min-w-0 ml-auto shrink-0">
-        {search.open ? (
+        {search?.open ? (
           <div className="flex items-center gap-1.5 w-[140px] sm:w-[200px] lg:w-[260px] min-w-0 border-b border-[rgb(var(--accent))] pb-0.5 animate-fade-in">
             <Search size={12} className="text-[rgb(var(--accent))] shrink-0" />
             <input
@@ -208,38 +208,47 @@ export const CatalogHeader = memo(function CatalogHeader({
               </div>
             )}
 
-            <Tooltip
-              label={sort.order === "az" ? CATALOG_HEADER_COPY.sortDesc : CATALOG_HEADER_COPY.sortAsc}
-              side="bottom"
-              asChild
-            >
-              <button
-                type="button"
-                onClick={sort.onToggle}
-                aria-label={sort.order === "az" ? CATALOG_HEADER_COPY.sortAsc : CATALOG_HEADER_COPY.sortDesc}
-                className={cn(ICON_BUTTON, ICON_BUTTON_IDLE)}
+            {sort && (
+              <Tooltip
+                label={sort.order === "az" ? CATALOG_HEADER_COPY.sortDesc : CATALOG_HEADER_COPY.sortAsc}
+                side="bottom"
+                asChild
               >
-                <ArrowUpDown size={13} strokeWidth={1.75} />
-              </button>
-            </Tooltip>
+                <button
+                  type="button"
+                  onClick={sort.onToggle}
+                  aria-label={sort.order === "az" ? CATALOG_HEADER_COPY.sortAsc : CATALOG_HEADER_COPY.sortDesc}
+                  className={cn(ICON_BUTTON, ICON_BUTTON_IDLE)}
+                >
+                  {/* Icon inverts with the order: A→Z points down, Z→A points up. */}
+                  {sort.order === "az" ? (
+                    <ArrowDownAZ size={13} strokeWidth={1.75} />
+                  ) : (
+                    <ArrowUpAZ size={13} strokeWidth={1.75} />
+                  )}
+                </button>
+              </Tooltip>
+            )}
 
-            <Tooltip
-              label={searchActive ? CATALOG_HEADER_COPY.clearSearch : CATALOG_HEADER_COPY.search}
-              side="bottom"
-              asChild
-            >
-              <button
-                type="button"
-                onClick={search.onToggle}
-                aria-label={searchActive ? CATALOG_HEADER_COPY.clearSearch : CATALOG_HEADER_COPY.search}
-                className={cn(
-                  ICON_BUTTON,
-                  searchActive ? ICON_BUTTON_ACTIVE : ICON_BUTTON_IDLE
-                )}
+            {search && (
+              <Tooltip
+                label={searchActive ? CATALOG_HEADER_COPY.clearSearch : CATALOG_HEADER_COPY.search}
+                side="bottom"
+                asChild
               >
-                <Search size={13} strokeWidth={1.75} />
-              </button>
-            </Tooltip>
+                <button
+                  type="button"
+                  onClick={search.onToggle}
+                  aria-label={searchActive ? CATALOG_HEADER_COPY.clearSearch : CATALOG_HEADER_COPY.search}
+                  className={cn(
+                    ICON_BUTTON,
+                    searchActive ? ICON_BUTTON_ACTIVE : ICON_BUTTON_IDLE
+                  )}
+                >
+                  <Search size={13} strokeWidth={1.75} />
+                </button>
+              </Tooltip>
+            )}
           </>
         )}
       </div>

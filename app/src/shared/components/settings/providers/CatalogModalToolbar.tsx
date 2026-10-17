@@ -133,7 +133,7 @@ export const CatalogModalToolbar = memo(function CatalogModalToolbar({
       {filter && (
         <div
           ref={filterRef}
-          className={cn("relative shrink-0", isSmall ? "flex" : "flex md:hidden")}
+          className={cn("relative shrink-0", isSmall ? "flex" : "flex lg:hidden")}
         >
           <Tooltip label={filter.label} side="bottom" asChild>
             <button

@@ -80,7 +80,7 @@ export interface SystemStatsPayload {
   cpu_count: number;
 }
 
-/** Rust `SetupStep` enum (setup/model_manager.rs:14), used by `model_progress`. */
+/** Canonical Rust `SetupStep` enum (setup/model_manager.rs:28, Serde snake_case). */
 export type SetupStep =
   | "idle"
   | "downloading"
@@ -88,14 +88,16 @@ export type SetupStep =
   | "verifying"
   | "completed"
   | "failed"
-  | "cancelled"
-  | "Idle"
-  | "Downloading"
-  | "Extracting"
-  | "Verifying"
-  | "Completed"
-  | "Failed"
-  | "Cancelled";
+  | "cancelled";
+
+export const VALID_SETUP_STEPS = new Set<SetupStep>([
+  "idle",
+  "downloading",
+  "extracting",
+  "verifying",
+  "completed",
+  "failed",
+  "cancelled"]);
 
 /** `model_progress` payload (setup/model_manager.rs & health.rs). */
 export interface ModelProgressPayload {

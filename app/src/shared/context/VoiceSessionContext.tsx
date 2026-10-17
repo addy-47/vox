@@ -1,9 +1,7 @@
-import { createContext, useContext, useCallback, useMemo } from "react";
+import { createContext, useContext, useCallback, useEffect, useMemo, useRef } from "react";
 import type { ReactNode } from "react";
 import { useSessionStore } from "@/store/sessionStore";
-import { useSessionEvents } from "@/shared/hooks/useSessionEvents";
-import { useTranscriptStream } from "@/shared/hooks/useTranscriptStream";
-import { useSessionHydration } from "@/shared/hooks/useSessionHydration";
+import { useVoiceSessionStream } from "@/shared/hooks/useVoiceSessionStream";
 import {
   engageSession,
   disengageSession,
@@ -134,8 +132,12 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
     }
   }, []);
 
-  const { transcript, assistantText, commitTurn, clearTranscript } =
-    useTranscriptStream(handleTurnComplete);
+  // commitTurn/clearTranscript are produced by useVoiceSessionStream below, while
+  // onStateChanged (passed into that same hook) must dispatch them on Ready/Idle.
+  // Ref indirection resolves the cycle; the hook reads handlers at event time,
+  // and the refs are wired in an effect that runs before any IPC event can arrive.
+  const commitTurnRef = useRef<() => void>(() => {});
+  const clearTranscriptRef = useRef<() => void>(() => {});
 
   const isEngaged = interactionState !== "Idle";
   const isSleeping = interactionState === "Sleeping";
@@ -161,7 +163,7 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
         storeApi().setSessionError(null);
       }
       if (next === "Ready") {
-        commitTurn();
+        commitTurnRef.current();
         if (!storeApi().activeSessionId) {
           void getRuntimeSnapshot().then((snapshot) => {
             if (snapshot && snapshot.conversation_id > 0) {
@@ -170,16 +172,12 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
           }).catch(() => {});
         }
       } else if (next === "Idle") {
-        clearTranscript();
+        clearTranscriptRef.current();
         storeApi().setLatestTurnMetrics(null);
       }
     },
-    [commitTurn, clearTranscript],
+    [],
   );
-
-  const handlePartial = useCallback(() => {}, []);
-  const handleFinal = useCallback(() => {}, []);
-  const handleToken = useCallback(() => {}, []);
 
   const handleSettingsUpdated = useCallback(() => {
     void (async () => {
@@ -198,18 +196,6 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
       }
     })();
   }, []);
-
-  // Listeners are registered synchronously on mount, before any await.
-  useSessionEvents({
-    onStateChanged: handleStateChanged,
-    onTranscriptPartial: handlePartial,
-    onTranscriptFinal: handleFinal,
-    onLlmToken: handleToken,
-    onSettingsUpdated: handleSettingsUpdated,
-    onTurnMetrics: (payload) => {
-      storeApi().setLatestTurnMetrics(payload);
-    },
-  });
 
   const handleHydrated = useCallback(
     (result: {
@@ -237,8 +223,21 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
     [],
   );
 
-  // Hydration runs after subscription is established.
-  useSessionHydration(handleHydrated);
+  const { transcript, assistantText, commitTurn, clearTranscript } = useVoiceSessionStream({
+    onStateChanged: handleStateChanged,
+    onSettingsUpdated: handleSettingsUpdated,
+    onTurnMetrics: (payload) => {
+      storeApi().setLatestTurnMetrics(payload);
+    },
+    onTurnComplete: handleTurnComplete,
+    onHydrated: handleHydrated,
+  });
+
+  // Wire the stream functions into the refs consumed by handleStateChanged.
+  useEffect(() => {
+    commitTurnRef.current = commitTurn;
+    clearTranscriptRef.current = clearTranscript;
+  }, [commitTurn, clearTranscript]);
 
   const engage = useCallback(async () => {
     clearTranscript();
@@ -433,7 +432,6 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
     api.setDialogueHistory([]);
 
     const restoreStartTime = performance.now();
-    const PULSE_CONVERGE_MS = 1700;
     console.info(`[trace-restore] selectSession start sessionId=${sessionId} at ${restoreStartTime.toFixed(1)}ms`);
 
     try {
@@ -443,20 +441,14 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
       const ipcElapsed = performance.now() - restoreStartTime;
       console.info(`[trace-restore] IPC fetched turns=${result.turns.length} in ${ipcElapsed.toFixed(1)}ms`);
 
+      // Data path commits immediately; the ambient RestorePulse ripple plays
+      // independently (driven by isRestoring/restoreSignal) and never blocks it.
       const history: DialogueTurn[] = result.turns.map((t) => ({
         user: t.user_text,
         assistant: t.assistant_text,
         id: t.turn_id,
       }));
 
-      // Synchronize with inward pulse convergence so transcript appears precisely when pulse hits orb edge
-      const elapsed = performance.now() - restoreStartTime;
-      const remainingWait = Math.max(0, PULSE_CONVERGE_MS - elapsed);
-      if (remainingWait > 0) {
-        await new Promise((resolve) => setTimeout(resolve, remainingWait));
-      }
-
-      console.info(`[trace-restore] Pulse convergence complete totalElapsed=${(performance.now() - restoreStartTime).toFixed(1)}ms, committing Ready`);
       const curApi = storeApi();
       curApi.setDialogueHistory(history);
       curApi.setTurnIdCounter(history.reduce((max, h) => Math.max(max, h.id), 0));

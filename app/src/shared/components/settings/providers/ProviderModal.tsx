@@ -13,6 +13,8 @@ import { CustomServerFormCard } from "./CustomServerFormCard";
 import { SelectableCard } from "./SelectableCard";
 import { CatalogFilterMenu, CatalogFilterItem } from "./CatalogHeader";
 import { CatalogModalToolbar } from "./CatalogModalToolbar";
+import { CatalogModalShell } from "./CatalogModalShell";
+import { CatalogFacetRail, type CatalogFacetGroup } from "./CatalogFacetRail";
 
 /** Deletes a custom server by ID and reverts to embedded if active. */
 export async function deleteCustomServer(domain: "llm" | "tts", serverId: string): Promise<void> {
@@ -48,6 +50,8 @@ export interface ProviderModalProps {
   onAddCustomServer?: () => void;
 }
 
+export type ProviderFilterCategory = "all" | "local" | "cloud" | "configured" | "unconfigured" | "guide";
+
 export const ProviderModal = memo(({
   category = "LLM", onSelectLocal, activeCloudProviderId, getProviderKey, pinnedProviderId,
   getCommittedProviderKey, onSelectProvider, editingProviderId, editingKeyValue, setEditingKeyValue,
@@ -55,7 +59,7 @@ export const ProviderModal = memo(({
 }: ProviderModalProps) => {
   const [modalSearch, setModalSearch] = useState("");
   const deferredSearch = useDeferredValue(modalSearch);
-  const [filterCategory, setFilterCategory] = useState<"all" | "local" | "cloud" | "configured" | "unconfigured" | "guide">("configured");
+  const [filterCategory, setFilterCategory] = useState<ProviderFilterCategory>("configured");
   const [sort, setSort] = useState<"az" | "za">("az");
   const [isFilterDropdownOpen, setIsFilterDropdownOpen] = useState(false);
   const [isCreatingCustomServer, setIsCreatingCustomServer] = useState(false);
@@ -132,29 +136,64 @@ export const ProviderModal = memo(({
 
   const sourceFilters = useMemo(
     () => [
+      { id: "all" as const, label: "All Providers", count: 1 + (isTts ? TTS_MODAL_PROVIDERS.length : CLOUD_PROVIDERS.length) + customServers.length, Icon: Globe },
+      { id: "configured" as const, label: "Available", count: 1 + (isTts ? ttsAvailableCount : configuredCount) + customServers.length, Icon: Key },
       { id: "local" as const, label: "On-Device", count: 1, Icon: HardDrive },
       { id: "cloud" as const, label: isTts ? "Cloud Voices" : "Cloud APIs", count: isTts ? TTS_MODAL_PROVIDERS.length : CLOUD_PROVIDERS.length, Icon: Cloud },
-      { id: "all" as const, label: "All Providers", count: 1 + (isTts ? TTS_MODAL_PROVIDERS.length : CLOUD_PROVIDERS.length) + customServers.length, Icon: Globe },
     ],
-    [isTts, customServers.length]
+    [isTts, customServers.length, ttsAvailableCount, configuredCount]
   );
 
   const statusFilters = useMemo(
     () =>
       isTts
-        ? [
-            { id: "configured" as const, label: "Available", count: 1 + ttsAvailableCount + customServers.length, Icon: Key },
-          ]
+        ? []
         : [
-            { id: "configured" as const, label: "Available", count: 1 + configuredCount + customServers.length, Icon: Key },
             { id: "unconfigured" as const, label: "Needs Key", count: unconfiguredCount, Icon: KeyRound },
           ],
-    [configuredCount, isTts, unconfiguredCount, customServers.length, ttsAvailableCount]
+    [isTts, unconfiguredCount]
   );
 
   const providerFilters = useMemo(
-    () => [...statusFilters, ...sourceFilters],
-    [statusFilters, sourceFilters]
+    () => [...sourceFilters, ...statusFilters],
+    [sourceFilters, statusFilters]
+  );
+
+  const facetGroups = useMemo<CatalogFacetGroup[]>(() => {
+    const groups: CatalogFacetGroup[] = [
+      {
+        title: "Source",
+        items: sourceFilters,
+      },
+    ];
+    if (!isTts && statusFilters.length > 0) {
+      groups.push({
+        title: "Status",
+        items: statusFilters,
+      });
+    }
+    return groups;
+  }, [sourceFilters, statusFilters, isTts]);
+
+  const facetRailFooter = useMemo(
+    () => (
+      <button
+        type="button"
+        onClick={() => setFilterCategory((prev) => (prev === "guide" ? "all" : "guide"))}
+        className={cn(
+          "w-full flex items-center justify-between px-3 py-2 rounded-xl text-[13px] transition-all cursor-pointer font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(var(--accent))]/50",
+          filterCategory === "guide"
+            ? "bg-[rgba(var(--accent),0.12)] text-[rgb(var(--accent))] font-bold shadow-xs"
+            : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.03)]"
+        )}
+      >
+        <div className="flex items-center gap-2.5 truncate">
+          <HelpCircle size={14} className={cn("shrink-0", filterCategory === "guide" ? "text-[rgb(var(--accent))]" : "opacity-60")} />
+          <span className="truncate">Setup Guide</span>
+        </div>
+      </button>
+    ),
+    [filterCategory]
   );
 
   const ttsFilteredProviders = useMemo(() => {
@@ -291,10 +330,11 @@ export const ProviderModal = memo(({
       return <CustomServerFormCard key={server.id} category={category} initial={server} onClose={() => setEditingServer(null)} onServerSaved={() => {}} />;
     }
     const isSelected = activeCategoryType === "server" && activeServerId === server.id;
+    const isCommittedActive = committedCategory === "server" && committedActiveProviderId === server.id;
     return (
       <SelectableCard
         key={server.id || server.url} id={server.id} name={server.name || "Custom Server"} tagline={server.url} logo={null}
-        isSelected={isSelected} statusBadge={isSelected ? "Active" : "Connected"} onSelect={() => handleSelectServer(server)}
+        isSelected={isSelected} statusBadge={isCommittedActive ? "Active" : undefined} onSelect={() => handleSelectServer(server)}
         actionSlot={
           <div className="flex items-center justify-between text-[11px] font-mono w-full">
             <span className="text-[rgb(var(--foreground-muted))]/70">Self-Hosted</span>
@@ -332,183 +372,127 @@ export const ProviderModal = memo(({
   const currentItemCount = (showLocalCard ? 1 : 0) + (isTts ? ttsFilteredProviders.length : modalFilteredProviders.length) + filteredCustomServers.length;
   const totalItemCount = (isTts ? TTS_MODAL_PROVIDERS.length : CLOUD_PROVIDERS.length) + customServers.length + 1;
 
-  return (
-    <div className="flex flex-col h-full min-h-0 gap-3">
-      <CatalogModalToolbar
-        search={{
-          value: modalSearch,
-          placeholder: "Search providers...",
-          onChange: setModalSearch,
-        }}
-        sort={{
-          order: sort,
-          onToggle: () => setSort((prev) => (prev === "az" ? "za" : "az")),
-        }}
-        itemCount={{
-          current: currentItemCount,
-          total: totalItemCount,
-          entityName: "providers",
-        }}
-        action={
-          <Tooltip label="Setup Guide" side="bottom" asChild>
-            <button
-              type="button"
-              onClick={() => setFilterCategory(filterCategory === "guide" ? "all" : "guide")}
-              aria-label="Setup Guide"
-              className={cn(
-                "p-2 rounded-xl border border-[rgba(var(--foreground),0.08)] bg-[rgba(var(--foreground),0.04)] transition-colors cursor-pointer flex items-center justify-center shrink-0 md:hidden",
-                filterCategory === "guide"
-                  ? "border-[rgb(var(--accent))]/40 bg-[rgb(var(--accent))]/10 text-[rgb(var(--accent))]"
-                  : "text-[rgb(var(--foreground-muted))]/70 hover:text-[rgb(var(--accent))]"
-              )}
-            >
-              <HelpCircle size={14} strokeWidth={1.75} />
-            </button>
-          </Tooltip>
-        }
-        filter={{
-          label: "Filter providers",
-          open: isFilterDropdownOpen,
-          activeCount: filterCategory === "all" ? 0 : 1,
-          onToggle: () => setIsFilterDropdownOpen((v) => !v),
-          onClose: () => setIsFilterDropdownOpen(false),
-          menu: (
-            <CatalogFilterMenu title="Provider Filters" resetLabel={filterCategory !== "all" ? "Reset" : undefined} onReset={() => setFilterCategory("all")}>
-              {providerFilters.map((cat) => (
-                <CatalogFilterItem key={cat.id} icon={cat.Icon} label={cat.label} count={cat.count} active={filterCategory === cat.id} onSelect={() => { setFilterCategory(cat.id); setIsFilterDropdownOpen(false); }} />
-              ))}
-            </CatalogFilterMenu>
-          ),
-        }}
-      />
+  const hasCards =
+    showLocalCard ||
+    (isTts ? ttsFilteredProviders.length > 0 : modalFilteredProviders.length > 0) ||
+    filteredCustomServers.length > 0 ||
+    (showCustomSection && isCreatingCustomServer) ||
+    (showCustomCreationCard && !editingServer);
 
-      <div className="flex-1 min-h-0 flex gap-4 overflow-hidden">
-        {/* Left Facet Sidebar on Desktop */}
-        <div className="w-[200px] shrink-0 hidden md:flex flex-col gap-3.5 overflow-y-auto overscroll-contain custom-scrollbar pr-2 py-0.5">
-          {/* Group 1: Source */}
-          <div className="flex flex-col gap-1">
-            <div className="px-2 pb-1 text-[11px] font-mono uppercase tracking-wider text-[rgb(var(--foreground-muted))]/60 font-semibold">
-              Source
-            </div>
-            {sourceFilters.map((cat) => (
-              <button
-                key={cat.id}
-                type="button"
-                onClick={() => setFilterCategory(cat.id)}
-                className={cn(
-                  "w-full flex items-center justify-between px-3 py-2 rounded-xl text-[13px] transition-all cursor-pointer font-medium",
-                  filterCategory === cat.id
-                    ? "bg-[rgba(var(--accent),0.12)] text-[rgb(var(--accent))] font-bold shadow-xs"
-                    : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.03)]"
-                )}
-              >
-                <div className="flex items-center gap-2.5 truncate">
-                  <cat.Icon size={14} className={cn("shrink-0", filterCategory === cat.id ? "text-[rgb(var(--accent))]" : "opacity-60")} />
-                  <span className="truncate">{cat.label}</span>
-                </div>
-                <span
-                  className={cn(
-                    "text-[10px] font-mono px-1.5 py-0.5 rounded-full font-bold shrink-0",
-                    filterCategory === cat.id
-                      ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))]"
-                      : "bg-[rgba(var(--foreground),0.06)] text-[rgb(var(--foreground-muted))]"
-                  )}
-                >
-                  {cat.count}
-                </span>
-              </button>
-            ))}
-          </div>
-
-          {/* Group 2: Status */}
-          <div className="pt-2 border-t border-[rgba(var(--foreground),0.06)] flex flex-col gap-1">
-            <div className="px-2 pb-1 text-[11px] font-mono uppercase tracking-wider text-[rgb(var(--foreground-muted))]/60 font-semibold">
-              Status
-            </div>
-            {statusFilters.map((cat) => (
-              <button
-                key={cat.id}
-                type="button"
-                onClick={() => setFilterCategory(cat.id)}
-                className={cn(
-                  "w-full flex items-center justify-between px-3 py-2 rounded-xl text-[13px] transition-all cursor-pointer font-medium",
-                  filterCategory === cat.id
-                    ? "bg-[rgba(var(--accent),0.12)] text-[rgb(var(--accent))] font-bold shadow-xs"
-                    : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.03)]"
-                )}
-              >
-                <div className="flex items-center gap-2.5 truncate">
-                  <cat.Icon size={14} className={cn("shrink-0", filterCategory === cat.id ? "text-[rgb(var(--accent))]" : "opacity-60")} />
-                  <span className="truncate">{cat.label}</span>
-                </div>
-                <span
-                  className={cn(
-                    "text-[10px] font-mono px-1.5 py-0.5 rounded-full font-bold shrink-0",
-                    filterCategory === cat.id
-                      ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))]"
-                      : "bg-[rgba(var(--foreground),0.06)] text-[rgb(var(--foreground-muted))]"
-                  )}
-                >
-                  {cat.count}
-                </span>
-              </button>
-            ))}
-          </div>
-
-          {/* Group 3: Help & Guide Option at the bottom */}
-          <div className="pt-2 border-t border-[rgba(var(--foreground),0.06)] mt-auto flex flex-col gap-1">
-            <button
-              type="button"
-              onClick={() => setFilterCategory((prev) => (prev === "guide" ? "all" : "guide"))}
-              className={cn(
-                "w-full flex items-center justify-between px-3 py-2 rounded-xl text-[13px] transition-all cursor-pointer font-medium",
-                filterCategory === "guide"
-                  ? "bg-[rgba(var(--accent),0.12)] text-[rgb(var(--accent))] font-bold shadow-xs"
-                  : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.03)]"
-              )}
-            >
-              <div className="flex items-center gap-2.5 truncate">
-                <HelpCircle size={14} className={cn("shrink-0", filterCategory === "guide" ? "text-[rgb(var(--accent))]" : "opacity-60")} />
-                <span className="truncate">Setup Guide</span>
-              </div>
-            </button>
-          </div>
-        </div>
-
-        {/* Right Content Area */}
-        {filterCategory === "guide" ? (
-          <div className="flex-1 min-h-0 h-full overflow-hidden">
-            <ProviderGuideView onBackToProviders={() => setFilterCategory("all")} category={category} />
-          </div>
-        ) : (
-          <div ref={scrollContainerRef} className="flex-1 min-h-0 overflow-y-auto overscroll-contain custom-scrollbar p-1 sm:p-2">
-            {showLocalCard || (isTts ? ttsFilteredProviders.length > 0 : modalFilteredProviders.length > 0) || filteredCustomServers.length > 0 || (showCustomSection && isCreatingCustomServer) || (showCustomCreationCard && !editingServer) ? (
-              <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3">
-                {committedCategory === "server" && committedActiveProviderId
-                  ? <>{customCards}{localCard}{cloudCards}{creationCard}</>
-                  : committedCategory === "cloud" && committedActiveProviderId
-                  ? <>{cloudCards}{localCard}{customCards}{creationCard}</>
-                  : <>{localCard}{cloudCards}{customCards}{creationCard}</>}
-              </div>
-            ) : (
-              <div className="h-64 flex flex-col items-center justify-center text-center space-y-2">
-                <p className="text-[14px] font-bold text-[rgb(var(--foreground))]">No providers found</p>
-                <p className="text-[12px] text-[rgb(var(--foreground-muted))] max-w-sm">No providers match your search query or filter.</p>
-                <button
-                  type="button"
-                  onClick={() => { setModalSearch(""); setFilterCategory("all"); }}
-                  className="mt-2 px-3 py-1.5 rounded-lg text-[12px] font-bold text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/10 border border-[rgba(var(--accent),0.3)] hover:bg-[rgb(var(--accent))]/20 transition-all cursor-pointer"
-                >
-                  Reset Filters
-                </button>
-              </div>
+  const toolbarNode = (
+    <CatalogModalToolbar
+      search={{
+        value: modalSearch,
+        placeholder: "Search providers...",
+        onChange: setModalSearch,
+      }}
+      sort={{
+        order: sort,
+        onToggle: () => setSort((prev) => (prev === "az" ? "za" : "az")),
+      }}
+      itemCount={{
+        current: currentItemCount,
+        total: totalItemCount,
+        entityName: "providers",
+      }}
+      action={
+        <Tooltip label="Setup Guide" side="bottom" asChild>
+          <button
+            type="button"
+            onClick={() => setFilterCategory((prev) => (prev === "guide" ? "all" : "guide"))}
+            aria-label="Setup Guide"
+            className={cn(
+              "p-2 rounded-xl border border-[rgba(var(--foreground),0.08)] bg-[rgba(var(--foreground),0.04)] transition-colors cursor-pointer flex items-center justify-center shrink-0 lg:hidden",
+              filterCategory === "guide"
+                ? "border-[rgb(var(--accent))]/40 bg-[rgb(var(--accent))]/10 text-[rgb(var(--accent))]"
+                : "text-[rgb(var(--foreground-muted))]/70 hover:text-[rgb(var(--accent))]"
             )}
-          </div>
-        )}
-      </div>
+          >
+            <HelpCircle size={14} strokeWidth={1.75} />
+          </button>
+        </Tooltip>
+      }
+      filter={{
+        label: "Filter providers",
+        open: isFilterDropdownOpen,
+        activeCount: filterCategory === "all" ? 0 : 1,
+        onToggle: () => setIsFilterDropdownOpen((v) => !v),
+        onClose: () => setIsFilterDropdownOpen(false),
+        menu: (
+          <CatalogFilterMenu
+            title="Provider Filters"
+            resetLabel={filterCategory !== "all" ? "Reset" : undefined}
+            onReset={() => setFilterCategory("all")}
+          >
+            {providerFilters.map((cat) => (
+              <CatalogFilterItem
+                key={cat.id}
+                icon={cat.Icon}
+                label={cat.label}
+                count={cat.count}
+                active={filterCategory === cat.id}
+                onSelect={() => {
+                  setFilterCategory(cat.id);
+                  setIsFilterDropdownOpen(false);
+                }}
+              />
+            ))}
+          </CatalogFilterMenu>
+        ),
+      }}
+    />
+  );
 
-      <ModalProviderFooter category={category} />
+  const emptyStateNode = (
+    <div className="h-64 flex flex-col items-center justify-center text-center space-y-2">
+      <p className="text-[14px] font-bold text-[rgb(var(--foreground))]">No providers found</p>
+      <p className="text-[12px] text-[rgb(var(--foreground-muted))] max-w-sm">
+        No providers match your search query or filter.
+      </p>
+      <button
+        type="button"
+        onClick={() => {
+          setModalSearch("");
+          setFilterCategory("all");
+        }}
+        className="mt-2 px-3 py-1.5 rounded-lg text-[12px] font-bold text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/10 border border-[rgba(var(--accent),0.3)] hover:bg-[rgb(var(--accent))]/20 transition-all cursor-pointer"
+      >
+        Reset Filters
+      </button>
     </div>
+  );
+
+  return (
+    <CatalogModalShell
+      toolbar={toolbarNode}
+      facetRail={
+        <CatalogFacetRail
+          groups={facetGroups}
+          selectedId={filterCategory}
+          onSelect={(id) => setFilterCategory(id as ProviderFilterCategory)}
+          footer={facetRailFooter}
+        />
+      }
+      scrollRef={scrollContainerRef}
+      footer={<ModalProviderFooter category={category} />}
+      isGuideActive={filterCategory === "guide"}
+      guideView={
+        <ProviderGuideView
+          onBackToProviders={() => setFilterCategory("all")}
+          category={category}
+        />
+      }
+      isEmpty={!hasCards}
+      emptyState={emptyStateNode}
+    >
+      <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3">
+        {committedCategory === "server" && committedActiveProviderId
+          ? <>{customCards}{localCard}{cloudCards}{creationCard}</>
+          : committedCategory === "cloud" && committedActiveProviderId
+          ? <>{cloudCards}{localCard}{customCards}{creationCard}</>
+          : <>{localCard}{cloudCards}{customCards}{creationCard}</>}
+      </div>
+    </CatalogModalShell>
   );
 });
 

@@ -7,6 +7,8 @@ import { REMOTE_MODEL_PAGE_SIZE } from "../models/catalog/catalogProbeUtils";
 import { RemoteModelCard } from "../models/catalog/RemoteModelCard";
 import { CatalogFilterMenu, CatalogFilterItem } from "./CatalogHeader";
 import { CatalogModalToolbar } from "./CatalogModalToolbar";
+import { CatalogModalShell } from "./CatalogModalShell";
+import { CatalogFacetRail, type CatalogFacetGroup } from "./CatalogFacetRail";
 
 export interface ModelModalProps {
   remoteModels: LlmModelInfo[];
@@ -64,6 +66,13 @@ export const ModelModal = memo(({
     { id: "fast" as const, label: "Fast (>30 TPS)", count: fastCount, Icon: Gauge },
   ], [remoteModels.length, favoritesCount, benchmarkedCount, toolsCount, fastCount]);
 
+  const facetGroups = useMemo<CatalogFacetGroup[]>(() => [
+    {
+      title: "Category",
+      items: categoryFilters,
+    },
+  ], [categoryFilters]);
+
   const modalFilteredModels = useMemo(() => {
     let list = remoteModels;
     const q = deferredSearch.trim().toLowerCase();
@@ -80,7 +89,7 @@ export const ModelModal = memo(({
       return sort === "az" ? an.localeCompare(bn, undefined, { sensitivity: "base" }) : bn.localeCompare(an, undefined, { sensitivity: "base" });
     });
 
-    const activeModelId = selectedModelId || pinnedModelId;
+    const activeModelId = pinnedModelId;
     if (activeModelId) {
       const idx = sorted.findIndex((m) => m.id === activeModelId);
       if (idx > 0) {
@@ -89,115 +98,133 @@ export const ModelModal = memo(({
       }
     }
     return sorted;
-  }, [remoteModels, deferredSearch, filterCategory, resolveProbed, selectedModelId, pinnedModelId, sort, favoriteModelIds]);
+  }, [remoteModels, deferredSearch, filterCategory, resolveProbed, pinnedModelId, sort, favoriteModelIds]);
 
   const [visibleModalModelCount, setVisibleModalModelCount] = useState(REMOTE_MODEL_PAGE_SIZE);
   useEffect(() => {
     setVisibleModalModelCount(REMOTE_MODEL_PAGE_SIZE);
-  }, [modalSearch, deferredSearch, filterCategory, selectedModelId, pinnedModelId, remoteModels]);
+  }, [modalSearch, deferredSearch, filterCategory, pinnedModelId, remoteModels]);
 
   const visibleModalModels = useMemo(() => modalFilteredModels.slice(0, visibleModalModelCount), [modalFilteredModels, visibleModalModelCount]);
   const modalHiddenCount = modalFilteredModels.length - visibleModalModels.length;
 
-  return (
-    <div className="flex flex-col h-full min-h-0 gap-3">
-      <CatalogModalToolbar
-        search={{
-          value: modalSearch,
-          placeholder: "Search models...",
-          onChange: setModalSearch,
-        }}
-        sort={{
-          order: sort,
-          onToggle: () => setSort((prev) => (prev === "az" ? "za" : "az")),
-        }}
-        itemCount={{
-          current: visibleModalModels.length,
-          total: remoteModels.length,
-          entityName: "models",
-        }}
-        filter={{
-          label: "Filter models",
-          open: isFilterDropdownOpen,
-          activeCount: filterCategory === "all" ? 0 : 1,
-          onToggle: () => setIsFilterDropdownOpen((v) => !v),
-          onClose: () => setIsFilterDropdownOpen(false),
-          menu: (
-            <CatalogFilterMenu
-              title="Model Filters"
-              resetLabel={filterCategory !== "all" ? "Reset" : undefined}
-              onReset={() => setFilterCategory("all")}
-            >
-              {categoryFilters.map((cat) => (
-                <CatalogFilterItem
-                  key={cat.id}
-                  icon={cat.Icon}
-                  label={cat.label}
-                  count={cat.count}
-                  active={filterCategory === cat.id}
-                  onSelect={() => { setFilterCategory(cat.id); setIsFilterDropdownOpen(false); }}
-                />
-              ))}
-            </CatalogFilterMenu>
-          ),
-        }}
-      />
+  const toolbarNode = (
+    <CatalogModalToolbar
+      search={{
+        value: modalSearch,
+        placeholder: "Search models...",
+        onChange: setModalSearch,
+      }}
+      sort={{
+        order: sort,
+        onToggle: () => setSort((prev) => (prev === "az" ? "za" : "az")),
+      }}
+      itemCount={{
+        current: visibleModalModels.length,
+        total: remoteModels.length,
+        entityName: "models",
+      }}
+      filter={{
+        label: "Filter models",
+        open: isFilterDropdownOpen,
+        activeCount: filterCategory === "all" ? 0 : 1,
+        onToggle: () => setIsFilterDropdownOpen((v) => !v),
+        onClose: () => setIsFilterDropdownOpen(false),
+        menu: (
+          <CatalogFilterMenu
+            title="Model Filters"
+            resetLabel={filterCategory !== "all" ? "Reset" : undefined}
+            onReset={() => setFilterCategory("all")}
+          >
+            {categoryFilters.map((cat) => (
+              <CatalogFilterItem
+                key={cat.id}
+                icon={cat.Icon}
+                label={cat.label}
+                count={cat.count}
+                active={filterCategory === cat.id}
+                onSelect={() => {
+                  setFilterCategory(cat.id);
+                  setIsFilterDropdownOpen(false);
+                }}
+              />
+            ))}
+          </CatalogFilterMenu>
+        ),
+      }}
+    />
+  );
 
-      <div ref={scrollContainerRef} className="flex-1 min-h-0 overflow-y-auto overscroll-contain custom-scrollbar p-1 sm:p-2">
-        <div className="min-h-full w-full">
-          {modalFilteredModels.length === 0 ? (
-            <div className="h-64 flex flex-col items-center justify-center text-center space-y-2">
-              <p className="text-[14px] font-bold text-[rgb(var(--foreground))]">No models found</p>
-              <p className="text-[12px] text-[rgb(var(--foreground-muted))] max-w-sm">No available models match your current search & filter criteria.</p>
-              <button
-                type="button"
-                onClick={() => { setModalSearch(""); setFilterCategory("all"); }}
-                className="mt-2 px-3 py-1.5 rounded-lg text-[12px] font-bold text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/10 border border-[rgba(var(--accent),0.3)] hover:bg-[rgb(var(--accent))]/20 transition-all cursor-pointer"
-              >
-                Reset Filters
-              </button>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3">
-              {visibleModalModels.map((model) => {
-                const isSelected = selectedModelId === model.id;
-                const probed = resolveProbed(model);
-                const isTesting = probingMap[model.id]?.status === "testing";
-                const probeError = probingMap[model.id]?.status === "error" ? probingMap[model.id]?.error : undefined;
-
-                return (
-                  <RemoteModelCard
-                    key={model.id}
-                    model={model}
-                    isSelected={isSelected}
-                    probed={probed}
-                    isTesting={isTesting}
-                    probeError={probeError}
-                    isFavorite={isFavorite(model.id)}
-                    onSelect={onSelectModel}
-                    onProbe={onProbeCapabilities}
-                    onCopy={handleCopyId}
-                    onToggleFavorite={toggleFavorite}
-                    isCopied={copiedId === model.id}
-                  />
-                );
-              })}
-              {modalHiddenCount > 0 && (
-                <div className="col-span-full flex items-center justify-center pt-1">
-                  <button
-                    type="button"
-                    onClick={() => setVisibleModalModelCount((c) => c + REMOTE_MODEL_PAGE_SIZE)}
-                    className="px-3 py-1.5 rounded-lg text-[11px] font-bold uppercase tracking-wider text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/10 border border-[rgba(var(--accent),0.25)] hover:bg-[rgb(var(--accent))]/20 transition-colors cursor-pointer"
-                  >
-                    {`Show ${modalHiddenCount} more`}
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
+  const emptyStateNode = (
+    <div className="h-64 flex flex-col items-center justify-center text-center space-y-2">
+      <p className="text-[14px] font-bold text-[rgb(var(--foreground))]">No models found</p>
+      <p className="text-[12px] text-[rgb(var(--foreground-muted))] max-w-sm">
+        No available models match your current search & filter criteria.
+      </p>
+      <button
+        type="button"
+        onClick={() => {
+          setModalSearch("");
+          setFilterCategory("all");
+        }}
+        className="mt-2 px-3 py-1.5 rounded-lg text-[12px] font-bold text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/10 border border-[rgba(var(--accent),0.3)] hover:bg-[rgb(var(--accent))]/20 transition-all cursor-pointer"
+      >
+        Reset Filters
+      </button>
     </div>
+  );
+
+  return (
+    <CatalogModalShell
+      toolbar={toolbarNode}
+      facetRail={
+        <CatalogFacetRail
+          groups={facetGroups}
+          selectedId={filterCategory}
+          onSelect={(id) => setFilterCategory(id as ModelCategory)}
+        />
+      }
+      scrollRef={scrollContainerRef}
+      isEmpty={modalFilteredModels.length === 0}
+      emptyState={emptyStateNode}
+    >
+      <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3">
+        {visibleModalModels.map((model) => {
+          const isSelected = selectedModelId === model.id;
+          const probed = resolveProbed(model);
+          const isTesting = probingMap[model.id]?.status === "testing";
+          const probeError = probingMap[model.id]?.status === "error" ? probingMap[model.id]?.error : undefined;
+
+          return (
+            <RemoteModelCard
+              key={model.id}
+              model={model}
+              isSelected={isSelected}
+              probed={probed}
+              isTesting={isTesting}
+              probeError={probeError}
+              isFavorite={isFavorite(model.id)}
+              onSelect={onSelectModel}
+              onProbe={onProbeCapabilities}
+              onCopy={handleCopyId}
+              onToggleFavorite={toggleFavorite}
+              isCopied={copiedId === model.id}
+            />
+          );
+        })}
+        {modalHiddenCount > 0 && (
+          <div className="col-span-full flex items-center justify-center pt-1">
+            <button
+              type="button"
+              onClick={() => setVisibleModalModelCount((c) => c + REMOTE_MODEL_PAGE_SIZE)}
+              className="px-3 py-1.5 rounded-lg text-[11px] font-bold uppercase tracking-wider text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/10 border border-[rgba(var(--accent),0.25)] hover:bg-[rgb(var(--accent))]/20 transition-colors cursor-pointer"
+            >
+              {`Show ${modalHiddenCount} more`}
+            </button>
+          </div>
+        )}
+      </div>
+    </CatalogModalShell>
   );
 });
 

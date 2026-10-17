@@ -22,6 +22,7 @@ import {
   updateCloudProvidersFromContract,
   updateTtsProvidersFromContract,
 } from "@/data/providersCopy";
+import { getEffectiveCloudApiKey } from "@/shared/lib/activeSelection";
 
 /** Reads a settings scope as a key-value map for dynamic key access. The
  * single guarded cast in the store; every dynamic read funnels through here. */
@@ -638,15 +639,18 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
           };
         }
       } else if (active === "cloud") {
-        const cloudKeys = draft.llm?.cloud_keys ?? draft.providers?.llm?.cloud_keys;
-        const cloudEntry = CLOUD_PROVIDERS.find((p) => p.id === activeSel?.provider);
+        const cloudId = activeSel?.provider;
+        const contractEntry = get().contract?.llm_cloud_providers?.find((p) => p.id === cloudId);
+        const cloudEntry = contractEntry || CLOUD_PROVIDERS.find((p) => p.id === cloudId);
+        const cloudUrl = contractEntry?.base_url || contractEntry?.url || cloudEntry?.url || "";
+        const apiKey = getEffectiveCloudApiKey(get().draftSettings, get().settings, cloudId);
         provider = {
           kind: "cloud",
-          provider_id: activeSel?.provider ?? undefined,
-          base_url: cloudEntry?.url || "",
+          provider_id: cloudId ?? undefined,
+          base_url: cloudUrl,
           model: activeSel?.model || "",
-          api_key: (activeSel?.provider && cloudKeys?.[activeSel.provider]) || undefined,
-          provider_name: cloudEntry?.name ?? activeSel?.provider ?? undefined,
+          api_key: apiKey,
+          provider_name: cloudEntry?.name ?? cloudId ?? undefined,
         };
       }
     }
@@ -655,9 +659,13 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       return;
     }
     // Cloud providers require an API key to list models. If the key is not yet configured,
-    // wait for the user to add and save their key — do not probe and fail.
+    // set an actionable error banner instead of silent abort.
     if (provider.kind === "cloud" && !provider.api_key?.trim()) {
-      if (get().remoteModelsError) set({ remoteModelsError: null, loadingRemoteModels: false });
+      set({
+        remoteModels: [],
+        remoteModelsError: "API key required. Configure your key in Providers.",
+        loadingRemoteModels: false,
+      });
       return;
     }
     const fetchKey = `${provider.kind}|${provider.provider_id ?? ""}|${provider.base_url}|${provider.api_key ? "key" : "nokey"}`;

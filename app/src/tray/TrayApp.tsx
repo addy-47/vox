@@ -6,8 +6,7 @@ import { Footer } from "./components/Footer";
 import { useVisibility, useInteraction } from "./useTrayHud";
 import { useTelemetry } from "@/shared/hooks/useTelemetry";
 import { hideTrayWindow, setWindowClickThrough } from "@/services/trayService";
-import { pttStart, pttStop, engageSession, resumeSession } from "@/services/pipelineService";
-import { getRuntimeSnapshot } from "@/services/monitoringService";
+import { pttStart, pttStop, engageSession, resumeSession, waitForPipelineState } from "@/services/pipelineService";
 import { getTranscriptHistory } from "@/services/persistenceService";
 import { TRAY_COPY } from "@/data/trayCopy";
 import { useSettingsStore } from "@/store/settingsStore";
@@ -27,22 +26,6 @@ interface SystemStats {
   vox_cpu: number;
   vox_ram_mb: number;
   threads: number;
-}
-
-// Snapshot poll for the tray's engage-then-start path. The tray is a HUD, so
-// this polls gently (500ms) — unlike the main app's 100ms engage poll.
-async function waitForTrayReady(timeoutMs: number): Promise<boolean> {
-  const deadline = Date.now() + timeoutMs;
-  for (;;) {
-    try {
-      const snap = await getRuntimeSnapshot();
-      if (snap?.pipeline_state === "Ready") return true;
-    } catch {
-      // Best-effort; keep polling until deadline.
-    }
-    if (Date.now() >= deadline) return false;
-    await new Promise((r) => setTimeout(r, 500));
-  }
 }
 
 export const TrayApp: React.FC = () => {
@@ -231,7 +214,9 @@ export const TrayApp: React.FC = () => {
         if (!result.success) throw new Error(result.reason ?? "engage-failed");
       } else if (interactionState === "Paused" || interactionState === "Sleeping") {
         await resumeSession();
-        const ready = await waitForTrayReady(5000);
+        // The tray is a HUD, so this polls gently (500ms) — unlike the main
+        // app's 100ms engage poll.
+        const ready = await waitForPipelineState("Ready", { timeoutMs: 5000, intervalMs: 500 });
         if (!ready) throw new Error("resume-timeout");
       }
       // Ready/Thinking/Speaking/Working fall through to a direct start

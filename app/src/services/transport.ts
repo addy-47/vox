@@ -51,6 +51,68 @@ export function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<
 }
 
 /**
+ * Invoke an IPC command with a hard timeout. The default matches the pipeline
+ * orchestration poll budget used by the session lifecycle services.
+ * Note: Tauri IPC cannot be aborted mid-flight — the timeout abandons the
+ * pending invocation rather than cancelling it.
+ */
+export function invokeWithTimeout<T>(
+  cmd: string,
+  args?: Record<string, unknown>,
+  timeoutMs: number = 8000,
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`${cmd} timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+    activeTransport
+      .invoke<T>(cmd, args)
+      .then((value) => {
+        clearTimeout(timer);
+        resolve(value);
+      })
+      .catch((err: unknown) => {
+        clearTimeout(timer);
+        reject(err);
+      });
+  });
+}
+
+export interface InvokeRetryOptions {
+  /** Additional attempts after the first failure. @default 2 */
+  retries?: number;
+  /** Delay (ms) before each retry, indexed by retry number; the last value repeats. @default [250, 500] */
+  backoffMs?: number[];
+}
+
+/**
+ * Invoke an IPC command with bounded retries and backoff. Delays are indexed by
+ * retry number (first retry waits `backoffMs[0]`); a shorter array clamps to
+ * its last value for all remaining retries. Rejects with the final error.
+ */
+export async function invokeWithRetry<T>(
+  cmd: string,
+  args?: Record<string, unknown>,
+  options?: InvokeRetryOptions,
+): Promise<T> {
+  const retries = options?.retries ?? 2;
+  const backoffMs = options?.backoffMs ?? [250, 500];
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    if (attempt > 0) {
+      const delay = backoffMs[Math.min(attempt - 1, backoffMs.length - 1)] ?? 0;
+      await new Promise((r) => setTimeout(r, delay));
+    }
+    try {
+      return await activeTransport.invoke<T>(cmd, args);
+    } catch (err: unknown) {
+      lastErr = err;
+    }
+  }
+  throw lastErr;
+}
+
+/**
  * Listen for an event via the active transport carrier.
  */
 export function listen<T>(event: string, handler: (event: { payload: T }) => void): Promise<UnlistenFn> {

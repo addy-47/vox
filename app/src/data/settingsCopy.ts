@@ -234,9 +234,13 @@ export const INTERACTION_CONFIG_DESK_COPY = {
     server: {
       title: "Remote Server",
       urlLabel: "Server URL",
-      urlPlaceholder: "http://127.0.0.1:11434",
+      urlPlaceholder: "http://localhost:11434",
       apiKeyLabel: "API Key (Optional)",
       apiKeyPlaceholder: "Bearer token...",
+      nameLabel: "Server Name (optional)",
+      namePlaceholder: "Auto-detect (e.g. Ollama, vLLM, LM Studio)",
+      discard: "Discard",
+      saveServer: "Save Server",
     },
     cloud: {
       title: "Cloud Provider API",
@@ -682,7 +686,7 @@ export const PROVIDERS_HEADER_COPY = {
   customButton: "+ Custom",
   customAria: "Configure custom server endpoint",
   comingSoon: "Coming soon",
-  customConfigTitle: "Custom Server Endpoint",
+  customConfigTitle: "Custom Server Configuration",
   customConfigSubtitle: "Connect to a self-hosted or dedicated inference node",
   filterAria: "Toggle provider filters",
   sortAsc: "Sort A to Z",
