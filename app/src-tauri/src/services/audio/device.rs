@@ -11,9 +11,9 @@ use cpal::{
 use ringbuf::{traits::*, HeapCons};
 
 use super::{
-    sink::PlaybackStreamContext, AudioCapture, AudioSink, MockAudioCapture, PlaybackEngineHandles,
-    PlaybackTelemetryHandles, INGESTION_BUFFER_CAPACITY_SAMPLES, INGESTION_OVERFLOW_LOG_INTERVAL,
-    PLAYBACK_CHANNELS, PLAYBACK_SAMPLE_RATE, SAMPLE_RATE,
+    sink::{PlaybackReferenceTap, PlaybackStreamContext}, AudioCapture, AudioSink, MockAudioCapture,
+    PlaybackEngineHandles, PlaybackTelemetryHandles, INGESTION_BUFFER_CAPACITY_SAMPLES,
+    INGESTION_OVERFLOW_LOG_INTERVAL, PLAYBACK_CHANNELS, PLAYBACK_SAMPLE_RATE, SAMPLE_RATE,
 };
 
 /// Hardware audio capture implementation wrapping a live CPAL input stream.
@@ -261,12 +261,19 @@ pub fn build_output_stream(
     discard_request: Arc<AtomicBool>,
     turn_armed: Arc<AtomicBool>,
     telemetry: &PlaybackTelemetryHandles,
+    reference_tap: Option<PlaybackReferenceTap>,
 ) -> Result<Box<dyn AudioSink>> {
     let host = resolve_audio_host();
     let (device, config) = resolve_output_device_and_config(&host)?;
 
-    let mut cb_ctx =
-        PlaybackStreamContext::new(consumer, handles, discard_request, turn_armed, telemetry);
+    let mut cb_ctx = PlaybackStreamContext::new(
+        consumer,
+        handles,
+        discard_request,
+        turn_armed,
+        telemetry,
+        reference_tap,
+    );
 
     let stream = device
         .build_output_stream(

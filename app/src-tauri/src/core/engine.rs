@@ -27,7 +27,9 @@ use crate::{
         audio::{
             detect_audio_output_mode,
             playback::{PlaybackEngineHandles, PlaybackTelemetryHandles},
-            spawn_audio_route_watcher, AudioStream, PlaybackEngine,
+            sink::PlaybackReferenceTap,
+            spawn_aec_worker, spawn_audio_route_watcher, AecCommand, AecProcessor, AudioStream,
+            PlaybackEngine, AEC_REFERENCE_BUFFER_SAMPLES,
         },
         llm::{
             actor::{cool_down_llm, warm_up_llm, LlmWarmUpHandles},
@@ -57,11 +59,13 @@ pub struct VoxEngine {
     pub audio_stream: AudioStream,
     pub stt_tx: mpsc::Sender<SttCommand>,
     pub vad_tx: mpsc::Sender<VadCommand>,
+    pub aec_tx: Option<mpsc::Sender<AecCommand>>,
     pub llm_tx: Option<mpsc::Sender<LlmCommand>>,
     pub tts_tx: Option<mpsc::Sender<TtsCommand>>,
     pub telemetry_tx: crossbeam_channel::Sender<TelemetryEvent>,
     pub pipeline_tx: mpsc::Sender<VoxEvent>,
     pub playback_engine: Arc<PlaybackEngine>,
+    pub aec_handle: Option<JoinHandle<()>>,
     pub stt_handle: Option<JoinHandle<()>>,
     pub vad_handle: Option<JoinHandle<()>>,
     pub route_watcher_handle: Option<JoinHandle<()>>,
@@ -128,6 +132,7 @@ async fn create_vad_instance(state: &AppState) -> Result<VadBackend, String> {
 fn create_playback_engine(
     state: &AppState,
     event_tx: mpsc::Sender<VoxEvent>,
+    reference_tap: Option<PlaybackReferenceTap>,
 ) -> Result<Arc<PlaybackEngine>, String> {
     let telemetry_handles = PlaybackTelemetryHandles {
         energy: Arc::clone(&state.telemetry.latest_playback_energy),
@@ -148,7 +153,7 @@ fn create_playback_engine(
         turn_metrics: Some(Arc::clone(&state.turn_metrics)),
     };
 
-    let pe = PlaybackEngine::new(engine_handles, telemetry_handles)
+    let pe = PlaybackEngine::new(engine_handles, telemetry_handles, reference_tap)
         .map_err(|e| format!("[Core::Engine] Playback engine init failed: {}", e))?;
 
     Ok(Arc::new(pe))
@@ -205,13 +210,34 @@ pub async fn start_audio_engine<R: tauri::Runtime + 'static>(
         )
     };
 
-    let ring_buffer = ringbuf::HeapRb::<f32>::new(RING_BUFFER_SIZE);
-    let (producer, consumer) = ring_buffer.split();
+    let (aec_tx, aec_rx) = mpsc::channel();
+
+    let aec_ref_rb = ringbuf::HeapRb::<f32>::new(AEC_REFERENCE_BUFFER_SAMPLES);
+    let (ref_prod, ref_cons) = aec_ref_rb.split();
+    let reference_tap = PlaybackReferenceTap::new(ref_prod);
+
+    let aec = AecProcessor::new(Some(ref_cons))
+        .map_err(|e| format!("[Core::Engine] AEC init failed: {}", e))?;
+
+    let cap_ring_buffer = ringbuf::HeapRb::<f32>::new(RING_BUFFER_SIZE);
+    let (cap_prod, cap_cons) = cap_ring_buffer.split();
+
+    let clean_ring_buffer = ringbuf::HeapRb::<f32>::new(RING_BUFFER_SIZE);
+    let (clean_prod, clean_cons) = clean_ring_buffer.split();
 
     state
         .pipeline
         .engine_shutdown
         .store(false, Ordering::Relaxed);
+
+    let aec_handle = spawn_aec_worker(
+        aec,
+        cap_cons,
+        clean_prod,
+        Arc::clone(&state.pipeline.engine_shutdown),
+        Some(aec_rx),
+    )
+    .map_err(|e| format!("[Core::Engine] Failed to spawn AEC worker: {}", e))?;
 
     let vad_config = VadActorConfig {
         initial_threshold: threshold,
@@ -242,7 +268,7 @@ pub async fn start_audio_engine<R: tauri::Runtime + 'static>(
     let vad_handle = Builder::new()
         .name("vox-vad-actor".to_string())
         .spawn(move || {
-            if let Err(e) = spawn_vad_actor(vad, consumer, vad_channels, vad_handles, vad_config) {
+            if let Err(e) = spawn_vad_actor(vad, clean_cons, vad_channels, vad_handles, vad_config) {
                 log::error!(
                     "[Core::Engine] VAD actor thread terminated with error: {:?}",
                     e
@@ -301,11 +327,12 @@ pub async fn start_audio_engine<R: tauri::Runtime + 'static>(
     let stt_handle = spawn_stt_worker(stt_channels, stt_provider, stt_handles)
         .map_err(|e| format!("[Core::Engine] Failed to spawn STT worker: {}", e))?;
 
-    let audio_stream = AudioStream::new(producer, Arc::clone(&state.pipeline.ingestion_gate))
+    let audio_stream = AudioStream::new(cap_prod, Arc::clone(&state.pipeline.ingestion_gate))
         .map_err(|e| e.to_string())?;
     audio_stream.start().map_err(|e| e.to_string())?;
 
-    let playback_engine = create_playback_engine(state, vox_event_tx.clone())?;
+    let playback_engine =
+        create_playback_engine(state, vox_event_tx.clone(), Some(reference_tap))?;
     let orchestrator_handle = spawn_router(app.clone(), vox_event_rx)?;
     let route_watcher_handle =
         spawn_audio_route_watcher(vad_tx.clone(), Arc::clone(&state.pipeline.engine_shutdown));
@@ -314,11 +341,13 @@ pub async fn start_audio_engine<R: tauri::Runtime + 'static>(
         audio_stream,
         stt_tx,
         vad_tx,
+        aec_tx: Some(aec_tx),
         llm_tx: None,
         tts_tx: None,
         telemetry_tx: state.telemetry.telemetry_tx.clone(),
         pipeline_tx: vox_event_tx.clone(),
         playback_engine,
+        aec_handle: Some(aec_handle),
         stt_handle: Some(stt_handle),
         vad_handle: Some(vad_handle),
         route_watcher_handle,

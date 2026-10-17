@@ -6,18 +6,52 @@ import {
   type Transport,
   type UnlistenFn,
 } from "../services/transport";
+import { minimalSettings, SERVER_ACTIVE } from "@/test/harness/settingsFixtures";
 
-function minimalSettings(): VoxSettings {
-  return {
-    appearance: { theme: "dark", accent_seed: "#fff" },
-    persona: { modular_prompt: "a", realtime_prompt: "b" },
-    llm: {
-      active: { category: "embedded", provider: null, model: "qwen" },
-      last_selected: { embedded: "qwen" },
-      cloud_keys: {},
-    },
-  } as unknown as VoxSettings;
-}
+/**
+ * settings commit partial-failure isolation regression suite.
+ *
+ * Phase 1 — Production Path Trace
+ * -------------------------------
+ * SUT: commitChanges — domain-scoped patch dispatch, per-key failure
+ * isolation (rejected keys stay in the draft and surface on their owning
+ * card), and the `llm.servers` vehicle translating to `apply_setting_patch`.
+ *
+ * Production Entry Seam:
+ *   useSettingsStore.getState().commitChanges / updateDraft /
+ *   recomputeDomainFlags — the real store actions the settings cards invoke
+ *   on save. Transport is the seam production explicitly swappable (services
+ *   /transport.ts); `makeTransportStub` in harness/ is a Transport
+ *   implementation, not a mock of the seam.
+ *
+ * Direction Check: the store action is the upstream trigger-side aggregator
+ * the UI calls; results are observed in store state and recorded wire calls.
+ *
+ * Production Path:
+ *   settings card (commit button) → commitChanges()
+ *   → recomputeDomainFlags → apply_settings_patch per dirty domain
+ *   → failure → triggerSaveFailure(keys) → draft restored for retry
+ *   → success → settings ← get_settings (server-confirmed state)
+ *
+ * Observable Exit: failedSaveDomains, draftSettings residue, settings state,
+ * and the exact `(cmd, args)` pairs sent.
+ *
+ * Phase 2a — Testability 4/4: real store constructor + real action +
+ * real transport-swap seam; state assembled from the typed wire fixture
+ * (no `as unknown as` escapes: field drift is a compile error).
+ *
+ * Phase 2b — False-Green table (each row a one-line production mutation):
+ *   | triggerSaveFailure no-op'd → failedSaveDomains empty        | must fail |
+ *   | accepted domain dropped from draft-merge → reverts silently | must fail |
+ *   | rejected key pruned from draft → retry impossible           | must fail |
+ *   | llm.servers sent as update_setting → zero patch calls       | must fail |
+ *   | scoped commit fires all dirty domains → patch count ≠ 1     | must fail |
+ *   (verified 2026-10-17: triggerSaveFailure no-op mutant killed)
+ *
+ * Phase 4 — Governing sentence:
+ *   If failureбанner bookkeeping broke, this test would fail because
+ *   failedSaveDomains["models"] would be undefined while expecting ["active"].
+ */
 
 describe("settings commit partial-failure isolation", () => {
   beforeEach(() => {
@@ -32,60 +66,61 @@ describe("settings commit partial-failure isolation", () => {
     });
   });
 
-  it("keeps only rejected keys in the draft and preserves unrelated edits", async () => {
+  /** Transport stub over the shared harness: records every cmd, answers patch/get_settings. */
+  function settingsTransport(overrides: {
+    patchFor?: (patch: Record<string, unknown>) => { applied: true; reload_policy: "hot" | "restart"; message: string; restart_scheduled: boolean } | Error;
+  } = {}): { stub: Transport; calls: Array<{ cmd: string; args?: Record<string, unknown> }> } {
+    const calls: Array<{ cmd: string; args?: Record<string, unknown> }> = [];
+    const stateOnServer: VoxSettings = minimalSettings();
+    return {
+      calls,
+      stub: {
+        invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+          calls.push({ cmd, args });
+          if (cmd === "apply_settings_patch") {
+            const patch = (args as { patch?: Record<string, unknown> })?.patch ?? {};
+            const res = overrides.patchFor?.(patch) ?? { applied: true, reload_policy: "hot" as const, message: "ok", restart_scheduled: false };
+            if (!(res instanceof Error)) {
+              // Backend behavior under test: accepted keys land on the server
+              // state get_settings later reports.
+              Object.assign(stateOnServer, JSON.parse(JSON.stringify(patch)));
+            }
+            return (res instanceof Error ? Promise.reject(res) : Promise.resolve(res)) as unknown as Promise<T>;
+          }
+          if (cmd === "get_settings") {
+            return Promise.resolve({ settings: JSON.parse(JSON.stringify(stateOnServer)), models_dir_exists: false, settings_path: "" }) as unknown as Promise<T>;
+          }
+          if (cmd === "get_model_catalog") {
+            return Promise.resolve({
+              llm: [], stt: [], tts: [], vad: [], auxiliary: [], model_groups: [], voices: [], preset_colors: [], model_parameters: {},
+            }) as unknown as Promise<T>;
+          }
+          return Promise.resolve(null as unknown as T);
+        },
+        listen(): Promise<UnlistenFn> {
+          return Promise.resolve(() => {});
+        },
+        convertFileSrc(filePath: string): string {
+          return filePath;
+        },
+      } as Transport,
+    };
+  }
+
+  it("NEGATIVE: an atomic patch rejection keeps every touched key in the draft, per-domain banners, server state unchanged", async () => {
     const saved = minimalSettings();
     const draft = minimalSettings();
     draft.persona.modular_prompt = "edited-persona";
-    draft.llm.active = { category: "server", provider: "srv-1", model: "" };
+    draft.llm.active = SERVER_ACTIVE;
 
-    const calls: Array<{ cmd: string; args?: Record<string, unknown> }> = [];
-    const mockTransport: Transport = {
-      invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
-        calls.push({ cmd, args });
-        if (cmd === "apply_settings_patch") {
-          const patch = (args as { patch: Record<string, unknown> }).patch;
-          if (patch && Object.prototype.hasOwnProperty.call(patch, "llm")) {
-            return Promise.reject(new Error("Unknown setting: llm.active")) as unknown as Promise<T>;
-          }
-          return Promise.resolve({
-            applied: true,
-            reload_policy: "hot",
-            message: "ok",
-            restart_scheduled: false,
-          } as unknown as T);
-        }
-        if (cmd === "get_settings") {
-          const merged = minimalSettings();
-          merged.persona.modular_prompt = "edited-persona";
-          return Promise.resolve({
-            settings: merged,
-            models_dir_exists: false,
-            settings_path: "",
-          } as unknown as T);
-        }
-        if (cmd === "get_model_catalog") {
-          return Promise.resolve({
-            llm: [],
-            stt: [],
-            tts: [],
-            vad: [],
-            auxiliary: [],
-            model_groups: [],
-            voices: [],
-            preset_colors: [],
-            model_parameters: {},
-          } as unknown as T);
-        }
-        return Promise.resolve(null as unknown as T);
-      },
-      listen(): Promise<UnlistenFn> {
-        return Promise.resolve(() => {});
-      },
-      convertFileSrc(filePath: string): string {
-        return filePath;
-      },
-    };
-    setTransport(mockTransport);
+    const { stub, calls } = settingsTransport({
+      // Backend contract (src-tauri/src/ipc/settings.rs apply_settings_patch):
+      // apply_settings_patch_tree validates the whole tree first and rejects
+      // atomically — an errored patch leaves server settings untouched, no
+      // per-key partial result exists.
+      patchFor: () => new Error("Unknown setting: llm.active"),
+    });
+    setTransport(stub);
 
     useSettingsStore.setState({ settings: saved, draftSettings: draft });
     useSettingsStore.getState().recomputeDomainFlags();
@@ -93,22 +128,39 @@ describe("settings commit partial-failure isolation", () => {
     await useSettingsStore.getState().commitChanges();
 
     const state = useSettingsStore.getState();
-    // The rejected llm key is reported on the models card…
+    // Both touched keys failed — llm maps to the "models" card, persona to its
+    // own card (SETTINGS_DOMAIN_TO_UI).
     expect(state.failedSaveDomains["models"]).toEqual(["active"]);
-    // …stays in the draft for retry…
-    expect(state.draftSettings?.llm?.active).toEqual({
-      category: "server",
-      provider: "srv-1",
-      model: "",
-    });
-    // …while the accepted persona edit lands and is no longer dirty.
-    expect(state.settings?.persona?.modular_prompt).toBe("edited-persona");
+    expect(state.failedSaveDomains["persona"]).toEqual(["modular_prompt"]);
+    // Both rejected values stay in the draft so they can be retried…
+    expect(state.draftSettings?.llm?.active).toEqual(SERVER_ACTIVE);
     expect(state.draftSettings?.persona?.modular_prompt).toBe("edited-persona");
+    // …and the re-read confirms the server never changed (atomic contract).
+    expect(state.settings?.persona?.modular_prompt).toBe("a");
     expect(
-      calls.filter(
-        (c) => c.cmd === "update_setting" && (c.args as { key: string }).key === "servers"
-      )
+      calls.filter((c) => c.cmd === "update_setting" && (c.args as { key?: string })?.key === "servers")
     ).toHaveLength(0);
+  });
+
+  it("NEGATIVE: domain-scoped rejection routes only that domain's key to its card banner", async () => {
+    const saved = minimalSettings();
+    const draft = minimalSettings();
+    draft.dictation.enabled = true;
+
+    const { stub } = settingsTransport({
+      patchFor: () => new Error("Unknown setting: dictation.enabled"),
+    });
+    setTransport(stub);
+
+    useSettingsStore.setState({ settings: saved, draftSettings: draft });
+    useSettingsStore.getState().recomputeDomainFlags();
+
+    await useSettingsStore.getState().commitChanges();
+
+    const state = useSettingsStore.getState();
+    // dictation maps to the "interaction" card, per settingsFlags.ts §17.
+    expect(state.failedSaveDomains["interaction"]).toEqual(["enabled"]);
+    expect(state.draftSettings?.dictation?.enabled).toBe(true);
   });
 
   it("scoped commit persists one key and leaves other dirty keys alone", async () => {
@@ -117,50 +169,8 @@ describe("settings commit partial-failure isolation", () => {
     draft.persona.modular_prompt = "edited-persona";
     draft.llm.cloud_keys = { nvidia: "nv-key" };
 
-    const calls: Array<{ cmd: string; args?: Record<string, unknown> }> = [];
-    const mockTransport: Transport = {
-      invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
-        calls.push({ cmd, args });
-        if (cmd === "apply_settings_patch") {
-          return Promise.resolve({
-            applied: true,
-            reload_policy: "restart",
-            message: "ok",
-            restart_scheduled: false,
-          } as unknown as T);
-        }
-        if (cmd === "get_settings") {
-          const merged = minimalSettings();
-          merged.llm.cloud_keys = { nvidia: "nv-key" };
-          return Promise.resolve({
-            settings: merged,
-            models_dir_exists: false,
-            settings_path: "",
-          } as unknown as T);
-        }
-        if (cmd === "get_model_catalog") {
-          return Promise.resolve({
-            llm: [],
-            stt: [],
-            tts: [],
-            vad: [],
-            auxiliary: [],
-            model_groups: [],
-            voices: [],
-            preset_colors: [],
-            model_parameters: {},
-          } as unknown as T);
-        }
-        return Promise.resolve(null as unknown as T);
-      },
-      listen(): Promise<UnlistenFn> {
-        return Promise.resolve(() => {});
-      },
-      convertFileSrc(filePath: string): string {
-        return filePath;
-      },
-    };
-    setTransport(mockTransport);
+    const { stub, calls } = settingsTransport();
+    setTransport(stub);
 
     useSettingsStore.setState({ settings: saved, draftSettings: draft });
     useSettingsStore.getState().recomputeDomainFlags();
@@ -168,59 +178,16 @@ describe("settings commit partial-failure isolation", () => {
 
     const updates = calls.filter((c) => c.cmd === "apply_settings_patch");
     expect(updates).toHaveLength(1);
-    // The unrelated persona edit is still dirty in the draft, untouched.
-    expect(useSettingsStore.getState().draftSettings?.persona?.modular_prompt).toBe(
-      "edited-persona"
-    );
+    expect(useSettingsStore.getState().draftSettings?.persona?.modular_prompt).toBe("edited-persona");
     expect(useSettingsStore.getState().failedSaveDomains["persona"]).toBeUndefined();
   });
 
-  it("commits the servers vehicle as update_setting(llm, servers)", async () => {
+  it("commits the servers vehicle as apply_settings_patch with llm.servers in it", async () => {
     const saved = minimalSettings();
     const draft = minimalSettings();
 
-    const calls: Array<{ cmd: string; args?: Record<string, unknown> }> = [];
-    const mockTransport: Transport = {
-      invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
-        calls.push({ cmd, args });
-        if (cmd === "apply_settings_patch") {
-          return Promise.resolve({
-            applied: true,
-            reload_policy: "restart",
-            message: "ok",
-            restart_scheduled: false,
-          } as unknown as T);
-        }
-        if (cmd === "get_settings") {
-          return Promise.resolve({
-            settings: minimalSettings(),
-            models_dir_exists: false,
-            settings_path: "",
-          } as unknown as T);
-        }
-        if (cmd === "get_model_catalog") {
-          return Promise.resolve({
-            llm: [],
-            stt: [],
-            tts: [],
-            vad: [],
-            auxiliary: [],
-            model_groups: [],
-            voices: [],
-            preset_colors: [],
-            model_parameters: {},
-          } as unknown as T);
-        }
-        return Promise.resolve(null as unknown as T);
-      },
-      listen(): Promise<UnlistenFn> {
-        return Promise.resolve(() => {});
-      },
-      convertFileSrc(filePath: string): string {
-        return filePath;
-      },
-    };
-    setTransport(mockTransport);
+    const { stub, calls } = settingsTransport();
+    setTransport(stub);
 
     useSettingsStore.setState({ settings: saved, draftSettings: draft });
     useSettingsStore.getState().recomputeDomainFlags();
@@ -231,6 +198,9 @@ describe("settings commit partial-failure isolation", () => {
 
     const serverCalls = calls.filter((c) => c.cmd === "apply_settings_patch");
     expect(serverCalls).toHaveLength(1);
+    const patch = (serverCalls[0]?.args as { patch?: Record<string, unknown> })?.patch;
+    expect(patch).toHaveProperty("llm");
+    expect(patch?.llm).toHaveProperty("servers");
     expect(useSettingsStore.getState().failedSaveDomains["models"]).toBeUndefined();
   });
 });

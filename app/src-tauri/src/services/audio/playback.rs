@@ -9,9 +9,9 @@ use parking_lot::Mutex;
 use ringbuf::{traits::*, HeapProd};
 
 use super::{
-    build_output_stream, resampler::upsample_2x_into, AudioResampler, AudioSink,
-    MODULAR_PREROLL_THRESHOLD_SAMPLES, PLAYBACK_BUFFER_SAMPLES, PLAYBACK_PRODUCER_SCRATCH_CAPACITY,
-    REALTIME_PREROLL_THRESHOLD_SAMPLES, SINC_CHUNK_SIZE_OUTPUT,
+    build_output_stream, resampler::upsample_2x_into, sink::PlaybackReferenceTap, AudioResampler,
+    AudioSink, MODULAR_PREROLL_THRESHOLD_SAMPLES, PLAYBACK_BUFFER_SAMPLES,
+    PLAYBACK_PRODUCER_SCRATCH_CAPACITY, REALTIME_PREROLL_THRESHOLD_SAMPLES, SINC_CHUNK_SIZE_OUTPUT,
 };
 pub use super::{PlaybackEngineHandles, PlaybackTelemetryHandles};
 use crate::{
@@ -51,6 +51,7 @@ impl PlaybackEngine {
     pub fn new(
         handles: PlaybackEngineHandles,
         telemetry: PlaybackTelemetryHandles,
+        reference_tap: Option<PlaybackReferenceTap>,
     ) -> Result<Self> {
         let rb = ringbuf::HeapRb::<f32>::new(PLAYBACK_BUFFER_SAMPLES);
         let (producer, consumer) = rb.split();
@@ -63,6 +64,7 @@ impl PlaybackEngine {
             Arc::clone(&discard_request),
             Arc::clone(&turn_armed),
             &telemetry,
+            reference_tap,
         )?;
 
         Ok(Self {

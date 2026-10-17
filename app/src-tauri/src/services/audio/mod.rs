@@ -38,6 +38,11 @@ pub const SINC_WINDOW_LEN: usize = 256;
 pub const SINC_OVERSAMPLING_FACTOR: usize = 128;
 pub const SINC_CUTOFF_FREQUENCY: f32 = 0.95;
 
+pub const AEC_FRAME_SAMPLES: usize = 160;
+pub const AEC_SAMPLE_RATE: u32 = 16000;
+pub const AEC_REFERENCE_BUFFER_SAMPLES: usize = 16384;
+
+pub mod aec;
 pub mod decode;
 pub mod device;
 pub mod playback;
@@ -77,6 +82,7 @@ pub struct MockAudioSink;
 
 impl AudioSink for MockAudioSink {}
 
+pub use aec::{spawn_aec_worker, AecCommand, AecProcessor, AecStatistics};
 pub use decode::{
     decode_bytes_to_24khz_mono, decode_to_24khz_mono, truncate_to, write_wav_f32,
     write_wav_f32_raw, DecodedAudio,
@@ -87,6 +93,7 @@ pub use device::{
 pub use playback::PlaybackEngine;
 pub use resampler::{upsample_2x, upsample_2x_into, AudioResampler};
 pub use route::{detect_audio_output_mode, spawn_audio_route_watcher};
+pub use sink::PlaybackReferenceTap;
 
 /// Telemetry and visualization atomics passed to the playback engine.
 #[derive(Clone)]

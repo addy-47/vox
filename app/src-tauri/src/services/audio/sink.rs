@@ -3,7 +3,7 @@ use std::sync::{
     Arc,
 };
 
-use ringbuf::{traits::*, HeapCons};
+use ringbuf::{traits::*, HeapCons, HeapProd};
 
 use super::{
     PlaybackEngineHandles, PlaybackTelemetryHandles, PLAYBACK_CHANNELS, PLAYBACK_DEFAULT_VOLUME,
@@ -15,8 +15,50 @@ use crate::{
         events::{AudioIntent, VoxEvent},
         state::InteractionState,
     },
-    utils::audio_filters::FilterBank,
+    utils::audio_filters::{BiquadLowPass, FilterBank},
 };
+
+/// Reference tap that extracts rendered playback audio (anti-aliased and downsampled 3:1 to 16kHz) for AEC.
+pub struct PlaybackReferenceTap {
+    producer: HeapProd<f32>,
+    lpf: BiquadLowPass,
+    decimator_count: usize,
+}
+
+impl PlaybackReferenceTap {
+    /// Creates a new reference tap wrapping a lock-free ring buffer producer.
+    pub fn new(producer: HeapProd<f32>) -> Self {
+        Self {
+            producer,
+            lpf: BiquadLowPass::new_butterworth(7500.0, PLAYBACK_SAMPLE_RATE as f32),
+            decimator_count: 0,
+        }
+    }
+
+    /// Pushes a 48kHz playback sample through Butterworth LPF, downsampling 3:1 to 16kHz mono.
+    #[inline]
+    pub fn push_sample(&mut self, sample: f32) {
+        let filtered = self.lpf.tick(sample);
+        self.decimator_count += 1;
+        if self.decimator_count == 3 {
+            let _ = self.producer.try_push(filtered);
+            self.decimator_count = 0;
+        }
+    }
+
+    /// Pushes a slice of 48kHz playback samples into the reference tap.
+    pub fn push_slice_48khz(&mut self, samples: &[f32]) {
+        for &s in samples {
+            self.push_sample(s);
+        }
+    }
+
+    /// Resets the internal downsampling and filter state.
+    pub fn reset(&mut self) {
+        self.decimator_count = 0;
+        self.lpf.reset();
+    }
+}
 
 /// Context state held exclusively by the real-time CPAL output stream callback.
 pub struct PlaybackStreamContext {
@@ -33,6 +75,7 @@ pub struct PlaybackStreamContext {
     pub current_volume: f32,
     pub filter_bank: FilterBank,
     pub played_samples: u64,
+    pub reference_tap: Option<PlaybackReferenceTap>,
 }
 
 impl PlaybackStreamContext {
@@ -43,6 +86,7 @@ impl PlaybackStreamContext {
         discard_request: Arc<AtomicBool>,
         turn_armed: Arc<AtomicBool>,
         telemetry: &PlaybackTelemetryHandles,
+        reference_tap: Option<PlaybackReferenceTap>,
     ) -> Self {
         Self {
             consumer,
@@ -58,6 +102,7 @@ impl PlaybackStreamContext {
             current_volume: PLAYBACK_DEFAULT_VOLUME,
             filter_bank: FilterBank::new(PLAYBACK_SAMPLE_RATE as f32),
             played_samples: 0,
+            reference_tap,
         }
     }
 
@@ -99,6 +144,9 @@ impl PlaybackStreamContext {
         self.last_sample = 0.0;
         self.current_volume = PLAYBACK_DEFAULT_VOLUME;
         self.filter_bank.reset();
+        if let Some(ref mut tap) = self.reference_tap {
+            tap.reset();
+        }
     }
 
     /// Drains ringbuf audio frames, applies click-free volume ramp, and calculates telemetry.
@@ -109,6 +157,7 @@ impl PlaybackStreamContext {
         let mut sum_mid_sq = 0.0;
         let mut sum_high_sq = 0.0;
         let mut popped = 0u64;
+        let is_muted = self.handles.is_playback_muted.load(Ordering::Relaxed);
 
         for frame in 0..frames {
             let sample_opt = self.consumer.try_pop();
@@ -130,6 +179,12 @@ impl PlaybackStreamContext {
             }
 
             let played_sample = sample * self.current_volume;
+            let effective_sample = if is_muted { 0.0 } else { played_sample };
+
+            if let Some(ref mut tap) = self.reference_tap {
+                tap.push_sample(effective_sample);
+            }
+
             sum_sq += played_sample * played_sample;
 
             let (low, mid, high) = self.filter_bank.tick(played_sample);

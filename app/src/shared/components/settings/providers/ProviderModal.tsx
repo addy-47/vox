@@ -3,7 +3,7 @@ import { useLenisScrollContainer, useScrollTopOnChange } from "@/shared/hooks/us
 import { CLOUD_PROVIDERS, TTS_MODAL_PROVIDERS, type CloudProvider } from "@/data/providersCopy";
 import { INTERACTION_CONFIG_DESK_COPY } from "@/data/settingsCopy";
 import { useSettingsStore, type LlmCustomServer, type TtsCustomServer } from "@/store/settingsStore";
-import { activeSelection } from "@/shared/lib/activeSelection";
+import { activeSelection, promoteActive } from "@/shared/lib/activeSelection";
 import { ModalProviderFooter } from "@/shared/components/settings/SettingsCommitControls";
 import { Tooltip } from "@/shared/ui/Tooltip";
 import { ArrowRight, Check, Cloud, Globe, HelpCircle, Key, KeyRound, Pencil, Plus, Server, Trash2, X } from "lucide-react";
@@ -242,13 +242,10 @@ export const ProviderModal = memo(({
     if (q) list = list.filter((p) => p.name.toLowerCase().includes(q) || p.id.toLowerCase().includes(q) || p.tagline.toLowerCase().includes(q));
     if (filterCategory === "custom") return [];
     if (filterCategory === "configured") list = list.filter((p) => p.isConfigured || p.isFree || Boolean(getProviderKey(p.id)?.trim()));
-    const sorted = [...list].sort((a, b) => sort === "az" ? a.name.localeCompare(b.name, undefined, { sensitivity: "base" }) : b.name.localeCompare(a.name, undefined, { sensitivity: "base" }));
-    const committedTtsProvider = committedSettings?.tts?.active?.provider;
-    if (committedTtsProvider) {
-      const idx = sorted.findIndex((p) => p.id === committedTtsProvider);
-      if (idx > 0) { const [active] = sorted.splice(idx, 1); sorted.unshift(active); }
-    }
-    return sorted;
+    return promoteActive(
+      [...list].sort((a, b) => sort === "az" ? a.name.localeCompare(b.name, undefined, { sensitivity: "base" }) : b.name.localeCompare(a.name, undefined, { sensitivity: "base" })),
+      committedSettings?.tts?.active?.provider
+    );
   }, [deferredSearch, filterCategory, getProviderKey, isTts, sort, committedSettings?.tts?.active?.provider]);
 
   const modalFilteredProviders = useMemo(() => {
@@ -259,19 +256,14 @@ export const ProviderModal = memo(({
     else if (filterCategory === "unconfigured") list = list.filter((p) => !p.isConfigured && !getProviderKey(p.id)?.trim());
     else if (filterCategory === "custom") list = [];
 
-    const sorted = [...list].sort((a, b) => {
-      const aKey = Boolean(getCommittedProviderKey(a.id)?.trim()), bKey = Boolean(getCommittedProviderKey(b.id)?.trim());
-      if (aKey !== bKey) return aKey ? -1 : 1;
-      return sort === "az" ? a.name.localeCompare(b.name, undefined, { sensitivity: "base" }) : b.name.localeCompare(a.name, undefined, { sensitivity: "base" });
-    });
-    const committedLlmProvider = committedSettings?.llm?.active?.provider;
-    if (committedLlmProvider) {
-      const idx = sorted.findIndex(
-        (p) => p.id === committedLlmProvider
-      );
-      if (idx > 0) { const [active] = sorted.splice(idx, 1); sorted.unshift(active); }
-    }
-    return sorted;
+    return promoteActive(
+      [...list].sort((a, b) => {
+        const aKey = Boolean(getCommittedProviderKey(a.id)?.trim()), bKey = Boolean(getCommittedProviderKey(b.id)?.trim());
+        if (aKey !== bKey) return aKey ? -1 : 1;
+        return sort === "az" ? a.name.localeCompare(b.name, undefined, { sensitivity: "base" }) : b.name.localeCompare(a.name, undefined, { sensitivity: "base" });
+      }),
+      committedSettings?.llm?.active?.provider
+    );
   }, [deferredSearch, filterCategory, getProviderKey, getCommittedProviderKey, sort, committedSettings?.llm?.active?.provider]);
 
   const matchesLocal = useMemo(() => {
@@ -286,13 +278,10 @@ export const ProviderModal = memo(({
   const filteredCustomServers = useMemo(() => {
     if (!showCustomSection) return [];
     const q = deferredSearch.trim().toLowerCase();
-    const list = !q ? [...customServers] : customServers.filter((s) => (s.name && s.name.toLowerCase().includes(q)) || (s.url && s.url.toLowerCase().includes(q)) || (s.id && s.id.toLowerCase().includes(q)));
-    const targetServerId = isTts ? committedSettings?.tts?.active?.provider : committedSettings?.llm?.active?.provider;
-    if (targetServerId) {
-      const idx = list.findIndex((s) => s.id === targetServerId);
-      if (idx > 0) { const [pinned] = list.splice(idx, 1); list.unshift(pinned); }
-    }
-    return list;
+    return promoteActive(
+      !q ? [...customServers] : customServers.filter((s) => (s.name && s.name.toLowerCase().includes(q)) || (s.url && s.url.toLowerCase().includes(q)) || (s.id && s.id.toLowerCase().includes(q))),
+      isTts ? committedSettings?.tts?.active?.provider : committedSettings?.llm?.active?.provider
+    );
   }, [showCustomSection, deferredSearch, customServers, isTts, committedSettings?.tts?.active?.provider, committedSettings?.llm?.active?.provider]);
 
   const localMeta = {

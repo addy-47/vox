@@ -148,7 +148,8 @@ Tickets follow the `<local-ticket-template>` format and reside in `.scratch/aec-
 flowchart LR
     T1["01: AEC Reference Tap & Harness"] --> T2["02: Live Mic Capture AEC Ingestion"]
     T2 --> T3["03: Full-Duplex Barge-In Unification"]
-    T3 --> T4["04: Settings Control & Telemetry"]
+    T3 --> T5["05: Headless Full-Duplex Test Suite"]
+    T5 --> T6["06: Decimator Anti-Aliasing & Test Consolidation"]
 ```
 
 ### [Ticket 01: AEC Reference Tap and End-to-End Echo Reduction Harness](file:///home/addy/projects/apps/vox/.scratch/aec-integration/issues/01-aec-reference-tap-and-harness.md)
@@ -166,7 +167,36 @@ flowchart LR
 - **Blocked by:** Ticket 02.
 - **Deliverable:** Elimination of `state.audio_mode == Speaker` suppression in `actor.rs`, unified interruption testing under active playback, and `tests/barge_in_aec_test.rs`.
 
-### [Ticket 04: AEC Settings Control, IPC Bridge, UI Toggle, and Telemetry](file:///home/addy/projects/apps/vox/.scratch/aec-integration/issues/04-aec-settings-and-telemetry.md)
-- **What to build:** An end-to-end user setting and monitoring slice allowing users to toggle AEC on/off in the Settings UI, dispatching IPC updates to dynamically bypass or activate the AEC processor, and displaying real-time AEC telemetry in monitoring.
+### [Ticket 04: AEC Settings Control & Telemetry — SUPERSEDED / PRUNED](file:///home/addy/projects/apps/vox/.scratch/aec-integration/issues/04-aec-settings-and-telemetry.md)
+> [!NOTE]
+> **Pruned from Implementation:** AEC is non-negotiable core audio infrastructure, not an optional user setting. Exposing it in the UI adds confusion and risks self-interruption failure modes. Retained only internal backend metrics and automatic fallback without user-facing settings.
+
+### [Ticket 05: Headless Full-Duplex AEC & Double-Talk Barge-In Integration Test Suite](file:///home/addy/projects/apps/vox/.scratch/aec-integration/issues/05-automated-aec-barge-in-test-suite.md)
+- **What to build:** A deterministic, automated headless integration test suite verifying that the full production audio pipeline suppresses acoustic loopback without physical audio hardware, mathematically asserting echo attenuation (ERLE >= 20dB), zero self-interruptions during solo playback, and sub-100ms barge-in triggering when user speech overlaps assistant playback.
 - **Blocked by:** Ticket 03.
-- **Deliverable:** `config.rs` toggle, IPC command, Settings switch in `InteractionConfigDesk.tsx`, and telemetry display in `Monitoring.tsx`.
+- **Deliverable:** `app/src-tauri/tests/aec_barge_in_integration_test.rs` covering automated synthetic loopback, double-talk barge-in, false-green bypass assertions, and ERLE calculation.
+
+### [Ticket 06: AEC Reference Decimator Anti-Aliasing and Test Suite Consolidation](file:///home/addy/projects/apps/vox/.scratch/aec-integration/issues/06-aec-hardening-anti-aliasing-and-test-consolidation.md)
+- **What to build:** Eliminate high-frequency reference aliasing in the playback tap using a low-pass decimation filter, isolate integration test database states to prevent migration collision crashes, and consolidate redundant test suites to reduce cold CI compile time by 4 minutes.
+- **Blocked by:** Ticket 05.
+- **Deliverable:** Anti-aliasing IIR/polyphase filter in `PlaybackReferenceTap` (`sink.rs`), deletion of redundant `barge_in_aec_test.rs`, and test harness database isolation.
+
+
+---
+
+## 6. Testing Strategy: Automated vs. Manual
+
+### 6.1 Native Automated Testing (Fully Deterministic in CI)
+AEC and barge-in can be rigorously and natively tested **without** physical speakers or microphones via headless mock streams:
+1. **Synthetic Loopback & Delay Injection:** Using `create_headless_playback_with_sink`, playback audio chunks are rendered into an in-memory buffer. A delayed ($\tau \in [10, 80]\text{ms}$) and attenuated copy is injected into the simulated capture producer.
+2. **Echo-Only Invariant:** Under injected echo alone, the test asserts that `AecProcessor` suppresses residual energy below the VAD threshold: `VoxEvent::SpeechStart` is **never** emitted, and `VoxEvent::PlaybackFinished` completes without interruption.
+3. **Double-Talk & Barge-In Invariant:** When a real speech WAV is mixed with the echo, the test asserts that `SpeechStart` fires within $\le 100\text{ms}$, playback cancellation is dispatched immediately, and Nemotron/Sherpa transcribes the user utterance (Levenshtein similarity $\ge 0.90$).
+4. **False-Green Safety Check:** Running the same synthetic loopback with `aec_enabled = false` must trigger false speech detection, proving the test suite catches broken or disabled AEC logic.
+5. **Mathematical Metric (ERLE):** Computes Echo Return Loss Enhancement: $\text{ERLE} = 10 \log_{10}(E_{\text{in}} / E_{\text{out}}) \ge 20\text{ dB}$.
+
+### 6.2 Manual Real-World Verification
+Physical validation covers non-linear hardware distortions that synthetic models do not replicate:
+- Open-back headphones at maximum system volume.
+- Laptop built-in speakers at 100% volume with chassis vibration and non-linear harmonic distortion.
+- Physical 3.5mm TRRS headsets with analog ground loop impedance.
+
