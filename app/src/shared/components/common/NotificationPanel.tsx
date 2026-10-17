@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { Tooltip } from "@/shared/ui/Tooltip";
+import { TabStrip } from "@/shared/ui";
 import { NOTIFICATION_COPY } from "@/data/notificationCopy";
 import {
   useNotificationStore,
@@ -365,7 +366,6 @@ TimeGroupHeader.displayName = "TimeGroupHeader";
 export const NotificationPanel = memo(({ onClose }: NotificationPanelProps) => {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<"tasks" | "updates">("tasks");
-  const tabListRef = useRef<HTMLDivElement>(null);
   const tasks = useNotificationStore(selectTasksRolledUp);
   const updates = useNotificationStore(selectUpdatesRolledUp);
   const badgeCount = useNotificationStore(selectBadgeCount);
@@ -472,68 +472,18 @@ export const NotificationPanel = memo(({ onClose }: NotificationPanelProps) => {
         {/* ── Underline tab bar & dismiss all on single line ── */}
         <div className="flex items-end gap-0 border-b border-[rgba(var(--accent),0.08)]">
           <div className="flex items-end gap-0 overflow-x-auto no-scrollbar">
-            <div
-              ref={tabListRef}
-              role="tablist"
-              aria-label={NOTIFICATION_COPY.tabsAriaLabel}
-              className="flex items-end gap-0"
-              onKeyDown={(e) => {
-                if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
-                  e.preventDefault();
-                  const buttons = tabListRef.current?.querySelectorAll<HTMLButtonElement>('[data-arrow-nav]');
-                  if (!buttons || buttons.length === 0) return;
-                  const currentIndex = Array.from(buttons).findIndex((b) => b === document.activeElement);
-                  let nextIndex: number;
-                  if (e.key === "ArrowLeft") {
-                    nextIndex = currentIndex <= 0 ? buttons.length - 1 : currentIndex - 1;
-                  } else {
-                    nextIndex = currentIndex >= buttons.length - 1 ? 0 : currentIndex + 1;
-                  }
-                  buttons[nextIndex]?.focus();
-                  buttons[nextIndex]?.click();
-                }
-              }}
-            >
-              {([
+            <TabStrip
+              tabs={[
                 { id: "tasks", label: NOTIFICATION_COPY.tasksTab, count: tasks.length },
                 { id: "updates", label: NOTIFICATION_COPY.updatesTab, count: updates.length },
-              ] as const).map((tab, index) => {
-                const isActive = activeTab === tab.id;
-                return (
-                  <span key={tab.id} className="flex items-end">
-                    {index > 0 && (
-                      <span
-                        className="text-[11px] text-[rgb(var(--foreground-muted))]/25 select-none pb-1.5 px-1 sm:px-2"
-                        aria-hidden="true"
-                      >
-                        |
-                      </span>
-                    )}
-                    <button
-                      type="button"
-                      id={`notification-tab-${tab.id}`}
-                      role="tab"
-                      aria-selected={isActive}
-                      aria-controls="notification-tabpanel"
-                      tabIndex={isActive ? 0 : -1}
-                      data-arrow-nav
-                      onClick={() => setActiveTab(tab.id)}
-                      className={cn(
-                        "flex items-center gap-1.5 px-2 pb-1.5 pt-1 text-[11px] sm:text-[11.5px] font-mono font-bold uppercase tracking-[0.06em] border-b-2 transition-colors duration-150 cursor-pointer shrink-0",
-                        isActive
-                          ? "border-[rgb(var(--accent))] text-[rgb(var(--accent))]"
-                          : "border-transparent text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))]"
-                      )}
-                    >
-                      <span>{tab.label}</span>
-                      {tab.count > 0 && (
-                        <span className="font-mono tabular-nums text-[11px] opacity-70">{tab.count}</span>
-                      )}
-                    </button>
-                  </span>
-                );
-              })}
-            </div>
+              ]}
+              activeTab={activeTab}
+              onChange={(id) => setActiveTab(id as "tasks" | "updates")}
+              variant="underline"
+              size="sm"
+              ariaLabel={NOTIFICATION_COPY.tabsAriaLabel}
+              className="flex items-end gap-0"
+            />
           </div>
 
           <div className="flex-1" />

@@ -1,13 +1,12 @@
 import { useState, useEffect, useRef, memo, useCallback } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
-import { SlidersHorizontal, Mic, MicOff, Activity, Radio, Layers, Zap } from "lucide-react";
+import { SlidersHorizontal, Mic, MicOff, Activity, Radio, Layers, Zap, AudioLines, BrainCircuit, ChevronRight, Ear } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
-import { SegmentedControl, ToggleTile } from "@/shared/ui";
-import { PipelineProvidersDesk } from "./PipelineProvidersDesk";
+import { SegmentedControl, ToggleTile, Tooltip } from "@/shared/ui";
 import { InteractionConfigDesk } from "./InteractionConfigDesk";
 import { RealtimeConfigDesk } from "./RealtimeConfigDesk";
 import { DictationConfigDesk } from "./DictationConfigDesk";
-import { DICTATION_COPY, INTERACTION_CARD_COPY, TRIGGER_MODE_COPY, PIPELINE_MODE_COPY } from "@/data/settingsCopy";
+import { DICTATION_COPY, INTERACTION_CARD_COPY, TRIGGER_MODE_COPY, PIPELINE_MODE_COPY, PIPELINE_PROVIDERS_DESK_COPY } from "@/data/settingsCopy";
 
 interface InteractionCardProps {
   layoutMode?: "full-max" | "full-min" | "small";
@@ -81,6 +80,10 @@ export const InteractionCard = memo(
     const isPassive = String(interactionMode).toLowerCase() === "passive";
     const pipelineMode = interaction.pipeline_mode ?? "modular";
     const isModular = pipelineMode === "modular";
+    const pipelineCompact = layoutMode === "small";
+    const pipelineIconSize = pipelineCompact ? 16 : 26;
+    const pipelineChevronSize = pipelineCompact ? 12 : 14;
+    const pipelineTextSize = pipelineCompact ? "text-[11px]" : "text-[14px]";
     return (
       <div
         className={cn(
@@ -194,13 +197,60 @@ export const InteractionCard = memo(
                       layoutMode === "small" ? "h-auto" : "h-full"
                     )}
                   >
-                    <PipelineProvidersDesk
-                      sttActive={draftSettings.stt?.active}
-                      llmActive={draftSettings.llm?.active}
-                      ttsActive={draftSettings.tts?.active}
-                      onSelectCategory={handleSelectCategory}
-                      layoutMode={layoutMode}
-                    />
+                    <div className="grid grid-cols-3 gap-2 w-full flex-1 min-h-0 select-none">
+                      {[
+                        { id: "STT" as const, card: PIPELINE_PROVIDERS_DESK_COPY.cards.stt, Icon: Ear, active: draftSettings.stt?.active },
+                        { id: "LLM" as const, card: PIPELINE_PROVIDERS_DESK_COPY.cards.llm, Icon: BrainCircuit, active: draftSettings.llm?.active },
+                        { id: "TTS" as const, card: PIPELINE_PROVIDERS_DESK_COPY.cards.tts, Icon: AudioLines, active: draftSettings.tts?.active },
+                      ].map((stage) => {
+                        const IconComponent = stage.Icon;
+                        const category = stage.active?.category ?? "";
+                        const model = stage.active?.model ?? "";
+
+                        return (
+                          <Tooltip
+                            key={stage.id}
+                            label={`${PIPELINE_PROVIDERS_DESK_COPY.configureAriaPrefix} ${stage.card.title}`}
+                            side="top"
+                            asChild
+                          >
+                            <button
+                              type="button"
+                              onClick={() => handleSelectCategory(stage.id)}
+                              aria-label={`${PIPELINE_PROVIDERS_DESK_COPY.configureAriaPrefix} ${stage.card.title}`}
+                              className={cn(
+                                "group relative h-full w-full min-h-0 flex flex-col items-center justify-center gap-1.5 overflow-hidden text-center cursor-pointer rounded-xl border transition-colors duration-200",
+                                pipelineCompact ? "px-4 py-3" : "px-5 py-3.5",
+                                "border-[rgba(var(--accent),0.06)] bg-[rgba(var(--foreground),0.015)]",
+                                "hover:border-[rgba(var(--accent),0.25)] hover:bg-[rgba(var(--accent),0.03)]",
+                                "focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[rgb(var(--accent))]"
+                              )}
+                            >
+                              <ChevronRight
+                                size={pipelineChevronSize}
+                                strokeWidth={2.2}
+                                className="absolute top-2 right-2 text-[rgb(var(--foreground-muted))]/35 transition-all duration-200 group-hover:translate-x-0.5 group-hover:text-[rgb(var(--accent))]"
+                              />
+
+                              <IconComponent size={pipelineIconSize} strokeWidth={2} className="shrink-0 text-[rgb(var(--accent))]" />
+
+                              <span className="flex flex-col items-center gap-0 max-w-full">
+                                {category && (
+                                  <span className={cn("max-w-full leading-tight truncate", pipelineTextSize, "text-[rgb(var(--foreground))]/85")}>
+                                    {category}
+                                  </span>
+                                )}
+                                {model && (
+                                  <span className={cn("max-w-full leading-tight truncate", pipelineTextSize, "text-[rgb(var(--foreground-muted))]/80")}>
+                                    {model}
+                                  </span>
+                                )}
+                              </span>
+                            </button>
+                          </Tooltip>
+                        );
+                      })}
+                    </div>
                   </div>
                 )
               ) : (

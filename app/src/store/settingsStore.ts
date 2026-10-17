@@ -18,6 +18,7 @@ import {
   type SettingsContract,
 } from "@/services/settingsService";
 import {
+  CLOUD_PROVIDERS,
   updateCloudProvidersFromContract,
   updateTtsProvidersFromContract,
 } from "@/data/providersCopy";
@@ -624,7 +625,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     let provider = providerConfig;
     if (!provider && draft && active !== "embedded") {
       if (active === "server") {
-        const entry = draft.providers?.llm?.servers?.find((s) => s.id === activeSel?.provider);
+        const servers = draft.llm?.servers ?? draft.providers?.llm?.servers;
+        const entry = servers?.find((s) => s.id === activeSel?.provider);
         if (entry) {
           provider = {
             kind: "server",
@@ -637,13 +639,14 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         }
       } else if (active === "cloud") {
         const cloudKeys = draft.llm?.cloud_keys ?? draft.providers?.llm?.cloud_keys;
+        const cloudEntry = CLOUD_PROVIDERS.find((p) => p.id === activeSel?.provider);
         provider = {
           kind: "cloud",
           provider_id: activeSel?.provider ?? undefined,
-          base_url: "",
+          base_url: cloudEntry?.url || "",
           model: activeSel?.model || "",
           api_key: (activeSel?.provider && cloudKeys?.[activeSel.provider]) || undefined,
-          provider_name: activeSel?.provider ?? undefined,
+          provider_name: cloudEntry?.name ?? activeSel?.provider ?? undefined,
         };
       }
     }

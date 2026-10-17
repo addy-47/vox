@@ -1,13 +1,12 @@
 import { memo, useState, useMemo, useEffect, useCallback, useDeferredValue } from "react";
 import { useLenisScrollContainer, useScrollTopOnChange } from "@/shared/hooks/useLenisScrollContainer";
 import { Cpu, Gauge, Heart, Wrench, Zap } from "lucide-react";
-import { CLOUD_PROVIDERS } from "@/data/providersCopy";
-import { useSettingsStore } from "@/store/settingsStore";
 import { useFavoriteModels } from "@/shared/hooks/useFavoriteModels";
 import type { LlmModelInfo, ModelCapabilities } from "@/store/settingsStore";
 import { REMOTE_MODEL_PAGE_SIZE } from "../models/catalog/catalogProbeUtils";
 import { RemoteModelCard } from "../models/catalog/RemoteModelCard";
-import { CatalogHeader, CatalogFilterMenu, CatalogFilterItem } from "./CatalogHeader";
+import { CatalogFilterMenu, CatalogFilterItem } from "./CatalogHeader";
+import { CatalogModalToolbar } from "./CatalogModalToolbar";
 
 export interface ModelModalProps {
   remoteModels: LlmModelInfo[];
@@ -28,7 +27,6 @@ export const ModelModal = memo(({
 }: ModelModalProps) => {
   const [modalSearch, setModalSearch] = useState("");
   const deferredSearch = useDeferredValue(modalSearch);
-  const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [filterCategory, setFilterCategory] = useState<ModelCategory>("all");
   const [sort, setSort] = useState<"az" | "za">("az");
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -48,15 +46,6 @@ export const ModelModal = memo(({
   }, []);
 
   const { favoriteModelIds, toggleFavorite, isFavorite } = useFavoriteModels();
-
-  const llmSettings = useSettingsStore((s) => s.draftSettings?.llm);
-  const llmServers = useSettingsStore((s) => s.draftSettings?.providers?.llm?.servers);
-  const activeMode = llmSettings?.active?.category ?? "cloud";
-  const activeProviderName = useMemo(() => {
-    if (activeMode === "cloud") return CLOUD_PROVIDERS.find((p) => p.id === llmSettings?.active?.provider)?.name || "Cloud";
-    if (activeMode === "server") return llmServers?.find((s) => s.id === llmSettings?.active?.provider)?.name || "Custom Server";
-    return "Embedded";
-  }, [activeMode, llmSettings?.active?.provider, llmServers]);
 
   const resolveProbed = useCallback((m: LlmModelInfo) => {
     return probingMap[m.id]?.capabilities || m.capabilities || capabilitiesCache?.[`server:${m.id}`] || capabilitiesCache?.[`cloud:${m.id}`] || capabilitiesCache?.[`embedded:${m.id}`] || capabilitiesCache?.[m.id];
@@ -112,24 +101,21 @@ export const ModelModal = memo(({
 
   return (
     <div className="flex flex-col h-full min-h-0 gap-3">
-      <CatalogHeader
-        icon={<Cpu size={14} className="text-[rgb(var(--accent))]" />}
-        title="Remote Models"
-        status={
-          <span className="text-[10.5px] font-mono text-[rgb(var(--foreground-muted))]/70 flex items-center gap-1.5 ml-1">
-            <span className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--accent))] animate-pulse shrink-0" />
-            <span className="capitalize">{activeMode} · {activeProviderName}</span>
-          </span>
-        }
+      <CatalogModalToolbar
         search={{
-          open: isSearchOpen,
           value: modalSearch,
           placeholder: "Search models...",
           onChange: setModalSearch,
-          onToggle: () => setIsSearchOpen((v) => !v),
-          onClose: () => { setIsSearchOpen(false); setModalSearch(""); },
         }}
-        sort={{ order: sort, onToggle: () => setSort((prev) => (prev === "az" ? "za" : "az")) }}
+        sort={{
+          order: sort,
+          onToggle: () => setSort((prev) => (prev === "az" ? "za" : "az")),
+        }}
+        itemCount={{
+          current: visibleModalModels.length,
+          total: remoteModels.length,
+          entityName: "models",
+        }}
         filter={{
           label: "Filter models",
           open: isFilterDropdownOpen,

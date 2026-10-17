@@ -20,8 +20,7 @@ import { LlmProviderConfig, ProviderCaps } from "@/store/settingsStore";
 import { useModelDownloads } from "@/shared/hooks/useModelDownloads";
 import { useRemoteLlmProbing } from "@/shared/hooks/useRemoteLlmProbing";
 
-import { ModelsTopologyMap, type PipelineTab } from "./ModelsTopologyMap";
-import { SettingsTopologyMap } from "./SettingsTopologyMap";
+import { PipelineTopologyMap, type PipelineTab } from "./PipelineTopologyMap";
 import { VadWorkspace } from "./VadWorkspace";
 import { AsrWorkspace } from "./AsrWorkspace";
 import { AuxiliaryWorkspace } from "./AuxiliaryWorkspace";
@@ -118,7 +117,8 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
     }
     if (activeProviderKind === "server") {
       const serverId = draftSettings?.llm?.active?.provider;
-      const entry = draftSettings?.providers?.llm?.servers?.find((s) => s.id === serverId);
+      const servers = draftSettings?.llm?.servers ?? draftSettings?.providers?.llm?.servers;
+      const entry = servers?.find((s) => s.id === serverId);
       return {
         kind: "server",
         provider_id: serverId ?? undefined,
@@ -143,6 +143,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
     draftSettings?.llm?.active?.provider,
     draftSettings?.llm?.active?.model,
     draftSettings?.llm?.cloud_keys,
+    draftSettings?.llm?.servers,
     draftSettings?.providers?.llm?.servers,
   ]);
 
@@ -363,7 +364,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
         {/* Topology Bar: Swapped between Models Topology and Settings Topology */}
         <div className="shrink-0">
           {activeCategoryTab === "model" ? (
-            <ModelsTopologyMap
+            <PipelineTopologyMap
               activeTab={activePipelineTab}
               onChangeTab={setActivePipelineTab}
               layoutMode={layoutMode}
@@ -374,7 +375,8 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
               isAuxiliaryVerified={isAuxiliaryVerified}
             />
           ) : (
-            <SettingsTopologyMap
+            <PipelineTopologyMap
+              ariaLabel="Settings topology"
               layoutMode={layoutMode}
               nodes={
                 activePipelineTab === "vad"
@@ -403,7 +405,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
                       { id: "compute", label: "Compute", Icon: Microchip },
                     ]
               }
-              activeSubTab={
+              activeTab={
                 activePipelineTab === "vad"
                   ? activeVadSubTab
                   : activePipelineTab === "stt"
@@ -412,7 +414,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
                   ? activeLlmSubTab
                   : activeTtsSubTab
               }
-              onChangeSubTab={(id) => {
+              onChangeTab={(id) => {
                 if (activePipelineTab === "vad") setActiveVadSubTab(id);
                 else if (activePipelineTab === "stt") setActiveSttSubTab(id);
                 else if (activePipelineTab === "llm") setActiveLlmSubTab(id as LlmSubTab);

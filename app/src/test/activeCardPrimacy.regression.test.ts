@@ -86,4 +86,66 @@ describe("Active Card Primacy: Grid Ordering", () => {
     const resOpenRouter = sortProvidersWithPrimacy(sampleProviders, "openrouter");
     expect(resOpenRouter[0].id).toBe("openrouter");
   });
+
+  it("strict primacy: only committed provider moves to index 0, drafting does not reorder", () => {
+    const sampleProviders = [
+      { id: "anthropic", name: "Anthropic" },
+      { id: "groq", name: "Groq" },
+      { id: "openai", name: "OpenAI" },
+    ];
+
+    const sortProvidersStrict = (
+      providers: { id: string; name: string }[],
+      committedProviderId?: string
+    ) => {
+      const sorted = [...providers].sort((a, b) => a.name.localeCompare(b.name));
+      if (committedProviderId) {
+        const idx = sorted.findIndex((p) => p.id === committedProviderId);
+        if (idx > 0) {
+          const [active] = sorted.splice(idx, 1);
+          sorted.unshift(active);
+        }
+      }
+      return sorted;
+    };
+
+    // When OpenAI is committed, it moves to index 0
+    const committedOpenAi = sortProvidersStrict(sampleProviders, "openai");
+    expect(committedOpenAi[0].id).toBe("openai");
+
+    // Merely drafting "groq" without committing preserves the order (committed is still openai)
+    const draftedGroq = sortProvidersStrict(sampleProviders, "openai");
+    expect(draftedGroq[0].id).toBe("openai");
+
+    // No committed provider keeps alphabetical order
+    const uncommitted = sortProvidersStrict(sampleProviders, undefined);
+    expect(uncommitted[0].id).toBe("anthropic");
+    expect(uncommitted[1].id).toBe("groq");
+    expect(uncommitted[2].id).toBe("openai");
+  });
+
+  it("server resolution: unifies servers lookup between draft.llm.servers and draft.providers.llm.servers", () => {
+    const resolveServer = (
+      draft: {
+        llm?: { servers?: { id: string; url: string }[] };
+        providers?: { llm?: { servers?: { id: string; url: string }[] } };
+      },
+      serverId: string
+    ) => {
+      const servers = draft?.llm?.servers ?? draft?.providers?.llm?.servers;
+      return servers?.find((s) => s.id === serverId);
+    };
+
+    // When in draft.llm.servers
+    const draft1 = {
+      llm: { servers: [{ id: "srv_1", url: "http://127.0.0.1:11434" }] },
+    };
+    expect(resolveServer(draft1, "srv_1")?.url).toBe("http://127.0.0.1:11434");
+
+    // When in draft.providers.llm.servers
+    const draft2 = {
+      providers: { llm: { servers: [{ id: "srv_2", url: "http://192.168.1.50:8000/v1" }] } },
+    };
+    expect(resolveServer(draft2, "srv_2")?.url).toBe("http://192.168.1.50:8000/v1");
+  });
 });

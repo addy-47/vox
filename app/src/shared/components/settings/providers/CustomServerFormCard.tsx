@@ -9,6 +9,7 @@ import { cn } from "@/shared/lib/utils";
 import { useSettingsStore, type LlmCustomServer, type TtsCustomServer } from "@/store/settingsStore";
 import { probeProviderTarget } from "@/services/catalogService";
 import { ipcErrorMessage } from "@/shared/lib/ipcError";
+import { INTERACTION_CONFIG_DESK_COPY } from "@/data/settingsCopy";
 
 /** Inserts a server or replaces the entry with the same id (edit mode). */
 export function upsertServer<T extends { id: string }>(list: T[], server: T): T[] {
@@ -33,7 +34,10 @@ export const CustomServerFormCard = memo(({
   initial = null,
 }: CustomServerFormCardProps) => {
   const isTts = category === "TTS";
-  const initialUrl = initial?.url ?? (isTts ? "" : "");
+  const defaultUrl = isTts
+    ? INTERACTION_CONFIG_DESK_COPY.tts.server.urlPlaceholder
+    : INTERACTION_CONFIG_DESK_COPY.llm.server.urlPlaceholder;
+  const initialUrl = initial?.url ?? "";
   const [url, setUrl] = useState(initialUrl);
   const [apiKey, setApiKey] = useState(initial?.api_key ?? "");
   const [name, setName] = useState(initial?.name ?? "");
@@ -119,7 +123,7 @@ export const CustomServerFormCard = memo(({
   };
 
   const handleSaveAnyway = async () => {
-    const trimmedUrl = url.trim() || (isTts ? "" : "");
+    const trimmedUrl = url.trim() || defaultUrl;
     const fallbackName = name.trim() || "Custom Server";
 
     if (isTts) {
@@ -232,7 +236,7 @@ export const CustomServerFormCard = memo(({
             value={url}
             autoFocus
             onChange={(e) => setUrl(e.target.value)}
-            placeholder={isTts ? "" : ""}
+            placeholder={defaultUrl}
             className="w-full text-[11.5px] font-mono pb-1 bg-transparent border-b border-[rgba(var(--foreground),0.12)] focus:border-[rgb(var(--accent))] outline-none text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40 transition-colors"
           />
           <div className="flex gap-2">
@@ -240,7 +244,7 @@ export const CustomServerFormCard = memo(({
               type="password"
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
-              placeholder="API Key (Optional)"
+              placeholder={INTERACTION_CONFIG_DESK_COPY.llm.server.apiKeyLabel}
               className="flex-1 text-[11.5px] font-mono pb-1 bg-transparent border-b border-[rgba(var(--foreground),0.12)] focus:border-[rgb(var(--accent))] outline-none text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40 transition-colors"
             />
             <input

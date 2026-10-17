@@ -85,12 +85,13 @@ Authoritative system specifications reside in [`docs/specs/`](file:///home/addy/
 
 > 📖 **Phase 13 (active):** [recent_work.md](file:///home/addy/projects/apps/vox/docs/plans/phase13/recent_work.md)
 > Phase 12 Archive: [recent_work.md](file:///home/addy/projects/apps/vox/docs/plans/phase12/recent_work.md)
-
-- **Provider Identity & Cloud Integration (ZBC):** Backend validates server lists; Azure Speech & Google Cloud TTS integrated; active-card primacy and registry-based logo lookups.
-- **Frontend Architecture Recovery & Shared Header Unification:** Unified `ProviderModal`, `ModelModal`, and `VoiceModal` with shared `CatalogHeader` and `CatalogFilterMenu`; purged dead contexts and shims.
-- **Interaction Desk & Radial Hub Consolidation:** Decomposed config desk to `InteractionConfigDesk` (425 LOC) using `useProviderSelection` and `SelectableCard`; merged `SettingsVisualConnectors` into unified `RadialHub.tsx`.
-- **Direct Settings Restore Defaults Control:** Embedded `RestoreDefaultsButton` UI directly onto the settings page (desktop top-right and mobile header); 68/68 vitest clean, tsc clean.
-- **Hooks Cleanup & Structural Alignment:** Purged unused `useVirtualRows.ts` and `useMobileViewport.ts`; moved `isRealMobileDevice` to `breakpoints.ts`; broke circular re-export in `history/index.ts`; relocated `usePanelState.tsx` to `PanelStateContext.tsx` and `useMemoryGraphScene.ts` to `memory/`; tsc and 68/68 vitest clean.
+- **Provider Identity & Vector Registry Restoration:** Backend validates server lists; Azure Speech & Google Cloud TTS integrated; full vector SVG registry and custom image fallback in `ProviderLogo.tsx`; `SelectableCard` renders vector marks without empty placeholders.
+- **Frontend Architecture & Modal Toolbar Unification:** Consolidated `VoiceModal`, `ModelModal`, and `ProviderModal` to use shared `CatalogModalToolbar` with responsive 3-stage layouts; extracted `SearchBarShell` data adapter pattern; unified `PipelineTopologyMap`.
+- **Interaction Desk Inline Compact View:** Restored 46px compact horizontal tiles with in-situ API key editing, signature on-device icon, and clean `max-h-[160px]` scrolling in `InteractionConfigDesk.tsx`.
+- **ProviderModal Desktop Facet Sidebar:** Restored 200px desktop facet rail and two-column layout with Source, Status, and Help/Setup Guide groups in `ProviderModal.tsx`; mobile delegates to `CatalogModalToolbar` popover; tsc and 68/68 vitest clean.
+- **Codebase Health & Dead Code Elimination:** Purged single-consumer hooks and dead UI components; unified dual-target compilation gate; tsc and 68/68 vitest clean.
+- **SettingsSideCarouselCard Optimization:** Replaced 32px slide variants with a 120ms opacity-only fade, removed direction state, stabilized `renderDomainContent` via useCallback; tsc clean, 68/68 vitest clean.
+- **Remote Provider Resolution & Active-Card Primacy:** Unified custom server lookup via `draft?.llm?.servers ?? draft?.providers?.llm?.servers` in `ModelsCard` and `settingsStore`; enforced strict active-card primacy gating index 0 strictly by `committedSettings` so drafting never reorders cards; restored URL placeholders from `INTERACTION_CONFIG_DESK_COPY` in `CustomServerFormCard`; tsc, build, and 70/70 vitest clean.
 
 
 ---

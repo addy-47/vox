@@ -14,7 +14,7 @@ import {
   ChevronDown,
 } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
-import { Tooltip } from "@/shared/ui";
+import { Tooltip, TabStrip } from "@/shared/ui";
 import { MEMORY_COPY } from "@/data/memoryCopy";
 import { LAYOUT_COPY } from "@/data/layoutCopy";
 import type { UsePersonalMemoryDrawerReturn } from "@/shared/hooks/usePersonalMemoryDrawer";
@@ -206,83 +206,19 @@ export const PersonalMemoryModalView: React.FC<PersonalMemoryModalViewProps> = m
           </div>
 
           {/* Bottom Row: Underline Tabs with generous breathing room */}
-          <div
-            data-arrow-nav
-            role="tablist"
-            aria-label="Personal Memory Tabs"
+          <TabStrip
+            tabs={[
+              { id: "memory", label: MEMORY_COPY.tabMemory, icon: FileText },
+              { id: "observations", label: MEMORY_COPY.tabObservations, icon: Tag, count: drawer.unconsolidatedIdentityCount },
+              { id: "staging", label: MEMORY_COPY.tabStaging, icon: Layers, indicator: hasPendingStaging },
+            ]}
+            activeTab={activeTab}
+            onChange={(id) => setActiveTab(id as PersonalMemoryModalTab)}
+            variant="underline"
+            size="sm"
+            ariaLabel="Personal Memory Tabs"
             className="w-full flex items-center justify-between pt-2 pb-0 select-none overflow-x-auto no-scrollbar -mb-[1px]"
-          >
-            {/* Memory Tab */}
-            <div className="flex-1 min-w-0 flex items-center justify-center">
-              <button
-                type="button"
-                role="tab"
-                aria-selected={activeTab === "memory"}
-                onClick={() => setActiveTab("memory")}
-                className={cn(
-                  "w-full flex items-center justify-center gap-2 pb-2.5 border-b-2 transition-all duration-200 bg-transparent text-[11.5px] font-mono font-bold uppercase tracking-[0.06em] outline-none cursor-pointer text-center truncate px-2",
-                  activeTab === "memory"
-                    ? "text-[rgb(var(--accent))] border-[rgb(var(--accent))]"
-                    : "text-[rgb(var(--foreground-muted))]/60 border-transparent hover:text-[rgb(var(--foreground))]"
-                )}
-              >
-                <FileText size={13} className="shrink-0" />
-                <span className="truncate">{MEMORY_COPY.tabMemory}</span>
-              </button>
-              <span className="text-[10px] text-[rgb(var(--foreground-muted))]/25 font-light select-none pb-2.5 shrink-0 px-1 sm:px-2">
-                |
-              </span>
-            </div>
-
-            {/* Observations Tab */}
-            <div className="flex-1 min-w-0 flex items-center justify-center">
-              <button
-                type="button"
-                role="tab"
-                aria-selected={activeTab === "observations"}
-                onClick={() => setActiveTab("observations")}
-                className={cn(
-                  "w-full flex items-center justify-center gap-2 pb-2.5 border-b-2 transition-all duration-200 bg-transparent text-[11.5px] font-mono font-bold uppercase tracking-[0.06em] outline-none cursor-pointer text-center truncate px-2",
-                  activeTab === "observations"
-                    ? "text-[rgb(var(--accent))] border-[rgb(var(--accent))]"
-                    : "text-[rgb(var(--foreground-muted))]/60 border-transparent hover:text-[rgb(var(--foreground))]"
-                )}
-              >
-                <Tag size={13} className="shrink-0" />
-                <span className="truncate">{MEMORY_COPY.tabObservations}</span>
-                {drawer.unconsolidatedIdentityCount > 0 && (
-                  <span className="text-[10px] font-mono font-bold text-[rgb(var(--accent))] shrink-0">
-                    ({drawer.unconsolidatedIdentityCount})
-                  </span>
-                )}
-              </button>
-              <span className="text-[10px] text-[rgb(var(--foreground-muted))]/25 font-light select-none pb-2.5 shrink-0 px-1 sm:px-2">
-                |
-              </span>
-            </div>
-
-            {/* Staging Tab */}
-            <div className="flex-1 min-w-0 flex items-center justify-center">
-              <button
-                type="button"
-                role="tab"
-                aria-selected={activeTab === "staging"}
-                onClick={() => setActiveTab("staging")}
-                className={cn(
-                  "w-full flex items-center justify-center gap-2 pb-2.5 border-b-2 transition-all duration-200 bg-transparent text-[11.5px] font-mono font-bold uppercase tracking-[0.06em] outline-none cursor-pointer text-center truncate px-2 relative",
-                  activeTab === "staging"
-                    ? "text-[rgb(var(--accent))] border-[rgb(var(--accent))]"
-                    : "text-[rgb(var(--foreground-muted))]/60 border-transparent hover:text-[rgb(var(--foreground))]"
-                )}
-              >
-                <Layers size={13} className="shrink-0" />
-                <span className="truncate">{MEMORY_COPY.tabStaging}</span>
-                {hasPendingStaging && (
-                  <span className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--success))] shadow-[0_0_6px_rgba(var(--success),0.8)] animate-pulse shrink-0" />
-                )}
-              </button>
-            </div>
-          </div>
+          />
         </div>
 
         {/* ── Single Full-Height Unified Workspace (One Contiguous Entity) ── */}
