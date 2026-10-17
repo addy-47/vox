@@ -303,3 +303,89 @@ impl TtsProvider for GoogleTtsProvider {
         })
     }
 }
+
+/// Synthesizes text with the specified Google Cloud TTS voice directly to a WAV file for previews.
+pub async fn synthesize_to_wav(
+    voice: &str,
+    text: &str,
+    speed: f32,
+    project_override: Option<&str>,
+    output_path: &std::path::Path,
+) -> Result<()> {
+    use google_cloud_texttospeech_v1::model;
+
+    let text_clean = text.trim();
+    if text_clean.is_empty() {
+        return Ok(());
+    }
+
+    let client = connect_client().await?;
+    let mut builder = client.streaming_synthesize();
+    if let Some(project) = project_override {
+        let mut options = google_cloud_gax::options::RequestOptions::default();
+        options.set_quota_project(project);
+        builder = builder.with_options(options);
+    }
+
+    let (sender, mut responses) = builder.build();
+    let locale = voice_locale(voice);
+
+    let audio_config = model::StreamingAudioConfig::new()
+        .set_audio_encoding(model::AudioEncoding::Pcm)
+        .set_sample_rate_hertz(GOOGLE_TTS_SAMPLE_RATE as i32)
+        .set_speaking_rate(speed.clamp(MIN_SPEED, MAX_SPEED) as f64);
+
+    let voice_params = model::VoiceSelectionParams::new()
+        .set_language_code(locale)
+        .set_name(voice);
+
+    let config = model::StreamingSynthesizeConfig::new()
+        .set_voice(voice_params)
+        .set_streaming_audio_config(audio_config);
+
+    let config_req = model::StreamingSynthesizeRequest::new().set_streaming_request(
+        model::streaming_synthesize_request::StreamingRequest::StreamingConfig(config.into()),
+    );
+    sender
+        .send(config_req)
+        .await
+        .map_err(|e| anyhow!("Google TTS config send failed: {}", e))?;
+
+    let input = model::StreamingSynthesisInput::new().set_input_source(
+        model::streaming_synthesis_input::InputSource::Text(text_clean.to_string()),
+    );
+    let input_req = model::StreamingSynthesizeRequest::new().set_streaming_request(
+        model::streaming_synthesize_request::StreamingRequest::Input(input.into()),
+    );
+    sender
+        .send(input_req)
+        .await
+        .map_err(|e| anyhow!("Google TTS input send failed: {}", e))?;
+
+    drop(sender);
+
+    let mut samples: Vec<f32> = Vec::new();
+    let mut stash: Vec<u8> = Vec::new();
+
+    while let Some(response) = responses.next().await {
+        let response = response.map_err(|e| classify_rpc_error(&e, "preview stream failed"))?;
+        stash.extend_from_slice(&response.audio_content);
+        let count = stash.len() / 2;
+        if count > 0 {
+            for chunk in stash[..count * 2].chunks_exact(2) {
+                let v = i16::from_le_bytes([chunk[0], chunk[1]]) as f32 / 32768.0;
+                samples.push(v);
+            }
+            stash.drain(..count * 2);
+        }
+    }
+
+    if samples.is_empty() {
+        anyhow::bail!("Google TTS returned 0 audio samples");
+    }
+
+    crate::services::tts::voice::write_f32_wav(output_path, &samples, GOOGLE_TTS_SAMPLE_RATE)
+        .map_err(|e| anyhow!("Failed to write preview WAV: {}", e))?;
+
+    Ok(())
+}

@@ -381,3 +381,61 @@ impl TtsProvider for AzureTtsProvider {
             .unwrap_or(false)
     }
 }
+
+/// Synthesizes text with the specified Azure voice directly to a WAV file for previews.
+pub async fn synthesize_to_wav(
+    region_or_endpoint: &str,
+    voice: &str,
+    key: &str,
+    resource_id: Option<&str>,
+    text: &str,
+    speed: f32,
+    output_path: &std::path::Path,
+) -> Result<()> {
+    let provider = AzureTtsProvider::new(region_or_endpoint, voice, key, resource_id)?;
+    let text_clean = text.trim();
+    if text_clean.is_empty() {
+        return Ok(());
+    }
+
+    let ssml = build_ssml(&provider.voice, text_clean, speed);
+    let url = format!("{}{AZURE_TTS_API_PATH}", provider.base_url.trim_end_matches('/'));
+
+    let (name, value) = auth_header(&provider)?;
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(AZURE_TTS_TIMEOUT_SECS))
+        .build()
+        .map_err(|e| anyhow!("Failed to build client for Azure preview: {}", e))?;
+
+    let resp = client
+        .post(&url)
+        .header("Content-Type", "application/ssml+xml")
+        .header("X-Microsoft-OutputFormat", AZURE_TTS_OUTPUT_FORMAT)
+        .header("User-Agent", "Vox")
+        .header(name, value)
+        .body(ssml)
+        .send()
+        .await
+        .map_err(|e| anyhow!("Azure preview request failed: {}", e))?;
+
+    let status = resp.status();
+    if !status.is_success() {
+        return Err(anyhow!("Azure preview rejected with HTTP {}", status));
+    }
+
+    let pcm_bytes = resp.bytes().await.map_err(|e| anyhow!("Failed to read Azure preview audio: {}", e))?;
+    let mut samples: Vec<f32> = Vec::with_capacity(pcm_bytes.len() / 2);
+    for chunk in pcm_bytes.chunks_exact(2) {
+        let v = i16::from_le_bytes([chunk[0], chunk[1]]) as f32 / 32768.0;
+        samples.push(v);
+    }
+
+    if samples.is_empty() {
+        anyhow::bail!("Azure TTS returned 0 audio samples");
+    }
+
+    crate::services::tts::voice::write_f32_wav(output_path, &samples, AZURE_TTS_SAMPLE_RATE)
+        .map_err(|e| anyhow!("Failed to write preview WAV: {}", e))?;
+
+    Ok(())
+}
