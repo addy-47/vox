@@ -6,6 +6,7 @@ import { SETTINGS_COPY, INTERACTION_CONFIG_DESK_COPY } from "@/data/settingsCopy
 import { useExpandableList } from "@/shared/ui/ExpandableList";
 import { useViewportResize } from "@/shared/hooks/useViewportResize";
 import { Tooltip } from "@/shared/ui/Tooltip";
+import { getEffectiveCloudApiKey } from "@/shared/lib/activeSelection";
 
 export type DomainCommitMode =
   | "missing-key"
@@ -32,13 +33,11 @@ export function useDomainCommitState(domainId: string): DomainCommitState {
   // any domain, and the derived dirtiness below ran two `JSON.stringify` walks
   // per store write per wrapper (~1,100 calls). `domainFlags` is recomputed
   // once per mutation, so these are now O(1) lookups.
-  const llmCategory = useSettingsStore((s) => s.draftSettings?.llm?.active?.category);
-  const llmActiveProvider = useSettingsStore((s) => s.draftSettings?.llm?.active?.provider);
-  const llmCloudKeys = useSettingsStore((s) => s.draftSettings?.llm?.cloud_keys);
-  const llmProvidersKeys = useSettingsStore((s) => s.draftSettings?.providers?.llm?.cloud_keys);
-  const cloudApiKey = llmActiveProvider
-    ? (llmCloudKeys?.[llmActiveProvider] ?? llmProvidersKeys?.[llmActiveProvider])
-    : undefined;
+  const draftSettings = useSettingsStore((s) => s.draftSettings);
+  const committedSettings = useSettingsStore((s) => s.settings);
+  const llmCategory = draftSettings?.llm?.active?.category;
+  const llmActiveProvider = draftSettings?.llm?.active?.provider;
+  const cloudApiKey = getEffectiveCloudApiKey(draftSettings, committedSettings, llmActiveProvider);
   const pipelineMode = useSettingsStore((s) => s.draftSettings?.interaction?.pipeline_mode);
   const realtimeProvider = useSettingsStore((s) => s.draftSettings?.realtime?.active?.provider);
   const realtimeKeys = useSettingsStore((s) => s.draftSettings?.realtime?.api_keys);
@@ -283,13 +282,11 @@ export const ModalProviderFooter = memo(({ category }: { category: "STT" | "LLM"
   const isTts = category === "TTS";
   const failedKeys = useSettingsStore((s) => s.failedSaveDomains[isTts ? "tts" : "models"]);
   const remoteModelsError = useSettingsStore((s) => s.remoteModelsError);
-  const llmCategory = useSettingsStore((s) => s.draftSettings?.llm?.active?.category);
-  const llmActiveProvider = useSettingsStore((s) => s.draftSettings?.llm?.active?.provider);
-  const llmCloudKeys = useSettingsStore((s) => s.draftSettings?.llm?.cloud_keys);
-  const llmProvidersKeys = useSettingsStore((s) => s.draftSettings?.providers?.llm?.cloud_keys);
-  const cloudApiKey = llmActiveProvider
-    ? (llmCloudKeys?.[llmActiveProvider] ?? llmProvidersKeys?.[llmActiveProvider])
-    : undefined;
+  const draftSettings = useSettingsStore((s) => s.draftSettings);
+  const committedSettings = useSettingsStore((s) => s.settings);
+  const llmCategory = draftSettings?.llm?.active?.category;
+  const llmActiveProvider = draftSettings?.llm?.active?.provider;
+  const cloudApiKey = getEffectiveCloudApiKey(draftSettings, committedSettings, llmActiveProvider);
   const isCloudLlmMissingKey = category === "LLM" && llmCategory === "cloud" && !cloudApiKey?.trim();
 
   if (category === "STT") return null;

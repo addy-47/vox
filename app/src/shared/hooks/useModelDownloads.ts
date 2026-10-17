@@ -8,7 +8,7 @@ import {
 import * as eventsService from "@/services/eventsService";
 
 export interface ModelStatus {
-  step: 'idle' | 'downloading' | 'extracting' | 'verifying' | 'completed' | 'failed' | 'cancelled';
+  step: eventsService.SetupStep;
   progress: number;
   bytesDownloaded: number;
   totalBytes: number;
@@ -71,17 +71,11 @@ export function useModelDownloads() {
       const { model_id, step, progress, bytes_downloaded, total_bytes, error } = payload || {};
       if (!model_id) return;
 
-      const rawStep = String(step || "downloading").toLowerCase();
-      const canonicalStep = rawStep === "complete" ? "completed" : rawStep;
-      const stepLower: ModelStatus["step"] =
-        canonicalStep === "idle" ||
-        canonicalStep === "downloading" ||
-        canonicalStep === "extracting" ||
-        canonicalStep === "verifying" ||
-        canonicalStep === "completed" ||
-        canonicalStep === "failed" ||
-        canonicalStep === "cancelled"
-          ? canonicalStep
+      // Wire contract is Serde snake_case; unknown values coerce defensively
+      // to "downloading" so a malformed payload can never strand the UI.
+      const stepName: eventsService.SetupStep =
+        typeof step === "string" && eventsService.VALID_SETUP_STEPS.has(step as eventsService.SetupStep)
+          ? (step as eventsService.SetupStep)
           : "downloading";
       const fileProgress = typeof progress === "number" ? progress : 0;
       const fileBytes = bytes_downloaded || 0;
@@ -91,7 +85,7 @@ export function useModelDownloads() {
         progress: fileProgress,
         bytesDownloaded: fileBytes,
         totalBytes: fileTotal,
-        done: stepLower === "completed",
+        done: stepName === "completed",
       };
 
       const groups = modelCatalog?.model_groups || [];
@@ -112,9 +106,9 @@ export function useModelDownloads() {
           doneBytes += fp ? (fp.bytesDownloaded || (fp.progress / 100) * tb) : 0;
           if (!fp?.done) allDone = false;
         }
-        if (stepLower === "failed" || stepLower === "cancelled") {
+        if (stepName === "failed" || stepName === "cancelled") {
           updateDownloadStatus(targetId, {
-            step: stepLower,
+            step: stepName,
             progress: totalBytes > 0 ? (doneBytes / totalBytes) * 100 : 0,
             bytesDownloaded: Math.round(doneBytes),
             totalBytes: totalBytes || 100,
@@ -142,14 +136,14 @@ export function useModelDownloads() {
       }
 
       updateDownloadStatus(model_id, {
-        step: stepLower,
+        step: stepName,
         progress: fileProgress,
         bytesDownloaded: fileBytes,
         totalBytes: fileTotal,
         error: error || undefined,
       });
 
-      if (stepLower === "completed") {
+      if (stepName === "completed") {
         refreshPresence();
       }
     });

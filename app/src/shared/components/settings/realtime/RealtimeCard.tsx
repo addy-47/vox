@@ -3,15 +3,7 @@ import { useSettingsStore, type VoxSettings, type SettingsState, type RealtimeSu
 import { useModelParameters } from "@/shared/hooks/useModelParameters";
 import { Search, Cpu } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
-import { REALTIME_CONFIG_DESK_COPY } from "@/data/settingsCopy";
-import {
-  resolveRealtimeSubkey,
-  isRealtimeProviderDisabled,
-} from "@/shared/lib/realtimeProviders";
-
-
-
-import {
+import { REALTIME_CONFIG_DESK_COPY } from "@/data/settingsCopy";import {
   PipelineFlow,
   RealtimeInput as Input,
   RealtimeTemperatureSlider as TemperatureSlider,
@@ -156,8 +148,10 @@ export const RealtimeCard = memo(
     const fallbackProvider = contract?.realtime_providers?.[0]?.id ?? "";
     const providerId = draftSettings.realtime?.active?.provider ?? fallbackProvider;
 
-    const subkey = resolveRealtimeSubkey(providerId);
-    const disabled = isRealtimeProviderDisabled(providerId);
+    // Realtime subkey is the provider id itself (backend-defined); no provider
+    // is disabled — the former realtimeProviders shim was a vestigial no-op.
+    const subkey = providerId;
+    const disabled = false;
 
     return (
       <div

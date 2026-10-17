@@ -12,19 +12,12 @@ import {
 } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
 import { isCoarsePointer } from '@/lib/capabilities';
+import { formatBytes } from '@/shared/lib/format';
 import { WIZARD_CTA_LABELS, WIZARD_STEP_HEADERS, MODEL_SETUP_COPY, MODEL_CATEGORY_META, MODEL_PROGRESS_STEPS } from '@/data/welcomeCopy';
 
 import { WizardHeader } from '../components/WizardHeader';
 import { WizardFooter } from '../components/WizardFooter';
 import { ModelCategory } from '../components/ModelCategory';
-
-const formatSize = (bytes: number) => {
-  if (bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-};
 
 interface Props {
   onNext: () => void;
@@ -192,7 +185,7 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
                     <div className="flex items-center gap-2">
                         <div className="h-1.5 w-1.5 rounded-full bg-[rgb(var(--accent))] shadow-[0_0_8px_rgba(var(--accent),0.8)]" />
                         <span className="text-[13px] font-black text-[rgb(var(--accent))] tracking-widest">
-                            {formatSize(totalSize)} {MODEL_SETUP_COPY.totalSuffix}
+                            {formatBytes(totalSize)} {MODEL_SETUP_COPY.totalSuffix}
                         </span>
                     </div>
                 }
@@ -231,7 +224,6 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
                             selected={cat.groups.length > 0 && cat.groups.some(g => selectedIds.has(g.id))}
                             required={cat.required}
                             onToggle={toggleByCategory.get(cat.id) ?? (() => {})}
-                            formatSize={formatSize}
                             selectedIds={selectedIds}
                             onToggleModel={toggleModel}
                         />

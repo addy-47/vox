@@ -56,13 +56,27 @@ export function useRemoteLlmProbing(
 
   const fetchRemoteModels = useCallback(async (force = false) => {
     if (!provider || provider.kind === "embedded" || !provider.base_url) return;
-    if (provider.kind === "cloud" && !provider.api_key?.trim()) return;
+    if (provider.kind === "cloud" && !provider.api_key?.trim()) {
+      useSettingsStore.setState({
+        remoteModels: [],
+        remoteModelsError: "API key required. Configure your key in Providers.",
+        loadingRemoteModels: false,
+      });
+      return;
+    }
     await loadRemoteModels(provider, force);
   }, [provider, loadRemoteModels]);
 
   useEffect(() => {
     if (activePipelineTab === "llm" && isRemoteLlm && provider && provider.kind !== "embedded" && provider.base_url) {
-      if (provider.kind === "cloud" && !provider.api_key?.trim()) return;
+      if (provider.kind === "cloud" && !provider.api_key?.trim()) {
+        useSettingsStore.setState({
+          remoteModels: [],
+          remoteModelsError: "API key required. Configure your key in Providers.",
+          loadingRemoteModels: false,
+        });
+        return;
+      }
       fetchRemoteModels();
     }
   }, [activePipelineTab, isRemoteLlm, provider, fetchRemoteModels]);

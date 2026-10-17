@@ -11,7 +11,6 @@ import {
   Clock,
   Heart,
   Languages,
-  Loader2,
   Mars,
   Mic,
   Plus,
@@ -30,6 +29,8 @@ import {
   CatalogFilterMenu,
 } from "../../providers/CatalogHeader";
 import { CatalogModalToolbar } from "../../providers/CatalogModalToolbar";
+import { CatalogModalShell } from "../../providers/CatalogModalShell";
+import { CatalogSkeletonGrid } from "../../providers/CatalogSkeletonGrid";
 import { VoiceCard } from "./VoiceCard";
 import { CloneVoiceDrawer } from "./CloneVoiceDrawer";
 import { VoicePreviewBanner } from "./VoicePreviewBanner";
@@ -206,306 +207,305 @@ export const VoiceModal = memo(
         : []),
     ];
 
-    return (
-      <div className="flex flex-col h-full min-h-0 gap-3.5">
-        <CatalogModalToolbar
-          search={{
-            value: search,
-            placeholder: VOICE_CATALOG_COPY.searchPlaceholder,
-            onChange: setSearch,
-          }}
-          sort={{
-            order: sort,
-            onToggle: () => setSort((s) => (s === "az" ? "za" : "az")),
-          }}
-          itemCount={{
-            current: filtered.length,
-            total: scopedVoices.length,
-            entityName: "voices",
-          }}
-          action={
-            canClone ? (
-              <button
-                type="button"
-                onClick={() => setIsCloneDrawerOpen(true)}
-                title={VOICE_CATALOG_COPY.cloneVoiceChatterboxNote}
-                className="px-2.5 sm:px-3 py-1.5 rounded-lg text-[12px] font-bold bg-[rgb(var(--accent))]/15 border border-[rgb(var(--accent))]/40 text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/25 transition-all flex items-center gap-1.5 cursor-pointer shrink-0"
-              >
-                <Plus size={14} strokeWidth={2.5} />
-                <span className="hidden sm:inline">{VOICE_CATALOG_COPY.cloneVoice}</span>
-              </button>
-            ) : undefined
-          }
-          filter={{
-            label: VOICE_CATALOG_COPY.filterAria,
-            open: isFilterDropdownOpen,
-            activeCount: activeFilterCount,
-            onToggle: () => setIsFilterDropdownOpen((v) => !v),
-            onClose: () => setIsFilterDropdownOpen(false),
-            menu: (
-              <CatalogFilterMenu
-                title={VOICE_CATALOG_COPY.filtersTitle}
-                resetLabel={activeFilterCount > 0 ? VOICE_CATALOG_COPY.resetFilters : undefined}
-                onReset={handleResetFilters}
-              >
-                <div className="flex flex-col gap-1">
-                  {scopeFilters.map((item) => (
-                    <CatalogFilterItem
-                      key={item.id}
-                      icon={item.Icon}
-                      label={item.label}
-                      count={item.count}
-                      active={scope === item.id}
-                      onSelect={() => {
-                        setScope(item.id);
-                        setIsFilterDropdownOpen(false);
-                      }}
-                    />
-                  ))}
-                </div>
-                <div className="mt-1 pt-1.5 border-t border-[rgba(var(--foreground),0.06)] flex flex-col gap-0.5">
-                  <span className="px-1 text-[10.5px] font-mono uppercase tracking-wider text-[rgb(var(--foreground-muted))]/60 font-semibold">
-                    {VOICE_CATALOG_COPY.genderFacet}
-                  </span>
-                  {[
-                    { id: "female", label: VOICE_CATALOG_COPY.female, count: counts.female },
-                    { id: "male", label: VOICE_CATALOG_COPY.male, count: counts.male },
-                    ...(counts.neutral > 0 ? [{ id: "neutral" as const, label: "Neutral", count: counts.neutral }] : []),
-                  ].map((item) => (
-                    <CatalogFilterItem
-                      key={item.id}
-                      label={item.label}
-                      count={item.count}
-                      active={gender === item.id}
-                      onSelect={() => {
-                        setGender((prev) => (prev === item.id ? null : item.id));
-                        setIsFilterDropdownOpen(false);
-                      }}
-                    />
-                  ))}
-                </div>
-                <div className="mt-1 pt-1.5 border-t border-[rgba(var(--foreground),0.06)] flex flex-col gap-0.5">
-                  <span className="px-1 text-[10.5px] font-mono uppercase tracking-wider text-[rgb(var(--foreground-muted))]/60 font-semibold">
-                    {VOICE_CATALOG_COPY.accentFacet}
-                  </span>
+    const toolbarNode = (
+      <CatalogModalToolbar
+        search={{
+          value: search,
+          placeholder: VOICE_CATALOG_COPY.searchPlaceholder,
+          onChange: setSearch,
+        }}
+        sort={{
+          order: sort,
+          onToggle: () => setSort((s) => (s === "az" ? "za" : "az")),
+        }}
+        itemCount={{
+          current: filtered.length,
+          total: scopedVoices.length,
+          entityName: "voices",
+        }}
+        action={
+          canClone ? (
+            <button
+              type="button"
+              onClick={() => setIsCloneDrawerOpen(true)}
+              title={VOICE_CATALOG_COPY.cloneVoiceChatterboxNote}
+              className="px-2.5 sm:px-3 py-1.5 rounded-lg text-[12px] font-bold bg-[rgb(var(--accent))]/15 border border-[rgb(var(--accent))]/40 text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/25 transition-all flex items-center gap-1.5 cursor-pointer shrink-0"
+            >
+              <Plus size={14} strokeWidth={2.5} />
+              <span className="hidden sm:inline">{VOICE_CATALOG_COPY.cloneVoice}</span>
+            </button>
+          ) : undefined
+        }
+        filter={{
+          label: VOICE_CATALOG_COPY.filterAria,
+          open: isFilterDropdownOpen,
+          activeCount: activeFilterCount,
+          onToggle: () => setIsFilterDropdownOpen((v) => !v),
+          onClose: () => setIsFilterDropdownOpen(false),
+          menu: (
+            <CatalogFilterMenu
+              title={VOICE_CATALOG_COPY.filtersTitle}
+              resetLabel={activeFilterCount > 0 ? VOICE_CATALOG_COPY.resetFilters : undefined}
+              onReset={handleResetFilters}
+            >
+              <div className="flex flex-col gap-1">
+                {scopeFilters.map((item) => (
                   <CatalogFilterItem
-                    label={VOICE_CATALOG_COPY.english}
-                    count={counts.english}
-                    active={accent === "english"}
+                    key={item.id}
+                    icon={item.Icon}
+                    label={item.label}
+                    count={item.count}
+                    active={scope === item.id}
                     onSelect={() => {
-                      setAccent((prev) => (prev === "english" ? null : "english"));
+                      setScope(item.id);
                       setIsFilterDropdownOpen(false);
                     }}
                   />
+                ))}
+              </div>
+              <div className="mt-1 pt-1.5 border-t border-[rgba(var(--foreground),0.06)] flex flex-col gap-0.5">
+                <span className="px-1 text-[10.5px] font-mono uppercase tracking-wider text-[rgb(var(--foreground-muted))]/60 font-semibold">
+                  {VOICE_CATALOG_COPY.genderFacet}
+                </span>
+                {[
+                  { id: "female", label: VOICE_CATALOG_COPY.female, count: counts.female },
+                  { id: "male", label: VOICE_CATALOG_COPY.male, count: counts.male },
+                  ...(counts.neutral > 0 ? [{ id: "neutral" as const, label: "Neutral", count: counts.neutral }] : []),
+                ].map((item) => (
                   <CatalogFilterItem
-                    label={VOICE_CATALOG_COPY.multilingual}
-                    count={counts.multilingual}
-                    active={accent === "multilingual"}
+                    key={item.id}
+                    label={item.label}
+                    count={item.count}
+                    active={gender === item.id}
                     onSelect={() => {
-                      setAccent((prev) => (prev === "multilingual" ? null : "multilingual"));
+                      setGender((prev) => (prev === item.id ? null : item.id));
                       setIsFilterDropdownOpen(false);
                     }}
                   />
-                </div>
-              </CatalogFilterMenu>
-            ),
-          }}
-        />
-
-        {/* Main Content Area */}
-        <div className="flex-1 min-h-0 flex gap-4 overflow-hidden">
-          {/* Facet Sidebar: clean categories, gender, languages with count pills */}
-          <div className="w-[200px] shrink-0 hidden md:flex flex-col gap-3.5 overflow-y-auto overscroll-contain custom-scrollbar pr-2 py-0.5">
-            {/* Library Section */}
-            <div className="flex flex-col gap-1">
-              {scopeFilters.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => setScope(item.id)}
-                  className={cn(
-                    "w-full flex items-center justify-between px-3 py-2 rounded-xl text-[13px] transition-all cursor-pointer font-medium",
-                    scope === item.id
-                      ? "bg-[rgba(var(--accent),0.12)] text-[rgb(var(--accent))] font-bold shadow-xs"
-                      : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.03)]"
-                  )}
-                >
-                  <div className="flex items-center gap-2.5 truncate">
-                    <item.Icon size={14} className={cn("shrink-0", scope === item.id ? "text-[rgb(var(--accent))]" : "opacity-60")} />
-                    <span className="truncate">{item.label}</span>
-                  </div>
-                  <span className={cn(
-                    "text-[10px] font-mono px-1.5 py-0.5 rounded-full font-bold shrink-0",
-                    scope === item.id
-                      ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))]"
-                      : "bg-[rgba(var(--foreground),0.06)] text-[rgb(var(--foreground-muted))]"
-                  )}>
-                    {item.count}
-                  </span>
-                </button>
-              ))}
-            </div>
-
-            {/* Gender Section */}
-            <div className="pt-2 border-t border-[rgba(var(--foreground),0.06)] flex flex-col gap-1">
-              <div className="px-2 pb-1 text-[11px] font-mono uppercase tracking-wider text-[rgb(var(--foreground-muted))]/60 font-semibold">
-                {VOICE_CATALOG_COPY.genderFacet}
+                ))}
               </div>
-              {[
-                { id: "female", label: VOICE_CATALOG_COPY.female, count: counts.female, Icon: Venus },
-                { id: "male", label: VOICE_CATALOG_COPY.male, count: counts.male, Icon: Mars },
-                ...(counts.neutral > 0
-                  ? [{ id: "neutral" as const, label: "Neutral", count: counts.neutral, Icon: CircleUserRound }]
-                  : []),
-              ].map((item) => {
-                const isActive = gender === item.id;
-                const Icon = item.Icon;
-                return (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => setGender(isActive ? null : item.id)}
-                    className={cn(
-                      "w-full flex items-center justify-between px-3 py-1.5 rounded-xl text-[12.5px] transition-all cursor-pointer font-medium",
-                      isActive
-                        ? "bg-[rgba(var(--accent),0.12)] text-[rgb(var(--accent))] font-bold"
-                        : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.03)]"
-                    )}
-                  >
-                    <div className="flex items-center gap-2 truncate">
-                      <Icon size={13} className={cn("shrink-0", isActive ? "text-[rgb(var(--accent))]" : "opacity-60")} />
-                      <span className="truncate">{item.label}</span>
-                    </div>
-                    <span className={cn(
-                      "text-[10px] font-mono px-1.5 py-0.5 rounded-full shrink-0",
-                      isActive
-                        ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] font-bold"
-                        : "bg-[rgba(var(--foreground),0.05)] text-[rgb(var(--foreground-muted))]"
-                    )}>
-                      {item.count}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Accent / Language Section */}
-            <div className="pt-2 border-t border-[rgba(var(--foreground),0.06)] flex flex-col gap-1">
-              <div className="px-2 pb-1 text-[11px] font-mono uppercase tracking-wider text-[rgb(var(--foreground-muted))]/60 font-semibold">
-                {VOICE_CATALOG_COPY.accentFacet}
+              <div className="mt-1 pt-1.5 border-t border-[rgba(var(--foreground),0.06)] flex flex-col gap-0.5">
+                <span className="px-1 text-[10.5px] font-mono uppercase tracking-wider text-[rgb(var(--foreground-muted))]/60 font-semibold">
+                  {VOICE_CATALOG_COPY.accentFacet}
+                </span>
+                <CatalogFilterItem
+                  label={VOICE_CATALOG_COPY.english}
+                  count={counts.english}
+                  active={accent === "english"}
+                  onSelect={() => {
+                    setAccent((prev) => (prev === "english" ? null : "english"));
+                    setIsFilterDropdownOpen(false);
+                  }}
+                />
+                <CatalogFilterItem
+                  label={VOICE_CATALOG_COPY.multilingual}
+                  count={counts.multilingual}
+                  active={accent === "multilingual"}
+                  onSelect={() => {
+                    setAccent((prev) => (prev === "multilingual" ? null : "multilingual"));
+                    setIsFilterDropdownOpen(false);
+                  }}
+                />
               </div>
-              {(
-                [
-                  { id: "english", label: VOICE_CATALOG_COPY.english, count: counts.english },
-                  { id: "multilingual", label: VOICE_CATALOG_COPY.multilingual, count: counts.multilingual },
-                ] as const
-              ).map((item) => {
-                const isActive = accent === item.id;
-                const Icon = item.id === "english" ? Type : Languages;
-                return (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => setAccent(isActive ? null : item.id)}
-                    className={cn(
-                      "w-full flex items-center justify-between px-3 py-1.5 rounded-xl text-[12.5px] transition-all cursor-pointer font-medium",
-                      isActive
-                        ? "bg-[rgba(var(--accent),0.12)] text-[rgb(var(--accent))] font-bold"
-                        : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.03)]"
-                    )}
-                  >
-                    <div className="flex items-center gap-1.5 truncate">
-                      <Icon size={13} className={cn("shrink-0", isActive ? "text-[rgb(var(--accent))]" : "opacity-60")} />
-                      <span className="truncate">{item.label}</span>
-                    </div>
-                    <span className={cn(
-                      "text-[10px] font-mono px-1.5 py-0.5 rounded-full shrink-0",
-                      isActive
-                        ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] font-bold"
-                        : "bg-[rgba(var(--foreground),0.05)] text-[rgb(var(--foreground-muted))]"
-                    )}>
-                      {item.count}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
+            </CatalogFilterMenu>
+          ),
+        }}
+      />
+    );
 
-            {canClone && (
-              <p className="mt-3 px-2 text-[11px] leading-relaxed text-[rgb(var(--foreground-muted))]/70">
-                {VOICE_CATALOG_COPY.cloneVoiceChatterboxNote}
-              </p>
-            )}
-          </div>
-
-          {/* Voice Cards Grid: 3 cards per row, generous breathing room */}
-          <div
-            ref={containerRef}
-            className="flex-1 min-h-0 overflow-y-auto overscroll-contain custom-scrollbar pr-1.5"
-          >
-            <div className="min-h-full w-full">
-              {loading ? (
-                <div className="h-64 flex flex-col items-center justify-center text-[13px] text-[rgb(var(--foreground-muted))] gap-2">
-                  <Loader2 size={24} className="animate-spin text-[rgb(var(--accent))]" />
-                  <span>Loading unified voices…</span>
-                </div>
-              ) : filtered.length === 0 ? (
-                <div className="h-64 flex flex-col items-center justify-center text-center space-y-3">
-                  <p className="text-[15px] font-bold text-[rgb(var(--foreground))]">
-                    {VOICE_CATALOG_COPY.emptyTitle}
-                  </p>
-                  <p className="text-[13px] text-[rgb(var(--foreground-muted))] max-w-sm">
-                    {cloudSync
-                      ? VOICE_CATALOG_COPY.edgeSyncHint
-                      : VOICE_CATALOG_COPY.emptyHint}
-                  </p>
-                  <button
-                    type="button"
-                    onClick={handleResetFilters}
-                    className="mt-2 px-3.5 py-1.5 rounded-xl text-[12.5px] font-bold text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/10 border border-[rgba(var(--accent),0.3)] hover:bg-[rgb(var(--accent))]/20 transition-all cursor-pointer"
-                  >
-                    {VOICE_CATALOG_COPY.resetFilters}
-                  </button>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3.5">
-                  {filtered.map((v) => (
-                    <VoiceCard
-                      key={v.id}
-                      voice={v}
-                      selected={staged?.id === v.id}
-                      favorited={v.is_favorite}
-                      previewPlaying={playingId === v.id}
-                      isSynthesizing={isSynthesizing && playingId === v.id}
-                      previewProgress={playingId === v.id ? previewProgress : 0}
-                      previewDisabled={!v.has_preview && sessionBusy}
-                      onSelect={handleCardSelect}
-                      onToggleFavorite={handleCardFavorite}
-                      onPreview={handleCardPreview}
-                      onSeekPreview={seekPreview}
-                    />
-                  ))}
-                </div>
+    const facetRailNode = (
+      <div className="flex flex-col gap-3.5 w-full h-full overflow-y-auto overscroll-contain custom-scrollbar pr-2 py-0.5">
+        {/* Library Section */}
+        <div className="flex flex-col gap-1">
+          {scopeFilters.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => setScope(item.id)}
+              className={cn(
+                "w-full flex items-center justify-between px-3 py-2 rounded-xl text-[13px] transition-all cursor-pointer font-medium",
+                scope === item.id
+                  ? "bg-[rgba(var(--accent),0.12)] text-[rgb(var(--accent))] font-bold shadow-xs"
+                  : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.03)]"
               )}
-            </div>
-          </div>
+            >
+              <div className="flex items-center gap-2.5 truncate">
+                <item.Icon size={14} className={cn("shrink-0", scope === item.id ? "text-[rgb(var(--accent))]" : "opacity-60")} />
+                <span className="truncate">{item.label}</span>
+              </div>
+              <span className={cn(
+                "text-[10px] font-mono px-1.5 py-0.5 rounded-full font-bold shrink-0",
+                scope === item.id
+                  ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))]"
+                  : "bg-[rgba(var(--foreground),0.06)] text-[rgb(var(--foreground-muted))]"
+              )}>
+                {item.count}
+              </span>
+            </button>
+          ))}
         </div>
 
-        {/* Decoupled Bottom Voice Preview Banner */}
-        <VoicePreviewBanner
-          voice={staged}
-          isPlaying={stagedPlaying}
-          isSynthesizing={isSynthesizing && stagedPlaying}
-          previewProgress={previewProgress}
-          previewCurrentTime={previewCurrentTime}
-          previewDuration={previewDuration}
-          previewPrompt={previewPrompt}
-          sessionBusy={sessionBusy}
-          onTogglePreview={togglePreview}
-          onToggleFavorite={toggleFavorite}
-          onSeekPreview={seekPreview}
-          onSetPreviewPrompt={setPreviewPrompt}
-        />
+        {/* Gender Section */}
+        <div className="pt-2 border-t border-[rgba(var(--foreground),0.06)] flex flex-col gap-1">
+          <div className="px-2 pb-1 text-[11px] font-mono uppercase tracking-wider text-[rgb(var(--foreground-muted))]/60 font-semibold select-none">
+            {VOICE_CATALOG_COPY.genderFacet}
+          </div>
+          {[
+            { id: "female", label: VOICE_CATALOG_COPY.female, count: counts.female, Icon: Venus },
+            { id: "male", label: VOICE_CATALOG_COPY.male, count: counts.male, Icon: Mars },
+            ...(counts.neutral > 0
+              ? [{ id: "neutral" as const, label: "Neutral", count: counts.neutral, Icon: CircleUserRound }]
+              : []),
+          ].map((item) => {
+            const isActive = gender === item.id;
+            const Icon = item.Icon;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setGender(isActive ? null : item.id)}
+                className={cn(
+                  "w-full flex items-center justify-between px-3 py-1.5 rounded-xl text-[12.5px] transition-all cursor-pointer font-medium",
+                  isActive
+                    ? "bg-[rgba(var(--accent),0.12)] text-[rgb(var(--accent))] font-bold"
+                    : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.03)]"
+                )}
+              >
+                <div className="flex items-center gap-2 truncate">
+                  <Icon size={13} className={cn("shrink-0", isActive ? "text-[rgb(var(--accent))]" : "opacity-60")} />
+                  <span className="truncate">{item.label}</span>
+                </div>
+                <span className={cn(
+                  "text-[10px] font-mono px-1.5 py-0.5 rounded-full shrink-0",
+                  isActive
+                    ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] font-bold"
+                    : "bg-[rgba(var(--foreground),0.05)] text-[rgb(var(--foreground-muted))]"
+                )}>
+                  {item.count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Accent / Language Section */}
+        <div className="pt-2 border-t border-[rgba(var(--foreground),0.06)] flex flex-col gap-1">
+          <div className="px-2 pb-1 text-[11px] font-mono uppercase tracking-wider text-[rgb(var(--foreground-muted))]/60 font-semibold select-none">
+            {VOICE_CATALOG_COPY.accentFacet}
+          </div>
+          {(
+            [
+              { id: "english", label: VOICE_CATALOG_COPY.english, count: counts.english },
+              { id: "multilingual", label: VOICE_CATALOG_COPY.multilingual, count: counts.multilingual },
+            ] as const
+          ).map((item) => {
+            const isActive = accent === item.id;
+            const Icon = item.id === "english" ? Type : Languages;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setAccent(isActive ? null : item.id)}
+                className={cn(
+                  "w-full flex items-center justify-between px-3 py-1.5 rounded-xl text-[12.5px] transition-all cursor-pointer font-medium",
+                  isActive
+                    ? "bg-[rgba(var(--accent),0.12)] text-[rgb(var(--accent))] font-bold"
+                    : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.03)]"
+                )}
+              >
+                <div className="flex items-center gap-1.5 truncate">
+                  <Icon size={13} className={cn("shrink-0", isActive ? "text-[rgb(var(--accent))]" : "opacity-60")} />
+                  <span className="truncate">{item.label}</span>
+                </div>
+                <span className={cn(
+                  "text-[10px] font-mono px-1.5 py-0.5 rounded-full shrink-0",
+                  isActive
+                    ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] font-bold"
+                    : "bg-[rgba(var(--foreground),0.05)] text-[rgb(var(--foreground-muted))]"
+                )}>
+                  {item.count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        {canClone && (
+          <p className="mt-auto pt-3 px-2 text-[11px] leading-relaxed text-[rgb(var(--foreground-muted))]/70 border-t border-[rgba(var(--foreground),0.06)]">
+            {VOICE_CATALOG_COPY.cloneVoiceChatterboxNote}
+          </p>
+        )}
+      </div>
+    );
+
+    const emptyStateNode = (
+      <div className="h-64 flex flex-col items-center justify-center text-center space-y-3">
+        <p className="text-[15px] font-bold text-[rgb(var(--foreground))]">
+          {VOICE_CATALOG_COPY.emptyTitle}
+        </p>
+        <p className="text-[13px] text-[rgb(var(--foreground-muted))] max-w-sm">
+          {cloudSync
+            ? VOICE_CATALOG_COPY.edgeSyncHint
+            : VOICE_CATALOG_COPY.emptyHint}
+        </p>
+        <button
+          type="button"
+          onClick={handleResetFilters}
+          className="mt-2 px-3.5 py-1.5 rounded-xl text-[12.5px] font-bold text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/10 border border-[rgba(var(--accent),0.3)] hover:bg-[rgb(var(--accent))]/20 transition-all cursor-pointer"
+        >
+          {VOICE_CATALOG_COPY.resetFilters}
+        </button>
+      </div>
+    );
+
+    const voicePreviewBannerNode = (
+      <VoicePreviewBanner
+        voice={staged}
+        isPlaying={stagedPlaying}
+        isSynthesizing={isSynthesizing && stagedPlaying}
+        previewProgress={previewProgress}
+        previewCurrentTime={previewCurrentTime}
+        previewDuration={previewDuration}
+        previewPrompt={previewPrompt}
+        sessionBusy={sessionBusy}
+        onTogglePreview={togglePreview}
+        onToggleFavorite={toggleFavorite}
+        onSeekPreview={seekPreview}
+        onSetPreviewPrompt={setPreviewPrompt}
+      />
+    );
+
+    return (
+      <>
+        <CatalogModalShell
+          toolbar={toolbarNode}
+          facetRail={facetRailNode}
+          scrollRef={containerRef}
+          footer={voicePreviewBannerNode}
+          isLoading={loading}
+          skeletonGrid={<CatalogSkeletonGrid count={6} />}
+          isEmpty={filtered.length === 0}
+          emptyState={emptyStateNode}
+        >
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3.5">
+            {filtered.map((v) => (
+              <VoiceCard
+                key={v.id}
+                voice={v}
+                selected={staged?.id === v.id}
+                favorited={v.is_favorite}
+                previewPlaying={playingId === v.id}
+                isSynthesizing={isSynthesizing && playingId === v.id}
+                previewProgress={playingId === v.id ? previewProgress : 0}
+                previewDisabled={!v.has_preview && sessionBusy}
+                onSelect={handleCardSelect}
+                onToggleFavorite={handleCardFavorite}
+                onPreview={handleCardPreview}
+                onSeekPreview={seekPreview}
+              />
+            ))}
+          </div>
+        </CatalogModalShell>
 
         {canClone && (
           <CloneVoiceDrawer
@@ -514,7 +514,7 @@ export const VoiceModal = memo(
             onCreated={handleVoiceCreated}
           />
         )}
-      </div>
+      </>
     );
   }
 );

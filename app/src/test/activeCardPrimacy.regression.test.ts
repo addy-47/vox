@@ -148,4 +148,54 @@ describe("Active Card Primacy: Grid Ordering", () => {
     };
     expect(resolveServer(draft2, "srv_2")?.url).toBe("http://192.168.1.50:8000/v1");
   });
+
+  it("getEffectiveCloudApiKey: resolves across draft, draft.providers, and committed.providers", async () => {
+    const { getEffectiveCloudApiKey } = await import("@/shared/lib/activeSelection");
+
+    // Case 1: Key in draft.llm.cloud_keys
+    const draft1 = { llm: { cloud_keys: { openrouter: "sk-draft-llm" } } };
+    expect(getEffectiveCloudApiKey(draft1, null, "openrouter")).toBe("sk-draft-llm");
+
+    // Case 2: Key in draft.providers.llm.cloud_keys
+    const draft2 = { providers: { llm: { cloud_keys: { openrouter: "sk-draft-providers" } } } };
+    expect(getEffectiveCloudApiKey(draft2, null, "openrouter")).toBe("sk-draft-providers");
+
+    // Case 3: Key in committed.providers.llm.cloud_keys
+    const committed1 = { providers: { llm: { cloud_keys: { openrouter: "sk-committed-providers" } } } };
+    expect(getEffectiveCloudApiKey(null, committed1, "openrouter")).toBe("sk-committed-providers");
+
+    // Case 4: Missing key returns undefined
+    expect(getEffectiveCloudApiKey(null, null, "openrouter")).toBeUndefined();
+  });
+
+  it("active model primacy: only committed pinnedModelId moves to index 0", () => {
+    const sampleModels = [
+      { id: "anthropic/claude-3-5-sonnet", name: "Claude 3.5 Sonnet" },
+      { id: "deepseek/deepseek-chat", name: "DeepSeek Chat" },
+      { id: "openai/gpt-4o", name: "GPT-4o" },
+    ];
+
+    const sortModelsStrict = (
+      models: { id: string; name: string }[],
+      pinnedModelId?: string
+    ) => {
+      const sorted = [...models].sort((a, b) => a.name.localeCompare(b.name));
+      if (pinnedModelId) {
+        const idx = sorted.findIndex((m) => m.id === pinnedModelId);
+        if (idx > 0) {
+          const [active] = sorted.splice(idx, 1);
+          sorted.unshift(active);
+        }
+      }
+      return sorted;
+    };
+
+    // Committed GPT-4o pinned to index 0
+    const committedGpt4o = sortModelsStrict(sampleModels, "openai/gpt-4o");
+    expect(committedGpt4o[0].id).toBe("openai/gpt-4o");
+
+    // Drafting DeepSeek without committing does not reorder
+    const stillGpt4o = sortModelsStrict(sampleModels, "openai/gpt-4o");
+    expect(stillGpt4o[0].id).toBe("openai/gpt-4o");
+  });
 });

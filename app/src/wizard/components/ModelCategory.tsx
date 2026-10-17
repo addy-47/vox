@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Check, ChevronDown } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
+import { formatBytes } from '@/shared/lib/format';
 import { MODEL_CATEGORY_COPY } from '@/data/welcomeCopy';
 
 interface ModelEntry {
@@ -28,7 +29,6 @@ interface CategoryProps {
     selected: boolean;
     required: boolean;
     onToggle: () => void;
-    formatSize: (b: number) => string;
     selectedIds: Set<string>;
     onToggleModel: (id: string) => void;
 }
@@ -41,7 +41,6 @@ export const ModelCategory = React.memo(({
     selected,
     required,
     onToggle,
-    formatSize,
     selectedIds,
     onToggleModel
 }: CategoryProps) => {
@@ -97,7 +96,7 @@ export const ModelCategory = React.memo(({
                 
                 <div className="flex items-center gap-4 sm:gap-6 shrink-0">
                     <div className="flex flex-col items-end gap-1">
-                        <span className="text-[12px] font-bold text-[rgb(var(--accent))] font-mono tracking-normal">{formatSize(totalSize)}</span>
+                        <span className="text-[12px] font-bold text-[rgb(var(--accent))] font-mono tracking-normal">{formatBytes(totalSize)}</span>
                         <div 
                             onClick={(e) => {
                                 e.stopPropagation();
@@ -197,7 +196,7 @@ export const ModelCategory = React.memo(({
                                             </div>
                                         </div>
                                         <span className="text-[rgb(var(--foreground-muted))]/40 font-mono text-[12px] group-hover:text-[rgb(var(--accent))]/60 transition-colors self-center">
-                                            {formatSize(groupSize)}
+                                            {formatBytes(groupSize)}
                                         </span>
                                     </div>
                                 );
