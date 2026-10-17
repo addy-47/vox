@@ -124,29 +124,35 @@ describe("Active Card Primacy: Grid Ordering", () => {
     expect(uncommitted[2].id).toBe("openai");
   });
 
-  it("server resolution: unifies servers lookup between draft.llm.servers and draft.providers.llm.servers", () => {
-    const resolveServer = (
-      draft: {
-        llm?: { servers?: { id: string; url: string }[] };
-        providers?: { llm?: { servers?: { id: string; url: string }[] } };
+  it("getEffectiveLlmServers: unifies servers lookup across draft, draft.providers, committed.providers, and committed.llm", async () => {
+    const { getEffectiveLlmServers } = await import("@/shared/lib/activeSelection");
+
+    // Case 1: In draft.llm.servers
+    const draft1 = { llm: { servers: [{ id: "srv_1", url: "http://127.0.0.1:11434" }] } };
+    expect(getEffectiveLlmServers(draft1, null)[0]?.url).toBe("http://127.0.0.1:11434");
+
+    // Case 2: In draft.providers.llm.servers
+    const draft2 = { providers: { llm: { servers: [{ id: "srv_2", url: "http://192.168.1.50:8000/v1" }] } } };
+    expect(getEffectiveLlmServers(draft2, null)[0]?.url).toBe("http://192.168.1.50:8000/v1");
+
+    // Case 3: In committed.providers.llm.servers (standard initial boot state)
+    const committed1 = { providers: { llm: { servers: [{ id: "llm_custom_123", url: "http://192.168.1.184:11434", name: "Ollama" }] } } };
+    expect(getEffectiveLlmServers(null, committed1)[0]?.url).toBe("http://192.168.1.184:11434");
+
+    // Case 4: selectActiveLlmProvider resolves server correctly when draft.llm.servers is undefined
+    const { selectActiveLlmProvider } = await import("@/store/settingsStore");
+    const mockState = {
+      draftSettings: {
+        llm: {
+          active: { category: "server" as const, provider: "llm_custom_123", model: "" },
+        },
       },
-      serverId: string
-    ) => {
-      const servers = draft?.llm?.servers ?? draft?.providers?.llm?.servers;
-      return servers?.find((s) => s.id === serverId);
-    };
-
-    // When in draft.llm.servers
-    const draft1 = {
-      llm: { servers: [{ id: "srv_1", url: "http://127.0.0.1:11434" }] },
-    };
-    expect(resolveServer(draft1, "srv_1")?.url).toBe("http://127.0.0.1:11434");
-
-    // When in draft.providers.llm.servers
-    const draft2 = {
-      providers: { llm: { servers: [{ id: "srv_2", url: "http://192.168.1.50:8000/v1" }] } },
-    };
-    expect(resolveServer(draft2, "srv_2")?.url).toBe("http://192.168.1.50:8000/v1");
+      settings: committed1,
+    } as unknown as import("@/store/settingsStore").SettingsState;
+    const provider = selectActiveLlmProvider(mockState);
+    expect(provider.kind).toBe("server");
+    expect(provider.base_url).toBe("http://192.168.1.184:11434");
+    expect(provider.provider_name).toBe("Ollama");
   });
 
   it("getEffectiveCloudApiKey: resolves across draft, draft.providers, and committed.providers", async () => {

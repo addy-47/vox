@@ -389,6 +389,7 @@ impl TtsProvider for RecordingProvider {
                 max: 2.0,
                 step: 0.05,
             },
+            execution: vox_lib::services::tts::TtsExecutionKind::Embedded,
         }
     }
 

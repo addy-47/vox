@@ -54,3 +54,26 @@ export function getEffectiveCloudApiKey(
 
   return undefined;
 }
+
+/**
+ * Resolves configured LLM custom servers across draft.llm.servers, draft.providers.llm.servers,
+ * committed.providers.llm.servers, and committed.llm.servers.
+ */
+export function getEffectiveLlmServers(
+  draft?: {
+    llm?: { servers?: Array<{ id: string; name?: string; url: string; model?: string; protocol?: string; api_key?: string | null }> };
+    providers?: { llm?: { servers?: Array<{ id: string; name?: string; url: string; model?: string; protocol?: string; api_key?: string | null }> } };
+  } | null,
+  committed?: {
+    llm?: { servers?: Array<{ id: string; name?: string; url: string; model?: string; protocol?: string; api_key?: string | null }> };
+    providers?: { llm?: { servers?: Array<{ id: string; name?: string; url: string; model?: string; protocol?: string; api_key?: string | null }> } };
+  } | null
+): Array<{ id: string; name?: string; url: string; model?: string; protocol?: string; api_key?: string | null }> {
+  return (
+    draft?.llm?.servers ??
+    draft?.providers?.llm?.servers ??
+    committed?.providers?.llm?.servers ??
+    committed?.llm?.servers ??
+    []
+  );
+}

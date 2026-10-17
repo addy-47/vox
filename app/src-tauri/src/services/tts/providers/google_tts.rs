@@ -169,6 +169,64 @@ impl<'a> PcmIngest<'a> {
     }
 }
 
+/// Monthly free tier character quota for Google Cloud TTS (Chirp 3 HD).
+pub const GOOGLE_TTS_MONTHLY_FREE_CHAR_LIMIT: u64 = 1_000_000;
+
+/// Tracks monthly character consumption for Google Cloud TTS free tier.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+pub struct GoogleTtsMonthlyUsage {
+    pub period: String,
+    pub characters_used: u64,
+}
+
+static USAGE_LOCK: parking_lot::Mutex<()> = parking_lot::Mutex::new(());
+
+fn usage_file_path() -> Option<std::path::PathBuf> {
+    std::panic::catch_unwind(|| crate::utils::paths::get().data.join("google_tts_usage.json")).ok()
+}
+
+pub fn check_and_increment_usage(char_count: usize) -> Result<()> {
+    let _guard = USAGE_LOCK.lock();
+    let current_period = chrono::Utc::now().format("%Y-%m").to_string();
+    let path = match usage_file_path() {
+        Some(p) => p,
+        None => return Ok(()),
+    };
+
+    let mut usage = if path.exists() {
+        std::fs::read_to_string(&path)
+            .ok()
+            .and_then(|s| serde_json::from_str::<GoogleTtsMonthlyUsage>(&s).ok())
+            .unwrap_or_default()
+    } else {
+        GoogleTtsMonthlyUsage::default()
+    };
+
+    if usage.period != current_period {
+        usage.period = current_period;
+        usage.characters_used = 0;
+    }
+
+    if usage.characters_used + char_count as u64 > GOOGLE_TTS_MONTHLY_FREE_CHAR_LIMIT {
+        return Err(TtsError::RateLimited {
+            message: format!(
+                "Google Cloud TTS monthly free tier quota reached ({}/{} characters). \
+                 Synthesis blocked to prevent billing charges.",
+                usage.characters_used, GOOGLE_TTS_MONTHLY_FREE_CHAR_LIMIT
+            ),
+        }
+        .into());
+    }
+
+    usage.characters_used += char_count as u64;
+
+    if let Ok(json) = serde_json::to_string_pretty(&usage) {
+        let _ = std::fs::write(&path, json);
+    }
+
+    Ok(())
+}
+
 impl TtsProvider for GoogleTtsProvider {
     /// Declares this provider's capabilities.
     fn caps() -> ProviderCaps {
@@ -176,6 +234,7 @@ impl TtsProvider for GoogleTtsProvider {
             voices: TtsVoiceSource::Cloud,
             clone: false,
             speed_range: Self::SPEED_RANGE,
+            execution: crate::services::tts::TtsExecutionKind::Cloud,
         }
     }
 
@@ -186,6 +245,7 @@ impl TtsProvider for GoogleTtsProvider {
         if text_clean.is_empty() {
             return Ok(());
         }
+        check_and_increment_usage(text_clean.chars().count())?;
         if text_clean.len() > GOOGLE_TTS_MAX_TEXT_BYTES {
             return Err(TtsError::SynthesisFailed {
                 message: format!(
@@ -318,6 +378,7 @@ pub async fn synthesize_to_wav(
     if text_clean.is_empty() {
         return Ok(());
     }
+    check_and_increment_usage(text_clean.chars().count())?;
 
     let client = connect_client().await?;
     let mut builder = client.streaming_synthesize();

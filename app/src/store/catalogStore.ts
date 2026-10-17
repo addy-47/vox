@@ -63,7 +63,9 @@ export const useCatalogStore = create<CatalogState>((set, get) => ({
   loadRemoteModels: async (providerConfig?: LlmProviderConfig, force = false) => {
     const provider = providerConfig || selectActiveLlmProvider(useSettingsStore.getState());
     if (!provider || provider.kind === "embedded" || !provider.base_url) {
-      if (get().remoteModelsError) set({ remoteModelsError: null, loadingRemoteModels: false });
+      if (get().remoteModels.length > 0 || get().remoteModelsError) {
+        set({ remoteModels: [], remoteModelsError: null, loadingRemoteModels: false });
+      }
       return;
     }
 
@@ -94,7 +96,12 @@ export const useCatalogStore = create<CatalogState>((set, get) => ({
     console.info(
       `[Providers] loadRemoteModels kind=${provider.kind} url=${provider.base_url} hasKey=${Boolean(provider.api_key)} force=${force}`
     );
-    set({ loadingRemoteModels: true, remoteModelsError: null });
+    // Clear stale models immediately when switching providers to prevent showing previous provider's models
+    set({
+      remoteModels: [],
+      loadingRemoteModels: true,
+      remoteModelsError: null,
+    });
     const request = listLlmModels(provider);
     remoteModelsInflight.set(fetchKey, request);
     try {
@@ -111,7 +118,11 @@ export const useCatalogStore = create<CatalogState>((set, get) => ({
     } catch (err) {
       const msg = ipcErrorMessage(err);
       console.error("[Providers] loadRemoteModels failed:", err);
-      set({ loadingRemoteModels: false, remoteModelsError: msg });
+      set({
+        remoteModels: [],
+        loadingRemoteModels: false,
+        remoteModelsError: msg,
+      });
     } finally {
       if (remoteModelsInflight.get(fetchKey) === request) {
         remoteModelsInflight.delete(fetchKey);

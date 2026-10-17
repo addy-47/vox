@@ -47,6 +47,10 @@ pub struct ModelGroup {
     #[serde(default)]
     pub is_remote: bool,
     #[serde(default)]
+    pub is_configured: Option<bool>,
+    #[serde(default)]
+    pub is_free: Option<bool>,
+    #[serde(default)]
     pub required: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub logo: Option<String>,

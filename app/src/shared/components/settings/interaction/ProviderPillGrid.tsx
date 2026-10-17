@@ -272,7 +272,7 @@ export const ProviderPillGrid = memo(function ProviderPillGrid({
   return (
     <div
       ref={containerRef}
-      className="max-h-[160px] overflow-y-auto overscroll-contain custom-scrollbar pr-1 pb-2 w-full"
+      className="max-h-[160px] overflow-y-auto overflow-x-hidden overscroll-contain custom-scrollbar [scrollbar-gutter:stable] pr-2 pb-2 w-full"
     >
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 content-start w-full">
         {committedActiveCategory === "server" && committedActiveProviderId

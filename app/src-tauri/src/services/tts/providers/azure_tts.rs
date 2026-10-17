@@ -269,6 +269,7 @@ impl TtsProvider for AzureTtsProvider {
             voices: TtsVoiceSource::Cloud,
             clone: false,
             speed_range: Self::SPEED_RANGE,
+            execution: crate::services::tts::TtsExecutionKind::Cloud,
         }
     }
 

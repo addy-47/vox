@@ -8,6 +8,7 @@ export interface CloudProvider {
   tagline?: string;
   logo?: string;
   isFree?: boolean;
+  isConfigured?: boolean;
 }
 
 export const CLOUD_PROVIDERS: CloudProvider[] = [];
@@ -24,6 +25,7 @@ export interface TtsProviderEntry {
   url?: string;
   logo?: string;
   isFree?: boolean;
+  isConfigured?: boolean;
   isComingSoon?: boolean;
   statusLabel?: string;
 }
@@ -76,6 +78,8 @@ export function updateTtsProvidersFromContract(
     logo?: string;
     is_cloud?: boolean;
     is_remote?: boolean;
+    is_configured?: boolean;
+    isConfigured?: boolean;
     is_free?: boolean;
     isFree?: boolean;
     status_label?: string;
@@ -103,6 +107,7 @@ export function updateTtsProvidersFromContract(
       url: p.url,
       logo: p.logo,
       isFree: p.is_free ?? p.id.includes("edge"),
+      isConfigured: Boolean(p.is_configured ?? p.isConfigured),
       statusLabel: p.id.includes("edge") ? "Free" : p.is_remote ? "Requires Server" : "Ready",
     });
   }

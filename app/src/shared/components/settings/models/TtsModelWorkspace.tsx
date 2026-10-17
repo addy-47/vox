@@ -2,7 +2,7 @@ import { memo } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
 import { SubModelCard } from "./SubModelCard";
 import type { ModelStatus } from "@/shared/hooks/useModelDownloads";
-import { Loader2 } from "lucide-react";
+import { Loader2, AlertTriangle } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { activeSelection } from "@/shared/lib/activeSelection";
 
@@ -16,6 +16,7 @@ interface TtsModelWorkspaceProps {
   deleteModel: (id: string) => void;
   isRemoteTtsHealthy: boolean | null;
   checkingTtsHealth: boolean;
+  ttsHealthReason?: string | null;
 }
 
 export const TtsModelWorkspace = memo(
@@ -29,6 +30,7 @@ export const TtsModelWorkspace = memo(
     deleteModel,
     isRemoteTtsHealthy,
     checkingTtsHealth,
+    ttsHealthReason,
   }: TtsModelWorkspaceProps) => {
     const draftSettings = useSettingsStore((s) => s.draftSettings);
     const updateDraft = useSettingsStore((s) => s.updateDraft);
@@ -56,6 +58,12 @@ export const TtsModelWorkspace = memo(
 
     return (
       <div className={cn("flex-1 min-h-0 w-full overflow-y-auto custom-scrollbar pr-1", layoutMode === "small" && "max-h-[220px]")}>
+        {(isRemote || isCloud) && ttsHealthReason && (
+          <div className="mb-2.5 px-3 py-2 rounded-lg bg-[rgba(var(--error),0.08)] border border-[rgba(var(--error),0.25)] flex items-center gap-2 text-[12px] text-[rgb(var(--error))]">
+            <AlertTriangle size={14} className="shrink-0" />
+            <span className="font-mono text-[11px] leading-relaxed">{ttsHealthReason}</span>
+          </div>
+        )}
         <div
           className={cn(
             "grid gap-2.5 h-full",
@@ -102,7 +110,7 @@ export const TtsModelWorkspace = memo(
                   startDownload={() => startDownload(model.id)}
                   deleteModel={() => deleteModel(model.id)}
                 />
-                {model.is_remote && isSelected && (
+                {(model.is_remote || model.is_cloud) && isSelected && (
                   <div className="absolute top-2.5 right-2.5 flex items-center gap-1.5 select-none pointer-events-none">
                     {checkingTtsHealth ? (
                       <Loader2 size={10} className="animate-spin text-[rgb(var(--accent))]" />

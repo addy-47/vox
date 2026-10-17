@@ -26,11 +26,23 @@ pub struct ParamRange {
     pub step: f32,
 }
 
+/// Execution tier classification for TTS providers.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum TtsExecutionKind {
+    #[default]
+    Embedded,
+    Cloud,
+    Remote,
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct ProviderCaps {
     pub voices: TtsVoiceSource,
     pub clone: bool,
     pub speed_range: ParamRange,
+    #[serde(default)]
+    pub execution: TtsExecutionKind,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Default)]

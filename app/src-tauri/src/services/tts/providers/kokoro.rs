@@ -128,6 +128,7 @@ impl TtsProvider for KokoroEngine {
             voices: TtsVoiceSource::Catalog,
             clone: false,
             speed_range: Self::SPEED_RANGE,
+            execution: crate::services::tts::TtsExecutionKind::Embedded,
         }
     }
 
