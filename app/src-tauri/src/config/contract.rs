@@ -61,6 +61,14 @@ pub struct NumericDefaultsContract {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RealtimeProviderContract {
     pub id: String,
+    pub name: String,
+    pub url: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key_placeholder: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tagline: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub logo: Option<String>,
     pub voice_field: String,
     pub supports_web_search: bool,
     pub supports_agent_mode: bool,
@@ -177,12 +185,22 @@ pub fn build_settings_contract() -> SettingsContract {
     let realtime_providers = vec![
         RealtimeProviderContract {
             id: "gemini_live".to_string(),
+            name: "Gemini Live".to_string(),
+            url: "https://aistudio.google.com/apikey".to_string(),
+            key_placeholder: Some("AIzaSy...".to_string()),
+            tagline: Some("Google's direct live speech model with search grounding".to_string()),
+            logo: None,
             voice_field: "voice_name".to_string(),
             supports_web_search: true,
             supports_agent_mode: false,
         },
         RealtimeProviderContract {
             id: "deepgram_voice_agent".to_string(),
+            name: "Deepgram Agent".to_string(),
+            url: "https://console.deepgram.com/".to_string(),
+            key_placeholder: Some("Token...".to_string()),
+            tagline: Some("Deepgram's real-time conversational voice agent".to_string()),
+            logo: None,
             voice_field: "voice".to_string(),
             supports_web_search: false,
             supports_agent_mode: true,

@@ -10,7 +10,7 @@ import { LiveTestStep } from "./steps/LiveTestStep";
 import { CompletedStep } from "./steps/CompletedStep";
 import { WizardErrorPanel } from "./components/WizardErrorPanel";
 import { revealWizard, fetchManifest } from '@/services/setupService';
-import { isRealMobileDevice } from '@/shared/hooks/useMobileViewport';
+import { isRealMobileDevice } from '@/layout/breakpoints';
 
 
 import { CheckCircle2 } from 'lucide-react';

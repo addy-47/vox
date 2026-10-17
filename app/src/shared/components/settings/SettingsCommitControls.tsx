@@ -2,7 +2,7 @@ import { memo, useCallback, useMemo } from "react";
 import { AlertCircle, Check, RefreshCw } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { useSettingsStore, type SettingsState, SETTINGS_DOMAIN_TO_UI } from "@/store/settingsStore";
-import { SETTINGS_COPY } from "@/data/settingsCopy";
+import { SETTINGS_COPY, INTERACTION_CONFIG_DESK_COPY } from "@/data/settingsCopy";
 import { useExpandableList } from "@/shared/ui/ExpandableList";
 import { useViewportResize } from "@/shared/hooks/useViewportResize";
 import { Tooltip } from "@/shared/ui/Tooltip";
@@ -278,3 +278,46 @@ export const SettingsCommitControls = memo(({ domainId, layoutMode }: SettingsCo
 });
 
 SettingsCommitControls.displayName = "SettingsCommitControls";
+
+export const ModalProviderFooter = memo(({ category }: { category: "STT" | "LLM" | "TTS" }) => {
+  const isTts = category === "TTS";
+  const failedKeys = useSettingsStore((s) => s.failedSaveDomains[isTts ? "tts" : "models"]);
+  const remoteModelsError = useSettingsStore((s) => s.remoteModelsError);
+  const llmCategory = useSettingsStore((s) => s.draftSettings?.llm?.active?.category);
+  const llmActiveProvider = useSettingsStore((s) => s.draftSettings?.llm?.active?.provider);
+  const llmCloudKeys = useSettingsStore((s) => s.draftSettings?.llm?.cloud_keys);
+  const llmProvidersKeys = useSettingsStore((s) => s.draftSettings?.providers?.llm?.cloud_keys);
+  const cloudApiKey = llmActiveProvider
+    ? (llmCloudKeys?.[llmActiveProvider] ?? llmProvidersKeys?.[llmActiveProvider])
+    : undefined;
+  const isCloudLlmMissingKey = category === "LLM" && llmCategory === "cloud" && !cloudApiKey?.trim();
+
+  if (category === "STT") return null;
+  if (!failedKeys && !remoteModelsError && !isCloudLlmMissingKey) return null;
+  return (
+    <div className="flex flex-col gap-2 shrink-0 w-full max-w-full">
+      {isCloudLlmMissingKey && (
+        <SettingsFooterBanner
+          title={SETTINGS_COPY.apiKeyRequired}
+          detail="Enter and save an API key for the selected provider to enable cloud inference."
+          className="rounded-xl w-full max-w-full"
+        />
+      )}
+      {failedKeys && failedKeys.length > 0 && (
+        <SettingsFooterBanner
+          title={SETTINGS_COPY.saveFailedTitle}
+          detail={`${SETTINGS_COPY.saveFailedHint} ${failedKeys.join(", ")}`}
+          className="rounded-xl w-full max-w-full"
+        />
+      )}
+      {remoteModelsError && (
+        <SettingsFooterBanner
+          title={INTERACTION_CONFIG_DESK_COPY.status.connectionFailed}
+          detail={remoteModelsError}
+          className="rounded-xl w-full max-w-full"
+        />
+      )}
+    </div>
+  );
+});
+ModalProviderFooter.displayName = "ModalProviderFooter";

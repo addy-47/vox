@@ -21,7 +21,7 @@ import { HISTORY_COPY } from "@/data/historyCopy";
 import { useHistoryFilterStore } from "@/store/historyFilterStore";
 import { formatDateTime, resolveSessionTitle, type SessionRow } from "@/services/persistenceService";
 import { useRegisterPageDrawer } from "@/shared/context/PageDrawerContext";
-import { usePanelStateContext } from "@/shared/hooks/usePanelState";
+import { usePanelStateContext } from "@/shared/context/PanelStateContext";
 import { useProfilerDrawer } from "@/shared/components/profiler/ProfilerDrawer";
 import { getThemeTransitioning, subscribeThemeTransition } from "@/shared/theme";
 

@@ -17,8 +17,12 @@ import "@fontsource/jetbrains-mono/600.css";
 import "@fontsource/jetbrains-mono/700.css";
 import "./index.css";
 import App from "./App";
-import { SettingsProvider } from "./shared/context/SettingsContext";
 import { ErrorBoundary } from "./shared/components/common";
+import { useSettingsStore } from "./store/settingsStore";
+
+// Boot settings and model catalog into the store
+void useSettingsStore.getState().loadSettings();
+void useSettingsStore.getState().loadModelCatalog();
 
 const TrayApp = lazy(() => import("./tray/TrayApp").then(m => ({ default: m.TrayApp })));
 
@@ -40,15 +44,13 @@ document.addEventListener("visibilitychange", () => {
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
     <ErrorBoundary name="Root">
-      <SettingsProvider>
-        {isTray ? (
-          <Suspense fallback={<div className="h-screen w-full bg-[rgb(var(--background))]" />}>
-            <TrayApp />
-          </Suspense>
-        ) : (
-          <App />
-        )}
-      </SettingsProvider>
+      {isTray ? (
+        <Suspense fallback={<div className="h-screen w-full bg-[rgb(var(--background))]" />}>
+          <TrayApp />
+        </Suspense>
+      ) : (
+        <App />
+      )}
     </ErrorBoundary>
   </React.StrictMode>
 );

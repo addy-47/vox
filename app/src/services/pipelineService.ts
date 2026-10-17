@@ -1,7 +1,7 @@
 import { invoke } from "./transport";
 import { getRuntimeSnapshot } from "./monitoringService";
 import { type InteractionState, VALID_INTERACTION_STATES } from "@/services/eventsService";
-import type { SessionRow, TurnRow } from "./historyService";
+import type { SessionRow, TurnRow } from "./persistenceService";
 import { useSessionStore } from "@/store/sessionStore";
 
 export type InteractionOwner = "Assistant" | "Dictation";

@@ -6,7 +6,6 @@ export * from "./ChamberOrbitRings";
 export * from "./MonthDayCard";
 export * from "./ViewSelector";
 export * from "./HistoryListView";
-export * from "@/shared/hooks/useHistory";
 export * from "./orbitMath";
 export * from "./CalendarPicker";
 export * from "./HistorySearchBar";

@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { getShortcutsGroupedByRoute } from "@/data/shortcuts";
-import { isRealMobileDevice } from "@/shared/hooks/useMobileViewport";
+import { isRealMobileDevice } from "@/layout/breakpoints";
 
 const HomeHelpContent = lazy(() =>
   import("@/shared/components/help/HomeHelpContent").then((m) => ({ default: m.HomeHelpContent }))

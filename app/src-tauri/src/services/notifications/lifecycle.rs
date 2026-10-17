@@ -129,8 +129,8 @@ pub async fn dictation_transcribing<R: tauri::Runtime>(app: &AppHandle<R>, db: &
         app,
         db,
         LifecycleCard {
-            title: "⏳ Dictation",
-            message: "<b>Transcribing...</b> Processing speech",
+            title: "Dictation",
+            message: "Transcribing......",
             severity: Severity::Info,
             duration_ms: 5000,
         },

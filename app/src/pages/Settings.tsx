@@ -51,12 +51,9 @@ const DomainContent = memo(({ domain, layoutMode }: { domain: DomainId; layoutMo
 });
 DomainContent.displayName = "DomainContent";
 
-import { RadialNode, HubConnectors } from "@/shared/components/settings/RadialHub";
+import { RadialHub, SettingsConnectorsOverlay } from "@/shared/components/settings/RadialHub";
+import { RestoreDefaultsButton } from "@/shared/components/settings/RestoreDefaultsButton";
 import { BottomDockFeather } from "@/shared/ui/BottomDockFeather";
-import {
-  HubCenter,
-  SettingsConnectorsOverlay,
-} from "@/shared/components/settings/SettingsVisualConnectors";
 
 import { SettingsCardWrapper } from "@/shared/components/settings/SettingsCardWrapper";
 import { SettingsSideCarouselCard } from "@/shared/components/settings/SettingsSideCarouselCard";
@@ -145,6 +142,10 @@ export const Settings: React.FC = () => {
       {/* ── Desktop & Tablet Hexagon/Grid Layout (>= 1024px) ────────────────── */}
       {!isCompact ? (
         <div ref={containerRef} className="flex-1 w-full grid grid-cols-12 grid-rows-6 gap-4 items-stretch relative min-h-0 overflow-visible">
+          {/* Direct Page-Level Restore Control */}
+          <div className="absolute top-0 right-2 z-30 hidden lg:block">
+            <RestoreDefaultsButton />
+          </div>
 
           {/* Dynamic SVG Overlay for Node-to-Card connections (rendered synchronously with active cards) */}
           <SettingsConnectorsOverlay
@@ -230,28 +231,14 @@ export const Settings: React.FC = () => {
 
           {/* Middle-Center Slot (Col 5-8, Row 3-4) -> Radial Hub Center Grid Cell */}
           <div className="col-start-5 col-span-4 row-start-3 row-span-2 flex items-center justify-center p-2 z-20">
-            <div
-              className="relative shrink-0"
-              style={{
-                width: Math.max(radiusX, radiusY) * 2 + 100,
-                height: Math.max(radiusX, radiusY) * 2 + 100,
-              }}
-            >
-              <HubConnectors activeDomains={activeDomains} radiusX={radiusX} radiusY={radiusY} />
-
-              {DOMAINS.map((domain) => (
-                <RadialNode
-                  key={domain.id}
-                  domain={domain}
-                  isActive={activeDomains.includes(domain.id)}
-                  onSelect={handleSelect}
-                  radiusX={radiusX}
-                  radiusY={radiusY}
-                />
-              ))}
-
-              <HubCenter onClick={handleCenterClick} hasActiveCards={hasSelection} />
-            </div>
+            <RadialHub
+              activeDomains={activeDomains}
+              radiusX={radiusX}
+              radiusY={radiusY}
+              onSelect={handleSelect}
+              onCenterClick={handleCenterClick}
+              hasSelection={hasSelection}
+            />
           </div>
 
           {/* Bottom-Center Slot (Col 5-8, Row 5-6) -> 6:00 (Appearance Card) */}
@@ -265,6 +252,12 @@ export const Settings: React.FC = () => {
       ) : (
         /* ── Mobile & Compact Layout (Single vertical scroll list) ─────────── */
         <div className="flex-1 flex flex-col min-h-0 overflow-hidden w-full pt-2.5 sm:pt-3.5">
+          <div className="flex items-center justify-between px-3 sm:px-4.5 pb-2 shrink-0">
+            <span className="text-xs font-semibold uppercase tracking-wider text-[rgb(var(--foreground-muted))]">
+              Settings
+            </span>
+            <RestoreDefaultsButton />
+          </div>
 
           <div className="flex-1 w-full relative overflow-hidden flex flex-col min-h-0">
             <div className="flex-1 w-full overflow-y-auto custom-scrollbar pb-[130px] space-y-4 px-3 sm:px-4.5">

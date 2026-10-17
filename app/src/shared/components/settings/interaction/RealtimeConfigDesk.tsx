@@ -1,6 +1,6 @@
 import { memo, useCallback, useState } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
-import { REALTIME_PROVIDERS } from "@/data/providersCopy";
+
 import { REALTIME_CONFIG_DESK_COPY } from "@/data/settingsCopy";
 import { Radio, Check, X, Pencil } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
@@ -12,13 +12,26 @@ interface RealtimeConfigDeskProps {
 
 export const RealtimeConfigDesk = memo(({ layoutMode }: RealtimeConfigDeskProps) => {
   const draftSettings = useSettingsStore((s) => s.draftSettings);
+  const contract = useSettingsStore((s) => s.contract);
   const updateDraft = useSettingsStore((s) => s.updateDraft);
+
+  const realtimeProviders = contract?.realtime_providers ?? [];
+  const providerList = realtimeProviders.map((p) => ({
+    id: p.id,
+    name: p.name,
+    subkey: p.id,
+    url: p.url,
+    tagline: p.tagline ?? "",
+    keyPlaceholder: p.key_placeholder ?? "Token...",
+    logo: p.logo,
+    desc: "",
+  }));
 
   const [editingProviderId, setEditingProviderId] = useState<string | null>(null);
   const [editingKeyValue, setEditingKeyValue] = useState("");
 
   const currentProviderId =
-    draftSettings?.realtime?.active?.provider || "gemini_live";
+    draftSettings?.realtime?.active?.provider || realtimeProviders[0]?.id || "";
 
   /** API keys: draft vehicle first, then the committed providers file. */
   const realtimeKeys =
@@ -95,7 +108,7 @@ export const RealtimeConfigDesk = memo(({ layoutMode }: RealtimeConfigDeskProps)
           layoutMode === "small" ? "grid-cols-1" : "grid-cols-1 sm:grid-cols-2"
         )}
       >
-        {REALTIME_PROVIDERS.map((provider) => {
+        {providerList.map((provider) => {
           const isSelected =
             currentProviderId === provider.id || currentProviderId === provider.subkey;
           const savedKey = getProviderKey(provider.id);

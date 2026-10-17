@@ -80,3 +80,25 @@ export function useRuntimeSnapshot(enabled: boolean = true): RuntimeSnapshot | n
 
   return snapshot;
 }
+
+export interface VoxFootprint {
+  voxCpu: number;
+  voxRam: number;
+  isReady: boolean;
+}
+
+/**
+ * Reads the shared 30s `get_runtime_snapshot` cache (see useRuntimeSnapshot)
+ * and exposes the Vox process's CPU usage and RAM footprint for the
+ * bottom-of-screen mini-HUD.
+ */
+export function useVoxFootprint(): VoxFootprint {
+  const snap = useRuntimeSnapshot(true);
+  if (!snap) {
+    return { voxCpu: 0, voxRam: 0, isReady: false };
+  }
+  const voxCpu = Number.isFinite(snap.vox_cpu_usage) ? snap.vox_cpu_usage : 0;
+  const voxRam = Number.isFinite(snap.vox_ram_mb) ? snap.vox_ram_mb : 0;
+  return { voxCpu, voxRam, isReady: true };
+}
+

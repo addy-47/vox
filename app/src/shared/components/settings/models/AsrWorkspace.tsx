@@ -1,7 +1,7 @@
 import { memo } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
 import { useModelParameters } from "@/shared/hooks/useModelParameters";
-import { SubModelCard } from "../SubModelCard";
+import { SubModelCard } from "./SubModelCard";
 import type { ModelStatus } from "@/shared/hooks/useModelDownloads";
 import { cn } from "@/shared/lib/utils";
 import { activeSelection } from "@/shared/lib/activeSelection";

@@ -11,7 +11,7 @@ import { TextInputBar } from "@/shared/components/home/TextInputBar";
 import { ActiveTranscript } from "@/shared/components/home/ActiveTranscript";
 import { ErrorBoundary } from "@/shared/components/common";
 import { EdgePanel } from "@/shared/ui";
-import { usePanelStateContext } from "@/shared/hooks/usePanelState";
+import { usePanelStateContext } from "@/shared/context/PanelStateContext";
 import {
   GOVERNOR_LABELS,
   HOME_CONTROLS_COPY,
@@ -29,7 +29,7 @@ import { useSessionStore } from "@/store/sessionStore";
 import { useRegisterPageDrawer } from "@/shared/context/PageDrawerContext";
 import { useHomePage } from "@/shared/hooks/useHomePage";
 import { useMemoryTrace } from "@/shared/hooks/useMemoryTrace";
-import { isRealMobileDevice } from "@/shared/hooks/useMobileViewport";
+import { isRealMobileDevice } from "@/layout/breakpoints";
 
 const DialogueTurn = memo(({ turn }: { turn: { user: string; assistant: string; id: number } }) => (
   <React.Fragment>

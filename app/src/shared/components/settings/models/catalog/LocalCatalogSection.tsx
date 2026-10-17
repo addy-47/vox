@@ -1,9 +1,8 @@
 import { memo, useMemo } from "react";
 import { cn } from "@/shared/lib/utils";
 import { useSettingsStore } from "@/store/settingsStore";
-import { useLenisScrollContainer } from "@/shared/hooks/useLenisScrollContainer";
-import { useScrollTopOnChange } from "@/shared/hooks/useScrollTopOnChange";
-import { SubModelCard } from "../../SubModelCard";
+import { useLenisScrollContainer, useScrollTopOnChange } from "@/shared/hooks/useLenisScrollContainer";
+import { SubModelCard } from "../SubModelCard";
 import type { ModelStatus } from "@/shared/hooks/useModelDownloads";
 import { activeSelection } from "@/shared/lib/activeSelection";
 

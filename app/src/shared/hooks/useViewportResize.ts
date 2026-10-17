@@ -7,8 +7,7 @@ import {
   getViewportLayout,
   type ViewportLayout,
 } from "@/layout/viewportResize";
-import { isRealMobileDevice } from "@/shared/hooks/useMobileViewport";
-import { isCompactWidth } from "@/layout/breakpoints";
+import { isCompactWidth, isRealMobileDevice } from "@/layout/breakpoints";
 
 export type { ViewportLayout };
 

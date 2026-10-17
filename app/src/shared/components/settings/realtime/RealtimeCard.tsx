@@ -41,6 +41,7 @@ function UnifiedConfig({
   const activeModel = draftSettings.realtime?.active?.model || null;
   const { params, setParam } = useModelParameters(activeModel);
 
+  const contract = useSettingsStore((s) => s.contract);
   const realtimeProvider = contract?.realtime_providers?.find((p) => p.id === subkey);
   const voiceField = realtimeProvider?.voice_field ?? "voice";
   const supportsWebSearch = realtimeProvider?.supports_web_search ?? false;

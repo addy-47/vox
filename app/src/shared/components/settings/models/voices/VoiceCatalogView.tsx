@@ -4,9 +4,8 @@ import { ErrorBoundary } from "@/shared/components/common/ErrorBoundary";
 import { ExpandableList } from "@/shared/ui/ExpandableList";
 import { VOICE_CATALOG_COPY } from "@/data/settingsCopy";
 import { useSessionStore } from "@/store/sessionStore";
-import { useVoiceCatalog } from "@/shared/hooks/useVoiceCatalog";
+import { useVoiceCatalog, useVoiceScope } from "@/shared/hooks/useVoiceCatalog";
 import { useLenisScrollContainer } from "@/shared/hooks/useLenisScrollContainer";
-import { useVoiceScope } from "@/shared/hooks/useVoiceScope";
 import type { UnifiedVoiceDto } from "@/services/voicesService";
 import {
   CatalogFilterItem,
@@ -15,7 +14,7 @@ import {
   type CatalogSortOrder,
 } from "../../providers/CatalogHeader";
 import { VoiceCard } from "./VoiceCard";
-import { VoiceCatalogModalView } from "./VoiceCatalogModalView";
+import { VoiceModal } from "./VoiceModal";
 
 type VoiceScopeFilter = "all" | "recent" | "favorites" | "custom";
 type VoiceGenderFilter = "female" | "male" | "neutral";
@@ -279,7 +278,7 @@ export const VoiceCatalogView = memo(({ layoutMode, providerId }: VoiceCatalogVi
         onDiscard={handleDiscard}
         modalContent={({ close }) => (
           <ErrorBoundary name="VoiceCatalogModalContent">
-            <VoiceCatalogModalView
+            <VoiceModal
             catalog={catalog}
             voiceScope={targetProvider}
             canClone={scope.can_clone}

@@ -3,8 +3,6 @@
  * Bridges alias IDs ("gemini", "openai", "deepgram", "elevenlabs")
  * to their concrete configuration subkeys.
  */
-import type { RealtimeSubkey } from "@/store/settingsStore";
-
 export const REALTIME_SUBKEY_MAP: Record<string, string> = {};
 
 /**
