@@ -75,7 +75,7 @@ export const ProviderPillGrid = memo(function ProviderPillGrid({
       key="local-pill"
       onClick={onSelectLocal}
       className={cn(
-        "group flex items-center gap-2 px-2.5 py-2 rounded-xl transition-all cursor-pointer select-none border min-h-[46px]",
+        "group flex items-center gap-2 px-2.5 py-2 rounded-xl transition-colors duration-150 cursor-pointer select-none border h-[46px] min-h-[46px] max-h-[46px] overflow-hidden",
         isLocalActive
           ? "bg-[rgba(var(--foreground),0.025)] border-[rgb(var(--accent))] shadow-[0_0_12px_rgba(var(--accent),0.12)] text-[rgb(var(--foreground))]"
           : "bg-[rgba(var(--foreground),0.015)] border-[rgba(var(--accent),0.06)] hover:border-[rgba(var(--accent),0.25)] hover:bg-[rgba(var(--foreground),0.03)] text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--foreground))]"
@@ -110,14 +110,14 @@ export const ProviderPillGrid = memo(function ProviderPillGrid({
             key={server.id || server.url}
             onClick={() => onSelectCustomServer(server)}
             className={cn(
-              "group flex items-center gap-2 px-2.5 py-2 rounded-xl transition-all cursor-pointer select-none border min-h-[46px]",
+              "group flex items-center gap-2 px-2.5 py-2 rounded-xl transition-colors duration-150 cursor-pointer select-none border h-[46px] min-h-[46px] max-h-[46px] overflow-hidden",
               isSelected
                 ? "bg-[rgba(var(--foreground),0.025)] border-[rgb(var(--accent))] shadow-[0_0_12px_rgba(var(--accent),0.12)] text-[rgb(var(--foreground))]"
                 : "bg-[rgba(var(--foreground),0.015)] border-[rgba(var(--accent),0.06)] hover:border-[rgba(var(--accent),0.25)] hover:bg-[rgba(var(--foreground),0.03)] text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--foreground))]"
             )}
           >
             <div className="w-6 h-6 rounded-md bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--foreground),0.06)] flex items-center justify-center shrink-0">
-              <ProviderLogo providerId={server.id || "custom-server"} logo={null} size={14} className="shrink-0" />
+              <ProviderLogo providerId={server.id || "custom-server"} providerName={server.name} logo={null} size={14} className="shrink-0" />
             </div>
             <div className="flex flex-col min-w-0 flex-1 justify-center">
               <span className="text-[11.5px] font-semibold truncate leading-tight text-[rgb(var(--foreground))]">
@@ -127,7 +127,7 @@ export const ProviderPillGrid = memo(function ProviderPillGrid({
                 {server.url}
               </span>
             </div>
-            <div className="flex items-center justify-end w-12 shrink-0 ml-auto relative" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-end w-12 h-6 shrink-0 ml-auto relative overflow-hidden" onClick={(e) => e.stopPropagation()}>
               {isSelected && (
                 <div className="w-4 h-4 rounded-full bg-[rgba(var(--accent),0.15)] border border-[rgba(var(--accent),0.3)] flex items-center justify-center text-[rgb(var(--accent))] shrink-0 transition-opacity [@media(hover:hover)]:group-hover:opacity-0 pointer-events-none">
                   <Check size={9} strokeWidth={2.5} />
@@ -174,7 +174,7 @@ export const ProviderPillGrid = memo(function ProviderPillGrid({
           }
         }}
         className={cn(
-          "group flex items-center gap-2 px-2.5 py-2 rounded-xl transition-all cursor-pointer select-none border min-h-[46px]",
+          "group flex items-center gap-2 px-2.5 py-2 rounded-xl transition-colors duration-150 cursor-pointer select-none border h-[46px] min-h-[46px] max-h-[46px] overflow-hidden",
           isSelected
             ? "bg-[rgba(var(--foreground),0.025)] border-[rgb(var(--accent))] shadow-[0_0_12px_rgba(var(--accent),0.12)] text-[rgb(var(--foreground))]"
             : "bg-[rgba(var(--foreground),0.015)] border-[rgba(var(--accent),0.06)] hover:border-[rgba(var(--accent),0.25)] hover:bg-[rgba(var(--foreground),0.03)] text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--foreground))]"
@@ -234,7 +234,7 @@ export const ProviderPillGrid = memo(function ProviderPillGrid({
                 {provider.tagline || "Cloud API"}
               </span>
             </div>
-            <div className="shrink-0 flex items-center justify-end w-12 ml-auto relative" onClick={(e) => e.stopPropagation()}>
+            <div className="shrink-0 flex items-center justify-end w-12 h-6 ml-auto relative overflow-hidden" onClick={(e) => e.stopPropagation()}>
               {isSelected && (
                 <div className="w-4 h-4 rounded-full bg-[rgba(var(--accent),0.15)] border border-[rgba(var(--accent),0.3)] flex items-center justify-center text-[rgb(var(--accent))] shrink-0 transition-opacity [@media(hover:hover)]:group-hover:opacity-0 pointer-events-none">
                   <Check size={9} strokeWidth={2.5} />
@@ -272,7 +272,7 @@ export const ProviderPillGrid = memo(function ProviderPillGrid({
   return (
     <div
       ref={containerRef}
-      className="max-h-[160px] overflow-y-scroll overscroll-contain custom-scrollbar pr-1 pb-2 w-full [scrollbar-gutter:stable]"
+      className="max-h-[160px] overflow-y-auto overscroll-contain custom-scrollbar pr-1 pb-2 w-full"
     >
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 content-start w-full">
         {committedActiveCategory === "server" && committedActiveProviderId
@@ -285,7 +285,7 @@ export const ProviderPillGrid = memo(function ProviderPillGrid({
       {currentCategory === "STT" && (
         <div
           title={PROVIDERS_HEADER_COPY.comingSoon}
-          className="flex items-center gap-2 px-2.5 py-2 rounded-xl border border-[rgba(var(--foreground),0.04)] bg-[rgba(var(--foreground),0.01)] opacity-50 min-h-[46px] select-none cursor-not-allowed"
+          className="flex items-center gap-2 px-2.5 py-2 rounded-xl border border-[rgba(var(--foreground),0.04)] bg-[rgba(var(--foreground),0.01)] opacity-50 h-[46px] min-h-[46px] max-h-[46px] overflow-hidden select-none cursor-not-allowed"
         >
           <div className="w-6 h-6 rounded-md bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--foreground),0.06)] flex items-center justify-center shrink-0 opacity-60">
             <ProviderLogo logo={null} size={14} className="shrink-0" />

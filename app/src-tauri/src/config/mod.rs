@@ -16,7 +16,8 @@ pub use dispatch::{
 };
 pub use files::{AgentConfigFile, ProvidersConfigFile, SettingsConfigFile};
 pub use mutation::{
-    apply_model_parameter_mutation, apply_setting_mutation, supported_keys_for_domain,
+    apply_model_parameter_mutation, apply_setting_mutation, apply_settings_patch_tree,
+    supported_keys_for_domain,
 };
 pub use settings::{
     get_preset_colors, AppearanceSettings, AudioOutputMode, InteractionSettings, PersonaSettings,

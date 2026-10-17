@@ -38,6 +38,10 @@ export function updateSetting(
   return invoke<SettingUpdateResult>("update_setting", { domain, key, value });
 }
 
+export function applySettingsPatch(patch: Record<string, unknown>): Promise<SettingUpdateResult> {
+  return invoke<SettingUpdateResult>("apply_settings_patch", { patch });
+}
+
 export function updateModelParameters(
   modelId: string,
   patch: Record<string, unknown>

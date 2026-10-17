@@ -584,6 +584,42 @@ pub fn apply_setting_mutation(
     }
 }
 
+/// Applies a batched settings patch (domain -> { key -> value }) in memory.
+/// Returns the list of `(domain, key)` pairs that were recognized and applied.
+/// The operation is atomic: it is applied to a clone and only committed to
+/// `settings` on full success; an error leaves `settings` untouched.
+pub fn apply_settings_patch_tree(
+    settings: &mut VoxSettings,
+    patch: &serde_json::Value,
+) -> Result<Vec<(String, String)>, String> {
+    let patch_obj = patch
+        .as_object()
+        .ok_or_else(|| "patch must be a JSON object".to_string())?;
+
+    let mut working = settings.clone();
+    let mut changed: Vec<(String, String)> = Vec::new();
+
+    for (domain, domain_patch) in patch_obj {
+        let domain_obj = domain_patch
+            .as_object()
+            .ok_or_else(|| format!("domain '{}' patch must be an object", domain))?;
+        for (key, value) in domain_obj {
+            let applied = apply_setting_mutation(&mut working, domain, key, value)?;
+            if !applied {
+                let valid = supported_keys_for_domain(domain).join(", ");
+                return Err(format!(
+                    "Unknown setting: {}.{} (valid {} keys: {})",
+                    domain, key, domain, valid
+                ));
+            }
+            changed.push((domain.clone(), key.clone()));
+        }
+    }
+
+    *settings = working;
+    Ok(changed)
+}
+
 /// Applies an atomic mutation to per-model parameters stored in the database models table.
 pub async fn apply_model_parameter_mutation(
     state: &AppState,

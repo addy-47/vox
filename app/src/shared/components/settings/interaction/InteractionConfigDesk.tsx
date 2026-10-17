@@ -1,12 +1,14 @@
-import { useState, useEffect, memo, useMemo, useCallback } from "react";
-import { useSettingsStore, type LlmProviderConfig, type ActiveCategory, type LlmCustomServer, type TtsCustomServer } from "@/store/settingsStore";
+import { useState, useEffect, memo, useMemo, useCallback, useRef } from "react";
+import { useShallow } from "zustand/react/shallow";
+import { useSettingsStore, selectActiveLlmProvider, type ActiveCategory, type LlmCustomServer, type TtsCustomServer } from "@/store/settingsStore";
+import { useCatalogStore } from "@/store/catalogStore";
 import { useExpandedModalStore } from "@/store/expandedModalStore";
 import { CLOUD_PROVIDERS, TTS_MODAL_PROVIDERS, type CloudProvider } from "@/data/providersCopy";
 import { INTERACTION_CONFIG_DESK_COPY, PIPELINE_PROVIDERS_DESK_COPY, PROVIDERS_HEADER_COPY } from "@/data/settingsCopy";
 import { checkLlmProviderHealth } from "@/services/catalogService";
 import { BrainCircuit, Network, AudioLines, Mic, Globe, Key, KeyRound, HardDrive, Plus, Server } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
-import { activeSelection, getCloudProviderAlias } from "@/shared/lib/activeSelection";
+import { activeSelection } from "@/shared/lib/activeSelection";
 import { ExpandableList } from "@/shared/ui";
 import { Tooltip } from "@/shared/ui/Tooltip";
 import { SettingsCommitControls } from "@/shared/components/settings/SettingsCommitControls";
@@ -23,8 +25,8 @@ import {
   type CatalogSortOrder,
 } from "@/shared/components/settings/providers/CatalogHeader";
 import { upsertServer } from "@/shared/components/settings/providers/CustomServerFormCard";
-import { useRemoteLlmProbing } from "@/shared/hooks/useRemoteLlmProbing";
-import { useLenisScrollContainer, useScrollTopOnChange } from "@/shared/hooks/useLenisScrollContainer";
+
+import { useScrollTopOnChange } from "@/shared/hooks/useLenisScrollContainer";
 import { CustomServerInlineForm } from "./CustomServerInlineForm";
 import { ProviderPillGrid } from "./ProviderPillGrid";
 
@@ -123,46 +125,17 @@ export const InteractionConfigDesk = memo(({ activeCategory, onBack, layoutMode 
       ? committedSettings?.stt?.active?.provider
       : committedSettings?.llm?.active?.provider;
 
-  const activeLlmProvider = draftLlm?.active?.category ?? "embedded";
+
   const llmServerInventory = useMemo(
     () => draftLlm?.servers ?? draftSettings?.providers?.llm?.servers ?? [],
     [draftLlm?.servers, draftSettings?.providers?.llm?.servers]
   );
 
-  const activeServerEntry = useMemo(() => {
-    if (activeLlmProvider !== "server" || !draftLlm?.active?.provider) return null;
-    return llmServerInventory.find((s) => s.id === draftLlm?.active?.provider) ?? null;
-  }, [activeLlmProvider, draftLlm?.active?.provider, llmServerInventory]);
 
-  const currentProvider: LlmProviderConfig = useMemo(() => {
-    if (activeLlmProvider === "embedded") return { kind: "embedded" };
-    if (activeLlmProvider === "server") {
-      return {
-        kind: "server",
-        provider_id: draftLlm?.active?.provider ?? undefined,
-        base_url: activeServerEntry?.url || "",
-        model: draftLlm?.active?.model || "",
-        api_key: activeServerEntry?.api_key || undefined,
-        provider_name: activeServerEntry?.name || undefined,
-      };
-    }
-    const cloudId = draftLlm?.active?.provider ?? undefined;
-    const cloudEntry = CLOUD_PROVIDERS.find((p) => p.id === cloudId);
-    return {
-      kind: "cloud",
-      provider_id: cloudId,
-      base_url: cloudEntry?.url || "",
-      model: draftLlm?.active?.model || "",
-      api_key: (cloudId && draftLlm?.cloud_keys?.[cloudId]) || undefined,
-      provider_name: cloudEntry?.name || undefined,
-    };
-  }, [activeLlmProvider, activeServerEntry, draftLlm?.active?.provider, draftLlm?.active?.model, draftLlm?.cloud_keys]);
+  const currentProvider = useSettingsStore(useShallow(selectActiveLlmProvider));
 
-  const { remoteModels, probingMap, handleProbeCapabilities } = useRemoteLlmProbing(
-    currentProvider,
-    "llm",
-    currentCategory === "LLM"
-  );
+  const remoteModels = useCatalogStore((s) => s.remoteModels);
+  const probingMap = useCatalogStore((s) => s.probingMap);
 
   const rawCloudProviders = useMemo((): CloudProvider[] => {
     if (currentCategory === "TTS") {
@@ -218,8 +191,7 @@ export const InteractionConfigDesk = memo(({ activeCategory, onBack, layoutMode 
     if (committedActiveCloudProviderId) {
       const idx = list.findIndex(
         (p) =>
-          p.id === committedActiveCloudProviderId ||
-          getCloudProviderAlias(p.id) === committedActiveCloudProviderId
+          p.id === committedActiveCloudProviderId
       );
       if (idx > 0) {
         const [pinned] = list.splice(idx, 1);
@@ -237,12 +209,12 @@ export const InteractionConfigDesk = memo(({ activeCategory, onBack, layoutMode 
     return list;
   }, [filteredProviders, showAllInline, getProviderKey, activeCloudProviderId, committedActiveCloudProviderId, currentCategory]);
 
-  const { containerRef: providerGridRef, lenisRef: providerLenisRef } = useLenisScrollContainer<HTMLDivElement>();
+  const providerGridRef = useRef<HTMLDivElement | null>(null);
   const providerOrderFingerprint = useMemo(
     () => `${committedActiveCloudProviderId}|${rawCloudProviders.map((p) => (getCommittedProviderKey(p.id)?.trim() ? "1" : "0")).join("")}`,
     [committedActiveCloudProviderId, rawCloudProviders, getCommittedProviderKey]
   );
-  useScrollTopOnChange(providerGridRef, providerOrderFingerprint, providerLenisRef);
+  useScrollTopOnChange(providerGridRef, providerOrderFingerprint);
 
   useEffect(() => {
     if (currentProvider.kind === "embedded") {
@@ -587,12 +559,12 @@ export const InteractionConfigDesk = memo(({ activeCategory, onBack, layoutMode 
                 selectedModelId={draftLlm?.active?.model}
                 pinnedModelId={committedSettings?.llm?.active?.model}
                 probingMap={probingMap}
-                capabilitiesCache={useSettingsStore.getState().capabilitiesCache}
+                capabilitiesCache={useCatalogStore.getState().capabilitiesCache}
                 onSelectModel={(modelId) => {
                   const cur = useSettingsStore.getState().draftSettings?.llm?.active;
                   if (cur && (cur.category === "server" || cur.category === "cloud")) updateDraft("llm", "active", { ...cur, model: modelId });
                 }}
-                onProbeCapabilities={handleProbeCapabilities}
+                onProbeCapabilities={() => {}}
               />
             ) : (
               <ProviderModal {...providerSelection} onAddCustomServer={handleOpenCustomServer} />
@@ -637,7 +609,6 @@ export const InteractionConfigDesk = memo(({ activeCategory, onBack, layoutMode 
               showAllInline={showAllInline}
               onToggleShowAll={() => {
                 setShowAllInline((v) => !v);
-                setTimeout(() => providerLenisRef.current?.resize(), 50);
               }}
               totalProvidersCount={filteredProviders.length}
               containerRef={providerGridRef}

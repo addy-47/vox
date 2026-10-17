@@ -51,7 +51,6 @@ pub fn lookup_preset(id: &str) -> Option<ProviderPresetMeta> {
     presets.into_iter().find(|p| {
         p.id == lower
             || p.name.to_lowercase() == lower
-            || (p.id == "nvidia_nim" && lower == "nvidia")
     })
 }
 
@@ -146,10 +145,10 @@ mod tests {
                     preset.id
                 );
             }
-            if preset.id == "nvidia_nim" {
+            if preset.id == "nvidia" {
                 assert!(
                     !preset.stream_usage,
-                    "nvidia_nim: stream_options causes intermittent 503s"
+                    "nvidia: stream_options causes intermittent 503s"
                 );
             }
         }

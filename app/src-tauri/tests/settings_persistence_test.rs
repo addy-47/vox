@@ -17,7 +17,7 @@ use std::{
 
 use common::paths::TempPathsGuard;
 use vox_lib::{
-    config::{apply_setting_mutation, VoxSettings},
+    config::{apply_setting_mutation, apply_settings_patch_tree, VoxSettings},
     core::events::PipelineMode,
     pipeline::dictation::DictationOutputMode,
     services::vad::VadBackendOption,
@@ -673,4 +673,25 @@ fn test_settings_3way_partial_corruption_recovery() {
         Instant::now() < deadline,
         "test_settings_3way_partial_corruption_recovery exceeded 10s deadline"
     );
+}
+
+#[test]
+fn test_apply_settings_patch_tree_atomic_multi_key() {
+    let mut settings = VoxSettings::default();
+    let patch = serde_json::json!({
+        "appearance": { "theme": "dark" },
+        "vad": { "threshold": 0.7 }
+    });
+    let changed = apply_settings_patch_tree(&mut settings, &patch).expect("patch should apply");
+    assert_eq!(changed.len(), 2);
+    assert!(changed.contains(&("appearance".to_string(), "theme".to_string())));
+    assert!(changed.contains(&("vad".to_string(), "threshold".to_string())));
+    assert_eq!(settings.appearance.theme, "dark");
+    assert_eq!(settings.vad.threshold, 0.7);
+
+    // Unknown key must error and leave settings untouched.
+    let before = settings.clone();
+    let bad = serde_json::json!({ "appearance": { "nope": true } });
+    assert!(apply_settings_patch_tree(&mut settings, &bad).is_err());
+    assert_eq!(settings.appearance.theme, before.appearance.theme);
 }

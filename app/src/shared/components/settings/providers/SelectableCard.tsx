@@ -5,6 +5,8 @@ import { ProviderLogo } from "./ProviderLogo";
 export interface SelectableCardProps {
   id: string;
   name: string;
+  /** Optional brand-name hint forwarded to ProviderLogo for engine-logo inference. */
+  providerName?: string;
   tagline?: string;
   logo?: string | null;
   isSelected: boolean;
@@ -18,6 +20,7 @@ export interface SelectableCardProps {
 export const SelectableCard = memo(({
   id,
   name,
+  providerName,
   tagline,
   logo,
   isSelected,
@@ -52,7 +55,7 @@ export const SelectableCard = memo(({
             ? "bg-[rgba(var(--accent),0.12)] border-[rgba(var(--accent),0.3)] shadow-[0_0_12px_rgba(var(--accent),0.15)]"
             : "bg-[rgba(var(--foreground),0.04)] border-[rgba(var(--foreground),0.07)] group-hover:border-[rgba(var(--accent),0.25)]"
         )}>
-          <ProviderLogo providerId={id} logo={logo} size={24} />
+          <ProviderLogo providerId={id} providerName={providerName ?? name} logo={logo} size={24} />
         </div>
         <h4 className="font-bold text-[14.5px] text-[rgb(var(--foreground))] tracking-tight truncate w-full text-center mt-2.5 leading-tight group-hover:text-[rgb(var(--accent))] transition-colors">
           {name}

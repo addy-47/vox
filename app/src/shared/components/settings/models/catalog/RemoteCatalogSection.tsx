@@ -6,12 +6,12 @@ import {
   useCallback,
 } from "react";
 import {
-  Loader2,
   ServerCog,
   Cloud,
   RefreshCw,
   AlertCircle,
   AlertTriangle,
+  Loader2,
   Sparkles,
   Cpu,
   Gauge,
@@ -34,6 +34,7 @@ import {
   type ModelCapabilities,
   type LlmProviderConfig,
 } from "@/store/settingsStore";
+import { useCatalogStore } from "@/store/catalogStore";
 import { ProviderModal } from "../../providers/ProviderModal";
 import { useProviderSelection } from "@/shared/hooks/useProviderSelection";
 import { ModelModal } from "../../providers/ModelModal";
@@ -70,7 +71,7 @@ export const RemoteCatalogSection = memo(({
   handleProbeCapabilities,
 }: RemoteCatalogSectionProps) => {
   const updateDraft = useSettingsStore((s) => s.updateDraft);
-  const capabilitiesCache = useSettingsStore((s) => s.capabilitiesCache);
+  const capabilitiesCache = useCatalogStore((s) => s.capabilitiesCache);
   const committedSettings = useSettingsStore((s) => s.settings);
 
   // Modal View: "models" | "providers"
@@ -92,7 +93,6 @@ export const RemoteCatalogSection = memo(({
     "all" | "favorites" | "benchmarked" | "tools" | "fast"
   >("all");
   const [isFilterOpen, setIsFilterOpen] = useState(false);
-
   const { favoriteModelIds } = useFavoriteModels();
 
   /** Resolved probe capabilities for a model (live probe → model payload →
@@ -189,8 +189,8 @@ export const RemoteCatalogSection = memo(({
     });
     models = sorted;
 
-    // Active card primacy: committedRemoteModelId (or selectedModelId) is placed first in the list
-    const activeModelId = committedRemoteModelId || selectedModelId;
+    // Active card primacy: only the committed model pins to the top.
+    const activeModelId = committedRemoteModelId;
     console.log("[RemoteCatalogSection] Model primacy:", {
       activeModelId,
       committedRemoteModelId,
@@ -217,7 +217,6 @@ export const RemoteCatalogSection = memo(({
     sort,
     favoriteModelIds,
     resolveCapabilities,
-    selectedModelId,
     committedRemoteModelId,
   ]);
 
@@ -225,7 +224,7 @@ export const RemoteCatalogSection = memo(({
   const [visibleModelCount, setVisibleModelCount] = useState(REMOTE_MODEL_PAGE_SIZE);
   useEffect(() => {
     setVisibleModelCount(REMOTE_MODEL_PAGE_SIZE);
-  }, [searchQuery, modelFilter, sort, selectedModelId, committedRemoteModelId, remoteModels]);
+  }, [searchQuery, modelFilter, sort, committedRemoteModelId, remoteModels]);
 
   const visibleInlineModels = useMemo(
     () => filteredRemoteModels.slice(0, visibleModelCount),
@@ -285,7 +284,7 @@ export const RemoteCatalogSection = memo(({
           const inlineProbeError = probingMap[model.id]?.status === "error" ? probingMap[model.id]?.error : undefined;
           const isGpu = probed?.is_gpu_accelerated;
 
-          // Check if name is essentially a duplicate of the raw ID (e.g. "01 ai/yi large" vs "01-ai/yi-large")
+          // Check if name is essentially a duplicate of the raw ID
           const isIdDuplicateOfName =
             !model.name ||
             model.name.toLowerCase().replace(/[\s\-_/]/g, "") ===
@@ -305,19 +304,11 @@ export const RemoteCatalogSection = memo(({
               key={model.id}
               role="button"
               tabIndex={0}
-              onClick={() => {
-                const active = useSettingsStore.getState().draftSettings?.llm?.active;
-                if (active && (active.category === "server" || active.category === "cloud")) {
-                  updateDraft("llm", "active", { ...active, model: model.id });
-                }
-              }}
+              onClick={() => handleSelectModel(model.id)}
               onKeyDown={(e) => {
                 if (e.key === "Enter" || e.key === " ") {
                   e.preventDefault();
-                  const active = useSettingsStore.getState().draftSettings?.llm?.active;
-                  if (active && (active.category === "server" || active.category === "cloud")) {
-                    updateDraft("llm", "active", { ...active, model: model.id });
-                  }
+                  handleSelectModel(model.id);
                 }
               }}
               className={cn(
@@ -483,9 +474,7 @@ export const RemoteCatalogSection = memo(({
                         <span>{LLM_CATALOG_COPY.capabilities}</span>
                       </div>
                     </Tooltip>
-                  ) : (
-                    null
-                  )}
+                  ) : null}
                 </div>
 
                 {/* Right Bottom: Re-probe / Benchmark Button */}

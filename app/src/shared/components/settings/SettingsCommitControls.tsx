@@ -2,6 +2,7 @@ import { memo, useCallback, useMemo } from "react";
 import { AlertCircle, Check, RefreshCw } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { useSettingsStore, type SettingsState, SETTINGS_DOMAIN_TO_UI } from "@/store/settingsStore";
+import { useCatalogStore } from "@/store/catalogStore";
 import { SETTINGS_COPY, INTERACTION_CONFIG_DESK_COPY } from "@/data/settingsCopy";
 import { useExpandableList } from "@/shared/ui/ExpandableList";
 import { useViewportResize } from "@/shared/hooks/useViewportResize";
@@ -280,7 +281,7 @@ SettingsCommitControls.displayName = "SettingsCommitControls";
 export const ModalProviderFooter = memo(({ category }: { category: "STT" | "LLM" | "TTS" }) => {
   const isTts = category === "TTS";
   const failedKeys = useSettingsStore((s) => s.failedSaveDomains[isTts ? "tts" : "models"]);
-  const remoteModelsError = useSettingsStore((s) => s.remoteModelsError);
+  const remoteModelsError = useCatalogStore((s) => s.remoteModelsError);
   const draftSettings = useSettingsStore((s) => s.draftSettings);
   const committedSettings = useSettingsStore((s) => s.settings);
   const llmCategory = draftSettings?.llm?.active?.category;

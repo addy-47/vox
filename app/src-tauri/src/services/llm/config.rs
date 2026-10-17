@@ -217,15 +217,7 @@ impl LlmSettings {
                     Some(id) if !id.trim().is_empty() => id.trim(),
                     _ => DEFAULT_LLM_CLOUD_PROVIDER_NAME,
                 };
-                let api_key = provs.cloud_keys.get(provider_id).cloned().or_else(|| {
-                    if provider_id == "nvidia" {
-                        provs.cloud_keys.get("nvidia_nim").cloned()
-                    } else if provider_id == "nvidia_nim" {
-                        provs.cloud_keys.get("nvidia").cloned()
-                    } else {
-                        None
-                    }
-                });
+                let api_key = provs.cloud_keys.get(provider_id).cloned();
                 use crate::services::llm::catalog::lookup_preset;
                 let preset = lookup_preset(provider_id);
                 match preset {
