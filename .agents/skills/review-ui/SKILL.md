@@ -1,129 +1,201 @@
 ---
 name: review-ui
-description: Deterministic architectural, performance, and memory audit suite for the Vox frontend. Contains internal scripts for fast static invariant checks via `pnpm test`, headless CDP stress-testing across all 7 drawers and edge panels, and extended 5-minute soak testing. Formats reports using the `/review-v2` rubric.
+description: Audit and review Vox frontend changes with the UI trade-off tiers as the main rubric. Hunts first for the frontend doing the backend's job (hacks around a missing backend contract), then ad-hoc implementations that bypass shared primitives and tokens, then performance and memory. Runs the deterministic scripts (`pnpm lint:arch`, drawer stress test, soak test) and labels every finding with a visible-impact tier and a category. Use whenever frontend code is modified or reviewed (components, drawers, panels, modals, animations, stores, hooks, services), even for a "quick look" or "does this look right".
 ---
 
-# `review-ui` — Vox Frontend Deterministic Audit & Stress Suite
+# `review-ui` — Vox Frontend Audit
 
 ## 0. Purpose
 
-Eliminates manual guessing, silent simplifications, and repetitive human-in-the-loop debug cycles by enforcing automated, deterministic tests for Vox frontend style guide invariants, memory leaks, and drawer/panel rendering bottlenecks.
+Eliminates manual guessing, silent simplifications, and repetitive human-in-the-loop debug cycles. Two questions drive every review:
+1. **What changes for the user?** Every finding is tiered by visible impact.
+2. **Does the frontend stay on its side of the backend contract?** The frontend consumes the contract; it must not replicate it or compensate for gaps in it.
 
 ---
 
-## 1. When to Use Which Script (Agent Decision Tree)
-
-Whenever an agent touches or evaluates frontend code, consult this matrix to pick the right script:
+## 1. Run the Scripts First (Agent Decision Tree)
 
 ```
 Did you modify/review frontend code?
  │
  ├── Touched TypeScript/React components, stores, hooks, or services?
- │    └── ▶ RUN: `pnpm test` (or `node .agents/skills/vox-ui-audit/scripts/check_invariants.mjs`)
- │         ⏱ Time: <300ms
- │         🎯 Catches: Raw IPC outside `src/services/`, store destructuring, canvas unmount leaks, unmemoized context providers.
+ │    └── ▶ RUN: `pnpm lint:arch`, ESLint, and `pnpm test`
+ │         🎯 lint:arch catches: canvas teardown, GPU layer promotion on overlay hosts, unmemoized context providers, provider-id literals, theme-transition contract, glass duration utilities, breakpoint/dialog/shortcut SSOT, probe-arg casing, catalog copy, ProviderCaps fields nobody reads.
  │
  ├── Touched Drawers, Panels, Modals, Popovers, or CSS/Framer-Motion animations?
- │    └── ▶ RUN: `node .agents/skills/vox-ui-audit/scripts/stress_drawers.mjs`
+ │    └── ▶ RUN: `node .app/scripts/stress_drawers.mjs`
  │         ⏱ Time: ~35s
  │         🎯 Catches: Animation frame drops (<50 FPS), missing GPU layer promotion (`transform-gpu`), layout thrashing, unmounted DOM accumulation across all 7 drawers/panels.
  │
  └── Touched WebGL shaders, Three.js scenes, audio loops, or long-running state management?
-      └── ▶ RUN: `node .agents/skills/vox-ui-audit/scripts/soak_test.mjs`
+      └── ▶ RUN: `node .app/scripts/soak_test.mjs`
            ⏱ Time: ~5 min
            🎯 Catches: Monotonic RAM growth, WebKitGTK backing store accumulation, uncollected event listeners, memory leaks.
 ```
 
+**Who owns which check** (do not re-derive what a tool already reports):
+
+| Tool | Owns |
+| :--- | :--- |
+| ESLint | No `any`; import and module-boundary rules, including raw IPC outside `src/services/` |
+| `pnpm lint:arch` | Source-text invariants over `src/**` (list above) |
+| `pnpm test` | Behavior tests in `src/test/**` |
+| `stress_drawers.mjs` | Transition FPS, layout counts, DOM drift |
+| `soak_test.mjs` | Heap slope (MB/min), backing-store growth, listener leaks |
+
+- A script failure is a 🚦 INVARIANT finding; report it with the script's own line numbers.
+- `lint:arch` is a source-text check, not a behavior test: a pass does not prove the behavior or the contract is right.
+- If you did not run a script, say "not run" in the report. Never imply a pass.
+
 ---
 
-## 2. Bundled Scripts Inside This Skill
-
-All scripts live directly within `.agents/skills/vox-ui-audit/scripts/`:
+## 2. Bundled Scripts
 
 | Script | Command | Purpose |
 | :--- | :--- | :--- |
-| **`check_invariants.mjs`** | `node .agents/skills/vox-ui-audit/scripts/check_invariants.mjs`<br>*(also wired to `pnpm test`)* | Instant static AST invariant audit. Fails fast with line numbers if style guide rules are violated. |
-| **`stress_drawers.mjs`** | `node .agents/skills/vox-ui-audit/scripts/stress_drawers.mjs` | Automated headless Chrome DevTools Protocol (CDP) runner exercising all 7 drawers & edge panels. Measures real transition FPS, layout counts, and DOM drift. |
-| **`soak_test.mjs`** | `node .agents/skills/vox-ui-audit/scripts/soak_test.mjs` | 5-minute continuous soak test cycling all routes with live drawer/panel interactions. Logs high-frequency telemetry and calculates MB/min heap slope. |
+| **`lint-arch`** | `pnpm lint:arch` | Fast static source-text invariant audit over `src/**`. Fails with file:line when a rule is violated. |
+| **`stress_drawers.mjs`** | `node .app/scripts/stress_drawers.mjs` | Automated headless Chrome DevTools Protocol (CDP) runner exercising all 7 drawers & edge panels. Measures real transition FPS, layout counts, and DOM drift. |
+| **`soak_test.mjs`** | `node .app/scripts/soak_test.mjs` | 5-minute continuous soak test cycling all routes with live drawer/panel interactions. Logs high-frequency telemetry and calculates MB/min heap slope. |
 
 ---
 
-## 3. Review the findings and componets using the rubric below after running scripts
+## 3. Review Rubric (apply after running the scripts)
 
-### Step 0 — Establish Scale and Intent (Mandatory, First)
+### Labels
 
-Before critiquing anything, determine what this code is actually for. If not already clear from context, ask:
+Every finding carries one **tier**, one **category**, and optionally the 🔴 overlay. Format: `[⚖️ T3 · 🔌 BACKEND-GAP]`.
 
-- Is this a proof of concept, an MVP, or production code expected to hold under real load?
-- Roughly what scale — a handful of users, thousands, or millions?
+| Tier | Label | Meaning |
+|------|-------|---------|
+| T1 | 🐛 Pure Fix | Zero visible change. Same pixels, fewer resources: dead code, redundant re-renders, unnecessary re-computation. |
+| T2 | 💡 Subtle Refactor | Users would barely notice: reduced frame rate in a background effect, fewer blur layers, a minor timing shift. |
+| T3 | ⚖️ Trade-off | Users would notice: removing a visual layer, changing an animation, restructuring a component's appearance or behavior. |
 
-**Calibrate everything that follows against this answer.** A pattern that's over-engineering for a weekend POC is exactly correct for a system built for a million users, and vice versa. Do not apply production-scale standards to a POC, and do not wave away real risk in something headed to production because "it works for now."
+Tier describes what the user sees after the fix, not how big the diff is. If a proposed fix would push a finding into T3, say so and flag it as needing sign-off before applying: a visible trade-off is a design decision, not just a code cleanup.
 
-State your calibration explicitly before the review: "Reviewing this as [POC/MVP/production] scale — critique is calibrated accordingly."
+| Category | Meaning |
+|----------|---------|
+| 🔌 BACKEND-GAP | The frontend replicates the backend contract or does the backend's job. |
+| 🧩 AD-HOC | A one-off implementation that bypasses a shared primitive, token, hook, or service. |
+| ⚡ PERF/MEM | Frame rate, re-renders, leaks, resource cost. |
+| 🚦 INVARIANT | Reported by a script or by ESLint. |
+| 🪦 DEAD/BLOAT | Dead code, duplicates, or far more code than the job needs. |
 
-**Also determine: does this code affect UI, rendering, or anything user-visible?** If yes, Step 3.5 (visual impact tiering) applies alongside normal severity. If this is backend, infra, or non-visual logic — skip it entirely, do not force it.
+**🔴 overlay:** the code will break under a specific, nameable condition ("breaks when X happens because Y"). Not vague unease.
+
+Do not inflate a stylistic preference into a 🔴 or a T3. Say clearly which findings are real risk and which are optional.
+
+---
+
+### Step 0 — Calibrate (Mandatory, First)
+
+- **Surface:** main window, tray HUD, or setup wizard. They are separate webviews with different lifecycles.
+- **Hardware floor:** judge resource cost against the low end the project supports (see the hardware tiers in `docs/backend.md` §2), not a development machine.
+- **Visibility:** non-visual code (services, store, hooks) still gets a tier; with no visible effect it is T1 unless it changes behavior.
+
+Read what applies before critiquing: `AGENTS.md` §5 (invariants), `docs/design.md`, `*style-guides` §8 and §10 (event contract, reload policies). Do not assume them.
+
+State it: "Reviewing [surface], calibrated to [hardware floor]."
 
 ---
 
 ### Step 1 — Read for Understanding First
 
-Before critiquing, understand what the code is actually trying to do. Do not review line-by-line in isolation — understand the shape of the whole thing first, then go back in with scrutiny.
+Understand what the UI does before critiquing. For each value or piece of state that reaches the screen, trace where it comes from: a backend event, a service call, the store, or a local derivation. Understand the whole shape first, then go back in with scrutiny. This trace feeds Step 2a.
 
 ---
 
-### Step 2 — Hunt
+### Step 2 — Hunt, in this order
 
-Actively look for, in this order of severity:
+#### 2a. 🔌 BACKEND-GAP (most important)
 
-**Will break / already broken**
-- Code paths that will fail under a specific, nameable condition — not vague unease, an actual scenario ("this will break when X happens because Y")
-- Race conditions, unhandled errors, silent failure modes
-- Assumptions that don't hold (e.g. assuming a list is never empty, assuming a call never times out)
+State flows one way, pipeline → UI. The event and command contract, payloads, and reload policies belong to the backend. Look for the frontend working around a missing or awkward contract:
 
-**Redundant or unnecessary**
-- Code that duplicates logic that already exists elsewhere in the codebase
-- Abstractions with only one implementation and no near-term second one
-- Defensive code against conditions that cannot actually occur given the calibration from Step 0
+- Inferring or guessing state the backend owns: timers that "wait for the engine to be ready", mood or state derived from combinations of events instead of consuming the backend's state event.
+- Re-implementing backend validation, clamping, or defaults.
+- Hardcoded capability, hardware-tier, model, or reload-policy tables. For example, check whether the store's `restartKeys` come from the backend's reload policy or are hardcoded on the frontend.
+- Parsing error strings or message text to decide behavior.
+- Polling or refetching whole state because no change event exists.
+- Shadow copies of backend state that the frontend must reconcile.
+- Retries, debounces, or delays that paper over a backend race.
+- Branching on `pipeline_mode` for lifecycle. The frontend calls the same verbs and the backend routes.
+- Passing the same argument in two casings, or other signs the contract is unclear.
+- Estimating or computing a metric the backend already measures.
 
-**Over-engineered relative to stated scale**
-- Patterns, layers, or generality that solve a problem this system doesn't have at its current scale
-- If this is a POC/MVP: flag anything built for a scale or flexibility need that doesn't exist yet
-- If this is production at real scale: flag anything too thin or too naive for the stated load
+**Test:** could this be one field, event, or command from the backend? If yes, and the frontend is computing or guessing it, flag 🔌.
+**Not a finding:** presentation logic. Mapping an event to a visual mood or formatting a value for display is the frontend's job.
 
-**Bloat**
-- 100 lines doing what 10 could. This is the classic finding — locate it and show the replacement.
+**Output rule.** Never fix a 🔌 finding by adding more frontend code. Report a **Backend Ask** (format in Step 3). A hack that must stay for now gets a greppable comment: `backend-gap: <what the backend should provide>`.
+
+#### 2b. 🧩 AD-HOC
+
+- Hex colors, arbitrary Tailwind values, or inline styles instead of design tokens.
+- A new glass elevation level instead of the closed set.
+- Native `title` attributes used as tooltips instead of the shared `Tooltip`.
+- Custom Escape or outside-click listeners instead of the overlay stack.
+- Hand-rolled drawers, popovers, or modals instead of the shared primitives.
+- Bespoke animation loops instead of the shared frame-rate hook.
+- Copy outside `shared/data`.
+- Raw IPC in components instead of the service layer.
+- A new hook or helper that duplicates one in `shared/`.
+- Magic numbers for breakpoints or durations that have an SSOT.
+
+#### 2c. ⚡ PERF/MEM
+
+Script results first. Then what the scripts can't see:
+- Unmemoized heavy components, re-render cascades, missing fine-grained selectors.
+- Fast-changing values in the store or context instead of local state or refs.
+- Unthrottled or non-visibility-aware animation work; idle states should drive 0 FPS.
+- Event listeners not registered through the shared cleanup wrapper.
+- Stale async results applied after unmount or a route change.
+- Unhandled errors and silent failure modes (for example, an IPC call that rejects and shows nothing).
+- Assumptions that don't hold (a list never empty, a call that never times out or never resolves).
+- The backend not being ready treated as an edge case instead of the default.
+
+#### 2d. 🪦 DEAD/BLOAT
+
+- Dead code, duplicated components, code that duplicates logic that already exists elsewhere in the codebase.
+- Abstractions with one implementation and no near-term second.
+- Defensive code against conditions that cannot occur on this surface.
+- Contract fields or props nobody reads.
+- 100 lines doing what 10 could. Locate it and show the replacement.
 
 ---
 
 ### Step 3 — For Every Finding
 
-Do not just describe the problem. For each finding:
+1. **What it is:** specific, with file and location.
+2. **Why it matters:** the actual cost or failure mode, tied to the Step 0 calibration, and what the user does or doesn't see.
+3. **The replacement:** show the actual code, not "this should be simpler." For 🔌, give the Backend Ask instead, plus what the frontend looks like once the backend provides it.
+4. **Label:** tier, category, and 🔴 if it applies.
 
-1. **What it is** — specific, not vague
-2. **Why it matters** — the actual failure mode or cost, tied to the scale established in Step 0
-3. **The replacement** — show the actual simpler/correct code, not just "this should be simpler." If it's a 100-line block that should be 10 lines, write the 10 lines.
-4. **Severity** — 🔴 will break / 🟠 will cause real pain at stated scale / 🟡 stylistic preference, optional
+**Backend Ask format:**
+- **Hack:** what the frontend does today, and where.
+- **Backend should provide:** the command, event, or payload field.
+- **Contract home:** where it belongs (event contract, reload policies, or IPC command surface).
+- **Interim:** leave it marked with `backend-gap:` or remove it if it is harmful. Never extend it.
 
-Do not inflate stylistic preferences to the same severity as real risk. Say clearly which is which.
-
-For every finding on UI/visual code, additionally classify:
-
-| Tier | Label | Meaning |
-|------|-------|---------|
-| Tier 1 | 🐛 Bug - Pure Fix | Zero visible change. Same pixels, fewer resources — dead code, redundant re-renders, unnecessary re-computation. |
-| Tier 2 | 💡 Subtle Refactor | Users would barely notice — reduced frame rate in a background effect, fewer blur layers, minor timing shift in an animation. |
-| Tier 3 | ⚖️ Trade-off | Users would notice — removing a visual layer, changing an animation, restructuring a component's appearance or behavior. |
-
-If proposing the fix/replacement from Step 3 would push a finding into Tier 3, say so explicitly and flag it as needing sign-off before applying — a visible trade-off is a design decision, not just a code cleanup, even if the code-level fix is trivial.
+Backend Asks are inputs to the create-tickets skill: each becomes a ticket with `Layer: backend`, blocking the frontend ticket that depends on it.
 
 ---
 
 ### Step 4 — What NOT to Flag
 
-- Do not flag patterns that are correct for the stated scale, even if they'd be excessive at a different scale
-- Do not flag genuine stylistic differences as bugs
-- Do not manufacture findings to appear thorough — if a section is actually fine, say so and move on
+- Patterns that are correct for the calibrated surface and hardware floor.
+- Genuine stylistic differences as bugs.
+- Presentation-only derivations (see the 2a exception).
+- Anything a script or ESLint already reported: report it once as 🚦, do not re-derive it.
+- Do not manufacture findings to appear thorough. If a section is fine, say so and move on.
 
 ---
 
 ### Step 5 — Final Report
+
+1. **Calibration line** from Step 0.
+2. **Scripts:** each one as run (pass/fail) or "not run".
+3. **Tier summary:** `🐛 T1: n · 💡 T2: n · ⚖️ T3: n (need sign-off)`, plus the count of 🔴 overlays.
+4. **Findings,** T3 first, then T2, then T1. Each with its label line, what, why, and replacement.
+5. **Backend Asks:** every 🔌 finding, in the format from Step 3.
+6. **Not verified:** what was not run, or could not be assessed.
+
+T3 findings are not applied without sign-off.
