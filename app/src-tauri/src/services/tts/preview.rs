@@ -5,7 +5,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -27,7 +27,7 @@ use crate::{
         tts::{
             factory::caps_for_id,
             providers::{
-                edge_tts,
+                azure_tts, edge_tts, google_tts,
                 kokoro::{
                     KOKORO_SILENCE_SCALE, MODEL_DIRNAME_TTS_KOKORO_ESPEAK,
                     MODEL_FILE_TTS_KOKORO_LEXICON_US, MODEL_FILE_TTS_KOKORO_MODEL,
@@ -88,7 +88,7 @@ impl PreviewSynthesizer {
         voice_id: &str,
         prompt: Option<&str>,
         engine: Option<&str>,
-        state: &AppState,
+        state: &Arc<AppState>,
     ) -> Result<VoicePreviewResult, VoxIpcError> {
         let interaction_state = state.pipeline.state();
         if interaction_state != InteractionState::Idle {
@@ -140,8 +140,10 @@ impl PreviewSynthesizer {
         let prompt_owned = clean_prompt;
         let provider_owned = provider;
         let target_path_clone = target_path.clone();
+        let state_clone = Arc::clone(state);
         let (task, handle) = futures_util::future::abortable(async move {
             synthesize_for_provider(
+                &state_clone,
                 &provider_owned,
                 &voice_id_owned,
                 &prompt_owned,
@@ -279,6 +281,7 @@ fn normalize_engine_id(engine: &str) -> Option<String> {
 
 /// Dispatches preview synthesis to the voice's owning provider on the correct thread.
 async fn synthesize_for_provider(
+    state: &AppState,
     provider: &str,
     voice_id: &str,
     text: &str,
@@ -326,14 +329,46 @@ async fn synthesize_for_provider(
             log::info!("[Preview] Edge online synthesis voice={}", voice_id);
             edge_tts::synthesize_to_wav(voice_id, text, target_path).await
         }
+        "google_tts" => {
+            log::info!("[Preview] Google Cloud TTS online synthesis voice={}", voice_id);
+            let project_override = state
+                .settings
+                .read()
+                .ok()
+                .and_then(|s| s.providers.tts.google_tts.project_override.clone());
+            google_tts::synthesize_to_wav(
+                voice_id,
+                text,
+                speed,
+                project_override.as_deref(),
+                target_path,
+            )
+            .await
+        }
+        "azure_tts" => {
+            log::info!("[Preview] Azure AI Speech online synthesis voice={}", voice_id);
+            let (region, key, resource_id): (String, String, Option<String>) = {
+                let s = state.settings.read().map_err(|e| anyhow!("Failed to read settings: {}", e))?;
+                (
+                    s.providers.tts.azure_tts.region_or_endpoint.clone(),
+                    s.providers.tts.azure_tts.key.clone(),
+                    s.providers.tts.azure_tts.resource_id.clone(),
+                )
+            };
+            azure_tts::synthesize_to_wav(
+                &region,
+                voice_id,
+                &key,
+                resource_id.as_deref(),
+                text,
+                speed,
+                target_path,
+            )
+            .await
+        }
         "chatterbox" | "chatterbox_remote" | "zipvoice" => Err(anyhow::anyhow!(
             "Voice preview unavailable for '{}': reference audio is not installed.",
             voice_id
-        )),
-        "azure_tts" | "google_tts" => Err(anyhow::anyhow!(
-            "Voice preview unavailable for '{}' (provider '{}'): cloud preview is not implemented.",
-            voice_id,
-            provider
         )),
         _ if voice_id.contains('-') => {
             edge_tts::synthesize_to_wav(voice_id, text, target_path).await
