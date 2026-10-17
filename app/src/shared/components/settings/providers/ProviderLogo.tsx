@@ -11,7 +11,7 @@ export interface ProviderLogoProps {
 export interface ProviderLogoDef {
   id: string;
   aliases: readonly string[];
-  render: (props: { size: number; className?: string }) => JSX.Element;
+  render: (props: { size: number; className?: string }) => any;
 }
 
 export const FallbackServerLogo = ({ size, className }: { size: number; className?: string }) => (

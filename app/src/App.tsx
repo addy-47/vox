@@ -10,11 +10,11 @@ import { LAYOUT_COPY } from "@/data/layoutCopy";
 import { MemoryProfilerProvider } from "@/shared/context/MemoryProfilerContext";
 import { VoiceSessionProvider } from "@/shared/context/VoiceSessionContext";
 import { ProfilerDrawerProvider } from "@/shared/components/profiler/ProfilerDrawer";
-import { PanelStateProvider } from "@/shared/hooks/usePanelState";
+import { PanelStateProvider } from "@/shared/context/PanelStateContext";
 import { useNotificationStore } from "@/store/notificationStore";
 import { installOverlayStack } from "@/shared/lib/overlayStack";
 import { getCurrentWindowLabel } from "@/services/windowService";
-import { isRealMobileDevice } from "@/shared/hooks/useMobileViewport";
+import { isRealMobileDevice } from "@/layout/breakpoints";
 import { AnimatePresence, motion, MotionConfig } from "framer-motion";
 
 // Route-level preloads (desktop-first): secondary chunks warm only when the

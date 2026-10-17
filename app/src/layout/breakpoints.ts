@@ -34,3 +34,17 @@ export function isCompactWidth(width?: number): boolean {
 export function isMobileWidth(width?: number): boolean {
   return (width ?? currentWidth(BREAKPOINT_MOBILE_MAX)) < BREAKPOINT_MOBILE_MAX;
 }
+
+/**
+ * True only for a real handheld OS: Android or iOS.
+ *
+ * Use this to gate anything that would be wrong on a real device — chiefly the
+ * developer chrome in `WizardRoot` (the "Android Flow" / "Phone Frame"
+ * toggles), which exists to preview the mobile layout from a desktop browser and
+ * must never appear on the device it is previewing.
+ */
+export function isRealMobileDevice(): boolean {
+  if (typeof navigator === "undefined") return false;
+  return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+}
+

@@ -24,8 +24,7 @@ import { Tooltip } from "@/shared/ui/Tooltip";
 import { ExpandableList } from "@/shared/ui/ExpandableList";
 import { SettingsCommitControls } from "@/shared/components/settings/SettingsCommitControls";
 import { fzfMultiTermScore } from "@/shared/lib/fuzzy";
-import { useScrollTopOnChange } from "@/shared/hooks/useScrollTopOnChange";
-import { useLenisScrollContainer } from "@/shared/hooks/useLenisScrollContainer";
+import { useLenisScrollContainer, useScrollTopOnChange } from "@/shared/hooks/useLenisScrollContainer";
 import { useFavoriteModels } from "@/shared/hooks/useFavoriteModels";
 import { LLM_CATALOG_COPY } from "@/data/settingsCopy";
 import { CLOUD_PROVIDERS } from "@/data/providersCopy";
@@ -35,8 +34,9 @@ import {
   type ModelCapabilities,
   type LlmProviderConfig,
 } from "@/store/settingsStore";
-import { CloudProvidersModalView, useCloudProvidersModalState } from "../../providers/CloudProvidersModalView";
-import { RemoteModelsModalView } from "../../providers/RemoteModelsModalView";
+import { ProviderModal } from "../../providers/ProviderModal";
+import { useProviderSelection } from "@/shared/hooks/useProviderSelection";
+import { ModelModal } from "../../providers/ModelModal";
 import {
   CatalogFilterItem,
   CatalogFilterMenu,
@@ -80,7 +80,7 @@ export const RemoteCatalogSection = memo(({
   // always the models catalog.
   const showProvidersView = provider?.kind === "cloud";
   const activeModalView = showProvidersView ? catalogModalView : "models";
-  const cloudProvidersModalProps = useCloudProvidersModalState({
+  const cloudProvidersModalProps = useProviderSelection({
     onNavigateToModels: () => setCatalogModalView("models"),
   });
 
@@ -672,7 +672,7 @@ export const RemoteCatalogSection = memo(({
         headerActions={<SettingsCommitControls domainId="models" layoutMode={layoutMode} />}
         modalContent={
           activeModalView === "models" ? (
-            <RemoteModelsModalView
+            <ModelModal
               remoteModels={remoteModels}
               selectedModelId={selectedModelId}
               pinnedModelId={committedRemoteModelId}
@@ -682,7 +682,7 @@ export const RemoteCatalogSection = memo(({
               onProbeCapabilities={handleProbeCapabilities}
             />
           ) : (
-            <CloudProvidersModalView {...cloudProvidersModalProps} />
+            <ProviderModal {...cloudProvidersModalProps} />
           )
         }
       >

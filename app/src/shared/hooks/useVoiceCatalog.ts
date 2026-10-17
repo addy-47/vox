@@ -8,8 +8,12 @@ import {
   synthesizeVoicePreview,
   toggleVoiceFavorite,
   voicePreviewUrl,
+  getVoiceScope,
+  type VoiceScopeDto,
   type UnifiedVoiceDto,
 } from "@/services/voicesService";
+
+export type { VoiceScopeDto };
 
 export interface UseVoiceCatalogOptions {
   provider?: string;
@@ -395,4 +399,64 @@ export function useVoiceCatalog(
     stopPreview,
   };
 }
+
+const FALLBACK_SCOPE: VoiceScopeDto = {
+  voice_provider: "",
+  can_clone: false,
+  cloud_sync: false,
+};
+
+export interface VoiceScopeState {
+  scope: VoiceScopeDto;
+  /** True once the backend has resolved this engine (never render unscoped before). */
+  ready: boolean;
+}
+
+const SCOPE_CACHE = new Map<string, VoiceScopeDto>();
+
+export function useVoiceScope(engine: string | undefined | null): VoiceScopeState {
+  const resolvedEngine = engine ?? "";
+  const cached = resolvedEngine ? SCOPE_CACHE.get(resolvedEngine) : undefined;
+  const [scope, setScope] = useState<VoiceScopeDto>(cached ?? FALLBACK_SCOPE);
+  const [ready, setReady] = useState(Boolean(cached));
+  const [prevEngine, setPrevEngine] = useState(resolvedEngine);
+
+  if (prevEngine !== resolvedEngine) {
+    setPrevEngine(resolvedEngine);
+    const nowCached = resolvedEngine ? SCOPE_CACHE.get(resolvedEngine) : undefined;
+    setScope(nowCached ?? FALLBACK_SCOPE);
+    setReady(Boolean(nowCached));
+  }
+
+  useEffect(() => {
+    const key = resolvedEngine;
+    if (SCOPE_CACHE.has(key)) {
+      setScope(SCOPE_CACHE.get(key)!);
+      setReady(true);
+      return;
+    }
+    let isMounted = true;
+    if (!cached) setReady(false);
+    getVoiceScope(resolvedEngine || undefined)
+      .then((s) => {
+        SCOPE_CACHE.set(key, s);
+        if (isMounted) {
+          setScope(s);
+          setReady(true);
+        }
+      })
+      .catch(() => {
+        if (isMounted) {
+          setScope(FALLBACK_SCOPE);
+          setReady(true);
+        }
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, [resolvedEngine, cached]);
+
+  return { scope, ready };
+}
+
 

@@ -2,8 +2,6 @@ import { useState, useEffect, useMemo, memo } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
 import {
   setupRemoteServer,
-} from "@/services/settingsService";
-import {
   checkTtsProviderHealth,
   getProviderCaps,
 } from "@/services/catalogService";

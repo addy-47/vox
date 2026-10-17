@@ -7,7 +7,7 @@ import {
   GLink,
   MemoryCategory,
   getActiveDynamicPalette,
-} from "@/shared/components/memory/memoryGraphTypes";
+} from "./memoryGraphTypes";
 import { isSoftwareRasterizer } from "@/shared/lib/glUtils";
 
 interface UseMemoryGraphSceneOptions {

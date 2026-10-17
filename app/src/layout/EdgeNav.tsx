@@ -5,7 +5,7 @@ import { SlidersHorizontal, House, Activity, History, Network } from "lucide-rea
 import { cn } from "@/shared/lib/utils";
 import { BottomDockFeather } from "@/shared/ui";
 import { Tooltip } from "@/shared/ui/Tooltip";
-import { isRealMobileDevice } from "@/shared/hooks/useMobileViewport";
+import { isRealMobileDevice } from "@/layout/breakpoints";
 
 const navItems = [
   { icon: House, label: "Home", path: "/" },

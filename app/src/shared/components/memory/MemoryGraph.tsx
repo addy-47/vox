@@ -13,7 +13,7 @@ import * as THREE from "three";
 import { ObservationRecord } from "@/services/memoryService";
 import { MEMORY_COPY } from "@/data/memoryCopy";
 import { useMemoryTrace } from "@/shared/hooks/useMemoryTrace";
-import { useMemoryGraphScene } from "@/shared/hooks/useMemoryGraphScene";
+import { useMemoryGraphScene } from "./useMemoryGraphScene";
 import {
   GNode,
   GLink,

@@ -1,5 +1,5 @@
 import { memo } from "react";
-import { SubModelCard } from "../SubModelCard";
+import { SubModelCard } from "./SubModelCard";
 import type { ModelStatus } from "@/shared/hooks/useModelDownloads";
 import { cn } from "@/shared/lib/utils";
 import { useSettingsStore } from "@/store/settingsStore";

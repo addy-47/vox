@@ -4,7 +4,7 @@ import { SlidersHorizontal, Mic, MicOff, Activity, Radio, Layers, Zap } from "lu
 import { cn } from "@/shared/lib/utils";
 import { SegmentedControl, ToggleTile } from "@/shared/ui";
 import { PipelineProvidersDesk } from "./PipelineProvidersDesk";
-import { LlmConfigDesk } from "./LlmConfigDesk";
+import { InteractionConfigDesk } from "./InteractionConfigDesk";
 import { RealtimeConfigDesk } from "./RealtimeConfigDesk";
 import { DictationConfigDesk } from "./DictationConfigDesk";
 import { DICTATION_COPY, INTERACTION_CARD_COPY, TRIGGER_MODE_COPY, PIPELINE_MODE_COPY } from "@/data/settingsCopy";
@@ -179,7 +179,7 @@ export const InteractionCard = memo(
                       layoutMode === "small" ? "h-auto" : "h-full"
                     )}
                   >
-                    <LlmConfigDesk
+                    <InteractionConfigDesk
                       activeCategory={activeCategory}
                       isModular={isModular}
                       onBack={handleBackFromLevel2}

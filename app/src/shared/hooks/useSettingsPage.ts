@@ -1,8 +1,7 @@
 import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from "react";
 import { SETTINGS_DOMAINS as DOMAINS, type SettingsDomainId as DomainId } from "@/data/settingsCopy";
 import { useSettingsStore } from "@/store/settingsStore";
-import { isCompactWidth } from "@/layout/breakpoints";
-import { isRealMobileDevice } from "@/shared/hooks/useMobileViewport";
+import { isCompactWidth, isRealMobileDevice } from "@/layout/breakpoints";
 
 interface LineCoords {
   x1: number;

@@ -3,15 +3,14 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Header } from "./components/Header";
 import { TranscriptRenderer } from "./components/TranscriptRenderer";
 import { Footer } from "./components/Footer";
-import { useVisibility } from "@/shared/hooks/useVisibility";
-import { useInteraction } from "@/shared/hooks/useInteraction";
+import { useVisibility, useInteraction } from "./useTrayHud";
 import { useTelemetry } from "@/shared/hooks/useTelemetry";
 import { hideTrayWindow, setWindowClickThrough } from "@/services/trayService";
 import { pttStart, pttStop, engageSession, resumeSession } from "@/services/pipelineService";
 import { getRuntimeSnapshot } from "@/services/monitoringService";
 import { getTranscriptHistory } from "@/services/persistenceService";
 import { TRAY_COPY } from "@/data/trayCopy";
-import { useSettings } from "@/shared/hooks/useSettings";
+import { useSettingsStore } from "@/store/settingsStore";
 import { ErrorBoundary } from "@/shared/components/common";
 import {
   onStateChanged,
@@ -47,7 +46,8 @@ async function waitForTrayReady(timeoutMs: number): Promise<boolean> {
 }
 
 export const TrayApp: React.FC = () => {
-  const { settings, isLoading } = useSettings();
+  const settings = useSettingsStore((s) => s.settings);
+  const isLoading = useSettingsStore((s) => s.isLoading);
   
   const [history, setHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState<number>(-1);

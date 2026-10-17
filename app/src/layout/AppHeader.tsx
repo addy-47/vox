@@ -6,7 +6,7 @@ import { ThemeToggleButton } from "@/shared/ui/ThemeToggleButton";
 import { TemporaryChatIcon } from "@/shared/ui/TemporaryChatIcon";
 import { RestoreDefaultsButton } from "@/shared/components/settings/RestoreDefaultsButton";
 import { ActiveSessionHeader } from "@/shared/components/home/ActiveSessionHeader";
-import { usePanelStateContext } from "@/shared/hooks/usePanelState";
+import { usePanelStateContext } from "@/shared/context/PanelStateContext";
 import { useNotificationStore, selectBadgeCount } from "@/store/notificationStore";
 import { useSessionStore } from "@/store/sessionStore";
 import { setSessionPrivateMode } from "@/services/pipelineService";

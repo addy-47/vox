@@ -1,5 +1,3 @@
-import { invoke } from "./transport";
-
 /**
  * Label of the webview this code is running in ("main" | "tray" | "wizard").
  *

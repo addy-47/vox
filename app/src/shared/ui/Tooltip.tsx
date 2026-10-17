@@ -28,7 +28,7 @@ import {
 import { cn } from "@/shared/lib/utils";
 import { getShortcutById } from "@/data/shortcuts";
 import { isSpatialNavigating, subscribeSpatialNavigating } from "@/shared/lib/spatialNavigation";
-import { isRealMobileDevice } from "@/shared/hooks/useMobileViewport";
+import { isRealMobileDevice } from "@/layout/breakpoints";
 
 export interface TooltipProps {
   label: React.ReactNode;

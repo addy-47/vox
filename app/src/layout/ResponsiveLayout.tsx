@@ -8,11 +8,11 @@ import { AppHeader } from "./AppHeader";
 import { AmbientBackground, HelpPanel, NotificationPanel, ErrorBoundary, OrbitalLoader, DelayedFallback } from "@/shared/components/common";
 import { TurnMetricsBadge } from "@/shared/components/home";
 import { EdgePanel, BottomDockFeather } from "@/shared/ui";
-import { usePanelStateContext } from "@/shared/hooks/usePanelState";
+import { usePanelStateContext } from "@/shared/context/PanelStateContext";
 import { useLocation, useNavigate, useOutlet } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Activity } from "lucide-react";
-import { useVoxFootprint } from "@/shared/hooks/useVoxFootprint";
+import { useVoxFootprint } from "@/shared/hooks/useRuntimeSnapshot";
 import { cn } from "@/shared/lib/utils";
 import { ModelStatusOverlay } from "@/shared/components/settings/ModelStatusOverlay";
 import { Tooltip } from "@/shared/ui/Tooltip";
@@ -21,9 +21,8 @@ import { usePageDrawer } from "@/shared/context/PageDrawerContext";
 import { useHistoryFilterStore } from "@/store/historyFilterStore";
 import { useSessionStore } from "@/store/sessionStore";
 import { getStackSize } from "@/shared/lib/overlayStack";
-import { isCompactWidth } from "./breakpoints";
+import { isCompactWidth, isRealMobileDevice } from "./breakpoints";
 import { isCoarsePointer } from "@/lib/capabilities";
-import { isRealMobileDevice } from "@/shared/hooks/useMobileViewport";
 
 const Monitoring = lazy(() => import("@/pages/Monitoring").then((m) => ({ default: m.Monitoring })));
 

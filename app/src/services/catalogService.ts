@@ -2,11 +2,9 @@ import { invoke } from "./transport";
 import type {
   ModelCatalog,
   ProviderCaps,
-  VoxSettings,
   LlmModelInfo,
   LlmProviderConfig,
   ModelCapabilities,
-  ProviderHealthCheckResult,
 } from "@/store/settingsStore";
 
 // ---- Provider health & model catalog (ipc/catalog.rs) ----

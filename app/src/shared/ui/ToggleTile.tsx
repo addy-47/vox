@@ -1,6 +1,6 @@
 import React, { memo, useMemo } from "react";
 import { cn } from "@/shared/lib/utils";
-import { isRealMobileDevice } from "@/shared/hooks/useMobileViewport";
+import { isRealMobileDevice } from "@/layout/breakpoints";
 
 export interface ToggleTileProps {
   title: string;

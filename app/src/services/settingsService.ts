@@ -1,11 +1,6 @@
 import { invoke } from "./transport";
 import type {
   VoxSettings,
-  ModelCatalog,
-  LlmProviderConfig,
-  ModelCapabilities,
-  LlmModelInfo,
-  ProviderCaps,
 } from "@/store/settingsStore";
 
 export interface BootState {
@@ -102,6 +97,11 @@ export interface SettingsContract {
   tts_models?: ModelGroup[];
   realtime_providers?: Array<{
     id: string;
+    name: string;
+    url: string;
+    key_placeholder?: string;
+    tagline?: string;
+    logo?: string;
     voice_field: string;
     supports_web_search: boolean;
     supports_agent_mode: boolean;
@@ -139,17 +139,7 @@ export function getCachedSettingsContract(): SettingsContract | null {
 }
 
 export function isRestartKey(domain: string, key: string): boolean {
-  if (cachedContract?.reload_policies?.[domain]) {
-    return cachedContract.reload_policies[domain][key] === "restart";
-  }
-  const restartScopes: Record<string, string[]> = {
-    stt: ["active", "last_selected", "transliterate_enabled"],
-    llm: ["active", "last_selected", "servers", "cloud_keys"],
-    tts: ["active", "last_selected", "servers"],
-    vad: ["vad_backend"],
-    realtime: ["active", "active_voice_id", "voice", "voice_id", "api_keys"],
-  };
-  return Boolean(restartScopes[domain]?.includes(key));
+  return cachedContract?.reload_policies?.[domain]?.[key] === "restart";
 }
 
 export function getReloadPolicy(domain: string, key: string): SettingReloadPolicy {
@@ -167,14 +157,7 @@ export function getSupportedKeys(domain: string): readonly string[] {
 }
 
 export function isSecretKey(domain: string, key: string): boolean {
-  if (cachedContract?.secret_keys) {
-    return cachedContract.secret_keys.some((s) => s.domain === domain && s.key === key);
-  }
-  return (
-    (domain === "llm" && (key === "cloud_keys" || key === "servers")) ||
-    (domain === "tts" && key === "servers") ||
-    (domain === "realtime" && key === "api_keys")
-  );
+  return Boolean(cachedContract?.secret_keys?.some((s) => s.domain === domain && s.key === key));
 }
 
 export const settingsContractService = {

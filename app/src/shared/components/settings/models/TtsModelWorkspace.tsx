@@ -1,6 +1,6 @@
 import { memo } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
-import { SubModelCard } from "../SubModelCard";
+import { SubModelCard } from "./SubModelCard";
 import type { ModelStatus } from "@/shared/hooks/useModelDownloads";
 import { Loader2 } from "lucide-react";
 import { cn } from "@/shared/lib/utils";

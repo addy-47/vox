@@ -4,7 +4,7 @@ import { LAYOUT_COPY } from "@/data/layoutCopy";
 import { useNavigate } from "react-router-dom";
 import { checkForUpdates, checkForModelUpdates, type UpdateReport, type ModelUpdateReport } from "@/services/setupService";
 import { copyToClipboard } from "@/shared/lib/clipboard";
-import { isRealMobileDevice } from "@/shared/hooks/useMobileViewport";
+import { isRealMobileDevice } from "@/layout/breakpoints";
 
 export const TitleBar: React.FC = () => {
   if (isRealMobileDevice()) return null;

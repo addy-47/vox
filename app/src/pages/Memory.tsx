@@ -28,7 +28,7 @@ import { ErrorBoundary, OrbitalLoader, EmptyState } from "@/shared/components/co
 import { Drawer } from "@/shared/ui/Drawer";
 import { Modal } from "@/shared/ui/Modal";
 import { EdgePanel, BottomDockFeather } from "@/shared/ui";
-import { usePanelStateContext } from "@/shared/hooks/usePanelState";
+import { usePanelStateContext } from "@/shared/context/PanelStateContext";
 import { MEMORY_COPY } from "@/data/memoryCopy";
 import { cn } from "@/shared/lib/utils";
 import { AnimatePresence, motion } from "framer-motion";
