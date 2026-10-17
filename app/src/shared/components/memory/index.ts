@@ -3,7 +3,7 @@ export * from "./MemoryLegendOverlay";
 export * from "./MemoryTimeline";
 export * from "./MemoryNodeTooltip";
 export * from "./SessionNodeTooltip";
-export * from "./SearchBar";
+export * from "./MemorySearchBar";
 export * from "./GraphControlDock";
 export * from "./dynamicGraphPalette";
 export * from "./memoryGraphTypes";

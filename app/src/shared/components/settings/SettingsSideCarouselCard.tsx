@@ -13,18 +13,9 @@ interface SettingsSideCarouselCardProps {
 }
 
 const slideVariants = {
-  enter: (dir: "up" | "down") => ({
-    opacity: 0,
-    y: dir === "up" ? -32 : 32,
-  }),
-  center: {
-    opacity: 1,
-    y: 0,
-  },
-  exit: (dir: "up" | "down") => ({
-    opacity: 0,
-    y: dir === "up" ? 32 : -32,
-  }),
+  enter: { opacity: 0 },
+  center: { opacity: 1 },
+  exit: { opacity: 0 },
 };
 
 export const SettingsSideCarouselCard = memo(({
@@ -52,7 +43,6 @@ export const SettingsSideCarouselCard = memo(({
     return primaryId;
   });
 
-  const [direction, setDirection] = useState<"up" | "down">("down");
 
   // Keep in sync when user clicks a specific radial node in the hub
   useEffect(() => {
@@ -70,14 +60,12 @@ export const SettingsSideCarouselCard = memo(({
 
   // 1-click immediate switch to bottom card (direction: down)
   const handleSwitchToBottom = useCallback(() => {
-    setDirection("down");
     setCurrentId(secondaryId);
     onSwitchDomain(secondaryId);
   }, [secondaryId, onSwitchDomain]);
 
   // 1-click immediate switch to top card (direction: up)
   const handleSwitchToTop = useCallback(() => {
-    setDirection("up");
     setCurrentId(primaryId);
     onSwitchDomain(primaryId);
   }, [primaryId, onSwitchDomain]);
@@ -107,15 +95,14 @@ export const SettingsSideCarouselCard = memo(({
       )}
 
       {/* ── Card: anchored in-place, never shifts ───────────────────────────── */}
-      <AnimatePresence mode="wait" custom={direction}>
+      <AnimatePresence mode="wait">
         <motion.div
           key={currentId}
-          custom={direction}
           variants={slideVariants}
           initial="enter"
           animate="center"
           exit="exit"
-          transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+          transition={{ duration: 0.12, ease: "easeOut" }}
           className="w-full flex items-center justify-center"
         >
           <SettingsCardWrapper

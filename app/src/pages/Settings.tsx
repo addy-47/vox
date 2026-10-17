@@ -103,6 +103,13 @@ export const Settings: React.FC = () => {
     // never flickers or recalculates when the user cycles between cards.
   }, []);
 
+  const renderDomainContent = useCallback(
+    (domain: DomainId, mode?: "full-max" | "full-min" | "small") => (
+      <DomainContent domain={domain} layoutMode={mode} />
+    ),
+    []
+  );
+
   // Escape collapses the topmost active Settings card (mirrors outside-click FILO pop).
   useEffect(() => {
     if (activeDomains.length === 0) return;
@@ -168,9 +175,7 @@ export const Settings: React.FC = () => {
                   activeDomains={activeDomains}
                   layoutMode={layoutMode}
                   onSwitchDomain={(nextId) => handleCarouselSwitch("left", nextId)}
-                  renderDomainContent={(domain, mode) => (
-                    <DomainContent domain={domain} layoutMode={mode} />
-                  )}
+                  renderDomainContent={renderDomainContent}
                 />
               </div>
 
@@ -184,9 +189,7 @@ export const Settings: React.FC = () => {
                   activeDomains={activeDomains}
                   layoutMode={layoutMode}
                   onSwitchDomain={(nextId) => handleCarouselSwitch("right", nextId)}
-                  renderDomainContent={(domain, mode) => (
-                    <DomainContent domain={domain} layoutMode={mode} />
-                  )}
+                  renderDomainContent={renderDomainContent}
                 />
               </div>
             </>

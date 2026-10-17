@@ -422,5 +422,3 @@ export function ChapterScrubber({
     </div>
   );
 }
-
-export default ChapterScrubber;

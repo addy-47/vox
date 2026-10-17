@@ -1,5 +1,6 @@
 import { memo, type ReactNode } from "react";
 import { cn } from "@/shared/lib/utils";
+import { ProviderLogo } from "./ProviderLogo";
 
 export interface SelectableCardProps {
   id: string;
@@ -60,7 +61,7 @@ export const SelectableCard = memo(({
             ? "bg-[rgba(var(--accent),0.12)] border-[rgba(var(--accent),0.3)] shadow-[0_0_12px_rgba(var(--accent),0.15)]"
             : "bg-[rgba(var(--foreground),0.04)] border-[rgba(var(--foreground),0.07)] group-hover:border-[rgba(var(--accent),0.25)]"
         )}>
-          {logo ? <img src={logo} alt={name} className="w-6 h-6 object-contain" /> : null}
+          <ProviderLogo providerId={id} logo={logo} size={24} />
         </div>
         <h4 className="font-bold text-[14.5px] text-[rgb(var(--foreground))] tracking-tight truncate w-full text-center mt-2.5 leading-tight group-hover:text-[rgb(var(--accent))] transition-colors">
           {name}

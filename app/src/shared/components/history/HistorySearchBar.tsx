@@ -1,5 +1,5 @@
-import React, { useState, useMemo, useRef, useEffect, useCallback, memo } from "react";
-import { Search, X, MessageSquare } from "lucide-react";
+import { useState, useMemo, useEffect, useCallback, memo } from "react";
+import { MessageSquare } from "lucide-react";
 import {
   resolveSessionTitle,
   getTurns,
@@ -7,9 +7,10 @@ import {
   type SessionRow,
 } from "@/services/persistenceService";
 import { cn } from "@/shared/lib/utils";
-import { HighlightMatch } from "@/shared/ui";
+import { SearchBarShell, HighlightMatch } from "@/shared/ui";
+import { HISTORY_COPY } from "@/data/historyCopy";
 
-interface HistorySearchBarProps {
+export interface HistorySearchBarProps {
   sessions: SessionRow[];
   onSelectSession: (session: SessionRow) => void;
   className?: string;
@@ -62,12 +63,8 @@ export const HistorySearchBar = memo<HistorySearchBarProps>(({
   dropdownPlacement = "bottom",
 }) => {
   const [value, setValue] = useState("");
-  const [focused, setFocused] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
   const [cacheVersion, setCacheVersion] = useState(0);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const dropdownRef = useRef<HTMLDivElement>(null);
-  const blurTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Background turn indexing queue for scalable search across all session messages
   useEffect(() => {
@@ -98,7 +95,6 @@ export const HistorySearchBar = memo<HistorySearchBarProps>(({
           clearTimeout(idleId);
         }
       }
-      if (blurTimerRef.current) clearTimeout(blurTimerRef.current);
     };
   }, [sessions]);
 
@@ -170,159 +166,102 @@ export const HistorySearchBar = memo<HistorySearchBarProps>(({
     return hits;
   }, [sessions, value, cacheVersion]);
 
-  const handleChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    setValue(e.target.value);
-    setActiveIndex(-1);
-  }, []);
-
   const handleClear = useCallback(() => {
     setValue("");
     setActiveIndex(-1);
-    inputRef.current?.focus();
   }, []);
 
   const handleSelect = useCallback(
     (hit: HistorySearchHit) => {
       onSelectSession(hit.session);
-      setFocused(false);
       setValue("");
       setActiveIndex(-1);
     },
     [onSelectSession]
   );
 
-  const handleBlur = useCallback(() => {
-    blurTimerRef.current = setTimeout(() => {
-      setFocused(false);
-    }, 200);
-  }, []);
-
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLInputElement>) => {
-      if (results.length === 0) return;
-
-      if (e.key === "ArrowDown") {
-        e.preventDefault();
-        setActiveIndex((prev) => (prev < results.length - 1 ? prev + 1 : 0));
-      } else if (e.key === "ArrowUp") {
-        e.preventDefault();
-        setActiveIndex((prev) => (prev > 0 ? prev - 1 : results.length - 1));
-      } else if (e.key === "Enter") {
-        e.preventDefault();
-        if (activeIndex >= 0 && activeIndex < results.length) {
-          handleSelect(results[activeIndex]);
-        } else if (results.length > 0) {
-          handleSelect(results[0]);
-        }
-      } else if (e.key === "Escape") {
-        e.preventDefault();
-        setFocused(false);
-      }
-    },
-    [results, activeIndex, handleSelect]
-  );
-
-  const isTopDropdown = dropdownPlacement === "top";
-
   return (
-    <div className={cn("relative pointer-events-auto flex flex-col items-center w-full", className)}>
-      {/* ── Underline Search Input: Exactly mirrors Memory SearchBar ── */}
-      <div className="flex items-center gap-2 py-1.5 border-b border-[rgba(var(--foreground),0.18)] focus-within:border-[rgba(var(--accent),0.8)] transition-colors duration-200 w-full shrink-0">
-        <Search size={13} className="text-[rgb(var(--accent))] shrink-0 opacity-70" />
-        <input
-          ref={inputRef}
-          type="text"
-          value={value}
-          onChange={handleChange}
-          onFocus={() => setFocused(true)}
-          onBlur={handleBlur}
-          onKeyDown={handleKeyDown}
-          placeholder="Search history & messages…"
-          className="flex-1 min-w-0 bg-transparent text-[12px] font-mono text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/60 focus:outline-none"
-        />
-        {value && (
-          <button
-            type="button"
-            onClick={handleClear}
-            className="p-0.5 rounded text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))] cursor-pointer shrink-0 transition-colors"
-            aria-label="Clear search"
-          >
-            <X size={12} />
-          </button>
-        )}
-      </div>
-
-      {/* ── Quick Search Dropdown with Centered Breadth & Refined Typography ── */}
-      {focused && value.trim().length > 0 && (
-        <div
-          ref={dropdownRef}
-          style={{ width: "min(420px, calc(100vw - 32px))" }}
-          className={cn(
-            "absolute left-1/2 -translate-x-1/2 rounded-2xl glass-card border border-[rgba(var(--accent),0.25)] bg-[rgba(var(--card),0.96)] shadow-lg p-2 z-50 flex flex-col gap-1 overflow-hidden",
-            isTopDropdown ? "bottom-[calc(100%+8px)]" : "top-[calc(100%+8px)]"
-          )}
-        >
-          <div className="px-2.5 py-1.5 text-[10px] font-mono uppercase tracking-wider text-[rgb(var(--foreground-muted))] border-b border-[rgba(var(--border),0.08)] flex items-center justify-between">
-            <span>Conversations</span>
-            <span className="opacity-70 font-bold">{results.length}</span>
+    <SearchBarShell
+      id="history-search-input"
+      value={value}
+      onChange={(val) => {
+        setValue(val);
+        setActiveIndex(-1);
+      }}
+      onClear={handleClear}
+      placeholder={HISTORY_COPY.searchPlaceholder}
+      ariaLabel={HISTORY_COPY.searchPlaceholder}
+      clearAriaLabel={HISTORY_COPY.clearSearch}
+      className={className}
+      dropdownPlacement={dropdownPlacement}
+      itemCount={results.length}
+      activeIndex={activeIndex}
+      onActiveIndexChange={setActiveIndex}
+      onSelectActive={(idx) => {
+        if (results[idx]) {
+          handleSelect(results[idx]);
+        }
+      }}
+      dropdownHeader={
+        <div className="px-2.5 py-1.5 text-[10px] font-mono uppercase tracking-wider text-[rgb(var(--foreground-muted))] border-b border-[rgba(var(--border),0.08)] flex items-center justify-between">
+          <span>{HISTORY_COPY.allSessionsLabel}</span>
+          <span className="opacity-70 font-bold">{results.length}</span>
+        </div>
+      }
+      dropdownContent={
+        results.length === 0 ? (
+          <div className="px-4 py-4 text-center text-[11.5px] font-sans text-[rgb(var(--foreground-muted))]">
+            {HISTORY_COPY.noMatchingSessions}
           </div>
+        ) : (
+          <div className="py-1 max-h-[320px] overflow-y-auto custom-scrollbar flex flex-col gap-0.5">
+            {results.map((hit, idx) => {
+              const isActive = idx === activeIndex;
+              const title = resolveSessionTitle(hit.session);
+              const dateLabel = formatDateSub(hit.session.created_at);
 
-          {results.length === 0 ? (
-            <div className="px-4 py-4 text-center text-[11.5px] font-sans text-[rgb(var(--foreground-muted))]">
-              No matching conversations or messages
-            </div>
-          ) : (
-            <div className="py-1 max-h-[320px] overflow-y-auto custom-scrollbar flex flex-col gap-0.5">
-              {results.map((hit, idx) => {
-                const isActive = idx === activeIndex;
-                const title = resolveSessionTitle(hit.session);
-                const dateLabel = formatDateSub(hit.session.created_at);
-
-                return (
-                  <button
-                    key={`${hit.session.id}-${idx}`}
-                    type="button"
-                    onMouseDown={(e) => {
-                      e.preventDefault();
-                      handleSelect(hit);
-                    }}
-                    className={cn(
-                      "w-full text-left p-2.5 rounded-xl transition-colors cursor-pointer flex flex-col",
-                      isActive
-                        ? "bg-[rgba(var(--accent),0.10)]"
-                        : "hover:bg-[rgba(var(--foreground),0.04)]"
-                    )}
-                  >
-                    {/* Top Row: Icon + Title + Date */}
-                    <div className="flex items-center justify-between gap-2 min-w-0">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <MessageSquare
-                          size={13}
-                          className="text-[rgb(var(--accent))] shrink-0 opacity-70"
-                        />
-                        <span className="text-[13px] font-medium text-[rgb(var(--foreground))] truncate">
-                          <HighlightMatch text={title} query={value} />
-                        </span>
-                      </div>
-                      <span className="text-[10px] font-mono text-[rgb(var(--foreground-muted))]/60 shrink-0">
-                        {dateLabel}
+              return (
+                <button
+                  key={`${hit.session.id}-${idx}`}
+                  type="button"
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    handleSelect(hit);
+                  }}
+                  className={cn(
+                    "w-full text-left p-2.5 rounded-xl transition-colors cursor-pointer flex flex-col",
+                    isActive
+                      ? "bg-[rgba(var(--accent),0.10)]"
+                      : "hover:bg-[rgba(var(--foreground),0.04)]"
+                  )}
+                >
+                  <div className="flex items-center justify-between gap-2 min-w-0">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <MessageSquare
+                        size={13}
+                        className="text-[rgb(var(--accent))] shrink-0 opacity-70"
+                      />
+                      <span className="text-[13px] font-medium text-[rgb(var(--foreground))] truncate">
+                        <HighlightMatch text={title} query={value} />
                       </span>
                     </div>
+                    <span className="text-[10px] font-mono text-[rgb(var(--foreground-muted))]/60 shrink-0">
+                      {dateLabel}
+                    </span>
+                  </div>
 
-                    {/* Matched Turn Snippet if matched inside conversation */}
-                    {hit.matchedSnippet && (
-                      <p className="text-[11.5px] font-sans text-[rgb(var(--foreground-muted))] line-clamp-2 leading-relaxed mt-1 pl-5 m-0">
-                        <HighlightMatch text={hit.matchedSnippet} query={value} />
-                      </p>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
+                  {hit.matchedSnippet && (
+                    <p className="text-[11.5px] font-sans text-[rgb(var(--foreground-muted))] line-clamp-2 leading-relaxed mt-1 pl-5 m-0">
+                      <HighlightMatch text={hit.matchedSnippet} query={value} />
+                    </p>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        )
+      }
+    />
   );
 });
 

@@ -7,14 +7,17 @@ import {
   useState,
 } from "react";
 import {
-  AudioLines,
+  CircleUserRound,
   Clock,
   Heart,
   Languages,
   Loader2,
+  Mars,
   Mic,
   Plus,
   Sparkles,
+  Type,
+  Venus,
 } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { VOICE_CATALOG_COPY } from "@/data/settingsCopy";
@@ -25,8 +28,8 @@ import { useLenisScrollContainer } from "@/shared/hooks/useLenisScrollContainer"
 import {
   CatalogFilterItem,
   CatalogFilterMenu,
-  CatalogHeader,
 } from "../../providers/CatalogHeader";
+import { CatalogModalToolbar } from "../../providers/CatalogModalToolbar";
 import { VoiceCard } from "./VoiceCard";
 import { CloneVoiceDrawer } from "./CloneVoiceDrawer";
 import { VoicePreviewBanner } from "./VoicePreviewBanner";
@@ -75,7 +78,6 @@ export const VoiceModal = memo(
 
     const [search, setSearch] = useState("");
     const deferredSearch = useDeferredValue(search);
-    const [isSearchOpen, setIsSearchOpen] = useState(false);
     const [scope, setScope] = useState<Scope>("all");
     const [gender, setGender] = useState<string | null>(null);
     const [accent, setAccent] = useState<"english" | "multilingual" | null>(null);
@@ -206,14 +208,21 @@ export const VoiceModal = memo(
 
     return (
       <div className="flex flex-col h-full min-h-0 gap-3.5">
-        <CatalogHeader
-          icon={<AudioLines size={14} className="text-[rgb(var(--accent))]" />}
-          title={VOICE_CATALOG_COPY.title}
-          status={
-            <span className="text-[11px] font-mono text-[rgb(var(--foreground-muted))] px-2 py-1 rounded-lg bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--foreground),0.06)] shrink-0 select-none hidden sm:inline">
-              Showing <span className="text-[rgb(var(--foreground))] font-bold">{filtered.length}</span> of {scopedVoices.length}
-            </span>
-          }
+        <CatalogModalToolbar
+          search={{
+            value: search,
+            placeholder: VOICE_CATALOG_COPY.searchPlaceholder,
+            onChange: setSearch,
+          }}
+          sort={{
+            order: sort,
+            onToggle: () => setSort((s) => (s === "az" ? "za" : "az")),
+          }}
+          itemCount={{
+            current: filtered.length,
+            total: scopedVoices.length,
+            entityName: "voices",
+          }}
           action={
             canClone ? (
               <button
@@ -227,21 +236,6 @@ export const VoiceModal = memo(
               </button>
             ) : undefined
           }
-          search={{
-            open: isSearchOpen,
-            value: search,
-            placeholder: VOICE_CATALOG_COPY.searchPlaceholder,
-            onChange: setSearch,
-            onToggle: () => setIsSearchOpen((v) => !v),
-            onClose: () => {
-              setIsSearchOpen(false);
-              setSearch("");
-            },
-          }}
-          sort={{
-            order: sort,
-            onToggle: () => setSort((s) => (s === "az" ? "za" : "az")),
-          }}
           filter={{
             label: VOICE_CATALOG_COPY.filterAria,
             open: isFilterDropdownOpen,
@@ -358,13 +352,14 @@ export const VoiceModal = memo(
                 {VOICE_CATALOG_COPY.genderFacet}
               </div>
               {[
-                { id: "female", label: VOICE_CATALOG_COPY.female, count: counts.female },
-                { id: "male", label: VOICE_CATALOG_COPY.male, count: counts.male },
+                { id: "female", label: VOICE_CATALOG_COPY.female, count: counts.female, Icon: Venus },
+                { id: "male", label: VOICE_CATALOG_COPY.male, count: counts.male, Icon: Mars },
                 ...(counts.neutral > 0
-                  ? [{ id: "neutral" as const, label: "Neutral", count: counts.neutral }]
+                  ? [{ id: "neutral" as const, label: "Neutral", count: counts.neutral, Icon: CircleUserRound }]
                   : []),
               ].map((item) => {
                 const isActive = gender === item.id;
+                const Icon = item.Icon;
                 return (
                   <button
                     key={item.id}
@@ -377,7 +372,10 @@ export const VoiceModal = memo(
                         : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.03)]"
                     )}
                   >
-                    <span>{item.label}</span>
+                    <div className="flex items-center gap-2 truncate">
+                      <Icon size={13} className={cn("shrink-0", isActive ? "text-[rgb(var(--accent))]" : "opacity-60")} />
+                      <span className="truncate">{item.label}</span>
+                    </div>
                     <span className={cn(
                       "text-[10px] font-mono px-1.5 py-0.5 rounded-full shrink-0",
                       isActive
@@ -403,6 +401,7 @@ export const VoiceModal = memo(
                 ] as const
               ).map((item) => {
                 const isActive = accent === item.id;
+                const Icon = item.id === "english" ? Type : Languages;
                 return (
                   <button
                     key={item.id}
@@ -416,7 +415,7 @@ export const VoiceModal = memo(
                     )}
                   >
                     <div className="flex items-center gap-1.5 truncate">
-                      <Languages size={13} className={cn("shrink-0", isActive ? "text-[rgb(var(--accent))]" : "opacity-60")} />
+                      <Icon size={13} className={cn("shrink-0", isActive ? "text-[rgb(var(--accent))]" : "opacity-60")} />
                       <span className="truncate">{item.label}</span>
                     </div>
                     <span className={cn(

@@ -4,7 +4,6 @@ export * from "./OrbitCarousel";
 export * from "./CentralClockNode";
 export * from "./ChamberOrbitRings";
 export * from "./MonthDayCard";
-export * from "./ViewSelector";
 export * from "./HistoryListView";
 export * from "./orbitMath";
 export * from "./CalendarPicker";

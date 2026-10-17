@@ -21,7 +21,7 @@ import {
   CatalogHeader,
   type CatalogSortOrder,
 } from "@/shared/components/settings/providers/CatalogHeader";
-import { SelectableCard } from "@/shared/components/settings/providers/SelectableCard";
+import { ProviderLogo } from "@/shared/components/settings/providers/ProviderLogo";
 import { CustomServerFormCard } from "@/shared/components/settings/providers/CustomServerFormCard";
 import { useRemoteLlmProbing } from "@/shared/hooks/useRemoteLlmProbing";
 import { useLenisScrollContainer, useScrollTopOnChange } from "@/shared/hooks/useLenisScrollContainer";
@@ -219,47 +219,7 @@ export const InteractionConfigDesk = memo(({ activeCategory, onBack, layoutMode 
   const showLocalCard = (providerFilter === "all" || providerFilter === "local" || (providerFilter === "configured" && isLocalActive)) && (!searchQuery.trim() || "on-device local offline vox".includes(searchQuery.toLowerCase().trim()));
   const showCustomCards = providerFilter === "all" || providerFilter === "configured";
 
-  const renderProviderAction = (provider: CloudProvider) => {
-    const savedKey = getProviderKey(provider.id);
-    if (editingProviderId === provider.id) {
-      return (
-        <div className="flex items-center gap-1.5 border-b border-[rgb(var(--accent))] pb-0.5 w-full bg-transparent animate-fade-in" onClick={(e) => e.stopPropagation()}>
-          <input
-            type="password" autoFocus value={editingKeyValue} onChange={(e) => setEditingKeyValue(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") handleSaveInlineKey(provider.id); if (e.key === "Escape") handleCancelInlineKey(); }}
-            placeholder={provider.keyPlaceholder}
-            className="w-full bg-transparent text-[11px] font-mono outline-none text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/30"
-          />
-          <button type="button" onClick={() => handleSaveInlineKey(provider.id)} className="text-[rgb(var(--accent))] p-0.5"><Check size={13} strokeWidth={2.2} /></button>
-          <button type="button" onClick={handleCancelInlineKey} className="text-[rgb(var(--foreground-muted))]/60 p-0.5"><X size={13} /></button>
-        </div>
-      );
-    }
-    return (
-      <div className="flex items-center justify-between text-[11px] font-mono w-full" onClick={(e) => e.stopPropagation()}>
-        <span className="text-[rgb(var(--foreground-muted))]/70">Cloud Gateway</span>
-        {savedKey?.trim() ? (
-          <div className="flex items-center gap-1.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--accent))] shrink-0" />
-            <span className="text-[rgb(var(--foreground-muted))]">••••••••{savedKey.slice(-4)}</span>
-            <button type="button" onClick={() => handleStartInlineEdit(provider.id, savedKey)} className="p-1 rounded hover:bg-white/[0.08] hover:text-[rgb(var(--accent))] text-[rgb(var(--foreground-muted))]/60"><Pencil size={11} /></button>
-          </div>
-        ) : (
-          <button type="button" onClick={() => handleStartInlineEdit(provider.id, "")} className="text-[rgb(var(--accent))] hover:underline font-medium">+ Connect Key</button>
-        )}
-      </div>
-    );
-  };
 
-  const renderServerAction = (server: LlmCustomServer | TtsCustomServer) => (
-    <div className="flex items-center justify-between text-[11px] font-mono w-full" onClick={(e) => e.stopPropagation()}>
-      <span className="text-[rgb(var(--foreground-muted))]/70">Self-Hosted</span>
-      <div className="flex items-center gap-1.5">
-        <button type="button" onClick={() => { setEditingServer(server); setIsCreatingServer(false); }} className="p-1 rounded text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))]"><Pencil size={11} /></button>
-        <button type="button" onClick={() => deleteCustomServer(activeCategory === "LLM" ? "llm" : "tts", server.id)} className="p-1 rounded text-[rgb(var(--foreground-muted))]/40 hover:text-[rgb(var(--error))]"><Trash2 size={11} /></button>
-      </div>
-    </div>
-  );
 
   return (
     <div className={cn("w-full flex flex-col flex-1 min-h-0 rounded-xl bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--accent),0.08)] p-3 sm:p-3.5 gap-2.5 justify-between animate-fade-in", layoutMode === "small" ? "h-auto min-h-0 justify-start" : "h-full")}>
@@ -302,7 +262,7 @@ export const InteractionConfigDesk = memo(({ activeCategory, onBack, layoutMode 
           domainId="models"
           triggerPlacement="floating"
           customTrigger={activeCategory === "STT" ? () => null : undefined}
-          inlineMaxHeightClass="max-h-[160px] sm:max-h-[180px]"
+          inlineMaxHeightClass="max-h-[160px]"
           icon={modalView === "models" ? <Network size={16} className="text-[rgb(var(--accent))]" /> : categoryIcon}
           onBack={modalView === "models" ? () => setModalView("providers") : undefined}
           title={<span className="font-display text-[15px] font-bold tracking-tight text-[rgb(var(--foreground))]">{modalView === "models" ? "Available Models" : categoryTitle}</span>}
@@ -329,18 +289,34 @@ export const InteractionConfigDesk = memo(({ activeCategory, onBack, layoutMode 
           )}
         >
           <div ref={providerGridRef} className="h-full overflow-y-auto pr-1 pb-6 custom-scrollbar overflow-x-hidden">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 content-start w-full">
+            <div className="flex flex-col gap-2 content-start w-full">
               {showLocalCard && (
-                <SelectableCard
-                  id="local-provider"
-                  name={localMeta.name}
-                  tagline={localMeta.tagline}
-                  logo={null}
-                  isSelected={isLocalActive}
-                  statusBadge={isLocalActive ? "Active" : undefined}
-                  onSelect={handleSelectLocal}
-                  actionSlot={<div className="flex items-center justify-between text-[11px] font-mono w-full"><span className="text-[rgb(var(--foreground-muted))]/70">Local Hardware</span><span className="text-[rgb(var(--accent))] font-bold flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--accent))]" />{isLocalActive ? "Active" : "Offline Ready"}</span></div>}
-                />
+                <div
+                  onClick={handleSelectLocal}
+                  className={cn(
+                    "group flex items-center gap-2 px-2.5 py-2 rounded-xl transition-all cursor-pointer select-none border min-h-[46px]",
+                    isLocalActive
+                      ? "bg-[rgba(var(--foreground),0.025)] border-[rgb(var(--accent))] shadow-[0_0_12px_rgba(var(--accent),0.12)] text-[rgb(var(--foreground))]"
+                      : "bg-[rgba(var(--foreground),0.015)] border-[rgba(var(--accent),0.06)] hover:border-[rgba(var(--accent),0.25)] hover:bg-[rgba(var(--foreground),0.03)] text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--foreground))]"
+                  )}
+                >
+                  <div className="w-6 h-6 rounded-md bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--foreground),0.06)] flex items-center justify-center shrink-0">
+                    <ProviderLogo providerId="on-device" logo={null} size={14} className="shrink-0" />
+                  </div>
+                  <div className="flex flex-col min-w-0 flex-1 justify-center">
+                    <span className="text-[11.5px] font-semibold truncate leading-tight text-[rgb(var(--foreground))]">
+                      {localMeta.name}
+                    </span>
+                    <span className="text-[9.5px] text-[rgb(var(--foreground-muted))]/70 truncate mt-0.5 leading-tight">
+                      {localMeta.tagline}
+                    </span>
+                  </div>
+                  {isLocalActive && (
+                    <div className="w-4 h-4 rounded-full bg-[rgba(var(--accent),0.15)] border border-[rgba(var(--accent),0.3)] flex items-center justify-center text-[rgb(var(--accent))] shrink-0 ml-auto">
+                      <Check size={9} strokeWidth={2.5} />
+                    </div>
+                  )}
+                </div>
               )}
 
               {showCustomCards && customServers.map((server) => {
@@ -349,21 +325,41 @@ export const InteractionConfigDesk = memo(({ activeCategory, onBack, layoutMode 
                 }
                 const isSelected = activeCategory === "LLM" ? draftLlm?.active?.category === "server" && draftLlm?.active?.provider === server.id : draftSettings?.tts?.active?.category === "server" && draftSettings?.tts?.active?.provider === server.id;
                 return (
-                  <SelectableCard
+                  <div
                     key={server.id || server.url}
-                    id={server.id}
-                    name={server.name || "Custom Server"}
-                    tagline={server.url}
-                    logo={null}
-                    isSelected={isSelected}
-                    statusBadge={isSelected ? "Active" : undefined}
-                    onSelect={() => {
+                    onClick={() => {
                       const domain = activeCategory === "LLM" ? "llm" : "tts";
                       updateDraft(domain, "active", activeSelection("server", (server as LlmCustomServer).model || "", server.id));
                       window.dispatchEvent(new CustomEvent("sync_pipeline_tab", { detail: domain }));
                     }}
-                    actionSlot={renderServerAction(server)}
-                  />
+                    className={cn(
+                      "group flex items-center gap-2 px-2.5 py-2 rounded-xl transition-all cursor-pointer select-none border min-h-[46px]",
+                      isSelected
+                        ? "bg-[rgba(var(--foreground),0.025)] border-[rgb(var(--accent))] shadow-[0_0_12px_rgba(var(--accent),0.12)] text-[rgb(var(--foreground))]"
+                        : "bg-[rgba(var(--foreground),0.015)] border-[rgba(var(--accent),0.06)] hover:border-[rgba(var(--accent),0.25)] hover:bg-[rgba(var(--foreground),0.03)] text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--foreground))]"
+                    )}
+                  >
+                    <div className="w-6 h-6 rounded-md bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--foreground),0.06)] flex items-center justify-center shrink-0">
+                      <ProviderLogo providerId={server.id || "custom-server"} logo={null} size={14} className="shrink-0" />
+                    </div>
+                    <div className="flex flex-col min-w-0 flex-1 justify-center">
+                      <span className="text-[11.5px] font-semibold truncate leading-tight text-[rgb(var(--foreground))]">
+                        {server.name || "Custom Server"}
+                      </span>
+                      <span className="text-[9.5px] text-[rgb(var(--foreground-muted))]/70 truncate mt-0.5 leading-tight">
+                        {server.url}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0 ml-auto">
+                      {isSelected && (
+                        <div className="w-4 h-4 rounded-full bg-[rgba(var(--accent),0.15)] border border-[rgba(var(--accent),0.3)] flex items-center justify-center text-[rgb(var(--accent))]">
+                          <Check size={9} strokeWidth={2.5} />
+                        </div>
+                      )}
+                      <button type="button" onClick={(e) => { e.stopPropagation(); setEditingServer(server); setIsCreatingServer(false); }} className="p-1 rounded text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))]"><Pencil size={11} /></button>
+                      <button type="button" onClick={(e) => { e.stopPropagation(); deleteCustomServer(activeCategory === "LLM" ? "llm" : "tts", server.id); }} className="p-1 rounded text-[rgb(var(--foreground-muted))]/40 hover:text-[rgb(var(--error))]"><Trash2 size={11} /></button>
+                    </div>
+                  </div>
                 );
               })}
 
@@ -372,37 +368,151 @@ export const InteractionConfigDesk = memo(({ activeCategory, onBack, layoutMode 
               )}
 
               {showCustomCards && activeCategory !== "STT" && !isCreatingServer && !editingServer && (
-                <SelectableCard
-                  key="create-custom"
-                  id="create-custom"
-                  name={activeCategory === "TTS" ? "Add Voice Server" : "Add Custom Server"}
-                  tagline={activeCategory === "TTS" ? "Connect remote synthesis host." : "Connect self-hosted Ollama, vLLM, or LM Studio endpoint."}
-                  logo={null}
-                  isSelected={false}
-                  onSelect={() => setIsCreatingServer(true)}
-                  actionSlot={<div className="flex items-center justify-between text-[11px] font-mono w-full"><span className="text-[rgb(var(--foreground-muted))]/60">Self-Hosted</span><span className="text-[rgb(var(--accent))] font-medium">+ Configure</span></div>}
-                />
+                <div
+                  onClick={() => setIsCreatingServer(true)}
+                  className="group flex items-center gap-2 px-2.5 py-2 rounded-xl transition-all cursor-pointer select-none border min-h-[46px] bg-[rgba(var(--foreground),0.015)] border-[rgba(var(--accent),0.06)] hover:border-[rgba(var(--accent),0.25)] hover:bg-[rgba(var(--foreground),0.03)] text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--foreground))]"
+                >
+                  <div className="w-6 h-6 rounded-md bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--foreground),0.06)] flex items-center justify-center shrink-0">
+                    <ProviderLogo providerId="server" logo={null} size={14} className="shrink-0" />
+                  </div>
+                  <div className="flex flex-col min-w-0 flex-1 justify-center">
+                    <span className="text-[11.5px] font-semibold truncate leading-tight text-[rgb(var(--foreground))]">
+                      {activeCategory === "TTS" ? "Add Voice Server" : "Add Custom Server"}
+                    </span>
+                    <span className="text-[9.5px] text-[rgb(var(--foreground-muted))]/70 truncate mt-0.5 leading-tight">
+                      {activeCategory === "TTS" ? "Connect remote synthesis host." : "Connect self-hosted Ollama, vLLM, or LM Studio endpoint."}
+                    </span>
+                  </div>
+                  <div className="text-[rgb(var(--accent))] font-medium text-[11px] shrink-0 ml-auto">+ Configure</div>
+                </div>
               )}
 
               {(showAllInline ? filteredProviders : curatedProviders).map((provider) => {
                 const isSelected = activeCloudProviderId === provider.id;
+                const isEditing = editingProviderId === provider.id;
+                const savedKey = getProviderKey(provider.id) ?? "";
+                const hasKey = Boolean(savedKey.trim());
+
                 return (
-                  <SelectableCard
+                  <div
                     key={provider.id}
-                    id={provider.id}
-                    name={provider.name}
-                    tagline={provider.tagline || "Cloud API"}
-                    logo={provider.logo ?? null}
-                    isSelected={isSelected}
-                    statusBadge={isSelected ? "Active" : undefined}
-                    onSelect={() => handleSelectCloudProvider(provider)}
-                    actionSlot={renderProviderAction(provider)}
-                  />
+                    onClick={() => {
+                      if (!isEditing) {
+                        handleSelectCloudProvider(provider);
+                      }
+                    }}
+                    className={cn(
+                      "group flex items-center gap-2 px-2.5 py-2 rounded-xl transition-all cursor-pointer select-none border min-h-[46px]",
+                      isSelected
+                        ? "bg-[rgba(var(--foreground),0.025)] border-[rgb(var(--accent))] shadow-[0_0_12px_rgba(var(--accent),0.12)] text-[rgb(var(--foreground))]"
+                        : "bg-[rgba(var(--foreground),0.015)] border-[rgba(var(--accent),0.06)] hover:border-[rgba(var(--accent),0.25)] hover:bg-[rgba(var(--foreground),0.03)] text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--foreground))]"
+                    )}
+                  >
+                    {isEditing ? (
+                      <div
+                        className="w-full flex items-center gap-1.5 border-b border-[rgb(var(--accent))] pb-0.5 animate-fade-in"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <input
+                          type="password"
+                          autoFocus
+                          value={editingKeyValue}
+                          onChange={(e) => setEditingKeyValue(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") handleSaveInlineKey(provider.id);
+                            if (e.key === "Escape") handleCancelInlineKey();
+                          }}
+                          placeholder={provider.keyPlaceholder}
+                          className="w-full bg-transparent text-[11px] font-mono outline-none text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/30"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleSaveInlineKey(provider.id)}
+                          title={copy.llm.cloud.saveKey}
+                          aria-label={copy.llm.cloud.saveKey}
+                          className="text-[rgb(var(--accent))] hover:opacity-75 transition-opacity p-0.5 shrink-0"
+                        >
+                          <Check size={13} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleCancelInlineKey}
+                          title={copy.llm.cloud.cancelKey}
+                          aria-label={copy.llm.cloud.cancelKey}
+                          className="text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))] transition-colors p-0.5 shrink-0"
+                        >
+                          <X size={13} />
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="w-6 h-6 rounded-md bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--foreground),0.06)] flex items-center justify-center shrink-0">
+                          <ProviderLogo providerId={provider.id} logo={provider.logo ?? null} size={14} className="shrink-0" />
+                        </div>
+                        <div className="flex flex-col min-w-0 flex-1 justify-center">
+                          <span
+                            className={cn(
+                              "text-[11.5px] truncate leading-tight",
+                              isSelected ? "font-semibold text-[rgb(var(--foreground))]" : "font-medium text-[rgb(var(--foreground))]/90"
+                            )}
+                          >
+                            {provider.name}
+                          </span>
+                          <span className="text-[9.5px] text-[rgb(var(--foreground-muted))]/70 truncate mt-0.5 leading-tight">
+                            {provider.tagline || "Cloud API"}
+                          </span>
+                        </div>
+                        <div className="shrink-0 flex items-center gap-1 ml-auto" onClick={(e) => e.stopPropagation()}>
+                          {hasKey ? (
+                            <button
+                              type="button"
+                              onClick={() => handleStartInlineEdit(provider.id, savedKey)}
+                              className="p-1 rounded text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] transition-colors cursor-pointer"
+                              title={copy.llm.cloud.editKey}
+                              aria-label={copy.llm.cloud.editKey}
+                            >
+                              <Pencil size={11} />
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleStartInlineEdit(provider.id, "")}
+                              className="w-4 h-4 rounded flex items-center justify-center text-[13px] font-bold text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.12)] transition-all leading-none cursor-pointer"
+                              aria-label="Connect provider"
+                            >
+                              +
+                            </button>
+                          )}
+                          {isSelected && (
+                            <div className="w-4 h-4 rounded-full bg-[rgba(var(--accent),0.15)] border border-[rgba(var(--accent),0.3)] flex items-center justify-center text-[rgb(var(--accent))] shrink-0">
+                              <Check size={9} strokeWidth={2.5} />
+                            </div>
+                          )}
+                        </div>
+                      </>
+                    )}
+                  </div>
                 );
               })}
 
+              {activeCategory === "STT" && (
+                <div className="flex items-center gap-2 px-2.5 py-2 rounded-xl border border-[rgba(var(--foreground),0.04)] bg-[rgba(var(--foreground),0.01)] opacity-50 min-h-[46px] select-none">
+                  <div className="w-6 h-6 rounded-md bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--foreground),0.06)] flex items-center justify-center shrink-0 opacity-60">
+                    <ProviderLogo logo={null} size={14} className="shrink-0" />
+                  </div>
+                  <div className="flex flex-col min-w-0 flex-1 justify-center">
+                    <span className="text-[11.5px] font-medium text-[rgb(var(--foreground))] truncate leading-tight">
+                      Cloud STT
+                    </span>
+                    <span className="text-[9.5px] text-[rgb(var(--foreground-muted))] truncate mt-0.5 leading-tight">
+                      Hosted transcription
+                    </span>
+                  </div>
+                </div>
+              )}
+
               {activeCategory === "LLM" && filteredProviders.length > curatedProviders.length && (
-                <div className="col-span-full pt-2 pb-1 flex flex-col items-center justify-center">
+                <div className="pt-2 pb-1 flex flex-col items-center justify-center">
                   <button
                     type="button"
                     onClick={() => { setShowAllInline((v) => !v); setTimeout(() => providerLenisRef.current?.resize(), 50); }}

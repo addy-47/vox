@@ -1,8 +1,8 @@
 import { memo } from "react";
 import { ChevronLeft, ChevronRight, MessageSquare, Brain, Clock } from "lucide-react";
 import { HISTORY_COPY } from "@/data/historyCopy";
-import { cn } from "@/shared/lib/utils";
-import type { HistoryView } from "./ViewSelector";
+import { TabStrip } from "@/shared/ui";
+export type HistoryView = "day" | "month";
 
 export interface WindowProgress {
   /** 0-based index of the visible window. */
@@ -182,46 +182,19 @@ export const CentralClockNode = memo(
           {/* ── Inner Circular Safe Zone: Centered Content with Perfect Breathing Room ── */}
           <div className="relative z-20 flex flex-col items-center justify-between w-[82%] h-[82%] pt-1.5 pb-2.5 select-none">
             {/* 1. Top Section: Mode Pill Toggle */}
-            <div
-              data-arrow-nav
-              role="tablist"
-              aria-label={HISTORY_COPY.viewSelectorLabel}
-              className="clock-pill theme-flip-surface flex items-center gap-1 p-1 rounded-full shadow-inner transition-colors select-none"
-              onClick={(e) => e.stopPropagation()}
-              onKeyDown={(e) => {
-                if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  onViewChange(view === "day" ? "month" : "day");
-                }
-              }}
-            >
-              <button
-                role="tab"
-                aria-selected={view === "day"}
-                onClick={() => onViewChange("day")}
-                className={cn(
-                  "px-3.5 py-0.5 rounded-full text-[10px] font-mono font-bold tracking-[0.18em] uppercase transition-all duration-200 cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))]",
-                  view === "day"
-                    ? "bg-[rgba(var(--accent),0.25)] text-[rgb(var(--accent))] border border-[rgba(var(--accent),0.6)] shadow-[0_0_10px_rgba(var(--accent),0.4)]"
-                    : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] opacity-60 hover:opacity-100 border border-transparent"
-                )}
-              >
-                {HISTORY_COPY.viewDay}
-              </button>
-              <button
-                role="tab"
-                aria-selected={view === "month"}
-                onClick={() => onViewChange("month")}
-                className={cn(
-                  "px-3.5 py-0.5 rounded-full text-[10px] font-mono font-bold tracking-[0.18em] uppercase transition-all duration-200 cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))]",
-                  view === "month"
-                    ? "bg-[rgba(var(--accent),0.25)] text-[rgb(var(--accent))] border border-[rgba(var(--accent),0.6)] shadow-[0_0_10px_rgba(var(--accent),0.4)]"
-                    : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] opacity-60 hover:opacity-100 border border-transparent"
-                )}
-              >
-                {HISTORY_COPY.viewMonth}
-              </button>
+            <div onClick={(e) => e.stopPropagation()}>
+              <TabStrip
+                tabs={[
+                  { id: "day", label: HISTORY_COPY.viewDay },
+                  { id: "month", label: HISTORY_COPY.viewMonth },
+                ]}
+                activeTab={view}
+                onChange={(id) => onViewChange(id as HistoryView)}
+                variant="pill"
+                size="sm"
+                ariaLabel={HISTORY_COPY.viewSelectorLabel}
+                className="clock-pill theme-flip-surface flex items-center gap-1 p-1 rounded-full shadow-inner transition-colors select-none"
+              />
             </div>
 
             {/* 2. Middle Row: Centered Hero Date + Metrics Stack */}

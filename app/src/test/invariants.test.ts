@@ -1101,7 +1101,7 @@ snap no matter what transition-property says.`
     for (const rel of [
       "pages/Home.tsx",
       "shared/components/home/TextInputBar.tsx",
-      "shared/components/memory/SearchBar.tsx",
+      "shared/components/memory/MemorySearchBar.tsx",
     ]) {
       const src = fs.readFileSync(path.join(SRC_DIR, rel), "utf-8");
       expect(src.includes("shortcutKeysSuffix"), `${rel} must compose hints via shortcutKeysSuffix`).toBe(true);

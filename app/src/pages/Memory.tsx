@@ -38,7 +38,7 @@ import {
   MemoryTimeline,
   MemoryNodeTooltip,
   SessionNodeTooltip,
-  SearchBar,
+  MemorySearchBar,
   GraphControlDock,
   MemoryCategory,
   toMemoryCategory,
@@ -433,7 +433,7 @@ export const Memory: React.FC = memo(() => {
       {/* ── Center Search Bar: Portaled into AppHeader center slot for desktop main layout ── */}
       {!isCompactLayout && typeof document !== "undefined" && document.getElementById("app-header-center-slot") &&
         createPortal(
-          <SearchBar
+          <MemorySearchBar
             facts={facts}
             searchQuery={searchQuery}
             isLightMode={isLightMode}
@@ -660,7 +660,7 @@ export const Memory: React.FC = memo(() => {
                 <X size={15} />
               </button>
             </div>
-            <SearchBar
+            <MemorySearchBar
               facts={facts}
               searchQuery={searchQuery}
               isLightMode={isLightMode}
