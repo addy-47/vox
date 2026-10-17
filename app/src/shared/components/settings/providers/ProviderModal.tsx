@@ -3,7 +3,7 @@ import { useLenisScrollContainer, useScrollTopOnChange } from "@/shared/hooks/us
 import { CLOUD_PROVIDERS, TTS_MODAL_PROVIDERS, type CloudProvider } from "@/data/providersCopy";
 import { INTERACTION_CONFIG_DESK_COPY } from "@/data/settingsCopy";
 import { useSettingsStore, type LlmCustomServer, type TtsCustomServer } from "@/store/settingsStore";
-import { activeSelection, getCloudProviderAlias } from "@/shared/lib/activeSelection";
+import { activeSelection } from "@/shared/lib/activeSelection";
 import { ModalProviderFooter } from "@/shared/components/settings/SettingsCommitControls";
 import { Tooltip } from "@/shared/ui/Tooltip";
 import { ArrowRight, Check, Cloud, Globe, HelpCircle, Key, KeyRound, Pencil, Plus, Server, Trash2, X } from "lucide-react";
@@ -267,7 +267,7 @@ export const ProviderModal = memo(({
     const committedLlmProvider = committedSettings?.llm?.active?.provider;
     if (committedLlmProvider) {
       const idx = sorted.findIndex(
-        (p) => p.id === committedLlmProvider || getCloudProviderAlias(p.id) === committedLlmProvider
+        (p) => p.id === committedLlmProvider
       );
       if (idx > 0) { const [active] = sorted.splice(idx, 1); sorted.unshift(active); }
     }
@@ -384,6 +384,7 @@ export const ProviderModal = memo(({
     return (
       <SelectableCard
         key={server.id || server.url} id={server.id} name={server.name || "Custom Server"} tagline={server.url} logo={null}
+        providerName={server.name}
         isSelected={isSelected} onSelect={() => handleSelectServer(server)}
         cornerSlot={
           onNavigateToModels && category === "LLM" ? (

@@ -72,7 +72,8 @@ use crate::{
         },
         projects::{create_project, delete_project, get_projects, rename_project},
         settings::{
-            get_restart_status, get_settings, get_settings_contract, reset_settings, update_setting,
+            apply_settings_patch, get_restart_status, get_settings, get_settings_contract, reset_settings,
+            update_setting,
         },
         setup::{
             check_updates, complete_setup_wizard, fetch_manifest, get_onboarding_status,
@@ -763,6 +764,7 @@ notification_permission_state,
             toggle_model_favorite,
             setup_remote_server,
             update_setting,
+            apply_settings_patch,
             reset_settings,
             ptt_start,
             ptt_stop,

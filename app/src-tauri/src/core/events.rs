@@ -205,6 +205,13 @@ pub struct TurnMetricsPayload {
     pub context_window: u32,
 }
 
+/// Payload emitted on `engine-restart-state` events.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EngineRestartStatePayload {
+    pub restarting: bool,
+    pub target: Option<String>,
+}
+
 /// Strongly-typed universal Tauri IPC event enum.
 /// Every IPC event emitted to any webview window must have a canonical entry here.
 #[derive(Debug, Clone, Serialize)]
@@ -219,6 +226,7 @@ pub enum IpcEvent {
     SystemStats(SystemStatsPayload),
     TurnMetrics(TurnMetricsPayload),
     SettingsUpdated,
+    EngineRestartState(EngineRestartStatePayload),
     ToggleTray,
     NotificationCreated(NotificationRecord),
     NotificationUpdated(NotificationRecord),
@@ -258,6 +266,7 @@ impl IpcEvent {
             Self::SystemStats(_) => "system_stats",
             Self::TurnMetrics(_) => "turn_metrics",
             Self::SettingsUpdated => "settings-updated",
+            Self::EngineRestartState(_) => "engine-restart-state",
             Self::ToggleTray => "toggle_tray",
             Self::NotificationCreated(_) => "notification_created",
             Self::NotificationUpdated(_) => "notification_updated",
@@ -281,6 +290,7 @@ pub fn emit_ipc<R: Runtime>(app: &AppHandle<R>, event: IpcEvent) -> Result<(), t
         IpcEvent::SystemStats(payload) => app.emit(name, payload),
         IpcEvent::TurnMetrics(payload) => app.emit(name, payload),
         IpcEvent::SettingsUpdated => app.emit(name, ()),
+        IpcEvent::EngineRestartState(payload) => app.emit(name, payload),
         IpcEvent::ToggleTray => app.emit(name, ()),
         IpcEvent::NotificationCreated(payload) => app.emit(name, payload),
         IpcEvent::NotificationUpdated(payload) => app.emit(name, payload),
@@ -308,6 +318,7 @@ pub fn emit_ipc_to<R: Runtime>(
         IpcEvent::SystemStats(payload) => app.emit_to(target_str, name, payload),
         IpcEvent::TurnMetrics(payload) => app.emit_to(target_str, name, payload),
         IpcEvent::SettingsUpdated => app.emit_to(target_str, name, ()),
+        IpcEvent::EngineRestartState(payload) => app.emit_to(target_str, name, payload),
         IpcEvent::ToggleTray => app.emit_to(target_str, name, ()),
         IpcEvent::NotificationCreated(payload) => app.emit_to(target_str, name, payload),
         IpcEvent::NotificationUpdated(payload) => app.emit_to(target_str, name, payload),

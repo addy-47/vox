@@ -1,6 +1,7 @@
 
 import { useMemo, memo } from "react";
 import { useSettingsStore, LlmProviderConfig } from "@/store/settingsStore";
+import { useCatalogStore } from "@/store/catalogStore";
 import { useModelParameters } from "@/shared/hooks/useModelParameters";
 import { Zap, Battery, Gauge } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
@@ -61,7 +62,7 @@ export const LlmSettingsView = memo(({
 
   // Active capabilities and dynamic bounds
   const MIN_CONTEXT_WINDOW = 8192;
-  const capabilitiesCache = useSettingsStore((s) => s.capabilitiesCache);
+  const capabilitiesCache = useCatalogStore((s) => s.capabilitiesCache);
   const activeCapabilities = useMemo(() => {
     if (!activeModelId) return undefined;
     return (

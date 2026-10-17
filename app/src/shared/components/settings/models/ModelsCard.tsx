@@ -1,5 +1,7 @@
-import { useState, useEffect, useMemo, memo } from "react";
-import { useSettingsStore } from "@/store/settingsStore";
+import { useState, useEffect, memo } from "react";
+import { useShallow } from "zustand/react/shallow";
+import { useSettingsStore, selectActiveLlmProvider } from "@/store/settingsStore";
+import { useCatalogStore } from "@/store/catalogStore";
 import {
   setupRemoteServer,
   checkTtsProviderHealth,
@@ -12,14 +14,14 @@ import {
   STT_SETTINGS_COPY,
   LLM_SETTINGS_COPY,
 } from "@/data/settingsCopy";
-import { CLOUD_PROVIDERS } from "@/data/providersCopy";
+
 import { Orbit, Loader2 } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { SegmentedControl } from "@/shared/ui";
-import { LlmProviderConfig, ProviderCaps } from "@/store/settingsStore";
+import { ProviderCaps } from "@/store/settingsStore";
 import { useModelDownloads } from "@/shared/hooks/useModelDownloads";
 import { useRemoteLlmProbing } from "@/shared/hooks/useRemoteLlmProbing";
-import { getEffectiveCloudApiKey, getCloudProviderAlias } from "@/shared/lib/activeSelection";
+
 
 import { PipelineTopologyMap, type PipelineTab } from "./PipelineTopologyMap";
 import { VadWorkspace } from "./VadWorkspace";
@@ -52,9 +54,13 @@ interface ModelsCardProps {
 
 export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) => {
   const draftSettings = useSettingsStore((s) => s.draftSettings);
-  const committedSettings = useSettingsStore((s) => s.settings);
-  const contract = useSettingsStore((s) => s.contract);
-  const modelCatalog = useSettingsStore((s) => s.modelCatalog);
+  const modelCatalog = useCatalogStore((s) => s.modelCatalog) ?? useSettingsStore((s) => s.modelCatalog);
+
+  useEffect(() => {
+    if (!modelCatalog) {
+      void useCatalogStore.getState().loadModelCatalog();
+    }
+  }, [modelCatalog]);
 
   const {
     downloadStatuses,
@@ -114,55 +120,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
     };
   }, [activeTtsId]);
 
-  const provider: LlmProviderConfig = useMemo(() => {
-    if (activeProviderKind === "embedded") {
-      return { kind: "embedded" };
-    }
-    if (activeProviderKind === "server") {
-      const serverId = draftSettings?.llm?.active?.provider;
-      const servers = draftSettings?.llm?.servers ?? draftSettings?.providers?.llm?.servers;
-      const entry = servers?.find((s) => s.id === serverId);
-      return {
-        kind: "server",
-        provider_id: serverId ?? undefined,
-        base_url: entry?.url || "",
-        model: draftSettings?.llm?.active?.model || "",
-        api_key: entry?.api_key || undefined,
-        provider_name: entry?.name || undefined,
-      };
-    }
-    const cloudId = draftSettings?.llm?.active?.provider;
-    const aliasId = getCloudProviderAlias(cloudId);
-    const contractEntry = contract?.llm_cloud_providers?.find(
-      (p) => p.id === cloudId || (aliasId && p.id === aliasId)
-    );
-    const cloudEntry =
-      contractEntry ||
-      CLOUD_PROVIDERS.find((p) => p.id === cloudId || (aliasId && p.id === aliasId));
-    const cloudUrl =
-      contractEntry?.base_url || contractEntry?.url || cloudEntry?.url || "";
-    const cloudApiKey = getEffectiveCloudApiKey(draftSettings, committedSettings, cloudId);
-    return {
-      kind: "cloud",
-      provider_id: cloudId ?? undefined,
-      base_url: cloudUrl,
-      model: draftSettings?.llm?.active?.model || "",
-      api_key: cloudApiKey,
-      provider_name: cloudEntry?.name || undefined,
-    };
-  }, [
-    activeProviderKind,
-    draftSettings?.llm?.active?.provider,
-    draftSettings?.llm?.active?.model,
-    draftSettings?.llm?.cloud_keys,
-    draftSettings?.providers?.llm?.cloud_keys,
-    committedSettings?.providers?.llm?.cloud_keys,
-    committedSettings?.llm?.cloud_keys,
-    draftSettings?.llm?.servers,
-    draftSettings?.providers?.llm?.servers,
-    contract?.llm_cloud_providers,
-  ]);
-
+  const provider = useSettingsStore(useShallow(selectActiveLlmProvider));
 
   const {
     remoteModels,

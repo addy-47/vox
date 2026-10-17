@@ -579,7 +579,7 @@ async fn test_nvidia_preset_wire_request_and_tool_stream() {
                 Arc::clone(&captured),
             );
 
-        let config = ConnectionConfig::new(&base_url, "test-model", Some("k"), Some("nvidia_nim"));
+        let config = ConnectionConfig::new(&base_url, "test-model", Some("k"), Some("nvidia"));
         let transport = RemoteTransport::new(config);
         let cancel = CancellationToken::new();
         let (tx, rx) = mpsc::channel::<LlmStreamEvent>();

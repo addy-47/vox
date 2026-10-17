@@ -168,22 +168,6 @@ describe("Active Card Primacy: Grid Ordering", () => {
     expect(getEffectiveCloudApiKey(null, null, "openrouter")).toBeUndefined();
   });
 
-  it("getEffectiveCloudApiKey: resolves bidirectional alias between nvidia and nvidia_nim", async () => {
-    const { getEffectiveCloudApiKey, getCloudProviderAlias } = await import("@/shared/lib/activeSelection");
-
-    expect(getCloudProviderAlias("nvidia")).toBe("nvidia_nim");
-    expect(getCloudProviderAlias("nvidia_nim")).toBe("nvidia");
-    expect(getCloudProviderAlias("openrouter")).toBeNull();
-
-    // Key saved under nvidia_nim, queried with nvidia
-    const committedNim = { providers: { llm: { cloud_keys: { nvidia_nim: "nv-key-nim" } } } };
-    expect(getEffectiveCloudApiKey(null, committedNim, "nvidia")).toBe("nv-key-nim");
-
-    // Key saved under nvidia, queried with nvidia_nim
-    const committedNvidia = { providers: { llm: { cloud_keys: { nvidia: "nv-key-base" } } } };
-    expect(getEffectiveCloudApiKey(null, committedNvidia, "nvidia_nim")).toBe("nv-key-base");
-  });
-
   it("updateTtsProvidersFromContract: includes cloud and remote synthesis with mapped display names", async () => {
     const { updateTtsProvidersFromContract, TTS_MODAL_PROVIDERS } = await import("@/data/providersCopy");
 

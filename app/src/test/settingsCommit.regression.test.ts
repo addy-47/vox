@@ -42,9 +42,9 @@ describe("settings commit partial-failure isolation", () => {
     const mockTransport: Transport = {
       invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
         calls.push({ cmd, args });
-        if (cmd === "update_setting") {
-          const domain = (args as { domain: string }).domain;
-          if (domain === "llm") {
+        if (cmd === "apply_settings_patch") {
+          const patch = (args as { patch: Record<string, unknown> }).patch;
+          if (patch && Object.prototype.hasOwnProperty.call(patch, "llm")) {
             return Promise.reject(new Error("Unknown setting: llm.active")) as unknown as Promise<T>;
           }
           return Promise.resolve({
@@ -121,7 +121,7 @@ describe("settings commit partial-failure isolation", () => {
     const mockTransport: Transport = {
       invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
         calls.push({ cmd, args });
-        if (cmd === "update_setting") {
+        if (cmd === "apply_settings_patch") {
           return Promise.resolve({
             applied: true,
             reload_policy: "restart",
@@ -166,9 +166,8 @@ describe("settings commit partial-failure isolation", () => {
     useSettingsStore.getState().recomputeDomainFlags();
     await useSettingsStore.getState().commitChanges({ domain: "llm", key: "cloud_keys" });
 
-    const updates = calls.filter((c) => c.cmd === "update_setting");
+    const updates = calls.filter((c) => c.cmd === "apply_settings_patch");
     expect(updates).toHaveLength(1);
-    expect((updates[0].args as { key: string }).key).toBe("cloud_keys");
     // The unrelated persona edit is still dirty in the draft, untouched.
     expect(useSettingsStore.getState().draftSettings?.persona?.modular_prompt).toBe(
       "edited-persona"
@@ -184,7 +183,7 @@ describe("settings commit partial-failure isolation", () => {
     const mockTransport: Transport = {
       invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
         calls.push({ cmd, args });
-        if (cmd === "update_setting") {
+        if (cmd === "apply_settings_patch") {
           return Promise.resolve({
             applied: true,
             reload_policy: "restart",
@@ -230,12 +229,7 @@ describe("settings commit partial-failure isolation", () => {
     ]);
     await useSettingsStore.getState().commitChanges();
 
-    const serverCalls = calls.filter(
-      (c) =>
-        c.cmd === "update_setting" &&
-        (c.args as { domain: string }).domain === "llm" &&
-        (c.args as { key: string }).key === "servers"
-    );
+    const serverCalls = calls.filter((c) => c.cmd === "apply_settings_patch");
     expect(serverCalls).toHaveLength(1);
     expect(useSettingsStore.getState().failedSaveDomains["models"]).toBeUndefined();
   });

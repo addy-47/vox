@@ -61,7 +61,17 @@ export function createContainedLenis(
   // pagination, modal open). Without this a container measured at height 0
   // (hidden modal) stays locked at 0 forever.
   if (typeof ResizeObserver !== "undefined") {
-    const ro = new ResizeObserver(() => lenis.resize());
+    let lastContentHeight = 0;
+    const ro = new ResizeObserver(() => {
+      // DEV diagnostic: any content height change while hovering identifies the
+      // source of scrollbar flicker (the scrollbar only shifts when geometry moves).
+      const h = content.offsetHeight;
+      if (import.meta.env.DEV && Math.abs(h - lastContentHeight) > 1) {
+        console.debug(`[Lenis] content height ${lastContentHeight} -> ${h}`, el.className.slice(0, 60));
+      }
+      lastContentHeight = h;
+      lenis.resize();
+    });
     ro.observe(el);
     ro.observe(content);
     const prevDestroy = lenis.destroy.bind(lenis);

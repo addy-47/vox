@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback, useEffect } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
-import { activeSelection, getCloudProviderAlias } from "@/shared/lib/activeSelection";
+import { activeSelection } from "@/shared/lib/activeSelection";
 import type { CloudProvider } from "@/data/providersCopy";
 
 export interface UseProviderSelectionOptions {
@@ -57,8 +57,7 @@ export function useProviderSelection(options?: UseProviderSelectionOptions) {
         return ds?.tts?.[providerId]?.key ?? ds?.providers?.tts?.[providerId]?.key;
       }
       const keys = draftSettings?.llm?.cloud_keys ?? draftSettings?.providers?.llm?.cloud_keys;
-      const alias = getCloudProviderAlias(providerId);
-      return keys?.[providerId] ?? (alias ? keys?.[alias] : undefined);
+      return keys?.[providerId];
     },
     [
       isTts,
@@ -102,8 +101,7 @@ export function useProviderSelection(options?: UseProviderSelectionOptions) {
         return (committedSettings as Ct | null)?.providers?.tts?.[providerId]?.key;
       }
       const keys = committedSettings?.providers?.llm?.cloud_keys ?? committedSettings?.llm?.cloud_keys;
-      const alias = getCloudProviderAlias(providerId);
-      return keys?.[providerId] ?? (alias ? keys?.[alias] : undefined);
+      return keys?.[providerId];
     },
     [isTts, committedSettings?.providers?.tts, committedSettings?.providers?.llm?.cloud_keys]
   );

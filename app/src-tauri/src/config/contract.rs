@@ -136,7 +136,6 @@ pub fn build_settings_contract() -> SettingsContract {
 
     let mut llm_cloud_providers = Vec::new();
     let mut seen_ids = std::collections::HashSet::new();
-    let has_nvidia = raw_presets.iter().any(|p| p.id == "nvidia");
 
     for preset in raw_presets {
         let is_cloud = preset.key_placeholder.is_some()
@@ -147,9 +146,6 @@ pub fn build_settings_contract() -> SettingsContract {
         }
 
         let id = preset.id;
-        if id == "nvidia_nim" && (has_nvidia || seen_ids.contains("nvidia")) {
-            continue;
-        }
         if seen_ids.contains(&id) {
             continue;
         }

@@ -9,7 +9,7 @@ use crate::{
     config::types::ActiveSelection,
     core::{
         engine::{ensure_memory_embedder, start_audio_engine, stop_audio_engine},
-        events::InteractionMode,
+        events::{emit_ipc, EngineRestartStatePayload, InteractionMode, IpcEvent},
         state::{AppState, InteractionOwner, InteractionState},
     },
     ipc::pipeline::{launch_engine, restart_engine_inner, stop_engine},
@@ -41,6 +41,14 @@ pub fn request_engine_restart<R: tauri::Runtime>(
     state: &Arc<AppState>,
     reason: &str,
 ) -> bool {
+    let _ = emit_ipc(
+        app,
+        IpcEvent::EngineRestartState(EngineRestartStatePayload {
+            restarting: true,
+            target: Some("engine".to_string()),
+        }),
+    );
+
     state.restart_requested.store(true, Ordering::Release);
 
     if state
@@ -79,6 +87,13 @@ pub fn request_engine_restart<R: tauri::Runtime>(
             }
 
             state.restart_in_flight.store(true, Ordering::Release);
+            let _ = emit_ipc(
+                &app,
+                IpcEvent::EngineRestartState(EngineRestartStatePayload {
+                    restarting: true,
+                    target: Some("engine".to_string()),
+                }),
+            );
             let outcome = restart_engine_inner(&app, &state).await;
             state.restart_in_flight.store(false, Ordering::Release);
 
@@ -87,6 +102,13 @@ pub fn request_engine_restart<R: tauri::Runtime>(
                 Err(e) => log::error!("[Settings] Engine restart failed: {}", e),
             }
         }
+        let _ = emit_ipc(
+            &app,
+            IpcEvent::EngineRestartState(EngineRestartStatePayload {
+                restarting: false,
+                target: None,
+            }),
+        );
         log::debug!("[Settings] Engine restart runner finished");
     });
 

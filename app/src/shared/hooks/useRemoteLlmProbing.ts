@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from "react";
+import { useCatalogStore } from "@/store/catalogStore";
 import { useSettingsStore } from "@/store/settingsStore";
 import { probeModelCapabilities } from "@/services/catalogService";
 import type {
@@ -11,14 +12,14 @@ export function useRemoteLlmProbing(
   activePipelineTab: string,
   isRemoteLlm: boolean
 ) {
-  const remoteModels = useSettingsStore((s) => s.remoteModels);
-  const loadingRemoteModels = useSettingsStore((s) => s.loadingRemoteModels);
-  const remoteModelsError = useSettingsStore((s) => s.remoteModelsError);
-  const loadRemoteModels = useSettingsStore((s) => s.loadRemoteModels);
-  const patchRemoteModelCapabilities = useSettingsStore((s) => s.patchRemoteModelCapabilities);
+  const remoteModels = useCatalogStore((s) => s.remoteModels);
+  const loadingRemoteModels = useCatalogStore((s) => s.loadingRemoteModels);
+  const remoteModelsError = useCatalogStore((s) => s.remoteModelsError);
+  const loadRemoteModels = useCatalogStore((s) => s.loadRemoteModels);
+  const patchRemoteModelCapabilities = useCatalogStore((s) => s.patchCapabilities);
   const [probingMap, setProbingMap] = useState<Record<string, { status: 'idle' | 'testing' | 'success' | 'error'; capabilities?: ModelCapabilities; error?: string }>>({});
-
-  const capabilitiesCache = useSettingsStore((s) => s.capabilitiesCache);
+ 
+  const capabilitiesCache = useCatalogStore((s) => s.capabilitiesCache);
   const mountedRef = useRef(true);
 
   useEffect(() => {
@@ -30,9 +31,9 @@ export function useRemoteLlmProbing(
 
   // Load disk capabilities cache and model catalog on initial mount
   useEffect(() => {
-    useSettingsStore.getState().loadCapabilitiesCache();
-    if (!useSettingsStore.getState().modelCatalog) {
-      useSettingsStore.getState().loadModelCatalog();
+    useCatalogStore.getState().loadCapabilitiesCache();
+    if (!useCatalogStore.getState().modelCatalog) {
+      useCatalogStore.getState().loadModelCatalog();
     }
   }, []);
 

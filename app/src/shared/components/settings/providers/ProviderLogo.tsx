@@ -57,10 +57,27 @@ export const ProviderLogo = memo(function ProviderLogo({
   size = 16,
   className,
 }: ProviderLogoProps) {
-  const norm = `${providerId || ""}${providerName || ""}${dialect || ""}${logo || ""}`.toLowerCase();
+  const norm = `${providerId || ""}${providerName || ""}${dialect || ""}`.toLowerCase();
+  // NOTE: `logo` deliberately excluded from `norm`. Backend contracts ship brand
+  // marks as raw `data:image/svg+xml;base64` blobs; scanning those strings for
+  // substrate tokens ("go", "openai", "google") misfires constantly. Shipped
+  // `logo` data-URIs render directly via the <img> fast path at the top.
+  const resolved = (branch: string) => {
+    if (import.meta.env.DEV) console.debug(`[ProviderLogo] norm="${norm.slice(0, 48)}" -> ${branch}`);
+    return true;
+  };
 
-  // 1. OpenAI / Whisper / ChatGPT
-  if (norm.includes("openai") || norm.includes("whisper") || norm.includes("chatgpt")) {
+  // 1. OpenAI / Whisper / ChatGPT — suppressed when an engine token is present,
+  // so ids/names like "ollama_openai_compat" or "Ollama (OpenAI-compatible)"
+  // keep their engine mark (checks 14-16) instead of the generic OpenAI one.
+  if (
+    (norm.includes("openai") || norm.includes("whisper") || norm.includes("chatgpt")) &&
+    !norm.includes("ollama") &&
+    !norm.includes("lmstudio") &&
+    !norm.includes("lm-studio") &&
+    !norm.includes("vllm") &&
+    resolved("openai")
+  ) {
     return (
       <svg
         width={size}
@@ -358,7 +375,7 @@ export const ProviderLogo = memo(function ProviderLogo({
   }
 
   // 14. Ollama
-  if (norm.includes("ollama")) {
+  if (norm.includes("ollama") && resolved("ollama")) {
     return (
       <svg
         width={size}
@@ -373,7 +390,7 @@ export const ProviderLogo = memo(function ProviderLogo({
   }
 
   // 15. LM Studio
-  if (norm.includes("lmstudio") || norm.includes("lm-studio")) {
+  if ((norm.includes("lmstudio") || norm.includes("lm-studio")) && resolved("lmstudio")) {
     return (
       <svg
         width={size}
@@ -393,7 +410,7 @@ export const ProviderLogo = memo(function ProviderLogo({
   }
 
   // 16. vLLM
-  if (norm.includes("vllm")) {
+  if (norm.includes("vllm") && resolved("vllm")) {
     return (
       <svg
         width={size}
@@ -713,15 +730,16 @@ export const ProviderLogo = memo(function ProviderLogo({
     return <FallbackServerLogo size={size} className={className} />;
   }
 
-  // 41. Image fallback if valid URL or data URI is supplied
-  if (
+  // 41. Image fallback for backend-shipped brand marks. Prefix-checked only —
+  // the loose `includes(".")` path could render garbage keys (e.g. "sk-ant-...")
+  // as <img src>. Shipped data-URIs are authoritative over string matching.
+  const concreteLogo =
     logo &&
     (logo.startsWith("data:") ||
-      logo.startsWith("http:") ||
-      logo.startsWith("https:") ||
-      logo.startsWith("/") ||
-      logo.includes("."))
-  ) {
+      logo.startsWith("http://") ||
+      logo.startsWith("https://") ||
+      logo.startsWith("/"));
+  if (concreteLogo && resolved("img-fallback")) {
     return (
       <img
         src={logo}
@@ -734,6 +752,7 @@ export const ProviderLogo = memo(function ProviderLogo({
   }
 
   // 42. Default fallback: Server vector logo
+  resolved("fallback-server-chassis");
   return <FallbackServerLogo size={size} className={className} />;
 });
 

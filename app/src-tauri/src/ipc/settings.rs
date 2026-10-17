@@ -4,9 +4,10 @@ use tauri::{AppHandle, Manager, State};
 
 use crate::{
     config::{
-        apply_model_parameter_mutation, apply_setting_mutation, dispatch_worker_command,
-        get_setting_reload_policy, handle_setting_side_effects, request_engine_restart,
-        schedule_debounced_save, supported_keys_for_domain, SettingReloadPolicy, VoxSettings,
+        apply_model_parameter_mutation, apply_setting_mutation, apply_settings_patch_tree,
+        dispatch_worker_command, get_setting_reload_policy, handle_setting_side_effects,
+        request_engine_restart, schedule_debounced_save, supported_keys_for_domain, SettingReloadPolicy,
+        VoxSettings,
     },
     core::{
         error::VoxIpcError,
@@ -220,6 +221,76 @@ pub async fn update_setting<R: tauri::Runtime>(
         applied: true,
         reload_policy: policy.as_str().to_string(),
         message,
+        restart_scheduled,
+    })
+}
+
+/// Applies a batched settings patch atomically.
+#[tauri::command]
+pub async fn apply_settings_patch<R: tauri::Runtime>(
+    patch: serde_json::Value,
+    app: AppHandle<R>,
+) -> Result<SettingUpdateResult, VoxIpcError> {
+    let state: State<'_, Arc<AppState>> = app.state();
+
+    // Acquire the settings write lock once and apply the whole patch in memory.
+    let changed = {
+        let mut settings = state
+            .settings
+            .write()
+            .map_err(|e| VoxIpcError::Internal(e.to_string()))?;
+        apply_settings_patch_tree(&mut settings, &patch).map_err(VoxIpcError::InvalidArgument)?
+    };
+
+    // Handle side effects, worker dispatch, and aggregate reload policy.
+    let mut restart_needed = false;
+    let mut worker_needed = false;
+    for (domain, key) in &changed {
+        let value = patch
+            .get(domain)
+            .and_then(|d| d.get(key))
+            .cloned()
+            .unwrap_or(serde_json::Value::Null);
+        handle_setting_side_effects(&app, &state, domain, key, &value).await;
+
+        let policy = get_setting_reload_policy(domain, key);
+        if policy == SettingReloadPolicy::WorkerCommand {
+            dispatch_worker_command(&app, domain, key, &value).await;
+            worker_needed = true;
+        } else if policy == SettingReloadPolicy::Restart {
+            restart_needed = true;
+        }
+    }
+
+    let restart_scheduled = if restart_needed {
+        let reason = "apply_settings_patch".to_string();
+        request_engine_restart(&app, state.inner(), &reason)
+    } else {
+        false
+    };
+
+    schedule_debounced_save(state.inner().clone()).await;
+
+    let reload_policy = if restart_needed {
+        "restart"
+    } else if worker_needed {
+        "worker_command"
+    } else {
+        "hot"
+    };
+
+    if let Err(e) = emit_ipc(&app, IpcEvent::SettingsUpdated) {
+        log::warn!("[Settings::Patch] Failed to emit settings-updated: {}", e);
+    }
+
+    Ok(SettingUpdateResult {
+        applied: !changed.is_empty(),
+        reload_policy: reload_policy.to_string(),
+        message: format!(
+            "Applied {} setting(s) — {}",
+            changed.len(),
+            reload_policy
+        ),
         restart_scheduled,
     })
 }

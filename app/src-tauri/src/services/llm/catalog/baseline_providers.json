@@ -133,31 +133,6 @@
     "logo": "data:image/svg+xml;base64,PHN2ZwogICAgICAgIHdpZHRoPSIyNCIKICAgICAgICBoZWlnaHQ9IjI0IgogICAgICAgIHZpZXdCb3g9IjAgMCAyNCAyNCIKICAgICAgICBmaWxsPSIjRkY3MDAwIgogICAgICA+CiAgICAgICAgPHJlY3QgeD0iMyIgeT0iNCIgd2lkdGg9IjQiIGhlaWdodD0iNCIgLz4KICAgICAgICA8cmVjdCB4PSIxNyIgeT0iNCIgd2lkdGg9IjQiIGhlaWdodD0iNCIgLz4KICAgICAgICA8cmVjdCB4PSIzIiB5PSIxMCIgd2lkdGg9IjQiIGhlaWdodD0iNCIgLz4KICAgICAgICA8cmVjdCB4PSIxMCIgeT0iMTAiIHdpZHRoPSI0IiBoZWlnaHQ9IjQiIC8+CiAgICAgICAgPHJlY3QgeD0iMTciIHk9IjEwIiB3aWR0aD0iNCIgaGVpZ2h0PSI0IiAvPgogICAgICAgIDxyZWN0IHg9IjMiIHk9IjE2IiB3aWR0aD0iNCIgaGVpZ2h0PSI0IiAvPgogICAgICAgIDxyZWN0IHg9IjE3IiB5PSIxNiIgd2lkdGg9IjQiIGhlaWdodD0iNCIgLz4KICAgICAgPC9zdmc+"
   },
   {
-    "id": "nvidia_nim",
-    "name": "Nvidia NIM",
-    "base_url": "https://integrate.api.nvidia.com/v1",
-    "auth_scheme": "bearer",
-    "transport": "chat_completions",
-    "token_limit": "max_tokens",
-    "reasoning_off": {
-      "path": "reasoning_effort",
-      "value": "none"
-    },
-    "tool_choice": "auto",
-    "stream_usage": false,
-    "response_envelope": "chat",
-    "tool_stream": "openai_delta",
-    "top_k_field": null,
-    "catalog": "nvidia",
-    "context_window": null,
-    "source": "catalog/modelparams_vendor.json (nvidia/nemotron-3-super-120b-a12b declares max_tokens + reasoning_effort none|low|high; tool_choice presumed OpenAI-compat, absent from catalog entry; stream_usage false after Phase 11 intermittent 503s)",
-    "checked": "2026-09-22",
-    "key_placeholder": "nvapi-...",
-    "popular": true,
-    "tagline": "Enterprise NIM microservices",
-    "logo": "data:image/svg+xml;base64,PHN2ZwogICAgICAgIHdpZHRoPSIyNCIKICAgICAgICBoZWlnaHQ9IjI0IgogICAgICAgIHZpZXdCb3g9IjAgMCAyNCAyNCIKICAgICAgICBmaWxsPSIjNzZCOTAwIgogICAgICA+CiAgICAgICAgPHBhdGggZD0iTTEwLjg3IDUuMjVjLTMuMSAwLTUuNjMgMi41My01LjYzIDUuNjMgMCAyLjY4IDEuODggNC45MiA0LjQxIDUuNDd2LTEuNzhjLTEuNTctLjQ4LTIuNzMtMS45NC0yLjczLTMuNjkgMC0yLjEyIDEuNzItMy44NCAzLjg0LTMuODQgMS40OCAwIDIuNzcuODMgMy40MiAyLjA1aDEuOWMtLjc3LTIuMjYtMi45Mi0zLjg0LTUuMjEtMy44NHptMC0zQzUuOTcgMi4yNSAyIDYuMjIgMiAxMS4xMmMwIDQuMTQgMi44NCA3LjYzIDYuNyA4LjYydi0yLjFjLTIuNzUtLjktNC43LTMuNDgtNC43LTYuNTIgMC0zLjggMy4wOC02Ljg4IDYuODctNi44OCAyLjg3IDAgNS4zNCAxLjc2IDYuMzggNC4yOGgyLjI0Yy0xLjE4LTMuNzQtNC42OC02LjM3LTguNjItNi4zN3oiIC8+CiAgICAgIDwvc3ZnPg=="
-  },
-  {
     "id": "gemini",
     "name": "Google Gemini (OpenAI-Compat)",
     "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
