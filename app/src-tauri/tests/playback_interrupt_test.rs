@@ -293,67 +293,10 @@ async fn test_playback_finished_deferred_while_pending() {
     .expect("test_playback_finished_deferred_while_pending timed out");
 }
 
-/// Subtest 4: Sacred VAD ducking check.
-/// When audio mode is Speaker and state is Speaking, streaming real speech audio
-/// through the VAD actor must be completely suppressed (no SpeechStart emitted).
+
+/// Subtest 5: Speech detection fires when state is Ready, and Headset mode never suppresses speech even while Speaking.
 #[test]
-fn test_vad_ducking_suppresses_during_speaker_playback() {
-    let _guard = common::paths::TempPathsGuard::new();
-    vox_lib::utils::paths::init();
-    let (_app, state) = common::harness::get_test_app_and_state_sync();
-
-    let (stt_tx, _stt_rx) = mpsc::channel();
-    let vad_config = VadActorConfig {
-        initial_threshold: vox_lib::core::defaults::DEFAULT_VAD_THRESHOLD,
-        initial_noise_gate: vox_lib::core::defaults::DEFAULT_VAD_PTT_NOISE_GATE,
-        initial_silence_duration_ms: vox_lib::core::defaults::DEFAULT_VAD_SILENCE_DURATION_MS,
-        initial_speech_onset_ms: vox_lib::core::defaults::DEFAULT_VAD_SPEECH_ONSET_MS,
-        initial_mode: InteractionMode::Passive,
-        initial_audio_mode: AudioOutputMode::Speaker,
-    };
-
-    let audio_suppressed = Arc::new(AtomicBool::new(false));
-    let engine_shutdown = Arc::new(AtomicBool::new(false));
-
-    let (vad_cmd_tx, vox_event_rx, mut producer, vad_join) = common::harness::setup_vad_actor(
-        stt_tx,
-        vad_config,
-        state.pipeline.current_state_atomic.clone(),
-        state.pipeline.turn_id.clone(),
-        audio_suppressed.clone(),
-        state.pipeline.ingestion_gate.clone(),
-        engine_shutdown.clone(),
-    );
-
-    // Set state to Speaking while audio mode is Speaker
-    state.pipeline.set_state(InteractionState::Speaking);
-
-    // Stream real speech clip (supertonic_01_en_briefing.wav)
-    common::audio::stream_test_clip(common::ASSET_SUPERTONIC_01_EN_FILENAME, &mut producer);
-
-    // Assert that NO SpeechStart event was emitted during playback (suppressed)
-    common::harness::assert_channel_empty_after(
-        &vox_event_rx,
-        Duration::from_millis(500),
-        "VAD ducking suppression during Speaker Speaking",
-    );
-
-    // Teardown VAD actor with bounded thread join
-    engine_shutdown.store(true, Ordering::Relaxed);
-    let _ = vad_cmd_tx.send(VadCommand::Shutdown);
-    let (tx, rx) = mpsc::channel();
-    std::thread::spawn(move || {
-        let _ = vad_join.join();
-        let _ = tx.send(());
-    });
-    rx.recv_timeout(Duration::from_secs(5))
-        .expect("VAD actor thread join timed out");
-}
-
-/// Subtest 5: VAD suppression resumes after playback (Speaker in Ready),
-/// and Headset mode never suppresses speech even while Speaking.
-#[test]
-fn test_vad_ducking_resumes_after_playback_and_headset_never_suppresses() {
+fn test_speech_detection_in_ready_and_headset_modes() {
     let _guard = common::paths::TempPathsGuard::new();
     vox_lib::utils::paths::init();
     let (_app, state) = common::harness::get_test_app_and_state_sync();

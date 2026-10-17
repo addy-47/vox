@@ -1,5 +1,6 @@
 import { memo, useState, useMemo, useEffect, useCallback, useDeferredValue } from "react";
 import { useLenisScrollContainer, useScrollTopOnChange } from "@/shared/hooks/useLenisScrollContainer";
+import { promoteActive } from "@/shared/lib/activeSelection";
 import { Cpu, Gauge, Heart, Wrench, Zap } from "lucide-react";
 import { useFavoriteModels } from "@/shared/hooks/useFavoriteModels";
 import type { LlmModelInfo, ModelCapabilities } from "@/store/settingsStore";
@@ -84,20 +85,13 @@ export const ModelModal = memo(({
     else if (filterCategory === "tools") list = list.filter((m) => resolveProbed(m)?.supports_tools === "supported");
     else if (filterCategory === "fast") list = list.filter((m) => (resolveProbed(m)?.tps ?? 0) >= 30);
 
-    const sorted = [...list].sort((a, b) => {
-      const an = a.name || a.id, bn = b.name || b.id;
-      return sort === "az" ? an.localeCompare(bn, undefined, { sensitivity: "base" }) : bn.localeCompare(an, undefined, { sensitivity: "base" });
-    });
-
-    const activeModelId = pinnedModelId;
-    if (activeModelId) {
-      const idx = sorted.findIndex((m) => m.id === activeModelId);
-      if (idx > 0) {
-        const [selected] = sorted.splice(idx, 1);
-        sorted.unshift(selected);
-      }
-    }
-    return sorted;
+    return promoteActive(
+      [...list].sort((a, b) => {
+        const an = a.name || a.id, bn = b.name || b.id;
+        return sort === "az" ? an.localeCompare(bn, undefined, { sensitivity: "base" }) : bn.localeCompare(an, undefined, { sensitivity: "base" });
+      }),
+      pinnedModelId
+    );
   }, [remoteModels, deferredSearch, filterCategory, resolveProbed, pinnedModelId, sort, favoriteModelIds]);
 
   const [visibleModalModelCount, setVisibleModalModelCount] = useState(REMOTE_MODEL_PAGE_SIZE);

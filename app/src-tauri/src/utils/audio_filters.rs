@@ -84,6 +84,60 @@ impl FilterBank {
     }
 }
 
+/// 2nd-order IIR Biquad Low-Pass Filter (Butterworth, Direct Form II Transposed).
+pub struct BiquadLowPass {
+    b0: f32,
+    b1: f32,
+    b2: f32,
+    a1: f32,
+    a2: f32,
+    s1: f32,
+    s2: f32,
+}
+
+impl BiquadLowPass {
+    /// Creates a 2nd-order Butterworth low-pass filter with cutoff `cutoff_hz` at `sample_rate`.
+    pub fn new_butterworth(cutoff_hz: f32, sample_rate: f32) -> Self {
+        let q = std::f32::consts::FRAC_1_SQRT_2;
+        let omega = 2.0 * PI * cutoff_hz / sample_rate;
+        let cos_w = omega.cos();
+        let sin_w = omega.sin();
+        let alpha = sin_w / (2.0 * q);
+
+        let b0 = (1.0 - cos_w) / 2.0;
+        let b1 = 1.0 - cos_w;
+        let b2 = (1.0 - cos_w) / 2.0;
+        let a0 = 1.0 + alpha;
+        let a1 = -2.0 * cos_w;
+        let a2 = 1.0 - alpha;
+
+        Self {
+            b0: b0 / a0,
+            b1: b1 / a0,
+            b2: b2 / a0,
+            a1: a1 / a0,
+            a2: a2 / a0,
+            s1: 0.0,
+            s2: 0.0,
+        }
+    }
+
+    /// Ticks a single sample through Direct Form II Transposed structure.
+    #[inline]
+    pub fn tick(&mut self, x: f32) -> f32 {
+        let y = self.b0 * x + self.s1;
+        self.s1 = self.b1 * x - self.a1 * y + self.s2;
+        self.s2 = self.b2 * x - self.a2 * y;
+        y
+    }
+
+    /// Resets filter history/delay memories.
+    pub fn reset(&mut self) {
+        self.s1 = 0.0;
+        self.s2 = 0.0;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -148,5 +202,36 @@ mod tests {
         let (r_l, r_m, r_h) = fb.process_chunk(&signal);
         assert!(r_l >= 0.0 && r_m >= 0.0 && r_h >= 0.0);
         assert!(r_m > 0.05);
+    }
+
+    /// Tests 2nd-order Butterworth low-pass filter DC gain and high-frequency stopband attenuation.
+    #[test]
+    fn test_biquad_butterworth_low_pass() {
+        let mut lp = BiquadLowPass::new_butterworth(7500.0, 48000.0);
+
+        // 1. DC unity gain
+        let mut y = 0.0;
+        for _ in 0..1000 {
+            y = lp.tick(1.0);
+        }
+        assert!((y - 1.0).abs() < 1e-3, "DC response must be unity gain (got {})", y);
+
+        // 2. High-frequency stopband attenuation (> 12 kHz, e.g. 16 kHz)
+        lp.reset();
+        let mut max_amp = 0.0f32;
+        for i in 0..1000 {
+            let t = i as f32 / 48000.0;
+            let x = (2.0 * PI * 16000.0 * t).sin();
+            let out = lp.tick(x);
+            if i > 500 {
+                max_amp = max_amp.max(out.abs());
+            }
+        }
+        // At 16 kHz, attenuation should be ~ -20 dB (amplitude <= 0.12)
+        assert!(
+            max_amp < 0.15,
+            "16 kHz signal must be attenuated below 0.15 amplitude (got {})",
+            max_amp
+        );
     }
 }

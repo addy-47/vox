@@ -77,3 +77,30 @@ export function getEffectiveLlmServers(
     []
   );
 }
+
+/**
+ * Active-card primacy: the committed/active entry is always rendered first.
+ *
+ * Semantics (shared by the model catalog, provider cloud/TTS grids, and the
+ * custom-server list — `ModelModal.tsx`, `ProviderModal.tsx`): an already
+ * *sorted* list, plus the id of the entry the user actively uses, moves that
+ * entry to index 0 — only when present at index > 0. Absent id or an id
+ * already first is a no-op. Only the active selection promotes; a *drafted*
+ * (uncommitted) selection must never reorder until its caller passes the
+ * committed id.
+ *
+ * Returns a new array; the input list is never mutated.
+ */
+export function promoteActive<T extends { id: string }>(
+  list: readonly T[],
+  activeId?: string | null
+): T[] {
+  const sorted = [...list];
+  if (!activeId) return sorted;
+  const idx = sorted.findIndex((entry) => entry.id === activeId);
+  if (idx > 0) {
+    const [active] = sorted.splice(idx, 1);
+    sorted.unshift(active);
+  }
+  return sorted;
+}

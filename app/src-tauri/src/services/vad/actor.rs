@@ -22,10 +22,7 @@ use super::{
 };
 use crate::{
     config::AudioOutputMode,
-    core::{
-        events::{InteractionMode, InteractionOwner, VoxEvent},
-        state::InteractionState,
-    },
+    core::events::{InteractionMode, InteractionOwner, VoxEvent},
     monitoring::TelemetryEvent,
     services::stt::SttCommand,
     utils::audio_filters::FilterBank,
@@ -338,32 +335,9 @@ pub fn trim_window(state: &VadActorState, raw_len: usize) -> Vec<f32> {
 /// Minimum in-buffer sample span required before a windowed speech region is trimmed.
 const MIN_WINDOWED_SPEECH_SAMPLES: usize = 256;
 
-/// Checks whether audio processing should be ducked due to speaker output or explicit suppression.
-fn should_suppress_audio(
-    audio_suppressed: &AtomicBool,
-    state_atomic: &AtomicU32,
-    state: &VadActorState,
-) -> bool {
-    if audio_suppressed.load(Ordering::Relaxed) {
-        return true;
-    }
-
-    let is_suppressed = state.realtime_tx.is_none()
-        && InteractionState::from(state_atomic.load(Ordering::Relaxed))
-            == InteractionState::Speaking
-        && state.audio_mode == AudioOutputMode::Speaker;
-
-    if is_suppressed {
-        static SUPPRESS_COUNT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
-        let count = SUPPRESS_COUNT.fetch_add(1, Ordering::Relaxed);
-        if count.is_multiple_of(200) {
-            log::info!(
-                "[VAD Actor] Mic input suppressed: state=Speaking, audio_mode=Speaker (barge-in disabled to prevent acoustic loopback)"
-            );
-        }
-    }
-
-    is_suppressed
+/// Checks whether audio processing should be ducked due to explicit suppression.
+fn should_suppress_audio(audio_suppressed: &AtomicBool) -> bool {
+    audio_suppressed.load(Ordering::Relaxed)
 }
 
 /// Spawns the synchronous, low-latency VAD actor thread.
@@ -439,7 +413,7 @@ where
                     &handles.dropped_counter,
                 );
 
-                if should_suppress_audio(&handles.audio_suppressed, &handles.state_atomic, &state) {
+                if should_suppress_audio(&handles.audio_suppressed) {
                     continue;
                 }
 
@@ -485,84 +459,15 @@ mod tests {
     use super::*;
     use crate::{
         config::AudioOutputMode,
-        core::{events::InteractionMode, state::InteractionState},
+        core::events::InteractionMode,
     };
 
-    fn make_state(
-        audio_mode: AudioOutputMode,
-        state_val: u32,
-        realtime_tx: Option<tokio::sync::mpsc::Sender<Vec<i16>>>,
-    ) -> (VadActorState, Arc<AtomicU32>, Arc<AtomicBool>) {
-        let mut s = VadActorState::new(0.5, 0.001, 800, 32, InteractionMode::Passive, audio_mode);
-        s.realtime_tx = realtime_tx;
-        let state_atomic = Arc::new(AtomicU32::new(state_val));
+    #[test]
+    fn test_audio_suppressed_flag_controls_suppression() {
         let suppressed = Arc::new(AtomicBool::new(false));
-        (s, state_atomic, suppressed)
-    }
-
-    #[test]
-    fn test_suppression_requires_speaking_state() {
-        let (state, atomic, suppressed) = make_state(
-            AudioOutputMode::Speaker,
-            InteractionState::Ready as u32,
-            None,
-        );
-        assert!(!should_suppress_audio(&suppressed, &atomic, &state));
-        let (state2, atomic2, suppressed2) = make_state(
-            AudioOutputMode::Speaker,
-            InteractionState::Listening as u32,
-            None,
-        );
-        assert!(!should_suppress_audio(&suppressed2, &atomic2, &state2));
-    }
-
-    #[test]
-    fn test_suppression_speaker_speaking_no_realtime() {
-        let (state, atomic, suppressed) = make_state(
-            AudioOutputMode::Speaker,
-            InteractionState::Speaking as u32,
-            None,
-        );
-        assert!(should_suppress_audio(&suppressed, &atomic, &state));
-    }
-
-    #[test]
-    fn test_headset_never_suppresses() {
-        let (state, atomic, suppressed) = make_state(
-            AudioOutputMode::Headset,
-            InteractionState::Speaking as u32,
-            None,
-        );
-        assert!(!should_suppress_audio(&suppressed, &atomic, &state));
-    }
-
-    #[test]
-    fn test_realtime_bypasses_suppression() {
-        let (tx, _rx) = tokio::sync::mpsc::channel(1);
-        let (state, atomic, suppressed) = make_state(
-            AudioOutputMode::Speaker,
-            InteractionState::Speaking as u32,
-            Some(tx),
-        );
-        assert!(!should_suppress_audio(&suppressed, &atomic, &state));
-    }
-
-    #[test]
-    fn test_audio_suppressed_flag_forces_suppression() {
-        let (state, atomic, suppressed) = make_state(
-            AudioOutputMode::Headset,
-            InteractionState::Ready as u32,
-            None,
-        );
+        assert!(!should_suppress_audio(&suppressed));
         suppressed.store(true, Ordering::Relaxed);
-        assert!(should_suppress_audio(&suppressed, &atomic, &state));
-        let (state2, atomic2, suppressed2) = make_state(
-            AudioOutputMode::Speaker,
-            InteractionState::Ready as u32,
-            None,
-        );
-        suppressed2.store(true, Ordering::Relaxed);
-        assert!(should_suppress_audio(&suppressed2, &atomic2, &state2));
+        assert!(should_suppress_audio(&suppressed));
     }
 
     #[test]

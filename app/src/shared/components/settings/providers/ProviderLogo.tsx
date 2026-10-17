@@ -1,4 +1,4 @@
-import { memo } from "react";
+import { memo, type ReactElement } from "react";
 import { cn } from "@/shared/lib/utils";
 
 export interface ProviderLogoProps {
@@ -15,7 +15,7 @@ export interface ProviderLogoProps {
 export interface ProviderLogoDef {
   id: string;
   aliases: readonly string[];
-  render: (props: { size: number; className?: string }) => any;
+  render: (props: { size: number; className?: string }) => ReactElement;
 }
 
 export const FallbackServerLogo = ({ size = 16, className }: { size?: number; className?: string }) => (
