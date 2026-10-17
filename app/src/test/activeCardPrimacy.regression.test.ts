@@ -168,6 +168,93 @@ describe("Active Card Primacy: Grid Ordering", () => {
     expect(getEffectiveCloudApiKey(null, null, "openrouter")).toBeUndefined();
   });
 
+  it("getEffectiveCloudApiKey: resolves bidirectional alias between nvidia and nvidia_nim", async () => {
+    const { getEffectiveCloudApiKey, getCloudProviderAlias } = await import("@/shared/lib/activeSelection");
+
+    expect(getCloudProviderAlias("nvidia")).toBe("nvidia_nim");
+    expect(getCloudProviderAlias("nvidia_nim")).toBe("nvidia");
+    expect(getCloudProviderAlias("openrouter")).toBeNull();
+
+    // Key saved under nvidia_nim, queried with nvidia
+    const committedNim = { providers: { llm: { cloud_keys: { nvidia_nim: "nv-key-nim" } } } };
+    expect(getEffectiveCloudApiKey(null, committedNim, "nvidia")).toBe("nv-key-nim");
+
+    // Key saved under nvidia, queried with nvidia_nim
+    const committedNvidia = { providers: { llm: { cloud_keys: { nvidia: "nv-key-base" } } } };
+    expect(getEffectiveCloudApiKey(null, committedNvidia, "nvidia_nim")).toBe("nv-key-base");
+  });
+
+  it("updateTtsProvidersFromContract: includes cloud and remote synthesis with mapped display names", async () => {
+    const { updateTtsProvidersFromContract, TTS_MODAL_PROVIDERS } = await import("@/data/providersCopy");
+
+    const sampleManifestTts = [
+      {
+        id: "edge_tts",
+        name: "edge",
+        category: "tts",
+        subcategory: "cloud",
+        description: "Microsoft Edge speech",
+        is_cloud: true,
+        is_remote: false,
+      },
+      {
+        id: "google_tts",
+        name: "google",
+        category: "tts",
+        subcategory: "cloud",
+        description: "Google Cloud Text-to-Speech",
+        is_cloud: true,
+        is_remote: false,
+      },
+      {
+        id: "azure_tts",
+        name: "azure",
+        category: "tts",
+        subcategory: "cloud",
+        description: "Azure AI Speech",
+        is_cloud: true,
+        is_remote: false,
+      },
+      {
+        id: "chatterbox_remote",
+        name: "chatterbox_remote",
+        category: "tts",
+        subcategory: "remote",
+        description: "Remote HTTP server",
+        is_cloud: false,
+        is_remote: true,
+      },
+      {
+        id: "chatterbox",
+        name: "chatterbox",
+        category: "tts",
+        subcategory: "main",
+        description: "Local model",
+        is_cloud: false,
+        is_remote: false,
+      },
+    ];
+
+    updateTtsProvidersFromContract(sampleManifestTts);
+
+    expect(TTS_MODAL_PROVIDERS.map((p) => p.id)).toEqual([
+      "edge_tts",
+      "google_tts",
+      "azure_tts",
+      "chatterbox_remote",
+    ]);
+
+    const edge = TTS_MODAL_PROVIDERS.find((p) => p.id === "edge_tts");
+    expect(edge?.name).toBe("Microsoft Edge TTS");
+    expect(edge?.category).toBe("cloud");
+    expect(edge?.isFree).toBe(true);
+
+    const remote = TTS_MODAL_PROVIDERS.find((p) => p.id === "chatterbox_remote");
+    expect(remote?.name).toBe("Chatterbox Remote (HTTP)");
+    expect(remote?.category).toBe("server");
+    expect(remote?.isFree).toBe(false);
+  });
+
   it("active model primacy: only committed pinnedModelId moves to index 0", () => {
     const sampleModels = [
       { id: "anthropic/claude-3-5-sonnet", name: "Claude 3.5 Sonnet" },

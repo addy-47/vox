@@ -426,7 +426,9 @@ pub fn create_realtime_provider(
                 .cloned()
                 .unwrap_or_default();
             if api_key.trim().is_empty() {
-                return Err("API key for Gemini Live is not configured in providers.jsonc".to_string());
+                return Err(
+                    "API key for Gemini Live is not configured in providers.jsonc".to_string(),
+                );
             }
             let config = GeminiRealtimeConfig {
                 api_key,
@@ -452,7 +454,10 @@ pub fn create_realtime_provider(
                 .cloned()
                 .unwrap_or_default();
             if api_key.trim().is_empty() {
-                return Err("API key for Deepgram Voice Agent is not configured in providers.jsonc".to_string());
+                return Err(
+                    "API key for Deepgram Voice Agent is not configured in providers.jsonc"
+                        .to_string(),
+                );
             }
             let config = DeepgramVoiceAgentConfig {
                 api_key,

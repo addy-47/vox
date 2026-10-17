@@ -186,7 +186,11 @@ fn main() {
                 provider: Some("nvidia".to_string()),
                 model: model.clone(),
             };
-            settings.providers.llm.cloud_keys.insert("nvidia".to_string(), api_key);
+            settings
+                .providers
+                .llm
+                .cloud_keys
+                .insert("nvidia".to_string(), api_key);
         }
         _ => {
             settings.llm.active = ActiveSelection {

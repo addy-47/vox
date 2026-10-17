@@ -104,8 +104,7 @@ pub async fn sync_remote_voices(state: State<'_, Arc<AppState>>) -> Result<usize
             log::warn!("[Voices] Background Edge TTS sync failed: {}", e);
         }
         if sync_azure {
-            let base =
-                crate::services::tts::auth::normalize_azure_endpoint(&azure_base);
+            let base = crate::services::tts::auth::normalize_azure_endpoint(&azure_base);
             if let Err(e) =
                 crate::services::tts::voice::sync_azure_tts_voices_to_db(&conn, &base, &azure_key)
                     .await
@@ -114,8 +113,7 @@ pub async fn sync_remote_voices(state: State<'_, Arc<AppState>>) -> Result<usize
             }
         }
         if sync_google {
-            if let Err(e) = crate::services::tts::voice::sync_google_tts_voices_to_db(&conn).await
-            {
+            if let Err(e) = crate::services::tts::voice::sync_google_tts_voices_to_db(&conn).await {
                 log::warn!("[Voices] Background Google TTS sync failed: {}", e);
             }
         }

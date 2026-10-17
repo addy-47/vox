@@ -5,9 +5,9 @@ use serde::{Deserialize, Serialize};
 use crate::{
     config::{ActiveSelection, LastSelectedModels},
     core::defaults::{
-        DEFAULT_LLM_CLOUD_MODEL, DEFAULT_LLM_CLOUD_PROVIDER_NAME,
-        DEFAULT_LLM_MODEL, DEFAULT_LLM_SERVER_BASE_URL, DEFAULT_LLM_SERVER_MODEL,
-        DEFAULT_LLM_SERVER_PROVIDER_NAME, MIN_LLM_CONTEXT_WINDOW,
+        DEFAULT_LLM_CLOUD_MODEL, DEFAULT_LLM_CLOUD_PROVIDER_NAME, DEFAULT_LLM_MODEL,
+        DEFAULT_LLM_SERVER_BASE_URL, DEFAULT_LLM_SERVER_MODEL, DEFAULT_LLM_SERVER_PROVIDER_NAME,
+        MIN_LLM_CONTEXT_WINDOW,
     },
 };
 
@@ -176,10 +176,7 @@ impl LlmSettings {
         match self.active.category.as_str() {
             "server" => {
                 let target_id = self.active.provider.as_deref().unwrap_or("ollama");
-                let server = provs
-                    .servers
-                    .iter()
-                    .find(|s| s.id == target_id);
+                let server = provs.servers.iter().find(|s| s.id == target_id);
 
                 if let Some(srv) = server {
                     let model = if !self.active.model.is_empty() {
@@ -469,8 +466,10 @@ mod tests {
             LlmRuntimeTarget::Unresolved { provider_id } => {
                 assert_eq!(provider_id, "non_existent_provider_xyz");
             }
-            other => panic!("Expected Unresolved target for unknown provider, got {:?}", other),
+            other => panic!(
+                "Expected Unresolved target for unknown provider, got {:?}",
+                other
+            ),
         }
     }
 }
-

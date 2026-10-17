@@ -4,9 +4,7 @@ use crate::{
     core::{events::InteractionMode, state::AppState},
     persistence::models::update_model_parameters,
     services::{
-        llm::LlmCustomServer,
-        memory::scheduler::parse_consolidation_time,
-        tts::TtsCustomServer,
+        llm::LlmCustomServer, memory::scheduler::parse_consolidation_time, tts::TtsCustomServer,
     },
 };
 
@@ -63,19 +61,43 @@ pub fn supported_keys_for_domain(domain: &str) -> &'static [&'static str] {
     }
 }
 
-/// Normalizes one custom server URL in place (trim, strip trailing slash).
+/// Normalizes one custom server URL in place:
+/// - Strips whitespace around colons and slashes
+/// - Fixes typos such as http// or https// by normalizing to ://
+/// - Automatically prepends http:// if protocol is omitted
+/// - Trims trailing slashes
+/// - Validates final URL with Url::parse
 fn normalize_server_url(url: &str) -> Result<String, String> {
-    let trimmed = url.trim().trim_end_matches('/');
+    let trimmed = url.trim();
     if trimmed.is_empty() {
         return Err("server url must not be empty".to_string());
     }
-    if !(trimmed.starts_with("http://") || trimmed.starts_with("https://")) {
-        return Err(format!("server url must start with http:// or https://: {}", trimmed));
+
+    let mut s = trimmed.to_string();
+    if s.starts_with("https//") {
+        s = format!("https://{}", &s[7..]);
+    } else if s.starts_with("http//") {
+        s = format!("http://{}", &s[6..]);
+    } else if s.starts_with("https:/") && !s.starts_with("https://") {
+        s = format!("https://{}", &s[7..]);
+    } else if s.starts_with("http:/") && !s.starts_with("http://") {
+        s = format!("http://{}", &s[6..]);
     }
-    if trimmed.contains(char::is_whitespace) {
-        return Err(format!("server url must not contain whitespace: {}", trimmed));
+
+    if !s.starts_with("http://") && !s.starts_with("https://") {
+        s = format!("http://{}", s);
     }
-    Ok(trimmed.to_string())
+
+    let s_clean: String = s.chars().filter(|c| !c.is_whitespace()).collect();
+    let final_url = s_clean.trim_end_matches('/').to_string();
+
+    let parsed =
+        reqwest::Url::parse(&final_url).map_err(|e| format!("invalid server url: {}", e))?;
+    if parsed.host_str().is_none() {
+        return Err("server url must contain a valid host".to_string());
+    }
+
+    Ok(final_url)
 }
 
 /// Validates an LLM custom server list: non-empty ids, well-formed normalized URLs, no duplicate ids or URLs.
@@ -108,7 +130,10 @@ fn validate_tts_server_list(servers: &mut [TtsCustomServer]) -> Result<(), Strin
         }
         server.url = normalize_server_url(&server.url)?;
         if server.remote_path.trim().is_empty() {
-            return Err(format!("server '{}' remote_path must not be empty", server.id));
+            return Err(format!(
+                "server '{}' remote_path must not be empty",
+                server.id
+            ));
         }
     }
     let mut seen_ids = std::collections::HashSet::new();
@@ -289,8 +314,9 @@ fn apply_tts_mutation(
             settings.providers.tts.servers = servers;
         }
         "azure_tts" => {
-            let cfg: crate::services::tts::config::TtsAzureConfig = serde_json::from_value(value.clone())
-                .map_err(|e| format!("Invalid Azure TTS config: {}", e))?;
+            let cfg: crate::services::tts::config::TtsAzureConfig =
+                serde_json::from_value(value.clone())
+                    .map_err(|e| format!("Invalid Azure TTS config: {}", e))?;
             if cfg.region_or_endpoint.trim().is_empty() {
                 return Err("azure region_or_endpoint must not be empty".to_string());
             }
@@ -303,14 +329,17 @@ fn apply_tts_mutation(
             settings.providers.tts.azure_tts = cfg;
         }
         "google_tts" => {
-            let cfg: crate::services::tts::config::TtsGoogleConfig = serde_json::from_value(value.clone())
-                .map_err(|e| format!("Invalid Google TTS config: {}", e))?;
+            let cfg: crate::services::tts::config::TtsGoogleConfig =
+                serde_json::from_value(value.clone())
+                    .map_err(|e| format!("Invalid Google TTS config: {}", e))?;
             if cfg.voice.trim().is_empty() {
                 return Err("google voice must not be empty".to_string());
             }
             if let Some(ref p) = cfg.project_override {
                 if p.trim().is_empty() {
-                    return Err("google project_override must not be empty when provided".to_string());
+                    return Err(
+                        "google project_override must not be empty when provided".to_string()
+                    );
                 }
             }
             settings.providers.tts.google_tts = cfg;
@@ -585,8 +614,21 @@ mod tests {
         for expected in ["active", "last_selected", "servers", "cloud_keys"] {
             assert!(keys.contains(&expected), "missing {}", expected);
         }
-        for phantom in ["server", "cloud", "embedded", "model", "provider", "temperature", "threads", "context_window"] {
-            assert!(!keys.contains(&phantom), "phantom key accepted: {}", phantom);
+        for phantom in [
+            "server",
+            "cloud",
+            "embedded",
+            "model",
+            "provider",
+            "temperature",
+            "threads",
+            "context_window",
+        ] {
+            assert!(
+                !keys.contains(&phantom),
+                "phantom key accepted: {}",
+                phantom
+            );
         }
     }
 
@@ -612,7 +654,7 @@ mod tests {
         ];
         assert!(validate_llm_server_list(&mut servers).is_err());
 
-        let mut bad_scheme = vec![LlmCustomServer {
+        let mut no_scheme = vec![LlmCustomServer {
             id: "a".to_string(),
             name: "A".to_string(),
             url: "10.0.0.1:11434".to_string(),
@@ -620,7 +662,29 @@ mod tests {
             protocol: "openai".to_string(),
             api_key: None,
         }];
-        assert!(validate_llm_server_list(&mut bad_scheme).is_err());
+        assert!(validate_llm_server_list(&mut no_scheme).is_ok());
+        assert_eq!(no_scheme[0].url, "http://10.0.0.1:11434");
+
+        let mut typo_scheme = vec![LlmCustomServer {
+            id: "b".to_string(),
+            name: "B".to_string(),
+            url: "http//localhost:8000".to_string(),
+            model: String::new(),
+            protocol: "openai".to_string(),
+            api_key: None,
+        }];
+        assert!(validate_llm_server_list(&mut typo_scheme).is_ok());
+        assert_eq!(typo_scheme[0].url, "http://localhost:8000");
+
+        let mut empty_scheme = vec![LlmCustomServer {
+            id: "c".to_string(),
+            name: "C".to_string(),
+            url: "   ".to_string(),
+            model: String::new(),
+            protocol: "openai".to_string(),
+            api_key: None,
+        }];
+        assert!(validate_llm_server_list(&mut empty_scheme).is_err());
 
         let mut ok = vec![LlmCustomServer {
             id: "a".to_string(),

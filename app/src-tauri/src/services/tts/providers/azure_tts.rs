@@ -85,7 +85,9 @@ impl AzureTtsProvider {
             return Err(auth_error());
         };
         if voice.contains(['\'', '"', '<', '>']) {
-            return Err(anyhow!("Azure TTS voice name contains SSML-unsafe characters"));
+            return Err(anyhow!(
+                "Azure TTS voice name contains SSML-unsafe characters"
+            ));
         }
         Ok(Self {
             client,
@@ -130,7 +132,11 @@ fn build_ssml(voice: &str, text: &str, speed: f32) -> String {
         .join("-")
         .trim()
         .to_string();
-    let lang = if lang.is_empty() { "en-US" } else { lang.as_str() };
+    let lang = if lang.is_empty() {
+        "en-US"
+    } else {
+        lang.as_str()
+    };
     let escaped = text
         .replace('&', "&amp;")
         .replace('<', "&lt;")
@@ -158,7 +164,9 @@ fn entra_token(provider: &AzureTtsProvider) -> Result<String> {
         }
     }
     if !matches!(provider.auth, AuthMode::Entra { .. }) {
-        return Err(anyhow!("Entra token requested on key-authenticated provider"));
+        return Err(anyhow!(
+            "Entra token requested on key-authenticated provider"
+        ));
     }
     let token = AZURE_TTS_RUNTIME.block_on(async {
         let credential = azure_identity::DeveloperToolsCredential::new(None)
@@ -183,10 +191,7 @@ fn entra_token(provider: &AzureTtsProvider) -> Result<String> {
 /// `#` separator between resource ID and access token).
 fn auth_header(provider: &AzureTtsProvider) -> Result<(String, String)> {
     match provider.auth {
-        AuthMode::Key(ref key) => Ok((
-            "Ocp-Apim-Subscription-Key".to_string(),
-            key.clone(),
-        )),
+        AuthMode::Key(ref key) => Ok(("Ocp-Apim-Subscription-Key".to_string(), key.clone())),
         AuthMode::Entra { ref resource_id } => {
             let token = entra_token(provider)?;
             Ok((
@@ -341,13 +346,8 @@ impl TtsProvider for AzureTtsProvider {
             }
             return Err(auth::classify_http_status(status.as_u16()).into());
         };
-        let total_samples = stream_pcm_response(
-            response,
-            ctx.turn_id,
-            ctx.intent,
-            &ctx.cancel,
-            ctx.playback,
-        )?;
+        let total_samples =
+            stream_pcm_response(response, ctx.turn_id, ctx.intent, &ctx.cancel, ctx.playback)?;
         let audio_duration = total_samples as f32 / AZURE_TTS_SAMPLE_RATE as f32;
         let rtf = if audio_duration > 0.0 {
             start.elapsed().as_secs_f32() / audio_duration

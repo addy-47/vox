@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback, useEffect } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
-import { activeSelection } from "@/shared/lib/activeSelection";
+import { activeSelection, getCloudProviderAlias } from "@/shared/lib/activeSelection";
 import type { CloudProvider } from "@/data/providersCopy";
 
 export interface UseProviderSelectionOptions {
@@ -57,7 +57,8 @@ export function useProviderSelection(options?: UseProviderSelectionOptions) {
         return ds?.tts?.[providerId]?.key ?? ds?.providers?.tts?.[providerId]?.key;
       }
       const keys = draftSettings?.llm?.cloud_keys ?? draftSettings?.providers?.llm?.cloud_keys;
-      return keys?.[providerId];
+      const alias = getCloudProviderAlias(providerId);
+      return keys?.[providerId] ?? (alias ? keys?.[alias] : undefined);
     },
     [
       isTts,
@@ -100,7 +101,9 @@ export function useProviderSelection(options?: UseProviderSelectionOptions) {
         type Ct = { providers?: { tts?: Record<string, { key?: string }> } };
         return (committedSettings as Ct | null)?.providers?.tts?.[providerId]?.key;
       }
-      return committedSettings?.providers?.llm?.cloud_keys?.[providerId];
+      const keys = committedSettings?.providers?.llm?.cloud_keys ?? committedSettings?.llm?.cloud_keys;
+      const alias = getCloudProviderAlias(providerId);
+      return keys?.[providerId] ?? (alias ? keys?.[alias] : undefined);
     },
     [isTts, committedSettings?.providers?.tts, committedSettings?.providers?.llm?.cloud_keys]
   );

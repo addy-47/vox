@@ -142,7 +142,12 @@ pub async fn update_model_parameters(
         }
         (rec.model_type, rec.category, rec.provider, base)
     } else {
-        ("custom".to_string(), "custom".to_string(), None, params.clone())
+        (
+            "custom".to_string(),
+            "custom".to_string(),
+            None,
+            params.clone(),
+        )
     };
 
     let params_str = serde_json::to_string(&merged_params).unwrap_or_else(|_| "{}".to_string());

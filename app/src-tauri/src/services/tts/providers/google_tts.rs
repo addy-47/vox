@@ -216,10 +216,13 @@ impl TtsProvider for GoogleTtsProvider {
                 builder = builder.with_options(options);
             }
             let (sender, mut responses) = builder.build();
-            let audio_config = model::StreamingAudioConfig::new()
-                .set_audio_encoding(model::AudioEncoding::Pcm)
-                .set_sample_rate_hertz(GOOGLE_TTS_SAMPLE_RATE as i32)
-                .set_speaking_rate(speed.clamp(Self::SPEED_RANGE.min, Self::SPEED_RANGE.max) as f64);
+            let audio_config =
+                model::StreamingAudioConfig::new()
+                    .set_audio_encoding(model::AudioEncoding::Pcm)
+                    .set_sample_rate_hertz(GOOGLE_TTS_SAMPLE_RATE as i32)
+                    .set_speaking_rate(
+                        speed.clamp(Self::SPEED_RANGE.min, Self::SPEED_RANGE.max) as f64
+                    );
             let voice_params = model::VoiceSelectionParams::new()
                 .set_language_code(locale)
                 .set_name(voice_name);
@@ -252,8 +255,7 @@ impl TtsProvider for GoogleTtsProvider {
                     log::info!("[GoogleTTS] Synthesis cancelled for turn {}", turn_id);
                     break;
                 }
-                let response =
-                    response.map_err(|e| classify_rpc_error(&e, "stream failed"))?;
+                let response = response.map_err(|e| classify_rpc_error(&e, "stream failed"))?;
                 if !ingest.ingest(&response.audio_content) {
                     break;
                 }

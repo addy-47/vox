@@ -743,10 +743,7 @@ pub fn on_end<R: Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &RoutingCon
 }
 
 /// Resolves dynamic execution parameters from the models table for the given model ID.
-pub(crate) async fn resolve_llm_execution_params(
-    db: &VoxDb,
-    model_id: &str,
-) -> LlmExecutionParams {
+pub(crate) async fn resolve_llm_execution_params(db: &VoxDb, model_id: &str) -> LlmExecutionParams {
     let conn = match db.connect() {
         Ok(c) => c,
         Err(e) => {
@@ -762,31 +759,31 @@ pub(crate) async fn resolve_llm_execution_params(
         .await
         .unwrap_or_default();
     LlmExecutionParams {
-                context_window: raw
-                    .get("context_window")
-                    .and_then(|v| v.as_u64())
-                    .map(|v| v as usize)
-                    .unwrap_or(DEFAULT_LLM_CONTEXT_WINDOW as usize),
-                max_output_tokens: raw
-                    .get("max_output_tokens")
-                    .and_then(|v| v.as_u64())
-                    .map(|v| v as usize)
-                    .unwrap_or(DEFAULT_LLM_MAX_OUTPUT_TOKENS as usize),
-                temperature: raw
-                    .get("temperature")
-                    .and_then(|v| v.as_f64())
-                    .map(|v| v as f32)
-                    .unwrap_or(DEFAULT_LLM_TEMPERATURE),
-                reasoning_enabled: raw
-                    .get("reasoning_enabled")
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(false),
-                n_threads: raw
-                    .get("threads")
-                    .and_then(|v| v.as_u64())
-                    .map(|v| v as u32)
-                    .unwrap_or(DEFAULT_LLM_THREADS),
-            }
+        context_window: raw
+            .get("context_window")
+            .and_then(|v| v.as_u64())
+            .map(|v| v as usize)
+            .unwrap_or(DEFAULT_LLM_CONTEXT_WINDOW as usize),
+        max_output_tokens: raw
+            .get("max_output_tokens")
+            .and_then(|v| v.as_u64())
+            .map(|v| v as usize)
+            .unwrap_or(DEFAULT_LLM_MAX_OUTPUT_TOKENS as usize),
+        temperature: raw
+            .get("temperature")
+            .and_then(|v| v.as_f64())
+            .map(|v| v as f32)
+            .unwrap_or(DEFAULT_LLM_TEMPERATURE),
+        reasoning_enabled: raw
+            .get("reasoning_enabled")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false),
+        n_threads: raw
+            .get("threads")
+            .and_then(|v| v.as_u64())
+            .map(|v| v as u32)
+            .unwrap_or(DEFAULT_LLM_THREADS),
+    }
 }
 
 /// Resolves tool calling capability for the active model from capability cache or 4s probe.

@@ -6,8 +6,9 @@ import { INTERACTION_CONFIG_DESK_COPY, PIPELINE_PROVIDERS_DESK_COPY, PROVIDERS_H
 import { checkLlmProviderHealth } from "@/services/catalogService";
 import { BrainCircuit, Network, AudioLines, Mic, Globe, Key, KeyRound, HardDrive, Plus, Server } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
-import { activeSelection } from "@/shared/lib/activeSelection";
+import { activeSelection, getCloudProviderAlias } from "@/shared/lib/activeSelection";
 import { ExpandableList } from "@/shared/ui";
+import { Tooltip } from "@/shared/ui/Tooltip";
 import { SettingsCommitControls } from "@/shared/components/settings/SettingsCommitControls";
 import { ModelModal } from "@/shared/components/settings/models/LlmCatalogView";
 import {
@@ -108,6 +109,20 @@ export const InteractionConfigDesk = memo(({ activeCategory, onBack, layoutMode 
     onSaveInlineKey: handleSaveInlineKey,
   } = providerSelection;
 
+  const committedActiveCategory =
+    currentCategory === "TTS"
+      ? committedSettings?.tts?.active?.category
+      : currentCategory === "STT"
+      ? committedSettings?.stt?.active?.category
+      : committedSettings?.llm?.active?.category;
+
+  const committedActiveProviderId =
+    currentCategory === "TTS"
+      ? committedSettings?.tts?.active?.provider
+      : currentCategory === "STT"
+      ? committedSettings?.stt?.active?.provider
+      : committedSettings?.llm?.active?.provider;
+
   const activeLlmProvider = draftLlm?.active?.category ?? "embedded";
   const llmServerInventory = useMemo(
     () => draftLlm?.servers ?? draftSettings?.providers?.llm?.servers ?? [],
@@ -158,6 +173,7 @@ export const InteractionConfigDesk = memo(({ activeCategory, onBack, layoutMode 
         url: p.url || "",
         keyPlaceholder: "API Key (Optional)...",
         logo: p.logo,
+        isFree: p.isFree,
       }));
     }
     return currentCategory === "LLM" ? CLOUD_PROVIDERS : [];
@@ -166,7 +182,7 @@ export const InteractionConfigDesk = memo(({ activeCategory, onBack, layoutMode 
   const providerFilterCounts = useMemo(() => {
     let configured = 0, unconfigured = 0;
     for (const p of rawCloudProviders) {
-      if (getProviderKey(p.id)?.trim()) configured += 1;
+      if (p.isFree || getProviderKey(p.id)?.trim()) configured += 1;
       else unconfigured += 1;
     }
     return { all: rawCloudProviders.length + 1, configured, unconfigured };
@@ -176,12 +192,13 @@ export const InteractionConfigDesk = memo(({ activeCategory, onBack, layoutMode 
     let list = rawCloudProviders;
     const q = searchQuery.trim().toLowerCase();
     if (q) list = list.filter((p) => p.name.toLowerCase().includes(q) || p.id.toLowerCase().includes(q) || p.tagline?.toLowerCase().includes(q));
-    if (providerFilter === "configured") list = list.filter((p) => Boolean(getProviderKey(p.id)?.trim()));
-    else if (providerFilter === "unconfigured") list = list.filter((p) => !getProviderKey(p.id)?.trim());
+    if (providerFilter === "configured") list = list.filter((p) => Boolean(p.isFree) || Boolean(getProviderKey(p.id)?.trim()));
+    else if (providerFilter === "unconfigured") list = list.filter((p) => !p.isFree && !getProviderKey(p.id)?.trim());
     else if (providerFilter === "local") list = [];
 
     return [...list].sort((a, b) => {
-      const aKey = Boolean(getCommittedProviderKey(a.id)?.trim()), bKey = Boolean(getCommittedProviderKey(b.id)?.trim());
+      const aKey = Boolean(a.isFree) || Boolean(getCommittedProviderKey(a.id)?.trim());
+      const bKey = Boolean(b.isFree) || Boolean(getCommittedProviderKey(b.id)?.trim());
       if (aKey !== bKey) return aKey ? -1 : 1;
       return sortOrder === "az" ? a.name.localeCompare(b.name, undefined, { sensitivity: "base" }) : b.name.localeCompare(a.name, undefined, { sensitivity: "base" });
     });
@@ -194,9 +211,31 @@ export const InteractionConfigDesk = memo(({ activeCategory, onBack, layoutMode 
   }, [currentCategory, llmServerInventory, draftSettings?.tts?.servers, draftSettings?.providers?.tts?.servers]);
 
   const curatedProviders = useMemo(() => {
-    if (showAllInline) return filteredProviders;
-    return filteredProviders.filter((p) => Boolean(getProviderKey(p.id)?.trim()) || activeCloudProviderId === p.id);
-  }, [filteredProviders, showAllInline, getProviderKey, activeCloudProviderId]);
+    const list = showAllInline
+      ? filteredProviders
+      : filteredProviders.filter((p) => Boolean(p.isFree) || Boolean(getProviderKey(p.id)?.trim()) || activeCloudProviderId === p.id);
+    // Active-card primacy: the committed active cloud provider always renders first.
+    if (committedActiveCloudProviderId) {
+      const idx = list.findIndex(
+        (p) =>
+          p.id === committedActiveCloudProviderId ||
+          getCloudProviderAlias(p.id) === committedActiveCloudProviderId
+      );
+      if (idx > 0) {
+        const [pinned] = list.splice(idx, 1);
+        list.unshift(pinned);
+      }
+    }
+    console.log("[InteractionConfigDesk] curatedProviders:", {
+      currentCategory,
+      committedActiveCloudProviderId,
+      activeCloudProviderId,
+      firstProvider: list[0]?.id,
+      listLength: list.length,
+      allIds: list.map((p) => p.id),
+    });
+    return list;
+  }, [filteredProviders, showAllInline, getProviderKey, activeCloudProviderId, committedActiveCloudProviderId, currentCategory]);
 
   const { containerRef: providerGridRef, lenisRef: providerLenisRef } = useLenisScrollContainer<HTMLDivElement>();
   const providerOrderFingerprint = useMemo(
@@ -206,26 +245,44 @@ export const InteractionConfigDesk = memo(({ activeCategory, onBack, layoutMode 
   useScrollTopOnChange(providerGridRef, providerOrderFingerprint, providerLenisRef);
 
   useEffect(() => {
-    if (currentProvider.kind === "embedded" || !currentProvider.base_url || (currentProvider.kind === "cloud" && !currentProvider.api_key?.trim())) {
-      setIsHealthy(null); setDetectedDialect(null); setModelsError(null); return;
+    if (currentProvider.kind === "embedded") {
+      setCheckingHealth(false);
+      setIsHealthy(true);
+      setDetectedDialect(null);
+      setModelsError(null);
+      return;
+    }
+    if (!currentProvider.base_url || (currentProvider.kind === "cloud" && !currentProvider.api_key?.trim())) {
+      setCheckingHealth(false);
+      setIsHealthy(null);
+      setDetectedDialect(null);
+      setModelsError(null);
+      return;
     }
     let isMounted = true;
     const timer = setTimeout(async () => {
-      setCheckingHealth(true); setModelsError(null);
+      setCheckingHealth(true);
+      setModelsError(null);
       try {
         const res = await checkLlmProviderHealth(currentProvider);
         if (!isMounted) return;
-        setIsHealthy(res.healthy); setDetectedDialect(res.dialect ?? null);
+        setIsHealthy(res.healthy);
+        setDetectedDialect(res.dialect ?? null);
         setModelsError(res.healthy ? null : (res.reason ?? INTERACTION_CONFIG_DESK_COPY.status.connectionFailed));
       } catch (err) {
         if (!isMounted) return;
-        console.error(err); setIsHealthy(false); setDetectedDialect(null);
+        console.error(err);
+        setIsHealthy(false);
+        setDetectedDialect(null);
         setModelsError(INTERACTION_CONFIG_DESK_COPY.status.connectionFailed);
       } finally {
         if (isMounted) setCheckingHealth(false);
       }
     }, 500);
-    return () => { isMounted = false; clearTimeout(timer); };
+    return () => {
+      isMounted = false;
+      clearTimeout(timer);
+    };
   }, [currentProvider]);
 
   useEffect(() => {
@@ -391,13 +448,17 @@ export const InteractionConfigDesk = memo(({ activeCategory, onBack, layoutMode 
         onBack={subView === "server" ? handleCancelCustomServer : onBack}
         status={
           checkingHealth ? (
-            <span className="text-[10px] font-mono text-[rgb(var(--foreground-muted))] animate-pulse">
-              Testing...
-            </span>
+            <Tooltip label="Testing connection...">
+              <span className="w-2 h-2 rounded-full bg-[rgb(var(--accent))] animate-pulse shrink-0 inline-block ml-0.5" />
+            </Tooltip>
           ) : isHealthy === true ? (
-            <span className="text-[10px] font-mono text-[rgb(var(--accent))]">
-              Online {detectedDialect ? `(${detectedDialect})` : ""}
-            </span>
+            <Tooltip label={detectedDialect ? `Online (${detectedDialect})` : "Online"}>
+              <span className="w-2 h-2 rounded-full bg-[rgb(var(--accent))] shadow-[0_0_8px_rgba(var(--accent),0.6)] shrink-0 inline-block ml-0.5" />
+            </Tooltip>
+          ) : isHealthy === false ? (
+            <Tooltip label={modelsError || "Connection failed"}>
+              <span className="w-2 h-2 rounded-full bg-[rgb(var(--foreground-muted))]/40 shrink-0 inline-block ml-0.5" />
+            </Tooltip>
           ) : null
         }
         action={
@@ -506,6 +567,9 @@ export const InteractionConfigDesk = memo(({ activeCategory, onBack, layoutMode 
           <ExpandableList
             className="flex-1 min-h-0"
             domainId="models"
+            onDiscard={() => {
+              useSettingsStore.getState().discardDomainChanges("models");
+            }}
             triggerPlacement="floating"
             customTrigger={currentCategory === "STT" ? () => null : undefined}
             inlineMaxHeightClass="max-h-[160px]"
@@ -538,6 +602,8 @@ export const InteractionConfigDesk = memo(({ activeCategory, onBack, layoutMode 
               currentCategory={currentCategory}
               showLocalCard={showLocalCard}
               isLocalActive={isLocalActive}
+              committedActiveCategory={committedActiveCategory}
+              committedActiveProviderId={committedActiveProviderId}
               localMeta={localMeta}
               onSelectLocal={handleSelectLocal}
               showCustomCards={showCustomCards}
@@ -558,7 +624,6 @@ export const InteractionConfigDesk = memo(({ activeCategory, onBack, layoutMode 
               onDeleteCustomServer={(serverId) => {
                 deleteCustomServer(currentCategory === "LLM" ? "llm" : "tts", serverId);
               }}
-              onAddCustomServer={handleOpenCustomServer}
               providers={showAllInline ? filteredProviders : curatedProviders}
               activeCloudProviderId={activeCloudProviderId}
               editingProviderId={editingProviderId}

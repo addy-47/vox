@@ -154,8 +154,7 @@ pub async fn check_llm_health(
                     reqwest::Client::new()
                 }
             };
-            let discovered =
-                discover_server_dialect(&client, &base_url, &conn_cfg.auth).await;
+            let discovered = discover_server_dialect(&client, &base_url, &conn_cfg.auth).await;
 
             let provider = RemoteTransport::new(conn_cfg.clone());
             let health_error = provider.health_check().await.err();
@@ -282,8 +281,7 @@ pub async fn check_tts_health(
             if key.trim().is_empty() {
                 return Ok(false);
             }
-            let base =
-                crate::services::tts::auth::normalize_azure_endpoint(&region_or_endpoint);
+            let base = crate::services::tts::auth::normalize_azure_endpoint(&region_or_endpoint);
             let url = format!("{}{}", base.trim_end_matches('/'), AZURE_TTS_VOICES_PATH);
             let client = reqwest::Client::builder()
                 .timeout(Duration::from_secs(2))
@@ -395,7 +393,10 @@ pub async fn probe_target(
         }
         _ => {
             // "llm", "server", "cloud"
-            let trimmed_url = base_url.as_deref().map(|s| s.trim()).filter(|s| !s.is_empty());
+            let trimmed_url = base_url
+                .as_deref()
+                .map(|s| s.trim())
+                .filter(|s| !s.is_empty());
             let (effective_url, effective_provider_name) = if let Some(url) = trimmed_url {
                 (url.to_string(), provider_id.clone())
             } else if let Some(pid) = provider_id.as_deref().filter(|s| !s.trim().is_empty()) {
@@ -418,17 +419,17 @@ pub async fn probe_target(
                 });
             };
 
-            let effective_api_key = api_key
-                .filter(|k| !k.trim().is_empty())
-                .or_else(|| {
-                    if let Some(ref pid) = provider_id {
-                        state.settings.read().ok().and_then(|s| {
-                            s.providers.llm.cloud_keys.get(pid).cloned()
-                        })
-                    } else {
-                        None
-                    }
-                });
+            let effective_api_key = api_key.filter(|k| !k.trim().is_empty()).or_else(|| {
+                if let Some(ref pid) = provider_id {
+                    state
+                        .settings
+                        .read()
+                        .ok()
+                        .and_then(|s| s.providers.llm.cloud_keys.get(pid).cloned())
+                } else {
+                    None
+                }
+            });
 
             let effective_model = model.unwrap_or_default();
             let conn_cfg = ConnectionConfig::new(
@@ -498,4 +499,3 @@ pub async fn probe_target(
         }
     }
 }
-

@@ -485,8 +485,7 @@ pub async fn ensure_modular_workers(state: &AppState) -> Result<(), String> {
     let mut new_llm_tx = None;
     let mut new_llm_handle = None;
     if needs_llm {
-        let llm_params =
-            resolve_llm_execution_params(&state.db, settings.llm.active_model()).await;
+        let llm_params = resolve_llm_execution_params(&state.db, settings.llm.active_model()).await;
         warm_up_llm(
             LlmWarmUpHandles {
                 llm_tx: &mut new_llm_tx,

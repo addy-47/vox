@@ -187,7 +187,11 @@ impl CompactionCoordinator {
         let resolved_ctx = get_model_parameters(&conn, llm_settings.active_model())
             .await
             .ok()
-            .and_then(|p| p.get("context_window").and_then(|v| v.as_u64()).map(|v| v as u32));
+            .and_then(|p| {
+                p.get("context_window")
+                    .and_then(|v| v.as_u64())
+                    .map(|v| v as u32)
+            });
 
         let compaction_res = match run_compaction(
             active_provider.as_ref(),
