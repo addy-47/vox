@@ -1,6 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { useCatalogStore } from "@/store/catalogStore";
-import { useSettingsStore } from "@/store/settingsStore";
 import { probeModelCapabilities } from "@/services/catalogService";
 import type {
   ModelCapabilities,
@@ -58,7 +57,7 @@ export function useRemoteLlmProbing(
   const fetchRemoteModels = useCallback(async (force = false) => {
     if (!provider || provider.kind === "embedded" || !provider.base_url) return;
     if (provider.kind === "cloud" && !provider.api_key?.trim()) {
-      useSettingsStore.setState({
+      useCatalogStore.setState({
         remoteModels: [],
         remoteModelsError: "API key required. Configure your key in Providers.",
         loadingRemoteModels: false,
@@ -71,7 +70,7 @@ export function useRemoteLlmProbing(
   useEffect(() => {
     if (activePipelineTab === "llm" && isRemoteLlm && provider && provider.kind !== "embedded" && provider.base_url) {
       if (provider.kind === "cloud" && !provider.api_key?.trim()) {
-        useSettingsStore.setState({
+        useCatalogStore.setState({
           remoteModels: [],
           remoteModelsError: "API key required. Configure your key in Providers.",
           loadingRemoteModels: false,

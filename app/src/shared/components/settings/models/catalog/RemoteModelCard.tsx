@@ -240,11 +240,14 @@ export const RemoteModelCard = memo(({
       </div>
 
       {/* Card Actions Footer: tactile Benchmark action on bottom right */}
-      <div className="flex items-center justify-end gap-2 mt-3 pt-2.5 border-t border-[rgba(var(--foreground),0.06)] min-w-0" onClick={(e) => e.stopPropagation()}>
+      <div className="flex items-center justify-end gap-2 mt-3 pt-2.5 border-t border-[rgba(var(--foreground),0.06)] min-w-0">
         <button
           type="button"
           disabled={isTesting}
-          onClick={() => onProbe(model.id)}
+          onClick={(e) => {
+            e.stopPropagation();
+            onProbe(model.id);
+          }}
           className="px-2.5 py-1.5 rounded-lg text-[11px] font-bold text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/10 border border-[rgba(var(--accent),0.25)] hover:bg-[rgb(var(--accent))]/20 transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
           title={probed ? LLM_CATALOG_COPY.rerunBenchmark : LLM_CATALOG_COPY.runBenchmark}
         >

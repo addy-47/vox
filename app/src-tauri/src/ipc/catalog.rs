@@ -79,10 +79,17 @@ pub async fn get_model_catalog<R: tauri::Runtime>(
         .filter(|g| g.category == "stt")
         .cloned()
         .collect();
+    let has_google_adc = crate::services::health::has_google_adc();
     let tts = groups
         .iter()
         .filter(|g| g.category == "tts")
-        .cloned()
+        .map(|g| {
+            let mut group = g.clone();
+            if group.id == "google_tts" {
+                group.is_configured = Some(has_google_adc);
+            }
+            group
+        })
         .collect();
     let vad = groups
         .iter()

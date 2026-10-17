@@ -4,8 +4,8 @@ import { useModelParameters } from "@/shared/hooks/useModelParameters";
 import { Zap, Battery, Gauge } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { RotaryKnob } from "@/shared/ui";
-import { TTS_VOICE_MANAGER_COPY, COMPUTE_PROFILE_COPY } from "@/data/settingsCopy";
-import { CustomSvgs, PresetButton, PresetInput } from "./CustomSvgs";
+import { TTS_VOICE_MANAGER_COPY, COMPUTE_PROFILE_COPY, LLM_SETTINGS_COPY } from "@/data/settingsCopy";
+import { CustomSvgs, PresetButton, PresetInput, RemoteComputeGraphic } from "./CustomSvgs";
 
 export interface TtsVoiceManagerProps {
   layoutMode?: "full-max" | "full-min" | "small";
@@ -55,6 +55,10 @@ const TtsVoiceManagerBody = memo(({
     typeof v === "number" && !Number.isNaN(v) ? v : undefined;
   const copy = TTS_VOICE_MANAGER_COPY;
 
+  const isCloud = caps?.execution === "cloud";
+  const isRemote = caps?.execution === "remote";
+  const isRemoteOrCloud = isCloud || isRemote;
+
   return (
     <div
       className={cn(
@@ -92,6 +96,16 @@ const TtsVoiceManagerBody = memo(({
 
       {/* TAB 3: COMPUTE ALLOCATION */}
       {activeSubTab === "compute" && (() => {
+        if (isRemoteOrCloud) {
+          return (
+            <CustomSvgs
+              title={isCloud ? LLM_SETTINGS_COPY.compute.remoteTitleLocal : LLM_SETTINGS_COPY.compute.remoteTitleRemote}
+              description={LLM_SETTINGS_COPY.compute.remoteDescription}
+              layoutMode={layoutMode}
+              emptyGraphic={<RemoteComputeGraphic />}
+            />
+          );
+        }
         const totalCores = (typeof navigator !== "undefined" ? navigator.hardwareConcurrency : undefined) || 4;
         const balancedThreads = Math.max(1, Math.floor(totalCores / 2));
         const ecoThreads = Math.max(1, Math.floor(totalCores / 4));

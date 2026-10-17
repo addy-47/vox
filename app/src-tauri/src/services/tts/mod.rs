@@ -7,8 +7,8 @@ pub mod providers;
 pub mod voice;
 pub use actor::{cool_down_tts, spawn_tts_worker, warm_up_tts, TtsCommand, TtsWarmUpConfig};
 pub use config::{
-    ParamRange, ProviderCaps, TtsActiveProvider, TtsAzureConfig, TtsCustomServer, TtsGoogleConfig,
-    TtsProviderConfig, TtsProvidersConfig, TtsSettings, TtsVoiceSource,
+    ParamRange, ProviderCaps, TtsActiveProvider, TtsAzureConfig, TtsCustomServer, TtsExecutionKind,
+    TtsGoogleConfig, TtsProviderConfig, TtsProvidersConfig, TtsSettings, TtsVoiceSource,
 };
 pub use factory::{caps_for_id, create_tts_provider, resolve_reference_audio};
 pub use providers::{

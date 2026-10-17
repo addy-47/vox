@@ -179,6 +179,7 @@ mod tests {
                 voices: TtsVoiceSource::Catalog,
                 clone: false,
                 speed_range: SupertonicEngine::SPEED_RANGE,
+                execution: crate::services::tts::TtsExecutionKind::Embedded,
             }
         );
         assert_eq!(
@@ -188,13 +189,17 @@ mod tests {
         let chatterbox = caps_for_id("chatterbox").expect("chatterbox caps");
         assert_eq!(chatterbox.voices, TtsVoiceSource::Custom);
         assert!(chatterbox.clone);
-        assert_eq!(
-            caps_for_id("chatterbox_remote").expect("chatterbox_remote caps"),
-            chatterbox
-        );
+        assert_eq!(chatterbox.execution, crate::services::tts::TtsExecutionKind::Embedded);
+
+        let chatterbox_remote = caps_for_id("chatterbox_remote").expect("chatterbox_remote caps");
+        assert_eq!(chatterbox_remote.voices, TtsVoiceSource::Custom);
+        assert!(chatterbox_remote.clone);
+        assert_eq!(chatterbox_remote.execution, crate::services::tts::TtsExecutionKind::Remote);
+
         let edge = caps_for_id("edge_tts").expect("edge_tts caps");
         assert_eq!(edge.voices, TtsVoiceSource::Edge);
         assert!(!edge.clone);
+        assert_eq!(edge.execution, crate::services::tts::TtsExecutionKind::Cloud);
         assert_ne!(
             edge.speed_range,
             SupertonicEngine::SPEED_RANGE,
@@ -203,12 +208,17 @@ mod tests {
         let zipvoice = caps_for_id("zipvoice").expect("zipvoice caps");
         assert_eq!(zipvoice.voices, TtsVoiceSource::Custom);
         assert!(!zipvoice.clone);
+        assert_eq!(zipvoice.execution, crate::services::tts::TtsExecutionKind::Embedded);
+
         let azure = caps_for_id("azure_tts").expect("azure_tts caps");
         assert_eq!(azure.voices, TtsVoiceSource::Cloud);
         assert!(!azure.clone);
+        assert_eq!(azure.execution, crate::services::tts::TtsExecutionKind::Cloud);
+
         let google = caps_for_id("google_tts").expect("google_tts caps");
         assert_eq!(google.voices, TtsVoiceSource::Cloud);
         assert!(!google.clone);
+        assert_eq!(google.execution, crate::services::tts::TtsExecutionKind::Cloud);
     }
 
     #[test]

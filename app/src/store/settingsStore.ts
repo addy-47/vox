@@ -24,7 +24,7 @@ import {
   updateCloudProvidersFromContract,
   updateTtsProvidersFromContract,
 } from "@/data/providersCopy";
-import { getEffectiveCloudApiKey } from "@/shared/lib/activeSelection";
+import { getEffectiveCloudApiKey, getEffectiveLlmServers } from "@/shared/lib/activeSelection";
 
 export type * from "@/types/settings";
 import type {
@@ -58,10 +58,13 @@ export interface ParamRange {
   step: number;
 }
 
+export type TtsExecutionKind = "embedded" | "cloud" | "remote";
+
 export interface ProviderCaps {
   voices: TtsVoiceSource;
   clone: boolean;
   speed_range: ParamRange;
+  execution?: TtsExecutionKind;
 }
 
 export interface SettingsState {
@@ -807,15 +810,16 @@ export function selectActiveLlmProvider(state: SettingsState): LlmProviderConfig
   const kind = active?.category ?? "embedded";
   if (kind === "embedded") return { kind: "embedded" };
   if (kind === "server") {
-    const servers = state.draftSettings?.llm?.servers ?? state.settings?.llm?.servers ?? [];
-    const s = servers.find((entry) => entry.id === active?.provider);
+    const servers = getEffectiveLlmServers(state.draftSettings, state.settings);
+    const targetId = active?.provider || "ollama";
+    const s = servers.find((entry) => entry.id === targetId) ?? (targetId === "ollama" ? servers[0] : undefined);
     return {
       kind: "server",
-      provider_id: s?.id,
-      base_url: s?.url || "",
-      model: active?.model || "",
+      provider_id: s?.id ?? targetId,
+      base_url: s?.url || (targetId === "ollama" ? "http://127.0.0.1:11434" : ""),
+      model: active?.model || s?.model || "",
       api_key: s?.api_key ?? undefined,
-      provider_name: s?.name,
+      provider_name: s?.name ?? (targetId === "ollama" ? "Ollama" : "Remote Server"),
     };
   }
   const cloudId = active?.provider ?? "nvidia";

@@ -83,6 +83,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
 
   const [isRemoteTtsHealthy, setIsRemoteTtsHealthy] = useState<boolean | null>(null);
   const [checkingTtsHealth, setCheckingTtsHealth] = useState(false);
+  const [ttsHealthReason, setTtsHealthReason] = useState<string | null>(null);
   const [sshConnectionString, setSshConnectionString] = useState(() => localStorage.getItem("vox_ssh_conn") || "root@localhost");
   const [sshPort, setSshPort] = useState(() => localStorage.getItem("vox_ssh_port") || "22");
   const [sshIdentityKey, setSshIdentityKey] = useState(() => localStorage.getItem("vox_ssh_key") || "~/.ssh/id_rsa");
@@ -100,6 +101,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
   const previewTtsGroup = modelCatalog?.tts?.find((g) => g.id === activeTtsId);
   const isCloudTts = !!previewTtsGroup?.is_cloud;
   const isRemoteTts = !!previewTtsGroup?.is_remote;
+  const isCloudOrRemoteTts = isRemoteTts || isCloudTts;
 
   // Settings capabilities for the preview TTS provider (caps-driven panes).
   const [ttsCaps, setTtsCaps] = useState<ProviderCaps | null>(null);
@@ -155,10 +157,11 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
     }
   }, [activePipelineTab]);
 
-  // 2. Remote TTS Health Polling (gated by preview tier, visibility & active tab)
+  // 2. Remote & Cloud TTS Health Polling (gated by preview tier, visibility & active tab)
   useEffect(() => {
-    if (!isRemoteTts) {
+    if (!isCloudOrRemoteTts) {
       setIsRemoteTtsHealthy(null);
+      setTtsHealthReason(null);
       return;
     }
 
@@ -168,8 +171,10 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
       try {
         const res = await checkTtsProviderHealth();
         setIsRemoteTtsHealthy(res.healthy);
+        setTtsHealthReason(res.healthy ? null : (res.reason ?? null));
       } catch (_) {
         setIsRemoteTtsHealthy(false);
+        setTtsHealthReason("TTS provider health check failed");
       } finally {
         setCheckingTtsHealth(false);
       }
@@ -178,7 +183,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
     checkHealth();
     const interval = setInterval(checkHealth, 5000);
     return () => clearInterval(interval);
-  }, [isRemoteTts, activePipelineTab, draftSettings?.tts?.active?.model]);
+  }, [isCloudOrRemoteTts, activePipelineTab, draftSettings?.tts?.active?.model]);
 
   useEffect(() => {
     return eventsService.onModelProgress((payload) => {
@@ -499,6 +504,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
                         deleteModel={handleDeleteModelGroup}
                         isRemoteTtsHealthy={isRemoteTtsHealthy}
                         checkingTtsHealth={checkingTtsHealth}
+                        ttsHealthReason={ttsHealthReason}
                       />
                     )
                   ) : activeTtsSubTab === "voice" ? (

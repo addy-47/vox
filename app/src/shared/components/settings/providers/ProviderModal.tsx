@@ -169,9 +169,9 @@ export const ProviderModal = memo(({
   );
   useScrollTopOnChange(scrollContainerRef, orderFingerprint, lenisRef);
 
-  const configuredCount = useMemo(() => CLOUD_PROVIDERS.filter((p) => Boolean(getProviderKey(p.id)?.trim())).length, [getProviderKey]);
-  const unconfiguredCount = useMemo(() => CLOUD_PROVIDERS.filter((p) => !getProviderKey(p.id)?.trim()).length, [getProviderKey]);
-  const ttsAvailableCount = useMemo(() => TTS_MODAL_PROVIDERS.filter((p) => p.isFree || Boolean(getProviderKey(p.id)?.trim())).length, [getProviderKey]);
+  const configuredCount = useMemo(() => CLOUD_PROVIDERS.filter((p) => Boolean(p.isConfigured) || Boolean(getProviderKey(p.id)?.trim())).length, [getProviderKey]);
+  const unconfiguredCount = useMemo(() => CLOUD_PROVIDERS.filter((p) => !p.isConfigured && !getProviderKey(p.id)?.trim()).length, [getProviderKey]);
+  const ttsAvailableCount = useMemo(() => TTS_MODAL_PROVIDERS.filter((p) => p.isConfigured || p.isFree || Boolean(getProviderKey(p.id)?.trim())).length, [getProviderKey]);
 
   const sourceFilters = useMemo(
     () => [
@@ -241,7 +241,7 @@ export const ProviderModal = memo(({
     const q = deferredSearch.trim().toLowerCase();
     if (q) list = list.filter((p) => p.name.toLowerCase().includes(q) || p.id.toLowerCase().includes(q) || p.tagline.toLowerCase().includes(q));
     if (filterCategory === "custom") return [];
-    if (filterCategory === "configured") list = list.filter((p) => p.isFree || Boolean(getProviderKey(p.id)?.trim()));
+    if (filterCategory === "configured") list = list.filter((p) => p.isConfigured || p.isFree || Boolean(getProviderKey(p.id)?.trim()));
     const sorted = [...list].sort((a, b) => sort === "az" ? a.name.localeCompare(b.name, undefined, { sensitivity: "base" }) : b.name.localeCompare(a.name, undefined, { sensitivity: "base" }));
     const committedTtsProvider = committedSettings?.tts?.active?.provider;
     if (committedTtsProvider) {
@@ -255,8 +255,8 @@ export const ProviderModal = memo(({
     let list = CLOUD_PROVIDERS;
     const q = deferredSearch.trim().toLowerCase();
     if (q) list = list.filter((p) => p.name.toLowerCase().includes(q) || p.id.toLowerCase().includes(q) || p.tagline?.toLowerCase().includes(q) || p.url.toLowerCase().includes(q));
-    if (filterCategory === "configured") list = list.filter((p) => Boolean((p as { isFree?: boolean }).isFree) || Boolean(getProviderKey(p.id)?.trim()));
-    else if (filterCategory === "unconfigured") list = list.filter((p) => !getProviderKey(p.id)?.trim());
+    if (filterCategory === "configured") list = list.filter((p) => Boolean(p.isConfigured) || Boolean((p as { isFree?: boolean }).isFree) || Boolean(getProviderKey(p.id)?.trim()));
+    else if (filterCategory === "unconfigured") list = list.filter((p) => !p.isConfigured && !getProviderKey(p.id)?.trim());
     else if (filterCategory === "custom") list = [];
 
     const sorted = [...list].sort((a, b) => {

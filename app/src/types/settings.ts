@@ -117,6 +117,8 @@ export interface ModelGroupInfo {
   is_built_in?: boolean;
   is_cloud?: boolean;
   is_remote?: boolean;
+  is_configured?: boolean;
+  is_free?: boolean;
   required?: boolean;
   files?: ModelEntry[];
 }

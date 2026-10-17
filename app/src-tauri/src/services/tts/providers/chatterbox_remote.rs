@@ -228,6 +228,7 @@ impl TtsProvider for ChatterboxRemoteProvider {
             voices: TtsVoiceSource::Custom,
             clone: true,
             speed_range: Self::SPEED_RANGE,
+            execution: crate::services::tts::TtsExecutionKind::Remote,
         }
     }
 

@@ -51,11 +51,11 @@ pub async fn check_health(
             })
         }
         "tts" => {
-            let healthy = check_tts_health(state, provider).await?;
+            let (healthy, reason) = check_tts_health_with_reason(state, provider).await?;
             Ok(ProviderHealthCheckResult {
                 healthy,
                 dialect: None,
-                reason: None,
+                reason,
             })
         }
         _ => Err(format!("Unknown provider health check kind: {}", kind)),
@@ -215,10 +215,30 @@ pub async fn check_stt_health(
     }
 }
 
-pub async fn check_tts_health(
+/// Returns true if Google Application Default Credentials (ADC) file exists on the host.
+pub fn has_google_adc() -> bool {
+    if let Ok(path) = std::env::var("GOOGLE_APPLICATION_CREDENTIALS") {
+        if std::path::Path::new(&path).exists() {
+            return true;
+        }
+    }
+    if let Some(config_dir) = dirs::config_dir() {
+        if config_dir.join("gcloud/application_default_credentials.json").exists() {
+            return true;
+        }
+    }
+    if let Some(home) = dirs::home_dir() {
+        if home.join(".config/gcloud/application_default_credentials.json").exists() {
+            return true;
+        }
+    }
+    false
+}
+
+pub async fn check_tts_health_with_reason(
     state: &Arc<AppState>,
     provider: Option<ProviderConfigPayload>,
-) -> Result<bool, String> {
+) -> Result<(bool, Option<String>), String> {
     let config = match provider {
         Some(ProviderConfigPayload::Tts(prov)) => prov,
         _ => {
@@ -232,15 +252,33 @@ pub async fn check_tts_health(
     match config {
         TtsProviderConfig::Supertonic => {
             let models_dir = paths::get().models.clone();
-            Ok(models_dir.join(SUPERTONIC_MODEL_DIR).exists())
+            let exists = models_dir.join(SUPERTONIC_MODEL_DIR).exists();
+            let reason = if exists {
+                None
+            } else {
+                Some("Supertonic model weights not found on disk.".to_string())
+            };
+            Ok((exists, reason))
         }
         TtsProviderConfig::Kokoro => {
             let models_dir = paths::get().models.clone();
-            Ok(models_dir.join(KOKORO_MODEL_DIR).exists())
+            let exists = models_dir.join(KOKORO_MODEL_DIR).exists();
+            let reason = if exists {
+                None
+            } else {
+                Some("Kokoro model weights not found on disk.".to_string())
+            };
+            Ok((exists, reason))
         }
         TtsProviderConfig::Chatterbox { .. } => {
             let models_dir = paths::get().models.clone();
-            Ok(models_dir.join(CHATTERBOX_MODEL_DIR).exists())
+            let exists = models_dir.join(CHATTERBOX_MODEL_DIR).exists();
+            let reason = if exists {
+                None
+            } else {
+                Some("Chatterbox model weights not found on disk.".to_string())
+            };
+            Ok((exists, reason))
         }
         TtsProviderConfig::ChatterboxRemote { ref endpoint, .. } => {
             let client = reqwest::Client::builder()
@@ -251,12 +289,19 @@ pub async fn check_tts_health(
             match client.get(&health_url).send().await {
                 Ok(resp) if resp.status().is_success() => {
                     if let Ok(body) = resp.json::<serde_json::Value>().await {
-                        Ok(body.get("status").and_then(|s| s.as_str()) == Some("ok"))
+                        let ok = body.get("status").and_then(|s| s.as_str()) == Some("ok");
+                        let reason = if ok {
+                            None
+                        } else {
+                            Some("Remote server responded with non-ok health status.".to_string())
+                        };
+                        Ok((ok, reason))
                     } else {
-                        Ok(false)
+                        Ok((false, Some("Remote server returned invalid JSON health response.".to_string())))
                     }
                 }
-                _ => Ok(false),
+                Ok(resp) => Ok((false, Some(format!("Remote server returned HTTP {}.", resp.status())))),
+                Err(e) => Ok((false, Some(format!("Cannot reach remote server at {}: {}", endpoint, e)))),
             }
         }
         TtsProviderConfig::EdgeTts { .. } => {
@@ -265,13 +310,20 @@ pub async fn check_tts_health(
                 .build()
                 .map_err(|e| e.to_string())?;
             match client.head("https://speech.platform.bing.com").send().await {
-                Ok(resp) => Ok(resp.status().is_success() || resp.status().as_u16() < 500),
-                _ => Ok(false),
+                Ok(resp) if resp.status().is_success() || resp.status().as_u16() < 500 => Ok((true, None)),
+                Ok(resp) => Ok((false, Some(format!("Edge TTS service returned HTTP {}.", resp.status())))),
+                Err(e) => Ok((false, Some(format!("Edge TTS service unreachable: {}", e)))),
             }
         }
         TtsProviderConfig::Zipvoice { .. } => {
             let models_dir = paths::get().models.clone();
-            Ok(models_dir.join(ZIPVOICE_MODEL_DIR).exists())
+            let exists = models_dir.join(ZIPVOICE_MODEL_DIR).exists();
+            let reason = if exists {
+                None
+            } else {
+                Some("Zipvoice model weights not found on disk.".to_string())
+            };
+            Ok((exists, reason))
         }
         TtsProviderConfig::AzureTts {
             region_or_endpoint,
@@ -279,7 +331,7 @@ pub async fn check_tts_health(
             ..
         } => {
             if key.trim().is_empty() {
-                return Ok(false);
+                return Ok((false, Some("Azure AI Speech key is required.".to_string())));
             }
             let base = crate::services::tts::auth::normalize_azure_endpoint(&region_or_endpoint);
             let url = format!("{}{}", base.trim_end_matches('/'), AZURE_TTS_VOICES_PATH);
@@ -293,24 +345,56 @@ pub async fn check_tts_health(
                 .send()
                 .await
             {
-                Ok(resp) => Ok(resp.status().is_success()),
-                _ => Ok(false),
+                Ok(resp) if resp.status().is_success() => Ok((true, None)),
+                Ok(resp) => Ok((false, Some(format!("Azure AI Speech auth failed: HTTP {}.", resp.status())))),
+                Err(e) => Ok((false, Some(format!("Azure AI Speech service unreachable: {}", e)))),
             }
         }
         TtsProviderConfig::GoogleTts { .. } => {
+            if !has_google_adc() {
+                return Ok((
+                    false,
+                    Some("Google Application Default Credentials (ADC) not found. Run 'gcloud auth application-default login' in terminal.".to_string()),
+                ));
+            }
             let client = match google_cloud_texttospeech_v1::client::TextToSpeech::builder()
                 .build()
                 .await
             {
                 Ok(client) => client,
-                Err(_) => return Ok(false),
+                Err(e) => {
+                    return Ok((
+                        false,
+                        Some(format!("Google ADC client init failed: {}. Run 'gcloud auth application-default login'.", e)),
+                    ));
+                }
             };
             match client.list_voices().set_language_code("en-US").send().await {
-                Ok(_) => Ok(true),
-                _ => Ok(false),
+                Ok(_) => Ok((true, None)),
+                Err(e) => {
+                    let err_str = e.to_string();
+                    let reason = if err_str.to_lowercase().contains("unauthenticated")
+                        || err_str.to_lowercase().contains("token expired")
+                        || err_str.to_lowercase().contains("invalid_grant")
+                    {
+                        "Google ADC token expired. Run 'gcloud auth application-default login' in terminal to refresh.".to_string()
+                    } else if err_str.to_lowercase().contains("permission_denied") {
+                        format!("Google Cloud permission denied. Verify Text-to-Speech API is enabled: {}", err_str)
+                    } else {
+                        format!("Google Cloud TTS health check failed: {}", err_str)
+                    };
+                    Ok((false, Some(reason)))
+                }
             }
         }
     }
+}
+
+pub async fn check_tts_health(
+    state: &Arc<AppState>,
+    provider: Option<ProviderConfigPayload>,
+) -> Result<bool, String> {
+    check_tts_health_with_reason(state, provider).await.map(|(healthy, _)| healthy)
 }
 
 /// Structured outcome of probing an arbitrary provider target.

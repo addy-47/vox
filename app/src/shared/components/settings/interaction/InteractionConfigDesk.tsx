@@ -8,7 +8,7 @@ import { INTERACTION_CONFIG_DESK_COPY, PIPELINE_PROVIDERS_DESK_COPY, PROVIDERS_H
 import { checkLlmProviderHealth } from "@/services/catalogService";
 import { BrainCircuit, Network, AudioLines, Mic, Globe, Key, KeyRound, HardDrive, Plus, Server } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
-import { activeSelection } from "@/shared/lib/activeSelection";
+import { activeSelection, getEffectiveLlmServers } from "@/shared/lib/activeSelection";
 import { ExpandableList } from "@/shared/ui";
 import { Tooltip } from "@/shared/ui/Tooltip";
 import { SettingsCommitControls } from "@/shared/components/settings/SettingsCommitControls";
@@ -127,8 +127,8 @@ export const InteractionConfigDesk = memo(({ activeCategory, onBack, layoutMode 
 
 
   const llmServerInventory = useMemo(
-    () => draftLlm?.servers ?? draftSettings?.providers?.llm?.servers ?? [],
-    [draftLlm?.servers, draftSettings?.providers?.llm?.servers]
+    () => getEffectiveLlmServers(draftSettings, committedSettings) as LlmCustomServer[],
+    [draftLlm?.servers, draftSettings?.providers?.llm?.servers, committedSettings?.providers?.llm?.servers]
   );
 
 
@@ -147,6 +147,7 @@ export const InteractionConfigDesk = memo(({ activeCategory, onBack, layoutMode 
         keyPlaceholder: "API Key (Optional)...",
         logo: p.logo,
         isFree: p.isFree,
+        isConfigured: p.isConfigured,
       }));
     }
     return currentCategory === "LLM" ? CLOUD_PROVIDERS : [];
@@ -155,7 +156,7 @@ export const InteractionConfigDesk = memo(({ activeCategory, onBack, layoutMode 
   const providerFilterCounts = useMemo(() => {
     let configured = 0, unconfigured = 0;
     for (const p of rawCloudProviders) {
-      if (p.isFree || getProviderKey(p.id)?.trim()) configured += 1;
+      if (p.isConfigured || p.isFree || getProviderKey(p.id)?.trim()) configured += 1;
       else unconfigured += 1;
     }
     return { all: rawCloudProviders.length + 1, configured, unconfigured };
@@ -165,13 +166,13 @@ export const InteractionConfigDesk = memo(({ activeCategory, onBack, layoutMode 
     let list = rawCloudProviders;
     const q = searchQuery.trim().toLowerCase();
     if (q) list = list.filter((p) => p.name.toLowerCase().includes(q) || p.id.toLowerCase().includes(q) || p.tagline?.toLowerCase().includes(q));
-    if (providerFilter === "configured") list = list.filter((p) => Boolean(p.isFree) || Boolean(getProviderKey(p.id)?.trim()));
-    else if (providerFilter === "unconfigured") list = list.filter((p) => !p.isFree && !getProviderKey(p.id)?.trim());
+    if (providerFilter === "configured") list = list.filter((p) => Boolean(p.isConfigured) || Boolean(p.isFree) || Boolean(getProviderKey(p.id)?.trim()));
+    else if (providerFilter === "unconfigured") list = list.filter((p) => !p.isConfigured && !p.isFree && !getProviderKey(p.id)?.trim());
     else if (providerFilter === "local") list = [];
 
     return [...list].sort((a, b) => {
-      const aKey = Boolean(a.isFree) || Boolean(getCommittedProviderKey(a.id)?.trim());
-      const bKey = Boolean(b.isFree) || Boolean(getCommittedProviderKey(b.id)?.trim());
+      const aKey = Boolean(a.isConfigured) || Boolean(a.isFree) || Boolean(getCommittedProviderKey(a.id)?.trim());
+      const bKey = Boolean(b.isConfigured) || Boolean(b.isFree) || Boolean(getCommittedProviderKey(b.id)?.trim());
       if (aKey !== bKey) return aKey ? -1 : 1;
       return sortOrder === "az" ? a.name.localeCompare(b.name, undefined, { sensitivity: "base" }) : b.name.localeCompare(a.name, undefined, { sensitivity: "base" });
     });
@@ -179,14 +180,14 @@ export const InteractionConfigDesk = memo(({ activeCategory, onBack, layoutMode 
 
   const customServers = useMemo((): Array<LlmCustomServer | TtsCustomServer> => {
     if (currentCategory === "LLM") return llmServerInventory;
-    if (currentCategory === "TTS") return draftSettings?.tts?.servers ?? draftSettings?.providers?.tts?.servers ?? [];
+    if (currentCategory === "TTS") return (draftSettings?.tts?.servers ?? draftSettings?.providers?.tts?.servers ?? committedSettings?.providers?.tts?.servers ?? []) as TtsCustomServer[];
     return [];
-  }, [currentCategory, llmServerInventory, draftSettings?.tts?.servers, draftSettings?.providers?.tts?.servers]);
+  }, [currentCategory, llmServerInventory, draftSettings?.tts?.servers, draftSettings?.providers?.tts?.servers, committedSettings?.providers?.tts?.servers]);
 
   const curatedProviders = useMemo(() => {
     const list = showAllInline
       ? filteredProviders
-      : filteredProviders.filter((p) => Boolean(p.isFree) || Boolean(getProviderKey(p.id)?.trim()) || activeCloudProviderId === p.id);
+      : filteredProviders.filter((p) => Boolean(p.isConfigured) || Boolean(p.isFree) || Boolean(getProviderKey(p.id)?.trim()) || activeCloudProviderId === p.id);
     // Active-card primacy: the committed active cloud provider always renders first.
     if (committedActiveCloudProviderId) {
       const idx = list.findIndex(

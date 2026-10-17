@@ -414,6 +414,7 @@ impl TtsProvider for EdgeTtsProvider {
             voices: TtsVoiceSource::Edge,
             clone: false,
             speed_range: Self::SPEED_RANGE,
+            execution: crate::services::tts::TtsExecutionKind::Cloud,
         }
     }
 

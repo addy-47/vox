@@ -165,6 +165,7 @@ impl TtsProvider for ZipvoiceEngine {
             voices: TtsVoiceSource::Custom,
             clone: false,
             speed_range: Self::SPEED_RANGE,
+            execution: crate::services::tts::TtsExecutionKind::Embedded,
         }
     }
 
