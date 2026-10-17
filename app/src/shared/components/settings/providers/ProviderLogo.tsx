@@ -3,6 +3,10 @@ import { cn } from "@/shared/lib/utils";
 
 export interface ProviderLogoProps {
   providerId?: string;
+  /** Human-facing name: custom servers saved as "Ollama", "LM Studio", "vLLM" resolve to their brand mark. */
+  providerName?: string;
+  /** Backend-detected serving dialect (e.g. "ollama", "openai") for logo inference. */
+  dialect?: string;
   logo?: string | null;
   size?: number;
   className?: string;
@@ -21,14 +25,21 @@ export const FallbackServerLogo = ({ size = 16, className }: { size?: number; cl
     viewBox="0 0 24 24"
     fill="none"
     stroke="currentColor"
-    strokeWidth="2"
+    strokeWidth="1.75"
     strokeLinecap="round"
     strokeLinejoin="round"
     className={cn("shrink-0 text-[rgb(var(--accent))]", className)}
+    aria-hidden="true"
   >
-    <rect x="2" y="4" width="20" height="16" rx="2" />
-    <line x1="6" y1="12" x2="6.01" y2="12" strokeWidth="2.5" />
-    <line x1="10" y1="12" x2="18" y2="12" />
+    {/* Dual-bay server chassis */}
+    <rect x="2.5" y="4.5" width="19" height="6.5" rx="1.5" />
+    <rect x="2.5" y="13" width="19" height="6.5" rx="1.5" />
+    {/* Bay vents */}
+    <line x1="10.5" y1="7.75" x2="17.5" y2="7.75" />
+    <line x1="10.5" y1="16.25" x2="17.5" y2="16.25" />
+    {/* Status LEDs: active (top bay) + standby (bottom bay) */}
+    <circle cx="5.75" cy="7.75" r="1" fill="currentColor" stroke="none" />
+    <circle cx="5.75" cy="16.25" r="1" fill="currentColor" stroke="none" opacity="0.45" />
   </svg>
 );
 
@@ -40,11 +51,13 @@ export function getProviderLogoDef(_norm: string): ProviderLogoDef | undefined {
 
 export const ProviderLogo = memo(function ProviderLogo({
   providerId,
+  providerName,
+  dialect,
   logo,
   size = 16,
   className,
 }: ProviderLogoProps) {
-  const norm = (providerId || logo || "").toLowerCase().trim();
+  const norm = `${providerId || ""}${providerName || ""}${dialect || ""}${logo || ""}`.toLowerCase();
 
   // 1. OpenAI / Whisper / ChatGPT
   if (norm.includes("openai") || norm.includes("whisper") || norm.includes("chatgpt")) {
@@ -133,16 +146,21 @@ export const ProviderLogo = memo(function ProviderLogo({
         height={size}
         viewBox="0 0 24 24"
         fill="none"
-        stroke="currentColor"
-        strokeWidth="2.2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        className={cn("shrink-0 text-[rgb(var(--accent))]", className)}
+        xmlns="http://www.w3.org/2000/svg"
+        className={cn("shrink-0", className)}
       >
-        <circle cx="12" cy="12" r="9" />
-        <path d="M12 7v5l3 3" />
-        <path d="M16 12h2" />
-        <path d="M6 12h2" />
+        <path
+          d="M18.8 8.4A7.5 7.5 0 0 0 5.2 8.4 5.2 5.2 0 0 0 2 13.5a5.2 5.2 0 0 0 5.2 5.2h10.4A4.4 4.4 0 0 0 22 14.3a4.4 4.4 0 0 0-3.2-5.9z"
+          fill="none"
+          stroke="#6566F1"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        <circle cx="12" cy="13" r="2.5" fill="#6566F1" />
+        <path d="M12 7.5v2" stroke="#6566F1" strokeWidth="2" strokeLinecap="round" />
+        <path d="M16 13h2" stroke="#6566F1" strokeWidth="2" strokeLinecap="round" />
+        <path d="M6 13h2" stroke="#6566F1" strokeWidth="2" strokeLinecap="round" />
       </svg>
     );
   }

@@ -57,8 +57,7 @@ use vox_lib::{
         },
         tts::{
             actor::TtsWorkerHandles, config::ProviderCaps, factory::create_tts_provider,
-            providers::SynthesisContext, spawn_tts_worker, TtsCommand,
-            TtsProvider, TtsSettings,
+            providers::SynthesisContext, spawn_tts_worker, TtsCommand, TtsProvider, TtsSettings,
         },
     },
 };

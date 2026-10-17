@@ -141,8 +141,13 @@ fn test_settings_json_roundtrip_persistence() {
         "tts.active should be recognized"
     );
     assert!(
-        apply_setting_mutation(&mut settings, "tts", "active_voice_id", &serde_json::json!("aria"))
-            .expect("tts.active_voice_id mutation failed"),
+        apply_setting_mutation(
+            &mut settings,
+            "tts",
+            "active_voice_id",
+            &serde_json::json!("aria")
+        )
+        .expect("tts.active_voice_id mutation failed"),
         "tts.active_voice_id should be recognized"
     );
     // Diffusion steps are a fixed per-provider constant, not a setting.
@@ -515,10 +520,18 @@ fn test_settings_jsonc_with_comments_support() {
     assert_eq!(loaded.appearance.theme, "dark_modern");
     assert_eq!(loaded.appearance.accent_seed, "#10B981");
 
-    assert_eq!(loaded.providers.llm.servers[0].url, "http://100.67.98.126:11435");
+    assert_eq!(
+        loaded.providers.llm.servers[0].url,
+        "http://100.67.98.126:11435"
+    );
     assert_eq!(loaded.providers.llm.servers[0].model, "qwen3.5:9b");
     assert_eq!(
-        loaded.providers.llm.cloud_keys.get("together").map(|s| s.as_str()),
+        loaded
+            .providers
+            .llm
+            .cloud_keys
+            .get("together")
+            .map(|s| s.as_str()),
         Some("test-key-12345")
     );
     assert_eq!(
@@ -632,13 +645,17 @@ fn test_settings_3way_partial_corruption_recovery() {
 
     // Valid files should remain intact even if settings.jsonc had a type error
     assert_eq!(
-        loaded.providers.llm.cloud_keys.get("together").map(|s| s.as_str()),
+        loaded
+            .providers
+            .llm
+            .cloud_keys
+            .get("together")
+            .map(|s| s.as_str()),
         Some("my-secret-key-999"),
         "Valid providers.jsonc must be preserved during settings type-error recovery"
     );
     assert_eq!(
-        loaded.persona.modular_prompt,
-        "Custom persona prompt for recovery test",
+        loaded.persona.modular_prompt, "Custom persona prompt for recovery test",
         "Valid agent.jsonc must be preserved during settings type-error recovery"
     );
 

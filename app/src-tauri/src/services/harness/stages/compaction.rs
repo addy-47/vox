@@ -124,7 +124,11 @@ impl CompactionStage {
             get_model_parameters(conn, model_id)
                 .await
                 .ok()
-                .and_then(|p| p.get("context_window").and_then(|v| v.as_u64()).map(|v| v as u32))
+                .and_then(|p| {
+                    p.get("context_window")
+                        .and_then(|v| v.as_u64())
+                        .map(|v| v as u32)
+                })
         } else {
             None
         };

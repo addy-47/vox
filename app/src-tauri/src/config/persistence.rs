@@ -172,10 +172,9 @@ impl VoxSettings {
             if let Some(v) = obj.get("stt") {
                 match serde_json::from_value(v.clone()) {
                     Ok(parsed) => self.providers.stt = parsed,
-                    Err(e) => log::error!(
-                        "[Settings] Failed to parse providers.stt section: {}.",
-                        e
-                    ),
+                    Err(e) => {
+                        log::error!("[Settings] Failed to parse providers.stt section: {}.", e)
+                    }
                 }
             }
             if let Some(v) = obj.get("tts") {

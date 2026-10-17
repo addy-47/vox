@@ -176,7 +176,7 @@ export interface SettingsCommitControlsProps {
  */
 export const SettingsCommitControls = memo(({ domainId, layoutMode }: SettingsCommitControlsProps) => {
   const { mode } = useDomainCommitState(domainId);
-  const { isExpanded, close } = useExpandableList();
+  const { isExpanded } = useExpandableList();
   const { isMobile, isCompact } = useViewportResize();
 
   if (mode === null) return null;
@@ -250,7 +250,6 @@ export const SettingsCommitControls = memo(({ domainId, layoutMode }: SettingsCo
           type="button"
           onClick={async () => {
             await useSettingsStore.getState().commitChanges();
-            if (isExpanded) close();
           }}
           aria-label={SETTINGS_COPY.applyAndRestart}
           className={cn(

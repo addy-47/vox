@@ -7,6 +7,7 @@ export interface CloudProvider {
   popular?: boolean;
   tagline?: string;
   logo?: string;
+  isFree?: boolean;
 }
 
 export const CLOUD_PROVIDERS: CloudProvider[] = [];
@@ -74,6 +75,7 @@ export function updateTtsProvidersFromContract(
     url?: string;
     logo?: string;
     is_cloud?: boolean;
+    is_remote?: boolean;
     is_free?: boolean;
     isFree?: boolean;
     status_label?: string;
@@ -81,24 +83,27 @@ export function updateTtsProvidersFromContract(
   }>
 ) {
   if (!providers || providers.length === 0) return;
-  const cloudOnes = providers.filter(
-    (t) => t.category === "cloud" || t.is_cloud || t.subcategory === "cloud"
+  const filtered = providers.filter(
+    (t) => t.is_cloud || t.is_remote || t.subcategory === "cloud" || t.subcategory === "remote"
   );
-  if (cloudOnes.length === 0) return;
+  if (filtered.length === 0) return;
   TTS_MODAL_PROVIDERS.length = 0;
-  for (const p of cloudOnes) {
+  for (const p of filtered) {
+    const nameMap: Record<string, string> = {
+      google_tts: "Google Cloud TTS",
+      azure_tts: "Azure AI Speech",
+      edge_tts: "Microsoft Edge TTS",
+      chatterbox_remote: "Chatterbox Remote (HTTP)",
+    };
     TTS_MODAL_PROVIDERS.push({
       id: p.id,
-      name: p.name,
-      category: "cloud",
-      tagline: p.tagline || p.description || "",
+      name: nameMap[p.id] || p.name,
+      category: p.is_remote ? "server" : "cloud",
+      tagline: p.description || p.tagline || "",
       url: p.url,
       logo: p.logo,
-      isFree: p.is_free ?? p.isFree ?? p.id.includes("edge"),
-      statusLabel:
-        p.status_label ||
-        p.statusLabel ||
-        (p.id.includes("edge") ? "Free" : "Ready"),
+      isFree: p.is_free ?? p.id.includes("edge"),
+      statusLabel: p.id.includes("edge") ? "Free" : p.is_remote ? "Requires Server" : "Ready",
     });
   }
 }

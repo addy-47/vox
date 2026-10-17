@@ -8,9 +8,9 @@ export interface SelectableCardProps {
   tagline?: string;
   logo?: string | null;
   isSelected: boolean;
-  isFavorite?: boolean;
   isComingSoon?: boolean;
-  statusBadge?: string;
+  /** Corner affordance rendered in the card's top-right slot (e.g. breadcrumb navigation). */
+  cornerSlot?: ReactNode;
   onSelect: () => void;
   actionSlot?: ReactNode;
 }
@@ -21,9 +21,8 @@ export const SelectableCard = memo(({
   tagline,
   logo,
   isSelected,
-  isFavorite,
   isComingSoon,
-  statusBadge,
+  cornerSlot,
   onSelect,
   actionSlot,
 }: SelectableCardProps) => {
@@ -40,19 +39,11 @@ export const SelectableCard = memo(({
           : "bg-[rgba(var(--card),0.4)] border-[rgba(var(--foreground),0.07)] hover:border-[rgba(var(--accent),0.35)] hover:bg-[rgba(var(--card),0.65)] cursor-pointer"
       )}
     >
-      <div className="absolute top-3 right-3 flex items-center gap-1.5 z-10" onClick={(e) => e.stopPropagation()}>
-        {statusBadge && (
-          <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded-md bg-[rgba(var(--accent),0.12)] text-[rgb(var(--accent))] border border-[rgba(var(--accent),0.25)] flex items-center gap-1">
-            {isSelected && <span className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--accent))]" />}
-            {statusBadge}
-          </span>
-        )}
-        {isFavorite && (
-          <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded-md bg-[rgba(var(--foreground),0.06)] text-[rgb(var(--foreground-muted))]">
-            Fav
-          </span>
-        )}
-      </div>
+      {cornerSlot && (
+        <div className="absolute top-3 right-3 flex items-center gap-1.5 z-10" onClick={(e) => e.stopPropagation()}>
+          {cornerSlot}
+        </div>
+      )}
 
       <div className="flex flex-col items-center text-center my-auto px-1 pt-1">
         <div className={cn(

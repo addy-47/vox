@@ -1,8 +1,6 @@
 import { memo } from "react";
-import { ArrowLeft, BookOpen, Globe, Key, Network, Server } from "lucide-react";
+import { ArrowLeft, BookOpen, Globe, HardDrive, Key, Network, Server } from "lucide-react";
 import { PROVIDER_GUIDE_COPY } from "@/data/settingsCopy";
-import { useLenisScrollContainer } from "@/shared/hooks/useLenisScrollContainer";
-import { ProviderArchitectureGraphic } from "./ProviderArchitectureGraphic";
 
 export interface ProviderGuideViewProps {
   onBackToProviders: () => void;
@@ -14,7 +12,6 @@ export const ProviderGuideView = memo(function ProviderGuideView({
   category = "LLM",
 }: ProviderGuideViewProps) {
   const { guideTitle, guideSubtitle, backToProviders, sections, steps } = PROVIDER_GUIDE_COPY;
-  const { containerRef } = useLenisScrollContainer<HTMLDivElement>();
 
   const sectionIcons: Record<string, typeof Globe> = {
     provider: Globe,
@@ -25,8 +22,7 @@ export const ProviderGuideView = memo(function ProviderGuideView({
 
   return (
     <div
-      ref={containerRef}
-      className="h-full overflow-y-auto overflow-x-hidden overscroll-contain custom-scrollbar p-1.5 sm:p-2.5 pr-2.5 sm:pr-4 select-none"
+      className="h-full overflow-y-auto overscroll-contain custom-scrollbar p-1.5 sm:p-2.5 pr-2.5 sm:pr-4 select-none"
     >
       <div className="flex flex-col gap-4 animate-fade-in pb-4">
       {/* Top Banner / Navigation */}
@@ -57,12 +53,26 @@ export const ProviderGuideView = memo(function ProviderGuideView({
         </button>
       </div>
 
-      {/* Visual Architectural Vector Graphic */}
-      <div className="w-full rounded-xl bg-[rgba(var(--foreground),0.015)] border border-[rgba(var(--foreground),0.06)] p-3">
-        <div className="text-[10px] uppercase font-bold tracking-[0.14em] text-[rgb(var(--foreground-muted))]/80 mb-1 px-1">
-          Connection & Network Setup
-        </div>
-        <ProviderArchitectureGraphic category={category} />
+      {/* Plain-Language Connection Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        {[
+          { icon: Globe, title: "Cloud Providers", body: "Add an API key from your provider (OpenRouter, NVIDIA, etc.) and save." },
+          { icon: Server, title: "Custom Servers", body: "Connect self-hosted Ollama, vLLM, or LM Studio endpoints on your local network." },
+          { icon: HardDrive, title: "On-Device Models", body: "Run private, zero-telemetry local models directly on your hardware." },
+        ].map((card) => (
+          <div
+            key={card.title}
+            className="p-3.5 rounded-xl bg-[rgba(var(--card),0.5)] border border-[rgba(var(--foreground),0.06)] flex flex-col gap-2"
+          >
+            <div className="flex items-center gap-2 text-[rgb(var(--accent))] font-display font-bold text-[13px]">
+              <card.icon size={15} />
+              <span>{card.title}</span>
+            </div>
+            <p className="text-[12px] text-[rgb(var(--foreground-muted))] leading-relaxed">
+              {card.body}
+            </p>
+          </div>
+        ))}
       </div>
 
       {/* 2x2 Concept Explainer Grid */}

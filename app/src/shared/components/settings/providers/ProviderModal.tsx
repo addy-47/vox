@@ -3,10 +3,10 @@ import { useLenisScrollContainer, useScrollTopOnChange } from "@/shared/hooks/us
 import { CLOUD_PROVIDERS, TTS_MODAL_PROVIDERS, type CloudProvider } from "@/data/providersCopy";
 import { INTERACTION_CONFIG_DESK_COPY } from "@/data/settingsCopy";
 import { useSettingsStore, type LlmCustomServer, type TtsCustomServer } from "@/store/settingsStore";
-import { activeSelection } from "@/shared/lib/activeSelection";
+import { activeSelection, getCloudProviderAlias } from "@/shared/lib/activeSelection";
 import { ModalProviderFooter } from "@/shared/components/settings/SettingsCommitControls";
 import { Tooltip } from "@/shared/ui/Tooltip";
-import { ArrowRight, Check, Cloud, Globe, HardDrive, HelpCircle, Key, KeyRound, Pencil, Trash2, X } from "lucide-react";
+import { ArrowRight, Check, Cloud, Globe, HelpCircle, Key, KeyRound, Pencil, Plus, Server, Trash2, X } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { ProviderGuideView } from "../models/catalog/ProviderGuideView";
 import { CustomServerFormCard } from "./CustomServerFormCard";
@@ -50,7 +50,46 @@ export interface ProviderModalProps {
   onAddCustomServer?: () => void;
 }
 
-export type ProviderFilterCategory = "all" | "local" | "cloud" | "configured" | "unconfigured" | "guide";
+export type ProviderFilterCategory = "all" | "cloud" | "configured" | "unconfigured" | "custom" | "guide";
+
+/** Dashed skeleton card for creating a custom server: centered plus-in-dashed-circle
+ *  with centered title/description (restored from CloudProvidersModalView.old.tsx). */
+const CustomProviderCreationCard = memo(function CustomProviderCreationCard({
+  category,
+  onClick,
+}: {
+  category: "STT" | "LLM" | "TTS";
+  onClick: () => void;
+}) {
+  const isTts = category === "TTS";
+  return (
+    <div
+      onClick={onClick}
+      className="relative flex flex-col justify-between p-4.5 rounded-xl border border-dashed border-[rgba(var(--foreground),0.2)] hover:border-[rgb(var(--accent))] bg-transparent hover:bg-[rgba(var(--accent),0.03)] transition-all duration-200 select-none group cursor-pointer transform-gpu h-[188px]"
+    >
+      <div className="flex flex-col items-center text-center my-auto px-1 pt-1">
+        <div className="w-12 h-12 rounded-2xl border border-dashed border-[rgba(var(--foreground),0.25)] group-hover:border-[rgb(var(--accent))] flex items-center justify-center text-[rgb(var(--foreground-muted))] group-hover:text-[rgb(var(--accent))] group-hover:scale-105 transition-all bg-[rgba(var(--foreground),0.02)]">
+          <Plus size={20} strokeWidth={2.25} />
+        </div>
+        <h4 className="font-bold text-[14.5px] text-[rgb(var(--foreground))] tracking-tight truncate w-full text-center mt-2.5 leading-tight group-hover:text-[rgb(var(--accent))] transition-colors">
+          {isTts ? "Add Voice Server" : "Add Custom Server"}
+        </h4>
+        <p className="text-[12px] text-[rgb(var(--foreground-muted))] mt-1 line-clamp-2 leading-relaxed text-center px-1 h-[36px]">
+          {isTts
+            ? "Connect Chatterbox GPU node or remote synthesis host."
+            : "Connect self-hosted Ollama, vLLM, or LM Studio endpoint."}
+        </p>
+      </div>
+      <div className="mt-auto pt-2.5 flex items-center justify-between text-[11px] font-mono border-t border-dashed border-[rgba(var(--foreground),0.12)] h-[28px]">
+        <span className="text-[rgb(var(--foreground-muted))]/60">Self-Hosted</span>
+        <span className="text-[rgb(var(--accent))] font-medium flex items-center gap-1 group-hover:translate-x-0.5 transition-transform">
+          + Configure <ArrowRight size={11} />
+        </span>
+      </div>
+    </div>
+  );
+});
+CustomProviderCreationCard.displayName = "CustomProviderCreationCard";
 
 export const ProviderModal = memo(({
   category = "LLM", onSelectLocal, activeCloudProviderId, getProviderKey, pinnedProviderId,
@@ -138,8 +177,8 @@ export const ProviderModal = memo(({
     () => [
       { id: "all" as const, label: "All Providers", count: 1 + (isTts ? TTS_MODAL_PROVIDERS.length : CLOUD_PROVIDERS.length) + customServers.length, Icon: Globe },
       { id: "configured" as const, label: "Available", count: 1 + (isTts ? ttsAvailableCount : configuredCount) + customServers.length, Icon: Key },
-      { id: "local" as const, label: "On-Device", count: 1, Icon: HardDrive },
-      { id: "cloud" as const, label: isTts ? "Cloud Voices" : "Cloud APIs", count: isTts ? TTS_MODAL_PROVIDERS.length : CLOUD_PROVIDERS.length, Icon: Cloud },
+      { id: "custom" as const, label: "Custom Servers", count: customServers.length, Icon: Server },
+      { id: "cloud" as const, label: isTts ? "Cloud Voices" : "Cloud Providers", count: isTts ? TTS_MODAL_PROVIDERS.length : CLOUD_PROVIDERS.length, Icon: Cloud },
     ],
     [isTts, customServers.length, ttsAvailableCount, configuredCount]
   );
@@ -201,7 +240,7 @@ export const ProviderModal = memo(({
     let list = TTS_MODAL_PROVIDERS;
     const q = deferredSearch.trim().toLowerCase();
     if (q) list = list.filter((p) => p.name.toLowerCase().includes(q) || p.id.toLowerCase().includes(q) || p.tagline.toLowerCase().includes(q));
-    if (filterCategory === "local") return [];
+    if (filterCategory === "custom") return [];
     if (filterCategory === "configured") list = list.filter((p) => p.isFree || Boolean(getProviderKey(p.id)?.trim()));
     const sorted = [...list].sort((a, b) => sort === "az" ? a.name.localeCompare(b.name, undefined, { sensitivity: "base" }) : b.name.localeCompare(a.name, undefined, { sensitivity: "base" }));
     const committedTtsProvider = committedSettings?.tts?.active?.provider;
@@ -218,7 +257,7 @@ export const ProviderModal = memo(({
     if (q) list = list.filter((p) => p.name.toLowerCase().includes(q) || p.id.toLowerCase().includes(q) || p.tagline?.toLowerCase().includes(q) || p.url.toLowerCase().includes(q));
     if (filterCategory === "configured") list = list.filter((p) => Boolean((p as { isFree?: boolean }).isFree) || Boolean(getProviderKey(p.id)?.trim()));
     else if (filterCategory === "unconfigured") list = list.filter((p) => !getProviderKey(p.id)?.trim());
-    else if (filterCategory === "local") list = [];
+    else if (filterCategory === "custom") list = [];
 
     const sorted = [...list].sort((a, b) => {
       const aKey = Boolean(getCommittedProviderKey(a.id)?.trim()), bKey = Boolean(getCommittedProviderKey(b.id)?.trim());
@@ -227,7 +266,9 @@ export const ProviderModal = memo(({
     });
     const committedLlmProvider = committedSettings?.llm?.active?.provider;
     if (committedLlmProvider) {
-      const idx = sorted.findIndex((p) => p.id === committedLlmProvider);
+      const idx = sorted.findIndex(
+        (p) => p.id === committedLlmProvider || getCloudProviderAlias(p.id) === committedLlmProvider
+      );
       if (idx > 0) { const [active] = sorted.splice(idx, 1); sorted.unshift(active); }
     }
     return sorted;
@@ -238,8 +279,8 @@ export const ProviderModal = memo(({
     return !q || "built-in on-device local neural whisper gguf kokoro vox offline".includes(q);
   }, [deferredSearch]);
 
-  const showLocalCard = (filterCategory === "local" || filterCategory === "all" || filterCategory === "configured") && matchesLocal;
-  const showCustomSection = filterCategory === "all" || filterCategory === "configured";
+  const showLocalCard = (filterCategory === "all" || filterCategory === "configured") && matchesLocal;
+  const showCustomSection = filterCategory === "all" || filterCategory === "configured" || filterCategory === "custom";
   const showCustomCreationCard = showCustomSection && (!deferredSearch.trim() || "custom server self-hosted endpoint".includes(deferredSearch.trim().toLowerCase()));
 
   const filteredCustomServers = useMemo(() => {
@@ -263,7 +304,7 @@ export const ProviderModal = memo(({
   const localCard = showLocalCard ? (
     <SelectableCard
       key="local-provider-card" id="local-provider" name={localMeta.name} tagline={localMeta.tagline} logo={null}
-      isSelected={isLocalSelected} statusBadge={isLocalSelected ? "Active" : undefined} onSelect={handleSelectLocalProvider}
+      isSelected={isLocalSelected} onSelect={handleSelectLocalProvider}
       actionSlot={<><span className="text-[rgb(var(--foreground-muted))]/70">Local Hardware</span><span className="text-[rgb(var(--accent))] font-bold flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--accent))]" />{isLocalSelected ? "Active" : "Offline Ready"}</span></>}
     />
   ) : null;
@@ -275,7 +316,6 @@ export const ProviderModal = memo(({
           <SelectableCard
             key={entry.id} id={entry.id} name={entry.name} tagline={entry.tagline} logo={entry.logo}
             isSelected={isSelected} isComingSoon={entry.isComingSoon}
-            statusBadge={isSelected ? "Active" : entry.isFree ? "Free" : entry.isComingSoon ? "Soon" : undefined}
             onSelect={() => {
               if (entry.isComingSoon) return;
               useSettingsStore.getState().clearRemoteModelsError();
@@ -296,7 +336,21 @@ export const ProviderModal = memo(({
         return (
           <SelectableCard
             key={provider.id} id={provider.id} name={provider.name} tagline={provider.tagline || "OpenAI-compatible inference gateway."}
-            logo={provider.logo ?? null} isSelected={isSelected} statusBadge={isSelected ? "Active" : undefined} onSelect={() => onSelectProvider(provider)}
+            logo={provider.logo ?? null} isSelected={isSelected} onSelect={() => onSelectProvider(provider)}
+            cornerSlot={
+              onNavigateToModels && hasKey ? (
+                <Tooltip label="Browse models" side="top" asChild>
+                  <button
+                    type="button"
+                    onClick={() => { onSelectProvider(provider); onNavigateToModels(provider); }}
+                    className="w-7 h-7 flex items-center justify-center rounded-md text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.1)] transition-colors cursor-pointer"
+                    aria-label="Browse models"
+                  >
+                    <ArrowRight size={13} strokeWidth={2} />
+                  </button>
+                </Tooltip>
+              ) : undefined
+            }
             actionSlot={
               isEditing ? (
                 <div className="flex items-center gap-1.5 border-b border-[rgb(var(--accent))] pb-0.5 w-full bg-transparent animate-fade-in">
@@ -311,9 +365,6 @@ export const ProviderModal = memo(({
                     <div className="flex items-center gap-1.5">
                       <span className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--accent))] shrink-0" /><span className="text-[rgb(var(--foreground-muted))]">••••••••{savedKey?.slice(-4)}</span>
                       <button type="button" onClick={() => onStartInlineEdit(provider.id, savedKey ?? "")} className="p-1 rounded hover:bg-white/[0.08] hover:text-[rgb(var(--accent))] transition-colors text-[rgb(var(--foreground-muted))]/60 cursor-pointer shrink-0" title="Edit API Key"><Pencil size={11} /></button>
-                      {onNavigateToModels && (
-                        <button type="button" onClick={() => { onSelectProvider(provider); onNavigateToModels(provider); }} className="p-1 rounded-md text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.1)] transition-colors cursor-pointer" title="Browse models" aria-label="Browse models"><ArrowRight size={13} strokeWidth={2} /></button>
-                      )}
                     </div>
                   ) : (
                     <button type="button" onClick={() => onStartInlineEdit(provider.id, "")} className="text-[rgb(var(--accent))] hover:underline cursor-pointer font-medium flex items-center gap-1">+ Connect Key</button>
@@ -330,11 +381,27 @@ export const ProviderModal = memo(({
       return <CustomServerFormCard key={server.id} category={category} initial={server} onClose={() => setEditingServer(null)} onServerSaved={() => {}} />;
     }
     const isSelected = activeCategoryType === "server" && activeServerId === server.id;
-    const isCommittedActive = committedCategory === "server" && committedActiveProviderId === server.id;
     return (
       <SelectableCard
         key={server.id || server.url} id={server.id} name={server.name || "Custom Server"} tagline={server.url} logo={null}
-        isSelected={isSelected} statusBadge={isCommittedActive ? "Active" : undefined} onSelect={() => handleSelectServer(server)}
+        isSelected={isSelected} onSelect={() => handleSelectServer(server)}
+        cornerSlot={
+          onNavigateToModels && category === "LLM" ? (
+            <Tooltip label="Browse models" side="top" asChild>
+              <button
+                type="button"
+                onClick={() => {
+                  handleSelectServer(server);
+                  onNavigateToModels({ id: server.id, name: server.name || "Custom Server", url: server.url, popular: false, keyPlaceholder: "" });
+                }}
+                className="w-7 h-7 flex items-center justify-center rounded-md text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.1)] transition-colors cursor-pointer"
+                aria-label="Browse models"
+              >
+                <ArrowRight size={13} strokeWidth={2} />
+              </button>
+            </Tooltip>
+          ) : undefined
+        }
         actionSlot={
           <div className="flex items-center justify-between text-[11px] font-mono w-full">
             <span className="text-[rgb(var(--foreground-muted))]/70">Self-Hosted</span>
@@ -358,12 +425,9 @@ export const ProviderModal = memo(({
         <CustomServerFormCard key="new" category={category} initial={null} onClose={() => setIsCreatingCustomServer(false)} onServerSaved={() => {}} />
       )}
       {showCustomCreationCard && !isCreatingCustomServer && !editingServer && (
-        <SelectableCard
-          key="create-custom" id="create-custom"
-          name={category === "TTS" ? "Add Voice Server" : "Add Custom Server"}
-          tagline={category === "TTS" ? "Connect Chatterbox GPU node or remote synthesis host." : "Connect self-hosted Ollama, vLLM, or LM Studio endpoint."}
-          logo={null} isSelected={false} onSelect={() => setIsCreatingCustomServer(true)}
-          actionSlot={<><span className="text-[rgb(var(--foreground-muted))]/60">Self-Hosted</span><span className="text-[rgb(var(--accent))] font-medium flex items-center gap-1 group-hover:translate-x-0.5 transition-transform">+ Configure <ArrowRight size={11} /></span></>}
+        <CustomProviderCreationCard
+          category={category}
+          onClick={() => setIsCreatingCustomServer(true)}
         />
       )}
     </>

@@ -22,7 +22,7 @@ import {
   updateCloudProvidersFromContract,
   updateTtsProvidersFromContract,
 } from "@/data/providersCopy";
-import { getEffectiveCloudApiKey } from "@/shared/lib/activeSelection";
+import { getEffectiveCloudApiKey, getCloudProviderAlias } from "@/shared/lib/activeSelection";
 
 /** Reads a settings scope as a key-value map for dynamic key access. The
  * single guarded cast in the store; every dynamic read funnels through here. */
@@ -640,8 +640,9 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         }
       } else if (active === "cloud") {
         const cloudId = activeSel?.provider;
-        const contractEntry = get().contract?.llm_cloud_providers?.find((p) => p.id === cloudId);
-        const cloudEntry = contractEntry || CLOUD_PROVIDERS.find((p) => p.id === cloudId);
+        const aliasId = getCloudProviderAlias(cloudId);
+        const contractEntry = get().contract?.llm_cloud_providers?.find((p) => p.id === cloudId || (aliasId && p.id === aliasId));
+        const cloudEntry = contractEntry || CLOUD_PROVIDERS.find((p) => p.id === cloudId || (aliasId && p.id === aliasId));
         const cloudUrl = contractEntry?.base_url || contractEntry?.url || cloudEntry?.url || "";
         const apiKey = getEffectiveCloudApiKey(get().draftSettings, get().settings, cloudId);
         provider = {

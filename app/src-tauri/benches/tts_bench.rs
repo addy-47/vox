@@ -563,14 +563,23 @@ fn main() {
     if run_google {
         let google_voices = [
             ("en-US-Chirp3-HD-Kore", "Google Cloud TTS (Chirp 3 HD Kore)"),
-            ("en-US-Chirp3-HD-Fenrir", "Google Cloud TTS (Chirp 3 HD Fenrir)"),
+            (
+                "en-US-Chirp3-HD-Fenrir",
+                "Google Cloud TTS (Chirp 3 HD Fenrir)",
+            ),
             ("en-US-Chirp3-HD-Puck", "Google Cloud TTS (Chirp 3 HD Puck)"),
-            ("en-US-Chirp3-HD-Aoede", "Google Cloud TTS (Chirp 3 HD Aoede)"),
+            (
+                "en-US-Chirp3-HD-Aoede",
+                "Google Cloud TTS (Chirp 3 HD Aoede)",
+            ),
         ];
 
         for (voice_name, desc) in google_voices {
-            if let Ok(provider_impl) = vox_lib::services::tts::GoogleTtsProvider::new(voice_name, Some("vox-agent-001")) {
-                let provider: Box<dyn vox_lib::services::tts::providers::TtsProvider> = Box::new(provider_impl);
+            if let Ok(provider_impl) =
+                vox_lib::services::tts::GoogleTtsProvider::new(voice_name, Some("vox-agent-001"))
+            {
+                let provider: Box<dyn vox_lib::services::tts::providers::TtsProvider> =
+                    Box::new(provider_impl);
                 let tag = format!("google_tts_{}", voice_name.replace("en-US-Chirp3-HD-", ""));
                 let run = benchmark_tts_provider(
                     desc,
@@ -583,7 +592,10 @@ fn main() {
                 );
                 engine_runs.push(run);
             } else {
-                eprintln!("[WARN] Failed to initialize GoogleTtsProvider for voice {}", voice_name);
+                eprintln!(
+                    "[WARN] Failed to initialize GoogleTtsProvider for voice {}",
+                    voice_name
+                );
             }
         }
     }
@@ -594,21 +606,25 @@ fn main() {
         let azure_voices = [
             ("en-US-JennyNeural", "Azure AI Speech (JennyNeural)"),
             ("en-US-GuyNeural", "Azure AI Speech (GuyNeural)"),
-            ("en-US-AvaMultilingualNeural", "Azure AI Speech (AvaMultilingualNeural)"),
-            ("en-US-AndrewMultilingualNeural", "Azure AI Speech (AndrewMultilingualNeural)"),
+            (
+                "en-US-AvaMultilingualNeural",
+                "Azure AI Speech (AvaMultilingualNeural)",
+            ),
+            (
+                "en-US-AndrewMultilingualNeural",
+                "Azure AI Speech (AndrewMultilingualNeural)",
+            ),
         ];
 
         if key.is_empty() {
             eprintln!("[WARN] AZURE_SPEECH_KEY not set; set AZURE_SPEECH_KEY to benchmark Azure AI Speech");
         } else {
             for (voice_name, desc) in azure_voices {
-                if let Ok(provider_impl) = vox_lib::services::tts::AzureTtsProvider::new(
-                    &region,
-                    voice_name,
-                    &key,
-                    None,
-                ) {
-                    let provider: Box<dyn vox_lib::services::tts::providers::TtsProvider> = Box::new(provider_impl);
+                if let Ok(provider_impl) =
+                    vox_lib::services::tts::AzureTtsProvider::new(&region, voice_name, &key, None)
+                {
+                    let provider: Box<dyn vox_lib::services::tts::providers::TtsProvider> =
+                        Box::new(provider_impl);
                     let tag = format!("azure_tts_{}", voice_name.replace("en-US-", ""));
                     let run = benchmark_tts_provider(
                         desc,
@@ -621,7 +637,10 @@ fn main() {
                     );
                     engine_runs.push(run);
                 } else {
-                    eprintln!("[WARN] Failed to initialize AzureTtsProvider for voice {}", voice_name);
+                    eprintln!(
+                        "[WARN] Failed to initialize AzureTtsProvider for voice {}",
+                        voice_name
+                    );
                 }
             }
         }

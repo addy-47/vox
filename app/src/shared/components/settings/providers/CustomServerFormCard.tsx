@@ -1,4 +1,4 @@
-import { memo, useState } from "react";
+import { memo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import {
   AlertCircle,
   ArrowLeft,
@@ -93,7 +93,10 @@ export const CustomServerFormCard = memo(({
         });
 
         if (res.healthy) {
-          const resolvedName = name.trim() || res.dialect || "Remote";
+          const defaultDialectName = res.dialect
+            ? res.dialect.charAt(0).toUpperCase() + res.dialect.slice(1)
+            : "Remote Server";
+          const resolvedName = name.trim() || defaultDialectName;
           const newServer: LlmCustomServer = {
             id: initial?.id ?? `llm_custom_${Date.now()}`,
             name: resolvedName,
@@ -166,6 +169,37 @@ export const CustomServerFormCard = memo(({
     onClose();
   };
 
+  const urlRef = useRef<HTMLInputElement | null>(null);
+  const apiKeyRef = useRef<HTMLInputElement | null>(null);
+  const nameRef = useRef<HTMLInputElement | null>(null);
+
+  const handleFormKeyDown = (e: ReactKeyboardEvent) => {
+    if (e.key === "Escape") {
+      // Cancel only this form card — the parent modal must stay open.
+      e.stopPropagation();
+      onClose();
+      return;
+    }
+    if (e.key !== "Enter") return;
+    if (e.target === urlRef.current) {
+      // URL field: advance to the API-key input.
+      e.stopPropagation();
+      apiKeyRef.current?.focus();
+      return;
+    }
+    if (e.target === apiKeyRef.current) {
+      // API-key field: advance to the name input.
+      e.stopPropagation();
+      nameRef.current?.focus();
+      return;
+    }
+    if (e.target === nameRef.current) {
+      // Name is the final field: submit the save probe.
+      e.stopPropagation();
+      if (!isProbing && url.trim()) void handleSave();
+    }
+  };
+
   return (
     <div className={cn(
       "relative flex flex-col justify-between p-4.5 rounded-xl border border-dashed transition-all select-none h-[188px]",
@@ -230,9 +264,10 @@ export const CustomServerFormCard = memo(({
           </div>
         </div>
       ) : (
-        <div className="flex flex-col gap-2 py-2 flex-1 justify-center">
+        <div className="flex flex-col gap-2 py-2 flex-1 justify-center" onKeyDown={handleFormKeyDown}>
           <input
             type="text"
+            ref={urlRef}
             value={url}
             autoFocus
             onChange={(e) => setUrl(e.target.value)}
@@ -242,6 +277,7 @@ export const CustomServerFormCard = memo(({
           <div className="flex gap-2">
             <input
               type="password"
+              ref={apiKeyRef}
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
               placeholder={INTERACTION_CONFIG_DESK_COPY.llm.server.apiKeyLabel}
@@ -249,6 +285,7 @@ export const CustomServerFormCard = memo(({
             />
             <input
               type="text"
+              ref={nameRef}
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="Name (Auto)"

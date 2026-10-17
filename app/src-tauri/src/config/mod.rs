@@ -9,14 +9,15 @@ pub mod settings;
 pub mod types;
 
 pub use contract::*;
-
 pub use dispatch::{
     dispatch_worker_command, dispatch_worker_command_has_arm, handle_setting_side_effects,
     request_engine_restart, schedule_debounced_save, RESTART_COALESCE_MS,
     SETTINGS_SAVE_DEBOUNCE_MS,
 };
 pub use files::{AgentConfigFile, ProvidersConfigFile, SettingsConfigFile};
-pub use mutation::{apply_model_parameter_mutation, apply_setting_mutation, supported_keys_for_domain};
+pub use mutation::{
+    apply_model_parameter_mutation, apply_setting_mutation, supported_keys_for_domain,
+};
 pub use settings::{
     get_preset_colors, AppearanceSettings, AudioOutputMode, InteractionSettings, PersonaSettings,
     PersonalMemorySettings, SystemSettings, VoxSettings, WorkingMemorySettings,
@@ -149,9 +150,9 @@ pub fn is_secret_key(domain: &str, key: &str) -> bool {
 /// This is checked at compile-test time to prevent drift.
 pub fn secret_keys_are_supported() -> bool {
     use crate::config::mutation::supported_keys_for_domain;
-    secret_keys().iter().all(|(d, k)| {
-        supported_keys_for_domain(d).contains(k)
-    })
+    secret_keys()
+        .iter()
+        .all(|(d, k)| supported_keys_for_domain(d).contains(k))
 }
 
 #[cfg(test)]

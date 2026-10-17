@@ -26,8 +26,19 @@ export function activeSelection(
 }
 
 /**
+ * Returns the alias provider id if one exists (e.g. nvidia <-> nvidia_nim).
+ */
+export function getCloudProviderAlias(providerId?: string | null): string | null {
+  if (!providerId) return null;
+  if (providerId === "nvidia") return "nvidia_nim";
+  if (providerId === "nvidia_nim") return "nvidia";
+  return null;
+}
+
+/**
  * Resolves the effective API key for a cloud provider across draft and committed settings.
- * Checks draft.llm.cloud_keys, draft.providers.llm.cloud_keys, and committed.providers.llm.cloud_keys.
+ * Checks draft.llm.cloud_keys, draft.providers.llm.cloud_keys, committed.providers.llm.cloud_keys,
+ * and committed.llm.cloud_keys, with bidirectional alias fallback (e.g. nvidia <-> nvidia_nim).
  */
 export function getEffectiveCloudApiKey(
   draft?: {
@@ -41,10 +52,21 @@ export function getEffectiveCloudApiKey(
   providerId?: string | null
 ): string | undefined {
   if (!providerId) return undefined;
-  const key =
-    draft?.llm?.cloud_keys?.[providerId] ??
-    draft?.providers?.llm?.cloud_keys?.[providerId] ??
-    committed?.providers?.llm?.cloud_keys?.[providerId] ??
-    committed?.llm?.cloud_keys?.[providerId];
-  return key?.trim() || undefined;
+
+  const lookup = (id: string) =>
+    draft?.llm?.cloud_keys?.[id] ??
+    draft?.providers?.llm?.cloud_keys?.[id] ??
+    committed?.providers?.llm?.cloud_keys?.[id] ??
+    committed?.llm?.cloud_keys?.[id];
+
+  const primary = lookup(providerId)?.trim();
+  if (primary) return primary;
+
+  const alias = getCloudProviderAlias(providerId);
+  if (alias) {
+    const aliasKey = lookup(alias)?.trim();
+    if (aliasKey) return aliasKey;
+  }
+
+  return undefined;
 }

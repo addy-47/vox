@@ -1,14 +1,12 @@
 use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 
 use crate::{
     config::{
-        classify_known, get_setting_reload_policy, mutation::supported_keys_for_domain,
-        secret_keys,
+        classify_known, get_setting_reload_policy, mutation::supported_keys_for_domain, secret_keys,
     },
-    core::defaults::{
-        DEFAULT_LLM_MAX_OUTPUT_TOKENS, DEFAULT_LLM_TEMPERATURE, DEFAULT_TTS_SPEED,
-    },
+    core::defaults::{DEFAULT_LLM_MAX_OUTPUT_TOKENS, DEFAULT_LLM_TEMPERATURE, DEFAULT_TTS_SPEED},
     services::llm::catalog::presets::BUNDLED_PROVIDERS_JSON,
     setup::manifest::{ModelGroup, VoxManifest},
 };
@@ -133,11 +131,12 @@ pub fn build_settings_contract() -> SettingsContract {
         .collect();
 
     // Parse cloud providers from baseline_providers.json
-    let raw_presets: Vec<RawProviderPreset> = serde_json::from_str(BUNDLED_PROVIDERS_JSON)
-        .unwrap_or_default();
+    let raw_presets: Vec<RawProviderPreset> =
+        serde_json::from_str(BUNDLED_PROVIDERS_JSON).unwrap_or_default();
 
     let mut llm_cloud_providers = Vec::new();
     let mut seen_ids = std::collections::HashSet::new();
+    let has_nvidia = raw_presets.iter().any(|p| p.id == "nvidia");
 
     for preset in raw_presets {
         let is_cloud = preset.key_placeholder.is_some()
@@ -148,7 +147,7 @@ pub fn build_settings_contract() -> SettingsContract {
         }
 
         let id = preset.id;
-        if id == "nvidia_nim" && seen_ids.contains("nvidia") {
+        if id == "nvidia_nim" && (has_nvidia || seen_ids.contains("nvidia")) {
             continue;
         }
         if seen_ids.contains(&id) {

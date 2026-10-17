@@ -201,12 +201,10 @@ pub async fn list_models(
             )
             .await
         }
-        LlmRuntimeTarget::Unresolved { provider_id } => {
-            Err(format!(
-                "catalog provider '{}' is not in the declarative manifest (RULE-PROV-01)",
-                provider_id
-            ))
-        }
+        LlmRuntimeTarget::Unresolved { provider_id } => Err(format!(
+            "catalog provider '{}' is not in the declarative manifest (RULE-PROV-01)",
+            provider_id
+        )),
     }
 }
 
@@ -643,13 +641,11 @@ impl CapabilityProbeEngine {
                 let model_id = target_model.unwrap_or("embedded-default.gguf");
                 Ok(Self::probe_local_embedded(model_id, now))
             }
-            LlmRuntimeTarget::Unresolved { provider_id } => {
-                Err(format!(
-                    "catalog provider '{}' is not in the declarative manifest (RULE-PROV-01)",
-                    provider_id
-                )
-                .into())
-            }
+            LlmRuntimeTarget::Unresolved { provider_id } => Err(format!(
+                "catalog provider '{}' is not in the declarative manifest (RULE-PROV-01)",
+                provider_id
+            )
+            .into()),
             LlmRuntimeTarget::Server {
                 base_url,
                 model,
@@ -1390,18 +1386,16 @@ impl CapabilityProbeEngine {
                     ),
                 )
             }
-            LlmRuntimeTarget::Unresolved { provider_id } => {
-                return (
-                    None,
-                    done(
-                        ProbeOutcome::Failed,
-                        Some(format!(
-                            "catalog provider '{}' is not in the declarative manifest (RULE-PROV-01)",
-                            provider_id
-                        )),
-                    ),
-                )
-            }
+            LlmRuntimeTarget::Unresolved { provider_id } => return (
+                None,
+                done(
+                    ProbeOutcome::Failed,
+                    Some(format!(
+                        "catalog provider '{}' is not in the declarative manifest (RULE-PROV-01)",
+                        provider_id
+                    )),
+                ),
+            ),
         };
 
         let conn_cfg = ConnectionConfig::new(

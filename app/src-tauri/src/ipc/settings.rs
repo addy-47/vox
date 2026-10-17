@@ -117,9 +117,7 @@ fn is_secret_setting(domain: &str, key: &str) -> bool {
 /// The true value is still applied and persisted; only its display is masked.
 fn redact_setting_value(domain: &str, key: &str, value: &serde_json::Value) -> serde_json::Value {
     if is_secret_setting(domain, key) {
-        serde_json::Value::String(
-            crate::services::tts::auth::redact_secret().to_string(),
-        )
+        serde_json::Value::String(crate::services::tts::auth::redact_secret().to_string())
     } else {
         value.clone()
     }
@@ -157,11 +155,10 @@ pub async fn update_setting<R: tauri::Runtime>(
             .settings
             .write()
             .map_err(|e| VoxIpcError::Internal(e.to_string()))?;
-        apply_setting_mutation(&mut settings, &domain, &key, &value)
-            .map_err(|e| {
-                log::warn!("[Settings::Mutation] Rejected {}.{}: {}", domain, key, e);
-                VoxIpcError::InvalidArgument(e)
-            })?
+        apply_setting_mutation(&mut settings, &domain, &key, &value).map_err(|e| {
+            log::warn!("[Settings::Mutation] Rejected {}.{}: {}", domain, key, e);
+            VoxIpcError::InvalidArgument(e)
+        })?
     };
 
     if !applied {

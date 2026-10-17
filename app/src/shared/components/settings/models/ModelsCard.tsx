@@ -19,7 +19,7 @@ import { SegmentedControl } from "@/shared/ui";
 import { LlmProviderConfig, ProviderCaps } from "@/store/settingsStore";
 import { useModelDownloads } from "@/shared/hooks/useModelDownloads";
 import { useRemoteLlmProbing } from "@/shared/hooks/useRemoteLlmProbing";
-import { getEffectiveCloudApiKey } from "@/shared/lib/activeSelection";
+import { getEffectiveCloudApiKey, getCloudProviderAlias } from "@/shared/lib/activeSelection";
 
 import { PipelineTopologyMap, type PipelineTab } from "./PipelineTopologyMap";
 import { VadWorkspace } from "./VadWorkspace";
@@ -132,9 +132,15 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
       };
     }
     const cloudId = draftSettings?.llm?.active?.provider;
-    const contractEntry = contract?.llm_cloud_providers?.find((p) => p.id === cloudId);
-    const cloudEntry = contractEntry || CLOUD_PROVIDERS.find((p) => p.id === cloudId);
-    const cloudUrl = contractEntry?.base_url || contractEntry?.url || cloudEntry?.url || "";
+    const aliasId = getCloudProviderAlias(cloudId);
+    const contractEntry = contract?.llm_cloud_providers?.find(
+      (p) => p.id === cloudId || (aliasId && p.id === aliasId)
+    );
+    const cloudEntry =
+      contractEntry ||
+      CLOUD_PROVIDERS.find((p) => p.id === cloudId || (aliasId && p.id === aliasId));
+    const cloudUrl =
+      contractEntry?.base_url || contractEntry?.url || cloudEntry?.url || "";
     const cloudApiKey = getEffectiveCloudApiKey(draftSettings, committedSettings, cloudId);
     return {
       kind: "cloud",

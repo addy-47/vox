@@ -2,9 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     config::{ActiveSelection, LastSelectedModels},
-    core::defaults::{
-        DEFAULT_ASR_MODEL, DEFAULT_ASR_TRANSLITERATE_ENABLED, DEFAULT_STT_THREADS,
-    },
+    core::defaults::{DEFAULT_ASR_MODEL, DEFAULT_ASR_TRANSLITERATE_ENABLED, DEFAULT_STT_THREADS},
     services::audio::SAMPLE_RATE,
 };
 

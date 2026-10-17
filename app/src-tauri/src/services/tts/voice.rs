@@ -955,7 +955,10 @@ pub async fn fetch_remote_google_voices() -> Result<Vec<EdgeTtsVoiceEntry>, Stri
             .await
             .map_err(|e| format!("Google voices:list failed for {}: {}", region, e))?;
         for v in response.voices {
-            if !v.name.contains(crate::services::tts::GOOGLE_TTS_STREAMING_VOICE_INFIX) {
+            if !v
+                .name
+                .contains(crate::services::tts::GOOGLE_TTS_STREAMING_VOICE_INFIX)
+            {
                 continue;
             }
             let locale = v.language_codes.first().cloned().unwrap_or_default();

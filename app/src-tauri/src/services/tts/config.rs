@@ -207,10 +207,7 @@ impl TtsSettings {
                 let default_prov = TtsProvidersConfig::default();
                 let provs = providers.unwrap_or(&default_prov);
                 let target_id = self.active.provider.as_deref().unwrap_or("chatterbox-gpu");
-                let server = provs
-                    .servers
-                    .iter()
-                    .find(|s| s.id == target_id);
+                let server = provs.servers.iter().find(|s| s.id == target_id);
 
                 if let Some(srv) = server {
                     TtsProviderConfig::ChatterboxRemote {
