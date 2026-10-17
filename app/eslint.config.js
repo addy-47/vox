@@ -30,6 +30,7 @@ const BROWSER_GLOBALS = Object.fromEntries(
     "CustomEvent", "Event", "Audio", "URL", "Blob", "Worker",
     "IntersectionObserverEntry", "getComputedStyle", "matchMedia",
     "structuredClone", "queueMicrotask", "crypto", "performance",
+    "fetch",
   ].map((name) => [name, "readonly"]),
 );
 
@@ -157,8 +158,7 @@ export default [
 
       // --- Service boundary (frontend-style-guide.md §2, Invariant 1/1b) ---
       // Raw @tauri-apps invoke in view layers banned; use src/services/*.
-      // fetch() is a global so cannot be blocked by no-restricted-imports;
-      // it is enforced at architecture review + lint-arch level.
+      // Raw fetch() in components banned; route through src/services/transport.ts.
       "no-restricted-imports": ["error", {
         "patterns": [
           {
@@ -167,6 +167,13 @@ export default [
           },
         ],
       }],
+      "no-restricted-globals": [
+        "error",
+        {
+          "name": "fetch",
+          "message": "Use src/services/transport.ts. Raw fetch in components violates the service boundary (frontend-style-guide.md §2).",
+        },
+      ],
 
       // Vite HMR correctness.
       "react-refresh/only-export-components": ["warn", { "allowConstantExport": true }],
@@ -181,6 +188,7 @@ export default [
     files: ["src/services/transport.ts"],
     rules: {
       "no-restricted-imports": "off",
+      "no-restricted-globals": "off",
     },
   },
 ];

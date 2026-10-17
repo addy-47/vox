@@ -1,63 +1,61 @@
 ---
 trigger: manual
-description: Vox Frontend Code Style Guide and Engineering Standards for TypeScript/React (`app/src/`).
+description: TypeScript, React 19, Liquid Space design tokens, and WebGL lifecycle standards for the Vox frontend (`app/src/`).
 ---
 
 # Vox — Frontend Code Style Guide & Engineering Standards
 
-This document contains durable coding standards for the Vox frontend (`app/src/`). **Agents doing write operations on frontend code must read this file before modifying code.**
+Durable engineering standards for the Vox frontend application (`app/src/`). Read before creating or editing TypeScript/React files.
 
 ---
 
-## 1. Hardware Tiers & Feature Mapping
+## 1. Hardware Tiers & UI Mapping
 
-The frontend reflects the active hardware tier and dynamic model degradation/upgrades in the ambient UI.
+The ambient UI reflects active hardware capabilities. Visual surfaces adapt dynamically to model degradation or cloud streaming.
 
-| Tier | Hardware | Pipeline Mode | Memory Ingestion | Memory Retrieval | Tool Calling |
-| :--- | :------- | :-----------: | :--------------: | :--------------: | :----------: |
-| **1A** | 8GB, CPU-only, no GPU | Modular (Local) | ❌ None (FIFO only) | ✅ Working Memory context window only | ❌ Unavailable |
-| **1B** ⭐ | 8GB+, dedicated GPU | Modular (Local) | ✅ Full async ingestion | ✅ Full retrieval (episodic + semantic) | ⚠️ Depends on local LLM capability |
-| **2A** ⭐ | Hybrid (Remote LLM + Local Audio) | Modular (Remote LLM) | ✅ Full async ingestion | ✅ Full retrieval | ⚠️ Depends on remote LLM capability |
-| **2B** ⭐ default | Hybrid (Cloud LLM + Local Audio) | Modular (Cloud LLM) | ✅ Full async ingestion | ✅ Full retrieval | ✅ All cloud models support tool calling |
-| **3** | Any (Realtime S2S) | Realtime (WebSocket) | ✅ Provider-managed | ✅ Via early tool calls in provider | ✅ Via early tool calls |
+| Tier | Hardware | Pipeline Mode | Ingestion | Retrieval | Tool Calling |
+| :--- | :------- | :-----------: | :-------: | :-------: | :----------: |
+| **1A** | 8GB, CPU-only | Modular (Local) | FIFO only | Context window | None |
+| **1B** | 8GB+, dedicated GPU | Modular (Local) | Async background | Full (vector + BM25) | Local LLM dependent |
+| **2A** | Hybrid (Remote LLM) | Modular (Remote LLM) | Async background | Full | Remote LLM dependent |
+| **2B** (default) | Hybrid (Cloud LLM) | Modular (Cloud LLM) | Async background | Full | Full cloud tool calls |
+| **3** | Realtime S2S | Realtime (WebSocket) | Provider-managed | Early tool calls | Full provider tools |
 
 ---
 
-## 2. Frontend Architecture & Boundaries
+## 2. Architecture & Layer Boundaries
 
-- **Package Manager:** Always use `pnpm`, never `npm` or `yarn`.
-- **Zero Hardcoded Text / Labels:** Inline hardcoded strings, labels, select options, or mock objects inside components/pages are strictly banned. All static content must live in `src/data/` (e.g., `appData.ts`, `settingsDomains.ts`).
-- **Strict Service Layer Boundary:** Raw `@tauri-apps/api` invoke calls or direct fetches inside React components are prohibited. All IPC/API calls MUST pass through dedicated service modules in `src/services/` (e.g. `pipelineService.ts`, `settingsService.ts`).
-- **Page Responsibility (Layout Only):** Files in `src/pages/` MUST only define visual structure, routing, and layout composition. Business logic, state sync, and data transformations belong in `src/services/`, `src/hooks/`, or `src/store/`.
-- **Modular Component Subdirectories:** `src/shared/components/` must be structured into logical feature/domain subdirectories (e.g., `layout/`, `home/`, `history/`, `settings/`, `monitoring/`, `common/`). Flat, uncategorized component directories are banned.
-- **Type Safety:** Strict TypeScript. `any` is strictly prohibited — define explicit interfaces/types for all props and service returns.
-- **Verification:** Run `pnpm lint` and `pnpm build` after every modification. Zero warnings/errors permitted.
+- **Package manager:** Always use `pnpm`.
+- **Zero hardcoded copy:** Place labels, options, and descriptions in `src/data/` (e.g. `appData.ts`). Never inline raw strings inside component templates.
+- **Service encapsulation:** Components never call `@tauri-apps/api` invoke directly. Route all backend calls through modules in `src/services/`.
+- **Page responsibility:** Files in `src/pages/` manage layout and route composition only. Business logic lives in services, hooks, or stores.
+- **Component structure:** Group components into domain subdirectories inside `src/shared/components/` (e.g. `layout/`, `settings/`, `memory/`).
+- **Strict typing:** Do not use `any`. Write explicit TypeScript interfaces for props, store slices, and service payloads.
 
 ---
 
 ## 3. State Management & Reactivity
 
-- **Transient High-Frequency UI State:** Audio visualizers, waveform amplitudes, and 60fps animation states live in local component state or mutable refs (`useRef`). Never store high-frequency animation values in global React Context.
-- **Low-Frequency App State:** App configuration, settings, active tier, and connection status live in React Context or Zustand (`src/store/`).
-- **Reusable Stateful Logic:** Extract into custom hooks (`src/hooks/`) whenever logic appears in 2+ components.
+- **High-frequency state:** Waveform amplitudes, audio visualizer levels, and 60 FPS animation targets live in local component state or mutable refs (`useRef`). Never store high-frequency data in React context.
+- **Application state:** User settings, active hardware tier, and connectivity status live in Zustand stores (`src/store/`) or dedicated contexts.
+- **Stateful logic extraction:** Extract recurring component state logic into custom hooks in `src/hooks/`.
 
 ---
 
-## 4. Mandatory React Performance & Lifecycle Invariants (Universal Across All Pages)
+## 4. React 19 Performance & Lifecycle Invariants
 
-These invariants apply to every component, hook, context, and page in `app/src/`. Violating any invariant is a blocking defect.
+Violating these invariants causes performance regressions, memory leaks, or unmount crashes.
 
-### 4.1 Context Value & Identity Stability
-- **Zero Raw Object Context Values:** Passing unmemoized object literals (`<Context.Provider value={{ a, b }}>`) or closures to a Provider is strictly banned. Context values MUST be wrapped in `useMemo`.
-- **Split Volatile State from Actions:** When context state updates frequently (e.g., streaming transcripts, timestamps), separate volatile data from stable dispatcher actions to prevent unnecessary subtree re-renders.
+### 4.1 Context Stability
+- **Memoized context values:** Wrap all Provider `value` objects in `useMemo`. Never pass unmemoized object literals.
+- **Separate volatile state from dispatchers:** Do not place rapid telemetry updates into the same context provider as stable action callbacks.
 
-### 4.2 Zustand Selector Discipline
-- **Zero Full-Store Destructuring:** Invoking `const { a, b } = useSettingsStore()` is strictly banned. Full-store destructuring subscribes the component to every state change across the entire store.
-- **Mandatory Fine-Grained Selectors:** Always use targeted atomic selectors `useSettingsStore((s) => s.draftSettings?.domain)` or shallow equality via `useShallow`.
+### 4.2 Zustand Selectors
+- **Targeted atomic selectors:** Always select minimal scalar slices (`useSettingsStore((s) => s.theme)`) or use `useShallow`.
+- **No full-store destructuring:** Avoid `const { ... } = useSettingsStore()`, which forces re-renders on unrelated store mutations.
 
-### 4.3 Async Effect & Event Listener Lifecycle (React 19 / StrictMode Safe)
-- **Mandatory `isMounted` Guard for Async Setup:** Every async setup function inside `useEffect` (e.g., Tauri `listen`) must guard state mutations and listener registrations with an `isMounted` flag.
-- **Safe Unmount Listener Teardown:** If an async listener resolves after component unmount, invoke the resulting `unlisten()` callback immediately:
+### 4.3 Async Effects & Event Listeners
+- **`isMounted` listener guards:** Always guard async setup callbacks and state updates with an active mount flag:
   ```ts
   useEffect(() => {
     let isMounted = true;
@@ -72,72 +70,30 @@ These invariants apply to every component, hook, context, and page in `app/src/`
   }, []);
   ```
 
-### 4.4 Timers, Intervals & rAF Hygiene
-- **Zero Side-Effects in State Updaters:** Calling `setTimeout`, `setInterval`, or IPC triggers inside a `setState(prev => ...)` updater is strictly prohibited.
-- **Track All Nested Timers:** If a timer triggers a subsequent `setInterval` (e.g. staggered polling), both timer references must be stored and cleared in the `useEffect` cleanup.
-- **Stable rAF Mutable Target Capture:** `requestAnimationFrame` interpolation loops MUST read target values from a mutable ref (`targetTextRef.current`) rather than closing over a render-scoped variable, preventing early termination or animation stalls.
+### 4.4 Timers & Animation Frames
+- **Pure state updaters:** Never invoke `setTimeout`, `setInterval`, or IPC triggers inside `setState(prev => ...)` functions.
+- **Nested timer tracking:** Store and clear all timer and interval IDs during effect cleanup.
+- **Mutable target capture:** Animation frame loops must read transition targets from mutable refs (`targetRef.current`) rather than closures.
 
-### 4.5 Component & Leaf Primitive Memoization
-- **Mandatory Memo for Shared Leaf Controls:** All shared inputs and leaf controls (`ToggleTile`, `SegmentedControl`, `SliderField`, `Button`, `SearchInput`, `SubModelCard`) must be wrapped in `React.memo` with an explicit `displayName`.
-- **Stable Callback References:** Callbacks passed to memoized children must be stabilized with `useCallback`. Avoid passing inline arrow functions in render loops.
+### 4.5 Component Memoization
+- **Leaf control memoization:** Wrap shared controls (`Button`, `SegmentedControl`, `SliderField`, `ToggleTile`) in `React.memo` with an explicit `displayName`.
+- **Stable callbacks:** Wrap functions passed to memoized children in `useCallback`.
 
 ### 4.6 WebGL & GPU Resource Teardown
-- **Mandatory Canvas Dimension Reset (WebKitGTK Backing Store Invariant):** Prior to `renderer.forceContextLoss()` and `renderer.dispose()`, `canvas.width = 1; canvas.height = 1;` MUST be explicitly assigned to the `<canvas>` DOM element. In Linux WebKitGTK + Mesa, removing a canvas from the DOM without resetting dimensions leaves the full-resolution DRI/EGL backing framebuffer in process memory.
-- **Mandatory Force Context Loss:** Every Three.js WebGLRenderer must execute `renderer.forceContextLoss()` prior to `renderer.dispose()` during unmount cleanup, ensuring the WebGL context is released by the browser/webview engine.
-- **Geometry & Material Disposals:** All Three.js geometries, instanced meshes, and materials must be explicitly disposed in `useEffect` cleanup.
-- **2D Canvas Teardown:** 2D canvas components (`PixelSynthesisCanvas`, `LiquidChamber`) must cancel RAF loops, disconnect `ResizeObserver`, and reset `canvas.width = 1; canvas.height = 1;` on unmount.
+- **Canvas dimension reset (WebKitGTK invariant):** Before disposing a WebGL context, set `canvas.width = 1; canvas.height = 1;`. Failing to shrink the canvas leaves full-resolution backing framebuffers in process memory.
+- **Forced context loss:** Call `renderer.forceContextLoss()` before `renderer.dispose()` on unmount.
+- **Resource cleanup:** Dispose all geometries, materials, and textures during cleanup.
+- **2D canvas teardown:** 2D canvases must cancel active RAF loops, disconnect `ResizeObserver`, and reset dimensions on unmount.
 
-### 4.7 DOM Ref Callbacks in Loops
-- **Zero Inline Ref Callbacks in `.map()`:** Passing inline arrow functions to `ref` inside loops (`ref={(el) => ...}`) forces React to detach (`null`) and reattach every element on every render. Use a stable ref callback cache (`Map<string, (el) => void>`) or dataset query.
-
-### 4.8 Input Debounce & WebGL Buffer Invariant
-- **Debounce Heavy Compute/Filter Inputs:** Text inputs driving graph filtering, full-text searches, or WebGL buffer updates must debounce parent state commits by >= 150ms to preserve 60 FPS typing responsiveness.
-
-### 4.9 Zero Volatile State in Root Context Providers
-- **Split Volatile Subscription Data from Stable Actions:** Never place volatile tracking or telemetry state (e.g. per-component trace tables, streaming token metrics) in the same React context provider as stable dispatch actions (`registerMount`, `registerUnmount`). Volatile data must live in an independent context (`MemoryProfilerDataContext`) with microtask batching or an external subscriber store to prevent whole-app re-render cascades.
-
-### 4.10 Dense Data Array & Topology Cleanup on Unmount
-- **Explicit Array Teardown:** Components or hooks maintaining large object graphs, caches, or vertex buffers (`gNodesRef`, `gLinksRef`, `Float32Array`) must explicitly clear or null them (`ref.current = []`) in unmount cleanup to break closure references and allow V8 GC to reclaim memory.
-
-### 4.11 Chunk Splitting & Pure Utility Isolation
-- **No IPC Imports in Pure Utilities:** Pure formatting, date/time, and string helpers must NEVER be exported from service modules that import `@tauri-apps/api` or state stores. Pure helpers belong strictly in `src/shared/lib/` to prevent polluting the main bundle chunk.
+### 4.7 Pure Utility Isolation
+- Place pure formatting and string helpers in `src/shared/lib/`. Pure utilities must never import `@tauri-apps/api` or state stores.
 
 ---
 
-## 5. Liquid Space Design System & Layout Rules
+## 5. Liquid Space Design System Rules
 
-- **Desktop Layout:** Floating bottom `EdgeNav` capsule, monitoring panel as popover bottom-left.
-- **Mobile Layout:** Monitoring moves to `/monitoring` route with solid background. Nav capsule gets a 4th tab.
-- **Viewport Transitions:** Mobile → desktop redirects from `/monitoring` to `/` and relaunches popover. Desktop → mobile closes popover and routes to `/monitoring`.
-- **Orb Responsive Scaling:** Mobile Orb scales to `min(92vw, 85vh)`. Desktop Orb is `min(70vw, 65vh)`.
-- **Glass Elevation is a Closed System:** Use only defined design token elevation levels. Do not invent arbitrary ad-hoc shadows or glass backgrounds.
-- **Mood Sync:** Visual elements must reflect backend pipeline states (`Idle`, `Ready`, `Listening`, `Thinking`, `Speaking`, `Paused`, `Error`).
-- **Pill Containers for Buttons ONLY (Zero Faux-Pill Copy):** Any element styled with `rounded-full` / `rounded-pill`, background tint, and border is strictly reserved for interactive, clickable controls (buttons, segmented choice items, switches, nav capsule). NEVER wrap static text, status labels, metrics, or kickers in pill containers.
-- **Zero Redundant Value/Status Badges:** Never place a pill badge next to a section or card title that parrots the value or state of an adjacent control (e.g. repeating `"300 ms"`, `"1.05x"`, `"Active"`, `"Manual"`). When an active control is present, title badges are banned.
-- **Frameless Clean Vector SVG Pattern:** Vector illustrations and diagrams (`WebSearchGlobe`, `TransliterationToggle`, `RemoteComputeGraphic`, `ManagedContextGraphic`) must never be enclosed in heavy outer pill-shaped container boxes with backgrounds and borders. They must breathe as pure, frameless vector wireframes with crisp geometric strokes (0.8px – 1.25px) and unboxed accompanying typography.
-
----
-
-## 6. Documentation Standards
-
-Root architecture and feature docs in `docs/*.md` follow a uniform frontmatter + "How to read" convention:
-
-### 6.1 Required Frontmatter (YAML)
-```yaml
----
-title: "Doc Title"
-audience: "Internal — <who this is for>"
-last_updated: YYYY-MM-DD
-owners: "frontend-engineer role"
-related_docs:
-  - "docs/other.md — one-line relationship"
----
-```
-
-### 6.2 Required "How to read this doc" Section
-Immediately after the title, include:
-- **Audience:** who the doc is for.
-- **Scope:** what it covers.
-- **Convention:** how claims are cited (`path/file.ts` pointers; no invented code blocks).
-- **Non-goals:** what it is explicitly NOT (with cross-links).
-- **SSOT:** where the authoritative detail lives.
+- **Elevation hierarchy:** Use defined design token elevation classes. Never invent arbitrary shadow or blur values.
+- **Mood synchronization:** Visual surfaces reflect the 7 canonical backend pipeline states (`Idle`, `Ready`, `Listening`, `Thinking`, `Speaking`, `Paused`, `Error`).
+- **Interactive pills only:** Rounded pill containers (`rounded-full`) with borders are reserved strictly for clickable controls. Never place static text, metrics, or badges inside pill containers.
+- **No redundant status badges:** Avoid adding badge containers adjacent to a control that already displays the current value.
+- **Frameless vector graphics:** Technical diagrams and SVG illustrations render as frameless wireframes (0.8px–1.25px stroke) without heavy background bounding boxes.
