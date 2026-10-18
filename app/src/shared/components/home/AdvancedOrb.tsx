@@ -82,8 +82,8 @@ function getCSSColor(varName: string, fallbackHex: string): THREE.Color {
     }
     try {
       return new THREE.Color(val);
-    } catch {
-      // Fall through
+    } catch (e) {
+      console.debug("[AdvancedOrb] Failed to parse CSS color:", e);
     }
   }
 
@@ -92,16 +92,16 @@ function getCSSColor(varName: string, fallbackHex: string): THREE.Color {
   try {
     const raw = localStorage.getItem("vox_appearance");
     if (raw) {
-      const saved = JSON.parse(raw);
-      if (saved?.accent_seed && typeof saved.accent_seed === "string") {
+      const saved = JSON.parse(raw) as { accent_seed?: unknown; theme?: unknown } | null;
+      if (typeof saved?.accent_seed === "string") {
         if (varName === '--accent-dark' || varName.includes('glow')) {
           return new THREE.Color(saved.accent_seed).multiplyScalar(saved.theme === 'light' ? 0.70 : 0.40);
         }
         return new THREE.Color(saved.accent_seed);
       }
     }
-  } catch {
-    // LocalStorage read failed
+  } catch (e) {
+    console.debug("[AdvancedOrb] Failed to read cached appearance:", e);
   }
 
   return new THREE.Color(fallbackHex);
@@ -401,7 +401,9 @@ export const VoxOrb = React.memo(({
 }: VoxOrbProps) => {
   useMemoryTrace("VoxOrb (Three.js Shader)");
   const onFirstFrameRef = useRef(onFirstFrame);
-  onFirstFrameRef.current = onFirstFrame;
+  useEffect(() => {
+    onFirstFrameRef.current = onFirstFrame;
+  }, [onFirstFrame]);
   const firstFrameFiredRef = useRef(false);
   const themeApplyLogCountRef = useRef(0); // cyan-flash RCA only — remove with logs
 
@@ -497,15 +499,21 @@ export const VoxOrb = React.memo(({
   // ── Dynamic FPS controls ─────────────────────────────────────────────────
   // Maintain 60 FPS while state is actively engaged OR during state transitions
   // so the orb settles smoothly without dropping frames mid-shrink.
+  const [prevInteractionState, setPrevInteractionState] = useState(interactionState);
   const [isTransitioning, setIsTransitioning] = useState(false);
 
-  useEffect(() => {
+  if (interactionState !== prevInteractionState) {
+    setPrevInteractionState(interactionState);
     setIsTransitioning(true);
+  }
+
+  useEffect(() => {
+    if (!isTransitioning) return;
     const timer = setTimeout(() => {
       setIsTransitioning(false);
     }, 1400);
     return () => clearTimeout(timer);
-  }, [interactionState]);
+  }, [isTransitioning]);
 
   const isActive = (interactionState !== 'Idle' && interactionState !== 'Paused') || isTransitioning;
 
@@ -577,8 +585,10 @@ export const VoxOrb = React.memo(({
   try {
     const r = document.documentElement;
     const cs = getComputedStyle(r);
-    console.info(`[trace-orb] mount: cachedTheme=${themeSeed ? 'HIT#' + themeSeed.accent.getHexString() : 'MISS'}, cssAccent=[${cs.getPropertyValue('--accent').trim() || 'EMPTY'}], cssAccentDark=[${cs.getPropertyValue('--accent-dark').trim() || 'EMPTY'}], inlineAccent=[${r.style.getPropertyValue('--accent').trim() || 'EMPTY'}], docTheme=${r.getAttribute('data-theme') || 'none'}, state=${stateRef.current}`);
-  } catch {}
+    console.info(`[trace-orb] mount: cachedTheme=${themeSeed ? 'HIT#' + themeSeed.accent.getHexString() : 'MISS'}, cssAccent=[${cs.getPropertyValue('--accent').trim() || 'EMPTY'}], cssAccentDark=[${cs.getPropertyValue('--accent-dark').trim() || 'EMPTY'}], inlineAccent=[${r.style.getPropertyValue('--accent').trim() || 'EMPTY'}], docTheme=${r.getAttribute('data-theme') || 'none'}, state=${interactionState}`);
+  } catch (e) {
+    console.debug("[AdvancedOrb] Trace log failed on mount:", e);
+  }
   const themeRef = useRef({
     theme: themeSeed?.theme ?? "",
     accent: themeSeed?.accent.clone() ?? getCSSColor('--accent', '#00dbe9'),
@@ -739,13 +749,15 @@ export const VoxOrb = React.memo(({
         themeApplyLogCountRef.current = n + 1;
         console.info(`[trace-orb] tick-target #${n + 1}: state=${state} theme=${themeRef.current.theme || 'EMPTY'} tgtGlow=#${ctx.tgtGlow.getHexString()} tgtAccent=#${ctx.tgtAccent.getHexString()} firstFrame=${firstFrameFiredRef.current}`);
       }
-    } catch {}
+    } catch (e) {
+      console.debug("[AdvancedOrb] Tick trace log failed:", e);
+    }
 
     ctx.sharedUni.u_colorGlow.value.copy(ctx.curGlow);
     ctx.sharedUni.u_colorAccent.value.copy(ctx.curAccent);
 
-    ctx.outerMat.uniforms['u_colorGlow'].value.copy(ctx.curGlow);
-    ctx.outerMat.uniforms['u_colorAccent'].value.copy(ctx.curAccent);
+    (ctx.outerMat.uniforms['u_colorGlow'].value as THREE.Color).copy(ctx.curGlow);
+    (ctx.outerMat.uniforms['u_colorAccent'].value as THREE.Color).copy(ctx.curAccent);
 
     // 8. Mid & Energy drive rotational drift across sheets
     const speedMult = 1.0 + audioEnergy * 0.6 + ctx.smoothedMid * 0.5 - ctx.think * 0.3 + ctx.work * 0.9;
@@ -769,7 +781,11 @@ export const VoxOrb = React.memo(({
     ctx.renderer.render(ctx.scene, ctx.camera);
     if (!firstFrameFiredRef.current) {
       firstFrameFiredRef.current = true;
-      try { console.info(`[trace-orb] first-frame painted @${performance.now().toFixed(1)}ms: glow=#${ctx.curGlow.getHexString()} accent=#${ctx.curAccent.getHexString()} state=${state}`); } catch {}
+      try {
+        console.info(`[trace-orb] first-frame painted @${performance.now().toFixed(1)}ms: glow=#${ctx.curGlow.getHexString()} accent=#${ctx.curAccent.getHexString()} state=${state}`);
+      } catch (e) {
+        console.debug("[AdvancedOrb] First frame log failed:", e);
+      }
       onFirstFrameRef.current?.();
     }
   }, [telemetryRef]);
@@ -827,7 +843,11 @@ export const VoxOrb = React.memo(({
     // --accent-dark stays token-sourced to match the pre-existing look.
     const initGlow = getCSSColor('--accent-dark', '#0891b2');
     const initAccent = getCSSColor('--accent', '#00dbe9');
-    try { console.info(`[trace-orb] scene-init: accent=#${initAccent.getHexString()} glow=#${initGlow.getHexString()} (fallbacks #00dbe9/#0891b2 = cyan family), state=${stateRef.current}, container=${width}x${height}`); } catch {}
+    try {
+      console.info(`[trace-orb] scene-init: accent=#${initAccent.getHexString()} glow=#${initGlow.getHexString()} (fallbacks #00dbe9/#0891b2 = cyan family), state=${stateRef.current}, container=${width}x${height}`);
+    } catch (e) {
+      console.debug("[AdvancedOrb] Scene init log failed:", e);
+    }
 
     const sharedUni = {
       u_time: { value: 0.0 },
@@ -949,9 +969,10 @@ export const VoxOrb = React.memo(({
     // Flash fix: seed the live lerp from the muted cached theme (not the vivid
     // raw token), so the first painted frame already matches the Idle target.
     // Null only pre-boot (cache always HIT in practice) — fallback keeps old behaviour.
-    if (themeSeed) {
-      curGlow.copy(themeSeed.glow);
-      curAccent.copy(themeSeed.accent);
+    const seed = cachedOrbTheme;
+    if (seed) {
+      curGlow.copy(seed.glow);
+      curAccent.copy(seed.accent);
     }
     sceneRef.current = {
       renderer,
@@ -1009,8 +1030,8 @@ export const VoxOrb = React.memo(({
         if (gl && !gl.isContextLost()) {
           renderer.forceContextLoss();
         }
-      } catch {
-        // Context may already be dropped by browser
+      } catch (e) {
+        console.debug("[AdvancedOrb] WebGL context loss error during cleanup:", e);
       }
       renderer.dispose();
     };
@@ -1019,7 +1040,7 @@ export const VoxOrb = React.memo(({
   return (
     <div
       ref={mountRef}
-      style={{ width: '100%', height: '100%', background: 'transparent', position: 'relative' }}
+      style={{ width: '100%', height: '100%', background: 'transparent', position: 'relative', contain: 'strict', transform: 'translateZ(0)' }}
     />
   );
 });

@@ -28,6 +28,8 @@ The ambient UI reflects active hardware capabilities. Visual surfaces adapt dyna
 - **Package manager:** Always use `pnpm`.
 - **Zero hardcoded copy:** Place labels, options, and descriptions in `src/data/` (e.g. `appData.ts`). Never inline raw strings inside component templates.
 - **Service encapsulation:** Components never call `@tauri-apps/api` invoke directly. Route all backend calls through modules in `src/services/`.
+- **No raw fetch:** Direct `fetch()` calls in UI components and stores are strictly prohibited and enforced by ESLint `no-restricted-globals`. All network calls must pass through `src/services/transport.ts`.
+- **Zero silent error swallowing:** Empty `catch {}` or `catch (_e) {}` blocks are strictly banned. All non-fatal catch blocks must log diagnostic details via `console.debug` or `console.warn`.
 - **Page responsibility:** Files in `src/pages/` manage layout and route composition only. Business logic lives in services, hooks, or stores.
 - **Component structure:** Group components into domain subdirectories inside `src/shared/components/` (e.g. `layout/`, `settings/`, `memory/`).
 - **Strict typing:** Do not use `any`. Write explicit TypeScript interfaces for props, store slices, and service payloads.
@@ -45,6 +47,11 @@ The ambient UI reflects active hardware capabilities. Visual surfaces adapt dyna
 ## 4. React 19 Performance & Lifecycle Invariants
 
 Violating these invariants causes performance regressions, memory leaks, or unmount crashes.
+
+### 4.0 Unconditional Hook Ordering
+- **Hooks execute first:** Every React hook (`useMemo`, `useState`, `useEffect`, `useCallback`, Zustand selectors) MUST execute unconditionally at the top of the component body.
+- **Never hook after early returns:** Guard checks returning `null` (e.g. mobile detection, monitoring bypass) must live in a parent wrapper or after all hook invocations.
+- **Never short-circuit hooks:** Calling `useA() ?? useB()` is an order-breaking defect. Call each hook independently at root level and coalesce results afterwards.
 
 ### 4.1 Context Stability
 - **Memoized context values:** Wrap all Provider `value` objects in `useMemo`. Never pass unmemoized object literals.
@@ -87,6 +94,10 @@ Violating these invariants causes performance regressions, memory leaks, or unmo
 
 ### 4.7 Pure Utility Isolation
 - Place pure formatting and string helpers in `src/shared/lib/`. Pure utilities must never import `@tauri-apps/api` or state stores.
+
+### 4.8 Ref Render Purity & Effect Cascades
+- **Zero ref mutations during render:** Never read or mutate `useRef.current` in the component render phase. Move mutations to `useEffect`, `useLayoutEffect`, or event callbacks.
+- **Zero synchronous `setState` in effect body:** Never call `setState()` directly/synchronously in an effect body. For state synchronization based on prop/state changes, adjust state during render using previous state comparison, or defer execution asynchronously.
 
 ---
 

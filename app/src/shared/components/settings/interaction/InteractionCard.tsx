@@ -55,7 +55,8 @@ export const InteractionCard = memo(
 
     useEffect(() => {
       const handleSync = (e: Event) => {
-        const cat = (e as CustomEvent).detail;
+        const customEvent = e as CustomEvent<string>;
+        const cat = typeof customEvent.detail === "string" ? customEvent.detail : "";
         if (cat === "stt" || cat === "llm" || cat === "tts") {
           const upperCat = cat.toUpperCase() as "STT" | "LLM" | "TTS";
           if (prevCategoryRef.current !== upperCat) {

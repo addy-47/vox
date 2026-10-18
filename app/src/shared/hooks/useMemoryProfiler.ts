@@ -30,6 +30,9 @@ function primaryMemoryMb(snapshot: ProfilerSnapshot): number {
   return snapshot.total_vox_ram_mb ?? snapshot.total_pss_mb ?? snapshot.cgroup_current_mb ?? 0;
 }
 
+// Writes a "poll" event every 5 seconds. Disabled by default, can be toggled on when profiling.
+const ENABLE_DIAGNOSTIC_POLL = false;
+
 export function useMemoryProfiler(enabled = true) {
   const location = useLocation();
 
@@ -50,15 +53,15 @@ export function useMemoryProfiler(enabled = true) {
   } | null>(null);
 
   const pageRecordsRef = useRef<Record<string, PageMemoryRecord>>({});
-  pageRecordsRef.current = pageRecords;
-
   const currentRouteRef = useRef(currentRoute);
-  currentRouteRef.current = currentRoute;
-
   const componentTracesRef = useRef(componentTraces);
-  componentTracesRef.current = componentTraces;
-
   const inFlightRef = useRef(false);
+
+  useEffect(() => {
+    pageRecordsRef.current = pageRecords;
+    currentRouteRef.current = currentRoute;
+    componentTracesRef.current = componentTraces;
+  });
 
   const captureSnapshot = useCallback(
     async (options?: { isManual?: boolean }): Promise<ProfilerSnapshot | null> => {
@@ -186,28 +189,30 @@ export function useMemoryProfiler(enabled = true) {
 
     // Defer snapshot capture until drawer slide-in transition (380ms) finishes
     // to preserve 60 FPS animation smoothness without layout thrashing
-    const timer = setTimeout(async () => {
-      if (isCancelled) return;
-      const snap = await captureSnapshot({ isManual: false });
-      if (!snap || isCancelled) return;
+    const timer = setTimeout(() => {
+      void (async () => {
+        if (isCancelled) return;
+        const snap = await captureSnapshot({ isManual: false });
+        if (!snap || isCancelled) return;
 
-      setPageRecords((prev) => {
-        const prevRec = prev[route];
-        return {
-          ...prev,
-          [route]: {
-            route,
-            mountedAt: performance.now(),
-            baseline: snap,
-            peak: prevRec?.peak || snap,
-            current: snap,
-            retained: null,
-            retainedDeltaMb: null,
-            peakDeltaMb: 0,
-            activeComponentsOnMount: activeComponents,
-          },
-        };
-      });
+        setPageRecords((prev) => {
+          const prevRec = prev[route];
+          return {
+            ...prev,
+            [route]: {
+              route,
+              mountedAt: performance.now(),
+              baseline: snap,
+              peak: prevRec?.peak ?? snap,
+              current: snap,
+              retained: null,
+              retainedDeltaMb: null,
+              peakDeltaMb: 0,
+              activeComponentsOnMount: activeComponents,
+            },
+          };
+        });
+      })();
     }, 420);
 
     return () => {
@@ -215,10 +220,6 @@ export function useMemoryProfiler(enabled = true) {
       clearTimeout(timer);
     };
   }, [location.pathname, enabled, captureSnapshot]);
-
-
-  // Writes a "poll" event every 5 seconds. Disabled by default, can be toggled on when profiling.
-  const ENABLE_DIAGNOSTIC_POLL = false;
 
   useEffect(() => {
     if (!enabled || !ENABLE_DIAGNOSTIC_POLL) return;
@@ -229,7 +230,6 @@ export function useMemoryProfiler(enabled = true) {
       if (document.hidden) return;
       try {
         const snap = await getProfilerSnapshot();
-        if (!snap) return;
         const route = currentRouteRef.current;
         const rec = pageRecordsRef.current[route];
         await recordMemoryProfileEvent({
@@ -259,7 +259,7 @@ export function useMemoryProfiler(enabled = true) {
             (k) => componentTracesRef.current[k].activeInstances > 0
           ),
           dom_node_count: document.querySelectorAll("*").length,
-          font_face_count: document.fonts ? document.fonts.size : 0,
+          font_face_count: document.fonts.size,
           timestamp_ms: Date.now(),
         });
       } catch {
@@ -267,17 +267,21 @@ export function useMemoryProfiler(enabled = true) {
       }
     };
 
+    const runDiagPoll = () => {
+      void diagPoll();
+    };
+
     let intervalId: ReturnType<typeof setInterval> | null = null;
     const timerId = setTimeout(() => {
-      diagPoll();
-      intervalId = setInterval(diagPoll, DIAG_INTERVAL_MS);
+      runDiagPoll();
+      intervalId = setInterval(runDiagPoll, DIAG_INTERVAL_MS);
     }, 2500);
 
     return () => {
       clearTimeout(timerId);
       if (intervalId) clearInterval(intervalId);
     };
-  }, [enabled, captureSnapshot]);
+  }, [enabled]);
 
   const clearHistory = useCallback(() => {
     setHistory([]);

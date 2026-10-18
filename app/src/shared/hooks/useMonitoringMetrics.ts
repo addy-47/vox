@@ -60,8 +60,10 @@ export function useMonitoringMetrics(enabled = true) {
 
     const start = () => {
       if (intervalId) clearInterval(intervalId);
-      poll();
-      intervalId = setInterval(poll, POLL_MS);
+      void poll();
+      intervalId = setInterval(() => {
+        void poll();
+      }, POLL_MS);
     };
 
     const stop = () => {

@@ -34,9 +34,9 @@ if (typeof window !== "undefined") {
     requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
   };
   if (typeof idleWindow.requestIdleCallback === "function") {
-    idleWindow.requestIdleCallback(preloadMonitoring, { timeout: 2000 });
+    idleWindow.requestIdleCallback(() => { void preloadMonitoring(); }, { timeout: 2000 });
   } else {
-    setTimeout(preloadMonitoring, 1500);
+    setTimeout(() => { void preloadMonitoring(); }, 1500);
   }
 }
 
@@ -126,10 +126,10 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
       if (currentIdx !== -1) {
         if (deltaX < 0 && currentIdx < PRIMARY_ROUTES.length - 1) {
           setSwipeDirection(1);
-          navigate(PRIMARY_ROUTES[currentIdx + 1]);
+          void navigate(PRIMARY_ROUTES[currentIdx + 1]);
         } else if (deltaX > 0 && currentIdx > 0) {
           setSwipeDirection(-1);
-          navigate(PRIMARY_ROUTES[currentIdx - 1]);
+          void navigate(PRIMARY_ROUTES[currentIdx - 1]);
         }
       }
     }
@@ -187,14 +187,14 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
       if (!pending.toCompact) {
         // Compact → Full-max: switch from route page to popover
         if (pathnameRef.current === "/monitoring") {
-          navigate("/", { replace: true });
+          void navigate("/", { replace: true });
           setMonitorOpen(true);
         }
       } else {
         // Full-max → Compact: switch from popover to route page
         if (monitorOpenRef.current && pathnameRef.current !== "/monitoring") {
           setMonitorOpen(false);
-          navigate("/monitoring");
+          void navigate("/monitoring");
         }
       }
     });
@@ -317,14 +317,14 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
       if (!isCoarsePointer() && mod && (key === "w" || key === "W")) {
         e.preventDefault();
         import("@tauri-apps/api/window").then(({ getCurrentWindow }) => {
-          getCurrentWindow().close();
+          void getCurrentWindow().close();
         }).catch(() => {});
         return;
       }
       if (!isCoarsePointer() && mod && (key === "q" || key === "Q")) {
         e.preventDefault();
         import("@tauri-apps/plugin-process").then(({ exit }) => {
-          exit(0);
+          void exit(0);
         }).catch(() => {});
         return;
       }
@@ -366,9 +366,9 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
         if (currentIndex !== -1) {
           setMonitorOpen(false);
           if (key === "ArrowRight") {
-            navigate(routes[(currentIndex + 1) % routes.length]);
+            void navigate(routes[(currentIndex + 1) % routes.length]);
           } else {
-            navigate(routes[(currentIndex - 1 + routes.length) % routes.length]);
+            void navigate(routes[(currentIndex - 1 + routes.length) % routes.length]);
           }
         }
         return;
@@ -400,7 +400,7 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [location.pathname, navigate, togglePanel, openPanel, openActiveDrawer, closeActiveDrawer]);
+  }, [location.pathname, navigate, togglePanel, openPanel, openActiveDrawer, closeActiveDrawer, closeHelp]);
 
   const isSettings = location.pathname === "/settings";
   const isHome = location.pathname === "/";

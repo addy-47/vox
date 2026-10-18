@@ -50,7 +50,7 @@ export const PersonalMemoryVersionNav: React.FC<PersonalMemoryVersionNavProps> =
         }
 
         debounceTimerRef.current = setTimeout(() => {
-          onCommitActiveVersion(targetRecord.version);
+          void onCommitActiveVersion(targetRecord.version);
         }, 500);
       },
       [onSelectVersion, onCommitActiveVersion]

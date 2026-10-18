@@ -185,7 +185,7 @@ export const DictationConfigDesk = memo(({ layoutMode, disabled = false }: Dicta
         return;
       }
       if (e.key === "Enter") {
-        handleHotkeySave();
+        void handleHotkeySave();
         return;
       }
 

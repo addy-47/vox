@@ -46,7 +46,7 @@ export const LiveWaveform = memo(({
   mode = "static",
   onError,
   onStreamReady,
-  onStreamEnd,
+  onStreamEnd: _onStreamEnd,
   className,
   telemetryRef,
   ...props
@@ -68,6 +68,11 @@ export const LiveWaveform = memo(({
   const lastWidthRef = useRef(0)
   const lastHeightRef = useRef(0)
   const lastAccentRef = useRef<string>("")
+
+  const callbacksRef = useRef({ onError, onStreamReady });
+  useEffect(() => {
+    callbacksRef.current = { onError, onStreamReady };
+  }, [onError, onStreamReady]);
 
   const heightStyle = typeof height === "number" ? `${height}px` : height
 
@@ -165,12 +170,12 @@ export const LiveWaveform = memo(({
         }
         localStream = stream
         streamRef.current = stream
-        onStreamReady?.(stream)
+        callbacksRef.current.onStreamReady?.(stream)
 
         const AudioContextConstructor = window.AudioContext || window.webkitAudioContext
         const audioContext = new AudioContextConstructor()
         if (cancelled) {
-          audioContext.close()
+          void audioContext.close()
           return
         }
         localAudioContext = audioContext
@@ -184,12 +189,12 @@ export const LiveWaveform = memo(({
         analyserRef.current = analyser
       } catch (error) {
         if (!cancelled) {
-          onError?.(error as Error)
+          callbacksRef.current.onError?.(error as Error)
         }
       }
     }
 
-    setupMicrophone()
+    void setupMicrophone()
     return () => {
       cancelled = true
       if (localStream) {
@@ -199,10 +204,10 @@ export const LiveWaveform = memo(({
       streamRef.current = null
 
       if (localAudioContext && localAudioContext.state !== "closed") {
-        localAudioContext.close()
+        void localAudioContext.close()
       }
       if (audioContextRef.current && audioContextRef.current.state !== "closed") {
-        audioContextRef.current.close()
+        void audioContextRef.current.close()
       }
       audioContextRef.current = null
       analyserRef.current = null
@@ -231,7 +236,7 @@ export const LiveWaveform = memo(({
           const step = barWidth + barGap
           const barCount = Math.floor(width / step)
           const halfCount = Math.floor(barCount / 2)
-          const newBars = new Array(barCount)
+          const newBars: number[] = new Array<number>(barCount)
           
           let relevantData: number[] = []
           if (externalData) {
@@ -276,7 +281,7 @@ export const LiveWaveform = memo(({
         const time = processTimeRef.current
         const step = barWidth + barGap
         const barCount = Math.floor(width / step)
-        const processingData = new Array(barCount)
+        const processingData: number[] = new Array<number>(barCount)
 
         if (mode === "static") {
           const halfCount = Math.floor(barCount / 2)
@@ -366,7 +371,7 @@ export const LiveWaveform = memo(({
             }
           }
         } else {
-          const actualData = data.length > 0 ? data : new Array(barCount).fill(0.1)
+          const actualData = data.length > 0 ? data : new Array<number>(barCount).fill(0.1)
           for (let i = 0; i < barCount; i++) {
             const dataIdx = actualData.length - 1 - i
             if (dataIdx < 0) break
@@ -404,16 +409,16 @@ export const LiveWaveform = memo(({
     return () => {
       tickRef.current = () => {}
     }
-  }, [active, processing, sensitivity, updateRate, historySize, barWidth, baseBarHeight, barGap, barRadius, barColor, fadeEdges, fadeWidth, mode])
+  }, [active, processing, sensitivity, updateRate, historySize, barWidth, baseBarHeight, barGap, barRadius, barColor, fadeEdges, fadeWidth, mode, telemetryRef])
 
   return (
     <div
-      className={cn("relative h-full w-full overflow-hidden", className)}
+      className={cn("relative h-full w-full overflow-hidden contain-strict transform-gpu", className)}
       ref={containerRef}
       style={{ height: heightStyle }}
       {...props}
     >
-      <canvas className="block h-full w-full" ref={canvasRef} />
+      <canvas className="block h-full w-full will-change-transform" ref={canvasRef} />
     </div>
   )
 })

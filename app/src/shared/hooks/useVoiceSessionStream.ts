@@ -63,7 +63,10 @@ export function useVoiceSessionStream(handlers: VoiceSessionStreamHandlers): {
 
   const mounted = useRef(true);
   const handlersRef = useRef(handlers);
-  handlersRef.current = handlers;
+
+  useEffect(() => {
+    handlersRef.current = handlers;
+  }, [handlers]);
 
   const activeTurnIdRef = useRef<number | null>(null);
   const activeUserTextRef = useRef("");
@@ -268,7 +271,9 @@ export function useVoiceSessionStream(handlers: VoiceSessionStreamHandlers): {
       }
     };
 
-    const id = setTimeout(hydrate, 0);
+    const id = setTimeout(() => {
+      void hydrate();
+    }, 0);
     return () => { cancelled = true; clearTimeout(id); };
   }, []);
 

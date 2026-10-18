@@ -36,10 +36,12 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
   const [isFinished, setIsFinished] = useState(false);
 
   useEffect(() => {
+    let isMounted = true;
     const fetchCatalog = async () => {
       setIsFetching(true);
       try {
         const data = await fetchManifest();
+        if (!isMounted) return;
         setManifest(data);
         const required = data.model_groups
             .filter((g) => g.files.some((f) => f.required))
@@ -47,19 +49,23 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
         setSelectedIds(new Set(required));
       } catch (e) {
         console.error('Failed to load model catalog', e);
-        setInternalError(MODEL_SETUP_COPY.catalogLoadError);
+        if (isMounted) setInternalError(MODEL_SETUP_COPY.catalogLoadError);
       } finally {
-        setIsFetching(false);
+        if (isMounted) setIsFetching(false);
       }
     };
-    fetchCatalog();
+    void fetchCatalog();
 
     getRuntimeReport().then((report) => {
-        if (report.models_verified && !isAlreadyComplete) {
+        if (isMounted && report.models_verified && !isAlreadyComplete) {
             setIsFinished(true);
             setView('complete');
         }
     }).catch(() => {});
+
+    return () => {
+      isMounted = false;
+    };
   }, [isAlreadyComplete]);
 
   useEffect(() => {

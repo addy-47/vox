@@ -66,7 +66,7 @@ export const WizardRoot: React.FC = () => {
       .catch(() => {});
     
     return () => clearTimeout(timer);
-  }, []);
+  }, [send]);
 
 
 

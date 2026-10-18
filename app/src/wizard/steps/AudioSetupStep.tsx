@@ -32,7 +32,7 @@ export const AudioSetupStep: React.FC<Props> = ({ onNext, onBack }) => {
         if (isMounted) setAudioError(true);
       }
     };
-    init();
+    void init();
 
     let lastTime = 0;
     let localEnergy = 0;

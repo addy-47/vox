@@ -43,6 +43,17 @@ interface ConduitSegment {
   sessionId: string;
 }
 
+interface CoreMaterialUniforms {
+  [uniform: string]: THREE.IUniform;
+  color1: THREE.IUniform<THREE.Color>;
+  color2: THREE.IUniform<THREE.Color>;
+  opacity: THREE.IUniform<number>;
+}
+
+interface CoreShaderMaterial extends THREE.ShaderMaterial {
+  uniforms: CoreMaterialUniforms;
+}
+
 // Reusable scratch colors to eliminate per-frame/per-link allocations
 const SCRATCH_COLOR_1 = new THREE.Color();
 const SCRATCH_COLOR_2 = new THREE.Color();
@@ -98,25 +109,27 @@ export function useMemoryGraphScene({
 
   // Prop Mirror Refs
   const selectedFactIdRef = useRef(selectedFactId);
-  selectedFactIdRef.current = selectedFactId;
-
   const selectedSessionIdRef = useRef(selectedSessionId);
-  selectedSessionIdRef.current = selectedSessionId;
-
   const searchQueryRef = useRef(searchQuery);
-  searchQueryRef.current = searchQuery;
-
   const selectedCollectionRef = useRef(selectedCollection);
-  selectedCollectionRef.current = selectedCollection;
-
   const factsRef = useRef(facts);
-  factsRef.current = facts;
-
   const isLightModeRef = useRef(isLightMode);
-  isLightModeRef.current = isLightMode;
-
   const pausedRef = useRef(paused);
-  pausedRef.current = paused;
+  const widthRef = useRef(width);
+  const heightRef = useRef(height);
+  const rebuildTopologyRef = useRef<((inputFacts: ObservationRecord[], isLight: boolean) => void) | null>(null);
+
+  useEffect(() => {
+    selectedFactIdRef.current = selectedFactId;
+    selectedSessionIdRef.current = selectedSessionId;
+    searchQueryRef.current = searchQuery;
+    selectedCollectionRef.current = selectedCollection;
+    factsRef.current = facts;
+    isLightModeRef.current = isLightMode;
+    pausedRef.current = paused;
+    widthRef.current = width;
+    heightRef.current = height;
+  });
 
   // ── External pause/resume: suspends or resumes the rAF render loop ──────────
   useEffect(() => {
@@ -141,12 +154,10 @@ export function useMemoryGraphScene({
       const palette = getActiveDynamicPalette(isLight);
 
       if (coreMeshRef.current) {
-        const mat = coreMeshRef.current.material as THREE.ShaderMaterial;
-        if (mat.uniforms) {
-          mat.uniforms.color1.value.set(isLight ? "#0284c7" : "#00f0ff");
-          mat.uniforms.color2.value.set(isLight ? "#9333ea" : "#c084fc");
-          mat.uniforms.opacity.value = isLight ? 0.85 : 0.75;
-        }
+        const mat = coreMeshRef.current.material as CoreShaderMaterial;
+        mat.uniforms.color1.value.set(isLight ? "#0284c7" : "#00f0ff");
+        mat.uniforms.color2.value.set(isLight ? "#9333ea" : "#c084fc");
+        mat.uniforms.opacity.value = isLight ? 0.85 : 0.75;
       }
       if (coreWireMeshRef.current) {
         const mat = coreWireMeshRef.current.material as THREE.MeshBasicMaterial;
@@ -825,6 +836,7 @@ export function useMemoryGraphScene({
 
   // Topology Update Effect: triggers whenever facts array or light mode changes
   useEffect(() => {
+    rebuildTopologyRef.current = rebuildTopology;
     rebuildTopology(facts, isLightMode);
   }, [facts, isLightMode, rebuildTopology]);
 
@@ -912,8 +924,8 @@ export function useMemoryGraphScene({
     const container = canvasContainerRef.current;
     if (!container) return;
 
-    const initialWidth = container.clientWidth || width || 800;
-    const initialHeight = container.clientHeight || height || 600;
+    const initialWidth = container.clientWidth || widthRef.current || 800;
+    const initialHeight = container.clientHeight || heightRef.current || 600;
 
     // 1. Scene
     const scene = new THREE.Scene();
@@ -1102,7 +1114,7 @@ export function useMemoryGraphScene({
 
     // If facts are already present, build topology immediately!
     if (factsRef.current && factsRef.current.length > 0) {
-      rebuildTopology(factsRef.current, isLightModeRef.current);
+      rebuildTopologyRef.current?.(factsRef.current, isLightModeRef.current);
     }
 
     // 10. Dynamic FPS Animation Loop (60 FPS during camera motion / flyTo, 30 FPS when idle)
@@ -1287,7 +1299,7 @@ export function useMemoryGraphScene({
       outerRingGeo.dispose();
       outerRingMat.dispose();
     };
-  }, []);
+  }, [canvasContainerRef]);
 
   // Resize Effect: guarantees distortion-free aspect ratio during maximize, restore, or window resize
   useEffect(() => {
@@ -1330,7 +1342,7 @@ export function useMemoryGraphScene({
       ro.disconnect();
       if (rAfId !== null) cancelAnimationFrame(rAfId);
     };
-  }, [width, height]);
+  }, [canvasContainerRef, width, height]);
 
   return {
     isLightMode,

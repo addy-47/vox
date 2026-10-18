@@ -105,7 +105,8 @@ export const ExpandableList = memo(
       if (!expanded) return;
       pushModal();
       return () => {
-        popModal();
+        // Defer un-suppression of background commit footers until exit animation completes
+        setTimeout(popModal, 260);
       };
     }, [expanded, pushModal, popModal]);
 

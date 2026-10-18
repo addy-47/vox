@@ -56,7 +56,7 @@ export const PanelStateProvider: React.FC<PanelStateProviderProps> = memo(({ chi
 
   const isNarrowViewport = useCallback(() => {
     return typeof window !== "undefined" && window.innerWidth < THRESHOLD_DUAL_PANEL_WIDTH;
-  }, []);
+  }, [THRESHOLD_DUAL_PANEL_WIDTH]);
 
   // Enforce exclusivity on resize
   useEffect(() => {
@@ -78,7 +78,7 @@ export const PanelStateProvider: React.FC<PanelStateProviderProps> = memo(({ chi
       window.removeEventListener("resize", handleResize);
       if (rAfId !== null) cancelAnimationFrame(rAfId);
     };
-  }, []);
+  }, [THRESHOLD_DUAL_PANEL_WIDTH]);
 
   const openPanel = useCallback((id: PanelId) => {
     const edge = PANEL_EDGE_MAP[id];

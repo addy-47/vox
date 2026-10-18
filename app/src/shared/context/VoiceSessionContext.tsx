@@ -372,7 +372,7 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
           await engage();
         }
         await submitTextInput(trimmed);
-      } catch (err: unknown) {
+      } catch {
         // Defensive re-engagement: if backend was unexpectedly idle, re-engage and retry once
         try {
           await engage();

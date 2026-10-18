@@ -20,21 +20,25 @@ export const SystemCheckStep: React.FC<Props> = ({ onNext, onBack, error: extern
   const [checkError, setCheckError] = useState<string | null>(null);
 
   useEffect(() => {
+    let isMounted = true;
     const check = async () => {
       setIsLoading(true);
       setCheckError(null);
       try {
         // fetch_manifest is already called in WizardRoot, avoiding redundant IPC call here
         const r = await getRuntimeReport();
-        setReport(r);
+        if (isMounted) setReport(r);
       } catch (e) {
         console.error('System check failed', e);
-        setCheckError(e instanceof Error ? e.message : String(e));
+        if (isMounted) setCheckError(e instanceof Error ? e.message : String(e));
       } finally {
-        setIsLoading(false);
+        if (isMounted) setIsLoading(false);
       }
     };
-    check();
+    void check();
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   const systemOk = Boolean(report && report.write_access && report.disk_space_ok);

@@ -97,12 +97,17 @@ export const Home = memo(() => {
   // Diagnostic telemetry: log Home render timing and layout lifecycle
   // (cyan-flash RCA: full path logging — mount/unmount, orb mount, state,
   //  theme vars, and cached theme. Remove once the flash source is found.)
+  const mountStateRef = useRef({ interactionState, isEngaged });
+  useEffect(() => {
+    mountStateRef.current = { interactionState, isEngaged };
+  }, [interactionState, isEngaged]);
+
   useEffect(() => {
     if (!import.meta.env.DEV) return;
     const t0 = performance.now();
     const root = document.documentElement;
     const cs = getComputedStyle(root);
-    console.info(`[trace-home] Home mounted @${t0.toFixed(1)}ms, docTheme=${root.getAttribute("data-theme") || "none"}, cssAccent=[${cs.getPropertyValue("--accent").trim() || "EMPTY"}], cssGlowDark=[${cs.getPropertyValue("--glow-dark").trim() || "EMPTY"}], inlineAccent=[${root.style.getPropertyValue("--accent").trim() || "EMPTY"}], interactionState=${interactionState}, isEngaged=${isEngaged}`);
+    console.info(`[trace-home] Home mounted @${t0.toFixed(1)}ms, docTheme=${root.getAttribute("data-theme") || "none"}, cssAccent=[${cs.getPropertyValue("--accent").trim() || "EMPTY"}], cssGlowDark=[${cs.getPropertyValue("--glow-dark").trim() || "EMPTY"}], inlineAccent=[${root.style.getPropertyValue("--accent").trim() || "EMPTY"}], interactionState=${mountStateRef.current.interactionState}, isEngaged=${mountStateRef.current.isEngaged}`);
     const t1 = performance.now();
     console.info(`[trace-home] mount-paint-ready @${t1.toFixed(1)}ms (+${(t1 - t0).toFixed(1)}ms after mount effect)`);
     return () => {
@@ -145,24 +150,24 @@ export const Home = memo(() => {
 
       if ((e.key === "m" || e.key === "M") && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
         e.preventDefault();
-        toggleMicMute();
+        void toggleMicMute();
         return;
       }
       if ((e.key === "m" || e.key === "M") && e.shiftKey) {
         e.preventDefault();
-        togglePlaybackMute();
+        void togglePlaybackMute();
         return;
       }
       if ((e.key === "p" || e.key === "P") && !e.ctrlKey && !e.metaKey && !e.altKey) {
         e.preventDefault();
-        if (isPaused) resume();
-        else pause();
+        if (isPaused) void resume();
+        else void pause();
         return;
       }
       if (e.key === " " && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
-        if (isEngaged) disengage();
-        else engage();
+        if (isEngaged) void disengage();
+        else void engage();
         return;
       }
       if ((e.key === "t" || e.key === "T") && !e.ctrlKey && !e.metaKey && !e.altKey) {
@@ -174,12 +179,12 @@ export const Home = memo(() => {
       // pausing here as well would fire two actions from one key.
       if (e.key === "Escape" && !isTextModeOpen && (interactionState === "Speaking" || interactionState === "Thinking")) {
         e.preventDefault();
-        pause();
+        void pause();
         return;
       }
       if (e.key === " " && !spaceOnButton && !e.ctrlKey && !e.metaKey && interactionMode === "PTT" && isEngaged && !isPaused && !isSleeping && interactionState !== "Error") {
         e.preventDefault();
-        handlePttStart();
+        void handlePttStart();
       }
     };
 
@@ -188,8 +193,8 @@ export const Home = memo(() => {
         const endOnButton =
           (document.activeElement as HTMLElement | null)?.tagName === "BUTTON";
         if (!endOnButton && interactionMode === "PTT" && isEngaged && !isPaused && !isSleeping && interactionState !== "Error") {
-          if (pttStatus === "RECORDING") handlePttStop();
-          else handlePttCancel();
+          if (pttStatus === "RECORDING") void handlePttStop();
+          else void handlePttCancel();
         }
       }
     };
@@ -457,9 +462,9 @@ export const Home = memo(() => {
                 {/* PTT Mic Button */}
                 {interactionMode === "PTT" && (
                   <button
-                    onPointerDown={() => handlePttStart()}
-                    onPointerUp={() => handlePttStop()}
-                    onPointerLeave={() => { if (pttStatus === "RECORDING") handlePttCancel(); }}
+                    onPointerDown={() => { void handlePttStart(); }}
+                    onPointerUp={() => { void handlePttStop(); }}
+                    onPointerLeave={() => { if (pttStatus === "RECORDING") void handlePttCancel(); }}
                     disabled={isPaused || isSleeping}
                     tabIndex={isPaused || isSleeping ? -1 : 0}
                     className={cn(

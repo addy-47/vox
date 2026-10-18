@@ -64,7 +64,6 @@ export const HistorySearchBar = memo<HistorySearchBarProps>(({
 }) => {
   const [value, setValue] = useState("");
   const [activeIndex, setActiveIndex] = useState(-1);
-  const [cacheVersion, setCacheVersion] = useState(0);
 
   // Background turn indexing queue for scalable search across all session messages
   useEffect(() => {
@@ -76,9 +75,6 @@ export const HistorySearchBar = memo<HistorySearchBarProps>(({
         if (canceled) break;
         const batch = unindexed.slice(i, i + BATCH_SIZE);
         await Promise.all(batch.map((s) => getTurns(s.id).catch(() => [])));
-        if (!canceled) {
-          setCacheVersion((v) => v + 1);
-        }
       }
     };
 
@@ -164,7 +160,7 @@ export const HistorySearchBar = memo<HistorySearchBarProps>(({
     }
 
     return hits;
-  }, [sessions, value, cacheVersion]);
+  }, [sessions, value]);
 
   const handleClear = useCallback(() => {
     setValue("");

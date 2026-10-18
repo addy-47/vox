@@ -41,7 +41,7 @@ export const MemorySearchBar = memo<MemorySearchBarProps>(({
     if (searchQuery !== undefined && searchQuery !== value) {
       setValue(searchQuery);
     }
-  }, [searchQuery]);
+  }, [searchQuery, value]);
 
   const palette = useMemo(() => getActiveDynamicPalette(isLightMode), [isLightMode]);
 

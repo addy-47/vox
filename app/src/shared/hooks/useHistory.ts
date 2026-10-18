@@ -63,7 +63,9 @@ export function useHistory() {
   const [error, setError] = useState<string | null>(null);
   const [selectedSession, setSelectedSession] = useState<SessionRow | null>(null);
   const selectedSessionRef = useRef<SessionRow | null>(selectedSession);
-  selectedSessionRef.current = selectedSession;
+  useLayoutEffect(() => {
+    selectedSessionRef.current = selectedSession;
+  }, [selectedSession]);
   const [turns, setTurns] = useState<TurnRow[]>([]);
   const [turnsLoading, setTurnsLoading] = useState(false);
   const [turnsError, setTurnsError] = useState<string | null>(null);
@@ -137,12 +139,21 @@ export function useHistory() {
   }, [fetchSessions]);
 
   useEffect(() => {
-    loadSessions();
+    let isMounted = true;
+    const run = async () => {
+      await Promise.resolve();
+      if (!isMounted) return;
+      await loadSessions();
+    };
+    void run();
+    return () => {
+      isMounted = false;
+    };
   }, [loadSessions]);
 
   useEffect(() => {
     const unlisten = onSessionsChanged(() => {
-      fetchSessions();
+      void fetchSessions();
     });
     return () => unlisten();
   }, [fetchSessions]);
@@ -185,34 +196,43 @@ export function useHistory() {
   // Sync selected session from router query params and ensure window + day view alignment
   useEffect(() => {
     if (sessions.length === 0) return;
-    const params = new URLSearchParams(location.search);
-    const targetSessionId = params.get("sessionId");
-    if (targetSessionId) {
-      const target = sessions.find((s) => s.id === Number(targetSessionId));
-      if (target) {
-        setSelectedSession(target);
-        const winIdx = sessionWindows.findIndex((w) =>
-          w.sessions.some((s) => s.id === target.id)
-        );
-        if (winIdx !== -1) {
-          setDayWindowIndex(winIdx);
+    let isMounted = true;
+    const sync = async () => {
+      await Promise.resolve();
+      if (!isMounted) return;
+      const params = new URLSearchParams(location.search);
+      const targetSessionId = params.get("sessionId");
+      if (targetSessionId) {
+        const target = sessions.find((s) => s.id === Number(targetSessionId));
+        if (target) {
+          setSelectedSession(target);
+          const winIdx = sessionWindows.findIndex((w) =>
+            w.sessions.some((s) => s.id === target.id)
+          );
+          if (winIdx !== -1) {
+            setDayWindowIndex(winIdx);
+          }
+          setView("day");
+          return;
         }
-        setView("day");
-        return;
       }
-    }
-    // Keep currently selectedSession reference fresh if it exists in the updated sessions list
-    if (selectedSessionRef.current) {
-      const updated = sessions.find((s) => s.id === selectedSessionRef.current?.id);
-      if (
-        updated &&
-        (updated.uncompacted_turns !== selectedSessionRef.current.uncompacted_turns ||
-          updated.title !== selectedSessionRef.current.title ||
-          updated.updated_at !== selectedSessionRef.current.updated_at)
-      ) {
-        setSelectedSession(updated);
+      // Keep currently selectedSession reference fresh if it exists in the updated sessions list
+      if (selectedSessionRef.current) {
+        const updated = sessions.find((s) => s.id === selectedSessionRef.current?.id);
+        if (
+          updated &&
+          (updated.uncompacted_turns !== selectedSessionRef.current.uncompacted_turns ||
+            updated.title !== selectedSessionRef.current.title ||
+            updated.updated_at !== selectedSessionRef.current.updated_at)
+        ) {
+          setSelectedSession(updated);
+        }
       }
-    }
+    };
+    void sync();
+    return () => {
+      isMounted = false;
+    };
   }, [sessions, location.search, sessionWindows]);
 
   const effectiveSessionWindowIndex = Math.min(
@@ -225,7 +245,10 @@ export function useHistory() {
   );
 
   const currentWindow = sessionWindows[effectiveSessionWindowIndex];
-  const currentWindowSessions = currentWindow?.sessions ?? [];
+  const currentWindowSessions = useMemo(
+    () => currentWindow?.sessions ?? [],
+    [currentWindow]
+  );
   const currentMonthWindow = monthWindows[effectiveMonthWindowIndex];
 
   const sessionById = useMemo(
@@ -291,11 +314,7 @@ export function useHistory() {
   const selectedSessionId = selectedSession?.id ?? null;
 
   useEffect(() => {
-    if (selectedSessionId === null) {
-      setTurns([]);
-      setTurnsError(null);
-      return;
-    }
+    if (selectedSessionId === null) return;
     let isCancelled = false;
     const fetchTurns = async () => {
       setTurnsLoading(true);
@@ -316,7 +335,7 @@ export function useHistory() {
         }
       }
     };
-    fetchTurns();
+    void fetchTurns();
 
     return () => {
       isCancelled = true;
@@ -358,7 +377,7 @@ export function useHistory() {
           setConfirmDeleteId(null);
           setDeleteError(null);
           if (selectedSession?.id === id) setSelectedSession(null);
-          fetchSessions();
+          void fetchSessions();
         } catch (err: unknown) {
           console.error("Failed to delete session:", err);
           setDeleteError(getErrorMessage(err, HISTORY_COPY.deleteFailed));
@@ -511,9 +530,9 @@ export function useHistory() {
     error,
     selectedSession,
     setSelectedSession,
-    turns,
+    turns: selectedSessionId === null ? [] : turns,
     turnsLoading,
-    turnsError,
+    turnsError: selectedSessionId === null ? null : turnsError,
     deleteError,
     setDeleteError,
     confirmDeleteId,

@@ -98,7 +98,12 @@ export const Modal = memo(
           const focusable =
             prev.tabIndex >= 0 || /^(BUTTON|INPUT|SELECT|TEXTAREA|A)$/.test(prev.tagName);
           if (focusable) {
-            prev.focus({ preventScroll: true });
+            // Restore focus after exit animation completes to prevent synchronous layout thrashing
+            setTimeout(() => {
+              if (document.contains(prev)) {
+                prev.focus({ preventScroll: true });
+              }
+            }, 260);
             return;
           }
         }

@@ -75,7 +75,7 @@ export const PixelSynthesisCanvas: React.FC<PixelSynthesisCanvasProps> = ({
     const ALPHA_BANDS = 6;
     const MATRIX_FRAME_INTERVAL = APPLY_BATCHED_MATRIX ? 1000 / 30 : 0;
 
-    const bucketStyles: string[] = new Array(ALPHA_BANDS).fill("");
+    const bucketStyles: string[] = new Array<string>(ALPHA_BANDS).fill("");
     const refreshBucketStyles = () => {
       for (let b = 0; b < ALPHA_BANDS; b++) {
         const mid = (b + 0.5) / ALPHA_BANDS;

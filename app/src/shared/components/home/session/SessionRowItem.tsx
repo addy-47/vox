@@ -128,7 +128,7 @@ export const SessionRowItem = memo(
     }, [onDelete, session.id]);
 
     const handleCompact = useCallback(() => {
-      executeCompaction(session.id);
+      void executeCompaction(session.id);
     }, [executeCompaction, session.id]);
 
     // Drag start for dragging session into a project
@@ -256,7 +256,7 @@ export const SessionRowItem = memo(
                     onClick={(e) => {
                       e.stopPropagation();
                       e.preventDefault();
-                      executeCompaction(session.id);
+                      void executeCompaction(session.id);
                     }}
                     aria-label={SESSION_COPY.actions.uncompactedTurnsTooltip}
                     className="flex items-center justify-center w-5 h-5 rounded hover:bg-[rgba(var(--accent),0.12)] transition-all cursor-pointer text-[rgb(var(--accent))] opacity-60 hover:!opacity-100"

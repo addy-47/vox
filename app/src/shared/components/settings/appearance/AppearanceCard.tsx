@@ -24,7 +24,8 @@ export const AppearanceCard = memo(({ layoutMode = "full-max" }: AppearanceCardP
   const pendingSeedRef = useRef(appearance?.accent_seed ?? null);
 
   useEffect(() => {
-    if (appearance?.accent_seed && appearance.accent_seed !== localColor) {
+    if (draggingRef.current) return;
+    if (appearance?.accent_seed && appearance.accent_seed !== localColorRef.current) {
       setLocalColor(appearance.accent_seed);
     }
   }, [appearance?.accent_seed]);
@@ -88,7 +89,7 @@ export const AppearanceCard = memo(({ layoutMode = "full-max" }: AppearanceCardP
   }, [commitAccent]);
 
   const handleCopy = useCallback(() => {
-    navigator.clipboard.writeText(localColor).then(() => {
+    void navigator.clipboard.writeText(localColor).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     });

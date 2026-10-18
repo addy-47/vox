@@ -6,11 +6,15 @@ import { checkForUpdates, checkForModelUpdates, type UpdateReport, type ModelUpd
 import { copyToClipboard } from "@/shared/lib/clipboard";
 import { isRealMobileDevice } from "@/layout/breakpoints";
 
-export const TitleBar: React.FC = () => {
-  if (isRealMobileDevice()) return null;
-
+const TitleBarContent: React.FC = () => {
   const navigate = useNavigate();
-  const [isTauri, setIsTauri] = useState(false);
+  const [isTauri] = useState(
+    () =>
+      typeof window !== "undefined" &&
+      (!!window.__TAURI__ ||
+        !!window.__TAURI_INTERNALS__ ||
+        !!window.__TAURI_METADATA__)
+  );
   const [isCloseHovered, setIsCloseHovered] = useState(false);
   const [appUpdate, setAppUpdate] = useState<UpdateReport | null>(null);
   const [modelUpdate, setModelUpdate] = useState<ModelUpdateReport | null>(null);
@@ -22,7 +26,7 @@ export const TitleBar: React.FC = () => {
     const fetchUpdates = async () => {
       try {
         const appRes = await checkForUpdates();
-        if (appRes && appRes.update_available) {
+        if (appRes.update_available) {
           setAppUpdate(appRes);
         } else {
           setAppUpdate(null);
@@ -33,7 +37,7 @@ export const TitleBar: React.FC = () => {
 
       try {
         const modelRes = await checkForModelUpdates();
-        if (modelRes && modelRes.update_available) {
+        if (modelRes.update_available) {
           setModelUpdate(modelRes);
         } else {
           setModelUpdate(null);
@@ -43,7 +47,7 @@ export const TitleBar: React.FC = () => {
       }
     };
     
-    fetchUpdates();
+    void fetchUpdates();
   }, [isTauri]);
 
   const handleCopyCommand = async (cmd: string) => {
@@ -57,7 +61,7 @@ export const TitleBar: React.FC = () => {
   // Hover cards reveal on hover/focus. Blur-dismiss restores keyboard and
   // touch parity: Escape or an outside tap drops focus, hiding the card.
   useEffect(() => {
-    const cardOf = (el: Element | null) => el?.closest?.("[data-hover-card]") ?? null;
+    const cardOf = (el: Element | null) => el?.closest("[data-hover-card]") ?? null;
     const dismissIfInside = (target: EventTarget | null) => {
       const active = document.activeElement as HTMLElement | null;
       const card = active ? cardOf(active) : null;
@@ -79,61 +83,54 @@ export const TitleBar: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    // Check if we are running in Tauri
-    const hasTauri = !!window.__TAURI__ ||
-                     !!window.__TAURI_INTERNALS__ ||
-                     !!window.__TAURI_METADATA__;
-    setIsTauri(hasTauri);
+    if (!isTauri) return;
 
-    if (hasTauri) {
-      let isMounted = true;
-      let unlistenFocus: (() => void) | undefined;
-      let unlistenBlur: (() => void) | undefined;
+    let isMounted = true;
+    let unlistenFocus: (() => void) | undefined;
+    let unlistenBlur: (() => void) | undefined;
 
-      const setupListeners = async () => {
-        try {
-          const { getCurrentWindow } = await import("@tauri-apps/api/window");
-          const win = getCurrentWindow();
-          
-          const fnFocus = await win.listen("tauri://focus", () => {
-            if (isMounted) setIsCloseHovered(false);
-          });
-          if (isMounted) {
-            unlistenFocus = fnFocus;
-          } else {
-            fnFocus();
-          }
-
-          const fnBlur = await win.listen("tauri://blur", () => {
-            if (isMounted) setIsCloseHovered(false);
-          });
-          if (isMounted) {
-            unlistenBlur = fnBlur;
-          } else {
-            fnBlur();
-          }
-        } catch (err) {
-          console.error("[TitleBar] Failed to setup listeners:", err);
+    const setupListeners = async () => {
+      try {
+        const { getCurrentWindow } = await import("@tauri-apps/api/window");
+        const win = getCurrentWindow();
+        
+        const fnFocus = await win.listen("tauri://focus", () => {
+          if (isMounted) setIsCloseHovered(false);
+        });
+        if (isMounted) {
+          unlistenFocus = fnFocus;
+        } else {
+          fnFocus();
         }
-      };
 
-      setupListeners();
-      
-      // Also use standard web focus event for redundancy
-      const handleWebFocus = () => {
-        if (isMounted) setIsCloseHovered(false);
-      };
-      window.addEventListener('focus', handleWebFocus);
-      
-      return () => {
-        isMounted = false;
-        if (unlistenFocus) unlistenFocus();
-        if (unlistenBlur) unlistenBlur();
-        window.removeEventListener('focus', handleWebFocus);
-      };
-    }
-    return () => {};
-  }, []);
+        const fnBlur = await win.listen("tauri://blur", () => {
+          if (isMounted) setIsCloseHovered(false);
+        });
+        if (isMounted) {
+          unlistenBlur = fnBlur;
+        } else {
+          fnBlur();
+        }
+      } catch (err) {
+        console.error("[TitleBar] Failed to setup listeners:", err);
+      }
+    };
+
+    void setupListeners();
+    
+    // Also use standard web focus event for redundancy
+    const handleWebFocus = () => {
+      if (isMounted) setIsCloseHovered(false);
+    };
+    window.addEventListener('focus', handleWebFocus);
+    
+    return () => {
+      isMounted = false;
+      if (unlistenFocus) unlistenFocus();
+      if (unlistenBlur) unlistenBlur();
+      window.removeEventListener('focus', handleWebFocus);
+    };
+  }, [isTauri]);
 
   const handleMinimize = async () => {
     try {
@@ -163,7 +160,7 @@ export const TitleBar: React.FC = () => {
     }
   };
 
-  if (!isTauri || isRealMobileDevice()) return null;
+  if (!isTauri) return null;
 
   return (
     // A desktop window titlebar (drag region + minimise/maximise/close) has no
@@ -212,7 +209,7 @@ export const TitleBar: React.FC = () => {
               <div className="p-2 rounded-md bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--foreground),0.06)] flex items-center justify-between gap-2">
                 <code className="text-[11px] font-mono text-[rgb(var(--foreground))]/80 select-all truncate block flex-1">{appUpdate.update_command}</code>
                 <button 
-                  onClick={() => handleCopyCommand(appUpdate.update_command)}
+                  onClick={() => { void handleCopyCommand(appUpdate.update_command); }}
                   className="p-1 hover:bg-[rgba(var(--accent),0.15)] rounded text-[rgb(var(--accent))] transition-colors shrink-0 cursor-pointer"
                   aria-label={LAYOUT_COPY.titleBar.copyCommand}
                 >
@@ -286,7 +283,7 @@ export const TitleBar: React.FC = () => {
                 type="button"
                 onClick={() => {
                   setModelCardOpen(false);
-                  navigate("/settings");
+                  void navigate("/settings");
                   window.dispatchEvent(new CustomEvent("sync_pipeline_tab", { detail: "models" }));
                 }}
                 className="w-full py-1.5 px-3 rounded-lg bg-[rgba(var(--accent),0.1)] hover:bg-[rgb(var(--accent))] text-[rgb(var(--accent))] hover:text-[rgb(var(--accent-foreground))] font-bold text-[11px] tracking-wide uppercase transition-all flex items-center justify-center gap-1.5 cursor-pointer border border-[rgba(var(--accent),0.2)] hover:border-[rgb(var(--accent))]"
@@ -330,4 +327,9 @@ export const TitleBar: React.FC = () => {
       </div>
     </div>
   );
+};
+
+export const TitleBar: React.FC = () => {
+  if (isRealMobileDevice()) return null;
+  return <TitleBarContent />;
 };

@@ -59,7 +59,16 @@ export function useModelDownloads() {
   }, [modelCatalog]);
 
   useEffect(() => {
-    refreshPresence();
+    let isMounted = true;
+    const run = async () => {
+      await Promise.resolve();
+      if (!isMounted) return;
+      await refreshPresence();
+    };
+    void run();
+    return () => {
+      isMounted = false;
+    };
   }, [refreshPresence]);
 
   // Per-file progress accumulator
@@ -122,7 +131,7 @@ export function useModelDownloads() {
             totalBytes: totalBytes || 100,
             error: undefined,
           });
-          refreshPresence();
+          void refreshPresence();
         } else {
           updateDownloadStatus(targetId, {
             step: "downloading",
@@ -144,7 +153,7 @@ export function useModelDownloads() {
       });
 
       if (stepName === "completed") {
-        refreshPresence();
+        void refreshPresence();
       }
     });
 

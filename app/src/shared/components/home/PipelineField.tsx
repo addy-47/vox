@@ -13,7 +13,8 @@ export const PipelineField = React.memo(({ state, volume = 0 }: PipelineFieldPro
 
   useEffect(() => {
     if (!containerRef.current) return;
-    let targetEnergy = 0.12;
+
+    let targetEnergy: number;
 
     switch (state) {
       case "Ready":

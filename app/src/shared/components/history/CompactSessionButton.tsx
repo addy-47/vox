@@ -36,7 +36,7 @@ export const CompactSessionButton = memo(({
     e.stopPropagation();
     e.preventDefault();
     if (disabled) return;
-    executeCompaction(sessionId);
+    void executeCompaction(sessionId);
   };
 
   const label = isCompacting

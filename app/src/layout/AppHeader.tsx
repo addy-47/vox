@@ -26,11 +26,6 @@ export const AppHeader: React.FC = memo(() => {
   const isSettings = pathname === "/settings";
   const isMonitoring = pathname === "/monitoring";
 
-  // Monitoring page uses its own dedicated self-contained header in both popover and full page modes
-  if (isMonitoring) {
-    return null;
-  }
-
   const { isMobile, isCompact, isNarrow } = useViewportResize();
 
   const { togglePanel, isPanelOpen, closePanel, openPanel, rightPanel } = usePanelStateContext();
@@ -58,6 +53,11 @@ export const AppHeader: React.FC = memo(() => {
       // Best-effort IPC
     }
   }, [isIdle]);
+
+  // Monitoring page uses its own dedicated self-contained header in both popover and full page modes
+  if (isMonitoring) {
+    return null;
+  }
 
   return (
     <header

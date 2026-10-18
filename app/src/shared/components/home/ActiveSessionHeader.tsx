@@ -36,7 +36,8 @@ export const ActiveSessionHeader: React.FC<ActiveSessionHeaderProps> = ({
   useEffect(() => {
     let isMounted = true;
 
-    const unlisten = onSessionsChanged(async () => {
+    const unlisten = onSessionsChanged(() => {
+      void (async () => {
       let currentActiveId = useSessionStore.getState().activeSessionId;
       if (!currentActiveId) {
         try {
@@ -99,6 +100,7 @@ export const ActiveSessionHeader: React.FC<ActiveSessionHeaderProps> = ({
       } catch (e) {
         console.warn("[ActiveSessionHeader] Failed to refresh session label:", e);
       }
+      })();
     });
 
     return () => {

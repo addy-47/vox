@@ -125,7 +125,12 @@ export const Drawer = memo(
           const focusable =
             prev.tabIndex >= 0 || /^(BUTTON|INPUT|SELECT|TEXTAREA|A)$/.test(prev.tagName);
           if (focusable) {
-            prev.focus({ preventScroll: true });
+            // Restore focus after slide-out animation finishes to prevent layout thrashing
+            setTimeout(() => {
+              if (document.contains(prev)) {
+                prev.focus({ preventScroll: true });
+              }
+            }, 400);
             return;
           }
         }
@@ -192,7 +197,9 @@ export const Drawer = memo(
         const cleanup = () => {
           try {
             target.releasePointerCapture(e.pointerId);
-          } catch {}
+          } catch (e) {
+            console.debug("[Drawer] Failed to release pointer capture:", e);
+          }
           target.removeEventListener("pointermove", onPointerMove);
           target.removeEventListener("pointerup", onPointerUp);
           target.removeEventListener("pointercancel", onPointerUp);

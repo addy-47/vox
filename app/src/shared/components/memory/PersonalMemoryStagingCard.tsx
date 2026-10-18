@@ -66,19 +66,31 @@ export interface PersonalMemoryStagingCardProps {
   embedded?: boolean;
 }
 
-function parseOpPayload(content?: string): {
+interface OpPayload {
   text?: string;
   section_id?: string;
   block_id?: string;
   title?: string;
   blocks?: Array<string | { id?: string; text?: string }>;
-} {
+}
+
+function parseOpPayload(content?: string): OpPayload {
   if (!content) return {};
   try {
-    return JSON.parse(content);
+    return JSON.parse(content) as OpPayload;
   } catch {
     return { text: content };
   }
+}
+
+interface RawSection {
+  id?: string;
+  title?: string;
+  blocks?: Array<{ id?: string; text?: string }>;
+}
+
+interface RawSectionsPayload {
+  sections?: RawSection[];
 }
 
 function parseSections(
@@ -87,14 +99,14 @@ function parseSections(
 ): Array<{ id?: string; title: string; blocks: Array<{ id?: string; text: string }> }> {
   if (canonicalContent) {
     try {
-      const parsed = JSON.parse(canonicalContent);
-      if (Array.isArray(parsed?.sections)) {
-        return parsed.sections.map((s: { id?: string; title?: string; blocks?: Array<{ id?: string; text?: string }> }) => ({
+      const parsed = JSON.parse(canonicalContent) as RawSectionsPayload;
+      if (Array.isArray(parsed.sections)) {
+        return parsed.sections.map((s) => ({
           id: s.id,
-          title: s.title || "Untitled",
-          blocks: (s.blocks || []).map((b) => ({
+          title: s.title ?? "Untitled",
+          blocks: (s.blocks ?? []).map((b) => ({
             id: b.id,
-            text: b.text || "",
+            text: b.text ?? "",
           })),
         }));
       }

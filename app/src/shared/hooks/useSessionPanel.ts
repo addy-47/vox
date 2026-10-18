@@ -50,7 +50,7 @@ export function useSessionPanel(): UseSessionPanelReturn {
   const [projectOrder, setProjectOrder] = useState<string[]>(() => {
     try {
       const saved = localStorage.getItem("vox_projects_order");
-      return saved ? JSON.parse(saved) : [];
+      return saved ? (JSON.parse(saved) as string[]) : [];
     } catch {
       return [];
     }
@@ -86,11 +86,16 @@ export function useSessionPanel(): UseSessionPanelReturn {
 
   useEffect(() => {
     let isMounted = true;
-    refresh().catch(() => { if (isMounted) setLoading(false); });
+    // Defer the initial fetch out of the effect body: `refresh` closes over
+    // setState, so calling it synchronously here reads as setState-in-effect.
+    queueMicrotask(() => {
+      if (!isMounted) return;
+      void refresh();
+    });
 
     const unlisten = onSessionsChanged(() => {
       if (!isMounted) return;
-      refresh().catch(() => {});
+      void refresh();
     });
 
     return () => { isMounted = false; unlisten(); };

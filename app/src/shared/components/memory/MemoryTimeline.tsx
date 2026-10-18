@@ -110,16 +110,16 @@ export const MemoryTimeline = memo<MemoryTimelineProps>(({
   }, []);
 
   useEffect(() => {
-    fetchStats();
-    fetchSessionsList();
+    void fetchStats();
+    void fetchSessionsList();
   }, [fetchStats, fetchSessionsList]);
 
   useEffect(() => {
     const unlistenStats = onMemoryIngestionUpdated(() => {
-      fetchStats();
+      void fetchStats();
     });
     const unlistenSessions = onSessionsChanged(() => {
-      fetchSessionsList();
+      void fetchSessionsList();
     });
 
     return () => {
