@@ -1,4 +1,9 @@
-import React, { memo, useRef, useCallback, useEffect } from "react";
+import React, {
+  memo,
+  useRef,
+  useCallback,
+  useEffect,
+} from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
@@ -10,6 +15,7 @@ import { OverlayBackdrop } from "@/shared/ui/OverlayBackdrop";
 import { BottomDockFeather } from "@/shared/ui/BottomDockFeather";
 import { LAYOUT_COPY } from "@/data/layoutCopy";
 import { useViewportResize } from "@/shared/hooks/useViewportResize";
+import { EdgePanelActiveContext } from "./edgePanelActive";
 
 export interface EdgePanelProps {
   side: "left" | "right";
@@ -118,6 +124,12 @@ const EdgePanelInner = memo(
       return cleanup;
     }, [open]);
 
+    useEffect(() => {
+      // [trace] Open-latency anchor. SessionPanel measures its mount against
+      // this mark, so the log shows how long the panel takes after the toggle.
+      if (open) performance.mark("edge-panel-open");
+    }, [open]);
+
     const handlePanelKeyDown = useCallback((e: React.KeyboardEvent) => {
       if (e.key !== "Tab" || !panelRef.current) return;
       const items = Array.from(
@@ -150,39 +162,50 @@ const EdgePanelInner = memo(
     const fastTransition = shouldReduceMotion || isCoarse;
 
     const panelNode = (
-      <AnimatePresence>
-        {open && (
-          <>
-            {/* Backdrop dimming: shared OverlayBackdrop (single source of truth). */}
+      <>
+        <AnimatePresence>
+          {open && (
+            /* Backdrop dimming: shared OverlayBackdrop (single source of truth). */
             <OverlayBackdrop
               onClose={onClose}
               zIndex={effectiveBackdropZ}
               className={cn(!isGlobal && "lg:hidden")}
             />
-            <motion.aside
-              ref={panelRef}
-              role="dialog"
-              aria-modal="true"
-              aria-label={title || LAYOUT_COPY.panel.fallback}
-              data-edge-panel={side}
-              tabIndex={-1}
-              onKeyDown={handlePanelKeyDown}
-              initial={{ x: isLeft ? "-100%" : "100%" }}
-              animate={{ x: 0 }}
-              exit={{ x: isLeft ? "-100%" : "100%" }}
-              transition={{
-                duration: fastTransition ? 0.12 : 0.22,
-                ease: fastTransition ? "easeOut" : [0.16, 1, 0.3, 1],
-              }}
-              style={{ zIndex: effectiveZ }}
-              className={cn(
-                isGlobal ? "fixed top-0 bottom-0" : "absolute top-0 bottom-0",
-                "flex flex-col bg-[rgb(var(--card))]/96 overflow-hidden pointer-events-auto select-auto border-[rgba(var(--border),0.08)] shadow-lg transform-gpu",
-                isLeft ? "left-0 border-r" : "right-0 border-l",
-                "w-[340px] max-w-[92vw]",
-                className
-              )}
-            >
+          )}
+        </AnimatePresence>
+        {/*
+          The aside is always mounted, at one tree position, so toggling `open`
+          never remounts `children`. The previous `{open && ...}` version
+          destroyed the whole subtree on close and rebuilt it (mount effects,
+          data fetches, and every memoized row) on the next open. Closed state
+          is now off-screen plus `inert`, so it takes no focus and no pointer.
+        */}
+        <motion.aside
+          ref={panelRef}
+          role="dialog"
+          aria-modal={open ? true : undefined}
+          aria-hidden={!open}
+          inert={!open}
+          aria-label={title || LAYOUT_COPY.panel.fallback}
+          data-edge-panel={side}
+          tabIndex={-1}
+          onKeyDown={handlePanelKeyDown}
+          initial={false}
+          animate={{ x: open ? 0 : isLeft ? "-100%" : "100%" }}
+          transition={{
+            duration: fastTransition ? 0.12 : 0.22,
+            ease: fastTransition ? "easeOut" : [0.16, 1, 0.3, 1],
+          }}
+          style={{ zIndex: effectiveZ }}
+          className={cn(
+            isGlobal ? "fixed top-0 bottom-0" : "absolute top-0 bottom-0",
+            "flex flex-col bg-[rgb(var(--card))]/96 overflow-hidden select-auto border-[rgba(var(--border),0.08)] shadow-lg transform-gpu",
+            isLeft ? "left-0 border-r" : "right-0 border-l",
+            "w-[340px] max-w-[92vw]",
+            open ? "pointer-events-auto" : "pointer-events-none",
+            className
+          )}
+        >
             {/* Header: Minimal anchor row or classic titled bar */}
             {minimalHeader ? (
               /* When panel is LEFT: close button on the RIGHT so it doesn't collide with the trigger.
@@ -236,15 +259,15 @@ const EdgePanelInner = memo(
             {/* Content Body — strictly self-contained with internal scroll dissolve */}
             <div className="flex-1 min-h-0 flex flex-col overflow-hidden relative">
               <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-                {children}
+                <EdgePanelActiveContext.Provider value={open}>
+                  {children}
+                </EdgePanelActiveContext.Provider>
               </div>
               {/* Internal bottom dissolve strictly bounded to panel */}
               <BottomDockFeather className="absolute bottom-0 left-0 right-0 h-14 pointer-events-none z-10" />
             </div>
-          </motion.aside>
-        </>
-      )}
-    </AnimatePresence>
+        </motion.aside>
+      </>
   );
 
   if (isGlobal && typeof document !== "undefined") {

@@ -26,6 +26,7 @@ interface AmbientBackgroundProps {
   instanceId?: string;
 }
 
+
 /** Fixed ambient tuning. The mood prop never had a caller, so the four mood
  * presets collapsed to the one reachable set of values. */
 const RIPPLE_DURATION = 28; // seconds per ripple cycle
@@ -33,6 +34,7 @@ const RIPPLE_OPACITY = 0.10; // max opacity at ring origin
 const GLOW_OPACITY = 0.05; // core glow under the orb
 
 const RIPPLE_COUNT = 3;
+
 
 export const AmbientBackground = React.memo(({
   originX = "50%",

@@ -188,9 +188,14 @@ export const InteractionConfigDesk = memo(({ activeCategory, onBack, layoutMode 
   }, [currentCategory, llmServerInventory, draftSettings?.tts?.servers, draftSettings?.providers?.tts?.servers, committedSettings?.providers?.tts?.servers]);
 
   const curatedProviders = useMemo(() => {
-    const list = showAllInline
-      ? filteredProviders
-      : filteredProviders.filter((p) => Boolean(p.isConfigured) || Boolean(p.isFree) || Boolean(getProviderKey(p.id)?.trim()) || activeCloudProviderId === p.id);
+    // Copy before reordering: `filteredProviders` is a memoized array, and when
+    // `showAllInline` is set it is aliased directly — mutating it in place would
+    // corrupt the memo for every later render (wrong order, stale entries).
+    const list = [
+      ...(showAllInline
+        ? filteredProviders
+        : filteredProviders.filter((p) => Boolean(p.isConfigured) || Boolean(p.isFree) || Boolean(getProviderKey(p.id)?.trim()) || activeCloudProviderId === p.id)),
+    ];
     // Active-card primacy: the committed active cloud provider always renders first.
     if (committedActiveCloudProviderId) {
       const idx = list.findIndex(
@@ -202,14 +207,15 @@ export const InteractionConfigDesk = memo(({ activeCategory, onBack, layoutMode 
         list.unshift(pinned);
       }
     }
-    console.log("[InteractionConfigDesk] curatedProviders:", {
-      currentCategory,
-      committedActiveCloudProviderId,
-      activeCloudProviderId,
-      firstProvider: list[0]?.id,
-      listLength: list.length,
-      allIds: list.map((p) => p.id),
-    });
+    if (import.meta.env.DEV) {
+      console.log("[InteractionConfigDesk] curatedProviders:", {
+        currentCategory,
+        committedActiveCloudProviderId,
+        activeCloudProviderId,
+        firstProvider: list[0]?.id,
+        listLength: list.length,
+      });
+    }
     return list;
   }, [filteredProviders, showAllInline, getProviderKey, activeCloudProviderId, committedActiveCloudProviderId, currentCategory]);
 

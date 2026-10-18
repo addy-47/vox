@@ -851,7 +851,17 @@ input[type="range"]:active::-webkit-slider-thumb {
 }
 
 
+  *, *::before, *::after {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
 
+  /* Opt-in: restore blur inside drawers only */
+  .drawer-keep-blur,
+  .drawer-keep-blur * {
+    backdrop-filter: blur(12px) !important;
+    -webkit-backdrop-filter: blur(12px) !important;
+  }
 
 
 @keyframes pulse-slow {

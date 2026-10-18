@@ -1,9 +1,41 @@
-import { memo, useMemo } from "react";
+import { memo, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { Heart, Loader2, Pause, Play } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { VOICE_CATALOG_COPY } from "@/data/settingsCopy";
 import type { UnifiedVoiceDto } from "@/services/voicesService";
 import { getVoiceWaveform } from "./VoicePreviewBanner";
+
+/**
+ * Bar count that fits the scrubber's measured width. The catalog grid packs
+ * cards into 1–2 columns, so a fixed bar count overflows narrow cards; because
+ * the list scroller is `overflow-y-auto` (which computes `overflow-x: auto`),
+ * that overflow shows up as a horizontal scrollbar on the whole list. Measuring
+ * the scrubber keeps the waveform responsive instead.
+ */
+function useFittingBarCount(active: boolean, max = 32): {
+  ref: RefObject<HTMLDivElement | null>;
+  count: number;
+} {
+  const ref = useRef<HTMLDivElement>(null);
+  const [count, setCount] = useState(max);
+  useEffect(() => {
+    if (!active) return;
+    const el = ref.current;
+    if (!el) return;
+    const measure = () => {
+      const w = el.clientWidth;
+      // ~5px per bar (≈3px bar + 2px gap). Clamp so very narrow cards still
+      // read as a waveform, and wide cards stay dense.
+      setCount(Math.max(8, Math.min(max, Math.floor(w / 5))));
+    };
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [active, max]);
+  return { ref, count };
+}
 
 export interface VoiceCardProps {
   voice?: UnifiedVoiceDto;
@@ -46,9 +78,10 @@ export const VoiceCard = memo(
     onPreview,
     onSeekPreview,
   }: VoiceCardProps) => {
+    const { ref: scrubberRef, count: barCount } = useFittingBarCount(previewPlaying);
     const cardWaveformBars = useMemo(
-      () => (voice && previewPlaying ? getVoiceWaveform(voice.id, 28) : []),
-      [voice, previewPlaying]
+      () => (voice && previewPlaying ? getVoiceWaveform(voice.id, barCount) : []),
+      [voice, previewPlaying, barCount]
     );
 
     if (!voice) return null;
@@ -151,13 +184,14 @@ export const VoiceCard = memo(
           {/* If previewPlaying, show the interactive waveform scrubber! Otherwise show badges */}
           {previewPlaying ? (
             <div
+              ref={scrubberRef}
               role="slider"
               aria-label="Seek preview audio"
               aria-valuenow={Math.round((previewProgress ?? 0) * 100)}
               aria-valuemin={0}
               aria-valuemax={100}
               tabIndex={0}
-              className="mt-2.5 flex items-center gap-[2.5px] h-6 w-full cursor-pointer select-none px-1 rounded hover:bg-[rgba(var(--foreground),0.03)] transition-colors"
+              className="mt-2.5 flex items-center justify-between gap-[2px] h-6 w-full overflow-hidden cursor-pointer select-none rounded hover:bg-[rgba(var(--foreground),0.03)] transition-colors"
               onClick={(e) => {
                 e.stopPropagation();
                 if (!onSeekPreview) return;
@@ -184,7 +218,7 @@ export const VoiceCard = memo(
                     key={i}
                     style={{ height: `${Math.round(Math.max(22, height * 100))}%` }}
                     className={cn(
-                      "flex-1 rounded-full min-w-[2px] max-w-[4px] transition-all duration-75",
+                      "flex-1 min-w-0 rounded-full max-w-[4px] transition-all duration-75",
                       isSynthesizing
                         ? "animate-pulse bg-[rgb(var(--accent))]/40"
                         : isPlayed

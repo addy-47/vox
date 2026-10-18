@@ -23,6 +23,7 @@ import {
   selectUncompactedSessionIds,
   selectActiveCompactionSessionIds,
 } from "@/store/notificationStore";
+import { useRenderTrace } from "@/shared/hooks/useRenderTrace";
 
 export interface SessionRowItemProps {
   session: SessionRow;
@@ -84,6 +85,37 @@ export const SessionRowItem = memo(
 
     const executeCompaction = useNotificationStore(
       (s) => s.executeCompactionForSession
+    );
+
+    // [trace] RCA: which prop/store/local-state identity caused this row to
+    // render. Capped: there can be ~40 rows, so a storm would flood the console.
+    useRenderTrace(
+      "SessionRowItem",
+      () => ({ id: session.id, active, pinned, nested }),
+      {
+        watch: {
+          session,
+          active,
+          restoring,
+          pinned,
+          onSelect,
+          onTogglePin,
+          onRename,
+          onMoveToProject,
+          onDelete,
+          allProjects,
+          nested,
+          projectTag,
+          showRecency,
+          isUncompacted,
+          isCompacting,
+          isRenaming,
+          renameTitle,
+          menuOpen,
+        },
+        maxChangeLogs: 3,
+        heartbeat: 50,
+      }
     );
 
     const handleSelect = useCallback(() => {

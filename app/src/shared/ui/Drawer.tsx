@@ -246,7 +246,7 @@ export const Drawer = memo(
                 exit={{ opacity: 0 }}
                 transition={{ duration: 0.2 }}
                 onClick={onClose}
-                className="absolute inset-0 bg-[rgb(var(--background))]/60 backdrop-blur-sm pointer-events-auto cursor-default"
+                className="absolute inset-0 bg-[rgb(var(--background))]/75 backdrop-blur-sm pointer-events-auto cursor-default"
               />
             )}
 
@@ -263,7 +263,7 @@ export const Drawer = memo(
               onKeyDown={handleSheetKeyDown}
               style={{ height: `${heightPercent}%` }}
               className={cn(
-                "absolute bottom-0 left-0 right-0 flex flex-col rounded-t-3xl overflow-hidden border-t border-[rgba(var(--accent),0.12)] [text-shadow:none] outline-none pointer-events-auto transform-gpu will-change-transform contain-paint",
+                "absolute bottom-0 left-0 right-0 flex flex-col rounded-t-3xl overflow-hidden border-t border-[rgba(var(--accent),0.12)] [text-shadow:none] outline-none pointer-events-auto transform-gpu will-change-transform contain-paint drawer-keep-blur",
                 isDragging ? "select-none transition-none" : "transition-[height] duration-150 ease-out"
               )}
               onClick={(e) => e.stopPropagation()}

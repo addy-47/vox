@@ -1,4 +1,4 @@
-import React, { memo, useMemo, useRef, useEffect, lazy, Suspense } from "react";
+import React, { memo, useMemo, useRef, useEffect, useCallback, lazy, Suspense } from "react";
 const VoxOrb = lazy(() =>
   import("@/shared/components/home/AdvancedOrb").then((m) => ({ default: m.VoxOrb }))
 );
@@ -210,7 +210,10 @@ export const Home = memo(() => {
   const { isPanelOpen, closePanel } = usePanelStateContext();
   const sessionError = useSessionStore((s) => s.sessionError);
   const clearSessionError = useSessionStore((s) => s.setSessionError);
-  const closeSessions = () => closePanel("sessions");
+  // Stable identity: Home re-renders on every streamed transcript token. An
+  // inline arrow here would give `SessionPanel` (memo) a new `onClose` prop on
+  // every token, defeating memo and re-rendering the whole session list.
+  const closeSessions = useCallback(() => closePanel("sessions"), [closePanel]);
 
 
   // Bound visible dialogue history to recent turns to prevent unbounded DOM accumulation
@@ -538,7 +541,13 @@ export const Home = memo(() => {
         )}
       </div>
 
-      {/* ── Left Edge Rail (Conversations) ── */}
+      {/* ── Left Edge Rail (Conversations) ──
+          No `keepMounted`: it rendered a second, hidden SessionPanel instance
+          that refetched on every sessions_changed event, and then remounted the
+          panel on every open/close (EdgePanel renders `children` in two
+          different tree positions). Panel state that must survive a close
+          (view mode, scroll, expanded projects) already lives in
+          sessionPanelUiStore/sessionPanelScrollTop. */}
       <EdgePanel side="left" open={isPanelOpen("sessions")} onClose={closeSessions} minimalHeader>
         <ErrorBoundary name="SessionPanel">
           <SessionPanel onClose={closeSessions} />

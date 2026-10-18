@@ -6,6 +6,16 @@ import { type ProjectRow } from "@/services/projectsService";
 import { SESSION_COPY } from "@/data/sessionCopy";
 import { Tooltip } from "@/shared/ui/Tooltip";
 import { ProjectRowItem } from "./ProjectRowItem";
+import { useRenderTrace } from "@/shared/hooks/useRenderTrace";
+
+/** Order-sensitive id comparison, used to skip no-op state writes. */
+function sameIds(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
 
 export interface SessionProjectsSectionProps {
   projects: ProjectGroup[];
@@ -67,12 +77,47 @@ export const SessionProjectsSection = memo(
     );
     const isDraggingProjectRef = useRef(false);
 
-    // Sync with incoming projects prop ONLY if not actively dragging
+    // Sync with incoming projects prop ONLY if not actively dragging. Skip the
+    // state write when the id list is unchanged: a parent re-render otherwise
+    // costs this section an extra render plus a new array identity for free.
     useEffect(() => {
-      if (!isDraggingProjectRef.current) {
-        setProjectIds(projects.map((g) => g.project.id));
-      }
+      if (isDraggingProjectRef.current) return;
+      const nextIds = projects.map((g) => g.project.id);
+      setProjectIds((prev) => (sameIds(prev, nextIds) ? prev : nextIds));
     }, [projects]);
+
+    // [trace] RCA: watches both incoming props and this section's own state, so
+    // a render is never left unexplained. `changed=[projects]` means the parent
+    // handed over a new array; `changed=[projectIds]` means local state moved.
+    useRenderTrace(
+      "SessionProjectsSection",
+      () => ({ projects: projects.length, projectIds: projectIds.length }),
+      {
+        watch: {
+          projects,
+          allProjects,
+          activeSessionId,
+          isRestoring,
+          restoringSessionId,
+          createNewProject,
+          reorderProjects,
+          renameProject,
+          deleteProject,
+          refresh,
+          onSelectSession,
+          onTogglePinSession,
+          onRenameSession,
+          onMoveSessionToProject,
+          onDeleteSession,
+          onCreateSessionInProject,
+          projectIds,
+          dragOverProjectId,
+          isCreatingProject,
+          projectName,
+        },
+        maxChangeLogs: 40,
+      }
+    );
 
     const projectIdsRef = useRef(projectIds);
     useEffect(() => {
