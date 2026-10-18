@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback, useEffect } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
+import { useShallow } from "zustand/react/shallow";
 import { activeSelection } from "@/shared/lib/activeSelection";
 import type { CloudProvider } from "@/data/providersCopy";
 
@@ -14,8 +15,8 @@ export function useProviderSelection(options?: UseProviderSelectionOptions) {
   const isTts = category === "TTS";
   const isStt = category === "STT";
 
-  const draftSettings = useSettingsStore((s) => s.draftSettings);
-  const committedSettings = useSettingsStore((s) => s.settings);
+  const draftSettings = useSettingsStore(useShallow((s) => s.draftSettings));
+  const committedSettings = useSettingsStore(useShallow((s) => s.settings));
   const updateDraft = useSettingsStore((s) => s.updateDraft);
   const [editingProviderId, setEditingProviderId] = useState<string | null>(null);
   const [editingKeyValue, setEditingKeyValue] = useState<string>("");

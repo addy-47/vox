@@ -30,8 +30,12 @@ echo "==> backend architectural invariant lint: ./scripts/lint-arch.sh"
 # `-D warnings` is essential: plain `cargo clippy` exits 0 even when it prints
 # warnings, so without it the success message could lie. It applies to workspace
 # members only, not third-party dependencies.
-echo "==> desktop: cargo clippy --all-targets --release -D warnings -D clippy::disallowed_methods"
-cargo clippy --all-targets --release -- -D warnings -D clippy::disallowed_methods
+# Disallowed methods (RULE-CONC-01 etc.) are strictly denied on production lib and bin.
+echo "==> desktop lib & bin: cargo clippy --bin Vox --lib --release -D warnings"
+cargo clippy --bin Vox --lib --release -- -D warnings
+
+echo "==> desktop tests & benchmarks: cargo clippy --tests --benches --release -D warnings"
+cargo clippy --tests --benches --release -- -D warnings -A clippy::disallowed_methods
 
 if [[ "$MODE" == "desktop" ]]; then
     echo

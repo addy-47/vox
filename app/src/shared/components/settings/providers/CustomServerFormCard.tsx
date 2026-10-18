@@ -6,7 +6,9 @@ import {
   X,
 } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
+import { Tooltip } from "@/shared/ui/Tooltip";
 import { useSettingsStore, type LlmCustomServer, type TtsCustomServer } from "@/store/settingsStore";
+import { useShallow } from "zustand/react/shallow";
 import { probeProviderTarget } from "@/services/catalogService";
 import { ipcErrorMessage } from "@/shared/lib/ipcError";
 import { INTERACTION_CONFIG_DESK_COPY } from "@/data/settingsCopy";
@@ -16,6 +18,14 @@ export function upsertServer<T extends { id: string }>(list: T[], server: T): T[
   return list.some((s) => s.id === server.id)
     ? list.map((s) => (s.id === server.id ? server : s))
     : [...list, server];
+}
+
+/**
+ * backend-gap: backend should mint canonical server ids on probe/save
+ * (`setup_remote_server` response). Temp id is collision-safe only.
+ */
+export function mintCustomServerId(prefix: "llm_custom" | "tts_custom"): string {
+  return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
 
@@ -44,7 +54,7 @@ export const CustomServerFormCard = memo(({
   const [isProbing, setIsProbing] = useState(false);
   const [unhealthyReason, setUnhealthyReason] = useState<string | null>(null);
 
-  const draftSettings = useSettingsStore((s) => s.draftSettings);
+  const draftSettings = useSettingsStore(useShallow((s) => s.draftSettings));
   const updateDraft = useSettingsStore((s) => s.updateDraft);
   const commitChanges = useSettingsStore((s) => s.commitChanges);
 
@@ -67,7 +77,7 @@ export const CustomServerFormCard = memo(({
         if (res.healthy) {
           const resolvedName = name.trim() || "Remote";
           const newServer: TtsCustomServer = {
-            id: initial?.id ?? `tts_custom_${Date.now()}`,
+            id: initial?.id ?? mintCustomServerId("tts_custom"),
             name: resolvedName,
             url: trimmedUrl,
             remote_path: (initial as TtsCustomServer | null)?.remote_path ?? "~/.vox",
@@ -98,7 +108,7 @@ export const CustomServerFormCard = memo(({
             : "Remote Server";
           const resolvedName = name.trim() || defaultDialectName;
           const newServer: LlmCustomServer = {
-            id: initial?.id ?? `llm_custom_${Date.now()}`,
+            id: initial?.id ?? mintCustomServerId("llm_custom"),
             name: resolvedName,
             url: trimmedUrl,
             model: (initial as LlmCustomServer | null)?.model ?? "",
@@ -131,7 +141,7 @@ export const CustomServerFormCard = memo(({
 
     if (isTts) {
       const newServer: TtsCustomServer = {
-        id: initial?.id ?? `tts_custom_${Date.now()}`,
+        id: initial?.id ?? mintCustomServerId("tts_custom"),
         name: fallbackName,
         url: trimmedUrl,
         remote_path: (initial as TtsCustomServer | null)?.remote_path ?? "~/.vox",
@@ -147,7 +157,7 @@ export const CustomServerFormCard = memo(({
       await commitChanges({ domain: "tts", key: "servers" });
     } else {
       const newServer: LlmCustomServer = {
-        id: initial?.id ?? `llm_custom_${Date.now()}`,
+        id: initial?.id ?? mintCustomServerId("llm_custom"),
         name: fallbackName,
         url: trimmedUrl,
         model: (initial as LlmCustomServer | null)?.model ?? "",
@@ -210,15 +220,16 @@ export const CustomServerFormCard = memo(({
           <span className={cn("w-1.5 h-1.5 rounded-full", unhealthyReason ? "bg-[rgb(var(--error))]" : "bg-[rgb(var(--accent))]")} />
           {isTts ? "New Voice Server" : "New Custom Server"}
         </span>
-        <button
-          type="button"
-          onClick={handleDiscard}
-          className="text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))] transition-colors p-1 cursor-pointer bg-transparent rounded"
-          title="Cancel"
-          aria-label="Cancel"
-        >
-          <X size={14} />
-        </button>
+        <Tooltip label={INTERACTION_CONFIG_DESK_COPY.llm.cloud.cancelKey} side="top" asChild>
+          <button
+            type="button"
+            onClick={handleDiscard}
+            className="text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))] transition-colors p-1 cursor-pointer bg-transparent rounded"
+            aria-label={INTERACTION_CONFIG_DESK_COPY.llm.cloud.cancelKey}
+          >
+            <X size={14} />
+          </button>
+        </Tooltip>
       </div>
 
       {unhealthyReason ? (
@@ -236,15 +247,16 @@ export const CustomServerFormCard = memo(({
             </p>
           </div>
           <div className="flex items-center justify-between pt-1 border-t border-[rgba(var(--foreground),0.06)] mt-auto h-[28px]">
-            <button
-              type="button"
-              onClick={() => setUnhealthyReason(null)}
-              className="text-[11px] font-medium text-[rgb(var(--accent))] hover:underline transition-all cursor-pointer bg-transparent flex items-center gap-1 p-0"
-              title="Return to editing inputs"
-            >
-              <ArrowLeft size={12} />
-              Edit
-            </button>
+            <Tooltip label="Return to editing inputs" side="top" asChild>
+              <button
+                type="button"
+                onClick={() => setUnhealthyReason(null)}
+                className="text-[11px] font-medium text-[rgb(var(--accent))] hover:underline transition-all cursor-pointer bg-transparent flex items-center gap-1 p-0"
+              >
+                <ArrowLeft size={12} />
+                Edit
+              </button>
+            </Tooltip>
             <div className="flex items-center gap-2">
               <button
                 type="button"
@@ -269,7 +281,6 @@ export const CustomServerFormCard = memo(({
             type="text"
             ref={urlRef}
             value={url}
-            autoFocus
             onChange={(e) => setUrl(e.target.value)}
             placeholder={defaultUrl}
             className="w-full text-[11.5px] font-mono pb-1 bg-transparent border-b border-[rgba(var(--foreground),0.12)] focus:border-[rgb(var(--accent))] outline-none text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40 transition-colors"
@@ -301,14 +312,14 @@ export const CustomServerFormCard = memo(({
             {isProbing ? "Probing endpoint..." : "2s auto-discovery"}
           </span>
           <div className="flex items-center gap-1.5">
-            <button
-              type="button"
-              disabled={isProbing || !url.trim()}
-              onClick={handleSave}
-              className="flex items-center gap-1 p-1 rounded text-[rgb(var(--accent))] hover:opacity-75 transition-opacity font-bold text-[11.5px] cursor-pointer disabled:opacity-40 bg-transparent"
-              title="Save Server"
-              aria-label="Save Server"
-            >
+            <Tooltip label={INTERACTION_CONFIG_DESK_COPY.llm.server.saveServer} side="top" asChild>
+              <button
+                type="button"
+                disabled={isProbing || !url.trim()}
+                onClick={handleSave}
+                className="flex items-center gap-1 p-1 rounded text-[rgb(var(--accent))] hover:opacity-75 transition-opacity font-bold text-[11.5px] cursor-pointer disabled:opacity-40 bg-transparent"
+                aria-label={INTERACTION_CONFIG_DESK_COPY.llm.server.saveServer}
+              >
               {isProbing ? (
                 <span className="w-3.5 h-3.5 border-2 border-[rgb(var(--accent))] border-t-transparent rounded-full animate-spin" />
               ) : (
@@ -316,6 +327,7 @@ export const CustomServerFormCard = memo(({
               )}
               <span>Save</span>
             </button>
+          </Tooltip>
           </div>
         </div>
       )}

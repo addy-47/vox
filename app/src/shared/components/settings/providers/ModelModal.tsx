@@ -1,6 +1,9 @@
-import { memo, useState, useMemo, useEffect, useCallback, useDeferredValue } from "react";
+import { memo, useState, useMemo, useEffect, useCallback, useDeferredValue, useRef } from "react";
 import { useLenisScrollContainer, useScrollTopOnChange } from "@/shared/hooks/useLenisScrollContainer";
 import { promoteActive } from "@/shared/lib/activeSelection";
+import { resolveCapabilities } from "@/shared/lib/catalogCapabilities";
+import { filterModels } from "@/shared/lib/catalogFilter";
+import { LLM_CATALOG_COPY } from "@/data/settingsCopy";
 import { Cpu, Gauge, Heart, Wrench, Zap } from "lucide-react";
 import { useFavoriteModels } from "@/shared/hooks/useFavoriteModels";
 import type { LlmModelInfo, ModelCapabilities } from "@/store/settingsStore";
@@ -42,16 +45,25 @@ export const ModelModal = memo(({
     scrollToTop();
   }, [deferredSearch, filterCategory, sort, scrollToTop]);
 
+  const copyTimer = useRef<number | null>(null);
+  useEffect(() => () => {
+    if (copyTimer.current) window.clearTimeout(copyTimer.current);
+  }, []);
+
   const handleCopyId = useCallback((id: string) => {
-    void navigator.clipboard.writeText(id);
-    setCopiedId(id);
-    setTimeout(() => setCopiedId(null), 1800);
+    navigator.clipboard.writeText(id).then(() => {
+      setCopiedId(id);
+      if (copyTimer.current) window.clearTimeout(copyTimer.current);
+      copyTimer.current = window.setTimeout(() => setCopiedId(null), 1800);
+    }).catch((err) => {
+      console.warn("[ModelModal] clipboard write denied:", err);
+    });
   }, []);
 
   const { favoriteModelIds, toggleFavorite, isFavorite } = useFavoriteModels();
 
   const resolveProbed = useCallback((m: LlmModelInfo) => {
-    return probingMap[m.id]?.capabilities || m.capabilities || capabilitiesCache?.[`server:${m.id}`] || capabilitiesCache?.[`cloud:${m.id}`] || capabilitiesCache?.[`embedded:${m.id}`] || capabilitiesCache?.[m.id];
+    return resolveCapabilities(m, probingMap, capabilitiesCache);
   }, [probingMap, capabilitiesCache]);
 
   const favoritesCount = useMemo(() => remoteModels.filter((m) => favoriteModelIds.has(m.id)).length, [remoteModels, favoriteModelIds]);
@@ -75,18 +87,14 @@ export const ModelModal = memo(({
   ], [categoryFilters]);
 
   const modalFilteredModels = useMemo(() => {
-    let list = remoteModels;
-    const q = deferredSearch.trim().toLowerCase();
-    if (q) {
-      list = list.filter((m) => m.id.toLowerCase().includes(q) || (m.name && m.name.toLowerCase().includes(q)) || (m.family && m.family.toLowerCase().includes(q)) || (m.quantization && m.quantization.toLowerCase().includes(q)));
-    }
-    if (filterCategory === "favorites") list = list.filter((m) => favoriteModelIds.has(m.id));
-    else if (filterCategory === "benchmarked") list = list.filter((m) => (resolveProbed(m)?.tps ?? 0) > 0);
-    else if (filterCategory === "tools") list = list.filter((m) => resolveProbed(m)?.supports_tools === "supported");
-    else if (filterCategory === "fast") list = list.filter((m) => (resolveProbed(m)?.tps ?? 0) >= 30);
+    const filtered = filterModels(remoteModels, {
+      category: filterCategory,
+      favoriteIds: favoriteModelIds,
+      resolveProbed,
+    }, deferredSearch);
 
     return promoteActive(
-      [...list].sort((a, b) => {
+      [...filtered].sort((a, b) => {
         const an = a.name || a.id, bn = b.name || b.id;
         return sort === "az" ? an.localeCompare(bn, undefined, { sensitivity: "base" }) : bn.localeCompare(an, undefined, { sensitivity: "base" });
       }),
@@ -106,7 +114,7 @@ export const ModelModal = memo(({
     <CatalogModalToolbar
       search={{
         value: modalSearch,
-        placeholder: "Search models...",
+        placeholder: LLM_CATALOG_COPY.modalSearchPlaceholder,
         onChange: setModalSearch,
       }}
       sort={{
@@ -151,9 +159,9 @@ export const ModelModal = memo(({
 
   const emptyStateNode = (
     <div className="h-64 flex flex-col items-center justify-center text-center space-y-2">
-      <p className="text-[14px] font-bold text-[rgb(var(--foreground))]">No models found</p>
+      <p className="text-[14px] font-bold text-[rgb(var(--foreground))]">{LLM_CATALOG_COPY.modalEmptyTitle}</p>
       <p className="text-[12px] text-[rgb(var(--foreground-muted))] max-w-sm">
-        No available models match your current search & filter criteria.
+        {LLM_CATALOG_COPY.modalEmptyHint}
       </p>
       <button
         type="button"
@@ -163,7 +171,7 @@ export const ModelModal = memo(({
         }}
         className="mt-2 px-3 py-1.5 rounded-lg text-[12px] font-bold text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/10 border border-[rgba(var(--accent),0.3)] hover:bg-[rgb(var(--accent))]/20 transition-all cursor-pointer"
       >
-        Reset Filters
+        {LLM_CATALOG_COPY.resetFilters}
       </button>
     </div>
   );

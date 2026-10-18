@@ -60,6 +60,8 @@ Only paths with non-obvious rules that agents cannot infer from the codebase ind
 
 ### 4.1 Architectural Invariants (Non-Negotiable)
 
+**DATABASE ENGINE (NON-NEGOTIABLE):** WE DO NOT USE SQLITE. Vox exclusively uses the **Turso Database Engine** (`turso` crate: pure-Rust, async-native, MVCC concurrent writers). Never assume SQLite, C toolchains, or rusqlite locking constraints. Reference: `docs/features/turso-database-engine.md`.
+
 **Zero Backward Compatibility (ZBC):** Break, replace, or redesign existing interfaces when that produces the better architecture. Never introduce compatibility layers or legacy paths.
 
 **Pre-exploration:** Before any codebase exploration, architecture lookup, graph query, or broad search — read `.agents/rules/codebase-memory-mcp.md` and follow its graph-first workflow.
@@ -91,13 +93,13 @@ All authoritative specs live in [`docs/specs/`](file:///home/addy/projects/apps/
 
 > 📖 **Phase 13 (active):** [recent_work.md](file:///home/addy/projects/apps/vox/docs/plans/phase13/recent_work.md)
 > Phase 12 Archive: [recent_work.md](file:///home/addy/projects/apps/vox/docs/plans/phase12/recent_work.md)
-- **Catalog Modal & State Decomposition:** Tickets 1-10 done — unified backend dialect probing, `CatalogModalShell`, 3-stage responsive layouts, `ProviderPillGrid`; pruned alias fallbacks; transactional IPC batch patch; separated `catalogStore.ts`/`engineStatusStore.ts`; resolved re-render loops via `useShallow`; fixed scrollbar hover flicker; unified custom server resolution.
+- **Catalog Modal & State Decomposition:** Tickets 1-10 done — unified backend dialect probing, `CatalogModalShell`, 3-stage responsive layouts, `ProviderPillGrid`; pruned alias fallbacks; transactional IPC batch patch; separated `catalogStore.ts`/`engineStatusStore.ts`; resolved re-render loops via `useShallow`; fixed scrollbar hover flicker; unified custom server resolution. Completed provider-list SSOT migration: `ProviderModal`, `RemoteCatalogSection`, `InteractionConfigDesk` now consume `useCatalogStore.cloudProviders/ttsProviders`; removed all legacy `CLOUD_PROVIDERS`/`TTS_MODAL_PROVIDERS` references; tsc --noEmit clean, vitest 148/148, lint:arch green.
 - **Cloud TTS Streaming & Voice Preview:** Google Cloud TTS (bidi gRPC) and Azure AI Speech (REST SSML 24kHz); live voice catalog in Turso DB; dual-target compile gate clean.
 - **Acoustic Echo Cancellation (AEC) & Incognito Persistence:** WebRTC AEC3 dynamic delay adaptation & complete queue drain; `ClearRenderQueue` on interruption and cancel; unified Incognito private mode SSOT across backend settings, header Ghost button, and state capsule badges; swept legacy `~/.vox/vox.db` debris.
 - **Frontend test-suite rebuild (in progress):** Batch 0-2 complete — vitest config, shared harness (`transportStub.ts`, `settingsFixtures.ts`), `activeSelection.ts` (`promoteActive`), regression tests for settings flags, overlay stack, catalog store, pipeline service, voice session stream; all typecheck-clean. Batch 3 pending: `notificationPanel` test failing on `NotificationRecord` fixture shape — deleted to keep suite green; resume with correct transport stub + fixture.
 - **Frontend lint tooling audit & defect remediation (complete):** Tickets 01–09 done; **0 ESLint errors** (275 → 0); vitest 148/148, tsc/lint-arch clean; CDP stress & soak suites expanded with mock IPC backend covering all panels, drawers, modals, canvas containment, focus trapping (`EdgePanel`), and deferred focus restoration (`Modal`/`Drawer`); 0 runtime exceptions, 0 leaked backdrops.
 - **AGENTS.md & rules/ rewrite:** Rewrote all 12 rule files via `/writing-for-agents`; pruned dir map, hardened post-task hook (single-bullet-per-seam), removed duplicate frontmatter, deduplicated Android pitfalls, aligned testing references, and strictly demarcated persona roles vs style guides.
-- **Backend Invariant Gate & Remediation Tickets:** Added `clippy.toml` (`disallowed_methods`) and `lint-arch.sh` to `verify-targets.sh`; created tracer-bullet tickets 01–05 under `.scratch/invariant-fixes/issues/` to fix 69 detected spec invariant breaches.
+- **Backend Invariant Gate & Remediation:** Integrated `clippy.toml` (`disallowed_methods`) and `lint-arch.sh` into `verify-targets.sh`; completed Tickets 01–03 (named probe threads, fact text lookup, and TTS voice catalog SQL in persistence/); 0 SQL violations remaining outside persistence; dual-target compile gate clean.
 
 ---
 

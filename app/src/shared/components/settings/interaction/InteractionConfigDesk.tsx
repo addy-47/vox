@@ -3,7 +3,7 @@ import { useShallow } from "zustand/react/shallow";
 import { useSettingsStore, selectActiveLlmProvider, type ActiveCategory, type LlmCustomServer, type TtsCustomServer } from "@/store/settingsStore";
 import { useCatalogStore } from "@/store/catalogStore";
 import { useExpandedModalStore } from "@/store/expandedModalStore";
-import { CLOUD_PROVIDERS, TTS_MODAL_PROVIDERS, type CloudProvider } from "@/data/providersCopy";
+import { type CloudProvider } from "@/data/providersCopy";
 import { INTERACTION_CONFIG_DESK_COPY, PIPELINE_PROVIDERS_DESK_COPY, PROVIDERS_HEADER_COPY } from "@/data/settingsCopy";
 import { checkLlmProviderHealth } from "@/services/catalogService";
 import { BrainCircuit, Network, AudioLines, Mic, Globe, Key, KeyRound, HardDrive, Plus, Server } from "lucide-react";
@@ -137,10 +137,12 @@ export const InteractionConfigDesk = memo(({ activeCategory, onBack, layoutMode 
 
   const remoteModels = useCatalogStore((s) => s.remoteModels);
   const probingMap = useCatalogStore((s) => s.probingMap);
+  const storeCloudProviders = useCatalogStore((s) => s.cloudProviders);
+  const storeTtsProviders = useCatalogStore((s) => s.ttsProviders);
 
   const rawCloudProviders = useMemo((): CloudProvider[] => {
     if (currentCategory === "TTS") {
-      return TTS_MODAL_PROVIDERS.map((p) => ({
+      return storeTtsProviders.map((p) => ({
         id: p.id,
         name: p.name,
         tagline: p.tagline,
@@ -151,8 +153,8 @@ export const InteractionConfigDesk = memo(({ activeCategory, onBack, layoutMode 
         isConfigured: p.isConfigured,
       }));
     }
-    return currentCategory === "LLM" ? CLOUD_PROVIDERS : [];
-  }, [currentCategory]);
+    return currentCategory === "LLM" ? storeCloudProviders : [];
+  }, [currentCategory, storeTtsProviders, storeCloudProviders]);
 
   const providerFilterCounts = useMemo(() => {
     let configured = 0, unconfigured = 0;

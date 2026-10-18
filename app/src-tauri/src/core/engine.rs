@@ -401,42 +401,15 @@ pub async fn stop_audio_engine(state: &AppState) -> Result<(), String> {
     let vad_handle = engine.vad_handle.take();
     let route_watcher_handle = engine.route_watcher_handle.take();
 
-    let caller_tid = std::thread::current().id();
-    let is_caller_router = std::thread::current().name() == Some("vox-router");
-
-    tokio::task::spawn_blocking(move || {
-        let join_worker = |h: std::thread::JoinHandle<()>, name: &str| {
-            if h.thread().id() == caller_tid || (name == "orchestrator" && is_caller_router) {
-                log::debug!(
-                    "[Core::Engine] {} handle matches calling thread; skipping self-join to prevent deadlock",
-                    name
-                );
-            } else if let Err(e) = h.join() {
-                log::warn!("[Core::Engine] Failed to join {} handle: {:?}", name, e);
-            }
-        };
-
-        if let Some(h) = llm_handle {
-            join_worker(h, "LLM");
-        }
-        if let Some(h) = tts_handle {
-            join_worker(h, "TTS");
-        }
-        if let Some(h) = orch_handle {
-            join_worker(h, "orchestrator");
-        }
-        if let Some(h) = stt_handle {
-            join_worker(h, "STT");
-        }
-        if let Some(h) = vad_handle {
-            join_worker(h, "VAD");
-        }
-        if let Some(h) = route_watcher_handle {
-            join_worker(h, "route_watcher");
-        }
-    })
-    .await
-    .map_err(|e| format!("Join task failed: {}", e))?;
+    // Do not join worker threads: joining can deadlock when the caller runs on one of
+    // those threads (e.g. restart invoked from the router task). Dropping the engine
+    // below releases hardware streams immediately; threads exit on their own.
+    drop(llm_handle);
+    drop(tts_handle);
+    drop(orch_handle);
+    drop(stt_handle);
+    drop(vad_handle);
+    drop(route_watcher_handle);
 
     {
         let mut persist_lock = state.persist_tx.lock();

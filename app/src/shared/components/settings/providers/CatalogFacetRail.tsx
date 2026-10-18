@@ -146,7 +146,7 @@ export const CatalogFacetRail = memo(({
                 {item.count !== undefined && (
                   <span
                     className={cn(
-                      "text-[10px] font-mono px-1.5 py-0.5 rounded-full font-bold shrink-0 transition-colors",
+                      "text-[10px] font-mono px-1.5 py-0.5 rounded-md font-bold shrink-0 transition-colors",
                       isSelected
                         ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))]"
                         : "bg-[rgba(var(--foreground),0.06)] text-[rgb(var(--foreground-muted))]"

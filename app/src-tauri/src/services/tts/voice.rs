@@ -6,7 +6,7 @@ use std::{
     mem,
     path::Path,
     sync::Arc,
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::Duration,
 };
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -727,69 +727,13 @@ pub fn simplify_edge_friendly_name(short_name: &str, friendly_name: &str) -> Str
     }
 }
 
-/// Runs voice-table work inside a transaction, rolling back on failure so a
-/// mid-sync error never leaves the pooled connection holding a write lock.
-async fn in_voice_transaction<T, F>(conn: &turso::Connection, work: F) -> anyhow::Result<T>
-where
-    F: core::future::Future<Output = anyhow::Result<T>>,
-{
-    conn.execute("BEGIN TRANSACTION;", ()).await?;
-    let result = work.await;
-    if result.is_err() {
-        if let Err(e) = conn.execute("ROLLBACK;", ()).await {
-            log::warn!("[Voice] Voice sync rollback failed: {}", e);
-        }
-    } else if let Err(e) = conn.execute("COMMIT;", ()).await {
-        log::warn!("[Voice] Voice sync commit failed: {}", e);
-        return Err(anyhow::anyhow!(e));
-    }
-    result
-}
-
 /// Syncs declarative bundled manifest voices into the Turso voices table.
 pub async fn sync_manifest_voices_to_db(conn: &turso::Connection) -> anyhow::Result<()> {
     let manifest = get_manifest_voices();
     if manifest.is_empty() {
         return Ok(());
     }
-    in_voice_transaction(conn, async {
-        for v in manifest {
-            let tags_json = serde_json::to_string(&v.tags).unwrap_or_else(|_| "[]".to_string());
-            let now = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_secs() as i64;
-            conn.execute(
-                "INSERT INTO voices (
-                id, provider_id, name, source_kind, gender, locale, accent, description, tags, sample_text, created_at
-            ) VALUES (?, ?, ?, 'bundled', ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(id) DO UPDATE SET
-                provider_id = excluded.provider_id,
-                name = excluded.name,
-                gender = excluded.gender,
-                locale = excluded.locale,
-                accent = excluded.accent,
-                description = excluded.description,
-                tags = excluded.tags,
-                sample_text = excluded.sample_text",
-                (
-                    v.id,
-                    v.provider_id,
-                    v.name,
-                    v.gender,
-                    v.locale,
-                    v.accent,
-                    v.description,
-                    tags_json,
-                    v.sample_text,
-                    now,
-                ),
-            )
-            .await?;
-        }
-        Ok(())
-    })
-    .await
+    crate::persistence::voices::sync_manifest_voices_batch(conn, &manifest).await
 }
 
 /// Metadata describing an Azure Speech neural voice from `voices/list`.
@@ -901,38 +845,26 @@ pub async fn sync_azure_tts_voices_to_db(
     if count == 0 {
         return Ok(0);
     }
-    in_voice_transaction(conn, async {
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs() as i64;
-        for v in voices {
+    let rows: Vec<crate::persistence::voices::RemoteVoiceRow> = voices
+        .into_iter()
+        .map(|v| {
             let (locale, accent) = split_locale(&v.locale);
             let gender = normalize_gender_str(&v.gender);
-            conn.execute(
-                "INSERT INTO voices (
-                    id, provider_id, name, source_kind, gender, locale, accent, description, tags, sample_text, created_at
-                ) VALUES (?, 'azure_tts', ?, 'remote', ?, ?, ?, NULL, '[\"Cloud\",\"Neural\"]', 'Azure AI Speech neural preview.', ?)
-                ON CONFLICT(id) DO UPDATE SET
-                    name = excluded.name,
-                    gender = excluded.gender,
-                    locale = excluded.locale,
-                    accent = excluded.accent",
-                (
-                    v.short_name,
-                    v.display_name,
-                    gender,
-                    locale,
-                    accent,
-                    now,
-                ),
-            )
-            .await?;
-        }
-
-        Ok(count)
-    })
-    .await
+            crate::persistence::voices::RemoteVoiceRow {
+                id: v.short_name,
+                provider_id: "azure_tts".to_string(),
+                name: v.display_name,
+                gender,
+                locale,
+                accent,
+                description: None,
+                tags_json: "[\"Cloud\",\"Neural\"]".to_string(),
+                sample_text: "Azure AI Speech neural preview.".to_string(),
+            }
+        })
+        .collect();
+    crate::persistence::voices::upsert_remote_voices_batch(conn, &rows).await?;
+    Ok(count)
 }
 
 /// Queries Google `voices:list` for streaming-capable Chirp 3: HD English voices.
@@ -992,12 +924,9 @@ pub async fn sync_google_tts_voices_to_db(conn: &turso::Connection) -> anyhow::R
     if count == 0 {
         return Ok(0);
     }
-    in_voice_transaction(conn, async {
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs() as i64;
-        for v in voices {
+    let rows: Vec<crate::persistence::voices::RemoteVoiceRow> = voices
+        .into_iter()
+        .map(|v| {
             let (locale, accent) = split_locale(&v.locale);
             let gender = normalize_gender_str(&v.gender);
             let display = format!(
@@ -1006,23 +935,21 @@ pub async fn sync_google_tts_voices_to_db(conn: &turso::Connection) -> anyhow::R
                 v.locale
             );
             let id = v.short_name.clone();
-            conn.execute(
-                "INSERT INTO voices (
-                    id, provider_id, name, source_kind, gender, locale, accent, description, tags, sample_text, created_at
-                ) VALUES (?, 'google_tts', ?, 'remote', ?, ?, ?, NULL, '[\"Cloud\",\"Chirp\"]', 'Google Cloud Chirp 3 HD preview.', ?)
-                ON CONFLICT(id) DO UPDATE SET
-                    name = excluded.name,
-                    gender = excluded.gender,
-                    locale = excluded.locale,
-                    accent = excluded.accent",
-                (id, display, gender, locale, accent, now),
-            )
-            .await?;
-        }
-
-        Ok(count)
-    })
-    .await
+            crate::persistence::voices::RemoteVoiceRow {
+                id,
+                provider_id: "google_tts".to_string(),
+                name: display,
+                gender,
+                locale,
+                accent,
+                description: None,
+                tags_json: "[\"Cloud\",\"Chirp\"]".to_string(),
+                sample_text: "Google Cloud Chirp 3 HD preview.".to_string(),
+            }
+        })
+        .collect();
+    crate::persistence::voices::upsert_remote_voices_batch(conn, &rows).await?;
+    Ok(count)
 }
 
 /// Syncs remote Edge TTS voices into the Turso voices table in a single transaction.
@@ -1034,39 +961,27 @@ pub async fn sync_edge_tts_voices_to_db(conn: &turso::Connection) -> anyhow::Res
     if count == 0 {
         return Ok(0);
     }
-    in_voice_transaction(conn, async {
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs() as i64;
-        for e in edge_voices {
+    let rows: Vec<crate::persistence::voices::RemoteVoiceRow> = edge_voices
+        .into_iter()
+        .map(|e| {
             let (locale, accent) = split_locale(&e.locale);
             let gender = normalize_gender_str(&e.gender);
             let clean_name = simplify_edge_friendly_name(&e.short_name, &e.friendly_name);
-            conn.execute(
-                "INSERT INTO voices (
-                    id, provider_id, name, source_kind, gender, locale, accent, description, tags, sample_text, created_at
-                ) VALUES (?, 'edge_tts', ?, 'remote', ?, ?, ?, NULL, '[\"Cloud\",\"Neural\"]', 'Microsoft Edge Neural Text to Speech preview.', ?)
-                ON CONFLICT(id) DO UPDATE SET
-                    name = excluded.name,
-                    gender = excluded.gender,
-                    locale = excluded.locale,
-                    accent = excluded.accent",
-                (
-                    e.short_name,
-                    clean_name,
-                    gender,
-                    locale,
-                    accent,
-                    now,
-                ),
-            )
-            .await?;
-        }
-
-        Ok(count)
-    })
-    .await
+            crate::persistence::voices::RemoteVoiceRow {
+                id: e.short_name,
+                provider_id: "edge_tts".to_string(),
+                name: clean_name,
+                gender,
+                locale,
+                accent,
+                description: None,
+                tags_json: "[\"Cloud\",\"Neural\"]".to_string(),
+                sample_text: "Microsoft Edge Neural Text to Speech preview.".to_string(),
+            }
+        })
+        .collect();
+    crate::persistence::voices::upsert_remote_voices_batch(conn, &rows).await?;
+    Ok(count)
 }
 
 /// Lists unified voices from Turso, ensuring manifest voices are populated offline.
@@ -1075,18 +990,7 @@ pub async fn list_unified_voices(
     provider: Option<&str>,
 ) -> anyhow::Result<Vec<UnifiedVoiceDto>> {
     // 1. Self-healing: ensure packaged chatterbox and zipvoice voices have their correct provider_id
-    let _ = conn.execute(
-        "UPDATE voices SET provider_id = 'chatterbox', source_kind = 'pre_baked'
-         WHERE (id LIKE 'chatterbox_voice_%' OR id LIKE 'chatterbox_%') AND provider_id != 'chatterbox';",
-        (),
-    ).await;
-    let _ = conn
-        .execute(
-            "UPDATE voices SET provider_id = 'zipvoice'
-         WHERE source_kind = 'zipvoice_pack' AND provider_id != 'zipvoice';",
-            (),
-        )
-        .await;
+    let _ = crate::persistence::voices::migrate_legacy_voice_providers(conn).await;
 
     // 2. Query Turso voices table offline-first. The engine id maps through
     // the same scope resolution as `resolve_voice_scope` so remote-family

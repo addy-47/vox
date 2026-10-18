@@ -522,6 +522,141 @@ async fn seed_single_zipvoice(conn: &Connection, slug: &str, path: &Path) -> Res
     Ok(())
 }
 
+/// Syncs declarative bundled manifest voices into the Turso voices table.
+pub async fn sync_manifest_voices_batch(
+    conn: &Connection,
+    voices: &[crate::services::tts::voice::ManifestVoiceEntry],
+) -> Result<()> {
+    if voices.is_empty() {
+        return Ok(());
+    }
+    conn.execute("BEGIN TRANSACTION;", ()).await?;
+    for v in voices {
+        let tags_json = serde_json::to_string(&v.tags).unwrap_or_else(|_| "[]".to_string());
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+        let res = conn
+            .execute(
+                "INSERT INTO voices (
+                id, provider_id, name, source_kind, gender, locale, accent, description, tags, sample_text, created_at
+            ) VALUES (?, ?, ?, 'bundled', ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                provider_id = excluded.provider_id,
+                name = excluded.name,
+                gender = excluded.gender,
+                locale = excluded.locale,
+                accent = excluded.accent,
+                description = excluded.description,
+                tags = excluded.tags,
+                sample_text = excluded.sample_text",
+                (
+                    v.id.clone(),
+                    v.provider_id.clone(),
+                    v.name.clone(),
+                    v.gender.clone(),
+                    v.locale.clone(),
+                    v.accent.clone(),
+                    v.description.clone(),
+                    tags_json,
+                    v.sample_text.clone(),
+                    now,
+                ),
+            )
+            .await;
+        if let Err(e) = res {
+            let _ = conn.execute("ROLLBACK;", ()).await;
+            return Err(e.into());
+        }
+    }
+    if let Err(e) = conn.execute("COMMIT;", ()).await {
+        let _ = conn.execute("ROLLBACK;", ()).await;
+        return Err(e.into());
+    }
+    Ok(())
+}
+
+/// Normalized row for a remotely-sourced voice upsert.
+#[derive(Debug, Clone)]
+pub struct RemoteVoiceRow {
+    pub id: String,
+    pub provider_id: String,
+    pub name: String,
+    pub gender: String,
+    pub locale: String,
+    pub accent: Option<String>,
+    pub description: Option<String>,
+    pub tags_json: String,
+    pub sample_text: String,
+}
+
+/// Upserts a batch of remotely-sourced voices in a single transaction.
+pub async fn upsert_remote_voices_batch(conn: &Connection, rows: &[RemoteVoiceRow]) -> Result<()> {
+    if rows.is_empty() {
+        return Ok(());
+    }
+    conn.execute("BEGIN TRANSACTION;", ()).await?;
+    for r in rows {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+        let res = conn
+            .execute(
+                "INSERT INTO voices (
+                    id, provider_id, name, source_kind, gender, locale, accent, description, tags, sample_text, created_at
+                ) VALUES (?, ?, ?, 'remote', ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    name = excluded.name,
+                    gender = excluded.gender,
+                    locale = excluded.locale,
+                    accent = excluded.accent",
+                (
+                    r.id.clone(),
+                    r.provider_id.clone(),
+                    r.name.clone(),
+                    r.gender.clone(),
+                    r.locale.clone(),
+                    r.accent.clone(),
+                    r.description.clone(),
+                    r.tags_json.clone(),
+                    r.sample_text.clone(),
+                    now,
+                ),
+            )
+            .await;
+        if let Err(e) = res {
+            let _ = conn.execute("ROLLBACK;", ()).await;
+            return Err(e.into());
+        }
+    }
+    if let Err(e) = conn.execute("COMMIT;", ()).await {
+        let _ = conn.execute("ROLLBACK;", ()).await;
+        return Err(e.into());
+    }
+    Ok(())
+}
+
+/// Self-healing migration of legacy voice provider ids.
+pub async fn migrate_legacy_voice_providers(conn: &Connection) -> Result<()> {
+    let _ = conn
+        .execute(
+            "UPDATE voices SET provider_id = 'chatterbox', source_kind = 'pre_baked'
+             WHERE (id LIKE 'chatterbox_voice_%' OR id LIKE 'chatterbox_%') AND provider_id != 'chatterbox';",
+            (),
+        )
+        .await;
+    let _ = conn
+        .execute(
+            "UPDATE voices SET provider_id = 'zipvoice'
+             WHERE source_kind = 'zipvoice_pack' AND provider_id != 'zipvoice';",
+            (),
+        )
+        .await;
+    Ok(())
+}
+
 pub fn display_name_for_slug(slug: &str) -> String {
     let mut chars = slug.chars();
     match chars.next() {

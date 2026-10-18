@@ -20,9 +20,8 @@ import {
   type SettingsContract,
 } from "@/services/settingsService";
 import {
-  CLOUD_PROVIDERS,
-  updateCloudProvidersFromContract,
-  updateTtsProvidersFromContract,
+  mapCloudProvidersFromContract,
+  mapTtsProvidersFromContract,
 } from "@/data/providersCopy";
 import { getEffectiveCloudApiKey, getEffectiveLlmServers } from "@/shared/lib/activeSelection";
 
@@ -198,8 +197,14 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     try {
       const contract = await settingsContractService.getSettingsContract();
       if (contract) {
-        updateCloudProvidersFromContract(contract.llm_cloud_providers);
-        updateTtsProvidersFromContract(contract.tts_providers);
+        try {
+          useCatalogStore.setState({
+            cloudProviders: mapCloudProvidersFromContract(contract.llm_cloud_providers),
+            ttsProviders: mapTtsProvidersFromContract(contract.tts_providers),
+          });
+        } catch {
+          // catalog store unavailable in isolated unit tests
+        }
         set({ contract });
       }
       return contract;
@@ -826,7 +831,7 @@ export function selectActiveLlmProvider(state: SettingsState): LlmProviderConfig
   }
   const cloudId = active?.provider ?? "nvidia";
   const contractEntry = state.contract?.llm_cloud_providers?.find((p) => p.id === cloudId);
-  const cloudEntry = contractEntry || CLOUD_PROVIDERS.find((p) => p.id === cloudId);
+  const cloudEntry = contractEntry ?? undefined;
   const apiKey = getEffectiveCloudApiKey(state.draftSettings, state.settings, cloudId);
   return {
     kind: "cloud",

@@ -83,22 +83,23 @@ export const RemoteModelCard = memo(({
               </h4>
 
               {/* Copy Button */}
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onCopy(model.id);
-                }}
-                className="p-1 rounded-md text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.1)] transition-colors shrink-0 cursor-pointer"
-                title={isCopied ? "Copied Model ID" : "Copy Model ID"}
-                aria-label="Copy Model ID"
-              >
-                {isCopied ? (
-                  <Check size={13} className="text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))]" />
-                ) : (
-                  <Copy size={13} />
-                )}
-              </button>
+              <Tooltip label={isCopied ? "Copied Model ID" : "Copy Model ID"} side="top" asChild>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onCopy(model.id);
+                  }}
+                  className="p-1 rounded-md text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.1)] transition-colors shrink-0 cursor-pointer"
+                  aria-label="Copy Model ID"
+                >
+                  {isCopied ? (
+                    <Check size={13} className="text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))]" />
+                  ) : (
+                    <Copy size={13} />
+                  )}
+                </button>
+              </Tooltip>
 
               {/* Warning */}
               {hasProbeWarning(probeError, probed) && (
@@ -241,23 +242,24 @@ export const RemoteModelCard = memo(({
 
       {/* Card Actions Footer: tactile Benchmark action on bottom right */}
       <div className="flex items-center justify-end gap-2 mt-3 pt-2.5 border-t border-[rgba(var(--foreground),0.06)] min-w-0">
-        <button
-          type="button"
-          disabled={isTesting}
-          onClick={(e) => {
-            e.stopPropagation();
-            onProbe(model.id);
-          }}
-          className="px-2.5 py-1.5 rounded-lg text-[11px] font-bold text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/10 border border-[rgba(var(--accent),0.25)] hover:bg-[rgb(var(--accent))]/20 transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-          title={probed ? LLM_CATALOG_COPY.rerunBenchmark : LLM_CATALOG_COPY.runBenchmark}
-        >
-          {isTesting ? (
-            <Loader2 size={12} className="animate-spin" />
-          ) : (
-            <Sparkles size={12} />
-          )}
-          <span>{probed ? LLM_CATALOG_COPY.reprobe : LLM_CATALOG_COPY.benchmark}</span>
-        </button>
+        <Tooltip label={probed ? LLM_CATALOG_COPY.rerunBenchmark : LLM_CATALOG_COPY.runBenchmark} side="top" asChild>
+          <button
+            type="button"
+            disabled={isTesting}
+            onClick={(e) => {
+              e.stopPropagation();
+              onProbe(model.id);
+            }}
+            className="px-2.5 py-1.5 rounded-lg text-[11px] font-bold text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/10 border border-[rgba(var(--accent),0.25)] hover:bg-[rgb(var(--accent))]/20 transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+          >
+            {isTesting ? (
+              <Loader2 size={12} className="animate-spin" />
+            ) : (
+              <Sparkles size={12} />
+            )}
+            <span>{probed ? LLM_CATALOG_COPY.reprobe : LLM_CATALOG_COPY.benchmark}</span>
+          </button>
+        </Tooltip>
       </div>
     </div>
   );
