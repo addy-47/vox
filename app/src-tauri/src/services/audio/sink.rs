@@ -129,6 +129,12 @@ impl PlaybackStreamContext {
                 self.played_samples = 0;
             }
             self.reset_telemetry_state();
+            if let Some(ref mut tap) = self.reference_tap {
+                let frames = output.len() / PLAYBACK_CHANNELS as usize;
+                for _ in 0..frames {
+                    tap.push_sample(0.0);
+                }
+            }
             output.fill(0.0);
             return;
         }

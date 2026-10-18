@@ -249,7 +249,6 @@ export const SessionPanel = memo(({ onClose }: SessionPanelProps) => {
     // mounts while scrolling re-reports its height, so `getTotalSize()` changes
     // on each pass and the native scrollbar thumb visibly resizes as you scroll.
     // A fixed height makes the total stable for the whole session.
-    measureElement: () => SESSION_ROW_HEIGHT,
     overscan: 6,
   });
 
@@ -410,6 +409,8 @@ export const SessionPanel = memo(({ onClose }: SessionPanelProps) => {
                           top: 0,
                           left: 0,
                           width: "100%",
+                          height: `${SESSION_ROW_HEIGHT}px`,
+                          overflow: "hidden",
                           transform: `translateY(${virtualRow.start}px)`,
                         }}
                       >

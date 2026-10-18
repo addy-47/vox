@@ -290,10 +290,21 @@ impl PlaybackEngine {
         Arc::clone(&self.pending_synthesis_jobs)
     }
 
+    /// Returns the current turn ID.
+    pub fn current_turn_id(&self) -> u32 {
+        self.current_turn_id.load(Ordering::Relaxed)
+    }
+
+    /// Returns a clone of the current turn ID atomic handle.
+    pub fn current_turn_atomic(&self) -> Arc<AtomicU32> {
+        Arc::clone(&self.current_turn_id)
+    }
+
     /// Cancels active playback, signals consumer discard, and resets buffer count.
     pub fn cancel(&self) {
         self.cancel_flag.store(true, Ordering::Relaxed);
         self.discard_request.store(true, Ordering::Relaxed);
+        self.turn_armed.store(false, Ordering::Relaxed);
         log::info!(
             "[Audio::Playback] Cancelled (turn {}) — buffer signal sent",
             self.current_turn_id.load(Ordering::Relaxed)
