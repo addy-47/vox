@@ -430,6 +430,7 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
   }, []);
 
   const selectSession = useCallback(async (sessionId: number) => {
+    isDisengagingRef.current = false;
     const s = storeApi();
     // Scenario 1: User clicks the currently active session -> no-op
     if (sessionId === s.activeSessionId || s.isRestoring) return;
@@ -475,6 +476,7 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
   }, [clearTranscript]);
 
   const startNewConversation = useCallback(async (projectId?: string) => {
+    isDisengagingRef.current = false;
     if (storeApi().isRestoring) return;
     clearTranscript();
     const api = storeApi();

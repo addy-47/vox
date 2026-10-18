@@ -57,13 +57,29 @@ pub fn on_interrupt<R: tauri::Runtime>(
     let interrupted_turn_id = state.pipeline.peek_turn_id();
 
     // Distinguish between:
-    // 1. Mid-thought continuation (`Thinking` or `Working` before final response speech started):
-    //    preserve the first spoken segment so the continuation segment concatenates into one full query.
-    // 2. Genuine barge-in (`Speaking` while assistant response is playing):
+    // 1. Mid-thought continuation:
+    //    - `Working`: tool execution or compaction is in flight before final response audio.
+    //    - `Thinking`: LLM is actively thinking (`is_turn_open() == true`), OR STT decoding is
+    //      still in flight before LLM dispatch (`!is_turn_open()` with 0 pending synthesis jobs).
+    //      If the LLM has already finished (`!is_turn_open()` with pending synthesis jobs),
+    //      the turn has already been answered and speech is a barge-in, NOT a continuation.
+    // 2. Genuine barge-in (`Speaking` while assistant response is playing, or post-LLM synthesis):
     //    clear the accumulator for a brand-new user turn.
+    let is_mid_thought = match prior_state {
+        InteractionState::Working => true,
+        InteractionState::Thinking => {
+            let pending_jobs = state
+                .pipeline
+                .pending_synthesis_jobs
+                .load(Ordering::Relaxed);
+            state.pipeline.is_turn_open() || pending_jobs == 0
+        }
+        _ => false,
+    };
+
     {
         let mut acc = state.pipeline_accumulator.lock();
-        if prior_state == InteractionState::Thinking || prior_state == InteractionState::Working {
+        if is_mid_thought {
             acc.stash_for_continuation();
             log::info!(
                 "[Pipeline::Interrupt] Mid-thought continuation detected in {:?} (turn {}); stashed prefix_len={} awaiting_stt={}",

@@ -23,6 +23,8 @@ export const SESSION_COPY = {
   noPinnedSessions: "No pinned conversations",
   noProjectsYet: "No projects yet",
   noProjectSessions: "No conversations in this project",
+  /** `n` = how many further conversations one click will reveal. */
+  showMoreSessions: (n: number) => `Show ${n} more`,
   newProjectPlaceholder: "New project name",
   createProjectAriaLabel: "Create project",
   newInProjectAriaLabel: "New conversation in project",

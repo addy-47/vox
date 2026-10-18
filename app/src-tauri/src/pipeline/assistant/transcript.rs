@@ -85,6 +85,11 @@ pub(crate) fn spawn_harness_turn_task<R: tauri::Runtime + 'static>(
                 if let Some(ref mut harness) = *guard {
                     harness.on_turn_completed(Arc::clone(&app_state), Arc::clone(&harness_arc));
                 }
+                app_state
+                    .pipeline_accumulator
+                    .lock()
+                    .continuation_prefix
+                    .clear();
             }
             TurnOutcome::DuplicateIgnored { turn_id } => {
                 log::info!("[Pipeline::Transcript] Duplicate turn {} ignored", turn_id);

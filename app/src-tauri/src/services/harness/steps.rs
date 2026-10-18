@@ -704,7 +704,10 @@ pub fn step7_handle_cancelled(ctx: CancelledTurnContext<'_>) -> TurnOutcome {
         harness.history.rollback_last_user_turn();
     }
 
-    ctx.app_state.pipeline_accumulator.lock().clear();
+    ctx.app_state
+        .pipeline_accumulator
+        .lock()
+        .reset_assistant_output();
     TurnOutcome::Cancelled {
         turn_id: ctx.turn_id,
     }

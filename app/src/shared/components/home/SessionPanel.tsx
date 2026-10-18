@@ -1,5 +1,6 @@
 import React, { memo, useCallback, useMemo, useRef, useEffect } from "react";
 import { useMemoryTrace } from "@/shared/hooks/useMemoryTrace";
+import { useRenderTrace, RENDER_TRACE_ENABLED } from "@/shared/hooks/useRenderTrace";
 import {
   Plus,
   Loader2,
@@ -22,10 +23,17 @@ import {
 } from "@/store/sessionPanelUiStore";
 import { SessionRowItem } from "./session/SessionRowItem";
 import { SessionProjectsSection } from "./session/SessionProjectsSection";
+import { useEdgePanelActive } from "@/shared/ui/edgePanelActive";
 
 interface SessionPanelProps {
   onClose: () => void;
 }
+
+/**
+ * Fixed height for one row in the virtualized history list. Rows are spaced by
+ * this constant, so no per-row measurement is needed.
+ */
+const SESSION_ROW_HEIGHT = 52;
 
 /**
  * Conversation list rendered inside EdgePanel (side="left").
@@ -33,6 +41,8 @@ interface SessionPanelProps {
  */
 export const SessionPanel = memo(({ onClose }: SessionPanelProps) => {
   useMemoryTrace("SessionPanel");
+  // The panel stays mounted while closed, so its data layer must idle then.
+  const panelActive = useEdgePanelActive();
   const {
     pinnedSessions,
     projects,
@@ -51,20 +61,11 @@ export const SessionPanel = memo(({ onClose }: SessionPanelProps) => {
     moveSessionToProject,
     deleteSession,
     reorderProjects,
-  } = useSessionPanel();
+  } = useSessionPanel(panelActive);
   const activeSessionId = useSessionStore((s) => s.activeSessionId);
   const isRestoring = useSessionStore((s) => s.isRestoring);
   const restoringSessionId = useSessionStore((s) => s.restoringSessionId);
   const setActiveSessionLabel = useSessionStore((s) => s.setActiveSessionLabel);
-
-  // [trace-session-panel] Diagnostic trace to observe re-renders during active voice session
-  const renderCountRef = useRef(0);
-  renderCountRef.current += 1;
-  if (import.meta.env.DEV && renderCountRef.current % 10 === 1) {
-    console.info(
-      `[trace-session-panel] SessionPanel render count=${renderCountRef.current} activeSession=${activeSessionId} isRestoring=${isRestoring} @${performance.now().toFixed(1)}ms`
-    );
-  }
 
   const viewMode = useSessionPanelUiStore((s) => s.viewMode);
   const setViewMode = useSessionPanelUiStore((s) => s.setViewMode);
@@ -97,25 +98,124 @@ export const SessionPanel = memo(({ onClose }: SessionPanelProps) => {
     );
   }, [uncategorizedSessions, projects]);
 
+  // [trace] RCA: `watch` holds the identities React itself compares. Every key
+  // in the logged `changed=[...]` is a cause of this component's re-render.
+  useRenderTrace(
+    "SessionPanel",
+    () => ({
+      viewMode,
+      pinned: pinnedSessions.length,
+      projects: projects.length,
+      uncategorized: uncategorizedSessions.length,
+      chronological: allChronologicalSessions.length,
+    }),
+    {
+      watch: {
+        onClose,
+        viewMode,
+        activeSessionId,
+        isRestoring,
+        restoringSessionId,
+        loading,
+        error,
+        pinnedSessions,
+        projects,
+        allProjects,
+        uncategorizedSessions,
+        allChronologicalSessions,
+        projectNameMap,
+      },
+    }
+  );
+
+  // [trace] Open latency: EdgePanel marks `edge-panel-open` on every open. The
+  // mark is cleared here, otherwise a later open measures against a stale mark
+  // and reports seconds that never elapsed.
+  useEffect(() => {
+    if (!RENDER_TRACE_ENABLED) return;
+    try {
+      performance.measure("session-panel-mount", "edge-panel-open");
+      const entry = performance.getEntriesByName("session-panel-mount").pop();
+      if (entry) {
+        console.info(
+          `[trace] SessionPanel mounted ${entry.duration.toFixed(1)}ms after open`
+        );
+      }
+    } catch {
+      /* no open mark present */
+    }
+    performance.clearMarks("edge-panel-open");
+  }, []);
+
+  // [trace] Data -> paint cost and DOM weight. This is the number the lag is
+  // made of: how long from the fetch that populated the panel to the frame that
+  // shows it, and how many elements that frame had to build.
+  const rootRef = useRef<HTMLDivElement>(null);
+  const firstDataPaintRef = useRef(false);
+  useEffect(() => {
+    if (loading || firstDataPaintRef.current) return;
+    firstDataPaintRef.current = true;
+    if (!RENDER_TRACE_ENABLED) return;
+    const nodes = rootRef.current?.querySelectorAll("*").length ?? 0;
+    requestAnimationFrame(() => {
+      let ms = Number.NaN;
+      try {
+        performance.measure(
+          "session-panel-first-paint",
+          "session-panel-refresh-start"
+        );
+        ms = (
+          performance.getEntriesByName("session-panel-first-paint").pop()
+            ?.duration ?? Number.NaN
+        );
+      } catch {
+        /* no refresh mark present */
+      }
+      performance.clearMarks("session-panel-refresh-start");
+      console.info(
+        `[trace] SessionPanel data->paint ${ms.toFixed(1)}ms domNodes=${nodes} ` +
+          `projects=${projects.length} rows=${
+            pinnedSessions.length +
+            uncategorizedSessions.length +
+            projects.reduce((n, p) => n + p.sessions.length, 0)
+          }`
+      );
+    });
+  }, [loading, pinnedSessions, uncategorizedSessions, projects]);
+
+  // `handleSelect` is passed to every SessionRowItem. If it closed over the
+  // session lists it would get a new identity on every data change, defeating
+  // `memo` on all ~40 rows. Read the data from a ref instead so the callback is
+  // stable.
+  const handleSelectDataRef = useRef<{
+    sessions: Map<number, SessionRow>;
+    projectNames: Map<string, string>;
+  }>({ sessions: new Map(), projectNames: new Map() });
+  useEffect(() => {
+    const sessions = new Map<number, SessionRow>();
+    for (const s of pinnedSessions) sessions.set(s.id, s);
+    for (const s of uncategorizedSessions) sessions.set(s.id, s);
+    for (const p of projects) {
+      for (const s of p.sessions) sessions.set(s.id, s);
+    }
+    handleSelectDataRef.current = { sessions, projectNames: projectNameMap };
+  }, [pinnedSessions, uncategorizedSessions, projects, projectNameMap]);
+
   const handleSelect = useCallback(
     (id: number) => {
-      // Find session across all lists to resolve its title and project name for the breadcrumb
-      const allSessions = [
-        ...pinnedSessions,
-        ...uncategorizedSessions,
-        ...projects.flatMap((p) => p.sessions),
-      ];
-      const session = allSessions.find((s) => s.id === id);
+      // Resolve title and project name for the breadcrumb from the latest data.
+      const { sessions, projectNames } = handleSelectDataRef.current;
+      const session = sessions.get(id);
       if (session) {
         setActiveSessionLabel({
           sessionTitle: resolveSessionTitle(session),
-          projectName: session.project_id ? projectNameMap.get(session.project_id) ?? null : null,
+          projectName: session.project_id ? projectNames.get(session.project_id) ?? null : null,
         });
       }
       onClose();
       selectSession(id).catch(() => {});
     },
-    [selectSession, onClose, pinnedSessions, uncategorizedSessions, projects, projectNameMap, setActiveSessionLabel]
+    [selectSession, onClose, setActiveSessionLabel]
   );
 
   const handleNew = useCallback(() => {
@@ -126,12 +226,14 @@ export const SessionPanel = memo(({ onClose }: SessionPanelProps) => {
 
   const handleCreateInProject = useCallback(
     (projectId: string) => {
-      const project = allProjects.find((p) => p.id === projectId);
-      setActiveSessionLabel({ sessionTitle: null, projectName: project?.name ?? null });
+      // Read through the ref so this stays stable: it reaches every project
+      // row, and it showed up in the trace as changing on every data load.
+      const project = handleSelectDataRef.current.projectNames.get(projectId);
+      setActiveSessionLabel({ sessionTitle: null, projectName: project ?? null });
       onClose();
       createNewSession(projectId).catch(() => {});
     },
-    [createNewSession, onClose, allProjects, setActiveSessionLabel]
+    [createNewSession, onClose, setActiveSessionLabel]
   );
 
   const handleRetry = useCallback(() => {
@@ -142,15 +244,37 @@ export const SessionPanel = memo(({ onClose }: SessionPanelProps) => {
   const rowVirtualizer = useVirtualizer({
     count: allChronologicalSessions.length,
     getScrollElement: () => scrollRef.current,
-    estimateSize: () => 52,
+    estimateSize: () => SESSION_ROW_HEIGHT,
+    // Constant row height on purpose. With dynamic measurement, every row that
+    // mounts while scrolling re-reports its height, so `getTotalSize()` changes
+    // on each pass and the native scrollbar thumb visibly resizes as you scroll.
+    // A fixed height makes the total stable for the whole session.
+    measureElement: () => SESSION_ROW_HEIGHT,
     overscan: 6,
   });
 
-  // Persist scroll offset across panel close/reopen (panel unmounts on close).
-  const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
-    if (loading) return;
-    sessionPanelScrollTop.value = e.currentTarget.scrollTop;
-  }, [loading]);
+  // Persist scroll offset across panel close/reopen (panel stays mounted).
+  const scrollTraceAtRef = useRef(0);
+  const handleScroll = useCallback(
+    (e: React.UIEvent<HTMLDivElement>) => {
+      if (loading) return;
+      const el = e.currentTarget;
+      sessionPanelScrollTop.value = el.scrollTop;
+      // [trace] RCA: a native scrollbar thumb is proportional to
+      // scrollHeight/clientHeight, so a thumb that resizes while scrolling means
+      // one of those moved. Throttled to one line per 500ms.
+      if (!RENDER_TRACE_ENABLED) return;
+      const now = performance.now();
+      if (now - scrollTraceAtRef.current < 500) return;
+      scrollTraceAtRef.current = now;
+      console.info(
+        `[trace] history-scroll clientH=${el.clientHeight} scrollH=${el.scrollHeight} ` +
+          `virtualTotal=${rowVirtualizer.getTotalSize()} count=${rowVirtualizer.getVirtualItems().length} ` +
+          `scrollTop=${el.scrollTop.toFixed(0)}`
+      );
+    },
+    [loading, rowVirtualizer]
+  );
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -162,7 +286,7 @@ export const SessionPanel = memo(({ onClose }: SessionPanelProps) => {
   }, [loading]);
 
   return (
-    <div className="flex-1 min-h-0 flex flex-col overflow-hidden select-none font-sans">
+    <div ref={rootRef} className="flex-1 min-h-0 flex flex-col overflow-hidden select-none font-sans">
       {/* ── Fixed Header: Top Actions + Error Banner + Pinned Section ── */}
       <div className="shrink-0 flex flex-col gap-5 px-1.5 pt-3 pb-2">
         {/* Top Actions: + New Conversation & view mode toggle */}
@@ -281,7 +405,6 @@ export const SessionPanel = memo(({ onClose }: SessionPanelProps) => {
                       <div
                         key={session.id}
                         data-index={virtualRow.index}
-                        ref={rowVirtualizer.measureElement}
                         style={{
                           position: "absolute",
                           top: 0,

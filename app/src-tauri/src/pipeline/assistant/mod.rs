@@ -57,6 +57,13 @@ impl TurnAccumulator {
         self.next_clause_seq = 0;
     }
 
+    /// Resets assistant output and clause chunker state for a cancelled turn without wiping continuation prefix.
+    pub fn reset_assistant_output(&mut self) {
+        self.chunker.clear();
+        self.assistant_response.clear();
+        self.next_clause_seq = 0;
+    }
+
     /// Preserves any recognized user transcript across a mid-thought continuation (`Thinking` -> `Listening`)
     /// while resetting assistant output and clause chunker state from the aborted premature LLM pass.
     pub fn stash_for_continuation(&mut self) {
@@ -74,7 +81,7 @@ impl TurnAccumulator {
                 self.continuation_prefix.push_str(&prev);
             }
             self.awaiting_continuation = false;
-        } else {
+        } else if self.continuation_prefix.is_empty() {
             // The previous segment's STT Final is still in flight on the STT thread;
             // mark awaiting_continuation so `on_transcript_final` captures it when it lands.
             self.awaiting_continuation = true;
@@ -133,6 +140,11 @@ impl TurnAccumulator {
     /// Sets the recognized user transcript.
     pub fn set_user_transcript(&mut self, text: String) {
         self.user_transcript = text;
+    }
+
+    /// Extracts the recognized user transcript, leaving an empty string in place.
+    pub fn take_user_transcript(&mut self) -> String {
+        take(&mut self.user_transcript)
     }
 
     /// Extracts the full assistant response, leaving an empty string in place.

@@ -291,11 +291,7 @@ export const VoiceCatalogView = memo(({ layoutMode, providerId }: VoiceCatalogVi
       >
         <div
           ref={inlineGridRef}
-          className={
-            layoutMode === "small"
-              ? "h-full overflow-y-auto overscroll-contain pr-1 custom-scrollbar"
-              : "h-full overflow-y-auto overscroll-contain pr-1 custom-scrollbar"
-          }
+          className="h-full overflow-y-auto overflow-x-hidden overscroll-contain pr-1 custom-scrollbar"
         >
           <div
             className={

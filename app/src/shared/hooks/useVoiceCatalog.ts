@@ -61,6 +61,21 @@ const DEFAULT_PREVIEW_PROMPT =
 const VOICES_CACHE = new Map<string, UnifiedVoiceDto[]>();
 
 /**
+ * Detach every media listener from an <audio> element before tearing it down.
+ * Without this, clearing the source fires a synthetic `error` event that
+ * re-enters the stale handler and tears down whichever preview is current —
+ * which killed a just-started preview and forced a second click.
+ */
+function detachAudioHandlers(audio: HTMLAudioElement): void {
+  audio.onloadeddata = null;
+  audio.onloadedmetadata = null;
+  audio.onplay = null;
+  audio.onended = null;
+  audio.onerror = null;
+  audio.ontimeupdate = null;
+}
+
+/**
  * Unified voice catalog state: Turso-backed list, draft staging, favorites,
  * on-demand preview synthesis, and interactive playback scrub bar.
  */
@@ -163,9 +178,11 @@ export function useVoiceCatalog(
 
   useEffect(() => {
     return () => {
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current.src = "";
+      const audio = audioRef.current;
+      if (audio) {
+        detachAudioHandlers(audio);
+        audio.pause();
+        audio.removeAttribute("src");
         audioRef.current = null;
       }
       if (currentBlobUrlRef.current) {
@@ -177,9 +194,11 @@ export function useVoiceCatalog(
 
   const stopPreview = useCallback(() => {
     activeVoiceRef.current = null;
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current.src = "";
+    const audio = audioRef.current;
+    if (audio) {
+      detachAudioHandlers(audio);
+      audio.pause();
+      audio.removeAttribute("src");
       audioRef.current = null;
     }
     if (currentBlobUrlRef.current) {
@@ -261,7 +280,10 @@ export function useVoiceCatalog(
 
   const togglePreview = useCallback(
     (voice: UnifiedVoiceDto) => {
-      if (playingId === voice.id) {
+      // Read the ref, not `playingId`: state updates are async, so two fast
+      // clicks on the same voice would otherwise both (re)start playback
+      // instead of toggling stop.
+      if (activeVoiceRef.current === voice.id) {
         stopPreview();
         return;
       }
@@ -321,22 +343,29 @@ export function useVoiceCatalog(
           audioRef.current = audio;
 
           audio.onloadeddata = () => {
+            if (audioRef.current !== audio) return;
             console.info("[VoiceCatalog] Audio loaded data for", voice.id);
           };
           audio.onloadedmetadata = () => {
+            if (audioRef.current !== audio) return;
             console.info("[VoiceCatalog] Audio metadata loaded. Duration:", audio.duration);
             if (Number.isFinite(audio.duration) && audio.duration > 0) {
               setPreviewDuration(audio.duration);
             }
           };
           audio.onplay = () => {
+            if (audioRef.current !== audio) return;
             console.info("[VoiceCatalog] Audio playback started for", voice.id);
           };
           audio.onended = () => {
+            if (audioRef.current !== audio) return;
             console.info("[VoiceCatalog] Audio playback ended for", voice.id);
             stopPreview();
           };
           audio.onerror = (e) => {
+            // Ignore errors from a superseded element: clearing `src` on teardown
+            // fires a synthetic error that must not tear down the current preview.
+            if (audioRef.current !== audio) return;
             const mediaErr = audio.error;
             console.error("[VoiceCatalog] Audio playback error for", audioSrc.slice(0, 50), {
               code: mediaErr?.code,
@@ -346,6 +375,7 @@ export function useVoiceCatalog(
             stopPreview();
           };
           audio.ontimeupdate = () => {
+            if (audioRef.current !== audio) return;
             if (Number.isFinite(audio.duration) && audio.duration > 0) {
               setPreviewProgress(audio.currentTime / audio.duration);
               setPreviewCurrentTime(audio.currentTime);
@@ -353,8 +383,10 @@ export function useVoiceCatalog(
           };
 
           audio.play().then(() => {
+            if (audioRef.current !== audio) return;
             console.info("[VoiceCatalog] audio.play() succeeded for", voice.id);
           }).catch((err) => {
+            if (audioRef.current !== audio) return;
             console.error("[VoiceCatalog] Audio play() promise rejected:", err);
             stopPreview();
           });
@@ -367,7 +399,7 @@ export function useVoiceCatalog(
           }
         });
     },
-    [playingId, previewPrompt, engine, stopPreview]
+    [previewPrompt, engine, stopPreview]
   );
 
   const effectiveVoices = suspended ? [] : voices;

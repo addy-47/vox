@@ -114,6 +114,7 @@ pub fn on_playback_finished<R: tauri::Runtime>(
     }
 
     state.pipeline.clear_drained_while_open();
+    state.pipeline_accumulator.lock().clear();
     transition(InteractionState::Ready, None, ctx, app, state);
     state.turn_metrics.record_playback_finished(turn_id);
     log::info!(
