@@ -528,3 +528,51 @@ fn _dummy_stt_tx() -> mpsc::Sender<vox_lib::services::stt::SttCommand> {
 fn _dummy_vad_rx() -> mpsc::Receiver<vox_lib::services::vad::VadCommand> {
     mpsc::channel().1
 }
+
+#[tokio::test]
+async fn test_clear_render_queue_prevents_post_cancellation_suppression() {
+    let _guard = common::paths::TempPathsGuard::new();
+    vox_lib::utils::paths::init();
+
+    let ref_ring = HeapRb::<f32>::new(16384);
+    let (ref_prod, ref_cons) = ref_ring.split();
+    let mut tap = PlaybackReferenceTap::new(ref_prod);
+    let mut aec = AecProcessor::new(Some(ref_cons)).unwrap();
+
+    // Push 480 samples of render reference into tap
+    for i in 0..480 {
+        tap.push_sample(0.5 * ((i as f32) * 0.1).sin());
+    }
+
+    // Calling clear_render_queue flushes all pending reference frames
+    aec.clear_render_queue();
+
+    // User speech frames (near-end voice @ 400Hz tone, 16kHz sample rate, 5 frames = 50ms)
+    let total_samples = 5 * AEC_FRAME_SAMPLES;
+    let user_speech: Vec<f32> = (0..total_samples)
+        .map(|i| 0.35 * (2.0 * std::f32::consts::PI * 400.0 * (i as f32) / 16000.0).sin())
+        .collect();
+
+    let mut in_energy = 0.0f32;
+    let mut out_energy = 0.0f32;
+
+    for (f_idx, chunk) in user_speech.chunks(AEC_FRAME_SAMPLES).enumerate() {
+        let mut processed = [0.0f32; AEC_FRAME_SAMPLES];
+        aec.process_frame(chunk, &mut processed)
+            .expect("AEC process_frame should succeed");
+
+        // Skip initial filter ramp-up frame (first 10ms transient)
+        if f_idx >= 1 {
+            in_energy += chunk.iter().map(|&x| x * x).sum::<f32>();
+            out_energy += processed.iter().map(|&x| x * x).sum::<f32>();
+        }
+    }
+
+    // Verify speech is not suppressed (steady-state energy retention >= 80%)
+    assert!(
+        out_energy >= 0.8 * in_energy,
+        "Near-end steady-state speech must not be suppressed when render queue was cleared (in={}, out={})",
+        in_energy,
+        out_energy
+    );
+}

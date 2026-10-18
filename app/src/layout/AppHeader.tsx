@@ -1,14 +1,15 @@
 import React, { memo, useCallback } from "react";
 import { useLocation } from "react-router-dom";
-import { PanelLeft, Bell, HelpCircle } from "lucide-react";
+import { PanelLeft, Bell, HelpCircle, Ghost } from "lucide-react";
 import { Tooltip } from "@/shared/ui/Tooltip";
 import { ThemeToggleButton } from "@/shared/ui/ThemeToggleButton";
-import { TemporaryChatIcon } from "@/shared/ui/TemporaryChatIcon";
 import { RestoreDefaultsButton } from "@/shared/components/settings/RestoreDefaultsButton";
 import { ActiveSessionHeader } from "@/shared/components/home/ActiveSessionHeader";
 import { usePanelStateContext } from "@/shared/context/PanelStateContext";
 import { useNotificationStore, selectBadgeCount } from "@/store/notificationStore";
 import { useSessionStore } from "@/store/sessionStore";
+import { useSettingsStore } from "@/store/settingsStore";
+import { updateSetting } from "@/services/settingsService";
 import { setSessionPrivateMode } from "@/services/pipelineService";
 import { useViewportResize } from "@/shared/hooks/useViewportResize";
 import { NOTIFICATION_COPY } from "@/data/notificationCopy";
@@ -31,7 +32,9 @@ export const AppHeader: React.FC = memo(() => {
   const { togglePanel, isPanelOpen, closePanel, openPanel, rightPanel } = usePanelStateContext();
   const unreadCount = useNotificationStore(selectBadgeCount);
 
-  const isTemporarySession = useSessionStore((s) => s.isTemporarySession);
+  const isPrivateModeSetting = useSettingsStore((s) => s.settings?.working_memory?.private_mode ?? false);
+  const sessionIsTemporary = useSessionStore((s) => s.isTemporarySession);
+  const isTemporarySession = isPrivateModeSetting || sessionIsTemporary;
   const interactionState = useSessionStore((s) => s.interactionState);
   const isIdle = interactionState === "Idle";
 
@@ -45,9 +48,12 @@ export const AppHeader: React.FC = memo(() => {
 
   const toggleTemporarySession = useCallback(async () => {
     if (!isIdle) return;
-    const next = !useSessionStore.getState().isTemporarySession;
+    const current = useSettingsStore.getState().settings?.working_memory?.private_mode ?? useSessionStore.getState().isTemporarySession;
+    const next = !current;
     useSessionStore.getState().setIsTemporarySession(next);
     try {
+      await updateSetting("working_memory", "private_mode", next);
+      await useSettingsStore.getState().loadSettings();
       await setSessionPrivateMode(next);
     } catch {
       // Best-effort IPC
@@ -131,7 +137,7 @@ export const AppHeader: React.FC = memo(() => {
               )}
               aria-label={HOME_CONTROLS_COPY.temporary.toggleAriaLabel}
             >
-              <TemporaryChatIcon size={14} strokeWidth={1.75} checked={isTemporarySession} />
+              <Ghost size={14} strokeWidth={1.75} className={cn(isTemporarySession && "text-[rgb(var(--accent))]")} />
             </button>
           </Tooltip>
         )}

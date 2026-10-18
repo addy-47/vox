@@ -20,6 +20,7 @@ const MAX_RENDER_QUEUE_BACKLOG_SAMPLES: usize = 3200;
 pub enum AecCommand {
     SetEnabled(bool),
     SetStreamDelayMs(i32),
+    ClearRenderQueue,
 }
 
 /// Telemetry statistics from the AEC processor.
@@ -46,6 +47,7 @@ pub struct AecProcessor {
     stream_delay_ms: i32,
     ringbuf_underruns: u64,
     ringbuf_overflows: u64,
+    frame_counter: u32,
 }
 
 impl AecProcessor {
@@ -79,16 +81,25 @@ impl AecProcessor {
             stream_delay_ms: DEFAULT_STREAM_DELAY_MS,
             ringbuf_underruns: 0,
             ringbuf_overflows: 0,
+            frame_counter: 0,
         })
+    }
+
+    /// Clears any pending render reference audio immediately (e.g. on playback cancel or interrupt).
+    pub fn clear_render_queue(&mut self) {
+        if let Some(ref mut cons) = self.render_consumer {
+            let occupied = cons.occupied_len();
+            if occupied > 0 {
+                cons.skip(occupied);
+            }
+        }
     }
 
     /// Enables or disables AEC processing (bypass mode).
     pub fn set_enabled(&mut self, enabled: bool) {
         self.enabled = enabled;
         if !enabled {
-            if let Some(ref mut cons) = self.render_consumer {
-                cons.skip(cons.occupied_len());
-            }
+            self.clear_render_queue();
         }
     }
 
@@ -133,19 +144,17 @@ impl AecProcessor {
         if let Some(ref mut cons) = self.render_consumer {
             let occupied = cons.occupied_len();
             if occupied > MAX_RENDER_QUEUE_BACKLOG_SAMPLES {
-                cons.skip(occupied - AEC_FRAME_SAMPLES);
+                cons.skip(occupied - MAX_RENDER_QUEUE_BACKLOG_SAMPLES);
                 self.ringbuf_overflows += 1;
             }
-            let popped = cons.pop_slice(&mut self.render_buf);
-            if popped < AEC_FRAME_SAMPLES {
-                self.render_buf[popped..].fill(0.0);
-                if popped == 0 {
-                    self.ringbuf_underruns += 1;
+            while cons.occupied_len() >= AEC_FRAME_SAMPLES {
+                let popped = cons.pop_slice(&mut self.render_buf);
+                if popped == AEC_FRAME_SAMPLES {
+                    let render_in: [&[f32]; 1] = [&self.render_buf];
+                    let mut render_out: [&mut [f32]; 1] = [&mut self.render_dest];
+                    let _ = self.apm.process_render_f32(&render_in, &mut render_out);
                 }
             }
-            let render_in: [&[f32]; 1] = [&self.render_buf];
-            let mut render_out: [&mut [f32]; 1] = [&mut self.render_dest];
-            let _ = self.apm.process_render_f32(&render_in, &mut render_out);
         }
     }
 
@@ -162,9 +171,7 @@ impl AecProcessor {
 
         if !self.enabled {
             output.copy_from_slice(capture);
-            if let Some(ref mut cons) = self.render_consumer {
-                cons.skip(cons.occupied_len());
-            }
+            self.clear_render_queue();
             return Ok(());
         }
 
@@ -178,6 +185,23 @@ impl AecProcessor {
             .map_err(|e| anyhow!("AEC capture processing error: {}", e))?;
 
         output.copy_from_slice(&self.capture_dest);
+
+        // Dynamic delay adaptation: poll AEC3 reported delay median every 100 frames (~1 sec)
+        self.frame_counter = (self.frame_counter + 1) % 100;
+        if self.frame_counter == 0 {
+            let stats = self.apm.statistics();
+            if let Some(median) = stats.delay_median_ms {
+                if median > 0 && (median - self.stream_delay_ms).abs() >= 15 {
+                    log::info!(
+                        "[Audio::AEC] Dynamic delay adaptation: adapting stream_delay_ms from {} ms to {} ms (reported median)",
+                        self.stream_delay_ms,
+                        median
+                    );
+                    let _ = self.set_stream_delay_ms(median);
+                }
+            }
+        }
+
         Ok(())
     }
 
@@ -255,6 +279,10 @@ where
                                 if let Err(e) = aec.set_stream_delay_ms(delay) {
                                     log::warn!("[Audio::AEC] Failed to set stream delay: {}", e);
                                 }
+                            }
+                            AecCommand::ClearRenderQueue => {
+                                aec.clear_render_queue();
+                                log::debug!("[Audio::AEC] Flushed render reference backlog queue");
                             }
                         }
                     }

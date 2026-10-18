@@ -105,6 +105,14 @@ pub fn on_playback_finished<R: tauri::Runtime>(
         return;
     }
 
+    if let Ok(guard) = state.engine.try_lock() {
+        if let Some(ref engine) = *guard {
+            if let Some(ref aec_tx) = engine.aec_tx {
+                let _ = aec_tx.send(crate::services::audio::aec::AecCommand::ClearRenderQueue);
+            }
+        }
+    }
+
     state.pipeline.clear_drained_while_open();
     transition(InteractionState::Ready, None, ctx, app, state);
     state.turn_metrics.record_playback_finished(turn_id);
