@@ -43,9 +43,9 @@ export const HOME_CONTROLS_COPY = {
     unmuteMicTooltip: "Unmute Microphone",
   },
   temporary: {
-    toggleAriaLabel: "Toggle Temporary Session",
-    toggleTooltip: "Temporary Session (Memory Only)",
-    activeBadge: "Temporary",
+    toggleAriaLabel: "Toggle Incognito Mode",
+    toggleTooltip: "Incognito Mode (Memory Only)",
+    activeBadge: "Incognito",
   },
   /** Accessible name for the pipeline status capsule. */
   statusAriaLabel: (label: string) => `Vox Status: ${label}`,

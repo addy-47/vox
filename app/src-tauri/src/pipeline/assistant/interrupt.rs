@@ -19,6 +19,9 @@ pub fn on_interrupt<R: tauri::Runtime>(
     if let Ok(guard) = state.engine.try_lock() {
         if let Some(ref engine) = *guard {
             engine.playback_engine.cancel();
+            if let Some(ref aec_tx) = engine.aec_tx {
+                let _ = aec_tx.send(crate::services::audio::aec::AecCommand::ClearRenderQueue);
+            }
         }
     }
 

@@ -19,7 +19,8 @@ import {
   stopEngine,
 } from "@/services/pipelineService";
 import { getRuntimeSnapshot } from "@/services/monitoringService";
-import { getSettings } from "@/services/settingsService";
+import { getSettings, updateSetting } from "@/services/settingsService";
+import { useSettingsStore } from "@/store/settingsStore";
 import { SESSION_COPY } from "@/data/sessionCopy";
 import type { InteractionState, StateChangedPayload } from "@/services/eventsService";
 import { type InteractionModeUpper, normalizeToInteractionModeUpper } from "@/shared/lib/interactionMode";
@@ -111,7 +112,9 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
   const pipelineMode = useSessionStore((s) => s.pipelineMode);
   const isLaunching = useSessionStore((s) => s.isLaunching);
   const cpuWarning = useSessionStore((s) => s.cpuWarning);
-  const isTemporarySession = useSessionStore((s) => s.isTemporarySession);
+  const isPrivateModeSetting = useSettingsStore((s) => s.settings?.working_memory?.private_mode ?? false);
+  const sessionIsTemporary = useSessionStore((s) => s.isTemporarySession);
+  const isTemporarySession = isPrivateModeSetting || sessionIsTemporary;
   const isTextModeOpen = useSessionStore((s) => s.isTextModeOpen);
   const isPlaybackMuted = useSessionStore((s) => s.isPlaybackMuted);
   const isMicMuted = useSessionStore((s) => s.isMicMuted);
@@ -386,9 +389,12 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
   );
 
   const toggleTemporarySession = useCallback(async () => {
-    const next = !storeApi().isTemporarySession;
+    const current = useSettingsStore.getState().settings?.working_memory?.private_mode ?? storeApi().isTemporarySession;
+    const next = !current;
     storeApi().setIsTemporarySession(next);
     try {
+      await updateSetting("working_memory", "private_mode", next);
+      await useSettingsStore.getState().loadSettings();
       await setSessionPrivateMode(next);
     } catch {
       // Best-effort IPC notification

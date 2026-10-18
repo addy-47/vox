@@ -173,17 +173,30 @@ pub fn migrate_legacy_layout(root: &Path) {
     let target_db_dir = root.join("data").join("db");
     let target_db = target_db_dir.join(DB_FILENAME);
 
-    if legacy_db.exists() && !target_db.exists() && create_dir_all(&target_db_dir).is_ok() {
-        let _ = rename(&legacy_db, &target_db);
-        let legacy_wal = root.join("vox.db-wal");
-        if legacy_wal.exists() {
-            let _ = rename(&legacy_wal, target_db_dir.join("vox.db-wal"));
+    if legacy_db.exists() && create_dir_all(&target_db_dir).is_ok() {
+        if !target_db.exists() {
+            let _ = rename(&legacy_db, &target_db);
+            let legacy_wal = root.join("vox.db-wal");
+            if legacy_wal.exists() {
+                let _ = rename(&legacy_wal, target_db_dir.join("vox.db-wal"));
+            }
+            let legacy_log = root.join("vox.db-log");
+            if legacy_log.exists() {
+                let _ = rename(&legacy_log, target_db_dir.join("vox.db-log"));
+            }
+            log::info!("[Storage] Migrated legacy vox.db to data/db/vox.db");
+        } else {
+            let _ = remove_file(&legacy_db);
+            let legacy_wal = root.join("vox.db-wal");
+            if legacy_wal.exists() {
+                let _ = remove_file(&legacy_wal);
+            }
+            let legacy_log = root.join("vox.db-log");
+            if legacy_log.exists() {
+                let _ = remove_file(&legacy_log);
+            }
+            log::info!("[Storage] Swept stale legacy vox.db and wal/log from root");
         }
-        let legacy_log = root.join("vox.db-log");
-        if legacy_log.exists() {
-            let _ = rename(&legacy_log, target_db_dir.join("vox.db-log"));
-        }
-        log::info!("[Storage] Migrated legacy vox.db to data/db/vox.db");
     }
 
     // Debris sweep: clean up stale *.tmp and *.corrupt.* files in config/

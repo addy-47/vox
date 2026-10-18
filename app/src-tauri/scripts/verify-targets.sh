@@ -23,11 +23,15 @@ cd "$(dirname "$0")/.."
 
 MODE="${1:-both}"
 
+# First gate: Static architectural invariants
+echo "==> backend architectural invariant lint: ./scripts/lint-arch.sh"
+./scripts/lint-arch.sh
+
 # `-D warnings` is essential: plain `cargo clippy` exits 0 even when it prints
 # warnings, so without it the success message could lie. It applies to workspace
 # members only, not third-party dependencies.
-echo "==> desktop: cargo clippy --all-targets --release -D warnings"
-cargo clippy --all-targets --release -- -D warnings
+echo "==> desktop: cargo clippy --all-targets --release -D warnings -D clippy::disallowed_methods"
+cargo clippy --all-targets --release -- -D warnings -D clippy::disallowed_methods
 
 if [[ "$MODE" == "desktop" ]]; then
     echo
@@ -38,8 +42,8 @@ fi
 # shellcheck source=scripts/android-env.sh
 source ./scripts/android-env.sh
 
-echo "==> android: cargo clippy --target aarch64-linux-android --lib --release -D warnings"
-cargo clippy --target "$ANDROID_TARGET" --lib --release -- -D warnings
+echo "==> android: cargo clippy --target aarch64-linux-android --lib --release -D warnings -D clippy::disallowed_methods"
+cargo clippy --target "$ANDROID_TARGET" --lib --release -- -D warnings -D clippy::disallowed_methods
 
 echo
 echo "OK: both targets compile with 0 warnings / 0 errors."

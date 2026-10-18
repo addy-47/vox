@@ -19,7 +19,7 @@ import {
 } from "@/data/homeCopy";
 import { shortcutKeysSuffix } from "@/data/shortcuts";
 
-import { Power, Mic, Keyboard, Play, Pause, X, AlertCircle, RotateCcw } from "lucide-react";
+import { Power, Mic, Keyboard, Play, Pause, X, AlertCircle, RotateCcw, Ghost } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { ChapterScrubber, type Chapter } from "@/shared/ui/ChapterScrubber";
 
@@ -298,19 +298,17 @@ export const Home = memo(() => {
             Mode: {GOVERNOR_LABELS[cpuWarning.governor] || cpuWarning.governor}
           </span>
         )}
-        {isTemporarySession && !isEngaged ? (
-          <DynamicStatusBadge
-            label={HOME_CONTROLS_COPY.temporary.activeBadge}
-            shimmer={false}
-            className="opacity-50 grayscale"
-          />
-        ) : (
-          <DynamicStatusBadge
-            label={activityDisplay.label}
-            orbState={activityDisplay.orbState}
-            shimmer={activityDisplay.shimmer}
-          />
+        {isTemporarySession && (
+          <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[rgba(var(--accent),0.12)] border border-[rgba(var(--accent),0.3)] text-[10px] font-mono font-bold tracking-[0.2em] uppercase text-[rgb(var(--accent))] shadow-[0_0_10px_rgba(var(--accent),0.15)] animate-in fade-in zoom-in-95 duration-200">
+            <Ghost size={11} strokeWidth={2} />
+            <span>{HOME_CONTROLS_COPY.temporary.activeBadge}</span>
+          </div>
         )}
+        <DynamicStatusBadge
+          label={activityDisplay.label}
+          orbState={activityDisplay.orbState}
+          shimmer={activityDisplay.shimmer}
+        />
       </div>
 
       {/* ── Side Dialogue Area - Right Only (All transcripts, big screens only) ── */}

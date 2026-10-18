@@ -1,10 +1,11 @@
 import { memo } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
-import { NotebookTabs, ShieldOff, FoldVertical } from "lucide-react";
+import { NotebookTabs, Ghost, FoldVertical } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { Card, ToggleTile } from "@/shared/ui";
 import { WORKING_MEMORY_SETTINGS_COPY } from "@/data/settingsCopy";
 import { WorkingMemoryConfigDesk } from "./WorkingMemoryConfigDesk";
+import { useSessionStore } from "@/store/sessionStore";
 
 interface WorkingMemoryCardProps {
   layoutMode?: "full-max" | "full-min" | "small";
@@ -57,10 +58,12 @@ export const WorkingMemoryCard = memo(({ layoutMode = "full-max" }: WorkingMemor
             inactiveLabel={copy.privateModeInactive}
             activeSublabel={copy.privateModeActiveSub}
             inactiveSublabel={copy.privateModeInactiveSub}
-            icon={ShieldOff}
-            onToggle={() =>
-              updateDraft("working_memory", "private_mode", !workingMemory.private_mode)
-            }
+            icon={Ghost}
+            onToggle={() => {
+              const next = !workingMemory.private_mode;
+              updateDraft("working_memory", "private_mode", next);
+              useSessionStore.getState().setIsTemporarySession(next);
+            }}
             layoutMode={layoutMode}
           />
 

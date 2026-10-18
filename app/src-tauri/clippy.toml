@@ -1,0 +1,8 @@
+# Clippy configuration for Vox Backend
+# Enforces static architectural invariants from docs/specs/ and backend-style-guide.md
+
+# RULE-CONC-01: Bare thread spawn without Builder name/priority is forbidden.
+# All backend threads must be explicitly named for OS diagnostic visibility.
+disallowed-methods = [
+    { path = "std::thread::spawn", reason = "RULE-CONC-01: Bare thread::spawn without Builder name is forbidden. Use std::thread::Builder::new().name(...).spawn(...)." },
+]
