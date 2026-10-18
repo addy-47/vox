@@ -493,6 +493,11 @@ export const LLM_CATALOG_COPY = {
   filterTools: "Tools Support",
   filterFast: "Fast (>30 TPS)",
   resetFilters: "Reset Filters",
+  modalSearchPlaceholder: "Search models...",
+  modalEmptyTitle: "No models found",
+  modalEmptyHint: "No available models match your current search & filter criteria.",
+  providerModalEmptyTitle: "No providers found",
+  providerModalEmptyHint: "No providers match your search query or filter.",
 } as const;
 
 export const REMOTE_SERVER_COPY = {

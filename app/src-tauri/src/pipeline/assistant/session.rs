@@ -208,6 +208,15 @@ pub fn on_session_start<R: Runtime + 'static>(
     state: &AppState,
     _ctx: &RoutingContext,
 ) {
+    // During an engine restart, ignore implicit session starts (session_id == None)
+    // so the restart's explicit re-engagement with the preserved session id wins.
+    if state.restart_in_flight.load(Ordering::Acquire) && session_id.is_none() {
+        log::info!(
+            "[Pipeline::Session] Ignoring implicit session start during engine restart"
+        );
+        return;
+    }
+
     let current_state = state.pipeline.state();
     if current_state != InteractionState::Idle {
         log::warn!(

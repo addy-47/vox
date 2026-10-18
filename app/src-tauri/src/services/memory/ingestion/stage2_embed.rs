@@ -12,7 +12,7 @@ use crate::{
     persistence::{
         deactivate_observation,
         facts::{
-            fetch_active_vectors_by_type, insert_observation, insert_vector, ObservationRecord,
+            fetch_active_vectors_by_type, get_memory_fact_text, insert_observation, insert_vector, ObservationRecord,
         },
         fetch_session_project_id,
         queue::claim_pending_queue_batch,
@@ -249,29 +249,12 @@ async fn process_stage2_item_with_embedding(
 /// failure degrades to a placeholder rather than propagating.
 async fn observation_text(conn: &Connection, observation_id: &str) -> String {
     let fallback = format!("<observation {} text unavailable>", observation_id);
-    let mut rows = match conn
-        .query(
-            "SELECT text FROM memory_facts WHERE id = ?",
-            (observation_id.to_string(),),
-        )
-        .await
-    {
-        Ok(r) => r,
-        Err(e) => {
-            log::warn!(
-                "[Memory::Ingestion::Stage2] Telemetry text lookup failed for {}: {}",
-                observation_id,
-                e
-            );
-            return fallback;
-        }
-    };
-    match rows.next().await {
-        Ok(Some(row)) => row.get(0).unwrap_or(fallback),
+    match get_memory_fact_text(conn, observation_id).await {
+        Ok(Some(text)) => text,
         Ok(None) => fallback,
         Err(e) => {
             log::warn!(
-                "[Memory::Ingestion::Stage2] Telemetry text row read failed for {}: {}",
+                "[Memory::Ingestion::Stage2] Telemetry text lookup failed for {}: {}",
                 observation_id,
                 e
             );

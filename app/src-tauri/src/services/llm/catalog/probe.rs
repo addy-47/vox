@@ -1499,7 +1499,9 @@ mod tests {
             "http://{}",
             listener.local_addr().expect("mock server addr")
         );
-        let handle = std::thread::spawn(move || {
+        let handle = std::thread::Builder::new()
+            .name("llm-catalog-probe".into())
+            .spawn(move || {
             for (status, body) in responses {
                 let (mut stream, _) = listener.accept().expect("mock accept");
                 stream
@@ -1516,7 +1518,8 @@ mod tests {
                 stream.write_all(head.as_bytes()).expect("mock write head");
                 stream.write_all(body.as_bytes()).expect("mock write body");
             }
-        });
+        })
+        .expect("spawn llm-catalog-probe thread");
         (url, handle)
     }
 
@@ -1532,7 +1535,9 @@ mod tests {
             "http://{}",
             listener.local_addr().expect("mock server addr")
         );
-        let handle = std::thread::spawn(move || {
+        let handle = std::thread::Builder::new()
+            .name("llm-catalog-probe".into())
+            .spawn(move || {
             let (mut stream, _) = listener.accept().expect("mock accept");
             stream
                 .set_read_timeout(Some(Duration::from_secs(5)))
@@ -1544,7 +1549,8 @@ mod tests {
             );
             stream.write_all(head.as_bytes()).expect("mock write head");
             stream.write_all(body.as_bytes()).expect("mock write body");
-        });
+        })
+        .expect("spawn llm-catalog-probe thread");
         (url, handle)
     }
 

@@ -1,9 +1,12 @@
 import { memo, useState, useMemo, useCallback, useDeferredValue } from "react";
 import { useLenisScrollContainer, useScrollTopOnChange } from "@/shared/hooks/useLenisScrollContainer";
-import { CLOUD_PROVIDERS, TTS_MODAL_PROVIDERS, type CloudProvider } from "@/data/providersCopy";
-import { INTERACTION_CONFIG_DESK_COPY } from "@/data/settingsCopy";
+import { type CloudProvider } from "@/data/providersCopy";
+import { useCatalogStore } from "@/store/catalogStore";
+import { INTERACTION_CONFIG_DESK_COPY, LLM_CATALOG_COPY } from "@/data/settingsCopy";
 import { useSettingsStore, type LlmCustomServer, type TtsCustomServer } from "@/store/settingsStore";
+import { useShallow } from "zustand/react/shallow";
 import { activeSelection, promoteActive } from "@/shared/lib/activeSelection";
+import { filterProviders } from "@/shared/lib/catalogFilter";
 import { ModalProviderFooter } from "@/shared/components/settings/SettingsCommitControls";
 import { Tooltip } from "@/shared/ui/Tooltip";
 import { ArrowRight, Check, Cloud, Globe, HelpCircle, Key, KeyRound, Pencil, Plus, Server, Trash2, X } from "lucide-react";
@@ -104,10 +107,12 @@ export const ProviderModal = memo(({
   const [isCreatingCustomServer, setIsCreatingCustomServer] = useState(false);
   const [editingServer, setEditingServer] = useState<LlmCustomServer | TtsCustomServer | null>(null);
 
-  const draftSettings = useSettingsStore((s) => s.draftSettings);
-  const committedSettings = useSettingsStore((s) => s.settings);
+  const draftSettings = useSettingsStore(useShallow((s) => s.draftSettings));
+  const committedSettings = useSettingsStore(useShallow((s) => s.settings));
   const updateDraft = useSettingsStore((s) => s.updateDraft);
   const isTts = category === "TTS";
+  const storeCloudProviders = useCatalogStore((s) => s.cloudProviders);
+  const storeTtsProviders = useCatalogStore((s) => s.ttsProviders);
 
   const customServers = useMemo(() => {
     return (isTts ? draftSettings?.tts?.servers ?? draftSettings?.providers?.tts?.servers : draftSettings?.llm?.servers ?? draftSettings?.providers?.llm?.servers) ?? [];
@@ -164,23 +169,23 @@ export const ProviderModal = memo(({
   const isCommittedLocal = committedCategory === "embedded";
 
   const orderFingerprint = useMemo(
-    () => `${committedActiveProviderId ?? ""}|${isCommittedLocal ? "local" : ""}|${pinnedProviderId ?? ""}|${CLOUD_PROVIDERS.map((p) => getCommittedProviderKey(p.id)?.trim() ? "1" : "0").join("")}`,
-    [committedActiveProviderId, isCommittedLocal, pinnedProviderId, getCommittedProviderKey]
+    () => `${committedActiveProviderId ?? ""}|${isCommittedLocal ? "local" : ""}|${pinnedProviderId ?? ""}|${storeCloudProviders.map((p) => getCommittedProviderKey(p.id)?.trim() ? "1" : "0").join("")}`,
+    [committedActiveProviderId, isCommittedLocal, pinnedProviderId, getCommittedProviderKey, storeCloudProviders]
   );
   useScrollTopOnChange(scrollContainerRef, orderFingerprint, lenisRef);
 
-  const configuredCount = useMemo(() => CLOUD_PROVIDERS.filter((p) => Boolean(p.isConfigured) || Boolean(getProviderKey(p.id)?.trim())).length, [getProviderKey]);
-  const unconfiguredCount = useMemo(() => CLOUD_PROVIDERS.filter((p) => !p.isConfigured && !getProviderKey(p.id)?.trim()).length, [getProviderKey]);
-  const ttsAvailableCount = useMemo(() => TTS_MODAL_PROVIDERS.filter((p) => p.isConfigured || p.isFree || Boolean(getProviderKey(p.id)?.trim())).length, [getProviderKey]);
+  const configuredCount = useMemo(() => storeCloudProviders.filter((p) => Boolean(p.isConfigured) || Boolean(getProviderKey(p.id)?.trim())).length, [getProviderKey, storeCloudProviders]);
+  const unconfiguredCount = useMemo(() => storeCloudProviders.filter((p) => !p.isConfigured && !getProviderKey(p.id)?.trim()).length, [getProviderKey, storeCloudProviders]);
+  const ttsAvailableCount = useMemo(() => storeTtsProviders.filter((p) => p.isConfigured || p.isFree || Boolean(getProviderKey(p.id)?.trim())).length, [getProviderKey, storeTtsProviders]);
 
   const sourceFilters = useMemo(
     () => [
-      { id: "all" as const, label: "All Providers", count: 1 + (isTts ? TTS_MODAL_PROVIDERS.length : CLOUD_PROVIDERS.length) + customServers.length, Icon: Globe },
+      { id: "all" as const, label: "All Providers", count: 1 + (isTts ? storeTtsProviders.length : storeCloudProviders.length) + customServers.length, Icon: Globe },
       { id: "configured" as const, label: "Available", count: 1 + (isTts ? ttsAvailableCount : configuredCount) + customServers.length, Icon: Key },
       { id: "custom" as const, label: "Custom Servers", count: customServers.length, Icon: Server },
-      { id: "cloud" as const, label: isTts ? "Cloud Voices" : "Cloud Providers", count: isTts ? TTS_MODAL_PROVIDERS.length : CLOUD_PROVIDERS.length, Icon: Cloud },
+      { id: "cloud" as const, label: isTts ? "Cloud Voices" : "Cloud Providers", count: isTts ? storeTtsProviders.length : storeCloudProviders.length, Icon: Cloud },
     ],
-    [isTts, customServers.length, ttsAvailableCount, configuredCount]
+    [isTts, customServers.length, ttsAvailableCount, configuredCount, storeTtsProviders.length, storeCloudProviders.length]
   );
 
   const statusFilters = useMemo(
@@ -237,24 +242,27 @@ export const ProviderModal = memo(({
 
   const ttsFilteredProviders = useMemo(() => {
     if (!isTts) return [];
-    let list = TTS_MODAL_PROVIDERS;
-    const q = deferredSearch.trim().toLowerCase();
-    if (q) list = list.filter((p) => p.name.toLowerCase().includes(q) || p.id.toLowerCase().includes(q) || p.tagline.toLowerCase().includes(q));
     if (filterCategory === "custom") return [];
-    if (filterCategory === "configured") list = list.filter((p) => p.isConfigured || p.isFree || Boolean(getProviderKey(p.id)?.trim()));
+    const list = filterProviders(
+      storeTtsProviders.map((p) => ({ ...p, url: p.url ?? null })),
+      filterCategory === "all" ? "all" : filterCategory,
+      deferredSearch,
+      { getProviderKey }
+    );
     return promoteActive(
       [...list].sort((a, b) => sort === "az" ? a.name.localeCompare(b.name, undefined, { sensitivity: "base" }) : b.name.localeCompare(a.name, undefined, { sensitivity: "base" })),
       committedSettings?.tts?.active?.provider
     );
-  }, [deferredSearch, filterCategory, getProviderKey, isTts, sort, committedSettings?.tts?.active?.provider]);
+  }, [deferredSearch, filterCategory, getProviderKey, isTts, sort, committedSettings?.tts?.active?.provider, storeTtsProviders]);
 
   const modalFilteredProviders = useMemo(() => {
-    let list = CLOUD_PROVIDERS;
-    const q = deferredSearch.trim().toLowerCase();
-    if (q) list = list.filter((p) => p.name.toLowerCase().includes(q) || p.id.toLowerCase().includes(q) || p.tagline?.toLowerCase().includes(q) || p.url.toLowerCase().includes(q));
-    if (filterCategory === "configured") list = list.filter((p) => Boolean(p.isConfigured) || Boolean((p as { isFree?: boolean }).isFree) || Boolean(getProviderKey(p.id)?.trim()));
-    else if (filterCategory === "unconfigured") list = list.filter((p) => !p.isConfigured && !getProviderKey(p.id)?.trim());
-    else if (filterCategory === "custom") list = [];
+    if (filterCategory === "custom") return [];
+    const list = filterProviders(
+      storeCloudProviders,
+      filterCategory === "guide" ? "all" : filterCategory,
+      deferredSearch,
+      { getProviderKey }
+    );
 
     return promoteActive(
       [...list].sort((a, b) => {
@@ -264,7 +272,7 @@ export const ProviderModal = memo(({
       }),
       committedSettings?.llm?.active?.provider
     );
-  }, [deferredSearch, filterCategory, getProviderKey, getCommittedProviderKey, sort, committedSettings?.llm?.active?.provider]);
+  }, [deferredSearch, filterCategory, getProviderKey, getCommittedProviderKey, sort, committedSettings?.llm?.active?.provider, storeCloudProviders]);
 
   const matchesLocal = useMemo(() => {
     const q = deferredSearch.trim().toLowerCase();
@@ -344,8 +352,12 @@ export const ProviderModal = memo(({
               isEditing ? (
                 <div className="flex items-center gap-1.5 border-b border-[rgb(var(--accent))] pb-0.5 w-full bg-transparent animate-fade-in">
                   <input type="password" autoFocus value={editingKeyValue} onChange={(e) => setEditingKeyValue(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") onSaveInlineKey(provider.id); if (e.key === "Escape") onCancelInlineKey(); }} placeholder={provider.keyPlaceholder} className="w-full bg-transparent text-[11px] font-mono outline-none text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/30" />
-                  <button type="button" onClick={() => onSaveInlineKey(provider.id)} title={INTERACTION_CONFIG_DESK_COPY.llm.cloud.saveKey} aria-label={INTERACTION_CONFIG_DESK_COPY.llm.cloud.saveKey} className="text-[rgb(var(--accent))] hover:opacity-75 transition-opacity p-0.5 shrink-0 bg-transparent cursor-pointer"><Check size={13} strokeWidth={2.2} /></button>
-                  <button type="button" onClick={onCancelInlineKey} title={INTERACTION_CONFIG_DESK_COPY.llm.cloud.cancelKey} aria-label={INTERACTION_CONFIG_DESK_COPY.llm.cloud.cancelKey} className="text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))] transition-colors p-0.5 shrink-0 bg-transparent cursor-pointer"><X size={13} /></button>
+                  <Tooltip label={INTERACTION_CONFIG_DESK_COPY.llm.cloud.saveKey} side="top" asChild>
+                    <button type="button" onClick={() => onSaveInlineKey(provider.id)} aria-label={INTERACTION_CONFIG_DESK_COPY.llm.cloud.saveKey} className="text-[rgb(var(--accent))] hover:opacity-75 transition-opacity p-0.5 shrink-0 bg-transparent cursor-pointer"><Check size={13} strokeWidth={2.2} /></button>
+                  </Tooltip>
+                  <Tooltip label={INTERACTION_CONFIG_DESK_COPY.llm.cloud.cancelKey} side="top" asChild>
+                    <button type="button" onClick={onCancelInlineKey} aria-label={INTERACTION_CONFIG_DESK_COPY.llm.cloud.cancelKey} className="text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))] transition-colors p-0.5 shrink-0 bg-transparent cursor-pointer"><X size={13} /></button>
+                  </Tooltip>
                 </div>
               ) : (
                 <div className="flex items-center justify-between text-[11px] font-mono w-full">
@@ -353,7 +365,9 @@ export const ProviderModal = memo(({
                   {hasKey ? (
                     <div className="flex items-center gap-1.5">
                       <span className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--accent))] shrink-0" /><span className="text-[rgb(var(--foreground-muted))]">••••••••{savedKey?.slice(-4)}</span>
-                      <button type="button" onClick={() => onStartInlineEdit(provider.id, savedKey ?? "")} className="p-1 rounded hover:bg-white/[0.08] hover:text-[rgb(var(--accent))] transition-colors text-[rgb(var(--foreground-muted))]/60 cursor-pointer shrink-0" title="Edit API Key"><Pencil size={11} /></button>
+                      <Tooltip label={INTERACTION_CONFIG_DESK_COPY.llm.cloud.editKey} side="top" asChild>
+                        <button type="button" onClick={() => onStartInlineEdit(provider.id, savedKey ?? "")} className="p-1 rounded hover:bg-white/[0.08] hover:text-[rgb(var(--accent))] transition-colors text-[rgb(var(--foreground-muted))]/60 cursor-pointer shrink-0" aria-label={INTERACTION_CONFIG_DESK_COPY.llm.cloud.editKey}><Pencil size={11} /></button>
+                      </Tooltip>
                     </div>
                   ) : (
                     <button type="button" onClick={() => onStartInlineEdit(provider.id, "")} className="text-[rgb(var(--accent))] hover:underline cursor-pointer font-medium flex items-center gap-1">+ Connect Key</button>
@@ -424,7 +438,7 @@ export const ProviderModal = memo(({
   );
 
   const currentItemCount = (showLocalCard ? 1 : 0) + (isTts ? ttsFilteredProviders.length : modalFilteredProviders.length) + filteredCustomServers.length;
-  const totalItemCount = (isTts ? TTS_MODAL_PROVIDERS.length : CLOUD_PROVIDERS.length) + customServers.length + 1;
+  const totalItemCount = (isTts ? storeTtsProviders.length : storeCloudProviders.length) + customServers.length + 1;
 
   const hasCards =
     showLocalCard ||
@@ -499,9 +513,9 @@ export const ProviderModal = memo(({
 
   const emptyStateNode = (
     <div className="h-64 flex flex-col items-center justify-center text-center space-y-2">
-      <p className="text-[14px] font-bold text-[rgb(var(--foreground))]">No providers found</p>
+      <p className="text-[14px] font-bold text-[rgb(var(--foreground))]">{LLM_CATALOG_COPY.providerModalEmptyTitle}</p>
       <p className="text-[12px] text-[rgb(var(--foreground-muted))] max-w-sm">
-        No providers match your search query or filter.
+        {LLM_CATALOG_COPY.providerModalEmptyHint}
       </p>
       <button
         type="button"
@@ -511,7 +525,7 @@ export const ProviderModal = memo(({
         }}
         className="mt-2 px-3 py-1.5 rounded-lg text-[12px] font-bold text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/10 border border-[rgba(var(--accent),0.3)] hover:bg-[rgb(var(--accent))]/20 transition-all cursor-pointer"
       >
-        Reset Filters
+        {LLM_CATALOG_COPY.resetFilters}
       </button>
     </div>
   );

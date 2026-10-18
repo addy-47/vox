@@ -1,5 +1,6 @@
 import type { LlmModelInfo } from "@/store/settingsStore";
 import type { UnifiedVoiceDto } from "@/services/voicesService";
+import { fzfMultiTermScore } from "@/shared/lib/fuzzy";
 
 export interface ProviderFilterItem {
   id: string;
@@ -68,10 +69,18 @@ export interface ModelFilterState {
   category?: "all" | "favorites" | "benchmarked" | "tools" | "fast" | string;
   favoriteIds?: Set<string> | string[];
   resolveProbed?: (m: LlmModelInfo) => { tps?: number | null; supports_tools?: string | null } | undefined | null;
+  /** Score-ranked fzf multi-term search (inline catalog behavior). Omit for plain substring search. */
+  fuzzy?: boolean;
+}
+
+function modelSearchFields(m: LlmModelInfo): string[] {
+  return [m.id, m.name ?? "", m.family ?? "", m.quantization ?? ""];
 }
 
 /**
  * Pure predicate filtering for LLM models.
+ * Substring search is the default; pass `{ fuzzy: true }` for score-ranked
+ * fzf multi-term search over id/name/family/quantization.
  */
 export function filterModels<T extends LlmModelInfo = LlmModelInfo>(
   models: T[],
@@ -80,18 +89,27 @@ export function filterModels<T extends LlmModelInfo = LlmModelInfo>(
 ): T[] {
   let list = models;
   const q = searchQuery.trim().toLowerCase();
+  const state: ModelFilterState = typeof filterState === "string" ? { category: filterState } : filterState;
 
   if (q) {
-    list = list.filter((m) => {
-      const idMatch = m.id.toLowerCase().includes(q);
-      const nameMatch = m.name ? m.name.toLowerCase().includes(q) : false;
-      const familyMatch = m.family ? m.family.toLowerCase().includes(q) : false;
-      const quantMatch = m.quantization ? m.quantization.toLowerCase().includes(q) : false;
-      return idMatch || nameMatch || familyMatch || quantMatch;
-    });
+    if (state.fuzzy) {
+      const terms = q.split(/\s+/).filter(Boolean);
+      const scored = list
+        .map((m) => ({ m, score: fzfMultiTermScore(terms, modelSearchFields(m)) }))
+        .filter((e): e is { m: T; score: number } => e.score !== null);
+      scored.sort((a, b) => b.score - a.score);
+      list = scored.map((e) => e.m);
+    } else {
+      list = list.filter((m) => {
+        const idMatch = m.id.toLowerCase().includes(q);
+        const nameMatch = m.name ? m.name.toLowerCase().includes(q) : false;
+        const familyMatch = m.family ? m.family.toLowerCase().includes(q) : false;
+        const quantMatch = m.quantization ? m.quantization.toLowerCase().includes(q) : false;
+        return idMatch || nameMatch || familyMatch || quantMatch;
+      });
+    }
   }
 
-  const state: ModelFilterState = typeof filterState === "string" ? { category: filterState } : filterState;
   const category = state.category ?? "all";
 
   if (category === "favorites") {

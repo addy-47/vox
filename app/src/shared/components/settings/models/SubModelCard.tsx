@@ -58,17 +58,18 @@ export const SubModelCard = memo<SubModelCardProps>(({
         );
       }
       return (
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            startDownload();
-          }}
-          className="p-1.5 rounded-lg text-[rgb(var(--accent))] hover:text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.15)] transition-colors shrink-0 cursor-pointer"
-          aria-label={MODEL_HUB_COPY.row.downloadModel}
-          title={MODEL_HUB_COPY.row.downloadModel}
-        >
-          <Download size={16} />
-        </button>
+        <Tooltip label={MODEL_HUB_COPY.row.downloadModel} side="top" asChild>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              startDownload();
+            }}
+            className="p-1.5 rounded-lg text-[rgb(var(--accent))] hover:text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.15)] transition-colors shrink-0 cursor-pointer"
+            aria-label={MODEL_HUB_COPY.row.downloadModel}
+          >
+            <Download size={16} />
+          </button>
+        </Tooltip>
       );
     }
 
@@ -139,6 +140,26 @@ export const SubModelCard = memo<SubModelCardProps>(({
     );
   };
 
+  const specsSheet = (
+    <div className="space-y-1 text-left">
+      <div className="flex justify-between border-b border-[rgba(var(--accent),0.08)] pb-0.5 mb-1 font-bold">
+        <span className="text-[11px] text-[rgb(var(--accent))] uppercase tracking-wider">{MODEL_HUB_COPY.row.specs}</span>
+        <span className="font-mono text-[11px] text-[rgb(var(--foreground-muted))]">{parameters}</span>
+      </div>
+      {description && <div className="text-[11px] text-[rgb(var(--foreground))] leading-normal mb-1">{description}</div>}
+      {ramUsage && (
+        <div className="text-[11px] text-[rgb(var(--foreground-muted))] font-mono">
+          RAM: {ramUsage}
+        </div>
+      )}
+      {tradeoffs && (
+        <div className="text-[11px] text-[rgb(var(--foreground-muted))] italic border-t border-[rgba(var(--accent),0.08)] pt-1 mt-1 leading-normal">
+          {tradeoffs}
+        </div>
+      )}
+    </div>
+  );
+
   const hasTooltip = showTooltip && !!(description || parameters || ramUsage || tradeoffs);
 
   return (
@@ -175,28 +196,11 @@ export const SubModelCard = memo<SubModelCardProps>(({
 
           <div className="flex items-center gap-1.5 shrink-0 mt-0.5">
             {hasTooltip && (
-              <div className="relative group inline-block">
-                <Info size={16} className="text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] transition-colors cursor-help" />
-                <div className="absolute right-full top-0 mr-2 hidden group-hover:block group-hover:opacity-100 w-52 p-2.5 rounded-lg bg-[rgb(var(--card))]/95 border border-[rgba(var(--accent),0.25)] text-[12px] text-[rgb(var(--foreground-muted))] shadow-md leading-normal z-50 transition-opacity duration-200 pointer-events-none">
-                  <div className="space-y-1">
-                    <div className="flex justify-between border-b border-[rgba(var(--accent),0.08)] pb-0.5 mb-1 font-bold">
-                      <span className="text-[11px] text-[rgb(var(--accent))] uppercase tracking-wider">{MODEL_HUB_COPY.row.specs}</span>
-                      <span className="font-mono text-[11px] text-[rgb(var(--foreground-muted))]">{parameters}</span>
-                    </div>
-                    {description && <div className="text-[11px] text-[rgb(var(--foreground))] leading-normal mb-1">{description}</div>}
-                    {ramUsage && (
-                      <div className="text-[11px] text-[rgb(var(--foreground-muted))] font-mono">
-                        RAM: {ramUsage}
-                      </div>
-                    )}
-                    {tradeoffs && (
-                      <div className="text-[11px] text-[rgb(var(--foreground-muted))] italic border-t border-[rgba(var(--accent),0.08)] pt-1 mt-1 leading-normal">
-                        {tradeoffs}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
+              <Tooltip label={specsSheet} side="right" mobileTapEnabled>
+                <span className="inline-flex items-center">
+                  <Info size={16} className="text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] transition-colors cursor-help" />
+                </span>
+              </Tooltip>
             )}
           </div>
         </div>

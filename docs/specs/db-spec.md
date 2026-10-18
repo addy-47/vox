@@ -13,6 +13,9 @@ Vox requires a zero-latency-penalty persistence layer for real-time voice stream
 - Memory consolidation algorithms and semantic scoring logic (governed by `memory-spec.md`).
 - In-memory event routing and pipeline message busses (governed by `events-spec.md`).
 
+### 1.4 Database Engine (Non-Negotiable)
+**VOX DOES NOT USE SQLITE.** Vox exclusively uses the **Turso Database Engine** (`turso` crate: pure-Rust rewrite, native Tokio async I/O, native MVCC with concurrent writers via `BEGIN CONCURRENT`, native vector storage `F32_BLOB`). Never introduce C SQLite dependencies, `rusqlite`, or single-writer assumptions. Full technical reference lives in `docs/features/turso-database-engine.md`.
+
 ---
 
 ## 2. User Stories
@@ -72,9 +75,9 @@ flowchart TD
 ## 4. Architectural Invariants & Behavior Rules
 
 ### 4.1 Strict Persistence Boundary
-- **RULE-DB-01 (Single Boundary)**: The persistence module MUST serve as the sole gateway for all database interactions. No SQL statements or direct database handles MAY leak into IPC, pipeline, or service layers.
+- **RULE-DB-01 (Single Boundary)**: The persistence module MUST serve as the sole gateway for all database interactions. No SQL statements MAY leak into IPC, pipeline, or service layers.
 - **RULE-DB-02 (Engine Lifecycle)**: The database engine MUST be initialized exactly once during application startup and held in global application state. Re-opening the database file from disk outside startup or test harnesses is FORBIDDEN.
-- **RULE-DB-03 (Connection Vending)**: Handlers and background workers MUST acquire lightweight execution connections from the engine factory. Connections MUST NOT be shared across concurrent operations to prevent concurrency deadlocks.
+- **RULE-DB-03 (Connection Vending)**: Handlers and background workers MUST acquire lightweight execution connections from the engine factory (`state.db.connect()`). Connections MUST NOT be shared across concurrent operations to prevent concurrency deadlocks.
 - **RULE-DB-04 (Voice Hot-Path Isolation)**: Write operations generated during live voice interactions MUST be offloaded to an asynchronous persistence channel. The audio processing loop MUST NEVER perform synchronous database writes.
 
 ### 4.2 Concurrency, MVCC & Transaction Rules

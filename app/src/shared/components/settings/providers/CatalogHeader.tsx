@@ -393,7 +393,7 @@ export const CatalogFilterItem = memo(function CatalogFilterItem({
       </span>
       <span
         className={cn(
-          "text-[10px] font-mono px-1.5 rounded-full font-bold shrink-0 leading-[16px]",
+          "text-[10px] font-mono px-1.5 rounded-md font-bold shrink-0 leading-[16px]",
           active
             ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))]"
             : "bg-[rgba(var(--foreground),0.06)] text-[rgb(var(--foreground-muted))]"

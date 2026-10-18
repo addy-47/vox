@@ -139,7 +139,7 @@ The configuration is decomposed into three files according to domain volatility,
 
 - **RULE-STORAGE-06 (Format Standards)**: Configuration files MUST parse as JSONC (lenient JSON permitting comments and trailing commas). Append-only transcripts MUST use JSONL (JSON Lines).
 - **RULE-STORAGE-07 (Dynamic Audio Routing Exemption)**: Live microphone input and audio output devices are physical transient system states. They MUST NOT be persisted into `settings.jsonc`, but instead dynamically discovered and updated at runtime.
-- **RULE-STORAGE-10 (Sparse Model Provenance Invariant)**: Per-model parameter overrides (speed, context window, temperature, threads, layers) MUST NOT be stored in `settings.jsonc` or `providers.jsonc`. They MUST persist sparsely on-demand in the Turso SQLite `models` table (`parameters` JSON column). Untouched catalog models default to catalog parameters without database rows.
+- **RULE-STORAGE-10 (Sparse Model Provenance Invariant)**: Per-model parameter overrides (speed, context window, temperature, threads, layers) MUST NOT be stored in `settings.jsonc` or `providers.jsonc`. They MUST persist sparsely on-demand in the Turso `models` table (`parameters` JSON column). Untouched catalog models default to catalog parameters without database rows.
 
 ### 5.3 Startup Migration Protocol
 - **RULE-STORAGE-08 (Automated One-Way Migration)**: On startup before opening database connections or loading models, the system MUST execute an automated legacy layout migration:

@@ -23,17 +23,18 @@ import { cn } from "@/shared/lib/utils";
 import { Tooltip } from "@/shared/ui/Tooltip";
 import { ExpandableList } from "@/shared/ui/ExpandableList";
 import { SettingsCommitControls } from "@/shared/components/settings/SettingsCommitControls";
-import { fzfMultiTermScore } from "@/shared/lib/fuzzy";
+import { resolveCapabilities as resolveModelCapabilities } from "@/shared/lib/catalogCapabilities";
+import { filterModels } from "@/shared/lib/catalogFilter";
 import { useLenisScrollContainer, useScrollTopOnChange } from "@/shared/hooks/useLenisScrollContainer";
 import { useFavoriteModels } from "@/shared/hooks/useFavoriteModels";
 import { LLM_CATALOG_COPY } from "@/data/settingsCopy";
-import { CLOUD_PROVIDERS } from "@/data/providersCopy";
 import {
   useSettingsStore,
   type LlmModelInfo,
   type ModelCapabilities,
   type LlmProviderConfig,
 } from "@/store/settingsStore";
+import { useShallow } from "zustand/react/shallow";
 import { useCatalogStore } from "@/store/catalogStore";
 import { ProviderModal } from "../../providers/ProviderModal";
 import { useProviderSelection } from "@/shared/hooks/useProviderSelection";
@@ -72,7 +73,8 @@ export const RemoteCatalogSection = memo(({
 }: RemoteCatalogSectionProps) => {
   const updateDraft = useSettingsStore((s) => s.updateDraft);
   const capabilitiesCache = useCatalogStore((s) => s.capabilitiesCache);
-  const committedSettings = useSettingsStore((s) => s.settings);
+  const cloudProviders = useCatalogStore((s) => s.cloudProviders);
+  const committedSettings = useSettingsStore(useShallow((s) => s.settings));
 
   // Modal View: "models" | "providers"
   const [catalogModalView, setCatalogModalView] = useState<"models" | "providers">("models");
@@ -99,12 +101,7 @@ export const RemoteCatalogSection = memo(({
    * capability cache). Single source for the filter predicates below. */
   const resolveCapabilities = useCallback(
     (model: LlmModelInfo): ModelCapabilities | undefined =>
-      probingMap[model.id]?.capabilities ||
-      model.capabilities ||
-      capabilitiesCache?.[`server:${model.id}`] ||
-      capabilitiesCache?.[`cloud:${model.id}`] ||
-      capabilitiesCache?.[`embedded:${model.id}`] ||
-      capabilitiesCache?.[model.id],
+      resolveModelCapabilities(model, probingMap, capabilitiesCache),
     [probingMap, capabilitiesCache]
   );
 
@@ -143,42 +140,12 @@ export const RemoteCatalogSection = memo(({
   // Filtered Remote Models with fzf-style fuzzy matching, active facets, and
   // name order. The committed model stays pinned to the top.
   const filteredRemoteModels = useMemo(() => {
-    const trimmed = searchQuery.trim();
-    let models = remoteModels;
-
-    if (trimmed) {
-      const terms = trimmed.split(/\s+/).filter(Boolean);
-      if (terms.length > 0) {
-        const scored: Array<{ model: LlmModelInfo; score: number }> = [];
-
-        for (const model of remoteModels) {
-          const candidateFields = [
-            model.id,
-            model.name,
-            model.family || "",
-            model.quantization || "",
-          ];
-          const score = fzfMultiTermScore(terms, candidateFields);
-          if (score !== null) {
-            scored.push({ model, score });
-          }
-        }
-
-        // Sort descending by match score so the best fuzzy match is at the top
-        scored.sort((a, b) => b.score - a.score);
-        models = scored.map((item) => item.model);
-      }
-    }
-
-    if (modelFilter !== "all") {
-      models = models.filter((model) => {
-        if (modelFilter === "favorites") return favoriteModelIds.has(model.id);
-        const probed = resolveCapabilities(model);
-        if (modelFilter === "benchmarked") return probed?.tps != null && probed.tps > 0;
-        if (modelFilter === "tools") return probed?.supports_tools === "supported";
-        return probed?.tps != null && probed.tps >= 30;
-      });
-    }
+    const models = filterModels(remoteModels, {
+      category: modelFilter,
+      favoriteIds: favoriteModelIds,
+      resolveProbed: resolveCapabilities,
+      fuzzy: true,
+    }, searchQuery);
 
     const sorted = [...models];
     sorted.sort((a, b) => {
@@ -187,7 +154,6 @@ export const RemoteCatalogSection = memo(({
       const cmp = an.localeCompare(bn, undefined, { sensitivity: "base" });
       return sort === "az" ? cmp : -cmp;
     });
-    models = sorted;
 
     // Active card primacy: only the committed model pins to the top.
     const activeModelId = committedRemoteModelId;
@@ -274,13 +240,7 @@ export const RemoteCatalogSection = memo(({
       ) : (
         visibleInlineModels.map((model) => {
           const isSelected = selectedModelId === model.id;
-          const probed =
-            probingMap[model.id]?.capabilities ||
-            model.capabilities ||
-            capabilitiesCache?.[`server:${model.id}`] ||
-            capabilitiesCache?.[`cloud:${model.id}`] ||
-            capabilitiesCache?.[`embedded:${model.id}`] ||
-            capabilitiesCache?.[model.id];
+          const probed = resolveCapabilities(model);
           const isTesting = probingMap[model.id]?.status === "testing";
           const inlineProbeError = probingMap[model.id]?.status === "error" ? probingMap[model.id]?.error : undefined;
           const isGpu = probed?.is_gpu_accelerated;
@@ -481,18 +441,19 @@ export const RemoteCatalogSection = memo(({
                 {/* Right Bottom: Re-probe / Benchmark Button */}
                 <div className="flex items-center gap-1.5 shrink-0">
                   {!isTesting && (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleProbeCapabilities(model.id);
-                      }}
-                      className="text-[11px] font-bold text-[rgb(var(--accent))] px-2.5 py-0.5 rounded-lg bg-[rgb(var(--accent))]/10 border border-[rgb(var(--accent))]/25 hover:bg-[rgb(var(--accent))]/20 transition-all flex items-center gap-1 cursor-pointer"
-                      title={probed ? LLM_CATALOG_COPY.rerunBenchmark : LLM_CATALOG_COPY.runBenchmark}
-                    >
-                      <Sparkles size={11} />
-                      <span>{probed ? LLM_CATALOG_COPY.reprobe : LLM_CATALOG_COPY.benchmark}</span>
-                    </button>
+                    <Tooltip label={probed ? LLM_CATALOG_COPY.rerunBenchmark : LLM_CATALOG_COPY.runBenchmark} side="top" asChild>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleProbeCapabilities(model.id);
+                        }}
+                        className="text-[11px] font-bold text-[rgb(var(--accent))] px-2.5 py-0.5 rounded-lg bg-[rgb(var(--accent))]/10 border border-[rgb(var(--accent))]/25 hover:bg-[rgb(var(--accent))]/20 transition-all flex items-center gap-1 cursor-pointer"
+                      >
+                        <Sparkles size={11} />
+                        <span>{probed ? LLM_CATALOG_COPY.reprobe : LLM_CATALOG_COPY.benchmark}</span>
+                      </button>
+                    </Tooltip>
                   )}
                 </div>
               </div>
@@ -651,7 +612,7 @@ export const RemoteCatalogSection = memo(({
             </span>
           ) : (
             <span className="text-[11px] text-[rgb(var(--foreground-muted))]">
-              Connectors · {CLOUD_PROVIDERS.length}
+              Connectors · {cloudProviders.length}
             </span>
           )
         }

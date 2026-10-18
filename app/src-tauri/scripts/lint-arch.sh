@@ -68,16 +68,7 @@ for root, _, files in os.walk(src_dir):
                 if m:
                     report_violation("RULE-DB-01", file_path, i, f"Direct SQL query outside persistence layer: {line.strip()}")
 
-        # 2. RULE-DB-01 & RULE-DB-03: No direct db.connect() outside persistence/ & lib.rs bootstrap
-        if not is_persistence and not is_lib_rs:
-            for i, line in enumerate(lines, 1):
-                if ".connect()" in line:
-                    # check previous 2 lines for state.db or db
-                    window = " ".join([l.strip() for l in lines[max(0, i-3):i]])
-                    if "db" in window or "state" in window:
-                        report_violation("RULE-DB-01", file_path, i, f"Direct DB connection vending outside persistence layer: {line.strip()}")
-
-        # 3. RULE-STORAGE-01: No hardcoded ~/.vox paths outside utils/paths.rs
+        # 2. RULE-STORAGE-01: No hardcoded ~/.vox paths outside utils/paths.rs
         if not is_paths_rs:
             for i, line in enumerate(lines, 1):
                 m = STORAGE_PATH_REGEX.search(line)

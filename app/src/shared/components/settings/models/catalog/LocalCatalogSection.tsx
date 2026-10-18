@@ -1,6 +1,7 @@
 import { memo, useMemo } from "react";
 import { cn } from "@/shared/lib/utils";
 import { useSettingsStore } from "@/store/settingsStore";
+import { useShallow } from "zustand/react/shallow";
 import { useLenisScrollContainer, useScrollTopOnChange } from "@/shared/hooks/useLenisScrollContainer";
 import { SubModelCard } from "../SubModelCard";
 import type { ModelStatus } from "@/shared/hooks/useModelDownloads";
@@ -31,7 +32,7 @@ export const LocalCatalogSection = memo(({
 }: LocalCatalogSectionProps) => {
   const modelCatalog = useSettingsStore((s) => s.modelCatalog);
   const updateDraft = useSettingsStore((s) => s.updateDraft);
-  const committedSettings = useSettingsStore((s) => s.settings);
+  const committedSettings = useSettingsStore(useShallow((s) => s.settings));
 
   const committedLocalModelId = useMemo(
     () => committedSettings?.llm?.active?.model,

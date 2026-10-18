@@ -19,7 +19,7 @@ import {
 } from "@/data/homeCopy";
 import { shortcutKeysSuffix } from "@/data/shortcuts";
 
-import { Power, Mic, Keyboard, Play, Pause, X, AlertCircle, RotateCcw, Ghost } from "lucide-react";
+import { Power, Mic, Keyboard, Play, Pause, X, AlertCircle, RotateCcw } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { ChapterScrubber, type Chapter } from "@/shared/ui/ChapterScrubber";
 
@@ -284,9 +284,9 @@ export const Home = memo(() => {
         </div>
       )}
 
-      {/* ── Status Capsule: Fixed top 10% across desktop, adjusted for mobile header padding ── */}
+      {/* ── Status Header: Fixed top 10% across desktop, adjusted for mobile header padding ── */}
       <div
-        className="absolute left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 pointer-events-none"
+        className="absolute left-1/2 -translate-x-1/2 z-30 flex flex-col items-center pointer-events-none text-center"
         style={{
           top: isRealMobileDevice()
             ? "calc(50% - min(41vw, 25vh) - 112px - 22.4px)"
@@ -294,13 +294,12 @@ export const Home = memo(() => {
         }}
       >
         {cpuWarning && (
-          <span className="text-[11px] tracking-widest uppercase text-[rgb(var(--accent))]/70 font-semibold px-2 py-0.5 rounded-md bg-[rgb(var(--accent))]/10 border border-[rgb(var(--accent))]/20">
+          <span className="text-[11px] tracking-widest uppercase text-[rgb(var(--accent))]/70 font-semibold px-2 py-0.5 rounded-md bg-[rgb(var(--accent))]/10 border border-[rgb(var(--accent))]/20 mb-1">
             Mode: {GOVERNOR_LABELS[cpuWarning.governor] || cpuWarning.governor}
           </span>
         )}
         {isTemporarySession && (
-          <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[rgba(var(--accent),0.12)] border border-[rgba(var(--accent),0.3)] text-[10px] font-mono font-bold tracking-[0.2em] uppercase text-[rgb(var(--accent))] shadow-[0_0_10px_rgba(var(--accent),0.15)] animate-in fade-in zoom-in-95 duration-200">
-            <Ghost size={11} strokeWidth={2} />
+          <div className="flex items-center text-[9px] font-mono font-semibold tracking-[0.25em] uppercase text-[rgb(var(--accent))]/60 leading-none mb-1 animate-in fade-in duration-200">
             <span>{HOME_CONTROLS_COPY.temporary.activeBadge}</span>
           </div>
         )}

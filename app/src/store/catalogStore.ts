@@ -4,6 +4,10 @@ import {
   readModelCapabilitiesCache,
   requestModelCatalog,
 } from "@/services/catalogService";
+import type {
+  CloudProvider,
+  TtsProviderEntry,
+} from "@/data/providersCopy";
 import { ipcErrorMessage } from "@/shared/lib/ipcError";
 import { useSettingsStore, selectActiveLlmProvider } from "@/store/settingsStore";
 import type {
@@ -28,6 +32,10 @@ export interface CatalogState {
   capabilitiesCacheError: string | null;
   probingMap: Record<string, CatalogProbingEntry>;
   modelCatalog: ModelCatalog | null;
+  /** Store-owned provider lists (SSOT). Populated from the settings contract. */
+  cloudProviders: CloudProvider[];
+  ttsProviders: TtsProviderEntry[];
+  setProviders: (cloud: CloudProvider[], tts: TtsProviderEntry[]) => void;
 
   loadModelCatalog: () => Promise<void>;
   loadRemoteModels: (providerConfig?: LlmProviderConfig, force?: boolean) => Promise<void>;
@@ -49,6 +57,12 @@ export const useCatalogStore = create<CatalogState>((set, get) => ({
   capabilitiesCacheError: null,
   probingMap: {},
   modelCatalog: null,
+  cloudProviders: [],
+  ttsProviders: [],
+
+  setProviders: (cloud, tts) => {
+    set({ cloudProviders: cloud, ttsProviders: tts });
+  },
 
   loadModelCatalog: async () => {
     try {

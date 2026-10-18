@@ -55,7 +55,7 @@ sequenceDiagram
     participant SVC as Frontend Service Module
     participant IPC as IPC Command Bridge
     participant DOM as Domain Service (Backend)
-    participant DB as SQLite Persistence
+    participant DB as Turso Persistence
     participant EVT as Central Event Router
 
     Note over User,EVT: Command & Query Invocations
