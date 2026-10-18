@@ -1,22 +1,53 @@
 import React, { memo } from "react";
 import { cn } from "@/shared/lib/utils";
+import type { SettingsDomainId } from "@/data/settingsCopy";
 
 interface SettingsCardSkeletonProps {
   layoutMode?: "full-max" | "full-min" | "small";
+  domain?: SettingsDomainId;
 }
+
+const getDomainCardWidth = (domainId: string | undefined, layoutMode: "full-max" | "full-min" | "small"): string => {
+  if (layoutMode === "small") return "w-full";
+  if (domainId === "persona") {
+    return layoutMode === "full-min" ? "lg:w-[350px] xl:w-[370px] 2xl:w-[440px]" : "lg:w-[470px]";
+  }
+  if (domainId === "appearance") {
+    return layoutMode === "full-min" ? "lg:w-[240px] xl:w-[260px] 2xl:w-[280px]" : "lg:w-[290px] xl:w-[310px]";
+  }
+  return layoutMode === "full-min" ? "lg:w-[360px] xl:w-[420px] 2xl:w-[520px]" : "lg:w-[520px]";
+};
+
+const getDomainSkeletonHeight = (domainId: string | undefined, layoutMode: "full-max" | "full-min" | "small"): string => {
+  if (layoutMode === "small") return "h-auto";
+  switch (domainId) {
+    case "appearance":
+      return "min-h-[180px] h-full";
+    case "interaction":
+    case "models":
+    case "working_memory":
+    case "personal_memory":
+      return "lg:h-[340px]";
+    default:
+      return "min-h-[220px]";
+  }
+};
 
 export const SettingsCardSkeleton: React.FC<SettingsCardSkeletonProps> = memo(({
   layoutMode = "full-max",
+  domain,
 }) => {
   return (
     <div
       className={cn(
         "w-full flex flex-col select-none relative overflow-hidden",
         layoutMode === "small"
-          ? "bg-transparent p-0"
+          ? "bg-transparent p-0 h-auto"
           : cn(
-              "glass-card p-4 min-h-[220px] max-w-[460px]",
-              layoutMode === "full-min" ? "lg:w-[320px] xl:w-[380px] 2xl:w-[440px]" : "lg:w-[440px]"
+              "glass-card",
+              domain === "persona" ? "p-4 sm:p-5" : "p-5",
+              getDomainSkeletonHeight(domain, layoutMode),
+              getDomainCardWidth(domain, layoutMode)
             )
       )}
     >

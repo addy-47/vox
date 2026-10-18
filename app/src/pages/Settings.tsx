@@ -1,4 +1,4 @@
-import { useMemo, useEffect, useCallback, memo, Suspense, lazy } from "react";
+import { useMemo, useEffect, useCallback, memo, Suspense, lazy, useRef } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
 import { ErrorBoundary, OrbitalLoader } from "@/shared/components/common";
 import { SETTINGS_DOMAINS as DOMAINS, type SettingsDomainId as DomainId } from "@/data/settingsCopy";
@@ -27,7 +27,7 @@ import { SettingsCardSkeleton } from "@/shared/components/settings/SettingsCardS
 const DomainContent = memo(({ domain, layoutMode }: { domain: DomainId; layoutMode?: "full-max" | "full-min" | "small" }) => {
   const isRealtime = useSettingsStore((s) => s.draftSettings?.interaction?.pipeline_mode === "realtime");
   return (
-    <Suspense fallback={<SettingsCardSkeleton layoutMode={layoutMode} />}>
+    <Suspense fallback={<SettingsCardSkeleton layoutMode={layoutMode} domain={domain} />}>
       {(() => {
         switch (domain) {
           case "persona":
@@ -89,6 +89,17 @@ export const Settings: React.FC = () => {
     handleCenterClick,
     setActiveDomains,
   } = useSettingsPage();
+
+  // [RCA-PROBE] track active card count for unmount timing
+  const activeDomainsRef = useRef(activeDomains);
+  activeDomainsRef.current = activeDomains;
+  useEffect(() => {
+    const mountedAt = performance.now();
+    console.log("[RCA-PROBE] Settings mounted", mountedAt);
+    return () => {
+      console.log("[RCA-PROBE] Settings unmount, activeCards=", activeDomainsRef.current.length, "livedMs=", performance.now() - mountedAt);
+    };
+  }, []);
 
   const drawerHandlers = useMemo(() => ({
     open: () => setActiveDomains(DOMAINS.map((d) => d.id)),

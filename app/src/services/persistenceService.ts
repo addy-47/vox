@@ -61,8 +61,7 @@ export function getCachedSessions(): SessionRow[] | null {
   return cachedSessions;
 }
 
-/** Returns active sessions optionally filtered by project, pinned-first then newest. */
-export function getSessions(projectId?: string): Promise<SessionRow[]> {
+function fetchSessionsFromBackend(projectId?: string): Promise<SessionRow[]> {
   const key = projectId ?? "__all__";
   const existing = sessionsInFlight.get(key);
   if (existing) {
@@ -80,6 +79,29 @@ export function getSessions(projectId?: string): Promise<SessionRow[]> {
     });
   sessionsInFlight.set(key, promise);
   return promise;
+}
+
+/**
+ * Stale-while-revalidate read: a warm cache is served synchronously so route
+ * remounts paint with zero IPC latency, while a deduped background revalidate
+ * refreshes the cache for the next read. Invalidation paths (`sessions_changed`
+ * handlers, local mutations) MUST use `refreshSessions` — routing them through
+ * this stale read would serve pre-mutation data.
+ */
+export function getSessions(projectId?: string): Promise<SessionRow[]> {
+  if (!projectId && cachedSessions) {
+    void fetchSessionsFromBackend(projectId).catch(() => {});
+    return Promise.resolve(cachedSessions);
+  }
+  return fetchSessionsFromBackend(projectId);
+}
+
+/**
+ * Forced session-list read for invalidation paths. Always hits the backend
+ * (deduped against concurrent in-flight calls) and updates the shared cache.
+ */
+export function refreshSessions(projectId?: string): Promise<SessionRow[]> {
+  return fetchSessionsFromBackend(projectId);
 }
 
 const turnsInFlight = new Map<number, Promise<TurnRow[]>>();

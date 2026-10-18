@@ -46,12 +46,10 @@ export function useSettingsPage() {
   useEffect(() => {
     const closed = lastActiveDomains.current.filter((d) => !activeDomains.includes(d));
     if (closed.length > 0) {
-      // Survive, don't discard: flush any pending autosave immediately so hot
-      // changes commit instead of dying with the 600ms timer. Restart-classified
-      // dirty state stays in the draft (no prompt, no auto-apply) and is still
-      // there — with its Apply button — when the card reopens. Explicit
-      // per-card discard remains available in SettingsCardWrapper.
-      useSettingsStore.getState().flushPendingAutosave();
+      // Defer flush off the navigation/unmount path so route transitions stay snappy.
+      setTimeout(() => {
+        useSettingsStore.getState().flushPendingAutosave();
+      }, 0);
     }
     lastActiveDomains.current = activeDomains;
   }, [activeDomains]);

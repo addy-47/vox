@@ -2,6 +2,7 @@ import { useState, useEffect, useLayoutEffect, useCallback, useRef, useMemo } fr
 import { useLocation } from "react-router-dom";
 import {
   getSessions,
+  refreshSessions,
   getCachedSessions,
   getTurns,
   deleteSession,
@@ -117,10 +118,10 @@ export function useHistory() {
     };
   }, []);
 
-  const fetchSessions = useCallback(async () => {
+  const fetchSessions = useCallback(async (force = false) => {
     setError(null);
     try {
-      const data = await getSessions();
+      const data = force ? await refreshSessions() : await getSessions();
       // Same ordering as every other session list (Home, Memory rail):
       // pinned first, then by last activity — not bare created_at.
       setSessions(sortSessionsNewestFirst(data));
@@ -153,7 +154,8 @@ export function useHistory() {
 
   useEffect(() => {
     const unlisten = onSessionsChanged(() => {
-      void fetchSessions();
+      // Invalidation path: bypass the stale-while-revalidate read.
+      void fetchSessions(true);
     });
     return () => unlisten();
   }, [fetchSessions]);

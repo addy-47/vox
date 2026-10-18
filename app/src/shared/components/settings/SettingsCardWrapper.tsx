@@ -49,7 +49,7 @@ export const SettingsCardWrapper = memo(({ domain, isActive, layoutMode, childre
         <motion.div
           initial={layoutMode === "small" ? { opacity: 0 } : { opacity: 0, scale: 0.96 }}
           animate={{ opacity: 1, scale: 1 }}
-          exit={layoutMode === "small" ? { opacity: 0 } : { opacity: 0, scale: 0.96 }}
+          exit={layoutMode === "small" ? { opacity: 0, transition: { duration: 0 } } : { opacity: 0, scale: 0.96, transition: { duration: 0 } }}
           transition={{ duration: layoutMode === "small" ? 0.15 : 0.28, ease: [0.16, 1, 0.3, 1] }}
           className={cn(
             "w-full pointer-events-auto",
