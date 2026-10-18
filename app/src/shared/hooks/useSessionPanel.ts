@@ -203,6 +203,20 @@ export function useSessionPanel(active: boolean = true): UseSessionPanelReturn {
     return () => { isMounted = false; unlisten(); };
   }, [active, refresh]);
 
+  // Deferred prefetch: while the panel is closed, fetch once after startup so
+  // the first open renders cached data immediately. Live `sessions_changed`
+  // updates stay gated on `active` to avoid hidden-subtree re-renders.
+  const prefetchedRef = useRef(false);
+  useEffect(() => {
+    if (active || prefetchedRef.current) return;
+    const timer = window.setTimeout(() => {
+      if (prefetchedRef.current) return;
+      prefetchedRef.current = true;
+      void refresh();
+    }, 1500);
+    return () => window.clearTimeout(timer);
+  }, [active, refresh]);
+
   const pinnedSessions = useMemo(
     () => (Array.isArray(sessions) ? sessions.filter((s) => Boolean(s?.is_pinned)) : []),
     [sessions]

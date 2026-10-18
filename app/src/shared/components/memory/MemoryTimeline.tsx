@@ -188,8 +188,8 @@ export const MemoryTimeline = memo<MemoryTimelineProps>(({
   const rowVirtualizer = useVirtualizer({
     count: filteredSessions.length,
     getScrollElement: () => scrollRef.current,
-    estimateSize: () => 50,
-    overscan: 16,
+    estimateSize: () => 56,
+    overscan: 8,
   });
 
   return (
@@ -250,7 +250,7 @@ export const MemoryTimeline = memo<MemoryTimelineProps>(({
         <div
           ref={scrollRef}
           onScroll={handleScroll}
-          className="flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-0.5 pr-0.5 pt-1 pb-24"
+          className="flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-0.5 pr-0.5 pt-1 pb-24 [contain:layout_paint]"
         >
           {loadingSessions ? (
             <div className="flex items-center justify-center p-8">

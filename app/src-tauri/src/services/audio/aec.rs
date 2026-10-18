@@ -144,16 +144,26 @@ impl AecProcessor {
         if let Some(ref mut cons) = self.render_consumer {
             let occupied = cons.occupied_len();
             if occupied > MAX_RENDER_QUEUE_BACKLOG_SAMPLES {
-                cons.skip(occupied - MAX_RENDER_QUEUE_BACKLOG_SAMPLES);
+                cons.skip(occupied - AEC_FRAME_SAMPLES);
                 self.ringbuf_overflows += 1;
             }
-            while cons.occupied_len() >= AEC_FRAME_SAMPLES {
+            let mut frames_processed = 0;
+            while cons.occupied_len() >= AEC_FRAME_SAMPLES && frames_processed < 2 {
                 let popped = cons.pop_slice(&mut self.render_buf);
                 if popped == AEC_FRAME_SAMPLES {
                     let render_in: [&[f32]; 1] = [&self.render_buf];
                     let mut render_out: [&mut [f32]; 1] = [&mut self.render_dest];
                     let _ = self.apm.process_render_f32(&render_in, &mut render_out);
+                    frames_processed += 1;
                 }
+            }
+            if frames_processed == 0 {
+                // If reference buffer has no frame (e.g. slight jitter or initial startup),
+                // feed silence so APM render clock stays synchronous with capture clock.
+                self.render_buf.fill(0.0);
+                let render_in: [&[f32]; 1] = [&self.render_buf];
+                let mut render_out: [&mut [f32]; 1] = [&mut self.render_dest];
+                let _ = self.apm.process_render_f32(&render_in, &mut render_out);
             }
         }
     }

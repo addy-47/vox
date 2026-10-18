@@ -61,6 +61,22 @@ pub fn spawn_tts_worker(
                 intent,
             } => {
                 job_seq += 1;
+                if handles.cancel_flag.load(Ordering::Relaxed)
+                    || handles.playback.current_turn_id() != turn_id
+                {
+                    log::info!(
+                        "[TTS Worker] Dropping queued job {} for turn {} (turn superseded or cancelled)",
+                        job_seq,
+                        turn_id
+                    );
+                    if let Some(ref jobs) = handles.pending_synthesis_jobs {
+                        let _ = jobs.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |v| {
+                            Some(v.saturating_sub(1))
+                        });
+                    }
+                    continue;
+                }
+
                 let pending = handles
                     .pending_synthesis_jobs
                     .as_ref()
@@ -106,7 +122,7 @@ pub fn spawn_tts_worker(
                         })
                         .unwrap_or(0);
                     remaining_jobs = prev.saturating_sub(1);
-                    if prev <= 1 {
+                    if prev <= 1 && handles.playback.current_turn_id() == turn_id {
                         handles.playback.flush_pre_roll();
                         flushed_pre_roll = true;
                         if !handles.playback.is_armed() && handles.playback.occupied_len() == 0 {

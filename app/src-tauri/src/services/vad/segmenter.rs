@@ -15,7 +15,6 @@ use super::{
     VAD_PRE_ROLL_CAPACITY, VAD_PRE_ROLL_FLUSH_SAMPLES,
 };
 use crate::{
-    config::AudioOutputMode,
     core::{
         events::{InteractionOwner, VoxEvent},
         state::InteractionState,
@@ -200,10 +199,8 @@ fn compute_dynamic_onset_gate(
     interaction_state: InteractionState,
 ) -> f32 {
     let base_gate = state.noise_gate * vad.noise_gate_multiplier();
-    // Require higher SNR margin during Speaker playback to reject residual acoustic echo
-    let snr_multiplier = if interaction_state == InteractionState::Speaking
-        && state.audio_mode == AudioOutputMode::Speaker
-    {
+    // Require higher SNR margin during Speaking playback to reject residual acoustic echo
+    let snr_multiplier = if interaction_state == InteractionState::Speaking {
         3.2
     } else {
         2.0
@@ -398,11 +395,9 @@ pub fn process_continuous_segmentation(
         let onset_gate = compute_dynamic_onset_gate(state, vad, interaction_state);
         let is_onset_speech = vad_detected && raw_energy >= onset_gate;
 
-        // Require slightly firmer confirmation when barging in over open speakers
+        // Require slightly firmer confirmation when barging in over active playback
         let base_start_frames = state.speech_start_frames.max(2) as f32;
-        let required_onset_score = if interaction_state == InteractionState::Speaking
-            && state.audio_mode == AudioOutputMode::Speaker
-        {
+        let required_onset_score = if interaction_state == InteractionState::Speaking {
             (base_start_frames * 1.5).max(5.0)
         } else {
             base_start_frames
@@ -445,12 +440,7 @@ pub fn process_continuous_segmentation(
             state.current_turn_id = atomic_tid;
         }
 
-        // Dual-threshold sustain: once in speech, do NOT gate on `onset_gate` energy so soft
-        // trailing syllables and nasals never prematurely sever the utterance.
-        let sustain_energy_ok = raw_energy >= (state.noise_floor_ema * 1.35);
-        let is_sustain_speech = vad_detected || (state.inactive_frames < 4 && sustain_energy_ok);
-
-        if is_sustain_speech {
+        if vad_detected {
             // If recovering from a mid-sentence micro-pause (>= 4 frames = 64ms), adapt cadence EMA
             if state.inactive_frames >= 4 {
                 let pause_ms = (state.inactive_frames * 16) as f32;
