@@ -361,6 +361,22 @@ All vector illustrations, domain diagrams, and custom toggle widgets (e.g. `WebS
 * **Minimalist Stroke Logo**: The loading graphic consists of a clean, minimal, stroke-style SVG of the official Vox audio waveform logo (`rgb(var(--accent))` stroke, ~1.5px weight). It renders the 5 vertical sound equalizer lines overlaid with the signature central waveform featuring the deep "V" dip and terminal node dots. Heavy orb silhouettes, outer rotating rings, and ping auras are eliminated in favor of an ultra-lean, single-element SVG.
 * **Motion & Performance Budget**: Animates purely through hardware-accelerated CSS `stroke-dashoffset` flow and gentle breathing glow (`opacity` / `filter`). Zero JavaScript animation loops or `requestAnimationFrame` hooks are permitted. Idle loops pause under `prefers-reduced-motion` and `data-viewport-resize`.
 
+### 7.2 Route Commit Motion & Orb Entrance Bloom
+
+* **Route commits are instant except for the mobile swipe gesture.** The
+  swipe slide (±18 % offset, 220 ms, ease `[0.16, 1, 0.3, 1]`) is the only
+  route entrance animation: it communicates lateral movement across sibling
+  tabs. Click, keyboard, and tap navigation commit with no entrance animation
+  (`initial={false}` on the route container) — an opacity ramp on every route
+  swap is perceived latency, not feedback. Swipe direction resets on the next
+  touch start so a stale offset never replays on a plain tap.
+* **Orb entrance bloom.** The WebGL orb container stays invisible until its
+  first frame is painted, then blooms in over 700 ms (opacity 0 → 1, scale
+  0.92 → 1, ease `[0.16, 1, 0.3, 1]`) instead of popping from nothing to a
+  fully-drawn canvas. The bloom is compositor-only (transform + opacity) and
+  is skipped entirely under `prefers-reduced-motion`, where the orb starts in
+  its entered state.
+
 
 ---
 

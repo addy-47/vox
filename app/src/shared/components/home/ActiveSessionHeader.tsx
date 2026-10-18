@@ -2,7 +2,7 @@ import React, { useEffect } from "react";
 import { motion } from "framer-motion";
 import { useSessionStore } from "@/store/sessionStore";
 import { onSessionsChanged } from "@/services/eventsService";
-import { getSessions, resolveSessionTitle } from "@/services/persistenceService";
+import { refreshSessions, resolveSessionTitle } from "@/services/persistenceService";
 import { getProjects } from "@/services/projectsService";
 import { getRuntimeSnapshot } from "@/services/monitoringService";
 
@@ -63,7 +63,8 @@ export const ActiveSessionHeader: React.FC<ActiveSessionHeaderProps> = ({
 
       try {
         const [sessions, projects] = await Promise.all([
-          getSessions(),
+          // Invalidation path (sessions_changed): bypass the stale-while-revalidate read.
+          refreshSessions(),
           getProjects().catch(() => []),
         ]);
         if (!isMounted) return;

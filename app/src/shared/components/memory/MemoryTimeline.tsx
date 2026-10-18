@@ -6,6 +6,7 @@ import {
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   getSessions,
+  refreshSessions,
   sortSessionsNewestFirst,
   type SessionRow,
 } from "@/services/persistenceService";
@@ -98,9 +99,9 @@ export const MemoryTimeline = memo<MemoryTimelineProps>(({
     }
   }, []);
 
-  const fetchSessionsList = useCallback(async () => {
+  const fetchSessionsList = useCallback(async (force = false) => {
     try {
-      const data = await getSessions();
+      const data = force ? await refreshSessions() : await getSessions();
       setSessions(sortSessionsNewestFirst(data));
     } catch (err) {
       console.warn("[MemoryTimeline] Failed to load sessions:", err);
@@ -119,7 +120,8 @@ export const MemoryTimeline = memo<MemoryTimelineProps>(({
       void fetchStats();
     });
     const unlistenSessions = onSessionsChanged(() => {
-      void fetchSessionsList();
+      // Invalidation path: bypass the stale-while-revalidate read.
+      void fetchSessionsList(true);
     });
 
     return () => {

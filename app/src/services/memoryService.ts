@@ -1,4 +1,5 @@
 import { invoke } from "./transport";
+import { onMemoryIngestionUpdated } from "./eventsService";
 
 /**
  * Mirror of `PersonalMemoryRecord` (persistence/personal_memory.rs).
@@ -199,10 +200,48 @@ export async function getObservations(
 
 /**
  * Returns all `status = 'active'` observations for memory graph visualization.
+ *
+ * Stale-while-revalidate read: the Memory page remounts on every route visit,
+ * so a warm cache serves the last-known snapshot synchronously (zero IPC on
+ * warm navigation) while a deduped background revalidate updates the cache.
+ * The cache is invalidated by the ingestion event below — the only backend
+ * writer of active observations — and by `{ force: true }` for local
+ * mutation paths.
  */
-export function getActiveObservations(projectId?: string): Promise<ObservationRecord[]> {
-  return getObservations(projectId, "active");
+let activeObservationsCache: ObservationRecord[] | null = null;
+let activeObservationsInFlight: Promise<ObservationRecord[]> | null = null;
+
+function fetchActiveObservations(): Promise<ObservationRecord[]> {
+  if (activeObservationsInFlight) return activeObservationsInFlight;
+  activeObservationsInFlight = getObservations(undefined, "active").finally(() => {
+    activeObservationsInFlight = null;
+  });
+  return activeObservationsInFlight;
 }
+
+export async function getActiveObservations(opts?: { force?: boolean }): Promise<ObservationRecord[]> {
+  if (opts?.force || !activeObservationsCache) {
+    const data = await fetchActiveObservations();
+    activeObservationsCache = data;
+    return data;
+  }
+  void fetchActiveObservations()
+    .then((fresh) => {
+      activeObservationsCache = fresh;
+    })
+    .catch(() => {
+      // Background revalidate is best-effort; the stale snapshot stays served.
+    });
+  return activeObservationsCache;
+}
+
+// Compaction/ingestion is the only backend writer of active observations;
+// hook the canonical event once at module scope so the cache never outlives
+// the last backend mutation. eventsService imports memoryService type-only,
+// so this direction introduces no runtime import cycle.
+onMemoryIngestionUpdated(() => {
+  activeObservationsCache = null;
+});
 
 export interface IngestionStats {
   total: number;

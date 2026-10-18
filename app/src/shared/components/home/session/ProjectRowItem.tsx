@@ -210,7 +210,6 @@ export const ProjectRowItem = memo(
           isDragTarget &&
             "border-[rgba(var(--accent),0.6)] bg-[rgba(var(--accent),0.12)] shadow-md"
         )}
-        layout={false}
         whileDrag={{
           scale: 1,
           cursor: "grabbing",

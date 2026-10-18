@@ -100,6 +100,9 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
 
   const handleTouchStart = (e: React.TouchEvent) => {
     if (!isMobile) return;
+    // A new gesture supersedes any previous swipe direction — otherwise a
+    // later tap-nav would replay the stale slide offset from an old swipe.
+    if (swipeDirection !== 0) setSwipeDirection(0);
     const target = e.target as HTMLElement | null;
     if (target?.tagName === "CANVAS" || target?.closest("canvas, input[type='range'], [data-no-swipe], [role='slider']")) {
       return;
@@ -150,6 +153,9 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
   useEffect(() => {
     document.title = PAGE_TITLES[location.pathname] ?? "Vox";
     window.scrollTo(0, 0);
+    // Dev-only cyan-flash RCA probe. `getComputedStyle` here forces a
+    // synchronous style recalc on every navigation — must never run in prod.
+    if (!import.meta.env.DEV) return;
     import("@/services/persistenceService").then(({ getTurnsCacheSize }) => {
       // (cyan-flash RCA: theme-token state at every route commit. Remove once found.)
       try {
@@ -362,7 +368,9 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
         e.preventDefault();
         const isCompact = isCompactWidth();
         const routes = isCompact ? ["/", "/history", "/memory", "/settings", "/monitoring"] : ["/", "/history", "/memory", "/settings"];
-        const currentIndex = routes.indexOf(location.pathname);
+        // Read through the ref, not the closure — keeps this listener out of
+        // the pathname dependency so it isn't torn down and re-added per nav.
+        const currentIndex = routes.indexOf(pathnameRef.current);
         if (currentIndex !== -1) {
           setMonitorOpen(false);
           if (key === "ArrowRight") {
@@ -400,7 +408,7 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [location.pathname, navigate, togglePanel, openPanel, openActiveDrawer, closeActiveDrawer, closeHelp]);
+  }, [navigate, togglePanel, openPanel, openActiveDrawer, closeActiveDrawer, closeHelp]);
 
   const isSettings = location.pathname === "/settings";
   const isHome = location.pathname === "/";
@@ -474,10 +482,16 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
             {(children || outlet) && (
               <motion.div
                 key={location.pathname}
-                initial={{
-                  opacity: isMobile && swipeDirection !== 0 ? 0.8 : 0,
-                  x: isMobile && swipeDirection !== 0 ? (swipeDirection > 0 ? "18%" : "-18%") : 0,
-                }}
+                // Entrance motion is reserved for the mobile swipe gesture,
+                // where the slide communicates lateral tab movement. Click,
+                // keyboard, and tap navs commit instantly (`initial={false}`):
+                // a fade-from-invisible on every route swap is pure perceived
+                // latency. Swipe direction is reset on the next touch start.
+                initial={
+                  isMobile && swipeDirection !== 0
+                    ? { opacity: 0.8, x: swipeDirection > 0 ? "18%" : "-18%" }
+                    : false
+                }
                 animate={{ opacity: 1, x: 0 }}
                 transition={{
                   duration: isMobile ? 0.22 : 0.15,

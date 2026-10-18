@@ -98,6 +98,7 @@ All authoritative specs live in [`docs/specs/`](file:///home/addy/projects/apps/
 - **AEC & Incognito Persistence:** WebRTC AEC3, clear render queue, unified private mode SSOT.
 - **Frontend test suite + lint remediation:** vitest 157/157, 0 ESLint errors, tsc/lint-arch clean.
 - **Backend invariant gate + VAD/ASR + session panel perf:** clippy/lint-arch gate, VAD/ASR pipeline, session panel reconcile/virtualization/deferred prefetch.
+- **Navigation perf (warm-nav SWR + motion):** `getSessions`/`getActiveObservations` stale-while-revalidate caches with forced `refreshSessions` on all `sessions_changed`/ingestion invalidation paths; route-nav RCA log dev-gated; route entrance motion restricted to mobile swipe; keydown listener keyed off `pathnameRef`; orb first-frame entrance bloom (design-spec §7.2). tsc/eslint(0 new)/vitest 157/157/lint-arch/knip/pnpm build clean.
 
 ---
 

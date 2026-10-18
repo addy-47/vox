@@ -407,6 +407,19 @@ export const VoxOrb = React.memo(({
   const firstFrameFiredRef = useRef(false);
   const themeApplyLogCountRef = useRef(0); // cyan-flash RCA only — remove with logs
 
+  // ── Entrance animation ──────────────────────────────────────────────────
+  // The orb container stays invisible until the first WebGL frame is painted,
+  // then blooms in (opacity + gentle scale). Without this, the canvas popped
+  // from nothing to fully-drawn the instant scene init finished (~100–200 ms
+  // after mount). Honours prefers-reduced-motion by starting entered.
+  const prefersReducedMotion = useState(
+    () =>
+      typeof window !== "undefined" &&
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+  )[0];
+  const [entered, setEntered] = useState(prefersReducedMotion);
+
   const mountRef     = useRef<HTMLDivElement>(null);
   const stateRef     = useRef(interactionState);
   const sleepingRef  = useRef(isSleeping);
@@ -787,6 +800,8 @@ export const VoxOrb = React.memo(({
         console.debug("[AdvancedOrb] First frame log failed:", e);
       }
       onFirstFrameRef.current?.();
+      // Begin the entrance bloom only once there is a frame to show.
+      setEntered(true);
     }
   }, [telemetryRef]);
 
@@ -838,11 +853,15 @@ export const VoxOrb = React.memo(({
       };
     }
 
-    // Seed uniforms from a synchronous DOM read so the first frames use
-    // the live theme even when the observer effect has not settled yet.
-    // --accent-dark stays token-sourced to match the pre-existing look.
-    const initGlow = getCSSColor('--accent-dark', '#0891b2');
-    const initAccent = getCSSColor('--accent', '#00dbe9');
+    // Seed uniforms from the cached theme when available to avoid a cyan flash
+    // on mount. Fall back to DOM read only when cache is empty.
+    const seedForInit = cachedOrbTheme;
+    const initGlow = seedForInit
+      ? seedForInit.glow.clone()
+      : getCSSColor('--accent-dark', '#0891b2');
+    const initAccent = seedForInit
+      ? seedForInit.accent.clone()
+      : getCSSColor('--accent', '#00dbe9');
     try {
       console.info(`[trace-orb] scene-init: accent=#${initAccent.getHexString()} glow=#${initGlow.getHexString()} (fallbacks #00dbe9/#0891b2 = cyan family), state=${stateRef.current}, container=${width}x${height}`);
     } catch (e) {
@@ -1011,36 +1030,52 @@ export const VoxOrb = React.memo(({
     return () => {
       sceneRef.current = null;
       resizeObs.disconnect();
+      // Remove DOM immediately; defer heavy GPU teardown off the navigation path.
       if (container.contains(renderer.domElement)) {
         container.removeChild(renderer.domElement);
       }
-      sharedDiscGeo.dispose();
-      outerGeo.dispose();
-      outerMat.dispose();
-      discMats.forEach((m) => m.dispose());
-      if (typeof window !== "undefined") {
-        delete window.__VOX_THREE_METRICS__;
-      }
-      if (renderer.domElement) {
-        renderer.domElement.width = 1;
-        renderer.domElement.height = 1;
-      }
-      try {
-        const gl = renderer.getContext();
-        if (gl && !gl.isContextLost()) {
-          renderer.forceContextLoss();
+      setTimeout(() => {
+        sharedDiscGeo.dispose();
+        outerGeo.dispose();
+        outerMat.dispose();
+        discMats.forEach((m) => m.dispose());
+        if (typeof window !== "undefined") {
+          delete window.__VOX_THREE_METRICS__;
         }
-      } catch (e) {
-        console.debug("[AdvancedOrb] WebGL context loss error during cleanup:", e);
-      }
-      renderer.dispose();
+        if (renderer.domElement) {
+          renderer.domElement.width = 1;
+          renderer.domElement.height = 1;
+        }
+        try {
+          const gl = renderer.getContext();
+          if (gl && !gl.isContextLost()) {
+            renderer.forceContextLoss();
+          }
+        } catch (e) {
+          console.debug("[AdvancedOrb] WebGL context loss error during cleanup:", e);
+        }
+        renderer.dispose();
+      }, 0);
     };
   }, []);
 
   return (
     <div
       ref={mountRef}
-      style={{ width: '100%', height: '100%', background: 'transparent', position: 'relative', contain: 'strict', transform: 'translateZ(0)' }}
+      style={{
+        width: '100%',
+        height: '100%',
+        background: 'transparent',
+        position: 'relative',
+        contain: 'strict',
+        // translateZ(0) keeps the compositing hint the container always had;
+        // the scale/opacity pair is the entrance bloom (compositor-only).
+        transform: entered ? 'translateZ(0) scale(1)' : 'translateZ(0) scale(0.92)',
+        opacity: entered ? 1 : 0,
+        transition: prefersReducedMotion
+          ? 'none'
+          : 'opacity 700ms cubic-bezier(0.16, 1, 0.3, 1), transform 700ms cubic-bezier(0.16, 1, 0.3, 1)',
+      }}
     />
   );
 });

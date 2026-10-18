@@ -19,6 +19,7 @@ import {
 } from "@/services/memoryService";
 import {
   getSessions,
+  refreshSessions,
   resolveSessionTitle,
   type SessionRow,
 } from "@/services/persistenceService";
@@ -110,10 +111,12 @@ export const Memory: React.FC = memo(() => {
   const [selectModeEnabled, setSelectModeEnabled] = useState(false);
   const [isLightMode, setIsLightMode] = useState(false);
 
-  // Fetch session list for title resolution and session tooltips
-  const fetchSessions = useCallback(async () => {
+  // Fetch session list for title resolution and session tooltips.
+  // Mount path serves the stale-while-revalidate cache; the sessions_changed
+  // handler is an invalidation path and must bypass it.
+  const fetchSessions = useCallback(async (force = false) => {
     try {
-      const data = await getSessions();
+      const data = force ? await refreshSessions() : await getSessions();
       if (mountedRef.current) setSessions(data);
     } catch (err) {
       console.warn("[Memory] Failed to load sessions:", err);
@@ -123,7 +126,7 @@ export const Memory: React.FC = memo(() => {
   useEffect(() => {
     void fetchSessions();
     const unlisten = onSessionsChanged(() => {
-      void fetchSessions();
+      void fetchSessions(true);
     });
     return () => {
       unlisten();
@@ -226,11 +229,13 @@ export const Memory: React.FC = memo(() => {
   }, []);
 
   // ── Load Memory Data ───────────────────────────────────────────────────────
-  const refresh = useCallback(async (isSilent = false) => {
+  // `force` bypasses the stale-while-revalidate read — used by mutation
+  // paths (drawer refresh after consolidation); plain mounts serve the cache.
+  const refresh = useCallback(async (isSilent = false, force = false) => {
     if (!isSilent) setLoading(true);
     setRefreshing(true);
     try {
-      const activeFacts = await getActiveObservations();
+      const activeFacts = await getActiveObservations({ force });
       if (!mountedRef.current) return;
       setFacts(activeFacts);
       setLoadError(null);
@@ -254,7 +259,8 @@ export const Memory: React.FC = memo(() => {
   // ── Personal Memory Drawer Hook ──────────────────────────────────────────
   const drawer = usePersonalMemoryDrawer({
     facts,
-    onRefreshFacts: refresh,
+    // Post-mutation path: force a fresh observation read, never the stale cache.
+    onRefreshFacts: (silent = false) => refresh(silent, true),
     onError: setLoadError,
   });
   const { drawerOpen } = drawer;
