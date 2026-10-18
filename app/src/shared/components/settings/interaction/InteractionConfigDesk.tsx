@@ -48,7 +48,8 @@ export const InteractionConfigDesk = memo(({ activeCategory, onBack, layoutMode 
 
   useEffect(() => {
     const handleSync = (e: Event) => {
-      const cat = (e as CustomEvent).detail;
+      const customEvent = e as CustomEvent<string>;
+      const cat = typeof customEvent.detail === "string" ? customEvent.detail : "";
       if (cat === "stt" || cat === "llm" || cat === "tts") {
         setCurrentCategory(cat.toUpperCase() as "STT" | "LLM" | "TTS");
       }
@@ -128,7 +129,7 @@ export const InteractionConfigDesk = memo(({ activeCategory, onBack, layoutMode 
 
   const llmServerInventory = useMemo(
     () => getEffectiveLlmServers(draftSettings, committedSettings) as LlmCustomServer[],
-    [draftLlm?.servers, draftSettings?.providers?.llm?.servers, committedSettings?.providers?.llm?.servers]
+    [committedSettings, draftSettings]
   );
 
 
@@ -233,24 +234,26 @@ export const InteractionConfigDesk = memo(({ activeCategory, onBack, layoutMode 
       return;
     }
     let isMounted = true;
-    const timer = setTimeout(async () => {
-      setCheckingHealth(true);
-      setModelsError(null);
-      try {
-        const res = await checkLlmProviderHealth(currentProvider);
-        if (!isMounted) return;
-        setIsHealthy(res.healthy);
-        setDetectedDialect(res.dialect ?? null);
-        setModelsError(res.healthy ? null : (res.reason ?? INTERACTION_CONFIG_DESK_COPY.status.connectionFailed));
-      } catch (err) {
-        if (!isMounted) return;
-        console.error(err);
-        setIsHealthy(false);
-        setDetectedDialect(null);
-        setModelsError(INTERACTION_CONFIG_DESK_COPY.status.connectionFailed);
-      } finally {
-        if (isMounted) setCheckingHealth(false);
-      }
+    const timer = setTimeout(() => {
+      void (async () => {
+        setCheckingHealth(true);
+        setModelsError(null);
+        try {
+          const res = await checkLlmProviderHealth(currentProvider);
+          if (!isMounted) return;
+          setIsHealthy(res.healthy);
+          setDetectedDialect(res.dialect ?? null);
+          setModelsError(res.healthy ? null : (res.reason ?? INTERACTION_CONFIG_DESK_COPY.status.connectionFailed));
+        } catch (err) {
+          if (!isMounted) return;
+          console.error(err);
+          setIsHealthy(false);
+          setDetectedDialect(null);
+          setModelsError(INTERACTION_CONFIG_DESK_COPY.status.connectionFailed);
+        } finally {
+          if (isMounted) setCheckingHealth(false);
+        }
+      })();
     }, 500);
     return () => {
       isMounted = false;
@@ -595,7 +598,7 @@ export const InteractionConfigDesk = memo(({ activeCategory, onBack, layoutMode 
                 handleEditServer(server.id, server.url, server.api_key ?? null, server.name || "");
               }}
               onDeleteCustomServer={(serverId) => {
-                deleteCustomServer(currentCategory === "LLM" ? "llm" : "tts", serverId);
+                void deleteCustomServer(currentCategory === "LLM" ? "llm" : "tts", serverId);
               }}
               providers={showAllInline ? filteredProviders : curatedProviders}
               activeCloudProviderId={activeCloudProviderId}

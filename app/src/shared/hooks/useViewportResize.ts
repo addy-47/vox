@@ -34,8 +34,11 @@ export function useViewportResize() {
   useEffect(() => {
     let isMounted = true;
     installViewportResizeGate();
-    setIsResizing(isViewportResizing());
-    setLayout(getViewportLayout());
+    void Promise.resolve().then(() => {
+      if (!isMounted) return;
+      setIsResizing(isViewportResizing());
+      setLayout(getViewportLayout());
+    });
 
     const updateBreakpoints = () => {
       if (!isMounted) return;

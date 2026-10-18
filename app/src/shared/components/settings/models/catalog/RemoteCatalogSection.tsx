@@ -218,6 +218,7 @@ export const RemoteCatalogSection = memo(({
     favoriteModelIds,
     resolveCapabilities,
     committedRemoteModelId,
+    selectedModelId,
   ]);
 
   // Capped render window for the inline grid (see REMOTE_MODEL_PAGE_SIZE).

@@ -115,7 +115,7 @@ export const History: React.FC = () => {
   const handleBackToList = React.useCallback(() => {
     setSelectedSession(null);
     if (location.search.includes("sessionId")) {
-      navigate("/history", { replace: true });
+      void navigate("/history", { replace: true });
     }
   }, [setSelectedSession, location.search, navigate]);
 

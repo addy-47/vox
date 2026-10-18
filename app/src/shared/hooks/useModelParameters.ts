@@ -20,7 +20,10 @@ export function useModelParameters(modelId: string | null | undefined) {
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingRef = useRef<Record<string, unknown>>({});
   const modelRef = useRef(modelId);
-  modelRef.current = modelId;
+
+  useEffect(() => {
+    modelRef.current = modelId;
+  }, [modelId]);
 
   const flush = useCallback(async () => {
     const target = modelRef.current;

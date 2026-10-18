@@ -162,7 +162,7 @@ export async function getProfilerSnapshot(): Promise<ProfilerSnapshot> {
 export async function recordMemoryProfileEvent(event: MemoryProfileLogEvent): Promise<void> {
   try {
     await invoke("record_memory_profile_event", { event });
-  } catch (e) {
+  } catch {
     // Non-blocking logging
   }
 }
@@ -197,9 +197,9 @@ export function sampleDOMStats(): DOMSample {
   }
 
   const nodeCount = document.querySelectorAll("*").length;
-  let fontFaceCount = 0;
+  let fontFaceCount: number;
   try {
-    fontFaceCount = document.fonts ? document.fonts.size : 0;
+    fontFaceCount = document.fonts.size;
   } catch {
     fontFaceCount = 0;
   }

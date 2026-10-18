@@ -223,6 +223,7 @@ export function usePersonalMemoryDrawer({
   // Drawer handlers & Page Drawer registration
   const openDrawer = useCallback(() => {
     setStagingMode("idle");
+    setDrawerBodyReady(false);
     setDrawerOpen(true);
   }, []);
 
@@ -231,6 +232,7 @@ export function usePersonalMemoryDrawer({
       storeSetReopenToComments(true);
     }
     setDrawerOpen(false);
+    setDrawerBodyReady(false);
     setStagingMode("idle");
   }, [comments.length, storeSetReopenToComments]);
 
@@ -245,10 +247,7 @@ export function usePersonalMemoryDrawer({
 
   // Deferred drawer body ready
   useEffect(() => {
-    if (!drawerOpen) {
-      setDrawerBodyReady(false);
-      return;
-    }
+    if (!drawerOpen) return;
     let cancelled = false;
     const id1 = requestAnimationFrame(() =>
       requestAnimationFrame(() => {
@@ -263,11 +262,18 @@ export function usePersonalMemoryDrawer({
 
   // Auto-reopen to comment section if comments were pending when drawer was closed
   useEffect(() => {
-    if (drawerOpen && reopenToComments && comments.length > 0) {
+    if (!drawerOpen || !reopenToComments || comments.length === 0) return undefined;
+    let isMounted = true;
+    const run = async () => {
+      await Promise.resolve();
+      if (!isMounted) return;
       setStagingMode("comment");
       storeSetReopenToComments(false);
-    }
-    return undefined;
+    };
+    void run();
+    return () => {
+      isMounted = false;
+    };
   }, [drawerOpen, reopenToComments, comments.length, storeSetReopenToComments]);
 
   // Derived Candidate observations from facts
@@ -302,7 +308,16 @@ export function usePersonalMemoryDrawer({
   }, [onError]);
 
   useEffect(() => {
-    refreshPersonalMemory();
+    let isMounted = true;
+    const run = async () => {
+      await Promise.resolve();
+      if (!isMounted) return;
+      await refreshPersonalMemory();
+    };
+    void run();
+    return () => {
+      isMounted = false;
+    };
   }, [refreshPersonalMemory]);
 
   // Version selection & restore
@@ -708,9 +723,9 @@ export function usePersonalMemoryDrawer({
 
   const handleConfirmPendingIntegration = useCallback(() => {
     if (pendingActionType === "regenerate" && comments.length > 0) {
-      handleRegenerateWithComments(comments, true);
+      void handleRegenerateWithComments(comments, true);
     } else {
-      handleConsolidateNow(true);
+      void handleConsolidateNow(true);
     }
   }, [pendingActionType, comments, handleRegenerateWithComments, handleConsolidateNow]);
 
@@ -730,7 +745,7 @@ export function usePersonalMemoryDrawer({
     drawerOpen,
     openDrawer,
     closeDrawer,
-    drawerBodyReady,
+    drawerBodyReady: drawerOpen && drawerBodyReady,
     personalMemory,
     displayedRecord,
     versions,

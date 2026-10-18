@@ -46,6 +46,11 @@ export const VoiceCard = memo(
     onPreview,
     onSeekPreview,
   }: VoiceCardProps) => {
+    const cardWaveformBars = useMemo(
+      () => (voice && previewPlaying ? getVoiceWaveform(voice.id, 28) : []),
+      [voice, previewPlaying]
+    );
+
     if (!voice) return null;
 
     const description = voice.description || VOICE_CATALOG_COPY.fallbackDescription;
@@ -60,11 +65,6 @@ export const VoiceCard = memo(
             ].filter(Boolean)
           )
         );
-
-    const cardWaveformBars = useMemo(
-      () => (voice && previewPlaying ? getVoiceWaveform(voice.id, 28) : []),
-      [voice, previewPlaying]
-    );
 
     return (
       <div

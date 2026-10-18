@@ -27,7 +27,9 @@ const preloadRouteChunks = () => {
   // burns radio/CPU on constrained GPUs for routes the user may never open.
   try {
     if (typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)").matches) return;
-  } catch {}
+  } catch (e) {
+    console.debug("[App] Failed to check matchMedia pointer:", e);
+  }
   void import("@/pages/History");
   void import("@/pages/Memory");
   void import("@/pages/Settings");
@@ -146,7 +148,9 @@ const App: React.FC = () => {
               localStorage.removeItem("vox_setup_completed");
               localStorage.removeItem("vox_skip_wizard_dev");
             }
-          } catch (_) {}
+          } catch (e) {
+            console.debug("[App] Failed to update localStorage setup state:", e);
+          }
           return;
         } catch (e) {
           console.error(`[App] Setup check failed (attempt ${attempt}/${MAX_ATTEMPTS}):`, e);
@@ -165,7 +169,9 @@ const App: React.FC = () => {
       let cachedCompleted = false;
       try {
         cachedCompleted = localStorage.getItem("vox_setup_completed") === "true";
-      } catch (_) {}
+      } catch (e) {
+        console.debug("[App] Failed to read localStorage setup state:", e);
+      }
 
       setSetupUnreachable(true);
       setSetupCompleted(null);
@@ -173,7 +179,7 @@ const App: React.FC = () => {
         setUserChoseRoute("app");
       }
     };
-    checkSetup();
+    void checkSetup();
 
     return () => {
       window.removeEventListener('unhandledrejection', onRejection);
@@ -238,7 +244,9 @@ const App: React.FC = () => {
     let isMounted = true;
     let cleanupListeners: (() => void) | null = null;
 
-    fetchNotifications().catch(() => {});
+    fetchNotifications().catch((e: unknown) => {
+      console.debug("[App] Failed to fetch notifications:", e);
+    });
 
     initListeners()
       .then((cleanup) => {
@@ -248,7 +256,9 @@ const App: React.FC = () => {
           cleanup();
         }
       })
-      .catch(() => {});
+      .catch((e: unknown) => {
+        console.debug("[App] Failed to initialize notification listeners:", e);
+      });
 
     return () => {
       isMounted = false;

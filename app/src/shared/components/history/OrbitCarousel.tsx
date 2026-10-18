@@ -284,12 +284,16 @@ export const OrbitCarousel = memo(({
   }, []);
 
   useEffect(() => {
+    const nodeEls = nodeElsRef.current;
+    const styleCache = styleCacheRef.current;
+    const baseAngles = baseAnglesRef.current;
+    const refCallbacksMap = refCallbacksMapRef.current;
     return () => {
       stopLoop();
-      nodeElsRef.current.clear();
-      styleCacheRef.current.clear();
-      baseAnglesRef.current.clear();
-      refCallbacksMapRef.current.clear();
+      nodeEls.clear();
+      styleCache.clear();
+      baseAngles.clear();
+      refCallbacksMap.clear();
     };
   }, [stopLoop]);
 

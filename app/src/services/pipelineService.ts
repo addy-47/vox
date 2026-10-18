@@ -110,7 +110,7 @@ export async function continueSession(
 
   // 3. Auto-engage pipeline with the new sessionId in background so caller receives
   // historical turns immediately without waiting for CPAL audio engine boot polling.
-  (async () => {
+  void (async () => {
     try {
       if (notifyState) {
         await engageSession(notifyState, 8000, sessionId);

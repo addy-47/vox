@@ -40,43 +40,6 @@ export const CloneVoiceDrawer = memo(
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    // Timer effect for live recording up to 30s
-    useEffect(() => {
-      let timer: ReturnType<typeof setInterval> | undefined;
-      if (isRecording) {
-        timer = setInterval(() => {
-          setDuration((d) => (d >= 30 ? 30 : d + 1));
-        }, 1000);
-      } else {
-        clearInterval(timer);
-      }
-      return () => clearInterval(timer);
-    }, [isRecording]);
-
-    // Auto-stop at 30 seconds
-    useEffect(() => {
-      if (isRecording && duration >= 30) {
-        handleStopRecording();
-      }
-    }, [isRecording, duration]);
-
-    // Cleanup recording on unmount or close
-    useEffect(() => {
-      if (!isOpen) {
-        if (isRecording) {
-          stopBackendRecording().catch(() => {});
-        }
-        setIsRecording(false);
-        setDuration(0);
-        setRecordedPcm(null);
-        setRecordedSampleRate(0);
-        setSelectedFilePath(null);
-        setVoiceName("");
-        setError(null);
-        setIsSubmitting(false);
-      }
-    }, [isOpen]);
-
     const handleStartRecording = useCallback(async () => {
       setError(null);
       setRecordedPcm(null);
@@ -100,6 +63,43 @@ export const CloneVoiceDrawer = memo(
         setError(err instanceof Error ? err.message : String(err));
       }
     }, []);
+
+    // Timer effect for live recording up to 30s
+    useEffect(() => {
+      let timer: ReturnType<typeof setInterval> | undefined;
+      if (isRecording) {
+        timer = setInterval(() => {
+          setDuration((d) => (d >= 30 ? 30 : d + 1));
+        }, 1000);
+      } else {
+        clearInterval(timer);
+      }
+      return () => clearInterval(timer);
+    }, [isRecording]);
+
+    // Auto-stop at 30 seconds
+    useEffect(() => {
+      if (isRecording && duration >= 30) {
+        void handleStopRecording();
+      }
+    }, [isRecording, duration, handleStopRecording]);
+
+    // Cleanup recording on unmount or close
+    useEffect(() => {
+      if (!isOpen) {
+        if (isRecording) {
+          void stopBackendRecording().catch(() => {});
+        }
+        setIsRecording(false);
+        setDuration(0);
+        setRecordedPcm(null);
+        setRecordedSampleRate(0);
+        setSelectedFilePath(null);
+        setVoiceName("");
+        setError(null);
+        setIsSubmitting(false);
+      }
+    }, [isOpen, isRecording]);
 
     const handlePickFile = useCallback(async () => {
       setError(null);

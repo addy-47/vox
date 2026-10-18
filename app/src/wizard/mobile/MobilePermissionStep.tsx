@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react';
 import { Mic, Bell, Check } from 'lucide-react';
 import {
   getRuntimeReport,
@@ -75,7 +75,16 @@ export const MobilePermissionStep: React.FC<MobilePermissionStepProps> = ({
   }, []);
 
   useEffect(() => {
-    void checkStatus();
+    let isMounted = true;
+    const run = async () => {
+      await Promise.resolve();
+      if (!isMounted) return;
+      await checkStatus();
+    };
+    void run();
+    return () => {
+      isMounted = false;
+    };
   }, [checkStatus]);
 
   useEffect(() => {
@@ -139,7 +148,9 @@ export const MobilePermissionStep: React.FC<MobilePermissionStepProps> = ({
   // indirection keeps `handleGrantAccess` referentially stable across the
   // `checkStatus` identity changes that would otherwise re-run this every render.
   const grantRef = useRef(handleGrantAccess);
-  grantRef.current = handleGrantAccess;
+  useLayoutEffect(() => {
+    grantRef.current = handleGrantAccess;
+  });
   useEffect(() => {
     onRegisterGrantAction?.(() => void grantRef.current());
   }, [onRegisterGrantAction]);

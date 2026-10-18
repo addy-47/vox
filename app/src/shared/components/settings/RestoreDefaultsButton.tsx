@@ -15,7 +15,7 @@ export const RestoreDefaultsButton = memo(() => {
   const [isConfirming, setIsConfirming] = useState(false);
 
   const handleConfirm = useCallback(() => {
-    restoreDefaults();
+    void restoreDefaults();
     setIsConfirming(false);
   }, [restoreDefaults]);
 

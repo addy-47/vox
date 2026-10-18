@@ -54,7 +54,9 @@ interface ModelsCardProps {
 
 export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) => {
   const draftSettings = useSettingsStore((s) => s.draftSettings);
-  const modelCatalog = useCatalogStore((s) => s.modelCatalog) ?? useSettingsStore((s) => s.modelCatalog);
+  const catalogModelCatalog = useCatalogStore((s) => s.modelCatalog);
+  const settingsModelCatalog = useSettingsStore((s) => s.modelCatalog);
+  const modelCatalog = catalogModelCatalog ?? settingsModelCatalog;
 
   useEffect(() => {
     if (!modelCatalog) {
@@ -135,7 +137,8 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
   // 1. Bidirectional Pipeline Tab Synchronization with InteractionCard
   useEffect(() => {
     const handleSync = (e: Event) => {
-      const tab = (e as CustomEvent).detail;
+      const customEvent = e as CustomEvent<string>;
+      const tab = typeof customEvent.detail === "string" ? customEvent.detail : "";
       if (tab === "stt") {
         setActivePipelineTab("stt");
       } else if (tab === "llm" || tab === "tts") {
@@ -172,7 +175,8 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
         const res = await checkTtsProviderHealth();
         setIsRemoteTtsHealthy(res.healthy);
         setTtsHealthReason(res.healthy ? null : (res.reason ?? null));
-      } catch (_) {
+      } catch (err) {
+        console.warn("[ModelsCard] TTS provider health check failed", err);
         setIsRemoteTtsHealthy(false);
         setTtsHealthReason("TTS provider health check failed");
       } finally {
@@ -180,8 +184,10 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
       }
     };
 
-    checkHealth();
-    const interval = setInterval(checkHealth, 5000);
+    void checkHealth();
+    const interval = setInterval(() => {
+      void checkHealth();
+    }, 5000);
     return () => clearInterval(interval);
   }, [isCloudOrRemoteTts, activePipelineTab, draftSettings?.tts?.active?.model]);
 
@@ -195,7 +201,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
           error: payload.error || undefined,
         });
         if (payload.step === "completed" && isRemoteTts) {
-          checkTtsProviderHealth().then((res) => setIsRemoteTtsHealthy(res.healthy));
+          void checkTtsProviderHealth().then((res) => setIsRemoteTtsHealthy(res.healthy));
         }
       }
     });
@@ -230,7 +236,8 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
       try {
         const urlObj = new URL(endpoint);
         srvPort = urlObj.port ? parseInt(urlObj.port) : 7860;
-      } catch (_) {
+      } catch (err) {
+        console.debug("[ModelsCard] Failed to parse URL, fallback to colon split", err);
         const parts = (endpoint || "").replace("http://", "").replace("https://", "").split(":");
         if (parts.length > 1) {
           srvPort = parseInt(parts[parts.length - 1]) || 7860;

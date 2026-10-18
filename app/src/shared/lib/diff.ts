@@ -40,7 +40,7 @@ export function diffWords(oldText: string, newText: string): DiffToken[] {
 
   // LCS DP table (lengths)
   // For memory safety with typical block sizes (1-500 words), this is fast and bounded.
-  const dp: number[][] = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0));
+  const dp: number[][] = Array.from({ length: n + 1 }, () => new Array<number>(m + 1).fill(0));
 
   for (let i = 0; i < n; i++) {
     for (let j = 0; j < m; j++) {

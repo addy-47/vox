@@ -100,7 +100,9 @@ const EdgePanelInner = memo(
               } else {
                 el.focus({ preventScroll: true });
               }
-            } catch {}
+            } catch (e) {
+              console.debug("[EdgePanel] Failed to focus element on open:", e);
+            }
           }
         }, 240);
         cleanup = () => { if (focusTimerRef.current) clearTimeout(focusTimerRef.current); };
@@ -109,10 +111,34 @@ const EdgePanelInner = memo(
         focusedBeforeRef.current = null;
         try {
           if (document.contains(prev)) prev.focus({ preventScroll: true });
-        } catch {}
+        } catch (e) {
+          console.debug("[EdgePanel] Failed to restore focus on close:", e);
+        }
       }
       return cleanup;
     }, [open]);
+
+    const handlePanelKeyDown = useCallback((e: React.KeyboardEvent) => {
+      if (e.key !== "Tab" || !panelRef.current) return;
+      const items = Array.from(
+        panelRef.current.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        )
+      ).filter((el) => el.offsetWidth > 0 || el.offsetHeight > 0);
+      if (items.length === 0) return;
+      const first = items[0];
+      const last = items[items.length - 1];
+      const active = document.activeElement as HTMLElement | null;
+      if (e.shiftKey) {
+        if (active === first || !panelRef.current.contains(active)) {
+          e.preventDefault();
+          last.focus();
+        }
+      } else if (active === last || !panelRef.current.contains(active)) {
+        e.preventDefault();
+        first.focus();
+      }
+    }, []);
 
     const isLeft = side === "left";
     const isGlobal = position === "global";
@@ -136,8 +162,11 @@ const EdgePanelInner = memo(
             <motion.aside
               ref={panelRef}
               role="dialog"
+              aria-modal="true"
               aria-label={title || LAYOUT_COPY.panel.fallback}
               data-edge-panel={side}
+              tabIndex={-1}
+              onKeyDown={handlePanelKeyDown}
               initial={{ x: isLeft ? "-100%" : "100%" }}
               animate={{ x: 0 }}
               exit={{ x: isLeft ? "-100%" : "100%" }}

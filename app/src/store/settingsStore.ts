@@ -718,7 +718,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     }
 
     let ticks = 0;
-    restartPollInterval = setInterval(async () => {
+    restartPollInterval = setInterval(() => {
+      void (async () => {
       ticks += 1;
       if (ticks > RESTART_POLL_MAX_TICKS || !get().restartInFlight) {
         if (restartPollInterval) {
@@ -745,6 +746,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       } catch (err) {
         console.warn("[SettingsStore] Failed to poll restart status:", err);
       }
+      })();
     }, RESTART_POLL_INTERVAL_MS);
   },
 

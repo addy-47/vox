@@ -87,23 +87,23 @@ export const TrayApp: React.FC = () => {
     const syncVisibility = async () => {
       try {
         if (visibilityState === 'HIDDEN') {
-          hideTrayWindow();
-          setWindowClickThrough("tray", true);
+          await hideTrayWindow();
+          await setWindowClickThrough("tray", true);
           reset();
           setInteractionState("Idle");
           setCopied(false);
           setHistoryIndex(-1);
           setViewingHistory(false);
         } else if (visibilityState === 'ACTIVE' || visibilityState === 'APPEARING') {
-          setWindowClickThrough("tray", false);
+          await setWindowClickThrough("tray", false);
         } else if (visibilityState === 'FADING') {
-          setWindowClickThrough("tray", true);
+          await setWindowClickThrough("tray", true);
         }
       } catch (e) {
         console.warn("[TrayApp] Failed to sync visibility:", e);
       }
     };
-    syncVisibility();
+    void syncVisibility();
   }, [visibilityState, reset]);
 
   const stateRef = useRef({
@@ -163,9 +163,13 @@ export const TrayApp: React.FC = () => {
   const handleClose = useCallback(() => {
     const textToCommit = stateRef.current.liveTargetText;
     if (textToCommit.trim()) {
-      getTranscriptHistory().then((h) => {
-        setHistory(h);
-      });
+      getTranscriptHistory()
+        .then((h) => {
+          setHistory(h);
+        })
+        .catch((e) => {
+          console.warn("[TrayApp] Failed to load history on close:", e);
+        });
     }
     stateRef.current.callbacks.reset();
     setHistoryIndex(-1);
@@ -312,9 +316,13 @@ export const TrayApp: React.FC = () => {
     }
 
     // Initial History Sync
-    getTranscriptHistory().then((h: string[]) => {
-      if (active) setHistory(h);
-    });
+    getTranscriptHistory()
+      .then((h: string[]) => {
+        if (active) setHistory(h);
+      })
+      .catch((e) => {
+        console.warn("[TrayApp] Failed to load initial transcript history:", e);
+      });
 
     return () => {
       active = false;

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { launchEngine, stopEngine } from '@/services/pipelineService';
 import { onTranscriptPartial, onTranscriptFinal, onTelemetry } from '@/services/eventsService';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -51,7 +51,7 @@ export const LiveTestStep: React.FC<Props> = ({ onNext, onBack }) => {
   
   const transcriptTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  const setup = async () => {
+  const setup = useCallback(async () => {
     setError(null);
     setIsEngineReady(false);
     try {
@@ -61,10 +61,16 @@ export const LiveTestStep: React.FC<Props> = ({ onNext, onBack }) => {
       console.error('Engine launch failed', e);
       setError(e instanceof Error ? e.message : String(e));
     }
-  };
+  }, []);
 
   useEffect(() => {
-    setup();
+    let isMounted = true;
+    const run = async () => {
+      await Promise.resolve();
+      if (!isMounted) return;
+      await setup();
+    };
+    void run();
 
     const unlistenPartial = onTranscriptPartial((payload) => {
       setTranscript(payload.text);
@@ -102,13 +108,14 @@ export const LiveTestStep: React.FC<Props> = ({ onNext, onBack }) => {
     });
 
     return () => {
+      isMounted = false;
       unlistenPartial();
       unlistenFinal();
       unlistenEnergy();
       if (transcriptTimeoutRef.current) clearTimeout(transcriptTimeoutRef.current);
       stopEngine().catch(console.error);
     };
-  }, []);
+  }, [setup]);
 
   return (
     <div className="flex flex-col h-full max-h-[100vh] overflow-y-auto lg:overflow-hidden justify-between relative select-none">
@@ -131,7 +138,7 @@ export const LiveTestStep: React.FC<Props> = ({ onNext, onBack }) => {
                   <div className="flex flex-col">
                       <h3 className="text-[rgb(var(--foreground))] font-bold uppercase tracking-wider text-[12px]">{LIVE_TEST_COPY.engineErrorTitle}</h3>
                       <button 
-                          onClick={setup}
+                          onClick={() => { void setup(); }}
                           className="text-[12px] font-bold uppercase tracking-wider text-[rgb(var(--accent))] hover:underline text-left mt-0.5"
                       >
                           {LIVE_TEST_COPY.tryAgain}

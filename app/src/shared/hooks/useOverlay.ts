@@ -33,13 +33,16 @@ export function useOverlay({
   shouldDismissOnPointerDown,
 }: UseOverlayOptions): void {
   const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
   const refRef = useRef(ref);
-  refRef.current = ref;
   const dismissRef = useRef(dismissOnOutside);
-  dismissRef.current = dismissOnOutside;
   const shouldDismissRef = useRef(shouldDismissOnPointerDown);
-  shouldDismissRef.current = shouldDismissOnPointerDown;
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+    refRef.current = ref;
+    dismissRef.current = dismissOnOutside;
+    shouldDismissRef.current = shouldDismissOnPointerDown;
+  });
 
   useEffect(() => {
     if (!active) return;

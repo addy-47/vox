@@ -91,45 +91,51 @@ export function useDynamicFPS({
   const fpsActiveRef = useRef(fpsActive);
   const fpsIdleRef = useRef(fpsIdle);
 
-  onFrameRef.current = onFrame;
-  isActiveRef.current = isActive;
-  isPausedRef.current = isPaused;
-  isVisibleRef.current = effectiveVisible;
-  isPageVisibleRef.current = effectivePageVisible;
-  fpsActiveRef.current = fpsActive;
-  fpsIdleRef.current = fpsIdle;
-
   // ── RAF state ──
   const rafRef = useRef<number | null>(null);
   const lastFrameTimeRef = useRef<number>(0);
+  const loopRef = useRef<(timestamp: number) => void>(() => {});
 
-  // ── Stable loop body — reads from refs on each tick ──
   const loop = useCallback((timestamp: number) => {
-    if (
-      isPausedRef.current ||
-      !isVisibleRef.current ||
-      !isPageVisibleRef.current
-    ) {
-      rafRef.current = null;
-      return;
-    }
-
-    const targetFps = isActiveRef.current
-      ? fpsActiveRef.current
-      : fpsIdleRef.current;
-
-    if (targetFps > 0) {
-      const frameInterval = 1000 / targetFps;
-      const delta = timestamp - lastFrameTimeRef.current;
-      if (delta >= frameInterval) {
-        lastFrameTimeRef.current =
-          timestamp - (delta % frameInterval);
-        onFrameRef.current(delta);
-      }
-    }
-
-    rafRef.current = requestAnimationFrame(loop);
+    loopRef.current(timestamp);
   }, []);
+
+  useEffect(() => {
+    onFrameRef.current = onFrame;
+    isActiveRef.current = isActive;
+    isPausedRef.current = isPaused;
+    isVisibleRef.current = effectiveVisible;
+    isPageVisibleRef.current = effectivePageVisible;
+    fpsActiveRef.current = fpsActive;
+    fpsIdleRef.current = fpsIdle;
+
+    loopRef.current = (timestamp: number) => {
+      if (
+        isPausedRef.current ||
+        !isVisibleRef.current ||
+        !isPageVisibleRef.current
+      ) {
+        rafRef.current = null;
+        return;
+      }
+
+      const targetFps = isActiveRef.current
+        ? fpsActiveRef.current
+        : fpsIdleRef.current;
+
+      if (targetFps > 0) {
+        const frameInterval = 1000 / targetFps;
+        const delta = timestamp - lastFrameTimeRef.current;
+        if (delta >= frameInterval) {
+          lastFrameTimeRef.current =
+            timestamp - (delta % frameInterval);
+          onFrameRef.current(delta);
+        }
+      }
+
+      rafRef.current = requestAnimationFrame(loop);
+    };
+  });
 
   // ── Lifecycle: start/stop loop based on control flags ──
   // Uses the effective flags (caller props ANDed with self-managed observers)

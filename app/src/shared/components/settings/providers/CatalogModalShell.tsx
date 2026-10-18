@@ -55,7 +55,7 @@ export const CatalogModalShell = memo(function CatalogModalShell({
           <div
             ref={scrollRef}
             className={cn(
-              "flex-1 min-h-0 overflow-y-auto overscroll-contain custom-scrollbar p-1 sm:p-2",
+              "flex-1 min-h-0 overflow-y-auto overscroll-contain custom-scrollbar p-1 sm:p-2 contain-paint transform-gpu",
               contentClassName
             )}
           >

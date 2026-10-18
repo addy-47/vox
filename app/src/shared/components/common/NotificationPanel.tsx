@@ -197,7 +197,7 @@ const NotificationItem = memo(
       }
       let parsedAction: { action?: string; target?: string } = {};
       try {
-        parsedAction = JSON.parse(notif.action_payload || "{}");
+        parsedAction = JSON.parse(notif.action_payload ?? "{}") as { action?: string; target?: string };
       } catch {
         // safe fallback
       }
@@ -432,10 +432,10 @@ export const NotificationPanel = memo(({ onClose }: NotificationPanelProps) => {
 
   const handlePrimary = useCallback(
     (notif: NotificationRecord) => {
-      executeAction(notif, (target) => {
+      void executeAction(notif, (target) => {
         onClose();
         const route = target.startsWith("/") ? target : `/${target}`;
-        navigate(route);
+        void navigate(route);
       }).catch(() => {});
     },
     [executeAction, onClose, navigate]
@@ -446,11 +446,11 @@ export const NotificationPanel = memo(({ onClose }: NotificationPanelProps) => {
       onClose();
       const category = toCategory(notif.category);
       if (notif.session_id !== null && notif.session_id !== undefined) {
-        navigate(`/history?sessionId=${notif.session_id}`);
+        void navigate(`/history?sessionId=${notif.session_id}`);
       } else if (category === "memory_consolidation") {
-        navigate("/memory");
+        void navigate("/memory");
       } else {
-        navigate("/settings");
+        void navigate("/settings");
       }
     },
     [navigate, onClose]

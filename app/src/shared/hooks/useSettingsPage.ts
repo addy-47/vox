@@ -230,13 +230,15 @@ export function useSettingsPage() {
 
   useEffect(() => {
     if (isCompact || activeDomains.length === 0) {
-      setLines({
-        persona: null,
-        models: null,
-        working_memory: null,
-        personal_memory: null,
-        appearance: null,
-        interaction: null,
+      void Promise.resolve().then(() => {
+        setLines({
+          persona: null,
+          models: null,
+          working_memory: null,
+          personal_memory: null,
+          appearance: null,
+          interaction: null,
+        });
       });
       return;
     }
@@ -369,7 +371,7 @@ export function useSettingsPage() {
       cancelAnimationFrame(calcRafId);
       if (observer) observer.disconnect();
     };
-  }, [activeDomains, isCompact, windowWidth, windowHeight, radiusX, radiusY]);
+  }, [activeDomains, isCompact, windowWidth, windowHeight, radiusX, radiusY, isSideCarousel]);
 
   const handleSelect = useCallback((id: DomainId) => {
     setActiveDomains((prev) => {

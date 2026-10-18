@@ -43,7 +43,7 @@ export const ModelModal = memo(({
   }, [deferredSearch, filterCategory, sort, scrollToTop]);
 
   const handleCopyId = useCallback((id: string) => {
-    navigator.clipboard.writeText(id);
+    void navigator.clipboard.writeText(id);
     setCopiedId(id);
     setTimeout(() => setCopiedId(null), 1800);
   }, []);

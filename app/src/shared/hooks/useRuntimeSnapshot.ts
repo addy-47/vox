@@ -19,13 +19,21 @@ function startSharedPolling(): void {
       if (snap) {
         sharedSnapshot = snap;
       }
-    } catch {}
+    } catch (err) {
+      console.debug("[useRuntimeSnapshot] Failed to fetch runtime snapshot:", err);
+    }
     sharedListeners.forEach((fn) => {
-      try { fn(sharedSnapshot); } catch {}
+      try {
+        fn(sharedSnapshot);
+      } catch (err) {
+        console.debug("[useRuntimeSnapshot] Error in snapshot listener callback:", err);
+      }
     });
   };
-  poll();
-  sharedIntervalId = setInterval(poll, POLL_INTERVAL_MS);
+  void poll();
+  sharedIntervalId = setInterval(() => {
+    void poll();
+  }, POLL_INTERVAL_MS);
   if (!isListenerAttached && typeof document !== "undefined") {
     isListenerAttached = true;
     document.addEventListener("visibilitychange", handleVisibility);
@@ -66,7 +74,8 @@ export function useRuntimeSnapshot(enabled: boolean = true): RuntimeSnapshot | n
     if (enabled && sharedIntervalId === null && !document.hidden) {
       startSharedPolling();
     } else if (enabled && sharedSnapshot !== null) {
-      setSnapshot(sharedSnapshot);
+      const cached = sharedSnapshot;
+      void Promise.resolve().then(() => setSnapshot(cached));
     }
 
     return () => {

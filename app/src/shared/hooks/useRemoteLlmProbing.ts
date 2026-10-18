@@ -30,9 +30,9 @@ export function useRemoteLlmProbing(
 
   // Load disk capabilities cache and model catalog on initial mount
   useEffect(() => {
-    useCatalogStore.getState().loadCapabilitiesCache();
+    void useCatalogStore.getState().loadCapabilitiesCache();
     if (!useCatalogStore.getState().modelCatalog) {
-      useCatalogStore.getState().loadModelCatalog();
+      void useCatalogStore.getState().loadModelCatalog();
     }
   }, []);
 
@@ -77,7 +77,7 @@ export function useRemoteLlmProbing(
         });
         return;
       }
-      fetchRemoteModels();
+      void fetchRemoteModels();
     }
   }, [activePipelineTab, isRemoteLlm, provider, fetchRemoteModels]);
 

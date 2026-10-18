@@ -137,7 +137,7 @@ export const useNotificationStore = create<NotificationStoreState>((set, get) =>
   executeAction: async (notif: NotificationRecord, onNavigate?: (target: string) => void) => {
     let parsed: { action?: string; target?: string } = {};
     try {
-      parsed = JSON.parse(notif.action_payload || "{}");
+      parsed = JSON.parse(notif.action_payload ?? "{}") as { action?: string; target?: string };
     } catch {
       // safe fallback
     }

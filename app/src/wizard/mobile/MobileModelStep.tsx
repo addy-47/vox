@@ -282,17 +282,27 @@ export const MobileModelStep: React.FC<MobileModelStepProps> = ({
       const step = progress[f.id]?.step?.toLowerCase();
       return step === 'completed' || step === 'complete';
     });
-    if (allCompleted) {
-      setIsDone(true);
-      setIsDownloading(false);
-    } else if (
-      selectedFiles.every((f) => {
-        const step = progress[f.id]?.step?.toLowerCase();
-        return step === 'completed' || step === 'complete' || step === 'failed' || step === 'cancelled';
-      })
-    ) {
-      setIsDownloading(false);
-    }
+    const allFinished = selectedFiles.every((f) => {
+      const step = progress[f.id]?.step?.toLowerCase();
+      return step === 'completed' || step === 'complete' || step === 'failed' || step === 'cancelled';
+    });
+    if (!allCompleted && !allFinished) return;
+
+    let isMounted = true;
+    const run = async () => {
+      await Promise.resolve();
+      if (!isMounted) return;
+      if (allCompleted) {
+        setIsDone(true);
+        setIsDownloading(false);
+      } else if (allFinished) {
+        setIsDownloading(false);
+      }
+    };
+    void run();
+    return () => {
+      isMounted = false;
+    };
   }, [isDownloading, isDone, selectedFiles, progress]);
 
   // D5.3: Honest download triggering
@@ -330,14 +340,18 @@ export const MobileModelStep: React.FC<MobileModelStepProps> = ({
         isDone: false,
         isDownloading: false,
         label: 'Retry Download',
-        action: handleStartDownload,
+        action: () => {
+          void handleStartDownload();
+        },
       });
     } else {
       onModelStatusChange({
         isDone: false,
         isDownloading: false,
         label: `${copy.downloadButton} (${formatBytes(totalSelectedBytes)})`,
-        action: handleStartDownload,
+        action: () => {
+          void handleStartDownload();
+        },
       });
     }
   }, [

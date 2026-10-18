@@ -102,8 +102,17 @@ export function useObservationsList(
     if (!active) return;
     offsetRef.current = 0;
     hasMoreRef.current = true;
-    setHasMore(true);
-    fetchBatch(statusFilter, 0, false);
+    let isMounted = true;
+    const run = async () => {
+      await Promise.resolve();
+      if (!isMounted) return;
+      setHasMore(true);
+      await fetchBatch(statusFilter, 0, false);
+    };
+    void run();
+    return () => {
+      isMounted = false;
+    };
   }, [active, statusFilter, fetchBatch]);
 
   const loadMore = useCallback(async () => {

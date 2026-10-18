@@ -1,4 +1,4 @@
-import { memo, useCallback, useState } from "react";
+import { memo, useCallback, useState, useMemo } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
 
 import { REALTIME_CONFIG_DESK_COPY } from "@/data/settingsCopy";
@@ -34,8 +34,10 @@ export const RealtimeConfigDesk = memo(({ layoutMode }: RealtimeConfigDeskProps)
     draftSettings?.realtime?.active?.provider || realtimeProviders[0]?.id || "";
 
   /** API keys: draft vehicle first, then the committed providers file. */
-  const realtimeKeys =
-    draftSettings?.realtime?.api_keys ?? draftSettings?.providers?.realtime?.api_keys ?? {};
+  const realtimeKeys = useMemo(
+    () => draftSettings?.realtime?.api_keys ?? draftSettings?.providers?.realtime?.api_keys ?? {},
+    [draftSettings?.realtime?.api_keys, draftSettings?.providers?.realtime?.api_keys]
+  );
 
   const getProviderKey = useCallback(
     (providerId: string) => {

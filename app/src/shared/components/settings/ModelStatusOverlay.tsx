@@ -92,7 +92,7 @@ export const ModelStatusOverlay = memo(() => {
   }, [llmId, asrId, isRemoteLlm, isCloudStt]);
 
   useEffect(() => {
-    checkPresence();
+    void checkPresence();
   }, [checkPresence]);
 
   if (!activeSettings || !modelCatalog) return null;
@@ -102,35 +102,30 @@ export const ModelStatusOverlay = memo(() => {
 
   const catalogLlm = modelCatalog.llm.find((m) => m.id === llmId);
 
-  let llmDisplayName = "";
-  let llmSubtitle = "";
-
   const llmServerEntry = activeSettings?.providers?.llm?.servers?.find(
     (s) => s.id === activeSettings?.llm?.active?.provider
   );
 
-  if (activeLlmKind === "server") {
-    llmDisplayName = llmId || "Server LLM";
-    llmSubtitle = llmServerEntry?.name || "Remote";
-  } else if (activeLlmKind === "cloud") {
-    llmDisplayName = llmId || "Cloud LLM";
-    llmSubtitle = activeSettings?.llm?.active?.provider || "Cloud API";
-  } else {
-    llmDisplayName = catalogLlm?.name || llmId || "Embedded LLM";
-    llmSubtitle = catalogLlm?.parameters || "On-Device GGUF";
-  }
+  const llmDisplayName =
+    activeLlmKind === "server"
+      ? llmId || "Server LLM"
+      : activeLlmKind === "cloud"
+        ? llmId || "Cloud LLM"
+        : catalogLlm?.name || llmId || "Embedded LLM";
+  const llmSubtitle =
+    activeLlmKind === "server"
+      ? llmServerEntry?.name || "Remote"
+      : activeLlmKind === "cloud"
+        ? activeSettings?.llm?.active?.provider || "Cloud API"
+        : catalogLlm?.parameters || "On-Device GGUF";
 
   const activeAsr = modelCatalog.stt.find((m) => m.id === asrId) || modelCatalog.stt[0];
-  let asrDisplayName = "";
-  let asrSubtitle = "";
-
-  if (activeSttKind === "cloud") {
-    asrDisplayName = asrId || "Cloud STT";
-    asrSubtitle = activeSettings?.stt?.active?.provider || "Cloud API";
-  } else {
-    asrDisplayName = activeAsr?.name || asrId || "Nemotron";
-    asrSubtitle = activeAsr?.parameters || "ASR";
-  }
+  const asrDisplayName =
+    activeSttKind === "cloud" ? asrId || "Cloud STT" : activeAsr?.name || asrId || "Nemotron";
+  const asrSubtitle =
+    activeSttKind === "cloud"
+      ? activeSettings?.stt?.active?.provider || "Cloud API"
+      : activeAsr?.parameters || "ASR";
 
   const activeTts = modelCatalog.tts.find((m) => m.id === ttsKind) || modelCatalog.tts[0];
   const activeVoiceName = modelCatalog.active_voice_name;

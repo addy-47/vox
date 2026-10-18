@@ -59,13 +59,7 @@ export function useProviderSelection(options?: UseProviderSelectionOptions) {
       const keys = draftSettings?.llm?.cloud_keys ?? draftSettings?.providers?.llm?.cloud_keys;
       return keys?.[providerId];
     },
-    [
-      isTts,
-      draftSettings?.tts,
-      draftSettings?.providers?.tts,
-      draftSettings?.llm?.cloud_keys,
-      draftSettings?.providers?.llm?.cloud_keys,
-    ]
+    [isTts, draftSettings]
   );
 
   // Save-gated ordering: the sort follows committed keys so selecting only
@@ -103,7 +97,7 @@ export function useProviderSelection(options?: UseProviderSelectionOptions) {
       const keys = committedSettings?.providers?.llm?.cloud_keys ?? committedSettings?.llm?.cloud_keys;
       return keys?.[providerId];
     },
-    [isTts, committedSettings?.providers?.tts, committedSettings?.providers?.llm?.cloud_keys]
+    [isTts, committedSettings]
   );
 
   useEffect(() => {
@@ -232,10 +226,7 @@ export function useProviderSelection(options?: UseProviderSelectionOptions) {
     [
       isTts,
       editingKeyValue,
-      draftSettings?.tts,
-      draftSettings?.providers?.tts,
-      draftSettings?.llm?.cloud_keys,
-      draftSettings?.providers?.llm?.cloud_keys,
+      draftSettings,
       updateDraft,
     ]
   );

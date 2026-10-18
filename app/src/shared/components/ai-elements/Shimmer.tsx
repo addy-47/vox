@@ -1,10 +1,10 @@
-import React, { memo, useMemo, type CSSProperties, type ElementType } from "react";
+import React, { memo, useMemo, type CSSProperties } from "react";
 import { motion } from "framer-motion";
 import { cn } from "@/shared/lib/utils";
 
 export interface TextShimmerProps {
   children: string;
-  as?: ElementType;
+  as?: keyof React.JSX.IntrinsicElements;
   className?: string;
   duration?: number;
   spread?: number;
@@ -22,7 +22,9 @@ const ShimmerComponent: React.FC<TextShimmerProps> = ({
     [children, spread]
   );
 
-  const MotionComponent = useMemo(() => motion.create(Component as keyof React.JSX.IntrinsicElements), [Component]);
+  const MotionComponent =
+    (motion as unknown as Partial<Record<keyof React.JSX.IntrinsicElements, React.ComponentType>>)[Component] ??
+    motion.span;
 
   return (
     <MotionComponent

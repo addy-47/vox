@@ -104,9 +104,9 @@ export const Memory: React.FC = memo(() => {
   const { isPanelOpen, closePanel, openPanel } = usePanelStateContext();
   const sessionRailOpen = isPanelOpen("sessions");
   const isRightPanelOpen = isPanelOpen("help") || isPanelOpen("notifications");
-  const setSessionRailOpen = (v: boolean) => {
+  const setSessionRailOpen = useCallback((v: boolean) => {
     if (!v) closePanel("sessions");
-  };
+  }, [closePanel]);
   const [selectModeEnabled, setSelectModeEnabled] = useState(false);
   const [isLightMode, setIsLightMode] = useState(false);
 
@@ -121,9 +121,9 @@ export const Memory: React.FC = memo(() => {
   }, []);
 
   useEffect(() => {
-    fetchSessions();
+    void fetchSessions();
     const unlisten = onSessionsChanged(() => {
-      fetchSessions();
+      void fetchSessions();
     });
     return () => {
       unlisten();
@@ -240,14 +240,15 @@ export const Memory: React.FC = memo(() => {
       if (!mountedRef.current) return;
       setLoadError(MEMORY_COPY.loadFailedDesc);
     } finally {
-      if (!mountedRef.current) return;
-      setLoading(false);
-      setRefreshing(false);
+      if (mountedRef.current) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
   }, []);
 
   useEffect(() => {
-    refresh();
+    void refresh();
   }, [refresh]);
 
   // ── Personal Memory Drawer Hook ──────────────────────────────────────────
@@ -325,7 +326,7 @@ export const Memory: React.FC = memo(() => {
 
   const handleCloseSessionRail = useCallback(() => {
     setSessionRailOpen(false);
-  }, []);
+  }, [setSessionRailOpen]);
 
   const handleCoreClick = useCallback(() => {
     // Dismiss floating tooltips before opening drawer to release overlay Escape listener
@@ -346,8 +347,8 @@ export const Memory: React.FC = memo(() => {
     setSearchQuery("");
     setSelectedCollection("all");
     graphRef.current?.recenter();
-    refresh(true);
-    drawer.refreshPersonalMemory(true);
+    void refresh(true);
+    void drawer.refreshPersonalMemory(true);
   }, [refresh, drawer]);
   const handleFocusCore = useCallback(() => graphRef.current?.focusCore(), []);
   const handleToggleSelectMode = useCallback(() => setSelectModeEnabled((prev) => !prev), []);

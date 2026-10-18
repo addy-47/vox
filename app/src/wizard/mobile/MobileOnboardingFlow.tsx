@@ -13,6 +13,8 @@ import { MOBILE_ONBOARDING_COPY } from '@/data/welcomeCopy';
 
 export type MobileStepId = 'hero' | 'intelligence' | 'permission' | 'runtime' | 'models' | 'ready';
 
+const STEPS_ORDER: MobileStepId[] = ['hero', 'intelligence', 'permission', 'runtime', 'models', 'ready'];
+
 interface MobileOnboardingFlowProps {
   onComplete?: () => void;
   initialStep?: MobileStepId;
@@ -22,7 +24,7 @@ export const MobileOnboardingFlow: React.FC<MobileOnboardingFlowProps> = ({
   onComplete,
   initialStep = 'hero',
 }) => {
-  const stepsOrder: MobileStepId[] = ['hero', 'intelligence', 'permission', 'runtime', 'models', 'ready'];
+  const stepsOrder = STEPS_ORDER;
   const [currentStep, setCurrentStep] = useState<MobileStepId>(initialStep);
   const [permissionsGranted, setPermissionsGranted] = useState(false);
   const [permissionsRequesting, setPermissionsRequesting] = useState(false);
@@ -68,11 +70,15 @@ export const MobileOnboardingFlow: React.FC<MobileOnboardingFlowProps> = ({
     try {
       localStorage.setItem('vox_setup_completed', 'true');
       localStorage.setItem('vox_skip_wizard_dev', 'true');
-    } catch (_) {}
+    } catch (e) {
+      console.debug("[MobileOnboardingFlow] Failed to set skip setup localStorage flag:", e);
+    }
 
     try {
       await completeSetupWizard();
-    } catch (_) {}
+    } catch (e) {
+      console.debug("[MobileOnboardingFlow] Failed to complete setup wizard on skip:", e);
+    }
 
     if (onComplete) {
       onComplete();
@@ -84,11 +90,15 @@ export const MobileOnboardingFlow: React.FC<MobileOnboardingFlowProps> = ({
   const handleFinish = useCallback(async () => {
     try {
       localStorage.setItem('vox_setup_completed', 'true');
-    } catch (_) {}
+    } catch (e) {
+      console.debug("[MobileOnboardingFlow] Failed to set finish setup localStorage flag:", e);
+    }
 
     try {
       await completeSetupWizard();
-    } catch (_) {}
+    } catch (e) {
+      console.debug("[MobileOnboardingFlow] Failed to complete setup wizard on finish:", e);
+    }
 
     if (onComplete) {
       onComplete();
@@ -114,7 +124,7 @@ export const MobileOnboardingFlow: React.FC<MobileOnboardingFlowProps> = ({
     if (currentIndex < stepsOrder.length - 1) {
       setCurrentStep(stepsOrder[currentIndex + 1]);
     } else {
-      handleFinish();
+      void handleFinish();
     }
   }, [currentIndex, stepsOrder, handleFinish, currentStep, permissionsGranted]);
 
@@ -186,7 +196,9 @@ export const MobileOnboardingFlow: React.FC<MobileOnboardingFlowProps> = ({
       case 'ready':
         return {
           label: MOBILE_ONBOARDING_COPY.ready.continueButton,
-          onClick: handleFinish,
+          onClick: () => {
+            void handleFinish();
+          },
           disabled: false,
           isLoading: false,
         };

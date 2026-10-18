@@ -90,7 +90,7 @@ export const useVisibility = () => {
       // If we enter the tray, freeze the state at ACTIVE
       clearTimers();
       if (state !== "HIDDEN") {
-        setState("ACTIVE");
+        void Promise.resolve().then(() => setState("ACTIVE"));
       }
     }
   }, [isHovered, state, clearTimers]);

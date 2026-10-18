@@ -125,15 +125,15 @@ export function useVoiceCatalog(
   }, [provider]);
 
   useEffect(() => {
+    if (suspended) return;
     let alive = true;
-    if (suspended) {
-      setVoices([]);
-      setLoading(true);
-      return () => {
-        alive = false;
-      };
-    }
-    const teardown = reload();
+    let teardown: (() => void) | undefined;
+    const run = async () => {
+      await Promise.resolve();
+      if (!alive) return;
+      teardown = reload();
+    };
+    void run();
     // Non-blocking background sync of remote voices runs once on mount when cloudSync is enabled
     if (cloudSync && !remoteSyncedRef.current) {
       remoteSyncedRef.current = true;
@@ -157,7 +157,7 @@ export function useVoiceCatalog(
     }
     return () => {
       alive = false;
-      teardown();
+      if (teardown) teardown();
     };
   }, [reload, provider, suspended, cloudSync]);
 
@@ -370,20 +370,17 @@ export function useVoiceCatalog(
     [playingId, previewPrompt, engine, stopPreview]
   );
 
-  useEffect(() => {
-    // Adopt the persisted draft voice only when it belongs to the currently
-    // loaded engine scope — never stage another engine's voice id.
-    if (!stagedId && draftVoiceId && voices.some((v) => v.id === draftVoiceId)) {
-      setStagedId(draftVoiceId);
-    }
-  }, [stagedId, draftVoiceId, voices]);
+  const effectiveVoices = suspended ? [] : voices;
+  const effectiveLoading = suspended ? true : loading;
+  const effectiveStagedId =
+    stagedId ?? (draftVoiceId && voices.some((v) => v.id === draftVoiceId) ? draftVoiceId : null);
 
   return {
-    voices,
-    loading,
+    voices: effectiveVoices,
+    loading: effectiveLoading,
     error,
     reload,
-    stagedId,
+    stagedId: effectiveStagedId,
     stageVoice,
     commitVoice,
     toggleFavorite,
@@ -431,12 +428,9 @@ export function useVoiceScope(engine: string | undefined | null): VoiceScopeStat
   useEffect(() => {
     const key = resolvedEngine;
     if (SCOPE_CACHE.has(key)) {
-      setScope(SCOPE_CACHE.get(key)!);
-      setReady(true);
       return;
     }
     let isMounted = true;
-    if (!cached) setReady(false);
     getVoiceScope(resolvedEngine || undefined)
       .then((s) => {
         SCOPE_CACHE.set(key, s);

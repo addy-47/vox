@@ -38,12 +38,11 @@ const StaticVoxLogo = ({ size }: { size?: number | string; strokeWidth?: number 
 export const HelpPanel = memo(({ onClose: _onClose, initialShortcuts = false }: HelpPanelProps) => {
   const { pathname } = useLocation();
   const [showShortcuts, setShowShortcuts] = useState(initialShortcuts);
-
-  useEffect(() => {
-    if (initialShortcuts) {
-      setShowShortcuts(true);
-    }
-  }, [initialShortcuts]);
+  const [prevInitialShortcuts, setPrevInitialShortcuts] = useState(initialShortcuts);
+  if (initialShortcuts !== prevInitialShortcuts) {
+    setPrevInitialShortcuts(initialShortcuts);
+    if (initialShortcuts) setShowShortcuts(true);
+  }
 
   const pageMeta = useMemo(() => {
     if (pathname.startsWith("/history")) {
