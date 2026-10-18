@@ -100,6 +100,7 @@ All authoritative specs live in [`docs/specs/`](file:///home/addy/projects/apps/
 - **Frontend lint tooling audit & defect remediation (complete):** Tickets 01–09 done; **0 ESLint errors** (275 → 0); vitest 148/148, tsc/lint-arch clean; CDP stress & soak suites expanded with mock IPC backend covering all panels, drawers, modals, canvas containment, focus trapping (`EdgePanel`), and deferred focus restoration (`Modal`/`Drawer`); 0 runtime exceptions, 0 leaked backdrops.
 - **AGENTS.md & rules/ rewrite:** Rewrote all 12 rule files via `/writing-for-agents`; pruned dir map, hardened post-task hook (single-bullet-per-seam), removed duplicate frontmatter, deduplicated Android pitfalls, aligned testing references, and strictly demarcated persona roles vs style guides.
 - **Backend Invariant Gate & Remediation:** Integrated `clippy.toml` (`disallowed_methods`) and `lint-arch.sh` into `verify-targets.sh`; completed Tickets 01–03 (named probe threads, fact text lookup, and TTS voice catalog SQL in persistence/); 0 SQL violations remaining outside persistence; dual-target compile gate clean.
+- **VAD, ASR Pipeline & Mid-Thought Continuation:** Eliminated pre-roll turn-id race and Nemotron duplicate tail; un-stacked double hysteresis between Silero ONNX and `segmenter.rs` with SNR-adaptive leaky onset and cadence-aware hangover; added mid-thought continuation merging and late transcript capture in `events-spec.md`; 233/233 tests passed, dual-target compile gate clean.
 
 ---
 

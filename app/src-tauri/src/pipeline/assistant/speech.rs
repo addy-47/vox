@@ -10,7 +10,7 @@ use crate::{
     pipeline::{assistant::interrupt::on_interrupt, transition, RoutingContext},
 };
 
-/// Handles user speech onset for passive domains, evaluating barge-in vs direct onset and resetting STT stream.
+/// Handles user speech onset for passive domains, evaluating barge-in vs continuation vs direct onset.
 pub fn on_speech_start<R: tauri::Runtime>(
     app: &AppHandle<R>,
     state: &AppState,

@@ -148,7 +148,7 @@ impl SttEngineTrait for SttEngine {
         Ok(())
     }
 
-    /// Transcribes complete audio buffer, reusing pre-streamed audio if present, or performing one-shot decoding.
+    /// Transcribes complete audio buffer, reusing pre-streamed audio if aligned, or performing clean one-shot decoding.
     fn transcribe(&self, audio: &[f32]) -> Result<String> {
         if audio.is_empty() {
             return Ok(String::new());
@@ -157,16 +157,34 @@ impl SttEngineTrait for SttEngine {
         let start = Instant::now();
         let mut inner = self.inner.lock();
 
-        // If audio was already partially or fully fed incrementally via accept_audio_chunk, reuse the active stream.
-        let stream = if let Some(stream) = inner.stream.take() {
-            if inner.fed_samples < audio.len() {
-                stream.accept_waveform(SAMPLE_RATE as i32, &audio[inner.fed_samples..]);
+        // Only reuse the active online stream if `fed_samples` matches `audio.len()` (or is within
+        // a single trailing chunk). If a reset occurred mid-utterance (`fed_samples < audio.len()`
+        // by a pre-roll margin), slicing `&audio[inner.fed_samples..]` would duplicate the tail
+        // while missing the head. In that case, rebuild a fresh stream over the complete `audio` slice.
+        let stream = match inner.stream.take() {
+            Some(existing_stream) if inner.fed_samples == audio.len() => existing_stream,
+            Some(existing_stream)
+                if inner.fed_samples < audio.len()
+                    && (audio.len() - inner.fed_samples) <= 1024 =>
+            {
+                existing_stream.accept_waveform(SAMPLE_RATE as i32, &audio[inner.fed_samples..]);
+                existing_stream
             }
-            stream
-        } else {
-            let stream = create_warmed_stream(&inner.recognizer);
-            stream.accept_waveform(SAMPLE_RATE as i32, audio);
-            stream
+            Some(_) => {
+                log::debug!(
+                    "[STT-Nemotron] Stream sample count ({}) diverged from final utterance ({}); performing full utterance decode to prevent clipping/duplication.",
+                    inner.fed_samples,
+                    audio.len()
+                );
+                let fresh = create_warmed_stream(&inner.recognizer);
+                fresh.accept_waveform(SAMPLE_RATE as i32, audio);
+                fresh
+            }
+            None => {
+                let fresh = create_warmed_stream(&inner.recognizer);
+                fresh.accept_waveform(SAMPLE_RATE as i32, audio);
+                fresh
+            }
         };
 
         let trailing = vec![0.0f32; NEMOTRON_TRAILING_SILENCE_SAMPLES];

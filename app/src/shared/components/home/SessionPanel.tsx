@@ -143,7 +143,7 @@ export const SessionPanel = memo(({ onClose }: SessionPanelProps) => {
     count: allChronologicalSessions.length,
     getScrollElement: () => scrollRef.current,
     estimateSize: () => 52,
-    overscan: 16,
+    overscan: 6,
   });
 
   // Persist scroll offset across panel close/reopen (panel unmounts on close).

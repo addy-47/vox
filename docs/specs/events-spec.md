@@ -84,12 +84,20 @@ stateDiagram-v2
   - When the gate is CLOSED, incoming audio frames MUST be dropped immediately at the input callback, reducing background processing CPU to 0%.
 
 ### 4.3 Barge-In & Intermediate Execution
-- **RULE-EVT-08 (Barge-In Interruption Protocol)**: When user speech starts or a push-to-talk trigger arrives while the assistant is in `Thinking`, `Speaking`, or `Working`:
+- **RULE-EVT-08 (Barge-In Interruption Protocol)**: When user speech starts or a push-to-talk trigger arrives while the assistant is in `Speaking` (active response audio playback):
   1. Audio playback MUST mute immediately.
-  2. Active processing and synthesis jobs for the current turn MUST be cancelled.
+  2. Active synthesis and playback jobs for the current turn MUST be cancelled.
   3. A new turn token MUST be generated.
-  4. The state MUST transition immediately to `Listening`.
-  5. If partial assistant text was already generated before the interruption, it MUST be saved to history as an interrupted turn. If no text was generated, the turn MUST be rolled back cleanly.
+  4. The accumulator MUST be cleared.
+  5. The state MUST transition immediately to `Listening`.
+  6. If partial assistant text was already generated before the interruption, it MUST be saved to history as an interrupted turn. If no text was generated, the turn MUST be rolled back cleanly.
+- **RULE-EVT-08A (Mid-Thought Continuation Protocol)**: When user speech starts while the assistant is in `Thinking` or `Working` before final response audio playback begins:
+  1. Audio playback and active language model generation for turn $N$ MUST be cancelled.
+  2. A new turn token MUST be generated, and state MUST transition to `Listening`.
+  3. Any recognized user transcript from turn $N$ MUST be preserved as a continuation prefix in the pipeline accumulator.
+  4. If turn $N$'s speech-to-text final completes late while already in `Listening`, it MUST be appended to the continuation prefix rather than dropped.
+  5. Upon completion of turn $N+1$ transcription, the stashed prefix and the new transcript MUST be concatenated into a single combined user query (`<prefix> <new_text>`).
+  6. If turn $N+1$ yields an empty transcript (e.g. breath or pause gap), the stashed prefix MUST be promoted and dispatched as the final query rather than aborting to `Ready`.
 - **RULE-EVT-09 (Working State Invariant)**: When an intermediate operation (compaction, memory search, or tool execution) executes during a turn:
   1. The system MUST transition from `Thinking` to `Working`.
   2. The cognitive layer MAY play an interim filler phrase (e.g., *"Let me look that up"*).
@@ -133,9 +141,11 @@ Vox operates across three primary domain topologies:
 | **`ResumeSession`** | `Paused`, `Sleeping`, or `Error` | If `Paused`: instant re-arm to `Ready`. If `Sleeping`: re-warms models in background. | Re-enables microphone passthrough; reconnects WebSocket if dropped. Transitions to `Ready`. | N/A |
 | **`EndSession`** | Any active state | Unmounts session, clears state. Tears down audio capture if dictation is idle. Transitions to `Idle`. | Disconnects WebSocket, tears down audio capture if dictation is idle. Transitions to `Idle`. | N/A |
 | **`SpeechStart` / `PttStart`** | `Ready` | Allocates new turn ID, transitions to `Listening`. Begins audio capture. | Allocates new turn ID, transitions to `Listening`. Begins streaming audio. | Allocates turn ID, transitions to `Listening`. Begins audio capture. |
-| **`SpeechStart` / `PttStart`** | `Thinking`, `Speaking`, or `Working` | **Barge-In**: Mutes playback immediately, cancels active turn, allocates new turn ID, transitions to `Listening`. | **Barge-In**: Mutes playback, sends interrupt command to server, allocates new turn ID, transitions to `Listening`. | If `Thinking`: captures turn $N+1$ without aborting turn $N$ transcription. |
+| **`SpeechStart` / `PttStart`** | `Thinking` or `Working` | **Continuation**: Cancels in-flight LLM pass, stashes user transcript in accumulator, allocates new turn ID, transitions to `Listening`. | **Barge-In**: Mutes playback, sends interrupt command to server, allocates new turn ID, transitions to `Listening`. | If `Thinking`: captures turn $N+1$ without aborting turn $N$ transcription. |
+| **`SpeechStart` / `PttStart`** | `Speaking` | **Barge-In**: Mutes playback immediately, clears accumulator, cancels active turn, allocates new turn ID, transitions to `Listening`. | **Barge-In**: Mutes playback, sends interrupt command to server, allocates new turn ID, transitions to `Listening`. | N/A (Dictation produces no audio output). |
 | **`SpeechEnd` / `PttStop`** | `Listening` | Transitions to `Thinking`. Dispatches captured audio to speech-to-text. | Transitions to `Thinking`. Signals speech completion to remote provider. | Transitions to `Thinking`. Dispatches audio to speech-to-text. |
-| **`TranscriptFinal`** | `Thinking` | If words recognized: starts language model. If empty: resets to `Ready` with notification. | If words recognized: awaits remote audio. If empty: resets to `Ready`. | Transliterates if configured, dispatches text to desktop paste engine, resets to `Ready`. |
+| **`TranscriptFinal`** | `Thinking` | If words recognized: merges continuation prefix if present, starts language model. If empty: promotes prefix if present, else resets to `Ready` with notification. | If words recognized: awaits remote audio. If empty: resets to `Ready`. | Transliterates if configured, dispatches text to desktop paste engine, resets to `Ready`. |
+| **`TranscriptFinal`** | `Listening` | If turn matches previous segment: appends text into accumulator continuation prefix without state change. | Dispatches interim text frame directly to provider. | Dispatches text to desktop paste engine for completed turn $N$. |
 | **`TextInput`** | `Ready` or `Paused` | Auto-resumes if paused, sets query in dialogue history, transitions to `Thinking`, generates response. | Auto-resumes if paused, sends text frame directly to WebSocket, transitions to `Thinking`. | Dropped (Dictation accepts voice input only). |
 | **`PlaybackStarted`** | `Thinking` or `Working` | If interim filler: remains `Working`. If final response: transitions to `Speaking`. | Transitions to `Speaking`. | N/A (Dictation produces no audio output). |
 | **`PlaybackFinished`** | `Speaking` | Transitions to `Ready` when output audio drains and all synthesis jobs are complete. | Transitions to `Ready` when server audio stream finishes playing. | N/A |

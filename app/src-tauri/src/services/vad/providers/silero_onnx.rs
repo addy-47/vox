@@ -5,6 +5,16 @@ use sherpa_onnx::{SileroVadModelConfig, VadModelConfig, VoiceActivityDetector};
 
 use super::VadEngine as VadEngineTrait;
 
+/// Minimum internal Sherpa-ONNX speech onset window (1 native 512-sample Silero frame = 32ms).
+/// Kept minimal so `SileroVadEngine` acts as a low-latency frame classifier without stacking
+/// a second 120ms onset delay on top of `segmenter.rs`.
+const SILERO_INTERNAL_MIN_SPEECH_S: f32 = 0.032;
+
+/// Minimum internal Sherpa-ONNX silence hold window (2 native 512-sample Silero frames = 64ms).
+/// Smooths 1-frame micro-dropouts inside Sherpa while delegating dynamic hangover (500–1100ms)
+/// to the adaptive segmenter in `segmenter.rs`.
+const SILERO_INTERNAL_MIN_SILENCE_S: f32 = 0.064;
+
 /// Voice Activity Detection engine wrapping Silero VAD ONNX model via Sherpa-ONNX.
 pub struct SileroVadEngine {
     detector: VoiceActivityDetector,
@@ -34,7 +44,7 @@ impl SileroVadEngine {
         )?;
 
         log::info!(
-            "[VAD] Silero VAD Engine loaded successfully (threshold={}, min_silence={}s, min_speech={}s, max_speech={}s).",
+            "[VAD] Silero VAD Engine loaded successfully (threshold={}, configured_min_silence={}s, configured_min_speech={}s, max_speech={}s).",
             threshold,
             min_silence_duration,
             min_speech_duration,
@@ -54,15 +64,20 @@ impl SileroVadEngine {
     fn create_detector(
         model_path: &Path,
         threshold: f32,
-        min_silence_duration: f32,
-        min_speech_duration: f32,
+        _min_silence_duration: f32,
+        _min_speech_duration: f32,
         max_speech_duration: f32,
     ) -> Result<VoiceActivityDetector> {
+        // Clamp Sherpa's internal hysteresis to single-window responsiveness so segmenter.rs
+        // owns the unified adaptive onset and hangover state machine without double-buffering lag.
+        let effective_min_speech = SILERO_INTERNAL_MIN_SPEECH_S;
+        let effective_min_silence = SILERO_INTERNAL_MIN_SILENCE_S;
+
         log::info!(
-            "[VAD] >>> Initializing Sherpa-ONNX Silero VAD Engine (threshold={}, min_silence={}s, min_speech={}s, max_speech={}s)...",
+            "[VAD] >>> Initializing Sherpa-ONNX Silero VAD Engine (threshold={}, internal_min_silence={}s, internal_min_speech={}s, max_speech={}s)...",
             threshold,
-            min_silence_duration,
-            min_speech_duration,
+            effective_min_silence,
+            effective_min_speech,
             max_speech_duration
         );
 
@@ -70,8 +85,8 @@ impl SileroVadEngine {
             silero_vad: SileroVadModelConfig {
                 model: Some(model_path.to_string_lossy().into()),
                 threshold,
-                min_silence_duration,
-                min_speech_duration,
+                min_silence_duration: effective_min_silence,
+                min_speech_duration: effective_min_speech,
                 window_size: 512,
                 max_speech_duration,
             },
@@ -97,22 +112,22 @@ impl SileroVadEngine {
         min_silence_duration: f32,
         min_speech_duration: f32,
     ) -> Result<()> {
-        if (self.threshold - threshold).abs() < 1e-4
-            && (self.min_silence_duration - min_silence_duration).abs() < 1e-4
-            && (self.min_speech_duration - min_speech_duration).abs() < 1e-4
-        {
+        let threshold_changed = (self.threshold - threshold).abs() >= 1e-4;
+        self.min_silence_duration = min_silence_duration;
+        self.min_speech_duration = min_speech_duration;
+
+        if !threshold_changed {
             return Ok(());
         }
+
         self.detector = Self::create_detector(
             &self.model_path,
             threshold,
-            min_silence_duration,
-            min_speech_duration,
+            self.min_silence_duration,
+            self.min_speech_duration,
             self.max_speech_duration,
         )?;
         self.threshold = threshold;
-        self.min_silence_duration = min_silence_duration;
-        self.min_speech_duration = min_speech_duration;
         Ok(())
     }
 
@@ -158,6 +173,11 @@ impl VadEngineTrait for SileroVadEngine {
     /// Evaluates if the current audio buffer chunk contains speech.
     fn predict(&mut self, chunk: &[f32]) -> bool {
         self.detector.accept_waveform(chunk);
-        self.detector.detected()
+        let detected = self.detector.detected();
+        // Prevent internal Sherpa speech-segment queue growth across long sessions
+        while !self.detector.is_empty() {
+            self.detector.pop();
+        }
+        detected
     }
 }

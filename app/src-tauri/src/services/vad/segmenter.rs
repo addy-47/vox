@@ -11,14 +11,37 @@ use crossbeam_channel::Sender;
 use super::{
     actor::{VadActorChannels, VadActorHandles, VadActorState},
     providers::VadBackend,
-    VadEngine as _, VAD_INPUT_SAMPLE_RATE, VAD_MIN_UTTERANCE_SAMPLES, VAD_PRE_ROLL_CAPACITY,
+    VadEngine as _, VAD_INPUT_SAMPLE_RATE, VAD_MIN_UTTERANCE_SAMPLES,
+    VAD_PRE_ROLL_CAPACITY, VAD_PRE_ROLL_FLUSH_SAMPLES,
 };
 use crate::{
-    core::events::{InteractionOwner, VoxEvent},
+    config::AudioOutputMode,
+    core::{
+        events::{InteractionOwner, VoxEvent},
+        state::InteractionState,
+    },
     monitoring::TelemetryEvent,
     services::stt::SttCommand,
     utils::audio_filters::FilterBank,
 };
+
+/// Fast downward adaptation rate for ambient noise floor when room gets quieter.
+const NOISE_FLOOR_ALPHA_DOWN: f32 = 0.05;
+/// Slow upward adaptation rate for ambient noise floor during steady non-speech background noise.
+const NOISE_FLOOR_ALPHA_UP: f32 = 0.002;
+/// Minimum clamped ambient noise floor RMS.
+const MIN_NOISE_FLOOR_RMS: f32 = 0.0005;
+/// Maximum clamped ambient noise floor RMS so loud environments never deafen onset detection.
+const MAX_NOISE_FLOOR_RMS: f32 = 0.025;
+
+/// Minimum speech samples (~1.25s @ 16kHz) before early-utterance pause protection relaxes.
+const EARLY_UTTERANCE_PROTECTION_SAMPLES: usize = 20_000;
+/// Minimum silence hangover frames (50 frames = 800ms) during the first 1.25s of an utterance.
+const EARLY_UTTERANCE_MIN_END_FRAMES: usize = 50;
+/// Extra hangover frames (22 frames = 352ms) added when STT partial indicates an incomplete clause.
+const INCOMPLETE_CLAUSE_EXTRA_FRAMES: usize = 22;
+/// Maximum adaptive hangover frames (68 frames = 1088ms) to keep turn-taking responsive.
+const MAX_ADAPTIVE_END_FRAMES: usize = 68;
 
 /// Bounded circular buffer for retaining pre-roll audio before speech onset.
 #[derive(Debug)]
@@ -62,11 +85,34 @@ impl PreRollBuffer {
         self.buffer.is_empty()
     }
 
-    /// Copies stored samples into the target buffer in chronological order without linear shifting.
+    /// Returns the number of samples currently held in the pre-roll buffer.
+    pub fn len(&self) -> usize {
+        self.buffer.len()
+    }
+
+    /// Copies all stored samples into the target buffer in chronological order without linear shifting.
     pub fn copy_into(&self, target: &mut Vec<f32>) {
         let (front, back) = self.buffer.as_slices();
         target.extend_from_slice(front);
         target.extend_from_slice(back);
+    }
+
+    /// Copies up to the most recent `max_samples` into `target` in chronological order.
+    pub fn copy_tail_into(&self, target: &mut Vec<f32>, max_samples: usize) {
+        let total = self.buffer.len();
+        if total <= max_samples {
+            self.copy_into(target);
+            return;
+        }
+        let skip = total - max_samples;
+        let (front, back) = self.buffer.as_slices();
+        if skip < front.len() {
+            target.extend_from_slice(&front[skip..]);
+            target.extend_from_slice(back);
+        } else {
+            let back_skip = skip - front.len();
+            target.extend_from_slice(&back[back_skip..]);
+        }
     }
 }
 
@@ -131,6 +177,66 @@ pub fn process_and_emit_telemetry(
     raw_energy
 }
 
+/// Updates the asymmetric continuous ambient noise floor tracker during non-speech intervals.
+#[inline]
+fn update_noise_floor(state: &mut VadActorState, raw_energy: f32) {
+    if raw_energy < state.noise_floor_ema {
+        state.noise_floor_ema = (1.0 - NOISE_FLOOR_ALPHA_DOWN) * state.noise_floor_ema
+            + NOISE_FLOOR_ALPHA_DOWN * raw_energy;
+    } else {
+        state.noise_floor_ema = (1.0 - NOISE_FLOOR_ALPHA_UP) * state.noise_floor_ema
+            + NOISE_FLOOR_ALPHA_UP * raw_energy;
+    }
+    state.noise_floor_ema = state
+        .noise_floor_ema
+        .clamp(MIN_NOISE_FLOOR_RMS, MAX_NOISE_FLOOR_RMS);
+}
+
+/// Computes the dynamic SNR-aware energy gate for speech onset.
+#[inline]
+fn compute_dynamic_onset_gate(
+    state: &VadActorState,
+    vad: &VadBackend,
+    interaction_state: InteractionState,
+) -> f32 {
+    let base_gate = state.noise_gate * vad.noise_gate_multiplier();
+    // Require higher SNR margin during Speaker playback to reject residual acoustic echo
+    let snr_multiplier = if interaction_state == InteractionState::Speaking
+        && state.audio_mode == AudioOutputMode::Speaker
+    {
+        3.2
+    } else {
+        2.0
+    };
+    let adaptive_gate = (state.noise_floor_ema * snr_multiplier).clamp(0.0012, 0.025);
+    // Blend user-configured floor with live room SNR floor so quiet rooms remain sensitive
+    adaptive_gate.max(base_gate * 0.5)
+}
+
+/// Computes the dynamic silence hangover frame count before SpeechEnd is emitted.
+#[inline]
+fn compute_dynamic_end_frames(state: &VadActorState, handles: &VadActorHandles) -> usize {
+    let base_frames = state.speech_end_frames.max(25);
+
+    // 1. Cadence-derived hangover: adapt to the user's observed intra-sentence pause rhythm (+220ms margin)
+    let cadence_ms = state.smoothed_pause_duration_ms + 220.0;
+    let cadence_frames = (cadence_ms as usize / 16).max(base_frames);
+
+    let mut target_frames = base_frames.max(cadence_frames);
+
+    // 2. Early-utterance protection: speakers frequently pause after the first 2-3 words ("What can you...")
+    if state.speech_sample_counter < EARLY_UTTERANCE_PROTECTION_SAMPLES {
+        target_frames = target_frames.max(EARLY_UTTERANCE_MIN_END_FRAMES);
+    }
+
+    // 3. Semantic / syntax continuation hint from live STT partials (conjunctions, prepositions, <=3 words)
+    if handles.incomplete_clause_hint.load(Ordering::Relaxed) {
+        target_frames += INCOMPLETE_CLAUSE_EXTRA_FRAMES;
+    }
+
+    target_frames.clamp(base_frames, MAX_ADAPTIVE_END_FRAMES)
+}
+
 /// Handles speech start event transition, stream resets, and pre-roll transfer.
 pub fn handle_speech_start(
     state: &mut VadActorState,
@@ -139,11 +245,37 @@ pub fn handle_speech_start(
     vox_event_tx: Option<&mpsc::Sender<VoxEvent>>,
 ) {
     state.in_speech = true;
-    state.current_turn_id = handles.turn_id_atomic.load(Ordering::Relaxed);
+    state.speech_sample_counter = 0;
+    handles
+        .incomplete_clause_hint
+        .store(false, Ordering::Relaxed);
 
-    log::info!("[VAD Actor] Speech Start (turn: {})", state.current_turn_id);
-
+    let prev_turn_id = handles.turn_id_atomic.load(Ordering::Relaxed);
+    let interaction_state = InteractionState::from(handles.state_atomic.load(Ordering::Relaxed));
     let owner: InteractionOwner = handles.owner_atomic.load(Ordering::Relaxed).into();
+
+    // Predict the monotonic turn ID that `on_speech_start` will allocate on the Router thread
+    // so the pre-roll StreamChunk and subsequent chunks share the exact same turn_id.
+    let expected_turn_id = if matches!(owner, InteractionOwner::Assistant | InteractionOwner::Dictation)
+        && matches!(
+            interaction_state,
+            InteractionState::Ready
+                | InteractionState::Thinking
+                | InteractionState::Speaking
+                | InteractionState::Working
+        ) {
+        prev_turn_id.wrapping_add(1)
+    } else {
+        prev_turn_id
+    };
+    state.current_turn_id = expected_turn_id;
+
+    log::info!(
+        "[VAD Actor] Speech Start (turn: {}, prev_atomic: {}, noise_floor_rms: {:.5})",
+        state.current_turn_id,
+        prev_turn_id,
+        state.noise_floor_ema
+    );
 
     if let Some(tx) = vox_event_tx {
         if let Err(e) = tx.send(VoxEvent::SpeechStart { owner }) {
@@ -152,8 +284,18 @@ pub fn handle_speech_start(
     }
 
     state.utterance_buffer.clear();
-    state.pre_roll_buffer.copy_into(&mut state.utterance_buffer);
+    let pr_total = state.pre_roll_buffer.len();
+    state
+        .pre_roll_buffer
+        .copy_tail_into(&mut state.utterance_buffer, VAD_PRE_ROLL_FLUSH_SAMPLES);
     state.samples_since_partial = state.utterance_buffer.len();
+    log::info!(
+        "[VAD Actor] Speech Start (turn: {}) pre_roll_total={} flushed_pre_roll={} utterance_samples={}",
+        state.current_turn_id,
+        pr_total,
+        state.utterance_buffer.len(),
+        state.utterance_buffer.len()
+    );
 
     if !state.utterance_buffer.is_empty() && state.realtime_tx.is_none() {
         if let Err(e) = stt_tx.send(SttCommand::StreamChunk {
@@ -176,7 +318,18 @@ pub fn handle_speech_end(
     vox_event_tx: Option<&mpsc::Sender<VoxEvent>>,
 ) {
     state.in_speech = false;
-    state.current_turn_id = handles.turn_id_atomic.load(Ordering::Relaxed);
+    state.onset_score = 0.0;
+    state.active_frames = 0;
+    state.inactive_frames = 0;
+    state.speech_sample_counter = 0;
+    handles
+        .incomplete_clause_hint
+        .store(false, Ordering::Relaxed);
+
+    let atomic_tid = handles.turn_id_atomic.load(Ordering::Relaxed);
+    if atomic_tid > 0 {
+        state.current_turn_id = atomic_tid;
+    }
     log::info!("[VAD Actor] Speech End (turn: {})", state.current_turn_id);
 
     let owner: InteractionOwner = handles.owner_atomic.load(Ordering::Relaxed).into();
@@ -199,6 +352,11 @@ pub fn handle_speech_end(
         }
     }
 
+    log::info!(
+        "[VAD Actor] Speech End (turn: {}) utterance_samples={}",
+        state.current_turn_id,
+        state.utterance_buffer.len()
+    );
     state.utterance_buffer.clear();
     state.samples_since_partial = 0;
 }
@@ -211,6 +369,7 @@ pub fn accumulate_speech_frames(
 ) {
     state.utterance_buffer.extend_from_slice(chunk);
     state.samples_since_partial += chunk.len();
+    state.speech_sample_counter += chunk.len();
 
     if state.realtime_tx.is_none() {
         if let Err(e) = stt_tx.send(SttCommand::StreamChunk {
@@ -222,7 +381,7 @@ pub fn accumulate_speech_frames(
     }
 }
 
-/// Executes ContinuousSegmentation mode for autonomous speech bounding.
+/// Executes ContinuousSegmentation mode with SNR-adaptive leaky onset and cadence-aware hangover.
 pub fn process_continuous_segmentation(
     chunk: &[f32],
     raw_energy: f32,
@@ -232,41 +391,92 @@ pub fn process_continuous_segmentation(
     stt_tx: &mpsc::Sender<SttCommand>,
     vox_event_tx: Option<&mpsc::Sender<VoxEvent>>,
 ) {
-    let is_speech = vad.predict(chunk) && vad.is_above_noise_gate(raw_energy, state.noise_gate);
-    let speech_start_threshold = state.speech_start_frames.max(1);
-    let speech_end_threshold = state.speech_end_frames.max(1);
+    let vad_detected = vad.predict(chunk);
+    let interaction_state = InteractionState::from(handles.state_atomic.load(Ordering::Relaxed));
 
-    if is_speech {
-        state.active_frames += 1;
-        state.inactive_frames = 0;
+    if !state.in_speech {
+        let onset_gate = compute_dynamic_onset_gate(state, vad, interaction_state);
+        let is_onset_speech = vad_detected && raw_energy >= onset_gate;
 
-        if !state.in_speech && state.active_frames >= speech_start_threshold {
-            handle_speech_start(state, handles, stt_tx, vox_event_tx);
-        }
-
-        if state.in_speech {
-            state.current_turn_id = handles.turn_id_atomic.load(Ordering::Relaxed);
-            accumulate_speech_frames(chunk, state, stt_tx);
+        // Require slightly firmer confirmation when barging in over open speakers
+        let base_start_frames = state.speech_start_frames.max(2) as f32;
+        let required_onset_score = if interaction_state == InteractionState::Speaking
+            && state.audio_mode == AudioOutputMode::Speaker
+        {
+            (base_start_frames * 1.5).max(5.0)
         } else {
-            // INVARIANT: sub-threshold onset frames are retained in pre-roll so the
-            // gate frame is flushed into the utterance at SpeechStart instead of
-            // being dropped (abrupt onsets lose their leading 16ms otherwise).
+            base_start_frames
+        };
+
+        if is_onset_speech {
+            // Boost onset score for high-SNR speech bursts so clear syllables trigger faster
+            let snr_boost = if raw_energy >= onset_gate * 2.5 {
+                1.35
+            } else {
+                1.0
+            };
+            state.onset_score += snr_boost;
+            state.active_frames += 1;
+            state.inactive_frames = 0;
+
+            if state.onset_score >= required_onset_score {
+                handle_speech_start(state, handles, stt_tx, vox_event_tx);
+                accumulate_speech_frames(chunk, state, stt_tx);
+            } else {
+                // Retain sub-threshold onset frames in pre-roll so the entire rising edge is preserved
+                state.pre_roll_buffer.push(chunk);
+            }
+        } else {
+            // Leaky decay instead of instant zero reset so unvoiced plosives (/p/, /t/, /k/) don't wipe progress
+            state.onset_score = (state.onset_score - 0.5).max(0.0);
+            if state.onset_score == 0.0 {
+                state.active_frames = 0;
+            }
+            state.inactive_frames += 1;
+            if !vad_detected {
+                update_noise_floor(state, raw_energy);
+            }
             state.pre_roll_buffer.push(chunk);
         }
     } else {
-        state.inactive_frames += 1;
-        state.active_frames = 0;
+        // Sync current_turn_id once Router has committed the new turn_id
+        let atomic_tid = handles.turn_id_atomic.load(Ordering::Relaxed);
+        if atomic_tid > state.current_turn_id {
+            state.current_turn_id = atomic_tid;
+        }
 
-        if state.in_speech {
-            if state.inactive_frames >= speech_end_threshold {
+        // Dual-threshold sustain: once in speech, do NOT gate on `onset_gate` energy so soft
+        // trailing syllables and nasals never prematurely sever the utterance.
+        let sustain_energy_ok = raw_energy >= (state.noise_floor_ema * 1.35);
+        let is_sustain_speech = vad_detected || (state.inactive_frames < 4 && sustain_energy_ok);
+
+        if is_sustain_speech {
+            // If recovering from a mid-sentence micro-pause (>= 4 frames = 64ms), adapt cadence EMA
+            if state.inactive_frames >= 4 {
+                let pause_ms = (state.inactive_frames * 16) as f32;
+                state.smoothed_pause_duration_ms =
+                    0.75 * state.smoothed_pause_duration_ms + 0.25 * pause_ms;
+            }
+            state.active_frames += 1;
+            state.inactive_frames = 0;
+            accumulate_speech_frames(chunk, state, stt_tx);
+        } else {
+            state.inactive_frames += 1;
+            state.active_frames = 0;
+
+            let dynamic_end_threshold = compute_dynamic_end_frames(state, handles);
+            if state.inactive_frames >= dynamic_end_threshold {
                 handle_speech_end(vad, state, handles, stt_tx, vox_event_tx);
                 state.pre_roll_buffer.push(chunk);
             } else {
-                state.current_turn_id = handles.turn_id_atomic.load(Ordering::Relaxed);
                 accumulate_speech_frames(chunk, state, stt_tx);
+                // Also keep feeding recent trailing silence into pre_roll_buffer so if SpeechEnd
+                // fires and the user resumes speaking immediately (< 200ms later), pre_roll_buffer
+                // already holds the boundary context!
+                if state.inactive_frames > dynamic_end_threshold.saturating_sub(20) {
+                    state.pre_roll_buffer.push(chunk);
+                }
             }
-        } else {
-            state.pre_roll_buffer.push(chunk);
         }
     }
 }
@@ -292,7 +502,7 @@ pub fn process_windowed_validation(
             state.window_speech_detected = true;
             state.window_first_speech_sample = state
                 .window_sample_offset
-                .saturating_sub(VAD_PRE_ROLL_CAPACITY);
+                .saturating_sub(VAD_PRE_ROLL_FLUSH_SAMPLES.min(VAD_PRE_ROLL_CAPACITY));
         }
         state.window_last_speech_sample = state.window_sample_offset + chunk.len();
     }
@@ -370,6 +580,15 @@ mod tests {
         assert_eq!(out2.len(), 10);
         assert_eq!(out2[0], 2.0);
         assert_eq!(out2[9], 11.0);
+    }
+
+    #[test]
+    fn test_preroll_copy_tail_into() {
+        let mut buf = PreRollBuffer::new(10);
+        buf.push(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]);
+        let mut tail = Vec::new();
+        buf.copy_tail_into(&mut tail, 4);
+        assert_eq!(tail, vec![5.0, 6.0, 7.0, 8.0]);
     }
 
     #[test]

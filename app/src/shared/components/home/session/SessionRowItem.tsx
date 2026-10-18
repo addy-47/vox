@@ -160,7 +160,7 @@ export const SessionRowItem = memo(
         }}
         aria-current={active ? "true" : undefined}
         className={cn(
-          "group relative flex items-center justify-between gap-1.5 py-2 rounded-sm text-left cursor-pointer transition-all select-none border border-transparent",
+          "group relative flex items-center justify-between gap-1.5 py-2 rounded-sm text-left cursor-pointer transition-colors select-none border border-transparent",
           active
             ? "bg-[rgba(var(--accent),0.12)] border-[rgba(var(--accent),0.25)] text-[rgb(var(--accent))] font-medium shadow-sm"
             : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.04)]",

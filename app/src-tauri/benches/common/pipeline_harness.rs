@@ -234,6 +234,7 @@ pub fn setup_e2e_pipeline(settings: VoxSettings) -> E2ePipelineSetup {
         dropped_counter: Arc::new(AtomicU64::new(0)),
         ingestion_gate: state.pipeline.ingestion_gate.clone(),
         owner_atomic: state.owner.clone(),
+        incomplete_clause_hint: Arc::new(AtomicBool::new(false)),
     };
 
     let vad_handle = std::thread::spawn(move || {

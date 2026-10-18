@@ -29,12 +29,21 @@ pub fn on_error<R: tauri::Runtime + 'static>(
         err.message
     );
 
+    // Guard against stale error events from past turns
+    if err.turn_id != state.pipeline.peek_turn_id() && err.impact == PipelineImpact::TurnAborted {
+        log::debug!(
+            "[Pipeline::Error] Ignoring stale TurnAborted error for turn {} (active turn is {})",
+            err.turn_id,
+            state.pipeline.peek_turn_id()
+        );
+        return;
+    }
+
     match err.impact {
         PipelineImpact::None | PipelineImpact::Degraded => {
             // Degraded fidelity or None: Turn continues without stopping. No state transition, no token cancellation.
         }
         PipelineImpact::TurnAborted => {
-            // Turn fails cleanly: Cancel turn token and synthesis jobs, return state machine directly to Ready.
             if let Ok(guard) = state.engine.try_lock() {
                 if let Some(ref engine) = *guard {
                     engine.playback_engine.cancel();
@@ -49,7 +58,6 @@ pub fn on_error<R: tauri::Runtime + 'static>(
             transition(InteractionState::Ready, None, ctx, app, state);
         }
         PipelineImpact::SessionHalted => {
-            // Unrecoverable breakdown: Cancel playback, trip token, transition to Error.
             if let Ok(guard) = state.engine.try_lock() {
                 if let Some(ref engine) = *guard {
                     engine.playback_engine.cancel();
@@ -65,7 +73,6 @@ pub fn on_error<R: tauri::Runtime + 'static>(
         }
     }
 
-    // Classify error and delegate alerting strictly to the Notification Service
     let msg_lower = err.message.to_lowercase();
     let is_hw_error = err.source.contains("Audio")
         || err.source.contains("Microphone")
@@ -184,6 +191,16 @@ pub fn on_cancelled<R: tauri::Runtime>(
     state: &AppState,
     ctx: &RoutingContext,
 ) {
+    let current_turn = state.pipeline.peek_turn_id();
+    if turn_id != current_turn {
+        log::debug!(
+            "[Pipeline::Cancelled] Ignoring stale Cancelled event for turn {} (active turn is {})",
+            turn_id,
+            current_turn
+        );
+        return;
+    }
+
     log::info!(
         "[Pipeline::Cancelled] Interaction cancelled on turn {}",
         turn_id

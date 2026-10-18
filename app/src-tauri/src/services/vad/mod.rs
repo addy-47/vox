@@ -23,9 +23,13 @@ pub const MODEL_FILE_VAD_SILERO: &str = "silero_vad.onnx";
 /// Input sample rate (Hz) of audio frames evaluated by the VAD actor.
 pub const VAD_INPUT_SAMPLE_RATE: u32 = 16000;
 pub const VAD_CHUNK_SIZE: usize = 256;
-pub const VAD_PRE_ROLL_CAPACITY: usize = 8000;
-pub const VAD_SPEECH_START_FRAMES: usize = 2;
-pub const VAD_SPEECH_END_FRAMES: usize = 25;
+/// Ring buffer capacity (16,000 samples = 1.0s @ 16kHz) retained continuously before speech onset.
+pub const VAD_PRE_ROLL_CAPACITY: usize = 16000;
+/// Optimal pre-roll slice (9,600 samples = 600ms @ 16kHz) flushed into utterance start on SpeechStart
+/// so soft rising edges and unvoiced plosives are preserved without prepending excessive silence.
+pub const VAD_PRE_ROLL_FLUSH_SAMPLES: usize = 9600;
+pub const VAD_SPEECH_START_FRAMES: usize = 4;
+pub const VAD_SPEECH_END_FRAMES: usize = 38;
 pub const VAD_MIN_UTTERANCE_SAMPLES: usize = 4800;
 pub const VAD_PARTIAL_INTERVAL_SAMPLES: usize = 12800;
 pub const VAD_MAX_PARTIAL_WINDOW_SAMPLES: usize = 240000;

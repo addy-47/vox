@@ -88,25 +88,29 @@ pub(crate) fn spawn_harness_turn_task<R: tauri::Runtime + 'static>(
             }
             TurnOutcome::DuplicateIgnored { turn_id } => {
                 log::info!("[Pipeline::Transcript] Duplicate turn {} ignored", turn_id);
-                app_state.pipeline.reset_turn_guards();
-                transition(
-                    InteractionState::Ready,
-                    None,
-                    &ctx_clone,
-                    &app_clone,
-                    &app_state,
-                );
+                if turn_id == app_state.pipeline.peek_turn_id() {
+                    app_state.pipeline.reset_turn_guards();
+                    transition(
+                        InteractionState::Ready,
+                        None,
+                        &ctx_clone,
+                        &app_clone,
+                        &app_state,
+                    );
+                }
             }
             TurnOutcome::Cancelled { turn_id } => {
                 log::info!("[Pipeline::Transcript] Turn {} cancelled", turn_id);
-                app_state.pipeline.reset_turn_guards();
-                transition(
-                    InteractionState::Ready,
-                    None,
-                    &ctx_clone,
-                    &app_clone,
-                    &app_state,
-                );
+                if turn_id == app_state.pipeline.peek_turn_id() {
+                    app_state.pipeline.reset_turn_guards();
+                    transition(
+                        InteractionState::Ready,
+                        None,
+                        &ctx_clone,
+                        &app_clone,
+                        &app_state,
+                    );
+                }
             }
             TurnOutcome::Error { turn_id, message } => {
                 log::error!(
@@ -114,14 +118,16 @@ pub(crate) fn spawn_harness_turn_task<R: tauri::Runtime + 'static>(
                     turn_id,
                     message
                 );
-                app_state.pipeline.reset_turn_guards();
-                transition(
-                    InteractionState::Ready,
-                    None,
-                    &ctx_clone,
-                    &app_clone,
-                    &app_state,
-                );
+                if turn_id == app_state.pipeline.peek_turn_id() {
+                    app_state.pipeline.reset_turn_guards();
+                    transition(
+                        InteractionState::Ready,
+                        None,
+                        &ctx_clone,
+                        &app_clone,
+                        &app_state,
+                    );
+                }
             }
         }
     });
@@ -142,55 +148,85 @@ pub fn on_transcript_final<R: tauri::Runtime>(
         target_window(ctx.owner),
         text.chars().count()
     );
+
     let current_state = state.pipeline.state();
+
+    // If turn_id matches a late-arriving final while the user is already speaking the continuation (Listening),
+    // capture it directly into continuation_prefix instead of dropping it.
+    if current_state == InteractionState::Listening {
+        let mut acc = state.pipeline_accumulator.lock();
+        if acc.awaiting_continuation && turn_id + 1 == state.pipeline.peek_turn_id() {
+            acc.append_continuation_prefix(&text);
+            log::info!(
+                "[Pipeline::Transcript] Captured late-arriving final for turn {} while in Listening; prefix len={}",
+                turn_id,
+                acc.continuation_prefix.len()
+            );
+            return;
+        }
+    }
+
     if current_state != InteractionState::Thinking {
         log::debug!(
-            "[Pipeline::Transcript] Transcript dropped: state is {:?}, expected Thinking",
+            "[Pipeline::Transcript] Transcript dropped: state is {:?}, expected Thinking or Listening",
             current_state
         );
         return;
     }
 
     let trimmed = text.trim().to_string();
-    if trimmed.is_empty() {
-        log::debug!(
-            "[Pipeline::Transcript] Dropping empty transcript for turn {}",
-            turn_id
-        );
-        state.pipeline_accumulator.lock().clear();
-        transition(InteractionState::Ready, None, ctx, app, state);
+    let mut acc = state.pipeline_accumulator.lock();
 
-        let app_handle = app.clone();
-        let db = state.db.clone();
-        tauri::async_runtime::spawn(async move {
-            let params = NotificationParams {
-                category: NotificationCategory::Pipeline,
-                severity: Severity::Info,
-                impact: Some(PipelineImpact::None),
-                action: Action::Transient,
-                title: "Voice Assistant",
-                message: "Speech detected, but no words recognized.",
-                group_key: Some("assistant:empty_speech"),
-                session_id: None,
-                metadata: None,
-                duration_ms: None,
-            };
-            if let Err(e) = services::notifications::notify(&app_handle, &db, params).await {
-                log::warn!(
-                    "[Pipeline::Transcript] Failed to dispatch notification: {}",
-                    e
-                );
-            }
-        });
-        return;
-    }
+    // If transcript is empty but we have a stashed continuation prefix (e.g. user uttered a sigh/cough or short pause),
+    // resolve using the prefix instead of aborting to Ready.
+    let raw_query = if trimmed.is_empty() {
+        if !acc.continuation_prefix.is_empty() {
+            log::info!(
+                "[Pipeline::Transcript] Empty transcript for turn {}; promoting stashed continuation_prefix: '{}'",
+                turn_id,
+                acc.continuation_prefix
+            );
+            acc.resolve_merged_transcript("")
+        } else {
+            log::debug!(
+                "[Pipeline::Transcript] Dropping empty transcript for turn {}",
+                turn_id
+            );
+            acc.clear();
+            drop(acc);
+            transition(InteractionState::Ready, None, ctx, app, state);
+
+            let app_handle = app.clone();
+            let db = state.db.clone();
+            tauri::async_runtime::spawn(async move {
+                let params = NotificationParams {
+                    category: NotificationCategory::Pipeline,
+                    severity: Severity::Info,
+                    impact: Some(PipelineImpact::None),
+                    action: Action::Transient,
+                    title: "Voice Assistant",
+                    message: "Speech detected, but no words recognized.",
+                    group_key: Some("assistant:empty_speech"),
+                    session_id: None,
+                    metadata: None,
+                    duration_ms: None,
+                };
+                let _ = services::notifications::notify(&app_handle, &db, params).await;
+            });
+            return;
+        }
+    } else {
+        acc.resolve_merged_transcript(&trimmed)
+    };
+
+    drop(acc);
 
     let transliterate_enabled = state
         .settings
         .read()
         .map(|s| s.stt.transliterate_enabled)
         .unwrap_or(false);
-    let query = transliterate_if_hi(&trimmed, true, transliterate_enabled);
+    let query = transliterate_if_hi(&raw_query, true, transliterate_enabled);
     log::info!(
         "[Pipeline::Transcript] Turn {}: User said: '{}'",
         turn_id,
@@ -209,16 +245,11 @@ pub fn on_transcript_final<R: tauri::Runtime>(
         text: query.clone(),
         owner: Some(ctx.owner),
     };
-    if let Err(e) = emit_ipc_to(
+    let _ = emit_ipc_to(
         app,
         target_window(ctx.owner),
         IpcEvent::TranscriptFinal(payload),
-    ) {
-        log::warn!(
-            "[Pipeline::Transcript] Failed to emit TranscriptFinal IPC: {}",
-            e
-        );
-    }
+    );
 
     state.pipeline.set_turn_open(true);
     state.pipeline.clear_drained_while_open();
