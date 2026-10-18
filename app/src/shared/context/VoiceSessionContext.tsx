@@ -141,6 +141,7 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
   // and the refs are wired in an effect that runs before any IPC event can arrive.
   const commitTurnRef = useRef<() => void>(() => {});
   const clearTranscriptRef = useRef<() => void>(() => {});
+  const isDisengagingRef = useRef(false);
 
   const isEngaged = interactionState !== "Idle";
   const isSleeping = interactionState === "Sleeping";
@@ -167,9 +168,9 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
       }
       if (next === "Ready") {
         commitTurnRef.current();
-        if (!storeApi().activeSessionId) {
+        if (!isDisengagingRef.current && !storeApi().activeSessionId) {
           void getRuntimeSnapshot().then((snapshot) => {
-            if (snapshot && snapshot.conversation_id > 0) {
+            if (!isDisengagingRef.current && snapshot && snapshot.conversation_id > 0) {
               storeApi().setActiveSessionId(snapshot.conversation_id);
             }
           }).catch(() => {});
@@ -288,6 +289,7 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
   }, []);
 
   const disengage = useCallback(async () => {
+    isDisengagingRef.current = true;
     clearTranscript();
     const api = storeApi();
     api.setIsLaunching(true);
@@ -304,7 +306,9 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
     } catch {
       // End is best-effort; local state was already cleared.
     } finally {
+      storeApi().setActiveSessionId(null);
       storeApi().setIsLaunching(false);
+      isDisengagingRef.current = false;
     }
   }, [clearTranscript]);
 

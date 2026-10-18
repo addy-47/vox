@@ -85,6 +85,7 @@ async fn test_echo_only_solo_playback_causes_zero_false_interruption() {
             dropped_counter: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             ingestion_gate: state.pipeline.ingestion_gate.clone(),
             owner_atomic: Arc::clone(&state.owner),
+            incomplete_clause_hint: Arc::new(AtomicBool::new(false)),
         };
         let vad_channels = vox_lib::services::vad::VadActorChannels {
             stt_tx: _dummy_stt_tx(),
@@ -223,6 +224,7 @@ async fn test_double_talk_barge_in_cancels_playback_and_transitions_to_listening
             dropped_counter: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             ingestion_gate: state.pipeline.ingestion_gate.clone(),
             owner_atomic: Arc::clone(&state.owner),
+            incomplete_clause_hint: Arc::new(AtomicBool::new(false)),
         };
         let vad_channels = vox_lib::services::vad::VadActorChannels {
             stt_tx: _dummy_stt_tx(),
@@ -377,6 +379,7 @@ async fn test_false_green_bypass_reproduces_echo_interruption() {
             dropped_counter: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             ingestion_gate: state.pipeline.ingestion_gate.clone(),
             owner_atomic: Arc::clone(&state.owner),
+            incomplete_clause_hint: Arc::new(AtomicBool::new(false)),
         };
         let vad_channels = vox_lib::services::vad::VadActorChannels {
             stt_tx: _dummy_stt_tx(),

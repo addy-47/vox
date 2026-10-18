@@ -89,6 +89,12 @@ pub struct VadActorState {
     pub pre_roll_buffer: PreRollBuffer,
     pub realtime_tx: Option<tokio::sync::mpsc::Sender<Vec<i16>>>,
 
+    // Dynamic Noise-Floor & Adaptive Cadence / Hangover State
+    pub noise_floor_ema: f32,
+    pub onset_score: f32,
+    pub speech_sample_counter: usize,
+    pub smoothed_pause_duration_ms: f32,
+
     // WindowedValidation state tracking
     pub window_active: bool,
     pub window_sample_offset: usize,
@@ -123,6 +129,7 @@ pub struct VadActorHandles {
     pub dropped_counter: Arc<AtomicU64>,
     pub ingestion_gate: Arc<AtomicBool>,
     pub owner_atomic: Arc<AtomicU32>,
+    pub incomplete_clause_hint: Arc<AtomicBool>,
 }
 
 /// Communication channels utilized by the VAD actor.
@@ -169,6 +176,10 @@ impl VadActorState {
             ),
             pre_roll_buffer: PreRollBuffer::new(VAD_PRE_ROLL_CAPACITY),
             realtime_tx: None,
+            noise_floor_ema: 0.002, // Initial baseline ambient room noise floor estimate
+            onset_score: 0.0,
+            speech_sample_counter: 0,
+            smoothed_pause_duration_ms: 300.0,
             window_active: false,
             window_sample_offset: 0,
             window_speech_detected: false,
@@ -226,6 +237,7 @@ fn process_vad_commands(
                     state.in_speech = false;
                     state.utterance_buffer.clear();
                     state.samples_since_partial = 0;
+                    state.onset_score = 0.0;
                 }
                 state.mode = m;
             }
@@ -239,6 +251,7 @@ fn process_vad_commands(
                     state.in_speech = false;
                     state.utterance_buffer.clear();
                     state.samples_since_partial = 0;
+                    state.onset_score = 0.0;
                 }
                 state.operational_mode = op;
             }
@@ -391,6 +404,7 @@ where
                     state.window_buffer.clear();
                     state.in_speech = false;
                     state.window_active = false;
+                    state.onset_score = 0.0;
                     log::debug!(
                         "[VAD Actor] Ingestion gate closed — purged in-flight audio buffers"
                     );

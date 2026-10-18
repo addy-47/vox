@@ -52,7 +52,8 @@ fn test_playback_reference_tap_downsampling_48k_to_16k() {
     let mut popped = vec![0.0f32; 160];
     let count = cons.pop_slice(&mut popped);
     assert_eq!(count, 160);
-    for sample in popped {
+    // Allow initial IIR Butterworth filter step-response transient to settle (~20 samples @ 16kHz = 1.25ms)
+    for &sample in &popped[20..] {
         assert!((sample - 0.75).abs() < 1e-5);
     }
 }

@@ -116,6 +116,7 @@ pub fn benchmark_streaming_provider(
         owner_atomic: Arc::new(AtomicU32::new(
             vox_lib::core::events::InteractionOwner::Assistant as u32,
         )),
+        incomplete_clause_hint: Arc::new(AtomicBool::new(false)),
     };
 
     let earshot_engine =

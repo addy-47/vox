@@ -51,6 +51,7 @@ struct WorkerState {
     last_emit_time: Instant,
     last_transcript: String,
     current_active_turn: u32,
+    stream_open: bool,
     last_inference_duration: Duration,
 }
 
@@ -128,15 +129,25 @@ fn handle_partial_command(
     state: &mut WorkerState,
 ) {
     if tid != state.current_active_turn {
-        log::info!(
-            "[STT] New turn ID {} detected (prev {}). Resetting buffers.",
-            tid,
-            state.current_active_turn
-        );
-        state.current_active_turn = tid;
-        state.last_transcript.clear();
-        if let Err(e) = ctx.provider.reset_state() {
-            log::warn!("[STT] Error resetting state for new turn: {:?}", e);
+        if state.stream_open && tid == state.current_active_turn.wrapping_add(1) {
+            log::debug!(
+                "[STT] Adopting incremented turn ID {} (prev {}) on active partial stream without reset.",
+                tid,
+                state.current_active_turn
+            );
+            state.current_active_turn = tid;
+        } else {
+            log::info!(
+                "[STT] New turn ID {} detected (prev {}). Resetting buffers.",
+                tid,
+                state.current_active_turn
+            );
+            state.current_active_turn = tid;
+            state.last_transcript.clear();
+            state.stream_open = false;
+            if let Err(e) = ctx.provider.reset_state() {
+                log::warn!("[STT] Error resetting state for new turn: {:?}", e);
+            }
         }
     }
 
@@ -149,6 +160,7 @@ fn handle_partial_command(
 
     if ctx.cancel_flag.load(Ordering::Relaxed) {
         state.last_transcript.clear();
+        state.stream_open = false;
         if let Err(e) = ctx.provider.reset_state() {
             log::warn!("[STT] Error resetting state on cancellation: {:?}", e);
         }
@@ -158,10 +170,12 @@ fn handle_partial_command(
     let start_inference = Instant::now();
     match ctx.provider.transcribe_chunk(utterance, false) {
         Ok(text) => {
+            state.stream_open = true;
             state.last_inference_duration = start_inference.elapsed();
 
             if ctx.cancel_flag.load(Ordering::Relaxed) {
                 state.last_transcript.clear();
+                state.stream_open = false;
                 if let Err(e) = ctx.provider.reset_state() {
                     log::warn!("[STT] Error resetting state on cancellation: {:?}", e);
                 }
@@ -187,20 +201,33 @@ fn handle_stream_chunk_command(
     state: &mut WorkerState,
 ) {
     if tid != state.current_active_turn {
-        log::info!(
-            "[STT] New turn ID {} detected on stream chunk (prev {}). Resetting buffers.",
-            tid,
-            state.current_active_turn
-        );
-        state.current_active_turn = tid;
-        state.last_transcript.clear();
-        if let Err(e) = ctx.provider.reset_state() {
-            log::warn!("[STT] Error resetting state for new turn {}: {:?}", tid, e);
+        if state.stream_open && tid == state.current_active_turn.wrapping_add(1) {
+            // Router incremented turn_id 1ms after VAD sent the pre-roll chunk:
+            // adopt the new turn_id seamlessly WITHOUT wiping the pre-roll audio in the transducer!
+            log::debug!(
+                "[STT] Adopting Router-incremented turn ID {} (prev {}) on active stream without resetting pre-roll.",
+                tid,
+                state.current_active_turn
+            );
+            state.current_active_turn = tid;
+        } else {
+            log::info!(
+                "[STT] New turn ID {} detected on stream chunk (prev {}). Resetting buffers.",
+                tid,
+                state.current_active_turn
+            );
+            state.current_active_turn = tid;
+            state.last_transcript.clear();
+            state.stream_open = false;
+            if let Err(e) = ctx.provider.reset_state() {
+                log::warn!("[STT] Error resetting state for new turn {}: {:?}", tid, e);
+            }
         }
     }
 
     if ctx.cancel_flag.load(Ordering::Relaxed) {
         state.last_transcript.clear();
+        state.stream_open = false;
         if let Err(e) = ctx.provider.reset_state() {
             log::warn!("[STT] Error resetting state on cancellation: {:?}", e);
         }
@@ -209,6 +236,7 @@ fn handle_stream_chunk_command(
 
     match ctx.provider.transcribe_chunk(chunk, false) {
         Ok(text) => {
+            state.stream_open = true;
             let dynamic_throttle = Duration::from_millis(STT_MIN_PARTIAL_THROTTLE_MS);
             if state.last_emit_time.elapsed() >= dynamic_throttle {
                 emit_partial_event(ctx, tid, text, state);
@@ -257,11 +285,15 @@ fn handle_final_command(
         state.current_active_turn,
         owner,
     );
-    if cancelled || tid < state.current_active_turn {
-        log::info!("[STT] Final rejected as stale/cancelled (turn {})", tid);
+
+    // Do not reject turn N if turn N+1 just started due to a brief mid-sentence pause;
+    // only reject if explicitly cancelled and no utterance audio is present.
+    if cancelled && tid == state.current_active_turn {
+        log::info!("[STT] Final rejected as cancelled (turn {})", tid);
         state.last_transcript.clear();
+        state.stream_open = false;
         if let Err(e) = ctx.provider.reset_state() {
-            log::warn!("[STT] Error resetting state on stale final: {:?}", e);
+            log::warn!("[STT] Error resetting state on cancelled final: {:?}", e);
         }
         if let Some(ref pipeline_tx) = ctx.pipeline_event_tx {
             if let Err(e) = pipeline_tx.send(VoxEvent::Cancelled {
@@ -269,13 +301,14 @@ fn handle_final_command(
                 owner,
             }) {
                 log::warn!(
-                    "[STT] Error sending cancelled event on stale final: {:?}",
+                    "[STT] Error sending cancelled event on cancelled final: {:?}",
                     e
                 );
             }
         }
         return;
     }
+
     state.current_active_turn = tid;
 
     let transcript = match ctx.provider.transcribe_chunk(utterance, true) {
@@ -286,6 +319,7 @@ fn handle_final_command(
         }
     };
 
+    state.stream_open = false;
     if let Err(e) = ctx.provider.reset_state() {
         log::warn!("[STT] Error resetting provider state post-final: {:?}", e);
     }
@@ -312,6 +346,7 @@ fn drain_reset_stream(
 ) -> bool {
     log::info!("[STT] ResetStream received. Aggressively clearing state.");
     state.last_transcript.clear();
+    state.stream_open = false;
     if let Err(e) = provider.reset_state() {
         log::warn!("[STT] Error resetting provider on stream reset: {:?}", e);
     }
@@ -357,6 +392,7 @@ fn run_worker_loop(
         last_emit_time: Instant::now(),
         last_transcript: String::new(),
         current_active_turn: 0u32,
+        stream_open: false,
         last_inference_duration: Duration::from_millis(STT_DEFAULT_INFERENCE_DURATION_MS),
     };
     let mut pending_cmd = None;

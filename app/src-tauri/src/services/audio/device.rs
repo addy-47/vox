@@ -137,7 +137,7 @@ pub fn resolve_audio_host() -> cpal::Host {
     cpal::default_host()
 }
 
-/// Builds the CPAL input ingestion stream with lock-free ringbuf forwarding.
+/// Builds the CPAL input ingestion stream with lock-free ringbuf forwarding and anti-aliasing downsampling.
 fn build_input_stream<P>(
     device: cpal::Device,
     config: &cpal::StreamConfig,
@@ -152,6 +152,7 @@ where
     let mut source_index: f32 = 0.0;
     let resample_ratio = sample_rate as f32 / SAMPLE_RATE as f32;
     let mut mono_buffer = Vec::with_capacity(INGESTION_BUFFER_CAPACITY_SAMPLES);
+    let mut filtered_buffer = Vec::with_capacity(INGESTION_BUFFER_CAPACITY_SAMPLES);
     let mut resampled_buffer = Vec::with_capacity(INGESTION_BUFFER_CAPACITY_SAMPLES);
 
     let stream = device.build_input_stream(
@@ -162,6 +163,7 @@ where
             }
 
             mono_buffer.clear();
+            filtered_buffer.clear();
             resampled_buffer.clear();
 
             for chunk in data.chunks_exact(channels) {
@@ -173,6 +175,24 @@ where
             }
 
             let n_mono = mono_buffer.len();
+            if n_mono == 0 {
+                return;
+            }
+
+            // Anti-aliasing low-pass filter (3-tap moving average) prior to decimation
+            // to prevent high-frequency noise (8kHz–22kHz) from aliasing into the speech band.
+            filtered_buffer.resize(n_mono, 0.0);
+            if n_mono >= 3 {
+                filtered_buffer[0] = mono_buffer[0];
+                for i in 1..n_mono - 1 {
+                    filtered_buffer[i] =
+                        0.25 * mono_buffer[i - 1] + 0.5 * mono_buffer[i] + 0.25 * mono_buffer[i + 1];
+                }
+                filtered_buffer[n_mono - 1] = mono_buffer[n_mono - 1];
+            } else {
+                filtered_buffer.copy_from_slice(&mono_buffer);
+            }
+
             while (source_index as usize) < n_mono {
                 if resampled_buffer.len() >= INGESTION_BUFFER_CAPACITY_SAMPLES {
                     break;
@@ -180,7 +200,8 @@ where
                 let idx = source_index as usize;
                 let next_idx = (idx + 1).min(n_mono - 1);
                 let frac = source_index - idx as f32;
-                let sample = (1.0 - frac) * mono_buffer[idx] + frac * mono_buffer[next_idx];
+                let sample =
+                    (1.0 - frac) * filtered_buffer[idx] + frac * filtered_buffer[next_idx];
                 resampled_buffer.push(sample);
                 source_index += resample_ratio;
             }

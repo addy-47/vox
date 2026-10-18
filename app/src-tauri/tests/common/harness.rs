@@ -211,6 +211,7 @@ pub fn setup_vad_actor(
         dropped_counter: Arc::new(AtomicU64::new(0)),
         ingestion_gate,
         owner_atomic: Arc::new(AtomicU32::new(InteractionOwner::Assistant as u32)),
+        incomplete_clause_hint: Arc::new(AtomicBool::new(false)),
     };
 
     let join_handle = std::thread::Builder::new()

@@ -10,12 +10,15 @@ use crate::{
     pipeline::{transition, RoutingContext},
 };
 
-/// Executes the 6-step canonical barge-in sequence when an interruption occurs during Thinking or Speaking.
+/// Executes the canonical barge-in or mid-thought continuation sequence when speech onset
+/// occurs during Thinking, Working, or Speaking.
 pub fn on_interrupt<R: tauri::Runtime>(
     app: &AppHandle<R>,
     state: &AppState,
     ctx: &RoutingContext,
 ) -> u32 {
+    let prior_state = state.pipeline.state();
+
     if let Ok(guard) = state.engine.try_lock() {
         if let Some(ref engine) = *guard {
             engine.playback_engine.cancel();
@@ -53,8 +56,26 @@ pub fn on_interrupt<R: tauri::Runtime>(
 
     let interrupted_turn_id = state.pipeline.peek_turn_id();
 
-    // 5. Accumulator Reset: Clears TurnAccumulator for the incoming user utterance (events-spec §5 item 5)
-    state.pipeline_accumulator.lock().clear();
+    // Distinguish between:
+    // 1. Mid-thought continuation (`Thinking` or `Working` before final response speech started):
+    //    preserve the first spoken segment so the continuation segment concatenates into one full query.
+    // 2. Genuine barge-in (`Speaking` while assistant response is playing):
+    //    clear the accumulator for a brand-new user turn.
+    {
+        let mut acc = state.pipeline_accumulator.lock();
+        if prior_state == InteractionState::Thinking || prior_state == InteractionState::Working {
+            acc.stash_for_continuation();
+            log::info!(
+                "[Pipeline::Interrupt] Mid-thought continuation detected in {:?} (turn {}); stashed prefix_len={} awaiting_stt={}",
+                prior_state,
+                interrupted_turn_id,
+                acc.continuation_prefix.len(),
+                acc.awaiting_continuation
+            );
+        } else {
+            acc.clear();
+        }
+    }
 
     let (new_turn_id, _) = state.pipeline.next_turn();
     state.pipeline.cancel_flag.store(false, Ordering::Relaxed);
@@ -62,7 +83,8 @@ pub fn on_interrupt<R: tauri::Runtime>(
     state.turn_metrics.start_turn(new_turn_id);
 
     log::info!(
-        "[Pipeline::Interrupt] Interruption handled (interrupted turn: {}, new turn: {})",
+        "[Pipeline::Interrupt] Interruption handled (prior_state: {:?}, interrupted turn: {}, new turn: {})",
+        prior_state,
         interrupted_turn_id,
         new_turn_id
     );

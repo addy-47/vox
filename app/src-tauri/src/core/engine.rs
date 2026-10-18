@@ -248,6 +248,9 @@ pub async fn start_audio_engine<R: tauri::Runtime + 'static>(
         initial_audio_mode: audio_mode,
     };
 
+    let incomplete_clause_hint = Arc::new(AtomicBool::new(false));
+    let incomplete_clause_hint_for_vad = Arc::clone(&incomplete_clause_hint);
+
     let vad_handles = VadActorHandles {
         state_atomic: Arc::clone(&state.pipeline.current_state_atomic),
         turn_id_atomic: Arc::clone(&state.pipeline.turn_id),
@@ -256,6 +259,7 @@ pub async fn start_audio_engine<R: tauri::Runtime + 'static>(
         dropped_counter: Arc::clone(&state.telemetry.dropped_telemetry_events),
         ingestion_gate: Arc::clone(&state.pipeline.ingestion_gate),
         owner_atomic: Arc::clone(&state.owner),
+        incomplete_clause_hint: incomplete_clause_hint_for_vad,
     };
 
     let vad_channels = VadActorChannels {
@@ -278,21 +282,42 @@ pub async fn start_audio_engine<R: tauri::Runtime + 'static>(
         .map_err(|e| format!("[Core::Engine] Failed to spawn VAD thread: {}", e))?;
 
     let app_handle = app.clone();
+    let hint_emitter = Arc::clone(&incomplete_clause_hint);
     let partial_emitter = Some(Arc::new(move |turn_id: u32, text: String| {
-        let owner: InteractionOwner = app_handle
-            .state::<Arc<AppState>>()
+        let app_state_ref = app_handle.state::<Arc<AppState>>();
+        let owner: InteractionOwner = app_state_ref
             .owner
             .load(Ordering::Relaxed)
             .into();
+
+        // Heuristic: inspect partial text for trailing incomplete syntax (conjunctions, prepositions, or <=3 words)
+        // and update the VAD actor's incomplete_clause_hint lock-free atomic flag.
+        let trimmed = text.trim();
+        let word_count = trimmed.split_whitespace().count();
+        let ends_with_conjunction = trimmed.ends_with(" and")
+            || trimmed.ends_with(" or")
+            || trimmed.ends_with(" but")
+            || trimmed.ends_with(" the")
+            || trimmed.ends_with(" a")
+            || trimmed.ends_with(" an")
+            || trimmed.ends_with(" to")
+            || trimmed.ends_with(" of")
+            || trimmed.ends_with(" in")
+            || trimmed.ends_with("on")
+            || trimmed.ends_with("और")
+            || trimmed.ends_with("के")
+            || trimmed.ends_with("से")
+            || trimmed.ends_with("पर");
+        let is_incomplete = word_count <= 3 || ends_with_conjunction;
+        hint_emitter.store(is_incomplete, Ordering::Relaxed);
+
         let target = target_window(owner);
         log::debug!(
-            "[STT::Partial::Trace] turn={} owner={:?} target={} chars={} tray_exists={} main_exists={}",
+            "[STT::Partial::Trace] turn={} owner={:?} target={} chars={}",
             turn_id,
             owner,
             target,
-            text.chars().count(),
-            app_handle.get_webview_window("tray").is_some(),
-            app_handle.get_webview_window("main").is_some()
+            text.chars().count()
         );
         if let Err(e) = emit_ipc_to(
             &app_handle,
@@ -381,15 +406,9 @@ pub async fn stop_audio_engine(state: &AppState) -> Result<(), String> {
     state.pipeline.set_state(InteractionState::Idle);
     *state.event_tx.lock() = None;
 
-    if let Err(e) = engine.pipeline_tx.send(VoxEvent::Shutdown) {
-        log::warn!("[Core::Engine] Failed to send Shutdown to pipeline: {}", e);
-    }
-    if let Err(e) = engine.stt_tx.send(SttCommand::Shutdown) {
-        log::warn!("[Core::Engine] Failed to send Shutdown to STT: {}", e);
-    }
-    if let Err(e) = engine.vad_tx.send(VadCommand::Shutdown) {
-        log::warn!("[Core::Engine] Failed to send Shutdown to VAD: {}", e);
-    }
+    let _ = engine.pipeline_tx.send(VoxEvent::Shutdown);
+    let _ = engine.stt_tx.send(SttCommand::Shutdown);
+    let _ = engine.vad_tx.send(VadCommand::Shutdown);
 
     cool_down_llm(&mut engine.llm_tx, Some(&state.llm_provider));
     cool_down_tts(&mut engine.tts_tx);
@@ -401,9 +420,6 @@ pub async fn stop_audio_engine(state: &AppState) -> Result<(), String> {
     let vad_handle = engine.vad_handle.take();
     let route_watcher_handle = engine.route_watcher_handle.take();
 
-    // Do not join worker threads: joining can deadlock when the caller runs on one of
-    // those threads (e.g. restart invoked from the router task). Dropping the engine
-    // below releases hardware streams immediately; threads exit on their own.
     drop(llm_handle);
     drop(tts_handle);
     drop(orch_handle);
@@ -414,12 +430,7 @@ pub async fn stop_audio_engine(state: &AppState) -> Result<(), String> {
     {
         let mut persist_lock = state.persist_tx.lock();
         if let Some(tx) = persist_lock.take() {
-            if let Err(e) = tx.send(PersistenceEvent::Shutdown) {
-                log::warn!(
-                    "[Core::Engine] Failed to send Shutdown to persistence: {}",
-                    e
-                );
-            }
+            let _ = tx.send(PersistenceEvent::Shutdown);
         }
     }
 
@@ -472,7 +483,6 @@ pub async fn ensure_modular_workers(state: &AppState) -> Result<(), String> {
         return Ok(());
     };
 
-    // Check if workers are already active under a short lock
     let (needs_llm, needs_tts, playback_engine, pipeline_tx) = {
         let lock = state.engine.lock().await;
         let engine = lock.as_ref().ok_or("Audio engine not ready")?;
@@ -535,32 +545,22 @@ pub async fn ensure_modular_workers(state: &AppState) -> Result<(), String> {
             if needs_tts && engine.tts_tx.is_none() {
                 engine.tts_tx = new_tts_tx;
                 engine.tts_handle = new_tts_handle;
-            } else {
-                log::error!(
-                    "[Core::Engine] TTS worker populated by another path despite warm-up claim; \
-                     discarding duplicate provider"
-                );
             }
         }
     }
 
     ensure_memory_embedder(&settings);
 
-    // Pre-warm STT worker asynchronously so first spoken turn incurs zero ONNX loading delay
     {
         let lock = state.engine.lock().await;
         if let Some(ref engine) = *lock {
-            if let Err(e) = engine.stt_tx.send(SttCommand::Warmup) {
-                log::debug!("[Core::Engine] Failed to send Warmup to STT worker: {}", e);
-            }
+            let _ = engine.stt_tx.send(SttCommand::Warmup);
         }
     }
 
     Ok(())
 }
 
-/// Releases its claim on drop, so the `?` paths in `ensure_modular_workers`
-/// cannot strand it and deadlock every future warm-up attempt.
 struct WarmUpClaim<'a>(&'a AtomicBool);
 
 impl<'a> WarmUpClaim<'a> {
@@ -577,7 +577,6 @@ impl Drop for WarmUpClaim<'_> {
     }
 }
 
-/// Pre-warms the memory embedder asynchronously if context retrieval is enabled.
 pub fn ensure_memory_embedder(settings: &VoxSettings) {
     if settings.personal_memory.context_retrieval_enabled && !is_embedder_loaded() {
         tauri::async_runtime::spawn_blocking(|| {
@@ -590,7 +589,6 @@ pub fn ensure_memory_embedder(settings: &VoxSettings) {
     }
 }
 
-/// Synchronous wrapper for ensure_modular_workers to be called safely on the Router OS thread.
 pub fn ensure_modular_workers_sync(state: &AppState) -> Result<(), String> {
     let handle = get_tokio_handle();
     handle.block_on(ensure_modular_workers(state))

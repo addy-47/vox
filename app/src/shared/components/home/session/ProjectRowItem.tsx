@@ -152,11 +152,12 @@ export const ProjectRowItem = memo(
           isDragTarget &&
             "border-[rgba(var(--accent),0.6)] bg-[rgba(var(--accent),0.12)] shadow-md"
         )}
+        layout={false}
         whileDrag={{
-          scale: 1.01,
+          scale: 1,
           cursor: "grabbing",
         }}
-        transition={{ type: "spring", stiffness: 350, damping: 30 }}
+        transition={{ duration: 0 }}
       >
         {/* Project Header Row: Flat folder, title / rename input, hover + to add session, hover 3-dots */}
         <div
@@ -276,7 +277,7 @@ export const ProjectRowItem = memo(
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: "auto" }}
               exit={{ opacity: 0, height: 0 }}
-              transition={{ duration: 0.16, ease: "easeInOut" }}
+              transition={{ duration: 0 }}
               className="flex flex-col overflow-hidden gap-0.5"
             >
               <div className="flex flex-col gap-0.5">
