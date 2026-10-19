@@ -363,13 +363,15 @@ All vector illustrations, domain diagrams, and custom toggle widgets (e.g. `WebS
 
 ### 7.2 Route Commit Motion & Orb Entrance Bloom
 
-* **Route commits are instant except for the mobile swipe gesture.** The
-  swipe slide (±18 % offset, 220 ms, ease `[0.16, 1, 0.3, 1]`) is the only
-  route entrance animation: it communicates lateral movement across sibling
-  tabs. Click, keyboard, and tap navigation commit with no entrance animation
-  (`initial={false}` on the route container) — an opacity ramp on every route
-  swap is perceived latency, not feedback. Swipe direction resets on the next
-  touch start so a stale offset never replays on a plain tap.
+* **Unmount first, then reveal the destination.** A click, keyboard action, or
+  swipe immediately commits navigation and unmounts the previous page. The
+  persistent shell shows an opaque, textless loader while the destination and
+  its render chunks prepare; the destination is revealed when it can paint.
+  Never keep the previous page visible behind the loader or keep every route
+  mounted to achieve this. Route entrance motion remains limited to the mobile
+  swipe gesture (±18 % offset, 220 ms, ease `[0.16, 1, 0.3, 1]`), which
+  communicates lateral movement across sibling tabs. Swipe direction resets
+  on the next touch start so a stale offset never replays on a plain tap.
 * **Orb entrance bloom.** The WebGL orb container stays invisible until its
   first frame is painted, then blooms in over 700 ms (opacity 0 → 1, scale
   0.92 → 1, ease `[0.16, 1, 0.3, 1]`) instead of popping from nothing to a

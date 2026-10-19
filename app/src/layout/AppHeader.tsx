@@ -155,6 +155,9 @@ export const AppHeader: React.FC = memo(() => {
           </div>
         )}
 
+        {/* Settings: Restore Defaults in left corner for full layouts */}
+        {isSettings && !isCompact && !isMobile && <RestoreDefaultsButton />}
+
         {/* Settings Title in compact & mobile */}
         {isSettings && (isCompact || isMobile) && (
           <div className="flex flex-col min-w-0">
@@ -183,8 +186,8 @@ export const AppHeader: React.FC = memo(() => {
         )}
       >
 
-        {/* Context Action 2: Settings Reset Settings Defaults Button (left of theme) */}
-        {isSettings && <RestoreDefaultsButton />}
+        {/* Context Action 2: Settings Reset Settings Defaults Button (left of theme) — small/mobile layouts only */}
+        {isSettings && (isCompact || isMobile) && <RestoreDefaultsButton />}
 
         {/* Standard Theme Toggle */}
         <ThemeToggleButton />

@@ -6,6 +6,7 @@ import { cn } from "@/shared/lib/utils";
 import { BottomDockFeather } from "@/shared/ui";
 import { Tooltip } from "@/shared/ui/Tooltip";
 import { isRealMobileDevice } from "@/layout/breakpoints";
+import { useNavigateWithFeedback } from "./useNavigateWithFeedback";
 
 const navItems = [
   { icon: House, label: "Home", path: "/" },
@@ -16,6 +17,7 @@ const navItems = [
 
 export const EdgeNav: React.FC = () => {
   const location = useLocation();
+  const navigateWithFeedback = useNavigateWithFeedback();
 
   return (
     <nav
@@ -29,20 +31,19 @@ export const EdgeNav: React.FC = () => {
             <NavLink
               to={item.path}
               end={item.path === "/"}
-              onPointerDown={() => {
-                if (item.path === "/history") void import("@/pages/History");
-                else if (item.path === "/memory") void import("@/pages/Memory");
-                else if (item.path === "/settings") {
-                  void import("@/pages/Settings").then((m) => {
-                    if ("preloadSettingsCards" in m && typeof m.preloadSettingsCards === "function") {
-                      void m.preloadSettingsCards();
-                    }
-                  }).catch(() => {});
-                }
-              }}
               onClick={(e) => {
                 if (location.pathname === item.path) {
                   e.preventDefault();
+                } else if (
+                  !e.defaultPrevented &&
+                  e.button === 0 &&
+                  !e.metaKey &&
+                  !e.altKey &&
+                  !e.ctrlKey &&
+                  !e.shiftKey
+                ) {
+                  e.preventDefault();
+                  navigateWithFeedback(item.path);
                 }
               }}
               className={({ isActive }) =>
@@ -81,6 +82,16 @@ export const EdgeNav: React.FC = () => {
               onClick={(e) => {
                 if (location.pathname === "/monitoring") {
                   e.preventDefault();
+                } else if (
+                  !e.defaultPrevented &&
+                  e.button === 0 &&
+                  !e.metaKey &&
+                  !e.altKey &&
+                  !e.ctrlKey &&
+                  !e.shiftKey
+                ) {
+                  e.preventDefault();
+                  navigateWithFeedback("/monitoring");
                 }
               }}
               className={({ isActive }) =>

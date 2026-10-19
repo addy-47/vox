@@ -9,12 +9,13 @@ import { AmbientBackground, HelpPanel, NotificationPanel, ErrorBoundary, Orbital
 import { TurnMetricsBadge } from "@/shared/components/home";
 import { EdgePanel, BottomDockFeather } from "@/shared/ui";
 import { usePanelStateContext } from "@/shared/context/PanelStateContext";
-import { useLocation, useNavigate, useOutlet } from "react-router-dom";
+import { useLocation, useNavigate, useOutlet, type NavigateOptions } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Activity } from "lucide-react";
 import { useVoxFootprint } from "@/shared/hooks/useRuntimeSnapshot";
 import { cn } from "@/shared/lib/utils";
 import { ModelStatusOverlay } from "@/shared/components/settings/ModelStatusOverlay";
+import { preloadSettingsCardChunks } from "@/shared/components/settings/settingsCardChunks";
 import { Tooltip } from "@/shared/ui/Tooltip";
 import { useProfilerDrawer } from "@/shared/components/profiler/ProfilerDrawer";
 import { usePageDrawer } from "@/shared/context/PageDrawerContext";
@@ -23,8 +24,40 @@ import { useSessionStore } from "@/store/sessionStore";
 import { getStackSize } from "@/shared/lib/overlayStack";
 import { isCompactWidth, isRealMobileDevice } from "./breakpoints";
 import { isCoarsePointer } from "@/lib/capabilities";
+import { RouteNavigationProvider } from "./RouteNavigationContext";
 
 const Monitoring = lazy(() => import("@/pages/Monitoring").then((m) => ({ default: m.Monitoring })));
+const ROUTE_REVEAL_MS = 150;
+
+async function prepareRoute(pathname: string): Promise<void> {
+  switch (pathname) {
+    case "/history":
+      await import("@/pages/History");
+      return;
+    case "/memory":
+      await import("@/pages/Memory");
+      return;
+    case "/settings": {
+      await import("@/pages/Settings");
+      await preloadSettingsCardChunks();
+      return;
+    }
+    case "/monitoring":
+      await import("@/pages/Monitoring");
+      return;
+    default:
+      return;
+  }
+}
+
+interface PendingNavigation {
+  pathname: string;
+  phase: "loading" | "revealing";
+  onReady?: () => void;
+  pageReady: boolean;
+  chunksReady: boolean;
+  startedAt: number;
+}
 
 // Preload the monitoring chunk on the first idle frame so the popover
 // opens without any JS-module loading lag on first click.
@@ -56,6 +89,10 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
   const location = useLocation();
   const navigate = useNavigate();
   const outlet = useOutlet();
+  const [pendingNavigation, setPendingNavigation] = useState<PendingNavigation | null>(null);
+  const pendingNavigationRef = useRef<PendingNavigation | null>(null);
+  const navigationGenerationRef = useRef(0);
+  const routeRevealTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [monitorOpen, setMonitorOpen] = useState(false);
   const monitorBtnRef = useRef<HTMLButtonElement>(null);
   const { voxCpu, voxRam, isReady } = useVoxFootprint();
@@ -80,6 +117,118 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
 
   const sessionsOpen = isPanelOpen("sessions");
   const isRightPanelOpen = isHelpOpen || isPanelOpen("notifications");
+
+  const cancelPendingNavigation = useCallback(() => {
+    navigationGenerationRef.current += 1;
+    if (routeRevealTimerRef.current !== null) {
+      clearTimeout(routeRevealTimerRef.current);
+      routeRevealTimerRef.current = null;
+    }
+    pendingNavigationRef.current = null;
+    setPendingNavigation(null);
+  }, []);
+
+  const revealReadyPage = useCallback((pending: PendingNavigation) => {
+    if (pendingNavigationRef.current !== pending || !pending.pageReady || !pending.chunksReady) return;
+
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const showPage = () => {
+      if (pendingNavigationRef.current !== pending) return;
+      const revealing: PendingNavigation = { ...pending, phase: "revealing" };
+      pendingNavigationRef.current = revealing;
+      setPendingNavigation(revealing);
+
+      routeRevealTimerRef.current = setTimeout(() => {
+        if (pendingNavigationRef.current !== revealing) return;
+        pendingNavigationRef.current = null;
+        routeRevealTimerRef.current = null;
+        setPendingNavigation(null);
+        revealing.onReady?.();
+      }, reducedMotion ? 0 : ROUTE_REVEAL_MS);
+    };
+
+    const minimumLoaderMs = reducedMotion ? 0 : 100;
+    const remainingLoaderMs = minimumLoaderMs - (performance.now() - pending.startedAt);
+    routeRevealTimerRef.current = setTimeout(showPage, Math.max(0, remainingLoaderMs));
+  }, []);
+
+  const navigateWithFeedback = useCallback((to: string, onReady?: () => void, options?: NavigateOptions) => {
+    const targetPathname = new URL(to, window.location.href).pathname;
+    if (targetPathname === location.pathname) {
+      const pending = pendingNavigationRef.current;
+      if (pending?.pathname === targetPathname) {
+        if (onReady) {
+          const previousOnReady = pending.onReady;
+          pending.onReady = () => {
+            previousOnReady?.();
+            onReady();
+          };
+        }
+        return;
+      }
+      if (pending) cancelPendingNavigation();
+      void navigate(to, options);
+      if (onReady) requestAnimationFrame(onReady);
+      return;
+    }
+
+    const generation = ++navigationGenerationRef.current;
+    if (routeRevealTimerRef.current !== null) {
+      clearTimeout(routeRevealTimerRef.current);
+      routeRevealTimerRef.current = null;
+    }
+
+    const pending: PendingNavigation = {
+      pathname: targetPathname,
+      phase: "loading",
+      onReady,
+      pageReady: false,
+      chunksReady: false,
+      startedAt: performance.now(),
+    };
+    pendingNavigationRef.current = pending;
+    setPendingNavigation(pending);
+
+    // Commit immediately so the previous page unmounts. The shell-level loader
+    // stays opaque while the destination and its render chunks prepare.
+    void navigate(to, options);
+    void prepareRoute(targetPathname)
+      .then(() => {
+        if (navigationGenerationRef.current !== generation) return;
+        pending.chunksReady = true;
+        revealReadyPage(pending);
+      })
+      .catch((error: unknown) => {
+        console.error(`[navigation] Failed to prepare ${targetPathname}:`, error);
+        if (navigationGenerationRef.current !== generation) return;
+        pendingNavigationRef.current = null;
+        setPendingNavigation(null);
+      });
+  }, [cancelPendingNavigation, location.pathname, navigate, revealReadyPage]);
+
+  const handlePageReady = useCallback((pathname: string) => {
+    const pending = pendingNavigationRef.current;
+    if (!pending || pending.pathname !== pathname) return;
+
+    pending.pageReady = true;
+    revealReadyPage(pending);
+  }, [revealReadyPage]);
+
+  const routeNavigation = useMemo(
+    () => ({ navigate: navigateWithFeedback, pageReady: handlePageReady }),
+    [handlePageReady, navigateWithFeedback]
+  );
+
+  useEffect(() => () => {
+    if (routeRevealTimerRef.current !== null) clearTimeout(routeRevealTimerRef.current);
+  }, []);
+
+  useEffect(() => {
+    const pending = pendingNavigationRef.current;
+    if (pending && location.pathname !== pending.pathname) {
+      cancelPendingNavigation();
+    }
+  }, [cancelPendingNavigation, location.pathname]);
 
 
   // Viewport-resize gate: while a resize is in flight, CSS transitions /
@@ -129,10 +278,10 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
       if (currentIdx !== -1) {
         if (deltaX < 0 && currentIdx < PRIMARY_ROUTES.length - 1) {
           setSwipeDirection(1);
-          void navigate(PRIMARY_ROUTES[currentIdx + 1]);
+          navigateWithFeedback(PRIMARY_ROUTES[currentIdx + 1]);
         } else if (deltaX > 0 && currentIdx > 0) {
           setSwipeDirection(-1);
-          void navigate(PRIMARY_ROUTES[currentIdx - 1]);
+          navigateWithFeedback(PRIMARY_ROUTES[currentIdx - 1]);
         }
       }
     }
@@ -151,21 +300,51 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
   // Route side effects: window title + scroll reset on navigation.
   // Previously neither existed — every route shared one static title.
   useEffect(() => {
-    document.title = PAGE_TITLES[location.pathname] ?? "Vox";
-    window.scrollTo(0, 0);
-    // Dev-only cyan-flash RCA probe. `getComputedStyle` here forces a
-    // synchronous style recalc on every navigation — must never run in prod.
-    if (!import.meta.env.DEV) return;
-    import("@/services/persistenceService").then(({ getTurnsCacheSize }) => {
-      // (cyan-flash RCA: theme-token state at every route commit. Remove once found.)
-      try {
-        const r = document.documentElement;
-        const cs = getComputedStyle(r);
-        console.info(`[route-nav] -> ${location.pathname} turnsCache=${getTurnsCacheSize()} docTheme=${r.getAttribute('data-theme') || 'none'} cssAccent=[${cs.getPropertyValue('--accent').trim() || 'EMPTY'}] inlineAccent=[${r.style.getPropertyValue('--accent').trim() || 'EMPTY'}]`);
-      } catch {
-        console.info(`[route-nav] -> ${location.pathname} turnsCache=${getTurnsCacheSize()}`);
-      }
-    }).catch(() => {});
+    const path = location.pathname;
+    document.title = PAGE_TITLES[path] ?? "Vox";
+
+    // Scroll reset is a low-priority UI chore; defer it to the next paint so we
+    // do not force a synchronous layout during route commits. This keeps route
+    // changes smooth without keeping every page mounted in memory.
+    const scrollFrame = window.requestAnimationFrame(() => {
+      window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+    });
+
+    // Dev-only route-nav tracing is intentionally off by default. The old
+    // version imported the persistence service and read computed styles on every
+    // navigation, which forces a full style recalc and adds visible jank in the
+    // hot path. Keep the probe explicitly opt-in instead of running it blindly.
+    const shouldTrace =
+      import.meta.env.DEV &&
+      (window as typeof window & { __VOX_ROUTE_TRACE__?: boolean }).__VOX_ROUTE_TRACE__ === true;
+    if (!shouldTrace) {
+      return () => cancelAnimationFrame(scrollFrame);
+    }
+
+    void import("@/services/persistenceService")
+      .then(({ getTurnsCacheSize }) => {
+        try {
+          const root = document.documentElement;
+          const cs = getComputedStyle(root);
+          const docTheme = root.hasAttribute("data-theme") ? root.getAttribute("data-theme") : null;
+          const cssAccentRaw = cs.getPropertyValue("--accent").trim();
+          const inlineAccentRaw = root.style.getPropertyValue("--accent").trim();
+          const docThemeLabel = docTheme ?? "none";
+          const cssAccent = cssAccentRaw.length > 0 ? cssAccentRaw : "EMPTY";
+          const inlineAccent = inlineAccentRaw.length > 0 ? inlineAccentRaw : "EMPTY";
+          console.info(
+            `[route-nav] -> ${path} turnsCache=${getTurnsCacheSize()} docTheme=${docThemeLabel} cssAccent=[${cssAccent}] inlineAccent=[${inlineAccent}]`
+          );
+        } catch (error) {
+          console.warn(`[route-nav] Failed to read trace details for ${path}:`, error);
+          console.info(`[route-nav] -> ${path} turnsCache=${getTurnsCacheSize()}`);
+        }
+      })
+      .catch((error: unknown) => {
+        console.warn(`[route-nav] Failed to load trace details for ${path}:`, error);
+      });
+
+    return () => cancelAnimationFrame(scrollFrame);
   }, [location.pathname]);
 
   // Bidirectional viewport transition: compact (EdgeNav route) ↔ full-max (corner popover).
@@ -193,14 +372,13 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
       if (!pending.toCompact) {
         // Compact → Full-max: switch from route page to popover
         if (pathnameRef.current === "/monitoring") {
-          void navigate("/", { replace: true });
-          setMonitorOpen(true);
+          navigateWithFeedback("/", () => setMonitorOpen(true), { replace: true });
         }
       } else {
         // Full-max → Compact: switch from popover to route page
         if (monitorOpenRef.current && pathnameRef.current !== "/monitoring") {
           setMonitorOpen(false);
-          void navigate("/monitoring");
+          navigateWithFeedback("/monitoring");
         }
       }
     });
@@ -209,7 +387,7 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
       unsubFrame();
       unsubGate();
     };
-  }, [navigate]);
+  }, [navigateWithFeedback]);
 
   // ── Arrow-key handler: page-nav vs in-page movement vs spatial (v2) ──
   // Precedence (checked in order):
@@ -285,7 +463,7 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
             secondary = Math.abs(candCx - activeCx);
             overlap = Math.max(0, Math.min(ar.right, r.right) - Math.max(ar.left, r.left));
           }
-        } else if (direction === "ArrowUp") {
+        } else {
           if (r.bottom <= ar.bottom - 4 || candCy < activeCy - 4) {
             primary = Math.max(0, ar.top - r.bottom);
             secondary = Math.abs(candCx - activeCx);
@@ -324,14 +502,18 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
         e.preventDefault();
         import("@tauri-apps/api/window").then(({ getCurrentWindow }) => {
           void getCurrentWindow().close();
-        }).catch(() => {});
+        }).catch((error: unknown) => {
+          console.error("[layout] Failed to close the window:", error);
+        });
         return;
       }
       if (!isCoarsePointer() && mod && (key === "q" || key === "Q")) {
         e.preventDefault();
         import("@tauri-apps/plugin-process").then(({ exit }) => {
           void exit(0);
-        }).catch(() => {});
+        }).catch((error: unknown) => {
+          console.error("[layout] Failed to quit the application:", error);
+        });
         return;
       }
 
@@ -374,9 +556,9 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
         if (currentIndex !== -1) {
           setMonitorOpen(false);
           if (key === "ArrowRight") {
-            void navigate(routes[(currentIndex + 1) % routes.length]);
+            navigateWithFeedback(routes[(currentIndex + 1) % routes.length]);
           } else {
-            void navigate(routes[(currentIndex - 1 + routes.length) % routes.length]);
+            navigateWithFeedback(routes[(currentIndex - 1 + routes.length) % routes.length]);
           }
         }
         return;
@@ -408,7 +590,7 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [navigate, togglePanel, openPanel, openActiveDrawer, closeActiveDrawer, closeHelp]);
+  }, [navigate, navigateWithFeedback, togglePanel, openPanel, openActiveDrawer, closeActiveDrawer, closeHelp]);
 
   const isSettings = location.pathname === "/settings";
   const isHome = location.pathname === "/";
@@ -423,6 +605,7 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
   const ambientOriginY = "calc(50% - 36px)";
 
   return (
+    <RouteNavigationProvider value={routeNavigation}>
     <div
       style={{
         display: "flex",
@@ -454,6 +637,7 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
 
         {/* Page content */}
         <main
+          aria-busy={pendingNavigation !== null}
           onTouchStart={handleTouchStart}
           onTouchEnd={handleTouchEnd}
           style={{
@@ -479,7 +663,7 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
               </DelayedFallback>
             }
           >
-            {(children || outlet) && (
+            {(children ?? outlet) && (
               <motion.div
                 key={location.pathname}
                 // Entrance motion is reserved for the mobile swipe gesture,
@@ -499,10 +683,22 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
                 }}
                 className="flex-1 w-full min-h-0 overflow-hidden flex flex-col transform-gpu"
               >
-                {children || outlet}
+                {children ?? outlet}
               </motion.div>
             )}
           </Suspense>
+          {pendingNavigation && (
+            <div
+              role="status"
+              aria-label={LAYOUT_COPY.nav.loadingPage}
+              className={`absolute inset-0 z-50 flex items-center justify-center transition-opacity duration-150 ease-out ${
+                pendingNavigation.phase === "revealing" ? "pointer-events-none opacity-0" : "opacity-100"
+              }`}
+              style={{ backgroundColor: "rgb(var(--background))" }}
+            >
+              <OrbitalLoader size="md" />
+            </div>
+          )}
         </main>
 
         {/* ── Engine Monitor Area — bottom-left ───────────────────────────── */}
@@ -612,5 +808,6 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
         </EdgePanel>
       </div>
     </div>
+    </RouteNavigationProvider>
   );
 };

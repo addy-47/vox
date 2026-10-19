@@ -1,13 +1,13 @@
 import React, { useEffect, useState } from "react";
 import { Minus, Square, X, ArrowUpCircle, Copy, Check, Sparkles, Cpu, ChevronRight } from "lucide-react";
 import { LAYOUT_COPY } from "@/data/layoutCopy";
-import { useNavigate } from "react-router-dom";
+import { useNavigateWithFeedback } from "./useNavigateWithFeedback";
 import { checkForUpdates, checkForModelUpdates, type UpdateReport, type ModelUpdateReport } from "@/services/setupService";
 import { copyToClipboard } from "@/shared/lib/clipboard";
 import { isRealMobileDevice } from "@/layout/breakpoints";
 
 const TitleBarContent: React.FC = () => {
-  const navigate = useNavigate();
+  const navigateWithFeedback = useNavigateWithFeedback();
   const [isTauri] = useState(
     () =>
       typeof window !== "undefined" &&
@@ -283,8 +283,9 @@ const TitleBarContent: React.FC = () => {
                 type="button"
                 onClick={() => {
                   setModelCardOpen(false);
-                  void navigate("/settings");
-                  window.dispatchEvent(new CustomEvent("sync_pipeline_tab", { detail: "models" }));
+                  navigateWithFeedback("/settings", () => {
+                    window.dispatchEvent(new CustomEvent("sync_pipeline_tab", { detail: "models" }));
+                  });
                 }}
                 className="w-full py-1.5 px-3 rounded-lg bg-[rgba(var(--accent),0.1)] hover:bg-[rgb(var(--accent))] text-[rgb(var(--accent))] hover:text-[rgb(var(--accent-foreground))] font-bold text-[11px] tracking-wide uppercase transition-all flex items-center justify-center gap-1.5 cursor-pointer border border-[rgba(var(--accent),0.2)] hover:border-[rgb(var(--accent))]"
               >

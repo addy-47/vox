@@ -3,6 +3,7 @@ export const LAYOUT_COPY = {
     monitor: "System Monitor (Ctrl+M)",
     engineMonitor: "Engine Monitor",
     openProfiler: "Open UI Memory Profiler (Shift+Up)",
+    loadingPage: "Loading page",
   },
   layoutFlip: {
     title: "Adjusting layout…",
