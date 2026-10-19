@@ -3,7 +3,7 @@ import { motion } from "framer-motion";
 import { useSessionStore } from "@/store/sessionStore";
 import { onSessionsChanged } from "@/services/eventsService";
 import { refreshSessions, resolveSessionTitle } from "@/services/persistenceService";
-import { getProjects } from "@/services/projectsService";
+import { refreshProjects } from "@/services/projectsService";
 import { getRuntimeSnapshot } from "@/services/monitoringService";
 
 interface ActiveSessionHeaderProps {
@@ -63,9 +63,9 @@ export const ActiveSessionHeader: React.FC<ActiveSessionHeaderProps> = ({
 
       try {
         const [sessions, projects] = await Promise.all([
-          // Invalidation path (sessions_changed): bypass the stale-while-revalidate read.
+          // Invalidation path (sessions_changed): bypass both SWR caches.
           refreshSessions(),
-          getProjects().catch(() => []),
+          refreshProjects().catch(() => []),
         ]);
         if (!isMounted) return;
 

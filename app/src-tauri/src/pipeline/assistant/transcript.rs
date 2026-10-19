@@ -232,6 +232,24 @@ pub fn on_transcript_final<R: tauri::Runtime>(
         .map(|s| s.stt.transliterate_enabled)
         .unwrap_or(false);
     let query = transliterate_if_hi(&raw_query, true, transliterate_enabled);
+
+    // RULE-HARN-03: reject duplicate user turns before any side effects. Emitting the
+    // TranscriptFinal IPC first would render an orphan user bubble in the UI when the
+    // Harness later drops the duplicate without generating a response.
+    if ctx.pipeline_mode == PipelineMode::Modular && is_duplicate_user_turn(state, &query) {
+        log::info!(
+            "[Pipeline::Transcript] Duplicate turn {} suppressed pre-dispatch ('{}')",
+            turn_id,
+            query
+        );
+        state.pipeline_accumulator.lock().clear();
+        if turn_id == state.pipeline.peek_turn_id() {
+            state.pipeline.reset_turn_guards();
+            transition(InteractionState::Ready, None, ctx, app, state);
+        }
+        return;
+    }
+
     log::info!(
         "[Pipeline::Transcript] Turn {}: User said: '{}'",
         turn_id,
@@ -269,4 +287,13 @@ pub fn on_transcript_final<R: tauri::Runtime>(
             );
         }
     }
+}
+
+/// Returns true when the query matches the most recent user turn recorded in Harness history.
+pub(super) fn is_duplicate_user_turn(state: &AppState, query: &str) -> bool {
+    let guard = state.harness.lock();
+    guard
+        .as_ref()
+        .map(|harness| harness.history.is_duplicate_user_turn(query))
+        .unwrap_or(false)
 }

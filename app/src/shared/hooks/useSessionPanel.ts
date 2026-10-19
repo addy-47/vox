@@ -9,6 +9,7 @@ import {
 } from "@/services/persistenceService";
 import {
   getProjects,
+  refreshProjects,
   createProject,
   renameProject,
   deleteProject,
@@ -150,7 +151,7 @@ export function useSessionPanel(active: boolean = true): UseSessionPanelReturn {
           console.warn("[SessionPanel] getSessions error:", e);
           return [] as SessionRow[];
         }),
-        getProjects().catch((e) => {
+        (force ? refreshProjects() : getProjects()).catch((e) => {
           console.warn("[SessionPanel] getProjects error:", e);
           return [] as ProjectRow[];
         }),

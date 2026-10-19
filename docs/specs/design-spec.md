@@ -377,6 +377,27 @@ All vector illustrations, domain diagrams, and custom toggle widgets (e.g. `WebS
   is skipped entirely under `prefers-reduced-motion`, where the orb starts in
   its entered state.
 
+### 7.3 Warm-Nav Data Caches (Route Commit Must Never Await IPC)
+
+Route remounts are the hot path: page components MUST paint from cached data
+synchronously. All full-list reads used at route commit follow one contract —
+stale-while-revalidate in the service layer (`persistenceService.ts`,
+`projectsService.ts`, `memoryService.ts`):
+
+* **Warm read (`getSessions` / `getProjects` / `getTurns` / observation
+  reads):** cached data resolves synchronously; a deduped background revalidate
+  refreshes the cache. No route mount awaits a cold IPC before first paint.
+* **Invalidation read (`refreshSessions` / `refreshProjects` / forced
+  refresh):** always hits the backend, deduped against in-flight calls.
+  Required on `sessions_changed` and all mutation paths, never on activation.
+* **Turns cache:** LRU-bounded (20 sessions), keyed by session id.
+* **Project mutations** (`createProject` / `renameProject` / `deleteProject`)
+  are the only writers of project rows; each clears the projects cache so the
+  next observed read refetches. No backend event marks project mutations.
+* **Consumers must reconcile** (`reconcileSessions` / `reconcileProjects`):
+  field-identical rows keep the previous object identity so cached reads never
+  re-render the whole panel subtree.
+
 
 ---
 

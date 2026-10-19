@@ -99,6 +99,7 @@ All authoritative specs live in [`docs/specs/`](file:///home/addy/projects/apps/
 - **Frontend test suite + lint remediation:** vitest 157/157, 0 ESLint errors, tsc/lint-arch clean.
 - **Backend invariant gate + VAD/ASR + session panel perf:** clippy/lint-arch gate, VAD/ASR pipeline, session panel reconcile/virtualization/deferred prefetch.
 - **Navigation perf (warm-nav SWR + motion):** `getSessions`/`getActiveObservations` stale-while-revalidate caches with forced `refreshSessions` on all `sessions_changed`/ingestion invalidation paths; route-nav RCA log dev-gated; route entrance motion restricted to mobile swipe; keydown listener keyed off `pathnameRef`; orb first-frame entrance bloom (design-spec §7.2). tsc/eslint(0 new)/vitest 157/157/lint-arch/knip/pnpm build clean.
+- **Voice pipeline brittleness RCA + fixes (vox.log trace):** removed dynamic-onset-gate upper clamp that collapsed SNR margin at loud ambient floors and un-biased noise-floor EMA updates (`segmenter.rs`, unit-tested); durable turn-identity gate on `ingest_chunk_with_intent` + `begin_synthesis_turn` so a barge-in-superseded TTS job can no longer stream or play back late chunks after the shared `cancel_flag` is re-armed (`playback.rs`, `tts/actor.rs`); RULE-HARN-03 dedup moved pre-side-effect in `transcript.rs`/`text.rs` so duplicates no longer advance turn IDs or render orphan UI bubbles. Desktop verify-targets (lint-arch + clippy -D warnings) 0/0.
 
 ---
 

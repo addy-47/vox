@@ -32,6 +32,8 @@ const NOISE_FLOOR_ALPHA_UP: f32 = 0.002;
 const MIN_NOISE_FLOOR_RMS: f32 = 0.0005;
 /// Maximum clamped ambient noise floor RMS so loud environments never deafen onset detection.
 const MAX_NOISE_FLOOR_RMS: f32 = 0.025;
+/// Minimum dynamic onset energy gate (RMS) preserving sensitivity in extremely quiet rooms.
+const MIN_ONSET_GATE_RMS: f32 = 0.0012;
 
 /// Minimum speech samples (~1.25s @ 16kHz) before early-utterance pause protection relaxes.
 const EARLY_UTTERANCE_PROTECTION_SAMPLES: usize = 20_000;
@@ -195,17 +197,21 @@ fn update_noise_floor(state: &mut VadActorState, raw_energy: f32) {
 #[inline]
 fn compute_dynamic_onset_gate(
     state: &VadActorState,
-    vad: &VadBackend,
+    noise_gate_multiplier: f32,
     interaction_state: InteractionState,
 ) -> f32 {
-    let base_gate = state.noise_gate * vad.noise_gate_multiplier();
+    let base_gate = state.noise_gate * noise_gate_multiplier;
     // Require higher SNR margin during Speaking playback to reject residual acoustic echo
     let snr_multiplier = if interaction_state == InteractionState::Speaking {
         3.2
     } else {
         2.0
     };
-    let adaptive_gate = (state.noise_floor_ema * snr_multiplier).clamp(0.0012, 0.025);
+    // The floor is already clamped to [MIN_NOISE_FLOOR_RMS, MAX_NOISE_FLOOR_RMS], so the
+    // product stays bounded. An upper clamp here would saturate below `floor * multiplier`
+    // in loud ambient conditions (steady fan/hum), collapsing the SNR margin to ~0 dB and
+    // letting noise bursts pass the onset gate — only the absolute lower bound is clamped.
+    let adaptive_gate = (state.noise_floor_ema * snr_multiplier).max(MIN_ONSET_GATE_RMS);
     // Blend user-configured floor with live room SNR floor so quiet rooms remain sensitive
     adaptive_gate.max(base_gate * 0.5)
 }
@@ -392,7 +398,8 @@ pub fn process_continuous_segmentation(
     let interaction_state = InteractionState::from(handles.state_atomic.load(Ordering::Relaxed));
 
     if !state.in_speech {
-        let onset_gate = compute_dynamic_onset_gate(state, vad, interaction_state);
+        let onset_gate =
+            compute_dynamic_onset_gate(state, vad.noise_gate_multiplier(), interaction_state);
         let is_onset_speech = vad_detected && raw_energy >= onset_gate;
 
         // Require slightly firmer confirmation when barging in over active playback
@@ -428,9 +435,12 @@ pub fn process_continuous_segmentation(
                 state.active_frames = 0;
             }
             state.inactive_frames += 1;
-            if !vad_detected {
-                update_noise_floor(state, raw_energy);
-            }
+            // Track the ambient floor on every frame that did not qualify as onset speech.
+            // Restricting updates to `!vad_detected` frames biased the floor downward: the
+            // loudest noise bursts (which the neural detector labels "speech") never reached
+            // the tracker, so the gate stayed below the true ambient level precisely when a
+            // steady noise source (fan/hum) produced transient peaks above it.
+            update_noise_floor(state, raw_energy);
             state.pre_roll_buffer.push(chunk);
         }
     } else {
@@ -687,5 +697,90 @@ mod tests {
 
         assert!(!state.window_autostop_fired);
         assert!(rx.try_recv().is_err());
+    }
+
+    #[test]
+    fn test_onset_gate_preserves_snr_margin_at_high_floor() {
+        let mut state = VadActorState::new(
+            0.5,
+            0.003,
+            400,
+            64,
+            InteractionMode::Passive,
+            AudioOutputMode::Speaker,
+        );
+        state.noise_floor_ema = 0.0227;
+
+        let gate = compute_dynamic_onset_gate(&state, 1.0, InteractionState::Ready);
+        assert!(
+            (gate - 0.0454).abs() < 1e-4,
+            "2x SNR margin must survive at loud ambient floors (got {})",
+            gate
+        );
+
+        let echo_gate = compute_dynamic_onset_gate(&state, 1.0, InteractionState::Speaking);
+        assert!(
+            (echo_gate - 0.0726).abs() < 1e-4,
+            "3.2x echo gate must survive at loud ambient floors (got {})",
+            echo_gate
+        );
+    }
+
+    #[test]
+    fn test_onset_gate_clamps_to_minimum_in_quiet_rooms() {
+        let mut state = VadActorState::new(
+            0.5,
+            0.003,
+            400,
+            64,
+            InteractionMode::Passive,
+            AudioOutputMode::Speaker,
+        );
+        state.noise_floor_ema = MIN_NOISE_FLOOR_RMS;
+
+        let gate = compute_dynamic_onset_gate(&state, 1.0, InteractionState::Ready);
+        assert!(
+            gate >= MIN_ONSET_GATE_RMS,
+            "gate must never fall below the absolute minimum (got {})",
+            gate
+        );
+    }
+
+    #[test]
+    fn test_update_noise_floor_asymmetric_convergence_and_clamps() {
+        let mut state = VadActorState::new(
+            0.5,
+            0.003,
+            400,
+            64,
+            InteractionMode::Passive,
+            AudioOutputMode::Speaker,
+        );
+        state.noise_floor_ema = 0.01;
+
+        for _ in 0..200 {
+            update_noise_floor(&mut state, 0.001);
+        }
+        assert!(
+            state.noise_floor_ema < 0.002,
+            "fast downward adaptation expected (got {})",
+            state.noise_floor_ema
+        );
+
+        for _ in 0..200 {
+            update_noise_floor(&mut state, MIN_NOISE_FLOOR_RMS);
+        }
+        assert!(
+            (state.noise_floor_ema - MIN_NOISE_FLOOR_RMS).abs() < 1e-6,
+            "floor must clamp to MIN_NOISE_FLOOR_RMS"
+        );
+
+        for _ in 0..50_000 {
+            update_noise_floor(&mut state, 1.0);
+        }
+        assert!(
+            (state.noise_floor_ema - MAX_NOISE_FLOOR_RMS).abs() < 1e-6,
+            "floor must clamp to MAX_NOISE_FLOOR_RMS"
+        );
     }
 }

@@ -61,6 +61,10 @@ pub fn spawn_tts_worker(
                 intent,
             } => {
                 job_seq += 1;
+                // Bind this job's audio to its originating turn so chunks synthesized after a
+                // barge-in supersedes the turn are dropped at the playback ingest boundary
+                // (the shared cancel flag is re-armed for the new turn almost immediately).
+                handles.playback.begin_synthesis_turn(turn_id);
                 if handles.cancel_flag.load(Ordering::Relaxed)
                     || handles.playback.current_turn_id() != turn_id
                 {

@@ -247,19 +247,41 @@ function animateTokensToNewTheme(
   })).filter((p) => p.from && p.to);
 
   const t0 = performance.now();
-  // 30fps write pacing: restyling the token set on :root forces a full-document
-  // recalc per write, so writes land on alternate frames. The clock keeps
-  // running at rAF rate and the final frame always writes exact end values.
+  // Write pacing is TIME-based, not frame-parity-based.
+  //
+  // Restyling the token set on :root forces a full-document recalc per write,
+  // so writes are capped at ~30fps to avoid a write on every single frame of a
+  // fast machine. Pacing on `frame % 2` charged a whole extra frame whenever a
+  // frame was already slow — measured 69-380ms per flip frame — which halved
+  // the step count of a fade that was already frame-starved (measured: exactly
+  // 2 writes for the whole 200ms fade). A time cap never delays a write when
+  // frames are slow, and still caps a 60fps machine at ~33ms.
+  const MIN_WRITE_INTERVAL_MS = 33;
   let frame = 0;
+  let lastTickAt = t0;
+  let lastWriteAt = t0 - MIN_WRITE_INTERVAL_MS;
+  let writes = 0;
   const tick = (now: number) => {
     if (gen !== flipGeneration) return;
+    const delta = now - lastTickAt;
+    lastTickAt = now;
     const t = Math.min(1, (now - t0) / durationMs);
     frame += 1;
-    if (t < 1 && frame % 2 === 0) {
+    if (t < 1 && now - lastWriteAt < MIN_WRITE_INTERVAL_MS) {
+      if (import.meta.env.DEV) {
+        console.info(`[RCA-PROBE] tick gen=${gen} f=${frame} t=${t.toFixed(3)} d=${delta.toFixed(1)}ms skip`);
+      }
       requestAnimationFrame(tick);
       return;
     }
+    lastWriteAt = now;
     const e = cubicBezierEase(t);
+    if (import.meta.env.DEV) {
+      console.info(
+        `[RCA-PROBE] tick gen=${gen} f=${frame} t=${t.toFixed(3)} e=${e.toFixed(3)} d=${delta.toFixed(1)}ms WRITE#${writes + 1} gate=${document.documentElement.hasAttribute("data-theme-transition")}`
+      );
+    }
+    writes += 1;
 
     const accent = parsed.find((p) => p.key === "accent");
     const accentTriple =
@@ -277,6 +299,16 @@ function animateTokensToNewTheme(
     } else {
       for (const key of FLIP_TOKEN_KEYS) root.style.removeProperty(`--${key}`);
       root.style.setProperty("--accent", newAccentInline);
+      // The fade has landed. Hold the gate only for the tail frame so this
+      // final state paints before transitions/animations/blur come back —
+      // the fixed 232ms window may already have expired (it did, in every
+      // measured flip: CLOSE landed before WRITE#n t=1).
+      if (import.meta.env.DEV) {
+        console.info(
+          `[RCA-PROBE] fade DONE gen=${gen} writes=${writes} at t0+${(now - t0).toFixed(0)}ms -> gate closes in ${TRANSITION_TAIL_MS}ms`
+        );
+      }
+      armGateClose(TRANSITION_TAIL_MS);
     }
   };
   requestAnimationFrame(tick);
@@ -296,6 +328,19 @@ export const THEME_TRANSITION_MS = 200;
 /** One frame of slack so the final interpolated frame renders before the gate
  * reopens and per-component durations resume. */
 const TRANSITION_TAIL_MS = 32;
+
+/**
+ * Safety cap only. The fade itself closes the gate when it lands
+ * (`animateTokensToNewTheme` -> `armGateClose(TRANSITION_TAIL_MS)`); this
+ * exists so a stalled rAF loop (backgrounded window) cannot leave the gate
+ * open forever. It used to be the *primary* close at 232ms from click, which
+ * fired before the fade ended on every frame-starved flip measured (gate
+ * CLOSE preceding the final token write), so the final write landed with
+ * transitions re-enabled and every `.glass-card` / `transition-all` surface
+ * then ran its own 150-500ms colour transition from the mid-flip value —
+ * cards visibly trailing the background.
+ */
+const FLIP_GATE_SAFETY_MS = THEME_TRANSITION_MS * 4 + TRANSITION_TAIL_MS;
 
 /** Rapid toggling must not extend the flip window.
  *
@@ -376,6 +421,9 @@ function syncGate() {
       } else {
         root.removeAttribute("data-theme-transition");
       }
+      if (import.meta.env.DEV) {
+        console.info(`[RCA-PROBE] gate ${shouldBeOpen ? "OPEN" : "CLOSE"} @${Math.round(performance.now())}ms`);
+      }
     }
     setTransitioning(shouldBeOpen);
   }
@@ -397,6 +445,29 @@ function closeGate() {
   }
   flipGateHeld = false;
   syncGate();
+}
+
+/**
+ * (Re)arms the gate's close to `delayMs` from now.
+ *
+ * `applyTheme` arms a fixed `THEME_TRANSITION_MS + TRANSITION_TAIL_MS` (232ms)
+ * window at click time. That is an assumption about how long the fade takes.
+ * When a frame costs 70-380ms the fade overruns it, and the gate closed while
+ * interpolated tokens were still mid-value: the final write then painted with
+ * `transition-property`, `animation-play-state` and `backdrop-filter` already
+ * re-enabled, so the last step landed as a cascade of per-element colour
+ * transitions instead of one interpolated jump — the laggy, steppy tail.
+ *
+ * Called on animation completion only, never on click, so a burst of clicks
+ * still cannot grow the window past the last flip's own fade (FLIP_BURST_*).
+ */
+function armGateClose(delayMs: number) {
+  if (transitionTimer) clearTimeout(transitionTimer);
+  transitionTimer = setTimeout(() => {
+    transitionTimer = null;
+    flipGateHeld = false;
+    syncGate();
+  }, delayMs);
 }
 
 /** Synchronous by contract — the flip must land in the same task as the click. */
@@ -489,8 +560,11 @@ export function applyTheme(
   flipGateHeld = true;
   syncGate();
 
+  const tPhase0 = performance.now();
   const startValues = readRootTokenValues();
+  const tPhase1 = performance.now();
   writeThemeToDom(appearance);
+  const tPhase2 = performance.now();
 
   // Drop any masks left by a burst flip so the new theme's literal values
   // are readable, then snapshot the true targets — unless the cache already
@@ -508,11 +582,22 @@ export function applyTheme(
     rememberTargets(cacheKey, endValues);
   }
   const newAccentInline = root.style.getPropertyValue("--accent");
+  const tPhase3 = performance.now();
 
   // Mask the flip: re-apply the old values inline so nothing new paints until
   // the first interpolated frame. The rAF loop's first tick overwrites them.
   for (const [key, value] of startValues) {
     root.style.setProperty(`--${key}`, value);
+  }
+  const tPhase4 = performance.now();
+  if (import.meta.env.DEV) {
+    console.info(
+      `[RCA-PROBE] applyTheme phases cacheHit=${Boolean(targetCache.get(cacheKey))} ` +
+        `readStart=${(tPhase1 - tPhase0).toFixed(1)}ms writeTheme=${(tPhase2 - tPhase1).toFixed(1)}ms ` +
+        `endCapture=${(tPhase3 - tPhase2).toFixed(1)}ms mask=${(tPhase4 - tPhase3).toFixed(1)}ms ` +
+        `total=${(tPhase4 - trace.t0).toFixed(1)}ms burst=${burstFlipCount} ` +
+        `gate=${document.documentElement.hasAttribute("data-theme-transition")}`
+    );
   }
 
   animateTokensToNewTheme(startValues, endValues, newAccentInline, THEME_TRANSITION_MS);
@@ -536,12 +621,11 @@ export function applyTheme(
   traceFlipTargets(trace.id, [...baseTargets, ...cardTargets], THEME_TRANSITION_MS + TRANSITION_TAIL_MS);
   endFlipTrace(trace, animate);
 
+  // Safety cap only — the fade closes the gate itself when it lands
+  // (`animateTokensToNewTheme` -> `armGateClose(TRANSITION_TAIL_MS)`). This
+  // covers a stalled rAF loop so the gate cannot stay open forever.
   if (!transitionTimer) {
-    transitionTimer = setTimeout(() => {
-      transitionTimer = null;
-      flipGateHeld = false;
-      syncGate();
-    }, THEME_TRANSITION_MS + TRANSITION_TAIL_MS);
+    armGateClose(FLIP_GATE_SAFETY_MS);
   }
 }
 

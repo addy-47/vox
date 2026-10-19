@@ -138,6 +138,9 @@ const App: React.FC = () => {
       for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
         try {
           const completed = await getOnboardingStatus();
+          if (import.meta.env.DEV) {
+            console.info(`[boot] setup status resolved (completed=${completed}) @${Math.round(performance.now())}ms`);
+          }
           const finalStatus = forceWizard ? false : completed;
           setSetupCompleted(finalStatus);
           setSetupUnreachable(false);
@@ -229,6 +232,9 @@ const App: React.FC = () => {
   // Once the app shell is loaded and readyToTransition is satisfied, smoothly fade out the HTML boot loader
   useEffect(() => {
     if (!isLoading) {
+      if (import.meta.env.DEV) {
+        console.info(`[boot] loader hidden (app shell committed) @${Math.round(performance.now())}ms`);
+      }
       window.__VOX_HIDE_BOOT_LOADER?.();
     }
   }, [isLoading]);

@@ -40,7 +40,53 @@ export default defineConfig(async ({ mode }) => ({
   // 1. prevent Vite from obscuring rust errors
   clearScreen: false,
   // 2. tauri expects a fixed port, fail if that port is not available
+  // Dev cold-start: see `server.warmup` below — the pre-bundle + graph warm-up
+  // targets the loader → Home transition in `tauri dev`, and the lazy route
+  // pages joined as entries so heavyweight deps are pre-bundled instead of
+  // being discovered mid-session (which triggers a full page reload that
+  // tears down every live IPC callback).
+  optimizeDeps: {
+    entries: [
+      "index.html",
+      "src/main.tsx",
+      "src/pages/History.tsx",
+      "src/pages/Memory.tsx",
+      "src/pages/Settings.tsx",
+      "src/pages/Monitoring.tsx",
+      "src/tray/TrayApp.tsx",
+    ],
+    include: [
+      "react",
+      "react-dom",
+      "react-router-dom",
+      "zustand",
+      "framer-motion",
+      "lucide-react",
+      "three",
+      "clsx",
+      "tailwind-merge",
+      "@tanstack/react-virtual",
+      "@tauri-apps/api",
+      "@tauri-apps/plugin-dialog",
+      "@tauri-apps/plugin-fs",
+      "@tauri-apps/plugin-opener",
+      "@tauri-apps/plugin-process",
+      "@tauri-apps/plugin-updater",
+      "react-markdown",
+      "lenis",
+      "thinking-orbs",
+      "react-colorful",
+      "@floating-ui/react",
+      "@noriginmedia/norigin-spatial-navigation",
+    ],
+  },
   server: {
+    warmup: {
+      // Boot-path entries. Warmup resolves each entry's full static import
+      // graph (App → layout → Home) before the webview navigates, so the
+      // first real request is served from an already-transformed module.
+      clientFiles: ["./index.html", "./src/main.tsx", "./src/App.tsx", "./src/pages/Home.tsx"],
+    },
     port: 1420,
     strictPort: true,
     host: "0.0.0.0",
