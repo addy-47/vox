@@ -3,6 +3,7 @@ import { RotateCw, TriangleAlert } from "lucide-react";
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
 import { getOnboardingStatus } from "@/services/setupService";
 import { ResponsiveLayout } from "@/layout/ResponsiveLayout";
+import { RouteReady } from "@/layout/RouteNavigationContext";
 import { WizardRoot } from "@/wizard/WizardRoot";
 import { TitleBar } from "@/layout/TitleBar";
 import { ErrorBoundary, OrbitalLoader, WizardStandIn } from "@/shared/components/common";
@@ -341,19 +342,49 @@ const App: React.FC = () => {
                               screen. */}
                           {routeToApp && (
                             <Route element={<ResponsiveLayout />}>
-                              <Route path="/" element={<ErrorBoundary name="Home"><Home /></ErrorBoundary>} />
-                              <Route path="/history" element={<ErrorBoundary name="History"><History /></ErrorBoundary>} />
-                              <Route path="/memory" element={<ErrorBoundary name="Memory"><Memory /></ErrorBoundary>} />
-                              <Route path="/settings" element={<ErrorBoundary name="Settings"><Settings /></ErrorBoundary>} />
+                              <Route
+                                path="/"
+                                element={
+                                  <RouteReady pathname="/">
+                                    <ErrorBoundary name="Home"><Home /></ErrorBoundary>
+                                  </RouteReady>
+                                }
+                              />
+                              <Route
+                                path="/history"
+                                element={
+                                  <RouteReady pathname="/history">
+                                    <ErrorBoundary name="History"><History /></ErrorBoundary>
+                                  </RouteReady>
+                                }
+                              />
+                              <Route
+                                path="/memory"
+                                element={
+                                  <RouteReady pathname="/memory">
+                                    <ErrorBoundary name="Memory"><Memory /></ErrorBoundary>
+                                  </RouteReady>
+                                }
+                              />
+                              <Route
+                                path="/settings"
+                                element={
+                                  <RouteReady pathname="/settings">
+                                    <ErrorBoundary name="Settings"><Settings /></ErrorBoundary>
+                                  </RouteReady>
+                                }
+                              />
                               <Route
                                 path="/monitoring"
                                 element={
                                   isRealMobileDevice() ? (
                                     <Navigate to="/" replace />
                                   ) : (
-                                    <ErrorBoundary name="Monitoring">
-                                      <Monitoring />
-                                    </ErrorBoundary>
+                                    <RouteReady pathname="/monitoring">
+                                      <ErrorBoundary name="Monitoring">
+                                        <Monitoring />
+                                      </ErrorBoundary>
+                                    </RouteReady>
                                   )
                                 }
                               />

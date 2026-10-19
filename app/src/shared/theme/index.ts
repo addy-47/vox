@@ -180,6 +180,7 @@ let flipGeneration = 0;
  */
 const targetCache = new Map<string, Map<string, string>>();
 const TARGET_CACHE_LIMIT = 32;
+let currentTokenValues: Map<string, string> | null = null;
 
 /**
  * Tokens this module owns as INLINE custom properties on `<html>`, and which
@@ -257,31 +258,16 @@ function animateTokensToNewTheme(
   // 2 writes for the whole 200ms fade). A time cap never delays a write when
   // frames are slow, and still caps a 60fps machine at ~33ms.
   const MIN_WRITE_INTERVAL_MS = 33;
-  let frame = 0;
-  let lastTickAt = t0;
   let lastWriteAt = t0 - MIN_WRITE_INTERVAL_MS;
-  let writes = 0;
   const tick = (now: number) => {
     if (gen !== flipGeneration) return;
-    const delta = now - lastTickAt;
-    lastTickAt = now;
     const t = Math.min(1, (now - t0) / durationMs);
-    frame += 1;
     if (t < 1 && now - lastWriteAt < MIN_WRITE_INTERVAL_MS) {
-      if (import.meta.env.DEV) {
-        console.info(`[RCA-PROBE] tick gen=${gen} f=${frame} t=${t.toFixed(3)} d=${delta.toFixed(1)}ms skip`);
-      }
       requestAnimationFrame(tick);
       return;
     }
     lastWriteAt = now;
     const e = cubicBezierEase(t);
-    if (import.meta.env.DEV) {
-      console.info(
-        `[RCA-PROBE] tick gen=${gen} f=${frame} t=${t.toFixed(3)} e=${e.toFixed(3)} d=${delta.toFixed(1)}ms WRITE#${writes + 1} gate=${document.documentElement.hasAttribute("data-theme-transition")}`
-      );
-    }
-    writes += 1;
 
     const accent = parsed.find((p) => p.key === "accent");
     const accentTriple =
@@ -291,7 +277,10 @@ function animateTokensToNewTheme(
 
     for (const p of parsed) {
       const out = lerpToken(p.from!, p.to!, e, accentTriple);
-      if (out) root.style.setProperty(`--${p.key}`, out);
+      if (out) {
+        root.style.setProperty(`--${p.key}`, out);
+        currentTokenValues?.set(p.key, out);
+      }
     }
 
     if (t < 1) {
@@ -299,15 +288,9 @@ function animateTokensToNewTheme(
     } else {
       for (const key of FLIP_TOKEN_KEYS) root.style.removeProperty(`--${key}`);
       root.style.setProperty("--accent", newAccentInline);
-      // The fade has landed. Hold the gate only for the tail frame so this
-      // final state paints before transitions/animations/blur come back —
-      // the fixed 232ms window may already have expired (it did, in every
-      // measured flip: CLOSE landed before WRITE#n t=1).
-      if (import.meta.env.DEV) {
-        console.info(
-          `[RCA-PROBE] fade DONE gen=${gen} writes=${writes} at t0+${(now - t0).toFixed(0)}ms -> gate closes in ${TRANSITION_TAIL_MS}ms`
-        );
-      }
+      currentTokenValues = new Map(endValues);
+      currentTokenValues.set("accent", newAccentInline);
+      // Let the final state paint before transitions and blur resume.
       armGateClose(TRANSITION_TAIL_MS);
     }
   };
@@ -358,6 +341,7 @@ const FLIP_BURST_LIMIT = 3;
 const FLIP_BURST_WINDOW_MS = 500;
 
 let lastAppliedTheme: string | null = null;
+let lastAppliedAppearanceKey: string | null = null;
 let transitionTimer: ReturnType<typeof setTimeout> | null = null;
 let burstFlipCount = 0;
 let burstWindowStart = 0;
@@ -421,9 +405,6 @@ function syncGate() {
       } else {
         root.removeAttribute("data-theme-transition");
       }
-      if (import.meta.env.DEV) {
-        console.info(`[RCA-PROBE] gate ${shouldBeOpen ? "OPEN" : "CLOSE"} @${Math.round(performance.now())}ms`);
-      }
     }
     setTransitioning(shouldBeOpen);
   }
@@ -462,7 +443,9 @@ function closeGate() {
  * still cannot grow the window past the last flip's own fade (FLIP_BURST_*).
  */
 function armGateClose(delayMs: number) {
-  if (transitionTimer) clearTimeout(transitionTimer);
+  if (transitionTimer !== null && burstFlipCount > FLIP_BURST_LIMIT) return;
+  const previousTimer = transitionTimer;
+  if (previousTimer !== null) clearTimeout(previousTimer);
   transitionTimer = setTimeout(() => {
     transitionTimer = null;
     flipGateHeld = false;
@@ -526,13 +509,24 @@ export function applyTheme(
   const { animate = true } = options;
   const trace = beginFlipTrace();
   const isThemeChange = lastAppliedTheme !== null && lastAppliedTheme !== appearance.theme;
+  const appearanceKey = targetCacheKey(appearance);
+  const appearanceChanged = lastAppliedAppearanceKey !== appearanceKey;
   lastAppliedTheme = appearance.theme;
+  lastAppliedAppearanceKey = appearanceKey;
 
   const root = document.documentElement;
 
   if (!animate || !isThemeChange || prefersReducedMotion()) {
     closeGate();
     writeThemeToDom(appearance);
+    if (appearanceChanged) {
+      if (currentTokenValues === null || !animate || prefersReducedMotion()) {
+        currentTokenValues = readRootTokenValues();
+        rememberTargets(appearanceKey, currentTokenValues);
+      } else {
+        currentTokenValues = null;
+      }
+    }
     persistForBootScript(appearance);
     endFlipTrace(trace, false);
     return;
@@ -560,18 +554,17 @@ export function applyTheme(
   flipGateHeld = true;
   syncGate();
 
-  const tPhase0 = performance.now();
-  const startValues = readRootTokenValues();
-  const tPhase1 = performance.now();
+  const startValues = currentTokenValues
+    ? new Map(currentTokenValues)
+    : readRootTokenValues();
   writeThemeToDom(appearance);
-  const tPhase2 = performance.now();
 
   // Drop any masks left by a burst flip so the new theme's literal values
   // are readable, then snapshot the true targets — unless the cache already
   // holds them, in which case the second forced recalc is skipped entirely.
   // Inline-owned tokens (--accent and the --notif-* family) survive the strip,
   // because stripping them would erase the values this capture is reading.
-  const cacheKey = targetCacheKey(appearance);
+  const cacheKey = appearanceKey;
   let endValues = targetCache.get(cacheKey);
   if (!endValues) {
     for (const key of FLIP_TOKEN_KEYS) {
@@ -582,23 +575,13 @@ export function applyTheme(
     rememberTargets(cacheKey, endValues);
   }
   const newAccentInline = root.style.getPropertyValue("--accent");
-  const tPhase3 = performance.now();
 
   // Mask the flip: re-apply the old values inline so nothing new paints until
   // the first interpolated frame. The rAF loop's first tick overwrites them.
   for (const [key, value] of startValues) {
     root.style.setProperty(`--${key}`, value);
   }
-  const tPhase4 = performance.now();
-  if (import.meta.env.DEV) {
-    console.info(
-      `[RCA-PROBE] applyTheme phases cacheHit=${Boolean(targetCache.get(cacheKey))} ` +
-        `readStart=${(tPhase1 - tPhase0).toFixed(1)}ms writeTheme=${(tPhase2 - tPhase1).toFixed(1)}ms ` +
-        `endCapture=${(tPhase3 - tPhase2).toFixed(1)}ms mask=${(tPhase4 - tPhase3).toFixed(1)}ms ` +
-        `total=${(tPhase4 - trace.t0).toFixed(1)}ms burst=${burstFlipCount} ` +
-        `gate=${document.documentElement.hasAttribute("data-theme-transition")}`
-    );
-  }
+  currentTokenValues = new Map(startValues);
 
   animateTokensToNewTheme(startValues, endValues, newAccentInline, THEME_TRANSITION_MS);
   persistForBootScript(appearance);
@@ -669,6 +652,7 @@ export function beginAccentPreview(): void {
 export function previewAccent(accentSeed: string): void {
   if (typeof document === "undefined") return;
   pendingAccentSeed = accentSeed;
+  currentTokenValues = null;
   if (previewAccentFrame !== null) return;
 
   previewAccentFrame = requestAnimationFrame(() => {
@@ -703,6 +687,9 @@ export function endAccentPreview(): void {
 /** Test seam: forgets the last applied theme so the next call is a first paint. */
 export function resetThemeStateForTests() {
   lastAppliedTheme = null;
+  lastAppliedAppearanceKey = null;
+  currentTokenValues = null;
+  targetCache.clear();
   burstFlipCount = 0;
   burstWindowStart = 0;
   previewGateHeld = false;

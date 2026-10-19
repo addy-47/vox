@@ -10,8 +10,8 @@
  * the flip window. Measured on the Settings route with all six cards open
  * (9,606 nodes), that cost more blocking time than the flip it was measuring.
  *
- * It is now dev-only. `beginFlipTrace` stays cheap (one `performance.now()`);
- * the expensive half — `endFlipTrace` — compiles away in a production build.
+ * It is now dev-only and opt-in. The expensive census and frame sampler must
+ * not run during ordinary development theme changes.
  *
  * ## The forced-recalc probe is opt-in, and must stay that way
  *
@@ -22,10 +22,10 @@
  * would have flushed the same recalc at paint instead, after yielding. So the
  * per-flip probe defaults OFF.
  *
- * Turn it on deliberately when isolating recalc cost:
- *   setThemeTraceProbe(true)     // from the WebKitGTK inspector console
- * The pass census, the frame sampler and the snap detector are passive and stay
- * on, so the default trace is a faithful observer.
+ * Turn tracing on deliberately when isolating frame cost:
+ *   setThemeTraceEnabled(true)   // from the WebKitGTK inspector console
+ * Turn on the destructive forced-recalc probe separately with
+ * `setThemeTraceProbe(true)`.
  */
 
 export interface FlipTraceHandle {
@@ -38,6 +38,7 @@ export interface FlipTraceHandle {
 const TRACE_ENABLED = import.meta.env.DEV;
 
 let probeEnabled = false;
+let traceEnabled = false;
 
 /**
  * Opt in to the destructive forced-style-recalc probe. Off by default: it
@@ -45,13 +46,21 @@ let probeEnabled = false;
  */
 export function setThemeTraceProbe(enabled: boolean): void {
   probeEnabled = enabled;
+  traceEnabled = enabled;
+}
+
+/** Enable the non-destructive theme census and frame sampler on demand. */
+export function setThemeTraceEnabled(enabled: boolean): void {
+  traceEnabled = enabled;
 }
 
 if (TRACE_ENABLED && typeof window !== "undefined") {
   const w = window as unknown as {
     setThemeTraceProbe?: (enabled: boolean) => void;
+    setThemeTraceEnabled?: (enabled: boolean) => void;
   };
   w.setThemeTraceProbe = setThemeTraceProbe;
+  w.setThemeTraceEnabled = setThemeTraceEnabled;
 }
 
 let nextId = 1;
@@ -63,7 +72,7 @@ export function beginFlipTrace(): FlipTraceHandle {
 }
 
 export function endFlipTrace(handle: FlipTraceHandle, animate: boolean) {
-  if (!TRACE_ENABLED) return;
+  if (!TRACE_ENABLED || !traceEnabled) return;
   if (typeof document === "undefined") return;
   const id = handle.id;
   const t0 = handle.t0;
@@ -157,7 +166,7 @@ export function traceFlipTargets(id: number, selectors: string[], durationMs: nu
   // Reads computed values on 4 samples x N targets inside the flip window, so
   // it forces the recalcs it is trying to characterise. Same reason as the
   // probe above: opt-in only.
-  if (!probeEnabled) return;
+  if (!TRACE_ENABLED || !probeEnabled) return;
   if (typeof document === "undefined") return;
   const t0 = performance.now();
   const targets = selectors

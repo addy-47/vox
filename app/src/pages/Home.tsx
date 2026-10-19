@@ -94,27 +94,6 @@ export const Home = memo(() => {
 
   const contentInnerRef = useRef<HTMLDivElement>(null);
 
-  // Diagnostic telemetry: log Home render timing and layout lifecycle
-  // (cyan-flash RCA: full path logging — mount/unmount, orb mount, state,
-  //  theme vars, and cached theme. Remove once the flash source is found.)
-  const mountStateRef = useRef({ interactionState, isEngaged });
-  useEffect(() => {
-    mountStateRef.current = { interactionState, isEngaged };
-  }, [interactionState, isEngaged]);
-
-  useEffect(() => {
-    if (!import.meta.env.DEV) return;
-    const t0 = performance.now();
-    const root = document.documentElement;
-    const cs = getComputedStyle(root);
-    console.info(`[trace-home] Home mounted @${t0.toFixed(1)}ms, docTheme=${root.getAttribute("data-theme") || "none"}, cssAccent=[${cs.getPropertyValue("--accent").trim() || "EMPTY"}], cssGlowDark=[${cs.getPropertyValue("--glow-dark").trim() || "EMPTY"}], inlineAccent=[${root.style.getPropertyValue("--accent").trim() || "EMPTY"}], interactionState=${mountStateRef.current.interactionState}, isEngaged=${mountStateRef.current.isEngaged}`);
-    const t1 = performance.now();
-    console.info(`[trace-home] mount-paint-ready @${t1.toFixed(1)}ms (+${(t1 - t0).toFixed(1)}ms after mount effect)`);
-    return () => {
-      console.info(`[trace-home] Home unmounted after ${(performance.now() - t0).toFixed(1)}ms`);
-    };
-  }, []);
-
   // Auto-scroll follower: keep pinned to bottom as text streams in or messages are sent
   useEffect(() => {
     const inner = contentInnerRef.current;
@@ -558,4 +537,3 @@ export const Home = memo(() => {
 });
 
 Home.displayName = "Home";
-

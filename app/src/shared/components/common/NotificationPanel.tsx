@@ -1,5 +1,5 @@
 import { useState, useEffect, memo, useCallback, useMemo, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigateWithFeedback } from "@/layout/useNavigateWithFeedback";
 import {
   Bell,
   Check,
@@ -364,7 +364,7 @@ TimeGroupHeader.displayName = "TimeGroupHeader";
  * Groups items by time period (Today / Yesterday / Earlier).
  */
 export const NotificationPanel = memo(({ onClose }: NotificationPanelProps) => {
-  const navigate = useNavigate();
+  const navigateWithFeedback = useNavigateWithFeedback();
   const [activeTab, setActiveTab] = useState<"tasks" | "updates">("tasks");
   const tasks = useNotificationStore(selectTasksRolledUp);
   const updates = useNotificationStore(selectUpdatesRolledUp);
@@ -435,10 +435,10 @@ export const NotificationPanel = memo(({ onClose }: NotificationPanelProps) => {
       void executeAction(notif, (target) => {
         onClose();
         const route = target.startsWith("/") ? target : `/${target}`;
-        void navigate(route);
+        navigateWithFeedback(route);
       }).catch(() => {});
     },
-    [executeAction, onClose, navigate]
+    [executeAction, onClose, navigateWithFeedback]
   );
 
   const handleOpen = useCallback(
@@ -446,14 +446,14 @@ export const NotificationPanel = memo(({ onClose }: NotificationPanelProps) => {
       onClose();
       const category = toCategory(notif.category);
       if (notif.session_id !== null && notif.session_id !== undefined) {
-        void navigate(`/history?sessionId=${notif.session_id}`);
+        navigateWithFeedback(`/history?sessionId=${notif.session_id}`);
       } else if (category === "memory_consolidation") {
-        void navigate("/memory");
+        navigateWithFeedback("/memory");
       } else {
-        void navigate("/settings");
+        navigateWithFeedback("/settings");
       }
     },
-    [navigate, onClose]
+    [navigateWithFeedback, onClose]
   );
 
   return (

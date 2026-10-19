@@ -1,17 +1,18 @@
-import { useMemo, useEffect, useCallback, memo, Suspense, lazy, useRef } from "react";
+import { useMemo, useEffect, useCallback, memo, Suspense, lazy } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
 import { ErrorBoundary, OrbitalLoader } from "@/shared/components/common";
 import { SETTINGS_DOMAINS as DOMAINS, type SettingsDomainId as DomainId } from "@/data/settingsCopy";
 import { useRegisterPageDrawer } from "@/shared/context/PageDrawerContext";
-
-// Loader functions for eager prewarming
-const loadPersona = () => import("@/shared/components/settings/persona/PersonaCard").then(m => ({ default: m.PersonaCard }));
-const loadModels = () => import("@/shared/components/settings/models/ModelsCard").then(m => ({ default: m.ModelsCard }));
-const loadRealtime = () => import("@/shared/components/settings/realtime/RealtimeCard").then(m => ({ default: m.RealtimeCard }));
-const loadWorkingMemory = () => import("@/shared/components/settings/working_memory/WorkingMemoryCard").then(m => ({ default: m.WorkingMemoryCard }));
-const loadPersonalMemory = () => import("@/shared/components/settings/personal_memory/PersonalMemoryCard").then(m => ({ default: m.PersonalMemoryCard }));
-const loadAppearance = () => import("@/shared/components/settings/appearance/AppearanceCard").then(m => ({ default: m.AppearanceCard }));
-const loadInteraction = () => import("@/shared/components/settings/interaction/InteractionCard").then(m => ({ default: m.InteractionCard }));
+import {
+  loadAppearance,
+  loadInteraction,
+  loadModels,
+  loadPersona,
+  loadPersonalMemory,
+  loadRealtime,
+  loadWorkingMemory,
+  preloadSettingsCardChunks,
+} from "@/shared/components/settings/settingsCardChunks";
 
 // Lazy-loaded domain card components
 const PersonaCard = lazy(loadPersona);
@@ -59,16 +60,9 @@ import { SettingsSideCarouselCard } from "@/shared/components/settings/SettingsS
 import { useSettingsPage } from "@/shared/hooks/useSettingsPage";
 import { useMemoryTrace } from "@/shared/hooks/useMemoryTrace";
 
-// Preload settings card chunks so mobile visits do not trigger cascading suspensions
-export const preloadSettingsCards = () =>
+const preloadSettingsCards = () =>
   Promise.all([
-    loadPersona(),
-    loadModels(),
-    loadRealtime(),
-    loadWorkingMemory(),
-    loadPersonalMemory(),
-    loadAppearance(),
-    loadInteraction(),
+    preloadSettingsCardChunks(),
     useSettingsStore.getState().loadRemoteModels(),
   ]);
 
@@ -89,19 +83,6 @@ export const Settings: React.FC = () => {
     handleCenterClick,
     setActiveDomains,
   } = useSettingsPage();
-
-  // [RCA-PROBE] track active card count for unmount timing
-  const activeDomainsRef = useRef(activeDomains);
-  useEffect(() => {
-    activeDomainsRef.current = activeDomains;
-  }, [activeDomains]);
-  useEffect(() => {
-    const mountedAt = performance.now();
-    console.log("[RCA-PROBE] Settings mounted", mountedAt);
-    return () => {
-      console.log("[RCA-PROBE] Settings unmount, activeCards=", activeDomainsRef.current.length, "livedMs=", performance.now() - mountedAt);
-    };
-  }, []);
 
   const drawerHandlers = useMemo(() => ({
     open: () => setActiveDomains(DOMAINS.map((d) => d.id)),
@@ -137,7 +118,9 @@ export const Settings: React.FC = () => {
   useEffect(() => {
     const idle = window.requestIdleCallback ?? ((fn: () => void) => setTimeout(fn, 400));
     const id = idle(() => {
-      void preloadSettingsCards().catch(() => {});
+      void preloadSettingsCards().catch((error: unknown) => {
+        console.debug("[Settings] Failed to prewarm settings data:", error);
+      });
     });
     return () => {
       if (window.cancelIdleCallback && typeof id === "number") window.cancelIdleCallback(id);
