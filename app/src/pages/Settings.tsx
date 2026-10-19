@@ -92,7 +92,9 @@ export const Settings: React.FC = () => {
 
   // [RCA-PROBE] track active card count for unmount timing
   const activeDomainsRef = useRef(activeDomains);
-  activeDomainsRef.current = activeDomains;
+  useEffect(() => {
+    activeDomainsRef.current = activeDomains;
+  }, [activeDomains]);
   useEffect(() => {
     const mountedAt = performance.now();
     console.log("[RCA-PROBE] Settings mounted", mountedAt);

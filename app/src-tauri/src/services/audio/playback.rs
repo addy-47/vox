@@ -22,6 +22,9 @@ use crate::{
     services::realtime::{RealtimeAudioConfig, DEFAULT_OUTPUT_SAMPLE_RATE},
 };
 
+/// Sentinel turn id meaning no synthesis job has streamed audio into this engine yet.
+const SYNTHESIS_TURN_UNSET: u32 = u32::MAX;
+
 /// Core audio playback engine managing an audio sink, SPSC lock-free ring buffer, and volume ramps.
 pub struct PlaybackEngine {
     producer: Mutex<(HeapProd<f32>, Vec<f32>)>,
@@ -29,6 +32,7 @@ pub struct PlaybackEngine {
     discard_request: Arc<AtomicBool>,
     event_tx: Sender<VoxEvent>,
     current_turn_id: Arc<AtomicU32>,
+    synthesis_turn: Arc<AtomicU32>,
     turn_armed: Arc<AtomicBool>,
     pending_synthesis_jobs: Arc<AtomicU32>,
     playback_intent: Arc<AtomicU8>,
@@ -57,6 +61,7 @@ impl PlaybackEngine {
         let (producer, consumer) = rb.split();
         let discard_request = Arc::new(AtomicBool::new(false));
         let turn_armed = Arc::new(AtomicBool::new(false));
+        let synthesis_turn = Arc::new(AtomicU32::new(SYNTHESIS_TURN_UNSET));
 
         let sink = build_output_stream(
             consumer,
@@ -76,6 +81,7 @@ impl PlaybackEngine {
             discard_request,
             event_tx: handles.event_tx,
             current_turn_id: handles.current_turn_id,
+            synthesis_turn,
             turn_armed,
             pending_synthesis_jobs: handles.pending_synthesis_jobs,
             playback_intent: handles.playback_intent,
@@ -101,6 +107,7 @@ impl PlaybackEngine {
             discard_request,
             event_tx: handles.event_tx,
             current_turn_id: handles.current_turn_id,
+            synthesis_turn: Arc::new(AtomicU32::new(SYNTHESIS_TURN_UNSET)),
             turn_armed,
             pending_synthesis_jobs: handles.pending_synthesis_jobs,
             playback_intent: handles.playback_intent,
@@ -109,8 +116,29 @@ impl PlaybackEngine {
         }
     }
 
+    /// Marks the pipeline turn whose synthesis job is currently streaming audio into this engine.
+    ///
+    /// The TTS worker processes jobs strictly sequentially, so a single atomic captures the
+    /// originating turn of every in-flight `ingest_chunk_with_intent` call.
+    pub fn begin_synthesis_turn(&self, turn_id: u32) {
+        self.synthesis_turn.store(turn_id, Ordering::Relaxed);
+    }
+
     /// Ingest a 24kHz audio chunk with an explicit audio intent tag.
     pub fn ingest_chunk_with_intent(&self, chunk_24khz: &[f32], intent: AudioIntent) {
+        let synthesis_turn = self.synthesis_turn.load(Ordering::Relaxed);
+        let current_turn = self.current_turn_id.load(Ordering::Relaxed);
+        if !is_synthesis_turn_current(synthesis_turn, current_turn) {
+            // Barge-in superseded the originating turn mid-synthesis. The shared cancel flag is
+            // re-armed for the new turn within microseconds, so turn identity is the durable
+            // guard that keeps a cancelled turn's late chunks from re-arming and playing back.
+            log::debug!(
+                "[Audio::Playback] Dropping stale synthesis audio (job turn {}, active turn {})",
+                synthesis_turn,
+                current_turn
+            );
+            return;
+        }
         self.playback_intent
             .store(u8::from(intent), Ordering::Relaxed);
         self.ingest_chunk_with_threshold(chunk_24khz, MODULAR_PREROLL_THRESHOLD_SAMPLES);
@@ -319,5 +347,27 @@ impl PlaybackEngine {
     /// Returns the number of unplayed audio samples remaining in the buffer.
     pub fn buffer_len(&self) -> usize {
         self.producer.lock().0.occupied_len()
+    }
+}
+
+/// Returns true when the in-flight synthesis job's originating turn still matches the
+/// pipeline's active turn; an unset sentinel (no job streamed yet) is always accepted.
+fn is_synthesis_turn_current(synthesis_turn: u32, current_turn: u32) -> bool {
+    synthesis_turn == SYNTHESIS_TURN_UNSET || synthesis_turn == current_turn
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_synthesis_turn_gate_accepts_current_and_unset() {
+        assert!(is_synthesis_turn_current(SYNTHESIS_TURN_UNSET, 7));
+        assert!(is_synthesis_turn_current(7, 7));
+    }
+
+    #[test]
+    fn test_synthesis_turn_gate_rejects_superseded_turn() {
+        assert!(!is_synthesis_turn_current(5, 6));
     }
 }

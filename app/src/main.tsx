@@ -20,6 +20,12 @@ import App from "./App";
 import { ErrorBoundary } from "./shared/components/common";
 import { useSettingsStore } from "./store/settingsStore";
 
+// Stage-2 boot RCA mark: absolute anchor (ms since navigation start) for the
+// dev-only boot timeline. Everything after this is post-module-graph.
+if (import.meta.env.DEV) {
+  console.info(`[boot] main.tsx evaluated @${Math.round(performance.now())}ms`);
+}
+
 // Boot settings and model catalog into the store
 void useSettingsStore.getState().loadSettings();
 void useSettingsStore.getState().loadModelCatalog();

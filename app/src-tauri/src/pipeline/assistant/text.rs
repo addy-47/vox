@@ -22,6 +22,32 @@ pub fn on_text_input<R: tauri::Runtime + 'static>(
         return;
     }
 
+    let trimmed = text.trim().to_string();
+    if trimmed.is_empty() {
+        log::debug!("[Pipeline::Text] Dropping empty text input");
+        return;
+    }
+
+    let transliterate_enabled = state
+        .settings
+        .read()
+        .map(|s| s.stt.transliterate_enabled)
+        .unwrap_or(false);
+    let query = transliterate_if_hi(&trimmed, true, transliterate_enabled);
+
+    // RULE-HARN-03: reject duplicate typed turns before allocating a turn ID, interrupting the
+    // active turn, or emitting TranscriptFinal so ignored duplicates neither advance turn
+    // counters nor render orphan UI bubbles.
+    if ctx.pipeline_mode == PipelineMode::Modular
+        && super::transcript::is_duplicate_user_turn(state, &query)
+    {
+        log::info!(
+            "[Pipeline::Text] Duplicate typed turn suppressed pre-dispatch ('{}')",
+            query
+        );
+        return;
+    }
+
     // Auto-resume so typed input is never silently dropped while paused or sleeping.
     if current_state == InteractionState::Paused || current_state == InteractionState::Sleeping {
         log::info!(
@@ -47,21 +73,6 @@ pub fn on_text_input<R: tauri::Runtime + 'static>(
         return;
     };
 
-    let trimmed = text.trim().to_string();
-    if trimmed.is_empty() {
-        log::debug!(
-            "[Pipeline::Text] Dropping empty text input for turn {}",
-            active_turn_id
-        );
-        return;
-    }
-
-    let transliterate_enabled = state
-        .settings
-        .read()
-        .map(|s| s.stt.transliterate_enabled)
-        .unwrap_or(false);
-    let query = transliterate_if_hi(&trimmed, true, transliterate_enabled);
     log::info!(
         "[Pipeline::Text] Turn {}: User typed: '{}'",
         active_turn_id,
