@@ -4,6 +4,7 @@ use anyhow::{anyhow, Result};
 use sherpa_onnx::{TenVadModelConfig, VadModelConfig, VoiceActivityDetector};
 
 use super::VadEngine as VadEngineTrait;
+use crate::core::compute::{self, Execution, Workload};
 
 /// Voice Activity Detection engine wrapping TenVAD ONNX model via Sherpa-ONNX.
 pub struct VadEngine {
@@ -77,7 +78,7 @@ impl VadEngine {
                 max_speech_duration,
             },
             sample_rate: 16000,
-            num_threads: 1,
+            num_threads: compute::resolve_threads(Workload::Vad, Execution::Embedded) as i32,
             debug: false,
             provider: Some("cpu".into()),
         };

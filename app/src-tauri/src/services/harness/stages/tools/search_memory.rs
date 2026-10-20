@@ -165,8 +165,8 @@ async fn perform_hybrid_search(
             .read()
             .map_err(|e| ToolError::ExecutionFailed(format!("Settings lock error: {}", e)))?;
         (
-            guard.personal_memory.top_k_facts as usize,
-            guard.personal_memory.semantic_similarity_cutoff,
+            guard.memory.top_k_facts as usize,
+            guard.memory.semantic_similarity_cutoff,
         )
     };
 

@@ -11,9 +11,10 @@ use cpal::{
 use ringbuf::{traits::*, HeapCons};
 
 use super::{
-    sink::{PlaybackReferenceTap, PlaybackStreamContext}, AudioCapture, AudioSink, MockAudioCapture,
-    PlaybackEngineHandles, PlaybackTelemetryHandles, INGESTION_BUFFER_CAPACITY_SAMPLES,
-    INGESTION_OVERFLOW_LOG_INTERVAL, PLAYBACK_CHANNELS, PLAYBACK_SAMPLE_RATE, SAMPLE_RATE,
+    sink::{PlaybackReferenceTap, PlaybackStreamContext},
+    AudioCapture, AudioSink, MockAudioCapture, PlaybackEngineHandles, PlaybackTelemetryHandles,
+    INGESTION_BUFFER_CAPACITY_SAMPLES, INGESTION_OVERFLOW_LOG_INTERVAL, PLAYBACK_CHANNELS,
+    PLAYBACK_SAMPLE_RATE, SAMPLE_RATE,
 };
 
 /// Hardware audio capture implementation wrapping a live CPAL input stream.
@@ -185,8 +186,9 @@ where
             if n_mono >= 3 {
                 filtered_buffer[0] = mono_buffer[0];
                 for i in 1..n_mono - 1 {
-                    filtered_buffer[i] =
-                        0.25 * mono_buffer[i - 1] + 0.5 * mono_buffer[i] + 0.25 * mono_buffer[i + 1];
+                    filtered_buffer[i] = 0.25 * mono_buffer[i - 1]
+                        + 0.5 * mono_buffer[i]
+                        + 0.25 * mono_buffer[i + 1];
                 }
                 filtered_buffer[n_mono - 1] = mono_buffer[n_mono - 1];
             } else {
@@ -200,8 +202,7 @@ where
                 let idx = source_index as usize;
                 let next_idx = (idx + 1).min(n_mono - 1);
                 let frac = source_index - idx as f32;
-                let sample =
-                    (1.0 - frac) * filtered_buffer[idx] + frac * filtered_buffer[next_idx];
+                let sample = (1.0 - frac) * filtered_buffer[idx] + frac * filtered_buffer[next_idx];
                 resampled_buffer.push(sample);
                 source_index += resample_ratio;
             }

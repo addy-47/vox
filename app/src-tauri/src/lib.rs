@@ -72,8 +72,8 @@ use crate::{
         },
         projects::{create_project, delete_project, get_projects, rename_project},
         settings::{
-            apply_settings_patch, get_restart_status, get_settings, get_settings_contract, reset_settings,
-            update_setting,
+            apply_settings_patch, get_restart_status, get_settings, get_settings_contract,
+            reset_settings, update_setting,
         },
         setup::{
             check_updates, complete_setup_wizard, fetch_manifest, get_onboarding_status,
@@ -509,7 +509,7 @@ pub fn run() {
             let is_daily_cadence = state_arc
                 .settings
                 .read()
-                .map(|s| s.personal_memory.consolidation_cadence == "daily")
+                .map(|s| s.memory.consolidation_cadence == "daily")
                 .unwrap_or(false);
             if is_daily_cadence {
                 spawn_consolidation_scheduler(app.handle().clone(), Arc::clone(&state_arc));

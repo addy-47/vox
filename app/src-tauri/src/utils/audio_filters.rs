@@ -214,7 +214,11 @@ mod tests {
         for _ in 0..1000 {
             y = lp.tick(1.0);
         }
-        assert!((y - 1.0).abs() < 1e-3, "DC response must be unity gain (got {})", y);
+        assert!(
+            (y - 1.0).abs() < 1e-3,
+            "DC response must be unity gain (got {})",
+            y
+        );
 
         // 2. High-frequency stopband attenuation (> 12 kHz, e.g. 16 kHz)
         lp.reset();

@@ -4,7 +4,7 @@ use tauri::{AppHandle, State};
 
 use crate::{
     core::{
-        defaults::{DEFAULT_LLM_CONTEXT_WINDOW, DEFAULT_LLM_THREADS},
+        defaults::DEFAULT_LLM_CONTEXT_WINDOW,
         error::VoxIpcError,
         events::{emit_ipc, IpcEvent, Severity},
         state::AppState,
@@ -89,7 +89,7 @@ pub async fn consolidate_personal_memory(
             .settings
             .read()
             .map_err(|_| VoxIpcError::Internal("Failed to acquire settings".to_string()))?;
-        (guard.llm.clone(), guard.personal_memory.clone())
+        (guard.llm.clone(), guard.memory.clone())
     };
     let provider = resolve_llm_provider(&state, &llm_settings)?;
 
@@ -313,7 +313,7 @@ pub async fn regenerate_personal_memory(
             .settings
             .read()
             .map_err(|_| VoxIpcError::Internal("Failed to acquire settings".to_string()))?;
-        (guard.llm.clone(), guard.personal_memory.clone())
+        (guard.llm.clone(), guard.memory.clone())
     };
     let provider = resolve_llm_provider(&state, &llm_settings)?;
 
@@ -355,7 +355,6 @@ fn resolve_llm_provider(
         providers,
         &llm_path,
         DEFAULT_LLM_CONTEXT_WINDOW,
-        DEFAULT_LLM_THREADS,
     )
     .map(Arc::from)
     .map_err(|e| VoxIpcError::Engine(format!("Failed to initialize LLM provider: {e}")))

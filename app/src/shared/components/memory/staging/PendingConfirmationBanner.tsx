@@ -16,13 +16,13 @@ export const PendingConfirmationBanner: React.FC<PendingConfirmationBannerProps>
   ({ confirmation, isConsolidating, onConfirm, onDismiss }) => {
     const isCompaction = confirmation.reason === "compaction_in_progress";
     const pipelineProcessingEnabled = useSettingsStore(
-      (s) => s.settings?.personal_memory?.pipeline_processing_enabled ?? true
+      (s) => s.settings?.memory?.pipeline_processing_enabled ?? true
     );
     const updateDraft = useSettingsStore((s) => s.updateDraft);
     const commitChanges = useSettingsStore((s) => s.commitChanges);
 
     const handleEnableAndWait = useCallback(async () => {
-      updateDraft("personal_memory", "pipeline_processing_enabled", true);
+      updateDraft("memory", "pipeline_processing_enabled", true);
       await commitChanges();
       onDismiss();
     }, [updateDraft, commitChanges, onDismiss]);

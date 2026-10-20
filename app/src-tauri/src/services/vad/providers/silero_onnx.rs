@@ -4,6 +4,7 @@ use anyhow::{anyhow, Result};
 use sherpa_onnx::{SileroVadModelConfig, VadModelConfig, VoiceActivityDetector};
 
 use super::VadEngine as VadEngineTrait;
+use crate::core::compute::{self, Execution, Workload};
 
 /// Minimum internal Sherpa-ONNX speech onset window (1 native 512-sample Silero frame = 32ms).
 /// Kept minimal so `SileroVadEngine` acts as a low-latency frame classifier without stacking
@@ -92,7 +93,7 @@ impl SileroVadEngine {
             },
             ten_vad: Default::default(),
             sample_rate: 16000,
-            num_threads: 1,
+            num_threads: compute::resolve_threads(Workload::Vad, Execution::Embedded) as i32,
             debug: false,
             provider: Some("cpu".into()),
         };

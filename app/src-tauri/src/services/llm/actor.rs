@@ -382,7 +382,6 @@ pub fn warm_up_llm(
         Some(&settings.providers.llm),
         llm_path,
         params.context_window as u32,
-        params.n_threads,
     ) {
         Ok(p) => p,
         Err(e) => {

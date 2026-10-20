@@ -315,6 +315,7 @@ All multi-tab navigation strips across the application (in modals, config desks,
 * **Container Grammar**: Flex container with a subtle bottom border (`border-b border-[rgba(var(--accent),0.08)] mb-2 px-0.5 select-none overflow-x-auto no-scrollbar`), with no capsule styling or enclosed pill track.
 * **Tab Elements**: Clean text (`text-[11px] sm:text-[11.5px] font-mono font-bold uppercase tracking-[0.06em]`) with an active bottom underline indicator (`border-b-2 border-[rgb(var(--accent))] text-[rgb(var(--accent))]`) and inactive transparent border (`text-[rgb(var(--foreground-muted))]/60 border-transparent hover:text-[rgb(var(--foreground))]`).
 * **Subtle Dividers**: Delicate vertical dividers between sibling tabs (`<span className="text-[10px] text-[rgb(var(--foreground-muted))]/25 select-none pb-1.5 px-1 sm:px-2">|</span>`).
+* **Exception — the settings category strip**: the Speech card's category strip (Voice detection, Speech transcription, Text to speech) is a boxed icon + label strip, not an underline tab. Each item is a bordered cell of fixed width; its label truncates instead of resizing the cell, and the strip carries no provider sublabel. The exception covers the strip's shape only — pill and capsule wrappers stay prohibited; desktop cells are 94px high with no extra title-to-caption gap, while small-screen cells retain their compact layout and existing icons.
 
 ### 5.3 Clean Vector SVG Pattern (Frameless Linework)
 
@@ -487,41 +488,6 @@ Rather than standard conversation logs, Vox renders a holographic dialogue strea
   `title` only for component props, truncated-text ellipsis, and shared primitives.
 * Icon-only buttons **must** have a tooltip.
 
-### 10.1 Catalog Header Grammar
-
-Every dense catalog rendered inside a settings card (providers, LLM models, voices)
-carries one standardized inline header. The grammar is closed — no catalog adds
-rows, badges, or controls outside it.
-
-```
-[icon] Title  ·  gap  ·  [catalog action] [filter] [sort] [search]
-```
-
-* **Icon + title** on the left, in `font-display`, with an optional breadcrumb
-  back arrow for nested catalogs. The breadcrumb belongs to the header, not to
-  the list: a catalog reachable by drilling in keeps its `←` affordance.
-* **Right cluster** holds at most four slots, in fixed order: catalog action,
-  filter, sort, search. A slot omitted by a catalog collapses; the order never
-  changes.
-* **Catalog action** is catalog-specific (e.g. add-provider). When a catalog has
-  no such action the slot is empty.
-* **Filter** opens a compact popover — the same facets the catalog's expand modal
-  offers — and shows an active-count dot. Filters are real: the inline list
-  narrows to the chosen facet. The popover renders in a portal pinned to the
-  trigger and clamped to the viewport; it is never clipped by the card's scroll
-  container and never exceeds `240px` width or the remaining viewport height.
-  Its internals stay tight (`11.5px` rows, `4px` gaps, glyphless facets allowed)
-  so it reads as a facet menu, not a second card.
-* **Sort** toggles name order, A–Z ⇄ Z–A.
-* **Search** toggles the right cluster into a single underline input that
-  replaces the icons in place. The header row does not grow.
-* Icon controls use the 13px thin-stroke treatment in a `w-7 h-7` rounded-md
-  hit target. Native `title` tooltips are banned here as everywhere else; every
-  slot uses the custom `Tooltip`.
-* Count pills are banned next to the title (design-spec §5, zero redundant
-  value/status badges). Status that must surface (e.g. fetching, connection
-  failure) is a status affordance, not a count.
-
 ---
 
 ## 11. Accessibility
@@ -602,8 +568,29 @@ Vox uses one overlay grammar across the shipped interface:
   - CSS `snap-*` is banned on any Lenis-managed container (snap fights virtual scroll and locks).
   - Scroll resets fire only on settled (debounced/committed) state — never per keystroke.
 - **Expanded List Modal (Tier 2b)** — When dense, compact inline card lists (`ExpandableList` in settings, catalogs, providers) are expanded into full modals (`w-[min(920px,94vw)] h-[min(720px,88vh)]`), they must not render squished compact rows in a large void. Instead, they transition into a spacious, tailored UI: an integrated toolbar with real-time search and filter chips, multi-column responsive cards (`grid-cols-1 md:grid-cols-2 lg:grid-cols-3`), and directly visible telemetry (speed/TPS, context window, VRAM footprint, capability badges) with zero reliance on hover-only tooltips. The modal header hosts domain commit controls only for states needing action or status (missing credential, apply-restart, saved/restarting/failed), using the same logic as the card footer, while any open modal suppresses the background card footer. Routine hot-save changes show no intermediate Save/Cancel and resolve directly to the saved state. List order follows committed (saved) state only: selecting re-highlights immediately but re-sorts on save, gliding the list to top with a smooth scroll.
+- **Speech models modal (Tier 2b)** — The Speech card's expanded surface serves the text-to-speech category only: the seven engines (four on-device, three cloud) in a multi-column grid with a source facet rail (All, On-device, Cloud). The compact inline grid has no facet rail; the expanded surface owns the rail, and the choice is independent of any header filter. Each engine card carries a waveform glyph in its top-right cluster that opens that engine's voice catalog in the same modal, with the modal header back arrow returning to the engine grid. Selecting an engine applies the same tier-implied selection as the inline grid. The voice-detection and speech-transcription categories keep their inline lists and carry no expanded surface.
 - **Memory pipeline** — horizontal, left-to-right stage flow inside a global drawer.
 - **Memory profiler** — converted from a route to a global bottom drawer (`ProfilerDrawer`).
+
+### Settings Card Grammar
+
+The reworked settings cards carry a fixed header grammar: an icon and an
+uppercase card label on the left, and at most one control in the top-right slot.
+
+* **Speech card header (08:00)** — `AudioLines` icon + `SPEECH MODELS` label on the
+  left; a `Select voice` action in the top-right slot. The action is always visible
+  (label literal, never the current voice name) and swaps the whole card face for
+  the voice catalog, whose header carries a breadcrumb back to the models view.
+  The card carries no `Model | Settings` toggle.
+* **Voice detection gear** — the detection workspace carries one gear in its
+  top-right corner that swaps the model grid for a single scrollable pane holding
+  all three detection knobs (sensitivity, silence, onset). No tabs.
+* **Realtime pipeline mode** — when the pipeline mode is `realtime`, the 08:00
+  slot renders the realtime card instead of the Speech card: the realtime
+  pipeline owns the microphone, so the speech card's controls are not reachable
+  while it is active. The slot stays visible and still opens from the hub.
+
+---
 
 ### 13.1 Session Compaction Triggers (History)
 
@@ -688,4 +675,4 @@ Keys are categorized into strict functional tiers to eliminate collision between
 ---
 
 
-**Last Updated:** 2026-10-04
+**Last Updated:** 2026-10-20

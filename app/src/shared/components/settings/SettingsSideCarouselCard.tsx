@@ -25,19 +25,25 @@ export const SettingsSideCarouselCard = memo(({
   onSwitchDomain,
   renderDomainContent,
 }: SettingsSideCarouselCardProps) => {
-  const domainPair: [DomainId, DomainId] = useMemo(() => {
-    return side === "left"
-      ? ["interaction", "personal_memory"]
-      : ["models", "working_memory"];
-  }, [side]);
+  /**
+   * A side holds one or two cards. The right side holds Memory alone, so the
+   * secondary entry is optional: no secondary means no carousel affordances.
+   */
+  const domainIds: DomainId[] = useMemo(
+    () => (side === "left" ? ["interaction", "speech"] : ["memory", "language"]),
+    [side]
+  );
 
-  const [primaryId, secondaryId] = domainPair;
+  const primaryId = domainIds[0];
+  const secondaryId = domainIds[1];
   const primaryDomain = DOMAINS.find((d) => d.id === primaryId)!;
-  const secondaryDomain = DOMAINS.find((d) => d.id === secondaryId)!;
+  const secondaryDomain = secondaryId
+    ? DOMAINS.find((d) => d.id === secondaryId)
+    : undefined;
 
   // Active domain is tracked from activeDomains, defaulting to primary
   const [currentId, setCurrentId] = useState<DomainId>(() => {
-    if (activeDomains.includes(secondaryId) && !activeDomains.includes(primaryId)) {
+    if (secondaryId && activeDomains.includes(secondaryId) && !activeDomains.includes(primaryId)) {
       return secondaryId;
     }
     return primaryId;
@@ -46,6 +52,7 @@ export const SettingsSideCarouselCard = memo(({
 
   // Keep in sync when user clicks a specific radial node in the hub
   useEffect(() => {
+    if (!secondaryId) return;
     const hasSec = activeDomains.includes(secondaryId);
     const hasPri = activeDomains.includes(primaryId);
     if (hasSec && !hasPri) {
@@ -55,11 +62,15 @@ export const SettingsSideCarouselCard = memo(({
     }
   }, [activeDomains, primaryId, secondaryId]);
 
-  const isCardActive = activeDomains.includes(primaryId) || activeDomains.includes(secondaryId);
-  const currentDomain = currentId === primaryId ? primaryDomain : secondaryDomain;
+  const isCardActive =
+    activeDomains.includes(primaryId) ||
+    (secondaryId ? activeDomains.includes(secondaryId) : false);
+  const currentDomain =
+    currentId === primaryId || !secondaryDomain ? primaryDomain : secondaryDomain;
 
   // 1-click immediate switch to bottom card (direction: down)
   const handleSwitchToBottom = useCallback(() => {
+    if (!secondaryId) return;
     setCurrentId(secondaryId);
     onSwitchDomain(secondaryId);
   }, [secondaryId, onSwitchDomain]);
@@ -80,7 +91,7 @@ export const SettingsSideCarouselCard = memo(({
     <div className="relative flex items-center justify-center w-full max-w-full">
       {/* ── Absolute top affordance: only visible when on bottom card ─────────── */}
       {/* Chevron ABOVE label so reading order is: ^ then INTERACTION              */}
-      {!isTopActive && (
+      {!isTopActive && secondaryDomain && (
         <button
           type="button"
           onClick={handleSwitchToTop}
@@ -117,7 +128,7 @@ export const SettingsSideCarouselCard = memo(({
 
       {/* ── Absolute bottom affordance: only visible when on top card ─────────── */}
       {/* Label ABOVE chevron so reading order is: WORKING then v                  */}
-      {isTopActive && (
+      {isTopActive && secondaryDomain && (
         <button
           type="button"
           onClick={handleSwitchToBottom}

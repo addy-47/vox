@@ -200,6 +200,7 @@ export interface RealtimeSettings {
 export interface InteractionSettings {
   mode: "passive" | "ptt" | "Passive" | "PTT";
   pipeline_mode: PipelineMode;
+  web_search_enabled: boolean;
 }
 
 export interface DictationSettings {
@@ -210,26 +211,22 @@ export interface DictationSettings {
   silence_auto_stop_ms?: number;
 }
 
-export interface WorkingMemorySettings {
+export interface MemorySettings {
+  context_retrieval_enabled: boolean;
+  pipeline_processing_enabled: boolean;
   private_mode: boolean;
+  consolidation_cadence: string;
+  consolidation_time: string;
+  suggestion_policy?: "manual_review" | "auto_apply" | string;
   auto_compaction: boolean;
   max_context_share: number;
-  web_search_enabled: boolean;
+  top_k_facts: number;
+  semantic_similarity_cutoff: number;
 }
 
 export interface AppearanceSettings {
   theme: string;
   accent_seed: string;
-}
-
-export interface PersonalMemorySettings {
-  context_retrieval_enabled: boolean;
-  pipeline_processing_enabled: boolean;
-  top_k_facts: number;
-  semantic_similarity_cutoff: number;
-  consolidation_cadence: string;
-  consolidation_time: string;
-  suggestion_policy?: "manual_review" | "auto_apply" | string;
 }
 
 export interface PersonaSettings {
@@ -279,9 +276,8 @@ export interface VoxSettings {
   realtime: RealtimeSettings;
   interaction: InteractionSettings;
   dictation: DictationSettings;
-  working_memory: WorkingMemorySettings;
+  memory: MemorySettings;
   appearance: AppearanceSettings;
-  personal_memory: PersonalMemorySettings;
   persona: PersonaSettings;
   system: SystemSettings;
   providers?: ProvidersConfigFile;
@@ -307,10 +303,19 @@ export interface DraftKeyMap {
   llm: "active" | "last_selected" | "servers" | "cloud_keys";
   tts: "active" | "last_selected" | "active_voice_id" | "voice" | "voice_id" | "servers";
   realtime: "active" | "active_voice_id" | "api_keys";
-  interaction: "mode" | "pipeline_mode";
+  interaction: "mode" | "pipeline_mode" | "web_search_enabled";
   dictation: "enabled" | "interaction_mode" | "hotkey" | "output_mode" | "silence_auto_stop_ms";
-  working_memory: "private_mode" | "auto_compaction" | "max_context_share" | "web_search_enabled";
-  personal_memory: "context_retrieval_enabled" | "pipeline_processing_enabled" | "top_k_facts" | "semantic_similarity_cutoff" | "consolidation_cadence" | "consolidation_time" | "suggestion_policy";
+  memory:
+    | "context_retrieval_enabled"
+    | "pipeline_processing_enabled"
+    | "private_mode"
+    | "consolidation_cadence"
+    | "consolidation_time"
+    | "suggestion_policy"
+    | "auto_compaction"
+    | "max_context_share"
+    | "top_k_facts"
+    | "semantic_similarity_cutoff";
   persona: "modular_prompt" | "realtime_prompt";
   system: "setup_completed";
   providers: never;

@@ -1,5 +1,7 @@
 import {
   Archive,
+  AudioLines,
+  AudioWaveform,
   Bot,
   Brain,
   Calendar,
@@ -12,9 +14,10 @@ import {
   Filter,
   Globe,
   History,
+  Hourglass,
   Keyboard,
-  Key,
   List,
+  Metronome,
   Mic,
   MicOff,
   Moon,
@@ -35,6 +38,7 @@ import {
   VolumeX,
   X,
   XCircle,
+  Zap,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { HelpControlItem } from "@/shared/components/help/HelpControlCard";
@@ -365,11 +369,11 @@ export const MEMORY_PAGE_HELP: PageHelpGuide = {
 // 4. SETTINGS PAGE GUIDE (DIVIDED PER DOMAIN CARD)
 // ─────────────────────────────────────────────────────────────────────────────
 export type SettingsCardId =
-  | "models"
+  | "speech"
   | "interaction"
   | "persona"
-  | "working_memory"
-  | "personal_memory"
+  | "memory"
+  | "language"
   | "appearance";
 
 export interface SettingsCardHelp {
@@ -393,50 +397,72 @@ export const SETTINGS_PAGE_HELP: {
   subtitle: "Decide how Vox thinks, listens, speaks, remembers, and looks. Changes save on their own.",
   cards: [
     {
-      id: "models",
-      label: "Models",
-      badge: "Thinking & voice",
+      id: "speech",
+      label: "Speech",
+      badge: "Ears & voice",
       icon: Cpu,
-      overview: "Pick the brains and voices Vox uses — running on this machine, or in the cloud.",
+      overview: "Pick what hears you and what speaks for Vox — on this machine or in the cloud.",
       controls: [
         {
-          icon: Brain,
-          name: "Reasoning model",
-          badge: "The brain",
-          action: "Choose which AI answers you.",
-          outcome: "Choose which AI answers you. Local models run fully offline and private; cloud providers answer faster and smarter but need an API key.",
+          icon: AudioWaveform,
+          name: "Voice detection",
+          badge: "Detection",
+          action: "Choose the detector that finds your speech.",
+          outcome: "The detector marks where speech starts and ends. Pick a different one if yours struggles in your room.",
         },
         {
-          icon: Key,
-          name: "Cloud API keys",
-          badge: "Credentials",
-          action: "Paste your provider key once.",
-          outcome: "Paste your provider key once. It is stored only on this device and unlocks the cloud models you pay for.",
+          icon: SlidersHorizontal,
+          name: "Detection settings",
+          badge: "Tuning",
+          action: "Open the gear on the detection tab.",
+          outcome: "Three dials sit behind the gear: sensitivity, silence cutoff and speech onset.",
         },
         {
           icon: Mic,
-          name: "Listening model",
+          name: "Speech transcription",
           badge: "Hearing",
           action: "Choose the speech recognition.",
           outcome: "Choose how Vox turns your speech into text. Local recognition keeps your audio on this machine from start to finish.",
         },
         {
           icon: Volume2,
-          name: "Speaking voice",
+          name: "Text to speech",
           badge: "Voice",
-          action: "Pick a voice and its speed.",
-          outcome: "Pick the voice Vox speaks with and adjust its speed, or clone a voice from a short recording of your own.",
+          action: "Pick one of seven engines.",
+          outcome: "Four engines run on this machine and three answer from the cloud. Every engine keeps its own speed.",
         },
         {
-          icon: Cpu,
-          name: "Modular or Realtime",
-          badge: "Pipeline",
-          action: "Pick how voice flows.",
-          outcome: "Modular chains separate models for hearing, thinking and speaking. Realtime opens one direct voice connection with sub-second replies.",
+          icon: AudioLines,
+          name: "Select voice",
+          badge: "Voice catalogue",
+          action: "Press Select voice in the card header.",
+          outcome: "Browse the voices of the active engine, preview one, favourite it, or clone your own from a short recording.",
+        },
+        {
+          icon: Metronome,
+          name: "Speech rate",
+          badge: "Tempo",
+          action: "Open the gauge in the voice header.",
+          outcome: "Speed the playback up or slow it down without changing the pitch.",
+        },
+        {
+          icon: Hourglass,
+          name: "Silence",
+          badge: "Pause",
+          action: "Set how long a pause ends your turn.",
+          outcome: "Vox waits for this silence before it starts answering.",
+        },
+        {
+          icon: Zap,
+          name: "Onset",
+          badge: "Start",
+          action: "Set how long a voice must last.",
+          outcome: "A turn starts after this much continuous speech, so short noises never trigger a reply.",
         },
       ],
       tips: [
-        "Switching the active model rebuilds the voice engine once — Vox tells you while it restarts.",
+        "Every speech engine can run on this machine or in the cloud — pick per stage, not globally.",
+        "The voice catalogue follows the engine: change the engine and you see its voices.",
       ],
     },
     {
@@ -474,6 +500,13 @@ export const SETTINGS_PAGE_HELP: {
           action: "Set how dictation ends.",
           outcome: "Vox finishes your dictation automatically after a short silence, or waits until you release the hotkey when auto-stop is off.",
         },
+        {
+          icon: Globe,
+          name: "Web search",
+          badge: "Live facts",
+          action: "Allow live lookups.",
+          outcome: "Let Vox look up live facts mid-conversation when its own knowledge is out of date.",
+        },
       ],
       tips: [
         "On some Linux desktops synthetic typing is blocked — Clipboard mode always works as a fallback.",
@@ -510,11 +543,11 @@ export const SETTINGS_PAGE_HELP: {
       ],
     },
     {
-      id: "working_memory",
-      label: "Working memory",
-      badge: "Sessions & context",
-      icon: History,
-      overview: "What Vox keeps from the current conversation, and whether it may search the web.",
+      id: "memory",
+      label: "Memory",
+      badge: "Recall & storage",
+      icon: Brain,
+      overview: "What Vox keeps from your chats, what it learns about you, and how much of it joins each answer.",
       controls: [
         {
           icon: ShieldOff,
@@ -531,28 +564,12 @@ export const SETTINGS_PAGE_HELP: {
           outcome: "Long conversations are folded into short summaries so Vox keeps up without slowing down. Turn this off to be asked before each summary.",
         },
         {
-          icon: Globe,
-          name: "Web search",
-          badge: "Live facts",
-          action: "Allow live lookups.",
-          outcome: "Let Vox look up live facts mid-conversation when its own knowledge is out of date.",
-        },
-        {
           icon: Database,
           name: "Context share",
           badge: "Attention split",
           action: "Balance profile versus present.",
           outcome: "Decide how much of the AI's attention goes to your profile and past dialogue versus the question in front of it.",
         },
-      ],
-    },
-    {
-      id: "personal_memory",
-      label: "Personal memory",
-      badge: "Learning & recall",
-      icon: Brain,
-      overview: "What Vox learns about you over time, and how much of it joins each answer.",
-      controls: [
         {
           icon: Brain,
           name: "Memory recall",
@@ -597,7 +614,49 @@ export const SETTINGS_PAGE_HELP: {
         },
       ],
       tips: [
+        "Basic holds the everyday switches. Advanced holds the dials — most people never need them.",
         "The defaults suit almost everyone — change these only when recall feels too thin or too noisy.",
+      ],
+    },
+    {
+      id: "language",
+      label: "Language",
+      badge: "Reasoning engine",
+      icon: Brain,
+      overview: "Choose which model does the thinking — on this machine, on a hosted provider, or on your own server.",
+      controls: [
+        {
+          icon: Cpu,
+          name: "Provider",
+          badge: "Where it runs",
+          action: "Pick a provider card.",
+          outcome: "On-device runs a local model with no network. A cloud provider uses its hosted endpoint. A custom server points Vox at your own machine.",
+        },
+        {
+          icon: Globe,
+          name: "Select model",
+          badge: "Which model",
+          action: "Open Select model in the header.",
+          outcome: "Lists the models the chosen provider offers. Search, sort, and filter the list there, then pick one.",
+        },
+        {
+          icon: Sparkles,
+          name: "Add provider",
+          badge: "New endpoint",
+          action: "Pick the dashed add card.",
+          outcome: "Opens the provider catalog. Connect a hosted key or register a self-hosted Ollama, vLLM, or LM Studio endpoint.",
+        },
+        {
+          icon: Search,
+          name: "Expand the list",
+          badge: "Full catalog",
+          action: "Use the expand button.",
+          outcome: "Shows the whole provider catalog with filters, so you can connect or switch providers without leaving the card.",
+        },
+      ],
+      tips: [
+        "Local models keep every prompt on this machine. Cloud models answer faster but send text to the provider.",
+        "A provider needs a saved key before its models appear. Add the key in the expanded catalog.",
       ],
     },
     {

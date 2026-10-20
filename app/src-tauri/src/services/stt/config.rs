@@ -2,7 +2,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     config::{ActiveSelection, LastSelectedModels},
-    core::defaults::{DEFAULT_ASR_MODEL, DEFAULT_ASR_TRANSLITERATE_ENABLED, DEFAULT_STT_THREADS},
+    core::{
+        compute::{self, Execution, Workload},
+        defaults::{DEFAULT_ASR_MODEL, DEFAULT_ASR_TRANSLITERATE_ENABLED},
+    },
     services::audio::SAMPLE_RATE,
 };
 
@@ -80,8 +83,19 @@ impl SttSettings {
     }
 
     /// Resolves the effective worker thread count.
+    ///
+    /// The budget comes from the backend compute policy. Only a provider that
+    /// runs on this machine owns local inference threads, so a cloud provider
+    /// resolves to zero threads.
     pub fn effective_threads(&self) -> u32 {
-        DEFAULT_STT_THREADS
+        // The execution site follows the resolved provider config. The STT
+        // backend builds an embedded engine for every category except
+        // "cloud", so only a cloud provider runs off this machine.
+        let execution = match self.to_provider_config() {
+            SttProviderConfig::Embedded { .. } => Execution::Embedded,
+            SttProviderConfig::Cloud { .. } => Execution::Remote,
+        };
+        compute::resolve_threads(Workload::Stt, execution)
     }
 
     /// Converts active settings into a concrete provider configuration variant.

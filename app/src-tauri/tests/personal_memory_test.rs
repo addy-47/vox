@@ -14,7 +14,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use common::{harness::get_test_app_and_state, paths::TempPathsGuard};
 use vox_lib::{
-    config::PersonalMemorySettings,
+    config::MemorySettings,
     persistence::{
         compactions::{commit_compaction_output, record_compaction_start},
         facts::{
@@ -180,7 +180,7 @@ async fn test_consolidation_confirmation_gating() {
             llm_provider: &provider,
             comments: None,
             project_id: None,
-            memory_settings: &PersonalMemorySettings::default(),
+            memory_settings: &MemorySettings::default(),
             llm_settings: None,
             forced: true,
         })
@@ -227,7 +227,7 @@ async fn test_consolidation_confirmation_gating() {
             llm_provider: &provider,
             comments: None,
             project_id: None,
-            memory_settings: &PersonalMemorySettings::default(),
+            memory_settings: &MemorySettings::default(),
             llm_settings: None,
             forced: false,
         })
@@ -262,7 +262,7 @@ async fn test_consolidation_confirmation_gating() {
             llm_provider: &provider,
             comments: None,
             project_id: None,
-            memory_settings: &PersonalMemorySettings::default(),
+            memory_settings: &MemorySettings::default(),
             llm_settings: None,
             forced: true,
         }).await;

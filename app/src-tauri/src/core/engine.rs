@@ -13,7 +13,7 @@ use tauri::{AppHandle, Manager};
 use crate::{
     config::VoxSettings,
     core::{
-        defaults::{DEFAULT_TTS_SPEED, DEFAULT_TTS_THREADS},
+        defaults::DEFAULT_TTS_SPEED,
         events::{emit_ipc_to, InteractionMode, IpcEvent, TranscriptPayload, VoxEvent},
         state::{AppState, InteractionOwner, InteractionState},
     },
@@ -272,7 +272,8 @@ pub async fn start_audio_engine<R: tauri::Runtime + 'static>(
     let vad_handle = Builder::new()
         .name("vox-vad-actor".to_string())
         .spawn(move || {
-            if let Err(e) = spawn_vad_actor(vad, clean_cons, vad_channels, vad_handles, vad_config) {
+            if let Err(e) = spawn_vad_actor(vad, clean_cons, vad_channels, vad_handles, vad_config)
+            {
                 log::error!(
                     "[Core::Engine] VAD actor thread terminated with error: {:?}",
                     e
@@ -285,10 +286,7 @@ pub async fn start_audio_engine<R: tauri::Runtime + 'static>(
     let hint_emitter = Arc::clone(&incomplete_clause_hint);
     let partial_emitter = Some(Arc::new(move |turn_id: u32, text: String| {
         let app_state_ref = app_handle.state::<Arc<AppState>>();
-        let owner: InteractionOwner = app_state_ref
-            .owner
-            .load(Ordering::Relaxed)
-            .into();
+        let owner: InteractionOwner = app_state_ref.owner.load(Ordering::Relaxed).into();
 
         // Heuristic: inspect partial text for trailing incomplete syntax (conjunctions, prepositions, or <=3 words)
         // and update the VAD actor's incomplete_clause_hint lock-free atomic flag.
@@ -356,8 +354,7 @@ pub async fn start_audio_engine<R: tauri::Runtime + 'static>(
         .map_err(|e| e.to_string())?;
     audio_stream.start().map_err(|e| e.to_string())?;
 
-    let playback_engine =
-        create_playback_engine(state, vox_event_tx.clone(), Some(reference_tap))?;
+    let playback_engine = create_playback_engine(state, vox_event_tx.clone(), Some(reference_tap))?;
     let orchestrator_handle = spawn_router(app.clone(), vox_event_rx)?;
     let route_watcher_handle =
         spawn_audio_route_watcher(vad_tx.clone(), Arc::clone(&state.pipeline.engine_shutdown));
@@ -529,7 +526,6 @@ pub async fn ensure_modular_workers(state: &AppState) -> Result<(), String> {
                 super_tts_path: &tts_path,
                 reference_audio: reference_audio.as_deref(),
                 speed: DEFAULT_TTS_SPEED,
-                num_threads: DEFAULT_TTS_THREADS,
             },
             pipeline_tx,
         )?;
@@ -578,7 +574,7 @@ impl Drop for WarmUpClaim<'_> {
 }
 
 pub fn ensure_memory_embedder(settings: &VoxSettings) {
-    if settings.personal_memory.context_retrieval_enabled && !is_embedder_loaded() {
+    if settings.memory.context_retrieval_enabled && !is_embedder_loaded() {
         tauri::async_runtime::spawn_blocking(|| {
             if let Err(e) = ensure_embedder_loaded(true) {
                 log::warn!("[Core::Engine] Failed to pre-warm memory embedder: {}", e);

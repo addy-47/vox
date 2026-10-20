@@ -7,7 +7,7 @@ interface SettingsHelpContentProps {
   initialCardId?: SettingsCardId;
 }
 
-export const SettingsHelpContent = memo(({ initialCardId = "models" }: SettingsHelpContentProps) => {
+export const SettingsHelpContent = memo(({ initialCardId = "speech" }: SettingsHelpContentProps) => {
   const [selectedCardId, setSelectedCardId] = useState<SettingsCardId>(initialCardId);
 
   const activeCard = useMemo(() => {

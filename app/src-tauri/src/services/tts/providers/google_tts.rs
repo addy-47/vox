@@ -182,7 +182,12 @@ pub struct GoogleTtsMonthlyUsage {
 static USAGE_LOCK: parking_lot::Mutex<()> = parking_lot::Mutex::new(());
 
 fn usage_file_path() -> Option<std::path::PathBuf> {
-    std::panic::catch_unwind(|| crate::utils::paths::get().data.join("google_tts_usage.json")).ok()
+    std::panic::catch_unwind(|| {
+        crate::utils::paths::get()
+            .data
+            .join("google_tts_usage.json")
+    })
+    .ok()
 }
 
 pub fn check_and_increment_usage(char_count: usize) -> Result<()> {

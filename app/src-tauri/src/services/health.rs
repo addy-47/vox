@@ -2,7 +2,8 @@ use std::{path::PathBuf, sync::Arc, time::Duration};
 
 use crate::{
     core::{
-        defaults::{DEFAULT_STT_THREADS, DEFAULT_TTS_SPEED},
+        compute::{self, Execution, Workload},
+        defaults::DEFAULT_TTS_SPEED,
         state::AppState,
     },
     services::{
@@ -201,17 +202,22 @@ pub async fn check_stt_health(
             };
             Ok(model_path.exists())
         }
-        SttProviderConfig::Cloud { .. } => tokio::task::spawn_blocking(move || {
-            match create_stt_provider(&config, &PathBuf::new(), DEFAULT_STT_THREADS) {
-                Ok(provider) => provider.health_check(),
-                Err(e) => {
-                    log::warn!("[Settings] Cloud STT provider health check failed: {}", e);
-                    false
+        SttProviderConfig::Cloud { .. } => {
+            // A cloud provider runs off this machine, so it owns no local
+            // inference threads.
+            let num_threads = compute::resolve_threads(Workload::Stt, Execution::Remote);
+            tokio::task::spawn_blocking(move || {
+                match create_stt_provider(&config, &PathBuf::new(), num_threads) {
+                    Ok(provider) => provider.health_check(),
+                    Err(e) => {
+                        log::warn!("[Settings] Cloud STT provider health check failed: {}", e);
+                        false
+                    }
                 }
-            }
-        })
-        .await
-        .map_err(|e| e.to_string()),
+            })
+            .await
+            .map_err(|e| e.to_string())
+        }
     }
 }
 
@@ -223,12 +229,18 @@ pub fn has_google_adc() -> bool {
         }
     }
     if let Some(config_dir) = dirs::config_dir() {
-        if config_dir.join("gcloud/application_default_credentials.json").exists() {
+        if config_dir
+            .join("gcloud/application_default_credentials.json")
+            .exists()
+        {
             return true;
         }
     }
     if let Some(home) = dirs::home_dir() {
-        if home.join(".config/gcloud/application_default_credentials.json").exists() {
+        if home
+            .join(".config/gcloud/application_default_credentials.json")
+            .exists()
+        {
             return true;
         }
     }
@@ -297,11 +309,22 @@ pub async fn check_tts_health_with_reason(
                         };
                         Ok((ok, reason))
                     } else {
-                        Ok((false, Some("Remote server returned invalid JSON health response.".to_string())))
+                        Ok((
+                            false,
+                            Some(
+                                "Remote server returned invalid JSON health response.".to_string(),
+                            ),
+                        ))
                     }
                 }
-                Ok(resp) => Ok((false, Some(format!("Remote server returned HTTP {}.", resp.status())))),
-                Err(e) => Ok((false, Some(format!("Cannot reach remote server at {}: {}", endpoint, e)))),
+                Ok(resp) => Ok((
+                    false,
+                    Some(format!("Remote server returned HTTP {}.", resp.status())),
+                )),
+                Err(e) => Ok((
+                    false,
+                    Some(format!("Cannot reach remote server at {}: {}", endpoint, e)),
+                )),
             }
         }
         TtsProviderConfig::EdgeTts { .. } => {
@@ -310,8 +333,13 @@ pub async fn check_tts_health_with_reason(
                 .build()
                 .map_err(|e| e.to_string())?;
             match client.head("https://speech.platform.bing.com").send().await {
-                Ok(resp) if resp.status().is_success() || resp.status().as_u16() < 500 => Ok((true, None)),
-                Ok(resp) => Ok((false, Some(format!("Edge TTS service returned HTTP {}.", resp.status())))),
+                Ok(resp) if resp.status().is_success() || resp.status().as_u16() < 500 => {
+                    Ok((true, None))
+                }
+                Ok(resp) => Ok((
+                    false,
+                    Some(format!("Edge TTS service returned HTTP {}.", resp.status())),
+                )),
                 Err(e) => Ok((false, Some(format!("Edge TTS service unreachable: {}", e)))),
             }
         }
@@ -346,8 +374,17 @@ pub async fn check_tts_health_with_reason(
                 .await
             {
                 Ok(resp) if resp.status().is_success() => Ok((true, None)),
-                Ok(resp) => Ok((false, Some(format!("Azure AI Speech auth failed: HTTP {}.", resp.status())))),
-                Err(e) => Ok((false, Some(format!("Azure AI Speech service unreachable: {}", e)))),
+                Ok(resp) => Ok((
+                    false,
+                    Some(format!(
+                        "Azure AI Speech auth failed: HTTP {}.",
+                        resp.status()
+                    )),
+                )),
+                Err(e) => Ok((
+                    false,
+                    Some(format!("Azure AI Speech service unreachable: {}", e)),
+                )),
             }
         }
         TtsProviderConfig::GoogleTts { .. } => {
@@ -394,7 +431,9 @@ pub async fn check_tts_health(
     state: &Arc<AppState>,
     provider: Option<ProviderConfigPayload>,
 ) -> Result<bool, String> {
-    check_tts_health_with_reason(state, provider).await.map(|(healthy, _)| healthy)
+    check_tts_health_with_reason(state, provider)
+        .await
+        .map(|(healthy, _)| healthy)
 }
 
 /// Structured outcome of probing an arbitrary provider target.

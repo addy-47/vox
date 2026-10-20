@@ -9,7 +9,6 @@ use crate::{
     core::{
         defaults::{
             DEFAULT_LLM_CONTEXT_WINDOW, DEFAULT_LLM_MAX_OUTPUT_TOKENS, DEFAULT_LLM_TEMPERATURE,
-            DEFAULT_LLM_THREADS,
         },
         events::PipelineMode,
         state::AppState,
@@ -60,7 +59,6 @@ pub struct LlmExecutionParams {
     pub max_output_tokens: usize,
     pub temperature: f32,
     pub reasoning_enabled: bool,
-    pub n_threads: u32,
 }
 
 impl Default for LlmExecutionParams {
@@ -70,7 +68,6 @@ impl Default for LlmExecutionParams {
             max_output_tokens: DEFAULT_LLM_MAX_OUTPUT_TOKENS as usize,
             temperature: DEFAULT_LLM_TEMPERATURE,
             reasoning_enabled: false,
-            n_threads: DEFAULT_LLM_THREADS,
         }
     }
 }
@@ -87,7 +84,7 @@ impl Harness {
         supports_tools: bool,
     ) -> Self {
         let ctx_window = params.context_window;
-        let max_share = settings.working_memory.max_context_share;
+        let max_share = settings.memory.max_context_share;
 
         let mut prompt_stage = PromptBuilderStage::new(base_prompt, ctx_window, max_share);
         prompt_stage.set_personal_memory(personal_memory);
@@ -95,7 +92,7 @@ impl Harness {
 
         let history_stage = ConversationHistoryStage::with_system_prompt(assembled_prompt);
         let budget_stage = ContextBudgetStage::new(ctx_window, params.max_output_tokens);
-        let compaction_stage = CompactionStage::new(settings.working_memory.auto_compaction);
+        let compaction_stage = CompactionStage::new(settings.memory.auto_compaction);
         let generation_options = GenerationOptions {
             temperature: Some(params.temperature),
             max_output_tokens: Some(params.max_output_tokens as u32),
@@ -118,8 +115,8 @@ impl Harness {
             tool_registry: ToolRegistry::with_default_tools(),
             supports_tools,
             title_set: false,
-            memory_retrieval_enabled: settings.personal_memory.context_retrieval_enabled,
-            web_search_enabled: settings.working_memory.web_search_enabled,
+            memory_retrieval_enabled: settings.memory.context_retrieval_enabled,
+            web_search_enabled: settings.interaction.web_search_enabled,
             has_played_filler: false,
         }
     }
@@ -132,7 +129,7 @@ impl Harness {
         settings: &VoxSettings,
     ) -> Self {
         let ctx_window = DEFAULT_LLM_CONTEXT_WINDOW as usize;
-        let max_share = settings.working_memory.max_context_share;
+        let max_share = settings.memory.max_context_share;
 
         let mut prompt_stage = PromptBuilderStage::new(base_prompt, ctx_window, max_share);
         prompt_stage.set_personal_memory(personal_memory);
@@ -155,8 +152,8 @@ impl Harness {
             tool_registry: ToolRegistry::with_default_tools(),
             supports_tools: true,
             title_set: false,
-            memory_retrieval_enabled: settings.personal_memory.context_retrieval_enabled,
-            web_search_enabled: settings.working_memory.web_search_enabled,
+            memory_retrieval_enabled: settings.memory.context_retrieval_enabled,
+            web_search_enabled: settings.interaction.web_search_enabled,
             has_played_filler: false,
         }
     }

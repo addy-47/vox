@@ -48,10 +48,9 @@ pub fn provider_catalog() -> Vec<ProviderPresetMeta> {
 pub fn lookup_preset(id: &str) -> Option<ProviderPresetMeta> {
     let lower = id.trim().to_lowercase();
     let presets = list_presets();
-    presets.into_iter().find(|p| {
-        p.id == lower
-            || p.name.to_lowercase() == lower
-    })
+    presets
+        .into_iter()
+        .find(|p| p.id == lower || p.name.to_lowercase() == lower)
 }
 
 #[cfg(test)]

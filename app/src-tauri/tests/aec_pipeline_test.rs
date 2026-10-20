@@ -71,8 +71,7 @@ async fn test_aec_suppresses_synthetic_tts_echo_alone() {
         let rb = HeapRb::<f32>::new(65536);
         let (mut render_prod, render_cons) = rb.split();
 
-        let mut aec = AecProcessor::new(Some(render_cons))
-            .expect("Failed to create AecProcessor");
+        let mut aec = AecProcessor::new(Some(render_cons)).expect("Failed to create AecProcessor");
         aec.set_stream_delay_ms(40)
             .expect("Failed to set stream delay");
 
@@ -224,8 +223,7 @@ async fn test_aec_bypass_leaves_echo_unattenuated() {
         let rb = HeapRb::<f32>::new(16384);
         let (_, render_cons) = rb.split();
 
-        let mut aec = AecProcessor::new(Some(render_cons))
-            .expect("Failed to create AecProcessor");
+        let mut aec = AecProcessor::new(Some(render_cons)).expect("Failed to create AecProcessor");
         aec.set_enabled(false);
         assert!(!aec.is_enabled());
 

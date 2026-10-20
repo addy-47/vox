@@ -32,7 +32,7 @@ export const AppHeader: React.FC = memo(() => {
   const { togglePanel, isPanelOpen, closePanel, openPanel, rightPanel } = usePanelStateContext();
   const unreadCount = useNotificationStore(selectBadgeCount);
 
-  const isPrivateModeSetting = useSettingsStore((s) => s.settings?.working_memory?.private_mode ?? false);
+  const isPrivateModeSetting = useSettingsStore((s) => s.settings?.memory?.private_mode ?? false);
   const sessionIsTemporary = useSessionStore((s) => s.isTemporarySession);
   const isTemporarySession = isPrivateModeSetting || sessionIsTemporary;
   const interactionState = useSessionStore((s) => s.interactionState);
@@ -48,11 +48,11 @@ export const AppHeader: React.FC = memo(() => {
 
   const toggleTemporarySession = useCallback(async () => {
     if (!isIdle) return;
-    const current = useSettingsStore.getState().settings?.working_memory?.private_mode ?? useSessionStore.getState().isTemporarySession;
+    const current = useSettingsStore.getState().settings?.memory?.private_mode ?? useSessionStore.getState().isTemporarySession;
     const next = !current;
     useSessionStore.getState().setIsTemporarySession(next);
     try {
-      await updateSetting("working_memory", "private_mode", next);
+      await updateSetting("memory", "private_mode", next);
       await useSettingsStore.getState().loadSettings();
       await setSessionPrivateMode(next);
     } catch {

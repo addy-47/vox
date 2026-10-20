@@ -120,16 +120,10 @@ impl VoxSettings {
                 self.system = v;
             }
             if let Some(v) = obj
-                .get("working_memory")
+                .get("memory")
                 .and_then(|v| serde_json::from_value(v.clone()).ok())
             {
-                self.working_memory = v;
-            }
-            if let Some(v) = obj
-                .get("personal_memory")
-                .and_then(|v| serde_json::from_value(v.clone()).ok())
-            {
-                self.personal_memory = v;
+                self.memory = v;
             }
             if let Some(v) = obj
                 .get("stt")

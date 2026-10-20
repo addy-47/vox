@@ -400,7 +400,10 @@ pub async fn synthesize_to_wav(
     }
 
     let ssml = build_ssml(&provider.voice, text_clean, speed);
-    let url = format!("{}{AZURE_TTS_API_PATH}", provider.base_url.trim_end_matches('/'));
+    let url = format!(
+        "{}{AZURE_TTS_API_PATH}",
+        provider.base_url.trim_end_matches('/')
+    );
 
     let (name, value) = auth_header(&provider)?;
     let client = reqwest::Client::builder()
@@ -424,7 +427,10 @@ pub async fn synthesize_to_wav(
         return Err(anyhow!("Azure preview rejected with HTTP {}", status));
     }
 
-    let pcm_bytes = resp.bytes().await.map_err(|e| anyhow!("Failed to read Azure preview audio: {}", e))?;
+    let pcm_bytes = resp
+        .bytes()
+        .await
+        .map_err(|e| anyhow!("Failed to read Azure preview audio: {}", e))?;
     let mut samples: Vec<f32> = Vec::with_capacity(pcm_bytes.len() / 2);
     for chunk in pcm_bytes.chunks_exact(2) {
         let v = i16::from_le_bytes([chunk[0], chunk[1]]) as f32 / 32768.0;

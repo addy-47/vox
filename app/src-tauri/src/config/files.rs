@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
 
 use super::settings::{
-    AppearanceSettings, InteractionSettings, PersonaSettings, PersonalMemorySettings,
-    SystemSettings, VoxSettings, WorkingMemorySettings,
+    AppearanceSettings, InteractionSettings, MemorySettings, PersonaSettings, SystemSettings,
+    VoxSettings,
 };
 use crate::{
     pipeline::dictation::DictationSettings,
@@ -24,8 +24,7 @@ pub struct SettingsConfigFile {
     pub interaction: InteractionSettings,
     pub dictation: DictationSettings,
     pub system: SystemSettings,
-    pub working_memory: WorkingMemorySettings,
-    pub personal_memory: PersonalMemorySettings,
+    pub memory: MemorySettings,
     pub stt: SttSettings,
     pub llm: LlmSettings,
     pub tts: TtsSettings,
@@ -57,8 +56,7 @@ impl VoxSettings {
             interaction: self.interaction.clone(),
             dictation: self.dictation.clone(),
             system: self.system.clone(),
-            working_memory: self.working_memory.clone(),
-            personal_memory: self.personal_memory.clone(),
+            memory: self.memory.clone(),
             stt: self.stt.clone(),
             llm: self.llm.clone(),
             tts: self.tts.clone(),
@@ -82,8 +80,7 @@ impl VoxSettings {
         self.interaction = cfg.interaction;
         self.dictation = cfg.dictation;
         self.system = cfg.system;
-        self.working_memory = cfg.working_memory;
-        self.personal_memory = cfg.personal_memory;
+        self.memory = cfg.memory;
         self.stt = cfg.stt;
         self.llm = cfg.llm;
         self.tts = cfg.tts;

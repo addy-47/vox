@@ -65,8 +65,13 @@ export const SettingsCardWrapper = memo(({ domain, isActive, layoutMode, childre
           <div
             id={`card-${domain.id}`}
             className={cn(
-              "flex flex-col gap-0 max-w-full",
-              layoutMode === "small" ? "w-full" : cn("shrink-0", getDomainCardWidth(domain.id, layoutMode)),
+              // The footer must share the card's width exactly. Do not cap this
+              // container (`max-w-full`) while the card keeps its own fixed
+              // width: at carousel widths the cap would shrink the footer while
+              // the card still overflows, producing a narrow strip under a wide
+              // card. Small mode is fluid, so it caps both together.
+              "flex flex-col gap-0",
+              layoutMode === "small" ? "w-full max-w-full" : cn("shrink-0", getDomainCardWidth(domain.id, layoutMode)),
               layoutMode !== "small" && (hasChanges || isAutoSavedHere || isRestartHere || saveFailure) && "has-unsaved-changes"
             )}
           >

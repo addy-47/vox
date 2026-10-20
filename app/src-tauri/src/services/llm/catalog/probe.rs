@@ -1386,16 +1386,18 @@ impl CapabilityProbeEngine {
                     ),
                 )
             }
-            LlmRuntimeTarget::Unresolved { provider_id } => return (
-                None,
-                done(
-                    ProbeOutcome::Failed,
-                    Some(format!(
+            LlmRuntimeTarget::Unresolved { provider_id } => {
+                return (
+                    None,
+                    done(
+                        ProbeOutcome::Failed,
+                        Some(format!(
                         "catalog provider '{}' is not in the declarative manifest (RULE-PROV-01)",
                         provider_id
                     )),
-                ),
-            ),
+                    ),
+                )
+            }
         };
 
         let conn_cfg = ConnectionConfig::new(

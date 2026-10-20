@@ -157,7 +157,6 @@ async fn test_tts_worker_cool_down_clears_handles_and_joins() {
                 super_tts_path: &supertonic_model_dir,
                 reference_audio: None,
                 speed: 1.0,
-                num_threads: 2,
             },
             event_tx,
         );

@@ -7,7 +7,7 @@ use turso::Connection;
 
 use crate::{
     core::{
-        defaults::{DEFAULT_LLM_CONTEXT_WINDOW, DEFAULT_LLM_THREADS},
+        defaults::DEFAULT_LLM_CONTEXT_WINDOW,
         events::{emit_ipc, IpcEvent, Severity},
         state::{AppState, InteractionState},
     },
@@ -359,7 +359,6 @@ fn resolve_llm_provider(
         providers,
         &llm_path,
         DEFAULT_LLM_CONTEXT_WINDOW,
-        DEFAULT_LLM_THREADS,
     )
     .ok()
 }

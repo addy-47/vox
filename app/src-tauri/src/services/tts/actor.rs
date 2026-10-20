@@ -229,7 +229,6 @@ pub struct TtsWarmUpConfig<'a> {
     pub super_tts_path: &'a Path,
     pub reference_audio: Option<&'a str>,
     pub speed: f32,
-    pub num_threads: u32,
 }
 
 /// Spawns and initializes a persistent TTS worker actor thread.
@@ -249,7 +248,6 @@ pub fn warm_up_tts(
         cfg.super_tts_path,
         cfg.reference_audio,
         cfg.speed,
-        cfg.num_threads,
     )?;
 
     let (tx, rx) = mpsc::channel::<TtsCommand>();

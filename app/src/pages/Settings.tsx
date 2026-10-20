@@ -6,24 +6,31 @@ import { useRegisterPageDrawer } from "@/shared/context/PageDrawerContext";
 import {
   loadAppearance,
   loadInteraction,
-  loadModels,
+  loadLanguage,
+  loadMemory,
   loadPersona,
-  loadPersonalMemory,
   loadRealtime,
-  loadWorkingMemory,
+  loadSpeech,
   preloadSettingsCardChunks,
 } from "@/shared/components/settings/settingsCardChunks";
 
 // Lazy-loaded domain card components
 const PersonaCard = lazy(loadPersona);
-const ModelsCard = lazy(loadModels);
+const SpeechCard = lazy(loadSpeech);
+const LanguageCard = lazy(loadLanguage);
 const RealtimeCard = lazy(loadRealtime);
-const WorkingMemoryCard = lazy(loadWorkingMemory);
-const PersonalMemoryCard = lazy(loadPersonalMemory);
+const MemoryCard = lazy(loadMemory);
 const AppearanceCard = lazy(loadAppearance);
 const InteractionCard = lazy(loadInteraction);
 
 import { SettingsCardSkeleton } from "@/shared/components/settings/SettingsCardSkeleton";
+
+/** Slot lookups by domain id. Slots must not depend on array positions. */
+const domainById = (id: DomainId) => {
+  const match = DOMAINS.find((d) => d.id === id);
+  if (!match) throw new Error(`Unknown settings domain: ${id}`);
+  return match;
+};
 
 const DomainContent = memo(({ domain, layoutMode }: { domain: DomainId; layoutMode?: "full-max" | "full-min" | "small" }) => {
   const isRealtime = useSettingsStore((s) => s.draftSettings?.interaction?.pipeline_mode === "realtime");
@@ -33,12 +40,12 @@ const DomainContent = memo(({ domain, layoutMode }: { domain: DomainId; layoutMo
         switch (domain) {
           case "persona":
             return <PersonaCard layoutMode={layoutMode} />;
-          case "models":
-            return isRealtime ? <RealtimeCard layoutMode={layoutMode} /> : <ModelsCard layoutMode={layoutMode} />;
-          case "working_memory":
-            return <WorkingMemoryCard layoutMode={layoutMode} />;
-          case "personal_memory":
-            return <PersonalMemoryCard layoutMode={layoutMode} />;
+          case "speech":
+            return isRealtime ? <RealtimeCard layoutMode={layoutMode} /> : <SpeechCard layoutMode={layoutMode} />;
+          case "language":
+            return <LanguageCard layoutMode={layoutMode} />;
+          case "memory":
+            return <MemoryCard layoutMode={layoutMode} />;
           case "appearance":
             return <AppearanceCard layoutMode={layoutMode} />;
           case "interaction":
@@ -128,9 +135,22 @@ export const Settings: React.FC = () => {
   }, []);
 
   if (!draftSettings) {
+    // The loader stands where the hub center will be, not in the middle of
+    // the page. It reuses the hub's own slot, so nothing jumps sideways when
+    // the settings arrive.
     return (
-      <div className="flex-1 flex flex-col items-center justify-center min-w-0 z-10 h-full relative overflow-hidden bg-transparent px-6 md:px-10 py-6 md:py-10">
-        <OrbitalLoader size="md" />
+      <div className="flex-1 flex flex-col min-w-0 z-10 h-full relative overflow-hidden bg-transparent select-none p-0 lg:px-6 lg:pt-2 lg:pb-[72px]">
+        {isCompact ? (
+          <div className="flex-1 flex items-center justify-center">
+            <OrbitalLoader size="md" />
+          </div>
+        ) : (
+          <div className="flex-1 w-full grid grid-cols-12 grid-rows-6 gap-4 items-stretch relative min-h-0">
+            <div className="col-start-5 col-span-4 row-start-3 row-span-2 flex items-center justify-center p-2 z-20">
+              <OrbitalLoader size="md" />
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -157,7 +177,7 @@ export const Settings: React.FC = () => {
           {/* Side Cards: Unified Carousel in constrained viewports or independent slots in wide viewports */}
           {isSideCarousel ? (
             <>
-              {/* Left Side Carousel Card -> 10:00 (Interaction) & 8:00 (Personal Memory) */}
+              {/* Left Side Carousel Card -> 10:00 (Interaction) & 8:00 (Model Hub) */}
               <div
                 id="card-left-carousel"
                 className="col-start-1 col-span-4 row-start-1 row-span-6 flex items-center justify-end p-2 relative z-10 overflow-visible"
@@ -171,7 +191,7 @@ export const Settings: React.FC = () => {
                 />
               </div>
 
-              {/* Right Side Carousel Card -> 2:00 (Models) & 4:00 (Working Memory) */}
+              {/* Right Side Carousel Card -> 2:00 (Memory) & 4:00 (Tuning) */}
               <div
                 id="card-right-carousel"
                 className="col-start-9 col-span-4 row-start-1 row-span-6 flex items-center justify-start p-2 relative z-10 overflow-visible"
@@ -189,29 +209,29 @@ export const Settings: React.FC = () => {
             <>
               {/* Top-Left Slot (Col 1-4, Row 1-3) -> 10:00 (Interaction Card) */}
               <div className="col-start-1 col-span-4 row-start-1 row-span-3 flex items-end justify-end p-2 relative z-10">
-                <SettingsCardWrapper domain={DOMAINS[5]} isActive={activeDomains.includes("interaction")} layoutMode={layoutMode}>
-                  <DomainContent domain={DOMAINS[5].id} layoutMode={layoutMode} />
+                <SettingsCardWrapper domain={domainById("interaction")} isActive={activeDomains.includes("interaction")} layoutMode={layoutMode}>
+                  <DomainContent domain="interaction" layoutMode={layoutMode} />
                 </SettingsCardWrapper>
               </div>
 
-              {/* Top-Right Slot (Col 9-12, Row 1-3) -> 2:00 (Models Card) */}
+              {/* Top-Right Slot (Col 9-12, Row 1-3) -> 2:00 (Memory Card) */}
               <div className="col-start-9 col-span-4 row-start-1 row-span-3 flex items-end justify-start p-2 relative z-10">
-                <SettingsCardWrapper domain={DOMAINS[1]} isActive={activeDomains.includes("models")} layoutMode={layoutMode}>
-                  <DomainContent domain={DOMAINS[1].id} layoutMode={layoutMode} />
+                <SettingsCardWrapper domain={domainById("memory")} isActive={activeDomains.includes("memory")} layoutMode={layoutMode}>
+                  <DomainContent domain="memory" layoutMode={layoutMode} />
                 </SettingsCardWrapper>
               </div>
 
-              {/* Middle-Left Slot (Col 1-4, Row 4-6) -> 8:00 (Personal Memory Card) */}
+              {/* Middle-Left Slot (Col 1-4, Row 4-6) -> 8:00 (Speech Card) */}
               <div className="col-start-1 col-span-4 row-start-4 row-span-3 flex items-start justify-end p-2 relative z-10">
-                <SettingsCardWrapper domain={DOMAINS[4]} isActive={activeDomains.includes("personal_memory")} layoutMode={layoutMode}>
-                  <DomainContent domain={DOMAINS[4].id} layoutMode={layoutMode} />
+                <SettingsCardWrapper domain={domainById("speech")} isActive={activeDomains.includes("speech")} layoutMode={layoutMode}>
+                  <DomainContent domain="speech" layoutMode={layoutMode} />
                 </SettingsCardWrapper>
               </div>
 
-              {/* Middle-Right Slot (Col 9-12, Row 4-6) -> 4:00 (Working Memory Card) */}
+              {/* Middle-Right Slot (Col 9-12, Row 4-6) -> 4:00 (Language Card) */}
               <div className="col-start-9 col-span-4 row-start-4 row-span-3 flex items-start justify-start p-2 relative z-10">
-                <SettingsCardWrapper domain={DOMAINS[2]} isActive={activeDomains.includes("working_memory")} layoutMode={layoutMode}>
-                  <DomainContent domain={DOMAINS[2].id} layoutMode={layoutMode} />
+                <SettingsCardWrapper domain={domainById("language")} isActive={activeDomains.includes("language")} layoutMode={layoutMode}>
+                  <DomainContent domain="language" layoutMode={layoutMode} />
                 </SettingsCardWrapper>
               </div>
             </>
@@ -219,8 +239,8 @@ export const Settings: React.FC = () => {
 
           {/* Top-Center Slot (Col 5-8, Row 1-2) -> 12:00 (Persona Card - elevated to avoid sibling collision & unclipped) */}
           <div className="col-start-5 col-span-4 row-start-1 row-span-2 flex items-start justify-center p-2 relative z-10 overflow-visible">
-            <SettingsCardWrapper domain={DOMAINS[0]} isActive={activeDomains.includes("persona")} layoutMode={layoutMode}>
-              <DomainContent domain={DOMAINS[0].id} layoutMode={layoutMode} />
+            <SettingsCardWrapper domain={domainById("persona")} isActive={activeDomains.includes("persona")} layoutMode={layoutMode}>
+              <DomainContent domain="persona" layoutMode={layoutMode} />
             </SettingsCardWrapper>
           </div>
 
@@ -238,8 +258,8 @@ export const Settings: React.FC = () => {
 
           {/* Bottom-Center Slot (Col 5-8, Row 5-6) -> 6:00 (Appearance Card) */}
           <div className="col-start-5 col-span-4 row-start-5 row-span-2 flex items-start justify-center p-2 relative z-10">
-            <SettingsCardWrapper domain={DOMAINS[3]} isActive={activeDomains.includes("appearance")} layoutMode={layoutMode}>
-              <DomainContent domain={DOMAINS[3].id} layoutMode={layoutMode} />
+            <SettingsCardWrapper domain={domainById("appearance")} isActive={activeDomains.includes("appearance")} layoutMode={layoutMode}>
+              <DomainContent domain="appearance" layoutMode={layoutMode} />
             </SettingsCardWrapper>
           </div>
 
@@ -256,7 +276,7 @@ export const Settings: React.FC = () => {
           <div className="flex-1 w-full relative overflow-hidden flex flex-col min-h-0">
             <div className="flex-1 w-full overflow-y-auto custom-scrollbar pb-[130px] space-y-4 px-3 sm:px-4.5">
               {[...DOMAINS].sort((a, b) => {
-                const order = ["interaction", "models", "working_memory", "personal_memory", "persona", "appearance"];
+                const order = ["interaction", "memory", "language", "speech", "persona", "appearance"];
                 return order.indexOf(a.id) - order.indexOf(b.id);
               }).map((domain) => (
                 <div key={domain.id} className="w-full">

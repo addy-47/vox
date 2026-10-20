@@ -19,10 +19,9 @@ pub const SUPPORTED_DOMAINS: &[&str] = &[
     "tts",
     "interaction",
     "dictation",
-    "working_memory",
+    "memory",
     "persona",
     "realtime",
-    "personal_memory",
     "system",
 ];
 

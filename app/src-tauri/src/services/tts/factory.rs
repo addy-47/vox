@@ -3,6 +3,7 @@ use std::path::Path;
 use turso::Connection;
 
 use crate::{
+    core::compute::{self, Execution, Workload},
     persistence::voices::get_voice,
     services::tts::{
         providers::TtsProvider,
@@ -64,6 +65,20 @@ pub async fn resolve_reference_audio(conn: &Connection, voice_id: Option<&str>) 
     Some(wav)
 }
 
+/// Maps a resolved TTS provider configuration to the site that runs it.
+fn execution_for(config: &TtsProviderConfig) -> Execution {
+    match config {
+        TtsProviderConfig::Supertonic
+        | TtsProviderConfig::Kokoro
+        | TtsProviderConfig::Chatterbox { .. }
+        | TtsProviderConfig::Zipvoice { .. } => Execution::Embedded,
+        TtsProviderConfig::ChatterboxRemote { .. }
+        | TtsProviderConfig::EdgeTts { .. }
+        | TtsProviderConfig::AzureTts { .. }
+        | TtsProviderConfig::GoogleTts { .. } => Execution::Remote,
+    }
+}
+
 /// Creates a boxed TTS provider based on settings configuration.
 pub fn create_tts_provider(
     settings: &TtsSettings,
@@ -71,9 +86,9 @@ pub fn create_tts_provider(
     super_tts_path: &Path,
     reference_audio: Option<&str>,
     speed: f32,
-    num_threads: u32,
 ) -> Result<Box<dyn TtsProvider>, String> {
     let provider_config = settings.to_provider_config(providers, speed);
+    let num_threads = compute::resolve_threads(Workload::Tts, execution_for(&provider_config));
 
     match &provider_config {
         TtsProviderConfig::Supertonic => {
@@ -189,17 +204,26 @@ mod tests {
         let chatterbox = caps_for_id("chatterbox").expect("chatterbox caps");
         assert_eq!(chatterbox.voices, TtsVoiceSource::Custom);
         assert!(chatterbox.clone);
-        assert_eq!(chatterbox.execution, crate::services::tts::TtsExecutionKind::Embedded);
+        assert_eq!(
+            chatterbox.execution,
+            crate::services::tts::TtsExecutionKind::Embedded
+        );
 
         let chatterbox_remote = caps_for_id("chatterbox_remote").expect("chatterbox_remote caps");
         assert_eq!(chatterbox_remote.voices, TtsVoiceSource::Custom);
         assert!(chatterbox_remote.clone);
-        assert_eq!(chatterbox_remote.execution, crate::services::tts::TtsExecutionKind::Remote);
+        assert_eq!(
+            chatterbox_remote.execution,
+            crate::services::tts::TtsExecutionKind::Remote
+        );
 
         let edge = caps_for_id("edge_tts").expect("edge_tts caps");
         assert_eq!(edge.voices, TtsVoiceSource::Edge);
         assert!(!edge.clone);
-        assert_eq!(edge.execution, crate::services::tts::TtsExecutionKind::Cloud);
+        assert_eq!(
+            edge.execution,
+            crate::services::tts::TtsExecutionKind::Cloud
+        );
         assert_ne!(
             edge.speed_range,
             SupertonicEngine::SPEED_RANGE,
@@ -208,17 +232,26 @@ mod tests {
         let zipvoice = caps_for_id("zipvoice").expect("zipvoice caps");
         assert_eq!(zipvoice.voices, TtsVoiceSource::Custom);
         assert!(!zipvoice.clone);
-        assert_eq!(zipvoice.execution, crate::services::tts::TtsExecutionKind::Embedded);
+        assert_eq!(
+            zipvoice.execution,
+            crate::services::tts::TtsExecutionKind::Embedded
+        );
 
         let azure = caps_for_id("azure_tts").expect("azure_tts caps");
         assert_eq!(azure.voices, TtsVoiceSource::Cloud);
         assert!(!azure.clone);
-        assert_eq!(azure.execution, crate::services::tts::TtsExecutionKind::Cloud);
+        assert_eq!(
+            azure.execution,
+            crate::services::tts::TtsExecutionKind::Cloud
+        );
 
         let google = caps_for_id("google_tts").expect("google_tts caps");
         assert_eq!(google.voices, TtsVoiceSource::Cloud);
         assert!(!google.clone);
-        assert_eq!(google.execution, crate::services::tts::TtsExecutionKind::Cloud);
+        assert_eq!(
+            google.execution,
+            crate::services::tts::TtsExecutionKind::Cloud
+        );
     }
 
     #[test]

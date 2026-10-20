@@ -56,6 +56,8 @@ import type { VoxSettings } from "@/types/settings";
  *   | rule.keys path removed (whole-scope compare everywhere)          | must fail |
  *   | checkDomainRequiringRestart ignores partial scopes               | must fail |
  *   | SettingsDomainToUI dictation→interaction mapping dropped         | must fail |
+ *   | transliteration edit attributed to the models card               | must fail |
+ *   | vad rule widened back to the whole scope (noise gate reports dirty)| must fail |
  *
  * Phase 4 — Governing sentence:
  *   If the per-key draft/committed compare silently broke, this test would
@@ -80,7 +82,7 @@ describe("checkDomainDirty", () => {
     const draft = settingsFrom(committed);
     draft.persona.modular_prompt = "edited-persona";
     expect(checkDomainDirty(committed, draft, "persona")).toBe(true);
-    expect(checkDomainDirty(committed, draft, "working_memory")).toBe(false);
+    expect(checkDomainDirty(committed, draft, "memory")).toBe(false);
   });
 
   it("NEGATIVE: dirty detection must not fire when draft equals committed", () => {
@@ -97,10 +99,11 @@ describe("checkDomainDirty", () => {
     const draft = settingsFrom(committed);
     draft.dictation.enabled = true; // interaction card owns dictation scope
     expect(checkDomainDirty(committed, draft, "interaction")).toBe(true);
-    // vad is a models-card scope
+    // vad is a speech-card scope
     const vadDraft = settingsFrom(committed);
     vadDraft.vad.threshold = 0.9;
-    expect(checkDomainDirty(committed, vadDraft, "models")).toBe(true);
+    expect(checkDomainDirty(committed, vadDraft, "speech")).toBe(true);
+    expect(checkDomainDirty(committed, vadDraft, "persona")).toBe(false);
   });
 
   it("NEGATIVE: dirty verdict is per-key, not per-scope — an undeclared wire field must not flag the card", () => {
@@ -109,8 +112,8 @@ describe("checkDomainDirty", () => {
     // realtime_prompt identical → only modular_prompt must trip the card.
     expect(checkDomainDirty(committed, draft, "persona")).toBe(true);
     const draft2 = settingsFrom(committed);
-    draft2.working_memory.private_mode = true;
-    expect(checkDomainDirty(committed, draft2, "working_memory")).toBe(true);
+    draft2.memory.private_mode = true;
+    expect(checkDomainDirty(committed, draft2, "memory")).toBe(true);
   });
 
   it("forward wire compatibility: an undeclared scope field alone never marks a card dirty", () => {
@@ -119,17 +122,57 @@ describe("checkDomainDirty", () => {
     // retro-wire it into "unsaved changes": unknown keys are ignored (draft
     // compare is per declared key, never whole-scope JSON equality).
     const draft = settingsFrom(committed);
-    (draft.working_memory as unknown as Record<string, unknown>).backend_added_field = "new";
+    (draft.memory as unknown as Record<string, unknown>).backend_added_field = "new";
     (draft.persona as unknown as Record<string, unknown>).backend_added_field = "new";
     (draft.persona as unknown as Record<string, unknown>).modular_prompt = "pin";
-    expect(JSON.stringify(draft.working_memory)).not.toEqual(JSON.stringify(committed.working_memory));
-    expect(checkDomainDirty(committed, draft, "working_memory")).toBe(false);
+    expect(JSON.stringify(draft.memory)).not.toEqual(JSON.stringify(committed.memory));
+    expect(checkDomainDirty(committed, draft, "memory")).toBe(false);
   });
 
   it("is dirty when both settings exist but a declared key vanishes from the draft", () => {
     const draft = settingsFrom(committed) as Partial<VoxSettings>;
-    delete (draft as { working_memory?: { private_mode?: boolean } }).working_memory?.private_mode;
-    expect(checkDomainDirty(committed, draft as VoxSettings, "working_memory")).toBe(true);
+    delete (draft as { memory?: { private_mode?: boolean } }).memory?.private_mode;
+    expect(checkDomainDirty(committed, draft as VoxSettings, "memory")).toBe(true);
+  });
+});
+
+describe("dirty ownership split (transliteration | vad noise gate)", () => {
+  it("reports a transliteration edit on the interaction card, not on the speech card", () => {
+    // The transliteration switch moved to the interaction desk, so the
+    // interaction card owns `stt.transliterate_enabled`.
+    const draft = settingsFrom(committed);
+    draft.stt.transliterate_enabled = !committed.stt.transliterate_enabled;
+    expect(checkDomainDirty(committed, draft, "interaction")).toBe(true);
+    expect(checkDomainDirty(committed, draft, "speech")).toBe(false);
+  });
+
+  it("NEGATIVE: the stt model selection still belongs to the speech card", () => {
+    const draft = settingsFrom(committed);
+    draft.stt.active = { ...committed.stt.active, model: "whisper-large" };
+    expect(checkDomainDirty(committed, draft, "speech")).toBe(true);
+    expect(checkDomainDirty(committed, draft, "interaction")).toBe(false);
+  });
+
+  it("NEGATIVE: the removed vad noise gate never marks the owning card dirty", () => {
+    // `vad.ptt_noise_gate` left the UI but stays in the wire payload, so the
+    // card that owns the vad scope must ignore it.
+    const draft = settingsFrom(committed);
+    draft.vad.ptt_noise_gate = committed.vad.ptt_noise_gate + 0.1;
+    expect(checkDomainDirty(committed, draft, "speech")).toBe(false);
+    expect(checkDomainDirty(committed, draft, "interaction")).toBe(false);
+  });
+
+  it("the user-facing vad keys still mark the speech card dirty", () => {
+    for (const key of ["threshold", "silence_duration_ms", "speech_onset_ms"] as const) {
+      const draft = settingsFrom(committed);
+      draft.vad[key] = draft.vad[key] + 1;
+      expect(checkDomainDirty(committed, draft, "speech"), `vad.${key} must flag the card`).toBe(
+        true
+      );
+      expect(checkDomainDirty(committed, draft, "interaction"), `vad.${key} must not flag the interaction card`).toBe(
+        false
+      );
+    }
   });
 });
 
@@ -150,7 +193,7 @@ describe("checkCategoryDirty", () => {
   it("NEGATIVE: no settings yet means never dirty (no phantom banner before boot)", () => {
     expect(checkCategoryDirty(null, null, "persona")).toBe(false);
     expect(checkDomainDirty(null, null, "persona")).toBe(false);
-    expect(checkDomainRequiringRestart(null, null, "models")).toBe(false);
+    expect(checkDomainRequiringRestart(null, null, "speech")).toBe(false);
   });
 });
 
@@ -196,7 +239,8 @@ describe("checkDomainRequiringRestart (loaded production contract)", () => {
     // vad.threshold → declared "restart" in the loaded contract
     const vadDraft = settingsFrom(committed);
     vadDraft.vad.threshold = 0.9;
-    expect(checkDomainRequiringRestart(committed, vadDraft, "models")).toBe(true);
+    expect(checkDomainRequiringRestart(committed, vadDraft, "speech")).toBe(true);
+    expect(checkDomainRequiringRestart(committed, vadDraft, "persona")).toBe(false);
 
     // dictation.enabled → declared "restart"
     const dictDraft = settingsFrom(committed);
@@ -211,21 +255,22 @@ describe("checkDomainRequiringRestart (loaded production contract)", () => {
   });
 
   it("NEGATIVE: identical committed/draft never requires restart", () => {
-    expect(checkDomainRequiringRestart(committed, committed, "models")).toBe(false);
+    expect(checkDomainRequiringRestart(committed, committed, "speech")).toBe(false);
   });
 });
 
 describe("SETTINGS_DOMAIN_TO_UI mapping (single definition card ownership)", () => {
-  it("NEGATIVE: every scope maps to one of the six commit cards", () => {
+  it("NEGATIVE: every scope maps to one of the commit cards", () => {
     for (const uiDomain of Object.values(SETTINGS_DOMAIN_TO_UI)) {
       expect(
-        ["models", "persona", "working_memory", "personal_memory", "appearance", "interaction"],
+        ["speech", "persona", "memory", "appearance", "language", "interaction"],
         `scope ${String(uiDomain)} leaves the commit-card system`
       ).toContain(uiDomain);
     }
     expect(SETTINGS_DOMAIN_TO_UI.dictation).toBe("interaction");
-    expect(SETTINGS_DOMAIN_TO_UI.llm).toBe("models");
-    expect(SETTINGS_DOMAIN_TO_UI["stt"]).toBe("models");
+    expect(SETTINGS_DOMAIN_TO_UI.llm).toBe("language");
+    expect(SETTINGS_DOMAIN_TO_UI["stt"]).toBe("speech");
+    expect(SETTINGS_DOMAIN_TO_UI["vad"]).toBe("speech");
   });
 });
 

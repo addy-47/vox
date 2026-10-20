@@ -4,20 +4,20 @@ import {
   probeAgeDays,
   failedProbeChecks,
   hasProbeWarning,
-} from "@/shared/components/settings/models/LlmCatalogView";
+} from "@/shared/components/settings/language/catalogProbeUtils";
 import type { ModelCapabilities } from "@/store/settingsStore";
 
 /**
  * Capability-probe transparency regression suite — LLM catalog labels.
  *
  * SUT: the exact label functions the catalog rows call (exported from
- * LlmCatalogView). A measured value and a baseline guess must never render
+ * RemoteCatalogSection). A measured value and a baseline guess must never render
  * with the same words; a failed check must surface its detail; a stale
  * result must be computable as stale.
  *
  * Production Entry Seams (all real production signatures):
  *   provenanceLabel / probeAgeDays / failedProbeChecks
- *     (shared/components/settings/models/LlmCatalogView.tsx — the same
+ *     (shared/components/settings/language/RemoteCatalogSection.tsx — the same
  *     functions RemoteModelCard and the inline capabilities tooltip call)
  *
  * False-Green table (each row is a one-line production mutation):

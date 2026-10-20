@@ -57,7 +57,7 @@ async fn test_harness_cognitive_stage_to_tts_matrix() {
                 provider: None,
                 model: "qwen".to_string(),
             };
-            settings.personal_memory.context_retrieval_enabled = false;
+            settings.memory.context_retrieval_enabled = false;
         }
         state
             .owner
@@ -108,7 +108,6 @@ async fn test_harness_cognitive_stage_to_tts_matrix() {
                     max_output_tokens: 300,
                     temperature: 0.7,
                     reasoning_enabled: false,
-                    n_threads: 4,
                 },
                 llm_tx.clone(),
                 true,

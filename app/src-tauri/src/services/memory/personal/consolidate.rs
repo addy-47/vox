@@ -17,7 +17,7 @@ use super::{
     revisions::stage_revisions,
 };
 use crate::{
-    config::settings::PersonalMemorySettings,
+    config::settings::MemorySettings,
     persistence::{
         facts::{
             fetch_active_observations_by_type, fetch_integrated_personal_facts,
@@ -99,7 +99,7 @@ pub struct ConsolidationRequest<'a> {
     pub llm_provider: &'a dyn LlmProvider,
     pub comments: Option<Vec<String>>,
     pub project_id: Option<&'a str>,
-    pub memory_settings: &'a PersonalMemorySettings,
+    pub memory_settings: &'a MemorySettings,
     pub llm_settings: Option<&'a LlmSettings>,
     pub forced: bool,
 }
@@ -110,7 +110,7 @@ struct ConsolidationPass<'a> {
     llm_provider: &'a dyn LlmProvider,
     current_record: &'a PersonalMemoryRecord,
     project_id: Option<&'a str>,
-    memory_settings: &'a PersonalMemorySettings,
+    memory_settings: &'a MemorySettings,
     llm_settings: &'a LlmSettings,
 }
 
@@ -403,7 +403,7 @@ pub async fn regenerate_personal_memory(
     conn: &Connection,
     llm_provider: &dyn LlmProvider,
     project_id: Option<&str>,
-    memory_settings: &PersonalMemorySettings,
+    memory_settings: &MemorySettings,
     llm_settings: Option<&LlmSettings>,
 ) -> Result<PersonalMemoryRecord> {
     let fallback_settings = LlmSettings::default();
