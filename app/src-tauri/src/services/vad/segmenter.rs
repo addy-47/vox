@@ -11,8 +11,8 @@ use crossbeam_channel::Sender;
 use super::{
     actor::{VadActorChannels, VadActorHandles, VadActorState},
     providers::VadBackend,
-    VadEngine as _, VAD_INPUT_SAMPLE_RATE, VAD_MIN_UTTERANCE_SAMPLES,
-    VAD_PRE_ROLL_CAPACITY, VAD_PRE_ROLL_FLUSH_SAMPLES,
+    VadEngine as _, VAD_INPUT_SAMPLE_RATE, VAD_MIN_UTTERANCE_SAMPLES, VAD_PRE_ROLL_CAPACITY,
+    VAD_PRE_ROLL_FLUSH_SAMPLES,
 };
 use crate::{
     core::{
@@ -259,14 +259,16 @@ pub fn handle_speech_start(
 
     // Predict the monotonic turn ID that `on_speech_start` will allocate on the Router thread
     // so the pre-roll StreamChunk and subsequent chunks share the exact same turn_id.
-    let expected_turn_id = if matches!(owner, InteractionOwner::Assistant | InteractionOwner::Dictation)
-        && matches!(
-            interaction_state,
-            InteractionState::Ready
-                | InteractionState::Thinking
-                | InteractionState::Speaking
-                | InteractionState::Working
-        ) {
+    let expected_turn_id = if matches!(
+        owner,
+        InteractionOwner::Assistant | InteractionOwner::Dictation
+    ) && matches!(
+        interaction_state,
+        InteractionState::Ready
+            | InteractionState::Thinking
+            | InteractionState::Speaking
+            | InteractionState::Working
+    ) {
         prev_turn_id.wrapping_add(1)
     } else {
         prev_turn_id

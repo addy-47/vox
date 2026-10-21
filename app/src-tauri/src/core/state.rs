@@ -187,7 +187,7 @@ impl AppState {
         let settings = VoxSettings::load();
         telemetry
             .is_private_mode
-            .store(settings.working_memory.private_mode, Ordering::Relaxed);
+            .store(settings.memory.private_mode, Ordering::Relaxed);
 
         let model_manager = Arc::new(ModelManager::new(Some(app_handle.clone())));
         let manifest = Arc::new(TokioRwLock::new(None));

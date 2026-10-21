@@ -4,7 +4,7 @@ import { useSettingsStore } from "@/store/settingsStore";
 import { REALTIME_CONFIG_DESK_COPY } from "@/data/settingsCopy";
 import { Radio, Check, X, Pencil } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
-import { ProviderLogo } from "@/shared/components/settings/providers/ProviderLogo";
+import { ProviderLogo } from "@/shared/components/settings/shared/ProviderLogo";
 
 interface RealtimeConfigDeskProps {
   layoutMode?: "full-max" | "full-min" | "small";

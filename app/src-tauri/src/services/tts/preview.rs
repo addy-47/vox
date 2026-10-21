@@ -17,7 +17,8 @@ use tokio::sync::Mutex;
 
 use crate::{
     core::{
-        defaults::{DEFAULT_TTS_SPEED, DEFAULT_TTS_THREADS},
+        compute::{self, Execution, Workload},
+        defaults::DEFAULT_TTS_SPEED,
         error::VoxIpcError,
         state::{AppState, InteractionState},
     },
@@ -128,7 +129,10 @@ impl PreviewSynthesizer {
         }
 
         let provider = resolve_preview_provider(state, voice_id, engine).await?;
-        let (speed, threads) = (DEFAULT_TTS_SPEED, DEFAULT_TTS_THREADS);
+        let (speed, threads) = (
+            DEFAULT_TTS_SPEED,
+            compute::resolve_threads(Workload::Tts, preview_execution(&provider)),
+        );
         log::info!(
             "[Preview] Synthesizing voice={} provider={} engine_hint={:?}",
             voice_id,
@@ -267,6 +271,16 @@ async fn resolve_preview_provider(
     )))
 }
 
+/// Maps a preview provider id to the site that runs it.
+///
+/// Only the local ONNX engines own worker threads on this machine.
+fn preview_execution(provider: &str) -> Execution {
+    match provider {
+        "supertonic" | "kokoro" => Execution::Embedded,
+        _ => Execution::Remote,
+    }
+}
+
 /// Normalizes a frontend engine id to a known backend provider id.
 fn normalize_engine_id(engine: &str) -> Option<String> {
     let normalized = engine.trim().to_lowercase();
@@ -330,7 +344,10 @@ async fn synthesize_for_provider(
             edge_tts::synthesize_to_wav(voice_id, text, target_path).await
         }
         "google_tts" => {
-            log::info!("[Preview] Google Cloud TTS online synthesis voice={}", voice_id);
+            log::info!(
+                "[Preview] Google Cloud TTS online synthesis voice={}",
+                voice_id
+            );
             let project_override = state
                 .settings
                 .read()
@@ -346,9 +363,15 @@ async fn synthesize_for_provider(
             .await
         }
         "azure_tts" => {
-            log::info!("[Preview] Azure AI Speech online synthesis voice={}", voice_id);
+            log::info!(
+                "[Preview] Azure AI Speech online synthesis voice={}",
+                voice_id
+            );
             let (region, key, resource_id): (String, String, Option<String>) = {
-                let s = state.settings.read().map_err(|e| anyhow!("Failed to read settings: {}", e))?;
+                let s = state
+                    .settings
+                    .read()
+                    .map_err(|e| anyhow!("Failed to read settings: {}", e))?;
                 (
                     s.providers.tts.azure_tts.region_or_endpoint.clone(),
                     s.providers.tts.azure_tts.key.clone(),

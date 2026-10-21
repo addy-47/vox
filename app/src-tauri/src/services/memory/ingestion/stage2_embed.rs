@@ -12,7 +12,8 @@ use crate::{
     persistence::{
         deactivate_observation,
         facts::{
-            fetch_active_vectors_by_type, get_memory_fact_text, insert_observation, insert_vector, ObservationRecord,
+            fetch_active_vectors_by_type, get_memory_fact_text, insert_observation, insert_vector,
+            ObservationRecord,
         },
         fetch_session_project_id,
         queue::claim_pending_queue_batch,

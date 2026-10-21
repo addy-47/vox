@@ -47,7 +47,9 @@ async fn test_echo_only_solo_playback_causes_zero_false_interruption() {
         let _guard = common::paths::TempPathsGuard::new();
         vox_lib::utils::paths::init();
         let (_app, state) = common::harness::get_test_app_and_state().await;
-        state.owner.store(InteractionOwner::Assistant as u32, Ordering::Relaxed);
+        state
+            .owner
+            .store(InteractionOwner::Assistant as u32, Ordering::Relaxed);
 
         let tts_path = Path::new("tests/assets/edgetts_01_en_briefing.wav");
         let tts_samples = common::audio::decode_wav_to_mono_16k(tts_path)
@@ -71,8 +73,9 @@ async fn test_echo_only_solo_playback_causes_zero_false_interruption() {
 
         let aec = AecProcessor::new(Some(ref_cons)).expect("Failed to create AecProcessor");
         let aec_shutdown = Arc::new(AtomicBool::new(false));
-        let aec_worker = spawn_aec_worker(aec, cap_cons, clean_prod, Arc::clone(&aec_shutdown), None)
-            .expect("Failed to spawn AEC worker");
+        let aec_worker =
+            spawn_aec_worker(aec, cap_cons, clean_prod, Arc::clone(&aec_shutdown), None)
+                .expect("Failed to spawn AEC worker");
 
         let audio_suppressed = Arc::new(AtomicBool::new(false));
         let engine_shutdown = Arc::new(AtomicBool::new(false));
@@ -178,7 +181,9 @@ async fn test_double_talk_barge_in_cancels_playback_and_transitions_to_listening
         let _guard = common::paths::TempPathsGuard::new();
         vox_lib::utils::paths::init();
         let (app, state) = common::harness::get_test_app_and_state().await;
-        state.owner.store(InteractionOwner::Assistant as u32, Ordering::Relaxed);
+        state
+            .owner
+            .store(InteractionOwner::Assistant as u32, Ordering::Relaxed);
 
         let tts_path = Path::new("tests/assets/edgetts_01_en_briefing.wav");
         let user_path = Path::new("tests/assets/supertonic_01_en_briefing.wav");
@@ -194,8 +199,8 @@ async fn test_double_talk_barge_in_cancels_playback_and_transitions_to_listening
         state.pipeline.turn_id.store(turn_id, Ordering::Relaxed);
         state.pipeline.set_state(InteractionState::Speaking);
 
-        let router_handle = spawn_router(app.clone(), vox_event_rx)
-            .expect("Failed to spawn router");
+        let router_handle =
+            spawn_router(app.clone(), vox_event_rx).expect("Failed to spawn router");
 
         // Queues: ref_rb, cap_rb, clean_rb
         let ref_rb = HeapRb::<f32>::new(65536);
@@ -210,8 +215,9 @@ async fn test_double_talk_barge_in_cancels_playback_and_transitions_to_listening
 
         let aec = AecProcessor::new(Some(ref_cons)).expect("Failed to create AecProcessor");
         let aec_shutdown = Arc::new(AtomicBool::new(false));
-        let aec_worker = spawn_aec_worker(aec, cap_cons, clean_prod, Arc::clone(&aec_shutdown), None)
-            .expect("Failed to spawn AEC worker");
+        let aec_worker =
+            spawn_aec_worker(aec, cap_cons, clean_prod, Arc::clone(&aec_shutdown), None)
+                .expect("Failed to spawn AEC worker");
 
         let audio_suppressed = Arc::new(AtomicBool::new(false));
         let engine_shutdown = Arc::new(AtomicBool::new(false));
@@ -297,7 +303,9 @@ async fn test_double_talk_barge_in_cancels_playback_and_transitions_to_listening
             cap_prod.push_slice(&mic_frame);
             tokio::time::sleep(Duration::from_millis(2)).await;
 
-            if frame_idx > inject_user_frame + 20 && state.pipeline.state() == InteractionState::Listening {
+            if frame_idx > inject_user_frame + 20
+                && state.pipeline.state() == InteractionState::Listening
+            {
                 break;
             }
         }
@@ -343,7 +351,9 @@ async fn test_false_green_bypass_reproduces_echo_interruption() {
         let _guard = common::paths::TempPathsGuard::new();
         vox_lib::utils::paths::init();
         let (_app, state) = common::harness::get_test_app_and_state().await;
-        state.owner.store(InteractionOwner::Assistant as u32, Ordering::Relaxed);
+        state
+            .owner
+            .store(InteractionOwner::Assistant as u32, Ordering::Relaxed);
 
         let tts_path = Path::new("tests/assets/edgetts_01_en_briefing.wav");
         let tts_samples = common::audio::decode_wav_to_mono_16k(tts_path)
@@ -365,8 +375,9 @@ async fn test_false_green_bypass_reproduces_echo_interruption() {
         aec.set_enabled(false);
 
         let aec_shutdown = Arc::new(AtomicBool::new(false));
-        let aec_worker = spawn_aec_worker(aec, cap_cons, clean_prod, Arc::clone(&aec_shutdown), None)
-            .expect("Failed to spawn AEC worker");
+        let aec_worker =
+            spawn_aec_worker(aec, cap_cons, clean_prod, Arc::clone(&aec_shutdown), None)
+                .expect("Failed to spawn AEC worker");
 
         let audio_suppressed = Arc::new(AtomicBool::new(false));
         let engine_shutdown = Arc::new(AtomicBool::new(false));
@@ -510,9 +521,15 @@ async fn test_erle_mathematical_metric_exceeds_twenty_five_db() {
             }
         }
 
-        assert!(evaluated_frames > 20, "Must have enough frames to calculate ERLE");
+        assert!(
+            evaluated_frames > 20,
+            "Must have enough frames to calculate ERLE"
+        );
         let erle_db = 10.0 * (total_in_energy / total_out_energy.max(1e-12)).log10();
-        println!("Measured ERLE: {:.2} dB across {} frames", erle_db, evaluated_frames);
+        println!(
+            "Measured ERLE: {:.2} dB across {} frames",
+            erle_db, evaluated_frames
+        );
 
         assert!(
             erle_db >= 25.0,

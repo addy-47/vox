@@ -31,7 +31,7 @@ pub fn supported_keys_for_domain(domain: &str) -> &'static [&'static str] {
             "azure_tts",
             "google_tts",
         ],
-        "interaction" => &["mode", "pipeline_mode"],
+        "interaction" => &["mode", "pipeline_mode", "web_search_enabled"],
         "dictation" => &[
             "enabled",
             "interaction_mode",
@@ -39,34 +39,25 @@ pub fn supported_keys_for_domain(domain: &str) -> &'static [&'static str] {
             "output_mode",
             "silence_auto_stop_ms",
         ],
-        "working_memory" => &[
-            "private_mode",
-            "auto_compaction",
-            "max_context_share",
-            "web_search_enabled",
-        ],
-        "persona" => &["modular_prompt", "realtime_prompt"],
-        "realtime" => &["active", "active_voice_id", "voice", "voice_id", "api_keys"],
-        "personal_memory" => &[
+        "memory" => &[
             "context_retrieval_enabled",
             "pipeline_processing_enabled",
-            "top_k_facts",
-            "semantic_similarity_cutoff",
+            "private_mode",
             "consolidation_cadence",
             "consolidation_time",
             "suggestion_policy",
+            "auto_compaction",
+            "max_context_share",
+            "top_k_facts",
+            "semantic_similarity_cutoff",
         ],
+        "persona" => &["modular_prompt", "realtime_prompt"],
+        "realtime" => &["active", "active_voice_id", "voice", "voice_id", "api_keys"],
         "system" => &["setup_completed"],
         _ => &[],
     }
 }
 
-/// Normalizes one custom server URL in place:
-/// - Strips whitespace around colons and slashes
-/// - Fixes typos such as http// or https// by normalizing to ://
-/// - Automatically prepends http:// if protocol is omitted
-/// - Trims trailing slashes
-/// - Validates final URL with Url::parse
 fn normalize_server_url(url: &str) -> Result<String, String> {
     let trimmed = url.trim();
     if trimmed.is_empty() {
@@ -364,6 +355,11 @@ fn apply_interaction_mutation(
             settings.interaction.pipeline_mode = serde_json::from_value(value.clone())
                 .map_err(|e| format!("Invalid pipeline_mode: {}", e))?;
         }
+        "web_search_enabled" => {
+            settings.interaction.web_search_enabled = value
+                .as_bool()
+                .ok_or("web_search_enabled must be a boolean")?;
+        }
         _ => return Ok(false),
     }
     Ok(true)
@@ -400,18 +396,54 @@ fn apply_dictation_mutation(
     Ok(true)
 }
 
-fn apply_working_memory_mutation(
+fn apply_memory_mutation(
     settings: &mut VoxSettings,
     key: &str,
     value: &serde_json::Value,
 ) -> Result<bool, String> {
     match key {
+        "context_retrieval_enabled" => {
+            settings.memory.context_retrieval_enabled = value
+                .as_bool()
+                .ok_or("context_retrieval_enabled must be a boolean")?;
+        }
+        "pipeline_processing_enabled" => {
+            settings.memory.pipeline_processing_enabled = value
+                .as_bool()
+                .ok_or("pipeline_processing_enabled must be a boolean")?;
+        }
         "private_mode" => {
-            settings.working_memory.private_mode =
+            settings.memory.private_mode =
                 value.as_bool().ok_or("private_mode must be a boolean")?;
         }
+        "consolidation_cadence" => {
+            let val = value
+                .as_str()
+                .ok_or("consolidation_cadence must be a string")?;
+            if !matches!(val, "manual" | "daily") {
+                return Err("consolidation_cadence must be one of: manual, daily".to_string());
+            }
+            settings.memory.consolidation_cadence = val.to_string();
+        }
+        "consolidation_time" => {
+            let val = value
+                .as_str()
+                .ok_or("consolidation_time must be a string")?;
+            parse_consolidation_time(val)
+                .ok_or("consolidation_time must be in HH:MM 24-hour format".to_string())?;
+            settings.memory.consolidation_time = val.to_string();
+        }
+        "suggestion_policy" => {
+            let val = value.as_str().ok_or("suggestion_policy must be a string")?;
+            if !matches!(val, "manual_review" | "auto_apply") {
+                return Err(
+                    "suggestion_policy must be one of: manual_review, auto_apply".to_string(),
+                );
+            }
+            settings.memory.suggestion_policy = val.to_string();
+        }
         "auto_compaction" => {
-            settings.working_memory.auto_compaction =
+            settings.memory.auto_compaction =
                 value.as_bool().ok_or("auto_compaction must be a boolean")?;
         }
         "max_context_share" => {
@@ -419,12 +451,25 @@ fn apply_working_memory_mutation(
             if !(0.0..=1.0).contains(&val) {
                 return Err("max_context_share must be between 0.0 and 1.0".to_string());
             }
-            settings.working_memory.max_context_share = val;
+            settings.memory.max_context_share = val;
         }
-        "web_search_enabled" => {
-            settings.working_memory.web_search_enabled = value
-                .as_bool()
-                .ok_or("web_search_enabled must be a boolean")?;
+        "top_k_facts" => {
+            let top_k = value
+                .as_u64()
+                .ok_or("top_k_facts must be a positive integer")? as u32;
+            if top_k == 0 || top_k > 100 {
+                return Err("top_k_facts must be between 1 and 100".to_string());
+            }
+            settings.memory.top_k_facts = top_k;
+        }
+        "semantic_similarity_cutoff" => {
+            let val = value
+                .as_f64()
+                .ok_or("semantic_similarity_cutoff must be a number")? as f32;
+            if !(0.0..=1.0).contains(&val) {
+                return Err("semantic_similarity_cutoff must be between 0.0 and 1.0".to_string());
+            }
+            settings.memory.semantic_similarity_cutoff = val;
         }
         _ => return Ok(false),
     }
@@ -479,71 +524,6 @@ fn apply_realtime_mutation(
     Ok(true)
 }
 
-fn apply_personal_memory_mutation(
-    settings: &mut VoxSettings,
-    key: &str,
-    value: &serde_json::Value,
-) -> Result<bool, String> {
-    match key {
-        "context_retrieval_enabled" => {
-            settings.personal_memory.context_retrieval_enabled = value
-                .as_bool()
-                .ok_or("context_retrieval_enabled must be a boolean")?;
-        }
-        "pipeline_processing_enabled" => {
-            settings.personal_memory.pipeline_processing_enabled = value
-                .as_bool()
-                .ok_or("pipeline_processing_enabled must be a boolean")?;
-        }
-        "top_k_facts" => {
-            let top_k = value
-                .as_u64()
-                .ok_or("top_k_facts must be a positive integer")? as u32;
-            if top_k == 0 || top_k > 100 {
-                return Err("top_k_facts must be between 1 and 100".to_string());
-            }
-            settings.personal_memory.top_k_facts = top_k;
-        }
-        "semantic_similarity_cutoff" => {
-            let val = value
-                .as_f64()
-                .ok_or("semantic_similarity_cutoff must be a number")? as f32;
-            if !(0.0..=1.0).contains(&val) {
-                return Err("semantic_similarity_cutoff must be between 0.0 and 1.0".to_string());
-            }
-            settings.personal_memory.semantic_similarity_cutoff = val;
-        }
-        "consolidation_cadence" => {
-            let val = value
-                .as_str()
-                .ok_or("consolidation_cadence must be a string")?;
-            if !matches!(val, "manual" | "daily") {
-                return Err("consolidation_cadence must be one of: manual, daily".to_string());
-            }
-            settings.personal_memory.consolidation_cadence = val.to_string();
-        }
-        "consolidation_time" => {
-            let val = value
-                .as_str()
-                .ok_or("consolidation_time must be a string")?;
-            parse_consolidation_time(val)
-                .ok_or("consolidation_time must be in HH:MM 24-hour format".to_string())?;
-            settings.personal_memory.consolidation_time = val.to_string();
-        }
-        "suggestion_policy" => {
-            let val = value.as_str().ok_or("suggestion_policy must be a string")?;
-            if !matches!(val, "manual_review" | "auto_apply") {
-                return Err(
-                    "suggestion_policy must be one of: manual_review, auto_apply".to_string(),
-                );
-            }
-            settings.personal_memory.suggestion_policy = val.to_string();
-        }
-        _ => return Ok(false),
-    }
-    Ok(true)
-}
-
 fn apply_system_mutation(
     settings: &mut VoxSettings,
     key: &str,
@@ -575,19 +555,15 @@ pub fn apply_setting_mutation(
         "tts" => apply_tts_mutation(settings, key, value),
         "interaction" => apply_interaction_mutation(settings, key, value),
         "dictation" => apply_dictation_mutation(settings, key, value),
-        "working_memory" => apply_working_memory_mutation(settings, key, value),
+        "memory" => apply_memory_mutation(settings, key, value),
         "persona" => apply_persona_mutation(settings, key, value),
         "realtime" => apply_realtime_mutation(settings, key, value),
-        "personal_memory" => apply_personal_memory_mutation(settings, key, value),
         "system" => apply_system_mutation(settings, key, value),
         _ => Ok(false),
     }
 }
 
 /// Applies a batched settings patch (domain -> { key -> value }) in memory.
-/// Returns the list of `(domain, key)` pairs that were recognized and applied.
-/// The operation is atomic: it is applied to a clone and only committed to
-/// `settings` on full success; an error leaves `settings` untouched.
 pub fn apply_settings_patch_tree(
     settings: &mut VoxSettings,
     patch: &serde_json::Value,

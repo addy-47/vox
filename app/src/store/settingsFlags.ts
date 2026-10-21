@@ -16,26 +16,25 @@ export function scopeEntries(scope: unknown): Record<string, unknown> {
  */
 export const SETTINGS_DOMAIN_TO_UI: Record<string, SettingsDomainId> = {
   persona: "persona",
-  working_memory: "working_memory",
-  personal_memory: "personal_memory",
+  memory: "memory",
   appearance: "appearance",
   interaction: "interaction",
   dictation: "interaction",
-  realtime: "models",
-  vad: "models",
-  stt: "models",
-  llm: "models",
-  tts: "models",
-  system: "models",
+  realtime: "speech",
+  vad: "speech",
+  stt: "speech",
+  llm: "language",
+  tts: "speech",
+  system: "speech",
 };
 
-/** The six card domains that own a commit footer. */
+/** The card domains that own a commit footer. */
 export const COMMIT_DOMAIN_IDS = [
-  "models",
+  "speech",
   "persona",
-  "working_memory",
-  "personal_memory",
+  "memory",
   "appearance",
+  "language",
   "interaction",
 ] as const;
 

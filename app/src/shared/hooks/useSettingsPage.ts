@@ -35,11 +35,11 @@ export function useSettingsPage() {
 
   const [lines, setLines] = useState<Record<DomainId, { x1: number; y1: number; x2: number; y2: number } | null>>({
     persona: null,
-    models: null,
-    working_memory: null,
-    personal_memory: null,
+    speech: null,
+    memory: null,
     appearance: null,
     interaction: null,
+    language: null,
   });
 
   const lastActiveDomains = useRef<DomainId[]>([]);
@@ -146,7 +146,7 @@ export function useSettingsPage() {
       }
 
       // 3. Left side cards (10:00 & 8:00 nodes at cx - radiusX * cos(30°))
-      const leftCardEl = document.getElementById("card-left-carousel") || document.getElementById("card-interaction") || document.getElementById("card-personal_memory");
+      const leftCardEl = document.getElementById("card-left-carousel") || document.getElementById("card-interaction") || document.getElementById("card-speech");
       if (leftCardEl) {
         const leftRect = leftCardEl.getBoundingClientRect();
         const clearanceX = (cx - leftRect.right - 44) / 0.866;
@@ -156,7 +156,7 @@ export function useSettingsPage() {
       }
 
       // 4. Right side cards (2:00 & 4:00 nodes at cx + radiusX * cos(30°))
-      const rightCardEl = document.getElementById("card-right-carousel") || document.getElementById("card-models") || document.getElementById("card-working_memory");
+      const rightCardEl = document.getElementById("card-right-carousel") || document.getElementById("card-memory");
       if (rightCardEl) {
         const rightRect = rightCardEl.getBoundingClientRect();
         const clearanceX = (rightRect.left - cx - 44) / 0.866;
@@ -180,7 +180,7 @@ export function useSettingsPage() {
     if (typeof ResizeObserver !== "undefined" && containerRef.current) {
       ro = new ResizeObserver(measureClearance);
       ro.observe(containerRef.current);
-      ["persona", "appearance", "interaction", "models", "working_memory", "personal_memory"].forEach((id) => {
+      ["persona", "appearance", "interaction", "speech", "memory", "language"].forEach((id) => {
         const el = document.getElementById(`card-${id}`);
         if (el && ro) ro.observe(el);
       });
@@ -231,10 +231,10 @@ export function useSettingsPage() {
       void Promise.resolve().then(() => {
         setLines({
           persona: null,
-          models: null,
-          working_memory: null,
-          personal_memory: null,
+          speech: null,
+          memory: null,
           appearance: null,
+          language: null,
           interaction: null,
         });
       });
@@ -260,9 +260,9 @@ export function useSettingsPage() {
           const nodeEl = document.getElementById(`node-${domain.id}`);
           let cardEl = document.getElementById(`card-${domain.id}`);
           if (!cardEl && isSideCarousel) {
-            if (domain.id === "interaction" || domain.id === "personal_memory") {
+            if (domain.id === "interaction" || domain.id === "speech") {
               cardEl = document.getElementById("card-left-carousel");
-            } else if (domain.id === "models" || domain.id === "working_memory") {
+            } else if (domain.id === "memory" || domain.id === "language") {
               cardEl = document.getElementById("card-right-carousel");
             }
           }
@@ -270,6 +270,16 @@ export function useSettingsPage() {
           if (nodeEl && cardEl) {
             const nodeRect = nodeEl.getBoundingClientRect();
             const cardRect = cardEl.getBoundingClientRect();
+            const isSideDomain =
+              domain.id === "speech" ||
+              domain.id === "interaction" ||
+              domain.id === "memory" ||
+              domain.id === "language";
+            // Keep side connectors anchored to equal grid slots, not variable commit footers.
+            const sideAnchorRect =
+              !isSideCarousel && isSideDomain && cardEl.parentElement
+                ? cardEl.parentElement.getBoundingClientRect()
+                : cardRect;
 
             const x1 = (nodeRect.left + nodeRect.right) / 2 - containerRect.left;
             const y1 = (nodeRect.top + nodeRect.bottom) / 2 - containerRect.top;
@@ -286,15 +296,15 @@ export function useSettingsPage() {
                 x2 = (cardRect.left + cardRect.right) / 2 - containerRect.left;
                 y2 = cardRect.top - containerRect.top;
                 break;
-              case "models":
-              case "working_memory":
+              case "memory":
+              case "language":
                 x2 = cardRect.left - containerRect.left;
-                y2 = (cardRect.top + cardRect.bottom) / 2 - containerRect.top;
+                y2 = (sideAnchorRect.top + sideAnchorRect.bottom) / 2 - containerRect.top;
                 break;
-              case "personal_memory":
+              case "speech":
               case "interaction":
                 x2 = cardRect.right - containerRect.left;
-                y2 = (cardRect.top + cardRect.bottom) / 2 - containerRect.top;
+                y2 = (sideAnchorRect.top + sideAnchorRect.bottom) / 2 - containerRect.top;
                 break;
             }
 

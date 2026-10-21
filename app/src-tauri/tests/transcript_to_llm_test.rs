@@ -57,8 +57,8 @@ async fn test_transcript_to_llm_matrix() {
                 provider: None,
                 model: "qwen".to_string(),
             };
-            settings.working_memory.auto_compaction = true;
-            settings.personal_memory.context_retrieval_enabled = false;
+            settings.memory.auto_compaction = true;
+            settings.memory.context_retrieval_enabled = false;
         }
         state
             .owner
@@ -107,7 +107,6 @@ async fn test_transcript_to_llm_matrix() {
                     max_output_tokens: 512,
                     temperature: 0.7,
                     reasoning_enabled: false,
-                    n_threads: 4,
                 },
                 llm_tx.clone(),
                 true,

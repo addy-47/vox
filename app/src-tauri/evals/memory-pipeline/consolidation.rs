@@ -6,7 +6,7 @@ use std::path::Path;
 
 use anyhow::{anyhow, Result};
 use vox_lib::{
-    config::settings::PersonalMemorySettings,
+    config::settings::MemorySettings,
     persistence::{
         facts::{fetch_active_observations_by_type, ObservationRecord},
         personal_memory::get_personal_memory,
@@ -115,7 +115,7 @@ pub async fn evaluate_consolidation_stage(
     // The eval runs auto_apply so a harmful delete actually reaches the committed
     // state and can be measured. Production defaults to manual_review, which
     // stages the same delete instead. Recorded in the run manifest.
-    let memory_settings = PersonalMemorySettings {
+    let memory_settings = MemorySettings {
         suggestion_policy: "auto_apply".to_string(),
         ..Default::default()
     };

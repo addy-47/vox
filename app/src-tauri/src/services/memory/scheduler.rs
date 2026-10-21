@@ -5,7 +5,7 @@ use tauri::AppHandle;
 
 use crate::{
     core::{
-        defaults::{DEFAULT_LLM_CONTEXT_WINDOW, DEFAULT_LLM_THREADS},
+        defaults::DEFAULT_LLM_CONTEXT_WINDOW,
         events::{emit_ipc, IpcEvent, Severity},
         state::{AppState, InteractionState},
     },
@@ -53,7 +53,6 @@ fn resolve_provider(state: &Arc<AppState>) -> Option<Arc<dyn LlmProvider>> {
         Some(&llm_providers),
         &llm_path,
         DEFAULT_LLM_CONTEXT_WINDOW,
-        DEFAULT_LLM_THREADS,
     )
     .ok()
     .map(Arc::from)
@@ -80,7 +79,7 @@ pub async fn run_consolidation_once<R: tauri::Runtime>(
             .settings
             .read()
             .map_err(|_| anyhow!("Failed to acquire settings for consolidation"))?;
-        (guard.llm.clone(), guard.personal_memory.clone())
+        (guard.llm.clone(), guard.memory.clone())
     };
     let conn = state.db.connect()?;
     let outcome = consolidate_personal_memory(ConsolidationRequest {
@@ -159,8 +158,8 @@ pub async fn check_missed_consolidation_on_boot<R: tauri::Runtime>(
         .read()
         .map(|s| {
             (
-                s.personal_memory.consolidation_cadence.clone(),
-                s.personal_memory.consolidation_time.clone(),
+                s.memory.consolidation_cadence.clone(),
+                s.memory.consolidation_time.clone(),
             )
         })
         .unwrap_or_else(|_| ("manual".to_string(), "02:00".to_string()));
@@ -244,8 +243,8 @@ pub fn start_consolidation_scheduler<R: tauri::Runtime + 'static>(
 
     let (cadence, time_str) = match state.settings.read() {
         Ok(s) => (
-            s.personal_memory.consolidation_cadence.clone(),
-            s.personal_memory.consolidation_time.clone(),
+            s.memory.consolidation_cadence.clone(),
+            s.memory.consolidation_time.clone(),
         ),
         Err(_) => {
             log::warn!("[Memory::Scheduler] Settings lock poisoned; scheduler not started.");
@@ -284,8 +283,8 @@ pub fn start_consolidation_scheduler<R: tauri::Runtime + 'static>(
         loop {
             let (cadence, time_str) = match state_clone.settings.read() {
                 Ok(s) => (
-                    s.personal_memory.consolidation_cadence.clone(),
-                    s.personal_memory.consolidation_time.clone(),
+                    s.memory.consolidation_cadence.clone(),
+                    s.memory.consolidation_time.clone(),
                 ),
                 Err(_) => {
                     log::warn!("[Memory::Scheduler] Settings lock poisoned; scheduler stopping.");
@@ -310,7 +309,7 @@ pub fn start_consolidation_scheduler<R: tauri::Runtime + 'static>(
             let still_daily = state_clone
                 .settings
                 .read()
-                .map(|s| s.personal_memory.consolidation_cadence.clone())
+                .map(|s| s.memory.consolidation_cadence.clone())
                 .unwrap_or_default()
                 == "daily";
             if !still_daily {

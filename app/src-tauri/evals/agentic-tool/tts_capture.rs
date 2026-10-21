@@ -95,7 +95,7 @@ pub fn build_provider(settings: &TtsSettings) -> Result<Box<dyn TtsProvider>> {
         model: "kokoro".to_string(),
     };
     let model_dir = vox_lib::utils::paths::model_dir("");
-    create_tts_provider(&s, None, &model_dir, None, 1.0, 2)
+    create_tts_provider(&s, None, &model_dir, None, 1.0)
         .map_err(|e| anyhow!("Failed to initialize Kokoro for eval capture: {}", e))
 }
 

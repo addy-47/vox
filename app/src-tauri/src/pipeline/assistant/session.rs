@@ -14,7 +14,6 @@ use crate::{
     core::{
         defaults::{
             DEFAULT_LLM_CONTEXT_WINDOW, DEFAULT_LLM_MAX_OUTPUT_TOKENS, DEFAULT_LLM_TEMPERATURE,
-            DEFAULT_LLM_THREADS,
         },
         engine::{ensure_memory_embedder, ensure_modular_workers_sync, stop_audio_engine_sync},
         error::PipelineImpact,
@@ -211,9 +210,7 @@ pub fn on_session_start<R: Runtime + 'static>(
     // During an engine restart, ignore implicit session starts (session_id == None)
     // so the restart's explicit re-engagement with the preserved session id wins.
     if state.restart_in_flight.load(Ordering::Acquire) && session_id.is_none() {
-        log::info!(
-            "[Pipeline::Session] Ignoring implicit session start during engine restart"
-        );
+        log::info!("[Pipeline::Session] Ignoring implicit session start during engine restart");
         return;
     }
 
@@ -664,7 +661,7 @@ pub fn on_end<R: Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &RoutingCon
     let auto_compaction = state
         .settings
         .read()
-        .map(|s| s.working_memory.auto_compaction)
+        .map(|s| s.memory.auto_compaction)
         .unwrap_or(false);
 
     let app_handle = app.clone();
@@ -787,11 +784,6 @@ pub(crate) async fn resolve_llm_execution_params(db: &VoxDb, model_id: &str) -> 
             .get("reasoning_enabled")
             .and_then(|v| v.as_bool())
             .unwrap_or(false),
-        n_threads: raw
-            .get("threads")
-            .and_then(|v| v.as_u64())
-            .map(|v| v as u32)
-            .unwrap_or(DEFAULT_LLM_THREADS),
     }
 }
 

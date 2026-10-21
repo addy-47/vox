@@ -6,6 +6,8 @@ export interface VoxLogoLoaderProps {
   size?: "sm" | "md" | "lg" | number;
   className?: string;
   animated?: boolean;
+  /** Renders as a bare mark: no status role, no loading label. */
+  decorative?: boolean;
 }
 
 const SIZE_MAP: Record<"sm" | "md" | "lg", number> = {
@@ -20,7 +22,7 @@ const SIZE_MAP: Record<"sm" | "md" | "lg", number> = {
  * and pure CSS hardware-accelerated stroke flow + breathing glow.
  */
 export const VoxLogoLoader: React.FC<VoxLogoLoaderProps> = memo(
-  ({ size = "md", className, animated = true }) => {
+  ({ size = "md", className, animated = true, decorative = false }) => {
     const pixelSize = typeof size === "number" ? size : SIZE_MAP[size] ?? 44;
 
     return (
@@ -31,8 +33,9 @@ export const VoxLogoLoader: React.FC<VoxLogoLoaderProps> = memo(
           className
         )}
         style={{ width: pixelSize, height: pixelSize }}
-        role="status"
-        aria-label="Loading"
+        role={decorative ? undefined : "status"}
+        aria-label={decorative ? undefined : "Loading"}
+        aria-hidden={decorative || undefined}
       >
         <svg
           width={pixelSize}

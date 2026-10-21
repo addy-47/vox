@@ -9,6 +9,10 @@ import type {
   TtsProviderEntry,
 } from "@/data/providersCopy";
 import { ipcErrorMessage } from "@/shared/lib/ipcError";
+import {
+  getEffectiveCloudApiKey,
+  getEffectiveLlmServers,
+} from "@/shared/lib/activeSelection";
 import { useSettingsStore, selectActiveLlmProvider } from "@/store/settingsStore";
 import type {
   LlmModelInfo,
@@ -23,11 +27,41 @@ export interface CatalogProbingEntry {
   error?: string;
 }
 
+/**
+ * Lifecycle of one provider's remote model list.
+ *
+ * `ready` means a fetch completed. `fetchedKey` holds the identity of the
+ * cached result (kind|url|key presence); `null` means nothing is cached, so
+ * the next load retries.
+ */
+export interface ProviderRemoteModelsStatus {
+  status: "idle" | "loading" | "ready" | "error";
+  error: string | null;
+  /** Identity of the cached result. `null` when nothing is cached. */
+  fetchedKey: string | null;
+}
+
+/** Resolved endpoint of a provider, independent of the caller's config. */
+interface ResolvedProviderTarget {
+  kind: "cloud" | "server";
+  base_url: string;
+  api_key?: string;
+  provider_name?: string;
+}
+
 export interface CatalogState {
   remoteModels: LlmModelInfo[];
   loadingRemoteModels: boolean;
   remoteModelsError: string | null;
   remoteModelsFetchedKey: string | null;
+  /**
+   * Remote model list per provider id (cloud provider id or custom server id).
+   * Independent of the active-provider flow above: every connected provider
+   * gets its own group, fetched lazily and cached per provider.
+   */
+  remoteModelsByProvider: Record<string, LlmModelInfo[]>;
+  /** Per-provider lifecycle of the list above (loading / ready / error). */
+  remoteModelsStatusByProvider: Record<string, ProviderRemoteModelsStatus>;
   capabilitiesCache: Record<string, ModelCapabilities>;
   capabilitiesCacheError: string | null;
   probingMap: Record<string, CatalogProbingEntry>;
@@ -41,18 +75,98 @@ export interface CatalogState {
   loadRemoteModels: (providerConfig?: LlmProviderConfig, force?: boolean) => Promise<void>;
   clearRemoteModels: () => void;
   clearRemoteModelsError: () => void;
+  /**
+   * Loads (and caches) the remote model list of one provider. The provider
+   * config is optional: without it the endpoint and the API key are resolved
+   * from the settings inventory and the backend contract.
+   *
+   * Never fires a request for a cloud provider without a stored key.
+   * Concurrent calls for the same provider share one in-flight request.
+   */
+  loadRemoteModelsForProvider: (
+    providerId: string,
+    providerConfig?: LlmProviderConfig,
+    force?: boolean
+  ) => Promise<void>;
+  /** Drops the cached list of one provider so the next load refetches it. */
+  invalidateRemoteModelsForProvider: (providerId: string) => void;
   loadCapabilitiesCache: () => Promise<void>;
   patchCapabilities: (modelId: string, caps: ModelCapabilities) => void;
   setProbingEntry: (modelId: string, entry: CatalogProbingEntry) => void;
 }
 
 const remoteModelsInflight = new Map<string, Promise<LlmModelInfo[]>>();
+/** In-flight per-provider requests, keyed by provider id. */
+const providerRemoteModelsInflight = new Map<string, Promise<LlmModelInfo[]>>();
+
+/**
+ * Resolves the endpoint of one provider.
+ *
+ * The caller's config wins for the endpoint, but a missing endpoint or key is
+ * filled from the settings inventory (custom servers) and from the backend
+ * contract (cloud providers). The stored key wins over the passed one: the
+ * draft is the newer truth than a stale config object.
+ */
+function resolveProviderTarget(
+  providerId: string,
+  providerConfig: LlmProviderConfig | undefined,
+  cloudProviders: CloudProvider[]
+): ResolvedProviderTarget | null {
+  if (providerConfig?.kind === "embedded") return null;
+
+  const settingsState = useSettingsStore.getState();
+  const draft = settingsState.draftSettings ?? null;
+  const committed = settingsState.settings ?? null;
+
+  const contractEntry = settingsState.contract?.llm_cloud_providers?.find(
+    (p) => p.id === providerId
+  );
+  const storeEntry = cloudProviders.find((p) => p.id === providerId);
+  const contractBaseUrl =
+    contractEntry?.base_url || contractEntry?.url || storeEntry?.url || "";
+
+  const storedKey = getEffectiveCloudApiKey(draft, committed, providerId)?.trim() || undefined;
+  const passedKey = providerConfig?.api_key?.trim() || undefined;
+  const apiKey = storedKey || passedKey;
+
+  if (providerConfig) {
+    return {
+      kind: providerConfig.kind === "server" ? "server" : "cloud",
+      base_url: providerConfig.base_url?.trim() || contractBaseUrl,
+      api_key: apiKey,
+      provider_name: providerConfig.provider_name,
+    };
+  }
+
+  const server = getEffectiveLlmServers(draft, committed).find((s) => s.id === providerId);
+  if (server) {
+    return {
+      kind: "server",
+      base_url: (server.url || "").trim(),
+      api_key: server.api_key?.trim() || apiKey,
+      provider_name: server.name,
+    };
+  }
+
+  if (contractBaseUrl) {
+    return {
+      kind: "cloud",
+      base_url: contractBaseUrl,
+      api_key: apiKey,
+      provider_name: contractEntry?.name || storeEntry?.name,
+    };
+  }
+
+  return null;
+}
 
 export const useCatalogStore = create<CatalogState>((set, get) => ({
   remoteModels: [],
   loadingRemoteModels: false,
   remoteModelsError: null,
   remoteModelsFetchedKey: null,
+  remoteModelsByProvider: {},
+  remoteModelsStatusByProvider: {},
   capabilitiesCache: {},
   capabilitiesCacheError: null,
   probingMap: {},
@@ -156,6 +270,127 @@ export const useCatalogStore = create<CatalogState>((set, get) => ({
     if (get().remoteModelsError) {
       set({ remoteModelsError: null });
     }
+  },
+
+  loadRemoteModelsForProvider: async (
+    providerId: string,
+    providerConfig?: LlmProviderConfig,
+    force = false
+  ) => {
+    const id = providerId?.trim() ?? "";
+    if (!id) return;
+
+    const target = resolveProviderTarget(id, providerConfig, get().cloudProviders);
+
+    // A degraded group: empty list plus an error the UI can offer a retry for.
+    const degrade = (error: string) => {
+      const current = get().remoteModelsStatusByProvider[id];
+      const currentModels = get().remoteModelsByProvider[id];
+      // Already degraded the same way: no new object identities, no re-render.
+      if (
+        current?.status === "error" &&
+        current.error === error &&
+        currentModels?.length === 0
+      ) {
+        return;
+      }
+      console.info(`[Catalog] loadRemoteModelsForProvider degraded id=${id}: ${error}`);
+      set((state) => ({
+        remoteModelsByProvider: { ...state.remoteModelsByProvider, [id]: [] },
+        remoteModelsStatusByProvider: {
+          ...state.remoteModelsStatusByProvider,
+          [id]: { status: "error", error, fetchedKey: null },
+        },
+      }));
+    };
+
+    if (!target) {
+      degrade("Provider endpoint is not configured.");
+      return;
+    }
+    // RULE: a provider without a stored key never reaches the network.
+    if (target.kind === "cloud" && !target.api_key) {
+      degrade("API key required. Configure your key in Providers.");
+      return;
+    }
+    if (!target.base_url) {
+      degrade("Provider endpoint is not configured.");
+      return;
+    }
+
+    const fetchKey = `${target.kind}|${id}|${target.base_url}|${target.api_key ? "key" : "nokey"}`;
+    const cached = get().remoteModelsStatusByProvider[id];
+    if (!force && cached?.status === "ready" && cached.fetchedKey === fetchKey) {
+      return;
+    }
+
+    // One in-flight request per provider: concurrent callers join it.
+    const inflight = providerRemoteModelsInflight.get(id);
+    if (!force && inflight) {
+      try {
+        await inflight;
+      } catch {
+        // The owner records the error.
+      }
+      return;
+    }
+
+    console.info(
+      `[Catalog] loadRemoteModelsForProvider id=${id} kind=${target.kind} url=${target.base_url} hasKey=${Boolean(target.api_key)} force=${force}`
+    );
+    set((state) => ({
+      remoteModelsStatusByProvider: {
+        ...state.remoteModelsStatusByProvider,
+        [id]: { status: "loading", error: null, fetchedKey: cached?.fetchedKey ?? null },
+      },
+    }));
+
+    const request = listLlmModels({
+      kind: target.kind,
+      provider_id: id,
+      base_url: target.base_url,
+      model: providerConfig?.model ?? "",
+      api_key: target.api_key,
+      provider_name: target.provider_name,
+    });
+    providerRemoteModelsInflight.set(id, request);
+    try {
+      const list = await request;
+      console.info(`[Catalog] loadRemoteModelsForProvider ok id=${id} count=${list.length}`);
+      set((state) => ({
+        remoteModelsByProvider: { ...state.remoteModelsByProvider, [id]: list },
+        remoteModelsStatusByProvider: {
+          ...state.remoteModelsStatusByProvider,
+          [id]: { status: "ready", error: null, fetchedKey: fetchKey },
+        },
+      }));
+    } catch (err) {
+      const msg = ipcErrorMessage(err);
+      console.error(`[Catalog] loadRemoteModelsForProvider failed for ${id}:`, err);
+      set((state) => ({
+        remoteModelsByProvider: { ...state.remoteModelsByProvider, [id]: [] },
+        remoteModelsStatusByProvider: {
+          ...state.remoteModelsStatusByProvider,
+          [id]: { status: "error", error: msg, fetchedKey: null },
+        },
+      }));
+    } finally {
+      if (providerRemoteModelsInflight.get(id) === request) {
+        providerRemoteModelsInflight.delete(id);
+      }
+    }
+  },
+
+  invalidateRemoteModelsForProvider: (providerId: string) => {
+    const id = providerId?.trim() ?? "";
+    if (!id) return;
+    set((state) => {
+      const models = { ...state.remoteModelsByProvider };
+      delete models[id];
+      const statuses = { ...state.remoteModelsStatusByProvider };
+      delete statuses[id];
+      return { remoteModelsByProvider: models, remoteModelsStatusByProvider: statuses };
+    });
   },
 
   loadCapabilitiesCache: async () => {

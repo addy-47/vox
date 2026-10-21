@@ -190,48 +190,98 @@ fn test_settings_json_roundtrip_persistence() {
         "dictation.output_mode should be recognized"
     );
 
-    // Working Memory
+    // Memory (merged scope)
     assert!(
         apply_setting_mutation(
+            &mut settings,
+            "memory",
+            "private_mode",
+            &serde_json::json!(true)
+        )
+        .expect("memory.private_mode mutation failed"),
+        "memory.private_mode should be recognized"
+    );
+    assert!(
+        apply_setting_mutation(
+            &mut settings,
+            "memory",
+            "max_context_share",
+            &serde_json::json!(0.4)
+        )
+        .expect("memory.max_context_share mutation failed"),
+        "memory.max_context_share should be recognized"
+    );
+    assert!(
+        apply_setting_mutation(
+            &mut settings,
+            "memory",
+            "context_retrieval_enabled",
+            &serde_json::json!(false)
+        )
+        .expect("memory.context_retrieval_enabled mutation failed"),
+        "memory.context_retrieval_enabled should be recognized"
+    );
+    assert!(
+        apply_setting_mutation(
+            &mut settings,
+            "memory",
+            "top_k_facts",
+            &serde_json::json!(15)
+        )
+        .expect("memory.top_k_facts mutation failed"),
+        "memory.top_k_facts should be recognized"
+    );
+    assert!(
+        apply_setting_mutation(
+            &mut settings,
+            "memory",
+            "semantic_similarity_cutoff",
+            &serde_json::json!(0.55)
+        )
+        .expect("memory.semantic_similarity_cutoff mutation failed"),
+        "memory.semantic_similarity_cutoff should be recognized"
+    );
+
+    // Interaction: web search toggle lives in the interaction scope.
+    assert!(
+        apply_setting_mutation(
+            &mut settings,
+            "interaction",
+            "web_search_enabled",
+            &serde_json::json!(false)
+        )
+        .expect("interaction.web_search_enabled mutation failed"),
+        "interaction.web_search_enabled should be recognized"
+    );
+
+    // Zero backward compatibility: the retired scopes are no longer recognized.
+    assert!(
+        !apply_setting_mutation(
             &mut settings,
             "working_memory",
             "private_mode",
             &serde_json::json!(true)
         )
-        .expect("working_memory.private_mode mutation failed"),
-        "working_memory.private_mode should be recognized"
+        .expect("working_memory.private_mode must resolve without error"),
+        "working_memory.private_mode must not be recognized after the scope merge"
     );
     assert!(
-        apply_setting_mutation(
-            &mut settings,
-            "working_memory",
-            "max_context_share",
-            &serde_json::json!(0.4)
-        )
-        .expect("working_memory.max_context_share mutation failed"),
-        "working_memory.max_context_share should be recognized"
-    );
-
-    // Personal Memory
-    assert!(
-        apply_setting_mutation(
-            &mut settings,
-            "personal_memory",
-            "context_retrieval_enabled",
-            &serde_json::json!(false)
-        )
-        .expect("personal_memory.context_retrieval_enabled mutation failed"),
-        "personal_memory.context_retrieval_enabled should be recognized"
-    );
-    assert!(
-        apply_setting_mutation(
+        !apply_setting_mutation(
             &mut settings,
             "personal_memory",
             "top_k_facts",
             &serde_json::json!(15)
         )
-        .expect("personal_memory.top_k_facts mutation failed"),
-        "personal_memory.top_k_facts should be recognized"
+        .expect("personal_memory.top_k_facts must resolve without error"),
+        "personal_memory.top_k_facts must not be recognized after the scope merge"
+    );
+    assert!(
+        apply_settings_patch_tree(
+            &mut settings,
+            &serde_json::json!({ "working_memory": { "private_mode": true } }),
+        )
+        .is_err(),
+        "a patch on the retired working_memory scope must be rejected"
     );
 
     // 3. Persist mutated settings to disk via SUT: VoxSettings::save
@@ -312,12 +362,14 @@ fn test_settings_json_roundtrip_persistence() {
     assert_eq!(reloaded.tts.active.model, "supertonic");
     assert_eq!(reloaded.tts.active_voice_id, "aria");
     assert_eq!(reloaded.interaction.pipeline_mode, PipelineMode::Realtime);
+    assert!(!reloaded.interaction.web_search_enabled);
     assert!(reloaded.dictation.enabled);
     assert_eq!(reloaded.dictation.output_mode, DictationOutputMode::Tray);
-    assert!(reloaded.working_memory.private_mode);
-    assert!((reloaded.working_memory.max_context_share - 0.4).abs() < 1e-5);
-    assert!(!reloaded.personal_memory.context_retrieval_enabled);
-    assert_eq!(reloaded.personal_memory.top_k_facts, 15);
+    assert!(reloaded.memory.private_mode);
+    assert!((reloaded.memory.max_context_share - 0.4).abs() < 1e-5);
+    assert!(!reloaded.memory.context_retrieval_enabled);
+    assert_eq!(reloaded.memory.top_k_facts, 15);
+    assert!((reloaded.memory.semantic_similarity_cutoff - 0.55).abs() < 1e-5);
 
     assert!(
         Instant::now() < deadline,
@@ -348,13 +400,10 @@ fn test_settings_malformed_fallback_to_default() {
     assert_eq!(recovered.vad.threshold, defaults.vad.threshold);
     assert_eq!(recovered.llm.active, defaults.llm.active);
     assert_eq!(recovered.tts.active_voice_id, defaults.tts.active_voice_id);
+    assert_eq!(recovered.memory.private_mode, defaults.memory.private_mode);
     assert_eq!(
-        recovered.working_memory.private_mode,
-        defaults.working_memory.private_mode
-    );
-    assert_eq!(
-        recovered.personal_memory.context_retrieval_enabled,
-        defaults.personal_memory.context_retrieval_enabled
+        recovered.memory.context_retrieval_enabled,
+        defaults.memory.context_retrieval_enabled
     );
 
     // 2. Assert the corrupt file was backed up to settings.corrupt.<ts>.jsonc

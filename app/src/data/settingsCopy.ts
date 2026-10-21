@@ -1,7 +1,13 @@
 import type { LucideIcon } from "lucide-react";
-import { BookOpenText, CircleUserRound, NotebookTabs, Orbit, Palette, SlidersHorizontal } from "lucide-react";
+import { AudioLines, BookOpenText, BrainCircuit, CircleUserRound, Palette, SlidersHorizontal } from "lucide-react";
 
-export type SettingsDomainId = "persona" | "models" | "working_memory" | "personal_memory" | "appearance" | "interaction";
+export type SettingsDomainId =
+  | "persona"
+  | "speech"
+  | "memory"
+  | "appearance"
+  | "language"
+  | "interaction";
 
 export interface SettingsDomain {
   id: SettingsDomainId;
@@ -11,13 +17,18 @@ export interface SettingsDomain {
   angle: number;
 }
 
+/**
+ * Clock order. The array index is the slot address used by the radial hub:
+ * [0] 12:00 Persona, [1] 02:00 Memory, [2] 04:00 Language, [3] 06:00 Appearance,
+ * [4] 08:00 Speech (`speech`), [5] 10:00 Interaction.
+ */
 export const SETTINGS_DOMAINS: SettingsDomain[] = [
   { id: "persona", label: "Persona", sublabel: "Prompts & identity", icon: CircleUserRound, angle: -90 },
-  { id: "models", label: "Models", sublabel: "Voice & thinking models", icon: Orbit, angle: -30 },
-  { id: "working_memory", label: "Working", sublabel: "Context, turns & compaction", icon: NotebookTabs, angle: 30 },
+  { id: "memory", label: "Memory", sublabel: "Recall, facts & compaction", icon: BookOpenText, angle: -30 },
+  { id: "language", label: "Language Model", sublabel: "Reasoning engine & providers", icon: BrainCircuit, angle: 30 },
   { id: "appearance", label: "Appearance", sublabel: "Visual theme & colors", icon: Palette, angle: 90 },
-  { id: "personal_memory", label: "Personal", sublabel: "Knowledge, facts & consolidation", icon: BookOpenText, angle: 150 },
-  { id: "interaction", label: "Interaction", sublabel: "Activation & cloud key", icon: SlidersHorizontal, angle: -150 },
+  { id: "speech", label: "Speech Models", sublabel: "Voice, transcription & synthesis", icon: AudioLines, angle: 150 },
+  { id: "interaction", label: "Interaction", sublabel: "Activation & web search", icon: SlidersHorizontal, angle: -150 },
 ];
 
 export type SettingsScope =
@@ -28,8 +39,7 @@ export type SettingsScope =
   | "tts"
   | "interaction"
   | "dictation"
-  | "working_memory"
-  | "personal_memory"
+  | "memory"
   | "persona"
   | "realtime"
   | "system";
@@ -40,17 +50,30 @@ export type SettingsScope =
  */
 export const SETTINGS_SCOPE_KEYS: Partial<Record<SettingsScope, readonly string[]>> = {
   appearance: ["theme", "accent_seed"],
-  interaction: ["mode", "pipeline_mode"],
+  // vad / stt / llm / tts mirror the backend contract
+  // (`config::mutation::supported_keys_for_domain`), the SSOT for the keys a
+  // scope accepts. Without them the dirty check fell back to a whole-scope
+  // compare, so any backend-side field change flagged the owning card.
+  vad: ["threshold", "ptt_noise_gate", "silence_duration_ms", "speech_onset_ms", "vad_backend"],
+  stt: ["active", "last_selected", "transliterate_enabled"],
+  llm: ["active", "last_selected", "servers", "cloud_keys"],
+  // The TTS scope carries three real keys (active, last_selected, active_voice_id)
+  // plus the custom-server inventory. Provider ids are never listed here: the
+  // frontend must not hardcode a provider identity (design invariant 6).
+  tts: ["active", "last_selected", "active_voice_id", "servers"],
+  interaction: ["mode", "pipeline_mode", "web_search_enabled"],
   dictation: ["enabled", "interaction_mode", "hotkey", "output_mode", "silence_auto_stop_ms"],
-  working_memory: ["private_mode", "auto_compaction", "max_context_share", "web_search_enabled"],
-  personal_memory: [
+  memory: [
     "context_retrieval_enabled",
     "pipeline_processing_enabled",
-    "top_k_facts",
-    "semantic_similarity_cutoff",
+    "private_mode",
     "consolidation_cadence",
     "consolidation_time",
     "suggestion_policy",
+    "auto_compaction",
+    "max_context_share",
+    "top_k_facts",
+    "semantic_similarity_cutoff",
   ],
   persona: ["modular_prompt", "realtime_prompt"],
   realtime: [
@@ -67,22 +90,42 @@ export interface DomainDirtyKey {
   nestedKey?: string;
 }
 
+/**
+ * The VAD keys a user can edit. `ptt_noise_gate` (removed from the UI) and
+ * `vad_backend` (engine-owned) are excluded on purpose: a card that owns the
+ * vad scope must never report dirty for them.
+ */
+export const VAD_USER_FACING_KEYS = [
+  "threshold",
+  "silence_duration_ms",
+  "speech_onset_ms",
+] as const;
+
+/** The STT keys the models card owns: model selection only. */
+export const STT_MODEL_KEYS = ["active", "last_selected"] as const;
+
+/** The STT key the interaction card owns: script transliteration. */
+export const TRANSLITERATION_KEYS = ["transliterate_enabled"] as const;
+
 export const DOMAIN_DIRTY_KEYS: Record<SettingsDomainId, readonly DomainDirtyKey[]> = {
-  models: [
-    { scope: "vad", keys: SETTINGS_SCOPE_KEYS.vad },
-    { scope: "stt", keys: SETTINGS_SCOPE_KEYS.stt },
+  // The speech card owns model selection for every stage, plus the detection
+  // knobs it renders behind the voice-detection gear.
+  speech: [
+    { scope: "stt", keys: STT_MODEL_KEYS },
     { scope: "tts", keys: SETTINGS_SCOPE_KEYS.tts },
-    { scope: "llm", keys: SETTINGS_SCOPE_KEYS.llm },
     { scope: "realtime", keys: SETTINGS_SCOPE_KEYS.realtime },
+    { scope: "vad", keys: VAD_USER_FACING_KEYS },
   ],
-  working_memory: [
-    { scope: "working_memory", keys: SETTINGS_SCOPE_KEYS.working_memory },
+  // The language card owns the reasoning engine: model selection, the custom
+  // server inventory, and the cloud provider keys.
+  language: [
+    { scope: "llm", keys: SETTINGS_SCOPE_KEYS.llm },
+  ],
+  memory: [
+    { scope: "memory", keys: SETTINGS_SCOPE_KEYS.memory },
   ],
   persona: [
     { scope: "persona", keys: SETTINGS_SCOPE_KEYS.persona },
-  ],
-  personal_memory: [
-    { scope: "personal_memory", keys: SETTINGS_SCOPE_KEYS.personal_memory },
   ],
   appearance: [
     { scope: "appearance", keys: SETTINGS_SCOPE_KEYS.appearance },
@@ -91,6 +134,9 @@ export const DOMAIN_DIRTY_KEYS: Record<SettingsDomainId, readonly DomainDirtyKey
     { scope: "interaction", keys: SETTINGS_SCOPE_KEYS.interaction },
     { scope: "dictation", keys: SETTINGS_SCOPE_KEYS.dictation },
     { scope: "realtime", keys: SETTINGS_SCOPE_KEYS.realtime },
+    // Script transliteration is an interaction-card control: the speech card
+    // owns the stt model selection only.
+    { scope: "stt", keys: TRANSLITERATION_KEYS },
   ],
 };
 
@@ -206,7 +252,7 @@ export const PERSONA_COPY = {
   tagsProtectedHint: "That edit touches protected system tags, so it wasn't saved.",
 };
 
-export const INTERACTION_CONFIG_DESK_COPY = {
+export const PROVIDERS_CONFIG_DESK_COPY = {
   integrated: {
     title: "Integrated Voice Engine",
     description: "Streaming STT, LLM inference, and TTS audio synthesis run tightly coupled in unified process memory for minimal perceived latency.",
@@ -296,29 +342,69 @@ export const INTERACTION_CONFIG_DESK_COPY = {
   },
 };
 
-export const PERSONAL_MEMORY_CONFIG_DESK_COPY = {
-  cardTitle: "Personal Memory",
-  recallToggle: {
-    title: "Memory Recall",
-    activeLabel: "Recall On",
-    inactiveLabel: "Recall Off",
-    activeSublabel: "Uses past memories in chat",
-    inactiveSublabel: "Does not use past memories",
-  },
-  pipelineToggle: {
-    title: "Memory Learning",
-    activeLabel: "Learning On",
-    inactiveLabel: "Learning Off",
-    activeSublabel: "Saves new facts from chat",
-    inactiveSublabel: "Pauses saving new facts",
+export const WEB_SEARCH_COPY = {
+  tab: "Web Search",
+  title: "Web Search",
+  description:
+    "Let Vox search the live web for current facts mid-conversation. Keyless built-in engine, Modular sessions only.",
+  enabled: "Enabled",
+  disabled: "Disabled",
+  toggleAria: "Toggle web search",
+};
+
+export const REMOTE_CONTROL_COPY = {
+  tab: "Remote Control",
+  title: "Remote Control",
+  description:
+    "Let a paired phone act as the microphone, speaker and screen for this laptop, over your own network.",
+  comingSoon: "Coming Soon",
+} as const;
+
+export const MEMORY_CARD_COPY = {
+  cardTitle: "Memory",
+  viewBasic: "Basic",
+  viewAdvanced: "Advanced",
+  tiles: {
+    recall: {
+      title: "Memory Recall",
+      activeLabel: "Recall On",
+      inactiveLabel: "Recall Off",
+      activeSublabel: "Uses past memories in chat",
+      inactiveSublabel: "Does not use past memories",
+    },
+    learning: {
+      title: "Memory Learning",
+      activeLabel: "Learning On",
+      inactiveLabel: "Learning Off",
+      activeSublabel: "Saves new facts from chat",
+      inactiveSublabel: "Pauses saving new facts",
+    },
+    autoCompaction: {
+      title: "Auto Compaction",
+      activeLabel: "Auto Active",
+      inactiveLabel: "Manual Review",
+      activeSublabel: "Summarizes on idle",
+      inactiveSublabel: "Prompt on uncompacted",
+    },
   },
   tabs: {
-    consolidation: "Schedule",
-    depth: "Limit",
-    cutoff: "Relevance",
+    sessionStorage: "Storage",
+    schedule: "Schedule",
     suggestions: "Suggestions",
+    context: "Context",
+    limit: "Limit",
+    relevance: "Relevance",
   },
-  consolidation: {
+  sessionStorage: {
+    title: "Session Storage",
+    description:
+      "When on, nothing from your chats is written to disk — no audio, no transcripts, no memories.",
+    enabledLabel: "Incognito",
+    disabledLabel: "Logged",
+    enabledSub: "No traces saved",
+    disabledSub: "Standard SQLite",
+  },
+  schedule: {
     title: "Update Schedule",
     sublabel: "[ 24h format ]",
     description: "How often Vox updates your personal memory notes with new facts learned from conversations.",
@@ -333,39 +419,46 @@ export const PERSONAL_MEMORY_CONFIG_DESK_COPY = {
     minutesShort: "m",
     in: "in",
   },
-  depth: {
+  limit: {
     title: "Memory Limit",
     description: "Maximum number of relevant memories Vox brings into each conversation.",
     unit: "memories",
   },
-  cutoff: {
+  relevance: {
     title: "Relevance Threshold",
     description: "How closely a memory must match your current conversation to be remembered.",
   },
   suggestions: {
     title: "Suggestion Policy",
     description: "Determine whether extracted memory suggestions require manual review or are automatically applied.",
-    manualLabel: "Manual Review",
+    manualLabel: "Manual",
     autoLabel: "Auto-Apply",
+  },
+  context: {
+    title: "Context Share Budget",
+    description:
+      "Percentage of LLM context window reserved for personal profile and working dialogue history.",
   },
 };
 
 export const TTS_VOICE_MANAGER_COPY = {
   tabs: {
     selectVoice: "Select Voice",
+    voice: "Voice",
+    speed: "Speech Rate",
   },
   voice: {
     title: "Voice Profile",
     prefix: "Choose an AI voice persona from the",
   },
+  execution: {
+    embedded: "Synthesized on-device.",
+    cloud: "Synthesized in the cloud.",
+    remote: "Synthesized on your own server.",
+  },
   speed: {
     title: "Speech Rate",
     description: "Fine-tune speech synthesis playback tempo and velocity across assistant responses without pitch distortion.",
-  },
-  compute: {
-    title: "Compute Allocation",
-    description:
-      "CPU worker threads for TTS synthesis. Higher counts reduce latency but share cores with STT and LLM.",
   },
   region: {
     previous: "Previous region",
@@ -373,9 +466,8 @@ export const TTS_VOICE_MANAGER_COPY = {
   },
 };
 
-export const CATALOG_HEADER_COPY = {
+export const CARD_HEADER_COPY = {
   back: "Back",
-  addProviderSoon: "Add provider (coming soon)",
   sortAsc: "Sort A–Z",
   sortDesc: "Sort Z–A",
   search: "Search",
@@ -529,20 +621,86 @@ export const REMOTE_SERVER_COPY = {
   deploy: "Deploy Chatterbox Server",
 } as const;
 
-export const MODEL_HUB_COPY = {
-  title: "Model Hub",
-  tabs: {
-    vad: "Voice Detection",
-    vadShort: "Detection",
-    stt: "Listening",
-    sttShort: "Listening",
-    llm: "Reasoning",
-    llmShort: "Reasoning",
-    tts: "Speaking",
-    ttsShort: "Speaking",
-    auxiliary: "Support",
-    auxiliaryShort: "Support",
+/** The three LLM knobs, shown as glyphs in the model catalog header. */
+export const LLM_TUNING_COPY = {
+  custom: "Custom",
+  responseLength: {
+    title: "Response length",
+    hint: "Tokens per reply. Native lets the model decide how long it answers.",
+    native: "Native",
   },
+  context: {
+    title: "Context window",
+    hint: "How much the model can hold at once. A hosted provider sets its own limit.",
+    serverManaged: "Server managed",
+  },
+  creativity: {
+    title: "Creativity",
+    hint: "Higher values vary the wording more. Lower values keep answers plainer.",
+  },
+} as const;
+
+/** Shared by every card catalog that can reveal its full list. */
+export const CATALOG_REVEAL_COPY = {
+  showAll: "Show all",
+} as const;
+
+export const LANGUAGE_CARD_COPY = {
+  title: "Language Model",
+  selectModel: "Select model",
+  providersAria: "Language providers",
+  providerModalTitle: "Language providers",
+  providerModalSubtitle: "Connect a hosted provider or register a self-hosted endpoint.",
+  expandProviders: "Expand language providers",
+  backToProviders: "Back to providers",
+  providerCount: "providers",
+  showAll: "Show all",
+  seeLess: "See less",
+  needsKey: "Cloud · needs key",
+  keySaved: "Cloud · key saved",
+  onDevice: "On-device",
+  addProvider: "Add provider",
+  localPrivate: "Local GGUF · private",
+  saveKey: "Save key",
+  cancel: "Cancel",
+} as const;
+
+export const SPEECH_CARD_COPY = {
+  title: "Speech Models",
+  topologyAria: "Speech pipeline",
+  selectVoice: "Select voice",
+  openVoices: "Open voices",
+  cloud: "Cloud",
+  tierOnDevice: "On-device",
+  tierCloud: "Cloud",
+  tierBuiltIn: "Built-in",
+  sourceFacet: "Source",
+  facetAll: "All",
+  facetLocal: "On-device",
+  facetCloud: "Cloud",
+  ttsModelsTitle: "Text to speech models",
+  ttsModelsSubtitle: "Seven engines. Pick one, then open its voices.",
+  ttsModelsAria: "Browse text to speech engines",
+  expandTts: "Expand text to speech models",
+  expandVoices: "Expand voice catalog",
+  vadSettings: "Detection settings",
+  backToVadModels: "Back to detection models",
+  tabs: {
+    vad: "Voice detection",
+    vadShort: "Detection",
+    stt: "Transcription",
+    sttShort: "Transcription",
+    tts: "Text to speech",
+    ttsShort: "Speech",
+  },
+  tabCaptions: {
+    tts: "Local and cloud voices",
+    stt: "Speech to text, on-device",
+    vad: "Find where speech starts",
+  },
+} as const;
+
+export const MODEL_HUB_COPY = {
   missing: "Missing",
   notDownloadedDesc: "This model file is not downloaded yet.",
   /** Shown under a server/cloud LLM chip, whose weights are not local. */
@@ -567,28 +725,16 @@ export const DIRTY_STATE_COPY = {
   stage: "Unsaved changes in this stage",
 } as const;
 
-export const COMPUTE_PROFILE_COPY = {
-  title: "Compute Allocation",
-  auto: "Auto",
-  eco: "Eco",
-  max: "Max",
-  custom: "Custom",
+/** Placeholder for numeric inputs that accept a value outside the presets. */
+export const CUSTOM_VALUE_COPY = {
+  placeholder: "Custom",
 } as const;
 
 export const LLM_SETTINGS_COPY = {
   tabs: {
-    compute: "Compute",
     tokens: "Response",
     context: "Context",
     creativity: "Creativity",
-  },
-  compute: {
-    title: "Compute Allocation",
-    description: "Allocate local CPU worker threads for in-process model reasoning.",
-    remoteTitleLocal: "Cloud Infrastructure",
-    remoteTitleRemote: "Remote Compute",
-    remoteDescription:
-      "Inference computation and KV-cache allocation are offloaded entirely to the remote endpoint.",
   },
   tokens: {
     title: "Token Limit",
@@ -612,43 +758,11 @@ export const APPEARANCE_COPY = {
   copiedHex: "Copied",
 } as const;
 
-export const WORKING_MEMORY_SETTINGS_COPY = {
-  cardTitle: "Working Memory",
-  tabs: {
-    webSearch: "Web Search",
-    contentShare: "Content Share",
-  },
-  privateModeTitle: "Session Storage",
-  privateModeActive: "Incognito Active",
-  privateModeInactive: "Logging Active",
-  privateModeActiveSub: "No traces saved",
-  privateModeInactiveSub: "Standard SQLite",
-  autoCompactionTitle: "Auto Compaction",
-  autoCompactionActive: "Auto Active",
-  autoCompactionInactive: "Manual Review",
-  autoCompactionActiveSub: "Summarizes on idle",
-  autoCompactionInactiveSub: "Prompt on uncompacted",
-  webSearch: {
-    title: "Web Search",
-    description:
-      "Let Vox search the live web for current facts mid-conversation. Keyless built-in engine, Modular sessions only.",
-    enabled: "Enabled",
-    disabled: "Disabled",
-    toggleAria: "Toggle web search",
-  },
-  contentShare: {
-    title: "Context Share Budget",
-    description:
-      "Percentage of LLM context window reserved for personal profile and working dialogue history.",
-  },
-};
-
 export const VAD_SETTINGS_COPY = {
   tabs: {
     sensitivity: "Sensitivity",
     silence: "Silence Cutoff",
     speechOnset: "Speech Onset",
-    noiseGate: "Noise Gate",
   },
   sensitivity: {
     title: "Voice Sensitivity",
@@ -662,28 +776,20 @@ export const VAD_SETTINGS_COPY = {
     title: "Speech Onset Duration",
     description: "Minimum continuous voice duration required before initiating an active turn.",
   },
-  noiseGate: {
-    title: "Noise Gate Floor",
-    description: "Energy floor threshold to filter steady background noise before detection.",
-  },
 };
+
+export const TRANSLITERATION_COPY = {
+  tab: "Transliteration",
+  title: "Script Transliteration",
+  description: "Converts recognized regional scripts into phonetic Latin text in real-time.",
+  enabled: "Enabled",
+  disabled: "Disabled",
+  toggleAria: "Toggle script transliteration",
+} as const;
 
 export const STT_SETTINGS_COPY = {
   tabs: {
-    streamingRate: "Streaming Rate",
     transliteration: "Transliterate",
-  },
-  compute: {
-    title: "Compute Allocation",
-    description: "Dedicated CPU worker threads allocated for speech recognition inference.",
-  },
-  streamingRate: {
-    title: "Subtitle Cadence",
-    description: "Update frequency for interim real-time transcription streaming.",
-  },
-  transliteration: {
-    title: "Script Transliteration",
-    description: "Converts recognized regional scripts into phonetic Latin text in real-time.",
   },
 };
 
@@ -704,9 +810,15 @@ export const PROVIDERS_HEADER_COPY = {
 } as const;
 
 export const PIPELINE_PROVIDERS_DESK_COPY = {
+  cardTitle: "Providers",
   sectionTitle: "Inference Pipeline",
   sectionSubtitle: "Configure stages for listening, reasoning, and speaking.",
   configureAriaPrefix: "Configure",
+  selectProvider: "Select a provider",
+  onDevice: "On-Device",
+  customServer: "Custom Server",
+  notSelected: "Not selected",
+  providerCount: "{count} providers",
   cards: {
     stt: {
       title: "Speech Recognition",

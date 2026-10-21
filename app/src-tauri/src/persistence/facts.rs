@@ -552,7 +552,10 @@ pub async fn fetch_active_episodic_observations(
 /// Looks up the `text` column of a single memory fact by id.
 pub async fn get_memory_fact_text(conn: &Connection, fact_id: &str) -> Result<Option<String>> {
     let mut rows = conn
-        .query("SELECT text FROM memory_facts WHERE id = ?", (fact_id.to_string(),))
+        .query(
+            "SELECT text FROM memory_facts WHERE id = ?",
+            (fact_id.to_string(),),
+        )
         .await?;
     match rows.next().await? {
         Some(row) => Ok(row.get(0).ok()),

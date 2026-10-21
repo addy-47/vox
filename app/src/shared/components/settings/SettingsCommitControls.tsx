@@ -3,7 +3,7 @@ import { AlertCircle, Check, RefreshCw } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { useSettingsStore, type SettingsState, SETTINGS_DOMAIN_TO_UI } from "@/store/settingsStore";
 import { useCatalogStore } from "@/store/catalogStore";
-import { SETTINGS_COPY, INTERACTION_CONFIG_DESK_COPY } from "@/data/settingsCopy";
+import { SETTINGS_COPY, PROVIDERS_CONFIG_DESK_COPY } from "@/data/settingsCopy";
 import { useExpandableList } from "@/shared/ui/ExpandableList";
 import { useViewportResize } from "@/shared/hooks/useViewportResize";
 import { Tooltip } from "@/shared/ui/Tooltip";
@@ -57,8 +57,11 @@ export function useDomainCommitState(domainId: string): DomainCommitState {
     pipelineMode === "realtime" && !realtimeKeyFor(realtimeProvider)?.trim();
 
   const isMissingKey = useMemo(() => {
-    if (domainId === "models" || domainId === "interaction") {
-      return pipelineMode === "realtime" ? isRealtimeMissingKey : isCloudLlmMissingKey;
+    if (domainId === "language") {
+      return isCloudLlmMissingKey;
+    }
+    if (domainId === "speech" || domainId === "interaction") {
+      return pipelineMode === "realtime" ? isRealtimeMissingKey : false;
     }
     return false;
   }, [domainId, pipelineMode, isRealtimeMissingKey, isCloudLlmMissingKey]);
@@ -70,10 +73,10 @@ export function useDomainCommitState(domainId: string): DomainCommitState {
     useCallback(
       (s: SettingsState) => {
         if (!s.restartInFlight) return false;
-        if (s.restartKeys.length === 0) return domainId === "models";
+        if (s.restartKeys.length === 0) return domainId === "speech";
         return s.restartKeys.some((k) => {
           const scope = k.split(".")[0];
-          const targetUi = SETTINGS_DOMAIN_TO_UI[scope] || "models";
+          const targetUi = SETTINGS_DOMAIN_TO_UI[scope] || "speech";
           return targetUi === domainId;
         });
       },
@@ -280,7 +283,7 @@ SettingsCommitControls.displayName = "SettingsCommitControls";
 
 export const ModalProviderFooter = memo(({ category }: { category: "STT" | "LLM" | "TTS" }) => {
   const isTts = category === "TTS";
-  const failedKeys = useSettingsStore((s) => s.failedSaveDomains[isTts ? "tts" : "models"]);
+  const failedKeys = useSettingsStore((s) => s.failedSaveDomains[isTts ? "speech" : "language"]);
   const remoteModelsError = useCatalogStore((s) => s.remoteModelsError);
   const draftSettings = useSettingsStore((s) => s.draftSettings);
   const committedSettings = useSettingsStore((s) => s.settings);
@@ -309,7 +312,7 @@ export const ModalProviderFooter = memo(({ category }: { category: "STT" | "LLM"
       )}
       {remoteModelsError && (
         <SettingsFooterBanner
-          title={INTERACTION_CONFIG_DESK_COPY.status.connectionFailed}
+          title={PROVIDERS_CONFIG_DESK_COPY.status.connectionFailed}
           detail={remoteModelsError}
           className="rounded-xl w-full max-w-full"
         />

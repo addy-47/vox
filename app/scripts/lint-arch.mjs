@@ -242,11 +242,11 @@ function offenderPush(list, src, idx, file, frag) {
   const settingsService = fs.readFileSync(path.join(SRC_DIR, "services", "settingsService.ts"), "utf-8");
   check("Invariant 29 (probe args single casing)", !settingsService.includes("model_id: modelId") && !settingsService.includes("target_cap: targetCap"), "  snake_case duplicate args present in settingsService.ts");
 
-  // Expanded catalog copy transparency (LlmCatalogView).
-  const view = fs.readFileSync(path.join(SRC_DIR, "shared", "components", "settings", "models", "LlmCatalogView.tsx"), "utf-8");
+  // Expanded catalog copy transparency (language RemoteCatalogSection).
+  const view = fs.readFileSync(path.join(SRC_DIR, "shared", "components", "settings", "language", "RemoteCatalogSection.tsx"), "utf-8");
   const badCopy = ["> testing", "visionCount", '"vision"'].some((s) => view.includes(s)) ||
     ['"Benchmark"', '"Re-probe"', '"Re-run benchmark"', '"Untested"'].some((l) => view.includes(`>${l}<`) || view.includes(` ${l}`));
-  check("Invariant 28 (expanded catalog copy SSOT)", !badCopy, "  second spinner / vision filter / hardcoded copy present in LlmCatalogView.tsx");
+  check("Invariant 28 (expanded catalog copy SSOT)", !badCopy, "  second spinner / vision filter / hardcoded copy present in RemoteCatalogSection.tsx");
 
   // Shortcut registry SSOT.
   const shortcuts = fs.readFileSync(path.join(SRC_DIR, "data", "shortcuts.ts"), "utf-8");

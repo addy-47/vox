@@ -597,7 +597,7 @@ export function applyTheme(
     ".clock-pill",
     ".orbit-card-surface",
   ];
-  const cardIds = ["persona", "models", "working_memory", "personal_memory", "appearance", "interaction"];
+  const cardIds = ["persona", "speech", "memory", "appearance", "language", "interaction"];
   const cardTargets = cardIds
     .filter((id) => document.getElementById(`card-${id}`))
     .map((id) => `#card-${id} .glass-card, #card-${id} .glass`);

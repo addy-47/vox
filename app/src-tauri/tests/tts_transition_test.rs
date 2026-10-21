@@ -289,7 +289,7 @@ async fn test_compaction_filler_dispatch_and_pending_accounting() {
         // Calibrate context window to 8192 (>= MIN_LLM_CONTEXT_WINDOW = 8192)
         {
             let mut settings = state.settings.write().unwrap();
-            settings.working_memory.auto_compaction = true; // required: default is false, compaction won't trigger without this
+            settings.memory.auto_compaction = true; // required: default is false, compaction won't trigger without this
         }
 
         let settings = state.settings.read().unwrap().clone();
@@ -303,7 +303,6 @@ async fn test_compaction_filler_dispatch_and_pending_accounting() {
                 max_output_tokens: 512,
                 temperature: 0.7,
                 reasoning_enabled: false,
-                n_threads: 4,
             },
             llm_tx.clone(),
             true,
@@ -424,7 +423,6 @@ async fn test_compaction_filler_dispatch_and_pending_accounting() {
                 max_output_tokens: 512,
                 temperature: 0.7,
                 reasoning_enabled: false,
-                n_threads: 4,
             },
             llm_tx,
             true,

@@ -288,7 +288,7 @@ async fn handle_interaction_side_effects<R: tauri::Runtime>(
     }
 }
 
-async fn handle_personal_memory_side_effects<R: tauri::Runtime>(
+async fn handle_memory_side_effects<R: tauri::Runtime>(
     app: &AppHandle<R>,
     state: &AppState,
     key: &str,
@@ -298,7 +298,7 @@ async fn handle_personal_memory_side_effects<R: tauri::Runtime>(
         let cadence = state
             .settings
             .read()
-            .map(|s| s.personal_memory.consolidation_cadence.clone())
+            .map(|s| s.memory.consolidation_cadence.clone())
             .unwrap_or_default();
         if cadence == "daily" {
             let state_arc = app.state::<Arc<AppState>>().inner().clone();
@@ -382,7 +382,7 @@ pub async fn handle_setting_side_effects<R: tauri::Runtime>(
     key: &str,
     value: &serde_json::Value,
 ) {
-    if domain == "working_memory" && key == "private_mode" {
+    if domain == "memory" && key == "private_mode" {
         let is_private = value.as_bool().unwrap_or(false);
         state
             .telemetry
@@ -393,17 +393,18 @@ pub async fn handle_setting_side_effects<R: tauri::Runtime>(
         handle_dictation_side_effects(app, state, key, value).await;
     } else if domain == "interaction" {
         handle_interaction_side_effects(app, state, key, value).await;
-    } else if domain == "personal_memory" {
-        handle_personal_memory_side_effects(app, state, key, value).await;
-    } else if domain == "working_memory" && key == "web_search_enabled" {
-        let enabled = value.as_bool().unwrap_or(false);
-        if let Some(ref mut h) = *state.harness.lock() {
-            h.set_web_search_enabled(enabled);
+        if key == "web_search_enabled" {
+            let enabled = value.as_bool().unwrap_or(false);
+            if let Some(ref mut h) = *state.harness.lock() {
+                h.set_web_search_enabled(enabled);
+            }
+            log::info!(
+                "[Settings] Interaction web search runtime enabled={}",
+                enabled
+            );
         }
-        log::info!(
-            "[Settings] Working memory web search runtime enabled={}",
-            enabled
-        );
+    } else if domain == "memory" {
+        handle_memory_side_effects(app, state, key, value).await;
     } else if (domain == "llm" || domain == "tts" || domain == "stt") && key == "active" {
         handle_active_model_side_effects(state, domain, value).await;
     }
@@ -483,10 +484,6 @@ pub async fn dispatch_worker_command<R: tauri::Runtime>(
                     }
                 }
             }
-            // `(tts, "speed")` was a dead setting-mutation arm: `tts.speed` is not
-            // a writable setting key (see mutation::supported_keys_for_domain).
-            // Runtime speed changes arrive via TtsCommand::SetSpeed from the
-            // speed-param subsystem, not from the settings mutation path.
             _ => {}
         }
     }

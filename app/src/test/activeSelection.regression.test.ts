@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { getProviderLogoDef, PROVIDER_LOGO_REGISTRY } from "@/shared/components/settings/providers/ProviderLogo";
+import { getProviderLogoDef, PROVIDER_LOGO_REGISTRY } from "@/shared/components/settings/shared/ProviderLogo";
 import {
   promoteActive,
   getEffectiveLlmServers,

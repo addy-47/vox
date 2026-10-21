@@ -2,7 +2,10 @@ use std::path::Path;
 
 use crate::{
     config::VoxSettings,
-    core::defaults::{DEFAULT_LLM_CONTEXT_WINDOW, DEFAULT_LLM_THREADS},
+    core::{
+        compute::{self, Execution, Workload},
+        defaults::DEFAULT_LLM_CONTEXT_WINDOW,
+    },
     services::llm::{
         embedded::EmbeddedProvider,
         provider::LlmProvider,
@@ -11,16 +14,26 @@ use crate::{
     },
 };
 
+/// Maps a resolved LLM runtime target to the site that runs it.
+fn execution_for(target: &LlmRuntimeTarget) -> Execution {
+    match target {
+        LlmRuntimeTarget::Embedded => Execution::Embedded,
+        LlmRuntimeTarget::Server { .. }
+        | LlmRuntimeTarget::Cloud { .. }
+        | LlmRuntimeTarget::Unresolved { .. } => Execution::Remote,
+    }
+}
+
 /// Creates a boxed LLM provider directly from `LlmSettings` and parameters.
 pub fn create_llm_provider_from_llm_settings(
     llm_settings: &LlmSettings,
     providers: Option<&LlmProvidersConfig>,
     llm_path: &Path,
     ctx_size: u32,
-    n_threads: u32,
 ) -> Result<Box<dyn LlmProvider>, String> {
     let provider_config = llm_settings.to_provider_config(providers);
     let effective_ctx = LlmSettings::effective_ctx_size(ctx_size);
+    let n_threads = compute::resolve_threads(Workload::Llm, execution_for(&provider_config));
 
     match provider_config {
         LlmRuntimeTarget::Unresolved { provider_id } => Err(format!(
@@ -66,6 +79,5 @@ pub fn create_llm_provider(
         Some(&settings.providers.llm),
         llm_path,
         DEFAULT_LLM_CONTEXT_WINDOW,
-        DEFAULT_LLM_THREADS,
     )
 }

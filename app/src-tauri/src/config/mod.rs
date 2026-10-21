@@ -20,8 +20,8 @@ pub use mutation::{
     supported_keys_for_domain,
 };
 pub use settings::{
-    get_preset_colors, AppearanceSettings, AudioOutputMode, InteractionSettings, PersonaSettings,
-    PersonalMemorySettings, SystemSettings, VoxSettings, WorkingMemorySettings,
+    get_preset_colors, AppearanceSettings, AudioOutputMode, InteractionSettings, MemorySettings,
+    PersonaSettings, SystemSettings, VoxSettings,
 };
 pub use types::{ActiveSelection, LastSelectedModels};
 
@@ -81,9 +81,8 @@ pub fn classify_known(domain: &str, key: &str) -> Option<SettingReloadPolicy> {
         "appearance",
         "interaction",
         "dictation",
-        "working_memory",
+        "memory",
         "persona",
-        "personal_memory",
         "system",
     ];
 

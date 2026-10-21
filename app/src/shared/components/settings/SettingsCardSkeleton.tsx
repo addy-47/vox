@@ -1,6 +1,7 @@
 import React, { memo } from "react";
 import { cn } from "@/shared/lib/utils";
 import type { SettingsDomainId } from "@/data/settingsCopy";
+import { SETTINGS_DOMAIN_CARD_HEIGHT_CLASS } from "./shared/settingsLayout";
 
 interface SettingsCardSkeletonProps {
   layoutMode?: "full-max" | "full-min" | "small";
@@ -24,10 +25,10 @@ const getDomainSkeletonHeight = (domainId: string | undefined, layoutMode: "full
     case "appearance":
       return "min-h-[180px] h-full";
     case "interaction":
-    case "models":
-    case "working_memory":
-    case "personal_memory":
-      return "lg:h-[340px]";
+    case "speech":
+    case "language":
+    case "memory":
+      return SETTINGS_DOMAIN_CARD_HEIGHT_CLASS;
     default:
       return "min-h-[220px]";
   }

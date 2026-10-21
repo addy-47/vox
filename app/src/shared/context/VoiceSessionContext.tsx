@@ -112,7 +112,7 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
   const pipelineMode = useSessionStore((s) => s.pipelineMode);
   const isLaunching = useSessionStore((s) => s.isLaunching);
   const cpuWarning = useSessionStore((s) => s.cpuWarning);
-  const isPrivateModeSetting = useSettingsStore((s) => s.settings?.working_memory?.private_mode ?? false);
+  const isPrivateModeSetting = useSettingsStore((s) => s.settings?.memory?.private_mode ?? false);
   const sessionIsTemporary = useSessionStore((s) => s.isTemporarySession);
   const isTemporarySession = isPrivateModeSetting || sessionIsTemporary;
   const isTextModeOpen = useSessionStore((s) => s.isTextModeOpen);
@@ -393,11 +393,11 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
   );
 
   const toggleTemporarySession = useCallback(async () => {
-    const current = useSettingsStore.getState().settings?.working_memory?.private_mode ?? storeApi().isTemporarySession;
+    const current = useSettingsStore.getState().settings?.memory?.private_mode ?? storeApi().isTemporarySession;
     const next = !current;
     storeApi().setIsTemporarySession(next);
     try {
-      await updateSetting("working_memory", "private_mode", next);
+      await updateSetting("memory", "private_mode", next);
       await useSettingsStore.getState().loadSettings();
       await setSessionPrivateMode(next);
     } catch {

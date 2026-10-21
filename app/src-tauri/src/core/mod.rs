@@ -1,3 +1,4 @@
+pub mod compute;
 pub mod defaults;
 pub mod engine;
 pub mod error;

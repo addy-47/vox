@@ -6,8 +6,8 @@ use crate::{
     config::{
         apply_model_parameter_mutation, apply_setting_mutation, apply_settings_patch_tree,
         dispatch_worker_command, get_setting_reload_policy, handle_setting_side_effects,
-        request_engine_restart, schedule_debounced_save, supported_keys_for_domain, SettingReloadPolicy,
-        VoxSettings,
+        request_engine_restart, schedule_debounced_save, supported_keys_for_domain,
+        SettingReloadPolicy, VoxSettings,
     },
     core::{
         error::VoxIpcError,
@@ -286,11 +286,7 @@ pub async fn apply_settings_patch<R: tauri::Runtime>(
     Ok(SettingUpdateResult {
         applied: !changed.is_empty(),
         reload_policy: reload_policy.to_string(),
-        message: format!(
-            "Applied {} setting(s) — {}",
-            changed.len(),
-            reload_policy
-        ),
+        message: format!("Applied {} setting(s) — {}", changed.len(), reload_policy),
         restart_scheduled,
     })
 }
@@ -314,17 +310,25 @@ pub async fn reset_settings<R: tauri::Runtime>(
     handle_setting_side_effects(
         &app,
         &state,
-        "working_memory",
+        "memory",
         "private_mode",
-        &serde_json::json!(defaults.working_memory.private_mode),
+        &serde_json::json!(defaults.memory.private_mode),
     )
     .await;
     handle_setting_side_effects(
         &app,
         &state,
-        "personal_memory",
+        "memory",
         "context_retrieval_enabled",
-        &serde_json::json!(defaults.personal_memory.context_retrieval_enabled),
+        &serde_json::json!(defaults.memory.context_retrieval_enabled),
+    )
+    .await;
+    handle_setting_side_effects(
+        &app,
+        &state,
+        "interaction",
+        "web_search_enabled",
+        &serde_json::json!(defaults.interaction.web_search_enabled),
     )
     .await;
 

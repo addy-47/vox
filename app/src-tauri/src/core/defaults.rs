@@ -1,9 +1,9 @@
 pub const DEFAULT_UI_THEME: &str = "dark";
 pub const DEFAULT_UI_ACCENT_SEED: &str = "#00DBE9"; // Default Cyan
 
-pub const DEFAULT_WORKING_MEMORY_PRIVATE_MODE: bool = false;
-pub const DEFAULT_WORKING_MEMORY_AUTO_COMPACTION: bool = false;
-pub const DEFAULT_WORKING_MEMORY_MAX_CONTEXT_SHARE: f32 = 0.15;
+pub const DEFAULT_MEMORY_PRIVATE_MODE: bool = false;
+pub const DEFAULT_MEMORY_AUTO_COMPACTION: bool = false;
+pub const DEFAULT_MEMORY_MAX_CONTEXT_SHARE: f32 = 0.15;
 
 pub const DEFAULT_DICTATION_ENABLED: bool = true;
 pub const DEFAULT_DICTATION_HOTKEY: &str = "Ctrl+Alt+V";
@@ -19,12 +19,11 @@ pub const DEFAULT_VAD_MAX_SPEECH_DURATION_S: u32 = 30;
 pub const DEFAULT_ASR_MODEL: &str = "nvidia_nemotron";
 pub const DEFAULT_ASR_TRANSLITERATE_ENABLED: bool = true;
 pub const DEFAULT_STT_PARTIAL_THROTTLE_MS: u64 = 300;
-pub const DEFAULT_STT_THREADS: u32 = 4;
 
 pub const DEFAULT_LLM_MODEL: &str = "qwen_3_5_0_8b";
 pub const MIN_LLM_CONTEXT_WINDOW: u32 = 8192;
 pub const DEFAULT_LLM_CONTEXT_WINDOW: u32 = 8192;
-pub const DEFAULT_LLM_THREADS: u32 = 4;
+
 pub const DEFAULT_LLM_TEMPERATURE: f32 = 0.6;
 pub const DEFAULT_LLM_COMPACTION_TEMPERATURE: f32 = 0.5;
 pub const DEFAULT_LLM_MAX_OUTPUT_TOKENS: u32 = 120;
@@ -39,21 +38,21 @@ pub const DEFAULT_LLM_CLOUD_PROVIDER_NAME: &str = "nvidia";
 
 pub const DEFAULT_TTS_VOICE_ID: &str = "bella";
 pub const DEFAULT_TTS_SPEED: f32 = 1.05;
-pub const DEFAULT_TTS_THREADS: u32 = 4;
+
 pub const DEFAULT_TTS_ZIPVOICE_GUIDANCE_SCALE: f32 = 1.0;
 pub const DEFAULT_TTS_AZURE_REGION: &str = "eastus";
 pub const DEFAULT_TTS_AZURE_VOICE: &str = "en-US-JennyNeural";
 pub const DEFAULT_TTS_GOOGLE_VOICE: &str = "en-US-Chirp3-HD-Kore";
 
-pub const DEFAULT_PERSONAL_MEMORY_CONTEXT_RETRIEVAL_ENABLED: bool = true;
-pub const DEFAULT_PERSONAL_MEMORY_PIPELINE_PROCESSING_ENABLED: bool = true;
-pub const DEFAULT_PERSONAL_MEMORY_TOP_K_FACTS: u32 = 5;
-pub const DEFAULT_PERSONAL_MEMORY_SEMANTIC_SIMILARITY_CUTOFF: f32 = 0.40;
-pub const DEFAULT_PERSONAL_MEMORY_CONSOLIDATION_CADENCE: &str = "manual";
-pub const DEFAULT_PERSONAL_MEMORY_CONSOLIDATION_TIME: &str = "02:00";
-pub const DEFAULT_PERSONAL_MEMORY_SUGGESTION_POLICY: &str = "manual_review";
+pub const DEFAULT_MEMORY_CONTEXT_RETRIEVAL_ENABLED: bool = true;
+pub const DEFAULT_MEMORY_PIPELINE_PROCESSING_ENABLED: bool = true;
+pub const DEFAULT_MEMORY_TOP_K_FACTS: u32 = 5;
+pub const DEFAULT_MEMORY_SEMANTIC_SIMILARITY_CUTOFF: f32 = 0.40;
+pub const DEFAULT_MEMORY_CONSOLIDATION_CADENCE: &str = "manual";
+pub const DEFAULT_MEMORY_CONSOLIDATION_TIME: &str = "02:00";
+pub const DEFAULT_MEMORY_SUGGESTION_POLICY: &str = "manual_review";
 
-pub const DEFAULT_WORKING_MEMORY_WEB_SEARCH_ENABLED: bool = true;
+pub const DEFAULT_INTERACTION_WEB_SEARCH_ENABLED: bool = true;
 
 pub const DEFAULT_GEMINI_REALTIME_MODEL: &str = "gemini-3.1-flash-live-preview";
 pub const DEFAULT_GEMINI_REALTIME_VOICE: &str = "Aoede";

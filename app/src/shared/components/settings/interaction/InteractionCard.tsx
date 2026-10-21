@@ -1,16 +1,26 @@
-import { useState, useEffect, useRef, memo, useCallback } from "react";
+import { useState, memo, useCallback } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
-import { SlidersHorizontal, Mic, MicOff, Activity, Radio, Layers, Zap, AudioLines, BrainCircuit, ChevronRight, Ear } from "lucide-react";
+import { SlidersHorizontal, Mic, MicOff, Activity, Radio, Layers, Zap } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
-import { SegmentedControl, ToggleTile, Tooltip } from "@/shared/ui";
-import { InteractionConfigDesk } from "./InteractionConfigDesk";
+import { SegmentedControl, ToggleTile } from "@/shared/ui";
 import { RealtimeConfigDesk } from "./RealtimeConfigDesk";
 import { DictationConfigDesk } from "./DictationConfigDesk";
-import { DICTATION_COPY, INTERACTION_CARD_COPY, TRIGGER_MODE_COPY, PIPELINE_MODE_COPY, PIPELINE_PROVIDERS_DESK_COPY } from "@/data/settingsCopy";
+import { WebSearchGlobe } from "./WebSearchGlobe";
+import { RemoteControlGlyph } from "./RemoteControlGlyph";
+import { TransliterationPanel } from "./TransliterationPanel";
+import { DICTATION_COPY, INTERACTION_CARD_COPY, TRIGGER_MODE_COPY, PIPELINE_MODE_COPY, WEB_SEARCH_COPY, REMOTE_CONTROL_COPY, TRANSLITERATION_COPY } from "@/data/settingsCopy";
 
 interface InteractionCardProps {
   layoutMode?: "full-max" | "full-min" | "small";
 }
+
+type InteractionDeskTab = "remote" | "web_search" | "transliteration";
+
+const INTERACTION_DESK_TABS: Array<{ id: InteractionDeskTab; label: string }> = [
+  { id: "remote", label: REMOTE_CONTROL_COPY.tab },
+  { id: "web_search", label: WEB_SEARCH_COPY.tab },
+  { id: "transliteration", label: TRANSLITERATION_COPY.tab },
+];
 
 const VIEW_OPTIONS = [
   { id: "assistant" as const, label: INTERACTION_CARD_COPY.viewAssistant },
@@ -22,55 +32,15 @@ export const InteractionCard = memo(
     const settings = useSettingsStore((s) => s.settings);
     const draftSettings = useSettingsStore((s) => s.draftSettings);
     const updateDraft = useSettingsStore((s) => s.updateDraft);
-    const discardCategoryChanges = useSettingsStore((s) => s.discardCategoryChanges);
 
     const [activeView, setActiveView] = useState<"assistant" | "dictation">("assistant");
-    const [activeCategory, setActiveCategory] = useState<"STT" | "LLM" | "TTS">("LLM");
-    const [isDrillDownOpen, setIsDrillDownOpen] = useState(false);
+    const [activeDeskTab, setActiveDeskTab] = useState<InteractionDeskTab>("remote");
 
-    const prevCategoryRef = useRef<string>(activeCategory);
+    const webSearchEnabled = draftSettings?.interaction?.web_search_enabled ?? true;
 
-    // Auto-discard unsaved draft changes when leaving Level 2 back to Level 1
-    const handleBackFromLevel2 = useCallback(() => {
-      discardCategoryChanges(activeCategory.toLowerCase());
-      setIsDrillDownOpen(false);
-    }, [activeCategory, discardCategoryChanges]);
-
-    const handleSelectCategory = useCallback((cat: "STT" | "LLM" | "TTS") => {
-      setActiveCategory(cat);
-      setIsDrillDownOpen(true);
-    }, []);
-
-
-    // Guard sync_pipeline_tab event dispatch to prevent ping-pong loop
-    useEffect(() => {
-      if (prevCategoryRef.current !== activeCategory) {
-        prevCategoryRef.current = activeCategory;
-        const event = new CustomEvent("sync_pipeline_tab", {
-          detail: activeCategory.toLowerCase(),
-        });
-        window.dispatchEvent(event);
-      }
-    }, [activeCategory]);
-
-    useEffect(() => {
-      const handleSync = (e: Event) => {
-        const customEvent = e as CustomEvent<string>;
-        const cat = typeof customEvent.detail === "string" ? customEvent.detail : "";
-        if (cat === "stt" || cat === "llm" || cat === "tts") {
-          const upperCat = cat.toUpperCase() as "STT" | "LLM" | "TTS";
-          if (prevCategoryRef.current !== upperCat) {
-            if (isDrillDownOpen) {
-              discardCategoryChanges(activeCategory.toLowerCase());
-            }
-            prevCategoryRef.current = upperCat;
-            setActiveCategory(upperCat);
-          }
-        }
-      };
-      window.addEventListener("sync_interaction_category", handleSync);
-      return () => window.removeEventListener("sync_interaction_category", handleSync);
-    }, [activeCategory, discardCategoryChanges, isDrillDownOpen]);
+    const handleToggleWebSearch = useCallback(() => {
+      updateDraft("interaction", "web_search_enabled", !webSearchEnabled);
+    }, [webSearchEnabled, updateDraft]);
 
     if (!draftSettings || !settings) return null;
     const { interaction, dictation } = draftSettings;
@@ -81,10 +51,7 @@ export const InteractionCard = memo(
     const isPassive = String(interactionMode).toLowerCase() === "passive";
     const pipelineMode = interaction.pipeline_mode ?? "modular";
     const isModular = pipelineMode === "modular";
-    const pipelineCompact = layoutMode === "small";
-    const pipelineIconSize = pipelineCompact ? 16 : 26;
-    const pipelineChevronSize = pipelineCompact ? 12 : 14;
-    const pipelineTextSize = pipelineCompact ? "text-[11px]" : "text-[14px]";
+
     return (
       <div
         className={cn(
@@ -121,139 +88,131 @@ export const InteractionCard = memo(
             <>
               {/* Core Assistant Controls */}
               <div className="grid grid-cols-2 gap-2 shrink-0">
-              <ToggleTile
-                title={TRIGGER_MODE_COPY.cardTitle}
-                active={isPassive}
-                activeLabel={TRIGGER_MODE_COPY.continuousTitle}
-                inactiveLabel={TRIGGER_MODE_COPY.pttTitle}
-                activeSublabel={TRIGGER_MODE_COPY.continuousSub}
-                inactiveSublabel={TRIGGER_MODE_COPY.pttSub}
-                icon={isPassive ? Activity : Radio}
-                onToggle={() => updateDraft("interaction", "mode", isPassive ? "ptt" : "passive")}
-                layoutMode={layoutMode}
-                visualizer={
-                  isPassive ? (
-                    <div className="flex items-end gap-[1.5px] h-3">
-                      <span className="w-[2px] bg-[rgb(var(--accent))] rounded-full animate-wave-bar-1" />
-                      <span className="w-[2px] bg-[rgb(var(--accent))] rounded-full animate-wave-bar-2" />
-                      <span className="w-[2px] bg-[rgb(var(--accent))] rounded-full animate-wave-bar-3" />
-                      <span className="w-[2px] bg-[rgb(var(--accent))] rounded-full animate-wave-bar-4" />
-                    </div>
-                  ) : (
-                    <div className="w-3 h-3 rounded-full border border-[rgb(var(--accent))]/40 flex items-center justify-center relative">
-                      <span className="absolute inset-0 rounded-full border border-[rgb(var(--accent))] animate-ping opacity-60" />
-                      <span className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--accent))]" />
-                    </div>
-                  )
-                }
-              />
-              <ToggleTile
-                title={PIPELINE_MODE_COPY.cardTitle}
-                active={isModular}
-                activeLabel={PIPELINE_MODE_COPY.modularTitle}
-                inactiveLabel={PIPELINE_MODE_COPY.realtimeTitle}
-                activeSublabel={PIPELINE_MODE_COPY.modularSub}
-                inactiveSublabel={PIPELINE_MODE_COPY.realtimeSub}
-                icon={isModular ? Layers : Zap}
-                onToggle={() => updateDraft("interaction", "pipeline_mode", isModular ? "realtime" : "modular")}
-                layoutMode={layoutMode}
-                visualizer={
-                  isModular ? (
-                    <div className="flex flex-col gap-[1.5px] items-center">
-                      <span className="w-3.5 h-[2px] bg-[rgb(var(--accent))] rounded animate-pulse" />
-                      <span className="w-2.5 h-[2px] bg-[rgb(var(--accent))]/60 rounded animate-pulse" />
-                      <span className="w-3.5 h-[2px] bg-[rgb(var(--accent))] rounded animate-pulse" />
-                    </div>
-                  ) : (
-                    <div className="w-7 h-2 bg-[rgba(var(--foreground),0.04)] border border-[rgba(var(--border),0.06)] rounded-full relative overflow-hidden flex items-center">
-                      <span className="absolute w-1.5 h-1.5 rounded-full bg-[rgb(var(--accent))] animate-flow-dot shadow-[0_0_6px_rgba(var(--accent),0.8)]" />
-                    </div>
-                  )
-                }
-              />
-            </div>
+                <ToggleTile
+                  title={TRIGGER_MODE_COPY.cardTitle}
+                  active={isPassive}
+                  activeLabel={TRIGGER_MODE_COPY.continuousTitle}
+                  inactiveLabel={TRIGGER_MODE_COPY.pttTitle}
+                  activeSublabel={TRIGGER_MODE_COPY.continuousSub}
+                  inactiveSublabel={TRIGGER_MODE_COPY.pttSub}
+                  icon={isPassive ? Activity : Radio}
+                  onToggle={() => updateDraft("interaction", "mode", isPassive ? "ptt" : "passive")}
+                  layoutMode={layoutMode}
+                  visualizer={
+                    isPassive ? (
+                      <div className="flex items-end gap-[1.5px] h-3">
+                        <span className="w-[2px] bg-[rgb(var(--accent))] rounded-full animate-wave-bar-1" />
+                        <span className="w-[2px] bg-[rgb(var(--accent))] rounded-full animate-wave-bar-2" />
+                        <span className="w-[2px] bg-[rgb(var(--accent))] rounded-full animate-wave-bar-3" />
+                        <span className="w-[2px] bg-[rgb(var(--accent))] rounded-full animate-wave-bar-4" />
+                      </div>
+                    ) : (
+                      <div className="w-3 h-3 rounded-full border border-[rgb(var(--accent))]/40 flex items-center justify-center relative">
+                        <span className="absolute inset-0 rounded-full border border-[rgb(var(--accent))] animate-ping opacity-60" />
+                        <span className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--accent))]" />
+                      </div>
+                    )
+                  }
+                />
+                <ToggleTile
+                  title={PIPELINE_MODE_COPY.cardTitle}
+                  active={isModular}
+                  activeLabel={PIPELINE_MODE_COPY.modularTitle}
+                  inactiveLabel={PIPELINE_MODE_COPY.realtimeTitle}
+                  activeSublabel={PIPELINE_MODE_COPY.modularSub}
+                  inactiveSublabel={PIPELINE_MODE_COPY.realtimeSub}
+                  icon={isModular ? Layers : Zap}
+                  onToggle={() => updateDraft("interaction", "pipeline_mode", isModular ? "realtime" : "modular")}
+                  layoutMode={layoutMode}
+                  visualizer={
+                    isModular ? (
+                      <div className="flex flex-col gap-[1.5px] items-center">
+                        <span className="w-3.5 h-[2px] bg-[rgb(var(--accent))] rounded animate-pulse" />
+                        <span className="w-2.5 h-[2px] bg-[rgb(var(--accent))]/60 rounded animate-pulse" />
+                        <span className="w-3.5 h-[2px] bg-[rgb(var(--accent))] rounded animate-pulse" />
+                      </div>
+                    ) : (
+                      <div className="w-7 h-2 bg-[rgba(var(--foreground),0.04)] border border-[rgba(var(--border),0.06)] rounded-full relative overflow-hidden flex items-center">
+                        <span className="absolute w-1.5 h-1.5 rounded-full bg-[rgb(var(--accent))] animate-flow-dot shadow-[0_0_6px_rgba(var(--accent),0.8)]" />
+                      </div>
+                    )
+                  }
+                />
+              </div>
 
-              {/* Category & Provider Selector Subcomponent or Realtime Config Desk */}
+              {/* Interaction Desk: Remote Control (placeholder) | Web Search | Transliteration */}
               {isModular ? (
-                isDrillDownOpen ? (
-                  /* ── LEVEL 2: Unified Category Provider Desk ── */
-                  <div
-                    className={cn(
-                      "flex-1 w-full flex flex-col min-h-0 rounded-xl relative animate-fade-in",
-                      layoutMode === "small" ? "h-auto" : "h-full"
-                    )}
-                  >
-                    <InteractionConfigDesk
-                      activeCategory={activeCategory}
-                      isModular={isModular}
-                      onBack={handleBackFromLevel2}
-                      layoutMode={layoutMode}
-                    />
-                  </div>
-                ) : (
-                  /* ── LEVEL 1: Unified Pipeline Stage Cards (STT | LLM | TTS) ── */
-                  <div
-                    className={cn(
-                      "flex-1 w-full flex flex-col min-h-0 rounded-xl relative animate-fade-in mt-0.5",
-                      layoutMode === "small" ? "h-auto" : "h-full"
-                    )}
-                  >
-                    <div className="grid grid-cols-3 gap-2 w-full flex-1 min-h-0 select-none">
-                      {[
-                        { id: "STT" as const, card: PIPELINE_PROVIDERS_DESK_COPY.cards.stt, Icon: Ear, active: draftSettings.stt?.active },
-                        { id: "LLM" as const, card: PIPELINE_PROVIDERS_DESK_COPY.cards.llm, Icon: BrainCircuit, active: draftSettings.llm?.active },
-                        { id: "TTS" as const, card: PIPELINE_PROVIDERS_DESK_COPY.cards.tts, Icon: AudioLines, active: draftSettings.tts?.active },
-                      ].map((stage) => {
-                        const IconComponent = stage.Icon;
-                        const category = stage.active?.category ?? "";
-                        const model = stage.active?.model ?? "";
-
+                <div
+                  className={cn(
+                    "flex-1 w-full flex flex-col min-h-0 rounded-xl p-3 relative border border-[rgba(var(--accent),0.06)] bg-[rgba(var(--foreground),0.02)] overflow-hidden",
+                    layoutMode === "small" ? "h-auto" : "h-full"
+                  )}
+                >
+                  <div className="w-full flex flex-col h-full">
+                    {/* Tab Row — equal-width grid, no shift between tabs */}
+                    <div className="w-full grid grid-cols-3 gap-1 pt-0.5 pb-1.5 shrink-0 border-b border-[rgba(var(--accent),0.08)] mb-2 px-0.5">
+                      {INTERACTION_DESK_TABS.map((tab) => {
+                        const isActive = activeDeskTab === tab.id;
                         return (
-                          <Tooltip
-                            key={stage.id}
-                            label={`${PIPELINE_PROVIDERS_DESK_COPY.configureAriaPrefix} ${stage.card.title}`}
-                            side="top"
-                            asChild
+                          <button
+                            key={tab.id}
+                            type="button"
+                            onClick={() => setActiveDeskTab(tab.id)}
+                            className={cn(
+                              "w-full min-w-0 flex items-center justify-center pb-1 border-b-2 transition-all duration-200 bg-transparent text-[9.5px] sm:text-[10.5px] xl:text-[11px] font-black uppercase tracking-[0.04em] sm:tracking-[0.08em] outline-none cursor-pointer text-center truncate px-0.5",
+                              isActive
+                                ? "text-[rgb(var(--accent))] border-[rgb(var(--accent))]"
+                                : "text-[rgb(var(--foreground-muted))]/60 border-transparent hover:text-[rgb(var(--foreground))]"
+                            )}
                           >
-                            <button
-                              type="button"
-                              onClick={() => handleSelectCategory(stage.id)}
-                              aria-label={`${PIPELINE_PROVIDERS_DESK_COPY.configureAriaPrefix} ${stage.card.title}`}
-                              className={cn(
-                                "group relative h-full w-full min-h-0 flex flex-col items-center justify-center gap-1.5 overflow-hidden text-center cursor-pointer rounded-xl border transition-colors duration-200",
-                                pipelineCompact ? "px-4 py-3" : "px-5 py-3.5",
-                                "border-[rgba(var(--accent),0.06)] bg-[rgba(var(--foreground),0.015)]",
-                                "hover:border-[rgba(var(--accent),0.25)] hover:bg-[rgba(var(--accent),0.03)]",
-                                "focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[rgb(var(--accent))]"
-                              )}
-                            >
-                              <ChevronRight
-                                size={pipelineChevronSize}
-                                strokeWidth={2.2}
-                                className="absolute top-2 right-2 text-[rgb(var(--foreground-muted))]/35 transition-all duration-200 group-hover:translate-x-0.5 group-hover:text-[rgb(var(--accent))]"
-                              />
-
-                              <IconComponent size={pipelineIconSize} strokeWidth={2} className="shrink-0 text-[rgb(var(--accent))]" />
-
-                              <span className="flex flex-col items-center gap-0 max-w-full">
-                                {category && (
-                                  <span className={cn("max-w-full leading-tight truncate", pipelineTextSize, "text-[rgb(var(--foreground))]/85")}>
-                                    {category}
-                                  </span>
-                                )}
-                                {model && (
-                                  <span className={cn("max-w-full leading-tight truncate", pipelineTextSize, "text-[rgb(var(--foreground-muted))]/80")}>
-                                    {model}
-                                  </span>
-                                )}
-                              </span>
-                            </button>
-                          </Tooltip>
+                            <span className="truncate">{tab.label}</span>
+                          </button>
                         );
                       })}
                     </div>
+
+                    {/* Panel */}
+                    {activeDeskTab === "remote" ? (
+                      <div className="flex flex-row items-center justify-between gap-4 h-full p-2 sm:p-3 rounded-xl bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--accent),0.08)] animate-fade-in">
+                        <div className="flex flex-col gap-1 min-w-0 flex-1">
+                          <span className="text-[12px] font-bold uppercase tracking-wider text-[rgb(var(--foreground))]">
+                            {REMOTE_CONTROL_COPY.title}
+                          </span>
+                          <p className="text-[11px] sm:text-[11.5px] text-[rgb(var(--foreground-muted))]/75 leading-relaxed font-medium">
+                            {REMOTE_CONTROL_COPY.description}
+                          </p>
+                        </div>
+                        <div className="shrink-0 w-[116px] flex flex-col items-center justify-center">
+                          <RemoteControlGlyph
+                            label={REMOTE_CONTROL_COPY.comingSoon}
+                            ariaLabel={REMOTE_CONTROL_COPY.title}
+                          />
+                        </div>
+                      </div>
+                    ) : activeDeskTab === "web_search" ? (
+                      <div className="flex flex-row items-center justify-between gap-4 h-full p-2 sm:p-3 rounded-xl bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--accent),0.08)] animate-fade-in">
+                        <div className="flex flex-col gap-1 min-w-0 flex-1">
+                          <span className="text-[12px] font-bold uppercase tracking-wider text-[rgb(var(--foreground))]">
+                            {WEB_SEARCH_COPY.title}
+                          </span>
+                          <p className="text-[11px] sm:text-[11.5px] text-[rgb(var(--foreground-muted))]/75 leading-relaxed font-medium">
+                            {WEB_SEARCH_COPY.description}
+                          </p>
+                        </div>
+                        <div className="shrink-0 w-[116px] flex flex-col items-center justify-center">
+                          <WebSearchGlobe
+                            enabled={webSearchEnabled}
+                            onToggle={handleToggleWebSearch}
+                            label={webSearchEnabled ? WEB_SEARCH_COPY.enabled : WEB_SEARCH_COPY.disabled}
+                            ariaLabel={WEB_SEARCH_COPY.toggleAria}
+                          />
+                        </div>
+                      </div>
+                    ) : (
+                      <TransliterationPanel />
+                    )}
                   </div>
-                )
+                </div>
               ) : (
                 <div
                   className={cn(

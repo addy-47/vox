@@ -50,7 +50,7 @@ import { minimalSettings, SERVER_ACTIVE } from "@/test/harness/settingsFixtures"
  *
  * Phase 4 — Governing sentence:
  *   If failureбанner bookkeeping broke, this test would fail because
- *   failedSaveDomains["models"] would be undefined while expecting ["active"].
+ *   failedSaveDomains["language"] would be undefined while expecting ["active"].
  */
 
 describe("settings commit partial-failure isolation", () => {
@@ -128,9 +128,9 @@ describe("settings commit partial-failure isolation", () => {
     await useSettingsStore.getState().commitChanges();
 
     const state = useSettingsStore.getState();
-    // Both touched keys failed — llm maps to the "models" card, persona to its
-    // own card (SETTINGS_DOMAIN_TO_UI).
-    expect(state.failedSaveDomains["models"]).toEqual(["active"]);
+    // Both touched keys failed — llm maps to the "language" card, persona to
+    // its own card (SETTINGS_DOMAIN_TO_UI).
+    expect(state.failedSaveDomains["language"]).toEqual(["active"]);
     expect(state.failedSaveDomains["persona"]).toEqual(["modular_prompt"]);
     // Both rejected values stay in the draft so they can be retried…
     expect(state.draftSettings?.llm?.active).toEqual(SERVER_ACTIVE);
@@ -201,6 +201,6 @@ describe("settings commit partial-failure isolation", () => {
     const patch = (serverCalls[0]?.args as { patch?: Record<string, unknown> })?.patch;
     expect(patch).toHaveProperty("llm");
     expect(patch?.llm).toHaveProperty("servers");
-    expect(useSettingsStore.getState().failedSaveDomains["models"]).toBeUndefined();
+    expect(useSettingsStore.getState().failedSaveDomains["language"]).toBeUndefined();
   });
 });

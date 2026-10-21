@@ -25,7 +25,7 @@ pub fn spawn_ingestion_sweep<R: Runtime>(
     let is_enabled = state
         .settings
         .read()
-        .map(|s| s.personal_memory.pipeline_processing_enabled)
+        .map(|s| s.memory.pipeline_processing_enabled)
         .unwrap_or(true);
 
     if !is_enabled {

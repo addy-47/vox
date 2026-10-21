@@ -293,7 +293,6 @@ async fn test_playback_finished_deferred_while_pending() {
     .expect("test_playback_finished_deferred_while_pending timed out");
 }
 
-
 /// Subtest 5: Speech detection fires when state is Ready, and Headset mode never suppresses speech even while Speaking.
 #[test]
 fn test_speech_detection_in_ready_and_headset_modes() {

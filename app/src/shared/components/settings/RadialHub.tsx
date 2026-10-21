@@ -297,8 +297,8 @@ export const SettingsConnectorsOverlay = memo(({
     }
 
     const line10 = lines.interaction;
-    const line8 = lines.personal_memory;
-    const leftActive = activeDomains.includes("interaction") || activeDomains.includes("personal_memory");
+    const line8 = lines.speech;
+    const leftActive = activeDomains.includes("interaction") || activeDomains.includes("speech");
     if (leftActive && (line10 || line8)) {
       const nodeX = line10?.x1 ?? line8!.x1;
       const cardX = line10?.x2 ?? line8!.x2;
@@ -322,17 +322,21 @@ export const SettingsConnectorsOverlay = memo(({
       });
     }
 
-    const line2 = lines.models;
-    const line4 = lines.working_memory;
-    const rightActive = activeDomains.includes("models") || activeDomains.includes("working_memory");
+    // The right side holds Memory (2:00) and Language (4:00). Both converge on
+    // the same carousel card, so draw a mirrored fork; a single open card keeps
+    // its own elbow.
+    const line2 = lines.memory;
+    const line4 = lines.language;
+    const rightActive =
+      activeDomains.includes("memory") || activeDomains.includes("language");
     if (rightActive && (line2 || line4)) {
       const nodeX = line2?.x1 ?? line4!.x1;
       const cardX = line2?.x2 ?? line4!.x2;
-      const cy = (line2 && line4) ? (line2.y1 + line4.y1) / 2 : (line2 ? line2.y1 + 45 : line4!.y1 - 45);
+      const cy = line2 && line4 ? (line2.y1 + line4.y1) / 2 : line2 ? line2.y1 + 45 : line4!.y1 - 45;
       const halfH = line2 ? Math.abs(cy - line2.y1) : 45;
-      const deltaX = Math.min(42, Math.max(26, Math.abs(cardX - nodeX) * 0.35));
+      const deltaX = Math.min(42, Math.max(26, Math.abs(nodeX - cardX) * 0.35));
       const mergeX = nodeX + deltaX;
-      const diagLen = Math.hypot(deltaX, halfH);
+      const diagLen = Math.hypot(deltaX, halfH) || 1;
       const offX = (deltaX / diagLen) * 20;
       const offY = (halfH / diagLen) * 20;
 
@@ -381,7 +385,7 @@ export const SettingsConnectorsOverlay = memo(({
 
         if (!isVertical) {
           const dx_mid = Math.abs(line.y2 - line.y1);
-          if (domain.id === "models" || domain.id === "working_memory") {
+          if (domain.id === "memory" || domain.id === "language") {
             nextX = Math.min(line.x2, line.x1 + dx_mid);
           } else {
             nextX = Math.max(line.x2, line.x1 - dx_mid);

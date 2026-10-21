@@ -27,7 +27,7 @@ The tool is governed by four system axioms:
 - **Identifier**: `web_search`
 - **Domain Availability**: `ToolDomain::Modular` (Modular Assistant sessions only). Realtime S2S models manage web grounding via native provider protocols.
 - **Flow Category**: `ToolFlow::NonTerminal`. Invocation immediately triggers `NonTerminalPhase`, dispatches interim filler audio, transitions the pipeline to `InteractionState::Working`, and initiates a reentrant cognitive turn loop upon evidence acquisition.
-- **User Settings Gate**: A single user-facing boolean `working_memory.web_search_enabled` (default: `true`) gates the tool. When `false`, `web_search` is suppressed from the active tool registry for Modular sessions and the model never sees it in its tool list. The toggle applies live without application restart.
+- **User Settings Gate**: A single user-facing boolean `interaction.web_search_enabled` (default: `true`) gates the tool. When `false`, `web_search` is suppressed from the active tool registry for Modular sessions and the model never sees it in its tool list. The toggle applies live without application restart.
 
 ---
 

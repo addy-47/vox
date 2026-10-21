@@ -64,7 +64,7 @@ export const Monitoring: React.FC<MonitoringProps> = ({
   const ttsProvider = useSettingsStore((s) => s.settings?.tts?.active?.model);
   const sttProvider = useSettingsStore((s) => s.settings?.stt?.active?.category);
   const contextRetrievalEnabled = useSettingsStore(
-    (s) => s.settings?.personal_memory?.context_retrieval_enabled ?? true
+    (s) => s.settings?.memory?.context_retrieval_enabled ?? true
   );
   const transliterateEnabled = useSettingsStore(
     (s) => s.settings?.stt?.transliterate_enabled ?? true

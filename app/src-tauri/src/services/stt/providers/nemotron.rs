@@ -164,8 +164,7 @@ impl SttEngineTrait for SttEngine {
         let stream = match inner.stream.take() {
             Some(existing_stream) if inner.fed_samples == audio.len() => existing_stream,
             Some(existing_stream)
-                if inner.fed_samples < audio.len()
-                    && (audio.len() - inner.fed_samples) <= 1024 =>
+                if inner.fed_samples < audio.len() && (audio.len() - inner.fed_samples) <= 1024 =>
             {
                 existing_stream.accept_waveform(SAMPLE_RATE as i32, &audio[inner.fed_samples..]);
                 existing_stream

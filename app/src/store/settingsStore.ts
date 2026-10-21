@@ -410,7 +410,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       return;
     }
 
-    const targetDomainId = explicitDomainId || SETTINGS_DOMAIN_TO_UI[domain as string] || "models";
+    const targetDomainId = explicitDomainId || SETTINGS_DOMAIN_TO_UI[domain as string] || "speech";
     const needsRestart = flags[targetDomainId]?.requiresRestart ?? false;
 
     // If this change or domain requires an engine restart, do NOT auto-commit.
@@ -529,9 +529,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       "realtime",
       "interaction",
       "dictation",
-      "working_memory",
+      "memory",
       "appearance",
-      "personal_memory",
       "persona",
       "system",
     ];
@@ -595,7 +594,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         get().recomputeDomainFlags();
         const failedByUiDomain = new Map<string, string[]>();
         for (const f of failures) {
-          const uiDomain = SETTINGS_DOMAIN_TO_UI[f.domain] ?? "models";
+          const uiDomain = SETTINGS_DOMAIN_TO_UI[f.domain] ?? "speech";
           const keys = failedByUiDomain.get(uiDomain);
           if (keys) keys.push(f.key);
           else failedByUiDomain.set(uiDomain, [f.key]);
@@ -678,7 +677,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       get().recomputeDomainFlags();
       const failedByUiDomain = new Map<string, string[]>();
       for (const f of failures) {
-        const uiDomain = SETTINGS_DOMAIN_TO_UI[f.domain] ?? "models";
+        const uiDomain = SETTINGS_DOMAIN_TO_UI[f.domain] ?? "speech";
         const keys = failedByUiDomain.get(uiDomain);
         if (keys) keys.push(f.key);
         else failedByUiDomain.set(uiDomain, [f.key]);

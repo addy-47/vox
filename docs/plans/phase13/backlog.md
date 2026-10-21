@@ -26,3 +26,18 @@
     - *Remote Server Setup*: SSH tunnel setup, remote Python/FastAPI environment, Chatterbox remote daemon configuration.
     - *Local Embedded TTS*: On-device ONNX runtime prerequisites, Kokoro / Supertonic weight management.
   - **Rich Interactive Content Panel**: The main body section displays structured prerequisites, terminal copy-paste snippets with inline copy buttons, diagnostics, and step-by-step troubleshooting.
+
+## 4. Remote Chatterbox Server Provisioning (excluded from the Speech card)
+- **Problem**: The Speech card lists the seven engines it can run without extra setup: four on-device (`supertonic`, `kokoro`, `zipvoice`, `chatterbox`) and three cloud (`edge_tts`, `google_tts`, `azure_tts`). The self-hosted Chatterbox engine (`chatterbox_remote`) is excluded because it needs a provisioned GPU host first. The previous `RemoteServerSetup` component was deleted: it was never reachable from the new card and its flow was incomplete.
+- **Requirements**:
+  - **Reintroduce the engine behind a gate**: show the remote engine in the grid only when at least one server is configured, or always with a `Configure server` action instead of a tier badge.
+  - **Provisioning flow**: SSH target entry, codebase sync, GGUF model pull, and daemon start, with progress and failure states. This replaces the deleted component.
+  - **Voice level**: the remote engine has its own voice inventory; it must reuse the same per-engine voice level the other engines use.
+  - **Health**: per-server reachability and model-load status on the card, with a retry path.
+
+## 5. Cloud TTS Credentials in the Speech Card
+- **Problem**: The Speech card renders the three cloud engines as plain cards. Selecting one applies it, but the card offers no place to enter the Google ADC project or the Azure key/region, so a misconfigured cloud engine fails silently at synthesis time.
+- **Requirements**:
+  - **Configured state**: read the existing configured signal (`Google` = ADC present, `Azure` = stored key + region) and show it on the card without hiding the card.
+  - **Credential entry**: a `Configure` action per cloud engine that opens a key/region form; no provider concept in the grid, only per-engine credentials.
+  - **Failure surfacing**: a synthesis failure for a cloud engine must name the missing credential and link to the form.

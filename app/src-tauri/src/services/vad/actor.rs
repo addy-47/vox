@@ -471,10 +471,7 @@ where
 mod tests {
 
     use super::*;
-    use crate::{
-        config::AudioOutputMode,
-        core::events::InteractionMode,
-    };
+    use crate::{config::AudioOutputMode, core::events::InteractionMode};
 
     #[test]
     fn test_audio_suppressed_flag_controls_suppression() {
