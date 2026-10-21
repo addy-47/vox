@@ -45,6 +45,7 @@ import {
   type CardSortOrder,
 } from "../shared/CardHeader";
 import { CatalogReveal } from "../shared/CatalogReveal";
+import { rca, rcaRect } from "@/shared/lib/rcaTrace";
 import { LlmTuningControls } from "./LlmTuningControls";
 import {
   provenanceLabel,
@@ -187,7 +188,16 @@ export const RemoteCatalogSection = memo(({
   const handleSelectModel = useCallback((modelId: string) => {
     const active = useSettingsStore.getState().draftSettings?.llm.active;
     if (active && (active.category === "server" || active.category === "cloud")) {
+      rca("model-select", "select", {
+        from: active.model,
+        to: modelId,
+        committed: useSettingsStore.getState().settings?.llm.active.model,
+      });
       updateDraft("llm", "active", { ...active, model: modelId });
+      rca("model-select", "after-update", {
+        dirty: useSettingsStore.getState().domainFlags["language"]?.dirty,
+        sheet: rcaRect(document.getElementById("card-language")),
+      });
     }
   }, [updateDraft]);
 
@@ -195,14 +205,16 @@ export const RemoteCatalogSection = memo(({
   // interception to a list this short, and the card already sits above a
   // backdrop-blurred surface; native scroll keeps the frame budget flat.
   const inlineRowsRef = useRef<HTMLDivElement | null>(null);
-  useScrollTopOnChange(inlineRowsRef, selectedModelId || committedRemoteModelId);
+  // Save-gated scroll: the glide belongs to a committed change. Keying it on
+  // the draft model made every pick scroll the catalog to the top.
+  useScrollTopOnChange(inlineRowsRef, committedRemoteModelId);
 
   const renderRemoteModelRows = () => (
     <CatalogReveal
       className="flex-1 min-h-0"
       scrollRef={inlineRowsRef}
       featherHeight={80}
-      scrollerClassName="h-full overflow-y-auto pr-1 custom-scrollbar [scrollbar-gutter:stable]"
+      scrollerClassName="flex-1 min-h-0 overflow-y-auto pr-1 custom-scrollbar [scrollbar-gutter:stable]"
     >
       <div
         className={cn(
@@ -589,7 +601,7 @@ export const RemoteCatalogSection = memo(({
       {/* Remote Models 2-Column Grid — inline at card height, full-bleed in the expand modal */}
       <ExpandableList
         className="flex-1 min-h-0"
-        triggerPlacement="floating"
+        hideInlineTrigger
         inlineMaxHeightClass={getSettingsInlineListMaxHeightClass(layoutMode)}
         onBack={showProvidersView ? () => setCatalogModalView(activeModalView === "models" ? "providers" : "models") : undefined}
         icon={activeModalView === "models" ? <ServerCog size={16} className="text-[rgb(var(--accent))]" /> : <Cloud size={16} className="text-[rgb(var(--accent))]" />}

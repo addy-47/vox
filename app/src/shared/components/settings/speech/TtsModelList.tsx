@@ -21,7 +21,7 @@ export const TtsModelList = memo((props: TtsModelListProps) => {
     <ExpandableList
       className="flex-1 min-h-0"
       inlineMaxHeightClass={getSettingsInlineListMaxHeightClass(props.layoutMode)}
-      triggerPlacement="floating"
+      hideInlineTrigger
       icon={<AudioLines size={16} className="text-[rgb(var(--accent))]" />}
       title={engine ? VOICE_CATALOG_COPY.title : SPEECH_CARD_COPY.ttsModelsTitle}
       modalSubtitle={engine ? VOICE_CATALOG_COPY.subtitle : SPEECH_CARD_COPY.ttsModelsSubtitle}
@@ -38,7 +38,7 @@ export const TtsModelList = memo((props: TtsModelListProps) => {
         />
       )}
     >
-      <TtsEngineGrid {...props} className="h-full" />
+      <TtsEngineGrid {...props} className="flex-1 min-h-0" />
     </ExpandableList>
   );
 });

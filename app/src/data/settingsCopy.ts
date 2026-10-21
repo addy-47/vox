@@ -203,6 +203,11 @@ export const SETTINGS_COPY = {
   /** Detail line for the missing-credential banner. */
   apiKeyRequiredDetail:
     "Enter and save an API key for the selected provider to enable cloud inference.",
+  /** A cloud/server provider is selected but no model is. Committing would send
+   * an empty model id to the engine, so the commit is blocked instead. */
+  modelRequired: "Select a Model",
+  modelRequiredDetail:
+    "This provider has no model selected. Pick one from its catalog before applying.",
   applyAndRestart: "Apply & Restart",
   /** Icon-only variant of the commit button (small / mobile layouts). */
   restartOnly: "Restart",
@@ -608,7 +613,11 @@ export const LLM_TUNING_COPY = {
 
 /** Shared by every card catalog that can reveal its full list. */
 export const CATALOG_REVEAL_COPY = {
-  showAll: "Show all",
+  /**
+   * Expands the catalog into its modal. "Expand" matches the maximize glyph:
+   * the list is not truncated, so nothing is "shown": the view grows.
+   */
+  expand: "Expand",
 } as const;
 
 export const LANGUAGE_CARD_COPY = {
@@ -618,10 +627,9 @@ export const LANGUAGE_CARD_COPY = {
   providerModalTitle: "Language providers",
   providerModalSubtitle: "Connect a hosted provider or register a self-hosted endpoint.",
   expandProviders: "Expand language providers",
+  browseModels: "Browse models",
   backToProviders: "Back to providers",
   providerCount: "providers",
-  showAll: "Show all",
-  seeLess: "See less",
   needsKey: "Cloud · needs key",
   keySaved: "Cloud · key saved",
   onDevice: "On-device",
@@ -656,6 +664,12 @@ export const SPEECH_CARD_COPY = {
   ttsModelsSubtitle: "Seven engines. Pick one, then open its voices.",
   ttsModelsAria: "Browse text to speech engines",
   expandTts: "Expand text to speech models",
+  /** Header of the engine flow banner: text in, speech out. */
+  engineFlow: {
+    title: "Text in, speech out",
+    caption: "Words are spoken by the selected engine, one voice at a time.",
+    words: ["hello", "this", "is", "a", "preview", "of", "my", "voice"],
+  },
   expandVoices: "Expand voice catalog",
   vadSettings: "Detection settings",
   backToVadModels: "Back to detection models",

@@ -36,11 +36,15 @@ export interface ExpandableListProps {
   /** Caps the inline slot via height classes. Omit to let flex sizing govern.
    * The modal slot is always full height. */
   inlineMaxHeightClass?: string;
-  /** Optional trailing content for the inline action row. Row placement only. */
+  /** Optional trailing content for the inline action row. */
   inlineActions?: React.ReactNode;
-  /** "floating" overlaps the list's bottom-right corner; "row" appends an action row. */
-  triggerPlacement?: "floating" | "row";
-  /** Optional custom trigger render prop instead of default Maximize2 button */
+  /**
+   * Suppresses the inline Maximize2 trigger. Catalogs that already carry the
+   * shared `CatalogReveal` affordance use this instead of a second, redundant
+   * expand button.
+   */
+  hideInlineTrigger?: boolean;
+  /** Optional custom trigger render prop instead of the default Maximize2 button. */
   customTrigger?: (open: () => void) => React.ReactNode;
   className?: string;
   children: React.ReactNode;
@@ -75,7 +79,7 @@ export const ExpandableList = memo(
     ariaLabel,
     inlineMaxHeightClass,
     inlineActions,
-    triggerPlacement = "row",
+    hideInlineTrigger = false,
     customTrigger,
     className,
     children,
@@ -127,18 +131,7 @@ export const ExpandableList = memo(
 
         {customTrigger ? (
           customTrigger(open)
-        ) : triggerPlacement === "floating" ? (
-          <Tooltip label={expandLabel} side="top" asChild>
-            <button
-              type="button"
-              onClick={open}
-              aria-label={expandLabel}
-              className="absolute -bottom-2 right-1 z-10 w-8 h-8 flex items-center justify-center rounded-lg border border-[rgba(var(--border),0.15)] bg-[rgba(var(--card),0.85)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:border-[rgba(var(--accent),0.35)] hover:bg-[rgba(var(--card),0.95)] transition-colors cursor-pointer shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))] shadow-sm"
-            >
-              <Maximize2 size={13} strokeWidth={1.75} />
-            </button>
-          </Tooltip>
-        ) : (
+        ) : hideInlineTrigger ? null : (
           <div className="flex items-center justify-end gap-1.5 shrink-0 pt-1">
             {inlineActions}
             <Tooltip label={expandLabel} side="top" asChild>

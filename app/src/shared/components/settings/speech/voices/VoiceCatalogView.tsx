@@ -265,7 +265,7 @@ export const VoiceCatalogView = memo(({ layoutMode, providerId, onBack }: VoiceC
       <ExpandableList
         className="flex-1 min-h-0"
         inlineMaxHeightClass={getSettingsInlineListMaxHeightClass(layoutMode)}
-        triggerPlacement="floating"
+        hideInlineTrigger
         icon={<Mic size={16} className="text-[rgb(var(--accent))]" />}
         title={VOICE_CATALOG_COPY.title}
         subtitle={VOICE_CATALOG_COPY.subtitle}

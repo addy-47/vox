@@ -8,6 +8,7 @@ import { isCoarsePointer } from "@/lib/capabilities";
 import { Tooltip } from "@/shared/ui/Tooltip";
 import { OverlayBackdrop } from "@/shared/ui/OverlayBackdrop";
 import { LAYOUT_COPY } from "@/data/layoutCopy";
+import { rca, rcaRect } from "@/shared/lib/rcaTrace";
 
 export interface ModalProps {
   open: boolean;
@@ -205,6 +206,18 @@ export const Modal = memo(
                     <Tooltip label={LAYOUT_COPY.modal.close} side="bottom">
                       <button
                         onClick={onClose}
+                        onPointerEnter={() =>
+                          rca("close-hover", "enter", {
+                            panel: rcaRect(panelRef.current),
+                            banner: rcaRect(document.querySelector("[data-rca-banner]")),
+                          })
+                        }
+                        onPointerLeave={() =>
+                          rca("close-hover", "leave", {
+                            panel: rcaRect(panelRef.current),
+                            banner: rcaRect(document.querySelector("[data-rca-banner]")),
+                          })
+                        }
                         className="flex items-center justify-center w-8 h-8 rounded-full glass-card text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))]"
                         aria-label={LAYOUT_COPY.modal.close}
                       >

@@ -6,6 +6,7 @@ import { RotaryKnob } from "@/shared/ui";
 import { useSettingsStore } from "@/store/settingsStore";
 import { useCatalogStore } from "@/store/catalogStore";
 import { useModelParameters } from "@/shared/hooks/useModelParameters";
+import { resolveCapabilitiesById } from "@/shared/lib/catalogCapabilities";
 import { CardPopover } from "../shared/CardHeader";
 import { PresetButton, PresetInput } from "../shared/CustomSvgs";
 import { LLM_TUNING_COPY } from "@/data/settingsCopy";
@@ -128,13 +129,9 @@ export const LlmTuningControls = memo(() => {
 
   /** The probed ceiling. Unknown means the provider decides. */
   const contextCeiling = useMemo(() => {
-    if (!activeModelId) return undefined;
-    const caps =
-      capabilitiesCache[`server:${activeModelId}`] ??
-      capabilitiesCache[`cloud:${activeModelId}`] ??
-      capabilitiesCache[`embedded:${activeModelId}`] ??
-      capabilitiesCache[activeModelId];
-    return caps.context_window;
+    // A model that was never probed has no cache entry and no ceiling. This
+    // lookup goes through the SSOT so the crash on a cache miss cannot return.
+    return resolveCapabilitiesById(activeModelId, capabilitiesCache)?.context_window;
   }, [activeModelId, capabilitiesCache]);
 
   const contextPresets = useMemo(

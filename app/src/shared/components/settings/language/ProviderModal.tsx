@@ -2,10 +2,10 @@ import { memo, useState, useMemo, useCallback, useDeferredValue } from "react";
 import { useLenisScrollContainer, useScrollTopOnChange } from "@/shared/hooks/useLenisScrollContainer";
 import { type CloudProvider } from "@/data/providersCopy";
 import { useCatalogStore } from "@/store/catalogStore";
-import { PROVIDERS_CONFIG_DESK_COPY, LLM_CATALOG_COPY } from "@/data/settingsCopy";
+import { PROVIDERS_CONFIG_DESK_COPY, LLM_CATALOG_COPY, LANGUAGE_CARD_COPY } from "@/data/settingsCopy";
 import { useSettingsStore, type LlmCustomServer, type TtsCustomServer } from "@/store/settingsStore";
 import { useShallow } from "zustand/react/shallow";
-import { activeSelection, promoteActive } from "@/shared/lib/activeSelection";
+import { activeSelection, promoteActive, resolveProviderModel } from "@/shared/lib/activeSelection";
 import { requestSpeechTab } from "@/shared/lib/speechTabSync";
 import { filterProviders } from "@/shared/lib/catalogFilter";
 import { ModalProviderFooter } from "@/shared/components/settings/SettingsCommitControls";
@@ -14,7 +14,7 @@ import { ArrowRight, Check, Cloud, Globe, HelpCircle, Key, KeyRound, Pencil, Ser
 import { cn } from "@/shared/lib/utils";
 import { ProviderGuideView } from "./ProviderGuideView";
 import { CustomServerFormCard } from "./CustomServerFormCard";
-import { SelectableCard } from "./SelectableCard";
+import { SelectableCard } from "../shared/SelectableCard";
 import { AddCard } from "../shared/AddCard";
 import { CardFilterMenu, CardFilterItem } from "../shared/CardHeader";
 import { CatalogModalToolbar } from "../shared/CatalogModalToolbar";
@@ -53,9 +53,6 @@ export interface ProviderModalProps {
   onSaveInlineKey: (id: string) => void;
   onNavigateToModels?: (provider: CloudProvider) => void;
   onAddCustomServer?: () => void;
-  /** Catalog filter on first open. The language card opens everything so a
-   *  provider that still needs a key is never hidden from the row that opened it. */
-  initialFilter?: ProviderFilterCategory;
 }
 
 export type ProviderFilterCategory = "all" | "cloud" | "configured" | "unconfigured" | "custom" | "guide";
@@ -90,11 +87,13 @@ CustomProviderCreationCard.displayName = "CustomProviderCreationCard";
 export const ProviderModal = memo(({
   category = "LLM", onSelectLocal, activeCloudProviderId, getProviderKey, pinnedProviderId,
   getCommittedProviderKey, onSelectProvider, editingProviderId, editingKeyValue, setEditingKeyValue,
-  onStartInlineEdit, onCancelInlineKey, onSaveInlineKey, onNavigateToModels, initialFilter = "configured",
+  onStartInlineEdit, onCancelInlineKey, onSaveInlineKey, onNavigateToModels,
 }: ProviderModalProps) => {
   const [modalSearch, setModalSearch] = useState("");
   const deferredSearch = useDeferredValue(modalSearch);
-  const [filterCategory, setFilterCategory] = useState<ProviderFilterCategory>(initialFilter);
+  // One default at every entry point: an unconnected provider stays reachable
+  // through its own row, but the list opens on what is ready to use.
+  const [filterCategory, setFilterCategory] = useState<ProviderFilterCategory>("configured");
   const [sort, setSort] = useState<"az" | "za">("az");
   const [isFilterDropdownOpen, setIsFilterDropdownOpen] = useState(false);
   const [isCreatingCustomServer, setIsCreatingCustomServer] = useState(false);
@@ -126,14 +125,37 @@ export const ProviderModal = memo(({
 
   const handleSelectServer = useCallback((server: LlmCustomServer | TtsCustomServer) => {
     useCatalogStore.getState().clearRemoteModelsError();
+    const committedActive = isTts
+      ? committedSettings?.tts?.active ?? null
+      : committedSettings?.llm?.active ?? null;
     if (isTts) {
-      updateDraft("tts", "active", activeSelection("server", "", server.id));
+      updateDraft(
+        "tts",
+        "active",
+        activeSelection(
+          "server",
+          resolveProviderModel({ category: "server", provider: server.id }, committedActive),
+          server.id
+        )
+      );
       requestSpeechTab("tts");
     } else {
       const llmServ = server as LlmCustomServer;
-      updateDraft("llm", "active", activeSelection("server", llmServ.model || "", llmServ.id));
+      updateDraft(
+        "llm",
+        "active",
+        activeSelection(
+          "server",
+          resolveProviderModel(
+            { category: "server", provider: llmServ.id },
+            committedActive,
+            llmServ.model || ""
+          ),
+          llmServ.id
+        )
+      );
     }
-  }, [isTts, updateDraft]);
+  }, [isTts, committedSettings, updateDraft]);
 
   const handleDeleteServer = useCallback(async (serverId: string) => {
     await deleteCustomServer(isTts ? "tts" : "llm", serverId);
@@ -146,10 +168,21 @@ export const ProviderModal = memo(({
     } else {
       const domain = category.toLowerCase() as "stt" | "llm" | "tts";
       const fallback = draftSettings?.[domain].last_selected.embedded ?? "";
-      updateDraft(domain, "active", activeSelection("embedded", fallback));
+      updateDraft(
+        domain,
+        "active",
+        activeSelection(
+          "embedded",
+          resolveProviderModel(
+            { category: "embedded", provider: null },
+            committedSettings?.[domain]?.active ?? null,
+            fallback
+          )
+        )
+      );
       if (domain === "tts" || domain === "stt") requestSpeechTab(domain);
     }
-  }, [category, draftSettings, onSelectLocal, updateDraft]);
+  }, [category, committedSettings, draftSettings, onSelectLocal, updateDraft]);
 
   const { containerRef: scrollContainerRef, lenisRef } = useLenisScrollContainer<HTMLDivElement>();
   const committedActiveProviderId = isTts
@@ -328,12 +361,12 @@ export const ProviderModal = memo(({
             logo={provider.logo ?? null} isSelected={isSelected} onSelect={() => onSelectProvider(provider)}
             cornerSlot={
               onNavigateToModels && hasKey ? (
-                <Tooltip label="Browse models" side="top" asChild>
+                <Tooltip label={LANGUAGE_CARD_COPY.browseModels} side="top" asChild>
                   <button
                     type="button"
                     onClick={() => { onSelectProvider(provider); onNavigateToModels(provider); }}
                     className="w-7 h-7 flex items-center justify-center rounded-md text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.1)] transition-colors cursor-pointer"
-                    aria-label="Browse models"
+                    aria-label={`${LANGUAGE_CARD_COPY.browseModels}: ${provider.name}`}
                   >
                     <ArrowRight size={13} strokeWidth={2} />
                   </button>
@@ -383,7 +416,7 @@ export const ProviderModal = memo(({
         isSelected={isSelected} onSelect={() => handleSelectServer(server)}
         cornerSlot={
           onNavigateToModels && category === "LLM" ? (
-            <Tooltip label="Browse models" side="top" asChild>
+            <Tooltip label={LANGUAGE_CARD_COPY.browseModels} side="top" asChild>
               <button
                 type="button"
                 onClick={() => {
@@ -391,7 +424,7 @@ export const ProviderModal = memo(({
                   onNavigateToModels({ id: server.id, name: server.name || "Custom Server", url: server.url, popular: false, keyPlaceholder: "" });
                 }}
                 className="w-7 h-7 flex items-center justify-center rounded-md text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.1)] transition-colors cursor-pointer"
-                aria-label="Browse models"
+                aria-label={`${LANGUAGE_CARD_COPY.browseModels}: ${server.name || "Custom Server"}`}
               >
                 <ArrowRight size={13} strokeWidth={2} />
               </button>

@@ -1,6 +1,8 @@
 import { memo } from "react";
 import { ArrowRight } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
+import { Tooltip } from "@/shared/ui/Tooltip";
+import { LANGUAGE_CARD_COPY } from "@/data/settingsCopy";
 import { ProviderLogo } from "../shared/ProviderLogo";
 import { CatalogRowCard } from "../shared/CatalogRowCard";
 
@@ -17,6 +19,11 @@ export interface ProviderPillProps {
   leading?: React.ReactNode;
   active: boolean;
   onSelect: () => void;
+  /**
+   * Opens this provider's model catalog. Rendered as its own trailing hitbox:
+   * the row body only selects, so a browse cannot happen by accident.
+   */
+  onBrowse?: () => void;
   /** Replaces the trailing arrow (unconnected rows show a plus). */
   trailing?: React.ReactNode;
   className?: string;
@@ -28,8 +35,8 @@ export interface ProviderPillProps {
 
 /**
  * One available provider in the language card. Brand mark, provider name, one
- * status line, and an arrow that promises the model list behind it. The arrow
- * is decorative: the whole row is the hit area.
+ * status line. The body selects the provider; the arrow is a separate hitbox
+ * that opens that provider's models, matching the provider modal.
  */
 export const ProviderPill = memo(({
   id,
@@ -40,6 +47,7 @@ export const ProviderPill = memo(({
   leading,
   active,
   onSelect,
+  onBrowse,
   trailing,
   className,
   muted = false,
@@ -68,11 +76,27 @@ export const ProviderPill = memo(({
     className={className}
     trailing={
       trailing ?? (
-        <ArrowRight
-          size={13}
-          strokeWidth={2}
-          className="text-[rgb(var(--foreground-muted))]/50 transition-transform group-hover:translate-x-0.5 group-hover:text-[rgb(var(--accent))]"
-        />
+        onBrowse ? (
+          <Tooltip label={LANGUAGE_CARD_COPY.browseModels} side="left" asChild>
+            <button
+              type="button"
+              aria-label={`${LANGUAGE_CARD_COPY.browseModels}: ${name}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                onBrowse();
+              }}
+              className="w-7 h-7 flex items-center justify-center rounded-md text-[rgb(var(--foreground-muted))]/50 transition-colors hover:bg-[rgba(var(--accent),0.1)] hover:text-[rgb(var(--accent))] cursor-pointer"
+            >
+              <ArrowRight size={13} strokeWidth={2} />
+            </button>
+          </Tooltip>
+        ) : (
+          <ArrowRight
+            size={13}
+            strokeWidth={2}
+            className="text-[rgb(var(--foreground-muted))]/50 transition-transform group-hover:translate-x-0.5 group-hover:text-[rgb(var(--accent))]"
+          />
+        )
       )
     }
   />

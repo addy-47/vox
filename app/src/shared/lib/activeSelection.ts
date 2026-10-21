@@ -26,6 +26,35 @@ export function activeSelection(
 }
 
 /**
+ * The model id a provider switch must write.
+ *
+ * A model id belongs to the provider that serves it, so it must never be
+ * carried across a switch: the old code copied `active.model` into the new
+ * selection, which left a foreign id behind and made the domain permanently
+ * dirty once the user returned to the saved provider (`Apply & Restart` that
+ * could not clear).
+ *
+ * Reverting to the committed category+provider restores the committed model, so
+ * a revert is always byte-identical to the saved selection and the dirty flag
+ * clears. Any other target uses the caller's fallback (the target's own known
+ * model, or `""` when the catalog must supply it).
+ */
+export function resolveProviderModel(
+  target: { category: ActiveCategory; provider: string | null },
+  committed: ActiveSelection | null | undefined,
+  fallback = ""
+): string {
+  if (
+    committed &&
+    committed.category === target.category &&
+    (committed.provider ?? null) === (target.provider ?? null)
+  ) {
+    return committed.model;
+  }
+  return fallback;
+}
+
+/**
  * Resolves the effective API key for a cloud provider across draft and committed settings.
  * Checks draft.llm.cloud_keys, draft.providers.llm.cloud_keys, committed.providers.llm.cloud_keys,
  * and committed.llm.cloud_keys.
