@@ -136,8 +136,9 @@ export const Tooltip: React.FC<TooltipProps> = React.memo(({
   const renderReference = () => {
     if (asChild && React.isValidElement(children)) {
       const child = children as React.ReactElement<Record<string, unknown>>;
-      const childWithRef = child as unknown as { ref?: React.Ref<HTMLElement | SVGSVGElement> };
-      const existingRef = childWithRef.ref;
+      // React 19 moved `ref` into props; reading `element.ref` logs a
+      // deprecation error on every render that uses `asChild`.
+      const existingRef = (child.props as { ref?: React.Ref<HTMLElement | SVGSVGElement> }).ref;
       const mergedRef = (node: HTMLElement | SVGSVGElement | null) => {
         refs.setReference(node);
         if (typeof existingRef === "function") {

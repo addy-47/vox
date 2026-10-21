@@ -12,6 +12,7 @@ import type { DomainFlags } from "@/types/settings";
 
 export type DomainCommitMode =
   | "missing-key"
+  | "missing-model"
   | "restart"
   | "saved"
   | "restarting"
@@ -21,6 +22,20 @@ export interface DomainCommitState {
   mode: DomainCommitMode | null;
   hasChanges: boolean;
   failedKeys: string[];
+}
+
+/**
+ * True when a cloud/server LLM selection carries no model id. Switching
+ * provider writes an empty model by design (a model id belongs to the provider
+ * that serves it), so this state is normal and must block commit instead of
+ * sending an empty model to the engine.
+ */
+export function isLlmSelectionMissingModel(
+  selection: { category?: string; model?: string } | null | undefined
+): boolean {
+  if (!selection) return false;
+  if (selection.category !== "cloud" && selection.category !== "server") return false;
+  return !selection.model?.trim();
 }
 
 /**
@@ -39,6 +54,7 @@ export function useDomainCommitState(domainId: string): DomainCommitState {
   const committedSettings = useSettingsStore((s) => s.settings);
   const llmCategory = draftSettings?.llm.active.category;
   const llmActiveProvider = draftSettings?.llm.active.provider;
+  const llmActiveModel = draftSettings?.llm.active.model;
   const cloudApiKey = getEffectiveCloudApiKey(draftSettings, committedSettings, llmActiveProvider);
   const pipelineMode = useSettingsStore((s) => s.draftSettings?.interaction.pipeline_mode);
   const realtimeProvider = useSettingsStore((s) => s.draftSettings?.realtime.active.provider);
@@ -93,12 +109,21 @@ export function useDomainCommitState(domainId: string): DomainCommitState {
     )
   );
 
+  const isMissingModel = useMemo(() => {
+    if (domainId !== "language") return false;
+    return isLlmSelectionMissingModel({ category: llmCategory, model: llmActiveModel });
+  }, [domainId, llmCategory, llmActiveModel]);
+
   // Hot-save changes stay uncommitted only during the 600ms autosave window.
   // There is intentionally no routine Save/Cancel UI for them: they resolve to
   // the saved toast, while restart-class changes keep explicit controls.
   let mode: DomainCommitMode | null = null;
   if (hasChanges && isMissingKey) {
     mode = "missing-key";
+  } else if (hasChanges && isMissingModel) {
+    // Never offer "Apply & Restart" for a selection that has no model: the
+    // engine would receive an empty model id. Only Discard is actionable.
+    mode = "missing-model";
   } else if (hasChanges && requiresRestart) {
     mode = "restart";
   } else if (!saveFailure && autoSaved) {
@@ -252,6 +277,36 @@ export const SettingsCommitControls = memo(({ domainId, layoutMode }: SettingsCo
     );
   }
 
+  if (mode === "missing-model") {
+    if (isExpanded) {
+      // Same rule as a missing key: the modal shows one footer banner instead
+      // of a dead header button.
+      return null;
+    }
+    return (
+      <div className="flex items-center gap-1.5 shrink-0">
+        <span className="flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider text-[rgb(var(--accent))] shrink-0">
+          <AlertCircle size={13} className="shrink-0" />
+          <span className="hidden md:inline">{SETTINGS_COPY.modelRequired}</span>
+        </span>
+        <button
+          type="button"
+          disabled
+          className="px-2.5 py-1 rounded-lg font-bold text-[11px] uppercase tracking-wider bg-[rgba(var(--foreground),0.05)] text-[rgb(var(--foreground-muted))]/40 cursor-not-allowed border border-[rgba(var(--border),0.1)] shrink-0"
+        >
+          {SETTINGS_COPY.applyAndRestart}
+        </button>
+        <button
+          type="button"
+          onClick={() => useSettingsStore.getState().discardDomainChanges(domainId)}
+          className="px-2.5 py-1 rounded-lg bg-transparent text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--danger))] hover:bg-[rgba(var(--danger),0.1)] border border-transparent hover:border-[rgba(var(--danger),0.2)] text-[11px] font-bold uppercase tracking-wider transition-all cursor-pointer shrink-0"
+        >
+          {SETTINGS_COPY.discardChanges}
+        </button>
+      </div>
+    );
+  }
+
   const isSmall = layoutMode === "small" || isMobile || isCompact;
   const showLabel = !isSmall;
   // Small and mobile layouts get an icon-only button: the full "Apply &
@@ -302,6 +357,8 @@ export const ModalProviderFooter = memo(({ category }: { category: "STT" | "LLM"
   const llmActiveProvider = draftSettings?.llm.active.provider;
   const cloudApiKey = getEffectiveCloudApiKey(draftSettings, committedSettings, llmActiveProvider);
   const isCloudLlmMissingKey = category === "LLM" && llmCategory === "cloud" && !cloudApiKey?.trim();
+  const isMissingModel =
+    isLlmSelectionMissingModel({ category: llmCategory, model: draftSettings?.llm.active.model });
 
   if (category === "STT") return null;
 
@@ -314,9 +371,18 @@ export const ModalProviderFooter = memo(({ category }: { category: "STT" | "LLM"
   const showConnectionFailed = Boolean(remoteModelsError) && !(category === "LLM" && isApiKeyError);
 
   const hasFailedKeys = (failedKeys?.length ?? 0) > 0;
-  if (!hasFailedKeys && !showMissingKey && !showConnectionFailed) return null;
+  const showMissingModel = category === "LLM" && isMissingModel;
+  if (!hasFailedKeys && !showMissingKey && !showConnectionFailed && !showMissingModel) return null;
   return (
     <div className="flex flex-col gap-2 shrink-0 w-full max-w-full">
+      {showMissingModel && (
+        <SettingsFooterBanner
+          title={SETTINGS_COPY.modelRequired}
+          detail={SETTINGS_COPY.modelRequiredDetail}
+          tone="accent"
+          className="rounded-xl w-full max-w-full"
+        />
+      )}
       {showMissingKey && (
         <SettingsFooterBanner
           title={SETTINGS_COPY.apiKeyRequired}

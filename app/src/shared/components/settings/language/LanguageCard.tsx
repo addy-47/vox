@@ -49,25 +49,27 @@ export const LanguageCard = memo(({ layoutMode = "full-max" }: LanguageCardProps
       )}
     >
       {view === "models" ? (
-        provider.kind === "embedded" ? (
-          <LocalModelsView
-            layoutMode={layoutMode}
-            onBack={() => setView("providers")}
-          />
-        ) : (
-          <RemoteCatalogSection
-            layoutMode={layoutMode}
-            provider={provider}
-            remoteModels={remoteModels}
-            loadingRemoteModels={loadingRemoteModels}
-            remoteModelsError={remoteModelsError}
-            probingMap={probingMap}
-            handleProbeCapabilities={handleProbeCapabilities}
-            onBack={() => setView("providers")}
-          />
-        )
+        <div key="models-face" className="flex flex-col flex-1 min-h-0 animate-fade-in">
+          {provider.kind === "embedded" ? (
+            <LocalModelsView
+              layoutMode={layoutMode}
+              onBack={() => setView("providers")}
+            />
+          ) : (
+            <RemoteCatalogSection
+              layoutMode={layoutMode}
+              provider={provider}
+              remoteModels={remoteModels}
+              loadingRemoteModels={loadingRemoteModels}
+              remoteModelsError={remoteModelsError}
+              probingMap={probingMap}
+              handleProbeCapabilities={handleProbeCapabilities}
+              onBack={() => setView("providers")}
+            />
+          )}
+        </div>
       ) : (
-        <div className="flex flex-col flex-1 min-h-0 animate-fade-in">
+        <div key="providers-face" className="flex flex-col flex-1 min-h-0 animate-fade-in">
           <CardTitleBar
             icon={<BrainCircuit size={17} />}
             title={LANGUAGE_CARD_COPY.title}
@@ -78,7 +80,7 @@ export const LanguageCard = memo(({ layoutMode = "full-max" }: LanguageCardProps
           <div className="flex-1 w-full flex flex-col min-h-0 relative">
             <ExpandableList
               className="flex-1 min-h-0"
-              triggerPlacement="floating"
+              hideInlineTrigger
               inlineMaxHeightClass={getSettingsInlineListMaxHeightClass(layoutMode)}
               icon={<BrainCircuit size={16} className="text-[rgb(var(--accent))]" />}
               title={
@@ -99,7 +101,6 @@ export const LanguageCard = memo(({ layoutMode = "full-max" }: LanguageCardProps
                 <ProviderModal
                   {...selection}
                   category="LLM"
-                  initialFilter="all"
                   onNavigateToModels={() => {
                     setView("models");
                     close();

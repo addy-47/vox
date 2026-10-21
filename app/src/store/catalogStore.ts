@@ -223,9 +223,12 @@ export const useCatalogStore = create<CatalogState>((set, get) => ({
     console.info(
       `[Providers] loadRemoteModels kind=${provider.kind} url=${provider.base_url} hasKey=${Boolean(provider.api_key)} force=${force}`
     );
-    // Clear stale models immediately when switching providers to prevent showing previous provider's models
+    // A refetch of the same provider keeps its rows on screen (stale-while-
+    // revalidate); only a source switch clears, so the previous provider's
+    // models never flash under the new one.
+    const isSameSource = get().remoteModelsFetchedKey === fetchKey;
     set({
-      remoteModels: [],
+      ...(isSameSource ? {} : { remoteModels: [] }),
       loadingRemoteModels: true,
       remoteModelsError: null,
     });
@@ -407,13 +410,18 @@ export const useCatalogStore = create<CatalogState>((set, get) => ({
   },
 
   patchCapabilities: (modelId: string, caps: ModelCapabilities) => {
+    const id = caps.model_id || modelId;
+    // The disk cache key is `${provider_kind}:${model_id}`. A probe payload
+    // without a kind must not create an `undefined:model` key that the SSOT
+    // lookup can never hit.
+    const cacheKey = caps.provider_kind ? `${caps.provider_kind}:${id}` : id;
     set((state) => ({
       remoteModels: state.remoteModels.map((m) =>
         m.id === modelId ? { ...m, capabilities: caps } : m
       ),
       capabilitiesCache: {
         ...state.capabilitiesCache,
-        [`${caps.provider_kind}:${caps.model_id}`]: caps,
+        [cacheKey]: caps,
       },
     }));
   },

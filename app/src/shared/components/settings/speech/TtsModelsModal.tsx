@@ -1,8 +1,11 @@
 import { memo, useState } from "react";
 import { Cloud, Cpu, Layers } from "lucide-react";
 import { SPEECH_CARD_COPY } from "@/data/settingsCopy";
+import { useSettingsStore } from "@/store/settingsStore";
+import { useCatalogStore } from "@/store/catalogStore";
 import { useVoiceCatalog, useVoiceScope } from "@/shared/hooks/useVoiceCatalog";
 import { CatalogFacetRail, type CatalogFacetGroup } from "../shared/CatalogFacetRail";
+import { EngineFlowBanner } from "./EngineFlowBanner";
 import { VoiceModal } from "./voices/VoiceModal";
 import { TtsEngineGrid, type TtsEngineGridProps } from "./TtsEngineGrid";
 
@@ -48,10 +51,15 @@ EngineVoices.displayName = "EngineVoices";
 export const TtsModelsModal = memo(
   ({ engine, onPickEngine, onDone, ...gridProps }: TtsModelsModalProps) => {
     const [facet, setFacet] = useState<Facet>("all");
+    const modelCatalog = useCatalogStore((s) => s.modelCatalog);
+    const activeTtsId = useSettingsStore((s) => s.draftSettings?.tts.active.model ?? "");
 
     if (engine) {
       return <EngineVoices engine={engine} onDone={onDone} />;
     }
+
+    const engineName =
+      modelCatalog?.tts?.find((model) => model.id === activeTtsId)?.name ?? activeTtsId;
 
     const groups: CatalogFacetGroup[] = [
       {
@@ -65,21 +73,26 @@ export const TtsModelsModal = memo(
     ];
 
     return (
-      <div className="flex flex-1 min-h-0 gap-4">
-        <div className="w-36 sm:w-44 shrink-0">
-          <CatalogFacetRail
-            groups={groups}
-            selectedId={facet}
-            onSelect={(id) => setFacet(id as Facet)}
+      <div className="flex flex-col flex-1 min-h-0 gap-4">
+        <div className="flex flex-1 min-h-0 gap-4">
+          <div className="w-36 sm:w-44 shrink-0">
+            <CatalogFacetRail
+              groups={groups}
+              selectedId={facet}
+              onSelect={(id) => setFacet(id as Facet)}
+            />
+          </div>
+          <TtsEngineGrid
+            {...gridProps}
+            facet={facet}
+            variant="cards"
+            className="flex-1 min-h-0"
+            onPickVoice={onPickEngine}
           />
         </div>
-        <TtsEngineGrid
-          {...gridProps}
-          facet={facet}
-          columns={3}
-          className="flex-1 min-h-0"
-          onPickVoice={onPickEngine}
-        />
+        {/* Same placement as the voice preview banner: pinned under the list,
+            never above it, so the catalog keeps the top of the viewport. */}
+        <EngineFlowBanner engineName={engineName} />
       </div>
     );
   }

@@ -7,18 +7,22 @@ import {
   type ReactNode,
   type RefObject,
 } from "react";
-import { ChevronDown } from "lucide-react";
+import { Maximize } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { useExpandableList } from "@/shared/ui/ExpandableList";
 import { CATALOG_REVEAL_COPY } from "@/data/settingsCopy";
 
 /**
- * The "there is more below" affordance, shared by every card catalog.
+ * The catalog's expand affordance, shared by every card catalog.
  *
  * A sentinel sits under the last row. While the sentinel is below the fold,
- * the list is clipped by a feather and a `Show all` label offers the full
- * catalog. The moment the end enters the visible band, the label disappears:
- * it has nothing left to offer.
+ * the list is clipped by a feather and an `Expand` label sits on it. The list
+ * is a native scroller that already holds every row, so the label does not
+ * reveal rows: it opens the modal, which is the same catalog at full size.
+ *
+ * It renders even when the end is reached, because it is the only expand
+ * affordance left (the corner maximize glyph is gone). In the modal it stands
+ * down: the list is already full size.
  *
  * The reveal target defaults to the enclosing `ExpandableList`, so a list that
  * knows how to open its own modal needs no extra wiring.
@@ -56,7 +60,7 @@ export interface CatalogRevealProps {
 export const CatalogReveal = memo(({
   children,
   onReveal,
-  label = CATALOG_REVEAL_COPY.showAll,
+  label = CATALOG_REVEAL_COPY.expand,
   scrollerClassName,
   className,
   scrollRef: externalScrollRef,
@@ -67,7 +71,7 @@ export const CatalogReveal = memo(({
   const scrollRef = externalScrollRef ?? localScrollRef;
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const [atEnd, setAtEnd] = useState(false);
-  const { open } = useExpandableList();
+  const { open, isExpanded } = useExpandableList();
 
   /**
    * The end state is measured, not waited for. An observer callback lands a
@@ -138,18 +142,31 @@ export const CatalogReveal = memo(({
         />
       )}
 
-      {!atEnd && (
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex justify-center">
+      {/*
+        Two placements, one affordance. While rows remain below the fold the
+        label floats on the feather; once the end is readable it moves into
+        flow, so it stays available without covering the last row.
+      */}
+      {!isExpanded && (
+        <div
+          className={cn(
+            "z-20 flex justify-center",
+            atEnd
+              ? "relative shrink-0 pt-1"
+              : "pointer-events-none absolute inset-x-0 bottom-0"
+          )}
+        >
           <button
             type="button"
             onClick={onReveal ?? open}
-            className="group pointer-events-auto inline-flex cursor-pointer flex-col items-center gap-0.5 text-[rgb(var(--accent))] transition-colors hover:text-[rgb(var(--foreground))]"
+            aria-label={label}
+            className="group pointer-events-auto inline-flex cursor-pointer items-center gap-1 text-[rgb(var(--accent))] transition-colors hover:text-[rgb(var(--foreground))]"
           >
             <span className="text-[11px] font-bold uppercase tracking-[0.14em]">{label}</span>
-            <ChevronDown
+            <Maximize
               size={13}
-              strokeWidth={2.5}
-              className="transition-transform group-hover:translate-y-0.5"
+              strokeWidth={2.2}
+              className="transition-transform group-hover:-translate-y-px group-hover:translate-x-px"
             />
           </button>
         </div>

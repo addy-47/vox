@@ -3,7 +3,7 @@ import { useShallow } from "zustand/react/shallow";
 import { Check, Plus, X } from "lucide-react";
 import { useSettingsStore } from "@/store/settingsStore";
 import { useCatalogStore } from "@/store/catalogStore";
-import { activeSelection, getEffectiveCloudApiKey, getEffectiveLlmServers } from "@/shared/lib/activeSelection";
+import { activeSelection, getEffectiveCloudApiKey, getEffectiveLlmServers, resolveProviderModel } from "@/shared/lib/activeSelection";
 import { useExpandableList } from "@/shared/ui/ExpandableList";
 import { VoxLogoLoader } from "@/shared/components/common/VoxLogoLoader";
 import { LANGUAGE_CARD_COPY } from "@/data/settingsCopy";
@@ -79,23 +79,64 @@ export const ProviderGrid = memo(({ onOpenModels }: ProviderGridProps) => {
     return "local";
   }, [committedSettings?.llm.active]);
 
+  const committedActive = committedSettings?.llm.active;
+
+  /**
+   * Switching provider writes a model that belongs to the target provider.
+   * Carrying the previous provider's model id is what kept the domain dirty
+   * after the user returned to the saved provider.
+   *
+   * Neither of these navigates: the row body selects, and the row's arrow is a
+   * separate hitbox that browses that provider's models.
+   */
   const selectLocal = () => {
     useCatalogStore.getState().clearRemoteModelsError();
-    updateDraft("llm", "active", activeSelection("embedded", localModelId));
-    onOpenModels();
+    updateDraft(
+      "llm",
+      "active",
+      activeSelection(
+        "embedded",
+        resolveProviderModel({ category: "embedded", provider: null }, committedActive, localModelId)
+      )
+    );
   };
 
   const selectCloud = (providerId: string) => {
     useCatalogStore.getState().clearRemoteModelsError();
-    // Same contract as the provider modal: keep the current model id until the
-    // catalog selection replaces it.
-    updateDraft("llm", "active", activeSelection("cloud", active?.model ?? "", providerId));
-    onOpenModels();
+    // A cloud provider has no model until its catalog supplies one. Reverting
+    // to the committed provider restores the committed model instead.
+    updateDraft(
+      "llm",
+      "active",
+      activeSelection(
+        "cloud",
+        resolveProviderModel({ category: "cloud", provider: providerId }, committedActive),
+        providerId
+      )
+    );
   };
 
   const selectServer = (serverId: string, model: string) => {
     useCatalogStore.getState().clearRemoteModelsError();
-    updateDraft("llm", "active", activeSelection("server", model, serverId));
+    updateDraft(
+      "llm",
+      "active",
+      activeSelection(
+        "server",
+        resolveProviderModel({ category: "server", provider: serverId }, committedActive, model),
+        serverId
+      )
+    );
+  };
+
+  /**
+   * The arrow hitbox: browse this provider's models, selecting it first only
+   * when it is not already the draft target. Re-selecting an already selected
+   * provider would restore its committed model and silently drop a pending
+   * model choice.
+   */
+  const browseModels = (select: () => void, alreadyActive: boolean) => {
+    if (!alreadyActive) select();
     onOpenModels();
   };
 
@@ -143,6 +184,7 @@ export const ProviderGrid = memo(({ onOpenModels }: ProviderGridProps) => {
             }
             active={activeCategory === "embedded"}
             onSelect={selectLocal}
+            onBrowse={() => browseModels(selectLocal, activeCategory === "embedded")}
           />
         ),
       },
@@ -160,6 +202,12 @@ export const ProviderGrid = memo(({ onOpenModels }: ProviderGridProps) => {
             }
             active={activeCategory === "server" && active?.provider === server.id}
             onSelect={() => selectServer(server.id, server.model || "")}
+            onBrowse={() =>
+              browseModels(
+                () => selectServer(server.id, server.model || ""),
+                activeCategory === "server" && active?.provider === server.id
+              )
+            }
           />
         ),
       })),
@@ -177,6 +225,12 @@ export const ProviderGrid = memo(({ onOpenModels }: ProviderGridProps) => {
             }
             active={activeCategory === "cloud" && active?.provider === provider.id}
             onSelect={() => selectCloud(provider.id)}
+            onBrowse={() =>
+              browseModels(
+                () => selectCloud(provider.id),
+                activeCategory === "cloud" && active?.provider === provider.id
+              )
+            }
           />
         ),
       })),

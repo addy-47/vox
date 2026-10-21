@@ -1,4 +1,4 @@
-import { memo } from "react";
+import { memo, useEffect } from "react";
 import { AlertCircle, Check, RefreshCw } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { useSettingsStore } from "@/store/settingsStore";
@@ -10,6 +10,7 @@ import type { SettingsDomain as Domain } from "@/data/settingsCopy";
 import { SETTINGS_COPY } from "@/data/settingsCopy";
 import { useMemoryTrace } from "@/shared/hooks/useMemoryTrace";
 import { getDomainCardWidth } from "./shared/settingsLayout";
+import { rca, rcaRect } from "@/shared/lib/rcaTrace";
 
 
 export interface SettingsCardWrapperProps {
@@ -24,6 +25,7 @@ export const SettingsCardWrapper = memo(({ domain, isActive, layoutMode, childre
   const { mode, hasChanges } = useDomainCommitState(domain.id);
 
   const isMissingKey = mode === "missing-key";
+  const isMissingModel = mode === "missing-model";
   const requiresRestart = mode === "restart";
   const isAutoSavedHere = mode === "saved";
   const isRestartHere = mode === "restarting";
@@ -32,6 +34,18 @@ export const SettingsCardWrapper = memo(({ domain, isActive, layoutMode, childre
   const deskFooter = useSettingsStore((s) => s.deskFooter);
   const expandModalOpen = useExpandedModalStore((s) => s.openCount > 0);
   const showDeskFooter = !expandModalOpen && !hasChanges && deskFooter?.domain === domain.id;
+
+  // RCA: the footer changes the card block height, and the wrapper centers that
+  // block vertically. Log when the mode flips so a layout jump can be tied to
+  // the exact transition.
+  useEffect(() => {
+    rca("card-footer", "mode", {
+      domain: domain.id,
+      mode,
+      hasChanges,
+      card: rcaRect(document.getElementById(`card-${domain.id}`)),
+    });
+  }, [domain.id, mode, hasChanges]);
 
   return (
     <AnimatePresence>
@@ -99,8 +113,36 @@ export const SettingsCardWrapper = memo(({ domain, isActive, layoutMode, childre
               </div>
             )}
 
+            {/* Mode A2: A provider is selected but no model is. The commit would
+                send an empty model id, so it is blocked; only Discard acts. */}
+            {!expandModalOpen && hasChanges && isMissingModel && (
+              <div
+                key="missing-model-footer"
+                className="w-full p-2.5 sm:p-3 px-4 sm:px-5 rounded-b-[1.25rem] rounded-t-none bg-[rgba(var(--accent),0.08)] dark:bg-[rgba(var(--accent),0.12)] border border-t-0 border-[rgba(var(--accent),0.2)] flex items-center justify-between gap-2 overflow-hidden text-[12px] animate-in fade-in duration-150"
+              >
+                <span className="font-bold uppercase tracking-wider text-[rgb(var(--accent))] flex items-center gap-1.5 min-w-0 flex-1">
+                  <AlertCircle size={14} className="shrink-0" />
+                  <span className="truncate">{SETTINGS_COPY.modelRequired}</span>
+                </span>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    disabled
+                    className="px-3 py-1 rounded-lg bg-[rgba(var(--foreground),0.05)] text-[rgb(var(--foreground-muted))]/40 font-black text-[12px] uppercase tracking-wider cursor-not-allowed border border-[rgba(var(--border),0.1)] shrink-0"
+                  >
+                    {SETTINGS_COPY.applyAndRestart}
+                  </button>
+                  <button
+                    onClick={() => useSettingsStore.getState().discardDomainChanges(domain.id)}
+                    className="px-3 py-1 rounded-lg bg-transparent text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--danger))] hover:bg-[rgba(var(--danger),0.1)] border border-transparent hover:border-[rgba(var(--danger),0.2)] text-[12px] font-bold uppercase tracking-wider transition-all cursor-pointer shrink-0"
+                  >
+                    {SETTINGS_COPY.discardChanges}
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Mode B: Unsaved changes requiring engine restart -> Explicit "Apply & Restart" */}
-            {!expandModalOpen && hasChanges && !isMissingKey && requiresRestart && (
+            {!expandModalOpen && hasChanges && !isMissingKey && !isMissingModel && requiresRestart && (
               <div
                 key="apply-restart-footer"
                 className="w-full p-2.5 px-4 sm:px-5 rounded-b-[1.25rem] rounded-t-none bg-[rgba(var(--accent),0.08)] dark:bg-[rgba(var(--accent),0.12)] border border-t-0 border-[rgba(var(--accent),0.2)] flex items-center justify-between gap-2 flex-wrap overflow-hidden text-[12px] animate-in fade-in duration-150"

@@ -2,7 +2,7 @@ import { useState, useMemo, useCallback, useEffect } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
 import { useCatalogStore } from "@/store/catalogStore";
 import { useShallow } from "zustand/react/shallow";
-import { activeSelection } from "@/shared/lib/activeSelection";
+import { activeSelection, resolveProviderModel } from "@/shared/lib/activeSelection";
 import { requestSpeechTab } from "@/shared/lib/speechTabSync";
 import type { CloudProvider } from "@/data/providersCopy";
 
@@ -113,25 +113,54 @@ export function useProviderSelection(options?: UseProviderSelectionOptions) {
     (provider: CloudProvider) => {
       useCatalogStore.getState().clearRemoteModelsError();
       if (isTts) {
-        updateDraft("tts", "active", activeSelection("cloud", provider.id, provider.id));
+        // A TTS cloud engine's model id IS the engine/provider id.
+        updateDraft(
+          "tts",
+          "active",
+          activeSelection(
+            "cloud",
+            resolveProviderModel(
+              { category: "cloud", provider: provider.id },
+              committedSettings?.tts?.active ?? null,
+              provider.id
+            ),
+            provider.id
+          )
+        );
         requestSpeechTab("tts");
       } else if (isStt) {
         updateDraft(
           "stt",
           "active",
-          activeSelection("cloud", draftSettings?.stt?.active?.model || "", provider.id)
+          activeSelection(
+            "cloud",
+            resolveProviderModel(
+              { category: "cloud", provider: provider.id },
+              committedSettings?.stt?.active ?? null
+            ),
+            provider.id
+          )
         );
         requestSpeechTab("stt");
       } else {
+        // Never carry the previous provider's model across the switch: it is
+        // what left `llm.active` permanently dirty after reverting.
         updateDraft(
           "llm",
           "active",
-          activeSelection("cloud", draftSettings?.llm?.active?.model || "", provider.id)
+          activeSelection(
+            "cloud",
+            resolveProviderModel(
+              { category: "cloud", provider: provider.id },
+              committedSettings?.llm?.active ?? null
+            ),
+            provider.id
+          )
         );
       }
       options?.onSelectProvider?.(provider);
     },
-    [isTts, isStt, draftSettings?.llm?.active?.model, draftSettings?.stt?.active?.model, updateDraft, options]
+    [isTts, isStt, committedSettings, updateDraft, options]
   );
 
   const isLocalActive = isTts
@@ -146,7 +175,11 @@ export function useProviderSelection(options?: UseProviderSelectionOptions) {
         "active",
         activeSelection(
           "embedded",
-          draftSettings?.tts?.last_selected?.embedded ?? draftSettings?.tts?.active?.model ?? ""
+          resolveProviderModel(
+            { category: "embedded", provider: null },
+            committedSettings?.tts?.active ?? null,
+            draftSettings?.tts?.last_selected?.embedded ?? ""
+          )
         )
       );
       requestSpeechTab("tts");
@@ -156,7 +189,11 @@ export function useProviderSelection(options?: UseProviderSelectionOptions) {
         "active",
         activeSelection(
           "embedded",
-          draftSettings?.stt?.last_selected?.embedded ?? draftSettings?.stt?.active?.model ?? ""
+          resolveProviderModel(
+            { category: "embedded", provider: null },
+            committedSettings?.stt?.active ?? null,
+            draftSettings?.stt?.last_selected?.embedded ?? ""
+          )
         )
       );
       requestSpeechTab("stt");
@@ -166,19 +203,23 @@ export function useProviderSelection(options?: UseProviderSelectionOptions) {
         "active",
         activeSelection(
           "embedded",
-          draftSettings?.llm?.last_selected?.embedded ?? draftSettings?.llm?.active?.model ?? ""
+          resolveProviderModel(
+            { category: "embedded", provider: null },
+            committedSettings?.llm?.active ?? null,
+            draftSettings?.llm?.last_selected?.embedded ?? ""
+          )
         )
       );
     }
   }, [
     isTts,
     isStt,
+    committedSettings?.tts?.active,
+    committedSettings?.stt?.active,
+    committedSettings?.llm?.active,
     draftSettings?.tts?.last_selected?.embedded,
-    draftSettings?.tts?.active?.model,
     draftSettings?.stt?.last_selected?.embedded,
-    draftSettings?.stt?.active?.model,
     draftSettings?.llm?.last_selected?.embedded,
-    draftSettings?.llm?.active?.model,
     updateDraft,
   ]);
 
