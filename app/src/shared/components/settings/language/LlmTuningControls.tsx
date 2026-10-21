@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { memo, useMemo, useRef, useState, type ReactNode } from "react";
 import { Layers, Thermometer, TextCursorInput, type LucideIcon } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { Tooltip } from "@/shared/ui/Tooltip";
@@ -46,25 +46,6 @@ const TuningGlyph = memo(({
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
 
-  useEffect(() => {
-    if (!open) return;
-    const onPointerDown = (e: PointerEvent) => {
-      const target = e.target as Node;
-      const inTrigger = triggerRef.current?.contains(target) ?? false;
-      const inPanel = panelRef.current?.contains(target) ?? false;
-      if (!inTrigger && !inPanel) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
-    };
-    document.addEventListener("pointerdown", onPointerDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("pointerdown", onPointerDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
-
   return (
     <div className="relative shrink-0">
       <Tooltip label={valueLabel ? `${label} · ${valueLabel}` : label} side="bottom" asChild>
@@ -89,7 +70,12 @@ const TuningGlyph = memo(({
       </Tooltip>
 
       {open && (
-        <CardPopover anchorRef={triggerRef} panelRef={panelRef} menu={children} />
+        <CardPopover
+          anchorRef={triggerRef}
+          panelRef={panelRef}
+          menu={children}
+          onClose={() => setOpen(false)}
+        />
       )}
     </div>
   );
@@ -129,7 +115,7 @@ TuningPanel.displayName = "TuningPanel";
  */
 export const LlmTuningControls = memo(() => {
   const llm = useSettingsStore((s) => s.draftSettings?.llm);
-  const activeModelId = llm?.active?.model ?? null;
+  const activeModelId = llm?.active.model ?? null;
   const { params, setParam } = useModelParameters(activeModelId);
   const capabilitiesCache = useCatalogStore((s) => s.capabilitiesCache);
 
@@ -144,11 +130,11 @@ export const LlmTuningControls = memo(() => {
   const contextCeiling = useMemo(() => {
     if (!activeModelId) return undefined;
     const caps =
-      capabilitiesCache?.[`server:${activeModelId}`] ??
-      capabilitiesCache?.[`cloud:${activeModelId}`] ??
-      capabilitiesCache?.[`embedded:${activeModelId}`] ??
-      capabilitiesCache?.[activeModelId];
-    return caps?.context_window;
+      capabilitiesCache[`server:${activeModelId}`] ??
+      capabilitiesCache[`cloud:${activeModelId}`] ??
+      capabilitiesCache[`embedded:${activeModelId}`] ??
+      capabilitiesCache[activeModelId];
+    return caps.context_window;
   }, [activeModelId, capabilitiesCache]);
 
   const contextPresets = useMemo(

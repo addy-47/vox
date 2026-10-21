@@ -8,6 +8,7 @@ import { useExpandableList } from "@/shared/ui/ExpandableList";
 import { useViewportResize } from "@/shared/hooks/useViewportResize";
 import { Tooltip } from "@/shared/ui/Tooltip";
 import { getEffectiveCloudApiKey } from "@/shared/lib/activeSelection";
+import type { DomainFlags } from "@/types/settings";
 
 export type DomainCommitMode =
   | "missing-key"
@@ -36,18 +37,24 @@ export function useDomainCommitState(domainId: string): DomainCommitState {
   // once per mutation, so these are now O(1) lookups.
   const draftSettings = useSettingsStore((s) => s.draftSettings);
   const committedSettings = useSettingsStore((s) => s.settings);
-  const llmCategory = draftSettings?.llm?.active?.category;
-  const llmActiveProvider = draftSettings?.llm?.active?.provider;
+  const llmCategory = draftSettings?.llm.active.category;
+  const llmActiveProvider = draftSettings?.llm.active.provider;
   const cloudApiKey = getEffectiveCloudApiKey(draftSettings, committedSettings, llmActiveProvider);
-  const pipelineMode = useSettingsStore((s) => s.draftSettings?.interaction?.pipeline_mode);
-  const realtimeProvider = useSettingsStore((s) => s.draftSettings?.realtime?.active?.provider);
-  const realtimeKeys = useSettingsStore((s) => s.draftSettings?.realtime?.api_keys);
-  const realtimeProvidersKeys = useSettingsStore((s) => s.draftSettings?.providers?.realtime?.api_keys);
+  const pipelineMode = useSettingsStore((s) => s.draftSettings?.interaction.pipeline_mode);
+  const realtimeProvider = useSettingsStore((s) => s.draftSettings?.realtime.active.provider);
+  const realtimeKeys = useSettingsStore((s) => s.draftSettings?.realtime.api_keys);
+  const realtimeProvidersKeys = useSettingsStore((s) => s.draftSettings?.providers?.realtime.api_keys);
 
-  const hasChanges = useSettingsStore((s) => Boolean(s.domainFlags[domainId]?.dirty));
-  const requiresRestart = useSettingsStore(
-    (s) => Boolean(s.domainFlags[domainId]?.requiresRestart)
-  );
+  // `domainFlags` is empty until the first recompute, so a domain key can be
+  // missing. The lookup is typed as possibly undefined on purpose.
+  const hasChanges = useSettingsStore((s) => {
+    const flag = s.domainFlags[domainId] as DomainFlags | undefined;
+    return Boolean(flag?.dirty);
+  });
+  const requiresRestart = useSettingsStore((s) => {
+    const flag = s.domainFlags[domainId] as DomainFlags | undefined;
+    return Boolean(flag?.requiresRestart);
+  });
 
   const isCloudLlmMissingKey =
     llmCategory === "cloud" && !cloudApiKey?.trim();
@@ -67,8 +74,10 @@ export function useDomainCommitState(domainId: string): DomainCommitState {
   }, [domainId, pipelineMode, isRealtimeMissingKey, isCloudLlmMissingKey]);
 
   const autoSaved = useSettingsStore((s) => s.autoSavedDomain === domainId);
-  const saveFailure = useSettingsStore((s) => s.failedSaveDomains[domainId]);
+  // One selector for both: the failure list is either absent or a non-empty
+  // array of rejected keys.
   const failedKeys = useSettingsStore((s) => s.failedSaveDomains[domainId]);
+  const saveFailure = (failedKeys?.length ?? 0) > 0;
   const isRestarting = useSettingsStore(
     useCallback(
       (s: SettingsState) => {
@@ -76,7 +85,7 @@ export function useDomainCommitState(domainId: string): DomainCommitState {
         if (s.restartKeys.length === 0) return domainId === "speech";
         return s.restartKeys.some((k) => {
           const scope = k.split(".")[0];
-          const targetUi = SETTINGS_DOMAIN_TO_UI[scope] || "speech";
+          const targetUi = SETTINGS_DOMAIN_TO_UI[scope] ?? "speech";
           return targetUi === domainId;
         });
       },
@@ -102,7 +111,6 @@ export function useDomainCommitState(domainId: string): DomainCommitState {
 
   return { mode, hasChanges, failedKeys: failedKeys ?? [] };
 }
-
 /**
  * Shared footer banner grammar for every settings surface: card footers,
  * inline desks, and expanded modals render failures and transient provider
@@ -246,16 +254,19 @@ export const SettingsCommitControls = memo(({ domainId, layoutMode }: SettingsCo
 
   const isSmall = layoutMode === "small" || isMobile || isCompact;
   const showLabel = !isSmall;
+  // Small and mobile layouts get an icon-only button: the full "Apply &
+  // Restart" label does not fit next to the close control.
+  const actionLabel = showLabel ? SETTINGS_COPY.applyAndRestart : SETTINGS_COPY.restartOnly;
 
   return (
     <div className="flex items-center justify-between gap-2 shrink-0">
-      <Tooltip label={SETTINGS_COPY.applyAndRestart} side="bottom">
+      <Tooltip label={actionLabel} side="bottom">
         <button
           type="button"
           onClick={async () => {
             await useSettingsStore.getState().commitChanges();
           }}
-          aria-label={SETTINGS_COPY.applyAndRestart}
+          aria-label={actionLabel}
           className={cn(
             "px-2 sm:px-2.5 py-1 rounded-lg border font-bold text-[11px] uppercase tracking-wider transition-all cursor-pointer shrink-0",
             "flex items-center gap-1.5 bg-transparent text-[rgb(var(--accent))] border-[rgba(var(--accent),0.45)]",
@@ -287,30 +298,40 @@ export const ModalProviderFooter = memo(({ category }: { category: "STT" | "LLM"
   const remoteModelsError = useCatalogStore((s) => s.remoteModelsError);
   const draftSettings = useSettingsStore((s) => s.draftSettings);
   const committedSettings = useSettingsStore((s) => s.settings);
-  const llmCategory = draftSettings?.llm?.active?.category;
-  const llmActiveProvider = draftSettings?.llm?.active?.provider;
+  const llmCategory = draftSettings?.llm.active.category;
+  const llmActiveProvider = draftSettings?.llm.active.provider;
   const cloudApiKey = getEffectiveCloudApiKey(draftSettings, committedSettings, llmActiveProvider);
   const isCloudLlmMissingKey = category === "LLM" && llmCategory === "cloud" && !cloudApiKey?.trim();
 
   if (category === "STT") return null;
-  if (!failedKeys && !remoteModelsError && !isCloudLlmMissingKey) return null;
+
+  // The catalog reports a missing cloud credential as a plain error string.
+  // Rendering it as "Connection failed" next to the missing-key banner showed
+  // the same cause twice. A missing credential is a credential problem, not a
+  // connection failure: one banner, and only the credential one.
+  const isApiKeyError = Boolean(remoteModelsError && /api key required/i.test(remoteModelsError));
+  const showMissingKey = category === "LLM" && (isCloudLlmMissingKey || isApiKeyError);
+  const showConnectionFailed = Boolean(remoteModelsError) && !(category === "LLM" && isApiKeyError);
+
+  const hasFailedKeys = (failedKeys?.length ?? 0) > 0;
+  if (!hasFailedKeys && !showMissingKey && !showConnectionFailed) return null;
   return (
     <div className="flex flex-col gap-2 shrink-0 w-full max-w-full">
-      {isCloudLlmMissingKey && (
+      {showMissingKey && (
         <SettingsFooterBanner
           title={SETTINGS_COPY.apiKeyRequired}
-          detail="Enter and save an API key for the selected provider to enable cloud inference."
+          detail={SETTINGS_COPY.apiKeyRequiredDetail}
           className="rounded-xl w-full max-w-full"
         />
       )}
-      {failedKeys && failedKeys.length > 0 && (
+      {hasFailedKeys && failedKeys && (
         <SettingsFooterBanner
           title={SETTINGS_COPY.saveFailedTitle}
           detail={`${SETTINGS_COPY.saveFailedHint} ${failedKeys.join(", ")}`}
           className="rounded-xl w-full max-w-full"
         />
       )}
-      {remoteModelsError && (
+      {showConnectionFailed && (
         <SettingsFooterBanner
           title={PROVIDERS_CONFIG_DESK_COPY.status.connectionFailed}
           detail={remoteModelsError}

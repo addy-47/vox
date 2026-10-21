@@ -98,7 +98,6 @@ export const AppearanceCard = memo(({ layoutMode = "full-max" }: AppearanceCardP
   if (!appearance) return null;
 
   const isSmall = layoutMode === "small";
-  const isMin = layoutMode === "full-min";
 
   return (
     <Card 
@@ -108,10 +107,7 @@ export const AppearanceCard = memo(({ layoutMode = "full-max" }: AppearanceCardP
         "text-[14px] leading-relaxed text-[rgb(var(--foreground))]/85 flex flex-col justify-between select-none",
         isSmall
           ? "w-full h-auto gap-3.5"
-          : cn(
-              "p-5 min-h-[180px] h-full",
-              isMin ? "lg:w-[240px] xl:w-[260px] 2xl:w-[280px]" : "lg:w-[290px] xl:w-[310px]"
-            )
+          : "p-5 min-h-[180px] h-full"
       )}
     >
       {/* Top Row: Header Title + Hex Copy */}

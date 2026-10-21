@@ -108,7 +108,23 @@ export default [
       "@typescript-eslint/no-unnecessary-condition": "warn",
 
       // Prefer ?. coalescing over || for nullable types.
-      "@typescript-eslint/prefer-nullish-coalescing": "warn",
+      //
+      // `ignorePrimitives` keeps the rule on its documented scope: for
+      // primitives, `||` is the intended operator, because an empty string or
+      // a zero must fall through to the next fallback (`"" || "Cloud API"`),
+      // while `??` would stop at the empty string. Only nullable
+      // object/array/undefined unions gain the stricter `??`.
+      "@typescript-eslint/prefer-nullish-coalescing": [
+        "warn",
+        {
+          ignorePrimitives: {
+            bigint: true,
+            boolean: true,
+            number: true,
+            string: true,
+          },
+        },
+      ],
 
       // Async functions that never await are likely annotation mistakes.
       "@typescript-eslint/require-await": "warn",

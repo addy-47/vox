@@ -3,6 +3,8 @@ import { useSettingsStore } from "@/store/settingsStore";
 import { SlidersHorizontal, Mic, MicOff, Activity, Radio, Layers, Zap } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { SegmentedControl, ToggleTile } from "@/shared/ui";
+import { CardTitleBar } from "../shared/CardTitleBar";
+import { SETTINGS_DOMAIN_CARD_HEIGHT_CLASS } from "../shared/settingsLayout";
 import { RealtimeConfigDesk } from "./RealtimeConfigDesk";
 import { DictationConfigDesk } from "./DictationConfigDesk";
 import { WebSearchGlobe } from "./WebSearchGlobe";
@@ -36,7 +38,7 @@ export const InteractionCard = memo(
     const [activeView, setActiveView] = useState<"assistant" | "dictation">("assistant");
     const [activeDeskTab, setActiveDeskTab] = useState<InteractionDeskTab>("remote");
 
-    const webSearchEnabled = draftSettings?.interaction?.web_search_enabled ?? true;
+    const webSearchEnabled = draftSettings?.interaction.web_search_enabled ?? true;
 
     const handleToggleWebSearch = useCallback(() => {
       updateDraft("interaction", "web_search_enabled", !webSearchEnabled);
@@ -45,8 +47,8 @@ export const InteractionCard = memo(
     if (!draftSettings || !settings) return null;
     const { interaction, dictation } = draftSettings;
 
-    const dictationEnabled = dictation?.enabled ?? true;
-    const dictationInteractionMode = dictation?.interaction_mode ?? "ptt";
+    const dictationEnabled = dictation.enabled ?? true;
+    const dictationInteractionMode = dictation.interaction_mode ?? "ptt";
     const interactionMode = interaction.mode ?? "passive";
     const isPassive = String(interactionMode).toLowerCase() === "passive";
     const pipelineMode = interaction.pipeline_mode ?? "modular";
@@ -58,30 +60,23 @@ export const InteractionCard = memo(
           "w-full flex flex-col text-[14px] leading-relaxed text-[rgb(var(--foreground))]/85 select-none justify-between",
           layoutMode === "small"
             ? "bg-transparent p-0 h-auto"
-            : cn(
-                "glass-card p-5 lg:h-[340px]",
-                layoutMode === "full-min"
-                  ? "lg:w-[360px] xl:w-[420px] 2xl:w-[520px]"
-                  : "lg:w-[520px]"
-              )
+            : cn("glass-card p-5", SETTINGS_DOMAIN_CARD_HEIGHT_CLASS)
         )}
       >
         {/* Header Section */}
-        <div className="flex items-center justify-between mb-3 shrink-0 border-b border-[rgba(var(--accent),0.08)] pb-2 w-full">
-          <div className="flex items-center gap-2">
-            <SlidersHorizontal className="text-[rgb(var(--accent))]" size={17} />
-            <span className="font-display text-[13px] font-black uppercase tracking-[0.2em] text-[rgb(var(--foreground))]">
-              {INTERACTION_CARD_COPY.cardTitle}
-            </span>
-          </div>
-          {/* Top Right Assistant / Dictation Switcher */}
-          <SegmentedControl
-            options={VIEW_OPTIONS}
-            value={activeView}
-            onChange={setActiveView}
-            size="sm"
-          />
-        </div>
+        <CardTitleBar
+          icon={<SlidersHorizontal size={17} />}
+          title={INTERACTION_CARD_COPY.cardTitle}
+          action={
+            /* Top Right Assistant / Dictation Switcher */
+            <SegmentedControl
+              options={VIEW_OPTIONS}
+              value={activeView}
+              onChange={setActiveView}
+              size="sm"
+            />
+          }
+        />
 
         <div className="flex flex-col gap-3 flex-1 min-h-0">
           {activeView === "assistant" ? (

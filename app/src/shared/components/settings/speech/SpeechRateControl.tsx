@@ -18,7 +18,7 @@ import { CardPopover } from "../shared/CardHeader";
  * settings key, and its bounds come from the provider.
  */
 export const SpeechRateControl = memo(() => {
-  const ttsModelId = useSettingsStore((s) => s.draftSettings?.tts?.active?.model ?? null);
+  const ttsModelId = useSettingsStore((s) => s.draftSettings?.tts.active.model ?? null);
   const { params, setParam } = useModelParameters(ttsModelId);
 
   const [open, setOpen] = useState(false);
@@ -44,26 +44,6 @@ export const SpeechRateControl = memo(() => {
       isMounted = false;
     };
   }, [ttsModelId]);
-
-  // Outside pointerdown and Escape close the popover (Tier 1 popover).
-  useEffect(() => {
-    if (!open) return;
-    const handleDown = (e: PointerEvent) => {
-      const target = e.target as Node;
-      const inTrigger = triggerRef.current?.contains(target) ?? false;
-      const inPanel = panelRef.current?.contains(target) ?? false;
-      if (!inTrigger && !inPanel) setOpen(false);
-    };
-    const handleKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
-    };
-    document.addEventListener("pointerdown", handleDown);
-    document.addEventListener("keydown", handleKey);
-    return () => {
-      document.removeEventListener("pointerdown", handleDown);
-      document.removeEventListener("keydown", handleKey);
-    };
-  }, [open]);
 
   const handleChange = useCallback(
     (value: number) => {
@@ -104,6 +84,7 @@ export const SpeechRateControl = memo(() => {
         <CardPopover
           anchorRef={triggerRef}
           panelRef={panelRef}
+          onClose={() => setOpen(false)}
           menu={
             <div className="flex flex-col items-center gap-1 px-1 pb-1">
               <span className="w-full text-[11px] font-bold uppercase tracking-wider text-[rgb(var(--foreground-muted))]/80">

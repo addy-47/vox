@@ -283,9 +283,7 @@ const TitleBarContent: React.FC = () => {
                 type="button"
                 onClick={() => {
                   setModelCardOpen(false);
-                  navigateWithFeedback("/settings", () => {
-                    window.dispatchEvent(new CustomEvent("sync_pipeline_tab", { detail: "models" }));
-                  });
+                  navigateWithFeedback("/settings");
                 }}
                 className="w-full py-1.5 px-3 rounded-lg bg-[rgba(var(--accent),0.1)] hover:bg-[rgb(var(--accent))] text-[rgb(var(--accent))] hover:text-[rgb(var(--accent-foreground))] font-bold text-[11px] tracking-wide uppercase transition-all flex items-center justify-center gap-1.5 cursor-pointer border border-[rgba(var(--accent),0.2)] hover:border-[rgb(var(--accent))]"
               >

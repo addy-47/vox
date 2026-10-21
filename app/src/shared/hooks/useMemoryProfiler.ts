@@ -94,22 +94,22 @@ export function useMemoryProfiler(enabled = true) {
         const fontCount = domSample.fontFaceCount || (document.fonts ? document.fonts.size : 0);
 
         const currentTotal = primaryMemoryMb(snap);
-        const baselineTotal = existing?.baseline ? primaryMemoryMb(existing.baseline) : currentTotal;
-        const peakTotal = Math.max(existing?.peak ? primaryMemoryMb(existing.peak) : 0, currentTotal);
-        const isNewPeak = !existing?.peak || currentTotal > primaryMemoryMb(existing.peak);
-        const updatedPeak = isNewPeak ? snap : (existing?.peak ?? snap);
+        const baselineTotal = existing.baseline ? primaryMemoryMb(existing.baseline) : currentTotal;
+        const peakTotal = Math.max(existing.peak ? primaryMemoryMb(existing.peak) : 0, currentTotal);
+        const isNewPeak = !existing.peak || currentTotal > primaryMemoryMb(existing.peak);
+        const updatedPeak = isNewPeak ? snap : (existing.peak ?? snap);
         const peakDelta = Math.round((peakTotal - baselineTotal) * 100) / 100;
 
         const updated: PageMemoryRecord = {
           route: r,
-          mountedAt: existing?.mountedAt ?? performance.now(),
-          baseline: existing?.baseline ?? snap,
+          mountedAt: existing.mountedAt ?? performance.now(),
+          baseline: existing.baseline ?? snap,
           current: snap,
           peak: updatedPeak,
-          retained: existing?.retained ?? null,
-          retainedDeltaMb: existing?.retainedDeltaMb ?? null,
+          retained: existing.retained ?? null,
+          retainedDeltaMb: existing.retainedDeltaMb ?? null,
           peakDeltaMb: peakDelta,
-          activeComponentsOnMount: existing?.activeComponentsOnMount ?? activeComps,
+          activeComponentsOnMount: existing.activeComponentsOnMount ?? activeComps,
         };
 
         setPageRecords((prev) => ({ ...prev, [r]: updated }));
@@ -203,7 +203,7 @@ export function useMemoryProfiler(enabled = true) {
               route,
               mountedAt: performance.now(),
               baseline: snap,
-              peak: prevRec?.peak ?? snap,
+              peak: prevRec.peak ?? snap,
               current: snap,
               retained: null,
               retainedDeltaMb: null,
@@ -235,7 +235,7 @@ export function useMemoryProfiler(enabled = true) {
         await recordMemoryProfileEvent({
           route,
           event_type: "poll",
-          baseline_ram_mb: rec?.baseline ? primaryMemoryMb(rec.baseline) : null,
+          baseline_ram_mb: rec.baseline ? primaryMemoryMb(rec.baseline) : null,
           current_ram_mb: primaryMemoryMb(snap),
           core_app_ram_mb: snap.core_app_ram_mb,
           development_tools_ram_mb: snap.development_tools_ram_mb,
@@ -249,8 +249,8 @@ export function useMemoryProfiler(enabled = true) {
           cgroup_kernel_mb: snap.cgroup_kernel_mb,
           cgroup_shmem_mb: snap.cgroup_shmem_mb,
           total_pss_mb: snap.total_pss_mb,
-          peak_ram_mb: rec?.peak ? primaryMemoryMb(rec.peak) : null,
-          peak_delta_mb: rec?.peakDeltaMb ?? null,
+          peak_ram_mb: rec.peak ? primaryMemoryMb(rec.peak) : null,
+          peak_delta_mb: rec.peakDeltaMb ?? null,
           retained_ram_mb: null,
           retained_delta_mb: null,
           main_webview_ram_mb: snap.main_webview_ram_mb,

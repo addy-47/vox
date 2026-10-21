@@ -185,8 +185,9 @@ export const ModelModal = memo(({
         {modalFilteredModels.map((model) => {
           const isSelected = selectedModelId === model.id;
           const probed = resolveProbed(model);
-          const isTesting = probingMap[model.id]?.status === "testing";
-          const probeError = probingMap[model.id]?.status === "error" ? probingMap[model.id]?.error : undefined;
+          const probeState = probingMap[model.id];
+          const isTesting = probeState?.status === "testing";
+          const probeError = probeState?.status === "error" ? probeState.error : undefined;
 
           return (
             <RemoteModelCard

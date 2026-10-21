@@ -1,23 +1,15 @@
 import React, { memo } from "react";
 import { cn } from "@/shared/lib/utils";
 import type { SettingsDomainId } from "@/data/settingsCopy";
-import { SETTINGS_DOMAIN_CARD_HEIGHT_CLASS } from "./shared/settingsLayout";
+import {
+  getDomainCardWidth,
+  SETTINGS_DOMAIN_CARD_HEIGHT_CLASS,
+} from "./shared/settingsLayout";
 
 interface SettingsCardSkeletonProps {
   layoutMode?: "full-max" | "full-min" | "small";
   domain?: SettingsDomainId;
 }
-
-const getDomainCardWidth = (domainId: string | undefined, layoutMode: "full-max" | "full-min" | "small"): string => {
-  if (layoutMode === "small") return "w-full";
-  if (domainId === "persona") {
-    return layoutMode === "full-min" ? "lg:w-[350px] xl:w-[370px] 2xl:w-[440px]" : "lg:w-[470px]";
-  }
-  if (domainId === "appearance") {
-    return layoutMode === "full-min" ? "lg:w-[240px] xl:w-[260px] 2xl:w-[280px]" : "lg:w-[290px] xl:w-[310px]";
-  }
-  return layoutMode === "full-min" ? "lg:w-[360px] xl:w-[420px] 2xl:w-[520px]" : "lg:w-[520px]";
-};
 
 const getDomainSkeletonHeight = (domainId: string | undefined, layoutMode: "full-max" | "full-min" | "small"): string => {
   if (layoutMode === "small") return "h-auto";

@@ -212,12 +212,12 @@ export function useSessionPanel(active: boolean = true): UseSessionPanelReturn {
   // navigation/animation. Live `sessions_changed` updates stay gated on `active`.
 
   const pinnedSessions = useMemo(
-    () => (Array.isArray(sessions) ? sessions.filter((s) => Boolean(s?.is_pinned)) : []),
+    () => (Array.isArray(sessions) ? sessions.filter((s) => Boolean(s.is_pinned)) : []),
     [sessions]
   );
 
   const nonPinnedSessions = useMemo(
-    () => (Array.isArray(sessions) ? sessions.filter((s) => !s?.is_pinned) : []),
+    () => (Array.isArray(sessions) ? sessions.filter((s) => !s.is_pinned) : []),
     [sessions]
   );
 
@@ -242,7 +242,7 @@ export function useSessionPanel(active: boolean = true): UseSessionPanelReturn {
   const projectsWithSessions = useMemo((): ProjectGroup[] => {
     return sortedProjects.map((project) => ({
       project,
-      sessions: nonPinnedSessions.filter((s) => s?.project_id === project?.id),
+      sessions: nonPinnedSessions.filter((s) => s.project_id === project.id),
     }));
   }, [sortedProjects, nonPinnedSessions]);
 
@@ -250,8 +250,8 @@ export function useSessionPanel(active: boolean = true): UseSessionPanelReturn {
     () =>
       nonPinnedSessions.filter((s) => {
         if (!Array.isArray(projects) || projects.length === 0) return true;
-        const hasProject = projects.some((p) => p?.id === s?.project_id);
-        return !hasProject || !s?.project_id;
+        const hasProject = projects.some((p) => p.id === s.project_id);
+        return !hasProject || !s.project_id;
       }),
     [nonPinnedSessions, projects]
   );

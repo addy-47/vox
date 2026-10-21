@@ -1,5 +1,6 @@
 import { memo } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
+import { useCatalogStore } from "@/store/catalogStore";
 import { SpeechModelCard } from "./SpeechModelCard";
 import type { ModelStatus } from "@/shared/hooks/useModelDownloads";
 import { cn } from "@/shared/lib/utils";
@@ -32,7 +33,7 @@ export const SttModelList = memo(
   }: SttModelListProps) => {
     const draftSettings = useSettingsStore((s) => s.draftSettings);
     const updateDraft = useSettingsStore((s) => s.updateDraft);
-    const modelCatalog = useSettingsStore((s) => s.modelCatalog);
+    const modelCatalog = useCatalogStore((s) => s.modelCatalog);
     const sttModels = modelCatalog?.stt ?? [];
     if (!draftSettings || !modelCatalog) return null;
 
@@ -50,7 +51,7 @@ export const SttModelList = memo(
           )}
         >
           {sttModels.map((model) => {
-            const activeModel = draftSettings.stt?.active?.model ?? modelCatalog.stt?.[0]?.id;
+            const activeModel = draftSettings.stt.active.model ?? modelCatalog.stt[0]?.id;
             const isSelected = activeModel === model.id;
             const modelGroupId = model.id;
             const isDownloaded = !!modelPresence[modelGroupId];

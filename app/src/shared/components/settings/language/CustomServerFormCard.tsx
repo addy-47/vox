@@ -14,7 +14,7 @@ import { ipcErrorMessage } from "@/shared/lib/ipcError";
 import { PROVIDERS_CONFIG_DESK_COPY } from "@/data/settingsCopy";
 
 /** Inserts a server or replaces the entry with the same id (edit mode). */
-export function upsertServer<T extends { id: string }>(list: T[], server: T): T[] {
+function upsertServer<T extends { id: string }>(list: T[], server: T): T[] {
   return list.some((s) => s.id === server.id)
     ? list.map((s) => (s.id === server.id ? server : s))
     : [...list, server];
@@ -24,7 +24,7 @@ export function upsertServer<T extends { id: string }>(list: T[], server: T): T[
  * backend-gap: backend should mint canonical server ids on probe/save
  * (`setup_remote_server` response). Temp id is collision-safe only.
  */
-export function mintCustomServerId(prefix: "llm_custom" | "tts_custom"): string {
+function mintCustomServerId(prefix: "llm_custom" | "tts_custom"): string {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
@@ -83,7 +83,7 @@ export const CustomServerFormCard = memo(({
             remote_path: (initial as TtsCustomServer | null)?.remote_path ?? "~/.vox",
             api_key: apiKey.trim() || null,
           };
-          const currentList = draftSettings?.tts?.servers ?? draftSettings?.providers?.tts?.servers ?? [];
+          const currentList = draftSettings?.tts.servers ?? draftSettings?.providers?.tts.servers ?? [];
           console.info(
             `[Providers] saveCustomServer url=${trimmedUrl} prevCount=${currentList.length} id=${newServer.id}`
           );
@@ -115,7 +115,7 @@ export const CustomServerFormCard = memo(({
             protocol: (initial as LlmCustomServer | null)?.protocol ?? "openai",
             api_key: apiKey.trim() || null,
           };
-          const currentList = draftSettings?.llm?.servers ?? draftSettings?.providers?.llm?.servers ?? [];
+          const currentList = draftSettings?.llm.servers ?? draftSettings?.providers?.llm.servers ?? [];
           console.info(
             `[Providers] saveCustomServer url=${trimmedUrl} prevCount=${currentList.length} id=${newServer.id}`
           );
@@ -147,7 +147,7 @@ export const CustomServerFormCard = memo(({
         remote_path: (initial as TtsCustomServer | null)?.remote_path ?? "~/.vox",
         api_key: apiKey.trim() || null,
       };
-      const currentList = draftSettings?.tts?.servers ?? draftSettings?.providers?.tts?.servers ?? [];
+      const currentList = draftSettings?.tts.servers ?? draftSettings?.providers?.tts.servers ?? [];
       console.info(
         `[Providers] saveCustomServerAnyway url=${trimmedUrl} prevCount=${currentList.length} id=${newServer.id}`
       );
@@ -164,7 +164,7 @@ export const CustomServerFormCard = memo(({
         protocol: (initial as LlmCustomServer | null)?.protocol ?? "openai",
         api_key: apiKey.trim() || null,
       };
-      const currentList = draftSettings?.llm?.servers ?? draftSettings?.providers?.llm?.servers ?? [];
+      const currentList = draftSettings?.llm.servers ?? draftSettings?.providers?.llm.servers ?? [];
       console.info(
         `[Providers] saveCustomServerAnyway url=${trimmedUrl} prevCount=${currentList.length} id=${newServer.id}`
       );

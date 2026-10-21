@@ -137,8 +137,8 @@ export const RemoteCatalogSection = memo(({
   // Save-gated pinning: list order follows the COMMITTED model, so selecting
   // only re-highlights. The reorder (with smooth scroll) lands on save.
   const committedRemoteModelId = useMemo(() => {
-    return committedSettings?.llm?.active?.model || undefined;
-  }, [committedSettings?.llm?.active?.model]);
+    return committedSettings?.llm.active.model || undefined;
+  }, [committedSettings?.llm.active.model]);
 
   // Filtered Remote Models with fzf-style fuzzy matching, active facets, and
   // name order. The committed model stays pinned to the top.
@@ -185,7 +185,7 @@ export const RemoteCatalogSection = memo(({
   const [isSearchOpen, setIsSearchOpen] = useState(false);
 
   const handleSelectModel = useCallback((modelId: string) => {
-    const active = useSettingsStore.getState().draftSettings?.llm?.active;
+    const active = useSettingsStore.getState().draftSettings?.llm.active;
     if (active && (active.category === "server" || active.category === "cloud")) {
       updateDraft("llm", "active", { ...active, model: modelId });
     }
@@ -197,7 +197,7 @@ export const RemoteCatalogSection = memo(({
   const inlineRowsRef = useRef<HTMLDivElement | null>(null);
   useScrollTopOnChange(inlineRowsRef, selectedModelId || committedRemoteModelId);
 
-  const RemoteModelRows = () => (
+  const renderRemoteModelRows = () => (
     <CatalogReveal
       className="flex-1 min-h-0"
       scrollRef={inlineRowsRef}
@@ -245,8 +245,9 @@ export const RemoteCatalogSection = memo(({
         filteredRemoteModels.map((model) => {
           const isSelected = selectedModelId === model.id;
           const probed = resolveCapabilities(model);
-          const isTesting = probingMap[model.id]?.status === "testing";
-          const inlineProbeError = probingMap[model.id]?.status === "error" ? probingMap[model.id]?.error : undefined;
+          const probeState = probingMap[model.id];
+          const isTesting = probeState?.status === "testing";
+          const inlineProbeError = probeState?.status === "error" ? probeState.error : undefined;
           const isGpu = probed?.is_gpu_accelerated;
 
           // Check if name is essentially a duplicate of the raw ID
@@ -378,7 +379,7 @@ export const RemoteCatalogSection = memo(({
                             <span>{LLM_CATALOG_COPY.modelCapabilities}</span>
                             {isGpu ? (
                               <span className="text-[rgb(var(--notif-models))] font-mono text-[10px] font-bold shrink-0">{LLM_CATALOG_COPY.gpuBadge}</span>
-                            ) : probed?.server_has_gpu ? (
+                            ) : probed.server_has_gpu ? (
                               <span className="text-[rgb(var(--warn-soft))] font-mono text-[10px] font-bold shrink-0">{LLM_CATALOG_COPY.cpuBadge}</span>
                             ) : null}
                           </div>
@@ -588,14 +589,13 @@ export const RemoteCatalogSection = memo(({
       {/* Remote Models 2-Column Grid — inline at card height, full-bleed in the expand modal */}
       <ExpandableList
         className="flex-1 min-h-0"
-        domainId="language"
         triggerPlacement="floating"
         inlineMaxHeightClass={getSettingsInlineListMaxHeightClass(layoutMode)}
         onBack={showProvidersView ? () => setCatalogModalView(activeModalView === "models" ? "providers" : "models") : undefined}
         icon={activeModalView === "models" ? <ServerCog size={16} className="text-[rgb(var(--accent))]" /> : <Cloud size={16} className="text-[rgb(var(--accent))]" />}
         title={
           <span className="font-display text-[15px] font-bold tracking-tight text-[rgb(var(--foreground))]">
-            {activeModalView === "models" ? LLM_CATALOG_COPY.catalogTitle : "Cloud Providers"}
+            {activeModalView === "models" ? LLM_CATALOG_COPY.catalogTitle : LLM_CATALOG_COPY.providersViewTitle}
           </span>
         }
         subtitle={
@@ -605,7 +605,7 @@ export const RemoteCatalogSection = memo(({
             </span>
           ) : (
             <span className="text-[11px] text-[rgb(var(--foreground-muted))]">
-              Connectors · {cloudProviders.length}
+              {LLM_CATALOG_COPY.connectorsLabel} · {cloudProviders.length}
             </span>
           )
         }
@@ -613,8 +613,8 @@ export const RemoteCatalogSection = memo(({
         ariaLabel={LLM_CATALOG_COPY.catalogAriaLabel}
         modalSubtitle={
           activeModalView === "models"
-            ? "Explore, probe, and select remote models for conversation."
-            : "Configure external AI model endpoints and authentication keys."
+            ? LLM_CATALOG_COPY.modelsModalSubtitle
+            : LLM_CATALOG_COPY.providersModalSubtitle
         }
         headerActions={<SettingsCommitControls domainId="language" layoutMode={layoutMode} />}
         modalContent={
@@ -633,7 +633,7 @@ export const RemoteCatalogSection = memo(({
           )
         }
       >
-        {RemoteModelRows()}
+        {renderRemoteModelRows()}
       </ExpandableList>
     </div>
   );

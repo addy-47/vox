@@ -196,7 +196,7 @@ export const PersonalMemoryDossierCard: React.FC<PersonalMemoryDossierCardProps>
         />
 
         {/* Persistent text highlight overlay while commenting */}
-        {selectionAnchor?.rects?.map((r, i) => (
+        {selectionAnchor?.rects.map((r, i) => (
           <div
             key={`sel_rect_${i}`}
             className="absolute pointer-events-none rounded-[2px] bg-[rgba(var(--accent),0.28)] transition-opacity duration-150 z-10"

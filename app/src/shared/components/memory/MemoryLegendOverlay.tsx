@@ -53,9 +53,9 @@ export const MemoryLegendOverlay = memo<MemoryLegendOverlayProps>(({
         {CATEGORIES.map((catKey) => {
           const isSelected = selectedCollection === catKey;
           const count = counts[catKey] ?? 0;
-          const catColor = palette[catKey]?.main || "#00dbe9";
+          const catColor = palette[catKey].main || "#00dbe9";
           const label = MEMORY_COPY.categories[catKey];
-          const desc = palette[catKey]?.desc || "";
+          const desc = palette[catKey].desc || "";
 
           return (
             <Tooltip

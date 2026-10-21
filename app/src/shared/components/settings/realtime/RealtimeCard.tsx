@@ -30,7 +30,7 @@ function UnifiedConfig({
   // The subkey only selects the provider family's field layout. Values live
   // in the `models` table per active model; the model id itself is the
   // realtime active selection.
-  const activeModel = draftSettings.realtime?.active?.model || null;
+  const activeModel = draftSettings.realtime.active.model || null;
   const { params, setParam } = useModelParameters(activeModel);
 
   const contract = useSettingsStore((s) => s.contract);
@@ -65,7 +65,7 @@ function UnifiedConfig({
           value={model}
           onChange={(v) => {
             if (disabled) return;
-            const cur = draftSettings.realtime?.active;
+            const cur = draftSettings.realtime.active;
             if (cur) updateDraft("realtime", "active", { ...cur, model: v });
           }}
           placeholder={REALTIME_CONFIG_DESK_COPY.modelPlaceholder}
@@ -146,7 +146,7 @@ export const RealtimeCard = memo(
     if (!draftSettings) return null;
 
     const fallbackProvider = contract?.realtime_providers?.[0]?.id ?? "";
-    const providerId = draftSettings.realtime?.active?.provider ?? fallbackProvider;
+    const providerId = draftSettings.realtime.active.provider ?? fallbackProvider;
 
     // Realtime subkey is the provider id itself (backend-defined); no provider
     // is disabled — the former realtimeProviders shim was a vestigial no-op.
@@ -159,12 +159,7 @@ export const RealtimeCard = memo(
           "w-full h-auto flex flex-col text-[14px] gap-3 leading-relaxed text-[rgb(var(--foreground))]/85 select-none",
           layoutMode === "small"
             ? "bg-transparent p-0"
-            : cn(
-                "glass-card p-5",
-                layoutMode === "full-min"
-                  ? "lg:w-[360px] xl:w-[420px] 2xl:w-[520px]"
-                  : "lg:w-[520px]",
-              ),
+            : "glass-card p-5",
         )}
       >
         {/* ── Header ──────────────────────────────────────────────────────── */}

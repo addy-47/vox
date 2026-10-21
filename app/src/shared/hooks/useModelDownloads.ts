@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from "react";
-import { useSettingsStore } from "@/store/settingsStore";
+import { useCatalogStore } from "@/store/catalogStore";
 import {
   downloadOptionalModel,
   deleteModel,
@@ -19,7 +19,7 @@ export interface ModelStatus {
 const globalDownloadStatuses: Record<string, ModelStatus> = {};
 
 export function useModelDownloads() {
-  const modelCatalog = useSettingsStore((s) => s.modelCatalog);
+  const modelCatalog = useCatalogStore((s) => s.modelCatalog);
 
   const [downloadStatuses, setDownloadStatuses] = useState<Record<string, ModelStatus>>(() => ({
     ...globalDownloadStatuses,
@@ -41,12 +41,12 @@ export function useModelDownloads() {
   // Check model files presence in parallel
   const refreshPresence = useCallback(async () => {
     try {
-      const allModelIds = modelCatalog?.model_groups?.map((g) => g.id) || [
-        ...(modelCatalog?.vad?.map((m) => m.id) || []),
-        ...(modelCatalog?.stt?.map((m) => m.id) || []),
-        ...(modelCatalog?.llm?.map((m) => m.id) || []),
-        ...(modelCatalog?.tts?.map((m) => m.id) || []),
-        ...(modelCatalog?.auxiliary?.map((m) => m.id) || []),
+      const allModelIds = modelCatalog?.model_groups.map((g) => g.id) || [
+        ...(modelCatalog?.vad.map((m) => m.id) || []),
+        ...(modelCatalog?.stt.map((m) => m.id) || []),
+        ...(modelCatalog?.llm.map((m) => m.id) || []),
+        ...(modelCatalog?.tts.map((m) => m.id) || []),
+        ...(modelCatalog?.auxiliary.map((m) => m.id) || []),
       ];
 
       const entries = await Promise.all(
@@ -110,10 +110,10 @@ export function useModelDownloads() {
         let allDone = files.length > 0;
         for (const f of files) {
           const fp = fileProgressRef.current[f.id];
-          const tb = fp?.totalBytes || f.size || 0;
+          const tb = fp.totalBytes || f.size || 0;
           totalBytes += tb;
           doneBytes += fp ? (fp.bytesDownloaded || (fp.progress / 100) * tb) : 0;
-          if (!fp?.done) allDone = false;
+          if (!fp.done) allDone = false;
         }
         if (stepName === "failed" || stepName === "cancelled") {
           updateDownloadStatus(targetId, {
@@ -192,7 +192,7 @@ export function useModelDownloads() {
   };
 
   const isGroupRequired = useCallback((id: string) => {
-    const g = modelCatalog?.model_groups?.find((x) => x.id === id);
+    const g = modelCatalog?.model_groups.find((x) => x.id === id);
     return !!g && (!!g.required || !!g.is_built_in);
   }, [modelCatalog]);
 

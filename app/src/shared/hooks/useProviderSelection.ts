@@ -1,7 +1,9 @@
 import { useState, useMemo, useCallback, useEffect } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
+import { useCatalogStore } from "@/store/catalogStore";
 import { useShallow } from "zustand/react/shallow";
 import { activeSelection } from "@/shared/lib/activeSelection";
+import { requestSpeechTab } from "@/shared/lib/speechTabSync";
 import type { CloudProvider } from "@/data/providersCopy";
 
 export interface UseProviderSelectionOptions {
@@ -103,30 +105,29 @@ export function useProviderSelection(options?: UseProviderSelectionOptions) {
 
   useEffect(() => {
     return () => {
-      useSettingsStore.getState().clearRemoteModelsError();
+      useCatalogStore.getState().clearRemoteModelsError();
     };
   }, []);
 
   const handleSelectProvider = useCallback(
     (provider: CloudProvider) => {
-      useSettingsStore.getState().clearRemoteModelsError();
+      useCatalogStore.getState().clearRemoteModelsError();
       if (isTts) {
         updateDraft("tts", "active", activeSelection("cloud", provider.id, provider.id));
-        window.dispatchEvent(new CustomEvent("sync_pipeline_tab", { detail: "tts" }));
+        requestSpeechTab("tts");
       } else if (isStt) {
         updateDraft(
           "stt",
           "active",
           activeSelection("cloud", draftSettings?.stt?.active?.model || "", provider.id)
         );
-        window.dispatchEvent(new CustomEvent("sync_pipeline_tab", { detail: "stt" }));
+        requestSpeechTab("stt");
       } else {
         updateDraft(
           "llm",
           "active",
           activeSelection("cloud", draftSettings?.llm?.active?.model || "", provider.id)
         );
-        window.dispatchEvent(new CustomEvent("sync_pipeline_tab", { detail: "llm" }));
       }
       options?.onSelectProvider?.(provider);
     },
@@ -138,7 +139,7 @@ export function useProviderSelection(options?: UseProviderSelectionOptions) {
     : activeCategoryType === "embedded";
 
   const handleSelectLocal = useCallback(() => {
-    useSettingsStore.getState().clearRemoteModelsError();
+    useCatalogStore.getState().clearRemoteModelsError();
     if (isTts) {
       updateDraft(
         "tts",
@@ -148,7 +149,7 @@ export function useProviderSelection(options?: UseProviderSelectionOptions) {
           draftSettings?.tts?.last_selected?.embedded ?? draftSettings?.tts?.active?.model ?? ""
         )
       );
-      window.dispatchEvent(new CustomEvent("sync_pipeline_tab", { detail: "tts" }));
+      requestSpeechTab("tts");
     } else if (isStt) {
       updateDraft(
         "stt",
@@ -158,7 +159,7 @@ export function useProviderSelection(options?: UseProviderSelectionOptions) {
           draftSettings?.stt?.last_selected?.embedded ?? draftSettings?.stt?.active?.model ?? ""
         )
       );
-      window.dispatchEvent(new CustomEvent("sync_pipeline_tab", { detail: "stt" }));
+      requestSpeechTab("stt");
     } else {
       updateDraft(
         "llm",
@@ -168,7 +169,6 @@ export function useProviderSelection(options?: UseProviderSelectionOptions) {
           draftSettings?.llm?.last_selected?.embedded ?? draftSettings?.llm?.active?.model ?? ""
         )
       );
-      window.dispatchEvent(new CustomEvent("sync_pipeline_tab", { detail: "llm" }));
     }
   }, [
     isTts,

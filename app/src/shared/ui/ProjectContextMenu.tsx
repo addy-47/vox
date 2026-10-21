@@ -43,7 +43,7 @@ export const ProjectContextMenu: React.FC<ProjectContextMenuProps> = memo(
         onClose();
       } catch (err: unknown) {
         setIsDeleting(false);
-        const msg = (err as { message?: string })?.message || String(err);
+        const msg = (err as { message?: string }).message || String(err);
         if (msg.includes("session(s) exist") || msg.includes("Cannot delete")) {
           const match = msg.match(/(\d+)\s+session\(s\)\s+exist/);
           if (match) {

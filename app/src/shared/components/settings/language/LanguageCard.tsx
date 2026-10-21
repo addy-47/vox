@@ -6,6 +6,7 @@ import { useSettingsStore, selectActiveLlmProvider } from "@/store/settingsStore
 import { useRemoteLlmProbing } from "@/shared/hooks/useRemoteLlmProbing";
 import { useProviderSelection } from "@/shared/hooks/useProviderSelection";
 import { ExpandableList } from "@/shared/ui/ExpandableList";
+import { SettingsCommitControls } from "@/shared/components/settings/SettingsCommitControls";
 import { CardTitleBar } from "../shared/CardTitleBar";
 import { LANGUAGE_CARD_COPY } from "@/data/settingsCopy";
 import { ProviderGrid } from "./ProviderGrid";
@@ -44,10 +45,7 @@ export const LanguageCard = memo(({ layoutMode = "full-max" }: LanguageCardProps
         "w-full flex flex-col text-[14px] leading-relaxed text-[rgb(var(--foreground))]/85 select-none justify-between",
         layoutMode === "small"
           ? "bg-transparent p-0 h-auto"
-          : cn(
-              cn("glass-card p-5", SETTINGS_DOMAIN_CARD_HEIGHT_CLASS),
-              layoutMode === "full-min" ? "lg:w-[360px] xl:w-[420px] 2xl:w-[520px]" : "lg:w-[520px]"
-            )
+          : cn("glass-card p-5", SETTINGS_DOMAIN_CARD_HEIGHT_CLASS)
       )}
     >
       {view === "models" ? (
@@ -80,7 +78,6 @@ export const LanguageCard = memo(({ layoutMode = "full-max" }: LanguageCardProps
           <div className="flex-1 w-full flex flex-col min-h-0 relative">
             <ExpandableList
               className="flex-1 min-h-0"
-              domainId="language"
               triggerPlacement="floating"
               inlineMaxHeightClass={getSettingsInlineListMaxHeightClass(layoutMode)}
               icon={<BrainCircuit size={16} className="text-[rgb(var(--accent))]" />}
@@ -97,6 +94,7 @@ export const LanguageCard = memo(({ layoutMode = "full-max" }: LanguageCardProps
               modalSubtitle={LANGUAGE_CARD_COPY.providerModalSubtitle}
               expandLabel={LANGUAGE_CARD_COPY.expandProviders}
               ariaLabel={LANGUAGE_CARD_COPY.providersAria}
+              headerActions={<SettingsCommitControls domainId="language" layoutMode={layoutMode} />}
               modalContent={({ close }) => (
                 <ProviderModal
                   {...selection}

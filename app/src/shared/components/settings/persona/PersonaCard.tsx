@@ -248,7 +248,7 @@ export const PersonaCard = memo(({ layoutMode = "full-max" }: PersonaCardProps) 
       const end = target.selectionEnd;
 
       if (isTouchingProtectedTag(tagSpans, start, end)) {
-        nativeEvent.preventDefault?.();
+        nativeEvent.preventDefault();
         e.preventDefault();
       }
     },
@@ -330,10 +330,7 @@ export const PersonaCard = memo(({ layoutMode = "full-max" }: PersonaCardProps) 
       elevation="card"
       className={cn(
         "@container text-[14px] leading-relaxed text-[rgb(var(--foreground))]/85 transform-gpu flex flex-col",
-        !isSmall && cn(
-          "p-4 sm:p-5",
-          layoutMode === "full-min" ? "lg:w-[350px] xl:w-[370px] 2xl:w-[440px]" : "lg:w-[470px]"
-        )
+        !isSmall && cn("p-4 sm:p-5")
       )}
     >
       {/* Header & Controls: Clean title on left, Modular | Realtime pill on right */}

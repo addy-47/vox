@@ -1,6 +1,7 @@
 import { memo, useState, useEffect, useCallback } from "react";
 import { checkModelExists } from "@/services/setupService";
 import { useSettingsStore } from "@/store/settingsStore";
+import { useCatalogStore } from "@/store/catalogStore";
 import { Ear, BrainCircuit, AudioLines, AlertTriangle, AlertCircle } from "lucide-react";
 import { MODEL_HUB_COPY } from "@/data/settingsCopy";
 
@@ -16,7 +17,7 @@ const compactModelName = (name: string): string => {
   if (meaningful.length === 0) return name.slice(0, 10);
 
   const first = meaningful[0];
-  const version = tokens.find(t => /^[\d.]+$/.test(t)) || "";
+  const version = tokens.find(t => /^[\d.]+$/.test(t)) ?? "";
   return version ? `${first}${version}` : first;
 };
 
@@ -33,8 +34,8 @@ export const ModelStatusOverlay = memo(() => {
   // presence check below) on every settings keystroke.
   const settings = useSettingsStore((s) => s.settings);
   const draftSettings = useSettingsStore((s) => s.draftSettings);
-  const modelCatalog = useSettingsStore((s) => s.modelCatalog);
-  const activeSettings = settings || draftSettings;
+  const modelCatalog = useCatalogStore((s) => s.modelCatalog);
+  const activeSettings = settings ?? draftSettings;
   const [presence, setPresence] = useState<Record<string, boolean>>({});
   const [vw, setVw] = useState(typeof window !== "undefined" ? window.innerWidth : 1200);
 
@@ -54,16 +55,16 @@ export const ModelStatusOverlay = memo(() => {
     window.matchMedia("(pointer: coarse)").matches;
   const [tipOpen, setTipOpen] = useState(false);
 
-  const llmCategory = activeSettings?.llm?.active?.category;
-  const sttCategory = activeSettings?.stt?.active?.category;
+  const llmCategory = activeSettings?.llm.active.category;
+  const sttCategory = activeSettings?.stt.active.category;
   const isRemoteLlm = llmCategory === "server" || llmCategory === "cloud";
   const isCloudStt = sttCategory === "cloud";
 
-  const llmId = activeSettings?.llm?.active?.model || "";
+  const llmId = activeSettings?.llm.active.model ?? "";
 
-  const asrId = activeSettings?.stt?.active?.model || "";
+  const asrId = activeSettings?.stt.active.model ?? "";
 
-  const ttsKind = activeSettings?.tts?.active?.model || "";
+  const ttsKind = activeSettings?.tts.active.model ?? "";
 
   // Keyed ONLY on the model identities that presence actually depends on.
   // Previously this callback closed over the whole settings object, so every
@@ -102,8 +103,8 @@ export const ModelStatusOverlay = memo(() => {
 
   const catalogLlm = modelCatalog.llm.find((m) => m.id === llmId);
 
-  const llmServerEntry = activeSettings?.providers?.llm?.servers?.find(
-    (s) => s.id === activeSettings?.llm?.active?.provider
+  const llmServerEntry = activeSettings.providers?.llm.servers.find(
+    (s) => s.id === activeSettings.llm.active.provider
   );
 
   const llmDisplayName =
@@ -116,21 +117,20 @@ export const ModelStatusOverlay = memo(() => {
     activeLlmKind === "server"
       ? llmServerEntry?.name || "Remote"
       : activeLlmKind === "cloud"
-        ? activeSettings?.llm?.active?.provider || "Cloud API"
+        ? activeSettings.llm.active.provider || "Cloud API"
         : catalogLlm?.parameters || "On-Device GGUF";
-
   const activeAsr = modelCatalog.stt.find((m) => m.id === asrId) || modelCatalog.stt[0];
   const asrDisplayName =
-    activeSttKind === "cloud" ? asrId || "Cloud STT" : activeAsr?.name || asrId || "Nemotron";
+    activeSttKind === "cloud" ? asrId || "Cloud STT" : activeAsr.name || asrId || "Nemotron";
   const asrSubtitle =
     activeSttKind === "cloud"
-      ? activeSettings?.stt?.active?.provider || "Cloud API"
-      : activeAsr?.parameters || "ASR";
+      ? activeSettings.stt.active.provider || "Cloud API"
+      : activeAsr.parameters || "ASR";
 
   const activeTts = modelCatalog.tts.find((m) => m.id === ttsKind) || modelCatalog.tts[0];
   const activeVoiceName = modelCatalog.active_voice_name;
-  const ttsDisplayName = activeTts?.name || ttsKind;
-  const ttsSubtitle = activeVoiceName || activeTts?.parameters || "";
+  const ttsDisplayName = activeTts.name || ttsKind;
+  const ttsSubtitle = activeVoiceName || activeTts.parameters || "";
 
   const llmExists = isRemoteLlm ? true : (presence[llmId] ?? true);
   const asrExists = isCloudStt ? true : (presence[asrId] ?? true);
@@ -175,7 +175,7 @@ export const ModelStatusOverlay = memo(() => {
           {/* Tooltip */}
           <div className={`absolute bottom-10 right-0 scale-95 opacity-0 group-hover:scale-100 group-hover:opacity-100 transition-all duration-200 pointer-events-none w-56 p-3 rounded-xl bg-[rgb(var(--background))]/95 border border-[rgba(var(--accent),0.15)] shadow-xl z-50 text-[13px] leading-relaxed text-[rgb(var(--foreground-muted))]/80 ${isCoarse && tipOpen ? "!opacity-100 !scale-100" : ""}`}>
             <p className="font-bold text-[rgb(var(--foreground))] mb-1">{asrDisplayName}</p>
-            {activeAsr?.description || "Speech recognition model"}
+            {activeAsr.description || "Speech recognition model"}
             {!asrExists && (
               <p className="mt-1.5 text-[rgb(var(--danger))] font-semibold text-[11px] flex items-center gap-1">
                 <AlertCircle size={12} className="shrink-0" /> {MODEL_HUB_COPY.notDownloadedDesc}

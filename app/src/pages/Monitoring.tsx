@@ -17,7 +17,9 @@ import {
   launchEngine,
 } from "@/services/pipelineService";
 import { useMonitoringMetrics } from "@/shared/hooks/useMonitoringMetrics";
+import { type RuntimeSnapshot } from "@/services/monitoringService";
 import { useSettingsStore } from "@/store/settingsStore";
+import { useCatalogStore } from "@/store/catalogStore";
 import { cn } from "@/shared/lib/utils";
 import {
   parseRgb,
@@ -59,20 +61,20 @@ export const Monitoring: React.FC<MonitoringProps> = ({
 
   // Subscribe to settings store to inspect exact variants and reactive theme
   const theme = useSettingsStore((s) => s.settings?.appearance.theme);
-  const vadBackend = useSettingsStore((s) => s.settings?.vad?.vad_backend);
-  const llmProvider = useSettingsStore((s) => s.settings?.llm?.active?.category);
-  const ttsProvider = useSettingsStore((s) => s.settings?.tts?.active?.model);
-  const sttProvider = useSettingsStore((s) => s.settings?.stt?.active?.category);
+  const vadBackend = useSettingsStore((s) => s.settings?.vad.vad_backend);
+  const llmProvider = useSettingsStore((s) => s.settings?.llm.active.category);
+  const ttsProvider = useSettingsStore((s) => s.settings?.tts.active.model);
+  const sttProvider = useSettingsStore((s) => s.settings?.stt.active.category);
   const contextRetrievalEnabled = useSettingsStore(
-    (s) => s.settings?.memory?.context_retrieval_enabled ?? true
+    (s) => s.settings?.memory.context_retrieval_enabled ?? true
   );
   const transliterateEnabled = useSettingsStore(
-    (s) => s.settings?.stt?.transliterate_enabled ?? true
+    (s) => s.settings?.stt.transliterate_enabled ?? true
   );
-  const modelCatalog = useSettingsStore((s) => s.modelCatalog);
-  const llmActiveModel = useSettingsStore((s) => s.settings?.llm?.active?.model ?? "");
-  const llmActiveProvider = useSettingsStore((s) => s.settings?.llm?.active?.provider ?? "");
-  const sttActiveModel = useSettingsStore((s) => s.settings?.stt?.active?.model ?? "");
+  const modelCatalog = useCatalogStore((s) => s.modelCatalog);
+  const llmActiveModel = useSettingsStore((s) => s.settings?.llm.active.model ?? "");
+  const llmActiveProvider = useSettingsStore((s) => s.settings?.llm.active.provider ?? "");
+  const sttActiveModel = useSettingsStore((s) => s.settings?.stt.active.model ?? "");
   const themeIsLight = theme === "light";
 
   // Dynamic CSS variable observer state
@@ -103,16 +105,53 @@ export const Monitoring: React.FC<MonitoringProps> = ({
   }, [syncAccent]);
 
   const {
-    latest,
+    latest: rawLatest,
     engineToggling: togglingEngine,
     setEngineToggling: setTogglingEngine,
   } = useMonitoringMetrics(!popover || open);
 
+  const latest: RuntimeSnapshot = rawLatest ?? {
+    pipeline_state: "",
+    current_turn_id: 0,
+    conversation_id: 0,
+    playback_active: false,
+    system_cpu_usage: 0,
+    system_ram_mb: 0,
+    vox_cpu_usage: 0,
+    vox_ram_mb: 0,
+    total_ram_mb: 8192,
+    cpu_cores: 0,
+    vad_energy: 0,
+    vad_probability: 0,
+    stt_latency_ms: null,
+    ttft_ms: null,
+    total_voice_latency_ms: null,
+    persistence_queue_depth: 0,
+    dropped_persistence_events: 0,
+    playback_buffer_samples: 0,
+    playback_underruns: 0,
+    active_owner: "",
+    active_threads: 0,
+    tts_rtf: null,
+    playback_start_ms: null,
+    persistence_writes_per_sec: 0,
+    is_db_healthy: false,
+    is_llm_loaded: false,
+    llm_provider_kind: "",
+    is_tts_loaded: false,
+    is_stt_loaded: false,
+    is_vad_loaded: false,
+    is_embedder_loaded: false,
+    is_translit_loaded: false,
+    cpu_governor: "",
+    cpu_governor_optimal: false,
+  };
+
   // Residency is a property of the manifest group, not of provider names.
   // Cloud and remote providers run off-device and are never resident; a
   // built-in VAD backend has no weights to load.
-  const activeVadGroup = modelCatalog?.vad?.find((m) => m.id === vadBackend);
-  const activeTtsGroup = modelCatalog?.tts?.find((m) => m.id === ttsProvider);
+  const activeVadGroup = modelCatalog?.vad.find((m) => m.id === vadBackend);
+  const activeTtsGroup = modelCatalog?.tts.find((m) => m.id === ttsProvider);
 
   const isVadModel = activeVadGroup ? !activeVadGroup.is_built_in : false;
   const isSttModel = sttProvider === "embedded";
@@ -134,12 +173,12 @@ export const Monitoring: React.FC<MonitoringProps> = ({
 
   const activeModelsCount = useMemo(() => {
     return (
-      (isVadModel && latest?.is_vad_loaded ? 1 : 0) +
-      (isSttModel && latest?.is_stt_loaded ? 1 : 0) +
-      (isLlmModel && latest?.is_llm_loaded ? 1 : 0) +
-      (isTtsModel && latest?.is_tts_loaded ? 1 : 0) +
-      (isEmbedderModel && latest?.is_embedder_loaded ? 1 : 0) +
-      (isTranslitModel && latest?.is_translit_loaded ? 1 : 0)
+      (isVadModel && latest.is_vad_loaded ? 1 : 0) +
+      (isSttModel && latest.is_stt_loaded ? 1 : 0) +
+      (isLlmModel && latest.is_llm_loaded ? 1 : 0) +
+      (isTtsModel && latest.is_tts_loaded ? 1 : 0) +
+      (isEmbedderModel && latest.is_embedder_loaded ? 1 : 0) +
+      (isTranslitModel && latest.is_translit_loaded ? 1 : 0)
     );
   }, [
     isVadModel,
@@ -148,22 +187,22 @@ export const Monitoring: React.FC<MonitoringProps> = ({
     isTtsModel,
     isEmbedderModel,
     isTranslitModel,
-    latest?.is_vad_loaded,
-    latest?.is_stt_loaded,
-    latest?.is_llm_loaded,
-    latest?.is_tts_loaded,
-    latest?.is_embedder_loaded,
-    latest?.is_translit_loaded,
+    latest.is_vad_loaded,
+    latest.is_stt_loaded,
+    latest.is_llm_loaded,
+    latest.is_tts_loaded,
+    latest.is_embedder_loaded,
+    latest.is_translit_loaded,
   ]);
 
   const isEngineLoaded = useMemo(() => {
     return (
       activeModelsCount > 0 ||
       !!(
-        latest?.is_vad_loaded ||
-        latest?.is_stt_loaded ||
-        latest?.is_llm_loaded ||
-        latest?.is_tts_loaded
+        latest.is_vad_loaded ||
+        latest.is_stt_loaded ||
+        latest.is_llm_loaded ||
+        latest.is_tts_loaded
       )
     );
   }, [activeModelsCount, latest]);
@@ -222,7 +261,7 @@ export const Monitoring: React.FC<MonitoringProps> = ({
     }
 
     let ttsVariant = "On Device";
-    const ttsModel = modelCatalog?.tts?.find((m) => m.id === ttsProvider);
+    const ttsModel = modelCatalog?.tts.find((m) => m.id === ttsProvider);
     if (ttsModel?.is_cloud) {
       ttsVariant = "In Cloud";
     } else if (ttsModel?.is_remote) {
@@ -297,9 +336,9 @@ export const Monitoring: React.FC<MonitoringProps> = ({
     }
   }, [isEngineLoaded, togglingEngine, setTogglingEngine]);
 
-  const cpuPct = latest?.vox_cpu_usage || 0;
-  const ramMb = latest?.vox_ram_mb || 0;
-  const totalRamMb = latest?.total_ram_mb || 8192;
+  const cpuPct = latest.vox_cpu_usage || 0;
+  const ramMb = latest.vox_ram_mb || 0;
+  const totalRamMb = latest.total_ram_mb || 8192;
   const ramGb = (ramMb / 1024).toFixed(2);
   const ramPct = Math.min(100, Math.max(0, (ramMb / totalRamMb) * 100));
 

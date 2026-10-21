@@ -95,7 +95,7 @@ export const AmbientBackground = React.memo(({
         return;
       }
 
-      const energy = telemetryRef.current?.energy || 0;
+      const energy = telemetryRef.current.energy || 0;
       // organic, fluid interpolation
       smoothedEnergy += (energy - smoothedEnergy) * 0.15;
 
@@ -136,7 +136,7 @@ export const AmbientBackground = React.memo(({
 
     // Telemetry monitor check to wake up self-stopping loop (relaxed interval for low idle overhead)
     const checkInterval = setInterval(() => {
-      const currentEnergy = telemetryRef.current?.energy || 0;
+      const currentEnergy = telemetryRef.current.energy || 0;
       if (currentEnergy > 0.005 && !isRunning && !document.hidden) {
         startLoop();
       }

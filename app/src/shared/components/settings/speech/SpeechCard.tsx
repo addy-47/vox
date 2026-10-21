@@ -1,6 +1,7 @@
 import { useState, useEffect, memo } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
 import { useCatalogStore } from "@/store/catalogStore";
+import { onSpeechTabRequest } from "@/shared/lib/speechTabSync";
 import { SPEECH_CARD_COPY } from "@/data/settingsCopy";
 
 import {
@@ -40,10 +41,8 @@ interface SpeechCardProps {
  */
 export const SpeechCard = memo(({ layoutMode = "full-max" }: SpeechCardProps) => {
   const draftSettings = useSettingsStore((s) => s.draftSettings);
-  const catalogModelCatalog = useCatalogStore((s) => s.modelCatalog);
-  const settingsModelCatalog = useSettingsStore((s) => s.modelCatalog);
+  const modelCatalog = useCatalogStore((s) => s.modelCatalog);
   const isCategoryDirty = useSettingsStore((s) => s.isCategoryDirty);
-  const modelCatalog = catalogModelCatalog ?? settingsModelCatalog;
 
   useEffect(() => {
     if (!modelCatalog) {
@@ -66,26 +65,11 @@ export const SpeechCard = memo(({ layoutMode = "full-max" }: SpeechCardProps) =>
   const [vadSettingsOpen, setVadSettingsOpen] = useState(false);
 
   // Interaction card -> this card. Only the speech stages are shared now.
-  useEffect(() => {
-    const handleSync = (e: Event) => {
-      const detail = (e as CustomEvent<string>).detail;
-      if (detail === "stt" || detail === "tts") setActiveTab(detail);
-    };
-    window.addEventListener("sync_pipeline_tab", handleSync);
-    return () => window.removeEventListener("sync_pipeline_tab", handleSync);
-  }, []);
-
-  useEffect(() => {
-    if (activeTab === "stt" || activeTab === "tts") {
-      window.dispatchEvent(
-        new CustomEvent("sync_interaction_category", { detail: activeTab.toUpperCase() })
-      );
-    }
-  }, [activeTab]);
+  useEffect(() => onSpeechTabRequest((tab) => setActiveTab(tab)), []);
 
   if (!draftSettings) return null;
 
-  const activeTtsId = draftSettings.tts?.active?.model ?? "";
+  const activeTtsId = draftSettings.tts.active.model ?? "";
 
   const nodes: PipelineTopologyNode<SpeechTab>[] = [
     {
@@ -120,10 +104,7 @@ export const SpeechCard = memo(({ layoutMode = "full-max" }: SpeechCardProps) =>
         "w-full flex flex-col text-[14px] leading-relaxed text-[rgb(var(--foreground))]/85 select-none justify-between",
         layoutMode === "small"
           ? "bg-transparent p-0 h-auto"
-          : cn(
-              cn("glass-card p-5", SETTINGS_DOMAIN_CARD_HEIGHT_CLASS),
-              layoutMode === "full-min" ? "lg:w-[360px] xl:w-[420px] 2xl:w-[520px]" : "lg:w-[520px]"
-            )
+          : cn("glass-card p-5", SETTINGS_DOMAIN_CARD_HEIGHT_CLASS)
       )}
     >
       {view === "voices" ? (

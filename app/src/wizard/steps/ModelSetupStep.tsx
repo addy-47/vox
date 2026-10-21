@@ -283,8 +283,8 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
                     const allFiles = selectedGroups.flatMap(g => g.files);
                     if (allFiles.length === 0) return null;
 
-                    const groupProgress = allFiles.reduce((acc, m) => acc + (progress[m.id]?.progress || 0), 0) / allFiles.length;
-                    const isDone = allFiles.every(m => progress[m.id]?.step === 'completed');
+                    const groupProgress = allFiles.reduce((acc, m) => acc + (progress[m.id].progress || 0), 0) / allFiles.length;
+                    const isDone = allFiles.every(m => progress[m.id].step === 'completed');
                     const rawStep = allFiles
                         .map(m => progress[m.id])
                         .find(p => p && p.step !== 'completed')?.step;

@@ -191,7 +191,7 @@ export function useHistory() {
     [sessions, capacity]
   );
   const monthWindows = useMemo(
-    () => chunkDaysIntoWindows(currentMonthGroup?.days ?? [], capacity),
+    () => chunkDaysIntoWindows(currentMonthGroup.days ?? [], capacity),
     [currentMonthGroup, capacity]
   );
 
@@ -248,7 +248,7 @@ export function useHistory() {
 
   const currentWindow = sessionWindows[effectiveSessionWindowIndex];
   const currentWindowSessions = useMemo(
-    () => currentWindow?.sessions ?? [],
+    () => currentWindow.sessions ?? [],
     [currentWindow]
   );
   const currentMonthWindow = monthWindows[effectiveMonthWindowIndex];
@@ -484,9 +484,9 @@ export function useHistory() {
   );
 
   const monthMetaLabel = useMemo(() => {
-    const monthDaysCount = currentMonthWindow?.days.length ?? 0;
+    const monthDaysCount = currentMonthWindow.days.length ?? 0;
     const totalSessions =
-      currentMonthWindow?.days.reduce((sum, d) => sum + d.sessions.length, 0) ?? 0;
+      currentMonthWindow.days.reduce((sum, d) => sum + d.sessions.length, 0) ?? 0;
     return `${monthDaysCount} ${
       monthDaysCount === 1 ? HISTORY_COPY.daySingular : HISTORY_COPY.dayPlural
     } · ${totalSessions} ${
@@ -504,7 +504,7 @@ export function useHistory() {
 
   const monthTurnsCount = useMemo(
     () =>
-      currentMonthGroup?.days.reduce(
+      currentMonthGroup.days.reduce(
         (sum, d) => sum + d.sessions.reduce((sSum, s) => sSum + s.turn_count, 0),
         0
       ) ?? 0,

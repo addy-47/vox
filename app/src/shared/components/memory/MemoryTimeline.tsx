@@ -63,7 +63,7 @@ export const MemoryTimeline = memo<MemoryTimelineProps>(({
   }, []);
 
   const pipelineProcessingEnabled = useSettingsStore(
-    (s) => s.settings?.memory?.pipeline_processing_enabled ?? true
+    (s) => s.settings?.memory.pipeline_processing_enabled ?? true
   );
 
   const scrollRef = useRef<HTMLDivElement>(null);

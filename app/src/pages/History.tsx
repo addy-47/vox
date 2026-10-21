@@ -189,8 +189,8 @@ export const History: React.FC = () => {
   }, [isOrbitViewport, currentWindowSessions, selectedSession, setSelectedSession]);
 
   const monthNodeIds = React.useMemo(() => {
-    return (currentMonthWindow?.days ?? []).map((d) => d.dayKey);
-  }, [currentMonthWindow?.days]);
+    return (currentMonthWindow.days ?? []).map((d) => d.dayKey);
+  }, [currentMonthWindow.days]);
 
   // Publish the drill-down row, never un-publish on cleanup. A nulling cleanup
   // made the store oscillate null -> row -> null on every in-place session
@@ -221,11 +221,11 @@ export const History: React.FC = () => {
 
   const renderMonthNode = React.useCallback(
     (dayKey: string) => {
-      const day = currentMonthGroup?.days.find((d) => d.dayKey === dayKey);
+      const day = currentMonthGroup.days.find((d) => d.dayKey === dayKey);
       if (!day) return null;
       return <MonthDayCard day={day} onOpen={handleDrillIntoDay} />;
     },
-    [currentMonthGroup?.days, handleDrillIntoDay]
+    [currentMonthGroup.days, handleDrillIntoDay]
   );
 
   const renderDayNode = React.useCallback(
@@ -359,8 +359,8 @@ export const History: React.FC = () => {
                 metaLabel={monthMetaLabel}
                 sessionsCount={currentMonthGroup.totalSessions}
                 memoriesCount={monthTurnsCount}
-                timeSpanLabel={currentMonthWindow?.label}
-                windowLabel={currentMonthWindow?.label}
+                timeSpanLabel={currentMonthWindow.label}
+                windowLabel={currentMonthWindow.label}
                 windowProgress={monthWindowProgress}
                 canPrev={
                   monthWindowIndex < monthWindows.length - 1 ||
@@ -397,16 +397,16 @@ export const History: React.FC = () => {
                 variant="day"
                 view={view}
                 onViewChange={handleViewChange}
-                primaryLabel={currentWindow?.dateSpanLabel || formatDayHeroLabel(currentGroup.dayKey)}
+                primaryLabel={currentWindow.dateSpanLabel || formatDayHeroLabel(currentGroup.dayKey)}
                 secondaryLabel={formatDayYearLabel(currentGroup.dayKey)}
                 dayHeroParts={formatDayHeroParts(currentGroup.dayKey)}
-                dateSpanLabel={currentWindow?.dateSpanLabel}
+                dateSpanLabel={currentWindow.dateSpanLabel}
                 weekdayLabel={formatWeekdayLabel(currentGroup.dayKey)}
                 metaLabel={dayMetaLabel}
                 sessionsCount={currentWindowSessions.length}
                 memoriesCount={dayTurnsCount}
-                timeSpanLabel={dayTimeSpan || currentWindow?.label}
-                windowLabel={currentWindow?.label}
+                timeSpanLabel={dayTimeSpan || currentWindow.label}
+                windowLabel={currentWindow.label}
                 windowProgress={dayWindowProgress}
                 canPrev={dayWindowIndex < dayWindows.length - 1}
                 canNext={dayWindowIndex > 0}

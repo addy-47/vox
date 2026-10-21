@@ -32,8 +32,13 @@ const domainById = (id: DomainId) => {
   return match;
 };
 
+/** Compact single-column order, derived from the shared slot map. */
+const MOBILE_ORDERED_DOMAINS = [...DOMAINS].sort(
+  (a, b) => SETTINGS_DOMAIN_SLOTS[a.id].mobileOrder - SETTINGS_DOMAIN_SLOTS[b.id].mobileOrder
+);
+
 const DomainContent = memo(({ domain, layoutMode }: { domain: DomainId; layoutMode?: "full-max" | "full-min" | "small" }) => {
-  const isRealtime = useSettingsStore((s) => s.draftSettings?.interaction?.pipeline_mode === "realtime");
+  const isRealtime = useSettingsStore((s) => s.draftSettings?.interaction.pipeline_mode === "realtime");
   return (
     <Suspense fallback={<SettingsCardSkeleton layoutMode={layoutMode} domain={domain} />}>
       {(() => {
@@ -60,7 +65,9 @@ const DomainContent = memo(({ domain, layoutMode }: { domain: DomainId; layoutMo
 DomainContent.displayName = "DomainContent";
 
 import { RadialHub, SettingsConnectorsOverlay } from "@/shared/components/settings/RadialHub";
+import { getStackSize } from "@/shared/lib/overlayStack";
 import { BottomDockFeather } from "@/shared/ui/BottomDockFeather";
+import { SETTINGS_DOMAIN_SLOTS } from "@/shared/components/settings/shared/settingsLayout";
 
 import { SettingsCardWrapper } from "@/shared/components/settings/SettingsCardWrapper";
 import { SettingsSideCarouselCard } from "@/shared/components/settings/SettingsSideCarouselCard";
@@ -97,12 +104,6 @@ export const Settings: React.FC = () => {
   }), [setActiveDomains]);
   useRegisterPageDrawer(drawerHandlers);
 
-  const handleCarouselSwitch = useCallback((_side: "left" | "right", _nextId: DomainId) => {
-    // No-op: carousel card manages its own currentId locally.
-    // activeDomains keeps BOTH pair domains permanently so the SVG fork
-    // never flickers or recalculates when the user cycles between cards.
-  }, []);
-
   const renderDomainContent = useCallback(
     (domain: DomainId, mode?: "full-max" | "full-min" | "small") => (
       <DomainContent domain={domain} layoutMode={mode} />
@@ -111,10 +112,13 @@ export const Settings: React.FC = () => {
   );
 
   // Escape collapses the topmost active Settings card (mirrors outside-click FILO pop).
+  // Overlays registered on the global stack (modals, popovers) consume Escape
+  // first; the card only collapses when no overlay owns the key.
   useEffect(() => {
     if (activeDomains.length === 0) return;
     const handleKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setActiveDomains((prev) => prev.slice(0, -1));
+      if (e.key !== "Escape" || getStackSize() > 0) return;
+      setActiveDomains((prev) => prev.slice(0, -1));
     };
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
@@ -123,14 +127,23 @@ export const Settings: React.FC = () => {
   // Eagerly prewarm the 7 card chunks and remote model catalog after first paint
   // so opening radial cards is completely warm with zero cold fetch delay.
   useEffect(() => {
-    const idle = window.requestIdleCallback ?? ((fn: () => void) => setTimeout(fn, 400));
-    const id = idle(() => {
+    let cancelled = false;
+    const run = () => {
+      if (cancelled) return;
       void preloadSettingsCards().catch((error: unknown) => {
         console.debug("[Settings] Failed to prewarm settings data:", error);
       });
-    });
+    };
+    // WebKitGTK may lack requestIdleCallback; feature-detect instead of
+    // assuming the API surface.
+    const hasIdle = "requestIdleCallback" in window;
+    const handle: number = hasIdle
+      ? window.requestIdleCallback(() => run())
+      : window.setTimeout(run, 400);
     return () => {
-      if (window.cancelIdleCallback && typeof id === "number") window.cancelIdleCallback(id);
+      cancelled = true;
+      if (hasIdle) window.cancelIdleCallback(handle);
+      else window.clearTimeout(handle);
     };
   }, []);
 
@@ -177,7 +190,7 @@ export const Settings: React.FC = () => {
           {/* Side Cards: Unified Carousel in constrained viewports or independent slots in wide viewports */}
           {isSideCarousel ? (
             <>
-              {/* Left Side Carousel Card -> 10:00 (Interaction) & 8:00 (Model Hub) */}
+              {/* Left Side Carousel Card -> 10:00 (Interaction) & 8:00 (Speech) */}
               <div
                 id="card-left-carousel"
                 className="col-start-1 col-span-4 row-start-1 row-span-6 flex items-center justify-end p-2 relative z-10 overflow-visible"
@@ -186,12 +199,11 @@ export const Settings: React.FC = () => {
                   side="left"
                   activeDomains={activeDomains}
                   layoutMode={layoutMode}
-                  onSwitchDomain={(nextId) => handleCarouselSwitch("left", nextId)}
                   renderDomainContent={renderDomainContent}
                 />
               </div>
 
-              {/* Right Side Carousel Card -> 2:00 (Memory) & 4:00 (Tuning) */}
+              {/* Right Side Carousel Card -> 2:00 (Memory) & 4:00 (Language) */}
               <div
                 id="card-right-carousel"
                 className="col-start-9 col-span-4 row-start-1 row-span-6 flex items-center justify-start p-2 relative z-10 overflow-visible"
@@ -200,7 +212,6 @@ export const Settings: React.FC = () => {
                   side="right"
                   activeDomains={activeDomains}
                   layoutMode={layoutMode}
-                  onSwitchDomain={(nextId) => handleCarouselSwitch("right", nextId)}
                   renderDomainContent={renderDomainContent}
                 />
               </div>
@@ -275,10 +286,7 @@ export const Settings: React.FC = () => {
 
           <div className="flex-1 w-full relative overflow-hidden flex flex-col min-h-0">
             <div className="flex-1 w-full overflow-y-auto custom-scrollbar pb-[130px] space-y-4 px-3 sm:px-4.5">
-              {[...DOMAINS].sort((a, b) => {
-                const order = ["interaction", "memory", "language", "speech", "persona", "appearance"];
-                return order.indexOf(a.id) - order.indexOf(b.id);
-              }).map((domain) => (
+              {MOBILE_ORDERED_DOMAINS.map((domain) => (
                 <div key={domain.id} className="w-full">
                   <SettingsCardWrapper domain={domain} isActive={true} layoutMode="small">
                     <div className="w-full glass-card rounded-2xl p-3.5 sm:p-4.5">

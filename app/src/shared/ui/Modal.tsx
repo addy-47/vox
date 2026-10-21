@@ -107,7 +107,7 @@ export const Modal = memo(
             return;
           }
         }
-        (document.activeElement as HTMLElement | null)?.blur?.();
+        (document.activeElement as HTMLElement | null)?.blur();
       };
     }, [open]);
 

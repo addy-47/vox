@@ -230,8 +230,8 @@ export function useVoiceSessionStream(handlers: VoiceSessionStreamHandlers): {
     const hydrate = async () => {
       try {
         const res = await getSettings();
-        const interactionMode = res.settings?.interaction?.mode ?? null;
-        const pipelineMode = res.settings?.interaction?.pipeline_mode
+        const interactionMode = res.settings.interaction.mode ?? null;
+        const pipelineMode = res.settings.interaction.pipeline_mode
           ? (res.settings.interaction.pipeline_mode.toLowerCase() as "modular" | "realtime")
           : null;
 

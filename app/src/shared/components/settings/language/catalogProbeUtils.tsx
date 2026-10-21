@@ -2,11 +2,6 @@ import type { ReactNode } from "react";
 import type { ModelCapabilities, ProbeCheck } from "@/store/settingsStore";
 import { LLM_CATALOG_COPY } from "@/data/settingsCopy";
 
-/**
- * How many catalog rows to mount before asking the user to narrow the list.
- */
-export const REMOTE_MODEL_PAGE_SIZE = 40;
-
 /** Human source label for a probed capability set. */
 export function provenanceLabel(provenance: ModelCapabilities["provenance"]): string {
   switch (provenance) {
