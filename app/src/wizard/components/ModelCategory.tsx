@@ -145,12 +145,12 @@ export const ModelCategory = React.memo(({
                     >
                         <div className="p-5 space-y-2 max-h-[300px] overflow-y-auto custom-scrollbar">
                             {groups.map((group) => {
-                                const isGroupSelected = selectedIds?.has(group.id) ?? false;
+                                const isGroupSelected = selectedIds.has(group.id) ?? false;
                                 const groupSize = group.files.reduce((sum, f) => sum + f.size, 0);
                                 const handleLineClick = (e: React.MouseEvent) => {
                                     if (required) return;
                                     e.stopPropagation();
-                                    onToggleModel?.(group.id);
+                                    onToggleModel(group.id);
                                 };
 
                                 return (
@@ -164,7 +164,7 @@ export const ModelCategory = React.memo(({
                                         onKeyDown={(e) => {
                                             if (e.key === " " && !required) {
                                                 e.preventDefault();
-                                                onToggleModel?.(group.id);
+                                                onToggleModel(group.id);
                                             }
                                         }}
                                         className={cn(

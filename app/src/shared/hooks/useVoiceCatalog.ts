@@ -84,7 +84,7 @@ export function useVoiceCatalog(
 ): UseVoiceCatalogResult {
   const { provider, suspended = false, engine, cloudSync = false } = options;
   const updateDraft = useSettingsStore((s) => s.updateDraft);
-  const draftVoiceId = useSettingsStore((s) => s.draftSettings?.tts?.active_voice_id);
+  const draftVoiceId = useSettingsStore((s) => s.draftSettings?.tts.active_voice_id);
 
   const cachedVoices = provider ? VOICES_CACHE.get(provider) : undefined;
   const [voices, setVoices] = useState<UnifiedVoiceDto[]>(cachedVoices ?? []);

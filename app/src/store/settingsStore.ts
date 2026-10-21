@@ -31,9 +31,6 @@ import type {
   DomainFlags,
   DraftKeyMap,
   LlmProviderConfig,
-  ModelCatalog,
-  ModelCapabilities,
-  LlmModelInfo,
 } from "@/types/settings";
 import {
   scopeEntries,
@@ -69,13 +66,6 @@ export interface ProviderCaps {
 export interface SettingsState {
   settings: VoxSettings | null;
   draftSettings: VoxSettings | null;
-  modelCatalog: ModelCatalog | null;
-  remoteModels: LlmModelInfo[];
-  loadingRemoteModels: boolean;
-  remoteModelsError: string | null;
-  remoteModelsFetchedKey: string | null;
-  capabilitiesCache: Record<string, ModelCapabilities>;
-  capabilitiesCacheError: string | null;
   isLoading: boolean;
   hasChanges: boolean;
   /**
@@ -94,9 +84,6 @@ export interface SettingsState {
   loadSettings: () => Promise<void>;
   loadModelCatalog: () => Promise<void>;
   loadRemoteModels: (providerConfig?: LlmProviderConfig, force?: boolean) => Promise<void>;
-  clearRemoteModelsError: () => void;
-  loadCapabilitiesCache: () => Promise<void>;
-  patchRemoteModelCapabilities: (modelId: string, caps: ModelCapabilities) => void;
   updateDraft: <D extends keyof VoxSettings>(
     domain: D,
     key: DraftKeyMap[D],
@@ -135,7 +122,12 @@ export interface SettingsState {
    * `failedSaveKeys` array shared by every domain, so two simultaneous
    * failures made one card's banner print the other card's key names.
    */
-  failedSaveDomains: Record<string, string[]>;
+  /**
+   * Rejected keys per UI domain. A domain is absent from the map when it has
+   * no failures, so the value type is `Partial` — `Record<string, string[]>`
+   * would type a sparse map as always-present and hide the missing case.
+   */
+  failedSaveDomains: Partial<Record<string, string[]>>;
   triggerSaveFailure: (domainId: string, keys: string[]) => void;
   /**
    * Transient desk-level error (provider health / model-list failure) shown
@@ -178,13 +170,6 @@ const RESTART_POLL_MAX_TICKS = 30;
 export const useSettingsStore = create<SettingsState>((set, get) => ({
   settings: null,
   draftSettings: null,
-  modelCatalog: null,
-  remoteModels: [],
-  loadingRemoteModels: false,
-  remoteModelsError: null,
-  remoteModelsFetchedKey: null,
-  capabilitiesCache: {},
-  capabilitiesCacheError: null,
   isLoading: true,
   hasChanges: false,
   restartKeys: [],
@@ -272,21 +257,9 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     await useCatalogStore.getState().loadRemoteModels(providerConfig, force);
   },
 
-  clearRemoteModelsError: () => {
-    useCatalogStore.getState().clearRemoteModelsError();
-  },
-
-  loadCapabilitiesCache: async () => {
-    await useCatalogStore.getState().loadCapabilitiesCache();
-  },
-
-  patchRemoteModelCapabilities: (modelId, caps) => {
-    useCatalogStore.getState().patchCapabilities(modelId, caps);
-  },
-
   lastSavedTimestamp: 0,
   autoSavedDomain: null as string | null,
-  failedSaveDomains: {} as Record<string, string[]>,
+  failedSaveDomains: {} as Partial<Record<string, string[]>>,
   deskFooter: null as { domain: string; title: string; detail: string } | null,
   setDeskFooter: (entry) => {
     const cur = get().deskFooter;
@@ -395,14 +368,10 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       return;
     }
 
-    const clearsRemoteError = key === "active" && Boolean(get().remoteModelsError);
-    set({
-      draftSettings: newDraft,
-      ...(clearsRemoteError ? { remoteModelsError: null } : {}),
-    });
+    set({ draftSettings: newDraft });
     const flags = get().recomputeDomainFlags();
 
-    if (!flags || !COMMIT_DOMAIN_IDS.some((d) => flags[d]?.dirty)) {
+    if (!flags || !COMMIT_DOMAIN_IDS.some((d) => flags[d].dirty)) {
       if (settingsAutoSaveTimer) {
         clearTimeout(settingsAutoSaveTimer);
         settingsAutoSaveTimer = null;
@@ -411,7 +380,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     }
 
     const targetDomainId = explicitDomainId || SETTINGS_DOMAIN_TO_UI[domain as string] || "speech";
-    const needsRestart = flags[targetDomainId]?.requiresRestart ?? false;
+    const needsRestart = flags[targetDomainId].requiresRestart ?? false;
 
     // If this change or domain requires an engine restart, do NOT auto-commit.
     // Leave the card dirty with "Apply & Restart" button visible.
@@ -430,7 +399,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     settingsAutoSaveTimer = setTimeout(() => {
       settingsAutoSaveTimer = null;
       const anyNeedsRestart = COMMIT_DOMAIN_IDS.some(
-        (d) => get().domainFlags[d]?.requiresRestart
+        (d) => get().domainFlags[d].requiresRestart
       );
       if (anyNeedsRestart) {
         return;
@@ -458,7 +427,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     if (!settings) return;
 
     const scope = category.toLowerCase() as keyof VoxSettings;
-    const savedScope = scopeEntries(settings?.[scope]);
+    const savedScope = scopeEntries(settings[scope]);
     if (!savedScope) return;
 
     const contractKeys = settingsContractService.getSupportedKeys(scope);
@@ -562,10 +531,10 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     try {
       if (Object.keys(dirtyTree).length > 0) {
         const res = await applySettingsPatch(dirtyTree);
-        if (res?.reload_policy === "restart") {
+        if (res.reload_policy === "restart") {
           restartKeys.push(...touchedKeys);
         }
-        if (res?.restart_scheduled) {
+        if (res.restart_scheduled) {
           restartScheduled = true;
         }
       }
@@ -621,7 +590,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
           if (!preScope || !clonedScope) continue;
           for (const key of Object.keys(preScope)) {
             if (domain === only.domain && key === only.key) continue;
-            if (JSON.stringify(preScope[key]) !== JSON.stringify(savedScope?.[key])) {
+            if (JSON.stringify(preScope[key]) !== JSON.stringify(savedScope[key])) {
               clonedScope[key] = structuredClone(preScope[key]);
             }
           }
@@ -696,7 +665,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     clearTimeout(settingsAutoSaveTimer);
     settingsAutoSaveTimer = null;
     const anyNeedsRestart = COMMIT_DOMAIN_IDS.some(
-      (d) => get().domainFlags[d]?.requiresRestart
+      (d) => get().domainFlags[d].requiresRestart
     );
     if (anyNeedsRestart) {
       return;
@@ -812,7 +781,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 }));
 
 export function selectActiveLlmProvider(state: SettingsState): LlmProviderConfig {
-  const active = state.draftSettings?.llm?.active ?? state.settings?.llm?.active;
+  const active = state.draftSettings?.llm.active ?? state.settings?.llm.active;
   const kind = active?.category ?? "embedded";
   if (kind === "embedded") return { kind: "embedded" };
   if (kind === "server") {
@@ -829,7 +798,7 @@ export function selectActiveLlmProvider(state: SettingsState): LlmProviderConfig
     };
   }
   const cloudId = active?.provider ?? "nvidia";
-  const contractEntry = state.contract?.llm_cloud_providers?.find((p) => p.id === cloudId);
+  const contractEntry = state.contract?.llm_cloud_providers.find((p) => p.id === cloudId);
   const cloudEntry = contractEntry ?? undefined;
   const apiKey = getEffectiveCloudApiKey(state.draftSettings, state.settings, cloudId);
   return {

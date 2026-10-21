@@ -134,7 +134,7 @@ export const Drawer = memo(
             return;
           }
         }
-        (document.activeElement as HTMLElement | null)?.blur?.();
+        (document.activeElement as HTMLElement | null)?.blur();
       };
     }, [open]);
 

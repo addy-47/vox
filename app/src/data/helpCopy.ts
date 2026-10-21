@@ -43,8 +43,6 @@ import {
 import type { LucideIcon } from "lucide-react";
 import type { HelpControlItem } from "@/shared/components/help/HelpControlCard";
 
-export type HelpTier = "1A" | "1B" | "2A" | "2B" | "3";
-
 export interface PageHelpGuide {
   title: string;
   badge: string;

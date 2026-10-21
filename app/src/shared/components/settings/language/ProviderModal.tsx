@@ -6,6 +6,7 @@ import { PROVIDERS_CONFIG_DESK_COPY, LLM_CATALOG_COPY } from "@/data/settingsCop
 import { useSettingsStore, type LlmCustomServer, type TtsCustomServer } from "@/store/settingsStore";
 import { useShallow } from "zustand/react/shallow";
 import { activeSelection, promoteActive } from "@/shared/lib/activeSelection";
+import { requestSpeechTab } from "@/shared/lib/speechTabSync";
 import { filterProviders } from "@/shared/lib/catalogFilter";
 import { ModalProviderFooter } from "@/shared/components/settings/SettingsCommitControls";
 import { Tooltip } from "@/shared/ui/Tooltip";
@@ -21,14 +22,14 @@ import { CatalogModalShell } from "../shared/CatalogModalShell";
 import { CatalogFacetRail, type CatalogFacetGroup } from "../shared/CatalogFacetRail";
 
 /** Deletes a custom server by ID and reverts to embedded if active. */
-export async function deleteCustomServer(domain: "llm" | "tts", serverId: string): Promise<void> {
+async function deleteCustomServer(domain: "llm" | "tts", serverId: string): Promise<void> {
   const { commitChanges, draftSettings: draft, updateDraft } = useSettingsStore.getState();
-  const list = (domain === "tts" ? draft?.tts?.servers ?? draft?.providers?.tts?.servers : draft?.llm?.servers ?? draft?.providers?.llm?.servers) ?? [];
+  const list = (domain === "tts" ? draft?.tts.servers ?? draft?.providers?.tts.servers : draft?.llm.servers ?? draft?.providers?.llm.servers) ?? [];
   console.info(`[Providers] deleteCustomServer domain=${domain} id=${serverId} prevCount=${list.length}`);
   updateDraft(domain, "servers", list.filter((s: { id: string }) => s.id !== serverId));
-  const isActive = (domain === "tts" ? draft?.tts?.active?.provider : draft?.llm?.active?.provider) === serverId;
+  const isActive = (domain === "tts" ? draft?.tts.active.provider : draft?.llm.active.provider) === serverId;
   if (isActive) {
-    const fallback = (domain === "tts" ? draft?.tts?.last_selected?.embedded : draft?.llm?.last_selected?.embedded) ?? "";
+    const fallback = (domain === "tts" ? draft?.tts.last_selected.embedded : draft?.llm.last_selected.embedded) ?? "";
     updateDraft(domain, "active", activeSelection("embedded", fallback));
   }
   await commitChanges({ domain, key: "servers" });
@@ -68,17 +69,18 @@ const CustomProviderCreationCard = memo(function CustomProviderCreationCard({
   category: "STT" | "LLM" | "TTS";
   onClick: () => void;
 }) {
+  const copy = PROVIDERS_CONFIG_DESK_COPY;
   const isTts = category === "TTS";
   return (
     <AddCard
       variant="tile"
-      title={isTts ? "Add Voice Server" : "Add Custom Server"}
+      title={isTts ? copy.creationCard.addVoiceServer : copy.creationCard.addCustomServer}
       description={
         isTts
-          ? "Connect Chatterbox GPU node or remote synthesis host."
-          : "Connect self-hosted Ollama, vLLM, or LM Studio endpoint."
+          ? copy.creationCard.voiceServerDescription
+          : copy.creationCard.customServerDescription
       }
-      footnote="Self-Hosted"
+      footnote={copy.creationCard.selfHostedFootnote}
       onClick={onClick}
     />
   );
@@ -106,31 +108,30 @@ export const ProviderModal = memo(({
   const storeTtsProviders = useCatalogStore((s) => s.ttsProviders);
 
   const customServers = useMemo(() => {
-    return (isTts ? draftSettings?.tts?.servers ?? draftSettings?.providers?.tts?.servers : draftSettings?.llm?.servers ?? draftSettings?.providers?.llm?.servers) ?? [];
+    return (isTts ? draftSettings?.tts.servers ?? draftSettings?.providers?.tts.servers : draftSettings?.llm.servers ?? draftSettings?.providers?.llm.servers) ?? [];
   }, [isTts, draftSettings]);
 
   const activeCategoryType = useMemo(() => {
     const domain = category.toLowerCase() as "stt" | "tts" | "llm";
-    return draftSettings?.[domain]?.active?.category ?? "embedded";
+    return draftSettings?.[domain].active.category ?? "embedded";
   }, [category, draftSettings]);
 
   const isLocalSelected = activeCategoryType === "embedded";
   const activeCloudId = useMemo(() => {
     if (activeCategoryType !== "cloud") return null;
-    return activeCloudProviderId ?? (isTts ? draftSettings?.tts?.active?.provider : draftSettings?.llm?.active?.provider) ?? null;
+    return activeCloudProviderId ?? (isTts ? draftSettings?.tts.active.provider : draftSettings?.llm.active.provider) ?? null;
   }, [activeCategoryType, activeCloudProviderId, isTts, draftSettings]);
 
-  const activeServerId = activeCategoryType === "server" ? (isTts ? draftSettings?.tts?.active?.provider : draftSettings?.llm?.active?.provider) ?? null : null;
+  const activeServerId = activeCategoryType === "server" ? (isTts ? draftSettings?.tts.active.provider : draftSettings?.llm.active.provider) ?? null : null;
 
   const handleSelectServer = useCallback((server: LlmCustomServer | TtsCustomServer) => {
-    useSettingsStore.getState().clearRemoteModelsError();
+    useCatalogStore.getState().clearRemoteModelsError();
     if (isTts) {
       updateDraft("tts", "active", activeSelection("server", "", server.id));
-      window.dispatchEvent(new CustomEvent("sync_pipeline_tab", { detail: "tts" }));
+      requestSpeechTab("tts");
     } else {
       const llmServ = server as LlmCustomServer;
       updateDraft("llm", "active", activeSelection("server", llmServ.model || "", llmServ.id));
-      window.dispatchEvent(new CustomEvent("sync_pipeline_tab", { detail: "llm" }));
     }
   }, [isTts, updateDraft]);
 
@@ -139,24 +140,24 @@ export const ProviderModal = memo(({
   }, [isTts]);
 
   const handleSelectLocalProvider = useCallback(() => {
-    useSettingsStore.getState().clearRemoteModelsError();
+    useCatalogStore.getState().clearRemoteModelsError();
     if (onSelectLocal) {
       onSelectLocal();
     } else {
       const domain = category.toLowerCase() as "stt" | "llm" | "tts";
-      const fallback = draftSettings?.[domain]?.last_selected?.embedded ?? "";
+      const fallback = draftSettings?.[domain].last_selected.embedded ?? "";
       updateDraft(domain, "active", activeSelection("embedded", fallback));
-      window.dispatchEvent(new CustomEvent("sync_pipeline_tab", { detail: domain }));
+      if (domain === "tts" || domain === "stt") requestSpeechTab(domain);
     }
   }, [category, draftSettings, onSelectLocal, updateDraft]);
 
   const { containerRef: scrollContainerRef, lenisRef } = useLenisScrollContainer<HTMLDivElement>();
   const committedActiveProviderId = isTts
-    ? committedSettings?.tts?.active?.provider
-    : committedSettings?.llm?.active?.provider;
+    ? committedSettings?.tts.active.provider
+    : committedSettings?.llm.active.provider;
   const committedCategory = isTts
-    ? committedSettings?.tts?.active?.category
-    : committedSettings?.llm?.active?.category;
+    ? committedSettings?.tts.active.category
+    : committedSettings?.llm.active.category;
   const isCommittedLocal = committedCategory === "embedded";
 
   const orderFingerprint = useMemo(
@@ -242,9 +243,9 @@ export const ProviderModal = memo(({
     );
     return promoteActive(
       [...list].sort((a, b) => sort === "az" ? a.name.localeCompare(b.name, undefined, { sensitivity: "base" }) : b.name.localeCompare(a.name, undefined, { sensitivity: "base" })),
-      committedSettings?.tts?.active?.provider
+      committedSettings?.tts.active.provider
     );
-  }, [deferredSearch, filterCategory, getProviderKey, isTts, sort, committedSettings?.tts?.active?.provider, storeTtsProviders]);
+  }, [deferredSearch, filterCategory, getProviderKey, isTts, sort, committedSettings?.tts.active.provider, storeTtsProviders]);
 
   const modalFilteredProviders = useMemo(() => {
     if (filterCategory === "custom") return [];
@@ -261,9 +262,9 @@ export const ProviderModal = memo(({
         if (aKey !== bKey) return aKey ? -1 : 1;
         return sort === "az" ? a.name.localeCompare(b.name, undefined, { sensitivity: "base" }) : b.name.localeCompare(a.name, undefined, { sensitivity: "base" });
       }),
-      committedSettings?.llm?.active?.provider
+      committedSettings?.llm.active.provider
     );
-  }, [deferredSearch, filterCategory, getProviderKey, getCommittedProviderKey, sort, committedSettings?.llm?.active?.provider, storeCloudProviders]);
+  }, [deferredSearch, filterCategory, getProviderKey, getCommittedProviderKey, sort, committedSettings?.llm.active.provider, storeCloudProviders]);
 
   const matchesLocal = useMemo(() => {
     const q = deferredSearch.trim().toLowerCase();
@@ -279,9 +280,9 @@ export const ProviderModal = memo(({
     const q = deferredSearch.trim().toLowerCase();
     return promoteActive(
       !q ? [...customServers] : customServers.filter((s) => (s.name && s.name.toLowerCase().includes(q)) || (s.url && s.url.toLowerCase().includes(q)) || (s.id && s.id.toLowerCase().includes(q))),
-      isTts ? committedSettings?.tts?.active?.provider : committedSettings?.llm?.active?.provider
+      isTts ? committedSettings?.tts.active.provider : committedSettings?.llm.active.provider
     );
-  }, [showCustomSection, deferredSearch, customServers, isTts, committedSettings?.tts?.active?.provider, committedSettings?.llm?.active?.provider]);
+  }, [showCustomSection, deferredSearch, customServers, isTts, committedSettings?.tts.active.provider, committedSettings?.llm.active.provider]);
 
   const localMeta = {
     STT: { name: "On-Device Speech Recognition", tagline: "High-accuracy local Whisper & Nemotron transcription. 100% offline." },
@@ -299,17 +300,17 @@ export const ProviderModal = memo(({
 
   const cloudCards = isTts
     ? ttsFilteredProviders.map((entry) => {
-        const isSelected = activeCloudId === entry.id || (entry.id === "edge_speech" && ((activeCloudId?.includes("edge") ?? false) || (draftSettings?.tts?.active?.model?.includes("edge") ?? false)));
+        const isSelected = activeCloudId === entry.id || (entry.id === "edge_speech" && ((activeCloudId?.includes("edge") ?? false) || (draftSettings?.tts.active.model.includes("edge") ?? false)));
         return (
           <SelectableCard
             key={entry.id} id={entry.id} name={entry.name} tagline={entry.tagline} logo={entry.logo}
             isSelected={isSelected} isComingSoon={entry.isComingSoon}
             onSelect={() => {
               if (entry.isComingSoon) return;
-              useSettingsStore.getState().clearRemoteModelsError();
+              useCatalogStore.getState().clearRemoteModelsError();
               const ttsModel = entry.id === "edge_speech" ? entry.id.replace("speech", "tts") : entry.id;
               updateDraft("tts", "active", activeSelection("cloud", ttsModel, entry.id));
-              window.dispatchEvent(new CustomEvent("sync_pipeline_tab", { detail: "tts" }));
+              requestSpeechTab("tts");
               onSelectProvider({ id: entry.id, name: entry.name, url: entry.url || "", popular: true, keyPlaceholder: "API Key (Optional)..." });
             }}
             actionSlot={<><span className="text-[rgb(var(--foreground-muted))]/70">{entry.isFree ? "Keyless Cloud" : "Cloud Voice"}</span><span className={cn("font-bold flex items-center gap-1.5", entry.isComingSoon ? "text-[rgb(var(--foreground-muted))]/60 font-normal" : "text-[rgb(var(--accent))]")}>{!entry.isComingSoon && <span className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--accent))]" />}{entry.isComingSoon ? "In Development" : isSelected ? "Active" : "Ready"}</span></>}
@@ -472,15 +473,15 @@ export const ProviderModal = memo(({
         </Tooltip>
       }
       filter={{
-        label: "Filter providers",
+        label: PROVIDERS_CONFIG_DESK_COPY.filterLabel,
         open: isFilterDropdownOpen,
         activeCount: filterCategory === "all" ? 0 : 1,
         onToggle: () => setIsFilterDropdownOpen((v) => !v),
         onClose: () => setIsFilterDropdownOpen(false),
         menu: (
           <CardFilterMenu
-            title="Provider Filters"
-            resetLabel={filterCategory !== "all" ? "Reset" : undefined}
+            title={PROVIDERS_CONFIG_DESK_COPY.filterMenuTitle}
+            resetLabel={filterCategory !== "all" ? PROVIDERS_CONFIG_DESK_COPY.reset : undefined}
             onReset={() => setFilterCategory("all")}
           >
             {providerFilters.map((cat) => (
@@ -556,5 +557,3 @@ export const ProviderModal = memo(({
 });
 
 ProviderModal.displayName = "ProviderModal";
-
-export { upsertServer } from "./CustomServerFormCard";

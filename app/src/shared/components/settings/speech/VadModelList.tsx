@@ -1,5 +1,6 @@
 import { memo } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
+import { useCatalogStore } from "@/store/catalogStore";
 import { SpeechModelCard } from "./SpeechModelCard";
 import type { ModelStatus } from "@/shared/hooks/useModelDownloads";
 import { cn } from "@/shared/lib/utils";
@@ -29,7 +30,7 @@ export const VadModelList = memo(
   }: VadModelListProps) => {
     const vad = useSettingsStore((s) => s.draftSettings?.vad);
     const updateDraft = useSettingsStore((s) => s.updateDraft);
-    const modelCatalog = useSettingsStore((s) => s.modelCatalog);
+    const modelCatalog = useCatalogStore((s) => s.modelCatalog);
     const vadModels = modelCatalog?.vad ?? [];
     if (!vad) return null;
     const activeVadBackend = vad.vad_backend || "";

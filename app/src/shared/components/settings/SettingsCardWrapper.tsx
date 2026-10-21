@@ -9,6 +9,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import type { SettingsDomain as Domain } from "@/data/settingsCopy";
 import { SETTINGS_COPY } from "@/data/settingsCopy";
 import { useMemoryTrace } from "@/shared/hooks/useMemoryTrace";
+import { getDomainCardWidth } from "./shared/settingsLayout";
 
 
 export interface SettingsCardWrapperProps {
@@ -17,17 +18,6 @@ export interface SettingsCardWrapperProps {
   layoutMode: "full-max" | "full-min" | "small";
   children: React.ReactNode;
 }
-
-const getDomainCardWidth = (domainId: string, layoutMode: "full-max" | "full-min" | "small"): string => {
-  if (layoutMode === "small") return "w-full";
-  if (domainId === "persona") {
-    return layoutMode === "full-min" ? "lg:w-[350px] xl:w-[370px] 2xl:w-[440px]" : "lg:w-[470px]";
-  }
-  if (domainId === "appearance") {
-    return layoutMode === "full-min" ? "lg:w-[240px] xl:w-[260px] 2xl:w-[280px]" : "lg:w-[290px] xl:w-[310px]";
-  }
-  return layoutMode === "full-min" ? "lg:w-[360px] xl:w-[420px] 2xl:w-[520px]" : "lg:w-[520px]";
-};
 
 export const SettingsCardWrapper = memo(({ domain, isActive, layoutMode, children }: SettingsCardWrapperProps) => {
   useMemoryTrace(`SettingsCard (${domain.id})`);
@@ -38,7 +28,7 @@ export const SettingsCardWrapper = memo(({ domain, isActive, layoutMode, childre
   const isAutoSavedHere = mode === "saved";
   const isRestartHere = mode === "restarting";
   const saveFailure = mode === "failed";
-  const failedKeys = useSettingsStore((s) => s.failedSaveDomains[domain.id]);
+  const failedKeys = useSettingsStore((s) => s.failedSaveDomains[domain.id]) ?? [];
   const deskFooter = useSettingsStore((s) => s.deskFooter);
   const expandModalOpen = useExpandedModalStore((s) => s.openCount > 0);
   const showDeskFooter = !expandModalOpen && !hasChanges && deskFooter?.domain === domain.id;

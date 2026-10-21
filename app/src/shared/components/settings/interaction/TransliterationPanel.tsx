@@ -156,7 +156,7 @@ export const TransliterationPanel = memo(() => {
   const draftSettings = useSettingsStore((s) => s.draftSettings);
   const updateDraft = useSettingsStore((s) => s.updateDraft);
 
-  const enabled = draftSettings?.stt?.transliterate_enabled ?? true;
+  const enabled = draftSettings?.stt.transliterate_enabled ?? true;
 
   const handleToggle = useCallback(() => {
     // The `stt` scope maps to the models card by default (model selection);

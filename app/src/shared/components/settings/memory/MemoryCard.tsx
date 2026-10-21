@@ -4,6 +4,8 @@ import { BookOpenText, Brain, FoldVertical, Workflow } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { Card, ToggleTile, SegmentedControl } from "@/shared/ui";
 import { MEMORY_CARD_COPY } from "@/data/settingsCopy";
+import { CardTitleBar } from "../shared/CardTitleBar";
+import { SETTINGS_DOMAIN_CARD_HEIGHT_CLASS } from "../shared/settingsLayout";
 import { MemoryConfigDesk } from "./MemoryConfigDesk";
 
 interface MemoryCardProps {
@@ -24,7 +26,6 @@ export const MemoryCard = memo(({ layoutMode = "full-max" }: MemoryCardProps) =>
   const [view, setView] = useState<MemoryView>("basic");
 
   const isSmall = layoutMode === "small";
-  const isMin = layoutMode === "full-min";
 
   const contextRetrievalEnabled = memory?.context_retrieval_enabled ?? true;
   const pipelineProcessingEnabled = memory?.pipeline_processing_enabled ?? true;
@@ -50,27 +51,22 @@ export const MemoryCard = memo(({ layoutMode = "full-max" }: MemoryCardProps) =>
         "text-[14px] leading-relaxed text-[rgb(var(--foreground))]/85 flex flex-col justify-between select-none transform-gpu",
         isSmall
           ? "bg-transparent p-0 h-auto"
-          : cn(
-              "glass-card p-5 lg:h-[340px] justify-between",
-              isMin ? "lg:w-[360px] xl:w-[420px] 2xl:w-[520px]" : "lg:w-[520px]"
-            )
+          : cn("glass-card p-5 justify-between", SETTINGS_DOMAIN_CARD_HEIGHT_CLASS)
       )}
     >
       {/* Header */}
-      <div className="flex items-center justify-between mb-3 shrink-0 border-b border-[rgba(var(--accent),0.08)] pb-2 w-full">
-        <div className="flex items-center gap-2">
-          <BookOpenText className="text-[rgb(var(--accent))]" size={17} />
-          <span className="font-display text-[13px] font-black uppercase tracking-[0.2em] text-[rgb(var(--foreground))]">
-            {copy.cardTitle}
-          </span>
-        </div>
-        <SegmentedControl
-          options={VIEW_OPTIONS}
-          value={view}
-          onChange={setView}
-          size="sm"
-        />
-      </div>
+      <CardTitleBar
+        icon={<BookOpenText size={17} />}
+        title={copy.cardTitle}
+        action={
+          <SegmentedControl
+            options={VIEW_OPTIONS}
+            value={view}
+            onChange={setView}
+            size="sm"
+          />
+        }
+      />
 
       {/* Card Body */}
       <div className="flex-1 flex flex-col justify-between min-h-0 pt-0.5 gap-2.5">

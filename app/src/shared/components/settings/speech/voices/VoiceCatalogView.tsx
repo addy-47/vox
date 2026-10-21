@@ -72,7 +72,7 @@ export const VoiceCatalogView = memo(({ layoutMode, providerId, onBack }: VoiceC
   const interactionState = useSessionStore((s) => s.interactionState);
   const sessionBusy = interactionState !== "Idle";
 
-  const targetProvider = (scope?.voice_provider || normalizedProviderId || "").toLowerCase();
+  const targetProvider = (scope.voice_provider || normalizedProviderId || "").toLowerCase();
 
   const scopedVoices = useMemo(() => {
     if (!targetProvider) return voices;
@@ -265,7 +265,6 @@ export const VoiceCatalogView = memo(({ layoutMode, providerId, onBack }: VoiceC
       <ExpandableList
         className="flex-1 min-h-0"
         inlineMaxHeightClass={getSettingsInlineListMaxHeightClass(layoutMode)}
-        domainId="tts"
         triggerPlacement="floating"
         icon={<Mic size={16} className="text-[rgb(var(--accent))]" />}
         title={VOICE_CATALOG_COPY.title}

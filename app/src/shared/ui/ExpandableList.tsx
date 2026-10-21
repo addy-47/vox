@@ -48,8 +48,6 @@ export interface ExpandableListProps {
   modalContent?: React.ReactNode | ((props: { close: () => void }) => React.ReactNode);
   /** Optional back button handler rendered on the extreme left of the modal header */
   onBack?: () => void;
-  /** Settings domain associated with the expandable modal (preserved in draft state across open/close). */
-  domainId?: string;
   /** Optional callback when modal closes */
   onClose?: () => void;
   /** Explicit callback when modal closes (preserved for caller compatibility) */
@@ -83,7 +81,6 @@ export const ExpandableList = memo(
     children,
     modalContent,
     onBack,
-    domainId: _domainId,
     onClose,
     onDiscard,
   }: ExpandableListProps) => {

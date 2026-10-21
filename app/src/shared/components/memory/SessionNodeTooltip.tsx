@@ -168,7 +168,7 @@ export const SessionNodeTooltip = memo(({
                 <div className="grid grid-cols-2 gap-x-5 gap-y-1.5 pt-1">
                   {presentCategories.map((catKey) => {
                     const count = categoryCounts.get(catKey) || 0;
-                    const catColor = palette[catKey]?.main || "#00dbe9";
+                    const catColor = palette[catKey].main || "#00dbe9";
                     const label = MEMORY_COPY.categories[catKey] || catKey;
 
                     return (

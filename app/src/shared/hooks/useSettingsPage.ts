@@ -2,6 +2,7 @@ import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } fr
 import { SETTINGS_DOMAINS as DOMAINS, type SettingsDomainId as DomainId } from "@/data/settingsCopy";
 import { useSettingsStore } from "@/store/settingsStore";
 import { isCompactWidth, isRealMobileDevice } from "@/layout/breakpoints";
+import { SETTINGS_DOMAIN_SLOTS } from "@/shared/components/settings/shared/settingsLayout";
 
 interface LineCoords {
   x1: number;
@@ -33,14 +34,9 @@ export function useSettingsPage() {
     typeof window !== "undefined" ? isRealMobileDevice() || isCompactWidth() : false
   );
 
-  const [lines, setLines] = useState<Record<DomainId, { x1: number; y1: number; x2: number; y2: number } | null>>({
-    persona: null,
-    speech: null,
-    memory: null,
-    appearance: null,
-    interaction: null,
-    language: null,
-  });
+  const [lines, setLines] = useState<Record<DomainId, LineCoords | null>>(() =>
+    Object.fromEntries(DOMAINS.map((d) => [d.id, null])) as Record<DomainId, LineCoords | null>
+  );
 
   const lastActiveDomains = useRef<DomainId[]>([]);
   useEffect(() => {
@@ -146,7 +142,10 @@ export function useSettingsPage() {
       }
 
       // 3. Left side cards (10:00 & 8:00 nodes at cx - radiusX * cos(30°))
-      const leftCardEl = document.getElementById("card-left-carousel") || document.getElementById("card-interaction") || document.getElementById("card-speech");
+      const leftCardEl =
+        document.getElementById("card-left-carousel") ??
+        document.getElementById("card-interaction") ??
+        document.getElementById("card-speech");
       if (leftCardEl) {
         const leftRect = leftCardEl.getBoundingClientRect();
         const clearanceX = (cx - leftRect.right - 44) / 0.866;
@@ -156,7 +155,8 @@ export function useSettingsPage() {
       }
 
       // 4. Right side cards (2:00 & 4:00 nodes at cx + radiusX * cos(30°))
-      const rightCardEl = document.getElementById("card-right-carousel") || document.getElementById("card-memory");
+      const rightCardEl =
+        document.getElementById("card-right-carousel") ?? document.getElementById("card-memory");
       if (rightCardEl) {
         const rightRect = rightCardEl.getBoundingClientRect();
         const clearanceX = (rightRect.left - cx - 44) / 0.866;
@@ -178,16 +178,17 @@ export function useSettingsPage() {
 
     let ro: ResizeObserver | null = null;
     if (typeof ResizeObserver !== "undefined" && containerRef.current) {
-      ro = new ResizeObserver(measureClearance);
-      ro.observe(containerRef.current);
-      ["persona", "appearance", "interaction", "speech", "memory", "language"].forEach((id) => {
-        const el = document.getElementById(`card-${id}`);
-        if (el && ro) ro.observe(el);
+      const roObserver = new ResizeObserver(measureClearance);
+      ro = roObserver;
+      roObserver.observe(containerRef.current);
+      DOMAINS.forEach((domain) => {
+        const el = document.getElementById(`card-${domain.id}`);
+        if (el) roObserver.observe(el);
       });
       const leftCar = document.getElementById("card-left-carousel");
-      if (leftCar && ro) ro.observe(leftCar);
+      if (leftCar) roObserver.observe(leftCar);
       const rightCar = document.getElementById("card-right-carousel");
-      if (rightCar && ro) ro.observe(rightCar);
+      if (rightCar) roObserver.observe(rightCar);
     }
 
     return () => {
@@ -207,15 +208,19 @@ export function useSettingsPage() {
       const clickedInsideNodeOrCard = DOMAINS.some((domain) => {
         const nodeEl = document.getElementById(`node-${domain.id}`);
         const cardEl = document.getElementById(`card-${domain.id}`);
-        return (nodeEl && nodeEl.contains(target)) || (cardEl && cardEl.contains(target));
+        return (
+          (nodeEl?.contains(target) ?? false) || (cardEl?.contains(target) ?? false)
+        );
       });
 
       const centerNodeEl = document.getElementById("center-node");
-      const clickedCenter = centerNodeEl && centerNodeEl.contains(target);
+      const clickedCenter = centerNodeEl?.contains(target) ?? false;
 
       const leftCarouselEl = document.getElementById("card-left-carousel");
       const rightCarouselEl = document.getElementById("card-right-carousel");
-      const clickedCarousel = (leftCarouselEl && leftCarouselEl.contains(target)) || (rightCarouselEl && rightCarouselEl.contains(target));
+      const clickedCarousel =
+        (leftCarouselEl?.contains(target) ?? false) ||
+        (rightCarouselEl?.contains(target) ?? false);
 
       if (!clickedInsideNodeOrCard && !clickedCenter && !clickedCarousel) {
         setActiveDomains((prev) => prev.slice(0, -1));
@@ -260,10 +265,12 @@ export function useSettingsPage() {
           const nodeEl = document.getElementById(`node-${domain.id}`);
           let cardEl = document.getElementById(`card-${domain.id}`);
           if (!cardEl && isSideCarousel) {
-            if (domain.id === "interaction" || domain.id === "speech") {
-              cardEl = document.getElementById("card-left-carousel");
-            } else if (domain.id === "memory" || domain.id === "language") {
-              cardEl = document.getElementById("card-right-carousel");
+            // Both domains of a carousel side share one card element.
+            const carouselSide = SETTINGS_DOMAIN_SLOTS[domain.id].carousel?.side;
+            if (carouselSide) {
+              cardEl = document.getElementById(
+                carouselSide === "left" ? "card-left-carousel" : "card-right-carousel"
+              );
             }
           }
 
@@ -326,22 +333,20 @@ export function useSettingsPage() {
             const calculated = calculatedLines[domain.id];
             const existing = prevLines[domain.id];
 
-            if (calculated === null || calculated === undefined) {
+            if (calculated === null) {
               if (existing !== null) {
                 newLines[domain.id] = null;
                 changed = true;
               }
-            } else {
-              if (
-                !existing ||
-                Math.abs(existing.x1 - calculated.x1) > 0.5 ||
-                Math.abs(existing.y1 - calculated.y1) > 0.5 ||
-                Math.abs(existing.x2 - calculated.x2) > 0.5 ||
-                Math.abs(existing.y2 - calculated.y2) > 0.5
-              ) {
-                newLines[domain.id] = calculated;
-                changed = true;
-              }
+            } else if (
+              !existing ||
+              Math.abs(existing.x1 - calculated.x1) > 0.5 ||
+              Math.abs(existing.y1 - calculated.y1) > 0.5 ||
+              Math.abs(existing.x2 - calculated.x2) > 0.5 ||
+              Math.abs(existing.y2 - calculated.y2) > 0.5
+            ) {
+              newLines[domain.id] = calculated;
+              changed = true;
             }
           });
 
@@ -358,18 +363,19 @@ export function useSettingsPage() {
     // Watch for card and container resizes (e.g. when lazy-loaded card chunks mount and expand)
     let observer: ResizeObserver | null = null;
     if (typeof ResizeObserver !== "undefined" && containerRef.current) {
-      observer = new ResizeObserver(() => {
+      const cardObserver = new ResizeObserver(() => {
         calculate();
       });
-      observer.observe(containerRef.current);
+      observer = cardObserver;
+      cardObserver.observe(containerRef.current);
       DOMAINS.forEach((d) => {
         const el = document.getElementById(`card-${d.id}`);
-        if (el && observer) observer.observe(el);
+        if (el) cardObserver.observe(el);
       });
       const leftCar = document.getElementById("card-left-carousel");
-      if (leftCar && observer) observer.observe(leftCar);
+      if (leftCar) cardObserver.observe(leftCar);
       const rightCar = document.getElementById("card-right-carousel");
-      if (rightCar && observer) observer.observe(rightCar);
+      if (rightCar) cardObserver.observe(rightCar);
     }
 
     return () => {

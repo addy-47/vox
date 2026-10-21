@@ -1,6 +1,7 @@
 import { memo } from "react";
 import { AudioWaveform } from "lucide-react";
 import { useSettingsStore } from "@/store/settingsStore";
+import { useCatalogStore } from "@/store/catalogStore";
 import type { ModelStatus } from "@/shared/hooks/useModelDownloads";
 import { cn } from "@/shared/lib/utils";
 import { activeSelection } from "@/shared/lib/activeSelection";
@@ -47,10 +48,10 @@ export const TtsEngineGrid = memo(
   }: TtsEngineGridProps) => {
     const draftSettings = useSettingsStore((s) => s.draftSettings);
     const updateDraft = useSettingsStore((s) => s.updateDraft);
-    const modelCatalog = useSettingsStore((s) => s.modelCatalog);
+    const modelCatalog = useCatalogStore((s) => s.modelCatalog);
     if (!draftSettings || !modelCatalog) return null;
 
-    const activeTtsId = draftSettings.tts?.active?.model ?? "";
+    const activeTtsId = draftSettings.tts.active.model ?? "";
     const engines = (modelCatalog.tts || []).filter((model) => {
       if (model.is_remote) return false;
       if (facet === "local") return !model.is_cloud;

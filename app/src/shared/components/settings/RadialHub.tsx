@@ -7,6 +7,7 @@ import {
   type SettingsDomain as Domain,
   SETTINGS_COPY,
 } from "@/data/settingsCopy";
+import { getCarouselPair, SETTINGS_DOMAIN_SLOTS } from "./shared/settingsLayout";
 
 /* ─── Radial Node ──────────────────────────────────────────────────────────── */
 
@@ -18,7 +19,7 @@ interface RadialNodeProps {
   radiusY: number;
 }
 
-export const RadialNode = memo(({ domain, isActive, onSelect, radiusX, radiusY }: RadialNodeProps) => {
+const RadialNode = memo(({ domain, isActive, onSelect, radiusX, radiusY }: RadialNodeProps) => {
   const rad = (domain.angle * Math.PI) / 180;
   const pos = {
     x: radiusX * Math.cos(rad),
@@ -69,7 +70,7 @@ interface HubCenterProps {
   hasActiveCards: boolean;
 }
 
-export const HubCenter = memo(({ onClick, hasActiveCards }: HubCenterProps) => (
+const HubCenter = memo(({ onClick, hasActiveCards }: HubCenterProps) => (
   <Tooltip
     label={hasActiveCards ? SETTINGS_COPY.closeAllDomains : SETTINGS_COPY.openAllDomains}
     side="top"
@@ -135,7 +136,7 @@ interface HubConnectorsProps {
   radiusY: number;
 }
 
-export const HubConnectors = memo(({ activeDomains, radiusX, radiusY }: HubConnectorsProps) => {
+const HubConnectors = memo(({ activeDomains, radiusX, radiusY }: HubConnectorsProps) => {
   const maxRadius = Math.max(radiusX, radiusY);
   const size = maxRadius * 2 + 120;
   const cx = size / 2;
@@ -280,74 +281,61 @@ export const SettingsConnectorsOverlay = memo(({
   if (isSideCarousel) {
     const pathsToRender: { id: string; pathD: string; animDelay: number }[] = [];
 
-    if (activeDomains.includes("persona") && lines.persona) {
+    // Vertical connectors (12:00 / 6:00) keep their straight elbows. Order
+    // follows the hub's domain ring: top slot first.
+    const verticalIds = DOMAINS.filter(
+      (d) => SETTINGS_DOMAIN_SLOTS[d.id].connector === "vertical"
+    ).map((d) => d.id);
+    verticalIds.forEach((id, i) => {
+      const line = lines[id];
+      if (!activeDomains.includes(id) || !line) return;
       pathsToRender.push({
-        id: "persona",
-        pathD: `M ${lines.persona.x1} ${lines.persona.y1 - 20} L ${lines.persona.x2} ${lines.persona.y2}`,
-        animDelay: 0,
+        id,
+        pathD: `M ${line.x1} ${line.y1 + (i === 0 ? -20 : 20)} L ${line.x2} ${line.y2}`,
+        animDelay: i === 0 ? 0 : 0.36,
       });
-    }
+    });
 
-    if (activeDomains.includes("appearance") && lines.appearance) {
-      pathsToRender.push({
-        id: "appearance",
-        pathD: `M ${lines.appearance.x1} ${lines.appearance.y1 + 20} L ${lines.appearance.x2} ${lines.appearance.y2}`,
-        animDelay: 0.36,
-      });
-    }
+    // Both carousel pairs converge on one card per side, so draw a fork per
+    // side; a single open card keeps its own elbow. The left fork merges
+    // toward the card (-x), the right one toward +x.
+    const forks = ([
+      { side: "left", direction: -1 },
+      { side: "right", direction: 1 },
+    ] as const).map(({ side, direction }) => {
+      const [primaryId, secondaryId] = getCarouselPair(side);
+      return { side, direction, primaryId, secondaryId };
+    });
 
-    const line10 = lines.interaction;
-    const line8 = lines.speech;
-    const leftActive = activeDomains.includes("interaction") || activeDomains.includes("speech");
-    if (leftActive && (line10 || line8)) {
-      const nodeX = line10?.x1 ?? line8!.x1;
-      const cardX = line10?.x2 ?? line8!.x2;
-      const cy = (line10 && line8) ? (line10.y1 + line8.y1) / 2 : (line10 ? line10.y1 + 45 : line8!.y1 - 45);
-      const halfH = line10 ? Math.abs(cy - line10.y1) : 45;
+    for (const { side, direction, primaryId, secondaryId } of forks) {
+      const lineTop = lines[primaryId];
+      const lineBottom = lines[secondaryId];
+      const active = activeDomains.includes(primaryId) || activeDomains.includes(secondaryId);
+      if (!active || (!lineTop && !lineBottom)) continue;
+
+      const nodeX = lineTop?.x1 ?? lineBottom!.x1;
+      const cardX = lineTop?.x2 ?? lineBottom!.x2;
+      const cy =
+        lineTop && lineBottom
+          ? (lineTop.y1 + lineBottom.y1) / 2
+          : lineTop
+            ? lineTop.y1 + 45
+            : lineBottom!.y1 - 45;
+      const halfH = lineTop ? Math.abs(cy - lineTop.y1) : 45;
       const deltaX = Math.min(42, Math.max(26, Math.abs(nodeX - cardX) * 0.35));
-      const mergeX = nodeX - deltaX;
-      const diagLen = Math.hypot(deltaX, halfH);
-      const offX = (deltaX / diagLen) * 20;
-      const offY = (halfH / diagLen) * 20;
-
-      pathsToRender.push({
-        id: "left-fork-10",
-        pathD: `M ${nodeX - offX} ${cy - halfH + offY} L ${mergeX} ${cy} L ${cardX} ${cy}`,
-        animDelay: 0.12,
-      });
-      pathsToRender.push({
-        id: "left-fork-8",
-        pathD: `M ${nodeX - offX} ${cy + halfH - offY} L ${mergeX} ${cy} L ${cardX} ${cy}`,
-        animDelay: 0.24,
-      });
-    }
-
-    // The right side holds Memory (2:00) and Language (4:00). Both converge on
-    // the same carousel card, so draw a mirrored fork; a single open card keeps
-    // its own elbow.
-    const line2 = lines.memory;
-    const line4 = lines.language;
-    const rightActive =
-      activeDomains.includes("memory") || activeDomains.includes("language");
-    if (rightActive && (line2 || line4)) {
-      const nodeX = line2?.x1 ?? line4!.x1;
-      const cardX = line2?.x2 ?? line4!.x2;
-      const cy = line2 && line4 ? (line2.y1 + line4.y1) / 2 : line2 ? line2.y1 + 45 : line4!.y1 - 45;
-      const halfH = line2 ? Math.abs(cy - line2.y1) : 45;
-      const deltaX = Math.min(42, Math.max(26, Math.abs(nodeX - cardX) * 0.35));
-      const mergeX = nodeX + deltaX;
+      const mergeX = nodeX + direction * deltaX;
       const diagLen = Math.hypot(deltaX, halfH) || 1;
       const offX = (deltaX / diagLen) * 20;
       const offY = (halfH / diagLen) * 20;
 
       pathsToRender.push({
-        id: "right-fork-2",
-        pathD: `M ${nodeX + offX} ${cy - halfH + offY} L ${mergeX} ${cy} L ${cardX} ${cy}`,
+        id: `${side}-fork-top`,
+        pathD: `M ${nodeX + direction * offX} ${cy - halfH + offY} L ${mergeX} ${cy} L ${cardX} ${cy}`,
         animDelay: 0.12,
       });
       pathsToRender.push({
-        id: "right-fork-4",
-        pathD: `M ${nodeX + offX} ${cy + halfH - offY} L ${mergeX} ${cy} L ${cardX} ${cy}`,
+        id: `${side}-fork-bottom`,
+        pathD: `M ${nodeX + direction * offX} ${cy + halfH - offY} L ${mergeX} ${cy} L ${cardX} ${cy}`,
         animDelay: 0.24,
       });
     }
@@ -380,12 +368,13 @@ export const SettingsConnectorsOverlay = memo(({
         const line = lines[domain.id];
         if (!line) return null;
 
-        const isVertical = domain.id === "persona" || domain.id === "appearance";
+        const connector = SETTINGS_DOMAIN_SLOTS[domain.id].connector;
+        const isVertical = connector === "vertical";
         let nextX = line.x2;
 
         if (!isVertical) {
           const dx_mid = Math.abs(line.y2 - line.y1);
-          if (domain.id === "memory" || domain.id === "language") {
+          if (connector === "fork-left") {
             nextX = Math.min(line.x2, line.x1 + dx_mid);
           } else {
             nextX = Math.max(line.x2, line.x1 - dx_mid);

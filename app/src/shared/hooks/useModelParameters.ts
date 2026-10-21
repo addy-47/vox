@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
+import { useCatalogStore } from "@/store/catalogStore";
 import { updateModelParameters } from "@/services/settingsService";
 
 /** Debounce for coalescing rapid parameter edits (knob drags, typed input). */
@@ -12,8 +13,8 @@ const PARAM_WRITE_DEBOUNCE_MS = 500;
  * A null model id disables writes (controls render fallbacks instead).
  */
 export function useModelParameters(modelId: string | null | undefined) {
-  const catalogParams = useSettingsStore(
-    (s) => modelId ? s.modelCatalog?.model_parameters?.[modelId] : undefined
+  const catalogParams = useCatalogStore(
+    (s) => modelId ? s.modelCatalog?.model_parameters[modelId] : undefined
   );
   const loadModelCatalog = useSettingsStore((s) => s.loadModelCatalog);
   const [pending, setPending] = useState<Record<string, unknown>>({});

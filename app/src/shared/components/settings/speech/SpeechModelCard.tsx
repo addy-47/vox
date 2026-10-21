@@ -82,7 +82,9 @@ export const SpeechModelCard = memo<SpeechModelCardProps>(({
         <p className="text-[11px] leading-relaxed text-[rgb(var(--foreground))]">{description}</p>
       )}
       {ramUsage && (
-        <p className="font-mono text-[10.5px] text-[rgb(var(--foreground-muted))]">RAM {ramUsage}</p>
+        <p className="font-mono text-[10.5px] text-[rgb(var(--foreground-muted))]">
+          {MODEL_HUB_COPY.row.ramLabel} {ramUsage}
+        </p>
       )}
       {tradeoffs && (
         <p className="border-t border-[rgba(var(--foreground),0.08)] pt-1.5 text-[10.5px] italic leading-relaxed text-[rgb(var(--foreground-muted))]">

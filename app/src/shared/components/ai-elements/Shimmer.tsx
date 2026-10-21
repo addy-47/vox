@@ -18,7 +18,7 @@ const ShimmerComponent: React.FC<TextShimmerProps> = ({
   spread = 2,
 }) => {
   const dynamicSpread = useMemo(
-    () => (children?.length ?? 0) * spread,
+    () => (children.length ?? 0) * spread,
     [children, spread]
   );
 

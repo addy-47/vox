@@ -1,6 +1,7 @@
 import { memo } from "react";
 import { ArrowRight, Plus } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
+import { SETTINGS_COPY } from "@/data/settingsCopy";
 
 export interface AddCardProps {
   title: string;
@@ -30,7 +31,7 @@ export const AddCard = memo(({
   onClick,
   variant = "row",
   footnote,
-  actionLabel = "+ Configure",
+  actionLabel = SETTINGS_COPY.addCardAction,
   className,
 }: AddCardProps) => {
   if (variant === "row") {

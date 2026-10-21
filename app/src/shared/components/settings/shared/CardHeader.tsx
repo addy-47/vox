@@ -5,6 +5,7 @@ import { ArrowDownAZ, ArrowLeft, ArrowUpAZ, Filter, Search, X } from "lucide-rea
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { Tooltip } from "@/shared/ui/Tooltip";
+import { useOverlay } from "@/shared/hooks/useOverlay";
 import { CARD_HEADER_COPY } from "@/data/settingsCopy";
 
 /**
@@ -87,31 +88,6 @@ export const CardHeader = memo(function CardHeader({
   useEffect(() => {
     if (search?.open) searchInputRef.current?.focus();
   }, [search?.open]);
-
-  // Latest filter callbacks without re-binding the listeners every render.
-  const onFilterCloseRef = useRef<(() => void) | null>(null);
-  onFilterCloseRef.current = filter?.onClose ?? null;
-
-  // Outside pointerdown and Escape close the filter popover (Tier 1 popover).
-  const filterOpen = filter?.open ?? false;
-  useEffect(() => {
-    if (!filterOpen) return;
-    const handleDown = (e: PointerEvent) => {
-      const target = e.target as Node;
-      const inTrigger = filterRef.current?.contains(target) ?? false;
-      const inPopover = popoverRef.current?.contains(target) ?? false;
-      if (!inTrigger && !inPopover) onFilterCloseRef.current?.();
-    };
-    const handleKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onFilterCloseRef.current?.();
-    };
-    document.addEventListener("pointerdown", handleDown);
-    document.addEventListener("keydown", handleKey);
-    return () => {
-      document.removeEventListener("pointerdown", handleDown);
-      document.removeEventListener("keydown", handleKey);
-    };
-  }, [filterOpen]);
 
   const searchActive = Boolean(search && (search.open || search.value.length > 0));
 
@@ -204,6 +180,7 @@ export const CardHeader = memo(function CardHeader({
                     menu={filter.menu}
                     anchorRef={filterRef}
                     panelRef={popoverRef}
+                    onClose={filter.onClose}
                   />
                 )}
               </div>
@@ -268,12 +245,26 @@ export const CardPopover = memo(function CardPopover({
   menu,
   anchorRef,
   panelRef,
+  onClose,
 }: {
   menu: React.ReactNode;
   anchorRef: React.RefObject<HTMLElement | null>;
   panelRef: React.RefObject<HTMLDivElement | null>;
+  /** Dismissal callback: Escape and outside-press route through the overlay stack. */
+  onClose: () => void;
 }) {
   const [style, setStyle] = useState<CSSProperties | null>(null);
+
+  // Registered on the global overlay stack: Escape and outside-press close the
+  // popover with app-wide FILO semantics instead of per-surface listeners.
+  useOverlay({
+    onClose,
+    ref: panelRef,
+    dismissOnOutside: true,
+    shouldDismissOnPointerDown: (target) =>
+      !(anchorRef.current?.contains(target) ?? false) &&
+      !(panelRef.current?.contains(target) ?? false),
+  });
 
   useEffect(() => {
     const anchor = anchorRef.current;

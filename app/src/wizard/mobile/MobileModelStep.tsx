@@ -185,7 +185,7 @@ export const MobileModelStep: React.FC<MobileModelStepProps> = ({
   const failedFiles = useMemo(() => {
     return selectedFiles.filter((f) => {
       const p = progress[f.id];
-      const step = p?.step?.toLowerCase();
+      const step = p.step.toLowerCase();
       return step === 'failed' || step === 'cancelled';
     });
   }, [selectedFiles, progress]);
@@ -216,7 +216,7 @@ export const MobileModelStep: React.FC<MobileModelStepProps> = ({
       const isCatDone =
         catFiles.length > 0 &&
         catFiles.every((f) => {
-          const step = progress[f.id]?.step?.toLowerCase();
+          const step = progress[f.id].step.toLowerCase();
           return step === 'completed' || step === 'complete';
         });
 
@@ -260,7 +260,7 @@ export const MobileModelStep: React.FC<MobileModelStepProps> = ({
     return selectedFiles.reduce((sum, f) => {
       const p = progress[f.id];
       if (!p) return sum;
-      const step = p.step?.toLowerCase();
+      const step = p.step.toLowerCase();
       if (step === 'completed' || step === 'complete') {
         return sum + f.size;
       }
@@ -279,11 +279,11 @@ export const MobileModelStep: React.FC<MobileModelStepProps> = ({
   useEffect(() => {
     if (!isDownloading || isDone || selectedFiles.length === 0) return;
     const allCompleted = selectedFiles.every((f) => {
-      const step = progress[f.id]?.step?.toLowerCase();
+      const step = progress[f.id].step.toLowerCase();
       return step === 'completed' || step === 'complete';
     });
     const allFinished = selectedFiles.every((f) => {
-      const step = progress[f.id]?.step?.toLowerCase();
+      const step = progress[f.id].step.toLowerCase();
       return step === 'completed' || step === 'complete' || step === 'failed' || step === 'cancelled';
     });
     if (!allCompleted && !allFinished) return;
@@ -637,11 +637,11 @@ export const MobileModelStep: React.FC<MobileModelStepProps> = ({
                             const firstFile = group.files[0];
                             const modelProg = firstFile ? progress[firstFile.id] : undefined;
                             const isGroupFailed = group.files.some((f) => {
-                              const s = progress[f.id]?.step?.toLowerCase();
+                              const s = progress[f.id].step.toLowerCase();
                               return s === 'failed' || s === 'cancelled';
                             });
                             const isGroupDone = group.files.length > 0 && group.files.every((f) => {
-                              const s = progress[f.id]?.step?.toLowerCase();
+                              const s = progress[f.id].step.toLowerCase();
                               return s === 'completed' || s === 'complete';
                             });
 

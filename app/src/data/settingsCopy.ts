@@ -95,17 +95,17 @@ export interface DomainDirtyKey {
  * `vad_backend` (engine-owned) are excluded on purpose: a card that owns the
  * vad scope must never report dirty for them.
  */
-export const VAD_USER_FACING_KEYS = [
+const VAD_USER_FACING_KEYS = [
   "threshold",
   "silence_duration_ms",
   "speech_onset_ms",
 ] as const;
 
 /** The STT keys the models card owns: model selection only. */
-export const STT_MODEL_KEYS = ["active", "last_selected"] as const;
+const STT_MODEL_KEYS = ["active", "last_selected"] as const;
 
 /** The STT key the interaction card owns: script transliteration. */
-export const TRANSLITERATION_KEYS = ["transliterate_enabled"] as const;
+const TRANSLITERATION_KEYS = ["transliterate_enabled"] as const;
 
 export const DOMAIN_DIRTY_KEYS: Record<SettingsDomainId, readonly DomainDirtyKey[]> = {
   // The speech card owns model selection for every stage, plus the detection
@@ -200,13 +200,20 @@ export const SETTINGS_COPY = {
   saveFailedNone: "The setting was rejected by the backend and was not applied.",
   restartingEngine: "Restarting engine...",
   apiKeyRequired: "API Key Required for Cloud Provider",
+  /** Detail line for the missing-credential banner. */
+  apiKeyRequiredDetail:
+    "Enter and save an API key for the selected provider to enable cloud inference.",
   applyAndRestart: "Apply & Restart",
+  /** Icon-only variant of the commit button (small / mobile layouts). */
+  restartOnly: "Restart",
   restoreDefaults: "Restore All Defaults",
   restoreAria: "Restore default settings",
   openDomain: "Open {label} settings",
   closeDomain: "Close {label} settings",
   openAllDomains: "Open all settings",
   closeAllDomains: "Clear all settings",
+  /** Trailing CTA on the dashed `AddCard` tile variant. */
+  addCardAction: "+ Configure",
 };
 
 export const DICTATION_COPY = {
@@ -234,14 +241,6 @@ export const DICTATION_COPY = {
   defaultHotkey: "Alt+V",
 };
 
-export const CATEGORY_SWITCH_COPY = {
-  tabs: {
-    stt: "Listening",
-    llm: "Reasoning",
-    tts: "Speaking",
-  },
-};
-
 export const PERSONA_COPY = {
   cardTitle: "Persona",
   tabModular: "Modular",
@@ -253,6 +252,18 @@ export const PERSONA_COPY = {
 };
 
 export const PROVIDERS_CONFIG_DESK_COPY = {
+  /** Header filter popover in the provider catalog. */
+  filterLabel: "Filter providers",
+  filterMenuTitle: "Provider Filters",
+  reset: "Reset",
+  /** Dashed add-card copy in the provider catalog. */
+  creationCard: {
+    addVoiceServer: "Add Voice Server",
+    addCustomServer: "Add Custom Server",
+    voiceServerDescription: "Connect Chatterbox GPU node or remote synthesis host.",
+    customServerDescription: "Connect self-hosted Ollama, vLLM, or LM Studio endpoint.",
+    selfHostedFootnote: "Self-Hosted",
+  },
   integrated: {
     title: "Integrated Voice Engine",
     description: "Streaming STT, LLM inference, and TTS audio synthesis run tightly coupled in unified process memory for minimal perceived latency.",
@@ -510,33 +521,6 @@ export const VOICE_CATALOG_COPY = {
   filtersTitle: "Filters",
 } as const;
 
-export const VOICE_CAROUSEL_COPY = {
-  namePlaceholder: "Enter voice name...",
-  chooseFile: "Choose WAV File",
-  fileSelected: "File Selected:",
-  stopRecording: "Stop Recording",
-  recordVoice: "Record Voice",
-  cancel: "Cancel",
-  cloning: "Cloning...",
-  processing: "Processing...",
-  cloneVoice: "Clone Voice",
-  searchPlaceholder: "Search voice...",
-  clear: "Clear",
-  closeSearch: "Close search",
-  searchVoices: "Search Voices",
-  searchVoice: "Search Voice",
-  saveVoiceName: "Save voice name",
-  cancelRename: "Cancel rename",
-  noVoice: "No Voice",
-  renameCustomVoice: "Rename Custom Voice",
-  renameVoice: "Rename voice",
-  deleteCustomVoice: "Delete Custom Voice",
-  deleteVoice: "Delete voice",
-  cloneVoiceProfile: "Clone Voice Profile",
-  prevVoice: "Previous Voice",
-  nextVoice: "Next Voice",
-} as const;
-
 export const LLM_CATALOG_COPY = {
   catalogTitle: "Available Models",
   catalogAriaLabel: "Browse all available models",
@@ -590,35 +574,17 @@ export const LLM_CATALOG_COPY = {
   modalEmptyHint: "No available models match your current search & filter criteria.",
   providerModalEmptyTitle: "No providers found",
   providerModalEmptyHint: "No providers match your search query or filter.",
-} as const;
-
-export const REMOTE_SERVER_COPY = {
-  bannerTitle: "Chatterbox Remote Deployment",
-  bannerBody:
-    "Deploy Chatterbox on a remote CUDA-accelerated GPU host (e.g. RunPod, Vast.ai, or homelab) to offload memory-intensive flow-matching voice synthesis. Enter your SSH connection info below to automatically sync the codebase, download GGUF models, and run the server.",
-  panelTitle: "Remote GPU Server",
-  online: "Online / Connected",
-  offline: "Offline / Unconfigured",
-  hostLabel: "SSH Host / Profile",
-  hostPlaceholder: "user@hostname",
-  portLabel: "SSH Port",
-  portPlaceholder: "22",
-  keyLabel: "Identity Key Path",
-  keyPlaceholder: "~/.ssh/id_rsa",
-  steps: {
-    initiating: "Initializing Setup...",
-    connecting: "Testing SSH Connection...",
-    deploying: "Configuring Remote Server...",
-    starting_service: "Starting Chatterbox Service...",
-    verifying: "Verifying Health Endpoint...",
-    complete: "Setup Completed Successfully",
-    failed: "Setup Failed",
-  } as Record<string, string>,
-  footerReady: "Ready to synthesize flow-matching audio.",
-  footerBusy: "Syncs scripts and installs PyTorch CUDA on remote host.",
-  deployed: "Deployed & Active",
-  deploying: "Deploying...",
-  deploy: "Deploy Chatterbox Server",
+  /** Title of the modal's providers (cloud connectors) view. */
+  providersViewTitle: "Cloud Providers",
+  /** Count line in the providers view: "Connectors · 5". */
+  connectorsLabel: "Connectors",
+  modelsModalSubtitle: "Explore, probe, and select remote models for conversation.",
+  providersModalSubtitle: "Configure external AI model endpoints and authentication keys.",
+  onDeviceTitle: "On-device models",
+  noLocalModelsTitle: "No local models installed",
+  noLocalModelsHint: "Download a model from the speech card or the setup guide.",
+  badgeBuiltIn: "Built-in",
+  badgeOnDevice: "On-device",
 } as const;
 
 /** The three LLM knobs, shown as glyphs in the model catalog header. */
@@ -663,6 +629,14 @@ export const LANGUAGE_CARD_COPY = {
   localPrivate: "Local GGUF · private",
   saveKey: "Save key",
   cancel: "Cancel",
+  /** Row meta prefixes, before the " · " separator. */
+  metaLocal: "Local",
+  metaSelfHosted: "Self-hosted",
+  metaCloud: "Cloud",
+  /** Inline key editor placeholder/aria, appended after the provider name. */
+  keyPlaceholder: "API key",
+  /** Fallback name for an unnamed custom server row. */
+  customServerFallback: "Custom Server",
 } as const;
 
 export const SPEECH_CARD_COPY = {
@@ -717,6 +691,8 @@ export const MODEL_HUB_COPY = {
     builtIn: "Built in",
     builtInNote: "Built into the app binary (cannot be deleted)",
     specs: "Specs",
+    /** Footprint label on the model row meta line. */
+    ramLabel: "RAM",
   },
 };
 
@@ -729,28 +705,6 @@ export const DIRTY_STATE_COPY = {
 export const CUSTOM_VALUE_COPY = {
   placeholder: "Custom",
 } as const;
-
-export const LLM_SETTINGS_COPY = {
-  tabs: {
-    tokens: "Response",
-    context: "Context",
-    creativity: "Creativity",
-  },
-  tokens: {
-    title: "Token Limit",
-    native: "Native",
-    description: "Maximum output token budget per conversational turn.",
-  },
-  context: {
-    title: "Context Window",
-    description:
-      "Token budget allocated for conversation history, system persona instructions, and memory facts.",
-  },
-  creativity: {
-    title: "Creativity",
-    description: "Controls randomness and creativity of generated text responses.",
-  },
-};
 
 export const APPEARANCE_COPY = {
   cardTitle: "Appearance",
@@ -785,65 +739,6 @@ export const TRANSLITERATION_COPY = {
   enabled: "Enabled",
   disabled: "Disabled",
   toggleAria: "Toggle script transliteration",
-} as const;
-
-export const STT_SETTINGS_COPY = {
-  tabs: {
-    transliteration: "Transliterate",
-  },
-};
-
-export const PROVIDERS_HEADER_COPY = {
-  customButton: "+ Custom",
-  customAria: "Configure custom server endpoint",
-  comingSoon: "Coming soon",
-  customConfigTitle: "Custom Server Configuration",
-  customConfigSubtitle: "Connect to a self-hosted or dedicated inference node",
-  filterAria: "Toggle provider filters",
-  sortAsc: "Sort A to Z",
-  sortDesc: "Sort Z to A",
-  searchPlaceholder: "Search providers...",
-  back: "Back",
-  closeSearch: "Close search",
-  clearSearch: "Clear search",
-  search: "Search",
-} as const;
-
-export const PIPELINE_PROVIDERS_DESK_COPY = {
-  cardTitle: "Providers",
-  sectionTitle: "Inference Pipeline",
-  sectionSubtitle: "Configure stages for listening, reasoning, and speaking.",
-  configureAriaPrefix: "Configure",
-  selectProvider: "Select a provider",
-  onDevice: "On-Device",
-  customServer: "Custom Server",
-  notSelected: "Not selected",
-  providerCount: "{count} providers",
-  cards: {
-    stt: {
-      title: "Speech Recognition",
-      shortLabel: "Listening",
-      role: "Acoustic Hearing",
-      defaultOnDevice: "On-Device",
-      cloud: "Cloud Speech",
-    },
-    llm: {
-      title: "Intelligence",
-      shortLabel: "Reasoning",
-      role: "Knowledge & Logic",
-      defaultOnDevice: "On-Device GGUF",
-      server: "Custom Server",
-      cloud: "Cloud Provider",
-    },
-    tts: {
-      title: "Voice Synthesis",
-      shortLabel: "Speaking",
-      role: "Speech Generation",
-      defaultOnDevice: "Built-in Voices",
-      remote: "Remote GPU",
-      cloud: "Cloud Voices",
-    },
-  },
 } as const;
 
 export const PROVIDER_GUIDE_COPY = {

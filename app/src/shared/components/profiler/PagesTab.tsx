@@ -149,12 +149,12 @@ export const PagesTab: React.FC<PagesTabProps> = ({
               {TRACKED_PAGES.map((page) => {
                 const rec = pageRecords[page.route];
                 const isCurrent = currentRoute === page.route;
-                const baselineMb = rec?.baseline?.total_vox_ram_mb;
-                const currentMb = rec?.current?.total_vox_ram_mb;
-                const peakMb = rec?.peak?.total_vox_ram_mb;
-                const peakDelta = rec?.peakDeltaMb;
-                const retainedMb = rec?.retained?.total_vox_ram_mb;
-                const retainedDelta = rec?.retainedDeltaMb;
+                const baselineMb = rec.baseline?.total_vox_ram_mb;
+                const currentMb = rec.current?.total_vox_ram_mb;
+                const peakMb = rec.peak?.total_vox_ram_mb;
+                const peakDelta = rec.peakDeltaMb;
+                const retainedMb = rec.retained?.total_vox_ram_mb;
+                const retainedDelta = rec.retainedDeltaMb;
 
                 // Risk is only stated once a retention sample exists. Before
                 // that this rendered a confident "Normal" over a number that had
@@ -223,7 +223,7 @@ export const PagesTab: React.FC<PagesTabProps> = ({
                         <span className="text-[11px] font-mono px-2 py-0.5 rounded-md bg-[rgb(var(--accent))]/20 text-[rgb(var(--accent))] border border-[rgb(var(--accent))]/30">
                           {PROFILER_COPY.pages.statusActive}
                         </span>
-                      ) : rec?.unmountedAt ? (
+                      ) : rec.unmountedAt ? (
                         <span className="text-[11px] font-mono px-2 py-0.5 rounded-md bg-[rgba(var(--foreground-muted),0.15)] text-[rgb(var(--foreground-muted))]">
                           {PROFILER_COPY.pages.statusUnmounted}
                         </span>

@@ -34,7 +34,7 @@ export interface CatalogProbingEntry {
  * cached result (kind|url|key presence); `null` means nothing is cached, so
  * the next load retries.
  */
-export interface ProviderRemoteModelsStatus {
+interface ProviderRemoteModelsStatus {
   status: "idle" | "loading" | "ready" | "error";
   error: string | null;
   /** Identity of the cached result. `null` when nothing is cached. */
@@ -118,7 +118,7 @@ function resolveProviderTarget(
   const draft = settingsState.draftSettings ?? null;
   const committed = settingsState.settings ?? null;
 
-  const contractEntry = settingsState.contract?.llm_cloud_providers?.find(
+  const contractEntry = settingsState.contract?.llm_cloud_providers.find(
     (p) => p.id === providerId
   );
   const storeEntry = cloudProviders.find((p) => p.id === providerId);
@@ -182,7 +182,6 @@ export const useCatalogStore = create<CatalogState>((set, get) => ({
     try {
       const catalog = await requestModelCatalog();
       set({ modelCatalog: catalog });
-      useSettingsStore.setState({ modelCatalog: catalog });
     } catch (err) {
       console.error("Failed to load model catalog:", err);
     }
@@ -277,7 +276,7 @@ export const useCatalogStore = create<CatalogState>((set, get) => ({
     providerConfig?: LlmProviderConfig,
     force = false
   ) => {
-    const id = providerId?.trim() ?? "";
+    const id = providerId.trim() ?? "";
     if (!id) return;
 
     const target = resolveProviderTarget(id, providerConfig, get().cloudProviders);
@@ -288,9 +287,9 @@ export const useCatalogStore = create<CatalogState>((set, get) => ({
       const currentModels = get().remoteModelsByProvider[id];
       // Already degraded the same way: no new object identities, no re-render.
       if (
-        current?.status === "error" &&
+        current.status === "error" &&
         current.error === error &&
-        currentModels?.length === 0
+        currentModels.length === 0
       ) {
         return;
       }
@@ -320,7 +319,7 @@ export const useCatalogStore = create<CatalogState>((set, get) => ({
 
     const fetchKey = `${target.kind}|${id}|${target.base_url}|${target.api_key ? "key" : "nokey"}`;
     const cached = get().remoteModelsStatusByProvider[id];
-    if (!force && cached?.status === "ready" && cached.fetchedKey === fetchKey) {
+    if (!force && cached.status === "ready" && cached.fetchedKey === fetchKey) {
       return;
     }
 
@@ -341,7 +340,7 @@ export const useCatalogStore = create<CatalogState>((set, get) => ({
     set((state) => ({
       remoteModelsStatusByProvider: {
         ...state.remoteModelsStatusByProvider,
-        [id]: { status: "loading", error: null, fetchedKey: cached?.fetchedKey ?? null },
+        [id]: { status: "loading", error: null, fetchedKey: cached.fetchedKey ?? null },
       },
     }));
 
@@ -382,7 +381,7 @@ export const useCatalogStore = create<CatalogState>((set, get) => ({
   },
 
   invalidateRemoteModelsForProvider: (providerId: string) => {
-    const id = providerId?.trim() ?? "";
+    const id = providerId.trim() ?? "";
     if (!id) return;
     set((state) => {
       const models = { ...state.remoteModelsByProvider };

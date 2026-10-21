@@ -31,12 +31,12 @@ export const RealtimeConfigDesk = memo(({ layoutMode }: RealtimeConfigDeskProps)
   const [editingKeyValue, setEditingKeyValue] = useState("");
 
   const currentProviderId =
-    draftSettings?.realtime?.active?.provider || realtimeProviders[0]?.id || "";
+    draftSettings?.realtime.active.provider || realtimeProviders[0]?.id || "";
 
   /** API keys: draft vehicle first, then the committed providers file. */
   const realtimeKeys = useMemo(
-    () => draftSettings?.realtime?.api_keys ?? draftSettings?.providers?.realtime?.api_keys ?? {},
-    [draftSettings?.realtime?.api_keys, draftSettings?.providers?.realtime?.api_keys]
+    () => draftSettings?.realtime.api_keys ?? draftSettings?.providers?.realtime.api_keys ?? {},
+    [draftSettings?.realtime.api_keys, draftSettings?.providers?.realtime.api_keys]
   );
 
   const getProviderKey = useCallback(
@@ -54,12 +54,12 @@ export const RealtimeConfigDesk = memo(({ layoutMode }: RealtimeConfigDeskProps)
         {
           category: "cloud",
           provider: providerId,
-          model: draftSettings?.realtime?.active?.model ?? "",
+          model: draftSettings?.realtime.active.model ?? "",
         },
         "interaction"
       );
     },
-    [draftSettings?.realtime?.active?.model, updateDraft]
+    [draftSettings?.realtime.active.model, updateDraft]
   );
 
   const handleStartInlineEdit = useCallback(
@@ -115,7 +115,7 @@ export const RealtimeConfigDesk = memo(({ layoutMode }: RealtimeConfigDeskProps)
             currentProviderId === provider.id || currentProviderId === provider.subkey;
           const savedKey = getProviderKey(provider.id);
           const isEditing = editingProviderId === provider.id;
-          const hasKey = Boolean(savedKey?.trim());
+          const hasKey = Boolean(savedKey.trim());
 
           return (
             <div

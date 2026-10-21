@@ -29,7 +29,7 @@ const EngineVoices = memo(({ engine, onDone }: { engine: string; onDone: () => v
   return (
     <VoiceModal
       catalog={catalog}
-      voiceScope={(scope?.voice_provider || engine || "").toLowerCase()}
+      voiceScope={(scope.voice_provider || engine || "").toLowerCase()}
       canClone={ready && scope.can_clone}
       cloudSync={ready && scope.cloud_sync}
       onCommit={() => onDone()}

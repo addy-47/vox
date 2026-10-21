@@ -137,7 +137,9 @@ export const VadSettingsPanel = memo(
               { label: "70%", value: 0.7 },
             ]}
             selectedValue={
-              thresholdCustom ? Number.NaN : [0.3, 0.5, 0.7].find((v) => Math.abs(currentThreshold - v) < 0.04)!
+              thresholdCustom
+                ? Number.NaN
+                : ([0.3, 0.5, 0.7].find((v) => Math.abs(currentThreshold - v) < 0.04) ?? Number.NaN)
             }
             onSelect={(value) => write("threshold", value)}
             customSelected={thresholdCustom}

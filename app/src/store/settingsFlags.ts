@@ -133,8 +133,8 @@ export function checkCategoryDirty(
   if (!settings || !draftSettings) return false;
 
   const scope = category.toLowerCase() as keyof VoxSettings;
-  const draftScope = scopeEntries(draftSettings?.[scope]);
-  const savedScope = scopeEntries(settings?.[scope]);
+  const draftScope = scopeEntries(draftSettings[scope]);
+  const savedScope = scopeEntries(settings[scope]);
 
   if (!draftScope && !savedScope) return false;
   if (!draftScope || !savedScope) return true;

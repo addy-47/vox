@@ -28,7 +28,7 @@ export interface ProviderGridProps {
 export const ProviderGrid = memo(({ onOpenModels }: ProviderGridProps) => {
   const draftSettings = useSettingsStore(useShallow((s) => s.draftSettings));
   const committedSettings = useSettingsStore(useShallow((s) => s.settings));
-  const modelCatalog = useSettingsStore((s) => s.modelCatalog);
+  const modelCatalog = useCatalogStore((s) => s.modelCatalog);
   const updateDraft = useSettingsStore((s) => s.updateDraft);
   const cloudProviders = useCatalogStore((s) => s.cloudProviders);
   const { open } = useExpandableList();
@@ -37,15 +37,15 @@ export const ProviderGrid = memo(({ onOpenModels }: ProviderGridProps) => {
   const [keyValue, setKeyValue] = useState("");
   const [savingKey, setSavingKey] = useState(false);
 
-  const active = draftSettings?.llm?.active;
+  const active = draftSettings?.llm.active;
   const activeCategory = active?.category ?? "embedded";
   const localModelId =
-    draftSettings?.llm?.last_selected?.embedded ??
+    draftSettings?.llm.last_selected.embedded ??
     (activeCategory === "embedded" ? active?.model : undefined) ??
     "";
 
   const localModelName = useMemo(() => {
-    const match = modelCatalog?.llm?.find((m) => m.id === localModelId);
+    const match = modelCatalog?.llm.find((m) => m.id === localModelId);
     return match?.name ?? "";
   }, [modelCatalog?.llm, localModelId]);
 
@@ -72,33 +72,30 @@ export const ProviderGrid = memo(({ onOpenModels }: ProviderGridProps) => {
    * thing: it decides what the model catalog shows, never the order here.
    */
   const savedKey = useMemo(() => {
-    const saved = committedSettings?.llm?.active;
+    const saved = committedSettings?.llm.active;
     if (!saved) return "local";
     if (saved.category === "cloud") return `cloud:${saved.provider ?? ""}`;
     if (saved.category === "server") return `server:${saved.provider ?? ""}`;
     return "local";
-  }, [committedSettings?.llm?.active]);
+  }, [committedSettings?.llm.active]);
 
   const selectLocal = () => {
-    useSettingsStore.getState().clearRemoteModelsError();
+    useCatalogStore.getState().clearRemoteModelsError();
     updateDraft("llm", "active", activeSelection("embedded", localModelId));
-    window.dispatchEvent(new CustomEvent("sync_pipeline_tab", { detail: "llm" }));
     onOpenModels();
   };
 
   const selectCloud = (providerId: string) => {
-    useSettingsStore.getState().clearRemoteModelsError();
+    useCatalogStore.getState().clearRemoteModelsError();
     // Same contract as the provider modal: keep the current model id until the
     // catalog selection replaces it.
     updateDraft("llm", "active", activeSelection("cloud", active?.model ?? "", providerId));
-    window.dispatchEvent(new CustomEvent("sync_pipeline_tab", { detail: "llm" }));
     onOpenModels();
   };
 
   const selectServer = (serverId: string, model: string) => {
-    useSettingsStore.getState().clearRemoteModelsError();
+    useCatalogStore.getState().clearRemoteModelsError();
     updateDraft("llm", "active", activeSelection("server", model, serverId));
-    window.dispatchEvent(new CustomEvent("sync_pipeline_tab", { detail: "llm" }));
     onOpenModels();
   };
 
@@ -110,11 +107,15 @@ export const ProviderGrid = memo(({ onOpenModels }: ProviderGridProps) => {
     setSavingKey(true);
     try {
       const keys = {
-        ...(draftSettings?.llm?.cloud_keys ?? {}),
+        ...(draftSettings?.llm.cloud_keys ?? {}),
         [providerId]: trimmed,
       };
       updateDraft("llm", "cloud_keys", keys);
       await useSettingsStore.getState().commitChanges({ domain: "llm", key: "cloud_keys" });
+      // A rejected write keeps the editor open: the footer banner names the
+      // failed key and the typed value stays editable instead of vanishing.
+      const failed = useSettingsStore.getState().failedSaveDomains.language ?? [];
+      if (failed.length > 0) return;
       setEditingKeyId(null);
       setKeyValue("");
     } finally {
@@ -135,7 +136,11 @@ export const ProviderGrid = memo(({ onOpenModels }: ProviderGridProps) => {
             id="embedded"
             name={LANGUAGE_CARD_COPY.onDevice}
             leading={<VoxLogoLoader size={28} animated={false} decorative />}
-            meta={localModelName ? `Local · ${localModelName}` : LANGUAGE_CARD_COPY.localPrivate}
+            meta={
+              localModelName
+                ? `${LANGUAGE_CARD_COPY.metaLocal} · ${localModelName}`
+                : LANGUAGE_CARD_COPY.localPrivate
+            }
             active={activeCategory === "embedded"}
             onSelect={selectLocal}
           />
@@ -146,12 +151,12 @@ export const ProviderGrid = memo(({ onOpenModels }: ProviderGridProps) => {
         node: (
           <ProviderPill
             id={server.id}
-            name={server.name || "Custom Server"}
+            name={server.name || LANGUAGE_CARD_COPY.customServerFallback}
             providerName={server.name}
             meta={
-              activeCategory === "server" && active?.provider === server.id && active?.model
-                ? `Self-hosted · ${active.model}`
-                : `Self-hosted · ${server.model || replaceProtocol(server.url)}`
+              activeCategory === "server" && active?.provider === server.id && active.model
+                ? `${LANGUAGE_CARD_COPY.metaSelfHosted} · ${active.model}`
+                : `${LANGUAGE_CARD_COPY.metaSelfHosted} · ${server.model || replaceProtocol(server.url)}`
             }
             active={activeCategory === "server" && active?.provider === server.id}
             onSelect={() => selectServer(server.id, server.model || "")}
@@ -166,8 +171,8 @@ export const ProviderGrid = memo(({ onOpenModels }: ProviderGridProps) => {
             name={provider.name}
             logo={provider.logo ?? null}
             meta={
-              activeCategory === "cloud" && active?.provider === provider.id && active?.model
-                ? `Cloud · ${active.model}`
+              activeCategory === "cloud" && active?.provider === provider.id && active.model
+                ? `${LANGUAGE_CARD_COPY.metaCloud} · ${active.model}`
                 : LANGUAGE_CARD_COPY.keySaved
             }
             active={activeCategory === "cloud" && active?.provider === provider.id}
@@ -254,8 +259,8 @@ export const ProviderGrid = memo(({ onOpenModels }: ProviderGridProps) => {
                   void saveKey();
                 }
               }}
-              placeholder={`${provider.name} API key`}
-              aria-label={`${provider.name} API key`}
+              placeholder={`${provider.name} ${LANGUAGE_CARD_COPY.keyPlaceholder}`}
+              aria-label={`${provider.name} ${LANGUAGE_CARD_COPY.keyPlaceholder}`}
               className="min-w-0 flex-1 bg-transparent text-[12px] text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/60 focus:outline-none"
             />
           ) : undefined

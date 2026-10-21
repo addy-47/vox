@@ -1,6 +1,7 @@
 import { memo, useMemo, useState } from "react";
 import { Cpu } from "lucide-react";
 import { useSettingsStore } from "@/store/settingsStore";
+import { useCatalogStore } from "@/store/catalogStore";
 import { useModelDownloads } from "@/shared/hooks/useModelDownloads";
 import { activeSelection } from "@/shared/lib/activeSelection";
 import { CardHeader, type CardSortOrder } from "../shared/CardHeader";
@@ -19,7 +20,7 @@ export interface LocalModelsViewProps {
  * appears here — this face answers "what can run right now".
  */
 export const LocalModelsView = memo(({ layoutMode, onBack }: LocalModelsViewProps) => {
-  const modelCatalog = useSettingsStore((s) => s.modelCatalog);
+  const modelCatalog = useCatalogStore((s) => s.modelCatalog);
   const draftSettings = useSettingsStore((s) => s.draftSettings);
   const committedSettings = useSettingsStore((s) => s.settings);
   const updateDraft = useSettingsStore((s) => s.updateDraft);
@@ -37,8 +38,8 @@ export const LocalModelsView = memo(({ layoutMode, onBack }: LocalModelsViewProp
   const [searchOpen, setSearchOpen] = useState(false);
   const [sort, setSort] = useState<CardSortOrder>("az");
 
-  const committedLocalId = committedSettings?.llm?.active?.model ?? "";
-  const selectedLocalId = draftSettings?.llm?.active?.model ?? "";
+  const committedLocalId = committedSettings?.llm.active.model ?? "";
+  const selectedLocalId = draftSettings?.llm.active.model ?? "";
 
   const models = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -71,7 +72,7 @@ export const LocalModelsView = memo(({ layoutMode, onBack }: LocalModelsViewProp
     <div className="flex h-full min-h-0 w-full flex-col animate-fade-in">
       <CardHeader
         icon={<Cpu size={14} className="text-[rgb(var(--accent))]" />}
-        title="On-device models"
+        title={LLM_CATALOG_COPY.onDeviceTitle}
         onBack={onBack}
         action={<LlmTuningControls />}
         sort={{
@@ -98,10 +99,10 @@ export const LocalModelsView = memo(({ layoutMode, onBack }: LocalModelsViewProp
         {models.length === 0 ? (
           <div className="py-8 text-center text-[12px] text-[rgb(var(--foreground-muted))]/70">
             <p className="font-semibold text-[rgb(var(--foreground))]/80">
-              {search ? `${LLM_CATALOG_COPY.noModelsMatch} "${search}"` : "No local models installed"}
+              {search ? `${LLM_CATALOG_COPY.noModelsMatch} "${search}"` : LLM_CATALOG_COPY.noLocalModelsTitle}
             </p>
             <p className="mt-1 text-[11px]">
-              {search ? LLM_CATALOG_COPY.clearSearch : "Download a model from the speech card or the setup guide."}
+              {search ? LLM_CATALOG_COPY.clearSearch : LLM_CATALOG_COPY.noLocalModelsHint}
             </p>
           </div>
         ) : (
@@ -121,7 +122,9 @@ export const LocalModelsView = memo(({ layoutMode, onBack }: LocalModelsViewProp
                 parameters={model.parameters || ""}
                 ramUsage={model.ram_usage}
                 tradeoffs={model.tradeoffs}
-                badge={model.is_built_in ? "Built-in" : "On-device"}
+                badge={
+                  model.is_built_in ? LLM_CATALOG_COPY.badgeBuiltIn : LLM_CATALOG_COPY.badgeOnDevice
+                }
                 isDownloaded={Boolean(model.is_built_in || modelPresence[model.id])}
                 isActive={selectedLocalId === model.id}
                 isRequired={isGroupRequired(model.id)}

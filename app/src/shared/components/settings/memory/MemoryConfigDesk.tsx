@@ -104,7 +104,7 @@ export const MemoryConfigDesk = memo(({ view, layoutMode }: MemoryConfigDeskProp
       const clean = e.target.value.replace(/[^0-9]/g, "");
       if (!clean) return;
       const val = parseInt(clean, 10);
-      if (!isNaN(val) && val >= 1 && val <= 50) {
+      if (!Number.isNaN(val) && val >= 1 && val <= 50) {
         updateDraft("memory", "top_k_facts", val);
       }
     },
@@ -116,7 +116,7 @@ export const MemoryConfigDesk = memo(({ view, layoutMode }: MemoryConfigDeskProp
       const clean = e.target.value.replace(/[^0-9]/g, "");
       if (!clean) return;
       const val = parseFloat(clean);
-      if (!isNaN(val) && val >= 1 && val <= 99) {
+      if (!Number.isNaN(val) && val >= 1 && val <= 99) {
         updateDraft("memory", "semantic_similarity_cutoff", val / 100);
       }
     },
