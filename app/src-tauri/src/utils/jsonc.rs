@@ -132,8 +132,14 @@ mod tests {
         count: i32,
     }
 
+    /// PURPOSE:  A JSONC file must parse with its comments removed, or the model config cannot be read.
+    /// SCENARIO: A document with line, inline and block comments is parsed.
+    /// ASSERTS:  The name, url and count fields are read with their original values.
+    /// CLASS:    happy-path
+    /// REQUIRES: none
+    /// MUTANT:   Strip comment markers inside string values in from_jsonc_str.
     #[test]
-    fn test_strip_comments_basic() {
+    fn jsonc_parser_strips_comments_without_touching_string_content() {
         let jsonc = r#"
         // Top-level comment
         {
@@ -152,8 +158,14 @@ mod tests {
         assert_eq!(sample.count, 42);
     }
 
+    /// PURPOSE:  Escaped quotes and comment markers inside a string value must survive.
+    /// SCENARIO: A value containing an escaped quote and both comment markers is parsed.
+    /// ASSERTS:  The parsed name is the original string.
+    /// CLASS:    edge-case
+    /// REQUIRES: none
+    /// MUTANT:   Treat an escaped quote as the end of the string in from_jsonc_str.
     #[test]
-    fn test_escaped_quotes_in_string() {
+    fn jsonc_parser_keeps_escaped_quotes_inside_strings() {
         let jsonc = r#"
         {
             "name": "He said \"hello // world\" /* not a comment */",
@@ -170,8 +182,14 @@ mod tests {
         );
     }
 
+    /// PURPOSE:  A byte-order mark and trailing commas must not stop the parse.
+    /// SCENARIO: A BOM-prefixed object with a trailing comma and an array with a trailing comma are parsed.
+    /// ASSERTS:  Both parse, with the expected fields and the three array items.
+    /// CLASS:    edge-case
+    /// REQUIRES: none
+    /// MUTANT:   Reject a document that starts with the BOM byte in from_jsonc_str.
     #[test]
-    fn test_trailing_commas_and_bom() {
+    fn jsonc_parser_accepts_a_bom_and_trailing_commas() {
         let jsonc = "\u{feff}{\n  \"name\": \"Vox\",\n  \"url\": \"https://example.com\",\n  \"count\": 10,\n}";
         let sample: Sample =
             from_jsonc_str(jsonc).expect("Failed to parse jsonc with BOM and trailing comma");

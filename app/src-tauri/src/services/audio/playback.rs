@@ -360,14 +360,26 @@ fn is_synthesis_turn_current(synthesis_turn: u32, current_turn: u32) -> bool {
 mod tests {
     use super::*;
 
+    /// PURPOSE:  Audio for the active turn, or audio before a turn id is known, must be allowed through.
+    /// SCENARIO: The turn gate is evaluated for the unset sentinel and for the current turn.
+    /// ASSERTS:  The unset sentinel and the matching turn are accepted.
+    /// CLASS:    happy-path
+    /// REQUIRES: none
+    /// MUTANT:   Reject SYNTESIS_TURN_UNSET in is_synthesis_turn_current.
     #[test]
-    fn test_synthesis_turn_gate_accepts_current_and_unset() {
+    fn synthesis_turn_gate_accepts_the_current_and_the_unset_turn() {
         assert!(is_synthesis_turn_current(SYNTHESIS_TURN_UNSET, 7));
         assert!(is_synthesis_turn_current(7, 7));
     }
 
+    /// PURPOSE:  Audio belonging to an old turn must not be played after a new turn started.
+    /// SCENARIO: The turn gate is evaluated for a turn id older than the current one.
+    /// ASSERTS:  The stale turn is rejected.
+    /// CLASS:    suppression
+    /// REQUIRES: none
+    /// MUTANT:   Make is_synthesis_turn_current always return true.
     #[test]
-    fn test_synthesis_turn_gate_rejects_superseded_turn() {
+    fn synthesis_turn_gate_rejects_a_superseded_turn() {
         assert!(!is_synthesis_turn_current(5, 6));
     }
 }

@@ -5,7 +5,8 @@
 # Usage:
 #   ./scripts/test.sh default          # unit + structural seams, no models, no network
 #   ./scripts/test.sh models           # seams that load ONNX/GGUF weights
-#   ./scripts/test.sh all              # everything, sequential, non-ignored
+#   ./scripts/test.sh all              # every non-remote binary, sequential, non-ignored
+#   ./scripts/test.sh remote           # the gated remote control binaries
 #   ./scripts/test.sh seam <binary>    # one seam binary, e.g. seam vad_segmentation_test
 #
 # Environment:
@@ -71,10 +72,23 @@ case "$TIER" in
     done < <(binaries)
     ;;
   all)
-    run
+    # Every non-remote binary. The remote control feature is work in progress, so its
+    # binaries are gated behind the `remote` tier.
+    run --lib
+    while IFS= read -r t; do
+      is_remote "$t" && continue
+      run --test "$t"
+    done < <(binaries)
+    ;;
+  remote)
+    # The remote control binaries, gated because the feature is work in progress.
+    while IFS= read -r t; do
+      is_remote "$t" || continue
+      run --test "$t"
+    done < <(binaries)
     ;;
   *)
-    echo "unknown tier: $TIER (expected default | models | all | seam)" >&2
+    echo "unknown tier: $TIER (expected default | models | all | remote | seam)" >&2
     exit 2
     ;;
 esac

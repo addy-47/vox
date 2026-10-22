@@ -326,23 +326,41 @@ mod tests {
     use super::*;
     use crate::services::audio::{MockAudioCapture, MockAudioSink};
 
+    /// PURPOSE:  The mock capture must support the full capture lifecycle, or headless runs cannot exercise the pipeline.
+    /// SCENARIO: A mock AudioStream is started and paused.
+    /// ASSERTS:  Start and pause both succeed.
+    /// CLASS:    happy-path
+    /// REQUIRES: none
+    /// MUTANT:   Make AudioStream::mock() fail on start.
     #[test]
-    fn test_audio_stream_mock_lifecycle() {
+    fn audio_stream_mock_starts_and_pauses() {
         let stream = AudioStream::mock();
         assert!(stream.start().is_ok());
         assert!(stream.pause().is_ok());
     }
 
+    /// PURPOSE:  A custom capture must be injectable, or the capture path cannot be tested headlessly.
+    /// SCENARIO: A stream is built from a MockAudioCapture and then started and paused.
+    /// ASSERTS:  Start and pause both succeed.
+    /// CLASS:    happy-path
+    /// REQUIRES: none
+    /// MUTANT:   Ignore the capture passed to AudioStream::from_capture.
     #[test]
-    fn test_audio_stream_custom_capture() {
+    fn audio_stream_accepts_an_injected_capture() {
         let capture = Box::new(MockAudioCapture);
         let stream = AudioStream::from_capture(capture);
         assert!(stream.start().is_ok());
         assert!(stream.pause().is_ok());
     }
 
+    /// PURPOSE:  A mock sink must be constructible, or playback tests cannot run without a device.
+    /// SCENARIO: A MockAudioSink is boxed as a trait object and dropped.
+    /// ASSERTS:  The sink constructs and drops without panicking.
+    /// CLASS:    happy-path
+    /// REQUIRES: none
+    /// MUTANT:   Make the Drop impl of MockAudioSink panic.
     #[test]
-    fn test_audio_sink_mock() {
+    fn audio_sink_mock_can_be_constructed_and_dropped() {
         let sink: Box<dyn AudioSink> = Box::new(MockAudioSink);
         drop(sink);
     }

@@ -67,8 +67,14 @@ impl VadEngine for EarshotVadEngine {
 mod tests {
     use super::*;
 
+    /// PURPOSE:  The VAD threshold must apply to the next prediction, or the engine keeps using a stale threshold.
+    /// SCENARIO: A silent frame is predicted, the threshold is raised, the frame is predicted again and the threshold is updated.
+    /// ASSERTS:  The first prediction is active, the second is inactive, and the stored threshold equals the updated value.
+    /// CLASS:    happy-path
+    /// REQUIRES: none
+    /// MUTANT:   Make update_threshold ignore the new value.
     #[test]
-    fn test_earshot_vad_predict_and_threshold_update() {
+    fn earshot_vad_predicts_speech_and_tracks_the_threshold() {
         let mut engine = EarshotVadEngine::new(-1.0).unwrap();
         let frame = [0.0f32; 256];
 

@@ -443,6 +443,7 @@ mod tests {
     use super::{is_devanagari, transliterate_if_hi};
 
     /// PURPOSE:  Script detection decides whether the model runs at all.
+    /// SCENARIO: A Devanagari string and a Latin string are passed to the detector.
     /// ASSERTS:  Devanagari text is detected, Latin text is not.
     /// CLASS:    happy-path
     /// REQUIRES: none
@@ -455,6 +456,7 @@ mod tests {
     }
 
     /// PURPOSE:  Transliteration must not touch text when the user turned it off.
+    /// SCENARIO: Transliteration is called while the feature is turned off.
     /// ASSERTS:  The input is returned unchanged.
     /// CLASS:    suppression
     /// REQUIRES: none
@@ -466,6 +468,7 @@ mod tests {
     }
 
     /// PURPOSE:  Non-Devanagari text must pass through even with transliteration on.
+    /// SCENARIO: Transliteration is called with a Latin string while the feature is on.
     /// ASSERTS:  The input is returned unchanged.
     /// CLASS:    suppression
     /// REQUIRES: none

@@ -1624,8 +1624,14 @@ mod tests {
             .expect("probe test timed out")
     }
 
+    /// PURPOSE:  A model that calls the declared tool must be reported as supporting tools.
+    /// SCENARIO: One observed tool call names the probed tool.
+    /// ASSERTS:  The verdict is Supported.
+    /// CLASS:    happy-path
+    /// REQUIRES: none
+    /// MUTANT:   Always return Unsupported from tool_verdict.
     #[test]
-    fn tool_verdict_supports_declared_tool() {
+    fn tool_verdict_supports_a_declared_tool_call() {
         let observed = vec![CanonicalToolCall {
             id: "call_1".to_string(),
             name: "web_search".to_string(),
@@ -1635,8 +1641,14 @@ mod tests {
         assert!(matches!(outcome, ToolOutcome::Supported));
     }
 
+    /// PURPOSE:  The failure detail must name the tool the model actually called.
+    /// SCENARIO: The model calls get_weather while web_search was probed.
+    /// ASSERTS:  The verdict is Unsupported and the detail names both get_weather and web_search.
+    /// CLASS:    edge-case
+    /// REQUIRES: none
+    /// MUTANT:   Drop the observed tool name from the tool_verdict detail.
     #[test]
-    fn tool_verdict_names_undeclared_tools() {
+    fn tool_verdict_names_the_undeclared_tool() {
         let observed = vec![CanonicalToolCall {
             id: "call_1".to_string(),
             name: "get_weather".to_string(),
@@ -1652,8 +1664,14 @@ mod tests {
         }
     }
 
+    /// PURPOSE:  A clean stream without tool calls must be Unsupported, not a silent success.
+    /// SCENARIO: No tool calls are observed.
+    /// ASSERTS:  The verdict is Unsupported and the detail contains "without tool calls".
+    /// CLASS:    edge-case
+    /// REQUIRES: none
+    /// MUTANT:   Return Supported when no tool call was observed.
     #[test]
-    fn tool_verdict_empty_clean_stream_is_unsupported() {
+    fn tool_verdict_reports_an_empty_stream_as_unsupported() {
         let (outcome, detail) = tool_verdict(&[], "web_search", None);
         match outcome {
             ToolOutcome::Unsupported => {
@@ -1663,8 +1681,14 @@ mod tests {
         }
     }
 
+    /// PURPOSE:  An interrupted stream must be Failed, not Unsupported.
+    /// SCENARIO: No tool calls are observed and the stream ended with a reset error.
+    /// ASSERTS:  The verdict is Failed and the detail contains "reset".
+    /// CLASS:    regression
+    /// REQUIRES: none
+    /// MUTANT:   Ignore the truncation reason in tool_verdict.
     #[test]
-    fn tool_verdict_truncation_without_calls_is_failure() {
+    fn tool_verdict_reports_a_truncated_stream_as_failed() {
         let (outcome, detail) = tool_verdict(&[], "web_search", Some("stream interrupted: reset"));
         match outcome {
             ToolOutcome::Failed => {
@@ -1674,8 +1698,14 @@ mod tests {
         }
     }
 
+    /// PURPOSE:  The probe must read the text out of every supported transport shape.
+    /// SCENARIO: Chat completions, Ollama native and Responses frames plus non-JSON input are parsed.
+    /// ASSERTS:  Each valid frame yields "Hello " and the invalid inputs yield no text.
+    /// CLASS:    happy-path
+    /// REQUIRES: none
+    /// MUTANT:   Always parse the payload as a chat-completions frame in extract_probe_text.
     #[test]
-    fn extract_probe_text_per_transport() {
+    fn extract_probe_text_reads_each_transport_shape() {
         let chat = r#"{"choices":[{"delta":{"content":"Hello "}}]}"#;
         assert_eq!(
             extract_probe_text(chat, TransportType::ChatCompletions),
@@ -1695,8 +1725,14 @@ mod tests {
         assert!(extract_probe_text(r#"{"choices":[]}"#, TransportType::ChatCompletions).is_empty());
     }
 
+    /// PURPOSE:  The terminal frame of each native stream must be recognised.
+    /// SCENARIO: Ollama done frames and Responses completion frames are checked.
+    /// ASSERTS:  done:true and response.completed are complete, and done:false and a delta frame are not.
+    /// CLASS:    happy-path
+    /// REQUIRES: none
+    /// MUTANT:   Return true for every frame from ollama_stream_is_complete.
     #[test]
-    fn stream_completion_markers() {
+    fn stream_completion_markers_detect_the_terminal_frame() {
         assert!(ollama_stream_is_complete(r#"{"done":true}"#));
         assert!(!ollama_stream_is_complete(r#"{"done":false}"#));
         assert!(responses_stream_is_complete(
@@ -1707,16 +1743,28 @@ mod tests {
         ));
     }
 
+    /// PURPOSE:  An error body must not be pasted whole into the UI.
+    /// SCENARIO: A 500-character body and a padded short body are excerpted.
+    /// ASSERTS:  The long excerpt is at most 310 characters and the short body is trimmed.
+    /// CLASS:    edge-case
+    /// REQUIRES: none
+    /// MUTANT:   Remove the length cap from error_excerpt.
     #[test]
-    fn error_excerpt_truncates_long_bodies() {
+    fn error_excerpt_truncates_a_long_error_body() {
         let long = "x".repeat(500);
         let excerpt = error_excerpt(&long);
         assert!(excerpt.len() <= 310, "len: {}", excerpt.len());
         assert_eq!(error_excerpt("  short  "), "short");
     }
 
+    /// PURPOSE:  The probe must declare exactly the production web-search tool, or the probe result does not reflect production.
+    /// SCENARIO: The probe tool declaration is converted to the production wire shape.
+    /// ASSERTS:  The tool is a function named web_search with a required "query" parameter.
+    /// CLASS:    happy-path
+    /// REQUIRES: none
+    /// MUTANT:   Rename the probe tool declaration to something other than web_search.
     #[test]
-    fn probe_tool_declaration_is_production_web_search() {
+    fn probe_tool_declaration_matches_the_production_tool() {
         use crate::services::llm::transport::canonical_tools_json;
         let def = probe_tool_declaration();
         assert_eq!(def.name, "web_search");
@@ -1731,8 +1779,14 @@ mod tests {
         assert!(names.contains(&"query"), "required: {:?}", names);
     }
 
+    /// PURPOSE:  Two parallel tool calls that both use index 0 must not be merged.
+    /// SCENARIO: Two lines each carrying an index-0 tool call are fed to the accumulator.
+    /// ASSERTS:  Two calls are drained, with ids call_1 and call_2 in order.
+    /// CLASS:    regression
+    /// REQUIRES: none
+    /// MUTANT:   Key the tool call accumulator only by tool call index.
     #[test]
-    fn accumulator_splits_parallel_index_zero_calls() {
+    fn tool_call_accumulator_keeps_two_calls_with_the_same_index() {
         use crate::services::llm::transport::chat_completions::ToolCallAccumulator;
         let mut acc = ToolCallAccumulator::default();
         acc.feed_line(r#"{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"web_search","arguments":"{}"}}]}}]}"#);
@@ -1751,8 +1805,14 @@ mod tests {
             .unwrap_or_else(|| panic!("check {} was not recorded", id))
     }
 
+    /// PURPOSE:  An unauthorized provider must be recorded as Failed with the status code.
+    /// SCENARIO: The mock server answers 401.
+    /// ASSERTS:  The outcome is Failed and the streaming check is Failed with "401" in the detail.
+    /// CLASS:    regression
+    /// REQUIRES: none
+    /// MUTANT:   Treat a 401 response as a successful stream in empirical_streaming_probe.
     #[tokio::test]
-    async fn streaming_probe_unauthorized_records_failed() {
+    async fn streaming_probe_records_a_401_as_failed() {
         let (url, server) = serve_canned(vec![(401, "unauthorized".to_string())]);
         let (client, config) = mock_setup(&url, None);
         let mut checks = Vec::new();
@@ -1773,8 +1833,14 @@ mod tests {
         server.join().expect("mock server panicked");
     }
 
+    /// PURPOSE:  A stream that completes without text must be recorded as Failed.
+    /// SCENARIO: The mock server answers 200 with only a DONE frame.
+    /// ASSERTS:  The outcome is Failed and the streaming check detail contains "empty".
+    /// CLASS:    edge-case
+    /// REQUIRES: none
+    /// MUTANT:   Accept an empty stream as measured in empirical_streaming_probe.
     #[tokio::test]
-    async fn streaming_probe_empty_completion_is_failed() {
+    async fn streaming_probe_records_an_empty_completion_as_failed() {
         let (url, server) = serve_canned(vec![(200, "data: [DONE]\n\n".to_string())]);
         let (client, config) = mock_setup(&url, None);
         let mut checks = Vec::new();
@@ -1794,8 +1860,14 @@ mod tests {
         server.join().expect("mock server panicked");
     }
 
+    /// PURPOSE:  The probe must report the Latin and Devanagari script coverage and a token rate.
+    /// SCENARIO: The mock server streams one Latin and one Devanagari token and then DONE.
+    /// ASSERTS:  The outcome is Measured with both script flags set and a token rate above zero.
+    /// CLASS:    happy-path
+    /// REQUIRES: none
+    /// MUTANT:   Always report the Latin script flag as false in empirical_streaming_probe.
     #[tokio::test]
-    async fn streaming_probe_measures_scripts_and_tps() {
+    async fn streaming_probe_measures_scripts_and_tokens_per_second() {
         let body = "data: {\"choices\":[{\"delta\":{\"content\":\"Hello \"}}]}\n\ndata: {\"choices\":[{\"delta\":{\"content\":\"नमस्ते\"}}]}\n\ndata: [DONE]\n\n";
         let (url, server) = serve_canned(vec![(200, body.to_string())]);
         let (client, config) = mock_setup(&url, None);
@@ -1822,8 +1894,14 @@ mod tests {
         server.join().expect("mock server panicked");
     }
 
+    /// PURPOSE:  A truncated stream must not produce a token rate.
+    /// SCENARIO: The mock server declares more bytes than it sends.
+    /// ASSERTS:  The outcome is Failed and the streaming check detail contains "interrupted".
+    /// CLASS:    edge-case
+    /// REQUIRES: none
+    /// MUTANT:   Compute the token rate from the partial text in empirical_streaming_probe.
     #[tokio::test]
-    async fn streaming_probe_truncation_yields_no_tps() {
+    async fn streaming_probe_records_a_truncated_stream_as_failed() {
         let partial = "data: {\"choices\":[{\"delta\":{\"content\":\"Hello \"}}]}\n\n";
         let (url, server) = serve_truncated(200, partial.len() + 5000, partial.to_string());
         let (client, config) = mock_setup(&url, None);
@@ -1844,8 +1922,14 @@ mod tests {
         server.join().expect("mock server panicked");
     }
 
+    /// PURPOSE:  A provider that really calls the tool must be recorded as supporting tools.
+    /// SCENARIO: The mock server streams a web_search tool call.
+    /// ASSERTS:  The outcome is Supported.
+    /// CLASS:    happy-path
+    /// REQUIRES: none
+    /// MUTANT:   Return Unsupported from empirical_tool_probe for every response.
     #[tokio::test]
-    async fn tool_probe_supported_via_declared_tool_call() {
+    async fn tool_probe_reports_support_when_the_tool_is_called() {
         let body = "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_1\",\"function\":{\"name\":\"web_search\",\"arguments\":\"{\\\"query\\\":\\\"weather in Tokyo\\\",\\\"spoken_filler\\\":\\\"Searching now\\\"}\"}}]}}]}\n\ndata: {\"choices\":[{\"delta\":{},\"finish_reason\":\"tool_calls\"}]}\n\ndata: [DONE]\n\n";
         let (url, server) = serve_canned(vec![(200, body.to_string())]);
         let (client, config) = mock_setup(&url, None);
@@ -1860,8 +1944,14 @@ mod tests {
         server.join().expect("mock server panicked");
     }
 
+    /// PURPOSE:  A plain text answer must be recorded as Unsupported with the reason.
+    /// SCENARIO: The mock server streams only content and a stop finish reason.
+    /// ASSERTS:  The outcome is Unsupported, the tool_calls check is Unsupported, and its detail contains "without tool calls".
+    /// CLASS:    edge-case
+    /// REQUIRES: none
+    /// MUTANT:   Treat any completed stream as tool support in empirical_tool_probe.
     #[tokio::test]
-    async fn tool_probe_text_only_is_unsupported() {
+    async fn tool_probe_reports_a_text_only_answer_as_unsupported() {
         let body = "data: {\"choices\":[{\"delta\":{\"content\":\"It is sunny.\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n";
         let (url, server) = serve_canned(vec![(200, body.to_string())]);
         let (client, config) = mock_setup(&url, None);
@@ -1880,8 +1970,14 @@ mod tests {
         server.join().expect("mock server panicked");
     }
 
+    /// PURPOSE:  A rate limit must be Failed, not Unsupported, or the user sees a wrong capability verdict.
+    /// SCENARIO: The mock server answers 429.
+    /// ASSERTS:  The outcome is Failed, the tool_calls check is Failed, and its detail contains "429".
+    /// CLASS:    regression
+    /// REQUIRES: none
+    /// MUTANT:   Map a 429 response to ToolOutcome::Unsupported in empirical_tool_probe.
     #[tokio::test]
-    async fn tool_probe_rate_limit_is_failed_not_unsupported() {
+    async fn tool_probe_records_a_429_as_failed() {
         let (url, server) = serve_canned(vec![(429, "{\"error\":\"rate limited\"}".to_string())]);
         let (client, config) = mock_setup(&url, None);
         let mut checks = Vec::new();
@@ -1899,8 +1995,14 @@ mod tests {
         server.join().expect("mock server panicked");
     }
 
+    /// PURPOSE:  A model that calls a different tool must be recorded as Unsupported and named.
+    /// SCENARIO: The mock server streams a get_weather tool call.
+    /// ASSERTS:  The outcome is Unsupported and the tool_calls detail contains "get_weather".
+    /// CLASS:    edge-case
+    /// REQUIRES: none
+    /// MUTANT:   Ignore the tool name of the observed call in empirical_tool_probe.
     #[tokio::test]
-    async fn tool_probe_undeclared_tool_is_unsupported() {
+    async fn tool_probe_records_an_undeclared_tool_as_unsupported() {
         let body = "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_9\",\"function\":{\"name\":\"get_weather\",\"arguments\":\"{}\"}}]}}]}\n\ndata: [DONE]\n\n";
         let (url, server) = serve_canned(vec![(200, body.to_string())]);
         let (client, config) = mock_setup(&url, None);
@@ -1918,8 +2020,14 @@ mod tests {
         server.join().expect("mock server panicked");
     }
 
+    /// PURPOSE:  The Ollama native NDJSON stream must be parsed by the tool probe.
+    /// SCENARIO: The mock server answers NDJSON tool calls and the ollama preset is selected.
+    /// ASSERTS:  The preset resolves to the native transport and the outcome is Supported.
+    /// CLASS:    happy-path
+    /// REQUIRES: none
+    /// MUTANT:   Parse the NDJSON body as a chat-completions stream in empirical_tool_probe.
     #[tokio::test]
-    async fn tool_probe_ollama_native_uses_ndjson() {
+    async fn tool_probe_accepts_the_ollama_ndjson_stream() {
         let body = "{\"message\":{\"role\":\"assistant\",\"tool_calls\":[{\"function\":{\"name\":\"web_search\",\"arguments\":{\"query\":\"weather in Tokyo\",\"spoken_filler\":\"Searching now\"}}}]},\"done\":false}\n{\"message\":{\"role\":\"assistant\",\"content\":\"\"},\"done\":true}\n";
         let (url, server) = serve_canned(vec![(200, body.to_string())]);
         let (client, config) = mock_setup(&url, Some("ollama"));
@@ -1939,8 +2047,14 @@ mod tests {
         server.join().expect("mock server panicked");
     }
 
+    /// PURPOSE:  A 404 from the Ollama metadata endpoints must leave the capability Unknown, not false.
+    /// SCENARIO: The mock server answers 404 to both metadata requests.
+    /// ASSERTS:  Two checks are recorded, both Failed with "404" in the detail, and supports_tools stays Unknown.
+    /// CLASS:    edge-case
+    /// REQUIRES: none
+    /// MUTANT:   Set meta.supports_tools to Support::No when a metadata request fails.
     #[tokio::test]
-    async fn ollama_metadata_404_records_failed_checks() {
+    async fn ollama_metadata_probe_records_two_failed_checks_on_404() {
         let (url, server) = serve_canned(vec![
             (404, "not found".to_string()),
             (404, "not found".to_string()),
@@ -1964,8 +2078,14 @@ mod tests {
         server.join().expect("mock server panicked");
     }
 
+    /// PURPOSE:  A token cap the provider accepts must be kept.
+    /// SCENARIO: The mock server accepts a request that carries the 4096 token cap.
+    /// ASSERTS:  The validated cap is Some(4096) and the check outcome is Measured.
+    /// CLASS:    happy-path
+    /// REQUIRES: none
+    /// MUTANT:   Return None from validate_token_cap when the request succeeds.
     #[tokio::test]
-    async fn validate_token_cap_accepts_working_cap() {
+    async fn validate_token_cap_accepts_a_cap_the_provider_accepts() {
         let (url, server) = serve_canned(vec![(200, "{}".to_string())]);
         let provider = LlmRuntimeTarget::Server {
             base_url: url.clone(),
@@ -1983,8 +2103,14 @@ mod tests {
         server.join().expect("mock server panicked");
     }
 
+    /// PURPOSE:  A cap the provider rejects as too long must not be kept.
+    /// SCENARIO: The mock server answers 400 with a context_length_exceeded error.
+    /// ASSERTS:  The validated cap is None, the check outcome is Failed, and the detail names context_length_exceeded.
+    /// CLASS:    edge-case
+    /// REQUIRES: none
+    /// MUTANT:   Keep the probed cap when the request fails in validate_token_cap.
     #[tokio::test]
-    async fn validate_token_cap_rejects_overlong_cap() {
+    async fn validate_token_cap_rejects_a_cap_the_provider_rejects() {
         let body = "{\"error\":{\"message\":\"context_length_exceeded: too long\",\"type\":\"invalid_request\"}}";
         let (url, server) = serve_canned(vec![(400, body.to_string())]);
         let provider = LlmRuntimeTarget::Server {

@@ -487,6 +487,7 @@ mod tests {
     }
 
     /// PURPOSE:  Muting must be driven by the shared flag, not a shadow copy.
+    /// SCENARIO: The shared suppression flag is cleared and then set.
     /// ASSERTS:  should_suppress_audio tracks the atomic in both directions.
     /// CLASS:    happy-path
     /// REQUIRES: none
@@ -500,6 +501,7 @@ mod tests {
     }
 
     /// PURPOSE:  Dictation must submit the spoken span, not the whole capture window.
+    /// SCENARIO: A capture window with speech between sample 100 and 900 is trimmed.
     /// ASSERTS:  With speech from sample 100 to 900 the slice is [100, 900).
     /// CLASS:    happy-path
     /// REQUIRES: none
@@ -523,6 +525,7 @@ mod tests {
     }
 
     /// PURPOSE:  A detector that clicks on a single frame must not cut the clip.
+    /// SCENARIO: A capture window with a single short speech span is trimmed.
     /// ASSERTS:  A span below the minimum falls back to the full buffer.
     /// CLASS:    edge-case
     /// REQUIRES: none
@@ -539,6 +542,7 @@ mod tests {
     }
 
     /// PURPOSE:  A window with no detected speech must produce nothing, not noise.
+    /// SCENARIO: A capture window with no detected speech is trimmed.
     /// ASSERTS:  trim_window returns an empty slice when speech was not detected.
     /// CLASS:    suppression
     /// REQUIRES: none
@@ -555,6 +559,7 @@ mod tests {
     }
 
     /// PURPOSE:  A stale end marker must not panic or over-read the buffer.
+    /// SCENARIO: A capture window with an end marker past the buffer length is trimmed.
     /// ASSERTS:  An end marker past `raw_len` clamps to `raw_len`.
     /// CLASS:    edge-case
     /// REQUIRES: none

@@ -199,3 +199,33 @@ Status values: `open` · `confirmed` · `testability-gap` · `wontfix`
   would silently weaken the test instead of failing it.
 - **Status:** testability-gap — the storage tests capture the log line as the quiescence
   proof. A real acknowledgement would need a production change.
+
+## F-21 — Personal memory markdown round-trip is lossy
+
+- **Seam:** Slice 21 (final sweep, memory seam)
+- **Symptom:** `render_to_markdown` writes each block on its own line, but `from_markdown`
+  folds consecutive lines under one heading into a single paragraph block. A section with
+  two blocks serialises and parses back as one block, and the next consolidation write
+  overwrites the second block.
+- **Evidence:** `src/services/memory/personal/model.rs`. The existing test asserts the
+  folded result, so the behaviour is current, not accidental.
+- **Impact:** Structured personal memory silently loses block boundaries on reload.
+- **Status:** confirmed — not fixed in this campaign. Production change required.
+
+## F-22 — Wall-clock latency assertion in the default tier
+
+- **Seam:** Slice 21 (final sweep)
+- **Symptom:** `src/services/llm/catalog/sync.rs` asserts `duration.as_millis() < 250`
+  inside `catalog_json_parses_with_the_expected_model_count`.
+- **Evidence:** The style guide bans wall-clock latency assertions outside benches.
+- **Impact:** Red on a slow machine for reasons unrelated to correctness.
+- **Status:** open — the assertion must become a behavioural one or move to a bench.
+
+## F-23 — Near-empty assertions in the audio device mock
+
+- **Seam:** Slice 21 (final sweep)
+- **Symptom:** `src/services/audio/device.rs`: `audio_stream_mock_starts_and_pauses` and
+  `audio_stream_accepts_an_injected_capture` assert only `is_ok()`, and
+  `audio_sink_mock_can_be_constructed_and_dropped` asserts nothing at all.
+- **Impact:** These pass even if the mock produces no audio. They are false-green.
+- **Status:** open — strengthen to assert that samples actually flow.

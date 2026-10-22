@@ -248,8 +248,14 @@ impl LlmSettings {
 mod tests {
     use super::*;
 
+    /// PURPOSE:  A fresh install must start on the embedded model, not on a cloud provider.
+    /// SCENARIO: The default LlmSettings are resolved to a runtime target.
+    /// ASSERTS:  The active category is "embedded", the model is DEFAULT_LLM_MODEL, the last selection records it, and the target is Embedded.
+    /// CLASS:    happy-path
+    /// REQUIRES: none
+    /// MUTANT:   Change the default active category of LlmSettings to "cloud".
     #[test]
-    fn test_llm_settings_defaults() {
+    fn llm_settings_default_to_the_embedded_runtime() {
         let settings = LlmSettings::default();
         assert_eq!(settings.active.category, "embedded");
         assert_eq!(settings.active_model(), DEFAULT_LLM_MODEL);
@@ -263,8 +269,14 @@ mod tests {
         assert_eq!(settings.runtime_target(None), LlmRuntimeTarget::Embedded);
     }
 
+    /// PURPOSE:  The selected provider and model must reach the runtime target, or the app talks to the wrong endpoint.
+    /// SCENARIO: The active selection is switched to a local server and then to a cloud provider with a stored key.
+    /// ASSERTS:  The server target uses the default server base URL and the "Local Ollama" name, and the cloud target uses the NVIDIA endpoint with the stored key.
+    /// CLASS:    happy-path
+    /// REQUIRES: none
+    /// MUTANT:   Drop the provider_name field when building the Server target.
     #[test]
-    fn test_llm_settings_server_and_cloud_active() {
+    fn llm_settings_resolve_server_and_cloud_targets() {
         let mut settings = LlmSettings {
             active: ActiveSelection {
                 category: "server".to_string(),
@@ -315,8 +327,14 @@ mod tests {
         }
     }
 
+    /// PURPOSE:  Each cloud provider must resolve to its own endpoint, or requests go to the wrong vendor.
+    /// SCENARIO: Anthropic, Gemini, OpenRouter, Groq, Together, DeepSeek and Mistral are selected in turn, then an unknown provider.
+    /// ASSERTS:  Each provider yields its own base URL, model and name, and an unknown provider resolves to Unresolved instead of falling back to NVIDIA.
+    /// CLASS:    regression
+    /// REQUIRES: none
+    /// MUTANT:   Make an unknown provider fall back to the NVIDIA cloud endpoint.
     #[test]
-    fn test_llm_settings_cloud_provider_resolution() {
+    fn llm_settings_resolve_each_cloud_provider_endpoint() {
         let mut settings = LlmSettings {
             active: ActiveSelection {
                 category: "cloud".to_string(),

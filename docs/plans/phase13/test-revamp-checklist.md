@@ -223,3 +223,13 @@ Legend: `[ ]` pending · `[x]` done · `[~]` folded into another binary · `[-]`
 - [x] Wall-clock watchdogs and sleep-based absence checks replaced by log or server acknowledgements
 - [!] F-19 — packaged voice seeding fails on upgraded databases
 - [!] F-20 — private-mode suppression has no acknowledgement channel
+- [x] Final sweep — every `src` unit test carries an intent block and a behaviour-first name (122 renamed, 175 blocks completed)
+- [x] Remote control binaries gated behind `./scripts/test.sh remote`
+- [x] `all` tier now excludes the remote binaries
+- [x] Full non-remote suite green: 413 passed, 4 skipped
+- [!] F-19 — packaged voice seeding fails on upgraded databases
+- [!] F-20 — private-mode suppression has no acknowledgement
+- [!] F-21 — personal memory markdown round-trip is lossy
+- [!] F-22 — wall-clock latency assertion in the default tier
+- [!] F-23 — near-empty assertions in the audio device mock
+- [!] F-24 — the cargo-mutants pass is blocked by the build cost of this crate
