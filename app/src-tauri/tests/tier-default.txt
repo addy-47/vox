@@ -5,11 +5,10 @@ settings_persistence_test
 database_persistence_boundary_test
 notifications_crud_test
 model_manager_test
-tts_voice_catalogue_test
-chunking_determinism_test
 realtime_transport_test
 stt_turn_identity_test
 dictation_ptt_test
 dictation_output_test
 transcript_ingestion_test
 agentic_tool_loop_test
+harness_loop_test

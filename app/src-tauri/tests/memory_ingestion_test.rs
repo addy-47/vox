@@ -778,7 +778,7 @@ async fn crash_reconciliation_quarantines_a_poison_pill_item() {
             .await
             .unwrap();
 
-        let id_s1 = enqueue_observation(
+        let _id_s1 = enqueue_observation(
             &conn,
             Some(session_id),
             compaction_id,
