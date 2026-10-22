@@ -108,11 +108,10 @@ Legend: `[ ]` pending · `[x]` done · `[~]` folded into another binary · `[-]`
 
 ## Slice 9 — TTS catalogues and transitions
 
-- [ ] `tests/tts_provider_catalogue_test.rs` (9)
-- [ ] `tests/tts_voice_catalogue_test.rs` (6)
-- [ ] `tests/tts_transition_test.rs` (2)
-- [ ] Binary: `tts_catalogue_test.rs`
-- [ ] Report Slice 9
+- [x] `tests/tts_provider_catalogue_test.rs` → `tests/tts_catalogue_test.rs` (9 subtests, honest header, intent blocks)
+- [x] `tests/tts_transition_test.rs` → `tests/tts_catalogue/transition.rs`, a module of the same binary (2 subtests)
+- [x] `tests/tts_voice_catalogue_test.rs` — folded and removed; the voice resolution rules are pure and became 6 unit tests in `src/services/tts/voice.rs` (default tier)
+- [x] Report Slice 9
 
 ## Slice 10 — Playback, interrupt, barge-in
 

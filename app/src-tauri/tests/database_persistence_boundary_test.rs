@@ -1091,6 +1091,15 @@ async fn tool_call_is_not_persisted_in_private_mode() {
         );
 
         // 2. Private mode on: the next tool call must not be written.
+        //
+        //    Quiescence mechanism: the worker's own acknowledgement. When the
+        //    persistence worker consumes an event in private mode it logs
+        //    "Private Mode active: skipping tool call record". Waiting for
+        //    that line proves the worker has handled the private event, so
+        //    the absence assertion below is not a race against the worker.
+        common::log_capture::install();
+        let _ = common::log_capture::take();
+
         is_private.store(true, Ordering::Relaxed);
         let private_call_id = "call_private_456".to_string();
         persist_tx
@@ -1108,46 +1117,20 @@ async fn tool_call_is_not_persisted_in_private_mode() {
             })
             .expect("Failed to send private ToolCallExecuted");
 
-        // 3. Quiescence: a third, public tool call queued after the private one.
-        //    The worker consumes its channel in order, so once this one is
-        //    stored the private event has already been handled.
-        let sentinel_call_id = "call_sentinel_789".to_string();
-        persist_tx
-            .send(PersistenceEvent::ToolCallExecuted {
-                id: sentinel_call_id.clone(),
-                session_id: orphan_sid,
-                turn_id: 3,
-                tool_name: "respond_and_set_title".to_string(),
-                tool_flow: vox_lib::services::llm::ToolFlow::Terminal,
-                arguments: serde_json::json!({ "title": "Sentinel" }),
-                result: "ok".to_string(),
-                is_error: false,
-                duration_ms: 10,
-                created_at: 1700000000300,
-            })
-            .expect("Failed to send sentinel ToolCallExecuted");
-
-        let sentinel_deadline = std::time::Instant::now() + Duration::from_secs(5);
-        let mut sentinel_found = false;
-        while std::time::Instant::now() < sentinel_deadline {
-            let mut rows = conn
-                .query(
-                    "SELECT COUNT(*) FROM session_tool_calls WHERE id = ?;",
-                    (sentinel_call_id.clone(),),
-                )
-                .await
-                .expect("Failed to query session_tool_calls");
-            let count: i64 = rows.next().await.unwrap().unwrap().get(0).unwrap();
-            if count > 0 {
-                sentinel_found = true;
+        let ack_deadline = std::time::Instant::now() + Duration::from_secs(5);
+        let mut captured = String::new();
+        loop {
+            captured.push_str(&common::log_capture::take_text());
+            if captured.contains("skipping tool call record") {
                 break;
             }
+            assert!(
+                std::time::Instant::now() < ack_deadline,
+                "the persistence worker never acknowledged the private event; captured log:\n{}",
+                captured
+            );
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
-        assert!(
-            sentinel_found,
-            "the sentinel tool call must be stored to prove the private event was processed"
-        );
 
         let mut rows = conn
             .query(

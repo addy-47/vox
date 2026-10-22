@@ -1,43 +1,20 @@
 //! ============================================================================
-//! tests/remote_tts_provider_test.rs — Default TTS Provider & Edge TTS Failure
+//! tts_catalogue_test.rs — TTS provider catalogue and voice resolution seam
 //! ============================================================================
-//! Category     : Integration Test (Seam 7 — TTS provider resolution)
-//! Component    : services/tts/{config,factory,voice,providers/*}.rs
-//! Prerequisites: Local Supertonic ONNX model in ~/.vox/models/tts/supertonic-3/
-//! Execution    : cargo nextest run --test remote_tts_provider_test --release --nocapture --test-threads=1
-//! Metrics      : (a) a fresh install resolves to `supertonic`; (b) the
-//!                Supertonic path produces non-silent PCM; (c) the `edge_tts`
-//!                path returns the explicit HTTP 403 availability error and
-//!                produces no audio; (d) `edge_tts` is still in the provider
-//!                catalogue and the voice catalog is unchanged; (e) the factory
-//!                resolves exactly one provider; (f) the Devanagari route
-//!                selects Supertonic, never the dead Edge TTS route;
-//!                (g) the default voice is provider-aware; (h) the Devanagari
-//!                route builds the Supertonic engine once and reuses it.
-//!
-//! WHY THIS EXISTS
-//! ---------------
-//! The Microsoft ReadAloud endpoint answers HTTP 403 for every client. It was
-//! the default TTS provider, so a fresh install selected a provider that
-//! cannot speak: the assistant produced an empty buffer and stayed silent.
-//! That is the reason the remote-control host path was blocked — the host has
-//! to be able to talk for the phone to hear it.
-//!
-//! The failure mode this file guards is the quiet one. A provider that fails
-//! must say so with an actionable error, and must never hand the turn to a
-//! different provider: a silent fallback gives the user a voice they did not
-//! choose and hides the misconfiguration. The same rule applies to the
-//! Devanagari route: it used to point at Edge TTS, which is now permanently
-//! unavailable, so the route pointed at a dead end while claiming otherwise.
-//!
-//! SCOPE — what this can and cannot prove
-//! -------------------------------------
-//! The Supertonic assertions run the real ONNX model, so they are slow but
-//! they are evidence. The Edge TTS assertion is deterministic and needs no
-//! network: the upstream failure is a known constant, not a runtime probe.
+//! Category  : Integration (Seam 9 — TTS provider resolution and voice catalogue)
+//! Component : services/tts/{config,factory,voice,providers/*}.rs
+//! Binary    : tts_catalogue_test
+//! Prereqs   : the Supertonic ONNX model for the synthesis scenarios
+//! Run       : cargo nextest run --test tts_catalogue_test --release --test-threads=1
 //! ============================================================================
+//!
+//! The provider catalogue decides which engine speaks. A silent voice swap is the
+//! failure nobody reports, so every resolution rule is asserted explicitly.
 
 mod common;
+
+#[path = "tts_catalogue/transition.rs"]
+mod transition;
 
 use std::{
     fs,
@@ -78,13 +55,13 @@ const EXPECTED_EDGE_ERROR: &str =
 // ============================================================================
 // Subtest 1: test_fresh_install_resolves_to_supertonic
 // ============================================================================
-/// Verifies:
-///   - The default provider enum variant is `supertonic`.
-///   - A fresh install with no stored settings resolves to the Supertonic
-///     provider configuration.
-///   - The default voice belongs to the default provider's catalogue.
+/// PURPOSE:  A fresh install must resolve to the bundled offline provider.
+/// ASSERTS:  The default active provider is Supertonic.
+/// CLASS:    happy-path
+/// REQUIRES: none
+/// MUTANT:   Change the default provider id.
 #[test]
-fn test_fresh_install_resolves_to_supertonic() {
+fn fresh_install_resolves_to_supertonic() {
     let deadline = std::time::Instant::now() + Duration::from_secs(10);
 
     assert_eq!(
@@ -133,11 +110,14 @@ fn test_fresh_install_resolves_to_supertonic() {
 // ============================================================================
 // Subtest 2: test_supertonic_path_produces_non_silent_samples
 // ============================================================================
-/// Verifies:
-///   - With `supertonic` selected and its weights present, a synthesis request
-///     returns non-silent PCM.
+/// PURPOSE:  The offline provider must actually produce audio.
+/// SCENARIO: The Supertonic engine synthesises a short phrase.
+/// ASSERTS:  The samples are not all silence.
+/// CLASS:    happy-path
+/// REQUIRES: the Supertonic ONNX model
+/// MUTANT:   Return a zeroed buffer from the engine.
 #[tokio::test]
-async fn test_supertonic_path_produces_non_silent_samples() {
+async fn supertonic_path_produces_non_silent_samples() {
     tokio::time::timeout(Duration::from_secs(180), async {
         let _guard = common::paths::TempPathsGuard::new();
         vox_lib::utils::paths::init();
@@ -208,14 +188,13 @@ async fn test_supertonic_path_produces_non_silent_samples() {
 // ============================================================================
 // Subtest 3: test_edge_tts_path_returns_the_explicit_availability_error
 // ============================================================================
-/// Verifies:
-///   - Selecting `edge_tts` returns an explicit error naming the upstream
-///     HTTP 403 failure.
-///   - The failed request produces no audio at all: no empty buffer, no
-///     silence.
-///   - The turn is reported to the pipeline as aborted.
+/// PURPOSE:  A dead provider must fail loudly, not silently.
+/// ASSERTS:  The Edge TTS path returns the explicit availability error and no audio.
+/// CLASS:    edge-case
+/// REQUIRES: none (no network)
+/// MUTANT:   Swallow the provider error and return silence.
 #[test]
-fn test_edge_tts_path_returns_the_explicit_availability_error() {
+fn edge_tts_path_returns_the_explicit_availability_error() {
     let deadline = std::time::Instant::now() + Duration::from_secs(15);
 
     let (event_tx, event_rx) = mpsc::channel::<VoxEvent>();
@@ -284,13 +263,13 @@ fn test_edge_tts_path_returns_the_explicit_availability_error() {
 // ============================================================================
 // Subtest 4: test_edge_tts_is_still_in_the_provider_catalogue
 // ============================================================================
-/// Verifies:
-///   - `edge_tts` is still listed in the provider catalogue and is still
-///     selectable.
-///   - The voice catalogue is unchanged: the bundled manifest still carries
-///     the same providers and the same number of voices.
+/// PURPOSE:  Removing a dead route must not remove it from the catalogue.
+/// ASSERTS:  Edge TTS is still listed with its capabilities.
+/// CLASS:    happy-path
+/// REQUIRES: none
+/// MUTANT:   Drop the Edge TTS entry from the catalogue.
 #[test]
-fn test_edge_tts_is_still_in_the_provider_catalogue() {
+fn edge_tts_is_still_in_the_provider_catalogue() {
     let deadline = std::time::Instant::now() + Duration::from_secs(10);
 
     let manifest = vox_lib::setup::manifest::VoxManifest::bundled();
@@ -347,13 +326,13 @@ fn test_edge_tts_is_still_in_the_provider_catalogue() {
 // ============================================================================
 // Subtest 5: test_provider_factory_resolves_exactly_one_provider
 // ============================================================================
-/// Verifies:
-///   - The factory maps a Supertonic selection to the Supertonic provider and
-///     an Edge TTS selection to the Edge TTS provider.
-///   - Neither selection is rewritten to a different provider, so a failure can
-///     never hand the turn to a voice the user did not choose.
+/// PURPOSE:  A provider id must resolve to exactly one engine.
+/// ASSERTS:  Every catalogue id resolves, and an unknown id is an explicit error.
+/// CLASS:    happy-path
+/// REQUIRES: none
+/// MUTANT:   Return the first provider for an unknown id.
 #[test]
-fn test_provider_factory_resolves_exactly_one_provider() {
+fn provider_factory_resolves_exactly_one_provider() {
     let deadline = std::time::Instant::now() + Duration::from_secs(20);
 
     let model_dir = common::paths::get_supertonic_model_dir();
@@ -423,16 +402,13 @@ fn test_provider_factory_resolves_exactly_one_provider() {
 // ============================================================================
 // Subtest 6: test_devanagari_route_selects_supertonic_not_edge_tts
 // ============================================================================
-/// Verifies:
-///   - The Devanagari route targets Supertonic, which renders Devanagari
-///     natively.
-///   - The dead Edge TTS route is gone from both engines that had it, and
-///     neither log message mentions Edge TTS any more.
-///   - The route names the missing Supertonic weights when they are absent,
-///     instead of failing obscurely.
-///   - The route really renders Devanagari when the weights are present.
+/// PURPOSE:  Devanagari must never take the dead Edge TTS route.
+/// ASSERTS:  The Devanagari route resolves to Supertonic.
+/// CLASS:    suppression
+/// REQUIRES: none
+/// MUTANT:   Route Devanagari to Edge TTS.
 #[test]
-fn test_devanagari_route_selects_supertonic_not_edge_tts() {
+fn devanagari_route_selects_supertonic_not_edge_tts() {
     let deadline = std::time::Instant::now() + Duration::from_secs(10);
 
     // 1. The route target is named and is not the dead provider.
@@ -474,12 +450,13 @@ fn test_devanagari_route_selects_supertonic_not_edge_tts() {
 // ============================================================================
 // Subtest 7: test_devanagari_route_reports_missing_supertonic_weights
 // ============================================================================
-/// Verifies:
-///   - The route names the provider and the missing path when the Supertonic
-///     weights are absent.
-///   - The route renders Devanagari audio when they are present.
+/// PURPOSE:  Missing weights must be reported, not silently ignored.
+/// ASSERTS:  The route returns the explicit missing-weights error.
+/// CLASS:    edge-case
+/// REQUIRES: none
+/// MUTANT:   Fall back to another provider when the weights are missing.
 #[test]
-fn test_devanagari_route_reports_missing_supertonic_weights() {
+fn devanagari_route_reports_missing_supertonic_weights() {
     let deadline = std::time::Instant::now() + Duration::from_secs(120);
 
     let (event_tx, _event_rx) = mpsc::channel::<VoxEvent>();
@@ -555,12 +532,13 @@ fn test_devanagari_route_reports_missing_supertonic_weights() {
 // ============================================================================
 // Subtest 8: test_default_voice_is_provider_aware
 // ============================================================================
-/// Verifies:
-///   - Each provider has its own default voice.
-///   - A stored voice id from another provider resolves to the active
-///     provider's default, not to a catalogue index.
+/// PURPOSE:  The default voice must belong to the active provider.
+/// ASSERTS:  Each provider resolves its own default voice id.
+/// CLASS:    happy-path
+/// REQUIRES: none
+/// MUTANT:   Return one global default for every provider.
 #[test]
-fn test_default_voice_is_provider_aware() {
+fn default_voice_is_provider_aware() {
     let deadline = std::time::Instant::now() + Duration::from_secs(10);
 
     // 1. The defaults are provider-scoped.
@@ -646,14 +624,14 @@ fn test_default_voice_is_provider_aware() {
 // ============================================================================
 // Subtest 9: test_devanagari_route_reuses_one_cached_engine
 // ============================================================================
-/// Verifies:
-///   - Two consecutive Devanagari clauses build the Supertonic engine once;
-///     the second clause is served from the cache.
-///   - The engine is released with the provider that owns the cache, so it
-///     never outlives its provider.
-///   - A new provider rebuilds the engine.
+/// PURPOSE:  The Devanagari route must not load the model twice.
+/// SCENARIO: The route runs twice.
+/// ASSERTS:  The second call reuses the cached engine.
+/// CLASS:    edge-case
+/// REQUIRES: the Supertonic ONNX model
+/// MUTANT:   Drop the engine cache.
 #[test]
-fn test_devanagari_route_reuses_one_cached_engine() {
+fn devanagari_route_reuses_one_cached_engine() {
     let deadline = std::time::Instant::now() + Duration::from_secs(180);
 
     let (event_tx, _event_rx) = mpsc::channel::<VoxEvent>();

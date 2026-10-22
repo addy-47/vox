@@ -1,14 +1,15 @@
 //! ============================================================================
-//! tts_transition_test.rs — TTS Voice Switch & Context Compaction Filler Dispatch
+//! transition.rs — TTS voice switch and compaction filler dispatch
 //! ============================================================================
-//! Category     : Integration Test (Seam 8)
-//! Component    : services/tts/actor.rs + services/tts/providers/supertonic.rs + services/harness/facade.rs + services/audio/playback.rs
-//! Prerequisites: Local Supertonic ONNX model in ~/.vox/models/tts/supertonic-3/
-//! Execution    : cargo nextest run --test tts_transition_test --release --nocapture --test-threads=1
-//! Metrics      : Voice hot-swap without thread restart, critical threshold compaction filler dispatch, pending job lifecycle
+//! Category  : Integration (Seam 9 — TTS voice hot-swap and filler dispatch)
+//! Component : services/tts/actor.rs + services/tts/providers/supertonic.rs
+//!             + services/harness/facade.rs + services/audio/playback.rs
+//! Binary    : tts_catalogue_test
+//! Prereqs   : the Supertonic ONNX model
+//! Run       : cargo nextest run --test tts_catalogue_test --release --test-threads=1
 //! ============================================================================
 
-mod common;
+use crate::common;
 
 use std::{
     sync::{
@@ -41,10 +42,15 @@ use vox_lib::{
     },
 };
 
-/// Path A: Verifies TtsCommand::SetVoice hot-swaps active speaker voice without thread restart,
-/// preserves pending job accounting, and synthesizes subsequent clauses cleanly.
+/// PURPOSE:  Changing the voice must not restart the worker thread.
+/// SCENARIO: A SetVoice command arrives while the worker is running.
+/// ASSERTS:  The worker keeps its identity, the pending job accounting survives, and the
+///           next clause is synthesised with the new voice.
+/// CLASS:    happy-path
+/// REQUIRES: the Supertonic ONNX model
+/// MUTANT:   Respawn the worker on a voice change.
 #[tokio::test]
-async fn test_tts_voice_switch_without_worker_restart() {
+async fn voice_switch_does_not_restart_the_tts_worker() {
     let test_timeout = Duration::from_secs(45);
     tokio::time::timeout(test_timeout, async {
         let _guard = common::paths::TempPathsGuard::new();
@@ -258,10 +264,14 @@ async fn test_tts_voice_switch_without_worker_restart() {
     .expect("test_tts_voice_switch_without_worker_restart timed out");
 }
 
-/// Path B: Verifies that exceeding critical context threshold triggers transition speech filler
-/// dispatch to TTS before compaction, properly incrementing pending synthesis jobs.
+/// PURPOSE:  A critical context budget must speak a filler and count the job.
+/// ASSERTS:  The filler reaches the TTS as an interim filler and the pending job count
+///           matches the dispatched clauses.
+/// CLASS:    happy-path
+/// REQUIRES: the Supertonic ONNX model
+/// MUTANT:   Skip the filler dispatch at the critical threshold.
 #[tokio::test]
-async fn test_compaction_filler_dispatch_and_pending_accounting() {
+async fn compaction_filler_is_dispatched_and_counted() {
     let test_timeout = Duration::from_secs(30);
     tokio::time::timeout(test_timeout, async {
         let _guard = common::paths::TempPathsGuard::new();
