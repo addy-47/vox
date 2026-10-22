@@ -78,12 +78,14 @@ Legend: `[ ]` pending · `[x]` done · `[~]` folded into another binary · `[-]`
 
 ## Slice 6 — Transcript ingestion
 
-- [ ] `tests/transcript_to_llm_test.rs` (1)
-- [ ] Continuation merge (`RULE-EVT-08A`)
-- [ ] Stale cancel
-- [ ] Duplicate query filter
-- [ ] Binary: `transcript_ingestion_test.rs`
-- [ ] Report Slice 6
+- [x] Binary: `transcript_ingestion_test.rs` — 12 subtests, recording LLM stub, no weights, in the default tier
+- [x] `src/pipeline/assistant/mod.rs` — 7 unit tests for the TurnAccumulator continuation logic
+- [x] Continuation merge (`RULE-EVT-08A`) — merge, late-arriving final, empty-turn promotion
+- [x] Stale cancel — a cancelled token is re-armed by `next_turn`
+- [x] Duplicate query filter — suppressed before dispatch, accumulator cleared, state back to Ready
+- [~] `tests/transcript_to_llm_test.rs` — ingestion half absorbed; the real-generation and compaction-filler halves move to Slice 7
+- [x] Report Slice 6
+- [!] F-18 — a stalled LLM response holds the harness lock and blocks every later turn
 
 ## Slice 7 — Agentic tool loop
 
