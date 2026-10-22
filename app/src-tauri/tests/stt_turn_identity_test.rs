@@ -45,7 +45,10 @@ impl Recording {
     }
 
     fn final_calls(&self) -> usize {
-        self.chunk_calls().iter().filter(|(_, is_final)| *is_final).count()
+        self.chunk_calls()
+            .iter()
+            .filter(|(_, is_final)| *is_final)
+            .count()
     }
 
     fn reset_count(&self) -> usize {
@@ -348,7 +351,11 @@ fn cancelled_final_for_current_turn_emits_cancelled() {
         1,
         "only the open turn may be transcribed; the cancelled repeat must not be"
     );
-    assert_eq!(h.recording.reset_count(), 2, "open and cancelled-final resets");
+    assert_eq!(
+        h.recording.reset_count(),
+        2,
+        "open and cancelled-final resets"
+    );
     h.close();
 }
 
@@ -389,7 +396,11 @@ fn reset_stream_clears_provider_before_the_next_final() {
         h.next_event(),
         VoxEvent::TranscriptFinal { turn_id: 1, .. }
     ));
-    assert_eq!(h.recording.reset_count(), 3, "open, explicit reset, post-final");
+    assert_eq!(
+        h.recording.reset_count(),
+        3,
+        "open, explicit reset, post-final"
+    );
     h.close();
 }
 

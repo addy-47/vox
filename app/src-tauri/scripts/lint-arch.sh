@@ -12,6 +12,7 @@
 #   6. RAIL-RC-05: Protocol Purity — services/remote/protocol/ imports no runtime, framework or filesystem
 #   7. RC-SSO: Single Definition Site — Every remote-control domain constant is defined exactly once
 #   8. RULE-DB-04: One Write Path — `last_seen_at` is written from exactly one place
+#   9. VERIFY-RC-15: Link Neutrality — tests/common/ names no concrete link implementation
 #
 
 set -euo pipefail
@@ -286,6 +287,27 @@ elif not os.path.abspath(last_seen_writes[0][0]).endswith("paired_devices.rs"):
         last_seen_writes[0][1],
         "the single `last_seen_at` write path must live in the paired-devices access layer",
     )
+
+# ---------------------------------------------------------------------------
+# 9. VERIFY-RC-15: shared conformance suite names no concrete link implementation
+# ---------------------------------------------------------------------------
+
+tests_common_dir = os.path.abspath(os.path.join("tests", "common"))
+if os.path.isdir(tests_common_dir):
+    for root, _, files in os.walk(tests_common_dir):
+        for name in files:
+            if not name.endswith(".rs"):
+                continue
+            path = os.path.join(root, name)
+            with open(path, "r", encoding="utf-8", errors="ignore") as fp:
+                content = fp.read().lower()
+            if "loopbacklink" in content:
+                report_violation(
+                    "VERIFY-RC-15",
+                    path,
+                    1,
+                    "the shared test infrastructure must not name a link implementation (`LoopbackLink`)",
+                )
 
 print("------------------------------------------------------------------------")
 if failures > 0:

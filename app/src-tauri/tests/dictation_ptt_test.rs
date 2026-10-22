@@ -91,16 +91,15 @@ impl Rig {
         let audio_suppressed = Arc::new(AtomicBool::new(false));
         let vad_shutdown = Arc::new(AtomicBool::new(false));
 
-        let (vad_cmd_tx, vad_event_rx, producer, vad_join) =
-            common::harness::setup_vad_actor(
-                stt_tx.clone(),
-                vad_config,
-                state.pipeline.current_state_atomic.clone(),
-                state.pipeline.turn_id.clone(),
-                audio_suppressed,
-                state.pipeline.ingestion_gate.clone(),
-                vad_shutdown.clone(),
-            );
+        let (vad_cmd_tx, vad_event_rx, producer, vad_join) = common::harness::setup_vad_actor(
+            stt_tx.clone(),
+            vad_config,
+            state.pipeline.current_state_atomic.clone(),
+            state.pipeline.turn_id.clone(),
+            audio_suppressed,
+            state.pipeline.ingestion_gate.clone(),
+            vad_shutdown.clone(),
+        );
         common::harness::attach_mock_engine_with_llm_vad_to_state(
             &app,
             &state,
@@ -182,7 +181,9 @@ impl Rig {
     }
 
     fn send(&self, event: VoxEvent) {
-        self.event_tx.send(event).expect("router must accept events");
+        self.event_tx
+            .send(event)
+            .expect("router must accept events");
     }
 
     async fn wait_dictation(&self, expected: InteractionState, label: &str) {
@@ -382,13 +383,15 @@ async fn validated_speech_reaches_only_the_selected_dispatch_arm() {
         rig.send(VoxEvent::PttStart {
             owner: InteractionOwner::Dictation,
         });
-        rig.wait_dictation(InteractionState::Listening, "dictation start").await;
+        rig.wait_dictation(InteractionState::Listening, "dictation start")
+            .await;
 
         common::audio::stream_test_clip(common::ASSET_SUPERTONIC_01_EN_FILENAME, &mut rig.producer);
         rig.send(VoxEvent::PttStop {
             owner: InteractionOwner::Dictation,
         });
-        rig.wait_dictation(InteractionState::Thinking, "dictation stop").await;
+        rig.wait_dictation(InteractionState::Thinking, "dictation stop")
+            .await;
 
         let (turn_id, audio, owner) = rig.expect_final("dictation speech");
         assert_eq!(owner, InteractionOwner::Dictation);
@@ -407,14 +410,16 @@ async fn validated_speech_reaches_only_the_selected_dispatch_arm() {
         rig.send(VoxEvent::PttStart {
             owner: InteractionOwner::Dictation,
         });
-        rig.wait_dictation(InteractionState::Listening, "dictation ghost start").await;
+        rig.wait_dictation(InteractionState::Listening, "dictation ghost start")
+            .await;
 
         common::audio::stream_silence_frames(&mut rig.producer, 30);
         common::audio::wait_for_buffer_drain(&rig.producer, 5);
         rig.send(VoxEvent::PttStop {
             owner: InteractionOwner::Dictation,
         });
-        rig.wait_dictation(InteractionState::Ready, "dictation ghost gate").await;
+        rig.wait_dictation(InteractionState::Ready, "dictation ghost gate")
+            .await;
         rig.assert_no_final("dictation ghost gate");
 
         transition_dictation(InteractionState::Ready, &rig.app, &rig.state);
@@ -427,7 +432,8 @@ async fn validated_speech_reaches_only_the_selected_dispatch_arm() {
         rig.send(VoxEvent::PttStart {
             owner: InteractionOwner::Dictation,
         });
-        rig.wait_dictation(InteractionState::Listening, "dictation cancel start").await;
+        rig.wait_dictation(InteractionState::Listening, "dictation cancel start")
+            .await;
         common::audio::stream_test_clip_prefix(
             common::ASSET_SUPERTONIC_01_EN_FILENAME,
             4000,
@@ -436,7 +442,8 @@ async fn validated_speech_reaches_only_the_selected_dispatch_arm() {
         rig.send(VoxEvent::PttCancel {
             owner: InteractionOwner::Dictation,
         });
-        rig.wait_dictation(InteractionState::Ready, "dictation cancel").await;
+        rig.wait_dictation(InteractionState::Ready, "dictation cancel")
+            .await;
         rig.assert_no_final("dictation cancel");
 
         transition_dictation(InteractionState::Ready, &rig.app, &rig.state);
@@ -449,12 +456,14 @@ async fn validated_speech_reaches_only_the_selected_dispatch_arm() {
         rig.send(VoxEvent::SpeechStart {
             owner: InteractionOwner::Dictation,
         });
-        rig.wait_dictation(InteractionState::Listening, "passive start").await;
+        rig.wait_dictation(InteractionState::Listening, "passive start")
+            .await;
 
         rig.send(VoxEvent::SpeechEnd {
             owner: InteractionOwner::Dictation,
         });
-        rig.wait_dictation(InteractionState::Thinking, "passive end").await;
+        rig.wait_dictation(InteractionState::Thinking, "passive end")
+            .await;
 
         let text = "passive dictation routing check".to_string();
         rig.send(VoxEvent::TranscriptFinal {
@@ -462,7 +471,8 @@ async fn validated_speech_reaches_only_the_selected_dispatch_arm() {
             text: text.clone(),
             owner: InteractionOwner::Dictation,
         });
-        rig.wait_dictation(InteractionState::Ready, "passive transcript").await;
+        rig.wait_dictation(InteractionState::Ready, "passive transcript")
+            .await;
         assert_eq!(
             rig.state.dictation_last_transcript.lock().as_deref(),
             Some(text.as_str()),
@@ -558,7 +568,10 @@ async fn validated_speech_reaches_only_the_selected_dispatch_arm() {
     // Assistant: cancel without a start is ignored and leaves the cancel flag alone.
     {
         rig.assistant_mode(PipelineMode::Modular);
-        rig.state.pipeline.cancel_flag.store(false, Ordering::Relaxed);
+        rig.state
+            .pipeline
+            .cancel_flag
+            .store(false, Ordering::Relaxed);
         ptt_cancel(&rig.app, &rig.state).expect("ptt_cancel");
         assert_eq!(rig.state.pipeline.state(), InteractionState::Ready);
         assert!(
@@ -579,7 +592,8 @@ async fn validated_speech_reaches_only_the_selected_dispatch_arm() {
         rig.send(VoxEvent::PttStart {
             owner: InteractionOwner::Dictation,
         });
-        rig.wait_dictation(InteractionState::Listening, "autostop start").await;
+        rig.wait_dictation(InteractionState::Listening, "autostop start")
+            .await;
 
         common::audio::stream_test_clip_prefix(
             common::ASSET_SUPERTONIC_01_EN_FILENAME,
@@ -589,7 +603,8 @@ async fn validated_speech_reaches_only_the_selected_dispatch_arm() {
         common::audio::stream_silence_frames(&mut rig.producer, 40);
         common::audio::wait_for_buffer_drain(&rig.producer, 5);
 
-        rig.wait_dictation(InteractionState::Thinking, "autostop stop").await;
+        rig.wait_dictation(InteractionState::Thinking, "autostop stop")
+            .await;
         let (_, audio, owner) = rig.expect_final("autostop");
         assert_eq!(owner, InteractionOwner::Dictation);
         assert!(!audio.is_empty());
@@ -604,7 +619,10 @@ async fn validated_speech_reaches_only_the_selected_dispatch_arm() {
     // Dictation: a speech onset must clear a stale cancel flag.
     {
         rig.dictation_mode();
-        rig.state.pipeline.cancel_flag.store(true, Ordering::Relaxed);
+        rig.state
+            .pipeline
+            .cancel_flag
+            .store(true, Ordering::Relaxed);
         assert!(
             rig.state.pipeline.cancel_flag.load(Ordering::Relaxed),
             "precondition: the cancel flag is set by the previous session teardown"
@@ -613,7 +631,8 @@ async fn validated_speech_reaches_only_the_selected_dispatch_arm() {
         rig.send(VoxEvent::SpeechStart {
             owner: InteractionOwner::Dictation,
         });
-        rig.wait_dictation(InteractionState::Listening, "cancel flag reset").await;
+        rig.wait_dictation(InteractionState::Listening, "cancel flag reset")
+            .await;
 
         assert!(
             !rig.state.pipeline.cancel_flag.load(Ordering::Relaxed),

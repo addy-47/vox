@@ -241,3 +241,125 @@ pub fn decode_audio_payload(bytes: &[u8]) -> Result<DecodeOutcome<AudioPayload>,
         other => Err(ProtocolError::UnknownPayloadTag(other)),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::services::remote::protocol::messages::{PttAction, PttMarker};
+
+    #[test]
+    fn audio_frame_wire_encoding_and_endianness() {
+        let frame = AudioFrame {
+            codec: AUDIO_CODEC_PCM16,
+            seq: 0x0102_0304,
+            epoch: 0x0102_0304_0506_0708,
+            sample_offset: 0x1112_1314_1516_1718,
+            samples: vec![0x0102, -2, 32767],
+        };
+
+        let bytes = encode_audio_frame(&frame);
+        assert_eq!(
+            bytes.len(),
+            AUDIO_FRAME_HEADER_BYTES + frame.samples.len() * PCM16_SAMPLE_BYTES
+        );
+        assert_eq!(bytes[0], AUDIO_CODEC_PCM16);
+        assert_eq!(&bytes[1..5], &0x0102_0304u32.to_be_bytes());
+        assert_eq!(&bytes[5..13], &0x0102_0304_0506_0708u64.to_be_bytes());
+        assert_eq!(&bytes[13..21], &0x1112_1314_1516_1718u64.to_be_bytes());
+        assert_eq!(&bytes[21..23], &0x0102i16.to_le_bytes());
+        assert_eq!(&bytes[23..25], &(-2i16).to_le_bytes());
+
+        let decoded = decode_audio_frame(&bytes).expect("must decode");
+        assert_eq!(decoded, frame);
+
+        // Truncated checks
+        assert!(decode_audio_frame(&bytes[..bytes.len() - 1]).is_err());
+        assert!(decode_audio_frame(&bytes[..AUDIO_FRAME_HEADER_BYTES - 1]).is_err());
+        assert!(decode_audio_frame(&[]).is_err());
+
+        // Unknown codec
+        let mut bad_codec = bytes.clone();
+        bad_codec[0] = 0x7f;
+        assert!(matches!(
+            decode_audio_frame(&bad_codec),
+            Err(ProtocolError::UnknownCodec(0x7f))
+        ));
+    }
+
+    #[test]
+    fn stream_formats_and_size_caps() {
+        assert_eq!(
+            StreamFormat::UPLINK,
+            StreamFormat {
+                sample_rate: 16_000,
+                channels: 1,
+                frame_size_samples: 320,
+            }
+        );
+        assert_eq!(
+            StreamFormat::DOWNLINK,
+            StreamFormat {
+                sample_rate: 24_000,
+                channels: 1,
+                frame_size_samples: 480,
+            }
+        );
+
+        assert!(check_stream_format(StreamFormat::UPLINK, StreamFormat::UPLINK).is_ok());
+        assert!(matches!(
+            check_stream_format(StreamFormat::UPLINK, StreamFormat::DOWNLINK),
+            Err(ProtocolError::FormatMismatch { .. })
+        ));
+
+        assert!(check_control_message_size(100, 100).is_ok());
+        assert!(matches!(
+            check_control_message_size(101, 100),
+            Err(ProtocolError::Oversized {
+                size: 101,
+                limit: 100
+            })
+        ));
+    }
+
+    #[test]
+    fn audio_payload_tag_discrimination() {
+        let frame = AudioFrame {
+            codec: AUDIO_CODEC_PCM16,
+            seq: 1,
+            epoch: 1,
+            sample_offset: 0,
+            samples: vec![10, -10],
+        };
+        let marker = AudioControlMessage::PttMarker(PttMarker {
+            action: PttAction::Start,
+            sample_offset: 0,
+            epoch: 1,
+        });
+
+        let frame_payload =
+            encode_audio_payload(&AudioPayload::Frame(frame.clone())).expect("must encode frame");
+        let marker_payload = encode_audio_payload(&AudioPayload::Control(marker.clone()))
+            .expect("must encode marker");
+
+        assert_eq!(frame_payload[0], AUDIO_PAYLOAD_TAG_BINARY);
+        assert_eq!(marker_payload[0], AUDIO_PAYLOAD_TAG_JSON);
+
+        assert_eq!(
+            decode_audio_payload(&frame_payload).expect("must decode"),
+            DecodeOutcome::Known(AudioPayload::Frame(frame))
+        );
+        assert_eq!(
+            decode_audio_payload(&marker_payload).expect("must decode"),
+            DecodeOutcome::Known(AudioPayload::Control(marker))
+        );
+
+        assert!(matches!(
+            decode_audio_payload(&[0x02, 0x00]),
+            Err(ProtocolError::UnknownPayloadTag(0x02))
+        ));
+        assert!(matches!(
+            decode_audio_payload(&[]),
+            Err(ProtocolError::MissingPayloadTag)
+        ));
+    }
+}

@@ -197,3 +197,69 @@ pub fn classify_protocol_error(error: &ProtocolError) -> ProtocolResponse {
         ProtocolError::FormatMismatch { .. } => ProtocolResponse::Fatal,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn error_codes_roundtrip_wire_names() {
+        for code in RemoteErrorCode::ALL {
+            let name = code.wire_name();
+            assert!(!name.is_empty());
+            assert_eq!(RemoteErrorCode::from_wire_name(name), Some(code));
+
+            let serialized = serde_json::to_string(&code).expect("must serialize");
+            assert_eq!(serialized, format!("\"{name}\""));
+            let deserialized: RemoteErrorCode =
+                serde_json::from_str(&serialized).expect("must deserialize");
+            assert_eq!(deserialized, code);
+        }
+        assert_eq!(RemoteErrorCode::from_wire_name("non_existent"), None);
+    }
+
+    #[test]
+    fn protocol_errors_map_to_spec_responses() {
+        assert_eq!(
+            classify_protocol_error(&ProtocolError::MalformedJson("bad".into())),
+            ProtocolResponse::Fatal
+        );
+        assert_eq!(
+            classify_protocol_error(&ProtocolError::MissingTypeTag),
+            ProtocolResponse::Skippable
+        );
+        assert_eq!(
+            classify_protocol_error(&ProtocolError::MissingPayloadTag),
+            ProtocolResponse::Fatal
+        );
+        assert_eq!(
+            classify_protocol_error(&ProtocolError::TruncatedFrame {
+                expected: 21,
+                actual: 4
+            }),
+            ProtocolResponse::Fatal
+        );
+        assert_eq!(
+            classify_protocol_error(&ProtocolError::UnknownCodec(0xFF)),
+            ProtocolResponse::Fatal
+        );
+        assert_eq!(
+            classify_protocol_error(&ProtocolError::UnknownPayloadTag(0x02)),
+            ProtocolResponse::Fatal
+        );
+        assert_eq!(
+            classify_protocol_error(&ProtocolError::Oversized {
+                size: 65536,
+                limit: 65535
+            }),
+            ProtocolResponse::Fatal
+        );
+        assert_eq!(
+            classify_protocol_error(&ProtocolError::FormatMismatch {
+                expected: StreamFormat::UPLINK,
+                actual: StreamFormat::DOWNLINK,
+            }),
+            ProtocolResponse::Fatal
+        );
+    }
+}

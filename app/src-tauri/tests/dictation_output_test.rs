@@ -109,8 +109,12 @@ impl Rig {
             })
             .expect("router must accept events");
         assert!(
-            common::harness::wait_for_dictation_state(&self.state, InteractionState::Ready, DEADLINE)
-                .await,
+            common::harness::wait_for_dictation_state(
+                &self.state,
+                InteractionState::Ready,
+                DEADLINE
+            )
+            .await,
             "the transcript must return the dictation track to Ready"
         );
     }
@@ -339,13 +343,17 @@ async fn devanagari_transcript_is_transliterated_when_enabled() {
     let stored = rig.last_transcript().expect("transcript must be stored");
     if engine_available {
         assert!(
-            !stored.chars().any(|c| ('\u{0900}'..='\u{097F}').contains(&c)),
+            !stored
+                .chars()
+                .any(|c| ('\u{0900}'..='\u{097F}').contains(&c)),
             "the stored transcript must be transliterated, got {:?}",
             stored
         );
     } else {
         assert!(
-            stored.chars().any(|c| ('\u{0900}'..='\u{097F}').contains(&c)),
+            stored
+                .chars()
+                .any(|c| ('\u{0900}'..='\u{097F}').contains(&c)),
             "without the model the raw script must be preserved, got {:?}",
             stored
         );
@@ -370,7 +378,9 @@ async fn devanagari_transcript_is_preserved_when_transliteration_is_off() {
 
     let stored = rig.last_transcript().expect("transcript must be stored");
     assert!(
-        stored.chars().any(|c| ('\u{0900}'..='\u{097F}').contains(&c)),
+        stored
+            .chars()
+            .any(|c| ('\u{0900}'..='\u{097F}').contains(&c)),
         "the original script must be preserved, got {:?}",
         stored
     );
@@ -415,7 +425,11 @@ async fn output_router_returns_ok_for_tray_mode() {
         &rig.state.db,
     )
     .await;
-    assert!(result.is_ok(), "tray mode must not fail: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "tray mode must not fail: {:?}",
+        result.err()
+    );
     rig.close();
 }
 
@@ -467,6 +481,9 @@ async fn dictation_returns_to_ready_after_the_transcript() {
 
     rig.deliver("back to ready").await;
 
-    assert_eq!(rig.state.pipeline.dictation_state(), InteractionState::Ready);
+    assert_eq!(
+        rig.state.pipeline.dictation_state(),
+        InteractionState::Ready
+    );
     rig.close();
 }

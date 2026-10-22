@@ -186,18 +186,19 @@ Remote control commands exist on both roles of the pair. **Host** commands are c
 
 | Command | Arguments | Return Shape | Behavioral Contract |
 | :--- | :--- | :--- | :--- |
-| `remote_create_pairing_payload` | None | `{ payload: string, qrDataUrl: string, expiresAt: number }` | Mints a single-use pairing token (≥128 bits, 2-minute TTL, memory-only) and returns the encoded pairing payload plus a rendered QR. The token MUST be marked consumed before any approval is sent. |
-| `remote_list_paired_devices` | None | `Array<PairedDeviceDto>` | Returns the host's `paired_devices` rows (device id, display name, role, paired-at, last-seen-at, address hints). |
-| `remote_revoke_device` | `deviceId: string` | `void` | Permanently removes the pairing: deletes the row and closes any open link from that device. The device can never connect again. |
-| `remote_disconnect_device` | `deviceId: string` | `void` | Ends the current link with reason `host_disconnected` and pauses the session. **Keeps** the pairing, so the device may reconnect later. Distinct from `remote_revoke_device`. |
+| `pair_new_device` | None | `{ payload: string, qrDataUrl: string, expiresAt: number }` | Mints a single-use pairing token (≥128 bits, 2-minute TTL, memory-only) and returns the encoded pairing payload plus a rendered QR. The token MUST be marked consumed before any approval is sent. |
+| `approve_pairing` | `decision: "Approve" \| "Reject"` | `void` | Answers the host pairing prompt modal when a phone completes the Noise handshake after scanning the QR code. On "Approve", the peer is saved to `paired_devices`. |
+| `list_paired_devices` | None | `Array<PairedDeviceDto>` | Returns the host's `paired_devices` rows (device id, display name, role, paired-at, last-seen-at, address hints) from Turso DB. |
+| `revoke_device` | `deviceId: string` | `void` | Permanently removes the pairing: deletes the row from Turso DB and closes any open link from that device. The device can never connect again. |
+| `disconnect_device` | `deviceId: string` | `void` | Ends the current link with reason `host_disconnected` and pauses the session. **Keeps** the pairing in Turso DB, so the device may reconnect later. Distinct from `revoke_device`. |
 
 **Controller commands**
 
 | Command | Arguments | Return Shape | Behavioral Contract |
 | :--- | :--- | :--- | :--- |
-| `remote_connect` | `deviceId?: string`, `address?: string` | `void` | Starts dialling a paired host (by device id) or a manually entered address. Resolves the candidate list: stored hints first, then mDNS. Emits `remote_state_changed` on every transition. |
-| `remote_disconnect` | None | `void` | Sends an intentional `Disconnect`. The host pauses the session and keeps it. |
-| `get_remote_link_state` | None | `RemoteStateDto` | Returns the current `RemoteLinkState` plus the connected host's identity. Exists so the controller's frontend can hydrate its initial render; the controller auto-reconnects, so its state can already be non-idle before the UI mounts. |
+| `connect_host` | `deviceId?: string`, `address?: string` | `void` | Triggered by Rocket Button 🚀 to dial a paired host (by device id) or a manually entered address. Resolves candidate list: stored hints first, then mDNS. Emits `remote_state_changed` on every transition. |
+| `disconnect_host` | None | `void` | Triggered by Rocket Button 🚀 to send an intentional `Disconnect`. The host pauses the session and keeps it. |
+| `get_link_state` | None | `RemoteStateDto` | Returns the current `RemoteLinkState` plus the connected host's identity. Exists so the controller's frontend can hydrate its initial render; the controller auto-reconnects, so its state can already be non-idle before the UI mounts. |
 | `get_command_routing` | None | `Record<string, CommandClass>` | Returns the static command-routing table: the classification of every IPC command and every `update_setting` domain/key as `Remote`, `Local`, `Split`, or `Denied`. The controller's frontend consults it to decide whether an action travels over the link or is handled locally. |
 | `remote_call` | `command: string`, `args?: Record<string, unknown>` | `unknown` | The carrier. Sends a `Req` over the link and resolves with the host's `Res` payload or rejects with the host's `Err` code and message. Only `Remote` and `Split` commands are dispatchable; `Local` and `Denied` are rejected before a request is sent. |
 

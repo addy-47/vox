@@ -27,6 +27,10 @@ use vox_lib::persistence::{
     decode_f32_blob, encode_f32_blob,
     facts::{insert_observation, insert_vector, ObservationRecord},
     notifications::{create_notification, NewNotification, Severity},
+    paired_devices::{
+        delete_paired_device, get_paired_device, insert_paired_device, list_paired_devices,
+        mark_paired_device_seen, update_paired_device_hints, NewPairedDevice, PairedDeviceRole,
+    },
     personal_memory::get_personal_memory,
     projects::{delete_project, get_project_by_id},
     schema::{run_migrations, SCHEMA_VERSION},
@@ -812,4 +816,182 @@ async fn test_session_tool_calls_persistence_and_indexes() {
     })
     .await
     .expect("test_session_tool_calls_persistence_and_indexes timed out");
+}
+
+// ============================================================================
+// Subtest 12: Paired Devices Schema & Storage Constraints
+// ============================================================================
+
+/// PURPOSE:  paired_devices table must enforce role allow-list, 32-byte key constraint, and FK independence.
+/// SCENARIO: Execute migrations on isolated database; verify table info, check constraints, and FK absence.
+/// ASSERTS:  Table exists with 8 documented columns; invalid role rejected; 31-byte key rejected; 0 FKs.
+/// CLASS:    contract
+/// REQUIRES: none
+/// MUTANT:   Remove CHECK (length(public_key) = 32) constraint from migration.
+#[tokio::test]
+async fn paired_devices_table_schema_constraints_and_migration() {
+    tokio::time::timeout(Duration::from_secs(20), async {
+        let dir = tempdir().expect("tempdir");
+        let db = VoxDb::open(dir.path().join("paired_devices_schema.db"))
+            .await
+            .expect("open db");
+        let conn = db.connect().expect("connect");
+        run_migrations(&conn).await.expect("migrations");
+
+        let mut rows = conn
+            .query(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='paired_devices';",
+                (),
+            )
+            .await
+            .expect("table count");
+        let count: i64 = rows.next().await.unwrap().unwrap().get(0).unwrap();
+        assert_eq!(count, 1);
+
+        // Columns check
+        let mut columns = Vec::new();
+        let mut col_rows = conn
+            .query("PRAGMA table_info(paired_devices);", ())
+            .await
+            .expect("table_info");
+        while let Some(row) = col_rows.next().await.expect("table_info row") {
+            let name: String = row.get(1).unwrap();
+            let decl_type: String = row.get(2).unwrap();
+            let not_null: i64 = row.get(3).unwrap();
+            let pk: i64 = row.get(5).unwrap();
+            columns.push((name, decl_type, not_null, pk));
+        }
+
+        let expected = [
+            ("device_id", "TEXT", 0, 1),
+            ("public_key", "BLOB", 1, 0),
+            ("display_name", "TEXT", 1, 0),
+            ("role", "TEXT", 1, 0),
+            ("trust_level", "TEXT", 1, 0),
+            ("hints", "TEXT", 1, 0),
+            ("paired_at", "INTEGER", 1, 0),
+            ("last_seen_at", "INTEGER", 0, 0),
+        ];
+        assert_eq!(columns.len(), expected.len());
+        for (actual, wanted) in columns.iter().zip(expected.iter()) {
+            assert_eq!(actual.0, wanted.0);
+            assert_eq!(actual.1, wanted.1);
+            assert_eq!(actual.2, wanted.2);
+            assert_eq!(actual.3, wanted.3);
+        }
+
+        // Invalid role rejected
+        let bad_role = conn
+            .execute(
+                "INSERT INTO paired_devices \
+                 (device_id, public_key, display_name, role, trust_level, hints, paired_at) \
+                 VALUES ('bad-role-device', ?, 'Spectator', 'spectator', 'full', '[]', 1);",
+                (vec![0u8; 32],),
+            )
+            .await;
+        assert!(bad_role.is_err());
+
+        // Short key rejected
+        let bad_key = conn
+            .execute(
+                "INSERT INTO paired_devices \
+                 (device_id, public_key, display_name, role, trust_level, hints, paired_at) \
+                 VALUES ('bad-key-device', ?, 'Short Key', 'controller', 'full', '[]', 1);",
+                (vec![0u8; 31],),
+            )
+            .await;
+        assert!(bad_key.is_err());
+
+        // Zero FK dependencies
+        let mut fk_rows = conn
+            .query("PRAGMA foreign_key_list(paired_devices);", ())
+            .await
+            .expect("fk query");
+        let mut fk_count = 0;
+        while fk_rows.next().await.expect("fk iter").is_some() {
+            fk_count += 1;
+        }
+        assert_eq!(fk_count, 0);
+    })
+    .await
+    .expect("timeout");
+}
+
+// ============================================================================
+// Subtest 13: Paired Devices CRUD & Unrecognized Hint Roundtrip
+// ============================================================================
+
+/// PURPOSE:  Paired devices persistence module must support complete CRUD without losing unrecognised hint kinds.
+/// SCENARIO: Insert pairing; lookup; list; update hints with unknown json; mark last_seen; then delete.
+/// ASSERTS:  All operations succeed; unrecognised hint roundtrips untouched; deleted row is gone.
+/// CLASS:    happy-path
+/// REQUIRES: none
+/// MUTANT:   Strip unrecognized fields when updating hints in update_paired_device_hints.
+#[tokio::test]
+async fn paired_devices_access_layer_crud_and_unrecognized_hints_roundtrip() {
+    tokio::time::timeout(Duration::from_secs(20), async {
+        let dir = tempdir().expect("tempdir");
+        let db = VoxDb::open(dir.path().join("paired_devices_crud.db"))
+            .await
+            .expect("open db");
+        let conn = db.connect().expect("connect");
+        run_migrations(&conn).await.expect("migrations");
+
+        let device_id = "9f8c1d2b3a4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8";
+        let public_key = vec![0u8; 32];
+
+        // 1. Insert
+        let inserted = insert_paired_device(
+            &conn,
+            &NewPairedDevice {
+                device_id: device_id.to_string(),
+                public_key: public_key.clone(),
+                display_name: "Ada's Phone".to_string(),
+                role: PairedDeviceRole::Controller,
+                trust_level: "full".to_string(),
+                hints: Vec::new(),
+            },
+        )
+        .await
+        .expect("insert");
+
+        assert_eq!(inserted.device_id, device_id);
+        assert_eq!(inserted.role, PairedDeviceRole::Controller);
+        assert!(inserted.paired_at > 0);
+        assert!(inserted.last_seen_at.is_none());
+
+        // 2. Lookup & List
+        let fetched = get_paired_device(&conn, device_id).await.unwrap().unwrap();
+        assert_eq!(fetched, inserted);
+
+        let listed = list_paired_devices(&conn).await.unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].device_id, device_id);
+
+        // 3. Hints update with unknown hint kind
+        let known = serde_json::json!({ "kind": "lan", "addr": "192.168.1.24", "port": 51234 });
+        let unknown = serde_json::json!({ "kind": "relay", "relay_id": "eu-west-3" });
+        let hints = vec![known, unknown.clone()];
+        assert_eq!(
+            update_paired_device_hints(&conn, device_id, &hints)
+                .await
+                .unwrap(),
+            1
+        );
+        let after_hints = get_paired_device(&conn, device_id).await.unwrap().unwrap();
+        assert_eq!(after_hints.hints[1], unknown);
+
+        // 4. Mark seen
+        assert_eq!(mark_paired_device_seen(&conn, device_id).await.unwrap(), 1);
+        let after_seen = get_paired_device(&conn, device_id).await.unwrap().unwrap();
+        assert!(after_seen.last_seen_at.is_some());
+
+        // 5. Delete
+        assert!(delete_paired_device(&conn, device_id).await.unwrap());
+        assert!(get_paired_device(&conn, device_id).await.unwrap().is_none());
+        assert!(list_paired_devices(&conn).await.unwrap().is_empty());
+        assert!(!delete_paired_device(&conn, device_id).await.unwrap());
+    })
+    .await
+    .expect("timeout");
 }

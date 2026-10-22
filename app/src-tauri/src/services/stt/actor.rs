@@ -492,9 +492,10 @@ pub fn spawn_stt_worker(
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::AtomicUsize;
+
     use super::*;
     use crate::services::stt::SttProviderKind;
-    use std::sync::atomic::AtomicUsize;
 
     struct CountingProvider {
         resets: AtomicUsize,
@@ -610,9 +611,7 @@ mod tests {
         let out = coalesce_partials(first, &rx, &mut pending);
 
         match out {
-            SttCommand::Partial {
-                turn_id, audio, ..
-            } => {
+            SttCommand::Partial { turn_id, audio, .. } => {
                 assert_eq!(turn_id, 2, "the newest turn id must win");
                 assert_eq!(audio, vec![2.0], "the newest audio must win");
             }

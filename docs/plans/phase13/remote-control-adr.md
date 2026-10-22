@@ -54,7 +54,7 @@ The call origin is an explicit `ControlOrigin` parameter on the affected service
 
 So the rule is a single statement: **all local writes are blocked while a remote session is active, except the appearance domain.** Reads stay available so the desktop can still browse history, settings, memory and notifications.
 
-Two carve-outs exist because the situation that needs them is precisely the situation in which a phone is attached: `remote_disconnect_device` (end this phone's link, keep the pairing) and `remote_revoke_device` (permanently remove a lost device) stay available, along with pairing a further device and turning remote control off entirely. Blocking "revoke my lost phone" while another phone is connected would be absurd.
+Two carve-outs exist because the situation that needs them is precisely the situation in which a phone is attached: `disconnect_device` (end this phone's link, keep the pairing) and `revoke_device` (permanently remove a lost device) stay available, along with pairing a further device and turning remote control off entirely. Blocking "revoke my lost phone" while another phone is connected would be absurd.
 
 **Cost.** The desktop loses nearly all of its mutating power during a remote session. That is the intent, not a side effect.
 

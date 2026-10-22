@@ -569,9 +569,9 @@ When a controller is attached, the host MUST refuse **every** local write comman
 
 | Command | Why it stays available |
 | :--- | :--- |
-| `remote_disconnect_device` | End this phone's link now, keep the pairing. Blocking this would trap the user. |
-| `remote_revoke_device` | Permanently remove a **lost** device. Revoking the lost phone is the exact action needed while another phone is attached. |
-| `remote_create_pairing_payload` | Pair an additional device. Pairing does not disturb the live session. |
+| `disconnect_device` | End this phone's link now, keep the pairing. Blocking this would trap the user. |
+| `revoke_device` | Permanently remove a **lost** device. Revoking the lost phone is the exact action needed while another phone is attached. |
+| `pair_new_device` | Pair an additional device. Pairing does not disturb the live session. |
 | `update_setting` with domain `remote`, key `accepts_controllers` | Turn remote control off entirely. Turning it off drops any attached controller. |
 
 #### 8.2.2 Blocked — everything else
@@ -655,7 +655,7 @@ These two state machines are explicitly decoupled. `RemoteLinkState` gates event
 
 **State delivery.** The backend owns the state and pushes it:
 - A `remote_state_changed` IPC event is emitted on every transition, on both the host and the controller. The desktop and the phone run the same frontend, so the same event name and payload type serve both.
-- A `get_remote_link_state` IPC command returns the current value. It exists **only on the controller**, and **only** to hydrate the initial render: the controller auto-reconnects (§6.2, US-RC-06), so its state can already be `Reconnecting` before the UI mounts, and a frontend that only listened for events would wait forever for a transition that already happened. The host does **not** need the command: a host that has just booted cannot have a controller attached, because the link died with the previous process, so the desktop starts at `Disconnected` and follows the event.
+- A `get_link_state` IPC command returns the current value. It exists **only on the controller**, and **only** to hydrate the initial render: the controller auto-reconnects (§6.2, US-RC-06), so its state can already be `Reconnecting` before the UI mounts, and a frontend that only listened for events would wait forever for a transition that already happened. The host does **not** need the command: a host that has just booted cannot have a controller attached, because the link died with the previous process, so the desktop starts at `Disconnected` and follows the event.
 
 **The general rule for the whole feature:** the backend owns state and pushes it; the frontend may read it once at boot, never to drive it.
 
@@ -841,7 +841,7 @@ Add the following events to §5 of `ipc-spec.md`:
 - **VERIFY-RC-19 (Host-initiated disconnect keeps the pairing):** After a host-initiated disconnect, the controller's `paired_devices` row still exists and the controller can reconnect successfully. After a revocation, the row is gone and the reconnect is refused terminally.
 - **VERIFY-RC-20 (Snapshot carries the transcript):** A controller that attaches to a host with an active session receives the recent turns in the `AttachSnapshot`, not an empty transcript.
 - **VERIFY-RC-21 (Audio channel is encrypted):** The audio WebSocket rejects a connection that has not completed a Noise handshake, and rejects one whose handshake used a different static key than the control channel. The plaintext of an audio frame is never observable on the wire.
-- **VERIFY-RC-22 (State delivery is push-based):** A `remote_state_changed` event is emitted on every `RemoteLinkState` transition on both the host and the controller. The controller's initial state is retrievable via `get_remote_link_state`. The host exposes no such command and does not need one.
+- **VERIFY-RC-22 (State delivery is push-based):** A `remote_state_changed` event is emitted on every `RemoteLinkState` transition on both the host and the controller. The controller's initial state is retrievable via `get_link_state`. The host exposes no such command and does not need one.
 
 ---
 

@@ -17,10 +17,7 @@
 mod common;
 
 use std::{
-    sync::{
-        atomic::Ordering,
-        mpsc, Arc, Mutex,
-    },
+    sync::{atomic::Ordering, mpsc, Arc, Mutex},
     thread::JoinHandle,
     time::Duration,
 };
@@ -32,17 +29,15 @@ use vox_lib::{
     },
     pipeline::{
         assistant::{
-            interrupt::on_interrupt, speech::on_speech_end, speech::on_speech_start,
+            interrupt::on_interrupt,
+            speech::{on_speech_end, on_speech_start},
             transcript::on_transcript_final,
         },
         RoutingContext,
     },
     services::{
         harness::{Harness, LlmExecutionParams, Role},
-        llm::{
-            actor::LlmResponse,
-            LlmCommand,
-        },
+        llm::{actor::LlmResponse, LlmCommand},
     },
 };
 
@@ -159,14 +154,22 @@ impl Rig {
             }
             std::thread::sleep(Duration::from_millis(10));
         }
-        panic!("no generation request for turn {} within the deadline", turn_id);
+        panic!(
+            "no generation request for turn {} within the deadline",
+            turn_id
+        );
     }
 
     /// Waits until the assistant response of the running turn is populated.
     fn await_assistant_response(&self) -> String {
         let deadline = std::time::Instant::now() + DEADLINE;
         while std::time::Instant::now() < deadline {
-            let text = self.state.pipeline_accumulator.lock().assistant_response.clone();
+            let text = self
+                .state
+                .pipeline_accumulator
+                .lock()
+                .assistant_response
+                .clone();
             if !text.is_empty() {
                 return text;
             }
@@ -276,13 +279,7 @@ async fn empty_transcript_returns_to_ready_without_dispatch() {
     let rig = Rig::new().await;
     rig.state.pipeline.set_state(InteractionState::Thinking);
 
-    on_transcript_final(
-        8,
-        "   \n\t ".to_string(),
-        &rig.app,
-        &rig.state,
-        &rig.ctx,
-    );
+    on_transcript_final(8, "   \n\t ".to_string(), &rig.app, &rig.state, &rig.ctx);
 
     assert_eq!(rig.state.pipeline.state(), InteractionState::Ready);
     rig.assert_no_generation("empty transcript");
@@ -442,10 +439,7 @@ async fn late_arriving_final_is_captured_as_a_continuation_prefix() {
     on_speech_start(&rig.app, &rig.state, &rig.ctx);
     assert_eq!(rig.state.pipeline.state(), InteractionState::Listening);
     assert!(
-        rig.state
-            .pipeline_accumulator
-            .lock()
-            .awaiting_continuation,
+        rig.state.pipeline_accumulator.lock().awaiting_continuation,
         "the accumulator must await the late final"
     );
 
@@ -552,16 +546,12 @@ async fn transcript_is_transliterated_before_dispatch() {
     rig.state.pipeline.set_state(InteractionState::Thinking);
     let engine_available = vox_lib::services::translit::init_transliteration_engine().is_ok();
 
-    on_transcript_final(
-        19,
-        "नमस्ते वोक्स".to_string(),
-        &rig.app,
-        &rig.state,
-        &rig.ctx,
-    );
+    on_transcript_final(19, "नमस्ते वोक्स".to_string(), &rig.app, &rig.state, &rig.ctx);
 
     let query = rig.await_query(19);
-    let has_devanagari = query.chars().any(|c| ('\u{0900}'..='\u{097F}').contains(&c));
+    let has_devanagari = query
+        .chars()
+        .any(|c| ('\u{0900}'..='\u{097F}').contains(&c));
     if engine_available {
         assert!(
             !has_devanagari,
@@ -605,13 +595,7 @@ async fn dropped_transcript_emits_no_pipeline_event() {
     let rig = Rig::new().await;
     rig.state.pipeline.set_state(InteractionState::Listening);
 
-    on_transcript_final(
-        20,
-        "dropped".to_string(),
-        &rig.app,
-        &rig.state,
-        &rig.ctx,
-    );
+    on_transcript_final(20, "dropped".to_string(), &rig.app, &rig.state, &rig.ctx);
 
     common::harness::assert_channel_empty(&rig.pipeline_rx, "dropped transcript");
 }

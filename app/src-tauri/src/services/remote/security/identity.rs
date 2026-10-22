@@ -202,3 +202,62 @@ fn derive_public_key(private: &[u8]) -> Result<[u8; X25519_KEY_BYTES], SecurityE
     public.copy_from_slice(dh.pubkey());
     Ok(public)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const GOLDEN_PUBLIC_KEY: [u8; X25519_KEY_BYTES] = [
+        0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
+        0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e,
+        0x1f, 0x20,
+    ];
+    const GOLDEN_DEVICE_ID: &str =
+        "4d3b88c1038b99a32152cda72333264e1206611dcf0ba533a179d51e28f63933";
+
+    #[test]
+    fn device_id_matches_golden_vector_and_is_sensitive_to_key() {
+        let derived = derive_device_id(&GOLDEN_PUBLIC_KEY);
+        assert_eq!(derived.as_str(), GOLDEN_DEVICE_ID);
+        assert_eq!(derived.as_str().len(), DEVICE_ID_HEX_CHARS);
+
+        let mut changed = GOLDEN_PUBLIC_KEY;
+        changed[0] ^= 0x01;
+        assert_ne!(derive_device_id(&changed).as_str(), derived.as_str());
+    }
+
+    #[test]
+    fn device_id_parses_only_strict_lowercase_hex() {
+        let key = DeviceKey::generate().expect("key must be generated");
+        let id = key.device_id();
+
+        assert_eq!(DeviceId::parse(id.as_str()).unwrap().as_str(), id.as_str());
+        assert!(DeviceId::parse(&id.as_str().to_uppercase()).is_err());
+        assert!(DeviceId::parse(&id.as_str()[..DEVICE_ID_HEX_CHARS - 1]).is_err());
+        assert!(DeviceId::parse(&"g".repeat(DEVICE_ID_HEX_CHARS)).is_err());
+    }
+
+    #[test]
+    fn peer_identity_requires_matching_derived_id() {
+        let key = DeviceKey::generate().expect("key must be generated");
+        let public = key.public_key().to_vec();
+        let id = derive_device_id(&public);
+
+        let identity = PeerIdentity::new(id.clone(), public.clone(), "Test Device".into()).unwrap();
+        assert_eq!(identity.display_name(), "Test Device");
+        assert_eq!(identity.public_key(), public.as_slice());
+
+        let other_key = DeviceKey::generate().expect("other key must be generated");
+        let wrong_id = derive_device_id(other_key.public_key());
+        assert!(PeerIdentity::new(wrong_id, public, "Mismatch".into()).is_err());
+    }
+
+    #[test]
+    fn device_key_zeroizes_private_material() {
+        let mut key = DeviceKey::generate().expect("key must be generated");
+        assert_eq!(key.private_key_bytes().len(), X25519_KEY_BYTES);
+        assert!(key.private.iter().any(|&b| b != 0));
+        key.private.zeroize();
+        assert!(key.private.iter().all(|&b| b == 0));
+    }
+}

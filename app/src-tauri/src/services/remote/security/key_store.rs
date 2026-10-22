@@ -244,3 +244,94 @@ fn set_private_mode(path: &Path) -> Result<(), SecurityError> {
 fn set_private_mode(_path: &Path) -> Result<(), SecurityError> {
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use tempfile::tempdir;
+
+    use super::*;
+
+    #[test]
+    fn key_store_creates_file_with_strict_mode_and_roundtrips() {
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join("device.key");
+        let store = KeyStore::new(path.clone());
+
+        let key = store.load_or_create().expect("load or create");
+        assert!(path.exists());
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+            assert_eq!(mode, KEY_FILE_MODE);
+        }
+
+        let reloaded = store.load().expect("reload");
+        assert_eq!(reloaded.public_key(), key.public_key());
+        assert_eq!(reloaded.device_id().as_str(), key.device_id().as_str());
+
+        // Validate on-disk binary format: version byte + 32-byte private key
+        let on_disk = fs::read(&path).unwrap();
+        assert_eq!(on_disk.len(), KEY_FILE_BYTES);
+        assert_eq!(on_disk[0], KEY_FILE_VERSION);
+        assert_eq!(&on_disk[1..], key.private_key_bytes());
+    }
+
+    #[test]
+    fn key_store_rejects_corrupted_format() {
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join("device.key");
+        let store = KeyStore::new(path.clone());
+
+        // Wrong length
+        fs::write(&path, vec![0u8; KEY_FILE_BYTES - 1]).unwrap();
+        assert!(matches!(
+            store.load(),
+            Err(SecurityError::KeyStoreFormat(_))
+        ));
+
+        // Unknown version
+        let mut bad_version = vec![KEY_FILE_VERSION + 1];
+        bad_version.extend_from_slice(&[0u8; X25519_KEY_BYTES]);
+        fs::write(&path, bad_version).unwrap();
+        assert!(matches!(
+            store.load(),
+            Err(SecurityError::KeyStoreFormat(_))
+        ));
+    }
+
+    #[test]
+    fn key_file_is_replaced_atomically_via_rename() {
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join("device.key");
+        let store = KeyStore::new(path.clone());
+
+        let first = store.load_or_create().expect("create first");
+        let second = DeviceKey::generate().expect("generate second");
+
+        #[cfg(unix)]
+        let first_inode = {
+            use std::os::unix::fs::MetadataExt;
+            fs::metadata(&path).unwrap().ino()
+        };
+
+        store.save(&second).expect("save second");
+
+        #[cfg(unix)]
+        let second_inode = {
+            use std::os::unix::fs::MetadataExt;
+            fs::metadata(&path).unwrap().ino()
+        };
+
+        #[cfg(unix)]
+        assert_ne!(
+            first_inode, second_inode,
+            "file must be replaced via atomic rename"
+        );
+
+        let reloaded = store.load().expect("reload");
+        assert_eq!(reloaded.public_key(), second.public_key());
+        assert_ne!(reloaded.public_key(), first.public_key());
+    }
+}
