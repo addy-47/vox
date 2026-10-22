@@ -242,16 +242,8 @@ mod tests {
 
     use super::*;
 
-    /// A model absent from the bundled catalog must NOT inherit capabilities
-    /// from an unrelated model that happens to share a family prefix.
-    ///
-    /// `qwen3.5:9b` is the concrete regression: 66 catalog models are tagged
-    /// `family = "qwen"` with mutually inconsistent `supports_structured` /
-    /// `context_window`, so the old substring+family fallback resolved to a
-    /// random one of them and silently turned off strict JSON-schema output
-    /// for both memory compaction and personal consolidation.
     #[test]
-    fn test_baseline_lookup_does_not_inherit_capabilities_by_family_prefix() {
+    fn catalog_lookup_does_not_inherit_capabilities_by_family_prefix() {
         assert!(
             get_baseline_spec("qwen3.5:9b").is_none(),
             "unknown model must not resolve a family baseline"
@@ -262,10 +254,8 @@ mod tests {
         );
     }
 
-    /// The family field must never be reachable as a capability source again.
-    /// If a future change reintroduces fuzzy matching, this fails.
     #[test]
-    fn test_family_field_alone_never_resolves_a_spec() {
+    fn catalog_family_match_alone_never_resolves_a_spec() {
         let lower = "qwen3.5:9b";
         for (key, spec) in parse_catalog_json(BUNDLED_MODELS_JSON) {
             if let Some(family) = spec.family.as_deref() {
@@ -280,7 +270,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_catalog_json_performance_and_accuracy() {
+    fn catalog_json_parses_with_the_expected_model_count() {
         let start = Instant::now();
         let catalog = parse_catalog_json(BUNDLED_MODELS_JSON);
         let duration = start.elapsed();

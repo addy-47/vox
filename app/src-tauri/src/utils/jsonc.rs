@@ -133,7 +133,7 @@ mod tests {
     }
 
     #[test]
-    fn test_strip_comments_basic() {
+    fn jsonc_parser_strips_comments_without_touching_string_content() {
         let jsonc = r#"
         // Top-level comment
         {
@@ -153,7 +153,7 @@ mod tests {
     }
 
     #[test]
-    fn test_escaped_quotes_in_string() {
+    fn jsonc_parser_keeps_escaped_quotes_inside_strings() {
         let jsonc = r#"
         {
             "name": "He said \"hello // world\" /* not a comment */",
@@ -171,7 +171,7 @@ mod tests {
     }
 
     #[test]
-    fn test_trailing_commas_and_bom() {
+    fn jsonc_parser_accepts_a_bom_and_trailing_commas() {
         let jsonc = "\u{feff}{\n  \"name\": \"Vox\",\n  \"url\": \"https://example.com\",\n  \"count\": 10,\n}";
         let sample: Sample =
             from_jsonc_str(jsonc).expect("Failed to parse jsonc with BOM and trailing comma");

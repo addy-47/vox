@@ -1,13 +1,11 @@
 //! ============================================================================
-//! tests/realtime_transport_test.rs — Realtime S2S WebSocket Driver Transport Lifecycle Tests
+//! realtime_transport_test.rs — the realtime WebSocket harness encodes outbound commands, decodes inbound frames, recovers from a dropped connection, and halts when reconnection is impossible
 //! ============================================================================
-//! Category     : Integration Test (Seam 19)
-//! Component    : services/realtime/transport/{connection,mod,health}, services/realtime/session
-//! Prerequisites: Local in-process WebSocket server, isolated TempPathsGuard
-//! Execution    : cargo nextest run --test realtime_transport_test --release --nocapture --test-threads=1
-//!                (Cloud live test): cargo nextest run --test realtime_transport_test --release --nocapture --test-threads=1 -- --ignored
-//! Metrics      : Wire framing encoding/decoding, reconnect backoff recovery, terminal failure halt,
-//!                paused state suppression, session cache TTL purge
+//! Category  : Integration (Seam 19 — realtime transport)
+//! Component : src/services/realtime/transport/{connection,mod,health}.rs, src/services/realtime/session.rs
+//! Binary    : realtime_transport_test
+//! Prereqs   : none (in-process WebSocket origin; the ignored scenario needs a live cloud key)
+//! Run       : cargo nextest run --test realtime_transport_test --release --test-threads=1
 //! ============================================================================
 
 mod common;
@@ -134,46 +132,38 @@ fn make_harness_init(
     }
 }
 
-// ============================================================================
-// Subtest 1: Duplex Wire Framing & Outbound Command Encoding
-// ============================================================================
-/// Entry Seam A: `services::realtime::transport::connection::spawn_harness`
-///
-/// Verifies:
-///   - Outbound commands (`Audio`, `ActivityStart`) are encoded via `ProviderDriver`
-///     and successfully received across the WebSocket wire by the server.
-///   - Inbound binary frames from the server are decoded by `ProviderDriver` into
-///     `RealtimeProviderEvent::AudioChunk` events on `provider_event_tx`.
+/// PURPOSE:  Every outbound command must be encoded by the provider driver
+///           and delivered on the wire; a command that is built but never
+///           written leaves the provider silent.
+/// SCENARIO: Connect to a local WebSocket origin, spawn the harness and send
+///           an activity start plus an audio chunk.
+/// ASSERTS:  The origin receives exactly `activity_start` followed by
+///           `pcm_samples:320`.
+/// CLASS:    happy-path
+/// REQUIRES: none
+/// MUTANT:   Skip the `OutboundCommand::Audio` arm in `TestDriver::encode` —
+///           the second frame assertion would fail.
 #[tokio::test]
-async fn test_duplex_wire_framing_and_outbound_encoding() {
+async fn outbound_commands_are_encoded_and_reach_the_origin() {
     tokio::time::timeout(Duration::from_secs(15), async {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let server_addr = listener.local_addr().unwrap();
 
-        // 1. Spawn Mock Server
         let server_task = tokio::spawn(async move {
             let (stream, _) = listener.accept().await.unwrap();
             let mut ws = tokio_tungstenite::accept_async(stream).await.unwrap();
 
-            // Receive outbound commands from client
             let msg1 = ws.next().await.unwrap().unwrap();
             assert_eq!(msg1.into_text().unwrap(), "activity_start");
 
             let msg2 = ws.next().await.unwrap().unwrap();
             assert_eq!(msg2.into_text().unwrap(), "pcm_samples:320");
 
-            // Send binary audio chunk back to client
-            let audio_bytes = vec![0x10, 0x00, 0x20, 0x00]; // i16 values: [16, 32]
-            ws.send(Message::Binary(audio_bytes.into())).await.unwrap();
-
-            // Wait briefly before closing
-            tokio::time::sleep(Duration::from_millis(100)).await;
             let _ = ws.close(None).await;
         });
 
-        // 2. Client Connection & Harness Setup
         let (ws_write, ws_read) = connect_to_ws(server_addr).await;
-        let (event_tx, mut event_rx) = mpsc::channel(64);
+        let (event_tx, _event_rx) = mpsc::channel(64);
         let (_state_tx, state_rx) = tokio::sync::watch::channel(InteractionState::Ready);
         let turn_id_ref = Arc::new(AtomicU32::new(1));
 
@@ -201,7 +191,6 @@ async fn test_duplex_wire_framing_and_outbound_encoding() {
 
         let handles = spawn_harness(driver, config, init);
 
-        // 3. Dispatch outbound commands
         handles
             .outbound_tx
             .send(OutboundCommand::ActivityStart)
@@ -213,7 +202,68 @@ async fn test_duplex_wire_framing_and_outbound_encoding() {
             .await
             .unwrap();
 
-        // 4. Await inbound audio chunk
+        server_task.await.unwrap();
+    })
+    .await
+    .expect("outbound_commands_are_encoded_and_reach_the_origin timed out");
+}
+
+/// PURPOSE:  An inbound binary frame must be decoded into the PCM samples
+///           the provider sent; a mis-decoded frame plays back as noise.
+/// SCENARIO: Have the origin send a binary frame carrying two little-endian
+///           i16 samples and read the provider event.
+/// ASSERTS:  An `AudioChunk` event arrives whose samples are exactly
+///           `[16, 32]`.
+/// CLASS:    happy-path
+/// REQUIRES: none
+/// MUTANT:   Swap the byte order in the binary decoder — the sample
+///           assertion would fail.
+#[tokio::test]
+async fn inbound_binary_frame_is_decoded_into_an_audio_chunk_event() {
+    tokio::time::timeout(Duration::from_secs(15), async {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let server_addr = listener.local_addr().unwrap();
+
+        let server_task = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let mut ws = tokio_tungstenite::accept_async(stream).await.unwrap();
+
+            // Send binary audio chunk back to client
+            let audio_bytes = vec![0x10, 0x00, 0x20, 0x00]; // i16 values: [16, 32]
+            ws.send(Message::Binary(audio_bytes.into())).await.unwrap();
+
+            let _ = ws.close(None).await;
+        });
+
+        let (ws_write, ws_read) = connect_to_ws(server_addr).await;
+        let (event_tx, mut event_rx) = mpsc::channel(64);
+        let (_state_tx, state_rx) = tokio::sync::watch::channel(InteractionState::Ready);
+        let turn_id_ref = Arc::new(AtomicU32::new(1));
+
+        let reconnect_fn: ReconnectFn = Box::new(move || {
+            Box::pin(async move {
+                anyhow::bail!("Reconnect not expected in wire framing test");
+            })
+        });
+
+        let driver = Arc::new(TestDriver::new());
+        let config = HarnessConfig {
+            max_reconnect_attempts: 1,
+            reconnect_base_delay_secs: 0,
+            reconnect_factor_secs: 0,
+        };
+
+        let init = make_harness_init(
+            ws_write,
+            ws_read,
+            reconnect_fn,
+            event_tx,
+            state_rx,
+            turn_id_ref,
+        );
+
+        let _handles = spawn_harness(driver, config, init);
+
         let event = tokio::time::timeout(Duration::from_secs(5), event_rx.recv())
             .await
             .expect("Must receive inbound event within timeout")
@@ -233,25 +283,31 @@ async fn test_duplex_wire_framing_and_outbound_encoding() {
         server_task.await.unwrap();
     })
     .await
-    .expect("test_duplex_wire_framing_and_outbound_encoding timed out");
+    .expect("inbound_binary_frame_is_decoded_into_an_audio_chunk_event timed out");
 }
 
-// ============================================================================
-// Subtest 2: Reconnect Recovery
-// ============================================================================
-/// Entry Seam A: `services::realtime::transport::connection::spawn_harness`
-///
-/// Verifies:
-///   - When the server abruptly closes the connection, the harness triggers the reconnect
-///     callback and re-establishes a live connection.
-///   - Outbound commands transmitted during/after reconnect reach the new server socket.
+/// PURPOSE:  When the provider says goodbye the harness must reconnect and
+///           keep the session usable; a session that dies on a polite
+///           `go_away` ends the user's turn for no reason.
+/// SCENARIO: The origin accepts one connection, sends `go_away` and closes,
+///           then accepts a second connection and reports that it is ready.
+/// ASSERTS:  The harness re-establishes the connection, the outbound command
+///           reaches the new socket, and the harness is not terminated.
+/// CLASS:    happy-path
+/// REQUIRES: none
+/// MUTANT:   Do not reconnect on `FrameAction::GoAway` — the harness would
+///           never reach the second connection and the origin assertion
+///           would fail.
 #[tokio::test]
-async fn test_reconnect_backoff_and_recovery() {
+async fn reconnect_after_go_away_re_establishes_the_connection() {
     tokio::time::timeout(Duration::from_secs(15), async {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let server_addr = listener.local_addr().unwrap();
 
-        // Server accepts connection 1, sends go_away, then accepts connection 2
+        // The origin signals "second connection accepted" so the client never
+        // has to sleep waiting for the reconnect to settle.
+        let (ready_tx, mut ready_rx) = mpsc::channel::<()>(1);
+
         let server_task = tokio::spawn(async move {
             // Connection 1
             let (stream1, _) = listener.accept().await.unwrap();
@@ -263,6 +319,7 @@ async fn test_reconnect_backoff_and_recovery() {
             // Connection 2 (Reconnection)
             let (stream2, _) = listener.accept().await.unwrap();
             let mut ws2 = tokio_tungstenite::accept_async(stream2).await.unwrap();
+            let _ = ready_tx.send(()).await;
 
             // Receive message from reconnected client
             let msg = ws2.next().await.unwrap().unwrap();
@@ -302,10 +359,12 @@ async fn test_reconnect_backoff_and_recovery() {
 
         let handles = spawn_harness(driver, config, init);
 
-        // Wait briefly for go_away and reconnect to settle
-        tokio::time::sleep(Duration::from_millis(200)).await;
+        // Wait for the origin to confirm the second connection, then talk on it.
+        ready_rx
+            .recv()
+            .await
+            .expect("the harness never reconnected to the origin");
 
-        // Dispatch outbound command over reconnected stream
         handles
             .outbound_tx
             .send(OutboundCommand::ActivityStart)
@@ -319,20 +378,21 @@ async fn test_reconnect_backoff_and_recovery() {
         );
     })
     .await
-    .expect("test_reconnect_backoff_and_recovery timed out");
+    .expect("reconnect_after_go_away_re_establishes_the_connection timed out");
 }
 
-// ============================================================================
-// Subtest 3: Terminal Reconnect Failure & Session Halted Impact
-// ============================================================================
-/// Entry Seam A: `services::realtime::transport::connection::spawn_harness`
-///
-/// Verifies:
-///   - When reconnect attempts reach `max_reconnect_attempts` without success:
-///     - `terminated` atomic flag is set to `true`.
-///     - `RealtimeProviderEvent::Error` with `PipelineImpact::SessionHalted` is emitted.
+/// PURPOSE:  When reconnection is impossible the harness must report a
+///           session-halting error; silently going quiet leaves the user
+///           talking to a dead microphone.
+/// SCENARIO: The origin closes immediately and every reconnect attempt fails.
+/// ASSERTS:  The emitted error carries `PipelineImpact::SessionHalted`, the
+///           current turn id and a "permanently lost" message.
+/// CLASS:    error-path
+/// REQUIRES: none
+/// MUTANT:   Emit a recoverable impact instead of `SessionHalted` — the
+///           impact assertion would fail.
 #[tokio::test]
-async fn test_terminal_reconnect_failure_and_halt() {
+async fn terminal_reconnect_failure_emits_a_session_halted_error() {
     tokio::time::timeout(Duration::from_secs(15), async {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let server_addr = listener.local_addr().unwrap();
@@ -380,7 +440,6 @@ async fn test_terminal_reconnect_failure_and_halt() {
 
         server_task.await.unwrap();
 
-        // Await terminal error event
         let error_event = tokio::time::timeout(Duration::from_secs(5), event_rx.recv())
             .await
             .expect("Must emit terminal event before timeout")
@@ -403,31 +462,105 @@ async fn test_terminal_reconnect_failure_and_halt() {
             other => panic!("Expected Error event, got: {:?}", other),
         }
 
-        // Verify terminated flag was set
         assert!(
             handles.terminated.load(Ordering::SeqCst),
             "terminated atomic flag must be true after max reconnect attempts exhausted"
         );
+    })
+    .await
+    .expect("terminal_reconnect_failure_emits_a_session_halted_error timed out");
+}
+
+/// PURPOSE:  The harness must give up after exactly the configured number of
+///           reconnect attempts; retrying forever keeps the app busy and the
+///           user waiting.
+/// SCENARIO: Run the same always-failing reconnect scenario and count the
+///           attempts the callback was asked to make.
+/// ASSERTS:  The callback was invoked exactly `max_reconnect_attempts` times
+///           and the harness reports itself terminated.
+/// CLASS:    edge-case
+/// REQUIRES: none
+/// MUTANT:   Ignore `max_reconnect_attempts` and retry forever — the attempt
+///           count assertion would fail.
+#[tokio::test]
+async fn terminal_reconnect_failure_stops_after_the_configured_attempts() {
+    tokio::time::timeout(Duration::from_secs(15), async {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let server_addr = listener.local_addr().unwrap();
+
+        let server_task = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let mut ws = tokio_tungstenite::accept_async(stream).await.unwrap();
+            let _ = ws.close(None).await;
+        });
+
+        let (ws_write, ws_read) = connect_to_ws(server_addr).await;
+        let (event_tx, mut event_rx) = mpsc::channel(64);
+        let (_state_tx, state_rx) = tokio::sync::watch::channel(InteractionState::Ready);
+        let turn_id_ref = Arc::new(AtomicU32::new(42));
+
+        let attempts_counter = Arc::new(AtomicU32::new(0));
+        let attempts_clone = attempts_counter.clone();
+        let reconnect_fn: ReconnectFn = Box::new(move || {
+            let c = attempts_clone.clone();
+            Box::pin(async move {
+                c.fetch_add(1, Ordering::SeqCst);
+                anyhow::bail!("Simulated network outage");
+            })
+        });
+
+        let driver = Arc::new(TestDriver::new());
+        let config = HarnessConfig {
+            max_reconnect_attempts: 2,
+            reconnect_base_delay_secs: 0,
+            reconnect_factor_secs: 0,
+        };
+
+        let init = make_harness_init(
+            ws_write,
+            ws_read,
+            reconnect_fn,
+            event_tx,
+            state_rx,
+            turn_id_ref,
+        );
+
+        let handles = spawn_harness(driver, config, init);
+
+        server_task.await.unwrap();
+
+        // The terminal error is the harness's acknowledgement that it stopped.
+        let _ = tokio::time::timeout(Duration::from_secs(5), event_rx.recv())
+            .await
+            .expect("Must emit terminal event before timeout");
+
         assert_eq!(
             attempts_counter.load(Ordering::SeqCst),
             2,
             "Must execute exactly max_reconnect_attempts"
         );
+        assert!(
+            handles.terminated.load(Ordering::SeqCst),
+            "the harness must mark itself terminated once the attempts are exhausted"
+        );
     })
     .await
-    .expect("test_terminal_reconnect_failure_and_halt timed out");
+    .expect("terminal_reconnect_failure_stops_after_the_configured_attempts timed out");
 }
 
-// ============================================================================
-// Subtest 4: Paused State Suppresses Reconnect
-// ============================================================================
-/// Entry Seam A: `services::realtime::transport::connection::spawn_harness`
-///
-/// Verifies:
-///   - If connection drops while `InteractionState == Paused`, the harness silently
-///     terminates the connection tasks without triggering the reconnect callback.
+/// PURPOSE:  A session that is paused on purpose must not reconnect; the
+///           user paused because the microphone is in use elsewhere, and a
+///           reconnect would grab it again.
+/// SCENARIO: Pause the session before the origin drops the connection, then
+///           watch the reconnect flag.
+/// ASSERTS:  The reconnect callback is never invoked and no error event is
+///           emitted.
+/// CLASS:    suppression
+/// REQUIRES: none
+/// MUTANT:   Ignore the `Paused` state when the connection drops — the
+///           reconnect-flag assertion would fail.
 #[tokio::test]
-async fn test_paused_state_suppresses_reconnect() {
+async fn paused_state_suppresses_the_reconnect() {
     tokio::time::timeout(Duration::from_secs(15), async {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let server_addr = listener.local_addr().unwrap();
@@ -495,19 +628,21 @@ async fn test_paused_state_suppresses_reconnect() {
         );
     })
     .await
-    .expect("test_paused_state_suppresses_reconnect timed out");
+    .expect("paused_state_suppresses_the_reconnect timed out");
 }
 
-// ============================================================================
-// Subtest 5: Session Cache TTL Management & Disk Purge
-// ============================================================================
-/// Entry Seam B: `create_realtime_provider` & `purge_session_cache`
-///
-/// Verifies:
-///   - Expired session tokens (> 2 hours) on disk are purged by `create_realtime_provider`.
-///   - Unexpired tokens are retained and injected into provider configuration.
+/// PURPOSE:  An expired session token must be purged from disk; reusing it
+///           makes the provider reject every connection with an
+///           authentication error the user cannot act on.
+/// SCENARIO: Write a cache file whose expiry is three hours in the past and
+///           create the realtime provider.
+/// ASSERTS:  The cache file no longer exists afterwards.
+/// CLASS:    edge-case
+/// REQUIRES: none
+/// MUTANT:   Skip the expiry check in `create_realtime_provider` — the file
+///           existence assertion would fail.
 #[tokio::test]
-async fn test_session_cache_ttl_and_purge() {
+async fn expired_session_cache_is_purged_on_provider_creation() {
     tokio::time::timeout(Duration::from_secs(15), async {
         let _guard = TempPathsGuard::new();
         let (_app, state) = get_test_app_and_state().await;
@@ -515,7 +650,6 @@ async fn test_session_cache_ttl_and_purge() {
         let cache_file = cache_dir().join(SESSION_CACHE_FILENAME);
         std::fs::create_dir_all(cache_dir()).unwrap();
 
-        // 1. Expired Token: timestamp 3 hours in the past
         let past_ms = chrono::Utc::now().timestamp_millis() as u64 - (3 * 3600 * 1000);
         let expired_json = serde_json::json!({
             "handle": "expired_session_token_123",
@@ -525,7 +659,6 @@ async fn test_session_cache_ttl_and_purge() {
         std::fs::write(&cache_file, expired_json.to_string()).unwrap();
         assert!(cache_file.exists(), "Setup: expired cache file must exist");
 
-        // Trigger create_realtime_provider
         {
             let mut settings = state.settings.write().unwrap();
             settings.realtime.active = vox_lib::config::ActiveSelection {
@@ -537,13 +670,33 @@ async fn test_session_cache_ttl_and_purge() {
 
         let _ = create_realtime_provider(&state);
 
-        // Verification: Expired cache file must be purged from disk
         assert!(
             !cache_file.exists(),
             "Expired session cache file must be purged automatically on create_realtime_provider"
         );
+    })
+    .await
+    .expect("expired_session_cache_is_purged_on_provider_creation timed out");
+}
 
-        // 2. Unexpired Token: timestamp 1 hour in the future
+/// PURPOSE:  A valid session token must survive provider creation; purging it
+///           forces a new handshake on every start.
+/// SCENARIO: Write a cache file whose expiry is one hour in the future and
+///           create the realtime provider.
+/// ASSERTS:  The cache file still exists afterwards.
+/// CLASS:    happy-path
+/// REQUIRES: none
+/// MUTANT:   Purge the cache file unconditionally — the existence assertion
+///           would fail.
+#[tokio::test]
+async fn unexpired_session_cache_is_retained_on_provider_creation() {
+    tokio::time::timeout(Duration::from_secs(15), async {
+        let _guard = TempPathsGuard::new();
+        let (_app, state) = get_test_app_and_state().await;
+
+        let cache_file = cache_dir().join(SESSION_CACHE_FILENAME);
+        std::fs::create_dir_all(cache_dir()).unwrap();
+
         let future_ms = chrono::Utc::now().timestamp_millis() as u64 + (3600 * 1000);
         let valid_json = serde_json::json!({
             "handle": "valid_session_token_456",
@@ -553,32 +706,76 @@ async fn test_session_cache_ttl_and_purge() {
         std::fs::write(&cache_file, valid_json.to_string()).unwrap();
         assert!(cache_file.exists(), "Setup: valid cache file must exist");
 
+        {
+            let mut settings = state.settings.write().unwrap();
+            settings.realtime.active = vox_lib::config::ActiveSelection {
+                category: "cloud".to_string(),
+                provider: Some("gemini_live".to_string()),
+                model: "gemini-2.0-flash".to_string(),
+            };
+        }
+
         let _ = create_realtime_provider(&state);
 
-        // Verification: Valid unexpired cache file must be retained
         assert!(
             cache_file.exists(),
             "Unexpired session cache file must NOT be purged"
         );
+    })
+    .await
+    .expect("unexpired_session_cache_is_retained_on_provider_creation timed out");
+}
 
-        // Explicit purge test
+/// PURPOSE:  The explicit purge must remove the session cache from disk;
+///           a stale token file is a credential left on the user's disk.
+/// SCENARIO: Write a valid cache file and call `purge_session_cache`.
+/// ASSERTS:  The cache file no longer exists afterwards.
+/// CLASS:    happy-path
+/// REQUIRES: none
+/// MUTANT:   Make `purge_session_cache` a no-op — the existence assertion
+///           would fail.
+#[tokio::test]
+async fn purge_session_cache_removes_the_cache_file() {
+    tokio::time::timeout(Duration::from_secs(15), async {
+        let _guard = TempPathsGuard::new();
+
+        let cache_file = cache_dir().join(SESSION_CACHE_FILENAME);
+        std::fs::create_dir_all(cache_dir()).unwrap();
+
+        let future_ms = chrono::Utc::now().timestamp_millis() as u64 + (3600 * 1000);
+        let valid_json = serde_json::json!({
+            "handle": "valid_session_token_456",
+            "model": "gemini-2.0-flash",
+            "expires_at": future_ms
+        });
+        std::fs::write(&cache_file, valid_json.to_string()).unwrap();
+        assert!(cache_file.exists(), "Setup: valid cache file must exist");
+
         purge_session_cache();
+
         assert!(
             !cache_file.exists(),
             "purge_session_cache must explicitly remove the cache file"
         );
     })
     .await
-    .expect("test_session_cache_ttl_and_purge timed out");
+    .expect("purge_session_cache_removes_the_cache_file timed out");
 }
 
-// ============================================================================
-// Subtest 6 (IGNORED): Live Cloud Provider Handshake
-// ============================================================================
-/// Cloud E2E test verifying live connection against configured cloud provider.
+/// PURPOSE:  A live cloud provider must complete a real handshake and a
+///           clean disconnect; the offline transport tests only prove the
+///           wiring, not the provider contract.
+/// SCENARIO: Instantiate the configured cloud provider, run its health check,
+///           connect in PTT mode and disconnect.
+/// ASSERTS:  The provider is created, the health check succeeds, the
+///           connection is established and the disconnect succeeds.
+/// CLASS:    happy-path
+/// REQUIRES: a live cloud API key (GEMINI_API_KEY or DEEPGRAM_API_KEY)
+/// MUTANT:   Skip the health check in `create_realtime_provider` — the
+///           health assertion would fail.
 #[tokio::test]
 #[ignore = "Requires live cloud API key (GEMINI_API_KEY or DEEPGRAM_API_KEY)"]
-async fn test_live_cloud_realtime_handshake() {
+async fn live_cloud_realtime_handshake() {
     tokio::time::timeout(Duration::from_secs(30), async {
         let _guard = TempPathsGuard::new();
         let (_app, state) = get_test_app_and_state().await;
@@ -594,5 +791,5 @@ async fn test_live_cloud_realtime_handshake() {
         session.disconnect().expect("Clean disconnect must succeed");
     })
     .await
-    .expect("test_live_cloud_realtime_handshake timed out");
+    .expect("live_cloud_realtime_handshake timed out");
 }

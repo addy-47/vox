@@ -569,7 +569,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_edge_tts_fails_loudly_while_upstream_is_unavailable() {
+    fn edge_tts_reports_the_upstream_403_and_leaves_no_audio() {
         let (event_tx, event_rx) = std::sync::mpsc::channel();
         let cancel = Arc::new(AtomicBool::new(false));
         let rb = ringbuf::HeapRb::<f32>::new(48000 * 5);

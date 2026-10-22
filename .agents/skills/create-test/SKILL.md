@@ -115,7 +115,7 @@ A "maybe" or "no" in the second column means the test design does not cover what
 
 Two durable artifacts:
 
-1. **The intent block above the test function.** This is the trace, compressed and committed:
+1. **The intent block above the test function**, for seam binaries under `app/src-tauri/tests/`. This is the trace, compressed and committed. Unit tests inside `app/src-tauri/src/` carry no block and no doc comment: the behaviour-first function name is the documentation there, and the block only bloats the source file.
 
 ```rust
 /// PURPOSE:  The production defect this test exists to catch. Names a failure mode.

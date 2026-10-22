@@ -1625,7 +1625,7 @@ mod tests {
     }
 
     #[test]
-    fn tool_verdict_supports_declared_tool() {
+    fn tool_verdict_supports_a_declared_tool_call() {
         let observed = vec![CanonicalToolCall {
             id: "call_1".to_string(),
             name: "web_search".to_string(),
@@ -1636,7 +1636,7 @@ mod tests {
     }
 
     #[test]
-    fn tool_verdict_names_undeclared_tools() {
+    fn tool_verdict_names_the_undeclared_tool() {
         let observed = vec![CanonicalToolCall {
             id: "call_1".to_string(),
             name: "get_weather".to_string(),
@@ -1653,7 +1653,7 @@ mod tests {
     }
 
     #[test]
-    fn tool_verdict_empty_clean_stream_is_unsupported() {
+    fn tool_verdict_reports_an_empty_stream_as_unsupported() {
         let (outcome, detail) = tool_verdict(&[], "web_search", None);
         match outcome {
             ToolOutcome::Unsupported => {
@@ -1664,7 +1664,7 @@ mod tests {
     }
 
     #[test]
-    fn tool_verdict_truncation_without_calls_is_failure() {
+    fn tool_verdict_reports_a_truncated_stream_as_failed() {
         let (outcome, detail) = tool_verdict(&[], "web_search", Some("stream interrupted: reset"));
         match outcome {
             ToolOutcome::Failed => {
@@ -1675,7 +1675,7 @@ mod tests {
     }
 
     #[test]
-    fn extract_probe_text_per_transport() {
+    fn extract_probe_text_reads_each_transport_shape() {
         let chat = r#"{"choices":[{"delta":{"content":"Hello "}}]}"#;
         assert_eq!(
             extract_probe_text(chat, TransportType::ChatCompletions),
@@ -1696,7 +1696,7 @@ mod tests {
     }
 
     #[test]
-    fn stream_completion_markers() {
+    fn stream_completion_markers_detect_the_terminal_frame() {
         assert!(ollama_stream_is_complete(r#"{"done":true}"#));
         assert!(!ollama_stream_is_complete(r#"{"done":false}"#));
         assert!(responses_stream_is_complete(
@@ -1708,7 +1708,7 @@ mod tests {
     }
 
     #[test]
-    fn error_excerpt_truncates_long_bodies() {
+    fn error_excerpt_truncates_a_long_error_body() {
         let long = "x".repeat(500);
         let excerpt = error_excerpt(&long);
         assert!(excerpt.len() <= 310, "len: {}", excerpt.len());
@@ -1716,7 +1716,7 @@ mod tests {
     }
 
     #[test]
-    fn probe_tool_declaration_is_production_web_search() {
+    fn probe_tool_declaration_matches_the_production_tool() {
         use crate::services::llm::transport::canonical_tools_json;
         let def = probe_tool_declaration();
         assert_eq!(def.name, "web_search");
@@ -1732,7 +1732,7 @@ mod tests {
     }
 
     #[test]
-    fn accumulator_splits_parallel_index_zero_calls() {
+    fn tool_call_accumulator_keeps_two_calls_with_the_same_index() {
         use crate::services::llm::transport::chat_completions::ToolCallAccumulator;
         let mut acc = ToolCallAccumulator::default();
         acc.feed_line(r#"{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"web_search","arguments":"{}"}}]}}]}"#);
@@ -1752,7 +1752,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn streaming_probe_unauthorized_records_failed() {
+    async fn streaming_probe_records_a_401_as_failed() {
         let (url, server) = serve_canned(vec![(401, "unauthorized".to_string())]);
         let (client, config) = mock_setup(&url, None);
         let mut checks = Vec::new();
@@ -1774,7 +1774,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn streaming_probe_empty_completion_is_failed() {
+    async fn streaming_probe_records_an_empty_completion_as_failed() {
         let (url, server) = serve_canned(vec![(200, "data: [DONE]\n\n".to_string())]);
         let (client, config) = mock_setup(&url, None);
         let mut checks = Vec::new();
@@ -1795,7 +1795,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn streaming_probe_measures_scripts_and_tps() {
+    async fn streaming_probe_measures_scripts_and_tokens_per_second() {
         let body = "data: {\"choices\":[{\"delta\":{\"content\":\"Hello \"}}]}\n\ndata: {\"choices\":[{\"delta\":{\"content\":\"नमस्ते\"}}]}\n\ndata: [DONE]\n\n";
         let (url, server) = serve_canned(vec![(200, body.to_string())]);
         let (client, config) = mock_setup(&url, None);
@@ -1823,7 +1823,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn streaming_probe_truncation_yields_no_tps() {
+    async fn streaming_probe_records_a_truncated_stream_as_failed() {
         let partial = "data: {\"choices\":[{\"delta\":{\"content\":\"Hello \"}}]}\n\n";
         let (url, server) = serve_truncated(200, partial.len() + 5000, partial.to_string());
         let (client, config) = mock_setup(&url, None);
@@ -1845,7 +1845,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn tool_probe_supported_via_declared_tool_call() {
+    async fn tool_probe_reports_support_when_the_tool_is_called() {
         let body = "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_1\",\"function\":{\"name\":\"web_search\",\"arguments\":\"{\\\"query\\\":\\\"weather in Tokyo\\\",\\\"spoken_filler\\\":\\\"Searching now\\\"}\"}}]}}]}\n\ndata: {\"choices\":[{\"delta\":{},\"finish_reason\":\"tool_calls\"}]}\n\ndata: [DONE]\n\n";
         let (url, server) = serve_canned(vec![(200, body.to_string())]);
         let (client, config) = mock_setup(&url, None);
@@ -1861,7 +1861,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn tool_probe_text_only_is_unsupported() {
+    async fn tool_probe_reports_a_text_only_answer_as_unsupported() {
         let body = "data: {\"choices\":[{\"delta\":{\"content\":\"It is sunny.\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n";
         let (url, server) = serve_canned(vec![(200, body.to_string())]);
         let (client, config) = mock_setup(&url, None);
@@ -1881,7 +1881,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn tool_probe_rate_limit_is_failed_not_unsupported() {
+    async fn tool_probe_records_a_429_as_failed() {
         let (url, server) = serve_canned(vec![(429, "{\"error\":\"rate limited\"}".to_string())]);
         let (client, config) = mock_setup(&url, None);
         let mut checks = Vec::new();
@@ -1900,7 +1900,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn tool_probe_undeclared_tool_is_unsupported() {
+    async fn tool_probe_records_an_undeclared_tool_as_unsupported() {
         let body = "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_9\",\"function\":{\"name\":\"get_weather\",\"arguments\":\"{}\"}}]}}]}\n\ndata: [DONE]\n\n";
         let (url, server) = serve_canned(vec![(200, body.to_string())]);
         let (client, config) = mock_setup(&url, None);
@@ -1919,7 +1919,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn tool_probe_ollama_native_uses_ndjson() {
+    async fn tool_probe_accepts_the_ollama_ndjson_stream() {
         let body = "{\"message\":{\"role\":\"assistant\",\"tool_calls\":[{\"function\":{\"name\":\"web_search\",\"arguments\":{\"query\":\"weather in Tokyo\",\"spoken_filler\":\"Searching now\"}}}]},\"done\":false}\n{\"message\":{\"role\":\"assistant\",\"content\":\"\"},\"done\":true}\n";
         let (url, server) = serve_canned(vec![(200, body.to_string())]);
         let (client, config) = mock_setup(&url, Some("ollama"));
@@ -1940,7 +1940,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn ollama_metadata_404_records_failed_checks() {
+    async fn ollama_metadata_probe_records_two_failed_checks_on_404() {
         let (url, server) = serve_canned(vec![
             (404, "not found".to_string()),
             (404, "not found".to_string()),
@@ -1965,7 +1965,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn validate_token_cap_accepts_working_cap() {
+    async fn validate_token_cap_accepts_a_cap_the_provider_accepts() {
         let (url, server) = serve_canned(vec![(200, "{}".to_string())]);
         let provider = LlmRuntimeTarget::Server {
             base_url: url.clone(),
@@ -1984,7 +1984,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn validate_token_cap_rejects_overlong_cap() {
+    async fn validate_token_cap_rejects_a_cap_the_provider_rejects() {
         let body = "{\"error\":{\"message\":\"context_length_exceeded: too long\",\"type\":\"invalid_request\"}}";
         let (url, server) = serve_canned(vec![(400, body.to_string())]);
         let provider = LlmRuntimeTarget::Server {

@@ -170,3 +170,95 @@ Status values: `open` · `confirmed` · `testability-gap` · `wontfix`
 - **Status:** confirmed — not fixed in this campaign. Production change required: release the
   harness lock before awaiting the provider, or make the await cancellable. Test written to
   exercise the path once fixed.
+
+## F-19 — Packaged voice seeding fails on upgraded databases
+
+- **Seam:** Slices 13 to 20 (storage boundary)
+- **Symptom:** Every run logs `[Persistence::Schema] Failed to seed zipvoice voices: Parse
+  error: table voices has no column named slug`. The user silently gets no packaged voices.
+- **Evidence:** `src/persistence/schema.rs`: `ensure_voice_metadata_columns` alters
+  `provider_id, gender, locale, accent, description, tags, sample_text, is_favorite,
+  last_used_at` but not `slug`, while `seed_zipvoice_voices` inserts into `voices.slug` and
+  the `CREATE TABLE` defines it. Visible in every test run, including the pre-change
+  baseline.
+- **Suspected cause:** the column was added to the create statement without a matching
+  migration for existing databases.
+- **Impact:** No packaged voices on any database created before the `slug` column existed.
+- **Status:** confirmed — not fixed in this campaign. Production change required: add `slug`
+  to the ALTER list. Add a migration assertion so the seed path cannot rot again.
+
+## F-20 — Private-mode suppression has no acknowledgement
+
+- **Seam:** Slices 13 to 20 (storage boundary)
+- **Symptom:** The persistence worker skips an event in private mode without any
+  channel-visible or database-visible trace. The only observable is a log line.
+- **Evidence:** `src/persistence/worker.rs` logs `Private Mode active: skipping tool call
+  record` and returns.
+- **Suspected cause:** the skip path has no contract for the caller.
+- **Impact:** The negative assertion depends on log wording. A worker that stops logging
+  would silently weaken the test instead of failing it.
+- **Status:** testability-gap — the storage tests capture the log line as the quiescence
+  proof. A real acknowledgement would need a production change.
+
+## F-21 — Personal memory markdown round-trip is lossy
+
+- **Seam:** Slice 21 (final sweep, memory seam)
+- **Symptom:** `render_to_markdown` writes each block on its own line, but `from_markdown`
+  folds consecutive lines under one heading into a single paragraph block. A section with
+  two blocks serialises and parses back as one block, and the next consolidation write
+  overwrites the second block.
+- **Evidence:** `src/services/memory/personal/model.rs`. The existing test asserts the
+  folded result, so the behaviour is current, not accidental.
+- **Impact:** Structured personal memory silently loses block boundaries on reload.
+- **Status:** confirmed — not fixed in this campaign. Production change required.
+
+## F-22 — Wall-clock latency assertion in the default tier
+
+- **Seam:** Slice 21 (final sweep)
+- **Symptom:** `src/services/llm/catalog/sync.rs` asserts `duration.as_millis() < 250`
+  inside `catalog_json_parses_with_the_expected_model_count`.
+- **Evidence:** The style guide bans wall-clock latency assertions outside benches.
+- **Impact:** Red on a slow machine for reasons unrelated to correctness.
+- **Status:** open — the assertion must become a behavioural one or move to a bench.
+
+## F-23 — Near-empty assertions in the audio device mock
+
+- **Seam:** Slice 21 (final sweep)
+- **Symptom:** `src/services/audio/device.rs`: `audio_stream_mock_starts_and_pauses` and
+  `audio_stream_accepts_an_injected_capture` assert only `is_ok()`, and
+  `audio_sink_mock_can_be_constructed_and_dropped` asserts nothing at all.
+- **Impact:** These pass even if the mock produces no audio. They are false-green.
+- **Status:** open — strengthen to assert that samples actually flow.
+
+## F-24 — The cargo-mutants campaign is not feasible in this environment
+
+- **Seam:** Slice 21 (final sweep)
+- **Symptom:** `cargo mutants` cannot run over this crate here.
+- **Evidence:** the copy mode breaks on `src/setup/manifest.rs`, which does
+  `include_str!("../../../../manifests/models_manifest.json")` — a path outside the crate
+  directory, so the copied tree cannot resolve it. `--in-place` works but cannot be
+  combined with `--jobs`, and one mutant needs a full debug rebuild of a crate that links
+  llama.cpp, ONNX Runtime and sherpa-onnx: minutes per mutant, not seconds.
+- **Suspected cause:** the crate is too large for a mutation sweep in this environment.
+- **Impact:** the batched mutation pass in the plan did not run.
+- **Status:** testability-gap — replaced by a hand-applied mutation campaign (see the
+  mutation record below). A real sweep needs a machine that can rebuild this crate
+  quickly, or a smaller crate to mutate.
+
+## Mutation record — hand-applied campaign (Slice 21)
+
+`cargo-mutants` could not run (F-24), so five mutants were applied by hand, one at a
+time, and the matching test was run. Each mutant was reverted immediately.
+
+| # | Mutation | Test | Result |
+| :--- | :--- | :--- | :--- |
+| M1 | VAD onset decay becomes an instant reset | `unvoiced_dropout_does_not_reset_onset_progress` | killed |
+| M2 | The STT `+1` turn adoption branch never adopts | `open_stream_adopts_incremented_turn_without_reset` | killed |
+| M3 | The continuation prefix is dropped from the merged query | `continuation_prefix_is_merged_into_the_next_query` | killed |
+| M4 | The tool budget grows from 5 to 7 | `the_tool_loop_stops_at_the_tool_budget` | killed |
+| M5 | The compound seam threshold drops from 22 words to 2 | `a_mid_length_sentence_with_a_comma_stays_one_clause` | survived, then killed |
+
+M5 survived the first pass: no test covered the 22 word threshold from below, so the
+mutant was invisible. A new test was written for it
+(`a_mid_length_sentence_with_a_comma_stays_one_clause`) and the mutant was killed on the
+re-run. That test is the only change this campaign made to a file it did not author.

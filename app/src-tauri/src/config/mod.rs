@@ -169,12 +169,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn secret_keys_are_supported_keys() {
+    fn secret_keys_are_all_supported_settings() {
         assert!(secret_keys_are_supported());
     }
 
     #[test]
-    fn realtime_keys_are_restart_not_hot() {
+    fn realtime_keys_require_a_restart() {
         // B-04 regression guard: realtime provider/voice keys MUST NOT be
         // classified Hot, or the running actor won't observe changes.
         // API keys apply hot without cycling the engine.
@@ -194,7 +194,7 @@ mod tests {
     }
 
     #[test]
-    fn policy_table_matches_mutation_contract() {
+    fn setting_reload_policy_matches_the_mutation_contract() {
         assert_eq!(
             get_setting_reload_policy("llm", "servers"),
             SettingReloadPolicy::Restart

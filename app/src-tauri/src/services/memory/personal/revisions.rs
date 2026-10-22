@@ -334,7 +334,7 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_decisions_valid() {
+    fn revision_decisions_accept_accept_and_reject_on_pending_records() {
         let mut pending_map = HashMap::new();
         pending_map.insert("rev_1".to_string(), sample_pending_record("rev_1", "{}"));
         pending_map.insert("rev_2".to_string(), sample_pending_record("rev_2", "{}"));
@@ -354,7 +354,7 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_decisions_rejects_invalid_action() {
+    fn revision_decision_rejects_an_unknown_action() {
         let mut pending_map = HashMap::new();
         pending_map.insert("rev_1".to_string(), sample_pending_record("rev_1", "{}"));
 
@@ -371,7 +371,7 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_decisions_rejects_non_pending() {
+    fn revision_decision_rejects_a_record_that_is_not_pending() {
         let pending_map = HashMap::new();
         let decisions = vec![RevisionDecision {
             id: "rev_missing".to_string(),
@@ -386,7 +386,7 @@ mod tests {
     }
 
     #[test]
-    fn test_deserialize_accepted_ops_handles_malformed() {
+    fn accepted_revision_ops_skip_malformed_records() {
         let mut pending_map = HashMap::new();
         let valid_op = ResolvedOp::CreateBlock {
             section_id: "sec_1".to_string(),
@@ -421,7 +421,7 @@ mod tests {
     }
 
     #[test]
-    fn test_render_revision_preview() {
+    fn revision_preview_describes_each_operation_kind() {
         use super::super::model::{MemoryBlock, MemorySection};
 
         let model = PersonalMemory {

@@ -406,7 +406,7 @@ mod tests {
     }
 
     #[test]
-    fn test_resolve_operations_all_variants() {
+    fn resolve_operations_maps_every_output_kind_to_a_resolved_op() {
         let memory = sample_model();
         let (_view, handle_map) = memory.to_handle_format();
 
@@ -468,7 +468,7 @@ mod tests {
     }
 
     #[test]
-    fn test_resolve_operations_unknown_handles_and_empty_text_isolated() {
+    fn resolve_operations_rejects_only_the_invalid_operations() {
         let memory = sample_model();
         let (_view, handle_map) = memory.to_handle_format();
 
@@ -522,7 +522,7 @@ mod tests {
     }
 
     #[test]
-    fn test_apply_operations_success() {
+    fn apply_operations_mutates_the_memory_model() {
         let memory = sample_model();
         let ops = vec![
             ResolvedOp::CreateSection {
@@ -560,7 +560,7 @@ mod tests {
     }
 
     #[test]
-    fn test_apply_operations_duplicate_section_rejected() {
+    fn apply_operations_rejects_a_duplicate_section_title() {
         let memory = sample_model();
         let ops = vec![ResolvedOp::CreateSection {
             title: "profile".to_string(), // duplicates "Profile"
@@ -573,7 +573,7 @@ mod tests {
     }
 
     #[test]
-    fn test_apply_operations_missing_targets_rejected() {
+    fn apply_operations_rejects_operations_on_missing_targets() {
         let memory = sample_model();
         let ops = vec![
             ResolvedOp::CreateBlock {
@@ -598,7 +598,7 @@ mod tests {
     }
 
     #[test]
-    fn test_apply_operations_auto_prunes_empty_section() {
+    fn apply_operations_prunes_a_section_left_empty() {
         let memory = sample_model();
         // sec_beta has only blk_3. Deleting blk_3 should auto-prune sec_beta!
         let ops = vec![ResolvedOp::DeleteBlock {
@@ -614,7 +614,7 @@ mod tests {
     }
 
     #[test]
-    fn test_extract_json_payload() {
+    fn extract_json_payload_strips_code_fences() {
         assert_eq!(
             extract_json_payload(r#"{"key": "value"}"#),
             r#"{"key": "value"}"#

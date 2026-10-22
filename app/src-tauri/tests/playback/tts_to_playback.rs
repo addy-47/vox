@@ -1,14 +1,15 @@
 //! ============================================================================
-//! tts_to_playback_test.rs — Real TTS Synthesis → Playback Ingest & Pre-Roll Gates
+//! tts_to_playback.rs — real synthesis to playback ingest and pre-roll gates
 //! ============================================================================
-//! Category     : Integration Test (Seam 7)
-//! Component    : services/tts/actor.rs + services/tts/providers/supertonic.rs + services/audio/playback.rs + pipeline/assistant/playback.rs
-//! Prerequisites: Local Supertonic ONNX model in ~/.vox/models/tts/supertonic-3/
-//! Execution    : cargo nextest run --test tts_to_playback_test --release --nocapture --test-threads=1
-//! Metrics      : Real audio synthesis (RMS > 0), sample ingestion, pre-roll threshold arming (12,000 samples), flush-pre-roll on short utterance, pending accounting
+//! Category  : Integration (Seam 10 — TTS synthesis → playback ingest)
+//! Component : services/tts/actor.rs + services/tts/providers/supertonic.rs
+//!             + services/audio/playback.rs + pipeline/assistant/playback.rs
+//! Binary    : playback_test
+//! Prereqs   : the Supertonic ONNX model
+//! Run       : cargo nextest run --test playback_test --release --test-threads=1
 //! ============================================================================
 
-mod common;
+use crate::common;
 
 use std::{
     sync::{
@@ -31,8 +32,15 @@ use vox_lib::{
     },
 };
 
+/// PURPOSE:  Synthesised audio must reach the playback sink and arm the pre-roll.
+/// SCENARIO: The real Supertonic engine synthesises a phrase and the samples are ingested.
+/// ASSERTS:  The samples are not silent, the sink received them, and the pre-roll armed
+///           once the cushion threshold was reached.
+/// CLASS:    happy-path
+/// REQUIRES: the Supertonic ONNX model
+/// MUTANT:   Drop the ingested samples before the sink.
 #[tokio::test]
-async fn test_real_tts_to_playback_synthesis_and_preroll() {
+async fn real_synthesis_is_ingested_and_arms_the_pre_roll() {
     let test_timeout = Duration::from_secs(60);
     tokio::time::timeout(test_timeout, async {
         let _guard = common::paths::TempPathsGuard::new();
@@ -206,8 +214,14 @@ async fn test_real_tts_to_playback_synthesis_and_preroll() {
     .expect("test_real_tts_to_playback_synthesis_and_preroll timed out");
 }
 
+/// PURPOSE:  A short utterance must not arm the pre-roll on its own.
+/// SCENARIO: A short phrase is synthesised and ingested.
+/// ASSERTS:  The pre-roll stays unarmed until the flush.
+/// CLASS:    edge-case
+/// REQUIRES: the Supertonic ONNX model
+/// MUTANT:   Arm the pre-roll on the first ingested sample.
 #[tokio::test]
-async fn test_tts_to_playback_short_utterance_flush() {
+async fn short_utterance_needs_a_flush_to_arm_the_pre_roll() {
     let test_timeout = Duration::from_secs(30);
     tokio::time::timeout(test_timeout, async {
         let _guard = common::paths::TempPathsGuard::new();

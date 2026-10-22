@@ -167,33 +167,33 @@ mod tests {
     }
 
     #[test]
-    fn reads_declared_architecture_and_context_length() {
+    fn gguf_header_reads_architecture_and_context_length() {
         let facts = parse_gguf_header(&minimal_header()).expect("header must parse");
         assert_eq!(facts.architecture.as_deref(), Some("qwen2"));
         assert_eq!(facts.context_length, Some(32768));
     }
 
     #[test]
-    fn rejects_wrong_magic() {
+    fn gguf_header_with_wrong_magic_is_rejected() {
         let mut header = minimal_header();
         header[0] = 0x00;
         assert!(parse_gguf_header(&header).is_none());
     }
 
     #[test]
-    fn rejects_unsupported_version() {
+    fn gguf_header_with_unsupported_version_is_rejected() {
         let mut header = minimal_header();
         header[4..8].copy_from_slice(&1u32.to_le_bytes());
         assert!(parse_gguf_header(&header).is_none());
     }
 
     #[test]
-    fn truncated_header_yields_no_facts() {
+    fn truncated_gguf_header_yields_no_facts() {
         assert!(parse_gguf_header(&minimal_header()[..10]).is_none());
     }
 
     #[test]
-    fn missing_file_yields_no_facts() {
+    fn missing_gguf_file_yields_no_facts() {
         let missing = std::path::Path::new("/nonexistent/model.gguf");
         assert!(read_gguf_facts(missing).is_none());
     }

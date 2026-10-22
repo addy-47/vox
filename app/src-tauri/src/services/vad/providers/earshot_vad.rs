@@ -68,7 +68,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_earshot_vad_predict_and_threshold_update() {
+    fn earshot_vad_predicts_speech_and_tracks_the_threshold() {
         let mut engine = EarshotVadEngine::new(-1.0).unwrap();
         let frame = [0.0f32; 256];
 

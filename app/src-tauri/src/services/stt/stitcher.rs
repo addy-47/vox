@@ -166,26 +166,23 @@ pub fn stitch_transcripts(prefix: &str, suffix: &str) -> String {
 mod tests {
     use super::*;
 
-    /// Tests empty string handling for prefix and suffix transcript stitching.
     #[test]
-    fn test_stitch_transcripts_empty_inputs() {
+    fn stitch_transcripts_ignores_an_empty_side() {
         assert_eq!(stitch_transcripts("", "hello world"), "hello world");
         assert_eq!(stitch_transcripts("hello world", ""), "hello world");
         assert_eq!(stitch_transcripts("   ", "hello world"), "hello world");
         assert_eq!(stitch_transcripts("hello world", "   "), "hello world");
     }
 
-    /// Tests soft subslice containment returning prefix text unmodified.
     #[test]
-    fn test_stitch_transcripts_subslice_containment() {
+    fn stitch_transcripts_returns_the_prefix_when_the_suffix_is_a_subslice() {
         let prefix = "The quick brown fox jumps over the lazy dog";
         let suffix = "brown fox jumps";
         assert_eq!(stitch_transcripts(prefix, suffix), prefix);
     }
 
-    /// Tests multi-word alignment matching and sequential overlap stitching.
     #[test]
-    fn test_stitch_transcripts_overlap_alignment() {
+    fn stitch_transcripts_merges_a_multi_word_overlap() {
         let p1 = "The quick brown fox jumps over the lazy dog";
         let s1 = "jumps over the lazy dog and runs into the woods";
         assert_eq!(
@@ -198,9 +195,8 @@ mod tests {
         assert_eq!(stitch_transcripts(p2, s2), "hello world there friend");
     }
 
-    /// Tests disjoint non-overlapping transcripts concatenation and case/punctuation normalization.
     #[test]
-    fn test_stitch_transcripts_disjoint_and_variations() {
+    fn stitch_transcripts_concatenates_disjoint_and_normalized_parts() {
         assert_eq!(
             stitch_transcripts("hello world", "apple banana"),
             "hello world apple banana"

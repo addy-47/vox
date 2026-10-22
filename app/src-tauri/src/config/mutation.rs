@@ -643,7 +643,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn llm_contract_accepts_inventory_keys_only() {
+    fn llm_mutation_contract_accepts_only_inventory_keys() {
         let keys = supported_keys_for_domain("llm");
         for expected in ["active", "last_selected", "servers", "cloud_keys"] {
             assert!(keys.contains(&expected), "missing {}", expected);
@@ -667,7 +667,7 @@ mod tests {
     }
 
     #[test]
-    fn server_list_validation_rejects_duplicates_and_bad_urls() {
+    fn server_list_validation_rejects_duplicates_and_malformed_urls() {
         let mut servers = vec![
             LlmCustomServer {
                 id: "a".to_string(),

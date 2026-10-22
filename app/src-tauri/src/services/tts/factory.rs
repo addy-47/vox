@@ -186,7 +186,7 @@ mod tests {
     use crate::services::tts::{ProviderCaps, TtsVoiceSource};
 
     #[test]
-    fn test_caps_for_id_matrix() {
+    fn provider_capabilities_match_the_declared_provider() {
         assert_eq!(
             caps_for_id("supertonic").expect("supertonic caps"),
             ProviderCaps {
@@ -254,7 +254,7 @@ mod tests {
     }
 
     #[test]
-    fn test_caps_for_id_rejects_unknown() {
+    fn provider_capability_lookup_rejects_an_unknown_id() {
         let err = caps_for_id("no_such_engine").expect_err("unknown provider id must not resolve");
         assert!(err.contains("no_such_engine"), "error should name the id");
         assert!(caps_for_id("").is_err(), "empty id must not resolve");

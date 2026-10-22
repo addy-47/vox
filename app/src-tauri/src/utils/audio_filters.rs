@@ -142,9 +142,8 @@ impl BiquadLowPass {
 mod tests {
     use super::*;
 
-    /// Tests LowPass filter DC steady-state unity gain and high-frequency attenuation.
     #[test]
-    fn test_low_pass_dc_and_attenuation() {
+    fn low_pass_passes_dc_and_attenuates_the_nyquist() {
         let mut lp = LowPass::new(250.0, 16000.0);
 
         let mut y = 0.0;
@@ -162,9 +161,8 @@ mod tests {
         assert!(nyquist_y.abs() < 0.1);
     }
 
-    /// Tests subtractive filter bank mathematical identity: low + mid + high == input.
     #[test]
-    fn test_filter_bank_subtractive_identity() {
+    fn filter_bank_bands_sum_back_to_the_input() {
         let mut fb = FilterBank::new(16000.0);
 
         for i in 0..500 {
@@ -181,9 +179,8 @@ mod tests {
         }
     }
 
-    /// Tests chunk RMS calculations, empty slice safety, and silence handling.
     #[test]
-    fn test_filter_bank_process_chunk_and_boundaries() {
+    fn filter_bank_chunk_reports_rms_per_band() {
         let mut fb = FilterBank::new(16000.0);
 
         assert_eq!(fb.process_chunk(&[]), (0.0, 0.0, 0.0));
@@ -204,9 +201,8 @@ mod tests {
         assert!(r_m > 0.05);
     }
 
-    /// Tests 2nd-order Butterworth low-pass filter DC gain and high-frequency stopband attenuation.
     #[test]
-    fn test_biquad_butterworth_low_pass() {
+    fn biquad_low_pass_attenuates_the_stopband() {
         let mut lp = BiquadLowPass::new_butterworth(7500.0, 48000.0);
 
         // 1. DC unity gain

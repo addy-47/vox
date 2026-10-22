@@ -1,14 +1,14 @@
 //! ============================================================================
-//! aec_pipeline_test.rs — AEC Reference Tap, Sonora AEC3 & Echo Suppression
+//! aec_pipeline.rs — AEC reference tap, Sonora AEC3 and echo suppression
 //! ============================================================================
-//! Category     : Integration Test
-//! Component    : services/audio/aec.rs + services/audio/sink.rs
-//! Prerequisites: tests/assets/edgetts_01_en_briefing.wav, tests/assets/supertonic_01_en_briefing.wav
-//! Execution    : cargo nextest run --test aec_pipeline_test --release --nocapture --test-threads=1
-//! Metrics      : Echo Return Loss Enhancement (ERLE >= 20dB), user speech preservation
+//! Category  : Integration (Seam 11 — playback reference → AEC → clean capture)
+//! Component : services/audio/aec.rs + services/audio/sink.rs
+//! Binary    : audio_capture_aec_test
+//! Prereqs   : the test audio assets
+//! Run       : cargo nextest run --test audio_capture_aec_test --release --test-threads=1
 //! ============================================================================
 
-mod common;
+use crate::common;
 
 use std::{path::Path, time::Duration};
 
@@ -17,19 +17,16 @@ use vox_lib::services::audio::{
     aec::AecProcessor, sink::PlaybackReferenceTap, AEC_FRAME_SAMPLES, AEC_REFERENCE_BUFFER_SAMPLES,
 };
 
+/// PURPOSE:  The AEC reference must run at the capture rate.
+/// ASSERTS:  A 48 kHz reference is downsampled to 16 kHz.
+/// CLASS:    happy-path
+/// REQUIRES: none
+/// MUTANT:   Feed the reference at the playback rate.
 /// Computes Echo Return Loss Enhancement (ERLE) in decibels.
-fn calculate_erle_db(input_echo: &[f32], output_residual: &[f32]) -> f64 {
-    let rms_in = common::audio::rms(input_echo) as f64;
-    let rms_out = common::audio::rms(output_residual) as f64;
-    if rms_out < 1e-9 {
-        return 60.0;
-    }
-    20.0 * (rms_in / rms_out).log10()
-}
-
 /// Verifies that PlaybackReferenceTap accurately downsamples 48kHz audio 3:1 to 16kHz.
+
 #[test]
-fn test_playback_reference_tap_downsampling_48k_to_16k() {
+fn playback_reference_tap_downsamples_48k_to_16k() {
     let rb = HeapRb::<f32>::new(AEC_REFERENCE_BUFFER_SAMPLES);
     let (prod, mut cons) = rb.split();
     let mut tap = PlaybackReferenceTap::new(prod);
@@ -49,9 +46,16 @@ fn test_playback_reference_tap_downsampling_48k_to_16k() {
     }
 }
 
+/// PURPOSE:  The AEC must remove the assistant's own echo from the capture.
+/// SCENARIO: The playback reference is fed with the synthetic echo.
+/// ASSERTS:  The residual is at least 20 dB below the echo.
+/// CLASS:    happy-path
+/// REQUIRES: the test audio assets
+/// MUTANT:   Skip the echo suppression stage.
 /// Verifies that AecProcessor suppresses synthetic TTS acoustic loopback by at least 20dB ERLE.
+
 #[tokio::test]
-async fn test_aec_suppresses_synthetic_tts_echo_alone() {
+async fn aec_suppresses_the_synthetic_tts_echo() {
     let test_timeout = Duration::from_secs(30);
     tokio::time::timeout(test_timeout, async {
         let tts_path = Path::new("tests/assets/edgetts_01_en_briefing.wav");
@@ -101,7 +105,7 @@ async fn test_aec_suppresses_synthetic_tts_echo_alone() {
         let eval_end = (num_frames * AEC_FRAME_SAMPLES).min(tts_samples.len());
         assert!(eval_end > eval_start + 16000);
 
-        let erle = calculate_erle_db(
+        let erle = common::audio::erle_db(
             &simulated_mic[eval_start..eval_end],
             &clean_output[eval_start..eval_end],
         );
@@ -123,9 +127,16 @@ async fn test_aec_suppresses_synthetic_tts_echo_alone() {
     .expect("Test timed out");
 }
 
+/// PURPOSE:  Suppressing the echo must not erase the user.
+/// SCENARIO: Echo and user speech are mixed into the capture.
+/// ASSERTS:  The user speech survives the suppression.
+/// CLASS:    edge-case
+/// REQUIRES: the test audio assets
+/// MUTANT:   Gate the whole capture during echo suppression.
 /// Verifies that during double-talk, user speech energy is preserved while echo is suppressed.
+
 #[tokio::test]
-async fn test_aec_double_talk_preserves_user_speech() {
+async fn aec_keeps_the_user_speech_during_double_talk() {
     let test_timeout = Duration::from_secs(30);
     tokio::time::timeout(test_timeout, async {
         let tts_path = Path::new("tests/assets/edgetts_01_en_briefing.wav");
@@ -202,9 +213,15 @@ async fn test_aec_double_talk_preserves_user_speech() {
     .expect("Test timed out");
 }
 
+/// PURPOSE:  The bypass must be a true bypass.
+/// ASSERTS:  With the AEC bypassed the echo is not attenuated.
+/// CLASS:    happy-path
+/// REQUIRES: the test audio assets
+/// MUTANT:   Apply the suppression even in bypass mode.
 /// Verifies that disabling AEC passes audio through completely untouched.
+
 #[tokio::test]
-async fn test_aec_bypass_leaves_echo_unattenuated() {
+async fn aec_bypass_leaves_the_echo_untouched() {
     let test_timeout = Duration::from_secs(15);
     tokio::time::timeout(test_timeout, async {
         let tts_path = Path::new("tests/assets/edgetts_01_en_briefing.wav");

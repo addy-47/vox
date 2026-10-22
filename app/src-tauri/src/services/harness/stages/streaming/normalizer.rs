@@ -244,7 +244,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_normalize_currencies() {
+    fn normalizer_expands_currency_amounts() {
         let input = "The bill came to $12.50 for lunch.";
         let result = TextNormalizer::normalize_for_speech(input);
         assert_eq!(
@@ -258,7 +258,7 @@ mod tests {
     }
 
     #[test]
-    fn test_normalize_times() {
+    fn normalizer_expands_clock_times() {
         let input = "Meeting is at 12:45 today.";
         let result = TextNormalizer::normalize_for_speech(input);
         assert_eq!(result, "Meeting is at twelve forty-five today.");
@@ -269,7 +269,7 @@ mod tests {
     }
 
     #[test]
-    fn test_normalize_measures() {
+    fn normalizer_expands_units_and_measurements() {
         let input = "I have 3.5 GB of logs taking 127 ms.";
         let result = TextNormalizer::normalize_for_speech(input);
         assert_eq!(result, "I have three point five gigabytes of logs taking one hundred twenty-seven milliseconds.");
@@ -283,7 +283,7 @@ mod tests {
     }
 
     #[test]
-    fn test_normalize_years_and_cardinals() {
+    fn normalizer_expands_years_and_large_cardinals() {
         let input = "In 2026, I parsed 1247 files.";
         let result = TextNormalizer::normalize_for_speech(input);
         assert_eq!(
@@ -297,7 +297,7 @@ mod tests {
     }
 
     #[test]
-    fn test_normalize_versions_and_ordinals() {
+    fn normalizer_expands_versions_and_ordinals() {
         let input = "Upgraded to v1.8.2 on our 3rd attempt.";
         let result = TextNormalizer::normalize_for_speech(input);
         assert_eq!(
@@ -307,14 +307,14 @@ mod tests {
     }
 
     #[test]
-    fn test_strip_markdown_and_tags() {
+    fn normalizer_strips_markdown_and_xml_tags() {
         let input = "<invoke name=\"critic\"><guidelines>**Persona Check:**</guidelines></invoke><Vox>Hello world!</Vox>";
         let result = TextNormalizer::normalize_for_speech(input);
         assert_eq!(result, "Persona Check: Hello world!");
     }
 
     #[test]
-    fn test_acronym_initialisms() {
+    fn normalizer_spells_out_acronyms() {
         let input = "Check the CLI and API on Linux OS.";
         let result = TextNormalizer::normalize_for_speech(input);
         assert_eq!(result, "Check the C L I and A P I on Linux O S.");

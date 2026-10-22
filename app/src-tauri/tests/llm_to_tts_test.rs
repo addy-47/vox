@@ -1,12 +1,17 @@
 //! ============================================================================
-//! llm_to_tts_test.rs — Cognitive Stage: HarnessSession ◄──► LlmActor ──► TTS
+//! llm_to_tts_test.rs — LLM to TTS chunking seam
 //! ============================================================================
-//! Category     : Integration Test (Seam 6)
-//! Component    : services/harness/session.rs + services/harness/plugins/stream.rs + services/llm/actor.rs + services/llm/embedded + services/tts/actor.rs + pipeline/assistant/llm.rs
-//! Prerequisites: Local Qwen 3.5 GGUF model in ~/.vox/models/llm/qwen/
-//! Execution    : cargo nextest run --test llm_to_tts_test --release --nocapture --test-threads=1
-//! Metrics      : Real token generation, clause chunking boundaries, atomic pending_synthesis_jobs accounting, remainder flush, HarnessSession turn commit lifecycle
+//! Category  : Integration (Seam 8 — token stream → clauses → TTS commands)
+//! Component : services/harness/stages/streaming/chunker.rs + services/harness/steps.rs
+//!             + services/tts/actor.rs + pipeline/assistant/llm.rs
+//! Binary    : llm_to_tts_test
+//! Prereqs   : the Qwen GGUF model for the generation scenario; the clause rules need
+//!             nothing.
+//! Run       : cargo nextest run --test llm_to_tts_test --release --test-threads=1
 //! ============================================================================
+//!
+//! The clause rules are pure: they are tested without a model. The last scenario drives
+//! a real generation to prove that the rules reach the TTS.
 
 mod common;
 
@@ -31,8 +36,17 @@ use vox_lib::{
     },
 };
 
+/// PURPOSE:  A real generated turn must stream its clauses to the TTS and commit both
+///           messages to the harness history.
+/// SCENARIO: The local Qwen model answers a prompt through the real harness turn.
+/// ASSERTS:  The turn completes, `LlmFinished` is emitted, at least one clause reaches
+///           the TTS as a turn response, the pending job count equals the clause count,
+///           and production committed the query and the answer to the history.
+/// CLASS:    happy-path
+/// REQUIRES: the Qwen GGUF model
+/// MUTANT:   Remove `harness.history.push_assistant_turn(...)` from the completion path.
 #[tokio::test]
-async fn test_harness_cognitive_stage_to_tts_matrix() {
+async fn harness_turn_streams_clauses_to_tts_and_commits_history() {
     let test_timeout = Duration::from_secs(60);
     tokio::time::timeout(test_timeout, async {
         let _guard = common::paths::TempPathsGuard::new();
@@ -307,5 +321,5 @@ async fn test_harness_cognitive_stage_to_tts_matrix() {
         assert!(join_res.is_ok(), "LLM worker thread join timed out");
     })
     .await
-    .expect("test_harness_cognitive_stage_to_tts_matrix timed out");
+    .expect("harness_turn_streams_clauses_to_tts_and_commits_history timed out");
 }

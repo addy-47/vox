@@ -294,7 +294,7 @@ mod tests {
     use crate::core::defaults::DEFAULT_TTS_SPEED;
 
     #[test]
-    fn test_tts_settings_defaults() {
+    fn tts_settings_default_to_the_embedded_provider_and_voice() {
         let settings = TtsSettings::default();
         assert_eq!(settings.active.category, "embedded");
         assert_eq!(settings.active.model, DEFAULT_TTS_PROVIDER);
@@ -312,7 +312,7 @@ mod tests {
     }
 
     #[test]
-    fn test_default_tts_provider_is_offline_capable() {
+    fn default_tts_provider_runs_offline() {
         // The Microsoft ReadAloud endpoint answers HTTP 403 for every client
         // (providers-spec §6.7), so the default provider must be one whose
         // weights ship with the model bundle.
@@ -320,7 +320,7 @@ mod tests {
     }
 
     #[test]
-    fn test_tts_settings_server_and_cloud() {
+    fn tts_settings_resolve_server_and_cloud_providers() {
         let mut settings = TtsSettings {
             active: ActiveSelection {
                 category: "cloud".to_string(),
