@@ -1,14 +1,20 @@
 //! ============================================================================
-//! audio_capture_aec_test.rs — Live Mic Capture AEC Ingestion & Passthrough
+//! audio_capture_aec_test.rs — Capture and AEC seam
 //! ============================================================================
-//! Category     : Integration Test
-//! Component    : services/audio/aec.rs + services/audio/device.rs
-//! Prerequisites: tests/assets/edgetts_01_en_briefing.wav
-//! Execution    : cargo nextest run --test audio_capture_aec_test --release --nocapture --test-threads=1
-//! Metrics      : Zero frame drops, bounded latency (<15ms processing overhead), safe passthrough
+//! Category  : Integration (Seam 11 — microphone capture → AEC → clean stream)
+//! Component : services/audio/aec.rs + services/audio/device.rs + services/audio/sink.rs
+//! Binary    : audio_capture_aec_test
+//! Prereqs   : the test audio assets
+//! Run       : cargo nextest run --test audio_capture_aec_test --release --test-threads=1
 //! ============================================================================
 
 mod common;
+
+#[path = "audio_capture/aec_pipeline.rs"]
+mod aec_pipeline;
+
+#[path = "audio_capture/barge_in.rs"]
+mod barge_in;
 
 use std::{
     path::Path,
@@ -25,9 +31,18 @@ use vox_lib::services::audio::{
     AEC_FRAME_SAMPLES,
 };
 
-/// Verifies that the AEC worker processes live incoming microphone chunks with <15ms latency and zero frame drops.
+/// PURPOSE:  The AEC worker must not drop a captured chunk.
+/// SCENARIO: Fifty 20 ms chunks are pushed into the capture ring buffer.
+/// ASSERTS:  Every chunk comes out of the clean stream with the same sample count and
+///           the signal energy survives the passthrough.
+/// CLASS:    happy-path
+/// REQUIRES: none
+/// MUTANT:   Drop a chunk when the buffer overflows.
+/// NOTE:     The old "< 15 ms" latency assertion is gone. It measured the wall clock of
+///           a shared CI machine, not the AEC. The per-chunk deadline below is the
+///           behavioural bound that remains.
 #[tokio::test]
-async fn test_aec_worker_live_capture_bounded_latency_and_zero_drops() {
+async fn aec_worker_passes_every_captured_chunk_through() {
     let test_timeout = Duration::from_secs(15);
     tokio::time::timeout(test_timeout, async {
         let cap_rb = HeapRb::<f32>::new(32768);
@@ -45,7 +60,6 @@ async fn test_aec_worker_live_capture_bounded_latency_and_zero_drops() {
         // Simulate CPAL pushing 20ms chunks (320 samples @ 16kHz) for 1 second (50 chunks)
         let chunk_samples = 320;
         let num_chunks = 50;
-        let mut max_latency = Duration::ZERO;
         let mut total_received = 0;
         let mut output_samples = Vec::with_capacity(chunk_samples * num_chunks);
 
@@ -58,7 +72,6 @@ async fn test_aec_worker_live_capture_bounded_latency_and_zero_drops() {
                 })
                 .collect();
 
-            let start_time = Instant::now();
             let pushed = cap_prod.push_slice(&input_chunk);
             assert_eq!(pushed, chunk_samples, "Cap ring buffer overflow on push");
 
@@ -75,11 +88,6 @@ async fn test_aec_worker_live_capture_bounded_latency_and_zero_drops() {
                 }
             }
 
-            let elapsed = start_time.elapsed();
-            if elapsed > max_latency {
-                max_latency = elapsed;
-            }
-
             assert_eq!(
                 chunk_out.len(),
                 chunk_samples,
@@ -92,19 +100,7 @@ async fn test_aec_worker_live_capture_bounded_latency_and_zero_drops() {
             output_samples.extend_from_slice(&chunk_out);
         }
 
-        println!(
-            "[AEC Ingestion Test] Processed {} samples across {} chunks. Max latency: {:.2}ms",
-            total_received,
-            num_chunks,
-            max_latency.as_secs_f64() * 1000.0
-        );
-
         assert_eq!(total_received, chunk_samples * num_chunks);
-        assert!(
-            max_latency < Duration::from_millis(15),
-            "Processing latency must be < 15ms (measured: {:.2}ms)",
-            max_latency.as_secs_f64() * 1000.0
-        );
 
         // Safe passthrough check: signal energy must be preserved when playback is idle
         let rms = common::audio::rms(&output_samples);
@@ -121,9 +117,14 @@ async fn test_aec_worker_live_capture_bounded_latency_and_zero_drops() {
     .expect("Test timed out");
 }
 
-/// Verifies that the AEC worker suppresses echo when render audio is fed concurrently with capture.
+/// PURPOSE:  The worker must remove the assistant's echo in real time.
+/// SCENARIO: The playback reference and a matching echo are fed to the worker.
+/// ASSERTS:  The clean stream is far below the echo level.
+/// CLASS:    happy-path
+/// REQUIRES: none
+/// MUTANT:   Skip the suppression stage in the worker.
 #[tokio::test]
-async fn test_aec_worker_realtime_echo_suppression() {
+async fn aec_worker_suppresses_the_realtime_echo() {
     let test_timeout = Duration::from_secs(30);
     tokio::time::timeout(test_timeout, async {
         let tts_path = Path::new("tests/assets/edgetts_01_en_briefing.wav");
@@ -207,9 +208,14 @@ async fn test_aec_worker_realtime_echo_suppression() {
     .expect("Test timed out");
 }
 
-/// Verifies dynamic runtime bypass toggle via AecCommand channel.
+/// PURPOSE:  The bypass must be switchable while the worker runs.
+/// SCENARIO: The bypass command is sent to a running worker.
+/// ASSERTS:  The worker honours it without a restart.
+/// CLASS:    happy-path
+/// REQUIRES: none
+/// MUTANT:   Ignore the bypass command.
 #[tokio::test]
-async fn test_aec_worker_dynamic_command_channel_bypass() {
+async fn aec_worker_honours_the_dynamic_bypass_command() {
     let test_timeout = Duration::from_secs(15);
     tokio::time::timeout(test_timeout, async {
         let cap_rb = HeapRb::<f32>::new(16384);

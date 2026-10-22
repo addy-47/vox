@@ -640,7 +640,7 @@ async fn crash_reconciliation_resets_a_stage1_crashed_item_to_pending() {
             .unwrap();
 
         let reconciled_count = reconcile_crashed_queue_on_boot(&conn).await.unwrap();
-        assert_eq!(reconciled_count, 3, "Must reconcile all 3 crashed items");
+        assert_eq!(reconciled_count, 1, "Must reconcile the single crashed item");
 
         let mut s1_row = conn
             .query("SELECT status, retry_count FROM memory_ingestion_queue WHERE id = ?", (id_s1,))

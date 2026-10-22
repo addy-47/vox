@@ -151,3 +151,14 @@ pub fn rms(samples: &[f32]) -> f32 {
     let sum_sq: f32 = samples.iter().map(|&s| s * s).sum();
     (sum_sq / samples.len() as f32).sqrt()
 }
+
+/// Echo Return Loss Enhancement in dB: how much of the echo energy the AEC removed.
+/// Returns 60 dB when the residual is silent (the clamp used by both AEC suites).
+pub fn erle_db(input_echo: &[f32], output_residual: &[f32]) -> f64 {
+    let rms_in = rms(input_echo) as f64;
+    let rms_out = rms(output_residual) as f64;
+    if rms_out < 1e-9 {
+        return 60.0;
+    }
+    20.0 * (rms_in / rms_out).log10()
+}
