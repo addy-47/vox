@@ -489,3 +489,252 @@ pub fn spawn_stt_worker(
         })
         .map_err(|e| e.to_string())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::services::stt::SttProviderKind;
+    use std::sync::atomic::AtomicUsize;
+
+    struct CountingProvider {
+        resets: AtomicUsize,
+    }
+
+    impl CountingProvider {
+        fn new() -> Self {
+            Self {
+                resets: AtomicUsize::new(0),
+            }
+        }
+
+        fn reset_count(&self) -> usize {
+            self.resets.load(Ordering::SeqCst)
+        }
+    }
+
+    impl SttProvider for CountingProvider {
+        fn transcribe_chunk(&self, _chunk: &[f32], _is_final: bool) -> anyhow::Result<String> {
+            Ok(String::new())
+        }
+
+        fn reset_state(&self) -> anyhow::Result<()> {
+            self.resets.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }
+
+        fn health_check(&self) -> bool {
+            true
+        }
+
+        fn kind(&self) -> SttProviderKind {
+            SttProviderKind::Embedded
+        }
+    }
+
+    fn worker_state() -> WorkerState {
+        WorkerState {
+            last_emit_time: Instant::now(),
+            last_transcript: String::new(),
+            current_active_turn: 0,
+            stream_open: false,
+            last_inference_duration: Duration::from_millis(STT_DEFAULT_INFERENCE_DURATION_MS),
+        }
+    }
+
+    fn partial(turn_id: u32, audio: Vec<f32>) -> (SttCommand, mpsc::Receiver<Vec<f32>>) {
+        let (recycle_tx, recycle_rx) = mpsc::sync_channel(1);
+        (
+            SttCommand::Partial {
+                turn_id,
+                audio,
+                recycle_tx,
+            },
+            recycle_rx,
+        )
+    }
+
+    /// PURPOSE:  Coalescing must not inspect or mutate commands that are not partials.
+    /// ASSERTS:  A Final is returned unchanged and nothing is queued as pending.
+    /// CLASS:    happy-path
+    /// REQUIRES: none
+    /// MUTANT:   Coalesce every command, not just `SttCommand::Partial`.
+    #[test]
+    fn coalesce_partials_leaves_non_partial_commands_untouched() {
+        let (_tx, rx) = mpsc::channel();
+        let mut pending = None;
+        let cmd = SttCommand::Final {
+            turn_id: 3,
+            audio: vec![0.0; 4],
+            owner: InteractionOwner::Assistant,
+        };
+
+        let out = coalesce_partials(cmd, &rx, &mut pending);
+        assert!(matches!(
+            out,
+            SttCommand::Final {
+                turn_id: 3,
+                owner: InteractionOwner::Assistant,
+                ..
+            }
+        ));
+        assert!(pending.is_none(), "nothing was queued behind a Final");
+    }
+
+    /// PURPOSE:  Stale partials must be dropped, and their pooled buffers returned.
+    /// SCENARIO: Queue P0 (first), P1, P2, then a StreamChunk.
+    /// ASSERTS:  The latest partial wins, P0 and P1 buffers are recycled, and the
+    ///           StreamChunk becomes the pending command.
+    /// CLASS:    edge-case
+    /// REQUIRES: none
+    /// MUTANT:   Keep the first partial instead of the last.
+    /// NOTE:     F-15 — this test fails today: the loop recycles every superseded
+    ///           buffer into the *first* partial's channel, so later buffers leak.
+    ///           Owner: backend-engineer. Re-enable when coalescing recycles each
+    ///           buffer into its own channel.
+    #[test]
+    #[ignore = "F-15: coalescing recycles into the first partial's channel and leaks later buffers"]
+    fn coalesce_partials_keeps_latest_audio_and_recycles_earlier_buffers() {
+        let (tx, rx) = mpsc::channel();
+        let (first, first_rx) = partial(0, vec![0.0]);
+        let (second, second_rx) = partial(1, vec![1.0]);
+        let (third, third_rx) = partial(2, vec![2.0]);
+        tx.send(second).expect("queue second partial");
+        tx.send(third).expect("queue third partial");
+        tx.send(SttCommand::StreamChunk {
+            turn_id: 2,
+            audio: vec![],
+        })
+        .expect("queue stream chunk");
+
+        let mut pending = None;
+        let out = coalesce_partials(first, &rx, &mut pending);
+
+        match out {
+            SttCommand::Partial {
+                turn_id, audio, ..
+            } => {
+                assert_eq!(turn_id, 2, "the newest turn id must win");
+                assert_eq!(audio, vec![2.0], "the newest audio must win");
+            }
+            _ => panic!("expected the latest Partial, got a non-partial command"),
+        }
+        assert_eq!(
+            first_rx.recv_timeout(Duration::from_millis(100)),
+            Ok(vec![0.0]),
+            "the superseded first buffer must be recycled"
+        );
+        assert_eq!(
+            second_rx.recv_timeout(Duration::from_millis(100)),
+            Ok(vec![1.0]),
+            "the superseded second buffer must be recycled"
+        );
+        assert!(
+            matches!(pending, Some(SttCommand::StreamChunk { .. })),
+            "the first non-partial command must be preserved for the next loop turn"
+        );
+        drop(third_rx);
+    }
+
+    /// PURPOSE:  A non-partial command must stop coalescing immediately, so its
+    ///           ordering relative to the surviving partial is preserved.
+    /// ASSERTS:  Commands queued after the non-partial stay in the channel.
+    /// CLASS:    edge-case
+    /// REQUIRES: none
+    /// MUTANT:   Continue coalescing past a non-partial command.
+    #[test]
+    fn coalesce_partials_stops_at_the_first_non_partial() {
+        let (tx, rx) = mpsc::channel();
+        let (first, _first_rx) = partial(1, vec![1.0]);
+        tx.send(SttCommand::ResetStream).expect("queue reset");
+        tx.send(SttCommand::Warmup).expect("queue warmup");
+
+        let mut pending = None;
+        let _ = coalesce_partials(first, &rx, &mut pending);
+
+        assert!(matches!(pending, Some(SttCommand::ResetStream)));
+        assert!(
+            matches!(rx.try_recv(), Ok(SttCommand::Warmup)),
+            "commands after the boundary must remain queued"
+        );
+    }
+
+    /// PURPOSE:  ResetStream must discard queued audio, not transcribe it.
+    /// SCENARIO: Queue a StreamChunk and a Partial, then ResetStream.
+    /// ASSERTS:  The partial buffer is recycled, the provider is reset once, and
+    ///           the drain continues normally.
+    /// CLASS:    suppression
+    /// REQUIRES: none
+    /// MUTANT:   Transcribe queued chunks instead of dropping them.
+    #[test]
+    fn drain_reset_stream_recycles_partials_and_drops_chunks() {
+        let (tx, rx) = mpsc::channel();
+        tx.send(SttCommand::StreamChunk {
+            turn_id: 1,
+            audio: vec![0.0; 8],
+        })
+        .expect("queue chunk");
+        let (queued_partial, recycled) = partial(1, vec![0.5; 4]);
+        tx.send(queued_partial).expect("queue partial");
+        tx.send(SttCommand::ResetStream).expect("queue reset");
+
+        let provider = CountingProvider::new();
+        let mut state = worker_state();
+        let mut pending = None;
+        let stop = drain_reset_stream(&rx, &provider, &mut state, &mut pending);
+
+        assert!(!stop);
+        assert!(pending.is_none());
+        assert_eq!(provider.reset_count(), 1);
+        assert_eq!(
+            recycled.recv_timeout(Duration::from_millis(100)),
+            Ok(vec![0.5; 4]),
+            "dropped partial audio must return to the pool"
+        );
+    }
+
+    /// PURPOSE:  A Final queued behind ResetStream belongs to a turn the user already
+    ///           spoke; it must survive the reset.
+    /// ASSERTS:  The Final becomes the pending command and is not consumed.
+    /// CLASS:    edge-case
+    /// REQUIRES: none
+    /// MUTANT:   Drop Final commands during the drain.
+    #[test]
+    fn drain_reset_stream_preserves_a_queued_final() {
+        let (tx, rx) = mpsc::channel();
+        tx.send(SttCommand::Final {
+            turn_id: 2,
+            audio: vec![0.0; 8],
+            owner: InteractionOwner::Assistant,
+        })
+        .expect("queue final");
+
+        let provider = CountingProvider::new();
+        let mut state = worker_state();
+        let mut pending = None;
+        let stop = drain_reset_stream(&rx, &provider, &mut state, &mut pending);
+
+        assert!(!stop);
+        assert!(
+            matches!(pending, Some(SttCommand::Final { turn_id: 2, .. })),
+            "the final must be deferred, not dropped"
+        );
+    }
+
+    /// PURPOSE:  Shutdown behind ResetStream must still stop the worker.
+    /// ASSERTS:  drain_reset_stream reports stop.
+    /// CLASS:    edge-case
+    /// REQUIRES: none
+    /// MUTANT:   Ignore Shutdown during the drain.
+    #[test]
+    fn drain_reset_stream_reports_shutdown() {
+        let (tx, rx) = mpsc::channel();
+        tx.send(SttCommand::Shutdown).expect("queue shutdown");
+
+        let provider = CountingProvider::new();
+        let mut state = worker_state();
+        let mut pending = None;
+        let stop = drain_reset_stream(&rx, &provider, &mut state, &mut pending);
+
+        assert!(stop, "shutdown must terminate the drain");
+    }
+}
