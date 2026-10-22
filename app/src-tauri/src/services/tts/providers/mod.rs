@@ -1,6 +1,7 @@
 pub mod azure_tts;
 pub mod chatterbox;
 pub mod chatterbox_remote;
+pub mod devanagari;
 pub mod edge_tts;
 pub mod google_tts;
 pub mod kokoro;

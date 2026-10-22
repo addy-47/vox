@@ -50,8 +50,19 @@ unset SYSROOT
 if [[ -z "${NDK_HOME:-}" ]]; then
     _ndk_root="${ANDROID_HOME:-$HOME/Android/Sdk}/ndk"
     if [[ -d "$_ndk_root" ]]; then
-        NDK_HOME="$(ls -1 "$_ndk_root" | sort -V | tail -1)"
-        export NDK_HOME
+        # NDK_HOME must be the FULL path to the version directory, not the bare
+        # version name. Every consumer below ($_ndk_bin, $_ndk_sysroot) builds a
+        # path under it, and a bare name resolves against $CWD and fails.
+        # Pick the highest version that actually carries the LLVM toolchain, so
+        # a partially-downloaded NDK cannot shadow a complete one.
+        for _ndk_ver in $(ls -1 "$_ndk_root" 2>/dev/null | sort -V); do
+            if [[ -d "$_ndk_root/$_ndk_ver/toolchains/llvm/prebuilt" ]]; then
+                NDK_HOME="$_ndk_root/$_ndk_ver"
+            fi
+        done
+        if [[ -n "${NDK_HOME:-}" ]]; then
+            export NDK_HOME
+        fi
     fi
 fi
 

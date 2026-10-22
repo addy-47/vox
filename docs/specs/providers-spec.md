@@ -160,6 +160,18 @@ Both implement the existing `TtsProvider::synthesize_chunk` contract on the dedi
 - **Google Cloud TTS** (`google_tts`, `TtsVoiceSource::Cloud`, `clone: false`): one `StreamingSynthesize` bidi stream per clause via `google-cloud-texttospeech-v1` (config → text → half-close → PCM-24k chunks; server starts only after half-close, so clause granularity is the correct design). Speaking rate set server-side (`speaking_rate`, 0.25–2.0). Auth is local ADC (`gcloud auth application-default login`), optional `tts.google_tts.project_override` as quota project; clauses over 5000 bytes are rejected with an actionable error. RPC codes map to `TtsError::{Auth, RateLimited, VoiceNotFound, Cancelled, SynthesisFailed}`. Voice sync: `voices:list` per `en-{US,GB,AU,IN}` filtered to `Chirp3-HD`, rows keyed `provider_id = 'google_tts'`.
 - Secrets (keys, tokens, SSML bodies) never reach logs or IPC payloads; `check_provider_health` reuses reachability semantics (any non-5xx proves routing).
 
+### 6.7 Default TTS Provider & Edge TTS Availability
+
+**Edge TTS is currently unavailable.** The Microsoft ReadAloud endpoint returns HTTP 403 for every client, regardless of user agent, locale, or voice. This is an upstream service change, not a configuration error, and it is not a Vox bug.
+
+Consequences and required behaviour:
+
+- **The default TTS provider is `supertonic`, not `edge_tts`.** `TtsActiveProvider`'s `#[default]` variant MUST be changed. A first-run install that defaults to a provider that always fails is a broken first-run experience, and it is the reason the remote-control host path was blocked: the host must be able to speak.
+- **`edge_tts` remains in the provider list, but MUST fail loudly.** Selecting it MUST surface an explicit, actionable error — *"Edge TTS is currently unavailable (HTTP 403 from the upstream service)"* — never an empty audio buffer and never a silent fallback to another provider. A silent fallback would hide the misconfiguration and produce a voice the user did not choose.
+- **The fallback rule is deterministic, not chained.** The provider factory MUST resolve exactly one provider. There is no "try A, then B, then C" chain (`.agents/rules/backend-style-guide.md` §7).
+
+*Verification*: With `supertonic` selected and its weights present, a synthesis request returns non-silent PCM. With `edge_tts` selected, the request returns the explicit availability error.
+
 ---
 
 ## 7. Architectural Decisions & Alternatives
