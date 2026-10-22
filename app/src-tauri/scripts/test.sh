@@ -32,7 +32,7 @@ binaries() {
 
 is_remote() {
   case "$1" in
-    remote_*|paired_devices_persistence_test) return 0 ;;
+    remote_*) return 0 ;;
     *) return 1 ;;
   esac
 }

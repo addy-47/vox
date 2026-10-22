@@ -1211,8 +1211,8 @@ mod tests {
             );
         }
 
-        let kokoro =
-            resolve_voice_index_for_provider("kokoro", "james").expect("Kokoro is a known provider id");
+        let kokoro = resolve_voice_index_for_provider("kokoro", "james")
+            .expect("Kokoro is a known provider id");
         let supertonic = resolve_voice_index_for_provider("supertonic", "james")
             .expect("Supertonic is a known provider id");
         assert_ne!(
@@ -1301,8 +1301,8 @@ mod tests {
             "a provider without a bundled catalogue has no default catalogue voice"
         );
 
-        let kokoro =
-            resolve_voice_index_for_provider("kokoro", "james").expect("Kokoro is a known provider id");
+        let kokoro = resolve_voice_index_for_provider("kokoro", "james")
+            .expect("Kokoro is a known provider id");
         let kokoro_profiles = get_voice_profiles();
         assert_eq!(
             kokoro_profiles[kokoro as usize].name, "Bella",

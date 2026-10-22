@@ -164,7 +164,10 @@ async fn test_short_utterance_requires_flush_to_arm() {
         playback_engine.ingest_chunk(&chunk_24k);
 
         // Negative assertion: PlaybackStarted must NOT fire before flush
-        common::harness::assert_channel_empty(&event_rx, "PlaybackStarted under threshold before flush");
+        common::harness::assert_channel_empty(
+            &event_rx,
+            "PlaybackStarted under threshold before flush",
+        );
 
         // Flush pre-roll cushion on generation completion
         playback_engine.flush_pre_roll();

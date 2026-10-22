@@ -17,8 +17,12 @@ use std::{
 
 use common::paths::TempPathsGuard;
 use vox_lib::{
-    config::{apply_setting_mutation, apply_settings_patch_tree, VoxSettings},
-    core::events::PipelineMode,
+    config::{
+        apply_setting_mutation, apply_settings_patch_tree, build_settings_contract, classify_known,
+        get_setting_reload_policy, is_secret_key, secret_keys, supported_keys_for_domain,
+        SettingReloadPolicy, VoxSettings,
+    },
+    core::events::{PipelineMode, RemoteExecutionMode},
     pipeline::dictation::DictationOutputMode,
     services::vad::VadBackendOption,
 };
@@ -743,4 +747,176 @@ fn test_apply_settings_patch_tree_atomic_multi_key() {
     let bad = serde_json::json!({ "appearance": { "nope": true } });
     assert!(apply_settings_patch_tree(&mut settings, &bad).is_err());
     assert_eq!(settings.appearance.theme, before.appearance.theme);
+}
+
+// ============================================================================
+// Subtest 12: Remote Settings Domain Contract & Mutation
+// ============================================================================
+
+/// PURPOSE:  The `remote` domain must be registered in the settings contract and mutable via the production router.
+/// SCENARIO: Query contract for remote domain; check reload policies; mutate keys; verify save/load roundtrip.
+/// ASSERTS:  Contract contains accepts_controllers (Hot) and execution_mode (Restart); invalid mode rejected.
+/// CLASS:    contract
+/// REQUIRES: none
+/// MUTANT:   Remove remote domain from supported_domains list in config/contract.rs.
+#[test]
+fn remote_domain_in_contract_and_mutable() {
+    let _guard = TempPathsGuard::new();
+    let domain = "remote";
+    let key_accepts = "accepts_controllers";
+    let key_mode = "execution_mode";
+
+    // 1. Contract registration
+    let contract = build_settings_contract();
+    assert!(contract.supported_keys.contains_key(domain));
+    let contract_keys = &contract.supported_keys[domain];
+    assert!(contract_keys.contains(&key_accepts.to_string()));
+    assert!(contract_keys.contains(&key_mode.to_string()));
+
+    let policies = contract.reload_policies.get(domain).expect("policies");
+    assert_eq!(policies.get(key_accepts).map(|s| s.as_str()), Some("hot"));
+    assert_eq!(policies.get(key_mode).map(|s| s.as_str()), Some("restart"));
+
+    assert_eq!(
+        classify_known(domain, key_accepts),
+        Some(SettingReloadPolicy::Hot)
+    );
+    assert_eq!(
+        classify_known(domain, key_mode),
+        Some(SettingReloadPolicy::Restart)
+    );
+    assert_eq!(
+        get_setting_reload_policy(domain, key_accepts),
+        SettingReloadPolicy::Hot
+    );
+    assert_eq!(
+        get_setting_reload_policy(domain, key_mode),
+        SettingReloadPolicy::Restart
+    );
+
+    // 2. Defaults
+    let defaults = VoxSettings::default();
+    assert!(!defaults.remote.accepts_controllers);
+    assert_eq!(defaults.remote.execution_mode, RemoteExecutionMode::Local);
+
+    // 3. Mutation router
+    let mut settings = VoxSettings::default();
+    assert!(
+        apply_setting_mutation(&mut settings, domain, key_accepts, &serde_json::json!(true))
+            .unwrap()
+    );
+    assert!(settings.remote.accepts_controllers);
+    assert!(apply_setting_mutation(
+        &mut settings,
+        domain,
+        key_mode,
+        &serde_json::json!("remote")
+    )
+    .unwrap());
+    assert_eq!(settings.remote.execution_mode, RemoteExecutionMode::Remote);
+
+    // Reject unknown execution mode
+    assert!(apply_setting_mutation(
+        &mut settings,
+        domain,
+        key_mode,
+        &serde_json::json!("invalid_mode")
+    )
+    .is_err());
+    assert_eq!(settings.remote.execution_mode, RemoteExecutionMode::Remote);
+
+    // 4. Persistence round-trip
+    settings.save().expect("save");
+    let reloaded = VoxSettings::load();
+    assert!(reloaded.remote.accepts_controllers);
+    assert_eq!(reloaded.remote.execution_mode, RemoteExecutionMode::Remote);
+
+    // 5. Missing remote section falls back to defaults
+    let settings_path = vox_lib::utils::paths::settings_path();
+    std::fs::write(
+        &settings_path,
+        serde_json::to_string_pretty(&serde_json::json!({
+            "appearance": { "theme": "nordic_frost" }
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    let recovered = VoxSettings::load();
+    assert_eq!(recovered.appearance.theme, "nordic_frost");
+    assert!(!recovered.remote.accepts_controllers);
+    assert_eq!(recovered.remote.execution_mode, RemoteExecutionMode::Local);
+}
+
+// ============================================================================
+// Subtest 13: Azure Speech Key Secret Classification & Masking
+// ============================================================================
+
+/// PURPOSE:  Azure Speech key must be classified as a secret, masked in logs, and preserved in storage.
+/// SCENARIO: Verify secret key registration; run update_setting for azure_tts while capturing logs.
+/// ASSERTS:  Secret is registered; logs contain `[redacted]`, not the raw key; state holds the raw key.
+/// CLASS:    suppression
+/// REQUIRES: none
+/// MUTANT:   Remove azure_tts from secret_keys() allow-list.
+#[tokio::test]
+async fn azure_speech_key_treated_as_secret_and_masked_in_logs() {
+    tokio::time::timeout(Duration::from_secs(30), async {
+        assert!(is_secret_key("tts", "azure_tts"));
+        assert!(secret_keys()
+            .iter()
+            .any(|(d, k)| *d == "tts" && *k == "azure_tts"));
+        for (d, k) in secret_keys() {
+            assert!(supported_keys_for_domain(d).contains(k));
+        }
+
+        let _guard = TempPathsGuard::new();
+        let (app, state) = common::harness::get_test_app_and_state().await;
+        let mutating_app = app.clone();
+
+        common::log_capture::install();
+        let _ = common::log_capture::take();
+
+        state
+            .restart_runner
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+
+        let real_key = "azure-super-secret-key-123";
+        let azure = vox_lib::services::tts::TtsAzureConfig {
+            region_or_endpoint: "eastus".to_string(),
+            voice: "en-US-JennyNeural".to_string(),
+            key: real_key.to_string(),
+            ..Default::default()
+        };
+        let value = serde_json::to_value(&azure).unwrap();
+
+        let result = vox_lib::ipc::settings::update_setting(
+            "tts".to_string(),
+            "azure_tts".to_string(),
+            value,
+            mutating_app,
+        )
+        .await
+        .unwrap();
+        assert!(result.applied);
+
+        let captured = common::log_capture::take_text();
+        assert!(!captured.contains(real_key));
+        assert!(captured.contains("[redacted]"));
+
+        let stored = state
+            .settings
+            .read()
+            .unwrap()
+            .providers
+            .tts
+            .azure_tts
+            .key
+            .clone();
+        assert_eq!(stored, real_key);
+
+        state
+            .restart_runner
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+    })
+    .await
+    .expect("timeout");
 }

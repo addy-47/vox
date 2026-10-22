@@ -603,3 +603,85 @@ fn payload_value<T: serde::de::DeserializeOwned>(
     serde_json::from_value(Value::Object(payload))
         .map_err(|error| ProtocolError::MalformedJson(error.to_string()))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn snapshot_session_id_numeric_wire_format() {
+        let snapshot = AttachSnapshot {
+            state: serde_json::json!({"state": "Ready"}),
+            session_id: Some(42),
+            settings: serde_json::json!({"theme": "dark"}),
+            turns: Vec::new(),
+        };
+
+        let bytes =
+            encode_control(&ControlMessage::AttachSnapshot(snapshot.clone())).expect("must encode");
+        let text = String::from_utf8(bytes).expect("must be utf-8");
+
+        assert!(text.contains("\"session_id\":42"));
+        assert!(!text.contains("\"session_id\":\"42\""));
+
+        let outcome = decode_control(text.as_bytes()).expect("must decode");
+        assert_eq!(
+            outcome,
+            DecodeOutcome::Known(ControlMessage::AttachSnapshot(snapshot))
+        );
+
+        // Null session id when inactive
+        let null_session = AttachSnapshot {
+            state: serde_json::json!({"state": "Ready"}),
+            session_id: None,
+            settings: serde_json::json!({}),
+            turns: Vec::new(),
+        };
+        let bytes =
+            encode_control(&ControlMessage::AttachSnapshot(null_session)).expect("must encode");
+        let text = String::from_utf8(bytes).expect("must be utf-8");
+        assert!(text.contains("\"session_id\":null"));
+
+        // Reject string session_id
+        let malformed =
+            br#"{"type":"AttachSnapshot","state":{},"session_id":"42","settings":{},"turns":[]}"#;
+        assert!(decode_control(malformed).is_err());
+    }
+
+    #[test]
+    fn unreadable_and_forward_compatible_messages() {
+        // Unknown type -> skip outcome
+        let outcome = decode_control(br#"{"type":"FutureMsg","payload":{"foo":"bar"}}"#)
+            .expect("must decode");
+        assert_eq!(
+            outcome,
+            DecodeOutcome::UnknownType {
+                type_name: "FutureMsg".to_string()
+            }
+        );
+
+        // Unknown audio type -> skip outcome
+        let outcome =
+            decode_audio_control(br#"{"type":"FutureAudioMsg","epoch":1}"#).expect("must decode");
+        assert_eq!(
+            outcome,
+            DecodeOutcome::UnknownType {
+                type_name: "FutureAudioMsg".to_string()
+            }
+        );
+
+        // Unknown extra field in known type -> accepted
+        let outcome =
+            decode_control(br#"{"type":"Ping","seq":7,"future_field":true}"#).expect("must decode");
+        assert_eq!(
+            outcome,
+            DecodeOutcome::Known(ControlMessage::Ping(Ping { seq: 7 }))
+        );
+
+        // Missing type tag -> MissingTypeTag error
+        assert!(matches!(
+            decode_control(b"{}"),
+            Err(ProtocolError::MissingTypeTag)
+        ));
+    }
+}
