@@ -1,12 +1,11 @@
 //! ============================================================================
-//! tests/notifications_crud_test.rs — Notification Center 3D Matrix Routing, Aggregation & Actions Integration Tests
+//! notifications_crud_test.rs — notification records are created, updated, resolved, filtered and routed to the right delivery channel without duplicating rows
 //! ============================================================================
-//! Category     : Integration Test (Seam 18)
-//! Component    : services/notifications/{service,router,actions,types}, persistence/notifications, persistence/compactions
-//! Prerequisites: Turso SQLite engine (vox.db), isolated TempPathsGuard
-//! Execution    : cargo nextest run --test notifications_crud_test --release --nocapture --test-threads=1
-//! Metrics      : 3D routing channel resolution, Zero-DB invariant for transient alerts,
-//!                group-key rollup deduplication, action execution engine, SQLite CRUD & resolution
+//! Category  : Integration (Seam 18 — notification centre)
+//! Component : src/services/notifications/{service,router,actions,types}.rs, src/persistence/notifications.rs, src/persistence/compactions.rs
+//! Binary    : notifications_crud_test
+//! Prereqs   : none (isolated temporary VOX_HOME per test)
+//! Run       : cargo nextest run --test notifications_crud_test --release --test-threads=1
 //! ============================================================================
 
 mod common;
@@ -34,24 +33,29 @@ use vox_lib::{
     },
 };
 
-// ============================================================================
-// Subtest 1: Persistence CRUD, In-Place Resolution & Tab Filtering
-// ============================================================================
-/// Verifies full SQLite CRUD lifecycle, Schema v4 fields (group_key, action_type, severity),
-/// in-place resolution metadata mutations, tab-scoped mark as read, and scoped dismissal.
+/// PURPOSE:  A notification handed to the store must be readable back with
+///           its group key, severity and action type intact; the frontend
+///           routes cards on those fields.
+/// SCENARIO: Create an interactive task notification and a passive receipt
+///           notification, then list the active records.
+/// ASSERTS:  Both rows exist, the task card keeps its `group_key`,
+///           `severity`, `action_type` and `status`, and there are exactly two
+///           active records.
+/// CLASS:    happy-path
+/// REQUIRES: none
+/// MUTANT:   Drop `group_key` from the insert in `create_notification` — the
+///           `group_key` assertion would fail.
 #[tokio::test]
-async fn test_notifications_persistence_crud_and_in_place_resolution() {
+async fn created_notification_is_persisted_with_its_fields() {
     tokio::time::timeout(Duration::from_secs(15), async {
         let (_guard, _app, state) = common::harness::setup_isolated_app_state().await;
         let conn = state.db.connect().expect("Failed to connect to test db");
 
-        // 1. Initially empty
         let active = fetch_active_notifications(&conn)
             .await
             .expect("Failed to fetch active");
         assert!(active.is_empty(), "Initial notifications must be empty");
 
-        // 2. Create interactive task notification
         let session_id = create_session(&conn, None)
             .await
             .expect("Failed to create session");
@@ -72,13 +76,13 @@ async fn test_notifications_persistence_crud_and_in_place_resolution() {
         let rec1 = create_notification(&conn, &task_notif)
             .await
             .expect("Failed to create task notification");
+
         assert_eq!(rec1.id, "notif_task_1");
         assert_eq!(rec1.group_key, group_key);
         assert_eq!(rec1.status, "unread");
         assert_eq!(rec1.severity, Severity::Info);
         assert_eq!(rec1.action_type, "interactive");
 
-        // 3. Create passive receipt notification
         let receipt_notif = NewNotification {
             id: "notif_receipt_1".to_string(),
             group_key: "memory_consolidation:daily".to_string(),
@@ -100,8 +104,49 @@ async fn test_notifications_persistence_crud_and_in_place_resolution() {
             .await
             .expect("Failed to fetch active");
         assert_eq!(active.len(), 2, "Must have exactly 2 active notifications");
+    })
+    .await
+    .expect("created_notification_is_persisted_with_its_fields timed out");
+}
 
-        // 4. In-place interactive update
+/// PURPOSE:  A compaction card that grows must be updated in place; creating
+///           a second card for the same group would spam the drawer with
+///           duplicates.
+/// SCENARIO: Create an interactive card, then update it through
+///           `update_interactive_notification` and read it back by group.
+/// ASSERTS:  The message is the updated one and the card is still the only
+///           active interactive card in that group.
+/// CLASS:    happy-path
+/// REQUIRES: none
+/// MUTANT:   Make `update_interactive_notification` insert a new row instead
+///           of updating — the message assertion would fail.
+#[tokio::test]
+async fn interactive_notification_updates_in_place() {
+    tokio::time::timeout(Duration::from_secs(15), async {
+        let (_guard, _app, state) = common::harness::setup_isolated_app_state().await;
+        let conn = state.db.connect().expect("Failed to connect to test db");
+
+        let session_id = create_session(&conn, None)
+            .await
+            .expect("Failed to create session");
+        let group_key = format!("session_compaction:{}", session_id);
+        let task_notif = NewNotification {
+            id: "notif_task_1".to_string(),
+            group_key: group_key.clone(),
+            category: "session_compaction".to_string(),
+            severity: Severity::Info,
+            action_type: "interactive".to_string(),
+            action_payload: format!("{{\"action\":\"compact\",\"sessionId\":{session_id}}}"),
+            title: "Session Finished".to_string(),
+            message: "Session has 5 uncompacted turns".to_string(),
+            status: "unread".to_string(),
+            session_id: Some(session_id),
+            metadata: "{\"uncompacted_turns\": 5, \"resolution\": \"pending\"}".to_string(),
+        };
+        create_notification(&conn, &task_notif)
+            .await
+            .expect("Failed to create task notification");
+
         let active_task = find_active_interactive_by_group(&conn, &group_key)
             .await
             .expect("Failed to query active interactive task");
@@ -122,8 +167,51 @@ async fn test_notifications_persistence_crud_and_in_place_resolution() {
             .expect("Failed to query updated interactive task")
             .expect("Interactive task missing");
         assert_eq!(updated_task.message, "Session has 8 uncompacted turns");
+        assert_eq!(
+            updated_task.id, "notif_task_1",
+            "the update must not create a second card in the same group"
+        );
+    })
+    .await
+    .expect("interactive_notification_updates_in_place timed out");
+}
 
-        // 5. In-place resolution (preserves unread status for user attention)
+/// PURPOSE:  Resolving a card in place must flip the metadata resolution and
+///           keep the record unread, so the user still sees the outcome.
+/// SCENARIO: Resolve an interactive card through
+///           `resolve_notification_in_place` and inspect the result.
+/// ASSERTS:  The message is the resolution text, the metadata carries
+///           `"resolution":"resolved"` and the status stays `unread`.
+/// CLASS:    happy-path
+/// REQUIRES: none
+/// MUTANT:   Set the resolved record's status to `read` — the status
+///           assertion would fail.
+#[tokio::test]
+async fn notification_resolution_preserves_unread_status() {
+    tokio::time::timeout(Duration::from_secs(15), async {
+        let (_guard, _app, state) = common::harness::setup_isolated_app_state().await;
+        let conn = state.db.connect().expect("Failed to connect to test db");
+
+        let session_id = create_session(&conn, None)
+            .await
+            .expect("Failed to create session");
+        let task_notif = NewNotification {
+            id: "notif_task_1".to_string(),
+            group_key: format!("session_compaction:{}", session_id),
+            category: "session_compaction".to_string(),
+            severity: Severity::Info,
+            action_type: "interactive".to_string(),
+            action_payload: "{}".to_string(),
+            title: "Session Finished".to_string(),
+            message: "Session has 5 uncompacted turns".to_string(),
+            status: "unread".to_string(),
+            session_id: Some(session_id),
+            metadata: "{\"resolution\": \"pending\"}".to_string(),
+        };
+        create_notification(&conn, &task_notif)
+            .await
+            .expect("Failed to create task notification");
+
         let resolved = resolve_notification_in_place(
             &conn,
             "notif_task_1",
@@ -133,11 +221,65 @@ async fn test_notifications_persistence_crud_and_in_place_resolution() {
         .await
         .expect("Resolution failed")
         .expect("Record should exist");
+
         assert_eq!(resolved.message, "Session compacted: extracted 4 facts.");
         assert!(resolved.metadata.contains("\"resolution\":\"resolved\""));
         assert_eq!(resolved.status, "unread");
+    })
+    .await
+    .expect("notification_resolution_preserves_unread_status timed out");
+}
 
-        // 6. Tab-scoped mark read (interactive only)
+/// PURPOSE:  "Mark as read" is applied per tab; marking the interactive tab
+///           must not silently mark the receipt tab as read too.
+/// SCENARIO: Create one interactive and one receipt notification, then mark
+///           only the interactive ones read.
+/// ASSERTS:  The interactive record becomes `read` and the receipt record
+///           stays `unread`.
+/// CLASS:    edge-case
+/// REQUIRES: none
+/// MUTANT:   Ignore the `action_type` filter in `mark_notifications_read` —
+///           the receipt assertion would fail.
+#[tokio::test]
+async fn mark_read_applies_only_to_the_filtered_action_type() {
+    tokio::time::timeout(Duration::from_secs(15), async {
+        let (_guard, _app, state) = common::harness::setup_isolated_app_state().await;
+        let conn = state.db.connect().expect("Failed to connect to test db");
+
+        let task_notif = NewNotification {
+            id: "notif_task_1".to_string(),
+            group_key: "session_compaction:1".to_string(),
+            category: "session_compaction".to_string(),
+            severity: Severity::Info,
+            action_type: "interactive".to_string(),
+            action_payload: "{}".to_string(),
+            title: "Session Finished".to_string(),
+            message: "Session has 5 uncompacted turns".to_string(),
+            status: "unread".to_string(),
+            session_id: Some(1),
+            metadata: "{}".to_string(),
+        };
+        create_notification(&conn, &task_notif)
+            .await
+            .expect("Failed to create task notification");
+
+        let receipt_notif = NewNotification {
+            id: "notif_receipt_1".to_string(),
+            group_key: "memory_consolidation:daily".to_string(),
+            category: "memory_consolidation".to_string(),
+            severity: Severity::Info,
+            action_type: "receipt".to_string(),
+            action_payload: "{}".to_string(),
+            title: "Memory Consolidated".to_string(),
+            message: "Daily profile updated".to_string(),
+            status: "unread".to_string(),
+            session_id: None,
+            metadata: "{}".to_string(),
+        };
+        create_notification(&conn, &receipt_notif)
+            .await
+            .expect("Failed to create receipt notification");
+
         mark_notifications_read(
             &conn,
             Some(&NotificationFilter {
@@ -158,8 +300,61 @@ async fn test_notifications_persistence_crud_and_in_place_resolution() {
             receipt_rec.status, "unread",
             "Receipt status must be untouched"
         );
+    })
+    .await
+    .expect("mark_read_applies_only_to_the_filtered_action_type timed out");
+}
 
-        // 7. Tab-scoped dismiss (receipt only)
+/// PURPOSE:  Dismissal is applied per tab; dismissing the receipt tab must
+///           leave the interactive card in the drawer.
+/// SCENARIO: Create one interactive and one receipt notification, then dismiss
+///           only the receipts.
+/// ASSERTS:  Exactly one active record remains and it is the interactive
+///           task card.
+/// CLASS:    edge-case
+/// REQUIRES: none
+/// MUTANT:   Ignore the `action_type` filter in `dismiss_notifications` — the
+///           remaining-count assertion would fail.
+#[tokio::test]
+async fn dismiss_applies_only_to_the_filtered_action_type() {
+    tokio::time::timeout(Duration::from_secs(15), async {
+        let (_guard, _app, state) = common::harness::setup_isolated_app_state().await;
+        let conn = state.db.connect().expect("Failed to connect to test db");
+
+        let task_notif = NewNotification {
+            id: "notif_task_1".to_string(),
+            group_key: "session_compaction:1".to_string(),
+            category: "session_compaction".to_string(),
+            severity: Severity::Info,
+            action_type: "interactive".to_string(),
+            action_payload: "{}".to_string(),
+            title: "Session Finished".to_string(),
+            message: "Session has 5 uncompacted turns".to_string(),
+            status: "unread".to_string(),
+            session_id: Some(1),
+            metadata: "{}".to_string(),
+        };
+        create_notification(&conn, &task_notif)
+            .await
+            .expect("Failed to create task notification");
+
+        let receipt_notif = NewNotification {
+            id: "notif_receipt_1".to_string(),
+            group_key: "memory_consolidation:daily".to_string(),
+            category: "memory_consolidation".to_string(),
+            severity: Severity::Info,
+            action_type: "receipt".to_string(),
+            action_payload: "{}".to_string(),
+            title: "Memory Consolidated".to_string(),
+            message: "Daily profile updated".to_string(),
+            status: "unread".to_string(),
+            session_id: None,
+            metadata: "{}".to_string(),
+        };
+        create_notification(&conn, &receipt_notif)
+            .await
+            .expect("Failed to create receipt notification");
+
         dismiss_notifications(
             &conn,
             Some(&NotificationFilter {
@@ -175,11 +370,52 @@ async fn test_notifications_persistence_crud_and_in_place_resolution() {
             .expect("Fetch failed");
         assert_eq!(remaining.len(), 1);
         assert_eq!(remaining[0].id, "notif_task_1");
+    })
+    .await
+    .expect("dismiss_applies_only_to_the_filtered_action_type timed out");
+}
 
-        // 8. Dismiss interactive by entity group key
+/// PURPOSE:  Dismissing by entity group must remove the interactive card for
+///           that entity and leave the drawer empty; a no-op here leaves
+///           resolved cards visible forever.
+/// SCENARIO: Dismiss the interactive notifications of one group key and list
+///           the remaining active records.
+/// ASSERTS:  No active notifications remain.
+/// CLASS:    happy-path
+/// REQUIRES: none
+/// MUTANT:   Make `dismiss_interactive_by_entity` a no-op — the emptiness
+///           assertion would fail.
+#[tokio::test]
+async fn dismiss_interactive_by_entity_clears_the_group() {
+    tokio::time::timeout(Duration::from_secs(15), async {
+        let (_guard, _app, state) = common::harness::setup_isolated_app_state().await;
+        let conn = state.db.connect().expect("Failed to connect to test db");
+
+        let session_id = create_session(&conn, None)
+            .await
+            .expect("Failed to create session");
+        let group_key = format!("session_compaction:{}", session_id);
+        let task_notif = NewNotification {
+            id: "notif_task_1".to_string(),
+            group_key: group_key.clone(),
+            category: "session_compaction".to_string(),
+            severity: Severity::Info,
+            action_type: "interactive".to_string(),
+            action_payload: "{}".to_string(),
+            title: "Session Finished".to_string(),
+            message: "Session has 5 uncompacted turns".to_string(),
+            status: "unread".to_string(),
+            session_id: Some(session_id),
+            metadata: "{}".to_string(),
+        };
+        create_notification(&conn, &task_notif)
+            .await
+            .expect("Failed to create task notification");
+
         dismiss_interactive_by_entity(&conn, &group_key)
             .await
             .expect("Failed to dismiss interactive by entity");
+
         let remaining_after = fetch_active_notifications(&conn)
             .await
             .expect("Fetch failed");
@@ -189,170 +425,108 @@ async fn test_notifications_persistence_crud_and_in_place_resolution() {
         );
     })
     .await
-    .expect("test_notifications_persistence_crud_and_in_place_resolution timed out");
+    .expect("dismiss_interactive_by_entity_clears_the_group timed out");
 }
 
-// ============================================================================
-// Subtest 2: Compaction Ledger Queries, Watermarks & Cascades
-// ============================================================================
-/// Verifies session turn association, uncompacted session queries, compaction start/finish
-/// tracking, and error recording.
-#[tokio::test]
-async fn test_compaction_ledger_queries_and_cascades() {
-    tokio::time::timeout(Duration::from_secs(15), async {
-        let (_guard, _app, state) = common::harness::setup_isolated_app_state().await;
-        let conn = state.db.connect().expect("Failed to connect to test db");
-
-        let session_id = 18201i64;
-        create_session_with_id(&conn, session_id, Some("default"))
-            .await
-            .expect("Failed to insert session");
-
-        conn.execute(
-            "INSERT INTO turns (session_id, turn_id, user_text, assistant_text, created_at) VALUES \
-             (?, 1, 'Hello', 'Hi there', 1001), \
-             (?, 2, 'My name is Alice', 'Nice to meet you Alice', 1002), \
-             (?, 3, 'I love Rust', 'Rust is awesome', 1003)",
-            (session_id, session_id, session_id),
-        )
-        .await
-        .expect("Failed to insert turns");
-
-        // 1. Verify session is detected as uncompacted
-        let uncompacted = fetch_uncompacted_sessions(&conn)
-            .await
-            .expect("Failed to fetch uncompacted");
-        assert_eq!(uncompacted.len(), 1);
-        assert_eq!(uncompacted[0].session_id, session_id);
-        assert_eq!(uncompacted[0].turn_count, 3);
-        assert_eq!(uncompacted[0].last_compacted_turn_id, 0);
-
-        // 2. Fetch turns for compaction
-        let turns = fetch_turns_for_compaction(&conn, session_id, 0, u32::MAX)
-            .await
-            .expect("Failed to fetch turns");
-        assert_eq!(turns.len(), 3);
-
-        // 3. Record compaction start
-        let run_id = record_compaction_start(&conn, session_id, "manual", 1, 3)
-            .await
-            .expect("Failed to record start");
-        assert!(run_id > 0);
-
-        // 4. Commit compaction results
-        let mut facts = HashMap::new();
-        facts.insert(
-            "personal".to_string(),
-            vec![
-                "User's name is Alice".to_string(),
-                "User loves Rust".to_string(),
-            ],
-        );
-
-        let committed_count = commit_compaction_results(
-            &conn,
-            run_id,
-            &session_id.to_string(),
-            "Conversation about user name and programming language preference.",
-            facts,
-            true,
-        )
-        .await
-        .expect("Failed to commit compaction results");
-        assert_eq!(committed_count, 2);
-
-        // 5. Session is no longer uncompacted
-        let uncompacted_after = fetch_uncompacted_sessions(&conn)
-            .await
-            .expect("Failed to fetch uncompacted");
-        assert!(
-            uncompacted_after.is_empty(),
-            "Session should now be fully compacted"
-        );
-
-        // 6. Record failed compaction attempt and verify error tracking
-        let fail_run_id = record_compaction_start(&conn, session_id, "manual", 4, 5)
-            .await
-            .expect("Failed to record start");
-        record_compaction_finish(&conn, fail_run_id, "", "failed", Some("LLM timed out"))
-            .await
-            .expect("Failed to record finish");
-
-        let latest = fetch_latest_compaction_run(&conn, session_id)
-            .await
-            .expect("Failed to fetch latest")
-            .expect("Expected latest run");
-        assert_eq!(latest.status, "failed");
-        assert_eq!(latest.error_msg.as_deref(), Some("LLM timed out"));
-    })
-    .await
-    .expect("test_compaction_ledger_queries_and_cascades timed out");
+/// PURPOSE:  A transient alert must never reach the notification drawer; it
+///           is a toast with a duration, not a record.
+/// SCENARIO: Resolve the delivery channel for a transient action at two
+///           different impact/severity combinations.
+/// ASSERTS:  Both resolve to `DeliveryChannel::ToastOnly`.
+/// CLASS:    contract
+/// REQUIRES: none
+/// MUTANT:   Let `resolve_channel` fall through to the interactive branch for
+///           `Action::Transient` — the channel assertion would fail.
+#[test]
+fn transient_action_resolves_to_toast_only() {
+    assert_eq!(
+        resolve_channel(None, Severity::Info, &Action::Transient),
+        DeliveryChannel::ToastOnly
+    );
+    assert_eq!(
+        resolve_channel(
+            Some(PipelineImpact::SessionHalted),
+            Severity::Critical,
+            &Action::Transient
+        ),
+        DeliveryChannel::ToastOnly
+    );
 }
 
-// ============================================================================
-// Subtest 3: 3D Matrix Routing & Zero-DB Invariant
-// ============================================================================
-/// Entry Seam A: `services::notifications::notify` & `services::notifications::resolve_channel`
-///
-/// Verifies:
-///   - 3D truth table channel resolution across (Impact, Severity, Action)
-///   - Zero-DB Invariant: Action::Transient dispatches to toast overlay without persisting ANY row to SQLite.
+/// PURPOSE:  A receipt is a persistent record with no user action; routing it
+///           to a toast would make it disappear unread.
+/// SCENARIO: Resolve the delivery channel for a receipt action.
+/// ASSERTS:  The channel is `DeliveryChannel::NotificationOnly`.
+/// CLASS:    contract
+/// REQUIRES: none
+/// MUTANT:   Return `ToastOnly` for `Action::Receipt` — the channel
+///           assertion would fail.
+#[test]
+fn receipt_action_resolves_to_notification_only() {
+    assert_eq!(
+        resolve_channel(None, Severity::Info, &Action::Receipt),
+        DeliveryChannel::NotificationOnly
+    );
+}
+
+/// PURPOSE:  An interactive card only earns a toast when it is urgent; a
+///           routine card must stay in the drawer without interrupting.
+/// SCENARIO: Resolve the delivery channel for an interactive action at
+///           several impact/severity combinations.
+/// ASSERTS:  Routine `Info` resolves to `NotificationOnly`, while critical
+///           severity, a halted session and an aborted turn all resolve to
+///           `ToastAndNotification`.
+/// CLASS:    contract
+/// REQUIRES: none
+/// MUTANT:   Always return `NotificationOnly` for interactive actions — the
+///           critical-severity assertion would fail.
+#[test]
+fn interactive_action_routes_to_toast_only_when_urgent() {
+    let interactive_action = Action::Interactive(ActionPayload::CompactSession { session_id: 10 });
+
+    assert_eq!(
+        resolve_channel(None, Severity::Info, &interactive_action),
+        DeliveryChannel::NotificationOnly
+    );
+    assert_eq!(
+        resolve_channel(None, Severity::Critical, &interactive_action),
+        DeliveryChannel::ToastAndNotification
+    );
+    assert_eq!(
+        resolve_channel(
+            Some(PipelineImpact::SessionHalted),
+            Severity::Info,
+            &interactive_action
+        ),
+        DeliveryChannel::ToastAndNotification
+    );
+    assert_eq!(
+        resolve_channel(
+            Some(PipelineImpact::TurnAborted),
+            Severity::Warning,
+            &interactive_action
+        ),
+        DeliveryChannel::ToastAndNotification
+    );
+}
+
+/// PURPOSE:  The Zero-DB invariant: a transient alert must not create a row
+///           in the notifications table; persistent toasts would grow the
+///           database without bound.
+/// SCENARIO: Dispatch a transient notification through the universal front
+///           door and then count the rows.
+/// ASSERTS:  `notify` returns no persistent ID and the notifications table
+///           has zero rows.
+/// CLASS:    suppression
+/// REQUIRES: none
+/// MUTANT:   Persist transient notifications before deciding the channel —
+///           the row-count assertion would fail.
 #[tokio::test]
-async fn test_notifications_3d_routing_and_zero_db_invariant() {
+async fn transient_notification_writes_no_database_row() {
     tokio::time::timeout(Duration::from_secs(15), async {
         let (_guard, app, state) = common::harness::setup_isolated_app_state().await;
         let conn = state.db.connect().expect("Failed to connect to test db");
 
-        // 1. Truth Table Tests for resolve_channel
-        // Transient always resolves to ToastOnly regardless of impact/severity
-        assert_eq!(
-            resolve_channel(None, Severity::Info, &Action::Transient),
-            DeliveryChannel::ToastOnly
-        );
-        assert_eq!(
-            resolve_channel(
-                Some(PipelineImpact::SessionHalted),
-                Severity::Critical,
-                &Action::Transient
-            ),
-            DeliveryChannel::ToastOnly
-        );
-
-        // Receipt always resolves to NotificationOnly
-        assert_eq!(
-            resolve_channel(None, Severity::Info, &Action::Receipt),
-            DeliveryChannel::NotificationOnly
-        );
-
-        // Interactive resolves conditionally based on impact / severity
-        let interactive_action =
-            Action::Interactive(ActionPayload::CompactSession { session_id: 10 });
-        assert_eq!(
-            resolve_channel(None, Severity::Info, &interactive_action),
-            DeliveryChannel::NotificationOnly
-        );
-        assert_eq!(
-            resolve_channel(None, Severity::Critical, &interactive_action),
-            DeliveryChannel::ToastAndNotification
-        );
-        assert_eq!(
-            resolve_channel(
-                Some(PipelineImpact::SessionHalted),
-                Severity::Info,
-                &interactive_action
-            ),
-            DeliveryChannel::ToastAndNotification
-        );
-        assert_eq!(
-            resolve_channel(
-                Some(PipelineImpact::TurnAborted),
-                Severity::Warning,
-                &interactive_action
-            ),
-            DeliveryChannel::ToastAndNotification
-        );
-
-        // 2. Zero-DB Invariant Execution: Dispatch Action::Transient through universal front door
         let transient_params = NotificationParams {
             group_key: Some("transient_alert"),
             category: NotificationCategory::Hardware,
@@ -370,13 +544,11 @@ async fn test_notifications_3d_routing_and_zero_db_invariant() {
             .await
             .expect("notify must succeed for transient action");
 
-        // Transient notifications do not generate persistent drawer IDs
         assert!(
             result.is_none(),
             "Transient notification must return None for persistent ID"
         );
 
-        // Critical Assertion: Database MUST remain completely empty (Zero-DB Invariant)
         let active_rows = fetch_active_notifications(&conn)
             .await
             .expect("Failed to fetch notifications");
@@ -397,28 +569,29 @@ async fn test_notifications_3d_routing_and_zero_db_invariant() {
         );
     })
     .await
-    .expect("test_notifications_3d_routing_and_zero_db_invariant timed out");
+    .expect("transient_notification_writes_no_database_row timed out");
 }
 
-// ============================================================================
-// Subtest 4: Group-Key Rollup & In-Place Deduplication
-// ============================================================================
-/// Entry Seam A: `services::notifications::notify` with duplicate `group_key`
-///
-/// Verifies:
-///   - Dispatching an initial interactive notification creates a persistent record.
-///   - Dispatching a second interactive notification with the identical `group_key` updates the
-///     existing record in-place without creating a duplicate row in SQLite.
+/// PURPOSE:  A second notification for the same entity must roll up into the
+///           existing card; inserting a duplicate floods the drawer with the
+///           same task.
+/// SCENARIO: Dispatch two interactive notifications with the same group key
+///           and different content, then list the active records.
+/// ASSERTS:  The second dispatch returns the first notification's ID, there
+///           is still exactly one active record, and its message and metadata
+///           carry the newest content.
+/// CLASS:    happy-path
+/// REQUIRES: none
+/// MUTANT:   Always insert a new row in `notify` for a group key — the
+///           active-count assertion would fail.
 #[tokio::test]
-async fn test_notifications_group_key_rollup_and_deduplication() {
+async fn group_key_rollup_updates_existing_notification_in_place() {
     tokio::time::timeout(Duration::from_secs(15), async {
-        let (_guard, app, state) =
-            common::harness::setup_isolated_app_state().await;
+        let (_guard, app, state) = common::harness::setup_isolated_app_state().await;
         let conn = state.db.connect().expect("Failed to connect to test db");
 
         let group_key = "session_compaction:18401";
 
-        // 1. First Dispatch: creates initial interactive task card
         let params_1 = NotificationParams {
             group_key: Some(group_key),
             category: NotificationCategory::SessionCompaction,
@@ -440,11 +613,14 @@ async fn test_notifications_group_key_rollup_and_deduplication() {
         let active_1 = fetch_active_notifications(&conn)
             .await
             .expect("Query failed");
-        assert_eq!(active_1.len(), 1, "Must have exactly 1 active notification after first dispatch");
+        assert_eq!(
+            active_1.len(),
+            1,
+            "Must have exactly 1 active notification after first dispatch"
+        );
         assert_eq!(active_1[0].id, id_1);
         assert_eq!(active_1[0].message, "Session has 5 uncompacted turns");
 
-        // 2. Second Dispatch: identical group_key with updated turn count
         let params_2 = NotificationParams {
             group_key: Some(group_key),
             category: NotificationCategory::SessionCompaction,
@@ -463,10 +639,11 @@ async fn test_notifications_group_key_rollup_and_deduplication() {
             .expect("Second notify must succeed")
             .expect("Must return notification ID");
 
-        // Invariant: returned ID must match the original ID (updated in-place)
-        assert_eq!(id_2, id_1, "Group-key rollup must return the existing notification ID");
+        assert_eq!(
+            id_2, id_1,
+            "Group-key rollup must return the existing notification ID"
+        );
 
-        // Critical Invariant: Total active notifications count must STILL be 1 (zero duplicate rows)
         let active_2 = fetch_active_notifications(&conn)
             .await
             .expect("Query failed");
@@ -484,24 +661,185 @@ async fn test_notifications_group_key_rollup_and_deduplication() {
         assert!(active_2[0].metadata.contains("\"uncompacted_turns\": 12"));
     })
     .await
-    .expect("test_notifications_group_key_rollup_and_deduplication timed out");
+    .expect("group_key_rollup_updates_existing_notification_in_place timed out");
 }
 
-// ============================================================================
-// Subtest 5: Action Execution Engine
-// ============================================================================
-/// Entry Seam B: `services::notifications::execute_notification_action`
-///
-/// Verifies:
-///   - Polymorphic interactive action execution dispatches targeted remediation.
-///   - On completion of `Retry`, the interactive task card is resolved in-place with `resolution: "resolved"`.
+/// PURPOSE:  The compaction ledger must list sessions that still have
+///           uncompacted turns; an empty list means the user never gets the
+///           "this session needs compaction" card.
+/// SCENARIO: Create a session with three turns and query the uncompacted
+///           sessions and the pending compaction turns.
+/// ASSERTS:  The session is listed with turn count 3 and last compacted turn
+///           id 0, and three turns are pending for compaction.
+/// CLASS:    happy-path
+/// REQUIRES: none
+/// MUTANT:   Return an empty list from `fetch_uncompacted_sessions` — the
+///           listing assertion would fail.
 #[tokio::test]
-async fn test_notification_action_execution_engine() {
+async fn compaction_ledger_lists_uncompacted_session_and_its_turns() {
+    tokio::time::timeout(Duration::from_secs(15), async {
+        let (_guard, _app, state) = common::harness::setup_isolated_app_state().await;
+        let conn = state.db.connect().expect("Failed to connect to test db");
+
+        let session_id = 18201i64;
+        create_session_with_id(&conn, session_id, Some("default"))
+            .await
+            .expect("Failed to insert session");
+
+        conn.execute(
+            "INSERT INTO turns (session_id, turn_id, user_text, assistant_text, created_at) VALUES \
+             (?, 1, 'Hello', 'Hi there', 1001), \
+             (?, 2, 'My name is Alice', 'Nice to meet you Alice', 1002), \
+             (?, 3, 'I love Rust', 'Rust is awesome', 1003)",
+            (session_id, session_id, session_id),
+        )
+        .await
+        .expect("Failed to insert turns");
+
+        let uncompacted = fetch_uncompacted_sessions(&conn)
+            .await
+            .expect("Failed to fetch uncompacted");
+        assert_eq!(uncompacted.len(), 1);
+        assert_eq!(uncompacted[0].session_id, session_id);
+        assert_eq!(uncompacted[0].turn_count, 3);
+        assert_eq!(uncompacted[0].last_compacted_turn_id, 0);
+
+        let turns = fetch_turns_for_compaction(&conn, session_id, 0, u32::MAX)
+            .await
+            .expect("Failed to fetch turns");
+        assert_eq!(turns.len(), 3);
+    })
+    .await
+    .expect("compaction_ledger_lists_uncompacted_session_and_its_turns timed out");
+}
+
+/// PURPOSE:  After a compaction is committed the session must leave the
+///           uncompacted list; otherwise the app nags the user about a
+///           session it already compacted.
+/// SCENARIO: Record a compaction run for the session, commit its facts, then
+///           re-query the uncompacted sessions.
+/// ASSERTS:  Two facts are committed and the session is no longer listed.
+/// CLASS:    happy-path
+/// REQUIRES: none
+/// MUTANT:   Do not advance the compaction watermark in
+///           `commit_compaction_results` — the empty-list assertion would
+///           fail.
+#[tokio::test]
+async fn committed_compaction_removes_session_from_uncompacted_list() {
+    tokio::time::timeout(Duration::from_secs(15), async {
+        let (_guard, _app, state) = common::harness::setup_isolated_app_state().await;
+        let conn = state.db.connect().expect("Failed to connect to test db");
+
+        let session_id = 18201i64;
+        create_session_with_id(&conn, session_id, Some("default"))
+            .await
+            .expect("Failed to insert session");
+
+        conn.execute(
+            "INSERT INTO turns (session_id, turn_id, user_text, assistant_text, created_at) VALUES \
+             (?, 1, 'Hello', 'Hi there', 1001), \
+             (?, 2, 'My name is Alice', 'Nice to meet you Alice', 1002), \
+             (?, 3, 'I love Rust', 'Rust is awesome', 1003)",
+            (session_id, session_id, session_id),
+        )
+        .await
+        .expect("Failed to insert turns");
+
+        let run_id = record_compaction_start(&conn, session_id, "manual", 1, 3)
+            .await
+            .expect("Failed to record start");
+        assert!(run_id > 0);
+
+        let mut facts = HashMap::new();
+        facts.insert(
+            "personal".to_string(),
+            vec![
+                "User's name is Alice".to_string(),
+                "User loves Rust".to_string(),
+            ],
+        );
+
+        let committed_count = commit_compaction_results(
+            &conn,
+            run_id,
+            &session_id.to_string(),
+            "Conversation about user name and programming language preference.",
+            facts,
+            true,
+        )
+        .await
+        .expect("Failed to commit compaction results");
+        assert_eq!(committed_count, 2);
+
+        let uncompacted_after = fetch_uncompacted_sessions(&conn)
+            .await
+            .expect("Failed to fetch uncompacted");
+        assert!(
+            uncompacted_after.is_empty(),
+            "Session should now be fully compacted"
+        );
+    })
+    .await
+    .expect("committed_compaction_removes_session_from_uncompacted_list timed out");
+}
+
+/// PURPOSE:  A failed compaction must be recorded with its error message; a
+///           run that is silently dropped hides the reason the user's
+///           session never compacts.
+/// SCENARIO: Record a compaction run, finish it with status `failed` and an
+///           error message, then read the latest run.
+/// ASSERTS:  The latest run has status `failed` and the recorded error
+///           message.
+/// CLASS:    error-path
+/// REQUIRES: none
+/// MUTANT:   Drop the `error_msg` write in `record_compaction_finish` — the
+///           error-message assertion would fail.
+#[tokio::test]
+async fn failed_compaction_run_records_its_error_message() {
+    tokio::time::timeout(Duration::from_secs(15), async {
+        let (_guard, _app, state) = common::harness::setup_isolated_app_state().await;
+        let conn = state.db.connect().expect("Failed to connect to test db");
+
+        let session_id = 18202i64;
+        create_session_with_id(&conn, session_id, Some("default"))
+            .await
+            .expect("Failed to insert session");
+
+        let fail_run_id = record_compaction_start(&conn, session_id, "manual", 4, 5)
+            .await
+            .expect("Failed to record start");
+        record_compaction_finish(&conn, fail_run_id, "", "failed", Some("LLM timed out"))
+            .await
+            .expect("Failed to record finish");
+
+        let latest = fetch_latest_compaction_run(&conn, session_id)
+            .await
+            .expect("Failed to fetch latest")
+            .expect("Expected latest run");
+        assert_eq!(latest.status, "failed");
+        assert_eq!(latest.error_msg.as_deref(), Some("LLM timed out"));
+    })
+    .await
+    .expect("failed_compaction_run_records_its_error_message timed out");
+}
+
+/// PURPOSE:  Executing a notification action must resolve the card in place
+///           and describe the retry; a card that stays `pending` makes the
+///           user believe the action never ran.
+/// SCENARIO: Create a retry card, execute the action through the production
+///           entry seam, then read the record back.
+/// ASSERTS:  The metadata resolution becomes `resolved` and the message names
+///           the retried operation.
+/// CLASS:    happy-path
+/// REQUIRES: none
+/// MUTANT:   Skip the in-place resolution in `execute_notification_action` —
+///           the metadata assertion would fail.
+#[tokio::test]
+async fn retry_action_execution_resolves_the_card_in_place() {
     tokio::time::timeout(Duration::from_secs(15), async {
         let (_guard, app, state) = common::harness::setup_isolated_app_state().await;
         let conn = state.db.connect().expect("Failed to connect to test db");
 
-        // 1. Ingest an interactive retry task card
         let notif_id = "notif_retry_18501";
         let retry_notif = NewNotification {
             id: notif_id.to_string(),
@@ -531,12 +869,10 @@ async fn test_notification_action_execution_engine() {
             .expect("Notification must exist");
         assert!(before.metadata.contains("\"resolution\": \"pending\""));
 
-        // 2. Execute the action through the production entry seam
         execute_notification_action(&app, &state, notif_id)
             .await
             .expect("execute_notification_action must succeed");
 
-        // 3. Verify in-place resolution
         let after = fetch_notification_by_id(&conn, notif_id)
             .await
             .expect("Query failed")
@@ -554,5 +890,5 @@ async fn test_notification_action_execution_engine() {
         );
     })
     .await
-    .expect("test_notification_action_execution_engine timed out");
+    .expect("retry_action_execution_resolves_the_card_in_place timed out");
 }

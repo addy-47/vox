@@ -525,4 +525,234 @@ mod tests {
         assert_eq!(chunks, vec!["He said, \"Hello world.\""]);
         assert_eq!(c.buffer(), "Then he left");
     }
+
+    /// Feeds the text through the chunker and returns the clauses plus the flushed tail.
+    fn chunk(text: &str) -> Vec<String> {
+        let mut chunker = ClauseChunker::new();
+        let mut clauses = chunker.push_str(text);
+        if let Some(rest) = chunker.flush() {
+            if !rest.trim().is_empty() {
+                clauses.push(rest);
+            }
+        }
+        clauses
+    }
+/// PURPOSE:  The same words must become the same clauses no matter how the model
+///           fragments its tokens.
+/// SCENARIO: The same sentence is fed as word tokens and as one chunk.
+/// ASSERTS:  Both fragmentations yield identical clauses.
+/// CLASS:    happy-path
+/// REQUIRES: none
+/// MUTANT:   Make the chunker depend on the incoming token boundaries.
+#[test]
+fn clause_boundaries_do_not_depend_on_token_fragmentation() {
+    let text = "Good morning everyone, today we are testing. Dr. Smith is here. How are you doing today? Let's verify this now.";
+
+    let mut chunker = ClauseChunker::new();
+    let mut from_words: Vec<String> = Vec::new();
+    for word in text.split_inclusive(' ') {
+        from_words.extend(chunker.push_str(word));
+    }
+    if let Some(rest) = chunker.flush() {
+        if !rest.trim().is_empty() {
+            from_words.push(rest);
+        }
+    }
+
+    let from_chunks = chunk(text);
+
+    assert!(!from_words.is_empty(), "the chunker must produce clauses");
+    assert_eq!(
+        from_words, from_chunks,
+        "clauses must be identical regardless of token fragmentation"
+    );
+    assert!(chunker.is_empty(), "the buffer must be empty after a flush");
+}
+
+/// PURPOSE:  A runaway sentence without punctuation must not grow the buffer forever.
+/// SCENARIO: 42 unpunctuated words are streamed.
+/// ASSERTS:  The text is split into a 30-word emergency chunk and the remainder.
+/// CLASS:    edge-case
+/// REQUIRES: none
+/// MUTANT:   Raise the emergency ceiling from 30 words.
+#[test]
+fn unpunctuated_runaway_is_force_chunked_at_thirty_words() {
+    let words: Vec<String> = (0..42)
+        .map(|i| format!("word{} ", i))
+        .collect();
+    let text = words.concat();
+
+    let clauses = chunk(&text);
+
+    assert_eq!(clauses.len(), 2, "42 words must become two clauses");
+    assert_eq!(clauses[0].split_whitespace().count(), 30);
+    assert_eq!(clauses[1].split_whitespace().count(), 12);
+}
+
+/// PURPOSE:  A comma inside a short sentence must not break the prosody.
+/// SCENARIO: A short sentence with a comma is streamed.
+/// ASSERTS:  It stays one clause.
+/// CLASS:    happy-path
+/// REQUIRES: none
+/// MUTANT:   Split at every comma.
+#[test]
+fn a_short_sentence_with_a_comma_stays_one_clause() {
+    let clauses = chunk("Hello my friend, how are you today?");
+    assert_eq!(clauses.len(), 1);
+    assert_eq!(clauses[0], "Hello my friend, how are you today?");
+}
+
+/// PURPOSE:  A long compound sentence must be split at a natural seam.
+/// SCENARIO: A 24-word sentence with a comma and a coordinating conjunction is streamed.
+/// ASSERTS:  It becomes two clauses split at the conjunction seam.
+/// CLASS:    edge-case
+/// REQUIRES: none
+/// MUTANT:   Lower the compound-sentence threshold below 22 words.
+#[test]
+fn a_long_compound_sentence_splits_at_the_conjunction_seam() {
+    let text = "We have carefully verified that all system components and background services are running smoothly, and we can proceed with the live rollout now.";
+    let clauses = chunk(text);
+
+    assert_eq!(clauses.len(), 2, "a 24-word compound must split once");
+    assert!(clauses[0].ends_with("running smoothly,"));
+    assert_eq!(clauses[1], "and we can proceed with the live rollout now.");
+}
+
+/// PURPOSE:  An abbreviation must not end the sentence.
+/// SCENARIO: "Dr. Smith is here." is streamed.
+/// ASSERTS:  It stays one clause.
+/// CLASS:    edge-case
+/// REQUIRES: none
+/// MUTANT:   Remove the abbreviation guard.
+#[test]
+fn an_abbreviation_does_not_end_the_sentence() {
+    let clauses = chunk("Dr. Smith is here.");
+    assert_eq!(clauses.len(), 1, "the period in Dr. must not split");
+    assert_eq!(clauses[0], "Dr. Smith is here.");
+}
+
+/// PURPOSE:  A decimal number must not end the sentence.
+/// SCENARIO: "The value is 3.14 exactly." is streamed.
+/// ASSERTS:  It stays one clause.
+/// CLASS:    edge-case
+/// REQUIRES: none
+/// MUTANT:   Remove the decimal guard.
+#[test]
+fn a_decimal_number_does_not_end_the_sentence() {
+    let clauses = chunk("The value is 3.14 exactly.");
+    assert_eq!(clauses.len(), 1, "the decimal point must not split");
+    assert_eq!(clauses[0], "The value is 3.14 exactly.");
+}
+
+/// PURPOSE:  A filename must not be split at its dot.
+/// SCENARIO: "Open config.toml now." is streamed.
+/// ASSERTS:  It stays one clause.
+/// CLASS:    edge-case
+/// REQUIRES: none
+/// MUTANT:   Split at a period that is not followed by whitespace.
+#[test]
+fn a_period_inside_a_word_does_not_split() {
+    let clauses = chunk("Open config.toml now.");
+    assert_eq!(clauses.len(), 1, "a mid-token period must not split");
+}
+
+/// PURPOSE:  A question ends a sentence even after a single word.
+/// SCENARIO: "Why? Because." is streamed.
+/// ASSERTS:  It becomes two clauses.
+/// CLASS:    happy-path
+/// REQUIRES: none
+/// MUTANT:   Require two words before a question mark splits.
+#[test]
+fn a_question_mark_ends_the_clause() {
+    let clauses = chunk("Why? Because.");
+    assert_eq!(clauses.len(), 2);
+    assert_eq!(clauses[0], "Why?");
+}
+
+/// PURPOSE:  A short exclamation is a conversational opener and must not split.
+/// SCENARIO: "Hey! Sure thing." is streamed.
+/// ASSERTS:  It stays one clause.
+/// CLASS:    edge-case
+/// REQUIRES: none
+/// MUTANT:   Split at every exclamation mark.
+#[test]
+fn a_short_exclamation_does_not_split() {
+    let clauses = chunk("Hey! Sure thing.");
+    assert_eq!(clauses.len(), 1, "a three-word opener must stay glued");
+}
+
+/// PURPOSE:  An exclamation after a full clause ends it.
+/// SCENARIO: "That was a long answer indeed! Next." is streamed.
+/// ASSERTS:  It becomes two clauses.
+/// CLASS:    happy-path
+/// REQUIRES: none
+/// MUTANT:   Raise the exclamation word gate.
+#[test]
+fn a_long_exclamation_ends_the_clause() {
+    let clauses = chunk("That was a long answer indeed! Next.");
+    assert_eq!(clauses.len(), 2);
+    assert_eq!(clauses[0], "That was a long answer indeed!");
+}
+
+/// PURPOSE:  A newline ends a list item.
+/// SCENARIO: A three-word line followed by a newline is streamed.
+/// ASSERTS:  It becomes two clauses.
+/// CLASS:    edge-case
+/// REQUIRES: none
+/// MUTANT:   Remove the newline split rule.
+#[test]
+fn a_newline_ends_a_list_item() {
+    let clauses = chunk("first item line\nsecond item line");
+    assert_eq!(clauses.len(), 2, "a newline must end the list item");
+}
+
+/// PURPOSE:  A semicolon inside a long clause is a natural seam.
+/// SCENARIO: A 25-word sentence with a semicolon is streamed.
+/// ASSERTS:  It splits at the semicolon.
+/// CLASS:    edge-case
+/// REQUIRES: none
+/// MUTANT:   Drop the semicolon from the compound seam search.
+#[test]
+fn a_semicolon_in_a_long_clause_is_a_split_point() {
+    let text = "The rollout is scheduled for tomorrow morning after the review board has approved the final checklist ; and signed the release document for production use today.";
+    let clauses = chunk(text);
+
+    assert!(clauses.len() >= 2, "a long clause with a semicolon must split");
+    assert!(
+        clauses[0].ends_with(';'),
+        "the split must land on the semicolon, got {:?}",
+        clauses[0]
+    );
+}
+
+/// PURPOSE:  The flush must hand over the unpunctuated tail exactly once.
+/// ASSERTS:  The tail is returned and the buffer is empty afterwards.
+/// CLASS:    edge-case
+/// REQUIRES: none
+/// MUTANT:   Keep the buffer after a flush.
+#[test]
+fn flush_returns_the_tail_and_empties_the_buffer() {
+    let mut chunker = ClauseChunker::new();
+    assert!(chunker.push_str("a tail without punctuation").is_empty());
+
+    let tail = chunker.flush().expect("the tail must be returned");
+    assert_eq!(tail, "a tail without punctuation");
+    assert!(chunker.is_empty(), "the buffer must be empty after a flush");
+    assert!(chunker.flush().is_none(), "a second flush must return nothing");
+}
+
+/// PURPOSE:  A cancelled turn must not leave buffered speech behind.
+/// ASSERTS:  Clear empties the buffer.
+/// CLASS:    suppression
+/// REQUIRES: none
+/// MUTANT:   Make clear() a no-op.
+#[test]
+fn clear_drops_the_buffered_text() {
+    let mut chunker = ClauseChunker::new();
+    chunker.push_str("half a sentence");
+
+    chunker.clear();
+
+    assert!(chunker.is_empty(), "clear must drop the buffered text");
+}
 }

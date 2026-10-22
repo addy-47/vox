@@ -1,13 +1,11 @@
 //! ============================================================================
-//! tests/database_persistence_boundary_test.rs — Turso Database Boundary & MVCC Integration Tests
+//! database_persistence_boundary_test.rs — the Turso schema migrates to the current version, enforces its foreign-key and unique constraints, and stores vectors without loss
 //! ============================================================================
-//! Category     : Integration Test (Seam 20)
-//! Component    : persistence/{db,schema,worker,sessions,projects,facts,compactions}
-//! Prerequisites: Turso SQLite engine (vox.db), isolated temporary database
-//! Execution    : cargo nextest run --test database_persistence_boundary_test --release --nocapture --test-threads=1
-//! Metrics      : Schema migrations (SCHEMA_VERSION, currently 7), foreign key RESTRICT / CASCADE / SET NULL,
-//!                unique partial index concurrency enforcement, multi-threaded MVCC read/write,
-//!                F32_BLOB 384-dimensional vector float precision
+//! Category  : Integration (Seam 20 — persistence boundary)
+//! Component : src/persistence/{db,schema,worker,sessions,projects,facts,compactions,notifications}.rs
+//! Binary    : database_persistence_boundary_test
+//! Prereqs   : none (temporary Turso database per test)
+//! Run       : cargo nextest run --test database_persistence_boundary_test --release --test-threads=1
 //! ============================================================================
 
 mod common;
@@ -35,20 +33,19 @@ use vox_lib::persistence::{
     PersistenceEvent, VoxDb,
 };
 
-// ============================================================================
-// Subtest 1: Database Initialization, Schema Migration & Seed Data
-// ============================================================================
-/// Entry Seam A: `VoxDb::open` and `run_migrations`
-///
-/// Verifies:
-///   - Database opens and applies pragmas (foreign_keys = ON, busy_timeout).
-///   - `run_migrations` transitions the database to `SCHEMA_VERSION` (`PRAGMA user_version`).
-///     Asserted symbolically so the next migration bump cannot desynchronise this comment.
-///   - Seed project `'default'` is created.
-///   - Seed global personal memory document (project_id = NULL, version = 1) is created.
-///   - Core v2 tables exist in `sqlite_master`.
+/// PURPOSE:  A freshly opened database must be migrated to the current schema
+///           version with foreign keys enabled; a stale `user_version` makes
+///           the app write into columns that do not exist yet.
+/// SCENARIO: Open a temporary database, run the migrations, and read the
+///           connection pragmas.
+/// ASSERTS:  `PRAGMA user_version` equals `SCHEMA_VERSION` and
+///           `PRAGMA foreign_keys` is 1.
+/// CLASS:    happy-path
+/// REQUIRES: none
+/// MUTANT:   Make `run_migrations` a no-op — the `user_version` assertion
+///           would fail.
 #[tokio::test]
-async fn test_schema_migration_and_seed_data() {
+async fn migrations_set_user_version_and_enable_foreign_keys() {
     tokio::time::timeout(Duration::from_secs(15), async {
         let dir = tempdir().expect("Failed to create tempdir");
         let db_path = dir.path().join("test_migration.db");
@@ -56,12 +53,10 @@ async fn test_schema_migration_and_seed_data() {
         let db = VoxDb::open(&db_path).await.expect("Failed to open VoxDb");
         let conn = db.connect().expect("Failed to vend connection");
 
-        // Run migrations
         run_migrations(&conn)
             .await
             .expect("Failed to execute schema migrations");
 
-        // 1. Verify PRAGMA user_version == SCHEMA_VERSION
         let mut rows = conn
             .query("PRAGMA user_version;", ())
             .await
@@ -72,29 +67,73 @@ async fn test_schema_migration_and_seed_data() {
             "Database user_version must match SCHEMA_VERSION after migration",
         );
 
-        // 2. Verify foreign_keys = ON
         let mut fk_rows = conn
             .query("PRAGMA foreign_keys;", ())
             .await
             .expect("Failed to query foreign_keys");
         let fk_enabled: i64 = fk_rows.next().await.unwrap().unwrap().get(0).unwrap();
         assert_eq!(fk_enabled, 1, "PRAGMA foreign_keys must be enabled (1)");
+    })
+    .await
+    .expect("migrations_set_user_version_and_enable_foreign_keys timed out");
+}
 
-        // 3. Verify seed project 'default' exists
+/// PURPOSE:  The migrations must seed the default project and the global
+///           personal memory document; without them the first session has no
+///           project to belong to and personal memory reads fail.
+/// SCENARIO: Run the migrations on an empty database and read the seed rows.
+/// ASSERTS:  Project `default` exists and the global personal memory is at
+///           version 1 with no project id.
+/// CLASS:    happy-path
+/// REQUIRES: none
+/// MUTANT:   Skip the seed inserts in `run_migrations` — the project
+///           assertion would fail.
+#[tokio::test]
+async fn migrations_seed_default_project_and_global_personal_memory() {
+    tokio::time::timeout(Duration::from_secs(15), async {
+        let dir = tempdir().expect("Failed to create tempdir");
+        let db_path = dir.path().join("test_seed.db");
+
+        let db = VoxDb::open(&db_path).await.expect("Failed to open VoxDb");
+        let conn = db.connect().expect("Failed to vend connection");
+        run_migrations(&conn).await.expect("Failed migrations");
+
         let default_project = get_project_by_id(&conn, "default")
             .await
             .expect("Failed to query default project");
         assert!(default_project.is_some(), "Default project must be seeded");
         assert_eq!(default_project.unwrap().id, "default");
 
-        // 4. Verify seed global personal memory exists (version = 1)
         let pm = get_personal_memory(&conn, None)
             .await
             .expect("Failed to query personal memory");
         assert_eq!(pm.version, 1, "Seed personal memory must be version 1");
         assert!(pm.project_id.is_none());
+    })
+    .await
+    .expect("migrations_seed_default_project_and_global_personal_memory timed out");
+}
 
-        // 5. Verify core v2 tables exist
+/// PURPOSE:  Every table the persistence layer writes to must exist after the
+///           migration; a missing table turns a write into a runtime error
+///           deep inside a worker.
+/// SCENARIO: Run the migrations and query `sqlite_master` for each expected
+///           table.
+/// ASSERTS:  All twelve core tables exist exactly once.
+/// CLASS:    contract
+/// REQUIRES: none
+/// MUTANT:   Drop the `session_tool_calls` table from the migration — the
+///           table-existence assertion would fail.
+#[tokio::test]
+async fn migrations_create_every_core_table() {
+    tokio::time::timeout(Duration::from_secs(15), async {
+        let dir = tempdir().expect("Failed to create tempdir");
+        let db_path = dir.path().join("test_tables.db");
+
+        let db = VoxDb::open(&db_path).await.expect("Failed to open VoxDb");
+        let conn = db.connect().expect("Failed to vend connection");
+        run_migrations(&conn).await.expect("Failed migrations");
+
         let expected_tables = [
             "projects",
             "sessions",
@@ -123,22 +162,55 @@ async fn test_schema_migration_and_seed_data() {
         }
     })
     .await
-    .expect("test_schema_migration_and_seed_data timed out");
+    .expect("migrations_create_every_core_table timed out");
 }
 
-// ============================================================================
-// Subtest 2: Relational Cascades & Foreign Key Restrictions
-// ============================================================================
-/// Entry Seam C: Relational foreign key cascade and restriction enforcement
-///
-/// Verifies:
-///   - `ON DELETE RESTRICT`: Attempting to delete a project containing active sessions fails.
-///   - `ON DELETE CASCADE`: Deleting a session cascades to turns, notifications, and compactions.
-///   - `ON DELETE SET NULL`: Deleting a session decouples memory facts (`session_id` becomes NULL)
-///     without deleting the historical facts.
-///   - `ON DELETE CASCADE` (Facts to Vectors): Deleting a fact cascades to `memory_facts_vectors`.
+/// PURPOSE:  Deleting a project that still owns sessions must be refused;
+///           cascading the delete would destroy the user's conversation
+///           history without warning.
+/// SCENARIO: Create a session under project `default`, then delete the
+///           project.
+/// ASSERTS:  `delete_project` returns an error.
+/// CLASS:    error-path
+/// REQUIRES: none
+/// MUTANT:   Change the `sessions.project_id` foreign key to `ON DELETE
+///           CASCADE` — the error assertion would fail.
 #[tokio::test]
-async fn test_relational_cascades_and_foreign_key_restrictions() {
+async fn project_delete_is_restricted_while_sessions_exist() {
+    tokio::time::timeout(Duration::from_secs(15), async {
+        let dir = tempdir().expect("Failed to create tempdir");
+        let db_path = dir.path().join("test_restrict.db");
+
+        let db = VoxDb::open(&db_path).await.expect("Failed to open VoxDb");
+        let conn = db.connect().expect("Failed to vend connection");
+        run_migrations(&conn).await.expect("Failed migrations");
+
+        create_session_with_id(&conn, 20201, Some("default"))
+            .await
+            .expect("Failed to create session");
+
+        let delete_proj_res = delete_project(&conn, "default").await;
+        assert!(
+            delete_proj_res.is_err(),
+            "delete_project must fail due to ON DELETE RESTRICT when child sessions exist"
+        );
+    })
+    .await
+    .expect("project_delete_is_restricted_while_sessions_exist timed out");
+}
+
+/// PURPOSE:  Deleting a session must delete its dependent rows; leaving
+///           orphaned turns, notifications, compactions or tool calls behind
+///           corrupts the history view.
+/// SCENARIO: Populate a session with a turn, a notification, a compaction and
+///           a tool call, then hard-delete the session.
+/// ASSERTS:  All four child tables report zero rows for that session.
+/// CLASS:    happy-path
+/// REQUIRES: none
+/// MUTANT:   Change the `turns.session_id` foreign key to `ON DELETE SET
+///           NULL` — the turn-count assertion would fail.
+#[tokio::test]
+async fn session_delete_cascades_to_its_child_rows() {
     tokio::time::timeout(Duration::from_secs(15), async {
         let dir = tempdir().expect("Failed to create tempdir");
         let db_path = dir.path().join("test_cascades.db");
@@ -147,28 +219,11 @@ async fn test_relational_cascades_and_foreign_key_restrictions() {
         let conn = db.connect().expect("Failed to vend connection");
         run_migrations(&conn).await.expect("Failed migrations");
 
-        // Create a provenance source session for compaction so compaction survives session_id deletion
-        let source_session_id = 20200i64;
-        create_session_with_id(&conn, source_session_id, Some("default"))
-            .await
-            .expect("Failed to create source session");
-        let compaction_id = record_compaction_start(&conn, source_session_id, "manual", 1, 1)
-            .await
-            .expect("Failed to record compaction");
-
         let session_id = 20201i64;
         create_session_with_id(&conn, session_id, Some("default"))
             .await
             .expect("Failed to create session");
 
-        // 1. RESTRICT Check: Cannot delete project 'default' while session exists
-        let delete_proj_res = delete_project(&conn, "default").await;
-        assert!(
-            delete_proj_res.is_err(),
-            "delete_project must fail due to ON DELETE RESTRICT when child sessions exist"
-        );
-
-        // 2. Populate child entities belonging to session_id
         conn.execute(
             "INSERT INTO turns (session_id, turn_id, user_text, assistant_text, created_at) VALUES \
              (?, 1, 'Question', 'Answer', 1000);",
@@ -199,7 +254,6 @@ async fn test_relational_cascades_and_foreign_key_restrictions() {
             .expect("Failed to record session-specific compaction");
         assert!(session_compaction_id > 0);
 
-        // Insert tool call belonging to session_id
         conn.execute(
             "INSERT INTO session_tool_calls (id, session_id, turn_id, tool_name, tool_kind, arguments, result, is_error, duration_ms, created_at) \
              VALUES ('call_cascade_test', ?, 1, 'respond_and_set_title', 'terminal', '{}', 'ok', 0, 5, 1000);",
@@ -208,7 +262,74 @@ async fn test_relational_cascades_and_foreign_key_restrictions() {
         .await
         .expect("Failed to insert tool call");
 
-        // Insert fact associated with session_id
+        delete_session(&conn, session_id, true)
+            .await
+            .expect("Failed to delete session");
+
+        for (table, label) in [
+            ("turns", "Turns must be deleted on session delete (CASCADE)"),
+            (
+                "notifications",
+                "Notifications must be deleted on session delete (CASCADE)",
+            ),
+            (
+                "session_compactions",
+                "Compactions must be deleted on session delete (CASCADE)",
+            ),
+            (
+                "session_tool_calls",
+                "Tool calls must be deleted on session delete (CASCADE)",
+            ),
+        ] {
+            let mut rows = conn
+                .query(
+                    &format!("SELECT COUNT(*) FROM {} WHERE session_id = ?;", table),
+                    (session_id,),
+                )
+                .await
+                .unwrap();
+            let count: i64 = rows.next().await.unwrap().unwrap().get(0).unwrap();
+            assert_eq!(count, 0, "{}", label);
+        }
+    })
+    .await
+    .expect("session_delete_cascades_to_its_child_rows timed out");
+}
+
+/// PURPOSE:  A deleted session must not delete the facts it produced; the
+///           facts are long-lived memory and their provenance is decoupled,
+///           not destroyed.
+/// SCENARIO: Insert a fact tied to a session, delete the session and read
+///           the fact's `session_id` and vector count.
+/// ASSERTS:  The fact survives with a NULL `session_id` and its vector row
+///           is still present.
+/// CLASS:    happy-path
+/// REQUIRES: none
+/// MUTANT:   Change the `memory_facts.session_id` foreign key to `ON DELETE
+///           CASCADE` — the survival assertion would fail.
+#[tokio::test]
+async fn session_delete_preserves_fact_and_its_vector() {
+    tokio::time::timeout(Duration::from_secs(15), async {
+        let dir = tempdir().expect("Failed to create tempdir");
+        let db_path = dir.path().join("test_setnull.db");
+
+        let db = VoxDb::open(&db_path).await.expect("Failed to open VoxDb");
+        let conn = db.connect().expect("Failed to vend connection");
+        run_migrations(&conn).await.expect("Failed migrations");
+
+        let source_session_id = 20200i64;
+        create_session_with_id(&conn, source_session_id, Some("default"))
+            .await
+            .expect("Failed to create source session");
+        let compaction_id = record_compaction_start(&conn, source_session_id, "manual", 1, 1)
+            .await
+            .expect("Failed to record compaction");
+
+        let session_id = 20201i64;
+        create_session_with_id(&conn, session_id, Some("default"))
+            .await
+            .expect("Failed to create session");
+
         let observation_id = "fact_cascade_20201".to_string();
         let observation_rec = ObservationRecord {
             id: observation_id.clone(),
@@ -224,81 +345,21 @@ async fn test_relational_cascades_and_foreign_key_restrictions() {
             .await
             .expect("Failed to insert fact");
 
-        // Insert vector for fact
-        let test_vec = vec![0.5f32; 384];
         insert_vector(
             &conn,
             &observation_id,
             "objective",
             "active",
             Some("default"),
-            &test_vec,
+            &vec![0.5f32; 384],
         )
         .await
         .expect("Failed to insert vector");
 
-        // 3. CASCADE Check: Hard delete session
         delete_session(&conn, session_id, true)
             .await
             .expect("Failed to delete session");
 
-        // Turns must be deleted (CASCADE)
-        let mut turn_rows = conn
-            .query(
-                "SELECT COUNT(*) FROM turns WHERE session_id = ?;",
-                (session_id,),
-            )
-            .await
-            .unwrap();
-        let turn_count: i64 = turn_rows.next().await.unwrap().unwrap().get(0).unwrap();
-        assert_eq!(
-            turn_count, 0,
-            "Turns must be deleted on session delete (CASCADE)"
-        );
-
-        // Notifications must be deleted (CASCADE)
-        let mut notif_rows = conn
-            .query(
-                "SELECT COUNT(*) FROM notifications WHERE session_id = ?;",
-                (session_id,),
-            )
-            .await
-            .unwrap();
-        let notif_count: i64 = notif_rows.next().await.unwrap().unwrap().get(0).unwrap();
-        assert_eq!(
-            notif_count, 0,
-            "Notifications must be deleted on session delete (CASCADE)"
-        );
-
-        // Compactions must be deleted (CASCADE)
-        let mut comp_rows = conn
-            .query(
-                "SELECT COUNT(*) FROM session_compactions WHERE session_id = ?;",
-                (session_id,),
-            )
-            .await
-            .unwrap();
-        let comp_count: i64 = comp_rows.next().await.unwrap().unwrap().get(0).unwrap();
-        assert_eq!(
-            comp_count, 0,
-            "Compactions must be deleted on session delete (CASCADE)"
-        );
-
-        // Tool calls must be deleted (CASCADE)
-        let mut tc_rows = conn
-            .query(
-                "SELECT COUNT(*) FROM session_tool_calls WHERE session_id = ?;",
-                (session_id,),
-            )
-            .await
-            .unwrap();
-        let tc_count: i64 = tc_rows.next().await.unwrap().unwrap().get(0).unwrap();
-        assert_eq!(
-            tc_count, 0,
-            "Tool calls must be deleted on session delete (CASCADE)"
-        );
-
-        // 4. SET NULL Check: Fact must survive with session_id = NULL
         let mut fact_rows = conn
             .query(
                 "SELECT session_id FROM memory_facts WHERE id = ?;",
@@ -317,18 +378,76 @@ async fn test_relational_cascades_and_foreign_key_restrictions() {
             "Fact session_id must be SET NULL upon session deletion to preserve history"
         );
 
-        // Vector must still exist while fact exists
         let mut vec_rows = conn
             .query(
                 "SELECT COUNT(*) FROM memory_facts_vectors WHERE fact_id = ?;",
-                (observation_id.clone(),),
+                (observation_id,),
             )
             .await
             .unwrap();
         let vec_count: i64 = vec_rows.next().await.unwrap().unwrap().get(0).unwrap();
         assert_eq!(vec_count, 1, "Vector must still exist while fact exists");
+    })
+    .await
+    .expect("session_delete_preserves_fact_and_its_vector timed out");
+}
 
-        // 5. CASCADE Check: Deleting fact cascades to vector
+/// PURPOSE:  Deleting a fact must delete its embedding; an orphan vector
+///           pollutes the similarity search with a fact that no longer
+///           exists.
+/// SCENARIO: Insert a fact and its vector, delete the fact and count the
+///           remaining vector rows.
+/// ASSERTS:  Zero vector rows remain for that fact.
+/// CLASS:    happy-path
+/// REQUIRES: none
+/// MUTANT:   Change the `memory_facts_vectors.fact_id` foreign key to `ON
+///           DELETE SET NULL` — the zero-count assertion would fail.
+#[tokio::test]
+async fn fact_delete_cascades_to_its_vector() {
+    tokio::time::timeout(Duration::from_secs(15), async {
+        let dir = tempdir().expect("Failed to create tempdir");
+        let db_path = dir.path().join("test_fact_cascade.db");
+
+        let db = VoxDb::open(&db_path).await.expect("Failed to open VoxDb");
+        let conn = db.connect().expect("Failed to vend connection");
+        run_migrations(&conn).await.expect("Failed migrations");
+
+        let source_session_id = 20200i64;
+        create_session_with_id(&conn, source_session_id, Some("default"))
+            .await
+            .expect("Failed to create source session");
+        let compaction_id = record_compaction_start(&conn, source_session_id, "manual", 1, 1)
+            .await
+            .expect("Failed to record compaction");
+
+        let observation_id = "fact_cascade_20201".to_string();
+        insert_observation(
+            &conn,
+            &ObservationRecord {
+                id: observation_id.clone(),
+                session_id: Some(source_session_id),
+                compaction_id,
+                observation_type: "objective".to_string(),
+                text: "User is building integration tests".to_string(),
+                status: "active".to_string(),
+                created_at: 1000,
+                updated_at: 1000,
+            },
+        )
+        .await
+        .expect("Failed to insert fact");
+
+        insert_vector(
+            &conn,
+            &observation_id,
+            "objective",
+            "active",
+            Some("default"),
+            &vec![0.5f32; 384],
+        )
+        .await
+        .expect("Failed to insert vector");
+
         conn.execute("DELETE FROM memory_facts WHERE id = ?;", (observation_id.clone(),))
             .await
             .expect("Failed to delete fact");
@@ -347,21 +466,22 @@ async fn test_relational_cascades_and_foreign_key_restrictions() {
         );
     })
     .await
-    .expect("test_relational_cascades_and_foreign_key_restrictions timed out");
+    .expect("fact_delete_cascades_to_its_vector timed out");
 }
 
-// ============================================================================
-// Subtest 3: Unique Partial Index Enforces Single In-Progress Compaction
-// ============================================================================
-/// Entry Seam C: Engine-level constraint via `idx_compactions_one_in_progress`
-///
-/// Verifies:
-///   - Starting a second compaction in `in_progress` status on the same session
-///     fails with a unique constraint violation at the SQLite engine level.
-///   - Once the active compaction transitions to `completed` or `failed`, a new
-///     `in_progress` compaction on that session succeeds.
+/// PURPOSE:  Only one compaction may be in progress per session; a second
+///           one would compact the same turns twice and double-write the
+///           facts.
+/// SCENARIO: Record an in-progress compaction and then try to record a
+///           second one for the same session.
+/// ASSERTS:  The second call fails with a unique-constraint error naming the
+///           partial index.
+/// CLASS:    error-path
+/// REQUIRES: none
+/// MUTANT:   Drop `idx_compactions_one_in_progress` from the migration — the
+///           error assertion would fail.
 #[tokio::test]
-async fn test_unique_partial_index_one_in_progress_compaction() {
+async fn second_in_progress_compaction_is_rejected_by_partial_index() {
     tokio::time::timeout(Duration::from_secs(15), async {
         let dir = tempdir().expect("Failed to create tempdir");
         let db_path = dir.path().join("test_partial_index.db");
@@ -375,13 +495,11 @@ async fn test_unique_partial_index_one_in_progress_compaction() {
             .await
             .expect("Failed to create session");
 
-        // 1. Record initial in_progress compaction
         let run_1 = record_compaction_start(&conn, session_id, "manual", 1, 10)
             .await
             .expect("First in_progress compaction must succeed");
         assert!(run_1 > 0);
 
-        // 2. Attempt to record a second concurrent in_progress compaction on same session
         let run_2_res = record_compaction_start(&conn, session_id, "soft", 11, 20).await;
         assert!(
             run_2_res.is_err(),
@@ -389,12 +507,47 @@ async fn test_unique_partial_index_one_in_progress_compaction() {
         );
         let err_str = run_2_res.unwrap_err().to_string();
         assert!(
-            err_str.contains("UNIQUE constraint failed") || err_str.contains("conflict") || err_str.contains("idx_compactions_one_in_progress"),
+            err_str.contains("UNIQUE constraint failed")
+                || err_str.contains("conflict")
+                || err_str.contains("idx_compactions_one_in_progress"),
             "Error must indicate unique constraint failure, got: {}",
             err_str
         );
+    })
+    .await
+    .expect("second_in_progress_compaction_is_rejected_by_partial_index timed out");
+}
 
-        // 3. Transition run_1 to completed
+/// PURPOSE:  Once a compaction completes, the next slice must be allowed;
+///           a permanent block would stop the session from ever compacting
+///           again.
+/// SCENARIO: Complete the first run, record a second one, complete it, then
+///           count the completed runs.
+/// ASSERTS:  The second run is created with a higher id and two completed
+///           runs exist for the session.
+/// CLASS:    happy-path
+/// REQUIRES: none
+/// MUTANT:   Change the partial index predicate to `status IN ('in_progress',
+///           'completed')` — the second-record assertion would fail.
+#[tokio::test]
+async fn new_in_progress_compaction_is_allowed_after_previous_completes() {
+    tokio::time::timeout(Duration::from_secs(15), async {
+        let dir = tempdir().expect("Failed to create tempdir");
+        let db_path = dir.path().join("test_partial_index2.db");
+
+        let db = VoxDb::open(&db_path).await.expect("Failed to open VoxDb");
+        let conn = db.connect().expect("Failed to vend connection");
+        run_migrations(&conn).await.expect("Failed migrations");
+
+        let session_id = 20301i64;
+        create_session_with_id(&conn, session_id, Some("default"))
+            .await
+            .expect("Failed to create session");
+
+        let run_1 = record_compaction_start(&conn, session_id, "manual", 1, 10)
+            .await
+            .expect("First in_progress compaction must succeed");
+
         conn.execute(
             "UPDATE session_compactions SET status = 'completed', finished_at = 2000 WHERE id = ?;",
             (run_1,),
@@ -402,13 +555,11 @@ async fn test_unique_partial_index_one_in_progress_compaction() {
         .await
         .expect("Failed to complete compaction");
 
-        // 4. Now a new in_progress compaction on same session must succeed
         let run_3 = record_compaction_start(&conn, session_id, "soft", 11, 20)
             .await
             .expect("New in_progress compaction must succeed after previous one completed");
         assert!(run_3 > run_1);
 
-        // 5. Multiple completed compactions on same session are allowed (WHERE status = 'in_progress')
         conn.execute(
             "UPDATE session_compactions SET status = 'completed', finished_at = 3000 WHERE id = ?;",
             (run_3,),
@@ -424,23 +575,28 @@ async fn test_unique_partial_index_one_in_progress_compaction() {
             .await
             .unwrap();
         let completed_count: i64 = count_rows.next().await.unwrap().unwrap().get(0).unwrap();
-        assert_eq!(completed_count, 2, "Multiple completed compactions must exist without index conflicts");
+        assert_eq!(
+            completed_count, 2,
+            "Multiple completed compactions must exist without index conflicts"
+        );
     })
     .await
-    .expect("test_unique_partial_index_one_in_progress_compaction timed out");
+    .expect("new_in_progress_compaction_is_allowed_after_previous_completes timed out");
 }
 
-// ============================================================================
-// Subtest 4: Multi-Threaded MVCC Concurrency Under WAL
-// ============================================================================
-/// Entry Seam B: Persistence Worker & Concurrent Readers
-///
-/// Verifies:
-///   - Dedicated background persistence worker thread processing write events
-///     never blocks or fails concurrent reader threads querying sessions and facts.
-///   - Zero `database locked` or SQLite busy errors occur under concurrent read/write load.
+/// PURPOSE:  The background persistence writer must never block or fail the
+///           readers; a "database is locked" error during a write would abort
+///           the user's session.
+/// SCENARIO: Run four reader tasks against the database while the
+///           persistence worker writes 25 turns.
+/// ASSERTS:  All four readers finish, at least 120 queries succeeded and the
+///           worker still reports a healthy database.
+/// CLASS:    happy-path
+/// REQUIRES: none
+/// MUTANT:   Make the persistence worker hold an exclusive lock across the
+///           whole batch — the readers would fail with a busy error.
 #[tokio::test]
-async fn test_concurrent_mvcc_wal_readers_and_persistence_worker() {
+async fn concurrent_readers_and_persistence_worker_complete_without_db_errors() {
     tokio::time::timeout(Duration::from_secs(15), async {
         let _guard = TempPathsGuard::new();
         let dir = tempdir().expect("Failed to create tempdir");
@@ -457,7 +613,6 @@ async fn test_concurrent_mvcc_wal_readers_and_persistence_worker() {
             .await
             .expect("Failed to create session");
 
-        // Spawn persistence worker on dedicated connection
         let is_healthy = Arc::new(AtomicBool::new(true));
         let rate = Arc::new(AtomicU32::new(0));
         let private_mode = Arc::new(AtomicBool::new(false));
@@ -540,9 +695,61 @@ async fn test_concurrent_mvcc_wal_readers_and_persistence_worker() {
             is_healthy.load(Ordering::Relaxed),
             "Persistence worker must report healthy status (zero DB errors)"
         );
+    })
+    .await
+    .expect("concurrent_readers_and_persistence_worker_complete_without_db_errors timed out");
+}
 
-        // Verify turns were written.
-        //
+/// PURPOSE:  Every turn handed to the persistence worker must reach the
+///           database; a dropped event silently loses the user's transcript.
+/// SCENARIO: Enqueue 25 `TurnCompleted` events and then poll the turn count
+///           until the drain completes.
+/// ASSERTS:  Exactly 25 turns are persisted for the session.
+/// CLASS:    happy-path
+/// REQUIRES: none
+/// MUTANT:   Drop the last event of the channel in the worker loop — the
+///           final count assertion would fail.
+#[tokio::test]
+async fn persistence_worker_writes_every_queued_turn() {
+    tokio::time::timeout(Duration::from_secs(15), async {
+        let _guard = TempPathsGuard::new();
+        let dir = tempdir().expect("Failed to create tempdir");
+        let db_path = dir.path().join("test_worker_drain.db");
+
+        let db = Arc::new(VoxDb::open(&db_path).await.expect("Failed to open VoxDb"));
+        let setup_conn = db.connect().expect("Failed to vend connection");
+        run_migrations(&setup_conn)
+            .await
+            .expect("Failed migrations");
+
+        let session_id = 20402i64;
+        create_session_with_id(&setup_conn, session_id, Some("default"))
+            .await
+            .expect("Failed to create session");
+
+        let is_healthy = Arc::new(AtomicBool::new(true));
+        let rate = Arc::new(AtomicU32::new(0));
+        let private_mode = Arc::new(AtomicBool::new(false));
+
+        let persistence_tx = spawn_persistence_worker(
+            db.clone(),
+            is_healthy.clone(),
+            rate.clone(),
+            private_mode.clone(),
+        );
+
+        for turn in 1..=25 {
+            persistence_tx
+                .send(PersistenceEvent::TurnCompleted {
+                    session_id,
+                    turn_id: turn,
+                    user_text: format!("user turn {}", turn),
+                    assistant_text: format!("assistant turn {}", turn),
+                })
+                .expect("Failed to enqueue turn write event");
+        }
+        let _ = persistence_tx.send(PersistenceEvent::Shutdown);
+
         // This previously slept a fixed 100ms after Shutdown and then counted rows.
         // That is a sleep-as-proxy-for-completion (testing-style-guide.md §5.4) and it
         // was systematically too short: the worker had only drained 19-21 of 25 queued
@@ -572,20 +779,22 @@ async fn test_concurrent_mvcc_wal_readers_and_persistence_worker() {
         );
     })
     .await
-    .expect("test_concurrent_mvcc_wal_readers_and_persistence_worker timed out");
+    .expect("persistence_worker_writes_every_queued_turn timed out");
 }
 
-// ============================================================================
-// Subtest 5: F32_BLOB 384-Dimensional Vector Precision Roundtrip
-// ============================================================================
-/// Entry Seam C: Dense vector serialization and raw SQLite storage
-///
-/// Verifies:
-///   - `encode_f32_blob` encodes 384 floating-point numbers into 1536 bytes.
-///   - Storing into Turso `F32_BLOB(384)` column preserves exact IEEE 754 float representation.
-///   - `decode_f32_blob` reproduces the original vector with bit-for-bit equality across all 384 dimensions.
+/// PURPOSE:  A 384-dimensional embedding must be stored and read back
+///           bit-for-bit; a lossy round-trip changes the cosine similarity
+///           and silently breaks semantic deduplication.
+/// SCENARIO: Encode 384 floats, store them through the production helper,
+///           read the raw BLOB back and decode it.
+/// ASSERTS:  The BLOB is 1536 bytes, the decoded vector has 384 dimensions
+///           and every float matches the original bit pattern.
+/// CLASS:    happy-path
+/// REQUIRES: none
+/// MUTANT:   Store the vector as f16 instead of f32 — the byte-length
+///           assertion would fail.
 #[tokio::test]
-async fn test_f32_blob_vector_precision_roundtrip() {
+async fn f32_blob_roundtrip_preserves_every_float_bit() {
     tokio::time::timeout(Duration::from_secs(15), async {
         let dir = tempdir().expect("Failed to create tempdir");
         let db_path = dir.path().join("test_vectors.db");
@@ -616,19 +825,21 @@ async fn test_f32_blob_vector_precision_roundtrip() {
             .expect("Failed to record compaction");
 
         let observation_id = "fact_vector_precision_test";
-        let observation_rec = ObservationRecord {
-            id: observation_id.to_string(),
-            session_id: Some(session_id),
-            compaction_id,
-            observation_type: "objective".to_string(),
-            text: "Vector precision test fact".to_string(),
-            status: "active".to_string(),
-            created_at: 1000,
-            updated_at: 1000,
-        };
-        insert_observation(&conn, &observation_rec)
-            .await
-            .expect("Failed to insert parent fact");
+        insert_observation(
+            &conn,
+            &ObservationRecord {
+                id: observation_id.to_string(),
+                session_id: Some(session_id),
+                compaction_id,
+                observation_type: "objective".to_string(),
+                text: "Vector precision test fact".to_string(),
+                status: "active".to_string(),
+                created_at: 1000,
+                updated_at: 1000,
+            },
+        )
+        .await
+        .expect("Failed to insert parent fact");
 
         // 4. Insert vector via production helper
         insert_vector(
@@ -671,27 +882,29 @@ async fn test_f32_blob_vector_precision_roundtrip() {
         }
     })
     .await
-    .expect("test_f32_blob_vector_precision_roundtrip timed out");
+    .expect("f32_blob_roundtrip_preserves_every_float_bit timed out");
 }
 
-// ============================================================================
-// Subtest 12: test_session_tool_calls_persistence_and_indexes
-// ============================================================================
-/// Verifies Seam 20 Phase 12 Schema & Persistence Worker Contracts:
-/// 1. Verifies `session_tool_calls` table and both `idx_tool_calls_session_turn` and `idx_tool_calls_created` indexes.
-/// 2. Verifies self-healing foreign key parent insertion on `ToolCallExecuted` event.
-/// 3. Verifies private mode suppression of `session_tool_calls` insertion.
+/// PURPOSE:  The tool-call table must carry the indexes the history view
+///           queries; without them the drawer loads every tool call in the
+///           database.
+/// SCENARIO: Run the migrations and list the indexes on `session_tool_calls`.
+/// ASSERTS:  `idx_tool_calls_session_turn` and `idx_tool_calls_created` both
+///           exist.
+/// CLASS:    contract
+/// REQUIRES: none
+/// MUTANT:   Drop `idx_tool_calls_created` from the migration — the index
+///           assertion would fail.
 #[tokio::test]
-async fn test_session_tool_calls_persistence_and_indexes() {
+async fn tool_call_indexes_exist_on_session_tool_calls() {
     tokio::time::timeout(Duration::from_secs(15), async {
         let dir = tempdir().expect("Failed to create tempdir");
-        let db_path = dir.path().join("test_tool_calls.db");
+        let db_path = dir.path().join("test_tool_call_indexes.db");
 
         let db = VoxDb::open(&db_path).await.expect("Failed to open VoxDb");
         let conn = db.connect().expect("Failed to vend connection");
         run_migrations(&conn).await.expect("Failed to run migrations");
 
-        // 1. Verify the schema migrated and the expected indexes exist
         let mut idx_rows = conn
             .query(
                 "SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'session_tool_calls';",
@@ -713,8 +926,32 @@ async fn test_session_tool_calls_persistence_and_indexes() {
             indexes.contains(&"idx_tool_calls_created".to_string()),
             "Index idx_tool_calls_created must exist"
         );
+    })
+    .await
+    .expect("tool_call_indexes_exist_on_session_tool_calls timed out");
+}
 
-        // Setup persistence worker with shared db
+/// PURPOSE:  A tool call for a session the database does not know yet must
+///           still be stored; losing the record means the agent's actions
+///           vanish from the history.
+/// SCENARIO: Send a `ToolCallExecuted` event for an unregistered session id
+///           and read the row back.
+/// ASSERTS:  The row exists with the tool name, kind and duration that were
+///           sent.
+/// CLASS:    happy-path
+/// REQUIRES: none
+/// MUTANT:   Remove the self-healing parent insert from the persistence
+///           worker — the row would never appear.
+#[tokio::test]
+async fn tool_call_event_self_heals_a_missing_session() {
+    tokio::time::timeout(Duration::from_secs(15), async {
+        let dir = tempdir().expect("Failed to create tempdir");
+        let db_path = dir.path().join("test_tool_calls.db");
+
+        let db = VoxDb::open(&db_path).await.expect("Failed to open VoxDb");
+        let conn = db.connect().expect("Failed to vend connection");
+        run_migrations(&conn).await.expect("Failed to run migrations");
+
         let is_healthy = Arc::new(AtomicBool::new(true));
         let rate = Arc::new(AtomicU32::new(0));
         let is_private = Arc::new(AtomicBool::new(false));
@@ -726,7 +963,6 @@ async fn test_session_tool_calls_persistence_and_indexes() {
             Arc::clone(&is_private),
         );
 
-        // 2. Send ToolCallExecuted for an unregistered session ID (Self-Healing FK test)
         let orphan_sid = 999111222i64;
         let call_id = "call_test_123".to_string();
         persist_tx
@@ -747,7 +983,6 @@ async fn test_session_tool_calls_persistence_and_indexes() {
             })
             .expect("Failed to send ToolCallExecuted");
 
-        // Wait for persistence
         let deadline = std::time::Instant::now() + Duration::from_secs(5);
         let mut tool_call_found = false;
         while std::time::Instant::now() < deadline {
@@ -776,8 +1011,86 @@ async fn test_session_tool_calls_persistence_and_indexes() {
             tool_call_found,
             "session_tool_calls record must be inserted with self-healed session"
         );
+    })
+    .await
+    .expect("tool_call_event_self_heals_a_missing_session timed out");
+}
 
-        // 3. Test Private Mode Suppression
+/// PURPOSE:  In private mode nothing about the user may reach the database;
+///           a stored tool call leaks the conversation contents on disk.
+/// SCENARIO: Enable private mode, send a tool call, then send a second
+///           public tool call and wait for it to appear — because the worker
+///           processes its channel in order, the private event has been
+///           handled by then.
+/// ASSERTS:  The private tool call has zero rows while the public one is
+///           stored.
+/// CLASS:    suppression
+/// REQUIRES: none
+/// MUTANT:   Ignore the private-mode flag in the persistence worker — the
+///           zero-count assertion would fail.
+#[tokio::test]
+async fn tool_call_is_not_persisted_in_private_mode() {
+    tokio::time::timeout(Duration::from_secs(15), async {
+        let dir = tempdir().expect("Failed to create tempdir");
+        let db_path = dir.path().join("test_tool_calls_private.db");
+
+        let db = VoxDb::open(&db_path).await.expect("Failed to open VoxDb");
+        let conn = db.connect().expect("Failed to vend connection");
+        run_migrations(&conn).await.expect("Failed to run migrations");
+
+        let is_healthy = Arc::new(AtomicBool::new(true));
+        let rate = Arc::new(AtomicU32::new(0));
+        let is_private = Arc::new(AtomicBool::new(false));
+
+        let persist_tx = spawn_persistence_worker(
+            Arc::new(db),
+            is_healthy,
+            rate,
+            Arc::clone(&is_private),
+        );
+
+        let orphan_sid = 999111222i64;
+
+        // 1. A public tool call proves the worker is alive and the table works.
+        let public_call_id = "call_public_001".to_string();
+        persist_tx
+            .send(PersistenceEvent::ToolCallExecuted {
+                id: public_call_id.clone(),
+                session_id: orphan_sid,
+                turn_id: 1,
+                tool_name: "respond_and_set_title".to_string(),
+                tool_flow: vox_lib::services::llm::ToolFlow::Terminal,
+                arguments: serde_json::json!({ "title": "Public" }),
+                result: "ok".to_string(),
+                is_error: false,
+                duration_ms: 10,
+                created_at: 1700000000000,
+            })
+            .expect("Failed to send public ToolCallExecuted");
+
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        let mut public_found = false;
+        while std::time::Instant::now() < deadline {
+            let mut rows = conn
+                .query(
+                    "SELECT COUNT(*) FROM session_tool_calls WHERE id = ?;",
+                    (public_call_id.clone(),),
+                )
+                .await
+                .expect("Failed to query session_tool_calls");
+            let count: i64 = rows.next().await.unwrap().unwrap().get(0).unwrap();
+            if count > 0 {
+                public_found = true;
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        assert!(
+            public_found,
+            "the public tool call must be stored — otherwise the test proves nothing"
+        );
+
+        // 2. Private mode on: the next tool call must not be written.
         is_private.store(true, Ordering::Relaxed);
         let private_call_id = "call_private_456".to_string();
         persist_tx
@@ -795,7 +1108,46 @@ async fn test_session_tool_calls_persistence_and_indexes() {
             })
             .expect("Failed to send private ToolCallExecuted");
 
-        tokio::time::sleep(Duration::from_millis(200)).await;
+        // 3. Quiescence: a third, public tool call queued after the private one.
+        //    The worker consumes its channel in order, so once this one is
+        //    stored the private event has already been handled.
+        let sentinel_call_id = "call_sentinel_789".to_string();
+        persist_tx
+            .send(PersistenceEvent::ToolCallExecuted {
+                id: sentinel_call_id.clone(),
+                session_id: orphan_sid,
+                turn_id: 3,
+                tool_name: "respond_and_set_title".to_string(),
+                tool_flow: vox_lib::services::llm::ToolFlow::Terminal,
+                arguments: serde_json::json!({ "title": "Sentinel" }),
+                result: "ok".to_string(),
+                is_error: false,
+                duration_ms: 10,
+                created_at: 1700000000300,
+            })
+            .expect("Failed to send sentinel ToolCallExecuted");
+
+        let sentinel_deadline = std::time::Instant::now() + Duration::from_secs(5);
+        let mut sentinel_found = false;
+        while std::time::Instant::now() < sentinel_deadline {
+            let mut rows = conn
+                .query(
+                    "SELECT COUNT(*) FROM session_tool_calls WHERE id = ?;",
+                    (sentinel_call_id.clone(),),
+                )
+                .await
+                .expect("Failed to query session_tool_calls");
+            let count: i64 = rows.next().await.unwrap().unwrap().get(0).unwrap();
+            if count > 0 {
+                sentinel_found = true;
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        assert!(
+            sentinel_found,
+            "the sentinel tool call must be stored to prove the private event was processed"
+        );
 
         let mut rows = conn
             .query(
@@ -811,5 +1163,5 @@ async fn test_session_tool_calls_persistence_and_indexes() {
         );
     })
     .await
-    .expect("test_session_tool_calls_persistence_and_indexes timed out");
+    .expect("tool_call_is_not_persisted_in_private_mode timed out");
 }
