@@ -93,6 +93,7 @@ pub struct VadActorState {
     pub noise_floor_ema: f32,
     pub onset_score: f32,
     pub speech_sample_counter: usize,
+    pub voiced_samples: usize,
     pub smoothed_pause_duration_ms: f32,
 
     // WindowedValidation state tracking
@@ -127,6 +128,7 @@ pub struct VadActorHandles {
     pub audio_suppressed: Arc<AtomicBool>,
     pub engine_shutdown: Arc<AtomicBool>,
     pub dropped_counter: Arc<AtomicU64>,
+    pub purged_frames_counter: Arc<AtomicU64>,
     pub ingestion_gate: Arc<AtomicBool>,
     pub owner_atomic: Arc<AtomicU32>,
     pub incomplete_clause_hint: Arc<AtomicBool>,
@@ -179,6 +181,7 @@ impl VadActorState {
             noise_floor_ema: 0.002, // Initial baseline ambient room noise floor estimate
             onset_score: 0.0,
             speech_sample_counter: 0,
+            voiced_samples: 0,
             smoothed_pause_duration_ms: 300.0,
             window_active: false,
             window_sample_offset: 0,
@@ -260,6 +263,7 @@ fn process_vad_commands(
                 stream_partials,
                 owner,
             } => {
+                vad.flush();
                 let turn_id = handles.turn_id_atomic.load(Ordering::Relaxed);
                 log::info!(
                     "[VAD Actor] Windowed validation started (turn {}, owner {:?})",
@@ -405,12 +409,14 @@ where
                     state.in_speech = false;
                     state.window_active = false;
                     state.onset_score = 0.0;
+                    handles.purged_frames_counter.fetch_add(1, Ordering::Relaxed);
                     log::debug!(
                         "[VAD Actor] Ingestion gate closed — purged in-flight audio buffers"
                     );
                 }
                 if consumer.occupied_len() >= VAD_CHUNK_SIZE {
                     consumer.pop_slice(&mut chunk);
+                    handles.purged_frames_counter.fetch_add(1, Ordering::Relaxed);
                 }
                 sleep(Duration::from_millis(VAD_ACTOR_IDLE_SLEEP_MS));
                 continue;

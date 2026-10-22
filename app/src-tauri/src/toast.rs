@@ -164,11 +164,13 @@ fn dispatch_windows_notification(title: &str, message: &str) -> ToastDeliveryOut
 }
 
 fn format_notification_body(message: &str) -> String {
-    if message.starts_with('\n') {
-        message.to_string()
-    } else {
-        format!("\n{}", message)
-    }
+    message
+        .replace("<b>", "")
+        .replace("</b>", "")
+        .replace("<i>", "")
+        .replace("</i>", "")
+        .trim()
+        .to_string()
 }
 
 /// Shows a lifecycle card and returns the server-assigned ID for later in-place replacement.

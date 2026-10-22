@@ -75,13 +75,13 @@ export const TranscriptRenderer: React.FC<TranscriptRendererProps> = React.memo(
             animate={{ opacity: 1, y: 0 }}
             className="w-full space-y-2"
           >
-            <div className="text-[18px] leading-snug font-medium tracking-tight text-[rgb(var(--foreground))]/90 drop-shadow-sm whitespace-pre-wrap">
+            <div className="text-[18px] leading-snug font-medium tracking-tight text-[rgb(var(--foreground))]/90 whitespace-pre-wrap">
               {displayText}
               {(isListening || isThinking) && (
                 <motion.span 
                   animate={{ opacity: [0, 1, 0] }}
                   transition={{ repeat: Infinity, duration: 0.8 }}
-                  className={`inline-block w-[2px] h-[1em] ml-1 align-middle shadow-[0_0_8px_rgba(var(--accent),0.8)] bg-[rgb(var(--accent))]`}
+                  className="inline-block w-[2px] h-[1em] ml-1 align-middle bg-[rgb(var(--accent))] rounded-full"
                 />
               )}
             </div>

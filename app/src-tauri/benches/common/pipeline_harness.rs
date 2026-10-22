@@ -232,6 +232,7 @@ pub fn setup_e2e_pipeline(settings: VoxSettings) -> E2ePipelineSetup {
         audio_suppressed: Arc::new(AtomicBool::new(false)),
         engine_shutdown: state.pipeline.engine_shutdown.clone(),
         dropped_counter: Arc::new(AtomicU64::new(0)),
+        purged_frames_counter: Arc::new(AtomicU64::new(0)),
         ingestion_gate: state.pipeline.ingestion_gate.clone(),
         owner_atomic: state.owner.clone(),
         incomplete_clause_hint: Arc::new(AtomicBool::new(false)),

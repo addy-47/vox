@@ -209,6 +209,7 @@ pub fn setup_vad_actor(
         audio_suppressed,
         engine_shutdown,
         dropped_counter: Arc::new(AtomicU64::new(0)),
+        purged_frames_counter: Arc::new(AtomicU64::new(0)),
         ingestion_gate,
         owner_atomic: Arc::new(AtomicU32::new(InteractionOwner::Assistant as u32)),
         incomplete_clause_hint: Arc::new(AtomicBool::new(false)),
@@ -527,6 +528,14 @@ pub fn get_test_app_and_state_sync() -> (
 async fn open_test_db() -> Arc<vox_lib::persistence::VoxDb> {
     vox_lib::utils::paths::init();
     let db_path = vox_lib::utils::paths::db_path();
+    if let Some(home) = dirs::home_dir() {
+        let live_vox = home.join(".vox");
+        assert!(
+            !db_path.starts_with(&live_vox),
+            "[FATAL] Test attempted to open production database at {:?}! All tests must run inside TempPathsGuard or an isolated VOX_HOME sandbox.",
+            db_path
+        );
+    }
     if let Some(db_parent) = db_path.parent() {
         std::fs::create_dir_all(db_parent).expect("Failed to create the database parent directory");
     }

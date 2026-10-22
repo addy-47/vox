@@ -45,7 +45,7 @@ use vox_lib::{
 ///           return true unconditionally.
 #[test]
 fn onnx_singletons_start_unloaded_after_full_unload() {
-    vox_lib::utils::paths::init();
+    let _guard = common::paths::TempPathsGuard::new();
 
     unload_all_onnx_models();
 
@@ -68,7 +68,7 @@ fn onnx_singletons_start_unloaded_after_full_unload() {
 ///           assertion would catch it.
 #[test]
 fn loaded_embedder_produces_384_dimension_vector() {
-    vox_lib::utils::paths::init();
+    let _guard = common::paths::TempPathsGuard::new();
     unload_all_onnx_models();
 
     let loaded = ensure_embedder_loaded(true).expect("ensure_embedder_loaded failed");
@@ -95,7 +95,7 @@ fn loaded_embedder_produces_384_dimension_vector() {
 ///           transliteration engine — the transliteration assertion would fail.
 #[test]
 fn memory_pipeline_unload_evicts_embedder_but_keeps_transliteration() {
-    vox_lib::utils::paths::init();
+    let _guard = common::paths::TempPathsGuard::new();
     unload_all_onnx_models();
 
     ensure_embedder_loaded(true).expect("ensure_embedder_loaded failed");
@@ -126,7 +126,7 @@ fn memory_pipeline_unload_evicts_embedder_but_keeps_transliteration() {
 ///           test would abort instead of returning `Ok(None)`.
 #[test]
 fn evicted_embedder_returns_none_without_crashing() {
-    vox_lib::utils::paths::init();
+    let _guard = common::paths::TempPathsGuard::new();
     unload_all_onnx_models();
 
     ensure_embedder_loaded(true).expect("ensure_embedder_loaded failed");
@@ -153,7 +153,7 @@ fn evicted_embedder_returns_none_without_crashing() {
 ///           the transliteration assertion would fail.
 #[test]
 fn full_onnx_unload_evicts_embedder_and_transliteration() {
-    vox_lib::utils::paths::init();
+    let _guard = common::paths::TempPathsGuard::new();
     unload_all_onnx_models();
 
     ensure_embedder_loaded(true).expect("ensure_embedder_loaded failed");
@@ -181,7 +181,7 @@ fn full_onnx_unload_evicts_embedder_and_transliteration() {
 ///           test would panic.
 #[test]
 fn repeated_full_unload_is_idempotent() {
-    vox_lib::utils::paths::init();
+    let _guard = common::paths::TempPathsGuard::new();
     unload_all_onnx_models();
 
     unload_all_onnx_models();
@@ -201,7 +201,7 @@ fn repeated_full_unload_is_idempotent() {
 ///           `ensure_embedder_loaded` returns false — the assertion would fail.
 #[test]
 fn embedder_reloads_cleanly_after_full_unload() {
-    vox_lib::utils::paths::init();
+    let _guard = common::paths::TempPathsGuard::new();
     unload_all_onnx_models();
 
     ensure_embedder_loaded(true).expect("initial load must succeed");
@@ -228,7 +228,7 @@ fn embedder_reloads_cleanly_after_full_unload() {
 #[tokio::test]
 async fn tts_warmup_populates_worker_handles() {
     tokio::time::timeout(Duration::from_secs(20), async {
-        vox_lib::utils::paths::init();
+        let _guard = common::paths::TempPathsGuard::new();
         let supertonic_model_dir = common::paths::get_supertonic_model_dir();
         assert!(supertonic_model_dir.exists());
 
@@ -300,7 +300,7 @@ async fn tts_warmup_populates_worker_handles() {
 #[tokio::test]
 async fn tts_cooldown_clears_sender_and_joins_worker() {
     tokio::time::timeout(Duration::from_secs(20), async {
-        vox_lib::utils::paths::init();
+        let _guard = common::paths::TempPathsGuard::new();
         let supertonic_model_dir = common::paths::get_supertonic_model_dir();
         assert!(supertonic_model_dir.exists());
 

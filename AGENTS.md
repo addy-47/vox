@@ -95,7 +95,7 @@ See **[Phase 13 Backlog](file:///home/addy/projects/apps/vox/docs/plans/phase13/
 
 ---
 
-## 8. TEMPORARY — Remote Control Module Map (delete when the feature lands)
+## 8. TEMPORARY — Remote Control Module Map (delete when the feature lands - this section is exempted from the threshold rule in section 1)
 
 > ⏳ Added by the Remote Control feature. **This section is deleted in the final wave (W8).** It is not a permanent rule of the codebase. Full rationale: [`docs/plans/phase13/remote-control-adr.md`](file:///home/addy/projects/apps/vox/docs/plans/phase13/remote-control-adr.md). Behavioral contract: [`docs/specs/remote-control-spec.md`](file:///home/addy/projects/apps/vox/docs/specs/remote-control-spec.md).
 

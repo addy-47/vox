@@ -196,10 +196,9 @@ pub async fn ptt_start<R: tauri::Runtime>(
         .clone()
         .ok_or_else(|| VoxIpcError::Engine("Event router is not active".into()))?;
 
+    let owner = InteractionOwner::from(state.owner.load(std::sync::atomic::Ordering::Relaxed));
     event_tx
-        .send(VoxEvent::PttStart {
-            owner: InteractionOwner::Assistant,
-        })
+        .send(VoxEvent::PttStart { owner })
         .map_err(|e| VoxIpcError::Engine(format!("Failed to send PttStart: {}", e)))?;
 
     Ok(())
@@ -217,10 +216,9 @@ pub async fn ptt_stop<R: tauri::Runtime>(
         .clone()
         .ok_or_else(|| VoxIpcError::Engine("Event router is not active".into()))?;
 
+    let owner = InteractionOwner::from(state.owner.load(std::sync::atomic::Ordering::Relaxed));
     event_tx
-        .send(VoxEvent::PttStop {
-            owner: InteractionOwner::Assistant,
-        })
+        .send(VoxEvent::PttStop { owner })
         .map_err(|e| VoxIpcError::Engine(format!("Failed to send PttStop: {}", e)))?;
 
     Ok(())
@@ -238,10 +236,9 @@ pub async fn ptt_cancel<R: tauri::Runtime>(
         .clone()
         .ok_or_else(|| VoxIpcError::Engine("Event router is not active".into()))?;
 
+    let owner = InteractionOwner::from(state.owner.load(std::sync::atomic::Ordering::Relaxed));
     event_tx
-        .send(VoxEvent::PttCancel {
-            owner: InteractionOwner::Assistant,
-        })
+        .send(VoxEvent::PttCancel { owner })
         .map_err(|e| VoxIpcError::Engine(format!("Failed to send PttCancel: {}", e)))?;
 
     Ok(())

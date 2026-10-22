@@ -324,7 +324,8 @@ pub fn build_output_stream(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::services::audio::{MockAudioCapture, MockAudioSink};
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
 
     #[test]
     fn audio_stream_mock_starts_and_pauses() {
@@ -335,15 +336,56 @@ mod tests {
 
     #[test]
     fn audio_stream_accepts_an_injected_capture() {
-        let capture = Box::new(MockAudioCapture);
+        struct TrackingCapture {
+            started: Arc<AtomicBool>,
+            paused: Arc<AtomicBool>,
+        }
+        impl AudioCapture for TrackingCapture {
+            fn start(&self) -> Result<()> {
+                self.started.store(true, Ordering::SeqCst);
+                Ok(())
+            }
+            fn pause(&self) -> Result<()> {
+                self.paused.store(true, Ordering::SeqCst);
+                Ok(())
+            }
+        }
+
+        let started = Arc::new(AtomicBool::new(false));
+        let paused = Arc::new(AtomicBool::new(false));
+        let capture = Box::new(TrackingCapture {
+            started: Arc::clone(&started),
+            paused: Arc::clone(&paused),
+        });
         let stream = AudioStream::from_capture(capture);
+
+        assert!(!started.load(Ordering::SeqCst));
         assert!(stream.start().is_ok());
+        assert!(started.load(Ordering::SeqCst), "capture start() must be invoked");
+
+        assert!(!paused.load(Ordering::SeqCst));
         assert!(stream.pause().is_ok());
+        assert!(paused.load(Ordering::SeqCst), "capture pause() must be invoked");
     }
 
     #[test]
     fn audio_sink_mock_can_be_constructed_and_dropped() {
-        let sink: Box<dyn AudioSink> = Box::new(MockAudioSink);
+        struct TrackingSink {
+            dropped: Arc<AtomicBool>,
+        }
+        impl AudioSink for TrackingSink {}
+        impl Drop for TrackingSink {
+            fn drop(&mut self) {
+                self.dropped.store(true, Ordering::SeqCst);
+            }
+        }
+
+        let dropped = Arc::new(AtomicBool::new(false));
+        let sink: Box<dyn AudioSink> = Box::new(TrackingSink {
+            dropped: Arc::clone(&dropped),
+        });
+        assert!(!dropped.load(Ordering::SeqCst));
         drop(sink);
+        assert!(dropped.load(Ordering::SeqCst), "AudioSink must be cleanly dropped");
     }
 }

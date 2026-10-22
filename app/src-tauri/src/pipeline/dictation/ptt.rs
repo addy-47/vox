@@ -220,8 +220,8 @@ pub fn on_ptt_stop_with_sender<R: tauri::Runtime>(
                 &notify_app,
                 &notify_db,
                 LifecycleCard {
-                    title: "Dictation: No Speech",
-                    message: "<b>No speech recognized</b>\nSpeak clearly into the microphone",
+                    title: "No Speech Detected",
+                    message: "Speak clearly into the microphone",
                     severity: Severity::Warning,
                     duration_ms: 3000,
                 },

@@ -1,7 +1,7 @@
 use std::{
     fs::read_to_string,
     sync::{
-        atomic::{AtomicBool, AtomicU8, Ordering},
+        atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering},
         mpsc, Arc,
     },
     thread::{Builder, JoinHandle},
@@ -257,6 +257,7 @@ pub async fn start_audio_engine<R: tauri::Runtime + 'static>(
         audio_suppressed: Arc::new(AtomicBool::new(false)),
         engine_shutdown: Arc::clone(&state.pipeline.engine_shutdown),
         dropped_counter: Arc::clone(&state.telemetry.dropped_telemetry_events),
+        purged_frames_counter: Arc::new(AtomicU64::new(0)),
         ingestion_gate: Arc::clone(&state.pipeline.ingestion_gate),
         owner_atomic: Arc::clone(&state.owner),
         incomplete_clause_hint: incomplete_clause_hint_for_vad,

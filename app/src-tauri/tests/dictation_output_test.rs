@@ -487,3 +487,27 @@ async fn dictation_returns_to_ready_after_the_transcript() {
     );
     rig.close();
 }
+
+/// PURPOSE:  Test fixtures for dictation history must read from tests/assets/dictation.jsonl
+///           inside the isolated sandbox rather than host production storage.
+/// SCENARIO: Initialize TempPathsGuard, seed dictation history fixture, read history lines
+///           via paths::dictation_history_file().
+/// ASSERTS:  History lines match the fixture contents and never touch ~/.vox.
+/// CLASS:    fixture
+/// REQUIRES: none
+/// MUTANT:   Change get_dictation_fixture_path to return non-existent path.
+#[tokio::test]
+async fn dictation_history_reads_from_sandboxed_fixture() {
+    let rig = Rig::new().await;
+    rig._paths.seed_dictation_history();
+
+    let lines = rig.history_lines();
+    assert_eq!(
+        lines.len(),
+        2,
+        "fixture must contain exactly 2 seeded history lines"
+    );
+    assert!(lines[0].contains("First dictation test entry"));
+    assert!(lines[1].contains("Second dictation test entry"));
+    rig.close();
+}

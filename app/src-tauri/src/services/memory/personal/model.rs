@@ -89,7 +89,10 @@ impl PersonalMemory {
             out.push_str("## ");
             out.push_str(section.title.trim());
             out.push('\n');
-            for block in &section.blocks {
+            for (j, block) in section.blocks.iter().enumerate() {
+                if j > 0 {
+                    out.push('\n');
+                }
                 out.push_str(block.text.trim());
                 out.push('\n');
             }
@@ -376,17 +379,20 @@ mod tests {
     fn personal_memory_markdown_roundtrip_preserves_the_model() {
         let model = sample_model();
         let md = model.render_to_markdown();
-        assert!(md.contains("## Profile\nUser is a software engineer.\nUser lives in Seattle.\n"));
+        assert!(md.contains("## Profile\nUser is a software engineer.\n\nUser lives in Seattle.\n"));
         assert!(md.contains("## Preferences\nPrefers dark mode.\n"));
 
         let parsed = PersonalMemory::from_markdown(&md);
         assert_eq!(parsed.sections.len(), 2);
         assert_eq!(parsed.sections[0].title, "Profile");
-        // Consecutive lines under a heading without blank lines are folded into a single paragraph block
-        assert_eq!(parsed.sections[0].blocks.len(), 1);
+        assert_eq!(parsed.sections[0].blocks.len(), 2);
         assert_eq!(
             parsed.sections[0].blocks[0].text,
-            "User is a software engineer. User lives in Seattle."
+            "User is a software engineer."
+        );
+        assert_eq!(
+            parsed.sections[0].blocks[1].text,
+            "User lives in Seattle."
         );
         assert_eq!(parsed.sections[1].title, "Preferences");
         assert_eq!(parsed.sections[1].blocks.len(), 1);
