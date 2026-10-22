@@ -164,8 +164,8 @@ async fn test_echo_only_solo_playback_causes_zero_false_interruption() {
         // Teardown
         aec_shutdown.store(true, Ordering::Relaxed);
         engine_shutdown.store(true, Ordering::Relaxed);
-        let _ = aec_worker.join();
-        let _ = vad_join.join();
+        aec_worker.join().expect("worker thread panicked");
+        vad_join.join().expect("worker thread panicked");
     })
     .await
     .expect("Test timed out");
@@ -332,10 +332,10 @@ async fn test_double_talk_barge_in_cancels_playback_and_transitions_to_listening
         // Teardown
         aec_shutdown.store(true, Ordering::Relaxed);
         engine_shutdown.store(true, Ordering::Relaxed);
-        let _ = aec_worker.join();
-        let _ = vad_join.join();
+        aec_worker.join().expect("worker thread panicked");
+        vad_join.join().expect("worker thread panicked");
         let _ = vox_event_tx.send(VoxEvent::Shutdown);
-        let _ = router_handle.join();
+        router_handle.join().expect("worker thread panicked");
     })
     .await
     .expect("Test timed out");
@@ -451,8 +451,8 @@ async fn test_false_green_bypass_reproduces_echo_interruption() {
         // Teardown
         aec_shutdown.store(true, Ordering::Relaxed);
         engine_shutdown.store(true, Ordering::Relaxed);
-        let _ = aec_worker.join();
-        let _ = vad_join.join();
+        aec_worker.join().expect("worker thread panicked");
+        vad_join.join().expect("worker thread panicked");
     })
     .await
     .expect("Test timed out");

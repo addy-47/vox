@@ -473,17 +473,8 @@ mod tests {
     use super::*;
     use crate::{config::AudioOutputMode, core::events::InteractionMode};
 
-    #[test]
-    fn test_audio_suppressed_flag_controls_suppression() {
-        let suppressed = Arc::new(AtomicBool::new(false));
-        assert!(!should_suppress_audio(&suppressed));
-        suppressed.store(true, Ordering::Relaxed);
-        assert!(should_suppress_audio(&suppressed));
-    }
-
-    #[test]
-    fn test_trim_window_branches() {
-        let mut s = VadActorState::new(
+    fn window_state() -> VadActorState {
+        let mut state = VadActorState::new(
             0.5,
             0.001,
             800,
@@ -491,12 +482,36 @@ mod tests {
             InteractionMode::PTT,
             AudioOutputMode::Speaker,
         );
-        s.window_buffer = (0..1000).map(|i| i as f32).collect();
-        let raw_len = s.window_buffer.len();
+        state.window_buffer = (0..1000).map(|i| i as f32).collect();
+        state
+    }
 
+    /// PURPOSE:  Muting must be driven by the shared flag, not a shadow copy.
+    /// ASSERTS:  should_suppress_audio tracks the atomic in both directions.
+    /// CLASS:    happy-path
+    /// REQUIRES: none
+    /// MUTANT:   Read the flag only once (cache it).
+    #[test]
+    fn audio_suppressed_flag_controls_suppression() {
+        let suppressed = Arc::new(AtomicBool::new(false));
+        assert!(!should_suppress_audio(&suppressed));
+        suppressed.store(true, Ordering::Relaxed);
+        assert!(should_suppress_audio(&suppressed));
+    }
+
+    /// PURPOSE:  Dictation must submit the spoken span, not the whole capture window.
+    /// ASSERTS:  With speech from sample 100 to 900 the slice is [100, 900).
+    /// CLASS:    happy-path
+    /// REQUIRES: none
+    /// MUTANT:   Return the whole buffer when speech was detected.
+    #[test]
+    fn trim_window_keeps_span_from_first_to_last_speech() {
+        let mut s = window_state();
+        let raw_len = s.window_buffer.len();
         s.window_speech_detected = true;
         s.window_first_speech_sample = 100;
         s.window_last_speech_sample = 900;
+
         let sliced = trim_window(&s, raw_len);
         assert_eq!(
             sliced.len(),
@@ -505,32 +520,53 @@ mod tests {
         );
         assert_eq!(sliced.first().copied(), Some(100.0));
         assert_eq!(sliced.last().copied(), Some(899.0));
+    }
 
+    /// PURPOSE:  A detector that clicks on a single frame must not cut the clip.
+    /// ASSERTS:  A span below the minimum falls back to the full buffer.
+    /// CLASS:    edge-case
+    /// REQUIRES: none
+    /// MUTANT:   Remove the `span < VAD_MIN_UTTERANCE_SAMPLES` fallback.
+    #[test]
+    fn trim_window_falls_back_to_full_buffer_for_short_span() {
+        let mut s = window_state();
+        let raw_len = s.window_buffer.len();
+        s.window_speech_detected = true;
         s.window_first_speech_sample = 10;
         s.window_last_speech_sample = 200;
-        let fallback = trim_window(&s, raw_len);
-        assert_eq!(
-            fallback.len(),
-            raw_len,
-            "sub-minimum speech span must fall back to the whole buffer"
-        );
 
+        assert_eq!(trim_window(&s, raw_len).len(), raw_len);
+    }
+
+    /// PURPOSE:  A window with no detected speech must produce nothing, not noise.
+    /// ASSERTS:  trim_window returns an empty slice when speech was not detected.
+    /// CLASS:    suppression
+    /// REQUIRES: none
+    /// MUTANT:   Remove the `!window_speech_detected` guard.
+    #[test]
+    fn trim_window_returns_empty_without_speech() {
+        let mut s = window_state();
+        let raw_len = s.window_buffer.len();
         s.window_speech_detected = false;
         s.window_first_speech_sample = 100;
         s.window_last_speech_sample = 900;
-        assert!(
-            trim_window(&s, raw_len).is_empty(),
-            "no speech must yield an empty buffer"
-        );
 
+        assert!(trim_window(&s, raw_len).is_empty());
+    }
+
+    /// PURPOSE:  A stale end marker must not panic or over-read the buffer.
+    /// ASSERTS:  An end marker past `raw_len` clamps to `raw_len`.
+    /// CLASS:    edge-case
+    /// REQUIRES: none
+    /// MUTANT:   Remove `.min(raw_len)` from the end index.
+    #[test]
+    fn trim_window_clamps_oversized_end_marker() {
+        let mut s = window_state();
+        let raw_len = s.window_buffer.len();
         s.window_speech_detected = true;
         s.window_first_speech_sample = 5;
         s.window_last_speech_sample = 99_999;
-        let clamped = trim_window(&s, raw_len);
-        assert_eq!(
-            clamped.len(),
-            raw_len - 5,
-            "oversized end marker must clamp to raw_len"
-        );
+
+        assert_eq!(trim_window(&s, raw_len).len(), raw_len - 5);
     }
 }

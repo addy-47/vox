@@ -290,20 +290,39 @@ pub fn collect_all_final_transcripts(
     finals.join(" ")
 }
 
-/// Asserts that a standard mpsc::Receiver is empty after a deterministic wait.
-/// Mandatory for negative assertion / suppression testing.
-pub fn assert_channel_empty_after<T: std::fmt::Debug>(
-    rx: &Receiver<T>,
-    wait: Duration,
-    label: &str,
-) {
-    std::thread::sleep(wait);
-    if let Ok(item) = rx.try_recv() {
+/// Asserts that `rx` holds no buffered item.
+///
+/// This function never waits. Call it only after quiescence is proven, by one of:
+/// - the turn's terminal state transition has been observed;
+/// - a synchronous handler has returned;
+/// - every producer has been shut down and joined;
+/// - the sender was dropped.
+///
+/// Waiting here would convert "the producer has not run yet" into a false pass.
+pub fn assert_channel_empty<T>(rx: &Receiver<T>, label: &str) {
+    let mut count = 0usize;
+    while rx.try_recv().is_ok() {
+        count += 1;
+    }
+    if count > 0 {
         panic!(
-            "[{}] Negative assertion failed: expected empty channel, but found item: {:?}",
-            label, item
+            "[{}] expected no messages after quiescence, found {}",
+            label, count
         );
     }
+}
+
+/// Drains everything currently buffered and returns it.
+///
+/// Use at a scenario boundary, never to make a negative assertion pass. The caller
+/// must assert that the returned items belong to the scenario that just ended.
+#[must_use]
+pub fn drain_pending<T>(rx: &Receiver<T>) -> Vec<T> {
+    let mut items = Vec::new();
+    while let Ok(item) = rx.try_recv() {
+        items.push(item);
+    }
+    items
 }
 
 /// Constructs the default test `TelemetryState` with fresh atomics and a
@@ -497,6 +516,32 @@ pub fn get_test_app_and_state_sync() -> (
         .block_on(get_test_app_and_state())
 }
 
+/// Opens the test database and runs the schema migrations against it.
+///
+/// The database's parent directory must exist before Turso can open it. The
+/// app creates it at startup via `paths::ensure_dirs()`, but a test that runs
+/// without `TempPathsGuard` resolves the real `~/.vox` root, and that
+/// directory does not exist on a machine where the app has never run. Creating
+/// it here keeps the harness self-sufficient instead of making every test
+/// depend on ambient state.
+async fn open_test_db() -> Arc<vox_lib::persistence::VoxDb> {
+    vox_lib::utils::paths::init();
+    let db_path = vox_lib::utils::paths::db_path();
+    if let Some(db_parent) = db_path.parent() {
+        std::fs::create_dir_all(db_parent).expect("Failed to create the database parent directory");
+    }
+    let db_conn = vox_lib::persistence::VoxDb::open(&db_path)
+        .await
+        .expect("Failed to open test database");
+    let migration_conn = db_conn
+        .connect()
+        .expect("Failed to vend migration connection");
+    vox_lib::persistence::schema::run_migrations(&migration_conn)
+        .await
+        .expect("Failed to run migrations on test database");
+    Arc::new(db_conn)
+}
+
 /// Constructs an AppHandle and managed AppState pair tailored for testing environments.
 pub async fn get_test_app_and_state() -> (
     AppHandle<tauri::test::MockRuntime>,
@@ -507,17 +552,7 @@ pub async fn get_test_app_and_state() -> (
     let app = get_test_app_handle();
     let telemetry = make_test_telemetry();
 
-    vox_lib::utils::paths::init();
-    let db_conn = vox_lib::persistence::VoxDb::open(&vox_lib::utils::paths::db_path())
-        .await
-        .expect("Failed to open test database");
-    let migration_conn = db_conn
-        .connect()
-        .expect("Failed to vend migration connection");
-    vox_lib::persistence::schema::run_migrations(&migration_conn)
-        .await
-        .expect("Failed to run migrations on test database");
-    let db = Arc::new(db_conn);
+    let db = open_test_db().await;
     let state = Arc::new(vox_lib::core::state::AppState::new(
         &app, None, telemetry, db,
     ));
@@ -529,17 +564,7 @@ pub async fn get_test_app_and_state() -> (
 pub async fn get_test_app_state() -> vox_lib::core::state::AppState {
     let telemetry = make_test_telemetry();
 
-    vox_lib::utils::paths::init();
-    let db_conn = vox_lib::persistence::VoxDb::open(&vox_lib::utils::paths::db_path())
-        .await
-        .expect("Failed to open test database");
-    let migration_conn = db_conn
-        .connect()
-        .expect("Failed to vend migration connection");
-    vox_lib::persistence::schema::run_migrations(&migration_conn)
-        .await
-        .expect("Failed to run migrations on test database");
-    let db = Arc::new(db_conn);
+    let db = open_test_db().await;
     let app = get_test_app_handle();
     vox_lib::core::state::AppState::new(&app, None, telemetry, db)
 }
