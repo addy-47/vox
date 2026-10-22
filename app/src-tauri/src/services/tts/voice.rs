@@ -15,10 +15,11 @@ use serde::{Deserialize, Serialize};
 use symphonia_core::audio::{Audio, GenericAudioBufferRef};
 
 use crate::{
+    core::defaults::{DEFAULT_TTS_KOKORO_VOICE_ID, DEFAULT_TTS_SUPERTONIC_VOICE_ID},
     services::{
         audio::resolve_audio_host,
         tts::{
-            providers::edge_tts::get_trusted_client_token, CHATTERBOX_MODEL_DIR,
+            providers::edge_tts::get_trusted_client_token, TtsActiveProvider, CHATTERBOX_MODEL_DIR,
             EDGE_TTS_USER_AGENT, EDGE_TTS_VOICES_URL_BASE, MODEL_FILE_TTS_CHATTERBOX_S3GEN,
             MODEL_FILE_TTS_CHATTERBOX_T3, TTS_SAMPLE_RATE,
         },
@@ -534,6 +535,118 @@ pub fn resolve_catalog_index(profiles: &[VoiceProfile], voice_id: &str) -> i32 {
     profiles.first().map(|p| p.id).unwrap_or(0)
 }
 
+/// Returns the voice profiles of a provider that ships a bundled catalogue.
+///
+/// A provider without a bundled catalogue (Chatterbox, ZipVoice, the cloud
+/// providers) addresses its voices by id or by directory, not by catalogue
+/// index.
+///
+/// The match is exhaustive over the canonical provider enum, so every
+/// provider the factory accepts is classified here. A provider can never
+/// fall through to another provider's catalogue.
+fn provider_voice_profiles(provider: TtsActiveProvider) -> Option<Vec<VoiceProfile>> {
+    match provider {
+        TtsActiveProvider::Kokoro => Some(get_voice_profiles()),
+        TtsActiveProvider::Supertonic => Some(get_supertonic_voice_profiles()),
+        TtsActiveProvider::EdgeTts
+        | TtsActiveProvider::Chatterbox
+        | TtsActiveProvider::ChatterboxRemote
+        | TtsActiveProvider::Zipvoice
+        | TtsActiveProvider::AzureTts
+        | TtsActiveProvider::GoogleTts => None,
+    }
+}
+
+/// Parses a provider id into the canonical provider enum.
+///
+/// The voice catalogue resolves providers through the same enum the provider
+/// factory parses. A typo in a provider id is therefore an explicit error
+/// instead of a silent fallback to the first catalogue entry — which gave
+/// the user a voice they never chose.
+fn parse_tts_provider(provider_id: &str) -> Result<TtsActiveProvider, String> {
+    serde_json::from_value(serde_json::Value::String(provider_id.to_string()))
+        .map_err(|_| format!("Unknown TTS provider id: {provider_id}"))
+}
+
+/// The default voice id of a provider that ships a bundled catalogue.
+///
+/// The default voice is provider-scoped: a voice id belongs to exactly one
+/// provider's catalogue, so there is no single global default.
+pub fn default_voice_id_for_provider(provider_id: &str) -> Option<&'static str> {
+    let provider = parse_tts_provider(provider_id).ok()?;
+    default_voice_id_for(provider)
+}
+
+/// The default voice id of a provider, resolved through the canonical enum.
+fn default_voice_id_for(provider: TtsActiveProvider) -> Option<&'static str> {
+    match provider {
+        TtsActiveProvider::Kokoro => Some(DEFAULT_TTS_KOKORO_VOICE_ID),
+        TtsActiveProvider::Supertonic => Some(DEFAULT_TTS_SUPERTONIC_VOICE_ID),
+        TtsActiveProvider::EdgeTts
+        | TtsActiveProvider::Chatterbox
+        | TtsActiveProvider::ChatterboxRemote
+        | TtsActiveProvider::Zipvoice
+        | TtsActiveProvider::AzureTts
+        | TtsActiveProvider::GoogleTts => None,
+    }
+}
+
+/// Resolves the voice id a provider must use.
+///
+/// A stored id that names a voice of the provider is kept. A stored id that
+/// belongs to another provider — or to none — resolves to that provider's own
+/// default voice.
+///
+/// The resolution never falls through to an arbitrary catalogue index: a
+/// catalogue-index fallback silently gives the user a voice they did not
+/// choose.
+pub fn resolve_provider_voice_id(provider_id: &str, voice_id: &str) -> String {
+    let trimmed = voice_id.trim();
+    let Ok(provider) = parse_tts_provider(provider_id) else {
+        log::warn!(
+            "[Voice] Unknown TTS provider id '{provider_id}': the stored voice id is kept unchanged"
+        );
+        return trimmed.to_string();
+    };
+    resolve_provider_voice_id_for(provider, trimmed)
+}
+
+/// Resolves the voice id of a provider, resolved through the canonical enum.
+fn resolve_provider_voice_id_for(provider: TtsActiveProvider, voice_id: &str) -> String {
+    let Some(profiles) = provider_voice_profiles(provider) else {
+        return voice_id.to_string();
+    };
+
+    let needle = voice_id.to_lowercase();
+    if profiles.iter().any(|p| p.name.to_lowercase() == needle) {
+        return needle;
+    }
+
+    default_voice_id_for(provider)
+        .unwrap_or(voice_id)
+        .to_lowercase()
+}
+
+/// Resolves the catalogue index of the voice a provider must use.
+///
+/// The index is taken from the provider-aware voice id, so it names the
+/// provider's default voice rather than the first entry of the catalogue.
+///
+/// An unrecognised provider id is an explicit error. The old behaviour
+/// resolved it to index zero, which silently selected a voice the user never
+/// chose.
+pub fn resolve_voice_index_for_provider(provider_id: &str, voice_id: &str) -> Result<i32, String> {
+    let provider = parse_tts_provider(provider_id)?;
+    let Some(profiles) = provider_voice_profiles(provider) else {
+        // A provider without a bundled catalogue addresses its voices by id
+        // or by directory. There is no catalogue position to resolve, so the
+        // index stays at the provider's default position.
+        return Ok(0);
+    };
+    let resolved = resolve_provider_voice_id_for(provider, voice_id);
+    Ok(resolve_catalog_index(&profiles, &resolved))
+}
+
 /// Returns default Supertonic voice profiles.
 pub fn get_supertonic_voice_profiles() -> Vec<VoiceProfile> {
     vec![
@@ -1044,4 +1157,185 @@ pub async fn list_unified_voices(
         .collect();
 
     Ok(dtos)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeSet;
+
+    use super::*;
+    use crate::services::tts::{caps_for_id, TtsActiveProvider};
+
+    const FACTORY_PROVIDER_IDS: [&str; 8] = [
+        "supertonic",
+        "kokoro",
+        "chatterbox",
+        "chatterbox_remote",
+        "edge_tts",
+        "zipvoice",
+        "azure_tts",
+        "google_tts",
+    ];
+
+    #[test]
+    fn test_an_unrecognised_provider_id_yields_an_explicit_error() {
+        let error = resolve_voice_index_for_provider("supertonnic", "james")
+            .expect_err("a typo in a provider id must not resolve to a catalogue index");
+
+        assert!(
+            error.contains("supertonnic"),
+            "the error must name the provider id, it said: {error}"
+        );
+
+        for unknown in ["", "Kokoro", "kokoro ", "kokoro2", "supertonic\n"] {
+            assert!(
+                resolve_voice_index_for_provider(unknown, "james").is_err(),
+                "the provider id `{unknown}` is not a provider the factory accepts, so it must not resolve to a catalogue index"
+            );
+        }
+    }
+
+    #[test]
+    fn test_every_provider_the_factory_accepts_resolves_to_its_own_voice_profile_set() {
+        for provider_id in FACTORY_PROVIDER_IDS {
+            caps_for_id(provider_id)
+                .unwrap_or_else(|error| panic!("the factory must accept `{provider_id}`: {error}"));
+
+            let resolved =
+                resolve_voice_index_for_provider(provider_id, "james").unwrap_or_else(|error| {
+                    panic!("the voice catalogue must resolve `{provider_id}`: {error}")
+                });
+            assert!(
+                resolved >= 0,
+                "the resolved index for `{provider_id}` must not be negative, it was {resolved}"
+            );
+        }
+
+        let kokoro =
+            resolve_voice_index_for_provider("kokoro", "james").expect("Kokoro is a known provider id");
+        let supertonic = resolve_voice_index_for_provider("supertonic", "james")
+            .expect("Supertonic is a known provider id");
+        assert_ne!(
+            kokoro, supertonic,
+            "Kokoro and Supertonic must not resolve to the same catalogue index"
+        );
+    }
+
+    #[test]
+    fn test_the_kokoro_and_supertonic_voice_id_sets_do_not_overlap() {
+        let manifest = get_manifest_voices();
+        let kokoro: BTreeSet<String> = manifest
+            .iter()
+            .filter(|entry| entry.provider_id == "kokoro")
+            .map(|entry| entry.id.clone())
+            .collect();
+        let supertonic: BTreeSet<String> = manifest
+            .iter()
+            .filter(|entry| entry.provider_id == "supertonic")
+            .map(|entry| entry.id.clone())
+            .collect();
+
+        assert!(!kokoro.is_empty(), "the Kokoro voice set must not be empty");
+        assert!(
+            !supertonic.is_empty(),
+            "the Supertonic voice set must not be empty"
+        );
+
+        let overlap: Vec<&String> = kokoro.intersection(&supertonic).collect();
+        assert!(
+            overlap.is_empty(),
+            "the Kokoro and Supertonic voice id sets must not overlap, they share {overlap:?}"
+        );
+        assert!(
+            !kokoro.contains("james"),
+            "a Supertonic voice id must not be a Kokoro voice id"
+        );
+        assert!(
+            !supertonic.contains("bella"),
+            "a Kokoro voice id must not be a Supertonic voice id"
+        );
+    }
+
+    #[test]
+    fn test_each_provider_resolves_a_voice_inside_its_own_catalogue() {
+        let kokoro = get_voice_profiles();
+        let supertonic = get_supertonic_voice_profiles();
+
+        for profile in &kokoro {
+            let name = profile.name.to_lowercase();
+            let index = resolve_voice_index_for_provider("kokoro", &name)
+                .expect("Kokoro is a known provider id");
+            assert_eq!(
+                kokoro[index as usize].name.to_lowercase(),
+                name,
+                "the Kokoro voice `{name}` must resolve inside the Kokoro catalogue"
+            );
+        }
+        for profile in &supertonic {
+            let name = profile.name.to_lowercase();
+            let index = resolve_voice_index_for_provider("supertonic", &name)
+                .expect("Supertonic is a known provider id");
+            assert_eq!(
+                supertonic[index as usize].name.to_lowercase(),
+                name,
+                "the Supertonic voice `{name}` must resolve inside the Supertonic catalogue"
+            );
+        }
+    }
+
+    #[test]
+    fn test_the_provider_scoped_default_voice_still_resolves_as_specified() {
+        assert_eq!(
+            default_voice_id_for_provider("kokoro"),
+            Some("bella"),
+            "Kokoro's default voice must be Bella"
+        );
+        assert_eq!(
+            default_voice_id_for_provider("supertonic"),
+            Some("james"),
+            "Supertonic's default voice must be James"
+        );
+        assert_eq!(
+            default_voice_id_for_provider("edge_tts"),
+            None,
+            "a provider without a bundled catalogue has no default catalogue voice"
+        );
+
+        let kokoro =
+            resolve_voice_index_for_provider("kokoro", "james").expect("Kokoro is a known provider id");
+        let kokoro_profiles = get_voice_profiles();
+        assert_eq!(
+            kokoro_profiles[kokoro as usize].name, "Bella",
+            "a Supertonic voice id under Kokoro must resolve to Kokoro's default"
+        );
+
+        let supertonic = resolve_voice_index_for_provider("supertonic", "bella")
+            .expect("Supertonic is a known provider id");
+        let supertonic_profiles = get_supertonic_voice_profiles();
+        assert_eq!(
+            supertonic_profiles[supertonic as usize].name, "James",
+            "a Kokoro voice id under Supertonic must resolve to Supertonic's default"
+        );
+    }
+
+    #[test]
+    fn test_the_provider_ids_the_factory_accepts_match_the_canonical_enum() {
+        let mut seen: BTreeSet<String> = BTreeSet::new();
+        for provider_id in FACTORY_PROVIDER_IDS {
+            let parsed: TtsActiveProvider =
+                serde_json::from_value(serde_json::Value::String(provider_id.to_string()))
+                    .unwrap_or_else(|error| {
+                        panic!("`{provider_id}` must be a canonical provider id: {error}")
+                    });
+            assert!(
+                seen.insert(format!("{parsed:?}")),
+                "each provider id must map to its own canonical variant, `{provider_id}` does not"
+            );
+        }
+        assert_eq!(
+            seen.len(),
+            FACTORY_PROVIDER_IDS.len(),
+            "every provider id must map to a distinct canonical variant"
+        );
+    }
 }

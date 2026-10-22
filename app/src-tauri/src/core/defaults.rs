@@ -36,13 +36,32 @@ pub const DEFAULT_LLM_CLOUD_BASE_URL: &str = "https://integrate.api.nvidia.com/v
 pub const DEFAULT_LLM_CLOUD_MODEL: &str = "meta/llama-3.1-8b-instruct";
 pub const DEFAULT_LLM_CLOUD_PROVIDER_NAME: &str = "nvidia";
 
-pub const DEFAULT_TTS_VOICE_ID: &str = "bella";
+/// The TTS provider a fresh install selects.
+///
+/// Supertonic ships with the model bundle and works offline. The Microsoft
+/// ReadAloud endpoint that Edge TTS uses answers HTTP 403 for every client
+/// (see `docs/specs/providers-spec.md` §6.7).
+pub const DEFAULT_TTS_PROVIDER: &str = "supertonic";
+
+/// The default voice of the Kokoro catalogue.
+///
+/// The default voice is provider-scoped: a voice id belongs to exactly one
+/// provider's catalogue, so there is no single global default.
+pub const DEFAULT_TTS_KOKORO_VOICE_ID: &str = "bella";
+
+/// The default voice of the Supertonic catalogue.
+pub const DEFAULT_TTS_SUPERTONIC_VOICE_ID: &str = "james";
+
 pub const DEFAULT_TTS_SPEED: f32 = 1.05;
 
 pub const DEFAULT_TTS_ZIPVOICE_GUIDANCE_SCALE: f32 = 1.0;
 pub const DEFAULT_TTS_AZURE_REGION: &str = "eastus";
 pub const DEFAULT_TTS_AZURE_VOICE: &str = "en-US-JennyNeural";
 pub const DEFAULT_TTS_GOOGLE_VOICE: &str = "en-US-Chirp3-HD-Kore";
+
+/// A fresh install does not accept remote controllers: the host behaves
+/// exactly like a standalone installation until the user opts in.
+pub const DEFAULT_REMOTE_ACCEPTS_CONTROLLERS: bool = false;
 
 pub const DEFAULT_MEMORY_CONTEXT_RETRIEVAL_ENABLED: bool = true;
 pub const DEFAULT_MEMORY_PIPELINE_PROCESSING_ENABLED: bool = true;

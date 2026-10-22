@@ -16,8 +16,7 @@ pub use providers::{
     chatterbox::ChatterboxEngine,
     chatterbox_remote::ChatterboxRemoteProvider,
     edge_tts::{
-        EdgeTtsProvider, EDGE_TTS_DEFAULT_VOICE, EDGE_TTS_HINDI_VOICE, EDGE_TTS_USER_AGENT,
-        EDGE_TTS_VOICES_URL_BASE,
+        EdgeTtsProvider, EDGE_TTS_DEFAULT_VOICE, EDGE_TTS_USER_AGENT, EDGE_TTS_VOICES_URL_BASE,
     },
     google_tts::GoogleTtsProvider,
     kokoro::KokoroEngine,
