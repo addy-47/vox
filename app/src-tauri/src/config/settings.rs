@@ -9,10 +9,11 @@ use crate::{
             DEFAULT_MEMORY_CONTEXT_RETRIEVAL_ENABLED, DEFAULT_MEMORY_MAX_CONTEXT_SHARE,
             DEFAULT_MEMORY_PIPELINE_PROCESSING_ENABLED, DEFAULT_MEMORY_PRIVATE_MODE,
             DEFAULT_MEMORY_SEMANTIC_SIMILARITY_CUTOFF, DEFAULT_MEMORY_SUGGESTION_POLICY,
-            DEFAULT_MEMORY_TOP_K_FACTS, DEFAULT_SYSTEM_PROMPT_MODULAR,
-            DEFAULT_SYSTEM_PROMPT_REALTIME, DEFAULT_UI_ACCENT_SEED, DEFAULT_UI_THEME,
+            DEFAULT_MEMORY_TOP_K_FACTS, DEFAULT_REMOTE_ACCEPTS_CONTROLLERS,
+            DEFAULT_SYSTEM_PROMPT_MODULAR, DEFAULT_SYSTEM_PROMPT_REALTIME, DEFAULT_UI_ACCENT_SEED,
+            DEFAULT_UI_THEME,
         },
-        events::{InteractionMode, PipelineMode},
+        events::{InteractionMode, PipelineMode, RemoteExecutionMode},
     },
     pipeline::dictation::DictationSettings,
     services::{
@@ -119,6 +120,29 @@ pub struct SystemSettings {
     pub setup_completed: bool,
 }
 
+/// The remote-control settings domain.
+///
+/// Two independent settings, one per role (remote-control spec §4.2):
+/// - `accepts_controllers` is host-side. When false the host behaves exactly
+///   like a standalone installation.
+/// - `execution_mode` is controller-side. `local` runs the device's own
+///   pipeline; `remote` makes it a thin client for a paired host.
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(default)]
+pub struct RemoteSettings {
+    pub accepts_controllers: bool,
+    pub execution_mode: RemoteExecutionMode,
+}
+
+impl Default for RemoteSettings {
+    fn default() -> Self {
+        Self {
+            accepts_controllers: DEFAULT_REMOTE_ACCEPTS_CONTROLLERS,
+            execution_mode: RemoteExecutionMode::default(),
+        }
+    }
+}
+
 /// The unified application settings aggregating domain subsystem configurations.
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 #[serde(default)]
@@ -128,6 +152,7 @@ pub struct VoxSettings {
     pub interaction: InteractionSettings,
     pub dictation: DictationSettings,
     pub system: SystemSettings,
+    pub remote: RemoteSettings,
     pub memory: MemorySettings,
     pub persona: PersonaSettings,
     pub stt: SttSettings,

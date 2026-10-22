@@ -120,6 +120,12 @@ impl VoxSettings {
                 self.system = v;
             }
             if let Some(v) = obj
+                .get("remote")
+                .and_then(|v| serde_json::from_value(v.clone()).ok())
+            {
+                self.remote = v;
+            }
+            if let Some(v) = obj
                 .get("memory")
                 .and_then(|v| serde_json::from_value(v.clone()).ok())
             {

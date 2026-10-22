@@ -25,6 +25,15 @@ pub enum InteractionMode {
     PTT,
 }
 
+/// The execution mode of a device that may act as a remote controller.
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum RemoteExecutionMode {
+    #[default]
+    Local,
+    Remote,
+}
+
 /// Audio synthesis intent category governing playback engine state transitions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
