@@ -1180,12 +1180,6 @@ mod tests {
         "google_tts",
     ];
 
-/// PURPOSE:  A typo in the provider id must never resolve to a catalogue index.
-/// SCENARIO: Several unknown provider ids are parsed.
-/// ASSERTS:  The call returns an error that names the provider id, for every unknown id.
-/// CLASS:    suppression
-/// REQUIRES: none
-/// MUTANT:   Fall back to catalogue index zero on an unknown provider id.
 #[test]
 fn an_unrecognised_provider_id_is_an_explicit_error() {
     let error = resolve_voice_index_for_provider("supertonnic", "james")
@@ -1209,13 +1203,6 @@ fn an_unrecognised_provider_id_is_an_explicit_error() {
 // Test 2: Every provider the factory accepts is classified
 // ============================================================================
 
-/// PURPOSE:  Every provider the factory can build must have a voice catalogue entry.
-/// SCENARIO: Every provider id the factory can build is resolved to a catalogue index.
-/// ASSERTS:  Each factory id resolves to a non-negative index, and the two catalogue
-///           providers resolve to different indices.
-/// CLASS:    happy-path
-/// REQUIRES: none
-/// MUTANT:   Let a provider resolve into another provider's catalogue.
 #[test]
 fn every_factory_provider_resolves_into_its_own_catalogue() {
     for provider_id in FACTORY_PROVIDER_IDS {
@@ -1250,12 +1237,6 @@ fn every_factory_provider_resolves_into_its_own_catalogue() {
 // Test 3: The Kokoro and Supertonic id sets are distinct
 // ============================================================================
 
-/// PURPOSE:  A voice id must belong to exactly one provider catalogue.
-/// SCENARIO: The Kokoro and Supertonic voice id sets are compared.
-/// ASSERTS:  Both sets are non-empty and their intersection is empty.
-/// CLASS:    edge-case
-/// REQUIRES: none
-/// MUTANT:   Add a voice id to both manifests.
 #[test]
 fn kokoro_and_supertonic_voice_ids_do_not_overlap() {
     let manifest = crate::services::tts::voice::get_manifest_voices();
@@ -1291,13 +1272,6 @@ fn kokoro_and_supertonic_voice_ids_do_not_overlap() {
     );
 }
 
-/// PURPOSE:  A voice name must resolve to itself inside its own catalogue.
-/// SCENARIO: Every Kokoro and Supertonic voice name is resolved inside its catalogue.
-/// ASSERTS:  Every Kokoro and Supertonic profile resolves to a profile with the same
-///           name.
-/// CLASS:    happy-path
-/// REQUIRES: none
-/// MUTANT:   Resolve a voice name to the first catalogue entry.
 #[test]
 fn each_provider_voice_resolves_inside_its_own_catalogue() {
     let kokoro = crate::services::tts::voice::get_voice_profiles();
@@ -1329,14 +1303,6 @@ fn each_provider_voice_resolves_inside_its_own_catalogue() {
 // Test 4: The provider-scoped default voice still resolves as specified
 // ============================================================================
 
-/// PURPOSE:  The default voice belongs to the provider, and a foreign stored id must
-///           fall back to that provider's default.
-/// SCENARIO: Default and stored voice ids are resolved for each provider.
-/// ASSERTS:  Kokoro defaults to Bella, Supertonic to James, a provider without a
-///           catalogue has none, and a foreign id resolves to the local default.
-/// CLASS:    happy-path
-/// REQUIRES: none
-/// MUTANT:   Return the stored id even when it belongs to another provider.
 #[test]
 fn provider_scoped_default_voice_resolves_as_specified() {
     assert_eq!(
@@ -1378,12 +1344,6 @@ fn provider_scoped_default_voice_resolves_as_specified() {
 // Test 5: The canonical enum is the only provider vocabulary
 // ============================================================================
 
-/// PURPOSE:  The provider vocabulary must be the canonical enum, not a parallel list.
-/// SCENARIO: Every factory provider id is parsed into the canonical enum.
-/// ASSERTS:  Every factory id parses into a distinct canonical variant.
-/// CLASS:    happy-path
-/// REQUIRES: none
-/// MUTANT:   Accept a provider id that the enum does not define.
 #[test]
 fn factory_provider_ids_match_the_canonical_enum() {
     let mut seen: BTreeSet<String> = BTreeSet::new();

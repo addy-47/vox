@@ -553,12 +553,6 @@ mod tests {
         )
     }
 
-    /// PURPOSE:  Coalescing must not inspect or mutate commands that are not partials.
-    /// SCENARIO: A Final command is offered to the coalescer.
-    /// ASSERTS:  A Final is returned unchanged and nothing is queued as pending.
-    /// CLASS:    happy-path
-    /// REQUIRES: none
-    /// MUTANT:   Coalesce every command, not just `SttCommand::Partial`.
     #[test]
     fn coalesce_partials_leaves_non_partial_commands_untouched() {
         let (_tx, rx) = mpsc::channel();
@@ -581,17 +575,6 @@ mod tests {
         assert!(pending.is_none(), "nothing was queued behind a Final");
     }
 
-    /// PURPOSE:  Stale partials must be dropped, and their pooled buffers returned.
-    /// SCENARIO: Queue P0 (first), P1, P2, then a StreamChunk.
-    /// ASSERTS:  The latest partial wins, P0 and P1 buffers are recycled, and the
-    ///           StreamChunk becomes the pending command.
-    /// CLASS:    edge-case
-    /// REQUIRES: none
-    /// MUTANT:   Keep the first partial instead of the last.
-    /// NOTE:     F-15 — this test fails today: the loop recycles every superseded
-    ///           buffer into the *first* partial's channel, so later buffers leak.
-    ///           Owner: backend-engineer. Re-enable when coalescing recycles each
-    ///           buffer into its own channel.
     #[test]
     #[ignore = "F-15: coalescing recycles into the first partial's channel and leaks later buffers"]
     fn coalesce_partials_keeps_latest_audio_and_recycles_earlier_buffers() {
@@ -636,13 +619,6 @@ mod tests {
         drop(third_rx);
     }
 
-    /// PURPOSE:  A non-partial command must stop coalescing immediately, so its
-    ///           ordering relative to the surviving partial is preserved.
-    /// SCENARIO: A partial is followed by a ResetStream and a Warmup in the queue.
-    /// ASSERTS:  Commands queued after the non-partial stay in the channel.
-    /// CLASS:    edge-case
-    /// REQUIRES: none
-    /// MUTANT:   Continue coalescing past a non-partial command.
     #[test]
     fn coalesce_partials_stops_at_the_first_non_partial() {
         let (tx, rx) = mpsc::channel();
@@ -660,13 +636,6 @@ mod tests {
         );
     }
 
-    /// PURPOSE:  ResetStream must discard queued audio, not transcribe it.
-    /// SCENARIO: Queue a StreamChunk and a Partial, then ResetStream.
-    /// ASSERTS:  The partial buffer is recycled, the provider is reset once, and
-    ///           the drain continues normally.
-    /// CLASS:    suppression
-    /// REQUIRES: none
-    /// MUTANT:   Transcribe queued chunks instead of dropping them.
     #[test]
     fn drain_reset_stream_recycles_partials_and_drops_chunks() {
         let (tx, rx) = mpsc::channel();
@@ -694,13 +663,6 @@ mod tests {
         );
     }
 
-    /// PURPOSE:  A Final queued behind ResetStream belongs to a turn the user already
-    ///           spoke; it must survive the reset.
-    /// SCENARIO: A ResetStream is drained while a Final is queued behind it.
-    /// ASSERTS:  The Final becomes the pending command and is not consumed.
-    /// CLASS:    edge-case
-    /// REQUIRES: none
-    /// MUTANT:   Drop Final commands during the drain.
     #[test]
     fn drain_reset_stream_preserves_a_queued_final() {
         let (tx, rx) = mpsc::channel();
@@ -723,12 +685,6 @@ mod tests {
         );
     }
 
-    /// PURPOSE:  Shutdown behind ResetStream must still stop the worker.
-    /// SCENARIO: A Shutdown command is queued and the reset drain runs.
-    /// ASSERTS:  drain_reset_stream reports stop.
-    /// CLASS:    edge-case
-    /// REQUIRES: none
-    /// MUTANT:   Ignore Shutdown during the drain.
     #[test]
     fn drain_reset_stream_reports_shutdown() {
         let (tx, rx) = mpsc::channel();

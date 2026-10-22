@@ -568,12 +568,6 @@ mod tests {
 
     use super::*;
 
-    /// PURPOSE:  A failing cloud TTS request must abort the turn with the upstream error, not play silence.
-    /// SCENARIO: A synthesis is requested against the unavailable Edge endpoint.
-    /// ASSERTS:  The call errors with "HTTP 403", the playback buffer stays empty, and a VoxEvent::Error carrying the 403 is emitted.
-    /// CLASS:    regression
-    /// REQUIRES: network (the Edge endpoint must answer to produce the 403)
-    /// MUTANT:   Swallow the synthesis error and return an empty chunk instead of an error.
     #[test]
     fn edge_tts_reports_the_upstream_403_and_leaves_no_audio() {
         let (event_tx, event_rx) = std::sync::mpsc::channel();

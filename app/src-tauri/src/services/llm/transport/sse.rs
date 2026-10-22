@@ -72,12 +72,6 @@ impl SseDecoder {
 mod tests {
     use super::*;
 
-    /// PURPOSE:  A partial SSE frame must not be decoded before its terminator arrives, or the stream emits truncated JSON.
-    /// SCENARIO: The SSE byte stream is fed in two chunks, the first ending mid-JSON.
-    /// ASSERTS:  The first chunk yields only the complete data line and the second chunk yields the remaining line plus [DONE].
-    /// CLASS:    edge-case
-    /// REQUIRES: none
-    /// MUTANT:   Emit the trailing buffer of decode_chunk as a data line when it has no terminator.
     #[test]
     fn sse_decoder_emits_only_complete_data_lines() {
         let mut decoder = SseDecoder::new();

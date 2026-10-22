@@ -328,24 +328,12 @@ mod tests {
         }
     }
 
-    /// PURPOSE:  A well-formed memory model must pass validation.
-    /// SCENARIO: A two-section model is validated.
-    /// ASSERTS:  validate returns Ok.
-    /// CLASS:    happy-path
-    /// REQUIRES: none
-    /// MUTANT:   Make PersonalMemory::validate always return Err.
     #[test]
     fn personal_memory_validates_a_well_formed_model() {
         let model = sample_model();
         assert!(model.validate().is_ok());
     }
 
-    /// PURPOSE:  A memory model with no sections must be refused.
-    /// SCENARIO: A model with an empty section list is validated.
-    /// ASSERTS:  The error message contains "contains no sections".
-    /// CLASS:    edge-case
-    /// REQUIRES: none
-    /// MUTANT:   Allow a model with zero sections in PersonalMemory::validate.
     #[test]
     fn personal_memory_rejects_a_model_without_sections() {
         let model = PersonalMemory { sections: vec![] };
@@ -353,12 +341,6 @@ mod tests {
         assert!(err.to_string().contains("contains no sections"));
     }
 
-    /// PURPOSE:  A blank section title must be refused.
-    /// SCENARIO: A model's first section title is set to whitespace.
-    /// ASSERTS:  The error message contains "empty title".
-    /// CLASS:    edge-case
-    /// REQUIRES: none
-    /// MUTANT:   Accept a whitespace-only section title in PersonalMemory::validate.
     #[test]
     fn personal_memory_rejects_a_blank_section_title() {
         let mut model = sample_model();
@@ -367,12 +349,6 @@ mod tests {
         assert!(err.to_string().contains("empty title"));
     }
 
-    /// PURPOSE:  Two sections with the same title in different cases must be refused.
-    /// SCENARIO: A third section titled "profile" is added next to "Profile".
-    /// ASSERTS:  The error message contains "duplicate section title".
-    /// CLASS:    edge-case
-    /// REQUIRES: none
-    /// MUTANT:   Compare section titles case-sensitively in PersonalMemory::validate.
     #[test]
     fn personal_memory_rejects_a_duplicate_section_title() {
         let mut model = sample_model();
@@ -388,12 +364,6 @@ mod tests {
         assert!(err.to_string().contains("duplicate section title"));
     }
 
-    /// PURPOSE:  A blank block text must be refused.
-    /// SCENARIO: A model's first block text is set to whitespace.
-    /// ASSERTS:  The error message contains "empty text".
-    /// CLASS:    edge-case
-    /// REQUIRES: none
-    /// MUTANT:   Skip the block text check in PersonalMemory::validate.
     #[test]
     fn personal_memory_rejects_a_blank_block_text() {
         let mut model = sample_model();
@@ -402,12 +372,6 @@ mod tests {
         assert!(err.to_string().contains("empty text"));
     }
 
-    /// PURPOSE:  Rendering to markdown and parsing back must preserve the memory and stay valid.
-    /// SCENARIO: A two-section model is rendered and parsed again.
-    /// ASSERTS:  The markdown holds both sections, the parsed model has the same titles, the folded paragraph is one block, and the parsed model validates.
-    /// CLASS:    happy-path
-    /// REQUIRES: none
-    /// MUTANT:   Emit a trailing empty section in render_to_markdown.
     #[test]
     fn personal_memory_markdown_roundtrip_preserves_the_model() {
         let model = sample_model();
@@ -432,12 +396,6 @@ mod tests {
         assert!(parsed.validate().is_ok());
     }
 
-    /// PURPOSE:  Markdown bullets must be stripped and preamble text must not become a section.
-    /// SCENARIO: Markdown with a preamble, bullet lists and a plain paragraph is parsed.
-    /// ASSERTS:  Two sections are parsed, the bullets become three plain blocks, and the parsed model validates.
-    /// CLASS:    happy-path
-    /// REQUIRES: none
-    /// MUTANT:   Keep the leading bullet marker in from_markdown.
     #[test]
     fn from_markdown_keeps_only_the_section_content() {
         let raw = r#"Ignored preamble before any heading
@@ -479,12 +437,6 @@ Enjoys hiking in the Cascades.
         assert!(parsed.validate().is_ok());
     }
 
-    /// PURPOSE:  The consolidation prompt must address sections and blocks by stable handles.
-    /// SCENARIO: A model is rendered into the handle view and the handle map.
-    /// ASSERTS:  The view lists [s1] and [b1] style handles, and the map resolves s1, s2 and b1 to b3 but resolves no unknown handle.
-    /// CLASS:    happy-path
-    /// REQUIRES: none
-    /// MUTANT:   Start the block numbering at 0 in to_handle_format.
     #[test]
     fn to_handle_format_numbers_sections_and_blocks() {
         let model = sample_model();
@@ -506,12 +458,6 @@ Enjoys hiking in the Cascades.
         assert_eq!(map.resolve_block("b4"), None);
     }
 
-    /// PURPOSE:  A section left without blocks must be removed.
-    /// SCENARIO: The blocks of the first section are cleared and the model is pruned.
-    /// ASSERTS:  One section remains and it is the second one.
-    /// CLASS:    happy-path
-    /// REQUIRES: none
-    /// MUTANT:   Make prune_empty_sections a no-op.
     #[test]
     fn prune_empty_sections_drops_sections_without_blocks() {
         let mut model = sample_model();
@@ -523,12 +469,6 @@ Enjoys hiking in the Cascades.
         assert_eq!(model.sections[0].id, "sec_2");
     }
 
-    /// PURPOSE:  The lookup helpers must return the correct indices.
-    /// SCENARIO: The model is searched for known and unknown section and block ids.
-    /// ASSERTS:  The known ids resolve to their indices and the unknown ids resolve to None.
-    /// CLASS:    happy-path
-    /// REQUIRES: none
-    /// MUTANT:   Return the first match for every id in find_block.
     #[test]
     fn find_section_and_find_block_locate_the_right_positions() {
         let model = sample_model();
@@ -542,12 +482,6 @@ Enjoys hiking in the Cascades.
         assert_eq!(model.find_block("blk_99"), None);
     }
 
-    /// PURPOSE:  Draft sections must become a valid memory model with generated ids.
-    /// SCENARIO: A draft with one blank block text is converted.
-    /// ASSERTS:  One section with two blocks remains, the ids are prefixed sec_ and blk_, and the model validates.
-    /// CLASS:    happy-path
-    /// REQUIRES: none
-    /// MUTANT:   Keep blank block texts in from_new_sections.
     #[test]
     fn from_new_sections_builds_a_valid_model_from_drafts() {
         let drafts = vec![NewSectionDraft {

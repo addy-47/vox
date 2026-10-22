@@ -54,9 +54,11 @@ A seam file that cannot reach 10 subtests is either under-tested or not a seam. 
 
 ---
 
-## 3. Mandatory Intent Block
+## 3. Intent Block — mandatory in seam binaries, banned in unit tests
 
-Every test function carries this block. It is the durable output of `/create-test`, and it is what a reviewer reads instead of guessing.
+Every test function in a **seam binary** (`app/src-tauri/tests/`) carries the block below. It is the durable output of `/create-test`, and it is what a reviewer reads instead of guessing.
+
+**Unit tests inside `app/src-tauri/src/` carry no block and no doc comment.** The behaviour-first function name is the documentation: the test sits next to the code it covers, so a block only bloats the file. `MUTANT` seeds and intent blocks live in the seam binaries, where the behaviour is not visible from the code.
 
 ```rust
 /// PURPOSE:  The production defect this test exists to catch, in one sentence.

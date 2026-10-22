@@ -322,12 +322,6 @@ fn is_abbreviation(word: &str) -> bool {
 mod tests {
     use super::*;
 
-    /// PURPOSE:  A clause must be emitted at a strong terminator, or the speech runs on without a pause.
-    /// SCENARIO: A question and a long follow-up sentence are streamed into the chunker.
-    /// ASSERTS:  Two clauses are emitted, the first ends with the question, and the buffer is empty.
-    /// CLASS:    happy-path
-    /// REQUIRES: none
-    /// MUTANT:   Make find_split_point ignore the '?' and '!' terminators.
     #[test]
     fn chunker_strong_terminator_splits_the_clause() {
         let mut c = ClauseChunker::new();
@@ -343,12 +337,6 @@ mod tests {
         assert!(c.is_empty());
     }
 
-    /// PURPOSE:  A newline must end the current clause, or list items are spoken as one run.
-    /// SCENARIO: Two lines are streamed in one push.
-    /// ASSERTS:  The first line is emitted as a clause and the second line stays buffered.
-    /// CLASS:    edge-case
-    /// REQUIRES: none
-    /// MUTANT:   Remove the newline rule from the split search.
     #[test]
     fn chunker_newline_ends_the_previous_clause() {
         let mut c = ClauseChunker::new();
@@ -357,12 +345,6 @@ mod tests {
         assert_eq!(c.buffer(), "Line two is ready");
     }
 
-    /// PURPOSE:  A comma must not break the prosody of an ordinary sentence.
-    /// SCENARIO: A short sentence with one comma and a long sentence with three commas are streamed.
-    /// ASSERTS:  Each input stays a single clause with its commas intact.
-    /// CLASS:    happy-path
-    /// REQUIRES: none
-    /// MUTANT:   Split at every comma.
     #[test]
     fn chunker_comma_in_an_ordinary_sentence_does_not_split() {
         let mut c = ClauseChunker::new();
@@ -382,12 +364,6 @@ mod tests {
         );
     }
 
-    /// PURPOSE:  A long compound sentence must split at a natural conjunction seam, or it buffers forever.
-    /// SCENARIO: A 25-word sentence with a comma and the conjunction "and" is streamed.
-    /// ASSERTS:  Two clauses are emitted, the first ending at the comma before the conjunction.
-    /// CLASS:    edge-case
-    /// REQUIRES: none
-    /// MUTANT:   Lower the compound-sentence word threshold below 22.
     #[test]
     fn chunker_long_runaway_splits_at_the_conjunction_seam() {
         let mut c = ClauseChunker::new();
@@ -406,12 +382,6 @@ mod tests {
         );
     }
 
-    /// PURPOSE:  Sentence periods must survive chunking, or the spoken prosody changes.
-    /// SCENARIO: Three short sentences are streamed.
-    /// ASSERTS:  Three clauses are emitted, each keeping its trailing period, and the flush returns nothing.
-    /// CLASS:    happy-path
-    /// REQUIRES: none
-    /// MUTANT:   Drop the trailing period when a clause is emitted.
     #[test]
     fn chunker_natural_periods_are_preserved_in_the_clause() {
         let mut c = ClauseChunker::new();
@@ -423,12 +393,6 @@ mod tests {
         assert_eq!(c.flush(), None);
     }
 
-    /// PURPOSE:  A decimal point or a version number must not end the sentence.
-    /// SCENARIO: "3.14" and a split "Gemini 1." / "5 Pro" are streamed.
-    /// ASSERTS:  No clause is emitted at the decimal or the version period.
-    /// CLASS:    edge-case
-    /// REQUIRES: none
-    /// MUTANT:   Remove the digit-after-period guard from find_split_point.
     #[test]
     fn chunker_decimal_period_does_not_end_the_clause() {
         let mut c = ClauseChunker::new();
@@ -452,12 +416,6 @@ mod tests {
         );
     }
 
-    /// PURPOSE:  An abbreviation must not end the sentence.
-    /// SCENARIO: "Hello Dr. Smith is here" is streamed, then a longer variant.
-    /// ASSERTS:  No clause is emitted at the abbreviation period.
-    /// CLASS:    edge-case
-    /// REQUIRES: none
-    /// MUTANT:   Remove the is_abbreviation guard from the split search.
     #[test]
     fn chunker_abbreviation_period_does_not_end_the_clause() {
         let mut c = ClauseChunker::new();
@@ -468,12 +426,6 @@ mod tests {
         assert_eq!(chunks2, vec!["Hello Dr. Smith is here with us today."]);
     }
 
-    /// PURPOSE:  Unpunctuated speech must not grow the buffer without bound.
-    /// SCENARIO: Forty words without punctuation are streamed.
-    /// ASSERTS:  A chunk is emitted and the first chunk holds exactly 30 words.
-    /// CLASS:    edge-case
-    /// REQUIRES: none
-    /// MUTANT:   Raise the emergency word ceiling from 30 to 38.
     #[test]
     fn chunker_unpunctuated_text_is_capped_at_thirty_words() {
         let long = (0..40)
@@ -489,12 +441,6 @@ mod tests {
         assert_eq!(chunks[0].split_whitespace().count(), 30);
     }
 
-    /// PURPOSE:  The flush must hand over the buffered tail, and clear must drop it.
-    /// SCENARIO: Text is pushed, flushed, pushed again, and cleared.
-    /// ASSERTS:  The flush returns the trimmed tail once, a second flush returns None, and clear empties the buffer.
-    /// CLASS:    edge-case
-    /// REQUIRES: none
-    /// MUTANT:   Make flush keep the buffer content after returning it.
     #[test]
     fn chunker_flush_returns_the_tail_and_clear_empties_the_buffer() {
         let mut c = ClauseChunker::new();
@@ -510,12 +456,6 @@ mod tests {
         assert_eq!(c.buffer(), "");
     }
 
-    /// PURPOSE:  The abbreviation table must cover the tokens that would otherwise end a sentence early.
-    /// SCENARIO: The abbreviation predicate is called with honorifics, a dotted prefix, a version and a single letter.
-    /// ASSERTS:  Dr, dr, e.g, Mrs, v2, v10 and J are abbreviations; Hello, the empty string and world are not.
-    /// CLASS:    edge-case
-    /// REQUIRES: none
-    /// MUTANT:   Remove the version-number branch from is_abbreviation.
     #[test]
     fn abbreviation_lookup_accepts_honorifics_versions_and_initials() {
         assert!(is_abbreviation("Dr"));
@@ -530,12 +470,6 @@ mod tests {
         assert!(!is_abbreviation("world"));
     }
 
-    /// PURPOSE:  Several terminators in one push must each produce their own clause.
-    /// SCENARIO: A sentence with an exclamation, a question and a long statement is streamed.
-    /// ASSERTS:  Exactly three clauses are emitted, in the original order.
-    /// CLASS:    happy-path
-    /// REQUIRES: none
-    /// MUTANT:   Emit only the first clause found in a push.
     #[test]
     fn chunker_three_terminators_emit_three_clauses() {
         let mut c = ClauseChunker::new();
@@ -554,12 +488,6 @@ mod tests {
         );
     }
 
-    /// PURPOSE:  A one-word exclamation is a conversational opener and must not split the sentence.
-    /// SCENARIO: "Hey! What is up with you today?" is streamed.
-    /// ASSERTS:  One clause is emitted containing both the exclamation and the question.
-    /// CLASS:    edge-case
-    /// REQUIRES: none
-    /// MUTANT:   Remove the exclamation word-count gate.
     #[test]
     fn chunker_short_exclamation_stays_glued_to_the_next_clause() {
         let mut c = ClauseChunker::new();
@@ -568,12 +496,6 @@ mod tests {
         assert_eq!(chunks, vec!["Hey! What is up with you today?"]);
     }
 
-    /// PURPOSE:  A full-clause exclamation must end the clause.
-    /// SCENARIO: "That is absolutely fantastic news! Let's get started now" is streamed.
-    /// ASSERTS:  The exclamation sentence is emitted and the remainder stays buffered.
-    /// CLASS:    happy-path
-    /// REQUIRES: none
-    /// MUTANT:   Raise the exclamation word gate above 4.
     #[test]
     fn chunker_substantive_exclamation_ends_the_clause() {
         let mut c = ClauseChunker::new();
@@ -582,12 +504,6 @@ mod tests {
         assert_eq!(c.buffer(), "Let's get started now");
     }
 
-    /// PURPOSE:  Quotation marks and parentheses must not leak into the next clause.
-    /// SCENARIO: A quoted sentence inside a larger utterance is streamed.
-    /// ASSERTS:  The emitted clause ends with the closing quote and the rest stays buffered.
-    /// CLASS:    edge-case
-    /// REQUIRES: none
-    /// MUTANT:   Stop consuming trailing delimiters after the terminal mark.
     #[test]
     fn chunker_trailing_delimiters_are_consumed_with_the_clause() {
         let mut c = ClauseChunker::new();
@@ -607,13 +523,6 @@ mod tests {
         }
         clauses
     }
-/// PURPOSE:  The same words must become the same clauses no matter how the model
-///           fragments its tokens.
-/// SCENARIO: The same sentence is fed as word tokens and as one chunk.
-/// ASSERTS:  Both fragmentations yield identical clauses.
-/// CLASS:    happy-path
-/// REQUIRES: none
-/// MUTANT:   Make the chunker depend on the incoming token boundaries.
 #[test]
 fn clause_boundaries_do_not_depend_on_token_fragmentation() {
     let text = "Good morning everyone, today we are testing. Dr. Smith is here. How are you doing today? Let's verify this now.";
@@ -639,12 +548,6 @@ fn clause_boundaries_do_not_depend_on_token_fragmentation() {
     assert!(chunker.is_empty(), "the buffer must be empty after a flush");
 }
 
-/// PURPOSE:  A runaway sentence without punctuation must not grow the buffer forever.
-/// SCENARIO: 42 unpunctuated words are streamed.
-/// ASSERTS:  The text is split into a 30-word emergency chunk and the remainder.
-/// CLASS:    edge-case
-/// REQUIRES: none
-/// MUTANT:   Raise the emergency ceiling from 30 words.
 #[test]
 fn unpunctuated_runaway_is_force_chunked_at_thirty_words() {
     let words: Vec<String> = (0..42)
@@ -659,12 +562,6 @@ fn unpunctuated_runaway_is_force_chunked_at_thirty_words() {
     assert_eq!(clauses[1].split_whitespace().count(), 12);
 }
 
-/// PURPOSE:  A comma inside a short sentence must not break the prosody.
-/// SCENARIO: A short sentence with a comma is streamed.
-/// ASSERTS:  It stays one clause.
-/// CLASS:    happy-path
-/// REQUIRES: none
-/// MUTANT:   Split at every comma.
 #[test]
 fn a_short_sentence_with_a_comma_stays_one_clause() {
     let clauses = chunk("Hello my friend, how are you today?");
@@ -672,12 +569,6 @@ fn a_short_sentence_with_a_comma_stays_one_clause() {
     assert_eq!(clauses[0], "Hello my friend, how are you today?");
 }
 
-/// PURPOSE:  The compound seam must not fire below the 22 word threshold.
-/// SCENARIO: An 18 word sentence with a comma after the tenth word is streamed.
-/// ASSERTS:  It stays one clause: the seam search needs a long sentence.
-/// CLASS:    edge-case
-/// REQUIRES: none
-/// MUTANT:   Lower the compound-sentence threshold from 22 words to 2.
 #[test]
 fn a_mid_length_sentence_with_a_comma_stays_one_clause() {
     let text =
@@ -691,12 +582,6 @@ fn a_mid_length_sentence_with_a_comma_stays_one_clause() {
     );
 }
 
-/// PURPOSE:  A long compound sentence must be split at a natural seam.
-/// SCENARIO: A 24-word sentence with a comma and a coordinating conjunction is streamed.
-/// ASSERTS:  It becomes two clauses split at the conjunction seam.
-/// CLASS:    edge-case
-/// REQUIRES: none
-/// MUTANT:   Lower the compound-sentence threshold below 22 words.
 #[test]
 fn a_long_compound_sentence_splits_at_the_conjunction_seam() {
     let text = "We have carefully verified that all system components and background services are running smoothly, and we can proceed with the live rollout now.";
@@ -707,12 +592,6 @@ fn a_long_compound_sentence_splits_at_the_conjunction_seam() {
     assert_eq!(clauses[1], "and we can proceed with the live rollout now.");
 }
 
-/// PURPOSE:  An abbreviation must not end the sentence.
-/// SCENARIO: "Dr. Smith is here." is streamed.
-/// ASSERTS:  It stays one clause.
-/// CLASS:    edge-case
-/// REQUIRES: none
-/// MUTANT:   Remove the abbreviation guard.
 #[test]
 fn an_abbreviation_does_not_end_the_sentence() {
     let clauses = chunk("Dr. Smith is here.");
@@ -720,12 +599,6 @@ fn an_abbreviation_does_not_end_the_sentence() {
     assert_eq!(clauses[0], "Dr. Smith is here.");
 }
 
-/// PURPOSE:  A decimal number must not end the sentence.
-/// SCENARIO: "The value is 3.14 exactly." is streamed.
-/// ASSERTS:  It stays one clause.
-/// CLASS:    edge-case
-/// REQUIRES: none
-/// MUTANT:   Remove the decimal guard.
 #[test]
 fn a_decimal_number_does_not_end_the_sentence() {
     let clauses = chunk("The value is 3.14 exactly.");
@@ -733,24 +606,12 @@ fn a_decimal_number_does_not_end_the_sentence() {
     assert_eq!(clauses[0], "The value is 3.14 exactly.");
 }
 
-/// PURPOSE:  A filename must not be split at its dot.
-/// SCENARIO: "Open config.toml now." is streamed.
-/// ASSERTS:  It stays one clause.
-/// CLASS:    edge-case
-/// REQUIRES: none
-/// MUTANT:   Split at a period that is not followed by whitespace.
 #[test]
 fn a_period_inside_a_word_does_not_split() {
     let clauses = chunk("Open config.toml now.");
     assert_eq!(clauses.len(), 1, "a mid-token period must not split");
 }
 
-/// PURPOSE:  A question ends a sentence even after a single word.
-/// SCENARIO: "Why? Because." is streamed.
-/// ASSERTS:  It becomes two clauses.
-/// CLASS:    happy-path
-/// REQUIRES: none
-/// MUTANT:   Require two words before a question mark splits.
 #[test]
 fn a_question_mark_ends_the_clause() {
     let clauses = chunk("Why? Because.");
@@ -758,24 +619,12 @@ fn a_question_mark_ends_the_clause() {
     assert_eq!(clauses[0], "Why?");
 }
 
-/// PURPOSE:  A short exclamation is a conversational opener and must not split.
-/// SCENARIO: "Hey! Sure thing." is streamed.
-/// ASSERTS:  It stays one clause.
-/// CLASS:    edge-case
-/// REQUIRES: none
-/// MUTANT:   Split at every exclamation mark.
 #[test]
 fn a_short_exclamation_does_not_split() {
     let clauses = chunk("Hey! Sure thing.");
     assert_eq!(clauses.len(), 1, "a three-word opener must stay glued");
 }
 
-/// PURPOSE:  An exclamation after a full clause ends it.
-/// SCENARIO: "That was a long answer indeed! Next." is streamed.
-/// ASSERTS:  It becomes two clauses.
-/// CLASS:    happy-path
-/// REQUIRES: none
-/// MUTANT:   Raise the exclamation word gate.
 #[test]
 fn a_long_exclamation_ends_the_clause() {
     let clauses = chunk("That was a long answer indeed! Next.");
@@ -783,24 +632,12 @@ fn a_long_exclamation_ends_the_clause() {
     assert_eq!(clauses[0], "That was a long answer indeed!");
 }
 
-/// PURPOSE:  A newline ends a list item.
-/// SCENARIO: A three-word line followed by a newline is streamed.
-/// ASSERTS:  It becomes two clauses.
-/// CLASS:    edge-case
-/// REQUIRES: none
-/// MUTANT:   Remove the newline split rule.
 #[test]
 fn a_newline_ends_a_list_item() {
     let clauses = chunk("first item line\nsecond item line");
     assert_eq!(clauses.len(), 2, "a newline must end the list item");
 }
 
-/// PURPOSE:  A semicolon inside a long clause is a natural seam.
-/// SCENARIO: A 25-word sentence with a semicolon is streamed.
-/// ASSERTS:  It splits at the semicolon.
-/// CLASS:    edge-case
-/// REQUIRES: none
-/// MUTANT:   Drop the semicolon from the compound seam search.
 #[test]
 fn a_semicolon_in_a_long_clause_is_a_split_point() {
     let text = "The rollout is scheduled for tomorrow morning after the review board has approved the final checklist ; and signed the release document for production use today.";
@@ -814,12 +651,6 @@ fn a_semicolon_in_a_long_clause_is_a_split_point() {
     );
 }
 
-/// PURPOSE:  The flush must hand over the unpunctuated tail exactly once.
-/// SCENARIO: An unpunctuated tail is buffered and then flushed.
-/// ASSERTS:  The tail is returned and the buffer is empty afterwards.
-/// CLASS:    edge-case
-/// REQUIRES: none
-/// MUTANT:   Keep the buffer after a flush.
 #[test]
 fn flush_returns_the_tail_and_empties_the_buffer() {
     let mut chunker = ClauseChunker::new();
@@ -831,12 +662,6 @@ fn flush_returns_the_tail_and_empties_the_buffer() {
     assert!(chunker.flush().is_none(), "a second flush must return nothing");
 }
 
-/// PURPOSE:  A cancelled turn must not leave buffered speech behind.
-/// SCENARIO: A cancelled turn clears the chunker buffer.
-/// ASSERTS:  Clear empties the buffer.
-/// CLASS:    suppression
-/// REQUIRES: none
-/// MUTANT:   Make clear() a no-op.
 #[test]
 fn clear_drops_the_buffered_text() {
     let mut chunker = ClauseChunker::new();

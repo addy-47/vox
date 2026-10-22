@@ -486,12 +486,6 @@ mod tests {
         state
     }
 
-    /// PURPOSE:  Muting must be driven by the shared flag, not a shadow copy.
-    /// SCENARIO: The shared suppression flag is cleared and then set.
-    /// ASSERTS:  should_suppress_audio tracks the atomic in both directions.
-    /// CLASS:    happy-path
-    /// REQUIRES: none
-    /// MUTANT:   Read the flag only once (cache it).
     #[test]
     fn audio_suppressed_flag_controls_suppression() {
         let suppressed = Arc::new(AtomicBool::new(false));
@@ -500,12 +494,6 @@ mod tests {
         assert!(should_suppress_audio(&suppressed));
     }
 
-    /// PURPOSE:  Dictation must submit the spoken span, not the whole capture window.
-    /// SCENARIO: A capture window with speech between sample 100 and 900 is trimmed.
-    /// ASSERTS:  With speech from sample 100 to 900 the slice is [100, 900).
-    /// CLASS:    happy-path
-    /// REQUIRES: none
-    /// MUTANT:   Return the whole buffer when speech was detected.
     #[test]
     fn trim_window_keeps_span_from_first_to_last_speech() {
         let mut s = window_state();
@@ -524,12 +512,6 @@ mod tests {
         assert_eq!(sliced.last().copied(), Some(899.0));
     }
 
-    /// PURPOSE:  A detector that clicks on a single frame must not cut the clip.
-    /// SCENARIO: A capture window with a single short speech span is trimmed.
-    /// ASSERTS:  A span below the minimum falls back to the full buffer.
-    /// CLASS:    edge-case
-    /// REQUIRES: none
-    /// MUTANT:   Remove the `span < VAD_MIN_UTTERANCE_SAMPLES` fallback.
     #[test]
     fn trim_window_falls_back_to_full_buffer_for_short_span() {
         let mut s = window_state();
@@ -541,12 +523,6 @@ mod tests {
         assert_eq!(trim_window(&s, raw_len).len(), raw_len);
     }
 
-    /// PURPOSE:  A window with no detected speech must produce nothing, not noise.
-    /// SCENARIO: A capture window with no detected speech is trimmed.
-    /// ASSERTS:  trim_window returns an empty slice when speech was not detected.
-    /// CLASS:    suppression
-    /// REQUIRES: none
-    /// MUTANT:   Remove the `!window_speech_detected` guard.
     #[test]
     fn trim_window_returns_empty_without_speech() {
         let mut s = window_state();
@@ -558,12 +534,6 @@ mod tests {
         assert!(trim_window(&s, raw_len).is_empty());
     }
 
-    /// PURPOSE:  A stale end marker must not panic or over-read the buffer.
-    /// SCENARIO: A capture window with an end marker past the buffer length is trimmed.
-    /// ASSERTS:  An end marker past `raw_len` clamps to `raw_len`.
-    /// CLASS:    edge-case
-    /// REQUIRES: none
-    /// MUTANT:   Remove `.min(raw_len)` from the end index.
     #[test]
     fn trim_window_clamps_oversized_end_marker() {
         let mut s = window_state();

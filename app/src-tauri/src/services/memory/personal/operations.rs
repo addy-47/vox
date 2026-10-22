@@ -405,12 +405,6 @@ mod tests {
         }
     }
 
-    /// PURPOSE:  Every consolidation output kind must resolve to a concrete memory operation.
-    /// SCENARIO: New, add, update and delete outputs are resolved against the handle map.
-    /// ASSERTS:  Four ops resolve, none is rejected, and each carries the resolved section and block ids.
-    /// CLASS:    happy-path
-    /// REQUIRES: none
-    /// MUTANT:   Drop the CreateSection branch from resolve_operations.
     #[test]
     fn resolve_operations_maps_every_output_kind_to_a_resolved_op() {
         let memory = sample_model();
@@ -473,12 +467,6 @@ mod tests {
         );
     }
 
-    /// PURPOSE:  One invalid operation must not discard the valid ones.
-    /// SCENARIO: Six invalid operations and one valid delete are resolved.
-    /// ASSERTS:  Only the valid delete resolves and the six invalid ones are rejected.
-    /// CLASS:    edge-case
-    /// REQUIRES: none
-    /// MUTANT:   Reject the whole batch when any single operation is invalid.
     #[test]
     fn resolve_operations_rejects_only_the_invalid_operations() {
         let memory = sample_model();
@@ -533,12 +521,6 @@ mod tests {
         assert_eq!(rejected.len(), 6);
     }
 
-    /// PURPOSE:  Accepted operations must be written into the memory model.
-    /// SCENARIO: CreateSection, CreateBlock and UpdateBlock ops are applied.
-    /// ASSERTS:  The report has no rejections, the model has three sections, the updated block holds the new text, and the new block and section exist.
-    /// CLASS:    happy-path
-    /// REQUIRES: none
-    /// MUTANT:   Skip the UpdateBlock branch in apply_operations.
     #[test]
     fn apply_operations_mutates_the_memory_model() {
         let memory = sample_model();
@@ -577,12 +559,6 @@ mod tests {
         assert_eq!(report.memory.sections[2].blocks[0].text, "Reads Sci-Fi.");
     }
 
-    /// PURPOSE:  A duplicate section title must be refused, or the memory grows duplicate sections.
-    /// SCENARIO: A CreateSection op with a title that differs only in case is applied.
-    /// ASSERTS:  The op is rejected with a reason containing "already exists".
-    /// CLASS:    edge-case
-    /// REQUIRES: none
-    /// MUTANT:   Compare section titles case-sensitively in apply_operations.
     #[test]
     fn apply_operations_rejects_a_duplicate_section_title() {
         let memory = sample_model();
@@ -596,12 +572,6 @@ mod tests {
         assert!(report.rejected[0].reason.contains("already exists"));
     }
 
-    /// PURPOSE:  An operation on a missing target must be refused instead of silently creating it.
-    /// SCENARIO: Create, update and delete ops targeting missing ids are applied.
-    /// ASSERTS:  All three are rejected with a reason containing "no longer exists".
-    /// CLASS:    edge-case
-    /// REQUIRES: none
-    /// MUTANT:   Create the missing target instead of rejecting the operation.
     #[test]
     fn apply_operations_rejects_operations_on_missing_targets() {
         let memory = sample_model();
@@ -627,12 +597,6 @@ mod tests {
         assert!(report.rejected[2].reason.contains("no longer exists"));
     }
 
-    /// PURPOSE:  A section left without blocks must be removed from the memory.
-    /// SCENARIO: The only block of the second section is deleted.
-    /// ASSERTS:  The report has no rejections, one section remains, and the emptied section is gone.
-    /// CLASS:    happy-path
-    /// REQUIRES: none
-    /// MUTANT:   Skip the empty-section prune after applying a delete.
     #[test]
     fn apply_operations_prunes_a_section_left_empty() {
         let memory = sample_model();
@@ -649,12 +613,6 @@ mod tests {
         assert_eq!(report.memory.find_section("sec_beta"), None);
     }
 
-    /// PURPOSE:  A fenced JSON block must be unwrapped before parsing.
-    /// SCENARIO: Raw JSON, a json-tagged fence and a plain fence are passed.
-    /// ASSERTS:  Each yields the bare JSON object text.
-    /// CLASS:    happy-path
-    /// REQUIRES: none
-    /// MUTANT:   Return the raw text unchanged from extract_json_payload.
     #[test]
     fn extract_json_payload_strips_code_fences() {
         assert_eq!(

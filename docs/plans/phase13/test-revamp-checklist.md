@@ -223,7 +223,7 @@ Legend: `[ ]` pending · `[x]` done · `[~]` folded into another binary · `[-]`
 - [x] Wall-clock watchdogs and sleep-based absence checks replaced by log or server acknowledgements
 - [!] F-19 — packaged voice seeding fails on upgraded databases
 - [!] F-20 — private-mode suppression has no acknowledgement channel
-- [x] Final sweep — every `src` unit test carries an intent block and a behaviour-first name (122 renamed, 175 blocks completed)
+- [x] Final sweep — every `src` unit test carries a behaviour-first name (122 renamed); the intent blocks live only in the seam binaries, and the `src` unit tests carry none (1157 lines of block removed)
 - [x] Remote control binaries gated behind `./scripts/test.sh remote`
 - [x] `all` tier now excludes the remote binaries
 - [x] Full non-remote suite green: 413 passed, 4 skipped

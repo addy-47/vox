@@ -166,12 +166,6 @@ mod tests {
         buf
     }
 
-    /// PURPOSE:  The model architecture and context length must come from the GGUF header, or the wrong model is loaded.
-    /// SCENARIO: A minimal version-3 GGUF header is parsed.
-    /// ASSERTS:  The architecture is "qwen2" and the context length is 32768.
-    /// CLASS:    happy-path
-    /// REQUIRES: none
-    /// MUTANT:   Skip the general.architecture key when building the facts.
     #[test]
     fn gguf_header_reads_architecture_and_context_length() {
         let facts = parse_gguf_header(&minimal_header()).expect("header must parse");
@@ -179,12 +173,6 @@ mod tests {
         assert_eq!(facts.context_length, Some(32768));
     }
 
-    /// PURPOSE:  A file that is not GGUF must not yield model facts.
-    /// SCENARIO: The magic bytes of a valid header are corrupted.
-    /// ASSERTS:  parse_gguf_header returns None.
-    /// CLASS:    edge-case
-    /// REQUIRES: none
-    /// MUTANT:   Remove the GGUF magic check from parse_gguf_header.
     #[test]
     fn gguf_header_with_wrong_magic_is_rejected() {
         let mut header = minimal_header();
@@ -192,12 +180,6 @@ mod tests {
         assert!(parse_gguf_header(&header).is_none());
     }
 
-    /// PURPOSE:  A GGUF version the parser does not implement must not yield model facts.
-    /// SCENARIO: The version field of a valid header is set to 1.
-    /// ASSERTS:  parse_gguf_header returns None.
-    /// CLASS:    edge-case
-    /// REQUIRES: none
-    /// MUTANT:   Accept any version number in parse_gguf_header.
     #[test]
     fn gguf_header_with_unsupported_version_is_rejected() {
         let mut header = minimal_header();
@@ -205,23 +187,11 @@ mod tests {
         assert!(parse_gguf_header(&header).is_none());
     }
 
-    /// PURPOSE:  A truncated GGUF file must not produce partial model facts.
-    /// SCENARIO: A valid header is cut to its first 10 bytes.
-    /// ASSERTS:  parse_gguf_header returns None.
-    /// CLASS:    edge-case
-    /// REQUIRES: none
-    /// MUTANT:   Return partial facts when the buffer runs out mid-header.
     #[test]
     fn truncated_gguf_header_yields_no_facts() {
         assert!(parse_gguf_header(&minimal_header()[..10]).is_none());
     }
 
-    /// PURPOSE:  A model file that does not exist must not yield model facts.
-    /// SCENARIO: read_gguf_facts is called with a path that is not present.
-    /// ASSERTS:  The result is None.
-    /// CLASS:    edge-case
-    /// REQUIRES: none
-    /// MUTANT:   Return default facts instead of None when the file cannot be opened.
     #[test]
     fn missing_gguf_file_yields_no_facts() {
         let missing = std::path::Path::new("/nonexistent/model.gguf");

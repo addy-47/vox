@@ -177,12 +177,6 @@ async fn process_stage1_item(conn: &Connection, item: &QueueItem) -> Result<Stag
 mod tests {
     use super::*;
 
-    /// PURPOSE:  Duplicate detection must ignore case and punctuation, or the same memory is stored twice.
-    /// SCENARIO: Empty, differently cased, punctuation-variant, disjoint and partially overlapping pairs are compared.
-    /// ASSERTS:  Identical pairs score 1.0, disjoint pairs 0.0, and a two-of-four overlap scores 0.5.
-    /// CLASS:    happy-path
-    /// REQUIRES: none
-    /// MUTANT:   Remove the lowercase and punctuation strip from jaccard_similarity.
     #[test]
     fn jaccard_similarity_normalizes_case_and_punctuation() {
         assert_eq!(jaccard_similarity("", ""), 1.0);

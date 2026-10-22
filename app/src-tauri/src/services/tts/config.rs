@@ -293,12 +293,6 @@ mod tests {
     use super::*;
     use crate::core::defaults::DEFAULT_TTS_SPEED;
 
-    /// PURPOSE:  A fresh install must seed the default provider's default voice.
-    /// SCENARIO: The default TtsSettings are read and resolved.
-    /// ASSERTS:  The category is "embedded", the model is DEFAULT_TTS_PROVIDER, the voice is the default Supertonic voice, and the provider config is Supertonic.
-    /// CLASS:    happy-path
-    /// REQUIRES: none
-    /// MUTANT:   Leave active_voice_id empty in TtsSettings::default.
     #[test]
     fn tts_settings_default_to_the_embedded_provider_and_voice() {
         let settings = TtsSettings::default();
@@ -317,12 +311,6 @@ mod tests {
         assert_eq!(provider_config, TtsProviderConfig::Supertonic);
     }
 
-    /// PURPOSE:  The default provider must be one whose weights ship with the bundle, because the cloud Edge endpoint answers 403.
-    /// SCENARIO: The default TtsActiveProvider is read.
-    /// ASSERTS:  The default is Supertonic.
-    /// CLASS:    regression
-    /// REQUIRES: none
-    /// MUTANT:   Change the default TtsActiveProvider to EdgeTts.
     #[test]
     fn default_tts_provider_runs_offline() {
         // The Microsoft ReadAloud endpoint answers HTTP 403 for every client
@@ -331,12 +319,6 @@ mod tests {
         assert_eq!(TtsActiveProvider::default(), TtsActiveProvider::Supertonic);
     }
 
-    /// PURPOSE:  The chosen provider, voice and speed must reach the provider config.
-    /// SCENARIO: Cloud Edge, server Chatterbox, cloud Azure and cloud Google selections are resolved in turn.
-    /// ASSERTS:  Each selection produces its provider config with the expected voice, endpoint, speed, remote path, key and project override.
-    /// CLASS:    happy-path
-    /// REQUIRES: none
-    /// MUTANT:   Drop the speed argument when building the ChatterboxRemote config.
     #[test]
     fn tts_settings_resolve_server_and_cloud_providers() {
         let mut settings = TtsSettings {
