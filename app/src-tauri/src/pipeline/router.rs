@@ -155,16 +155,16 @@ fn route_event<R: tauri::Runtime + 'static>(app: &AppHandle<R>, state: &AppState
 
     match event {
         // Dictation Track Dispatch
-        VoxEvent::PttStart {
-            owner: InteractionOwner::Dictation,
+        VoxEvent::PttStart { owner }
+        | VoxEvent::PttStop { owner }
+        | VoxEvent::PttCancel { owner }
+            if owner == InteractionOwner::Dictation
+                || ctx.owner == InteractionOwner::Dictation
+                || state.pipeline.dictation_state() == InteractionState::Listening =>
+        {
+            super::dictation::handle_event(app, state, event);
         }
-        | VoxEvent::PttStop {
-            owner: InteractionOwner::Dictation,
-        }
-        | VoxEvent::PttCancel {
-            owner: InteractionOwner::Dictation,
-        }
-        | VoxEvent::SpeechStart {
+        VoxEvent::SpeechStart {
             owner: InteractionOwner::Dictation,
         }
         | VoxEvent::SpeechEnd {

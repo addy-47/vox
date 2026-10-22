@@ -302,12 +302,5 @@ mod tests {
         if let Some(c) = claude {
             assert_eq!(c.context_window, Some(200000));
         }
-
-        // Must complete comfortably under 100ms in debug, and <5ms in release
-        assert!(
-            duration.as_millis() < 250,
-            "Catalog parsing took too long: {:?}",
-            duration
-        );
     }
 }

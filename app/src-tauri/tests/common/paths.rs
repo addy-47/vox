@@ -34,6 +34,11 @@ pub fn get_asset_path(filename: &str) -> PathBuf {
     );
 }
 
+/// Resolves the test dictation history fixture path in `tests/assets/`.
+pub fn get_dictation_fixture_path() -> PathBuf {
+    get_asset_path(vox_lib::utils::paths::DICTATION_HISTORY_FILENAME)
+}
+
 /// Resolves the local Nemotron STT model directory.
 pub fn get_nemotron_model_dir() -> PathBuf {
     vox_lib::utils::paths::init();
@@ -151,6 +156,10 @@ impl TempPathsGuard {
             let _ = std::fs::copy(&asset_db, &target_db);
         }
 
+        // Prepare clean data/history/ directory for test dictation output
+        let data_history_dir = temp_path.join("data").join("history");
+        let _ = std::fs::create_dir_all(&data_history_dir);
+
         // Symlink models directory from real models if available to enable test fixtures
         if let Some(home) = dirs::home_dir() {
             let real_models = std::env::var("VOX_MODELS_DIR")
@@ -179,6 +188,19 @@ impl TempPathsGuard {
     pub fn temp_dir(&self) -> std::path::PathBuf {
         self._dir.path().to_path_buf()
     }
+
+    /// Seeds dictation history fixture from `tests/assets/dictation.jsonl` into the sandbox.
+    pub fn seed_dictation_history(&self) {
+        let asset_dictation = get_dictation_fixture_path();
+        if asset_dictation.exists() {
+            let target_dictation = self
+                .temp_dir()
+                .join("data")
+                .join("history")
+                .join(vox_lib::utils::paths::DICTATION_HISTORY_FILENAME);
+            let _ = std::fs::copy(&asset_dictation, &target_dictation);
+        }
+    }
 }
 
 impl Drop for TempPathsGuard {
@@ -188,10 +210,11 @@ impl Drop for TempPathsGuard {
             vox_lib::utils::paths::init_with_root(std::path::PathBuf::from(prev));
         } else {
             std::env::remove_var("VOX_HOME");
-            // Reset back to user default vox home
-            if let Some(home) = dirs::home_dir() {
-                vox_lib::utils::paths::init_with_root(home.join(".vox"));
-            }
+            // DO NOT reset back to user default ~/.vox. Leaving PATHS pointing to
+            // an isolated dummy sandbox prevents subsequent tests or async workers
+            // from ever mutating the user's real ~/.vox directory.
+            let dummy = std::env::temp_dir().join("vox_test_isolated_dead");
+            vox_lib::utils::paths::init_with_root(dummy);
         }
     }
 }

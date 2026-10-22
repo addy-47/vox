@@ -249,6 +249,7 @@ pub fn handle_speech_start(
 ) {
     state.in_speech = true;
     state.speech_sample_counter = 0;
+    state.voiced_samples = 0;
     handles
         .incomplete_clause_hint
         .store(false, Ordering::Relaxed);
@@ -322,11 +323,13 @@ pub fn handle_speech_end(
     stt_tx: &mpsc::Sender<SttCommand>,
     vox_event_tx: Option<&mpsc::Sender<VoxEvent>>,
 ) {
+    let voiced_samples = state.voiced_samples;
     state.in_speech = false;
     state.onset_score = 0.0;
     state.active_frames = 0;
     state.inactive_frames = 0;
     state.speech_sample_counter = 0;
+    state.voiced_samples = 0;
     handles
         .incomplete_clause_hint
         .store(false, Ordering::Relaxed);
@@ -347,7 +350,7 @@ pub fn handle_speech_end(
 
     vad.flush();
 
-    if state.utterance_buffer.len() >= VAD_MIN_UTTERANCE_SAMPLES && state.realtime_tx.is_none() {
+    if voiced_samples >= VAD_MIN_UTTERANCE_SAMPLES && state.realtime_tx.is_none() {
         if let Err(e) = stt_tx.send(SttCommand::Final {
             turn_id: state.current_turn_id,
             audio: state.utterance_buffer.clone(),
@@ -425,6 +428,7 @@ pub fn process_continuous_segmentation(
 
             if state.onset_score >= required_onset_score {
                 handle_speech_start(state, handles, stt_tx, vox_event_tx);
+                state.voiced_samples += chunk.len();
                 accumulate_speech_frames(chunk, state, stt_tx);
             } else {
                 // Retain sub-threshold onset frames in pre-roll so the entire rising edge is preserved
@@ -461,6 +465,7 @@ pub fn process_continuous_segmentation(
             }
             state.active_frames += 1;
             state.inactive_frames = 0;
+            state.voiced_samples += chunk.len();
             accumulate_speech_frames(chunk, state, stt_tx);
         } else {
             state.inactive_frames += 1;
@@ -599,6 +604,7 @@ mod tests {
                 audio_suppressed: Arc::new(AtomicBool::new(false)),
                 engine_shutdown: Arc::new(AtomicBool::new(false)),
                 dropped_counter: Arc::new(AtomicU64::new(0)),
+                purged_frames_counter: Arc::new(AtomicU64::new(0)),
                 ingestion_gate: Arc::new(AtomicBool::new(true)),
                 owner_atomic: Arc::new(std::sync::atomic::AtomicU32::new(
                     InteractionOwner::Assistant as u32,
@@ -865,7 +871,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "F-14: minimum-utterance guard unreachable while early-utterance hangover is 50 frames"]
     fn utterance_below_minimum_emits_no_final() {
         let mut rig = Rig::new(32, 100, 0.01);
         rig.step(true);

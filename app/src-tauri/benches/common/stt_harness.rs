@@ -112,6 +112,7 @@ pub fn benchmark_streaming_provider(
         audio_suppressed: Arc::new(AtomicBool::new(false)),
         engine_shutdown: engine_shutdown.clone(),
         dropped_counter: Arc::new(AtomicU64::new(0)),
+        purged_frames_counter: Arc::new(AtomicU64::new(0)),
         ingestion_gate: Arc::new(AtomicBool::new(true)),
         owner_atomic: Arc::new(AtomicU32::new(
             vox_lib::core::events::InteractionOwner::Assistant as u32,

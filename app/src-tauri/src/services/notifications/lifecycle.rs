@@ -75,7 +75,7 @@ pub async fn dictation_listening<R: tauri::Runtime>(app: &AppHandle<R>, db: &Vox
     };
 
     let title = "Dictation";
-    let message = format!("<b>Listening...</b> Speak clearly{}", auto_stop_text);
+    let message = format!("Listening... Speak clearly{}", auto_stop_text);
     let server_id = show_replaceable_toast(title, &message, Severity::Info, LIFECYCLE_RESIDENT_MS);
     if server_id == 0 {
         notify_transient(
@@ -110,10 +110,10 @@ pub fn dictation_live_update(partial_text: &str) {
     }
     LIFECYCLE_LAST_UPDATE_MS.store(now, Ordering::Relaxed);
     let snippet = truncate_partial(partial_text);
-    let body = format!("<b>Listening...</b>\n<i>\"{}\"</i>", snippet);
+    let body = format!("\"{}\"", snippet);
     update_replaceable_toast(
         server_id,
-        "Dictation",
+        "Listening...",
         &body,
         Severity::Info,
         LIFECYCLE_RESIDENT_MS,

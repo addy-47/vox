@@ -182,7 +182,7 @@ fn check_linux_audio_sink_ports() -> Option<AudioOutputMode> {
                 if trimmed.starts_with("active port:")
                     && (trimmed.contains("headphone") || trimmed.contains("headset"))
                 {
-                    log::info!(
+                    log::debug!(
                         "[Audio::Route] Linux PipeWire/PulseAudio active port is headset: {}",
                         trimmed
                     );

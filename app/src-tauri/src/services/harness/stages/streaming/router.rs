@@ -105,8 +105,11 @@ impl StreamRoutingStage {
         response_rx: Receiver<LlmResponse>,
     ) -> Result<StreamPassOutcome, String> {
         let mut saw_finished = false;
+        let timeout_interval = std::time::Duration::from_millis(100);
+        let max_idle = std::time::Duration::from_secs(30);
+        let mut last_activity = std::time::Instant::now();
 
-        while let Ok(response) = response_rx.recv() {
+        loop {
             if handles.cancel.load(Ordering::Relaxed) {
                 log::info!(
                     "[Harness::Stream] Stream cancelled (turn {})",
@@ -117,6 +120,26 @@ impl StreamRoutingStage {
                     partial_text: handles.accumulator.lock().assistant_response.clone(),
                 });
             }
+
+            let response = match response_rx.recv_timeout(timeout_interval) {
+                Ok(resp) => {
+                    last_activity = std::time::Instant::now();
+                    resp
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                    if last_activity.elapsed() > max_idle {
+                        log::error!(
+                            "[Harness::Stream] Stream timed out after 30s idle (turn {})",
+                            handles.turn_id
+                        );
+                        return Err(format!("LLM provider response timed out after {:?}", max_idle));
+                    }
+                    continue;
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                    break;
+                }
+            };
 
             match response {
                 LlmResponse::Token(token) => {

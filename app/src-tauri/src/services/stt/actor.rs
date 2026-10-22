@@ -75,14 +75,15 @@ fn coalesce_partials(
     } = cmd
     {
         let mut skipped = 0;
+        let mut current_recycle_tx = recycle_tx;
         while let Ok(next_cmd) = rx.try_recv() {
             match next_cmd {
                 SttCommand::Partial {
                     turn_id: next_tid,
                     audio: next_audio,
-                    recycle_tx: _,
+                    recycle_tx: next_recycle_tx,
                 } => {
-                    if let Err(e) = recycle_tx.try_send(audio) {
+                    if let Err(e) = current_recycle_tx.try_send(audio) {
                         log::warn!(
                             "[STT] Failed to recycle previous partial audio buffer: {}",
                             e
@@ -90,6 +91,7 @@ fn coalesce_partials(
                     }
                     turn_id = next_tid;
                     audio = next_audio;
+                    current_recycle_tx = next_recycle_tx;
                     skipped += 1;
                 }
                 other => {
@@ -104,7 +106,7 @@ fn coalesce_partials(
         SttCommand::Partial {
             turn_id,
             audio,
-            recycle_tx,
+            recycle_tx: current_recycle_tx,
         }
     } else {
         cmd
@@ -577,7 +579,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "F-15: coalescing recycles into the first partial's channel and leaks later buffers"]
     fn coalesce_partials_keeps_latest_audio_and_recycles_earlier_buffers() {
         let (tx, rx) = mpsc::channel();
         let (first, first_rx) = partial(0, vec![0.0]);

@@ -48,7 +48,7 @@ use vox_lib::{
 fn passive_streaming_segments_speech_and_suppresses_silence() {
     let test_deadline = Instant::now() + Duration::from_secs(60);
 
-    vox_lib::utils::paths::init();
+    let _guard = common::paths::TempPathsGuard::new();
     let app = common::harness::get_test_app_handle();
 
     // 1. Setup production STT worker with local Nemotron

@@ -104,6 +104,11 @@ fn run_event_loop(
             }
         };
 
+        if matches!(event, PersistenceEvent::Shutdown) {
+            log::info!("[Persistence::Worker] Shutdown event received. Exiting");
+            break;
+        }
+
         if is_private_mode.load(Ordering::Relaxed) {
             log_skipped_private_event(&event);
             continue;

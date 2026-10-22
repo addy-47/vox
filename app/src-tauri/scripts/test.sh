@@ -23,6 +23,15 @@ export VOX_MODELS_DIR="${VOX_MODELS_DIR:-$HOME/.vox/models}"
 export RAYON_NUM_THREADS="${RAYON_NUM_THREADS:-$(nproc)}"
 export OMP_NUM_THREADS="${OMP_NUM_THREADS:-$(nproc)}"
 
+if [ -z "${VOX_HOME:-}" ]; then
+  TEST_SANDBOX_DIR=$(mktemp -d -t vox-test-sandbox-XXXXXX)
+  export VOX_HOME="$TEST_SANDBOX_DIR"
+  cleanup_test_sandbox() {
+    rm -rf "$TEST_SANDBOX_DIR"
+  }
+  trap cleanup_test_sandbox EXIT
+fi
+
 run() {
   cargo nextest run "$@" --release --test-threads=1 --no-fail-fast
 }

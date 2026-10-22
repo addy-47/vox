@@ -5,7 +5,10 @@ use crate::{
     persistence::VoxDb,
     pipeline::dictation::DictationOutputMode,
     services::{
-        dictation::{clipboard, input::create_input_adapter},
+        dictation::{
+            clipboard,
+            input::{create_input_adapter, SystemInputAdapter},
+        },
         notifications::lifecycle::{self, LifecycleCard},
     },
 };
@@ -50,12 +53,12 @@ async fn dispatch_to_clipboard<R: tauri::Runtime>(
         "[Dictation::Trace] OutputRouter: Successfully wrote transcript to system clipboard."
     );
     let snippet = format_paste_snippet(text);
-    let msg = format!("<b>Saved to clipboard</b> (press Ctrl+V):\n\"{}\"", snippet);
+    let msg = format!("\"{}\" (press Ctrl+V to paste)", snippet);
     lifecycle::dictation_terminal(
         app,
         db,
         LifecycleCard {
-            title: "Dictation Copied",
+            title: "Saved to Clipboard",
             message: &msg,
             severity: Severity::Info,
             duration_ms: 3000,
@@ -71,11 +74,21 @@ async fn dispatch_to_paste<R: tauri::Runtime>(
     db: &VoxDb,
     text: &str,
 ) -> Result<(), DictationError> {
+    let input_adapter = create_input_adapter();
+    dispatch_to_paste_with_adapter(app, db, text, input_adapter.as_ref()).await
+}
+
+/// Simulates OS paste using the provided adapter.
+pub async fn dispatch_to_paste_with_adapter<R: tauri::Runtime>(
+    app: &AppHandle<R>,
+    db: &VoxDb,
+    text: &str,
+    input_adapter: &dyn SystemInputAdapter,
+) -> Result<(), DictationError> {
     log::info!(
         "[Dictation::Trace] OutputRouter: Starting simulated paste for {} chars...",
         text.len()
     );
-    let input_adapter = create_input_adapter();
     let paste_result =
         clipboard::with_clipboard_safe(text, || async { input_adapter.simulate_paste() }).await;
 
@@ -91,7 +104,7 @@ async fn dispatch_to_paste<R: tauri::Runtime>(
                 app,
                 db,
                 LifecycleCard {
-                    title: "Dictation Pasted",
+                    title: "Pasted",
                     message: &msg,
                     severity: Severity::Info,
                     duration_ms: 3000,
@@ -106,12 +119,12 @@ async fn dispatch_to_paste<R: tauri::Runtime>(
                 "[Dictation::Trace] OutputRouter: Paste simulation failed ({:?}). Transcript is preserved on clipboard.",
                 e
             );
-            let msg = format!("<b>Saved to clipboard</b> (press Ctrl+V):\n\"{}\"", snippet);
+            let msg = format!("\"{}\" (press Ctrl+V to paste)", snippet);
             lifecycle::dictation_terminal(
                 app,
                 db,
                 LifecycleCard {
-                    title: "Dictation Copied",
+                    title: "Saved to Clipboard",
                     message: &msg,
                     severity: Severity::Warning,
                     duration_ms: 15_000,

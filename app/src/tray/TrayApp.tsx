@@ -6,7 +6,7 @@ import { Footer } from "./components/Footer";
 import { useVisibility, useInteraction } from "./useTrayHud";
 import { useTelemetry } from "@/shared/hooks/useTelemetry";
 import { hideTrayWindow, setWindowClickThrough } from "@/services/trayService";
-import { pttStart, pttStop, engageSession, resumeSession, waitForPipelineState } from "@/services/pipelineService";
+import { pttStart, pttStop } from "@/services/pipelineService";
 import { getTranscriptHistory } from "@/services/persistenceService";
 import { TRAY_COPY } from "@/data/trayCopy";
 import { useSettingsStore } from "@/store/settingsStore";
@@ -193,42 +193,24 @@ export const TrayApp: React.FC = () => {
     });
   }, [history]);
 
-  // State-dependent mic: Listening -> stop; otherwise ensure an engaged
-  // session first, then start. The backend drops PttStart unless a session is
-  // active (Idle/Paused/Sleeping are all dropped) and ptt_start still resolves
-  // Ok — so without the engage path below, the button silently did nothing.
+  // Mic button acts as Push-To-Talk Toggle for Dictation from the Tray HUD.
   const handleMicPress = useCallback(async () => {
     if (pttBusyRef.current) return;
-    if (interactionState === "Listening") {
-      try {
-        await pttStop();
-      } catch (e) {
-        console.error("[TrayApp] PTT stop failed:", e);
-        flashMicError(TRAY_COPY.micStopFailed);
-      }
-      return;
-    }
     pttBusyRef.current = true;
     setPttBusy(true);
     try {
-      if (interactionState === "Idle") {
-        // Manual-open path: no session exists yet. Same semantics as the main
-        // app's Engage (waits for Ready, up to 8s), then starts PTT.
-        const result = await engageSession((s) => setInteractionState(s), 8000);
-        if (!result.success) throw new Error(result.reason ?? "engage-failed");
-      } else if (interactionState === "Paused" || interactionState === "Sleeping") {
-        await resumeSession();
-        // The tray is a HUD, so this polls gently (500ms) — unlike the main
-        // app's 100ms engage poll.
-        const ready = await waitForPipelineState("Ready", { timeoutMs: 5000, intervalMs: 500 });
-        if (!ready) throw new Error("resume-timeout");
+      if (interactionState === "Listening") {
+        await pttStop();
+      } else {
+        await pttStart();
       }
-      // Ready/Thinking/Speaking/Working fall through to a direct start
-      // (barge-in is handled backend-side).
-      await pttStart();
     } catch (e) {
       console.error("[TrayApp] Mic press failed:", e);
-      flashMicError(TRAY_COPY.micEngageFailed);
+      flashMicError(
+        interactionState === "Listening"
+          ? TRAY_COPY.micStopFailed
+          : TRAY_COPY.micEngageFailed
+      );
     } finally {
       pttBusyRef.current = false;
       setPttBusy(false);

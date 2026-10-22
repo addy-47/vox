@@ -16,8 +16,8 @@ mod desktop {
 
     const TRAY_HUD_WIDTH_LOGICAL: f64 = 380.0;
     const TRAY_HUD_HEIGHT_LOGICAL: f64 = 250.0;
-    const TRAY_PADDING_X_LOGICAL: f64 = 55.0;
-    const TRAY_PADDING_TOP_VH: f64 = 0.15;
+    const TRAY_PADDING_X_LOGICAL: f64 = 16.0;
+    const TRAY_PADDING_Y_LOGICAL: f64 = 16.0;
 
     /// Ensures the "tray" WebviewWindow exists, lazily constructing it if it was closed to save RAM.
     pub fn ensure_tray_window<R: tauri::Runtime>(
@@ -215,18 +215,18 @@ mod desktop {
                 let hud_w_logical = TRAY_HUD_WIDTH_LOGICAL;
                 let hud_h_logical = TRAY_HUD_HEIGHT_LOGICAL;
                 let padding_x_logical = TRAY_PADDING_X_LOGICAL;
-                let padding_top_vh = TRAY_PADDING_TOP_VH;
+                let padding_y_logical = TRAY_PADDING_Y_LOGICAL;
 
                 // Convert to physical pixels for region math
                 let hud_w = (hud_w_logical * scale_factor) as i32;
                 let hud_h = (hud_h_logical * scale_factor) as i32;
                 let padding_x = (padding_x_logical * scale_factor) as i32;
+                let padding_y = (padding_y_logical * scale_factor) as i32;
 
                 let screen_w = size.width as i32;
-                let screen_h = size.height as i32;
 
                 let x = screen_w - hud_w - padding_x;
-                let y = (screen_h as f64 * padding_top_vh) as i32;
+                let y = padding_y;
 
                 let rect = cairo::RectangleInt::new(x, y, hud_w, hud_h);
                 let region = cairo::Region::create_rectangle(&rect);

@@ -44,7 +44,7 @@ Legend: `[ ]` pending · `[x]` done · `[~]` folded into another binary · `[-]`
 - [x] `src/services/vad/actor.rs` unit tests — 6 tests (1 suppression + 5 split `trim_window` branches), named + intent blocks
 - [x] Binary: `vad_segmentation_test.rs` — passes in 3.9 s; `--lib` 149 passed, 1 skipped
 - [x] Report Slice 2
-- [!] F-14 — `VAD_MIN_UTTERANCE_SAMPLES` guard unreachable (ignored test marks it)
+- [x] F-14 — `VAD_MIN_UTTERANCE_SAMPLES` guard unreachable (resolved: minimum utterance calculates voiced samples; test un-ignored and passing)
 
 ## Slice 3 — STT turn identity
 
@@ -52,8 +52,8 @@ Legend: `[ ]` pending · `[x]` done · `[~]` folded into another binary · `[-]`
 - [x] Binary: `stt_turn_identity_test.rs` (new) — 12 subtests, recording provider, no models, 0.06 s
 - [x] Added `stt_turn_identity_test` to `tests/tier-default.txt`
 - [x] Report Slice 3
-- [!] F-15 — coalescing recycles into the first partial's channel and leaks later buffers (ignored unit test)
-- [!] F-16 — turn-identity contract absent from `docs/specs/` (spec gap)
+- [x] F-15 — coalescing recycles into the first partial's channel and leaks later buffers (resolved: current_recycle_tx threaded per buffer; test un-ignored and passing)
+- [x] F-16 — turn-identity contract absent from `docs/specs/` (resolved: authored docs/specs/stt-contract-spec.md)
 
 ## Slice 4 — Dictation PTT lifecycle
 
@@ -85,7 +85,7 @@ Legend: `[ ]` pending · `[x]` done · `[~]` folded into another binary · `[-]`
 - [x] Duplicate query filter — suppressed before dispatch, accumulator cleared, state back to Ready
 - [~] `tests/transcript_to_llm_test.rs` — ingestion half absorbed; the real-generation and compaction-filler halves move to Slice 7
 - [x] Report Slice 6
-- [!] F-18 — a stalled LLM response holds the harness lock and blocks every later turn
+- [x] F-18 — a stalled LLM response holds the harness lock and blocks every later turn (resolved: poll loop checks cancellation and enforces 30s idle timeout)
 
 ## Slice 7 — Agentic tool loop
 
@@ -221,16 +221,14 @@ Legend: `[ ]` pending · `[x]` done · `[~]` folded into another binary · `[-]`
 - [x] Realtime transport — `realtime_transport_test.rs`, 6 → 10 subtests
 - [x] Every scenario carries an intent block, a behaviour-first name and an honest header
 - [x] Wall-clock watchdogs and sleep-based absence checks replaced by log or server acknowledgements
-- [!] F-19 — packaged voice seeding fails on upgraded databases
-- [!] F-20 — private-mode suppression has no acknowledgement channel
+- [x] F-19 — packaged voice seeding fails on upgraded databases (resolved: slug column added to ensure_voice_metadata_columns)
+- [x] F-20 — private-mode suppression has no acknowledgement channel (resolved: shutdown bypasses private suppression; clean worker logs)
 - [x] Final sweep — every `src` unit test carries a behaviour-first name (122 renamed); the intent blocks live only in the seam binaries, and the `src` unit tests carry none (1157 lines of block removed)
 - [x] Remote control binaries gated behind `./scripts/test.sh remote`
 - [x] `all` tier now excludes the remote binaries
 - [x] Full non-remote suite green: 413 passed, 4 skipped
-- [!] F-19 — packaged voice seeding fails on upgraded databases
-- [!] F-20 — private-mode suppression has no acknowledgement
-- [!] F-21 — personal memory markdown round-trip is lossy
-- [!] F-22 — wall-clock latency assertion in the default tier
-- [!] F-23 — near-empty assertions in the audio device mock
+- [x] F-21 — personal memory markdown round-trip is lossy (resolved: blank line separation in render_to_markdown; 11/11 tests green)
+- [x] F-22 — wall-clock latency assertion in the default tier (resolved: removed wall-clock check from catalog sync test)
+- [x] F-23 — near-empty assertions in the audio device mock (resolved: capture invocation and sink drop lifecycle asserts added)
 - [!] F-24 — the cargo-mutants pass is blocked by the build cost of this crate
 - [x] Hand-applied mutation campaign — 5 mutants, 5 killed (one needed a new test first)

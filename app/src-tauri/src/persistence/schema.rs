@@ -311,6 +311,7 @@ async fn ensure_voice_metadata_columns(conn: &Connection) -> Result<()> {
         ("sample_text", "ALTER TABLE voices ADD COLUMN sample_text TEXT NOT NULL DEFAULT 'Hello, this is a preview of my voice.';"),
         ("is_favorite", "ALTER TABLE voices ADD COLUMN is_favorite INTEGER NOT NULL DEFAULT 0;"),
         ("last_used_at", "ALTER TABLE voices ADD COLUMN last_used_at INTEGER;"),
+        ("slug", "ALTER TABLE voices ADD COLUMN slug TEXT;"),
     ] {
         if !cols.contains(col) {
             conn.execute(ddl, ()).await?;
