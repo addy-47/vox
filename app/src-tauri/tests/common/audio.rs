@@ -142,3 +142,12 @@ pub fn stream_test_clip_prefix(
     stream_audio_to_ring_buffer(&audio[..len], producer);
     wait_for_buffer_drain(producer, 5);
 }
+
+/// Root-mean-square of a sample slice. Shared by the AEC seams.
+pub fn rms(samples: &[f32]) -> f32 {
+    if samples.is_empty() {
+        return 0.0;
+    }
+    let sum_sq: f32 = samples.iter().map(|&s| s * s).sum();
+    (sum_sq / samples.len() as f32).sqrt()
+}
