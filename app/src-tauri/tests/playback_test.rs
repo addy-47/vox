@@ -1,18 +1,19 @@
 //! ============================================================================
-//! playback_interrupt_test.rs — Playback Lifecycle + VAD Suppression + Barge-in
+//! playback_test.rs — Playback lifecycle, interrupt and barge-in seam
 //! ============================================================================
-//! Category     : Integration Test (Seam 9)
-//! Component    : services/audio/playback.rs + services/audio/sink.rs +
-//!                pipeline/assistant/playback.rs + pipeline/assistant/interrupt.rs +
-//!                pipeline/router.rs + services/vad/actor.rs
-//! Prerequisites: Local Earshot VAD + test assets in tests/assets/
-//! Execution    : cargo nextest run --test playback_interrupt_test --release --nocapture --test-threads=1
-//! Metrics      : Pre-roll cushion gating, real sink drain callback PlaybackFinished
-//!                emission, pending job deferral, VAD speaker ducking suppression,
-//!                barge-in 6-step atomic lifecycle
+//! Category  : Integration (Seam 10 — playback lifecycle → VAD ducking → barge-in)
+//! Component : services/audio/playback.rs + services/audio/sink.rs
+//!             + pipeline/assistant/playback.rs + pipeline/assistant/interrupt.rs
+//!             + pipeline/router.rs + services/vad/actor.rs
+//! Binary    : playback_test
+//! Prereqs   : the test audio assets; the synthesis scenarios need the Supertonic model
+//! Run       : cargo nextest run --test playback_test --release --test-threads=1
 //! ============================================================================
 
 mod common;
+
+#[path = "playback/tts_to_playback.rs"]
+mod tts_to_playback;
 
 use std::{
     sync::{
@@ -33,10 +34,17 @@ use vox_lib::{
     services::vad::{actor::VadActorConfig, VadCommand},
 };
 
+/// PURPOSE:  The state must only advance to Speaking when audio really starts.
+/// SCENARIO: A turn is prepared and the playback sink is driven.
+/// ASSERTS:  Thinking becomes Speaking on playback start and Ready on playback finish.
+/// CLASS:    happy-path
+/// REQUIRES: none
+/// MUTANT:   Move to Speaking without a playback start.
 /// Subtest 1: Ingest >= 12,000 samples while in Thinking -> triggers PlaybackStarted -> Speaking.
 /// Drain buffer with pending_jobs == 0 through real sink callback -> triggers PlaybackFinished -> Ready.
+
 #[tokio::test]
-async fn test_playback_gates_thinking_to_speaking_and_speaking_to_ready() {
+async fn playback_gates_thinking_to_speaking_and_speaking_to_ready() {
     let test_timeout = Duration::from_secs(15);
     tokio::time::timeout(test_timeout, async {
         let _guard = common::paths::TempPathsGuard::new();
@@ -134,10 +142,16 @@ async fn test_playback_gates_thinking_to_speaking_and_speaking_to_ready() {
     .expect("test_playback_gates_thinking_to_speaking_and_speaking_to_ready timed out");
 }
 
+/// PURPOSE:  The pre-roll cushion must not arm on a short utterance.
+/// ASSERTS:  Playback does not start until the flush.
+/// CLASS:    edge-case
+/// REQUIRES: none
+/// MUTANT:   Arm the pre-roll as soon as any sample arrives.
 /// Subtest 2: Ingest 2,000 samples (< threshold 12,000) -> assert PlaybackStarted is NOT emitted.
 /// Then call flush_pre_roll() -> assert PlaybackStarted immediately emitted.
+
 #[tokio::test]
-async fn test_short_utterance_requires_flush_to_arm() {
+async fn short_utterance_requires_a_flush_to_arm_the_pre_roll() {
     let test_timeout = Duration::from_secs(10);
     tokio::time::timeout(test_timeout, async {
         let _guard = common::paths::TempPathsGuard::new();
@@ -184,11 +198,18 @@ async fn test_short_utterance_requires_flush_to_arm() {
     .expect("test_short_utterance_requires_flush_to_arm timed out");
 }
 
+/// PURPOSE:  The turn must not close while a synthesis job is still pending.
+/// SCENARIO: The sink drains while a pending job remains.
+/// ASSERTS:  PlaybackFinished is deferred until the pending count reaches zero.
+/// CLASS:    edge-case
+/// REQUIRES: none
+/// MUTANT:   Emit PlaybackFinished while a job is pending.
 /// Subtest 3: If pending_synthesis_jobs > 0 when playback buffer empties,
 /// PlaybackFinished must be deferred and state remains Speaking.
 /// Once pending_synthesis_jobs decrements to 0, PlaybackFinished transitions state to Ready.
+
 #[tokio::test]
-async fn test_playback_finished_deferred_while_pending() {
+async fn playback_finished_is_deferred_while_a_job_is_pending() {
     let test_timeout = Duration::from_secs(10);
     tokio::time::timeout(test_timeout, async {
         let _guard = common::paths::TempPathsGuard::new();
@@ -289,9 +310,14 @@ async fn test_playback_finished_deferred_while_pending() {
     .expect("test_playback_finished_deferred_while_pending timed out");
 }
 
-/// Subtest 5: Speech detection fires when state is Ready, and Headset mode never suppresses speech even while Speaking.
+/// PURPOSE:  The VAD must duck only in the modes that need it.
+/// SCENARIO: Speech onset is simulated in Speaker and in Headset mode.
+/// ASSERTS:  The detection follows the configured output mode.
+/// CLASS:    happy-path
+/// REQUIRES: none
+/// MUTANT:   Ignore the audio output mode when detecting speech.
 #[test]
-fn test_speech_detection_in_ready_and_headset_modes() {
+fn speech_detection_follows_the_audio_output_mode() {
     let _guard = common::paths::TempPathsGuard::new();
     vox_lib::utils::paths::init();
     let (_app, state) = common::harness::get_test_app_and_state_sync();
@@ -387,12 +413,20 @@ fn test_speech_detection_in_ready_and_headset_modes() {
         .expect("VAD actor thread join timed out");
 }
 
+/// PURPOSE:  A barge-in must stop the current turn and open the next one.
+/// SCENARIO: Speech starts while the assistant is speaking.
+/// ASSERTS:  The playback is cancelled, the turn id advances and the state becomes
+///           Listening.
+/// CLASS:    happy-path
+/// REQUIRES: none
+/// MUTANT:   Skip the turn advance on a barge-in.
 /// Subtest 6: Barge-in interrupt lifecycle.
 /// Seed Speaking state during Turn 1 with pending synthesis and unplayed audio.
 /// PttStart arriving at the router cancels the turn, clears accumulator,
 /// cancels playback, rotates to Turn 2, and transitions state to Listening.
+
 #[tokio::test]
-async fn test_barge_in_cancels_and_advances_turn() {
+async fn barge_in_cancels_the_turn_and_advances_it() {
     let test_timeout = Duration::from_secs(10);
     tokio::time::timeout(test_timeout, async {
         let _guard = common::paths::TempPathsGuard::new();
@@ -547,13 +581,20 @@ async fn test_barge_in_cancels_and_advances_turn() {
 // ============================================================================
 // Subtest 4: test_invariant_14_synthesis_guard_latch_lifecycle
 // ============================================================================
+/// PURPOSE:  The synthesis guard latch must open and close exactly once per turn.
+/// SCENARIO: A turn is prepared, played back and finished.
+/// ASSERTS:  The latch opens with the turn and closes when the playback finishes.
+/// CLASS:    edge-case
+/// REQUIRES: none
+/// MUTANT:   Leave the latch open after the turn.
 /// Verifies Invariant 14 Synthesis Guard Latch (`turn_open` and `drained_while_open`):
 /// 1. Router sets `turn_open = true` at turn onset.
 /// 2. Audio finishes playing (`on_playback_finished`) while LLM stream is still actively generating.
 /// 3. Latch catches premature exit: sets `drained_while_open = true` and holds state in `Speaking` (does NOT transition to `Ready`).
 /// 4. LLM finishes (`on_llm_finished`): clears `turn_open`, detects `drained_while_open == true` and `pending == 0`, and cleanly transitions to `Ready`.
+
 #[tokio::test]
-async fn test_invariant_14_synthesis_guard_latch_lifecycle() {
+async fn synthesis_guard_latch_has_a_full_lifecycle() {
     let test_timeout = Duration::from_secs(15);
     tokio::time::timeout(test_timeout, async {
         let _guard = common::paths::TempPathsGuard::new();
