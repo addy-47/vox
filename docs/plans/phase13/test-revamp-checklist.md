@@ -233,3 +233,4 @@ Legend: `[ ]` pending · `[x]` done · `[~]` folded into another binary · `[-]`
 - [!] F-22 — wall-clock latency assertion in the default tier
 - [!] F-23 — near-empty assertions in the audio device mock
 - [!] F-24 — the cargo-mutants pass is blocked by the build cost of this crate
+- [x] Hand-applied mutation campaign — 5 mutants, 5 killed (one needed a new test first)

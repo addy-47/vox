@@ -672,6 +672,25 @@ fn a_short_sentence_with_a_comma_stays_one_clause() {
     assert_eq!(clauses[0], "Hello my friend, how are you today?");
 }
 
+/// PURPOSE:  The compound seam must not fire below the 22 word threshold.
+/// SCENARIO: An 18 word sentence with a comma after the tenth word is streamed.
+/// ASSERTS:  It stays one clause: the seam search needs a long sentence.
+/// CLASS:    edge-case
+/// REQUIRES: none
+/// MUTANT:   Lower the compound-sentence threshold from 22 words to 2.
+#[test]
+fn a_mid_length_sentence_with_a_comma_stays_one_clause() {
+    let text =
+        "The deployment pipeline has finished the whole database migration tonight, and the team celebrated the successful release.";
+    let clauses = chunk(text);
+    assert_eq!(
+        clauses.len(),
+        1,
+        "a sentence below the compound threshold must not split, got {:?}",
+        clauses
+    );
+}
+
 /// PURPOSE:  A long compound sentence must be split at a natural seam.
 /// SCENARIO: A 24-word sentence with a comma and a coordinating conjunction is streamed.
 /// ASSERTS:  It becomes two clauses split at the conjunction seam.
