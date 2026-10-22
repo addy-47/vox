@@ -12,3 +12,4 @@ stt_turn_identity_test
 dictation_ptt_test
 dictation_output_test
 transcript_ingestion_test
+agentic_tool_loop_test
