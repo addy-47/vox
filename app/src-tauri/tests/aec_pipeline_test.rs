@@ -17,19 +17,10 @@ use vox_lib::services::audio::{
     aec::AecProcessor, sink::PlaybackReferenceTap, AEC_FRAME_SAMPLES, AEC_REFERENCE_BUFFER_SAMPLES,
 };
 
-/// Calculates Root Mean Square (RMS) energy across an audio sample slice.
-fn calculate_rms(samples: &[f32]) -> f32 {
-    if samples.is_empty() {
-        return 0.0;
-    }
-    let sum_sq: f32 = samples.iter().map(|&s| s * s).sum();
-    (sum_sq / samples.len() as f32).sqrt()
-}
-
 /// Computes Echo Return Loss Enhancement (ERLE) in decibels.
 fn calculate_erle_db(input_echo: &[f32], output_residual: &[f32]) -> f64 {
-    let rms_in = calculate_rms(input_echo) as f64;
-    let rms_out = calculate_rms(output_residual) as f64;
+    let rms_in = common::audio::rms(input_echo) as f64;
+    let rms_out = common::audio::rms(output_residual) as f64;
     if rms_out < 1e-9 {
         return 60.0;
     }
@@ -118,8 +109,8 @@ async fn test_aec_suppresses_synthetic_tts_echo_alone() {
         println!(
             "[AEC Pipeline Test] Measured ERLE: {:.2} dB (Input RMS: {:.4}, Output RMS: {:.4})",
             erle,
-            calculate_rms(&simulated_mic[eval_start..eval_end]),
-            calculate_rms(&clean_output[eval_start..eval_end])
+            common::audio::rms(&simulated_mic[eval_start..eval_end]),
+            common::audio::rms(&clean_output[eval_start..eval_end])
         );
 
         assert!(
@@ -191,8 +182,8 @@ async fn test_aec_double_talk_preserves_user_speech() {
         // In double talk, clean output should retain the user speech energy
         let eval_start = 16000;
         let eval_end = num_frames * AEC_FRAME_SAMPLES;
-        let user_rms = calculate_rms(&clean_user_ref[eval_start..eval_end]);
-        let clean_rms = calculate_rms(&clean_output[eval_start..eval_end]);
+        let user_rms = common::audio::rms(&clean_user_ref[eval_start..eval_end]);
+        let clean_rms = common::audio::rms(&clean_output[eval_start..eval_end]);
 
         println!(
             "[AEC Double-Talk] User speech RMS: {:.4}, Cleaned output RMS: {:.4}",

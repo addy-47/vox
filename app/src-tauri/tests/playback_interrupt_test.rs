@@ -164,11 +164,7 @@ async fn test_short_utterance_requires_flush_to_arm() {
         playback_engine.ingest_chunk(&chunk_24k);
 
         // Negative assertion: PlaybackStarted must NOT fire before flush
-        common::harness::assert_channel_empty_after(
-            &event_rx,
-            Duration::from_millis(200),
-            "PlaybackStarted under threshold before flush",
-        );
+        common::harness::assert_channel_empty(&event_rx, "PlaybackStarted under threshold before flush");
 
         // Flush pre-roll cushion on generation completion
         playback_engine.flush_pre_roll();
@@ -343,8 +339,15 @@ fn test_speech_detection_in_ready_and_headset_modes() {
         "SpeechStart must fire in Speaker mode when state is Ready"
     );
 
-    // Drain remaining events
-    while vox_event_rx.try_recv().is_ok() {}
+    // Case 1 consumed one SpeechStart. A second one here would be a duplicate event.
+    let leftovers = common::harness::drain_pending(&vox_event_rx);
+    assert!(
+        !leftovers
+            .iter()
+            .any(|e| matches!(e, VoxEvent::SpeechStart { .. })),
+        "Case 1 emitted more than one SpeechStart: {:?}",
+        leftovers
+    );
 
     // Case 2: Headset mode, state is Speaking
     vad_cmd_tx
@@ -377,7 +380,7 @@ fn test_speech_detection_in_ready_and_headset_modes() {
     let _ = vad_cmd_tx.send(VadCommand::Shutdown);
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
-        let _ = vad_join.join();
+        vad_join.join().expect("worker thread panicked");
         let _ = tx.send(());
     });
     rx.recv_timeout(Duration::from_secs(5))

@@ -70,7 +70,7 @@ pub const ASSET_EDGETTS_07_HI_GROUND_TRUTH: &str = CLIP_07_HI_GROUND_TRUTH;
 // Supertonic renders (single-utterance by construction: max internal pause
 // 0.4s EN / 0.3s HI, below the 800ms production silence default).
 // Ground truth shares the briefing/weather sentences (verified at runtime
-// by the >= 0.90 similarity gate in passive_streaming_test.rs).
+// by the >= 0.90 similarity gate in vad_segmentation_test.rs).
 pub const ASSET_SUPERTONIC_01_EN_FILENAME: &str = "supertonic_01_en_briefing.wav";
 pub const ASSET_SUPERTONIC_01_EN_GROUND_TRUTH: &str = CLIP_01_EN_GROUND_TRUTH;
 

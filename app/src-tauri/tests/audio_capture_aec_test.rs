@@ -25,15 +25,6 @@ use vox_lib::services::audio::{
     AEC_FRAME_SAMPLES,
 };
 
-/// Calculates Root Mean Square (RMS) energy across an audio slice.
-fn calculate_rms(samples: &[f32]) -> f32 {
-    if samples.is_empty() {
-        return 0.0;
-    }
-    let sum_sq: f32 = samples.iter().map(|&s| s * s).sum();
-    (sum_sq / samples.len() as f32).sqrt()
-}
-
 /// Verifies that the AEC worker processes live incoming microphone chunks with <15ms latency and zero frame drops.
 #[tokio::test]
 async fn test_aec_worker_live_capture_bounded_latency_and_zero_drops() {
@@ -116,7 +107,7 @@ async fn test_aec_worker_live_capture_bounded_latency_and_zero_drops() {
         );
 
         // Safe passthrough check: signal energy must be preserved when playback is idle
-        let rms = calculate_rms(&output_samples);
+        let rms = common::audio::rms(&output_samples);
         assert!(
             rms > 0.2,
             "AEC passthrough energy must be preserved when idle (measured RMS: {})",
@@ -194,8 +185,8 @@ async fn test_aec_worker_realtime_echo_suppression() {
         // Evaluate ERLE after initial filter convergence (1.0 second = 16000 samples)
         let eval_start = 16000;
         let eval_end = (num_frames * AEC_FRAME_SAMPLES).min(tts_samples.len());
-        let rms_in = calculate_rms(&simulated_mic[eval_start..eval_end]);
-        let rms_out = calculate_rms(&clean_output[eval_start..eval_end]);
+        let rms_in = common::audio::rms(&simulated_mic[eval_start..eval_end]);
+        let rms_out = common::audio::rms(&clean_output[eval_start..eval_end]);
         let erle = 20.0 * (rms_in as f64 / rms_out as f64).log10();
 
         println!(

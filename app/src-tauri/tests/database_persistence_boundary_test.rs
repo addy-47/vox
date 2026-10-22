@@ -544,7 +544,7 @@ async fn test_concurrent_mvcc_wal_readers_and_persistence_worker() {
         // Verify turns were written.
         //
         // This previously slept a fixed 100ms after Shutdown and then counted rows.
-        // That is a sleep-as-proxy-for-completion (testing-style-guide.md §6.1) and it
+        // That is a sleep-as-proxy-for-completion (testing-style-guide.md §5.4) and it
         // was systematically too short: the worker had only drained 19-21 of 25 queued
         // events in that window, so the test failed deterministically on unmodified
         // code as well as after any change. Replaced with a deadline poll: if the worker

@@ -326,7 +326,7 @@ fn test_model_manager_removal_cleans_marker() {
 // interesting cases are wrong servers, not happy ones.
 // ============================================================================
 
-/// Every network-bearing test is wrapped in this (testing-style-guide.md §6.1).
+/// Every network-bearing test is wrapped in this (testing-style-guide.md §5.4).
 const NET_TIMEOUT: Duration = Duration::from_secs(30);
 
 const MODEL_ID: &str = "resumable_model";

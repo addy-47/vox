@@ -290,20 +290,39 @@ pub fn collect_all_final_transcripts(
     finals.join(" ")
 }
 
-/// Asserts that a standard mpsc::Receiver is empty after a deterministic wait.
-/// Mandatory for negative assertion / suppression testing.
-pub fn assert_channel_empty_after<T: std::fmt::Debug>(
-    rx: &Receiver<T>,
-    wait: Duration,
-    label: &str,
-) {
-    std::thread::sleep(wait);
-    if let Ok(item) = rx.try_recv() {
+/// Asserts that `rx` holds no buffered item.
+///
+/// This function never waits. Call it only after quiescence is proven, by one of:
+/// - the turn's terminal state transition has been observed;
+/// - a synchronous handler has returned;
+/// - every producer has been shut down and joined;
+/// - the sender was dropped.
+///
+/// Waiting here would convert "the producer has not run yet" into a false pass.
+pub fn assert_channel_empty<T>(rx: &Receiver<T>, label: &str) {
+    let mut count = 0usize;
+    while rx.try_recv().is_ok() {
+        count += 1;
+    }
+    if count > 0 {
         panic!(
-            "[{}] Negative assertion failed: expected empty channel, but found item: {:?}",
-            label, item
+            "[{}] expected no messages after quiescence, found {}",
+            label, count
         );
     }
+}
+
+/// Drains everything currently buffered and returns it.
+///
+/// Use at a scenario boundary, never to make a negative assertion pass. The caller
+/// must assert that the returned items belong to the scenario that just ended.
+#[must_use]
+pub fn drain_pending<T>(rx: &Receiver<T>) -> Vec<T> {
+    let mut items = Vec::new();
+    while let Ok(item) = rx.try_recv() {
+        items.push(item);
+    }
+    items
 }
 
 /// Constructs the default test `TelemetryState` with fresh atomics and a
