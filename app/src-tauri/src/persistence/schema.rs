@@ -10,7 +10,7 @@ use crate::{
 
 pub type Result<T> = std::result::Result<T, PersistenceError>;
 
-pub const SCHEMA_VERSION: u32 = 14;
+pub const SCHEMA_VERSION: u32 = 15;
 
 const PERSONAL_MEMORY_SEMANTIC_SCHEMA_VERSION: u32 = 9;
 const EMPTY_PERSONAL_MEMORY_JSON: &str = r#"{"sections":[]}"#;
@@ -181,6 +181,20 @@ const SCHEMA_TABLE_STATEMENTS: &[&str] = &[
     "CREATE INDEX IF NOT EXISTS idx_models_type_cat ON models(model_type, category);",
     "CREATE INDEX IF NOT EXISTS idx_models_fav ON models(is_favorite);",
     "CREATE INDEX IF NOT EXISTS idx_models_last_active ON models(last_active_at DESC);",
+    // Remote peer registry. A standalone entity: no foreign keys, so no
+    // cascade can ever delete a pairing and no pairing can ever block a
+    // session delete. `last_seen_at` is written on connect and disconnect
+    // only (RULE-DB-04), never on a heartbeat.
+    "CREATE TABLE IF NOT EXISTS paired_devices (
+        device_id    TEXT    PRIMARY KEY,
+        public_key   BLOB    NOT NULL CHECK (length(public_key) = 32),
+        display_name TEXT    NOT NULL,
+        role         TEXT    NOT NULL CHECK (role IN ('controller', 'host')),
+        trust_level  TEXT    NOT NULL DEFAULT 'full' CHECK (trust_level IN ('full')),
+        hints        TEXT    NOT NULL DEFAULT '[]',
+        paired_at    INTEGER NOT NULL,
+        last_seen_at INTEGER
+    );",
 ];
 
 /// Runs schema migrations, dropping obsolete legacy tables and initializing the current schema.

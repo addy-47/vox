@@ -54,6 +54,7 @@ pub fn supported_keys_for_domain(domain: &str) -> &'static [&'static str] {
         "persona" => &["modular_prompt", "realtime_prompt"],
         "realtime" => &["active", "active_voice_id", "voice", "voice_id", "api_keys"],
         "system" => &["setup_completed"],
+        "remote" => &["accepts_controllers", "execution_mode"],
         _ => &[],
     }
 }
@@ -539,6 +540,26 @@ fn apply_system_mutation(
     Ok(true)
 }
 
+fn apply_remote_mutation(
+    settings: &mut VoxSettings,
+    key: &str,
+    value: &serde_json::Value,
+) -> Result<bool, String> {
+    match key {
+        "accepts_controllers" => {
+            settings.remote.accepts_controllers = value
+                .as_bool()
+                .ok_or("accepts_controllers must be a boolean")?;
+        }
+        "execution_mode" => {
+            settings.remote.execution_mode = serde_json::from_value(value.clone())
+                .map_err(|e| format!("Invalid remote execution_mode: {}", e))?;
+        }
+        _ => return Ok(false),
+    }
+    Ok(true)
+}
+
 /// Applies a mutation to the settings struct by domain+key routing.
 /// Returns `true` if the key was recognized and applied.
 pub fn apply_setting_mutation(
@@ -559,6 +580,7 @@ pub fn apply_setting_mutation(
         "persona" => apply_persona_mutation(settings, key, value),
         "realtime" => apply_realtime_mutation(settings, key, value),
         "system" => apply_system_mutation(settings, key, value),
+        "remote" => apply_remote_mutation(settings, key, value),
         _ => Ok(false),
     }
 }

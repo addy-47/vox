@@ -23,6 +23,7 @@ pub const SUPPORTED_DOMAINS: &[&str] = &[
     "persona",
     "realtime",
     "system",
+    "remote",
 ];
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

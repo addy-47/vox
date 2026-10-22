@@ -31,6 +31,7 @@ pub struct VoxPaths {
     pub socket: PathBuf,
     pub trigger_script: PathBuf,
     pub icon: PathBuf,
+    pub device_key: PathBuf,
 }
 
 static PATHS: RwLock<Option<VoxPaths>> = RwLock::new(None);
@@ -41,6 +42,12 @@ pub const PROVIDERS_FILENAME: &str = "providers.jsonc";
 pub const AGENT_FILENAME: &str = "agent.jsonc";
 pub const DICTATION_HISTORY_FILENAME: &str = "dictation.jsonl";
 pub const ICON_FILENAME: &str = "vox.png";
+/// The file the device's private key half lives in.
+///
+/// The key is never in the database: the database is exported and backed up.
+/// On desktop this is `~/.vox/device.key`; on Android the root is the
+/// app-private data directory, so the key is app-private storage.
+pub const DEVICE_KEY_FILENAME: &str = "device.key";
 
 /// Initialize the path singleton. Must be called ONCE at startup,
 /// before any call to `paths::get()`.
@@ -125,6 +132,7 @@ pub fn init_with_root(root: PathBuf) {
     let socket = run.join("vox.sock");
     let trigger_script = run.join("bin").join("vox-trigger");
     let icon = cache.join(ICON_FILENAME);
+    let device_key = root.join(DEVICE_KEY_FILENAME);
 
     let paths = VoxPaths {
         root,
@@ -148,6 +156,7 @@ pub fn init_with_root(root: PathBuf) {
         socket,
         trigger_script,
         icon,
+        device_key,
     };
 
     let mut lock = PATHS.write();
@@ -363,6 +372,12 @@ pub fn run_dir() -> PathBuf {
 
 pub fn socket_path() -> PathBuf {
     get().socket.clone()
+}
+
+/// The path of the device key file: `~/.vox/device.key` on desktop, and
+/// app-private storage on Android.
+pub fn device_key_path() -> PathBuf {
+    get().device_key.clone()
 }
 
 pub fn dictation_history_file() -> PathBuf {

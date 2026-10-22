@@ -179,6 +179,36 @@ Unified voice management backed by the local Turso `voices` table, serving bundl
 | `add_voice_from_recording` | `name: string`, `pcmF32: Array<number>`, `sampleRate: number` | `UnifiedVoiceDto` | Encodes PCM samples to WAV, pre-bakes speaker embedding tensors, and inserts a custom clone record. |
 | `delete_voice` | `voiceId: string` | `void` | Permanently deletes a custom voice record and its associated directory files. Rejects deletion of bundled or remote voices. |
 
+### 4.8 Remote Control Domain
+Remote control commands exist on both roles of the pair. **Host** commands are called by the laptop's frontend. **Controller** commands are called by the phone's frontend. The behavioural contracts are governed by [`remote-control-spec.md`](remote-control-spec.md); this section fixes the IPC surface only.
+
+**Host commands**
+
+| Command | Arguments | Return Shape | Behavioral Contract |
+| :--- | :--- | :--- | :--- |
+| `remote_create_pairing_payload` | None | `{ payload: string, qrDataUrl: string, expiresAt: number }` | Mints a single-use pairing token (≥128 bits, 2-minute TTL, memory-only) and returns the encoded pairing payload plus a rendered QR. The token MUST be marked consumed before any approval is sent. |
+| `remote_list_paired_devices` | None | `Array<PairedDeviceDto>` | Returns the host's `paired_devices` rows (device id, display name, role, paired-at, last-seen-at, address hints). |
+| `remote_revoke_device` | `deviceId: string` | `void` | Permanently removes the pairing: deletes the row and closes any open link from that device. The device can never connect again. |
+| `remote_disconnect_device` | `deviceId: string` | `void` | Ends the current link with reason `host_disconnected` and pauses the session. **Keeps** the pairing, so the device may reconnect later. Distinct from `remote_revoke_device`. |
+
+**Controller commands**
+
+| Command | Arguments | Return Shape | Behavioral Contract |
+| :--- | :--- | :--- | :--- |
+| `remote_connect` | `deviceId?: string`, `address?: string` | `void` | Starts dialling a paired host (by device id) or a manually entered address. Resolves the candidate list: stored hints first, then mDNS. Emits `remote_state_changed` on every transition. |
+| `remote_disconnect` | None | `void` | Sends an intentional `Disconnect`. The host pauses the session and keeps it. |
+| `get_remote_link_state` | None | `RemoteStateDto` | Returns the current `RemoteLinkState` plus the connected host's identity. Exists so the controller's frontend can hydrate its initial render; the controller auto-reconnects, so its state can already be non-idle before the UI mounts. |
+| `get_command_routing` | None | `Record<string, CommandClass>` | Returns the static command-routing table: the classification of every IPC command and every `update_setting` domain/key as `Remote`, `Local`, `Split`, or `Denied`. The controller's frontend consults it to decide whether an action travels over the link or is handled locally. |
+| `remote_call` | `command: string`, `args?: Record<string, unknown>` | `unknown` | The carrier. Sends a `Req` over the link and resolves with the host's `Res` payload or rejects with the host's `Err` code and message. Only `Remote` and `Split` commands are dispatchable; `Local` and `Denied` are rejected before a request is sent. |
+
+**Shared types**
+
+| Type | Shape | Description |
+| :--- | :--- | :--- |
+| `RemoteStateDto` | `{ link: string, failure?: string, deviceId?: string, displayName?: string }` | The canonical remote link state. `link` is one of `Disabled`, `Disconnected`, `Connecting`, `Connected`, `Reconnecting`, `Failed`. `failure` is present only when `link === "Failed"`. `deviceId` and `displayName` identify the attached peer when there is one. |
+| `PairedDeviceDto` | `{ deviceId: string, displayName: string, role: string, pairedAt: number, lastSeenAt?: number, hints: Array<unknown> }` | A row of `paired_devices`. |
+| `CommandClass` | `"Remote" \| "Local" \| "Split" \| "Denied"` | The routing classification of a command or settings key. |
+
 ---
 
 ## 5. Backend-to-Frontend Events
@@ -200,6 +230,7 @@ All backend events broadcast over the IPC bridge carry the following contracts:
 | `turn_metrics` | `{ turnId, ttftMs, ttfaMs, totalVoiceLatencyMs, contextTokensUsed, contextWindow }` | Milestone latencies and token usage for assistant turns. |
 | `sessions_changed` | `void` | Signals asynchronous session updates (e.g. title auto-generation). |
 | `settings_updated` | `void` | Signals settings hot-reload completion. |
+| `remote_state_changed` | `{ link: string, failure?: string, deviceId?: string, displayName?: string }` | The canonical remote link state changed. Emitted on every transition, on both the host and the controller. The backend owns this state and pushes it; the frontend MUST NOT poll for it. Supersedes the originally proposed `remote_device_connected` / `remote_device_disconnected` pair, which would force the frontend to reconstruct a state machine from two edges. |
 
 ### 5.1 The `activity` Envelope Contract
 When `state_changed` has `state === "Working"`, it MUST include an `activity` envelope:
@@ -222,6 +253,8 @@ When `state_changed` has `state === "Working"`, it MUST include an `activity` en
 | **Memory IPC Format** | Rendered Markdown on Wire, Canonical JSON in DB | Keeps the frontend editor simple while maintaining structured semantic blocks in the database. | Transmitting raw JSON trees to frontend (forces complex AST manipulation into UI components). |
 | **Batch Revision Resolution** | Atomic batch array in single IPC call | Eliminates race conditions and reduces N IPC roundtrips when reviewing suggestions. | Single-item resolution endpoints (causes multi-turn UI lag and partial commit states). |
 | **Activity Envelope Polymorphism** | Generic `{ kind, name, callId }` structure | Uniformly represents non-terminal operations (tool executions and harness compactions) without schema bloat. | Separate top-level fields for every potential operation type. |
+| **Remote State Delivery** | One `remote_state_changed` event, plus a controller-only `get_remote_link_state` read | The backend owns state and pushes it. The read command exists solely because the controller auto-reconnects and its state can predate the UI mount; the host never needs it because a freshly booted host cannot have a controller attached. | Polling. A separate connected/disconnected event pair, which would force the frontend to rebuild a state machine from two edges. |
+| **Remote Dispatch Surface** | A single `remote_call` command carrying `(command, args)` | One carrier keeps the controller's transport layer small and keeps the wire protocol independent of the IPC surface. The routing table is fetched, not hard-coded in the frontend. | A bespoke IPC command per remote action. |
 
 ---
 
@@ -233,3 +266,7 @@ When `state_changed` has `state === "Working"`, it MUST include an `activity` en
 - **Coalesced Settings Restart**: Simultaneously mutating two settings classified as `Restart` verifies that exactly one engine restart cycle executes.
 - **Optimistic Memory Conflict**: Submitting `save_personal_memory` with an outdated `expectedVersion` returns `Conflict` without modifying persistent records.
 - **Voice Preview Cancellation**: Issuing a second `synthesize_voice_preview` before the first completes verifies immediate cancellation of the previous synthesis worker via `AbortHandle`.
+- **Remote Routing Completeness**: A static test enumerates every registered IPC command and every `update_setting` domain/key, and fails if any is missing from the routing table returned by `get_command_routing`. The `model_parameters` pseudo-domain is included.
+- **Remote Guard Scope**: While a controller is attached, every command not in the `remote-control-spec.md` §8.2.1 permitted list is rejected for a desktop-origin call and accepted for a controller-origin call. Every command in the permitted list — every read, the appearance domain, and the remote-control administration commands — remains callable from the desktop.
+- **Remote State Delivery**: A `remote_state_changed` event is emitted on every remote link state transition, and `get_remote_link_state` returns the controller's current value. The host exposes no equivalent read command.
+- **Revocation vs. Host Disconnect**: After `remote_revoke_device` the row is gone and a reconnect is refused terminally; after `remote_disconnect_device` the row survives and a reconnect succeeds.
