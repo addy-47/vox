@@ -99,10 +99,12 @@ Legend: `[ ]` pending · `[x]` done · `[~]` folded into another binary · `[-]`
 
 ## Slice 8 — LLM → TTS chunking
 
-- [ ] `tests/llm_to_tts_test.rs` (1)
-- [ ] `tests/chunking_determinism_test.rs` (3)
-- [ ] Binary: `llm_to_tts_test.rs`
-- [ ] Report Slice 8
+- [x] `tests/llm_to_tts_test.rs` — renamed to a behaviour-first name, intent block added
+- [x] `tests/chunking_determinism_test.rs` — folded and removed; the clause rules are pure, so they became 14 unit tests in `src/services/harness/stages/streaming/chunker.rs` (default tier) instead of an integration binary
+- [x] Clause rules — determinism, emergency cap at 30 words, comma gate, compound seam at 22 words, abbreviation, decimal, mid-token period, question, short and long exclamation, newline, semicolon seam, flush, clear
+- [x] Real generation — clauses reach the TTS, the pending job count matches, production commits the history
+- [x] Report Slice 8
+- [!] Deviation from the plan: the clause rules are component-level, so they live in the lib test binary
 
 ## Slice 9 — TTS catalogues and transitions
 

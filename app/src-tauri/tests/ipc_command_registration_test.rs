@@ -1,13 +1,12 @@
 //! ============================================================================
-//! tests/ipc_command_registration_test.rs — IPC Command Registration Invariant
+//! ipc_command_registration_test.rs — every `#[tauri::command]` is reachable from `generate_handler![]`, and every desktop-only command keeps a mobile stub arm
 //! ============================================================================
-//! Category     : Integration Test (Seam 00 — source invariant)
-//! Component    : src/lib.rs (`generate_handler![]`) + src/ipc/**/*.rs
-//! Prerequisites: None (pure source parsing, no models, no services, no DB)
-//! Execution    : cargo nextest run --test ipc_command_registration_test --release --test-threads=1
-//! Metrics      : (a) set equality between `#[tauri::command]` names and
-//!                `tauri::generate_handler![]`; (b) cfg-coverage, ensuring a
-//!                dual-arm command keeps a mobile stub.
+//! Category  : Integration (Seam 00 — source invariant)
+//! Component : src/lib.rs, src/ipc/**/*.rs
+//! Binary    : ipc_command_registration_test
+//! Prereqs   : none
+//! Run       : cargo nextest run --test ipc_command_registration_test --release --test-threads=1
+//! ============================================================================
 //!
 //! WHY THIS EXISTS
 //! ---------------
@@ -28,10 +27,10 @@
 //! -------------------------------------
 //! This parses source text; it does not evaluate `cfg` expressions. So it can
 //! only reason about the *presence and text* of guards, never their truth on a
-//! given target. Test 2 checks that a command guarded for desktop also has an
-//! arm whose predicate textually negates that — which is exactly the stub-loss
-//! regression. It cannot prove the predicate compiles to the right thing.
-//! ============================================================================
+//! given target. The stub test checks that a command guarded for desktop also
+//! has an arm whose predicate textually negates that — which is exactly the
+//! stub-loss regression. It cannot prove the predicate compiles to the right
+//! thing.
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -235,12 +234,76 @@ fn is_non_desktop_guard(guard: &str) -> bool {
     g.contains("not(desktop)")
 }
 
-// ============================================================================
-// Test 1: Every `#[tauri::command]` is registered in generate_handler![]
-// ============================================================================
-
+/// PURPOSE:  The registration parser must find the `generate_handler![]` block
+///           in `lib.rs`; if the block is renamed or removed, every IPC
+///           registration check silently passes with an empty set.
+/// SCENARIO: Parse the real `src/lib.rs` and inspect the extracted names.
+/// ASSERTS:  At least one command name is extracted from the registration block.
+/// CLASS:    contract
+/// REQUIRES: none
+/// MUTANT:   Rename `tauri::generate_handler![` in `src/lib.rs` — the parser
+///           would then find nothing and every registration assertion would
+///           become vacuous.
 #[test]
-fn every_tauri_command_is_registered() {
+fn handler_registration_block_yields_command_names() {
+    let root = crate_root();
+    let lib_rs = fs::read_to_string(root.join("src/lib.rs")).expect("read src/lib.rs");
+
+    let registered = extract_registered_commands(&lib_rs);
+
+    assert!(
+        !registered.is_empty(),
+        "no commands parsed from the `generate_handler![]` block in lib.rs"
+    );
+    assert!(
+        registered.contains("get_settings"),
+        "the parsed registration set must contain the known `get_settings` command"
+    );
+}
+
+/// PURPOSE:  The definition scanner must find the `#[tauri::command]` functions
+///           under `src/ipc/`; if the IPC layout moves, the registration check
+///           compares against an empty set and always passes.
+/// SCENARIO: Scan the real `src/ipc/` directory tree.
+/// ASSERTS:  The extracted map is non-empty and every entry has at least one
+///           guard record.
+/// CLASS:    contract
+/// REQUIRES: none
+/// MUTANT:   Move `src/ipc/*.rs` to another directory — the scanner would find
+///           no commands and the "defined but not registered" check would pass
+///           vacuously.
+#[test]
+fn ipc_command_definitions_are_scanned_with_guards() {
+    let root = crate_root();
+    let ipc_dir = root.join("src/ipc");
+
+    let defined = extract_defined_commands(&ipc_dir);
+
+    assert!(
+        !defined.is_empty(),
+        "no `#[tauri::command]` functions found under {}. Either the IPC layout\n\
+         moved or this test is pointed at the wrong directory.",
+        ipc_dir.display()
+    );
+    for (name, guards) in &defined {
+        assert!(
+            !guards.is_empty(),
+            "command `{name}` must carry at least one guard record"
+        );
+    }
+}
+
+/// PURPOSE:  A command that is defined but not listed in `generate_handler![]`
+///           is unreachable from the frontend on every target, silently.
+/// SCENARIO: Compare the set of `#[tauri::command]` names under `src/ipc/`
+///           against the names registered in `src/lib.rs`.
+/// ASSERTS:  Every defined command name appears in the registered set.
+/// CLASS:    regression
+/// REQUIRES: none
+/// MUTANT:   Delete `get_settings,` from `tauri::generate_handler![]` in
+///           `src/lib.rs` — the frontend call would then fail at runtime.
+#[test]
+fn defined_command_is_registered_in_generate_handler() {
     let root = crate_root();
     let lib_rs = fs::read_to_string(root.join("src/lib.rs")).expect("read src/lib.rs");
     let ipc_dir = root.join("src/ipc");
@@ -281,12 +344,18 @@ fn every_tauri_command_is_registered() {
     );
 }
 
-// ============================================================================
-// Test 2: Dual-arm commands keep a mobile stub
-// ============================================================================
-
+/// PURPOSE:  Deleting the mobile stub arm of a dual-arm command compiles
+///           cleanly on both targets and breaks at runtime on Android only.
+/// SCENARIO: For every command guarded by a desktop predicate, look for a
+///           second arm guarded by the negated predicate.
+/// ASSERTS:  Every desktop-guarded command also has a non-desktop arm.
+/// CLASS:    regression
+/// REQUIRES: none
+/// MUTANT:   Delete the `#[cfg(not(desktop))]` arm of a command in
+///           `src/ipc/tray.rs` — Android would then resolve to a desktop-only
+///           symbol and fail at runtime.
 #[test]
-fn desktop_only_commands_retain_a_mobile_stub() {
+fn desktop_guarded_command_retains_non_desktop_stub() {
     let root = crate_root();
     let defined = extract_defined_commands(&root.join("src/ipc"));
 
@@ -315,5 +384,94 @@ fn desktop_only_commands_retain_a_mobile_stub() {
             .map(|(n, g)| format!("{} -> {:?}", n, g))
             .collect::<Vec<_>>()
             .join("\n  ")
+    );
+}
+
+/// PURPOSE:  The desktop-guard classifier decides which commands need a mobile
+///           stub; a wrong classifier would report the wrong offender set.
+/// SCENARIO: Feed representative `cfg` predicate texts to the classifier.
+/// ASSERTS:  `desktop` and `all(unix, desktop)` are desktop; `not(desktop)` is
+///           not; the two classifiers are mutually exclusive on those inputs.
+/// CLASS:    contract
+/// REQUIRES: none
+/// MUTANT:   Drop the `!g.contains("not(desktop)")` clause from
+///           `is_desktop_guard` — `not(desktop)` arms would then be counted as
+///           desktop arms and every stub would look self-satisfied.
+#[test]
+fn desktop_guard_predicate_is_classified_correctly() {
+    assert!(is_desktop_guard("desktop"));
+    assert!(is_desktop_guard("all(unix, desktop)"));
+    assert!(!is_desktop_guard("not(desktop)"));
+    assert!(!is_desktop_guard(""));
+
+    assert!(is_non_desktop_guard("not(desktop)"));
+    assert!(!is_non_desktop_guard("desktop"));
+    assert!(!is_non_desktop_guard("all(unix, desktop)"));
+
+    assert!(
+        !(is_desktop_guard("not(desktop)") && is_non_desktop_guard("not(desktop)")),
+        "the two guard classifiers must not both accept the same predicate"
+    );
+}
+
+/// PURPOSE:  The registration parser must ignore banner comments and inline
+///           comments, otherwise a commented-out command would be reported as
+///           registered (a false green).
+/// SCENARIO: Parse a synthetic `generate_handler![]` block containing comment
+///           lines and an inline trailing comment.
+/// ASSERTS:  Only the three real command names are extracted.
+/// CLASS:    edge-case
+/// REQUIRES: none
+/// MUTANT:   Remove the `line.split("//")` strip in `extract_registered_commands`
+///           — the commented-out name would then be treated as registered.
+#[test]
+fn registration_parser_ignores_comment_lines() {
+    let synthetic = r#"
+        .invoke_handler(tauri::generate_handler![
+            alpha,
+            // beta is retired and must not be parsed
+            gamma, // inline comment
+        ])
+    "#;
+
+    let registered = extract_registered_commands(synthetic);
+
+    assert_eq!(
+        registered,
+        BTreeSet::from([
+            "alpha".to_string(),
+            "gamma".to_string(),
+        ]),
+        "comment lines and inline comments must not contribute command names"
+    );
+}
+
+/// PURPOSE:  The registration parser must stop at the end of the
+///           `generate_handler![]` block; reading past it would import
+///           unrelated identifiers as registered commands.
+/// SCENARIO: Parse a synthetic block followed by an unrelated identifier.
+/// ASSERTS:  The identifier after the closing bracket is not in the set.
+/// CLASS:    edge-case
+/// REQUIRES: none
+/// MUTANT:   Remove the `if depth == 0 { break; }` early exit in
+///           `extract_registered_commands` — identifiers past the block would
+///           be counted as registered.
+#[test]
+fn registration_parser_stops_at_block_end() {
+    let synthetic = r#"
+        .invoke_handler(tauri::generate_handler![
+            alpha,
+        ])
+        .run(|app_handle, event| {
+            let not_a_command = 1;
+        })
+    "#;
+
+    let registered = extract_registered_commands(synthetic);
+
+    assert_eq!(
+        registered,
+        BTreeSet::from(["alpha".to_string()]),
+        "the parser must stop at the closing bracket of the registration block"
     );
 }
