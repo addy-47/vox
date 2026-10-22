@@ -247,7 +247,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_calculate_compaction_max_tokens_bounds() {
+    fn compaction_token_budget_is_clamped_to_the_allowed_range() {
         // Standard 8k context window: 8192 * 0.165 = 1351
         assert_eq!(calculate_compaction_max_tokens(8192, None), 1351);
 
@@ -268,7 +268,7 @@ mod tests {
     }
 
     #[test]
-    fn test_compaction_json_schema_structure() {
+    fn compaction_json_schema_declares_the_six_required_fields() {
         let schema = compaction_json_schema();
         assert_eq!(schema["type"], "object");
         let required = schema["required"].as_array().unwrap();

@@ -478,7 +478,7 @@ mod tests {
     };
 
     #[test]
-    fn test_responses_request_body_flattened_history() {
+    fn responses_request_body_flattens_history_into_input_items() {
         let config = ConnectionConfig {
             transport: TransportType::Responses,
             base_url: "https://api.openai.com/v1".to_string(),
@@ -547,7 +547,7 @@ mod tests {
     }
 
     #[test]
-    fn test_responses_typed_event_parsing() {
+    fn responses_event_parses_the_output_text_delta() {
         let json_line = r#"{"type":"response.output_text.delta","delta":"Vox is ready."}"#;
         let event =
             serde_json::from_str::<ResponsesEvent>(json_line).expect("must parse typed event");

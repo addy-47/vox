@@ -73,7 +73,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_sse_decoder_chunking() {
+    fn sse_decoder_emits_only_complete_data_lines() {
         let mut decoder = SseDecoder::new();
         let chunk1 = b"data: {\"token\":\"hello\"}\r\n\r\ndata: {\"token\":\" world";
         let lines1 = decoder.decode_chunk(chunk1);

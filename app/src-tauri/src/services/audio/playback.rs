@@ -361,13 +361,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_synthesis_turn_gate_accepts_current_and_unset() {
+    fn synthesis_turn_gate_accepts_the_current_and_the_unset_turn() {
         assert!(is_synthesis_turn_current(SYNTHESIS_TURN_UNSET, 7));
         assert!(is_synthesis_turn_current(7, 7));
     }
 
     #[test]
-    fn test_synthesis_turn_gate_rejects_superseded_turn() {
+    fn synthesis_turn_gate_rejects_a_superseded_turn() {
         assert!(!is_synthesis_turn_current(5, 6));
     }
 }

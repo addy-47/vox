@@ -136,7 +136,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_itn_numbers_and_currency() {
+    fn tier1_refinement_rewrites_numbers_and_currency() {
         assert_eq!(apply_tier1_refinement("twenty five"), "25");
         assert_eq!(
             apply_tier1_refinement("one thousand eight hundred dollars"),
@@ -149,7 +149,7 @@ mod tests {
     }
 
     #[test]
-    fn test_filler_removal() {
+    fn tier1_refinement_removes_fillers() {
         assert_eq!(
             apply_tier1_refinement("Hey Vox, um, what's the weather like?"),
             "Hey Vox, what's the weather like?"
@@ -161,7 +161,7 @@ mod tests {
     }
 
     #[test]
-    fn test_stutter_deduplication() {
+    fn tier1_refinement_deduplicates_stuttered_words() {
         assert_eq!(
             apply_tier1_refinement("Can you help me with the the function?"),
             "Can you help me with the function?"

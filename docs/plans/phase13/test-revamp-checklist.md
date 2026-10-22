@@ -89,49 +89,55 @@ Legend: `[ ]` pending · `[x]` done · `[~]` folded into another binary · `[-]`
 
 ## Slice 7 — Agentic tool loop
 
-- [ ] `tests/agentic_tool_runtime_test.rs` (6)
-- [ ] Tool cap 5, 65% debounce, non-terminal retrieval
-- [ ] Binary: `agentic_tool_loop_test.rs`
-- [ ] Report Slice 7
+- [x] `tests/agentic_tool_runtime_test.rs` → `tests/agentic_tool_loop_test.rs` (6 → 8 subtests), file renamed
+- [x] Non-terminal retrieval — memory RRF and the three-stage web search
+- [x] Terminal tool — title update, accumulator parity, clause prefix drop
+- [x] Wire mapping — NVIDIA preset and Ollama native request and tool-stream parsing
+- [x] Tool filter taxonomy — title, memory and web-search switches
+- [ ] Tool cap 5 (`MAX_TOOL_ITERATIONS`) — moved to Slice 12, the harness loop owns it
+- [x] Report Slice 7
 
 ## Slice 8 — LLM → TTS chunking
 
-- [ ] `tests/llm_to_tts_test.rs` (1)
-- [ ] `tests/chunking_determinism_test.rs` (3)
-- [ ] Binary: `llm_to_tts_test.rs`
-- [ ] Report Slice 8
+- [x] `tests/llm_to_tts_test.rs` — renamed to a behaviour-first name, intent block added
+- [x] `tests/chunking_determinism_test.rs` — folded and removed; the clause rules are pure, so they became 14 unit tests in `src/services/harness/stages/streaming/chunker.rs` (default tier) instead of an integration binary
+- [x] Clause rules — determinism, emergency cap at 30 words, comma gate, compound seam at 22 words, abbreviation, decimal, mid-token period, question, short and long exclamation, newline, semicolon seam, flush, clear
+- [x] Real generation — clauses reach the TTS, the pending job count matches, production commits the history
+- [x] Report Slice 8
+- [!] Deviation from the plan: the clause rules are component-level, so they live in the lib test binary
 
 ## Slice 9 — TTS catalogues and transitions
 
-- [ ] `tests/tts_provider_catalogue_test.rs` (9)
-- [ ] `tests/tts_voice_catalogue_test.rs` (6)
-- [ ] `tests/tts_transition_test.rs` (2)
-- [ ] Binary: `tts_catalogue_test.rs`
-- [ ] Report Slice 9
+- [x] `tests/tts_provider_catalogue_test.rs` → `tests/tts_catalogue_test.rs` (9 subtests, honest header, intent blocks)
+- [x] `tests/tts_transition_test.rs` → `tests/tts_catalogue/transition.rs`, a module of the same binary (2 subtests)
+- [x] `tests/tts_voice_catalogue_test.rs` — folded and removed; the voice resolution rules are pure and became 6 unit tests in `src/services/tts/voice.rs` (default tier)
+- [x] Report Slice 9
 
 ## Slice 10 — Playback, interrupt, barge-in
 
-- [ ] `tests/playback_interrupt_test.rs` (6)
-- [ ] `tests/tts_to_playback_test.rs` (2)
-- [ ] Binary: `playback_test.rs`
-- [ ] Report Slice 10
+- [x] `tests/playback_interrupt_test.rs` → `tests/playback_test.rs` (6 subtests, honest header, intent blocks)
+- [x] `tests/tts_to_playback_test.rs` → `tests/playback/tts_to_playback.rs`, a module of the same binary (2 subtests)
+- [x] Report Slice 10
 
 ## Slice 11 — Audio capture and AEC
 
-- [ ] `tests/audio_capture_aec_test.rs` (3)
-- [ ] `tests/aec_pipeline_test.rs` (4)
-- [ ] `tests/aec_barge_in_integration_test.rs` (5)
-- [ ] Binary: `audio_capture_aec_test.rs`
-- [ ] Report Slice 11
+- [x] `tests/audio_capture_aec_test.rs` — 3 subtests, honest header, intent blocks
+- [x] `tests/aec_pipeline_test.rs` → `tests/audio_capture/aec_pipeline.rs`, a module of the same binary (4 subtests)
+- [x] `tests/aec_barge_in_integration_test.rs` → `tests/audio_capture/barge_in.rs`, a module of the same binary (5 subtests)
+- [x] Shared `common::audio::erle_db` replaced the duplicated ERLE helpers
+- [x] The wall-clock "< 15 ms" latency assertion is gone; the per-chunk deadline remains
+- [x] Report Slice 11
 
 ## Slice 12 — Harness loop
 
-- [ ] `src/harness/loop.rs`
-- [ ] `src/harness/steps.rs`
-- [ ] `src/harness/chassis.rs`
-- [ ] `src/harness/session.rs`
-- [ ] Binary: `harness_loop_test.rs` (new)
-- [ ] Report Slice 12
+- [x] Binary: `tests/harness_loop_test.rs` — 5 subtests, recording LLM stub, no weights, in the default tier
+- [x] Tool budget — the loop stops after five tool rounds and runs one final tool-free pass
+- [x] Cancelled turn — never reaches the model
+- [x] Duplicate query — refused before the dispatch
+- [x] Unmounted harness — reports an error
+- [x] Finished turn — commits both messages to the history
+- [ ] `src/harness/chassis.rs`, `src/harness/session.rs` — deferred to the final sweep
+- [x] Report Slice 12
 
 ## Slice 13 — Session lifecycle
 
@@ -202,3 +208,29 @@ Legend: `[ ]` pending · `[x]` done · `[~]` folded into another binary · `[-]`
 | Silent drains | 0 | 10 |
 | Swallowed joins | 0 | 8 |
 | Orphan ignored tests | 0 | 4 |
+
+## Slices 13 to 20 — Supporting seams
+
+- [x] Session lifecycle — `session_lifecycle_test.rs`, 8 → 20 subtests
+- [x] Storage boundary — `database_persistence_boundary_test.rs`, 6 → 15 subtests
+- [x] Settings — `settings_persistence_test.rs`, 7 → 15 subtests
+- [x] Memory — `personal_memory_test.rs` 9 → 17, `memory_ingestion_test.rs` 4 → 11, `memory_compaction_test.rs` 6 → 13
+- [x] Notifications — `notifications_crud_test.rs`, 5 → 15 subtests
+- [x] Model manager and eviction — `model_manager_test.rs` 14 → 15, `model_eviction_test.rs` 2 → 9
+- [x] IPC registration — `ipc_command_registration_test.rs`, 2 → 7 subtests
+- [x] Realtime transport — `realtime_transport_test.rs`, 6 → 10 subtests
+- [x] Every scenario carries an intent block, a behaviour-first name and an honest header
+- [x] Wall-clock watchdogs and sleep-based absence checks replaced by log or server acknowledgements
+- [!] F-19 — packaged voice seeding fails on upgraded databases
+- [!] F-20 — private-mode suppression has no acknowledgement channel
+- [x] Final sweep — every `src` unit test carries a behaviour-first name (122 renamed); the intent blocks live only in the seam binaries, and the `src` unit tests carry none (1157 lines of block removed)
+- [x] Remote control binaries gated behind `./scripts/test.sh remote`
+- [x] `all` tier now excludes the remote binaries
+- [x] Full non-remote suite green: 413 passed, 4 skipped
+- [!] F-19 — packaged voice seeding fails on upgraded databases
+- [!] F-20 — private-mode suppression has no acknowledgement
+- [!] F-21 — personal memory markdown round-trip is lossy
+- [!] F-22 — wall-clock latency assertion in the default tier
+- [!] F-23 — near-empty assertions in the audio device mock
+- [!] F-24 — the cargo-mutants pass is blocked by the build cost of this crate
+- [x] Hand-applied mutation campaign — 5 mutants, 5 killed (one needed a new test first)

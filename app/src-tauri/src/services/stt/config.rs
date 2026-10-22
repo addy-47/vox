@@ -127,7 +127,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_stt_settings_defaults() {
+    fn stt_settings_default_to_the_embedded_model() {
         let settings = SttSettings::default();
         assert_eq!(settings.active.category, "embedded");
         assert_eq!(settings.active_model(), DEFAULT_ASR_MODEL);

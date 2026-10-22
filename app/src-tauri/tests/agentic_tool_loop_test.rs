@@ -1,14 +1,12 @@
 //! ============================================================================
-//! agentic_tool_runtime_test.rs — Agentic Tool Runtime, Taxonomy & Scratchpad Isolation
+//! agentic_tool_loop_test.rs — Agentic tool loop seam
 //! ============================================================================
-//! Category     : Integration Test (Seam 21)
-//! Component    : services/harness/stages/tools/ + services/harness/steps.rs +
-//!                services/harness/stages/prompt.rs + persistence/sessions.rs
-//! Prerequisites: Isolated temporary DB paths
-//! Execution    : cargo nextest run --test agentic_tool_runtime_test --release --nocapture --test-threads=1
-//! Metrics      : Terminal tool single-pass execution, DB title update, TurnAccumulator
-//!                parity, NonTerminal RRF retrieval, scratchpad drop, prefix audio drop,
-//!                provider wire bytes (request mapping) + stream parsing to ToolCall
+//! Category  : Integration (Seam 7 — tool call → tool execution → turn outcome)
+//! Component : services/harness/stages/tools/ + services/harness/steps.rs
+//!             + services/harness/stages/prompt.rs + persistence/sessions.rs
+//! Binary    : agentic_tool_loop_test
+//! Prereqs   : none (isolated temporary database)
+//! Run       : cargo nextest run --test agentic_tool_loop_test --release --test-threads=1
 //! ============================================================================
 
 mod common;
@@ -61,14 +59,17 @@ use vox_lib::{
 // ============================================================================
 // Subtest 1: test_terminal_tool_title_and_accumulator_parity
 // ============================================================================
-/// Verifies Seam 21 Terminal Tool Single-Pass Contract (`respond_and_set_title`):
-/// 1. Emits `respond_and_set_title` tool call with `title` and `spoken_response`.
-/// 2. Sets `TurnAccumulator.assistant_response = spoken_response` to guarantee DB turns parity.
-/// 3. Dispatches `spoken_response` directly to `tts_tx` as `AudioIntent::TurnResponse`.
-/// 4. Updates session title in Turso SQLite `sessions` table.
-/// 5. Commits `spoken_response` to working history (zero tool syntax in prompt history).
+/// PURPOSE:  The terminal tool must speak, set the session title and leave the
+///           accumulator holding exactly the spoken response.
+/// SCENARIO: The provider answers with a `respond_and_set_title` tool call.
+/// ASSERTS:  The TTS command carries the spoken text as a turn response, the accumulator
+///           holds the same text, the session row gets the title, and the title tool is
+///           suppressed on the next turn.
+/// CLASS:    happy-path
+/// REQUIRES: none
+/// MUTANT:   Skip the `assistant_response` assignment in the terminal tool handler.
 #[tokio::test]
-async fn test_terminal_tool_title_and_accumulator_parity() {
+async fn terminal_tool_sets_the_title_and_keeps_the_accumulator_in_parity() {
     let test_timeout = Duration::from_secs(15);
     tokio::time::timeout(test_timeout, async {
         let (_paths_guard, app, state) = common::harness::setup_isolated_app_state().await;
@@ -235,21 +236,22 @@ async fn test_terminal_tool_title_and_accumulator_parity() {
         );
     })
     .await
-    .expect("test_terminal_tool_title_and_accumulator_parity timed out");
+    .expect("terminal_tool_sets_the_title_and_keeps_the_accumulator_in_parity timed out");
 }
 
 // ============================================================================
 // Subtest 2: test_search_memory_non_terminal_rrf_retrieval
 // ============================================================================
-/// Verifies Seam 21 NonTerminal Observation Contract (`search_memory`):
-/// 1. Pre-seeds SQLite facts table with candidate memory facts.
-/// 2. Dispatches `search_memory` tool call.
-/// 3. Verifies `spoken_filler` sent to TTS as `AudioIntent::InterimFiller`.
-/// 4. Verifies hybrid RRF retrieval returns facts.
-/// 5. Verifies observation pushed into `scratchpad`.
-/// 6. Verifies turn completion commits only conversational dialogue (scratchpad dropped).
+/// PURPOSE:  A retrieval tool must not end the turn; it must fill in facts and keep
+///           working.
+/// SCENARIO: The provider answers with a `search_memory` tool call over seeded facts.
+/// ASSERTS:  An interim filler reaches the TTS, the retrieved facts reach the scratchpad,
+///           and the committed history holds only the conversation.
+/// CLASS:    happy-path
+/// REQUIRES: none
+/// MUTANT:   Commit the scratchpad observations into the conversation history.
 #[tokio::test]
-async fn test_search_memory_non_terminal_rrf_retrieval() {
+async fn search_memory_retrieval_is_non_terminal_and_drops_the_scratchpad() {
     let test_timeout = Duration::from_secs(15);
     tokio::time::timeout(test_timeout, async {
         let (_paths_guard, app, state) = common::harness::setup_isolated_app_state().await;
@@ -411,18 +413,20 @@ async fn test_search_memory_non_terminal_rrf_retrieval() {
         }
     })
     .await
-    .expect("test_search_memory_non_terminal_rrf_retrieval timed out");
+    .expect("search_memory_retrieval_is_non_terminal_and_drops_the_scratchpad timed out");
 }
 
 // ============================================================================
 // Subtest 3: test_clause_buffering_and_prefix_drop_on_tool_call
 // ============================================================================
-/// Verifies Seam 21 Drop-All-Prefix Requirement:
-/// When tokens arrive before a tool call ("Checking my database..."),
-/// the egress stream layer buffers them; upon receiving ToolCallReceived,
-/// the buffer is dropped and zero prefix speech is dispatched to TTS.
+/// PURPOSE:  Text spoken before a tool call must not be spoken twice.
+/// SCENARIO: The provider streams a clause and then asks for a tool.
+/// ASSERTS:  The buffered clause is dropped when the tool call starts.
+/// CLASS:    edge-case
+/// REQUIRES: none
+/// MUTANT:   Keep the buffered clause in the accumulator across the tool call.
 #[tokio::test]
-async fn test_clause_buffering_and_prefix_drop_on_tool_call() {
+async fn tool_call_drops_the_buffered_clause_prefix() {
     let test_timeout = Duration::from_secs(10);
     tokio::time::timeout(test_timeout, async {
         let (_paths_guard, app, state) = common::harness::setup_isolated_app_state().await;
@@ -493,7 +497,7 @@ async fn test_clause_buffering_and_prefix_drop_on_tool_call() {
         );
     })
     .await
-    .expect("test_clause_buffering_and_prefix_drop_on_tool_call timed out");
+    .expect("tool_call_drops_the_buffered_clause_prefix timed out");
 }
 
 // ============================================================================
@@ -556,13 +560,16 @@ fn drain_wire_events(rx: &mpsc::Receiver<LlmStreamEvent>) -> Vec<LlmStreamEvent>
 // ============================================================================
 // Subtest 4: test_nvidia_preset_wire_request_and_tool_stream
 // ============================================================================
-/// Wire regression for the Phase 12 eval failure: reasoning tokens ate the
-/// 120-token budget because the body carried `think:false` + `reasoning.enabled`
-/// (both ignored on NIM) instead of `reasoning_effort:"none"`.
-/// Drives the REAL `RemoteTransport` against a mock server and asserts both the
-/// exact request bytes and the parsed `ToolCall` out of chunked SSE deltas.
+/// PURPOSE:  The NVIDIA preset must put the tool schema on the wire and read the tool
+///           call back out of the stream.
+/// SCENARIO: A recorded wire exchange is replayed through the transport.
+/// ASSERTS:  The request body carries the tools and the response stream yields one
+///           tool call.
+/// CLASS:    happy-path
+/// REQUIRES: none
+/// MUTANT:   Drop the tools array when mapping the request.
 #[tokio::test]
-async fn test_nvidia_preset_wire_request_and_tool_stream() {
+async fn nvidia_preset_maps_the_request_and_parses_the_tool_stream() {
     let test_timeout = Duration::from_secs(25);
     tokio::time::timeout(test_timeout, async {
         let captured: Arc<Mutex<Option<serde_json::Value>>> = Arc::new(Mutex::new(None));
@@ -634,16 +641,22 @@ async fn test_nvidia_preset_wire_request_and_tool_stream() {
         server.join().expect("mock wire server must exit cleanly");
     })
     .await
-    .expect("test_nvidia_preset_wire_request_and_tool_stream timed out");
+    .expect("nvidia_preset_maps_the_request_and_parses_the_tool_stream timed out");
 }
 
 // ============================================================================
 // Subtest 5: test_ollama_native_wire_request_and_tool_stream
 // ============================================================================
-/// Native `/api/chat` wire contract: `think:false` + `options.num_predict`,
-/// complete per-line NDJSON tool calls, and NO `tool_choice` (unsupported).
+/// PURPOSE:  The Ollama native preset must map the tool schema and parse the tool call
+///           out of its own response shape.
+/// SCENARIO: A recorded wire exchange is replayed through the transport.
+/// ASSERTS:  The request body carries the tools and the response stream yields one
+///           tool call.
+/// CLASS:    happy-path
+/// REQUIRES: none
+/// MUTANT:   Drop the tools array when mapping the request.
 #[tokio::test]
-async fn test_ollama_native_wire_request_and_tool_stream() {
+async fn ollama_native_maps_the_request_and_parses_the_tool_stream() {
     let test_timeout = Duration::from_secs(25);
     tokio::time::timeout(test_timeout, async {
         let captured: Arc<Mutex<Option<serde_json::Value>>> = Arc::new(Mutex::new(None));
@@ -700,20 +713,20 @@ async fn test_ollama_native_wire_request_and_tool_stream() {
         server.join().expect("mock wire server must exit cleanly");
     })
     .await
-    .expect("test_ollama_native_wire_request_and_tool_stream timed out");
+    .expect("ollama_native_maps_the_request_and_parses_the_tool_stream timed out");
 }
 
 // ============================================================================
 // Subtest 5: test_web_search_non_terminal_3stage_retrieval
 // ============================================================================
-/// Verifies Seam 22 NonTerminal Cognitive Observation Contract (`web_search`):
-/// 1. Verifies `WebSearchTool` parameter schema, domain (Modular only), and NonTerminal flow.
-/// 2. Verifies `ToolFilter` gating when `web_search_enabled = false` vs `true`.
-/// 3. Verifies tool execution with adaptive timeout and degraded zero-turn-abort error handling.
-/// 4. Verifies prompt injection inoculation rules injected into `PromptBuilderStage`.
-/// 5. Verifies Stage 3 dynamic context budget ceiling clamping and `<web_search_evidence>` XML tag structure.
+/// PURPOSE:  Web search must run its three stages without ending the turn.
+/// SCENARIO: The provider answers with a web search tool call.
+/// ASSERTS:  The stages run, an interim filler is spoken, and the turn continues.
+/// CLASS:    happy-path
+/// REQUIRES: none
+/// MUTANT:   Treat the web search as a terminal tool.
 #[tokio::test]
-async fn test_web_search_non_terminal_3stage_retrieval() {
+async fn web_search_runs_three_stages_and_stays_non_terminal() {
     let test_timeout = Duration::from_secs(15);
     tokio::time::timeout(test_timeout, async {
         let (_paths_guard, _app, state) = common::harness::setup_isolated_app_state().await;
@@ -845,5 +858,72 @@ async fn test_web_search_non_terminal_3stage_retrieval() {
         );
     })
     .await
-    .expect("test_web_search_non_terminal_3stage_retrieval timed out");
+    .expect("web_search_runs_three_stages_and_stays_non_terminal timed out");
+}
+
+/// PURPOSE:  The title tool must only be offered while the session has no title.
+/// ASSERTS:  `respond_and_set_title` is active while the title is unset and hidden once
+///           it is set.
+/// CLASS:    suppression
+/// REQUIRES: none
+/// MUTANT:   Ignore `filter.title_is_unset` in `active_definitions`.
+#[test]
+fn tool_filter_hides_the_title_tool_once_the_title_is_set() {
+    let registry = ToolRegistry::with_default_tools();
+
+    let with_title = registry.active_definitions(&ToolFilter {
+        mode: PipelineMode::Modular,
+        title_is_unset: false,
+        memory_retrieval_enabled: true,
+        web_search_enabled: true,
+    });
+    assert!(
+        !with_title.iter().any(|t| t.name == "respond_and_set_title"),
+        "a titled session must not offer the title tool"
+    );
+
+    let without_title = registry.active_definitions(&ToolFilter {
+        mode: PipelineMode::Modular,
+        title_is_unset: true,
+        memory_retrieval_enabled: true,
+        web_search_enabled: true,
+    });
+    assert!(
+        without_title.iter().any(|t| t.name == "respond_and_set_title"),
+        "an untitled session must offer the title tool"
+    );
+}
+
+/// PURPOSE:  Retrieval tools must only be offered when the user enabled them.
+/// ASSERTS:  `search_memory` and `web_search` disappear when their switches are off.
+/// CLASS:    suppression
+/// REQUIRES: none
+/// MUTANT:   Ignore `memory_retrieval_enabled` in `active_definitions`.
+#[test]
+fn tool_filter_hides_retrieval_tools_when_they_are_disabled() {
+    let registry = ToolRegistry::with_default_tools();
+
+    let disabled = registry.active_definitions(&ToolFilter {
+        mode: PipelineMode::Modular,
+        title_is_unset: true,
+        memory_retrieval_enabled: false,
+        web_search_enabled: false,
+    });
+    assert!(
+        !disabled.iter().any(|t| t.name == "search_memory"),
+        "memory retrieval must be off when the switch is off"
+    );
+    assert!(
+        !disabled.iter().any(|t| t.name == "web_search"),
+        "web search must be off when the switch is off"
+    );
+
+    let enabled = registry.active_definitions(&ToolFilter {
+        mode: PipelineMode::Modular,
+        title_is_unset: true,
+        memory_retrieval_enabled: true,
+        web_search_enabled: true,
+    });
+    assert!(enabled.iter().any(|t| t.name == "search_memory"));
+    assert!(enabled.iter().any(|t| t.name == "web_search"));
 }

@@ -234,11 +234,6 @@ pub fn handle_event<R: tauri::Runtime + 'static>(
 mod tests {
     use super::TurnAccumulator;
 
-    /// PURPOSE:  An interrupted turn must keep the words the user already said.
-    /// ASSERTS:  The user transcript moves into the continuation prefix.
-    /// CLASS:    happy-path
-    /// REQUIRES: none
-    /// MUTANT:   Clear the user transcript instead of stashing it.
     #[test]
     fn stash_for_continuation_moves_the_user_transcript_into_the_prefix() {
         let mut acc = TurnAccumulator::new();
@@ -251,11 +246,6 @@ mod tests {
         assert!(!acc.awaiting_continuation);
     }
 
-    /// PURPOSE:  When nothing was recognised yet the late final must still be caught.
-    /// ASSERTS:  The accumulator awaits the late final.
-    /// CLASS:    edge-case
-    /// REQUIRES: none
-    /// MUTANT:   Drop the `awaiting_continuation` flag.
     #[test]
     fn stash_for_continuation_awaits_a_late_final() {
         let mut acc = TurnAccumulator::new();
@@ -266,11 +256,6 @@ mod tests {
         assert!(acc.awaiting_continuation);
     }
 
-    /// PURPOSE:  A second stashed fragment must not overwrite the first.
-    /// ASSERTS:  The prefix holds both fragments separated by a space.
-    /// CLASS:    edge-case
-    /// REQUIRES: none
-    /// MUTANT:   Replace the prefix instead of appending to it.
     #[test]
     fn stash_for_continuation_appends_to_an_existing_prefix() {
         let mut acc = TurnAccumulator::new();
@@ -283,11 +268,6 @@ mod tests {
         assert_eq!(acc.continuation_prefix, "second part third part");
     }
 
-    /// PURPOSE:  A late final must be appended, not dropped.
-    /// ASSERTS:  The late segment joins the prefix with a space.
-    /// CLASS:    edge-case
-    /// REQUIRES: none
-    /// MUTANT:   Ignore the segment argument.
     #[test]
     fn append_continuation_prefix_appends_the_late_segment() {
         let mut acc = TurnAccumulator::new();
@@ -299,11 +279,6 @@ mod tests {
         assert!(!acc.awaiting_continuation);
     }
 
-    /// PURPOSE:  The stashed prefix and the new words must become one query.
-    /// ASSERTS:  The merged text holds both parts in order.
-    /// CLASS:    happy-path
-    /// REQUIRES: none
-    /// MUTANT:   Return only the new segment.
     #[test]
     fn resolve_merged_transcript_joins_the_prefix_and_the_new_text() {
         let mut acc = TurnAccumulator::new();
@@ -316,11 +291,6 @@ mod tests {
         assert!(acc.continuation_prefix.is_empty());
     }
 
-    /// PURPOSE:  An empty new turn must promote the prefix, not abort the turn.
-    /// ASSERTS:  The merged text is the prefix alone.
-    /// CLASS:    edge-case
-    /// REQUIRES: none
-    /// MUTANT:   Return an empty string when the new text is empty.
     #[test]
     fn resolve_merged_transcript_promotes_the_prefix() {
         let mut acc = TurnAccumulator::new();
@@ -332,11 +302,6 @@ mod tests {
         assert_eq!(acc.user_transcript, "first part");
     }
 
-    /// PURPOSE:  A new turn must not inherit the previous turn's continuation state.
-    /// ASSERTS:  Clear resets the prefix, the transcript and the awaiting flag.
-    /// CLASS:    edge-case
-    /// REQUIRES: none
-    /// MUTANT:   Leave the continuation prefix in place.
     #[test]
     fn clear_resets_the_continuation_state() {
         let mut acc = TurnAccumulator::new();

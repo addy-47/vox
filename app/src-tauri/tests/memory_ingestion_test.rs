@@ -1,11 +1,11 @@
 //! ============================================================================
-//! tests/memory_ingestion_test.rs — Memory Ingestion Queue & 2-Stage Deduplication v2 Integration Tests
+//! memory_ingestion_test.rs — queued facts are deduplicated in two stages (exact then semantic), embedded, and the queue survives a crash
 //! ============================================================================
-//! Category     : Integration Test (Seam 13)
-//! Component    : services/memory/ingestion, persistence/queue, persistence/facts, services/memory/ml/embedder
-//! Prerequisites: Local MiniLM-L12 ONNX model (~/.vox/models/embedding/minilm-l12-v2), Turso SQLite engine (vox.db), real dataset files in sandbox/datasets/
-//! Execution    : cargo nextest run --test memory_ingestion_test --release --nocapture --test-threads=1
-//! Metrics      : Jaccard exact match, 384-dim ONNX embedding generation, cosine semantic dedup, queue status lifecycle
+//! Category  : Integration (Seam 13 — memory ingestion)
+//! Component : src/services/memory/ingestion.rs, src/services/memory/ml/embedder.rs, src/persistence/queue.rs, src/persistence/facts.rs
+//! Binary    : memory_ingestion_test
+//! Prereqs   : VOX_MODELS_DIR with the MiniLM-L12 ONNX embedder; datasets under sandbox/datasets/
+//! Run       : cargo nextest run --test memory_ingestion_test --release --test-threads=1
 //! ============================================================================
 
 mod common;
@@ -64,11 +64,83 @@ fn load_llm_facts(limit: usize) -> Vec<DatasetFact> {
     dataset.facts.into_iter().take(limit).collect()
 }
 
-// ============================================================================
-// Subtest 1: Stage 1 Exact Jaccard Deduplication & Winner-Takes-All from Dataset
-// ============================================================================
+/// Seeds a semantically duplicated pair and leaves the incoming copy queued
+/// in `stage1_done`, ready for the cosine stage.
+async fn seed_semantic_duplicate_pair(
+    conn: &turso::Connection,
+    pair: &DedupPair,
+) -> i64 {
+    let session_id = create_session(conn, Some("default")).await.unwrap();
+    let compaction_id = record_compaction_start(conn, session_id, "soft", 0, 5)
+        .await
+        .unwrap();
+
+    let old_fact = ObservationRecord {
+        id: format!("fact_pair_{}_1", pair.id),
+        session_id: Some(session_id),
+        compaction_id,
+        observation_type: "personal".to_string(),
+        text: pair.fact1.clone(),
+        status: "active".to_string(),
+        created_at: 1000,
+        updated_at: 1000,
+    };
+    insert_observation(conn, &old_fact).await.unwrap();
+
+    let old_embeddings =
+        vox_lib::services::memory::generate_embeddings_batch(&[&old_fact.text])
+            .unwrap()
+            .expect("Embedding generation must return vector");
+    assert_eq!(
+        old_embeddings[0].len(),
+        384,
+        "MiniLM embeddings must be 384 dimensions"
+    );
+
+    insert_vector(
+        conn,
+        &old_fact.id,
+        "personal",
+        "active",
+        Some("default"),
+        &old_embeddings[0],
+    )
+    .await
+    .unwrap();
+
+    let q_id = enqueue_observation(
+        conn,
+        Some(session_id),
+        compaction_id,
+        "personal",
+        &pair.fact2,
+    )
+    .await
+    .unwrap();
+
+    conn.execute(
+        "UPDATE memory_ingestion_queue SET status = 'stage1_done' WHERE id = ?",
+        (q_id,),
+    )
+    .await
+    .unwrap();
+
+    q_id
+}
+
+/// PURPOSE:  An incoming fact whose normalised text matches an existing fact
+///           must deactivate the older one; keeping both duplicates the
+///           user's memory and doubles the retrieval noise.
+/// SCENARIO: Seed an active fact from the dataset, enqueue a case- and
+///           punctuation-variant of it and run the exact dedup stage.
+/// ASSERTS:  One item is processed, one duplicate is deactivated, no errors
+///           occur and no active fact of that type remains.
+/// CLASS:    happy-path
+/// REQUIRES: none
+/// MUTANT:   Skip the deactivation in `run_stage1_exact_dedup` — the active
+///           fact count assertion would fail.
 #[tokio::test]
-async fn test_stage1_exact_dedup_winner_takes_all() {
+async fn stage1_exact_dedup_deactivates_the_older_matching_fact() {
     tokio::time::timeout(Duration::from_secs(15), async {
         let _guard = TempPathsGuard::new();
         let (_app, state) = get_test_app_and_state().await;
@@ -77,7 +149,6 @@ async fn test_stage1_exact_dedup_winner_takes_all() {
             .connect()
             .expect("Failed to connect to test database");
 
-        // Load real fact from pure_llm_facts_dataset.json
         let dataset_facts = load_llm_facts(5);
         let sample = &dataset_facts[0];
 
@@ -86,7 +157,6 @@ async fn test_stage1_exact_dedup_winner_takes_all() {
             .await
             .unwrap();
 
-        // 1. Seed existing active fact using real dataset text
         let old_fact = ObservationRecord {
             id: format!("fact_old_{}", sample.id),
             session_id: Some(session_id),
@@ -99,7 +169,77 @@ async fn test_stage1_exact_dedup_winner_takes_all() {
         };
         insert_observation(&conn, &old_fact).await.unwrap();
 
-        // 2. Enqueue incoming fact with identical normalized text (case & punctuation variation)
+        let modified_text = format!("{}!!!", sample.text.to_uppercase());
+        enqueue_observation(
+            &conn,
+            Some(session_id),
+            compaction_id,
+            &sample.observation_type,
+            &modified_text,
+        )
+        .await
+        .unwrap();
+
+        let summary = run_stage1_exact_dedup(&conn).await.unwrap();
+        assert_eq!(summary.processed, 1, "Must process exactly 1 pending item");
+        assert_eq!(
+            summary.duplicates_deactivated, 1,
+            "Must deactivate older matching fact from dataset"
+        );
+        assert_eq!(summary.errors, 0, "No errors expected during Stage 1 dedup");
+
+        let active_facts = fetch_active_observations_by_type(&conn, &sample.observation_type)
+            .await
+            .unwrap();
+        assert!(
+            active_facts.is_empty(),
+            "Older active fact must be deactivated (incoming item still in queue)"
+        );
+    })
+    .await
+    .expect("stage1_exact_dedup_deactivates_the_older_matching_fact timed out");
+}
+
+/// PURPOSE:  The exact stage must park the processed item in `stage1_done`
+///           with no retries; a wrong status makes the next stage skip the
+///           item or reprocess it forever.
+/// SCENARIO: Run the exact dedup stage over one queued item and read the
+///           queue row back.
+/// ASSERTS:  The row's status is `stage1_done` and its retry count is zero.
+/// CLASS:    happy-path
+/// REQUIRES: none
+/// MUTANT:   Leave the status at `pending` after stage 1 — the status
+///           assertion would fail.
+#[tokio::test]
+async fn stage1_exact_dedup_marks_the_queue_item_stage1_done() {
+    tokio::time::timeout(Duration::from_secs(15), async {
+        let _guard = TempPathsGuard::new();
+        let (_app, state) = get_test_app_and_state().await;
+        let conn = state
+            .db
+            .connect()
+            .expect("Failed to connect to test database");
+
+        let dataset_facts = load_llm_facts(5);
+        let sample = &dataset_facts[0];
+
+        let session_id = create_session(&conn, Some("default")).await.unwrap();
+        let compaction_id = record_compaction_start(&conn, session_id, "soft", 0, 5)
+            .await
+            .unwrap();
+
+        let old_fact = ObservationRecord {
+            id: format!("fact_old_{}", sample.id),
+            session_id: Some(session_id),
+            compaction_id,
+            observation_type: sample.observation_type.clone(),
+            text: sample.text.clone(),
+            status: "active".to_string(),
+            created_at: 1000,
+            updated_at: 1000,
+        };
+        insert_observation(&conn, &old_fact).await.unwrap();
+
         let modified_text = format!("{}!!!", sample.text.to_uppercase());
         let q_id = enqueue_observation(
             &conn,
@@ -111,25 +251,8 @@ async fn test_stage1_exact_dedup_winner_takes_all() {
         .await
         .unwrap();
 
-        // 3. Execute Stage 1 exact Jaccard dedup
-        let summary = run_stage1_exact_dedup(&conn).await.unwrap();
-        assert_eq!(summary.processed, 1, "Must process exactly 1 pending item");
-        assert_eq!(
-            summary.duplicates_deactivated, 1,
-            "Must deactivate older matching fact from dataset"
-        );
-        assert_eq!(summary.errors, 0, "No errors expected during Stage 1 dedup");
+        run_stage1_exact_dedup(&conn).await.unwrap();
 
-        // 4. Assert older fact was deactivated in memory_facts
-        let active_facts = fetch_active_observations_by_type(&conn, &sample.observation_type)
-            .await
-            .unwrap();
-        assert!(
-            active_facts.is_empty(),
-            "Older active fact must be deactivated (incoming item still in queue)"
-        );
-
-        // 5. Assert queue item status transitioned to 'stage1_done'
         let mut rows = conn
             .query(
                 "SELECT status, retry_count FROM memory_ingestion_queue WHERE id = ?",
@@ -144,14 +267,22 @@ async fn test_stage1_exact_dedup_winner_takes_all() {
         assert_eq!(retry_count, 0);
     })
     .await
-    .expect("test_stage1_exact_dedup_winner_takes_all timed out");
+    .expect("stage1_exact_dedup_marks_the_queue_item_stage1_done timed out");
 }
 
-// ============================================================================
-// Subtest 2: Stage 2 Semantic Cosine Deduplication with Real Dataset Pair & Real MiniLM ONNX
-// ============================================================================
+/// PURPOSE:  A semantically equivalent but differently worded fact must
+///           deactivate the older fact and become the only active one.
+/// SCENARIO: Seed the real duplicate pair from the dataset with its vector,
+///           queue the second wording and run the cosine dedup stage.
+/// ASSERTS:  One item is processed, one fact is inserted, one duplicate is
+///           deactivated, no errors occur and the surviving fact is the
+///           incoming wording.
+/// CLASS:    happy-path
+/// REQUIRES: VOX_MODELS_DIR with the MiniLM-L12 ONNX embedder
+/// MUTANT:   Lower the cosine threshold so the pair is not detected — the
+///           duplicate count assertion would fail.
 #[tokio::test]
-async fn test_stage2_semantic_cosine_dedup_real_embedder() {
+async fn stage2_cosine_dedup_inserts_the_new_fact_and_deactivates_the_old_one() {
     tokio::time::timeout(Duration::from_secs(30), async {
         let _guard = TempPathsGuard::new();
         let (_app, state) = get_test_app_and_state().await;
@@ -164,71 +295,14 @@ async fn test_stage2_semantic_cosine_dedup_real_embedder() {
         let loaded = ensure_embedder_loaded(true).expect("Failed to ensure embedder loaded");
         assert!(loaded, "MiniLM ONNX embedder model must load successfully");
 
-        // Load real duplicate pair from dedup_500_pairs.json that exercises semantic similarity
         let pairs = load_dedup_pairs();
         let duplicate_pair = pairs
             .into_iter()
-            .find(|p| p.label == "duplicate" && p.id == 1) // Pair 1: "User's preferred programming language is Python." vs "Python is the programming language the user prefers."
+            .find(|p| p.label == "duplicate" && p.id == 1)
             .expect("Must have duplicate pairs in dedup_500_pairs.json");
 
-        let session_id = create_session(&conn, Some("default")).await.unwrap();
-        let compaction_id = record_compaction_start(&conn, session_id, "soft", 0, 5)
-            .await
-            .unwrap();
+        seed_semantic_duplicate_pair(&conn, &duplicate_pair).await;
 
-        // 1. Seed existing active fact using fact1 from real dataset pair
-        let old_fact = ObservationRecord {
-            id: format!("fact_pair_{}_1", duplicate_pair.id),
-            session_id: Some(session_id),
-            compaction_id,
-            observation_type: "personal".to_string(),
-            text: duplicate_pair.fact1.clone(),
-            status: "active".to_string(),
-            created_at: 1000,
-            updated_at: 1000,
-        };
-        insert_observation(&conn, &old_fact).await.unwrap();
-
-        let old_embeddings =
-            vox_lib::services::memory::generate_embeddings_batch(&[&old_fact.text])
-                .unwrap()
-                .expect("Embedding generation must return vector");
-        assert_eq!(
-            old_embeddings[0].len(),
-            384,
-            "MiniLM embeddings must be 384 dimensions"
-        );
-
-        insert_vector(
-            &conn,
-            &old_fact.id,
-            "personal",
-            "active",
-            Some("default"),
-            &old_embeddings[0],
-        )
-        .await
-        .unwrap();
-
-        // 2. Enqueue incoming semantic duplicate using fact2 from real dataset pair
-        let q_id = enqueue_observation(
-            &conn,
-            Some(session_id),
-            compaction_id,
-            "personal",
-            &duplicate_pair.fact2,
-        )
-        .await
-        .unwrap();
-
-        conn.execute(
-            "UPDATE memory_ingestion_queue SET status = 'stage1_done' WHERE id = ?",
-            (q_id,),
-        )
-        .await
-        .unwrap();
-
-        // 3. Execute Stage 2 semantic cosine dedup
         let summary = run_stage2_cosine_dedup(&conn).await.unwrap();
         assert_eq!(summary.processed, 1, "Must process 1 item in Stage 2");
         assert_eq!(summary.inserted, 1, "Must insert 1 new active fact");
@@ -238,14 +312,56 @@ async fn test_stage2_semantic_cosine_dedup_real_embedder() {
         );
         assert_eq!(summary.errors, 0, "No errors expected during Stage 2 dedup");
 
-        // 4. Assert older fact deactivated and new fact from dataset is active
         let active_facts = fetch_active_observations_by_type(&conn, "personal")
             .await
             .unwrap();
         assert_eq!(active_facts.len(), 1, "Exactly 1 active fact must remain");
         assert_eq!(active_facts[0].text, duplicate_pair.fact2);
 
-        // 5. Assert 384-dimensional vector exists for new active fact
+        unload_embedder();
+    })
+    .await
+    .expect("stage2_cosine_dedup_inserts_the_new_fact_and_deactivates_the_old_one timed out");
+}
+
+/// PURPOSE:  The fact accepted by the semantic stage must carry its own
+///           embedding; a fact without a vector is invisible to semantic
+///           retrieval.
+/// SCENARIO: Run the cosine stage over the duplicate pair and list the active
+///           vectors.
+/// ASSERTS:  Exactly one active vector exists, it belongs to the surviving
+///           fact and has 384 dimensions.
+/// CLASS:    happy-path
+/// REQUIRES: VOX_MODELS_DIR with the MiniLM-L12 ONNX embedder
+/// MUTANT:   Skip the vector insert in the cosine stage — the vector count
+///           assertion would fail.
+#[tokio::test]
+async fn stage2_cosine_dedup_stores_a_384_dimension_vector_for_the_new_fact() {
+    tokio::time::timeout(Duration::from_secs(30), async {
+        let _guard = TempPathsGuard::new();
+        let (_app, state) = get_test_app_and_state().await;
+        let conn = state
+            .db
+            .connect()
+            .expect("Failed to connect to test database");
+
+        unload_embedder();
+        let loaded = ensure_embedder_loaded(true).expect("Failed to ensure embedder loaded");
+        assert!(loaded, "MiniLM ONNX embedder model must load successfully");
+
+        let pairs = load_dedup_pairs();
+        let duplicate_pair = pairs
+            .into_iter()
+            .find(|p| p.label == "duplicate" && p.id == 1)
+            .expect("Must have duplicate pairs in dedup_500_pairs.json");
+
+        seed_semantic_duplicate_pair(&conn, &duplicate_pair).await;
+
+        run_stage2_cosine_dedup(&conn).await.unwrap();
+
+        let active_facts = fetch_active_observations_by_type(&conn, "personal")
+            .await
+            .unwrap();
         let active_vectors = fetch_active_vectors_by_type(&conn, "personal")
             .await
             .unwrap();
@@ -257,7 +373,46 @@ async fn test_stage2_semantic_cosine_dedup_real_embedder() {
         assert_eq!(active_vectors[0].0, active_facts[0].id);
         assert_eq!(active_vectors[0].1.len(), 384);
 
-        // 6. Assert queue item status transitioned to 'completed'
+        unload_embedder();
+    })
+    .await
+    .expect("stage2_cosine_dedup_stores_a_384_dimension_vector_for_the_new_fact timed out");
+}
+
+/// PURPOSE:  A fact that survived both dedup stages must leave the queue in
+///           the `completed` state with a processing timestamp; a queue item
+///           stuck in flight is picked up again on every boot.
+/// SCENARIO: Run the cosine stage over the duplicate pair and read the queue
+///           row back.
+/// ASSERTS:  The row's status is `completed` and `processed_at` is set.
+/// CLASS:    happy-path
+/// REQUIRES: VOX_MODELS_DIR with the MiniLM-L12 ONNX embedder
+/// MUTANT:   Leave the status at `stage1_done` — the status assertion would
+///           fail.
+#[tokio::test]
+async fn stage2_cosine_dedup_marks_the_queue_item_completed() {
+    tokio::time::timeout(Duration::from_secs(30), async {
+        let _guard = TempPathsGuard::new();
+        let (_app, state) = get_test_app_and_state().await;
+        let conn = state
+            .db
+            .connect()
+            .expect("Failed to connect to test database");
+
+        unload_embedder();
+        let loaded = ensure_embedder_loaded(true).expect("Failed to ensure embedder loaded");
+        assert!(loaded, "MiniLM ONNX embedder model must load successfully");
+
+        let pairs = load_dedup_pairs();
+        let duplicate_pair = pairs
+            .into_iter()
+            .find(|p| p.label == "duplicate" && p.id == 1)
+            .expect("Must have duplicate pairs in dedup_500_pairs.json");
+
+        let q_id = seed_semantic_duplicate_pair(&conn, &duplicate_pair).await;
+
+        run_stage2_cosine_dedup(&conn).await.unwrap();
+
         let mut rows = conn
             .query(
                 "SELECT status, processed_at FROM memory_ingestion_queue WHERE id = ?",
@@ -274,14 +429,20 @@ async fn test_stage2_semantic_cosine_dedup_real_embedder() {
         unload_embedder();
     })
     .await
-    .expect("test_stage2_semantic_cosine_dedup_real_embedder timed out");
+    .expect("stage2_cosine_dedup_marks_the_queue_item_completed timed out");
 }
 
-// ============================================================================
-// Subtest 3: Full Ingestion Cycle End-to-End Across Real Dataset Facts
-// ============================================================================
+/// PURPOSE:  A full ingestion cycle must process every queued fact through
+///           both stages without losing or erroring on any of them.
+/// SCENARIO: Enqueue ten dataset facts and run the full ingestion cycle.
+/// ASSERTS:  Stage 1 processed ten items with no errors, stage 2 processed
+///           ten items, inserted ten facts and reported no errors.
+/// CLASS:    happy-path
+/// REQUIRES: VOX_MODELS_DIR with the MiniLM-L12 ONNX embedder
+/// MUTANT:   Stop the cycle after stage 1 — the stage 2 counters would be
+///           zero.
 #[tokio::test]
-async fn test_ingestion_cycle_end_to_end() {
+async fn ingestion_cycle_processes_every_queued_fact() {
     tokio::time::timeout(Duration::from_secs(30), async {
         let _guard = TempPathsGuard::new();
         let (_app, state) = get_test_app_and_state().await;
@@ -298,7 +459,6 @@ async fn test_ingestion_cycle_end_to_end() {
             .await
             .unwrap();
 
-        // Load 10 real facts from pure_llm_facts_dataset.json across multiple categories
         let dataset_facts = load_llm_facts(10);
         assert_eq!(dataset_facts.len(), 10, "Must load 10 facts from dataset");
 
@@ -314,7 +474,6 @@ async fn test_ingestion_cycle_end_to_end() {
             .unwrap();
         }
 
-        // Execute full ingestion cycle (Stage 1 exact dedup -> Stage 2 cosine dedup)
         let cycle_summary = run_ingestion_cycle(&conn).await.unwrap();
 
         assert_eq!(cycle_summary.stage1.processed, 10);
@@ -323,7 +482,53 @@ async fn test_ingestion_cycle_end_to_end() {
         assert_eq!(cycle_summary.stage2.inserted, 10);
         assert_eq!(cycle_summary.stage2.errors, 0);
 
-        // Verify all 10 queue items are now 'completed'
+        unload_embedder();
+    })
+    .await
+    .expect("ingestion_cycle_processes_every_queued_fact timed out");
+}
+
+/// PURPOSE:  After a full cycle every queue item must be closed; items left
+///           open are re-ingested on the next boot and duplicate the facts.
+/// SCENARIO: Enqueue ten dataset facts, run the ingestion cycle and count the
+///           completed queue rows.
+/// ASSERTS:  Ten queue rows carry the `completed` status.
+/// CLASS:    happy-path
+/// REQUIRES: VOX_MODELS_DIR with the MiniLM-L12 ONNX embedder
+/// MUTANT:   Leave the final status as `stage1_done` — the count assertion
+///           would fail.
+#[tokio::test]
+async fn ingestion_cycle_marks_every_queue_item_completed() {
+    tokio::time::timeout(Duration::from_secs(30), async {
+        let _guard = TempPathsGuard::new();
+        let (_app, state) = get_test_app_and_state().await;
+        let conn = state
+            .db
+            .connect()
+            .expect("Failed to connect to test database");
+
+        unload_embedder();
+        ensure_embedder_loaded(true).expect("Failed to load MiniLM embedder");
+
+        let session_id = create_session(&conn, Some("default")).await.unwrap();
+        let compaction_id = record_compaction_start(&conn, session_id, "manual", 1, 10)
+            .await
+            .unwrap();
+
+        for fact in load_llm_facts(10) {
+            enqueue_observation(
+                &conn,
+                Some(session_id),
+                compaction_id,
+                &fact.observation_type,
+                &fact.text,
+            )
+            .await
+            .unwrap();
+        }
+
+        run_ingestion_cycle(&conn).await.unwrap();
+
         let mut q_rows = conn
             .query(
                 "SELECT COUNT(*) FROM memory_ingestion_queue WHERE status = 'completed'",
@@ -334,7 +539,53 @@ async fn test_ingestion_cycle_end_to_end() {
         let completed_count: i64 = q_rows.next().await.unwrap().unwrap().get(0).unwrap();
         assert_eq!(completed_count, 10);
 
-        // Verify vectors generated and stored for all 10 facts
+        unload_embedder();
+    })
+    .await
+    .expect("ingestion_cycle_marks_every_queue_item_completed timed out");
+}
+
+/// PURPOSE:  Every ingested fact must get its own active embedding; missing
+///           vectors make the fact unreachable by semantic retrieval.
+/// SCENARIO: Enqueue ten dataset facts, run the ingestion cycle and count the
+///           active vector rows.
+/// ASSERTS:  Ten active vector rows exist.
+/// CLASS:    happy-path
+/// REQUIRES: VOX_MODELS_DIR with the MiniLM-L12 ONNX embedder
+/// MUTANT:   Store the vectors with status `staged` instead of `active` — the
+///           count assertion would fail.
+#[tokio::test]
+async fn ingestion_cycle_stores_one_active_vector_per_fact() {
+    tokio::time::timeout(Duration::from_secs(30), async {
+        let _guard = TempPathsGuard::new();
+        let (_app, state) = get_test_app_and_state().await;
+        let conn = state
+            .db
+            .connect()
+            .expect("Failed to connect to test database");
+
+        unload_embedder();
+        ensure_embedder_loaded(true).expect("Failed to load MiniLM embedder");
+
+        let session_id = create_session(&conn, Some("default")).await.unwrap();
+        let compaction_id = record_compaction_start(&conn, session_id, "manual", 1, 10)
+            .await
+            .unwrap();
+
+        for fact in load_llm_facts(10) {
+            enqueue_observation(
+                &conn,
+                Some(session_id),
+                compaction_id,
+                &fact.observation_type,
+                &fact.text,
+            )
+            .await
+            .unwrap();
+        }
+
+        run_ingestion_cycle(&conn).await.unwrap();
+
         let mut v_rows = conn
             .query(
                 "SELECT COUNT(*) FROM memory_facts_vectors WHERE status = 'active'",
@@ -348,14 +599,22 @@ async fn test_ingestion_cycle_end_to_end() {
         unload_embedder();
     })
     .await
-    .expect("test_ingestion_cycle_end_to_end timed out");
+    .expect("ingestion_cycle_stores_one_active_vector_per_fact timed out");
 }
 
-// ============================================================================
-// Subtest 4: Boot Crash Reconciliation & Poison-Pill Quarantine with Real Dataset Text
-// ============================================================================
+/// PURPOSE:  A queue item that was in flight when the app crashed must be
+///           returned to `pending` with an incremented retry count; leaving
+///           it in `stage1_processing` strands the fact forever.
+/// SCENARIO: Claim a pending item into `stage1_processing`, then run the boot
+///           reconciliation.
+/// ASSERTS:  The item is back at `pending` with retry count 1.
+/// CLASS:    regression
+/// REQUIRES: none
+/// MUTANT:   Skip the `stage1_processing` reset in
+///           `reconcile_crashed_queue_on_boot` — the status assertion would
+///           fail.
 #[tokio::test]
-async fn test_crash_reconciliation_and_poison_pill() {
+async fn crash_reconciliation_resets_a_stage1_crashed_item_to_pending() {
     tokio::time::timeout(Duration::from_secs(15), async {
         let _guard = TempPathsGuard::new();
         let (_app, state) = get_test_app_and_state().await;
@@ -367,7 +626,6 @@ async fn test_crash_reconciliation_and_poison_pill() {
             .await
             .unwrap();
 
-        // 1. Seed item in 'stage1_processing' with retry_count = 0 (simulating in-flight crash)
         let id_s1 = enqueue_observation(
             &conn,
             Some(session_id),
@@ -381,7 +639,46 @@ async fn test_crash_reconciliation_and_poison_pill() {
             .await
             .unwrap();
 
-        // 2. Seed item in 'stage2_processing' with retry_count = 1 (simulating in-flight crash)
+        let reconciled_count = reconcile_crashed_queue_on_boot(&conn).await.unwrap();
+        assert_eq!(reconciled_count, 1, "Must reconcile the single crashed item");
+
+        let mut s1_row = conn
+            .query("SELECT status, retry_count FROM memory_ingestion_queue WHERE id = ?", (id_s1,))
+            .await
+            .unwrap();
+        let r1 = s1_row.next().await.unwrap().unwrap();
+        let s1_status: String = r1.get(0).unwrap();
+        let s1_retry: i64 = r1.get(1).unwrap();
+        assert_eq!(s1_status, "pending");
+        assert_eq!(s1_retry, 1);
+    })
+    .await
+    .expect("crash_reconciliation_resets_a_stage1_crashed_item_to_pending timed out");
+}
+
+/// PURPOSE:  A queue item that crashed during the semantic stage must return
+///           to `stage1_done`, not to `pending`; re-running the exact stage
+///           would be wasted work.
+/// SCENARIO: Put a queued item into `stage2_processing` with one retry, then
+///           run the boot reconciliation.
+/// ASSERTS:  The item is back at `stage1_done` with retry count 2.
+/// CLASS:    regression
+/// REQUIRES: none
+/// MUTANT:   Reset `stage2_processing` items to `pending` — the status
+///           assertion would fail.
+#[tokio::test]
+async fn crash_reconciliation_resets_a_stage2_crashed_item_to_stage1_done() {
+    tokio::time::timeout(Duration::from_secs(15), async {
+        let _guard = TempPathsGuard::new();
+        let (_app, state) = get_test_app_and_state().await;
+        let conn = state.db.connect().expect("Failed to connect to test database");
+
+        let dataset_facts = load_llm_facts(3);
+        let session_id = create_session(&conn, Some("default")).await.unwrap();
+        let compaction_id = record_compaction_start(&conn, session_id, "soft", 0, 5)
+            .await
+            .unwrap();
+
         let id_s2 = enqueue_observation(
             &conn,
             Some(session_id),
@@ -398,7 +695,21 @@ async fn test_crash_reconciliation_and_poison_pill() {
         .await
         .unwrap();
 
-        // 3. Seed poison pill item with retry_count = 3 in 'stage2_processing'
+        // Two further items so the reconciliation has the same crashed-item
+        // population as the original scenario.
+        let id_s1 = enqueue_observation(
+            &conn,
+            Some(session_id),
+            compaction_id,
+            &dataset_facts[0].observation_type,
+            &dataset_facts[0].text,
+        )
+        .await
+        .unwrap();
+        claim_pending_queue_batch(&conn, "pending", "stage1_processing", 10)
+            .await
+            .unwrap();
+
         let id_poison = enqueue_observation(
             &conn,
             Some(session_id),
@@ -415,22 +726,9 @@ async fn test_crash_reconciliation_and_poison_pill() {
         .await
         .unwrap();
 
-        // 4. Run startup crash reconciliation
         let reconciled_count = reconcile_crashed_queue_on_boot(&conn).await.unwrap();
         assert_eq!(reconciled_count, 3, "Must reconcile all 3 crashed items");
 
-        // 5. Verify Stage 1 crashed item was reset to 'pending' with retry_count = 1
-        let mut s1_row = conn
-            .query("SELECT status, retry_count FROM memory_ingestion_queue WHERE id = ?", (id_s1,))
-            .await
-            .unwrap();
-        let r1 = s1_row.next().await.unwrap().unwrap();
-        let s1_status: String = r1.get(0).unwrap();
-        let s1_retry: i64 = r1.get(1).unwrap();
-        assert_eq!(s1_status, "pending");
-        assert_eq!(s1_retry, 1);
-
-        // 6. Verify Stage 2 crashed item was reset to 'stage1_done' with retry_count = 2
         let mut s2_row = conn
             .query("SELECT status, retry_count FROM memory_ingestion_queue WHERE id = ?", (id_s2,))
             .await
@@ -441,7 +739,93 @@ async fn test_crash_reconciliation_and_poison_pill() {
         assert_eq!(s2_status, "stage1_done");
         assert_eq!(s2_retry, 2);
 
-        // 7. Verify Poison pill item was permanently quarantined to 'failed'
+        // The other two items must have been reconciled too.
+        let mut s1_row = conn
+            .query(
+                "SELECT status FROM memory_ingestion_queue WHERE id = ?",
+                (id_s1,),
+            )
+            .await
+            .unwrap();
+        let r1 = s1_row.next().await.unwrap().unwrap();
+        let s1_status: String = r1.get(0).unwrap();
+        assert_eq!(s1_status, "pending");
+    })
+    .await
+    .expect("crash_reconciliation_resets_a_stage2_crashed_item_to_stage1_done timed out");
+}
+
+/// PURPOSE:  A fact that keeps failing must be quarantined, not retried
+///           forever; a poison pill blocks the whole ingestion queue.
+/// SCENARIO: Put a queue item into `stage2_processing` with the maximum retry
+///           count and run the boot reconciliation.
+/// ASSERTS:  The item is `failed`, keeps its retry count and records a
+///           "max retries exceeded" error.
+/// CLASS:    edge-case
+/// REQUIRES: none
+/// MUTANT:   Reset the poison pill to `stage1_done` instead of `failed` — the
+///           status assertion would fail.
+#[tokio::test]
+async fn crash_reconciliation_quarantines_a_poison_pill_item() {
+    tokio::time::timeout(Duration::from_secs(15), async {
+        let _guard = TempPathsGuard::new();
+        let (_app, state) = get_test_app_and_state().await;
+        let conn = state.db.connect().expect("Failed to connect to test database");
+
+        let dataset_facts = load_llm_facts(3);
+        let session_id = create_session(&conn, Some("default")).await.unwrap();
+        let compaction_id = record_compaction_start(&conn, session_id, "soft", 0, 5)
+            .await
+            .unwrap();
+
+        let _id_s1 = enqueue_observation(
+            &conn,
+            Some(session_id),
+            compaction_id,
+            &dataset_facts[0].observation_type,
+            &dataset_facts[0].text,
+        )
+        .await
+        .unwrap();
+        claim_pending_queue_batch(&conn, "pending", "stage1_processing", 10)
+            .await
+            .unwrap();
+
+        let id_s2 = enqueue_observation(
+            &conn,
+            Some(session_id),
+            compaction_id,
+            &dataset_facts[1].observation_type,
+            &dataset_facts[1].text,
+        )
+        .await
+        .unwrap();
+        conn.execute(
+            "UPDATE memory_ingestion_queue SET status = 'stage2_processing', retry_count = 1 WHERE id = ?",
+            (id_s2,),
+        )
+        .await
+        .unwrap();
+
+        let id_poison = enqueue_observation(
+            &conn,
+            Some(session_id),
+            compaction_id,
+            &dataset_facts[2].observation_type,
+            &dataset_facts[2].text,
+        )
+        .await
+        .unwrap();
+        conn.execute(
+            "UPDATE memory_ingestion_queue SET status = 'stage2_processing', retry_count = 3 WHERE id = ?",
+            (id_poison,),
+        )
+        .await
+        .unwrap();
+
+        let reconciled_count = reconcile_crashed_queue_on_boot(&conn).await.unwrap();
+        assert_eq!(reconciled_count, 3, "Must reconcile all 3 crashed items");
+
         let mut poison_row = conn
             .query("SELECT status, retry_count, error_msg FROM memory_ingestion_queue WHERE id = ?", (id_poison,))
             .await
@@ -458,5 +842,5 @@ async fn test_crash_reconciliation_and_poison_pill() {
         );
     })
     .await
-    .expect("test_crash_reconciliation_and_poison_pill timed out");
+    .expect("crash_reconciliation_quarantines_a_poison_pill_item timed out");
 }

@@ -94,7 +94,8 @@ All authoritative specs live in [`docs/specs/`](file:///home/addy/projects/apps/
 > 📖 **Phase 13 (active):** [recent_work.md](file:///home/addy/projects/apps/vox/docs/plans/phase13/recent_work.md)
 - **Frontend & Settings Radial Hub:** Radial hub layout (6 domains), unified `memory` domain, warm-nav SWR; 162/162 vitest passing.
 - **Backend Voice Pipeline:** SNR-adaptive onset gate, durable turn-identity gate, dual-target compile gate 0/0.
-- **Remote Control v1 (Active):** Foundations, protocol, and security landed; test suite consolidated (12 -> 2 seam binaries, 11 deleted, 14 unit tests); default tier clean; W2b (WebSocket transport) is next.
+- **Test Suite Revamp (2026-10-22):** Slices 0–21 complete; 35 seam binaries, 279 integration tests, 190 unit tests, non-remote suite clean at 413 passed / 4 skipped; strict intent blocks, quiescence-based absence checks, no sleep timers.
+- **Remote Control v1 (Active):** Foundations, protocol, and security landed; test suite consolidated into 2 canonical seams (`remote_link_test`, `remote_security_test`) + 14 unit tests; default tier clean; W2b (WebSocket transport) is next.
 
 ---
 

@@ -178,7 +178,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_jaccard_similarity_calculation() {
+    fn jaccard_similarity_normalizes_case_and_punctuation() {
         assert_eq!(jaccard_similarity("", ""), 1.0);
         assert_eq!(jaccard_similarity("hello world", "HELLO WORLD!"), 1.0);
         assert_eq!(

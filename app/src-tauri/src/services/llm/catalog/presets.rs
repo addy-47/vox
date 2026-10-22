@@ -84,9 +84,8 @@ mod tests {
         map
     }
 
-    /// Validates the bundled manifest parses with every row sourced and unique.
     #[test]
-    fn test_bundled_provider_manifest_is_sourced_ssot() {
+    fn provider_manifest_rows_are_sourced_and_uniquely_identified() {
         let res: Result<Vec<ProviderPresetMeta>, _> = serde_json::from_str(BUNDLED_PROVIDERS_JSON);
         if let Err(ref e) = res {
             eprintln!("DESERIALIZATION ERROR: {:?}", e);
@@ -117,9 +116,8 @@ mod tests {
         );
     }
 
-    /// Validates transport/path coherence per row (no impossible combinations).
     #[test]
-    fn test_provider_wire_path_coherence() {
+    fn provider_preset_wire_paths_match_the_transport() {
         for preset in list_presets() {
             if preset.transport == TransportType::OllamaNative {
                 assert!(
@@ -153,9 +151,8 @@ mod tests {
         }
     }
 
-    /// Cross-checks manifest mapping paths against the vendored community catalog.
     #[test]
-    fn test_manifest_paths_exist_in_vendor_catalog() {
+    fn provider_manifest_token_paths_exist_in_the_vendor_catalog() {
         let vendor = vendor_param_paths();
         assert!(
             vendor.len() >= 7,

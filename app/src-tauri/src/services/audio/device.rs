@@ -327,14 +327,14 @@ mod tests {
     use crate::services::audio::{MockAudioCapture, MockAudioSink};
 
     #[test]
-    fn test_audio_stream_mock_lifecycle() {
+    fn audio_stream_mock_starts_and_pauses() {
         let stream = AudioStream::mock();
         assert!(stream.start().is_ok());
         assert!(stream.pause().is_ok());
     }
 
     #[test]
-    fn test_audio_stream_custom_capture() {
+    fn audio_stream_accepts_an_injected_capture() {
         let capture = Box::new(MockAudioCapture);
         let stream = AudioStream::from_capture(capture);
         assert!(stream.start().is_ok());
@@ -342,7 +342,7 @@ mod tests {
     }
 
     #[test]
-    fn test_audio_sink_mock() {
+    fn audio_sink_mock_can_be_constructed_and_dropped() {
         let sink: Box<dyn AudioSink> = Box::new(MockAudioSink);
         drop(sink);
     }

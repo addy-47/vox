@@ -249,7 +249,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_llm_settings_defaults() {
+    fn llm_settings_default_to_the_embedded_runtime() {
         let settings = LlmSettings::default();
         assert_eq!(settings.active.category, "embedded");
         assert_eq!(settings.active_model(), DEFAULT_LLM_MODEL);
@@ -264,7 +264,7 @@ mod tests {
     }
 
     #[test]
-    fn test_llm_settings_server_and_cloud_active() {
+    fn llm_settings_resolve_server_and_cloud_targets() {
         let mut settings = LlmSettings {
             active: ActiveSelection {
                 category: "server".to_string(),
@@ -316,7 +316,7 @@ mod tests {
     }
 
     #[test]
-    fn test_llm_settings_cloud_provider_resolution() {
+    fn llm_settings_resolve_each_cloud_provider_endpoint() {
         let mut settings = LlmSettings {
             active: ActiveSelection {
                 category: "cloud".to_string(),

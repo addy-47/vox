@@ -329,20 +329,20 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_accepts_valid_model() {
+    fn personal_memory_validates_a_well_formed_model() {
         let model = sample_model();
         assert!(model.validate().is_ok());
     }
 
     #[test]
-    fn test_validate_rejects_empty_sections() {
+    fn personal_memory_rejects_a_model_without_sections() {
         let model = PersonalMemory { sections: vec![] };
         let err = model.validate().unwrap_err();
         assert!(err.to_string().contains("contains no sections"));
     }
 
     #[test]
-    fn test_validate_rejects_empty_title() {
+    fn personal_memory_rejects_a_blank_section_title() {
         let mut model = sample_model();
         model.sections[0].title = "   ".to_string();
         let err = model.validate().unwrap_err();
@@ -350,7 +350,7 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_rejects_duplicate_titles_case_insensitive() {
+    fn personal_memory_rejects_a_duplicate_section_title() {
         let mut model = sample_model();
         model.sections.push(MemorySection {
             id: "sec_3".to_string(),
@@ -365,7 +365,7 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_rejects_empty_block_text() {
+    fn personal_memory_rejects_a_blank_block_text() {
         let mut model = sample_model();
         model.sections[0].blocks[0].text = "\n\t ".to_string();
         let err = model.validate().unwrap_err();
@@ -373,7 +373,7 @@ mod tests {
     }
 
     #[test]
-    fn test_markdown_roundtrip_and_validation() {
+    fn personal_memory_markdown_roundtrip_preserves_the_model() {
         let model = sample_model();
         let md = model.render_to_markdown();
         assert!(md.contains("## Profile\nUser is a software engineer.\nUser lives in Seattle.\n"));
@@ -397,7 +397,7 @@ mod tests {
     }
 
     #[test]
-    fn test_from_markdown_strips_bullets_and_ignores_preamble() {
+    fn from_markdown_keeps_only_the_section_content() {
         let raw = r#"Ignored preamble before any heading
 Some chatter that should not be parsed into sections.
 
@@ -438,7 +438,7 @@ Enjoys hiking in the Cascades.
     }
 
     #[test]
-    fn test_to_handle_format_and_handle_map() {
+    fn to_handle_format_numbers_sections_and_blocks() {
         let model = sample_model();
         let (view, map) = model.to_handle_format();
 
@@ -459,7 +459,7 @@ Enjoys hiking in the Cascades.
     }
 
     #[test]
-    fn test_prune_empty_sections() {
+    fn prune_empty_sections_drops_sections_without_blocks() {
         let mut model = sample_model();
         model.sections[0].blocks.clear();
         assert_eq!(model.sections.len(), 2);
@@ -470,7 +470,7 @@ Enjoys hiking in the Cascades.
     }
 
     #[test]
-    fn test_find_block_and_section() {
+    fn find_section_and_find_block_locate_the_right_positions() {
         let model = sample_model();
         assert_eq!(model.find_section("sec_1"), Some(0));
         assert_eq!(model.find_section("sec_2"), Some(1));
@@ -483,7 +483,7 @@ Enjoys hiking in the Cascades.
     }
 
     #[test]
-    fn test_from_new_sections() {
+    fn from_new_sections_builds_a_valid_model_from_drafts() {
         let drafts = vec![NewSectionDraft {
             title: "Draft Title".to_string(),
             blocks: vec![
