@@ -113,6 +113,16 @@ flowchart TD
   2. The system MUST display an ephemeral notification: *"Dictation is disabled in Settings"*.
 - **RULE-OWN-10 (Non-Preemptive Dictation Overlap)**: In Dictation Passive mode, speech onset during `Thinking` starts Turn $N+1$ without aborting Turn $N$ transcription.
 
+### 4.4 Remote Session Ownership
+Remote control introduces a second possible owner of the session and the microphone. The rules below are governed by [`remote-control-spec.md`](remote-control-spec.md); they extend this spec and take precedence over it where they conflict.
+
+- **RULE-OWN-11 (Session Origin Is Explicit)**: The audio capture source MUST be selected by an explicit **session origin** — `Local` (the host's own microphone) or `Remote` (a controller's audio stream). The selection MUST be a deterministic choice made once at session start, never a fallback chain that tries one source and silently degrades to the other.
+- **RULE-OWN-12 (Exclusive Remote Capture)**: While a controller is attached, the host engine MUST use the network capture as the **exclusive** audio source. It MUST NOT fall back to the local laptop microphone, and the local capture hardware MUST NOT be opened for the assistant track. A remote session that silently falls back to the host microphone would answer a remote user with the wrong room's audio.
+- **RULE-OWN-13 (Dictation Gated Under Remote Control)**: While a controller is attached, the dictation track MUST be gated, and the dictation hotkey MUST be non-functional — **regardless of the pipeline state**, including `Paused`. Dictation is restored only when the controller detaches.
+  - This rule **overrides RULE-OWN-03 and the `Pause Assistant Session` row of §5**, which otherwise restore dictation on pause. A pause does not release the microphone: the controller still owns it.
+- **RULE-OWN-14 (Remote Session Definition)**: A remote session is active when the canonical `RemoteLinkState` is `Connected` — **not** when the pipeline happens to be non-idle. A controller that is attached but has not started a turn still owns the microphone, and dictation is still gated.
+- **RULE-OWN-15 (No Shadow Flags)**: No component may derive "is a remote session active" from its own state, a settings read, or a boolean of its own. Every consumer MUST query the canonical `RemoteLinkState` defined in `remote-control-spec.md` §9.1. This mirrors RULE-OWN-05's prohibition on settings sniffing.
+
 ---
 
 ## 5. State Transition & User Action Matrix
@@ -143,6 +153,7 @@ flowchart TD
 | **Dictation Hotkey Gating** | Non-preemptive gating with user feedback | Protects conversational context and cognitive tool execution from accidental keystrokes. | Preemptive pipeline hijacking (cancelling assistant speech mid-thought whenever dictation hotkey is hit). |
 | **Decoupled Settings Sniffing** | Direct interaction state inspection (`Ready` vs `Idle`) | Decouples runtime audio DSP and hot-paths from file I/O and configuration locks. | Polling configuration structs on every hotkey press (adds latency and lock contention). |
 | **Hardware Teardown** | Idle hardware shutdown when both tracks are `Idle` | Eliminates continuous battery drain and background CPU consumption when idle. | Keeping microphone streams permanently open 24/7 (wastes battery and keeps OS recording indicators active). |
+| **Remote Session Ownership** | An explicit `SessionOrigin` on the session, with the remote capture exclusive | The host's microphone and the controller's microphone are different rooms. A fallback chain would answer a remote user with the wrong room's audio. | Trying the local microphone first and falling back to the network source (or the reverse) at capture time. |
 
 ---
 
@@ -154,3 +165,6 @@ flowchart TD
 - **Rapid Retrigger Protection**: Rapidly tap the dictation key while a long sentence is transcribing. Verify that subsequent key presses do not create duplicate paste streams or crash the STT pipeline, emitting *"Previous turn transcribing"*.
 - **Zero Background Mutation**: Run continuous automated testing simulating VAD noise, tool executions, and audio dropouts; verify that the session focus marker is never mutated by non-IPC events.
 - **Hardware Power Down**: With both Assistant and Dictation in `Idle`, verify that CPAL microphone streams are completely closed and background recording indicators disappear.
+- **Remote Capture Exclusivity**: With a controller attached, verify that the host's CPAL microphone stream is NOT opened for the assistant track and that only the network capture feeds the pipeline. Verify that the local microphone is never opened as a fallback when the network stream drops.
+- **Dictation Gated Under Remote Control**: With a controller attached and the pipeline `Paused`, press the dictation hotkey. Verify that the press is dropped, that no dictation turn begins, and that dictation becomes usable again only after the controller detaches — overriding the `Pause Assistant Session` row of §5.
+- **Single Remote State Source**: Grep the backend source for `controller_attached`, `is_remote_connected`, and `remote_attached`. Verify that no such identifier exists, and that every remote-state consumer reads the canonical `RemoteLinkState`.

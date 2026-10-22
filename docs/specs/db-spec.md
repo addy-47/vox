@@ -49,7 +49,20 @@ erDiagram
     SESSION_COMPACTIONS ||--o{ MEMORY_FACTS : "originates (CASCADE delete)"
     
     MEMORY_FACTS ||--|| MEMORY_FACTS_VECTORS : "embeds (CASCADE delete)"
+
+    PAIRED_DEVICES {
+        TEXT device_id PK
+        BLOB public_key
+        TEXT display_name
+        TEXT role
+        TEXT trust_level
+        TEXT hints
+        INTEGER paired_at
+        INTEGER last_seen_at
+    }
 ```
+
+> `PAIRED_DEVICES` is a standalone node. It has no foreign keys to any other table: a paired peer is not a session, a project, or a user. Its ER placement is deliberately unconnected so that no cascade can ever delete a pairing, and no pairing can ever block a session delete.
 
 ```mermaid
 flowchart TD
@@ -297,6 +310,39 @@ Unified registry for model metadata, per-model parameter customization, activati
 *Invariants*:
 - Sparse on-demand storage: Untouched catalog models create zero database rows and resolve from default manifests. Rows are created only on activation, favorite toggle, or parameter tuning.
 - Parameter provenance: Tuning parameters for one model modifies only that model's row, preventing cross-model parameter pollution.
+
+### 5.14 `paired_devices` (Remote Peer Registry)
+Registry of devices that have completed remote-control pairing. Both roles maintain this table in their own local database: the laptop stores its controllers with `role = 'controller'`, the phone stores its hosts with `role = 'host'`.
+
+```sql
+CREATE TABLE IF NOT EXISTS paired_devices (
+    device_id    TEXT    PRIMARY KEY,
+    public_key   BLOB    NOT NULL CHECK (length(public_key) = 32),
+    display_name TEXT    NOT NULL,
+    role         TEXT    NOT NULL CHECK (role IN ('controller', 'host')),
+    trust_level  TEXT    NOT NULL DEFAULT 'full' CHECK (trust_level IN ('full')),
+    hints        TEXT    NOT NULL DEFAULT '[]',
+    paired_at    INTEGER NOT NULL,
+    last_seen_at INTEGER
+);
+```
+
+- `device_id` (TEXT, PK): Lowercase hex of `SHA-256("vox/device-id/v1" ‖ x25519_public_key)` — the derivation domain string is prepended to the 32 public key bytes before hashing. The identity layer owns the derivation (remote-control spec §5.1); the persistence layer stores the pair verbatim. The trust boundary rejects a peer whose presented device id does not match its key.
+- `public_key` (BLOB, NOT NULL): The peer's 32-byte X25519 static public key. The private half NEVER enters the database — it lives in a mode-0600 file.
+- `display_name` (TEXT, NOT NULL): Human-readable peer name shown in the device list.
+- `role` (TEXT, NOT NULL): `controller` on the laptop, `host` on the phone. A peer that connects in a role contradicting its stored role is rejected with `RoleNotPermitted`.
+- `trust_level` (TEXT, NOT NULL): `full` in v1. Reserved for a future reduced-trust tier.
+- `hints` (TEXT, NOT NULL): JSON array of `AddressHint` objects. The only mutable column besides `last_seen_at`. Updated by mDNS refresh and by observed successful connections. An unknown hint `kind` MUST round-trip without data loss.
+- `paired_at` (INTEGER, NOT NULL): Pairing completion time, millisecond epoch.
+- `last_seen_at` (INTEGER, NULLABLE): Last connect or disconnect time, millisecond epoch.
+*Indexes*: none required. The primary key covers the lookup, and the table is expected to hold a handful of rows.
+
+*Invariants*:
+- **RULE-DB-04 (Connect/Disconnect Only Writes):** `last_seen_at` MUST be written only on connect and disconnect events. It MUST NOT be written per heartbeat. A heartbeat that rewrites this column on every beat turns a connect-time field into a write-amplified hot column.
+- **RULE-DB-05 (Device Id Matches Key):** A row's `device_id` MUST be the derivation of its `public_key`. The persistence layer stores the pair verbatim and does not re-derive it; the trust boundary is where a mismatch is detected and rejected, and a mismatched peer MUST NOT be admitted to `paired_devices` in the first place.
+- No foreign keys. `paired_devices` is a standalone entity with no relationship to `projects`, `sessions` or any other table.
+- The table is named `paired_devices`, not `devices`, to avoid collision with the `AudioDevice` / `list_audio_devices` IPC domain.
+- Deleting a row is the complete and immediate revocation of a peer. There is no soft-delete or disabled flag.
 
 ---
 

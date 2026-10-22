@@ -21,10 +21,7 @@ use crate::{
             spawn_ingestion_sweep, start_consolidation_scheduler, stop_consolidation_scheduler,
             unload_memory_pipeline_onnx_models,
         },
-        tts::{
-            voice::{get_voice_profiles, resolve_catalog_index},
-            TtsCommand,
-        },
+        tts::{voice::resolve_voice_index_for_provider, TtsCommand},
         vad::{VadCommand, VadOperationalMode},
     },
     tray::{destroy_tray_window, ensure_tray_window, update_tray_menu_state},
@@ -476,11 +473,42 @@ pub async fn dispatch_worker_command<R: tauri::Runtime>(
             ("tts", "voice_id" | "voice" | "active_voice_id") => {
                 if let Some(ref tts_tx) = engine.tts_tx {
                     if let Some(id) = value.as_str() {
-                        let idx = resolve_catalog_index(&get_voice_profiles(), id);
-                        if let Err(e) = tts_tx.send(TtsCommand::SetVoice(idx)) {
-                            log::warn!("[Settings] Failed to send TtsCommand::SetVoice: {}", e);
+                        // The voice index is resolved against the ACTIVE
+                        // provider's catalogue. Resolving it against the
+                        // Kokoro catalogue for every provider handed the
+                        // worker an index that named a different voice, or no
+                        // voice at all.
+                        let provider = state
+                            .settings
+                            .read()
+                            .map(|s| s.tts.active.model.clone())
+                            .unwrap_or_default();
+                        match resolve_voice_index_for_provider(&provider, id) {
+                            Ok(idx) => {
+                                if let Err(e) = tts_tx.send(TtsCommand::SetVoice(idx)) {
+                                    log::warn!(
+                                        "[Settings] Failed to send TtsCommand::SetVoice: {}",
+                                        e
+                                    );
+                                }
+                                log::debug!(
+                                    "[Settings] TtsCommand::SetVoice({}) dispatched for provider {}",
+                                    idx,
+                                    provider
+                                );
+                            }
+                            Err(e) => {
+                                // An unrecognised provider id is never resolved
+                                // to a catalogue index: a wrong index would
+                                // silently select a voice the user did not
+                                // choose.
+                                log::warn!(
+                                    "[Settings] Voice index not resolved for provider {}: {}",
+                                    provider,
+                                    e
+                                );
+                            }
                         }
-                        log::debug!("[Settings] TtsCommand::SetVoice({}) dispatched", idx);
                     }
                 }
             }

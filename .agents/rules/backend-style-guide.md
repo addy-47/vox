@@ -33,7 +33,7 @@ Vox degrades and scales across hardware capabilities. Tier 2B is the default pro
 ### 2.1 File Grammar Order
 
 All Rust files strictly follow this top-to-bottom sequence:
-1. **Imports:** Grouped: `std::`, external crates, internal `crate::`, `super::`. Use function-level doc comments (`///`); do not write crate header blocks (`//!`).
+1. **Imports:** Grouped: `std::`, external crates, internal `crate::`, `super::`. Use function-level doc comments (`///`); do not write crate header blocks (`//!`) in `lib.rs` or `main.rs`. A `mod.rs` MAY carry a `//!` module-ownership block — that is a *module* header, not a crate header, and it is the only way Rust lets a module document its own ownership contract.
 2. **Constants & Type Aliases:** `const ...`, `pub(crate) type ...`.
 3. **Data Structures:** `struct` and `enum` declarations with derived traits.
 4. **Trait Implementations:** `impl Trait for Struct { ... }`.

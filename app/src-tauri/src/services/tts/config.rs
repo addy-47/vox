@@ -4,7 +4,7 @@ use crate::{
     config::{ActiveSelection, LastSelectedModels},
     core::defaults::{
         DEFAULT_TTS_AZURE_REGION, DEFAULT_TTS_AZURE_VOICE, DEFAULT_TTS_GOOGLE_VOICE,
-        DEFAULT_TTS_VOICE_ID, DEFAULT_TTS_ZIPVOICE_GUIDANCE_SCALE,
+        DEFAULT_TTS_PROVIDER, DEFAULT_TTS_SUPERTONIC_VOICE_ID, DEFAULT_TTS_ZIPVOICE_GUIDANCE_SCALE,
     },
 };
 
@@ -48,9 +48,13 @@ pub struct ProviderCaps {
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum TtsActiveProvider {
+    // `supertonic` is the default: its weights ship with the model bundle and
+    // it works offline. The Microsoft ReadAloud endpoint that `edge_tts` uses
+    // answers HTTP 403 for every client, so a first run that defaults to it
+    // produces a silent assistant. See `docs/specs/providers-spec.md` §6.7.
     #[default]
-    EdgeTts,
     Supertonic,
+    EdgeTts,
     Kokoro,
     Chatterbox,
     ChatterboxRemote,
@@ -196,14 +200,17 @@ impl Default for TtsSettings {
             active: ActiveSelection {
                 category: "embedded".to_string(),
                 provider: None,
-                model: "kokoro".to_string(),
+                model: DEFAULT_TTS_PROVIDER.to_string(),
             },
             last_selected: LastSelectedModels {
-                embedded: Some("kokoro".to_string()),
+                embedded: Some(DEFAULT_TTS_PROVIDER.to_string()),
                 server: Some("chatterbox-gpu".to_string()),
                 cloud: Some("edge_tts".to_string()),
             },
-            active_voice_id: DEFAULT_TTS_VOICE_ID.to_string(),
+            // The default voice is provider-scoped. The default provider's
+            // default voice is seeded here; when another provider is selected
+            // the voice resolves to that provider's own default.
+            active_voice_id: DEFAULT_TTS_SUPERTONIC_VOICE_ID.to_string(),
         }
     }
 }
@@ -290,12 +297,26 @@ mod tests {
     fn test_tts_settings_defaults() {
         let settings = TtsSettings::default();
         assert_eq!(settings.active.category, "embedded");
-        assert_eq!(settings.active.model, "kokoro");
-        assert_eq!(settings.active_voice_id, DEFAULT_TTS_VOICE_ID);
-        assert_eq!(settings.last_selected.embedded.as_deref(), Some("kokoro"));
+        assert_eq!(settings.active.model, DEFAULT_TTS_PROVIDER);
+        assert_eq!(
+            settings.active_voice_id, DEFAULT_TTS_SUPERTONIC_VOICE_ID,
+            "A fresh install must seed the default provider's default voice"
+        );
+        assert_eq!(
+            settings.last_selected.embedded.as_deref(),
+            Some(DEFAULT_TTS_PROVIDER)
+        );
 
         let provider_config = settings.to_provider_config(None, DEFAULT_TTS_SPEED);
-        assert_eq!(provider_config, TtsProviderConfig::Kokoro);
+        assert_eq!(provider_config, TtsProviderConfig::Supertonic);
+    }
+
+    #[test]
+    fn test_default_tts_provider_is_offline_capable() {
+        // The Microsoft ReadAloud endpoint answers HTTP 403 for every client
+        // (providers-spec §6.7), so the default provider must be one whose
+        // weights ship with the model bundle.
+        assert_eq!(TtsActiveProvider::default(), TtsActiveProvider::Supertonic);
     }
 
     #[test]

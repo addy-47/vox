@@ -93,15 +93,44 @@ All authoritative specs live in [`docs/specs/`](file:///home/addy/projects/apps/
 
 > 📖 **Phase 13 (active):** [recent_work.md](file:///home/addy/projects/apps/vox/docs/plans/phase13/recent_work.md)
 > Phase 12 Archive: [recent_work.md](file:///home/addy/projects/apps/vox/docs/plans/phase12/recent_work.md)
-- **Frontend hardening:** test suite (vitest 162) + 0 ESLint errors; warm-nav SWR, route-transition unmount/reveal, session-panel reconcile/virtualization; catalog modal shell and store decomposition.
-- **Settings hub re-layout:** 12:00 Persona · 02:00 Memory · 04:00 **Language** · 06:00 Appearance · 08:00 **Speech** · 10:00 Interaction. Small-screen inline lists share the Language card's 260px cap; catalogs render all options in their native scrollers (no “Show N more” paging), have no extra bottom scroll padding, and carry one `Expand` affordance (the feather inverts at the end, the label moves in flow instead of vanishing); Voice Catalog tracks end state directly on native scroll, the TTS grid has one scroll container, Speech category cells have a fixed 94px desktop height with no title-caption gap, and side-card connector anchors use a shared slot center so the 8:00/4:00 pair stays level.
-- **Settings Speech card:** Model Hub retired — stage tiles (glyph, name, caption) over detection/transcription/synthesis, `Select voice` header breadcrumb + catalog with its own expand trigger, floating detection gear, seven TTS engines with a per-engine voice modal, header speech-rate gauge. Model rows are logo + name + tier/footprint with persistent info/delete glyphs and family marks (`ModelLogo`). `tuning` domain removed, `models`→`speech` renamed everywhere. The TTS modal header carries the domain commit control (Apply & Restart / Changes Saved), icon-only “Restart” below 1024px. Engine tiles are **modal-only**: `TtsEngineGrid` takes `variant="rows" | "cards"`, the inline Speech-card face stays rows, and `TtsModelsModal` renders 188px `SelectableCard` tiles (shared with the provider modal, `leading` slot) plus the `EngineFlowBanner` pinned **below** the rail+grid (same placement as the voice preview banner); tiles carry only the tier badge (On-device/Cloud, no footprint) at the bottom-left, voices top-right, delete bottom-right.
-- **Settings Language card (04:00):** provider rows (on-device, keyed cloud, custom servers) with the saved provider first, unconnected ones dimmed with an inline key field (tick/cross accept-reject) that replaces the pill content, plus a dashed add card that opens the catalog modal; `Select model` swaps the face for that provider's catalog (search/sort/facets) with back navigation. Provider switches now write a model that belongs to the target provider (`resolveProviderModel`: revert to the saved provider restores the saved model, anything else starts empty), so "Apply & Restart" clears on revert; a cloud/server selection with no model shows a `missing-model` footer instead of a committable restart. `LlmTuningControls` resolves capabilities through `resolveCapabilitiesById` (a cache miss is inert, never a crash). The model catalog header carries the three LLM knobs as glyph popovers (`LlmTuningControls`: response length, context window, creativity) and the catalog sort/search were fixed. `llm` scope maps to the `language` domain. `settings/models/` retired: provider surface → `language/`, generic primitives → `shared/` (`CatalogRowCard`, `AddCard`, `CardTitleBar`, `CatalogModalShell`, `CatalogReveal` — the shared feather + `Expand` reveal used by the provider, remote-model, TTS-engine, and voice catalogs). Provider rows select only; the trailing arrow is a separate "Browse models" hitbox that never re-selects an already active provider. The provider modal always opens on the **Available** filter (no `initialFilter` prop). `CatalogReveal` is the only expand affordance (label "Expand" + maximize glyph, suppressed inside a modal; the floating corner `Maximize2` is gone, replaced by `hideInlineTrigger`). Both Language modals (provider catalog + model catalog) carry the `language` commit control in the header (Apply & Restart / Changes Saved, icon-only “Restart” below 1024px); a missing cloud key renders one credential banner, never a second “Connection failed” banner for the same cause.
-- **Voice pipeline + backend gates:** segmentation/onset RCA fixes, turn-identity gates on TTS playback, RULE-HARN-03 dedup moved pre-side-effect; `verify-targets.sh` clippy/lint-arch gate green.
-- **Monitoring null-safety:** `latest` snapshot can be null before first fetch; guarded Monitoring.tsx with a typed empty fallback so `is_vad_loaded` (and siblings) never dereference null.
-
+- **Frontend hardening & settings hub re-layout:** vitest 162/162, 0 ESLint errors; warm-nav SWR, route-transition unmount/reveal, session-panel virtualisation; radial hub layout (12:00 Persona · 02:00 Memory · 04:00 Language · 06:00 Appearance · 08:00 Speech · 10:00 Interaction), unified `memory` settings domain, shared catalog reveal and modal shells; Speech card (stage tiles, 7 TTS engines, per-engine voice modals) and Language card (provider rows, inline credential inputs, LLM tuning popovers).
+- **Backend pipeline & voice reliability:** clippy/lint-arch compile gate, VAD/ASR pipeline, SNR-adaptive onset gate, durable turn-identity gate on TTS playback/barge-in; dual-target compile gate clean.
+- **Monitoring & telemetry:** `latest` snapshot null-safety guarded with typed empty fallback.
+- **Remote Control v1 (in progress):** W0 (foundation), W1 (pure wire protocol, `RemoteLink` trait, conformance suite) and W2a (device identity, mode-0600 key store, Noise_XX handshake, pairing flow, trust store) landed and audited; 5 latent production defects fixed, architectural checks moved to `lint-arch.sh`, dual-target compile gate 0/0; W2b (WebSocket transport) is next.
 ---
 
 ## 6. Backlog
 
 See **[Phase 13 Backlog](file:///home/addy/projects/apps/vox/docs/plans/phase13/backlog.md)** for Cloud TTS quota management, Azure speech integration, and setup guide modal overhaul details.
+
+---
+
+## 7. TEMPORARY — Remote Control Module Map (delete when the feature lands)
+
+> ⏳ Added by the Remote Control feature. **This section is deleted in the final wave (W8).** It is not a permanent rule of the codebase. Full rationale: [`docs/plans/phase13/remote-control-adr.md`](file:///home/addy/projects/apps/vox/docs/plans/phase13/remote-control-adr.md). Behavioral contract: [`docs/specs/remote-control-spec.md`](file:///home/addy/projects/apps/vox/docs/specs/remote-control-spec.md).
+
+### 7.1 Module ownership
+
+Applies to `app/src-tauri/src/services/remote/`.
+
+| Module | Owns | Must never contain |
+| :--- | :--- | :--- |
+| `protocol/` | wire message types, binary framing, capability bitmask, wire error codes | I/O, state, Tauri types |
+| `link/` | `RemoteLink` trait, `LoopbackLink`, `WsLink`, link lifecycle | protocol semantics, app state |
+| `security/` | device identity, key storage, Noise handshake, pairing, trust store | session state, IPC commands |
+| `session/` | `RemoteLinkState`, `SessionRole`, session manager, heartbeat, snapshot | protocol encoding, Tauri commands |
+| `control/` | routing table, arg specs, command gateway, redaction, event policy | transport, audio |
+| `discovery/` | address hints, mDNS advertisement and browsing, dial candidates | session state |
+| `audio/` | network capture, network sink, frame pacing | session state, protocol encoding |
+| `testing/` | headless reference client | production logic |
+
+### 7.2 Rules
+
+1. **`protocol/` is pure.** No `tokio`, no `tauri`, no filesystem. It is the single source of truth for the wire contract; both roles and the test suite import it with no I/O.
+2. **`RemoteLinkState` (`session/state.rs`) is the single source of truth for remote state.** No `is_connected`, `controller_attached`, `is_remote_connected` or equivalent boolean may shadow it anywhere in the codebase. This mirrors `.agents/rules/backend-style-guide.md` §5.
+3. **Host and Controller are roles, not branches.** `session/manager.rs` implements the session once, parameterised by `SessionRole`. Never fork session logic per role.
+4. **`control/routing.rs` is a static table.** Every IPC command and every `update_setting` domain/key must appear in it, including the `model_parameters` pseudo-domain. A test asserts completeness.
+5. **The desktop-vs-remote distinction is an explicit `ControlOrigin` parameter** on the affected service functions. Never a thread-local, never a global flag.
+6. **The backend owns remote state and pushes it.** The frontend may read it once at boot, never to drive it. There is exactly one `remote_state_changed` event.
+7. **`ipc/` holds thin Tauri command wrappers only.** Domain logic belongs to the service module that owns the domain.
+8. **New modules land in the tree above, not as flat files in `services/remote/`.** If a new capability does not fit one of the eight modules, it needs a new module with a stated ownership, not a ninth file at the root.

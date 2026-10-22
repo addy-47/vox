@@ -15,10 +15,11 @@ use serde::{Deserialize, Serialize};
 use symphonia_core::audio::{Audio, GenericAudioBufferRef};
 
 use crate::{
+    core::defaults::{DEFAULT_TTS_KOKORO_VOICE_ID, DEFAULT_TTS_SUPERTONIC_VOICE_ID},
     services::{
         audio::resolve_audio_host,
         tts::{
-            providers::edge_tts::get_trusted_client_token, CHATTERBOX_MODEL_DIR,
+            providers::edge_tts::get_trusted_client_token, TtsActiveProvider, CHATTERBOX_MODEL_DIR,
             EDGE_TTS_USER_AGENT, EDGE_TTS_VOICES_URL_BASE, MODEL_FILE_TTS_CHATTERBOX_S3GEN,
             MODEL_FILE_TTS_CHATTERBOX_T3, TTS_SAMPLE_RATE,
         },
@@ -532,6 +533,118 @@ pub fn resolve_catalog_index(profiles: &[VoiceProfile], voice_id: &str) -> i32 {
         }
     }
     profiles.first().map(|p| p.id).unwrap_or(0)
+}
+
+/// Returns the voice profiles of a provider that ships a bundled catalogue.
+///
+/// A provider without a bundled catalogue (Chatterbox, ZipVoice, the cloud
+/// providers) addresses its voices by id or by directory, not by catalogue
+/// index.
+///
+/// The match is exhaustive over the canonical provider enum, so every
+/// provider the factory accepts is classified here. A provider can never
+/// fall through to another provider's catalogue.
+fn provider_voice_profiles(provider: TtsActiveProvider) -> Option<Vec<VoiceProfile>> {
+    match provider {
+        TtsActiveProvider::Kokoro => Some(get_voice_profiles()),
+        TtsActiveProvider::Supertonic => Some(get_supertonic_voice_profiles()),
+        TtsActiveProvider::EdgeTts
+        | TtsActiveProvider::Chatterbox
+        | TtsActiveProvider::ChatterboxRemote
+        | TtsActiveProvider::Zipvoice
+        | TtsActiveProvider::AzureTts
+        | TtsActiveProvider::GoogleTts => None,
+    }
+}
+
+/// Parses a provider id into the canonical provider enum.
+///
+/// The voice catalogue resolves providers through the same enum the provider
+/// factory parses. A typo in a provider id is therefore an explicit error
+/// instead of a silent fallback to the first catalogue entry — which gave
+/// the user a voice they never chose.
+fn parse_tts_provider(provider_id: &str) -> Result<TtsActiveProvider, String> {
+    serde_json::from_value(serde_json::Value::String(provider_id.to_string()))
+        .map_err(|_| format!("Unknown TTS provider id: {provider_id}"))
+}
+
+/// The default voice id of a provider that ships a bundled catalogue.
+///
+/// The default voice is provider-scoped: a voice id belongs to exactly one
+/// provider's catalogue, so there is no single global default.
+pub fn default_voice_id_for_provider(provider_id: &str) -> Option<&'static str> {
+    let provider = parse_tts_provider(provider_id).ok()?;
+    default_voice_id_for(provider)
+}
+
+/// The default voice id of a provider, resolved through the canonical enum.
+fn default_voice_id_for(provider: TtsActiveProvider) -> Option<&'static str> {
+    match provider {
+        TtsActiveProvider::Kokoro => Some(DEFAULT_TTS_KOKORO_VOICE_ID),
+        TtsActiveProvider::Supertonic => Some(DEFAULT_TTS_SUPERTONIC_VOICE_ID),
+        TtsActiveProvider::EdgeTts
+        | TtsActiveProvider::Chatterbox
+        | TtsActiveProvider::ChatterboxRemote
+        | TtsActiveProvider::Zipvoice
+        | TtsActiveProvider::AzureTts
+        | TtsActiveProvider::GoogleTts => None,
+    }
+}
+
+/// Resolves the voice id a provider must use.
+///
+/// A stored id that names a voice of the provider is kept. A stored id that
+/// belongs to another provider — or to none — resolves to that provider's own
+/// default voice.
+///
+/// The resolution never falls through to an arbitrary catalogue index: a
+/// catalogue-index fallback silently gives the user a voice they did not
+/// choose.
+pub fn resolve_provider_voice_id(provider_id: &str, voice_id: &str) -> String {
+    let trimmed = voice_id.trim();
+    let Ok(provider) = parse_tts_provider(provider_id) else {
+        log::warn!(
+            "[Voice] Unknown TTS provider id '{provider_id}': the stored voice id is kept unchanged"
+        );
+        return trimmed.to_string();
+    };
+    resolve_provider_voice_id_for(provider, trimmed)
+}
+
+/// Resolves the voice id of a provider, resolved through the canonical enum.
+fn resolve_provider_voice_id_for(provider: TtsActiveProvider, voice_id: &str) -> String {
+    let Some(profiles) = provider_voice_profiles(provider) else {
+        return voice_id.to_string();
+    };
+
+    let needle = voice_id.to_lowercase();
+    if profiles.iter().any(|p| p.name.to_lowercase() == needle) {
+        return needle;
+    }
+
+    default_voice_id_for(provider)
+        .unwrap_or(voice_id)
+        .to_lowercase()
+}
+
+/// Resolves the catalogue index of the voice a provider must use.
+///
+/// The index is taken from the provider-aware voice id, so it names the
+/// provider's default voice rather than the first entry of the catalogue.
+///
+/// An unrecognised provider id is an explicit error. The old behaviour
+/// resolved it to index zero, which silently selected a voice the user never
+/// chose.
+pub fn resolve_voice_index_for_provider(provider_id: &str, voice_id: &str) -> Result<i32, String> {
+    let provider = parse_tts_provider(provider_id)?;
+    let Some(profiles) = provider_voice_profiles(provider) else {
+        // A provider without a bundled catalogue addresses its voices by id
+        // or by directory. There is no catalogue position to resolve, so the
+        // index stays at the provider's default position.
+        return Ok(0);
+    };
+    let resolved = resolve_provider_voice_id_for(provider, voice_id);
+    Ok(resolve_catalog_index(&profiles, &resolved))
 }
 
 /// Returns default Supertonic voice profiles.

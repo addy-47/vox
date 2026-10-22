@@ -8,7 +8,11 @@ pub mod archive;
 pub mod audio;
 pub mod harness;
 pub mod http_server;
+pub mod log_capture;
 pub mod paths;
+pub mod remote_conformance;
+pub mod remote_noise;
+pub mod remote_samples;
 pub mod scoring;
 pub mod wire;
 

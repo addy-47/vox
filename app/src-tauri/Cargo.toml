@@ -124,6 +124,22 @@ once_cell = "1.21.4"                             # Lazy static cell initializati
 num2words = "0.4"                                # Spoken number and currency verbalization for TTS
 text-processing-rs = "0.2.2"                      # NVIDIA NeMo Inverse Text Normalization (ITN) port for STT
  
+# ─── 10. Remote Control (dependency surface) ─────────────────────────────────
+# snow: the Noise_XX handshake (mutual authentication, forward-secret session
+#       keys, replay protection). The remote-control spec forbids hand-rolled
+#       cryptography, so the audited library is the only permitted option.
+snow = "0.10"
+# mdns-sd: advertisement and browsing of the `_vox._tcp.local` service used for
+#          LAN discovery. Pure Rust, no async runtime dependency, no C toolchain.
+mdns-sd = "0.21"
+# qrcode: rendering of the pairing QR. The `image` feature is disabled: the
+#         pairing surface needs the SVG renderer and the raw module matrix, and
+#         the `image` crate's transitive tree is dead weight on Android.
+qrcode = { version = "0.14", default-features = false, features = ["svg", "pic"] }
+getrandom = "0.3"
+zeroize = "1.8"
+hex = "0.4"
+
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-positioner = { path = "./plugins/tauri-plugin-positioner", features = ["tray-icon"] }
@@ -168,6 +184,9 @@ sherpa-onnx = { version = "1.13.8", default-features = false, features = ["share
 [dev-dependencies]
 tempfile = "3"
 tauri = { version = "2", features = ["test"] }
+# `test-util` gives the test tree a deterministic clock, so a timeout is
+# exercised by advancing time rather than by waiting for it.
+tokio = { version = "1", features = ["test-util"] }
 
 [profile.dev]
 split-debuginfo = "unpacked"

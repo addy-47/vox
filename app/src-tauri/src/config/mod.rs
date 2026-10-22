@@ -21,7 +21,7 @@ pub use mutation::{
 };
 pub use settings::{
     get_preset_colors, AppearanceSettings, AudioOutputMode, InteractionSettings, MemorySettings,
-    PersonaSettings, SystemSettings, VoxSettings,
+    PersonaSettings, RemoteSettings, SystemSettings, VoxSettings,
 };
 pub use types::{ActiveSelection, LastSelectedModels};
 
@@ -107,6 +107,14 @@ pub fn classify_known(domain: &str, key: &str) -> Option<SettingReloadPolicy> {
         ("realtime", "voice", SettingReloadPolicy::Restart),
         ("realtime", "voice_id", SettingReloadPolicy::Restart),
         ("realtime", "api_keys", SettingReloadPolicy::Hot),
+        // `remote.accepts_controllers` starts and stops the host-side
+        // advertisement and listener. That is a runtime action, not an engine
+        // restart, so the running session manager observes the new value.
+        ("remote", "accepts_controllers", SettingReloadPolicy::Hot),
+        // `remote.execution_mode` switches the device between running its own
+        // pipeline and acting as a thin client. That changes what the engine
+        // is, so it requires a restart.
+        ("remote", "execution_mode", SettingReloadPolicy::Restart),
     ];
 
     if WORKER_COMMAND
@@ -135,8 +143,9 @@ pub fn classify_known(domain: &str, key: &str) -> Option<SettingReloadPolicy> {
 pub fn secret_keys() -> &'static [(&'static str, &'static str)] {
     &[
         ("llm", "cloud_keys"),
-        ("llm", "servers"), // embedded `api_key` on LlmCustomServer
-        ("tts", "servers"), // embedded `api_key` on TtsCustomServer
+        ("llm", "servers"),   // embedded `api_key` on LlmCustomServer
+        ("tts", "servers"),   // embedded `api_key` on TtsCustomServer
+        ("tts", "azure_tts"), // embedded `key` on TtsAzureConfig
         ("realtime", "api_keys"),
     ]
 }
