@@ -2,19 +2,12 @@
 
 ---
 
-## 1. MANDATORY: AGENTS.md Sync Hook
+## 1. MANDATORY: Work Log Hook
 
-> 🛑 **POST-TASK HOOK — TWO STEPS, IN ORDER:**
->
-> **Step 1 — Always: Update Section 5.**
-> After every completed task, update Section 5. **One bullet per work seam** — if the work you did belongs to the same lane (same feature, same subsystem, same logical thread) as an existing bullet, extend that bullet. Only work belonging to a genuinely different lane earns a new bullet.
-> Do NOT write to `docs/`, `recent_work.md`, or any other file — Section 5 is the only target.
+> 🛑 **POST-TASK HOOK: Record Work in `work_log.md`**
+> After every completed task, record your entry in `docs/plans/<current_phase>/work_log.md`.
+> **One bullet per work seam:** if your work extends an existing task or lane, update that bullet instead of appending a new one. Do not create new bullets for the same task.
 > [Skip for tasks with no lasting accountability: one-off lookups, read-only investigations, questions answered without touching files.]
->
-> **Step 2 — Only when approaching 110 lines: Migrate Section 5.**
-> After appending, count total lines. At or above **110 lines**:
-> 1. Migrate Section 5 to `docs/plans/<current_phase>/recent_work.md` under `## Past Work (YYYY-MM-DD)`.
-> 2. Replace Section 5 with a compact 3–5 bullet summary of only the highest-level milestones.
 
 ---
 
@@ -29,7 +22,7 @@ Only paths with non-obvious rules that agents cannot infer from the codebase ind
 | `app/src-tauri/scripts/verify-targets.sh` | **The compile gate.** Always use this — never bare `cargo check` on a cross target. |
 | `.agents/rules/` | Read the relevant rule file before acting in any named role. `android-style-guide.md` is mandatory for any change touching `cpal`, tray/menu, dictation, `utils/paths.rs`, model loading, `Cargo.toml` target tables, or any `cfg(`. |
 | `docs/specs/` | Authoritative behavioral contracts — SSOT. Never contradict. |
-| `docs/plans/phase13/` | Active phase. Plans and `recent_work.md` live here. |
+| `docs/plans/phase13/` | Active phase. Plans and `work_log.md` live here. |
 | `temp/.env` / `temp/server.txt` | API keys and remote GPU server creds. Not versioned. |
 | `~/.vox/vox.db` | Local Turso DB. Inspect via `tursodb ~/.vox/vox.db "<SQL>"`. |
 
@@ -56,7 +49,7 @@ Only paths with non-obvious rules that agents cannot infer from the codebase ind
 
 ---
 
-## 4. Invariants & Specs
+## 4. Invariants & Gates
 
 ### 4.1 Architectural Invariants (Non-Negotiable)
 
@@ -77,39 +70,36 @@ tursodb ~/.vox/vox.db "SELECT name FROM sqlite_master WHERE type='table';"
 >
 > **Android gate:** If the change touches `cpal`, tray/menu, dictation, `utils/paths.rs`, model loading, `Cargo.toml` target tables, or any `cfg(` — also read [`android-style-guide.md`](file:///home/addy/projects/apps/vox/.agents/rules/android-style-guide.md). Android support is incomplete; confirmed traps there have caused false "done" reports.
 
-### 4.3 Spec Alignment (Non-Drift Hook)
+---
 
-> 🛑 Every agent must adhere strictly to the approved specifications.
+## 5. Specifications & Spec Alignment (Non-Drift Gate)
+
+All authoritative specifications live in [`docs/specs/`](file:///home/addy/projects/apps/vox/docs/specs/). Reading the relevant spec is mandatory before designing or modifying code.
+
+> 🛑 **Spec Alignment Invariant:** Every agent must adhere strictly to the approved specifications.
 > 1. **Divergence / Additions:** If behavior, commands, or schemas diverge from or are absent from the relevant spec — STOP and ask for approval. If approved, update the spec FIRST (following `/create-spec`), then write code. Specs must never quietly drift from code.
 > 2. **Legacy Code:** If existing code implements behavior not captured in the spec — confirm with the user before pruning the code or updating the spec.
 
-### 4.4 Active Specifications Ledger
+---
 
-All authoritative specs live in [`docs/specs/`](file:///home/addy/projects/apps/vox/docs/specs/) , read the all relevant specs for your task as mandatory.explorations 
+## 6. Current Phase & Work Log
+
+> 📖 **Phase 13 (active):** All completed work and previous agent activity are recorded in [`docs/plans/phase13/work_log.md`](file:///home/addy/projects/apps/vox/docs/plans/phase13/work_log.md).
+> Read `work_log.md` to understand recent milestones, established architectural patterns, and verified seam implementations.
 
 ---
 
-## 5. Current Phase Summary
-
-> 📖 **Phase 13 (active):** [recent_work.md](file:///home/addy/projects/apps/vox/docs/plans/phase13/recent_work.md)
-- **Frontend & Settings Radial Hub:** Radial hub layout (6 domains), unified `memory` domain, warm-nav SWR; 162/162 vitest passing.
-- **Backend Voice Pipeline:** SNR-adaptive onset gate, durable turn-identity gate, dual-target compile gate 0/0.
-- **Test Suite Revamp (2026-10-22):** Slices 0–21 complete; 35 seam binaries, 279 integration tests, 190 unit tests, non-remote suite clean at 413 passed / 4 skipped; strict intent blocks, quiescence-based absence checks, no sleep timers.
-- **Remote Control v1 (Active):** Foundations, protocol, and security landed; test suite consolidated into 2 canonical seams (`remote_link_test`, `remote_security_test`) + 14 unit tests; default tier clean; W2b (WebSocket transport) is next.
-
----
-
-## 6. Backlog
+## 7. Backlog
 
 See **[Phase 13 Backlog](file:///home/addy/projects/apps/vox/docs/plans/phase13/backlog.md)** for Cloud TTS quota management, Azure speech integration, and setup guide modal overhaul details.
 
 ---
 
-## 7. TEMPORARY — Remote Control Module Map (delete when the feature lands)
+## 8. TEMPORARY — Remote Control Module Map (delete when the feature lands)
 
 > ⏳ Added by the Remote Control feature. **This section is deleted in the final wave (W8).** It is not a permanent rule of the codebase. Full rationale: [`docs/plans/phase13/remote-control-adr.md`](file:///home/addy/projects/apps/vox/docs/plans/phase13/remote-control-adr.md). Behavioral contract: [`docs/specs/remote-control-spec.md`](file:///home/addy/projects/apps/vox/docs/specs/remote-control-spec.md).
 
-### 7.1 Module ownership
+### 8.1 Module ownership
 
 Applies to `app/src-tauri/src/services/remote/`.
 
@@ -124,7 +114,7 @@ Applies to `app/src-tauri/src/services/remote/`.
 | `audio/` | network capture, network sink, frame pacing | session state, protocol encoding |
 | `testing/` | headless reference client | production logic |
 
-### 7.2 Rules
+### 8.2 Rules
 
 1. **`protocol/` is pure.** No `tokio`, no `tauri`, no filesystem. It is the single source of truth for the wire contract; both roles and the test suite import it with no I/O.
 2. **`RemoteLinkState` (`session/state.rs`) is the single source of truth for remote state.** No `is_connected`, `controller_attached`, `is_remote_connected` or equivalent boolean may shadow it anywhere in the codebase. This mirrors `.agents/rules/backend-style-guide.md` §5.
