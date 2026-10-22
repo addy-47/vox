@@ -89,10 +89,13 @@ Legend: `[ ]` pending · `[x]` done · `[~]` folded into another binary · `[-]`
 
 ## Slice 7 — Agentic tool loop
 
-- [ ] `tests/agentic_tool_runtime_test.rs` (6)
-- [ ] Tool cap 5, 65% debounce, non-terminal retrieval
-- [ ] Binary: `agentic_tool_loop_test.rs`
-- [ ] Report Slice 7
+- [x] `tests/agentic_tool_runtime_test.rs` → `tests/agentic_tool_loop_test.rs` (6 → 8 subtests), file renamed
+- [x] Non-terminal retrieval — memory RRF and the three-stage web search
+- [x] Terminal tool — title update, accumulator parity, clause prefix drop
+- [x] Wire mapping — NVIDIA preset and Ollama native request and tool-stream parsing
+- [x] Tool filter taxonomy — title, memory and web-search switches
+- [ ] Tool cap 5 (`MAX_TOOL_ITERATIONS`) — moved to Slice 12, the harness loop owns it
+- [x] Report Slice 7
 
 ## Slice 8 — LLM → TTS chunking
 
