@@ -1,0 +1,13 @@
+# Structural seams: no model weights, no network, no audio device.
+# Consumed by scripts/test.sh. Reconciled at the final sweep.
+ipc_command_registration_test
+settings_persistence_test
+database_persistence_boundary_test
+notifications_crud_test
+model_manager_test
+tts_voice_catalogue_test
+chunking_determinism_test
+realtime_transport_test
+stt_turn_identity_test
+dictation_ptt_test
+dictation_output_test
