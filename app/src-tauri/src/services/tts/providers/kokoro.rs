@@ -15,7 +15,10 @@ use sherpa_onnx::{
     OfflineTtsModelConfig,
 };
 
-use super::{edge_tts::EdgeTtsProvider, speed_range, SynthesisContext, TtsProvider};
+use super::{
+    devanagari::{DevanagariEngineCache, DEVANAGARI_ROUTE_PROVIDER},
+    speed_range, SynthesisContext, TtsProvider,
+};
 use crate::{
     core::{
         error::{PipelineError, PipelineImpact},
@@ -24,9 +27,10 @@ use crate::{
     services::{
         translit::is_devanagari,
         tts::{
-            ParamRange, ProviderCaps, TtsVoiceSource, EDGE_TTS_HINDI_VOICE, MAX_SPEED, MIN_SPEED,
+            ParamRange, ProviderCaps, TtsVoiceSource, MAX_SPEED, MIN_SPEED, SUPERTONIC_MODEL_DIR,
         },
     },
+    utils::paths::model_dir,
 };
 
 pub const MODEL_FILE_TTS_KOKORO_MODEL: &str = "model.onnx";
@@ -64,6 +68,11 @@ pub struct KokoroEngine {
     tts: Mutex<OfflineTts>,
     speed: AtomicF32,
     voice: AtomicI32,
+    /// The Supertonic engine the Devanagari route uses.
+    ///
+    /// The cache belongs to this provider, so the 145 MB weight set is loaded
+    /// once per provider lifetime and released when the provider is dropped.
+    devanagari: DevanagariEngineCache,
 }
 
 impl KokoroEngine {
@@ -117,6 +126,7 @@ impl KokoroEngine {
             tts: Mutex::new(tts),
             speed: AtomicF32::new(speed.clamp(Self::SPEED_RANGE.min, Self::SPEED_RANGE.max)),
             voice: AtomicI32::new(clamped_voice),
+            devanagari: DevanagariEngineCache::new(),
         })
     }
 }
@@ -160,20 +170,25 @@ impl TtsProvider for KokoroEngine {
 
         if is_devanagari(text) {
             log::warn!(
-                "[Kokoro] Devanagari script detected in turn {}: routing to Edge TTS fallback",
-                ctx.turn_id
+                "[Kokoro] Devanagari script detected in turn {}: routing to {}",
+                ctx.turn_id,
+                DEVANAGARI_ROUTE_PROVIDER
             );
             if let Err(e) = ctx.event_tx.send(VoxEvent::Error(PipelineError {
                 turn_id: ctx.turn_id,
-                message: "Configured TTS does not support Hindi (Devanagari). Routing to Edge TTS."
-                    .to_string(),
+                message: format!(
+                    "Configured TTS does not support Hindi (Devanagari). Routing to {}.",
+                    DEVANAGARI_ROUTE_PROVIDER
+                ),
                 source: "Kokoro".to_string(),
                 impact: PipelineImpact::Degraded,
             })) {
                 log::warn!("[Kokoro] Failed to emit error event: {}", e);
             }
-            let fallback_provider = EdgeTtsProvider::new(Some(EDGE_TTS_HINDI_VOICE));
-            return fallback_provider.synthesize_chunk(text, ctx);
+            let speed = self.speed.load(Ordering::Relaxed);
+            return self
+                .devanagari
+                .synthesize(text, ctx, &model_dir(SUPERTONIC_MODEL_DIR), speed);
         }
 
         let sid = self.voice.load(Ordering::Relaxed);

@@ -18,6 +18,7 @@ pub mod compactions;
 pub mod facts;
 pub mod models;
 pub mod notifications;
+pub mod paired_devices;
 pub mod personal_memory;
 pub mod projects;
 pub mod queue;
@@ -41,6 +42,11 @@ pub use models::{
     toggle_model_favorite, update_model_parameters, upsert_model_active, ModelRecord,
 };
 pub use notifications::{NewNotification, NotificationRecord};
+pub use paired_devices::{
+    delete_paired_device, get_paired_device, insert_paired_device, list_paired_devices,
+    mark_paired_device_seen, update_paired_device_hints, NewPairedDevice, PairedDevice,
+    PairedDeviceRole,
+};
 pub use personal_memory::{
     fetch_pending_revisions, get_personal_memory, insert_personal_memory_revisions,
     list_personal_memory_versions, reject_all_pending_revisions,

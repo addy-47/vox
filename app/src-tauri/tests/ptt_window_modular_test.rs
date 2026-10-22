@@ -35,7 +35,7 @@ use vox_lib::{
 async fn test_ptt_modular_matrix() {
     let test_timeout = Duration::from_secs(60);
     tokio::time::timeout(test_timeout, async {
-        vox_lib::utils::paths::init();
+        let _guard = common::paths::TempPathsGuard::new();
         let (app, state) = common::harness::get_test_app_and_state().await;
 
         // 1. Configure settings for Assistant Modular PTT

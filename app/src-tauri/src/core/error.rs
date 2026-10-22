@@ -154,6 +154,9 @@ pub enum PersistenceError {
     #[error("Schema migration failed for version {version}: {message}")]
     MigrationError { version: u32, message: String },
 
+    #[error("Invalid stored record: {message}")]
+    InvalidRecord { message: String },
+
     #[error("Record not found: {id}")]
     NotFound { id: String },
 }

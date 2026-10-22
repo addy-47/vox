@@ -17,7 +17,10 @@ use sherpa_onnx::{
     OfflineTtsZipvoiceModelConfig,
 };
 
-use super::{edge_tts::EdgeTtsProvider, speed_range, SynthesisContext, TtsProvider};
+use super::{
+    devanagari::{DevanagariEngineCache, DEVANAGARI_ROUTE_PROVIDER},
+    speed_range, SynthesisContext, TtsProvider,
+};
 use crate::{
     core::{
         error::{PipelineError, PipelineImpact},
@@ -26,9 +29,10 @@ use crate::{
     services::{
         translit::is_devanagari,
         tts::{
-            ParamRange, ProviderCaps, TtsVoiceSource, EDGE_TTS_HINDI_VOICE, MAX_SPEED, MIN_SPEED,
+            ParamRange, ProviderCaps, TtsVoiceSource, MAX_SPEED, MIN_SPEED, SUPERTONIC_MODEL_DIR,
         },
     },
+    utils::paths::model_dir,
 };
 
 pub const MODEL_FILE_TTS_ZIPVOICE_ENCODER: &str = "encoder.int8.onnx";
@@ -156,6 +160,11 @@ pub struct ZipvoiceEngine {
     /// an index into a reference clip at runtime; without it, voice selection
     /// would be unreachable without a full engine rebuild.
     voices_dir: PathBuf,
+    /// The Supertonic engine the Devanagari route uses.
+    ///
+    /// The cache belongs to this provider, so the 145 MB weight set is loaded
+    /// once per provider lifetime and released when the provider is dropped.
+    devanagari: DevanagariEngineCache,
 }
 
 impl TtsProvider for ZipvoiceEngine {
@@ -320,6 +329,7 @@ impl ZipvoiceEngine {
             min_char_in_sentence: AtomicI32::new(DEFAULT_ZIPVOICE_MIN_CHAR),
             reference: RwLock::new(initial_reference),
             voices_dir: model_path.join("voices"),
+            devanagari: DevanagariEngineCache::new(),
         })
     }
 
@@ -374,21 +384,25 @@ impl ZipvoiceEngine {
 
     fn handle_unsupported_script(&self, text: &str, ctx: &SynthesisContext<'_>) -> Result<()> {
         log::warn!(
-            "[Tts::Zipvoice] Devanagari script detected in turn {}: routing to Edge TTS fallback",
-            ctx.turn_id
+            "[Tts::Zipvoice] Devanagari script detected in turn {}: routing to {}",
+            ctx.turn_id,
+            DEVANAGARI_ROUTE_PROVIDER
         );
         if let Err(e) = ctx.event_tx.send(VoxEvent::Error(PipelineError {
             turn_id: ctx.turn_id,
-            message: "Configured TTS does not support Hindi (Devanagari). Routing to Edge TTS."
-                .to_string(),
+            message: format!(
+                "Configured TTS does not support Hindi (Devanagari). Routing to {}.",
+                DEVANAGARI_ROUTE_PROVIDER
+            ),
             source: "ZipVoice".to_string(),
             impact: PipelineImpact::Degraded,
         })) {
             log::warn!("[Tts::Zipvoice] Failed to emit error event: {}", e);
         }
 
-        let fallback_provider = EdgeTtsProvider::new(Some(EDGE_TTS_HINDI_VOICE));
-        fallback_provider.synthesize_chunk(text, ctx)
+        let speed = self.speed.load(Ordering::Relaxed);
+        self.devanagari
+            .synthesize(text, ctx, &model_dir(SUPERTONIC_MODEL_DIR), speed)
     }
 
     fn execute_synthesis(

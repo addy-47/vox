@@ -49,10 +49,45 @@ pub const EDGE_TTS_USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64)
 pub const EDGE_TTS_SEC_MS_GEC_VERSION: &str = "1-143.0.3650.75";
 pub const EDGE_TTS_WIN_EPOCH: u64 = 11_644_473_600;
 pub const EDGE_TTS_DEFAULT_VOICE: &str = "en-US-AriaNeural";
-pub const EDGE_TTS_HINDI_VOICE: &str = "hi-IN-SwaraNeural";
 pub const EDGE_TTS_VOICES_URL_BASE: &str = "https://speech.platform.bing.com/consumer/speech/synthesize/readaloud/voices/list?trustedclienttoken=";
 pub const EDGE_TTS_WS_URL_BASE: &str =
     "wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1";
+
+/// Whether the Microsoft ReadAloud endpoint is usable.
+///
+/// It is not. The endpoint answers HTTP 403 for every client, regardless of
+/// user agent, locale or voice. This is an upstream service change, not a
+/// configuration error, and it is not a Vox bug. See
+/// `docs/specs/providers-spec.md` §6.7.
+///
+/// The transport below is kept intact so the provider can be restored by
+/// flipping this flag when the upstream service recovers. Until then every
+/// synthesis request fails loudly instead of producing an empty buffer.
+pub const EDGE_TTS_UPSTREAM_AVAILABLE: bool = false;
+
+/// The explicit, actionable error surfaced when `edge_tts` is selected while
+/// the upstream service is unavailable.
+pub const EDGE_TTS_UNAVAILABLE_MESSAGE: &str =
+    "Edge TTS is currently unavailable (HTTP 403 from the upstream service)";
+
+/// Builds the availability error and notifies the pipeline of the aborted
+/// turn. Never returns audio: a provider that cannot speak says so.
+fn edge_tts_unavailable_error(turn_id: u32, event_tx: Option<&Sender<VoxEvent>>) -> anyhow::Error {
+    if let Some(tx) = event_tx {
+        if let Err(send_err) = tx.send(VoxEvent::Error(PipelineError {
+            turn_id,
+            message: EDGE_TTS_UNAVAILABLE_MESSAGE.to_string(),
+            source: "EdgeTts".to_string(),
+            impact: PipelineImpact::TurnAborted,
+        })) {
+            log::warn!(
+                "[EdgeTTS] Failed to emit availability error event: {}",
+                send_err
+            );
+        }
+    }
+    anyhow::anyhow!("{}", EDGE_TTS_UNAVAILABLE_MESSAGE)
+}
 
 /// Returns the Microsoft Edge ReadAloud client token bytes as a decoded UTF-8 string.
 pub fn get_trusted_client_token() -> String {
@@ -352,6 +387,10 @@ async fn stream_mp3_payload(
 
 /// Synthesizes text with the given voice directly to an output WAV file for previews.
 pub async fn synthesize_to_wav(voice: &str, text: &str, output_path: &Path) -> Result<()> {
+    if !EDGE_TTS_UPSTREAM_AVAILABLE {
+        return Err(edge_tts_unavailable_error(0, None));
+    }
+
     let (event_tx, _event_rx) = std::sync::mpsc::channel();
     let mut ws = connect_edge_websocket(&event_tx, 0)
         .await
@@ -424,6 +463,13 @@ impl TtsProvider for EdgeTtsProvider {
         log::debug!("[EdgeTTS] Entering synthesize_chunk: '{}'", text_clean);
         if text_clean.is_empty() {
             return Ok(());
+        }
+
+        // The upstream endpoint is unavailable (HTTP 403 for every client).
+        // Fail loudly and deterministically: no empty buffer, and no silent
+        // fallback to a voice the user did not choose.
+        if !EDGE_TTS_UPSTREAM_AVAILABLE {
+            return Err(edge_tts_unavailable_error(ctx.turn_id, Some(&ctx.event_tx)));
         }
 
         let start_time = Instant::now();
@@ -523,9 +569,8 @@ mod tests {
     use super::*;
 
     #[test]
-    #[ignore = "requires external network connection to live Edge TTS endpoints"]
-    fn test_edge_tts_live_synthesis() {
-        let (event_tx, _event_rx) = std::sync::mpsc::channel();
+    fn test_edge_tts_fails_loudly_while_upstream_is_unavailable() {
+        let (event_tx, event_rx) = std::sync::mpsc::channel();
         let cancel = Arc::new(AtomicBool::new(false));
         let rb = ringbuf::HeapRb::<f32>::new(48000 * 5);
         let (producer, _consumer) = rb.split();
@@ -556,10 +601,30 @@ mod tests {
         };
         let provider = EdgeTtsProvider::new(None);
         let res = provider.synthesize_chunk("Hey there. What's on your mind?", &ctx);
-        assert!(res.is_ok(), "Edge TTS synthesis failed: {:?}", res.err());
+
+        let err = res.expect_err("Edge TTS must fail while the upstream service is unavailable");
         assert!(
-            playback.occupied_len() > 0,
-            "Expected buffered audio samples in playback engine"
+            err.to_string().contains("HTTP 403"),
+            "The error must name the upstream HTTP 403 failure, got: {}",
+            err
         );
+        assert_eq!(
+            playback.occupied_len(),
+            0,
+            "A failed Edge TTS request must not leave an empty audio buffer"
+        );
+        let event = event_rx
+            .recv_timeout(Duration::from_millis(500))
+            .expect("The aborted turn must be reported to the pipeline");
+        match event {
+            VoxEvent::Error(err) => {
+                assert!(
+                    err.message.contains("HTTP 403"),
+                    "unexpected: {}",
+                    err.message
+                )
+            }
+            other => panic!("expected VoxEvent::Error, got {:?}", other),
+        }
     }
 }

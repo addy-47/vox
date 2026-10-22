@@ -163,11 +163,16 @@ async fn test_tts_voice_switch_without_worker_restart() {
             })
             .expect("Failed to send first Generate command");
 
-        // Send hot-swap command through real Settings IPC entry seam
+        // Send hot-swap command through real Settings IPC entry seam.
+        //
+        // The voice id MUST name a voice of the ACTIVE provider. The voice
+        // index is resolved against the active provider's catalogue, so a
+        // Kokoro id here would resolve to the Supertonic default instead of
+        // the voice the caller asked for. "alex" is Supertonic's entry 2.
         vox_lib::ipc::settings::update_setting(
             "tts".to_string(),
             "voice_id".to_string(),
-            serde_json::json!("nicole"),
+            serde_json::json!("alex"),
             app.clone(),
         )
         .await
