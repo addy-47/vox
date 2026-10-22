@@ -26,7 +26,7 @@ Status values: `open` · `confirmed` · `testability-gap` · `wontfix`
 - **Evidence:** direct handler invocation in the test body.
 - **Suspected cause:** test wired to the sink, not the trigger.
 - **Impact:** The STT → LLM handoff has no real test.
-- **Status:** open — seeds Slice 6.
+- **Status:** **partially resolved in Slice 6.** `transcript_ingestion_test` proves every ingestion decision (store, merge, suppress, dispatch) with the real handler, the real harness and a recording LLM stub. The single-binary end-to-end (a real STT final reaching the LLM request) is still not covered: `vad_segmentation_test` stops at the transcript and `transcript_ingestion_test` starts at it.
 
 ## F-3 — "Paste" subtest does not paste
 
@@ -44,14 +44,14 @@ Status values: `open` · `confirmed` · `testability-gap` · `wontfix`
 - **Symptom:** Zero references to `continuation_prefix` or `awaiting_continuation` in `tests/`.
 - **Suspected cause:** `RULE-EVT-08A` has no integration test.
 - **Impact:** Multi-utterance turns can duplicate or drop context.
-- **Status:** open — seeds Slice 6.
+- **Status:** **resolved in Slice 6.** `transcript_ingestion_test` covers the merge, the late-arriving final, and the empty-turn promotion of the stashed prefix. Seven unit tests in `pipeline/assistant/mod.rs` cover the accumulator itself.
 
 ## F-5 — Stale-cancel ordering untested
 
 - **Seam:** Slice 6
 - **Symptom:** No test for cancel-then-new-turn ordering.
 - **Impact:** A stale cancel can kill the next turn. Named in `vad-asr-pipeline-bugs-rca.md`.
-- **Status:** **partially resolved in Slice 3.** `stt_turn_identity_test::cancelled_final_for_a_later_turn_is_not_rejected` proves the worker does not reject a final for a different turn while the cancel flag is set. The LLM/playback half of stale-cancel ordering still belongs to Slice 6.
+- **Status:** **resolved in Slices 3 and 6.** `stt_turn_identity_test::cancelled_final_for_a_later_turn_is_not_rejected` proves the worker does not reject a final for a different turn while the cancel flag is set. `transcript_ingestion_test::stale_cancel_does_not_block_the_next_turn` proves the assistant side: a cancelled token is re-armed by `next_turn`, so the next transcript is still dispatched.
 
 ## F-6 — VAD segmenter state machine untested
 
@@ -151,3 +151,22 @@ Status values: `open` · `confirmed` · `testability-gap` · `wontfix`
 - **Evidence:** `src/services/vad/actor.rs` gate branch clears buffers and sleeps; there is no observable side effect. A slow scheduler makes the inference flaky in the safe direction only by luck.
 - **Impact:** The gate contract — "audio captured while nobody owns the mic must not reach the next turn" — is only weakly protected. Removing the sleep would make the test racy; keeping it violates the no-wall-clock rule.
 - **Status:** testability-gap — Slice 4 removes the scenario from the PTT binary and leaves it untouched in `dictation_window_test.rs` until Slice 5 decides: add a purge counter/event to the actor, or drive the actor loop directly in a unit test. Production change required; not made.
+
+## F-18 — A stalled LLM response blocks every later turn
+
+- **Seam:** Slice 6 (transcript ingestion)
+- **Symptom:** With no LLM response the next turn never reaches the LLM. The request for the
+  second turn was not observed within 10 s while the first turn was still waiting for its
+  generation response.
+- **Evidence:** During Slice 6 the merge scenario deadlocked until the LLM answered. The
+  harness mutex is held for the whole turn, so `step1_intake` of the next turn blocks
+  before it can even evaluate the duplicate filter.
+- **Suspected cause:** `Harness::execute_turn` keeps the harness lock while the stream pass
+  awaits the provider response. A provider that never answers therefore wedges the turn
+  loop, not just one turn.
+- **Impact:** One hung provider request stops all later turns. The turn token is cancelled
+  on interrupt, but the awaiting task does not observe it while it is blocked on the
+  response channel.
+- **Status:** confirmed — not fixed in this campaign. Production change required: release the
+  harness lock before awaiting the provider, or make the await cancellable. Test written to
+  exercise the path once fixed.
