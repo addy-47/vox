@@ -115,10 +115,9 @@ Legend: `[ ]` pending · `[x]` done · `[~]` folded into another binary · `[-]`
 
 ## Slice 10 — Playback, interrupt, barge-in
 
-- [ ] `tests/playback_interrupt_test.rs` (6)
-- [ ] `tests/tts_to_playback_test.rs` (2)
-- [ ] Binary: `playback_test.rs`
-- [ ] Report Slice 10
+- [x] `tests/playback_interrupt_test.rs` → `tests/playback_test.rs` (6 subtests, honest header, intent blocks)
+- [x] `tests/tts_to_playback_test.rs` → `tests/playback/tts_to_playback.rs`, a module of the same binary (2 subtests)
+- [x] Report Slice 10
 
 ## Slice 11 — Audio capture and AEC
 

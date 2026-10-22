@@ -1,12 +1,11 @@
 //! ============================================================================
-//! model_manager_test.rs — Model Download, Verification & Archive Extraction Test
+//! model_manager_test.rs — model downloads are verified, resumed safely, archive-extracted without path traversal, and cleaned up on removal
 //! ============================================================================
-//! Category     : Integration Test (Seam 17)
-//! Component    : setup/model_manager.rs + setup/manager_ops.rs + setup/manifest.rs
-//! Prerequisites: Local tempdir isolation
-//! Execution    : cargo nextest run --test model_manager_test --release --nocapture --test-threads=1
-//! Metrics      : SHA256 verification, .verified marker lifecycle, Zip-Slip guard, deletion
-//!                cleanup, resumable transfer (Range/206/416/200-fallback, cancel retention)
+//! Category  : Integration (Seam 17 — model setup)
+//! Component : src/setup/model_manager.rs, src/setup/manager_ops.rs, src/setup/manifest.rs
+//! Binary    : model_manager_test
+//! Prereqs   : none (temporary model directory and in-process HTTP origin per test)
+//! Run       : cargo nextest run --test model_manager_test --release --test-threads=1
 //! ============================================================================
 
 mod common;
@@ -32,130 +31,7 @@ use vox_lib::setup::{
 };
 
 // ============================================================================
-// Subtest 1: Valid payload verification and marker generation
-// ============================================================================
-#[test]
-fn test_model_manager_valid_payload_verification() {
-    let _guard = TempPathsGuard::new();
-    let dir = tempdir().expect("Failed to create tempdir");
-    let models_dir = dir.path();
-
-    let payload = b"Simulated neural network weight tensor content bytes 0123456789";
-    let sha256 = compute_sha256(payload);
-
-    let model_rel_path = "vad/model.onnx";
-    let model_full_path = models_dir.join(model_rel_path);
-    std::fs::create_dir_all(model_full_path.parent().unwrap()).unwrap();
-    std::fs::write(&model_full_path, payload).unwrap();
-
-    let entry = create_synthetic_model_entry(
-        "ten_vad",
-        model_rel_path,
-        payload.len() as u64,
-        &sha256,
-        None,
-    );
-
-    // Initial check: is_model_file_present should recognize size match and create marker
-    let present = is_model_file_present(&entry, models_dir);
-    assert!(
-        present,
-        "Model file with matching size must be marked present"
-    );
-
-    let verified_path = models_dir.join(model_rel_path).with_extension("verified");
-    assert!(
-        verified_path.exists(),
-        ".verified marker must exist on disk"
-    );
-
-    let marker =
-        VerifiedMarker::load(&verified_path).expect("Marker should load and parse as JSON");
-    assert_eq!(marker.model_id.as_deref(), Some("ten_vad"));
-    assert_eq!(marker.sha256, sha256);
-    assert_eq!(marker.expected_size, payload.len() as u64);
-
-    // Calling is_model_file_present a second time uses marker fast-path
-    assert!(is_model_file_present(&entry, models_dir));
-}
-
-// ============================================================================
-// Subtest 2: Corrupted payload detection
-// ============================================================================
-#[test]
-fn test_model_manager_corrupted_payload_detection() {
-    let _guard = TempPathsGuard::new();
-    let dir = tempdir().expect("Failed to create tempdir");
-    let models_dir = dir.path();
-
-    let mut payload = vec![0u8; 64];
-    payload[0..10].copy_from_slice(b"WHISPER_01");
-    let sha256 = compute_sha256(&payload);
-
-    let model_rel_path = "stt/encoder.bin";
-    let model_full_path = models_dir.join(model_rel_path);
-    std::fs::create_dir_all(model_full_path.parent().unwrap()).unwrap();
-
-    // Tamper with content: different bytes and smaller size
-    let tampered_payload = vec![1u8; 32];
-    std::fs::write(&model_full_path, &tampered_payload).unwrap();
-
-    // Entry expects original sha256 and original size
-    let entry = create_synthetic_model_entry(
-        "whisper_stt",
-        model_rel_path,
-        payload.len() as u64,
-        &sha256,
-        None,
-    );
-
-    // Size doesn't match expected_size, so is_model_file_present returns false
-    let present = is_model_file_present(&entry, models_dir);
-    assert!(
-        !present,
-        "Corrupted model file with mismatching size must fail verification"
-    );
-
-    let verified_path = models_dir.join(model_rel_path).with_extension("verified");
-    assert!(
-        !verified_path.exists(),
-        ".verified marker must NOT be created for invalid payload"
-    );
-
-    // Even if an outdated/corrupted marker exists with the wrong sha256, is_model_file_present
-    // must not falsely validate it against entry.sha256 when file size matches but hash differs
-    let bad_marker = VerifiedMarker {
-        model_id: Some("whisper_stt".to_string()),
-        sha256: "0000000000000000000000000000000000000000000000000000000000000000".to_string(),
-        verified_at: 1000,
-        expected_size: 32, // matches the 32-byte tampered_payload
-    };
-    bad_marker.save(&verified_path).unwrap();
-
-    // entry expects original 64-byte payload with sha256; bad_marker has wrong sha256 and expected_size 32
-    assert!(
-        !is_model_file_present(&entry, models_dir),
-        "Outdated marker with mismatched sha256 must not pass validation"
-    );
-}
-
-// ============================================================================
-// Subtest 3: Zip-Slip and Tar-Slip path traversal rejection
-//
-// These tests drive the REAL guard: `ModelManager::do_extract`.
-//
-// The previous versions of these tests asserted the third-party `zip`/`tar` crate's
-// own `enclosed_name()` / `Component::ParentDir` behaviour and then asserted a file
-// was absent that nothing had ever attempted to create. They passed even if
-// `do_extract`'s guards were deleted entirely — advertising "Zip-Slip guard" as a
-// covered metric while providing no security coverage at all (integration-test-spec.md
-// §0.1.3 Self-Execution Ban).
-//
-// Each test now asserts BOTH directions:
-//   1. NEGATIVE — a malicious archive is rejected with the specific guard error, and
-//      no file is written outside (or inside) the destination directory.
-//   2. POSITIVE CONTROL — a benign archive extracts successfully, proving the guard
-//      rejects *traversal specifically* rather than rejecting everything.
+// Archive extraction guards
 // ============================================================================
 
 /// Extracts `archive_path` via the production guard and asserts a traversal rejection.
@@ -191,8 +67,210 @@ fn assert_traversal_rejected(archive_path: &std::path::Path, archive_type: &str,
     );
 }
 
+// ============================================================================
+// Resumable transfer fixtures
+// ============================================================================
+
+/// Every network-bearing test is wrapped in this (testing-style-guide.md §5.4).
+const NET_TIMEOUT: Duration = Duration::from_secs(30);
+
+const MODEL_ID: &str = "resumable_model";
+const MODEL_REL_PATH: &str = "resumable/model.bin";
+const PAYLOAD_LEN: usize = 4096;
+const PREFIX_LEN: usize = 1024;
+
+/// Non-uniform, non-periodic-in-a-short-cycle payload so that a prefix, a
+/// duplicated body, or an off-by-one splice is always visible in the bytes.
+fn resumable_payload() -> Vec<u8> {
+    (0..PAYLOAD_LEN)
+        .map(|i| ((i * 7 + i / 13) % 251) as u8)
+        .collect()
+}
+
+fn tmp_path_for(models_dir: &std::path::Path) -> std::path::PathBuf {
+    models_dir.join(MODEL_REL_PATH).with_extension("tmp")
+}
+
+fn verified_path_for(models_dir: &std::path::Path) -> std::path::PathBuf {
+    models_dir.join(MODEL_REL_PATH).with_extension("verified")
+}
+
+/// Pre-seeds the `.tmp` that a previous interrupted run would have left behind.
+fn seed_partial_tmp(models_dir: &std::path::Path, payload: &[u8], len: usize) {
+    let tmp = tmp_path_for(models_dir);
+    std::fs::create_dir_all(tmp.parent().unwrap()).unwrap();
+    std::fs::write(&tmp, &payload[..len]).unwrap();
+}
+
+/// PURPOSE:  A model file whose bytes match the manifest hash must be marked
+///           present and get a `.verified` marker; without the marker the app
+///           re-downloads a model it already has on every boot.
+/// SCENARIO: Write the payload, ask `is_model_file_present` and inspect the
+///           marker it writes.
+/// ASSERTS:  The file is reported present, the marker exists and records the
+///           model id, hash and expected size.
+/// CLASS:    happy-path
+/// REQUIRES: none
+/// MUTANT:   Skip the marker write in `is_model_file_present` — the marker
+///           existence assertion would fail.
 #[test]
-fn test_model_manager_zip_slip_rejection() {
+fn model_file_with_matching_hash_is_marked_present_and_verified() {
+    let _guard = TempPathsGuard::new();
+    let dir = tempdir().expect("Failed to create tempdir");
+    let models_dir = dir.path();
+
+    let payload = b"Simulated neural network weight tensor content bytes 0123456789";
+    let sha256 = compute_sha256(payload);
+
+    let model_rel_path = "vad/model.onnx";
+    let model_full_path = models_dir.join(model_rel_path);
+    std::fs::create_dir_all(model_full_path.parent().unwrap()).unwrap();
+    std::fs::write(&model_full_path, payload).unwrap();
+
+    let entry = create_synthetic_model_entry(
+        "ten_vad",
+        model_rel_path,
+        payload.len() as u64,
+        &sha256,
+        None,
+    );
+
+    let present = is_model_file_present(&entry, models_dir);
+    assert!(
+        present,
+        "Model file with matching size must be marked present"
+    );
+
+    let verified_path = models_dir.join(model_rel_path).with_extension("verified");
+    assert!(
+        verified_path.exists(),
+        ".verified marker must exist on disk"
+    );
+
+    let marker =
+        VerifiedMarker::load(&verified_path).expect("Marker should load and parse as JSON");
+    assert_eq!(marker.model_id.as_deref(), Some("ten_vad"));
+    assert_eq!(marker.sha256, sha256);
+    assert_eq!(marker.expected_size, payload.len() as u64);
+
+    // Calling is_model_file_present a second time uses marker fast-path
+    assert!(is_model_file_present(&entry, models_dir));
+}
+
+/// PURPOSE:  A model file whose size does not match the manifest must not be
+///           accepted; a truncated download would be treated as a complete
+///           model and fail at inference time.
+/// SCENARIO: Write a tampered payload that is shorter than the manifest
+///           entry and ask `is_model_file_present`.
+/// ASSERTS:  The file is not reported present and no `.verified` marker is
+///           written.
+/// CLASS:    error-path
+/// REQUIRES: none
+/// MUTANT:   Compare only the file name and not the size in
+///           `is_model_file_present` — the presence assertion would fail.
+#[test]
+fn model_file_with_mismatching_size_is_not_marked_present() {
+    let _guard = TempPathsGuard::new();
+    let dir = tempdir().expect("Failed to create tempdir");
+    let models_dir = dir.path();
+
+    let mut payload = vec![0u8; 64];
+    payload[0..10].copy_from_slice(b"WHISPER_01");
+    let sha256 = compute_sha256(&payload);
+
+    let model_rel_path = "stt/encoder.bin";
+    let model_full_path = models_dir.join(model_rel_path);
+    std::fs::create_dir_all(model_full_path.parent().unwrap()).unwrap();
+
+    // Tamper with content: different bytes and smaller size
+    let tampered_payload = vec![1u8; 32];
+    std::fs::write(&model_full_path, &tampered_payload).unwrap();
+
+    // Entry expects original sha256 and original size
+    let entry = create_synthetic_model_entry(
+        "whisper_stt",
+        model_rel_path,
+        payload.len() as u64,
+        &sha256,
+        None,
+    );
+
+    let present = is_model_file_present(&entry, models_dir);
+    assert!(
+        !present,
+        "Corrupted model file with mismatching size must fail verification"
+    );
+
+    let verified_path = models_dir.join(model_rel_path).with_extension("verified");
+    assert!(
+        !verified_path.exists(),
+        ".verified marker must NOT be created for invalid payload"
+    );
+}
+
+/// PURPOSE:  An outdated marker that records a different hash must not
+///           validate the file; a stale marker would let a corrupted model
+///           pass verification.
+/// SCENARIO: Write a wrong `.verified` marker next to a size-matching file
+///           and ask `is_model_file_present`.
+/// ASSERTS:  The file is not reported present.
+/// CLASS:    edge-case
+/// REQUIRES: none
+/// MUTANT:   Trust the marker without comparing its hash to the manifest — the
+///           presence assertion would fail.
+#[test]
+fn stale_marker_with_wrong_hash_does_not_validate_the_model() {
+    let _guard = TempPathsGuard::new();
+    let dir = tempdir().expect("Failed to create tempdir");
+    let models_dir = dir.path();
+
+    let mut payload = vec![0u8; 64];
+    payload[0..10].copy_from_slice(b"WHISPER_01");
+    let sha256 = compute_sha256(&payload);
+
+    let model_rel_path = "stt/encoder.bin";
+    let model_full_path = models_dir.join(model_rel_path);
+    std::fs::create_dir_all(model_full_path.parent().unwrap()).unwrap();
+    let tampered_payload = vec![1u8; 32];
+    std::fs::write(&model_full_path, &tampered_payload).unwrap();
+
+    let entry = create_synthetic_model_entry(
+        "whisper_stt",
+        model_rel_path,
+        payload.len() as u64,
+        &sha256,
+        None,
+    );
+
+    let verified_path = models_dir.join(model_rel_path).with_extension("verified");
+    let bad_marker = VerifiedMarker {
+        model_id: Some("whisper_stt".to_string()),
+        sha256: "0000000000000000000000000000000000000000000000000000000000000000".to_string(),
+        verified_at: 1000,
+        expected_size: 32, // matches the 32-byte tampered_payload
+    };
+    bad_marker.save(&verified_path).unwrap();
+
+    assert!(
+        !is_model_file_present(&entry, models_dir),
+        "Outdated marker with mismatched sha256 must not pass validation"
+    );
+}
+
+/// PURPOSE:  A zip archive whose entry escapes the destination directory must
+///           be rejected and must write nothing; a Zip-Slip write overwrites
+///           arbitrary files on the user's disk.
+/// SCENARIO: Extract a zip containing `../../evil.txt` through the production
+///           `do_extract` guard and, as a positive control, extract a benign
+///           zip.
+/// ASSERTS:  The malicious archive errors with the `Zip-Slip` guard and
+///           writes nothing; the benign archive extracts its entries verbatim.
+/// CLASS:    error-path
+/// REQUIRES: none
+/// MUTANT:   Remove the traversal check in `ModelManager::do_extract` — the
+///           rejection assertion would fail.
+#[test]
+fn zip_archive_with_a_traversal_path_is_rejected() {
     let _guard = TempPathsGuard::new();
     let dir = tempdir().expect("Failed to create tempdir");
 
@@ -230,8 +308,20 @@ fn test_model_manager_zip_slip_rejection() {
     );
 }
 
+/// PURPOSE:  A tar.gz archive whose entry escapes the destination directory
+///           must be rejected and must write nothing; a Tar-Slip write
+///           overwrites arbitrary files on the user's disk.
+/// SCENARIO: Extract a tar.gz containing `../../evil.txt` through the
+///           production `do_extract` guard and, as a positive control, extract
+///           a benign tar.gz.
+/// ASSERTS:  The malicious archive errors with the `Tar-Slip` guard and
+///           writes nothing; the benign archive extracts its entries verbatim.
+/// CLASS:    error-path
+/// REQUIRES: none
+/// MUTANT:   Remove the traversal check in `ModelManager::do_extract` — the
+///           rejection assertion would fail.
 #[test]
-fn test_model_manager_tar_slip_rejection() {
+fn tar_archive_with_a_traversal_path_is_rejected() {
     let _guard = TempPathsGuard::new();
     let dir = tempdir().expect("Failed to create tempdir");
 
@@ -269,11 +359,17 @@ fn test_model_manager_tar_slip_rejection() {
     );
 }
 
-// ============================================================================
-// Subtest 4: Model removal cleans files and .verified marker
-// ============================================================================
+/// PURPOSE:  Removing a model must delete its `.verified` marker too; a
+///           leftover marker makes the app believe a deleted model is
+///           installed.
+/// SCENARIO: Install a model, then delete it through `delete_model_file`.
+/// ASSERTS:  Both the model file and the marker are gone from disk.
+/// CLASS:    happy-path
+/// REQUIRES: none
+/// MUTANT:   Delete only the model file in `delete_model_file` — the marker
+///           assertion would fail.
 #[test]
-fn test_model_manager_removal_cleans_marker() {
+fn model_removal_clears_the_file_and_the_verified_marker() {
     let _guard = TempPathsGuard::new();
     let dir = tempdir().expect("Failed to create tempdir");
     let models_dir = dir.path();
@@ -300,69 +396,27 @@ fn test_model_manager_removal_cleans_marker() {
     assert!(model_full_path.exists());
     assert!(verified_path.exists());
 
-    // Execute SUT: delete_model_file
     delete_model_file(&entry, models_dir);
 
-    // Verify both model file and .verified marker are removed
     assert!(!model_full_path.exists(), "Model file must be deleted");
     assert!(!verified_path.exists(), ".verified marker must be deleted");
 }
 
-// ============================================================================
-// Subtest 5: Resumable transfer over a deliberately-misbehaving HTTP origin
-//
-// `download_and_hash` (setup/model_manager.rs:284-332) has zero coverage in this
-// file: everything above is filesystem behaviour. The resumable-transfer logic
-// specified in docs/plans/phase13/android-platform-preparation-plan.md §8.6 lives
-// entirely inside `download_and_hash`, and it only ever runs in production against
-// a multi-GB transfer over a real network — on a phone.
-//
-// These tests drive the real public entry point `ModelManager::setup_model`
-// (:84), so the `.tmp` naming at :135, the status branch at :170 and the cleanup
-// arms at :155/:189 are all exercised. `ModelManager::new::<R>(None)` leaves
-// `app_emitter` as `None`, so no Tauri runtime is required.
-//
-// The origin server is hand-rolled (tests/common/http_server.rs) because the
-// interesting cases are wrong servers, not happy ones.
-// ============================================================================
-
-/// Every network-bearing test is wrapped in this (testing-style-guide.md §5.4).
-const NET_TIMEOUT: Duration = Duration::from_secs(30);
-
-const MODEL_ID: &str = "resumable_model";
-const MODEL_REL_PATH: &str = "resumable/model.bin";
-const PAYLOAD_LEN: usize = 4096;
-const PREFIX_LEN: usize = 1024;
-
-/// Non-uniform, non-periodic-in-a-short-cycle payload so that a prefix, a
-/// duplicated body, or an off-by-one splice is always visible in the bytes.
-fn resumable_payload() -> Vec<u8> {
-    (0..PAYLOAD_LEN)
-        .map(|i| ((i * 7 + i / 13) % 251) as u8)
-        .collect()
-}
-
-fn tmp_path_for(models_dir: &std::path::Path) -> std::path::PathBuf {
-    models_dir.join(MODEL_REL_PATH).with_extension("tmp")
-}
-
-fn verified_path_for(models_dir: &std::path::Path) -> std::path::PathBuf {
-    models_dir.join(MODEL_REL_PATH).with_extension("verified")
-}
-
-/// Pre-seeds the `.tmp` that a previous interrupted run would have left behind.
-fn seed_partial_tmp(models_dir: &std::path::Path, payload: &[u8], len: usize) {
-    let tmp = tmp_path_for(models_dir);
-    std::fs::create_dir_all(tmp.parent().unwrap()).unwrap();
-    std::fs::write(&tmp, &payload[..len]).unwrap();
-}
-
-// ---------------------------------------------------------------------------
-// Positive control. Without this, a harness that never delivers a body would make
-// every failure below indistinguishable from a passing implementation.
-// ---------------------------------------------------------------------------
+/// PURPOSE:  A fresh download must transfer the whole body and install a
+///           byte-identical, hash-verified file; a partial install would
+///           corrupt the model silently.
+/// SCENARIO: Download the payload from an origin that honours Range but is
+///           asked for the whole file.
+/// ASSERTS:  The origin sees one `200` response and serves the full body, the
+///           installed file is byte-identical and a `.verified` marker is
+///           written.
+/// CLASS:    happy-path
+/// REQUIRES: none
+/// MUTANT:   Skip the hash verification in `download_and_hash` — the byte
+///           identity assertion would still pass, but the marker assertion
+///           would fail.
 #[tokio::test]
-async fn test_model_manager_fresh_download_writes_verified_payload() {
+async fn fresh_download_writes_the_verified_payload() {
     let _guard = TempPathsGuard::new();
     let dir = tempdir().expect("Failed to create tempdir");
     let models_dir = dir.path();
@@ -410,12 +464,21 @@ async fn test_model_manager_fresh_download_writes_verified_payload() {
     );
 }
 
-// ---------------------------------------------------------------------------
-// Behaviour 1 — a pre-existing `.tmp` is resumed via `Range`, and only the
-// missing tail is transferred.
-// ---------------------------------------------------------------------------
+/// PURPOSE:  An interrupted download must be resumed with a `Range` header
+///           and must transfer only the missing tail; re-sending the prefix
+///           doubles the file and corrupts it.
+/// SCENARIO: Seed a 1024-byte `.tmp`, then download from an origin that
+///           honours Range.
+/// ASSERTS:  Exactly one request is made, it carries
+///           `Range: bytes=1024-`, the origin answers `206` and serves only
+///           the tail, and the installed file is byte-identical to the
+///           payload.
+/// CLASS:    happy-path
+/// REQUIRES: none
+/// MUTANT:   Ignore the existing `.tmp` and always request the whole file —
+///           the range-header assertion would fail.
 #[tokio::test]
-async fn test_model_manager_resume_sends_range_header_and_fetches_only_the_tail() {
+async fn resume_sends_a_range_header_and_fetches_only_the_tail() {
     let _guard = TempPathsGuard::new();
     let dir = tempdir().expect("Failed to create tempdir");
     let models_dir = dir.path();
@@ -475,14 +538,21 @@ async fn test_model_manager_resume_sends_range_header_and_fetches_only_the_tail(
     );
 }
 
-// ---------------------------------------------------------------------------
-// Behaviour 2 — SHA-256 must cover the resumed prefix, not just this run's bytes.
-// `download_and_hash:300` seeds `Sha256::new()` unconditionally, so a resumed
-// hash is computed over the tail alone and can never equal the manifest hash
-// once the file is actually appended.
-// ---------------------------------------------------------------------------
+/// PURPOSE:  The hash of a resumed download must cover the prefix already on
+///           disk, not only this run's bytes; otherwise the resumed file can
+///           never match the manifest hash.
+/// SCENARIO: Seed a 1024-byte `.tmp`, resume the download and verify the
+///           installed file.
+/// ASSERTS:  The request carries the Range header, the installed file is
+///           exactly the payload length and byte-identical, its SHA-256 equals
+///           the manifest hash, the marker records that hash, and no `.tmp` is
+///           left behind.
+/// CLASS:    regression
+/// REQUIRES: none
+/// MUTANT:   Seed the hasher with the tail only instead of the whole file —
+///           the hash assertion would fail.
 #[tokio::test]
-async fn test_model_manager_resumed_download_hash_matches_manifest() {
+async fn resumed_download_hash_matches_the_manifest() {
     let _guard = TempPathsGuard::new();
     let dir = tempdir().expect("Failed to create tempdir");
     let models_dir = dir.path();
@@ -546,15 +616,20 @@ async fn test_model_manager_resumed_download_hash_matches_manifest() {
     );
 }
 
-// ---------------------------------------------------------------------------
-// Behaviour 3 — the server IGNORES `Range` and replies `200` with the whole body.
-// `download_and_hash:292` accepts any success status, so a 200 answering a ranged
-// request is indistinguishable from a genuine 200. Appending there duplicates the
-// prefix and corrupts the file while still looking like a completed download.
-// The correct response is to truncate back to zero and restart.
-// ---------------------------------------------------------------------------
+/// PURPOSE:  An origin that ignores `Range` and replies `200` with the whole
+///           body must force a restart; appending that body to the existing
+///           `.tmp` silently doubles the file.
+/// SCENARIO: Seed a 1024-byte `.tmp` and download from an origin that always
+///           answers `200`.
+/// ASSERTS:  The ranged request is still made, the origin answers `200` with
+///           the full body, and the installed file is exactly the payload
+///           length, byte-identical and hashes to the manifest hash.
+/// CLASS:    edge-case
+/// REQUIRES: none
+/// MUTANT:   Append the `200` body to the existing `.tmp` — the length
+///           assertion would fail.
 #[tokio::test]
-async fn test_model_manager_server_ignoring_range_restarts_without_duplicating_bytes() {
+async fn server_ignoring_range_restarts_without_duplicating_bytes() {
     let _guard = TempPathsGuard::new();
     let dir = tempdir().expect("Failed to create tempdir");
     let models_dir = dir.path();
@@ -625,14 +700,21 @@ async fn test_model_manager_server_ignoring_range_restarts_without_duplicating_b
     );
 }
 
-// ---------------------------------------------------------------------------
-// Behaviour 4 — `416 Range Not Satisfiable` means the `.tmp` is stale or corrupt.
-// It must be deleted and the transfer restarted once from zero. Today `:292`
-// rejects 416 as a plain error and `:155` deletes the `.tmp` on the way out, so
-// the transfer never restarts and the download is simply lost.
-// ---------------------------------------------------------------------------
+/// PURPOSE:  A `416 Range Not Satisfiable` means the `.tmp` is stale; the
+///           client must delete it and restart the transfer once from zero
+///           instead of failing the download outright.
+/// SCENARIO: Seed a 1024-byte `.tmp` and download from an origin that always
+///           answers `416` to a ranged request.
+/// ASSERTS:  At least two requests are made, the first is ranged and answered
+///           `416`, the second carries no Range header and is answered `200`,
+///           the download succeeds, the file is byte-identical and the marker
+///           is written.
+/// CLASS:    edge-case
+/// REQUIRES: none
+/// MUTANT:   Treat the `416` as a terminal error — the second-request
+///           assertion would fail.
 #[tokio::test]
-async fn test_model_manager_range_not_satisfiable_discards_stale_tmp_and_restarts() {
+async fn range_not_satisfiable_discards_the_stale_tmp_and_restarts() {
     let _guard = TempPathsGuard::new();
     let dir = tempdir().expect("Failed to create tempdir");
     let models_dir = dir.path();
@@ -699,17 +781,21 @@ async fn test_model_manager_range_not_satisfiable_discards_stale_tmp_and_restart
     );
 }
 
-// ---------------------------------------------------------------------------
-// Behaviour 6 — cancelling mid-transfer must RETAIN the partial `.tmp`.
-// `setup_model:155` calls `remove_file(&temp_path)` on the error arm, so today
-// every cancel throws away the bytes already transferred. This is the regression
-// the resumable-transfer work exists to remove.
-//
-// The server drips the body so cancellation lands at a real mid-transfer instant:
-// the test reacts to the server's own write notifications rather than sleeping.
-// ---------------------------------------------------------------------------
+/// PURPOSE:  Cancelling a transfer must keep the bytes already received so
+///           the next attempt can resume; deleting the partial file throws
+///           away a multi-gigabyte download on every phone.
+/// SCENARIO: Start a download from an origin that drips the body, cancel it
+///           once the origin has written at least 1536 bytes and inspect the
+///           `.tmp`.
+/// ASSERTS:  The setup call reports an error, the `.tmp` still exists, holds
+///           a non-zero but partial number of bytes and those bytes are the
+///           true prefix of the payload.
+/// CLASS:    suppression
+/// REQUIRES: none
+/// MUTANT:   Remove the `.tmp` on the cancel arm of `setup_model` — the
+///           existence assertion would fail.
 #[tokio::test]
-async fn test_model_manager_cancel_mid_transfer_retains_partial_tmp() {
+async fn cancel_mid_transfer_retains_the_partial_tmp() {
     let _guard = TempPathsGuard::new();
     let dir = tempdir().expect("Failed to create tempdir");
     let models_dir = dir.path();
@@ -791,13 +877,21 @@ async fn test_model_manager_cancel_mid_transfer_retains_partial_tmp() {
     );
 }
 
-// ---------------------------------------------------------------------------
-// Behaviour 6, deterministic sibling: a dropped connection mid-body. No timing
-// involved — the origin announces the full Content-Length, writes a few hundred
-// bytes and hangs up. The partial `.tmp` must survive for the next attempt.
-// ---------------------------------------------------------------------------
+/// PURPOSE:  A connection dropped mid-body must leave the partial `.tmp`
+///           intact so the next run can resume instead of restarting from
+///           zero.
+/// SCENARIO: Seed a 1024-byte `.tmp` and download from an origin that hangs
+///           up after 512 bytes.
+/// ASSERTS:  The origin really truncated the body, the setup call reports an
+///           error, the `.tmp` exists and holds exactly the prefix plus the
+///           512 bytes that did arrive, and those bytes are the true prefix
+///           of the payload.
+/// CLASS:    suppression
+/// REQUIRES: none
+/// MUTANT:   Delete the `.tmp` when the body transfer fails — the existence
+///           assertion would fail.
 #[tokio::test]
-async fn test_model_manager_dropped_connection_retains_partial_tmp() {
+async fn dropped_connection_retains_the_partial_tmp() {
     let _guard = TempPathsGuard::new();
     let dir = tempdir().expect("Failed to create tempdir");
     let models_dir = dir.path();
@@ -855,14 +949,19 @@ async fn test_model_manager_dropped_connection_retains_partial_tmp() {
     );
 }
 
-// ---------------------------------------------------------------------------
-// Behaviour 7 — a hash mismatch MUST still delete the partial file (plan §8.6
-// step 6). This is the one deletion that survives the resumable-transfer change;
-// it must not be "fixed" alongside the cancel arm. Expected to PASS against the
-// current code — it is a regression guard, not a new behaviour.
-// ---------------------------------------------------------------------------
+/// PURPOSE:  A download whose hash does not match the manifest must not be
+///           installed and must delete the partial file; resuming from a
+///           corrupt prefix would fail forever.
+/// SCENARIO: Download content that has the right length but different bytes
+///           and inspect the outcome.
+/// ASSERTS:  The call fails with a "Hash mismatch" error, the `.tmp` is gone,
+///           no model file is installed and no `.verified` marker is written.
+/// CLASS:    error-path
+/// REQUIRES: none
+/// MUTANT:   Install the file before verifying the hash — the model-file
+///           existence assertion would fail.
 #[tokio::test]
-async fn test_model_manager_hash_mismatch_deletes_partial_tmp() {
+async fn hash_mismatch_deletes_the_partial_tmp() {
     let _guard = TempPathsGuard::new();
     let dir = tempdir().expect("Failed to create tempdir");
     let models_dir = dir.path();
@@ -917,20 +1016,21 @@ async fn test_model_manager_hash_mismatch_deletes_partial_tmp() {
     );
 }
 
-// ---------------------------------------------------------------------------
-// Behaviour 5 — progress events during a resume must be ABSOLUTE.
-//
-// This was blocked in the first pass: `ModelManager::new` only wires progress to
-// Tauri IPC, so with `app = None` the emitter is dead and nothing is observable.
-// `ModelManager::with_emitter` is the egress seam that makes it testable.
-//
-// The origin drips 256-byte slices 40 ms apart. `PROGRESS_EMIT_INTERVAL_MS` is
-// 150, so the transfer spans ~480 ms and emits several in-transfer progress
-// events — without the drip the whole 3 KB tail would arrive inside one interval
-// and no in-transfer event would ever fire, making this test vacuous.
-// ---------------------------------------------------------------------------
+/// PURPOSE:  The progress reported during a resumed download must be
+///           absolute; a counter that starts at zero shows the UI 25% when
+///           three quarters of the file is already on disk.
+/// SCENARIO: Resume a 1024-byte-prefixed download from an origin that drips
+///           the body and collect the emitted statuses.
+/// ASSERTS:  Every status reports the manifest size as its denominator, the
+///           in-transfer progress is absolute and strictly increasing, the
+///           transfer ends as `Completed` with the full byte count, and the
+///           installed file hashes to the manifest hash.
+/// CLASS:    regression
+/// REQUIRES: none
+/// MUTANT:   Seed the progress counter at zero instead of the resume offset —
+///           the absolute-progress assertion would fail.
 #[tokio::test]
-async fn test_model_manager_resume_reports_absolute_progress() {
+async fn resume_reports_absolute_progress() {
     let _guard = TempPathsGuard::new();
     let dir = tempdir().expect("Failed to create tempdir");
     let models_dir = dir.path();
