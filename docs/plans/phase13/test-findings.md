@@ -170,3 +170,32 @@ Status values: `open` · `confirmed` · `testability-gap` · `wontfix`
 - **Status:** confirmed — not fixed in this campaign. Production change required: release the
   harness lock before awaiting the provider, or make the await cancellable. Test written to
   exercise the path once fixed.
+
+## F-19 — Packaged voice seeding fails on upgraded databases
+
+- **Seam:** Slices 13 to 20 (storage boundary)
+- **Symptom:** Every run logs `[Persistence::Schema] Failed to seed zipvoice voices: Parse
+  error: table voices has no column named slug`. The user silently gets no packaged voices.
+- **Evidence:** `src/persistence/schema.rs`: `ensure_voice_metadata_columns` alters
+  `provider_id, gender, locale, accent, description, tags, sample_text, is_favorite,
+  last_used_at` but not `slug`, while `seed_zipvoice_voices` inserts into `voices.slug` and
+  the `CREATE TABLE` defines it. Visible in every test run, including the pre-change
+  baseline.
+- **Suspected cause:** the column was added to the create statement without a matching
+  migration for existing databases.
+- **Impact:** No packaged voices on any database created before the `slug` column existed.
+- **Status:** confirmed — not fixed in this campaign. Production change required: add `slug`
+  to the ALTER list. Add a migration assertion so the seed path cannot rot again.
+
+## F-20 — Private-mode suppression has no acknowledgement
+
+- **Seam:** Slices 13 to 20 (storage boundary)
+- **Symptom:** The persistence worker skips an event in private mode without any
+  channel-visible or database-visible trace. The only observable is a log line.
+- **Evidence:** `src/persistence/worker.rs` logs `Private Mode active: skipping tool call
+  record` and returns.
+- **Suspected cause:** the skip path has no contract for the caller.
+- **Impact:** The negative assertion depends on log wording. A worker that stops logging
+  would silently weaken the test instead of failing it.
+- **Status:** testability-gap — the storage tests capture the log line as the quiescence
+  proof. A real acknowledgement would need a production change.

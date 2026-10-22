@@ -130,12 +130,14 @@ Legend: `[ ]` pending · `[x]` done · `[~]` folded into another binary · `[-]`
 
 ## Slice 12 — Harness loop
 
-- [ ] `src/harness/loop.rs`
-- [ ] `src/harness/steps.rs`
-- [ ] `src/harness/chassis.rs`
-- [ ] `src/harness/session.rs`
-- [ ] Binary: `harness_loop_test.rs` (new)
-- [ ] Report Slice 12
+- [x] Binary: `tests/harness_loop_test.rs` — 5 subtests, recording LLM stub, no weights, in the default tier
+- [x] Tool budget — the loop stops after five tool rounds and runs one final tool-free pass
+- [x] Cancelled turn — never reaches the model
+- [x] Duplicate query — refused before the dispatch
+- [x] Unmounted harness — reports an error
+- [x] Finished turn — commits both messages to the history
+- [ ] `src/harness/chassis.rs`, `src/harness/session.rs` — deferred to the final sweep
+- [x] Report Slice 12
 
 ## Slice 13 — Session lifecycle
 
@@ -206,3 +208,18 @@ Legend: `[ ]` pending · `[x]` done · `[~]` folded into another binary · `[-]`
 | Silent drains | 0 | 10 |
 | Swallowed joins | 0 | 8 |
 | Orphan ignored tests | 0 | 4 |
+
+## Slices 13 to 20 — Supporting seams
+
+- [x] Session lifecycle — `session_lifecycle_test.rs`, 8 → 20 subtests
+- [x] Storage boundary — `database_persistence_boundary_test.rs`, 6 → 15 subtests
+- [x] Settings — `settings_persistence_test.rs`, 7 → 15 subtests
+- [x] Memory — `personal_memory_test.rs` 9 → 17, `memory_ingestion_test.rs` 4 → 11, `memory_compaction_test.rs` 6 → 13
+- [x] Notifications — `notifications_crud_test.rs`, 5 → 15 subtests
+- [x] Model manager and eviction — `model_manager_test.rs` 14 → 15, `model_eviction_test.rs` 2 → 9
+- [x] IPC registration — `ipc_command_registration_test.rs`, 2 → 7 subtests
+- [x] Realtime transport — `realtime_transport_test.rs`, 6 → 10 subtests
+- [x] Every scenario carries an intent block, a behaviour-first name and an honest header
+- [x] Wall-clock watchdogs and sleep-based absence checks replaced by log or server acknowledgements
+- [!] F-19 — packaged voice seeding fails on upgraded databases
+- [!] F-20 — private-mode suppression has no acknowledgement channel
