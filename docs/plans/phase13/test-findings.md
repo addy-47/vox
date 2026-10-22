@@ -229,3 +229,36 @@ Status values: `open` · `confirmed` · `testability-gap` · `wontfix`
   `audio_sink_mock_can_be_constructed_and_dropped` asserts nothing at all.
 - **Impact:** These pass even if the mock produces no audio. They are false-green.
 - **Status:** open — strengthen to assert that samples actually flow.
+
+## F-24 — The cargo-mutants campaign is not feasible in this environment
+
+- **Seam:** Slice 21 (final sweep)
+- **Symptom:** `cargo mutants` cannot run over this crate here.
+- **Evidence:** the copy mode breaks on `src/setup/manifest.rs`, which does
+  `include_str!("../../../../manifests/models_manifest.json")` — a path outside the crate
+  directory, so the copied tree cannot resolve it. `--in-place` works but cannot be
+  combined with `--jobs`, and one mutant needs a full debug rebuild of a crate that links
+  llama.cpp, ONNX Runtime and sherpa-onnx: minutes per mutant, not seconds.
+- **Suspected cause:** the crate is too large for a mutation sweep in this environment.
+- **Impact:** the batched mutation pass in the plan did not run.
+- **Status:** testability-gap — replaced by a hand-applied mutation campaign (see the
+  mutation record below). A real sweep needs a machine that can rebuild this crate
+  quickly, or a smaller crate to mutate.
+
+## Mutation record — hand-applied campaign (Slice 21)
+
+`cargo-mutants` could not run (F-24), so five mutants were applied by hand, one at a
+time, and the matching test was run. Each mutant was reverted immediately.
+
+| # | Mutation | Test | Result |
+| :--- | :--- | :--- | :--- |
+| M1 | VAD onset decay becomes an instant reset | `unvoiced_dropout_does_not_reset_onset_progress` | killed |
+| M2 | The STT `+1` turn adoption branch never adopts | `open_stream_adopts_incremented_turn_without_reset` | killed |
+| M3 | The continuation prefix is dropped from the merged query | `continuation_prefix_is_merged_into_the_next_query` | killed |
+| M4 | The tool budget grows from 5 to 7 | `the_tool_loop_stops_at_the_tool_budget` | killed |
+| M5 | The compound seam threshold drops from 22 words to 2 | `a_mid_length_sentence_with_a_comma_stays_one_clause` | survived, then killed |
+
+M5 survived the first pass: no test covered the 22 word threshold from below, so the
+mutant was invisible. A new test was written for it
+(`a_mid_length_sentence_with_a_comma_stays_one_clause`) and the mutant was killed on the
+re-run. That test is the only change this campaign made to a file it did not author.
