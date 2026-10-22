@@ -554,6 +554,7 @@ mod tests {
     }
 
     /// PURPOSE:  Coalescing must not inspect or mutate commands that are not partials.
+    /// SCENARIO: A Final command is offered to the coalescer.
     /// ASSERTS:  A Final is returned unchanged and nothing is queued as pending.
     /// CLASS:    happy-path
     /// REQUIRES: none
@@ -637,6 +638,7 @@ mod tests {
 
     /// PURPOSE:  A non-partial command must stop coalescing immediately, so its
     ///           ordering relative to the surviving partial is preserved.
+    /// SCENARIO: A partial is followed by a ResetStream and a Warmup in the queue.
     /// ASSERTS:  Commands queued after the non-partial stay in the channel.
     /// CLASS:    edge-case
     /// REQUIRES: none
@@ -694,6 +696,7 @@ mod tests {
 
     /// PURPOSE:  A Final queued behind ResetStream belongs to a turn the user already
     ///           spoke; it must survive the reset.
+    /// SCENARIO: A ResetStream is drained while a Final is queued behind it.
     /// ASSERTS:  The Final becomes the pending command and is not consumed.
     /// CLASS:    edge-case
     /// REQUIRES: none
@@ -721,6 +724,7 @@ mod tests {
     }
 
     /// PURPOSE:  Shutdown behind ResetStream must still stop the worker.
+    /// SCENARIO: A Shutdown command is queued and the reset drain runs.
     /// ASSERTS:  drain_reset_stream reports stop.
     /// CLASS:    edge-case
     /// REQUIRES: none

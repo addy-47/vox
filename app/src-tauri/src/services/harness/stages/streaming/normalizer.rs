@@ -243,8 +243,14 @@ impl TextNormalizer {
 mod tests {
     use super::*;
 
+    /// PURPOSE:  A currency amount must be spoken, not read as symbols.
+    /// SCENARIO: A dollar amount and a euro amount are normalized.
+    /// ASSERTS:  The dollar amount becomes "twelve dollars and fifty cents" and the euro amount becomes "forty-two euros".
+    /// CLASS:    happy-path
+    /// REQUIRES: none
+    /// MUTANT:   Remove the currency rule from TextNormalizer::normalize_for_speech.
     #[test]
-    fn test_normalize_currencies() {
+    fn normalizer_expands_currency_amounts() {
         let input = "The bill came to $12.50 for lunch.";
         let result = TextNormalizer::normalize_for_speech(input);
         assert_eq!(
@@ -257,8 +263,14 @@ mod tests {
         assert_eq!(eur_res, "It costs forty-two euros total.");
     }
 
+    /// PURPOSE:  A clock time must be spoken in words.
+    /// SCENARIO: "12:45" and "7:00" are normalized.
+    /// ASSERTS:  "12:45" becomes "twelve forty-five" and "7:00" becomes "seven o'clock".
+    /// CLASS:    happy-path
+    /// REQUIRES: none
+    /// MUTANT:   Drop the minutes-zero branch of the time rule.
     #[test]
-    fn test_normalize_times() {
+    fn normalizer_expands_clock_times() {
         let input = "Meeting is at 12:45 today.";
         let result = TextNormalizer::normalize_for_speech(input);
         assert_eq!(result, "Meeting is at twelve forty-five today.");
@@ -268,8 +280,14 @@ mod tests {
         assert_eq!(exact_res, "Set alarm for seven o'clock.");
     }
 
+    /// PURPOSE:  Units with a number must be spoken in full.
+    /// SCENARIO: A decimal gigabyte count, a millisecond count, a frame rate and a percentage are normalized.
+    /// ASSERTS:  Each quantity becomes its spoken form with the unit expanded.
+    /// CLASS:    happy-path
+    /// REQUIRES: none
+    /// MUTANT:   Remove the milliseconds unit from the normalizer.
     #[test]
-    fn test_normalize_measures() {
+    fn normalizer_expands_units_and_measurements() {
         let input = "I have 3.5 GB of logs taking 127 ms.";
         let result = TextNormalizer::normalize_for_speech(input);
         assert_eq!(result, "I have three point five gigabytes of logs taking one hundred twenty-seven milliseconds.");
@@ -282,8 +300,14 @@ mod tests {
         );
     }
 
+    /// PURPOSE:  A year and a grouped number must be spoken, not read digit by digit.
+    /// SCENARIO: The year 2026, the count 1247 and the grouped count 1,234,567 are normalized.
+    /// ASSERTS:  The year becomes "twenty twenty-six" and the counts become their full spoken form.
+    /// CLASS:    happy-path
+    /// REQUIRES: none
+    /// MUTANT:   Skip numbers that contain a thousands separator.
     #[test]
-    fn test_normalize_years_and_cardinals() {
+    fn normalizer_expands_years_and_large_cardinals() {
         let input = "In 2026, I parsed 1247 files.";
         let result = TextNormalizer::normalize_for_speech(input);
         assert_eq!(
@@ -296,8 +320,14 @@ mod tests {
         assert_eq!(comma_res, "Database has one million two hundred thirty-four thousand five hundred and sixty-seven rows.");
     }
 
+    /// PURPOSE:  A version string must be spoken as a version, not as a decimal.
+    /// SCENARIO: "v1.8.2" and the ordinal "3rd" are normalized.
+    /// ASSERTS:  The version becomes "version one point eight point two" and the ordinal becomes "third".
+    /// CLASS:    happy-path
+    /// REQUIRES: none
+    /// MUTANT:   Remove the version rule from the normalizer.
     #[test]
-    fn test_normalize_versions_and_ordinals() {
+    fn normalizer_expands_versions_and_ordinals() {
         let input = "Upgraded to v1.8.2 on our 3rd attempt.";
         let result = TextNormalizer::normalize_for_speech(input);
         assert_eq!(
@@ -306,15 +336,27 @@ mod tests {
         );
     }
 
+    /// PURPOSE:  Markup and agent tags must not be spoken to the user.
+    /// SCENARIO: A string with an invoke tag, markdown bold and a Vox tag is normalized.
+    /// ASSERTS:  The result is "Persona Check: Hello world!".
+    /// CLASS:    happy-path
+    /// REQUIRES: none
+    /// MUTANT:   Keep the contents of Vox tags in the normalized text.
     #[test]
-    fn test_strip_markdown_and_tags() {
+    fn normalizer_strips_markdown_and_xml_tags() {
         let input = "<invoke name=\"critic\"><guidelines>**Persona Check:**</guidelines></invoke><Vox>Hello world!</Vox>";
         let result = TextNormalizer::normalize_for_speech(input);
         assert_eq!(result, "Persona Check: Hello world!");
     }
 
+    /// PURPOSE:  An acronym must be spelled out for speech.
+    /// SCENARIO: "CLI", "API" and "OS" are normalized.
+    /// ASSERTS:  The result is "Check the C L I and A P I on Linux O S.".
+    /// CLASS:    happy-path
+    /// REQUIRES: none
+    /// MUTANT:   Skip the initialism rule for all-caps tokens of two letters.
     #[test]
-    fn test_acronym_initialisms() {
+    fn normalizer_spells_out_acronyms() {
         let input = "Check the CLI and API on Linux OS.";
         let result = TextNormalizer::normalize_for_speech(input);
         assert_eq!(result, "Check the C L I and A P I on Linux O S.");

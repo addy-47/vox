@@ -235,6 +235,7 @@ mod tests {
     use super::TurnAccumulator;
 
     /// PURPOSE:  An interrupted turn must keep the words the user already said.
+    /// SCENARIO: The user transcript of an interrupted turn is stashed for continuation.
     /// ASSERTS:  The user transcript moves into the continuation prefix.
     /// CLASS:    happy-path
     /// REQUIRES: none
@@ -252,6 +253,7 @@ mod tests {
     }
 
     /// PURPOSE:  When nothing was recognised yet the late final must still be caught.
+    /// SCENARIO: The accumulator is asked to wait because nothing was recognised yet.
     /// ASSERTS:  The accumulator awaits the late final.
     /// CLASS:    edge-case
     /// REQUIRES: none
@@ -267,6 +269,7 @@ mod tests {
     }
 
     /// PURPOSE:  A second stashed fragment must not overwrite the first.
+    /// SCENARIO: A second fragment is stashed while a continuation prefix already exists.
     /// ASSERTS:  The prefix holds both fragments separated by a space.
     /// CLASS:    edge-case
     /// REQUIRES: none
@@ -284,6 +287,7 @@ mod tests {
     }
 
     /// PURPOSE:  A late final must be appended, not dropped.
+    /// SCENARIO: A late final segment arrives and is appended to the prefix.
     /// ASSERTS:  The late segment joins the prefix with a space.
     /// CLASS:    edge-case
     /// REQUIRES: none
@@ -300,6 +304,7 @@ mod tests {
     }
 
     /// PURPOSE:  The stashed prefix and the new words must become one query.
+    /// SCENARIO: The continuation prefix and the new turn text are merged.
     /// ASSERTS:  The merged text holds both parts in order.
     /// CLASS:    happy-path
     /// REQUIRES: none
@@ -317,6 +322,7 @@ mod tests {
     }
 
     /// PURPOSE:  An empty new turn must promote the prefix, not abort the turn.
+    /// SCENARIO: The new turn text is empty, so the prefix is promoted.
     /// ASSERTS:  The merged text is the prefix alone.
     /// CLASS:    edge-case
     /// REQUIRES: none
@@ -333,6 +339,7 @@ mod tests {
     }
 
     /// PURPOSE:  A new turn must not inherit the previous turn's continuation state.
+    /// SCENARIO: A new turn starts and the continuation state is cleared.
     /// ASSERTS:  Clear resets the prefix, the transcript and the awaiting flag.
     /// CLASS:    edge-case
     /// REQUIRES: none

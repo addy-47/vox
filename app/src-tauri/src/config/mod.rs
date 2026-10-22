@@ -168,13 +168,25 @@ pub fn secret_keys_are_supported() -> bool {
 mod tests {
     use super::*;
 
+    /// PURPOSE:  Every secret key must be in the supported settings inventory, or it cannot be persisted.
+    /// SCENARIO: The secret key list is checked against the supported set.
+    /// ASSERTS:  secret_keys_are_supported returns true.
+    /// CLASS:    happy-path
+    /// REQUIRES: none
+    /// MUTANT:   Remove a secret key from the supported keys list.
     #[test]
-    fn secret_keys_are_supported_keys() {
+    fn secret_keys_are_all_supported_settings() {
         assert!(secret_keys_are_supported());
     }
 
+    /// PURPOSE:  The realtime provider and voice keys must not be classified Hot, or the running actor never observes the change.
+    /// SCENARIO: The four realtime provider and voice keys and the realtime api_keys key are classified.
+    /// ASSERTS:  The four provider and voice keys are classified but not Hot, and api_keys is Hot.
+    /// CLASS:    regression
+    /// REQUIRES: none
+    /// MUTANT:   Classify realtime.voice as SettingReloadPolicy::Hot.
     #[test]
-    fn realtime_keys_are_restart_not_hot() {
+    fn realtime_keys_require_a_restart() {
         // B-04 regression guard: realtime provider/voice keys MUST NOT be
         // classified Hot, or the running actor won't observe changes.
         // API keys apply hot without cycling the engine.
@@ -193,8 +205,14 @@ mod tests {
         );
     }
 
+    /// PURPOSE:  The reload policy table and the mutation contract must agree, or a setting change is applied to the wrong actor.
+    /// SCENARIO: The llm policy entries and the supported keys of several domains are compared.
+    /// ASSERTS:  llm.servers is Restart, llm.cloud_keys is Hot, the phantom llm keys are unclassified, and every policy key is in the mutation contract.
+    /// CLASS:    happy-path
+    /// REQUIRES: none
+    /// MUTANT:   Drop the "cloud_keys" entry from the llm policy table.
     #[test]
-    fn policy_table_matches_mutation_contract() {
+    fn setting_reload_policy_matches_the_mutation_contract() {
         assert_eq!(
             get_setting_reload_policy("llm", "servers"),
             SettingReloadPolicy::Restart

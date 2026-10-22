@@ -126,8 +126,14 @@ impl SttSettings {
 mod tests {
     use super::*;
 
+    /// PURPOSE:  A fresh install must start on the embedded ASR model with transliteration enabled.
+    /// SCENARIO: The default SttSettings are read and resolved.
+    /// ASSERTS:  The category is "embedded", the model is DEFAULT_ASR_MODEL, transliteration matches its default, and the provider config is Embedded.
+    /// CLASS:    happy-path
+    /// REQUIRES: none
+    /// MUTANT:   Change the default STT active category to "server".
     #[test]
-    fn test_stt_settings_defaults() {
+    fn stt_settings_default_to_the_embedded_model() {
         let settings = SttSettings::default();
         assert_eq!(settings.active.category, "embedded");
         assert_eq!(settings.active_model(), DEFAULT_ASR_MODEL);

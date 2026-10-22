@@ -477,8 +477,14 @@ mod tests {
         },
     };
 
+    /// PURPOSE:  The Responses API must receive the conversation as flat input items, or the model loses the turn history.
+    /// SCENARIO: A system, user, assistant and user conversation is turned into a request body.
+    /// ASSERTS:  The body carries the model, the instructions and the token cap, and the three non-system turns appear as role and content input items.
+    /// CLASS:    happy-path
+    /// REQUIRES: none
+    /// MUTANT:   Emit the conversation as a chat-completions message array instead of input items.
     #[test]
-    fn test_responses_request_body_flattened_history() {
+    fn responses_request_body_flattens_history_into_input_items() {
         let config = ConnectionConfig {
             transport: TransportType::Responses,
             base_url: "https://api.openai.com/v1".to_string(),
@@ -546,8 +552,14 @@ mod tests {
         assert_eq!(input_items[2]["content"], "What's the weather?");
     }
 
+    /// PURPOSE:  A typed Responses event must be parsed into its event type and delta.
+    /// SCENARIO: A response.output_text.delta JSON line is deserialized.
+    /// ASSERTS:  The event type is "response.output_text.delta" and the delta is "Vox is ready.".
+    /// CLASS:    happy-path
+    /// REQUIRES: none
+    /// MUTANT:   Rename the ResponsesEvent event_type field to event_kind.
     #[test]
-    fn test_responses_typed_event_parsing() {
+    fn responses_event_parses_the_output_text_delta() {
         let json_line = r#"{"type":"response.output_text.delta","delta":"Vox is ready."}"#;
         let event =
             serde_json::from_str::<ResponsesEvent>(json_line).expect("must parse typed event");

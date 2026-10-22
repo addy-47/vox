@@ -185,8 +185,14 @@ mod tests {
     use super::*;
     use crate::services::tts::{ProviderCaps, TtsVoiceSource};
 
+    /// PURPOSE:  Every provider id must declare its voice source, clone support, speed range and execution kind.
+    /// SCENARIO: The capability lookup is called for supertonic, kokoro, chatterbox, chatterbox_remote, edge_tts, zipvoice, azure_tts and google_tts.
+    /// ASSERTS:  Each provider reports its declared voice source, clone flag and execution kind, and Edge keeps its own wider speed range.
+    /// CLASS:    happy-path
+    /// REQUIRES: none
+    /// MUTANT:   Return the supertonic capabilities for every provider id.
     #[test]
-    fn test_caps_for_id_matrix() {
+    fn provider_capabilities_match_the_declared_provider() {
         assert_eq!(
             caps_for_id("supertonic").expect("supertonic caps"),
             ProviderCaps {
@@ -253,8 +259,14 @@ mod tests {
         );
     }
 
+    /// PURPOSE:  An unknown provider id must fail loudly instead of silently picking a default engine.
+    /// SCENARIO: The lookup is called with an unknown id, an empty id and a differently cased known id.
+    /// ASSERTS:  Each call fails, the error names the unknown id, and the match is exact rather than case-insensitive.
+    /// CLASS:    edge-case
+    /// REQUIRES: none
+    /// MUTANT:   Lowercase the id before matching in caps_for_id.
     #[test]
-    fn test_caps_for_id_rejects_unknown() {
+    fn provider_capability_lookup_rejects_an_unknown_id() {
         let err = caps_for_id("no_such_engine").expect_err("unknown provider id must not resolve");
         assert!(err.contains("no_such_engine"), "error should name the id");
         assert!(caps_for_id("").is_err(), "empty id must not resolve");

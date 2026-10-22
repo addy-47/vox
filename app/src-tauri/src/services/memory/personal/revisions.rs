@@ -333,8 +333,14 @@ mod tests {
         }
     }
 
+    /// PURPOSE:  Valid decisions on pending revisions must be accepted.
+    /// SCENARIO: Two pending revisions are accepted and rejected.
+    /// ASSERTS:  validate_decisions returns Ok.
+    /// CLASS:    happy-path
+    /// REQUIRES: none
+    /// MUTANT:   Reject the "reject" action in validate_decisions.
     #[test]
-    fn test_validate_decisions_valid() {
+    fn revision_decisions_accept_accept_and_reject_on_pending_records() {
         let mut pending_map = HashMap::new();
         pending_map.insert("rev_1".to_string(), sample_pending_record("rev_1", "{}"));
         pending_map.insert("rev_2".to_string(), sample_pending_record("rev_2", "{}"));
@@ -353,8 +359,14 @@ mod tests {
         assert!(validate_decisions(&decisions, &pending_map).is_ok());
     }
 
+    /// PURPOSE:  An unknown action must be refused with the offending action named.
+    /// SCENARIO: A decision with the action "delete" is validated.
+    /// ASSERTS:  The error is InvalidAction carrying "delete".
+    /// CLASS:    edge-case
+    /// REQUIRES: none
+    /// MUTANT:   Accept any action string in validate_decisions.
     #[test]
-    fn test_validate_decisions_rejects_invalid_action() {
+    fn revision_decision_rejects_an_unknown_action() {
         let mut pending_map = HashMap::new();
         pending_map.insert("rev_1".to_string(), sample_pending_record("rev_1", "{}"));
 
@@ -370,8 +382,14 @@ mod tests {
         }
     }
 
+    /// PURPOSE:  A decision on a non-pending revision must be refused with the record id named.
+    /// SCENARIO: A decision targets a revision id that is absent from the pending map.
+    /// ASSERTS:  The error is NotPending carrying "rev_missing".
+    /// CLASS:    edge-case
+    /// REQUIRES: none
+    /// MUTANT:   Treat a missing revision id as pending in validate_decisions.
     #[test]
-    fn test_validate_decisions_rejects_non_pending() {
+    fn revision_decision_rejects_a_record_that_is_not_pending() {
         let pending_map = HashMap::new();
         let decisions = vec![RevisionDecision {
             id: "rev_missing".to_string(),
@@ -385,8 +403,14 @@ mod tests {
         }
     }
 
+    /// PURPOSE:  One corrupt revision must not lose the valid ones.
+    /// SCENARIO: Two accepted revisions are deserialized, one holding valid JSON and one holding garbage.
+    /// ASSERTS:  Only the valid op is returned with its id, and the corrupt id is reported as malformed.
+    /// CLASS:    edge-case
+    /// REQUIRES: none
+    /// MUTANT:   Abort the whole batch when one record fails to deserialize.
     #[test]
-    fn test_deserialize_accepted_ops_handles_malformed() {
+    fn accepted_revision_ops_skip_malformed_records() {
         let mut pending_map = HashMap::new();
         let valid_op = ResolvedOp::CreateBlock {
             section_id: "sec_1".to_string(),
@@ -420,8 +444,14 @@ mod tests {
         assert!(malformed.contains("rev_corrupt"));
     }
 
+    /// PURPOSE:  The preview text must describe the operation in the user's terms.
+    /// SCENARIO: CreateSection, CreateBlock and DeleteBlock revisions are rendered against a memory model.
+    /// ASSERTS:  The previews read "Create section 'Interests' with 1 block(s)", "Create block in 'Bio': User is fluent in Rust." and "Delete block: Existing block text.".
+    /// CLASS:    happy-path
+    /// REQUIRES: none
+    /// MUTANT:   Return an empty preview string for an unknown op kind.
     #[test]
-    fn test_render_revision_preview() {
+    fn revision_preview_describes_each_operation_kind() {
         use super::super::model::{MemoryBlock, MemorySection};
 
         let model = PersonalMemory {

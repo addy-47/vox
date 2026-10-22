@@ -140,6 +140,7 @@ mod tests {
     use super::format_paste_snippet;
 
     /// PURPOSE:  A short transcript must be shown in full inside quotes.
+    /// SCENARIO: A short transcript is formatted as a paste snippet.
     /// ASSERTS:  The snippet is the quoted text.
     /// CLASS:    happy-path
     /// REQUIRES: none
@@ -150,6 +151,7 @@ mod tests {
     }
 
     /// PURPOSE:  A long transcript must not blow up the notification card.
+    /// SCENARIO: A transcript longer than the snippet limit is formatted.
     /// ASSERTS:  The snippet holds 240 characters plus the closing ellipsis.
     /// CLASS:    edge-case
     /// REQUIRES: none
@@ -167,6 +169,7 @@ mod tests {
     }
 
     /// PURPOSE:  Text at exactly the limit must not be truncated.
+    /// SCENARIO: A transcript of exactly the snippet limit length is formatted.
     /// ASSERTS:  The snippet keeps all 240 characters and carries no ellipsis.
     /// CLASS:    edge-case
     /// REQUIRES: none

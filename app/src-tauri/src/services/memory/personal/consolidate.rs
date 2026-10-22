@@ -720,8 +720,14 @@ No new sections need to be created as all observations can be integrated into th
 
     const STRICT_ENVELOPE: &str = r###"{"new": [], "add": [{"section": "s1", "text": "Loves hiking."}], "update": [], "delete": []}"###;
 
+    /// PURPOSE:  A model that cannot guarantee strict JSON must not drive memory consolidation.
+    /// SCENARIO: The gate is called with a model that lacks structured output support.
+    /// ASSERTS:  The call fails with a message containing "cannot guarantee strict JSON output".
+    /// CLASS:    regression
+    /// REQUIRES: none
+    /// MUTANT:   Always return Ok from gate_on_structured_output_support.
     #[test]
-    fn test_capability_gate_refuses_model_without_structured_output() {
+    fn capability_gate_refuses_a_model_without_structured_output() {
         let err =
             gate_on_structured_output_support("meta/llama-3.2-11b-vision-instruct").unwrap_err();
         assert!(
@@ -732,28 +738,52 @@ No new sections need to be created as all observations can be integrated into th
         );
     }
 
+    /// PURPOSE:  A model with structured output support must pass the gate.
+    /// SCENARIO: The gate is called with gpt-4o.
+    /// ASSERTS:  The call returns Ok.
+    /// CLASS:    happy-path
+    /// REQUIRES: none
+    /// MUTANT:   Refuse every model in gate_on_structured_output_support.
     #[test]
-    fn test_capability_gate_permits_structured_capable_model() {
+    fn capability_gate_permits_a_structured_capable_model() {
         gate_on_structured_output_support("gpt-4o")
             .expect("gpt-4o must pass the structured-output gate");
     }
 
+    /// PURPOSE:  An unknown model must not block consolidation, or new models can never be used.
+    /// SCENARIO: The gate is called with a model id that is not in the catalog.
+    /// ASSERTS:  The call returns Ok.
+    /// CLASS:    edge-case
+    /// REQUIRES: none
+    /// MUTANT:   Refuse every model that is not present in the catalog.
     #[test]
-    fn test_capability_gate_permits_unknown_model() {
+    fn capability_gate_permits_an_unknown_model() {
         gate_on_structured_output_support("not-a-real-model-xyz")
             .expect("unknown models default to permitted");
     }
 
+    /// PURPOSE:  A strict JSON envelope must be parsed into the delta operations.
+    /// SCENARIO: A strict envelope with one add operation is parsed.
+    /// ASSERTS:  One add operation is returned and the other three operation lists are empty.
+    /// CLASS:    happy-path
+    /// REQUIRES: none
+    /// MUTANT:   Skip the "add" list when parsing the delta output.
     #[test]
-    fn test_parse_delta_output_accepts_strict_envelope() {
+    fn delta_output_parses_a_strict_json_envelope() {
         let output = parse_delta_output(STRICT_ENVELOPE, "incremental integration")
             .expect("strict envelope must parse");
         assert_eq!(output.add.len(), 1);
         assert!(output.new.is_empty() && output.update.is_empty() && output.delete.is_empty());
     }
 
+    /// PURPOSE:  A prose answer must be refused, or the memory update is silently empty.
+    /// SCENARIO: Two prose answers that embed operations in prose are parsed.
+    /// ASSERTS:  Both fail with a message containing "Failed to parse incremental integration JSON output".
+    /// CLASS:    regression
+    /// REQUIRES: none
+    /// MUTANT:   Accept a non-JSON answer in parse_delta_output.
     #[test]
-    fn test_parse_delta_output_rejects_prose() {
+    fn delta_output_rejects_a_prose_answer() {
         for raw in [PROSE_OUTPUT_A, PROSE_OUTPUT_B] {
             let err = parse_delta_output(raw, "incremental integration").unwrap_err();
             assert!(

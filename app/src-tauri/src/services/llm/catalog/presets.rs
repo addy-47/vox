@@ -84,9 +84,14 @@ mod tests {
         map
     }
 
-    /// Validates the bundled manifest parses with every row sourced and unique.
+    /// PURPOSE:  Every provider preset must carry a source citation and a unique id, or the wire config is unauditable.
+    /// SCENARIO: The bundled provider manifest is deserialized and listed.
+    /// ASSERTS:  At least 14 presets are listed, every id is unique, every row has a non-empty source and checked date, and the ollama_openai_compat preset exists.
+    /// CLASS:    happy-path
+    /// REQUIRES: none
+    /// MUTANT:   Drop the source field when deserializing the provider manifest.
     #[test]
-    fn test_bundled_provider_manifest_is_sourced_ssot() {
+    fn provider_manifest_rows_are_sourced_and_uniquely_identified() {
         let res: Result<Vec<ProviderPresetMeta>, _> = serde_json::from_str(BUNDLED_PROVIDERS_JSON);
         if let Err(ref e) = res {
             eprintln!("DESERIALIZATION ERROR: {:?}", e);
@@ -117,9 +122,14 @@ mod tests {
         );
     }
 
-    /// Validates transport/path coherence per row (no impossible combinations).
+    /// PURPOSE:  A preset must not mix an impossible transport and path combination, or every request for that provider fails.
+    /// SCENARIO: Every preset in the manifest is checked against its transport.
+    /// ASSERTS:  Ollama-native presets nest the token path under options and forbid tool_choice and stream_usage, other presets keep a top-level token path, and the nvidia preset disables stream_usage.
+    /// CLASS:    happy-path
+    /// REQUIRES: none
+    /// MUTANT:   Allow stream_usage on the nvidia preset.
     #[test]
-    fn test_provider_wire_path_coherence() {
+    fn provider_preset_wire_paths_match_the_transport() {
         for preset in list_presets() {
             if preset.transport == TransportType::OllamaNative {
                 assert!(
@@ -153,9 +163,14 @@ mod tests {
         }
     }
 
-    /// Cross-checks manifest mapping paths against the vendored community catalog.
+    /// PURPOSE:  A token path the vendor catalog does not define is sent to the provider and rejected.
+    /// SCENARIO: The vendored community catalog is read and every preset path is cross-checked.
+    /// ASSERTS:  The vendor file covers at least 7 providers, every cited slug is known, and every token and reasoning path exists in the vendor params.
+    /// CLASS:    happy-path
+    /// REQUIRES: none
+    /// MUTANT:   Drop the reasoning_off path check from the manifest validation.
     #[test]
-    fn test_manifest_paths_exist_in_vendor_catalog() {
+    fn provider_manifest_token_paths_exist_in_the_vendor_catalog() {
         let vendor = vendor_param_paths();
         assert!(
             vendor.len() >= 7,

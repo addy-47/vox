@@ -166,26 +166,41 @@ pub fn stitch_transcripts(prefix: &str, suffix: &str) -> String {
 mod tests {
     use super::*;
 
-    /// Tests empty string handling for prefix and suffix transcript stitching.
+    /// PURPOSE:  An empty prefix or suffix must not corrupt the stitched transcript.
+    /// SCENARIO: Blank, whitespace-only and non-empty halves are stitched.
+    /// ASSERTS:  The non-empty half is returned unchanged in every case.
+    /// CLASS:    edge-case
+    /// REQUIRES: none
+    /// MUTANT:   Return the prefix when the suffix is blank.
     #[test]
-    fn test_stitch_transcripts_empty_inputs() {
+    fn stitch_transcripts_ignores_an_empty_side() {
         assert_eq!(stitch_transcripts("", "hello world"), "hello world");
         assert_eq!(stitch_transcripts("hello world", ""), "hello world");
         assert_eq!(stitch_transcripts("   ", "hello world"), "hello world");
         assert_eq!(stitch_transcripts("hello world", "   "), "hello world");
     }
 
-    /// Tests soft subslice containment returning prefix text unmodified.
+    /// PURPOSE:  A suffix that repeats part of the prefix must not duplicate the text.
+    /// SCENARIO: A suffix that is a contiguous subslice of the prefix is stitched.
+    /// ASSERTS:  The result equals the prefix exactly.
+    /// CLASS:    edge-case
+    /// REQUIRES: none
+    /// MUTANT:   Treat a contained suffix as a non-overlapping concatenation.
     #[test]
-    fn test_stitch_transcripts_subslice_containment() {
+    fn stitch_transcripts_returns_the_prefix_when_the_suffix_is_a_subslice() {
         let prefix = "The quick brown fox jumps over the lazy dog";
         let suffix = "brown fox jumps";
         assert_eq!(stitch_transcripts(prefix, suffix), prefix);
     }
 
-    /// Tests multi-word alignment matching and sequential overlap stitching.
+    /// PURPOSE:  An overlapping suffix must be merged into the prefix, or the transcript repeats itself.
+    /// SCENARIO: A suffix overlapping the prefix on four words and a suffix overlapping on one word are stitched.
+    /// ASSERTS:  Each result is the prefix and the suffix joined once at the overlap.
+    /// CLASS:    happy-path
+    /// REQUIRES: none
+    /// MUTANT:   Require a minimum overlap of three words before merging.
     #[test]
-    fn test_stitch_transcripts_overlap_alignment() {
+    fn stitch_transcripts_merges_a_multi_word_overlap() {
         let p1 = "The quick brown fox jumps over the lazy dog";
         let s1 = "jumps over the lazy dog and runs into the woods";
         assert_eq!(
@@ -198,9 +213,14 @@ mod tests {
         assert_eq!(stitch_transcripts(p2, s2), "hello world there friend");
     }
 
-    /// Tests disjoint non-overlapping transcripts concatenation and case/punctuation normalization.
+    /// PURPOSE:  Unrelated halves must be joined with a single space, and case and punctuation must survive.
+    /// SCENARIO: Two disjoint halves and a punctuated pair are stitched.
+    /// ASSERTS:  The first result joins the two halves with a space and the second keeps the original casing and punctuation.
+    /// CLASS:    happy-path
+    /// REQUIRES: none
+    /// MUTANT:   Lowercase the stitched output in stitch_transcripts.
     #[test]
-    fn test_stitch_transcripts_disjoint_and_variations() {
+    fn stitch_transcripts_concatenates_disjoint_and_normalized_parts() {
         assert_eq!(
             stitch_transcripts("hello world", "apple banana"),
             "hello world apple banana"
