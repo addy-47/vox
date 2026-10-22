@@ -134,3 +134,48 @@ fn format_paste_snippet(text: &str) -> String {
         format!("“{}…”", head)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::format_paste_snippet;
+
+    /// PURPOSE:  A short transcript must be shown in full inside quotes.
+    /// ASSERTS:  The snippet is the quoted text.
+    /// CLASS:    happy-path
+    /// REQUIRES: none
+    /// MUTANT:   Drop the quoting.
+    #[test]
+    fn paste_snippet_quotes_short_text() {
+        assert_eq!(format_paste_snippet("hello"), "“hello”");
+    }
+
+    /// PURPOSE:  A long transcript must not blow up the notification card.
+    /// ASSERTS:  The snippet holds 240 characters plus the closing ellipsis.
+    /// CLASS:    edge-case
+    /// REQUIRES: none
+    /// MUTANT:   Remove the truncation branch.
+    #[test]
+    fn paste_snippet_truncates_long_text() {
+        let text = "a".repeat(300);
+        let snippet = format_paste_snippet(&text);
+        assert!(
+            snippet.starts_with(&format!("“{}…", "a".repeat(240))),
+            "the snippet must keep the first 240 characters, got {} chars",
+            snippet.chars().count()
+        );
+        assert_eq!(snippet.chars().count(), 243);
+    }
+
+    /// PURPOSE:  Text at exactly the limit must not be truncated.
+    /// ASSERTS:  The snippet keeps all 240 characters and carries no ellipsis.
+    /// CLASS:    edge-case
+    /// REQUIRES: none
+    /// MUTANT:   Change the comparison to `<` instead of `<=`.
+    #[test]
+    fn paste_snippet_keeps_text_at_the_limit() {
+        let text = "b".repeat(240);
+        let snippet = format_paste_snippet(&text);
+        assert!(!snippet.contains('…'));
+        assert_eq!(snippet.chars().count(), 242);
+    }
+}

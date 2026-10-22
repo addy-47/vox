@@ -97,20 +97,22 @@ For every suppression, gate, or exclusion path, at least one test MUST assert th
 **absent**, and MUST do so deterministically. Preferred forms, in order:
 
 1. **Capture-channel interception** (strongest) — attach a sink *before* the boundary and assert nothing
-   was sent. Reference: `dictation_window_test.rs` "LLM Zero Invariant".
+   was sent. Reference: `dictation_ptt_test.rs` "LLM Zero Invariant".
 2. **Storage-layer count** — assert `SELECT COUNT(*) … == 0`. Reference:
    `notifications_crud_test.rs` zero-DB invariant.
 3. **Flag + booby-trapped callback** — the callback sets a flag *and* returns an error. Reference:
    `realtime_transport_test.rs` paused-state suppression.
-4. `assert_channel_empty_after(&rx, Duration, msg)` — the sanctioned helper in `tests/common/harness.rs`.
+4. **Producer quiescence** — close or drop the producer, then drain the receiver until `Disconnected`
+   (or wait on a barrier/ack that proves the producer finished), and assert the queue is empty.
 
-**Banned:** a bare `sleep(Nms)` followed by a non-blocking `try_recv` for an absence claim
-(`testing-style-guide.md` §6.1). Waits must be deadline polls or event-ordered sentinels.
+**Banned:** a bare `sleep(Nms)` followed by a non-blocking `try_recv` for an absence claim. This is
+banned *including inside a helper*: `assert_channel_empty_after` was exactly this pattern and is deleted.
+Waits must be deadline polls, closed-producer drains, or event-ordered sentinels.
 
 ### 0.1.5 Model Lens (binding for a model-oriented system)
 
 Every test MUST be classified on whether it touches a model, and the classification MUST be recorded in the
-file header's `Metrics` line.
+test's intent block (`REQUIRES` + `CLASS`), not in a file-level metrics line.
 
 | Test touches a model? | Then the assertions must be | Verdict if it asserts quality |
 | :--- | :--- | :--- |
@@ -138,12 +140,12 @@ If an external dependency is unavailable, the offline subset MUST run against a 
 (TCP listener + WebSocket, or an HTTP server capturing the request body — reference:
 `agentic_tool_runtime_test.rs::spawn_mock_wire_server`).
 
-### 0.1.7 Matrix Bundling (reconciles `testing-style-guide.md` §7.3 with `/create-test` Phase 3)
+### 0.1.7 Matrix Bundling (reconciles `testing-style-guide.md` §13 with `/create-test` Phase 3)
 
-§7.3 mandates consolidated matrix tests **for backend initialisation only** (no ONNX/GGUF re-warming). It
+§13 mandates consolidated model sessions **for backend initialisation only** (no ONNX/GGUF re-warming). It
 does **not** license merging assertions. Binding rule:
 
-- **Backend initialisation:** one worker/model session per test binary or per consolidated test fn. (§7.3)
+- **Backend initialisation:** one worker/model session per test binary or per consolidated test fn. (§13)
 - **Scenarios:** separately reported, order-independent, no cross-scenario state. (`/create-test` Ph. 3)
 - **Channel drains:** a drain between scenarios MUST NOT silently discard. Either assert on what is drained
   or eliminate the drain by giving each scenario its own actors.
@@ -154,16 +156,17 @@ does **not** license merging assertions. Binding rule:
 | :--- | :--- | :--- |
 | Provider wire contract, inbound + outbound | `tests/agentic_tool_runtime_test.rs` | `spawn_mock_wire_server` captures the real request body; assert both directions |
 | Real persistence, MVCC, float precision | `tests/database_persistence_boundary_test.rs` | Real Turso in tempdir; distinctive inputs, not uniform fills |
-| Suppression-gate assertion | `tests/dictation_window_test.rs` | Capture-channel "LLM Zero Invariant" |
+| Suppression-gate assertion | `tests/dictation_ptt_test.rs` | Capture-channel "LLM Zero Invariant" |
 | Boundary-gate assertion with a stub | `tests/tts_to_playback_test.rs` | In-file false-green audit note; both gate directions |
 | Latch lifecycle | `tests/playback_interrupt_test.rs` | Arm → hold → release → clear, in order |
 | Test-harness self-justification | `tests/tts_to_playback_test.rs` | `// NOTE (false-green audit): …` comment on every stub |
 
-### 0.1.9 Mandatory Header (extends `testing-style-guide.md` §4)
+### 0.1.9 Mandatory Header and Intent Block (extends `testing-style-guide.md` §3)
 
-Every file in `tests/` MUST carry `(Seam N)` in its `Category` line, and — where a test touches a model —
-a `Model: <none|wired-only|quality-asserted>` line. `Category: Integration Test` without a seam number is
-non-conforming.
+Every file in `tests/` MUST carry `(Seam N)` in its `Category` line. Every test function MUST carry the
+intent block from `testing-style-guide.md` §3 (`PURPOSE / SCENARIO / ASSERTS / CLASS / REQUIRES / MUTANT`).
+The file-level `Metrics` line is removed: a metric that is not asserted per test is not a metric, it is a
+claim. `Category: Integration Test` without a seam number is non-conforming.
 
 ---
 
@@ -249,11 +252,11 @@ Seam Status Legend:
 ### Seam 1 — Passive Audio Streaming: Ring Buffer ──► ContinuousSegmentation VAD ──► Nemotron STT ──► `TranscriptFinal`
 
 - **Status:** `[x] Solid (Verified Green & Validated)`
-- **File:** `tests/passive_streaming_test.rs`
+- **File:** `tests/vad_segmentation_test.rs`
 - **Category:** Integration Test
 - **Subsystems:** `services/vad/actor.rs`, `services/stt/actor.rs`, `core/state.rs`
 - **Prerequisites:** Local Earshot VAD + Nemotron 3.5 STT ONNX weights in `~/.vox/models/`
-- **Execution:** `cargo nextest run --test passive_streaming_test --release --nocapture --test-threads=1`
+- **Execution:** `cargo nextest run --test vad_segmentation_test --release --nocapture --test-threads=1`
 - **Metrics:** Perceived latency, Levenshtein transcript similarity ($\ge 0.90$)
 
 #### 1.1 `/create-test` Phase 0 — Classification
@@ -312,7 +315,7 @@ Helpers Written:
 
 #### 1.5 `/test` Execution Protocol
 
-- **Command:** `cargo nextest run --test passive_streaming_test --release --nocapture --test-threads=1`
+- **Command:** `cargo nextest run --test vad_segmentation_test --release --nocapture --test-threads=1`
 - **Success Criteria:**
   1. English briefing clip (`supertonic_01_en_briefing.wav`): Levenshtein similarity $\ge 0.90$ against reference text.
   2. Hindi weather clip (`supertonic_07_hi_weather.wav`): Levenshtein similarity $\ge 0.90$ with clean transliteration.
@@ -336,12 +339,15 @@ Helpers Written:
 ### Seam 2 — PTT Window Validation (Modular): Press ──► VAD Window ──► `SttCommand::Final`
 
 - **Status:** `[x] Solid (Verified Green & Validated)`
-- **File:** `tests/ptt_window_modular_test.rs`
+- **File:** `tests/dictation_ptt_test.rs` (scenarios S1–S3, `validated_speech_reaches_only_the_selected_dispatch_arm`)
 - **Category:** Integration Test
-- **Subsystems:** `pipeline/assistant/ptt.rs`, `services/vad/actor.rs`, `services/stt/actor.rs`, `core/state.rs`
-- **Prerequisites:** Local Earshot VAD + Nemotron 3.5 STT ONNX weights in `~/.vox/models/`
-- **Execution:** `cargo nextest run --test ptt_window_modular_test --release --nocapture --test-threads=1`
-- **Metrics:** Perceived latency, Levenshtein transcript similarity ($\ge 0.90$), state transitions, ghost gate suppression.
+- **Subsystems:** `pipeline/assistant/ptt.rs`, `services/vad/actor.rs`, `core/state.rs`
+- **Prerequisites:** none (Earshot VAD needs no weights; the STT sink is a raw channel)
+- **Execution:** `cargo nextest run --test dictation_ptt_test --release --test-threads=1`
+- **Metrics:** State transitions and ghost-gate suppression. Transcript accuracy moved to Seam 1 (`vad_segmentation_test`); this seam asserts the dispatch decision, not the decoder.
+
+> [!NOTE]
+> **Fold (Slice 4):** this seam and the offline Realtime PTT file were consolidated into `dictation_ptt_test.rs`. The STT model is no longer loaded: the assertion is which arm receives the validated audio (`SttCommand::Final` vs nothing), which is the contract this seam owns.
 
 #### 2.1 `/create-test` Phase 0 — Classification
 
@@ -409,7 +415,7 @@ Helpers Written:
 
 #### 2.5 `/test` Execution Protocol
 
-- **Command:** `cargo nextest run --test ptt_window_modular_test --release --nocapture --test-threads=1`
+- **Command:** `cargo nextest run --test dictation_ptt_test --release --test-threads=1`
 - **Success Criteria:**
   1. Subtest 1 (Speech): User speech during PTT hold transitions `Ready` $\to$ `Listening` $\to$ `Thinking`, and emits `TranscriptFinal` with similarity $\ge 0.90$ on `supertonic_01_en_briefing.wav`.
   2. Subtest 2 (Ghost Gate): Silence during PTT hold reverts `Listening` $\to$ `Ready`; `pipeline_event_rx` receives zero events after 500ms.
@@ -532,12 +538,17 @@ Production Functions Called:
 ### Seam 4 — Dictation PTT + Passive + Ingestion Gate: `VoxEvent::PttStart/PttStop/PttCancel` ──► VAD Window ──► STT ──► `OutputRouter` (Zero LLM)
 
 - **Status:** `[x] Solid (Verified Green & Validated)`
-- **File:** `tests/dictation_window_test.rs`
+- **File:** `tests/dictation_ptt_test.rs` (input half) and `tests/dictation_output_test.rs` (output half)
 - **Category:** Integration Test
-- **Subsystems:** `pipeline/dictation/{mod,ptt,speech,transcript,error}.rs`, `services/dictation/output_router.rs`, `services/vad/actor.rs`, `services/stt/actor.rs`, `core/state.rs`
-- **Prerequisites:** Local Earshot VAD + Nemotron 3.5 STT ONNX weights in `~/.vox/models/`
-- **Execution:** `cargo nextest run --test dictation_window_test --release --nocapture --test-threads=1`
-- **Metrics:** Latency, Levenshtein transcript similarity ($\ge 0.90$), state transitions, zero LLM commands, Option C gate purge.
+- **Subsystems:** `pipeline/dictation/{mod,ptt,speech,transcript,error}.rs`, `services/dictation/output_router.rs`, `services/vad/actor.rs`, `core/state.rs`
+- **Prerequisites:** none (Earshot VAD needs no weights; the STT sink is a raw channel)
+- **Execution:** `cargo nextest run --test dictation_ptt_test --release --test-threads=1` and `cargo nextest run --test dictation_output_test --release --test-threads=1`
+- **Metrics:** State transitions, zero LLM commands, output-mode routing, transcript preservation. Transcript similarity moved to Seam 1.
+
+> [!NOTE]
+> **Fold (Slice 4 + Slice 5):** `dictation_window_test.rs` was split. The input half lives in
+> `dictation_ptt_test.rs`, the output half in `dictation_output_test.rs`. The ingestion-gate
+> purge lost its coverage: the VAD actor exposes no observable for it (finding F-17).
 
 #### 4.1 `/create-test` Phase 0 — Classification
 
@@ -617,7 +628,7 @@ Production Functions Called:
 
 #### 4.5 `/test` Execution Protocol
 
-- **Command:** `cargo nextest run --test dictation_window_test --release --nocapture --test-threads=1`
+- **Command:** `cargo nextest run --test dictation_ptt_test --release --test-threads=1`
 - **Success Criteria:**
   1. Subtest 1 (PTT Speech): Dictation state transitions `Ready` $\to$ `Listening` $\to$ `Thinking` $\to$ `Ready`; `dictation_last_transcript` has similarity $\ge 0.90$; `llm_rx` is completely empty.
   2. Subtest 2 (Ghost Hold): Silence hold returns state to `Ready`; `pipeline_event_rx` remains empty.

@@ -1,11 +1,11 @@
 //! ============================================================================
-//! passive_streaming_test.rs — Passive Streaming Audio Pipeline Integration Test
+//! vad_segmentation_test.rs — VAD segmentation seam
 //! ============================================================================
-//! Category     : Integration Test (Seam 1)
-//! Component    : services/vad/actor.rs + services/stt/actor.rs
-//! Prerequisites: Local Nemotron STT + Earshot VAD weights in ~/.vox/models/
-//! Execution    : cargo nextest run --test passive_streaming_test --release --nocapture --test-threads=1
-//! Metrics      : Latency, Levenshtein transcript similarity (>= 0.90)
+//! Category  : Integration (Seam 2 — VAD segmentation → STT command stream)
+//! Component : services/vad/{actor,segmenter}.rs + services/stt/actor.rs
+//! Binary    : vad_segmentation_test
+//! Prereqs   : Nemotron STT + Earshot VAD (VOX_MODELS_DIR)
+//! Run       : cargo nextest run --test vad_segmentation_test --release --test-threads=1
 //! ============================================================================
 
 mod common;
@@ -30,8 +30,22 @@ use vox_lib::{
     },
 };
 
+/// PURPOSE:  Real speech must produce exactly one final transcript, and real silence
+///           must produce none — the two ends of the segmentation contract.
+/// SCENARIO: Earshot VAD + Nemotron STT run in Passive mode. One English clip, one Hindi
+///           clip, then 100 silent frames.
+/// ASSERTS:  Each clip yields a transcript at Levenshtein >= 0.90 against ground truth;
+///           Hindi transliterates to non-empty ASCII; after both producers are joined the
+///           event channels are empty.
+/// CLASS:    happy-path (speech) + suppression (silence)
+/// REQUIRES: VOX_MODELS_DIR with Earshot + Nemotron weights; ~4 s.
+/// MUTANT:   Remove the `in_speech` guard in `process_continuous_segmentation`, so silence
+///           enters the speech branch.
+///
+/// NOTE: the three scenarios share one VAD/STT worker because re-warming Sherpa/ONNX in one
+/// process corrupts memory (testing-style-guide.md §13). Scenarios remain order-independent.
 #[test]
-fn test_passive_streaming_matrix() {
+fn passive_streaming_segments_speech_and_suppresses_silence() {
     let test_deadline = Instant::now() + Duration::from_secs(60);
 
     vox_lib::utils::paths::init();
@@ -128,9 +142,16 @@ fn test_passive_streaming_matrix() {
     // Single-utterance clip by construction: max intra-sentence pause 0.3s,
     // below the 800ms production silence default — exactly one utterance.
     {
-        // Drain any lingering events from Subtest 1
-        while vox_event_rx.try_recv().is_ok() {}
-        while pipeline_event_rx.try_recv().is_ok() {}
+        // Subtest 1 consumed its own events while asserting. The channels are therefore
+        // empty at this boundary; anything present would belong to no scenario.
+        common::harness::assert_channel_empty(
+            &vox_event_rx,
+            "Subtest 1 boundary — vox_event_rx must be empty",
+        );
+        common::harness::assert_channel_empty(
+            &pipeline_event_rx,
+            "Subtest 1 boundary — pipeline_event_rx must be empty",
+        );
 
         let clip_path = common::paths::get_asset_path(common::ASSET_SUPERTONIC_07_HI_FILENAME);
         let audio = common::audio::decode_wav_to_mono_16k(&clip_path)
@@ -195,25 +216,21 @@ fn test_passive_streaming_matrix() {
 
     // --- Subtest 3: Silence Only Guard (Negative assertion) ---
     {
-        // Drain any lingering events
-        while vox_event_rx.try_recv().is_ok() {}
-        while pipeline_event_rx.try_recv().is_ok() {}
+        // Subtest 2 consumed its own events while asserting. The channels are empty here.
+        // The negative assertion runs after both producers are shut down and joined,
+        // so emptiness there proves the silence path emitted nothing.
+        common::harness::assert_channel_empty(
+            &vox_event_rx,
+            "Silence guard boundary — vox_event_rx must be empty",
+        );
+        common::harness::assert_channel_empty(
+            &pipeline_event_rx,
+            "Silence guard boundary — pipeline_event_rx must be empty",
+        );
 
         // Stream 100 silence frames
         common::audio::stream_silence_frames(&mut producer, 100);
         common::audio::wait_for_buffer_drain(&producer, 5);
-
-        // Assert no speech events triggered
-        common::harness::assert_channel_empty_after(
-            &vox_event_rx,
-            Duration::from_millis(500),
-            "Passive Streaming Silence Guard — vox_event_rx must remain empty",
-        );
-        common::harness::assert_channel_empty_after(
-            &pipeline_event_rx,
-            Duration::from_millis(200),
-            "Passive Streaming Silence Guard — pipeline_event_rx must remain empty",
-        );
     }
 
     // --- Teardown: Graceful Shutdown & Join ---
@@ -233,4 +250,14 @@ fn test_passive_streaming_matrix() {
     stt_join
         .join()
         .expect("STT worker thread panicked during test execution");
+
+    // Quiescence is now proven: both producers are joined and cannot emit again.
+    common::harness::assert_channel_empty(
+        &vox_event_rx,
+        "Passive Streaming Silence Guard — vox_event_rx must be empty after the producers joined",
+    );
+    common::harness::assert_channel_empty(
+        &pipeline_event_rx,
+        "Passive Streaming Silence Guard — pipeline_event_rx must be empty after the producers joined",
+    );
 }

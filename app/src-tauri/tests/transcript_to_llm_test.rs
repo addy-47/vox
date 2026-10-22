@@ -185,11 +185,7 @@ async fn test_transcript_to_llm_matrix() {
             );
 
             // Negative assertion: no pipeline events emitted
-            common::harness::assert_channel_empty_after(
-                &pipeline_rx,
-                Duration::from_millis(500),
-                "Empty transcript must not generate LLM events",
-            );
+            common::harness::assert_channel_empty(&pipeline_rx, "Empty transcript must not generate LLM events");
         }
 
         // =====================================================================
@@ -205,11 +201,7 @@ async fn test_transcript_to_llm_matrix() {
                 "Transcript received in Listening state must not alter pipeline state"
             );
 
-            common::harness::assert_channel_empty_after(
-                &pipeline_rx,
-                Duration::from_millis(300),
-                "Transcript received in non-Thinking state must be dropped with zero events",
-            );
+            common::harness::assert_channel_empty(&pipeline_rx, "Transcript received in non-Thinking state must be dropped with zero events");
         }
 
         // =====================================================================
@@ -236,19 +228,19 @@ async fn test_transcript_to_llm_matrix() {
             );
 
             // Negative assertion: modular LLM receives zero requests
-            common::harness::assert_channel_empty_after(
-                &pipeline_rx,
-                Duration::from_millis(500),
-                "Realtime mode must not dispatch to modular LLM pipeline",
-            );
+            common::harness::assert_channel_empty(&pipeline_rx, "Realtime mode must not dispatch to modular LLM pipeline");
         }
 
         // =====================================================================
         // Subtest 5: Critical threshold triggers transition speech filler & Working state
         // =====================================================================
         {
-            // Drain any prior TTS commands from previous turns (e.g. Subtest 1 responses)
-            while tts_rx.try_recv().is_ok() {}
+            // Subtest 1 dispatched TTS commands for its response. They must be here.
+            let prior_tts = common::harness::drain_pending(&tts_rx);
+            assert!(
+                !prior_tts.is_empty(),
+                "Subtest 1 must have dispatched TTS commands before Subtest 5"
+            );
 
             // Seed conversation buffer with enough messages to exceed critical threshold (>85% of usable 7680 = >6528 tokens; 105 turns ≈ 7035 tokens)
             {

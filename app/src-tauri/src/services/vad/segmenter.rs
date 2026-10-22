@@ -565,10 +565,376 @@ pub fn process_stream_passthrough(chunk: &[f32], state: &mut VadActorState) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{config::AudioOutputMode, core::events::InteractionMode};
+    use crate::{
+        config::AudioOutputMode,
+        core::events::{InteractionMode, InteractionOwner},
+        services::vad::providers::EarshotVadEngine,
+    };
+    use std::sync::atomic::AtomicBool;
 
+    /// Deterministic driver for `process_continuous_segmentation`.
+    ///
+    /// The real Earshot backend is used, but its threshold is flipped between frames
+    /// (-1.0 => predict true, 1.0 => predict false) so the detector output is scripted.
+    /// No model weights and no threads, so the state machine is fully reproducible.
+    struct Rig {
+        state: VadActorState,
+        handles: VadActorHandles,
+        vad: VadBackend,
+        stt_tx: mpsc::Sender<SttCommand>,
+        stt_rx: mpsc::Receiver<SttCommand>,
+        event_tx: mpsc::Sender<VoxEvent>,
+        event_rx: mpsc::Receiver<VoxEvent>,
+    }
+
+    impl Rig {
+        fn new(onset_ms: u32, silence_ms: u32, noise_gate: f32) -> Self {
+            let (stt_tx, stt_rx) = mpsc::channel();
+            let (event_tx, event_rx) = mpsc::channel();
+            let handles = VadActorHandles {
+                state_atomic: Arc::new(std::sync::atomic::AtomicU32::new(
+                    InteractionState::Ready as u32,
+                )),
+                turn_id_atomic: Arc::new(std::sync::atomic::AtomicU32::new(0)),
+                audio_suppressed: Arc::new(AtomicBool::new(false)),
+                engine_shutdown: Arc::new(AtomicBool::new(false)),
+                dropped_counter: Arc::new(AtomicU64::new(0)),
+                ingestion_gate: Arc::new(AtomicBool::new(true)),
+                owner_atomic: Arc::new(std::sync::atomic::AtomicU32::new(
+                    InteractionOwner::Assistant as u32,
+                )),
+                incomplete_clause_hint: Arc::new(AtomicBool::new(false)),
+            };
+            Self {
+                state: VadActorState::new(
+                    0.5,
+                    noise_gate,
+                    silence_ms,
+                    onset_ms,
+                    InteractionMode::Passive,
+                    AudioOutputMode::Speaker,
+                ),
+                handles,
+                vad: VadBackend::Earshot(
+                    EarshotVadEngine::new(1.0).expect("earshot detector must initialise"),
+                ),
+                stt_tx,
+                stt_rx,
+                event_tx,
+                event_rx,
+            }
+        }
+
+        fn step(&mut self, speech: bool) {
+            let amplitude = if speech { 0.05 } else { 0.0 };
+            self.step_amp(amplitude, speech);
+        }
+
+        fn step_amp(&mut self, amplitude: f32, speech: bool) {
+            self.vad
+                .update_threshold(if speech { -1.0 } else { 1.0 })
+                .expect("threshold update must succeed");
+            let frame = vec![amplitude; 256];
+            let energy = calculate_rms(&frame);
+            process_continuous_segmentation(
+                &frame,
+                energy,
+                &mut self.vad,
+                &mut self.state,
+                &self.handles,
+                &self.stt_tx,
+                Some(&self.event_tx),
+            );
+        }
+
+        fn events(&mut self) -> Vec<VoxEvent> {
+            self.event_rx.try_iter().collect()
+        }
+
+        fn commands(&mut self) -> Vec<SttCommand> {
+            self.stt_rx.try_iter().collect()
+        }
+    }
+
+    fn stream_and_final(commands: Vec<SttCommand>) -> (Vec<f32>, Option<Vec<f32>>) {
+        let mut streamed = Vec::new();
+        let mut final_audio = None;
+        for cmd in commands {
+            match cmd {
+                SttCommand::StreamChunk { audio, .. } => streamed.extend(audio),
+                SttCommand::Final { audio, .. } => final_audio = Some(audio),
+                _ => {}
+            }
+        }
+        (streamed, final_audio)
+    }
+
+    /// PURPOSE:  Onset noise must not start a turn; a partial rising edge must not either.
+    /// ASSERTS:  One qualifying frame emits no SpeechStart; the configured second frame does.
+    /// CLASS:    happy-path
+    /// MUTANT:   Change `state.onset_score >= required_onset_score` to `> 0`.
     #[test]
-    fn test_preroll_push_and_capacity() {
+    fn onset_requires_configured_confirmation_frames() {
+        let mut rig = Rig::new(32, 400, 0.01);
+        rig.step(true);
+        assert!(
+            rig.events().is_empty(),
+            "a single frame must not open a turn"
+        );
+        rig.step(true);
+        let events = rig.events();
+        assert!(
+            matches!(events.as_slice(), [VoxEvent::SpeechStart { .. }]),
+            "exactly one SpeechStart expected, got {:?}",
+            events
+        );
+    }
+
+    /// PURPOSE:  An unvoiced plosive (/p/, /t/, /k/) must not wipe onset progress.
+    /// ASSERTS:  true, false, true still opens the turn on the third frame.
+    /// CLASS:    regression (RCA confirmed bug A: instant reset)
+    /// MUTANT:   Replace the leaky decay with `state.onset_score = 0.0`.
+    #[test]
+    fn unvoiced_dropout_does_not_reset_onset_progress() {
+        let mut rig = Rig::new(32, 400, 0.01);
+        rig.step(true);
+        rig.step(false);
+        assert!(
+            rig.events().is_empty(),
+            "the dropout frame must not open a turn by itself"
+        );
+        rig.step(true);
+        assert_eq!(
+            rig.events().len(),
+            1,
+            "the third frame must open the turn; a reset would require a fourth"
+        );
+    }
+
+    /// PURPOSE:  The rising edge must be forwarded, not clipped, and in order.
+    /// ASSERTS:  The first stream chunk is the pre-roll frame, the second is the onset frame.
+    /// CLASS:    regression (RCA confirmed bug B: pre-roll wipeout)
+    /// MUTANT:   Clear `pre_roll_buffer` before copying it into `utterance_buffer`.
+    #[test]
+    fn pre_roll_tail_is_forwarded_as_the_first_stream_chunk() {
+        let mut rig = Rig::new(32, 400, 0.01);
+        rig.step_amp(0.05, true);
+        rig.step_amp(0.06, true);
+
+        let (streamed, _) = stream_and_final(rig.commands());
+        let chunks: Vec<&[f32]> = streamed.chunks_exact(256).collect();
+        assert_eq!(chunks.len(), 2, "one pre-roll chunk and one onset chunk");
+        assert!(
+            chunks[0].iter().all(|&s| (s - 0.05).abs() < 1e-6),
+            "first chunk must be the pre-roll frame"
+        );
+        assert!(
+            chunks[1].iter().all(|&s| (s - 0.06).abs() < 1e-6),
+            "second chunk must be the onset frame"
+        );
+    }
+
+    /// PURPOSE:  Audio must be streamed exactly once; no overlap and no omission.
+    /// ASSERTS:  Concatenated StreamChunks equal the Final audio sample-for-sample.
+    /// CLASS:    regression (RCA confirmed bug B: duplicated final segment)
+    /// MUTANT:   Append `chunk` to `utterance_buffer` inside `handle_speech_start`.
+    #[test]
+    fn streamed_audio_matches_final_audio_without_overlap() {
+        let mut rig = Rig::new(32, 100, 0.01);
+        rig.step(true);
+        rig.step(true); // opens the turn
+        rig.step(true);
+        rig.step(true);
+        for _ in 0..50 {
+            rig.step(false); // early-utterance hangover; 50th frame ends the turn
+        }
+
+        let (streamed, final_audio) = stream_and_final(rig.commands());
+        let final_audio = final_audio.expect("a qualifying utterance must emit Final");
+        assert!(!streamed.is_empty(), "the utterance must have been streamed");
+        assert_eq!(
+            streamed.len(),
+            final_audio.len(),
+            "streamed length must equal final length"
+        );
+        assert_eq!(
+            streamed, final_audio,
+            "final audio must be exactly the concatenation of streamed chunks"
+        );
+    }
+
+    /// PURPOSE:  A turn id change must not split one utterance in the STT stream.
+    /// ASSERTS:  Pre-roll, stream, and final commands all carry the same turn id.
+    /// CLASS:    regression (RCA: pre-roll tagged N-1, body tagged N)
+    /// MUTANT:   Replace `state.current_turn_id = expected_turn_id` with `prev_turn_id`.
+    #[test]
+    fn one_utterance_uses_one_turn_id_across_pre_roll_stream_and_final() {
+        let mut rig = Rig::new(32, 100, 0.01);
+        rig.handles.turn_id_atomic.store(7, Ordering::Relaxed);
+        rig.step(true);
+        rig.step(true); // opens the turn and predicts turn 8
+        rig.handles.turn_id_atomic.store(8, Ordering::Relaxed); // router commits
+        rig.step(true);
+        for _ in 0..50 {
+            rig.step(false);
+        }
+
+        let ids: Vec<u32> = rig
+            .commands()
+            .into_iter()
+            .filter_map(|cmd| match cmd {
+                SttCommand::StreamChunk { turn_id, .. } => Some(turn_id),
+                SttCommand::Final { turn_id, .. } => Some(turn_id),
+                _ => None,
+            })
+            .collect();
+        assert!(ids.len() >= 3, "expected pre-roll, body and final, got {:?}", ids);
+        assert!(
+            ids.iter().all(|&id| id == 8),
+            "every command of one utterance must share turn 8, got {:?}",
+            ids
+        );
+    }
+
+    /// PURPOSE:  Barge-in over playback must need firmer evidence than a quiet-room onset.
+    /// ASSERTS:  Three frames do not open a turn while Speaking; the fourth does.
+    /// CLASS:    suppression
+    /// MUTANT:   Remove the `InteractionState::Speaking` onset multiplier.
+    #[test]
+    fn barge_in_over_playback_requires_firmer_onset() {
+        let mut rig = Rig::new(32, 400, 0.01);
+        rig.handles
+            .state_atomic
+            .store(InteractionState::Speaking as u32, Ordering::Relaxed);
+        rig.step(true);
+        rig.step(true);
+        rig.step(true);
+        assert!(
+            rig.events().is_empty(),
+            "three frames must not barge in over playback"
+        );
+        rig.step(true);
+        assert_eq!(rig.events().len(), 1, "the fourth frame must barge in");
+    }
+
+    /// PURPOSE:  A speaker pausing after the first few words must not end the turn.
+    /// ASSERTS:  40 silent frames keep the turn open; 50 end it.
+    /// CLASS:    edge-case
+    /// MUTANT:   Remove the `EARLY_UTTERANCE_PROTECTION_SAMPLES` branch.
+    #[test]
+    fn early_utterance_pause_holds_end_for_800ms() {
+        let mut rig = Rig::new(32, 100, 0.01); // base hangover is 6 frames
+        rig.step(true);
+        rig.step(true);
+        for _ in 0..40 {
+            rig.step(false);
+        }
+        let early = rig.events();
+        assert!(
+            !early
+                .iter()
+                .any(|e| matches!(e, VoxEvent::SpeechEnd { .. })),
+            "turn must stay open for 40 frames of early pause"
+        );
+        for _ in 0..10 {
+            rig.step(false);
+        }
+        let late = rig.events();
+        assert!(
+            late.iter()
+                .any(|e| matches!(e, VoxEvent::SpeechEnd { .. })),
+            "turn must close at the 50-frame early-utterance threshold"
+        );
+    }
+
+    /// PURPOSE:  Silence must never open a turn or reach the STT worker.
+    /// ASSERTS:  Zero events and zero STT commands over 100 silent frames.
+    /// CLASS:    suppression
+    /// MUTANT:   Change `is_onset_speech = vad_detected && ...` to `vad_detected || ...`.
+    #[test]
+    fn silence_emits_no_events_and_no_stt_commands() {
+        let mut rig = Rig::new(32, 400, 0.01);
+        for _ in 0..100 {
+            rig.step(false);
+        }
+        assert!(rig.events().is_empty(), "silence must not emit VAD events");
+        assert!(
+            rig.commands().is_empty(),
+            "silence must not reach the STT worker"
+        );
+        assert!(!rig.state.in_speech, "silence must not open a turn");
+    }
+
+    /// PURPOSE:  A decaying onset must reset its frame counter, not leak across attempts.
+    /// ASSERTS:  After sustained silence, active_frames is zero and no turn opened.
+    /// CLASS:    edge-case
+    /// MUTANT:   Remove the `state.active_frames = 0` reset in the decay branch.
+    #[test]
+    fn onset_progress_decays_to_zero_after_sustained_silence() {
+        let mut rig = Rig::new(32, 400, 0.01);
+        rig.step(true);
+        for _ in 0..10 {
+            rig.step(false);
+        }
+        assert_eq!(rig.state.active_frames, 0);
+        assert_eq!(rig.state.onset_score, 0.0);
+        assert!(rig.events().is_empty());
+    }
+
+    /// PURPOSE:  Turn teardown must leave no stale utterance audio behind.
+    /// ASSERTS:  After SpeechEnd the utterance buffer is empty and pre-roll holds the boundary frame.
+    /// CLASS:    edge-case
+    /// MUTANT:   Remove `state.utterance_buffer.clear()` from `handle_speech_end`.
+    #[test]
+    fn speech_end_clears_utterance_and_repopulates_pre_roll() {
+        let mut rig = Rig::new(32, 100, 0.01);
+        rig.step(true);
+        rig.step(true);
+        for _ in 0..50 {
+            rig.step(false);
+        }
+        assert!(!rig.state.in_speech);
+        assert!(
+            rig.state.utterance_buffer.is_empty(),
+            "utterance buffer must be cleared after SpeechEnd"
+        );
+        assert!(
+            !rig.state.pre_roll_buffer.is_empty(),
+            "pre-roll must hold the boundary frame for an immediate resume"
+        );
+    }
+
+    /// PURPOSE:  A cough must not reach the LLM as an utterance.
+    /// ASSERTS:  An utterance shorter than VAD_MIN_UTTERANCE_SAMPLES emits no Final.
+    /// CLASS:    suppression
+    /// MUTANT:   Remove the `VAD_MIN_UTTERANCE_SAMPLES` guard from `handle_speech_end`.
+    /// NOTE:     F-14 — the guard is unreachable today: early-utterance protection forces
+    ///           50 hangover frames (49 accumulated, ~12.5k samples) before SpeechEnd,
+    ///           so the buffer always exceeds 4800. Kept ignored until the hangover and
+    ///           minimum-utterance rules are reconciled. Owner: backend-engineer.
+    #[test]
+    #[ignore = "F-14: minimum-utterance guard unreachable while early-utterance hangover is 50 frames"]
+    fn utterance_below_minimum_emits_no_final() {
+        let mut rig = Rig::new(32, 100, 0.01);
+        rig.step(true);
+        rig.step(true);
+        for _ in 0..60 {
+            rig.step(false);
+        }
+        let (_, final_audio) = stream_and_final(rig.commands());
+        assert!(
+            final_audio.is_none(),
+            "an utterance below the minimum must not emit Final"
+        );
+    }
+
+/// PURPOSE:  Pre-roll must be bounded; unbounded growth would leak memory per frame.
+/// ASSERTS:  Capacity is never exceeded and the newest samples survive.
+/// CLASS:    edge-case
+/// REQUIRES: none
+/// MUTANT:   Remove the `excess` pop_front loop in `PreRollBuffer::push`.
+    #[test]
+    fn preroll_ring_buffer_drops_oldest_samples_at_capacity() {
         let mut buf = PreRollBuffer::new(10);
         buf.push(&[1.0, 2.0, 3.0]);
         let mut out = Vec::new();
@@ -584,8 +950,13 @@ mod tests {
         assert_eq!(out2[9], 11.0);
     }
 
+/// PURPOSE:  Onset flush must take the recent tail, not an arbitrary slice.
+/// ASSERTS:  copy_tail_into returns the last N samples in chronological order.
+/// CLASS:    happy-path
+/// REQUIRES: none
+/// MUTANT:   Return the first N samples instead of the last N.
     #[test]
-    fn test_preroll_copy_tail_into() {
+    fn preroll_copy_tail_returns_most_recent_samples() {
         let mut buf = PreRollBuffer::new(10);
         buf.push(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]);
         let mut tail = Vec::new();
@@ -593,8 +964,13 @@ mod tests {
         assert_eq!(tail, vec![5.0, 6.0, 7.0, 8.0]);
     }
 
+/// PURPOSE:  An oversized capture chunk must not overflow the pre-roll buffer.
+/// ASSERTS:  Only the newest `max_capacity` samples are retained.
+/// CLASS:    edge-case
+/// REQUIRES: none
+/// MUTANT:   Append the whole chunk without truncating.
     #[test]
-    fn test_preroll_large_chunk_truncates() {
+    fn preroll_oversized_chunk_keeps_tail() {
         let mut buf = PreRollBuffer::new(5);
         buf.push(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]);
         let mut out = Vec::new();
@@ -602,8 +978,13 @@ mod tests {
         assert_eq!(out, vec![4.0, 5.0, 6.0, 7.0, 8.0]);
     }
 
+/// PURPOSE:  After an onset flush the buffer must be reusable and empty.
+/// ASSERTS:  clear() leaves zero samples and copy_into appends nothing.
+/// CLASS:    edge-case
+/// REQUIRES: none
+/// MUTANT:   Make clear() a no-op.
     #[test]
-    fn test_preroll_clear_and_empty_copy() {
+    fn preroll_clear_leaves_empty_buffer() {
         let mut buf = PreRollBuffer::new(4);
         buf.push(&[1.0, 2.0]);
         buf.clear();
@@ -612,16 +993,26 @@ mod tests {
         assert!(out.is_empty());
     }
 
+/// PURPOSE:  Energy gating must not divide by zero on an empty frame.
+/// ASSERTS:  Empty and all-zero frames return 0.0; full-scale returns 1.0.
+/// CLASS:    edge-case
+/// REQUIRES: none
+/// MUTANT:   Remove the empty-slice guard in `calculate_rms`.
     #[test]
-    fn test_calculate_rms_boundaries() {
+    fn rms_handles_empty_zero_and_full_scale() {
         assert_eq!(calculate_rms(&[]), 0.0);
         assert_eq!(calculate_rms(&[0.0, 0.0, 0.0]), 0.0);
         let rms = calculate_rms(&[1.0, 1.0, 1.0]);
         assert!((rms - 1.0).abs() < 1e-5);
     }
 
+/// PURPOSE:  Realtime egress must not wrap loud samples into the opposite sign.
+/// ASSERTS:  Values outside [-1, 1] clamp to i16 extremes.
+/// CLASS:    edge-case
+/// REQUIRES: none
+/// MUTANT:   Remove `.clamp(-1.0, 1.0)` before the cast.
     #[test]
-    fn test_f32_to_i16_pcm_clamping() {
+    fn pcm_conversion_clamps_out_of_range_samples() {
         let mut out = Vec::new();
         f32_to_i16_pcm(&[1.0, -1.0, 0.0, 2.0, -2.0, 0.5], &mut out);
         assert_eq!(out[0], 32767);
@@ -632,8 +1023,13 @@ mod tests {
         assert_eq!(out[5], (0.5 * 32767.0) as i16);
     }
 
+/// PURPOSE:  Hands-free dictation must stop itself when the user stops talking.
+/// ASSERTS:  One PttStop is emitted and the fired flag is latched.
+/// CLASS:    happy-path
+/// REQUIRES: none
+/// MUTANT:   Remove the `silence_samples < threshold_samples` early return.
     #[test]
-    fn test_window_autostop_fires_after_threshold() {
+    fn window_autostop_fires_once_silence_exceeds_threshold() {
         let mut state = VadActorState::new(
             0.5,
             0.01,
@@ -655,8 +1051,13 @@ mod tests {
         assert!(matches!(rx.try_recv().ok(), Some(VoxEvent::PttStop { .. })));
     }
 
+/// PURPOSE:  A window that never heard speech must not auto-stop immediately.
+/// ASSERTS:  No PttStop is emitted before `window_speech_detected`.
+/// CLASS:    suppression
+/// REQUIRES: none
+/// MUTANT:   Remove the `!state.window_speech_detected` early return.
     #[test]
-    fn test_window_autostop_ignores_prespeech_silence() {
+    fn window_autostop_ignores_silence_before_first_speech() {
         let mut state = VadActorState::new(
             0.5,
             0.01,
@@ -678,8 +1079,13 @@ mod tests {
         assert!(rx.try_recv().is_err());
     }
 
+/// PURPOSE:  Auto-stop must be opt-in per window.
+/// ASSERTS:  A window with no configured threshold emits nothing.
+/// CLASS:    suppression
+/// REQUIRES: none
+/// MUTANT:   Default the threshold to 1200 ms instead of `None`.
     #[test]
-    fn test_window_autostop_disabled_without_config() {
+    fn window_autostop_does_nothing_without_config() {
         let mut state = VadActorState::new(
             0.5,
             0.01,
@@ -701,8 +1107,13 @@ mod tests {
         assert!(rx.try_recv().is_err());
     }
 
+/// PURPOSE:  A loud room must not collapse the gate onto the ambient floor.
+/// ASSERTS:  2x margin in Ready and 3.2x during Speaking, both above the floor.
+/// CLASS:    edge-case
+/// REQUIRES: none
+/// MUTANT:   Clamp the adaptive gate to `MAX_NOISE_FLOOR_RMS`.
     #[test]
-    fn test_onset_gate_preserves_snr_margin_at_high_floor() {
+    fn onset_gate_keeps_snr_margin_at_loud_ambient_floor() {
         let mut state = VadActorState::new(
             0.5,
             0.003,
@@ -728,8 +1139,13 @@ mod tests {
         );
     }
 
+/// PURPOSE:  A silent room must still detect quiet speech.
+/// ASSERTS:  The gate never falls below MIN_ONSET_GATE_RMS.
+/// CLASS:    edge-case
+/// REQUIRES: none
+/// MUTANT:   Remove the `.max(MIN_ONSET_GATE_RMS)` clamp.
     #[test]
-    fn test_onset_gate_clamps_to_minimum_in_quiet_rooms() {
+    fn onset_gate_clamps_to_minimum_in_quiet_room() {
         let mut state = VadActorState::new(
             0.5,
             0.003,
@@ -748,8 +1164,13 @@ mod tests {
         );
     }
 
+/// PURPOSE:  The floor must follow a room getting quieter fast and louder slowly.
+/// ASSERTS:  Downward adaptation is fast, upward is slow, both clamp.
+/// CLASS:    edge-case
+/// REQUIRES: none
+/// MUTANT:   Use one alpha for both directions.
     #[test]
-    fn test_update_noise_floor_asymmetric_convergence_and_clamps() {
+    fn noise_floor_decays_fast_rises_slow_and_clamps() {
         let mut state = VadActorState::new(
             0.5,
             0.003,
