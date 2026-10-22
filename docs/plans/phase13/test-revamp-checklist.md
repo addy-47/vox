@@ -121,11 +121,12 @@ Legend: `[ ]` pending · `[x]` done · `[~]` folded into another binary · `[-]`
 
 ## Slice 11 — Audio capture and AEC
 
-- [ ] `tests/audio_capture_aec_test.rs` (3)
-- [ ] `tests/aec_pipeline_test.rs` (4)
-- [ ] `tests/aec_barge_in_integration_test.rs` (5)
-- [ ] Binary: `audio_capture_aec_test.rs`
-- [ ] Report Slice 11
+- [x] `tests/audio_capture_aec_test.rs` — 3 subtests, honest header, intent blocks
+- [x] `tests/aec_pipeline_test.rs` → `tests/audio_capture/aec_pipeline.rs`, a module of the same binary (4 subtests)
+- [x] `tests/aec_barge_in_integration_test.rs` → `tests/audio_capture/barge_in.rs`, a module of the same binary (5 subtests)
+- [x] Shared `common::audio::erle_db` replaced the duplicated ERLE helpers
+- [x] The wall-clock "< 15 ms" latency assertion is gone; the per-chunk deadline remains
+- [x] Report Slice 11
 
 ## Slice 12 — Harness loop
 

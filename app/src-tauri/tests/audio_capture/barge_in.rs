@@ -1,14 +1,15 @@
 //! ============================================================================
-//! aec_barge_in_integration_test.rs — Full-Duplex AEC & Double-Talk Barge-In Test Suite
+//! barge_in.rs — full duplex AEC and double talk barge-in
 //! ============================================================================
-//! Category     : Integration Test
-//! Component    : services/audio/aec.rs + services/vad/actor.rs + pipeline/assistant/interrupt.rs
-//! Prerequisites: tests/assets/edgetts_01_en_briefing.wav, tests/assets/supertonic_01_en_briefing.wav
-//! Execution    : cargo nextest run --release --test aec_barge_in_integration_test --test-threads=1
-//! Metrics      : Echo suppression (ERLE >= 20dB), zero solo interruption, double-talk barge-in, false-green bypass proof
+//! Category  : Integration (Seam 11 — echo suppression → VAD → barge-in)
+//! Component : services/audio/aec.rs + services/vad/actor.rs
+//!             + pipeline/assistant/interrupt.rs
+//! Binary    : audio_capture_aec_test
+//! Prereqs   : the test audio assets
+//! Run       : cargo nextest run --test audio_capture_aec_test --release --test-threads=1
 //! ============================================================================
 
-mod common;
+use crate::common;
 
 use std::{
     path::Path,
@@ -37,11 +38,14 @@ use vox_lib::{
     },
 };
 
-/// Assertion 1 (Echo-Only Invariant):
-/// Solo playback with injected acoustic echo is completely suppressed by AEC.
-/// VAD emits ZERO SpeechStart events, preventing self-interruption.
+/// PURPOSE:  The assistant's own echo must never interrupt the assistant.
+/// SCENARIO: Only the playback reference reaches the capture.
+/// ASSERTS:  No interruption happens and the echo is suppressed.
+/// CLASS:    suppression
+/// REQUIRES: the test audio assets
+/// MUTANT:   Let the echo reach the VAD unattenuated.
 #[tokio::test]
-async fn test_echo_only_solo_playback_causes_zero_false_interruption() {
+async fn solo_playback_never_interrupts_the_user() {
     let test_timeout = Duration::from_secs(30);
     tokio::time::timeout(test_timeout, async {
         let _guard = common::paths::TempPathsGuard::new();
@@ -171,11 +175,14 @@ async fn test_echo_only_solo_playback_causes_zero_false_interruption() {
     .expect("Test timed out");
 }
 
-/// Assertion 2 (Double-Talk / Barge-In Invariant):
-/// When genuine user speech overlaps assistant playback, AEC preserves user speech.
-/// VAD fires SpeechStart, playback is cancelled, and state transitions to Listening.
+/// PURPOSE:  A real user speaking over the assistant must interrupt it.
+/// SCENARIO: Echo and user speech are mixed into the capture.
+/// ASSERTS:  The playback is cancelled and the state becomes Listening.
+/// CLASS:    happy-path
+/// REQUIRES: the test audio assets
+/// MUTANT:   Skip the barge-in when echo and speech overlap.
 #[tokio::test]
-async fn test_double_talk_barge_in_cancels_playback_and_transitions_to_listening() {
+async fn double_talk_barge_in_cancels_the_playback_and_opens_listening() {
     let test_timeout = Duration::from_secs(30);
     tokio::time::timeout(test_timeout, async {
         let _guard = common::paths::TempPathsGuard::new();
@@ -341,11 +348,14 @@ async fn test_double_talk_barge_in_cancels_playback_and_transitions_to_listening
     .expect("Test timed out");
 }
 
-/// Assertion 3 (False-Green Proof / Bypass Invariant):
-/// When AEC has NO reference tap (bypassed), the same echo input triggers SpeechStart.
-/// This strictly proves the test suite detects an inactive or broken echo filter.
+/// PURPOSE:  The suppression scenarios must fail when the AEC is bypassed.
+/// SCENARIO: The same echo is played with the AEC bypassed.
+/// ASSERTS:  The echo now interrupts, which proves the suppression is what prevents it.
+/// CLASS:    regression
+/// REQUIRES: the test audio assets
+/// MUTANT:   Keep the suppression active in the bypass scenario.
 #[tokio::test]
-async fn test_false_green_bypass_reproduces_echo_interruption() {
+async fn bypass_reproduces_the_echo_interruption() {
     let test_timeout = Duration::from_secs(30);
     tokio::time::timeout(test_timeout, async {
         let _guard = common::paths::TempPathsGuard::new();
@@ -458,10 +468,13 @@ async fn test_false_green_bypass_reproduces_echo_interruption() {
     .expect("Test timed out");
 }
 
-/// Assertion 4 (ERLE Mathematical Metric):
-/// Echo Return Loss Enhancement (ERLE = 10 * log10(E_in / E_out)) across echo frames must be >= 25 dB.
+/// PURPOSE:  The ERLE metric must be computed from the real signal.
+/// ASSERTS:  The measured improvement exceeds 25 dB.
+/// CLASS:    happy-path
+/// REQUIRES: the test audio assets
+/// MUTANT:   Compute the metric from a constant instead of the signal.
 #[tokio::test]
-async fn test_erle_mathematical_metric_exceeds_twenty_five_db() {
+async fn erle_metric_exceeds_twenty_five_db() {
     let test_timeout = Duration::from_secs(30);
     tokio::time::timeout(test_timeout, async {
         let _guard = common::paths::TempPathsGuard::new();
@@ -549,8 +562,14 @@ fn _dummy_vad_rx() -> mpsc::Receiver<vox_lib::services::vad::VadCommand> {
     mpsc::channel().1
 }
 
+/// PURPOSE:  After a cancellation the playback reference must be dropped.
+/// SCENARIO: The render queue is cleared while the AEC keeps running.
+/// ASSERTS:  The post-cancellation suppression does not happen.
+/// CLASS:    edge-case
+/// REQUIRES: the test audio assets
+/// MUTANT:   Ignore the clear-render-queue command.
 #[tokio::test]
-async fn test_clear_render_queue_prevents_post_cancellation_suppression() {
+async fn clearing_the_render_queue_prevents_post_cancellation_suppression() {
     let _guard = common::paths::TempPathsGuard::new();
     vox_lib::utils::paths::init();
 
