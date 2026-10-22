@@ -142,12 +142,6 @@ impl BiquadLowPass {
 mod tests {
     use super::*;
 
-    /// PURPOSE:  The low-pass filter must pass DC and reject the highest frequency, or the audio band is wrong.
-    /// SCENARIO: A DC step and an alternating plus/minus one signal are pushed through the filter.
-    /// ASSERTS:  The DC output reaches unity gain and the alternating signal stays below 0.1 amplitude.
-    /// CLASS:    happy-path
-    /// REQUIRES: none
-    /// MUTANT:   Skip the LowPass accumulator update in tick.
     #[test]
     fn low_pass_passes_dc_and_attenuates_the_nyquist() {
         let mut lp = LowPass::new(250.0, 16000.0);
@@ -167,12 +161,6 @@ mod tests {
         assert!(nyquist_y.abs() < 0.1);
     }
 
-    /// PURPOSE:  The three filter bands must reconstruct the input, or the audio is distorted.
-    /// SCENARIO: A 440 Hz plus 3 kHz mixed sine is pushed through the filter bank.
-    /// ASSERTS:  Low plus mid plus high equals the input sample within 1e-5 for every frame.
-    /// CLASS:    happy-path
-    /// REQUIRES: none
-    /// MUTANT:   Scale the high band output by 0.9 in FilterBank::tick.
     #[test]
     fn filter_bank_bands_sum_back_to_the_input() {
         let mut fb = FilterBank::new(16000.0);
@@ -191,12 +179,6 @@ mod tests {
         }
     }
 
-    /// PURPOSE:  The chunk processor must report per-band RMS without dividing by zero.
-    /// SCENARIO: An empty chunk, a silent chunk and a 1 kHz sine chunk are processed.
-    /// ASSERTS:  The empty chunk returns three zeros, the silent chunk returns zeros, and the sine chunk returns non-negative RMS with a mid band above 0.05.
-    /// CLASS:    edge-case
-    /// REQUIRES: none
-    /// MUTANT:   Return a NaN RMS for an empty chunk.
     #[test]
     fn filter_bank_chunk_reports_rms_per_band() {
         let mut fb = FilterBank::new(16000.0);
@@ -219,12 +201,6 @@ mod tests {
         assert!(r_m > 0.05);
     }
 
-    /// PURPOSE:  The Butterworth low-pass must keep DC gain and attenuate the stopband.
-    /// SCENARIO: A DC step and a 16 kHz sine at 48 kHz are pushed through the biquad.
-    /// ASSERTS:  The DC output reaches unity gain within 1e-3 and the 16 kHz output stays below 0.15 amplitude.
-    /// CLASS:    happy-path
-    /// REQUIRES: none
-    /// MUTANT:   Use the wrong cutoff frequency in BiquadLowPass::new_butterworth.
     #[test]
     fn biquad_low_pass_attenuates_the_stopband() {
         let mut lp = BiquadLowPass::new_butterworth(7500.0, 48000.0);

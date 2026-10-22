@@ -642,12 +642,6 @@ pub async fn apply_model_parameter_mutation(
 mod tests {
     use super::*;
 
-    /// PURPOSE:  The mutation contract must accept exactly the real llm settings, or a write silently does nothing.
-    /// SCENARIO: The supported llm keys are listed and compared with the inventory.
-    /// ASSERTS:  The four real keys are present and the eight phantom keys are absent.
-    /// CLASS:    happy-path
-    /// REQUIRES: none
-    /// MUTANT:   Add "temperature" to the llm supported keys.
     #[test]
     fn llm_mutation_contract_accepts_only_inventory_keys() {
         let keys = supported_keys_for_domain("llm");
@@ -672,12 +666,6 @@ mod tests {
         }
     }
 
-    /// PURPOSE:  A duplicate server or an unusable URL must be refused, or the app starts with a broken provider.
-    /// SCENARIO: Two servers with the same URL, a scheme-less URL, a typo scheme, a blank URL and a valid list are validated.
-    /// ASSERTS:  The duplicate and blank-URL lists are rejected, the scheme-less and typo-scheme URLs are repaired to the http:// form, and the valid list is accepted.
-    /// CLASS:    edge-case
-    /// REQUIRES: none
-    /// MUTANT:   Skip the duplicate-URL check in validate_llm_server_list.
     #[test]
     fn server_list_validation_rejects_duplicates_and_malformed_urls() {
         let mut servers = vec![

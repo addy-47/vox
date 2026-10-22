@@ -135,12 +135,6 @@ fn clean_residual_whitespace(text: &str) -> String {
 mod tests {
     use super::*;
 
-    /// PURPOSE:  Spoken numbers must reach the output as digits, or downstream commands get prose.
-    /// SCENARIO: A spelled-out number, a dollar amount and a number inside a sentence are refined.
-    /// ASSERTS:  "twenty five" becomes 25, "one thousand eight hundred dollars" becomes "$1,800", and the sentence keeps its wording around 25.
-    /// CLASS:    happy-path
-    /// REQUIRES: none
-    /// MUTANT:   Remove the currency rule from apply_tier1_refinement.
     #[test]
     fn tier1_refinement_rewrites_numbers_and_currency() {
         assert_eq!(apply_tier1_refinement("twenty five"), "25");
@@ -154,12 +148,6 @@ mod tests {
         );
     }
 
-    /// PURPOSE:  Spoken fillers must not reach the transcript.
-    /// SCENARIO: The fillers "um" and "uh" appear inside two sentences.
-    /// ASSERTS:  Both fillers are removed and the surrounding words survive.
-    /// CLASS:    happy-path
-    /// REQUIRES: none
-    /// MUTANT:   Delete "um" from the filler list in apply_tier1_refinement.
     #[test]
     fn tier1_refinement_removes_fillers() {
         assert_eq!(
@@ -172,12 +160,6 @@ mod tests {
         );
     }
 
-    /// PURPOSE:  A repeated word from the STT engine must not survive into the transcript.
-    /// SCENARIO: "the the" appears inside a sentence.
-    /// ASSERTS:  The duplicate is removed and the sentence keeps one "the".
-    /// CLASS:    happy-path
-    /// REQUIRES: none
-    /// MUTANT:   Disable the repeated-word collapse in apply_tier1_refinement.
     #[test]
     fn tier1_refinement_deduplicates_stuttered_words() {
         assert_eq!(

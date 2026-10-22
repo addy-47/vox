@@ -242,12 +242,6 @@ mod tests {
 
     use super::*;
 
-    /// PURPOSE:  An uncatalogued model must not inherit capabilities from a same-family model, or strict JSON output is silently switched off.
-    /// SCENARIO: "qwen3.5:9b" and a genuine catalog entry are looked up.
-    /// ASSERTS:  The unknown model resolves to no baseline while a real catalog entry still resolves.
-    /// CLASS:    regression
-    /// REQUIRES: none
-    /// MUTANT:   Fall back to the first catalog entry whose family matches the model name prefix.
     #[test]
     fn catalog_lookup_does_not_inherit_capabilities_by_family_prefix() {
         assert!(
@@ -260,12 +254,6 @@ mod tests {
         );
     }
 
-    /// PURPOSE:  The family field must never become a capability source again.
-    /// SCENARIO: Every catalog entry is scanned for a family that the unknown model name contains.
-    /// ASSERTS:  No family match resolves the unknown model key.
-    /// CLASS:    regression
-    /// REQUIRES: none
-    /// MUTANT:   Add a substring-plus-family fallback to get_baseline_spec.
     #[test]
     fn catalog_family_match_alone_never_resolves_a_spec() {
         let lower = "qwen3.5:9b";
@@ -281,12 +269,6 @@ mod tests {
         }
     }
 
-    /// PURPOSE:  The bundled catalog must parse completely and in time, or the model list is empty at runtime.
-    /// SCENARIO: The bundled catalog JSON is parsed and timed.
-    /// ASSERTS:  At least 4000 models are parsed, gpt-4o and Claude 3.5 Sonnet are present with their context windows, and the parse finishes within the time budget.
-    /// CLASS:    happy-path
-    /// REQUIRES: none
-    /// MUTANT:   Drop entries whose fields fail to deserialize in parse_catalog_json.
     #[test]
     fn catalog_json_parses_with_the_expected_model_count() {
         let start = Instant::now();

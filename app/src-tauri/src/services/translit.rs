@@ -442,12 +442,6 @@ pub fn transliterate_if_hi(text: &str, is_final: bool, transliterate_enabled: bo
 mod tests {
     use super::{is_devanagari, transliterate_if_hi};
 
-    /// PURPOSE:  Script detection decides whether the model runs at all.
-    /// SCENARIO: A Devanagari string and a Latin string are passed to the detector.
-    /// ASSERTS:  Devanagari text is detected, Latin text is not.
-    /// CLASS:    happy-path
-    /// REQUIRES: none
-    /// MUTANT:   Return true for any non-empty string.
     #[test]
     fn devanagari_detection_matches_the_script_range() {
         assert!(is_devanagari("नमस्ते"));
@@ -455,24 +449,12 @@ mod tests {
         assert!(!is_devanagari(""));
     }
 
-    /// PURPOSE:  Transliteration must not touch text when the user turned it off.
-    /// SCENARIO: Transliteration is called while the feature is turned off.
-    /// ASSERTS:  The input is returned unchanged.
-    /// CLASS:    suppression
-    /// REQUIRES: none
-    /// MUTANT:   Ignore the `transliterate_enabled` flag.
     #[test]
     fn transliteration_is_skipped_when_disabled() {
         let text = "नमस्ते वोक्स";
         assert_eq!(transliterate_if_hi(text, true, false), text);
     }
 
-    /// PURPOSE:  Non-Devanagari text must pass through even with transliteration on.
-    /// SCENARIO: Transliteration is called with a Latin string while the feature is on.
-    /// ASSERTS:  The input is returned unchanged.
-    /// CLASS:    suppression
-    /// REQUIRES: none
-    /// MUTANT:   Run the model on every input.
     #[test]
     fn transliteration_skips_non_devanagari_text() {
         let text = "hello vox";

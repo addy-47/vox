@@ -246,12 +246,6 @@ fn compaction_output_constraint(model: &str) -> OutputConstraint {
 mod tests {
     use super::*;
 
-    /// PURPOSE:  The compaction budget must scale with the context window but stay inside the allowed range.
-    /// SCENARIO: Small, standard and huge context windows are combined with and without a probed ceiling.
-    /// ASSERTS:  The budget is 1351 for 8192 tokens, clamped to 256 for 1000 tokens, clamped to 16384 for 200000 tokens, and honours a lower probed ceiling.
-    /// CLASS:    edge-case
-    /// REQUIRES: none
-    /// MUTANT:   Remove the 256-token floor from calculate_compaction_max_tokens.
     #[test]
     fn compaction_token_budget_is_clamped_to_the_allowed_range() {
         // Standard 8k context window: 8192 * 0.165 = 1351
@@ -273,12 +267,6 @@ mod tests {
         assert_eq!(calculate_compaction_max_tokens(8192, Some(100)), 256);
     }
 
-    /// PURPOSE:  The compaction schema must forbid extra fields and require the six documented outputs.
-    /// SCENARIO: The compaction JSON schema is built.
-    /// ASSERTS:  The schema is an object with additionalProperties false and requires personal, objective, workdone, blocker, next_step and pitfall.
-    /// CLASS:    happy-path
-    /// REQUIRES: none
-    /// MUTANT:   Remove "pitfall" from the required list in compaction_json_schema.
     #[test]
     fn compaction_json_schema_declares_the_six_required_fields() {
         let schema = compaction_json_schema();
