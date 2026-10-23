@@ -2,7 +2,7 @@ import { useState, memo, useCallback } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
 import { BookOpenText, Brain, FoldVertical, Workflow } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
-import { Card, ToggleTile, SegmentedControl } from "@/shared/ui";
+import { Card, ToggleTile } from "@/shared/ui";
 import { MEMORY_CARD_COPY } from "@/data/settingsCopy";
 import { CardTitleBar } from "../shared/CardTitleBar";
 import { SETTINGS_DOMAIN_CARD_HEIGHT_CLASS } from "../shared/settingsLayout";
@@ -13,11 +13,6 @@ interface MemoryCardProps {
 }
 
 type MemoryView = "basic" | "advanced";
-
-const VIEW_OPTIONS = [
-  { id: "basic" as const, label: MEMORY_CARD_COPY.viewBasic },
-  { id: "advanced" as const, label: MEMORY_CARD_COPY.viewAdvanced },
-];
 
 export const MemoryCard = memo(({ layoutMode = "full-max" }: MemoryCardProps) => {
   const memory = useSettingsStore((s) => s.draftSettings?.memory);
@@ -56,16 +51,11 @@ export const MemoryCard = memo(({ layoutMode = "full-max" }: MemoryCardProps) =>
     >
       {/* Header */}
       <CardTitleBar
-        icon={<BookOpenText size={17} />}
-        title={copy.cardTitle}
-        action={
-          <SegmentedControl
-            options={VIEW_OPTIONS}
-            value={view}
-            onChange={setView}
-            size="sm"
-          />
-        }
+        icon={<BookOpenText size={view === "advanced" ? 14 : 17} />}
+        title={view === "advanced" ? copy.viewAdvanced : copy.cardTitle}
+        onBack={view === "advanced" ? () => setView("basic") : undefined}
+        actionLabel={view === "basic" ? copy.viewAdvanced : undefined}
+        onAction={view === "basic" ? () => setView("advanced") : undefined}
       />
 
       {/* Card Body */}

@@ -476,15 +476,17 @@ export const DictationConfigDesk = memo(({ layoutMode, disabled = false }: Dicta
                     {hotkeyError}
                   </span>
                 ) : !isEditingHotkey && (dictation.hotkey || DEFAULT_HOTKEY) !== DEFAULT_HOTKEY ? (
-                  <button
-                    type="button"
-                    onClick={handleResetDefault}
-                    className="text-[9.5px] text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] flex items-center gap-1 transition-colors cursor-pointer"
-                    title={DICTATION_COPY.resetDefault}
-                  >
-                    <RotateCcw size={10} />
-                    <span>{DICTATION_COPY.resetDefault}</span>
-                  </button>
+                  <Tooltip label={DICTATION_COPY.resetDefault} side="bottom" asChild>
+                    <button
+                      type="button"
+                      onClick={handleResetDefault}
+                      className="text-[9.5px] text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] flex items-center gap-1 transition-colors cursor-pointer"
+                      aria-label={DICTATION_COPY.resetDefault}
+                    >
+                      <RotateCcw size={10} />
+                      <span>{DICTATION_COPY.resetDefault}</span>
+                    </button>
+                  </Tooltip>
                 ) : null}
               </div>
               <p className="text-[11px] sm:text-[11.5px] text-[rgb(var(--foreground-muted))]/75 leading-relaxed font-medium">
@@ -554,22 +556,23 @@ export const DictationConfigDesk = memo(({ layoutMode, disabled = false }: Dicta
                         </div>
                       </div>
                     ) : (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setTempHotkey(dictation.hotkey || DEFAULT_HOTKEY);
-                          setIsEditingHotkey(true);
-                          inputRef.current?.focus();
-                        }}
-                        className="group/hk flex items-center gap-1.5 px-2.5 py-0.5 rounded-full transition-all duration-200 cursor-pointer "
-                        title={DICTATION_COPY.rebindHint}
-                        aria-label={`${DICTATION_COPY.hotkeyTitle}: ${dictation.hotkey || DEFAULT_HOTKEY}. Click to edit.`}
-                      >
-                        <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-[rgb(var(--foreground))] group-hover/hk:text-[rgb(var(--accent))] transition-colors">
-                          {(dictation.hotkey || DEFAULT_HOTKEY).split("+").map((s) => s.trim()).join(" + ")}
-                        </span>
-                        <Pencil size={10} className="text-[rgb(var(--foreground-muted))]/50 group-hover/hk:text-[rgb(var(--accent))] transition-colors shrink-0" />
-                      </button>
+                      <Tooltip label={DICTATION_COPY.rebindHint} side="bottom" asChild>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setTempHotkey(dictation.hotkey || DEFAULT_HOTKEY);
+                            setIsEditingHotkey(true);
+                            inputRef.current?.focus();
+                          }}
+                          className="group/hk flex items-center gap-1.5 px-2.5 py-0.5 rounded-full transition-all duration-200 cursor-pointer "
+                          aria-label={`${DICTATION_COPY.hotkeyTitle}: ${dictation.hotkey || DEFAULT_HOTKEY}. Click to edit.`}
+                        >
+                          <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-[rgb(var(--foreground))] group-hover/hk:text-[rgb(var(--accent))] transition-colors">
+                            {(dictation.hotkey || DEFAULT_HOTKEY).split("+").map((s) => s.trim()).join(" + ")}
+                          </span>
+                          <Pencil size={10} className="text-[rgb(var(--foreground-muted))]/50 group-hover/hk:text-[rgb(var(--accent))] transition-colors shrink-0" />
+                        </button>
+                      </Tooltip>
                     )}
                   </div>
                 }
@@ -660,37 +663,38 @@ export const DictationConfigDesk = memo(({ layoutMode, disabled = false }: Dicta
 
             {/* Right: Acoustic Chronometer SVG schedule control (matching PersonalMemory Clock pattern) */}
             <div className="shrink-0 flex flex-col items-center justify-center">
-              <button
-                type="button"
-                role="switch"
-                aria-checked={isAutoStopEnabled}
-                aria-label={DICTATION_COPY.toggleAutoStopAria(isAutoStopEnabled)}
-                onClick={handleAutoStopToggle}
-                className={cn(
-                  "group flex flex-col items-center select-none cursor-pointer rounded-2xl px-3 py-1.5 transition-all duration-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(var(--accent))]",
-                  isAutoStopEnabled
-                    ? "text-[rgb(var(--accent))]"
-                    : "text-[rgb(var(--foreground-muted))]/40 hover:text-[rgb(var(--foreground-muted))]/70"
-                )}
-                title={DICTATION_COPY.toggleAutoStopTooltip(isAutoStopEnabled)}
-              >
-                {/* 48x48 minimal line-style acoustic chronometer SVG */}
-                <div
-                  className="relative w-[48px] h-[48px] transition-transform duration-300 group-hover:scale-105"
-                  style={{
-                    animation: isAutoStopEnabled ? "wm-globe-float 3.6s ease-in-out infinite" : "none",
-                  }}
+              <Tooltip label={DICTATION_COPY.toggleAutoStopTooltip(isAutoStopEnabled)} side="bottom" asChild>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={isAutoStopEnabled}
+                  aria-label={DICTATION_COPY.toggleAutoStopAria(isAutoStopEnabled)}
+                  onClick={handleAutoStopToggle}
+                  className={cn(
+                    "group flex flex-col items-center select-none cursor-pointer rounded-2xl px-3 py-1.5 transition-all duration-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(var(--accent))]",
+                    isAutoStopEnabled
+                      ? "text-[rgb(var(--accent))]"
+                      : "text-[rgb(var(--foreground-muted))]/40 hover:text-[rgb(var(--foreground-muted))]/70"
+                  )}
                 >
-                  {renderSilenceWatchdogSvg(isAutoStopEnabled, secondsDraft)}
-                </div>
+                  {/* 48x48 minimal line-style acoustic chronometer SVG */}
+                  <div
+                    className="relative w-[48px] h-[48px] transition-transform duration-300 group-hover:scale-105"
+                    style={{
+                      animation: isAutoStopEnabled ? "wm-globe-float 3.6s ease-in-out infinite" : "none",
+                    }}
+                  >
+                    {renderSilenceWatchdogSvg(isAutoStopEnabled, secondsDraft)}
+                  </div>
 
-                {/* Badge: OFF label when disabled */}
-                {!isAutoStopEnabled && (
-                  <span className="mt-2.5 px-2.5 py-0.5 rounded-full text-[9px] font-mono font-bold uppercase tracking-[0.14em] leading-none transition-all duration-300 text-[rgb(var(--foreground-muted))]/50">
-                    OFF
-                  </span>
-                )}
-              </button>
+                  {/* Badge: OFF label when disabled */}
+                  {!isAutoStopEnabled && (
+                    <span className="mt-2.5 px-2.5 py-0.5 rounded-full text-[9px] font-mono font-bold uppercase tracking-[0.14em] leading-none transition-all duration-300 text-[rgb(var(--foreground-muted))]/50">
+                      OFF
+                    </span>
+                  )}
+                </button>
+              </Tooltip>
 
               {/* Time input badge — only when enabled, outside toggle button */}
               {isAutoStopEnabled && (

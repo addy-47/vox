@@ -2,18 +2,14 @@ import { useState, memo, useCallback, useMemo, useRef, useEffect } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
 import { CircleUserRound, Pencil, Check } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
-import { Card, SegmentedControl, Markdown } from "@/shared/ui";
+import { Card, Markdown } from "@/shared/ui";
 import { Tooltip } from "@/shared/ui/Tooltip";
+import { CardTitleBar } from "../shared/CardTitleBar";
 import { PERSONA_COPY } from "@/data/settingsCopy";
 
 interface PersonaCardProps {
   layoutMode?: "full-max" | "full-min" | "small";
 }
-
-const INSTRUCTION_TABS = [
-  { id: "modular" as const, label: PERSONA_COPY.tabModular, compactLabel: "M", title: PERSONA_COPY.tabModular },
-  { id: "realtime" as const, label: PERSONA_COPY.tabRealtime, compactLabel: "R", title: PERSONA_COPY.tabRealtime },
-];
 
 /**
  * Standardises modular and realtime prompts: extracts user persona text from XML wrapper if present.
@@ -174,16 +170,17 @@ function isTouchingProtectedTag(spans: TagSpan[], start: number, end: number, is
 export const PersonaCard = memo(({ layoutMode = "full-max" }: PersonaCardProps) => {
   const modularPrompt = useSettingsStore((s) => s.draftSettings?.persona.modular_prompt ?? "");
   const realtimePrompt = useSettingsStore((s) => s.draftSettings?.persona.realtime_prompt ?? "");
+  const pipelineMode = useSettingsStore((s) => s.draftSettings?.interaction.pipeline_mode ?? "modular");
   const updateDraft = useSettingsStore((s) => s.updateDraft);
 
-  const [activeTab, setActiveTab] = useState<"modular" | "realtime">("modular");
+  const isModular = pipelineMode === "modular";
   const [viewMode, setViewMode] = useState<"edit" | "preview">("preview");
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const highlightRef = useRef<HTMLDivElement>(null);
 
   // Standardise modular and realtime: extract user-facing persona text
-  const activeRawPrompt = activeTab === "modular" ? modularPrompt : realtimePrompt;
+  const activeRawPrompt = isModular ? modularPrompt : realtimePrompt;
   const activePrompt = useMemo(() => extractPersonaText(activeRawPrompt), [activeRawPrompt]);
 
   // Local keystroke draft
@@ -201,13 +198,13 @@ export const PersonaCard = memo(({ layoutMode = "full-max" }: PersonaCardProps) 
   // Diagnostics log requested for dark mode rendering artifact inspection
   useEffect(() => {
     const isDark = document.documentElement.classList.contains("dark");
-    const cardEl = document.getElementById("card-persona") || textareaRef.current?.parentElement;
+    const cardEl = document.getElementById("card-persona") ?? textareaRef.current?.parentElement;
     const computed = cardEl ? window.getComputedStyle(cardEl) : null;
     console.info("[PersonaCard Diagnostics]", {
       isDark,
       htmlClasses: document.documentElement.className,
       layoutMode,
-      activeTab,
+      pipelineMode,
       viewMode,
       cardDimensions: cardEl ? { width: cardEl.offsetWidth, height: cardEl.offsetHeight } : null,
       computedBorder: computed?.border,
@@ -217,7 +214,7 @@ export const PersonaCard = memo(({ layoutMode = "full-max" }: PersonaCardProps) 
       computedBg: computed?.backgroundColor,
       timestamp: Date.now(),
     });
-  }, [layoutMode, activeTab, viewMode]);
+  }, [layoutMode, pipelineMode, viewMode]);
 
   const shownPrompt = promptDraft ?? activePrompt;
   const tagSpans = useMemo(() => getProtectedXmlTagSpans(shownPrompt), [shownPrompt]);
@@ -260,14 +257,14 @@ export const PersonaCard = memo(({ layoutMode = "full-max" }: PersonaCardProps) 
       setTagViolation(false);
       setPromptDraft(null);
       promptDraftRef.current = null;
-      if (activeTab === "modular") {
+      if (isModular) {
         updateDraft("persona", "modular_prompt", nextValue);
       } else {
         const nextRaw = updatePersonaInRawPrompt(realtimePrompt, nextValue);
         updateDraft("persona", "realtime_prompt", nextRaw);
       }
     },
-    [activeTab, realtimePrompt, updateDraft]
+    [isModular, realtimePrompt, updateDraft]
   );
 
   const handlePromptChange = useCallback(
@@ -292,29 +289,6 @@ export const PersonaCard = memo(({ layoutMode = "full-max" }: PersonaCardProps) 
     }
   }, [commitDraft]);
 
-  const handleTabChange = useCallback(
-    (tab: "modular" | "realtime") => {
-      if (commitTimerRef.current) {
-        clearTimeout(commitTimerRef.current);
-        commitTimerRef.current = null;
-      }
-      const pending = promptDraftRef.current;
-      promptDraftRef.current = null;
-      setPromptDraft(null);
-      setTagViolation(false);
-      if (pending !== null) {
-        if (activeTab === "modular") {
-          updateDraft("persona", "modular_prompt", pending);
-        } else {
-          const nextRaw = updatePersonaInRawPrompt(realtimePrompt, pending);
-          updateDraft("persona", "realtime_prompt", nextRaw);
-        }
-      }
-      setActiveTab(tab);
-    },
-    [activeTab, realtimePrompt, updateDraft]
-  );
-
   const handleScroll = useCallback(() => {
     if (textareaRef.current && highlightRef.current) {
       highlightRef.current.scrollTop = textareaRef.current.scrollTop;
@@ -333,25 +307,17 @@ export const PersonaCard = memo(({ layoutMode = "full-max" }: PersonaCardProps) 
         !isSmall && cn("p-4 sm:p-5")
       )}
     >
-      {/* Header & Controls: Clean title on left, Modular | Realtime pill on right */}
-      <div className="flex items-center justify-between mb-3 shrink-0 border-b border-[rgba(var(--accent),0.08)] pb-2 w-full gap-2 flex-nowrap">
-        <div className="flex items-center gap-2 shrink-0">
-          <CircleUserRound className="text-[rgb(var(--accent))]" size={17} />
-          <span className="font-display text-[13px] font-black uppercase tracking-[0.2em] text-[rgb(var(--foreground))]">
-            {PERSONA_COPY.cardTitle}
-          </span>
-        </div>
-        
-        <div className="flex items-center gap-1.5 shrink-0">
-          <SegmentedControl options={INSTRUCTION_TABS} value={activeTab} onChange={handleTabChange} size="sm" />
-        </div>
-      </div>
+      {/* Header */}
+      <CardTitleBar
+        icon={<CircleUserRound size={17} />}
+        title={PERSONA_COPY.cardTitle}
+      />
 
       {/* Main Body: Default Preview with Floating Pencil Icon Toggle in Corner */}
       <div className="flex-1 flex flex-col w-full relative">
         {/* Floating Pencil / Done Toggle Button in Corner */}
         <div className="absolute top-2 right-2 z-20">
-          <Tooltip label={viewMode === "edit" ? "Done editing" : "Edit persona"}>
+          <Tooltip label={viewMode === "edit" ? PERSONA_COPY.doneEditing : PERSONA_COPY.editPersona}>
             <button
               type="button"
               onClick={() => setViewMode((m) => (m === "preview" ? "edit" : "preview"))}
@@ -361,7 +327,7 @@ export const PersonaCard = memo(({ layoutMode = "full-max" }: PersonaCardProps) 
                   ? "bg-[rgba(var(--accent),0.15)] text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.25)] border border-[rgba(var(--accent),0.3)] shadow-[0_0_8px_rgba(var(--accent),0.15)]"
                   : "text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] hover:bg-[rgba(var(--foreground),0.05)] border border-transparent"
               )}
-              aria-label={viewMode === "edit" ? "Done editing" : "Edit persona"}
+              aria-label={viewMode === "edit" ? PERSONA_COPY.doneEditing : PERSONA_COPY.editPersona}
             >
               {viewMode === "edit" ? <Check size={13} strokeWidth={2.5} /> : <Pencil size={13} />}
             </button>
@@ -392,7 +358,7 @@ export const PersonaCard = memo(({ layoutMode = "full-max" }: PersonaCardProps) 
                 onKeyDown={handleKeyDown}
                 onBeforeInput={handleBeforeInput}
                 onScroll={handleScroll}
-                placeholder={activeTab === "modular" ? PERSONA_COPY.modularPlaceholder : PERSONA_COPY.realtimePlaceholder}
+                placeholder={isModular ? PERSONA_COPY.modularPlaceholder : PERSONA_COPY.realtimePlaceholder}
                 spellCheck={false}
                 className={cn(
                   "relative z-10 w-full p-3 pr-9 font-mono text-[12px] sm:text-[12.5px] leading-relaxed text-transparent caret-[rgb(var(--accent))] bg-transparent resize-none focus:outline-none overflow-auto whitespace-pre-wrap break-words selection:bg-[rgba(var(--accent),0.25)] selection:text-[rgb(var(--foreground))]",

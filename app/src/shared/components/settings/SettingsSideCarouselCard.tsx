@@ -1,7 +1,13 @@
 import { memo, useState, useCallback, useMemo, useEffect } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
-import { SETTINGS_DOMAINS as DOMAINS, type SettingsDomainId as DomainId, type SettingsDomain } from "@/data/settingsCopy";
+import {
+  getSettingsDomains,
+  SETTINGS_DOMAINS as DOMAINS,
+  type SettingsDomainId as DomainId,
+  type SettingsDomain,
+} from "@/data/settingsCopy";
+import { useSettingsStore } from "@/store/settingsStore";
 import { getCarouselPair } from "./shared/settingsLayout";
 import { SettingsCardWrapper } from "./SettingsCardWrapper";
 
@@ -19,8 +25,8 @@ const slideVariants = {
 };
 
 /** Slot lookup by domain id. Throws on an unknown id instead of returning undefined. */
-const domainById = (id: DomainId): SettingsDomain => {
-  const match = DOMAINS.find((d) => d.id === id);
+const domainById = (id: DomainId, domains: SettingsDomain[] = DOMAINS): SettingsDomain => {
+  const match = domains.find((d) => d.id === id);
   if (!match) throw new Error(`Unknown settings domain: ${id}`);
   return match;
 };
@@ -31,6 +37,9 @@ export const SettingsSideCarouselCard = memo(({
   layoutMode,
   renderDomainContent,
 }: SettingsSideCarouselCardProps) => {
+  const isRealtime = useSettingsStore((s) => s.draftSettings?.interaction.pipeline_mode === "realtime");
+  const domains = useMemo(() => getSettingsDomains(isRealtime), [isRealtime]);
+
   /**
    * A side holds one or two cards. The pairing comes from the shared slot map
    * (`SETTINGS_DOMAIN_SLOTS`); a side without a secondary renders no
@@ -42,8 +51,8 @@ export const SettingsSideCarouselCard = memo(({
   // guarantees both), so neither is optional here.
   const primaryId = domainIds[0];
   const secondaryId = domainIds[1];
-  const primaryDomain = domainById(primaryId);
-  const secondaryDomain = domainById(secondaryId);
+  const primaryDomain = domainById(primaryId, domains);
+  const secondaryDomain = domainById(secondaryId, domains);
 
   // Active domain is tracked from activeDomains, defaulting to primary
   const [currentId, setCurrentId] = useState<DomainId>(() => {

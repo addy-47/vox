@@ -2,7 +2,7 @@ import { useState, useMemo, useCallback, useEffect } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
 import { useCatalogStore } from "@/store/catalogStore";
 import { useShallow } from "zustand/react/shallow";
-import { activeSelection, resolveProviderModel } from "@/shared/lib/activeSelection";
+import { activeSelection, getEffectiveCloudKeyMap, getEffectiveRealtimeApiKey, resolveProviderModel } from "@/shared/lib/activeSelection";
 import { requestSpeechTab } from "@/shared/lib/speechTabSync";
 import type { CloudProvider } from "@/data/providersCopy";
 
@@ -51,6 +51,10 @@ export function useProviderSelection(options?: UseProviderSelectionOptions) {
 
   const getProviderKey = useCallback(
     (providerId: string) => {
+      const isRealtime = draftSettings?.interaction.pipeline_mode === "realtime";
+      if (isRealtime) {
+        return getEffectiveRealtimeApiKey(draftSettings, committedSettings, providerId) || "";
+      }
       if (isTts) {
         type TtsRuntime = {
           tts?: Record<string, { key?: string }>;
@@ -62,7 +66,7 @@ export function useProviderSelection(options?: UseProviderSelectionOptions) {
       const keys = draftSettings?.llm?.cloud_keys ?? draftSettings?.providers?.llm?.cloud_keys;
       return keys?.[providerId];
     },
-    [isTts, draftSettings]
+    [isTts, draftSettings, committedSettings]
   );
 
   // Save-gated ordering: the sort follows committed keys so selecting only
@@ -93,6 +97,10 @@ export function useProviderSelection(options?: UseProviderSelectionOptions) {
 
   const getCommittedProviderKey = useCallback(
     (providerId: string) => {
+      const isRealtime = committedSettings?.interaction.pipeline_mode === "realtime";
+      if (isRealtime) {
+        return getEffectiveRealtimeApiKey(null, committedSettings, providerId) || "";
+      }
       if (isTts) {
         type Ct = { providers?: { tts?: Record<string, { key?: string }> } };
         return (committedSettings as Ct | null)?.providers?.tts?.[providerId]?.key;
@@ -143,24 +151,42 @@ export function useProviderSelection(options?: UseProviderSelectionOptions) {
         );
         requestSpeechTab("stt");
       } else {
-        // Never carry the previous provider's model across the switch: it is
-        // what left `llm.active` permanently dirty after reverting.
-        updateDraft(
-          "llm",
-          "active",
-          activeSelection(
-            "cloud",
-            resolveProviderModel(
-              { category: "cloud", provider: provider.id },
-              committedSettings?.llm?.active ?? null
-            ),
-            provider.id
-          )
-        );
+        const isRealtime = draftSettings?.interaction.pipeline_mode === "realtime";
+        if (isRealtime) {
+          const curModel = draftSettings?.realtime.active.model;
+          updateDraft("realtime", "active", {
+            category: "cloud",
+            provider: provider.id,
+            model: curModel || (provider.id === "gemini_live" ? "gemini-2.5-flash" : "gpt-5.2"),
+          });
+        } else {
+          // Never carry the previous provider's model across the switch: it is
+          // what left `llm.active` permanently dirty after reverting.
+          updateDraft(
+            "llm",
+            "active",
+            activeSelection(
+              "cloud",
+              resolveProviderModel(
+                { category: "cloud", provider: provider.id },
+                committedSettings?.llm?.active ?? null
+              ),
+              provider.id
+            )
+          );
+        }
       }
       options?.onSelectProvider?.(provider);
     },
-    [isTts, isStt, committedSettings, updateDraft, options]
+    [
+      isTts,
+      isStt,
+      committedSettings,
+      updateDraft,
+      options,
+      draftSettings?.interaction.pipeline_mode,
+      draftSettings?.realtime,
+    ]
   );
 
   const isLocalActive = isTts
@@ -236,7 +262,25 @@ export function useProviderSelection(options?: UseProviderSelectionOptions) {
   const handleSaveInlineKey = useCallback(
     async (providerId: string) => {
       const trimmed = editingKeyValue.trim();
-      if (isTts) {
+      const isRealtime = draftSettings?.interaction.pipeline_mode === "realtime";
+      if (isRealtime) {
+        const currentKeys = {
+          ...(draftSettings?.providers?.realtime?.api_keys ?? draftSettings?.realtime?.api_keys ?? {}),
+        };
+        if (trimmed) {
+          currentKeys[providerId] = trimmed;
+        } else {
+          delete currentKeys[providerId];
+        }
+        updateDraft("realtime", "api_keys", currentKeys);
+        if (providerId === "gemini_live") {
+          const cloudKeys = getEffectiveCloudKeyMap(draftSettings, committedSettings);
+          if (trimmed) cloudKeys.gemini = trimmed;
+          else delete cloudKeys.gemini;
+          updateDraft("llm", "cloud_keys", cloudKeys);
+        }
+        await useSettingsStore.getState().commitChanges({ domain: "realtime", key: "api_keys" });
+      } else if (isTts) {
         type Rt = { tts?: Record<string, Record<string, unknown>>; providers?: { tts?: Record<string, Record<string, unknown>> } };
         const rt = draftSettings as Rt | null;
         const base = (rt?.tts?.[providerId] ?? rt?.providers?.tts?.[providerId] ?? {
@@ -249,9 +293,7 @@ export function useProviderSelection(options?: UseProviderSelectionOptions) {
         (updateDraft as (a: string, b: string, c: unknown) => void)("tts", providerId, current);
         await (useSettingsStore.getState().commitChanges as (x: { domain: string; key: string }) => Promise<void>)({ domain: "tts", key: providerId });
       } else {
-        const currentKeys = {
-          ...(draftSettings?.llm?.cloud_keys ?? draftSettings?.providers?.llm?.cloud_keys ?? {}),
-        };
+        const currentKeys = getEffectiveCloudKeyMap(draftSettings, committedSettings);
         if (trimmed) {
           currentKeys[providerId] = trimmed;
         } else {
@@ -269,6 +311,7 @@ export function useProviderSelection(options?: UseProviderSelectionOptions) {
       isTts,
       editingKeyValue,
       draftSettings,
+      committedSettings,
       updateDraft,
     ]
   );

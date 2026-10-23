@@ -67,6 +67,33 @@ export const ProviderLogo = memo(function ProviderLogo({
     return true;
   };
 
+  // 0. Gemini — explicitly checked before OpenAI so Google Gemini (OpenAI-compat)
+  // or any Gemini endpoint resolves to the Google Gemini mark.
+  if (norm.includes("gemini") && resolved("gemini")) {
+    return (
+      <svg
+        width={size}
+        height={size}
+        viewBox="0 0 24 24"
+        fill="none"
+        className={cn("shrink-0", className)}
+      >
+        <path
+          d="M11.04 19.32Q12 21.51 12 24q0-2.49.93-4.68.96-2.19 2.58-3.81t3.81-2.58Q21.51 12 24 12q-2.49 0-4.68-.93-2.19-.96-3.81-2.58t-2.58-3.81Q12 2.49 12 0q0 2.49-.93 4.68-.96 2.19-2.58 3.81T4.68 11.07Q2.49 12 0 12q2.49 0 4.68.93 2.19.96 3.81 2.58t2.58 3.81z"
+          fill="url(#gemini-grad)"
+        />
+        <defs>
+          <linearGradient id="gemini-grad" x1="0" y1="0" x2="24" y2="24" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stopColor="#4285F4" />
+            <stop offset="35%" stopColor="#9B60ED" />
+            <stop offset="70%" stopColor="#EA4335" />
+            <stop offset="100%" stopColor="#FBBC05" />
+          </linearGradient>
+        </defs>
+      </svg>
+    );
+  }
+
   // 1. OpenAI / Whisper / ChatGPT — suppressed when an engine token is present,
   // so ids/names like "ollama_openai_compat" or "Ollama (OpenAI-compatible)"
   // keep their engine mark (checks 14-16) instead of the generic OpenAI one.
@@ -76,6 +103,7 @@ export const ProviderLogo = memo(function ProviderLogo({
     !norm.includes("lmstudio") &&
     !norm.includes("lm-studio") &&
     !norm.includes("vllm") &&
+    !norm.includes("gemini") &&
     resolved("openai")
   ) {
     return (
@@ -145,10 +173,10 @@ export const ProviderLogo = memo(function ProviderLogo({
         />
         <defs>
           <linearGradient id="gemini-grad" x1="0" y1="0" x2="24" y2="24" gradientUnits="userSpaceOnUse">
-            <stop offset="0%" stopColor="#1BA1E3" />
-            <stop offset="35%" stopColor="#5B77F6" />
-            <stop offset="70%" stopColor="#9B60ED" />
-            <stop offset="100%" stopColor="#E05286" />
+            <stop offset="0%" stopColor="#4285F4" />
+            <stop offset="35%" stopColor="#9B60ED" />
+            <stop offset="70%" stopColor="#EA4335" />
+            <stop offset="100%" stopColor="#FBBC05" />
           </linearGradient>
         </defs>
       </svg>

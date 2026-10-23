@@ -3,7 +3,13 @@ import { useShallow } from "zustand/react/shallow";
 import { Check, Plus, X } from "lucide-react";
 import { useSettingsStore } from "@/store/settingsStore";
 import { useCatalogStore } from "@/store/catalogStore";
-import { activeSelection, getEffectiveCloudApiKey, getEffectiveLlmServers, resolveProviderModel } from "@/shared/lib/activeSelection";
+import {
+  activeSelection,
+  getEffectiveCloudApiKey,
+  getEffectiveCloudKeyMap,
+  getEffectiveLlmServers,
+  resolveProviderModel,
+} from "@/shared/lib/activeSelection";
 import { useExpandableList } from "@/shared/ui/ExpandableList";
 import { VoxLogoLoader } from "@/shared/components/common/VoxLogoLoader";
 import { LANGUAGE_CARD_COPY } from "@/data/settingsCopy";
@@ -39,6 +45,7 @@ export const ProviderGrid = memo(({ onOpenModels, onExpand }: ProviderGridProps)
   const [keyValue, setKeyValue] = useState("");
   const [savingKey, setSavingKey] = useState(false);
 
+  const isRealtime = draftSettings?.interaction.pipeline_mode === "realtime";
   const active = draftSettings?.llm.active;
   const activeCategory = active?.category ?? "embedded";
   const localModelId =
@@ -149,10 +156,22 @@ export const ProviderGrid = memo(({ onOpenModels, onExpand }: ProviderGridProps)
 
     setSavingKey(true);
     try {
-      const keys = {
-        ...(draftSettings?.llm.cloud_keys ?? {}),
-        [providerId]: trimmed,
-      };
+      if (isRealtime) {
+        const keys = { ...(draftSettings?.realtime?.api_keys ?? {}) };
+        keys[providerId] = trimmed;
+        updateDraft("realtime", "api_keys", keys);
+        if (providerId === "gemini_live") {
+          const cloudKeys = getEffectiveCloudKeyMap(draftSettings, committedSettings);
+          cloudKeys.gemini = trimmed;
+          updateDraft("llm", "cloud_keys", cloudKeys);
+        }
+        await useSettingsStore.getState().commitChanges({ domain: "realtime", key: "api_keys" });
+        setEditingKeyId(null);
+        setKeyValue("");
+        return;
+      }
+      const keys = getEffectiveCloudKeyMap(draftSettings, committedSettings);
+      keys[providerId] = trimmed;
       updateDraft("llm", "cloud_keys", keys);
       await useSettingsStore.getState().commitChanges({ domain: "llm", key: "cloud_keys" });
       // A rejected write keeps the editor open: the footer banner names the
@@ -165,6 +184,203 @@ export const ProviderGrid = memo(({ onOpenModels, onExpand }: ProviderGridProps)
       setSavingKey(false);
     }
   };
+
+  const deleteCloudKey = async (providerId: string) => {
+    if (editingKeyId === providerId) {
+      setEditingKeyId(null);
+      setKeyValue("");
+    }
+    if (isRealtime) {
+      const keys = { ...(draftSettings?.realtime?.api_keys ?? {}) };
+      delete keys[providerId];
+      updateDraft("realtime", "api_keys", keys);
+      await useSettingsStore.getState().commitChanges({ domain: "realtime", key: "api_keys" });
+      return;
+    }
+    const keys = getEffectiveCloudKeyMap(draftSettings, committedSettings);
+    delete keys[providerId];
+    updateDraft("llm", "cloud_keys", keys);
+
+    const isActive = activeCategory === "cloud" && active?.provider === providerId;
+    if (isActive) {
+      updateDraft(
+        "llm",
+        "active",
+        activeSelection(
+          "embedded",
+          resolveProviderModel({ category: "embedded", provider: null }, committedActive, localModelId)
+        )
+      );
+    }
+
+    await useSettingsStore.getState().commitChanges({ domain: "llm", key: "cloud_keys" });
+    if (isActive) {
+      await useSettingsStore.getState().commitChanges({ domain: "llm", key: "active" });
+    }
+  };
+
+  if (isRealtime) {
+    const realtimeProviders = [
+      {
+        id: "gemini_live",
+        name: "Gemini Live",
+        providerName: "gemini",
+        defaultModel: "gemini-2.5-flash",
+      },
+      {
+        id: "deepgram_voice_agent",
+        name: "Deepgram Agent",
+        providerName: "deepgram",
+        defaultModel: "gpt-5.2",
+      },
+    ];
+
+    const currentPid = draftSettings?.realtime.active.provider ?? "gemini_live";
+    const currentModel = draftSettings?.realtime.active.model ?? "";
+
+    const rows = realtimeProviders.map((prov) => {
+      const isActive = currentPid === prov.id;
+      const key =
+        draftSettings?.realtime?.api_keys?.[prov.id] ||
+        (prov.id === "gemini_live"
+          ? getEffectiveCloudApiKey(draftSettings, committedSettings, "gemini")
+          : undefined) ||
+        "";
+      const hasKey = key.trim().length > 0;
+      const isEditing = editingKeyId === prov.id;
+
+      return (
+        <ProviderPill
+          key={prov.id}
+          id={prov.id}
+          name={prov.name}
+          providerName={prov.providerName}
+          meta={
+            hasKey
+              ? isActive && currentModel
+                ? `${LANGUAGE_CARD_COPY.metaCloud} · ${currentModel}`
+                : LANGUAGE_CARD_COPY.keySaved
+              : LANGUAGE_CARD_COPY.needsKey
+          }
+          active={isActive}
+          muted={!hasKey && !isEditing}
+          onSelect={() => {
+            updateDraft("realtime", "active", {
+              category: "cloud",
+              provider: prov.id,
+              model: isActive && currentModel ? currentModel : prov.defaultModel,
+            });
+          }}
+          onBrowse={
+            isEditing
+              ? undefined
+              : () => {
+                  if (!isActive) {
+                    updateDraft("realtime", "active", {
+                      category: "cloud",
+                      provider: prov.id,
+                      model: prov.defaultModel,
+                    });
+                  }
+                  onOpenModels();
+                }
+          }
+          onEdit={
+            isEditing
+              ? undefined
+              : () => {
+                  setEditingKeyId(prov.id);
+                  setKeyValue(key);
+                }
+          }
+          onDelete={
+            isEditing || !hasKey
+              ? undefined
+              : () => {
+                  void deleteCloudKey(prov.id);
+                }
+          }
+          trailing={
+            isEditing ? (
+              <>
+                <button
+                  type="button"
+                  aria-label={LANGUAGE_CARD_COPY.saveKey}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void saveKey();
+                  }}
+                  className="rounded-md p-1 text-[rgb(var(--accent))] transition-colors hover:bg-[rgba(var(--accent),0.14)] cursor-pointer"
+                >
+                  <Check size={13} strokeWidth={2.5} />
+                </button>
+                <button
+                  type="button"
+                  aria-label={LANGUAGE_CARD_COPY.cancel}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setEditingKeyId(null);
+                  }}
+                  className="rounded-md p-1 text-[rgb(var(--foreground-muted))] transition-colors hover:bg-[rgba(var(--foreground),0.08)] hover:text-[rgb(var(--foreground))] cursor-pointer"
+                >
+                  <X size={13} strokeWidth={2.25} />
+                </button>
+              </>
+            ) : !hasKey ? (
+              <button
+                type="button"
+                aria-label={LANGUAGE_CARD_COPY.addProvider}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setEditingKeyId(prov.id);
+                  setKeyValue("");
+                }}
+                className="rounded-md p-1 text-[rgb(var(--foreground-muted))]/60 transition-colors hover:bg-[rgba(var(--foreground),0.06)] hover:text-[rgb(var(--foreground))] cursor-pointer"
+              >
+                <Plus size={14} />
+              </button>
+            ) : undefined
+          }
+          body={
+            isEditing ? (
+              <input
+                autoFocus
+                type="password"
+                value={keyValue}
+                onClick={(e) => e.stopPropagation()}
+                onChange={(e) => setKeyValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") {
+                    e.stopPropagation();
+                    setEditingKeyId(null);
+                  }
+                  if (e.key === "Enter") {
+                    e.stopPropagation();
+                    void saveKey();
+                  }
+                }}
+                placeholder={`${prov.name} ${LANGUAGE_CARD_COPY.keyPlaceholder}`}
+                aria-label={`${prov.name} ${LANGUAGE_CARD_COPY.keyPlaceholder}`}
+                className="min-w-0 flex-1 bg-transparent text-[12px] text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/60 focus:outline-none"
+              />
+            ) : undefined
+          }
+        />
+      );
+    });
+
+    return (
+      <div className="flex-1 w-full flex flex-col min-h-0 relative">
+        <CatalogReveal
+          className="flex-1 min-h-0"
+          featherHeight={48}
+          scrollerClassName="flex-1 min-h-0 overflow-y-auto overscroll-contain pr-1 custom-scrollbar [scrollbar-gutter:stable]"
+        >
+          <div className="space-y-1.5 pb-2">{rows}</div>
+        </CatalogReveal>
+      </div>
+    );
+  }
 
   /**
    * Ready rows in display order: the saved provider leads, then on-device,
@@ -248,6 +464,13 @@ export const ProviderGrid = memo(({ onOpenModels, onExpand }: ProviderGridProps)
                   : () => {
                       setEditingKeyId(provider.id);
                       setKeyValue(currentKey);
+                    }
+              }
+              onDelete={
+                isEditing
+                  ? undefined
+                  : () => {
+                      void deleteCloudKey(provider.id);
                     }
               }
               trailing={

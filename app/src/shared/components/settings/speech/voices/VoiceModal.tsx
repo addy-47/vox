@@ -7,17 +7,21 @@ import {
   useState,
 } from "react";
 import {
+  AudioLines,
+  CircleDot,
   CircleUserRound,
   Clock,
+  Globe,
   Heart,
   Languages,
   Mars,
   Mic,
-  Plus,
   Sparkles,
   Type,
+  User,
   Venus,
 } from "lucide-react";
+import { EmptyState } from "@/shared/components/common";
 import { cn } from "@/shared/lib/utils";
 import { VOICE_CATALOG_COPY } from "@/data/settingsCopy";
 import { useSessionStore } from "@/store/sessionStore";
@@ -32,7 +36,7 @@ import { CatalogModalToolbar } from "../../shared/CatalogModalToolbar";
 import { CatalogModalShell } from "../../shared/CatalogModalShell";
 import { CatalogSkeletonGrid } from "../../shared/CatalogSkeletonGrid";
 import { VoiceCard } from "./VoiceCard";
-import { CloneVoiceDrawer } from "./CloneVoiceDrawer";
+import { CloneVoiceCard } from "./CloneVoiceCard";
 import { VoicePreviewBanner } from "./VoicePreviewBanner";
 
 export interface VoiceModalProps {
@@ -84,7 +88,6 @@ export const VoiceModal = memo(
     const [gender, setGender] = useState<string | null>(null);
     const [accent, setAccent] = useState<"english" | "multilingual" | null>(null);
     const [sort, setSort] = useState<Sort>("az");
-    const [isCloneDrawerOpen, setIsCloneDrawerOpen] = useState(false);
     const [isFilterDropdownOpen, setIsFilterDropdownOpen] = useState(false);
 
     const activeFilterCount = useMemo(() => {
@@ -226,19 +229,6 @@ export const VoiceModal = memo(
           total: scopedVoices.length,
           entityName: "voices",
         }}
-        action={
-          canClone ? (
-            <button
-              type="button"
-              onClick={() => setIsCloneDrawerOpen(true)}
-              title={VOICE_CATALOG_COPY.cloneVoiceChatterboxNote}
-              className="px-2.5 sm:px-3 py-1.5 rounded-lg text-[12px] font-bold bg-[rgb(var(--accent))]/15 border border-[rgb(var(--accent))]/40 text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/25 transition-all flex items-center gap-1.5 cursor-pointer shrink-0"
-            >
-              <Plus size={14} strokeWidth={2.5} />
-              <span className="hidden sm:inline">{VOICE_CATALOG_COPY.cloneVoice}</span>
-            </button>
-          ) : undefined
-        }
         filter={{
           label: VOICE_CATALOG_COPY.filterAria,
           open: isFilterDropdownOpen,
@@ -271,12 +261,13 @@ export const VoiceModal = memo(
                   {VOICE_CATALOG_COPY.genderFacet}
                 </span>
                 {[
-                  { id: "female", label: VOICE_CATALOG_COPY.female, count: counts.female },
-                  { id: "male", label: VOICE_CATALOG_COPY.male, count: counts.male },
-                  ...(counts.neutral > 0 ? [{ id: "neutral" as const, label: "Neutral", count: counts.neutral }] : []),
+                  { id: "female", label: VOICE_CATALOG_COPY.female, count: counts.female, icon: User },
+                  { id: "male", label: VOICE_CATALOG_COPY.male, count: counts.male, icon: User },
+                  ...(counts.neutral > 0 ? [{ id: "neutral" as const, label: VOICE_CATALOG_COPY.neutral, count: counts.neutral, icon: CircleDot }] : []),
                 ].map((item) => (
                   <CardFilterItem
                     key={item.id}
+                    icon={item.icon}
                     label={item.label}
                     count={item.count}
                     active={gender === item.id}
@@ -292,6 +283,7 @@ export const VoiceModal = memo(
                   {VOICE_CATALOG_COPY.accentFacet}
                 </span>
                 <CardFilterItem
+                  icon={Globe}
                   label={VOICE_CATALOG_COPY.english}
                   count={counts.english}
                   active={accent === "english"}
@@ -301,6 +293,7 @@ export const VoiceModal = memo(
                   }}
                 />
                 <CardFilterItem
+                  icon={Languages}
                   label={VOICE_CATALOG_COPY.multilingual}
                   count={counts.multilingual}
                   active={accent === "multilingual"}
@@ -442,23 +435,25 @@ export const VoiceModal = memo(
     );
 
     const emptyStateNode = (
-      <div className="h-64 flex flex-col items-center justify-center text-center space-y-3">
-        <p className="text-[15px] font-bold text-[rgb(var(--foreground))]">
-          {VOICE_CATALOG_COPY.emptyTitle}
-        </p>
-        <p className="text-[13px] text-[rgb(var(--foreground-muted))] max-w-sm">
-          {cloudSync
+      <EmptyState
+        icon={AudioLines}
+        title={VOICE_CATALOG_COPY.emptyTitle}
+        description={
+          cloudSync
             ? VOICE_CATALOG_COPY.edgeSyncHint
-            : VOICE_CATALOG_COPY.emptyHint}
-        </p>
-        <button
-          type="button"
-          onClick={handleResetFilters}
-          className="mt-2 px-3.5 py-1.5 rounded-xl text-[12.5px] font-bold text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/10 border border-[rgba(var(--accent),0.3)] hover:bg-[rgb(var(--accent))]/20 transition-all cursor-pointer"
-        >
-          {VOICE_CATALOG_COPY.resetFilters}
-        </button>
-      </div>
+            : VOICE_CATALOG_COPY.emptyHint
+        }
+        action={
+          <button
+            type="button"
+            onClick={handleResetFilters}
+            className="px-3.5 py-1.5 rounded-xl text-[12.5px] font-bold text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/10 border border-[rgba(var(--accent),0.3)] hover:bg-[rgb(var(--accent))]/20 transition-all cursor-pointer"
+          >
+            {VOICE_CATALOG_COPY.resetFilters}
+          </button>
+        }
+        className="py-12 border-dashed border-[rgba(var(--accent),0.15)] bg-transparent"
+      />
     );
 
     const voicePreviewBannerNode = (
@@ -507,16 +502,11 @@ export const VoiceModal = memo(
                 onSeekPreview={seekPreview}
               />
             ))}
+            {canClone && (
+              <CloneVoiceCard onCreated={handleVoiceCreated} />
+            )}
           </div>
         </CatalogModalShell>
-
-        {canClone && (
-          <CloneVoiceDrawer
-            isOpen={isCloneDrawerOpen}
-            onClose={() => setIsCloneDrawerOpen(false)}
-            onCreated={handleVoiceCreated}
-          />
-        )}
       </>
     );
   }

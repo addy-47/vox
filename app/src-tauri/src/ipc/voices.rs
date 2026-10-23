@@ -62,6 +62,39 @@ pub async fn list_voices(
         .db
         .connect()
         .map_err(|e| VoxIpcError::Database(e.to_string()))?;
+
+    if let Some(ref p) = provider {
+        let p_lower = p.to_lowercase();
+        if p_lower == "gemini_live" || p_lower == "deepgram_voice_agent" {
+            let has_key = {
+                let guard = state
+                    .settings
+                    .read()
+                    .map_err(|e| VoxIpcError::Internal(e.to_string()))?;
+                let k = guard
+                    .providers
+                    .realtime
+                    .api_keys
+                    .get(&p_lower)
+                    .cloned()
+                    .or_else(|| {
+                        if p_lower == "gemini_live" {
+                            guard.providers.llm.cloud_keys.get("gemini").cloned()
+                        } else {
+                            None
+                        }
+                    });
+                k.map(|s| !s.trim().is_empty()).unwrap_or(false)
+            };
+
+            if !has_key {
+                return Ok(Vec::new());
+            }
+
+            let _ = crate::services::tts::voice::sync_realtime_voices_to_db(&conn, &p_lower).await;
+        }
+    }
+
     crate::services::tts::voice::list_unified_voices(&conn, provider.as_deref())
         .await
         .map_err(|e| VoxIpcError::Database(format!("Failed to list voices: {}", e)))

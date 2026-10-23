@@ -85,6 +85,79 @@ export function getEffectiveCloudApiKey(
 }
 
 /**
+ * Resolves an effective realtime API key across draft and committed settings.
+ * Checks realtime.api_keys and falls back to llm.cloud_keys for gemini_live.
+ */
+export function getEffectiveRealtimeApiKey(
+  draft?: {
+    realtime?: { api_keys?: Record<string, string> };
+    providers?: {
+      realtime?: { api_keys?: Record<string, string> };
+      llm?: { cloud_keys?: Record<string, string> };
+    };
+    llm?: { cloud_keys?: Record<string, string> };
+  } | null,
+  committed?: {
+    realtime?: { api_keys?: Record<string, string> };
+    providers?: {
+      realtime?: { api_keys?: Record<string, string> };
+      llm?: { cloud_keys?: Record<string, string> };
+    };
+    llm?: { cloud_keys?: Record<string, string> };
+  } | null,
+  providerId?: string | null
+): string | undefined {
+  if (!providerId) return undefined;
+
+  const lookup = (id: string) =>
+    draft?.providers?.realtime?.api_keys?.[id] ??
+    draft?.realtime?.api_keys?.[id] ??
+    committed?.providers?.realtime?.api_keys?.[id] ??
+    committed?.realtime?.api_keys?.[id] ??
+    (id === "gemini_live"
+      ? (draft?.providers?.llm?.cloud_keys?.["gemini"] ??
+         draft?.llm?.cloud_keys?.["gemini"] ??
+         committed?.providers?.llm?.cloud_keys?.["gemini"] ??
+         committed?.llm?.cloud_keys?.["gemini"])
+      : undefined);
+
+  const key = lookup(providerId)?.trim();
+  return key || undefined;
+}
+
+/**
+ * Resolves the full dictionary of configured cloud API keys across draft and committed settings.
+ * Precedence: committed.llm -> committed.providers.llm -> draft.providers.llm -> draft.llm.
+ */
+export function getEffectiveCloudKeyMap(
+  draft?: {
+    llm?: { cloud_keys?: Record<string, string> };
+    providers?: { llm?: { cloud_keys?: Record<string, string> } };
+  } | null,
+  committed?: {
+    llm?: { cloud_keys?: Record<string, string> };
+    providers?: { llm?: { cloud_keys?: Record<string, string> } };
+  } | null
+): Record<string, string> {
+  const map: Record<string, string> = {};
+  const sources = [
+    committed?.llm?.cloud_keys,
+    committed?.providers?.llm?.cloud_keys,
+    draft?.providers?.llm?.cloud_keys,
+    draft?.llm?.cloud_keys,
+  ];
+  for (const src of sources) {
+    if (!src) continue;
+    for (const [k, v] of Object.entries(src)) {
+      if (typeof v === "string" && v.trim().length > 0) {
+        map[k] = v.trim();
+      }
+    }
+  }
+  return map;
+}
+
+/**
  * Resolves configured LLM custom servers across draft.llm.servers, draft.providers.llm.servers,
  * committed.providers.llm.servers, and committed.llm.servers.
  */
