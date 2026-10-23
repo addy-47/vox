@@ -34,7 +34,7 @@ const SHORTCUTS: ShortcutDef[] = [
   // ── Page Navigation & Context Drawers ──
   { id: "global.page-nav-left", keys: "Shift+←", label: "Navigate to previous page", scope: "global" },
   { id: "global.page-nav-right", keys: "Shift+→", label: "Navigate to next page", scope: "global" },
-  { id: "global.page-drawer-open", keys: "Shift+Up", label: "Open page drawer", scope: "global", note: "Home: profiler · History: detail panel · Memory: dossier · Settings: all cards" },
+  { id: "global.page-drawer-open", keys: "Shift+Up", label: "Open page drawer", scope: "global", note: "Home: profiler · History: detail panel · Memory: Personal Memory · Settings: all cards" },
   { id: "global.page-drawer-close", keys: "Shift+Down", label: "Close page drawer", scope: "global" },
   { id: "global.spatial-move", keys: "↑ ↓ ← →", label: "Move focus spatially across elements", scope: "global" },
   { id: "global.escape", keys: "Escape", label: "Close topmost overlay / cancel edit", scope: "global" },
@@ -60,8 +60,8 @@ const SHORTCUTS: ShortcutDef[] = [
   { id: "memory.recenter", keys: "Ctrl+R", label: "Recenter graph view", scope: "page:memory" },
   { id: "memory.zoomIn", keys: "Shift+=", label: "Zoom in graph", scope: "page:memory" },
   { id: "memory.zoomOut", keys: "Shift+-", label: "Zoom out graph", scope: "page:memory" },
-  { id: "memory.select", keys: "Enter / Space", label: "Select node / open dossier", scope: "page:memory" },
-  { id: "memory.page-drawer", keys: "Shift+Up", label: "Open personal memory dossier", scope: "page:memory" },
+  { id: "memory.select", keys: "Enter / Space", label: "Select node / open Personal Memory", scope: "page:memory" },
+  { id: "memory.page-drawer", keys: "Shift+Up", label: "Open Personal Memory", scope: "page:memory" },
 
   // ── Settings ──
   { id: "settings.all-cards", keys: "Shift+Up", label: "Open all domain cards", scope: "page:settings" },

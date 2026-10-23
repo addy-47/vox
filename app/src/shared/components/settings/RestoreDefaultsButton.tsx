@@ -27,25 +27,25 @@ export const RestoreDefaultsButton = memo(() => {
     return (
       <div className="inline-flex items-center gap-1.5 h-8 animate-fade-in shrink-0">
         <span className="text-[11px] font-bold tracking-wide text-[rgb(var(--accent))] select-none whitespace-nowrap">
-          Restore settings
+          {SETTINGS_COPY.restorePrompt}
         </span>
         <div className="flex items-center gap-0.5">
-          <Tooltip label="Confirm restore" side="bottom">
+          <Tooltip label={SETTINGS_COPY.confirmRestore} side="bottom">
             <button
               type="button"
               onClick={handleConfirm}
               className="p-1 text-[rgb(var(--danger))] hover:text-[rgb(var(--danger))] hover:scale-115 transition-all cursor-pointer"
-              aria-label="Confirm restore defaults"
+              aria-label={SETTINGS_COPY.confirmRestoreAria}
             >
               <Check size={13} strokeWidth={2.5} />
             </button>
           </Tooltip>
-          <Tooltip label="Cancel" side="bottom">
+          <Tooltip label={SETTINGS_COPY.cancelRestore} side="bottom">
             <button
               type="button"
               onClick={handleCancel}
               className="p-1 text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))] hover:scale-115 transition-all cursor-pointer"
-              aria-label="Cancel restore defaults"
+              aria-label={SETTINGS_COPY.cancelRestoreAria}
             >
               <X size={13} strokeWidth={2} />
             </button>

@@ -29,16 +29,16 @@ export const GraphControlDock = memo(
   }: GraphControlDockProps) => {
     return (
       <aside
-        aria-label="Graph Navigation Controls"
+        aria-label={MEMORY_COPY.dockControlsAria}
         className="fixed right-2 sm:right-5 top-1/2 -translate-y-1/2 z-30 flex flex-col items-center gap-1 sm:gap-1.5 p-1 sm:p-1.5 rounded-xl sm:rounded-2xl bg-[rgba(var(--card),0.75)] border border-[rgba(var(--border),0.14)] shadow-lg pointer-events-auto transition-colors"
       >
         {/* Search Modal Trigger (Compact / Mobile) */}
         {onOpenSearch && (
-          <Tooltip label="Search Memories" shortcutId="memory.search" side="left">
+          <Tooltip label={MEMORY_COPY.dockSearch} shortcutId="memory.search" side="left">
             <button
               type="button"
               onClick={onOpenSearch}
-              aria-label="Search Memories"
+              aria-label={MEMORY_COPY.dockSearch}
               className="w-8 h-8 sm:w-auto sm:h-auto p-1.5 sm:p-2.5 flex items-center justify-center rounded-lg sm:rounded-xl text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.12)] active:scale-95 transition-all cursor-pointer"
             >
               <Search className="w-4 h-4" />

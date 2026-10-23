@@ -209,7 +209,7 @@ export const SessionNodeTooltip = memo(({
                   }}
                   className="flex items-center gap-1.5 text-[11px] font-mono font-bold uppercase tracking-wider text-[rgb(var(--accent))] hover:text-[rgb(var(--foreground))] transition-colors cursor-pointer bg-transparent border-none p-0"
                 >
-                  <span>Focus in Timeline</span>
+                  <span>{MEMORY_COPY.focusTimeline}</span>
                   <ArrowRight size={12} />
                 </button>
               </div>

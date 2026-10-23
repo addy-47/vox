@@ -1,6 +1,7 @@
 import React, { memo } from "react";
 import { Plus, Replace, Trash2, Check, X, Layers } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
+import { MEMORY_COPY } from "@/data/memoryCopy";
 import type { MemoryRevisionView } from "@/services/memoryService";
 
 export interface SuggestionCardProps {
@@ -68,7 +69,7 @@ export const SuggestionCard: React.FC<SuggestionCardProps> = memo(
                   ? "bg-[rgb(var(--success))]/20 border-[rgb(var(--success))]/60 text-[rgb(var(--success))] shadow-xs"
                   : "bg-[rgba(var(--foreground),0.04)] border-[rgba(var(--border),0.14)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--success))] hover:border-[rgb(var(--success))]/40"
               )}
-              title="Accept suggestion"
+              title={MEMORY_COPY.acceptSuggestionTitle}
             >
               <Check size={13} strokeWidth={2.5} />
             </button>
@@ -82,7 +83,7 @@ export const SuggestionCard: React.FC<SuggestionCardProps> = memo(
                   ? "bg-[rgb(var(--danger))]/20 border-[rgb(var(--danger))]/60 text-[rgb(var(--danger))] shadow-xs"
                   : "bg-[rgba(var(--foreground),0.04)] border-[rgba(var(--border),0.14)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--danger))] hover:border-[rgb(var(--danger))]/40"
               )}
-              title="Reject suggestion"
+              title={MEMORY_COPY.rejectSuggestionTitle}
             >
               <X size={13} strokeWidth={2.5} />
             </button>

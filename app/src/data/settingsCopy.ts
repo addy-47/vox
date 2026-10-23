@@ -213,6 +213,12 @@ export const SETTINGS_COPY = {
   restartOnly: "Restart",
   restoreDefaults: "Restore All Defaults",
   restoreAria: "Restore default settings",
+  restorePrompt: "Restore settings",
+  confirmRestore: "Confirm restore",
+  confirmRestoreAria: "Confirm restore defaults",
+  cancel: "Cancel",
+  cancelRestore: "Cancel",
+  cancelRestoreAria: "Cancel restore defaults",
   openDomain: "Open {label} settings",
   closeDomain: "Close {label} settings",
   openAllDomains: "Open all settings",
@@ -244,6 +250,13 @@ export const DICTATION_COPY = {
   saveBtn: "Save",
   resetDefault: "Reset (Alt+V)",
   defaultHotkey: "Alt+V",
+  tabsAriaLabel: "Dictation configuration tabs",
+  manualReleaseOnly: "Manual release only",
+  autoCommitActive: (seconds: string | number) => `Auto-commit active (${seconds}s)`,
+  toggleAutoStopAria: (enabled: boolean) => enabled ? "Disable silence auto-stop" : "Enable silence auto-stop",
+  toggleAutoStopTooltip: (enabled: boolean) => enabled ? "Click to disable auto-stop" : "Click to enable auto-stop",
+  autoStopDurationAria: "Silence auto-stop duration in seconds",
+  autoStopDurationPlaceholder: "1.2",
 };
 
 export const PERSONA_COPY = {
@@ -261,6 +274,24 @@ export const PROVIDERS_CONFIG_DESK_COPY = {
   filterLabel: "Filter providers",
   filterMenuTitle: "Provider Filters",
   reset: "Reset",
+  localMeta: {
+    STT: { name: "On-Device Speech Recognition", tagline: "High-accuracy local Whisper & Nemotron transcription. 100% offline." },
+    LLM: { name: "On-Device Model", tagline: "Local GGUF neural reasoning on CPU or GPU. Zero telemetry, private." },
+    TTS: { name: "On-Device Neural Voices", tagline: "Local Kokoro neural synthesis with peak normalization and zero latency." },
+  },
+  badges: {
+    localHardware: "Local Hardware",
+    active: "Active",
+    offlineReady: "Offline Ready",
+    keylessCloud: "Keyless Cloud",
+    cloudVoice: "Cloud Voice",
+    cloudGateway: "Cloud Gateway",
+    selfHosted: "Self-Hosted",
+  },
+  actions: {
+    editServer: "Edit Server",
+    deleteServer: "Delete Server",
+  },
   /** Dashed add-card copy in the provider catalog. */
   creationCard: {
     addVoiceServer: "Add Voice Server",
@@ -281,7 +312,7 @@ export const PROVIDERS_CONFIG_DESK_COPY = {
     },
     server: {
       title: "Remote Speech Server",
-      description: "Stream microphone audio frames directly to a self-hosted or dedicated remote ASR inference node over secure WebSocket connection.",
+      description: "Stream microphone audio frames directly to a self-hosted or dedicated remote Speech-to-Text inference node over secure WebSocket connection.",
     },
     cloud: {
       title: "Cloud Speech API",
@@ -301,6 +332,10 @@ export const PROVIDERS_CONFIG_DESK_COPY = {
       apiKeyPlaceholder: "Bearer token...",
       nameLabel: "Server Name (optional)",
       namePlaceholder: "Auto-detect (e.g. Ollama, vLLM, LM Studio)",
+      namePlaceholderAuto: "Name (Auto)",
+      probingState: "Probing endpoint...",
+      autoDiscovery: "2s auto-discovery",
+      save: "Save",
       discard: "Discard",
       saveServer: "Save Server",
     },
@@ -312,6 +347,7 @@ export const PROVIDERS_CONFIG_DESK_COPY = {
       noProvidersMatch: "No providers match your search",
       clearSearch: "Clear search",
       connect: "+ Connect",
+      connectKey: "+ Connect Key",
       editKey: "Edit API key",
       saveKey: "Save API key",
       cancelKey: "Cancel",
@@ -327,6 +363,8 @@ export const PROVIDERS_CONFIG_DESK_COPY = {
     },
   },
   status: {
+    inDevelopment: "In Development",
+    ready: "Ready",
     testing: "Testing",
     offline: "Offline",
     online: "Online",
@@ -373,7 +411,11 @@ export const REMOTE_CONTROL_COPY = {
   title: "Remote Control",
   description:
     "Let a paired phone act as the microphone, speaker and screen for this laptop, over your own network.",
-  comingSoon: "Coming Soon",
+  comingSoon: "Pair Device",
+  statusDisconnected: "Disconnected",
+  statusSearching: "Searching for Controllers",
+  statusConnected: "Controller Connected",
+  disconnect: "Disconnect",
 } as const;
 
 export const MEMORY_CARD_COPY = {
@@ -418,7 +460,7 @@ export const MEMORY_CARD_COPY = {
     enabledLabel: "Incognito",
     disabledLabel: "Logged",
     enabledSub: "No traces saved",
-    disabledSub: "Standard SQLite",
+    disabledSub: "Persistent Storage",
   },
   schedule: {
     title: "Update Schedule",
@@ -480,6 +522,14 @@ export const TTS_VOICE_MANAGER_COPY = {
     previous: "Previous region",
     next: "Next region",
   },
+  cloning: {
+    processing: "Processing...",
+    submit: "Clone Voice",
+    tabRecord: "Record Audio",
+    tabUpload: "Upload WAV",
+    recordAgain: "Record Again",
+    namePlaceholder: "e.g. My Voice",
+  },
 };
 
 export const CARD_HEADER_COPY = {
@@ -498,6 +548,11 @@ export const VOICE_CATALOG_COPY = {
   expandLabel: "Expand voice catalog",
   searchPlaceholder: "Search voices...",
   searchAria: "Search voices",
+  seekAria: "Seek preview audio",
+  seekTitle: "Click or arrow keys to seek",
+  customPromptPlaceholder: "Type phrase to synthesize...",
+  applyPrompt: "Apply",
+  cancelPrompt: "Cancel editing",
   allVoices: "All Voices",
   recent: "Recent",
   favorites: "Favorites",
@@ -543,6 +598,20 @@ export const LLM_CATALOG_COPY = {
   toolsUnknown: "Unknown",
   languagesUnknown: "Unknown",
   managed: "Managed",
+  managedContext: "Managed",
+  computeTypes: {
+    gpuAccel: "GPU Accel",
+    serverGpu: "Server GPU",
+    standard: "Standard",
+  },
+  metricTiles: {
+    speed: "Speed",
+    context: "Context",
+    compute: "Compute",
+    tools: "Tools",
+  },
+  filterTitle: "Model Filters",
+  filterReset: "Reset",
   gpuBadge: "🚀 GPU",
   cpuBadge: "⚠️ CPU",
   rerunBenchmark: "Re-run capability benchmark",

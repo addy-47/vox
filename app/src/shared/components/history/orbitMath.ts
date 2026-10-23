@@ -251,7 +251,9 @@ export function toMonthKey(ms: number): string {
 }
 
 export function formatDayLabel(dayKey: string): string {
+  if (!dayKey) return "";
   const [y, m, d] = dayKey.split("-").map(Number);
+  if (!y || !m || !d) return "";
   return new Date(y, m - 1, d).toLocaleDateString(undefined, {
     month: "short",
     day: "numeric",
@@ -259,9 +261,10 @@ export function formatDayLabel(dayKey: string): string {
   });
 }
 
-
 export function formatMonthLabel(monthKey: string): string {
+  if (!monthKey) return "";
   const [y, m] = monthKey.split("-").map(Number);
+  if (!y || !m) return "";
   return new Date(y, m - 1, 1).toLocaleDateString(undefined, {
     month: "long",
     year: "numeric",
@@ -269,7 +272,9 @@ export function formatMonthLabel(monthKey: string): string {
 }
 
 export function formatMonthShortLabel(monthKey: string): string {
+  if (!monthKey) return "";
   const [y, m] = monthKey.split("-").map(Number);
+  if (!y || !m) return "";
   return new Date(y, m - 1, 1).toLocaleDateString(undefined, {
     month: "short",
     year: "numeric",
@@ -277,6 +282,7 @@ export function formatMonthShortLabel(monthKey: string): string {
 }
 
 export function formatClockTime(ms: number): string {
+  if (!ms || isNaN(ms)) return "";
   return new Date(ms).toLocaleTimeString(undefined, {
     hour: "2-digit",
     minute: "2-digit",
@@ -286,7 +292,9 @@ export function formatClockTime(ms: number): string {
 
 /** Day-view clock hero, e.g. "AUG 16". */
 export function formatDayHeroLabel(dayKey: string): string {
+  if (!dayKey) return "";
   const [y, m, d] = dayKey.split("-").map(Number);
+  if (!y || !m || !d) return "";
   const monthShort = new Date(y, m - 1, 1).toLocaleDateString(undefined, {
     month: "short",
   });
@@ -297,6 +305,7 @@ export function formatDayHeroLabel(dayKey: string): string {
 export function formatDayHeroParts(dayKey: string): { month: string; day: string } {
   if (!dayKey) return { month: "", day: "" };
   const [y, m, d] = dayKey.split("-").map(Number);
+  if (!y || !m || !d) return { month: "", day: "" };
   const monthShort = new Date(y, m - 1, 1).toLocaleDateString(undefined, {
     month: "short",
   });
@@ -310,6 +319,7 @@ export function formatDayHeroParts(dayKey: string): { month: string; day: string
 export function formatWeekdayLabel(dayKey: string): string {
   if (!dayKey) return "";
   const [y, m, d] = dayKey.split("-").map(Number);
+  if (!y || !m || !d) return "";
   return new Date(y, m - 1, d)
     .toLocaleDateString(undefined, { weekday: "long" })
     .toUpperCase();
@@ -317,12 +327,15 @@ export function formatWeekdayLabel(dayKey: string): string {
 
 /** Day-view clock secondary line, e.g. "2025". */
 export function formatDayYearLabel(dayKey: string): string {
-  return dayKey.split("-")[0];
+  if (!dayKey) return "";
+  return dayKey.split("-")[0] ?? "";
 }
 
 /** Month-view clock hero, e.g. "AUG". */
 export function formatMonthHeroLabel(monthKey: string): string {
+  if (!monthKey) return "";
   const [y, m] = monthKey.split("-").map(Number);
+  if (!y || !m) return "";
   return new Date(y, m - 1, 1)
     .toLocaleDateString(undefined, { month: "short" })
     .toUpperCase();
@@ -332,6 +345,7 @@ export function formatMonthHeroLabel(monthKey: string): string {
 export function formatMonthFullLabel(monthKey: string): string {
   if (!monthKey) return "";
   const [y, m] = monthKey.split("-").map(Number);
+  if (!y || !m) return "";
   return new Date(y, m - 1, 1)
     .toLocaleDateString(undefined, { month: "long" })
     .toUpperCase();
@@ -339,7 +353,8 @@ export function formatMonthFullLabel(monthKey: string): string {
 
 /** Month-view clock secondary line, e.g. "2026". */
 export function formatMonthYearLabel(monthKey: string): string {
-  return monthKey.split("-")[0];
+  if (!monthKey) return "";
+  return monthKey.split("-")[0] ?? "";
 }
 
 export interface DayGroup {

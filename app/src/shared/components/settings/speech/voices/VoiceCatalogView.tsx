@@ -285,7 +285,6 @@ export const VoiceCatalogView = memo(({ layoutMode, providerId, onBack }: VoiceC
         <CatalogReveal
           className="flex-1 min-h-0"
           featherHeight={80}
-          syncOnScroll
           scrollerClassName="flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain pr-1 custom-scrollbar [scrollbar-gutter:stable]"
         >
           <div

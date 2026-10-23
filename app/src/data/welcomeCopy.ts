@@ -293,6 +293,13 @@ export const WIZARD_CTA_LABELS = {
   proceed: "Continue",
   errorTitle: "Something Went Wrong",
   continueToModels: "Continue",
+  toggleFrame: "Toggle Device Frame",
+  frameModes: {
+    fill: "Fill Viewport",
+    phone: "Phone Frame",
+  },
+  restartFlow: "Restart Flow",
+  retryDownload: "Retry Download",
 } as const;
 
 export const MOBILE_ONBOARDING_COPY = {
@@ -303,12 +310,12 @@ export const MOBILE_ONBOARDING_COPY = {
   skipModal: {
     title: "Skip Setup for Now?",
     description: "Speech recognition and offline intelligence need local model weights to work.",
-    settingsNote: "You can download models and configure audio anytime in Settings → Models & Audio.",
+    settingsNote: "You can download models and configure audio anytime in Settings → Speech Models & Language Model.",
     cancelButton: "Continue Setup",
     confirmButton: "Skip to Home",
   },
   hero: {
-    step: "Step 1 of 5",
+    step: "Step 1 of 6",
     kicker: "On-Device Voice",
     title: "Meet Vox",
     description: "Your private, personal voice assistant. Speak naturally to converse, dictate, and remember anything.",
@@ -316,7 +323,7 @@ export const MOBILE_ONBOARDING_COPY = {
     next: "Continue",
   },
   intelligence: {
-    step: "Step 2 of 5",
+    step: "Step 2 of 6",
     kicker: "Zero Cloud",
     title: "Voice Intelligence",
     description: "Vox runs fully inside your device memory. Speech recognition and language models process your thoughts instantly and privately.",
@@ -377,6 +384,8 @@ export const MOBILE_ONBOARDING_COPY = {
     title: "You're All Set",
     description: "Vox is configured and ready on your device. Speak naturally anytime or adjust your settings.",
     statusBadge: "Engine Active",
+    voiceCalibrated: "Voice Calibrated",
+    privateBadge: "100% Private",
     actionPrompt: "Tap the center orb to start talking.",
     continueButton: "Start Using Vox",
   },

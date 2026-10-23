@@ -410,7 +410,7 @@ export const DictationConfigDesk = memo(({ layoutMode, disabled = false }: Dicta
       <div
         className="w-full flex items-center justify-between pt-0.5 pb-1.5 shrink-0 border-b border-[rgba(var(--accent),0.08)] mb-2 px-0.5 overflow-x-auto no-scrollbar"
         role="tablist"
-        aria-label="Dictation configuration tabs"
+        aria-label={DICTATION_COPY.tabsAriaLabel}
       >
         {TABS.map((tab, idx, arr) => {
           const isActive = activeSubTab === tab.id;
@@ -647,12 +647,12 @@ export const DictationConfigDesk = memo(({ layoutMode, disabled = false }: Dicta
                 {isAutoStopEnabled ? (
                   <span className="flex items-center gap-1 text-[10px] sm:text-[10.5px] font-mono text-[rgb(var(--accent))] font-medium">
                     <Timer size={11} className="shrink-0 opacity-85" />
-                    <span>Auto-commit active ({secondsDraft}s)</span>
+                    <span>{DICTATION_COPY.autoCommitActive(secondsDraft)}</span>
                   </span>
                 ) : (
                   <span className="flex items-center gap-1 text-[10px] font-mono text-[rgb(var(--foreground-muted))]/50">
                     <VolumeX size={11} className="shrink-0 opacity-60" />
-                    <span>Manual release only</span>
+                    <span>{DICTATION_COPY.manualReleaseOnly}</span>
                   </span>
                 )}
               </div>
@@ -664,7 +664,7 @@ export const DictationConfigDesk = memo(({ layoutMode, disabled = false }: Dicta
                 type="button"
                 role="switch"
                 aria-checked={isAutoStopEnabled}
-                aria-label={isAutoStopEnabled ? "Disable silence auto-stop" : "Enable silence auto-stop"}
+                aria-label={DICTATION_COPY.toggleAutoStopAria(isAutoStopEnabled)}
                 onClick={handleAutoStopToggle}
                 className={cn(
                   "group flex flex-col items-center select-none cursor-pointer rounded-2xl px-3 py-1.5 transition-all duration-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(var(--accent))]",
@@ -672,7 +672,7 @@ export const DictationConfigDesk = memo(({ layoutMode, disabled = false }: Dicta
                     ? "text-[rgb(var(--accent))]"
                     : "text-[rgb(var(--foreground-muted))]/40 hover:text-[rgb(var(--foreground-muted))]/70"
                 )}
-                title={isAutoStopEnabled ? "Click to disable auto-stop" : "Click to enable auto-stop"}
+                title={DICTATION_COPY.toggleAutoStopTooltip(isAutoStopEnabled)}
               >
                 {/* 48x48 minimal line-style acoustic chronometer SVG */}
                 <div
@@ -699,7 +699,7 @@ export const DictationConfigDesk = memo(({ layoutMode, disabled = false }: Dicta
                   onClick={() => secondsInputRef.current?.focus()}
                   className="mt-0 flex items-center gap-0.5 px-2 py-0.5 rounded-full cursor-text transition-all duration-200 hover:bg-[rgba(var(--accent),0.08)] group/time"
                   tabIndex={-1}
-                  aria-label="Silence auto-stop duration in seconds"
+                  aria-label={DICTATION_COPY.autoStopDurationAria}
                 >
                   <input
                     ref={secondsInputRef}
@@ -708,9 +708,9 @@ export const DictationConfigDesk = memo(({ layoutMode, disabled = false }: Dicta
                     value={secondsDraft}
                     onChange={handleSecondsChange}
                     onBlur={handleSecondsBlur}
-                    placeholder="1.2"
+                    placeholder={DICTATION_COPY.autoStopDurationPlaceholder}
                     maxLength={4}
-                    aria-label="Silence auto-stop duration in seconds"
+                    aria-label={DICTATION_COPY.autoStopDurationAria}
                     className="w-[2.4rem] bg-transparent font-mono text-[11px] font-bold outline-none text-[rgb(var(--accent))] text-center tracking-wider caret-[rgb(var(--accent))] selection:bg-[rgba(var(--accent),0.25)] cursor-text"
                   />
                   <span className="text-[9px] font-mono font-bold uppercase tracking-[0.12em] text-[rgb(var(--accent))]/70">

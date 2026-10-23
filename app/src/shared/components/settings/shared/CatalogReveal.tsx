@@ -53,8 +53,6 @@ export interface CatalogRevealProps {
    * follows, so the label only hides once the final row is readable.
    */
   featherHeight?: number;
-  /** Track native scroll directly instead of waiting for IntersectionObserver. */
-  syncOnScroll?: boolean;
 }
 
 export const CatalogReveal = memo(({
@@ -65,34 +63,31 @@ export const CatalogReveal = memo(({
   className,
   scrollRef: externalScrollRef,
   featherHeight = DEFAULT_FEATHER_HEIGHT,
-  syncOnScroll = false,
 }: CatalogRevealProps) => {
   const localScrollRef = useRef<HTMLDivElement | null>(null);
   const scrollRef = externalScrollRef ?? localScrollRef;
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const [atEnd, setAtEnd] = useState(false);
+  const [isScrollable, setIsScrollable] = useState(false);
   const { open, isExpanded } = useExpandableList();
-
-  /**
-   * The end state is measured, not waited for. An observer callback lands a
-   * frame late, which showed up as the label appearing one or two frames
-   * after a catalog opened. The layout effect measures the sentinel before the
-   * first paint; the observer keeps up with scrolling and late content.
-   */
-  const band = Math.max(40, featherHeight - 8);
-  const bandRef = useRef(band);
-  bandRef.current = band;
 
   const measure = useCallback(() => {
     const root = scrollRef.current;
     const sentinel = sentinelRef.current;
     if (!root || !sentinel) return;
+
+    const scrollable = root.scrollHeight > root.clientHeight + 4;
+    setIsScrollable(scrollable);
+
+    if (!scrollable) {
+      setAtEnd(true);
+      return;
+    }
+
     const rootRect = root.getBoundingClientRect();
-    const sentinelTop = sentinel.getBoundingClientRect().top;
-    setAtEnd(
-      sentinelTop >= rootRect.top + bandRef.current &&
-      sentinelTop <= rootRect.bottom
-    );
+    const sentinelRect = sentinel.getBoundingClientRect();
+    const reachedEnd = sentinelRect.top <= rootRect.bottom + 4;
+    setAtEnd(reachedEnd);
   }, [scrollRef]);
 
   useLayoutEffect(() => {
@@ -102,30 +97,16 @@ export const CatalogReveal = memo(({
 
     measure();
 
-    if (syncOnScroll) {
-      root.addEventListener("scroll", measure, { passive: true });
-      const resizeObserver = new ResizeObserver(measure);
-      resizeObserver.observe(root);
-      if (root.firstElementChild) resizeObserver.observe(root.firstElementChild);
+    root.addEventListener("scroll", measure, { passive: true });
+    const resizeObserver = new ResizeObserver(measure);
+    resizeObserver.observe(root);
+    if (root.firstElementChild) resizeObserver.observe(root.firstElementChild);
 
-      return () => {
-        root.removeEventListener("scroll", measure);
-        resizeObserver.disconnect();
-      };
-    }
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const entry = entries[entries.length - 1];
-        if (entry) setAtEnd(entry.isIntersecting);
-      },
-      // The band excludes the feather, so the label hides when the final row is
-      // readable rather than when it is merely clipped.
-      { root, rootMargin: `-${band}px 0px 0px 0px`, threshold: 0 }
-    );
-    observer.observe(sentinel);
-    return () => observer.disconnect();
-  }, [measure, scrollRef, band, syncOnScroll]);
+    return () => {
+      root.removeEventListener("scroll", measure);
+      resizeObserver.disconnect();
+    };
+  }, [measure, scrollRef]);
 
   return (
     <div className={cn("relative flex min-h-0 w-full flex-col", className)}>
@@ -134,28 +115,17 @@ export const CatalogReveal = memo(({
         <div ref={sentinelRef} aria-hidden="true" className="h-px w-full" />
       </div>
 
-      {/* Feather: the last rows dissolve into the card instead of being cut. */}
-      {!atEnd && (
+      {/* Feather: only shown when content overflows AND user hasn't reached the end. */}
+      {isScrollable && !atEnd && (
         <div
-          className="pointer-events-none absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-[rgba(var(--card),0.97)] via-[rgba(var(--card),0.8)] to-transparent"
+          className="pointer-events-none absolute inset-x-0 bottom-7 z-10 bg-gradient-to-t from-[rgba(var(--card),0.97)] via-[rgba(var(--card),0.8)] to-transparent"
           style={{ height: featherHeight }}
         />
       )}
 
-      {/*
-        Two placements, one affordance. While rows remain below the fold the
-        label floats on the feather; once the end is readable it moves into
-        flow, so it stays available without covering the last row.
-      */}
+      {/* Expand button: stable in-flow position, eliminating layout oscillation */}
       {!isExpanded && (
-        <div
-          className={cn(
-            "z-20 flex justify-center",
-            atEnd
-              ? "relative shrink-0 pt-1"
-              : "pointer-events-none absolute inset-x-0 bottom-0"
-          )}
-        >
+        <div className="z-20 flex justify-center shrink-0 pt-1 pb-0.5">
           <button
             type="button"
             onClick={onReveal ?? open}

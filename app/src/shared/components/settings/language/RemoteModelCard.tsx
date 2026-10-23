@@ -167,7 +167,7 @@ export const RemoteModelCard = memo(({
             <div className="flex flex-col justify-between p-2 rounded-lg bg-[rgba(var(--foreground),0.04)] border border-[rgba(var(--foreground),0.08)] group-hover:border-[rgba(var(--accent),0.2)] transition-colors">
               <div className="flex items-center gap-1.5 text-[10px] font-mono uppercase tracking-wider text-[rgb(var(--foreground-muted))]/75">
                 <Zap size={11} className="text-[rgb(var(--accent))] shrink-0" />
-                <span>Speed</span>
+                <span>{LLM_CATALOG_COPY.metricTiles.speed}</span>
               </div>
               <div className="mt-1 text-[12px] font-mono font-bold truncate">
                 {probed?.tps ? (
@@ -184,7 +184,7 @@ export const RemoteModelCard = memo(({
             <div className="flex flex-col justify-between p-2 rounded-lg bg-[rgba(var(--foreground),0.04)] border border-[rgba(var(--foreground),0.08)] group-hover:border-[rgba(var(--accent),0.2)] transition-colors">
               <div className="flex items-center gap-1.5 text-[10px] font-mono uppercase tracking-wider text-[rgb(var(--foreground-muted))]/75">
                 <Layers size={11} className="text-[rgb(var(--accent))] shrink-0" />
-                <span>Context</span>
+                <span>{LLM_CATALOG_COPY.metricTiles.context}</span>
               </div>
               <div className="mt-1 text-[12px] font-mono font-bold text-[rgb(var(--foreground))] truncate">
                 {probed?.context_window ? (
@@ -194,7 +194,7 @@ export const RemoteModelCard = memo(({
                     `${Math.round(probed.context_window / 1024)}k`
                   )
                 ) : (
-                  <span className="text-[rgb(var(--foreground-muted))]/70 font-normal text-[11px]">Managed</span>
+                  <span className="text-[rgb(var(--foreground-muted))]/70 font-normal text-[11px]">{LLM_CATALOG_COPY.managedContext}</span>
                 )}
               </div>
             </div>
@@ -203,7 +203,7 @@ export const RemoteModelCard = memo(({
             <div className="flex flex-col justify-between p-2 rounded-lg bg-[rgba(var(--foreground),0.04)] border border-[rgba(var(--foreground),0.08)] group-hover:border-[rgba(var(--accent),0.2)] transition-colors">
               <div className="flex items-center gap-1.5 text-[10px] font-mono uppercase tracking-wider text-[rgb(var(--foreground-muted))]/75">
                 <Cpu size={11} className="text-[rgb(var(--accent))] shrink-0" />
-                <span>Compute</span>
+                <span>{LLM_CATALOG_COPY.metricTiles.compute}</span>
               </div>
               <div className="mt-1 text-[12px] font-mono font-bold truncate">
                 {probed?.vram_bytes ? (
@@ -211,11 +211,11 @@ export const RemoteModelCard = memo(({
                     {(probed.vram_bytes / (1024 * 1024)).toFixed(0)}MB <span className="text-[10px] opacity-70">{isGpu ? "GPU" : "CPU"}</span>
                   </span>
                 ) : isGpu ? (
-                  <span className="text-[rgb(var(--notif-models))]">GPU Accel</span>
+                  <span className="text-[rgb(var(--notif-models))]">{LLM_CATALOG_COPY.computeTypes.gpuAccel}</span>
                 ) : probed?.server_has_gpu ? (
-                  <span className="text-[rgb(var(--notif-models))]">Server GPU</span>
+                  <span className="text-[rgb(var(--notif-models))]">{LLM_CATALOG_COPY.computeTypes.serverGpu}</span>
                 ) : (
-                  <span className="text-[rgb(var(--foreground-muted))]/60 font-normal text-[11px]">Standard</span>
+                  <span className="text-[rgb(var(--foreground-muted))]/60 font-normal text-[11px]">{LLM_CATALOG_COPY.computeTypes.standard}</span>
                 )}
               </div>
             </div>
@@ -224,7 +224,7 @@ export const RemoteModelCard = memo(({
             <div className="flex flex-col justify-between p-2 rounded-lg bg-[rgba(var(--foreground),0.04)] border border-[rgba(var(--foreground),0.08)] group-hover:border-[rgba(var(--accent),0.2)] transition-colors">
               <div className="flex items-center gap-1.5 text-[10px] font-mono uppercase tracking-wider text-[rgb(var(--foreground-muted))]/75">
                 <Wrench size={11} className="text-[rgb(var(--accent))] shrink-0" />
-                <span>Tools</span>
+                <span>{LLM_CATALOG_COPY.metricTiles.tools}</span>
               </div>
               <div className="mt-1 text-[12px] font-mono font-bold truncate">
                 {probed?.supports_tools === "supported" ? (

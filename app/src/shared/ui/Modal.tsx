@@ -5,10 +5,8 @@ import { X, ArrowLeft } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { useOverlay } from "@/shared/hooks/useOverlay";
 import { isCoarsePointer } from "@/lib/capabilities";
-import { Tooltip } from "@/shared/ui/Tooltip";
 import { OverlayBackdrop } from "@/shared/ui/OverlayBackdrop";
 import { LAYOUT_COPY } from "@/data/layoutCopy";
-import { rca, rcaRect } from "@/shared/lib/rcaTrace";
 
 export interface ModalProps {
   open: boolean;
@@ -185,8 +183,8 @@ export const Modal = memo(
                         type="button"
                         onClick={onBack}
                         className="p-1.5 -ml-1 rounded-lg text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.1)] transition-colors cursor-pointer shrink-0"
-                        title="Back"
-                        aria-label="Back"
+                        title={LAYOUT_COPY.modal.back}
+                        aria-label={LAYOUT_COPY.modal.back}
                       >
                         <ArrowLeft size={16} strokeWidth={2.25} />
                       </button>
@@ -203,27 +201,15 @@ export const Modal = memo(
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     {headerActions}
-                    <Tooltip label={LAYOUT_COPY.modal.close} side="bottom">
-                      <button
-                        onClick={onClose}
-                        onPointerEnter={() =>
-                          rca("close-hover", "enter", {
-                            panel: rcaRect(panelRef.current),
-                            banner: rcaRect(document.querySelector("[data-rca-banner]")),
-                          })
-                        }
-                        onPointerLeave={() =>
-                          rca("close-hover", "leave", {
-                            panel: rcaRect(panelRef.current),
-                            banner: rcaRect(document.querySelector("[data-rca-banner]")),
-                          })
-                        }
-                        className="flex items-center justify-center w-8 h-8 rounded-full glass-card text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))]"
-                        aria-label={LAYOUT_COPY.modal.close}
-                      >
-                        <X size={18} />
-                      </button>
-                    </Tooltip>
+                    <button
+                      type="button"
+                      onClick={onClose}
+                      title={LAYOUT_COPY.modal.close}
+                      aria-label={LAYOUT_COPY.modal.close}
+                      className="flex items-center justify-center w-8 h-8 rounded-full glass-card text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))]"
+                    >
+                      <X size={18} />
+                    </button>
                   </div>
                 </div>
               )}

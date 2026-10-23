@@ -28,6 +28,7 @@ import {
   MODEL_CATEGORY_META,
   MODEL_CATEGORY_COPY,
   MODEL_PROGRESS_STEPS,
+  WIZARD_CTA_LABELS,
 } from '@/data/welcomeCopy';
 import { formatBytes } from '@/shared/lib/format';
 
@@ -339,7 +340,7 @@ export const MobileModelStep: React.FC<MobileModelStepProps> = ({
       onModelStatusChange({
         isDone: false,
         isDownloading: false,
-        label: 'Retry Download',
+        label: WIZARD_CTA_LABELS.retryDownload,
         action: () => {
           void handleStartDownload();
         },
@@ -413,7 +414,7 @@ export const MobileModelStep: React.FC<MobileModelStepProps> = ({
               className="mx-auto min-h-[48px] px-4 py-2 rounded-xl bg-[rgb(var(--error))]/20 text-[rgb(var(--error))]/80 text-xs font-medium flex items-center justify-center gap-2 touch-manipulation cursor-pointer active:bg-[rgb(var(--error))]/30 transition-colors"
             >
               <RotateCcw className="w-3.5 h-3.5" />
-              <span>Retry Download</span>
+              <span>{WIZARD_CTA_LABELS.retryDownload}</span>
             </button>
           </div>
         )}

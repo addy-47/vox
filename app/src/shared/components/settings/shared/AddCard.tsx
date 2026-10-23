@@ -1,5 +1,5 @@
 import { memo } from "react";
-import { ArrowRight, Plus } from "lucide-react";
+import { Plus } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { SETTINGS_COPY } from "@/data/settingsCopy";
 
@@ -53,11 +53,6 @@ export const AddCard = memo(({
         <span className="min-w-0 flex-1 text-[13px] font-semibold leading-tight tracking-tight text-[rgb(var(--foreground-muted))] transition-colors group-hover:text-[rgb(var(--accent))]">
           {title}
         </span>
-        <ArrowRight
-          size={13}
-          strokeWidth={2}
-          className="shrink-0 text-[rgb(var(--foreground-muted))]/50 transition-all group-hover:translate-x-0.5 group-hover:text-[rgb(var(--accent))]"
-        />
       </button>
     );
   }
@@ -88,8 +83,8 @@ export const AddCard = memo(({
       </span>
       <span className="mt-auto flex h-[28px] items-center justify-between border-t border-dashed border-[rgba(var(--foreground),0.12)] pt-2.5 font-mono text-[11px]">
         <span className="text-[rgb(var(--foreground-muted))]/60">{footnote}</span>
-        <span className="flex items-center gap-1 font-medium text-[rgb(var(--accent))] transition-transform group-hover:translate-x-0.5">
-          {actionLabel} <ArrowRight size={11} />
+        <span className="flex items-center gap-1 font-medium text-[rgb(var(--accent))]">
+          {actionLabel}
         </span>
       </span>
     </button>

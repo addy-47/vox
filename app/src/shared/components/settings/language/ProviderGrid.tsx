@@ -14,6 +14,8 @@ import { ProviderPill } from "./ProviderPill";
 export interface ProviderGridProps {
   /** Swaps the card face to the active provider's model catalog. */
   onOpenModels: () => void;
+  /** Ensures parent modal level is primed to 'providers' before opening. */
+  onExpand?: () => void;
 }
 
 /**
@@ -25,7 +27,7 @@ export interface ProviderGridProps {
  * unconnected providers, which stay dimmed and carry a plus that opens an
  * inline key field inside their own row.
  */
-export const ProviderGrid = memo(({ onOpenModels }: ProviderGridProps) => {
+export const ProviderGrid = memo(({ onOpenModels, onExpand }: ProviderGridProps) => {
   const draftSettings = useSettingsStore(useShallow((s) => s.draftSettings));
   const committedSettings = useSettingsStore(useShallow((s) => s.settings));
   const modelCatalog = useCatalogStore((s) => s.modelCatalog);
@@ -211,29 +213,99 @@ export const ProviderGrid = memo(({ onOpenModels }: ProviderGridProps) => {
           />
         ),
       })),
-      ...readyClouds.map((provider) => ({
-        key: `cloud:${provider.id}`,
-        node: (
-          <ProviderPill
-            id={provider.id}
-            name={provider.name}
-            logo={provider.logo ?? null}
-            meta={
-              activeCategory === "cloud" && active?.provider === provider.id && active.model
-                ? `${LANGUAGE_CARD_COPY.metaCloud} · ${active.model}`
-                : LANGUAGE_CARD_COPY.keySaved
-            }
-            active={activeCategory === "cloud" && active?.provider === provider.id}
-            onSelect={() => selectCloud(provider.id)}
-            onBrowse={() =>
-              browseModels(
-                () => selectCloud(provider.id),
-                activeCategory === "cloud" && active?.provider === provider.id
-              )
-            }
-          />
-        ),
-      })),
+      ...readyClouds.map((provider) => {
+        const isEditing = editingKeyId === provider.id;
+        const currentKey = getEffectiveCloudApiKey(draftSettings, committedSettings, provider.id) ?? "";
+        return {
+          key: `cloud:${provider.id}`,
+          node: (
+            <ProviderPill
+              id={provider.id}
+              name={provider.name}
+              logo={provider.logo ?? null}
+              meta={
+                activeCategory === "cloud" && active?.provider === provider.id && active.model
+                  ? `${LANGUAGE_CARD_COPY.metaCloud} · ${active.model}`
+                  : LANGUAGE_CARD_COPY.keySaved
+              }
+              active={activeCategory === "cloud" && active?.provider === provider.id}
+              onSelect={() => {
+                if (isEditing) return;
+                selectCloud(provider.id);
+              }}
+              onBrowse={
+                isEditing
+                  ? undefined
+                  : () =>
+                      browseModels(
+                        () => selectCloud(provider.id),
+                        activeCategory === "cloud" && active?.provider === provider.id
+                      )
+              }
+              onEdit={
+                isEditing
+                  ? undefined
+                  : () => {
+                      setEditingKeyId(provider.id);
+                      setKeyValue(currentKey);
+                    }
+              }
+              trailing={
+                isEditing ? (
+                  <>
+                    <button
+                      type="button"
+                      aria-label={LANGUAGE_CARD_COPY.saveKey}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void saveKey();
+                      }}
+                      className="rounded-md p-1 text-[rgb(var(--accent))] transition-colors hover:bg-[rgba(var(--accent),0.14)] cursor-pointer"
+                    >
+                      <Check size={13} strokeWidth={2.5} />
+                    </button>
+                    <button
+                      type="button"
+                      aria-label={LANGUAGE_CARD_COPY.cancel}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setEditingKeyId(null);
+                      }}
+                      className="rounded-md p-1 text-[rgb(var(--foreground-muted))] transition-colors hover:bg-[rgba(var(--foreground),0.08)] hover:text-[rgb(var(--foreground))] cursor-pointer"
+                    >
+                      <X size={13} strokeWidth={2.25} />
+                    </button>
+                  </>
+                ) : undefined
+              }
+              body={
+                isEditing ? (
+                  <input
+                    autoFocus
+                    type="password"
+                    value={keyValue}
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={(e) => setKeyValue(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Escape") {
+                        e.stopPropagation();
+                        setEditingKeyId(null);
+                      }
+                      if (e.key === "Enter") {
+                        e.stopPropagation();
+                        void saveKey();
+                      }
+                    }}
+                    placeholder={`${provider.name} ${LANGUAGE_CARD_COPY.keyPlaceholder}`}
+                    aria-label={`${provider.name} ${LANGUAGE_CARD_COPY.keyPlaceholder}`}
+                    className="min-w-0 flex-1 bg-transparent text-[12px] text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/60 focus:outline-none"
+                  />
+                ) : undefined
+              }
+            />
+          ),
+        };
+      }),
     ];
 
     return [...rows].sort(
@@ -326,6 +398,10 @@ export const ProviderGrid = memo(({ onOpenModels }: ProviderGridProps) => {
   return (
     <CatalogReveal
       className="flex-1 min-h-0"
+      onReveal={() => {
+        onExpand?.();
+        open();
+      }}
       scrollerClassName="min-h-0 flex-1 overflow-y-auto overscroll-contain custom-scrollbar pr-1 [scrollbar-gutter:stable] [contain:paint]"
     >
       <div className="grid grid-cols-2 gap-2 auto-rows-max content-start">
@@ -334,7 +410,13 @@ export const ProviderGrid = memo(({ onOpenModels }: ProviderGridProps) => {
             {row.node}
           </div>
         ))}
-        <AddCard title={LANGUAGE_CARD_COPY.addProvider} onClick={open} />
+        <AddCard
+          title={LANGUAGE_CARD_COPY.addProvider}
+          onClick={() => {
+            onExpand?.();
+            open();
+          }}
+        />
       </div>
 
       {restRows.length > 0 && (

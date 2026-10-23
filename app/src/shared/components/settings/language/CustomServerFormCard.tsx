@@ -299,7 +299,7 @@ export const CustomServerFormCard = memo(({
               ref={nameRef}
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="Name (Auto)"
+              placeholder={PROVIDERS_CONFIG_DESK_COPY.llm.server.namePlaceholderAuto}
               className="w-24 text-[11.5px] pb-1 bg-transparent border-b border-[rgba(var(--foreground),0.12)] focus:border-[rgb(var(--accent))] outline-none text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40 transition-colors"
             />
           </div>
@@ -309,7 +309,7 @@ export const CustomServerFormCard = memo(({
       {!unhealthyReason && (
         <div className="flex items-center justify-between pt-2 border-t border-[rgba(var(--foreground),0.06)] mt-auto h-[28px]">
           <span className="text-[10.5px] font-mono text-[rgb(var(--foreground-muted))]/70 truncate">
-            {isProbing ? "Probing endpoint..." : "2s auto-discovery"}
+            {isProbing ? PROVIDERS_CONFIG_DESK_COPY.llm.server.probingState : PROVIDERS_CONFIG_DESK_COPY.llm.server.autoDiscovery}
           </span>
           <div className="flex items-center gap-1.5">
             <Tooltip label={PROVIDERS_CONFIG_DESK_COPY.llm.server.saveServer} side="top" asChild>
@@ -325,7 +325,7 @@ export const CustomServerFormCard = memo(({
               ) : (
                 <Check size={14} strokeWidth={2.5} />
               )}
-              <span>Save</span>
+              <span>{PROVIDERS_CONFIG_DESK_COPY.llm.server.save}</span>
             </button>
           </Tooltip>
           </div>

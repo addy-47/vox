@@ -125,8 +125,8 @@ export const ModelModal = memo(({
         onClose: () => setIsFilterDropdownOpen(false),
         menu: (
           <CardFilterMenu
-            title="Model Filters"
-            resetLabel={filterCategory !== "all" ? "Reset" : undefined}
+            title={LLM_CATALOG_COPY.filterTitle}
+            resetLabel={filterCategory !== "all" ? LLM_CATALOG_COPY.filterReset : undefined}
             onReset={() => setFilterCategory("all")}
           >
             {categoryFilters.map((cat) => (

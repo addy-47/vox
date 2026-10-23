@@ -10,6 +10,7 @@ import {
 import { ErrorBoundary } from "./ErrorBoundary";
 import { getShortcutsGroupedByRoute } from "@/data/shortcuts";
 import { isRealMobileDevice } from "@/layout/breakpoints";
+import { LAYOUT_COPY } from "@/data/layoutCopy";
 
 const HomeHelpContent = lazy(() =>
   import("@/shared/components/help/HomeHelpContent").then((m) => ({ default: m.HomeHelpContent }))
@@ -155,7 +156,7 @@ export const HelpPanel = memo(({ onClose: _onClose, initialShortcuts = false }: 
             </div>
           </ErrorBoundary>
         ) : (
-          <Suspense fallback={<div className="p-4 text-[12px] font-mono text-[rgb(var(--foreground-muted))]/60">Loading guide...</div>}>
+          <Suspense fallback={<div className="p-4 text-[12px] font-mono text-[rgb(var(--foreground-muted))]/60">{LAYOUT_COPY.loadingGuide}</div>}>
             {pageMeta.id === "history" && <HistoryHelpContent />}
             {pageMeta.id === "memory" && <MemoryHelpContent />}
             {pageMeta.id === "settings" && <SettingsHelpContent />}

@@ -317,17 +317,21 @@ export const ProviderModal = memo(({
     );
   }, [showCustomSection, deferredSearch, customServers, isTts, committedSettings?.tts.active.provider, committedSettings?.llm.active.provider]);
 
-  const localMeta = {
-    STT: { name: "On-Device Speech Recognition", tagline: "High-accuracy local Whisper & Nemotron transcription. 100% offline." },
-    LLM: { name: "On-Device Model", tagline: "Local GGUF neural reasoning on CPU or GPU. Zero telemetry, private." },
-    TTS: { name: "On-Device Neural Voices", tagline: "Local Kokoro neural synthesis with peak normalization and zero latency." },
-  }[category];
+  const localMeta = PROVIDERS_CONFIG_DESK_COPY.localMeta[category];
 
   const localCard = showLocalCard ? (
     <SelectableCard
       key="local-provider-card" id="local-provider" name={localMeta.name} tagline={localMeta.tagline} logo={null}
       isSelected={isLocalSelected} onSelect={handleSelectLocalProvider}
-      actionSlot={<><span className="text-[rgb(var(--foreground-muted))]/70">Local Hardware</span><span className="text-[rgb(var(--accent))] font-bold flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--accent))]" />{isLocalSelected ? "Active" : "Offline Ready"}</span></>}
+      actionSlot={
+        <div className="flex items-center justify-between text-[11px] font-mono w-full">
+          <span className="text-[rgb(var(--foreground-muted))]/70">{PROVIDERS_CONFIG_DESK_COPY.badges.localHardware}</span>
+          <span className="text-[rgb(var(--accent))] font-medium flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--accent))]" />
+            {isLocalSelected ? PROVIDERS_CONFIG_DESK_COPY.status.active : PROVIDERS_CONFIG_DESK_COPY.badges.offlineReady}
+          </span>
+        </div>
+      }
     />
   ) : null;
 
@@ -346,7 +350,15 @@ export const ProviderModal = memo(({
               requestSpeechTab("tts");
               onSelectProvider({ id: entry.id, name: entry.name, url: entry.url || "", popular: true, keyPlaceholder: "API Key (Optional)..." });
             }}
-            actionSlot={<><span className="text-[rgb(var(--foreground-muted))]/70">{entry.isFree ? "Keyless Cloud" : "Cloud Voice"}</span><span className={cn("font-bold flex items-center gap-1.5", entry.isComingSoon ? "text-[rgb(var(--foreground-muted))]/60 font-normal" : "text-[rgb(var(--accent))]")}>{!entry.isComingSoon && <span className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--accent))]" />}{entry.isComingSoon ? "In Development" : isSelected ? "Active" : "Ready"}</span></>}
+            actionSlot={
+              <div className="flex items-center justify-between text-[11px] font-mono w-full">
+                <span className="text-[rgb(var(--foreground-muted))]/70">{entry.isFree ? PROVIDERS_CONFIG_DESK_COPY.badges.keylessCloud : PROVIDERS_CONFIG_DESK_COPY.badges.cloudVoice}</span>
+                <span className={cn("font-medium flex items-center gap-1.5", entry.isComingSoon ? "text-[rgb(var(--foreground-muted))]/60 font-normal" : "text-[rgb(var(--accent))]")}>
+                  {!entry.isComingSoon && <span className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--accent))]" />}
+                  {entry.isComingSoon ? PROVIDERS_CONFIG_DESK_COPY.status.inDevelopment : isSelected ? PROVIDERS_CONFIG_DESK_COPY.status.active : PROVIDERS_CONFIG_DESK_COPY.status.ready}
+                </span>
+              </div>
+            }
           />
         );
       })
@@ -364,7 +376,10 @@ export const ProviderModal = memo(({
                 <Tooltip label={LANGUAGE_CARD_COPY.browseModels} side="top" asChild>
                   <button
                     type="button"
-                    onClick={() => { onSelectProvider(provider); onNavigateToModels(provider); }}
+                    onClick={() => {
+                      onSelectProvider(provider);
+                      onNavigateToModels(provider);
+                    }}
                     className="w-7 h-7 flex items-center justify-center rounded-md text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.1)] transition-colors cursor-pointer"
                     aria-label={`${LANGUAGE_CARD_COPY.browseModels}: ${provider.name}`}
                   >
@@ -386,7 +401,7 @@ export const ProviderModal = memo(({
                 </div>
               ) : (
                 <div className="flex items-center justify-between text-[11px] font-mono w-full">
-                  <span className="text-[rgb(var(--foreground-muted))]/70">Cloud Gateway</span>
+                  <span className="text-[rgb(var(--foreground-muted))]/70">{PROVIDERS_CONFIG_DESK_COPY.badges.cloudGateway}</span>
                   {hasKey ? (
                     <div className="flex items-center gap-1.5">
                       <span className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--accent))] shrink-0" /><span className="text-[rgb(var(--foreground-muted))]">••••••••{savedKey?.slice(-4)}</span>
@@ -395,7 +410,7 @@ export const ProviderModal = memo(({
                       </Tooltip>
                     </div>
                   ) : (
-                    <button type="button" onClick={() => onStartInlineEdit(provider.id, "")} className="text-[rgb(var(--accent))] hover:underline cursor-pointer font-medium flex items-center gap-1">+ Connect Key</button>
+                    <button type="button" onClick={() => onStartInlineEdit(provider.id, "")} className="text-[rgb(var(--accent))] hover:underline cursor-pointer font-medium flex items-center gap-1">{PROVIDERS_CONFIG_DESK_COPY.llm.cloud.connectKey}</button>
                   )}
                 </div>
               )
@@ -433,13 +448,13 @@ export const ProviderModal = memo(({
         }
         actionSlot={
           <div className="flex items-center justify-between text-[11px] font-mono w-full">
-            <span className="text-[rgb(var(--foreground-muted))]/70">Self-Hosted</span>
+            <span className="text-[rgb(var(--foreground-muted))]/70">{PROVIDERS_CONFIG_DESK_COPY.badges.selfHosted}</span>
             <div className="flex items-center gap-1.5">
-              <Tooltip label="Edit Server" side="top">
-                <button type="button" onClick={() => { setEditingServer(server); setIsCreatingCustomServer(false); }} className="p-1 rounded-md text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.1)] transition-all cursor-pointer" aria-label="Edit Server"><Pencil size={13} /></button>
+              <Tooltip label={PROVIDERS_CONFIG_DESK_COPY.actions.editServer} side="top">
+                <button type="button" onClick={() => { setEditingServer(server); setIsCreatingCustomServer(false); }} className="p-1 rounded-md text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.1)] transition-all cursor-pointer" aria-label={PROVIDERS_CONFIG_DESK_COPY.actions.editServer}><Pencil size={13} /></button>
               </Tooltip>
-              <Tooltip label="Delete Server" side="top">
-                <button type="button" onClick={() => handleDeleteServer(server.id)} className="p-1 rounded-md text-[rgb(var(--foreground-muted))]/40 hover:text-[rgb(var(--error))] hover:bg-[rgba(var(--error),0.1)] transition-all cursor-pointer" aria-label="Delete Server"><Trash2 size={13} /></button>
+              <Tooltip label={PROVIDERS_CONFIG_DESK_COPY.actions.deleteServer} side="top">
+                <button type="button" onClick={() => handleDeleteServer(server.id)} className="p-1 rounded-md text-[rgb(var(--foreground-muted))]/40 hover:text-[rgb(var(--error))] hover:bg-[rgba(var(--error),0.1)] transition-all cursor-pointer" aria-label={PROVIDERS_CONFIG_DESK_COPY.actions.deleteServer}><Trash2 size={13} /></button>
               </Tooltip>
             </div>
           </div>

@@ -29,6 +29,9 @@ import {
   orbitCapacityFor,
   ringRadiusFor,
   type DayGroup,
+  type MonthGroup,
+  type SessionWindow,
+  type MonthWindow,
   type HistoryView,
 } from "@/shared/components/history";
 import { HISTORY_COPY } from "@/data/historyCopy";
@@ -38,6 +41,26 @@ const EMPTY_DAY_GROUP: DayGroup = {
   dayLabel: formatDateTime(0),
   latestTimestamp: 0,
   sessions: [],
+};
+
+const EMPTY_MONTH_GROUP: MonthGroup = {
+  monthKey: "",
+  monthLabel: "",
+  days: [],
+  totalSessions: 0,
+};
+
+const EMPTY_SESSION_WINDOW: SessionWindow = {
+  sessions: [],
+  label: "",
+  dateSpanLabel: "",
+  startMs: 0,
+  endMs: 0,
+};
+
+const EMPTY_MONTH_WINDOW: MonthWindow = {
+  days: [],
+  label: "",
 };
 
 function getErrorMessage(e: unknown, fallback: string): string {
@@ -173,7 +196,7 @@ export function useHistory() {
 
   const currentGroup = dayGroups[effectiveDateIndex] || EMPTY_DAY_GROUP;
   const currentDateSessions = currentGroup.sessions;
-  const currentMonthGroup = monthGroups[effectiveMonthIndex];
+  const currentMonthGroup = monthGroups[effectiveMonthIndex] || EMPTY_MONTH_GROUP;
 
   // Orbit sizing
   const capacity = useMemo(
@@ -246,12 +269,12 @@ export function useHistory() {
     Math.max(0, monthWindows.length - 1)
   );
 
-  const currentWindow = sessionWindows[effectiveSessionWindowIndex];
+  const currentWindow = sessionWindows[effectiveSessionWindowIndex] || EMPTY_SESSION_WINDOW;
   const currentWindowSessions = useMemo(
     () => currentWindow.sessions ?? [],
     [currentWindow]
   );
-  const currentMonthWindow = monthWindows[effectiveMonthWindowIndex];
+  const currentMonthWindow = monthWindows[effectiveMonthWindowIndex] || EMPTY_MONTH_WINDOW;
 
   const sessionById = useMemo(
     () => new Map(currentWindowSessions.map((s) => [String(s.id), s])),
