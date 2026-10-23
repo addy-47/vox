@@ -422,11 +422,18 @@ export const Memory: React.FC = memo(() => {
         handleZoomOut();
         return;
       }
+
+      // Shift + ArrowUp -> Focus Core Personal Memory
+      if (shift && e.key === "ArrowUp") {
+        e.preventDefault();
+        handleCoreClick();
+        return;
+      }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [handleRecenter, handleZoomIn, handleZoomOut]);
+  }, [handleRecenter, handleZoomIn, handleZoomOut, handleCoreClick]);
 
   return (
     <div

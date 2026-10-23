@@ -115,9 +115,12 @@ async fn test_transcript_to_llm_matrix() {
 
         // 5. Spawn real background LLM worker thread using production EmbeddedProvider
         let worker_provider = Arc::clone(&provider);
-        let worker_handle = std::thread::spawn(move || {
-            spawn_llm_worker(llm_rx, worker_provider);
-        });
+        let worker_handle = std::thread::Builder::new()
+            .name("test-llm-worker".into())
+            .spawn(move || {
+                spawn_llm_worker(llm_rx, worker_provider);
+            })
+            .expect("spawn test-llm-worker");
 
         let ctx = RoutingContext::from_app_state(&state);
 

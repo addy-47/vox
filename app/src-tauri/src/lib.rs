@@ -63,7 +63,7 @@ use crate::{
         },
         persistence::{
             compact_session, delete_session, get_sessions, get_transcript_history, get_turns,
-            update_session,
+            search_history, update_session,
         },
         pipeline::{
             continue_session, create_session, end_session, launch_engine, pause_session,
@@ -779,6 +779,7 @@ notification_permission_state,
             continue_session,
             get_sessions,
             get_turns,
+            search_history,
             update_session,
             delete_session,
             compact_session,

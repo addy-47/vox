@@ -52,7 +52,9 @@ pub fn spawn_mock_wire_server(
     let addr = listener
         .local_addr()
         .expect("mock wire server needs an addr");
-    let handle = std::thread::spawn(move || {
+    let handle = std::thread::Builder::new()
+        .name("test-mock-wire".into())
+        .spawn(move || {
         let (mut stream, _) = listener.accept().expect("mock wire server must accept");
         stream
             .set_read_timeout(Some(std::time::Duration::from_secs(10)))
@@ -107,7 +109,8 @@ pub fn spawn_mock_wire_server(
         stream
             .write_all(&response_body)
             .expect("mock must write body");
-    });
+    })
+    .expect("spawn test-mock-wire thread");
     (format!("http://{}", addr), handle)
 }
 

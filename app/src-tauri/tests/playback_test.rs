@@ -338,7 +338,12 @@ fn speech_detection_follows_the_audio_output_mode() {
     let audio_suppressed = Arc::new(AtomicBool::new(false));
     let engine_shutdown = Arc::new(AtomicBool::new(false));
 
+    let vad_backend = common::harness::create_test_vad_backend(
+        vox_lib::services::vad::VadBackendOption::Earshot,
+        vad_config.initial_threshold,
+    );
     let (vad_cmd_tx, vox_event_rx, mut producer, vad_join) = common::harness::setup_vad_actor(
+        vad_backend,
         stt_tx,
         vad_config,
         state.pipeline.current_state_atomic.clone(),
@@ -408,10 +413,13 @@ fn speech_detection_follows_the_audio_output_mode() {
     engine_shutdown.store(true, Ordering::Relaxed);
     let _ = vad_cmd_tx.send(VadCommand::Shutdown);
     let (tx, rx) = mpsc::channel();
-    std::thread::spawn(move || {
-        vad_join.join().expect("worker thread panicked");
-        let _ = tx.send(());
-    });
+    std::thread::Builder::new()
+        .name("vad-joiner".into())
+        .spawn(move || {
+            vad_join.join().expect("worker thread panicked");
+            let _ = tx.send(());
+        })
+        .expect("spawn vad-joiner");
     rx.recv_timeout(Duration::from_secs(5))
         .expect("VAD actor thread join timed out");
 }

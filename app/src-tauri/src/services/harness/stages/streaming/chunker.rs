@@ -523,152 +523,156 @@ mod tests {
         }
         clauses
     }
-#[test]
-fn clause_boundaries_do_not_depend_on_token_fragmentation() {
-    let text = "Good morning everyone, today we are testing. Dr. Smith is here. How are you doing today? Let's verify this now.";
+    #[test]
+    fn clause_boundaries_do_not_depend_on_token_fragmentation() {
+        let text = "Good morning everyone, today we are testing. Dr. Smith is here. How are you doing today? Let's verify this now.";
 
-    let mut chunker = ClauseChunker::new();
-    let mut from_words: Vec<String> = Vec::new();
-    for word in text.split_inclusive(' ') {
-        from_words.extend(chunker.push_str(word));
-    }
-    if let Some(rest) = chunker.flush() {
-        if !rest.trim().is_empty() {
-            from_words.push(rest);
+        let mut chunker = ClauseChunker::new();
+        let mut from_words: Vec<String> = Vec::new();
+        for word in text.split_inclusive(' ') {
+            from_words.extend(chunker.push_str(word));
         }
+        if let Some(rest) = chunker.flush() {
+            if !rest.trim().is_empty() {
+                from_words.push(rest);
+            }
+        }
+
+        let from_chunks = chunk(text);
+
+        assert!(!from_words.is_empty(), "the chunker must produce clauses");
+        assert_eq!(
+            from_words, from_chunks,
+            "clauses must be identical regardless of token fragmentation"
+        );
+        assert!(chunker.is_empty(), "the buffer must be empty after a flush");
     }
 
-    let from_chunks = chunk(text);
+    #[test]
+    fn unpunctuated_runaway_is_force_chunked_at_thirty_words() {
+        let words: Vec<String> = (0..42).map(|i| format!("word{} ", i)).collect();
+        let text = words.concat();
 
-    assert!(!from_words.is_empty(), "the chunker must produce clauses");
-    assert_eq!(
-        from_words, from_chunks,
-        "clauses must be identical regardless of token fragmentation"
-    );
-    assert!(chunker.is_empty(), "the buffer must be empty after a flush");
-}
+        let clauses = chunk(&text);
 
-#[test]
-fn unpunctuated_runaway_is_force_chunked_at_thirty_words() {
-    let words: Vec<String> = (0..42)
-        .map(|i| format!("word{} ", i))
-        .collect();
-    let text = words.concat();
+        assert_eq!(clauses.len(), 2, "42 words must become two clauses");
+        assert_eq!(clauses[0].split_whitespace().count(), 30);
+        assert_eq!(clauses[1].split_whitespace().count(), 12);
+    }
 
-    let clauses = chunk(&text);
+    #[test]
+    fn a_short_sentence_with_a_comma_stays_one_clause() {
+        let clauses = chunk("Hello my friend, how are you today?");
+        assert_eq!(clauses.len(), 1);
+        assert_eq!(clauses[0], "Hello my friend, how are you today?");
+    }
 
-    assert_eq!(clauses.len(), 2, "42 words must become two clauses");
-    assert_eq!(clauses[0].split_whitespace().count(), 30);
-    assert_eq!(clauses[1].split_whitespace().count(), 12);
-}
-
-#[test]
-fn a_short_sentence_with_a_comma_stays_one_clause() {
-    let clauses = chunk("Hello my friend, how are you today?");
-    assert_eq!(clauses.len(), 1);
-    assert_eq!(clauses[0], "Hello my friend, how are you today?");
-}
-
-#[test]
-fn a_mid_length_sentence_with_a_comma_stays_one_clause() {
-    let text =
+    #[test]
+    fn a_mid_length_sentence_with_a_comma_stays_one_clause() {
+        let text =
         "The deployment pipeline has finished the whole database migration tonight, and the team celebrated the successful release.";
-    let clauses = chunk(text);
-    assert_eq!(
-        clauses.len(),
-        1,
-        "a sentence below the compound threshold must not split, got {:?}",
-        clauses
-    );
-}
+        let clauses = chunk(text);
+        assert_eq!(
+            clauses.len(),
+            1,
+            "a sentence below the compound threshold must not split, got {:?}",
+            clauses
+        );
+    }
 
-#[test]
-fn a_long_compound_sentence_splits_at_the_conjunction_seam() {
-    let text = "We have carefully verified that all system components and background services are running smoothly, and we can proceed with the live rollout now.";
-    let clauses = chunk(text);
+    #[test]
+    fn a_long_compound_sentence_splits_at_the_conjunction_seam() {
+        let text = "We have carefully verified that all system components and background services are running smoothly, and we can proceed with the live rollout now.";
+        let clauses = chunk(text);
 
-    assert_eq!(clauses.len(), 2, "a 24-word compound must split once");
-    assert!(clauses[0].ends_with("running smoothly,"));
-    assert_eq!(clauses[1], "and we can proceed with the live rollout now.");
-}
+        assert_eq!(clauses.len(), 2, "a 24-word compound must split once");
+        assert!(clauses[0].ends_with("running smoothly,"));
+        assert_eq!(clauses[1], "and we can proceed with the live rollout now.");
+    }
 
-#[test]
-fn an_abbreviation_does_not_end_the_sentence() {
-    let clauses = chunk("Dr. Smith is here.");
-    assert_eq!(clauses.len(), 1, "the period in Dr. must not split");
-    assert_eq!(clauses[0], "Dr. Smith is here.");
-}
+    #[test]
+    fn an_abbreviation_does_not_end_the_sentence() {
+        let clauses = chunk("Dr. Smith is here.");
+        assert_eq!(clauses.len(), 1, "the period in Dr. must not split");
+        assert_eq!(clauses[0], "Dr. Smith is here.");
+    }
 
-#[test]
-fn a_decimal_number_does_not_end_the_sentence() {
-    let clauses = chunk("The value is 3.14 exactly.");
-    assert_eq!(clauses.len(), 1, "the decimal point must not split");
-    assert_eq!(clauses[0], "The value is 3.14 exactly.");
-}
+    #[test]
+    fn a_decimal_number_does_not_end_the_sentence() {
+        let clauses = chunk("The value is 3.14 exactly.");
+        assert_eq!(clauses.len(), 1, "the decimal point must not split");
+        assert_eq!(clauses[0], "The value is 3.14 exactly.");
+    }
 
-#[test]
-fn a_period_inside_a_word_does_not_split() {
-    let clauses = chunk("Open config.toml now.");
-    assert_eq!(clauses.len(), 1, "a mid-token period must not split");
-}
+    #[test]
+    fn a_period_inside_a_word_does_not_split() {
+        let clauses = chunk("Open config.toml now.");
+        assert_eq!(clauses.len(), 1, "a mid-token period must not split");
+    }
 
-#[test]
-fn a_question_mark_ends_the_clause() {
-    let clauses = chunk("Why? Because.");
-    assert_eq!(clauses.len(), 2);
-    assert_eq!(clauses[0], "Why?");
-}
+    #[test]
+    fn a_question_mark_ends_the_clause() {
+        let clauses = chunk("Why? Because.");
+        assert_eq!(clauses.len(), 2);
+        assert_eq!(clauses[0], "Why?");
+    }
 
-#[test]
-fn a_short_exclamation_does_not_split() {
-    let clauses = chunk("Hey! Sure thing.");
-    assert_eq!(clauses.len(), 1, "a three-word opener must stay glued");
-}
+    #[test]
+    fn a_short_exclamation_does_not_split() {
+        let clauses = chunk("Hey! Sure thing.");
+        assert_eq!(clauses.len(), 1, "a three-word opener must stay glued");
+    }
 
-#[test]
-fn a_long_exclamation_ends_the_clause() {
-    let clauses = chunk("That was a long answer indeed! Next.");
-    assert_eq!(clauses.len(), 2);
-    assert_eq!(clauses[0], "That was a long answer indeed!");
-}
+    #[test]
+    fn a_long_exclamation_ends_the_clause() {
+        let clauses = chunk("That was a long answer indeed! Next.");
+        assert_eq!(clauses.len(), 2);
+        assert_eq!(clauses[0], "That was a long answer indeed!");
+    }
 
-#[test]
-fn a_newline_ends_a_list_item() {
-    let clauses = chunk("first item line\nsecond item line");
-    assert_eq!(clauses.len(), 2, "a newline must end the list item");
-}
+    #[test]
+    fn a_newline_ends_a_list_item() {
+        let clauses = chunk("first item line\nsecond item line");
+        assert_eq!(clauses.len(), 2, "a newline must end the list item");
+    }
 
-#[test]
-fn a_semicolon_in_a_long_clause_is_a_split_point() {
-    let text = "The rollout is scheduled for tomorrow morning after the review board has approved the final checklist ; and signed the release document for production use today.";
-    let clauses = chunk(text);
+    #[test]
+    fn a_semicolon_in_a_long_clause_is_a_split_point() {
+        let text = "The rollout is scheduled for tomorrow morning after the review board has approved the final checklist ; and signed the release document for production use today.";
+        let clauses = chunk(text);
 
-    assert!(clauses.len() >= 2, "a long clause with a semicolon must split");
-    assert!(
-        clauses[0].ends_with(';'),
-        "the split must land on the semicolon, got {:?}",
-        clauses[0]
-    );
-}
+        assert!(
+            clauses.len() >= 2,
+            "a long clause with a semicolon must split"
+        );
+        assert!(
+            clauses[0].ends_with(';'),
+            "the split must land on the semicolon, got {:?}",
+            clauses[0]
+        );
+    }
 
-#[test]
-fn flush_returns_the_tail_and_empties_the_buffer() {
-    let mut chunker = ClauseChunker::new();
-    assert!(chunker.push_str("a tail without punctuation").is_empty());
+    #[test]
+    fn flush_returns_the_tail_and_empties_the_buffer() {
+        let mut chunker = ClauseChunker::new();
+        assert!(chunker.push_str("a tail without punctuation").is_empty());
 
-    let tail = chunker.flush().expect("the tail must be returned");
-    assert_eq!(tail, "a tail without punctuation");
-    assert!(chunker.is_empty(), "the buffer must be empty after a flush");
-    assert!(chunker.flush().is_none(), "a second flush must return nothing");
-}
+        let tail = chunker.flush().expect("the tail must be returned");
+        assert_eq!(tail, "a tail without punctuation");
+        assert!(chunker.is_empty(), "the buffer must be empty after a flush");
+        assert!(
+            chunker.flush().is_none(),
+            "a second flush must return nothing"
+        );
+    }
 
-#[test]
-fn clear_drops_the_buffered_text() {
-    let mut chunker = ClauseChunker::new();
-    chunker.push_str("half a sentence");
+    #[test]
+    fn clear_drops_the_buffered_text() {
+        let mut chunker = ClauseChunker::new();
+        chunker.push_str("half a sentence");
 
-    chunker.clear();
+        chunker.clear();
 
-    assert!(chunker.is_empty(), "clear must drop the buffered text");
-}
+        assert!(chunker.is_empty(), "clear must drop the buffered text");
+    }
 }

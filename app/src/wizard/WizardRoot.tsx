@@ -37,6 +37,7 @@ export const WizardRoot: React.FC = () => {
   const [viewMode, setViewMode] = React.useState<'desktop' | 'mobile'>(() => {
     if (typeof window !== 'undefined') {
       if (isRealMobileDevice()) return 'mobile';
+      if (!import.meta.env.DEV) return 'desktop';
       const params = new URLSearchParams(window.location.search);
       if (params.get('mode') === 'mobile') return 'mobile';
       if (window.innerWidth < 768) return 'mobile';
@@ -139,7 +140,9 @@ export const WizardRoot: React.FC = () => {
         <AmbientBackground instanceId="wizard-mobile" />
         <MobileOnboardingFlow
           key={mobileResetKey}
-          onComplete={() => setMobileResetKey((k) => k + 1)}
+          onComplete={() => {
+            window.location.replace('/');
+          }}
         />
       </div>
     );
@@ -152,60 +155,62 @@ export const WizardRoot: React.FC = () => {
 
       {/* Mode Switcher Banner — desktop-only developer chrome. Hidden on a real
           phone: the device it previews is already the device it's running on. */}
-      <div className={`${isRealMobileDevice() ? 'hidden' : 'hidden sm:flex'} items-center justify-between px-6 py-2 border-b border-[rgba(var(--accent),0.06)] bg-black/20 backdrop-blur-sm z-20 text-xs`}>
-        <div className="flex items-center gap-2">
-          <span className="text-[11px] font-mono uppercase tracking-widest text-[rgb(var(--foreground-muted))]">
-            View Mode:
-          </span>
-          <div className="inline-flex rounded-lg p-0.5 bg-[rgb(var(--foreground))]/5 border border-[rgba(var(--foreground),0.1)]">
-            <button
-              onClick={() => setViewMode('desktop')}
-              className={cn(
-                "flex items-center gap-1.5 px-2.5 py-1 rounded-md transition-all font-medium",
-                viewMode === 'desktop'
-                  ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] shadow-sm"
-                  : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))]"
-              )}
-            >
-              <Monitor className="w-3.5 h-3.5" />
-              Desktop Setup
-            </button>
-            <button
-              onClick={() => setViewMode('mobile')}
-              className={cn(
-                "flex items-center gap-1.5 px-2.5 py-1 rounded-md transition-all font-medium",
-                viewMode === 'mobile'
-                  ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] shadow-sm"
-                  : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))]"
-              )}
-            >
-              <Smartphone className="w-3.5 h-3.5" />
-              Android Flow
-            </button>
-          </div>
-        </div>
-
-        {viewMode === 'mobile' && (
+      {import.meta.env.DEV && !isRealMobileDevice() && (
+        <div className="hidden sm:flex items-center justify-between px-6 py-2 border-b border-[rgba(var(--accent),0.06)] bg-black/20 backdrop-blur-sm z-20 text-xs">
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => setFrameMode(f => f === 'device' ? 'fullscreen' : 'device')}
-              className="flex items-center gap-1 px-2 py-1 rounded border border-[rgba(var(--foreground),0.1)] hover:bg-[rgb(var(--foreground))]/5 text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))]"
-              title="Toggle Device Frame"
-            >
-              {frameMode === 'device' ? <Maximize2 className="w-3.5 h-3.5" /> : <Minimize2 className="w-3.5 h-3.5" />}
-              <span>{frameMode === 'device' ? 'Fill Viewport' : 'Phone Frame'}</span>
-            </button>
-            <button
-              onClick={() => setMobileResetKey(k => k + 1)}
-              className="flex items-center gap-1 px-2 py-1 rounded border border-[rgba(var(--foreground),0.1)] hover:bg-[rgb(var(--foreground))]/5 text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))]"
-              title="Restart Flow"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-              <span>Restart Flow</span>
-            </button>
+            <span className="text-[11px] font-mono uppercase tracking-widest text-[rgb(var(--foreground-muted))]">
+              View Mode:
+            </span>
+            <div className="inline-flex rounded-lg p-0.5 bg-[rgb(var(--foreground))]/5 border border-[rgba(var(--foreground),0.1)]">
+              <button
+                onClick={() => setViewMode('desktop')}
+                className={cn(
+                  "flex items-center gap-1.5 px-2.5 py-1 rounded-md transition-all font-medium",
+                  viewMode === 'desktop'
+                    ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] shadow-sm"
+                    : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))]"
+                )}
+              >
+                <Monitor className="w-3.5 h-3.5" />
+                Desktop Setup
+              </button>
+              <button
+                onClick={() => setViewMode('mobile')}
+                className={cn(
+                  "flex items-center gap-1.5 px-2.5 py-1 rounded-md transition-all font-medium",
+                  viewMode === 'mobile'
+                    ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] shadow-sm"
+                    : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))]"
+                )}
+              >
+                <Smartphone className="w-3.5 h-3.5" />
+                Android Flow
+              </button>
+            </div>
           </div>
-        )}
-      </div>
+
+          {viewMode === 'mobile' && (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setFrameMode(f => f === 'device' ? 'fullscreen' : 'device')}
+                className="flex items-center gap-1 px-2 py-1 rounded border border-[rgba(var(--foreground),0.1)] hover:bg-[rgb(var(--foreground))]/5 text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))]"
+                title="Toggle Device Frame"
+              >
+                {frameMode === 'device' ? <Maximize2 className="w-3.5 h-3.5" /> : <Minimize2 className="w-3.5 h-3.5" />}
+                <span>{frameMode === 'device' ? 'Fill Viewport' : 'Phone Frame'}</span>
+              </button>
+              <button
+                onClick={() => setMobileResetKey(k => k + 1)}
+                className="flex items-center gap-1 px-2 py-1 rounded border border-[rgba(var(--foreground),0.1)] hover:bg-[rgb(var(--foreground))]/5 text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))]"
+                title="Restart Flow"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Restart Flow</span>
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       {viewMode === 'mobile' ? (
         frameMode === 'device' ? (

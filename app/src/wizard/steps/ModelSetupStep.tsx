@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState, useMemo } from 'react';
-import { startModelSetup, fetchManifest, getRuntimeReport, type VoxManifest } from '@/services/setupService';
+import { startModelSetup, cancelModelSetup, fetchManifest, getRuntimeReport, type VoxManifest } from '@/services/setupService';
 import { onModelProgress, type ModelProgressPayload } from '@/services/eventsService';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -283,8 +283,8 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
                     const allFiles = selectedGroups.flatMap(g => g.files);
                     if (allFiles.length === 0) return null;
 
-                    const groupProgress = allFiles.reduce((acc, m) => acc + (progress[m.id].progress || 0), 0) / allFiles.length;
-                    const isDone = allFiles.every(m => progress[m.id].step === 'completed');
+                    const groupProgress = allFiles.reduce((acc, m) => acc + (progress[m.id]?.progress || 0), 0) / (allFiles.length || 1);
+                    const isDone = allFiles.every(m => progress[m.id]?.step?.toLowerCase() === 'completed');
                     const rawStep = allFiles
                         .map(m => progress[m.id])
                         .find(p => p && p.step !== 'completed')?.step;
@@ -328,7 +328,10 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
             </div>
 
             <WizardFooter 
-                onBack={() => setView('catalog')}
+                onBack={() => {
+                  void cancelModelSetup().catch(() => {});
+                  setView('catalog');
+                }}
                 onNext={() => setView('complete')}
                 nextLabel={isFinished ? WIZARD_CTA_LABELS.continueToVerification : WIZARD_CTA_LABELS.synchronizing}
                 isNextDisabled={!isFinished}

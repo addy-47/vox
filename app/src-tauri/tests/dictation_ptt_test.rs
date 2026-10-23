@@ -31,13 +31,14 @@ use std::{
     time::{Duration, Instant},
 };
 
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 use vox_lib::{
     config::AudioOutputMode,
     core::{
         events::{InteractionMode, PipelineMode, VoxEvent},
         state::{AppState, InteractionOwner, InteractionState},
     },
+    ipc::pipeline as ipc_pipeline,
     pipeline::{
         assistant::ptt::{ptt_cancel, ptt_start, ptt_stop},
         dictation::{
@@ -74,6 +75,14 @@ struct Rig {
 
 impl Rig {
     async fn new() -> Self {
+        Self::new_with_backend(common::harness::create_test_vad_backend(
+            vox_lib::services::vad::VadBackendOption::Earshot,
+            vox_lib::core::defaults::DEFAULT_VAD_THRESHOLD,
+        ))
+        .await
+    }
+
+    async fn new_with_backend(vad_backend: vox_lib::services::vad::VadBackend) -> Self {
         let paths = common::paths::TempPathsGuard::new();
         let (app, state) = common::harness::get_test_app_and_state().await;
 
@@ -92,6 +101,7 @@ impl Rig {
         let vad_shutdown = Arc::new(AtomicBool::new(false));
 
         let (vad_cmd_tx, vad_event_rx, producer, vad_join) = common::harness::setup_vad_actor(
+            vad_backend,
             stt_tx.clone(),
             vad_config,
             state.pipeline.current_state_atomic.clone(),
@@ -117,19 +127,22 @@ impl Rig {
         let forward_shutdown = Arc::new(AtomicBool::new(false));
         let forward_flag = forward_shutdown.clone();
         let forward_tx = event_tx.clone();
-        let forward_join = std::thread::spawn(move || {
-            while !forward_flag.load(Ordering::Relaxed) {
-                match vad_event_rx.recv_timeout(Duration::from_millis(50)) {
-                    Ok(event) => {
-                        if forward_tx.send(event).is_err() {
-                            break;
+        let forward_join = std::thread::Builder::new()
+            .name("test-vad-forwarder".into())
+            .spawn(move || {
+                while !forward_flag.load(Ordering::Relaxed) {
+                    match vad_event_rx.recv_timeout(Duration::from_millis(50)) {
+                        Ok(event) => {
+                            if forward_tx.send(event).is_err() {
+                                break;
+                            }
                         }
+                        Err(mpsc::RecvTimeoutError::Timeout) => continue,
+                        Err(mpsc::RecvTimeoutError::Disconnected) => break,
                     }
-                    Err(mpsc::RecvTimeoutError::Timeout) => continue,
-                    Err(mpsc::RecvTimeoutError::Disconnected) => break,
                 }
-            }
-        });
+            })
+            .expect("spawn test-vad-forwarder");
 
         Self {
             app,
@@ -639,6 +652,120 @@ async fn validated_speech_reaches_only_the_selected_dispatch_arm() {
             "a dictation speech onset must clear the cancel flag, or STT drops the turn"
         );
         transition_dictation(InteractionState::Ready, &rig.app, &rig.state);
+    }
+
+    rig.close();
+}
+
+/// PURPOSE:  Silero VAD engine must properly drive the Dictation PTT pipeline.
+/// SCENARIO: Dictation mode with SileroVadEngine backend, stream speech audio and invoke ptt_stop.
+/// ASSERTS:  STT sink receives exactly one Final with Dictation owner; state transitions to Thinking.
+/// CLASS:    happy-path
+/// REQUIRES: VOX_MODELS_DIR with silero_vad.onnx
+/// MUTANT:   Drop SileroVadEngine dispatch in VadBackend::predict.
+#[tokio::test]
+async fn silero_vad_drives_dictation_ptt_speech_pipeline() {
+    let silero_backend = common::harness::create_test_vad_backend(
+        vox_lib::services::vad::VadBackendOption::SileroVad,
+        vox_lib::core::defaults::DEFAULT_VAD_THRESHOLD,
+    );
+    let mut rig = Rig::new_with_backend(silero_backend).await;
+    rig.dictation_mode();
+    rig.send(VoxEvent::PttStart {
+        owner: InteractionOwner::Dictation,
+    });
+    rig.wait_dictation(InteractionState::Listening, "silero dictation start")
+        .await;
+
+    common::audio::stream_test_clip(common::ASSET_SUPERTONIC_01_EN_FILENAME, &mut rig.producer);
+    rig.send(VoxEvent::PttStop {
+        owner: InteractionOwner::Dictation,
+    });
+    rig.wait_dictation(InteractionState::Thinking, "silero dictation stop")
+        .await;
+
+    let (turn_id, audio, owner) = rig.expect_final("silero dictation speech");
+    assert_eq!(owner, InteractionOwner::Dictation);
+    assert_eq!(turn_id, rig.state.pipeline.peek_turn_id());
+    assert!(!audio.is_empty(), "audio must not be empty");
+    rig.assert_no_final("silero dictation speech: exactly one Final");
+    rig.close();
+}
+
+/// PURPOSE:  Tauri IPC commands `ptt_start` and `ptt_stop` must resolve Dictation owner
+///           and transition dictation pipeline states from Listening -> Thinking -> Ready.
+/// SCENARIO: Dictation mode enabled; invoke ipc::pipeline::ptt_start,
+///           stream audio, invoke ipc::pipeline::ptt_stop.
+/// ASSERTS:  dictation_state transitions Listening -> Thinking -> Ready; Final is dispatched to STT;
+///           no events are silently dropped.
+/// CLASS:    contract
+/// REQUIRES: none
+/// MUTANT:   Invert owner check in ipc::pipeline::ptt_stop.
+#[tokio::test]
+async fn ptt_ipc_dictation_seam() {
+    let mut rig = Rig::new().await;
+    rig.dictation_mode();
+
+    // 1. PTT Start and Stop via IPC commands in Dictation mode
+    {
+        ipc_pipeline::ptt_start(rig.app.clone(), rig.app.state::<Arc<AppState>>())
+            .await
+            .expect("ipc ptt_start for dictation must succeed");
+
+        rig.wait_dictation(InteractionState::Listening, "ipc dictation start")
+            .await;
+
+        common::audio::stream_test_clip(common::ASSET_SUPERTONIC_01_EN_FILENAME, &mut rig.producer);
+
+        ipc_pipeline::ptt_stop(rig.app.clone(), rig.app.state::<Arc<AppState>>())
+            .await
+            .expect("ipc ptt_stop for dictation must succeed");
+
+        rig.wait_dictation(InteractionState::Thinking, "ipc dictation stop")
+            .await;
+
+        let (turn_id, audio, owner) = rig.expect_final("ipc dictation speech");
+        assert_eq!(owner, InteractionOwner::Dictation);
+        assert_eq!(turn_id, rig.state.pipeline.peek_turn_id());
+        assert!(!audio.is_empty(), "audio must not be empty");
+        rig.assert_no_final("ipc dictation speech: exactly one Final");
+
+        transition_dictation(InteractionState::Ready, &rig.app, &rig.state);
+        assert_eq!(
+            rig.state.pipeline.dictation_state(),
+            InteractionState::Ready
+        );
+    }
+
+    // 2. Second turn via IPC commands to ensure re-arm and state transition
+    {
+        ipc_pipeline::ptt_start(rig.app.clone(), rig.app.state::<Arc<AppState>>())
+            .await
+            .expect("ipc ptt_start second turn must succeed");
+
+        rig.wait_dictation(InteractionState::Listening, "ipc dictation start #2")
+            .await;
+
+        common::audio::stream_test_clip(common::ASSET_SUPERTONIC_01_EN_FILENAME, &mut rig.producer);
+
+        ipc_pipeline::ptt_stop(rig.app.clone(), rig.app.state::<Arc<AppState>>())
+            .await
+            .expect("ipc ptt_stop second turn must succeed");
+
+        rig.wait_dictation(InteractionState::Thinking, "ipc dictation stop #2")
+            .await;
+
+        let (turn_id, audio, owner) = rig.expect_final("ipc dictation speech #2");
+        assert_eq!(owner, InteractionOwner::Dictation);
+        assert_eq!(turn_id, rig.state.pipeline.peek_turn_id());
+        assert!(!audio.is_empty());
+        rig.assert_no_final("ipc dictation second turn: exactly one Final");
+
+        transition_dictation(InteractionState::Ready, &rig.app, &rig.state);
+        assert_eq!(
+            rig.state.pipeline.dictation_state(),
+            InteractionState::Ready
+        );
     }
 
     rig.close();

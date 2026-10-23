@@ -71,9 +71,8 @@ export const PixelSynthesisCanvas: React.FC<PixelSynthesisCanvasProps> = ({
     // REVERT: set APPLY_BATCHED_MATRIX = false to restore the legacy
     // per-dot loop below (kept intact for exactly this purpose).
     // ─────────────────────────────────────────────────────────────────
-    const APPLY_BATCHED_MATRIX = true;
     const ALPHA_BANDS = 6;
-    const MATRIX_FRAME_INTERVAL = APPLY_BATCHED_MATRIX ? 1000 / 30 : 0;
+    const MATRIX_FRAME_INTERVAL = 1000 / 30;
 
     const bucketStyles: string[] = new Array<string>(ALPHA_BANDS).fill("");
     const refreshBucketStyles = () => {
@@ -93,50 +92,13 @@ export const PixelSynthesisCanvas: React.FC<PixelSynthesisCanvasProps> = ({
 
     let lastMatrixFrame = 0;
 
-    // Legacy per-dot renderer (kept for REVERT above).
-    const renderLegacy = (
-      t: number,
-      orbX: number,
-      orbY: number,
-      baseRadius: number,
-      cols: number,
-      rows: number,
-      offsetX: number,
-      offsetY: number
-    ) => {
-      for (let r = 0; r < rows; r++) {
-        const y = offsetY + r * DOT_SPACING;
-        const dy = y - orbY;
-        for (let c = 0; c < cols; c++) {
-          const x = offsetX + c * DOT_SPACING;
-          const dx = x - orbX;
-          const dist = Math.sqrt(dx * dx + dy * dy);
-          const angle = Math.atan2(dy, dx);
-          const contourWobble =
-            1 +
-            0.12 * Math.sin(angle * 3 + t * 2.2) +
-            0.08 * Math.cos(angle * 2 - t * 1.6);
-          const effectiveOrbRadius = baseRadius * contourWobble;
-          const normDist = Math.min(1, dist / effectiveOrbRadius);
-          const proximity = (Math.cos(normDist * Math.PI) + 1) / 2;
-          const influence = Math.pow(proximity, 1.5);
-          const radius = BASE_RADIUS + (PEAK_RADIUS - BASE_RADIUS) * influence;
-          const alpha = 0.22 + 0.66 * influence;
-          ctx.beginPath();
-          ctx.arc(x, y, radius, 0, Math.PI * 2);
-          ctx.fillStyle = `rgba(${accentRgb}, ${alpha.toFixed(3)})`;
-          ctx.fill();
-        }
-      }
-    };
-
     const render = (now: number) => {
       if (document.hidden) {
         animId = 0;
         return;
       }
       animId = requestAnimationFrame(render);
-      if (APPLY_BATCHED_MATRIX && now - lastMatrixFrame < MATRIX_FRAME_INTERVAL) return;
+      if (now - lastMatrixFrame < MATRIX_FRAME_INTERVAL) return;
       lastMatrixFrame = now;
 
       const t = (now - startTime) * 0.0011; // Fluid, organic time parameter
@@ -146,7 +108,7 @@ export const PixelSynthesisCanvas: React.FC<PixelSynthesisCanvasProps> = ({
       // Periodically refresh accent color (+ its precomputed band styles)
       if (Math.floor(t * 10) % 30 === 0) {
         accentRgb = getAccentRgb();
-        if (APPLY_BATCHED_MATRIX) refreshBucketStyles();
+        refreshBucketStyles();
       }
 
       // Dynamic wandering liquid orb positions (two orbs interacting organically)
@@ -167,11 +129,6 @@ export const PixelSynthesisCanvas: React.FC<PixelSynthesisCanvasProps> = ({
       const rows = Math.ceil(height / DOT_SPACING) + 1;
       const offsetX = (width - (cols - 1) * DOT_SPACING) / 2;
       const offsetY = (height - (rows - 1) * DOT_SPACING) / 2;
-
-      if (!APPLY_BATCHED_MATRIX) {
-        renderLegacy(t, orbX, orbY, baseRadius, cols, rows, offsetX, offsetY);
-        return;
-      }
 
       // Per-frame trig factors for the Chebyshev wobble identities below.
       const sinPhi = Math.sin(t * 2.2);

@@ -155,20 +155,23 @@ impl LlmProvider for RecordingLlmProvider {
 
             // Forwarder thread capturing streamed tokens
             let (done_tx, done_rx) = tokio::sync::oneshot::channel::<String>();
-            std::thread::spawn(move || {
-                let mut accumulated = String::new();
-                while let Ok(event) = inter_rx.recv() {
-                    match &event {
-                        LlmStreamEvent::Token(tok) => {
-                            accumulated.push_str(tok);
+            std::thread::Builder::new()
+                .name("eval-llm-forwarder".to_string())
+                .spawn(move || {
+                    let mut accumulated = String::new();
+                    while let Ok(event) = inter_rx.recv() {
+                        match &event {
+                            LlmStreamEvent::Token(tok) => {
+                                accumulated.push_str(tok);
+                            }
+                            LlmStreamEvent::Finished => {}
+                            _ => {}
                         }
-                        LlmStreamEvent::Finished => {}
-                        _ => {}
+                        let _ = external_tx.send(event);
                     }
-                    let _ = external_tx.send(event);
-                }
-                let _ = done_tx.send(accumulated);
-            });
+                    let _ = done_tx.send(accumulated);
+                })
+                .expect("Failed to spawn eval-llm-forwarder");
 
             let res = self
                 .inner

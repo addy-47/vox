@@ -569,13 +569,14 @@ pub fn process_stream_passthrough(chunk: &[f32], state: &mut VadActorState) {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::AtomicBool;
+
     use super::*;
     use crate::{
         config::AudioOutputMode,
         core::events::{InteractionMode, InteractionOwner},
         services::vad::providers::EarshotVadEngine,
     };
-    use std::sync::atomic::AtomicBool;
 
     /// Deterministic driver for `process_continuous_segmentation`.
     ///
@@ -731,17 +732,19 @@ mod tests {
     #[test]
     fn streamed_audio_matches_final_audio_without_overlap() {
         let mut rig = Rig::new(32, 100, 0.01);
-        rig.step(true);
-        rig.step(true); // opens the turn
-        rig.step(true);
-        rig.step(true);
+        for _ in 0..25 {
+            rig.step(true); // >= 4800 voiced samples to qualify as an utterance
+        }
         for _ in 0..50 {
             rig.step(false); // early-utterance hangover; 50th frame ends the turn
         }
 
         let (streamed, final_audio) = stream_and_final(rig.commands());
         let final_audio = final_audio.expect("a qualifying utterance must emit Final");
-        assert!(!streamed.is_empty(), "the utterance must have been streamed");
+        assert!(
+            !streamed.is_empty(),
+            "the utterance must have been streamed"
+        );
         assert_eq!(
             streamed.len(),
             final_audio.len(),
@@ -760,7 +763,9 @@ mod tests {
         rig.step(true);
         rig.step(true); // opens the turn and predicts turn 8
         rig.handles.turn_id_atomic.store(8, Ordering::Relaxed); // router commits
-        rig.step(true);
+        for _ in 0..23 {
+            rig.step(true); // >= 4800 voiced samples to emit Final
+        }
         for _ in 0..50 {
             rig.step(false);
         }
@@ -774,7 +779,11 @@ mod tests {
                 _ => None,
             })
             .collect();
-        assert!(ids.len() >= 3, "expected pre-roll, body and final, got {:?}", ids);
+        assert!(
+            ids.len() >= 3,
+            "expected pre-roll, body and final, got {:?}",
+            ids
+        );
         assert!(
             ids.iter().all(|&id| id == 8),
             "every command of one utterance must share turn 8, got {:?}",
@@ -819,8 +828,7 @@ mod tests {
         }
         let late = rig.events();
         assert!(
-            late.iter()
-                .any(|e| matches!(e, VoxEvent::SpeechEnd { .. })),
+            late.iter().any(|e| matches!(e, VoxEvent::SpeechEnd { .. })),
             "turn must close at the 50-frame early-utterance threshold"
         );
     }

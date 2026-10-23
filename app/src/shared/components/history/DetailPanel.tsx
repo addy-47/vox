@@ -4,6 +4,7 @@ import { formatDateTime, resolveSessionTitle, type SessionRow, type TurnRow } fr
 import { EmptyState, OrbitalLoader } from "@/shared/components/common";
 import { HISTORY_COPY } from "@/data/historyCopy";
 import { Drawer } from "@/shared/ui/Drawer";
+import { Tooltip } from "@/shared/ui/Tooltip";
 import { Markdown } from "@/shared/ui/Markdown";
 import { CompactSessionButton } from "./CompactSessionButton";
 
@@ -154,12 +155,11 @@ export const DetailPanel = memo(
               <span className="text-[14px] font-display font-bold text-[rgb(var(--foreground-muted))]">
                 :
               </span>
-              <span
-                className="text-[14px] font-display font-bold tracking-tight text-[rgb(var(--foreground))] truncate max-w-[240px] sm:max-w-[380px]"
-                title={resolveSessionTitle(session)}
-              >
-                {resolveSessionTitle(session)}
-              </span>
+              <Tooltip label={resolveSessionTitle(session)}>
+                <span className="text-[14px] font-display font-bold tracking-tight text-[rgb(var(--foreground))] truncate max-w-[240px] sm:max-w-[380px]">
+                  {resolveSessionTitle(session)}
+                </span>
+              </Tooltip>
             </div>
           ) : undefined
         }

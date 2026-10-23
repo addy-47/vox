@@ -130,9 +130,12 @@ async fn harness_turn_streams_clauses_to_tts_and_commits_history() {
 
         // 5. Spawn real background LLM worker thread using production EmbeddedProvider
         let worker_provider = Arc::clone(&provider);
-        let worker_handle = std::thread::spawn(move || {
-            spawn_llm_worker(llm_rx, worker_provider);
-        });
+        let worker_handle = std::thread::Builder::new()
+            .name("test-llm-worker".into())
+            .spawn(move || {
+                spawn_llm_worker(llm_rx, worker_provider);
+            })
+            .expect("spawn test-llm-worker");
 
         let cancel = state.pipeline.turn_token();
         let accumulator = Arc::clone(&state.pipeline_accumulator);

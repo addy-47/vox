@@ -67,13 +67,17 @@ export const LiquidChamber = memo<LiquidChamberProps>(({
 
   // Persistent mutable refs for fluid physics simulation (prevents re-seeding on polling updates)
   const metricsRef = useRef({ ramPct, cpuPct, ramMb });
+  const wakeLoopRef = useRef<(() => void) | null>(null);
+
   useEffect(() => {
     metricsRef.current = { ramPct, cpuPct, ramMb };
+    wakeLoopRef.current?.();
   }, [ramPct, cpuPct, ramMb]);
 
   const colorsRef = useRef(colors);
   useEffect(() => {
     colorsRef.current = colors;
+    wakeLoopRef.current?.();
   }, [colors]);
 
   // Liquid Chamber Canvas Animation Loop (Fluid Continuous Wave Physics)
@@ -170,8 +174,16 @@ export const LiquidChamber = memo<LiquidChamberProps>(({
       const settling =
         Math.abs(targetRamFill - curRamFill) < 0.0005 &&
         Math.abs(targetCpuFill - curCpuFill) < 0.0005;
-      if (settling) settledFrames += 1;
-      else settledFrames = 0;
+      if (settling) {
+        settledFrames += 1;
+        if (settledFrames > 90) {
+          running = false;
+          rafId = 0;
+          return;
+        }
+      } else {
+        settledFrames = 0;
+      }
 
       ctx.clearRect(0, 0, width, height);
 
@@ -321,11 +333,23 @@ export const LiquidChamber = memo<LiquidChamberProps>(({
       ctx.restore(); // restore transform
     };
 
+    const wakeLoop = () => {
+      if (document.hidden) return;
+      settledFrames = 0;
+      if (!running) {
+        running = true;
+        lastFrameTime = performance.now();
+        rafId = requestAnimationFrame(render);
+      }
+    };
+    wakeLoopRef.current = wakeLoop;
+
     syncCanvasSize();
 
     // Use ResizeObserver to continuously track layout changes and animation opens
     const resizeObserver = new ResizeObserver(() => {
       syncCanvasSize();
+      wakeLoop();
     });
     resizeObserver.observe(container);
 
@@ -335,11 +359,7 @@ export const LiquidChamber = memo<LiquidChamberProps>(({
         if (rafId) cancelAnimationFrame(rafId);
         rafId = 0;
       } else {
-        running = true;
-        if (!rafId) {
-          lastFrameTime = performance.now();
-          rafId = requestAnimationFrame(render);
-        }
+        wakeLoop();
       }
     };
     document.addEventListener("visibilitychange", onVisibility);
@@ -348,6 +368,7 @@ export const LiquidChamber = memo<LiquidChamberProps>(({
 
     return () => {
       running = false;
+      wakeLoopRef.current = null;
       document.removeEventListener("visibilitychange", onVisibility);
       resizeObserver.disconnect();
       if (rafId) cancelAnimationFrame(rafId);

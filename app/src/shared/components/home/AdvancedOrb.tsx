@@ -543,6 +543,23 @@ export const VoxOrb = React.memo(({
   const isCalm = interactionState === 'Idle' || interactionState === 'Paused' || isSleeping;
   const lowPowerPause = isCoarsePointer && isCalm && !isTransitioning && !isVisible;
 
+  // Idle settle power arm: when the orb has been calm (Idle or Paused) for > 3.0s,
+  // pause rendering completely to permit CPU C-state package sleep and preserve battery.
+  // Active states, hover, interaction, or state change wake it immediately.
+  const [isSettledIdle, setIsSettledIdle] = useState(false);
+  const [isUserHovering, setIsUserHovering] = useState(false);
+
+  useEffect(() => {
+    if (!isCalm || isTransitioning || isUserHovering) {
+      setIsSettledIdle(false);
+      return;
+    }
+    const timer = setTimeout(() => {
+      setIsSettledIdle(true);
+    }, 3000);
+    return () => clearTimeout(timer);
+  }, [isCalm, isTransitioning, isUserHovering]);
+
   /**
    * Runtime scene context — populated by the init effect below.
    * The tick function reads from this ref so it doesn't need closure captures.
@@ -812,7 +829,7 @@ export const VoxOrb = React.memo(({
     fpsActive: 60,
     fpsIdle: 12,
     isActive,
-    isPaused: isSleeping || paused || lowPowerPause,
+    isPaused: isSleeping || paused || lowPowerPause || isSettledIdle,
   });
 
   // ── Scene initialisation (runs once) ─────────────────────────────────────
@@ -1062,6 +1079,8 @@ export const VoxOrb = React.memo(({
   return (
     <div
       ref={mountRef}
+      onPointerEnter={() => setIsUserHovering(true)}
+      onPointerLeave={() => setIsUserHovering(false)}
       style={{
         width: '100%',
         height: '100%',

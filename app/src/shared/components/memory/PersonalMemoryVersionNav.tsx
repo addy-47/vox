@@ -1,4 +1,4 @@
-import React, { memo, useCallback, useRef, useEffect } from "react";
+import React, { memo, useCallback } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import type { PersonalMemoryRecord } from "@/services/memoryService";
@@ -21,6 +21,7 @@ export const PersonalMemoryVersionNav: React.FC<PersonalMemoryVersionNavProps> =
     displayedRecord,
     onSelectVersion,
     onCommitActiveVersion,
+    isRestoring,
   }) => {
     const currentRecord = displayedRecord ?? activeVersionRecord;
     const currentVersion = currentRecord?.version ?? 1;
@@ -30,30 +31,16 @@ export const PersonalMemoryVersionNav: React.FC<PersonalMemoryVersionNavProps> =
     const hasOlder = currentIndex >= 0 && currentIndex < versions.length - 1;
     const hasNewer = currentIndex > 0;
 
-    const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const isViewingDifferentVersion = Boolean(
+      activeVersionRecord && currentVersion !== activeVersionRecord.version
+    );
 
-    useEffect(() => {
-      return () => {
-        if (debounceTimerRef.current) {
-          clearTimeout(debounceTimerRef.current);
-        }
-      };
-    }, []);
-
-    // Instant visual navigation + 500ms debounced active version commitment
+    // Browsing a revision updates local preview only — it NEVER mutates active state.
     const navigateToRecord = useCallback(
       (targetRecord: PersonalMemoryRecord) => {
         onSelectVersion(targetRecord);
-
-        if (debounceTimerRef.current) {
-          clearTimeout(debounceTimerRef.current);
-        }
-
-        debounceTimerRef.current = setTimeout(() => {
-          void onCommitActiveVersion(targetRecord.version);
-        }, 500);
       },
-      [onSelectVersion, onCommitActiveVersion]
+      [onSelectVersion]
     );
 
     const handleOlder = useCallback(() => {
@@ -105,6 +92,18 @@ export const PersonalMemoryVersionNav: React.FC<PersonalMemoryVersionNavProps> =
             <ChevronRight size={13} />
           </button>
         </Tooltip>
+
+        {isViewingDifferentVersion && (
+          <button
+            type="button"
+            onClick={() => void onCommitActiveVersion(currentVersion)}
+            disabled={isRestoring}
+            aria-label={`Restore version ${currentVersion}`}
+            className="ml-1 px-2 py-0.5 rounded text-[11px] font-mono font-medium text-[rgb(var(--accent))] bg-[rgba(var(--accent),0.1)] hover:bg-[rgba(var(--accent),0.2)] border border-[rgba(var(--accent),0.3)] transition-colors cursor-pointer disabled:opacity-50"
+          >
+            {isRestoring ? MEMORY_COPY.versions.restoring : "Restore"}
+          </button>
+        )}
       </div>
     );
   }

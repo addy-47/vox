@@ -132,7 +132,10 @@ impl StreamRoutingStage {
                             "[Harness::Stream] Stream timed out after 30s idle (turn {})",
                             handles.turn_id
                         );
-                        return Err(format!("LLM provider response timed out after {:?}", max_idle));
+                        return Err(format!(
+                            "LLM provider response timed out after {:?}",
+                            max_idle
+                        ));
                     }
                     continue;
                 }

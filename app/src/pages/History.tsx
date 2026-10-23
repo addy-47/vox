@@ -66,8 +66,6 @@ export const History: React.FC = () => {
     monthIndex,
     isOrbitViewport,
     effectiveView,
-    dayMetaLabel,
-    monthMetaLabel,
     dayTurnsCount,
     monthTurnsCount,
     dayTimeSpan,
@@ -149,6 +147,22 @@ export const History: React.FC = () => {
   }), [selectedSession, currentWindowSessions, sessions, setSelectedSession]);
   useRegisterPageDrawer(drawerHandlers);
 
+  // Stable refs for arrow-key navigation so keydown listener is not torn down on every keypress
+  const selectedSessionRef = React.useRef(selectedSession);
+  React.useEffect(() => {
+    selectedSessionRef.current = selectedSession;
+  }, [selectedSession]);
+
+  const currentWindowSessionsRef = React.useRef(currentWindowSessions);
+  React.useEffect(() => {
+    currentWindowSessionsRef.current = currentWindowSessions;
+  }, [currentWindowSessions]);
+
+  const isOrbitViewportRef = React.useRef(isOrbitViewport);
+  React.useEffect(() => {
+    isOrbitViewportRef.current = isOrbitViewport;
+  }, [isOrbitViewport]);
+
   // Arrow-key session card navigation: ArrowLeft / ArrowRight cycles sessions and orbits the ring
   React.useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -163,30 +177,31 @@ export const History: React.FC = () => {
       if (e.shiftKey || e.ctrlKey || e.metaKey) return;
 
       if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
-        if (!isOrbitViewport || currentWindowSessions.length === 0) return;
+        const sessions = currentWindowSessionsRef.current;
+        if (!isOrbitViewportRef.current || sessions.length === 0) return;
         e.preventDefault();
         e.stopPropagation();
 
-        const currentId = selectedSession?.id;
-        const currentIndex = currentWindowSessions.findIndex((s) => s.id === currentId);
+        const currentId = selectedSessionRef.current?.id;
+        const currentIndex = sessions.findIndex((s) => s.id === currentId);
 
         let nextIndex: number;
         if (currentIndex === -1) {
-          nextIndex = e.key === "ArrowRight" ? 0 : currentWindowSessions.length - 1;
+          nextIndex = e.key === "ArrowRight" ? 0 : sessions.length - 1;
         } else {
           nextIndex =
             e.key === "ArrowRight"
-              ? (currentIndex + 1) % currentWindowSessions.length
-              : (currentIndex - 1 + currentWindowSessions.length) % currentWindowSessions.length;
+              ? (currentIndex + 1) % sessions.length
+              : (currentIndex - 1 + sessions.length) % sessions.length;
         }
 
-        setSelectedSession(currentWindowSessions[nextIndex]);
+        setSelectedSession(sessions[nextIndex]);
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isOrbitViewport, currentWindowSessions, selectedSession, setSelectedSession]);
+  }, [setSelectedSession]);
 
   const monthNodeIds = React.useMemo(() => {
     return (currentMonthWindow.days ?? []).map((d) => d.dayKey);
@@ -356,7 +371,6 @@ export const History: React.FC = () => {
                 primaryLabel={formatMonthHeroLabel(currentMonthGroup.monthKey)}
                 secondaryLabel={formatMonthYearLabel(currentMonthGroup.monthKey)}
                 monthFullLabel={formatMonthFullLabel(currentMonthGroup.monthKey)}
-                metaLabel={monthMetaLabel}
                 sessionsCount={currentMonthGroup.totalSessions}
                 memoriesCount={monthTurnsCount}
                 timeSpanLabel={currentMonthWindow.label}
@@ -402,7 +416,6 @@ export const History: React.FC = () => {
                 dayHeroParts={formatDayHeroParts(currentGroup.dayKey)}
                 dateSpanLabel={currentWindow.dateSpanLabel}
                 weekdayLabel={formatWeekdayLabel(currentGroup.dayKey)}
-                metaLabel={dayMetaLabel}
                 sessionsCount={currentWindowSessions.length}
                 memoriesCount={dayTurnsCount}
                 timeSpanLabel={dayTimeSpan || currentWindow.label}

@@ -124,8 +124,9 @@ export const Home = memo(() => {
       // Space on a focused button must activate the button, never PTT:
       // native button activation would otherwise race handlePttStart.
       // (Ctrl+Space is an explicit chord and keeps working everywhere.)
+      const activeEl = document.activeElement as HTMLElement | null;
       const spaceOnButton =
-        e.key === " " && (document.activeElement as HTMLElement | null)?.tagName === "BUTTON";
+        e.key === " " && (activeEl?.tagName === "BUTTON" || activeEl?.getAttribute("role") === "button");
 
       if ((e.key === "m" || e.key === "M") && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
         e.preventDefault();
@@ -169,8 +170,9 @@ export const Home = memo(() => {
 
     const onKeyUp = (e: KeyboardEvent) => {
       if (e.key === " " && !e.ctrlKey && !e.metaKey) {
+        const activeEl = document.activeElement as HTMLElement | null;
         const endOnButton =
-          (document.activeElement as HTMLElement | null)?.tagName === "BUTTON";
+          activeEl?.tagName === "BUTTON" || activeEl?.getAttribute("role") === "button";
         if (!endOnButton && interactionMode === "PTT" && isEngaged && !isPaused && !isSleeping && interactionState !== "Error") {
           if (pttStatus === "RECORDING") void handlePttStop();
           else void handlePttCancel();
@@ -356,10 +358,10 @@ export const Home = memo(() => {
         </div>
       </div>
 
-      {/* ── Compact & Mobile Dialogue Scrubber (Vertically centered, right edge of screen, ≤75% orb height) ── */}
+      {/* ── Dialogue Scrubber (Vertically centered, right edge of screen, ≤75% orb height, aligned with dialogue rail) ── */}
       {scrubberChapters.length > 0 && (
         <div
-          className="absolute z-30 pointer-events-auto md:hidden"
+          className="absolute z-30 pointer-events-auto hidden md:block"
           style={{
             right: "max(6px, env(safe-area-inset-right, 6px))",
             top: isRealMobileDevice() ? "calc(50% - 22.4px)" : "calc(50% - 36px)",
@@ -441,9 +443,18 @@ export const Home = memo(() => {
                 {/* PTT Mic Button */}
                 {interactionMode === "PTT" && (
                   <button
-                    onPointerDown={() => { void handlePttStart(); }}
-                    onPointerUp={() => { void handlePttStop(); }}
-                    onPointerLeave={() => { if (pttStatus === "RECORDING") void handlePttCancel(); }}
+                    onPointerDown={(e) => {
+                      e.currentTarget.setPointerCapture(e.pointerId);
+                      void handlePttStart();
+                    }}
+                    onPointerUp={(e) => {
+                      try {
+                        e.currentTarget.releasePointerCapture(e.pointerId);
+                      } catch {
+                        // ignore if already released
+                      }
+                      void handlePttStop();
+                    }}
                     disabled={isPaused || isSleeping}
                     tabIndex={isPaused || isSleeping ? -1 : 0}
                     className={cn(

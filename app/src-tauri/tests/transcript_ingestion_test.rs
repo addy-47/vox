@@ -118,9 +118,12 @@ impl Rig {
 
         let recorded: Recorded = Arc::new(Mutex::new(Vec::new()));
         let worker_recorded = recorded.clone();
-        let llm_join = std::thread::spawn(move || {
-            stub_llm_worker(llm_rx, worker_recorded);
-        });
+        let llm_join = std::thread::Builder::new()
+            .name("test-stub-llm".into())
+            .spawn(move || {
+                stub_llm_worker(llm_rx, worker_recorded);
+            })
+            .expect("spawn test-stub-llm");
 
         let ctx = RoutingContext::from_app_state(&state);
         Self {

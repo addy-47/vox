@@ -268,6 +268,14 @@ export interface ProvidersConfigFile {
   };
 }
 
+export interface RemoteSettings {
+  enabled?: boolean;
+  role?: "host" | "controller" | "disabled";
+  pin?: string;
+  allowed_peers?: string[];
+  [key: string]: unknown;
+}
+
 export interface VoxSettings {
   vad: VadSettings;
   stt: SttSettings;
@@ -280,6 +288,7 @@ export interface VoxSettings {
   appearance: AppearanceSettings;
   persona: PersonaSettings;
   system: SystemSettings;
+  remote?: RemoteSettings;
   providers?: ProvidersConfigFile;
 }
 
@@ -318,5 +327,6 @@ export interface DraftKeyMap {
     | "semantic_similarity_cutoff";
   persona: "modular_prompt" | "realtime_prompt";
   system: "setup_completed";
+  remote: "enabled" | "role" | "pin" | "allowed_peers";
   providers: never;
 }

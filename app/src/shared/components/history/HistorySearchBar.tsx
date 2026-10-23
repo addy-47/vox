@@ -2,8 +2,7 @@ import { useState, useMemo, useEffect, useCallback, memo } from "react";
 import { MessageSquare } from "lucide-react";
 import {
   resolveSessionTitle,
-  getTurns,
-  getCachedTurns,
+  searchHistory,
   type SessionRow,
 } from "@/services/persistenceService";
 import { cn } from "@/shared/lib/utils";
@@ -64,41 +63,52 @@ export const HistorySearchBar = memo<HistorySearchBarProps>(({
 }) => {
   const [value, setValue] = useState("");
   const [activeIndex, setActiveIndex] = useState(-1);
+  const [backendHits, setBackendHits] = useState<HistorySearchHit[]>([]);
 
-  // Background turn indexing queue for scalable search across all session messages
+  // Debounced server-side search directly querying Turso SQL index
   useEffect(() => {
-    let canceled = false;
-    const loadQueue = async () => {
-      const unindexed = sessions.filter((s) => !getCachedTurns(s.id));
-      const BATCH_SIZE = 4;
-      for (let i = 0; i < unindexed.length; i += BATCH_SIZE) {
-        if (canceled) break;
-        const batch = unindexed.slice(i, i + BATCH_SIZE);
-        await Promise.all(batch.map((s) => getTurns(s.id).catch(() => [])));
-      }
-    };
+    const q = value.trim();
+    if (q.length < 2) {
+      setBackendHits([]);
+      return;
+    }
 
-    const idleId = window.requestIdleCallback
-      ? window.requestIdleCallback(() => void loadQueue())
-      : setTimeout(() => void loadQueue(), 150);
+    let active = true;
+    const timer = setTimeout(() => {
+      void (async () => {
+        try {
+          const rawHits = await searchHistory(q, null, 7);
+          if (!active) return;
+          const mapped: HistorySearchHit[] = rawHits.map((h) => ({
+            session: h.session,
+            matchType: h.match_type,
+            matchedSnippet: h.matched_snippet,
+            matchedRole: h.matched_role,
+            turnIndex: h.turn_index,
+          }));
+          setBackendHits(mapped);
+        } catch (e) {
+          console.debug("[HistorySearch] Backend search failed:", e);
+        }
+      })();
+    }, 180);
 
     return () => {
-      canceled = true;
-      if (typeof idleId === "number") {
-        if (window.cancelIdleCallback) {
-          window.cancelIdleCallback(idleId);
-        } else {
-          clearTimeout(idleId);
-        }
-      }
+      active = false;
+      clearTimeout(timer);
     };
-  }, [sessions]);
+  }, [value]);
 
-  // Scalable search across titles, first message, and all turns
+  // Scalable search combining immediate local title match with backend full-text turn matches
   const results = useMemo<HistorySearchHit[]>(() => {
     const q = value.trim().toLowerCase();
     if (!q) return [];
 
+    if (backendHits.length > 0) {
+      return backendHits;
+    }
+
+    // Instant local title and first_message search while backend query is in flight
     const hits: HistorySearchHit[] = [];
     const MAX_RESULTS = 7;
 
@@ -117,39 +127,8 @@ export const HistorySearchBar = memo<HistorySearchBarProps>(({
         continue;
       }
 
-      // 2. Check full turns in memory cache
-      const turns = getCachedTurns(session.id);
-      let foundTurn = false;
-
-      if (turns && turns.length > 0) {
-        for (const turn of turns) {
-          if (turn.user_text && turn.user_text.toLowerCase().includes(q)) {
-            hits.push({
-              session,
-              matchType: "turn",
-              matchedSnippet: extractSnippet(turn.user_text, q),
-              matchedRole: "user",
-              turnIndex: turn.turn_id,
-            });
-            foundTurn = true;
-            break;
-          }
-          if (turn.assistant_text && turn.assistant_text.toLowerCase().includes(q)) {
-            hits.push({
-              session,
-              matchType: "turn",
-              matchedSnippet: extractSnippet(turn.assistant_text, q),
-              matchedRole: "assistant",
-              turnIndex: turn.turn_id,
-            });
-            foundTurn = true;
-            break;
-          }
-        }
-      }
-
-      // 3. Fallback to session.first_message if turns not yet cached
-      if (!foundTurn && session.first_message && session.first_message.toLowerCase().includes(q)) {
+      // 2. Fallback to session.first_message
+      if (session.first_message && session.first_message.toLowerCase().includes(q)) {
         hits.push({
           session,
           matchType: "first_message",
@@ -160,7 +139,7 @@ export const HistorySearchBar = memo<HistorySearchBarProps>(({
     }
 
     return hits;
-  }, [sessions, value]);
+  }, [sessions, value, backendHits]);
 
   const handleClear = useCallback(() => {
     setValue("");

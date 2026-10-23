@@ -100,7 +100,7 @@ export const SettingsHelpContent = memo(({ initialCardId = "speech" }: SettingsH
         {activeCard.tips && activeCard.tips.length > 0 && (
           <>
             <div className="h-px bg-[rgba(var(--border),0.10)]" />
-            <div className="border-l-2 border-[rgb(var(--accent))] bg-[rgba(var(--accent),0.04)] pl-3.5 pr-3 py-2 rounded-r-xl flex flex-col gap-1 text-[12px] text-[rgb(var(--foreground-muted))] border-y border-r border-[rgba(var(--border),0.08)]">
+            <div className="border border-[rgba(var(--accent),0.2)] bg-[rgba(var(--accent),0.04)] px-3.5 py-2 rounded-xl flex flex-col gap-1 text-[12px] text-[rgb(var(--foreground-muted))]">
               {activeCard.tips.map((tip) => (
                 <p key={tip} className="leading-relaxed">
                   {tip}

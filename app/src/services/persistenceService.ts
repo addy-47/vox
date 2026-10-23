@@ -45,6 +45,32 @@ export interface SessionUpdate {
   projectId?: string | null;
 }
 
+/**
+ * Mirror of `HistorySearchHit` (persistence/sessions.rs).
+ */
+export interface HistorySearchHit {
+  session: SessionRow;
+  match_type: "title" | "turn" | "first_message";
+  matched_snippet?: string;
+  matched_role?: "user" | "assistant";
+  turn_index?: number;
+}
+
+/**
+ * Searches conversation sessions and turns directly via Turso SQL index.
+ */
+export function searchHistory(
+  query: string,
+  projectId?: string | null,
+  limit?: number
+): Promise<HistorySearchHit[]> {
+  return invoke("search_history", {
+    query,
+    projectId: projectId ?? null,
+    limit: limit ?? 20,
+  });
+}
+
 /** Ephemeral in-memory transcript history (tray buffer). */
 export function getTranscriptHistory(): Promise<string[]> {
   return invoke("get_transcript_history");

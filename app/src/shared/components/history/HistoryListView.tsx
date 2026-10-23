@@ -6,6 +6,7 @@ import { formatDateTime, resolveSessionTitle, type SessionRow } from "@/services
 import { HISTORY_COPY } from "@/data/historyCopy";
 import { useHistoryFilterStore } from "@/store/historyFilterStore";
 import { HighlightMatch, BottomDockFeather } from "@/shared/ui";
+import { Tooltip } from "@/shared/ui/Tooltip";
 import { CalendarPicker, toDateKey } from "./CalendarPicker";
 import { CompactSessionButton } from "./CompactSessionButton";
 
@@ -114,7 +115,7 @@ export const HistoryListView: React.FC<HistoryListViewProps> = memo(
     return (
       <div className="w-full h-full flex flex-col min-h-0 overflow-hidden z-20">
         {/* Quick Search and Date Filter Pills */}
-        <div className="shrink-0 px-4.5 sm:px-5.5 pt-2 pb-2.5 space-y-2.5 border-b]">
+        <div className="shrink-0 px-4.5 sm:px-5.5 pt-2 pb-2.5 space-y-2.5 border-b border-[rgba(var(--border),0.12)]">
 
           {/* Quick Search Input — Underline Style matching Design System */}
           <div className="px-1 pb-0.5">
@@ -173,20 +174,21 @@ export const HistoryListView: React.FC<HistoryListViewProps> = memo(
             })}
 
             {/* Filter icon button directly right of the last 30 days pill */}
-            <button
-              type="button"
-              onClick={() => setShowDateRangePicker((prev) => !prev)}
-              title={HISTORY_COPY.filterLabel}
-              aria-label={HISTORY_COPY.filterLabel}
-              className={cn(
-                "p-1.5 rounded-lg border text-[10.5px] font-mono whitespace-nowrap transition-all cursor-pointer flex items-center justify-center shrink-0",
-                showDateRangePicker || dateFilter === "custom"
-                  ? "bg-[rgba(var(--accent),0.2)] text-[rgb(var(--accent))] border-[rgba(var(--accent),0.45)] font-bold shadow-[0_0_8px_rgba(var(--accent),0.2)]"
-                  : "bg-[rgba(var(--card),0.4)] text-[rgb(var(--foreground-muted))] border-[rgba(var(--border),0.12)] hover:text-[rgb(var(--foreground))] hover:border-[rgba(var(--accent),0.2)]"
-              )}
-            >
-              <Filter size={11} strokeWidth={1.8} />
-            </button>
+            <Tooltip label={HISTORY_COPY.filterLabel}>
+              <button
+                type="button"
+                onClick={() => setShowDateRangePicker((prev) => !prev)}
+                aria-label={HISTORY_COPY.filterLabel}
+                className={cn(
+                  "p-1.5 rounded-lg border text-[10.5px] font-mono whitespace-nowrap transition-all cursor-pointer flex items-center justify-center shrink-0",
+                  showDateRangePicker || dateFilter === "custom"
+                    ? "bg-[rgba(var(--accent),0.2)] text-[rgb(var(--accent))] border-[rgba(var(--accent),0.45)] font-bold shadow-[0_0_8px_rgba(var(--accent),0.2)]"
+                    : "bg-[rgba(var(--card),0.4)] text-[rgb(var(--foreground-muted))] border-[rgba(var(--border),0.12)] hover:text-[rgb(var(--foreground))] hover:border-[rgba(var(--accent),0.2)]"
+                )}
+              >
+                <Filter size={11} strokeWidth={1.8} />
+              </button>
+            </Tooltip>
           </div>
 
           {/* Date Selection Filter Range Option Panel */}

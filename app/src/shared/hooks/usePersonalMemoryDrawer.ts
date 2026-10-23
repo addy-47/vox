@@ -8,6 +8,7 @@ import {
   regeneratePersonalMemory,
   getMemoryRevisions,
   resolveMemoryRevisions,
+  getIngestionStats,
   type PersonalMemoryRecord,
   type ObservationRecord,
   type MemoryRevisionView,
@@ -16,6 +17,7 @@ import {
 import { useObservationsList, type ObservationFilter } from "@/shared/hooks/useObservationsList";
 import { useRegisterPageDrawer } from "@/shared/context/PageDrawerContext";
 import { useMemoryStore } from "@/store/memoryStore";
+import { onPersonalMemoryUpdated } from "@/services/eventsService";
 import { copyToClipboard } from "@/shared/lib/clipboard";
 import type { StagingMode, MemoryComment, SelectionAnchor } from "@/shared/components/memory";
 import { MEMORY_COPY } from "@/data/memoryCopy";
@@ -276,26 +278,32 @@ export function usePersonalMemoryDrawer({
     };
   }, [drawerOpen, reopenToComments, comments.length, storeSetReopenToComments]);
 
-  // Derived Candidate observations from facts
+  const [serverUnconsolidatedCount, setServerUnconsolidatedCount] = useState<number | null>(null);
+
+  // Derived Candidate observations from facts (fallback if stats not yet loaded)
   const identityCandidateFacts = useMemo(() => {
-    return facts.filter((f) => f.fact_type === "personal");
+    return facts.filter((f) => f.fact_type === "personal" && f.status !== "integrated");
   }, [facts]);
 
-  const unconsolidatedIdentityCount = identityCandidateFacts.length;
+  const unconsolidatedIdentityCount = serverUnconsolidatedCount ?? identityCandidateFacts.length;
 
   // Refresh personal memory records
   const refreshPersonalMemory = useCallback(async (_isSilent = false) => {
     try {
-      const [mem, allVersions, allSuggestions] = await Promise.all([
+      const [mem, allVersions, allSuggestions, stats] = await Promise.all([
         getPersonalMemory(),
         getPersonalMemoryVersions(),
         getMemoryRevisions().catch(() => []),
+        getIngestionStats().catch(() => null),
       ]);
       if (!mountedRef.current) return;
       setPersonalMemory(mem);
       setDisplayedRecord(mem);
       setVersions(allVersions);
       setSuggestions(allSuggestions);
+      if (stats) {
+        setServerUnconsolidatedCount(stats.unconsolidated_personal_count);
+      }
       if (allSuggestions.length > 0) {
         setStagingMode("suggestions");
       }
@@ -306,6 +314,15 @@ export function usePersonalMemoryDrawer({
       }
     }
   }, [onError]);
+
+  useEffect(() => {
+    const unlisten = onPersonalMemoryUpdated(() => {
+      void refreshPersonalMemory(true);
+    });
+    return () => {
+      unlisten();
+    };
+  }, [refreshPersonalMemory]);
 
   useEffect(() => {
     let isMounted = true;

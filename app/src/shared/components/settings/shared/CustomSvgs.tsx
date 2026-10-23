@@ -138,6 +138,8 @@ PresetCell.displayName = "PresetCell";
 export interface PresetInputProps {
   value: string;
   onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  onBlur?: (e: React.FocusEvent<HTMLInputElement>) => void;
+  onKeyDown?: (e: React.KeyboardEvent<HTMLInputElement>) => void;
   placeholder: string;
   selected: boolean;
   inputMode?: "numeric" | "decimal" | "text";
@@ -148,6 +150,8 @@ export const PresetInput = memo(
   ({
     value,
     onChange,
+    onBlur,
+    onKeyDown,
     placeholder,
     selected,
     inputMode = "numeric",
@@ -166,6 +170,8 @@ export const PresetInput = memo(
         inputMode={inputMode}
         value={value}
         onChange={onChange}
+        onBlur={onBlur}
+        onKeyDown={onKeyDown}
         placeholder={placeholder}
         aria-label={ariaLabel}
         className={cn(

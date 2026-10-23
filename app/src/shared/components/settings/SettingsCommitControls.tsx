@@ -7,7 +7,6 @@ import { SETTINGS_COPY, PROVIDERS_CONFIG_DESK_COPY } from "@/data/settingsCopy";
 import { useExpandableList } from "@/shared/ui/ExpandableList";
 import { useViewportResize } from "@/shared/hooks/useViewportResize";
 import { Tooltip } from "@/shared/ui/Tooltip";
-import { getEffectiveCloudApiKey } from "@/shared/lib/activeSelection";
 import type { DomainFlags } from "@/types/settings";
 
 export type DomainCommitMode =
@@ -39,27 +38,52 @@ export function isLlmSelectionMissingModel(
 }
 
 /**
+ * Leaf selector hook for active LLM provider and cloud API key.
+ * Prevents full draftSettings subscriptions that cause 1,000+ unnecessary renders.
+ */
+function useLlmCloudApiKey() {
+  const llmCategory = useSettingsStore((s) => s.draftSettings?.llm.active.category);
+  const llmActiveProvider = useSettingsStore((s) => s.draftSettings?.llm.active.provider);
+  const llmActiveModel = useSettingsStore((s) => s.draftSettings?.llm.active.model);
+
+  const draftLlmKey = useSettingsStore(
+    useCallback((s: SettingsState) => (llmActiveProvider ? s.draftSettings?.llm.cloud_keys?.[llmActiveProvider] : undefined), [llmActiveProvider])
+  );
+  const draftProvKey = useSettingsStore(
+    useCallback((s: SettingsState) => (llmActiveProvider ? s.draftSettings?.providers?.llm.cloud_keys?.[llmActiveProvider] : undefined), [llmActiveProvider])
+  );
+  const comProvKey = useSettingsStore(
+    useCallback((s: SettingsState) => (llmActiveProvider ? s.settings?.providers?.llm.cloud_keys?.[llmActiveProvider] : undefined), [llmActiveProvider])
+  );
+  const comLlmKey = useSettingsStore(
+    useCallback((s: SettingsState) => (llmActiveProvider ? s.settings?.llm.cloud_keys?.[llmActiveProvider] : undefined), [llmActiveProvider])
+  );
+
+  const cloudApiKey = draftLlmKey ?? draftProvKey ?? comProvKey ?? comLlmKey;
+
+  return { llmCategory, llmActiveProvider, llmActiveModel, cloudApiKey };
+}
+
+/**
  * Single source of commit-button logic for a settings domain, shared by the
  * card footer (SettingsCardWrapper) and expanded-modal headers. Mode
  * precedence mirrors the card footer exactly: dirty states first, then
  * saved toast, restarting indicator, and save failure.
  */
 export function useDomainCommitState(domainId: string): DomainCommitState {
-  // Atomic leaf selectors, not `(s) => s.draftSettings`. The whole-object
-  // subscription re-rendered every mounted card wrapper on every keystroke in
-  // any domain, and the derived dirtiness below ran two `JSON.stringify` walks
-  // per store write per wrapper (~1,100 calls). `domainFlags` is recomputed
-  // once per mutation, so these are now O(1) lookups.
-  const draftSettings = useSettingsStore((s) => s.draftSettings);
-  const committedSettings = useSettingsStore((s) => s.settings);
-  const llmCategory = draftSettings?.llm.active.category;
-  const llmActiveProvider = draftSettings?.llm.active.provider;
-  const llmActiveModel = draftSettings?.llm.active.model;
-  const cloudApiKey = getEffectiveCloudApiKey(draftSettings, committedSettings, llmActiveProvider);
+  const { llmCategory, llmActiveModel, cloudApiKey } = useLlmCloudApiKey();
   const pipelineMode = useSettingsStore((s) => s.draftSettings?.interaction.pipeline_mode);
   const realtimeProvider = useSettingsStore((s) => s.draftSettings?.realtime.active.provider);
-  const realtimeKeys = useSettingsStore((s) => s.draftSettings?.realtime.api_keys);
-  const realtimeProvidersKeys = useSettingsStore((s) => s.draftSettings?.providers?.realtime.api_keys);
+  const realtimeKey = useSettingsStore(
+    useCallback(
+      (s: SettingsState) =>
+        realtimeProvider
+          ? (s.draftSettings?.realtime.api_keys?.[realtimeProvider] ??
+             s.draftSettings?.providers?.realtime.api_keys?.[realtimeProvider])
+          : undefined,
+      [realtimeProvider]
+    )
+  );
 
   // `domainFlags` is empty until the first recompute, so a domain key can be
   // missing. The lookup is typed as possibly undefined on purpose.
@@ -74,10 +98,8 @@ export function useDomainCommitState(domainId: string): DomainCommitState {
 
   const isCloudLlmMissingKey =
     llmCategory === "cloud" && !cloudApiKey?.trim();
-  const realtimeKeyFor = (id: string | null | undefined) =>
-    id ? (realtimeKeys?.[id] ?? realtimeProvidersKeys?.[id]) : undefined;
   const isRealtimeMissingKey =
-    pipelineMode === "realtime" && !realtimeKeyFor(realtimeProvider)?.trim();
+    pipelineMode === "realtime" && !realtimeKey?.trim();
 
   const isMissingKey = useMemo(() => {
     if (domainId === "language") {
@@ -351,14 +373,10 @@ export const ModalProviderFooter = memo(({ category }: { category: "STT" | "LLM"
   const isTts = category === "TTS";
   const failedKeys = useSettingsStore((s) => s.failedSaveDomains[isTts ? "speech" : "language"]);
   const remoteModelsError = useCatalogStore((s) => s.remoteModelsError);
-  const draftSettings = useSettingsStore((s) => s.draftSettings);
-  const committedSettings = useSettingsStore((s) => s.settings);
-  const llmCategory = draftSettings?.llm.active.category;
-  const llmActiveProvider = draftSettings?.llm.active.provider;
-  const cloudApiKey = getEffectiveCloudApiKey(draftSettings, committedSettings, llmActiveProvider);
+  const { llmCategory, llmActiveModel, cloudApiKey } = useLlmCloudApiKey();
   const isCloudLlmMissingKey = category === "LLM" && llmCategory === "cloud" && !cloudApiKey?.trim();
   const isMissingModel =
-    isLlmSelectionMissingModel({ category: llmCategory, model: draftSettings?.llm.active.model });
+    isLlmSelectionMissingModel({ category: llmCategory, model: llmActiveModel });
 
   if (category === "STT") return null;
 

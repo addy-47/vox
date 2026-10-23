@@ -1,5 +1,6 @@
 import React, { useState, memo } from "react";
 import { MessageSquare, Edit3, Trash2 } from "lucide-react";
+import { Tooltip } from "@/shared/ui/Tooltip";
 import { MEMORY_COPY } from "@/data/memoryCopy";
 import type { MemoryComment } from "../stagingTypes";
 
@@ -47,29 +48,33 @@ export const CommentsQueueView: React.FC<CommentsQueueViewProps> = memo(
                   </div>
 
                   <div className="flex items-center gap-1 shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setEditingCommentId(c.id);
-                        setEditingCommentText(c.text);
-                      }}
-                      className="p-1 rounded-lg text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.12)] opacity-60 group-hover:opacity-100 transition-all cursor-pointer"
-                      title={MEMORY_COPY.editComment}
-                    >
-                      <Edit3 size={13} />
-                    </button>
-                    {onDeleteComment && (
+                    <Tooltip label={MEMORY_COPY.editComment}>
                       <button
                         type="button"
                         onClick={() => {
-                          if (editingCommentId === c.id) setEditingCommentId(null);
-                          onDeleteComment(c.id);
+                          setEditingCommentId(c.id);
+                          setEditingCommentText(c.text);
                         }}
-                        className="p-1 rounded-lg text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--error))] hover:bg-[rgba(var(--error),0.1)] opacity-60 group-hover:opacity-100 transition-all cursor-pointer"
-                        title={MEMORY_COPY.deleteCommentTooltip}
+                        className="p-1 rounded-lg text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.12)] opacity-60 group-hover:opacity-100 transition-all cursor-pointer"
+                        aria-label={MEMORY_COPY.editComment}
                       >
-                        <Trash2 size={13} />
+                        <Edit3 size={13} />
                       </button>
+                    </Tooltip>
+                    {onDeleteComment && (
+                      <Tooltip label={MEMORY_COPY.deleteCommentTooltip}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (editingCommentId === c.id) setEditingCommentId(null);
+                            onDeleteComment(c.id);
+                          }}
+                          className="p-1 rounded-lg text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--error))] hover:bg-[rgba(var(--error),0.1)] opacity-60 group-hover:opacity-100 transition-all cursor-pointer"
+                          aria-label={MEMORY_COPY.deleteCommentTooltip}
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </Tooltip>
                     )}
                   </div>
                 </div>

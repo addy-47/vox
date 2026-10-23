@@ -133,9 +133,10 @@ async fn compaction_slice_covers_only_the_turns_past_the_watermark() {
             .collect::<Vec<_>>();
         seed_turns(&conn, session_id, &turns_2).await;
 
-        let pending_2 = fetch_turns_for_compaction(&conn, session_id, run1.to_turn_id + 1, u32::MAX)
-            .await
-            .unwrap();
+        let pending_2 =
+            fetch_turns_for_compaction(&conn, session_id, run1.to_turn_id + 1, u32::MAX)
+                .await
+                .unwrap();
         assert_eq!(pending_2.len(), 5);
         assert_eq!(pending_2.first().unwrap().turn_id, 6);
         assert_eq!(pending_2.last().unwrap().turn_id, 10);
@@ -315,7 +316,8 @@ async fn coordinator_declines_a_slice_while_a_compaction_is_in_progress() {
             .unwrap();
 
         let slice_res =
-            CompactionCoordinator::run_compaction_slice(&app, &state, session_id, "manual", None).await;
+            CompactionCoordinator::run_compaction_slice(&app, &state, session_id, "manual", None)
+                .await;
         assert!(slice_res.is_ok());
         assert!(
             slice_res.unwrap().is_none(),
@@ -748,76 +750,76 @@ async fn compaction_request_includes_the_prior_summary_tag() {
 #[ignore = "Requires remote GPU server with Ollama gemma3:12b running"]
 async fn compaction_slice_100_turns_against_a_remote_ollama_server() {
     tokio::time::timeout(std::time::Duration::from_secs(600), async {
-    let _guard = TempPathsGuard::new();
-    let (app, state) = get_test_app_and_state().await;
+        let _guard = TempPathsGuard::new();
+        let (app, state) = get_test_app_and_state().await;
 
-    {
-        let mut settings = state.settings.write().unwrap();
-        settings.llm.active = vox_lib::config::ActiveSelection {
-            category: "server".to_string(),
-            provider: Some("ollama".to_string()),
-            model: REMOTE_OLLAMA_MODEL.to_string(),
-        };
-        settings.providers.llm.servers = vec![LlmCustomServer {
-            id: "ollama-server".to_string(),
-            name: "Ollama".to_string(),
-            url: REMOTE_OLLAMA_URL.to_string(),
-            model: REMOTE_OLLAMA_MODEL.to_string(),
-            protocol: "ollama".to_string(),
-            api_key: None,
-        }];
-    }
+        {
+            let mut settings = state.settings.write().unwrap();
+            settings.llm.active = vox_lib::config::ActiveSelection {
+                category: "server".to_string(),
+                provider: Some("ollama".to_string()),
+                model: REMOTE_OLLAMA_MODEL.to_string(),
+            };
+            settings.providers.llm.servers = vec![LlmCustomServer {
+                id: "ollama-server".to_string(),
+                name: "Ollama".to_string(),
+                url: REMOTE_OLLAMA_URL.to_string(),
+                model: REMOTE_OLLAMA_MODEL.to_string(),
+                protocol: "ollama".to_string(),
+                api_key: None,
+            }];
+        }
 
-    let session_id = 9101;
-    let turns = load_dataset(100);
-    assert_eq!(turns.len(), 100, "Must seed exactly 100 turns from dataset");
-    let conn = state.db.connect().unwrap();
-    seed_turns(&conn, session_id, &turns).await;
-    state.pipeline.set_state(InteractionState::Ready);
+        let session_id = 9101;
+        let turns = load_dataset(100);
+        assert_eq!(turns.len(), 100, "Must seed exactly 100 turns from dataset");
+        let conn = state.db.connect().unwrap();
+        seed_turns(&conn, session_id, &turns).await;
+        state.pipeline.set_state(InteractionState::Ready);
 
-    let cancel = CancellationToken::new();
-    let summary = CompactionCoordinator::run_compaction_slice(
-        &app,
-        &state,
-        session_id,
-        "manual",
-        Some(&cancel),
-    )
-    .await
-    .expect("run_compaction_slice must succeed")
-    .expect("Must return compaction summary");
-
-    assert_eq!(summary.from_turn_id, 1);
-    assert_eq!(summary.to_turn_id, 100);
-    assert!(
-        summary.facts_enqueued > 0,
-        "Expected facts extracted from 100 turns"
-    );
-
-    let run = fetch_latest_compaction_run(&conn, session_id)
+        let cancel = CancellationToken::new();
+        let summary = CompactionCoordinator::run_compaction_slice(
+            &app,
+            &state,
+            session_id,
+            "manual",
+            Some(&cancel),
+        )
         .await
-        .unwrap()
-        .expect("Compaction record must exist");
-    assert_eq!(run.status, "completed");
-    assert_eq!(run.from_turn_id, 1);
-    assert_eq!(run.to_turn_id, 100);
+        .expect("run_compaction_slice must succeed")
+        .expect("Must return compaction summary");
 
-    let parsed =
-        parse_unified_compaction_json(&run.compaction_output).expect("Must be valid 6-key JSON");
-    let total_facts = parsed.personal.len()
-        + parsed.objective.len()
-        + parsed.workdone.len()
-        + parsed.blocker.len()
-        + parsed.next_step.len()
-        + parsed.pitfall.len();
-    assert!(total_facts > 0, "6-key schema must contain extracted facts");
+        assert_eq!(summary.from_turn_id, 1);
+        assert_eq!(summary.to_turn_id, 100);
+        assert!(
+            summary.facts_enqueued > 0,
+            "Expected facts extracted from 100 turns"
+        );
 
-    let mut q_rows = conn.query(
+        let run = fetch_latest_compaction_run(&conn, session_id)
+            .await
+            .unwrap()
+            .expect("Compaction record must exist");
+        assert_eq!(run.status, "completed");
+        assert_eq!(run.from_turn_id, 1);
+        assert_eq!(run.to_turn_id, 100);
+
+        let parsed = parse_unified_compaction_json(&run.compaction_output)
+            .expect("Must be valid 6-key JSON");
+        let total_facts = parsed.personal.len()
+            + parsed.objective.len()
+            + parsed.workdone.len()
+            + parsed.blocker.len()
+            + parsed.next_step.len()
+            + parsed.pitfall.len();
+        assert!(total_facts > 0, "6-key schema must contain extracted facts");
+
+        let mut q_rows = conn.query(
         "SELECT COUNT(*) FROM memory_ingestion_queue WHERE session_id = ? AND status = 'pending'",
         (session_id,),
     ).await.unwrap();
-    let count: i64 = q_rows.next().await.unwrap().unwrap().get(0).unwrap();
-    assert_eq!(count as u32, summary.facts_enqueued);
+        let count: i64 = q_rows.next().await.unwrap().unwrap().get(0).unwrap();
+        assert_eq!(count as u32, summary.facts_enqueued);
     })
     .await
     .expect("compaction_slice_100_turns_against_a_remote_ollama_server timed out");

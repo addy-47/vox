@@ -27,7 +27,8 @@ use vox_lib::{
         vad::{
             actor::{spawn_vad_actor, VadActorChannels, VadActorConfig, VadActorHandles},
             earshot_vad::EarshotVadEngine,
-            VadBackend, VadCommand,
+            providers::{SileroVadEngine, TenVadEngine},
+            VadBackend, VadBackendOption, VadCommand,
         },
     },
 };
@@ -172,7 +173,9 @@ pub fn setup_stt_worker<R: tauri::Runtime + 'static>(
 }
 
 /// Spawns the production VAD actor and returns the ring buffer producer along with channels.
+#[allow(clippy::too_many_arguments)]
 pub fn setup_vad_actor(
+    vad_backend: VadBackend,
     stt_tx: Sender<SttCommand>,
     config: VadActorConfig,
     state_atomic: Arc<AtomicU32>,
@@ -189,9 +192,6 @@ pub fn setup_vad_actor(
     let rb = HeapRb::<f32>::new(65536);
     let (producer, consumer) = rb.split();
 
-    let vad_engine = EarshotVadEngine::new(config.initial_threshold)
-        .expect("Failed to initialize Earshot VAD engine");
-    let vad_backend = VadBackend::Earshot(vad_engine);
     let (vad_cmd_tx, vad_cmd_rx) = mpsc::channel::<VadCommand>();
     let (telemetry_tx, _telemetry_rx) = crossbeam_channel::unbounded();
     let (vox_event_tx, vox_event_rx) = mpsc::channel::<VoxEvent>();
@@ -224,6 +224,29 @@ pub fn setup_vad_actor(
         .expect("Failed to spawn VAD actor thread");
 
     (vad_cmd_tx, vox_event_rx, producer, join_handle)
+}
+
+/// Helper creating a concrete VAD backend instance for testing.
+pub fn create_test_vad_backend(option: VadBackendOption, threshold: f32) -> VadBackend {
+    match option {
+        VadBackendOption::Earshot => {
+            let engine =
+                EarshotVadEngine::new(threshold).expect("Failed to initialize Earshot VAD engine");
+            VadBackend::Earshot(engine)
+        }
+        VadBackendOption::SileroVad => {
+            let model_path = super::paths::get_silero_vad_model_path();
+            let engine = SileroVadEngine::new(&model_path, threshold, 0.064, 0.032, 30.0)
+                .expect("Failed to initialize Silero VAD engine");
+            VadBackend::Silero(engine)
+        }
+        VadBackendOption::TenVad => {
+            let model_path = super::paths::get_ten_vad_model_path();
+            let engine = TenVadEngine::new(&model_path, threshold, 0.064, 0.032, 30.0)
+                .expect("Failed to initialize Ten VAD engine");
+            VadBackend::Ten(engine)
+        }
+    }
 }
 
 /// Drains pipeline events until TranscriptFinal for expected turn_id is received.

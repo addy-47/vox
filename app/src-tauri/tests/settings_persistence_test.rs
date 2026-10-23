@@ -10,8 +10,7 @@
 
 mod common;
 
-use std::fs;
-use std::time::Duration;
+use std::{fs, time::Duration};
 
 use common::paths::TempPathsGuard;
 use vox_lib::{
@@ -339,8 +338,13 @@ fn settings_save_writes_config_files_with_owner_only_permissions() {
     let mut settings = VoxSettings::default();
 
     assert!(
-        apply_setting_mutation(&mut settings, "tts", "active_voice_id", &serde_json::json!("aria"))
-            .expect("tts.active_voice_id mutation failed"),
+        apply_setting_mutation(
+            &mut settings,
+            "tts",
+            "active_voice_id",
+            &serde_json::json!("aria")
+        )
+        .expect("tts.active_voice_id mutation failed"),
         "tts.active_voice_id should be recognized"
     );
     assert!(
@@ -439,183 +443,147 @@ fn settings_reload_preserves_every_mutated_field() {
     let _guard = TempPathsGuard::new();
     let mut settings = VoxSettings::default();
 
-    assert!(
-        apply_setting_mutation(
-            &mut settings,
-            "appearance",
-            "theme",
-            &serde_json::json!("dark")
-        )
-        .expect("appearance.theme mutation failed")
-    );
-    assert!(
-        apply_setting_mutation(
-            &mut settings,
-            "appearance",
-            "accent_seed",
-            &serde_json::json!("#8B5CF6")
-        )
-        .expect("appearance.accent_seed mutation failed")
-    );
+    assert!(apply_setting_mutation(
+        &mut settings,
+        "appearance",
+        "theme",
+        &serde_json::json!("dark")
+    )
+    .expect("appearance.theme mutation failed"));
+    assert!(apply_setting_mutation(
+        &mut settings,
+        "appearance",
+        "accent_seed",
+        &serde_json::json!("#8B5CF6")
+    )
+    .expect("appearance.accent_seed mutation failed"));
     assert!(
         apply_setting_mutation(&mut settings, "vad", "threshold", &serde_json::json!(0.72))
             .expect("vad.threshold mutation failed")
     );
-    assert!(
-        apply_setting_mutation(
-            &mut settings,
-            "vad",
-            "ptt_noise_gate",
-            &serde_json::json!(0.04)
-        )
-        .expect("vad.ptt_noise_gate mutation failed")
-    );
-    assert!(
-        apply_setting_mutation(
-            &mut settings,
-            "vad",
-            "vad_backend",
-            &serde_json::json!("earshot")
-        )
-        .expect("vad.vad_backend mutation failed")
-    );
-    assert!(
-        apply_setting_mutation(
-            &mut settings,
-            "stt",
-            "active",
-            &serde_json::json!({
-                "category": "cloud",
-                "provider": "deepgram",
-                "model": "nova-3"
-            })
-        )
-        .expect("stt.active mutation failed")
-    );
-    assert!(
-        apply_setting_mutation(
-            &mut settings,
-            "stt",
-            "transliterate_enabled",
-            &serde_json::json!(false)
-        )
-        .expect("stt.transliterate_enabled mutation failed")
-    );
-    assert!(
-        apply_setting_mutation(
-            &mut settings,
-            "llm",
-            "active",
-            &serde_json::json!({
-                "category": "server",
-                "provider": "ollama",
-                "model": "qwen3.5:9b"
-            })
-        )
-        .expect("llm.active mutation failed")
-    );
-    assert!(
-        apply_setting_mutation(
-            &mut settings,
-            "tts",
-            "active",
-            &serde_json::json!({
-                "category": "embedded",
-                "model": "supertonic"
-            })
-        )
-        .expect("tts.active mutation failed")
-    );
-    assert!(
-        apply_setting_mutation(
-            &mut settings,
-            "tts",
-            "active_voice_id",
-            &serde_json::json!("aria")
-        )
-        .expect("tts.active_voice_id mutation failed")
-    );
-    assert!(
-        apply_setting_mutation(
-            &mut settings,
-            "interaction",
-            "pipeline_mode",
-            &serde_json::json!("realtime")
-        )
-        .expect("interaction.pipeline_mode mutation failed")
-    );
-    assert!(
-        apply_setting_mutation(
-            &mut settings,
-            "interaction",
-            "web_search_enabled",
-            &serde_json::json!(false)
-        )
-        .expect("interaction.web_search_enabled mutation failed")
-    );
-    assert!(
-        apply_setting_mutation(
-            &mut settings,
-            "dictation",
-            "enabled",
-            &serde_json::json!(true)
-        )
-        .expect("dictation.enabled mutation failed")
-    );
-    assert!(
-        apply_setting_mutation(
-            &mut settings,
-            "dictation",
-            "output_mode",
-            &serde_json::json!("tray")
-        )
-        .expect("dictation.output_mode mutation failed")
-    );
-    assert!(
-        apply_setting_mutation(
-            &mut settings,
-            "memory",
-            "private_mode",
-            &serde_json::json!(true)
-        )
-        .expect("memory.private_mode mutation failed")
-    );
-    assert!(
-        apply_setting_mutation(
-            &mut settings,
-            "memory",
-            "max_context_share",
-            &serde_json::json!(0.4)
-        )
-        .expect("memory.max_context_share mutation failed")
-    );
-    assert!(
-        apply_setting_mutation(
-            &mut settings,
-            "memory",
-            "context_retrieval_enabled",
-            &serde_json::json!(false)
-        )
-        .expect("memory.context_retrieval_enabled mutation failed")
-    );
-    assert!(
-        apply_setting_mutation(
-            &mut settings,
-            "memory",
-            "top_k_facts",
-            &serde_json::json!(15)
-        )
-        .expect("memory.top_k_facts mutation failed")
-    );
-    assert!(
-        apply_setting_mutation(
-            &mut settings,
-            "memory",
-            "semantic_similarity_cutoff",
-            &serde_json::json!(0.55)
-        )
-        .expect("memory.semantic_similarity_cutoff mutation failed")
-    );
+    assert!(apply_setting_mutation(
+        &mut settings,
+        "vad",
+        "ptt_noise_gate",
+        &serde_json::json!(0.04)
+    )
+    .expect("vad.ptt_noise_gate mutation failed"));
+    assert!(apply_setting_mutation(
+        &mut settings,
+        "vad",
+        "vad_backend",
+        &serde_json::json!("earshot")
+    )
+    .expect("vad.vad_backend mutation failed"));
+    assert!(apply_setting_mutation(
+        &mut settings,
+        "stt",
+        "active",
+        &serde_json::json!({
+            "category": "cloud",
+            "provider": "deepgram",
+            "model": "nova-3"
+        })
+    )
+    .expect("stt.active mutation failed"));
+    assert!(apply_setting_mutation(
+        &mut settings,
+        "stt",
+        "transliterate_enabled",
+        &serde_json::json!(false)
+    )
+    .expect("stt.transliterate_enabled mutation failed"));
+    assert!(apply_setting_mutation(
+        &mut settings,
+        "llm",
+        "active",
+        &serde_json::json!({
+            "category": "server",
+            "provider": "ollama",
+            "model": "qwen3.5:9b"
+        })
+    )
+    .expect("llm.active mutation failed"));
+    assert!(apply_setting_mutation(
+        &mut settings,
+        "tts",
+        "active",
+        &serde_json::json!({
+            "category": "embedded",
+            "model": "supertonic"
+        })
+    )
+    .expect("tts.active mutation failed"));
+    assert!(apply_setting_mutation(
+        &mut settings,
+        "tts",
+        "active_voice_id",
+        &serde_json::json!("aria")
+    )
+    .expect("tts.active_voice_id mutation failed"));
+    assert!(apply_setting_mutation(
+        &mut settings,
+        "interaction",
+        "pipeline_mode",
+        &serde_json::json!("realtime")
+    )
+    .expect("interaction.pipeline_mode mutation failed"));
+    assert!(apply_setting_mutation(
+        &mut settings,
+        "interaction",
+        "web_search_enabled",
+        &serde_json::json!(false)
+    )
+    .expect("interaction.web_search_enabled mutation failed"));
+    assert!(apply_setting_mutation(
+        &mut settings,
+        "dictation",
+        "enabled",
+        &serde_json::json!(true)
+    )
+    .expect("dictation.enabled mutation failed"));
+    assert!(apply_setting_mutation(
+        &mut settings,
+        "dictation",
+        "output_mode",
+        &serde_json::json!("tray")
+    )
+    .expect("dictation.output_mode mutation failed"));
+    assert!(apply_setting_mutation(
+        &mut settings,
+        "memory",
+        "private_mode",
+        &serde_json::json!(true)
+    )
+    .expect("memory.private_mode mutation failed"));
+    assert!(apply_setting_mutation(
+        &mut settings,
+        "memory",
+        "max_context_share",
+        &serde_json::json!(0.4)
+    )
+    .expect("memory.max_context_share mutation failed"));
+    assert!(apply_setting_mutation(
+        &mut settings,
+        "memory",
+        "context_retrieval_enabled",
+        &serde_json::json!(false)
+    )
+    .expect("memory.context_retrieval_enabled mutation failed"));
+    assert!(apply_setting_mutation(
+        &mut settings,
+        "memory",
+        "top_k_facts",
+        &serde_json::json!(15)
+    )
+    .expect("memory.top_k_facts mutation failed"));
+    assert!(apply_setting_mutation(
+        &mut settings,
+        "memory",
+        "semantic_similarity_cutoff",
+        &serde_json::json!(0.55)
+    )
+    .expect("memory.semantic_similarity_cutoff mutation failed"));
 
     assert!(
         settings.save().is_ok(),

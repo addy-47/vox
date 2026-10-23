@@ -17,7 +17,7 @@ use std::{
         atomic::{AtomicBool, AtomicUsize, Ordering},
         mpsc, Arc, Mutex,
     },
-    thread::{self, JoinHandle},
+    thread::JoinHandle,
     time::Duration,
 };
 
@@ -469,10 +469,13 @@ fn shutdown_terminates_the_worker_within_deadline() {
     let join = h.join.take().expect("worker handle");
 
     let (done_tx, done_rx) = mpsc::channel();
-    thread::spawn(move || {
-        join.join().expect("worker must not panic");
-        let _ = done_tx.send(());
-    });
+    std::thread::Builder::new()
+        .name("stt-shutdown-joiner".into())
+        .spawn(move || {
+            join.join().expect("worker must not panic");
+            let _ = done_tx.send(());
+        })
+        .expect("spawn stt-shutdown-joiner");
     done_rx
         .recv_timeout(DEADLINE)
         .expect("worker must exit after Shutdown");

@@ -341,3 +341,7 @@ export function onTurnMetrics(handler: (payload: TurnMetricsPayload) => void): (
 export function onMemoryIngestionUpdated(handler: () => void): () => void {
   return on("memory_ingestion_updated", handler);
 }
+
+export function onPersonalMemoryUpdated(handler: (record?: unknown) => void): () => void {
+  return on("personal_memory_updated", handler);
+}

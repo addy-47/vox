@@ -5,9 +5,9 @@ import { ObservationRecord } from "@/services/memoryService";
 import {
   GNode,
   GLink,
-  MemoryCategory,
   getActiveDynamicPalette,
 } from "./memoryGraphTypes";
+import type { GraphWorkerOutput } from "./memoryGraphWorker";
 import { isSoftwareRasterizer } from "@/shared/lib/glUtils";
 
 interface UseMemoryGraphSceneOptions {
@@ -550,281 +550,83 @@ export function useMemoryGraphScene({
   }, []);
 
   // ── Dynamic Chronological Time-Tree Algorithm ──────────────────────────────
+  const workerRef = useRef<Worker | null>(null);
+
+  useEffect(() => {
+    let worker: Worker | null = null;
+    try {
+      worker = new Worker(new URL("./memoryGraphWorker.ts", import.meta.url), {
+        type: "module",
+      });
+      workerRef.current = worker;
+
+      worker.onmessage = (e: MessageEvent<GraphWorkerOutput>) => {
+        const { gNodes, gLinks, sessionAnchors, conduits } = e.data;
+        gNodesRef.current = gNodes;
+        gLinksRef.current = gLinks;
+        sessionAnchorsRef.current = sessionAnchors;
+        conduitsRef.current = conduits.map((c) => ({
+          ...c,
+          p0: new THREE.Vector3(c.p0.x, c.p0.y, c.p0.z),
+          p1: new THREE.Vector3(c.p1.x, c.p1.y, c.p1.z),
+        }));
+
+        updateWebGLBuffers();
+        updateLineHighlighting();
+        wakeLoopRef.current();
+      };
+
+      if (factsRef.current && factsRef.current.length > 0) {
+        const pal = getActiveDynamicPalette(isLightModeRef.current);
+        worker.postMessage({
+          facts: factsRef.current,
+          isLight: isLightModeRef.current,
+          dynamicPalette: pal,
+          coreAccentHex: pal.personal.main,
+        });
+      }
+    } catch (e) {
+      console.error("[MemoryGraph] Failed to initialize worker:", e);
+    }
+
+    return () => {
+      if (worker) {
+        worker.terminate();
+        workerRef.current = null;
+      }
+    };
+  }, [updateLineHighlighting, updateWebGLBuffers]);
+
   const rebuildTopology = useCallback(
     (inputFacts: ObservationRecord[], isLight: boolean) => {
       const instancedMesh = instancedMeshRef.current;
       const instancedRing = instancedRingRef.current;
       const lineSegments = lineSegmentsRef.current;
-      if (!instancedMesh || !instancedRing || !lineSegments) return;
 
       if (!inputFacts || inputFacts.length === 0) {
         gNodesRef.current = [];
         gLinksRef.current = [];
         sessionAnchorsRef.current = [];
         conduitsRef.current = [];
-        instancedMesh.count = 0;
-        instancedRing.count = 0;
-        lineSegments.geometry.setDrawRange(0, 0);
+        if (instancedMesh) instancedMesh.count = 0;
+        if (instancedRing) instancedRing.count = 0;
+        if (lineSegments) lineSegments.geometry.setDrawRange(0, 0);
         return;
       }
 
-      const gNodes: GNode[] = [];
-      const gLinks: GLink[] = [];
-      const sessionAnchors: SessionAnchor[] = [];
-      const conduits: ConduitSegment[] = [];
-
-      // 1. Partition facts into Identity (Personal) and Session facts
-      const identityFacts: ObservationRecord[] = [];
-      const sessionMap = new Map<string, ObservationRecord[]>();
-
-      inputFacts.forEach((fact) => {
-        const cat = (fact.fact_type as MemoryCategory) || "objective";
-        if (cat === "personal") {
-          identityFacts.push(fact);
-        } else {
-          const sKey = fact.session_id !== null ? String(fact.session_id) : "unassigned";
-          const list = sessionMap.get(sKey) ?? [];
-          list.push(fact);
-          sessionMap.set(sKey, list);
-        }
-      });
-
-      // 2. Ring 1: Celestial Inner Halo of Identity Facts (R = 340)
-      const rIdentity = 340;
-      const nIdent = identityFacts.length;
-      const phiWeight = (1 + Math.sqrt(5)) / 2;
       const dynamicPalette = getActiveDynamicPalette(isLight);
       const coreAccentHex = dynamicPalette.personal.main;
 
-      identityFacts.forEach((fact, i) => {
-        const theta = (2 * Math.PI * i) / phiWeight;
-        const phi = Math.acos(1 - (2 * (i + 0.5)) / Math.max(nIdent, 1));
-
-        const x = rIdentity * Math.sin(phi) * Math.cos(theta);
-        const y = (rIdentity * 0.72) * Math.sin(phi) * Math.sin(theta);
-        const z = (rIdentity * 0.88) * Math.cos(phi);
-
-        const colPalette = dynamicPalette.personal;
-
-        gNodes.push({
-          id: fact.id,
-          label: fact.text,
-          compactId: fact.id.slice(0, 6),
-          collection: "personal",
-          status: "active",
-          factRecord: fact,
-          color: colPalette.main,
-          degree: 1,
-          x,
-          y,
-          z,
-          vx: 0,
-          vy: 0,
-          vz: 0,
+      if (workerRef.current) {
+        workerRef.current.postMessage({
+          facts: inputFacts,
+          isLight,
+          dynamicPalette,
+          coreAccentHex,
         });
-
-        gLinks.push({
-          id: `link_ident_${fact.id}`,
-          sourceIndex: -1,
-          targetIndex: gNodes.length - 1,
-          fromId: "core",
-          toId: fact.id,
-          relation: "CORE_IDENTITY",
-          color: colPalette.main,
-          isDashed: false,
-        });
-      });
-
-      // 3. 360-Degree Organic Dendritic Tree Canopy
-      // Sort sessions chronologically by earliest fact creation
-      const sortedSessionKeys = Array.from(sessionMap.keys()).sort((a, b) => {
-        const factsA = sessionMap.get(a)!;
-        const factsB = sessionMap.get(b)!;
-        const minA = factsA.reduce((min, f) => Math.min(min, f.created_at || 0), Infinity);
-        const minB = factsB.reduce((min, f) => Math.min(min, f.created_at || 0), Infinity);
-        return minA - minB;
-      });
-
-      const nSessions = sortedSessionKeys.length;
-
-      sortedSessionKeys.forEach((sKey, sIdx) => {
-        const clusterFacts = sessionMap.get(sKey)!;
-        const nCluster = clusterFacts.length;
-        const sessionTime = clusterFacts[0]?.created_at || sIdx;
-
-        // Spherical distribution of session canopy in full 360 degrees
-        // Golden ratio spiral for organic distribution around the sphere
-        const phiWeight = (1 + Math.sqrt(5)) / 2;
-        const azimuth = (2 * Math.PI * sIdx) / phiWeight;
-        // Mild elevation span: arcs from -0.65 rad (-37 deg) to +0.65 rad (+37 deg)
-        const elevation = Math.asin(-0.65 + (1.30 * (sIdx + 0.5)) / Math.max(nSessions, 1));
-
-        // Natural variation in branch length (R = 1050 to 1350)
-        const rSession = 1100 + 160 * Math.sin(sIdx * 1.8) + 80 * Math.cos(sIdx * 3.1);
-
-        const cosEl = Math.cos(elevation);
-        const trunkX = rSession * cosEl * Math.cos(azimuth);
-        const trunkY = rSession * Math.sin(elevation) * 0.85;
-        const trunkZ = rSession * cosEl * Math.sin(azimuth);
-        const sessionAnchor = new THREE.Vector3(trunkX, trunkY, trunkZ);
-
-        const dominantCat = (clusterFacts[0]?.fact_type as MemoryCategory) || "objective";
-
-        sessionAnchors.push({
-          sId: sKey,
-          count: nCluster,
-          x: trunkX,
-          y: trunkY,
-          z: trunkZ,
-          color: coreAccentHex,
-          timestamp: sessionTime,
-        });
-
-        // ── Organic Curved Cubic Bézier Trunk from Core to Session Anchor ──
-        // P0 = (0, 0, 0), P3 = sessionAnchor
-        // Control Points P1 & P2 with organic lateral/vertical curl
-        const dir = sessionAnchor.clone().normalize();
-        const worldUp = Math.abs(dir.y) < 0.85 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);
-        const lateral = new THREE.Vector3().crossVectors(dir, worldUp).normalize();
-        const normal = new THREE.Vector3().crossVectors(dir, lateral).normalize();
-
-        // Deterministic organic curvature per branch
-        const curlSign = sIdx % 2 === 0 ? 1 : -1;
-        const curlMag1 = (60 + (sIdx % 5) * 20) * curlSign;
-        const curlMag2 = -(40 + (sIdx % 4) * 25) * curlSign;
-
-        const p0 = new THREE.Vector3(0, 0, 0);
-        const p1 = dir.clone().multiplyScalar(rSession * 0.35)
-          .addScaledVector(lateral, curlMag1)
-          .addScaledVector(normal, curlMag2 * 0.5);
-        const p2 = dir.clone().multiplyScalar(rSession * 0.70)
-          .addScaledVector(lateral, curlMag2)
-          .addScaledVector(normal, curlMag1 * 0.5);
-        const p3 = sessionAnchor.clone();
-
-        const numTrunkSegments = 7;
-        let prevPoint = p0.clone();
-        for (let seg = 1; seg <= numTrunkSegments; seg++) {
-          const t = seg / numTrunkSegments;
-          const u = 1 - t;
-          // Cubic Bezier interpolation
-          const pt = new THREE.Vector3()
-            .copy(p0).multiplyScalar(u * u * u)
-            .addScaledVector(p1, 3 * u * u * t)
-            .addScaledVector(p2, 3 * u * t * t)
-            .addScaledVector(p3, t * t * t);
-
-          conduits.push({
-            p0: prevPoint.clone(),
-            p1: pt.clone(),
-            col0: coreAccentHex,
-            col1: coreAccentHex,
-            sessionId: sKey,
-          });
-          prevPoint = pt;
-        }
-
-        const anchorNodeIdx = gNodes.length;
-        gNodes.push({
-          id: `anchor_${sKey}`,
-          label: `Session ${sKey}`,
-          compactId: `S-${sKey.slice(-4)}`,
-          collection: dominantCat,
-          status: "active",
-          factRecord: clusterFacts[0],
-          sessionId: sKey,
-          isSessionAnchor: true,
-          color: coreAccentHex,
-          degree: nCluster,
-          x: trunkX,
-          y: trunkY,
-          z: trunkZ,
-          vx: 0,
-          vy: 0,
-          vz: 0,
-        });
-
-        // ── Dendritic Tree Foliage (Facts branching organically in natural tiers) ──
-        const clusterNodeIndices: number[] = [];
-
-        clusterFacts.forEach((fact, fIdx) => {
-          const cat = (fact.fact_type as MemoryCategory) || "objective";
-          const palette = dynamicPalette[cat] ?? dynamicPalette.objective;
-
-          // Foliage phyllotaxis around session anchor with healthy organic separation
-          const phiFoliage = (1 + Math.sqrt(5)) / 2;
-          const rotAngle = (2 * Math.PI * fIdx) / phiFoliage;
-          const progress = (fIdx + 1) / Math.max(nCluster, 1);
-          // Healthy divergence so facts fan gracefully without pinching at the stem
-          const divergence = 0.28 + 0.58 * Math.sqrt(progress);
-          // Dynamic branch distances from 80 to 320 units
-          const branchDist = 80 + 260 * Math.pow(progress, 0.58);
-
-          const rOff = Math.sin(divergence) * branchDist;
-          const aOff = Math.cos(divergence) * branchDist;
-
-          const posX = trunkX + aOff * dir.x + rOff * (Math.cos(rotAngle) * lateral.x + Math.sin(rotAngle) * normal.x);
-          const posY = trunkY + aOff * dir.y + rOff * (Math.cos(rotAngle) * lateral.y + Math.sin(rotAngle) * normal.y);
-          const posZ = trunkZ + aOff * dir.z + rOff * (Math.cos(rotAngle) * lateral.z + Math.sin(rotAngle) * normal.z);
-
-          const nodeIdx = gNodes.length;
-          clusterNodeIndices.push(nodeIdx);
-
-          gNodes.push({
-            id: fact.id,
-            label: fact.text,
-            compactId: fact.id.slice(0, 6),
-            collection: cat,
-            status: "active",
-            factRecord: fact,
-            sessionId: sKey,
-            color: palette.main,
-            degree: 1,
-            x: posX,
-            y: posY,
-            z: posZ,
-            vx: 0,
-            vy: 0,
-            vz: 0,
-          });
-
-          // Hierarchical dendritic branching:
-          // Facts 0..2 connect directly to anchor node (3 primary boughs).
-          // Facts 3..N connect to an earlier tier node using Math.floor((fIdx - 1) / 2.2),
-          // maintaining branching factor <= 2-3 to completely prevent dense convergence smudges!
-          let linkSourceIndex = anchorNodeIdx;
-          let linkFromId = `anchor_${sKey}`;
-
-          if (fIdx >= 3 && clusterNodeIndices.length > 2) {
-            const parentTierIdx = Math.floor((fIdx - 1) / 2.2);
-            if (parentTierIdx < clusterNodeIndices.length - 1) {
-              linkSourceIndex = clusterNodeIndices[parentTierIdx];
-              linkFromId = clusterFacts[parentTierIdx].id;
-            }
-          }
-
-          gLinks.push({
-            id: `link_branch_${fact.id}`,
-            sourceIndex: linkSourceIndex,
-            targetIndex: nodeIdx,
-            fromId: linkFromId,
-            toId: fact.id,
-            relation: cat.toUpperCase(),
-            color: palette.main,
-            isDashed: false,
-          });
-        });
-      });
-
-      gNodesRef.current = gNodes;
-      gLinksRef.current = gLinks;
-      sessionAnchorsRef.current = sessionAnchors;
-      conduitsRef.current = conduits;
-
-      updateWebGLBuffers();
-      updateLineHighlighting();
+      }
     },
-    [updateLineHighlighting, updateWebGLBuffers]
+    []
   );
 
   // Re-run buffer updates when search/filter/selection changes

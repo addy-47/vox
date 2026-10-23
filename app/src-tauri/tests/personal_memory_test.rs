@@ -381,7 +381,10 @@ async fn consolidation_is_gated_by_pending_queue_items() {
     tokio::time::timeout(Duration::from_secs(15), async {
         let _guard = TempPathsGuard::new();
         let (_app, state) = get_test_app_and_state().await;
-        let conn = state.db.connect().expect("Failed to connect to test database");
+        let conn = state
+            .db
+            .connect()
+            .expect("Failed to connect to test database");
 
         let session_id = create_session_with_id(&conn, 14302, Some("default"))
             .await
@@ -402,15 +405,9 @@ async fn consolidation_is_gated_by_pending_queue_items() {
         .unwrap();
 
         let fact_text = "User lives in Chicago.";
-        let q_id = enqueue_observation(
-            &conn,
-            Some(session_id),
-            run_id,
-            "personal",
-            fact_text,
-        )
-        .await
-        .unwrap();
+        let q_id = enqueue_observation(&conn, Some(session_id), run_id, "personal", fact_text)
+            .await
+            .unwrap();
         assert!(q_id > 0);
 
         let outcome = consolidate_personal_memory(ConsolidationRequest {

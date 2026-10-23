@@ -502,6 +502,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       "appearance",
       "persona",
       "system",
+      "remote",
     ];
 
     const dirtyTree: Record<string, Record<string, unknown>> = {};
