@@ -1,7 +1,10 @@
 import { useMemo, useEffect, useCallback, memo, Suspense, lazy } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
 import { ErrorBoundary, OrbitalLoader } from "@/shared/components/common";
-import { SETTINGS_DOMAINS as DOMAINS, type SettingsDomainId as DomainId } from "@/data/settingsCopy";
+import {
+  getSettingsDomains,
+  type SettingsDomainId as DomainId,
+} from "@/data/settingsCopy";
 import { useRegisterPageDrawer } from "@/shared/context/PageDrawerContext";
 import {
   loadAppearance,
@@ -9,7 +12,6 @@ import {
   loadLanguage,
   loadMemory,
   loadPersona,
-  loadRealtime,
   loadSpeech,
   preloadSettingsCardChunks,
 } from "@/shared/components/settings/settingsCardChunks";
@@ -18,27 +20,13 @@ import {
 const PersonaCard = lazy(loadPersona);
 const SpeechCard = lazy(loadSpeech);
 const LanguageCard = lazy(loadLanguage);
-const RealtimeCard = lazy(loadRealtime);
 const MemoryCard = lazy(loadMemory);
 const AppearanceCard = lazy(loadAppearance);
 const InteractionCard = lazy(loadInteraction);
 
 import { SettingsCardSkeleton } from "@/shared/components/settings/SettingsCardSkeleton";
 
-/** Slot lookups by domain id. Slots must not depend on array positions. */
-const domainById = (id: DomainId) => {
-  const match = DOMAINS.find((d) => d.id === id);
-  if (!match) throw new Error(`Unknown settings domain: ${id}`);
-  return match;
-};
-
-/** Compact single-column order, derived from the shared slot map. */
-const MOBILE_ORDERED_DOMAINS = [...DOMAINS].sort(
-  (a, b) => SETTINGS_DOMAIN_SLOTS[a.id].mobileOrder - SETTINGS_DOMAIN_SLOTS[b.id].mobileOrder
-);
-
 const DomainContent = memo(({ domain, layoutMode }: { domain: DomainId; layoutMode?: "full-max" | "full-min" | "small" }) => {
-  const isRealtime = useSettingsStore((s) => s.draftSettings?.interaction.pipeline_mode === "realtime");
   return (
     <Suspense fallback={<SettingsCardSkeleton layoutMode={layoutMode} domain={domain} />}>
       {(() => {
@@ -46,7 +34,7 @@ const DomainContent = memo(({ domain, layoutMode }: { domain: DomainId; layoutMo
           case "persona":
             return <PersonaCard layoutMode={layoutMode} />;
           case "speech":
-            return isRealtime ? <RealtimeCard layoutMode={layoutMode} /> : <SpeechCard layoutMode={layoutMode} />;
+            return <SpeechCard layoutMode={layoutMode} />;
           case "language":
             return <LanguageCard layoutMode={layoutMode} />;
           case "memory":
@@ -83,6 +71,19 @@ const preloadSettingsCards = () =>
 export const Settings: React.FC = () => {
   useMemoryTrace("Settings");
   const isLoaded = useSettingsStore((s) => s.draftSettings !== null);
+  const isRealtime = useSettingsStore((s) => s.draftSettings?.interaction.pipeline_mode === "realtime");
+  const domains = useMemo(() => getSettingsDomains(isRealtime), [isRealtime]);
+
+  const domainById = useCallback((id: DomainId) => {
+    const match = domains.find((d) => d.id === id);
+    if (!match) throw new Error(`Unknown settings domain: ${id}`);
+    return match;
+  }, [domains]);
+
+  const mobileOrderedDomains = useMemo(
+    () => [...domains].sort((a, b) => SETTINGS_DOMAIN_SLOTS[a.id].mobileOrder - SETTINGS_DOMAIN_SLOTS[b.id].mobileOrder),
+    [domains]
+  );
 
   const {
     containerRef,
@@ -99,9 +100,9 @@ export const Settings: React.FC = () => {
   } = useSettingsPage();
 
   const drawerHandlers = useMemo(() => ({
-    open: () => setActiveDomains(DOMAINS.map((d) => d.id)),
+    open: () => setActiveDomains(domains.map((d) => d.id)),
     close: () => setActiveDomains([]),
-  }), [setActiveDomains]);
+  }), [setActiveDomains, domains]);
   useRegisterPageDrawer(drawerHandlers);
 
   const renderDomainContent = useCallback(
@@ -181,7 +182,7 @@ export const Settings: React.FC = () => {
 
           {/* Dynamic SVG Overlay for Node-to-Card connections (rendered synchronously with active cards) */}
           <SettingsConnectorsOverlay
-            domains={DOMAINS}
+            domains={domains}
             activeDomains={activeDomains}
             lines={lines}
             isSideCarousel={isSideCarousel}
@@ -280,7 +281,7 @@ export const Settings: React.FC = () => {
         <div className="flex-1 flex flex-col min-h-0 overflow-hidden w-full pt-1.5 sm:pt-2">
           <div className="flex-1 w-full relative overflow-hidden flex flex-col min-h-0">
             <div className="flex-1 w-full overflow-y-auto custom-scrollbar pb-[130px] space-y-4 px-3 sm:px-4.5">
-              {MOBILE_ORDERED_DOMAINS.map((domain) => (
+              {mobileOrderedDomains.map((domain) => (
                 <div key={domain.id} className="w-full">
                   <SettingsCardWrapper domain={domain} isActive={true} layoutMode="small">
                     <div className="w-full glass-card rounded-2xl p-3.5 sm:p-4.5">

@@ -15,9 +15,11 @@ import {
   Cpu,
   Gauge,
   Heart,
+  Search,
   Wrench,
   Zap,
 } from "lucide-react";
+import { EmptyState } from "@/shared/components/common";
 import { cn } from "@/shared/lib/utils";
 import { Tooltip } from "@/shared/ui/Tooltip";
 import { useExpandableList } from "@/shared/ui/ExpandableList";
@@ -25,7 +27,7 @@ import { resolveCapabilities as resolveModelCapabilities } from "@/shared/lib/ca
 import { filterModels } from "@/shared/lib/catalogFilter";
 import { useScrollTopOnChange } from "@/shared/hooks/useLenisScrollContainer";
 import { useFavoriteModels } from "@/shared/hooks/useFavoriteModels";
-import { LLM_CATALOG_COPY } from "@/data/settingsCopy";
+import { LANGUAGE_CARD_COPY, LLM_CATALOG_COPY } from "@/data/settingsCopy";
 import {
   useSettingsStore,
   type LlmModelInfo,
@@ -230,20 +232,48 @@ export const RemoteCatalogSection = memo(({
           ))}
         </div>
       ) : remoteModels.length === 0 ? (
-        <div className="col-span-full text-center py-8 text-[12px] text-[rgb(var(--foreground-muted))]/70 space-y-1">
-          <p className="font-semibold text-[rgb(var(--foreground))]/80">{LLM_CATALOG_COPY.emptyTitle}</p>
-          <p className="text-[11px]">{LLM_CATALOG_COPY.emptyHint}</p>
+        <div className="col-span-full py-2">
+          <EmptyState
+            icon={remoteModelsError ? AlertCircle : Cpu}
+            title={remoteModelsError ? "No Models Loaded" : LLM_CATALOG_COPY.emptyTitle}
+            description={
+              typeof remoteModelsError === "string" && !remoteModelsError.includes("[object")
+                ? remoteModelsError
+                : provider?.kind === "cloud"
+                ? "Configure your API key in Providers to discover available models."
+                : "Ensure the model server is online and reachable."
+            }
+            action={
+              onBack ? (
+                <button
+                  type="button"
+                  onClick={onBack}
+                  className="px-3.5 py-1.5 rounded-xl text-[12px] font-bold text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/10 border border-[rgba(var(--accent),0.25)] hover:bg-[rgb(var(--accent))]/20 transition-all cursor-pointer"
+                >
+                  {LANGUAGE_CARD_COPY.backToProviders}
+                </button>
+              ) : undefined
+            }
+            className="py-6 border-dashed border-[rgba(var(--accent),0.15)] bg-transparent min-h-[180px]"
+          />
         </div>
       ) : filteredRemoteModels.length === 0 ? (
-        <div className="col-span-full text-center py-8 text-[12px] text-[rgb(var(--foreground-muted))]/70 space-y-2">
-          <p className="font-semibold text-[rgb(var(--foreground))]/80">{LLM_CATALOG_COPY.noModelsMatch} &ldquo;{searchQuery}&rdquo;</p>
-          <button
-            type="button"
-            onClick={() => setSearchQuery("")}
-            className="px-3 py-1 rounded-lg text-[11px] font-bold text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/10 border border-[rgba(var(--accent),0.25)] hover:bg-[rgb(var(--accent))]/20 transition-all cursor-pointer"
-          >
-            {LLM_CATALOG_COPY.clearSearch}
-          </button>
+        <div className="col-span-full py-2">
+          <EmptyState
+            icon={Search}
+            title="No Models Matching"
+            description={`${LLM_CATALOG_COPY.noModelsMatch} "${searchQuery}"`}
+            action={
+              <button
+                type="button"
+                onClick={() => setSearchQuery("")}
+                className="px-3.5 py-1.5 rounded-xl text-[12px] font-bold text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/10 border border-[rgba(var(--accent),0.25)] hover:bg-[rgb(var(--accent))]/20 transition-all cursor-pointer"
+              >
+                {LLM_CATALOG_COPY.clearSearch}
+              </button>
+            }
+            className="py-6 border-dashed border-[rgba(var(--accent),0.15)] bg-transparent min-h-[180px]"
+          />
         </div>
       ) : (
         filteredRemoteModels.map((model) => {

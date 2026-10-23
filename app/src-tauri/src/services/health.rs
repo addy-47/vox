@@ -525,6 +525,16 @@ pub async fn probe_target(
             } else if let Some(pid) = provider_id.as_deref().filter(|s| !s.trim().is_empty()) {
                 if let Some(preset) = crate::services::llm::catalog::lookup_preset(pid) {
                     (preset.base_url.to_string(), Some(pid.to_string()))
+                } else if pid == "gemini_live" {
+                    (
+                        "https://generativelanguage.googleapis.com".to_string(),
+                        Some("gemini_live".to_string()),
+                    )
+                } else if pid == "deepgram_voice_agent" {
+                    (
+                        "https://agent.deepgram.com".to_string(),
+                        Some("deepgram_voice_agent".to_string()),
+                    )
                 } else {
                     return Ok(ProbeProviderTargetResult {
                         healthy: false,
@@ -544,17 +554,59 @@ pub async fn probe_target(
 
             let effective_api_key = api_key.filter(|k| !k.trim().is_empty()).or_else(|| {
                 if let Some(ref pid) = provider_id {
-                    state
-                        .settings
-                        .read()
-                        .ok()
-                        .and_then(|s| s.providers.llm.cloud_keys.get(pid).cloned())
+                    let guard = state.settings.read().ok()?;
+                    guard
+                        .providers
+                        .realtime
+                        .api_keys
+                        .get(pid)
+                        .cloned()
+                        .or_else(|| guard.providers.llm.cloud_keys.get(pid).cloned())
+                        .or_else(|| {
+                            if pid == "gemini_live" {
+                                guard.providers.llm.cloud_keys.get("gemini").cloned()
+                            } else {
+                                None
+                            }
+                        })
                 } else {
                     None
                 }
             });
 
             let effective_model = model.unwrap_or_default();
+
+            if effective_provider_name.as_deref() == Some("deepgram_voice_agent")
+                || effective_provider_name.as_deref() == Some("gemini_live")
+            {
+                let is_gemini = effective_provider_name.as_deref() == Some("gemini_live");
+                let target = crate::services::llm::LlmRuntimeTarget::Cloud {
+                    base_url: effective_url,
+                    model: effective_model,
+                    api_key: effective_api_key,
+                    provider_name: effective_provider_name,
+                    protocol: Some("openai".to_string()),
+                };
+                let models = crate::services::llm::catalog::list_models(state, Some(target))
+                    .await
+                    .unwrap_or_default();
+                let healthy = !models.is_empty();
+                return Ok(ProbeProviderTargetResult {
+                    healthy,
+                    dialect: Some(if is_gemini {
+                        "Gemini Live API".to_string()
+                    } else {
+                        "Deepgram Voice Agent API".to_string()
+                    }),
+                    reason: if healthy {
+                        None
+                    } else {
+                        Some("No models returned or API key invalid".to_string())
+                    },
+                    models,
+                });
+            }
+
             let conn_cfg = ConnectionConfig::new(
                 &effective_url,
                 &effective_model,

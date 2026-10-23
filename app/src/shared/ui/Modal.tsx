@@ -6,6 +6,7 @@ import { cn } from "@/shared/lib/utils";
 import { useOverlay } from "@/shared/hooks/useOverlay";
 import { isCoarsePointer } from "@/lib/capabilities";
 import { OverlayBackdrop } from "@/shared/ui/OverlayBackdrop";
+import { Tooltip } from "./Tooltip";
 import { LAYOUT_COPY } from "@/data/layoutCopy";
 
 export interface ModalProps {
@@ -179,15 +180,16 @@ export const Modal = memo(
                 <div className="flex items-center justify-between px-4 sm:px-6 py-2.5 sm:pt-4 sm:pb-3 border-b border-[rgba(var(--accent),0.08)] shrink-0">
                   <div className="flex items-center gap-2.5 min-w-0">
                     {onBack && (
-                      <button
-                        type="button"
-                        onClick={onBack}
-                        className="p-1.5 -ml-1 rounded-lg text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.1)] transition-colors cursor-pointer shrink-0"
-                        title={LAYOUT_COPY.modal.back}
-                        aria-label={LAYOUT_COPY.modal.back}
-                      >
-                        <ArrowLeft size={16} strokeWidth={2.25} />
-                      </button>
+                      <Tooltip label={LAYOUT_COPY.modal.back} side="bottom" asChild>
+                        <button
+                          type="button"
+                          onClick={onBack}
+                          className="p-1.5 -ml-1 rounded-lg text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.1)] transition-colors cursor-pointer shrink-0"
+                          aria-label={LAYOUT_COPY.modal.back}
+                        >
+                          <ArrowLeft size={16} strokeWidth={2.25} />
+                        </button>
+                      </Tooltip>
                     )}
                     {icon}
                     <div className="min-w-0 flex flex-col justify-center">
@@ -201,15 +203,16 @@ export const Modal = memo(
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     {headerActions}
-                    <button
-                      type="button"
-                      onClick={onClose}
-                      title={LAYOUT_COPY.modal.close}
-                      aria-label={LAYOUT_COPY.modal.close}
-                      className="flex items-center justify-center w-8 h-8 rounded-full glass-card text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))]"
-                    >
-                      <X size={18} />
-                    </button>
+                    <Tooltip label={LAYOUT_COPY.modal.close} side="bottom" asChild>
+                      <button
+                        type="button"
+                        onClick={onClose}
+                        aria-label={LAYOUT_COPY.modal.close}
+                        className="flex items-center justify-center w-8 h-8 rounded-full glass-card text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))]"
+                      >
+                        <X size={18} />
+                      </button>
+                    </Tooltip>
                   </div>
                 </div>
               )}

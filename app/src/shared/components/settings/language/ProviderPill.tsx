@@ -1,5 +1,5 @@
 import { memo } from "react";
-import { ArrowRight, Pencil } from "lucide-react";
+import { ArrowRight, Pencil, Trash2 } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { Tooltip } from "@/shared/ui/Tooltip";
 import { LANGUAGE_CARD_COPY, PROVIDERS_CONFIG_DESK_COPY } from "@/data/settingsCopy";
@@ -28,6 +28,10 @@ export interface ProviderPillProps {
    * Triggers inline API key editing. Placed immediately to the right of the provider name.
    */
   onEdit?: () => void;
+  /**
+   * Deletes the configured provider key. Placed immediately to the right of the edit button.
+   */
+  onDelete?: () => void;
   /** Replaces the trailing arrow (unconnected rows show a plus). */
   trailing?: React.ReactNode;
   className?: string;
@@ -53,6 +57,7 @@ export const ProviderPill = memo(({
   onSelect,
   onBrowse,
   onEdit,
+  onDelete,
   trailing,
   className,
   muted = false,
@@ -74,22 +79,39 @@ export const ProviderPill = memo(({
     muted={muted}
     body={body}
     title={
-      onEdit ? (
+      onEdit || onDelete ? (
         <span className="flex items-center gap-1.5 min-w-0">
           <span className="truncate">{name}</span>
-          <Tooltip label={PROVIDERS_CONFIG_DESK_COPY.llm.cloud.editKey} side="top" asChild>
-            <button
-              type="button"
-              aria-label={`${PROVIDERS_CONFIG_DESK_COPY.llm.cloud.editKey}: ${name}`}
-              onClick={(e) => {
-                e.stopPropagation();
-                onEdit();
-              }}
-              className="p-1 rounded hover:bg-[rgba(var(--foreground),0.08)] hover:text-[rgb(var(--accent))] transition-colors text-[rgb(var(--foreground-muted))]/60 cursor-pointer shrink-0"
-            >
-              <Pencil size={11} />
-            </button>
-          </Tooltip>
+          {onEdit && (
+            <Tooltip label={PROVIDERS_CONFIG_DESK_COPY.llm.cloud.editKey} side="top" asChild>
+              <button
+                type="button"
+                aria-label={`${PROVIDERS_CONFIG_DESK_COPY.llm.cloud.editKey}: ${name}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onEdit();
+                }}
+                className="p-1 rounded hover:bg-[rgba(var(--foreground),0.08)] hover:text-[rgb(var(--accent))] transition-colors text-[rgb(var(--foreground-muted))]/60 cursor-pointer shrink-0"
+              >
+                <Pencil size={11} />
+              </button>
+            </Tooltip>
+          )}
+          {onDelete && (
+            <Tooltip label={PROVIDERS_CONFIG_DESK_COPY.actions.deleteProvider} side="top" asChild>
+              <button
+                type="button"
+                aria-label={`${PROVIDERS_CONFIG_DESK_COPY.actions.deleteProvider}: ${name}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDelete();
+                }}
+                className="p-1 rounded hover:bg-[rgba(var(--error),0.1)] hover:text-[rgb(var(--error))] transition-colors text-[rgb(var(--foreground-muted))]/40 cursor-pointer shrink-0"
+              >
+                <Trash2 size={11} />
+              </button>
+            </Tooltip>
+          )}
         </span>
       ) : (
         name

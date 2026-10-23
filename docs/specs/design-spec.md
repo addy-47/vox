@@ -574,8 +574,27 @@ Vox uses one overlay grammar across the shipped interface:
 
 ### Settings Card Grammar
 
-The reworked settings cards carry a fixed header grammar: an icon and an
-uppercase card label on the left, and at most one control in the top-right slot.
+The reworked settings cards carry a fixed header grammar: an icon and a
+card label on the left, and at most one control in the top-right slot.
+
+* **Header Hierarchy & Step Transitions (Step 1 vs Step 2):**
+  - **Step 1 (Top-level card face):**
+    - Leading icon: 17px (`size={17}`).
+    - Title: uppercase tracking grammar (`font-display text-[13px] font-black uppercase tracking-[0.2em] text-[rgb(var(--foreground))]`).
+    - Trailing slot: action button (`actionLabel` with `ChevronRight` size 12) swapping card face.
+  - **Step 2 (Nested view, e.g. Dictation in Interaction, Advanced in Memory, Models in Language, Voices in Speech):**
+    - Leading back breadcrumb: `ArrowLeft` (size 12, stroke 2.5) with `/` separator.
+    - Leading icon: scaled down to 14px (`size={14}`, `[&>svg]:w-3.5 [&>svg]:h-3.5`).
+    - Title: scaled down to `font-display font-bold text-[12px] sm:text-[12.5px] text-[rgb(var(--foreground))]/90 truncate` in title/normal case (never uppercase wide tracking).
+    - Ensures visual hierarchy distinguishes top-level domain cards from nested configuration desks.
+
+* **Voice Cloning Card Grammar:**
+  - **Resting skeleton card:** Identical visual weight and geometry as sibling voice cards (`p-4 rounded-xl border bg-[rgba(var(--card),0.35)]`). Left 40px action sphere hosts a `+` (`Plus` size 16) mark where the play button sits on voice cards. Title displays "Clone Voice" with Chatterbox description and source badges.
+  - **In-place active expansion:** Clicking the resting card expands it in place without layout jumps or external popups:
+    - Left 40px sphere transforms into a `Mic` record trigger (turns red/pulsing when recording 5–30s sample).
+    - Top row: inline voice name input on the left; Check (`Check` size 14, save) and Cross (`X` size 14, cancel/reset) on the top-right.
+    - Subtitle row: live recording countdown, duration summary, or error banner.
+    - Bottom row: reference badges on the left; "Choose WAV" file picker on the bottom-right.
 
 * **Speech card header (08:00)** — `AudioLines` icon + `SPEECH MODELS` label on the
   left; a `Select voice` action in the top-right slot. The action is always visible

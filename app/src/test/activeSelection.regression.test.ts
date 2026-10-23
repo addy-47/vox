@@ -4,6 +4,7 @@ import {
   promoteActive,
   getEffectiveLlmServers,
   getEffectiveCloudApiKey,
+  getEffectiveCloudKeyMap,
 } from "@/shared/lib/activeSelection";
 import { selectActiveLlmProvider, useSettingsStore } from "@/store/settingsStore";
 import { minimalSettings, settingsFrom, EMBEDDED_ACTIVE, SERVER_ACTIVE } from "@/test/harness/settingsFixtures";
@@ -154,6 +155,47 @@ describe("getEffectiveCloudApiKey — draft/committed precedence", () => {
 
   it("whitespace-only committed keys do not resolve", () => {
     expect(getEffectiveCloudApiKey(null, { llm: { cloud_keys: { nvidia: "   " } } }, "nvidia")).toBeUndefined();
+  });
+});
+
+describe("getEffectiveCloudKeyMap — preserves sibling cloud keys across draft and committed", () => {
+  it("NEGATIVE: merges committed keys from providers.llm and draft keys without dropping siblings", () => {
+    const committed = {
+      providers: {
+        llm: {
+          cloud_keys: {
+            nvidia: "nv-key-123",
+            gemini: "gm-key-456",
+          },
+        },
+      },
+    };
+    const draft = {
+      llm: {
+        cloud_keys: {
+          groq: "gq-key-789",
+        },
+      },
+    };
+
+    const merged = getEffectiveCloudKeyMap(draft, committed);
+    expect(merged).toEqual({
+      nvidia: "nv-key-123",
+      gemini: "gm-key-456",
+      groq: "gq-key-789",
+    });
+
+    // Deleting Gemini from merged map preserves NVIDIA NIM
+    delete merged.gemini;
+    expect(merged).toEqual({
+      nvidia: "nv-key-123",
+      groq: "gq-key-789",
+    });
+  });
+
+  it("NEGATIVE: returns empty object on empty or null inputs", () => {
+    expect(getEffectiveCloudKeyMap(null, null)).toEqual({});
+    expect(getEffectiveCloudKeyMap(undefined, undefined)).toEqual({});
   });
 });
 

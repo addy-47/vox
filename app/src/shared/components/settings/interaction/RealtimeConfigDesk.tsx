@@ -4,6 +4,7 @@ import { useSettingsStore } from "@/store/settingsStore";
 import { REALTIME_CONFIG_DESK_COPY } from "@/data/settingsCopy";
 import { Radio, Check, X, Pencil } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
+import { Tooltip } from "@/shared/ui/Tooltip";
 import { ProviderLogo } from "@/shared/components/settings/shared/ProviderLogo";
 
 interface RealtimeConfigDeskProps {
@@ -140,7 +141,13 @@ export const RealtimeConfigDesk = memo(({ layoutMode }: RealtimeConfigDeskProps)
                     : "bg-[rgba(var(--foreground),0.03)] border-[rgba(var(--foreground),0.06)]"
                 )}
               >
-                <ProviderLogo logo={provider.logo} size={16} className="shrink-0" />
+                <ProviderLogo
+                  providerId={provider.id}
+                  providerName={provider.name}
+                  logo={provider.logo}
+                  size={16}
+                  className="shrink-0"
+                />
               </div>
 
               {isEditing ? (
@@ -160,24 +167,26 @@ export const RealtimeConfigDesk = memo(({ layoutMode }: RealtimeConfigDeskProps)
                     placeholder={provider.keyPlaceholder}
                     className="w-full bg-transparent text-[11px] font-mono outline-none text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/30"
                   />
-                  <button
-                    type="button"
-                    onClick={() => handleSaveInlineKey(provider.id)}
-                    title="Save API Key"
-                    aria-label="Save API Key"
-                    className="text-[rgb(var(--accent))] hover:opacity-75 transition-opacity p-0.5 shrink-0 bg-transparent cursor-pointer"
-                  >
-                    <Check size={13} strokeWidth={2.2} />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleCancelInlineKey}
-                    title="Cancel"
-                    aria-label="Cancel"
-                    className="text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))] transition-colors p-0.5 shrink-0 bg-transparent cursor-pointer"
-                  >
-                    <X size={13} />
-                  </button>
+                  <Tooltip label={REALTIME_CONFIG_DESK_COPY.saveApiKey} side="bottom" asChild>
+                    <button
+                      type="button"
+                      onClick={() => handleSaveInlineKey(provider.id)}
+                      aria-label={REALTIME_CONFIG_DESK_COPY.saveApiKey}
+                      className="text-[rgb(var(--accent))] hover:opacity-75 transition-opacity p-0.5 shrink-0 bg-transparent cursor-pointer"
+                    >
+                      <Check size={13} strokeWidth={2.2} />
+                    </button>
+                  </Tooltip>
+                  <Tooltip label={REALTIME_CONFIG_DESK_COPY.cancel} side="bottom" asChild>
+                    <button
+                      type="button"
+                      onClick={handleCancelInlineKey}
+                      aria-label={REALTIME_CONFIG_DESK_COPY.cancel}
+                      className="text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))] transition-colors p-0.5 shrink-0 bg-transparent cursor-pointer"
+                    >
+                      <X size={13} />
+                    </button>
+                  </Tooltip>
                 </div>
               ) : (
                 <>
@@ -199,17 +208,18 @@ export const RealtimeConfigDesk = memo(({ layoutMode }: RealtimeConfigDeskProps)
 
                   <div className="shrink-0 flex items-center gap-1.5 ml-auto" onClick={(e) => e.stopPropagation()}>
                     {hasKey ? (
-                      <button
-                        type="button"
-                        onClick={() => handleStartInlineEdit(provider.id, savedKey)}
-                        className="px-1.5 py-0.5 rounded text-[10px] font-mono text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.08)] transition-all cursor-pointer flex items-center gap-1"
-                        title="Edit API Key"
-                        aria-label="Edit API Key"
-                      >
-                        <span className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--accent))]" />
-                        <span>••••{savedKey.slice(-4)}</span>
-                        <Pencil size={9} className="opacity-60" />
-                      </button>
+                      <Tooltip label={REALTIME_CONFIG_DESK_COPY.editApiKey} side="bottom" asChild>
+                        <button
+                          type="button"
+                          onClick={() => handleStartInlineEdit(provider.id, savedKey)}
+                          className="px-1.5 py-0.5 rounded text-[10px] font-mono text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.08)] transition-all cursor-pointer flex items-center gap-1"
+                          aria-label={REALTIME_CONFIG_DESK_COPY.editApiKey}
+                        >
+                          <span className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--accent))]" />
+                          <span>••••{savedKey.slice(-4)}</span>
+                          <Pencil size={9} className="opacity-60" />
+                        </button>
+                      </Tooltip>
                     ) : (
                       <button
                         type="button"

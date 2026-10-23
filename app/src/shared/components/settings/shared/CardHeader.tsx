@@ -96,18 +96,20 @@ export const CardHeader = memo(function CardHeader({
       {/* Left: breadcrumb + icon + title */}
       <div className="flex items-center gap-1 min-w-0">
         {onBack && (
-          <button
-            type="button"
-            onClick={onBack}
-            className="inline-flex items-center gap-1 text-[10.5px] font-bold text-[rgb(var(--foreground-muted))]/70 hover:text-[rgb(var(--accent))] transition-colors cursor-pointer shrink-0 group"
-            aria-label={CARD_HEADER_COPY.back}
-          >
-            <ArrowLeft
-              size={12}
-              strokeWidth={2.5}
-              className="group-hover:-translate-x-0.5 transition-transform"
-            />
-          </button>
+          <Tooltip label={CARD_HEADER_COPY.back} side="bottom" asChild>
+            <button
+              type="button"
+              onClick={onBack}
+              className="inline-flex items-center gap-1 text-[10.5px] font-bold text-[rgb(var(--foreground-muted))]/70 hover:text-[rgb(var(--accent))] transition-colors cursor-pointer shrink-0 group"
+              aria-label={CARD_HEADER_COPY.back}
+            >
+              <ArrowLeft
+                size={12}
+                strokeWidth={2.5}
+                className="group-hover:-translate-x-0.5 transition-transform"
+              />
+            </button>
+          </Tooltip>
         )}
         {onBack && (
           <span className="text-[rgb(var(--foreground-muted))]/30 text-[10px] shrink-0">/</span>

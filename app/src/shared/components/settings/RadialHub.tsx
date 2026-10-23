@@ -1,12 +1,14 @@
-import { memo } from "react";
+import { memo, useMemo } from "react";
 import { cn } from "@/shared/lib/utils";
 import { Tooltip } from "@/shared/ui/Tooltip";
 import {
+  getSettingsDomains,
   SETTINGS_DOMAINS as DOMAINS,
   type SettingsDomainId as DomainId,
   type SettingsDomain as Domain,
   SETTINGS_COPY,
 } from "@/data/settingsCopy";
+import { useSettingsStore } from "@/store/settingsStore";
 import { getCarouselPair, SETTINGS_DOMAIN_SLOTS } from "./shared/settingsLayout";
 
 /* ─── Radial Node ──────────────────────────────────────────────────────────── */
@@ -243,11 +245,13 @@ export const RadialHub = memo(({
   onCenterClick,
   hasSelection,
 }: RadialHubProps) => {
+  const isRealtime = useSettingsStore((s) => s.draftSettings?.interaction.pipeline_mode === "realtime");
+  const domains = useMemo(() => getSettingsDomains(isRealtime), [isRealtime]);
   const size = Math.max(radiusX, radiusY) * 2 + 100;
   return (
     <div className="relative shrink-0" style={{ width: size, height: size }}>
       <HubConnectors activeDomains={activeDomains} radiusX={radiusX} radiusY={radiusY} />
-      {DOMAINS.map((domain) => (
+      {domains.map((domain) => (
         <RadialNode
           key={domain.id}
           domain={domain}

@@ -1,5 +1,6 @@
 import { memo, useMemo, useState } from "react";
-import { Cpu } from "lucide-react";
+import { Cpu, Search } from "lucide-react";
+import { EmptyState } from "@/shared/components/common";
 import { useSettingsStore } from "@/store/settingsStore";
 import { useCatalogStore } from "@/store/catalogStore";
 import { useModelDownloads } from "@/shared/hooks/useModelDownloads";
@@ -97,13 +98,24 @@ export const LocalModelsView = memo(({ layoutMode, onBack }: LocalModelsViewProp
 
       <div className="mt-2 flex-1 min-h-0 overflow-y-auto overscroll-contain custom-scrollbar pr-1">
         {models.length === 0 ? (
-          <div className="py-8 text-center text-[12px] text-[rgb(var(--foreground-muted))]/70">
-            <p className="font-semibold text-[rgb(var(--foreground))]/80">
-              {search ? `${LLM_CATALOG_COPY.noModelsMatch} "${search}"` : LLM_CATALOG_COPY.noLocalModelsTitle}
-            </p>
-            <p className="mt-1 text-[11px]">
-              {search ? LLM_CATALOG_COPY.clearSearch : LLM_CATALOG_COPY.noLocalModelsHint}
-            </p>
+          <div className="py-2">
+            <EmptyState
+              icon={search ? Search : Cpu}
+              title={search ? "No Models Matching" : LLM_CATALOG_COPY.noLocalModelsTitle}
+              description={search ? `${LLM_CATALOG_COPY.noModelsMatch} "${search}"` : LLM_CATALOG_COPY.noLocalModelsHint}
+              action={
+                search ? (
+                  <button
+                    type="button"
+                    onClick={() => setSearch("")}
+                    className="px-3.5 py-1.5 rounded-xl text-[12px] font-bold text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/10 border border-[rgba(var(--accent),0.25)] hover:bg-[rgb(var(--accent))]/20 transition-all cursor-pointer"
+                  >
+                    {LLM_CATALOG_COPY.clearSearch}
+                  </button>
+                ) : undefined
+              }
+              className="py-6 border-dashed border-[rgba(var(--accent),0.15)] bg-transparent min-h-[180px]"
+            />
           </div>
         ) : (
           <div

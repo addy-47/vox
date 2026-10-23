@@ -28,6 +28,9 @@ export interface CloneVoiceDrawerProps {
 
 type Tab = "record" | "upload";
 
+/**
+ * @deprecated Use `CloneVoiceCard` instead. Voice cloning is now rendered in-place as a catalog tile.
+ */
 export const CloneVoiceDrawer = memo(
   ({ isOpen, onClose, onCreated }: CloneVoiceDrawerProps) => {
     const [tab, setTab] = useState<Tab>("record");

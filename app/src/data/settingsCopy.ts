@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import { AudioLines, BookOpenText, BrainCircuit, CircleUserRound, Palette, SlidersHorizontal } from "lucide-react";
+import { AudioLines, BookOpenText, BrainCircuit, CircleUserRound, Mic, Palette, Radio, SlidersHorizontal } from "lucide-react";
 
 export type SettingsDomainId =
   | "persona"
@@ -18,18 +18,35 @@ export interface SettingsDomain {
 }
 
 /**
+ * Returns dynamic domain descriptor list reflecting modular vs realtime pipeline mode.
+ */
+export const getSettingsDomains = (isRealtime = false): SettingsDomain[] => [
+  { id: "persona", label: "Persona", sublabel: "Prompts & identity", icon: CircleUserRound, angle: -90 },
+  { id: "memory", label: "Memory", sublabel: "Recall, facts & compaction", icon: BookOpenText, angle: -30 },
+  {
+    id: "language",
+    label: isRealtime ? "Realtime Model" : "Language Model",
+    sublabel: isRealtime ? "Gemini Live & Deepgram Agent" : "Reasoning engine & providers",
+    icon: isRealtime ? Radio : BrainCircuit,
+    angle: 30,
+  },
+  { id: "appearance", label: "Appearance", sublabel: "Visual theme & colors", icon: Palette, angle: 90 },
+  {
+    id: "speech",
+    label: isRealtime ? "Voices" : "Speech Models",
+    sublabel: isRealtime ? "Real-time voice catalog" : "Voice, transcription & synthesis",
+    icon: isRealtime ? Mic : AudioLines,
+    angle: 150,
+  },
+  { id: "interaction", label: "Interaction", sublabel: "Activation & web search", icon: SlidersHorizontal, angle: -150 },
+];
+
+/**
  * Clock order. The array index is the slot address used by the radial hub:
  * [0] 12:00 Persona, [1] 02:00 Memory, [2] 04:00 Language, [3] 06:00 Appearance,
  * [4] 08:00 Speech (`speech`), [5] 10:00 Interaction.
  */
-export const SETTINGS_DOMAINS: SettingsDomain[] = [
-  { id: "persona", label: "Persona", sublabel: "Prompts & identity", icon: CircleUserRound, angle: -90 },
-  { id: "memory", label: "Memory", sublabel: "Recall, facts & compaction", icon: BookOpenText, angle: -30 },
-  { id: "language", label: "Language Model", sublabel: "Reasoning engine & providers", icon: BrainCircuit, angle: 30 },
-  { id: "appearance", label: "Appearance", sublabel: "Visual theme & colors", icon: Palette, angle: 90 },
-  { id: "speech", label: "Speech Models", sublabel: "Voice, transcription & synthesis", icon: AudioLines, angle: 150 },
-  { id: "interaction", label: "Interaction", sublabel: "Activation & web search", icon: SlidersHorizontal, angle: -150 },
-];
+export const SETTINGS_DOMAINS: SettingsDomain[] = getSettingsDomains(false);
 
 export type SettingsScope =
   | "appearance"
@@ -162,6 +179,9 @@ export const REALTIME_CONFIG_DESK_COPY = {
   temperature: "Temperature",
   hubTitle: "Realtime Hub",
   liveMode: "Live Mode",
+  saveApiKey: "Save API Key",
+  cancel: "Cancel",
+  editApiKey: "Edit API Key",
 };
 
 export const PIPELINE_MODE_COPY = {
@@ -267,6 +287,8 @@ export const PERSONA_COPY = {
   realtimePlaceholder: "Realtime instruction prompt...",
   emptyPrompt: "No instructions defined. Switch to Edit to write prompt directives.",
   tagsProtectedHint: "That edit touches protected system tags, so it wasn't saved.",
+  doneEditing: "Done editing",
+  editPersona: "Edit persona",
 };
 
 export const PROVIDERS_CONFIG_DESK_COPY = {
@@ -291,6 +313,7 @@ export const PROVIDERS_CONFIG_DESK_COPY = {
   actions: {
     editServer: "Edit Server",
     deleteServer: "Delete Server",
+    deleteProvider: "Delete provider",
   },
   /** Dashed add-card copy in the provider catalog. */
   creationCard: {
@@ -398,19 +421,19 @@ export const PROVIDERS_CONFIG_DESK_COPY = {
 
 export const WEB_SEARCH_COPY = {
   tab: "Web Search",
-  title: "Web Search",
+  title: "Live Web Grounding",
   description:
-    "Let Vox search the live web for current facts mid-conversation. Keyless built-in engine, Modular sessions only.",
+    "Retrieve live web results and current facts mid-conversation. Supported in both modular and realtime modes.",
   enabled: "Enabled",
   disabled: "Disabled",
-  toggleAria: "Toggle web search",
+  toggleAria: "Toggle live web search",
 };
 
 export const REMOTE_CONTROL_COPY = {
   tab: "Remote Control",
-  title: "Remote Control",
+  title: "Mobile Companion",
   description:
-    "Let a paired phone act as the microphone, speaker and screen for this laptop, over your own network.",
+    "Use a paired phone as wireless microphone, speaker, and HUD over your local network.",
   comingSoon: "Pair Device",
   statusDisconnected: "Disconnected",
   statusSearching: "Searching for Controllers",
@@ -579,6 +602,23 @@ export const VOICE_CATALOG_COPY = {
   languageFacet: "Language",
   filterAria: "Toggle voice filters",
   filtersTitle: "Filters",
+  cloneVoiceRecord: "Record Audio",
+  cloneVoiceStop: "Stop recording",
+  cloneVoiceUpload: "Upload WAV",
+  cloneVoiceRecordingNotice: "Speak clearly into your microphone...",
+  cloneVoiceSampleRecorded: "Sample recorded",
+  cloneVoiceRecordAgain: "Record Again",
+  cloneVoiceReadyPrompt: "Read a short paragraph clearly (10–30s).",
+  cloneVoiceSelectFile: "Select WAV Audio File",
+  cloneVoiceChangeFile: "Change WAV",
+  cloneVoiceNamePlaceholder: "Voice name...",
+  cloneVoiceSubmit: "Clone Voice",
+  cloneVoiceProcessing: "Cloning...",
+  cloneVoiceNameRequired: "Please enter a voice name",
+  cloneVoiceAudioRequired: "Please record or select audio first",
+  cloneVoiceCancel: "Cancel",
+  cloneVoiceAudioHint: "Record 5–30s or choose a WAV file",
+  cloneVoicePcmFormat: "Chatterbox reference",
 } as const;
 
 export const LLM_CATALOG_COPY = {
@@ -817,11 +857,11 @@ export const VAD_SETTINGS_COPY = {
 
 export const TRANSLITERATION_COPY = {
   tab: "Transliteration",
-  title: "Script Transliteration",
-  description: "Converts recognized regional scripts into phonetic Latin text in real-time.",
+  title: "Phonetic Script Conversion",
+  description: "Converts recognized non-Latin scripts into phonetic text in real-time.",
   enabled: "Enabled",
   disabled: "Disabled",
-  toggleAria: "Toggle script transliteration",
+  toggleAria: "Toggle phonetic script conversion",
 } as const;
 
 export const PROVIDER_GUIDE_COPY = {

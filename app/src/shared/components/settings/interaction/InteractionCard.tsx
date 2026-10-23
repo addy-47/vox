@@ -1,11 +1,11 @@
 import { useState, memo, useCallback } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
+import { useModelParameters } from "@/shared/hooks/useModelParameters";
 import { SlidersHorizontal, Mic, MicOff, Activity, Radio, Layers, Zap } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
-import { SegmentedControl, ToggleTile } from "@/shared/ui";
+import { ToggleTile } from "@/shared/ui";
 import { CardTitleBar } from "../shared/CardTitleBar";
 import { SETTINGS_DOMAIN_CARD_HEIGHT_CLASS } from "../shared/settingsLayout";
-import { RealtimeConfigDesk } from "./RealtimeConfigDesk";
 import { DictationConfigDesk } from "./DictationConfigDesk";
 import { WebSearchGlobe } from "./WebSearchGlobe";
 import { RemoteControlGlyph } from "./RemoteControlGlyph";
@@ -24,11 +24,6 @@ const INTERACTION_DESK_TABS: Array<{ id: InteractionDeskTab; label: string }> = 
   { id: "transliteration", label: TRANSLITERATION_COPY.tab },
 ];
 
-const VIEW_OPTIONS = [
-  { id: "assistant" as const, label: INTERACTION_CARD_COPY.viewAssistant },
-  { id: "dictation" as const, label: INTERACTION_CARD_COPY.viewDictation },
-];
-
 export const InteractionCard = memo(
   ({ layoutMode = "full-max" }: InteractionCardProps) => {
     const settings = useSettingsStore((s) => s.settings);
@@ -38,11 +33,23 @@ export const InteractionCard = memo(
     const [activeView, setActiveView] = useState<"assistant" | "dictation">("assistant");
     const [activeDeskTab, setActiveDeskTab] = useState<InteractionDeskTab>("web_search");
 
-    const webSearchEnabled = draftSettings?.interaction.web_search_enabled ?? true;
+    const isRealtime = draftSettings?.interaction.pipeline_mode === "realtime";
+    const activeRealtimeModel = draftSettings?.realtime.active.model || null;
+    const { params: realtimeParams, setParam: setRealtimeParam } = useModelParameters(
+      isRealtime ? activeRealtimeModel : null
+    );
+
+    const webSearchEnabled = isRealtime
+      ? (realtimeParams.enable_web_search !== false && (draftSettings?.interaction.web_search_enabled ?? true))
+      : (draftSettings?.interaction.web_search_enabled ?? true);
 
     const handleToggleWebSearch = useCallback(() => {
-      updateDraft("interaction", "web_search_enabled", !webSearchEnabled);
-    }, [webSearchEnabled, updateDraft]);
+      const next = !webSearchEnabled;
+      updateDraft("interaction", "web_search_enabled", next);
+      if (isRealtime && activeRealtimeModel) {
+        setRealtimeParam("enable_web_search", next);
+      }
+    }, [webSearchEnabled, updateDraft, isRealtime, activeRealtimeModel, setRealtimeParam]);
 
     if (!draftSettings || !settings) return null;
     const { interaction, dictation } = draftSettings;
@@ -65,17 +72,11 @@ export const InteractionCard = memo(
       >
         {/* Header Section */}
         <CardTitleBar
-          icon={<SlidersHorizontal size={17} />}
-          title={INTERACTION_CARD_COPY.cardTitle}
-          action={
-            /* Top Right Assistant / Dictation Switcher */
-            <SegmentedControl
-              options={VIEW_OPTIONS}
-              value={activeView}
-              onChange={setActiveView}
-              size="sm"
-            />
-          }
+          icon={<SlidersHorizontal size={activeView === "dictation" ? 14 : 17} />}
+          title={activeView === "dictation" ? INTERACTION_CARD_COPY.viewDictation : INTERACTION_CARD_COPY.cardTitle}
+          onBack={activeView === "dictation" ? () => setActiveView("assistant") : undefined}
+          actionLabel={activeView === "assistant" ? INTERACTION_CARD_COPY.viewDictation : undefined}
+          onAction={activeView === "assistant" ? () => setActiveView("dictation") : undefined}
         />
 
         <div className="flex flex-col gap-3 flex-1 min-h-0">
@@ -136,88 +137,77 @@ export const InteractionCard = memo(
               </div>
 
               {/* Interaction Desk: Remote Control (placeholder) | Web Search | Transliteration */}
-              {isModular ? (
-                <div
-                  className={cn(
-                    "flex-1 w-full flex flex-col min-h-0 rounded-xl p-3 relative border border-[rgba(var(--accent),0.06)] bg-[rgba(var(--foreground),0.02)] overflow-hidden",
-                    layoutMode === "small" ? "h-auto" : "h-full"
-                  )}
-                >
-                  <div className="w-full flex flex-col h-full">
-                    {/* Tab Row — equal-width grid, no shift between tabs */}
-                    <div className="w-full grid grid-cols-3 gap-1 pt-0.5 pb-1.5 shrink-0 border-b border-[rgba(var(--accent),0.08)] mb-2 px-0.5">
-                      {INTERACTION_DESK_TABS.map((tab) => {
-                        const isActive = activeDeskTab === tab.id;
-                        return (
-                          <button
-                            key={tab.id}
-                            type="button"
-                            onClick={() => setActiveDeskTab(tab.id)}
-                            className={cn(
-                              "w-full min-w-0 flex items-center justify-center pb-1 border-b-2 transition-all duration-200 bg-transparent text-[9.5px] sm:text-[10.5px] xl:text-[11px] font-black uppercase tracking-[0.04em] sm:tracking-[0.08em] outline-none cursor-pointer text-center truncate px-0.5",
-                              isActive
-                                ? "text-[rgb(var(--accent))] border-[rgb(var(--accent))]"
-                                : "text-[rgb(var(--foreground-muted))]/60 border-transparent hover:text-[rgb(var(--foreground))]"
-                            )}
-                          >
-                            <span className="truncate">{tab.label}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-
-                    {/* Panel */}
-                    {activeDeskTab === "remote" ? (
-                      <div className="flex flex-row items-center justify-between gap-4 h-full p-2 sm:p-3 rounded-xl bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--accent),0.08)] animate-fade-in">
-                        <div className="flex flex-col gap-1 min-w-0 flex-1">
-                          <span className="text-[12px] font-bold uppercase tracking-wider text-[rgb(var(--foreground))]">
-                            {REMOTE_CONTROL_COPY.title}
-                          </span>
-                          <p className="text-[11px] sm:text-[11.5px] text-[rgb(var(--foreground-muted))]/75 leading-relaxed font-medium">
-                            {REMOTE_CONTROL_COPY.description}
-                          </p>
-                        </div>
-                        <div className="shrink-0 w-[116px] flex flex-col items-center justify-center">
-                          <RemoteControlGlyph
-                            label={REMOTE_CONTROL_COPY.comingSoon}
-                            ariaLabel={REMOTE_CONTROL_COPY.title}
-                          />
-                        </div>
-                      </div>
-                    ) : activeDeskTab === "web_search" ? (
-                      <div className="flex flex-row items-center justify-between gap-4 h-full p-2 sm:p-3 rounded-xl bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--accent),0.08)] animate-fade-in">
-                        <div className="flex flex-col gap-1 min-w-0 flex-1">
-                          <span className="text-[12px] font-bold uppercase tracking-wider text-[rgb(var(--foreground))]">
-                            {WEB_SEARCH_COPY.title}
-                          </span>
-                          <p className="text-[11px] sm:text-[11.5px] text-[rgb(var(--foreground-muted))]/75 leading-relaxed font-medium">
-                            {WEB_SEARCH_COPY.description}
-                          </p>
-                        </div>
-                        <div className="shrink-0 w-[116px] flex flex-col items-center justify-center">
-                          <WebSearchGlobe
-                            enabled={webSearchEnabled}
-                            onToggle={handleToggleWebSearch}
-                            label={webSearchEnabled ? WEB_SEARCH_COPY.enabled : WEB_SEARCH_COPY.disabled}
-                            ariaLabel={WEB_SEARCH_COPY.toggleAria}
-                          />
-                        </div>
-                      </div>
-                    ) : (
-                      <TransliterationPanel />
-                    )}
+              <div
+                className={cn(
+                  "flex-1 w-full flex flex-col min-h-0 rounded-xl p-3 relative border border-[rgba(var(--accent),0.06)] bg-[rgba(var(--foreground),0.02)] overflow-hidden",
+                  layoutMode === "small" ? "h-auto" : "h-full"
+                )}
+              >
+                <div className="w-full flex flex-col h-full">
+                  {/* Tab Row — equal-width grid, no shift between tabs */}
+                  <div className="w-full grid grid-cols-3 gap-1 pt-0.5 pb-1.5 shrink-0 border-b border-[rgba(var(--accent),0.08)] mb-2 px-0.5">
+                    {INTERACTION_DESK_TABS.map((tab) => {
+                      const isActive = activeDeskTab === tab.id;
+                      return (
+                        <button
+                          key={tab.id}
+                          type="button"
+                          onClick={() => setActiveDeskTab(tab.id)}
+                          className={cn(
+                            "w-full min-w-0 flex items-center justify-center pb-1 border-b-2 transition-all duration-200 bg-transparent text-[9.5px] sm:text-[10.5px] xl:text-[11px] font-black uppercase tracking-[0.04em] sm:tracking-[0.08em] outline-none cursor-pointer text-center truncate px-0.5",
+                            isActive
+                              ? "text-[rgb(var(--accent))] border-[rgb(var(--accent))]"
+                              : "text-[rgb(var(--foreground-muted))]/60 border-transparent hover:text-[rgb(var(--foreground))]"
+                          )}
+                        >
+                          <span className="truncate">{tab.label}</span>
+                        </button>
+                      );
+                    })}
                   </div>
-                </div>
-              ) : (
-                <div
-                  className={cn(
-                    "flex-1 w-full flex flex-col min-h-0 rounded-xl p-3 relative border border-[rgba(var(--accent),0.06)] bg-[rgba(var(--foreground),0.02)] overflow-hidden",
-                    layoutMode === "small" ? "h-auto" : "h-full"
+
+                  {/* Panel */}
+                  {activeDeskTab === "remote" ? (
+                    <div className="flex flex-row items-center justify-between gap-4 h-full p-2 sm:p-3 rounded-xl bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--accent),0.08)] animate-fade-in">
+                      <div className="flex flex-col gap-1 min-w-0 flex-1">
+                        <span className="text-[12px] font-bold uppercase tracking-wider text-[rgb(var(--foreground))]">
+                          {REMOTE_CONTROL_COPY.title}
+                        </span>
+                        <p className="text-[11px] sm:text-[11.5px] text-[rgb(var(--foreground-muted))]/75 leading-relaxed font-medium">
+                          {REMOTE_CONTROL_COPY.description}
+                        </p>
+                      </div>
+                      <div className="shrink-0 w-[116px] flex flex-col items-center justify-center">
+                        <RemoteControlGlyph
+                          label={REMOTE_CONTROL_COPY.comingSoon}
+                          ariaLabel={REMOTE_CONTROL_COPY.title}
+                        />
+                      </div>
+                    </div>
+                  ) : activeDeskTab === "web_search" ? (
+                    <div className="flex flex-row items-center justify-between gap-4 h-full p-2 sm:p-3 rounded-xl bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--accent),0.08)] animate-fade-in">
+                      <div className="flex flex-col gap-1 min-w-0 flex-1">
+                        <span className="text-[12px] font-bold uppercase tracking-wider text-[rgb(var(--foreground))]">
+                          {WEB_SEARCH_COPY.title}
+                        </span>
+                        <p className="text-[11px] sm:text-[11.5px] text-[rgb(var(--foreground-muted))]/75 leading-relaxed font-medium">
+                          {WEB_SEARCH_COPY.description}
+                        </p>
+                      </div>
+                      <div className="shrink-0 w-[116px] flex flex-col items-center justify-center">
+                        <WebSearchGlobe
+                          enabled={webSearchEnabled}
+                          onToggle={handleToggleWebSearch}
+                          label={webSearchEnabled ? WEB_SEARCH_COPY.enabled : WEB_SEARCH_COPY.disabled}
+                          ariaLabel={WEB_SEARCH_COPY.toggleAria}
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    <TransliterationPanel />
                   )}
-                >
-                  <RealtimeConfigDesk layoutMode={layoutMode} />
                 </div>
-              )}
+              </div>
             </>
           ) : (
 

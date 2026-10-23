@@ -98,6 +98,11 @@ export const SpeechCard = memo(({ layoutMode = "full-max" }: SpeechCardProps) =>
     },
   ];
 
+  const isRealtime = draftSettings.interaction.pipeline_mode === "realtime";
+  const activeVoiceProvider = isRealtime
+    ? (draftSettings.realtime.active.provider ?? "gemini_live")
+    : activeTtsId;
+
   return (
     <div
       className={cn(
@@ -107,11 +112,11 @@ export const SpeechCard = memo(({ layoutMode = "full-max" }: SpeechCardProps) =>
           : cn("glass-card p-5", SETTINGS_DOMAIN_CARD_HEIGHT_CLASS)
       )}
     >
-      {view === "voices" ? (
+      {isRealtime || view === "voices" ? (
         <VoiceCatalogView
           layoutMode={layoutMode}
-          providerId={activeTtsId}
-          onBack={() => setView("models")}
+          providerId={activeVoiceProvider}
+          onBack={isRealtime ? undefined : () => setView("models")}
         />
       ) : (
         <div className="flex flex-col flex-1 min-h-0">

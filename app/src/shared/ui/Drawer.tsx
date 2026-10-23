@@ -294,13 +294,15 @@ export const Drawer = memo(
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     {headerActions}
-                    <button
-                      onClick={onClose}
-                      className="flex items-center justify-center w-8 h-8 rounded-full glass-card text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))]"
-                      aria-label={LAYOUT_COPY.drawer.close}
-                    >
-                      <X size={18} />
-                    </button>
+                    <Tooltip label={LAYOUT_COPY.drawer.close} side="bottom" asChild>
+                      <button
+                        onClick={onClose}
+                        className="flex items-center justify-center w-8 h-8 rounded-full glass-card text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))]"
+                        aria-label={LAYOUT_COPY.drawer.close}
+                      >
+                        <X size={18} />
+                      </button>
+                    </Tooltip>
                   </div>
                 </div>
               )}

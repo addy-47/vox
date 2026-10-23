@@ -1,5 +1,6 @@
 import { memo, useCallback, useMemo, useState } from "react";
-import { Clock, Heart, Mic, Sparkles } from "lucide-react";
+import { AudioLines, CircleDot, Clock, Globe, Heart, Languages, Mic, Search, Sparkles, User } from "lucide-react";
+import { EmptyState } from "@/shared/components/common";
 import { SPEECH_CARD_COPY, VOICE_CATALOG_COPY } from "@/data/settingsCopy";
 import { useSessionStore } from "@/store/sessionStore";
 import { useVoiceCatalog, useVoiceScope } from "@/shared/hooks/useVoiceCatalog";
@@ -14,6 +15,7 @@ import {
 } from "../../shared/CardHeader";
 import { SpeechRateControl } from "../SpeechRateControl";
 import { VoiceCard } from "./VoiceCard";
+import { CloneVoiceCard } from "./CloneVoiceCard";
 import { VoiceModal } from "./VoiceModal";
 import { getSettingsInlineListMaxHeightClass } from "../../shared/settingsLayout";
 
@@ -28,8 +30,8 @@ export interface VoiceCatalogViewProps {
   layoutMode?: "full-max" | "full-min" | "small";
   /** Active TTS engine. Its voices are the only ones listed. */
   providerId: string;
-  /** Returns to the speech-model view. */
-  onBack: () => void;
+  /** Returns to the speech-model view (optional if rendered as root card). */
+  onBack?: () => void;
 }
 
 /**
@@ -73,6 +75,15 @@ export const VoiceCatalogView = memo(({ layoutMode, providerId, onBack }: VoiceC
   const sessionBusy = interactionState !== "Idle";
 
   const targetProvider = (scope.voice_provider || normalizedProviderId || "").toLowerCase();
+
+  const handleVoiceCreated = useCallback(
+    (newVoice: UnifiedVoiceDto) => {
+      catalog.reload();
+      commitVoice(newVoice.id);
+      togglePreview(newVoice);
+    },
+    [catalog, commitVoice, togglePreview]
+  );
 
   const scopedVoices = useMemo(() => {
     if (!targetProvider) return voices;
@@ -162,10 +173,10 @@ export const VoiceCatalogView = memo(({ layoutMode, providerId, onBack }: VoiceC
 
   const genderFilterOptions = useMemo(
     () => [
-      { id: "female" as const, label: VOICE_CATALOG_COPY.female, count: facetCounts.female },
-      { id: "male" as const, label: VOICE_CATALOG_COPY.male, count: facetCounts.male },
+      { id: "female" as const, label: VOICE_CATALOG_COPY.female, count: facetCounts.female, Icon: User },
+      { id: "male" as const, label: VOICE_CATALOG_COPY.male, count: facetCounts.male, Icon: User },
       ...(facetCounts.neutral > 0
-        ? [{ id: "neutral" as const, label: VOICE_CATALOG_COPY.neutral, count: facetCounts.neutral }]
+        ? [{ id: "neutral" as const, label: VOICE_CATALOG_COPY.neutral, count: facetCounts.neutral, Icon: CircleDot }]
         : []),
     ],
     [facetCounts]
@@ -212,6 +223,7 @@ export const VoiceCatalogView = memo(({ layoutMode, providerId, onBack }: VoiceC
                 {genderFilterOptions.map((item) => (
                   <CardFilterItem
                     key={item.id}
+                    icon={item.Icon}
                     label={item.label}
                     count={item.count}
                     active={genderFilter === item.id}
@@ -226,6 +238,7 @@ export const VoiceCatalogView = memo(({ layoutMode, providerId, onBack }: VoiceC
                   {VOICE_CATALOG_COPY.accentFacet}
                 </span>
                 <CardFilterItem
+                  icon={Globe}
                   label={VOICE_CATALOG_COPY.english}
                   count={facetCounts.english}
                   active={accentFilter === "english"}
@@ -234,6 +247,7 @@ export const VoiceCatalogView = memo(({ layoutMode, providerId, onBack }: VoiceC
                   }
                 />
                 <CardFilterItem
+                  icon={Languages}
                   label={VOICE_CATALOG_COPY.multilingual}
                   count={facetCounts.multilingual}
                   active={accentFilter === "multilingual"}
@@ -287,31 +301,69 @@ export const VoiceCatalogView = memo(({ layoutMode, providerId, onBack }: VoiceC
           featherHeight={80}
           scrollerClassName="flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain pr-1 custom-scrollbar [scrollbar-gutter:stable]"
         >
-          <div
-            className={
-              layoutMode === "small"
-                ? "grid auto-rows-max content-start gap-2 min-h-full w-full grid-cols-1"
-                : "grid auto-rows-max content-start gap-2 min-h-full w-full grid-cols-1 sm:grid-cols-2"
-            }
-          >
-            {filteredVoices.map((v) => (
-              <VoiceCard
-                key={v.id}
-                voice={v}
-                selected={stagedId === v.id}
-                favorited={v.is_favorite}
-                previewPlaying={playingId === v.id}
-                isSynthesizing={isSynthesizing && playingId === v.id}
-                previewProgress={playingId === v.id ? previewProgress : 0}
-                previewDisabled={!v.has_preview && sessionBusy}
-                hideBadges={true}
-                onSelect={commitVoice}
-                onToggleFavorite={toggleFavorite}
-                onPreview={togglePreview}
-                onSeekPreview={seekPreview}
+          {filteredVoices.length === 0 ? (
+            <div className="h-full flex items-center justify-center p-2">
+              <EmptyState
+                icon={voices.length === 0 ? AudioLines : Search}
+                title={voices.length === 0 ? VOICE_CATALOG_COPY.emptyTitle : "No Voices Found"}
+                description={
+                  voices.length === 0
+                    ? scope.cloud_sync
+                      ? VOICE_CATALOG_COPY.edgeSyncHint
+                      : "No voices available for this provider. Configure an API key or check provider connection."
+                    : search
+                    ? `No voices match "${search}" or active filters.`
+                    : "No voices match the selected filters."
+                }
+                action={
+                  voices.length > 0 ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSearch("");
+                        setScopeFilter("all");
+                        setGenderFilter(null);
+                        setAccentFilter(null);
+                      }}
+                      className="px-3.5 py-1.5 rounded-xl text-[12px] font-bold text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/10 border border-[rgba(var(--accent),0.25)] hover:bg-[rgb(var(--accent))]/20 transition-all cursor-pointer"
+                    >
+                      {VOICE_CATALOG_COPY.resetFilters}
+                    </button>
+                  ) : undefined
+                }
+                className="py-6 border-dashed border-[rgba(var(--accent),0.15)] bg-transparent min-h-[180px]"
               />
-            ))}
-          </div>
+            </div>
+          ) : (
+            <div
+              className={
+                layoutMode === "small"
+                  ? "grid auto-rows-max content-start gap-2 min-h-full w-full grid-cols-1"
+                  : "grid auto-rows-max content-start gap-2 min-h-full w-full grid-cols-1 sm:grid-cols-2"
+              }
+            >
+              {filteredVoices.map((v) => (
+                <VoiceCard
+                  key={v.id}
+                  voice={v}
+                  selected={stagedId === v.id}
+                  favorited={v.is_favorite}
+                  previewPlaying={playingId === v.id}
+                  isSynthesizing={isSynthesizing && playingId === v.id}
+                  previewProgress={playingId === v.id ? previewProgress : 0}
+                  previewDisabled={!v.has_preview && sessionBusy}
+                  hideBadges={true}
+                  onSelect={commitVoice}
+                  onToggleFavorite={toggleFavorite}
+                  onPreview={togglePreview}
+                  onSeekPreview={seekPreview}
+                />
+              ))}
+              {ready && scope.can_clone && (
+                <CloneVoiceCard onCreated={handleVoiceCreated} />
+              )}
+            </div>
+          )}
         </CatalogReveal>
       </ExpandableList>
     </div>

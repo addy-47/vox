@@ -5,7 +5,7 @@ import { useCatalogStore } from "@/store/catalogStore";
 import { PROVIDERS_CONFIG_DESK_COPY, LLM_CATALOG_COPY, LANGUAGE_CARD_COPY } from "@/data/settingsCopy";
 import { useSettingsStore, type LlmCustomServer, type TtsCustomServer } from "@/store/settingsStore";
 import { useShallow } from "zustand/react/shallow";
-import { activeSelection, promoteActive, resolveProviderModel } from "@/shared/lib/activeSelection";
+import { activeSelection, getEffectiveCloudKeyMap, promoteActive, resolveProviderModel } from "@/shared/lib/activeSelection";
 import { requestSpeechTab } from "@/shared/lib/speechTabSync";
 import { filterProviders } from "@/shared/lib/catalogFilter";
 import { ModalProviderFooter } from "@/shared/components/settings/SettingsCommitControls";
@@ -34,6 +34,49 @@ async function deleteCustomServer(domain: "llm" | "tts", serverId: string): Prom
   }
   await commitChanges({ domain, key: "servers" });
   if (isActive) await commitChanges({ domain, key: "active" });
+}
+
+/** Deletes a cloud provider key and reverts to embedded if active. */
+async function deleteCloudProvider(domain: "llm" | "tts", providerId: string): Promise<void> {
+  const { commitChanges, draftSettings: draft, settings: committed, updateDraft } = useSettingsStore.getState();
+  const isRealtime = draft?.interaction.pipeline_mode === "realtime";
+  if (isRealtime) {
+    const currentKeys = { ...(draft?.realtime?.api_keys ?? {}) };
+    delete currentKeys[providerId];
+    updateDraft("realtime", "api_keys", currentKeys);
+    if (providerId === "gemini_live") {
+      const cloudKeys = getEffectiveCloudKeyMap(draft, committed);
+      delete cloudKeys.gemini;
+      updateDraft("llm", "cloud_keys", cloudKeys);
+    }
+    await commitChanges({ domain: "realtime", key: "api_keys" });
+    return;
+  }
+  if (domain === "tts") {
+    type Rt = { tts?: Record<string, Record<string, unknown>>; providers?: { tts?: Record<string, Record<string, unknown>> } };
+    const rt = draft as Rt | null;
+    const base = (rt?.tts?.[providerId] ?? rt?.providers?.tts?.[providerId] ?? {}) as Record<string, unknown>;
+    const current = { ...base, key: "" };
+    (updateDraft as (a: string, b: string, c: unknown) => void)("tts", providerId, current);
+    const isActive = draft?.tts.active.category === "cloud" && draft?.tts.active.provider === providerId;
+    if (isActive) {
+      const fallback = draft?.tts.last_selected.embedded ?? "";
+      updateDraft("tts", "active", activeSelection("embedded", fallback));
+    }
+    await (commitChanges as (x: { domain: string; key: string }) => Promise<void>)({ domain: "tts", key: providerId });
+    if (isActive) await commitChanges({ domain: "tts", key: "active" });
+  } else {
+    const currentKeys = getEffectiveCloudKeyMap(draft, committed);
+    delete currentKeys[providerId];
+    updateDraft("llm", "cloud_keys", currentKeys);
+    const isActive = draft?.llm.active.category === "cloud" && draft?.llm.active.provider === providerId;
+    if (isActive) {
+      const fallback = draft?.llm.last_selected.embedded ?? "";
+      updateDraft("llm", "active", activeSelection("embedded", fallback));
+    }
+    await commitChanges({ domain: "llm", key: "cloud_keys" });
+    if (isActive) await commitChanges({ domain: "llm", key: "active" });
+  }
 }
 
 export interface ProviderModalProps {
@@ -103,7 +146,40 @@ export const ProviderModal = memo(({
   const committedSettings = useSettingsStore(useShallow((s) => s.settings));
   const updateDraft = useSettingsStore((s) => s.updateDraft);
   const isTts = category === "TTS";
-  const storeCloudProviders = useCatalogStore((s) => s.cloudProviders);
+  const isRealtime = category === "LLM" && draftSettings?.interaction.pipeline_mode === "realtime";
+
+  const realtimeProviders: CloudProvider[] = useMemo(() => [
+    {
+      id: "gemini_live",
+      name: "Gemini Live",
+      tagline: "Google's direct live speech model with search grounding",
+      url: "https://aistudio.google.com/apikey",
+      keyPlaceholder: "AIzaSy...",
+      isConfigured: Boolean(
+        draftSettings?.realtime?.api_keys?.["gemini_live"] ||
+        draftSettings?.providers?.realtime?.api_keys?.["gemini_live"] ||
+        committedSettings?.providers?.realtime?.api_keys?.["gemini_live"] ||
+        draftSettings?.llm?.cloud_keys?.["gemini"] ||
+        draftSettings?.providers?.llm?.cloud_keys?.["gemini"] ||
+        committedSettings?.providers?.llm?.cloud_keys?.["gemini"]
+      ),
+    },
+    {
+      id: "deepgram_voice_agent",
+      name: "Deepgram Agent",
+      tagline: "Deepgram's real-time conversational voice agent",
+      url: "https://console.deepgram.com/",
+      keyPlaceholder: "Token...",
+      isConfigured: Boolean(
+        draftSettings?.realtime?.api_keys?.["deepgram_voice_agent"] ||
+        draftSettings?.providers?.realtime?.api_keys?.["deepgram_voice_agent"] ||
+        committedSettings?.providers?.realtime?.api_keys?.["deepgram_voice_agent"]
+      ),
+    },
+  ], [draftSettings, committedSettings]);
+
+  const rawCloudProviders = useCatalogStore((s) => s.cloudProviders);
+  const storeCloudProviders = isRealtime ? realtimeProviders : rawCloudProviders;
   const storeTtsProviders = useCatalogStore((s) => s.ttsProviders);
 
   const customServers = useMemo(() => {
@@ -160,6 +236,13 @@ export const ProviderModal = memo(({
   const handleDeleteServer = useCallback(async (serverId: string) => {
     await deleteCustomServer(isTts ? "tts" : "llm", serverId);
   }, [isTts]);
+
+  const handleDeleteCloudProvider = useCallback(async (providerId: string) => {
+    if (editingProviderId === providerId) {
+      onCancelInlineKey();
+    }
+    await deleteCloudProvider(isTts ? "tts" : "llm", providerId);
+  }, [isTts, editingProviderId, onCancelInlineKey]);
 
   const handleSelectLocalProvider = useCallback(() => {
     useCatalogStore.getState().clearRemoteModelsError();
@@ -304,8 +387,8 @@ export const ProviderModal = memo(({
     return !q || "built-in on-device local neural whisper gguf kokoro vox offline".includes(q);
   }, [deferredSearch]);
 
-  const showLocalCard = (filterCategory === "all" || filterCategory === "configured") && matchesLocal;
-  const showCustomSection = filterCategory === "all" || filterCategory === "configured" || filterCategory === "custom";
+  const showLocalCard = !isRealtime && (filterCategory === "all" || filterCategory === "configured") && matchesLocal;
+  const showCustomSection = !isRealtime && (filterCategory === "all" || filterCategory === "configured" || filterCategory === "custom");
   const showCustomCreationCard = showCustomSection && (!deferredSearch.trim() || "custom server self-hosted endpoint".includes(deferredSearch.trim().toLowerCase()));
 
   const filteredCustomServers = useMemo(() => {
@@ -404,9 +487,25 @@ export const ProviderModal = memo(({
                   <span className="text-[rgb(var(--foreground-muted))]/70">{PROVIDERS_CONFIG_DESK_COPY.badges.cloudGateway}</span>
                   {hasKey ? (
                     <div className="flex items-center gap-1.5">
-                      <span className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--accent))] shrink-0" /><span className="text-[rgb(var(--foreground-muted))]">••••••••{savedKey?.slice(-4)}</span>
                       <Tooltip label={PROVIDERS_CONFIG_DESK_COPY.llm.cloud.editKey} side="top" asChild>
-                        <button type="button" onClick={() => onStartInlineEdit(provider.id, savedKey ?? "")} className="p-1 rounded hover:bg-white/[0.08] hover:text-[rgb(var(--accent))] transition-colors text-[rgb(var(--foreground-muted))]/60 cursor-pointer shrink-0" aria-label={PROVIDERS_CONFIG_DESK_COPY.llm.cloud.editKey}><Pencil size={11} /></button>
+                        <button
+                          type="button"
+                          onClick={() => onStartInlineEdit(provider.id, savedKey ?? "")}
+                          className="p-1 rounded-md text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.1)] transition-all cursor-pointer"
+                          aria-label={PROVIDERS_CONFIG_DESK_COPY.llm.cloud.editKey}
+                        >
+                          <Pencil size={13} />
+                        </button>
+                      </Tooltip>
+                      <Tooltip label={PROVIDERS_CONFIG_DESK_COPY.actions.deleteProvider} side="top" asChild>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteCloudProvider(provider.id)}
+                          className="p-1 rounded-md text-[rgb(var(--foreground-muted))]/40 hover:text-[rgb(var(--error))] hover:bg-[rgba(var(--error),0.1)] transition-all cursor-pointer"
+                          aria-label={PROVIDERS_CONFIG_DESK_COPY.actions.deleteProvider}
+                        >
+                          <Trash2 size={13} />
+                        </button>
                       </Tooltip>
                     </div>
                   ) : (

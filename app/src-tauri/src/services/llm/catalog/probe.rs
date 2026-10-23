@@ -218,11 +218,27 @@ async fn list_remote_models(
     kind: &str,
 ) -> Result<Vec<LlmModelInfo>, String> {
     let started = std::time::Instant::now();
+
+    if provider_name == Some("deepgram_voice_agent") || base_url.contains("agent.deepgram.com") {
+        return fetch_deepgram_agent_models(api_key, kind).await;
+    }
+    if provider_name == Some("gemini_live") {
+        return fetch_gemini_live_models(api_key, kind).await;
+    }
+
     let conn_cfg = ConnectionConfig::new(base_url, model, api_key, provider_name);
     let transport_kind = conn_cfg.transport;
     let transport = RemoteTransport::new(conn_cfg);
     match transport.list_models().await {
         Ok(mut models) => {
+            let is_gemini = provider_name == Some("gemini")
+                || base_url.contains("generativelanguage.googleapis.com")
+                || kind == "gemini";
+
+            if is_gemini {
+                filter_and_normalize_gemini_models(&mut models);
+            }
+
             for entry in &mut models {
                 entry.provider_kind = kind.to_string();
             }
@@ -246,6 +262,173 @@ async fn list_remote_models(
             Err(e.to_string())
         }
     }
+}
+
+/// Dynamically queries think models available for Deepgram Voice Agent.
+async fn fetch_deepgram_agent_models(
+    api_key: Option<&str>,
+    kind: &str,
+) -> Result<Vec<LlmModelInfo>, String> {
+    let key = api_key.unwrap_or_default().trim();
+    if key.is_empty() {
+        return Ok(Vec::new());
+    }
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let resp = client
+        .get("https://agent.deepgram.com/v1/agent/settings/think/models")
+        .header("Authorization", format!("Token {}", key))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if !resp.status().is_success() {
+        return Err(format!("Deepgram agent returned HTTP {}", resp.status()));
+    }
+
+    #[derive(serde::Deserialize)]
+    struct DeepgramModelEntry {
+        id: String,
+        name: Option<String>,
+        provider: Option<String>,
+    }
+    #[derive(serde::Deserialize)]
+    struct DeepgramAgentModelsResp {
+        #[serde(default)]
+        models: Vec<DeepgramModelEntry>,
+    }
+
+    let parsed = resp
+        .json::<DeepgramAgentModelsResp>()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(parsed
+        .models
+        .into_iter()
+        .map(|m| {
+            let name = m
+                .name
+                .unwrap_or_else(|| m.id.replace([':', '_', '-'], " "));
+            LlmModelInfo {
+                id: m.id,
+                name,
+                size_bytes: None,
+                quantization: None,
+                family: m.provider,
+                provider_kind: kind.to_string(),
+                capabilities: None,
+            }
+        })
+        .collect())
+}
+
+/// Dynamically queries bidirectional live models available from Google Gemini.
+async fn fetch_gemini_live_models(
+    api_key: Option<&str>,
+    kind: &str,
+) -> Result<Vec<LlmModelInfo>, String> {
+    let key = api_key.unwrap_or_default().trim();
+    if key.is_empty() {
+        return Ok(Vec::new());
+    }
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let url = format!(
+        "https://generativelanguage.googleapis.com/v1beta/models?key={}",
+        key
+    );
+    let resp = client.get(&url).send().await.map_err(|e| e.to_string())?;
+
+    if !resp.status().is_success() {
+        return Err(format!("Gemini API returned HTTP {}", resp.status()));
+    }
+
+    #[derive(serde::Deserialize)]
+    struct GeminiRawModel {
+        name: String,
+        #[serde(rename = "displayName")]
+        display_name: Option<String>,
+    }
+    #[derive(serde::Deserialize)]
+    struct GeminiModelsList {
+        #[serde(default)]
+        models: Vec<GeminiRawModel>,
+    }
+
+    let parsed = resp
+        .json::<GeminiModelsList>()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    const EXCLUDED: &[&str] = &[
+        "image",
+        "embed",
+        "robotics",
+        "computer-use",
+        "aqa",
+        "deep-research",
+        "banana",
+        "argon",
+        "lyria",
+        "transcribe",
+    ];
+
+    let filtered: Vec<LlmModelInfo> = parsed
+        .models
+        .into_iter()
+        .filter_map(|m| {
+            let stripped = m.name.strip_prefix("models/").unwrap_or(&m.name);
+            let lower = stripped.to_lowercase();
+            if EXCLUDED.iter().any(|needle| lower.contains(needle)) {
+                return None;
+            }
+            let display = m
+                .display_name
+                .unwrap_or_else(|| stripped.replace([':', '_', '-'], " "));
+            Some(LlmModelInfo {
+                id: stripped.to_string(),
+                name: display,
+                size_bytes: None,
+                quantization: None,
+                family: Some("google".to_string()),
+                provider_kind: kind.to_string(),
+                capabilities: None,
+            })
+        })
+        .collect();
+
+    Ok(filtered)
+}
+
+/// Normalizes model IDs and filters Gemini models to text/chat variants only.
+pub(crate) fn filter_and_normalize_gemini_models(models: &mut Vec<LlmModelInfo>) {
+    const EXCLUDED_SUBSTRINGS: &[&str] = &[
+        "live",
+        "image",
+        "tts",
+        "embed",
+        "robotics",
+        "computer-use",
+        "deep-research",
+        "aqa",
+    ];
+
+    models.retain_mut(|entry| {
+        if let Some(stripped) = entry.id.strip_prefix("models/") {
+            entry.id = stripped.to_string();
+            entry.name = entry.id.replace([':', '_', '-'], " ");
+        }
+
+        let lower = entry.id.to_lowercase();
+        !EXCLUDED_SUBSTRINGS.iter().any(|needle| lower.contains(needle))
+    });
 }
 
 /// Probes capabilities, validates optional token cap, and persists result to the capabilities cache.
@@ -2007,5 +2190,45 @@ mod tests {
             detail
         );
         server.join().expect("mock server panicked");
+    }
+
+    #[test]
+    fn gemini_filtering_strips_prefix_and_filters_non_chat_models() {
+        let make_model = |id: &str| LlmModelInfo {
+            id: id.to_string(),
+            name: id.replace([':', '_', '-'], " "),
+            size_bytes: None,
+            quantization: None,
+            family: None,
+            provider_kind: "cloud".to_string(),
+            capabilities: None,
+        };
+
+        let mut models = vec![
+            make_model("models/gemini-2.5-flash"),
+            make_model("models/gemini-2.5-pro"),
+            make_model("gemini-1.5-flash"),
+            make_model("models/gemini-3.1-flash-live-preview"),
+            make_model("models/gemini-2.5-flash-image"),
+            make_model("gemini-3.1-flash-image"),
+            make_model("models/gemini-2.5-flash-preview-tts"),
+            make_model("gemini-3.8-flash-tts"),
+            make_model("models/gemini-embedding-001"),
+            make_model("gemini-embedding-2"),
+            make_model("models/gemini-robotics-er-1"),
+            make_model("models/gemini-computer-use-preview"),
+            make_model("models/gemini-deep-research-preview"),
+            make_model("models/aqa"),
+        ];
+
+        filter_and_normalize_gemini_models(&mut models);
+
+        let ids: Vec<&str> = models.iter().map(|m| m.id.as_str()).collect();
+        assert_eq!(ids, vec!["gemini-2.5-flash", "gemini-2.5-pro", "gemini-1.5-flash"]);
+
+        // Verify clean names have models/ prefix stripped as well
+        assert_eq!(models[0].name, "gemini 2.5 flash");
+        assert_eq!(models[1].name, "gemini 2.5 pro");
+        assert_eq!(models[2].name, "gemini 1.5 flash");
     }
 }

@@ -5,6 +5,7 @@ import { resolveCapabilities } from "@/shared/lib/catalogCapabilities";
 import { filterModels } from "@/shared/lib/catalogFilter";
 import { LLM_CATALOG_COPY } from "@/data/settingsCopy";
 import { Cpu, Gauge, Heart, Wrench, Zap } from "lucide-react";
+import { EmptyState } from "@/shared/components/common";
 import { useFavoriteModels } from "@/shared/hooks/useFavoriteModels";
 import type { LlmModelInfo, ModelCapabilities } from "@/store/settingsStore";
 import { RemoteModelCard } from "./RemoteModelCard";
@@ -149,22 +150,24 @@ export const ModelModal = memo(({
   );
 
   const emptyStateNode = (
-    <div className="h-64 flex flex-col items-center justify-center text-center space-y-2">
-      <p className="text-[14px] font-bold text-[rgb(var(--foreground))]">{LLM_CATALOG_COPY.modalEmptyTitle}</p>
-      <p className="text-[12px] text-[rgb(var(--foreground-muted))] max-w-sm">
-        {LLM_CATALOG_COPY.modalEmptyHint}
-      </p>
-      <button
-        type="button"
-        onClick={() => {
-          setModalSearch("");
-          setFilterCategory("all");
-        }}
-        className="mt-2 px-3 py-1.5 rounded-lg text-[12px] font-bold text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/10 border border-[rgba(var(--accent),0.3)] hover:bg-[rgb(var(--accent))]/20 transition-all cursor-pointer"
-      >
-        {LLM_CATALOG_COPY.resetFilters}
-      </button>
-    </div>
+    <EmptyState
+      icon={Cpu}
+      title={LLM_CATALOG_COPY.modalEmptyTitle}
+      description={LLM_CATALOG_COPY.modalEmptyHint}
+      action={
+        <button
+          type="button"
+          onClick={() => {
+            setModalSearch("");
+            setFilterCategory("all");
+          }}
+          className="px-3.5 py-1.5 rounded-xl text-[12px] font-bold text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/10 border border-[rgba(var(--accent),0.3)] hover:bg-[rgb(var(--accent))]/20 transition-all cursor-pointer"
+        >
+          {LLM_CATALOG_COPY.resetFilters}
+        </button>
+      }
+      className="py-12 border-dashed border-[rgba(var(--accent),0.15)] bg-transparent"
+    />
   );
 
   return (
