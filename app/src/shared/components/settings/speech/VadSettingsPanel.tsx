@@ -1,4 +1,4 @@
-import { memo } from "react";
+import { memo, useState, useEffect } from "react";
 import { Gauge, Hourglass, Zap } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useSettingsStore } from "@/store/settingsStore";
@@ -28,6 +28,7 @@ interface VadKnobRowProps {
   /** The custom entry, shown only when the value is not one of the presets. */
   customValue: string;
   onCustomChange: (value: string) => void;
+  onCustomCommit?: () => void;
   customSelected: boolean;
   customLabel: string;
   disabled?: boolean;
@@ -50,6 +51,7 @@ const VadKnobRow = memo(({
   onSelect,
   customValue,
   onCustomChange,
+  onCustomCommit,
   customSelected,
   customLabel,
   disabled = false,
@@ -92,6 +94,12 @@ const VadKnobRow = memo(({
           placeholder={CUSTOM_VALUE_COPY.placeholder}
           ariaLabel={customLabel}
           onChange={(e) => onCustomChange(e.target.value)}
+          onBlur={onCustomCommit}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              onCustomCommit?.();
+            }
+          }}
         />
       </div>
     </div>
@@ -109,19 +117,83 @@ export const VadSettingsPanel = memo(
     const vad = useSettingsStore((s) => s.draftSettings?.vad);
     const updateDraft = useSettingsStore((s) => s.updateDraft);
 
-    if (!vad) return null;
-
-    const currentThreshold = vad.threshold ?? 0.5;
-    const currentSilenceMs = vad.silence_duration_ms ?? 800;
-    const currentSpeechOnsetMs = vad.speech_onset_ms ?? 32;
+    const currentThreshold = vad?.threshold ?? 0.5;
+    const currentSilenceMs = vad?.silence_duration_ms ?? 800;
+    const currentSpeechOnsetMs = vad?.speech_onset_ms ?? 32;
 
     const thresholdCustom = ![0.3, 0.5, 0.7].some((v) => Math.abs(currentThreshold - v) < 0.04);
     const silenceCustom = ![400, 800, 1200].includes(currentSilenceMs);
     const onsetCustom = ![32, 64, 128].includes(currentSpeechOnsetMs);
 
+    const [thresholdDraft, setThresholdDraft] = useState(
+      thresholdCustom ? `${Math.round(currentThreshold * 100)}%` : ""
+    );
+    const [silenceDraft, setSilenceDraft] = useState(
+      silenceCustom ? `${currentSilenceMs}ms` : ""
+    );
+    const [onsetDraft, setOnsetDraft] = useState(
+      onsetCustom ? `${currentSpeechOnsetMs}ms` : ""
+    );
+
+    useEffect(() => {
+      setThresholdDraft(thresholdCustom ? `${Math.round(currentThreshold * 100)}%` : "");
+    }, [currentThreshold, thresholdCustom]);
+
+    useEffect(() => {
+      setSilenceDraft(silenceCustom ? `${currentSilenceMs}ms` : "");
+    }, [currentSilenceMs, silenceCustom]);
+
+    useEffect(() => {
+      setOnsetDraft(onsetCustom ? `${currentSpeechOnsetMs}ms` : "");
+    }, [currentSpeechOnsetMs, onsetCustom]);
+
+    if (!vad) return null;
+
     const write = (key: VadUserKey, value: number) => {
       if (disabled) return;
       updateDraft("vad", key, value);
+    };
+
+    const commitThreshold = () => {
+      const clean = thresholdDraft.replace(/[^0-9]/g, "");
+      if (!clean) {
+        setThresholdDraft(thresholdCustom ? `${Math.round(currentThreshold * 100)}%` : "");
+        return;
+      }
+      const num = parseInt(clean, 10);
+      if (!Number.isNaN(num) && num >= 5 && num <= 95) {
+        write("threshold", num / 100);
+      } else {
+        setThresholdDraft(thresholdCustom ? `${Math.round(currentThreshold * 100)}%` : "");
+      }
+    };
+
+    const commitSilence = () => {
+      const clean = silenceDraft.replace(/[^0-9]/g, "");
+      if (!clean) {
+        setSilenceDraft(silenceCustom ? `${currentSilenceMs}ms` : "");
+        return;
+      }
+      const num = parseInt(clean, 10);
+      if (!Number.isNaN(num) && num >= 100 && num <= 3000) {
+        write("silence_duration_ms", num);
+      } else {
+        setSilenceDraft(silenceCustom ? `${currentSilenceMs}ms` : "");
+      }
+    };
+
+    const commitOnset = () => {
+      const clean = onsetDraft.replace(/[^0-9]/g, "");
+      if (!clean) {
+        setOnsetDraft(onsetCustom ? `${currentSpeechOnsetMs}ms` : "");
+        return;
+      }
+      const num = parseInt(clean, 10);
+      if (!Number.isNaN(num) && num >= 16 && num <= 1000) {
+        write("speech_onset_ms", num);
+      } else {
+        setOnsetDraft(onsetCustom ? `${currentSpeechOnsetMs}ms` : "");
+      }
     };
 
     return (
@@ -143,16 +215,10 @@ export const VadSettingsPanel = memo(
             }
             onSelect={(value) => write("threshold", value)}
             customSelected={thresholdCustom}
-            customValue={thresholdCustom ? `${Math.round(currentThreshold * 100)}%` : ""}
+            customValue={thresholdDraft}
             customLabel={VAD_SETTINGS_COPY.sensitivity.title}
-            onCustomChange={(raw) => {
-              const clean = raw.replace(/[^0-9]/g, "");
-              if (!clean) return;
-              const num = parseInt(clean, 10);
-              if (!Number.isNaN(num) && num >= 5 && num <= 95) {
-                write("threshold", num / 100);
-              }
-            }}
+            onCustomChange={setThresholdDraft}
+            onCustomCommit={commitThreshold}
             disabled={disabled}
           />
 
@@ -168,16 +234,10 @@ export const VadSettingsPanel = memo(
             selectedValue={silenceCustom ? Number.NaN : currentSilenceMs}
             onSelect={(value) => write("silence_duration_ms", value)}
             customSelected={silenceCustom}
-            customValue={silenceCustom ? `${currentSilenceMs}ms` : ""}
+            customValue={silenceDraft}
             customLabel={VAD_SETTINGS_COPY.silence.title}
-            onCustomChange={(raw) => {
-              const clean = raw.replace(/[^0-9]/g, "");
-              if (!clean) return;
-              const num = parseInt(clean, 10);
-              if (!Number.isNaN(num) && num >= 100 && num <= 3000) {
-                write("silence_duration_ms", num);
-              }
-            }}
+            onCustomChange={setSilenceDraft}
+            onCustomCommit={commitSilence}
             disabled={disabled}
           />
 
@@ -193,16 +253,10 @@ export const VadSettingsPanel = memo(
             selectedValue={onsetCustom ? Number.NaN : currentSpeechOnsetMs}
             onSelect={(value) => write("speech_onset_ms", value)}
             customSelected={onsetCustom}
-            customValue={onsetCustom ? `${currentSpeechOnsetMs}ms` : ""}
+            customValue={onsetDraft}
             customLabel={VAD_SETTINGS_COPY.speechOnset.title}
-            onCustomChange={(raw) => {
-              const clean = raw.replace(/[^0-9]/g, "");
-              if (!clean) return;
-              const num = parseInt(clean, 10);
-              if (!Number.isNaN(num) && num >= 16 && num <= 1000) {
-                write("speech_onset_ms", num);
-              }
-            }}
+            onCustomChange={setOnsetDraft}
+            onCustomCommit={commitOnset}
             disabled={disabled}
           />
         </div>

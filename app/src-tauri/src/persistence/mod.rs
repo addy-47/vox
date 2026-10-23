@@ -61,7 +61,8 @@ pub use queue::{
     update_queue_item_status, IngestionStatsRecord, QueueItem,
 };
 pub use sessions::{
-    ensure_session_exists, fetch_session_project_id, set_session_title, SessionRow, TurnRow,
+    ensure_session_exists, fetch_session_project_id, search_history, set_session_title,
+    HistorySearchHit, SessionRow, TurnRow,
 };
 pub use tool_calls::persist_tool_call;
 

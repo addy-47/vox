@@ -889,7 +889,9 @@ fn tool_filter_hides_the_title_tool_once_the_title_is_set() {
         web_search_enabled: true,
     });
     assert!(
-        without_title.iter().any(|t| t.name == "respond_and_set_title"),
+        without_title
+            .iter()
+            .any(|t| t.name == "respond_and_set_title"),
         "an untitled session must offer the title tool"
     );
 }

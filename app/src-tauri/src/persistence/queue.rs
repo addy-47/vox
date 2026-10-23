@@ -27,6 +27,7 @@ pub struct IngestionStatsRecord {
     pub processing: i64,
     pub completed: i64,
     pub failed: i64,
+    pub unconsolidated_personal_count: i64,
 }
 
 /// Enqueues a newly extracted observation into `memory_ingestion_queue` with status 'pending'.
@@ -322,11 +323,24 @@ pub async fn fetch_ingestion_aggregate_stats(conn: &Connection) -> Result<Ingest
     let completed = q_completed.max(facts_count);
     let total = pending + processing + completed + failed;
 
+    let mut unconsolidated_rows = conn
+        .query(
+            "SELECT COUNT(*) FROM memory_facts WHERE type = 'personal' AND status = 'active'",
+            (),
+        )
+        .await?;
+    let unconsolidated_personal_count = if let Some(r) = unconsolidated_rows.next().await? {
+        r.get::<Option<i64>>(0)?.unwrap_or(0)
+    } else {
+        0
+    };
+
     Ok(IngestionStatsRecord {
         total,
         pending,
         processing,
         completed,
         failed,
+        unconsolidated_personal_count,
     })
 }

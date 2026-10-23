@@ -151,7 +151,9 @@ impl MockLlmServer {
         let thread_counter = Arc::clone(&counter);
         let thread_shutdown = Arc::new(AtomicBool::new(false));
         let loop_shutdown = Arc::clone(&thread_shutdown);
-        let handle = std::thread::spawn(move || {
+        let handle = std::thread::Builder::new()
+            .name("eval-mock-llm".to_string())
+            .spawn(move || {
             // Serving runs on its own thread; each connection is handled inline,
             // which is sufficient because the harness issues requests sequentially.
             // The payload is framed as a real HTTP/1.1 response — the production
@@ -190,7 +192,8 @@ impl MockLlmServer {
                     }
                 }
             }
-        });
+        })
+        .expect("Failed to spawn eval-mock-llm");
 
         Ok(Self {
             base_url: format!("http://127.0.0.1:{}/v1", port),

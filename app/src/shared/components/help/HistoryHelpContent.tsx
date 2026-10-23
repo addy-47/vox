@@ -46,7 +46,7 @@ export const HistoryHelpContent = memo(() => {
 
             {/* Tips Callout */}
             {section.tips && section.tips.length > 0 && (
-              <div className="border-l-2 border-[rgb(var(--accent))] bg-[rgba(var(--accent),0.04)] pl-3.5 pr-3 py-2 rounded-r-xl flex flex-col gap-1 text-[12px] text-[rgb(var(--foreground-muted))] border-y border-r border-[rgba(var(--border),0.08)] mt-1">
+              <div className="border border-[rgba(var(--accent),0.2)] bg-[rgba(var(--accent),0.04)] px-3.5 py-2 rounded-xl flex flex-col gap-1 text-[12px] text-[rgb(var(--foreground-muted))] mt-1">
                 {section.tips.map((tip) => (
                   <p key={tip} className="leading-relaxed">
                     {tip}

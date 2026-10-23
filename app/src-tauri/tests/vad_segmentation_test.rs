@@ -13,7 +13,7 @@ mod common;
 use std::{
     sync::{
         atomic::{AtomicBool, AtomicU32, Ordering},
-        Arc,
+        mpsc, Arc,
     },
     time::{Duration, Instant},
 };
@@ -74,7 +74,12 @@ fn passive_streaming_segments_speech_and_suppresses_silence() {
         initial_audio_mode: AudioOutputMode::Headset,
     };
 
+    let vad_backend = common::harness::create_test_vad_backend(
+        vox_lib::services::vad::VadBackendOption::Earshot,
+        vad_config.initial_threshold,
+    );
     let (vad_cmd_tx, vox_event_rx, mut producer, vad_join) = common::harness::setup_vad_actor(
+        vad_backend,
         stt_tx.clone(),
         vad_config,
         state_atomic.clone(),
@@ -259,5 +264,91 @@ fn passive_streaming_segments_speech_and_suppresses_silence() {
     common::harness::assert_channel_empty(
         &pipeline_event_rx,
         "Passive Streaming Silence Guard — pipeline_event_rx must be empty after the producers joined",
+    );
+}
+
+/// PURPOSE:  Silero ONNX VAD engine must classify chunk-level speech and trigger SpeechStart/SpeechEnd
+///           in the continuous segmentation pipeline.
+/// SCENARIO: Stream real audio clip into ring buffer with SileroVadEngine active, follow with silence frames.
+/// ASSERTS:  SpeechStart and SpeechEnd events fire, and pure silence produces zero speech events.
+/// CLASS:    happy-path (speech) + suppression (silence)
+/// REQUIRES: VOX_MODELS_DIR with silero_vad.onnx
+/// MUTANT:   Invert prediction return in SileroVadEngine::predict.
+#[test]
+fn silero_vad_segments_speech_and_triggers_auto_silence_stop() {
+    let _guard = common::paths::TempPathsGuard::new();
+
+    let state_atomic = Arc::new(AtomicU32::new(InteractionState::Ready as u32));
+    let turn_id_atomic = Arc::new(AtomicU32::new(1));
+    let audio_suppressed = Arc::new(AtomicBool::new(false));
+    let ingestion_gate = Arc::new(AtomicBool::new(true));
+    let vad_shutdown = Arc::new(AtomicBool::new(false));
+
+    let vad_config = VadActorConfig {
+        initial_threshold: vox_lib::core::defaults::DEFAULT_VAD_THRESHOLD,
+        initial_noise_gate: vox_lib::core::defaults::DEFAULT_VAD_PTT_NOISE_GATE,
+        initial_silence_duration_ms: 800,
+        initial_speech_onset_ms: vox_lib::core::defaults::DEFAULT_VAD_SPEECH_ONSET_MS,
+        initial_mode: InteractionMode::Passive,
+        initial_audio_mode: AudioOutputMode::Headset,
+    };
+
+    let silero_backend = common::harness::create_test_vad_backend(
+        vox_lib::services::vad::VadBackendOption::SileroVad,
+        vad_config.initial_threshold,
+    );
+    let (stt_tx, _stt_rx) = mpsc::channel();
+
+    let (vad_cmd_tx, vox_event_rx, mut producer, vad_join) = common::harness::setup_vad_actor(
+        silero_backend,
+        stt_tx,
+        vad_config,
+        state_atomic,
+        turn_id_atomic,
+        audio_suppressed,
+        ingestion_gate,
+        vad_shutdown.clone(),
+    );
+
+    // 1. Stream English speech clip
+    let clip_path = common::paths::get_asset_path(common::ASSET_SUPERTONIC_01_EN_FILENAME);
+    let audio = common::audio::decode_wav_to_mono_16k(&clip_path)
+        .expect("Failed to decode supertonic_01_en_briefing.wav");
+
+    common::audio::stream_audio_to_ring_buffer(&audio, &mut producer);
+    common::audio::stream_silence_frames(&mut producer, 60);
+    common::audio::wait_for_buffer_drain(&producer, 5);
+
+    let mut saw_speech_start = false;
+    let mut saw_speech_end = false;
+    let speech_deadline = Instant::now() + Duration::from_secs(10);
+    while Instant::now() < speech_deadline && (!saw_speech_start || !saw_speech_end) {
+        if let Ok(ev) = vox_event_rx.recv_timeout(Duration::from_millis(100)) {
+            match ev {
+                VoxEvent::SpeechStart { .. } => saw_speech_start = true,
+                VoxEvent::SpeechEnd { .. } => saw_speech_end = true,
+                _ => {}
+            }
+        }
+    }
+
+    assert!(saw_speech_start, "Silero VAD did not emit SpeechStart");
+    assert!(saw_speech_end, "Silero VAD did not emit SpeechEnd");
+
+    // 2. Stream silence only and verify negative emission
+    common::harness::assert_channel_empty(
+        &vox_event_rx,
+        "Silero boundary — vox_event_rx must be empty before silence guard",
+    );
+    common::audio::stream_silence_frames(&mut producer, 80);
+    common::audio::wait_for_buffer_drain(&producer, 5);
+
+    let _ = vad_cmd_tx.send(VadCommand::Shutdown);
+    vad_shutdown.store(true, Ordering::SeqCst);
+    vad_join.join().expect("Silero VAD actor panicked");
+
+    common::harness::assert_channel_empty(
+        &vox_event_rx,
+        "Silero silence guard — vox_event_rx must remain empty for silence frames",
     );
 }

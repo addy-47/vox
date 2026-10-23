@@ -9,13 +9,14 @@ use crate::{
         state::AppState,
     },
     persistence::sessions::{
-        delete_session as delete_session_row, fetch_sessions, fetch_turns, update_session_metadata,
+        delete_session as delete_session_row, fetch_sessions, fetch_turns,
+        search_history as db_search_history, update_session_metadata,
     },
     utils::paths,
 };
 pub use crate::{
     ipc::pipeline::ContinueSessionResult,
-    persistence::sessions::{SessionRow, TurnRow},
+    persistence::sessions::{HistorySearchHit, SessionRow, TurnRow},
 };
 
 /// Retrieves the cached dictation transcript history (tray ephemeral buffer).
@@ -87,6 +88,23 @@ pub async fn get_turns(
         .connect()
         .map_err(|e| VoxIpcError::Database(e.to_string()))?;
     fetch_turns(&conn, session_id)
+        .await
+        .map_err(|e| VoxIpcError::Database(e.to_string()))
+}
+
+/// Searches conversation sessions and turns directly via Turso SQL.
+#[tauri::command]
+pub async fn search_history(
+    query: String,
+    project_id: Option<String>,
+    limit: Option<u32>,
+    state: State<'_, Arc<AppState>>,
+) -> Result<Vec<HistorySearchHit>, VoxIpcError> {
+    let conn = state
+        .db
+        .connect()
+        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
+    db_search_history(&conn, &query, project_id.as_deref(), limit.unwrap_or(20))
         .await
         .map_err(|e| VoxIpcError::Database(e.to_string()))
 }

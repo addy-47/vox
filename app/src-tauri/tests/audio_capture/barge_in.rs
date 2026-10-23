@@ -9,8 +9,6 @@
 //! Run       : cargo nextest run --test audio_capture_aec_test --release --test-threads=1
 //! ============================================================================
 
-use crate::common;
-
 use std::{
     path::Path,
     sync::{
@@ -37,6 +35,8 @@ use vox_lib::{
         vad::actor::VadActorConfig,
     },
 };
+
+use crate::common;
 
 /// PURPOSE:  The assistant's own echo must never interrupt the assistant.
 /// SCENARIO: Only the playback reference reaches the capture.
@@ -113,15 +113,18 @@ async fn solo_playback_never_interrupts_the_user() {
             vox_lib::core::defaults::DEFAULT_VAD_THRESHOLD,
         )
         .expect("Failed to init Earshot VAD");
-        let vad_join = std::thread::spawn(move || {
-            let _ = vox_lib::services::vad::spawn_vad_actor(
-                vox_lib::services::vad::VadBackend::Earshot(vad_backend),
-                clean_cons,
-                vad_channels,
-                vad_handles,
-                vad_cfg,
-            );
-        });
+        let vad_join = std::thread::Builder::new()
+            .name("test-vad-echo-actor".into())
+            .spawn(move || {
+                let _ = vox_lib::services::vad::spawn_vad_actor(
+                    vox_lib::services::vad::VadBackend::Earshot(vad_backend),
+                    clean_cons,
+                    vad_channels,
+                    vad_handles,
+                    vad_cfg,
+                );
+            })
+            .expect("failed to spawn thread");
 
         // Simulate 40ms acoustic delay and -6dB attenuation echo
         let delay_samples = 640;
@@ -259,15 +262,18 @@ async fn double_talk_barge_in_cancels_the_playback_and_opens_listening() {
             vox_lib::core::defaults::DEFAULT_VAD_THRESHOLD,
         )
         .expect("Failed to init Earshot VAD");
-        let vad_join = std::thread::spawn(move || {
-            let _ = vox_lib::services::vad::spawn_vad_actor(
-                vox_lib::services::vad::VadBackend::Earshot(vad_backend),
-                clean_cons,
-                vad_channels,
-                vad_handles,
-                vad_cfg,
-            );
-        });
+        let vad_join = std::thread::Builder::new()
+            .name("test-vad-echo-actor".into())
+            .spawn(move || {
+                let _ = vox_lib::services::vad::spawn_vad_actor(
+                    vox_lib::services::vad::VadBackend::Earshot(vad_backend),
+                    clean_cons,
+                    vad_channels,
+                    vad_handles,
+                    vad_cfg,
+                );
+            })
+            .expect("failed to spawn thread");
 
         // Mix echo and inject genuine user speech at frame 30
         let total_frames = 120; // 1.2 seconds
@@ -423,15 +429,18 @@ async fn bypass_reproduces_the_echo_interruption() {
             vox_lib::core::defaults::DEFAULT_VAD_THRESHOLD,
         )
         .expect("Failed to init Earshot VAD");
-        let vad_join = std::thread::spawn(move || {
-            let _ = vox_lib::services::vad::spawn_vad_actor(
-                vox_lib::services::vad::VadBackend::Earshot(vad_backend),
-                clean_cons,
-                vad_channels,
-                vad_handles,
-                vad_cfg,
-            );
-        });
+        let vad_join = std::thread::Builder::new()
+            .name("test-vad-echo-actor".into())
+            .spawn(move || {
+                let _ = vox_lib::services::vad::spawn_vad_actor(
+                    vox_lib::services::vad::VadBackend::Earshot(vad_backend),
+                    clean_cons,
+                    vad_channels,
+                    vad_handles,
+                    vad_cfg,
+                );
+            })
+            .expect("failed to spawn thread");
 
         // Stream echo into mic without AEC reference
         let test_len = 48000.min(tts_samples.len());

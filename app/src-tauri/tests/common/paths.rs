@@ -8,7 +8,7 @@ use vox_lib::services::{
     llm::{GEMMA_MODEL_DIR, GEMMA_MODEL_FILE, QWEN_MODEL_DIR, QWEN_MODEL_FILE},
     stt::{NEMOTRON_MODEL_DIR, QWEN_ASR_MODEL_DIR},
     tts::{CHATTERBOX_MODEL_DIR, SUPERTONIC_MODEL_DIR},
-    vad::{MODEL_DIR_VAD, MODEL_FILE_VAD},
+    vad::{MODEL_DIR_VAD, MODEL_FILE_VAD, MODEL_FILE_VAD_SILERO},
 };
 
 const TEST_DB_FILENAME: &str = "test_vox.db";
@@ -84,6 +84,13 @@ pub fn get_ten_vad_model_path() -> PathBuf {
     vox_lib::utils::paths::init();
     let models_dir = vox_lib::utils::paths::get().models.clone();
     models_dir.join(MODEL_DIR_VAD).join(MODEL_FILE_VAD)
+}
+
+/// Resolves the local Silero VAD model file path.
+pub fn get_silero_vad_model_path() -> PathBuf {
+    vox_lib::utils::paths::init();
+    let models_dir = vox_lib::utils::paths::get().models.clone();
+    models_dir.join(MODEL_DIR_VAD).join(MODEL_FILE_VAD_SILERO)
 }
 
 /// Resolves the local Qwen LLM model path.

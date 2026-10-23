@@ -16,3 +16,18 @@ export async function getCurrentWindowLabel(): Promise<string | null> {
     return null;
   }
 }
+
+/**
+ * Synchronous check for wizard role to eliminate initial mount flash.
+ * Checks path, query parameters, and synchronous Tauri metadata if present.
+ */
+export function isWizardWindowSync(): boolean {
+  if (typeof window === "undefined") return false;
+  if (window.location.pathname.startsWith("/wizard") || window.location.search.includes("mode=wizard")) {
+    return true;
+  }
+  const label = (window as unknown as { __TAURI_INTERNALS__?: { metadata?: { currentWindow?: { label?: string } } } })
+    .__TAURI_INTERNALS__?.metadata?.currentWindow?.label;
+  if (label) return label === "wizard";
+  return false;
+}

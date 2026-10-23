@@ -17,7 +17,6 @@ export interface CentralClockNodeProps {
   onViewChange: (view: HistoryView) => void;
   primaryLabel: string;
   secondaryLabel: string;
-  metaLabel: string;
   dayHeroParts?: { month: string; day: string };
   dateSpanLabel?: string | null;
   weekdayLabel?: string;
@@ -33,15 +32,29 @@ export interface CentralClockNodeProps {
   canNext: boolean;
   onPrev: () => void;
   onNext: () => void;
-  /** Day view: jump back to the newest day. */
-  onGoToday?: () => void;
-  /** Day view: breadcrumb back to the parent month. */
-  onBackToMonth?: () => void;
-  /** Day view: breadcrumb label, e.g. "AUG 2026". */
-  breadcrumbLabel?: string;
-  /** Optional compact flag for backwards compatibility. */
-  compact?: boolean;
 }
+
+// 48 perimeter dial ticks around the sphere rim. Precomputed once at module
+// scope: these 48 <line> elements were previously rebuilt on every render.
+const DIAL_TICKS = 48;
+const DIAL_TICK_ELEMENTS = Array.from({ length: DIAL_TICKS }, (_, i) => {
+  const angle = (i * 360) / DIAL_TICKS;
+  const isQuarter = i % (DIAL_TICKS / 4) === 0;
+  const isEighth = i % (DIAL_TICKS / 8) === 0;
+  const length = isQuarter ? 8 : isEighth ? 5 : 3;
+  return (
+    <line
+      key={i}
+      x1={100}
+      y1={2}
+      x2={100}
+      y2={2 + length}
+      stroke={isQuarter ? "rgb(var(--accent))" : "rgba(var(--foreground-muted), 0.6)"}
+      strokeWidth={isQuarter ? 2 : 1}
+      transform={`rotate(${angle} 100 100)`}
+    />
+  );
+});
 
 export const CentralClockNode = memo(
   ({
@@ -65,28 +78,6 @@ export const CentralClockNode = memo(
     onNext,
   }: CentralClockNodeProps) => {
     const showArc = windowProgress && windowProgress.count > 1;
-
-    // 48 perimeter dial ticks around the sphere rim. Precomputed once at module
-    // scope: these 48 <line> elements were previously rebuilt on every render.
-    const DIAL_TICKS = 48;
-    const DIAL_TICK_ELEMENTS = Array.from({ length: DIAL_TICKS }, (_, i) => {
-      const angle = (i * 360) / DIAL_TICKS;
-      const isQuarter = i % (DIAL_TICKS / 4) === 0;
-      const isEighth = i % (DIAL_TICKS / 8) === 0;
-      const length = isQuarter ? 8 : isEighth ? 5 : 3;
-      return (
-        <line
-          key={i}
-          x1={100}
-          y1={2}
-          x2={100}
-          y2={2 + length}
-          stroke={isQuarter ? "rgb(var(--accent))" : "rgba(var(--foreground-muted), 0.6)"}
-          strokeWidth={isQuarter ? 2 : 1}
-          transform={`rotate(${angle} 100 100)`}
-        />
-      );
-    });
 
     return (
       <div

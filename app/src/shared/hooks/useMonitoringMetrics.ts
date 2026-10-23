@@ -8,7 +8,8 @@ export function useMonitoringMetrics(enabled = true) {
   const [history, setHistory] = useState<(RuntimeSnapshot & { localTime: number })[]>([]);
   const [engineToggling, setEngineToggling] = useState(false);
 
-  const latest = history[history.length - 1] ?? null;
+  const latest: (RuntimeSnapshot & { localTime: number }) | null =
+    history.length > 0 ? history[history.length - 1] : null;
   const latestRef = useRef<RuntimeSnapshot | null>(latest);
 
   useEffect(() => {

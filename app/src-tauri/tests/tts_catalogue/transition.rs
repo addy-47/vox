@@ -9,8 +9,6 @@
 //! Run       : cargo nextest run --test tts_catalogue_test --release --test-threads=1
 //! ============================================================================
 
-use crate::common;
-
 use std::{
     sync::{
         atomic::{AtomicBool, AtomicI32, AtomicU32, Ordering},
@@ -41,6 +39,8 @@ use vox_lib::{
         },
     },
 };
+
+use crate::common;
 
 /// PURPOSE:  Changing the voice must not restart the worker thread.
 /// SCENARIO: A SetVoice command arrives while the worker is running.
@@ -153,9 +153,12 @@ async fn voice_switch_does_not_restart_the_tts_worker() {
         };
 
         // 4. Spawn persistent TTS worker thread
-        let worker_handle = std::thread::spawn(move || {
-            spawn_tts_worker(tts_rx, provider, worker_handles);
-        });
+        let worker_handle = std::thread::Builder::new()
+            .name("test-tts-worker".into())
+            .spawn(move || {
+                spawn_tts_worker(tts_rx, provider, worker_handles);
+            })
+            .expect("spawn test-tts-worker");
 
         // ---------------------------------------------------------------------
         // Entry Seam: Send Clause A (Voice 0), SetVoice(2) via Settings IPC, Send Clause B (Voice 2)

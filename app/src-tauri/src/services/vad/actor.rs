@@ -409,14 +409,18 @@ where
                     state.in_speech = false;
                     state.window_active = false;
                     state.onset_score = 0.0;
-                    handles.purged_frames_counter.fetch_add(1, Ordering::Relaxed);
+                    handles
+                        .purged_frames_counter
+                        .fetch_add(1, Ordering::Relaxed);
                     log::debug!(
                         "[VAD Actor] Ingestion gate closed — purged in-flight audio buffers"
                     );
                 }
                 if consumer.occupied_len() >= VAD_CHUNK_SIZE {
                     consumer.pop_slice(&mut chunk);
-                    handles.purged_frames_counter.fetch_add(1, Ordering::Relaxed);
+                    handles
+                        .purged_frames_counter
+                        .fetch_add(1, Ordering::Relaxed);
                 }
                 sleep(Duration::from_millis(VAD_ACTOR_IDLE_SLEEP_MS));
                 continue;

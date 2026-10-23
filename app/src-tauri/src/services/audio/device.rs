@@ -323,9 +323,12 @@ pub fn build_output_stream(
 
 #[cfg(test)]
 mod tests {
+    use std::sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    };
+
     use super::*;
-    use std::sync::atomic::{AtomicBool, Ordering};
-    use std::sync::Arc;
 
     #[test]
     fn audio_stream_mock_starts_and_pauses() {
@@ -361,11 +364,17 @@ mod tests {
 
         assert!(!started.load(Ordering::SeqCst));
         assert!(stream.start().is_ok());
-        assert!(started.load(Ordering::SeqCst), "capture start() must be invoked");
+        assert!(
+            started.load(Ordering::SeqCst),
+            "capture start() must be invoked"
+        );
 
         assert!(!paused.load(Ordering::SeqCst));
         assert!(stream.pause().is_ok());
-        assert!(paused.load(Ordering::SeqCst), "capture pause() must be invoked");
+        assert!(
+            paused.load(Ordering::SeqCst),
+            "capture pause() must be invoked"
+        );
     }
 
     #[test]
@@ -386,6 +395,9 @@ mod tests {
         });
         assert!(!dropped.load(Ordering::SeqCst));
         drop(sink);
-        assert!(dropped.load(Ordering::SeqCst), "AudioSink must be cleanly dropped");
+        assert!(
+            dropped.load(Ordering::SeqCst),
+            "AudioSink must be cleanly dropped"
+        );
     }
 }

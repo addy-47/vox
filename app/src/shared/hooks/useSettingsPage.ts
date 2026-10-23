@@ -389,6 +389,14 @@ export function useSettingsPage() {
 
   const handleSelect = useCallback((id: DomainId) => {
     setActiveDomains((prev) => {
+      if (isSideCarousel) {
+        const lastIdx = prev.lastIndexOf(id);
+        const isLatest = lastIdx === prev.length - 1;
+        if (isLatest) {
+          return prev.filter((d) => d !== id);
+        }
+        return [...prev.filter((d) => d !== id), id];
+      }
       if (prev.includes(id)) {
         return prev.filter((d) => d !== id);
       } else {
@@ -398,7 +406,7 @@ export function useSettingsPage() {
         return [...prev, id];
       }
     });
-  }, [isCompact]);
+  }, [isCompact, isSideCarousel]);
 
   const handleCenterClick = useCallback(() => {
     setActiveDomains((prev) => (prev.length > 0 ? [] : DOMAINS.map((d) => d.id)));

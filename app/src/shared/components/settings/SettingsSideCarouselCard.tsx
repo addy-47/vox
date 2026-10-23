@@ -56,11 +56,13 @@ export const SettingsSideCarouselCard = memo(({
 
   // Keep in sync when user clicks a specific radial node in the hub
   useEffect(() => {
-    const hasSec = activeDomains.includes(secondaryId);
-    const hasPri = activeDomains.includes(primaryId);
-    if (hasSec && !hasPri) {
+    const priIndex = activeDomains.lastIndexOf(primaryId);
+    const secIndex = activeDomains.lastIndexOf(secondaryId);
+    if (priIndex !== -1 && secIndex !== -1) {
+      setCurrentId(priIndex > secIndex ? primaryId : secondaryId);
+    } else if (secIndex !== -1) {
       setCurrentId(secondaryId);
-    } else if (hasPri && !hasSec) {
+    } else if (priIndex !== -1) {
       setCurrentId(primaryId);
     }
   }, [activeDomains, primaryId, secondaryId]);

@@ -53,7 +53,7 @@ export const ModelStatusOverlay = memo(() => {
     typeof window !== "undefined" &&
     typeof window.matchMedia === "function" &&
     window.matchMedia("(pointer: coarse)").matches;
-  const [tipOpen, setTipOpen] = useState(false);
+  const [activeTipId, setActiveTipId] = useState<"asr" | "llm" | "tts" | null>(null);
 
   const llmCategory = activeSettings?.llm.active.category;
   const sttCategory = activeSettings?.stt.active.category;
@@ -157,7 +157,7 @@ export const ModelStatusOverlay = memo(() => {
       {/* 1. Listening (ASR) Status Chip */}
       {(activeAsr || activeSttKind === "cloud") && (
         <div className="flex items-center gap-1.5 group relative cursor-help min-w-0 shrink-1"
-        onClick={isCoarse ? () => setTipOpen((v) => !v) : undefined}>
+        onClick={isCoarse ? () => setActiveTipId((curr) => curr === "asr" ? null : "asr") : undefined}>
           {asrExists ? (
             <Ear size={isNarrow ? 13 : 17} className="text-[rgb(var(--accent))]/80 shrink-0" />
           ) : (
@@ -173,7 +173,7 @@ export const ModelStatusOverlay = memo(() => {
             )}
           </div>
           {/* Tooltip */}
-          <div className={`absolute bottom-10 right-0 scale-95 opacity-0 group-hover:scale-100 group-hover:opacity-100 transition-all duration-200 pointer-events-none w-56 p-3 rounded-xl bg-[rgb(var(--background))]/95 border border-[rgba(var(--accent),0.15)] shadow-xl z-50 text-[13px] leading-relaxed text-[rgb(var(--foreground-muted))]/80 ${isCoarse && tipOpen ? "!opacity-100 !scale-100" : ""}`}>
+          <div className={`absolute bottom-10 right-0 scale-95 opacity-0 group-hover:scale-100 group-hover:opacity-100 transition-all duration-200 pointer-events-none w-56 p-3 rounded-xl bg-[rgb(var(--background))]/95 border border-[rgba(var(--accent),0.15)] shadow-xl z-50 text-[13px] leading-relaxed text-[rgb(var(--foreground-muted))]/80 ${isCoarse && activeTipId === "asr" ? "!opacity-100 !scale-100" : ""}`}>
             <p className="font-bold text-[rgb(var(--foreground))] mb-1">{asrDisplayName}</p>
             {activeAsr.description || "Speech recognition model"}
             {!asrExists && (
@@ -187,7 +187,7 @@ export const ModelStatusOverlay = memo(() => {
 
       {/* 2. Reasoning (LLM) Status Chip */}
       <div className="flex items-center gap-1.5 group relative cursor-help min-w-0 shrink-1"
-        onClick={isCoarse ? () => setTipOpen((v) => !v) : undefined}>
+        onClick={isCoarse ? () => setActiveTipId((curr) => curr === "llm" ? null : "llm") : undefined}>
         {llmExists ? (
           <BrainCircuit size={isNarrow ? 13 : 17} className="text-[rgb(var(--accent))]/80 shrink-0" />
         ) : (
@@ -203,7 +203,7 @@ export const ModelStatusOverlay = memo(() => {
           )}
         </div>
         {/* Tooltip */}
-        <div className={`absolute bottom-10 right-0 scale-95 opacity-0 group-hover:scale-100 group-hover:opacity-100 transition-all duration-200 pointer-events-none w-56 p-3 rounded-xl bg-[rgb(var(--background))]/95 border border-[rgba(var(--accent),0.15)] shadow-xl z-50 text-[13px] leading-relaxed text-[rgb(var(--foreground-muted))]/80 ${isCoarse && tipOpen ? "!opacity-100 !scale-100" : ""}`}>
+        <div className={`absolute bottom-10 right-0 scale-95 opacity-0 group-hover:scale-100 group-hover:opacity-100 transition-all duration-200 pointer-events-none w-56 p-3 rounded-xl bg-[rgb(var(--background))]/95 border border-[rgba(var(--accent),0.15)] shadow-xl z-50 text-[13px] leading-relaxed text-[rgb(var(--foreground-muted))]/80 ${isCoarse && activeTipId === "llm" ? "!opacity-100 !scale-100" : ""}`}>
           <p className="font-bold text-[rgb(var(--foreground))] mb-1">{llmDisplayName}</p>
           {catalogLlm?.description || MODEL_HUB_COPY.remoteLlmDesc}
           {!catalogLlm && llmId && (
@@ -223,7 +223,7 @@ export const ModelStatusOverlay = memo(() => {
       {/* 3. Speaking (TTS) Status Chip */}
       {activeTts && (
         <div className="flex items-center gap-1.5 group relative cursor-help min-w-0 shrink-1"
-        onClick={isCoarse ? () => setTipOpen((v) => !v) : undefined}>
+        onClick={isCoarse ? () => setActiveTipId((curr) => curr === "tts" ? null : "tts") : undefined}>
           <AudioLines size={isNarrow ? 13 : 17} className="text-[rgb(var(--accent))]/80 shrink-0" />
           <div className="min-w-0 overflow-hidden">
             <div className="text-[12.5px] font-bold text-[rgb(var(--foreground))]/70 leading-none truncate flex items-center gap-1 max-w-[140px] sm:max-w-[180px]">
@@ -234,7 +234,7 @@ export const ModelStatusOverlay = memo(() => {
             )}
           </div>
           {/* Tooltip */}
-          <div className={`absolute bottom-10 right-0 scale-95 opacity-0 group-hover:scale-100 group-hover:opacity-100 transition-all duration-200 pointer-events-none w-56 p-3 rounded-xl bg-[rgb(var(--background))]/95 border border-[rgba(var(--accent),0.15)] shadow-xl z-50 text-[13px] leading-relaxed text-[rgb(var(--foreground-muted))]/80 ${isCoarse && tipOpen ? "!opacity-100 !scale-100" : ""}`}>
+          <div className={`absolute bottom-10 right-0 scale-95 opacity-0 group-hover:scale-100 group-hover:opacity-100 transition-all duration-200 pointer-events-none w-56 p-3 rounded-xl bg-[rgb(var(--background))]/95 border border-[rgba(var(--accent),0.15)] shadow-xl z-50 text-[13px] leading-relaxed text-[rgb(var(--foreground-muted))]/80 ${isCoarse && activeTipId === "tts" ? "!opacity-100 !scale-100" : ""}`}>
             <p className="font-bold text-[rgb(var(--foreground))] mb-1">{activeTts.name}{activeVoiceName ? `: ${activeVoiceName}` : ""}</p>
             {activeTts.description}
           </div>

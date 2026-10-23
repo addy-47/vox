@@ -32,6 +32,43 @@ import { Tooltip } from "@/shared/ui/Tooltip";
 import { ErrorBoundary } from "@/shared/components/common";
 import { MONITORING_COPY } from "@/data/monitoringCopy";
 
+const EMPTY_SNAPSHOT: RuntimeSnapshot = {
+  pipeline_state: "",
+  current_turn_id: 0,
+  conversation_id: 0,
+  playback_active: false,
+  system_cpu_usage: 0,
+  system_ram_mb: 0,
+  vox_cpu_usage: 0,
+  vox_ram_mb: 0,
+  total_ram_mb: 8192,
+  cpu_cores: 0,
+  vad_energy: 0,
+  vad_probability: 0,
+  stt_latency_ms: null,
+  ttft_ms: null,
+  total_voice_latency_ms: null,
+  persistence_queue_depth: 0,
+  dropped_persistence_events: 0,
+  playback_buffer_samples: 0,
+  playback_underruns: 0,
+  active_owner: "",
+  active_threads: 0,
+  tts_rtf: null,
+  playback_start_ms: null,
+  persistence_writes_per_sec: 0,
+  is_db_healthy: false,
+  is_llm_loaded: false,
+  llm_provider_kind: "",
+  is_tts_loaded: false,
+  is_stt_loaded: false,
+  is_vad_loaded: false,
+  is_embedder_loaded: false,
+  is_translit_loaded: false,
+  cpu_governor: "",
+  cpu_governor_optimal: false,
+};
+
 interface MonitoringProps {
   popover?: boolean;
   open?: boolean;
@@ -110,42 +147,10 @@ export const Monitoring: React.FC<MonitoringProps> = ({
     setEngineToggling: setTogglingEngine,
   } = useMonitoringMetrics(!popover || open);
 
-  const latest: RuntimeSnapshot = rawLatest ?? {
-    pipeline_state: "",
-    current_turn_id: 0,
-    conversation_id: 0,
-    playback_active: false,
-    system_cpu_usage: 0,
-    system_ram_mb: 0,
-    vox_cpu_usage: 0,
-    vox_ram_mb: 0,
-    total_ram_mb: 8192,
-    cpu_cores: 0,
-    vad_energy: 0,
-    vad_probability: 0,
-    stt_latency_ms: null,
-    ttft_ms: null,
-    total_voice_latency_ms: null,
-    persistence_queue_depth: 0,
-    dropped_persistence_events: 0,
-    playback_buffer_samples: 0,
-    playback_underruns: 0,
-    active_owner: "",
-    active_threads: 0,
-    tts_rtf: null,
-    playback_start_ms: null,
-    persistence_writes_per_sec: 0,
-    is_db_healthy: false,
-    is_llm_loaded: false,
-    llm_provider_kind: "",
-    is_tts_loaded: false,
-    is_stt_loaded: false,
-    is_vad_loaded: false,
-    is_embedder_loaded: false,
-    is_translit_loaded: false,
-    cpu_governor: "",
-    cpu_governor_optimal: false,
-  };
+  const latest: RuntimeSnapshot = useMemo(
+    () => rawLatest ?? EMPTY_SNAPSHOT,
+    [rawLatest]
+  );
 
   // Residency is a property of the manifest group, not of provider names.
   // Cloud and remote providers run off-device and are never resident; a
@@ -198,18 +203,23 @@ export const Monitoring: React.FC<MonitoringProps> = ({
   const isEngineLoaded = useMemo(() => {
     return (
       activeModelsCount > 0 ||
-      !!(
+      Boolean(
         latest.is_vad_loaded ||
         latest.is_stt_loaded ||
         latest.is_llm_loaded ||
         latest.is_tts_loaded
       )
     );
-  }, [activeModelsCount, latest]);
+  }, [
+    activeModelsCount,
+    latest.is_vad_loaded,
+    latest.is_stt_loaded,
+    latest.is_llm_loaded,
+    latest.is_tts_loaded,
+  ]);
 
   // Dynamically resolve loaded model names to display in chamber
   const loadedModelNames = useMemo((): string[] => {
-    if (!latest) return [];
     const list: string[] = [];
     if (latest.is_llm_loaded) {
       const llmName =
@@ -237,7 +247,12 @@ export const Monitoring: React.FC<MonitoringProps> = ({
     }
     return list;
   }, [
-    latest,
+    latest.is_llm_loaded,
+    latest.is_stt_loaded,
+    latest.is_tts_loaded,
+    latest.is_vad_loaded,
+    latest.is_embedder_loaded,
+    latest.is_translit_loaded,
     llmProvider,
     sttProvider,
     ttsProvider,

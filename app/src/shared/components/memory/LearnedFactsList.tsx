@@ -25,7 +25,9 @@ const ObservationCard = memo(function ObservationCard({
   dimmed: boolean;
   showStatus: boolean;
 }) {
-  const isStaged = fact.status === "active";
+  // backend-gap: Status nomenclature collision across layers (active in DB vs staged in UI vs pending on wire).
+  // Normalized here until backend unifies on ObservationStatus enum on the IPC wire.
+  const isStaged = fact.status === "active" || (fact.status as string) === "staged";
   const isPending = fact.status === "pending";
   const isIntegrated = fact.status === "integrated";
 

@@ -5,7 +5,6 @@ import { cn } from "@/shared/lib/utils";
 import { Tooltip } from "@/shared/ui/Tooltip";
 import { TriangularLoopSelector, TriangularLoopOption, KeyboardHotkeySkeleton } from "@/shared/ui";
 import { DICTATION_COPY } from "@/data/settingsCopy";
-import { updateSetting } from "@/services/settingsService";
 import type { DictationSettings } from "@/store/settingsStore";
 
 interface DictationConfigDeskProps {
@@ -39,6 +38,7 @@ export const DictationConfigDesk = memo(({ layoutMode, disabled = false }: Dicta
   const [activeSubTab, setActiveSubTab] = useState<DictationSubTab>("hotkey");
   const dictationDraft = useSettingsStore((s) => s.draftSettings?.dictation);
   const updateDraft = useSettingsStore((s) => s.updateDraft);
+  const commitChanges = useSettingsStore((s) => s.commitChanges);
 
   const dictation = dictationDraft ?? {
     enabled: true,
@@ -147,7 +147,7 @@ export const DictationConfigDesk = memo(({ layoutMode, disabled = false }: Dicta
     if (cleanKey && cleanKey !== "...") {
       updateDraft("dictation", "hotkey", cleanKey);
       try {
-        await updateSetting("dictation", "hotkey", cleanKey);
+        await commitChanges({ domain: "dictation", key: "hotkey" });
         flashSavedToast();
       } catch (err) {
         // Visible, not console-only: the field would otherwise keep showing a
@@ -156,7 +156,7 @@ export const DictationConfigDesk = memo(({ layoutMode, disabled = false }: Dicta
       }
     }
     setIsEditingHotkey(false);
-  }, [tempHotkey, updateDraft, flashSavedToast]);
+  }, [tempHotkey, updateDraft, commitChanges, flashSavedToast]);
 
   const handleHotkeyCancel = useCallback(() => {
     setTempHotkey(dictation.hotkey || DEFAULT_HOTKEY);
@@ -167,13 +167,13 @@ export const DictationConfigDesk = memo(({ layoutMode, disabled = false }: Dicta
     setTempHotkey(DEFAULT_HOTKEY);
     updateDraft("dictation", "hotkey", DEFAULT_HOTKEY);
     try {
-      await updateSetting("dictation", "hotkey", DEFAULT_HOTKEY);
+      await commitChanges({ domain: "dictation", key: "hotkey" });
       flashSavedToast();
     } catch (err) {
       setHotkeyError(err instanceof Error ? err.message : String(err));
     }
     setIsEditingHotkey(false);
-  }, [updateDraft, flashSavedToast]);
+  }, [updateDraft, commitChanges, flashSavedToast]);
 
   const handleKeyDownRecorder = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {

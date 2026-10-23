@@ -257,54 +257,57 @@ fn main() {
     // measure from the release instant — there is no VAD SpeechEnd in PTT mode.
     let ptt_stop_time = Arc::new(parking_lot::Mutex::new(None::<Instant>));
     let ptt_stop_time_feed = Arc::clone(&ptt_stop_time);
-    let feed_handle = std::thread::spawn(move || {
-        if is_ptt {
-            let _ = vox_lib::pipeline::assistant::ptt::ptt_start(&app_feed, &state_feed);
-            println!(
-                "  [FEED] PTT window opened; streaming {} input samples",
-                audio_feed.len()
-            );
-        }
-
-        // Stream audio chunks in real-time pace (16ms frames @ 16kHz = 256 samples)
-        let chunk_size = 256;
-        let mut fed_samples = 0usize;
-        for chunk in audio_feed.chunks(chunk_size) {
-            {
-                let mut lock = in_prod_feed.lock();
-                let _ = lock.push_slice(chunk);
+    let feed_handle = std::thread::Builder::new()
+        .name("bench-feed-producer".to_string())
+        .spawn(move || {
+            if is_ptt {
+                let _ = vox_lib::pipeline::assistant::ptt::ptt_start(&app_feed, &state_feed);
+                println!(
+                    "  [FEED] PTT window opened; streaming {} input samples",
+                    audio_feed.len()
+                );
             }
-            fed_samples += chunk.len();
-            std::thread::sleep(Duration::from_millis(16));
-        }
-        println!(
-            "  [FEED] Input streaming complete: {} samples fed ({:.2}s @16kHz)",
-            fed_samples,
-            fed_samples as f32 / 16000.0
-        );
 
-        if is_ptt {
-            let app_c = app_feed.clone();
-            let state_c = state_feed.clone();
-            tokio::runtime::Runtime::new()
-                .unwrap()
-                .block_on(async move {
-                    let _ = vox_lib::pipeline::assistant::ptt::ptt_stop(&app_c, &state_c).await;
-                });
-            *ptt_stop_time_feed.lock() = Some(Instant::now());
-            println!("  [FEED] PTT window closed (PttStop dispatched)");
-        } else {
-            // Trailing silence to trigger VAD SpeechEnd: 1.5s = 94 chunks of 256 samples @ 16ms
-            let silence = vec![0.0f32; chunk_size];
-            for _ in 0..94 {
+            // Stream audio chunks in real-time pace (16ms frames @ 16kHz = 256 samples)
+            let chunk_size = 256;
+            let mut fed_samples = 0usize;
+            for chunk in audio_feed.chunks(chunk_size) {
                 {
                     let mut lock = in_prod_feed.lock();
-                    let _ = lock.push_slice(&silence);
+                    let _ = lock.push_slice(chunk);
                 }
+                fed_samples += chunk.len();
                 std::thread::sleep(Duration::from_millis(16));
             }
-        }
-    });
+            println!(
+                "  [FEED] Input streaming complete: {} samples fed ({:.2}s @16kHz)",
+                fed_samples,
+                fed_samples as f32 / 16000.0
+            );
+
+            if is_ptt {
+                let app_c = app_feed.clone();
+                let state_c = state_feed.clone();
+                tokio::runtime::Runtime::new()
+                    .unwrap()
+                    .block_on(async move {
+                        let _ = vox_lib::pipeline::assistant::ptt::ptt_stop(&app_c, &state_c).await;
+                    });
+                *ptt_stop_time_feed.lock() = Some(Instant::now());
+                println!("  [FEED] PTT window closed (PttStop dispatched)");
+            } else {
+                // Trailing silence to trigger VAD SpeechEnd: 1.5s = 94 chunks of 256 samples @ 16ms
+                let silence = vec![0.0f32; chunk_size];
+                for _ in 0..94 {
+                    {
+                        let mut lock = in_prod_feed.lock();
+                        let _ = lock.push_slice(&silence);
+                    }
+                    std::thread::sleep(Duration::from_millis(16));
+                }
+            }
+        })
+        .expect("Failed to spawn bench-feed-producer");
 
     println!("Audio streaming started. Polling pipeline events & playback tap...");
 

@@ -444,3 +444,192 @@ pub async fn fetch_session_continuation(
         title_is_set,
     })
 }
+
+/// Representation of a search hit across conversation sessions and turns.
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+pub struct HistorySearchHit {
+    pub session: SessionRow,
+    pub match_type: String, // "title" | "turn" | "first_message"
+    pub matched_snippet: Option<String>,
+    pub matched_role: Option<String>, // "user" | "assistant"
+    pub turn_index: Option<u32>,
+}
+
+fn extract_snippet(text: &str, query: &str, max_len: usize) -> String {
+    let lower_text = text.to_lowercase();
+    let lower_q = query.to_lowercase();
+    if let Some(idx) = lower_text.find(&lower_q) {
+        let target_start = idx.saturating_sub(max_len / 3);
+        let safe_start = text
+            .char_indices()
+            .map(|(i, _)| i)
+            .find(|&i| i >= target_start)
+            .unwrap_or(0);
+
+        let target_end = (idx + query.len() + (max_len * 2 / 3)).min(text.len());
+        let safe_end = text
+            .char_indices()
+            .map(|(i, _)| i)
+            .rfind(|&i| i <= target_end)
+            .unwrap_or(text.len());
+
+        let mut snippet = text[safe_start..safe_end].trim().to_string();
+        if safe_start > 0 {
+            snippet = format!("…{snippet}");
+        }
+        if safe_end < text.len() {
+            snippet = format!("{snippet}…");
+        }
+        snippet
+    } else {
+        let safe_end = text
+            .char_indices()
+            .map(|(i, _)| i)
+            .take(max_len)
+            .last()
+            .unwrap_or(text.len());
+        text[..safe_end].to_string()
+    }
+}
+
+/// Searches conversation sessions and turns directly via Turso SQL.
+pub async fn search_history(
+    conn: &Connection,
+    query: &str,
+    project_id: Option<&str>,
+    limit: u32,
+) -> Result<Vec<HistorySearchHit>> {
+    let mut attempt = 0;
+    loop {
+        match execute_search_history(conn, query, project_id, limit).await {
+            Ok(hits) => return Ok(hits),
+            Err(e) if is_transient_db_error(&e) && attempt < MAX_CONCURRENT_RETRY_ATTEMPTS => {
+                attempt += 1;
+                tokio::time::sleep(Duration::from_millis(RETRY_BASE_DELAY_MS * attempt as u64))
+                    .await;
+            }
+            Err(e) => return Err(e),
+        }
+    }
+}
+
+async fn execute_search_history(
+    conn: &Connection,
+    query: &str,
+    project_id: Option<&str>,
+    limit: u32,
+) -> Result<Vec<HistorySearchHit>> {
+    let q = query.trim();
+    if q.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let pattern = format!("%{q}%");
+    let cap = limit.clamp(1, 100) as i64;
+
+    let mut rows = if let Some(proj) = project_id {
+        conn.query(
+            "SELECT s.id, s.project_id, s.title, s.is_pinned, s.deleted_at, s.created_at, s.updated_at,
+                    (SELECT COUNT(*) FROM turns t WHERE t.session_id = s.id) as turn_count,
+                    (SELECT t.user_text FROM turns t WHERE t.session_id = s.id ORDER BY t.turn_id ASC LIMIT 1) as first_message,
+                    ((SELECT COUNT(*) FROM turns t WHERE t.session_id = s.id) - (SELECT COALESCE(MAX(c.to_turn_id), 0) FROM session_compactions c WHERE c.session_id = s.id AND c.status = 'completed')) as uncompacted_turns
+             FROM sessions s
+             WHERE s.deleted_at IS NULL AND s.project_id = ?
+               AND (
+                 s.title LIKE ?
+                 OR EXISTS (SELECT 1 FROM turns t WHERE t.session_id = s.id AND (t.user_text LIKE ? OR t.assistant_text LIKE ?))
+               )
+             ORDER BY s.is_pinned DESC, s.updated_at DESC
+             LIMIT ?",
+            (proj.to_string(), pattern.clone(), pattern.clone(), pattern.clone(), cap),
+        )
+        .await?
+    } else {
+        conn.query(
+            "SELECT s.id, s.project_id, s.title, s.is_pinned, s.deleted_at, s.created_at, s.updated_at,
+                    (SELECT COUNT(*) FROM turns t WHERE t.session_id = s.id) as turn_count,
+                    (SELECT t.user_text FROM turns t WHERE t.session_id = s.id ORDER BY t.turn_id ASC LIMIT 1) as first_message,
+                    ((SELECT COUNT(*) FROM turns t WHERE t.session_id = s.id) - (SELECT COALESCE(MAX(c.to_turn_id), 0) FROM session_compactions c WHERE c.session_id = s.id AND c.status = 'completed')) as uncompacted_turns
+             FROM sessions s
+             WHERE s.deleted_at IS NULL
+               AND (
+                 s.title LIKE ?
+                 OR EXISTS (SELECT 1 FROM turns t WHERE t.session_id = s.id AND (t.user_text LIKE ? OR t.assistant_text LIKE ?))
+               )
+             ORDER BY s.is_pinned DESC, s.updated_at DESC
+             LIMIT ?",
+            (pattern.clone(), pattern.clone(), pattern.clone(), cap),
+        )
+        .await?
+    };
+
+    let sessions = collect_session_rows(&mut rows).await?;
+    let mut hits = Vec::with_capacity(sessions.len());
+    let lower_q = q.to_lowercase();
+
+    for session in sessions {
+        if let Some(ref title) = session.title {
+            if title.to_lowercase().contains(&lower_q) {
+                hits.push(HistorySearchHit {
+                    session,
+                    match_type: "title".to_string(),
+                    matched_snippet: None,
+                    matched_role: None,
+                    turn_index: None,
+                });
+                continue;
+            }
+        }
+
+        let mut turn_rows = conn
+            .query(
+                "SELECT turn_id, user_text, assistant_text FROM turns
+                 WHERE session_id = ? AND (user_text LIKE ? OR assistant_text LIKE ?)
+                 ORDER BY turn_id ASC LIMIT 1",
+                (session.id, pattern.clone(), pattern.clone()),
+            )
+            .await?;
+
+        if let Some(t_row) = turn_rows.next().await? {
+            let turn_id_i64: i64 = t_row.get(0)?;
+            let turn_id = turn_id_i64 as u32;
+            let user_text: String = t_row.get(1)?;
+            let assistant_text: String = t_row.get(2)?;
+
+            if user_text.to_lowercase().contains(&lower_q) {
+                hits.push(HistorySearchHit {
+                    session,
+                    match_type: "turn".to_string(),
+                    matched_snippet: Some(extract_snippet(&user_text, q, 90)),
+                    matched_role: Some("user".to_string()),
+                    turn_index: Some(turn_id),
+                });
+                continue;
+            } else if assistant_text.to_lowercase().contains(&lower_q) {
+                hits.push(HistorySearchHit {
+                    session,
+                    match_type: "turn".to_string(),
+                    matched_snippet: Some(extract_snippet(&assistant_text, q, 90)),
+                    matched_role: Some("assistant".to_string()),
+                    turn_index: Some(turn_id),
+                });
+                continue;
+            }
+        }
+
+        if let Some(ref first_msg) = session.first_message {
+            if first_msg.to_lowercase().contains(&lower_q) {
+                let snippet = extract_snippet(first_msg, q, 90);
+                hits.push(HistorySearchHit {
+                    session,
+                    match_type: "first_message".to_string(),
+                    matched_snippet: Some(snippet),
+                    matched_role: Some("user".to_string()),
+                    turn_index: None,
+                });
+            }
+        }
+    }
+
+    Ok(hits)
+}

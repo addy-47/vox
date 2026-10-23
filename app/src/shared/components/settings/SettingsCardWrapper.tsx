@@ -10,7 +10,7 @@ import type { SettingsDomain as Domain } from "@/data/settingsCopy";
 import { SETTINGS_COPY } from "@/data/settingsCopy";
 import { useMemoryTrace } from "@/shared/hooks/useMemoryTrace";
 import { getDomainCardWidth } from "./shared/settingsLayout";
-import { rca, rcaRect } from "@/shared/lib/rcaTrace";
+import { rca, rcaRect, rcaEnabled } from "@/shared/lib/rcaTrace";
 
 
 export interface SettingsCardWrapperProps {
@@ -39,6 +39,7 @@ export const SettingsCardWrapper = memo(({ domain, isActive, layoutMode, childre
   // block vertically. Log when the mode flips so a layout jump can be tied to
   // the exact transition.
   useEffect(() => {
+    if (!rcaEnabled()) return;
     rca("card-footer", "mode", {
       domain: domain.id,
       mode,

@@ -8,14 +8,14 @@
 //! Run       : cargo nextest run --test audio_capture_aec_test --release --test-threads=1
 //! ============================================================================
 
-use crate::common;
-
 use std::{path::Path, time::Duration};
 
 use ringbuf::{traits::*, HeapRb};
 use vox_lib::services::audio::{
     aec::AecProcessor, sink::PlaybackReferenceTap, AEC_FRAME_SAMPLES, AEC_REFERENCE_BUFFER_SAMPLES,
 };
+
+use crate::common;
 
 /// PURPOSE:  The AEC reference must run at the capture rate.
 /// ASSERTS:  A 48 kHz reference is downsampled to 16 kHz.

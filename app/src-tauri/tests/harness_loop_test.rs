@@ -16,10 +16,7 @@
 mod common;
 
 use std::{
-    sync::{
-        atomic::Ordering,
-        mpsc, Arc, Mutex,
-    },
+    sync::{atomic::Ordering, mpsc, Arc, Mutex},
     thread::JoinHandle,
 };
 
@@ -31,10 +28,7 @@ use vox_lib::{
     pipeline::RoutingContext,
     services::{
         harness::{Harness, LlmExecutionParams, TurnExecutionRequest, TurnOutcome},
-        llm::{
-            actor::LlmResponse,
-            LlmCommand,
-        },
+        llm::{actor::LlmResponse, LlmCommand},
     },
 };
 
@@ -113,9 +107,12 @@ impl Rig {
 
         let recorded: Recorded = Arc::new(Mutex::new(Vec::new()));
         let worker_recorded = recorded.clone();
-        let llm_join = std::thread::spawn(move || {
-            stub_llm_worker(llm_rx, worker_recorded);
-        });
+        let llm_join = std::thread::Builder::new()
+            .name("test-stub-llm".into())
+            .spawn(move || {
+                stub_llm_worker(llm_rx, worker_recorded);
+            })
+            .expect("spawn test-stub-llm");
 
         Self {
             app,
@@ -237,10 +234,7 @@ async fn the_tool_loop_stops_at_the_tool_budget() {
         requests[..5].iter().all(|(_, tools)| *tools),
         "the first five passes must offer the tools"
     );
-    assert!(
-        !requests[5].1,
-        "the final pass must be tool-free"
-    );
+    assert!(!requests[5].1, "the final pass must be tool-free");
 }
 
 /// PURPOSE:  A cancelled turn must never reach the model.
@@ -262,7 +256,11 @@ async fn a_cancelled_turn_never_dispatches() {
         "a cancelled turn must not complete, got {:?}",
         outcome
     );
-    assert_eq!(rig.dispatch_count(), 0, "a cancelled turn must not dispatch");
+    assert_eq!(
+        rig.dispatch_count(),
+        0,
+        "a cancelled turn must not dispatch"
+    );
 }
 
 /// PURPOSE:  The same question twice must not start a second turn.

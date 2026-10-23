@@ -438,10 +438,7 @@ fn registration_parser_ignores_comment_lines() {
 
     assert_eq!(
         registered,
-        BTreeSet::from([
-            "alpha".to_string(),
-            "gamma".to_string(),
-        ]),
+        BTreeSet::from(["alpha".to_string(), "gamma".to_string(),]),
         "comment lines and inline comments must not contribute command names"
     );
 }

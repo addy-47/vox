@@ -249,6 +249,7 @@ export interface IngestionStats {
   processing: number;
   completed: number;
   failed: number;
+  unconsolidated_personal_count: number;
 }
 
 /**
@@ -257,5 +258,13 @@ export interface IngestionStats {
 export function getIngestionStats(): Promise<IngestionStats> {
   return invoke("get_ingestion_stats");
 }
+
+/* backend-gap: Unified Hybrid Vector RRF Search
+ * Currently, candidate extraction queries keyword matches and vector similarity matches
+ * independently, executing reciprocal rank fusion (rrfScore k=60) on the client thread.
+ * Rust backend contract must expose:
+ *   search_memory({ query: string, mode: "hybrid" | "vector" | "keyword", limit: number })
+ * returning pre-ranked results directly from Turso DB.
+ */
 
 

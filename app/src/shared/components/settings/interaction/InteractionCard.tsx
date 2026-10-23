@@ -36,7 +36,7 @@ export const InteractionCard = memo(
     const updateDraft = useSettingsStore((s) => s.updateDraft);
 
     const [activeView, setActiveView] = useState<"assistant" | "dictation">("assistant");
-    const [activeDeskTab, setActiveDeskTab] = useState<InteractionDeskTab>("remote");
+    const [activeDeskTab, setActiveDeskTab] = useState<InteractionDeskTab>("web_search");
 
     const webSearchEnabled = draftSettings?.interaction.web_search_enabled ?? true;
 

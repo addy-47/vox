@@ -452,9 +452,12 @@ async fn fact_delete_cascades_to_its_vector() {
         .await
         .expect("Failed to insert vector");
 
-        conn.execute("DELETE FROM memory_facts WHERE id = ?;", (observation_id.clone(),))
-            .await
-            .expect("Failed to delete fact");
+        conn.execute(
+            "DELETE FROM memory_facts WHERE id = ?;",
+            (observation_id.clone(),),
+        )
+        .await
+        .expect("Failed to delete fact");
 
         let mut vec_after = conn
             .query(
@@ -1040,18 +1043,16 @@ async fn tool_call_is_not_persisted_in_private_mode() {
 
         let db = VoxDb::open(&db_path).await.expect("Failed to open VoxDb");
         let conn = db.connect().expect("Failed to vend connection");
-        run_migrations(&conn).await.expect("Failed to run migrations");
+        run_migrations(&conn)
+            .await
+            .expect("Failed to run migrations");
 
         let is_healthy = Arc::new(AtomicBool::new(true));
         let rate = Arc::new(AtomicU32::new(0));
         let is_private = Arc::new(AtomicBool::new(false));
 
-        let persist_tx = spawn_persistence_worker(
-            Arc::new(db),
-            is_healthy,
-            rate,
-            Arc::clone(&is_private),
-        );
+        let persist_tx =
+            spawn_persistence_worker(Arc::new(db), is_healthy, rate, Arc::clone(&is_private));
 
         let orphan_sid = 999111222i64;
 
@@ -1326,6 +1327,79 @@ async fn paired_devices_access_layer_crud_and_unrecognized_hints_roundtrip() {
         assert!(get_paired_device(&conn, device_id).await.unwrap().is_none());
         assert!(list_paired_devices(&conn).await.unwrap().is_empty());
         assert!(!delete_paired_device(&conn, device_id).await.unwrap());
+    })
+    .await
+    .expect("timeout");
+}
+
+// Subtest 14: History Search matches titles and turn content with snippets
+//
+// PURPOSE:  search_history must find matching sessions by title or turn speech
+//           and return accurate snippet extracts without client-side turn scanning.
+// SCENARIO: Create sessions and turns, search for words in title and utterance.
+// ASSERTS:  search_history returns matched session, match_type, and snippet.
+// CLASS:    happy-path
+// REQUIRES: none (temporary Turso database)
+// MUTANT:   Break LIKE query or extract_snippet logic in search_history.
+#[tokio::test]
+async fn search_history_matches_titles_and_turns() {
+    tokio::time::timeout(Duration::from_secs(10), async {
+        let dir = tempdir().expect("tempdir");
+        let db_path = dir.path().join("test_search.db");
+        let db = VoxDb::open(&db_path).await.expect("open Turso database");
+        let conn = db.connect().expect("connect");
+        run_migrations(&conn).await.expect("run_migrations");
+
+        // Seed session 1: title match
+        let s1_id = 1001i64;
+        conn.execute(
+            "INSERT INTO sessions (id, project_id, title, is_pinned, created_at, updated_at)
+             VALUES (?, 'default', 'Architecture Discussion', 0, 1000, 1000)",
+            (s1_id,),
+        )
+        .await
+        .unwrap();
+
+        // Seed session 2: turn match
+        let s2_id = 1002i64;
+        conn.execute(
+            "INSERT INTO sessions (id, project_id, title, is_pinned, created_at, updated_at)
+             VALUES (?, 'default', 'Regular Sync', 0, 2000, 2000)",
+            (s2_id,),
+        )
+        .await
+        .unwrap();
+        conn.execute(
+            "INSERT INTO turns (session_id, turn_id, user_text, assistant_text, created_at)
+             VALUES (?, 1, 'Can you help me configure the Turso database engine?', 'Sure, Turso is pure Rust.', 2000)",
+            (s2_id,),
+        )
+        .await
+        .unwrap();
+
+        // 1. Search title keyword
+        let hits_title = vox_lib::persistence::search_history(&conn, "Architecture", None, 10)
+            .await
+            .expect("search_history title");
+        assert_eq!(hits_title.len(), 1);
+        assert_eq!(hits_title[0].session.id, s1_id);
+        assert_eq!(hits_title[0].match_type, "title");
+
+        // 2. Search turn keyword in user utterance
+        let hits_turn = vox_lib::persistence::search_history(&conn, "configure the Turso", None, 10)
+            .await
+            .expect("search_history turn");
+        assert_eq!(hits_turn.len(), 1);
+        assert_eq!(hits_turn[0].session.id, s2_id);
+        assert_eq!(hits_turn[0].match_type, "turn");
+        assert_eq!(hits_turn[0].matched_role.as_deref(), Some("user"));
+        assert!(hits_turn[0].matched_snippet.as_ref().unwrap().contains("Turso"));
+
+        // 3. Search non-existent keyword
+        let hits_none = vox_lib::persistence::search_history(&conn, "nonexistent_keyword_xyz", None, 10)
+            .await
+            .expect("search_history empty");
+        assert!(hits_none.is_empty());
     })
     .await
     .expect("timeout");

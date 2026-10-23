@@ -238,9 +238,12 @@ pub fn setup_e2e_pipeline(settings: VoxSettings) -> E2ePipelineSetup {
         incomplete_clause_hint: Arc::new(AtomicBool::new(false)),
     };
 
-    let vad_handle = std::thread::spawn(move || {
-        let _ = spawn_vad_actor(vad_backend, in_cons, vad_channels, vad_handles, vad_config);
-    });
+    let vad_handle = std::thread::Builder::new()
+        .name("bench-vad-actor".to_string())
+        .spawn(move || {
+            let _ = spawn_vad_actor(vad_backend, in_cons, vad_channels, vad_handles, vad_config);
+        })
+        .expect("Failed to spawn bench-vad-actor");
 
     // 4. Central Router with Benchmark Observer Split
     let (router_tx, router_rx) = mpsc::channel::<VoxEvent>();

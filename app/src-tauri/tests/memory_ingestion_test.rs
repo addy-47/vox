@@ -66,10 +66,7 @@ fn load_llm_facts(limit: usize) -> Vec<DatasetFact> {
 
 /// Seeds a semantically duplicated pair and leaves the incoming copy queued
 /// in `stage1_done`, ready for the cosine stage.
-async fn seed_semantic_duplicate_pair(
-    conn: &turso::Connection,
-    pair: &DedupPair,
-) -> i64 {
+async fn seed_semantic_duplicate_pair(conn: &turso::Connection, pair: &DedupPair) -> i64 {
     let session_id = create_session(conn, Some("default")).await.unwrap();
     let compaction_id = record_compaction_start(conn, session_id, "soft", 0, 5)
         .await
@@ -87,10 +84,9 @@ async fn seed_semantic_duplicate_pair(
     };
     insert_observation(conn, &old_fact).await.unwrap();
 
-    let old_embeddings =
-        vox_lib::services::memory::generate_embeddings_batch(&[&old_fact.text])
-            .unwrap()
-            .expect("Embedding generation must return vector");
+    let old_embeddings = vox_lib::services::memory::generate_embeddings_batch(&[&old_fact.text])
+        .unwrap()
+        .expect("Embedding generation must return vector");
     assert_eq!(
         old_embeddings[0].len(),
         384,
@@ -618,7 +614,10 @@ async fn crash_reconciliation_resets_a_stage1_crashed_item_to_pending() {
     tokio::time::timeout(Duration::from_secs(15), async {
         let _guard = TempPathsGuard::new();
         let (_app, state) = get_test_app_and_state().await;
-        let conn = state.db.connect().expect("Failed to connect to test database");
+        let conn = state
+            .db
+            .connect()
+            .expect("Failed to connect to test database");
 
         let dataset_facts = load_llm_facts(3);
         let session_id = create_session(&conn, Some("default")).await.unwrap();
@@ -640,10 +639,16 @@ async fn crash_reconciliation_resets_a_stage1_crashed_item_to_pending() {
             .unwrap();
 
         let reconciled_count = reconcile_crashed_queue_on_boot(&conn).await.unwrap();
-        assert_eq!(reconciled_count, 1, "Must reconcile the single crashed item");
+        assert_eq!(
+            reconciled_count, 1,
+            "Must reconcile the single crashed item"
+        );
 
         let mut s1_row = conn
-            .query("SELECT status, retry_count FROM memory_ingestion_queue WHERE id = ?", (id_s1,))
+            .query(
+                "SELECT status, retry_count FROM memory_ingestion_queue WHERE id = ?",
+                (id_s1,),
+            )
             .await
             .unwrap();
         let r1 = s1_row.next().await.unwrap().unwrap();

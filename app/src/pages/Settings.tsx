@@ -82,7 +82,7 @@ const preloadSettingsCards = () =>
 
 export const Settings: React.FC = () => {
   useMemoryTrace("Settings");
-  const draftSettings = useSettingsStore((s) => s.draftSettings);
+  const isLoaded = useSettingsStore((s) => s.draftSettings !== null);
 
   const {
     containerRef,
@@ -147,7 +147,7 @@ export const Settings: React.FC = () => {
     };
   }, []);
 
-  if (!draftSettings) {
+  if (!isLoaded) {
     // The loader stands where the hub center will be, not in the middle of
     // the page. It reuses the hub's own slot, so nothing jumps sideways when
     // the settings arrive.

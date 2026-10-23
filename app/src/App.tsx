@@ -14,7 +14,7 @@ import { ProfilerDrawerProvider } from "@/shared/components/profiler/ProfilerDra
 import { PanelStateProvider } from "@/shared/context/PanelStateContext";
 import { useNotificationStore } from "@/store/notificationStore";
 import { installOverlayStack } from "@/shared/lib/overlayStack";
-import { getCurrentWindowLabel } from "@/services/windowService";
+import { getCurrentWindowLabel, isWizardWindowSync } from "@/services/windowService";
 import { isRealMobileDevice } from "@/layout/breakpoints";
 import { AnimatePresence, motion, MotionConfig } from "framer-motion";
 
@@ -87,12 +87,12 @@ const App: React.FC = () => {
    * `installOverlayStack()`, and both booted `VoiceSessionProvider` (6 pipeline
    * listeners + 3 IPC calls). Only one is the real setup window.
    */
-  const [isWizardWebview, setIsWizardWebview] = useState<boolean | null>(null);
+  const [isWizardWebview, setIsWizardWebview] = useState<boolean>(() => isWizardWindowSync());
 
   useEffect(() => {
     let active = true;
     void getCurrentWindowLabel().then((label) => {
-      if (active) setIsWizardWebview(label === "wizard");
+      if (active && label) setIsWizardWebview(label === "wizard");
     });
     return () => {
       active = false;
@@ -247,7 +247,7 @@ const App: React.FC = () => {
   // The setup wizard has no notification panel and no pipeline, so this fetch +
   // listener registration is skipped there too.
   useEffect(() => {
-    if (isWizardWebview) return;
+    if (isWizardWebview || (routeToWizard && !isRealMobileDevice())) return;
     let isMounted = true;
     let cleanupListeners: (() => void) | null = null;
 
@@ -271,7 +271,7 @@ const App: React.FC = () => {
       isMounted = false;
       if (cleanupListeners) cleanupListeners();
     };
-  }, [fetchNotifications, initListeners, isWizardWebview]);
+  }, [fetchNotifications, initListeners, isWizardWebview, routeToWizard]);
 
   // Global overlay stack + spatial navigation install FOUR window-level
   // listeners each (including a mousemove handler). They are app-shell
@@ -279,7 +279,7 @@ const App: React.FC = () => {
   // the setup flow and would otherwise pay for navigation machinery it never
   // uses.
   useEffect(() => {
-    if (isWizardWebview) return;
+    if (isWizardWebview || (routeToWizard && !isRealMobileDevice())) return;
     const schedule = window.requestIdleCallback;
     const cb = () => installOverlayStack();
     if (typeof schedule === "function") {
@@ -288,13 +288,13 @@ const App: React.FC = () => {
       setTimeout(cb, 200);
     }
     initSpatialNavigation();
-  }, [isWizardWebview]);
+  }, [isWizardWebview, routeToWizard]);
 
   return (
     <div className="relative h-[100dvh] w-full bg-[rgb(var(--background))] overflow-hidden">
       <ErrorBoundary name="App">
         {/* Dedicated setup wizard window */}
-        {isWizardWebview === null ? null : isWizardWebview ? (
+        {isWizardWebview ? (
           <Router>
             {/* The setup flow honours the OS reduced-motion setting, same as the main app below. */}
             <MotionConfig reducedMotion="user">
@@ -304,6 +304,17 @@ const App: React.FC = () => {
                 <Route path="*" element={<Navigate to="/wizard" replace />} />
               </Routes>
             </Suspense>
+            </MotionConfig>
+          </Router>
+        ) : routeToWizard && !isRealMobileDevice() ? (
+          <Router>
+            <MotionConfig reducedMotion="user">
+              <Suspense fallback={<PageLoader />}>
+                <Routes>
+                  <Route path="/wizard" element={<WizardStandIn />} />
+                  <Route path="*" element={<Navigate to="/wizard" replace />} />
+                </Routes>
+              </Suspense>
             </MotionConfig>
           </Router>
         ) : (

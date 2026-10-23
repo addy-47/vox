@@ -9,8 +9,6 @@
 //! Run       : cargo nextest run --test playback_test --release --test-threads=1
 //! ============================================================================
 
-use crate::common;
-
 use std::{
     sync::{
         atomic::{AtomicBool, AtomicU32, AtomicU8, Ordering},
@@ -31,6 +29,8 @@ use vox_lib::{
         ProviderCaps,
     },
 };
+
+use crate::common;
 
 /// PURPOSE:  Synthesised audio must reach the playback sink and arm the pre-roll.
 /// SCENARIO: The real Supertonic engine synthesises a phrase and the samples are ingested.
@@ -112,9 +112,12 @@ async fn real_synthesis_is_ingested_and_arms_the_pre_roll() {
         };
 
         // 4. Spawn persistent TTS worker thread
-        let worker_handle = std::thread::spawn(move || {
-            spawn_tts_worker(tts_rx, provider, worker_handles);
-        });
+        let worker_handle = std::thread::Builder::new()
+            .name("test-tts-worker".into())
+            .spawn(move || {
+                spawn_tts_worker(tts_rx, provider, worker_handles);
+            })
+            .expect("spawn test-tts-worker");
 
         // ---------------------------------------------------------------------
         // Entry Seam: Send TtsCommand::Generate with realistic clause
@@ -319,9 +322,12 @@ async fn short_utterance_needs_a_flush_to_arm_the_pre_roll() {
         };
 
         // Spawn dedicated TTS worker thread
-        let worker_handle = std::thread::spawn(move || {
-            spawn_tts_worker(tts_rx, provider, worker_handles);
-        });
+        let worker_handle = std::thread::Builder::new()
+            .name("test-tts-worker-deferred".into())
+            .spawn(move || {
+                spawn_tts_worker(tts_rx, provider, worker_handles);
+            })
+            .expect("spawn test-tts-worker-deferred");
 
         // Send short utterance generation request
         tts_tx

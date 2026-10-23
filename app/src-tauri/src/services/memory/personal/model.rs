@@ -390,10 +390,7 @@ mod tests {
             parsed.sections[0].blocks[0].text,
             "User is a software engineer."
         );
-        assert_eq!(
-            parsed.sections[0].blocks[1].text,
-            "User lives in Seattle."
-        );
+        assert_eq!(parsed.sections[0].blocks[1].text, "User lives in Seattle.");
         assert_eq!(parsed.sections[1].title, "Preferences");
         assert_eq!(parsed.sections[1].blocks.len(), 1);
         assert_eq!(parsed.sections[1].blocks[0].text, "Prefers dark mode.");
