@@ -277,13 +277,7 @@ export const Settings: React.FC = () => {
         </div>
       ) : (
         /* ── Mobile & Compact Layout (Single vertical scroll list) ─────────── */
-        <div className="flex-1 flex flex-col min-h-0 overflow-hidden w-full pt-2.5 sm:pt-3.5">
-          <div className="flex items-center px-3 sm:px-4.5 pb-2 shrink-0">
-            <span className="text-xs font-semibold uppercase tracking-wider text-[rgb(var(--foreground-muted))]">
-              Settings
-            </span>
-          </div>
-
+        <div className="flex-1 flex flex-col min-h-0 overflow-hidden w-full pt-1.5 sm:pt-2">
           <div className="flex-1 w-full relative overflow-hidden flex flex-col min-h-0">
             <div className="flex-1 w-full overflow-y-auto custom-scrollbar pb-[130px] space-y-4 px-3 sm:px-4.5">
               {MOBILE_ORDERED_DOMAINS.map((domain) => (

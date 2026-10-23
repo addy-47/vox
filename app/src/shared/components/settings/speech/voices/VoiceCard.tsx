@@ -186,7 +186,7 @@ export const VoiceCard = memo(
             <div
               ref={scrubberRef}
               role="slider"
-              aria-label="Seek preview audio"
+              aria-label={VOICE_CATALOG_COPY.seekAria}
               aria-valuenow={Math.round((previewProgress ?? 0) * 100)}
               aria-valuemin={0}
               aria-valuemax={100}
@@ -208,7 +208,7 @@ export const VoiceCard = memo(
                   onSeekPreview?.(Math.max(0, (previewProgress ?? 0) - 0.05));
                 }
               }}
-              title="Click or arrow keys to seek"
+              title={VOICE_CATALOG_COPY.seekTitle}
             >
               {cardWaveformBars.map((height, i) => {
                 const barProgress = i / cardWaveformBars.length;

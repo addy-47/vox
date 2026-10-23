@@ -287,7 +287,7 @@ const TitleBarContent: React.FC = () => {
                 }}
                 className="w-full py-1.5 px-3 rounded-lg bg-[rgba(var(--accent),0.1)] hover:bg-[rgb(var(--accent))] text-[rgb(var(--accent))] hover:text-[rgb(var(--accent-foreground))] font-bold text-[11px] tracking-wide uppercase transition-all flex items-center justify-center gap-1.5 cursor-pointer border border-[rgba(var(--accent),0.2)] hover:border-[rgb(var(--accent))]"
               >
-                <span>Manage in Model Hub</span>
+                <span>{LAYOUT_COPY.titleBar.manageModels}</span>
                 <ChevronRight size={13} />
               </button>
             </div>

@@ -1,5 +1,5 @@
 import React, { memo, useEffect } from "react";
-import { FileText, Copy, Check, RotateCw, MessageSquare } from "lucide-react";
+import { FileText, Copy, Check, Sparkles, MessageSquare } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { createContainedLenis } from "@/shared/lib/lenisScroll";
 import { PixelSynthesisCanvas } from "./PixelSynthesisCanvas";
@@ -117,11 +117,13 @@ export const PersonalMemoryDossierCard: React.FC<PersonalMemoryDossierCardProps>
 
       {/* Dossier Header Bar — icon-only trailing actions with tooltips so the
           row survives narrow (modal) widths without crushing the title. */}
-      <div className="flex items-center justify-between gap-3 border-b border-[rgba(var(--border),0.12)] pb-3.5 min-h-[44px] shrink-0">
-        <div className="flex items-center gap-3 min-w-0 flex-1">
-          <div className="w-8 h-8 rounded-xl bg-[rgba(var(--accent),0.12)] border border-[rgba(var(--accent),0.25)] flex items-center justify-center text-[rgb(var(--accent))] shadow-sm shrink-0">
-            <FileText size={16} />
-          </div>
+      <div className="flex items-center justify-between gap-3 border-b border-[rgba(var(--border),0.12)] pb-3 min-h-[40px] shrink-0">
+        <div className="flex items-center gap-2.5 min-w-0 flex-1">
+          {!embedded && (
+            <div className="w-8 h-8 rounded-xl bg-[rgba(var(--accent),0.12)] border border-[rgba(var(--accent),0.25)] flex items-center justify-center text-[rgb(var(--accent))] shadow-sm shrink-0">
+              <FileText size={16} />
+            </div>
+          )}
           <div className="flex flex-col min-w-0">
             <div className="flex items-center gap-2">
               <span className="text-[13px] font-semibold tracking-wide text-[rgb(var(--foreground))] truncate">
@@ -134,8 +136,6 @@ export const PersonalMemoryDossierCard: React.FC<PersonalMemoryDossierCardProps>
                     month: "short",
                     day: "numeric",
                     year: "numeric",
-                    hour: "2-digit",
-                    minute: "2-digit",
                   })}`
                 : MEMORY_COPY.identityLayer}
             </span>
@@ -174,7 +174,7 @@ export const PersonalMemoryDossierCard: React.FC<PersonalMemoryDossierCardProps>
                   aria-label={MEMORY_COPY.regenerateTooltip}
                   className="flex items-center justify-center w-7 h-7 rounded-xl text-[rgb(var(--foreground-muted))] bg-[rgba(var(--foreground),0.05)] border border-[rgba(var(--border),0.14)] hover:text-[rgb(var(--foreground))] transition-colors disabled:opacity-40 cursor-pointer shadow-sm"
                 >
-                  <RotateCw size={13} className={cn(isRegenerating && "animate-spin text-[rgb(var(--accent))]")} />
+                  <Sparkles size={13} className={cn(isRegenerating && "animate-spin text-[rgb(var(--accent))]")} />
                 </button>
               </Tooltip>
             </>

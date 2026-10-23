@@ -224,7 +224,7 @@ export const SessionAccordionItem = memo<SessionAccordionItemProps>(({
 
             <span className="text-[11px] font-mono mt-0.5 flex items-center gap-1">
               <span className="text-[rgb(var(--accent))] font-medium">{factCount}</span>
-              <span className="text-[rgb(var(--foreground-muted))]/60">memories</span>
+              <span className="text-[rgb(var(--foreground-muted))]/60">{MEMORY_COPY.timeline.observationsCount}</span>
             </span>
           </div>
         </div>

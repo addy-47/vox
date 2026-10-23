@@ -188,8 +188,8 @@ export const MemorySearchBar = memo<MemorySearchBarProps>(({
             <div className="flex-1 flex flex-col items-center justify-center p-6 text-center my-auto min-h-0">
               <EmptyState
                 icon={Search}
-                title="Search Memories"
-                description="Search facts, preferences, and key details recorded across your conversations."
+                title={MEMORY_COPY.emptySearchTitle}
+                description={MEMORY_COPY.emptySearchDesc}
                 className="max-w-sm border-0 bg-transparent p-0 min-h-0"
               />
               {facts.length > 0 && (
@@ -215,8 +215,8 @@ export const MemorySearchBar = memo<MemorySearchBarProps>(({
             <div className="flex-1 flex flex-col items-center justify-center p-6 text-center my-auto min-h-0">
               <EmptyState
                 icon={Ghost}
-                title="No Memories Found"
-                description={`No memories match "${value.trim()}". Try another keyword or phrase.`}
+                title={MEMORY_COPY.noMemoriesFoundTitle}
+                description={MEMORY_COPY.noMemoriesFoundDesc(value.trim())}
                 className="max-w-sm border-0 bg-transparent p-0 min-h-0"
               />
             </div>

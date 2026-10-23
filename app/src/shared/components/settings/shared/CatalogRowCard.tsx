@@ -4,7 +4,7 @@ import { cn } from "@/shared/lib/utils";
 export interface CatalogRowCardProps {
   /** Slot for the leading mark (model glyph, provider logo). */
   leading: ReactNode;
-  title: string;
+  title: ReactNode;
   /** One dim line under the title: tier, footprint, endpoint, status. */
   meta: string;
   /** Persistent trailing controls. Never hover-only: they are the row's actions. */
@@ -55,7 +55,7 @@ export const CatalogRowCard = memo(
           role="button"
           tabIndex={interactive ? 0 : -1}
           aria-disabled={!interactive}
-          aria-label={ariaLabel ?? title}
+          aria-label={ariaLabel ?? (typeof title === "string" ? title : undefined)}
           aria-pressed={interactive ? active : undefined}
           onClick={() => {
             if (interactive) onSelect?.();
@@ -87,9 +87,9 @@ export const CatalogRowCard = memo(
               <span className="shrink-0">{leading}</span>
 
               <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                <span
+                <div
                   className={cn(
-                    "truncate text-[13px] font-semibold leading-tight tracking-tight",
+                    "flex min-w-0 items-center gap-1.5 text-[13px] font-semibold leading-tight tracking-tight",
                     active
                       ? "text-[rgb(var(--accent))]"
                       : muted
@@ -97,8 +97,8 @@ export const CatalogRowCard = memo(
                         : "text-[rgb(var(--foreground))]"
                   )}
                 >
-                  {title}
-                </span>
+                  {typeof title === "string" ? <span className="truncate">{title}</span> : title}
+                </div>
                 <span
                   className={cn(
                     "truncate text-[10.5px] leading-tight",

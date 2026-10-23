@@ -9,6 +9,8 @@ export const LAYOUT_COPY = {
     title: "Adjusting layout…",
     subtitle: "Settling into the new view",
   },
+  helpAria: "Help & guide",
+  loadingGuide: "Loading guide...",
   titleBar: {
     close: "Close",
     minimize: "Minimize",
@@ -19,6 +21,7 @@ export const LAYOUT_COPY = {
     copyCommand: "Copy command",
     whatsNew: "What's New:",
     openModels: "Open Models",
+    manageModels: "Manage in Model Hub",
     updateAvailable: "Update available",
     modelsOutdatedCount: (count: number) => `${count} model${count > 1 ? "s" : ""} outdated`,
   },
@@ -69,6 +72,7 @@ export const LAYOUT_COPY = {
   modal: {
     defaultAria: "Dialog",
     close: "Close dialog",
+    back: "Back",
   },
   panel: {
     close: "Close panel",

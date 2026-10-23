@@ -33,22 +33,22 @@ export const TimelineQueueSection = memo<TimelineQueueSectionProps>(({
         {!pipelineProcessingEnabled ? (
           <div className="flex items-center gap-1.5 text-[11px] font-mono text-[rgb(var(--foreground-muted))]/60">
             <span className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--foreground-muted))]/40" />
-            <span>Disabled</span>
+            <span>{MEMORY_COPY.timeline.statusDisabled}</span>
           </div>
         ) : processingCount > 0 ? (
           <div className="flex items-center gap-1.5 text-[11px] font-mono text-[rgb(var(--accent))]">
             <span className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--accent))] animate-pulse" />
-            <span>Processing</span>
+            <span>{MEMORY_COPY.timeline.statusProcessing}</span>
           </div>
         ) : pendingCount > 0 ? (
           <div className="flex items-center gap-1.5 text-[11px] font-mono text-[rgba(var(--accent),0.85)]">
             <Clock size={11} />
-            <span>Queued ({pendingCount})</span>
+            <span>{MEMORY_COPY.timeline.statusQueued(pendingCount)}</span>
           </div>
         ) : (
           <div className="flex items-center gap-1.5 text-[11px] font-mono text-[rgba(var(--accent),0.65)]">
             <Check size={11} strokeWidth={2.5} className="text-[rgba(var(--accent),0.75)]" />
-            <span>Up to date</span>
+            <span>{MEMORY_COPY.timeline.statusUpToDate}</span>
           </div>
         )}
       </div>

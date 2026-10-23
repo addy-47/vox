@@ -14,7 +14,7 @@ export const MONITORING_COPY = {
   chamberSpeaking: "Speaking",
   carouselPrev: "Previous metrics page",
   carouselNext: "Next metrics page",
-  openProfiler: "Open UI Memory Attribution & RCA Profiler",
+  openProfiler: "Open UI Diagnostics & Memory Profiler",
   closeMonitor: "Close monitor",
   monitorAria: "System Monitoring",
 };

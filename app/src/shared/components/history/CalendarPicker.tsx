@@ -1,6 +1,7 @@
 import React, { useState, useMemo, memo } from "react";
 import { ChevronLeft, ChevronRight, RotateCcw, Calendar as CalendarIcon } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
+import { HISTORY_COPY } from "@/data/historyCopy";
 
 export interface CalendarPickerProps {
   startDate: string | null; // "YYYY-MM-DD"
@@ -140,17 +141,17 @@ export const CalendarPicker: React.FC<CalendarPickerProps> = memo(
               <button
                 type="button"
                 onClick={handleReset}
-                title="Reset date range"
+                title={HISTORY_COPY.resetDateRange}
                 className="text-[10px] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] mr-1 transition-colors cursor-pointer flex items-center gap-0.5"
               >
-                <RotateCcw size={10} /> Clear
+                <RotateCcw size={10} /> {HISTORY_COPY.clear}
               </button>
             )}
             <button
               type="button"
               onClick={prevMonth}
               className="w-5 h-5 rounded flex items-center justify-center text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.08)] cursor-pointer transition-colors"
-              aria-label="Previous month"
+              aria-label={HISTORY_COPY.prevMonth}
             >
               <ChevronLeft size={13} />
             </button>
@@ -158,7 +159,7 @@ export const CalendarPicker: React.FC<CalendarPickerProps> = memo(
               type="button"
               onClick={nextMonth}
               className="w-5 h-5 rounded flex items-center justify-center text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.08)] cursor-pointer transition-colors"
-              aria-label="Next month"
+              aria-label={HISTORY_COPY.nextMonth}
             >
               <ChevronRight size={13} />
             </button>

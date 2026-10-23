@@ -625,7 +625,7 @@ export const Memory: React.FC = memo(() => {
           onClose={drawer.closeDrawer}
           position="global"
           ariaLabel={MEMORY_COPY.personalMemory}
-          className="w-[min(920px,86vw)] max-w-[calc(100vw-36px)] h-[min(740px,76vh)] max-h-[calc(100dvh-120px)]"
+          className="w-full max-w-[calc(100vw-16px)] h-[calc(100dvh-32px)] sm:w-[min(920px,86vw)] sm:max-w-[calc(100vw-36px)] sm:h-[min(740px,76vh)] sm:max-h-[calc(100dvh-120px)]"
           bodyClassName="h-full flex flex-col min-h-0 overflow-hidden p-0"
         >
           <ErrorBoundary name="MemoryModalContent">

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, memo } from "react";
 import { MessageSquarePlus } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
+import { MEMORY_COPY } from "@/data/memoryCopy";
 
 export interface SelectionRect {
   top: number;
@@ -108,7 +109,7 @@ export const PersonalMemoryCommentPopover: React.FC<PersonalMemoryCommentPopover
               onOpenChange?.(true);
             }}
             className="text-[rgb(var(--accent))] hover:scale-115 flex items-center justify-center cursor-pointer transition-transform p-1 opacity-90 hover:opacity-100 drop-shadow-sm"
-            title="Add Comment"
+            title={MEMORY_COPY.addComment}
           >
             <MessageSquarePlus size={16} />
           </button>
@@ -132,7 +133,7 @@ export const PersonalMemoryCommentPopover: React.FC<PersonalMemoryCommentPopover
                 }
               }}
               rows={2}
-              placeholder="Leave a comment"
+              placeholder={MEMORY_COPY.commentPlaceholder}
               className="w-full bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--border),0.14)] focus:border-[rgba(var(--accent),0.5)] rounded-md p-2 text-[12px] text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40 resize-none focus:outline-none transition-colors leading-relaxed font-sans"
             />
 
@@ -142,7 +143,7 @@ export const PersonalMemoryCommentPopover: React.FC<PersonalMemoryCommentPopover
                 onClick={handleDiscard}
                 className="px-1.5 py-0.5 text-[11.5px] font-sans text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors cursor-pointer"
               >
-                Cancel
+                {MEMORY_COPY.cancel}
               </button>
 
               <div className="flex items-center gap-1.5">
@@ -157,7 +158,7 @@ export const PersonalMemoryCommentPopover: React.FC<PersonalMemoryCommentPopover
                       : "bg-[rgba(var(--accent),0.12)] text-[rgba(var(--accent),0.3)] cursor-not-allowed"
                   )}
                 >
-                  <span>Add Comment</span>
+                  <span>{MEMORY_COPY.addComment}</span>
                 </button>
               </div>
             </div>

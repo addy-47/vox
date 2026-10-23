@@ -3,15 +3,15 @@ import {
   FileText,
   Copy,
   Check,
-  RotateCw,
+  Sparkles,
   Zap,
   MessageSquare,
   Tag,
   Layers,
-  Sparkles,
   X,
   Filter,
   ChevronDown,
+  MoreVertical,
 } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { Tooltip, TabStrip } from "@/shared/ui";
@@ -38,6 +38,8 @@ export const PersonalMemoryModalView: React.FC<PersonalMemoryModalViewProps> = m
     const [activeTab, setActiveTab] = useState<PersonalMemoryModalTab>("memory");
     const [isFilterOpen, setIsFilterOpen] = useState(false);
     const filterMenuRef = useRef<HTMLDivElement>(null);
+    const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
+    const moreMenuRef = useRef<HTMLDivElement>(null);
 
     // Track state mutations to auto-redirect back to the Memory tab for visual feedback
     const prevVeilCycleRef = useRef(drawer.veilCycle);
@@ -66,17 +68,20 @@ export const PersonalMemoryModalView: React.FC<PersonalMemoryModalViewProps> = m
       prevJustCommittedRef.current = drawer.justCommitted;
     }, [drawer.justCommitted]);
 
-    // Handle outside clicks for status filter dropdown
+    // Handle outside clicks for status filter and more actions dropdowns
     useEffect(() => {
-      if (!isFilterOpen) return;
+      if (!isFilterOpen && !isMoreMenuOpen) return;
       const handleClickOutside = (e: MouseEvent) => {
         if (filterMenuRef.current && !filterMenuRef.current.contains(e.target as Node)) {
           setIsFilterOpen(false);
         }
+        if (moreMenuRef.current && !moreMenuRef.current.contains(e.target as Node)) {
+          setIsMoreMenuOpen(false);
+        }
       };
       document.addEventListener("mousedown", handleClickOutside);
       return () => document.removeEventListener("mousedown", handleClickOutside);
-    }, [isFilterOpen]);
+    }, [isFilterOpen, isMoreMenuOpen]);
 
     // Handle comment selection in Dossier -> Redirect to Staging in comment mode
     const handleCommentFromDossier = () => {
@@ -92,104 +97,191 @@ export const PersonalMemoryModalView: React.FC<PersonalMemoryModalViewProps> = m
     return (
       <div className="flex flex-col h-full w-full min-h-0 select-none">
         {/* ── Unified Masthead: Title, Actions & Integrated Underline Tabs ── */}
-        <div className="flex flex-col shrink-0 px-6 pt-5 pb-0 border-b border-[rgba(var(--border),0.12)] bg-[rgba(var(--card),0.35)] select-none">
+        <div className="flex flex-col shrink-0 px-4 sm:px-6 pt-4 sm:pt-5 pb-0 border-b border-[rgba(var(--border),0.12)] bg-[rgba(var(--card),0.35)] select-none">
           {/* Top Row: Title & Global Actions */}
-          <div className="flex items-center justify-between gap-3 pb-4 min-h-[40px]">
-            {/* Left: Sparkles icon + Title */}
-            <div className="flex items-center gap-3 min-w-0">
-              <div className="w-8 h-8 rounded-xl bg-[rgba(var(--accent),0.12)] border border-[rgba(var(--accent),0.25)] flex items-center justify-center text-[rgb(var(--accent))] shadow-sm shrink-0">
-                <Sparkles size={16} />
-              </div>
-              <h2 className="text-[14px] font-semibold tracking-wide text-[rgb(var(--foreground))] truncate">
+          <div className="flex items-center justify-between gap-3 pb-3 sm:pb-4 min-h-[40px]">
+            {/* Left: Clean Title without icon (matching Drawer parity) */}
+            <div className="flex items-center min-w-0">
+              <h2 className="text-[14px] sm:text-[15px] font-semibold tracking-wide text-[rgb(var(--foreground))] truncate">
                 {MEMORY_COPY.personalMemory}
               </h2>
             </div>
 
             {/* Right: Global Actions Cluster */}
             <div className="flex items-center gap-1.5 shrink-0">
-              {/* Copy Button */}
-              <Tooltip label={drawer.copied ? MEMORY_COPY.copied : MEMORY_COPY.copyDocTitle}>
-                <button
-                  type="button"
-                  onClick={drawer.handleCopyDoc}
-                  disabled={!drawer.displayedRecord?.markdown && !drawer.displayedRecord?.content}
-                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-[11px] font-mono border border-[rgba(var(--border),0.18)] bg-[rgba(var(--foreground),0.04)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:border-[rgba(var(--accent),0.3)] transition-all cursor-pointer shadow-xs disabled:opacity-40"
-                  aria-label={MEMORY_COPY.copyDocTitle}
-                >
-                  {drawer.copied ? <Check size={13} className="text-[rgb(var(--success))]" /> : <Copy size={13} />}
-                  <span className="hidden sm:inline">{drawer.copied ? MEMORY_COPY.copied : MEMORY_COPY.copy}</span>
-                </button>
-              </Tooltip>
-
-              {/* Regenerate from Facts Button */}
-              <Tooltip label={drawer.isRegenerating ? MEMORY_COPY.regenerating : MEMORY_COPY.regenerateTooltip}>
-                <button
-                  type="button"
-                  onClick={drawer.handleRegenerateFromFacts}
-                  disabled={drawer.isRegenerating || drawer.saving}
-                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-[11px] font-mono border border-[rgba(var(--border),0.18)] bg-[rgba(var(--foreground),0.04)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:border-[rgba(var(--accent),0.3)] transition-all cursor-pointer shadow-xs disabled:opacity-40"
-                  aria-label={MEMORY_COPY.regenerateTooltip}
-                >
-                  <RotateCw
-                    size={13}
-                    className={cn(drawer.isRegenerating && "animate-spin text-[rgb(var(--accent))]")}
-                  />
-                  <span className="hidden sm:inline">
-                    {drawer.isRegenerating ? MEMORY_COPY.regenerating : MEMORY_COPY.regenerate}
-                  </span>
-                </button>
-              </Tooltip>
-
-              {/* Consolidate / Integrate Button */}
-              <Tooltip
-                label={
-                  drawer.unconsolidatedIdentityCount > 0
-                    ? MEMORY_COPY.consolidateTooltip
-                    : MEMORY_COPY.consolidateTooltipEmpty
-                }
-              >
-                <button
-                  type="button"
-                  onClick={() => drawer.handleConsolidateNow(false)}
-                  disabled={drawer.consolidating || drawer.unconsolidatedIdentityCount === 0}
-                  className={cn(
-                    "flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-[11px] font-mono border transition-all shadow-xs disabled:opacity-40 disabled:cursor-not-allowed",
-                    drawer.consolidating
-                      ? "bg-[rgba(var(--accent),0.25)] border-[rgba(var(--accent),0.5)] text-[rgb(var(--accent))]"
-                      : drawer.unconsolidatedIdentityCount > 0
-                      ? "bg-[rgba(var(--accent),0.15)] border-[rgba(var(--accent),0.35)] text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.25)] cursor-pointer"
-                      : "bg-[rgba(var(--foreground),0.04)] border-[rgba(var(--border),0.12)] text-[rgb(var(--foreground-muted))]/40"
-                  )}
-                  aria-label={MEMORY_COPY.consolidate}
-                >
-                  <Zap
-                    size={13}
-                    className={cn(drawer.consolidating && "animate-pulse text-[rgb(var(--accent))]")}
-                  />
-                  <span className="hidden sm:inline">
-                    {drawer.consolidating ? MEMORY_COPY.consolidating : MEMORY_COPY.consolidate}
-                  </span>
-                  {drawer.unconsolidatedIdentityCount > 0 && (
-                    <span className="text-[10px] font-mono font-bold">
-                      ({drawer.unconsolidatedIdentityCount})
-                    </span>
-                  )}
-                </button>
-              </Tooltip>
-
-              {/* Comments Counter (Redirects to Staging tab in comment mode) */}
-              {drawer.comments.length > 0 && (
-                <Tooltip label={MEMORY_COPY.commentsQueued(drawer.comments.length)}>
+              {/* Desktop / Tablet (>640px) Quick Actions */}
+              <div className="hidden sm:flex items-center gap-1.5">
+                {/* Copy Button */}
+                <Tooltip label={drawer.copied ? MEMORY_COPY.copied : MEMORY_COPY.copyDocTitle}>
                   <button
                     type="button"
-                    onClick={handleCommentFromDossier}
-                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[11px] font-mono border border-[rgba(var(--accent),0.3)] bg-[rgba(var(--accent),0.1)] text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.2)] transition-all cursor-pointer shadow-xs"
+                    onClick={drawer.handleCopyDoc}
+                    disabled={!drawer.displayedRecord?.markdown && !drawer.displayedRecord?.content}
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-[11px] font-mono border border-[rgba(var(--border),0.18)] bg-[rgba(var(--foreground),0.04)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:border-[rgba(var(--accent),0.3)] transition-all cursor-pointer shadow-xs disabled:opacity-40"
+                    aria-label={MEMORY_COPY.copyDocTitle}
                   >
-                    <MessageSquare size={13} />
-                    <span>{drawer.comments.length}</span>
+                    {drawer.copied ? <Check size={13} className="text-[rgb(var(--success))]" /> : <Copy size={13} />}
+                    <span>{drawer.copied ? MEMORY_COPY.copied : MEMORY_COPY.copy}</span>
                   </button>
                 </Tooltip>
-              )}
+
+                {/* Regenerate from Facts Button (using Sparkles icon) */}
+                <Tooltip label={drawer.isRegenerating ? MEMORY_COPY.regenerating : MEMORY_COPY.regenerateTooltip}>
+                  <button
+                    type="button"
+                    onClick={drawer.handleRegenerateFromFacts}
+                    disabled={drawer.isRegenerating || drawer.saving}
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-[11px] font-mono border border-[rgba(var(--border),0.18)] bg-[rgba(var(--foreground),0.04)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:border-[rgba(var(--accent),0.3)] transition-all cursor-pointer shadow-xs disabled:opacity-40"
+                    aria-label={MEMORY_COPY.regenerateTooltip}
+                  >
+                    <Sparkles
+                      size={13}
+                      className={cn(drawer.isRegenerating && "animate-spin text-[rgb(var(--accent))]")}
+                    />
+                    <span>
+                      {drawer.isRegenerating ? MEMORY_COPY.regenerating : MEMORY_COPY.regenerate}
+                    </span>
+                  </button>
+                </Tooltip>
+
+                {/* Consolidate / Integrate Button */}
+                <Tooltip
+                  label={
+                    drawer.unconsolidatedIdentityCount > 0
+                      ? MEMORY_COPY.consolidateTooltip
+                      : MEMORY_COPY.consolidateTooltipEmpty
+                  }
+                >
+                  <button
+                    type="button"
+                    onClick={() => drawer.handleConsolidateNow(false)}
+                    disabled={drawer.consolidating || drawer.unconsolidatedIdentityCount === 0}
+                    className={cn(
+                      "flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-[11px] font-mono border transition-all shadow-xs disabled:opacity-40 disabled:cursor-not-allowed",
+                      drawer.consolidating
+                        ? "bg-[rgba(var(--accent),0.25)] border-[rgba(var(--accent),0.5)] text-[rgb(var(--accent))]"
+                        : drawer.unconsolidatedIdentityCount > 0
+                        ? "bg-[rgba(var(--accent),0.15)] border-[rgba(var(--accent),0.35)] text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.25)] cursor-pointer"
+                        : "bg-[rgba(var(--foreground),0.04)] border-[rgba(var(--border),0.12)] text-[rgb(var(--foreground-muted))]/40"
+                    )}
+                    aria-label={MEMORY_COPY.consolidate}
+                  >
+                    <Zap
+                      size={13}
+                      className={cn(drawer.consolidating && "animate-pulse text-[rgb(var(--accent))]")}
+                    />
+                    <span>
+                      {drawer.consolidating ? MEMORY_COPY.consolidating : MEMORY_COPY.consolidate}
+                    </span>
+                    {drawer.unconsolidatedIdentityCount > 0 && (
+                      <span className="text-[10px] font-mono font-bold">
+                        ({drawer.unconsolidatedIdentityCount})
+                      </span>
+                    )}
+                  </button>
+                </Tooltip>
+
+                {/* Comments Counter (Redirects to Staging tab in comment mode) */}
+                {drawer.comments.length > 0 && (
+                  <Tooltip label={MEMORY_COPY.commentsQueued(drawer.comments.length)}>
+                    <button
+                      type="button"
+                      onClick={handleCommentFromDossier}
+                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[11px] font-mono border border-[rgba(var(--accent),0.3)] bg-[rgba(var(--accent),0.1)] text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.2)] transition-all cursor-pointer shadow-xs"
+                    >
+                      <MessageSquare size={13} />
+                      <span>{drawer.comments.length}</span>
+                    </button>
+                  </Tooltip>
+                )}
+              </div>
+
+              {/* Mobile (<640px) Overflow Menu with Vertical Three Dots */}
+              <div className="relative sm:hidden" ref={moreMenuRef}>
+                <button
+                  type="button"
+                  onClick={() => setIsMoreMenuOpen((prev) => !prev)}
+                  className={cn(
+                    "flex items-center justify-center w-8 h-8 rounded-xl border transition-colors cursor-pointer",
+                    isMoreMenuOpen
+                      ? "bg-[rgba(var(--accent),0.15)] border-[rgba(var(--accent),0.35)] text-[rgb(var(--accent))]"
+                      : "border-[rgba(var(--border),0.18)] bg-[rgba(var(--foreground),0.04)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:border-[rgba(var(--accent),0.3)]"
+                  )}
+                  aria-label="More actions"
+                  aria-expanded={isMoreMenuOpen}
+                >
+                  <MoreVertical size={16} />
+                </button>
+
+                {isMoreMenuOpen && (
+                  <div className="absolute right-0 top-full mt-1.5 w-48 rounded-xl border border-[rgba(var(--border),0.2)] bg-[rgba(var(--card),0.96)] backdrop-blur-md shadow-xl py-1.5 z-50 flex flex-col animate-in fade-in duration-150">
+                    {/* Copy Document */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void drawer.handleCopyDoc();
+                        setIsMoreMenuOpen(false);
+                      }}
+                      disabled={!drawer.displayedRecord?.markdown && !drawer.displayedRecord?.content}
+                      className="flex items-center gap-2.5 px-3 py-2 text-[12px] font-mono text-[rgb(var(--foreground))] hover:bg-[rgba(var(--accent),0.1)] hover:text-[rgb(var(--accent))] transition-colors disabled:opacity-40 text-left w-full cursor-pointer"
+                    >
+                      {drawer.copied ? <Check size={14} className="text-[rgb(var(--success))]" /> : <Copy size={14} />}
+                      <span>{drawer.copied ? MEMORY_COPY.copied : MEMORY_COPY.copyDocTitle}</span>
+                    </button>
+
+                    {/* Regenerate from Facts */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void drawer.handleRegenerateFromFacts();
+                        setIsMoreMenuOpen(false);
+                      }}
+                      disabled={drawer.isRegenerating || drawer.saving}
+                      className="flex items-center gap-2.5 px-3 py-2 text-[12px] font-mono text-[rgb(var(--foreground))] hover:bg-[rgba(var(--accent),0.1)] hover:text-[rgb(var(--accent))] transition-colors disabled:opacity-40 text-left w-full cursor-pointer"
+                    >
+                      <Sparkles size={14} className={cn(drawer.isRegenerating && "animate-spin text-[rgb(var(--accent))]")} />
+                      <span>{drawer.isRegenerating ? MEMORY_COPY.regenerating : MEMORY_COPY.regenerate}</span>
+                    </button>
+
+                    {/* Consolidate Observations */}
+                    {drawer.unconsolidatedIdentityCount > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void drawer.handleConsolidateNow(false);
+                          setIsMoreMenuOpen(false);
+                        }}
+                        disabled={drawer.consolidating}
+                        className="flex items-center justify-between px-3 py-2 text-[12px] font-mono text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.1)] transition-colors text-left w-full cursor-pointer border-t border-[rgba(var(--border),0.1)] mt-1 pt-2"
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <Zap size={14} className={cn(drawer.consolidating && "animate-pulse")} />
+                          <span>{drawer.consolidating ? MEMORY_COPY.consolidating : MEMORY_COPY.consolidate}</span>
+                        </div>
+                        <span className="font-bold text-[10.5px]">({drawer.unconsolidatedIdentityCount})</span>
+                      </button>
+                    )}
+
+                    {/* Comments (if any) */}
+                    {drawer.comments.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          handleCommentFromDossier();
+                          setIsMoreMenuOpen(false);
+                        }}
+                        className="flex items-center justify-between px-3 py-2 text-[12px] font-mono text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.1)] transition-colors text-left w-full cursor-pointer border-t border-[rgba(var(--border),0.1)] mt-1 pt-2"
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <MessageSquare size={14} />
+                          <span>Comments</span>
+                        </div>
+                        <span className="font-bold text-[10.5px]">({drawer.comments.length})</span>
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
 
               {/* Modal Close Button */}
               <Tooltip label={LAYOUT_COPY.modal.close}>
@@ -217,12 +309,12 @@ export const PersonalMemoryModalView: React.FC<PersonalMemoryModalViewProps> = m
             variant="underline"
             size="sm"
             ariaLabel="Personal Memory Tabs"
-            className="w-full flex items-center justify-between pt-2 pb-0 select-none overflow-x-auto no-scrollbar -mb-[1px]"
+            className="w-full flex items-center justify-between pt-1.5 pb-0 select-none overflow-x-auto no-scrollbar -mb-[1px]"
           />
         </div>
 
         {/* ── Single Full-Height Unified Workspace (One Contiguous Entity) ── */}
-        <div className="flex-1 min-h-0 px-6 pb-6 pt-5 overflow-hidden flex flex-col">
+        <div className="flex-1 min-h-0 px-4 sm:px-6 pb-4 sm:pb-6 pt-3.5 sm:pt-5 overflow-hidden flex flex-col">
           {activeTab === "memory" && (
             <div className="h-full w-full min-h-0 flex flex-col animate-in fade-in duration-200">
               <PersonalMemoryDossierCard
@@ -259,9 +351,9 @@ export const PersonalMemoryModalView: React.FC<PersonalMemoryModalViewProps> = m
           {activeTab === "observations" && (
             <div className="h-full w-full min-h-0 flex flex-col animate-in fade-in duration-200">
               {/* Observations Header Bar: Matches Dossier & Staging parity */}
-              <div className="flex items-center justify-between gap-3 border-b border-[rgba(var(--border),0.12)] pb-3.5 min-h-[44px] shrink-0">
-                <div className="flex items-center gap-3 min-w-0 flex-1">
-                  <div className="w-8 h-8 rounded-xl bg-[rgba(var(--accent),0.12)] border border-[rgba(var(--accent),0.25)] flex items-center justify-center text-[rgb(var(--accent))] shadow-sm shrink-0">
+              <div className="flex items-center justify-between gap-3 border-b border-[rgba(var(--border),0.12)] pb-3 min-h-[40px] shrink-0">
+                <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                  <div className="hidden sm:flex w-8 h-8 rounded-xl bg-[rgba(var(--accent),0.12)] border border-[rgba(var(--accent),0.25)] items-center justify-center text-[rgb(var(--accent))] shadow-sm shrink-0">
                     <Tag size={16} />
                   </div>
                   <div className="flex flex-col min-w-0">
@@ -276,7 +368,21 @@ export const PersonalMemoryModalView: React.FC<PersonalMemoryModalViewProps> = m
                   </div>
                 </div>
 
-                {/* Filter dropdown matching StagingHeader */}
+                <div className="flex items-center gap-2 shrink-0">
+                  {drawer.unconsolidatedIdentityCount > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => drawer.handleConsolidateNow(false)}
+                      disabled={drawer.consolidating}
+                      className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-mono border border-[rgba(var(--accent),0.35)] bg-[rgba(var(--accent),0.15)] text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.25)] transition-all cursor-pointer shadow-xs disabled:opacity-40"
+                    >
+                      <Zap size={11} className={cn(drawer.consolidating && "animate-pulse")} />
+                      <span className="hidden xs:inline">{drawer.consolidating ? MEMORY_COPY.consolidating : MEMORY_COPY.consolidate}</span>
+                      <span className="font-bold text-[10.5px]">({drawer.unconsolidatedIdentityCount})</span>
+                    </button>
+                  )}
+
+                  {/* Filter dropdown matching StagingHeader */}
                 <div className="relative shrink-0" ref={filterMenuRef}>
                   <button
                     type="button"
@@ -347,6 +453,7 @@ export const PersonalMemoryModalView: React.FC<PersonalMemoryModalViewProps> = m
                   )}
                 </div>
               </div>
+            </div>
 
               {/* Body */}
               <div className="flex-1 min-h-0 pt-4 flex flex-col overflow-hidden">

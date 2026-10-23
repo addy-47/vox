@@ -62,10 +62,14 @@ export const EngineFlowBanner = memo(({
   useLayoutEffect(() => {
     const node = wrapRef.current;
     if (!node) return undefined;
-    setWidth(node.getBoundingClientRect().width);
+    const initialWidth = Math.round(node.getBoundingClientRect().width);
+    setWidth(initialWidth);
     const observer = new ResizeObserver((entries) => {
       const entry = entries[entries.length - 1];
-      if (entry) setWidth(entry.contentRect.width);
+      if (entry) {
+        const next = Math.round(entry.contentRect.width);
+        setWidth((prev) => (Math.abs(prev - next) >= 2 ? next : prev));
+      }
     });
     observer.observe(node);
     return () => observer.disconnect();
@@ -95,7 +99,7 @@ export const EngineFlowBanner = memo(({
       document.removeEventListener("visibilitychange", sync);
       observer.disconnect();
     };
-  }, [width]);
+  }, []);
 
   const W = Math.max(420, width);
   const cx = W / 2;
@@ -140,7 +144,6 @@ export const EngineFlowBanner = memo(({
 
   return (
     <div
-      data-rca-banner
       className={cn(
         "hidden md:flex shrink-0 items-center gap-5 rounded-2xl border border-[rgba(var(--foreground),0.08)]",
         "bg-[rgba(var(--card),0.75)] px-5 py-3 shadow-lg",

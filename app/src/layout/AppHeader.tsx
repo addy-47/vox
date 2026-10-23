@@ -15,6 +15,7 @@ import { useViewportResize } from "@/shared/hooks/useViewportResize";
 import { NOTIFICATION_COPY } from "@/data/notificationCopy";
 import { HOME_CONTROLS_COPY } from "@/data/homeCopy";
 import { SESSION_COPY } from "@/data/sessionCopy";
+import { LAYOUT_COPY } from "@/data/layoutCopy";
 import { cn } from "@/shared/lib/utils";
 
 export const AppHeader: React.FC = memo(() => {
@@ -220,7 +221,7 @@ export const AppHeader: React.FC = memo(() => {
         </Tooltip>
 
         {/* Standard Help Popover */}
-        <Tooltip label="Help & guide" shortcutId="global.help" side="bottom">
+        <Tooltip label={LAYOUT_COPY.helpAria} shortcutId="global.help" side="bottom">
           <button
             type="button"
             onClick={() => (isHelpOpen ? closePanel("help") : openPanel("help"))}
@@ -235,7 +236,7 @@ export const AppHeader: React.FC = memo(() => {
                 ? "border-[rgba(var(--border),0.08)] bg-[rgba(var(--card),0.25)] text-[rgb(var(--foreground-muted))]/60 opacity-70 cursor-not-allowed pointer-events-none"
                 : "border-[rgba(var(--border),0.15)] bg-[rgba(var(--card),0.5)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:border-[rgba(var(--accent),0.3)] hover:bg-[rgba(var(--accent),0.06)] cursor-pointer"
             )}
-            aria-label="Help & guide"
+            aria-label={LAYOUT_COPY.helpAria}
           >
             <HelpCircle size={14} strokeWidth={1.75} />
           </button>

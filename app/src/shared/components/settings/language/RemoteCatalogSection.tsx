@@ -20,8 +20,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { Tooltip } from "@/shared/ui/Tooltip";
-import { ExpandableList } from "@/shared/ui/ExpandableList";
-import { SettingsCommitControls } from "@/shared/components/settings/SettingsCommitControls";
+import { useExpandableList } from "@/shared/ui/ExpandableList";
 import { resolveCapabilities as resolveModelCapabilities } from "@/shared/lib/catalogCapabilities";
 import { filterModels } from "@/shared/lib/catalogFilter";
 import { useScrollTopOnChange } from "@/shared/hooks/useLenisScrollContainer";
@@ -35,9 +34,6 @@ import {
 } from "@/store/settingsStore";
 import { useShallow } from "zustand/react/shallow";
 import { useCatalogStore } from "@/store/catalogStore";
-import { ProviderModal } from "./ProviderModal";
-import { useProviderSelection } from "@/shared/hooks/useProviderSelection";
-import { ModelModal } from "./ModelModal";
 import {
   CardFilterItem,
   CardFilterMenu,
@@ -64,6 +60,8 @@ export interface RemoteCatalogSectionProps {
   handleProbeCapabilities: (id?: string) => void;
   /** Returns to the provider picker when the section is hosted inside a card. */
   onBack?: () => void;
+  /** Ensures parent modal level is primed to 'models' before opening. */
+  onExpand?: () => void;
 }
 
 export const RemoteCatalogSection = memo(({
@@ -75,22 +73,12 @@ export const RemoteCatalogSection = memo(({
   probingMap,
   handleProbeCapabilities,
   onBack,
+  onExpand,
 }: RemoteCatalogSectionProps) => {
   const updateDraft = useSettingsStore((s) => s.updateDraft);
   const capabilitiesCache = useCatalogStore((s) => s.capabilitiesCache);
-  const cloudProviders = useCatalogStore((s) => s.cloudProviders);
   const committedSettings = useSettingsStore(useShallow((s) => s.settings));
-
-  // Modal View: "models" | "providers"
-  const [catalogModalView, setCatalogModalView] = useState<"models" | "providers">("models");
-  // The providers view lists *cloud* providers. For embedded/server there is
-  // nothing to navigate to, so the breadcrumb stays hidden and the modal is
-  // always the models catalog.
-  const showProvidersView = provider?.kind === "cloud";
-  const activeModalView = showProvidersView ? catalogModalView : "models";
-  const cloudProvidersModalProps = useProviderSelection({
-    onNavigateToModels: () => setCatalogModalView("models"),
-  });
+  const { open } = useExpandableList();
 
   // Search State for Remote Catalog
   const [searchQuery, setSearchQuery] = useState("");
@@ -214,6 +202,10 @@ export const RemoteCatalogSection = memo(({
       className="flex-1 min-h-0"
       scrollRef={inlineRowsRef}
       featherHeight={80}
+      onReveal={() => {
+        onExpand?.();
+        open();
+      }}
       scrollerClassName="flex-1 min-h-0 overflow-y-auto pr-1 custom-scrollbar [scrollbar-gutter:stable]"
     >
       <div
@@ -598,55 +590,15 @@ export const RemoteCatalogSection = memo(({
       )}
 
 
-      {/* Remote Models 2-Column Grid — inline at card height, full-bleed in the expand modal */}
-      <ExpandableList
-        className="flex-1 min-h-0"
-        hideInlineTrigger
-        inlineMaxHeightClass={getSettingsInlineListMaxHeightClass(layoutMode)}
-        onBack={showProvidersView ? () => setCatalogModalView(activeModalView === "models" ? "providers" : "models") : undefined}
-        icon={activeModalView === "models" ? <ServerCog size={16} className="text-[rgb(var(--accent))]" /> : <Cloud size={16} className="text-[rgb(var(--accent))]" />}
-        title={
-          <span className="font-display text-[15px] font-bold tracking-tight text-[rgb(var(--foreground))]">
-            {activeModalView === "models" ? LLM_CATALOG_COPY.catalogTitle : LLM_CATALOG_COPY.providersViewTitle}
-          </span>
-        }
-        subtitle={
-          activeModalView === "models" ? (
-            <span className="font-mono text-[11px] text-[rgb(var(--foreground-muted))]">
-              {remoteModels.length} {LLM_CATALOG_COPY.modelCountLabel}
-            </span>
-          ) : (
-            <span className="text-[11px] text-[rgb(var(--foreground-muted))]">
-              {LLM_CATALOG_COPY.connectorsLabel} · {cloudProviders.length}
-            </span>
-          )
-        }
-        expandLabel={LLM_CATALOG_COPY.expandLabel}
-        ariaLabel={LLM_CATALOG_COPY.catalogAriaLabel}
-        modalSubtitle={
-          activeModalView === "models"
-            ? LLM_CATALOG_COPY.modelsModalSubtitle
-            : LLM_CATALOG_COPY.providersModalSubtitle
-        }
-        headerActions={<SettingsCommitControls domainId="language" layoutMode={layoutMode} />}
-        modalContent={
-          activeModalView === "models" ? (
-            <ModelModal
-              remoteModels={remoteModels}
-              selectedModelId={selectedModelId}
-              pinnedModelId={committedRemoteModelId}
-              probingMap={probingMap}
-              capabilitiesCache={capabilitiesCache}
-              onSelectModel={handleSelectModel}
-              onProbeCapabilities={handleProbeCapabilities}
-            />
-          ) : (
-            <ProviderModal {...cloudProvidersModalProps} />
-          )
-        }
+      {/* Remote Models 2-Column Grid — inline at card height */}
+      <div
+        className={cn(
+          "flex-1 min-h-0 overflow-hidden flex flex-col",
+          getSettingsInlineListMaxHeightClass(layoutMode)
+        )}
       >
         {renderRemoteModelRows()}
-      </ExpandableList>
+      </div>
     </div>
   );
 });

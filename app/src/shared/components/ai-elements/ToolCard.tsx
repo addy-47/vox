@@ -1,6 +1,7 @@
 import React, { memo, useState } from "react";
 import { cn } from "@/shared/lib/utils";
 import { Wrench, ChevronDown, CheckCircle, Loader2, XCircle } from "lucide-react";
+import { DIALOGUE_COPY } from "@/data/homeCopy";
 
 export type ToolStatus = "running" | "completed" | "error";
 
@@ -69,7 +70,7 @@ export const ToolCard: React.FC<ToolCardProps> = memo(({
         <div className="px-2.5 pb-2.5 pt-1 border-t border-[rgba(var(--border),0.1)] flex flex-col gap-2 font-mono text-[11px] text-[rgb(var(--foreground-muted))]">
           {args && (
             <div>
-              <span className="text-[10px] uppercase font-bold text-[rgb(var(--foreground-muted))]/70">Inputs:</span>
+              <span className="text-[10px] uppercase font-bold text-[rgb(var(--foreground-muted))]/70">{DIALOGUE_COPY.toolCallInputs}</span>
               <pre className="mt-0.5 p-1.5 rounded bg-black/20 overflow-x-auto text-[10px] select-text">
                 {typeof args === "string" ? args : JSON.stringify(args, null, 2)}
               </pre>
@@ -77,7 +78,7 @@ export const ToolCard: React.FC<ToolCardProps> = memo(({
           )}
           {result && (
             <div>
-              <span className="text-[10px] uppercase font-bold text-[rgb(var(--foreground-muted))]/70">Output:</span>
+              <span className="text-[10px] uppercase font-bold text-[rgb(var(--foreground-muted))]/70">{DIALOGUE_COPY.toolCallOutputs}</span>
               <pre className="mt-0.5 p-1.5 rounded bg-black/20 overflow-x-auto text-[10px] select-text">
                 {result}
               </pre>

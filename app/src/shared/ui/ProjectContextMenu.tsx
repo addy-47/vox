@@ -112,7 +112,7 @@ export const ProjectContextMenu: React.FC<ProjectContextMenuProps> = memo(
           <div className="flex items-center justify-between px-2 py-1.5 rounded-sm text-[12.5px] select-none text-[rgb(var(--danger))]">
             <div className="flex items-center gap-2">
               <Trash2 size={13.5} />
-              <span className="font-medium">Delete</span>
+              <span className="font-medium">{SESSION_COPY.projectActions.confirm}</span>
             </div>
             <div className="flex items-center gap-1">
               <Tooltip label={SESSION_COPY.projectActions.confirm} side="top">

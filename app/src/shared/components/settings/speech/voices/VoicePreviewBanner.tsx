@@ -216,7 +216,7 @@ export const VoicePreviewBanner = memo(
                 type="text"
                 value={customPromptInput}
                 onChange={(e) => setCustomPromptInput(e.target.value)}
-                placeholder="Type phrase to synthesize..."
+                placeholder={VOICE_CATALOG_COPY.customPromptPlaceholder}
                 maxLength={120}
                 autoFocus
                 onKeyDown={(e) => {
@@ -230,13 +230,13 @@ export const VoicePreviewBanner = memo(
                 onClick={handleSavePrompt}
                 className="px-3 py-1.5 text-[11.5px] font-bold rounded-lg bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] cursor-pointer shrink-0 transition-opacity hover:opacity-90 active:scale-95"
               >
-                Apply
+                {VOICE_CATALOG_COPY.applyPrompt}
               </button>
               <button
                 type="button"
                 onClick={() => setIsEditingPrompt(false)}
                 className="p-1.5 text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] cursor-pointer shrink-0 transition-colors"
-                aria-label="Cancel editing"
+                aria-label={VOICE_CATALOG_COPY.cancelPrompt}
               >
                 <X size={15} />
               </button>

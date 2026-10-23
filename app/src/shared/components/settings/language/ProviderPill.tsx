@@ -1,8 +1,8 @@
 import { memo } from "react";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, Pencil } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { Tooltip } from "@/shared/ui/Tooltip";
-import { LANGUAGE_CARD_COPY } from "@/data/settingsCopy";
+import { LANGUAGE_CARD_COPY, PROVIDERS_CONFIG_DESK_COPY } from "@/data/settingsCopy";
 import { ProviderLogo } from "../shared/ProviderLogo";
 import { CatalogRowCard } from "../shared/CatalogRowCard";
 
@@ -24,6 +24,10 @@ export interface ProviderPillProps {
    * the row body only selects, so a browse cannot happen by accident.
    */
   onBrowse?: () => void;
+  /**
+   * Triggers inline API key editing. Placed immediately to the right of the provider name.
+   */
+  onEdit?: () => void;
   /** Replaces the trailing arrow (unconnected rows show a plus). */
   trailing?: React.ReactNode;
   className?: string;
@@ -48,6 +52,7 @@ export const ProviderPill = memo(({
   active,
   onSelect,
   onBrowse,
+  onEdit,
   trailing,
   className,
   muted = false,
@@ -68,36 +73,51 @@ export const ProviderPill = memo(({
     }
     muted={muted}
     body={body}
-    title={name}
+    title={
+      onEdit ? (
+        <span className="flex items-center gap-1.5 min-w-0">
+          <span className="truncate">{name}</span>
+          <Tooltip label={PROVIDERS_CONFIG_DESK_COPY.llm.cloud.editKey} side="top" asChild>
+            <button
+              type="button"
+              aria-label={`${PROVIDERS_CONFIG_DESK_COPY.llm.cloud.editKey}: ${name}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                onEdit();
+              }}
+              className="p-1 rounded hover:bg-[rgba(var(--foreground),0.08)] hover:text-[rgb(var(--accent))] transition-colors text-[rgb(var(--foreground-muted))]/60 cursor-pointer shrink-0"
+            >
+              <Pencil size={11} />
+            </button>
+          </Tooltip>
+        </span>
+      ) : (
+        name
+      )
+    }
     meta={meta}
     active={active}
     onSelect={onSelect}
     ariaLabel={name}
     className={className}
     trailing={
-      trailing ?? (
-        onBrowse ? (
-          <Tooltip label={LANGUAGE_CARD_COPY.browseModels} side="left" asChild>
-            <button
-              type="button"
-              aria-label={`${LANGUAGE_CARD_COPY.browseModels}: ${name}`}
-              onClick={(e) => {
-                e.stopPropagation();
-                onBrowse();
-              }}
-              className="w-7 h-7 flex items-center justify-center rounded-md text-[rgb(var(--foreground-muted))]/50 transition-colors hover:bg-[rgba(var(--accent),0.1)] hover:text-[rgb(var(--accent))] cursor-pointer"
-            >
-              <ArrowRight size={13} strokeWidth={2} />
-            </button>
-          </Tooltip>
-        ) : (
-          <ArrowRight
-            size={13}
-            strokeWidth={2}
-            className="text-[rgb(var(--foreground-muted))]/50 transition-transform group-hover:translate-x-0.5 group-hover:text-[rgb(var(--accent))]"
-          />
-        )
-      )
+      trailing !== undefined ? (
+        trailing
+      ) : onBrowse ? (
+        <Tooltip label={LANGUAGE_CARD_COPY.browseModels} side="left" asChild>
+          <button
+            type="button"
+            aria-label={`${LANGUAGE_CARD_COPY.browseModels}: ${name}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              onBrowse();
+            }}
+            className="w-7 h-7 flex items-center justify-center rounded-md text-[rgb(var(--foreground-muted))]/50 transition-colors hover:bg-[rgba(var(--accent),0.1)] hover:text-[rgb(var(--accent))] cursor-pointer"
+          >
+            <ArrowRight size={13} strokeWidth={2} />
+          </button>
+        </Tooltip>
+      ) : null
     }
   />
 ));

@@ -17,7 +17,7 @@ import { CheckCircle2 } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
 import { TitleBar } from '@/layout/TitleBar';
 import { AmbientBackground, VoxLogoLoader } from '@/shared/components/common';
-import { WIZARD_STEPS, WIZARD_STATUS_COPY } from '@/data/welcomeCopy';
+import { WIZARD_STEPS, WIZARD_STATUS_COPY, WIZARD_CTA_LABELS } from '@/data/welcomeCopy';
 
 import { MobileOnboardingFlow } from './mobile/MobileOnboardingFlow';
 import { Smartphone, Monitor, Maximize2, Minimize2, RotateCcw } from 'lucide-react';
@@ -194,18 +194,18 @@ export const WizardRoot: React.FC = () => {
               <button
                 onClick={() => setFrameMode(f => f === 'device' ? 'fullscreen' : 'device')}
                 className="flex items-center gap-1 px-2 py-1 rounded border border-[rgba(var(--foreground),0.1)] hover:bg-[rgb(var(--foreground))]/5 text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))]"
-                title="Toggle Device Frame"
+                title={WIZARD_CTA_LABELS.toggleFrame}
               >
                 {frameMode === 'device' ? <Maximize2 className="w-3.5 h-3.5" /> : <Minimize2 className="w-3.5 h-3.5" />}
-                <span>{frameMode === 'device' ? 'Fill Viewport' : 'Phone Frame'}</span>
+                <span>{frameMode === 'device' ? WIZARD_CTA_LABELS.frameModes.fill : WIZARD_CTA_LABELS.frameModes.phone}</span>
               </button>
               <button
                 onClick={() => setMobileResetKey(k => k + 1)}
                 className="flex items-center gap-1 px-2 py-1 rounded border border-[rgba(var(--foreground),0.1)] hover:bg-[rgb(var(--foreground))]/5 text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))]"
-                title="Restart Flow"
+                title={WIZARD_CTA_LABELS.restartFlow}
               >
                 <RotateCcw className="w-3.5 h-3.5" />
-                <span>Restart Flow</span>
+                <span>{WIZARD_CTA_LABELS.restartFlow}</span>
               </button>
             </div>
           )}

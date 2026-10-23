@@ -281,7 +281,7 @@ export const MEMORY_PAGE_HELP: PageHelpGuide = {
           icon: Brain,
           name: "Your profile",
           badge: "About you",
-          action: "Open the personal memory dossier.",
+          action: "Open Personal Memory.",
           outcome: "Your profile holds lasting facts about you — name, work, preferences. Press Shift+Up on the Memory page to open and edit it.",
           shortcut: "Shift+Up",
         },

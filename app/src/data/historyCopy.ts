@@ -1,10 +1,12 @@
 export const HISTORY_COPY = {
   loading: "Loading memories...",
-  noMemoriesTitle: "No Sessions persist",
+  noMemoriesTitle: "No conversations recorded yet",
   noMemoriesDesc: "Conversation & Chat history will appear here.",
   failedTitle: "Failed to load history",
   failedFallback: "Failed to load history sessions. Please check backend connection.",
   retry: "Retry",
+  resetDateRange: "Reset date range",
+  clear: "Clear",
   deleteConfirm: "Confirm Delete",
   deleteFailed: "Failed to delete session.",
   turnSingular: "turn",

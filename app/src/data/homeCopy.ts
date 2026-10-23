@@ -44,7 +44,7 @@ export const HOME_CONTROLS_COPY = {
   },
   temporary: {
     toggleAriaLabel: "Toggle Incognito Mode",
-    toggleTooltip: "Incognito Mode (Memory Only)",
+    toggleTooltip: "Incognito Mode (RAM only — nothing saved to disk)",
     activeBadge: "Incognito",
   },
   /** Accessible name for the pipeline status capsule. */
@@ -60,5 +60,7 @@ export const DIALOGUE_COPY = {
   assistantBadge: "VOX",
   readMore: "Read more",
   readLess: "Show less",
+  toolCallInputs: "Inputs:",
+  toolCallOutputs: "Output:",
 } as const;
 
