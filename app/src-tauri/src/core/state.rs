@@ -34,16 +34,16 @@ use crate::{
         },
         llm::LlmProvider,
         realtime::RealtimeActor,
+        remote::{
+            security::PairingCoordinator,
+            session::{RemoteLinkState, RemoteSessionManager, SessionRole, StateChangeCallback},
+        },
     },
     setup::{manifest::VoxManifest, model_manager::ModelManager},
 };
 pub use crate::{
     core::engine::VoxEngine, monitoring::telemetry::TelemetryState, pipeline::PipelineAtomics,
     services::memory::MemoryAppState,
-};
-use crate::services::remote::{
-    security::PairingCoordinator,
-    session::{RemoteLinkState, RemoteSessionManager, SessionRole, StateChangeCallback},
 };
 
 /// Pending inbound pairing request awaiting host user approval.

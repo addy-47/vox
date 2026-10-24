@@ -31,6 +31,7 @@ import { useRegisterPageDrawer } from "@/shared/context/PageDrawerContext";
 import { useHomePage } from "@/shared/hooks/useHomePage";
 import { useMemoryTrace } from "@/shared/hooks/useMemoryTrace";
 import { isRealMobileDevice } from "@/layout/breakpoints";
+import { stageTop } from "@/layout/stageMetrics";
 
 const DialogueTurn = memo(({ turn }: { turn: { user: string; assistant: string; id: number } }) => (
   <React.Fragment>
@@ -334,7 +335,7 @@ export const Home = memo(() => {
         className="absolute z-10 flex items-center justify-center select-none pointer-events-none"
         style={{
           left: "50%",
-          top: isRealMobileDevice() ? "calc(50% - 22.4px)" : "calc(50% - 36px)",
+          top: stageTop(isRealMobileDevice(), 36),
           transform: "translate(-50%, -50%)",
           width: isMobileScreen ? "min(82vw, 50vh)" : "min(65vw, 56vh)",
           height: isMobileScreen ? "min(82vw, 50vh)" : "min(65vw, 56vh)",
@@ -379,7 +380,7 @@ export const Home = memo(() => {
           className="absolute z-30 pointer-events-auto hidden md:block"
           style={{
             right: "max(6px, env(safe-area-inset-right, 6px))",
-            top: isRealMobileDevice() ? "calc(50% - 22.4px)" : "calc(50% - 36px)",
+            top: stageTop(isRealMobileDevice(), 36),
             transform: "translateY(-50%)",
             maxHeight: isMobileScreen ? "calc(min(82vw, 50vh) * 0.75)" : "calc(min(65vw, 56vh) * 0.75)",
             overflow: "visible",

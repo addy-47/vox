@@ -310,9 +310,7 @@ async fn fetch_deepgram_agent_models(
         .models
         .into_iter()
         .map(|m| {
-            let name = m
-                .name
-                .unwrap_or_else(|| m.id.replace([':', '_', '-'], " "));
+            let name = m.name.unwrap_or_else(|| m.id.replace([':', '_', '-'], " "));
             LlmModelInfo {
                 id: m.id,
                 name,
@@ -427,7 +425,9 @@ pub(crate) fn filter_and_normalize_gemini_models(models: &mut Vec<LlmModelInfo>)
         }
 
         let lower = entry.id.to_lowercase();
-        !EXCLUDED_SUBSTRINGS.iter().any(|needle| lower.contains(needle))
+        !EXCLUDED_SUBSTRINGS
+            .iter()
+            .any(|needle| lower.contains(needle))
     });
 }
 
@@ -2224,7 +2224,10 @@ mod tests {
         filter_and_normalize_gemini_models(&mut models);
 
         let ids: Vec<&str> = models.iter().map(|m| m.id.as_str()).collect();
-        assert_eq!(ids, vec!["gemini-2.5-flash", "gemini-2.5-pro", "gemini-1.5-flash"]);
+        assert_eq!(
+            ids,
+            vec!["gemini-2.5-flash", "gemini-2.5-pro", "gemini-1.5-flash"]
+        );
 
         // Verify clean names have models/ prefix stripped as well
         assert_eq!(models[0].name, "gemini 2.5 flash");

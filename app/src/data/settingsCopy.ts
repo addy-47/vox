@@ -438,7 +438,9 @@ export const REMOTE_CONTROL_COPY = {
   tab: "Remote Control",
   title: "Mobile Companion",
   description:
-    "Use a paired phone as wireless microphone, speaker, and HUD over your local network.",
+    "Use your phone as a wireless mic, speaker, and live assistant HUD over Wi-Fi.",
+  descriptionReady:
+    "Ready to connect. Pair an Android device on your local Wi-Fi network.",
   comingSoon: "Pair Device",
   statusDisconnected: "Disconnected",
   statusSearching: "Searching for Controllers",

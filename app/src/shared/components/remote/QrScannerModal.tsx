@@ -10,7 +10,7 @@ import {
   Flashlight,
   FlashlightOff,
   RotateCcw,
-  Laptop,
+  ScanLine,
 } from "lucide-react";
 import { Modal } from "@/shared/ui/Modal";
 import { Tooltip } from "@/shared/ui/Tooltip";
@@ -35,6 +35,8 @@ export interface QrScannerModalProps {
 export const QrScannerModal = memo(
   ({ open, onClose, defaultManual = false }: QrScannerModalProps) => {
     const connectHost = useRemoteStore((s) => s.connectHost);
+    const linkState = useRemoteStore((s) => s.linkState);
+    const failureReason = useRemoteStore((s) => s.failureReason);
 
     const [isManual, setIsManual] = useState(defaultManual);
     const [manualAddress, setManualAddress] = useState("");
@@ -51,43 +53,6 @@ export const QrScannerModal = memo(
     const streamRef = useRef<MediaStream | null>(null);
     const scanIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
-
-    const handleConnect = useCallback(
-      async (address: string, deviceId?: string) => {
-        try {
-          setConnecting(true);
-          setScanError(null);
-          await connectHost({ address, deviceId });
-          onClose();
-        } catch (e) {
-          console.warn("[QrScannerModal] connectHost failed:", e);
-          setScanError(e instanceof Error ? e.message : String(e));
-          setConnecting(false);
-          setScannedSuccess(false);
-        }
-      },
-      [connectHost, onClose]
-    );
-
-    const processQrCode = useCallback(
-      (raw: string) => {
-        if (!raw || connecting || scannedSuccess) return;
-        try {
-          const parsed = JSON.parse(raw) as ScannedQrPayload;
-          if (
-            typeof parsed.hint_addr === "string" &&
-            typeof parsed.hint_port === "number"
-          ) {
-            setScannedSuccess(true);
-            const target = `${parsed.hint_addr}:${parsed.hint_port}`;
-            void handleConnect(target, parsed.device_id);
-          }
-        } catch {
-          // Non-JSON barcode or unrelated QR code, ignore
-        }
-      },
-      [connecting, scannedSuccess, handleConnect]
-    );
 
     const stopCamera = useCallback(() => {
       if (scanIntervalRef.current) {
@@ -116,6 +81,64 @@ export const QrScannerModal = memo(
       setTorchOn(false);
       setTorchSupported(false);
     }, []);
+
+    const resetState = useCallback(() => {
+      stopCamera();
+      setIsManual(defaultManual);
+      setManualAddress("");
+      setConnecting(false);
+      setScannedSuccess(false);
+      setCameraError(null);
+      setScanError(null);
+    }, [defaultManual, stopCamera]);
+
+    const handleClose = useCallback(() => {
+      resetState();
+      onClose();
+    }, [resetState, onClose]);
+
+    const handleConnect = useCallback(
+      async (params: { address: string; deviceId?: string; token?: string; publicKey?: string }) => {
+        try {
+          setConnecting(true);
+          setScanError(null);
+          stopCamera();
+          await connectHost(params);
+          // Do not close modal immediately; wait for remote_state_changed to report Connected or Failed
+        } catch (e) {
+          console.warn("[QrScannerModal] connectHost failed:", e);
+          setScanError(e instanceof Error ? e.message : String(e));
+          setConnecting(false);
+          setScannedSuccess(false);
+        }
+      },
+      [connectHost, stopCamera]
+    );
+
+    const processQrCode = useCallback(
+      (raw: string) => {
+        if (!raw || connecting || scannedSuccess) return;
+        try {
+          const parsed = JSON.parse(raw) as ScannedQrPayload;
+          if (
+            typeof parsed.hint_addr === "string" &&
+            typeof parsed.hint_port === "number"
+          ) {
+            setScannedSuccess(true);
+            const target = `${parsed.hint_addr}:${parsed.hint_port}`;
+            void handleConnect({
+              address: target,
+              deviceId: parsed.device_id,
+              token: parsed.token,
+              publicKey: parsed.public_key,
+            });
+          }
+        } catch {
+          // Non-JSON barcode or unrelated QR code, ignore
+        }
+      },
+      [connecting, scannedSuccess, handleConnect]
+    );
 
     const startCamera = useCallback(async () => {
       stopCamera();
@@ -176,6 +199,27 @@ export const QrScannerModal = memo(
       }
     };
 
+    // React to linkState transitions while modal is open
+    useEffect(() => {
+      if (!open) return undefined;
+
+      if (linkState === "Connected") {
+        setConnecting(false);
+        setScannedSuccess(true);
+        const timer = setTimeout(() => {
+          handleClose();
+        }, 800);
+        return () => clearTimeout(timer);
+      }
+
+      if (linkState === "Failed") {
+        setConnecting(false);
+        setScannedSuccess(false);
+        setScanError(failureReason ?? "Connection to host failed.");
+      }
+      return undefined;
+    }, [open, linkState, failureReason, handleClose]);
+
     // Scan loop when camera is active
     useEffect(() => {
       if (!open || isManual || connecting || !cameraActive) {
@@ -221,44 +265,46 @@ export const QrScannerModal = memo(
 
       let isScanning = false;
 
-      scanIntervalRef.current = setInterval(async () => {
-        if (isScanning || scannedSuccess || connecting) return;
-        const video = videoRef.current;
-        if (!video || video.readyState < 2) return;
+      scanIntervalRef.current = setInterval(() => {
+        void (async () => {
+          if (isScanning || scannedSuccess || connecting) return;
+          const video = videoRef.current;
+          if (!video || video.readyState < 2) return;
 
-        isScanning = true;
+          isScanning = true;
 
-        try {
-          if (nativeDetector) {
-            const barcodes = await nativeDetector.detect(video);
-            if (barcodes && barcodes.length > 0) {
-              for (const b of barcodes) {
-                if (b.rawValue) {
-                  processQrCode(b.rawValue);
-                  break;
+          try {
+            if (nativeDetector) {
+              const barcodes = await nativeDetector.detect(video);
+              if (barcodes && barcodes.length > 0) {
+                for (const b of barcodes) {
+                  if (b.rawValue) {
+                    processQrCode(b.rawValue);
+                    break;
+                  }
                 }
               }
+            } else if (ctx && canvas) {
+              ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+              const imageData = ctx.getImageData(
+                0,
+                0,
+                canvas.width,
+                canvas.height
+              );
+              const qr = jsQR(imageData.data, canvas.width, canvas.height, {
+                inversionAttempts: "dontInvert",
+              });
+              if (qr && qr.data) {
+                processQrCode(qr.data);
+              }
             }
-          } else if (ctx && canvas) {
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-            const imageData = ctx.getImageData(
-              0,
-              0,
-              canvas.width,
-              canvas.height
-            );
-            const qr = jsQR(imageData.data, canvas.width, canvas.height, {
-              inversionAttempts: "dontInvert",
-            });
-            if (qr && qr.data) {
-              processQrCode(qr.data);
-            }
+          } catch {
+            // Frame decode skip
+          } finally {
+            isScanning = false;
           }
-        } catch {
-          // Frame decode skip
-        } finally {
-          isScanning = false;
-        }
+        })();
       }, 120);
 
       return () => {
@@ -277,38 +323,54 @@ export const QrScannerModal = memo(
     ]);
 
     useEffect(() => {
+      let timer: ReturnType<typeof setTimeout> | null = null;
       if (open && !isManual && !connecting) {
-        void startCamera();
+        // Defer camera initialization by 150ms so modal scale-in animation completes at 60fps
+        timer = setTimeout(() => {
+          void startCamera();
+        }, 150);
       } else {
         stopCamera();
       }
-      return () => stopCamera();
+      return () => {
+        if (timer) clearTimeout(timer);
+        stopCamera();
+      };
     }, [open, isManual, connecting, startCamera, stopCamera]);
-
-    const resetState = () => {
-      stopCamera();
-      setIsManual(defaultManual);
-      setManualAddress("");
-      setConnecting(false);
-      setScannedSuccess(false);
-      setCameraError(null);
-      setScanError(null);
-    };
-
-    const handleClose = () => {
-      resetState();
-      onClose();
-    };
 
     return (
       <Modal
         open={open}
         onClose={handleClose}
-        title="Connect to Vox Host"
+        icon={<ScanLine size={18} className="text-[rgb(var(--accent))] shrink-0" />}
+        headerActions={
+          !isManual && torchSupported && cameraActive && !connecting ? (
+            <Tooltip
+              label={torchOn ? "Turn Off Torch" : "Turn On Torch"}
+              side="bottom"
+            >
+              <button
+                type="button"
+                onClick={() => void toggleTorch()}
+                aria-label="Toggle Flashlight"
+                className="flex items-center justify-center w-8 h-8 rounded-full glass-card text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))]"
+              >
+                {torchOn ? (
+                  <Flashlight size={16} className="text-[rgb(var(--accent))]" />
+                ) : (
+                  <FlashlightOff size={16} />
+                )}
+              </button>
+            </Tooltip>
+          ) : undefined
+        }
+        title="Connect to Desktop Host"
         subtitle={
-          isManual
-            ? "Enter the local IP address and port displayed on your laptop."
-            : "Scan the pairing QR code displayed on your laptop screen."
+          connecting
+            ? "Establishing secure connection with host..."
+            : isManual
+            ? "Enter the IP address and port displayed in your computer's pairing window."
+            : "Align your camera with the pairing QR code shown on your computer screen."
         }
         position="global"
         fitContent
@@ -316,83 +378,75 @@ export const QrScannerModal = memo(
       >
         <div className="flex flex-col p-5 sm:p-6 gap-4">
           {connecting ? (
-            /* Spec §7.1: OrbitalLoader renders purely visually without accompanying text */
-            <div className="h-64 flex items-center justify-center">
+            /* Connecting State */
+            <div className="h-64 flex flex-col items-center justify-center gap-3 animate-fade-in">
               <OrbitalLoader size="lg" />
+              <span className="text-xs font-mono font-medium text-[rgb(var(--foreground))]">
+                Connecting to Desktop Host...
+              </span>
+              <span className="text-[11px] font-mono text-[rgb(var(--foreground-muted))]/70 text-center max-w-xs">
+                Awaiting pairing approval on your computer
+              </span>
             </div>
           ) : isManual ? (
             /* Manual IP Connection View */
             <div className="flex flex-col gap-4 animate-fade-in">
               {cameraError && (
-                <div className="flex items-start gap-2.5 p-3.5 rounded-xl bg-[rgba(var(--warning),0.08)] border border-[rgba(var(--warning),0.25)] text-xs text-[rgb(var(--foreground))]">
+                <div className="flex items-center gap-2.5 p-3 rounded-lg bg-[rgba(var(--warning),0.08)] border border-[rgba(var(--warning),0.25)] text-xs text-[rgb(var(--foreground))]">
                   <ShieldAlert
                     size={16}
-                    className="text-[rgb(var(--warning))] shrink-0 mt-0.5"
+                    className="text-[rgb(var(--warning))] shrink-0"
                   />
-                  <div className="space-y-0.5">
-                    <span className="font-bold text-[rgb(var(--warning))]">
-                      Camera unavailable
-                    </span>
-                    <p className="text-xs text-[rgb(var(--foreground-muted))] leading-relaxed">
-                      {cameraError}
-                    </p>
-                  </div>
+                  <p className="text-xs text-[rgb(var(--foreground-muted))] leading-relaxed">
+                    {cameraError}
+                  </p>
                 </div>
               )}
 
               {scanError && (
-                <div className="flex items-center gap-2.5 p-3 rounded-xl bg-[rgba(var(--error),0.1)] border border-[rgba(var(--error),0.2)] text-[rgb(var(--error))] text-xs font-medium">
+                <div className="flex items-center gap-2.5 p-3 rounded-lg bg-[rgba(var(--error),0.1)] border border-[rgba(var(--error),0.2)] text-[rgb(var(--error))] text-xs font-medium">
                   <AlertCircle size={15} className="shrink-0" />
                   <span>Connection failed: {scanError}</span>
                 </div>
               )}
 
-              <div className="space-y-3">
-                <div className="space-y-1.5">
-                  <label className="text-[11px] uppercase font-mono font-bold tracking-wider text-[rgb(var(--foreground-muted))]">
-                    Host Address (IP : Port)
-                  </label>
-                  <div className="relative flex items-center">
-                    <div className="absolute left-3.5 text-[rgb(var(--foreground-muted))] pointer-events-none">
-                      <Wifi size={15} />
-                    </div>
-                    <input
-                      type="text"
-                      value={manualAddress}
-                      onChange={(e) => setManualAddress(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && manualAddress.trim()) {
-                          void handleConnect(manualAddress.trim());
-                        }
-                      }}
-                      placeholder="192.168.1.42:7700"
-                      className="w-full h-11 pl-10 pr-3.5 rounded-xl bg-[rgba(var(--foreground),0.04)] border border-[rgba(var(--border),0.12)] text-sm font-mono text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40 focus:outline-none focus:border-[rgb(var(--accent))] transition-colors"
-                      autoFocus
-                    />
+              <div className="space-y-1.5">
+                <label className="block text-xs font-semibold text-[rgb(var(--foreground))]">
+                  Desktop Host Address
+                </label>
+                <div className="relative flex items-center">
+                  <div className="absolute left-3 text-[rgb(var(--foreground-muted))] pointer-events-none">
+                    <Wifi size={14} />
                   </div>
+                  <input
+                    type="text"
+                    value={manualAddress}
+                    onChange={(e) => setManualAddress(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && manualAddress.trim()) {
+                        void handleConnect({ address: manualAddress.trim() });
+                      }
+                    }}
+                    placeholder="192.168.1.42:7700"
+                    className="w-full h-10 pl-9 pr-3 rounded-lg bg-[rgba(var(--foreground),0.04)] border border-[rgba(var(--border),0.12)] text-xs font-mono text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40 focus:outline-none focus:border-[rgb(var(--accent))] focus:ring-1 focus:ring-[rgb(var(--accent))] transition-colors"
+                    autoFocus
+                  />
                 </div>
-
-                <div className="p-3.5 rounded-xl bg-[rgba(var(--card),0.6)] border border-[rgba(var(--border),0.07)] space-y-1">
-                  <p className="text-xs font-semibold text-[rgb(var(--foreground))]">
-                    Where do I find this address?
-                  </p>
-                  <p className="text-xs text-[rgb(var(--foreground-muted))] leading-relaxed">
-                    On your laptop, open{" "}
-                    <span className="text-[rgb(var(--foreground))] font-medium">
-                      Settings → Remote Control → Pair Device
-                    </span>
-                    . The LAN host IP and port are shown at the bottom-left of
-                    the pairing window.
-                  </p>
-                </div>
+                <p className="text-[11px] text-[rgb(var(--foreground-muted))] pt-0.5">
+                  Shown under the QR code in{" "}
+                  <span className="text-[rgb(var(--foreground))] font-medium">
+                    Settings → Remote Control
+                  </span>{" "}
+                  on desktop.
+                </p>
               </div>
 
-              <div className="flex flex-col gap-2.5 pt-1">
+              <div className="flex flex-col gap-2 pt-2">
                 <button
                   type="button"
                   disabled={!manualAddress.trim()}
-                  onClick={() => void handleConnect(manualAddress.trim())}
-                  className="w-full h-10 inline-flex items-center justify-center gap-2 rounded-xl bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] text-xs font-bold hover:opacity-90 disabled:opacity-40 transition-opacity cursor-pointer shadow-sm"
+                  onClick={() => void handleConnect({ address: manualAddress.trim() })}
+                  className="w-full h-10 inline-flex items-center justify-center gap-2 rounded-lg bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] text-xs font-bold hover:opacity-90 disabled:opacity-40 transition-opacity cursor-pointer shadow-sm"
                 >
                   Connect to Host
                   <ArrowRight size={14} strokeWidth={2.5} />
@@ -405,10 +459,10 @@ export const QrScannerModal = memo(
                       setIsManual(false);
                       setScanError(null);
                     }}
-                    className="w-full h-10 inline-flex items-center justify-center gap-2 rounded-xl border border-[rgba(var(--border),0.08)] bg-[rgba(var(--card),0.5)] hover:bg-[rgba(var(--card),0.9)] text-xs font-semibold text-[rgb(var(--foreground))] transition-colors cursor-pointer"
+                    className="w-full h-9 inline-flex items-center justify-center gap-2 rounded-lg border border-[rgba(var(--border),0.08)] bg-[rgba(var(--foreground),0.03)] hover:bg-[rgba(var(--foreground),0.06)] text-xs font-semibold text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors cursor-pointer"
                   >
-                    <Camera size={14} className="text-[rgb(var(--accent))]" />
-                    Switch to QR Camera Scanner
+                    <Camera size={14} />
+                    Switch to QR Scanner
                   </button>
                 )}
               </div>
@@ -417,7 +471,7 @@ export const QrScannerModal = memo(
             /* Native Low-Latency Camera Scanner View */
             <div className="flex flex-col gap-4 animate-fade-in">
               {/* Viewfinder Frame */}
-              <div className="relative w-full aspect-square max-w-[288px] mx-auto rounded-2xl overflow-hidden bg-black shadow-lg border border-[rgba(var(--border),0.12)] flex items-center justify-center">
+              <div className="relative w-full aspect-square max-w-[288px] mx-auto rounded-xl overflow-hidden bg-black shadow-lg border border-[rgba(var(--border),0.12)] flex items-center justify-center">
                 <video
                   ref={videoRef}
                   playsInline
@@ -435,7 +489,7 @@ export const QrScannerModal = memo(
                   )}
                 />
 
-                {/* Spec §7.1: OrbitalLoader only (no text) while camera initializes */}
+                {/* OrbitalLoader while camera initializes */}
                 {cameraLoading && (
                   <div className="absolute inset-0 flex items-center justify-center bg-black/95 z-10 p-4">
                     <OrbitalLoader size="md" />
@@ -458,7 +512,7 @@ export const QrScannerModal = memo(
                     <button
                       type="button"
                       onClick={() => setIsManual(true)}
-                      className="mt-1 px-4 py-2 rounded-xl bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] text-xs font-bold cursor-pointer"
+                      className="mt-1 px-4 py-2 rounded-lg bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] text-xs font-bold cursor-pointer"
                     >
                       Enter IP Manually
                     </button>
@@ -475,47 +529,23 @@ export const QrScannerModal = memo(
 
                 {/* Cybernetic Corner Reticle & Smooth 60fps Bidirectional Laser */}
                 {!cameraError && (
-                  <div className="absolute inset-6 pointer-events-none z-10 overflow-hidden rounded-xl">
+                  <div className="absolute inset-6 pointer-events-none z-10 overflow-hidden rounded-lg">
                     {/* Top-Left Corner */}
-                    <div className="absolute top-0 left-0 w-7 h-7 border-t-2 border-l-2 border-[rgb(var(--accent))] rounded-tl-xl" />
+                    <div className="absolute top-0 left-0 w-7 h-7 border-t-2 border-l-2 border-[rgb(var(--accent))] rounded-tl-lg" />
                     {/* Top-Right Corner */}
-                    <div className="absolute top-0 right-0 w-7 h-7 border-t-2 border-r-2 border-[rgb(var(--accent))] rounded-tr-xl" />
+                    <div className="absolute top-0 right-0 w-7 h-7 border-t-2 border-r-2 border-[rgb(var(--accent))] rounded-tr-lg" />
                     {/* Bottom-Left Corner */}
-                    <div className="absolute bottom-0 left-0 w-7 h-7 border-b-2 border-l-2 border-[rgb(var(--accent))] rounded-bl-xl" />
+                    <div className="absolute bottom-0 left-0 w-7 h-7 border-b-2 border-l-2 border-[rgb(var(--accent))] rounded-bl-lg" />
                     {/* Bottom-Right Corner */}
-                    <div className="absolute bottom-0 right-0 w-7 h-7 border-b-2 border-r-2 border-[rgb(var(--accent))] rounded-br-xl" />
+                    <div className="absolute bottom-0 right-0 w-7 h-7 border-b-2 border-r-2 border-[rgb(var(--accent))] rounded-br-lg" />
 
-                    {/* GPU-Composited Up-and-Down Sweeping Laser Line */}
-                    {!scannedSuccess && cameraActive && (
+                    {/* Sweeping Laser Line */}
+                    {!scannedSuccess && cameraActive && !scanError && (
                       <div className="efb-scan-laser-track">
                         <div className="efb-scan-laser-beam" />
                       </div>
                     )}
                   </div>
-                )}
-
-                {/* Torch / Flashlight Toggle */}
-                {torchSupported && cameraActive && (
-                  <Tooltip
-                    label={torchOn ? "Turn Off Torch" : "Turn On Torch"}
-                    side="left"
-                  >
-                    <button
-                      type="button"
-                      onClick={() => void toggleTorch()}
-                      aria-label="Toggle Flashlight"
-                      className="absolute top-3 right-3 w-9 h-9 rounded-xl bg-black/65 border border-white/15 text-white z-20 flex items-center justify-center hover:bg-black/85 transition-colors cursor-pointer"
-                    >
-                      {torchOn ? (
-                        <Flashlight
-                          size={16}
-                          className="text-[rgb(var(--accent))]"
-                        />
-                      ) : (
-                        <FlashlightOff size={16} className="text-white/75" />
-                      )}
-                    </button>
-                  </Tooltip>
                 )}
 
                 {/* Scanned Success Feedback */}
@@ -526,56 +556,47 @@ export const QrScannerModal = memo(
                       className="text-[rgb(var(--success))]"
                     />
                     <span className="text-xs font-bold text-white tracking-wide">
-                      Host QR Detected
+                      {linkState === "Connected" ? "Connected!" : "Host QR Detected"}
                     </span>
                   </div>
                 )}
               </div>
 
               {scanError && (
-                <div className="flex items-center gap-2 p-3 rounded-xl bg-[rgba(var(--error),0.1)] border border-[rgba(var(--error),0.2)] text-[rgb(var(--error))] text-xs font-medium">
-                  <AlertCircle size={14} className="shrink-0" />
-                  <span>{scanError}</span>
+                <div className="flex flex-col gap-2 p-3 rounded-lg bg-[rgba(var(--error),0.1)] border border-[rgba(var(--error),0.2)] text-[rgb(var(--error))] text-xs font-medium">
+                  <div className="flex items-center gap-2">
+                    <AlertCircle size={14} className="shrink-0" />
+                    <span>{scanError}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setScanError(null);
+                      setScannedSuccess(false);
+                      void startCamera();
+                    }}
+                    className="self-end px-2.5 py-1 rounded bg-[rgba(var(--error),0.2)] hover:bg-[rgba(var(--error),0.3)] text-[rgb(var(--foreground))] text-[11px] font-mono cursor-pointer transition-colors"
+                  >
+                    Retry Scan
+                  </button>
                 </div>
               )}
 
               {/* Bottom Guidance & Action Controls */}
-              <div className="rounded-2xl p-4 bg-[rgba(var(--card),0.6)] border border-[rgba(var(--border),0.08)] flex flex-col gap-3.5">
-                {/* Live Status & Simple 2-Line Onboarding Copy */}
-                <div className="flex items-start gap-3">
-                  <div className="w-8 h-8 rounded-xl bg-[rgba(var(--accent),0.1)] border border-[rgba(var(--accent),0.2)] flex items-center justify-center text-[rgb(var(--accent))] shrink-0 mt-0.5">
-                    <Laptop size={15} />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-xs font-bold text-[rgb(var(--foreground))]">
-                        Scan desktop pairing code
-                      </span>
-                      <span className="inline-flex items-center gap-1.5 text-[11px] font-mono text-[rgb(var(--accent))]">
-                        <span className="h-1.5 w-1.5 rounded-full bg-[rgb(var(--accent))] animate-pulse" />
-                        Ready
-                      </span>
-                    </div>
-                    <p className="text-xs text-[rgb(var(--foreground-muted))] mt-1 leading-relaxed">
-                      Open{" "}
-                      <span className="text-[rgb(var(--foreground))] font-medium">
-                        Settings → Remote Control
-                      </span>{" "}
-                      on your laptop and tap{" "}
-                      <span className="text-[rgb(var(--foreground))] font-medium">
-                        Pair Device
-                      </span>{" "}
-                      to display the QR code.
-                    </p>
-                  </div>
-                </div>
+              <div className="flex flex-col gap-3 pt-1">
+                <p className="text-xs text-center text-[rgb(var(--foreground-muted))] leading-relaxed max-w-xs mx-auto">
+                  Aim your camera at the QR code shown on desktop under{" "}
+                  <span className="text-[rgb(var(--foreground))] font-medium">
+                    Settings → Remote Control
+                  </span>
+                  .
+                </p>
 
-                {/* Tactile Action Bar */}
-                <div className="flex items-center gap-2.5 pt-1">
+                <div className="flex items-center gap-2">
                   <button
                     type="button"
                     onClick={() => setIsManual(true)}
-                    className="flex-1 h-10 inline-flex items-center justify-center gap-2 px-4 rounded-xl bg-[rgba(var(--foreground),0.06)] hover:bg-[rgba(var(--foreground),0.1)] border border-[rgba(var(--border),0.08)] text-xs font-semibold text-[rgb(var(--foreground))] transition-colors cursor-pointer"
+                    className="flex-1 h-10 inline-flex items-center justify-center gap-2 px-4 rounded-lg bg-[rgba(var(--foreground),0.05)] hover:bg-[rgba(var(--foreground),0.09)] border border-[rgba(var(--border),0.08)] text-xs font-semibold text-[rgb(var(--foreground))] transition-colors cursor-pointer"
                   >
                     <Wifi
                       size={14}
@@ -587,12 +608,15 @@ export const QrScannerModal = memo(
                   <Tooltip label="Reset Camera" side="top">
                     <button
                       type="button"
-                      onClick={() => void startCamera()}
+                      onClick={() => {
+                        setScanError(null);
+                        setScannedSuccess(false);
+                        void startCamera();
+                      }}
                       aria-label="Restart Camera"
-                      className="h-10 px-3.5 inline-flex items-center justify-center gap-1.5 rounded-xl bg-[rgba(var(--foreground),0.06)] hover:bg-[rgba(var(--foreground),0.1)] border border-[rgba(var(--border),0.08)] text-xs font-semibold text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors cursor-pointer shrink-0"
+                      className="h-10 w-10 inline-flex items-center justify-center rounded-lg bg-[rgba(var(--foreground),0.05)] hover:bg-[rgba(var(--foreground),0.09)] border border-[rgba(var(--border),0.08)] text-xs font-semibold text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors cursor-pointer shrink-0"
                     >
                       <RotateCcw size={14} />
-                      <span>Reset</span>
                     </button>
                   </Tooltip>
                 </div>

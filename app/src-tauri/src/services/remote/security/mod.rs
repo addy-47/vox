@@ -39,8 +39,9 @@ pub use noise::{
     NOISE_MAX_HANDSHAKE_MESSAGE_BYTES, NOISE_MAX_HANDSHAKE_PAYLOAD_BYTES, NOISE_PATTERN,
 };
 pub use pairing::{
-    get_local_lan_ip, mint_pairing_qr_svg, verify_claimed_identity, PairingCoordinator,
-    PairingDecision, PairingOutcome, PairingPrompt, PairingRequest, PairingToken, PairingTokenStore,
+    get_local_lan_ip, mint_pairing_invitation, mint_pairing_qr_svg, verify_claimed_identity,
+    PairingCoordinator, PairingDecision, PairingOutcome, PairingPrompt, PairingRequest,
+    PairingToken, PairingTokenStore,
 };
 pub use trust::{TrustDecision, TrustRefusal, TrustStore};
 

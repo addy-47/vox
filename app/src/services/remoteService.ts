@@ -57,7 +57,15 @@ export function disconnectDevice(deviceId: string): Promise<void> {
   return invoke<void>("disconnect_device", { deviceId });
 }
 
-export function connectHost(params: { deviceId?: string; address?: string }): Promise<void> {
+export interface ConnectHostParams {
+  deviceId?: string;
+  address?: string;
+  token?: string;
+  publicKey?: string;
+  [key: string]: unknown;
+}
+
+export function connectHost(params: ConnectHostParams): Promise<void> {
   return invoke<void>("connect_host", params);
 }
 

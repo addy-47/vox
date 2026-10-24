@@ -7,6 +7,7 @@ import {
   type PairedDeviceDto,
   type RemotePairingRequestedPayload,
   type CommandClass,
+  type ConnectHostParams,
   pairNewDevice as apiPairNewDevice,
   approvePairing as apiApprovePairing,
   listPairedDevices as apiListPairedDevices,
@@ -41,7 +42,7 @@ export interface RemoteStoreState {
   listPairedDevices: () => Promise<PairedDeviceDto[]>;
   revokeDevice: (deviceId: string) => Promise<void>;
   disconnectDevice: (deviceId: string) => Promise<void>;
-  connectHost: (params: { deviceId?: string; address?: string }) => Promise<void>;
+  connectHost: (params: ConnectHostParams) => Promise<void>;
   disconnectHost: () => Promise<void>;
 }
 
@@ -163,7 +164,7 @@ export const useRemoteStore = create<RemoteStoreState>((set, get) => ({
     await apiDisconnectDevice(deviceId);
   },
 
-  connectHost: async (params: { deviceId?: string; address?: string }) => {
+  connectHost: async (params: ConnectHostParams) => {
     await apiConnectHost(params);
   },
 

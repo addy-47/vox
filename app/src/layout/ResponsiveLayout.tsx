@@ -24,6 +24,7 @@ import { useSessionStore } from "@/store/sessionStore";
 import { useRemoteStore } from "@/store/remoteStore";
 import { getStackSize } from "@/shared/lib/overlayStack";
 import { isCompactWidth, isRealMobileDevice } from "./breakpoints";
+import { stageTop } from "./stageMetrics";
 import { isCoarsePointer } from "@/lib/capabilities";
 import { RouteNavigationProvider } from "./RouteNavigationContext";
 
@@ -703,12 +704,17 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
             <div
               role="status"
               aria-label={LAYOUT_COPY.nav.loadingPage}
-              className={`absolute inset-0 z-50 flex items-center justify-center transition-opacity duration-150 ease-out ${
+              className={`absolute inset-0 z-50 transition-opacity duration-150 ease-out ${
                 pendingNavigation.phase === "revealing" ? "pointer-events-none opacity-0" : "opacity-100"
               }`}
               style={{ backgroundColor: "rgb(var(--background))" }}
             >
-              <OrbitalLoader size="md" />
+              <div
+                className="absolute left-1/2 flex items-center justify-center"
+                style={{ top: stageTop(isMobile, 0), transform: "translate(-50%, -50%)" }}
+              >
+                <OrbitalLoader size="md" />
+              </div>
             </div>
           )}
         </main>

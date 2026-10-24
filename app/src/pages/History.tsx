@@ -24,6 +24,8 @@ import { useRegisterPageDrawer } from "@/shared/context/PageDrawerContext";
 import { usePanelStateContext } from "@/shared/context/PanelStateContext";
 import { useProfilerDrawer } from "@/shared/components/profiler/ProfilerDrawer";
 import { getThemeTransitioning, subscribeThemeTransition } from "@/shared/theme";
+import { isRealMobileDevice } from "@/layout/breakpoints";
+import { stageTop } from "@/layout/stageMetrics";
 
 export const History: React.FC = () => {
   const navigate = useNavigate();
@@ -308,8 +310,15 @@ export const History: React.FC = () => {
 
       {/* ── Main Canvas Stage: Direct on Ambient Field (Mounted underneath loader for instant warm render) ── */}
       {error ? (
-        <div className="absolute inset-0 flex items-center justify-center p-8 z-20">
-          <div className="max-w-sm w-full glass-card p-6 rounded-2xl flex flex-col items-center text-center gap-4 border border-[rgba(var(--error),0.2)]">
+        <div className="absolute inset-0 z-20 pointer-events-none">
+          <div
+            className="absolute left-1/2 max-w-sm w-full glass-card p-6 rounded-2xl flex flex-col items-center text-center gap-4 border border-[rgba(var(--error),0.2)]"
+            style={{
+              top: stageTop(isRealMobileDevice(), 36),
+              transform: "translate(-50%, -50%)",
+              padding: "2rem",
+            }}
+          >
             <div className="w-10 h-10 rounded-full bg-[rgb(var(--error))]/10 flex items-center justify-center text-[rgb(var(--error))]">
               <AlertCircle size={20} />
             </div>
@@ -331,13 +340,22 @@ export const History: React.FC = () => {
           </div>
         </div>
       ) : sessions.length === 0 && !showLoading ? (
-        <div className="absolute inset-0 flex items-center justify-center p-8 z-20">
-          <EmptyState
-            icon={Ghost}
-            title={HISTORY_COPY.noMemoriesTitle}
-            description={HISTORY_COPY.noMemoriesDesc}
-            className="max-w-sm border-0 bg-transparent"
-          />
+        <div className="absolute inset-0 z-20 pointer-events-none">
+          <div
+            className="absolute left-1/2 flex items-center justify-center pointer-events-none"
+            style={{
+              top: stageTop(isRealMobileDevice(), 36),
+              transform: "translate(-50%, -50%)",
+              padding: "2rem",
+            }}
+          >
+            <EmptyState
+              icon={Ghost}
+              title={HISTORY_COPY.noMemoriesTitle}
+              description={HISTORY_COPY.noMemoriesDesc}
+              className="max-w-sm border-0 bg-transparent"
+            />
+          </div>
         </div>
       ) : (
         /* Interactive Orbit/Stage Content */
@@ -508,7 +526,7 @@ export const History: React.FC = () => {
           <div
             className="absolute left-1/2 flex items-center justify-center pointer-events-none"
             style={{
-              top: "calc(50% - 36px)",
+              top: stageTop(isRealMobileDevice(), 36),
               transform: "translate(-50%, -50%)",
             }}
           >

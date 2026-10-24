@@ -16,7 +16,6 @@ use std::{
     time::{Duration, Instant},
 };
 
-use common::remote_noise::peer_pair;
 use tempfile::tempdir;
 use vox_lib::{
     persistence::{
@@ -32,14 +31,13 @@ use vox_lib::{
             guard::{is_command_permitted, is_desktop_command_permitted, ControlOrigin},
             routing::{get_routing_table, CommandClass},
         },
-        link::{bind, dial, LinkCloseReason, LoopbackLink, RemoteLink},
+        link::{bind, LinkCloseReason, LoopbackLink, RemoteLink},
         protocol::{
             framing::StreamFormat,
-            messages::{ControlMessage, LinkLossReason, SenderIdentity},
+            messages::{ControlMessage, LinkLossReason, PairDenied, SenderIdentity},
         },
         security::{
-            derive_device_id, mint_pairing_qr_svg, PairingCoordinator, PairingOutcome,
-            PairingRequest,
+            derive_device_id, DeviceKey, PairingCoordinator, PairingOutcome, PairingRequest,
         },
         session::{RemoteLinkState, RemoteSessionManager, SessionRole},
     },
@@ -82,19 +80,25 @@ async fn open_migrated_db(dir: &std::path::Path, file_name: &str) -> (VoxDb, tur
 // Subtests
 // ============================================================================
 
-/// PURPOSE:  A full pairing, Noise_XX handshake, and Hello negotiation must reach Connected link state over loopback.
-/// SCENARIO: Host binds loopback TCP WsListener, issues single-use pairing token; Controller dials, submits PairRequest, completes Noise handshake and user approval, exchanges Hello, and attaches link.
-/// ASSERTS:  Host verifies identity binding, user approval yields Approved outcome, Hello completes, and Host state is RemoteLinkState::Connected with matching peer identity.
+/// PURPOSE:  A full controller-initiated pairing via dial_and_connect must reach Connected state and persist peers in Turso DB on both sides.
+/// SCENARIO: Controller calls dial_and_connect with valid pairing token and host public key over loopback; Host accepts, validates request through PairingCoordinator, approves, and completes Hello negotiation.
+/// ASSERTS:  Both Controller and Host reach RemoteLinkState::Connected, and each peer is inserted into their respective Turso DB paired_devices table.
 /// CLASS:    happy-path
 /// REQUIRES: none
-/// MUTANT:   Skip state transition to Connected upon attaching link in RemoteSessionManager::attach_link.
+/// MUTANT:   Remove insert_paired_device call in dial_and_connect for host persistence.
 #[tokio::test]
-async fn remote_connection_loopback_e2e_full_flow() {
-    let (controller_key, host_key) = peer_pair();
-    let host_id = derive_device_id(host_key.public_key());
-    let controller_id = derive_device_id(controller_key.public_key());
+async fn remote_connection_pairing_handshake_approved_reaches_connected() {
+    let dir = tempdir().expect("tempdir");
+    vox_lib::utils::paths::init_with_root(dir.path().to_path_buf());
 
-    // 1. Host binds physical loopback listener
+    let (_host_db, host_conn) = open_migrated_db(dir.path(), "host_pair.db").await;
+    let (controller_db, controller_conn) = open_migrated_db(dir.path(), "controller_pair.db").await;
+
+    // 1. Host key and loopback listener
+    let host_key = DeviceKey::generate().expect("generate host key");
+    let host_id = derive_device_id(host_key.public_key());
+    let host_pk_hex = hex::encode(host_key.public_key());
+
     let listener = within_ok(
         "bind listener",
         bind("127.0.0.1:0".parse().expect("valid loopback")),
@@ -102,147 +106,282 @@ async fn remote_connection_loopback_e2e_full_flow() {
     .await;
     let addr = listener.local_addr().expect("listener address");
 
-    // 2. Host issues ephemeral pairing token & mints QR SVG
+    // 2. Host issues pairing token
     let coordinator = PairingCoordinator::new();
     let now = Instant::now();
     let token = coordinator.issue_token(now).expect("issue token");
 
-    let (payload_json, qr_svg_data_url) = mint_pairing_qr_svg(
-        &host_id,
-        host_key.public_key(),
-        "127.0.0.1",
-        addr.port(),
-        &token,
-    )
-    .expect("mint pairing qr");
+    // 3. Controller initiates dial_and_connect in background task
+    let controller_manager = Arc::new(RemoteSessionManager::new(SessionRole::Controller));
+    let cm = Arc::clone(&controller_manager);
+    let c_db = Arc::new(controller_db);
+    let target = format!("127.0.0.1:{}", addr.port());
+    let h_id = host_id.as_str().to_string();
+    let tok_str = token.to_hex();
+    let hpk_str = host_pk_hex.clone();
 
-    assert!(payload_json.contains(host_id.as_str()));
-    assert!(qr_svg_data_url.starts_with("data:image/svg+xml;base64,"));
-
-    // 3. Connect listener and dialer
-    let server_task = tokio::spawn(async move { listener.accept().await });
-    let client_link = within_ok(
-        "dial host",
-        dial(&format!("ws://{addr}")),
-    )
-    .await;
-    let server_link = server_task
-        .await
-        .expect("server accept task join")
-        .expect("server accept");
-
-    // 4. Controller submits pre-Noise PairRequest claim over physical control channel
-    let pair_request_msg = ControlMessage::PairRequest(vox_lib::services::remote::protocol::messages::PairRequest {
-        token: token.to_hex(),
-        device_id: controller_id.as_str().to_string(),
-        public_key: hex::encode(controller_key.public_key()),
-        display_name: "Pixel 9 Pro".to_string(),
+    let dial_task = tokio::spawn(async move {
+        cm.dial_and_connect(c_db, target, Some(h_id), Some(tok_str), Some(hpk_str))
+            .await
     });
-    within_ok("send pair request", client_link.send_control(pair_request_msg)).await;
 
-    let received_preauth = within_ok("recv pair request", server_link.recv_control()).await;
-    let claimed_req = match received_preauth {
+    // 4. Host accepts connection
+    let host_ws_link = within_ok("accept connection", listener.accept()).await;
+
+    // 5. Host receives PairRequest
+    let initial_msg = within_ok("recv pair request", host_ws_link.recv_control()).await;
+    let claimed_req = match initial_msg {
         ControlMessage::PairRequest(req) => req,
         other => panic!("Expected PairRequest, received {other:?}"),
     };
 
-    // 5. Host validates claim against completed Noise handshake and obtains user approval
+    let pubkey_bytes = hex::decode(&claimed_req.public_key).expect("decode controller pubkey");
     let pairing_req = PairingRequest::from_wire(
         &claimed_req.token,
         &claimed_req.device_id,
         &claimed_req.public_key,
         &claimed_req.display_name,
     )
-    .expect("valid wire request");
+    .expect("valid wire pairing request");
 
-    let pending_pairing = coordinator
+    let pending = coordinator
         .begin(
             pairing_req,
-            controller_key.public_key(),
+            &pubkey_bytes,
             "127.0.0.1".parse().expect("valid ip"),
             Instant::now(),
         )
-        .expect("coordinator begin");
+        .expect("begin pairing");
 
-    let prompt = pending_pairing.prompt();
-    let approved = prompt.approve();
-    assert!(approved);
+    let prompt = pending.prompt();
+    assert!(prompt.approve());
+    let outcome = pending.settle().await;
+    assert!(matches!(outcome, PairingOutcome::Approved { .. }));
 
-    let outcome = pending_pairing.settle().await;
-    assert!(matches!(
-        outcome,
-        PairingOutcome::Approved { ref peer } if *peer.device_id() == controller_id
-    ));
+    // 6. Host inserts controller into its DB
+    insert_paired_device(
+        &host_conn,
+        &NewPairedDevice {
+            device_id: claimed_req.device_id.clone(),
+            public_key: pubkey_bytes,
+            display_name: claimed_req.display_name.clone(),
+            role: PairedDeviceRole::Controller,
+            trust_level: "full".to_string(),
+            hints: vec![],
+        },
+    )
+    .await
+    .expect("insert controller in host db");
 
-    // 6. Complete Hello negotiation
+    // 7. Host sends PairApproved
+    within_ok(
+        "send PairApproved",
+        host_ws_link.send_control(ControlMessage::PairApproved),
+    )
+    .await;
+
+    // 8. Host completes Hello exchange
     let host_manager = Arc::new(RemoteSessionManager::new(SessionRole::Host));
-    let controller_manager = Arc::new(RemoteSessionManager::new(SessionRole::Controller));
-
     let host_identity = SenderIdentity {
         device_id: host_id.as_str().to_string(),
-        display_name: "Vox Host Laptop".to_string(),
-    };
-    let controller_identity = SenderIdentity {
-        device_id: controller_id.as_str().to_string(),
-        display_name: "Pixel 9 Pro".to_string(),
+        display_name: "Vox Host".to_string(),
     };
 
-    let server_link_arc = Arc::new(server_link);
-    let client_link_arc = Arc::new(client_link);
-
-    let h_link = Arc::clone(&server_link_arc);
-    let c_link = Arc::clone(&client_link_arc);
-    let hm = Arc::clone(&host_manager);
-    let cm = Arc::clone(&controller_manager);
-
-    let host_hello_task = tokio::spawn(async move {
-        hm.exchange_hello(
-            &*h_link,
+    let peer_hello = within_ok(
+        "exchange hello",
+        host_manager.exchange_hello(
+            &host_ws_link,
             host_identity,
-            StreamFormat::UPLINK,
             StreamFormat::DOWNLINK,
-        )
-        .await
-    });
-
-    let controller_hello_task = tokio::spawn(async move {
-        cm.exchange_hello(
-            &*c_link,
-            controller_identity,
             StreamFormat::UPLINK,
-            StreamFormat::DOWNLINK,
-        )
-        .await
-    });
+        ),
+    )
+    .await;
 
-    let (host_hello_res, controller_hello_res) =
-        tokio::try_join!(host_hello_task, controller_hello_task).expect("hello join");
-
-    let peer_hello_for_host = host_hello_res.expect("host exchange hello");
-    let peer_hello_for_controller = controller_hello_res.expect("controller exchange hello");
-
-    assert_eq!(
-        peer_hello_for_host.sender_identity.device_id,
-        controller_id.as_str()
-    );
-    assert_eq!(
-        peer_hello_for_controller.sender_identity.device_id,
-        host_id.as_str()
-    );
-
-    // 7. Attach link to host session manager
     host_manager
-        .attach_link(server_link_arc, peer_hello_for_host.sender_identity)
+        .attach_link(Arc::new(host_ws_link), peer_hello.sender_identity)
         .await;
 
+    // 9. Controller dial_task finishes successfully
+    within_ok("dial task result", dial_task)
+        .await
+        .expect("dial_and_connect succeeded");
+
+    // 10. Assertions
+    assert_eq!(controller_manager.state(), RemoteLinkState::Connected);
     assert_eq!(host_manager.state(), RemoteLinkState::Connected);
-    assert_eq!(
-        host_manager
-            .peer_identity()
-            .expect("attached peer")
-            .device_id,
-        controller_id.as_str()
+
+    // Assert controller persisted host in Turso DB
+    let stored_host = get_paired_device(&controller_conn, host_id.as_str())
+        .await
+        .expect("query host in controller db");
+    assert!(
+        stored_host.is_some(),
+        "Host MUST be saved in controller's paired_devices"
     );
+    assert_eq!(stored_host.unwrap().display_name, "Vox Host");
+
+    // Assert host persisted controller in Turso DB
+    let stored_controller = get_paired_device(&host_conn, &claimed_req.device_id)
+        .await
+        .expect("query controller in host db");
+    assert!(
+        stored_controller.is_some(),
+        "Controller MUST be saved in host's paired_devices"
+    );
+}
+
+/// PURPOSE:  A controller pairing request denied by the host must transition the controller state to Failed.
+/// SCENARIO: Controller calls dial_and_connect with token; Host responds with PairDenied; Controller receives rejection and terminates link.
+/// ASSERTS:  dial_and_connect returns Err, and controller_manager transitions to RemoteLinkState::Failed containing "Pairing denied by host".
+/// CLASS:    error-path
+/// REQUIRES: none
+/// MUTANT:   Ignore PairDenied and leave state in Connecting in dial_and_connect.
+#[tokio::test]
+async fn remote_connection_pairing_denial_transitions_to_failed() {
+    let dir = tempdir().expect("tempdir");
+    vox_lib::utils::paths::init_with_root(dir.path().to_path_buf());
+
+    let (controller_db, controller_conn) =
+        open_migrated_db(dir.path(), "controller_denial.db").await;
+
+    let host_key = DeviceKey::generate().expect("generate host key");
+    let host_id = derive_device_id(host_key.public_key());
+    let host_pk_hex = hex::encode(host_key.public_key());
+
+    let listener = within_ok(
+        "bind listener",
+        bind("127.0.0.1:0".parse().expect("valid loopback")),
+    )
+    .await;
+    let addr = listener.local_addr().expect("listener address");
+
+    let controller_manager = Arc::new(RemoteSessionManager::new(SessionRole::Controller));
+    let cm = Arc::clone(&controller_manager);
+    let c_db = Arc::new(controller_db);
+    let target = format!("127.0.0.1:{}", addr.port());
+    let h_id = host_id.as_str().to_string();
+    let hpk_str = host_pk_hex.clone();
+
+    let dial_task = tokio::spawn(async move {
+        cm.dial_and_connect(
+            c_db,
+            target,
+            Some(h_id),
+            Some("dummy_token_abc".to_string()),
+            Some(hpk_str),
+        )
+        .await
+    });
+
+    let host_ws_link = within_ok("accept connection", listener.accept()).await;
+    let initial_msg = within_ok("recv pair request", host_ws_link.recv_control()).await;
+    assert!(matches!(initial_msg, ControlMessage::PairRequest(_)));
+
+    // Host explicitly denies the pairing request
+    within_ok(
+        "send PairDenied",
+        host_ws_link.send_control(ControlMessage::PairDenied(PairDenied {
+            reason: "User denied pairing".to_string(),
+        })),
+    )
+    .await;
+
+    // Controller dial task completes with an Err
+    let dial_res = dial_task.await.expect("join dial task");
+    assert!(
+        dial_res.is_err(),
+        "dial_and_connect MUST return Err when pairing is denied"
+    );
+
+    // Assert controller transitioned to Failed state with denial reason
+    match controller_manager.state() {
+        RemoteLinkState::Failed(msg) => {
+            assert!(
+                msg.contains("Pairing denied by host: User denied pairing"),
+                "Expected failure message containing denial reason, got: {msg}"
+            );
+        }
+        other => panic!("Expected RemoteLinkState::Failed, got {other:?}"),
+    }
+
+    // Assert host was NOT saved in controller DB
+    let stored = get_paired_device(&controller_conn, host_id.as_str())
+        .await
+        .expect("query host in controller db");
+    assert!(
+        stored.is_none(),
+        "Host MUST NOT be saved in DB when pairing was denied"
+    );
+}
+
+/// PURPOSE:  A controller awaiting host pairing approval must time out and transition to Failed if host does not respond.
+/// SCENARIO: Controller dials and sends PairRequest; Host does not answer; 35-second approval timeout expires via virtual time advance.
+/// ASSERTS:  dial_and_connect returns Err, and controller_manager transitions to RemoteLinkState::Failed with timeout message.
+/// CLASS:    error-path
+/// REQUIRES: none
+/// MUTANT:   Remove timeout wrapping recv_control in dial_and_connect, hanging indefinitely.
+#[tokio::test]
+async fn remote_connection_pairing_timeout_transitions_to_failed() {
+    let dir = tempdir().expect("tempdir");
+    vox_lib::utils::paths::init_with_root(dir.path().to_path_buf());
+
+    let (controller_db, _controller_conn) =
+        open_migrated_db(dir.path(), "controller_timeout.db").await;
+
+    let host_key = DeviceKey::generate().expect("generate host key");
+    let host_id = derive_device_id(host_key.public_key());
+    let host_pk_hex = hex::encode(host_key.public_key());
+
+    let listener = within_ok(
+        "bind listener",
+        bind("127.0.0.1:0".parse().expect("valid loopback")),
+    )
+    .await;
+    let addr = listener.local_addr().expect("listener address");
+
+    tokio::time::pause();
+
+    let controller_manager = Arc::new(RemoteSessionManager::new(SessionRole::Controller));
+    let cm = Arc::clone(&controller_manager);
+    let c_db = Arc::new(controller_db);
+    let target = format!("127.0.0.1:{}", addr.port());
+    let h_id = host_id.as_str().to_string();
+    let hpk_str = host_pk_hex.clone();
+
+    let dial_task = tokio::spawn(async move {
+        cm.dial_and_connect(
+            c_db,
+            target,
+            Some(h_id),
+            Some("timeout_token".to_string()),
+            Some(hpk_str),
+        )
+        .await
+    });
+
+    let host_ws_link = within_ok("accept connection", listener.accept()).await;
+    let initial_msg = within_ok("recv pair request", host_ws_link.recv_control()).await;
+    assert!(matches!(initial_msg, ControlMessage::PairRequest(_)));
+
+    // Host does NOT reply. Advance virtual time past 35s timeout.
+    tokio::time::advance(Duration::from_secs(36)).await;
+
+    let dial_res = dial_task.await.expect("join dial task");
+    assert!(
+        dial_res.is_err(),
+        "dial_and_connect MUST return Err upon timeout"
+    );
+
+    match controller_manager.state() {
+        RemoteLinkState::Failed(msg) => {
+            assert!(
+                msg.contains("timed out"),
+                "Expected failure message containing timeout, got: {msg}"
+            );
+        }
+        other => panic!("Expected RemoteLinkState::Failed, got {other:?}"),
+    }
 }
 
 /// PURPOSE:  Host must detect missed pongs during link inactivity and transition state to Disconnected.
@@ -366,7 +505,10 @@ fn remote_connection_rule_rc_guard_blocks_desktop_mutating_writes() {
     let routing = get_routing_table();
     assert_eq!(routing.get("start_session"), Some(&CommandClass::Remote));
     assert_eq!(routing.get("appearance.theme"), Some(&CommandClass::Local));
-    assert_eq!(routing.get("interaction.pipeline_mode"), Some(&CommandClass::Remote));
+    assert_eq!(
+        routing.get("interaction.pipeline_mode"),
+        Some(&CommandClass::Remote)
+    );
     assert_eq!(routing.get("get_settings"), Some(&CommandClass::Split));
 }
 
@@ -391,7 +533,11 @@ async fn remote_connection_host_disconnect_keeps_pairing() {
         hints: vec![],
     };
 
-    let inserted = within_ok("insert paired device", insert_paired_device(&conn, &new_device)).await;
+    let inserted = within_ok(
+        "insert paired device",
+        insert_paired_device(&conn, &new_device),
+    )
+    .await;
     assert_eq!(inserted.device_id, device_id);
 
     // Host establishes active connection
@@ -418,12 +564,11 @@ async fn remote_connection_host_disconnect_keeps_pairing() {
     assert_eq!(host_manager.peer_identity(), None);
 
     // Verify pairing survives in Turso DB
-    let stored = within_ok(
-        "query paired device",
-        get_paired_device(&conn, device_id),
-    )
-    .await;
-    assert!(stored.is_some(), "Paired device row MUST persist after host disconnect");
+    let stored = within_ok("query paired device", get_paired_device(&conn, device_id)).await;
+    assert!(
+        stored.is_some(),
+        "Paired device row MUST persist after host disconnect"
+    );
     assert_eq!(stored.unwrap().display_name, "Pixel 9");
 }
 
@@ -465,7 +610,11 @@ async fn remote_connection_revocation_permanently_removes_device() {
     assert_eq!(host_manager.state(), RemoteLinkState::Connected);
 
     // Perform revocation: delete row from Turso DB and disconnect session
-    let deleted = within_ok("delete paired device", delete_paired_device(&conn, device_id)).await;
+    let deleted = within_ok(
+        "delete paired device",
+        delete_paired_device(&conn, device_id),
+    )
+    .await;
     assert!(deleted, "delete_paired_device must return true");
 
     within_ok(
@@ -477,13 +626,15 @@ async fn remote_connection_revocation_permanently_removes_device() {
     assert_eq!(host_manager.state(), RemoteLinkState::Disconnected);
 
     // Assert device row is permanently gone
-    let check = within_ok(
-        "query revoked device",
-        get_paired_device(&conn, device_id),
-    )
-    .await;
-    assert!(check.is_none(), "Revoked device MUST NOT exist in paired_devices table");
+    let check = within_ok("query revoked device", get_paired_device(&conn, device_id)).await;
+    assert!(
+        check.is_none(),
+        "Revoked device MUST NOT exist in paired_devices table"
+    );
 
     let all_devices = within_ok("list paired devices", list_paired_devices(&conn)).await;
-    assert!(all_devices.is_empty(), "paired_devices table must be empty after revocation");
+    assert!(
+        all_devices.is_empty(),
+        "paired_devices table must be empty after revocation"
+    );
 }
