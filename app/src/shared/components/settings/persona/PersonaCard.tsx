@@ -1,6 +1,6 @@
 import { useState, memo, useCallback, useMemo, useRef, useEffect } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
-import { CircleUserRound, Pencil, Check } from "lucide-react";
+import { CircleUserRound, Pencil, Check, X } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { Card, Markdown } from "@/shared/ui";
 import { Tooltip } from "@/shared/ui/Tooltip";
@@ -175,6 +175,8 @@ export const PersonaCard = memo(({ layoutMode = "full-max" }: PersonaCardProps) 
 
   const isModular = pipelineMode === "modular";
   const [viewMode, setViewMode] = useState<"edit" | "preview">("preview");
+  /** Raw prompt captured when editing starts, so Cancel can restore it exactly. */
+  const [editSnapshot, setEditSnapshot] = useState<string | null>(null);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const highlightRef = useRef<HTMLDivElement>(null);
@@ -296,6 +298,45 @@ export const PersonaCard = memo(({ layoutMode = "full-max" }: PersonaCardProps) 
     }
   }, []);
 
+  const startEditing = useCallback(() => {
+    setEditSnapshot(activeRawPrompt);
+    setViewMode("edit");
+  }, [activeRawPrompt]);
+
+  const finishEditing = useCallback(() => {
+    if (commitTimerRef.current) {
+      clearTimeout(commitTimerRef.current);
+      commitTimerRef.current = null;
+    }
+    const pending = promptDraftRef.current;
+    if (pending !== null) {
+      commitDraft(pending);
+    }
+    setPromptDraft(null);
+    promptDraftRef.current = null;
+    setEditSnapshot(null);
+    setViewMode("preview");
+  }, [commitDraft]);
+
+  const cancelEditing = useCallback(() => {
+    if (commitTimerRef.current) {
+      clearTimeout(commitTimerRef.current);
+      commitTimerRef.current = null;
+    }
+    if (editSnapshot !== null) {
+      updateDraft(
+        "persona",
+        isModular ? "modular_prompt" : "realtime_prompt",
+        editSnapshot
+      );
+    }
+    setPromptDraft(null);
+    promptDraftRef.current = null;
+    setTagViolation(false);
+    setEditSnapshot(null);
+    setViewMode("preview");
+  }, [editSnapshot, isModular, updateDraft]);
+
   const isSmall = layoutMode === "small";
 
   return (
@@ -315,24 +356,47 @@ export const PersonaCard = memo(({ layoutMode = "full-max" }: PersonaCardProps) 
 
       {/* Main Body: Default Preview with Floating Pencil Icon Toggle in Corner */}
       <div className="flex-1 flex flex-col w-full relative">
-        {/* Floating Pencil / Done Toggle Button in Corner */}
-        <div className="absolute top-2 right-2 z-20">
-          <Tooltip label={viewMode === "edit" ? PERSONA_COPY.doneEditing : PERSONA_COPY.editPersona}>
-            <button
-              type="button"
-              onClick={() => setViewMode((m) => (m === "preview" ? "edit" : "preview"))}
-              className={cn(
-                "p-1.5 rounded-lg transition-all duration-200 cursor-pointer flex items-center justify-center",
-                viewMode === "edit"
-                  ? "bg-[rgba(var(--accent),0.15)] text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.25)] border border-[rgba(var(--accent),0.3)] shadow-[0_0_8px_rgba(var(--accent),0.15)]"
-                  : "text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] hover:bg-[rgba(var(--foreground),0.05)] border border-transparent"
-              )}
-              aria-label={viewMode === "edit" ? PERSONA_COPY.doneEditing : PERSONA_COPY.editPersona}
-            >
-              {viewMode === "edit" ? <Check size={13} strokeWidth={2.5} /> : <Pencil size={13} />}
-            </button>
-          </Tooltip>
-        </div>
+        {/* Edit trigger sits in the top corner only while previewing. */}
+        {viewMode === "preview" && (
+          <div className="absolute top-2 right-2 z-20">
+            <Tooltip label={PERSONA_COPY.editPersona}>
+              <button
+                type="button"
+                onClick={startEditing}
+                className="p-1.5 rounded-lg transition-all duration-200 cursor-pointer flex items-center justify-center text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] hover:bg-[rgba(var(--foreground),0.05)] border border-transparent"
+                aria-label={PERSONA_COPY.editPersona}
+              >
+                <Pencil size={13} />
+              </button>
+            </Tooltip>
+          </div>
+        )}
+
+        {/* Save / cancel pair, bottom-right, same grammar as inline edits elsewhere. */}
+        {viewMode === "edit" && (
+          <div className="absolute bottom-2 right-2 z-20 flex items-center gap-1">
+            <Tooltip label={PERSONA_COPY.doneEditing} asChild>
+              <button
+                type="button"
+                onClick={finishEditing}
+                aria-label={PERSONA_COPY.doneEditing}
+                className="p-1 rounded-md bg-[rgba(var(--accent),0.18)] text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.3)] transition-colors cursor-pointer shrink-0"
+              >
+                <Check size={13} strokeWidth={2.5} />
+              </button>
+            </Tooltip>
+            <Tooltip label={PERSONA_COPY.cancelEditing} asChild>
+              <button
+                type="button"
+                onClick={cancelEditing}
+                aria-label={PERSONA_COPY.cancelEditing}
+                className="p-1 rounded-md text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.08)] transition-colors cursor-pointer shrink-0"
+              >
+                <X size={13} strokeWidth={2.5} />
+              </button>
+            </Tooltip>
+          </div>
+        )}
 
         {viewMode === "edit" ? (
           <>
@@ -342,7 +406,7 @@ export const PersonaCard = memo(({ layoutMode = "full-max" }: PersonaCardProps) 
                 ref={highlightRef}
                 aria-hidden="true"
                 className={cn(
-                  "absolute inset-0 p-3 pr-9 pointer-events-none overflow-auto font-mono text-[12px] sm:text-[12.5px] leading-relaxed whitespace-pre-wrap break-words select-none",
+                  "absolute inset-0 p-3 pr-9 pb-8 pointer-events-none overflow-auto font-mono text-[12px] sm:text-[12.5px] leading-relaxed whitespace-pre-wrap break-words select-none",
                   layoutMode === "full-max" ? "h-[200px]" : isSmall ? "h-[200px]" : "h-[150px]"
                 )}
               >
@@ -361,7 +425,7 @@ export const PersonaCard = memo(({ layoutMode = "full-max" }: PersonaCardProps) 
                 placeholder={isModular ? PERSONA_COPY.modularPlaceholder : PERSONA_COPY.realtimePlaceholder}
                 spellCheck={false}
                 className={cn(
-                  "relative z-10 w-full p-3 pr-9 font-mono text-[12px] sm:text-[12.5px] leading-relaxed text-transparent caret-[rgb(var(--accent))] bg-transparent resize-none focus:outline-none overflow-auto whitespace-pre-wrap break-words selection:bg-[rgba(var(--accent),0.25)] selection:text-[rgb(var(--foreground))]",
+                  "relative z-10 w-full p-3 pr-9 pb-8 font-mono text-[12px] sm:text-[12.5px] leading-relaxed text-transparent caret-[rgb(var(--accent))] bg-transparent resize-none focus:outline-none overflow-auto whitespace-pre-wrap break-words selection:bg-[rgba(var(--accent),0.25)] selection:text-[rgb(var(--foreground))]",
                   layoutMode === "full-max" ? "h-[200px]" : isSmall ? "h-[200px]" : "h-[150px]"
                 )}
               />

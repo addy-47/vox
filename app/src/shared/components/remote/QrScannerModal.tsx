@@ -1,9 +1,22 @@
-import { memo, useState, useEffect, useRef, useCallback } from "react";
+import { memo, useState, useCallback, useRef, useEffect } from "react";
 import jsQR from "jsqr";
-import { Camera, AlertCircle, ArrowRight, Laptop } from "lucide-react";
+import {
+  Camera,
+  AlertCircle,
+  ArrowRight,
+  Wifi,
+  ShieldAlert,
+  CheckCircle2,
+  Flashlight,
+  FlashlightOff,
+  RotateCcw,
+  Laptop,
+} from "lucide-react";
 import { Modal } from "@/shared/ui/Modal";
+import { Tooltip } from "@/shared/ui/Tooltip";
 import { useRemoteStore } from "@/store/remoteStore";
 import { OrbitalLoader } from "@/shared/components/common";
+import { cn } from "@/shared/lib/utils";
 
 interface ScannedQrPayload {
   hint_addr?: string;
@@ -22,30 +35,62 @@ export interface QrScannerModalProps {
 export const QrScannerModal = memo(
   ({ open, onClose, defaultManual = false }: QrScannerModalProps) => {
     const connectHost = useRemoteStore((s) => s.connectHost);
-    const linkState = useRemoteStore((s) => s.linkState);
 
     const [isManual, setIsManual] = useState(defaultManual);
     const [manualAddress, setManualAddress] = useState("");
     const [connecting, setConnecting] = useState(false);
+    const [scannedSuccess, setScannedSuccess] = useState(false);
+    const [cameraActive, setCameraActive] = useState(false);
+    const [cameraLoading, setCameraLoading] = useState(true);
     const [cameraError, setCameraError] = useState<string | null>(null);
     const [scanError, setScanError] = useState<string | null>(null);
+    const [torchOn, setTorchOn] = useState(false);
+    const [torchSupported, setTorchSupported] = useState(false);
 
     const videoRef = useRef<HTMLVideoElement | null>(null);
-    const canvasRef = useRef<HTMLCanvasElement | null>(null);
     const streamRef = useRef<MediaStream | null>(null);
-    const animFrameRef = useRef<number | null>(null);
     const scanIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+    const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+    const handleConnect = useCallback(
+      async (address: string, deviceId?: string) => {
+        try {
+          setConnecting(true);
+          setScanError(null);
+          await connectHost({ address, deviceId });
+          onClose();
+        } catch (e) {
+          console.warn("[QrScannerModal] connectHost failed:", e);
+          setScanError(e instanceof Error ? e.message : String(e));
+          setConnecting(false);
+          setScannedSuccess(false);
+        }
+      },
+      [connectHost, onClose]
+    );
+
+    const processQrCode = useCallback(
+      (raw: string) => {
+        if (!raw || connecting || scannedSuccess) return;
+        try {
+          const parsed = JSON.parse(raw) as ScannedQrPayload;
+          if (
+            typeof parsed.hint_addr === "string" &&
+            typeof parsed.hint_port === "number"
+          ) {
+            setScannedSuccess(true);
+            const target = `${parsed.hint_addr}:${parsed.hint_port}`;
+            void handleConnect(target, parsed.device_id);
+          }
+        } catch {
+          // Non-JSON barcode or unrelated QR code, ignore
+        }
+      },
+      [connecting, scannedSuccess, handleConnect]
+    );
 
     const stopCamera = useCallback(() => {
-      if (canvasRef.current) {
-        canvasRef.current.width = 1;
-        canvasRef.current.height = 1;
-      }
-      if (animFrameRef.current !== null) {
-        cancelAnimationFrame(animFrameRef.current);
-        animFrameRef.current = null;
-      }
-      if (scanIntervalRef.current !== null) {
+      if (scanIntervalRef.current) {
         clearInterval(scanIntervalRef.current);
         scanIntervalRef.current = null;
       }
@@ -54,7 +99,7 @@ export const QrScannerModal = memo(
           try {
             track.stop();
           } catch {
-            // ignore
+            // Ignore track stop errors
           }
         });
         streamRef.current = null;
@@ -62,246 +107,496 @@ export const QrScannerModal = memo(
       if (videoRef.current) {
         videoRef.current.srcObject = null;
       }
+      if (canvasRef.current) {
+        canvasRef.current.width = 1;
+        canvasRef.current.height = 1;
+      }
+      setCameraActive(false);
+      setCameraLoading(true);
+      setTorchOn(false);
+      setTorchSupported(false);
     }, []);
 
-    const handleConnect = useCallback(
-      async (address: string, deviceId?: string) => {
-        try {
-          setConnecting(true);
-          setScanError(null);
-          await connectHost({ address, deviceId });
-          stopCamera();
-          onClose();
-        } catch (e) {
-          console.warn("[QrScannerModal] connectHost failed:", e);
-          setScanError(e instanceof Error ? e.message : String(e));
-          setConnecting(false);
-        }
-      },
-      [connectHost, stopCamera, onClose]
-    );
+    const startCamera = useCallback(async () => {
+      stopCamera();
+      setCameraLoading(true);
+      setCameraError(null);
 
-    // Camera scanner loop
+      try {
+        if (!navigator.mediaDevices?.getUserMedia) {
+          throw new Error("Camera API is not supported on this device.");
+        }
+
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: { ideal: "environment" },
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+          },
+          audio: false,
+        });
+
+        streamRef.current = stream;
+
+        const track = stream.getVideoTracks()[0];
+        if (track && typeof track.getCapabilities === "function") {
+          const caps = track.getCapabilities() as { torch?: boolean };
+          setTorchSupported(Boolean(caps.torch));
+        }
+
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          try {
+            await videoRef.current.play();
+          } catch (playErr) {
+            console.warn("[QrScannerModal] video.play error:", playErr);
+          }
+        }
+      } catch (err) {
+        console.warn("[QrScannerModal] startCamera error:", err);
+        const msg =
+          err instanceof Error
+            ? err.message
+            : "Camera access was denied or device is not available.";
+        setCameraError(msg);
+        setCameraLoading(false);
+      }
+    }, [stopCamera]);
+
+    const toggleTorch = async () => {
+      const track = streamRef.current?.getVideoTracks()[0];
+      if (!track) return;
+      try {
+        const nextState = !torchOn;
+        // @ts-expect-error torch constraint in modern mobile browsers
+        await track.applyConstraints({ advanced: [{ torch: nextState }] });
+        setTorchOn(nextState);
+      } catch (err) {
+        console.warn("[QrScannerModal] toggleTorch error:", err);
+      }
+    };
+
+    // Scan loop when camera is active
     useEffect(() => {
-      if (!open || isManual) {
-        stopCamera();
+      if (!open || isManual || connecting || !cameraActive) {
+        if (scanIntervalRef.current) {
+          clearInterval(scanIntervalRef.current);
+          scanIntervalRef.current = null;
+        }
         return;
       }
 
-      let active = true;
-      setCameraError(null);
+      const hasBarcodeDetector = "BarcodeDetector" in window;
+      let nativeDetector: {
+        detect: (
+          source: HTMLVideoElement
+        ) => Promise<Array<{ rawValue?: string }>>;
+      } | null = null;
 
-      const startCamera = async () => {
+      if (hasBarcodeDetector) {
         try {
-          if (typeof navigator.mediaDevices.getUserMedia !== "function") {
-            throw new Error("Camera API not available in this environment.");
-          }
+          const DetectorCtor = (
+            window as unknown as {
+              BarcodeDetector: new (opts: { formats: string[] }) => {
+                detect: (
+                  source: HTMLVideoElement
+                ) => Promise<Array<{ rawValue?: string }>>;
+              };
+            }
+          ).BarcodeDetector;
+          nativeDetector = new DetectorCtor({ formats: ["qr_code"] });
+        } catch {
+          nativeDetector = null;
+        }
+      }
 
-          const stream = await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: "environment" },
-            audio: false,
-          });
+      if (!canvasRef.current) {
+        const c = document.createElement("canvas");
+        c.width = 320;
+        c.height = 320;
+        canvasRef.current = c;
+      }
+      const canvas = canvasRef.current;
+      const ctx = canvas?.getContext("2d", { willReadFrequently: true });
 
-          if (!active) {
-            stream.getTracks().forEach((t) => t.stop());
-            return;
-          }
+      let isScanning = false;
 
-          streamRef.current = stream;
+      scanIntervalRef.current = setInterval(async () => {
+        if (isScanning || scannedSuccess || connecting) return;
+        const video = videoRef.current;
+        if (!video || video.readyState < 2) return;
 
-          if (videoRef.current) {
-            videoRef.current.srcObject = stream;
-            videoRef.current.setAttribute("playsinline", "true");
-            await videoRef.current.play();
-          }
+        isScanning = true;
 
-          // Scan at ~20 fps (every 50ms)
-          scanIntervalRef.current = setInterval(() => {
-            if (!active) return;
-            const video = videoRef.current;
-            const canvas = canvasRef.current;
-            if (!video || !canvas || video.readyState !== video.HAVE_ENOUGH_DATA) return;
-
-            const width = video.videoWidth;
-            const height = video.videoHeight;
-            if (width === 0 || height === 0) return;
-
-            canvas.width = width;
-            canvas.height = height;
-
-            const ctx = canvas.getContext("2d", { willReadFrequently: true });
-            if (!ctx) return;
-
-            ctx.drawImage(video, 0, 0, width, height);
-            const imageData = ctx.getImageData(0, 0, width, height);
-            const code = jsQR(imageData.data, imageData.width, imageData.height, {
-              inversionAttempts: "dontInvert",
-            });
-
-            if (code && code.data) {
-              try {
-                const parsed = JSON.parse(code.data) as ScannedQrPayload;
-                if (typeof parsed.hint_addr === "string" && typeof parsed.hint_port === "number") {
-                  const target = `${parsed.hint_addr}:${parsed.hint_port}`;
-                  stopCamera();
-                  void handleConnect(target, typeof parsed.device_id === "string" ? parsed.device_id : undefined);
+        try {
+          if (nativeDetector) {
+            const barcodes = await nativeDetector.detect(video);
+            if (barcodes && barcodes.length > 0) {
+              for (const b of barcodes) {
+                if (b.rawValue) {
+                  processQrCode(b.rawValue);
+                  break;
                 }
-              } catch (e) {
-                console.debug("[QrScannerModal] Invalid QR json:", e);
               }
             }
-          }, 50);
-        } catch (err) {
-          console.warn("[QrScannerModal] Camera initialization error:", err);
-          if (active) {
-            setCameraError(
-              err instanceof Error ? err.message : "Unable to access camera."
+          } else if (ctx && canvas) {
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const imageData = ctx.getImageData(
+              0,
+              0,
+              canvas.width,
+              canvas.height
             );
-            setIsManual(true);
+            const qr = jsQR(imageData.data, canvas.width, canvas.height, {
+              inversionAttempts: "dontInvert",
+            });
+            if (qr && qr.data) {
+              processQrCode(qr.data);
+            }
           }
+        } catch {
+          // Frame decode skip
+        } finally {
+          isScanning = false;
         }
-      };
-
-      void startCamera();
+      }, 120);
 
       return () => {
-        active = false;
-        stopCamera();
+        if (scanIntervalRef.current) {
+          clearInterval(scanIntervalRef.current);
+          scanIntervalRef.current = null;
+        }
       };
-    }, [open, isManual, stopCamera, handleConnect]);
+    }, [
+      open,
+      isManual,
+      connecting,
+      cameraActive,
+      scannedSuccess,
+      processQrCode,
+    ]);
 
-    // Close when connected
     useEffect(() => {
-      if (open && linkState === "Connected") {
+      if (open && !isManual && !connecting) {
+        void startCamera();
+      } else {
         stopCamera();
-        onClose();
       }
-    }, [open, linkState, stopCamera, onClose]);
-
-    // Clean up on component unmount
-    useEffect(() => {
       return () => stopCamera();
-    }, [stopCamera]);
+    }, [open, isManual, connecting, startCamera, stopCamera]);
+
+    const resetState = () => {
+      stopCamera();
+      setIsManual(defaultManual);
+      setManualAddress("");
+      setConnecting(false);
+      setScannedSuccess(false);
+      setCameraError(null);
+      setScanError(null);
+    };
+
+    const handleClose = () => {
+      resetState();
+      onClose();
+    };
 
     return (
       <Modal
         open={open}
-        onClose={() => {
-          stopCamera();
-          onClose();
-        }}
+        onClose={handleClose}
         title="Connect to Vox Host"
         subtitle={
           isManual
-            ? "Enter the host IP address and port shown on your laptop"
-            : "Point camera at the QR code displayed on your laptop screen"
+            ? "Enter the local IP address and port displayed on your laptop."
+            : "Scan the pairing QR code displayed on your laptop screen."
         }
-        position="page"
-        className="max-w-md w-full"
+        position="global"
+        fitContent
+        className="max-w-md w-[94vw] sm:w-full overflow-hidden"
       >
-        <div className="flex flex-col p-6 gap-4">
+        <div className="flex flex-col p-5 sm:p-6 gap-4">
           {connecting ? (
-            <div className="flex flex-col items-center justify-center p-8 gap-3">
-              <OrbitalLoader size="md" />
-              <span className="text-xs font-mono text-[rgb(var(--foreground-muted))]">
-                Connecting to host...
-              </span>
+            /* Spec §7.1: OrbitalLoader renders purely visually without accompanying text */
+            <div className="h-64 flex items-center justify-center">
+              <OrbitalLoader size="lg" />
             </div>
           ) : isManual ? (
-            /* Manual IP Entry View */
-            <div className="flex flex-col gap-4">
+            /* Manual IP Connection View */
+            <div className="flex flex-col gap-4 animate-fade-in">
               {cameraError && (
-                <div className="flex items-center gap-2 p-3 rounded-xl bg-[rgba(var(--error),0.1)] border border-[rgba(var(--error),0.2)] text-[rgb(var(--error))] text-xs font-medium">
-                  <AlertCircle size={15} className="shrink-0" />
-                  <span>Camera unavailable: {cameraError}</span>
+                <div className="flex items-start gap-2.5 p-3.5 rounded-xl bg-[rgba(var(--warning),0.08)] border border-[rgba(var(--warning),0.25)] text-xs text-[rgb(var(--foreground))]">
+                  <ShieldAlert
+                    size={16}
+                    className="text-[rgb(var(--warning))] shrink-0 mt-0.5"
+                  />
+                  <div className="space-y-0.5">
+                    <span className="font-bold text-[rgb(var(--warning))]">
+                      Camera unavailable
+                    </span>
+                    <p className="text-xs text-[rgb(var(--foreground-muted))] leading-relaxed">
+                      {cameraError}
+                    </p>
+                  </div>
                 </div>
               )}
 
               {scanError && (
-                <div className="flex items-center gap-2 p-3 rounded-xl bg-[rgba(var(--error),0.1)] border border-[rgba(var(--error),0.2)] text-[rgb(var(--error))] text-xs font-medium">
+                <div className="flex items-center gap-2.5 p-3 rounded-xl bg-[rgba(var(--error),0.1)] border border-[rgba(var(--error),0.2)] text-[rgb(var(--error))] text-xs font-medium">
                   <AlertCircle size={15} className="shrink-0" />
                   <span>Connection failed: {scanError}</span>
                 </div>
               )}
 
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs uppercase font-mono font-bold tracking-wider text-[rgb(var(--foreground-muted))]">
-                  Host Address (IP:Port)
-                </label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    value={manualAddress}
-                    onChange={(e) => setManualAddress(e.target.value)}
-                    placeholder="192.168.1.100:7700"
-                    className="flex-1 px-3.5 py-2.5 rounded-xl bg-[rgba(var(--foreground),0.04)] border border-[rgba(var(--border),0.25)] text-sm font-mono text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40 focus:outline-none focus:border-[rgb(var(--accent))] transition-colors"
-                  />
-                  <button
-                    type="button"
-                    disabled={!manualAddress.trim()}
-                    onClick={() => void handleConnect(manualAddress.trim())}
-                    className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-[rgb(var(--accent))] text-[rgb(var(--background))] text-xs font-mono font-bold hover:opacity-90 disabled:opacity-40 transition-opacity cursor-pointer shrink-0"
-                  >
-                    Connect
-                    <ArrowRight size={13} strokeWidth={2.5} />
-                  </button>
+              <div className="space-y-3">
+                <div className="space-y-1.5">
+                  <label className="text-[11px] uppercase font-mono font-bold tracking-wider text-[rgb(var(--foreground-muted))]">
+                    Host Address (IP : Port)
+                  </label>
+                  <div className="relative flex items-center">
+                    <div className="absolute left-3.5 text-[rgb(var(--foreground-muted))] pointer-events-none">
+                      <Wifi size={15} />
+                    </div>
+                    <input
+                      type="text"
+                      value={manualAddress}
+                      onChange={(e) => setManualAddress(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && manualAddress.trim()) {
+                          void handleConnect(manualAddress.trim());
+                        }
+                      }}
+                      placeholder="192.168.1.42:7700"
+                      className="w-full h-11 pl-10 pr-3.5 rounded-xl bg-[rgba(var(--foreground),0.04)] border border-[rgba(var(--border),0.12)] text-sm font-mono text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40 focus:outline-none focus:border-[rgb(var(--accent))] transition-colors"
+                      autoFocus
+                    />
+                  </div>
+                </div>
+
+                <div className="p-3.5 rounded-xl bg-[rgba(var(--card),0.6)] border border-[rgba(var(--border),0.07)] space-y-1">
+                  <p className="text-xs font-semibold text-[rgb(var(--foreground))]">
+                    Where do I find this address?
+                  </p>
+                  <p className="text-xs text-[rgb(var(--foreground-muted))] leading-relaxed">
+                    On your laptop, open{" "}
+                    <span className="text-[rgb(var(--foreground))] font-medium">
+                      Settings → Remote Control → Pair Device
+                    </span>
+                    . The LAN host IP and port are shown at the bottom-left of
+                    the pairing window.
+                  </p>
                 </div>
               </div>
 
-              {!cameraError && (
+              <div className="flex flex-col gap-2.5 pt-1">
                 <button
                   type="button"
-                  onClick={() => setIsManual(false)}
-                  className="mt-2 inline-flex items-center justify-center gap-1.5 text-xs font-mono text-[rgb(var(--accent))] hover:underline cursor-pointer"
+                  disabled={!manualAddress.trim()}
+                  onClick={() => void handleConnect(manualAddress.trim())}
+                  className="w-full h-10 inline-flex items-center justify-center gap-2 rounded-xl bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] text-xs font-bold hover:opacity-90 disabled:opacity-40 transition-opacity cursor-pointer shadow-sm"
                 >
-                  <Camera size={13} />
-                  Switch to QR Camera Scanner
+                  Connect to Host
+                  <ArrowRight size={14} strokeWidth={2.5} />
                 </button>
-              )}
+
+                {!cameraError && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsManual(false);
+                      setScanError(null);
+                    }}
+                    className="w-full h-10 inline-flex items-center justify-center gap-2 rounded-xl border border-[rgba(var(--border),0.08)] bg-[rgba(var(--card),0.5)] hover:bg-[rgba(var(--card),0.9)] text-xs font-semibold text-[rgb(var(--foreground))] transition-colors cursor-pointer"
+                  >
+                    <Camera size={14} className="text-[rgb(var(--accent))]" />
+                    Switch to QR Camera Scanner
+                  </button>
+                )}
+              </div>
             </div>
           ) : (
-            /* Camera Viewfinder View */
-            <div className="flex flex-col items-center gap-4">
-              <div className="relative w-full aspect-square max-w-[280px] rounded-2xl overflow-hidden bg-black shadow-inner border border-[rgba(var(--border),0.2)]">
+            /* Native Low-Latency Camera Scanner View */
+            <div className="flex flex-col gap-4 animate-fade-in">
+              {/* Viewfinder Frame */}
+              <div className="relative w-full aspect-square max-w-[288px] mx-auto rounded-2xl overflow-hidden bg-black shadow-lg border border-[rgba(var(--border),0.12)] flex items-center justify-center">
                 <video
                   ref={videoRef}
-                  className="w-full h-full object-cover"
-                  muted
                   playsInline
+                  muted
+                  autoPlay
+                  onPlaying={() => {
+                    setCameraLoading(false);
+                    setCameraActive(true);
+                  }}
+                  className={cn(
+                    "w-full h-full object-cover transition-opacity duration-300",
+                    cameraActive
+                      ? "opacity-100"
+                      : "opacity-0 pointer-events-none"
+                  )}
                 />
-                <canvas ref={canvasRef} className="hidden" />
 
-                {/* Reticle Overlay */}
-                <div className="absolute inset-8 pointer-events-none border border-white/20 rounded-xl">
-                  {/* Top-left corner */}
-                  <div className="absolute top-0 left-0 w-5 h-5 border-t-2 border-l-2 border-[rgb(var(--accent))] rounded-tl-md" />
-                  {/* Top-right corner */}
-                  <div className="absolute top-0 right-0 w-5 h-5 border-t-2 border-r-2 border-[rgb(var(--accent))] rounded-tr-md" />
-                  {/* Bottom-left corner */}
-                  <div className="absolute bottom-0 left-0 w-5 h-5 border-b-2 border-l-2 border-[rgb(var(--accent))] rounded-bl-md" />
-                  {/* Bottom-right corner */}
-                  <div className="absolute bottom-0 right-0 w-5 h-5 border-b-2 border-r-2 border-[rgb(var(--accent))] rounded-br-md" />
+                {/* Spec §7.1: OrbitalLoader only (no text) while camera initializes */}
+                {cameraLoading && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/95 z-10 p-4">
+                    <OrbitalLoader size="md" />
+                  </div>
+                )}
 
-                  {/* Animated Scanning Beam */}
-                  <div className="absolute left-0 right-0 h-[2px] bg-[rgb(var(--accent))] shadow-[0_0_8px_rgba(var(--accent),0.8)] animate-bounce" />
-                </div>
+                {/* Camera Error Overlay */}
+                {cameraError && (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/95 z-10 text-center p-5">
+                    <ShieldAlert
+                      size={28}
+                      className="text-[rgb(var(--warning))]"
+                    />
+                    <span className="text-xs font-bold text-[rgb(var(--foreground))]">
+                      Camera Access Required
+                    </span>
+                    <p className="text-xs text-[rgb(var(--foreground-muted))] leading-relaxed">
+                      {cameraError}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setIsManual(true)}
+                      className="mt-1 px-4 py-2 rounded-xl bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] text-xs font-bold cursor-pointer"
+                    >
+                      Enter IP Manually
+                    </button>
+                  </div>
+                )}
+
+                {/* Subtle vignette around the reticle */}
+                {!cameraError && (
+                  <div
+                    aria-hidden="true"
+                    className="pointer-events-none absolute inset-0 shadow-[inset_0_0_40px_rgba(0,0,0,0.65)] z-10"
+                  />
+                )}
+
+                {/* Cybernetic Corner Reticle & Smooth 60fps Bidirectional Laser */}
+                {!cameraError && (
+                  <div className="absolute inset-6 pointer-events-none z-10 overflow-hidden rounded-xl">
+                    {/* Top-Left Corner */}
+                    <div className="absolute top-0 left-0 w-7 h-7 border-t-2 border-l-2 border-[rgb(var(--accent))] rounded-tl-xl" />
+                    {/* Top-Right Corner */}
+                    <div className="absolute top-0 right-0 w-7 h-7 border-t-2 border-r-2 border-[rgb(var(--accent))] rounded-tr-xl" />
+                    {/* Bottom-Left Corner */}
+                    <div className="absolute bottom-0 left-0 w-7 h-7 border-b-2 border-l-2 border-[rgb(var(--accent))] rounded-bl-xl" />
+                    {/* Bottom-Right Corner */}
+                    <div className="absolute bottom-0 right-0 w-7 h-7 border-b-2 border-r-2 border-[rgb(var(--accent))] rounded-br-xl" />
+
+                    {/* GPU-Composited Up-and-Down Sweeping Laser Line */}
+                    {!scannedSuccess && cameraActive && (
+                      <div className="efb-scan-laser-track">
+                        <div className="efb-scan-laser-beam" />
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Torch / Flashlight Toggle */}
+                {torchSupported && cameraActive && (
+                  <Tooltip
+                    label={torchOn ? "Turn Off Torch" : "Turn On Torch"}
+                    side="left"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => void toggleTorch()}
+                      aria-label="Toggle Flashlight"
+                      className="absolute top-3 right-3 w-9 h-9 rounded-xl bg-black/65 border border-white/15 text-white z-20 flex items-center justify-center hover:bg-black/85 transition-colors cursor-pointer"
+                    >
+                      {torchOn ? (
+                        <Flashlight
+                          size={16}
+                          className="text-[rgb(var(--accent))]"
+                        />
+                      ) : (
+                        <FlashlightOff size={16} className="text-white/75" />
+                      )}
+                    </button>
+                  </Tooltip>
+                )}
+
+                {/* Scanned Success Feedback */}
+                {scannedSuccess && (
+                  <div className="absolute inset-0 bg-black/75 flex flex-col items-center justify-center gap-2 z-20 animate-fade-in">
+                    <CheckCircle2
+                      size={42}
+                      className="text-[rgb(var(--success))]"
+                    />
+                    <span className="text-xs font-bold text-white tracking-wide">
+                      Host QR Detected
+                    </span>
+                  </div>
+                )}
               </div>
 
               {scanError && (
-                <div className="flex items-center gap-2 p-2.5 rounded-xl bg-[rgba(var(--error),0.1)] text-[rgb(var(--error))] text-xs font-medium">
+                <div className="flex items-center gap-2 p-3 rounded-xl bg-[rgba(var(--error),0.1)] border border-[rgba(var(--error),0.2)] text-[rgb(var(--error))] text-xs font-medium">
                   <AlertCircle size={14} className="shrink-0" />
                   <span>{scanError}</span>
                 </div>
               )}
 
-              <button
-                type="button"
-                onClick={() => setIsManual(true)}
-                className="inline-flex items-center gap-1.5 text-xs font-mono text-[rgb(var(--accent))] hover:underline cursor-pointer"
-              >
-                <Laptop size={13} />
-                Enter host IP manually
-              </button>
+              {/* Bottom Guidance & Action Controls */}
+              <div className="rounded-2xl p-4 bg-[rgba(var(--card),0.6)] border border-[rgba(var(--border),0.08)] flex flex-col gap-3.5">
+                {/* Live Status & Simple 2-Line Onboarding Copy */}
+                <div className="flex items-start gap-3">
+                  <div className="w-8 h-8 rounded-xl bg-[rgba(var(--accent),0.1)] border border-[rgba(var(--accent),0.2)] flex items-center justify-center text-[rgb(var(--accent))] shrink-0 mt-0.5">
+                    <Laptop size={15} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-bold text-[rgb(var(--foreground))]">
+                        Scan desktop pairing code
+                      </span>
+                      <span className="inline-flex items-center gap-1.5 text-[11px] font-mono text-[rgb(var(--accent))]">
+                        <span className="h-1.5 w-1.5 rounded-full bg-[rgb(var(--accent))] animate-pulse" />
+                        Ready
+                      </span>
+                    </div>
+                    <p className="text-xs text-[rgb(var(--foreground-muted))] mt-1 leading-relaxed">
+                      Open{" "}
+                      <span className="text-[rgb(var(--foreground))] font-medium">
+                        Settings → Remote Control
+                      </span>{" "}
+                      on your laptop and tap{" "}
+                      <span className="text-[rgb(var(--foreground))] font-medium">
+                        Pair Device
+                      </span>{" "}
+                      to display the QR code.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Tactile Action Bar */}
+                <div className="flex items-center gap-2.5 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setIsManual(true)}
+                    className="flex-1 h-10 inline-flex items-center justify-center gap-2 px-4 rounded-xl bg-[rgba(var(--foreground),0.06)] hover:bg-[rgba(var(--foreground),0.1)] border border-[rgba(var(--border),0.08)] text-xs font-semibold text-[rgb(var(--foreground))] transition-colors cursor-pointer"
+                  >
+                    <Wifi
+                      size={14}
+                      className="text-[rgb(var(--accent))] shrink-0"
+                    />
+                    Enter IP Manually
+                  </button>
+
+                  <Tooltip label="Reset Camera" side="top">
+                    <button
+                      type="button"
+                      onClick={() => void startCamera()}
+                      aria-label="Restart Camera"
+                      className="h-10 px-3.5 inline-flex items-center justify-center gap-1.5 rounded-xl bg-[rgba(var(--foreground),0.06)] hover:bg-[rgba(var(--foreground),0.1)] border border-[rgba(var(--border),0.08)] text-xs font-semibold text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors cursor-pointer shrink-0"
+                    >
+                      <RotateCcw size={14} />
+                      <span>Reset</span>
+                    </button>
+                  </Tooltip>
+                </div>
+              </div>
             </div>
           )}
         </div>

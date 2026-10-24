@@ -141,6 +141,7 @@ export const ProviderModal = memo(({
   const [isFilterDropdownOpen, setIsFilterDropdownOpen] = useState(false);
   const [isCreatingCustomServer, setIsCreatingCustomServer] = useState(false);
   const [editingServer, setEditingServer] = useState<LlmCustomServer | TtsCustomServer | null>(null);
+  const [confirmDeleteProviderId, setConfirmDeleteProviderId] = useState<string | null>(null);
 
   const draftSettings = useSettingsStore(useShallow((s) => s.draftSettings));
   const committedSettings = useSettingsStore(useShallow((s) => s.settings));
@@ -418,42 +419,91 @@ export const ProviderModal = memo(({
     />
   ) : null;
 
-  const cloudCards = isTts
-    ? ttsFilteredProviders.map((entry) => {
-        const isSelected = activeCloudId === entry.id || (entry.id === "edge_speech" && ((activeCloudId?.includes("edge") ?? false) || (draftSettings?.tts.active.model.includes("edge") ?? false)));
-        return (
+  const { connectedCloudCards, unconnectedCloudCards } = useMemo(() => {
+    const connected: Array<{ key: string; node: React.ReactNode }> = [];
+    const unconnected: Array<{ key: string; node: React.ReactNode }> = [];
+
+    if (isTts) {
+      ttsFilteredProviders.forEach((entry) => {
+        const isSelected =
+          activeCloudId === entry.id ||
+          (entry.id === "edge_speech" &&
+            ((activeCloudId?.includes("edge") ?? false) ||
+              (draftSettings?.tts.active.model.includes("edge") ?? false)));
+
+        const node = (
           <SelectableCard
-            key={entry.id} id={entry.id} name={entry.name} tagline={entry.tagline} logo={entry.logo}
-            isSelected={isSelected} isComingSoon={entry.isComingSoon}
+            key={entry.id}
+            id={entry.id}
+            name={entry.name}
+            tagline={entry.tagline}
+            logo={entry.logo}
+            isSelected={isSelected}
+            isComingSoon={entry.isComingSoon}
             onSelect={() => {
               if (entry.isComingSoon) return;
               useCatalogStore.getState().clearRemoteModelsError();
-              const ttsModel = entry.id === "edge_speech" ? entry.id.replace("speech", "tts") : entry.id;
+              const ttsModel =
+                entry.id === "edge_speech" ? entry.id.replace("speech", "tts") : entry.id;
               updateDraft("tts", "active", activeSelection("cloud", ttsModel, entry.id));
               requestSpeechTab("tts");
-              onSelectProvider({ id: entry.id, name: entry.name, url: entry.url || "", popular: true, keyPlaceholder: "API Key (Optional)..." });
+              onSelectProvider({
+                id: entry.id,
+                name: entry.name,
+                url: entry.url || "",
+                popular: true,
+                keyPlaceholder: "API Key (Optional)...",
+              });
             }}
             actionSlot={
               <div className="flex items-center justify-between text-[11px] font-mono w-full">
-                <span className="text-[rgb(var(--foreground-muted))]/70">{entry.isFree ? PROVIDERS_CONFIG_DESK_COPY.badges.keylessCloud : PROVIDERS_CONFIG_DESK_COPY.badges.cloudVoice}</span>
-                <span className={cn("font-medium flex items-center gap-1.5", entry.isComingSoon ? "text-[rgb(var(--foreground-muted))]/60 font-normal" : "text-[rgb(var(--accent))]")}>
+                <span className="text-[rgb(var(--foreground-muted))]/70">
+                  {entry.isFree
+                    ? PROVIDERS_CONFIG_DESK_COPY.badges.keylessCloud
+                    : PROVIDERS_CONFIG_DESK_COPY.badges.cloudVoice}
+                </span>
+                <span
+                  className={cn(
+                    "font-medium flex items-center gap-1.5",
+                    entry.isComingSoon
+                      ? "text-[rgb(var(--foreground-muted))]/60 font-normal"
+                      : "text-[rgb(var(--accent))]"
+                  )}
+                >
                   {!entry.isComingSoon && <span className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--accent))]" />}
-                  {entry.isComingSoon ? PROVIDERS_CONFIG_DESK_COPY.status.inDevelopment : isSelected ? PROVIDERS_CONFIG_DESK_COPY.status.active : PROVIDERS_CONFIG_DESK_COPY.status.ready}
+                  {entry.isComingSoon
+                    ? PROVIDERS_CONFIG_DESK_COPY.status.inDevelopment
+                    : isSelected
+                      ? PROVIDERS_CONFIG_DESK_COPY.status.active
+                      : PROVIDERS_CONFIG_DESK_COPY.status.ready}
                 </span>
               </div>
             }
           />
         );
-      })
-    : modalFilteredProviders.map((provider) => {
+
+        if (entry.isFree || !entry.isComingSoon) {
+          connected.push({ key: `cloud:${entry.id}`, node });
+        } else {
+          unconnected.push({ key: `cloud:${entry.id}`, node });
+        }
+      });
+    } else {
+      modalFilteredProviders.forEach((provider) => {
         const isSelected = activeCloudId === provider.id;
         const savedKey = getProviderKey(provider.id);
         const isEditing = editingProviderId === provider.id;
         const hasKey = Boolean(savedKey && savedKey.trim().length > 0);
-        return (
+
+        const node = (
           <SelectableCard
-            key={provider.id} id={provider.id} name={provider.name} tagline={provider.tagline || "OpenAI-compatible inference gateway."}
-            logo={provider.logo ?? null} isSelected={isSelected} onSelect={() => onSelectProvider(provider)}
+            key={provider.id}
+            id={provider.id}
+            name={provider.name}
+            tagline={provider.tagline || "OpenAI-compatible inference gateway."}
+            logo={provider.logo ?? null}
+            isSelected={isSelected}
+            onSelect={() => onSelectProvider(provider)}
             cornerSlot={
               onNavigateToModels && hasKey ? (
                 <Tooltip label={LANGUAGE_CARD_COPY.browseModels} side="top" asChild>
@@ -474,92 +524,271 @@ export const ProviderModal = memo(({
             actionSlot={
               isEditing ? (
                 <div className="flex items-center gap-1.5 border-b border-[rgb(var(--accent))] pb-0.5 w-full bg-transparent animate-fade-in">
-                  <input type="password" autoFocus value={editingKeyValue} onChange={(e) => setEditingKeyValue(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") onSaveInlineKey(provider.id); if (e.key === "Escape") onCancelInlineKey(); }} placeholder={provider.keyPlaceholder} className="w-full bg-transparent text-[11px] font-mono outline-none text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/30" />
+                  <input
+                    type="password"
+                    autoFocus
+                    value={editingKeyValue}
+                    onChange={(e) => setEditingKeyValue(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") onSaveInlineKey(provider.id);
+                      if (e.key === "Escape") onCancelInlineKey();
+                    }}
+                    placeholder={provider.keyPlaceholder}
+                    className="w-full bg-transparent text-[11px] font-mono outline-none text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/30"
+                  />
                   <Tooltip label={PROVIDERS_CONFIG_DESK_COPY.llm.cloud.saveKey} side="top" asChild>
-                    <button type="button" onClick={() => onSaveInlineKey(provider.id)} aria-label={PROVIDERS_CONFIG_DESK_COPY.llm.cloud.saveKey} className="text-[rgb(var(--accent))] hover:opacity-75 transition-opacity p-0.5 shrink-0 bg-transparent cursor-pointer"><Check size={13} strokeWidth={2.2} /></button>
+                    <button
+                      type="button"
+                      onClick={() => onSaveInlineKey(provider.id)}
+                      aria-label={PROVIDERS_CONFIG_DESK_COPY.llm.cloud.saveKey}
+                      className="text-[rgb(var(--accent))] hover:opacity-75 transition-opacity p-0.5 shrink-0 bg-transparent cursor-pointer"
+                    >
+                      <Check size={13} strokeWidth={2.2} />
+                    </button>
                   </Tooltip>
                   <Tooltip label={PROVIDERS_CONFIG_DESK_COPY.llm.cloud.cancelKey} side="top" asChild>
-                    <button type="button" onClick={onCancelInlineKey} aria-label={PROVIDERS_CONFIG_DESK_COPY.llm.cloud.cancelKey} className="text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))] transition-colors p-0.5 shrink-0 bg-transparent cursor-pointer"><X size={13} /></button>
+                    <button
+                      type="button"
+                      onClick={onCancelInlineKey}
+                      aria-label={PROVIDERS_CONFIG_DESK_COPY.llm.cloud.cancelKey}
+                      className="text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))] transition-colors p-0.5 shrink-0 bg-transparent cursor-pointer"
+                    >
+                      <X size={13} />
+                    </button>
                   </Tooltip>
                 </div>
               ) : (
                 <div className="flex items-center justify-between text-[11px] font-mono w-full">
-                  <span className="text-[rgb(var(--foreground-muted))]/70">{PROVIDERS_CONFIG_DESK_COPY.badges.cloudGateway}</span>
+                  <span className="text-[rgb(var(--foreground-muted))]/70">
+                    {PROVIDERS_CONFIG_DESK_COPY.badges.cloudGateway}
+                  </span>
                   {hasKey ? (
-                    <div className="flex items-center gap-1.5">
-                      <Tooltip label={PROVIDERS_CONFIG_DESK_COPY.llm.cloud.editKey} side="top" asChild>
-                        <button
-                          type="button"
-                          onClick={() => onStartInlineEdit(provider.id, savedKey ?? "")}
-                          className="p-1 rounded-md text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.1)] transition-all cursor-pointer"
-                          aria-label={PROVIDERS_CONFIG_DESK_COPY.llm.cloud.editKey}
-                        >
-                          <Pencil size={13} />
-                        </button>
-                      </Tooltip>
-                      <Tooltip label={PROVIDERS_CONFIG_DESK_COPY.actions.deleteProvider} side="top" asChild>
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteCloudProvider(provider.id)}
-                          className="p-1 rounded-md text-[rgb(var(--foreground-muted))]/40 hover:text-[rgb(var(--error))] hover:bg-[rgba(var(--error),0.1)] transition-all cursor-pointer"
-                          aria-label={PROVIDERS_CONFIG_DESK_COPY.actions.deleteProvider}
-                        >
-                          <Trash2 size={13} />
-                        </button>
-                      </Tooltip>
-                    </div>
+                    confirmDeleteProviderId === provider.id ? (
+                      <div className="flex items-center gap-1">
+                        <Tooltip label={PROVIDERS_CONFIG_DESK_COPY.actions.deleteProvider} side="top" asChild>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteCloudProvider(provider.id);
+                              setConfirmDeleteProviderId(null);
+                            }}
+                            className="p-1 rounded-md bg-[rgba(var(--danger),0.18)] text-[rgb(var(--danger))] hover:bg-[rgba(var(--danger),0.3)] transition-colors cursor-pointer"
+                            aria-label="Confirm delete"
+                          >
+                            <Check size={12} strokeWidth={2.75} />
+                          </button>
+                        </Tooltip>
+                        <Tooltip label={LANGUAGE_CARD_COPY.cancel} side="top" asChild>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setConfirmDeleteProviderId(null);
+                            }}
+                            className="p-1 rounded-md text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.08)] transition-colors cursor-pointer"
+                            aria-label="Cancel delete"
+                          >
+                            <X size={12} strokeWidth={2.5} />
+                          </button>
+                        </Tooltip>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
+                        <Tooltip label={PROVIDERS_CONFIG_DESK_COPY.llm.cloud.editKey} side="top" asChild>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onStartInlineEdit(provider.id, savedKey ?? "");
+                            }}
+                            className="p-1 rounded-md text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.1)] transition-all cursor-pointer"
+                            aria-label={PROVIDERS_CONFIG_DESK_COPY.llm.cloud.editKey}
+                          >
+                            <Pencil size={13} />
+                          </button>
+                        </Tooltip>
+                        <Tooltip label={PROVIDERS_CONFIG_DESK_COPY.actions.deleteProvider} side="top" asChild>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setConfirmDeleteProviderId(provider.id);
+                            }}
+                            className="p-1 rounded-md text-[rgb(var(--foreground-muted))]/40 hover:text-[rgb(var(--error))] hover:bg-[rgba(var(--error),0.1)] transition-all cursor-pointer"
+                            aria-label={PROVIDERS_CONFIG_DESK_COPY.actions.deleteProvider}
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </Tooltip>
+                      </div>
+                    )
                   ) : (
-                    <button type="button" onClick={() => onStartInlineEdit(provider.id, "")} className="text-[rgb(var(--accent))] hover:underline cursor-pointer font-medium flex items-center gap-1">{PROVIDERS_CONFIG_DESK_COPY.llm.cloud.connectKey}</button>
+                    <button
+                      type="button"
+                      onClick={() => onStartInlineEdit(provider.id, "")}
+                      className="text-[rgb(var(--accent))] hover:underline cursor-pointer font-medium flex items-center gap-1"
+                    >
+                      {PROVIDERS_CONFIG_DESK_COPY.llm.cloud.connectKey}
+                    </button>
                   )}
                 </div>
               )
             }
           />
         );
+
+        if (hasKey) {
+          connected.push({ key: `cloud:${provider.id}`, node });
+        } else {
+          unconnected.push({ key: `cloud:${provider.id}`, node });
+        }
       });
+    }
+
+    return { connectedCloudCards: connected, unconnectedCloudCards: unconnected };
+  }, [
+    isTts,
+    ttsFilteredProviders,
+    modalFilteredProviders,
+    activeCloudId,
+    draftSettings?.tts.active.model,
+    updateDraft,
+    onSelectProvider,
+    editingProviderId,
+    editingKeyValue,
+    onSaveInlineKey,
+    onCancelInlineKey,
+    onNavigateToModels,
+    getProviderKey,
+    confirmDeleteProviderId,
+    handleDeleteCloudProvider,
+    onStartInlineEdit,
+    setEditingKeyValue,
+  ]);
 
   const customCards = filteredCustomServers.map((server) => {
     if (editingServer?.id === server.id) {
-      return <CustomServerFormCard key={server.id} category={category} initial={server} onClose={() => setEditingServer(null)} onServerSaved={() => {}} />;
+      return {
+        key: `server:${server.id}`,
+        node: (
+          <CustomServerFormCard
+            key={server.id}
+            category={category}
+            initial={server}
+            onClose={() => setEditingServer(null)}
+            onServerSaved={() => {}}
+          />
+        ),
+      };
     }
     const isSelected = activeCategoryType === "server" && activeServerId === server.id;
-    return (
-      <SelectableCard
-        key={server.id || server.url} id={server.id} name={server.name || "Custom Server"} tagline={server.url} logo={null}
-        providerName={server.name}
-        isSelected={isSelected} onSelect={() => handleSelectServer(server)}
-        cornerSlot={
-          onNavigateToModels && category === "LLM" ? (
-            <Tooltip label={LANGUAGE_CARD_COPY.browseModels} side="top" asChild>
-              <button
-                type="button"
-                onClick={() => {
-                  handleSelectServer(server);
-                  onNavigateToModels({ id: server.id, name: server.name || "Custom Server", url: server.url, popular: false, keyPlaceholder: "" });
-                }}
-                className="w-7 h-7 flex items-center justify-center rounded-md text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.1)] transition-colors cursor-pointer"
-                aria-label={`${LANGUAGE_CARD_COPY.browseModels}: ${server.name || "Custom Server"}`}
-              >
-                <ArrowRight size={13} strokeWidth={2} />
-              </button>
-            </Tooltip>
-          ) : undefined
-        }
-        actionSlot={
-          <div className="flex items-center justify-between text-[11px] font-mono w-full">
-            <span className="text-[rgb(var(--foreground-muted))]/70">{PROVIDERS_CONFIG_DESK_COPY.badges.selfHosted}</span>
-            <div className="flex items-center gap-1.5">
-              <Tooltip label={PROVIDERS_CONFIG_DESK_COPY.actions.editServer} side="top">
-                <button type="button" onClick={() => { setEditingServer(server); setIsCreatingCustomServer(false); }} className="p-1 rounded-md text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.1)] transition-all cursor-pointer" aria-label={PROVIDERS_CONFIG_DESK_COPY.actions.editServer}><Pencil size={13} /></button>
+    return {
+      key: `server:${server.id}`,
+      node: (
+        <SelectableCard
+          key={server.id || server.url}
+          id={server.id}
+          name={server.name || "Custom Server"}
+          tagline={server.url}
+          logo={null}
+          providerName={server.name}
+          isSelected={isSelected}
+          onSelect={() => handleSelectServer(server)}
+          cornerSlot={
+            onNavigateToModels && category === "LLM" ? (
+              <Tooltip label={LANGUAGE_CARD_COPY.browseModels} side="top" asChild>
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleSelectServer(server);
+                    onNavigateToModels({
+                      id: server.id,
+                      name: server.name || "Custom Server",
+                      url: server.url,
+                      popular: false,
+                      keyPlaceholder: "",
+                    });
+                  }}
+                  className="w-7 h-7 flex items-center justify-center rounded-md text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.1)] transition-colors cursor-pointer"
+                  aria-label={`${LANGUAGE_CARD_COPY.browseModels}: ${server.name || "Custom Server"}`}
+                >
+                  <ArrowRight size={13} strokeWidth={2} />
+                </button>
               </Tooltip>
-              <Tooltip label={PROVIDERS_CONFIG_DESK_COPY.actions.deleteServer} side="top">
-                <button type="button" onClick={() => handleDeleteServer(server.id)} className="p-1 rounded-md text-[rgb(var(--foreground-muted))]/40 hover:text-[rgb(var(--error))] hover:bg-[rgba(var(--error),0.1)] transition-all cursor-pointer" aria-label={PROVIDERS_CONFIG_DESK_COPY.actions.deleteServer}><Trash2 size={13} /></button>
-              </Tooltip>
+            ) : undefined
+          }
+          actionSlot={
+            <div className="flex items-center justify-between text-[11px] font-mono w-full">
+              <span className="text-[rgb(var(--foreground-muted))]/70">
+                {PROVIDERS_CONFIG_DESK_COPY.badges.selfHosted}
+              </span>
+              {confirmDeleteProviderId === server.id ? (
+                <div className="flex items-center gap-1">
+                  <Tooltip label={PROVIDERS_CONFIG_DESK_COPY.actions.deleteServer} side="top" asChild>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteServer(server.id);
+                        setConfirmDeleteProviderId(null);
+                      }}
+                      className="p-1 rounded-md bg-[rgba(var(--danger),0.18)] text-[rgb(var(--danger))] hover:bg-[rgba(var(--danger),0.3)] transition-colors cursor-pointer"
+                      aria-label="Confirm delete"
+                    >
+                      <Check size={12} strokeWidth={2.75} />
+                    </button>
+                  </Tooltip>
+                  <Tooltip label={LANGUAGE_CARD_COPY.cancel} side="top" asChild>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setConfirmDeleteProviderId(null);
+                      }}
+                      className="p-1 rounded-md text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.08)] transition-colors cursor-pointer"
+                      aria-label="Cancel delete"
+                    >
+                      <X size={12} strokeWidth={2.5} />
+                    </button>
+                  </Tooltip>
+                </div>
+              ) : (
+                <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
+                  <Tooltip label={PROVIDERS_CONFIG_DESK_COPY.actions.editServer} side="top">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setEditingServer(server);
+                        setIsCreatingCustomServer(false);
+                      }}
+                      className="p-1 rounded-md text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.1)] transition-all cursor-pointer"
+                      aria-label={PROVIDERS_CONFIG_DESK_COPY.actions.editServer}
+                    >
+                      <Pencil size={13} />
+                    </button>
+                  </Tooltip>
+                  <Tooltip label={PROVIDERS_CONFIG_DESK_COPY.actions.deleteServer} side="top">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setConfirmDeleteProviderId(server.id);
+                      }}
+                      className="p-1 rounded-md text-[rgb(var(--foreground-muted))]/40 hover:text-[rgb(var(--error))] hover:bg-[rgba(var(--error),0.1)] transition-all cursor-pointer"
+                      aria-label={PROVIDERS_CONFIG_DESK_COPY.actions.deleteServer}
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </Tooltip>
+                </div>
+              )}
             </div>
-          </div>
-        }
-      />
-    );
+          }
+        />
+      ),
+    };
   });
 
   const creationCard = (
@@ -575,6 +804,69 @@ export const ProviderModal = memo(({
       )}
     </>
   );
+
+  const { readyElements, restElements } = useMemo(() => {
+    let savedNode: { key: string; node: React.ReactNode } | null = null;
+
+    if (isCommittedLocal && localCard) {
+      savedNode = { key: "local-provider-card", node: localCard };
+    } else if (committedCategory === "server" && committedActiveProviderId) {
+      const idx = customCards.findIndex((c) => c.key === `server:${committedActiveProviderId}`);
+      if (idx !== -1) {
+        savedNode = customCards[idx];
+      }
+    } else if (committedCategory === "cloud" && committedActiveProviderId) {
+      const connIdx = connectedCloudCards.findIndex((c) => c.key === `cloud:${committedActiveProviderId}`);
+      if (connIdx !== -1) {
+        savedNode = connectedCloudCards[connIdx];
+      } else {
+        const unconnIdx = unconnectedCloudCards.findIndex((c) => c.key === `cloud:${committedActiveProviderId}`);
+        if (unconnIdx !== -1) {
+          savedNode = unconnectedCloudCards[unconnIdx];
+        }
+      }
+    }
+
+    const orderedConnectedClouds = connectedCloudCards
+      .filter((c) => c.key !== savedNode?.key)
+      .map((c) => c.node);
+
+    const orderedCustomServers = customCards
+      .filter((c) => c.key !== savedNode?.key)
+      .map((c) => c.node);
+
+    const orderedLocal = localCard && savedNode?.key !== "local-provider-card" ? [localCard] : [];
+
+    const ready: React.ReactNode[] = [];
+    if (savedNode) {
+      ready.push(savedNode.node);
+    }
+    ready.push(...orderedConnectedClouds);
+    ready.push(...orderedCustomServers);
+    ready.push(...orderedLocal);
+    if (showCustomSection && (isCreatingCustomServer || (showCustomCreationCard && !editingServer))) {
+      ready.push(creationCard);
+    }
+
+    const rest = unconnectedCloudCards
+      .filter((c) => c.key !== savedNode?.key)
+      .map((c) => c.node);
+
+    return { readyElements: ready, restElements: rest };
+  }, [
+    isCommittedLocal,
+    localCard,
+    committedCategory,
+    committedActiveProviderId,
+    customCards,
+    connectedCloudCards,
+    unconnectedCloudCards,
+    showCustomSection,
+    isCreatingCustomServer,
+    showCustomCreationCard,
+    editingServer,
+    creationCard,
+  ]);
 
   const currentItemCount = (showLocalCard ? 1 : 0) + (isTts ? ttsFilteredProviders.length : modalFilteredProviders.length) + filteredCustomServers.length;
   const totalItemCount = (isTts ? storeTtsProviders.length : storeCloudProviders.length) + customServers.length + 1;
@@ -693,11 +985,11 @@ export const ProviderModal = memo(({
       emptyState={emptyStateNode}
     >
       <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3">
-        {committedCategory === "server" && committedActiveProviderId
-          ? <>{customCards}{localCard}{cloudCards}{creationCard}</>
-          : committedCategory === "cloud" && committedActiveProviderId
-          ? <>{cloudCards}{localCard}{customCards}{creationCard}</>
-          : <>{localCard}{cloudCards}{customCards}{creationCard}</>}
+        {readyElements}
+        {readyElements.length > 0 && restElements.length > 0 && (
+          <div className="col-span-full my-2 h-px w-full bg-[rgba(var(--foreground),0.08)]" />
+        )}
+        {restElements}
       </div>
     </CatalogModalShell>
   );

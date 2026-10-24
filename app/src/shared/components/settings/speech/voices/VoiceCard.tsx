@@ -111,7 +111,7 @@ export const VoiceCard = memo(
           }
         }}
         className={cn(
-          "group w-full text-left p-4 rounded-xl border transition-all duration-200 relative shrink-0 cursor-pointer flex items-start gap-3.5 hover:z-20",
+          "group w-full text-left p-4 rounded-xl border transition-all duration-200 relative shrink-0 cursor-pointer flex items-start gap-3.5 hover:z-20 h-full",
           selected
             ? "bg-[rgba(var(--card),0.7)] border-[rgb(var(--accent))] shadow-[0_0_20px_rgba(var(--accent),0.18)] ring-1 ring-[rgb(var(--accent))]/40"
             : "bg-[rgba(var(--card),0.35)] border-[rgba(var(--foreground),0.07)] hover:border-[rgba(var(--accent),0.35)] hover:bg-[rgba(var(--card),0.55)]"
@@ -146,40 +146,42 @@ export const VoiceCard = memo(
         </button>
 
         {/* Center: Info Column */}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-start justify-between gap-2">
-            <span
-              className={cn(
-                "font-bold text-[14.5px] leading-tight tracking-tight truncate font-sans",
-                selected ? "text-[rgb(var(--accent))]" : "text-[rgb(var(--foreground))]"
-              )}
-            >
-              {voice.name}
-            </span>
+        <div className="flex-1 min-w-0 flex flex-col justify-between h-full">
+          <div>
+            <div className="flex items-start justify-between gap-2">
+              <span
+                className={cn(
+                  "font-bold text-[14.5px] leading-tight tracking-tight truncate font-sans",
+                  selected ? "text-[rgb(var(--accent))]" : "text-[rgb(var(--foreground))]"
+                )}
+              >
+                {voice.name}
+              </span>
 
-            {/* Top-Right: Heart Button (accent colored) */}
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                e.preventDefault();
-                onToggleFavorite?.(voice.id);
-              }}
-              aria-label={favorited ? `Remove ${voice.name} from favorites` : `Add ${voice.name} to favorites`}
-              className={cn(
-                "p-1 -mr-1 -mt-1 rounded-lg shrink-0 transition-all cursor-pointer relative z-10",
-                favorited
-                  ? "text-[rgb(var(--accent))]"
-                  : "text-[rgb(var(--foreground-muted))]/40 hover:text-[rgb(var(--accent))] hover:bg-[rgba(var(--foreground),0.04)]"
-              )}
-            >
-              <Heart size={16} fill={favorited ? "currentColor" : "none"} strokeWidth={favorited ? 2 : 1.75} />
-            </button>
+              {/* Top-Right: Heart Button (accent colored) */}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  e.preventDefault();
+                  onToggleFavorite?.(voice.id);
+                }}
+                aria-label={favorited ? `Remove ${voice.name} from favorites` : `Add ${voice.name} to favorites`}
+                className={cn(
+                  "p-1 -mr-1 -mt-1 rounded-lg shrink-0 transition-all cursor-pointer relative z-10",
+                  favorited
+                    ? "text-[rgb(var(--accent))]"
+                    : "text-[rgb(var(--foreground-muted))]/40 hover:text-[rgb(var(--accent))] hover:bg-[rgba(var(--foreground),0.04)]"
+                )}
+              >
+                <Heart size={16} fill={favorited ? "currentColor" : "none"} strokeWidth={favorited ? 2 : 1.75} />
+              </button>
+            </div>
+
+            <p className="text-[12px] text-[rgb(var(--foreground-muted))] mt-1.5 line-clamp-2 leading-relaxed">
+              {description}
+            </p>
           </div>
-
-          <p className="text-[12px] text-[rgb(var(--foreground-muted))] mt-1.5 line-clamp-2 leading-relaxed">
-            {description}
-          </p>
 
           {/* If previewPlaying, show the interactive waveform scrubber! Otherwise show badges */}
           {previewPlaying ? (
@@ -191,7 +193,7 @@ export const VoiceCard = memo(
               aria-valuemin={0}
               aria-valuemax={100}
               tabIndex={0}
-              className="mt-2.5 flex items-center justify-between gap-[2px] h-6 w-full overflow-hidden cursor-pointer select-none rounded hover:bg-[rgba(var(--foreground),0.03)] transition-colors"
+              className="mt-auto pt-2.5 flex items-center justify-between gap-[2px] h-6 w-full overflow-hidden cursor-pointer select-none rounded hover:bg-[rgba(var(--foreground),0.03)] transition-colors"
               onClick={(e) => {
                 e.stopPropagation();
                 if (!onSeekPreview) return;
@@ -231,7 +233,7 @@ export const VoiceCard = memo(
             </div>
           ) : (
             badges.length > 0 && (
-              <div className="flex items-center gap-1.5 mt-2.5 flex-wrap">
+              <div className="flex items-center gap-1.5 mt-auto pt-2.5 flex-wrap">
                 {badges.map((b) => (
                   <span
                     key={b}

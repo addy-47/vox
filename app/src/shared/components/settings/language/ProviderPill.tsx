@@ -1,5 +1,5 @@
-import { memo } from "react";
-import { ArrowRight, Pencil, Trash2 } from "lucide-react";
+import { memo, useState } from "react";
+import { ArrowRight, Check, Pencil, Trash2, X } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { Tooltip } from "@/shared/ui/Tooltip";
 import { LANGUAGE_CARD_COPY, PROVIDERS_CONFIG_DESK_COPY } from "@/data/settingsCopy";
@@ -25,11 +25,11 @@ export interface ProviderPillProps {
    */
   onBrowse?: () => void;
   /**
-   * Triggers inline API key editing. Placed immediately to the right of the provider name.
+   * Triggers inline API key editing.
    */
   onEdit?: () => void;
   /**
-   * Deletes the configured provider key. Placed immediately to the right of the edit button.
+   * Deletes the configured provider key.
    */
   onDelete?: () => void;
   /** Replaces the trailing arrow (unconnected rows show a plus). */
@@ -39,12 +39,15 @@ export interface ProviderPillProps {
   muted?: boolean;
   /** Replaces the pill content with an inline editor. */
   body?: React.ReactNode;
+  /** Content rendered in an expanded bottom slot below title and meta. */
+  expandedContent?: React.ReactNode;
 }
 
 /**
  * One available provider in the language card. Brand mark, provider name, one
- * status line. The body selects the provider; the arrow is a separate hitbox
- * that opens that provider's models, matching the provider modal.
+ * status line.
+ * Edit and delete controls appear only on hover in a single line with the breadcrumb.
+ * Two-step delete transforms the cluster into a confirm tick and cancel cross.
  */
 export const ProviderPill = memo(({
   id,
@@ -62,86 +65,118 @@ export const ProviderPill = memo(({
   className,
   muted = false,
   body,
-}: ProviderPillProps) => (
-  <CatalogRowCard
-    leading={
-      <span className={cn("flex shrink-0 items-center justify-center", muted && "opacity-50")}>
-        {leading ?? (
-          <ProviderLogo
-            providerId={id}
-            providerName={providerName ?? name}
-            logo={logo}
-            size={32}
-          />
-        )}
-      </span>
-    }
-    muted={muted}
-    body={body}
-    title={
-      onEdit || onDelete ? (
-        <span className="flex items-center gap-1.5 min-w-0">
-          <span className="truncate">{name}</span>
-          {onEdit && (
-            <Tooltip label={PROVIDERS_CONFIG_DESK_COPY.llm.cloud.editKey} side="top" asChild>
-              <button
-                type="button"
-                aria-label={`${PROVIDERS_CONFIG_DESK_COPY.llm.cloud.editKey}: ${name}`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onEdit();
-                }}
-                className="p-1 rounded hover:bg-[rgba(var(--foreground),0.08)] hover:text-[rgb(var(--accent))] transition-colors text-[rgb(var(--foreground-muted))]/60 cursor-pointer shrink-0"
-              >
-                <Pencil size={11} />
-              </button>
-            </Tooltip>
+  expandedContent,
+}: ProviderPillProps) => {
+  const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
+
+  return (
+    <CatalogRowCard
+      leading={
+        <span className={cn("flex shrink-0 items-center justify-center", muted && "opacity-50")}>
+          {leading ?? (
+            <ProviderLogo
+              providerId={id}
+              providerName={providerName ?? name}
+              logo={logo}
+              size={32}
+            />
           )}
-          {onDelete && (
+        </span>
+      }
+      muted={muted}
+      body={body}
+      expandedContent={expandedContent}
+      title={name}
+      meta={meta}
+      active={active}
+      onSelect={onSelect}
+      ariaLabel={name}
+      className={className}
+      trailing={
+        trailing !== undefined ? (
+          trailing
+        ) : isConfirmingDelete ? (
+          <div className="flex items-center gap-1 shrink-0">
             <Tooltip label={PROVIDERS_CONFIG_DESK_COPY.actions.deleteProvider} side="top" asChild>
               <button
                 type="button"
-                aria-label={`${PROVIDERS_CONFIG_DESK_COPY.actions.deleteProvider}: ${name}`}
+                aria-label="Confirm delete"
                 onClick={(e) => {
                   e.stopPropagation();
-                  onDelete();
+                  onDelete?.();
+                  setIsConfirmingDelete(false);
                 }}
-                className="p-1 rounded hover:bg-[rgba(var(--error),0.1)] hover:text-[rgb(var(--error))] transition-colors text-[rgb(var(--foreground-muted))]/40 cursor-pointer shrink-0"
+                className="p-1 rounded-md bg-[rgba(var(--danger),0.18)] text-[rgb(var(--danger))] hover:bg-[rgba(var(--danger),0.3)] transition-colors cursor-pointer shrink-0"
               >
-                <Trash2 size={11} />
+                <Check size={12} strokeWidth={2.75} />
               </button>
             </Tooltip>
-          )}
-        </span>
-      ) : (
-        name
-      )
-    }
-    meta={meta}
-    active={active}
-    onSelect={onSelect}
-    ariaLabel={name}
-    className={className}
-    trailing={
-      trailing !== undefined ? (
-        trailing
-      ) : onBrowse ? (
-        <Tooltip label={LANGUAGE_CARD_COPY.browseModels} side="left" asChild>
-          <button
-            type="button"
-            aria-label={`${LANGUAGE_CARD_COPY.browseModels}: ${name}`}
-            onClick={(e) => {
-              e.stopPropagation();
-              onBrowse();
-            }}
-            className="w-7 h-7 flex items-center justify-center rounded-md text-[rgb(var(--foreground-muted))]/50 transition-colors hover:bg-[rgba(var(--accent),0.1)] hover:text-[rgb(var(--accent))] cursor-pointer"
-          >
-            <ArrowRight size={13} strokeWidth={2} />
-          </button>
-        </Tooltip>
-      ) : null
-    }
-  />
-));
+            <Tooltip label={LANGUAGE_CARD_COPY.cancel} side="top" asChild>
+              <button
+                type="button"
+                aria-label="Cancel delete"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsConfirmingDelete(false);
+                }}
+                className="p-1 rounded-md text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.08)] transition-colors cursor-pointer shrink-0"
+              >
+                <X size={12} strokeWidth={2.5} />
+              </button>
+            </Tooltip>
+          </div>
+        ) : (
+          <div className="flex items-center gap-1 shrink-0">
+            {onEdit && (
+              <Tooltip label={PROVIDERS_CONFIG_DESK_COPY.llm.cloud.editKey} side="top" asChild>
+                <button
+                  type="button"
+                  aria-label={`${PROVIDERS_CONFIG_DESK_COPY.llm.cloud.editKey}: ${name}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onEdit();
+                  }}
+                  className="p-1 rounded-md text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.1)] transition-colors cursor-pointer shrink-0 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
+                >
+                  <Pencil size={12} />
+                </button>
+              </Tooltip>
+            )}
+            {onDelete && (
+              <Tooltip label={PROVIDERS_CONFIG_DESK_COPY.actions.deleteProvider} side="top" asChild>
+                <button
+                  type="button"
+                  aria-label={`${PROVIDERS_CONFIG_DESK_COPY.actions.deleteProvider}: ${name}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setIsConfirmingDelete(true);
+                  }}
+                  className="p-1 rounded-md text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--error))] hover:bg-[rgba(var(--error),0.1)] transition-colors cursor-pointer shrink-0 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
+                >
+                  <Trash2 size={12} />
+                </button>
+              </Tooltip>
+            )}
+            {onBrowse && (
+              <Tooltip label={LANGUAGE_CARD_COPY.browseModels} side="left" asChild>
+                <button
+                  type="button"
+                  aria-label={`${LANGUAGE_CARD_COPY.browseModels}: ${name}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onBrowse();
+                  }}
+                  className="w-7 h-7 flex items-center justify-center rounded-md text-[rgb(var(--foreground-muted))]/50 transition-colors hover:bg-[rgba(var(--accent),0.1)] hover:text-[rgb(var(--accent))] cursor-pointer shrink-0"
+                >
+                  <ArrowRight size={13} strokeWidth={2} />
+                </button>
+              </Tooltip>
+            )}
+          </div>
+        )
+      }
+    />
+  );
+});
 
 ProviderPill.displayName = "ProviderPill";

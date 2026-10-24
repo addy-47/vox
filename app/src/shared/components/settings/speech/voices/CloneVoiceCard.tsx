@@ -191,7 +191,7 @@ export const CloneVoiceCard = memo(function CloneVoiceCard({
         }}
         aria-label={VOICE_CATALOG_COPY.cloneVoice}
         className={cn(
-          "group w-full text-left p-4 rounded-xl border transition-all duration-200 relative shrink-0 cursor-pointer flex items-start gap-3.5 hover:z-20",
+          "group w-full text-left p-4 rounded-xl border transition-all duration-200 relative shrink-0 cursor-pointer flex items-start gap-3.5 hover:z-20 h-full",
           "bg-[rgba(var(--card),0.35)] border-[rgba(var(--foreground),0.07)] hover:border-[rgba(var(--accent),0.35)] hover:bg-[rgba(var(--card),0.55)]",
           className
         )}
@@ -202,18 +202,20 @@ export const CloneVoiceCard = memo(function CloneVoiceCard({
         </div>
 
         {/* Center: Info Column */}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-start justify-between gap-2">
-            <span className="font-bold text-[14.5px] leading-tight tracking-tight truncate font-sans text-[rgb(var(--foreground))] group-hover:text-[rgb(var(--accent))] transition-colors">
-              {VOICE_CATALOG_COPY.cloneVoice}
-            </span>
+        <div className="flex-1 min-w-0 flex flex-col justify-between h-full">
+          <div>
+            <div className="flex items-start justify-between gap-2">
+              <span className="font-bold text-[14.5px] leading-tight tracking-tight truncate font-sans text-[rgb(var(--foreground))] group-hover:text-[rgb(var(--accent))] transition-colors">
+                {VOICE_CATALOG_COPY.cloneVoice}
+              </span>
+            </div>
+
+            <p className="text-[12px] text-[rgb(var(--foreground-muted))] mt-1.5 line-clamp-2 leading-relaxed">
+              {VOICE_CATALOG_COPY.cloneVoiceChatterboxNote}
+            </p>
           </div>
 
-          <p className="text-[12px] text-[rgb(var(--foreground-muted))] mt-1.5 line-clamp-2 leading-relaxed">
-            {VOICE_CATALOG_COPY.cloneVoiceChatterboxNote}
-          </p>
-
-          <div className="flex items-center gap-1.5 mt-2.5 flex-wrap">
+          <div className="flex items-center gap-1.5 mt-auto pt-2.5 flex-wrap">
             <span className="text-[10px] font-mono font-medium px-2 py-0.5 rounded-md bg-[rgba(var(--foreground),0.05)] text-[rgb(var(--foreground-muted))] border border-[rgba(var(--foreground),0.07)] leading-none">
               {VOICE_CATALOG_COPY.cloned}
             </span>
@@ -230,7 +232,7 @@ export const CloneVoiceCard = memo(function CloneVoiceCard({
   return (
     <div
       className={cn(
-        "group w-full text-left p-4 rounded-xl border transition-all duration-200 relative shrink-0 flex items-start gap-3.5",
+        "group w-full text-left p-4 rounded-xl border transition-all duration-200 relative shrink-0 flex items-start gap-3.5 h-full",
         "bg-[rgba(var(--card),0.55)] border-[rgba(var(--accent),0.35)] shadow-[0_0_20px_rgba(var(--accent),0.12)] ring-1 ring-[rgb(var(--accent))]/30",
         isRecording && "border-[rgb(var(--error))] shadow-[0_0_20px_rgba(239,68,68,0.2)] ring-1 ring-[rgb(var(--error))]/40",
         className
@@ -271,93 +273,95 @@ export const CloneVoiceCard = memo(function CloneVoiceCard({
       </Tooltip>
 
       {/* Center: Info Column */}
-      <div className="flex-1 min-w-0">
-        {/* Top Row: Name Input on Left, Tick & Cross on Right */}
-        <div className="flex items-center justify-between gap-2">
-          <input
-            autoFocus
-            type="text"
-            value={voiceName}
-            onChange={(e) => setVoiceName(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && canSubmit) {
-                e.preventDefault();
-                void handleClone();
-              } else if (e.key === "Escape") {
-                e.preventDefault();
-                resetState();
-              }
-            }}
-            placeholder={VOICE_CATALOG_COPY.cloneVoiceNamePlaceholder}
-            disabled={isSubmitting}
-            className="font-bold text-[14px] leading-tight tracking-tight font-sans text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40 bg-transparent border-b border-[rgba(var(--foreground),0.15)] focus:border-[rgb(var(--accent))] focus:outline-none w-full py-0.5 transition-colors"
-          />
+      <div className="flex-1 min-w-0 flex flex-col justify-between h-full">
+        <div>
+          {/* Top Row: Name Input on Left, Tick & Cross on Right */}
+          <div className="flex items-center justify-between gap-2">
+            <input
+              autoFocus
+              type="text"
+              value={voiceName}
+              onChange={(e) => setVoiceName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && canSubmit) {
+                  e.preventDefault();
+                  void handleClone();
+                } else if (e.key === "Escape") {
+                  e.preventDefault();
+                  resetState();
+                }
+              }}
+              placeholder={VOICE_CATALOG_COPY.cloneVoiceNamePlaceholder}
+              disabled={isSubmitting}
+              className="font-bold text-[14px] leading-tight tracking-tight font-sans text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40 bg-transparent border-b border-[rgba(var(--foreground),0.15)] focus:border-[rgb(var(--accent))] focus:outline-none w-full py-0.5 transition-colors"
+            />
 
-          <div className="flex items-center gap-1 shrink-0 -mr-1">
-            {/* Submit (Tick) Button */}
-            <Tooltip label={VOICE_CATALOG_COPY.cloneVoiceSubmit} side="top" asChild>
-              <button
-                type="button"
-                onClick={handleClone}
-                disabled={!canSubmit}
-                aria-label={VOICE_CATALOG_COPY.cloneVoiceSubmit}
-                className={cn(
-                  "w-7 h-7 rounded-lg shrink-0 transition-all cursor-pointer flex items-center justify-center",
-                  canSubmit
-                    ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] hover:scale-105 active:scale-95 shadow-[0_0_10px_rgba(var(--accent),0.3)]"
-                    : "text-[rgb(var(--foreground-muted))]/30 cursor-not-allowed"
-                )}
-              >
-                {isSubmitting ? (
-                  <Loader2 size={13} className="animate-spin" />
-                ) : (
-                  <Check size={14} strokeWidth={2.5} />
-                )}
-              </button>
-            </Tooltip>
+            <div className="flex items-center gap-1 shrink-0 -mr-1">
+              {/* Submit (Tick) Button */}
+              <Tooltip label={VOICE_CATALOG_COPY.cloneVoiceSubmit} side="top" asChild>
+                <button
+                  type="button"
+                  onClick={handleClone}
+                  disabled={!canSubmit}
+                  aria-label={VOICE_CATALOG_COPY.cloneVoiceSubmit}
+                  className={cn(
+                    "w-7 h-7 rounded-lg shrink-0 transition-all cursor-pointer flex items-center justify-center",
+                    canSubmit
+                      ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] hover:scale-105 active:scale-95 shadow-[0_0_10px_rgba(var(--accent),0.3)]"
+                      : "text-[rgb(var(--foreground-muted))]/30 cursor-not-allowed"
+                  )}
+                >
+                  {isSubmitting ? (
+                    <Loader2 size={13} className="animate-spin" />
+                  ) : (
+                    <Check size={14} strokeWidth={2.5} />
+                  )}
+                </button>
+              </Tooltip>
 
-            {/* Cancel (Cross) Button */}
-            <Tooltip label={VOICE_CATALOG_COPY.cloneVoiceCancel} side="top" asChild>
-              <button
-                type="button"
-                onClick={resetState}
-                disabled={isSubmitting}
-                aria-label={VOICE_CATALOG_COPY.cloneVoiceCancel}
-                className="w-7 h-7 rounded-lg text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.06)] transition-all cursor-pointer flex items-center justify-center"
-              >
-                <X size={14} />
-              </button>
-            </Tooltip>
+              {/* Cancel (Cross) Button */}
+              <Tooltip label={VOICE_CATALOG_COPY.cloneVoiceCancel} side="top" asChild>
+                <button
+                  type="button"
+                  onClick={resetState}
+                  disabled={isSubmitting}
+                  aria-label={VOICE_CATALOG_COPY.cloneVoiceCancel}
+                  className="w-7 h-7 rounded-lg text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.06)] transition-all cursor-pointer flex items-center justify-center"
+                >
+                  <X size={14} />
+                </button>
+              </Tooltip>
+            </div>
           </div>
+
+          {/* Subtitle / Status row */}
+          <p className={cn(
+            "text-[12px] mt-1.5 line-clamp-1 leading-relaxed",
+            error
+              ? "text-[rgb(var(--error))]"
+              : isRecording
+                ? "text-[rgb(var(--error))] font-medium animate-pulse"
+                : "text-[rgb(var(--foreground-muted))]"
+          )}>
+            {error ? (
+              <span className="flex items-center gap-1">
+                <AlertCircle size={12} className="shrink-0" />
+                <span className="truncate">{error}</span>
+              </span>
+            ) : isRecording ? (
+              `Recording (${duration}s / 30s) · Speak clearly`
+            ) : recordedPcm ? (
+              `Recorded ${duration}s audio sample`
+            ) : fileNameOnly ? (
+              `WAV: ${fileNameOnly}`
+            ) : (
+              VOICE_CATALOG_COPY.cloneVoiceReadyPrompt
+            )}
+          </p>
         </div>
 
-        {/* Subtitle / Status row */}
-        <p className={cn(
-          "text-[12px] mt-1.5 line-clamp-1 leading-relaxed",
-          error
-            ? "text-[rgb(var(--error))]"
-            : isRecording
-              ? "text-[rgb(var(--error))] font-medium animate-pulse"
-              : "text-[rgb(var(--foreground-muted))]"
-        )}>
-          {error ? (
-            <span className="flex items-center gap-1">
-              <AlertCircle size={12} className="shrink-0" />
-              <span className="truncate">{error}</span>
-            </span>
-          ) : isRecording ? (
-            `Recording (${duration}s / 30s) · Speak clearly`
-          ) : recordedPcm ? (
-            `Recorded ${duration}s audio sample`
-          ) : fileNameOnly ? (
-            `WAV: ${fileNameOnly}`
-          ) : (
-            VOICE_CATALOG_COPY.cloneVoiceReadyPrompt
-          )}
-        </p>
-
         {/* Bottom Row: Metadata Badges + Choose File Button on Right */}
-        <div className="flex items-center justify-between gap-2 mt-2.5">
+        <div className="flex items-center justify-between gap-2 mt-auto pt-2.5">
           <div className="flex items-center gap-1.5 flex-wrap">
             <span className="text-[10px] font-mono font-medium px-2 py-0.5 rounded-md bg-[rgba(var(--accent),0.08)] text-[rgb(var(--accent))] border border-[rgba(var(--accent),0.2)] leading-none flex items-center gap-1">
               <Sparkles size={9} />

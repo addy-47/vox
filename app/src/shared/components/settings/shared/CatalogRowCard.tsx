@@ -22,6 +22,10 @@ export interface CatalogRowCardProps {
    * swaps its own content instead of growing a second block below.
    */
   body?: ReactNode;
+  /**
+   * Content rendered in an expanded bottom row below the leading mark and text block.
+   */
+  expandedContent?: ReactNode;
 }
 
 /**
@@ -46,33 +50,35 @@ export const CatalogRowCard = memo(
     className,
     muted = false,
     body,
+    expandedContent,
   }: CatalogRowCardProps) => {
     const interactive = !disabled;
+    const isExpanded = Boolean(expandedContent);
 
     return (
       <div className="w-full">
         <div
           role="button"
-          tabIndex={interactive ? 0 : -1}
+          tabIndex={interactive && !isExpanded ? 0 : -1}
           aria-disabled={!interactive}
           aria-label={ariaLabel ?? (typeof title === "string" ? title : undefined)}
           aria-pressed={interactive ? active : undefined}
           onClick={() => {
-            if (interactive) onSelect?.();
+            if (interactive && !isExpanded) onSelect?.();
           }}
           onKeyDown={(e) => {
-            if ((e.key === "Enter" || e.key === " ") && interactive) {
+            if ((e.key === "Enter" || e.key === " ") && interactive && !isExpanded) {
               e.preventDefault();
               onSelect?.();
             }
           }}
           className={cn(
-            "group relative flex w-full select-none items-center gap-2.5 rounded-xl border",
+            "group relative flex w-full select-none flex-col rounded-xl border",
             "min-h-[64px] py-2.5 pl-2.5 pr-2.5 transition-colors duration-200",
             muted
               ? "border-[rgba(var(--foreground),0.045)] bg-[rgba(var(--foreground),0.015)]"
               : "border-[rgba(var(--foreground),0.07)] bg-[rgba(var(--foreground),0.035)]",
-            interactive &&
+            interactive && !isExpanded &&
               "cursor-pointer hover:border-[rgba(var(--accent),0.35)] hover:bg-[rgba(var(--foreground),0.06)]",
             disabled && "opacity-70",
             active &&
@@ -83,7 +89,7 @@ export const CatalogRowCard = memo(
           {body ? (
             <div className="flex min-w-0 flex-1 items-center gap-2">{body}</div>
           ) : (
-            <>
+            <div className="flex w-full items-center gap-2.5">
               <span className="shrink-0">{leading}</span>
 
               <div className="flex min-w-0 flex-1 flex-col gap-0.5">
@@ -110,10 +116,19 @@ export const CatalogRowCard = memo(
                   {meta}
                 </span>
               </div>
-            </>
+
+              {trailing && <div className="ml-auto flex shrink-0 items-center gap-0.5">{trailing}</div>}
+            </div>
           )}
 
-          {trailing && <div className="flex shrink-0 items-center gap-0.5">{trailing}</div>}
+          {expandedContent && (
+            <div
+              className="mt-2.5 pt-2 border-t border-[rgba(var(--foreground),0.07)] flex items-center gap-2 w-full"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {expandedContent}
+            </div>
+          )}
         </div>
       </div>
     );

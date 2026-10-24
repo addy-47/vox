@@ -92,6 +92,7 @@ All authoritative specifications live in [`docs/specs/`](file:///home/addy/proje
 ## 7. Backlog
 
 See **[Phase 13 Backlog](file:///home/addy/projects/apps/vox/docs/plans/phase13/backlog.md)** for Cloud TTS quota management, Azure speech integration, and setup guide modal overhaul details.
+- **Backend Ticket**: [Native Barcode Scanner Plugin](file:///home/addy/projects/apps/vox/.scratch/ticket_tauri_barcode_scanner.md) (`tauri-plugin-barcode-scanner`) for Android/iOS ML Kit camera integration.
 
 ---
 
