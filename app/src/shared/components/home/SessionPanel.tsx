@@ -80,6 +80,7 @@ export const SessionPanel = memo(({ onClose }: SessionPanelProps) => {
 
   // Combine all non-pinned sessions for full reverse-chronological history view (pinned shown separately above, never duplicated)
   const allChronologicalSessions = useMemo(() => {
+    if (viewMode !== "history") return [];
     const list: SessionRow[] = [
       ...uncategorizedSessions,
       ...projects.flatMap((p) => p.sessions),
@@ -96,7 +97,7 @@ export const SessionPanel = memo(({ onClose }: SessionPanelProps) => {
     return deduped.sort(
       (a, b) => sessionLastActivity(b) - sessionLastActivity(a)
     );
-  }, [uncategorizedSessions, projects]);
+  }, [viewMode, uncategorizedSessions, projects]);
 
   // [trace] RCA: `watch` holds the identities React itself compares. Every key
   // in the logged `changed=[...]` is a cause of this component's re-render.
@@ -242,7 +243,7 @@ export const SessionPanel = memo(({ onClose }: SessionPanelProps) => {
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const rowVirtualizer = useVirtualizer({
-    count: allChronologicalSessions.length,
+    count: viewMode === "history" ? allChronologicalSessions.length : 0,
     getScrollElement: () => scrollRef.current,
     estimateSize: () => SESSION_ROW_HEIGHT,
     // Constant row height on purpose. With dynamic measurement, every row that

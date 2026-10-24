@@ -24,7 +24,6 @@ export { toStatusLabel, isDotActive, resolveActivityDisplay };
 
 export function useHomePage() {
   const session = useVoiceSession();
-  const [historyOpen, setHistoryOpen] = useState(false);
   const [isMobileScreen, setIsMobileScreen] = useState(
     typeof window !== "undefined" ? isMobileWidth() : false
   );
@@ -55,8 +54,6 @@ export function useHomePage() {
     isSleeping,
     isPaused,
     pttStatus,
-    transcript,
-    assistantText,
     cpuWarning,
     isTemporarySession,
     isTextModeOpen,
@@ -112,7 +109,7 @@ export function useHomePage() {
     });
   }, [submitText]);
 
-  // Auto-scroll the dialogue rail whenever turns, transcript, or assistant text updates
+  // Auto-scroll the dialogue rail whenever turns update
   useEffect(() => {
     const el = dialogueScrollRef.current;
     if (!el || !shouldAutoScrollRef.current) return;
@@ -122,7 +119,7 @@ export function useHomePage() {
         dialogueScrollRef.current.scrollTop = dialogueScrollRef.current.scrollHeight;
       }
     });
-  }, [dialogueHistory, transcript, assistantText]);
+  }, [dialogueHistory]);
 
   return {
     interactionState,
@@ -132,8 +129,6 @@ export function useHomePage() {
     isSleeping,
     isPaused,
     pttStatus,
-    transcript,
-    assistantText,
     cpuWarning,
     isTemporarySession,
     isTextModeOpen,
@@ -158,8 +153,6 @@ export function useHomePage() {
     setTextModeOpen,
     togglePlaybackMute,
     toggleMicMute,
-    historyOpen,
-    setHistoryOpen,
     telemetryRef,
     dialogueScrollRef,
     handleDialogueScroll,

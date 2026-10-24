@@ -87,6 +87,22 @@ const PAGE_TITLES: Record<string, string> = {
   "/monitoring": "Vox — Monitoring",
 };
 
+const FootprintHudButton = React.memo(({ onOpenProfiler }: { onOpenProfiler: () => void }) => {
+  const { voxCpu, voxRam, isReady } = useVoxFootprint();
+  if (!isReady) return null;
+  return (
+    <Tooltip label={LAYOUT_COPY.nav.openProfiler} shortcutId="home.profiler">
+      <button
+        onClick={onOpenProfiler}
+        className="text-[14px] font-mono text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--accent))] hover:bg-white/[0.04] px-2 py-1 rounded-lg transition-all leading-none select-none tabular-nums cursor-pointer border border-transparent hover:border-[rgba(var(--border),0.15)]"
+      >
+        {voxCpu.toFixed(1)}% · {Math.round(voxRam)} MB
+      </button>
+    </Tooltip>
+  );
+});
+FootprintHudButton.displayName = "FootprintHudButton";
+
 export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) => {
   const location = useLocation();
   const navigate = useNavigate();
@@ -97,7 +113,6 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
   const routeRevealTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [monitorOpen, setMonitorOpen] = useState(false);
   const monitorBtnRef = useRef<HTMLButtonElement>(null);
-  const { voxCpu, voxRam, isReady } = useVoxFootprint();
   const { openProfiler } = useProfilerDrawer();
   const { openActiveDrawer, closeActiveDrawer } = usePageDrawer();
   const { isPanelOpen, closePanel, openPanel, togglePanel } = usePanelStateContext();
@@ -415,21 +430,24 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
       const all = Array.from(document.querySelectorAll<HTMLElement>(focusableSelector));
       const active = document.activeElement as HTMLElement | null;
 
-      const candidates = all.filter((el) => {
-        if (el === active) return false;
-        if (el.getAttribute("tabindex") === "-1") return false;
-        if (el.offsetWidth === 0 && el.offsetHeight === 0) return false;
-        if (el.closest("[aria-hidden='true']")) return false;
-        if (el.closest(".pointer-events-none") && !el.closest(".pointer-events-auto")) return false;
+      const candidates: { el: HTMLElement; r: DOMRect }[] = [];
+      for (const el of all) {
+        if (el === active) continue;
+        if (el.getAttribute("tabindex") === "-1") continue;
+        if (el.offsetWidth === 0 && el.offsetHeight === 0) continue;
+        if (el.closest("[aria-hidden='true']")) continue;
+        if (el.closest(".pointer-events-none") && !el.closest(".pointer-events-auto")) continue;
         const r = el.getBoundingClientRect();
-        return r.width > 0 && r.height > 0;
-      });
+        if (r.width > 0 && r.height > 0) {
+          candidates.push({ el, r });
+        }
+      }
 
       if (candidates.length === 0) return;
 
       const ar = active?.getBoundingClientRect();
       if (!ar || active === document.body) {
-        candidates[0]?.focus();
+        candidates[0]?.el.focus();
         return;
       }
 
@@ -439,8 +457,7 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
       let best: HTMLElement | null = null;
       let bestScore = Infinity;
 
-      for (const el of candidates) {
-        const r = el.getBoundingClientRect();
+      for (const { el, r } of candidates) {
         const candCx = r.left + r.width / 2;
         const candCy = r.top + r.height / 2;
 
@@ -746,19 +763,12 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
             </Tooltip>
 
             {/* Mini footprint HUD — CPU% · RAM MB (Click to launch Memory Profiler) */}
-            {isReady && (
-              <Tooltip label={LAYOUT_COPY.nav.openProfiler} shortcutId="home.profiler">
-                <button
-                  onClick={() => {
-                    setMonitorOpen(false);
-                    openProfiler();
-                  }}
-                  className="text-[14px] font-mono text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--accent))] hover:bg-white/[0.04] px-2 py-1 rounded-lg transition-all leading-none select-none tabular-nums cursor-pointer border border-transparent hover:border-[rgba(var(--border),0.15)]"
-                >
-                  {voxCpu.toFixed(1)}% · {Math.round(voxRam)} MB
-                </button>
-              </Tooltip>
-            )}
+            <FootprintHudButton
+              onOpenProfiler={() => {
+                setMonitorOpen(false);
+                openProfiler();
+              }}
+            />
           </div>
         </div>
 

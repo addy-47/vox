@@ -70,6 +70,17 @@ export const AmbientBackground = React.memo(({
     let smoothedEnergy = 0;
     let isRunning = false;
     let isSettled = false;
+    let lastGlowStr = "";
+    let lastRippleStr = "";
+    let isLight =
+      typeof document !== "undefined" &&
+      document.documentElement.getAttribute("data-theme") === "light";
+
+    const checkTheme = () => {
+      isLight =
+        typeof document !== "undefined" &&
+        document.documentElement.getAttribute("data-theme") === "light";
+    };
 
     const startLoop = () => {
       if (isRunning || document.hidden || isFrozen()) return;
@@ -99,9 +110,6 @@ export const AmbientBackground = React.memo(({
       // organic, fluid interpolation
       smoothedEnergy += (energy - smoothedEnergy) * 0.15;
 
-      const isLight =
-        typeof document !== "undefined" &&
-        document.documentElement.getAttribute("data-theme") === "light";
       const glowOpacityMultiplier = isLight ? 1.8 : 1.2;
       const rippleOpacityMultiplier = isLight ? 1.8 : 1.2;
 
@@ -111,19 +119,31 @@ export const AmbientBackground = React.memo(({
       const baseRipple = RIPPLE_OPACITY * rippleOpacityMultiplier;
       const dynamicRipple = baseRipple + smoothedEnergy * 0.18 * rippleOpacityMultiplier;
 
-      if (glowRef.current) {
-        glowRef.current.style.opacity = dynamicGlow.toFixed(3);
+      const glowStr = dynamicGlow.toFixed(3);
+      if (glowStr !== lastGlowStr && glowRef.current) {
+        lastGlowStr = glowStr;
+        glowRef.current.style.opacity = glowStr;
       }
-      if (rippleRef.current) {
-        rippleRef.current.style.opacity = dynamicRipple.toFixed(3);
+      const rippleStr = dynamicRipple.toFixed(3);
+      if (rippleStr !== lastRippleStr && rippleRef.current) {
+        lastRippleStr = rippleStr;
+        rippleRef.current.style.opacity = rippleStr;
       }
 
       // Self-stop rAF when energy is settled at idle 0
       if (energy < 0.001 && smoothedEnergy < 0.001) {
         if (!isSettled) {
           isSettled = true;
-          if (glowRef.current) glowRef.current.style.opacity = baseGlow.toFixed(3);
-          if (rippleRef.current) rippleRef.current.style.opacity = baseRipple.toFixed(3);
+          const bgStr = baseGlow.toFixed(3);
+          const brStr = baseRipple.toFixed(3);
+          if (glowRef.current && lastGlowStr !== bgStr) {
+            lastGlowStr = bgStr;
+            glowRef.current.style.opacity = bgStr;
+          }
+          if (rippleRef.current && lastRippleStr !== brStr) {
+            lastRippleStr = brStr;
+            rippleRef.current.style.opacity = brStr;
+          }
         }
         stopLoop();
         return;
@@ -153,6 +173,7 @@ export const AmbientBackground = React.memo(({
     // Park on theme flip, resume on completion. `smoothedEnergy` and
     // `isSettled` survive, so the loop picks up mid-interpolation.
     const onThemeTransition = () => {
+      checkTheme();
       frozenRef.current = getThemeTransitioning();
       if (frozenRef.current) {
         stopLoop();
@@ -161,6 +182,7 @@ export const AmbientBackground = React.memo(({
       }
     };
 
+    checkTheme();
     frozenRef.current = getThemeTransitioning();
     startLoop();
     document.addEventListener("visibilitychange", onVisibilityChange);
@@ -209,8 +231,6 @@ export const AmbientBackground = React.memo(({
         </div>
       </div>
 
-      {/* Noise grain overlay */}
-      <div className="amb-noise" />
     </div>
   );
 });

@@ -57,15 +57,15 @@ export const PipelineField = React.memo(({ state, volume = 0 }: PipelineFieldPro
         ["--border-alpha"]: "0.06",
       } as React.CSSProperties}
     >
-      {/* Sentient Field Ambient Heatmap */}
+      {/* Sentient Field Ambient Heatmap — zero filter blur, pure gradient falloff */}
       <div
-        className="absolute w-[80vw] h-[80vw] max-w-[800px] max-h-[800px] rounded-full blur-[120px] opacity-[var(--field-energy)] transition-[opacity] duration-700 ease-out"
+        className="absolute w-[85vw] h-[85vw] max-w-[860px] max-h-[860px] rounded-full opacity-[var(--field-energy)] transition-opacity duration-700 ease-out transform-gpu"
         style={{
           left: "50%",
           top: "55%",
           transform: "translate(-50%, -50%)",
-          background: `radial-gradient(circle, rgba(var(--accent), 0.4) 0%, rgba(var(--accent), 0.05) 50%, transparent 70%)`,
-          mixBlendMode: "screen",
+          background:
+            "radial-gradient(circle, rgba(var(--accent), 0.28) 0%, rgba(var(--accent), 0.10) 32%, rgba(var(--accent), 0.03) 55%, transparent 72%)",
         }}
       />
 

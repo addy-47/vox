@@ -316,16 +316,18 @@ export const ProjectRowItem = memo(
           )}
         </div>
 
-        {/* Floating Project Context Menu Portal */}
-        <ProjectContextMenu
-          open={menuOpen}
-          onClose={() => setMenuOpen(false)}
-          anchorRect={menuAnchorRect}
-          projectName={group.project.name}
-          onStartRename={handleStartRename}
-          onDelete={handleDelete}
-          triggerRef={triggerRef}
-        />
+        {/* Floating Project Context Menu Portal — only mount when open */}
+        {menuOpen && (
+          <ProjectContextMenu
+            open={menuOpen}
+            onClose={() => setMenuOpen(false)}
+            anchorRect={menuAnchorRect}
+            projectName={group.project.name}
+            onStartRename={handleStartRename}
+            onDelete={handleDelete}
+            triggerRef={triggerRef}
+          />
+        )}
 
         {/* Clean Nested Sessions (Indented under project)
 

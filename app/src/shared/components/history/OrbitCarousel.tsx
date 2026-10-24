@@ -23,7 +23,7 @@ export interface OrbitCarouselProps {
   /** Reports whether the most recent pointer gesture was a drag (click suppression). */
   onDragStateChange?: (moved: boolean) => void;
   /** Renders the card body for a node id; the carousel owns positioning/depth styling. */
-  renderNode?: (id: string) => React.ReactNode;
+  renderNode?: (id: string, isSelected?: boolean) => React.ReactNode;
   /**
    * Shared stage element that actually carries backdrop-filter (e.g. the hub).
    * The carousel's own card layer has no backdrop-filter, so toggling no-blur
@@ -137,8 +137,9 @@ export const OrbitCarousel = memo(({
       const opacity = ORBIT_CARD_OPACITY_MIN + depth * (1 - ORBIT_CARD_OPACITY_MIN);
       const zIndex = zIndexForAngle(angle, isSelected);
       
-      // Quantized depth blur to avoid continuous GPU layer re-rasterization
-      const blurVal = depth < 0.25 ? 3 : depth < 0.42 ? 1.5 : 0;
+      // Quantized depth blur — suppress while moving/dragging to prevent GPU re-rasterization
+      const isMoving = draggingRef.current || rafRef.current !== null || orbitAnimRafRef.current !== null;
+      const blurVal = isMoving ? 0 : (depth < 0.25 ? 3 : depth < 0.42 ? 1.5 : 0);
 
       const rx = Math.round(x * 10) / 10;
       const ry = Math.round(y * 10) / 10;
@@ -397,7 +398,8 @@ export const OrbitCarousel = memo(({
           const opacity =
             ORBIT_CARD_OPACITY_MIN + depth * (1 - ORBIT_CARD_OPACITY_MIN);
           const zIndex = zIndexForAngle(angle, isSelected);
-          const blurVal = depth < 0.25 ? 3 : depth < 0.42 ? 1.5 : 0;
+          const isMoving = draggingRef.current || rafRef.current !== null || orbitAnimRafRef.current !== null;
+          const blurVal = isMoving ? 0 : (depth < 0.25 ? 3 : depth < 0.42 ? 1.5 : 0);
 
           const rx = Math.round(x * 10) / 10;
           const ry = Math.round(y * 10) / 10;
@@ -453,7 +455,7 @@ export const OrbitCarousel = memo(({
               className="absolute left-0 top-0 pointer-events-auto opacity-0"
               style={{ transform: "translate3d(-9999px, -9999px, 0)" }}
             >
-              {renderNode(id)}
+              {renderNode(id, id === selectedId)}
             </div>
           ))}
       </div>

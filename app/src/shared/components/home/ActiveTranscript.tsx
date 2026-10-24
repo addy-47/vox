@@ -1,12 +1,19 @@
 import React, { memo } from "react";
 import { DialogueBubble } from "./DialogueBubble";
+import { useSessionStore } from "@/store/sessionStore";
 
 interface ActiveTranscriptProps {
-  transcript: string;
-  assistantText: string;
+  transcript?: string;
+  assistantText?: string;
 }
 
-export const ActiveTranscript: React.FC<ActiveTranscriptProps> = memo(({ transcript, assistantText }) => {
+export const ActiveTranscript: React.FC<ActiveTranscriptProps> = memo(({ transcript: propTranscript, assistantText: propAssistantText }) => {
+  const storeTranscript = useSessionStore((s) => s.transcript);
+  const storeAssistantText = useSessionStore((s) => s.assistantText);
+
+  const transcript = propTranscript ?? storeTranscript;
+  const assistantText = propAssistantText ?? storeAssistantText;
+
   if (!transcript && !assistantText) return null;
 
   return (

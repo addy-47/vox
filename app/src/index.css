@@ -219,7 +219,9 @@ body:not(.is-tray) {
     pointer-events: none;
     z-index: 9999;
     opacity: 0.035;
-    
+    transform: translateZ(0);
+    contain: strict;
+    background-size: 200px 200px;
     background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
     background-repeat: repeat;
   }
@@ -856,9 +858,8 @@ input[type="range"]:active::-webkit-slider-thumb {
     -webkit-backdrop-filter: none !important;
   }
 
-  /* Opt-in: restore blur inside drawers only */
-  .drawer-keep-blur,
-  .drawer-keep-blur * {
+  /* Opt-in: restore blur on the drawer sheet surface only (never on descendants) */
+  .drawer-keep-blur {
     backdrop-filter: blur(12px) !important;
     -webkit-backdrop-filter: blur(12px) !important;
   }

@@ -29,6 +29,7 @@ import { cn } from "@/shared/lib/utils";
 import { getShortcutById } from "@/data/shortcuts";
 import { isSpatialNavigating, subscribeSpatialNavigating } from "@/shared/lib/spatialNavigation";
 import { isRealMobileDevice } from "@/layout/breakpoints";
+import { isCoarsePointer } from "@/lib/capabilities";
 
 export interface TooltipProps {
   label: React.ReactNode;
@@ -62,14 +63,13 @@ export const Tooltip: React.FC<TooltipProps> = React.memo(({
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const arrowRef = useRef<SVGSVGElement>(null);
-  const [spatialNavigating, setSpatialNavigating] = useState(isSpatialNavigating());
 
   useEffect(() => {
+    if (!isOpen) return;
     return subscribeSpatialNavigating((navigating) => {
-      setSpatialNavigating(navigating);
       if (navigating) setIsOpen(false);
     });
-  }, []);
+  }, [isOpen]);
 
   const placement = useMemo<Placement>(() => {
     if (align === "start") return `${side}-start` as Placement;
@@ -77,25 +77,30 @@ export const Tooltip: React.FC<TooltipProps> = React.memo(({
     return side as Placement;
   }, [side, align]);
 
-  const { refs, floatingStyles, context } = useFloating({
-    open: isOpen && !spatialNavigating && !disabled,
-    onOpenChange: (open) => {
-      if (spatialNavigating && open) return;
-      setIsOpen(open);
-    },
-    placement,
-    whileElementsMounted: autoUpdate,
-    middleware: [
+  const middleware = useMemo(
+    () => [
       offset(8),
       flip({ fallbackAxisSideDirection: "start" }),
       shift({ padding: 8 }),
       arrow({ element: arrowRef }),
     ],
+    []
+  );
+
+  const { refs, floatingStyles, context } = useFloating({
+    open: isOpen && !isSpatialNavigating() && !disabled,
+    onOpenChange: (open) => {
+      if (isSpatialNavigating() && open) return;
+      setIsOpen(open);
+    },
+    placement,
+    whileElementsMounted: autoUpdate,
+    middleware,
   });
 
   const isTouchOrMobile = useMemo(() => {
     if (typeof window === "undefined") return false;
-    return isRealMobileDevice() || (typeof window.matchMedia === "function" && window.matchMedia("(pointer: coarse)").matches);
+    return isRealMobileDevice() || isCoarsePointer();
   }, []);
 
   const hover = useHover(context, {
@@ -180,7 +185,7 @@ export const Tooltip: React.FC<TooltipProps> = React.memo(({
   return (
     <>
       {renderReference()}
-      {isOpen && !spatialNavigating && (
+      {isOpen && !isSpatialNavigating() && (
         <FloatingPortal>
           <div
             ref={refs.setFloating}

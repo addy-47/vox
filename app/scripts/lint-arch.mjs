@@ -310,6 +310,49 @@ function offenderPush(list, src, idx, file, frag) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Invariant 31 — Layout shell telemetry isolation (frontend-style-guide.md §4.1).
+// Root layout shells (ResponsiveLayout) must not invoke high-frequency telemetry
+// hooks (useVoxFootprint) directly in their component body.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  const respPath = path.join(SRC_DIR, "layout", "ResponsiveLayout.tsx");
+  if (fs.existsSync(respPath)) {
+    const src = fs.readFileSync(respPath, "utf-8");
+    const layoutBody = src.slice(src.indexOf("export const ResponsiveLayout"));
+    check("Invariant 31 (Shell telemetry isolation)", !layoutBody.includes("useVoxFootprint()"), "  ResponsiveLayout calls useVoxFootprint() directly at shell level; isolate in memo leaf.");
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Invariant 32 — Lazy list row item menu mounting (frontend-style-guide.md §4.2).
+// Row items in virtual/mapped lists must conditionally mount context menus.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  const sessionRowPath = path.join(SRC_DIR, "shared", "components", "home", "session", "SessionRowItem.tsx");
+  const projectRowPath = path.join(SRC_DIR, "shared", "components", "home", "session", "ProjectRowItem.tsx");
+  const sessionOk = !fs.existsSync(sessionRowPath) || !fs.readFileSync(sessionRowPath, "utf-8").includes("<SessionContextMenu") || fs.readFileSync(sessionRowPath, "utf-8").includes("menuOpen && (");
+  const projectOk = !fs.existsSync(projectRowPath) || !fs.readFileSync(projectRowPath, "utf-8").includes("<ProjectContextMenu") || fs.readFileSync(projectRowPath, "utf-8").includes("menuOpen && (");
+  check("Invariant 32 (Lazy row menu mounting)", sessionOk && projectOk, "  SessionRowItem or ProjectRowItem mounts ContextMenu unconditionally without menuOpen guard.");
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Invariant 33 — No deleted CSS utility classes in JSX.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  const deadClasses = ["dock-feather", "theme-flip-surface"];
+  const offenders = [];
+  for (const f of tsFiles) {
+    const src = fs.readFileSync(f, "utf-8");
+    for (const cls of deadClasses) {
+      if (src.includes(`"${cls}"`) || src.includes(`'${cls}'`) || src.includes(` ${cls} `) || src.includes(` ${cls}"`) || src.includes(`"${cls} `)) {
+        offenders.push(`${rel(f)}: references dead class '.${cls}'`);
+      }
+    }
+  }
+  check("Invariant 33 (No dead custom CSS classes)", offenders.length === 0, offenders.map((o) => `  ${o}`).join("\n"));
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 if (failures > 0) {
   console.error(`\nlint-arch: ${failures} invariant violation${failures === 1 ? "" : "s"}`);
   process.exit(1);

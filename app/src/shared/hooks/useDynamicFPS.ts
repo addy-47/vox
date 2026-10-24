@@ -91,57 +91,58 @@ export function useDynamicFPS({
   const fpsActiveRef = useRef(fpsActive);
   const fpsIdleRef = useRef(fpsIdle);
 
+  onFrameRef.current = onFrame;
+  isActiveRef.current = isActive;
+  isPausedRef.current = isPaused;
+  isVisibleRef.current = effectiveVisible;
+  isPageVisibleRef.current = effectivePageVisible;
+  fpsActiveRef.current = fpsActive;
+  fpsIdleRef.current = fpsIdle;
+
   // ── RAF state ──
   const rafRef = useRef<number | null>(null);
   const lastFrameTimeRef = useRef<number>(0);
-  const loopRef = useRef<(timestamp: number) => void>(() => {});
 
   const loop = useCallback((timestamp: number) => {
     loopRef.current(timestamp);
   }, []);
 
-  useEffect(() => {
-    onFrameRef.current = onFrame;
-    isActiveRef.current = isActive;
-    isPausedRef.current = isPaused;
-    isVisibleRef.current = effectiveVisible;
-    isPageVisibleRef.current = effectivePageVisible;
-    fpsActiveRef.current = fpsActive;
-    fpsIdleRef.current = fpsIdle;
+  const loopRef = useRef<(timestamp: number) => void>((timestamp: number) => {
+    if (
+      isPausedRef.current ||
+      !isVisibleRef.current ||
+      !isPageVisibleRef.current
+    ) {
+      rafRef.current = null;
+      return;
+    }
 
-    loopRef.current = (timestamp: number) => {
-      if (
-        isPausedRef.current ||
-        !isVisibleRef.current ||
-        !isPageVisibleRef.current
-      ) {
-        rafRef.current = null;
-        return;
-      }
+    const targetFps = isActiveRef.current
+      ? fpsActiveRef.current
+      : fpsIdleRef.current;
 
-      const targetFps = isActiveRef.current
-        ? fpsActiveRef.current
-        : fpsIdleRef.current;
+    if (targetFps <= 0) {
+      rafRef.current = null;
+      return;
+    }
 
-      if (targetFps > 0) {
-        const frameInterval = 1000 / targetFps;
-        const delta = timestamp - lastFrameTimeRef.current;
-        if (delta >= frameInterval) {
-          lastFrameTimeRef.current =
-            timestamp - (delta % frameInterval);
-          onFrameRef.current(delta);
-        }
-      }
+    const frameInterval = 1000 / targetFps;
+    const delta = timestamp - lastFrameTimeRef.current;
+    if (delta >= frameInterval) {
+      lastFrameTimeRef.current =
+        timestamp - (delta % frameInterval);
+      onFrameRef.current(delta);
+    }
 
-      rafRef.current = requestAnimationFrame(loop);
-    };
+    rafRef.current = requestAnimationFrame(loop);
   });
 
   // ── Lifecycle: start/stop loop based on control flags ──
   // Uses the effective flags (caller props ANDed with self-managed observers)
   // so a scrolled-out element or hidden tab cancels the RAF entirely.
   useEffect(() => {
-    const shouldRun = !isPaused && effectiveVisible && effectivePageVisible;
+    const targetFps = isActive ? fpsActive : fpsIdle;
+    const shouldRun = !isPaused && effectiveVisible && effectivePageVisible && targetFps > 0;
 
     if (shouldRun) {
       if (rafRef.current === null) {
@@ -159,7 +160,7 @@ export function useDynamicFPS({
         rafRef.current = null;
       }
     };
-  }, [isPaused, effectiveVisible, effectivePageVisible, loop]);
+  }, [isPaused, effectiveVisible, effectivePageVisible, isActive, fpsActive, fpsIdle, loop]);
 
   // ── Manual start/stop for imperative control ──
   const start = useCallback(() => {

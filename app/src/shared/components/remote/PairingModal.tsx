@@ -474,7 +474,7 @@ export const PairingModal = memo(({ open, onClose }: PairingModalProps) => {
                             <img
                               src={details.qrDataUrl}
                               alt="Remote Pairing QR Code"
-                              className="w-32 h-32 sm:w-40 sm:h-40 md:w-48 md:h-48 md:sm:w-52 md:sm:h-52 block select-none pointer-events-none"
+                              className="w-40 h-40 sm:w-48 sm:h-48 md:w-56 md:h-56 md:sm:w-60 md:sm:h-60 block select-none pointer-events-none"
                             />
                           </div>
 

@@ -111,7 +111,7 @@ export const CentralClockNode = memo(
 
         {/* Central Session Hub Node — Perfectly Centered 3D Acoustic Core */}
         <div
-          className="theme-flip-surface clock-hub glass-keep-blur relative rounded-full flex flex-col items-center justify-center text-center transition-all overflow-hidden isolate glass-card"
+          className="clock-hub glass-keep-blur relative rounded-full flex flex-col items-center justify-center text-center transition-all overflow-hidden isolate glass-card"
           style={{
             width: "clamp(250px, 26vw, 320px)",
             height: "clamp(250px, 26vw, 320px)",
@@ -184,7 +184,7 @@ export const CentralClockNode = memo(
                 variant="pill"
                 size="sm"
                 ariaLabel={HISTORY_COPY.viewSelectorLabel}
-                className="clock-pill theme-flip-surface flex items-center gap-1 p-1 rounded-full shadow-inner transition-colors select-none"
+                className="clock-pill flex items-center gap-1 p-1 rounded-full shadow-inner transition-colors select-none"
               />
             </div>
 

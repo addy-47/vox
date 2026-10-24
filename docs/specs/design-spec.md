@@ -308,22 +308,22 @@ Pill-shaped containers (`rounded-full` / `rounded-pill` with background, border,
   2. **No Redundant Value / Status Badges Next to Titles:** Never add a pill badge next to a section or card title that parrots adjacent control settings (e.g. repeating `"300 ms"`, `"1.05x"`, `"Active"`, `"Manual"`). When an active control, button grid, or toggle switch is visible on the card, any duplicate status pill is redundant visual clutter and strictly banned.
   3. Static readouts, kickers, and titles must render as clean, unboxed typography (using font weight, tracking, opacity, or accent text color directly on the card surface).
 
-### 5.2 Navigation Tabs Invariant: Simple Underline Tabs Only (Zero Pill Tabs)
+### 5.2 Navigation Tabs Invariant: Simple Underline Tabs Only
 
-All multi-tab navigation strips across the application (in modals, config desks, or page views) MUST be simple underline tabs (matching the canonical config desk components, e.g., `PersonalMemoryConfigDesk` and `CategorySelector`). Pill-shaped buttons or capsule wrappers are strictly prohibited for tab navigation.
+All multi-tab navigation strips across the application (in modals, config desks, or page views) MUST be simple underline tabs. Pill-shaped buttons or capsule wrappers are strictly prohibited for tab navigation.
 
-* **Container Grammar**: Flex container with a subtle bottom border (`border-b border-[rgba(var(--accent),0.08)] mb-2 px-0.5 select-none overflow-x-auto no-scrollbar`), with no capsule styling or enclosed pill track.
-* **Tab Elements**: Clean text (`text-[11px] sm:text-[11.5px] font-mono font-bold uppercase tracking-[0.06em]`) with an active bottom underline indicator (`border-b-2 border-[rgb(var(--accent))] text-[rgb(var(--accent))]`) and inactive transparent border (`text-[rgb(var(--foreground-muted))]/60 border-transparent hover:text-[rgb(var(--foreground))]`).
-* **Subtle Dividers**: Delicate vertical dividers between sibling tabs (`<span className="text-[10px] text-[rgb(var(--foreground-muted))]/25 select-none pb-1.5 px-1 sm:px-2">|</span>`).
-* **Exception — the settings category strip**: the Speech card's category strip (Voice detection, Speech transcription, Text to speech) is a boxed icon + label strip, not an underline tab. Each item is a bordered cell of fixed width; its label truncates instead of resizing the cell, and the strip carries no provider sublabel. The exception covers the strip's shape only — pill and capsule wrappers stay prohibited; desktop cells are 94px high with no extra title-to-caption gap, while small-screen cells retain their compact layout and existing icons.
+* **Container Grammar**: Flex container with a subtle bottom border (`border-b`), zero capsule styling, and no enclosed pill track.
+* **Tab Elements**: Monospace or sans uppercase typography with active bottom underline indicator and inactive transparent border.
+* **Subtle Dividers**: Delicate vertical dividers between sibling tabs.
+* **Exception**: Settings category selector strips may use bordered icon + label cells of fixed width, provided no pill or capsule wrappers are used.
 
 ### 5.3 Clean Vector SVG Pattern (Frameless Linework)
 
-All vector illustrations, domain diagrams, and custom toggle widgets (e.g. `WebSearchGlobe`, `TransliterationToggle`, `RemoteComputeGraphic`, `ManagedContextGraphic`):
+All vector illustrations, domain diagrams, and custom toggle widgets:
 
-* **Frameless Linework:** Vector illustrations must never be enclosed in heavy outer rounded-rectangle or pill-shaped container boxes (`border border-[rgba(var(--accent),...)] bg-[rgba(var(--accent),...)] w-full h-[68px]`). The graphic must breathe cleanly on the transparent surface.
-* **Crisp Engineering Geometry:** Use delicate stroke weights (0.8px – 1.25px), subtle opacity ramps (0.25 – 0.85), and theme accent accents. Avoid drawing generic rounded pills to represent compute or context; use authentic structural representations (isometric lattices, blade chassis with data traces, stacked memory planes, or script vectors).
-* **Unboxed Accompanying Typography:** Text accompanying an SVG graphic must render as clean, unboxed typography below or beside the illustration (e.g. `text-[9px] font-mono font-bold tracking-[0.14em] uppercase text-[rgb(var(--accent))]`), never wrapped in a faux-button pill box.
+* **Frameless Linework**: Never enclose vector illustrations in heavy outer rounded-rectangle or pill-shaped container boxes. The graphic must breathe cleanly on the transparent surface.
+* **Crisp Engineering Geometry**: Use delicate stroke weights (0.8px – 1.25px), subtle opacity ramps (0.25 – 0.85), and theme accent highlights. Use authentic structural representations (isometric lattices, chassis data traces, stacked memory planes).
+* **Unboxed Accompanying Typography**: Text accompanying an SVG graphic must render as clean, unboxed typography, never wrapped in a faux-button pill box.
 
 ---
 
@@ -356,51 +356,16 @@ All vector illustrations, domain diagrams, and custom toggle widgets (e.g. `WebS
   static layout instead of a 60 fps compositing storm, without flashing modal
   loader overlays during standard window resizing.
 
-### 7.1 Vox Logo Loader Invariant (Minimal Stroke Waveform & Zero Typography)
+### 7.1 Logo Loader Invariant
 
-* **Zero Typography**: `OrbitalLoader` and boot loader are purely visual, ambient loading components. They MUST NOT render any text (no title, subtitle, or status text) across any page or view.
-* **Minimalist Stroke Logo**: The loading graphic consists of a clean, minimal, stroke-style SVG of the official Vox audio waveform logo (`rgb(var(--accent))` stroke, ~1.5px weight). It renders the 5 vertical sound equalizer lines overlaid with the signature central waveform featuring the deep "V" dip and terminal node dots. Heavy orb silhouettes, outer rotating rings, and ping auras are eliminated in favor of an ultra-lean, single-element SVG.
-* **Motion & Performance Budget**: Animates purely through hardware-accelerated CSS `stroke-dashoffset` flow and gentle breathing glow (`opacity` / `filter`). Zero JavaScript animation loops or `requestAnimationFrame` hooks are permitted. Idle loops pause under `prefers-reduced-motion` and `data-viewport-resize`.
+* **Zero Typography**: Loading components (`OrbitalLoader`, boot loader) are purely visual, ambient elements. They MUST NOT render text (no title, subtitle, or status text).
+* **Minimalist Stroke Logo**: Loading graphic consists of a clean, minimal stroke-style SVG of the official Vox audio waveform logo. Silhouettes and outer rotating rings are eliminated.
+* **Compositor Performance**: Animates purely through hardware-accelerated CSS `stroke-dashoffset` flow and gentle breathing glow. Zero JavaScript rAF animation loops.
 
-### 7.2 Route Commit Motion & Orb Entrance Bloom
+### 7.2 Route Commit Motion & Bloom
 
-* **Unmount first, then reveal the destination.** A click, keyboard action, or
-  swipe immediately commits navigation and unmounts the previous page. The
-  persistent shell shows an opaque, textless loader while the destination and
-  its render chunks prepare; the destination is revealed when it can paint.
-  Never keep the previous page visible behind the loader or keep every route
-  mounted to achieve this. Route entrance motion remains limited to the mobile
-  swipe gesture (±18 % offset, 220 ms, ease `[0.16, 1, 0.3, 1]`), which
-  communicates lateral movement across sibling tabs. Swipe direction resets
-  on the next touch start so a stale offset never replays on a plain tap.
-* **Orb entrance bloom.** The WebGL orb container stays invisible until its
-  first frame is painted, then blooms in over 700 ms (opacity 0 → 1, scale
-  0.92 → 1, ease `[0.16, 1, 0.3, 1]`) instead of popping from nothing to a
-  fully-drawn canvas. The bloom is compositor-only (transform + opacity) and
-  is skipped entirely under `prefers-reduced-motion`, where the orb starts in
-  its entered state.
-
-### 7.3 Warm-Nav Data Caches (Route Commit Must Never Await IPC)
-
-Route remounts are the hot path: page components MUST paint from cached data
-synchronously. All full-list reads used at route commit follow one contract —
-stale-while-revalidate in the service layer (`persistenceService.ts`,
-`projectsService.ts`, `memoryService.ts`):
-
-* **Warm read (`getSessions` / `getProjects` / `getTurns` / observation
-  reads):** cached data resolves synchronously; a deduped background revalidate
-  refreshes the cache. No route mount awaits a cold IPC before first paint.
-* **Invalidation read (`refreshSessions` / `refreshProjects` / forced
-  refresh):** always hits the backend, deduped against in-flight calls.
-  Required on `sessions_changed` and all mutation paths, never on activation.
-* **Turns cache:** LRU-bounded (20 sessions), keyed by session id.
-* **Project mutations** (`createProject` / `renameProject` / `deleteProject`)
-  are the only writers of project rows; each clears the projects cache so the
-  next observed read refetches. No backend event marks project mutations.
-* **Consumers must reconcile** (`reconcileSessions` / `reconcileProjects`):
-  field-identical rows keep the previous object identity so cached reads never
-  re-render the whole panel subtree.
-
+* **Unmount First, Then Reveal**: Navigation immediately commits and unmounts the previous page, displaying an ambient textless loader until destination chunks paint. Never keep stale routes mounted behind overlays.
+* **Orb Entrance Bloom**: The WebGL orb stays invisible until its first frame is painted, blooming in over 700 ms via compositor transforms and opacity. The bloom is skipped under `prefers-reduced-motion`.
 
 ---
 
@@ -410,7 +375,7 @@ The background is a reactive canvas representing the voice engine's state.
 
 ### 8.1 Status Surface
 
-The pipeline status surface is a **frameless typographic line** centered above the orb. It is static text plus an optional gradient shimmer sweep. It is never enclosed in a pill, border, background tint, or backdrop blur — per `.agents/rules/frontend-style-guide.md` §5, faux-pill containers are reserved for interactive controls only, and a status label is not one.
+The pipeline status surface is a **frameless typographic line** centered above the orb with an optional gradient shimmer sweep. It is never enclosed in a pill, border, background tint, or backdrop blur — per §5.1, faux-pill containers are reserved for interactive controls only, and a status label is not one.
 
 | `interactionState` | Label | Tone | Shimmer |
 | :--- | :--- | :--- | :--- |
@@ -424,47 +389,20 @@ The pipeline status surface is a **frameless typographic line** centered above t
 | `Error` | `Error` | `alert` | no |
 | `Working` (no activity) | `Working` | `live` | yes |
 
-Tone constrains typography only — it is never expressed as a coloured container. `dormant` and `alert` render static text; a shimmer sweep on `Dormant` would animate something that is intentionally still. The surface carries `role="status"` and `aria-live="polite"` so label changes are announced.
-
-When the pipeline is in `Working`, the label is overridden by the resolved **activity** (§8.2).
+Tone constrains typography only — never a colored container. The surface carries `role="status"` and `aria-live="polite"`. While `Working`, the label is overridden by the resolved **activity** (§8.2).
 
 ### 8.2 Activity Resolution & Orb Motion
 
-`Working` covers multiple distinct operations. The `activity` envelope (`ipc-spec.md` §4.1) identifies which. Resolution is a **three-tier cascade**, evaluated in order, with the first hit winning:
+`Working` operations resolve via a **three-tier cascade** (first hit wins):
+1. **`activity.name`** (e.g. `web_search`, `search_memory`, `compaction`).
+2. **`activity.kind`** (`tool` or `compaction`). Catches newly added operations without frontend registry edits.
+3. **`interactionState`** default fallback.
 
-1. **`activity.name`** — e.g. `web_search`, `search_memory`, `compaction`.
-2. **`activity.kind`** — `tool` or `compaction`. Catches any newly added operation with no registry edit.
-3. **`interactionState`** — the §8.1 default, which also supplies the orb motion when no activity is present.
+Orb motion presets map to activity state (`silk` = default noise displacement, `orbits` = orbital planes, `globe` = meridian scan, `web` = edge pulses, `morph` = particle re-boundary). Transitions use a smooth sheet-to-particle cross-dissolve (~300 ms).
 
-A tier-3 fallback guarantees that adding a backend operation never requires a frontend change and never produces an empty label.
+### 8.3 Sentient Membrane (`PipelineField`)
 
-| Tier-1 key (`activity.name`) | Label | Orb motion preset |
-| :--- | :--- | :--- |
-| `web_search` | `Searching web` | `globe` |
-| `search_memory` | `Recalling memory` | `web` |
-| `compaction` | `Compacting context` | `morph` |
-
-| Tier-2 key (`activity.kind`) | Label | Orb motion preset |
-| :--- | :--- | :--- |
-| `tool` | `Working` | `orbits` |
-| `compaction` | `Compacting context` | `morph` |
-
-Orb motion presets are named for the motion grammar ported from the `thinking-orbs` engine:
-
-| Preset | Motion |
-| :--- | :--- |
-| `silk` | Default. Silk-sheet noise displacement only — today's behaviour. |
-| `orbits` | Particles travelling tilted orbital planes around the silk core. |
-| `globe` | A vertical meridian scan band sweeping the particle field; dots brighten as it passes. |
-| `web` | A constellation wiring itself — nearest-neighbour edge pulses converging inward. |
-| `morph` | The silk sheets dissolve as particles re-boundary (circle → triangle → square). |
-
-Entering `Working` drives a **sheet-to-particle cross-dissolve** (~300 ms): silk opacity falls as particle alpha rises, so the orb visibly decompresses into its activity-specific form and re-compresses on completion. The particle layer is omitted entirely on software rasterisers, where `morph` degrades to `silk`.
-
-### Sentient membrane (`PipelineField`)
-
-Behind the central orb, a dashed radial membrane expands and contracts with VAD probability
-and audio volume — the visual heart rate of the assistant.
+Behind the central orb, a radial membrane expands and contracts with VAD probability and audio volume. It renders frameless with gradient falloff; heavy CSS blur filters (`blur-[120px]`) and screen blend modes are strictly prohibited.
 
 ---
 
@@ -501,197 +439,92 @@ Rather than standard conversation logs, Vox renders a holographic dialogue strea
 
 ---
 
-## 13. Gesture Contract (Unified Overlay Grammar)
+## 12. Unified Overlay Grammar
 
-Every transient surface — panel, drawer, popover, card — must respond to the
-same dismissal gestures, enforced by a single global authority rather than
-per-surface listeners.
+Every transient surface (panel, drawer, popover, modal) responds to unified dismissal gestures enforced by a single global authority (`shared/lib/overlayStack.ts`).
 
-### Overlay tiers
+### 12.1 Overlay Tiers
 
 | Tier | Surface | Anchor | Motion |
 | :--- | :--- | :--- | :--- |
-| **Tier 0** | settings accordion cards | inline | expand / collapse |
-| **Tier 1** | popovers & micro-panels (Memory node tooltip, Home test-clip menu, Monitoring popover) | bottom corner / hover / click | scale-fade, transient |
-| **Tier 2** | bottom drawers (History detail, Memory pipeline, Memory profiler) | bottom sheet | translate-Y, spring ease |
-| **Tier 2b** | centered modal (Personal Memory on compact viewports `< 1024px`; dense list expansion) | screen center | scale-fade, transient |
-| **Tier 3** | edge rails (Help, Notifications, Conversations) | top corner trigger | width-collapse / expand |
+| **Tier 0** | Settings accordion cards | Inline | Expand / collapse |
+| **Tier 1** | Popovers & micro-panels (tooltips, test menus, status popovers) | Element anchor / click / hover | Scale-fade, transient |
+| **Tier 2** | Bottom drawers (History detail, Memory pipeline, Profiler) | Bottom sheet (`Drawer.tsx`) | Translate-Y, spring ease |
+| **Tier 2b** | Centered modal (Dense list expansion, compact modals) | Screen center (`Modal.tsx`) | Scale-fade, transient |
+| **Tier 3** | Edge rails (Help, Notifications, Sessions) | Side dock (`EdgePanel.tsx`) | Width-collapse / expand |
 
-### Overlay topology
+### 12.2 Dismissal & Stacking Contracts
 
-Vox uses one overlay grammar across the shipped interface:
-
-- **Top-corner triggers open edge rails.** Help and Notifications share one right-edge rail group; only one is open at a time. Conversations uses an independent left-edge rail on Home.
-- **Bottom-corner triggers open popovers.** Monitoring remains a bottom-left popover on desktop and a route on compact viewports.
-- **Central cards and nodes open bottom drawers.** The existing `Drawer` remains the single bottom-sheet primitive for these surfaces. Below the 1024px compact threshold, where a full-bleed sheet crushes two-column content, the Personal Memory surface renders as a Tier 2b centered modal instead, and the History detail renders as a right-edge panel (`EdgePanel`, same dim/surface/spring as every other rail) over the dimmed session list instead of a drawer.
-- **Dense lists expand in place via Tier 2b.** Where a card body holds a selection list too long to scan or operate at its inline height, the card keeps its constrained inline list and exposes a single expand affordance that presents the same list in a centered modal. The inline list stays authoritative for selection and never becomes disabled or stale while the modal is open; the modal is a larger viewport onto the same state, not a second editor. The expand affordance is an icon-only control and therefore requires a `Tooltip`.
-- **Dismissal is centralized.** Escape closes the topmost surface first (FILO), and outside pointer-down closes the topmost dismissible surface. Surfaces do not install their own Escape or outside-click listeners.
-- **The memory profiler is a debug surface.** It is not part of the shipped overlay contract.
-
-### Dismissal rules
-
-- **Escape closes the topmost surface first (FILO).** `profiler drawer open →
-  monitoring popover opens on top → first Escape closes the popover → second
-  Escape closes the profiler`.
-- **Clicking the root layout closes any open surface.** Backdrops handle outside
-  clicks for Tier 2; Tier 1 popovers close on any pointerdown outside their element.
-- **Re-tapping a trigger toggles** the surface closed (History detail, Memory pipeline drawer).
-- The stack is the **single Escape authority**; surfaces must not add their own
-  Escape listeners. Exceptions that legitimately stay local (non-dismissal): the
-  dictation hotkey recorder, search-input clear, inline editing.
-
-### Implementation & Stacking Contracts
-
-- **Backdrop Dimming Contract**: Centered dialogs (`Modal.tsx`) and full edge rails (`EdgePanel.tsx`) requiring focus isolation use the unified dark dim token `bg-black/50 backdrop-blur-[2px]`. Bottom sheets (`Drawer.tsx`) remain unaffected and preserve page ambience using `bg-[rgb(var(--background))]/60 backdrop-blur-sm`.
-- **Layering & Z-Index Hierarchy**:
-  - `z-[70]`: Global overlays, modals, and open edge rails (including History detail `EdgePanel`).
-  - `z-[60]`: Top chrome clusters (`TopRightCluster`, top-left session triggers). Open right-edge rails must layer above or suppress `TopRightCluster` to prevent visual overlap.
+* **Single Dismissal Authority**: Surfaces do not install their own Escape or outside-click listeners. `shared/lib/overlayStack.ts` manages a FILO stack: `Escape` pops the topmost surface, and root pointer-down dismisses the topmost active overlay.
+* **Backdrop Dimming Contract**:
+  - Centered dialogs (`Modal.tsx`) and edge rails (`EdgePanel.tsx`) use `bg-black/50 backdrop-blur-[2px]`.
+  - Bottom sheets (`Drawer.tsx`) preserve ambient visibility with `bg-[rgb(var(--background))]/60 backdrop-blur-sm`.
+* **Z-Index Ladder**:
+  - `z-[70]`: Global overlays, modals, and open edge rails.
+  - `z-[60]`: Top chrome clusters (`TopRightCluster`).
   - `z-[50]`: Floating bottom navigation (`EdgeNav`).
   - `z-[40]`: Page headers and stationary HUD bars.
   - `z-[30]`: Page stage content and interactive canvas.
-- `shared/lib/overlayStack.ts` — global FILO registry (`registerOverlay`, `closeTopmost`, `getStackSize`); installed once in `App.tsx` via `installOverlayStack()`. Capture-phase `keydown` (Escape) + `pointerdown` (outside-click on the topmost overlay).
-- `shared/hooks/useOverlay.ts` — registers on `active`, unregisters on close.
-- `shared/ui/Drawer.tsx` — the shared bottom-sheet for all Tier 2 surfaces (`bg-[rgb(var(--background))]/60 backdrop-blur-sm` backdrop).
-- `shared/ui/Modal.tsx` — the shared centered dialog for Tier 2b surfaces (`bg-black/50 backdrop-blur-[2px]` dim, scale-fade motion, focus trap + restore, `footer`, `position="page" | "global"`).
-- `shared/ui/EdgePanel.tsx` — side-docked sliding rail with unified `bg-black/50 backdrop-blur-[2px]` backdrop.
 
-### Tier 2 & Tier 2b surfaces
+### 12.3 Smooth Scroll Standard (SSOT)
 
-- **History detail** — `DetailPanel` inside a bottom `Drawer` on wide orbit viewports (`> 1024px`). On list/compact viewports (`< 1024px`), clicking a session performs an **in-place page drill-down**: the session list transitions in-place into the full-width session transcript view with a top breadcrumb (`← All Sessions`), timestamp, turn count, and actions. Pressing `Escape` or clicking `← All Sessions` returns immediately to the preserved list view without clumsy overlay drawers.
-- **Personal Memory Compact Modal (Tier 2b)** — On viewports `< 1024px`, Personal Memory renders as a unified single-entity modal (no nested card-inside-a-card borders or double headers). Features an integrated top masthead with actions (Copy, Regenerate, Consolidate) and underline tabs (`Memory`, `Observations`, `Staging`). The workspace below forms one cohesive surface with distinct inner section headers (`About You`, `Observations`, `Staging`), synchronized 32px icon badges, and status filter parity. Actions affecting persistent memory auto-redirect to `Memory` for instant feedback.
-- **Smooth Scroll Standard (SSOT)** — All scrollable lists and panels use inertial smooth scrolling with exactly one mechanism:
-  - `shared/lib/lenisScroll.ts` — canonical factory + physics (`SMOOTH_SCROLL_DURATION = 0.85s` wheel glide with velocity decay; touch/trackpad momentum stays native). Never `new Lenis` ad-hoc in components.
-  - `shared/hooks/useLenisScrollContainer.ts` — canonical hook (one Lenis instance per container, ResizeObserver re-measure, Lenis-aware `scrollToTop`). No-op on coarse-pointer devices (native momentum scroll).
-  - `shared/ui/SmoothScrollArea.tsx` — declarative wrapper for new scroll areas (applies canonical container classes + hook automatically). Prefer it over hand-rolled effects.
-  - `shared/hooks/useScrollTopOnChange.ts` — save-gated reorder glide (slow 1.6s ease) driven by the same refs.
-  - Container classes: `overflow-y-auto overscroll-contain custom-scrollbar`. `Modal`/`Drawer` bodies yield (`overflow-hidden`) when the content owns its scroller — nested scrollable bodies are banned (they lock wheel input).
-  - CSS `snap-*` is banned on any Lenis-managed container (snap fights virtual scroll and locks).
-  - Scroll resets fire only on settled (debounced/committed) state — never per keystroke.
-- **Expanded List Modal (Tier 2b)** — When dense, compact inline card lists (`ExpandableList` in settings, catalogs, providers) are expanded into full modals (`w-[min(920px,94vw)] h-[min(720px,88vh)]`), they must not render squished compact rows in a large void. Instead, they transition into a spacious, tailored UI: an integrated toolbar with real-time search and filter chips, multi-column responsive cards (`grid-cols-1 md:grid-cols-2 lg:grid-cols-3`), and directly visible telemetry (speed/TPS, context window, VRAM footprint, capability badges) with zero reliance on hover-only tooltips. The modal header hosts domain commit controls only for states needing action or status (missing credential, apply-restart, saved/restarting/failed), using the same logic as the card footer, while any open modal suppresses the background card footer. Routine hot-save changes show no intermediate Save/Cancel and resolve directly to the saved state. List order follows committed (saved) state only: selecting re-highlights immediately but re-sorts on save, gliding the list to top with a smooth scroll.
-- **Speech models modal (Tier 2b)** — The Speech card's expanded surface serves the text-to-speech category only: the seven engines (four on-device, three cloud) in a multi-column grid with a source facet rail (All, On-device, Cloud). The compact inline grid has no facet rail; the expanded surface owns the rail, and the choice is independent of any header filter. Each engine card carries a waveform glyph in its top-right cluster that opens that engine's voice catalog in the same modal, with the modal header back arrow returning to the engine grid. Selecting an engine applies the same tier-implied selection as the inline grid. The voice-detection and speech-transcription categories keep their inline lists and carry no expanded surface.
-- **Memory pipeline** — horizontal, left-to-right stage flow inside a global drawer.
-- **Memory profiler** — converted from a route to a global bottom drawer (`ProfilerDrawer`).
+All scrollable lists and panels use inertial smooth scrolling with exactly one mechanism:
+* Managed exclusively via `shared/lib/lenisScroll.ts` and `shared/hooks/useLenisScrollContainer.ts` (or `SmoothScrollArea.tsx`). Never call `new Lenis` ad-hoc in components.
+* Container classes: `overflow-y-auto overscroll-contain custom-scrollbar`.
+* Modals and drawers must yield (`overflow-hidden`) when child content owns its scroller. Nested scrollable bodies are prohibited.
+* CSS `snap-*` is banned on any Lenis-managed container.
 
-### Settings Card Grammar
+### 12.4 Master-Detail & Expansion Invariants
 
-The reworked settings cards carry a fixed header grammar: an icon and a
-card label on the left, and at most one control in the top-right slot.
-
-* **Header Hierarchy & Step Transitions (Step 1 vs Step 2):**
-  - **Step 1 (Top-level card face):**
-    - Leading icon: 17px (`size={17}`).
-    - Title: uppercase tracking grammar (`font-display text-[13px] font-black uppercase tracking-[0.2em] text-[rgb(var(--foreground))]`).
-    - Trailing slot: action button (`actionLabel` with `ChevronRight` size 12) swapping card face.
-  - **Step 2 (Nested view, e.g. Dictation in Interaction, Advanced in Memory, Models in Language, Voices in Speech):**
-    - Leading back breadcrumb: `ArrowLeft` (size 12, stroke 2.5) with `/` separator.
-    - Leading icon: scaled down to 14px (`size={14}`, `[&>svg]:w-3.5 [&>svg]:h-3.5`).
-    - Title: scaled down to `font-display font-bold text-[12px] sm:text-[12.5px] text-[rgb(var(--foreground))]/90 truncate` in title/normal case (never uppercase wide tracking).
-    - Ensures visual hierarchy distinguishes top-level domain cards from nested configuration desks.
-
-* **Voice Cloning Card Grammar:**
-  - **Resting skeleton card:** Identical visual weight and geometry as sibling voice cards (`p-4 rounded-xl border bg-[rgba(var(--card),0.35)]`). Left 40px action sphere hosts a `+` (`Plus` size 16) mark where the play button sits on voice cards. Title displays "Clone Voice" with Chatterbox description and source badges.
-  - **In-place active expansion:** Clicking the resting card expands it in place without layout jumps or external popups:
-    - Left 40px sphere transforms into a `Mic` record trigger (turns red/pulsing when recording 5–30s sample).
-    - Top row: inline voice name input on the left; Check (`Check` size 14, save) and Cross (`X` size 14, cancel/reset) on the top-right.
-    - Subtitle row: live recording countdown, duration summary, or error banner.
-    - Bottom row: reference badges on the left; "Choose WAV" file picker on the bottom-right.
-
-* **Speech card header (08:00)** — `AudioLines` icon + `SPEECH MODELS` label on the
-  left; a `Select voice` action in the top-right slot. The action is always visible
-  (label literal, never the current voice name) and swaps the whole card face for
-  the voice catalog, whose header carries a breadcrumb back to the models view.
-  The card carries no `Model | Settings` toggle.
-* **Voice detection gear** — the detection workspace carries one gear in its
-  top-right corner that swaps the model grid for a single scrollable pane holding
-  all three detection knobs (sensitivity, silence, onset). No tabs.
-* **Realtime pipeline mode** — when the pipeline mode is `realtime`, the 08:00
-  slot renders the realtime card instead of the Speech card: the realtime
-  pipeline owns the microphone, so the speech card's controls are not reachable
-  while it is active. The slot stays visible and still opens from the hub.
+* **Dense List Expansion (Tier 2b)**: Constrained inline card lists (`ExpandableList`) expand into spacious centered modals (`Modal.tsx`) featuring an integrated search/filter toolbar, multi-column responsive cards, and directly visible telemetry badges.
+* **Header Hierarchy & Step Navigation**:
+  - **Step 1 (Top-level card face)**: 16–17px leading icon, uppercase tracked title, and trailing forward affordance swapping card face.
+  - **Step 2 (Nested view / Configuration desk)**: Compact 14px icon, leading back breadcrumb arrow (`ArrowLeft`), and normal-case title.
+* **In-Place Card Expansion**: Expandable action cards (e.g. cloning, custom provider setups) expand in place without layout jumps. Actions provide immediate inline feedback without popping external dialogs.
+* **Action Feedback & Mutual Exclusion**: Heavy or asynchronous operations (e.g. session compaction, model probing) must transition the trigger into an inline spinner and globally disable sibling triggers across the application during execution.
+* **Identity Preservation**: Completion refreshes must preserve component identity; updating counts or timestamps must never cause an active detail surface to unmount or reset scroll position.
 
 ---
 
-### 13.1 Session Compaction Triggers (History)
+## 13. Keyboard Interaction & Spatial Navigation
 
-Compaction extracts structured semantic memory facts from uncompacted session turns. Compaction triggers are rendered across four canonical History surfaces, strictly gated by `session.uncompacted_turns > 0`:
+### 13.1 Key Hierarchy & Modifiers
 
-1. **Details Panel Header (`DetailPanel`)**: Action button positioned left of the close (`X`) icon in `Drawer:headerActions`, rendering text `"Compact session"` (`variant="button"`).
-2. **Orbital View Session Card (`VoiceRippleNode`)**: Tactile circular glass icon button (`variant="icon"`, Sparkles icon) positioned in the card's top right corner, left of the delete trash button, visible on hover/focus-within (`group-hover:flex`).
-3. **List View Session Card (`HistoryListView`)**: Circular glass icon button positioned in the bottom right corner of each card, visible always alongside the delete action.
-4. **Step 2 Drill-Down Top Right Cluster (`TopRightCluster` / `History`)**: Icon button mounted directly to the left of the Notification (`Bell`) icon when an in-place session drill-down is open.
-
-*Dynamic State & Mutual Exclusion Invariants:*
-- **Single Authority**: `uncompacted_turns` is the only source of truth for trigger visibility, on every surface. Notification state is never a second gate — a card whose `uncompacted_turns` is zero is never shown, and a card with uncompacted turns is always shown, regardless of notification rollup or resolution.
-- **Active Compaction**: When compaction is initiated, the target session trigger transitions immediately into a spinning loader (`Loader2` spin).
-- **Universal Mutual Exclusion**: When compaction is in progress on any session, all other compaction triggers across the UI are disabled (`opacity-50 cursor-not-allowed`) — not only those on the initiating surface.
-- **Completion Transition**: When compaction concludes, the backend commits the session's compaction output, emits `NotificationUpdated` (resolving the task card) then `NotificationCreated` (the receipt), then `SessionsChanged`. There is no dedicated compaction event; `SessionsChanged` is the sole signal that `uncompacted_turns` has changed.
-- **No Transient Identity Swap**: A completion refresh must not re-key any session-scoped resource on anything other than the session's identity. Refreshing a session in place (new counts, new title, new timestamp) must never cause its transcript, detail surface, or drill-down to unmount, reload, or drop back to a closed state.
-
----
-
-
-## 14. Keyboard Interaction, Spatial Navigation & Tooltip Contract
-
-### 14.1 Key Hierarchy & Modifiers Contract
-
-Keys are categorized into strict functional tiers to eliminate collision between global navigation and in-page navigation:
+Keys are categorized into strict functional tiers to eliminate collision between global and in-page navigation:
 
 | Modifier Level | Scope | Primary Purpose | Example |
 | :--- | :--- | :--- | :--- |
 | **`Shift + Arrow`** | Application Navigation | Global page cycling (`←` / `→`) and contextual drawer expanding (`↑` / `↓`) | `Shift + Right` (Next Page) |
-| **`Ctrl / Cmd + Key`** | Rails & Window Lifecycle | Toggling persistent side rails, window close, and app quit | `Ctrl + S` (Sessions), `Ctrl + W` (Close), `Ctrl + Q` (Quit) |
-| **Plain Arrows (`↑ ↓ ← →`)** | In-Page Spatial Navigation | Moving focus between cards/widgets strictly within the active zone | Navigating session nodes in History orbit |
+| **`Ctrl / Cmd + Key`** | Rails & Window Lifecycle | Toggling persistent side rails, window close, and app quit | `Ctrl + S` (Sessions), `Ctrl + W` (Close Window) |
+| **Plain Arrows (`↑ ↓ ← →`)** | In-Page Spatial Navigation | Moving focus between cards/widgets strictly within the active zone | Navigating session nodes in History |
 | **Single Alpha (`M`, `T`, `P`)** | Voice Pipeline Direct Controls | Immediate single-stroke voice pipeline controls when not typing | `M` (Mute Mic), `P` (Pause/Resume), `T` (Text Mode) |
-| **`Space` / `Enter` / `Esc`** | Primaries | PTT hold-to-talk, selection activation, and hierarchical overlay dismissal | `Space` (Hold to Talk), `Escape` (Dismiss) |
+| **`Space` / `Enter` / `Esc`** | Primaries | PTT hold-to-talk, selection activation, and hierarchical overlay dismissal | `Space` (Hold to Talk), `Escape` (Dismiss / Barge-in) |
 
-### 14.2 Shortcuts Matrix
+Full keybinding definitions are maintained in `app/src/data/shortcuts.ts` as the single source of truth.
 
-| Shortcut | Action | Scope | Invariant |
-| :--- | :--- | :--- | :--- |
-| **`Ctrl + W`** (`Cmd + W`) | Close / Hide Window | Global | Closes window to tray; voice engine continues background operation. |
-| **`Ctrl + Q`** (`Cmd + Q`) | Quit Application | Global | Terminates backend process and UI entirely. |
-| **`Shift + →` / `←`** | Page Cycle | Global | Forward: `Home` → `History` → `Memory` → `Settings` (→ `Monitoring` if compact). Backward in reverse. |
-| **`Shift + ↑` / `↓`** | Context Drawer Expand/Collapse | Contextual | Home: Profiler. History: Session Detail. Memory: Personal Memory. Settings: Domain Cards. |
-| **`Ctrl + S`** (`Cmd + S`) | Toggle Sessions Rail | Global | Left docked session list. |
-| **`Ctrl + N`** (`Cmd + N`) | Toggle Notifications Rail | Global | Right docked notifications. |
-| **`Ctrl + /`** (`Cmd + /`) | Toggle Help Panel | Global | Route guide. |
-| **`?`** (`Shift + /`) | Shortcuts Cheat Sheet | Global | Direct cheat sheet overlay. |
-| **`Space` (Hold)** | Push-To-Talk | Engaged + PTT | Starts audio capture on keydown; commits on keyup. Cancels if <200ms. |
-| **`M`** | Toggle Mic Mute | Non-editable | Toggles microphone capture stream. |
-| **`Shift + M`** | Toggle Speaker Mute | Non-editable | Toggles TTS / playback output. |
-| **`P`** | Pause / Resume Voice | Non-editable | Toggles voice pipeline paused vs. active. |
-| **`T`** | Open Text Input Mode | Non-editable | Focuses bottom text prompt input. |
-| **`Ctrl + Space`** | Engage / Disengage | Global | Wakes or sleeps the ambient assistant. |
-| **`Escape`** | Hierarchical Dismissal | Global | Dismisses top overlay in reverse FILO order; barges into speaking voice agent. |
+### 13.2 Spatial Navigation & Tooltip Invariants
 
-### 14.3 Spatial Navigation Invariants
-
-* **Container Isolation**: 2D directional arrows are scoped to explicit zones: `STAGE_CONTAINER` (in-page content), `DOCK_CONTAINER` (`EdgeNav`), `CLUSTER_CONTAINER` (top chrome), `RAIL_CONTAINER` (active side rail).
-* **Zero Accidental Escape**: Navigating directional arrows within a stage cannot accidentally hop across containers into the bottom dock or top header without deliberate border rules or `Tab`.
-* **Focus-State Sync**: Spatial focus synchronization immediately updates selection state (e.g. focused orbit card becomes selected session).
-
-### 14.4 Tooltip Invariants
-
-* **Floating Architecture**: Powered by `@floating-ui/react` with smart boundary collision, flip, and offset handling.
-* **Navigation Silence**: Directional arrow navigation temporarily silences tooltips (`isSpatialNavigating`) to prevent intrusive popup flickering during rapid keyboard navigation.
-* **Surface Grammar**: Dark glass card, 11px uppercase label, optional `<kbd>` shortcut badge. Native `title` tooltips remain banned.
+* **Container Isolation**: 2D directional arrows are scoped to explicit zones (`STAGE_CONTAINER`, `DOCK_CONTAINER`, `CLUSTER_CONTAINER`, `RAIL_CONTAINER`). Navigating directional arrows within a stage cannot accidentally hop into chrome without deliberate boundary rules or `Tab`.
+* **Tooltip Navigation Silence**: Directional arrow navigation temporarily silences tooltips (`isSpatialNavigating`) to prevent intrusive popup flickering during rapid keyboard navigation.
+* **Lazy Tooltip Activation**: Tooltips must remain inert while closed, never subscribing to spatial nav or floating-ui events until hovered or focused.
 
 ---
 
-## 15. Do / Don't
+## 14. Do / Don't
 
 | Do | Don't |
 | :--- | :--- |
-| Use tokens for every color and size | Hardcode hex or arbitrary px beyond the ramp |
+| Use tokens for every color, radius, and size | Hardcode hex or arbitrary px beyond the scale |
 | Put every heading in `font-display` (Sora) | Put body copy or buttons in Sora |
 | Reserve `font-mono` for numbers & telemetry | Use mono on prose or button labels |
 | Uppercase only headings, short labels, short buttons | Uppercase subtext, descriptions, timestamps |
 | Use the custom `Tooltip` for hover explanations | Rely on native `title` tooltips |
 | Keep cards within one radius step per group | Mix `rounded-lg` + `rounded-xl` on sibling cards |
-| Respect the elevation levels | Invent a 5th glass level for one-off layouts |
+| Respect the closed 4-tier elevation levels | Invent a 5th glass level for one-off layouts |
 | Speak layman copy (no engine/STT/LLM jargon) | Use acronyms or sci-fi jargon in user-facing text |
+| Use simple underline tabs for all tab strips | Use pill or capsule buttons for tabs |
+| Render frameless linework for vector graphics | Wrap SVG diagrams in heavy rounded container boxes |
 
 ---
 
-
-**Last Updated:** 2026-10-20
+**Last Updated:** 2026-10-25

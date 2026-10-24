@@ -44,11 +44,15 @@ export function createContainedLenis(
   options: ContainedLenisOptions = {},
 ): Lenis | null {
   if (isCoarsePointer()) return null;
-  const content =
-    el.children.length === 1
-      ? (el.firstElementChild as HTMLElement)
-      : el;
-  const lenis = new Lenis({
+  const content = (el.firstElementChild as HTMLElement | null) ?? el;
+  if (import.meta.env.DEV && el.children.length !== 1) {
+    console.warn(
+      "[Lenis] Scroll wrapper should have exactly 1 child content wrapper; found:",
+      el.children.length,
+      el,
+    );
+  }
+  return new Lenis({
     wrapper: el,
     content,
     eventsTarget: el,
@@ -57,28 +61,4 @@ export function createContainedLenis(
     duration: SMOOTH_SCROLL_DURATION,
     ...options,
   });
-  // Keep virtual metrics in sync when list height changes (filtering,
-  // pagination, modal open). Without this a container measured at height 0
-  // (hidden modal) stays locked at 0 forever.
-  if (typeof ResizeObserver !== "undefined") {
-    let lastContentHeight = 0;
-    const ro = new ResizeObserver(() => {
-      // DEV diagnostic: any content height change while hovering identifies the
-      // source of scrollbar flicker (the scrollbar only shifts when geometry moves).
-      const h = content.offsetHeight;
-      if (import.meta.env.DEV && Math.abs(h - lastContentHeight) > 1) {
-        console.debug(`[Lenis] content height ${lastContentHeight} -> ${h}`, el.className.slice(0, 60));
-      }
-      lastContentHeight = h;
-      lenis.resize();
-    });
-    ro.observe(el);
-    ro.observe(content);
-    const prevDestroy = lenis.destroy.bind(lenis);
-    lenis.destroy = () => {
-      ro.disconnect();
-      prevDestroy();
-    };
-  }
-  return lenis;
 }

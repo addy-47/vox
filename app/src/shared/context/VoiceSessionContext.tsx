@@ -227,7 +227,7 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
     [],
   );
 
-  const { transcript, assistantText, commitTurn, clearTranscript } = useVoiceSessionStream({
+  const { commitTurn, clearTranscript } = useVoiceSessionStream({
     onStateChanged: handleStateChanged,
     onSettingsUpdated: handleSettingsUpdated,
     onTurnMetrics: (payload) => {
@@ -509,8 +509,8 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
       isPaused,
       isThinking,
       isLaunching,
-      transcript,
-      assistantText,
+      transcript: "",
+      assistantText: "",
       cpuWarning,
       isTemporarySession,
       isTextModeOpen,
@@ -555,8 +555,6 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
       isPaused,
       isThinking,
       isLaunching,
-      transcript,
-      assistantText,
       cpuWarning,
       isTemporarySession,
       isTextModeOpen,

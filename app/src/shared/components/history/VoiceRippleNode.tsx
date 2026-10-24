@@ -72,7 +72,7 @@ export const VoiceRippleNode = memo(
                 }}
               />
               {isSelected && (
-                <div className="absolute inset-[-3px] rounded-full border border-[rgb(var(--accent))] animate-ping" />
+                <div className="absolute inset-[-3px] rounded-full border border-[rgb(var(--accent))]/60" />
               )}
             </div>
             <span className="text-[12px] font-mono text-[rgb(var(--foreground))] font-bold">
@@ -87,7 +87,7 @@ export const VoiceRippleNode = memo(
                 <Tooltip label={HISTORY_COPY.deleteConfirm}>
                   <button
                     onClick={(e) => onDelete(e, session.id)}
-                    className="w-6 h-6 rounded-full border border-[rgba(var(--accent),0.4)] bg-white dark:bg-black flex items-center justify-center text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/20 cursor-pointer shadow-xs focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))]"
+                    className="w-6 h-6 rounded-full border border-[rgba(var(--accent),0.4)] bg-[rgb(var(--card))] flex items-center justify-center text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/20 cursor-pointer shadow-xs focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))]"
                     aria-label={HISTORY_COPY.deleteConfirm}
                   >
                     <Check size={12} strokeWidth={2.5} />
@@ -96,7 +96,7 @@ export const VoiceRippleNode = memo(
                 <Tooltip label={HISTORY_COPY.cancelDelete}>
                   <button
                     onClick={onCancelDelete}
-                    className="w-6 h-6 rounded-full border border-[rgba(var(--border),0.2)] bg-white dark:bg-black flex items-center justify-center text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] cursor-pointer shadow-xs focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))]"
+                    className="w-6 h-6 rounded-full border border-[rgba(var(--border),0.2)] bg-[rgb(var(--card))] flex items-center justify-center text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] cursor-pointer shadow-xs focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))]"
                     aria-label={HISTORY_COPY.cancelDelete}
                   >
                     <X size={12} strokeWidth={2.5} />
@@ -111,12 +111,12 @@ export const VoiceRippleNode = memo(
                     sessionId={session.id}
                     uncompactedTurns={session.uncompacted_turns}
                     variant="icon"
-                    className="w-6 h-6 rounded-full border border-[rgba(var(--border),0.2)] hover:border-[rgba(var(--accent),0.4)] bg-white/80 dark:bg-black/60 shadow-xs"
+                    className="w-6 h-6 rounded-full border border-[rgba(var(--border),0.2)] hover:border-[rgba(var(--accent),0.4)] bg-[rgba(var(--card),0.85)] shadow-xs"
                   />
                   <Tooltip label={HISTORY_COPY.deleteSession}>
                     <button
                       onClick={(e) => onDelete(e, session.id)}
-                      className="w-6 h-6 rounded-full border border-[rgba(var(--border),0.2)] hover:border-[rgba(var(--accent),0.4)] bg-white/80 dark:bg-black/60 flex items-center justify-center text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/10 transition-colors cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))]"
+                      className="w-6 h-6 rounded-full border border-[rgba(var(--border),0.2)] hover:border-[rgba(var(--accent),0.4)] bg-[rgba(var(--card),0.85)] flex items-center justify-center text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/10 transition-colors cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))]"
                       aria-label={HISTORY_COPY.deleteSession}
                     >
                       <Trash2 size={12} />

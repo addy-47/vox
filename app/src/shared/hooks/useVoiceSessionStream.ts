@@ -17,6 +17,7 @@ import { isDictationOwner } from "@/services/pipelineService";
 import { getSettings } from "@/services/settingsService";
 import { getRuntimeSnapshot } from "@/services/monitoringService";
 import { getTurns } from "@/services/persistenceService";
+import { useSessionStore } from "@/store/sessionStore";
 
 /** A completed dialogue turn flushed into the session history. */
 export interface VoiceSessionTurn {
@@ -105,6 +106,8 @@ export function useVoiceSessionStream(handlers: VoiceSessionStreamHandlers): {
     activeAiTextRef.current = "";
     setTranscript("");
     setAssistantText("");
+    useSessionStore.getState().setTranscript("");
+    useSessionStore.getState().setAssistantText("");
   }, [clearTimers]);
 
   const clearTranscript = useCallback(() => {
@@ -114,6 +117,8 @@ export function useVoiceSessionStream(handlers: VoiceSessionStreamHandlers): {
     activeAiTextRef.current = "";
     setTranscript("");
     setAssistantText("");
+    useSessionStore.getState().setTranscript("");
+    useSessionStore.getState().setAssistantText("");
   }, [clearTimers]);
 
   // Subscriptions register synchronously on mount, before any await.
@@ -147,6 +152,7 @@ export function useVoiceSessionStream(handlers: VoiceSessionStreamHandlers): {
           activeUserTextRef.current = payload.text;
           activeAiTextRef.current = "";
           setAssistantText("");
+          useSessionStore.getState().setAssistantText("");
         } else {
           activeUserTextRef.current = payload.text;
         }
@@ -155,6 +161,7 @@ export function useVoiceSessionStream(handlers: VoiceSessionStreamHandlers): {
           partialThrottleTimer.current = setTimeout(() => {
             if (!mounted.current) return;
             setTranscript(activeUserTextRef.current);
+            useSessionStore.getState().setTranscript(activeUserTextRef.current);
             partialThrottleTimer.current = null;
           }, 30);
         }
@@ -177,9 +184,11 @@ export function useVoiceSessionStream(handlers: VoiceSessionStreamHandlers): {
           activeTurnIdRef.current = payload.turn_id;
           activeAiTextRef.current = "";
           setAssistantText("");
+          useSessionStore.getState().setAssistantText("");
         }
         activeUserTextRef.current = payload.text;
         setTranscript(payload.text);
+        useSessionStore.getState().setTranscript(payload.text);
       }),
       onLlmToken((payload: LlmTokenPayload) => {
         if (!mounted.current) return;
@@ -202,6 +211,7 @@ export function useVoiceSessionStream(handlers: VoiceSessionStreamHandlers): {
           tokenThrottleTimer.current = setTimeout(() => {
             if (!mounted.current) return;
             setAssistantText(activeAiTextRef.current);
+            useSessionStore.getState().setAssistantText(activeAiTextRef.current);
             tokenThrottleTimer.current = null;
           }, 30);
         }
