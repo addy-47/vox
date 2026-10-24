@@ -221,8 +221,14 @@ pub async fn bind(addr: SocketAddr) -> Result<WsListener, LinkError> {
 
 /// Connects to a WebSocket endpoint at `url` and returns a configured [`WsLink`].
 pub async fn dial(url: &str) -> Result<WsLink, LinkError> {
-    let (ws_stream, _) = tokio_tungstenite::connect_async(url)
+    let connect_future = tokio_tungstenite::connect_async(url);
+    let (ws_stream, _) = tokio::time::timeout(std::time::Duration::from_secs(8), connect_future)
         .await
+        .map_err(|_| {
+            LinkError::Transport(
+                "Connection timed out. Ensure both devices are on the same Wi-Fi network.".into(),
+            )
+        })?
         .map_err(|e| LinkError::Transport(e.to_string()))?;
     Ok(WsLink::new(ws_stream))
 }

@@ -121,7 +121,7 @@ async fn remote_connection_pairing_handshake_approved_reaches_connected() {
     let hpk_str = host_pk_hex.clone();
 
     let dial_task = tokio::spawn(async move {
-        cm.dial_and_connect(c_db, target, Some(h_id), Some(tok_str), Some(hpk_str))
+        cm.dial_and_connect(c_db, target, Some(h_id), Some(tok_str), Some(hpk_str), None)
             .await
     });
 
@@ -270,6 +270,7 @@ async fn remote_connection_pairing_denial_transitions_to_failed() {
             Some(h_id),
             Some("dummy_token_abc".to_string()),
             Some(hpk_str),
+            None,
         )
         .await
     });
@@ -356,6 +357,7 @@ async fn remote_connection_pairing_timeout_transitions_to_failed() {
             Some(h_id),
             Some("timeout_token".to_string()),
             Some(hpk_str),
+            None,
         )
         .await
     });

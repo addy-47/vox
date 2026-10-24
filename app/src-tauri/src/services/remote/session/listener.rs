@@ -217,6 +217,9 @@ async fn handle_inbound_pairing<R: Runtime>(
             }
         };
 
+    // Acknowledge to controller that pairing request reached host and approval prompt is active
+    let _ = ws_link.send_control(ControlMessage::PairPrompting).await;
+
     let (responder_tx, responder_rx) = tokio::sync::oneshot::channel();
     *state.pending_pairing.lock() = Some(PendingPairingState {
         device_id: claimed_req.device_id.clone(),
