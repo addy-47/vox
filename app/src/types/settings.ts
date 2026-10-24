@@ -269,10 +269,8 @@ export interface ProvidersConfigFile {
 }
 
 export interface RemoteSettings {
-  enabled?: boolean;
-  role?: "host" | "controller" | "disabled";
-  pin?: string;
-  allowed_peers?: string[];
+  accepts_controllers: boolean;
+  execution_mode: "host_local" | "split" | "cloud_relay";
   [key: string]: unknown;
 }
 
@@ -327,6 +325,6 @@ export interface DraftKeyMap {
     | "semantic_similarity_cutoff";
   persona: "modular_prompt" | "realtime_prompt";
   system: "setup_completed";
-  remote: "enabled" | "role" | "pin" | "allowed_peers";
+  remote: "accepts_controllers" | "execution_mode";
   providers: never;
 }

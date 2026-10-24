@@ -71,6 +71,11 @@ use crate::{
             set_session_private_mode, start_session, stop_engine, submit_text_input,
         },
         projects::{create_project, delete_project, get_projects, rename_project},
+        remote::{
+            approve_pairing, connect_host, disconnect_device, disconnect_host,
+            get_command_routing, get_link_state, list_paired_devices, pair_new_device,
+            revoke_device,
+        },
         settings::{
             apply_settings_patch, get_restart_status, get_settings, get_settings_contract,
             reset_settings, update_setting,
@@ -514,6 +519,7 @@ pub fn run() {
             if is_daily_cadence {
                 spawn_consolidation_scheduler(app.handle().clone(), Arc::clone(&state_arc));
             }
+            ipc::remote::spawn_remote_host_listener(app.handle().clone(), Arc::clone(&state_arc));
 
             // ── 1.6 Dictation Global Hotkey Registration ──────────────────────────
             {
@@ -828,6 +834,16 @@ notification_permission_state,
             mark_notifications_read,
             dismiss_notifications,
             execute_notification_action,
+            // Remote Control
+            pair_new_device,
+            approve_pairing,
+            list_paired_devices,
+            revoke_device,
+            disconnect_device,
+            connect_host,
+            disconnect_host,
+            get_link_state,
+            get_command_routing,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

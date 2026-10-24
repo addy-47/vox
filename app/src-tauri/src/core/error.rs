@@ -227,6 +227,12 @@ impl From<turso::Error> for VoxIpcError {
     }
 }
 
+impl From<PersistenceError> for VoxIpcError {
+    fn from(e: PersistenceError) -> Self {
+        VoxIpcError::Database(e.to_string())
+    }
+}
+
 impl From<Error> for VoxIpcError {
     fn from(e: Error) -> Self {
         VoxIpcError::Internal(e.to_string())

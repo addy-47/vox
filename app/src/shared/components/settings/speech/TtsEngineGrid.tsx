@@ -1,10 +1,10 @@
 import { memo } from "react";
-import { ArrowLeft, AudioWaveform, Check, Download, Trash2 } from "lucide-react";
+import { ArrowLeft, Check, ChevronRight, Download, Trash2 } from "lucide-react";
 import { useSettingsStore } from "@/store/settingsStore";
 import { useCatalogStore } from "@/store/catalogStore";
 import type { ModelStatus } from "@/shared/hooks/useModelDownloads";
 import { cn } from "@/shared/lib/utils";
-import { activeSelection } from "@/shared/lib/activeSelection";
+import { activeSelection, promoteActive } from "@/shared/lib/activeSelection";
 import { Tooltip } from "@/shared/ui/Tooltip";
 import { MODEL_HUB_COPY, SPEECH_CARD_COPY } from "@/data/settingsCopy";
 import { CatalogReveal } from "../shared/CatalogReveal";
@@ -56,17 +56,20 @@ export const TtsEngineGrid = memo(
     variant = "rows",
   }: TtsEngineGridProps) => {
     const draftSettings = useSettingsStore((s) => s.draftSettings);
+    const committedSettings = useSettingsStore((s) => s.settings);
     const updateDraft = useSettingsStore((s) => s.updateDraft);
     const modelCatalog = useCatalogStore((s) => s.modelCatalog);
     if (!draftSettings || !modelCatalog) return null;
 
     const activeTtsId = draftSettings.tts.active.model ?? "";
-    const engines = (modelCatalog.tts || []).filter((model) => {
+    const committedTtsId = committedSettings?.tts.active.model;
+    const rawEngines = (modelCatalog.tts || []).filter((model) => {
       if (model.is_remote) return false;
       if (facet === "local") return !model.is_cloud;
       if (facet === "cloud") return !!model.is_cloud;
       return true;
     });
+    const engines = promoteActive(rawEngines, committedTtsId);
 
     const selectEngine = (model: (typeof engines)[number]) => {
       updateDraft(
@@ -90,7 +93,7 @@ export const TtsEngineGrid = memo(
             aria-label={`${SPEECH_CARD_COPY.openVoices}: ${name}`}
             className="p-1 rounded-md text-[rgb(var(--foreground-muted))]/70 hover:text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.12)] transition-colors cursor-pointer"
           >
-            <AudioWaveform size={15} strokeWidth={1.75} />
+            <ChevronRight size={15} strokeWidth={2} />
           </button>
         </Tooltip>
       ) : undefined;
@@ -200,7 +203,7 @@ export const TtsEngineGrid = memo(
                                   e.stopPropagation();
                                   setConfirmDeleteId(model.id);
                                 }}
-                                className="rounded-md p-1 text-[rgb(var(--foreground-muted))]/70 transition-colors hover:bg-[rgba(var(--danger),0.14)] hover:text-[rgb(var(--danger))] cursor-pointer"
+                                className="rounded-md p-1 text-[rgb(var(--foreground-muted))]/70 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity hover:bg-[rgba(var(--danger),0.14)] hover:text-[rgb(var(--danger))] cursor-pointer"
                                 aria-label={MODEL_HUB_COPY.row.deleteWeights}
                               >
                                 <Trash2 size={13} strokeWidth={2} />

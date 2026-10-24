@@ -423,7 +423,11 @@ export const WEB_SEARCH_COPY = {
   tab: "Web Search",
   title: "Live Web Grounding",
   description:
-    "Retrieve live web results and current facts mid-conversation. Supported in both modular and realtime modes.",
+    "Retrieve live web results and current facts mid-conversation.",
+  descriptionModular:
+    "Retrieve live web results and current facts during modular LLM generation.",
+  descriptionRealtime:
+    "Stream live web results and current facts directly into your realtime voice session.",
   enabled: "Enabled",
   disabled: "Disabled",
   toggleAria: "Toggle live web search",

@@ -296,45 +296,45 @@ export const VoiceCatalogView = memo(({ layoutMode, providerId, onBack }: VoiceC
           />
         )}
       >
-        <CatalogReveal
-          className="flex-1 min-h-0"
-          featherHeight={80}
-          scrollerClassName="flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain pr-1 custom-scrollbar [scrollbar-gutter:stable]"
-        >
-          {filteredVoices.length === 0 ? (
-            <div className="h-full flex items-center justify-center p-2">
-              <EmptyState
-                icon={voices.length === 0 ? AudioLines : Search}
-                title={voices.length === 0 ? VOICE_CATALOG_COPY.emptyTitle : "No Voices Found"}
-                description={
-                  voices.length === 0
-                    ? scope.cloud_sync
-                      ? VOICE_CATALOG_COPY.edgeSyncHint
-                      : "No voices available for this provider. Configure an API key or check provider connection."
-                    : search
-                    ? `No voices match "${search}" or active filters.`
-                    : "No voices match the selected filters."
-                }
-                action={
-                  voices.length > 0 ? (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSearch("");
-                        setScopeFilter("all");
-                        setGenderFilter(null);
-                        setAccentFilter(null);
-                      }}
-                      className="px-3.5 py-1.5 rounded-xl text-[12px] font-bold text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/10 border border-[rgba(var(--accent),0.25)] hover:bg-[rgb(var(--accent))]/20 transition-all cursor-pointer"
-                    >
-                      {VOICE_CATALOG_COPY.resetFilters}
-                    </button>
-                  ) : undefined
-                }
-                className="py-6 border-dashed border-[rgba(var(--accent),0.15)] bg-transparent min-h-[180px]"
-              />
-            </div>
-          ) : (
+        {filteredVoices.length === 0 ? (
+          <div className="flex-1 min-h-[140px] flex items-center justify-center p-3">
+            <EmptyState
+              size="sm"
+              icon={voices.length === 0 ? AudioLines : Search}
+              title={voices.length === 0 ? VOICE_CATALOG_COPY.emptyTitle : "No Voices Found"}
+              description={
+                voices.length === 0
+                  ? scope.cloud_sync
+                    ? VOICE_CATALOG_COPY.edgeSyncHint
+                    : "No voices available for this provider. Configure an API key or check provider connection."
+                  : search
+                  ? `No voices match "${search}" or active filters.`
+                  : "No voices match the selected filters."
+              }
+              action={
+                voices.length > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSearch("");
+                      setScopeFilter("all");
+                      setGenderFilter(null);
+                      setAccentFilter(null);
+                    }}
+                    className="px-3 py-1 rounded-lg text-[11px] font-bold text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/10 hover:bg-[rgb(var(--accent))]/20 transition-all cursor-pointer"
+                  >
+                    {VOICE_CATALOG_COPY.resetFilters}
+                  </button>
+                ) : undefined
+              }
+            />
+          </div>
+        ) : (
+          <CatalogReveal
+            className="flex-1 min-h-0"
+            featherHeight={80}
+            scrollerClassName="flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain pr-1 custom-scrollbar [scrollbar-gutter:stable]"
+          >
             <div
               className={
                 layoutMode === "small"
@@ -363,8 +363,8 @@ export const VoiceCatalogView = memo(({ layoutMode, providerId, onBack }: VoiceC
                 <CloneVoiceCard onCreated={handleVoiceCreated} />
               )}
             </div>
-          )}
-        </CatalogReveal>
+          </CatalogReveal>
+        )}
       </ExpandableList>
     </div>
   );

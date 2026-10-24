@@ -491,7 +491,7 @@ export const History: React.FC = () => {
                     </div>
 
                     {/* Full-width bottom dock feather dissolve identical to parent HistoryListView */}
-                    <BottomDockFeather className="absolute bottom-0 left-0 right-0 h-[72px] pointer-events-none z-10" />
+                    <BottomDockFeather className="absolute bottom-0 left-0 right-0 h-[calc(84px+env(safe-area-inset-bottom,0px))] pointer-events-none z-10" />
                   </div>
                 </div>
               )}

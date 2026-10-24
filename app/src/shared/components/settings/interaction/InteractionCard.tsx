@@ -8,8 +8,10 @@ import { CardTitleBar } from "../shared/CardTitleBar";
 import { SETTINGS_DOMAIN_CARD_HEIGHT_CLASS } from "../shared/settingsLayout";
 import { DictationConfigDesk } from "./DictationConfigDesk";
 import { WebSearchGlobe } from "./WebSearchGlobe";
-import { RemoteControlGlyph } from "./RemoteControlGlyph";
+import { RemoteDeskPanel } from "./RemoteDeskPanel";
+import { ControllerRemoteDeskPanel } from "./ControllerRemoteDeskPanel";
 import { TransliterationPanel } from "./TransliterationPanel";
+import { isRealMobileDevice } from "@/layout/breakpoints";
 import { DICTATION_COPY, INTERACTION_CARD_COPY, TRIGGER_MODE_COPY, PIPELINE_MODE_COPY, WEB_SEARCH_COPY, REMOTE_CONTROL_COPY, TRANSLITERATION_COPY } from "@/data/settingsCopy";
 
 interface InteractionCardProps {
@@ -31,7 +33,7 @@ export const InteractionCard = memo(
     const updateDraft = useSettingsStore((s) => s.updateDraft);
 
     const [activeView, setActiveView] = useState<"assistant" | "dictation">("assistant");
-    const [activeDeskTab, setActiveDeskTab] = useState<InteractionDeskTab>("web_search");
+    const [activeDeskTab, setActiveDeskTab] = useState<InteractionDeskTab>("remote");
 
     const isRealtime = draftSettings?.interaction.pipeline_mode === "realtime";
     const activeRealtimeModel = draftSettings?.realtime.active.model || null;
@@ -168,22 +170,11 @@ export const InteractionCard = memo(
 
                   {/* Panel */}
                   {activeDeskTab === "remote" ? (
-                    <div className="flex flex-row items-center justify-between gap-4 h-full p-2 sm:p-3 rounded-xl bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--accent),0.08)] animate-fade-in">
-                      <div className="flex flex-col gap-1 min-w-0 flex-1">
-                        <span className="text-[12px] font-bold uppercase tracking-wider text-[rgb(var(--foreground))]">
-                          {REMOTE_CONTROL_COPY.title}
-                        </span>
-                        <p className="text-[11px] sm:text-[11.5px] text-[rgb(var(--foreground-muted))]/75 leading-relaxed font-medium">
-                          {REMOTE_CONTROL_COPY.description}
-                        </p>
-                      </div>
-                      <div className="shrink-0 w-[116px] flex flex-col items-center justify-center">
-                        <RemoteControlGlyph
-                          label={REMOTE_CONTROL_COPY.comingSoon}
-                          ariaLabel={REMOTE_CONTROL_COPY.title}
-                        />
-                      </div>
-                    </div>
+                    isRealMobileDevice() ? (
+                      <ControllerRemoteDeskPanel />
+                    ) : (
+                      <RemoteDeskPanel />
+                    )
                   ) : activeDeskTab === "web_search" ? (
                     <div className="flex flex-row items-center justify-between gap-4 h-full p-2 sm:p-3 rounded-xl bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--accent),0.08)] animate-fade-in">
                       <div className="flex flex-col gap-1 min-w-0 flex-1">
@@ -191,7 +182,7 @@ export const InteractionCard = memo(
                           {WEB_SEARCH_COPY.title}
                         </span>
                         <p className="text-[11px] sm:text-[11.5px] text-[rgb(var(--foreground-muted))]/75 leading-relaxed font-medium">
-                          {WEB_SEARCH_COPY.description}
+                          {isRealtime ? WEB_SEARCH_COPY.descriptionRealtime : WEB_SEARCH_COPY.descriptionModular}
                         </p>
                       </div>
                       <div className="shrink-0 w-[116px] flex flex-col items-center justify-center">

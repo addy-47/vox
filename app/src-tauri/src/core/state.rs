@@ -41,6 +41,17 @@ pub use crate::{
     core::engine::VoxEngine, monitoring::telemetry::TelemetryState, pipeline::PipelineAtomics,
     services::memory::MemoryAppState,
 };
+use crate::services::remote::{
+    security::PairingCoordinator,
+    session::{RemoteLinkState, RemoteSessionManager, SessionRole, StateChangeCallback},
+};
+
+/// Pending inbound pairing request awaiting host user approval.
+pub struct PendingPairingState {
+    pub device_id: String,
+    pub display_name: String,
+    pub responder: tokio::sync::oneshot::Sender<bool>,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum AppWindow {
@@ -175,6 +186,9 @@ pub struct AppState {
     pub ingestion_cancel: Arc<ParkingMutex<Option<tokio_util::sync::CancellationToken>>>,
     pub compaction_lock: Arc<TokioMutex<()>>,
     pub nexus_search: Arc<nexus::NexusSearch>,
+    pub remote_manager: Arc<RemoteSessionManager>,
+    pub pairing_coordinator: Arc<PairingCoordinator>,
+    pub pending_pairing: Arc<ParkingMutex<Option<PendingPairingState>>>,
 }
 
 impl AppState {
@@ -198,7 +212,7 @@ impl AppState {
             owner: Arc::new(AtomicU32::new(InteractionOwner::Dictation as u32)),
             hud_visible: Arc::new(AtomicBool::new(true)),
             memory: MemoryAppState::new(),
-            settings: Arc::new(RwLock::new(settings)),
+            settings: Arc::new(RwLock::new(settings.clone())),
             hud_menu_item: ParkingMutex::new(None),
             pipeline: PipelineAtomics::new(),
             save_debounce: TokioMutex::new(None),
@@ -255,6 +269,38 @@ impl AppState {
                         .expect("Failed to initialize NexusSearch client"),
                 )
             },
+            remote_manager: {
+                let session_role = if cfg!(desktop) {
+                    SessionRole::Host
+                } else {
+                    SessionRole::Controller
+                };
+
+                let app_handle_for_remote = app_handle.clone();
+                let on_state_change: StateChangeCallback = Arc::new(move |state, peer| {
+                    let dto = state.to_dto(
+                        peer.map(|p| p.device_id.as_str()),
+                        peer.map(|p| p.display_name.as_str()),
+                    );
+                    let _ = crate::core::events::emit_ipc(
+                        &app_handle_for_remote,
+                        crate::core::events::IpcEvent::RemoteStateChanged(dto),
+                    );
+                });
+
+                let manager = Arc::new(RemoteSessionManager::with_callback(
+                    session_role,
+                    on_state_change,
+                ));
+
+                if session_role == SessionRole::Host && !settings.remote.accepts_controllers {
+                    manager.set_state(RemoteLinkState::Disabled);
+                }
+
+                manager
+            },
+            pairing_coordinator: Arc::new(PairingCoordinator::new()),
+            pending_pairing: Arc::new(ParkingMutex::new(None)),
         }
     }
 

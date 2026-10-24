@@ -1,12 +1,14 @@
 use std::{
     collections::{HashMap, HashSet},
     fmt,
-    net::IpAddr,
+    net::{IpAddr, UdpSocket},
     sync::Arc,
     time::Instant,
 };
 
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use parking_lot::Mutex;
+use qrcode::{render::svg, QrCode};
 use tokio::sync::oneshot;
 use zeroize::Zeroize;
 
@@ -519,3 +521,46 @@ impl PairingCoordinator {
         })
     }
 }
+
+/// Discovers the primary outgoing LAN IPv4 address.
+pub fn get_local_lan_ip() -> Option<String> {
+    let socket = UdpSocket::bind("0.0.0.0:0").ok()?;
+    socket.connect("8.8.8.8:80").ok()?;
+    let local_addr = socket.local_addr().ok()?;
+    match local_addr.ip() {
+        IpAddr::V4(ipv4) if !ipv4.is_loopback() => Some(ipv4.to_string()),
+        _ => None,
+    }
+}
+
+/// Mints an ephemeral pairing payload JSON and renders it into an SVG QR data URL.
+///
+/// Returns `(payload_json, qr_svg_data_url)`.
+pub fn mint_pairing_qr_svg(
+    host_id: &DeviceId,
+    public_key: &[u8],
+    hint_addr: &str,
+    hint_port: u16,
+    token: &PairingToken,
+) -> Result<(String, String), SecurityError> {
+    let payload_val = serde_json::json!({
+        "device_id": host_id.as_str(),
+        "public_key": hex::encode(public_key),
+        "token": token.to_hex(),
+        "hint_addr": hint_addr,
+        "hint_port": hint_port,
+    });
+    let payload = serde_json::to_string(&payload_val)
+        .map_err(|e| SecurityError::Noise(format!("Failed to serialize pairing payload: {e}")))?;
+
+    let code = QrCode::new(payload.as_bytes())
+        .map_err(|e| SecurityError::Noise(format!("Failed to generate QR code: {e}")))?;
+    let svg = code
+        .render::<svg::Color>()
+        .min_dimensions(240, 240)
+        .build();
+
+    let data_url = format!("data:image/svg+xml;base64,{}", BASE64.encode(svg.as_bytes()));
+    Ok((payload, data_url))
+}
+
