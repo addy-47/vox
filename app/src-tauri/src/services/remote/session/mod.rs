@@ -10,6 +10,13 @@
 //!
 //! Workspace rule: `AGENTS.md` §7.1, `session/`.
 
+pub mod manager;
+pub mod state;
+
+pub use self::{
+    manager::{RemoteSessionManager, SessionRole, StateChangeCallback},
+    state::{RemoteLinkState, RemoteStateDto},
+};
 pub use super::{
     HEARTBEAT_INTERVAL, HEARTBEAT_MAX_MISSED_PONGS, HEARTBEAT_PING_TIMEOUT, HEARTBEAT_PONG_TIMEOUT,
 };

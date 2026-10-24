@@ -4,6 +4,7 @@ import { useCatalogStore } from "@/store/catalogStore";
 import { SpeechModelCard } from "./SpeechModelCard";
 import type { ModelStatus } from "@/shared/hooks/useModelDownloads";
 import { cn } from "@/shared/lib/utils";
+import { promoteActive } from "@/shared/lib/activeSelection";
 import { SPEECH_CARD_COPY } from "@/data/settingsCopy";
 import { getSettingsInlineListMaxHeightClass } from "../shared/settingsLayout";
 
@@ -29,11 +30,14 @@ export const VadModelList = memo(
     deleteModel,
   }: VadModelListProps) => {
     const vad = useSettingsStore((s) => s.draftSettings?.vad);
+    const committedVad = useSettingsStore((s) => s.settings?.vad);
     const updateDraft = useSettingsStore((s) => s.updateDraft);
     const modelCatalog = useCatalogStore((s) => s.modelCatalog);
-    const vadModels = modelCatalog?.vad ?? [];
     if (!vad) return null;
     const activeVadBackend = vad.vad_backend || "";
+    const committedVadBackend = committedVad?.vad_backend || "";
+    const rawVadModels = modelCatalog?.vad ?? [];
+    const vadModels = promoteActive(rawVadModels, committedVadBackend);
 
     return (
       <div

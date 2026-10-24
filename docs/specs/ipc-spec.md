@@ -232,6 +232,7 @@ All backend events broadcast over the IPC bridge carry the following contracts:
 | `sessions_changed` | `void` | Signals asynchronous session updates (e.g. title auto-generation). |
 | `settings_updated` | `void` | Signals settings hot-reload completion. |
 | `remote_state_changed` | `{ link: string, failure?: string, deviceId?: string, displayName?: string }` | The canonical remote link state changed. Emitted on every transition, on both the host and the controller. The backend owns this state and pushes it; the frontend MUST NOT poll for it. Supersedes the originally proposed `remote_device_connected` / `remote_device_disconnected` pair, which would force the frontend to reconstruct a state machine from two edges. |
+| `remote_pairing_requested` | `{ deviceId: string, displayName: string }` | An inbound pairing request completed the Noise handshake and passed token validation on the host. Triggers the Host Pairing Prompt Modal (`approve_pairing`). |
 
 ### 5.1 The `activity` Envelope Contract
 When `state_changed` has `state === "Working"`, it MUST include an `activity` envelope:

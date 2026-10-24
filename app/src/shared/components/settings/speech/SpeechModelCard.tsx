@@ -173,7 +173,7 @@ export const SpeechModelCard = memo<SpeechModelCardProps>(({
             {hasTooltip && (
               <Tooltip label={specsSheet} side="left" mobileTapEnabled>
                 <span
-                  className="inline-flex items-center rounded-md p-1 text-[rgb(var(--foreground-muted))]/70 transition-colors hover:bg-[rgba(var(--foreground),0.06)] hover:text-[rgb(var(--accent))] cursor-help"
+                  className="inline-flex items-center rounded-md p-1 text-[rgb(var(--foreground-muted))]/70 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity hover:bg-[rgba(var(--foreground),0.06)] hover:text-[rgb(var(--accent))] cursor-help"
                   aria-label={`${name} details`}
                 >
                   <Info size={13} strokeWidth={2} />
@@ -188,7 +188,7 @@ export const SpeechModelCard = memo<SpeechModelCardProps>(({
                     e.stopPropagation();
                     setConfirmDeleteId(id);
                   }}
-                  className="rounded-md p-1 text-[rgb(var(--foreground-muted))]/70 transition-colors hover:bg-[rgba(var(--danger),0.14)] hover:text-[rgb(var(--danger))] cursor-pointer"
+                  className="rounded-md p-1 text-[rgb(var(--foreground-muted))]/70 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity hover:bg-[rgba(var(--danger),0.14)] hover:text-[rgb(var(--danger))] cursor-pointer"
                   aria-label={MODEL_HUB_COPY.row.deleteWeights}
                 >
                   <Trash2 size={13} strokeWidth={2} />

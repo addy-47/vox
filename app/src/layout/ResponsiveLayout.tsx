@@ -21,6 +21,7 @@ import { useProfilerDrawer } from "@/shared/components/profiler/ProfilerDrawer";
 import { usePageDrawer } from "@/shared/context/PageDrawerContext";
 import { useHistoryFilterStore } from "@/store/historyFilterStore";
 import { useSessionStore } from "@/store/sessionStore";
+import { useRemoteStore } from "@/store/remoteStore";
 import { getStackSize } from "@/shared/lib/overlayStack";
 import { isCompactWidth, isRealMobileDevice } from "./breakpoints";
 import { isCoarsePointer } from "@/lib/capabilities";
@@ -101,6 +102,7 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
   const { isPanelOpen, closePanel, openPanel, togglePanel } = usePanelStateContext();
   const historyDisplayMode = useHistoryFilterStore((s) => s.displayMode);
   const interactionState = useSessionStore((s) => s.interactionState);
+  const remoteLinkState = useRemoteStore((s) => s.linkState);
 
   const [helpInitialShortcuts, setHelpInitialShortcuts] = useState(false);
 
@@ -648,11 +650,21 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
             width: "100%",
             display: "flex",
             flexDirection: "column",
-            paddingBottom: isMobile ? "calc(60px + env(safe-area-inset-bottom))" : undefined,
+            paddingBottom: isMobile && isHome ? "calc(60px + env(safe-area-inset-bottom))" : undefined,
           }}
         >
           {/* Unified App Header for all layouts */}
           <AppHeader />
+
+          {/* Controller Ambient Rim Glow during active remote session */}
+          {isRealMobileDevice() && remoteLinkState === "Connected" && (
+            <div
+              className="pointer-events-none fixed inset-0 z-50 transition-opacity duration-700"
+              style={{
+                boxShadow: "inset 0 0 24px rgba(var(--accent), 0.15)",
+              }}
+            />
+          )}
 
           <Suspense
             fallback={

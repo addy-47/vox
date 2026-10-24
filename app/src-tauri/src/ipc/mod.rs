@@ -6,6 +6,7 @@ pub mod notifications;
 pub mod persistence;
 pub mod pipeline;
 pub mod projects;
+pub mod remote;
 pub mod settings;
 pub mod setup;
 pub mod tray;

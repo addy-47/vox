@@ -19,15 +19,17 @@ use std::{
 };
 
 use common::{remote_conformance::run_link_conformance, remote_samples::sample_ping};
-use futures_util::task::noop_waker;
+use futures_util::{task::noop_waker, SinkExt};
+use tokio_tungstenite::tungstenite::Message;
 use vox_lib::services::remote::{
     link::{
-        LinkCloseReason, LinkError, LoopbackLink, RawLink, RemoteLink, LOOPBACK_CHANNEL_CAPACITY,
+        bind, dial, LinkCloseReason, LinkError, LoopbackLink, RawLink, RemoteLink,
+        LOOPBACK_CHANNEL_CAPACITY,
     },
     protocol::{
         encode_control,
         framing::{AudioFrame, AudioPayload},
-        messages::{AudioControlMessage, ControlMessage, PttAction, PttMarker, Req},
+        messages::{AudioControlMessage, ControlMessage, Pong, PttAction, PttMarker, Req},
         ProtocolError, AUDIO_CODEC_PCM16, AUDIO_PAYLOAD_TAG_JSON,
     },
     MAX_CONTROL_MESSAGE_BYTES,
@@ -574,4 +576,124 @@ async fn loopback_passes_generic_conformance_suite() {
         "conformance run reported failures: {:?}",
         report.failures()
     );
+}
+
+/// PURPOSE:  A control message must traverse physical WebSocket loopback TCP without corruption.
+/// SCENARIO: Bind WsListener on loopback, dial WsLink, exchange Ping and Pong control messages.
+/// ASSERTS:  Delivered message is identical to transmitted message; both directions succeed.
+/// CLASS:    happy-path
+/// REQUIRES: none
+/// MUTANT:   Corrupt control payload serialization in WsLink::send_control.
+#[tokio::test]
+async fn ws_link_control_roundtrip_delivers_payload() {
+    let listener = within_ok(
+        "bind",
+        bind("127.0.0.1:0".parse().expect("valid loopback")),
+    )
+    .await;
+    let addr = listener.local_addr().expect("local addr");
+    let server_handle = tokio::spawn(async move { listener.accept().await });
+
+    let client = within_ok(
+        "dial",
+        dial(&format!("ws://{addr}")),
+    )
+    .await;
+    let server = server_handle
+        .await
+        .expect("server task join")
+        .expect("server accept");
+
+    let ping = sample_ping(42);
+    within_ok("send ping", client.send_control(ping.clone())).await;
+    let received_ping = within_ok("recv ping", server.recv_control()).await;
+    assert_eq!(received_ping, ping);
+
+    let pong = ControlMessage::Pong(Pong { seq: 42 });
+    within_ok("send pong", server.send_control(pong.clone())).await;
+    let received_pong = within_ok("recv pong", client.recv_control()).await;
+    assert_eq!(received_pong, pong);
+}
+
+/// PURPOSE:  Inbound messages exceeding MAX_CONTROL_MESSAGE_BYTES must terminate the link with a protocol error.
+/// SCENARIO: Send raw WebSocket binary frame larger than MAX_CONTROL_MESSAGE_BYTES to WsLink.
+/// ASSERTS:  recv_control returns LinkError::Protocol(Oversized) and close_reason records Protocol(Oversized).
+/// CLASS:    error-path
+/// REQUIRES: none
+/// MUTANT:   Remove check_control_message_size check in WsLink::decode_incoming.
+#[tokio::test]
+async fn ws_link_oversized_message_closes_with_protocol_error() {
+    let listener = within_ok(
+        "bind",
+        bind("127.0.0.1:0".parse().expect("valid loopback")),
+    )
+    .await;
+    let addr = listener.local_addr().expect("local addr");
+    let server_handle = tokio::spawn(async move { listener.accept().await });
+
+    let (mut raw_client, _) = tokio_tungstenite::connect_async(format!("ws://{addr}"))
+        .await
+        .expect("connect");
+    let server = server_handle
+        .await
+        .expect("server task join")
+        .expect("server accept");
+
+    let oversized_bytes = vec![0u8; MAX_CONTROL_MESSAGE_BYTES + 1];
+    raw_client
+        .send(Message::Binary(oversized_bytes.into()))
+        .await
+        .expect("raw send");
+
+    let recv_res = within("recv", server.recv_control()).await;
+    assert!(matches!(
+        recv_res,
+        Err(LinkError::Protocol(ProtocolError::Oversized { limit, .. }))
+            if limit == MAX_CONTROL_MESSAGE_BYTES
+    ));
+    assert!(matches!(
+        server.close_reason(),
+        Some(LinkCloseReason::Protocol(ProtocolError::Oversized { limit, .. }))
+            if limit == MAX_CONTROL_MESSAGE_BYTES
+    ));
+
+    let send_after = server.send_control(sample_ping(1)).await;
+    assert!(matches!(send_after, Err(LinkError::Closed(_))));
+}
+
+/// PURPOSE:  Closing one end of a WsLink must notify the peer with LinkCloseReason::Peer.
+/// SCENARIO: Close server WsLink with LinkCloseReason::Local; client calls recv_control.
+/// ASSERTS:  Client recv_control returns LinkError::Closed(Peer) and close_reason is Some(Peer).
+/// CLASS:    happy-path
+/// REQUIRES: none
+/// MUTANT:   Do not send Message::Close on WsLink::close.
+#[tokio::test]
+async fn ws_link_clean_close_notifies_peer() {
+    let listener = within_ok(
+        "bind",
+        bind("127.0.0.1:0".parse().expect("valid loopback")),
+    )
+    .await;
+    let addr = listener.local_addr().expect("local addr");
+    let server_handle = tokio::spawn(async move { listener.accept().await });
+
+    let client = within_ok(
+        "dial",
+        dial(&format!("ws://{addr}")),
+    )
+    .await;
+    let server = server_handle
+        .await
+        .expect("server task join")
+        .expect("server accept");
+
+    within_ok("close", server.close(LinkCloseReason::Local)).await;
+    assert_eq!(server.close_reason(), Some(LinkCloseReason::Local));
+
+    let recv_res = within("recv", client.recv_control()).await;
+    assert!(matches!(
+        recv_res,
+        Err(LinkError::Closed(LinkCloseReason::Peer))
+    ));
+    assert_eq!(client.close_reason(), Some(LinkCloseReason::Peer));
 }

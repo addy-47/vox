@@ -13,9 +13,7 @@
 //! | :--- | :--- |
 //! | `remote_link.rs` | the `RemoteLink` trait, `LinkError`, `LinkCloseReason` |
 //! | `loopback.rs` | the in-process `LoopbackLink` |
-//!
-//! The WebSocket transport that will join this module is wave 2. It is not
-//! listed here, because this block states what the module owns today.
+//! | `ws.rs` | the WebSocket transport `WsLink` and listener `WsListener` |
 //!
 //! The trait lives in `remote_link.rs` rather than `link.rs` because a
 //! module may not share the name of its parent: clippy's `module_inception`
@@ -24,9 +22,11 @@
 
 pub mod loopback;
 pub mod remote_link;
+pub mod ws;
 
 pub use self::{
     loopback::LoopbackLink,
     remote_link::{LinkCloseReason, LinkError, RawLink, RemoteLink},
+    ws::{bind, dial, WsLink, WsListener},
 };
 pub use super::{HANDSHAKE_DEADLINE, LOOPBACK_CHANNEL_CAPACITY};

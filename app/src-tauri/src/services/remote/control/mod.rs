@@ -8,3 +8,11 @@
 //! it does not touch the microphone.
 //!
 //! Workspace rule: `AGENTS.md` §7.1, `control/`.
+
+pub mod guard;
+pub mod routing;
+
+pub use self::{
+    guard::{is_command_permitted, is_desktop_command_permitted, ControlOrigin},
+    routing::{classify_command, get_routing_table, CommandClass},
+};

@@ -4,7 +4,7 @@ import { useCatalogStore } from "@/store/catalogStore";
 import { SpeechModelCard } from "./SpeechModelCard";
 import type { ModelStatus } from "@/shared/hooks/useModelDownloads";
 import { cn } from "@/shared/lib/utils";
-import { activeSelection } from "@/shared/lib/activeSelection";
+import { activeSelection, promoteActive } from "@/shared/lib/activeSelection";
 import { SPEECH_CARD_COPY } from "@/data/settingsCopy";
 import { getSettingsInlineListMaxHeightClass } from "../shared/settingsLayout";
 
@@ -32,10 +32,14 @@ export const SttModelList = memo(
     isGroupRequired,
   }: SttModelListProps) => {
     const draftSettings = useSettingsStore((s) => s.draftSettings);
+    const committedSettings = useSettingsStore((s) => s.settings);
     const updateDraft = useSettingsStore((s) => s.updateDraft);
     const modelCatalog = useCatalogStore((s) => s.modelCatalog);
-    const sttModels = modelCatalog?.stt ?? [];
     if (!draftSettings || !modelCatalog) return null;
+
+    const committedSttId = committedSettings?.stt.active.model;
+    const rawSttModels = modelCatalog?.stt ?? [];
+    const sttModels = promoteActive(rawSttModels, committedSttId);
 
     return (
       <div

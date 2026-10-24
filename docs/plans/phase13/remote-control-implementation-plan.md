@@ -1,182 +1,105 @@
-# Vox Remote Control — Implementation Plan (Orchestration Loop)
+# Remote Control Connection Flow Vertical Slice — Master Execution Plan & Specification
 
-**Goal:** a phone pairs with a Vox laptop host over LAN, becomes the host pipeline's microphone, speaker and UI surface, and the whole path is proven by automated tests against **real models** over a **real network**. The frontend (TypeScript / React) is out of scope and is owned by the user.
+## 1. Goal & Strict Scope Boundaries
 
-**SSOT:** [`docs/specs/remote-control-spec.md`](../../specs/remote-control-spec.md) · **Decisions:** [`remote-control-adr.md`](remote-control-adr.md) · **Draft tickets:** [`remote control-plan.md`](remote%20control-plan.md)
-
----
-
-## 1. Rules of the loop
-
-1. **One wave at a time.** No two waves overlap.
-2. **One agent implements a wave and writes its own tests.** A second agent in the same wave would double the iteration cost (ADR-RC-13).
-3. **At the wave boundary, an independent gate runs:** a test-engineer pass (evidence) followed by a QA-engineer pass (adversarial review + verdict).
-4. **A failed gate produces scoped fix findings**, not a re-run. The fixes re-enter the same path.
-5. **On an approved gate: commit, push, then STOP.** The next wave does not begin until the user inspects the pushed code and approves it.
-6. **The user is the final gate.** Every wave ends at a human inspection point.
-7. **No blockers are papered over.** A blocker is reported, not stubbed, mocked, or skipped.
-8. **Two failed attempts at the same fix without a new hypothesis → stop and escalate** to the user.
-
-### 1.1 No ticket files
-
-There is no per-ticket backlog. A wave is a short paragraph in the wave table
-below, and the wave's acceptance criteria are the spec clauses it names. A
-ticket per clause produced forty-four files that duplicated the spec, and the
-duplication is where the drift came from.
-
-**The spec is the backlog.** `docs/specs/remote-control-spec.md` names every
-behaviour and every `VERIFY-RC-*` criterion. When the two disagree, the spec
-wins and the code is wrong.
-
-**The mutation log is the evidence.** One file per wave,
-`docs/plans/phase13/remote-control-mutation-log.md`, records every mutant that
-was seeded against the wave's code and what happened to it. A test that has
-never been shown to go red is not evidence.
+This vertical slice implements the **Remote Control Connection Flow End-to-End**.
+- **In Scope:**
+  1. Backend WebSocket transport (`WsLink`) over `tokio-tungstenite`.
+  2. Noise_XX mutual authentication, single-use pairing token QR minting, and in-memory approval flow.
+  3. Canonical session state machine (`RemoteLinkState`, heartbeat loop, `Hello` negotiation, and disconnect handling).
+  4. 9 Tauri IPC commands and the `remote_state_changed` event push.
+  5. Complete Frontend UI:
+     - Desktop Host: Settings Remote Desk toggle, SVG QR pairing modal with 2-min countdown, Paired Controller card with Revoke action, Inbound Approval prompt modal (`PairingPromptModal`).
+     - Android Controller: Empty state, In-app WebRTC camera QR scanner modal with manual IP fallback, Paired Host view.
+     - Header Rocket Button 🚀: Controller dial trigger; Host active session indicator with two-step unboxed inline disconnect matching `RestoreDefaultsButton.tsx`.
+     - Ambient Visuals: Host motionless dimmed orb with inward ripples and compact `● Remote` status badge; Controller screen rim glow.
+  6. Automated loopback integration tests and physical Android APK build verification.
+- **Strictly Out of Scope:**
+  - Microphone audio capture streaming and speaker playback streaming (parked for subsequent audio pipeline slice).
+  - Off-LAN transports (QUIC, relays).
+  - Multiple simultaneous active controllers (v1 is strictly 1:1 host-to-controller).
 
 ---
 
-## 2. Sub-agent roster (persistent across the entire loop)
+## 2. All Settled Architectural & UI Decisions (ADRs)
 
-| Role | Agent | Owns | Produces | Gates? |
-| :--- | :--- | :--- | :--- | :--- |
-| **Implementer** | `backend-engineer` | Production code **and** the wave's tests | The diff, the wave's green test run | No |
-| **Verifier** | `test-engineer` | Independent evidence | A structured evidence report: raw test output, mutation results, coverage of the acceptance criteria | No |
-| **Auditor** | `qa-engineer` | The verdict | `APPROVED` / `REJECTED` / `INSUFFICIENT EVIDENCE`, with exact reproduction pointers | **Yes** |
-
-Roles are re-invoked, not respawned. Prior findings, prior rejections and prior context carry forward. The Auditor sees every previous verdict on the wave.
-
-**Agent invocation order per wave:** Implementer → Verifier → Auditor → (fixes → Verifier → Auditor)* → commit → push → stop.
-
----
-
-## 3. Wave plan
-
-Each wave is one commit on `ft/remote-control`, pushed to `origin/ft/remote-control`, then gated by the user.
-
-| Wave | Delivers | Depends on |
+| Area | Settled Decision | Behavioral Contract |
 | :--- | :--- | :--- |
-| **W0** Foundation | ADR + spec amendments (done, this commit), `AGENTS.md` §7, `snow`/`mdns-sd`/`qrcode` deps, `remote` settings domain, `paired_devices` table, `secret_keys()` azure fix, `supertonic` default TTS | — |
-| **W1** Protocol | `services/remote/protocol/` (messages, framing, capabilities, errors), `link/` traits, `LoopbackLink`, the conformance suite; plus the two W0 carry-overs (ticket 34, the cached Devanagari engine; ticket 35, the voice catalogue through the provider enum) | W0 |
-| **W2a** Security | `security/identity.rs` (the device key and the `DeviceId` derivation), `security/key_store.rs`, `security/noise.rs` (the Noise_XX handshake and encrypted transport), `security/pairing.rs` + `security/trust.rs`; plus the link-contract corrections (a close reason that carries its cause, and the fatal-or-skippable classification moved into `protocol/`) and the Emma voice-collision fix | W1 |
-| **W2b** Transport | `link/ws.rs` + `link/session.rs` — the real TCP → WebSocket → Noise transport with two sockets per link, the `SessionToken` message type, and the two transport-boundary obligations (the protocol MUSTs enforced at the receive path, and the conformance suite covering the log-a-warning clause) | W2a |
-| **W3** Session & control plane | `session/` (role, state, manager, heartbeat, snapshot), `control/` (routing, args, gateway, redaction), the `ControlOrigin` guard rule, host admission rules | W2 |
-| **W4** Event plane | `control/event_policy.rs`, the composite `IpcEmitter`, ~20 emit-site conversions, `remote_state_changed`, rate limits | W3 |
-| **W5** Audio | `audio/` (capture, sink, pacing), the extracted 16 kHz normaliser, AEC bypass, `SessionOrigin` capture arbitration, dictation gating | W3 |
-| **W6** Proof | `testing/reference_client.rs`, the end-to-end turn suite (real STT → real LLM → real TTS over real TCP+Noise), the negative-path suite | W4, W5 |
-| **W7** Phone client | Controller-side session, audio uplink, playout + jitter buffer, mode switch, the controller IPC surface | W6 |
-| **W8** Discovery, hardening, handoff | `discovery/` (hints, mDNS, candidates), the security hardening pass, spec sync, delete `AGENTS.md` §7, `AGENTS.md` §5 | W7 |
-
-**W6 is the milestone.** Until it passes, the feature is unproven: no turn has crossed a real network with real models.
-
-### 3.1 What each wave must deliver
-
-Each wave is one commit. The acceptance criteria are the spec clauses the
-wave names, and the `VERIFY-RC-*` numbers it closes.
-
-| Wave | Delivers | Spec clauses closed |
-| :--- | :--- | :--- |
-| **W0** Foundation | The ADR and the spec amendments, `AGENTS.md` §7, the `snow` / `mdns-sd` / `qrcode` dependencies, the `remote` settings domain, the `paired_devices` table, the `secret_keys()` Azure fix, `supertonic` as the default TTS | — |
-| **W1** Protocol | `services/remote/protocol/` (messages, framing, capabilities, errors), the `RemoteLink` trait, `LoopbackLink`, the link conformance suite; plus the two W0 carry-overs (the cached Devanagari engine and the voice catalogue through the provider enum) | VERIFY-RC-01, VERIFY-RC-15 |
-| **W2a** Security | `security/identity.rs` (the device key and the `DeviceId` derivation), `security/key_store.rs`, `security/noise.rs` (the Noise_XX handshake and encrypted transport), `security/pairing.rs`, `security/trust.rs`; plus the link-contract corrections (a close reason that carries its cause, and the fatal-or-skippable classification moved into `protocol/`) | VERIFY-RC-01, VERIFY-RC-02, VERIFY-RC-03, VERIFY-RC-06 |
-| **W2b** Transport | `link/ws.rs` and `link/session.rs` — the real TCP → WebSocket → Noise transport with two sockets per link, the `SessionToken` message type, and the two transport-boundary obligations (the protocol MUSTs enforced at the receive path, and the conformance suite covering the log-a-warning clause) | VERIFY-RC-13, VERIFY-RC-21 |
-| **W3** Session & control plane | `session/` (role, state, manager, heartbeat, snapshot), `control/` (routing, args, gateway, redaction), the `ControlOrigin` guard rule, host admission rules | VERIFY-RC-05, VERIFY-RC-07, VERIFY-RC-08, VERIFY-RC-16, VERIFY-RC-17, VERIFY-RC-18, VERIFY-RC-22 |
-| **W4** Event plane | `control/event_policy.rs`, the composite `IpcEmitter`, ~20 emit-site conversions, `remote_state_changed`, rate limits | VERIFY-RC-09, VERIFY-RC-10 |
-| **W5** Audio | `audio/` (capture, sink, pacing), the extracted 16 kHz normaliser, AEC bypass, `SessionOrigin` capture arbitration, dictation gating | VERIFY-RC-11, VERIFY-RC-12 |
-| **W6** Proof | `testing/reference_client.rs`, the end-to-end turn suite (real STT → real LLM → real TTS over real TCP + Noise), the negative-path suite | VERIFY-RC-19, VERIFY-RC-20 |
-| **W7** Phone client | Controller-side session, audio uplink, playout + jitter buffer, mode switch, the controller IPC surface | — |
-| **W8** Discovery, hardening, handoff | `discovery/` (hints, mDNS, candidates), the security hardening pass, spec sync, delete `AGENTS.md` §7, `AGENTS.md` §5 | — |
+| **Role Coupling** | Desktop is always **Host**; Android/Mobile is always **Controller**. | Decoupling is deferred to v2. Simplifies state and eliminates asymmetric confusion in v1. |
+| **Enablement (Lane 1)** | Host-only persistent switch (`remote.accepts_controllers: bool`). | Controller has NO enablement switch in settings. Controller is a client that connects on demand. |
+| **Header Rocket 🚀 (Lane 2)** | **Controller:** Always visible next to ghost/incognito in `AppHeader`. Clicking dials host or opens scanner modal.<br>**Host:** Hidden when idle; appears only when `Connected`. | Host disconnect uses a **two-step unboxed inline transition** identical to `RestoreDefaultsButton.tsx`: text *"Disconnect remote"*, red checkmark (`Check`), grey cross (`X`), auto-reverting after 5s. |
+| **Pairing & Approval** | Single-use 128-bit token (2-min TTL, in memory). Host displays *"Approve [Device Name]?"* modal with 30s timeout and [Approve] / [Deny] buttons. | **No secondary 4-to-8 digit PIN code.** Proximity is cryptographically proven by scanning the ephemeral QR code and completing Noise_XX. |
+| **Controller In-App Scanner** | Pure in-app camera viewfinder via WebRTC `getUserMedia` + `jsQR` parser, plus manual IP/port entry fallback. | Zero native plugin dependency overhead; 100% portable on Android WebView. Camera tracks are strictly stopped on unmount. |
+| **Paired Device Management** | **Host:** Shows single paired controller card with Revoke (trash) button calling `revoke_device`.<br>**Controller:** Shows paired host card with status ("Online"). | **NO Controller-side unpair command exists in `ipc-spec.md`.** Switching hosts on the controller is done simply by scanning a new QR code or entering a new target address. |
+| **Host Control Guard** | Backend enforces `RULE-RC-GUARD`: local mutating writes are rejected during a remote session. | Frontend implements `useRemoteGuard()` hook: disables Engage button and mutating triggers with `disabled={true}`, `cursor-not-allowed`, and tooltip *"Remote session active"*. |
+| **Host Visuals** | Dimmed motionless orb (sleeping style) with **ripples flowing inward**; compact status pill `● Remote` above orb. | Provides clear, calm visual feedback that the laptop is a passive listener while phone is authoritative. |
+| **Controller Visuals** | Inset accent rim glow around viewport edges (`box-shadow: inset 0 0 24px rgba(var(--accent), 0.15)`) + compact `Remote` sub-pill. | Subtle ambient indicator that the mobile surface is controlling a remote host. |
 
 ---
 
-## 4. Gates
+## 3. End-to-End Testing & Physical Device Questions Answered
 
-### 4.1 Sub-agent gate (end of every wave)
+### Q1: Can an agent fully test the connection logic end-to-end without a phone?
+**Yes.**  
+In Vox, the wire protocol and session state machine run independently of physical hardware:
+- We author a dedicated integration test binary: [`tests/remote_connection_test.rs`](file:///home/addy/projects/apps/vox/app/src-tauri/tests/remote_connection_test.rs).
+- This test spins up a live Host instance on a local OS loopback port (`127.0.0.1:0`), mints a pairing token, and simulates a Controller instance over real TCP/WebSocket.
+- It validates the entire flow programmatically:
+  1. TCP connection and Noise_XX handshake.
+  2. Public key derivation and identity verification (`DeviceId == SHA-256(domain || pubkey)`).
+  3. Ephemeral pairing token validation and consumption.
+  4. Inbound approval channel resolution (`approve_pairing`).
+  5. Hello exchange and capability negotiation.
+  6. Heartbeat loop (bidirectional 2s/1s ping/pong exchange).
+  7. Clean disconnect and state transition back to `Disconnected`.
+- For the frontend, Vitest DOM tests (`pnpm test:dom`) verify the React components, countdown timer, SVG QR rendering, and `useRemoteGuard` hook.
 
-- **Gate:** the Auditor issues `APPROVED` only when (a) the Verifier's evidence covers every acceptance criterion of the wave, (b) the diff matches the spec clauses it claims to implement, (c) the compile gate is 0 warnings on both targets, and (d) the full test suite is green.
-- **On `REJECTED`:** the Auditor's findings become scoped fixes. The Implementer fixes them. The Verifier and Auditor re-run **on the fixes only**.
-- **On `INSUFFICIENT EVIDENCE`:** the Auditor states exactly which evidence is missing. The Verifier produces it. No code is written.
-- **On `APPROVED`:** commit, push, stop for the user.
-
-### 4.2 HITL gate (end of every wave)
-
-**The user inspects the pushed code and approves before the next wave begins.** No wave starts on an internal approval alone.
-
-### 4.3 Scheduled check-ins
-
-Every 20 minutes during an active wave, an adversarial prompt is injected:
-
-- Has every issue actually been looked at, or assumed fixed?
-- Is the current phase still detailed enough, or is it coasting on a vague scope? If vague — stop and force `/modify-plan` before continuing.
-- Is progress real, or is the loop repeating the same failed attempt without a new hypothesis?
-
-Check-ins never approve. Only the sub-agent gate and the user's HITL gate do.
-
----
-
-## 5. Commit and push policy
-
-- One commit per wave. The commit message states the wave and the verification command with its result.
-- The commit is pushed to `origin/ft/remote-control` **before** the user inspects it.
-- A wave's commit must leave the repository green: `./scripts/verify-targets.sh` at 0 warnings on both targets, and the full `cargo nextest` suite passing.
-- Linear history. No merge commits.
-- **Before the feature ships, the branch history may be rewritten.** The feature is not released, so a squashed history is worth more than a granular one. After the first release, the history is append-only.
-
-### 5.1 Environment
-
-```bash
-export ANDROID_HOME=/opt/android-sdk
-export NDK_HOME=/opt/android-sdk/ndk/27.2.12479018
-export PATH="/root/.cargo/bin:$PATH"      # cargo-nextest
-cd app/src-tauri
-```
-
-> **Known upstream issue (not fixed by this work):** `scripts/android-env.sh` sets `NDK_HOME` to a bare version directory name instead of a full path, so its auto-discovery branch only works when `NDK_HOME` is already exported. Exporting `NDK_HOME` explicitly, as above, works around it. The Android clippy gate has been confirmed to pass with NDK 27.2.12479018.
-
-### 5.2 Commands
-
-```bash
-# compile gate (both targets, 0 warnings)
-cd app/src-tauri && ./scripts/verify-targets.sh
-
-# test suite
-cd app/src-tauri && RAYON_NUM_THREADS=$(nproc) OMP_NUM_THREADS=$(nproc) \
-  cargo nextest run --release --test-threads=1 --no-fail-fast
-
-# single test file
-cd app/src-tauri && cargo nextest run --test <name> --release --nocapture --test-threads=1
-```
-
-### 5.3 Test models
-
-Real model weights are provisioned at `~/.vox/models` from the public `addyo07/vox-models` Hugging Face repository:
-
-| Path | Contents |
-| :--- | :--- |
-| `stt/nemotron-3.5/` | Nemotron STT (encoder, decoder, joiner, tokens) |
-| `llm/qwen/` | qwen-3.5-0.8b q4_k_m GGUF |
-| `tts/supertonic-3/` | Supertonic TTS |
-| `tts/kokoro/` | Kokoro TTS |
-| `embedding/minilm-l12-v2/` | MiniLM embeddings |
-
-Re-provision with:
-
-```bash
-hf download addyo07/vox-models --include "stt/nemotron-3.5/*" --include "llm/qwen/*" \
-  --include "tts/supertonic-3/*" --include "embedding/minilm-l12-v2/*" \
-  --local-dir ~/.vox/models
-```
-
-**No fake or mock model providers.** The end-to-end suite uses the real models.
+### Q2: At what point in the plan should the user connect their phone to the laptop?
+**At Ticket 09 (The Final Verification Phase).**
+- During Tickets 01–08, all backend code is validated using unit tests, seam tests, and the cross-compilation compile gate (`./scripts/verify-targets.sh`).
+- Once Ticket 09 is reached:
+  1. Connect your Android phone to your laptop via USB.
+  2. Ensure USB Debugging is enabled (`adb devices` shows the phone).
+  3. The agent/user runs:
+     ```bash
+     cd app/src-tauri && cargo tauri android dev
+     # OR builds debug apk:
+     cargo tauri android build --debug
+     adb install -r gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk
+     ```
+  4. Open Vox on your laptop (Host) and Vox on your phone (Controller).
+  5. Laptop: Settings -> Remote Control -> click `[+ Pair New Device]`.
+  6. Phone: Header Rocket Button or Settings -> tap `[Scan Host QR]`, point camera at laptop screen.
+  7. Laptop: Click `[Approve]` on the inbound prompt modal.
+  8. Verify: Header Rocket icon appears on laptop, inward ripples activate, and phone takes control.
 
 ---
 
-## 6. Risks
+## 4. Ticket Breakdown (`.scratch/remote-connection-slice/issues/`)
 
-| Risk | Mitigation |
-| :--- | :--- |
-| The composite emitter touches ~20 emit sites across `pipeline/`, `services/`, `monitoring/` | Its own wave (W4) and its own gate. Two commits inside the wave: trait first, then call sites. |
-| `mdns-sd` may not build for `aarch64-linux-android` | W0 verifies it. If it fails, discovery degrades to QR-hint plus manual entry and mDNS moves to a later ticket. |
-| The idle monitor auto-pauses after 7 minutes and offloads models after 5 | Both are suppressed while a controller is attached (W3). |
-| `on_end` tears the engine down when dictation is `Idle` | Guarded in W5. |
-| The phone's uplink must not stall the VAD actor | In-order, gap-padded 256-sample delivery (W5). |
-| A new inbound socket is a new attack surface | Noise mutual auth, pairing, IP rate limits, size caps, handshake deadline (W2, W8). |
+All 9 tickets have been created as standalone markdown work items:
+
+1. **[01-ws-link-transport.md](file:///home/addy/projects/apps/vox/.scratch/remote-connection-slice/issues/01-ws-link-transport.md)**: Implement `WsLink` over `tokio-tungstenite` implementing `RemoteLink` (Host listener & Controller dialer).
+2. **[02-session-manager-state.md](file:///home/addy/projects/apps/vox/.scratch/remote-connection-slice/issues/02-session-manager-state.md)**: Implement `RemoteLinkState` enum, `RemoteSessionManager`, Noise_XX integration, Hello exchange, and 2s/1s heartbeat loop.
+3. **[03-command-routing-guard.md](file:///home/addy/projects/apps/vox/.scratch/remote-connection-slice/issues/03-command-routing-guard.md)**: Implement static `CommandClass` table and `RULE-RC-GUARD` blocking desktop mutating writes during remote session.
+4. **[04-pairing-coordinator-qr.md](file:///home/addy/projects/apps/vox/.scratch/remote-connection-slice/issues/04-pairing-coordinator-qr.md)**: Ephemeral 128-bit pairing token minting, SVG QR string output via `qrcode` crate, and `PendingPairing` with 30s approval timeout.
+5. **[05-ipc-handlers-event-push.md](file:///home/addy/projects/apps/vox/.scratch/remote-connection-slice/issues/05-ipc-handlers-event-push.md)**: Register the 9 simplified Tauri remote commands and wire `remote_state_changed` event push across transitions.
+6. **[06-frontend-store-remote-guard.md](file:///home/addy/projects/apps/vox/.scratch/remote-connection-slice/issues/06-frontend-store-remote-guard.md)**: Implement `remoteService.ts`, Zustand `remoteStore.ts`, and `useRemoteGuard()` hook.
+7. **[07-settings-remote-desk-host-pairing.md](file:///home/addy/projects/apps/vox/.scratch/remote-connection-slice/issues/07-settings-remote-desk-host-pairing.md)**: Host Remote Desk panel, `PairingModal.tsx` with SVG QR and live countdown timer, and Host `PairingPromptModal.tsx`.
+8. **[08-controller-settings-in-app-scanner.md](file:///home/addy/projects/apps/vox/.scratch/remote-connection-slice/issues/08-controller-settings-in-app-scanner.md)**: Controller Remote Desk panel, In-App WebRTC camera viewfinder modal (`getUserMedia` + `jsQR`), manual IP fallback, and connected host view.
+9. **[09-header-rocket-visuals-apk-test.md](file:///home/addy/projects/apps/vox/.scratch/remote-connection-slice/issues/09-header-rocket-visuals-apk-test.md)**: AppHeader `RocketButton.tsx` with two-step inline disconnect matching `RestoreDefaultsButton.tsx`, Host inward ripples, Controller edge glow, `tests/remote_connection_test.rs`, and physical device APK verification.
+
+---
+
+## 5. Implementation Agent Instructions
+
+When the implementation agent is launched to execute these tickets:
+1. **Work Frontier Order:** Follow tickets strictly from `01` to `09`. Each ticket declares its blockers.
+2. **Style Guides:**
+   - Backend: Adhere to `backend-style-guide.md` and `AGENTS.md` §8 module map.
+   - Frontend: Adhere to `impeccable` design rules and `frontend-style-guide.md` (no raw color literals, use theme variables, Framer Motion).
+3. **Compile Gate Rule:**
+   - After any change touching Rust or Tauri configs, always verify with:
+     ```bash
+     cd app/src-tauri && ./scripts/verify-targets.sh
+     ```

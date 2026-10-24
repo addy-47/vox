@@ -294,7 +294,7 @@ export const Settings: React.FC = () => {
               ))}
             </div>
             {/* Selective bottom dissolve for small-screen settings card list */}
-            <BottomDockFeather className="absolute bottom-0 left-0 right-0 h-[80px] pointer-events-none z-10" />
+            <BottomDockFeather className="absolute bottom-0 left-0 right-0 h-[calc(90px+env(safe-area-inset-bottom,0px))] pointer-events-none z-10" />
           </div>
         </div>
       )}

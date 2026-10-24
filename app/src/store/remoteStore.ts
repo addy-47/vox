@@ -1,0 +1,173 @@
+import { create } from "zustand";
+import { listen, type UnlistenFn } from "@/services/transport";
+import {
+  type RemoteLinkState,
+  type RemoteStateDto,
+  type PairNewDeviceDto,
+  type PairedDeviceDto,
+  type RemotePairingRequestedPayload,
+  type CommandClass,
+  pairNewDevice as apiPairNewDevice,
+  approvePairing as apiApprovePairing,
+  listPairedDevices as apiListPairedDevices,
+  revokeDevice as apiRevokeDevice,
+  disconnectDevice as apiDisconnectDevice,
+  connectHost as apiConnectHost,
+  disconnectHost as apiDisconnectHost,
+  getLinkState,
+  getCommandRouting,
+} from "@/services/remoteService";
+
+export interface ConnectedPeer {
+  deviceId: string;
+  displayName: string;
+}
+
+export interface RemoteStoreState {
+  linkState: RemoteLinkState;
+  failureReason: string | null;
+  connectedPeer: ConnectedPeer | null;
+  pendingPairingPrompt: RemotePairingRequestedPayload | null;
+  pairedDevices: PairedDeviceDto[];
+  commandRouting: Record<string, CommandClass>;
+  loading: boolean;
+  error: string | null;
+
+  init: () => Promise<UnlistenFn>;
+  hydrate: () => Promise<void>;
+  pairNewDevice: () => Promise<PairNewDeviceDto>;
+  approvePairing: (decision: "Approve" | "Reject") => Promise<void>;
+  dismissPairingPrompt: () => void;
+  listPairedDevices: () => Promise<PairedDeviceDto[]>;
+  revokeDevice: (deviceId: string) => Promise<void>;
+  disconnectDevice: (deviceId: string) => Promise<void>;
+  connectHost: (params: { deviceId?: string; address?: string }) => Promise<void>;
+  disconnectHost: () => Promise<void>;
+}
+
+export const useRemoteStore = create<RemoteStoreState>((set, get) => ({
+  linkState: "Disconnected",
+  failureReason: null,
+  connectedPeer: null,
+  pendingPairingPrompt: null,
+  pairedDevices: [],
+  commandRouting: {},
+  loading: false,
+  error: null,
+
+  init: async () => {
+    await get().hydrate();
+
+    const unlistenState = await listen<RemoteStateDto>("remote_state_changed", (event) => {
+      const dto = event.payload;
+      const peer =
+        dto.deviceId && dto.displayName
+          ? { deviceId: dto.deviceId, displayName: dto.displayName }
+          : null;
+
+      set({
+        linkState: dto.link,
+        failureReason: dto.failure ?? null,
+        connectedPeer: peer,
+      });
+
+      if (dto.link === "Connected") {
+        get().listPairedDevices().catch((e) => {
+          console.debug("[remoteStore] Failed to refresh paired devices:", e);
+        });
+      }
+    });
+
+    const unlistenPrompt = await listen<RemotePairingRequestedPayload>(
+      "remote_pairing_requested",
+      (event) => {
+        set({ pendingPairingPrompt: event.payload });
+      }
+    );
+
+    return () => {
+      unlistenState();
+      unlistenPrompt();
+    };
+  },
+
+  hydrate: async () => {
+    try {
+      set({ loading: true, error: null });
+      const [stateDto, devices, routing] = await Promise.all([
+        getLinkState().catch((e) => {
+          console.debug("[remoteStore] getLinkState not available:", e);
+          return { link: "Disconnected" } as RemoteStateDto;
+        }),
+        apiListPairedDevices().catch((e) => {
+          console.debug("[remoteStore] listPairedDevices error:", e);
+          return [] as PairedDeviceDto[];
+        }),
+        getCommandRouting().catch((e) => {
+          console.debug("[remoteStore] getCommandRouting error:", e);
+          return {} as Record<string, CommandClass>;
+        }),
+      ]);
+
+      const peer =
+        stateDto.deviceId && stateDto.displayName
+          ? { deviceId: stateDto.deviceId, displayName: stateDto.displayName }
+          : null;
+
+      set({
+        linkState: stateDto.link,
+        failureReason: stateDto.failure ?? null,
+        connectedPeer: peer,
+        pairedDevices: devices,
+        commandRouting: routing,
+        loading: false,
+        error: null,
+      });
+    } catch (e) {
+      console.warn("[remoteStore] Failed to hydrate remote store:", e);
+      set({ loading: false, error: String(e) });
+    }
+  },
+
+  pairNewDevice: async () => {
+    return apiPairNewDevice();
+  },
+
+  approvePairing: async (decision: "Approve" | "Reject") => {
+    await apiApprovePairing(decision);
+    set({ pendingPairingPrompt: null });
+    await get().listPairedDevices();
+  },
+
+  dismissPairingPrompt: () => {
+    set({ pendingPairingPrompt: null });
+  },
+
+  listPairedDevices: async () => {
+    try {
+      const devices = await apiListPairedDevices();
+      set({ pairedDevices: devices });
+      return devices;
+    } catch (e) {
+      console.warn("[remoteStore] Failed to list paired devices:", e);
+      return [];
+    }
+  },
+
+  revokeDevice: async (deviceId: string) => {
+    await apiRevokeDevice(deviceId);
+    await get().listPairedDevices();
+  },
+
+  disconnectDevice: async (deviceId: string) => {
+    await apiDisconnectDevice(deviceId);
+  },
+
+  connectHost: async (params: { deviceId?: string; address?: string }) => {
+    await apiConnectHost(params);
+  },
+
+  disconnectHost: async () => {
+    await apiDisconnectHost();
+  },
+}));

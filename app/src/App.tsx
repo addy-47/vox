@@ -13,6 +13,8 @@ import { VoiceSessionProvider } from "@/shared/context/VoiceSessionContext";
 import { ProfilerDrawerProvider } from "@/shared/components/profiler/ProfilerDrawer";
 import { PanelStateProvider } from "@/shared/context/PanelStateContext";
 import { useNotificationStore } from "@/store/notificationStore";
+import { useRemoteStore } from "@/store/remoteStore";
+import { PairingPromptModal } from "@/shared/components/remote/PairingPromptModal";
 import { installOverlayStack } from "@/shared/lib/overlayStack";
 import { getCurrentWindowLabel, isWizardWindowSync } from "@/services/windowService";
 import { isRealMobileDevice } from "@/layout/breakpoints";
@@ -273,6 +275,29 @@ const App: React.FC = () => {
     };
   }, [fetchNotifications, initListeners, isWizardWebview, routeToWizard]);
 
+  // Global remote control store lifecycle: listens for state changes and pairing requests
+  useEffect(() => {
+    if (isWizardWebview || (routeToWizard && !isRealMobileDevice())) return;
+    let cleanup: (() => void) | null = null;
+    let isMounted = true;
+
+    useRemoteStore
+      .getState()
+      .init()
+      .then((unlisten) => {
+        if (isMounted) cleanup = unlisten;
+        else unlisten();
+      })
+      .catch((e) => {
+        console.debug("[App] Failed to initialize remoteStore:", e);
+      });
+
+    return () => {
+      isMounted = false;
+      if (cleanup) cleanup();
+    };
+  }, [isWizardWebview, routeToWizard]);
+
   // Global overlay stack + spatial navigation install FOUR window-level
   // listeners each (including a mousemove handler). They are app-shell
   // concerns, so they are skipped in the `wizard` webview, which renders only
@@ -484,6 +509,8 @@ const App: React.FC = () => {
                     </div>
                   </div>
                 )}
+                {/* Global Remote Inbound Pairing Approval Modal */}
+                <PairingPromptModal />
               </div>
               </MotionConfig>
             </Router>

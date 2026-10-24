@@ -4,6 +4,7 @@ import { PanelLeft, Bell, HelpCircle, Ghost } from "lucide-react";
 import { Tooltip } from "@/shared/ui/Tooltip";
 import { ThemeToggleButton } from "@/shared/ui/ThemeToggleButton";
 import { RestoreDefaultsButton } from "@/shared/components/settings/RestoreDefaultsButton";
+import { RocketButton } from "@/shared/components/remote/RocketButton";
 import { ActiveSessionHeader } from "@/shared/components/home/ActiveSessionHeader";
 import { usePanelStateContext } from "@/shared/context/PanelStateContext";
 import { useNotificationStore, selectBadgeCount } from "@/store/notificationStore";
@@ -142,6 +143,9 @@ export const AppHeader: React.FC = memo(() => {
             </button>
           </Tooltip>
         )}
+
+        {/* Remote Control Rocket Button */}
+        {isHome && <RocketButton />}
 
 
         {/* History Title in compact & mobile */}

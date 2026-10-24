@@ -115,10 +115,14 @@ export const CatalogReveal = memo(({
         <div ref={sentinelRef} aria-hidden="true" className="h-px w-full" />
       </div>
 
-      {/* Feather: only shown when content overflows AND user hasn't reached the end. */}
-      {isScrollable && !atEnd && (
+      {/* Feather: only shown when inline (stands down in modal) and content overflows.
+          Fades out smoothly via CSS transition when reaching the bottom so the mask doesn't vanish abruptly. */}
+      {!isExpanded && isScrollable && (
         <div
-          className="pointer-events-none absolute inset-x-0 bottom-7 z-10 bg-gradient-to-t from-[rgba(var(--card),0.97)] via-[rgba(var(--card),0.8)] to-transparent"
+          className={cn(
+            "pointer-events-none absolute inset-x-0 bottom-7 z-10 bg-gradient-to-t from-[rgba(var(--card),0.97)] via-[rgba(var(--card),0.8)] to-transparent transition-opacity duration-300 ease-out",
+            atEnd ? "opacity-0" : "opacity-100"
+          )}
           style={{ height: featherHeight }}
         />
       )}

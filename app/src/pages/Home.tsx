@@ -17,11 +17,12 @@ import {
   HOME_CONTROLS_COPY,
   ERROR_BANNER_COPY,
 } from "@/data/homeCopy";
-import { shortcutKeysSuffix } from "@/data/shortcuts";
 
-import { Power, Mic, Keyboard, Play, Pause, X, AlertCircle, RotateCcw } from "lucide-react";
+import { AlertCircle } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { ChapterScrubber, type Chapter } from "@/shared/ui/ChapterScrubber";
+import { HomeControls } from "@/shared/components/home/HomeControls";
+import { useRemoteGuard } from "@/shared/hooks/useRemoteGuard";
 
 
 import { useProfilerDrawer } from "@/shared/components/profiler/ProfilerDrawer";
@@ -83,6 +84,7 @@ export const Home = memo(() => {
     shouldAutoScrollRef,
     activityDisplay,
   } = useHomePage();
+  const { isBlocked: isRemoteBlocked } = useRemoteGuard();
   useMemoryTrace("Home");
 
   const { openProfiler, closeProfiler } = useProfilerDrawer();
@@ -146,6 +148,7 @@ export const Home = memo(() => {
       }
       if (e.key === " " && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
+        if (isRemoteBlocked) return;
         if (isEngaged) void disengage();
         else void engage();
         return;
@@ -186,7 +189,7 @@ export const Home = memo(() => {
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
     };
-  }, [toggleMicMute, togglePlaybackMute, isPaused, pause, resume, isEngaged, engage, disengage, setTextModeOpen, interactionMode, isSleeping, interactionState, handlePttStart, handlePttStop, handlePttCancel, pttStatus, isTextModeOpen]);
+  }, [toggleMicMute, togglePlaybackMute, isPaused, pause, resume, isEngaged, engage, disengage, setTextModeOpen, interactionMode, isSleeping, interactionState, handlePttStart, handlePttStop, handlePttCancel, pttStatus, isTextModeOpen, isRemoteBlocked]);
 
   const { isPanelOpen, closePanel } = usePanelStateContext();
   const sessionError = useSessionStore((s) => s.sessionError);
@@ -287,6 +290,11 @@ export const Home = memo(() => {
             <span>{HOME_CONTROLS_COPY.temporary.activeBadge}</span>
           </div>
         )}
+        {isRemoteBlocked && (
+          <div className="flex items-center text-[9.5px] font-mono font-bold tracking-[0.25em] uppercase text-[rgb(var(--accent))] leading-none mb-1 animate-in fade-in duration-200">
+            <span>● Remote</span>
+          </div>
+        )}
         <DynamicStatusBadge
           label={activityDisplay.label}
           orbState={activityDisplay.orbState}
@@ -343,6 +351,13 @@ export const Home = memo(() => {
             isEngaged && interactionState !== "Error" ? "scale-100 opacity-100 animate-field-pulse" : "scale-90 opacity-60"
           )}
         />
+        {/* Inward ripples flowing toward orb center during remote session */}
+        {isRemoteBlocked && (
+          <div
+            className="absolute inset-4 rounded-full border border-[rgb(var(--accent))]/30 pointer-events-none animate-ping"
+            style={{ animationDuration: "3s" }}
+          />
+        )}
         {/* Orb directly renders on Home mount with zero loader flash */}
         <div className="relative w-full h-full flex items-center justify-center">
           <ErrorBoundary name="VoxOrb">
@@ -350,7 +365,7 @@ export const Home = memo(() => {
               <VoxOrb
                 telemetryRef={telemetryRef}
                 interactionState={interactionState}
-                isSleeping={isSleeping}
+                isSleeping={isSleeping || isRemoteBlocked}
                 paused={isPanelOpen("sessions") || isPanelOpen("notifications") || isPanelOpen("help")}
               />
             </Suspense>
@@ -404,130 +419,25 @@ export const Home = memo(() => {
             initialHistory={dialogueHistory.map((d) => d.user).filter(Boolean)}
           />
         ) : (
-          <div className="flex items-center gap-4 relative">
-            {/* Error State */}
-            {interactionState === "Error" ? (
-              <div className="relative flex flex-col items-center">
-                <button
-                  onClick={resume}
-                  tabIndex={0}
-                  className="flex items-center justify-center gap-2.5 px-6 h-14 rounded-full transition-all duration-500 border border-[rgb(var(--accent))]/50 bg-[rgb(var(--accent))]/15 hover:bg-[rgb(var(--accent))]/25 hover:scale-105 active:scale-95 text-[rgb(var(--accent))] shadow-[0_0_24px_rgba(var(--accent),0.25)] cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(var(--accent))] focus-visible:ring-offset-2 focus-visible:ring-offset-[rgb(var(--background))] focus-visible:scale-105"
-                  aria-label={HOME_CONTROLS_COPY.error.reconnectAriaLabel}
-                  title={HOME_CONTROLS_COPY.error.reconnectTooltip + shortcutKeysSuffix("home.reconnect")}
-                >
-                  <RotateCcw size={20} className="transition-transform group-hover:-rotate-45" />
-                  <span className="text-xs font-mono font-bold tracking-[0.2em] uppercase">
-                    {HOME_CONTROLS_COPY.error.reconnectLabel}
-                  </span>
-                </button>
-              </div>
-            ) : isEngaged ? (
-              /* Engaged Controls */
-              <React.Fragment>
-                {/* Pause / Resume */}
-                <button
-                  onClick={(isPaused || isSleeping) ? resume : pause}
-                  tabIndex={0}
-                  className={cn(
-                    "flex items-center justify-center w-14 h-14 rounded-full transition-all duration-500 border border-[rgb(var(--accent))]/25 bg-transparent hover:bg-[rgb(var(--accent))]/10 hover:scale-105 active:scale-95 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(var(--accent))] focus-visible:ring-offset-2 focus-visible:ring-offset-[rgb(var(--background))] focus-visible:scale-105 focus-visible:shadow-[0_0_24px_rgba(var(--accent),0.4)]",
-                    (isPaused || isSleeping)
-                      ? "bg-[rgb(var(--accent))]/20 border-[rgb(var(--accent))]/60 text-[rgb(var(--accent))]"
-                      : "text-[rgb(var(--accent))]"
-                  )}
-                  aria-label={(isPaused || isSleeping) ? HOME_CONTROLS_COPY.passive.resumeAriaLabel : HOME_CONTROLS_COPY.passive.pauseAriaLabel}
-                  title={(isPaused || isSleeping) ? HOME_CONTROLS_COPY.passive.resumeTooltip + shortcutKeysSuffix("home.pause-resume") : HOME_CONTROLS_COPY.passive.pauseTooltip + shortcutKeysSuffix("home.pause-resume")}
-                >
-                  {(isPaused || isSleeping) ? <Play size={28} /> : <Pause size={28} />}
-                </button>
-
-                {/* PTT Mic Button */}
-                {interactionMode === "PTT" && (
-                  <button
-                    onPointerDown={(e) => {
-                      e.currentTarget.setPointerCapture(e.pointerId);
-                      void handlePttStart();
-                    }}
-                    onPointerUp={(e) => {
-                      try {
-                        e.currentTarget.releasePointerCapture(e.pointerId);
-                      } catch {
-                        // ignore if already released
-                      }
-                      void handlePttStop();
-                    }}
-                    disabled={isPaused || isSleeping}
-                    tabIndex={isPaused || isSleeping ? -1 : 0}
-                    className={cn(
-                      "flex items-center justify-center w-14 h-14 rounded-full transition-all duration-500 border border-[rgb(var(--accent))]/25 bg-transparent hover:bg-[rgb(var(--accent))]/10 hover:scale-105 active:scale-95 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(var(--accent))] focus-visible:ring-offset-2 focus-visible:ring-offset-[rgb(var(--background))] focus-visible:scale-105 focus-visible:shadow-[0_0_24px_rgba(var(--accent),0.4)]",
-                      pttStatus === "RECORDING"
-                        ? "bg-[rgb(var(--accent))]/20 border-[rgb(var(--accent))]/60 text-[rgb(var(--accent))]"
-                        : "text-[rgb(var(--accent))]",
-                      (isPaused || isSleeping) && "opacity-40 cursor-not-allowed hover:bg-transparent hover:scale-100"
-                    )}
-                    aria-label={HOME_CONTROLS_COPY.ptt.micAriaLabel}
-                    title={HOME_CONTROLS_COPY.ptt.micTooltip + shortcutKeysSuffix("home.ptt")}
-                  >
-                    <Mic size={28} className={cn(pttStatus === "RECORDING" && "animate-pulse-slow")} />
-                  </button>
-                )}
-
-                {/* Text Mode Toggle */}
-                <button
-                  onClick={() => setTextModeOpen(true)}
-                  tabIndex={0}
-                  className="flex items-center justify-center w-14 h-14 rounded-full transition-all duration-500 border border-[rgb(var(--accent))]/25 bg-transparent hover:bg-[rgb(var(--accent))]/10 hover:scale-105 active:scale-95 text-[rgb(var(--accent))] cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(var(--accent))] focus-visible:ring-offset-2 focus-visible:ring-offset-[rgb(var(--background))] focus-visible:scale-105 focus-visible:shadow-[0_0_24px_rgba(var(--accent),0.4)]"
-                  aria-label={HOME_CONTROLS_COPY.textMode.toggleAriaLabel}
-                  title={HOME_CONTROLS_COPY.textMode.toggleTooltip + shortcutKeysSuffix("home.text-mode")}
-                >
-                  <Keyboard size={26} />
-                </button>
-
-                {/* Disengage */}
-                <div className="relative flex flex-col items-center">
-                  <button
-                    onClick={disengage}
-                    tabIndex={0}
-                    className={cn(
-                      "flex items-center justify-center w-14 h-14 rounded-full transition-all duration-500 border border-[rgb(var(--accent))]/60 text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/15 hover:bg-[rgb(var(--accent))]/25 hover:scale-105 active:scale-95 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(var(--accent))] focus-visible:ring-offset-2 focus-visible:ring-offset-[rgb(var(--background))] focus-visible:scale-105 focus-visible:shadow-[0_0_24px_rgba(var(--accent),0.4)]",
-                      isThinking && "engage-btn-loading border-transparent",
-                      isLaunching && "animate-spin"
-                    )}
-                    disabled={isLaunching}
-                    aria-label={HOME_CONTROLS_COPY.engage.stopAriaLabel}
-                  >
-                    {isLaunching ? (
-                      <Power size={28} className="animate-pulse-slow" />
-                    ) : (
-                      <X size={28} />
-                    )}
-                  </button>
-                </div>
-              </React.Fragment>
-            ) : (
-              /* Idle: Engage */
-              <React.Fragment>
-                {/* Engage */}
-                <div className="relative flex flex-col items-center">
-                  <button
-                    onClick={isLaunching ? cancelLaunch : engage}
-                    tabIndex={0}
-                    className={cn(
-                      "flex items-center justify-center w-14 h-14 rounded-full transition-all duration-500 border border-[rgb(var(--accent))]/25 bg-transparent hover:bg-[rgb(var(--accent))]/10 hover:scale-105 active:scale-95 text-[rgb(var(--accent))] cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(var(--accent))] focus-visible:ring-offset-2 focus-visible:ring-offset-[rgb(var(--background))] focus-visible:scale-105 focus-visible:shadow-[0_0_24px_rgba(var(--accent),0.4)]",
-                      isLaunching && "animate-spin border-[rgb(var(--accent))]/60"
-                    )}
-                    aria-label={isLaunching ? "Cancel launching session" : HOME_CONTROLS_COPY.engage.ariaLabel}
-                    title={isLaunching ? "Tap to cancel" : undefined}
-                  >
-                    {isLaunching ? (
-                      <X size={28} className="animate-pulse-slow text-[rgb(var(--error))]" />
-                    ) : (
-                      <Power size={28} className="transition-transform duration-700" />
-                    )}
-                  </button>
-                </div>
-              </React.Fragment>
-            )}
-          </div>
+          <HomeControls
+            restoreError={restoreError}
+            dismissRestoreError={dismissRestoreError}
+            isEngaged={isEngaged}
+            isSleeping={isSleeping}
+            isPaused={isPaused}
+            interactionMode={interactionMode}
+            pttStatus={pttStatus}
+            isLaunching={isLaunching}
+            isThinking={isThinking}
+            pause={pause}
+            resume={resume}
+            handlePttStart={handlePttStart}
+            handlePttStop={handlePttStop}
+            setTextModeOpen={setTextModeOpen}
+            disengage={disengage}
+            engage={engage}
+            cancelLaunch={cancelLaunch}
+          />
         )}
       </div>
 

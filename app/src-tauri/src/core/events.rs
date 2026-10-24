@@ -5,8 +5,17 @@ pub use crate::core::state::InteractionOwner;
 use crate::{
     core::{error::PipelineError, state::AppWindow},
     persistence::PersonalMemoryRecord,
+    services::remote::session::RemoteStateDto,
     setup::model_manager::ModelSetupStatus,
 };
+
+/// Inbound pairing prompt event payload broadcast to Host webview.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RemotePairingPromptPayload {
+    pub device_id: String,
+    pub display_name: String,
+}
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
@@ -242,6 +251,8 @@ pub enum IpcEvent {
     PersonalMemoryUpdated(PersonalMemoryRecord),
     SessionsChanged,
     MemoryIngestionUpdated,
+    RemoteStateChanged(RemoteStateDto),
+    RemotePairingRequested(RemotePairingPromptPayload),
 }
 
 impl From<u8> for AudioIntent {
@@ -282,6 +293,8 @@ impl IpcEvent {
             Self::PersonalMemoryUpdated(_) => "personal_memory_updated",
             Self::SessionsChanged => "sessions_changed",
             Self::MemoryIngestionUpdated => "memory_ingestion_updated",
+            Self::RemoteStateChanged(_) => "remote_state_changed",
+            Self::RemotePairingRequested(_) => "remote_pairing_requested",
         }
     }
 }
@@ -306,6 +319,8 @@ pub fn emit_ipc<R: Runtime>(app: &AppHandle<R>, event: IpcEvent) -> Result<(), t
         IpcEvent::PersonalMemoryUpdated(payload) => app.emit(name, payload),
         IpcEvent::SessionsChanged => app.emit(name, ()),
         IpcEvent::MemoryIngestionUpdated => app.emit(name, ()),
+        IpcEvent::RemoteStateChanged(payload) => app.emit(name, payload),
+        IpcEvent::RemotePairingRequested(payload) => app.emit(name, payload),
     }
 }
 
@@ -334,6 +349,8 @@ pub fn emit_ipc_to<R: Runtime>(
         IpcEvent::PersonalMemoryUpdated(payload) => app.emit_to(target_str, name, payload),
         IpcEvent::SessionsChanged => app.emit_to(target_str, name, ()),
         IpcEvent::MemoryIngestionUpdated => app.emit_to(target_str, name, ()),
+        IpcEvent::RemoteStateChanged(payload) => app.emit_to(target_str, name, payload),
+        IpcEvent::RemotePairingRequested(payload) => app.emit_to(target_str, name, payload),
     }
 }
 
