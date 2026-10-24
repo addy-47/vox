@@ -264,31 +264,39 @@ pub fn write_pcm_to_wav(
 
 /// Pre-bake Chatterbox speaker embedding tensors from a source reference WAV.
 pub fn pre_bake_speaker_tensors(source_wav: &Path, baked_dir: &Path) -> Result<(), String> {
-    use chatterbox_rs::{Engine, EngineOptions};
-
     create_dir_all(baked_dir)
         .map_err(|e| format!("Failed to create baked voice directory: {}", e))?;
 
     let tts_model_dir = model_dir(CHATTERBOX_MODEL_DIR);
-    let t3_path = tts_model_dir.join(MODEL_FILE_TTS_CHATTERBOX_T3);
-    let s3_path = tts_model_dir.join(MODEL_FILE_TTS_CHATTERBOX_S3GEN);
+    let model_dir_str = tts_model_dir.to_string_lossy().to_string();
 
-    if !t3_path.exists() || !s3_path.exists() {
-        return Err("Chatterbox models not found on disk. Ensure setup is complete.".to_string());
-    }
+    tokio::task::block_in_place(|| {
+        tokio::runtime::Handle::current().block_on(async {
+            let base_url = crate::services::sidecar::global_sidecar_supervisor()
+                .ensure_ready(
+                    crate::services::sidecar::SidecarKind::TtsClone,
+                    &[("--model-dir", &model_dir_str)],
+                )
+                .await
+                .map_err(|e| format!("Failed to start Chatterbox sidecar: {}", e))?;
 
-    let engine = Engine::new(EngineOptions {
-        t3_gguf_path: t3_path.to_string_lossy().into_owned(),
-        s3gen_gguf_path: s3_path.to_string_lossy().into_owned(),
-        reference_audio: source_wav.to_string_lossy().into_owned(),
-        verbose: false,
-        ..Default::default()
-    })
-    .map_err(|e| format!("Failed to initialize pre-bake engine: {}", e))?;
+            let client = reqwest::Client::new();
+            let res = client
+                .post(format!("{}/v1/voices/pre-bake", base_url))
+                .json(&serde_json::json!({
+                    "source_wav": source_wav,
+                    "baked_dir": baked_dir,
+                }))
+                .send()
+                .await
+                .map_err(|e| format!("Pre-bake request failed: {}", e))?;
 
-    engine
-        .save_voice(baked_dir)
-        .map_err(|e| format!("Failed to save pre-baked voice tensors: {}", e))?;
+            if !res.status().is_success() {
+                return Err(format!("Pre-bake failed: HTTP {}", res.status()));
+            }
+            Ok(())
+        })
+    })?;
 
     log::info!(
         "[Voice] Speaker tensors successfully pre-baked to {:?}",
@@ -1205,52 +1213,47 @@ pub async fn sync_azure_tts_voices_to_db(
     Ok(count)
 }
 
-/// Queries Google `voices:list` for streaming-capable Chirp 3: HD English voices.
+/// Queries Google `voices:list` for streaming-capable Chirp 3: HD English voices via the sidecar.
 pub async fn fetch_remote_google_voices() -> Result<Vec<EdgeTtsVoiceEntry>, String> {
-    let client = google_cloud_texttospeech_v1::client::TextToSpeech::builder()
-        .build()
+    let base_url = crate::services::sidecar::global_sidecar_supervisor()
+        .ensure_ready(crate::services::sidecar::SidecarKind::TtsCloud, &[])
         .await
-        .map_err(|e| {
-            format!(
-                "Google TTS ADC failed (run `gcloud auth application-default login`): {}",
-                e
-            )
-        })?;
-    let mut voices = Vec::new();
-    for region in ["en-US", "en-GB", "en-AU", "en-IN"] {
-        let response = client
-            .list_voices()
-            .set_language_code(region)
-            .send()
-            .await
-            .map_err(|e| format!("Google voices:list failed for {}: {}", region, e))?;
-        for v in response.voices {
-            if !v
-                .name
-                .contains(crate::services::tts::GOOGLE_TTS_STREAMING_VOICE_INFIX)
-            {
-                continue;
-            }
-            let locale = v.language_codes.first().cloned().unwrap_or_default();
-            let style = v.name.rsplit('-').next().unwrap_or(&v.name).to_string();
-            voices.push(EdgeTtsVoiceEntry {
-                name: v.name.clone(),
-                short_name: v.name,
-                gender: match v.ssml_gender {
-                    google_cloud_texttospeech_v1::model::SsmlVoiceGender::Male => {
-                        "male".to_string()
-                    }
-                    google_cloud_texttospeech_v1::model::SsmlVoiceGender::Female => {
-                        "female".to_string()
-                    }
-                    _ => "neutral".to_string(),
-                },
-                locale: locale.clone(),
-                friendly_name: format!("{style} ({locale})"),
-            });
-        }
+        .map_err(|e| format!("Google TTS sidecar not ready: {}", e))?;
+
+    let client = reqwest::Client::new();
+    let res = client
+        .post(format!("{}/v1/google/voices", base_url))
+        .json(&serde_json::json!({
+            "regions": ["en-US", "en-GB", "en-AU", "en-IN"]
+        }))
+        .send()
+        .await
+        .map_err(|e| format!("Google voices request failed: {}", e))?;
+
+    if !res.status().is_success() {
+        return Err(format!("Google voices failed: HTTP {}", res.status()));
     }
-    Ok(voices)
+
+    #[derive(serde::Deserialize)]
+    struct RemoteVoice {
+        name: String,
+        short_name: String,
+        gender: String,
+        locale: String,
+        friendly_name: String,
+    }
+
+    let remote_voices: Vec<RemoteVoice> = res.json().await.map_err(|e| e.to_string())?;
+    Ok(remote_voices
+        .into_iter()
+        .map(|v| EdgeTtsVoiceEntry {
+            name: v.name,
+            short_name: v.short_name,
+            gender: v.gender,
+            locale: v.locale,
+            friendly_name: v.friendly_name,
+        })
+        .collect())
 }
 
 /// Syncs live Google voices into the Turso voices table in a single transaction.

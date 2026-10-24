@@ -1,0 +1,14 @@
+[build]
+target-dir = "app/src-tauri/target"
+
+[target.x86_64-unknown-linux-gnu]
+rustflags = ["-C", "link-arg=-lc++", "-C", "link-arg=-lc++abi", "-C", "link-arg=-Wl,--allow-multiple-definition"]
+
+[target.aarch64-unknown-linux-gnu]
+rustflags = ["-C", "link-arg=-lc++", "-C", "link-arg=-lc++abi", "-C", "link-arg=-Wl,--allow-multiple-definition"]
+
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "link-arg=/FORCE:MULTIPLE"]
+
+[target.i686-pc-windows-msvc]
+rustflags = ["-C", "link-arg=/FORCE:MULTIPLE"]

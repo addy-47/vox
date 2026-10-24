@@ -11,6 +11,7 @@ node_modules
 dist
 dist-ssr
 *.local
+target/
 
 # Editor directories and files
 .vscode/*
@@ -32,7 +33,6 @@ dist-ssr
 condense/
 **/.vox_sandbox/
 *db-*
-vox-*
 venv*
 gemini.py
 neutts/

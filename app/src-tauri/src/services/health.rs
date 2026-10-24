@@ -394,34 +394,31 @@ pub async fn check_tts_health_with_reason(
                     Some("Google Application Default Credentials (ADC) not found. Run 'gcloud auth application-default login' in terminal.".to_string()),
                 ));
             }
-            let client = match google_cloud_texttospeech_v1::client::TextToSpeech::builder()
-                .build()
+            match crate::services::sidecar::global_sidecar_supervisor()
+                .ensure_ready(crate::services::sidecar::SidecarKind::TtsCloud, &[])
                 .await
             {
-                Ok(client) => client,
-                Err(e) => {
-                    return Ok((
-                        false,
-                        Some(format!("Google ADC client init failed: {}. Run 'gcloud auth application-default login'.", e)),
-                    ));
+                Ok(base_url) => {
+                    let client = reqwest::Client::builder()
+                        .timeout(Duration::from_secs(2))
+                        .build()
+                        .map_err(|e| e.to_string())?;
+                    match client.get(format!("{}/health", base_url)).send().await {
+                        Ok(resp) if resp.status().is_success() => Ok((true, None)),
+                        Ok(resp) => Ok((
+                            false,
+                            Some(format!("Google Cloud TTS sidecar health check failed: HTTP {}", resp.status())),
+                        )),
+                        Err(e) => Ok((
+                            false,
+                            Some(format!("Google Cloud TTS sidecar unreachable: {}", e)),
+                        )),
+                    }
                 }
-            };
-            match client.list_voices().set_language_code("en-US").send().await {
-                Ok(_) => Ok((true, None)),
-                Err(e) => {
-                    let err_str = e.to_string();
-                    let reason = if err_str.to_lowercase().contains("unauthenticated")
-                        || err_str.to_lowercase().contains("token expired")
-                        || err_str.to_lowercase().contains("invalid_grant")
-                    {
-                        "Google ADC token expired. Run 'gcloud auth application-default login' in terminal to refresh.".to_string()
-                    } else if err_str.to_lowercase().contains("permission_denied") {
-                        format!("Google Cloud permission denied. Verify Text-to-Speech API is enabled: {}", err_str)
-                    } else {
-                        format!("Google Cloud TTS health check failed: {}", err_str)
-                    };
-                    Ok((false, Some(reason)))
-                }
+                Err(e) => Ok((
+                    false,
+                    Some(format!("Failed to start Google Cloud TTS sidecar: {}", e)),
+                )),
             }
         }
     }

@@ -32,6 +32,7 @@ use vox_lib::{
 };
 
 #[tokio::test]
+#[ignore = "requires vox-llm sidecar binary"]
 async fn test_transcript_to_llm_matrix() {
     let test_timeout = Duration::from_secs(60);
     tokio::time::timeout(test_timeout, async {

@@ -1,7 +1,6 @@
-use std::sync::{mpsc, OnceLock};
+use std::sync::mpsc;
 
 use futures_util::future::BoxFuture;
-use llama_cpp_4::llama_backend::LlamaBackend;
 use serde::{Deserialize, Serialize};
 
 use crate::services::{
@@ -242,14 +241,4 @@ pub trait LlmEngine {
         cancel: &tokio_util::sync::CancellationToken,
         tx: &mpsc::Sender<LlmStreamEvent>,
     ) -> anyhow::Result<()>;
-}
-
-/// Returns the process-wide llama.cpp backend singleton.
-pub fn global_llama_backend() -> &'static LlamaBackend {
-    static BACKEND: OnceLock<LlamaBackend> = OnceLock::new();
-    BACKEND.get_or_init(|| {
-        let mut b = LlamaBackend::init().expect("Failed to initialise global llama.cpp backend");
-        b.void_logs();
-        b
-    })
 }

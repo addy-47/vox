@@ -12,20 +12,17 @@ pub use config::{
 };
 pub use factory::{caps_for_id, create_tts_provider, resolve_reference_audio};
 pub use providers::{
-    azure_tts::AzureTtsProvider,
-    chatterbox::ChatterboxEngine,
     chatterbox_remote::ChatterboxRemoteProvider,
     edge_tts::{
         EdgeTtsProvider, EDGE_TTS_DEFAULT_VOICE, EDGE_TTS_USER_AGENT, EDGE_TTS_VOICES_URL_BASE,
     },
-    google_tts::GoogleTtsProvider,
     kokoro::KokoroEngine,
     supertonic::TtsEngine,
     zipvoice::{
         resolve_zipvoice_reference, ZipvoiceEngine, ZipvoiceReference, ZipvoiceVoiceEntry,
         ZIPVOICE_GUIDANCE_SCALE,
     },
-    TtsProvider,
+    AzureTtsProvider, ChatterboxEngine, GoogleTtsProvider, TtsProvider,
 };
 pub use voice::VoiceProfile;
 

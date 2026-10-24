@@ -882,6 +882,9 @@ notification_permission_state,
                         }
                     }
 
+                    #[cfg(not(target_os = "android"))]
+                    crate::services::sidecar::global_sidecar_supervisor().shutdown_all();
+
 
                     // Gracefully signal persistence worker to flush and shutdown
                     {
