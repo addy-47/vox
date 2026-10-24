@@ -196,7 +196,7 @@ Remote control commands exist on both roles of the pair. **Host** commands are c
 
 | Command | Arguments | Return Shape | Behavioral Contract |
 | :--- | :--- | :--- | :--- |
-| `connect_host` | `deviceId?: string`, `address?: string` | `void` | Triggered by Rocket Button 🚀 to dial a paired host (by device id) or a manually entered address. Resolves candidate list: stored hints first, then mDNS. Emits `remote_state_changed` on every transition. |
+| `connect_host` | `deviceId?: string`, `address?: string`, `token?: string`, `publicKey?: string` | `void` | Triggered by Rocket Button 🚀 to dial a paired host (by device id) or a manually entered address, or by QR Scanner with pairing `token` and `publicKey` to initiate first-time pairing. When `token` and `publicKey` are present, sends `PairRequest` before `Hello` and saves the host to local `paired_devices` on `PairApproved`. Resolves candidate list: stored hints first, then mDNS. Emits `remote_state_changed` on every transition. |
 | `disconnect_host` | None | `void` | Triggered by Rocket Button 🚀 to send an intentional `Disconnect`. The host pauses the session and keeps it. |
 | `get_link_state` | None | `RemoteStateDto` | Returns the current `RemoteLinkState` plus the connected host's identity. Exists so the controller's frontend can hydrate its initial render; the controller auto-reconnects, so its state can already be non-idle before the UI mounts. |
 | `get_command_routing` | None | `Record<string, CommandClass>` | Returns the static command-routing table: the classification of every IPC command and every `update_setting` domain/key as `Remote`, `Local`, `Split`, or `Denied`. The controller's frontend consults it to decide whether an action travels over the link or is handled locally. |

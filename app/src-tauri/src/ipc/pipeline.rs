@@ -25,11 +25,7 @@ pub struct ContinueSessionResult {
 #[tauri::command]
 pub async fn launch_engine<R: tauri::Runtime>(app: AppHandle<R>) -> Result<(), VoxIpcError> {
     let state: State<'_, Arc<AppState>> = app.state();
-    if !is_desktop_command_permitted(
-        "launch_engine",
-        None,
-        &state.remote_manager.state(),
-    ) {
+    if !is_desktop_command_permitted("launch_engine", None, &state.remote_manager.state()) {
         return Err(VoxIpcError::InvalidState(
             "Remote session active: desktop mutating writes blocked".into(),
         ));
@@ -43,11 +39,7 @@ pub async fn launch_engine<R: tauri::Runtime>(app: AppHandle<R>) -> Result<(), V
 #[tauri::command]
 pub async fn stop_engine<R: tauri::Runtime>(app: AppHandle<R>) -> Result<(), VoxIpcError> {
     let state: State<'_, Arc<AppState>> = app.state();
-    if !is_desktop_command_permitted(
-        "stop_engine",
-        None,
-        &state.remote_manager.state(),
-    ) {
+    if !is_desktop_command_permitted("stop_engine", None, &state.remote_manager.state()) {
         return Err(VoxIpcError::InvalidState(
             "Remote session active: desktop mutating writes blocked".into(),
         ));
@@ -109,11 +101,7 @@ pub async fn start_session<R: tauri::Runtime>(
     app: AppHandle<R>,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), VoxIpcError> {
-    if !is_desktop_command_permitted(
-        "start_session",
-        None,
-        &state.remote_manager.state(),
-    ) {
+    if !is_desktop_command_permitted("start_session", None, &state.remote_manager.state()) {
         return Err(VoxIpcError::InvalidState(
             "Remote session active: desktop mutating writes blocked".into(),
         ));
@@ -161,11 +149,7 @@ pub async fn end_session<R: tauri::Runtime>(
     _app: AppHandle<R>,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), VoxIpcError> {
-    if !is_desktop_command_permitted(
-        "end_session",
-        None,
-        &state.remote_manager.state(),
-    ) {
+    if !is_desktop_command_permitted("end_session", None, &state.remote_manager.state()) {
         return Err(VoxIpcError::InvalidState(
             "Remote session active: desktop mutating writes blocked".into(),
         ));
@@ -189,11 +173,7 @@ pub async fn pause_session<R: tauri::Runtime>(
     _app: AppHandle<R>,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), VoxIpcError> {
-    if !is_desktop_command_permitted(
-        "pause_session",
-        None,
-        &state.remote_manager.state(),
-    ) {
+    if !is_desktop_command_permitted("pause_session", None, &state.remote_manager.state()) {
         return Err(VoxIpcError::InvalidState(
             "Remote session active: desktop mutating writes blocked".into(),
         ));
@@ -217,11 +197,7 @@ pub async fn resume_session<R: tauri::Runtime>(
     _app: AppHandle<R>,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), VoxIpcError> {
-    if !is_desktop_command_permitted(
-        "resume_session",
-        None,
-        &state.remote_manager.state(),
-    ) {
+    if !is_desktop_command_permitted("resume_session", None, &state.remote_manager.state()) {
         return Err(VoxIpcError::InvalidState(
             "Remote session active: desktop mutating writes blocked".into(),
         ));
@@ -245,11 +221,7 @@ pub async fn ptt_start<R: tauri::Runtime>(
     _app: AppHandle<R>,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), VoxIpcError> {
-    if !is_desktop_command_permitted(
-        "ptt_start",
-        None,
-        &state.remote_manager.state(),
-    ) {
+    if !is_desktop_command_permitted("ptt_start", None, &state.remote_manager.state()) {
         return Err(VoxIpcError::InvalidState(
             "Remote session active: desktop mutating writes blocked".into(),
         ));
@@ -274,11 +246,7 @@ pub async fn ptt_stop<R: tauri::Runtime>(
     _app: AppHandle<R>,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), VoxIpcError> {
-    if !is_desktop_command_permitted(
-        "ptt_stop",
-        None,
-        &state.remote_manager.state(),
-    ) {
+    if !is_desktop_command_permitted("ptt_stop", None, &state.remote_manager.state()) {
         return Err(VoxIpcError::InvalidState(
             "Remote session active: desktop mutating writes blocked".into(),
         ));
@@ -303,11 +271,7 @@ pub async fn ptt_cancel<R: tauri::Runtime>(
     _app: AppHandle<R>,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), VoxIpcError> {
-    if !is_desktop_command_permitted(
-        "ptt_cancel",
-        None,
-        &state.remote_manager.state(),
-    ) {
+    if !is_desktop_command_permitted("ptt_cancel", None, &state.remote_manager.state()) {
         return Err(VoxIpcError::InvalidState(
             "Remote session active: desktop mutating writes blocked".into(),
         ));
@@ -333,11 +297,7 @@ pub async fn submit_text_input<R: tauri::Runtime>(
     _app: AppHandle<R>,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), VoxIpcError> {
-    if !is_desktop_command_permitted(
-        "submit_text_input",
-        None,
-        &state.remote_manager.state(),
-    ) {
+    if !is_desktop_command_permitted("submit_text_input", None, &state.remote_manager.state()) {
         return Err(VoxIpcError::InvalidState(
             "Remote session active: desktop mutating writes blocked".into(),
         ));

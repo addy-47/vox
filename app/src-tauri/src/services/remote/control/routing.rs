@@ -1,5 +1,4 @@
-use std::collections::HashMap;
-use std::sync::LazyLock;
+use std::{collections::HashMap, sync::LazyLock};
 
 use serde::{Deserialize, Serialize};
 
@@ -89,7 +88,10 @@ static ROUTING_TABLE: LazyLock<HashMap<String, CommandClass>> = LazyLock::new(||
     table.insert("consolidate_personal_memory".into(), CommandClass::Remote);
     table.insert("regenerate_personal_memory".into(), CommandClass::Remote);
     table.insert("get_personal_memory_versions".into(), CommandClass::Remote);
-    table.insert("set_active_personal_memory_version".into(), CommandClass::Remote);
+    table.insert(
+        "set_active_personal_memory_version".into(),
+        CommandClass::Remote,
+    );
     table.insert("get_observations".into(), CommandClass::Remote);
     table.insert("get_ingestion_stats".into(), CommandClass::Remote);
     table.insert("get_memory_revisions".into(), CommandClass::Remote);
@@ -125,7 +127,10 @@ static ROUTING_TABLE: LazyLock<HashMap<String, CommandClass>> = LazyLock::new(||
 
     // ─── 11. Notifications ───────────────────────────────────────────────
     table.insert("notification_permission_state".into(), CommandClass::Remote);
-    table.insert("request_notification_permission".into(), CommandClass::Remote);
+    table.insert(
+        "request_notification_permission".into(),
+        CommandClass::Remote,
+    );
     table.insert("debug_fire_transient".into(), CommandClass::Remote);
     table.insert("get_notifications".into(), CommandClass::Remote);
     table.insert("mark_notifications_read".into(), CommandClass::Remote);

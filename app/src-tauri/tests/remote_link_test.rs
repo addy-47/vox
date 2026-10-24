@@ -586,19 +586,11 @@ async fn loopback_passes_generic_conformance_suite() {
 /// MUTANT:   Corrupt control payload serialization in WsLink::send_control.
 #[tokio::test]
 async fn ws_link_control_roundtrip_delivers_payload() {
-    let listener = within_ok(
-        "bind",
-        bind("127.0.0.1:0".parse().expect("valid loopback")),
-    )
-    .await;
+    let listener = within_ok("bind", bind("127.0.0.1:0".parse().expect("valid loopback"))).await;
     let addr = listener.local_addr().expect("local addr");
     let server_handle = tokio::spawn(async move { listener.accept().await });
 
-    let client = within_ok(
-        "dial",
-        dial(&format!("ws://{addr}")),
-    )
-    .await;
+    let client = within_ok("dial", dial(&format!("ws://{addr}"))).await;
     let server = server_handle
         .await
         .expect("server task join")
@@ -623,11 +615,7 @@ async fn ws_link_control_roundtrip_delivers_payload() {
 /// MUTANT:   Remove check_control_message_size check in WsLink::decode_incoming.
 #[tokio::test]
 async fn ws_link_oversized_message_closes_with_protocol_error() {
-    let listener = within_ok(
-        "bind",
-        bind("127.0.0.1:0".parse().expect("valid loopback")),
-    )
-    .await;
+    let listener = within_ok("bind", bind("127.0.0.1:0".parse().expect("valid loopback"))).await;
     let addr = listener.local_addr().expect("local addr");
     let server_handle = tokio::spawn(async move { listener.accept().await });
 
@@ -669,19 +657,11 @@ async fn ws_link_oversized_message_closes_with_protocol_error() {
 /// MUTANT:   Do not send Message::Close on WsLink::close.
 #[tokio::test]
 async fn ws_link_clean_close_notifies_peer() {
-    let listener = within_ok(
-        "bind",
-        bind("127.0.0.1:0".parse().expect("valid loopback")),
-    )
-    .await;
+    let listener = within_ok("bind", bind("127.0.0.1:0".parse().expect("valid loopback"))).await;
     let addr = listener.local_addr().expect("local addr");
     let server_handle = tokio::spawn(async move { listener.accept().await });
 
-    let client = within_ok(
-        "dial",
-        dial(&format!("ws://{addr}")),
-    )
-    .await;
+    let client = within_ok("dial", dial(&format!("ws://{addr}"))).await;
     let server = server_handle
         .await
         .expect("server task join")

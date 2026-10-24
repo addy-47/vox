@@ -1,4 +1,4 @@
-use std::{future::Future, sync::Arc};
+use std::{future::Future, sync::Arc, time::Duration};
 
 use parking_lot::RwLock;
 use tokio::{sync::RwLock as AsyncRwLock, time::sleep};
@@ -12,13 +12,10 @@ use crate::services::remote::{
         errors::ProtocolError,
         framing::StreamFormat,
         messages::{
-            ControlMessage, Hello, LinkLoss, LinkLossReason, Ping, SenderIdentity,
-            VersionMismatch,
+            ControlMessage, Hello, LinkLoss, LinkLossReason, Ping, SenderIdentity, VersionMismatch,
         },
     },
-    security::{
-        default_noise_prologue, DeviceKey, NoiseHandshake, NoiseTransport, SecurityError,
-    },
+    security::{default_noise_prologue, DeviceKey, NoiseHandshake, NoiseTransport, SecurityError},
     HEARTBEAT_INTERVAL, HEARTBEAT_MAX_MISSED_PONGS, PROTOCOL_VERSION,
 };
 
@@ -257,6 +254,199 @@ impl RemoteSessionManager {
 
         self.set_state(RemoteLinkState::Disconnected);
         Ok(())
+    }
+
+    /// Lists all paired devices from the Turso database.
+    pub async fn list_paired_devices(
+        db: &crate::persistence::VoxDb,
+    ) -> Result<
+        Vec<crate::persistence::paired_devices::PairedDevice>,
+        crate::core::error::PersistenceError,
+    > {
+        let conn = db.connect()?;
+        crate::persistence::paired_devices::list_paired_devices(&conn).await
+    }
+
+    /// Revokes a paired device from the Turso database and severs connection if currently active.
+    pub async fn revoke_device(
+        &self,
+        db: &crate::persistence::VoxDb,
+        device_id: &str,
+    ) -> Result<bool, crate::core::error::PersistenceError> {
+        let conn = db.connect()?;
+        let deleted =
+            crate::persistence::paired_devices::delete_paired_device(&conn, device_id).await?;
+        let is_current = self
+            .peer_identity()
+            .map(|p| p.device_id == device_id)
+            .unwrap_or(false);
+        if is_current {
+            let _ = self.disconnect(LinkLossReason::HostDisconnected).await;
+        }
+        Ok(deleted)
+    }
+
+    /// Dials a remote host from the controller and either initiates first-time pairing
+    /// (if `token` and `public_key` are provided) or completes authenticated connection.
+    pub async fn dial_and_connect(
+        self: Arc<Self>,
+        db: Arc<crate::persistence::VoxDb>,
+        target: String,
+        host_device_id: Option<String>,
+        token: Option<String>,
+        host_public_key: Option<String>,
+    ) -> Result<(), LinkError> {
+        self.set_state(RemoteLinkState::Connecting);
+
+        let url = if target.starts_with("ws://") || target.starts_with("wss://") {
+            target
+        } else {
+            format!("ws://{target}")
+        };
+
+        let ws_link = match crate::services::remote::link::ws::dial(&url).await {
+            Ok(l) => l,
+            Err(e) => {
+                let err_msg = format!("Failed to connect to host: {e}");
+                self.set_state(RemoteLinkState::Failed(err_msg.clone()));
+                return Err(e);
+            }
+        };
+
+        let key_store = crate::services::remote::security::KeyStore::default_path()
+            .map_err(|e| LinkError::Transport(e.to_string()))?;
+        let device_key = key_store
+            .load_or_create()
+            .map_err(|e| LinkError::Transport(e.to_string()))?;
+
+        let controller_id =
+            crate::services::remote::security::derive_device_id(device_key.public_key());
+        let controller_pubkey_hex = hex::encode(device_key.public_key());
+        let display_name = "Vox Controller".to_string();
+
+        if let (Some(tok), Some(h_pk)) = (token.as_ref(), host_public_key.as_ref()) {
+            let pair_req = ControlMessage::PairRequest(
+                crate::services::remote::protocol::messages::PairRequest {
+                    token: tok.clone(),
+                    device_id: controller_id.as_str().to_string(),
+                    public_key: controller_pubkey_hex,
+                    display_name: display_name.clone(),
+                },
+            );
+
+            if let Err(e) = ws_link.send_control(pair_req).await {
+                let err_msg = format!("Failed to send pairing request: {e}");
+                self.set_state(RemoteLinkState::Failed(err_msg.clone()));
+                return Err(e);
+            }
+
+            let resp =
+                match tokio::time::timeout(Duration::from_secs(35), ws_link.recv_control()).await {
+                    Ok(Ok(msg)) => msg,
+                    Ok(Err(e)) => {
+                        let err_msg = format!("Connection error awaiting pairing response: {e}");
+                        self.set_state(RemoteLinkState::Failed(err_msg.clone()));
+                        return Err(e);
+                    }
+                    Err(_) => {
+                        let err_msg = "Pairing approval timed out after 35 seconds".to_string();
+                        self.set_state(RemoteLinkState::Failed(err_msg.clone()));
+                        return Err(LinkError::Protocol(ProtocolError::MalformedJson(err_msg)));
+                    }
+                };
+
+            match resp {
+                ControlMessage::PairApproved => {
+                    let h_pk_bytes = hex::decode(h_pk).map_err(|e| {
+                        let err_msg = format!("Invalid host public key hex: {e}");
+                        self.set_state(RemoteLinkState::Failed(err_msg.clone()));
+                        LinkError::Protocol(ProtocolError::MalformedJson(err_msg))
+                    })?;
+                    let h_id = host_device_id.unwrap_or_else(|| {
+                        crate::services::remote::security::derive_device_id(&h_pk_bytes)
+                            .as_str()
+                            .to_string()
+                    });
+
+                    if let Ok(conn) = db.connect() {
+                        let _ = crate::persistence::paired_devices::insert_paired_device(
+                            &conn,
+                            &crate::persistence::paired_devices::NewPairedDevice {
+                                device_id: h_id,
+                                public_key: h_pk_bytes,
+                                display_name: "Vox Host".to_string(),
+                                role: crate::persistence::paired_devices::PairedDeviceRole::Host,
+                                trust_level: "full".to_string(),
+                                hints: vec![],
+                            },
+                        )
+                        .await;
+                    }
+
+                    let local_identity = SenderIdentity {
+                        device_id: controller_id.as_str().to_string(),
+                        display_name,
+                    };
+                    let peer_hello = match self
+                        .exchange_hello(
+                            &ws_link,
+                            local_identity,
+                            StreamFormat::UPLINK,
+                            StreamFormat::DOWNLINK,
+                        )
+                        .await
+                    {
+                        Ok(h) => h,
+                        Err(e) => {
+                            let err_msg = format!("Protocol negotiation error after pairing: {e}");
+                            self.set_state(RemoteLinkState::Failed(err_msg.clone()));
+                            return Err(e);
+                        }
+                    };
+
+                    self.attach_link(Arc::new(ws_link), peer_hello.sender_identity)
+                        .await;
+                    Ok(())
+                }
+                ControlMessage::PairDenied(denied) => {
+                    let err_msg = format!("Pairing denied by host: {}", denied.reason);
+                    self.set_state(RemoteLinkState::Failed(err_msg.clone()));
+                    let _ = ws_link.close(LinkCloseReason::Local).await;
+                    Err(LinkError::Protocol(ProtocolError::MalformedJson(err_msg)))
+                }
+                other => {
+                    let err_msg = format!("Expected PairApproved, got {:?}", other.message_type());
+                    self.set_state(RemoteLinkState::Failed(err_msg.clone()));
+                    let _ = ws_link.close(LinkCloseReason::Local).await;
+                    Err(LinkError::Protocol(ProtocolError::MalformedJson(err_msg)))
+                }
+            }
+        } else {
+            let local_identity = SenderIdentity {
+                device_id: controller_id.as_str().to_string(),
+                display_name,
+            };
+            let peer_hello = match self
+                .exchange_hello(
+                    &ws_link,
+                    local_identity,
+                    StreamFormat::UPLINK,
+                    StreamFormat::DOWNLINK,
+                )
+                .await
+            {
+                Ok(h) => h,
+                Err(e) => {
+                    let err_msg = format!("Handshake error: {e}");
+                    self.set_state(RemoteLinkState::Failed(err_msg.clone()));
+                    return Err(e);
+                }
+            };
+
+            self.attach_link(Arc::new(ws_link), peer_hello.sender_identity)
+                .await;
+            Ok(())
+        }
     }
 }
 

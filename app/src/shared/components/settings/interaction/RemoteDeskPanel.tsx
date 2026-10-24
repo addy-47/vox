@@ -47,7 +47,7 @@ export const RemoteDeskPanel = memo(() => {
       {/* Left Column: Title & Description */}
       <div className="flex flex-col gap-1 min-w-0 flex-1">
         <div className="flex items-center justify-between gap-2">
-          <span className="text-[12px] font-bold uppercase tracking-wider text-[rgb(var(--foreground))]">
+          <span className="text-[12px] font-bold tracking-wider text-[rgb(var(--foreground))]">
             {REMOTE_CONTROL_COPY.title}
           </span>
         </div>
@@ -56,8 +56,8 @@ export const RemoteDeskPanel = memo(() => {
           {!acceptsControllers
             ? REMOTE_CONTROL_COPY.description
             : pairedDevice
-            ? `Paired with ${pairedDevice.displayName} over Wi-Fi.`
-            : "Accepting connection from a mobile controller over Wi-Fi."}
+            ? `Connected to ${pairedDevice.displayName}. Wireless audio and session control are active.`
+            : REMOTE_CONTROL_COPY.descriptionReady}
         </p>
       </div>
 

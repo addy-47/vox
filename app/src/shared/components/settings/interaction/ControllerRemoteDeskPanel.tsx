@@ -55,8 +55,6 @@ export const ControllerRemoteDeskPanel = memo(() => {
         .catch(() => {
           setHasCameraPermission(true);
         });
-    } else {
-      setHasCameraPermission(true);
     }
   }, []);
 
@@ -72,7 +70,7 @@ export const ControllerRemoteDeskPanel = memo(() => {
         <div className="flex flex-col gap-2.5 w-full">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <span className="text-[12px] font-bold uppercase tracking-wider text-[rgb(var(--foreground))]">
+              <span className="text-[12px] font-bold tracking-wider text-[rgb(var(--foreground))]">
                 Connected Host
               </span>
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20">
@@ -107,18 +105,18 @@ export const ControllerRemoteDeskPanel = memo(() => {
           </div>
 
           <p className="text-[10.5px] text-[rgb(var(--foreground-muted))]/75 leading-relaxed font-medium">
-            Controlling sessions and dictation wirelessly from this mobile device.
+            Wirelessly controlling voice sessions and dictation on your desktop.
           </p>
         </div>
       ) : (
         /* Pre-Connection Setup */
         <>
           <div className="flex flex-col gap-1.5 min-w-0 flex-1">
-            <span className="text-[12px] font-bold uppercase tracking-wider text-[rgb(var(--foreground))]">
-              Pair with Host
+            <span className="text-[12px] font-bold tracking-wider text-[rgb(var(--foreground))]">
+              Pair with Desktop Host
             </span>
             <p className="text-[11px] text-[rgb(var(--foreground-muted))]/80 leading-relaxed font-medium">
-              Control Vox running on your desktop. Tap the scanner to link with your host screen.
+              Control Vox from your phone. Tap the scanner to link with your desktop screen.
             </p>
 
             {hasCameraPermission === false && (

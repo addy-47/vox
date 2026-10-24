@@ -10,10 +10,12 @@
 //!
 //! Workspace rule: `AGENTS.md` §7.1, `session/`.
 
+pub mod listener;
 pub mod manager;
 pub mod state;
 
 pub use self::{
+    listener::spawn_host_listener,
     manager::{RemoteSessionManager, SessionRole, StateChangeCallback},
     state::{RemoteLinkState, RemoteStateDto},
 };

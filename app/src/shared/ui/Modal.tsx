@@ -77,20 +77,18 @@ export const Modal = memo(
       dismissOnOutside: false, // backdrop handles outside clicks
     });
 
+    const effectiveZ = zIndex ?? (position === "global" ? 60 : 30);
+    const shouldReduceMotion = useReducedMotion();
+    const isCoarse = isCoarsePointer();
+    const fastTransition = shouldReduceMotion || isCoarse;
+
     // Focus the panel on open; restore focus to the trigger on close.
     const previouslyFocusedRef = useRef<HTMLElement | null>(null);
     useEffect(() => {
       if (!open) return;
-      // [trace-first-open] Intent-to-paint timing for first-open jank RCA. Logs only.
-      const intentAt = performance.now();
-      console.info(`[trace-first-open] Modal open intent @${intentAt.toFixed(1)}ms`);
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          console.info(`[trace-first-open] Modal first paint +${(performance.now() - intentAt).toFixed(1)}ms`);
-        });
-      });
       previouslyFocusedRef.current = document.activeElement as HTMLElement | null;
       panelRef.current?.focus();
+
       return () => {
         const prev = previouslyFocusedRef.current;
         previouslyFocusedRef.current = null;
@@ -101,12 +99,7 @@ export const Modal = memo(
           const focusable =
             prev.tabIndex >= 0 || /^(BUTTON|INPUT|SELECT|TEXTAREA|A)$/.test(prev.tagName);
           if (focusable) {
-            // Restore focus after exit animation completes to prevent synchronous layout thrashing
-            setTimeout(() => {
-              if (document.contains(prev)) {
-                prev.focus({ preventScroll: true });
-              }
-            }, 260);
+            prev.focus({ preventScroll: true });
             return;
           }
         }
@@ -137,12 +130,6 @@ export const Modal = memo(
         first.focus();
       }
     }, []);
-
-    const effectiveZ = zIndex ?? (position === "global" ? 60 : 30);
-
-    const shouldReduceMotion = useReducedMotion();
-    const isCoarse = isCoarsePointer();
-    const fastTransition = shouldReduceMotion || isCoarse;
 
     const modalNode = (
       <AnimatePresence>

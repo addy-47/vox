@@ -72,9 +72,8 @@ use crate::{
         },
         projects::{create_project, delete_project, get_projects, rename_project},
         remote::{
-            approve_pairing, connect_host, disconnect_device, disconnect_host,
-            get_command_routing, get_link_state, list_paired_devices, pair_new_device,
-            revoke_device,
+            approve_pairing, connect_host, disconnect_device, disconnect_host, get_command_routing,
+            get_link_state, list_paired_devices, pair_new_device, revoke_device,
         },
         settings::{
             apply_settings_patch, get_restart_status, get_settings, get_settings_contract,

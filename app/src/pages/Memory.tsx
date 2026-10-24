@@ -32,6 +32,8 @@ import { EdgePanel, BottomDockFeather } from "@/shared/ui";
 import { usePanelStateContext } from "@/shared/context/PanelStateContext";
 import { MEMORY_COPY } from "@/data/memoryCopy";
 import { cn } from "@/shared/lib/utils";
+import { isRealMobileDevice } from "@/layout/breakpoints";
+import { stageTop } from "@/layout/stageMetrics";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   type MemoryGraphRef,
@@ -576,7 +578,7 @@ export const Memory: React.FC = memo(() => {
       <div
         className="absolute left-1/2 flex flex-col items-center justify-center pointer-events-none z-20"
         style={{
-          top: "calc(50% - 36px)",
+          top: stageTop(isRealMobileDevice(), 36),
           transform: "translate(-50%, -50%)",
         }}
       >
@@ -603,13 +605,22 @@ export const Memory: React.FC = memo(() => {
 
       {/* ── Empty State (Matches History.tsx placement, UI, size, icon, and styling) ── */}
       {!loading && !loadError && facts.length === 0 && (
-        <div className="absolute inset-0 flex items-center justify-center p-8 z-20 pointer-events-none">
-          <EmptyState
-            icon={Ghost}
-            title={MEMORY_COPY.emptyFactsTitle}
-            description={MEMORY_COPY.emptyFactsDesc}
-            className="max-w-sm border-0 bg-transparent"
-          />
+        <div className="absolute inset-0 z-20 pointer-events-none">
+          <div
+            className="absolute left-1/2 flex items-center justify-center pointer-events-none"
+            style={{
+              top: stageTop(isRealMobileDevice(), 36),
+              transform: "translate(-50%, -50%)",
+              padding: "2rem",
+            }}
+          >
+            <EmptyState
+              icon={Ghost}
+              title={MEMORY_COPY.emptyFactsTitle}
+              description={MEMORY_COPY.emptyFactsDesc}
+              className="max-w-sm border-0 bg-transparent"
+            />
+          </div>
         </div>
       )}
 

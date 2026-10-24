@@ -57,12 +57,11 @@ const AndroidIcon = ({
   </svg>
 );
 
-const PAIRING_PHASES = [
-  { id: "installed", step: "01", label: "App ready", Icon: Smartphone },
-  { id: "scanning", step: "02", label: "Awaiting scan", Icon: ScanLine },
-  { id: "connecting", step: "03", label: "Handshake", Icon: Link2 },
-  { id: "paired", step: "04", label: "Paired", Icon: Check },
-] as const;
+const computeRemainingSeconds = (exp: number): number => {
+  const expMs = exp > 0 && exp < 10_000_000_000 ? exp * 1000 : exp;
+  const rem = Math.max(0, Math.ceil((expMs - Date.now()) / 1000));
+  return rem > 0 ? rem : 120;
+};
 
 export const PairingModal = memo(({ open, onClose }: PairingModalProps) => {
   const pairNewDevice = useRemoteStore((s) => s.pairNewDevice);
@@ -103,10 +102,7 @@ export const PairingModal = memo(({ open, onClose }: PairingModalProps) => {
         console.debug("[PairingModal] Failed to parse payload json:", e);
       }
 
-      const remaining = Math.max(
-        0,
-        Math.floor((res.expiresAt - Date.now()) / 1000)
-      );
+      const remaining = computeRemainingSeconds(res.expiresAt);
 
       setDetails({
         qrDataUrl: res.qrDataUrl,
@@ -114,7 +110,7 @@ export const PairingModal = memo(({ open, onClose }: PairingModalProps) => {
         hintAddr,
         hintPort,
       });
-      setTimeLeft(remaining > 0 ? remaining : 120);
+      setTimeLeft(remaining);
 
       timerRef.current = setInterval(() => {
         setTimeLeft((prev) => {
@@ -134,15 +130,20 @@ export const PairingModal = memo(({ open, onClose }: PairingModalProps) => {
   }, [pairNewDevice, clearTimer]);
 
   useEffect(() => {
+    let active = true;
     if (open) {
-      void generatePairing();
+      void Promise.resolve().then(() => {
+        if (active) {
+          void generatePairing();
+        }
+      });
     } else {
       clearTimer();
-      setDetails(null);
-      setError(null);
-      setApproving(null);
     }
-    return () => clearTimer();
+    return () => {
+      active = false;
+      clearTimer();
+    };
   }, [open, generatePairing, clearTimer]);
 
   useEffect(() => {
@@ -170,36 +171,18 @@ export const PairingModal = memo(({ open, onClose }: PairingModalProps) => {
   const seconds = timeLeft % 60;
   const timeFormatted = `${minutes}:${seconds.toString().padStart(2, "0")}`;
 
-  // Live phase index:
-  // 0: Token expired / idle
-  // 1: QR ready & awaiting mobile camera scan
-  // 2: Handshake / awaiting host approval
-  // 3: Connected
-  const currentPhaseIndex =
-    linkState === "Connected"
-      ? 3
-      : pendingPairingPrompt ||
-        linkState === "Connecting" ||
-        linkState === "Reconnecting"
-      ? 2
-      : details && timeLeft > 0
-      ? 1
-      : 0;
-
-  // Progress percentage across the 3 segments between the 4 nodes (0%, 33.33%, 66.66%, 100%)
-  const progressPercent = (currentPhaseIndex / (PAIRING_PHASES.length - 1)) * 100;
-
   return (
     <Modal
       open={open}
       onClose={onClose}
-      title="Pair Remote Controller"
-      subtitle="Connect your mobile device to control Vox wirelessly over LAN."
+      icon={<Link2 size={18} className="text-[rgb(var(--accent))] shrink-0 rotate-45" />}
+      title="Pair Mobile Controller"
+      subtitle="Scan this QR code from the Vox mobile app to link your devices over local Wi-Fi."
       position="global"
       fitContent
-      className="max-w-2xl w-[94vw] md:w-full overflow-hidden"
+      className="max-w-[760px] w-[94vw] md:w-full overflow-hidden"
     >
-      <div className="p-5 sm:p-6 space-y-5">
+      <div className="p-3.5 sm:p-5 md:p-6 md:sm:p-7 space-y-3.5 md:space-y-6">
         {loading ? (
           /* Spec §7.1: OrbitalLoader MUST NOT render any accompanying text */
           <div className="h-72 flex items-center justify-center">
@@ -225,12 +208,12 @@ export const PairingModal = memo(({ open, onClose }: PairingModalProps) => {
           </div>
         ) : (
           <>
-            {/* Top Grid: Left timeline matches exact height of Right QR Card */}
-            <div className="grid grid-cols-1 md:grid-cols-12 gap-5 items-stretch">
-              {/* Left Column: Full-height flex container aligned with QR card */}
-              <div className="md:col-span-7 flex flex-col justify-between rounded-2xl bg-[rgba(var(--card),0.45)] border border-[rgba(var(--border),0.07)] p-4 sm:p-5">
+            {/* Top Grid: On small screens QR is on top, steps below; on md+ desktop, side-by-side */}
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5 md:gap-6 items-stretch">
+              {/* Steps Column: order-2 on mobile (below QR), order-1 on desktop (left side) */}
+              <div className="order-2 md:order-1 md:col-span-7 flex flex-col justify-between p-3 sm:p-4 md:p-5 md:sm:p-6 md:pb-2.5 md:sm:pb-3">
                 {pendingPairingPrompt && (
-                  <div className="mb-4 rounded-xl p-3.5 bg-[rgba(var(--accent),0.08)] border border-[rgba(var(--accent),0.3)] space-y-2.5 animate-fade-in">
+                  <div className="mb-3 md:mb-4 rounded-xl p-3 md:p-3.5 bg-[rgba(var(--accent),0.08)] border border-[rgba(var(--accent),0.3)] space-y-2 md:space-y-2.5 animate-fade-in">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2 text-xs font-semibold text-[rgb(var(--accent))]">
                         <Radio size={14} className="animate-pulse" />
@@ -275,83 +258,78 @@ export const PairingModal = memo(({ open, onClose }: PairingModalProps) => {
                   </div>
                 )}
 
-                {/* Vertical Timeline Stepper (stretches evenly across available height) */}
-                <div className="relative flex-1 flex flex-col justify-between py-0.5">
+                {/* Vertical Timeline Stepper */}
+                <div className="relative space-y-2.5 md:space-y-4">
                   {/* Continuous Vertical Timeline Spine bridging all 3 icons */}
                   <div
                     aria-hidden="true"
-                    className="pointer-events-none absolute left-5 top-5 bottom-5 w-px -translate-x-1/2 bg-gradient-to-b from-[rgba(var(--accent),0.45)] via-[rgba(var(--border),0.15)] to-[rgba(var(--accent),0.35)]"
+                    className="pointer-events-none absolute left-4 md:left-5 top-4 md:top-5 bottom-4 md:bottom-5 w-px -translate-x-1/2 bg-gradient-to-b from-[rgba(var(--accent),0.45)] via-[rgba(var(--border),0.15)] to-[rgba(var(--accent),0.35)]"
                   />
 
                   {/* Step 1: Install App */}
-                  <div className="relative flex items-start gap-3.5">
-                    <div className="relative z-10 w-10 h-10 rounded-xl bg-[rgb(var(--card))] border border-[rgba(var(--accent),0.25)] shadow-[0_0_12px_rgba(var(--accent),0.08)] flex items-center justify-center text-[rgb(var(--accent))] shrink-0">
-                      <AndroidIcon size={19} />
+                  <div className="relative flex items-start gap-2.5 md:gap-3.5">
+                    <div className="relative z-10 w-8 h-8 md:w-10 md:h-10 rounded-lg md:rounded-xl bg-[rgb(var(--card))] border border-[rgba(var(--accent),0.25)] shadow-[0_0_12px_rgba(var(--accent),0.08)] flex items-center justify-center text-[rgb(var(--accent))] shrink-0">
+                      <AndroidIcon size={16} className="md:w-[19px] md:h-[19px]" />
                     </div>
                     <div className="flex-1 min-w-0 pt-0.5">
-                      <div className="flex items-center gap-2">
-                        <span className="text-[11px] font-mono font-bold text-[rgb(var(--accent))]">
+                      <div className="flex items-center gap-1.5 md:gap-2">
+                        <span className="text-[10px] md:text-[11px] font-mono font-bold text-[rgb(var(--accent))]">
                           01
                         </span>
-                        <h4 className="text-xs sm:text-sm font-bold text-[rgb(var(--foreground))] leading-snug">
-                          Install the Vox mobile app
+                        <h4 className="text-xs md:text-sm font-bold text-[rgb(var(--foreground))] leading-tight md:leading-snug">
+                          Install the Android App
                         </h4>
                       </div>
-                      <p className="text-xs text-[rgb(var(--foreground-muted))] mt-1 leading-relaxed">
-                        Download and install the companion Android APK on your
-                        phone.
+                      <p className="text-[11px] md:text-xs text-[rgb(var(--foreground-muted))] mt-0.5 md:mt-1 leading-snug md:leading-relaxed">
+                        Download and install the companion APK on your phone.{" "}
+                        <button
+                          type="button"
+                          onClick={handleDownloadApk}
+                          className="inline-flex items-center gap-1 text-[11px] md:text-xs font-semibold text-[rgb(var(--accent))] hover:underline cursor-pointer align-baseline transition-opacity hover:opacity-80"
+                        >
+                          <span>Download</span>
+                          <Download size={11} className="shrink-0" />
+                        </button>
                       </p>
                     </div>
-                    <Tooltip label="Download Android APK" side="top">
-                      <button
-                        type="button"
-                        onClick={handleDownloadApk}
-                        aria-label="Download Android APK"
-                        className="relative z-10 w-9 h-9 rounded-xl bg-[rgba(var(--accent),0.1)] hover:bg-[rgba(var(--accent),0.18)] border border-[rgba(var(--accent),0.2)] flex items-center justify-center text-[rgb(var(--accent))] transition-colors cursor-pointer shrink-0 mt-0.5"
-                      >
-                        <Download size={15} />
-                      </button>
-                    </Tooltip>
                   </div>
 
                   {/* Step 2: Open QR Scanner */}
-                  <div className="relative flex items-start gap-3.5 my-4">
-                    <div className="relative z-10 w-10 h-10 rounded-xl bg-[rgb(var(--card))] border border-[rgba(var(--accent),0.25)] shadow-[0_0_12px_rgba(var(--accent),0.08)] flex items-center justify-center text-[rgb(var(--accent))] shrink-0">
-                      <ScanLine size={18} />
+                  <div className="relative flex items-start gap-2.5 md:gap-3.5">
+                    <div className="relative z-10 w-8 h-8 md:w-10 md:h-10 rounded-lg md:rounded-xl bg-[rgb(var(--card))] border border-[rgba(var(--accent),0.25)] shadow-[0_0_12px_rgba(var(--accent),0.08)] flex items-center justify-center text-[rgb(var(--accent))] shrink-0">
+                      <ScanLine size={15} className="md:w-[18px] md:h-[18px]" />
                     </div>
                     <div className="flex-1 min-w-0 pt-0.5">
-                      <div className="flex items-center gap-2">
-                        <span className="text-[11px] font-mono font-bold text-[rgb(var(--accent))]">
+                      <div className="flex items-center gap-1.5 md:gap-2">
+                        <span className="text-[10px] md:text-[11px] font-mono font-bold text-[rgb(var(--accent))]">
                           02
                         </span>
-                        <h4 className="text-xs sm:text-sm font-bold text-[rgb(var(--foreground))] leading-snug">
-                          Open the app and tap Scan to Pair
+                        <h4 className="text-xs md:text-sm font-bold text-[rgb(var(--foreground))] leading-tight md:leading-snug">
+                          Open QR Scanner in App
                         </h4>
                       </div>
-                      <p className="text-xs text-[rgb(var(--foreground-muted))] mt-1 leading-relaxed">
-                        Launch Vox on your phone and open the QR scanner from
-                        the top bar.
+                      <p className="text-[11px] md:text-xs text-[rgb(var(--foreground-muted))] mt-0.5 md:mt-1 leading-snug md:leading-relaxed">
+                        Launch Vox on your phone and tap the scanner icon in the top bar.
                       </p>
                     </div>
                   </div>
 
                   {/* Step 3: Point & Confirm */}
-                  <div className="relative flex items-start gap-3.5">
-                    <div className="relative z-10 w-10 h-10 rounded-xl bg-[rgb(var(--card))] border border-[rgba(var(--accent),0.25)] shadow-[0_0_12px_rgba(var(--accent),0.08)] flex items-center justify-center text-[rgb(var(--accent))] shrink-0">
-                      <Smartphone size={18} />
+                  <div className="relative flex items-start gap-2.5 md:gap-3.5">
+                    <div className="relative z-10 w-8 h-8 md:w-10 md:h-10 rounded-lg md:rounded-xl bg-[rgb(var(--card))] border border-[rgba(var(--accent),0.25)] shadow-[0_0_12px_rgba(var(--accent),0.08)] flex items-center justify-center text-[rgb(var(--accent))] shrink-0">
+                      <Smartphone size={15} className="md:w-[18px] md:h-[18px]" />
                     </div>
                     <div className="flex-1 min-w-0 pt-0.5">
-                      <div className="flex items-center gap-2">
-                        <span className="text-[11px] font-mono font-bold text-[rgb(var(--accent))]">
+                      <div className="flex items-center gap-1.5 md:gap-2">
+                        <span className="text-[10px] md:text-[11px] font-mono font-bold text-[rgb(var(--accent))]">
                           03
                         </span>
-                        <h4 className="text-xs sm:text-sm font-bold text-[rgb(var(--foreground))] leading-snug">
-                          Point your camera and confirm
+                        <h4 className="text-xs md:text-sm font-bold text-[rgb(var(--foreground))] leading-tight md:leading-snug">
+                          Scan Code & Authorize
                         </h4>
                       </div>
-                      <p className="text-xs text-[rgb(var(--foreground-muted))] mt-1 leading-relaxed">
-                        Scan the QR code on the right, then approve the pairing
-                        prompt on this screen.
+                      <p className="text-[11px] md:text-xs text-[rgb(var(--foreground-muted))] mt-0.5 md:mt-1 leading-snug md:leading-relaxed">
+                        Aim your camera at the QR code, then approve the prompt on this screen.
                       </p>
                     </div>
                   </div>
@@ -359,29 +337,29 @@ export const PairingModal = memo(({ open, onClose }: PairingModalProps) => {
 
                 {/* Host Network Address Footer */}
                 {details && (
-                  <div className="mt-4 pt-3 border-t border-[rgba(var(--border),0.06)] flex items-center justify-between text-xs">
-                    <div className="flex items-center gap-2 text-[rgb(var(--foreground-muted))]">
+                  <div className="mt-2.5 md:mt-auto pt-2.5 md:pt-3 border-t border-[rgba(var(--border),0.06)] flex items-center justify-between text-[11px] md:text-xs">
+                    <div className="flex items-center gap-1.5 md:gap-2 text-[rgb(var(--foreground-muted))]">
                       <Wifi
-                        size={13}
-                        className="text-[rgb(var(--accent))] shrink-0"
+                        size={12}
+                        className="text-[rgb(var(--accent))] shrink-0 md:w-[13px] md:h-[13px]"
                       />
-                      <span>LAN Host</span>
+                      <span>Desktop Host</span>
                     </div>
-                    <span className="font-mono text-xs font-semibold text-[rgb(var(--foreground))]">
+                    <span className="font-mono text-[11px] md:text-xs font-semibold text-[rgb(var(--foreground))]">
                       {details.hintAddr}:{details.hintPort}
                     </span>
                   </div>
                 )}
               </div>
 
-              {/* Right Column: QR Card Container with Countdown */}
-              <div className="md:col-span-5 flex flex-col">
-                <div className="h-full w-full rounded-2xl bg-[rgba(var(--card),0.8)] border border-[rgba(var(--border),0.08)] p-4 sm:p-5 flex flex-col items-center justify-between text-center shadow-sm">
+              {/* QR Card Column: order-1 on mobile (top), order-2 on desktop (right side) */}
+              <div className="order-1 md:order-2 md:col-span-5 flex flex-col">
+                <div className="h-full w-full rounded-2xl bg-[rgba(var(--card),0.8)] border border-[rgba(var(--border),0.08)] p-3 sm:p-4 md:p-5 md:sm:p-6 flex flex-col items-center justify-between text-center shadow-sm">
                   {details && (
                     <div className="relative group my-auto">
                       <div
                         className={cn(
-                          "p-3 rounded-2xl bg-white shadow-md transition-all duration-300",
+                          "p-2.5 sm:p-3 md:p-3.5 rounded-xl md:rounded-2xl bg-white shadow-md transition-all duration-300",
                           timeLeft === 0
                             ? "opacity-20 grayscale scale-95"
                             : "opacity-100 scale-100"
@@ -390,21 +368,21 @@ export const PairingModal = memo(({ open, onClose }: PairingModalProps) => {
                         <img
                           src={details.qrDataUrl}
                           alt="Remote Pairing QR Code"
-                          className="w-44 h-44 sm:w-48 sm:h-48 block select-none pointer-events-none"
+                          className="w-32 h-32 sm:w-40 sm:h-40 md:w-48 md:h-48 md:sm:w-52 md:sm:h-52 block select-none pointer-events-none"
                         />
                       </div>
 
                       {timeLeft === 0 && (
-                        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2.5 bg-[rgba(var(--background),0.92)] rounded-2xl p-4 text-center">
+                        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-[rgba(var(--background),0.92)] rounded-xl md:rounded-2xl p-3 md:p-4 text-center">
                           <span className="text-xs font-bold text-[rgb(var(--foreground))]">
                             QR Code Expired
                           </span>
                           <button
                             type="button"
                             onClick={generatePairing}
-                            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] text-xs font-bold cursor-pointer hover:opacity-90 transition-opacity"
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] text-xs font-bold cursor-pointer hover:opacity-90 transition-opacity"
                           >
-                            <RotateCcw size={13} />
+                            <RotateCcw size={12} />
                             Regenerate
                           </button>
                         </div>
@@ -412,96 +390,35 @@ export const PairingModal = memo(({ open, onClose }: PairingModalProps) => {
                     </div>
                   )}
 
-                  {/* Countdown & Regenerate Action */}
-                  <div className="w-full pt-3 mt-3 border-t border-[rgba(var(--border),0.06)] flex flex-col items-center">
-                    <div className="inline-flex items-center gap-1.5 text-[11px] text-[rgb(var(--foreground-muted))]">
-                      <Clock size={12} className="text-[rgb(var(--accent))]" />
-                      <span>Expires in</span>
-                    </div>
-                    <div
-                      className={cn(
-                        "text-2xl sm:text-3xl font-extrabold tracking-tight font-mono mt-0.5 transition-colors",
-                        timeLeft <= 15 && timeLeft > 0
-                          ? "text-[rgb(var(--warning))]"
-                          : "text-[rgb(var(--foreground))]"
-                      )}
-                    >
-                      {timeFormatted}
+                  {/* Countdown & Regenerate Action: Row on mobile, Column on desktop */}
+                  <div className="w-full pt-2 md:pt-3.5 mt-2 md:mt-3.5 border-t border-[rgba(var(--border),0.06)] flex items-center justify-between md:flex-col md:items-center">
+                    <div className="flex items-center gap-1.5 md:flex-col md:items-center">
+                      <div className="inline-flex items-center gap-1 text-[11px] text-[rgb(var(--foreground-muted))]">
+                        <Clock size={11} className="text-[rgb(var(--accent))] md:w-[12px] md:h-[12px]" />
+                        <span>Expires in</span>
+                      </div>
+                      <div
+                        className={cn(
+                          "font-mono font-extrabold tracking-tight transition-colors text-sm md:text-2xl md:sm:text-3xl md:mt-0.5",
+                          timeLeft <= 15 && timeLeft > 0
+                            ? "text-[rgb(var(--warning))]"
+                            : "text-[rgb(var(--foreground))]"
+                        )}
+                      >
+                        {timeFormatted}
+                      </div>
                     </div>
 
                     <button
                       type="button"
                       onClick={generatePairing}
-                      className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.1)] cursor-pointer transition-colors"
+                      className="inline-flex items-center gap-1 px-2.5 py-1 md:mt-2 md:px-3 md:py-1.5 rounded-lg text-xs font-semibold text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.1)] cursor-pointer transition-colors"
                     >
-                      <RotateCcw size={12} />
-                      Get a new code
+                      <RotateCcw size={11} className="md:w-[12px] md:h-[12px]" />
+                      <span>Get a new code</span>
                     </button>
                   </div>
                 </div>
-              </div>
-            </div>
-
-            {/* Bottom Progress Pipeline: 4-Stage Connected Horizontal State Tracker */}
-            <div className="rounded-2xl px-4 py-3.5 bg-[rgba(var(--card),0.55)] border border-[rgba(var(--border),0.07)]">
-              <div className="relative grid grid-cols-4 items-start">
-                {/* Continuous Background Track Line connecting centers of col 1 -> col 4 */}
-                <div
-                  aria-hidden="true"
-                  className="pointer-events-none absolute top-4 left-[12.5%] right-[12.5%] h-[2px] -translate-y-1/2 bg-[rgba(var(--border),0.1)] rounded-full overflow-hidden"
-                >
-                  <div
-                    className="h-full bg-[rgb(var(--accent))] transition-all duration-500 ease-out"
-                    style={{ width: `${progressPercent}%` }}
-                  />
-                </div>
-
-                {PAIRING_PHASES.map((phase, idx) => {
-                  const isDone = idx < currentPhaseIndex;
-                  const isActive = idx === currentPhaseIndex;
-
-                  return (
-                    <div
-                      key={phase.id}
-                      className="relative z-10 flex flex-col items-center text-center px-1"
-                    >
-                      <div
-                        className={cn(
-                          "w-8 h-8 rounded-full flex items-center justify-center transition-all duration-300",
-                          isActive
-                            ? "bg-[rgb(var(--card))] text-[rgb(var(--accent))] border-2 border-[rgb(var(--accent))] shadow-[0_0_14px_rgba(var(--accent),0.35)]"
-                            : isDone
-                            ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] border border-[rgb(var(--accent))]"
-                            : "bg-[rgb(var(--card))] text-[rgb(var(--foreground-muted))]/50 border border-[rgba(var(--border),0.12)]"
-                        )}
-                      >
-                        {isDone ? (
-                          <Check size={14} strokeWidth={2.75} />
-                        ) : (
-                          <phase.Icon
-                            size={14}
-                            strokeWidth={isActive ? 2.25 : 1.75}
-                          />
-                        )}
-                      </div>
-
-                      <div className="mt-2 flex flex-col items-center">
-                        <span
-                          className={cn(
-                            "text-[11px] sm:text-xs leading-tight transition-colors",
-                            isActive
-                              ? "text-[rgb(var(--foreground))] font-bold"
-                              : isDone
-                              ? "text-[rgb(var(--accent))] font-semibold"
-                              : "text-[rgb(var(--foreground-muted))]/60 font-medium"
-                          )}
-                        >
-                          {phase.label}
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })}
               </div>
             </div>
           </>

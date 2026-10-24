@@ -15,6 +15,7 @@ use zeroize::Zeroize;
 use super::{
     errors::{PairingRefusal, SecurityError},
     identity::{derive_device_id, DeviceId, PeerIdentity, X25519_KEY_BYTES},
+    key_store::KeyStore,
     MAX_PREAUTH_MESSAGE_BYTES, PAIRING_APPROVAL_TIMEOUT, PAIRING_ATTEMPTS_PER_WINDOW,
     PAIRING_MAX_FAILED_ATTEMPTS, PAIRING_RATE_LIMIT_WINDOW, PAIRING_TOKEN_MIN_ENTROPY_BITS,
     PAIRING_TOKEN_TTL,
@@ -555,12 +556,31 @@ pub fn mint_pairing_qr_svg(
 
     let code = QrCode::new(payload.as_bytes())
         .map_err(|e| SecurityError::Noise(format!("Failed to generate QR code: {e}")))?;
-    let svg = code
-        .render::<svg::Color>()
-        .min_dimensions(240, 240)
-        .build();
+    let svg = code.render::<svg::Color>().min_dimensions(240, 240).build();
 
-    let data_url = format!("data:image/svg+xml;base64,{}", BASE64.encode(svg.as_bytes()));
+    let data_url = format!(
+        "data:image/svg+xml;base64,{}",
+        BASE64.encode(svg.as_bytes())
+    );
     Ok((payload, data_url))
 }
 
+/// Mints an ephemeral pairing invitation payload, QR code, and expiration for desktop host.
+pub fn mint_pairing_invitation(
+    coordinator: &PairingCoordinator,
+    port: u16,
+) -> Result<(String, String, i64), SecurityError> {
+    let key_store = KeyStore::default_path()?;
+    let device_key = key_store.load_or_create()?;
+    let host_id = derive_device_id(device_key.public_key());
+    let token = coordinator.issue_token(Instant::now())?;
+    let hint_addr = get_local_lan_ip().unwrap_or_else(|| "127.0.0.1".to_string());
+    let (payload, qr_data_url) =
+        mint_pairing_qr_svg(&host_id, device_key.public_key(), &hint_addr, port, &token)?;
+    let now_secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
+    let expires_at = now_secs + PAIRING_TOKEN_TTL.as_secs() as i64;
+    Ok((payload, qr_data_url, expires_at))
+}

@@ -1,6 +1,8 @@
 import React, { memo } from "react";
 import { Ghost, Hand } from "lucide-react";
 import { MEMORY_COPY } from "@/data/memoryCopy";
+import { stageTop } from "@/layout/stageMetrics";
+import { isRealMobileDevice } from "@/layout/breakpoints";
 
 export interface MemoryErrorStateProps {
   error: string;
@@ -11,7 +13,7 @@ export const MemoryErrorState: React.FC<MemoryErrorStateProps> = memo(({ error, 
   <div
     className="absolute left-1/2 flex flex-col items-center justify-center pointer-events-none z-20"
     style={{
-      top: "calc(50% - 36px)",
+      top: stageTop(isRealMobileDevice(), 36),
       transform: "translate(-50%, -50%)",
     }}
   >

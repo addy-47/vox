@@ -18,6 +18,7 @@ import { PairingPromptModal } from "@/shared/components/remote/PairingPromptModa
 import { installOverlayStack } from "@/shared/lib/overlayStack";
 import { getCurrentWindowLabel, isWizardWindowSync } from "@/services/windowService";
 import { isRealMobileDevice } from "@/layout/breakpoints";
+import { stageTop } from "@/layout/stageMetrics";
 import { AnimatePresence, motion, MotionConfig } from "framer-motion";
 
 // Route-level preloads (desktop-first): secondary chunks warm only when the
@@ -55,8 +56,15 @@ import { DelayedFallback } from "@/shared/components/common";
 // Premium Shared Orbital Loading Screen
 const PageLoader = () => (
   <DelayedFallback delayMs={150}>
-    <div className="flex h-[100dvh] w-full items-center justify-center bg-[rgb(var(--background))]">
-      <OrbitalLoader size="lg" />
+    <div className="relative h-[100dvh] w-full bg-[rgb(var(--background))]">
+      {/* Mobile anchors at the orb's optical centre line (`calc(50% - 22.4px)`);
+          desktop keeps the plain viewport centre (desktopY = 0). */}
+      <div
+        className="absolute left-1/2 flex items-center justify-center"
+        style={{ top: stageTop(isRealMobileDevice(), 0), transform: "translate(-50%, -50%)" }}
+      >
+        <OrbitalLoader size="lg" />
+      </div>
     </div>
   </DelayedFallback>
 );
