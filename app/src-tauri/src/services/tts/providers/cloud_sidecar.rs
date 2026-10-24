@@ -9,10 +9,7 @@ use futures_util::StreamExt;
 use super::{speed_range, SynthesisContext, TtsProvider};
 use crate::services::{
     sidecar::{global_sidecar_supervisor, SidecarKind},
-    tts::{
-        ParamRange, ProviderCaps, TtsVoiceSource, MAX_SPEED, MIN_SPEED, TTS_CHUNK_SIZE,
-        TTS_SAMPLE_RATE,
-    },
+    tts::{ParamRange, ProviderCaps, TtsVoiceSource, MAX_SPEED, MIN_SPEED, TTS_CHUNK_SIZE},
 };
 
 pub enum CloudProviderKind {
@@ -182,4 +179,154 @@ impl TtsProvider for CloudTtsSidecarProvider {
     fn health_check(&self) -> bool {
         true
     }
+}
+
+pub struct GoogleTtsProvider(pub CloudTtsSidecarProvider);
+
+impl GoogleTtsProvider {
+    pub fn new(voice: &str, project_override: Option<&str>) -> Result<Self, String> {
+        CloudTtsSidecarProvider::new_google(voice, project_override).map(Self)
+    }
+
+    pub fn new_google(voice: &str, project_override: Option<&str>) -> Result<Self, String> {
+        Self::new(voice, project_override)
+    }
+}
+
+impl TtsProvider for GoogleTtsProvider {
+    fn caps() -> ProviderCaps {
+        CloudTtsSidecarProvider::caps()
+    }
+    fn synthesize_chunk(&self, text: &str, ctx: &SynthesisContext<'_>) -> Result<()> {
+        self.0.synthesize_chunk(text, ctx)
+    }
+    fn set_speed(&self, speed: f32) {
+        self.0.set_speed(speed);
+    }
+    fn health_check(&self) -> bool {
+        self.0.health_check()
+    }
+}
+
+pub struct AzureTtsProvider(pub CloudTtsSidecarProvider);
+
+impl AzureTtsProvider {
+    pub fn new(
+        region_or_endpoint: &str,
+        voice: &str,
+        key: &str,
+        resource_id: Option<&str>,
+    ) -> Result<Self, String> {
+        CloudTtsSidecarProvider::new_azure(region_or_endpoint, voice, key, resource_id).map(Self)
+    }
+
+    pub fn new_azure(
+        region_or_endpoint: &str,
+        voice: &str,
+        key: &str,
+        resource_id: Option<&str>,
+    ) -> Result<Self, String> {
+        Self::new(region_or_endpoint, voice, key, resource_id)
+    }
+}
+
+impl TtsProvider for AzureTtsProvider {
+    fn caps() -> ProviderCaps {
+        CloudTtsSidecarProvider::caps()
+    }
+    fn synthesize_chunk(&self, text: &str, ctx: &SynthesisContext<'_>) -> Result<()> {
+        self.0.synthesize_chunk(text, ctx)
+    }
+    fn set_speed(&self, speed: f32) {
+        self.0.set_speed(speed);
+    }
+    fn health_check(&self) -> bool {
+        self.0.health_check()
+    }
+}
+
+pub async fn google_synthesize_to_wav(
+    voice: &str,
+    text: &str,
+    speed: f32,
+    project_override: Option<&str>,
+    target_path: &std::path::Path,
+) -> Result<()> {
+    let base_url = global_sidecar_supervisor()
+        .ensure_ready(SidecarKind::TtsCloud, &[])
+        .await
+        .map_err(|e| anyhow!("Failed to start Cloud TTS sidecar: {}", e))?;
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(format!("{}/v1/google/speech", base_url))
+        .json(&serde_json::json!({
+            "voice": voice,
+            "text": text,
+            "speed": speed,
+            "project_override": project_override,
+        }))
+        .send()
+        .await
+        .map_err(|e| anyhow!("Google TTS preview failed: {}", e))?;
+
+    if !resp.status().is_success() {
+        return Err(anyhow!("Google TTS preview HTTP {}", resp.status()));
+    }
+
+    let pcm_bytes = resp.bytes().await?;
+    let mut samples = Vec::with_capacity(pcm_bytes.len() / 2);
+    for chunk in pcm_bytes.chunks_exact(2) {
+        let s16 = i16::from_le_bytes([chunk[0], chunk[1]]);
+        samples.push(s16 as f32 / 32768.0);
+    }
+
+    crate::services::tts::voice::write_f32_wav(target_path, &samples, 24000)
+        .map_err(|e| anyhow!("Failed to write preview WAV: {}", e))?;
+    Ok(())
+}
+
+pub async fn azure_synthesize_to_wav(
+    region_or_endpoint: &str,
+    voice: &str,
+    key: &str,
+    resource_id: Option<&str>,
+    text: &str,
+    speed: f32,
+    target_path: &std::path::Path,
+) -> Result<()> {
+    let base_url = global_sidecar_supervisor()
+        .ensure_ready(SidecarKind::TtsCloud, &[])
+        .await
+        .map_err(|e| anyhow!("Failed to start Cloud TTS sidecar: {}", e))?;
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(format!("{}/v1/azure/speech", base_url))
+        .json(&serde_json::json!({
+            "region_or_endpoint": region_or_endpoint,
+            "voice": voice,
+            "key": key,
+            "resource_id": resource_id,
+            "text": text,
+            "speed": speed,
+        }))
+        .send()
+        .await
+        .map_err(|e| anyhow!("Azure TTS preview failed: {}", e))?;
+
+    if !resp.status().is_success() {
+        return Err(anyhow!("Azure TTS preview HTTP {}", resp.status()));
+    }
+
+    let pcm_bytes = resp.bytes().await?;
+    let mut samples = Vec::with_capacity(pcm_bytes.len() / 2);
+    for chunk in pcm_bytes.chunks_exact(2) {
+        let s16 = i16::from_le_bytes([chunk[0], chunk[1]]);
+        samples.push(s16 as f32 / 32768.0);
+    }
+
+    crate::services::tts::voice::write_f32_wav(target_path, &samples, 24000)
+        .map_err(|e| anyhow!("Failed to write preview WAV: {}", e))?;
+    Ok(())
 }

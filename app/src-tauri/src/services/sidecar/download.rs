@@ -1,9 +1,4 @@
-use std::{
-    fs::{create_dir_all, File},
-    io::{copy, Read},
-    path::{Path, PathBuf},
-    time::Duration,
-};
+use std::{fs::create_dir_all, path::PathBuf, time::Duration};
 
 use anyhow::{anyhow, Context, Result};
 use sha2::{Digest, Sha256};
@@ -51,7 +46,11 @@ pub fn get_sidecar_binary_path(kind: SidecarKind) -> Result<PathBuf> {
     if let Ok(val) = std::env::var(&env_var) {
         let p = PathBuf::from(val);
         if p.exists() {
-            log::info!("[Sidecar] Using override binary for {}: {:?}", kind.binary_name(), p);
+            log::info!(
+                "[Sidecar] Using override binary for {}: {:?}",
+                kind.binary_name(),
+                p
+            );
             return Ok(p);
         }
     }
@@ -104,11 +103,14 @@ pub async fn ensure_sidecar_binary(kind: SidecarKind) -> Result<PathBuf> {
     let dest_bin = bin_dir.join(&bin_name);
 
     // Fetch manifest
-    log::info!("[Sidecar] Downloading manifest from {}", SIDECARS_MANIFEST_URL);
+    log::info!(
+        "[Sidecar] Downloading manifest from {}",
+        SIDECARS_MANIFEST_URL
+    );
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(10))
         .build()?;
-    
+
     let manifest: SidecarsManifest = client
         .get(SIDECARS_MANIFEST_URL)
         .send()
@@ -123,9 +125,19 @@ pub async fn ensure_sidecar_binary(kind: SidecarKind) -> Result<PathBuf> {
         .sidecars
         .get(kind.binary_name())
         .and_then(|m| m.get(pkey))
-        .ok_or_else(|| anyhow!("No sidecar asset for {} on platform {}", kind.binary_name(), pkey))?;
+        .ok_or_else(|| {
+            anyhow!(
+                "No sidecar asset for {} on platform {}",
+                kind.binary_name(),
+                pkey
+            )
+        })?;
 
-    log::info!("[Sidecar] Downloading {} from {}", kind.binary_name(), asset.url);
+    log::info!(
+        "[Sidecar] Downloading {} from {}",
+        kind.binary_name(),
+        asset.url
+    );
     let resp = client
         .get(&asset.url)
         .send()
@@ -140,7 +152,12 @@ pub async fn ensure_sidecar_binary(kind: SidecarKind) -> Result<PathBuf> {
         hasher.update(&bytes);
         let hash = format!("{:x}", hasher.finalize());
         if hash != asset.sha256 {
-            anyhow::bail!("SHA-256 mismatch for {}: expected {}, got {}", kind.binary_name(), asset.sha256, hash);
+            anyhow::bail!(
+                "SHA-256 mismatch for {}: expected {}, got {}",
+                kind.binary_name(),
+                asset.sha256,
+                hash
+            );
         }
     }
 

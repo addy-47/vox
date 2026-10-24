@@ -1,12 +1,9 @@
 use std::{
-    path::{Path, PathBuf},
-    sync::{
-        atomic::AtomicBool,
-        mpsc, Arc,
-    },
+    path::PathBuf,
+    sync::{atomic::AtomicBool, mpsc, Arc},
 };
 
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use axum::{
     body::Body,
     extract::{Json, State},
@@ -75,20 +72,19 @@ async fn speech_handler(
 
     let (pcm_tx, mut pcm_rx) = tokio::sync::mpsc::channel::<Vec<f32>>(32);
     let playback = services::audio::PlaybackEngine::new(pcm_tx);
-    let (event_tx, _event_rx) = mpsc::channel();
-    let cancel = Arc::new(AtomicBool::new(false));
-
-    let ctx = SynthesisContext {
-        turn_id: 1,
-        intent: core::events::AudioIntent::Speech,
-        cancel,
-        playback: &playback,
-        event_tx,
-        telemetry_rtf: None,
-    };
 
     let text = payload.text;
     tokio::task::spawn_blocking(move || {
+        let (event_tx, _event_rx) = mpsc::channel();
+        let cancel = Arc::new(AtomicBool::new(false));
+        let ctx = SynthesisContext {
+            turn_id: 1,
+            intent: core::events::AudioIntent::Speech,
+            cancel,
+            playback: &playback,
+            event_tx,
+            telemetry_rtf: None,
+        };
         let _ = engine.synthesize_chunk(&text, &ctx);
     });
 
@@ -179,23 +175,8 @@ async fn main() -> Result<()> {
                 std::fs::create_dir_all(parent)?;
             }
             let listener = tokio::net::UnixListener::bind(&socket_path)?;
-            tracing::info!("Listening on Unix domain socket: {:?}", socket_path);
-
-            loop {
-                let (stream, _) = listener.accept().await?;
-                let app = app.clone();
-                tokio::spawn(async move {
-                    let io = hyper_util::rt::TokioIo::new(stream);
-                    let service = tower::service_fn(move |req| {
-                        let mut app = app.clone();
-                        use tower::Service;
-                        async move { app.call(req).await }
-                    });
-                    let _ = hyper_util::server::conn::auto::Builder::new(hyper_util::rt::TokioExecutor::new())
-                        .serve_connection(io, service)
-                        .await;
-                });
-            }
+            println!("VOX_SIDECAR_READY socket={}", socket_path.display());
+            axum::serve(listener, app).await?;
         }
         #[cfg(not(unix))]
         {
@@ -204,7 +185,7 @@ async fn main() -> Result<()> {
     } else {
         let addr = format!("127.0.0.1:{}", args.port);
         let listener = tokio::net::TcpListener::bind(&addr).await?;
-        tracing::info!("Listening on TCP: {}", listener.local_addr()?);
+        println!("VOX_SIDECAR_READY port={}", listener.local_addr()?.port());
         axum::serve(listener, app).await?;
     }
 

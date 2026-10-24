@@ -1,7 +1,7 @@
 use std::{
     collections::HashMap,
-    path::{Path, PathBuf},
-    sync::{Arc, OnceLock},
+    path::PathBuf,
+    sync::OnceLock,
     time::{Duration, Instant},
 };
 
@@ -9,10 +9,7 @@ use anyhow::{anyhow, Result};
 use parking_lot::Mutex;
 use tokio::process::{Child, Command};
 
-use super::{
-    download::{ensure_sidecar_binary, get_sidecar_binary_path},
-    types::SidecarKind,
-};
+use super::{download::ensure_sidecar_binary, types::SidecarKind};
 use crate::utils::paths::get as get_paths;
 
 const HEALTH_CHECK_TIMEOUT: Duration = Duration::from_secs(5);
@@ -28,6 +25,12 @@ struct ActiveInstance {
 
 pub struct SidecarSupervisor {
     instances: Mutex<HashMap<SidecarKind, ActiveInstance>>,
+}
+
+impl Default for SidecarSupervisor {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl SidecarSupervisor {
@@ -84,7 +87,7 @@ impl SidecarSupervisor {
         }
 
         // Set low process priority
-        #[cfg(unix)]
+        #[cfg(all(unix, not(target_os = "android")))]
         unsafe {
             cmd.pre_exec(|| {
                 libc::nice(10);
@@ -154,22 +157,27 @@ impl SidecarSupervisor {
 
     /// Reaps processes that have been idle for more than 5 minutes.
     pub async fn reap_idle(&self) {
-        let mut to_kill = Vec::new();
-        {
+        let to_kill = {
             let mut guard = self.instances.lock();
-            for (kind, inst) in guard.iter_mut() {
-                if inst.last_accessed.elapsed() > IDLE_TIMEOUT {
-                    to_kill.push(*kind);
+            let idle_keys: Vec<_> = guard
+                .iter()
+                .filter(|(_, inst)| inst.last_accessed.elapsed() > IDLE_TIMEOUT)
+                .map(|(k, _)| *k)
+                .collect();
+            let mut removed = Vec::new();
+            for k in idle_keys {
+                if let Some(inst) = guard.remove(&k) {
+                    removed.push((k, inst));
                 }
             }
-            for kind in &to_kill {
-                if let Some(mut inst) = guard.remove(kind) {
-                    log::info!("[Sidecar] Reaping idle sidecar {}", kind.binary_name());
-                    let _ = inst.child.kill().await;
-                    if let Some(p) = inst.socket_path {
-                        let _ = std::fs::remove_file(p);
-                    }
-                }
+            removed
+        };
+
+        for (kind, mut inst) in to_kill {
+            log::info!("[Sidecar] Reaping idle sidecar {}", kind.binary_name());
+            let _ = inst.child.kill().await;
+            if let Some(p) = inst.socket_path {
+                let _ = std::fs::remove_file(p);
             }
         }
     }

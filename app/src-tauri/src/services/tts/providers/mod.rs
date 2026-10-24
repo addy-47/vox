@@ -7,6 +7,14 @@ pub mod kokoro;
 pub mod supertonic;
 pub mod zipvoice;
 
+pub mod google_tts {
+    pub use super::cloud_sidecar::google_synthesize_to_wav as synthesize_to_wav;
+}
+
+pub mod azure_tts {
+    pub use super::cloud_sidecar::azure_synthesize_to_wav as synthesize_to_wav;
+}
+
 use std::sync::{
     atomic::{AtomicBool, AtomicU32},
     mpsc::Sender,
@@ -14,8 +22,7 @@ use std::sync::{
 };
 
 pub use chatterbox_sidecar::ChatterboxSidecarProvider as ChatterboxEngine;
-pub use cloud_sidecar::CloudTtsSidecarProvider as AzureTtsProvider;
-pub use cloud_sidecar::CloudTtsSidecarProvider as GoogleTtsProvider;
+pub use cloud_sidecar::{AzureTtsProvider, GoogleTtsProvider};
 pub use edge_tts::EdgeTtsProvider;
 pub use kokoro::KokoroEngine;
 pub use zipvoice::{ZipvoiceEngine, ZipvoiceReference};

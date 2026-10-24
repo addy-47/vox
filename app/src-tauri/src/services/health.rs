@@ -407,7 +407,10 @@ pub async fn check_tts_health_with_reason(
                         Ok(resp) if resp.status().is_success() => Ok((true, None)),
                         Ok(resp) => Ok((
                             false,
-                            Some(format!("Google Cloud TTS sidecar health check failed: HTTP {}", resp.status())),
+                            Some(format!(
+                                "Google Cloud TTS sidecar health check failed: HTTP {}",
+                                resp.status()
+                            )),
                         )),
                         Err(e) => Ok((
                             false,

@@ -1,10 +1,7 @@
-use std::{
-    path::PathBuf,
-    sync::{
-        atomic::{AtomicBool, AtomicU32},
-        mpsc::Sender,
-        Arc,
-    },
+use std::sync::{
+    atomic::{AtomicBool, AtomicU32},
+    mpsc::Sender,
+    Arc,
 };
 
 pub mod core {
@@ -40,8 +37,8 @@ pub mod core {
 
 pub mod services {
     pub mod audio {
-        use std::sync::Arc;
         use crate::core::events::AudioIntent;
+        use std::sync::Arc;
 
         pub struct PlaybackEngine {
             tx: tokio::sync::mpsc::Sender<Vec<f32>>,
@@ -60,8 +57,8 @@ pub mod services {
 
     pub mod tts {
         pub mod auth {
-            use std::time::{Duration, Instant};
             use crate::core::error::TtsError;
+            use std::time::{Duration, Instant};
 
             const TOKEN_REFRESH_MARGIN_SECS: u64 = 60;
 
@@ -79,7 +76,9 @@ pub mod services {
                 }
 
                 pub fn get(&self) -> Option<&str> {
-                    if Instant::now() + Duration::from_secs(TOKEN_REFRESH_MARGIN_SECS) < self.expires_at {
+                    if Instant::now() + Duration::from_secs(TOKEN_REFRESH_MARGIN_SECS)
+                        < self.expires_at
+                    {
                         Some(&self.value)
                     } else {
                         None
@@ -112,8 +111,8 @@ pub mod services {
         }
 
         pub mod voice {
-            use std::path::Path;
             use anyhow::Result;
+            use std::path::Path;
 
             pub fn write_f32_wav(path: &Path, samples: &[f32], sample_rate: u32) -> Result<()> {
                 let spec = hound::WavSpec {
@@ -185,12 +184,15 @@ pub mod utils {
 
     pub mod paths {
         use super::Paths;
+        use std::path::PathBuf;
         use std::sync::OnceLock;
 
         pub fn get() -> &'static Paths {
             static PATHS: OnceLock<Paths> = OnceLock::new();
             PATHS.get_or_init(|| {
-                let root = dirs::home_dir().unwrap_or_else(|| PathBuf::from(".")).join(".vox");
+                let root = dirs::home_dir()
+                    .unwrap_or_else(|| PathBuf::from("."))
+                    .join(".vox");
                 Paths {
                     data: root.join("data"),
                 }
@@ -200,7 +202,11 @@ pub mod utils {
 }
 
 pub const fn speed_range(min: f32, max: f32) -> services::tts::ParamRange {
-    services::tts::ParamRange { min, max, step: 0.05 }
+    services::tts::ParamRange {
+        min,
+        max,
+        step: 0.05,
+    }
 }
 
 pub struct SynthesisContext<'a> {
@@ -213,7 +219,9 @@ pub struct SynthesisContext<'a> {
 }
 
 pub trait TtsProvider: Send + Sync {
-    fn caps() -> services::tts::ProviderCaps where Self: Sized;
+    fn caps() -> services::tts::ProviderCaps
+    where
+        Self: Sized;
     fn synthesize_chunk(&self, text: &str, ctx: &SynthesisContext<'_>) -> anyhow::Result<()>;
     fn set_speed(&self, speed: f32);
     fn health_check(&self) -> bool;
