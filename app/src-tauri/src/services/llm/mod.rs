@@ -1,9 +1,9 @@
 pub mod actor;
 pub mod catalog;
 pub mod config;
-pub mod embedded;
 pub mod factory;
 pub mod provider;
+pub mod sidecar;
 pub mod transport;
 
 pub use actor::{
@@ -19,7 +19,7 @@ pub use catalog::{
 pub use config::{
     LlmActiveProvider, LlmCustomServer, LlmProvidersConfig, LlmRuntimeTarget, LlmSettings,
 };
-pub use embedded::{EmbeddedProvider, LlmWorker, ModelFamily};
+pub use sidecar::{SidecarLlmProvider, SidecarLlmProvider as EmbeddedProvider};
 pub use factory::{create_llm_provider, create_llm_provider_from_llm_settings};
 pub use provider::{
     global_llama_backend, CanonicalToolCall, CanonicalToolDefinition, ConversationInput,

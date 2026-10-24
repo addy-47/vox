@@ -1,0 +1,56 @@
+{
+  "version": "1.0.0",
+  "sidecars": {
+    "vox-llm": {
+      "linux-x86_64": {
+        "url": "https://github.com/addy-47/vox/releases/download/sidecars-v1.0.0/vox-llm-linux-x86_64.tar.gz",
+        "sha256": "",
+        "size_bytes": 35000000
+      },
+      "macos-aarch64": {
+        "url": "https://github.com/addy-47/vox/releases/download/sidecars-v1.0.0/vox-llm-macos-aarch64.tar.gz",
+        "sha256": "",
+        "size_bytes": 35000000
+      },
+      "windows-x86_64": {
+        "url": "https://github.com/addy-47/vox/releases/download/sidecars-v1.0.0/vox-llm-windows-x86_64.zip",
+        "sha256": "",
+        "size_bytes": 35000000
+      }
+    },
+    "vox-tts-clone": {
+      "linux-x86_64": {
+        "url": "https://github.com/addy-47/vox/releases/download/sidecars-v1.0.0/vox-tts-clone-linux-x86_64.tar.gz",
+        "sha256": "",
+        "size_bytes": 25000000
+      },
+      "macos-aarch64": {
+        "url": "https://github.com/addy-47/vox/releases/download/sidecars-v1.0.0/vox-tts-clone-macos-aarch64.tar.gz",
+        "sha256": "",
+        "size_bytes": 25000000
+      },
+      "windows-x86_64": {
+        "url": "https://github.com/addy-47/vox/releases/download/sidecars-v1.0.0/vox-tts-clone-windows-x86_64.zip",
+        "sha256": "",
+        "size_bytes": 25000000
+      }
+    },
+    "vox-tts-cloud": {
+      "linux-x86_64": {
+        "url": "https://github.com/addy-47/vox/releases/download/sidecars-v1.0.0/vox-tts-cloud-linux-x86_64.tar.gz",
+        "sha256": "",
+        "size_bytes": 20000000
+      },
+      "macos-aarch64": {
+        "url": "https://github.com/addy-47/vox/releases/download/sidecars-v1.0.0/vox-tts-cloud-macos-aarch64.tar.gz",
+        "sha256": "",
+        "size_bytes": 20000000
+      },
+      "windows-x86_64": {
+        "url": "https://github.com/addy-47/vox/releases/download/sidecars-v1.0.0/vox-tts-cloud-windows-x86_64.zip",
+        "sha256": "",
+        "size_bytes": 20000000
+      }
+    }
+  }
+}

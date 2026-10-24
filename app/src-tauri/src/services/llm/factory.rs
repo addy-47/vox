@@ -7,8 +7,8 @@ use crate::{
         defaults::DEFAULT_LLM_CONTEXT_WINDOW,
     },
     services::llm::{
-        embedded::EmbeddedProvider,
         provider::LlmProvider,
+        sidecar::SidecarLlmProvider as EmbeddedProvider,
         transport::{ConnectionConfig, RemoteTransport},
         LlmProvidersConfig, LlmRuntimeTarget, LlmSettings,
     },

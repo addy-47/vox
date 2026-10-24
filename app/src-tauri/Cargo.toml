@@ -48,11 +48,8 @@ symphonia-core = "0.6.0"       # Symphonia core primitives
 sonora = "0.2.0"               # Pure-Rust WebRTC AEC3, NS, and AGC2 audio processing
 
 # ─── 3. ML Inference & Language Processing ──────────────────────────────────
-llama-cpp-4 = { version = "0.2.61", default-features = false, features = ["openmp", "mtmd"] } # Local GGUF LLM inference
-llama-cpp-sys-4 = { version = "0.2.61", default-features = false }                             # Low-level llama.cpp C++ bindings
 ort = { version = "2.0.0-rc.13", features = ["download-binaries", "ndarray"] }                # ONNX Runtime bindings (1.28; fixes ReshapeFusion SIGSEGV on MiniLM INT8)
 ndarray = "0.17.2"                                                                            # N-dimensional array processing for ONNX tensors
-chatterbox-rs = { git = "https://github.com/addy-47/chatterbox-rs.git", rev = "c9d17bd", default-features = false } # Local voice cloning TTS
 tokenizers = { version = "0.21.0", default-features = false, features = ["fancy-regex"] }    # HuggingFace tokenizers (BPE / WordPiece)
 tiktoken-rs = "0.6.0"                                                                         # OpenAI BPE tokenizer for context budgeting
 
@@ -75,19 +72,6 @@ thread-priority = "1.1"                        # OS thread priority controls for
 reqwest = { version = "0.12", default-features = false, features = ["stream", "rustls-tls", "charset", "http2", "system-proxy", "json", "blocking"] } # HTTP/HTTPS client for cloud LLM/TTS
 tokio-tungstenite = { version = "0.29.0", features = ["rustls-tls-webpki-roots"] }       # WebSocket client for Gemini Live & Edge-TTS
 rustls = { version = "0.23", features = ["ring"] }                                       # TLS cryptography provider
-
-# ─── 5b. Cloud TTS Providers (Azure Speech + Google Cloud TTS) ───────────────
-# google-cloud-texttospeech-v1: official client (streaming_synthesize bidi gRPC
-# + synthesize_speech + list_voices, ADC default). Must survive verify-targets.sh
-# (desktop + arm64-v8a); if its TLS stack breaks Android, fall back to
-# REST-per-clause via reqwest with identical file layout.
-google-cloud-texttospeech-v1 = "1"
-google-cloud-gax = "1"
-# azure_identity: Entra fallback only (AzureCliCredential / DeveloperToolsCredential
-# for `az login` reuse). Key path uses reqwest. If it breaks the Android gate,
-# cfg-gate Entra to desktop and keep the key path universal.
-azure_identity = "1"
-azure_core = "1"
 
 # ─── 6. System Integration, Clipboard & Input Simulation ────────────────────
 # (Platform-specific drivers defined under cfg(desktop) below)
@@ -201,9 +185,6 @@ lto = false
 codegen-units = 16
 panic = "unwind"
 strip = false
-
-[[example]]
-name = "voice_clone"
 
 [[example]]
 name = "generate_simulation_dataset_clips"

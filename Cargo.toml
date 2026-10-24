@@ -1,0 +1,8 @@
+[workspace]
+members = [
+    "app/src-tauri",
+    "sidecars/vox-llm",
+    "sidecars/vox-tts-clone",
+    "sidecars/vox-tts-cloud",
+]
+resolver = "2"

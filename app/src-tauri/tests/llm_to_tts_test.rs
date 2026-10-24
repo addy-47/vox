@@ -46,6 +46,7 @@ use vox_lib::{
 /// REQUIRES: the Qwen GGUF model
 /// MUTANT:   Remove `harness.history.push_assistant_turn(...)` from the completion path.
 #[tokio::test]
+#[ignore = "requires vox-llm sidecar binary"]
 async fn harness_turn_streams_clauses_to_tts_and_commits_history() {
     let test_timeout = Duration::from_secs(60);
     tokio::time::timeout(test_timeout, async {

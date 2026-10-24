@@ -7,6 +7,7 @@ pub mod memory;
 pub mod notifications;
 pub mod realtime;
 pub mod remote;
+pub mod sidecar;
 pub mod stt;
 pub mod translit;
 pub mod tts;

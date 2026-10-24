@@ -1,9 +1,8 @@
-pub mod azure_tts;
-pub mod chatterbox;
 pub mod chatterbox_remote;
+pub mod chatterbox_sidecar;
+pub mod cloud_sidecar;
 pub mod devanagari;
 pub mod edge_tts;
-pub mod google_tts;
 pub mod kokoro;
 pub mod supertonic;
 pub mod zipvoice;
@@ -14,9 +13,10 @@ use std::sync::{
     Arc,
 };
 
-pub use azure_tts::AzureTtsProvider;
+pub use chatterbox_sidecar::ChatterboxSidecarProvider as ChatterboxEngine;
+pub use cloud_sidecar::CloudTtsSidecarProvider as AzureTtsProvider;
+pub use cloud_sidecar::CloudTtsSidecarProvider as GoogleTtsProvider;
 pub use edge_tts::EdgeTtsProvider;
-pub use google_tts::GoogleTtsProvider;
 pub use kokoro::KokoroEngine;
 pub use zipvoice::{ZipvoiceEngine, ZipvoiceReference};
 

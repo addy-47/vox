@@ -140,7 +140,7 @@ pub fn create_tts_provider(
             resource_id,
         } => {
             log::info!("[TTS Factory] Initializing AzureTTS provider");
-            AzureTtsProvider::new(region_or_endpoint, voice, key, resource_id.as_deref())
+            AzureTtsProvider::new_azure(region_or_endpoint, voice, key, resource_id.as_deref())
                 .map(|p| Box::new(p) as Box<dyn TtsProvider>)
                 .map_err(|e| format!("Failed to create AzureTTS provider: {}", e))
         }
@@ -149,7 +149,7 @@ pub fn create_tts_provider(
             project_override,
         } => {
             log::info!("[TTS Factory] Initializing GoogleTTS provider");
-            GoogleTtsProvider::new(voice, project_override.as_deref())
+            GoogleTtsProvider::new_google(voice, project_override.as_deref())
                 .map(|p| Box::new(p) as Box<dyn TtsProvider>)
                 .map_err(|e| format!("Failed to create GoogleTTS provider: {}", e))
         }

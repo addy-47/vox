@@ -15,7 +15,7 @@ This spec covers:
 - The inter-process communication contract between Vox and each sidecar.
 - The sidecar process lifecycle (start, health, restart, stop).
 - The CI/CD publication and on-demand download protocol.
-- Android platform exclusion rules.
+- **Android Platform Pruning & In-Process Contract**: Downloadable sidecars are desktop-only. All sidecar-backed features are pruned on Android (due to SELinux W^X). If Android support is desired in the future, sidecars must become in-process library crates (`crates/`) linked directly into `libvox_lib.so` via NDK.
 - Which existing tests are affected.
 
 ### 1.4 Out of Scope
@@ -94,17 +94,30 @@ vox/
 ```
 
 ### 4.2 Cloud TTS Sidecar (`vox-tts-cloud`)
-All cloud TTS providers that cannot use plain `reqwest` (currently: Google Cloud TTS with gRPC) live in `vox-tts-cloud`. Future cloud TTS integrations must be added here, not to the main app.
+All cloud TTS providers that use external vendor SDKs (Google Cloud TTS with gRPC and Azure AI Speech with Entra auth) live in `vox-tts-cloud`. Future cloud TTS integrations requiring vendor SDKs must be added here, not to the main app.
 ```text
 └── sidecars/
     └── vox-tts-cloud/                 # All cloud TTS providers that need heavy SDKs
-        ├── Cargo.toml                 # google-cloud-texttospeech-v1, google-cloud-gax, axum
+        ├── Cargo.toml                 # google-cloud-texttospeech-v1, google-cloud-gax, azure_identity, azure_core, axum
         └── src/
             ├── main.rs                # HTTP server, route dispatch
-            └── providers/
-                └── google_tts.rs     # Moved from app/src-tauri
+            ├── google_tts.rs          # Moved from app/src-tauri
+            └── azure_tts.rs           # Moved from app/src-tauri
 ```
-Azure TTS synthesis stays in the main app (already uses `reqwest`). Azure `azure_identity` / Entra auth is deferred.
+
+### 4.3 Android Platform Pruning & In-Process Contract
+All sidecar-backed capabilities (local GGUF LLM, local Chatterbox voice cloning, Google Cloud gRPC TTS, Azure Entra auth) are explicitly **pruned from the Android build target**:
+- **Why Pruned**: Android SELinux and W^X (Write XOR Execute) security policies strictly prohibit spawning or executing downloaded binary executables from writable application storage (`~/.vox/bin/` or `/data/data/com.vox.app/`).
+- **Architectural Contract for Future Android Support**:
+  To support any of these features on Android in the future, they **CANNOT** run as external sidecar processes. Instead:
+  1. The sidecar implementation must be refactored into a reusable library crate (`crates/`).
+  2. The main Vox Android binary must add the crate as a direct in-process dependency:
+     ```toml
+     [target.'cfg(target_os = "android")'.dependencies]
+     vox-llm-core = { path = "../../crates/vox-llm-core" }
+     ```
+  3. All native C/C++ libraries (`llama.cpp`, `chatterbox.cpp`) must be cross-compiled via the Android NDK and statically linked directly into `libvox_lib.so` inside the APK.
+  4. On Android, the provider dispatch layer must bypass the process supervisor and call the internal library crate directly in-process.
 
 ---
 
