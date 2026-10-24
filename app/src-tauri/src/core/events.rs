@@ -253,6 +253,7 @@ pub enum IpcEvent {
     MemoryIngestionUpdated,
     RemoteStateChanged(RemoteStateDto),
     RemotePairingRequested(RemotePairingPromptPayload),
+    RemotePairingPending,
 }
 
 impl From<u8> for AudioIntent {
@@ -295,6 +296,7 @@ impl IpcEvent {
             Self::MemoryIngestionUpdated => "memory_ingestion_updated",
             Self::RemoteStateChanged(_) => "remote_state_changed",
             Self::RemotePairingRequested(_) => "remote_pairing_requested",
+            Self::RemotePairingPending => "remote_pairing_pending",
         }
     }
 }
@@ -321,6 +323,7 @@ pub fn emit_ipc<R: Runtime>(app: &AppHandle<R>, event: IpcEvent) -> Result<(), t
         IpcEvent::MemoryIngestionUpdated => app.emit(name, ()),
         IpcEvent::RemoteStateChanged(payload) => app.emit(name, payload),
         IpcEvent::RemotePairingRequested(payload) => app.emit(name, payload),
+        IpcEvent::RemotePairingPending => app.emit(name, ()),
     }
 }
 
@@ -351,6 +354,7 @@ pub fn emit_ipc_to<R: Runtime>(
         IpcEvent::MemoryIngestionUpdated => app.emit_to(target_str, name, ()),
         IpcEvent::RemoteStateChanged(payload) => app.emit_to(target_str, name, payload),
         IpcEvent::RemotePairingRequested(payload) => app.emit_to(target_str, name, payload),
+        IpcEvent::RemotePairingPending => app.emit_to(target_str, name, ()),
     }
 }
 

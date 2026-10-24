@@ -14,7 +14,6 @@ import { ProfilerDrawerProvider } from "@/shared/components/profiler/ProfilerDra
 import { PanelStateProvider } from "@/shared/context/PanelStateContext";
 import { useNotificationStore } from "@/store/notificationStore";
 import { useRemoteStore } from "@/store/remoteStore";
-import { PairingPromptModal } from "@/shared/components/remote/PairingPromptModal";
 import { installOverlayStack } from "@/shared/lib/overlayStack";
 import { getCurrentWindowLabel, isWizardWindowSync } from "@/services/windowService";
 import { isRealMobileDevice } from "@/layout/breakpoints";
@@ -517,8 +516,6 @@ const App: React.FC = () => {
                     </div>
                   </div>
                 )}
-                {/* Global Remote Inbound Pairing Approval Modal */}
-                <PairingPromptModal />
               </div>
               </MotionConfig>
             </Router>

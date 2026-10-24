@@ -1,5 +1,5 @@
 import { memo, useState, useCallback, useEffect } from "react";
-import { Plus, Trash2 } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import { useSettingsStore } from "@/store/settingsStore";
 import { useRemoteStore } from "@/store/remoteStore";
 import { RemoteControlGlyph } from "./RemoteControlGlyph";
@@ -15,6 +15,8 @@ export const RemoteDeskPanel = memo(() => {
   const pairedDevices = useRemoteStore((s) => s.pairedDevices);
   const listPairedDevices = useRemoteStore((s) => s.listPairedDevices);
   const revokeDevice = useRemoteStore((s) => s.revokeDevice);
+  const pendingPairingPrompt = useRemoteStore((s) => s.pendingPairingPrompt);
+  const dismissPairingPrompt = useRemoteStore((s) => s.dismissPairingPrompt);
 
   const [isPairingOpen, setIsPairingOpen] = useState(false);
 
@@ -42,6 +44,11 @@ export const RemoteDeskPanel = memo(() => {
     [revokeDevice]
   );
 
+  const handleClosePairing = useCallback(() => {
+    setIsPairingOpen(false);
+    dismissPairingPrompt();
+  }, [dismissPairingPrompt]);
+
   return (
     <div className="flex flex-row items-center justify-between gap-4 h-full p-2 sm:p-3 rounded-xl bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--accent),0.08)] animate-fade-in">
       {/* Left Column: Title & Description */}
@@ -53,55 +60,56 @@ export const RemoteDeskPanel = memo(() => {
         </div>
 
         <p className="text-[11px] sm:text-[11.5px] text-[rgb(var(--foreground-muted))]/75 leading-relaxed font-medium line-clamp-2">
-          {!acceptsControllers
-            ? REMOTE_CONTROL_COPY.description
-            : pairedDevice
-            ? `Connected to ${pairedDevice.displayName}. Wireless audio and session control are active.`
-            : REMOTE_CONTROL_COPY.descriptionReady}
+          {!acceptsControllers ? (
+            REMOTE_CONTROL_COPY.description
+          ) : pairedDevice ? (
+            <>
+              Connected to{" "}
+              <span className="group inline-flex items-center gap-1 align-baseline">
+                <span className="text-[11px] font-mono font-bold text-[rgb(var(--accent))]">
+                  {pairedDevice.displayName}
+                </span>
+                <Tooltip label="Revoke device" side="top">
+                  <button
+                    type="button"
+                    onClick={() => void handleRevoke(pairedDevice.deviceId)}
+                    className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-[rgb(var(--danger))] hover:opacity-100 transition-opacity cursor-pointer inline-flex items-center"
+                    aria-label={`Revoke ${pairedDevice.displayName}`}
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                </Tooltip>
+              </span>
+              . Wireless audio and session control are active.
+            </>
+          ) : (
+            <>
+              {REMOTE_CONTROL_COPY.descriptionReady}{" "}
+              <button
+                type="button"
+                onClick={() => setIsPairingOpen(true)}
+                className="inline-flex items-center gap-1 text-[11px] font-mono font-bold text-[rgb(var(--accent))] hover:text-[rgb(var(--foreground))] hover:underline cursor-pointer transition-colors select-none"
+              >
+                Pair new device +
+              </button>
+            </>
+          )}
         </p>
       </div>
 
-      {/* Right Column: Interactive Glyph Switch & Pairing Action */}
+      {/* Right Column: Interactive Glyph Switch */}
       <div className="shrink-0 w-[116px] flex flex-col items-center justify-center">
         <RemoteControlGlyph
           enabled={acceptsControllers}
           onToggle={handleToggle}
-          label={!acceptsControllers ? "OFF" : undefined}
+          label={acceptsControllers ? "ENABLED" : "DISABLED"}
           ariaLabel={REMOTE_CONTROL_COPY.title}
         />
-        {acceptsControllers && (
-          pairedDevice ? (
-            <div className="mt-1 flex items-center justify-center gap-1.5 text-[10.5px] font-mono text-[rgb(var(--foreground-muted))] select-none">
-              <span className="truncate max-w-[80px] text-[rgb(var(--foreground))]/90 font-medium" title={pairedDevice.displayName}>
-                {pairedDevice.displayName}
-              </span>
-              <Tooltip label="Revoke device" side="top">
-                <button
-                  type="button"
-                  onClick={() => void handleRevoke(pairedDevice.deviceId)}
-                  className="p-0.5 rounded text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--danger))] transition-colors cursor-pointer"
-                  aria-label={`Revoke ${pairedDevice.displayName}`}
-                >
-                  <Trash2 size={12} />
-                </button>
-              </Tooltip>
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setIsPairingOpen(true)}
-              className="mt-0.5 inline-flex items-center justify-center gap-1 text-[11px] font-mono font-bold text-[rgb(var(--accent))] hover:text-[rgb(var(--foreground))] hover:underline cursor-pointer transition-colors select-none shrink-0"
-            >
-              <Plus size={11} strokeWidth={2.5} />
-              <span>Pair Device</span>
-            </button>
-          )
-        )}
       </div>
 
       <PairingModal
-        open={isPairingOpen}
-        onClose={() => setIsPairingOpen(false)}
+        open={isPairingOpen || Boolean(pendingPairingPrompt)}
+        onClose={handleClosePairing}
       />
     </div>
   );

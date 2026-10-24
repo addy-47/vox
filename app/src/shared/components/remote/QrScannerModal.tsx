@@ -2,9 +2,9 @@ import { memo, useState, useCallback, useRef, useEffect } from "react";
 import jsQR from "jsqr";
 import {
   Camera,
-  AlertCircle,
   ArrowRight,
   Wifi,
+  WifiOff,
   ShieldAlert,
   CheckCircle2,
   Flashlight,
@@ -37,6 +37,7 @@ export const QrScannerModal = memo(
     const connectHost = useRemoteStore((s) => s.connectHost);
     const linkState = useRemoteStore((s) => s.linkState);
     const failureReason = useRemoteStore((s) => s.failureReason);
+    const isPairingPending = useRemoteStore((s) => s.isPairingPending);
 
     const [isManual, setIsManual] = useState(defaultManual);
     const [manualAddress, setManualAddress] = useState("");
@@ -256,8 +257,8 @@ export const QrScannerModal = memo(
 
       if (!canvasRef.current) {
         const c = document.createElement("canvas");
-        c.width = 320;
-        c.height = 320;
+        c.width = 640;
+        c.height = 640;
         canvasRef.current = c;
       }
       const canvas = canvasRef.current;
@@ -285,7 +286,22 @@ export const QrScannerModal = memo(
                 }
               }
             } else if (ctx && canvas) {
-              ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+              const vw = video.videoWidth || 640;
+              const vh = video.videoHeight || 480;
+              const cropSize = Math.min(vw, vh);
+              const sx = (vw - cropSize) / 2;
+              const sy = (vh - cropSize) / 2;
+              ctx.drawImage(
+                video,
+                sx,
+                sy,
+                cropSize,
+                cropSize,
+                0,
+                0,
+                canvas.width,
+                canvas.height
+              );
               const imageData = ctx.getImageData(
                 0,
                 0,
@@ -305,7 +321,7 @@ export const QrScannerModal = memo(
             isScanning = false;
           }
         })();
-      }, 120);
+      }, 100);
 
       return () => {
         if (scanIntervalRef.current) {
@@ -375,17 +391,56 @@ export const QrScannerModal = memo(
         position="global"
         fitContent
         className="max-w-md w-[94vw] sm:w-full overflow-hidden"
+        footer={
+          scanError ? (
+            <div className="p-3 sm:p-4 border-t border-[rgba(var(--border),0.08)] bg-[rgba(var(--card),0.6)] backdrop-blur-md">
+              <div className="flex items-start sm:items-center justify-between gap-3 p-3 rounded-xl bg-[rgba(var(--error),0.08)] border border-[rgba(var(--error),0.2)] animate-fade-in">
+                <div className="flex items-start gap-2.5 min-w-0 flex-1">
+                  <WifiOff size={16} className="text-[rgb(var(--error))] shrink-0 mt-0.5 sm:mt-0" />
+                  <div className="flex flex-col min-w-0">
+                    <span className="text-xs font-semibold text-[rgb(var(--foreground))] break-words">
+                      {scanError}
+                    </span>
+                    {(scanError.toLowerCase().includes("timed out") ||
+                      scanError.toLowerCase().includes("connect") ||
+                      scanError.toLowerCase().includes("fail") ||
+                      scanError.toLowerCase().includes("denied")) && (
+                      <span className="text-[11px] text-[rgb(var(--foreground-muted))] leading-tight mt-0.5">
+                        Ensure both phone and computer are on the same Wi-Fi network.
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setScanError(null);
+                    setScannedSuccess(false);
+                    if (!isManual) void startCamera();
+                  }}
+                  className="px-3 py-1.5 rounded-lg bg-[rgba(var(--error),0.18)] hover:bg-[rgba(var(--error),0.28)] text-[rgb(var(--foreground))] text-xs font-semibold shrink-0 cursor-pointer transition-colors"
+                >
+                  Retry
+                </button>
+              </div>
+            </div>
+          ) : undefined
+        }
       >
         <div className="flex flex-col p-5 sm:p-6 gap-4">
           {connecting ? (
-            /* Connecting State */
-            <div className="h-64 flex flex-col items-center justify-center gap-3 animate-fade-in">
+            /* Connecting & Pairing Progression State */
+            <div className="h-64 flex flex-col items-center justify-center gap-3 animate-fade-in text-center p-4">
               <OrbitalLoader size="lg" />
               <span className="text-xs font-mono font-medium text-[rgb(var(--foreground))]">
-                Connecting to Desktop Host...
+                {isPairingPending
+                  ? "Waiting for Approval..."
+                  : "Establishing Connection..."}
               </span>
-              <span className="text-[11px] font-mono text-[rgb(var(--foreground-muted))]/70 text-center max-w-xs">
-                Awaiting pairing approval on your computer
+              <span className="text-[11px] font-mono text-[rgb(var(--foreground-muted))]/70 max-w-xs">
+                {isPairingPending
+                  ? "Please approve the prompt on your desktop screen."
+                  : "Connecting to host..."}
               </span>
             </div>
           ) : isManual ? (
@@ -400,13 +455,6 @@ export const QrScannerModal = memo(
                   <p className="text-xs text-[rgb(var(--foreground-muted))] leading-relaxed">
                     {cameraError}
                   </p>
-                </div>
-              )}
-
-              {scanError && (
-                <div className="flex items-center gap-2.5 p-3 rounded-lg bg-[rgba(var(--error),0.1)] border border-[rgba(var(--error),0.2)] text-[rgb(var(--error))] text-xs font-medium">
-                  <AlertCircle size={15} className="shrink-0" />
-                  <span>Connection failed: {scanError}</span>
                 </div>
               )}
 
@@ -561,26 +609,6 @@ export const QrScannerModal = memo(
                   </div>
                 )}
               </div>
-
-              {scanError && (
-                <div className="flex flex-col gap-2 p-3 rounded-lg bg-[rgba(var(--error),0.1)] border border-[rgba(var(--error),0.2)] text-[rgb(var(--error))] text-xs font-medium">
-                  <div className="flex items-center gap-2">
-                    <AlertCircle size={14} className="shrink-0" />
-                    <span>{scanError}</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setScanError(null);
-                      setScannedSuccess(false);
-                      void startCamera();
-                    }}
-                    className="self-end px-2.5 py-1 rounded bg-[rgba(var(--error),0.2)] hover:bg-[rgba(var(--error),0.3)] text-[rgb(var(--foreground))] text-[11px] font-mono cursor-pointer transition-colors"
-                  >
-                    Retry Scan
-                  </button>
-                </div>
-              )}
 
               {/* Bottom Guidance & Action Controls */}
               <div className="flex flex-col gap-3 pt-1">

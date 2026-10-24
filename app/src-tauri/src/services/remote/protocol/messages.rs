@@ -287,6 +287,8 @@ pub enum ControlType {
     LinkRefused,
     /// A pairing request.
     PairRequest,
+    /// Host is prompting the user for approval.
+    PairPrompting,
     /// A pairing approval.
     PairApproved,
     /// A pairing refusal.
@@ -295,7 +297,7 @@ pub enum ControlType {
 
 impl ControlType {
     /// Every control message kind.
-    pub const ALL: [ControlType; 17] = [
+    pub const ALL: [ControlType; 18] = [
         ControlType::Hello,
         ControlType::Req,
         ControlType::Res,
@@ -311,6 +313,7 @@ impl ControlType {
         ControlType::RoleNotPermitted,
         ControlType::LinkRefused,
         ControlType::PairRequest,
+        ControlType::PairPrompting,
         ControlType::PairApproved,
         ControlType::PairDenied,
     ];
@@ -333,6 +336,7 @@ impl ControlType {
             ControlType::RoleNotPermitted => "RoleNotPermitted",
             ControlType::LinkRefused => "LinkRefused",
             ControlType::PairRequest => "PairRequest",
+            ControlType::PairPrompting => "PairPrompting",
             ControlType::PairApproved => "PairApproved",
             ControlType::PairDenied => "PairDenied",
         }
@@ -380,6 +384,8 @@ pub enum ControlMessage {
     LinkRefused(LinkRefused),
     /// A pairing request.
     PairRequest(PairRequest),
+    /// Host is prompting the user for approval.
+    PairPrompting,
     /// A pairing approval.
     PairApproved,
     /// A pairing refusal.
@@ -405,6 +411,7 @@ impl ControlMessage {
             ControlMessage::RoleNotPermitted(_) => ControlType::RoleNotPermitted,
             ControlMessage::LinkRefused(_) => ControlType::LinkRefused,
             ControlMessage::PairRequest(_) => ControlType::PairRequest,
+            ControlMessage::PairPrompting => ControlType::PairPrompting,
             ControlMessage::PairApproved => ControlType::PairApproved,
             ControlMessage::PairDenied(_) => ControlType::PairDenied,
         }
@@ -479,6 +486,7 @@ pub fn encode_control(message: &ControlMessage) -> Result<Vec<u8>, ProtocolError
         ControlMessage::RoleNotPermitted(payload) => payload_map(payload)?,
         ControlMessage::LinkRefused(payload) => payload_map(payload)?,
         ControlMessage::PairRequest(payload) => payload_map(payload)?,
+        ControlMessage::PairPrompting => Map::new(),
         ControlMessage::PairApproved => Map::new(),
         ControlMessage::PairDenied(payload) => payload_map(payload)?,
     };
@@ -531,6 +539,7 @@ fn build_control(
         ControlType::RoleNotPermitted => ControlMessage::RoleNotPermitted(payload_value(payload)?),
         ControlType::LinkRefused => ControlMessage::LinkRefused(payload_value(payload)?),
         ControlType::PairRequest => ControlMessage::PairRequest(payload_value(payload)?),
+        ControlType::PairPrompting => ControlMessage::PairPrompting,
         ControlType::PairApproved => ControlMessage::PairApproved,
         ControlType::PairDenied => ControlMessage::PairDenied(payload_value(payload)?),
     })

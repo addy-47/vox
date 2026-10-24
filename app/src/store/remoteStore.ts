@@ -29,6 +29,7 @@ export interface RemoteStoreState {
   failureReason: string | null;
   connectedPeer: ConnectedPeer | null;
   pendingPairingPrompt: RemotePairingRequestedPayload | null;
+  isPairingPending: boolean;
   pairedDevices: PairedDeviceDto[];
   commandRouting: Record<string, CommandClass>;
   loading: boolean;
@@ -51,6 +52,7 @@ export const useRemoteStore = create<RemoteStoreState>((set, get) => ({
   failureReason: null,
   connectedPeer: null,
   pendingPairingPrompt: null,
+  isPairingPending: false,
   pairedDevices: [],
   commandRouting: {},
   loading: false,
@@ -66,10 +68,14 @@ export const useRemoteStore = create<RemoteStoreState>((set, get) => ({
           ? { deviceId: dto.deviceId, displayName: dto.displayName }
           : null;
 
+      const isTerminal =
+        dto.link === "Connected" || dto.link === "Failed" || dto.link === "Disconnected";
+
       set({
         linkState: dto.link,
         failureReason: dto.failure ?? null,
         connectedPeer: peer,
+        ...(isTerminal ? { isPairingPending: false } : {}),
       });
 
       if (dto.link === "Connected") {
@@ -86,9 +92,14 @@ export const useRemoteStore = create<RemoteStoreState>((set, get) => ({
       }
     );
 
+    const unlistenPending = await listen("remote_pairing_pending", () => {
+      set({ isPairingPending: true });
+    });
+
     return () => {
       unlistenState();
       unlistenPrompt();
+      unlistenPending();
     };
   },
 

@@ -295,6 +295,7 @@ impl RemoteSessionManager {
         host_device_id: Option<String>,
         token: Option<String>,
         host_public_key: Option<String>,
+        on_prompting: Option<Box<dyn FnOnce() + Send>>,
     ) -> Result<(), LinkError> {
         self.set_state(RemoteLinkState::Connecting);
 
@@ -340,7 +341,7 @@ impl RemoteSessionManager {
                 return Err(e);
             }
 
-            let resp =
+            let mut resp =
                 match tokio::time::timeout(Duration::from_secs(35), ws_link.recv_control()).await {
                     Ok(Ok(msg)) => msg,
                     Ok(Err(e)) => {
@@ -354,6 +355,27 @@ impl RemoteSessionManager {
                         return Err(LinkError::Protocol(ProtocolError::MalformedJson(err_msg)));
                     }
                 };
+
+            if let ControlMessage::PairPrompting = resp {
+                if let Some(cb) = on_prompting {
+                    cb();
+                }
+                resp = match tokio::time::timeout(Duration::from_secs(35), ws_link.recv_control())
+                    .await
+                {
+                    Ok(Ok(msg)) => msg,
+                    Ok(Err(e)) => {
+                        let err_msg = format!("Connection error awaiting pairing approval: {e}");
+                        self.set_state(RemoteLinkState::Failed(err_msg.clone()));
+                        return Err(e);
+                    }
+                    Err(_) => {
+                        let err_msg = "Pairing approval timed out after 35 seconds".to_string();
+                        self.set_state(RemoteLinkState::Failed(err_msg.clone()));
+                        return Err(LinkError::Protocol(ProtocolError::MalformedJson(err_msg)));
+                    }
+                };
+            }
 
             match resp {
                 ControlMessage::PairApproved => {

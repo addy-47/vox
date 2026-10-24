@@ -108,7 +108,7 @@ describe("QrScannerModal DOM suite", () => {
     });
 
     // 2. Assert modal is in connecting state
-    expect(screen.getByText("Connecting to Desktop Host...")).toBeTruthy();
+    expect(screen.getByText("Establishing Connection...")).toBeTruthy();
 
     // 3. Assert onClose is NOT called synchronously
     expect(onClose).not.toHaveBeenCalled();
@@ -142,7 +142,7 @@ describe("QrScannerModal DOM suite", () => {
       await vi.advanceTimersByTimeAsync(200);
     });
 
-    expect(screen.getByText("Connecting to Desktop Host...")).toBeTruthy();
+    expect(screen.getByText("Establishing Connection...")).toBeTruthy();
     expect(onClose).not.toHaveBeenCalled();
 
     // Simulate linkState transition to Connected
@@ -190,7 +190,7 @@ describe("QrScannerModal DOM suite", () => {
       await vi.advanceTimersByTimeAsync(200);
     });
 
-    expect(screen.getByText("Connecting to Desktop Host...")).toBeTruthy();
+    expect(screen.getByText("Establishing Connection...")).toBeTruthy();
 
     // Simulate linkState transition to Failed with reason
     act(() => {
@@ -231,7 +231,7 @@ describe("QrScannerModal DOM suite", () => {
       publicKey: undefined,
     });
 
-    expect(screen.getByText("Connecting to Desktop Host...")).toBeTruthy();
+    expect(screen.getByText("Establishing Connection...")).toBeTruthy();
     expect(onClose).not.toHaveBeenCalled();
   });
 });

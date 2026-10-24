@@ -137,14 +137,22 @@ pub async fn connect_host(
     token: Option<String>,
     public_key: Option<String>,
     state: State<'_, Arc<AppState>>,
+    app_handle: tauri::AppHandle,
 ) -> Result<(), VoxIpcError> {
     let target = address.or(device_id.clone()).ok_or_else(|| {
         VoxIpcError::InvalidArgument("Target host address or deviceId must be provided".into())
     })?;
     let (manager, db) = (Arc::clone(&state.remote_manager), Arc::clone(&state.db));
+    let app = app_handle.clone();
+    let on_prompting = Box::new(move || {
+        let _ = crate::core::events::emit_ipc(
+            &app,
+            crate::core::events::IpcEvent::RemotePairingPending,
+        );
+    });
     tokio::spawn(async move {
         let _ = manager
-            .dial_and_connect(db, target, device_id, token, public_key)
+            .dial_and_connect(db, target, device_id, token, public_key, Some(on_prompting))
             .await;
     });
     Ok(())
