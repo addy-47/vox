@@ -1,7 +1,7 @@
 import { memo, useMemo, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { Check, Plus, X } from "lucide-react";
-import { useSettingsStore } from "@/store/settingsStore";
+import { AlertCircle, Check, Loader2, Plus, X } from "lucide-react";
+import { useSettingsStore, type LlmCustomServer } from "@/store/settingsStore";
 import { useCatalogStore } from "@/store/catalogStore";
 import {
   activeSelection,
@@ -13,6 +13,10 @@ import {
 import { useExpandableList } from "@/shared/ui/ExpandableList";
 import { VoxLogoLoader } from "@/shared/components/common/VoxLogoLoader";
 import { LANGUAGE_CARD_COPY } from "@/data/settingsCopy";
+import { Tooltip } from "@/shared/ui/Tooltip";
+import { probeProviderTarget } from "@/services/catalogService";
+import { ipcErrorMessage } from "@/shared/lib/ipcError";
+import { cn } from "@/shared/lib/utils";
 import { AddCard } from "../shared/AddCard";
 import { CatalogReveal } from "../shared/CatalogReveal";
 import { ProviderPill } from "./ProviderPill";
@@ -23,6 +27,140 @@ export interface ProviderGridProps {
   /** Ensures parent modal level is primed to 'providers' before opening. */
   onExpand?: () => void;
 }
+
+/**
+ * Renders items in two decoupled vertical columns (alternating left/right).
+ * Vertical expansion in one column shifts only that column downward.
+ */
+function DecoupledColumnGrid({
+  items,
+  className,
+}: {
+  items: React.ReactNode[];
+  className?: string;
+}) {
+  const left = items.filter((_, i) => i % 2 === 0);
+  const right = items.filter((_, i) => i % 2 === 1);
+
+  return (
+    <div className={cn("flex gap-2 items-start w-full", className)}>
+      <div className="flex-1 min-w-0 flex flex-col gap-2">{left}</div>
+      <div className="flex-1 min-w-0 flex flex-col gap-2">{right}</div>
+    </div>
+  );
+}
+
+interface CustomServerInPlaceCardProps {
+  name: string;
+  url: string;
+  apiKey: string;
+  isSaving: boolean;
+  unhealthyReason: string | null;
+  onNameChange: (val: string) => void;
+  onUrlChange: (val: string) => void;
+  onKeyChange: (val: string) => void;
+  onSave: () => void;
+  onCancel: () => void;
+}
+
+const CustomServerInPlaceCard = memo(({
+  name,
+  url,
+  apiKey,
+  isSaving,
+  unhealthyReason,
+  onNameChange,
+  onUrlChange,
+  onKeyChange,
+  onSave,
+  onCancel,
+}: CustomServerInPlaceCardProps) => {
+  return (
+    <div
+      onClick={(e) => e.stopPropagation()}
+      className="group relative flex w-full flex-col select-none rounded-xl border border-[rgba(var(--accent),0.35)] bg-[rgba(var(--foreground),0.035)] p-2.5 transition-colors"
+    >
+      {/* Top Row: Name Input + Action Buttons (No header text) */}
+      <div className="flex items-center justify-between gap-2 w-full">
+        <input
+          autoFocus
+          type="text"
+          value={name}
+          onChange={(e) => onNameChange(e.target.value)}
+          placeholder="Server name (e.g. Ollama, vLLM)"
+          aria-label="Server name"
+          className="min-w-0 flex-1 text-[13px] font-semibold pb-0.5 bg-transparent border-b border-[rgba(var(--foreground),0.15)] focus:border-[rgb(var(--accent))] outline-none text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40 transition-colors"
+        />
+        <div className="flex items-center gap-1 shrink-0">
+          <Tooltip label="Save Server" side="top" asChild>
+            <button
+              type="button"
+              disabled={isSaving || !url.trim()}
+              onClick={(e) => {
+                e.stopPropagation();
+                onSave();
+              }}
+              className="p-1 rounded-md text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.14)] transition-colors cursor-pointer disabled:opacity-40"
+              aria-label="Save Server"
+            >
+              {isSaving ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} strokeWidth={2.5} />}
+            </button>
+          </Tooltip>
+          <Tooltip label={LANGUAGE_CARD_COPY.cancel} side="top" asChild>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onCancel();
+              }}
+              className="p-1 rounded-md text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.08)] transition-colors cursor-pointer"
+              aria-label="Cancel"
+            >
+              <X size={13} strokeWidth={2.25} />
+            </button>
+          </Tooltip>
+        </div>
+      </div>
+
+      {/* URL & Key Inputs: Minimal border-b inputs matching design spec */}
+      <div className="mt-2 flex flex-col gap-1.5 w-full">
+        <input
+          type="text"
+          value={url}
+          onChange={(e) => onUrlChange(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") onSave();
+            if (e.key === "Escape") onCancel();
+          }}
+          placeholder="http://localhost:11434"
+          aria-label="Server URL"
+          className="w-full text-[11.5px] font-mono pb-0.5 bg-transparent border-b border-[rgba(var(--foreground),0.12)] focus:border-[rgb(var(--accent))] outline-none text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40 transition-colors"
+        />
+        <input
+          type="password"
+          value={apiKey}
+          onChange={(e) => onKeyChange(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") onSave();
+            if (e.key === "Escape") onCancel();
+          }}
+          placeholder="API Key (optional)"
+          aria-label="API Key"
+          className="w-full text-[11.5px] font-mono pb-0.5 bg-transparent border-b border-[rgba(var(--foreground),0.12)] focus:border-[rgb(var(--accent))] outline-none text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40 transition-colors"
+        />
+      </div>
+
+      {unhealthyReason && (
+        <p className="mt-1.5 text-[11px] text-[rgb(var(--danger))] flex items-center gap-1">
+          <AlertCircle size={12} className="shrink-0" />
+          <span className="truncate">{unhealthyReason}</span>
+        </p>
+      )}
+    </div>
+  );
+});
+
+CustomServerInPlaceCard.displayName = "CustomServerInPlaceCard";
 
 /**
  * The language card's first face.
@@ -44,6 +182,107 @@ export const ProviderGrid = memo(({ onOpenModels, onExpand }: ProviderGridProps)
   const [editingKeyId, setEditingKeyId] = useState<string | null>(null);
   const [keyValue, setKeyValue] = useState("");
   const [savingKey, setSavingKey] = useState(false);
+
+  // Custom Server In-Place Form State
+  const [isCreatingServer, setIsCreatingServer] = useState(false);
+  const [editingServerId, setEditingServerId] = useState<string | null>(null);
+  const [serverName, setServerName] = useState("");
+  const [serverUrl, setServerUrl] = useState("");
+  const [serverKey, setServerKey] = useState("");
+  const [isProbing, setIsProbing] = useState(false);
+  const [unhealthyReason, setUnhealthyReason] = useState<string | null>(null);
+
+  const startAddServer = () => {
+    setEditingKeyId(null);
+    setEditingServerId(null);
+    setServerName("");
+    setServerUrl("");
+    setServerKey("");
+    setUnhealthyReason(null);
+    setIsCreatingServer(true);
+  };
+
+  const startEditServer = (server: { id: string; name?: string; url?: string; api_key?: string | null }) => {
+    setEditingKeyId(null);
+    setIsCreatingServer(false);
+    setServerName(server.name || "");
+    setServerUrl(server.url || "");
+    setServerKey(server.api_key || "");
+    setUnhealthyReason(null);
+    setEditingServerId(server.id);
+  };
+
+  const cancelCustomServer = () => {
+    setIsCreatingServer(false);
+    setEditingServerId(null);
+    setServerName("");
+    setServerUrl("");
+    setServerKey("");
+    setUnhealthyReason(null);
+  };
+
+  const saveCustomServer = async () => {
+    const trimmedUrl = serverUrl.trim();
+    if (!trimmedUrl || isProbing) return;
+
+    setIsProbing(true);
+    setUnhealthyReason(null);
+
+    try {
+      const res = await probeProviderTarget({
+        kind: "server",
+        baseUrl: trimmedUrl,
+        apiKey: serverKey.trim() || undefined,
+        providerId: serverName.trim() || undefined,
+      });
+
+      if (res.healthy) {
+        const defaultDialectName = res.dialect
+          ? res.dialect.charAt(0).toUpperCase() + res.dialect.slice(1)
+          : "Remote Server";
+        const resolvedName = serverName.trim() || defaultDialectName;
+        const newServer: LlmCustomServer = {
+          id: editingServerId ?? `llm_custom_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+          name: resolvedName,
+          url: trimmedUrl,
+          model: "",
+          protocol: "openai",
+          api_key: serverKey.trim() || null,
+        };
+        const currentList = draftSettings?.llm.servers ?? draftSettings?.providers?.llm.servers ?? [];
+        const nextList = currentList.some((s) => s.id === newServer.id)
+          ? currentList.map((s) => (s.id === newServer.id ? newServer : s))
+          : [...currentList, newServer];
+
+        updateDraft("llm", "servers", nextList);
+        cancelCustomServer();
+        await useSettingsStore.getState().commitChanges({ domain: "llm", key: "servers" });
+      } else {
+        setUnhealthyReason(res.reason || "Connection failed");
+      }
+    } catch (err) {
+      setUnhealthyReason(ipcErrorMessage(err));
+    } finally {
+      setIsProbing(false);
+    }
+  };
+
+  const deleteCustomServer = async (serverId: string) => {
+    if (editingServerId === serverId) {
+      cancelCustomServer();
+    }
+    const currentList = draftSettings?.llm.servers ?? draftSettings?.providers?.llm.servers ?? [];
+    updateDraft("llm", "servers", currentList.filter((s) => s.id !== serverId));
+    const isActive = activeCategory === "server" && active?.provider === serverId;
+    if (isActive) {
+      const fallback = draftSettings?.llm.last_selected.embedded ?? "";
+      updateDraft("llm", "active", activeSelection("embedded", fallback));
+    }
+    await useSettingsStore.getState().commitChanges({ domain: "llm", key: "servers" });
+    if (isActive) {
+      await useSettingsStore.getState().commitChanges({ domain: "llm", key: "active" });
+    }
+  };
 
   const isRealtime = draftSettings?.interaction.pipeline_mode === "realtime";
   const active = draftSettings?.llm.active;
@@ -302,7 +541,7 @@ export const ProviderGrid = memo(({ onOpenModels, onExpand }: ProviderGridProps)
           }
           trailing={
             isEditing ? (
-              <>
+              <div className="flex items-center gap-1 shrink-0">
                 <button
                   type="button"
                   aria-label={LANGUAGE_CARD_COPY.saveKey}
@@ -310,9 +549,10 @@ export const ProviderGrid = memo(({ onOpenModels, onExpand }: ProviderGridProps)
                     e.stopPropagation();
                     void saveKey();
                   }}
-                  className="rounded-md p-1 text-[rgb(var(--accent))] transition-colors hover:bg-[rgba(var(--accent),0.14)] cursor-pointer"
+                  disabled={savingKey || !keyValue.trim()}
+                  className="rounded-md p-1 text-[rgb(var(--accent))] transition-colors hover:bg-[rgba(var(--accent),0.14)] cursor-pointer disabled:opacity-40"
                 >
-                  <Check size={13} strokeWidth={2.5} />
+                  {savingKey ? <Loader2 size={12} className="animate-spin" /> : <Check size={13} strokeWidth={2.5} />}
                 </button>
                 <button
                   type="button"
@@ -325,7 +565,7 @@ export const ProviderGrid = memo(({ onOpenModels, onExpand }: ProviderGridProps)
                 >
                   <X size={13} strokeWidth={2.25} />
                 </button>
-              </>
+              </div>
             ) : !hasKey ? (
               <button
                 type="button"
@@ -341,7 +581,7 @@ export const ProviderGrid = memo(({ onOpenModels, onExpand }: ProviderGridProps)
               </button>
             ) : undefined
           }
-          body={
+          expandedContent={
             isEditing ? (
               <input
                 autoFocus
@@ -361,7 +601,7 @@ export const ProviderGrid = memo(({ onOpenModels, onExpand }: ProviderGridProps)
                 }}
                 placeholder={`${prov.name} ${LANGUAGE_CARD_COPY.keyPlaceholder}`}
                 aria-label={`${prov.name} ${LANGUAGE_CARD_COPY.keyPlaceholder}`}
-                className="min-w-0 flex-1 bg-transparent text-[12px] text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/60 focus:outline-none"
+                className="w-full bg-transparent border-b border-[rgba(var(--foreground),0.15)] focus:border-[rgb(var(--accent))] py-1 text-[12px] font-mono text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40 focus:outline-none transition-colors"
               />
             ) : undefined
           }
@@ -406,29 +646,54 @@ export const ProviderGrid = memo(({ onOpenModels, onExpand }: ProviderGridProps)
           />
         ),
       },
-      ...servers.map((server) => ({
-        key: `server:${server.id}`,
-        node: (
-          <ProviderPill
-            id={server.id}
-            name={server.name || LANGUAGE_CARD_COPY.customServerFallback}
-            providerName={server.name}
-            meta={
-              activeCategory === "server" && active?.provider === server.id && active.model
-                ? `${LANGUAGE_CARD_COPY.metaSelfHosted} · ${active.model}`
-                : `${LANGUAGE_CARD_COPY.metaSelfHosted} · ${server.model || replaceProtocol(server.url)}`
-            }
-            active={activeCategory === "server" && active?.provider === server.id}
-            onSelect={() => selectServer(server.id, server.model || "")}
-            onBrowse={() =>
-              browseModels(
-                () => selectServer(server.id, server.model || ""),
-                activeCategory === "server" && active?.provider === server.id
-              )
-            }
-          />
-        ),
-      })),
+      ...servers.map((server) => {
+        if (editingServerId === server.id) {
+          return {
+            key: `server:${server.id}`,
+            node: (
+              <CustomServerInPlaceCard
+                key={`server-edit:${server.id}`}
+                name={serverName}
+                url={serverUrl}
+                apiKey={serverKey}
+                isSaving={isProbing}
+                unhealthyReason={unhealthyReason}
+                onNameChange={setServerName}
+                onUrlChange={setServerUrl}
+                onKeyChange={setServerKey}
+                onSave={saveCustomServer}
+                onCancel={cancelCustomServer}
+              />
+            ),
+          };
+        }
+
+        return {
+          key: `server:${server.id}`,
+          node: (
+            <ProviderPill
+              id={server.id}
+              name={server.name || LANGUAGE_CARD_COPY.customServerFallback}
+              providerName={server.name}
+              meta={
+                activeCategory === "server" && active?.provider === server.id && active.model
+                  ? `${LANGUAGE_CARD_COPY.metaSelfHosted} · ${active.model}`
+                  : `${LANGUAGE_CARD_COPY.metaSelfHosted} · ${server.model || replaceProtocol(server.url)}`
+              }
+              active={activeCategory === "server" && active?.provider === server.id}
+              onSelect={() => selectServer(server.id, server.model || "")}
+              onBrowse={() =>
+                browseModels(
+                  () => selectServer(server.id, server.model || ""),
+                  activeCategory === "server" && active?.provider === server.id
+                )
+              }
+              onEdit={() => startEditServer(server)}
+              onDelete={() => void deleteCustomServer(server.id)}
+            />
+          ),
+        };
+      }),
       ...readyClouds.map((provider) => {
         const isEditing = editingKeyId === provider.id;
         const currentKey = getEffectiveCloudApiKey(draftSettings, committedSettings, provider.id) ?? "";
@@ -475,33 +740,38 @@ export const ProviderGrid = memo(({ onOpenModels, onExpand }: ProviderGridProps)
               }
               trailing={
                 isEditing ? (
-                  <>
-                    <button
-                      type="button"
-                      aria-label={LANGUAGE_CARD_COPY.saveKey}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        void saveKey();
-                      }}
-                      className="rounded-md p-1 text-[rgb(var(--accent))] transition-colors hover:bg-[rgba(var(--accent),0.14)] cursor-pointer"
-                    >
-                      <Check size={13} strokeWidth={2.5} />
-                    </button>
-                    <button
-                      type="button"
-                      aria-label={LANGUAGE_CARD_COPY.cancel}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setEditingKeyId(null);
-                      }}
-                      className="rounded-md p-1 text-[rgb(var(--foreground-muted))] transition-colors hover:bg-[rgba(var(--foreground),0.08)] hover:text-[rgb(var(--foreground))] cursor-pointer"
-                    >
-                      <X size={13} strokeWidth={2.25} />
-                    </button>
-                  </>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <Tooltip label={LANGUAGE_CARD_COPY.saveKey} side="top" asChild>
+                      <button
+                        type="button"
+                        aria-label={LANGUAGE_CARD_COPY.saveKey}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void saveKey();
+                        }}
+                        disabled={savingKey || !keyValue.trim()}
+                        className="rounded-md p-1 text-[rgb(var(--accent))] transition-colors hover:bg-[rgba(var(--accent),0.14)] cursor-pointer disabled:opacity-40"
+                      >
+                        {savingKey ? <Loader2 size={12} className="animate-spin" /> : <Check size={13} strokeWidth={2.5} />}
+                      </button>
+                    </Tooltip>
+                    <Tooltip label={LANGUAGE_CARD_COPY.cancel} side="top" asChild>
+                      <button
+                        type="button"
+                        aria-label={LANGUAGE_CARD_COPY.cancel}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditingKeyId(null);
+                        }}
+                        className="rounded-md p-1 text-[rgb(var(--foreground-muted))] transition-colors hover:bg-[rgba(var(--foreground),0.08)] hover:text-[rgb(var(--foreground))] cursor-pointer"
+                      >
+                        <X size={13} strokeWidth={2.25} />
+                      </button>
+                    </Tooltip>
+                  </div>
                 ) : undefined
               }
-              body={
+              expandedContent={
                 isEditing ? (
                   <input
                     autoFocus
@@ -521,7 +791,7 @@ export const ProviderGrid = memo(({ onOpenModels, onExpand }: ProviderGridProps)
                     }}
                     placeholder={`${provider.name} ${LANGUAGE_CARD_COPY.keyPlaceholder}`}
                     aria-label={`${provider.name} ${LANGUAGE_CARD_COPY.keyPlaceholder}`}
-                    className="min-w-0 flex-1 bg-transparent text-[12px] text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/60 focus:outline-none"
+                    className="w-full bg-transparent border-b border-[rgba(var(--foreground),0.15)] focus:border-[rgb(var(--accent))] py-1 text-[12px] font-mono text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40 focus:outline-none transition-colors"
                   />
                 ) : undefined
               }
@@ -531,10 +801,56 @@ export const ProviderGrid = memo(({ onOpenModels, onExpand }: ProviderGridProps)
       }),
     ];
 
-    return [...rows].sort(
-      (a, b) => Number(b.key === savedKey) - Number(a.key === savedKey)
-    );
+    const allCandidates = rows;
+    const savedRow = allCandidates.find((r) => r.key === savedKey);
+
+    const orderedConnectedClouds = readyClouds
+      .map((p) => allCandidates.find((r) => r.key === `cloud:${p.id}`))
+      .filter((r): r is { key: string; node: React.ReactNode } => Boolean(r && r.key !== savedKey));
+
+    const orderedServers = servers
+      .map((s) => allCandidates.find((r) => r.key === `server:${s.id}`))
+      .filter((r): r is { key: string; node: React.ReactNode } => Boolean(r && r.key !== savedKey));
+
+    const localRow = allCandidates.find((r) => r.key === "local");
+    const orderedLocal = localRow && localRow.key !== savedKey ? [localRow] : [];
+
+    const finalRows: Array<{ key: string; node: React.ReactNode }> = [];
+    if (savedRow) {
+      finalRows.push(savedRow);
+    }
+    finalRows.push(...orderedConnectedClouds);
+    finalRows.push(...orderedServers);
+    finalRows.push(...orderedLocal);
+
+    return finalRows;
   })();
+
+  const addProviderNode = isCreatingServer ? (
+    <CustomServerInPlaceCard
+      key="add-custom-server-form"
+      name={serverName}
+      url={serverUrl}
+      apiKey={serverKey}
+      isSaving={isProbing}
+      unhealthyReason={unhealthyReason}
+      onNameChange={setServerName}
+      onUrlChange={setServerUrl}
+      onKeyChange={setServerKey}
+      onSave={saveCustomServer}
+      onCancel={cancelCustomServer}
+    />
+  ) : (
+    <AddCard
+      key="add-provider-card"
+      title={LANGUAGE_CARD_COPY.addProvider}
+      onClick={() => {
+        startAddServer();
+      }}
+    />
+  );
+
+  const readyItems = readyRows.map((r) => r.node).concat(addProviderNode);
 
   const restRows = restClouds.map((provider) => {
     const isEditing = editingKeyId === provider.id;
@@ -550,30 +866,35 @@ export const ProviderGrid = memo(({ onOpenModels, onExpand }: ProviderGridProps)
         muted={!isEditing}
         trailing={
           isEditing ? (
-            <>
-              <button
-                type="button"
-                aria-label={LANGUAGE_CARD_COPY.saveKey}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  void saveKey();
-                }}
-                className="rounded-md p-1 text-[rgb(var(--accent))] transition-colors hover:bg-[rgba(var(--accent),0.14)] cursor-pointer"
-              >
-                <Check size={13} strokeWidth={2.5} />
-              </button>
-              <button
-                type="button"
-                aria-label={LANGUAGE_CARD_COPY.cancel}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setEditingKeyId(null);
-                }}
-                className="rounded-md p-1 text-[rgb(var(--foreground-muted))] transition-colors hover:bg-[rgba(var(--foreground),0.08)] hover:text-[rgb(var(--foreground))] cursor-pointer"
-              >
-                <X size={13} strokeWidth={2.25} />
-              </button>
-            </>
+            <div className="flex items-center gap-1 shrink-0">
+              <Tooltip label={LANGUAGE_CARD_COPY.saveKey} side="top" asChild>
+                <button
+                  type="button"
+                  aria-label={LANGUAGE_CARD_COPY.saveKey}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void saveKey();
+                  }}
+                  disabled={savingKey || !keyValue.trim()}
+                  className="rounded-md p-1 text-[rgb(var(--accent))] transition-colors hover:bg-[rgba(var(--accent),0.14)] cursor-pointer disabled:opacity-40"
+                >
+                  {savingKey ? <Loader2 size={12} className="animate-spin" /> : <Check size={13} strokeWidth={2.5} />}
+                </button>
+              </Tooltip>
+              <Tooltip label={LANGUAGE_CARD_COPY.cancel} side="top" asChild>
+                <button
+                  type="button"
+                  aria-label={LANGUAGE_CARD_COPY.cancel}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setEditingKeyId(null);
+                  }}
+                  className="rounded-md p-1 text-[rgb(var(--foreground-muted))] transition-colors hover:bg-[rgba(var(--foreground),0.08)] hover:text-[rgb(var(--foreground))] cursor-pointer"
+                >
+                  <X size={13} strokeWidth={2.25} />
+                </button>
+              </Tooltip>
+            </div>
           ) : (
             <Plus
               size={14}
@@ -590,7 +911,7 @@ export const ProviderGrid = memo(({ onOpenModels, onExpand }: ProviderGridProps)
           setEditingKeyId(provider.id);
           setKeyValue("");
         }}
-        body={
+        expandedContent={
           isEditing ? (
             <input
               autoFocus
@@ -610,7 +931,7 @@ export const ProviderGrid = memo(({ onOpenModels, onExpand }: ProviderGridProps)
               }}
               placeholder={`${provider.name} ${LANGUAGE_CARD_COPY.keyPlaceholder}`}
               aria-label={`${provider.name} ${LANGUAGE_CARD_COPY.keyPlaceholder}`}
-              className="min-w-0 flex-1 bg-transparent text-[12px] text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/60 focus:outline-none"
+              className="w-full bg-transparent border-b border-[rgba(var(--foreground),0.15)] focus:border-[rgb(var(--accent))] py-1 text-[12px] font-mono text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40 focus:outline-none transition-colors"
             />
           ) : undefined
         }
@@ -627,27 +948,12 @@ export const ProviderGrid = memo(({ onOpenModels, onExpand }: ProviderGridProps)
       }}
       scrollerClassName="min-h-0 flex-1 overflow-y-auto overscroll-contain custom-scrollbar pr-1 [scrollbar-gutter:stable] [contain:paint]"
     >
-      <div className="grid grid-cols-2 gap-2 auto-rows-max content-start">
-        {readyRows.map((row) => (
-          <div key={row.key} className="contents">
-            {row.node}
-          </div>
-        ))}
-        <AddCard
-          title={LANGUAGE_CARD_COPY.addProvider}
-          onClick={() => {
-            onExpand?.();
-            open();
-          }}
-        />
-      </div>
+      <DecoupledColumnGrid items={readyItems} />
 
       {restRows.length > 0 && (
         <>
           <div className="my-3 h-px w-full bg-[rgba(var(--foreground),0.1)]" />
-          <div className="grid grid-cols-2 gap-2 auto-rows-max content-start">
-            {restRows}
-          </div>
+          <DecoupledColumnGrid items={restRows} />
         </>
       )}
     </CatalogReveal>

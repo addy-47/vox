@@ -178,7 +178,7 @@ export const InteractionCard = memo(
                   ) : activeDeskTab === "web_search" ? (
                     <div className="flex flex-row items-center justify-between gap-4 h-full p-2 sm:p-3 rounded-xl bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--accent),0.08)] animate-fade-in">
                       <div className="flex flex-col gap-1 min-w-0 flex-1">
-                        <span className="text-[12px] font-bold uppercase tracking-wider text-[rgb(var(--foreground))]">
+                        <span className="text-[12px] font-bold  tracking-wider text-[rgb(var(--foreground))]">
                           {WEB_SEARCH_COPY.title}
                         </span>
                         <p className="text-[11px] sm:text-[11.5px] text-[rgb(var(--foreground-muted))]/75 leading-relaxed font-medium">

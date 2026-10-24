@@ -1005,4 +1005,100 @@ input[type="range"]:active::-webkit-slider-thumb {
   border-bottom-color: rgba(var(--accent), 0.1) !important;
 }
 
+/* ── Engine Flow Banner ───────────────────────────────────────────────
+   Transform/opacity only, no SMIL, no SVG masks, no JS timers. The engine is
+   static; the six word labels and every waveform bar animate. */
+ 
+/* Word lanes: positions pre-sampled along the same Béziers drawn in the SVG
+   (viewBox 960x128, inlet at x=334). Regenerate if the geometry changes. */
+@keyframes efb-lane-0{
+  0%{transform:translate(0.0px,34.0px) rotate(0.0deg) scale(1.00);opacity:0.15}
+  10%{transform:translate(43.2px,34.8px) rotate(2.2deg) scale(1.00);opacity:0.50}
+  20%{transform:translate(82.8px,37.1px) rotate(4.3deg) scale(1.00);opacity:0.85}
+  70%{transform:translate(246.1px,57.5px) rotate(7.3deg) scale(0.92);opacity:0.85}
+  85%{transform:translate(289.8px,62.2px) rotate(4.5deg) scale(0.72);opacity:0.35}
+  100%{transform:translate(334.0px,64.0px) rotate(0.0deg) scale(0.55);opacity:0.00}
+}
+@keyframes efb-lane-1{
+  0%{transform:translate(0.0px,64.0px) rotate(0.0deg) scale(1.00);opacity:0.15}
+  10%{transform:translate(43.2px,64.0px) rotate(0.0deg) scale(1.00);opacity:0.50}
+  20%{transform:translate(82.8px,64.0px) rotate(0.0deg) scale(1.00);opacity:0.85}
+  70%{transform:translate(246.1px,64.0px) rotate(0.0deg) scale(0.92);opacity:0.85}
+  85%{transform:translate(289.8px,64.0px) rotate(0.0deg) scale(0.72);opacity:0.35}
+  100%{transform:translate(334.0px,64.0px) rotate(0.0deg) scale(0.55);opacity:0.00}
+}
+@keyframes efb-lane-2{
+  0%{transform:translate(0.0px,94.0px) rotate(0.0deg) scale(1.00);opacity:0.15}
+  10%{transform:translate(43.2px,93.2px) rotate(-2.2deg) scale(1.00);opacity:0.50}
+  20%{transform:translate(82.8px,90.9px) rotate(-4.3deg) scale(1.00);opacity:0.85}
+  70%{transform:translate(246.1px,70.5px) rotate(-7.3deg) scale(0.92);opacity:0.85}
+  85%{transform:translate(289.8px,65.8px) rotate(-4.5deg) scale(0.72);opacity:0.35}
+  100%{transform:translate(334.0px,64.0px) rotate(0.0deg) scale(0.55);opacity:0.00}
+}
+
+
+@keyframes efb-bar { 0%, 100% { transform: scaleY(0.45); } 50% { transform: scaleY(1); } }
+
+.efb-a { animation-iteration-count: infinite; animation-fill-mode: both; }
+.efb-w { animation-timing-function: linear; animation-duration: 8s; opacity: 0; dominant-baseline: central; }
+.efb-lane-0 { animation-name: efb-lane-0; }
+.efb-lane-1 { animation-name: efb-lane-1; }
+.efb-lane-2 { animation-name: efb-lane-2; }
+/* transform-origin is set inline per bar, so no transform-box/fill-box layout. */
+.efb-bar { animation-name: efb-bar; animation-duration: 2.2s; animation-timing-function: ease-in-out; }
+
+/* Pause while the window is being resized (existing app convention). */
+[data-viewport-resize] .efb-a { animation-play-state: paused; }
+ 
+@media (prefers-reduced-motion: reduce) {
+  .efb-a { animation: none; }
+  .efb-w { display: none; }
+  .efb-scan-laser { animation: none; display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .efb-a { animation: none; }
+  .efb-w { display: none; }
+  .efb-scan-laser,
+  .efb-scan-laser-track { animation: none; display: none; }
+}
+
+/* ── QR Scanner Reticle Sweep Animation (60fps GPU-composited bidirectional) ── */
+@keyframes efb-scan-sweep {
+  0% {
+    transform: translate3d(0, 8%, 0);
+  }
+  100% {
+    transform: translate3d(0, 92%, 0);
+  }
+}
+
+.efb-scan-laser-track {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  will-change: transform;
+  animation: efb-scan-sweep 1.85s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite alternate;
+}
+
+.efb-scan-laser-beam {
+  position: absolute;
+  top: 0;
+  left: 0.5rem;
+  right: 0.5rem;
+  height: 2px;
+  border-radius: 9999px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(var(--accent), 0.85) 15%,
+    rgb(var(--accent)) 50%,
+    rgba(var(--accent), 0.85) 85%,
+    transparent 100%
+  );
+  box-shadow:
+    0 0 10px rgba(var(--accent), 0.9),
+    0 0 20px rgba(var(--accent), 0.45);
+}
+
+
 

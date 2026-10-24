@@ -289,6 +289,7 @@ export const PERSONA_COPY = {
   tagsProtectedHint: "That edit touches protected system tags, so it wasn't saved.",
   doneEditing: "Done editing",
   editPersona: "Edit persona",
+  cancelEditing: "Cancel editing",
 };
 
 export const PROVIDERS_CONFIG_DESK_COPY = {

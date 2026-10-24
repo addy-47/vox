@@ -32,6 +32,8 @@ export interface ModalProps {
   /** Panel sizing classes. Defaults to a responsive centered dialog. */
   className?: string;
   bodyClassName?: string;
+  /** When true, dialog height hugs its content (h-auto) instead of fixed min(760px, 76vh). */
+  fitContent?: boolean;
   children: React.ReactNode;
 }
 
@@ -62,6 +64,7 @@ export const Modal = memo(
     ariaLabel = LAYOUT_COPY.modal.defaultAria,
     className,
     bodyClassName,
+    fitContent = false,
     children,
   }: ModalProps) => {
     const panelRef = useRef<HTMLDivElement>(null);
@@ -171,7 +174,9 @@ export const Modal = memo(
                 // Responsive default: compact centered modal on mobile, capped on desktop.
                 // Leaves comfortable margins around the viewport (max-w-[calc(100vw-40px)] and max-h-[75vh])
                 // so it presents as a distinct floating dialog card rather than a full page.
-                "w-[min(1120px,86vw)] max-w-[calc(100vw-36px)] h-[min(760px,76vh)] max-h-[calc(100dvh-120px)]",
+                fitContent
+                  ? "w-[min(1120px,86vw)] max-w-[calc(100vw-36px)] h-auto max-h-[calc(100dvh-120px)]"
+                  : "w-[min(1120px,86vw)] max-w-[calc(100vw-36px)] h-[min(760px,76vh)] max-h-[calc(100dvh-120px)]",
                 className
               )}
               onClick={(e) => e.stopPropagation()}

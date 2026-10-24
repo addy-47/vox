@@ -105,10 +105,19 @@ Vox organizes all on-disk artifacts under the root directory (`$VOX_HOME`, defau
 │   ├── logs/           # Rolling daily operational logs
 │   └── crashes/        # Panic backtraces, minidumps, and crash logs
 │
-└── run/                # Tier 6: Ephemeral Runtime State (0700)
-    ├── vox.sock        # Unix domain IPC trigger socket
-    ├── vox.pid         # Single-instance process lock
-    └── bin/            # Desktop keybind integration scripts
+├── run/                # Tier 6: Ephemeral Runtime State (0700)
+│   ├── vox.sock        # Unix domain IPC trigger socket
+│   ├── vox.pid         # Single-instance process lock
+│   ├── vox-llm.sock    # Unix domain socket for local LLM sidecar
+│   ├── vox-tts-clone.sock # Unix domain socket for voice cloning sidecar
+│   ├── vox-tts-cloud.sock # Unix domain socket for cloud TTS sidecar
+│   └── bin/            # Desktop keybind integration scripts
+│
+└── bin/                # Tier 7: Downloadable Sidecar Executables (Mode 0755, Desktop-only)
+    ├── vox-llm         # Local GGUF LLM inference runner
+    ├── vox-tts-clone   # Local Chatterbox voice cloning runner
+    ├── vox-tts-cloud   # Cloud TTS (Google gRPC + Azure Entra) runner
+    └── manifest.json   # Downloaded sidecar verification manifest
 ```
 
 ---
@@ -127,6 +136,9 @@ Vox organizes all on-disk artifacts under the root directory (`$VOX_HOME`, defau
   - Custom cloned audio samples persist in `data/voices/{id}/source.wav`, and precomputed speaker embedding tensors persist in `data/voices/{id}/baked/speaker.safetensors`.
   - On-demand synthesized preview audio files reside in disposable cache `cache/tts/previews/{sha256(provider + voice_id + prompt)}.wav` subject to a 25 MB / 50 files LRU cache boundary.
   - Remote provider catalogs persist directly in Turso database (`voices` table), never in configuration files.
+- **RULE-STORAGE-10 (Sidecar Binary Isolation)**: All downloaded sidecar executables MUST reside in `$VOX_HOME/bin/`. They MUST have POSIX permissions `0755` on Unix. On Windows, they MUST have the `.exe` extension. Deleting `$VOX_HOME/bin/` MUST NOT corrupt any user databases, settings, or model weights.
+- **RULE-STORAGE-11 (Sidecar IPC Sockets)**: Sidecar Unix Domain Sockets MUST reside in `~/.vox/run/` with permissions `0700`. Sidecar socket files MUST be swept and unlinked on application startup and clean exit.
+- **RULE-STORAGE-12 (Desktop-Only Sidecars)**: The `bin/` directory and sidecar sockets MUST NOT be created or accessed on Android targets. Android relies strictly on in-app native runtimes or remote network services.
 
 ### 5.2 Field-Level Configuration Schema Mapping
 The configuration is decomposed into three files according to domain volatility, security tier, and reload semantics:
