@@ -337,7 +337,7 @@ const DISC_FRAG = `
 
     float alpha = (edgeGlow * radialBlend * 0.92 + fill) * u_baseOpacity;
     alpha *= (1.0 + u_amplitude * 4.5);
-    alpha *= mix(1.0, 0.05, u_sleeping);
+    alpha *= mix(1.0, 0.22, u_sleeping);
 
     if (alpha < 0.004) discard;
 
@@ -382,7 +382,7 @@ const OUTER_FRAG = `
     // Very sharp rim — tight but bright
     float rim   = smoothstep(0.52, 1.0, fresnel);
     float alpha = rim * (0.65 + u_amplitude * 0.30);
-    alpha *= mix(1.0, 0.12, u_sleeping);
+    alpha *= mix(1.0, 0.35, u_sleeping);
 
     if (alpha < 0.008) discard;
 
@@ -717,7 +717,7 @@ export const VoxOrb = React.memo(({
 
     // 4. Smoothly transition base offset value on state changes (eliminates instant state-jump visual pops)
     const targetBase = BASE_AMP[state] ?? 0.02;
-    const baseVal = (sleeping ? targetBase * 0.08 : targetBase);
+    const baseVal = (sleeping ? targetBase * 0.35 : targetBase);
     if (ctx.curBaseVal === undefined) {
       ctx.curBaseVal = baseVal;
     }

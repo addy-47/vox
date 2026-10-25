@@ -48,29 +48,16 @@ describe("RocketButton DOM suite", () => {
       // Step 1: User clicks the button
       fireEvent.click(rocketButton);
 
-      // Now in confirming state: renders unboxed inline text and Check/X buttons
-      expect(screen.getByText("Disconnect remote")).toBeTruthy();
-      const confirmButton = screen.getByRole("button", { name: "Confirm disconnect" });
-      const cancelButton = screen.getByRole("button", { name: "Cancel disconnect" });
+      // Clicking the rocket button opens ConfirmModal
+      expect(screen.getByRole("alertdialog")).toBeTruthy();
+      expect(screen.getByText("Disconnect Remote Controller")).toBeTruthy();
+      const confirmButton = screen.getByRole("button", { name: "Disconnect" });
+      const cancelButton = screen.getByRole("button", { name: "Cancel" });
       expect(confirmButton).toBeTruthy();
       expect(cancelButton).toBeTruthy();
-
-      // Step 2: Inactivity auto-revert after 5 seconds
-      act(() => {
-        vi.advanceTimersByTime(5000);
-      });
-
-      // After 5s inactivity, confirms closes and reverts to rocket button
-      expect(screen.queryByText("Disconnect remote")).toBeNull();
-      expect(
-        screen.getByRole("button", {
-          name: /Remote connected: Ada's Phone\. Click to disconnect\./i,
-        })
-      ).toBeTruthy();
-      expect(mockDisconnectDevice).not.toHaveBeenCalled();
     });
 
-    it("allows canceling the disconnect transition before timeout", () => {
+    it("allows canceling the disconnect dialog", async () => {
       useRemoteStore.setState({
         linkState: "Connected",
         connectedPeer: { deviceId: "phone_1", displayName: "Ada's Phone" },
@@ -83,22 +70,20 @@ describe("RocketButton DOM suite", () => {
       });
       fireEvent.click(rocketButton);
 
-      expect(screen.getByText("Disconnect remote")).toBeTruthy();
+      expect(screen.getByRole("alertdialog")).toBeTruthy();
 
-      // User clicks Cancel (X)
-      const cancelButton = screen.getByRole("button", { name: "Cancel disconnect" });
-      fireEvent.click(cancelButton);
+      // User clicks Cancel
+      const cancelButton = screen.getByRole("button", { name: "Cancel" });
+      await act(async () => {
+        fireEvent.click(cancelButton);
+        vi.advanceTimersByTime(250);
+      });
 
-      // Reverts immediately
-      expect(screen.queryByText("Disconnect remote")).toBeNull();
-      expect(
-        screen.getByRole("button", {
-          name: /Remote connected: Ada's Phone/i,
-        })
-      ).toBeTruthy();
+      // Dialog closes
+      expect(screen.queryByRole("alertdialog")).toBeNull();
     });
 
-    it("executes disconnectDevice upon clicking confirm Check", async () => {
+    it("executes disconnectDevice upon clicking Disconnect in ConfirmModal", async () => {
       const mockDisconnectDevice = vi.fn().mockResolvedValue(undefined);
       useRemoteStore.setState({
         linkState: "Connected",
@@ -110,7 +95,7 @@ describe("RocketButton DOM suite", () => {
 
       fireEvent.click(screen.getByRole("button", { name: /Remote connected: Pixel 9/i }));
 
-      const confirmButton = screen.getByRole("button", { name: "Confirm disconnect" });
+      const confirmButton = screen.getByRole("button", { name: "Disconnect" });
       await act(async () => {
         fireEvent.click(confirmButton);
       });

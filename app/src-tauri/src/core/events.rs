@@ -254,6 +254,7 @@ pub enum IpcEvent {
     RemoteStateChanged(RemoteStateDto),
     RemotePairingRequested(RemotePairingPromptPayload),
     RemotePairingPending,
+    RemotePairedDevicesChanged,
 }
 
 impl From<u8> for AudioIntent {
@@ -297,6 +298,7 @@ impl IpcEvent {
             Self::RemoteStateChanged(_) => "remote_state_changed",
             Self::RemotePairingRequested(_) => "remote_pairing_requested",
             Self::RemotePairingPending => "remote_pairing_pending",
+            Self::RemotePairedDevicesChanged => "remote_paired_devices_changed",
         }
     }
 }
@@ -324,6 +326,7 @@ pub fn emit_ipc<R: Runtime>(app: &AppHandle<R>, event: IpcEvent) -> Result<(), t
         IpcEvent::RemoteStateChanged(payload) => app.emit(name, payload),
         IpcEvent::RemotePairingRequested(payload) => app.emit(name, payload),
         IpcEvent::RemotePairingPending => app.emit(name, ()),
+        IpcEvent::RemotePairedDevicesChanged => app.emit(name, ()),
     }
 }
 
@@ -355,6 +358,7 @@ pub fn emit_ipc_to<R: Runtime>(
         IpcEvent::RemoteStateChanged(payload) => app.emit_to(target_str, name, payload),
         IpcEvent::RemotePairingRequested(payload) => app.emit_to(target_str, name, payload),
         IpcEvent::RemotePairingPending => app.emit_to(target_str, name, ()),
+        IpcEvent::RemotePairedDevicesChanged => app.emit_to(target_str, name, ()),
     }
 }
 

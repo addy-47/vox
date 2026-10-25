@@ -21,4 +21,5 @@ export * from "./HighlightMatch";
 export * from "./ContextMenuShell";
 export * from "./TabStrip";
 export * from "./SearchBarShell";
+export * from "./ConfirmModal";
 

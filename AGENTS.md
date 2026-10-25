@@ -55,8 +55,6 @@ Only paths with non-obvious rules that agents cannot infer from the codebase ind
 
 **Zero Backward Compatibility (ZBC):** Break, replace, or redesign existing interfaces when that produces the better architecture. Never introduce compatibility layers or legacy paths.
 
-**Pre-exploration:** Before any codebase exploration, architecture lookup, graph query, or broad search — read `.agents/rules/codebase-memory-mcp.md` and follow its graph-first workflow.
-
 **Local Turso CLI:**
 ```bash
 tursodb ~/.vox/vox.db "SELECT name FROM sqlite_master WHERE type='table';"

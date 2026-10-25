@@ -31,6 +31,7 @@ export interface RemoteStoreState {
   failureKind: RemoteFailureKind | null;
   connectedPeer: ConnectedPeer | null;
   pendingPairingPrompt: RemotePairingRequestedPayload | null;
+  isPairingModalOpen: boolean;
   isPairingPending: boolean;
   pairedDevices: PairedDeviceDto[];
   commandRouting: Record<string, CommandClass>;
@@ -40,6 +41,8 @@ export interface RemoteStoreState {
   init: () => Promise<UnlistenFn>;
   hydrate: () => Promise<void>;
   pairNewDevice: () => Promise<PairNewDeviceDto>;
+  openPairingModal: () => void;
+  closePairingModal: () => void;
   approvePairing: (decision: "Approve" | "Reject") => Promise<void>;
   dismissPairingPrompt: () => void;
   listPairedDevices: () => Promise<PairedDeviceDto[]>;
@@ -55,6 +58,7 @@ export const useRemoteStore = create<RemoteStoreState>((set, get) => ({
   failureKind: null,
   connectedPeer: null,
   pendingPairingPrompt: null,
+  isPairingModalOpen: false,
   isPairingPending: false,
   pairedDevices: [],
   commandRouting: {},
@@ -105,10 +109,15 @@ export const useRemoteStore = create<RemoteStoreState>((set, get) => ({
       set({ isPairingPending: true });
     });
 
+    const unlistenPairedChanged = await listen("remote_paired_devices_changed", () => {
+      void get().listPairedDevices();
+    });
+
     return () => {
       unlistenState();
       unlistenPrompt();
       unlistenPending();
+      unlistenPairedChanged();
     };
   },
 
@@ -155,14 +164,22 @@ export const useRemoteStore = create<RemoteStoreState>((set, get) => ({
     return apiPairNewDevice();
   },
 
+  openPairingModal: () => {
+    set({ isPairingModalOpen: true });
+  },
+
+  closePairingModal: () => {
+    set({ isPairingModalOpen: false, pendingPairingPrompt: null });
+  },
+
   approvePairing: async (decision: "Approve" | "Reject") => {
     await apiApprovePairing(decision);
-    set({ pendingPairingPrompt: null });
+    set({ pendingPairingPrompt: null, isPairingModalOpen: false });
     await get().listPairedDevices();
   },
 
   dismissPairingPrompt: () => {
-    set({ pendingPairingPrompt: null });
+    set({ pendingPairingPrompt: null, isPairingModalOpen: false });
   },
 
   listPairedDevices: async () => {

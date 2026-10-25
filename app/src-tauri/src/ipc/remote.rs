@@ -109,12 +109,17 @@ pub async fn list_paired_devices(
 pub async fn revoke_device(
     device_id: String,
     state: State<'_, Arc<AppState>>,
+    app_handle: tauri::AppHandle,
 ) -> Result<(), VoxIpcError> {
     state
         .remote_manager
         .revoke_device(&state.db, &device_id)
         .await
         .map_err(VoxIpcError::from)?;
+    let _ = crate::core::events::emit_ipc(
+        &app_handle,
+        crate::core::events::IpcEvent::RemotePairedDevicesChanged,
+    );
     Ok(())
 }
 

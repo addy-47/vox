@@ -1,11 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { render, screen, cleanup, act } from "@testing-library/react";
-import { PairingModal } from "@/shared/components/remote/PairingModal";
+import { PairingModal, _resetCachedQrDetails } from "@/shared/components/remote/PairingModal";
 import { useRemoteStore } from "@/store/remoteStore";
 
 describe("PairingModal DOM suite", () => {
   beforeEach(() => {
     vi.useFakeTimers();
+    _resetCachedQrDetails();
   });
 
   afterEach(() => {
@@ -141,55 +142,58 @@ describe("PairingModal DOM suite", () => {
     clearIntervalSpy.mockRestore();
   });
 
-  it("renders redesigned security authorization dialog when pendingPairingPrompt is active", async () => {
+  it("transitions in-place to AuthorizeDeviceContent when pendingPairingPrompt is received", async () => {
+    const mockPairNewDevice = vi.fn().mockResolvedValue({
+      payload: "{}",
+      qrDataUrl: "data:image/svg+xml;base64,PHN2Zz50ZXN0PC9zdmc+",
+      expiresAt: Date.now() + 120_000,
+    });
     const mockApprovePairing = vi.fn().mockResolvedValue(undefined);
+
     useRemoteStore.setState({
-      pendingPairingPrompt: {
-        deviceId: "dev_phone_999",
-        displayName: "Ada's Pixel",
-      },
+      pairNewDevice: mockPairNewDevice,
+      linkState: "Disconnected",
+      pendingPairingPrompt: null,
       approvePairing: mockApprovePairing,
     });
 
-    render(<PairingModal open={true} onClose={vi.fn()} />);
+    const onClose = vi.fn();
+    render(<PairingModal open={true} onClose={onClose} />);
 
-    expect(screen.getByText("Authorize Remote Controller")).toBeTruthy();
-    expect(screen.getByText("Ada's Pixel")).toBeTruthy();
-    expect(screen.getByText("Fingerprint: dev_phone_999")).toBeTruthy();
-    expect(screen.getByText("Granted Controller Privileges")).toBeTruthy();
-    expect(screen.getByText("Audio Streaming")).toBeTruthy();
-    expect(screen.getByText("Session Steering")).toBeTruthy();
-    expect(screen.getByText("Push-to-Talk")).toBeTruthy();
-    expect(screen.getByText("Telemetry Sync")).toBeTruthy();
-
-    const authorizeBtn = screen.getByRole("button", { name: /Authorize Device/i });
-    const declineBtn = screen.getByRole("button", { name: /Decline/i });
-    expect(authorizeBtn).toBeTruthy();
-    expect(declineBtn).toBeTruthy();
-
-    // Click Authorize Device
     await act(async () => {
-      authorizeBtn.click();
-    });
-    expect(mockApprovePairing).toHaveBeenCalledWith("Approve");
-  });
-
-  it("authorizes when Enter key is pressed during pending authorization", async () => {
-    const mockApprovePairing = vi.fn().mockResolvedValue(undefined);
-    useRemoteStore.setState({
-      pendingPairingPrompt: {
-        deviceId: "dev_phone_999",
-        displayName: "Ada's Pixel",
-      },
-      approvePairing: mockApprovePairing,
+      await Promise.resolve();
     });
 
-    render(<PairingModal open={true} onClose={vi.fn()} />);
+    // Initially in QR view
+    expect(screen.getByText("Pair Mobile Controller")).toBeTruthy();
+    expect(screen.getByAltText("Remote Pairing QR Code")).toBeTruthy();
 
+    // Host receives remote_pairing_requested
     act(() => {
-      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+      useRemoteStore.setState({
+        pendingPairingPrompt: {
+          deviceId: "phone_123",
+          displayName: "Ada's Pixel",
+        },
+      });
+      vi.advanceTimersByTime(250);
+    });
+
+    // Transitions in-place to Authorize Remote Device view
+    expect(screen.getByText("Authorize Remote Device")).toBeTruthy();
+    expect(screen.getByText("THIS DEVICE CAN")).toBeTruthy();
+    expect(screen.getByText("Stream microphone audio")).toBeTruthy();
+    expect(
+      screen.getByText("Ada's Pixel is requesting permission to control Vox over your local Wi-Fi network.")
+    ).toBeTruthy();
+
+    // Approves from within the same modal
+    const approveBtn = screen.getByRole("button", { name: /Approve Connection/i });
+    await act(async () => {
+      approveBtn.click();
     });
 
     expect(mockApprovePairing).toHaveBeenCalledWith("Approve");
+    expect(onClose).toHaveBeenCalled();
   });
 });

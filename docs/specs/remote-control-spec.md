@@ -36,6 +36,7 @@ The spec is written to survive the addition of new transports (off-LAN, relay), 
 | **US-RC-08** | As a user on the laptop, I want to browse the session history, settings, and memory panels normally with every mutating control disabled, so that the phone's view stays authoritative and nothing on the laptop can change what the phone is showing. |
 | **US-RC-09** | As a user with a lost phone, I want to revoke that device from the laptop's settings so it can never connect again. |
 | **US-RC-10** | As a developer adding a second transport, I want to implement only a new Connector that passes the existing conformance suite, with no changes to the gateway, audio adapters, or phone client. |
+| **US-RC-11** | As a user on either host or controller, I want to revoke a paired device with an explicit confirmation dialog, so that trust is permanently severed and the peer is informed immediately. |
 
 ---
 
@@ -102,6 +103,14 @@ flowchart LR
     Pipeline --> DB
 ```
 
+### 4.4 Three Distinct Operational Lanes
+
+Remote control operations are strictly partitioned into three independent lanes. Implementations MUST NOT bridge or conflate their lifecycles:
+
+1. **Lane 1: Device Pairing (Mutual Cryptographic Trust Setup).** A one-time setup exchange: QR scan $\to$ Noise handshake $\to$ Host Authorization Dialog $\to$ Mutual insertion of the peer into `paired_devices`. When `PairApproved` is exchanged, the pairing link terminates cleanly. Both peers remain in `Disconnected` (paired in local storage). Zero audio streaming or IPC steering links are attached during Lane 1.
+2. **Lane 2: Remote Connection (Live Streaming Session).** Explicitly triggered from the Home screen **Rocket button** (or explicit connect action). Uses stored `paired_devices` credentials to dial the peer, perform Noise handshake + `Hello` negotiation, bind the audio socket, and attach the active streaming session. Toggling or disconnecting Lane 2 terminates the active link and pauses the session while strictly preserving the device row in `paired_devices`.
+3. **Lane 3: Revocation (Mutual Cryptographic Invalidation).** Triggered from Settings on either the Host or Controller via a dedicated two-step confirmation modal (`<ConfirmModal>`). Deletes the device row from `paired_devices`. If currently connected, the revoking party MUST send `LinkLoss { reason: LinkLossReason::Revoked }` before closing the transport link, ensuring the peer immediately purges its own local pairing row and halts reconnection loops.
+
 ---
 
 ## 5. Identity & Security
@@ -165,7 +174,8 @@ sequenceDiagram
     L->>P: PairApproved { host_identity } (post-Noise, encrypted)
     L->>L: Insert PairedPeer role=controller into paired_devices
     P->>P: Insert PairedPeer role=host into local paired_devices
-    Note over L,P: Pairing complete — proceed to Hello
+    L->>P: Clean link close (LinkCloseReason::Local)
+    Note over L,P: Pairing complete (Lane 1 terminates). Both devices are paired in local database and remain Disconnected. Proceeding to live audio/control streaming (Lane 2) requires explicit initiation via the Home Rocket button.
 ```
 
 > [!IMPORTANT]
@@ -229,16 +239,22 @@ Hints are connection candidates, not identity. The hint array MUST be updated on
 
 An unknown `kind` in the JSON array MUST round-trip without data loss (forward compat for relay hints).
 
-### 5.6 Revocation
+### 5.6 Revocation (Lane 3)
 
-Revocation MUST:
-1. Delete the device's row from `paired_devices`.
-2. Close any open connection from that device immediately.
-3. Take effect without restarting the app.
+Revocation is mutual and permanent. Either peer (Host or Controller) may initiate revocation from its Settings surface.
 
-After revocation, any connection attempt from that device MUST be rejected. The connection state machine MUST enter `Failed(Revoked)` as a terminal state (no retry).
+**Revocation UX & Invariants:**
+1. **Mandatory Two-Step Confirmation Modal:** Revocation MUST require explicit confirmation through a dedicated centered dialog (`<ConfirmModal>`) per Image 2 reference. In-place inline toggles or persistent layout gaps in card headers/rows are strictly forbidden.
+2. **Local Credential Purge:** The initiating peer deletes the device's row from its local `paired_devices` table and emits an IPC `remote_paired_devices_changed` event.
+3. **Active Connection Severance & Notification:** If an active streaming connection exists with the revoked peer, the initiating peer MUST send `LinkLoss { reason: LinkLossReason::Revoked }` before closing the transport link.
+4. **Peer Revocation Handling:** On receiving `LinkLoss(Revoked)`, the peer MUST:
+   - Immediately purge the revoking device from its local `paired_devices` table.
+   - Transition `RemoteLinkState` to `Failed { kind: RemoteFailureKind::RejectedByHost, failure: "Device pairing was revoked" }` as a terminal state.
+   - Halt all reconnection backoff loops immediately (no reconnect retries).
+   - Emit `remote_paired_devices_changed` so its local UI returns to the unpaired discovery state.
+5. **Rejection of Future Connections:** Any subsequent connection attempt from a revoked identity MUST be rejected immediately during `Hello` negotiation with `UnknownPeer`.
 
-**Revocation is permanent. It is not the same operation as a host-initiated disconnect** (§6.6), which ends the current link and keeps the pairing. Revocation is for a device that is lost or should never connect again; a host-initiated disconnect is for a device that should stop connecting *now* and be allowed back later.
+**Revocation is permanent. It is not the same operation as a disconnect** (§6.4, §6.6), which ends the current streaming link and keeps the pairing. Revocation is for a device that is lost, unlinked, or should never connect again; a disconnect is for a device that should stop streaming *now* and be allowed back later.
 
 ---
 
@@ -334,6 +350,23 @@ On a host-initiated disconnect the host MUST:
 > [!NOTE]
 > **Amended from the original draft.** The original draft gave the host exactly two ways to end a controller's participation: wait for the controller to disconnect, or revoke the device permanently. A user whose phone is on the sofa next to the laptop had no way to take the session back without destroying the pairing. Revocation remains available and is the correct action for a **lost** device.
 
+### 6.7 Transparent Error Classification & UX Messaging
+
+Generic, blanket network errors (such as "Please check your Wi-Fi") MUST NOT be thrown when the underlying failure reason is identifiable. The client MUST classify errors transparently:
+
+| Failure Mode | Root Cause | Client UX Guidance |
+| :--- | :--- | :--- |
+| `LinkRefused(not_accepting)` | Host settings disable remote | "Your laptop is not accepting remote connections." |
+| `LinkRefused(host_busy)` | Host has active desktop session | "Your laptop is in a session right now." |
+| `LinkRefused(controller_attached)`| Another phone is connected | "Another device is already connected." |
+| `UnknownPeer` | Stored credentials missing | "This device is not paired with your laptop." |
+| `VersionMismatch` | Incompatible app versions | "Update the app on your laptop." |
+| `LinkLoss(revoked)` | Pair trust severed | "Device pairing was revoked." |
+| `ConnectionRefused` / `Offline` | Host app not running or firewall | "Laptop is offline or Vox is not running." |
+| `SubnetSplit` / `VpnBlocked` | VPN route isolation | "Cannot reach laptop. Check if a VPN is isolating devices." |
+| `Timeout` | Packets dropped on LAN | "Connection timed out. Host did not respond." |
+| `Unknown` | Unclassified socket error | "Unable to connect: [specific error details]." |
+
 ---
 
 ## 7. Wire Protocol
@@ -408,7 +441,7 @@ On receiving the peer's `Hello`:
 | `Disconnect` | Controller → Host | Control | Intentional disconnect. Host pauses session. |
 | `Ping` | Host → Controller | Control | Liveness probe. Fields: `seq`. Sent every 2 seconds. |
 | `Pong` | Controller → Host | Control | Liveness response. Fields: `seq` (echoed). Must be sent within 1 second. |
-| `LinkLoss` | Host → Controller | Control | Host closing connection due to pause, idle, or an explicit host-initiated disconnect. Fields: `reason` (`host_paused` \| `host_idle` \| `host_disconnected`). |
+| `LinkLoss` | Host → Controller | Control | Host closing connection due to pause, idle, explicit disconnect, or revocation. Fields: `reason` (`host_paused` \| `host_idle` \| `host_disconnected` \| `revoked`). |
 | `VersionMismatch` | Both | Control | Sent before close when Hello version is incompatible. |
 | `UnknownPeer` | Host → Controller | Control | Sent before close when device_id is not in paired_devices. |
 | `RoleNotPermitted` | Host → Controller | Control | Sent before close when peer role contradicts stored role. |
