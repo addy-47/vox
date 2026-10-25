@@ -20,12 +20,74 @@ Android work was re-homed to Phase 13.
 
 ---
 
+## Past Work (2026-10-25)
+
+- **Remote Control Modal Alignment & In-Place Flow Refinement (2026-10-25):**
+  1. *Authorize Remote Device Modal Visual Polish (`AuthorizeDeviceModal.tsx`)*:
+     - Aligned layout, typography, and spacing to reference image: breathable padding (`p-6 sm:p-8 md:p-9`), spacious 4-item permission list with generous vertical rhythm, and zero synthetic inner cards on the right column.
+     - Re-implemented high-fidelity vector illustration: phone with pulsing cyan core, dashed communication beam, laptop with dual radiating radar circles, Vox center orb, and beveled keyboard deck using Vox Liquid Space tokens.
+     - Standardized action buttons: 48px comfortable height, full-width balanced row with glass Deny button and elevated cyan Approve button with focus and active states.
+  2. *PairingModal Natural Sizing & Transition Cleanup (`PairingModal.tsx`, `App.tsx`, `RemoteDeskPanel.tsx`)*:
+     - Removed artificial `min-h` container restrictions from `PairingModal` in QR mode, restoring tight `fitContent` geometry and eliminating awkward bottom whitespace.
+     - Maintained seamless in-place transition to `AuthorizeDeviceContent` upon receiving `pendingPairingPrompt` without opening conflicting duplicate modals or breaking z-index layering.
+     - Unified pairing modal triggers in `RemoteDeskPanel.tsx` via `openPairingModal` in `remoteStore.ts` and root `<GlobalPairingModal />` in `App.tsx`.
+  3. *Verification*:
+     - Verified: `./scripts/verify-targets.sh` clean (0 warnings / 0 errors across backend invariants, desktop binary, benchmarks, and Android cross-target).
+     - Verified: Vitest DOM and unit suites passing (15/15 tests across `PairingModal.dom.test.tsx`, `AuthorizeDeviceModal.dom.test.tsx`, and `remoteStore.test.ts`; 183/183 across full unit test suite).
+
 ## Past Work (2026-10-23)
 
 - **Android Gradle Kotlin Compilation Fix (`MainActivity.kt`):**
   - *Root Cause*: `MainActivity.onCreate` in `gen/android/app/src/main/java/com/addy/Vox/MainActivity.kt` invoked `PluginManager.onActivityCreate(this)`, which does not exist in Tauri 2's `PluginManager` API, triggering Kotlin compile error `Unresolved reference: onActivityCreate`.
   - *Resolution*: Removed `PluginManager.onActivityCreate(this)` and the unused import. `TauriActivity.onCreate(savedInstanceState)` already calls `PluginManager.onCreate(this)` via `super.onCreate(savedInstanceState)`. Verified via `./gradlew :app:compileUniversalDebugKotlin` (`BUILD SUCCESSFUL in 5s`).
 
+
+- **Remote Control 3-Lane Architecture Decoupling, Spec Realignment, & UI Redesign (2026-10-25):**
+  1. *Spec Realignment (`docs/specs/remote-control-spec.md`)*:
+     - Formally partitioned remote operations into three strictly decoupled operational lanes (§4.4): Lane 1 (Device Pairing), Lane 2 (Live Streaming Session), and Lane 3 (Revocation).
+     - Fixed sequence diagram in §5.3: Replaced erroneous `Note over L,P: Pairing complete — proceed to Hello` with clean link termination in `Disconnected` state (`LinkCloseReason::Local`).
+     - Updated §5.6 (Revocation) and §7.3 (Wire Protocol) to specify bidirectional revocation, mandatory two-step confirmation modal (`<ConfirmModal>`), and active peer notification via `LinkLossReason::Revoked`.
+     - Added §6.7 (Transparent Error Classification & UX Messaging), eliminating generic "check your Wi-Fi" messages in favor of root-cause messaging (`LinkRefused`, `UnknownPeer`, `VersionMismatch`, `SubnetSplit`, `Timeout`).
+  2. *Backend Architectural Decoupling (`listener.rs`, `manager.rs`, `messages.rs`, `events.rs`, `ipc/remote.rs`)*:
+     - Added `LinkLossReason::Revoked` variant and `IpcEvent::RemotePairedDevicesChanged`.
+     - In `listener.rs`, replaced `complete_pairing_and_attach` with `complete_pairing`: upon user approval, inserts peer into `paired_devices`, sends `PairApproved`, cleanly closes link with `LinkCloseReason::Local`, and emits `RemotePairedDevicesChanged` without attaching the stream link.
+     - In `manager.rs` (`dial_and_connect`), decoupled the first-time pairing path (`token.is_some()`): stores host in `paired_devices`, closes link cleanly, and leaves state in `Disconnected` without running `exchange_hello` or `attach_link`.
+     - In `manager.rs` (`revoke_device`), severs active connection with explicit `LinkLossReason::Revoked` wire notification.
+  3. *High-Fidelity UI Redesign & Flicker Elimination*:
+     - Implemented `app/src/shared/components/remote/AuthorizeDeviceModal.tsx` matching reference Image 3: 2-column layout with 4 permission rows, SVG Phone $\leftrightarrow$ Laptop wireless illustration with radiating radar waves, auto-expire countdown timer, and glass Deny / cyan pill Approve buttons.
+     - Implemented reusable `app/src/shared/ui/ConfirmModal.tsx` matching reference Image 2 for destructive confirmations.
+     - Eliminated multi-frame loading flicker in `PairingModal.tsx` by initializing `loading: true` on initial mount and stripping out inline authorization clutter.
+     - Redesigned `RemoteDeskPanel.tsx` to eliminate layout holes and wire `<ConfirmModal>` for device revocation.
+     - Redesigned `ControllerRemoteDeskPanel.tsx`: displays Host identity on left, SVG trigger with `Host Connected` / `Host Paired` and subtle red `Click to revoke` triggering `<ConfirmModal>` on right.
+     - Decoupled `RocketButton.tsx` to strictly manage Lane 2 (initiates live connection to paired host without requiring QR scan).
+  4. *Automated Verification*:
+     - Added DOM test suite `AuthorizeDeviceModal.dom.test.tsx` (5 tests passing).
+     - Verified: `pnpm tsc --noEmit` clean (0 errors), `pnpm test:dom` clean (8 files, 43 tests passing), `pnpm test:unit` clean (20 files, 183 tests passing), and `pnpm lint:arch` clean (0 violations).
+
+- **Remote Control Connection Flow RCA & End-to-End Restoration (2026-10-25):**
+  1. *Root Cause Analysis*:
+     - In `session/listener.rs` and `session/manager.rs`, the pairing completion handler prematurely closed the active TCP link (`ws_link.close`) and set the Controller state directly to `Disconnected` upon `PairApproved`. This prevented the protocol from completing `exchange_hello` and `attach_link`, which left the Controller hanging indefinitely in `connecting: true` inside `QrScannerModal.tsx`.
+     - In `session/manager.rs`, when the Controller attempted to reconnect via `RocketButton.tsx` (using `deviceId` rather than an explicit `IP:port` address string), the dialing logic attempted `ws://<deviceId>`, failing name resolution immediately.
+     - `AuthorizeDeviceModal` was previously mounted locally within `RemoteDeskPanel.tsx`, making the host approval dialog invisible whenever the settings drawer was not active on the desktop.
+  2. *Architectural & Runtime Fixes*:
+     - Restored `complete_pairing_and_attach` in `listener.rs` and `manager.rs`, ensuring `exchange_hello` and `attach_link` execute immediately upon mutual `PairApproved` signaling. Both devices transition to `RemoteLinkState::Connected` as required by the connection contract.
+     - Updated `dial_and_connect` in `manager.rs` to persist the host connection address into `paired_devices.hints` upon pairing approval, and resolve stored hints automatically whenever a caller provides a target `deviceId` without an explicit port.
+     - Mounted `GlobalAuthorizeDeviceModal` globally in `App.tsx` ensuring incoming pairing prompts trigger Image 3's authorization dialog across all active screens.
+  3. *Automated Verification*:
+     - `pnpm tsc --noEmit`: 0 errors.
+     - `pnpm test:dom`: 8/8 test files passed (43/43 tests passing).
+     - `pnpm test:unit`: 20/20 test files passed (183/183 tests passing).
+     - `pnpm lint:arch`: 0 violations.
+
+- **ConfirmModal Standalone Surface & Controller Remote Desk Distillation (2026-10-25):**
+  1. *ConfirmModal Single-Surface Refactor (`ConfirmModal.tsx`)*: Completely rebuilt `ConfirmModal` as an un-nested, standalone portal overlay directly matching Antigravity design spec (Image 2). Removed the generic `Modal` wrapper which was causing transparency bugs (`--surface` missing token), double borders, scrollbars, and inner frame clipping. Provided a solid matte graphite card (`#1b1b20`), border-white/10, top-right `X` close button, and clean right-aligned Cancel and Destructive action buttons.
+  2. *Controller Remote Desk Distillation (`ControllerRemoteDeskPanel.tsx`)*: Redesigned Controller Remote Desk panel to eliminate confusing copy and redundant status text when paired with a desktop host. Left side displays standard section header, live pulsing or calm status indicator dot, host display name, IP address, and concise description ("Live session active. Wireless mic and speaker streaming." or "Paired over local Wi-Fi. Tap the rocket icon on home to stream."). Right side replaces the makeshift button with a dedicated `HostGlyphButton` matching `ScannerGlyphButton` geometry: custom SVG desktop monitor with signal rings, uppercase font-mono status tag (`CONNECTED` or `PAIRED`), and subtle red `Revoke` trigger calling `ConfirmModal`.
+  3. *PairingModal Zero-Flicker & Smooth Transition Guarantee (`PairingModal.tsx`, `RemoteDeskPanel.tsx`)*: Eliminated the jarring modal height pop by permanently mounting the two-column grid from frame 0 and placing the `<OrbitalLoader>` inside the QR placeholder box rather than replacing the modal body. Mounted `<PairingModal>` directly in `RemoteDeskPanel.tsx` so `AnimatePresence` manages smooth enter and exit. Added an 800ms smooth transition timer before closing on `Connected` to prevent sudden snaps.
+  4. *Automated Verification*:
+     - `pnpm tsc --noEmit`: 0 errors.
+     - `pnpm test:dom`: 8/8 test files passed (43/43 tests passing).
+     - `pnpm test:unit`: 20/20 test files passed (183/183 tests passing).
+     - `pnpm lint:arch`: 0 violations across all architecture invariants.
 
 - **Frontend Design Spec De-bloating, Three-Layer Governance & Performance Invariant Hardening (2026-10-25):**
   1. *Design System Streamlining (`DESIGN.md` in root & `docs/specs/design-spec.md`)*: Copied authoritative design document to repository root `DESIGN.md` per `impeccable` standard agent discovery conventions, while preserving `docs/specs/design-spec.md` as mirrored contract. Audited file against `create-spec` Step 2 ("Decide what earns a place"), pruning 167 lines of low-level brittle JSX strings, exact Tailwind classes, and pixel coordinates from Section 5.2 (Navigation Tabs), Section 7.1 (Logo Loader), and Section 13 (Gesture Contract / Overlay Grammar). Removed §7.3 ("Warm-Nav Data Caches") completely as a service data architecture leak. Transformed component-specific mockups (Voice Cloning card, Speech models modal, History compaction button coordinates) into durable, reusable invariants for Overlay Tiers (0–3), FILO Dismissal, Master-Detail hierarchy, and Mutual Exclusion.

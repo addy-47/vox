@@ -294,8 +294,8 @@ export const Home = memo(() => {
           </div>
         )}
         {isRemoteBlocked && (
-          <div className="flex items-center text-[9.5px] font-mono font-bold tracking-[0.25em] uppercase text-[rgb(var(--accent))] leading-none mb-1 animate-in fade-in duration-200">
-            <span>● Remote</span>
+          <div className="flex items-center text-[9.5px] font-mono font-semibold tracking-[0.25em] uppercase text-[rgba(var(--foreground),0.65)] leading-none mb-1 animate-in fade-in duration-200">
+            <span>REMOTE</span>
           </div>
         )}
         <DynamicStatusBadge

@@ -247,7 +247,15 @@ async fn handle_inbound_pairing<R: Runtime>(
     }
 
     if let PairingOutcome::Approved { peer: _ } = pending.settle().await {
-        complete_pairing_and_attach(ws_link, claimed_req, pubkey_bytes, host_id, state).await;
+        complete_pairing_and_attach(
+            ws_link,
+            claimed_req,
+            pubkey_bytes,
+            host_id,
+            state,
+            app_handle,
+        )
+        .await;
     } else {
         let _ = ws_link
             .send_control(ControlMessage::PairDenied(PairDenied {
@@ -257,12 +265,13 @@ async fn handle_inbound_pairing<R: Runtime>(
     }
 }
 
-async fn complete_pairing_and_attach(
+async fn complete_pairing_and_attach<R: Runtime>(
     ws_link: WsLink,
     claimed_req: PairRequest,
     pubkey_bytes: Vec<u8>,
     host_id: DeviceId,
     state: Arc<AppState>,
+    app_handle: AppHandle<R>,
 ) {
     if let Ok(conn) = state.db.connect() {
         let _ = insert_paired_device(
@@ -301,6 +310,9 @@ async fn complete_pairing_and_attach(
             .attach_link(Arc::new(ws_link), peer_hello.sender_identity)
             .await;
     }
+
+    // Notify local frontend that paired devices changed
+    let _ = emit_ipc(&app_handle, IpcEvent::RemotePairedDevicesChanged);
 }
 
 async fn handle_inbound_hello(ws_link: WsLink, peer_hello: Hello, state: Arc<AppState>) {

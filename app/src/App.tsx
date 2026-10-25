@@ -42,6 +42,7 @@ const preloadRouteChunks = () => {
 import { Home } from "@/pages/Home";
 import { PageDrawerProvider } from "@/shared/context/PageDrawerContext";
 import { initSpatialNavigation } from "@/shared/lib/spatialNavigation";
+import { PairingModal } from "@/shared/components/remote/PairingModal";
 
 // Lazy load secondary pages for performance
 const History = lazy(() => import("@/pages/History").then(m => ({ default: m.History })));
@@ -67,6 +68,11 @@ const PageLoader = () => (
     </div>
   </DelayedFallback>
 );
+
+const GlobalPairingModal = React.memo(() => {
+  return <PairingModal />;
+});
+GlobalPairingModal.displayName = "GlobalPairingModal";
 
 const App: React.FC = () => {
   const [setupCompleted, setSetupCompleted] = useState<boolean | null>(null);
@@ -516,6 +522,8 @@ const App: React.FC = () => {
                     </div>
                   </div>
                 )}
+
+                <GlobalPairingModal />
               </div>
               </MotionConfig>
             </Router>

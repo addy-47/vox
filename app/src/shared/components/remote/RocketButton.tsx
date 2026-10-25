@@ -1,6 +1,7 @@
-import { memo, useState, useCallback, useEffect, useRef } from "react";
-import { Rocket, Check, X } from "lucide-react";
+import { memo, useState, useCallback } from "react";
+import { Rocket } from "lucide-react";
 import { Tooltip } from "@/shared/ui/Tooltip";
+import { ConfirmModal } from "@/shared/ui/ConfirmModal";
 import { useRemoteStore } from "@/store/remoteStore";
 import { isRealMobileDevice } from "@/layout/breakpoints";
 import { QrScannerModal } from "./QrScannerModal";
@@ -10,44 +11,25 @@ import { cn } from "@/shared/lib/utils";
  * Header Rocket Button 🚀
  * Controller (mobile): Always visible. Dials host or disconnects.
  * Host (desktop): Hidden until `linkState === "Connected"`.
- * Two-step unboxed inline transition for disconnect with 5-second auto-revert.
+ * Clicking on Host opens ConfirmModal before disconnecting.
  */
 export const RocketButton = memo(() => {
   const linkState = useRemoteStore((s) => s.linkState);
   const connectedPeer = useRemoteStore((s) => s.connectedPeer);
+  const pairedDevices = useRemoteStore((s) => s.pairedDevices);
   const disconnectDevice = useRemoteStore((s) => s.disconnectDevice);
   const disconnectHost = useRemoteStore((s) => s.disconnectHost);
+  const connectHost = useRemoteStore((s) => s.connectHost);
 
   const isMobile = isRealMobileDevice();
   const isConnected = linkState === "Connected";
   const isConnecting = linkState === "Connecting" || linkState === "Reconnecting";
+  const pairedHost = pairedDevices.find((d) => d.role === "host") ?? pairedDevices[0] ?? null;
 
   const [isConfirming, setIsConfirming] = useState(false);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
-  const revertTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const clearRevertTimer = useCallback(() => {
-    if (revertTimerRef.current !== null) {
-      clearTimeout(revertTimerRef.current);
-      revertTimerRef.current = null;
-    }
-  }, []);
-
-  const handleStartConfirm = useCallback(() => {
-    setIsConfirming(true);
-    clearRevertTimer();
-    revertTimerRef.current = setTimeout(() => {
-      setIsConfirming(false);
-    }, 5000);
-  }, [clearRevertTimer]);
-
-  const handleCancelConfirm = useCallback(() => {
-    clearRevertTimer();
-    setIsConfirming(false);
-  }, [clearRevertTimer]);
 
   const handleConfirmHostDisconnect = useCallback(async () => {
-    clearRevertTimer();
     setIsConfirming(false);
     if (connectedPeer?.deviceId) {
       try {
@@ -56,7 +38,7 @@ export const RocketButton = memo(() => {
         console.warn("[RocketButton] disconnectDevice error:", e);
       }
     }
-  }, [connectedPeer, disconnectDevice, clearRevertTimer]);
+  }, [connectedPeer, disconnectDevice]);
 
   const handleControllerClick = useCallback(async () => {
     if (isConnected) {
@@ -65,70 +47,55 @@ export const RocketButton = memo(() => {
       } catch (e) {
         console.warn("[RocketButton] disconnectHost error:", e);
       }
+    } else if (pairedHost) {
+      try {
+        await connectHost({ deviceId: pairedHost.deviceId });
+      } catch (e) {
+        console.warn("[RocketButton] connectHost error:", e);
+      }
     } else {
       setIsScannerOpen(true);
     }
-  }, [isConnected, disconnectHost]);
+  }, [isConnected, pairedHost, disconnectHost, connectHost]);
 
   const handleCloseScanner = useCallback(() => {
     setIsScannerOpen(false);
   }, []);
-
-  useEffect(() => {
-    return () => clearRevertTimer();
-  }, [clearRevertTimer]);
 
   // Host: Hidden unless Connected
   if (!isMobile && !isConnected) {
     return null;
   }
 
-  // Host (Desktop): Two-step unboxed inline disconnect
+  // Host (Desktop): Rocket icon opens ConfirmModal on click
   if (!isMobile) {
-    if (isConfirming) {
-      return (
-        <div className="inline-flex items-center gap-1.5 h-8 animate-fade-in shrink-0">
-          <span className="text-[11px] font-bold tracking-wide text-[rgb(var(--accent))] select-none whitespace-nowrap">
-            Disconnect remote
-          </span>
-          <div className="flex items-center gap-0.5">
-            <Tooltip label="Confirm disconnect" side="bottom">
-              <button
-                type="button"
-                onClick={() => void handleConfirmHostDisconnect()}
-                className="p-1 text-[rgb(var(--danger))] hover:text-[rgb(var(--danger))] hover:scale-115 transition-all cursor-pointer"
-                aria-label="Confirm disconnect"
-              >
-                <Check size={13} strokeWidth={2.5} />
-              </button>
-            </Tooltip>
-            <Tooltip label="Cancel" side="bottom">
-              <button
-                type="button"
-                onClick={handleCancelConfirm}
-                className="p-1 text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))] hover:scale-115 transition-all cursor-pointer"
-                aria-label="Cancel disconnect"
-              >
-                <X size={13} strokeWidth={2} />
-              </button>
-            </Tooltip>
-          </div>
-        </div>
-      );
-    }
-
     const peerName = connectedPeer?.displayName ?? "Remote Controller";
     return (
-      <Tooltip label={`Connected to ${peerName}`} side="bottom">
-        <button
-          type="button"
-          onClick={handleStartConfirm}
-          className="inline-flex items-center justify-center w-8 h-8 rounded-xl border border-[rgba(var(--accent),0.5)] bg-[rgba(var(--accent),0.12)] text-[rgb(var(--accent))] shadow-[0_0_12px_rgba(var(--accent),0.2)] hover:bg-[rgba(var(--accent),0.2)] transition-all shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))] cursor-pointer animate-pulse-slow"
-          aria-label={`Remote connected: ${peerName}. Click to disconnect.`}
-        >
-          <Rocket size={14} strokeWidth={1.75} />
-        </button>
-      </Tooltip>
+      <>
+        <Tooltip label={`Connected to ${peerName} (Click to disconnect)`} side="bottom">
+          <button
+            type="button"
+            onClick={() => setIsConfirming(true)}
+            className="inline-flex items-center justify-center w-8 h-8 rounded-xl border border-[rgba(var(--accent),0.5)] bg-[rgba(var(--accent),0.12)] text-[rgb(var(--accent))] shadow-[0_0_12px_rgba(var(--accent),0.2)] hover:bg-[rgba(var(--accent),0.2)] transition-all shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))] cursor-pointer animate-pulse-slow"
+            aria-label={`Remote connected: ${peerName}. Click to disconnect.`}
+          >
+            <Rocket size={14} strokeWidth={1.75} />
+          </button>
+        </Tooltip>
+
+        {isConfirming && (
+          <ConfirmModal
+            open={isConfirming}
+            title="Disconnect Remote Controller"
+            description={`Disconnect session with "${peerName}"? You can reconnect anytime.`}
+            confirmLabel="Disconnect"
+            cancelLabel="Cancel"
+            isDestructive={true}
+            onConfirm={handleConfirmHostDisconnect}
+            onCancel={() => setIsConfirming(false)}
+          />
+        )}
+      </>
     );
   }
 
@@ -158,9 +125,6 @@ export const RocketButton = memo(() => {
             strokeWidth={1.75}
             className={cn(isConnecting && "animate-spin text-[rgb(var(--accent))]")}
           />
-          {isConnected && (
-            <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-[rgb(var(--success))] ring-1 ring-[rgb(var(--background))]" />
-          )}
         </button>
       </Tooltip>
 

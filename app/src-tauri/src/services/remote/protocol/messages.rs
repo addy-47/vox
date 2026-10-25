@@ -145,6 +145,8 @@ pub enum LinkLossReason {
     HostIdle,
     /// The host disconnected the controller on purpose.
     HostDisconnected,
+    /// Device pairing was permanently revoked.
+    Revoked,
 }
 
 /// A host-initiated close, sent before the link is closed.

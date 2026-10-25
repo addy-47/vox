@@ -234,14 +234,20 @@ impl RemoteSessionManager {
 
         let link_opt = self.link.write().await.take();
         if let Some(link) = link_opt {
-            match self.role {
-                SessionRole::Host => {
-                    let _ = link
-                        .send_control(ControlMessage::LinkLoss(LinkLoss { reason }))
-                        .await;
-                }
-                SessionRole::Controller => {
-                    let _ = link.send_control(ControlMessage::Disconnect).await;
+            if reason == LinkLossReason::Revoked {
+                let _ = link
+                    .send_control(ControlMessage::LinkLoss(LinkLoss { reason }))
+                    .await;
+            } else {
+                match self.role {
+                    SessionRole::Host => {
+                        let _ = link
+                            .send_control(ControlMessage::LinkLoss(LinkLoss { reason }))
+                            .await;
+                    }
+                    SessionRole::Controller => {
+                        let _ = link.send_control(ControlMessage::Disconnect).await;
+                    }
                 }
             }
             let _ = link.close(LinkCloseReason::Local).await;
@@ -281,7 +287,7 @@ impl RemoteSessionManager {
             .map(|p| p.device_id == device_id)
             .unwrap_or(false);
         if is_current {
-            let _ = self.disconnect(LinkLossReason::HostDisconnected).await;
+            let _ = self.disconnect(LinkLossReason::Revoked).await;
         }
         Ok(deleted)
     }
@@ -299,10 +305,36 @@ impl RemoteSessionManager {
     ) -> Result<(), LinkError> {
         self.set_state(RemoteLinkState::Connecting);
 
-        let url = if target.starts_with("ws://") || target.starts_with("wss://") {
-            target
+        // If target does not contain an address/port, resolve from paired_devices hints
+        let dial_target = if !target.contains(':') {
+            if let Ok(conn) = db.connect() {
+                if let Ok(Some(device)) =
+                    crate::persistence::paired_devices::get_paired_device(&conn, &target).await
+                {
+                    if let Some(hint_val) = device.hints.first() {
+                        if let Some(addr_str) = hint_val.get("addr").and_then(|v| v.as_str()) {
+                            addr_str.to_string()
+                        } else {
+                            target
+                        }
+                    } else {
+                        target
+                    }
+                } else {
+                    target
+                }
+            } else {
+                target
+            }
         } else {
-            format!("ws://{target}")
+            target
+        };
+
+        let dial_target_for_hint = dial_target.clone();
+        let url = if dial_target.starts_with("ws://") || dial_target.starts_with("wss://") {
+            dial_target
+        } else {
+            format!("ws://{dial_target}")
         };
 
         let ws_link = match crate::services::remote::link::ws::dial(&url).await {
@@ -419,6 +451,7 @@ impl RemoteSessionManager {
                             .to_string()
                     });
 
+                    let host_hint = dial_target_for_hint.clone();
                     if let Ok(conn) = db.connect() {
                         let _ = crate::persistence::paired_devices::insert_paired_device(
                             &conn,
@@ -428,7 +461,7 @@ impl RemoteSessionManager {
                                 display_name: "Vox Host".to_string(),
                                 role: crate::persistence::paired_devices::PairedDeviceRole::Host,
                                 trust_level: "full".to_string(),
-                                hints: vec![],
+                                hints: vec![serde_json::json!({ "addr": host_hint })],
                             },
                         )
                         .await;
