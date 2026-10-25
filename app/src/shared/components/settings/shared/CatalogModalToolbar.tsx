@@ -54,23 +54,35 @@ const CatalogModalFilterPopover = memo(function CatalogModalFilterPopover({
   useEffect(() => {
     const anchor = anchorRef.current;
     if (!anchor) return;
+    let rafId = 0;
+    const last = { top: 0, left: 0, width: 0 };
     const place = () => {
-      const r = anchor.getBoundingClientRect();
-      const margin = 8;
-      const width = Math.min(260, window.innerWidth - margin * 2);
-      const left = Math.max(margin, Math.min(r.left, window.innerWidth - width - margin));
-      setStyle({
-        position: "fixed",
-        top: r.bottom + 6,
-        left,
-        width,
-        maxHeight: Math.max(160, window.innerHeight - r.bottom - 6 - margin),
+      if (rafId) return;
+      rafId = requestAnimationFrame(() => {
+        rafId = 0;
+        const r = anchor.getBoundingClientRect();
+        const margin = 8;
+        const width = Math.min(260, window.innerWidth - margin * 2);
+        const left = Math.max(margin, Math.min(r.left, window.innerWidth - width - margin));
+        const top = r.bottom + 6;
+        if (last.top === top && last.left === left && last.width === width) return;
+        last.top = top;
+        last.left = left;
+        last.width = width;
+        setStyle({
+          position: "fixed",
+          top,
+          left,
+          width,
+          maxHeight: Math.max(160, window.innerHeight - r.bottom - 6 - margin),
+        });
       });
     };
     place();
     window.addEventListener("resize", place);
     window.addEventListener("scroll", place, true);
     return () => {
+      if (rafId) cancelAnimationFrame(rafId);
       window.removeEventListener("resize", place);
       window.removeEventListener("scroll", place, true);
     };
@@ -104,6 +116,12 @@ export const CatalogModalToolbar = memo(function CatalogModalToolbar({
   const popoverRef = useRef<HTMLDivElement | null>(null);
 
   const filterOpen = filter?.open ?? false;
+
+  useOverlay({
+    active: (search.value?.length ?? 0) > 0,
+    onClose: () => search.onChange(""),
+    dismissOnOutside: false,
+  });
 
   useOverlay({
     active: filterOpen,

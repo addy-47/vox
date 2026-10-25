@@ -5,6 +5,7 @@ import { useSettingsStore } from "@/store/settingsStore";
 import { useCatalogStore } from "@/store/catalogStore";
 import { useVoiceCatalog, useVoiceScope } from "@/shared/hooks/useVoiceCatalog";
 import { CatalogFacetRail, type CatalogFacetGroup } from "../shared/CatalogFacetRail";
+import { CatalogModalShell } from "../shared/CatalogModalShell";
 import { EngineFlowBanner } from "./EngineFlowBanner";
 import { VoiceModal } from "./voices/VoiceModal";
 import { TtsEngineGrid, type TtsEngineGridProps } from "./TtsEngineGrid";
@@ -73,27 +74,24 @@ export const TtsModelsModal = memo(
     ];
 
     return (
-      <div className="flex flex-col flex-1 min-h-0 gap-4">
-        <div className="flex flex-1 min-h-0 gap-4">
-          <div className="w-36 sm:w-44 shrink-0">
-            <CatalogFacetRail
-              groups={groups}
-              selectedId={facet}
-              onSelect={(id) => setFacet(id as Facet)}
-            />
-          </div>
-          <TtsEngineGrid
-            {...gridProps}
-            facet={facet}
-            variant="cards"
-            className="flex-1 min-h-0"
-            onPickVoice={onPickEngine}
+      <CatalogModalShell
+        facetRail={
+          <CatalogFacetRail
+            groups={groups}
+            selectedId={facet}
+            onSelect={(id) => setFacet(id as Facet)}
           />
-        </div>
-        {/* Same placement as the voice preview banner: pinned under the list,
-            never above it, so the catalog keeps the top of the viewport. */}
-        <EngineFlowBanner engineName={engineName} />
-      </div>
+        }
+        footer={<EngineFlowBanner engineName={engineName} />}
+      >
+        <TtsEngineGrid
+          {...gridProps}
+          facet={facet}
+          variant="cards"
+          className="flex-1 min-h-0"
+          onPickVoice={onPickEngine}
+        />
+      </CatalogModalShell>
     );
   }
 );

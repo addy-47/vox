@@ -3,7 +3,7 @@ import { cn } from "@/shared/lib/utils";
 import { CatalogSkeletonGrid } from "./CatalogSkeletonGrid";
 
 export interface CatalogModalShellProps {
-  toolbar: React.ReactNode;
+  toolbar?: React.ReactNode;
   facetRail?: React.ReactNode;
   scrollRef?: React.RefObject<HTMLDivElement | null>;
   footer?: React.ReactNode;
@@ -33,7 +33,7 @@ export const CatalogModalShell = memo(function CatalogModalShell({
 }: CatalogModalShellProps) {
   return (
     <div className="flex flex-col h-full min-h-0 gap-3">
-      {toolbar}
+      {toolbar ? toolbar : null}
 
       <div className="flex flex-1 min-h-0 gap-4 overflow-hidden">
         {/* Desktop Left Rail: 200px fixed width, hidden below lg (1024px) */}

@@ -215,6 +215,126 @@ const CustomServerInPlaceCard = memo(({
 CustomServerInPlaceCard.displayName = "CustomServerInPlaceCard";
 
 /**
+ * Inline catalog custom-server card (language card providers face).
+ * Distilled variant: no header, no labels, underline inputs, confirm tick +
+ * cancel cross sit inline with the name input on the top line.
+ */
+interface CustomServerInlineCardProps {
+  name: string;
+  url: string;
+  apiKey: string;
+  isSaving: boolean;
+  unhealthyReason: string | null;
+  onNameChange: (val: string) => void;
+  onUrlChange: (val: string) => void;
+  onKeyChange: (val: string) => void;
+  onSave: () => void;
+  onCancel: () => void;
+}
+
+const CustomServerInlineCard = memo(({
+  name,
+  url,
+  apiKey,
+  isSaving,
+  unhealthyReason,
+  onNameChange,
+  onUrlChange,
+  onKeyChange,
+  onSave,
+  onCancel,
+}: CustomServerInlineCardProps) => {
+  return (
+    <div
+      onClick={(e) => e.stopPropagation()}
+      className="group relative flex w-full flex-col select-none rounded-xl border border-[rgba(var(--accent),0.35)] bg-[rgba(var(--card),0.85)] p-3 shadow-md transition-all duration-200 animate-fade-in"
+    >
+      {/* Top row: name input + confirm tick + cancel cross */}
+      <div className="flex items-center gap-2">
+        <input
+          autoFocus
+          type="text"
+          value={name}
+          onChange={(e) => onNameChange(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") onSave();
+            if (e.key === "Escape") onCancel();
+          }}
+          placeholder={PROVIDERS_CONFIG_DESK_COPY.llm.server.namePlaceholderAuto}
+          aria-label={PROVIDERS_CONFIG_DESK_COPY.llm.server.nameLabel}
+          className="flex-1 text-[12px] font-medium bg-transparent outline-none border-b border-[rgba(var(--foreground),0.12)] focus:border-[rgb(var(--accent))] text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40 transition-colors"
+        />
+        <button
+          type="button"
+          disabled={isSaving || !url.trim()}
+          onClick={(e) => {
+            e.stopPropagation();
+            onSave();
+          }}
+          className="p-1 rounded text-[rgb(var(--accent))] hover:opacity-75 transition-opacity cursor-pointer disabled:opacity-40"
+          aria-label={PROVIDERS_CONFIG_DESK_COPY.llm.server.saveServer}
+        >
+          {isSaving ? (
+            <Loader2 size={13} className="animate-spin" />
+          ) : (
+            <Check size={13} strokeWidth={2.5} />
+          )}
+        </button>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onCancel();
+          }}
+          className="p-1 rounded text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors cursor-pointer"
+          aria-label={LANGUAGE_CARD_COPY.cancel}
+        >
+          <X size={13} strokeWidth={2.25} />
+        </button>
+      </div>
+
+      {/* Remaining underline inputs */}
+      <div className="flex flex-col gap-2 py-2 w-full">
+        <input
+          type="text"
+          value={url}
+          onChange={(e) => onUrlChange(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") onSave();
+            if (e.key === "Escape") onCancel();
+          }}
+          placeholder={PROVIDERS_CONFIG_DESK_COPY.llm.server.urlPlaceholder}
+          aria-label="Endpoint URL"
+          className="w-full text-[11.5px] font-mono bg-transparent outline-none border-b border-[rgba(var(--foreground),0.12)] focus:border-[rgb(var(--accent))] text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40 transition-colors"
+        />
+
+        <input
+          type="password"
+          value={apiKey}
+          onChange={(e) => onKeyChange(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") onSave();
+            if (e.key === "Escape") onCancel();
+          }}
+          placeholder={PROVIDERS_CONFIG_DESK_COPY.llm.server.apiKeyPlaceholder}
+          aria-label={PROVIDERS_CONFIG_DESK_COPY.llm.server.apiKeyLabel}
+          className="w-full text-[11.5px] font-mono bg-transparent outline-none border-b border-[rgba(var(--foreground),0.12)] focus:border-[rgb(var(--accent))] text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40 transition-colors"
+        />
+      </div>
+
+      {unhealthyReason && (
+        <div className="mb-2 p-1.5 rounded-lg bg-[rgba(var(--danger),0.08)] border border-[rgba(var(--danger),0.2)] text-[11px] text-[rgb(var(--danger))] flex items-center gap-1.5">
+          <AlertCircle size={12} className="shrink-0" />
+          <span className="truncate">{unhealthyReason}</span>
+        </div>
+      )}
+    </div>
+  );
+});
+
+CustomServerInlineCard.displayName = "CustomServerInlineCard";
+
+/**
  * The language card's first face.
  *
  * One scroller. Ready providers sit at the top in full strength, the saved one
@@ -751,7 +871,7 @@ export const ProviderGrid = memo(({ onOpenModels, onExpand }: ProviderGridProps)
           return {
             key: `server:${server.id}`,
             node: (
-              <CustomServerInPlaceCard
+              <CustomServerInlineCard
                 key={`server-edit:${server.id}`}
                 name={serverName}
                 url={serverUrl}
@@ -927,7 +1047,7 @@ export const ProviderGrid = memo(({ onOpenModels, onExpand }: ProviderGridProps)
   })();
 
   const addProviderNode = isCreatingServer ? (
-    <CustomServerInPlaceCard
+    <CustomServerInlineCard
       key="add-custom-server-form"
       name={serverName}
       url={serverUrl}

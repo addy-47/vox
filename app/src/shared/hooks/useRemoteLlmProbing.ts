@@ -18,7 +18,6 @@ export function useRemoteLlmProbing(
   const patchRemoteModelCapabilities = useCatalogStore((s) => s.patchCapabilities);
   const [probingMap, setProbingMap] = useState<Record<string, { status: 'idle' | 'testing' | 'success' | 'error'; capabilities?: ModelCapabilities; error?: string }>>({});
  
-  const capabilitiesCache = useCatalogStore((s) => s.capabilitiesCache);
   const mountedRef = useRef(true);
 
   useEffect(() => {
@@ -30,29 +29,15 @@ export function useRemoteLlmProbing(
 
   // Load disk capabilities cache and model catalog on initial mount
   useEffect(() => {
-    void useCatalogStore.getState().loadCapabilitiesCache();
+    if (Object.keys(useCatalogStore.getState().capabilitiesCache).length === 0) {
+      void useCatalogStore.getState().loadCapabilitiesCache();
+    }
     if (!useCatalogStore.getState().modelCatalog) {
       void useCatalogStore.getState().loadModelCatalog();
     }
   }, []);
 
-  // Sync disk capabilities cache into component state on mount / update.
-  // Cached entries render as previously measured, never as a fresh probe:
-  // freshness and provenance come from the capabilities themselves.
-  useEffect(() => {
-    if (capabilitiesCache && Object.keys(capabilitiesCache).length > 0) {
-      setProbingMap((prev) => {
-        const next = { ...prev };
-        for (const [_, caps] of Object.entries(capabilitiesCache)) {
-          const mId = caps.model_id;
-          if (!next[mId] || next[mId].status === "idle") {
-            next[mId] = { status: "success", capabilities: caps };
-          }
-        }
-        return next;
-      });
-    }
-  }, [capabilitiesCache]);
+  // Removed redundant capabilitiesCache -> probingMap clone effect; resolveCapabilities falls back to cache.
 
   const fetchRemoteModels = useCallback(async (force = false) => {
     if (!provider || provider.kind === "embedded" || !provider.base_url) return;

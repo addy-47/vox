@@ -157,7 +157,7 @@ export const Modal = memo(
               }}
               onKeyDown={handlePanelKeyDown}
               className={cn(
-                "relative flex flex-col rounded-2xl overflow-hidden glass-card border border-[rgba(var(--accent),0.24)] shadow-[0_0_40px_rgba(var(--accent),0.18),0_25px_60px_-15px_rgba(0,0,0,0.85)] [text-shadow:none] outline-none pointer-events-auto transform-gpu contain-paint",
+                "relative flex flex-col rounded-2xl overflow-hidden glass-card border border-[rgba(var(--accent),0.12)] [text-shadow:none] outline-none pointer-events-auto transform-gpu contain-paint",
                 // Responsive default: compact centered modal on mobile, capped on desktop.
                 // Leaves comfortable margins around the viewport (max-w-[calc(100vw-40px)] and max-h-[75vh])
                 // so it presents as a distinct floating dialog card rather than a full page.

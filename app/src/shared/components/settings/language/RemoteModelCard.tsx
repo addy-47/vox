@@ -71,7 +71,7 @@ export const RemoteModelCard = memo(({
         }
       }}
       className={cn(
-        "relative flex flex-col justify-between p-4 rounded-xl border transition-colors duration-150 select-none group cursor-pointer transform-gpu contain-paint",
+        "relative flex flex-col justify-between p-4 rounded-xl border transition-colors duration-150 select-none group cursor-pointer contain-paint",
         isSelected
           ? "bg-[rgba(var(--card),0.5)] border-[rgb(var(--accent))] shadow-[0_0_24px_rgba(var(--accent),0.16)] ring-1 ring-[rgb(var(--accent))]/30"
           : "bg-[rgba(var(--card),0.5)] border-[rgba(var(--foreground),0.06)] hover:border-[rgba(var(--accent),0.35)] hover:bg-[rgba(var(--card),0.85)]",

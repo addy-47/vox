@@ -160,7 +160,6 @@ export const LanguageCard = memo(({ layoutMode = "full-max" }: LanguageCardProps
               category="LLM"
               onNavigateToModels={() => {
                 setModalLevel("models");
-                setCardFace("models");
               }}
             />
           )

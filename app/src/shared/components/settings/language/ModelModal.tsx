@@ -38,13 +38,38 @@ export const ModelModal = memo(({
   const [sort, setSort] = useState<"az" | "za">("az");
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [isFilterDropdownOpen, setIsFilterDropdownOpen] = useState(false);
+  const [visibleCount, setVisibleCount] = useState(24);
 
   const { containerRef: scrollContainerRef, lenisRef, scrollToTop } = useLenisScrollContainer<HTMLDivElement>();
-  useScrollTopOnChange(scrollContainerRef, selectedModelId || pinnedModelId, lenisRef);
+  // Only glide to top when the COMMITTED model changes (never on draft click)
+  useScrollTopOnChange(scrollContainerRef, pinnedModelId, lenisRef);
 
+  const isFirstFilterRender = useRef(true);
   useEffect(() => {
+    setVisibleCount(24);
+    if (isFirstFilterRender.current) {
+      isFirstFilterRender.current = false;
+      return;
+    }
     scrollToTop();
-  }, [deferredSearch, filterCategory, sort, scrollToTop]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deferredSearch, filterCategory, sort]);
+
+  // Precompute resolved capabilities ONCE per model
+  const probedById = useMemo(() => {
+    const map = new Map<string, ModelCapabilities | undefined>();
+    for (const m of remoteModels) {
+      map.set(m.id, resolveCapabilities(m, probingMap, capabilitiesCache));
+    }
+    return map;
+  }, [remoteModels, probingMap, capabilitiesCache]);
+
+  const resolveProbed = useCallback(
+    (m: LlmModelInfo) => probedById.get(m.id),
+    [probedById]
+  );
+
+  const { favoriteModelIds, toggleFavorite, isFavorite } = useFavoriteModels();
 
   const copyTimer = useRef<number | null>(null);
   useEffect(() => () => {
@@ -59,12 +84,6 @@ export const ModelModal = memo(({
       copyTimer.current = window.setTimeout(() => setCopiedId(null), 1800);
     });
   }, []);
-
-  const { favoriteModelIds, toggleFavorite, isFavorite } = useFavoriteModels();
-
-  const resolveProbed = useCallback((m: LlmModelInfo) => {
-    return resolveCapabilities(m, probingMap, capabilitiesCache);
-  }, [probingMap, capabilitiesCache]);
 
   const { favoritesCount, benchmarkedCount, toolsCount, fastCount } = useMemo(() => {
     let favorites = 0;
@@ -104,7 +123,7 @@ export const ModelModal = memo(({
   const modalFilteredModels = useMemo(() => {
     const filtered = filterModels(remoteModels, {
       category: filterCategory,
-      favoriteIds: favoriteModelIds,
+      favoriteIds: filterCategory === "favorites" ? favoriteModelIds : undefined,
       resolveProbed,
       fuzzy: true,
     }, deferredSearch);
@@ -117,6 +136,19 @@ export const ModelModal = memo(({
       pinnedModelId
     );
   }, [remoteModels, deferredSearch, filterCategory, resolveProbed, pinnedModelId, sort, favoriteModelIds]);
+
+  useEffect(() => {
+    if (visibleCount >= modalFilteredModels.length) return;
+    const timer = window.setTimeout(() => {
+      setVisibleCount((prev) => Math.min(modalFilteredModels.length, prev + 36));
+    }, 180);
+    return () => window.clearTimeout(timer);
+  }, [visibleCount, modalFilteredModels.length]);
+
+  const visibleModels = useMemo(
+    () => modalFilteredModels.slice(0, visibleCount),
+    [modalFilteredModels, visibleCount]
+  );
 
   const toolbarNode = (
     <CatalogModalToolbar
@@ -201,7 +233,7 @@ export const ModelModal = memo(({
       emptyState={emptyStateNode}
     >
       <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3">
-        {modalFilteredModels.map((model) => {
+        {visibleModels.map((model) => {
           const isSelected = selectedModelId === model.id;
           const probed = resolveProbed(model);
           const probeState = probingMap[model.id];
