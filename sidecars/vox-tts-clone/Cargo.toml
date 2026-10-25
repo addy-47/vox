@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 description = "Voice cloning sidecar service for Vox (Chatterbox local GGUF)"
 authors = ["addy-47"]
+autoexamples = false
 
 [dependencies]
 chatterbox-rs = { git = "https://github.com/addy-47/chatterbox-rs.git", rev = "c9d17bd", default-features = false }

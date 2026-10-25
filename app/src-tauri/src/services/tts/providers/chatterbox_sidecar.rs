@@ -9,16 +9,9 @@ use std::{
 use anyhow::{anyhow, Result};
 
 use super::{speed_range, SynthesisContext, TtsProvider};
-use crate::{
-    core::events::AudioIntent,
-    services::{
-        audio::PlaybackEngine,
-        sidecar::{global_sidecar_supervisor, SidecarKind},
-        tts::{
-            ParamRange, ProviderCaps, TtsVoiceSource, MAX_SPEED, MIN_SPEED, TTS_CHUNK_SIZE,
-            TTS_SAMPLE_RATE,
-        },
-    },
+use crate::services::{
+    sidecar::{global_sidecar_supervisor, SidecarKind},
+    tts::{ParamRange, ProviderCaps, TtsVoiceSource, MAX_SPEED, MIN_SPEED, TTS_CHUNK_SIZE},
 };
 
 pub struct ChatterboxSidecarProvider {

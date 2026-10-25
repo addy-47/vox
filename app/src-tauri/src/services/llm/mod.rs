@@ -19,14 +19,17 @@ pub use catalog::{
 pub use config::{
     LlmActiveProvider, LlmCustomServer, LlmProvidersConfig, LlmRuntimeTarget, LlmSettings,
 };
-pub use sidecar::{SidecarLlmProvider, SidecarLlmProvider as EmbeddedProvider};
 pub use factory::{create_llm_provider, create_llm_provider_from_llm_settings};
 pub use provider::{
-    global_llama_backend, CanonicalToolCall, CanonicalToolDefinition, ConversationInput,
-    GenerationOptions, GenerationPurpose, GenerationRequest, LlmEngine, LlmError, LlmProvider,
-    LlmStreamEvent, OutputConstraint, ProviderCapabilities, ProviderKind, ReasoningMode, Support,
-    ToolFlow,
+    CanonicalToolCall, CanonicalToolDefinition, ConversationInput, GenerationOptions,
+    GenerationPurpose, GenerationRequest, LlmEngine, LlmError, LlmProvider, LlmStreamEvent,
+    OutputConstraint, ProviderCapabilities, ProviderKind, ReasoningMode, Support, ToolFlow,
 };
+pub use sidecar::{SidecarLlmProvider, SidecarLlmProvider as EmbeddedProvider};
+
+pub mod embedded {
+    pub use super::sidecar::SidecarLlmProvider as EmbeddedProvider;
+}
 pub use transport::{AuthScheme, ConnectionConfig, RemoteTransport, TransportType};
 
 pub const QWEN_MODEL_DIR: &str = "llm/qwen";

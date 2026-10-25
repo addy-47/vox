@@ -48,7 +48,7 @@ symphonia-core = "0.6.0"       # Symphonia core primitives
 sonora = "0.2.0"               # Pure-Rust WebRTC AEC3, NS, and AGC2 audio processing
 
 # ─── 3. ML Inference & Language Processing ──────────────────────────────────
-ort = { version = "2.0.0-rc.13", features = ["download-binaries", "ndarray"] }                # ONNX Runtime bindings (1.28; fixes ReshapeFusion SIGSEGV on MiniLM INT8)
+ort = { version = "=2.0.0-rc.13", features = ["download-binaries", "ndarray"] }                # ONNX Runtime bindings (1.28; fixes ReshapeFusion SIGSEGV on MiniLM INT8)
 ndarray = "0.17.2"                                                                            # N-dimensional array processing for ONNX tensors
 tokenizers = { version = "0.21.0", default-features = false, features = ["fancy-regex"] }    # HuggingFace tokenizers (BPE / WordPiece)
 tiktoken-rs = "0.6.0"                                                                         # OpenAI BPE tokenizer for context budgeting
@@ -129,6 +129,7 @@ tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-positioner = { path = "./plugins/tauri-plugin-positioner", features = ["tray-icon"] }
 arboard = { version = "3.4", features = ["wayland-data-control"] }
 enigo = { version = "0.2", default-features = false }
+libc = "0.2"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk = { version = "0.18", features = ["v3_24"] }
@@ -172,22 +173,7 @@ tauri = { version = "2", features = ["test"] }
 # exercised by advancing time rather than by waiting for it.
 tokio = { version = "1", features = ["test-util"] }
 
-[profile.dev]
-split-debuginfo = "unpacked"
-
-[profile.dev.package."*"]
-opt-level = 2
-debug = false
-
-[profile.release]
-opt-level = 3
-lto = false
-codegen-units = 16
-panic = "unwind"
-strip = false
-
-[[example]]
-name = "generate_simulation_dataset_clips"
+# ─── 11. Benches and Evals ─────────────────────────────────
 
 [[bench]]
 name = "stt_bench"

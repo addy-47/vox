@@ -21,8 +21,8 @@ pub mod core {
 
 pub mod services {
     pub mod audio {
-        use std::sync::Arc;
         use crate::core::events::AudioIntent;
+        use std::sync::Arc;
 
         pub struct PlaybackEngine {
             tx: tokio::sync::mpsc::Sender<Vec<f32>>,
@@ -75,7 +75,11 @@ pub mod services {
 }
 
 pub const fn speed_range(min: f32, max: f32) -> services::tts::ParamRange {
-    services::tts::ParamRange { min, max, step: 0.05 }
+    services::tts::ParamRange {
+        min,
+        max,
+        step: 0.05,
+    }
 }
 
 pub struct SynthesisContext<'a> {
@@ -88,7 +92,9 @@ pub struct SynthesisContext<'a> {
 }
 
 pub trait TtsProvider: Send + Sync {
-    fn caps() -> services::tts::ProviderCaps where Self: Sized;
+    fn caps() -> services::tts::ProviderCaps
+    where
+        Self: Sized;
     fn synthesize_chunk(&self, text: &str, ctx: &SynthesisContext<'_>) -> anyhow::Result<()>;
     fn set_speed(&self, speed: f32);
     fn health_check(&self) -> bool;

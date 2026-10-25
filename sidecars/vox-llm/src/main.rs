@@ -1,5 +1,5 @@
 use std::{
-    path::{Path, PathBuf},
+    path::PathBuf,
     sync::{mpsc, Arc},
 };
 
@@ -15,7 +15,6 @@ use axum::{
     Router,
 };
 use clap::Parser;
-use futures_util::stream::Stream;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
@@ -27,8 +26,8 @@ pub mod embedded;
 use embedded::EmbeddedProvider;
 use services::harness::{ChatMessage, Role};
 use services::llm::{
-    GenerationInput, GenerationOptions, GenerationPurpose, GenerationRequest, LlmError,
-    LlmProvider, LlmStreamEvent, OutputConstraint, ReasoningMode,
+    GenerationInput, GenerationOptions, GenerationPurpose, GenerationRequest, LlmProvider,
+    LlmStreamEvent, OutputConstraint, ReasoningMode,
 };
 
 #[derive(Parser, Debug)]
@@ -65,6 +64,7 @@ struct ChatCompletionMessage {
 }
 
 #[derive(Deserialize, Debug)]
+#[allow(dead_code)]
 struct ChatCompletionRequest {
     #[serde(default)]
     model: String,
@@ -173,7 +173,8 @@ async fn chat_completions_handler(
     });
 
     // 4. Stream response
-    let (sse_tx, sse_rx) = tokio::sync::mpsc::channel::<Result<Event, std::convert::Infallible>>(64);
+    let (sse_tx, sse_rx) =
+        tokio::sync::mpsc::channel::<Result<Event, std::convert::Infallible>>(64);
     tokio::task::spawn_blocking(move || {
         while let Ok(event) = rx.recv() {
             match event {
@@ -193,7 +194,7 @@ async fn chat_completions_handler(
                         let _ = sse_tx.blocking_send(Ok(Event::default().data(json_str)));
                     }
                 }
-                LlmStreamEvent::Finished { .. } => {
+                LlmStreamEvent::Finished => {
                     let _ = sse_tx.blocking_send(Ok(Event::default().data("[DONE]")));
                     break;
                 }
@@ -207,7 +208,9 @@ async fn chat_completions_handler(
     });
 
     let sse_stream = tokio_stream::wrappers::ReceiverStream::new(sse_rx);
-    Ok(Sse::new(sse_stream).keep_alive(KeepAlive::default()).into_response())
+    Ok(Sse::new(sse_stream)
+        .keep_alive(KeepAlive::default())
+        .into_response())
 }
 
 #[tokio::main]

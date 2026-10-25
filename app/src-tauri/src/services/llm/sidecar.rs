@@ -1,15 +1,13 @@
 use std::{
     fs::read_dir,
     path::{Path, PathBuf},
-    sync::{mpsc, Arc},
+    sync::mpsc,
 };
 
-use futures_util::future::BoxFuture;
-use futures_util::StreamExt;
+use futures_util::{future::BoxFuture, StreamExt};
 use serde_json::Value;
 
 use crate::services::{
-    harness::ConversationContext,
     llm::{
         GenerationRequest, LlmError, LlmModelInfo, LlmProvider, LlmStreamEvent,
         ProviderCapabilities, ProviderKind, Support,
@@ -63,10 +61,11 @@ impl SidecarLlmProvider {
                             models.push(LlmModelInfo {
                                 id: filename.to_string(),
                                 name: clean_name,
-                                description: format!("Local GGUF model: {}", filename),
-                                context_length: Some(4096),
                                 size_bytes,
-                                is_local: true,
+                                quantization: None,
+                                family: None,
+                                provider_kind: "embedded".to_string(),
+                                capabilities: None,
                             });
                         }
                     }
@@ -81,7 +80,7 @@ impl LlmProvider for SidecarLlmProvider {
     fn generate<'a>(
         &'a self,
         request: GenerationRequest,
-        turn_id: u32,
+        _turn_id: u32,
         cancel: &'a tokio_util::sync::CancellationToken,
         tx: &'a mpsc::Sender<LlmStreamEvent>,
     ) -> BoxFuture<'a, Result<(), LlmError>> {
@@ -150,8 +149,8 @@ impl LlmProvider for SidecarLlmProvider {
                     break;
                 }
 
-                let chunk = chunk_res
-                    .map_err(|e| LlmError::Engine(format!("SSE chunk error: {}", e)))?;
+                let chunk =
+                    chunk_res.map_err(|e| LlmError::Engine(format!("SSE chunk error: {}", e)))?;
                 let text = String::from_utf8_lossy(&chunk);
                 line_buf.push_str(&text);
 
@@ -162,11 +161,7 @@ impl LlmProvider for SidecarLlmProvider {
                     if let Some(data) = line.strip_prefix("data:") {
                         let trimmed = data.trim();
                         if trimmed == "[DONE]" {
-                            let _ = tx.send(LlmStreamEvent::Finished {
-                                finish_reason: Some("stop".to_string()),
-                                input_tokens: None,
-                                output_tokens: None,
-                            });
+                            let _ = tx.send(LlmStreamEvent::Finished);
                             return Ok(());
                         }
 
@@ -184,11 +179,7 @@ impl LlmProvider for SidecarLlmProvider {
                 }
             }
 
-            let _ = tx.send(LlmStreamEvent::Finished {
-                finish_reason: Some("stop".to_string()),
-                input_tokens: None,
-                output_tokens: None,
-            });
+            let _ = tx.send(LlmStreamEvent::Finished);
 
             Ok(())
         })

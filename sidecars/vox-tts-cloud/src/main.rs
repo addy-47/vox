@@ -1,9 +1,6 @@
 use std::{
     path::PathBuf,
-    sync::{
-        atomic::AtomicBool,
-        mpsc, Arc,
-    },
+    sync::{atomic::AtomicBool, mpsc, Arc},
 };
 
 use anyhow::Result;
@@ -59,7 +56,6 @@ struct GoogleVoicesReq {
 struct AzureSpeechReq {
     region_or_endpoint: String,
     voice: String,
-    #[serde(default)]
     key: String,
     resource_id: Option<String>,
     text: String,
@@ -71,7 +67,7 @@ async fn health_handler() -> impl IntoResponse {
 }
 
 async fn google_speech_handler(
-    State(_): State<AppState>,
+    State(_state): State<AppState>,
     Json(payload): Json<GoogleSpeechReq>,
 ) -> Result<Response, (StatusCode, String)> {
     let provider = GoogleTtsProvider::new(&payload.voice, payload.project_override.as_deref())
@@ -83,20 +79,19 @@ async fn google_speech_handler(
 
     let (pcm_tx, mut pcm_rx) = tokio::sync::mpsc::channel::<Vec<f32>>(32);
     let playback = services::audio::PlaybackEngine::new(pcm_tx);
-    let (event_tx, _event_rx) = mpsc::channel();
-    let cancel = Arc::new(AtomicBool::new(false));
-
-    let ctx = SynthesisContext {
-        turn_id: 1,
-        intent: core::events::AudioIntent::Speech,
-        cancel,
-        playback: &playback,
-        event_tx,
-        telemetry_rtf: None,
-    };
 
     let text = payload.text;
     tokio::task::spawn_blocking(move || {
+        let (event_tx, _event_rx) = mpsc::channel();
+        let cancel = Arc::new(AtomicBool::new(false));
+        let ctx = SynthesisContext {
+            turn_id: 1,
+            intent: core::events::AudioIntent::Speech,
+            cancel,
+            playback: &playback,
+            event_tx,
+            telemetry_rtf: None,
+        };
         let _ = provider.synthesize_chunk(&text, &ctx);
     });
 
@@ -127,51 +122,44 @@ async fn google_speech_handler(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
 }
 
-#[derive(serde::Serialize)]
-struct RemoteVoiceEntry {
-    name: String,
-    short_name: String,
-    gender: String,
-    locale: String,
-    friendly_name: String,
-}
-
 async fn google_voices_handler(
-    State(_): State<AppState>,
+    State(_state): State<AppState>,
     Json(payload): Json<GoogleVoicesReq>,
-) -> Result<Json<Vec<RemoteVoiceEntry>>, (StatusCode, String)> {
+) -> Result<impl IntoResponse, (StatusCode, String)> {
     let client = google_cloud_texttospeech_v1::client::TextToSpeech::builder()
         .build()
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
+    let mut voices = Vec::new();
     let regions = if payload.regions.is_empty() {
-        vec!["en-US".to_string(), "en-GB".to_string(), "en-AU".to_string(), "en-IN".to_string()]
+        vec!["en-US".to_string()]
     } else {
         payload.regions
     };
 
-    let mut voices = Vec::new();
     for region in regions {
-        if let Ok(resp) = client.list_voices().set_language_code(&region).send().await {
+        if let Ok(resp) = client.list_voices().set_language_code(region).send().await {
             for v in resp.voices {
-                if !v.name.contains("Chirp3-HD") {
+                if !v
+                    .name
+                    .contains(services::tts::GOOGLE_TTS_STREAMING_VOICE_INFIX)
+                {
                     continue;
                 }
                 let locale = v.language_codes.first().cloned().unwrap_or_default();
                 let style = v.name.rsplit('-').next().unwrap_or(&v.name).to_string();
-                let gender = match v.ssml_gender {
-                    google_cloud_texttospeech_v1::model::SsmlVoiceGender::Male => "male".to_string(),
-                    google_cloud_texttospeech_v1::model::SsmlVoiceGender::Female => "female".to_string(),
-                    _ => "neutral".to_string(),
-                };
-                voices.push(RemoteVoiceEntry {
-                    name: v.name.clone(),
-                    short_name: v.name,
-                    gender,
-                    locale: locale.clone(),
-                    friendly_name: format!("{style} ({locale})"),
-                });
+                voices.push(serde_json::json!({
+                    "name": v.name.clone(),
+                    "short_name": v.name,
+                    "gender": match v.ssml_gender {
+                        google_cloud_texttospeech_v1::model::SsmlVoiceGender::Male => "male",
+                        google_cloud_texttospeech_v1::model::SsmlVoiceGender::Female => "female",
+                        _ => "neutral",
+                    },
+                    "locale": locale.clone(),
+                    "friendly_name": format!("{} ({})", style, locale),
+                }));
             }
         }
     }
@@ -180,7 +168,7 @@ async fn google_voices_handler(
 }
 
 async fn azure_speech_handler(
-    State(_): State<AppState>,
+    State(_state): State<AppState>,
     Json(payload): Json<AzureSpeechReq>,
 ) -> Result<Response, (StatusCode, String)> {
     let provider = AzureTtsProvider::new(
@@ -197,20 +185,19 @@ async fn azure_speech_handler(
 
     let (pcm_tx, mut pcm_rx) = tokio::sync::mpsc::channel::<Vec<f32>>(32);
     let playback = services::audio::PlaybackEngine::new(pcm_tx);
-    let (event_tx, _event_rx) = mpsc::channel();
-    let cancel = Arc::new(AtomicBool::new(false));
-
-    let ctx = SynthesisContext {
-        turn_id: 1,
-        intent: core::events::AudioIntent::Speech,
-        cancel,
-        playback: &playback,
-        event_tx,
-        telemetry_rtf: None,
-    };
 
     let text = payload.text;
     tokio::task::spawn_blocking(move || {
+        let (event_tx, _event_rx) = mpsc::channel();
+        let cancel = Arc::new(AtomicBool::new(false));
+        let ctx = SynthesisContext {
+            turn_id: 1,
+            intent: core::events::AudioIntent::Speech,
+            cancel,
+            playback: &playback,
+            event_tx,
+            telemetry_rtf: None,
+        };
         let _ = provider.synthesize_chunk(&text, &ctx);
     });
 
@@ -264,23 +251,8 @@ async fn main() -> Result<()> {
                 std::fs::create_dir_all(parent)?;
             }
             let listener = tokio::net::UnixListener::bind(&socket_path)?;
-            tracing::info!("Listening on Unix domain socket: {:?}", socket_path);
-
-            loop {
-                let (stream, _) = listener.accept().await?;
-                let app = app.clone();
-                tokio::spawn(async move {
-                    let io = hyper_util::rt::TokioIo::new(stream);
-                    let service = tower::service_fn(move |req| {
-                        let mut app = app.clone();
-                        use tower::Service;
-                        async move { app.call(req).await }
-                    });
-                    let _ = hyper_util::server::conn::auto::Builder::new(hyper_util::rt::TokioExecutor::new())
-                        .serve_connection(io, service)
-                        .await;
-                });
-            }
+            println!("VOX_SIDECAR_READY socket={}", socket_path.display());
+            axum::serve(listener, app).await?;
         }
         #[cfg(not(unix))]
         {
@@ -289,7 +261,7 @@ async fn main() -> Result<()> {
     } else {
         let addr = format!("127.0.0.1:{}", args.port);
         let listener = tokio::net::TcpListener::bind(&addr).await?;
-        tracing::info!("Listening on TCP: {}", listener.local_addr()?);
+        println!("VOX_SIDECAR_READY port={}", listener.local_addr()?.port());
         axum::serve(listener, app).await?;
     }
 

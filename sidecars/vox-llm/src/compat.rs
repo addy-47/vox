@@ -1,7 +1,3 @@
-use std::sync::{mpsc, OnceLock};
-use llama_cpp_4::llama_backend::LlamaBackend;
-use serde::{Deserialize, Serialize};
-
 pub mod services {
     pub mod harness {
         use serde::{Deserialize, Serialize};
@@ -28,11 +24,11 @@ pub mod services {
     }
 
     pub mod llm {
-        use std::sync::{mpsc, OnceLock};
+        use super::harness::ConversationContext;
         use futures_util::future::BoxFuture;
         use llama_cpp_4::llama_backend::LlamaBackend;
         use serde::{Deserialize, Serialize};
-        use super::harness::ConversationContext;
+        use std::sync::{mpsc, OnceLock};
 
         pub const DEFAULT_BATCH_CHUNK_SIZE: usize = 512;
         pub const DEFAULT_MAX_GENERATION_SAFETY_TOKENS: usize = 512;
@@ -40,7 +36,8 @@ pub mod services {
         pub fn global_llama_backend() -> &'static LlamaBackend {
             static BACKEND: OnceLock<LlamaBackend> = OnceLock::new();
             BACKEND.get_or_init(|| {
-                let mut b = LlamaBackend::init().expect("Failed to initialize global llama.cpp backend");
+                let mut b =
+                    LlamaBackend::init().expect("Failed to initialize global llama.cpp backend");
                 b.void_logs();
                 b
             })
@@ -97,11 +94,7 @@ pub mod services {
         pub enum LlmStreamEvent {
             Token(String),
             Reasoning(String),
-            Finished {
-                finish_reason: Option<String>,
-                input_tokens: Option<u32>,
-                output_tokens: Option<u32>,
-            },
+            Finished,
             Error(String),
         }
 
