@@ -8,11 +8,20 @@ export type RemoteLinkState =
   | "Reconnecting"
   | "Failed";
 
+export type RemoteFailureKind =
+  | "timeout"
+  | "unreachable"
+  | "rejected_by_host"
+  | "invalid_token"
+  | "version_mismatch"
+  | "unknown";
+
 export type CommandClass = "Remote" | "Local" | "Split" | "Denied";
 
 export interface RemoteStateDto {
   link: RemoteLinkState;
   failure?: string;
+  failureKind?: RemoteFailureKind;
   deviceId?: string;
   displayName?: string;
 }
@@ -21,6 +30,7 @@ export interface PairNewDeviceDto {
   payload: string;
   qrDataUrl: string;
   expiresAt: number;
+  expiresAtMs: number;
 }
 
 export interface PairedDeviceDto {

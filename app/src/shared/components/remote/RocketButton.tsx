@@ -70,6 +70,10 @@ export const RocketButton = memo(() => {
     }
   }, [isConnected, disconnectHost]);
 
+  const handleCloseScanner = useCallback(() => {
+    setIsScannerOpen(false);
+  }, []);
+
   useEffect(() => {
     return () => clearRevertTimer();
   }, [clearRevertTimer]);
@@ -160,10 +164,12 @@ export const RocketButton = memo(() => {
         </button>
       </Tooltip>
 
-      <QrScannerModal
-        open={isScannerOpen}
-        onClose={() => setIsScannerOpen(false)}
-      />
+      {isScannerOpen && (
+        <QrScannerModal
+          open={isScannerOpen}
+          onClose={handleCloseScanner}
+        />
+      )}
     </>
   );
 });

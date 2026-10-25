@@ -297,7 +297,7 @@ async fn remote_connection_pairing_denial_transitions_to_failed() {
 
     // Assert controller transitioned to Failed state with denial reason
     match controller_manager.state() {
-        RemoteLinkState::Failed(msg) => {
+        RemoteLinkState::Failed { reason: msg, .. } => {
             assert!(
                 msg.contains("Pairing denied by host: User denied pairing"),
                 "Expected failure message containing denial reason, got: {msg}"
@@ -376,7 +376,7 @@ async fn remote_connection_pairing_timeout_transitions_to_failed() {
     );
 
     match controller_manager.state() {
-        RemoteLinkState::Failed(msg) => {
+        RemoteLinkState::Failed { reason: msg, .. } => {
             assert!(
                 msg.contains("timed out"),
                 "Expected failure message containing timeout, got: {msg}"

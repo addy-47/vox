@@ -6,8 +6,6 @@
 
 > 🛑 **POST-TASK HOOK: Record Work in `work_log.md`**
 > After every completed task, record your entry in `docs/plans/<current_phase>/work_log.md`.
-> **One bullet per work seam:** if your work extends an existing task or lane, update that bullet instead of appending a new one. Do not create new bullets for the same task.
-> [Skip for tasks with no lasting accountability: one-off lookups, read-only investigations, questions answered without touching files.]
 
 ---
 
@@ -32,7 +30,7 @@ Only paths with non-obvious rules that agents cannot infer from the codebase ind
 
 ## 3. Execution & Testing Invariants
 
-0. **Compile Gate:** Always:
+0. **Compile Gate:** Always use script below , never any shallow or ad-hoc cargo checks.
    ```bash
    cd app/src-tauri && ./scripts/verify-targets.sh
    ```
@@ -66,9 +64,9 @@ tursodb ~/.vox/vox.db "SELECT name FROM sqlite_master WHERE type='table';"
 
 ### 4.2 Code Modification Gate
 
-> 🛑 **Before touching code:** Read the corresponding style guide and engineer rule file in `.agents/rules/` for the area you are working on.
+> 🛑 **Before touching code:** Read the corresponding style guide and engineer rule file in `.agents/rules/` for the area you are working on.These are the hard rules that must be followed no matter the task you are working on. 
 >
-> **Android gate:** If the change touches `cpal`, tray/menu, dictation, `utils/paths.rs`, model loading, `Cargo.toml` target tables, or any `cfg(` — also read [`android-style-guide.md`](file:///home/addy/projects/apps/vox/.agents/rules/android-style-guide.md). Android support is incomplete; confirmed traps there have caused false "done" reports.
+> 🛑 **After modifying code:** Use the `/review` discipline to review the diff you have created and check if there are any violations with respect to the corresponding style guide and engineer rule file in `.agents/rules/` for the area you are working on.If there are reiterate until there are no violations.
 
 ---
 

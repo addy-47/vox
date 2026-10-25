@@ -1,7 +1,8 @@
-import { memo, useCallback } from "react";
+import { memo, useCallback, useMemo } from "react";
 import type { ReactElement } from "react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
+import { Tooltip } from "@/shared/ui/Tooltip";
 import { DIRTY_STATE_COPY } from "@/data/settingsCopy";
 
 /**
@@ -35,7 +36,7 @@ function PipelineTopologyMapInner<T extends string = string>({
   layoutMode,
   ariaLabel,
 }: PipelineTopologyMapProps<T>) {
-  const ids = nodes.map((n) => n.id);
+  const ids = useMemo(() => nodes.map((n) => n.id), [nodes]);
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       const currentIdx = ids.indexOf(activeTab);
@@ -94,10 +95,11 @@ function PipelineTopologyMapInner<T extends string = string>({
             )}
           >
             {isDirty && (
-              <span
-                title={DIRTY_STATE_COPY.category}
-                className="absolute top-2 right-2 w-1.5 h-1.5 rounded-full bg-[rgb(var(--warn-soft))] shadow-[0_0_6px_rgba(var(--warn-soft),0.8)] shrink-0"
-              />
+              <Tooltip label={DIRTY_STATE_COPY.category} side="top">
+                <span
+                  className="absolute top-2 right-2 w-1.5 h-1.5 rounded-full bg-[rgb(var(--warn-soft))] shadow-[0_0_6px_rgba(var(--warn-soft),0.8)] shrink-0"
+                />
+              </Tooltip>
             )}
             <Icon
               size={layoutMode === "small" ? 16 : 20}

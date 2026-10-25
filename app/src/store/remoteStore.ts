@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { listen, type UnlistenFn } from "@/services/transport";
 import {
   type RemoteLinkState,
+  type RemoteFailureKind,
   type RemoteStateDto,
   type PairNewDeviceDto,
   type PairedDeviceDto,
@@ -27,6 +28,7 @@ export interface ConnectedPeer {
 export interface RemoteStoreState {
   linkState: RemoteLinkState;
   failureReason: string | null;
+  failureKind: RemoteFailureKind | null;
   connectedPeer: ConnectedPeer | null;
   pendingPairingPrompt: RemotePairingRequestedPayload | null;
   isPairingPending: boolean;
@@ -50,6 +52,7 @@ export interface RemoteStoreState {
 export const useRemoteStore = create<RemoteStoreState>((set, get) => ({
   linkState: "Disconnected",
   failureReason: null,
+  failureKind: null,
   connectedPeer: null,
   pendingPairingPrompt: null,
   isPairingPending: false,
@@ -74,6 +77,7 @@ export const useRemoteStore = create<RemoteStoreState>((set, get) => ({
       set({
         linkState: dto.link,
         failureReason: dto.failure ?? null,
+        failureKind: dto.failureKind ?? null,
         connectedPeer: peer,
         ...(isTerminal ? { isPairingPending: false } : {}),
       });
@@ -134,6 +138,7 @@ export const useRemoteStore = create<RemoteStoreState>((set, get) => ({
       set({
         linkState: stateDto.link,
         failureReason: stateDto.failure ?? null,
+        failureKind: stateDto.failureKind ?? null,
         connectedPeer: peer,
         pairedDevices: devices,
         commandRouting: routing,

@@ -226,7 +226,7 @@ pub async fn dial(url: &str) -> Result<WsLink, LinkError> {
         .await
         .map_err(|_| {
             LinkError::Transport(
-                "Connection timed out. Ensure both devices are on the same Wi-Fi network.".into(),
+                "Connection timed out (8s limit). Host did not respond at target endpoint.".into(),
             )
         })?
         .map_err(|e| LinkError::Transport(e.to_string()))?;

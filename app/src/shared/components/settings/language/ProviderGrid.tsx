@@ -1,6 +1,6 @@
 import { memo, useMemo, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { AlertCircle, Check, Loader2, Plus, X } from "lucide-react";
+import { AlertCircle, Check, Loader2, Plus, Server, X } from "lucide-react";
 import { useSettingsStore, type LlmCustomServer } from "@/store/settingsStore";
 import { useCatalogStore } from "@/store/catalogStore";
 import {
@@ -12,7 +12,7 @@ import {
 } from "@/shared/lib/activeSelection";
 import { useExpandableList } from "@/shared/ui/ExpandableList";
 import { VoxLogoLoader } from "@/shared/components/common/VoxLogoLoader";
-import { LANGUAGE_CARD_COPY } from "@/data/settingsCopy";
+import { LANGUAGE_CARD_COPY, PROVIDERS_CONFIG_DESK_COPY } from "@/data/settingsCopy";
 import { Tooltip } from "@/shared/ui/Tooltip";
 import { probeProviderTarget } from "@/services/catalogService";
 import { ipcErrorMessage } from "@/shared/lib/ipcError";
@@ -57,6 +57,7 @@ interface CustomServerInPlaceCardProps {
   apiKey: string;
   isSaving: boolean;
   unhealthyReason: string | null;
+  title?: string;
   onNameChange: (val: string) => void;
   onUrlChange: (val: string) => void;
   onKeyChange: (val: string) => void;
@@ -70,6 +71,7 @@ const CustomServerInPlaceCard = memo(({
   apiKey,
   isSaving,
   unhealthyReason,
+  title = PROVIDERS_CONFIG_DESK_COPY.creationCard.addCustomServer,
   onNameChange,
   onUrlChange,
   onKeyChange,
@@ -79,84 +81,133 @@ const CustomServerInPlaceCard = memo(({
   return (
     <div
       onClick={(e) => e.stopPropagation()}
-      className="group relative flex w-full flex-col select-none rounded-xl border border-[rgba(var(--accent),0.35)] bg-[rgba(var(--foreground),0.035)] p-2.5 transition-colors"
+      className="group relative flex w-full flex-col select-none rounded-xl border border-[rgba(var(--accent),0.35)] bg-[rgba(var(--card),0.85)] p-3 shadow-md transition-all duration-200 animate-fade-in"
     >
-      {/* Top Row: Name Input + Action Buttons (No header text) */}
-      <div className="flex items-center justify-between gap-2 w-full">
-        <input
-          autoFocus
-          type="text"
-          value={name}
-          onChange={(e) => onNameChange(e.target.value)}
-          placeholder="Server name (e.g. Ollama, vLLM)"
-          aria-label="Server name"
-          className="min-w-0 flex-1 text-[13px] font-semibold pb-0.5 bg-transparent border-b border-[rgba(var(--foreground),0.15)] focus:border-[rgb(var(--accent))] outline-none text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40 transition-colors"
-        />
-        <div className="flex items-center gap-1 shrink-0">
-          <Tooltip label="Save Server" side="top" asChild>
-            <button
-              type="button"
-              disabled={isSaving || !url.trim()}
-              onClick={(e) => {
-                e.stopPropagation();
-                onSave();
+      {/* Header: Title with Server icon + Cancel/Close button */}
+      <div className="flex items-center justify-between pb-2 border-b border-[rgba(var(--foreground),0.07)] shrink-0">
+        <div className="flex items-center gap-1.5 min-w-0">
+          <Server size={14} className="text-[rgb(var(--accent))] shrink-0" />
+          <span className="text-[12px] font-bold text-[rgb(var(--foreground))] truncate">
+            {title}
+          </span>
+        </div>
+        <Tooltip label={LANGUAGE_CARD_COPY.cancel} side="top" asChild>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onCancel();
+            }}
+            className="p-1 rounded-md text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.08)] transition-colors cursor-pointer"
+            aria-label={LANGUAGE_CARD_COPY.cancel}
+          >
+            <X size={13} strokeWidth={2.25} />
+          </button>
+        </Tooltip>
+      </div>
+      {/* Input Fields: Structured, labeled, comfortable spacing */}
+      <div className="flex flex-col gap-2 py-2.5 w-full">
+        {/* Server Name Field */}
+        <div className="flex flex-col gap-0.5 w-full">
+          <label className="text-[9.5px] font-mono font-bold uppercase tracking-wider text-[rgb(var(--foreground-muted))]/75">
+            {PROVIDERS_CONFIG_DESK_COPY.llm.server.nameLabel}
+          </label>
+          <div className="flex items-center rounded-lg border border-[rgba(var(--foreground),0.1)] bg-[rgba(var(--foreground),0.03)] px-2.5 py-1.5 focus-within:border-[rgb(var(--accent))] transition-colors">
+            <input
+              autoFocus
+              type="text"
+              value={name}
+              onChange={(e) => onNameChange(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") onSave();
+                if (e.key === "Escape") onCancel();
               }}
-              className="p-1 rounded-md text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.14)] transition-colors cursor-pointer disabled:opacity-40"
-              aria-label="Save Server"
-            >
-              {isSaving ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} strokeWidth={2.5} />}
-            </button>
-          </Tooltip>
-          <Tooltip label={LANGUAGE_CARD_COPY.cancel} side="top" asChild>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                onCancel();
+              placeholder={PROVIDERS_CONFIG_DESK_COPY.llm.server.namePlaceholderAuto}
+              aria-label={PROVIDERS_CONFIG_DESK_COPY.llm.server.nameLabel}
+              className="w-full text-[12px] font-medium bg-transparent outline-none text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40"
+            />
+          </div>
+        </div>
+
+        {/* Endpoint URL Field */}
+        <div className="flex flex-col gap-0.5 w-full">
+          <label className="text-[9.5px] font-mono font-bold uppercase tracking-wider text-[rgb(var(--foreground-muted))]/75">
+            Endpoint URL
+          </label>
+          <div className="flex items-center rounded-lg border border-[rgba(var(--foreground),0.1)] bg-[rgba(var(--foreground),0.03)] px-2.5 py-1.5 focus-within:border-[rgb(var(--accent))] transition-colors">
+            <input
+              type="text"
+              value={url}
+              onChange={(e) => onUrlChange(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") onSave();
+                if (e.key === "Escape") onCancel();
               }}
-              className="p-1 rounded-md text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.08)] transition-colors cursor-pointer"
-              aria-label="Cancel"
-            >
-              <X size={13} strokeWidth={2.25} />
-            </button>
-          </Tooltip>
+              placeholder={PROVIDERS_CONFIG_DESK_COPY.llm.server.urlPlaceholder}
+              aria-label="Endpoint URL"
+              className="w-full text-[11.5px] font-mono bg-transparent outline-none text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40"
+            />
+          </div>
+        </div>
+
+        {/* API Key Field */}
+        <div className="flex flex-col gap-0.5 w-full">
+          <label className="text-[9.5px] font-mono font-bold uppercase tracking-wider text-[rgb(var(--foreground-muted))]/75">
+            {PROVIDERS_CONFIG_DESK_COPY.llm.server.apiKeyLabel}
+          </label>
+          <div className="flex items-center rounded-lg border border-[rgba(var(--foreground),0.1)] bg-[rgba(var(--foreground),0.03)] px-2.5 py-1.5 focus-within:border-[rgb(var(--accent))] transition-colors">
+            <input
+              type="password"
+              value={apiKey}
+              onChange={(e) => onKeyChange(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") onSave();
+                if (e.key === "Escape") onCancel();
+              }}
+              placeholder={PROVIDERS_CONFIG_DESK_COPY.llm.server.apiKeyPlaceholder}
+              aria-label={PROVIDERS_CONFIG_DESK_COPY.llm.server.apiKeyLabel}
+              className="w-full text-[11.5px] font-mono bg-transparent outline-none text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40"
+            />
+          </div>
         </div>
       </div>
 
-      {/* URL & Key Inputs: Minimal border-b inputs matching design spec */}
-      <div className="mt-2 flex flex-col gap-1.5 w-full">
-        <input
-          type="text"
-          value={url}
-          onChange={(e) => onUrlChange(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") onSave();
-            if (e.key === "Escape") onCancel();
-          }}
-          placeholder="http://localhost:11434"
-          aria-label="Server URL"
-          className="w-full text-[11.5px] font-mono pb-0.5 bg-transparent border-b border-[rgba(var(--foreground),0.12)] focus:border-[rgb(var(--accent))] outline-none text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40 transition-colors"
-        />
-        <input
-          type="password"
-          value={apiKey}
-          onChange={(e) => onKeyChange(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") onSave();
-            if (e.key === "Escape") onCancel();
-          }}
-          placeholder="API Key (optional)"
-          aria-label="API Key"
-          className="w-full text-[11.5px] font-mono pb-0.5 bg-transparent border-b border-[rgba(var(--foreground),0.12)] focus:border-[rgb(var(--accent))] outline-none text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40 transition-colors"
-        />
-      </div>
-
       {unhealthyReason && (
-        <p className="mt-1.5 text-[11px] text-[rgb(var(--danger))] flex items-center gap-1">
+        <div className="mb-2 p-1.5 rounded-lg bg-[rgba(var(--danger),0.08)] border border-[rgba(var(--danger),0.2)] text-[11px] text-[rgb(var(--danger))] flex items-center gap-1.5">
           <AlertCircle size={12} className="shrink-0" />
           <span className="truncate">{unhealthyReason}</span>
-        </p>
+        </div>
       )}
+
+      {/* Footer / Actions: Cancel and Save & Connect buttons */}
+      <div className="flex items-center justify-between pt-2 border-t border-[rgba(var(--foreground),0.07)] shrink-0">
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onCancel();
+          }}
+          className="px-2.5 py-1 rounded-md text-[11.5px] font-medium text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.06)] transition-colors cursor-pointer"
+        >
+          {LANGUAGE_CARD_COPY.cancel}
+        </button>
+        <button
+          type="button"
+          disabled={isSaving || !url.trim()}
+          onClick={(e) => {
+            e.stopPropagation();
+            onSave();
+          }}
+          className="inline-flex items-center gap-1 px-3 py-1 rounded-md bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] font-bold text-[11.5px] hover:opacity-90 active:scale-95 transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shadow-xs"
+        >
+          {isSaving ? (
+            <Loader2 size={12} className="animate-spin" />
+          ) : (
+            <Check size={12} strokeWidth={2.5} />
+          )}
+          <span>{isSaving ? PROVIDERS_CONFIG_DESK_COPY.llm.server.probingState : PROVIDERS_CONFIG_DESK_COPY.llm.server.save}</span>
+        </button>
+      </div>
     </div>
   );
 });

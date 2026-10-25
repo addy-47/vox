@@ -186,7 +186,7 @@ Remote control commands exist on both roles of the pair. **Host** commands are c
 
 | Command | Arguments | Return Shape | Behavioral Contract |
 | :--- | :--- | :--- | :--- |
-| `pair_new_device` | None | `{ payload: string, qrDataUrl: string, expiresAt: number }` | Mints a single-use pairing token (≥128 bits, 2-minute TTL, memory-only) and returns the encoded pairing payload plus a rendered QR. The token MUST be marked consumed before any approval is sent. |
+| `pair_new_device` | None | `{ payload: string, qrDataUrl: string, expiresAt: number, expiresAtMs: number }` | Mints a single-use pairing token (≥128 bits, 2-minute TTL, memory-only) and returns the encoded pairing payload plus a rendered QR. `expiresAtMs` provides standardized Unix epoch milliseconds. The token MUST be marked consumed before any approval is sent. |
 | `approve_pairing` | `decision: "Approve" \| "Reject"` | `void` | Answers the host pairing prompt modal when a phone completes the Noise handshake after scanning the QR code. On "Approve", the peer is saved to `paired_devices`. |
 | `list_paired_devices` | None | `Array<PairedDeviceDto>` | Returns the host's `paired_devices` rows (device id, display name, role, paired-at, last-seen-at, address hints) from Turso DB. |
 | `revoke_device` | `deviceId: string` | `void` | Permanently removes the pairing: deletes the row from Turso DB and closes any open link from that device. The device can never connect again. |
@@ -206,7 +206,7 @@ Remote control commands exist on both roles of the pair. **Host** commands are c
 
 | Type | Shape | Description |
 | :--- | :--- | :--- |
-| `RemoteStateDto` | `{ link: string, failure?: string, deviceId?: string, displayName?: string }` | The canonical remote link state. `link` is one of `Disabled`, `Disconnected`, `Connecting`, `Connected`, `Reconnecting`, `Failed`. `failure` is present only when `link === "Failed"`. `deviceId` and `displayName` identify the attached peer when there is one. |
+| `RemoteStateDto` | `{ link: string, failure?: string, failureKind?: string, deviceId?: string, displayName?: string }` | The canonical remote link state. `link` is one of `Disabled`, `Disconnected`, `Connecting`, `Connected`, `Reconnecting`, `Failed`. `failure` and `failureKind` (`"timeout"` \| `"unreachable"` \| `"rejected_by_host"` \| `"invalid_token"` \| `"version_mismatch"` \| `"unknown"`) are present only when `link === "Failed"`. `deviceId` and `displayName` identify the attached peer when there is one. |
 | `PairedDeviceDto` | `{ deviceId: string, displayName: string, role: string, pairedAt: number, lastSeenAt?: number, hints: Array<unknown> }` | A row of `paired_devices`. |
 | `CommandClass` | `"Remote" \| "Local" \| "Split" \| "Denied"` | The routing classification of a command or settings key. |
 
@@ -231,7 +231,7 @@ All backend events broadcast over the IPC bridge carry the following contracts:
 | `turn_metrics` | `{ turnId, ttftMs, ttfaMs, totalVoiceLatencyMs, contextTokensUsed, contextWindow }` | Milestone latencies and token usage for assistant turns. |
 | `sessions_changed` | `void` | Signals asynchronous session updates (e.g. title auto-generation). |
 | `settings_updated` | `void` | Signals settings hot-reload completion. |
-| `remote_state_changed` | `{ link: string, failure?: string, deviceId?: string, displayName?: string }` | The canonical remote link state changed. Emitted on every transition, on both the host and the controller. The backend owns this state and pushes it; the frontend MUST NOT poll for it. Supersedes the originally proposed `remote_device_connected` / `remote_device_disconnected` pair, which would force the frontend to reconstruct a state machine from two edges. |
+| `remote_state_changed` | `{ link: string, failure?: string, failureKind?: string, deviceId?: string, displayName?: string }` | The canonical remote link state changed. Emitted on every transition, on both the host and the controller. The backend owns this state and pushes it; the frontend MUST NOT poll for it. Supersedes the originally proposed `remote_device_connected` / `remote_device_disconnected` pair, which would force the frontend to reconstruct a state machine from two edges. |
 | `remote_pairing_requested` | `{ deviceId: string, displayName: string }` | An inbound pairing request completed the Noise handshake and passed token validation on the host. Triggers the Host Pairing Prompt Modal (`approve_pairing`). |
 
 ### 5.1 The `activity` Envelope Contract

@@ -435,6 +435,28 @@ export const REMOTE_CONTROL_COPY = {
   pairDeviceScreenPrompt: "Pair this device with your desktop screen to control Vox wirelessly.",
   enterIpManually: "Enter IP manually",
   linked: "Linked",
+  revokeConfirmPrompt: "Revoke?",
+  revokeConfirmAria: "Confirm revocation",
+  revokeCancelAria: "Cancel revocation",
+  disconnectConfirmPrompt: "Disconnect?",
+  disconnectConfirmAria: "Confirm disconnect",
+  disconnectCancelAria: "Cancel disconnect",
+  successTitleHost: "Controller Paired & Connected",
+  successSubtitleHost: (name: string) => `${name} is linked as remote controller.`,
+  successTitleController: "Connected to Desktop Host",
+  successSubtitleController: "Local microphone and speaker are ready.",
+  errorTimeout:
+    "Connection timed out. The computer did not respond. Check if both devices are on the same Wi-Fi and VPNs or firewalls are not blocking port 7700.",
+  errorUnreachable:
+    "Cannot reach desktop host. Ensure Vox is running on your computer.",
+  errorRejected:
+    "Pairing request was declined by the desktop host.",
+  errorInvalidToken:
+    "The pairing QR code has expired or is invalid. Please generate a new QR code on your computer.",
+  errorVersionMismatch:
+    "Protocol version mismatch between phone and computer.",
+  errorUnknown: (detail: string) => `Connection failed: ${detail}`,
+  errorGeneric: "Connection failed. Please check network and retry.",
 } as const;
 
 export const MEMORY_CARD_COPY = {

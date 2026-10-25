@@ -16,6 +16,8 @@ import { Modal } from "@/shared/ui/Modal";
 import { Tooltip } from "@/shared/ui/Tooltip";
 import { useRemoteStore } from "@/store/remoteStore";
 import { OrbitalLoader } from "@/shared/components/common";
+import { REMOTE_CONTROL_COPY } from "@/data/settingsCopy";
+import type { RemoteFailureKind } from "@/services/remoteService";
 import { cn } from "@/shared/lib/utils";
 
 interface ScannedQrPayload {
@@ -32,11 +34,57 @@ export interface QrScannerModalProps {
   defaultManual?: boolean;
 }
 
+const getErrorMessage = (
+  kind: RemoteFailureKind | null,
+  rawReason: string | null
+): { title: string; hint?: string } => {
+  switch (kind) {
+    case "timeout":
+      return {
+        title: "Connection Timed Out",
+        hint: REMOTE_CONTROL_COPY.errorTimeout,
+      };
+    case "unreachable":
+      return {
+        title: "Host Unreachable",
+        hint: REMOTE_CONTROL_COPY.errorUnreachable,
+      };
+    case "rejected_by_host":
+      return {
+        title: "Connection Declined",
+        hint: REMOTE_CONTROL_COPY.errorRejected,
+      };
+    case "invalid_token":
+      return {
+        title: "QR Code Expired / Invalid",
+        hint: REMOTE_CONTROL_COPY.errorInvalidToken,
+      };
+    case "version_mismatch":
+      return {
+        title: "Version Mismatch",
+        hint: REMOTE_CONTROL_COPY.errorVersionMismatch,
+      };
+    case "unknown":
+      return {
+        title: "Connection Failed",
+        hint: rawReason
+          ? REMOTE_CONTROL_COPY.errorUnknown(rawReason)
+          : REMOTE_CONTROL_COPY.errorGeneric,
+      };
+    default:
+      return {
+        title: rawReason || REMOTE_CONTROL_COPY.errorGeneric,
+        hint: undefined,
+      };
+  }
+};
+
 export const QrScannerModal = memo(
   ({ open, onClose, defaultManual = false }: QrScannerModalProps) => {
     const connectHost = useRemoteStore((s) => s.connectHost);
     const linkState = useRemoteStore((s) => s.linkState);
     const failureReason = useRemoteStore((s) => s.failureReason);
+    const failureKind = useRemoteStore((s) => s.failureKind);
     const isPairingPending = useRemoteStore((s) => s.isPairingPending);
 
     const [isManual, setIsManual] = useState(defaultManual);
@@ -57,8 +105,10 @@ export const QrScannerModal = memo(
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
     const connectingRef = useRef(connecting);
     const scannedSuccessRef = useRef(scannedSuccess);
+    const cameraGenRef = useRef(0);
 
     const stopCamera = useCallback(() => {
+      cameraGenRef.current += 1;
       if (scanIntervalRef.current) {
         clearInterval(scanIntervalRef.current);
         scanIntervalRef.current = null;
@@ -114,11 +164,7 @@ export const QrScannerModal = memo(
           setConnecting(true);
           setCameraActive(false);
           setScanError(null);
-          // Defer camera teardown so the connecting view can paint first (avoids
-          // a synchronous frame drop at the scan -> connect transition).
-          setTimeout(() => {
-            stopCamera();
-          }, 0);
+          stopCamera();
           await connectHost(params);
           // Do not close modal immediately; wait for remote_state_changed to report Connected or Failed
         } catch (e) {
@@ -158,6 +204,7 @@ export const QrScannerModal = memo(
 
     const startCamera = useCallback(async () => {
       stopCamera();
+      const gen = cameraGenRef.current;
       setCameraLoading(true);
       setCameraError(null);
 
@@ -174,6 +221,18 @@ export const QrScannerModal = memo(
           },
           audio: false,
         });
+
+        // If modal was closed or switched to manual while awaiting getUserMedia, kill tracks immediately!
+        if (gen !== cameraGenRef.current) {
+          stream.getTracks().forEach((t) => {
+            try {
+              t.stop();
+            } catch {
+              // Ignore track stop errors
+            }
+          });
+          return;
+        }
 
         streamRef.current = stream;
 
@@ -192,6 +251,7 @@ export const QrScannerModal = memo(
           }
         }
       } catch (err) {
+        if (gen !== cameraGenRef.current) return;
         console.warn("[QrScannerModal] startCamera error:", err);
         const msg =
           err instanceof Error
@@ -224,7 +284,7 @@ export const QrScannerModal = memo(
         setScannedSuccess(true);
         const timer = setTimeout(() => {
           handleClose();
-        }, 250);
+        }, 800);
         return () => clearTimeout(timer);
       }
 
@@ -388,14 +448,16 @@ export const QrScannerModal = memo(
         }, 100);
       }
 
+      const videoEl = videoRef.current;
+
       return () => {
         stopped = true;
-        const vv = videoRef.current as
-          | (HTMLVideoElement & {
-              cancelVideoFrameCallback?: (h: number) => void;
-            })
-          | null;
         if (rafRef.current !== null) {
+          const vv = videoEl as
+            | (HTMLVideoElement & {
+                cancelVideoFrameCallback?: (h: number) => void;
+              })
+            | null;
           if (vv && typeof vv.cancelVideoFrameCallback === "function") {
             vv.cancelVideoFrameCallback(rafRef.current);
           } else {
@@ -418,11 +480,7 @@ export const QrScannerModal = memo(
           void startCamera();
         }, 150);
       } else {
-        // Defer teardown to avoid a synchronous frame drop during the scan -> connect
-        // transition; the video container is hidden by the connecting view anyway.
-        setTimeout(() => {
-          stopCamera();
-        }, 0);
+        stopCamera();
       }
       return () => {
         if (timer) clearTimeout(timer);
@@ -434,9 +492,15 @@ export const QrScannerModal = memo(
       <Modal
         open={open}
         onClose={handleClose}
-        icon={<ScanLine size={18} className="text-[rgb(var(--accent))] shrink-0" />}
+        icon={
+          linkState === "Connected" ? (
+            <CheckCircle2 size={18} className="text-[rgb(var(--success))] shrink-0" />
+          ) : (
+            <ScanLine size={18} className="text-[rgb(var(--accent))] shrink-0" />
+          )
+        }
         headerActions={
-          !isManual && torchSupported && cameraActive && !connecting ? (
+          !isManual && torchSupported && cameraActive && !connecting && linkState !== "Connected" ? (
             <Tooltip
               label={torchOn ? "Turn Off Torch" : "Turn On Torch"}
               side="bottom"
@@ -456,9 +520,15 @@ export const QrScannerModal = memo(
             </Tooltip>
           ) : undefined
         }
-        title="Connect to Desktop Host"
+        title={
+          linkState === "Connected"
+            ? REMOTE_CONTROL_COPY.successTitleController
+            : "Connect to Desktop Host"
+        }
         subtitle={
-          connecting
+          linkState === "Connected"
+            ? REMOTE_CONTROL_COPY.successSubtitleController
+            : connecting
             ? "Establishing secure connection with host..."
             : isManual
             ? "Enter the IP address and port displayed in your computer's pairing window."
@@ -474,17 +544,21 @@ export const QrScannerModal = memo(
                 <div className="flex items-start gap-2.5 min-w-0 flex-1">
                   <WifiOff size={16} className="text-[rgb(var(--error))] shrink-0 mt-0.5 sm:mt-0" />
                   <div className="flex flex-col min-w-0">
-                    <span className="text-xs font-semibold text-[rgb(var(--foreground))] break-words">
-                      {scanError}
-                    </span>
-                    {(scanError.toLowerCase().includes("timed out") ||
-                      scanError.toLowerCase().includes("connect") ||
-                      scanError.toLowerCase().includes("fail") ||
-                      scanError.toLowerCase().includes("denied")) && (
-                      <span className="text-[11px] text-[rgb(var(--foreground-muted))] leading-tight mt-0.5">
-                        Ensure both phone and computer are on the same Wi-Fi network.
-                      </span>
-                    )}
+                    {(() => {
+                      const errInfo = getErrorMessage(failureKind, scanError);
+                      return (
+                        <>
+                          <span className="text-xs font-semibold text-[rgb(var(--foreground))] break-words">
+                            {errInfo.title}
+                          </span>
+                          {errInfo.hint && (
+                            <span className="text-[11px] text-[rgb(var(--foreground-muted))] leading-tight mt-0.5">
+                              {errInfo.hint}
+                            </span>
+                          )}
+                        </>
+                      );
+                    })()}
                   </div>
                 </div>
                 <button
@@ -504,7 +578,20 @@ export const QrScannerModal = memo(
         }
       >
         <div className="flex flex-col p-5 sm:p-6 gap-4">
-          {connecting ? (
+          {linkState === "Connected" ? (
+            /* Connected Celebration State */
+            <div className="h-64 flex flex-col items-center justify-center gap-3 animate-fade-in text-center p-4">
+              <div className="w-14 h-14 rounded-2xl bg-[rgba(var(--success),0.12)] border border-[rgba(var(--success),0.25)] flex items-center justify-center text-[rgb(var(--success))] shadow-[0_0_24px_rgba(var(--success),0.15)] animate-in zoom-in-95 duration-200">
+                <CheckCircle2 size={32} strokeWidth={2.5} />
+              </div>
+              <h3 className="text-sm font-bold text-[rgb(var(--foreground))]">
+                {REMOTE_CONTROL_COPY.successTitleController}
+              </h3>
+              <p className="text-xs text-[rgb(var(--foreground-muted))] max-w-xs">
+                {REMOTE_CONTROL_COPY.successSubtitleController}
+              </p>
+            </div>
+          ) : connecting ? (
             /* Connecting & Pairing Progression State */
             <div className="h-64 flex flex-col items-center justify-center gap-3 animate-fade-in text-center p-4">
               <OrbitalLoader size="lg" />
@@ -685,7 +772,7 @@ export const QrScannerModal = memo(
                       className="text-[rgb(var(--success))]"
                     />
                     <span className="text-xs font-bold text-white tracking-wide">
-                      {linkState === "Connected" ? "Connected!" : "Host QR Detected"}
+                      Host QR Detected
                     </span>
                   </div>
                 )}

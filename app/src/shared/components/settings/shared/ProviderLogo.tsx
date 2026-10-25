@@ -1,4 +1,4 @@
-import { memo, type ReactElement } from "react";
+import { memo, useId, type ReactElement } from "react";
 import { cn } from "@/shared/lib/utils";
 
 export interface ProviderLogoProps {
@@ -57,6 +57,8 @@ export const ProviderLogo = memo(function ProviderLogo({
   size = 16,
   className,
 }: ProviderLogoProps) {
+  const reactId = useId();
+  const gradId = `gemini-grad-${reactId.replace(/:/g, "")}`;
   const norm = `${providerId || ""}${providerName || ""}${dialect || ""}`.toLowerCase();
   // NOTE: `logo` deliberately excluded from `norm`. Backend contracts ship brand
   // marks as raw `data:image/svg+xml;base64` blobs; scanning those strings for
@@ -80,10 +82,10 @@ export const ProviderLogo = memo(function ProviderLogo({
       >
         <path
           d="M11.04 19.32Q12 21.51 12 24q0-2.49.93-4.68.96-2.19 2.58-3.81t3.81-2.58Q21.51 12 24 12q-2.49 0-4.68-.93-2.19-.96-3.81-2.58t-2.58-3.81Q12 2.49 12 0q0 2.49-.93 4.68-.96 2.19-2.58 3.81T4.68 11.07Q2.49 12 0 12q2.49 0 4.68.93 2.19.96 3.81 2.58t2.58 3.81z"
-          fill="url(#gemini-grad)"
+          fill={`url(#${gradId})`}
         />
         <defs>
-          <linearGradient id="gemini-grad" x1="0" y1="0" x2="24" y2="24" gradientUnits="userSpaceOnUse">
+          <linearGradient id={gradId} x1="0" y1="0" x2="24" y2="24" gradientUnits="userSpaceOnUse">
             <stop offset="0%" stopColor="#4285F4" />
             <stop offset="35%" stopColor="#9B60ED" />
             <stop offset="70%" stopColor="#EA4335" />
@@ -169,10 +171,10 @@ export const ProviderLogo = memo(function ProviderLogo({
       >
         <path
           d="M11.04 19.32Q12 21.51 12 24q0-2.49.93-4.68.96-2.19 2.58-3.81t3.81-2.58Q21.51 12 24 12q-2.49 0-4.68-.93-2.19-.96-3.81-2.58t-2.58-3.81Q12 2.49 12 0q0 2.49-.93 4.68-.96 2.19-2.58 3.81T4.68 11.07Q2.49 12 0 12q2.49 0 4.68.93 2.19.96 3.81 2.58t2.58 3.81z"
-          fill="url(#gemini-grad)"
+          fill={`url(#${gradId})`}
         />
         <defs>
-          <linearGradient id="gemini-grad" x1="0" y1="0" x2="24" y2="24" gradientUnits="userSpaceOnUse">
+          <linearGradient id={gradId} x1="0" y1="0" x2="24" y2="24" gradientUnits="userSpaceOnUse">
             <stop offset="0%" stopColor="#4285F4" />
             <stop offset="35%" stopColor="#9B60ED" />
             <stop offset="70%" stopColor="#EA4335" />

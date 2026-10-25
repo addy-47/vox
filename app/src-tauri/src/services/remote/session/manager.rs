@@ -4,7 +4,7 @@ use parking_lot::RwLock;
 use tokio::{sync::RwLock as AsyncRwLock, time::sleep};
 use tokio_util::sync::CancellationToken;
 
-use super::state::{RemoteLinkState, RemoteStateDto};
+use super::state::{RemoteFailureKind, RemoteLinkState, RemoteStateDto};
 use crate::services::remote::{
     link::{LinkCloseReason, LinkError, RemoteLink},
     protocol::{
@@ -308,8 +308,19 @@ impl RemoteSessionManager {
         let ws_link = match crate::services::remote::link::ws::dial(&url).await {
             Ok(l) => l,
             Err(e) => {
+                let err_str = e.to_string();
+                let kind = if err_str.contains("timed out") {
+                    RemoteFailureKind::Timeout
+                } else if err_str.contains("refused")
+                    || err_str.contains("unreachable")
+                    || err_str.contains("No route to host")
+                {
+                    RemoteFailureKind::Unreachable
+                } else {
+                    RemoteFailureKind::Unknown
+                };
                 let err_msg = format!("Failed to connect to host: {e}");
-                self.set_state(RemoteLinkState::Failed(err_msg.clone()));
+                self.set_state(RemoteLinkState::failed(err_msg.clone(), kind));
                 return Err(e);
             }
         };
@@ -337,7 +348,10 @@ impl RemoteSessionManager {
 
             if let Err(e) = ws_link.send_control(pair_req).await {
                 let err_msg = format!("Failed to send pairing request: {e}");
-                self.set_state(RemoteLinkState::Failed(err_msg.clone()));
+                self.set_state(RemoteLinkState::failed(
+                    err_msg.clone(),
+                    RemoteFailureKind::Unreachable,
+                ));
                 return Err(e);
             }
 
@@ -346,12 +360,18 @@ impl RemoteSessionManager {
                     Ok(Ok(msg)) => msg,
                     Ok(Err(e)) => {
                         let err_msg = format!("Connection error awaiting pairing response: {e}");
-                        self.set_state(RemoteLinkState::Failed(err_msg.clone()));
+                        self.set_state(RemoteLinkState::failed(
+                            err_msg.clone(),
+                            RemoteFailureKind::Unreachable,
+                        ));
                         return Err(e);
                     }
                     Err(_) => {
                         let err_msg = "Pairing approval timed out after 35 seconds".to_string();
-                        self.set_state(RemoteLinkState::Failed(err_msg.clone()));
+                        self.set_state(RemoteLinkState::failed(
+                            err_msg.clone(),
+                            RemoteFailureKind::Timeout,
+                        ));
                         return Err(LinkError::Protocol(ProtocolError::MalformedJson(err_msg)));
                     }
                 };
@@ -366,12 +386,18 @@ impl RemoteSessionManager {
                     Ok(Ok(msg)) => msg,
                     Ok(Err(e)) => {
                         let err_msg = format!("Connection error awaiting pairing approval: {e}");
-                        self.set_state(RemoteLinkState::Failed(err_msg.clone()));
+                        self.set_state(RemoteLinkState::failed(
+                            err_msg.clone(),
+                            RemoteFailureKind::Unreachable,
+                        ));
                         return Err(e);
                     }
                     Err(_) => {
                         let err_msg = "Pairing approval timed out after 35 seconds".to_string();
-                        self.set_state(RemoteLinkState::Failed(err_msg.clone()));
+                        self.set_state(RemoteLinkState::failed(
+                            err_msg.clone(),
+                            RemoteFailureKind::Timeout,
+                        ));
                         return Err(LinkError::Protocol(ProtocolError::MalformedJson(err_msg)));
                     }
                 };
@@ -381,7 +407,10 @@ impl RemoteSessionManager {
                 ControlMessage::PairApproved => {
                     let h_pk_bytes = hex::decode(h_pk).map_err(|e| {
                         let err_msg = format!("Invalid host public key hex: {e}");
-                        self.set_state(RemoteLinkState::Failed(err_msg.clone()));
+                        self.set_state(RemoteLinkState::failed(
+                            err_msg.clone(),
+                            RemoteFailureKind::InvalidToken,
+                        ));
                         LinkError::Protocol(ProtocolError::MalformedJson(err_msg))
                     })?;
                     let h_id = host_device_id.unwrap_or_else(|| {
@@ -421,7 +450,10 @@ impl RemoteSessionManager {
                         Ok(h) => h,
                         Err(e) => {
                             let err_msg = format!("Protocol negotiation error after pairing: {e}");
-                            self.set_state(RemoteLinkState::Failed(err_msg.clone()));
+                            self.set_state(RemoteLinkState::failed(
+                                err_msg.clone(),
+                                RemoteFailureKind::VersionMismatch,
+                            ));
                             return Err(e);
                         }
                     };
@@ -431,14 +463,24 @@ impl RemoteSessionManager {
                     Ok(())
                 }
                 ControlMessage::PairDenied(denied) => {
+                    let is_token = denied.reason.to_lowercase().contains("token")
+                        || denied.reason.to_lowercase().contains("expired");
+                    let kind = if is_token {
+                        RemoteFailureKind::InvalidToken
+                    } else {
+                        RemoteFailureKind::RejectedByHost
+                    };
                     let err_msg = format!("Pairing denied by host: {}", denied.reason);
-                    self.set_state(RemoteLinkState::Failed(err_msg.clone()));
+                    self.set_state(RemoteLinkState::failed(err_msg.clone(), kind));
                     let _ = ws_link.close(LinkCloseReason::Local).await;
                     Err(LinkError::Protocol(ProtocolError::MalformedJson(err_msg)))
                 }
                 other => {
                     let err_msg = format!("Expected PairApproved, got {:?}", other.message_type());
-                    self.set_state(RemoteLinkState::Failed(err_msg.clone()));
+                    self.set_state(RemoteLinkState::failed(
+                        err_msg.clone(),
+                        RemoteFailureKind::VersionMismatch,
+                    ));
                     let _ = ws_link.close(LinkCloseReason::Local).await;
                     Err(LinkError::Protocol(ProtocolError::MalformedJson(err_msg)))
                 }
@@ -460,7 +502,10 @@ impl RemoteSessionManager {
                 Ok(h) => h,
                 Err(e) => {
                     let err_msg = format!("Handshake error: {e}");
-                    self.set_state(RemoteLinkState::Failed(err_msg.clone()));
+                    self.set_state(RemoteLinkState::failed(
+                        err_msg.clone(),
+                        RemoteFailureKind::VersionMismatch,
+                    ));
                     return Err(e);
                 }
             };

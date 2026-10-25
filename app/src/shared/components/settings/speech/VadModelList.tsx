@@ -29,13 +29,13 @@ export const VadModelList = memo(
     startDownload,
     deleteModel,
   }: VadModelListProps) => {
-    const vad = useSettingsStore((s) => s.draftSettings?.vad);
-    const committedVad = useSettingsStore((s) => s.settings?.vad);
+    const activeVadBackend = useSettingsStore((s) => s.draftSettings?.vad?.vad_backend ?? "");
+    const committedVadBackend = useSettingsStore((s) => s.settings?.vad?.vad_backend ?? "");
+    const hasVad = useSettingsStore((s) => !!s.draftSettings?.vad);
     const updateDraft = useSettingsStore((s) => s.updateDraft);
     const modelCatalog = useCatalogStore((s) => s.modelCatalog);
-    if (!vad) return null;
-    const activeVadBackend = vad.vad_backend || "";
-    const committedVadBackend = committedVad?.vad_backend || "";
+    if (!hasVad || !modelCatalog) return null;
+
     const rawVadModels = modelCatalog?.vad ?? [];
     const vadModels = promoteActive(rawVadModels, committedVadBackend);
 

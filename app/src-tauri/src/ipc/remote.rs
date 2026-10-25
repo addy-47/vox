@@ -21,6 +21,7 @@ pub struct PairNewDeviceDto {
     pub payload: String,
     pub qr_data_url: String,
     pub expires_at: i64,
+    pub expires_at_ms: i64,
 }
 
 /// A row from `paired_devices` serialized for IPC.
@@ -65,13 +66,14 @@ pub async fn pair_new_device(
         ));
     }
 
-    let (payload, qr_data_url, expires_at) =
+    let (payload, qr_data_url, expires_at, expires_at_ms) =
         mint_pairing_invitation(&state.pairing_coordinator, 7700)
             .map_err(|e| VoxIpcError::Internal(e.to_string()))?;
     Ok(PairNewDeviceDto {
         payload,
         qr_data_url,
         expires_at,
+        expires_at_ms,
     })
 }
 

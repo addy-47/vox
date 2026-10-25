@@ -566,10 +566,12 @@ pub fn mint_pairing_qr_svg(
 }
 
 /// Mints an ephemeral pairing invitation payload, QR code, and expiration for desktop host.
+///
+/// Returns `(payload_json, qr_svg_data_url, expires_at_secs, expires_at_ms)`.
 pub fn mint_pairing_invitation(
     coordinator: &PairingCoordinator,
     port: u16,
-) -> Result<(String, String, i64), SecurityError> {
+) -> Result<(String, String, i64, i64), SecurityError> {
     let key_store = KeyStore::default_path()?;
     let device_key = key_store.load_or_create()?;
     let host_id = derive_device_id(device_key.public_key());
@@ -577,10 +579,11 @@ pub fn mint_pairing_invitation(
     let hint_addr = get_local_lan_ip().unwrap_or_else(|| "127.0.0.1".to_string());
     let (payload, qr_data_url) =
         mint_pairing_qr_svg(&host_id, device_key.public_key(), &hint_addr, port, &token)?;
-    let now_secs = std::time::SystemTime::now()
+    let now_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
-        .as_secs() as i64;
-    let expires_at = now_secs + PAIRING_TOKEN_TTL.as_secs() as i64;
-    Ok((payload, qr_data_url, expires_at))
+        .as_millis() as i64;
+    let expires_at_ms = now_ms + PAIRING_TOKEN_TTL.as_millis() as i64;
+    let expires_at_secs = expires_at_ms / 1000;
+    Ok((payload, qr_data_url, expires_at_secs, expires_at_ms))
 }
