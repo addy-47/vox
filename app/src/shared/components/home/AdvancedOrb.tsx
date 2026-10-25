@@ -5,6 +5,7 @@ import { type InteractionState } from '@/services/eventsService';
 import { useMemoryTrace } from '@/shared/hooks/useMemoryTrace';
 import { isSoftwareRasterizer } from '@/shared/lib/glUtils';
 import { getThemeTransitioning, subscribeThemeTransition } from '@/shared/theme';
+import { isViewportResizing, subscribeViewportGate } from '@/layout/viewportResize';
 
 
 interface VoxOrbProps {
@@ -842,7 +843,7 @@ export const VoxOrb = React.memo(({
       powerPreference: isSoftwareRaster ? "low-power" : "high-performance",
     });
     renderer.setSize(width, height, false);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, isSoftwareRaster ? 1 : 2));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, isSoftwareRaster ? 1 : 1.5));
     renderer.setClearColor(0x000000, 0);
     renderer.domElement.style.cssText =
       'position:absolute;top:0;left:0;width:100%;height:100%;margin:0;padding:0;';
@@ -976,17 +977,37 @@ export const VoxOrb = React.memo(({
     }
     updateCamera(width, height);
 
-    const resizeObs = new ResizeObserver(([entry]) => {
-      if (!entry) return;
-      const { width: w, height: h } = entry.contentRect;
+    const applyResize = (w: number, h: number) => {
       if (w > 0 && h > 0) {
         updateCamera(w, h);
         if (sceneRef.current) {
           renderer.render(scene, camera);
         }
       }
+    };
+
+    let pendingWidth = 0;
+    let pendingHeight = 0;
+
+    const resizeObs = new ResizeObserver(([entry]) => {
+      if (!entry) return;
+      const { width: w, height: h } = entry.contentRect;
+      if (isViewportResizing()) {
+        pendingWidth = w;
+        pendingHeight = h;
+        return;
+      }
+      applyResize(w, h);
     });
     resizeObs.observe(container);
+
+    const unsubGate = subscribeViewportGate((active) => {
+      if (!active && pendingWidth > 0 && pendingHeight > 0) {
+        applyResize(pendingWidth, pendingHeight);
+        pendingWidth = 0;
+        pendingHeight = 0;
+      }
+    });
 
     const curGlow = initGlow.clone();
     const curAccent = initAccent.clone();
@@ -1039,6 +1060,7 @@ export const VoxOrb = React.memo(({
     return () => {
       sceneRef.current = null;
       resizeObs.disconnect();
+      unsubGate();
       // Remove DOM immediately; defer heavy GPU teardown off the navigation path.
       if (container.contains(renderer.domElement)) {
         container.removeChild(renderer.domElement);

@@ -1,7 +1,9 @@
-import React, { useState, useEffect, useRef, memo } from "react";
+import React, { useState, useEffect, useRef, memo, useCallback } from "react";
 import { MessageSquarePlus } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { MEMORY_COPY } from "@/data/memoryCopy";
+import { useOverlay } from "@/shared/hooks/useOverlay";
+import { Tooltip } from "@/shared/ui/Tooltip";
 
 export interface SelectionRect {
   top: number;
@@ -53,19 +55,18 @@ export const PersonalMemoryCommentPopover: React.FC<PersonalMemoryCommentPopover
       return () => clearTimeout(timer);
     }, [isOpen, onOpenChange]);
 
-    // Close on click outside when open
-    useEffect(() => {
-      if (!isOpen) return undefined;
-      const handleClickOutside = (e: MouseEvent) => {
-        if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
-          setIsOpen(false);
-          onOpenChange?.(false);
-          onCancel();
-        }
-      };
-      document.addEventListener("mousedown", handleClickOutside);
-      return () => document.removeEventListener("mousedown", handleClickOutside);
-    }, [isOpen, onCancel, onOpenChange]);
+    const handleDiscard = useCallback(() => {
+      setIsOpen(false);
+      onOpenChange?.(false);
+      onCancel();
+    }, [onCancel, onOpenChange]);
+
+    useOverlay({
+      active: isOpen,
+      onClose: handleDiscard,
+      ref: popoverRef,
+      dismissOnOutside: true,
+    });
 
     if (!anchor) return null;
 
@@ -83,12 +84,6 @@ export const PersonalMemoryCommentPopover: React.FC<PersonalMemoryCommentPopover
       onOpenChange?.(false);
     };
 
-    const handleDiscard = () => {
-      setIsOpen(false);
-      onOpenChange?.(false);
-      onCancel();
-    };
-
     return (
       <div
         ref={popoverRef}
@@ -100,19 +95,21 @@ export const PersonalMemoryCommentPopover: React.FC<PersonalMemoryCommentPopover
       >
         {!isOpen ? (
           /* Sleek borderless trigger button at bottom-right of highlighted text */
-          <button
-            type="button"
-            onMouseDown={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              setIsOpen(true);
-              onOpenChange?.(true);
-            }}
-            className="text-[rgb(var(--accent))] hover:scale-115 flex items-center justify-center cursor-pointer transition-transform p-1 opacity-90 hover:opacity-100 drop-shadow-sm"
-            title={MEMORY_COPY.addComment}
-          >
-            <MessageSquarePlus size={16} />
-          </button>
+          <Tooltip label={MEMORY_COPY.addComment} side="top">
+            <button
+              type="button"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setIsOpen(true);
+                onOpenChange?.(true);
+              }}
+              className="text-[rgb(var(--accent))] hover:scale-115 flex items-center justify-center cursor-pointer transition-transform p-1 opacity-90 hover:opacity-100 drop-shadow-sm"
+              aria-label={MEMORY_COPY.addComment}
+            >
+              <MessageSquarePlus size={16} />
+            </button>
+          </Tooltip>
         ) : (
           /* Clean minimal Antigravity-style comment box */
           <div
@@ -128,8 +125,6 @@ export const PersonalMemoryCommentPopover: React.FC<PersonalMemoryCommentPopover
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault();
                   handleSubmit();
-                } else if (e.key === "Escape") {
-                  handleDiscard();
                 }
               }}
               rows={2}

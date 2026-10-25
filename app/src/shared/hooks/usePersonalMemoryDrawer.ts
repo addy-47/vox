@@ -324,18 +324,44 @@ export function usePersonalMemoryDrawer({
     };
   }, [refreshPersonalMemory]);
 
+  const hasLoadedPersonalMemoryRef = useRef(false);
+
   useEffect(() => {
     let isMounted = true;
-    const run = async () => {
-      await Promise.resolve();
-      if (!isMounted) return;
-      await refreshPersonalMemory();
-    };
-    void run();
+    if (drawerOpen) {
+      hasLoadedPersonalMemoryRef.current = true;
+      void refreshPersonalMemory();
+      return () => {
+        isMounted = false;
+      };
+    }
+
+    if (!hasLoadedPersonalMemoryRef.current) {
+      const idleCallback =
+        typeof window !== "undefined" && "requestIdleCallback" in window
+          ? window.requestIdleCallback(
+              () => {
+                if (isMounted && !hasLoadedPersonalMemoryRef.current) {
+                  hasLoadedPersonalMemoryRef.current = true;
+                  void refreshPersonalMemory(true);
+                }
+              },
+              { timeout: 4000 }
+            )
+          : null;
+
+      return () => {
+        isMounted = false;
+        if (idleCallback !== null && typeof window !== "undefined" && "cancelIdleCallback" in window) {
+          window.cancelIdleCallback(idleCallback);
+        }
+      };
+    }
+
     return () => {
       isMounted = false;
     };
-  }, [refreshPersonalMemory]);
+  }, [drawerOpen, refreshPersonalMemory]);
 
   // Version selection & restore
   const handleSelectVersion = useCallback((rec: PersonalMemoryRecord) => {
@@ -567,9 +593,13 @@ export function usePersonalMemoryDrawer({
         rafId = null;
         if (isComposingCommentRef.current) return;
 
+        const clearAnchor = () => {
+          setSelectionAnchor((prev) => (prev === null ? null : null));
+        };
+
         const sel = window.getSelection();
         if (!sel || sel.isCollapsed || !sel.rangeCount) {
-          setSelectionAnchor(null);
+          clearAnchor();
           return;
         }
         const container = dossierContainerRef.current;
@@ -577,13 +607,13 @@ export function usePersonalMemoryDrawer({
 
         const anchorNode = sel.anchorNode;
         if (!anchorNode || !container.contains(anchorNode)) {
-          setSelectionAnchor(null);
+          clearAnchor();
           return;
         }
 
         const text = sel.toString().trim();
         if (!text || text.length < 2) {
-          setSelectionAnchor(null);
+          clearAnchor();
           return;
         }
 
@@ -592,7 +622,7 @@ export function usePersonalMemoryDrawer({
         const containerRect = container.getBoundingClientRect();
 
         if (rect.width === 0 || rect.height === 0) {
-          setSelectionAnchor(null);
+          clearAnchor();
           return;
         }
 

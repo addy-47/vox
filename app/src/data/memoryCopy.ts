@@ -197,6 +197,10 @@ export const MEMORY_COPY = {
   emptySearchDesc: "Search facts, preferences, and key details recorded across your conversations.",
   noMemoriesFoundTitle: "No Memories Found",
   noMemoriesFoundDesc: (query: string) => `No memories match "${query}". Try another keyword or phrase.`,
+  searchMemories: "Search Memories",
+  closeSearch: "Close search",
+  graphNoMemories: "Memory graph: no memories loaded yet.",
+  graphMemoriesHint: "Open details with Shift+Up.",
   timeline: {
     ingestionTitle: "Memory Queue",
     searchSessionsPlaceholder: "Search sessions...",

@@ -204,6 +204,10 @@ export const Home = memo(() => {
     return dialogueHistory.slice(-10);
   }, [dialogueHistory]);
 
+  const userTurnHistory = useMemo(() => {
+    return dialogueHistory.map((d) => d.user).filter(Boolean);
+  }, [dialogueHistory]);
+
   const scrubberChapters = useMemo<Chapter[]>(() => {
     // Show latest conversation turns in chronological order (oldest at top, latest at bottom).
     // Bound to the 15 most recent turns so scrubber ticks fit comfortably within the 75% orb height cap.
@@ -415,7 +419,7 @@ export const Home = memo(() => {
             onTogglePlaybackMute={togglePlaybackMute}
             isMicMuted={isMicMuted}
             onToggleMicMute={toggleMicMute}
-            initialHistory={dialogueHistory.map((d) => d.user).filter(Boolean)}
+            initialHistory={userTurnHistory}
           />
         ) : (
           <HomeControls

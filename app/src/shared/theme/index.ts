@@ -241,11 +241,15 @@ function animateTokensToNewTheme(
   const gen = ++flipGeneration;
   const root = document.documentElement;
 
-  const parsed = FLIP_TOKEN_KEYS.map((key) => ({
-    key,
-    from: parseTokenLiteral(startValues.get(key) ?? ""),
-    to: parseTokenLiteral(endValues.get(key) ?? ""),
-  })).filter((p) => p.from && p.to);
+  const parsed = FLIP_TOKEN_KEYS.filter(
+    (key) => startValues.get(key) !== endValues.get(key)
+  )
+    .map((key) => ({
+      key,
+      from: parseTokenLiteral(startValues.get(key) ?? ""),
+      to: parseTokenLiteral(endValues.get(key) ?? ""),
+    }))
+    .filter((p) => p.from && p.to);
 
   const t0 = performance.now();
   // Write pacing is TIME-based, not frame-parity-based.
@@ -273,7 +277,7 @@ function animateTokensToNewTheme(
     const accentTriple =
       accent && accent.from && accent.to
         ? lerpToken(accent.from, accent.to, e, "")
-        : "";
+        : (newAccentInline || startValues.get("accent") || "");
 
     for (const p of parsed) {
       const out = lerpToken(p.from!, p.to!, e, accentTriple);
@@ -286,8 +290,15 @@ function animateTokensToNewTheme(
     if (t < 1) {
       requestAnimationFrame(tick);
     } else {
-      for (const key of FLIP_TOKEN_KEYS) root.style.removeProperty(`--${key}`);
+      for (const key of FLIP_TOKEN_KEYS) {
+        if (INLINE_OWNED_TOKENS.has(key)) continue;
+        root.style.removeProperty(`--${key}`);
+      }
       root.style.setProperty("--accent", newAccentInline);
+      applyNotificationCategoryTokens(
+        newAccentInline,
+        root.getAttribute("data-theme") === "light"
+      );
       currentTokenValues = new Map(endValues);
       currentTokenValues.set("accent", newAccentInline);
       // Let the final state paint before transitions and blur resume.

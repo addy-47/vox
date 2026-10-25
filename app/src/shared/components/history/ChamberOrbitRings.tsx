@@ -45,17 +45,6 @@ export const ChamberOrbitRings = memo(({ radius }: ChamberOrbitRingsProps) => {
             <stop offset="85%" stopColor="rgb(var(--accent))" stopOpacity="0.40" />
             <stop offset="100%" stopColor="rgb(var(--accent))" stopOpacity="0.50" />
           </linearGradient>
-
-          {/* Soft ambient glow filter for front spotlight */}
-          <filter id="orbitNeonGlow" x="-30%" y="-30%" width="160%" height="160%">
-            <feGaussianBlur in="SourceGraphic" stdDeviation="4" result="blur1" />
-            <feGaussianBlur in="SourceGraphic" stdDeviation="8" result="blur2" />
-            <feMerge>
-              <feMergeNode in="blur2" />
-              <feMergeNode in="blur1" />
-              <feMergeNode in="SourceGraphic" />
-            </feMerge>
-          </filter>
         </defs>
 
         {/* 1. Innermost Concentric Time Track */}
@@ -83,14 +72,29 @@ export const ChamberOrbitRings = memo(({ radius }: ChamberOrbitRingsProps) => {
           strokeOpacity="0.22"
         />
 
-        {/* 3. Primary Front Spotlight Arc (Subtle Luminous Glow on the bottom half) */}
+        {/* 3. Primary Front Spotlight Arc (Layered vector glow — zero SVG feGaussianBlur cost) */}
+        <path
+          d={`M ${cx - rx} ${cy} A ${rx} ${ry} 0 0 0 ${cx + rx} ${cy}`}
+          fill="none"
+          stroke="url(#frontArcGlow)"
+          strokeWidth="10"
+          strokeOpacity="0.18"
+          strokeLinecap="round"
+        />
+        <path
+          d={`M ${cx - rx} ${cy} A ${rx} ${ry} 0 0 0 ${cx + rx} ${cy}`}
+          fill="none"
+          stroke="url(#frontArcGlow)"
+          strokeWidth="4"
+          strokeOpacity="0.35"
+          strokeLinecap="round"
+        />
         <path
           d={`M ${cx - rx} ${cy} A ${rx} ${ry} 0 0 0 ${cx + rx} ${cy}`}
           fill="none"
           stroke="url(#frontArcGlow)"
           strokeWidth="1.75"
           strokeLinecap="round"
-          filter="url(#orbitNeonGlow)"
         />
 
         {/* 4. Concentric Outer Guide Ring 1 */}
