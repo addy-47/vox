@@ -20,6 +20,7 @@ import { CardFilterMenu, CardFilterItem } from "../shared/CardHeader";
 import { CatalogModalToolbar } from "../shared/CatalogModalToolbar";
 import { CatalogModalShell } from "../shared/CatalogModalShell";
 import { CatalogFacetRail, type CatalogFacetGroup } from "../shared/CatalogFacetRail";
+import { getRealtimeProviders } from "@/services/settingsService";
 
 /** Deletes a custom server by ID and reverts to embedded if active. */
 async function deleteCustomServer(domain: "llm" | "tts", serverId: string): Promise<void> {
@@ -127,6 +128,67 @@ const CustomProviderCreationCard = memo(function CustomProviderCreationCard({
 });
 CustomProviderCreationCard.displayName = "CustomProviderCreationCard";
 
+interface InlineKeyEditorProps {
+  initialValue: string;
+  placeholder?: string;
+  onSave: (val: string) => void;
+  onCancel: () => void;
+  onChangeValue?: (val: string) => void;
+}
+
+const InlineKeyEditor = memo(({
+  initialValue,
+  placeholder,
+  onSave,
+  onCancel,
+  onChangeValue,
+}: InlineKeyEditorProps) => {
+  const [val, setVal] = useState(initialValue);
+
+  const handleChange = (newVal: string) => {
+    setVal(newVal);
+    onChangeValue?.(newVal);
+  };
+
+  return (
+    <div className="flex items-center gap-1.5 border-b border-[rgb(var(--accent))] pb-0.5 w-full bg-transparent animate-fade-in">
+      <input
+        type="password"
+        autoFocus
+        value={val}
+        onChange={(e) => handleChange(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") onSave(val);
+          if (e.key === "Escape") onCancel();
+        }}
+        placeholder={placeholder}
+        className="w-full bg-transparent text-[11px] font-mono outline-none text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/30"
+      />
+      <Tooltip label={PROVIDERS_CONFIG_DESK_COPY.llm.cloud.saveKey} side="top" asChild>
+        <button
+          type="button"
+          onClick={() => onSave(val)}
+          aria-label={PROVIDERS_CONFIG_DESK_COPY.llm.cloud.saveKey}
+          className="text-[rgb(var(--accent))] hover:opacity-75 transition-opacity p-0.5 shrink-0 bg-transparent cursor-pointer"
+        >
+          <Check size={13} strokeWidth={2.2} />
+        </button>
+      </Tooltip>
+      <Tooltip label={PROVIDERS_CONFIG_DESK_COPY.llm.cloud.cancelKey} side="top" asChild>
+        <button
+          type="button"
+          onClick={onCancel}
+          aria-label={PROVIDERS_CONFIG_DESK_COPY.llm.cloud.cancelKey}
+          className="text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))] transition-colors p-0.5 shrink-0 bg-transparent cursor-pointer"
+        >
+          <X size={13} />
+        </button>
+      </Tooltip>
+    </div>
+  );
+});
+InlineKeyEditor.displayName = "InlineKeyEditor";
+
 export const ProviderModal = memo(({
   category = "LLM", onSelectLocal, activeCloudProviderId, getProviderKey, pinnedProviderId,
   getCommittedProviderKey, onSelectProvider, editingProviderId, editingKeyValue, setEditingKeyValue,
@@ -143,68 +205,118 @@ export const ProviderModal = memo(({
   const [editingServer, setEditingServer] = useState<LlmCustomServer | TtsCustomServer | null>(null);
   const [confirmDeleteProviderId, setConfirmDeleteProviderId] = useState<string | null>(null);
 
-  const draftSettings = useSettingsStore(useShallow((s) => s.draftSettings));
-  const committedSettings = useSettingsStore(useShallow((s) => s.settings));
-  const updateDraft = useSettingsStore((s) => s.updateDraft);
+  const isRealtime = useSettingsStore(
+    (s) => category === "LLM" && s.draftSettings?.interaction.pipeline_mode === "realtime"
+  );
+  const draftLlm = useSettingsStore(useShallow((s) => s.draftSettings?.llm));
+  const draftProvidersLlm = useSettingsStore(useShallow((s) => s.draftSettings?.providers?.llm));
+  const committedProvidersLlm = useSettingsStore(useShallow((s) => s.settings?.providers?.llm));
+  const draftTts = useSettingsStore(useShallow((s) => s.draftSettings?.tts));
+  const draftProvidersTts = useSettingsStore(useShallow((s) => s.draftSettings?.providers?.tts));
+  const draftRealtime = useSettingsStore(useShallow((s) => s.draftSettings?.realtime));
+  const draftProvidersRealtime = useSettingsStore(useShallow((s) => s.draftSettings?.providers?.realtime));
+  const committedProvidersRealtime = useSettingsStore(useShallow((s) => s.settings?.providers?.realtime));
   const isTts = category === "TTS";
-  const isRealtime = category === "LLM" && draftSettings?.interaction.pipeline_mode === "realtime";
+  const committedActiveProviderId = useSettingsStore((s) =>
+    category === "TTS" ? s.settings?.tts.active.provider : s.settings?.llm.active.provider
+  );
+  const committedCategory = useSettingsStore((s) =>
+    category === "TTS" ? s.settings?.tts.active.category : s.settings?.llm.active.category
+  );
+  const isCommittedLocal = committedCategory === "embedded";
+  const updateDraft = useSettingsStore((s) => s.updateDraft);
 
-  const realtimeProviders: CloudProvider[] = useMemo(() => [
-    {
-      id: "gemini_live",
-      name: "Gemini Live",
-      tagline: "Google's direct live speech model with search grounding",
-      url: "https://aistudio.google.com/apikey",
-      keyPlaceholder: "AIzaSy...",
-      isConfigured: Boolean(
-        draftSettings?.realtime?.api_keys?.["gemini_live"] ||
-        draftSettings?.providers?.realtime?.api_keys?.["gemini_live"] ||
-        committedSettings?.providers?.realtime?.api_keys?.["gemini_live"] ||
-        draftSettings?.llm?.cloud_keys?.["gemini"] ||
-        draftSettings?.providers?.llm?.cloud_keys?.["gemini"] ||
-        committedSettings?.providers?.llm?.cloud_keys?.["gemini"]
-      ),
-    },
-    {
-      id: "deepgram_voice_agent",
-      name: "Deepgram Agent",
-      tagline: "Deepgram's real-time conversational voice agent",
-      url: "https://console.deepgram.com/",
-      keyPlaceholder: "Token...",
-      isConfigured: Boolean(
-        draftSettings?.realtime?.api_keys?.["deepgram_voice_agent"] ||
-        draftSettings?.providers?.realtime?.api_keys?.["deepgram_voice_agent"] ||
-        committedSettings?.providers?.realtime?.api_keys?.["deepgram_voice_agent"]
-      ),
-    },
-  ], [draftSettings, committedSettings]);
+  const realtimeProviders: CloudProvider[] = useMemo(() => {
+    const rtContractList = getRealtimeProviders();
+    const rtList = rtContractList.length > 0
+      ? rtContractList.map((p) => ({
+          id: p.id,
+          name: p.name,
+          tagline: p.tagline ?? "",
+          url: p.url,
+          keyPlaceholder: p.key_placeholder ?? "Token...",
+          isConfigured: Boolean(
+            draftRealtime?.api_keys?.[p.id] ||
+            draftProvidersRealtime?.api_keys?.[p.id] ||
+            committedProvidersRealtime?.api_keys?.[p.id] ||
+            (p.id === "gemini_live" && (
+              draftLlm?.cloud_keys?.["gemini"] ||
+              draftProvidersLlm?.cloud_keys?.["gemini"] ||
+              committedProvidersLlm?.cloud_keys?.["gemini"]
+            ))
+          ),
+        }))
+      : [
+          {
+            id: "gemini_live",
+            name: "Gemini Live",
+            tagline: "Google's direct live speech model with search grounding",
+            url: "https://aistudio.google.com/apikey",
+            keyPlaceholder: "AIzaSy...",
+            isConfigured: Boolean(
+              draftRealtime?.api_keys?.["gemini_live"] ||
+              draftProvidersRealtime?.api_keys?.["gemini_live"] ||
+              committedProvidersRealtime?.api_keys?.["gemini_live"] ||
+              draftLlm?.cloud_keys?.["gemini"] ||
+              draftProvidersLlm?.cloud_keys?.["gemini"] ||
+              committedProvidersLlm?.cloud_keys?.["gemini"]
+            ),
+          },
+          {
+            id: "deepgram_voice_agent",
+            name: "Deepgram Agent",
+            tagline: "Deepgram's real-time conversational voice agent",
+            url: "https://console.deepgram.com/",
+            keyPlaceholder: "Token...",
+            isConfigured: Boolean(
+              draftRealtime?.api_keys?.["deepgram_voice_agent"] ||
+              draftProvidersRealtime?.api_keys?.["deepgram_voice_agent"] ||
+              committedProvidersRealtime?.api_keys?.["deepgram_voice_agent"]
+            ),
+          },
+        ];
+    return rtList;
+  }, [
+    draftRealtime?.api_keys,
+    draftProvidersRealtime?.api_keys,
+    committedProvidersRealtime?.api_keys,
+    draftLlm?.cloud_keys,
+    draftProvidersLlm?.cloud_keys,
+    committedProvidersLlm?.cloud_keys,
+  ]);
 
   const rawCloudProviders = useCatalogStore((s) => s.cloudProviders);
   const storeCloudProviders = isRealtime ? realtimeProviders : rawCloudProviders;
   const storeTtsProviders = useCatalogStore((s) => s.ttsProviders);
 
   const customServers = useMemo(() => {
-    return (isTts ? draftSettings?.tts.servers ?? draftSettings?.providers?.tts.servers : draftSettings?.llm.servers ?? draftSettings?.providers?.llm.servers) ?? [];
-  }, [isTts, draftSettings]);
+    return (isTts
+      ? draftTts?.servers ?? draftProvidersTts?.servers
+      : draftLlm?.servers ?? draftProvidersLlm?.servers) ?? [];
+  }, [isTts, draftTts?.servers, draftProvidersTts?.servers, draftLlm?.servers, draftProvidersLlm?.servers]);
 
   const activeCategoryType = useMemo(() => {
-    const domain = category.toLowerCase() as "stt" | "tts" | "llm";
-    return draftSettings?.[domain].active.category ?? "embedded";
-  }, [category, draftSettings]);
+    if (category === "TTS") return draftTts?.active.category ?? "embedded";
+    if (category === "LLM") return draftLlm?.active.category ?? "embedded";
+    return "embedded";
+  }, [category, draftTts?.active.category, draftLlm?.active.category]);
 
   const isLocalSelected = activeCategoryType === "embedded";
   const activeCloudId = useMemo(() => {
     if (activeCategoryType !== "cloud") return null;
-    return activeCloudProviderId ?? (isTts ? draftSettings?.tts.active.provider : draftSettings?.llm.active.provider) ?? null;
-  }, [activeCategoryType, activeCloudProviderId, isTts, draftSettings]);
+    return activeCloudProviderId ?? (isTts ? draftTts?.active.provider : draftLlm?.active.provider) ?? null;
+  }, [activeCategoryType, activeCloudProviderId, isTts, draftTts?.active.provider, draftLlm?.active.provider]);
 
-  const activeServerId = activeCategoryType === "server" ? (isTts ? draftSettings?.tts.active.provider : draftSettings?.llm.active.provider) ?? null : null;
+  const activeServerId = activeCategoryType === "server"
+    ? (isTts ? draftTts?.active.provider : draftLlm?.active.provider) ?? null
+    : null;
 
   const handleSelectServer = useCallback((server: LlmCustomServer | TtsCustomServer) => {
     useCatalogStore.getState().clearRemoteModelsError();
+    const curSettings = useSettingsStore.getState().settings;
     const committedActive = isTts
-      ? committedSettings?.tts?.active ?? null
-      : committedSettings?.llm?.active ?? null;
+      ? curSettings?.tts?.active ?? null
+      : curSettings?.llm?.active ?? null;
     if (isTts) {
       updateDraft(
         "tts",
@@ -232,7 +344,7 @@ export const ProviderModal = memo(({
         )
       );
     }
-  }, [isTts, committedSettings, updateDraft]);
+  }, [isTts, updateDraft]);
 
   const handleDeleteServer = useCallback(async (serverId: string) => {
     await deleteCustomServer(isTts ? "tts" : "llm", serverId);
@@ -251,7 +363,8 @@ export const ProviderModal = memo(({
       onSelectLocal();
     } else {
       const domain = category.toLowerCase() as "stt" | "llm" | "tts";
-      const fallback = draftSettings?.[domain].last_selected.embedded ?? "";
+      const { draftSettings: draft, settings: committed } = useSettingsStore.getState();
+      const fallback = draft?.[domain].last_selected.embedded ?? "";
       updateDraft(
         domain,
         "active",
@@ -259,23 +372,16 @@ export const ProviderModal = memo(({
           "embedded",
           resolveProviderModel(
             { category: "embedded", provider: null },
-            committedSettings?.[domain]?.active ?? null,
+            committed?.[domain]?.active ?? null,
             fallback
           )
         )
       );
       if (domain === "tts" || domain === "stt") requestSpeechTab(domain);
     }
-  }, [category, committedSettings, draftSettings, onSelectLocal, updateDraft]);
+  }, [category, onSelectLocal, updateDraft]);
 
   const { containerRef: scrollContainerRef, lenisRef } = useLenisScrollContainer<HTMLDivElement>();
-  const committedActiveProviderId = isTts
-    ? committedSettings?.tts.active.provider
-    : committedSettings?.llm.active.provider;
-  const committedCategory = isTts
-    ? committedSettings?.tts.active.category
-    : committedSettings?.llm.active.category;
-  const isCommittedLocal = committedCategory === "embedded";
 
   const orderFingerprint = useMemo(
     () => `${committedActiveProviderId ?? ""}|${isCommittedLocal ? "local" : ""}|${pinnedProviderId ?? ""}|${storeCloudProviders.map((p) => getCommittedProviderKey(p.id)?.trim() ? "1" : "0").join("")}`,
@@ -360,9 +466,9 @@ export const ProviderModal = memo(({
     );
     return promoteActive(
       [...list].sort((a, b) => sort === "az" ? a.name.localeCompare(b.name, undefined, { sensitivity: "base" }) : b.name.localeCompare(a.name, undefined, { sensitivity: "base" })),
-      committedSettings?.tts.active.provider
+      committedActiveProviderId
     );
-  }, [deferredSearch, filterCategory, getProviderKey, isTts, sort, committedSettings?.tts.active.provider, storeTtsProviders]);
+  }, [deferredSearch, filterCategory, getProviderKey, sort, committedActiveProviderId, storeTtsProviders]);
 
   const modalFilteredProviders = useMemo(() => {
     if (filterCategory === "custom") return [];
@@ -379,9 +485,9 @@ export const ProviderModal = memo(({
         if (aKey !== bKey) return aKey ? -1 : 1;
         return sort === "az" ? a.name.localeCompare(b.name, undefined, { sensitivity: "base" }) : b.name.localeCompare(a.name, undefined, { sensitivity: "base" });
       }),
-      committedSettings?.llm.active.provider
+      committedActiveProviderId
     );
-  }, [deferredSearch, filterCategory, getProviderKey, getCommittedProviderKey, sort, committedSettings?.llm.active.provider, storeCloudProviders]);
+  }, [deferredSearch, filterCategory, getProviderKey, getCommittedProviderKey, sort, committedActiveProviderId, storeCloudProviders]);
 
   const matchesLocal = useMemo(() => {
     const q = deferredSearch.trim().toLowerCase();
@@ -397,9 +503,11 @@ export const ProviderModal = memo(({
     const q = deferredSearch.trim().toLowerCase();
     return promoteActive(
       !q ? [...customServers] : customServers.filter((s) => (s.name && s.name.toLowerCase().includes(q)) || (s.url && s.url.toLowerCase().includes(q)) || (s.id && s.id.toLowerCase().includes(q))),
-      isTts ? committedSettings?.tts.active.provider : committedSettings?.llm.active.provider
+      committedActiveProviderId
     );
-  }, [showCustomSection, deferredSearch, customServers, isTts, committedSettings?.tts.active.provider, committedSettings?.llm.active.provider]);
+  }, [showCustomSection, deferredSearch, customServers, committedActiveProviderId]);
+
+  const ttsActiveModel = draftTts?.active.model ?? "";
 
   const localMeta = PROVIDERS_CONFIG_DESK_COPY.localMeta[category];
 
@@ -429,7 +537,7 @@ export const ProviderModal = memo(({
           activeCloudId === entry.id ||
           (entry.id === "edge_speech" &&
             ((activeCloudId?.includes("edge") ?? false) ||
-              (draftSettings?.tts.active.model.includes("edge") ?? false)));
+              (ttsActiveModel.includes("edge"))));
 
         const node = (
           <SelectableCard
@@ -523,40 +631,13 @@ export const ProviderModal = memo(({
             }
             actionSlot={
               isEditing ? (
-                <div className="flex items-center gap-1.5 border-b border-[rgb(var(--accent))] pb-0.5 w-full bg-transparent animate-fade-in">
-                  <input
-                    type="password"
-                    autoFocus
-                    value={editingKeyValue}
-                    onChange={(e) => setEditingKeyValue(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") onSaveInlineKey(provider.id);
-                      if (e.key === "Escape") onCancelInlineKey();
-                    }}
-                    placeholder={provider.keyPlaceholder}
-                    className="w-full bg-transparent text-[11px] font-mono outline-none text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/30"
-                  />
-                  <Tooltip label={PROVIDERS_CONFIG_DESK_COPY.llm.cloud.saveKey} side="top" asChild>
-                    <button
-                      type="button"
-                      onClick={() => onSaveInlineKey(provider.id)}
-                      aria-label={PROVIDERS_CONFIG_DESK_COPY.llm.cloud.saveKey}
-                      className="text-[rgb(var(--accent))] hover:opacity-75 transition-opacity p-0.5 shrink-0 bg-transparent cursor-pointer"
-                    >
-                      <Check size={13} strokeWidth={2.2} />
-                    </button>
-                  </Tooltip>
-                  <Tooltip label={PROVIDERS_CONFIG_DESK_COPY.llm.cloud.cancelKey} side="top" asChild>
-                    <button
-                      type="button"
-                      onClick={onCancelInlineKey}
-                      aria-label={PROVIDERS_CONFIG_DESK_COPY.llm.cloud.cancelKey}
-                      className="text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))] transition-colors p-0.5 shrink-0 bg-transparent cursor-pointer"
-                    >
-                      <X size={13} />
-                    </button>
-                  </Tooltip>
-                </div>
+                <InlineKeyEditor
+                  initialValue={editingKeyValue}
+                  placeholder={provider.keyPlaceholder}
+                  onChangeValue={setEditingKeyValue}
+                  onSave={() => onSaveInlineKey(provider.id)}
+                  onCancel={onCancelInlineKey}
+                />
               ) : (
                 <div className="flex items-center justify-between text-[11px] font-mono w-full">
                   <span className="text-[rgb(var(--foreground-muted))]/70">
@@ -652,11 +733,10 @@ export const ProviderModal = memo(({
     ttsFilteredProviders,
     modalFilteredProviders,
     activeCloudId,
-    draftSettings?.tts.active.model,
+    ttsActiveModel,
     updateDraft,
     onSelectProvider,
     editingProviderId,
-    editingKeyValue,
     onSaveInlineKey,
     onCancelInlineKey,
     onNavigateToModels,
@@ -667,131 +747,143 @@ export const ProviderModal = memo(({
     setEditingKeyValue,
   ]);
 
-  const customCards = filteredCustomServers.map((server) => {
-    if (editingServer?.id === server.id) {
+  const customCards = useMemo(() => {
+    return filteredCustomServers.map((server) => {
+      if (editingServer?.id === server.id) {
+        return {
+          key: `server:${server.id}`,
+          node: (
+            <CustomServerFormCard
+              key={server.id}
+              category={category}
+              initial={server}
+              onClose={() => setEditingServer(null)}
+              onServerSaved={() => {}}
+            />
+          ),
+        };
+      }
+      const isSelected = activeCategoryType === "server" && activeServerId === server.id;
       return {
         key: `server:${server.id}`,
         node: (
-          <CustomServerFormCard
-            key={server.id}
-            category={category}
-            initial={server}
-            onClose={() => setEditingServer(null)}
-            onServerSaved={() => {}}
+          <SelectableCard
+            key={server.id || server.url}
+            id={server.id}
+            name={server.name || "Custom Server"}
+            tagline={server.url}
+            logo={null}
+            providerName={server.name}
+            isSelected={isSelected}
+            onSelect={() => handleSelectServer(server)}
+            cornerSlot={
+              onNavigateToModels && category === "LLM" ? (
+                <Tooltip label={LANGUAGE_CARD_COPY.browseModels} side="top" asChild>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleSelectServer(server);
+                      onNavigateToModels({
+                        id: server.id,
+                        name: server.name || "Custom Server",
+                        url: server.url,
+                        popular: false,
+                        keyPlaceholder: "",
+                      });
+                    }}
+                    className="w-7 h-7 flex items-center justify-center rounded-md text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.1)] transition-colors cursor-pointer"
+                    aria-label={`${LANGUAGE_CARD_COPY.browseModels}: ${server.name || "Custom Server"}`}
+                  >
+                    <ArrowRight size={13} strokeWidth={2} />
+                  </button>
+                </Tooltip>
+              ) : undefined
+            }
+            actionSlot={
+              <div className="flex items-center justify-between text-[11px] font-mono w-full">
+                <span className="text-[rgb(var(--foreground-muted))]/70">
+                  {PROVIDERS_CONFIG_DESK_COPY.badges.selfHosted}
+                </span>
+                {confirmDeleteProviderId === server.id ? (
+                  <div className="flex items-center gap-1">
+                    <Tooltip label={PROVIDERS_CONFIG_DESK_COPY.actions.deleteServer} side="top" asChild>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteServer(server.id);
+                          setConfirmDeleteProviderId(null);
+                        }}
+                        className="p-1 rounded-md bg-[rgba(var(--danger),0.18)] text-[rgb(var(--danger))] hover:bg-[rgba(var(--danger),0.3)] transition-colors cursor-pointer"
+                        aria-label="Confirm delete"
+                      >
+                        <Check size={12} strokeWidth={2.75} />
+                      </button>
+                    </Tooltip>
+                    <Tooltip label={LANGUAGE_CARD_COPY.cancel} side="top" asChild>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setConfirmDeleteProviderId(null);
+                        }}
+                        className="p-1 rounded-md text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.08)] transition-colors cursor-pointer"
+                        aria-label="Cancel delete"
+                      >
+                        <X size={12} strokeWidth={2.5} />
+                      </button>
+                    </Tooltip>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
+                    <Tooltip label={PROVIDERS_CONFIG_DESK_COPY.actions.editServer} side="top">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditingServer(server);
+                          setIsCreatingCustomServer(false);
+                        }}
+                        className="p-1 rounded-md text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.1)] transition-all cursor-pointer"
+                        aria-label={PROVIDERS_CONFIG_DESK_COPY.actions.editServer}
+                      >
+                        <Pencil size={13} />
+                      </button>
+                    </Tooltip>
+                    <Tooltip label={PROVIDERS_CONFIG_DESK_COPY.actions.deleteServer} side="top">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setConfirmDeleteProviderId(server.id);
+                        }}
+                        className="p-1 rounded-md text-[rgb(var(--foreground-muted))]/40 hover:text-[rgb(var(--error))] hover:bg-[rgba(var(--error),0.1)] transition-all cursor-pointer"
+                        aria-label={PROVIDERS_CONFIG_DESK_COPY.actions.deleteServer}
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </Tooltip>
+                  </div>
+                )}
+              </div>
+            }
           />
         ),
       };
-    }
-    const isSelected = activeCategoryType === "server" && activeServerId === server.id;
-    return {
-      key: `server:${server.id}`,
-      node: (
-        <SelectableCard
-          key={server.id || server.url}
-          id={server.id}
-          name={server.name || "Custom Server"}
-          tagline={server.url}
-          logo={null}
-          providerName={server.name}
-          isSelected={isSelected}
-          onSelect={() => handleSelectServer(server)}
-          cornerSlot={
-            onNavigateToModels && category === "LLM" ? (
-              <Tooltip label={LANGUAGE_CARD_COPY.browseModels} side="top" asChild>
-                <button
-                  type="button"
-                  onClick={() => {
-                    handleSelectServer(server);
-                    onNavigateToModels({
-                      id: server.id,
-                      name: server.name || "Custom Server",
-                      url: server.url,
-                      popular: false,
-                      keyPlaceholder: "",
-                    });
-                  }}
-                  className="w-7 h-7 flex items-center justify-center rounded-md text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.1)] transition-colors cursor-pointer"
-                  aria-label={`${LANGUAGE_CARD_COPY.browseModels}: ${server.name || "Custom Server"}`}
-                >
-                  <ArrowRight size={13} strokeWidth={2} />
-                </button>
-              </Tooltip>
-            ) : undefined
-          }
-          actionSlot={
-            <div className="flex items-center justify-between text-[11px] font-mono w-full">
-              <span className="text-[rgb(var(--foreground-muted))]/70">
-                {PROVIDERS_CONFIG_DESK_COPY.badges.selfHosted}
-              </span>
-              {confirmDeleteProviderId === server.id ? (
-                <div className="flex items-center gap-1">
-                  <Tooltip label={PROVIDERS_CONFIG_DESK_COPY.actions.deleteServer} side="top" asChild>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDeleteServer(server.id);
-                        setConfirmDeleteProviderId(null);
-                      }}
-                      className="p-1 rounded-md bg-[rgba(var(--danger),0.18)] text-[rgb(var(--danger))] hover:bg-[rgba(var(--danger),0.3)] transition-colors cursor-pointer"
-                      aria-label="Confirm delete"
-                    >
-                      <Check size={12} strokeWidth={2.75} />
-                    </button>
-                  </Tooltip>
-                  <Tooltip label={LANGUAGE_CARD_COPY.cancel} side="top" asChild>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setConfirmDeleteProviderId(null);
-                      }}
-                      className="p-1 rounded-md text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.08)] transition-colors cursor-pointer"
-                      aria-label="Cancel delete"
-                    >
-                      <X size={12} strokeWidth={2.5} />
-                    </button>
-                  </Tooltip>
-                </div>
-              ) : (
-                <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
-                  <Tooltip label={PROVIDERS_CONFIG_DESK_COPY.actions.editServer} side="top">
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setEditingServer(server);
-                        setIsCreatingCustomServer(false);
-                      }}
-                      className="p-1 rounded-md text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.1)] transition-all cursor-pointer"
-                      aria-label={PROVIDERS_CONFIG_DESK_COPY.actions.editServer}
-                    >
-                      <Pencil size={13} />
-                    </button>
-                  </Tooltip>
-                  <Tooltip label={PROVIDERS_CONFIG_DESK_COPY.actions.deleteServer} side="top">
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setConfirmDeleteProviderId(server.id);
-                      }}
-                      className="p-1 rounded-md text-[rgb(var(--foreground-muted))]/40 hover:text-[rgb(var(--error))] hover:bg-[rgba(var(--error),0.1)] transition-all cursor-pointer"
-                      aria-label={PROVIDERS_CONFIG_DESK_COPY.actions.deleteServer}
-                    >
-                      <Trash2 size={13} />
-                    </button>
-                  </Tooltip>
-                </div>
-              )}
-            </div>
-          }
-        />
-      ),
-    };
-  });
+    });
+  }, [
+    filteredCustomServers,
+    editingServer,
+    activeCategoryType,
+    activeServerId,
+    handleSelectServer,
+    onNavigateToModels,
+    category,
+    confirmDeleteProviderId,
+    handleDeleteServer,
+  ]);
 
-  const creationCard = (
+  const creationCard = useMemo(() => (
     <>
       {showCustomSection && isCreatingCustomServer && (
         <CustomServerFormCard key="new" category={category} initial={null} onClose={() => setIsCreatingCustomServer(false)} onServerSaved={() => {}} />
@@ -803,7 +895,7 @@ export const ProviderModal = memo(({
         />
       )}
     </>
-  );
+  ), [showCustomSection, isCreatingCustomServer, category, showCustomCreationCard, editingServer]);
 
   const { readyElements, restElements } = useMemo(() => {
     let savedNode: { key: string; node: React.ReactNode } | null = null;

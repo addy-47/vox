@@ -6,6 +6,7 @@ import { cn } from "@/shared/lib/utils";
 import { Card, Tooltip } from "@/shared/ui";
 import { beginAccentPreview, endAccentPreview, previewAccent } from "@/shared/theme";
 import { APPEARANCE_COPY } from "@/data/settingsCopy";
+import { copyToClipboard } from "@/shared/lib/clipboard";
 
 interface AppearanceCardProps {
   layoutMode?: "full-max" | "full-min" | "small";
@@ -17,6 +18,9 @@ export const AppearanceCard = memo(({ layoutMode = "full-max" }: AppearanceCardP
   const [localColor, setLocalColor] = useState(appearance?.accent_seed || "#00dbe9");
   const [copied, setCopied] = useState(false);
   const draggingRef = useRef(false);
+  const colorRafRef = useRef<number | null>(null);
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   // Live refs: the release listener must read the newest colour without being
   // re-attached on every drag frame.
   const localColorRef = useRef(localColor);
@@ -27,6 +31,7 @@ export const AppearanceCard = memo(({ layoutMode = "full-max" }: AppearanceCardP
     if (draggingRef.current) return;
     if (appearance?.accent_seed && appearance.accent_seed !== localColorRef.current) {
       setLocalColor(appearance.accent_seed);
+      pendingSeedRef.current = appearance.accent_seed;
     }
   }, [appearance?.accent_seed]);
 
@@ -39,11 +44,17 @@ export const AppearanceCard = memo(({ layoutMode = "full-max" }: AppearanceCardP
   const commitAccent = useCallback(() => {
     if (!draggingRef.current) return;
     draggingRef.current = false;
+    if (colorRafRef.current !== null) {
+      cancelAnimationFrame(colorRafRef.current);
+      colorRafRef.current = null;
+    }
     window.removeEventListener("pointerup", commitAccent);
     window.removeEventListener("mouseup", commitAccent);
     window.removeEventListener("pointercancel", commitAccent);
     const next = localColorRef.current;
-    if (pendingSeedRef.current && next !== pendingSeedRef.current) {
+    setLocalColor(next);
+    if (next && next !== pendingSeedRef.current) {
+      pendingSeedRef.current = next;
       updateDraft("appearance", "accent_seed", next);
     }
     endAccentPreview();
@@ -55,44 +66,55 @@ export const AppearanceCard = memo(({ layoutMode = "full-max" }: AppearanceCardP
   useEffect(
     () => () => {
       draggingRef.current = false;
+      if (colorRafRef.current !== null) {
+        cancelAnimationFrame(colorRafRef.current);
+      }
+      if (copyTimerRef.current !== null) {
+        clearTimeout(copyTimerRef.current);
+      }
+      window.removeEventListener("pointerup", commitAccent);
+      window.removeEventListener("mouseup", commitAccent);
+      window.removeEventListener("pointercancel", commitAccent);
       endAccentPreview();
     },
-    []
+    [commitAccent]
   );
 
   /**
    * Live accent preview. `previewAccent` is rAF-coalesced and holds the repaint
    * gate open for the duration of the drag, so the write costs one document
    * style recalc per frame instead of one per mousemove event.
-   *
-   * This used to be a bare `documentElement.style.setProperty` on every event:
-   * unthrottled, outside the theme module, and with no notification-token sync,
-   * so the seven `--notif-*` colours sat frozen at the old accent for the whole
-   * drag and then jumped.
-   *
-   * The release is bound to `window`, not just the wrapper's `onPointerUp`:
-   * react-colorful tracks the drag with a `document` mouseup listener, so a
-   * gesture that ends outside the card never fires the wrapper handler — and an
-   * unclosed gate leaves all 237 `transition-all` sites and every
-   * `backdrop-filter` region suspended app-wide.
    */
   const handleColorChange = useCallback((color: string) => {
-    setLocalColor(color);
+    localColorRef.current = color;
     if (!draggingRef.current) {
       draggingRef.current = true;
+      pendingSeedRef.current =
+        useSettingsStore.getState().draftSettings?.appearance?.accent_seed ?? localColorRef.current;
       beginAccentPreview();
       window.addEventListener("pointerup", commitAccent);
       window.addEventListener("mouseup", commitAccent);
       window.addEventListener("pointercancel", commitAccent);
     }
+    if (colorRafRef.current === null) {
+      colorRafRef.current = requestAnimationFrame(() => {
+        colorRafRef.current = null;
+        setLocalColor(localColorRef.current);
+      });
+    }
     previewAccent(color);
   }, [commitAccent]);
 
-  const handleCopy = useCallback(() => {
-    void navigator.clipboard.writeText(localColor).then(() => {
+  const handleCopy = useCallback(async () => {
+    const success = await copyToClipboard(localColor);
+    if (success) {
       setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    });
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+      copyTimerRef.current = setTimeout(() => {
+        copyTimerRef.current = null;
+        setCopied(false);
+      }, 1500);
+    }
   }, [localColor]);
 
   if (!appearance) return null;

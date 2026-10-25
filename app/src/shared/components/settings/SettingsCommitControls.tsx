@@ -39,24 +39,24 @@ export function isLlmSelectionMissingModel(
 
 /**
  * Leaf selector hook for active LLM provider and cloud API key.
- * Prevents full draftSettings subscriptions that cause 1,000+ unnecessary renders.
+ * Gated by enabled flag so non-language cards skip subscribing to cloud keys.
  */
-function useLlmCloudApiKey() {
-  const llmCategory = useSettingsStore((s) => s.draftSettings?.llm.active.category);
-  const llmActiveProvider = useSettingsStore((s) => s.draftSettings?.llm.active.provider);
-  const llmActiveModel = useSettingsStore((s) => s.draftSettings?.llm.active.model);
+function useLlmCloudApiKey(enabled = true) {
+  const llmCategory = useSettingsStore((s) => (enabled ? s.draftSettings?.llm.active.category : undefined));
+  const llmActiveProvider = useSettingsStore((s) => (enabled ? s.draftSettings?.llm.active.provider : undefined));
+  const llmActiveModel = useSettingsStore((s) => (enabled ? s.draftSettings?.llm.active.model : undefined));
 
   const draftLlmKey = useSettingsStore(
-    useCallback((s: SettingsState) => (llmActiveProvider ? s.draftSettings?.llm.cloud_keys?.[llmActiveProvider] : undefined), [llmActiveProvider])
+    useCallback((s: SettingsState) => (enabled && llmActiveProvider ? s.draftSettings?.llm.cloud_keys?.[llmActiveProvider] : undefined), [enabled, llmActiveProvider])
   );
   const draftProvKey = useSettingsStore(
-    useCallback((s: SettingsState) => (llmActiveProvider ? s.draftSettings?.providers?.llm.cloud_keys?.[llmActiveProvider] : undefined), [llmActiveProvider])
+    useCallback((s: SettingsState) => (enabled && llmActiveProvider ? s.draftSettings?.providers?.llm.cloud_keys?.[llmActiveProvider] : undefined), [enabled, llmActiveProvider])
   );
   const comProvKey = useSettingsStore(
-    useCallback((s: SettingsState) => (llmActiveProvider ? s.settings?.providers?.llm.cloud_keys?.[llmActiveProvider] : undefined), [llmActiveProvider])
+    useCallback((s: SettingsState) => (enabled && llmActiveProvider ? s.settings?.providers?.llm.cloud_keys?.[llmActiveProvider] : undefined), [enabled, llmActiveProvider])
   );
   const comLlmKey = useSettingsStore(
-    useCallback((s: SettingsState) => (llmActiveProvider ? s.settings?.llm.cloud_keys?.[llmActiveProvider] : undefined), [llmActiveProvider])
+    useCallback((s: SettingsState) => (enabled && llmActiveProvider ? s.settings?.llm.cloud_keys?.[llmActiveProvider] : undefined), [enabled, llmActiveProvider])
   );
 
   const cloudApiKey = draftLlmKey ?? draftProvKey ?? comProvKey ?? comLlmKey;
@@ -71,17 +71,20 @@ function useLlmCloudApiKey() {
  * saved toast, restarting indicator, and save failure.
  */
 export function useDomainCommitState(domainId: string): DomainCommitState {
-  const { llmCategory, llmActiveModel, cloudApiKey } = useLlmCloudApiKey();
-  const pipelineMode = useSettingsStore((s) => s.draftSettings?.interaction.pipeline_mode);
-  const realtimeProvider = useSettingsStore((s) => s.draftSettings?.realtime.active.provider);
+  const isLanguageDomain = domainId === "language";
+  const isSpeechOrInteraction = domainId === "speech" || domainId === "interaction";
+
+  const { llmCategory, llmActiveModel, cloudApiKey } = useLlmCloudApiKey(isLanguageDomain);
+  const pipelineMode = useSettingsStore((s) => (isSpeechOrInteraction ? s.draftSettings?.interaction.pipeline_mode : undefined));
+  const realtimeProvider = useSettingsStore((s) => (isSpeechOrInteraction ? s.draftSettings?.realtime.active.provider : undefined));
   const realtimeKey = useSettingsStore(
     useCallback(
       (s: SettingsState) =>
-        realtimeProvider
+        isSpeechOrInteraction && realtimeProvider
           ? (s.draftSettings?.realtime.api_keys?.[realtimeProvider] ??
              s.draftSettings?.providers?.realtime.api_keys?.[realtimeProvider])
           : undefined,
-      [realtimeProvider]
+      [isSpeechOrInteraction, realtimeProvider]
     )
   );
 
@@ -373,13 +376,14 @@ export const ModalProviderFooter = memo(({ category }: { category: "STT" | "LLM"
   const isTts = category === "TTS";
   const failedKeys = useSettingsStore((s) => s.failedSaveDomains[isTts ? "speech" : "language"]);
   const remoteModelsError = useCatalogStore((s) => s.remoteModelsError);
-  const { llmCategory, llmActiveModel, cloudApiKey } = useLlmCloudApiKey();
+  const { llmCategory, llmActiveModel, cloudApiKey } = useLlmCloudApiKey(category === "LLM");
   const isCloudLlmMissingKey = category === "LLM" && llmCategory === "cloud" && !cloudApiKey?.trim();
   const isMissingModel =
     isLlmSelectionMissingModel({ category: llmCategory, model: llmActiveModel });
 
   if (category === "STT") return null;
 
+  // backend-gap: structured error_kind on fetch_remote_models response.
   // The catalog reports a missing cloud credential as a plain error string.
   // Rendering it as "Connection failed" next to the missing-key banner showed
   // the same cause twice. A missing credential is a credential problem, not a

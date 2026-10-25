@@ -17,6 +17,7 @@ import { Tooltip } from "@/shared/ui/Tooltip";
 import { probeProviderTarget } from "@/services/catalogService";
 import { ipcErrorMessage } from "@/shared/lib/ipcError";
 import { cn } from "@/shared/lib/utils";
+import { getRealtimeProviders } from "@/services/settingsService";
 import { AddCard } from "../shared/AddCard";
 import { CatalogReveal } from "../shared/CatalogReveal";
 import { ProviderPill } from "./ProviderPill";
@@ -172,8 +173,49 @@ CustomServerInPlaceCard.displayName = "CustomServerInPlaceCard";
  * inline key field inside their own row.
  */
 export const ProviderGrid = memo(({ onOpenModels, onExpand }: ProviderGridProps) => {
-  const draftSettings = useSettingsStore(useShallow((s) => s.draftSettings));
-  const committedSettings = useSettingsStore(useShallow((s) => s.settings));
+  const isRealtime = useSettingsStore((s) => s.draftSettings?.interaction.pipeline_mode === "realtime");
+  const draftLlm = useSettingsStore(useShallow((s) => s.draftSettings?.llm));
+  const draftProvidersLlm = useSettingsStore(useShallow((s) => s.draftSettings?.providers?.llm));
+  const committedLlm = useSettingsStore(useShallow((s) => s.settings?.llm));
+  const committedProvidersLlm = useSettingsStore(useShallow((s) => s.settings?.providers?.llm));
+  const draftRealtime = useSettingsStore(useShallow((s) => s.draftSettings?.realtime));
+  const committedRealtime = useSettingsStore(useShallow((s) => s.settings?.realtime));
+  const draftProvidersRealtime = useSettingsStore(useShallow((s) => s.draftSettings?.providers?.realtime));
+  const committedProvidersRealtime = useSettingsStore(useShallow((s) => s.settings?.providers?.realtime));
+
+  const draftSettings = useMemo(() => ({
+    interaction: { pipeline_mode: isRealtime ? ("realtime" as const) : ("turn_based" as const) },
+    llm: draftLlm ?? {
+      active: { category: "embedded" as const, provider: null, model: "" },
+      servers: [],
+      last_selected: { embedded: "" },
+      cloud_keys: {} as Record<string, string>,
+    },
+    providers: {
+      llm: draftProvidersLlm ?? { servers: [], cloud_keys: {} as Record<string, string> },
+      realtime: draftProvidersRealtime,
+    },
+    realtime: draftRealtime ?? {
+      active: { category: "cloud" as const, provider: "gemini_live", model: "" },
+      active_voice_id: "",
+      api_keys: {} as Record<string, string>,
+    },
+  }), [isRealtime, draftLlm, draftProvidersLlm, draftRealtime, draftProvidersRealtime]);
+
+  const committedSettings = useMemo(() => ({
+    llm: committedLlm ?? {
+      active: { category: "embedded" as const, provider: null, model: "" },
+      servers: [],
+      last_selected: { embedded: "" },
+      cloud_keys: {} as Record<string, string>,
+    },
+    providers: {
+      llm: committedProvidersLlm,
+      realtime: committedProvidersRealtime,
+    },
+    realtime: committedRealtime,
+  }), [committedLlm, committedProvidersLlm, committedRealtime, committedProvidersRealtime]);
+
   const modelCatalog = useCatalogStore((s) => s.modelCatalog);
   const updateDraft = useSettingsStore((s) => s.updateDraft);
   const cloudProviders = useCatalogStore((s) => s.cloudProviders);
@@ -284,7 +326,6 @@ export const ProviderGrid = memo(({ onOpenModels, onExpand }: ProviderGridProps)
     }
   };
 
-  const isRealtime = draftSettings?.interaction.pipeline_mode === "realtime";
   const active = draftSettings?.llm.active;
   const activeCategory = active?.category ?? "embedded";
   const localModelId =
@@ -459,20 +500,28 @@ export const ProviderGrid = memo(({ onOpenModels, onExpand }: ProviderGridProps)
   };
 
   if (isRealtime) {
-    const realtimeProviders = [
-      {
-        id: "gemini_live",
-        name: "Gemini Live",
-        providerName: "gemini",
-        defaultModel: "gemini-2.5-flash",
-      },
-      {
-        id: "deepgram_voice_agent",
-        name: "Deepgram Agent",
-        providerName: "deepgram",
-        defaultModel: "gpt-5.2",
-      },
-    ];
+    const rtContractList = getRealtimeProviders();
+    const realtimeProviders = rtContractList.length > 0
+      ? rtContractList.map((p) => ({
+          id: p.id,
+          name: p.name,
+          providerName: p.id === "gemini_live" ? "gemini" : p.id === "deepgram_voice_agent" ? "deepgram" : p.id,
+          defaultModel: p.id === "deepgram_voice_agent" ? "gpt-5.2" : "gemini-2.5-flash",
+        }))
+      : [
+          {
+            id: "gemini_live",
+            name: "Gemini Live",
+            providerName: "gemini",
+            defaultModel: "gemini-2.5-flash",
+          },
+          {
+            id: "deepgram_voice_agent",
+            name: "Deepgram Agent",
+            providerName: "deepgram",
+            defaultModel: "gpt-5.2",
+          },
+        ];
 
     const currentPid = draftSettings?.realtime.active.provider ?? "gemini_live";
     const currentModel = draftSettings?.realtime.active.model ?? "";

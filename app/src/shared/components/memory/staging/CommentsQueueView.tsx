@@ -1,6 +1,7 @@
 import React, { useState, memo } from "react";
 import { MessageSquare, Edit3, Trash2 } from "lucide-react";
 import { Tooltip } from "@/shared/ui/Tooltip";
+import { useOverlay } from "@/shared/hooks/useOverlay";
 import { MEMORY_COPY } from "@/data/memoryCopy";
 import type { MemoryComment } from "../stagingTypes";
 
@@ -15,6 +16,12 @@ export const CommentsQueueView: React.FC<CommentsQueueViewProps> = memo(
   ({ comments, onDeleteComment, onUpdateComment, onClearComments }) => {
     const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
     const [editingCommentText, setEditingCommentText] = useState("");
+
+    useOverlay({
+      active: editingCommentId !== null,
+      onClose: () => setEditingCommentId(null),
+      dismissOnOutside: false,
+    });
 
     return (
       <div className="flex-1 min-h-0 flex flex-col justify-between pt-3 transition-opacity duration-500">

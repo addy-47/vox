@@ -213,7 +213,7 @@ let activeObservationsInFlight: Promise<ObservationRecord[]> | null = null;
 
 function fetchActiveObservations(): Promise<ObservationRecord[]> {
   if (activeObservationsInFlight) return activeObservationsInFlight;
-  activeObservationsInFlight = getObservations(undefined, "active").finally(() => {
+  activeObservationsInFlight = getObservations(undefined, "staged").finally(() => {
     activeObservationsInFlight = null;
   });
   return activeObservationsInFlight;

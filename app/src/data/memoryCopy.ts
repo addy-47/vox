@@ -227,5 +227,9 @@ export const MEMORY_COPY = {
     pipelineStageFailed: "Failed (will retry)",
     pipelineStageFailedDesc: "Scheduled for automatic retry",
     sessionsHeader: "Sessions",
+    loadingSessions: "Loading sessions…",
+    noSessionsAvailable: "No sessions available",
+    filteredPrefix: "Filtered:",
+    resetFilter: "Reset",
   },
 };

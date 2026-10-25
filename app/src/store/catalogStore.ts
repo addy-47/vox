@@ -290,9 +290,9 @@ export const useCatalogStore = create<CatalogState>((set, get) => ({
       const currentModels = get().remoteModelsByProvider[id];
       // Already degraded the same way: no new object identities, no re-render.
       if (
-        current.status === "error" &&
+        current?.status === "error" &&
         current.error === error &&
-        currentModels.length === 0
+        currentModels?.length === 0
       ) {
         return;
       }
@@ -322,7 +322,7 @@ export const useCatalogStore = create<CatalogState>((set, get) => ({
 
     const fetchKey = `${target.kind}|${id}|${target.base_url}|${target.api_key ? "key" : "nokey"}`;
     const cached = get().remoteModelsStatusByProvider[id];
-    if (!force && cached.status === "ready" && cached.fetchedKey === fetchKey) {
+    if (!force && cached?.status === "ready" && cached.fetchedKey === fetchKey) {
       return;
     }
 
@@ -343,7 +343,7 @@ export const useCatalogStore = create<CatalogState>((set, get) => ({
     set((state) => ({
       remoteModelsStatusByProvider: {
         ...state.remoteModelsStatusByProvider,
-        [id]: { status: "loading", error: null, fetchedKey: cached.fetchedKey ?? null },
+        [id]: { status: "loading", error: null, fetchedKey: cached?.fetchedKey ?? null },
       },
     }));
 

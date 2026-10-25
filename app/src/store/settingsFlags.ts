@@ -74,11 +74,13 @@ export function checkDomainDirty(
 
     if (!draftScope && !savedScope) continue;
     if (!draftScope || !savedScope) return true;
+    if (draftScope === savedScope) continue;
 
     if (rule.keys && rule.keys.length > 0) {
       for (const k of rule.keys) {
         const draftVal = draftScope[k];
         const savedVal = savedScope[k];
+        if (draftVal === savedVal) continue;
         if (JSON.stringify(draftVal) !== JSON.stringify(savedVal)) {
           return true;
         }
@@ -109,12 +111,14 @@ export function checkDomainRequiringRestart(
     const savedScope = scopeEntries(settings[scope]);
 
     if (!draftScope || !savedScope) continue;
+    if (draftScope === savedScope) continue;
 
     const keysToCheck = rule.keys || Object.keys(draftScope);
     for (const k of keysToCheck) {
       if (isRestartKey(scope, k)) {
         const draftVal = draftScope[k];
         const savedVal = savedScope[k];
+        if (draftVal === savedVal) continue;
         if (JSON.stringify(draftVal) !== JSON.stringify(savedVal)) {
           return true;
         }
@@ -138,6 +142,7 @@ export function checkCategoryDirty(
 
   if (!draftScope && !savedScope) return false;
   if (!draftScope || !savedScope) return true;
+  if (draftScope === savedScope) return false;
 
   const contractKeys = settingsContractService.getSupportedKeys(scope);
   const keys = contractKeys && contractKeys.length > 0 ? contractKeys : SETTINGS_SCOPE_KEYS[scope as SettingsScope];
@@ -145,6 +150,7 @@ export function checkCategoryDirty(
     for (const k of keys) {
       const draftVal = draftScope[k];
       const savedVal = savedScope[k];
+      if (draftVal === savedVal) continue;
       if (JSON.stringify(draftVal) !== JSON.stringify(savedVal)) {
         return true;
       }
@@ -152,4 +158,28 @@ export function checkCategoryDirty(
     return false;
   }
   return JSON.stringify(draftScope) !== JSON.stringify(savedScope);
+}
+
+/**
+ * Pure function to compute domain flags and hasChanges from settings and draftSettings.
+ * Preserves unchanged flag object references and short-circuits restart checks on clean domains.
+ */
+export function computeFlagsState(
+  settings: VoxSettings | null,
+  draftSettings: VoxSettings | null,
+  prevFlags: Record<string, DomainFlags> = {}
+): { domainFlags: Record<string, DomainFlags>; hasChanges: boolean } {
+  const flags: Record<string, DomainFlags> = {};
+  for (const id of COMMIT_DOMAIN_IDS) {
+    const dirty = checkDomainDirty(settings, draftSettings, id);
+    const requiresRestart = dirty ? checkDomainRequiringRestart(settings, draftSettings, id) : false;
+    const prev = prevFlags[id];
+    if (prev && prev.dirty === dirty && prev.requiresRestart === requiresRestart) {
+      flags[id] = prev;
+    } else {
+      flags[id] = { dirty, requiresRestart };
+    }
+  }
+  const hasChanges = COMMIT_DOMAIN_IDS.some((id) => flags[id].dirty);
+  return { domainFlags: flags, hasChanges };
 }

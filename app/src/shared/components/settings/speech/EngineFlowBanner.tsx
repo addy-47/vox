@@ -152,16 +152,11 @@ export const EngineFlowBanner = memo(
               <circle cy="-4" r="1.6" fill={accent} stroke="none" />
             </g>
 
-            {/* audio out — fades in at the core, full tail animated left to right */}
+            {/* Static tapered output waveform — matches JSDoc contract, zero per-bar SVG repaint */}
             <g fill={accent}>
               {OUT_BARS.map((b, i) => (
                 <rect
                   key={i}
-                  className="efb-a efb-bar"
-                  style={{
-                    transformOrigin: `${b.x + 1.75}px ${MID}px`,
-                    animationDelay: `${b.delay}s`,
-                  }}
                   x={b.x}
                   y={MID - b.h / 2}
                   width="3.5"

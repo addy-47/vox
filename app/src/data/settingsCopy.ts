@@ -251,6 +251,8 @@ export const DICTATION_COPY = {
   toggleAutoStopTooltip: (enabled: boolean) => enabled ? "Click to disable auto-stop" : "Click to enable auto-stop",
   autoStopDurationAria: "Silence auto-stop duration in seconds",
   autoStopDurationPlaceholder: "1.2",
+  pttActive: (hotkey: string) => `Push-to-Talk active (${hotkey})`,
+  continuousActive: (hotkey: string) => `Continuous / Passive active (${hotkey})`,
 };
 
 export const PERSONA_COPY = {
@@ -420,6 +422,19 @@ export const REMOTE_CONTROL_COPY = {
   statusSearching: "Searching for Controllers",
   statusConnected: "Controller Connected",
   disconnect: "Disconnect",
+  connectedTo: "Connected to",
+  wirelessAudioActive: ". Wireless audio and session control are active.",
+  wirelessMicActive: ". Wireless microphone and session control active.",
+  pairNewDevice: "Pair new device +",
+  revokeDevice: "Revoke device",
+  revokeDeviceAria: (name: string) => `Revoke ${name}`,
+  scanQrPrompt: "Scan QR Code to Pair",
+  scanQrButton: "Scan QR",
+  connectedHost: "Connected Host",
+  disconnectHostAria: "Disconnect from host",
+  pairDeviceScreenPrompt: "Pair this device with your desktop screen to control Vox wirelessly.",
+  enterIpManually: "Enter IP manually",
+  linked: "Linked",
 } as const;
 
 export const MEMORY_CARD_COPY = {
@@ -570,6 +585,9 @@ export const VOICE_CATALOG_COPY = {
   fallbackDescription: "On-device neural voice for natural speech synthesis.",
   emptyTitle: "No voices found",
   emptyHint: "No available voices match your current search and filter criteria.",
+  noVoicesAvailable: "No voices available for this provider. Configure an API key or check provider connection.",
+  noVoicesMatchFilters: "No voices match the selected filters.",
+  noVoicesMatchSearch: (query: string) => `No voices match "${query}" or active filters.`,
   resetFilters: "Reset Filters",
   cancel: "Cancel",
   selectVoice: "Select Voice",
@@ -614,6 +632,8 @@ export const LLM_CATALOG_COPY = {
   emptyHint: "Ensure the remote server is online and configured in the Interaction Card.",
   clearSearch: "Clear Search",
   noModelsMatch: "No models matching",
+  copyModelId: "Copy Model ID",
+  copiedModelId: "Copied Model ID",
   toolsSupported: "Supported",
   toolsNone: "None",
   toolsUnknown: "Unknown",

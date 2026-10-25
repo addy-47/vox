@@ -7,6 +7,7 @@ import { getEffectiveRealtimeApiKey } from "@/shared/lib/activeSelection";
 import { useCatalogStore } from "@/store/catalogStore";
 import { useRemoteLlmProbing } from "@/shared/hooks/useRemoteLlmProbing";
 import { useProviderSelection } from "@/shared/hooks/useProviderSelection";
+import { getRealtimeProviders } from "@/services/settingsService";
 import { ExpandableList } from "@/shared/ui/ExpandableList";
 import { SettingsCommitControls } from "@/shared/components/settings/SettingsCommitControls";
 import { CardTitleBar } from "../shared/CardTitleBar";
@@ -35,36 +36,33 @@ export interface LanguageCardProps {
  */
 export const LanguageCard = memo(({ layoutMode = "full-max" }: LanguageCardProps) => {
   const isRealtime = useSettingsStore((s) => s.draftSettings?.interaction.pipeline_mode === "realtime");
-  const draftSettings = useSettingsStore((s) => s.draftSettings);
-  const committedSettings = useSettingsStore((s) => s.settings);
   const activeLlmProvider = useSettingsStore(useShallow(selectActiveLlmProvider));
+  const realtimeProviderId = useSettingsStore((s) => s.draftSettings?.realtime.active.provider ?? "gemini_live");
+  const realtimeModel = useSettingsStore((s) => s.draftSettings?.realtime.active.model ?? "");
+  const effectiveRealtimeKey = useSettingsStore((s) =>
+    getEffectiveRealtimeApiKey(s.draftSettings, s.settings, s.draftSettings?.realtime.active.provider ?? "gemini_live") ?? ""
+  );
 
   const activeRealtimeProvider = useMemo<LlmProviderConfig>(() => {
-    const cur = draftSettings?.realtime.active.provider ?? "gemini_live";
-    const key = getEffectiveRealtimeApiKey(draftSettings, committedSettings, cur) ?? "";
-    const displayName =
-      cur === "gemini_live"
-        ? "Gemini Live"
-        : cur === "deepgram_voice_agent"
-        ? "Deepgram Agent"
-        : cur;
+    const rtContract = getRealtimeProviders().find((p) => p.id === realtimeProviderId);
     return {
       kind: "cloud",
-      provider_id: cur,
-      provider_name: displayName,
-      base_url: cur === "gemini_live" ? "https://generativelanguage.googleapis.com" : "https://agent.deepgram.com",
-      api_key: key,
-      model: draftSettings?.realtime.active.model ?? "",
+      provider_id: realtimeProviderId,
+      provider_name: rtContract?.name ?? (realtimeProviderId === "gemini_live" ? "Gemini Live" : realtimeProviderId),
+      base_url: rtContract?.url ?? "",
+      api_key: effectiveRealtimeKey,
+      model: realtimeModel,
     };
-  }, [draftSettings, committedSettings]);
-
-  const provider = isRealtime ? activeRealtimeProvider : activeLlmProvider;
-  const isRemote = isRealtime ? true : provider.kind !== "embedded";
-  const { remoteModels, loadingRemoteModels, remoteModelsError, probingMap, handleProbeCapabilities } =
-    useRemoteLlmProbing(provider, "llm", isRemote);
+  }, [realtimeProviderId, effectiveRealtimeKey, realtimeModel]);
 
   const [cardFace, setCardFace] = useState<"providers" | "models">("providers");
   const [modalLevel, setModalLevel] = useState<"providers" | "models">("providers");
+
+  const provider = isRealtime ? activeRealtimeProvider : activeLlmProvider;
+  const isRemote = isRealtime ? true : provider.kind !== "embedded";
+  const shouldProbe = isRemote && (cardFace === "models" || modalLevel === "models");
+  const { remoteModels, loadingRemoteModels, remoteModelsError, probingMap, handleProbeCapabilities } =
+    useRemoteLlmProbing(provider, "llm", shouldProbe);
 
   const selection = useProviderSelection({ category: "LLM" });
 

@@ -511,6 +511,8 @@ export const Memory: React.FC = memo(() => {
         <ErrorBoundary name="MemoryTimeline">
           <MemoryTimeline
             facts={facts}
+            sessions={sessions}
+            isLightMode={isLightMode}
             selectedSessionId={selectedSessionId}
             selectedFactId={selectedFact?.id ?? null}
             onSelectSession={handleSelectSession}

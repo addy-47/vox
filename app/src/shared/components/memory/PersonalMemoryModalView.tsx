@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { Tooltip, TabStrip } from "@/shared/ui";
+import { useOverlay } from "@/shared/hooks/useOverlay";
 import { MEMORY_COPY } from "@/data/memoryCopy";
 import { LAYOUT_COPY } from "@/data/layoutCopy";
 import type { UsePersonalMemoryDrawerReturn } from "@/shared/hooks/usePersonalMemoryDrawer";
@@ -68,20 +69,20 @@ export const PersonalMemoryModalView: React.FC<PersonalMemoryModalViewProps> = m
       prevJustCommittedRef.current = drawer.justCommitted;
     }, [drawer.justCommitted]);
 
-    // Handle outside clicks for status filter and more actions dropdowns
-    useEffect(() => {
-      if (!isFilterOpen && !isMoreMenuOpen) return;
-      const handleClickOutside = (e: MouseEvent) => {
-        if (filterMenuRef.current && !filterMenuRef.current.contains(e.target as Node)) {
-          setIsFilterOpen(false);
-        }
-        if (moreMenuRef.current && !moreMenuRef.current.contains(e.target as Node)) {
-          setIsMoreMenuOpen(false);
-        }
-      };
-      document.addEventListener("mousedown", handleClickOutside);
-      return () => document.removeEventListener("mousedown", handleClickOutside);
-    }, [isFilterOpen, isMoreMenuOpen]);
+    // Register dropdown overlays with global overlayStack
+    useOverlay({
+      active: isFilterOpen,
+      onClose: () => setIsFilterOpen(false),
+      ref: filterMenuRef,
+      dismissOnOutside: true,
+    });
+
+    useOverlay({
+      active: isMoreMenuOpen,
+      onClose: () => setIsMoreMenuOpen(false),
+      ref: moreMenuRef,
+      dismissOnOutside: true,
+    });
 
     // Handle comment selection in Dossier -> Redirect to Staging in comment mode
     const handleCommentFromDossier = () => {
@@ -384,40 +385,41 @@ export const PersonalMemoryModalView: React.FC<PersonalMemoryModalViewProps> = m
 
                   {/* Filter dropdown matching StagingHeader */}
                 <div className="relative shrink-0" ref={filterMenuRef}>
-                  <button
-                    type="button"
-                    onClick={() => setIsFilterOpen((prev) => !prev)}
-                    className={cn(
-                      "flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-mono border transition-colors duration-150 cursor-pointer",
-                      isFilterOpen || (drawer.obsStatusFilter && drawer.obsStatusFilter !== "all")
-                        ? "bg-[rgba(var(--accent),0.12)] border-[rgba(var(--accent),0.35)] text-[rgb(var(--accent))]"
-                        : "border-[rgba(var(--border),0.18)] bg-[rgba(var(--foreground),0.04)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:border-[rgba(var(--accent),0.3)]"
-                    )}
-                    title={MEMORY_COPY.filterObservations}
-                    aria-expanded={isFilterOpen}
-                  >
-                    <Filter
-                      size={11}
-                      className={
-                        drawer.obsStatusFilter && drawer.obsStatusFilter !== "all"
-                          ? "text-[rgb(var(--accent))]"
-                          : undefined
-                      }
-                    />
-                    <span className="capitalize">
-                      {drawer.obsStatusFilter === "staged"
-                        ? MEMORY_COPY.observationFilterStaged
-                        : drawer.obsStatusFilter === "pending"
-                        ? MEMORY_COPY.observationFilterPending
-                        : drawer.obsStatusFilter === "integrated"
-                        ? MEMORY_COPY.observationFilterIntegrated
-                        : MEMORY_COPY.observationFilterAll}
-                    </span>
-                    <ChevronDown
-                      size={11}
-                      className={cn("transition-transform duration-150 opacity-70", isFilterOpen && "rotate-180")}
-                    />
-                  </button>
+                  <Tooltip label={MEMORY_COPY.filterObservations}>
+                    <button
+                      type="button"
+                      onClick={() => setIsFilterOpen((prev) => !prev)}
+                      className={cn(
+                        "flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-mono border transition-colors duration-150 cursor-pointer",
+                        isFilterOpen || (drawer.obsStatusFilter && drawer.obsStatusFilter !== "all")
+                          ? "bg-[rgba(var(--accent),0.12)] border-[rgba(var(--accent),0.35)] text-[rgb(var(--accent))]"
+                          : "border-[rgba(var(--border),0.18)] bg-[rgba(var(--foreground),0.04)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:border-[rgba(var(--accent),0.3)]"
+                      )}
+                      aria-expanded={isFilterOpen}
+                    >
+                      <Filter
+                        size={11}
+                        className={
+                          drawer.obsStatusFilter && drawer.obsStatusFilter !== "all"
+                            ? "text-[rgb(var(--accent))]"
+                            : undefined
+                        }
+                      />
+                      <span className="capitalize">
+                        {drawer.obsStatusFilter === "staged"
+                          ? MEMORY_COPY.observationFilterStaged
+                          : drawer.obsStatusFilter === "pending"
+                          ? MEMORY_COPY.observationFilterPending
+                          : drawer.obsStatusFilter === "integrated"
+                          ? MEMORY_COPY.observationFilterIntegrated
+                          : MEMORY_COPY.observationFilterAll}
+                      </span>
+                      <ChevronDown
+                        size={11}
+                        className={cn("transition-transform duration-150 opacity-70", isFilterOpen && "rotate-180")}
+                      />
+                    </button>
+                  </Tooltip>
 
                   {isFilterOpen && (
                     <div className="absolute right-0 top-full mt-1.5 w-36 py-1 rounded-xl bg-[rgb(var(--card))] border border-[rgba(var(--border),0.2)] shadow-xl z-50">

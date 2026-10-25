@@ -28,22 +28,24 @@ const INTERACTION_DESK_TABS: Array<{ id: InteractionDeskTab; label: string }> = 
 
 export const InteractionCard = memo(
   ({ layoutMode = "full-max" }: InteractionCardProps) => {
-    const settings = useSettingsStore((s) => s.settings);
-    const draftSettings = useSettingsStore((s) => s.draftSettings);
+    const interaction = useSettingsStore((s) => s.draftSettings?.interaction);
+    const dictation = useSettingsStore((s) => s.draftSettings?.dictation);
+    const activeRealtimeModel = useSettingsStore((s) => s.draftSettings?.realtime.active.model || null);
+    const hasSettings = useSettingsStore((s) => Boolean(s.settings && s.draftSettings));
     const updateDraft = useSettingsStore((s) => s.updateDraft);
 
     const [activeView, setActiveView] = useState<"assistant" | "dictation">("assistant");
     const [activeDeskTab, setActiveDeskTab] = useState<InteractionDeskTab>("remote");
 
-    const isRealtime = draftSettings?.interaction.pipeline_mode === "realtime";
-    const activeRealtimeModel = draftSettings?.realtime.active.model || null;
+    const isRealtime = interaction?.pipeline_mode === "realtime";
+    const shouldFetchParams = isRealtime && activeDeskTab === "web_search" && activeView === "assistant";
     const { params: realtimeParams, setParam: setRealtimeParam } = useModelParameters(
-      isRealtime ? activeRealtimeModel : null
+      shouldFetchParams ? activeRealtimeModel : null
     );
 
     const webSearchEnabled = isRealtime
-      ? (realtimeParams.enable_web_search !== false && (draftSettings?.interaction.web_search_enabled ?? true))
-      : (draftSettings?.interaction.web_search_enabled ?? true);
+      ? (realtimeParams.enable_web_search !== false && (interaction?.web_search_enabled ?? true))
+      : (interaction?.web_search_enabled ?? true);
 
     const handleToggleWebSearch = useCallback(() => {
       const next = !webSearchEnabled;
@@ -53,8 +55,7 @@ export const InteractionCard = memo(
       }
     }, [webSearchEnabled, updateDraft, isRealtime, activeRealtimeModel, setRealtimeParam]);
 
-    if (!draftSettings || !settings) return null;
-    const { interaction, dictation } = draftSettings;
+    if (!hasSettings || !interaction || !dictation) return null;
 
     const dictationEnabled = dictation.enabled ?? true;
     const dictationInteractionMode = dictation.interaction_mode ?? "ptt";

@@ -1,6 +1,6 @@
 use std::{
     ffi::c_void,
-    sync::{Once, OnceLock},
+    sync::OnceLock,
 };
 
 use jni::{
@@ -9,7 +9,6 @@ use jni::{
 };
 
 static ANDROID_APP_ACTIVITY: OnceLock<GlobalRef> = OnceLock::new();
-static ANDROID_INIT_ONCE: Once = Once::new();
 
 /// Initializes the native `ndk_context` from the Android `MainActivity` JNI entry point.
 ///
@@ -70,10 +69,11 @@ pub unsafe extern "C" fn Java_com_addy_Vox_MainActivity_initAndroidContext(
         );
     }
 
-    ANDROID_INIT_ONCE.call_once(|| {
-        ndk_context::initialize_android_context(vm_ptr, activity_ptr);
-        log::info!(
-            "[AndroidContext] ndk-context successfully initialized with JavaVM and MainActivity"
-        );
-    });
+    // ndk-context is already initialized by tao (TauriActivity) during super.onCreate()
+    // with the application context; calling initialize_android_context again here would
+    // trip its `previous.is_none()` assertion and abort the process. Do NOT re-init.
+    let _ = (vm_ptr, activity_ptr);
+    log::info!(
+        "[AndroidContext] ndk-context already owned by tao; activity ref retained only"
+    );
 }

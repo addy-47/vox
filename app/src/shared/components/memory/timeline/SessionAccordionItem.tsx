@@ -52,7 +52,7 @@ export interface SessionAccordionItemProps {
   isSelectedSession: boolean;
   selectedFactId: string | null;
   isLightMode: boolean;
-  onToggle: () => void;
+  onToggle: (sessionId: number) => void;
   onSelectFact: (fact: ObservationRecord) => void;
 }
 
@@ -81,7 +81,7 @@ export const SessionAccordionItem = memo<SessionAccordionItemProps>(({
   const sortBtnRef = useRef<HTMLButtonElement>(null);
   const filterBtnRef = useRef<HTMLButtonElement>(null);
 
-  const palette = useMemo(() => getActiveDynamicPalette(isLightMode), [isLightMode]);
+  const palette = useMemo(() => (isExpanded ? getActiveDynamicPalette(isLightMode) : {}), [isLightMode, isExpanded]);
   const title = resolveSessionTitle(session);
   const recency = formatSessionRecency(session.updated_at);
   const factCount = facts.length;
@@ -114,19 +114,22 @@ export const SessionAccordionItem = memo<SessionAccordionItemProps>(({
   };
 
   const categoryCounts = useMemo(() => {
+    if (!isExpanded) return new Map<MemoryCategory, number>();
     const counts = new Map<MemoryCategory, number>();
     for (const f of facts) {
       const cat = toMemoryCategory(f.fact_type) || "objective";
       counts.set(cat, (counts.get(cat) || 0) + 1);
     }
     return counts;
-  }, [facts]);
+  }, [facts, isExpanded]);
 
   const presentCategories = useMemo(() => {
+    if (!isExpanded) return [];
     return CATEGORY_ORDER.filter((c) => (categoryCounts.get(c) ?? 0) > 0);
-  }, [categoryCounts]);
+  }, [categoryCounts, isExpanded]);
 
   const displayFacts = useMemo(() => {
+    if (!isExpanded) return [];
     let list = [...facts];
     if (selectedCategory !== "all") {
       list = list.filter((f) => (toMemoryCategory(f.fact_type) || "objective") === selectedCategory);
@@ -148,10 +151,11 @@ export const SessionAccordionItem = memo<SessionAccordionItemProps>(({
     }
 
     return list;
-  }, [facts, selectedCategory, sortBy]);
+  }, [facts, selectedCategory, sortBy, isExpanded]);
 
   // Group facts into category sections
   const categoryGroups = useMemo(() => {
+    if (!isExpanded) return [];
     const map = new Map<MemoryCategory, ObservationRecord[]>();
     for (const cat of CATEGORY_ORDER) {
       map.set(cat, []);
@@ -167,10 +171,10 @@ export const SessionAccordionItem = memo<SessionAccordionItemProps>(({
       .map((cat) => ({
         category: cat,
         label: MEMORY_COPY.categories[cat] || cat,
-        color: palette[cat]?.main || "#00dbe9",
+        color: (palette as Record<string, { main: string }>)[cat]?.main || "#00dbe9",
         facts: map.get(cat)!,
       }));
-  }, [displayFacts, palette]);
+  }, [displayFacts, palette, isExpanded]);
 
   return (
     <div
@@ -185,9 +189,9 @@ export const SessionAccordionItem = memo<SessionAccordionItemProps>(({
       <div
         role="button"
         tabIndex={0}
-        onClick={onToggle}
+        onClick={() => onToggle(session.id)}
         onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") onToggle();
+          if (e.key === "Enter" || e.key === " ") onToggle(session.id);
         }}
         className={cn(
           "group relative flex items-center justify-between gap-2 py-2 px-2 rounded-sm text-left cursor-pointer transition-colors select-none",
@@ -268,119 +272,123 @@ export const SessionAccordionItem = memo<SessionAccordionItemProps>(({
               </button>
             </Tooltip>
 
-            <ContextMenuShell
-              open={sortMenuOpen}
-              onClose={() => setSortMenuOpen(false)}
-              anchorRect={sortAnchor}
-              triggerRef={sortBtnRef}
-              width={145}
-            >
-              <button
-                type="button"
-                role="menuitem"
-                tabIndex={-1}
-                onClick={() => {
-                  setSortBy("category");
-                  setSortMenuOpen(false);
-                }}
-                className={cn(
-                  "w-full px-2.5 py-1.5 rounded-md text-left flex items-center justify-between transition-colors hover:bg-[rgba(var(--foreground),0.06)] cursor-pointer bg-transparent border-none text-[12px]",
-                  sortBy === "category" ? "text-[rgb(var(--accent))] font-medium" : "text-[rgb(var(--foreground))]"
-                )}
+            {sortMenuOpen && (
+              <ContextMenuShell
+                open={sortMenuOpen}
+                onClose={() => setSortMenuOpen(false)}
+                anchorRect={sortAnchor}
+                triggerRef={sortBtnRef}
+                width={145}
               >
-                <span>{MEMORY_COPY.timeline.sortCategory}</span>
-                {sortBy === "category" && <Check size={12} />}
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                tabIndex={-1}
-                onClick={() => {
-                  setSortBy("time");
-                  setSortMenuOpen(false);
-                }}
-                className={cn(
-                  "w-full px-2.5 py-1.5 rounded-md text-left flex items-center justify-between transition-colors hover:bg-[rgba(var(--foreground),0.06)] cursor-pointer bg-transparent border-none text-[12px]",
-                  sortBy === "time" ? "text-[rgb(var(--accent))] font-medium" : "text-[rgb(var(--foreground))]"
-                )}
-              >
-                <span>{MEMORY_COPY.timeline.sortTime}</span>
-                {sortBy === "time" && <Check size={12} />}
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                tabIndex={-1}
-                onClick={() => {
-                  setSortBy("alpha");
-                  setSortMenuOpen(false);
-                }}
-                className={cn(
-                  "w-full px-2.5 py-1.5 rounded-md text-left flex items-center justify-between transition-colors hover:bg-[rgba(var(--foreground),0.06)] cursor-pointer bg-transparent border-none text-[12px]",
-                  sortBy === "alpha" ? "text-[rgb(var(--accent))] font-medium" : "text-[rgb(var(--foreground))]"
-                )}
-              >
-                <span>{MEMORY_COPY.timeline.sortAlphabetical}</span>
-                {sortBy === "alpha" && <Check size={12} />}
-              </button>
-            </ContextMenuShell>
+                <button
+                  type="button"
+                  role="menuitem"
+                  tabIndex={-1}
+                  onClick={() => {
+                    setSortBy("category");
+                    setSortMenuOpen(false);
+                  }}
+                  className={cn(
+                    "w-full px-2.5 py-1.5 rounded-md text-left flex items-center justify-between transition-colors hover:bg-[rgba(var(--foreground),0.06)] cursor-pointer bg-transparent border-none text-[12px]",
+                    sortBy === "category" ? "text-[rgb(var(--accent))] font-medium" : "text-[rgb(var(--foreground))]"
+                  )}
+                >
+                  <span>{MEMORY_COPY.timeline.sortCategory}</span>
+                  {sortBy === "category" && <Check size={12} />}
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  tabIndex={-1}
+                  onClick={() => {
+                    setSortBy("time");
+                    setSortMenuOpen(false);
+                  }}
+                  className={cn(
+                    "w-full px-2.5 py-1.5 rounded-md text-left flex items-center justify-between transition-colors hover:bg-[rgba(var(--foreground),0.06)] cursor-pointer bg-transparent border-none text-[12px]",
+                    sortBy === "time" ? "text-[rgb(var(--accent))] font-medium" : "text-[rgb(var(--foreground))]"
+                  )}
+                >
+                  <span>{MEMORY_COPY.timeline.sortTime}</span>
+                  {sortBy === "time" && <Check size={12} />}
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  tabIndex={-1}
+                  onClick={() => {
+                    setSortBy("alpha");
+                    setSortMenuOpen(false);
+                  }}
+                  className={cn(
+                    "w-full px-2.5 py-1.5 rounded-md text-left flex items-center justify-between transition-colors hover:bg-[rgba(var(--foreground),0.06)] cursor-pointer bg-transparent border-none text-[12px]",
+                    sortBy === "alpha" ? "text-[rgb(var(--accent))] font-medium" : "text-[rgb(var(--foreground))]"
+                  )}
+                >
+                  <span>{MEMORY_COPY.timeline.sortAlphabetical}</span>
+                  {sortBy === "alpha" && <Check size={12} />}
+                </button>
+              </ContextMenuShell>
+            )}
 
-            <ContextMenuShell
-              open={filterMenuOpen}
-              onClose={() => setFilterMenuOpen(false)}
-              anchorRect={filterAnchor}
-              triggerRef={filterBtnRef}
-              width={155}
-            >
-              <button
-                type="button"
-                role="menuitem"
-                tabIndex={-1}
-                onClick={() => {
-                  setSelectedCategory("all");
-                  setFilterMenuOpen(false);
-                }}
-                className={cn(
-                  "w-full px-2.5 py-1.5 rounded-md text-left flex items-center justify-between transition-colors hover:bg-[rgba(var(--foreground),0.06)] cursor-pointer bg-transparent border-none text-[12px]",
-                  selectedCategory === "all" ? "text-[rgb(var(--accent))] font-medium" : "text-[rgb(var(--foreground))]"
-                )}
+            {filterMenuOpen && (
+              <ContextMenuShell
+                open={filterMenuOpen}
+                onClose={() => setFilterMenuOpen(false)}
+                anchorRect={filterAnchor}
+                triggerRef={filterBtnRef}
+                width={155}
               >
-                <span>{MEMORY_COPY.timeline.allCategories} ({facts.length})</span>
-                {selectedCategory === "all" && <Check size={12} />}
-              </button>
-              {presentCategories.map((catKey) => {
-                const count = categoryCounts.get(catKey) ?? 0;
-                const catColor = palette[catKey]?.main || "#00dbe9";
-                const label = MEMORY_COPY.categories[catKey] || catKey;
-                const isSelected = selectedCategory === catKey;
+                <button
+                  type="button"
+                  role="menuitem"
+                  tabIndex={-1}
+                  onClick={() => {
+                    setSelectedCategory("all");
+                    setFilterMenuOpen(false);
+                  }}
+                  className={cn(
+                    "w-full px-2.5 py-1.5 rounded-md text-left flex items-center justify-between transition-colors hover:bg-[rgba(var(--foreground),0.06)] cursor-pointer bg-transparent border-none text-[12px]",
+                    selectedCategory === "all" ? "text-[rgb(var(--accent))] font-medium" : "text-[rgb(var(--foreground))]"
+                  )}
+                >
+                  <span>{MEMORY_COPY.timeline.allCategories} ({facts.length})</span>
+                  {selectedCategory === "all" && <Check size={12} />}
+                </button>
+                {presentCategories.map((catKey) => {
+                  const count = categoryCounts.get(catKey) ?? 0;
+                  const catColor = (palette as Record<string, { main: string }>)[catKey]?.main || "#00dbe9";
+                  const label = MEMORY_COPY.categories[catKey] || catKey;
+                  const isSelected = selectedCategory === catKey;
 
-                return (
-                  <button
-                    key={catKey}
-                    type="button"
-                    role="menuitem"
-                    tabIndex={-1}
-                    onClick={() => {
-                      setSelectedCategory(catKey);
-                      setFilterMenuOpen(false);
-                    }}
-                    className={cn(
-                      "w-full px-2.5 py-1.5 rounded-md text-left flex items-center justify-between transition-colors hover:bg-[rgba(var(--foreground),0.06)] cursor-pointer bg-transparent border-none text-[12px]",
-                      isSelected ? "text-[rgb(var(--foreground))] font-medium" : "text-[rgb(var(--foreground-muted))]"
-                    )}
-                  >
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span
-                        className="w-1.5 h-1.5 rounded-full shrink-0"
-                        style={{ backgroundColor: catColor }}
-                      />
-                      <span className="truncate">{label} ({count})</span>
-                    </div>
-                    {isSelected && <Check size={12} className="text-[rgb(var(--accent))] shrink-0" />}
-                  </button>
-                );
-              })}
-            </ContextMenuShell>
+                  return (
+                    <button
+                      key={catKey}
+                      type="button"
+                      role="menuitem"
+                      tabIndex={-1}
+                      onClick={() => {
+                        setSelectedCategory(catKey);
+                        setFilterMenuOpen(false);
+                      }}
+                      className={cn(
+                        "w-full px-2.5 py-1.5 rounded-md text-left flex items-center justify-between transition-colors hover:bg-[rgba(var(--foreground),0.06)] cursor-pointer bg-transparent border-none text-[12px]",
+                        isSelected ? "text-[rgb(var(--foreground))] font-medium" : "text-[rgb(var(--foreground-muted))]"
+                      )}
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span
+                          className="w-1.5 h-1.5 rounded-full shrink-0"
+                          style={{ backgroundColor: catColor }}
+                        />
+                        <span className="truncate">{label} ({count})</span>
+                      </div>
+                      {isSelected && <Check size={12} className="text-[rgb(var(--accent))] shrink-0" />}
+                    </button>
+                  );
+                })}
+              </ContextMenuShell>
+            )}
           </div>
         )}
       </div>
@@ -389,13 +397,13 @@ export const SessionAccordionItem = memo<SessionAccordionItemProps>(({
         <div className="pl-6 pr-2 pt-0.5 pb-2 flex flex-col animate-in fade-in duration-150">
           {selectedCategory !== "all" && (
             <div className="flex items-center justify-between text-[10.5px] font-mono text-[rgb(var(--foreground-muted))]/70 pb-1 px-1">
-              <span>Filtered: {MEMORY_COPY.categories[selectedCategory as MemoryCategory] || selectedCategory}</span>
+              <span>{MEMORY_COPY.timeline.filteredPrefix} {MEMORY_COPY.categories[selectedCategory as MemoryCategory] || selectedCategory}</span>
               <button
                 type="button"
                 onClick={() => setSelectedCategory("all")}
                 className="text-[rgb(var(--accent))] hover:underline cursor-pointer bg-transparent border-none p-0"
               >
-                Reset
+                {MEMORY_COPY.timeline.resetFilter}
               </button>
             </div>
           )}

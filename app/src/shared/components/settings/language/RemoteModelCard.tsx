@@ -59,7 +59,17 @@ export const RemoteModelCard = memo(({
 
   return (
     <div
+      role="button"
+      tabIndex={0}
+      aria-pressed={isSelected}
+      aria-label={shortName}
       onClick={() => onSelect(model.id)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onSelect(model.id);
+        }
+      }}
       className={cn(
         "relative flex flex-col justify-between p-4 rounded-xl border transition-colors duration-150 select-none group cursor-pointer transform-gpu contain-paint",
         isSelected
@@ -83,7 +93,7 @@ export const RemoteModelCard = memo(({
               </h4>
 
               {/* Copy Button */}
-              <Tooltip label={isCopied ? "Copied Model ID" : "Copy Model ID"} side="top" asChild>
+              <Tooltip label={isCopied ? LLM_CATALOG_COPY.copiedModelId : LLM_CATALOG_COPY.copyModelId} side="top" asChild>
                 <button
                   type="button"
                   onClick={(e) => {
@@ -91,7 +101,7 @@ export const RemoteModelCard = memo(({
                     onCopy(model.id);
                   }}
                   className="p-1 rounded-md text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.1)] transition-colors shrink-0 cursor-pointer"
-                  aria-label="Copy Model ID"
+                  aria-label={LLM_CATALOG_COPY.copyModelId}
                 >
                   {isCopied ? (
                     <Check size={13} className="text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))]" />

@@ -42,6 +42,7 @@ import {
   checkDomainDirty,
   checkDomainRequiringRestart,
   checkCategoryDirty,
+  computeFlagsState,
 } from "@/store/settingsFlags";
 
 export { SETTINGS_DOMAIN_TO_UI, COMMIT_DOMAIN_IDS, isRestartKey };
@@ -205,16 +206,10 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
    * store from an updater would be a side effect in a pure callback.
    */
   recomputeDomainFlags: () => {
-    const flags: Record<string, DomainFlags> = {};
-    for (const id of COMMIT_DOMAIN_IDS) {
-      flags[id] = {
-        dirty: get().isDomainDirty(id),
-        requiresRestart: get().isDomainRequiringRestart(id),
-      };
-    }
-    const hasChanges = COMMIT_DOMAIN_IDS.some((id) => flags[id].dirty);
-    set({ domainFlags: flags, hasChanges });
-    return flags;
+    const { settings, draftSettings, domainFlags: prevFlags } = get();
+    const { domainFlags, hasChanges } = computeFlagsState(settings, draftSettings, prevFlags);
+    set({ domainFlags, hasChanges });
+    return domainFlags;
   },
 
   loadSettings: async () => {
@@ -317,7 +312,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     if (!draftSettings || !settings) return;
 
     const currentVal = scopeEntries(draftSettings[domain])[key];
-    if (JSON.stringify(currentVal) === JSON.stringify(value)) return;
+    if (currentVal === value || JSON.stringify(currentVal) === JSON.stringify(value)) return;
 
     const newDraft = {
       ...draftSettings,
@@ -327,6 +322,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       },
     };
 
+    const flagsState = computeFlagsState(settings, newDraft, get().domainFlags);
+
     if (domain === "appearance" && (key === "theme" || key === "accent_seed")) {
       applyTheme(newDraft.appearance);
 
@@ -335,9 +332,6 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       }
       // Generation stamp: a second edit while the first IPC is in flight must
       // not have the older response overwrite `settings` with a stale value.
-      // The old code nulled the timer handle inside the fired callback, so a
-      // concurrent update started an unguarded second timer, and a late
-      // resolution left the card permanently dirty.
       const generation = ++appearanceDebounceGeneration;
       appearanceDebounceTimer = setTimeout(() => {
         appearanceDebounceTimer = null;
@@ -346,14 +340,17 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
             if (generation !== appearanceDebounceGeneration) return;
             const curSettings = get().settings;
             if (curSettings) {
-              set({
-                settings: {
-                  ...curSettings,
-                  appearance: {
-                    ...curSettings.appearance,
-                    [key]: value,
-                  },
+              const updatedSettings = {
+                ...curSettings,
+                appearance: {
+                  ...curSettings.appearance,
+                  [key]: value,
                 },
+              };
+              const updatedFlags = computeFlagsState(updatedSettings, get().draftSettings, get().domainFlags);
+              set({
+                settings: updatedSettings,
+                ...updatedFlags,
               });
             }
             get().triggerAutoSaveToast("appearance");
@@ -361,15 +358,13 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
           .catch(console.error);
       }, 200);
 
-      // Derived flags first, then a single write, so subscribers see the draft
-      // and its dirty state in one render rather than two.
-      set({ draftSettings: newDraft });
-      get().recomputeDomainFlags();
+      // Single write so subscribers see the draft and its dirty state in one render.
+      set({ draftSettings: newDraft, ...flagsState });
       return;
     }
 
-    set({ draftSettings: newDraft });
-    const flags = get().recomputeDomainFlags();
+    set({ draftSettings: newDraft, ...flagsState });
+    const flags = flagsState.domainFlags;
 
     if (!flags || !COMMIT_DOMAIN_IDS.some((d) => flags[d].dirty)) {
       if (settingsAutoSaveTimer) {
@@ -474,8 +469,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       applyTheme(settings.appearance);
     }
 
-    set({ draftSettings: newDraft, autoSavedDomain: null });
-    get().recomputeDomainFlags();
+    const flagsState = computeFlagsState(settings, newDraft, get().domainFlags);
+    set({ draftSettings: newDraft, autoSavedDomain: null, ...flagsState });
   },
 
   isCommitting: false,
@@ -733,8 +728,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     if (!settings) return;
     const cloned = structuredClone(settings);
     applyTheme(settings.appearance);
-    set({ draftSettings: cloned, hasChanges: false, autoSavedDomain: null });
-    get().recomputeDomainFlags();
+    const flagsState = computeFlagsState(settings, cloned, get().domainFlags);
+    set({ draftSettings: cloned, autoSavedDomain: null, ...flagsState });
   },
 
   restoreDefaults: async () => {

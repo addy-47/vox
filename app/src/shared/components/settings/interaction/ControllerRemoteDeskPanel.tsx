@@ -8,7 +8,7 @@ import { REMOTE_CONTROL_COPY } from "@/data/settingsCopy";
 const ScannerGlyphButton = ({ onClick }: { onClick: () => void }) => (
   <button
     type="button"
-    aria-label="Scan QR Code to Pair"
+    aria-label={REMOTE_CONTROL_COPY.scanQrPrompt}
     onClick={onClick}
     className="group flex flex-col items-center shrink-0 select-none cursor-pointer rounded-2xl px-3 py-2 transition-all duration-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(var(--accent))] text-[rgb(var(--accent))]"
   >
@@ -41,7 +41,7 @@ const ScannerGlyphButton = ({ onClick }: { onClick: () => void }) => (
     </div>
 
     <span className="mt-2 text-[10px] font-mono font-bold uppercase tracking-wider transition-colors text-[rgb(var(--accent))]">
-      Scan QR
+      {REMOTE_CONTROL_COPY.scanQrButton}
     </span>
   </button>
 );
@@ -58,10 +58,12 @@ export const ControllerRemoteDeskPanel = memo(() => {
   const isConnected = linkState === "Connected";
 
   useEffect(() => {
+    let permStatus: PermissionStatus | null = null;
     if (typeof navigator !== "undefined" && navigator.permissions?.query) {
       navigator.permissions
         .query({ name: "camera" as PermissionName })
         .then((status) => {
+          permStatus = status;
           setHasCameraPermission(status.state !== "denied");
           status.onchange = () => {
             setHasCameraPermission(status.state !== "denied");
@@ -71,6 +73,11 @@ export const ControllerRemoteDeskPanel = memo(() => {
           setHasCameraPermission(true);
         });
     }
+    return () => {
+      if (permStatus) {
+        permStatus.onchange = null;
+      }
+    };
   }, []);
 
   const handleOpenScanner = useCallback((manual = false) => {
@@ -92,34 +99,34 @@ export const ControllerRemoteDeskPanel = memo(() => {
       <div className="flex flex-col gap-1 min-w-0 flex-1">
         <div className="flex items-center justify-between gap-2">
           <span className="text-[12px] font-bold tracking-wider text-[rgb(var(--foreground))]">
-            {isConnected ? "Connected Host" : REMOTE_CONTROL_COPY.title}
+            {isConnected ? REMOTE_CONTROL_COPY.connectedHost : REMOTE_CONTROL_COPY.title}
           </span>
         </div>
 
         <p className="text-[11px] sm:text-[11.5px] text-[rgb(var(--foreground-muted))]/75 leading-relaxed font-medium line-clamp-2">
           {isConnected ? (
             <>
-              Connected to{" "}
+              {REMOTE_CONTROL_COPY.connectedTo}{" "}
               <span className="group inline-flex items-center gap-1 align-baseline">
                 <span className="text-[11px] font-mono font-bold text-[rgb(var(--accent))]">
                   {connectedPeer?.displayName ?? "Vox Desktop Host"}
                 </span>
-                <Tooltip label="Disconnect" side="top">
+                <Tooltip label={REMOTE_CONTROL_COPY.disconnect} side="top">
                   <button
                     type="button"
                     onClick={() => void handleDisconnect()}
                     className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-[rgb(var(--danger))] hover:opacity-100 transition-opacity cursor-pointer inline-flex items-center"
-                    aria-label="Disconnect from host"
+                    aria-label={REMOTE_CONTROL_COPY.disconnectHostAria}
                   >
                     <PowerOff size={12} />
                   </button>
                 </Tooltip>
               </span>
-              . Wireless microphone and session control active.
+              {REMOTE_CONTROL_COPY.wirelessMicActive}
             </>
           ) : (
             <>
-              Pair this device with your desktop screen to control Vox wirelessly.
+              {REMOTE_CONTROL_COPY.pairDeviceScreenPrompt}
               {hasCameraPermission === false && (
                 <>
                   {" "}
@@ -128,7 +135,7 @@ export const ControllerRemoteDeskPanel = memo(() => {
                     onClick={() => handleOpenScanner(true)}
                     className="inline-flex items-center gap-1 text-[11px] font-mono font-bold text-[rgb(var(--accent))] hover:text-[rgb(var(--foreground))] hover:underline cursor-pointer transition-colors select-none"
                   >
-                    Enter IP manually
+                    {REMOTE_CONTROL_COPY.enterIpManually}
                   </button>
                 </>
               )}
@@ -145,7 +152,7 @@ export const ControllerRemoteDeskPanel = memo(() => {
               <Wifi size={18} className="animate-pulse" />
             </div>
             <span className="text-[9.5px] font-mono font-bold uppercase tracking-wider text-[rgb(var(--accent))] mt-0.5">
-              Linked
+              {REMOTE_CONTROL_COPY.linked}
             </span>
           </div>
         ) : (
@@ -153,11 +160,13 @@ export const ControllerRemoteDeskPanel = memo(() => {
         )}
       </div>
 
-      <QrScannerModal
-        open={isScannerOpen}
-        onClose={() => setIsScannerOpen(false)}
-        defaultManual={defaultManual}
-      />
+      {isScannerOpen && (
+        <QrScannerModal
+          open={isScannerOpen}
+          onClose={() => setIsScannerOpen(false)}
+          defaultManual={defaultManual}
+        />
+      )}
     </div>
   );
 });

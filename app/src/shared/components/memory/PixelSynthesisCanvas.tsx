@@ -46,10 +46,12 @@ export const PixelSynthesisCanvas: React.FC<PixelSynthesisCanvasProps> = ({
     resizeObserver.observe(canvas);
 
     const getAccentRgb = (): string => {
-      const val = getComputedStyle(document.documentElement)
-        .getPropertyValue("--accent")
-        .trim();
-      return val || "124, 58, 237";
+      const root = document.documentElement;
+      return (
+        root.style.getPropertyValue("--accent").trim() ||
+        getComputedStyle(root).getPropertyValue("--accent").trim() ||
+        "0, 219, 233"
+      );
     };
 
     let accentRgb = getAccentRgb();
@@ -104,12 +106,6 @@ export const PixelSynthesisCanvas: React.FC<PixelSynthesisCanvasProps> = ({
       const t = (now - startTime) * 0.0011; // Fluid, organic time parameter
 
       ctx.clearRect(0, 0, width, height);
-
-      // Periodically refresh accent color (+ its precomputed band styles)
-      if (Math.floor(t * 10) % 30 === 0) {
-        accentRgb = getAccentRgb();
-        refreshBucketStyles();
-      }
 
       // Dynamic wandering liquid orb positions (two orbs interacting organically)
       const orbX =

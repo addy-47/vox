@@ -86,13 +86,14 @@ const HubCenter = memo(({ onClick, hasActiveCards }: HubCenterProps) => (
       aria-label={hasActiveCards ? SETTINGS_COPY.closeAllDomains : SETTINGS_COPY.openAllDomains}
     >
       <div
-        className="absolute rounded-full border border-dashed transition-colors duration-200"
+        className="absolute rounded-full border border-dashed transition-colors duration-200 transform-gpu"
         style={{
           width: "52px",
           height: "52px",
           borderColor: `rgba(var(--accent), ${hasActiveCards ? 0.35 : 0.20})`,
           animation: hasActiveCards ? "border-rotate 18s linear infinite" : "none",
           background: "transparent",
+          willChange: hasActiveCards ? "transform" : "auto",
         }}
       />
       <div
@@ -106,7 +107,7 @@ const HubCenter = memo(({ onClick, hasActiveCards }: HubCenterProps) => (
         }}
       />
       <div
-        className="absolute rounded-full border transition-colors duration-200"
+        className="absolute rounded-full border transition-colors duration-200 transform-gpu"
         style={{
           width: "22px",
           height: "22px",
@@ -114,6 +115,7 @@ const HubCenter = memo(({ onClick, hasActiveCards }: HubCenterProps) => (
           background: "radial-gradient(circle, rgba(var(--accent), 0.25) 0%, transparent 100%)",
           boxShadow: "0 0 16px rgba(var(--accent), 0.35)",
           animation: hasActiveCards ? "reactor-pulse 2.5s ease-in-out infinite" : "none",
+          willChange: hasActiveCards ? "transform, opacity" : "auto",
         }}
       />
       <div

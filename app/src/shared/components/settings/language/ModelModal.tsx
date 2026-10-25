@@ -3,6 +3,7 @@ import { useLenisScrollContainer, useScrollTopOnChange } from "@/shared/hooks/us
 import { promoteActive } from "@/shared/lib/activeSelection";
 import { resolveCapabilities } from "@/shared/lib/catalogCapabilities";
 import { filterModels } from "@/shared/lib/catalogFilter";
+import { copyToClipboard } from "@/shared/lib/clipboard";
 import { LLM_CATALOG_COPY } from "@/data/settingsCopy";
 import { Cpu, Gauge, Heart, Wrench, Zap } from "lucide-react";
 import { EmptyState } from "@/shared/components/common";
@@ -51,12 +52,11 @@ export const ModelModal = memo(({
   }, []);
 
   const handleCopyId = useCallback((id: string) => {
-    navigator.clipboard.writeText(id).then(() => {
+    void copyToClipboard(id).then((ok) => {
+      if (!ok) return;
       setCopiedId(id);
       if (copyTimer.current) window.clearTimeout(copyTimer.current);
       copyTimer.current = window.setTimeout(() => setCopiedId(null), 1800);
-    }).catch((err) => {
-      console.warn("[ModelModal] clipboard write denied:", err);
     });
   }, []);
 
@@ -66,22 +66,37 @@ export const ModelModal = memo(({
     return resolveCapabilities(m, probingMap, capabilitiesCache);
   }, [probingMap, capabilitiesCache]);
 
-  const favoritesCount = useMemo(() => remoteModels.filter((m) => favoriteModelIds.has(m.id)).length, [remoteModels, favoriteModelIds]);
-  const benchmarkedCount = useMemo(() => remoteModels.filter((m) => (resolveProbed(m)?.tps ?? 0) > 0).length, [remoteModels, resolveProbed]);
-  const toolsCount = useMemo(() => remoteModels.filter((m) => resolveProbed(m)?.supports_tools === "supported").length, [remoteModels, resolveProbed]);
-  const fastCount = useMemo(() => remoteModels.filter((m) => (resolveProbed(m)?.tps ?? 0) >= 30).length, [remoteModels, resolveProbed]);
+  const { favoritesCount, benchmarkedCount, toolsCount, fastCount } = useMemo(() => {
+    let favorites = 0;
+    let benchmarked = 0;
+    let tools = 0;
+    let fast = 0;
+    for (const m of remoteModels) {
+      if (favoriteModelIds.has(m.id)) favorites += 1;
+      const probed = resolveProbed(m);
+      if (probed?.tps != null && probed.tps > 0) benchmarked += 1;
+      if (probed?.supports_tools === "supported") tools += 1;
+      if (probed?.tps != null && probed.tps >= 30) fast += 1;
+    }
+    return {
+      favoritesCount: favorites,
+      benchmarkedCount: benchmarked,
+      toolsCount: tools,
+      fastCount: fast,
+    };
+  }, [remoteModels, favoriteModelIds, resolveProbed]);
 
   const categoryFilters = useMemo(() => [
-    { id: "all" as const, label: "All Models", count: remoteModels.length, Icon: Cpu },
-    { id: "favorites" as const, label: "Favorites", count: favoritesCount, Icon: Heart },
-    { id: "benchmarked" as const, label: "Benchmarked", count: benchmarkedCount, Icon: Zap },
-    { id: "tools" as const, label: "Tools Support", count: toolsCount, Icon: Wrench },
-    { id: "fast" as const, label: "Fast (>30 TPS)", count: fastCount, Icon: Gauge },
+    { id: "all" as const, label: LLM_CATALOG_COPY.filterAll, count: remoteModels.length, Icon: Cpu },
+    { id: "favorites" as const, label: LLM_CATALOG_COPY.filterFavorites, count: favoritesCount, Icon: Heart },
+    { id: "benchmarked" as const, label: LLM_CATALOG_COPY.filterBenchmarked, count: benchmarkedCount, Icon: Zap },
+    { id: "tools" as const, label: LLM_CATALOG_COPY.filterTools, count: toolsCount, Icon: Wrench },
+    { id: "fast" as const, label: LLM_CATALOG_COPY.filterFast, count: fastCount, Icon: Gauge },
   ], [remoteModels.length, favoritesCount, benchmarkedCount, toolsCount, fastCount]);
 
   const facetGroups = useMemo<CatalogFacetGroup[]>(() => [
     {
-      title: "Category",
+      title: LLM_CATALOG_COPY.filtersTitle,
       items: categoryFilters,
     },
   ], [categoryFilters]);
@@ -91,6 +106,7 @@ export const ModelModal = memo(({
       category: filterCategory,
       favoriteIds: favoriteModelIds,
       resolveProbed,
+      fuzzy: true,
     }, deferredSearch);
 
     return promoteActive(

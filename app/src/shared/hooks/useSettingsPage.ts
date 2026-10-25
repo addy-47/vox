@@ -3,12 +3,35 @@ import { SETTINGS_DOMAINS as DOMAINS, type SettingsDomainId as DomainId } from "
 import { useSettingsStore } from "@/store/settingsStore";
 import { isCompactWidth, isRealMobileDevice } from "@/layout/breakpoints";
 import { SETTINGS_DOMAIN_SLOTS } from "@/shared/components/settings/shared/settingsLayout";
+import { subscribeViewportFrame } from "@/layout/viewportResize";
+import { getStackSize } from "@/shared/lib/overlayStack";
 
 interface LineCoords {
   x1: number;
   y1: number;
   x2: number;
   y2: number;
+}
+
+/**
+ * Reads layout bounds around the element center to avoid 
+ * mid-scale transform distortion while Framer Motion interpolates scale(0.96 -> 1).
+ */
+function getUnscaledRect(el: HTMLElement) {
+  const rect = el.getBoundingClientRect();
+  const w = el.offsetWidth;
+  const h = el.offsetHeight;
+  if (w <= 0 || h <= 0) return rect;
+  const cx = (rect.left + rect.right) / 2;
+  const cy = (rect.top + rect.bottom) / 2;
+  return {
+    left: cx - w / 2,
+    right: cx + w / 2,
+    top: cy - h / 2,
+    bottom: cy + h / 2,
+    width: w,
+    height: h,
+  };
 }
 
 export function useSettingsPage() {
@@ -51,20 +74,12 @@ export function useSettingsPage() {
   }, [activeDomains]);
 
   useEffect(() => {
-    let rafId: number;
-    const checkSize = () => {
-      cancelAnimationFrame(rafId);
-      rafId = requestAnimationFrame(() => {
-        setWindowWidth(window.innerWidth);
-        setWindowHeight(window.innerHeight);
-        setIsCompact(isRealMobileDevice() || isCompactWidth());
-      });
+    const handleViewport = () => {
+      setWindowWidth(window.innerWidth);
+      setWindowHeight(window.innerHeight);
+      setIsCompact(isRealMobileDevice() || isCompactWidth());
     };
-    window.addEventListener("resize", checkSize);
-    return () => {
-      window.removeEventListener("resize", checkSize);
-      cancelAnimationFrame(rafId);
-    };
+    return subscribeViewportFrame(handleViewport);
   }, []);
 
   // In the current main layout (>= 1440w and >= 850h), the radial hub maintains its standard size.
@@ -92,7 +107,7 @@ export function useSettingsPage() {
   const radiusX = dynamicRadiusX ?? baselineRadiusX;
   const radiusY = dynamicRadiusY ?? baselineRadiusY;
 
-  const layoutMode = useMemo<"full-max" | "full-min" | "small">( () => {
+  const layoutMode = useMemo<"full-max" | "full-min" | "small">(() => {
     if (isCompact) return "small";
     if (windowWidth < 1366 || activeDomains.length > 1) return "full-min";
     return "full-max";
@@ -105,102 +120,10 @@ export function useSettingsPage() {
     return windowHeight < 840;
   }, [isCompact, windowHeight]);
 
-  // ── Dedicated Dynamic Radial Hub Clearance Effect ──
-  // Always runs to guarantee that the radial nodes never overlap surrounding cards (such as Persona above).
-  useLayoutEffect(() => {
-    if (isCompact) return;
-
-    const measureClearance = () => {
-      const centerNodeEl = document.getElementById("center-node");
-      if (!centerNodeEl || !containerRef.current) return;
-
-      const centerRect = centerNodeEl.getBoundingClientRect();
-      const cy = (centerRect.top + centerRect.bottom) / 2;
-      const cx = (centerRect.left + centerRect.right) / 2;
-
-      let maxSafeRadiusY = baselineRadiusY;
-      let maxSafeRadiusX = baselineRadiusX;
-
-      // 1. Persona card (12:00 node at cy - radiusY). Node radius is 20px, min gap is 24px => 44px
-      const personaCardEl = document.getElementById("card-persona");
-      if (personaCardEl) {
-        const personaRect = personaCardEl.getBoundingClientRect();
-        const clearanceY = (cy - personaRect.bottom) - 44;
-        if (clearanceY > 15) {
-          maxSafeRadiusY = Math.min(maxSafeRadiusY, Math.round(clearanceY));
-        }
-      }
-
-      // 2. Appearance card (6:00 node at cy + radiusY)
-      const appearanceCardEl = document.getElementById("card-appearance");
-      if (appearanceCardEl) {
-        const appearanceRect = appearanceCardEl.getBoundingClientRect();
-        const clearanceY = (appearanceRect.top - cy) - 44;
-        if (clearanceY > 15) {
-          maxSafeRadiusY = Math.min(maxSafeRadiusY, Math.round(clearanceY));
-        }
-      }
-
-      // 3. Left side cards (10:00 & 8:00 nodes at cx - radiusX * cos(30°))
-      const leftCardEl =
-        document.getElementById("card-left-carousel") ??
-        document.getElementById("card-interaction") ??
-        document.getElementById("card-speech");
-      if (leftCardEl) {
-        const leftRect = leftCardEl.getBoundingClientRect();
-        const clearanceX = (cx - leftRect.right - 44) / 0.866;
-        if (clearanceX > 25) {
-          maxSafeRadiusX = Math.min(maxSafeRadiusX, Math.round(clearanceX));
-        }
-      }
-
-      // 4. Right side cards (2:00 & 4:00 nodes at cx + radiusX * cos(30°))
-      const rightCardEl =
-        document.getElementById("card-right-carousel") ?? document.getElementById("card-memory");
-      if (rightCardEl) {
-        const rightRect = rightCardEl.getBoundingClientRect();
-        const clearanceX = (rightRect.left - cx - 44) / 0.866;
-        if (clearanceX > 25) {
-          maxSafeRadiusX = Math.min(maxSafeRadiusX, Math.round(clearanceX));
-        }
-      }
-
-      const targetRadiusX = Math.max(50, Math.min(baselineRadiusX, maxSafeRadiusX));
-      const targetRadiusY = Math.max(40, Math.min(baselineRadiusY, maxSafeRadiusY));
-
-      setDynamicRadiusX((prev) => (prev === null || Math.abs(prev - targetRadiusX) > 1.5 ? targetRadiusX : prev));
-      setDynamicRadiusY((prev) => (prev === null || Math.abs(prev - targetRadiusY) > 1.5 ? targetRadiusY : prev));
-    };
-
-    measureClearance();
-    const t1 = setTimeout(measureClearance, 50);
-    const t2 = setTimeout(measureClearance, 220);
-
-    let ro: ResizeObserver | null = null;
-    if (typeof ResizeObserver !== "undefined" && containerRef.current) {
-      const roObserver = new ResizeObserver(measureClearance);
-      ro = roObserver;
-      roObserver.observe(containerRef.current);
-      DOMAINS.forEach((domain) => {
-        const el = document.getElementById(`card-${domain.id}`);
-        if (el) roObserver.observe(el);
-      });
-      const leftCar = document.getElementById("card-left-carousel");
-      if (leftCar) roObserver.observe(leftCar);
-      const rightCar = document.getElementById("card-right-carousel");
-      if (rightCar) roObserver.observe(rightCar);
-    }
-
-    return () => {
-      clearTimeout(t1);
-      clearTimeout(t2);
-      if (ro) ro.disconnect();
-    };
-  }, [isCompact, windowWidth, windowHeight, baselineRadiusX, baselineRadiusY, activeDomains]);
-
   useEffect(() => {
     if (isCompact) return;
     const handleOutsideClick = (e: MouseEvent) => {
+      if (getStackSize() > 0) return;
       if (activeDomains.length === 0) return;
       const target = e.target as HTMLElement;
       if (!containerRef.current || !containerRef.current.contains(target)) return;
@@ -231,161 +154,237 @@ export function useSettingsPage() {
     return () => document.removeEventListener("mousedown", handleOutsideClick);
   }, [activeDomains, isCompact]);
 
-  useEffect(() => {
-    if (isCompact || activeDomains.length === 0) {
-      void Promise.resolve().then(() => {
-        setLines({
-          persona: null,
-          speech: null,
-          memory: null,
-          appearance: null,
-          language: null,
-          interaction: null,
-        });
+  // ── Unified Dynamic Layout & Clearance Effect ──
+  // Replaces duplicate ResizeObservers and staggered setTimeout polling with
+  // a single ResizeObserver and single rAF pass reading unscaled card bounds.
+  useLayoutEffect(() => {
+    if (isCompact) {
+      setLines({
+        persona: null,
+        speech: null,
+        memory: null,
+        appearance: null,
+        language: null,
+        interaction: null,
       });
       return;
     }
 
-    let calcRafId: number;
-    const calculate = () => {
+    let rafId: number;
+
+    const runLayout = () => {
       if (!containerRef.current) return;
-      cancelAnimationFrame(calcRafId);
-      calcRafId = requestAnimationFrame(() => {
-        if (!containerRef.current) return;
-        const containerRect = containerRef.current.getBoundingClientRect();
 
-        const calculatedLines: Record<string, LineCoords | null> = {};
+      // 1. Measure clearance around radial hub
+      const centerNodeEl = document.getElementById("center-node");
+      if (centerNodeEl) {
+        const centerRect = centerNodeEl.getBoundingClientRect();
+        const cy = (centerRect.top + centerRect.bottom) / 2;
+        const cx = (centerRect.left + centerRect.right) / 2;
 
-        DOMAINS.forEach((domain) => {
-          if (!activeDomains.includes(domain.id)) {
-            calculatedLines[domain.id] = null;
-            return;
+        let maxSafeRadiusY = baselineRadiusY;
+        let maxSafeRadiusX = baselineRadiusX;
+
+        // 1. Persona card (12:00 node at cy - radiusY). Node radius is 20px, min gap is 24px => 44px
+        const personaCardEl = document.getElementById("card-persona");
+        if (personaCardEl) {
+          const personaRect = getUnscaledRect(personaCardEl);
+          const clearanceY = cy - personaRect.bottom - 44;
+          if (clearanceY > 15) {
+            maxSafeRadiusY = Math.min(maxSafeRadiusY, Math.round(clearanceY));
+          }
+        }
+
+        // 2. Appearance card (6:00 node at cy + radiusY)
+        const appearanceCardEl = document.getElementById("card-appearance");
+        if (appearanceCardEl) {
+          const appearanceRect = getUnscaledRect(appearanceCardEl);
+          const clearanceY = appearanceRect.top - cy - 44;
+          if (clearanceY > 15) {
+            maxSafeRadiusY = Math.min(maxSafeRadiusY, Math.round(clearanceY));
+          }
+        }
+
+        // 3. Left side cards (10:00 & 8:00 nodes at cx - radiusX * cos(30°))
+        const leftCardEl =
+          document.getElementById("card-left-carousel") ??
+          document.getElementById("card-interaction") ??
+          document.getElementById("card-speech");
+        if (leftCardEl) {
+          const leftRect = getUnscaledRect(leftCardEl);
+          const clearanceX = (cx - leftRect.right - 44) / 0.866;
+          if (clearanceX > 25) {
+            maxSafeRadiusX = Math.min(maxSafeRadiusX, Math.round(clearanceX));
+          }
+        }
+
+        // 4. Right side cards (2:00 & 4:00 nodes at cx + radiusX * cos(30°))
+        const rightCardEl =
+          document.getElementById("card-right-carousel") ?? document.getElementById("card-memory");
+        if (rightCardEl) {
+          const rightRect = getUnscaledRect(rightCardEl);
+          const clearanceX = (rightRect.left - cx - 44) / 0.866;
+          if (clearanceX > 25) {
+            maxSafeRadiusX = Math.min(maxSafeRadiusX, Math.round(clearanceX));
+          }
+        }
+
+        const targetRadiusX = Math.max(50, Math.min(baselineRadiusX, maxSafeRadiusX));
+        const targetRadiusY = Math.max(40, Math.min(baselineRadiusY, maxSafeRadiusY));
+
+        setDynamicRadiusX((prev) => (prev === null || Math.abs(prev - targetRadiusX) > 1.5 ? targetRadiusX : prev));
+        setDynamicRadiusY((prev) => (prev === null || Math.abs(prev - targetRadiusY) > 1.5 ? targetRadiusY : prev));
+      }
+
+      // 2. Calculate line connectors
+      if (activeDomains.length === 0) {
+        setLines((prev) => {
+          const hasNonNull = DOMAINS.some((d) => prev[d.id] !== null);
+          if (!hasNonNull) return prev;
+          return Object.fromEntries(DOMAINS.map((d) => [d.id, null])) as Record<DomainId, LineCoords | null>;
+        });
+        return;
+      }
+
+      const containerRect = containerRef.current.getBoundingClientRect();
+      const calculatedLines: Record<string, LineCoords | null> = {};
+
+      DOMAINS.forEach((domain) => {
+        if (!activeDomains.includes(domain.id)) {
+          calculatedLines[domain.id] = null;
+          return;
+        }
+
+        const nodeEl = document.getElementById(`node-${domain.id}`);
+        let cardEl = document.getElementById(`card-${domain.id}`);
+        if (!cardEl && isSideCarousel) {
+          // Both domains of a carousel side share one card element.
+          const carouselSide = SETTINGS_DOMAIN_SLOTS[domain.id].carousel?.side;
+          if (carouselSide) {
+            cardEl = document.getElementById(
+              carouselSide === "left" ? "card-left-carousel" : "card-right-carousel"
+            );
+          }
+        }
+
+        if (nodeEl && cardEl) {
+          const nodeRect = nodeEl.getBoundingClientRect();
+          const cardRect = getUnscaledRect(cardEl);
+          const isSideDomain =
+            domain.id === "speech" ||
+            domain.id === "interaction" ||
+            domain.id === "memory" ||
+            domain.id === "language";
+
+          // Keep side connectors anchored to equal grid slots, not variable commit footers.
+          const sideAnchorRect =
+            !isSideCarousel && isSideDomain && cardEl.parentElement
+              ? cardEl.parentElement.getBoundingClientRect()
+              : cardRect;
+
+          const x1 = (nodeRect.left + nodeRect.right) / 2 - containerRect.left;
+          const y1 = (nodeRect.top + nodeRect.bottom) / 2 - containerRect.top;
+
+          let x2 = 0;
+          let y2 = 0;
+
+          switch (domain.id) {
+            case "persona":
+              x2 = (cardRect.left + cardRect.right) / 2 - containerRect.left;
+              y2 = cardRect.bottom - containerRect.top;
+              break;
+            case "appearance":
+              x2 = (cardRect.left + cardRect.right) / 2 - containerRect.left;
+              y2 = cardRect.top - containerRect.top;
+              break;
+            case "memory":
+            case "language":
+              x2 = cardRect.left - containerRect.left;
+              y2 = (sideAnchorRect.top + sideAnchorRect.bottom) / 2 - containerRect.top;
+              break;
+            case "speech":
+            case "interaction":
+              x2 = cardRect.right - containerRect.left;
+              y2 = (sideAnchorRect.top + sideAnchorRect.bottom) / 2 - containerRect.top;
+              break;
           }
 
-          const nodeEl = document.getElementById(`node-${domain.id}`);
-          let cardEl = document.getElementById(`card-${domain.id}`);
-          if (!cardEl && isSideCarousel) {
-            // Both domains of a carousel side share one card element.
-            const carouselSide = SETTINGS_DOMAIN_SLOTS[domain.id].carousel?.side;
-            if (carouselSide) {
-              cardEl = document.getElementById(
-                carouselSide === "left" ? "card-left-carousel" : "card-right-carousel"
-              );
-            }
-          }
-
-          if (nodeEl && cardEl) {
-            const nodeRect = nodeEl.getBoundingClientRect();
-            const cardRect = cardEl.getBoundingClientRect();
-            const isSideDomain =
-              domain.id === "speech" ||
-              domain.id === "interaction" ||
-              domain.id === "memory" ||
-              domain.id === "language";
-            // Keep side connectors anchored to equal grid slots, not variable commit footers.
-            const sideAnchorRect =
-              !isSideCarousel && isSideDomain && cardEl.parentElement
-                ? cardEl.parentElement.getBoundingClientRect()
-                : cardRect;
-
-            const x1 = (nodeRect.left + nodeRect.right) / 2 - containerRect.left;
-            const y1 = (nodeRect.top + nodeRect.bottom) / 2 - containerRect.top;
-
-            let x2 = 0;
-            let y2 = 0;
-
-            switch (domain.id) {
-              case "persona":
-                x2 = (cardRect.left + cardRect.right) / 2 - containerRect.left;
-                y2 = cardRect.bottom - containerRect.top;
-                break;
-              case "appearance":
-                x2 = (cardRect.left + cardRect.right) / 2 - containerRect.left;
-                y2 = cardRect.top - containerRect.top;
-                break;
-              case "memory":
-              case "language":
-                x2 = cardRect.left - containerRect.left;
-                y2 = (sideAnchorRect.top + sideAnchorRect.bottom) / 2 - containerRect.top;
-                break;
-              case "speech":
-              case "interaction":
-                x2 = cardRect.right - containerRect.left;
-                y2 = (sideAnchorRect.top + sideAnchorRect.bottom) / 2 - containerRect.top;
-                break;
-            }
-
-            if (!isNaN(x1) && !isNaN(y1) && !isNaN(x2) && !isNaN(y2)) {
-              calculatedLines[domain.id] = { x1, y1, x2, y2 };
-            } else {
-              calculatedLines[domain.id] = null;
-            }
+          if (!isNaN(x1) && !isNaN(y1) && !isNaN(x2) && !isNaN(y2)) {
+            calculatedLines[domain.id] = { x1, y1, x2, y2 };
           } else {
             calculatedLines[domain.id] = null;
           }
-        });
+        } else {
+          calculatedLines[domain.id] = null;
+        }
+      });
 
-        setLines((prevLines) => {
-          let changed = false;
-          const newLines = { ...prevLines };
+      setLines((prevLines) => {
+        let changed = false;
+        const newLines = { ...prevLines };
 
-          DOMAINS.forEach((domain) => {
-            const calculated = calculatedLines[domain.id];
-            const existing = prevLines[domain.id];
+        DOMAINS.forEach((domain) => {
+          const calculated = calculatedLines[domain.id];
+          const existing = prevLines[domain.id];
 
-            if (calculated === null) {
-              if (existing !== null) {
-                newLines[domain.id] = null;
-                changed = true;
-              }
-            } else if (
-              !existing ||
-              Math.abs(existing.x1 - calculated.x1) > 0.5 ||
-              Math.abs(existing.y1 - calculated.y1) > 0.5 ||
-              Math.abs(existing.x2 - calculated.x2) > 0.5 ||
-              Math.abs(existing.y2 - calculated.y2) > 0.5
-            ) {
-              newLines[domain.id] = calculated;
+          if (calculated === null) {
+            if (existing !== null) {
+              newLines[domain.id] = null;
               changed = true;
             }
-          });
-
-          return changed ? newLines : prevLines;
+          } else if (
+            !existing ||
+            Math.abs(existing.x1 - calculated.x1) > 0.5 ||
+            Math.abs(existing.y1 - calculated.y1) > 0.5 ||
+            Math.abs(existing.x2 - calculated.x2) > 0.5 ||
+            Math.abs(existing.y2 - calculated.y2) > 0.5
+          ) {
+            newLines[domain.id] = calculated;
+            changed = true;
+          }
         });
+
+        return changed ? newLines : prevLines;
       });
     };
 
-    calculate();
-    const timer1 = setTimeout(calculate, 100);
-    const timer2 = setTimeout(calculate, 320);
-    const timer3 = setTimeout(calculate, 600);
+    const scheduleLayout = () => {
+      cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(runLayout);
+    };
 
-    // Watch for card and container resizes (e.g. when lazy-loaded card chunks mount and expand)
-    let observer: ResizeObserver | null = null;
+    scheduleLayout();
+
+    let ro: ResizeObserver | null = null;
     if (typeof ResizeObserver !== "undefined" && containerRef.current) {
-      const cardObserver = new ResizeObserver(() => {
-        calculate();
-      });
-      observer = cardObserver;
-      cardObserver.observe(containerRef.current);
-      DOMAINS.forEach((d) => {
-        const el = document.getElementById(`card-${d.id}`);
-        if (el) cardObserver.observe(el);
+      const observer = new ResizeObserver(scheduleLayout);
+      ro = observer;
+      observer.observe(containerRef.current);
+      DOMAINS.forEach((domain) => {
+        const el = document.getElementById(`card-${domain.id}`);
+        if (el) observer.observe(el);
       });
       const leftCar = document.getElementById("card-left-carousel");
-      if (leftCar) cardObserver.observe(leftCar);
+      if (leftCar) observer.observe(leftCar);
       const rightCar = document.getElementById("card-right-carousel");
-      if (rightCar) cardObserver.observe(rightCar);
+      if (rightCar) observer.observe(rightCar);
     }
 
     return () => {
-      clearTimeout(timer1);
-      clearTimeout(timer2);
-      clearTimeout(timer3);
-      cancelAnimationFrame(calcRafId);
-      if (observer) observer.disconnect();
+      cancelAnimationFrame(rafId);
+      if (ro) ro.disconnect();
     };
-  }, [activeDomains, isCompact, windowWidth, windowHeight, radiusX, radiusY, isSideCarousel]);
+  }, [
+    isCompact,
+    windowWidth,
+    windowHeight,
+    baselineRadiusX,
+    baselineRadiusY,
+    activeDomains,
+    isSideCarousel,
+    radiusX,
+    radiusY,
+  ]);
 
   const handleSelect = useCallback((id: DomainId) => {
     setActiveDomains((prev) => {

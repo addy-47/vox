@@ -223,7 +223,7 @@ pub async fn get_observations(
     let mapped_status = status
         .as_deref()
         .map(|s| if s == "staged" { "active" } else { s });
-    fetch_all_observations(
+    let mut records = fetch_all_observations(
         &conn,
         project_id.as_deref(),
         mapped_status,
@@ -232,7 +232,16 @@ pub async fn get_observations(
         observation_type.as_deref(),
     )
     .await
-    .map_err(|e| VoxIpcError::Database(e.to_string()))
+    .map_err(|e| VoxIpcError::Database(e.to_string()))?;
+
+    // Unify wire status: emit canonical "staged" for extracted, ready-to-integrate facts
+    for record in &mut records {
+        if record.status == "active" {
+            record.status = "staged".to_string();
+        }
+    }
+
+    Ok(records)
 }
 
 /// Returns aggregate counts for memory ingestion and active facts.

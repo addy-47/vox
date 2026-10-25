@@ -276,7 +276,7 @@ export const RemoteCatalogSection = memo(({
           />
         </div>
       ) : (
-        filteredRemoteModels.map((model) => {
+        filteredRemoteModels.slice(0, 24).map((model) => {
           const isSelected = selectedModelId === model.id;
           const probed = resolveCapabilities(model);
           const probeState = probingMap[model.id];

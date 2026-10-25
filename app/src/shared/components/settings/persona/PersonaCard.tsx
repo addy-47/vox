@@ -1,4 +1,4 @@
-import { useState, memo, useCallback, useMemo, useRef, useEffect } from "react";
+import { useState, memo, useCallback, useMemo, useRef } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
 import { CircleUserRound, Pencil, Check, X } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
@@ -188,39 +188,17 @@ export const PersonaCard = memo(({ layoutMode = "full-max" }: PersonaCardProps) 
   // Local keystroke draft
   const [promptDraft, setPromptDraft] = useState<string | null>(null);
   const promptDraftRef = useRef<string | null>(null);
-  const commitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [tagViolation, setTagViolation] = useState(false);
 
-  useEffect(() => {
-    return () => {
-      if (commitTimerRef.current) clearTimeout(commitTimerRef.current);
-    };
-  }, []);
-
-  // Diagnostics log requested for dark mode rendering artifact inspection
-  useEffect(() => {
-    const isDark = document.documentElement.classList.contains("dark");
-    const cardEl = document.getElementById("card-persona") ?? textareaRef.current?.parentElement;
-    const computed = cardEl ? window.getComputedStyle(cardEl) : null;
-    console.info("[PersonaCard Diagnostics]", {
-      isDark,
-      htmlClasses: document.documentElement.className,
-      layoutMode,
-      pipelineMode,
-      viewMode,
-      cardDimensions: cardEl ? { width: cardEl.offsetWidth, height: cardEl.offsetHeight } : null,
-      computedBorder: computed?.border,
-      computedBorderColor: computed?.borderColor,
-      computedOutline: computed?.outline,
-      computedBoxShadow: computed?.boxShadow,
-      computedBg: computed?.backgroundColor,
-      timestamp: Date.now(),
-    });
-  }, [layoutMode, pipelineMode, viewMode]);
-
   const shownPrompt = promptDraft ?? activePrompt;
-  const tagSpans = useMemo(() => getProtectedXmlTagSpans(shownPrompt), [shownPrompt]);
-  const highlightedContent = useMemo(() => renderSyntaxHighlightedText(shownPrompt), [shownPrompt]);
+  const tagSpans = useMemo(
+    () => (viewMode === "edit" ? getProtectedXmlTagSpans(shownPrompt) : []),
+    [viewMode, shownPrompt]
+  );
+  const highlightedContent = useMemo(
+    () => (viewMode === "edit" ? renderSyntaxHighlightedText(shownPrompt) : null),
+    [viewMode, shownPrompt]
+  );
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -257,8 +235,6 @@ export const PersonaCard = memo(({ layoutMode = "full-max" }: PersonaCardProps) 
   const commitDraft = useCallback(
     (nextValue: string) => {
       setTagViolation(false);
-      setPromptDraft(null);
-      promptDraftRef.current = null;
       if (isModular) {
         updateDraft("persona", "modular_prompt", nextValue);
       } else {
@@ -274,22 +250,13 @@ export const PersonaCard = memo(({ layoutMode = "full-max" }: PersonaCardProps) 
       const nextValue = e.target.value;
       setPromptDraft(nextValue);
       promptDraftRef.current = nextValue;
-      if (commitTimerRef.current) clearTimeout(commitTimerRef.current);
-      commitTimerRef.current = setTimeout(() => commitDraft(nextValue), 200);
     },
-    [commitDraft]
+    []
   );
 
   const handlePromptBlur = useCallback(() => {
-    if (commitTimerRef.current) {
-      clearTimeout(commitTimerRef.current);
-      commitTimerRef.current = null;
-    }
-    const pending = promptDraftRef.current;
-    if (pending !== null) {
-      commitDraft(pending);
-    }
-  }, [commitDraft]);
+    // Keep draft locally in state while editing; do not trim or switch to activePrompt on blur
+  }, []);
 
   const handleScroll = useCallback(() => {
     if (textareaRef.current && highlightRef.current) {
@@ -300,14 +267,12 @@ export const PersonaCard = memo(({ layoutMode = "full-max" }: PersonaCardProps) 
 
   const startEditing = useCallback(() => {
     setEditSnapshot(activeRawPrompt);
+    setPromptDraft(activePrompt);
+    promptDraftRef.current = activePrompt;
     setViewMode("edit");
-  }, [activeRawPrompt]);
+  }, [activeRawPrompt, activePrompt]);
 
   const finishEditing = useCallback(() => {
-    if (commitTimerRef.current) {
-      clearTimeout(commitTimerRef.current);
-      commitTimerRef.current = null;
-    }
     const pending = promptDraftRef.current;
     if (pending !== null) {
       commitDraft(pending);
@@ -319,10 +284,6 @@ export const PersonaCard = memo(({ layoutMode = "full-max" }: PersonaCardProps) 
   }, [commitDraft]);
 
   const cancelEditing = useCallback(() => {
-    if (commitTimerRef.current) {
-      clearTimeout(commitTimerRef.current);
-      commitTimerRef.current = null;
-    }
     if (editSnapshot !== null) {
       updateDraft(
         "persona",
