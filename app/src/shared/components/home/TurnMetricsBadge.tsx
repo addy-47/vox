@@ -68,22 +68,22 @@ export const TurnMetricsBadge: React.FC<{ className?: string }> = memo(({ classN
     };
   }, [isEngaged, latestMetrics]);
 
-  if (!stats) return null;
-
   return (
     <AnimatePresence>
-      <motion.div
-        initial={{ opacity: 0, y: 4 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: 4 }}
-        transition={{ duration: 0.2, ease: "easeOut" }}
-        className={cn(
-          "hidden lg:inline-flex items-center gap-2.5 px-2 py-1 select-none text-[14px] font-mono leading-none tabular-nums text-[rgb(var(--foreground))]",
-          className
-        )}
-        role="status"
-        aria-label={METRICS_COPY.badgeAriaLabel}
-      >
+      {stats && (
+        <motion.div
+          key="turn-metrics-badge"
+          initial={{ opacity: 0, y: 4 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: 4 }}
+          transition={{ duration: 0.2, ease: "easeOut" }}
+          className={cn(
+            "hidden lg:inline-flex items-center gap-2.5 px-2 py-1 select-none text-[14px] font-mono leading-none tabular-nums text-[rgb(var(--foreground))]",
+            className
+          )}
+          role="status"
+          aria-label={METRICS_COPY.badgeAriaLabel}
+        >
         <div className="flex items-center text-[rgb(var(--accent))] shrink-0">
           <Zap size={14} strokeWidth={2.2} />
         </div>
@@ -178,6 +178,7 @@ export const TurnMetricsBadge: React.FC<{ className?: string }> = memo(({ classN
           </div>
         </Tooltip>
       </motion.div>
+      )}
     </AnimatePresence>
   );
 });

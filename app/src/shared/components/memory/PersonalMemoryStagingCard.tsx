@@ -180,9 +180,10 @@ export const PersonalMemoryStagingCard: React.FC<PersonalMemoryStagingCardProps>
       }
     }, [mode, canonicalMarkdown, canonicalContent]);
 
+    const isSuggestionsActive = mode === "suggestions" && suggestions.length > 0;
     const baseSections = useMemo(
-      () => parseSections(canonicalContent, canonicalMarkdown),
-      [canonicalContent, canonicalMarkdown]
+      () => (isSuggestionsActive ? parseSections(canonicalContent, canonicalMarkdown) : []),
+      [isSuggestionsActive, canonicalContent, canonicalMarkdown]
     );
 
     useEffect(() => {
@@ -344,8 +345,6 @@ export const PersonalMemoryStagingCard: React.FC<PersonalMemoryStagingCardProps>
         console.error("[PersonalMemoryStagingCard] Regenerate failed:", e);
       }
     };
-
-    const isSuggestionsActive = mode === "suggestions" && suggestions.length > 0;
 
     return (
       <div

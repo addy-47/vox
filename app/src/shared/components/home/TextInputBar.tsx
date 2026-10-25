@@ -3,6 +3,7 @@ import { CornerDownLeft, X, Volume2, VolumeX, Mic, MicOff } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { HOME_CONTROLS_COPY } from "@/data/homeCopy";
 import { shortcutKeysSuffix } from "@/data/shortcuts";
+import { Tooltip } from "@/shared/ui/Tooltip";
 
 export interface TextInputBarProps {
   onSubmit: (text: string) => void;
@@ -38,17 +39,19 @@ export const TextInputBar = memo(({
 
   // Sync any newly arriving turns into the history stack
   useEffect(() => {
-    if (initialHistory && initialHistory.length > 0) {
-      setHistory((prev) => {
-        const merged = [...initialHistory];
-        for (const item of prev) {
-          if (!merged.includes(item)) {
-            merged.push(item);
-          }
+    if (!initialHistory || initialHistory.length === 0) return;
+    setHistory((prev) => {
+      const merged = [...initialHistory];
+      for (const item of prev) {
+        if (!merged.includes(item)) {
+          merged.push(item);
         }
-        return merged;
-      });
-    }
+      }
+      if (merged.length === prev.length && merged.every((v, i) => v === prev[i])) {
+        return prev;
+      }
+      return merged;
+    });
   }, [initialHistory]);
 
   const setCaretToEnd = useCallback(() => {
@@ -112,36 +115,38 @@ export const TextInputBar = memo(({
   return (
     <div className="flex items-center w-full max-w-xl mx-auto gap-3 px-4 py-2  transition-all duration-300">
       {/* Mic Mute Toggle */}
-      <button
-        type="button"
-        onClick={onToggleMicMute}
-        className={cn(
-          "flex items-center justify-center w-9 h-9 rounded-full transition-colors duration-200 cursor-pointer",
-          isMicMuted
-            ? "text-[rgb(var(--error))]/90 bg-[rgba(var(--error),0.15)] hover:bg-[rgba(var(--error),0.25)]"
-            : "text-[rgb(var(--accent))]/70 hover:text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/10"
-        )}
-        aria-label={isMicMuted ? copy.unmuteMicAriaLabel : copy.muteMicAriaLabel}
-        title={(isMicMuted ? copy.unmuteMicTooltip : copy.muteMicTooltip) + shortcutKeysSuffix("home.mute")}
-      >
-        {isMicMuted ? <MicOff size={17} /> : <Mic size={17} />}
-      </button>
+      <Tooltip label={(isMicMuted ? copy.unmuteMicTooltip : copy.muteMicTooltip) + shortcutKeysSuffix("home.mute")} side="top">
+        <button
+          type="button"
+          onClick={onToggleMicMute}
+          className={cn(
+            "flex items-center justify-center w-9 h-9 rounded-full transition-colors duration-200 cursor-pointer",
+            isMicMuted
+              ? "text-[rgb(var(--error))]/90 bg-[rgba(var(--error),0.15)] hover:bg-[rgba(var(--error),0.25)]"
+              : "text-[rgb(var(--accent))]/70 hover:text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/10"
+          )}
+          aria-label={isMicMuted ? copy.unmuteMicAriaLabel : copy.muteMicAriaLabel}
+        >
+          {isMicMuted ? <MicOff size={17} /> : <Mic size={17} />}
+        </button>
+      </Tooltip>
 
       {/* Speaker Playback Mute Toggle */}
-      <button
-        type="button"
-        onClick={onTogglePlaybackMute}
-        className={cn(
-          "flex items-center justify-center w-9 h-9 rounded-full transition-colors duration-200 cursor-pointer",
-          isPlaybackMuted
-            ? "text-[rgb(var(--warn-soft))]/90 bg-[rgba(var(--warn-soft),0.15)] hover:bg-[rgba(var(--warn-soft),0.25)]"
-            : "text-[rgb(var(--accent))]/70 hover:text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/10"
-        )}
-        aria-label={isPlaybackMuted ? copy.unmuteSpeakerAriaLabel : copy.muteSpeakerAriaLabel}
-        title={(isPlaybackMuted ? copy.unmuteSpeakerTooltip : copy.muteSpeakerTooltip) + shortcutKeysSuffix("home.speaker-mute")}
-      >
-        {isPlaybackMuted ? <VolumeX size={17} /> : <Volume2 size={17} />}
-      </button>
+      <Tooltip label={(isPlaybackMuted ? copy.unmuteSpeakerTooltip : copy.muteSpeakerTooltip) + shortcutKeysSuffix("home.speaker-mute")} side="top">
+        <button
+          type="button"
+          onClick={onTogglePlaybackMute}
+          className={cn(
+            "flex items-center justify-center w-9 h-9 rounded-full transition-colors duration-200 cursor-pointer",
+            isPlaybackMuted
+              ? "text-[rgb(var(--warn-soft))]/90 bg-[rgba(var(--warn-soft),0.15)] hover:bg-[rgba(var(--warn-soft),0.25)]"
+              : "text-[rgb(var(--accent))]/70 hover:text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/10"
+          )}
+          aria-label={isPlaybackMuted ? copy.unmuteSpeakerAriaLabel : copy.muteSpeakerAriaLabel}
+        >
+          {isPlaybackMuted ? <VolumeX size={17} /> : <Volume2 size={17} />}
+        </button>
+      </Tooltip>
 
       {/* Underline Input Box */}
       <form onSubmit={handleSubmit} className="flex-1 flex items-center min-w-0">
@@ -158,32 +163,34 @@ export const TextInputBar = memo(({
       </form>
 
       {/* Send Button */}
-      <button
-        type="button"
-        onClick={() => handleSubmit()}
-        disabled={!value.trim() || disabled}
-        className={cn(
-          "flex items-center justify-center w-9 h-9 rounded-full transition-all duration-200 cursor-pointer border border-[rgb(var(--accent))]/40",
-          value.trim() && !disabled
-            ? "bg-[rgb(var(--accent))]/20 text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/30 hover:scale-105 active:scale-95"
-            : "opacity-30 cursor-not-allowed text-[rgb(var(--accent))]/40 border-transparent"
-        )}
-        aria-label={copy.sendAriaLabel}
-        title={copy.sendTooltip + shortcutKeysSuffix("home.send")}
-      >
-        <CornerDownLeft size={16} />
-      </button>
+      <Tooltip label={copy.sendTooltip + shortcutKeysSuffix("home.send")} side="top">
+        <button
+          type="button"
+          onClick={() => handleSubmit()}
+          disabled={!value.trim() || disabled}
+          className={cn(
+            "flex items-center justify-center w-9 h-9 rounded-full transition-all duration-200 cursor-pointer border border-[rgb(var(--accent))]/40",
+            value.trim() && !disabled
+              ? "bg-[rgb(var(--accent))]/20 text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/30 hover:scale-105 active:scale-95"
+              : "opacity-30 cursor-not-allowed text-[rgb(var(--accent))]/40 border-transparent"
+          )}
+          aria-label={copy.sendAriaLabel}
+        >
+          <CornerDownLeft size={16} />
+        </button>
+      </Tooltip>
 
       {/* Discard / Close Button */}
-      <button
-        type="button"
-        onClick={onClose}
-        className="flex items-center justify-center w-9 h-9 rounded-full text-[rgb(var(--foreground))]/60 hover:text-[rgb(var(--foreground))] hover:bg-[rgb(var(--foreground))]/10 transition-colors duration-200 cursor-pointer"
-        aria-label={copy.discardAriaLabel}
-        title={copy.discardTooltip + shortcutKeysSuffix("home.discard")}
-      >
-        <X size={17} />
-      </button>
+      <Tooltip label={copy.discardTooltip + shortcutKeysSuffix("home.discard")} side="top">
+        <button
+          type="button"
+          onClick={onClose}
+          className="flex items-center justify-center w-9 h-9 rounded-full text-[rgb(var(--foreground))]/60 hover:text-[rgb(var(--foreground))] hover:bg-[rgb(var(--foreground))]/10 transition-colors duration-200 cursor-pointer"
+          aria-label={copy.discardAriaLabel}
+        >
+          <X size={17} />
+        </button>
+      </Tooltip>
     </div>
   );
 });

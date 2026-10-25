@@ -157,32 +157,6 @@ export const DOMAIN_DIRTY_KEYS: Record<SettingsDomainId, readonly DomainDirtyKey
   ],
 };
 
-export const REALTIME_CONFIG_DESK_COPY = {
-  title: "Realtime Direct Voice Connection",
-  bannerDescPrefix: "Full duplex speech-to-speech engine with ",
-  bannerHighlight: "sub-200ms",
-  bannerDescSuffix: " live audio streaming, native grounding, and dynamic turn detection.",
-  providerLabel: "Voice Provider",
-  apiKeyLabel: "API Key (Required)",
-  stages: {
-    capture: "Capture",
-    think: "Think",
-    speak: "Speak",
-  },
-  voice: {
-    selectVoice: "Select Voice",
-    prevVoice: "Previous Voice",
-    nextVoice: "Next Voice",
-  },
-  modelLabel: "Model",
-  modelPlaceholder: "Model ID",
-  temperature: "Temperature",
-  hubTitle: "Realtime Hub",
-  liveMode: "Live Mode",
-  saveApiKey: "Save API Key",
-  cancel: "Cancel",
-  editApiKey: "Edit API Key",
-};
 
 export const PIPELINE_MODE_COPY = {
   cardTitle: "Pipeline",

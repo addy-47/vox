@@ -56,8 +56,9 @@ export const HistoryListView: React.FC<HistoryListViewProps> = memo(
     const q = searchQuery.trim().toLowerCase();
 
     const sessionDates = useMemo(() => {
+      if (!showDateRangePicker && dateFilter !== "custom") return new Set<string>();
       return new Set(sessions.map((s) => toDateKey(new Date(s.created_at))));
-    }, [sessions]);
+    }, [sessions, showDateRangePicker, dateFilter]);
 
     const initialCalendarDate = useMemo(() => {
       if (sessions.length > 0) {
@@ -66,15 +67,13 @@ export const HistoryListView: React.FC<HistoryListViewProps> = memo(
       return new Date();
     }, [sessions]);
 
-    const filteredSessions = useMemo(() => {
+    const dateFilteredSessions = useMemo(() => {
       const now = Date.now();
+      const startOfTodayMs = new Date().setHours(0, 0, 0, 0);
 
       return sessions.filter((s) => {
-        // 1. Date Filter
         if (dateFilter === "today") {
-          const sessionDate = new Date(s.created_at);
-          const today = new Date();
-          if (sessionDate.toDateString() !== today.toDateString()) return false;
+          return s.created_at >= startOfTodayMs;
         } else if (dateFilter === "week") {
           const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
           if (now - s.created_at > sevenDaysMs) return false;
@@ -90,17 +89,18 @@ export const HistoryListView: React.FC<HistoryListViewProps> = memo(
             if (customEndDate && sessionDateKey > customEndDate) return false;
           }
         }
-
-        // 2. Search on session title or preview message
-        if (q) {
-          const title = resolveSessionTitle(s).toLowerCase();
-          const firstMsg = (s.first_message || "").toLowerCase();
-          return title.includes(q) || firstMsg.includes(q) || fuzzyMatch(q, title);
-        }
-
         return true;
       });
-    }, [sessions, q, dateFilter, customStartDate, customEndDate]);
+    }, [sessions, dateFilter, customStartDate, customEndDate]);
+
+    const filteredSessions = useMemo(() => {
+      if (!q) return dateFilteredSessions;
+      return dateFilteredSessions.filter((s) => {
+        const title = resolveSessionTitle(s).toLowerCase();
+        const firstMsg = (s.first_message || "").toLowerCase();
+        return title.includes(q) || firstMsg.includes(q) || fuzzyMatch(q, title);
+      });
+    }, [dateFilteredSessions, q]);
 
     // D1: virtualize the session card list — renders only visible rows +
     // overscan instead of the full filtered array. Zero visual change.
@@ -250,26 +250,28 @@ export const HistoryListView: React.FC<HistoryListViewProps> = memo(
                     transform: `translateY(${virtualRow.start}px)`,
                     paddingBottom: 10,
                   }}
-                  role="button"
-                  tabIndex={0}
-                  aria-pressed={isSelected}
-                  aria-label={title}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onSelect(session);
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.preventDefault();
-                      onSelect(session);
-                    }
-                  }}
-                  className={cn(
-                    "w-full rounded-xl p-4 flex flex-col text-left transition-colors select-none cursor-pointer relative group glass-card",
-                    "border-[rgba(var(--border),0.15)] bg-[rgb(var(--card))]/80 hover:border-[rgba(var(--accent),0.55)] hover:bg-[rgb(var(--card))]/95 hover:shadow-[0_0_20px_rgba(var(--accent),0.15)]",
-                    isSelected && "border-[rgb(var(--accent))] bg-[rgb(var(--card))] shadow-[0_0_25px_rgba(var(--accent),0.35)]"
-                  )}
                 >
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    aria-pressed={isSelected}
+                    aria-label={title}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onSelect(session);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        onSelect(session);
+                      }
+                    }}
+                    className={cn(
+                      "w-full rounded-xl p-4 flex flex-col text-left transition-colors select-none cursor-pointer relative group glass-card",
+                      "border-[rgba(var(--border),0.15)] bg-[rgb(var(--card))]/80 hover:border-[rgba(var(--accent),0.55)] hover:bg-[rgb(var(--card))]/95 hover:shadow-[0_0_20px_rgba(var(--accent),0.15)]",
+                      isSelected && "border-[rgb(var(--accent))] bg-[rgb(var(--card))] shadow-[0_0_25px_rgba(var(--accent),0.35)]"
+                    )}
+                  >
                   {/* Header row: glowing dot + time + turns */}
                   <div className="flex items-center justify-between mb-2 pr-8">
                     <div className="flex items-center gap-2">
@@ -345,7 +347,8 @@ export const HistoryListView: React.FC<HistoryListViewProps> = memo(
                     />
                   </div>
                 </div>
-              );
+              </div>
+            );
             })}
             </div>
           )}

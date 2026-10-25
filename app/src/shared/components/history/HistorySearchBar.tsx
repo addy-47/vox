@@ -63,13 +63,16 @@ export const HistorySearchBar = memo<HistorySearchBarProps>(({
 }) => {
   const [value, setValue] = useState("");
   const [activeIndex, setActiveIndex] = useState(-1);
-  const [backendHits, setBackendHits] = useState<HistorySearchHit[]>([]);
+  const [backendQueryHits, setBackendQueryHits] = useState<{ query: string; hits: HistorySearchHit[] }>({
+    query: "",
+    hits: [],
+  });
 
   // Debounced server-side search directly querying Turso SQL index
   useEffect(() => {
     const q = value.trim();
     if (q.length < 2) {
-      setBackendHits([]);
+      setBackendQueryHits((prev) => (prev.hits.length === 0 ? prev : { query: "", hits: [] }));
       return;
     }
 
@@ -86,7 +89,7 @@ export const HistorySearchBar = memo<HistorySearchBarProps>(({
             matchedRole: h.matched_role,
             turnIndex: h.turn_index,
           }));
-          setBackendHits(mapped);
+          setBackendQueryHits({ query: q.toLowerCase(), hits: mapped });
         } catch (e) {
           console.debug("[HistorySearch] Backend search failed:", e);
         }
@@ -104,8 +107,8 @@ export const HistorySearchBar = memo<HistorySearchBarProps>(({
     const q = value.trim().toLowerCase();
     if (!q) return [];
 
-    if (backendHits.length > 0) {
-      return backendHits;
+    if (backendQueryHits.query === q && backendQueryHits.hits.length > 0) {
+      return backendQueryHits.hits;
     }
 
     // Instant local title and first_message search while backend query is in flight
@@ -139,7 +142,7 @@ export const HistorySearchBar = memo<HistorySearchBarProps>(({
     }
 
     return hits;
-  }, [sessions, value, backendHits]);
+  }, [sessions, value, backendQueryHits]);
 
   const handleClear = useCallback(() => {
     setValue("");

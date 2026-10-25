@@ -36,8 +36,8 @@ interface SessionAnchor {
 }
 
 interface ConduitSegment {
-  p0: THREE.Vector3;
-  p1: THREE.Vector3;
+  p0: { x: number; y: number; z: number };
+  p1: { x: number; y: number; z: number };
   col0: string;
   col1: string;
   sessionId: string;
@@ -60,6 +60,7 @@ const SCRATCH_COLOR_2 = new THREE.Color();
 const SCRATCH_START_COLOR = new THREE.Color();
 const SCRATCH_RING_COLOR = new THREE.Color();
 const LIGHT_BG_COLOR = new THREE.Color(0xf8fafc);
+const DUMMY_LOOKAT = new THREE.Vector3(0, 0, 3000);
 
 export function useMemoryGraphScene({
   canvasContainerRef,
@@ -72,7 +73,9 @@ export function useMemoryGraphScene({
   selectedSessionId = null,
   paused = false,
 }: UseMemoryGraphSceneOptions) {
-  const [isLightMode, setIsLightMode] = useState(false);
+  const [isLightMode, setIsLightMode] = useState(
+    () => typeof document !== "undefined" && document.documentElement.getAttribute("data-theme") === "light"
+  );
 
   // Three.js Core Refs
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
@@ -248,6 +251,9 @@ export function useMemoryGraphScene({
       pitfall: dynamicPalette.pitfall.main,
     };
 
+    let ringIdx = 0;
+    const lookAtTarget = cameraRef.current ? cameraRef.current.position : DUMMY_LOOKAT;
+
     gNodes.forEach((node, i) => {
       const visible = isNodeVisible(node);
       const matchesSearch = !hasSearch || isNodeMatchingSearch(node);
@@ -303,26 +309,38 @@ export function useMemoryGraphScene({
         const ringScale = isSelected ? radius * 1.55 : radius * 1.35;
         dummy.position.set(node.x, node.y, node.z);
         dummy.scale.set(ringScale, ringScale, ringScale);
-        dummy.lookAt(cameraRef.current ? cameraRef.current.position : new THREE.Vector3(0, 0, 3000));
+        dummy.lookAt(lookAtTarget);
         dummy.updateMatrix();
-        instancedRing.setMatrixAt(i, dummy.matrix);
+        instancedRing.setMatrixAt(ringIdx, dummy.matrix);
 
         SCRATCH_RING_COLOR.set(colHexMain);
-        instancedRing.setColorAt(i, SCRATCH_RING_COLOR);
-      } else {
-        dummy.position.set(node.x, node.y, node.z);
-        dummy.scale.set(0.001, 0.001, 0.001);
-        dummy.updateMatrix();
-        instancedRing.setMatrixAt(i, dummy.matrix);
+        instancedRing.setColorAt(ringIdx, SCRATCH_RING_COLOR);
+        ringIdx++;
       }
     });
 
     instancedMesh.count = gNodes.length;
-    instancedRing.count = gNodes.length;
-    if (instancedMesh.instanceMatrix) instancedMesh.instanceMatrix.needsUpdate = true;
-    if (instancedMesh.instanceColor) instancedMesh.instanceColor.needsUpdate = true;
-    if (instancedRing.instanceMatrix) instancedRing.instanceMatrix.needsUpdate = true;
-    if (instancedRing.instanceColor) instancedRing.instanceColor.needsUpdate = true;
+    instancedRing.count = ringIdx;
+    if (instancedMesh.instanceMatrix) {
+      instancedMesh.instanceMatrix.clearUpdateRanges();
+      instancedMesh.instanceMatrix.addUpdateRange(0, gNodes.length * 16);
+      instancedMesh.instanceMatrix.needsUpdate = true;
+    }
+    if (instancedMesh.instanceColor) {
+      instancedMesh.instanceColor.clearUpdateRanges();
+      instancedMesh.instanceColor.addUpdateRange(0, gNodes.length * 3);
+      instancedMesh.instanceColor.needsUpdate = true;
+    }
+    if (instancedRing.instanceMatrix) {
+      instancedRing.instanceMatrix.clearUpdateRanges();
+      instancedRing.instanceMatrix.addUpdateRange(0, ringIdx * 16);
+      instancedRing.instanceMatrix.needsUpdate = true;
+    }
+    if (instancedRing.instanceColor) {
+      instancedRing.instanceColor.clearUpdateRanges();
+      instancedRing.instanceColor.addUpdateRange(0, ringIdx * 3);
+      instancedRing.instanceColor.needsUpdate = true;
+    }
   }, [isNodeMatchingSearch, isNodeVisible]);
 
   // Update Line Conduits Highlighting & Colors
@@ -387,6 +405,11 @@ export function useMemoryGraphScene({
       return true;
     };
 
+    const liveNodeMask = new Uint8Array(gNodes.length);
+    for (let i = 0; i < gNodes.length; i++) {
+      liveNodeMask[i] = isNodeLive(gNodes[i]) ? 1 : 0;
+    }
+
     // 1. Write Umbilical Conduits
     // Conduits connect session anchors to the core — skip if collection-filtered away
     conduits.forEach((cond) => {
@@ -434,16 +457,15 @@ export function useMemoryGraphScene({
       // (they connect personal nodes to the core — always draw unless search hides target)
       if (link.relation !== "CORE_IDENTITY") {
         // Check target node passes filters
-        if (!isNodeLive(tgt)) return;
+        if (!liveNodeMask[link.targetIndex]) return;
 
         // Check source node passes filters (if it's a real node, not the core or an anchor)
         if (link.sourceIndex >= 0 && link.sourceIndex < gNodes.length) {
-          const srcNode = gNodes[link.sourceIndex];
-          if (srcNode && !isNodeLive(srcNode)) return;
+          if (!liveNodeMask[link.sourceIndex]) return;
         }
       } else if (hasSearch) {
         // For CORE_IDENTITY links, still hide if target doesn't match search
-        if (!isNodeLive(tgt)) return;
+        if (!liveNodeMask[link.targetIndex]) return;
       }
 
       const tgtSessionId = tgt.sessionId ?? (tgt.factRecord?.session_id !== null ? String(tgt.factRecord.session_id) : null);
@@ -544,7 +566,11 @@ export function useMemoryGraphScene({
       writePtr += 6;
     });
 
+    posAttr.clearUpdateRanges();
+    posAttr.addUpdateRange(0, writePtr);
     posAttr.needsUpdate = true;
+    colAttr.clearUpdateRanges();
+    colAttr.addUpdateRange(0, writePtr);
     colAttr.needsUpdate = true;
     geo.setDrawRange(0, writePtr / 3);
   }, []);
@@ -565,26 +591,12 @@ export function useMemoryGraphScene({
         gNodesRef.current = gNodes;
         gLinksRef.current = gLinks;
         sessionAnchorsRef.current = sessionAnchors;
-        conduitsRef.current = conduits.map((c) => ({
-          ...c,
-          p0: new THREE.Vector3(c.p0.x, c.p0.y, c.p0.z),
-          p1: new THREE.Vector3(c.p1.x, c.p1.y, c.p1.z),
-        }));
+        conduitsRef.current = conduits;
 
         updateWebGLBuffers();
         updateLineHighlighting();
         wakeLoopRef.current();
       };
-
-      if (factsRef.current && factsRef.current.length > 0) {
-        const pal = getActiveDynamicPalette(isLightModeRef.current);
-        worker.postMessage({
-          facts: factsRef.current,
-          isLight: isLightModeRef.current,
-          dynamicPalette: pal,
-          coreAccentHex: pal.personal.main,
-        });
-      }
     } catch (e) {
       console.error("[MemoryGraph] Failed to initialize worker:", e);
     }
@@ -914,9 +926,10 @@ export function useMemoryGraphScene({
     scene.add(lineSegments);
     lineSegmentsRef.current = lineSegments;
 
-    // If facts are already present, build topology immediately!
-    if (factsRef.current && factsRef.current.length > 0) {
-      rebuildTopologyRef.current?.(factsRef.current, isLightModeRef.current);
+    // If graph nodes are already computed, sync WebGL buffers immediately; otherwise rebuildTopology effect handles dispatch.
+    if (gNodesRef.current && gNodesRef.current.length > 0) {
+      updateWebGLBuffers();
+      updateLineHighlighting();
     }
 
     // 10. Dynamic FPS Animation Loop (60 FPS during camera motion / flyTo, 30 FPS when idle)
@@ -1112,13 +1125,19 @@ export function useMemoryGraphScene({
       const container = canvasContainerRef.current;
       if (!renderer || !camera || !scene) return;
 
-      const w = container?.clientWidth || width;
-      const h = container?.clientHeight || height;
+      const w = container?.clientWidth || widthRef.current;
+      const h = container?.clientHeight || heightRef.current;
       if (w <= 0 || h <= 0) return;
 
       camera.aspect = w / h;
       camera.setViewOffset(w, h, 0, 36, w, h);
       camera.updateProjectionMatrix();
+
+      // Skip GPU framebuffer reallocation during active window drag
+      if (typeof document !== "undefined" && document.documentElement.hasAttribute("data-viewport-resize")) {
+        return;
+      }
+
       renderer.setSize(w, h, false);
       const isGraphSoftwareRaster = isSoftwareRasterizer();
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, isGraphSoftwareRaster ? 1 : 1.5));
@@ -1144,7 +1163,7 @@ export function useMemoryGraphScene({
       ro.disconnect();
       if (rAfId !== null) cancelAnimationFrame(rAfId);
     };
-  }, [canvasContainerRef, width, height]);
+  }, [canvasContainerRef]);
 
   return {
     isLightMode,

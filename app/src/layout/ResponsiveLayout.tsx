@@ -773,16 +773,18 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
         </div>
 
         {/* Monitoring Popover */}
-        <ErrorBoundary name="MonitoringPopover">
-          <Suspense fallback={null}>
-            <Monitoring
-              popover
-              open={monitorOpen}
-              onClose={() => setMonitorOpen(false)}
-              anchorRef={monitorBtnRef}
-            />
-          </Suspense>
-        </ErrorBoundary>
+        {monitorOpen && (
+          <ErrorBoundary name="MonitoringPopover">
+            <Suspense fallback={null}>
+              <Monitoring
+                popover
+                open={monitorOpen}
+                onClose={() => setMonitorOpen(false)}
+                anchorRef={monitorBtnRef}
+              />
+            </Suspense>
+          </ErrorBoundary>
+        )}
 
         {/* ── Status Info & Default Reset Controls Area — bottom-right ── */}
         {isHome && interactionState !== "Idle" ? (

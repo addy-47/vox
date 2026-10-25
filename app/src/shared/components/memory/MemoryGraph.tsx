@@ -170,11 +170,11 @@ export const MemoryGraph = memo(
       // fact is also listed in the session rail. This label keeps the canvas
       // from being a silent hole in the accessibility tree.
       const graphAriaLabel = useMemo(() => {
-        if (facts.length === 0) return "Memory graph: no memories loaded yet.";
+        if (facts.length === 0) return MEMORY_COPY.graphNoMemories;
         const counts = new Map<string, number>();
         for (const f of facts) counts.set(f.fact_type, (counts.get(f.fact_type) ?? 0) + 1);
         const parts = [...counts.entries()].map(([t, n]) => `${n} ${t}`);
-        return `Memory graph: ${facts.length} memories (${parts.join(", ")}). Open details with Shift+Up.`;
+        return `Memory graph: ${facts.length} memories (${parts.join(", ")}). ${MEMORY_COPY.graphMemoriesHint}`;
       }, [facts]);
 
       const pointerDownPosRef = useRef<{ x: number; y: number } | null>(null);

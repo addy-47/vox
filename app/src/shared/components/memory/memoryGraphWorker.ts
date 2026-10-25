@@ -130,11 +130,17 @@ self.onmessage = (e: MessageEvent<GraphWorkerInput>) => {
   });
 
   // 3. 360-Degree Organic Dendritic Tree Canopy (No silent caps or thresholds)
+  const sessionMinTimeMap = new Map<string, number>();
+  for (const [key, sessionFacts] of sessionMap.entries()) {
+    sessionMinTimeMap.set(
+      key,
+      sessionFacts.reduce((min, f) => Math.min(min, f.created_at || 0), Infinity)
+    );
+  }
+
   const sortedSessionKeys = Array.from(sessionMap.keys()).sort((a, b) => {
-    const factsA = sessionMap.get(a)!;
-    const factsB = sessionMap.get(b)!;
-    const minA = factsA.reduce((min, f) => Math.min(min, f.created_at || 0), Infinity);
-    const minB = factsB.reduce((min, f) => Math.min(min, f.created_at || 0), Infinity);
+    const minA = sessionMinTimeMap.get(a) ?? Infinity;
+    const minB = sessionMinTimeMap.get(b) ?? Infinity;
     return minA - minB;
   });
 

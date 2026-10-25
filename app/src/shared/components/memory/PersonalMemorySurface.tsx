@@ -1,3 +1,4 @@
+import { useCallback } from "react";
 import { Zap, ClipboardCheck, Tag } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { Tooltip } from "@/shared/ui";
@@ -114,6 +115,11 @@ interface PersonalMemoryBodyProps extends PersonalMemorySurfaceProps {
  * Layout-agnostic glass cards; the sheet/modal owns the geometry.
  */
 export function PersonalMemoryBody({ drawer, singleColumn = false }: PersonalMemoryBodyProps) {
+  const { setStagingMode, setJustCommitted } = drawer;
+  const handleSelectComment = useCallback(() => setStagingMode("comment"), [setStagingMode]);
+  const handleDismissCommitted = useCallback(() => setJustCommitted(false), [setJustCommitted]);
+  const handleViewVersionHistory = useCallback(() => setJustCommitted(false), [setJustCommitted]);
+
   return (
     <div className="w-full h-full flex-1 min-h-0">
       <div className={cn(
@@ -142,7 +148,7 @@ export function PersonalMemoryBody({ drawer, singleColumn = false }: PersonalMem
           onCancelComment={drawer.handleCancelComment}
           setIsComposingComment={drawer.setIsComposingComment}
           comments={drawer.comments}
-          onSelectComment={() => drawer.setStagingMode("comment")}
+          onSelectComment={handleSelectComment}
           drawerOpen={drawer.drawerOpen}
           drawerBodyReady={drawer.drawerBodyReady}
         />
@@ -166,7 +172,7 @@ export function PersonalMemoryBody({ drawer, singleColumn = false }: PersonalMem
           isCommitting={drawer.isCommitting}
           suggestions={drawer.suggestions}
           onApplySuggestions={drawer.handleApplySuggestions}
-          onDismissCommitted={() => drawer.setJustCommitted(false)}
+          onDismissCommitted={handleDismissCommitted}
           isApplyingSuggestions={drawer.isApplyingSuggestions}
           candidateFacts={drawer.identityCandidateFacts}
           observations={drawer.paginatedObservations}
@@ -180,9 +186,7 @@ export function PersonalMemoryBody({ drawer, singleColumn = false }: PersonalMem
           onConfirmPendingIntegration={drawer.handleConfirmPendingIntegration}
           onCancelPendingConfirmation={drawer.handleCancelPendingConfirmation}
           justCommitted={drawer.justCommitted}
-          onViewVersionHistory={() => {
-            drawer.setJustCommitted(false);
-          }}
+          onViewVersionHistory={handleViewVersionHistory}
         />
       </div>
     </div>

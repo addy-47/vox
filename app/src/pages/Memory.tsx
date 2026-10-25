@@ -9,7 +9,6 @@ import React, {
 import { createPortal } from "react-dom";
 import {
   Ghost,
-  X,
 } from "lucide-react";
 import { useViewportResize } from "@/shared/hooks/useViewportResize";
 import { subscribeViewportFrame, subscribeViewportGate } from "@/layout/viewportResize";
@@ -111,7 +110,9 @@ export const Memory: React.FC = memo(() => {
     if (!v) closePanel("sessions");
   }, [closePanel]);
   const [selectModeEnabled, setSelectModeEnabled] = useState(false);
-  const [isLightMode, setIsLightMode] = useState(false);
+  const [isLightMode, setIsLightMode] = useState(
+    () => typeof document !== "undefined" && document.documentElement.getAttribute("data-theme") === "light"
+  );
 
   // Fetch session list for title resolution and session tooltips.
   // Mount path serves the stale-while-revalidate cache; the sessions_changed
@@ -258,11 +259,13 @@ export const Memory: React.FC = memo(() => {
     void refresh();
   }, [refresh]);
 
+  const handleRefreshFacts = useCallback((silent = false) => refresh(silent, true), [refresh]);
+
   // ── Personal Memory Drawer Hook ──────────────────────────────────────────
   const drawer = usePersonalMemoryDrawer({
     facts,
     // Post-mutation path: force a fresh observation read, never the stale cache.
-    onRefreshFacts: (silent = false) => refresh(silent, true),
+    onRefreshFacts: handleRefreshFacts,
     onError: setLoadError,
   });
   const { drawerOpen } = drawer;
@@ -437,6 +440,11 @@ export const Memory: React.FC = memo(() => {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [handleRecenter, handleZoomIn, handleZoomOut, handleCoreClick]);
 
+  const headerCenterSlot =
+    !isCompactLayout && typeof document !== "undefined"
+      ? document.getElementById("app-header-center-slot")
+      : null;
+
   return (
     <div
       ref={containerRef}
@@ -447,7 +455,7 @@ export const Memory: React.FC = memo(() => {
           mount here, doubling overdraw with a competing ripple centre. */}
 
       {/* ── Center Search Bar: Portaled into AppHeader center slot for desktop main layout ── */}
-      {!isCompactLayout && typeof document !== "undefined" && document.getElementById("app-header-center-slot") &&
+      {headerCenterSlot &&
         createPortal(
           <MemorySearchBar
             facts={facts}
@@ -458,7 +466,7 @@ export const Memory: React.FC = memo(() => {
             dropdownPlacement="bottom"
             className="w-full max-w-[280px]"
           />,
-          document.getElementById("app-header-center-slot")!
+          headerCenterSlot
         )}
 
 
@@ -667,24 +675,12 @@ export const Memory: React.FC = memo(() => {
           open={searchModalOpen}
           onClose={() => setSearchModalOpen(false)}
           position="global"
-          ariaLabel="Search Memories"
-          className="w-[min(480px,92vw)] h-[min(540px,72vh)] p-4 rounded-2xl bg-[rgba(var(--card),0.92)] backdrop-blur-md border border-[rgba(var(--border),0.2)] shadow-xl"
+          title={MEMORY_COPY.searchMemories}
+          ariaLabel={MEMORY_COPY.searchMemories}
+          className="w-[min(480px,92vw)] h-[min(540px,72vh)] p-4 rounded-2xl bg-[rgba(var(--card),0.92)] border border-[rgba(var(--border),0.2)] shadow-xl"
           bodyClassName="h-full flex flex-col min-h-0 overflow-hidden"
         >
-          <div className="flex flex-col h-full min-h-0">
-            <div className="flex items-center justify-between border-b border-[rgba(var(--accent),0.12)] pb-2 mb-2 shrink-0">
-              <span className="text-[13px] font-display font-black tracking-wider uppercase text-[rgb(var(--foreground))]">
-                Search Memories
-              </span>
-              <button
-                type="button"
-                onClick={() => setSearchModalOpen(false)}
-                className="p-1 rounded-lg text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.06)] transition-colors cursor-pointer bg-transparent border-0 flex items-center justify-center"
-                aria-label="Close search"
-              >
-                <X size={15} />
-              </button>
-            </div>
+          <div className="flex flex-col h-full min-h-0 pt-1">
             <MemorySearchBar
               facts={facts}
               searchQuery={searchQuery}
