@@ -1,7 +1,4 @@
-use std::{
-    ffi::c_void,
-    sync::OnceLock,
-};
+use std::{ffi::c_void, sync::OnceLock};
 
 use jni::{
     objects::{GlobalRef, JObject},
@@ -73,7 +70,5 @@ pub unsafe extern "C" fn Java_com_addy_Vox_MainActivity_initAndroidContext(
     // with the application context; calling initialize_android_context again here would
     // trip its `previous.is_none()` assertion and abort the process. Do NOT re-init.
     let _ = (vm_ptr, activity_ptr);
-    log::info!(
-        "[AndroidContext] ndk-context already owned by tao; activity ref retained only"
-    );
+    log::info!("[AndroidContext] ndk-context already owned by tao; activity ref retained only");
 }

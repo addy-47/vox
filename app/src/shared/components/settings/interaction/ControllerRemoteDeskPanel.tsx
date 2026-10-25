@@ -1,8 +1,9 @@
-import { memo, useState, useEffect, useCallback } from "react";
-import { Wifi, PowerOff } from "lucide-react";
+import { memo, useState, useEffect, useCallback, useRef } from "react";
+import { Wifi, PowerOff, Check, X } from "lucide-react";
 import { useRemoteStore } from "@/store/remoteStore";
 import { QrScannerModal } from "@/shared/components/remote/QrScannerModal";
 import { Tooltip } from "@/shared/ui/Tooltip";
+import { cn } from "@/shared/lib/utils";
 import { REMOTE_CONTROL_COPY } from "@/data/settingsCopy";
 
 const ScannerGlyphButton = ({ onClick }: { onClick: () => void }) => (
@@ -54,8 +55,17 @@ export const ControllerRemoteDeskPanel = memo(() => {
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [defaultManual, setDefaultManual] = useState(false);
   const [hasCameraPermission, setHasCameraPermission] = useState<boolean | null>(null);
+  const [isDisconnecting, setIsDisconnecting] = useState(false);
+  const disconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const isConnected = linkState === "Connected";
+
+  const clearDisconnectTimer = useCallback(() => {
+    if (disconnectTimerRef.current !== null) {
+      clearTimeout(disconnectTimerRef.current);
+      disconnectTimerRef.current = null;
+    }
+  }, []);
 
   useEffect(() => {
     let permStatus: PermissionStatus | null = null;
@@ -77,21 +87,37 @@ export const ControllerRemoteDeskPanel = memo(() => {
       if (permStatus) {
         permStatus.onchange = null;
       }
+      clearDisconnectTimer();
     };
-  }, []);
+  }, [clearDisconnectTimer]);
 
   const handleOpenScanner = useCallback((manual = false) => {
     setDefaultManual(manual);
     setIsScannerOpen(true);
   }, []);
 
-  const handleDisconnect = useCallback(async () => {
+  const handleStartDisconnect = useCallback(() => {
+    setIsDisconnecting(true);
+    clearDisconnectTimer();
+    disconnectTimerRef.current = setTimeout(() => {
+      setIsDisconnecting(false);
+    }, 5000);
+  }, [clearDisconnectTimer]);
+
+  const handleCancelDisconnect = useCallback(() => {
+    clearDisconnectTimer();
+    setIsDisconnecting(false);
+  }, [clearDisconnectTimer]);
+
+  const handleConfirmDisconnect = useCallback(async () => {
+    clearDisconnectTimer();
+    setIsDisconnecting(false);
     try {
       await disconnectHost();
     } catch (e) {
       console.warn("[ControllerRemoteDeskPanel] Failed to disconnect host:", e);
     }
-  }, [disconnectHost]);
+  }, [disconnectHost, clearDisconnectTimer]);
 
   return (
     <div className="flex flex-row items-center justify-between gap-4 h-full p-2 sm:p-3 rounded-xl bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--accent),0.08)] animate-fade-in">
@@ -107,20 +133,51 @@ export const ControllerRemoteDeskPanel = memo(() => {
           {isConnected ? (
             <>
               {REMOTE_CONTROL_COPY.connectedTo}{" "}
-              <span className="group inline-flex items-center gap-1 align-baseline">
+              <span className="group inline-flex items-center align-baseline">
                 <span className="text-[11px] font-mono font-bold text-[rgb(var(--accent))]">
                   {connectedPeer?.displayName ?? "Vox Desktop Host"}
                 </span>
-                <Tooltip label={REMOTE_CONTROL_COPY.disconnect} side="top">
-                  <button
-                    type="button"
-                    onClick={() => void handleDisconnect()}
-                    className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-[rgb(var(--danger))] hover:opacity-100 transition-opacity cursor-pointer inline-flex items-center"
-                    aria-label={REMOTE_CONTROL_COPY.disconnectHostAria}
-                  >
-                    <PowerOff size={12} />
-                  </button>
-                </Tooltip>
+                <span
+                  className={cn(
+                    "inline-flex items-center transition-all duration-200 overflow-hidden align-middle",
+                    isDisconnecting
+                      ? "max-w-[150px] opacity-100 ml-1.5"
+                      : "max-w-0 opacity-0 group-hover:max-w-[40px] group-hover:opacity-100 group-hover:ml-1"
+                  )}
+                >
+                  {isDisconnecting ? (
+                    <span className="inline-flex items-center gap-1 bg-[rgba(var(--danger),0.12)] border border-[rgba(var(--danger),0.25)] rounded-md px-1.5 py-0.5 text-[10px] font-semibold text-[rgb(var(--danger))] animate-fade-in">
+                      <span>{REMOTE_CONTROL_COPY.disconnectConfirmPrompt}</span>
+                      <button
+                        type="button"
+                        onClick={() => void handleConfirmDisconnect()}
+                        className="hover:scale-110 text-[rgb(var(--danger))] cursor-pointer transition-transform"
+                        aria-label={REMOTE_CONTROL_COPY.disconnectConfirmAria}
+                      >
+                        <Check size={11} strokeWidth={2.5} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleCancelDisconnect}
+                        className="hover:scale-110 text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] cursor-pointer transition-transform"
+                        aria-label={REMOTE_CONTROL_COPY.disconnectCancelAria}
+                      >
+                        <X size={11} strokeWidth={2} />
+                      </button>
+                    </span>
+                  ) : (
+                    <Tooltip label={REMOTE_CONTROL_COPY.disconnect} side="top">
+                      <button
+                        type="button"
+                        onClick={handleStartDisconnect}
+                        className="p-0.5 rounded text-[rgb(var(--danger))] hover:bg-[rgba(var(--danger),0.12)] cursor-pointer transition-colors inline-flex items-center"
+                        aria-label={REMOTE_CONTROL_COPY.disconnectHostAria}
+                      >
+                        <PowerOff size={12} />
+                      </button>
+                    </Tooltip>
+                  )}
+                </span>
               </span>
               {REMOTE_CONTROL_COPY.wirelessMicActive}
             </>

@@ -107,12 +107,12 @@ export const CatalogReveal = memo(({
       </div>
 
       {/* Feather: only shown when inline (stands down in modal) and content overflows.
-          Fades out smoothly via CSS transition when reaching the bottom so the mask doesn't vanish abruptly. */}
-      {!isExpanded && isScrollable && (
+          Fades out smoothly via CSS transition when reaching the bottom or content shrinks so the mask doesn't vanish abruptly. */}
+      {!isExpanded && (
         <div
           className={cn(
             "pointer-events-none absolute inset-x-0 bottom-7 z-10 bg-gradient-to-t from-[rgba(var(--card),0.97)] via-[rgba(var(--card),0.8)] to-transparent transition-opacity duration-300 ease-out",
-            atEnd ? "opacity-0" : "opacity-100"
+            isScrollable && !atEnd ? "opacity-100" : "opacity-0"
           )}
           style={{ height: featherHeight }}
         />

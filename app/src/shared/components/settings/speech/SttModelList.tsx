@@ -31,13 +31,13 @@ export const SttModelList = memo(
     deleteModel,
     isGroupRequired,
   }: SttModelListProps) => {
-    const draftSettings = useSettingsStore((s) => s.draftSettings);
-    const committedSettings = useSettingsStore((s) => s.settings);
+    const activeSttId = useSettingsStore((s) => s.draftSettings?.stt.active.model);
+    const committedSttId = useSettingsStore((s) => s.settings?.stt.active.model);
+    const hasDraft = useSettingsStore((s) => !!s.draftSettings);
     const updateDraft = useSettingsStore((s) => s.updateDraft);
     const modelCatalog = useCatalogStore((s) => s.modelCatalog);
-    if (!draftSettings || !modelCatalog) return null;
+    if (!hasDraft || !modelCatalog) return null;
 
-    const committedSttId = committedSettings?.stt.active.model;
     const rawSttModels = modelCatalog?.stt ?? [];
     const sttModels = promoteActive(rawSttModels, committedSttId);
 
@@ -55,7 +55,7 @@ export const SttModelList = memo(
           )}
         >
           {sttModels.map((model) => {
-            const activeModel = draftSettings.stt.active.model ?? modelCatalog.stt[0]?.id;
+            const activeModel = activeSttId ?? modelCatalog.stt[0]?.id;
             const isSelected = activeModel === model.id;
             const modelGroupId = model.id;
             const isDownloaded = !!modelPresence[modelGroupId];

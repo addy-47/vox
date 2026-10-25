@@ -89,6 +89,15 @@ export const CardHeader = memo(function CardHeader({
     if (search?.open) searchInputRef.current?.focus();
   }, [search?.open]);
 
+  useOverlay({
+    active: Boolean(search?.open),
+    onClose: () => {
+      if (search?.value) search.onChange("");
+      else search?.onClose?.();
+    },
+    dismissOnOutside: false,
+  });
+
   const searchActive = Boolean(search && (search.open || search.value.length > 0));
 
   return (
@@ -135,6 +144,7 @@ export const CardHeader = memo(function CardHeader({
               onChange={(e) => search.onChange(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Escape") {
+                  e.stopPropagation();
                   if (search.value) search.onChange("");
                   else search.onClose?.();
                 } else if (e.key === "Enter") {
@@ -271,26 +281,57 @@ export const CardPopover = memo(function CardPopover({
   useEffect(() => {
     const anchor = anchorRef.current;
     if (!anchor) return;
+    let rafId: number | null = null;
+
     const place = () => {
-      const r = anchor.getBoundingClientRect();
+      rafId = null;
+      const el = anchorRef.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
       const margin = 8;
       const width = Math.min(240, window.innerWidth - margin * 2);
-      setStyle({
-        position: "fixed",
-        top: r.bottom + 6,
-        left: Math.max(margin, Math.min(r.right - width, window.innerWidth - width - margin)),
-        width,
-        maxHeight: Math.max(160, window.innerHeight - r.bottom - 6 - margin),
+      const top = Math.round(r.bottom + 6);
+      const left = Math.round(
+        Math.max(margin, Math.min(r.right - width, window.innerWidth - width - margin))
+      );
+      const maxHeight = Math.round(Math.max(160, window.innerHeight - r.bottom - 6 - margin));
+
+      setStyle((prev) => {
+        if (
+          prev &&
+          prev.top === top &&
+          prev.left === left &&
+          prev.width === width &&
+          prev.maxHeight === maxHeight
+        ) {
+          return prev;
+        }
+        return { position: "fixed", top, left, width, maxHeight };
       });
     };
-    place();
-    window.addEventListener("resize", place);
-    window.addEventListener("scroll", place, true);
-    return () => {
-      window.removeEventListener("resize", place);
-      window.removeEventListener("scroll", place, true);
+
+    const schedulePlace = (e?: Event) => {
+      if (
+        e &&
+        panelRef.current &&
+        e.target instanceof Node &&
+        panelRef.current.contains(e.target)
+      ) {
+        return;
+      }
+      if (rafId !== null) return;
+      rafId = requestAnimationFrame(place);
     };
-  }, [anchorRef]);
+
+    place();
+    window.addEventListener("resize", schedulePlace, { passive: true });
+    window.addEventListener("scroll", schedulePlace, { capture: true, passive: true });
+    return () => {
+      window.removeEventListener("resize", schedulePlace);
+      window.removeEventListener("scroll", schedulePlace, true);
+      if (rafId !== null) cancelAnimationFrame(rafId);
+    };
+  }, [anchorRef, panelRef]);
 
   if (!style) return null;
 

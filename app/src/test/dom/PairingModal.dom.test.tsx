@@ -106,6 +106,14 @@ describe("PairingModal DOM suite", () => {
       useRemoteStore.setState({ linkState: "Connected" });
     });
 
+    // Should not close immediately (celebration state is visible)
+    expect(onClose).not.toHaveBeenCalled();
+
+    // Advance celebration timer by 800ms
+    act(() => {
+      vi.advanceTimersByTime(800);
+    });
+
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
@@ -131,5 +139,57 @@ describe("PairingModal DOM suite", () => {
     unmount();
     expect(clearIntervalSpy).toHaveBeenCalled();
     clearIntervalSpy.mockRestore();
+  });
+
+  it("renders redesigned security authorization dialog when pendingPairingPrompt is active", async () => {
+    const mockApprovePairing = vi.fn().mockResolvedValue(undefined);
+    useRemoteStore.setState({
+      pendingPairingPrompt: {
+        deviceId: "dev_phone_999",
+        displayName: "Ada's Pixel",
+      },
+      approvePairing: mockApprovePairing,
+    });
+
+    render(<PairingModal open={true} onClose={vi.fn()} />);
+
+    expect(screen.getByText("Authorize Remote Controller")).toBeTruthy();
+    expect(screen.getByText("Ada's Pixel")).toBeTruthy();
+    expect(screen.getByText("Fingerprint: dev_phone_999")).toBeTruthy();
+    expect(screen.getByText("Granted Controller Privileges")).toBeTruthy();
+    expect(screen.getByText("Audio Streaming")).toBeTruthy();
+    expect(screen.getByText("Session Steering")).toBeTruthy();
+    expect(screen.getByText("Push-to-Talk")).toBeTruthy();
+    expect(screen.getByText("Telemetry Sync")).toBeTruthy();
+
+    const authorizeBtn = screen.getByRole("button", { name: /Authorize Device/i });
+    const declineBtn = screen.getByRole("button", { name: /Decline/i });
+    expect(authorizeBtn).toBeTruthy();
+    expect(declineBtn).toBeTruthy();
+
+    // Click Authorize Device
+    await act(async () => {
+      authorizeBtn.click();
+    });
+    expect(mockApprovePairing).toHaveBeenCalledWith("Approve");
+  });
+
+  it("authorizes when Enter key is pressed during pending authorization", async () => {
+    const mockApprovePairing = vi.fn().mockResolvedValue(undefined);
+    useRemoteStore.setState({
+      pendingPairingPrompt: {
+        deviceId: "dev_phone_999",
+        displayName: "Ada's Pixel",
+      },
+      approvePairing: mockApprovePairing,
+    });
+
+    render(<PairingModal open={true} onClose={vi.fn()} />);
+
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+    });
+
+    expect(mockApprovePairing).toHaveBeenCalledWith("Approve");
   });
 });

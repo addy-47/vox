@@ -1,5 +1,6 @@
-import { memo, useState, useCallback, useEffect } from "react";
-import { Trash2 } from "lucide-react";
+import { memo, useState, useCallback, useEffect, useRef } from "react";
+import { Check, Trash2, X } from "lucide-react";
+import { cn } from "@/shared/lib/utils";
 import { useSettingsStore } from "@/store/settingsStore";
 import { useRemoteStore } from "@/store/remoteStore";
 import { RemoteControlGlyph } from "./RemoteControlGlyph";
@@ -19,11 +20,21 @@ export const RemoteDeskPanel = memo(() => {
   const dismissPairingPrompt = useRemoteStore((s) => s.dismissPairingPrompt);
 
   const [isPairingOpen, setIsPairingOpen] = useState(false);
+  const [isRevoking, setIsRevoking] = useState(false);
+  const revokeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pairedDevice = pairedDevices[0] ?? null;
+
+  const clearRevokeTimer = useCallback(() => {
+    if (revokeTimerRef.current !== null) {
+      clearTimeout(revokeTimerRef.current);
+      revokeTimerRef.current = null;
+    }
+  }, []);
 
   useEffect(() => {
     void listPairedDevices();
-  }, [listPairedDevices]);
+    return () => clearRevokeTimer();
+  }, [listPairedDevices, clearRevokeTimer]);
 
   const handleToggle = useCallback(() => {
     const next = !acceptsControllers;
@@ -31,15 +42,30 @@ export const RemoteDeskPanel = memo(() => {
     void commitChanges({ domain: "remote", key: "accepts_controllers" });
   }, [acceptsControllers, updateDraft, commitChanges]);
 
-  const handleRevoke = useCallback(
+  const handleStartRevoke = useCallback(() => {
+    setIsRevoking(true);
+    clearRevokeTimer();
+    revokeTimerRef.current = setTimeout(() => {
+      setIsRevoking(false);
+    }, 5000);
+  }, [clearRevokeTimer]);
+
+  const handleCancelRevoke = useCallback(() => {
+    clearRevokeTimer();
+    setIsRevoking(false);
+  }, [clearRevokeTimer]);
+
+  const handleConfirmRevoke = useCallback(
     async (deviceId: string) => {
+      clearRevokeTimer();
+      setIsRevoking(false);
       try {
         await revokeDevice(deviceId);
       } catch (e) {
         console.warn("[RemoteDeskPanel] Failed to revoke device:", e);
       }
     },
-    [revokeDevice]
+    [revokeDevice, clearRevokeTimer]
   );
 
   const handleClosePairing = useCallback(() => {
@@ -63,20 +89,51 @@ export const RemoteDeskPanel = memo(() => {
           ) : pairedDevice ? (
             <>
               {REMOTE_CONTROL_COPY.connectedTo}{" "}
-              <span className="group inline-flex items-center gap-1 align-baseline">
+              <span className="group inline-flex items-center align-baseline">
                 <span className="text-[11px] font-mono font-bold text-[rgb(var(--accent))]">
                   {pairedDevice.displayName}
                 </span>
-                <Tooltip label={REMOTE_CONTROL_COPY.revokeDevice} side="top">
-                  <button
-                    type="button"
-                    onClick={() => void handleRevoke(pairedDevice.deviceId)}
-                    className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-[rgb(var(--danger))] hover:opacity-100 transition-opacity cursor-pointer inline-flex items-center"
-                    aria-label={REMOTE_CONTROL_COPY.revokeDeviceAria(pairedDevice.displayName)}
-                  >
-                    <Trash2 size={12} />
-                  </button>
-                </Tooltip>
+                <span
+                  className={cn(
+                    "inline-flex items-center transition-all duration-200 overflow-hidden align-middle",
+                    isRevoking
+                      ? "max-w-[140px] opacity-100 ml-1.5"
+                      : "max-w-0 opacity-0 group-hover:max-w-[40px] group-hover:opacity-100 group-hover:ml-1"
+                  )}
+                >
+                  {isRevoking ? (
+                    <span className="inline-flex items-center gap-1 bg-[rgba(var(--danger),0.12)] border border-[rgba(var(--danger),0.25)] rounded-md px-1.5 py-0.5 text-[10px] font-semibold text-[rgb(var(--danger))] animate-fade-in">
+                      <span>{REMOTE_CONTROL_COPY.revokeConfirmPrompt}</span>
+                      <button
+                        type="button"
+                        onClick={() => void handleConfirmRevoke(pairedDevice.deviceId)}
+                        className="hover:scale-110 text-[rgb(var(--danger))] cursor-pointer transition-transform"
+                        aria-label={REMOTE_CONTROL_COPY.revokeConfirmAria}
+                      >
+                        <Check size={11} strokeWidth={2.5} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleCancelRevoke}
+                        className="hover:scale-110 text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] cursor-pointer transition-transform"
+                        aria-label={REMOTE_CONTROL_COPY.revokeCancelAria}
+                      >
+                        <X size={11} strokeWidth={2} />
+                      </button>
+                    </span>
+                  ) : (
+                    <Tooltip label={REMOTE_CONTROL_COPY.revokeDevice} side="top">
+                      <button
+                        type="button"
+                        onClick={handleStartRevoke}
+                        className="p-0.5 rounded text-[rgb(var(--danger))] hover:bg-[rgba(var(--danger),0.12)] cursor-pointer transition-colors inline-flex items-center"
+                        aria-label={REMOTE_CONTROL_COPY.revokeDeviceAria(pairedDevice.displayName)}
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    </Tooltip>
+                  )}
+                </span>
               </span>
               {REMOTE_CONTROL_COPY.wirelessAudioActive}
             </>

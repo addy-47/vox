@@ -55,14 +55,12 @@ export const TtsEngineGrid = memo(
     className,
     variant = "rows",
   }: TtsEngineGridProps) => {
-    const draftSettings = useSettingsStore((s) => s.draftSettings);
-    const committedSettings = useSettingsStore((s) => s.settings);
+    const activeTtsId = useSettingsStore((s) => s.draftSettings?.tts.active.model ?? "");
+    const committedTtsId = useSettingsStore((s) => s.settings?.tts.active.model);
+    const hasDraft = useSettingsStore((s) => !!s.draftSettings);
     const updateDraft = useSettingsStore((s) => s.updateDraft);
     const modelCatalog = useCatalogStore((s) => s.modelCatalog);
-    if (!draftSettings || !modelCatalog) return null;
-
-    const activeTtsId = draftSettings.tts.active.model ?? "";
-    const committedTtsId = committedSettings?.tts.active.model;
+    if (!hasDraft || !modelCatalog) return null;
     const rawEngines = (modelCatalog.tts || []).filter((model) => {
       if (model.is_remote) return false;
       if (facet === "local") return !model.is_cloud;

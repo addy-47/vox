@@ -19,6 +19,8 @@ import {
   X,
 } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
+import { Tooltip } from "@/shared/ui/Tooltip";
+import { useOverlay } from "@/shared/hooks/useOverlay";
 import { VOICE_CATALOG_COPY } from "@/data/settingsCopy";
 import type { UnifiedVoiceDto } from "@/services/voicesService";
 
@@ -67,6 +69,95 @@ function formatTime(seconds: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
+export interface VoiceWaveformScrubberProps {
+  hasPreview: boolean;
+  isPlaying: boolean;
+  sessionBusy: boolean;
+  previewProgress: number;
+  previewCurrentTime: number;
+  previewDuration: number;
+  waveformBars: string[];
+  onSeekPreview: (fraction: number) => void;
+}
+
+export const VoiceWaveformScrubber = memo(function VoiceWaveformScrubber({
+  hasPreview,
+  isPlaying,
+  sessionBusy,
+  previewProgress,
+  previewCurrentTime,
+  previewDuration,
+  waveformBars,
+  onSeekPreview,
+}: VoiceWaveformScrubberProps) {
+  const scrubberRef = useRef<HTMLDivElement>(null);
+
+  const handleScrubberClick = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      if (!scrubberRef.current) return;
+      const rect = scrubberRef.current.getBoundingClientRect();
+      const clickX = e.clientX - rect.left;
+      const fraction = Math.max(0, Math.min(1, clickX / rect.width));
+      onSeekPreview(fraction);
+    },
+    [onSeekPreview]
+  );
+
+  return (
+    <div className="flex items-center gap-3 sm:gap-3.5 w-full">
+      <span className="font-mono text-[11px] sm:text-[11.5px] tabular-nums text-[rgb(var(--foreground-muted))] w-8 sm:w-9 text-right shrink-0">
+        {formatTime(previewCurrentTime)}
+      </span>
+
+      <Tooltip
+        label={
+          !hasPreview && !isPlaying
+            ? "No preview synthesized yet"
+            : "Click to seek preview"
+        }
+        side="top"
+      >
+        <div
+          ref={scrubberRef}
+          onClick={hasPreview || !sessionBusy ? handleScrubberClick : undefined}
+          className={cn(
+            "flex-1 h-10 sm:h-11 flex items-center gap-[2.5px] sm:gap-[3px] px-1.5 rounded-lg transition-all select-none",
+            !hasPreview && !isPlaying
+              ? "opacity-35 cursor-not-allowed"
+              : "cursor-pointer hover:bg-[rgba(var(--foreground),0.03)]"
+          )}
+        >
+          {waveformBars.map((heightPct, i) => {
+            const barProgress = i / waveformBars.length;
+            const isPlayed = previewProgress > 0 && barProgress <= previewProgress;
+            const isSkeleton = !hasPreview && !isPlaying;
+            return (
+              <div
+                key={i}
+                style={{ height: isSkeleton ? "24%" : heightPct }}
+                className={cn(
+                  "flex-1 rounded-full min-w-[2px] max-w-[4px] transition-all duration-75",
+                  isSkeleton
+                    ? "bg-[rgba(var(--foreground),0.2)]"
+                    : isPlayed
+                      ? "bg-[rgb(var(--accent))] shadow-[0_0_6px_rgba(var(--accent),0.4)]"
+                      : "bg-[rgba(var(--foreground),0.18)] hover:bg-[rgba(var(--foreground),0.35)]"
+                )}
+              />
+            );
+          })}
+        </div>
+      </Tooltip>
+
+      <span className="font-mono text-[11px] sm:text-[11.5px] tabular-nums text-[rgb(var(--foreground-muted))] w-8 sm:w-9 shrink-0">
+        {formatTime(previewDuration)}
+      </span>
+    </div>
+  );
+});
+
+VoiceWaveformScrubber.displayName = "VoiceWaveformScrubber";
+
 export const VoicePreviewBanner = memo(
   ({
     voice,
@@ -84,24 +175,12 @@ export const VoicePreviewBanner = memo(
   }: VoicePreviewBannerProps) => {
     const [isEditingPrompt, setIsEditingPrompt] = useState(false);
     const [customPromptInput, setCustomPromptInput] = useState(previewPrompt);
-    const scrubberRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
       if (!isEditingPrompt) {
         setCustomPromptInput(previewPrompt);
       }
     }, [previewPrompt, isEditingPrompt]);
-
-    const handleScrubberClick = useCallback(
-      (e: React.MouseEvent<HTMLDivElement>) => {
-        if (!scrubberRef.current) return;
-        const rect = scrubberRef.current.getBoundingClientRect();
-        const clickX = e.clientX - rect.left;
-        const fraction = Math.max(0, Math.min(1, clickX / rect.width));
-        onSeekPreview(fraction);
-      },
-      [onSeekPreview]
-    );
 
     const handleSavePrompt = useCallback(() => {
       onSetPreviewPrompt(customPromptInput);
@@ -111,9 +190,18 @@ export const VoicePreviewBanner = memo(
       }
     }, [customPromptInput, isPlaying, onSetPreviewPrompt, onTogglePreview, voice]);
 
+    useOverlay({
+      active: isEditingPrompt,
+      onClose: () => setIsEditingPrompt(false),
+      dismissOnOutside: false,
+    });
+
     const waveformBars = useMemo(
-      () => (voice ? getVoiceWaveform(voice.id, 46) : []),
-      [voice]
+      () =>
+        voice
+          ? getVoiceWaveform(voice.id, 46).map((h) => `${Math.round(h * 100)}%`)
+          : [],
+      [voice?.id]
     );
 
     if (!voice) return null;
@@ -172,26 +260,39 @@ export const VoicePreviewBanner = memo(
         {/* Top-Right: Edit Phrase and Like (Favorite) Buttons */}
         <div className="col-start-3 row-start-1 flex items-center gap-2 shrink-0 self-center">
           {voice.source_kind !== "custom" && (
-            <button
-              type="button"
-              onClick={() => {
-                if (isEditingPrompt) {
-                  setIsEditingPrompt(false);
-                } else {
-                  setCustomPromptInput(previewPrompt);
-                  setIsEditingPrompt(true);
-                }
-              }}
-              title={isEditingPrompt ? "Cancel editing phrase" : "Customize sample sentence"}
-              className={cn(
-                "p-2 rounded-lg transition-all cursor-pointer",
+            <Tooltip
+              label={
                 isEditingPrompt
-                  ? "text-[rgb(var(--accent))] bg-[rgba(var(--accent),0.12)] shadow-xs"
-                  : "text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] hover:bg-[rgba(var(--foreground),0.04)]"
-              )}
+                  ? "Cancel editing phrase"
+                  : "Customize sample sentence"
+              }
+              side="bottom"
             >
-              <Edit3 size={15} />
-            </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (isEditingPrompt) {
+                    setIsEditingPrompt(false);
+                  } else {
+                    setCustomPromptInput(previewPrompt);
+                    setIsEditingPrompt(true);
+                  }
+                }}
+                aria-label={
+                  isEditingPrompt
+                    ? "Cancel editing phrase"
+                    : "Customize sample sentence"
+                }
+                className={cn(
+                  "p-2 rounded-lg transition-all cursor-pointer",
+                  isEditingPrompt
+                    ? "text-[rgb(var(--accent))] bg-[rgba(var(--accent),0.12)] shadow-xs"
+                    : "text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] hover:bg-[rgba(var(--foreground),0.04)]"
+                )}
+              >
+                <Edit3 size={15} />
+              </button>
+            </Tooltip>
           )}
           <button
             type="button"
@@ -221,7 +322,10 @@ export const VoicePreviewBanner = memo(
                 autoFocus
                 onKeyDown={(e) => {
                   if (e.key === "Enter") handleSavePrompt();
-                  else if (e.key === "Escape") setIsEditingPrompt(false);
+                  else if (e.key === "Escape") {
+                    e.stopPropagation();
+                    setIsEditingPrompt(false);
+                  }
                 }}
                 className="flex-1 min-w-0 bg-transparent border-b border-[rgb(var(--accent))] text-[13px] text-[rgb(var(--foreground))] outline-none py-1.5 placeholder:text-[rgb(var(--foreground-muted))]/50"
               />
@@ -242,47 +346,16 @@ export const VoicePreviewBanner = memo(
               </button>
             </div>
           ) : (
-            <div className="flex items-center gap-3 sm:gap-3.5 w-full">
-              <span className="font-mono text-[11px] sm:text-[11.5px] tabular-nums text-[rgb(var(--foreground-muted))] w-8 sm:w-9 text-right shrink-0">
-                {formatTime(previewCurrentTime)}
-              </span>
-
-              <div
-                ref={scrubberRef}
-                onClick={voice.has_preview || !sessionBusy ? handleScrubberClick : undefined}
-                className={cn(
-                  "flex-1 h-10 sm:h-11 flex items-center gap-[2.5px] sm:gap-[3px] px-1.5 rounded-lg transition-all select-none",
-                  !voice.has_preview && !isPlaying
-                    ? "opacity-35 cursor-not-allowed"
-                    : "cursor-pointer hover:bg-[rgba(var(--foreground),0.03)]"
-                )}
-                title={!voice.has_preview && !isPlaying ? "No preview synthesized yet" : "Click to seek preview"}
-              >
-                {waveformBars.map((height, i) => {
-                  const barProgress = i / waveformBars.length;
-                  const isPlayed = previewProgress > 0 && barProgress <= previewProgress;
-                  const isSkeleton = !voice.has_preview && !isPlaying;
-                  return (
-                    <div
-                      key={i}
-                      style={{ height: `${Math.round(isSkeleton ? 24 : height * 100)}%` }}
-                      className={cn(
-                        "flex-1 rounded-full min-w-[2px] max-w-[4px] transition-all duration-75",
-                        isSkeleton
-                          ? "bg-[rgba(var(--foreground),0.2)]"
-                          : isPlayed
-                            ? "bg-[rgb(var(--accent))] shadow-[0_0_6px_rgba(var(--accent),0.4)]"
-                            : "bg-[rgba(var(--foreground),0.18)] hover:bg-[rgba(var(--foreground),0.35)]"
-                      )}
-                    />
-                  );
-                })}
-              </div>
-
-              <span className="font-mono text-[11px] sm:text-[11.5px] tabular-nums text-[rgb(var(--foreground-muted))] w-8 sm:w-9 shrink-0">
-                {formatTime(previewDuration)}
-              </span>
-            </div>
+            <VoiceWaveformScrubber
+              hasPreview={!!voice.has_preview}
+              isPlaying={isPlaying}
+              sessionBusy={sessionBusy}
+              previewProgress={previewProgress}
+              previewCurrentTime={previewCurrentTime}
+              previewDuration={previewDuration}
+              waveformBars={waveformBars}
+              onSeekPreview={onSeekPreview}
+            />
           )}
         </div>
 

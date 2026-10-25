@@ -1,4 +1,4 @@
-import { memo, useState, useEffect } from "react";
+import { memo, useState } from "react";
 import { Gauge, Hourglass, Zap } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useSettingsStore } from "@/store/settingsStore";
@@ -114,40 +114,44 @@ VadKnobRow.displayName = "VadKnobRow";
  */
 export const VadSettingsPanel = memo(
   ({ disabled = false }: VadSettingsPanelProps) => {
-    const vad = useSettingsStore((s) => s.draftSettings?.vad);
+    const currentThreshold = useSettingsStore((s) => s.draftSettings?.vad?.threshold ?? 0.5);
+    const currentSilenceMs = useSettingsStore((s) => s.draftSettings?.vad?.silence_duration_ms ?? 800);
+    const currentSpeechOnsetMs = useSettingsStore((s) => s.draftSettings?.vad?.speech_onset_ms ?? 32);
+    const hasVad = useSettingsStore((s) => !!s.draftSettings?.vad);
     const updateDraft = useSettingsStore((s) => s.updateDraft);
-
-    const currentThreshold = vad?.threshold ?? 0.5;
-    const currentSilenceMs = vad?.silence_duration_ms ?? 800;
-    const currentSpeechOnsetMs = vad?.speech_onset_ms ?? 32;
 
     const thresholdCustom = ![0.3, 0.5, 0.7].some((v) => Math.abs(currentThreshold - v) < 0.04);
     const silenceCustom = ![400, 800, 1200].includes(currentSilenceMs);
     const onsetCustom = ![32, 64, 128].includes(currentSpeechOnsetMs);
 
+    const [prevThreshold, setPrevThreshold] = useState(currentThreshold);
     const [thresholdDraft, setThresholdDraft] = useState(
       thresholdCustom ? `${Math.round(currentThreshold * 100)}%` : ""
     );
+    if (prevThreshold !== currentThreshold) {
+      setPrevThreshold(currentThreshold);
+      setThresholdDraft(thresholdCustom ? `${Math.round(currentThreshold * 100)}%` : "");
+    }
+
+    const [prevSilenceMs, setPrevSilenceMs] = useState(currentSilenceMs);
     const [silenceDraft, setSilenceDraft] = useState(
       silenceCustom ? `${currentSilenceMs}ms` : ""
     );
+    if (prevSilenceMs !== currentSilenceMs) {
+      setPrevSilenceMs(currentSilenceMs);
+      setSilenceDraft(silenceCustom ? `${currentSilenceMs}ms` : "");
+    }
+
+    const [prevOnsetMs, setPrevOnsetMs] = useState(currentSpeechOnsetMs);
     const [onsetDraft, setOnsetDraft] = useState(
       onsetCustom ? `${currentSpeechOnsetMs}ms` : ""
     );
-
-    useEffect(() => {
-      setThresholdDraft(thresholdCustom ? `${Math.round(currentThreshold * 100)}%` : "");
-    }, [currentThreshold, thresholdCustom]);
-
-    useEffect(() => {
-      setSilenceDraft(silenceCustom ? `${currentSilenceMs}ms` : "");
-    }, [currentSilenceMs, silenceCustom]);
-
-    useEffect(() => {
+    if (prevOnsetMs !== currentSpeechOnsetMs) {
+      setPrevOnsetMs(currentSpeechOnsetMs);
       setOnsetDraft(onsetCustom ? `${currentSpeechOnsetMs}ms` : "");
-    }, [currentSpeechOnsetMs, onsetCustom]);
+    }
 
-    if (!vad) return null;
+    if (!hasVad) return null;
 
     const write = (key: VadUserKey, value: number) => {
       if (disabled) return;

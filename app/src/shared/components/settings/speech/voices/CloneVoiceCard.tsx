@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import {
   AlertCircle,
   Check,
@@ -13,6 +13,7 @@ import {
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { cn } from "@/shared/lib/utils";
 import { Tooltip } from "@/shared/ui/Tooltip";
+import { useOverlay } from "@/shared/hooks/useOverlay";
 import { VOICE_CATALOG_COPY } from "@/data/settingsCopy";
 import {
   addVoiceFromFile,
@@ -55,6 +56,19 @@ export const CloneVoiceCard = memo(function CloneVoiceCard({
     setIsSubmitting(false);
     setIsExpanded(false);
   }, [isRecording]);
+
+  const cardRef = useRef<HTMLDivElement | null>(null);
+
+  useOverlay({
+    active: isExpanded,
+    onClose: resetState,
+    ref: cardRef,
+    dismissOnOutside: true,
+    shouldDismissOnPointerDown: (target) => {
+      if (isRecording) return false;
+      return !cardRef.current?.contains(target);
+    },
+  });
 
   const handleStartRecording = useCallback(async (e?: React.MouseEvent) => {
     e?.stopPropagation();
@@ -231,6 +245,7 @@ export const CloneVoiceCard = memo(function CloneVoiceCard({
   // 2. Expanded / In-Place Editing State: same card geometry, interactive controls
   return (
     <div
+      ref={cardRef}
       className={cn(
         "group w-full text-left p-4 rounded-xl border transition-all duration-200 relative shrink-0 flex items-start gap-3.5 h-full",
         "bg-[rgba(var(--card),0.55)] border-[rgba(var(--accent),0.35)] shadow-[0_0_20px_rgba(var(--accent),0.12)] ring-1 ring-[rgb(var(--accent))]/30",

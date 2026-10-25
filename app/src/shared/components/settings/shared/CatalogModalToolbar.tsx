@@ -4,6 +4,7 @@ import type { CSSProperties } from "react";
 import { ArrowDownAZ, ArrowUpZA, Filter, Search, X } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { Tooltip } from "@/shared/ui/Tooltip";
+import { useOverlay } from "@/shared/hooks/useOverlay";
 import { CARD_HEADER_COPY } from "@/data/settingsCopy";
 
 export interface CatalogModalToolbarFilter {
@@ -102,28 +103,18 @@ export const CatalogModalToolbar = memo(function CatalogModalToolbar({
   const filterRef = useRef<HTMLDivElement | null>(null);
   const popoverRef = useRef<HTMLDivElement | null>(null);
 
-  const onFilterCloseRef = useRef<(() => void) | null>(null);
-  onFilterCloseRef.current = filter?.onClose ?? null;
-
   const filterOpen = filter?.open ?? false;
-  useEffect(() => {
-    if (!filterOpen) return;
-    const handleDown = (e: PointerEvent) => {
-      const target = e.target as Node;
+
+  useOverlay({
+    active: filterOpen,
+    onClose: () => filter?.onClose(),
+    dismissOnOutside: true,
+    shouldDismissOnPointerDown: (target) => {
       const inTrigger = filterRef.current?.contains(target) ?? false;
       const inPopover = popoverRef.current?.contains(target) ?? false;
-      if (!inTrigger && !inPopover) onFilterCloseRef.current?.();
-    };
-    const handleKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onFilterCloseRef.current?.();
-    };
-    document.addEventListener("pointerdown", handleDown);
-    document.addEventListener("keydown", handleKey);
-    return () => {
-      document.removeEventListener("pointerdown", handleDown);
-      document.removeEventListener("keydown", handleKey);
-    };
-  }, [filterOpen]);
+      return !inTrigger && !inPopover;
+    },
+  });
 
   const isSmall = layoutMode === "small";
 

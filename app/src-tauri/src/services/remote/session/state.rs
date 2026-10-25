@@ -1,5 +1,23 @@
 use serde::{Deserialize, Serialize};
 
+/// Typed classification of remote connection failure.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RemoteFailureKind {
+    /// Connection dial or response timed out.
+    Timeout,
+    /// Host port unreachable, connection refused, or no route to host.
+    Unreachable,
+    /// Pairing request was explicitly rejected by the host user.
+    RejectedByHost,
+    /// Pairing token was expired, already consumed, or invalid.
+    InvalidToken,
+    /// Protocol or handshake version mismatch.
+    VersionMismatch,
+    /// General or unknown OS/network transport error.
+    Unknown,
+}
+
 /// The canonical connection state of the remote control link.
 ///
 /// Remote-control spec §9.1: Single source of truth for remote state.
@@ -16,11 +34,22 @@ pub enum RemoteLinkState {
     Connected,
     /// Link dropped unexpectedly; reconnecting with backoff.
     Reconnecting,
-    /// Terminal failure (e.g. Revoked, UnknownPeer, VersionMismatch, Timeout).
-    Failed(String),
+    /// Terminal failure with detailed message and classified kind.
+    Failed {
+        reason: String,
+        kind: RemoteFailureKind,
+    },
 }
 
 impl RemoteLinkState {
+    /// Convenience constructor for failed states.
+    pub fn failed(reason: impl Into<String>, kind: RemoteFailureKind) -> Self {
+        Self::Failed {
+            reason: reason.into(),
+            kind,
+        }
+    }
+
     /// Returns the canonical state string.
     pub fn as_str(&self) -> &'static str {
         match self {
@@ -29,7 +58,7 @@ impl RemoteLinkState {
             Self::Connecting => "Connecting",
             Self::Connected => "Connected",
             Self::Reconnecting => "Reconnecting",
-            Self::Failed(_) => "Failed",
+            Self::Failed { .. } => "Failed",
         }
     }
 
@@ -38,7 +67,11 @@ impl RemoteLinkState {
         RemoteStateDto {
             link: self.as_str().to_string(),
             failure: match self {
-                Self::Failed(reason) => Some(reason.clone()),
+                Self::Failed { reason, .. } => Some(reason.clone()),
+                _ => None,
+            },
+            failure_kind: match self {
+                Self::Failed { kind, .. } => Some(*kind),
                 _ => None,
             },
             device_id: device_id.map(|s| s.to_string()),
@@ -58,6 +91,9 @@ pub struct RemoteStateDto {
     /// Detailed failure reason when `link == "Failed"`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub failure: Option<String>,
+    /// Typed classification of failure when `link == "Failed"`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub failure_kind: Option<RemoteFailureKind>,
     /// Connected peer device id.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub device_id: Option<String>,
