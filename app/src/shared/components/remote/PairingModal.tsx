@@ -249,7 +249,9 @@ export const PairingModal = memo(({ open, onClose }: PairingModalProps) => {
                 <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5 md:gap-6 items-stretch h-full">
                   {/* Left Column: 3-Step Setup Stepper */}
                   <div className="order-2 md:order-1 md:col-span-7 flex flex-col justify-between p-3 sm:p-4 md:p-5">
-                    <div className="relative space-y-3 md:space-y-5">
+                    <div className="relative space-y-5 md:space-y-13">
+
+
                       {/* Continuous Vertical Timeline Spine */}
                       <div
                         aria-hidden="true"

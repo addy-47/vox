@@ -135,7 +135,7 @@ export const ExpandableList = memo(
       <div className={cn("relative flex flex-col min-h-0", className)}>
         <ExpandableListContext.Provider value={inlineContext}>
           <div className={cn("flex-1 min-h-0 overflow-hidden flex flex-col", inlineMaxHeightClass)}>
-            {modalContent && expanded ? null : children}
+            {children}
           </div>
         </ExpandableListContext.Provider>
 

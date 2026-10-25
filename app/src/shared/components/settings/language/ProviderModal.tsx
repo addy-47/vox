@@ -518,10 +518,10 @@ export const ProviderModal = memo(({
       actionSlot={
         <div className="flex items-center justify-between text-[11px] font-mono w-full">
           <span className="text-[rgb(var(--foreground-muted))]/70">{PROVIDERS_CONFIG_DESK_COPY.badges.localHardware}</span>
-          <span className="text-[rgb(var(--accent))] font-medium flex items-center gap-1.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--accent))]" />
-            {isLocalSelected ? PROVIDERS_CONFIG_DESK_COPY.status.active : PROVIDERS_CONFIG_DESK_COPY.badges.offlineReady}
-          </span>
+<span className="text-[11px] font-mono text-[rgb(var(--accent))] font-medium flex items-center gap-1.5">
+                          <span className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--accent))] shrink-0" />
+                          {isLocalSelected ? "Active" : "Ready"}
+                        </span>
         </div>
       }
     />
@@ -578,7 +578,7 @@ export const ProviderModal = memo(({
                       : "text-[rgb(var(--accent))]"
                   )}
                 >
-                  {!entry.isComingSoon && <span className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--accent))]" />}
+                  {!entry.isComingSoon && <span className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--accent))] shrink-0" />}
                   {entry.isComingSoon
                     ? PROVIDERS_CONFIG_DESK_COPY.status.inDevelopment
                     : isSelected
@@ -675,40 +675,46 @@ export const ProviderModal = memo(({
                         </Tooltip>
                       </div>
                     ) : (
-                      <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
-                        <Tooltip label={PROVIDERS_CONFIG_DESK_COPY.llm.cloud.editKey} side="top" asChild>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onStartInlineEdit(provider.id, savedKey ?? "");
-                            }}
-                            className="p-1 rounded-md text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.1)] transition-all cursor-pointer"
-                            aria-label={PROVIDERS_CONFIG_DESK_COPY.llm.cloud.editKey}
-                          >
-                            <Pencil size={13} />
-                          </button>
-                        </Tooltip>
-                        <Tooltip label={PROVIDERS_CONFIG_DESK_COPY.actions.deleteProvider} side="top" asChild>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setConfirmDeleteProviderId(provider.id);
-                            }}
-                            className="p-1 rounded-md text-[rgb(var(--foreground-muted))]/40 hover:text-[rgb(var(--error))] hover:bg-[rgba(var(--error),0.1)] transition-all cursor-pointer"
-                            aria-label={PROVIDERS_CONFIG_DESK_COPY.actions.deleteProvider}
-                          >
-                            <Trash2 size={13} />
-                          </button>
-                        </Tooltip>
+                      <div className="flex items-center justify-end gap-1.5 min-w-[88px]">
+                        <span className="text-[11px] font-mono font-medium text-[rgb(var(--accent))] flex items-center gap-1.5 transition-opacity duration-150 group-hover:hidden">
+                          <span className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--accent))] shrink-0" />
+                          Connected
+                        </span>
+                        <div className="hidden group-hover:flex items-center gap-1.5 transition-opacity duration-150">
+                          <Tooltip label={PROVIDERS_CONFIG_DESK_COPY.llm.cloud.editKey} side="top" asChild>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onStartInlineEdit(provider.id, savedKey ?? "");
+                              }}
+                              className="p-1 rounded-md text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.1)] transition-all cursor-pointer"
+                              aria-label={PROVIDERS_CONFIG_DESK_COPY.llm.cloud.editKey}
+                            >
+                              <Pencil size={13} />
+                            </button>
+                          </Tooltip>
+                          <Tooltip label={PROVIDERS_CONFIG_DESK_COPY.actions.deleteProvider} side="top" asChild>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setConfirmDeleteProviderId(provider.id);
+                              }}
+                              className="p-1 rounded-md text-[rgb(var(--foreground-muted))]/40 hover:text-[rgb(var(--error))] hover:bg-[rgba(var(--error),0.1)] transition-all cursor-pointer"
+                              aria-label={PROVIDERS_CONFIG_DESK_COPY.actions.deleteProvider}
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </Tooltip>
+                        </div>
                       </div>
                     )
                   ) : (
                     <button
                       type="button"
                       onClick={() => onStartInlineEdit(provider.id, "")}
-                      className="text-[rgb(var(--accent))] hover:underline cursor-pointer font-medium flex items-center gap-1"
+                      className="text-[11px] font-mono text-[rgb(var(--accent))] hover:underline cursor-pointer font-medium flex items-center gap-1"
                     >
                       {PROVIDERS_CONFIG_DESK_COPY.llm.cloud.connectKey}
                     </button>
@@ -835,34 +841,40 @@ export const ProviderModal = memo(({
                     </Tooltip>
                   </div>
                 ) : (
-                  <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
-                    <Tooltip label={PROVIDERS_CONFIG_DESK_COPY.actions.editServer} side="top">
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setEditingServer(server);
-                          setIsCreatingCustomServer(false);
-                        }}
-                        className="p-1 rounded-md text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.1)] transition-all cursor-pointer"
-                        aria-label={PROVIDERS_CONFIG_DESK_COPY.actions.editServer}
-                      >
-                        <Pencil size={13} />
-                      </button>
-                    </Tooltip>
-                    <Tooltip label={PROVIDERS_CONFIG_DESK_COPY.actions.deleteServer} side="top">
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setConfirmDeleteProviderId(server.id);
-                        }}
-                        className="p-1 rounded-md text-[rgb(var(--foreground-muted))]/40 hover:text-[rgb(var(--error))] hover:bg-[rgba(var(--error),0.1)] transition-all cursor-pointer"
-                        aria-label={PROVIDERS_CONFIG_DESK_COPY.actions.deleteServer}
-                      >
-                        <Trash2 size={13} />
-                      </button>
-                    </Tooltip>
+                  <div className="flex items-center justify-end gap-1.5 min-w-[72px]">
+                    <span className="text-[11px] font-mono font-medium text-[rgb(var(--accent))] transition-opacity duration-150 group-hover:hidden flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--accent))] shrink-0" />
+                      Custom
+                    </span>
+                    <div className="hidden group-hover:flex items-center gap-1.5 transition-opacity duration-150">
+                      <Tooltip label={PROVIDERS_CONFIG_DESK_COPY.actions.editServer} side="top">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditingServer(server);
+                            setIsCreatingCustomServer(false);
+                          }}
+                          className="p-1 rounded-md text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.1)] transition-all cursor-pointer"
+                          aria-label={PROVIDERS_CONFIG_DESK_COPY.actions.editServer}
+                        >
+                          <Pencil size={13} />
+                        </button>
+                      </Tooltip>
+                      <Tooltip label={PROVIDERS_CONFIG_DESK_COPY.actions.deleteServer} side="top">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setConfirmDeleteProviderId(server.id);
+                          }}
+                          className="p-1 rounded-md text-[rgb(var(--foreground-muted))]/40 hover:text-[rgb(var(--error))] hover:bg-[rgba(var(--error),0.1)] transition-all cursor-pointer"
+                          aria-label={PROVIDERS_CONFIG_DESK_COPY.actions.deleteServer}
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </Tooltip>
+                    </div>
                   </div>
                 )}
               </div>

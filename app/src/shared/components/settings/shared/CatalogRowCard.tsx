@@ -73,8 +73,8 @@ export const CatalogRowCard = memo(
             }
           }}
           className={cn(
-            "group relative flex w-full select-none flex-col rounded-xl border",
-            "min-h-[64px] py-2.5 pl-2.5 pr-2.5 transition-colors duration-200",
+            "group relative flex w-full select-none flex-col items-center justify-center rounded-xl border",
+            "min-h-[56px] py-2 pl-2.5 pr-2.5 transition-colors duration-200",
             muted
               ? "border-[rgba(var(--foreground),0.045)] bg-[rgba(var(--foreground),0.015)]"
               : "border-[rgba(var(--foreground),0.07)] bg-[rgba(var(--foreground),0.035)]",

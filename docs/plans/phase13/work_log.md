@@ -465,3 +465,5 @@ Android work was re-homed to Phase 13.
   8. *Overlay Stack Hygiene (`CatalogModalToolbar.tsx`, `CloneVoiceCard.tsx`)*: Replaced manual document event listeners in `CatalogModalToolbar` with `useOverlay`. Added `cardRef` and `useOverlay` to `CloneVoiceCard` for Escape key and outside-click dismissal when expanded.
   Verified: `pnpm lint:arch` clean, `pnpm test` (27/27 test files, 223/223 tests passing), `pnpm build` clean (0 errors in 11.02s).
 
+
+- **Modal Layout Standardization (2026-10-25):** Standardized the four catalog modals (Provider, Model, Voice, TTS Engine) on shared structure: TTS engine modal refactored onto `CatalogModalShell`, facet rail standardized to 200px (hidden <lg), grid unified to `grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3`, Modal header padding/min-height adjusted, title typography standardized. `CatalogModalShell` toolbar made optional. Verified: `pnpm tsc --noEmit` clean, `pnpm lint:arch` clean.
