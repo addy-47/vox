@@ -9,23 +9,10 @@ Durable engineering standards for the Vox frontend application (`app/src/`). Rea
 
 ---
 
-## 1. Hardware Tiers & UI Mapping
-
-The ambient UI reflects active hardware capabilities. Visual surfaces adapt dynamically to model degradation or cloud streaming.
-
-| Tier | Hardware | Pipeline Mode | Ingestion | Retrieval | Tool Calling |
-| :--- | :------- | :-----------: | :-------: | :-------: | :----------: |
-| **1A** | 8GB, CPU-only | Modular (Local) | FIFO only | Context window | None |
-| **1B** | 8GB+, dedicated GPU | Modular (Local) | Async background | Full (vector + BM25) | Local LLM dependent |
-| **2A** | Hybrid (Remote LLM) | Modular (Remote LLM) | Async background | Full | Remote LLM dependent |
-| **2B** (default) | Hybrid (Cloud LLM) | Modular (Cloud LLM) | Async background | Full | Full cloud tool calls |
-| **3** | Realtime S2S | Realtime (WebSocket) | Provider-managed | Early tool calls | Full provider tools |
-
----
-
 ## 2. Architecture & Layer Boundaries
 
 - **Package manager:** Always use `pnpm`.
+- **Design system SSOT:** Visual design tokens, elevation ladders, typography scales, concentric radii ($R_{inner} = R_{outer} - P$), and overlay grammar are governed by root [`DESIGN.md`](file:///home/addy/projects/apps/vox/DESIGN.md). Never invent one-off colors, blurs, or container pill styles.
 - **Zero hardcoded copy:** Place labels, options, and descriptions in `src/data/` (e.g. `appData.ts`). Never inline raw strings inside component templates.
 - **Service encapsulation:** Components never call `@tauri-apps/api` invoke directly. Route all backend calls through modules in `src/services/`.
 - **No raw fetch:** Direct `fetch()` calls in UI components and stores are strictly prohibited and enforced by ESLint `no-restricted-globals`. All network calls must pass through `src/services/transport.ts`.
@@ -38,7 +25,10 @@ The ambient UI reflects active hardware capabilities. Visual surfaces adapt dyna
 
 ## 3. State Management & Reactivity
 
-- **High-frequency state:** Waveform amplitudes, audio visualizer levels, and 60 FPS animation targets live in local component state or mutable refs (`useRef`). Never store high-frequency data in React context.
+- **High-frequency stream isolation:** Live streaming buffers (`transcript`, `assistantText`, streaming LLM tokens, raw PCM waveform buffers) MUST NEVER be placed in React Context. They belong in dedicated Zustand store slices (`sessionStore`) or mutable refs. Components consuming streams must subscribe via targeted scalar selectors at leaf nodes (e.g. `ActiveTranscript`).
+- **Context action/data decoupling:** Context providers that manage both state and actions MUST decouple referentially stable actions (`useMemo(() => ({ doA, doB }), [])`) from volatile data ticks. Never invalidate action dispatchers on streaming state updates.
+- **Category-scoped dirty isolation:** Settings and configuration forms must scope dirty tracking to individual domain/category slices (`isCategoryDirty(cat)`), preventing draft changes in one category from causing global re-renders or invalidating unrelated tabs.
+- **High-frequency visual state:** Waveform amplitudes, audio visualizer levels, and 60 FPS animation targets live in local component state or mutable refs (`useRef`). Never store high-frequency data in React context.
 - **Application state:** User settings, active hardware tier, and connectivity status live in Zustand stores (`src/store/`) or dedicated contexts.
 - **Stateful logic extraction:** Extract recurring component state logic into custom hooks in `src/hooks/`.
 
@@ -53,58 +43,51 @@ Violating these invariants causes performance regressions, memory leaks, or unmo
 - **Never hook after early returns:** Guard checks returning `null` (e.g. mobile detection, monitoring bypass) must live in a parent wrapper or after all hook invocations.
 - **Never short-circuit hooks:** Calling `useA() ?? useB()` is an order-breaking defect. Call each hook independently at root level and coalesce results afterwards.
 
-### 4.1 Context Stability
+### 4.1 Root Shell & Layout Purity
+- **No telemetry subscriptions in layout shells:** Root layout containers (`ResponsiveLayout`, `AppHeader`, `EdgeNav`) must NEVER invoke polling or telemetry hooks (`useVoxFootprint`, `useMonitoringMetrics`). Telemetry indicators must be isolated in self-contained, memoized leaf components (`FootprintHudButton`).
 - **Memoized context values:** Wrap all Provider `value` objects in `useMemo`. Never pass unmemoized object literals.
 - **Separate volatile state from dispatchers:** Do not place rapid telemetry updates into the same context provider as stable action callbacks.
 
-### 4.2 Zustand Selectors
+### 4.2 Zustand Selectors & List Row Lazy Mounting
 - **Targeted atomic selectors:** Always select minimal scalar slices (`useSettingsStore((s) => s.theme)`) or use `useShallow`.
 - **No full-store destructuring:** Avoid `const { ... } = useSettingsStore()`, which forces re-renders on unrelated store mutations.
+- **Lazy row item mounting:** In virtualized or mapped lists (`SessionRowItem`, `ProjectRowItem`), expensive auxiliary subtrees (floating context menus, popovers, portals, and tooltips) MUST be conditionally mounted only when actively triggered (`menuOpen && <...>`). Never mount hundreds of dormant portals, floating positioning calculators, or window listeners inside list row items.
 
-### 4.3 Async Effects & Event Listeners
-- **`isMounted` listener guards:** Always guard async setup callbacks and state updates with an active mount flag:
-  ```ts
-  useEffect(() => {
-    let isMounted = true;
-    let unlisten: (() => void) | null = null;
-    const setup = async () => {
-      const u = await win.listen(...);
-      if (isMounted) unlisten = u;
-      else u();
-    };
-    setup();
-    return () => { isMounted = false; if (unlisten) unlisten(); };
-  }, []);
-  ```
+### 4.3 Compositor & GPU Filter Safety
+- **No universal backdrop-filters:** Never apply `backdrop-filter` via universal (`*`) or descendant wildcard selectors (e.g. `.drawer-keep-blur *`). Every descendant receives its own GPU compositor layer, crashing WebKitGTK frame rates.
+- **Constrained SVG filter overlays:** Full-viewport SVG filter overlays (fractal noise `feTurbulence`) must specify explicit tile dimensions (`background-size: 200px 200px`), hardware isolation (`transform: translateZ(0)`), and containment (`contain: strict`). Duplicate ambient filter layers are strictly forbidden.
+- **Zero extreme blur/blend layers:** Large-area extreme blurs (`blur-[120px]` on 800px+ surfaces) with blending modes (`mix-blend-mode: screen`) behind active canvases are prohibited; use static radial-gradient color stops instead.
 
-### 4.4 Timers & Animation Frames
+### 4.4 DOM Geometry & Layout Thrash Protection
+- **No layout queries in streaming paths:** Never query layout-inducing DOM properties (`scrollHeight`, `clientHeight`, `offsetWidth`, `getBoundingClientRect()`) inside high-frequency render loops or token streaming effects.
+- **Threshold guarding:** Layout queries on streaming content must be guarded by character length thresholds (e.g. `content.length < 90`) or microtask debouncing.
+
+### 4.5 Lifecycle & Timer Hygiene
+- **Tracked timer cleanup:** Store all timer and interval IDs in mutable refs (`timerRef.current`) and clear them during effect cleanup. Never launch untracked `setTimeout` calls inside effect cleanup returns (e.g. `return () => setTimeout(pop, 260)`).
 - **Pure state updaters:** Never invoke `setTimeout`, `setInterval`, or IPC triggers inside `setState(prev => ...)` functions.
-- **Nested timer tracking:** Store and clear all timer and interval IDs during effect cleanup.
 - **Mutable target capture:** Animation frame loops must read transition targets from mutable refs (`targetRef.current`) rather than closures.
-
-### 4.5 Component Memoization
-- **Leaf control memoization:** Wrap shared controls (`Button`, `SegmentedControl`, `SliderField`, `ToggleTile`) in `React.memo` with an explicit `displayName`.
-- **Stable callbacks:** Wrap functions passed to memoized children in `useCallback`.
 
 ### 4.6 WebGL & GPU Resource Teardown
 - **Canvas dimension reset (WebKitGTK invariant):** Before disposing a WebGL context, set `canvas.width = 1; canvas.height = 1;`. Failing to shrink the canvas leaves full-resolution backing framebuffers in process memory.
 - **Forced context loss:** Call `renderer.forceContextLoss()` before `renderer.dispose()` on unmount.
-- **Resource cleanup:** Dispose all geometries, materials, and textures during cleanup.
+- **Resource cleanup:** Dispose all geometries, materials, and textures during cleanup. Null out dense reference arrays (`nodesRef.current = []`).
 - **2D canvas teardown:** 2D canvases must cancel active RAF loops, disconnect `ResizeObserver`, and reset dimensions on unmount.
 
-### 4.7 Pure Utility Isolation
-- Place pure formatting and string helpers in `src/shared/lib/`. Pure utilities must never import `@tauri-apps/api` or state stores.
+### 4.7 Three.js & Animation Frame Loop Equilibrium
+- **Dynamic FPS throttling:** Animation frame loops must schedule via `useDynamicFPS` (60 FPS active, 15 FPS idle, 0 FPS hidden/settled).
+- **Two-phase physics settlement:** Physics simulations (force-directed graphs) must settle to equilibrium within fixed ticks ($< 100$) and freeze all GPU uploads (0 FPS idle).
+- **Zero-allocation render loops:** Hoist math and color helper objects (`THREE.Object3D`, `THREE.Color`, vectors) into `useRef` instances. Zero object allocations inside 60 FPS animation callbacks.
 
 ### 4.8 Ref Render Purity & Effect Cascades
 - **Zero ref mutations during render:** Never read or mutate `useRef.current` in the component render phase. Move mutations to `useEffect`, `useLayoutEffect`, or event callbacks.
 - **Zero synchronous `setState` in effect body:** Never call `setState()` directly/synchronously in an effect body. For state synchronization based on prop/state changes, adjust state during render using previous state comparison, or defer execution asynchronously.
 
----
+### 4.9 Markdown AST Fast-Path
+- **Fast-path plain text:** Turn and description renderers must pre-check for markdown syntax (`!/[*_#`\[\]]/.test(content)`) to bypass `ReactMarkdown` AST compilation on plain turns, eliminating 80–150ms rendering latency.
 
-## 5. Liquid Space Design System Rules
+### 4.10 Component Memoization
+- **Leaf control memoization:** Wrap shared controls (`Button`, `SegmentedControl`, `SliderField`, `ToggleTile`) in `React.memo` with an explicit `displayName`.
+- **Stable callbacks:** Wrap functions passed to memoized children in `useCallback`.
 
-- **Elevation hierarchy:** Use defined design token elevation classes. Never invent arbitrary shadow or blur values.
-- **Mood synchronization:** Visual surfaces reflect the 7 canonical backend pipeline states (`Idle`, `Ready`, `Listening`, `Thinking`, `Speaking`, `Paused`, `Error`).
-- **Interactive pills only:** Rounded pill containers (`rounded-full`) with borders are reserved strictly for clickable controls. Never place static text, metrics, or badges inside pill containers.
-- **No redundant status badges:** Avoid adding badge containers adjacent to a control that already displays the current value.
-- **Frameless vector graphics:** Technical diagrams and SVG illustrations render as frameless wireframes (0.8px–1.25px stroke) without heavy background bounding boxes.
+### 4.11 Pure Utility Isolation
+- Place pure formatting and string helpers in `src/shared/lib/`. Pure utilities must never import `@tauri-apps/api` or state stores.

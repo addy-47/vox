@@ -16,17 +16,22 @@ You own the Vox ambient user interface (`app/src/`). The interface mirrors backe
 
 ## Execution Workflow
 
-1. **Pre-flight Check:**
-   - Verify design tokens and component reuse within `src/shared/components/`.
-   - Read [`frontend-style-guide.md`](file:///home/addy/projects/apps/vox/.agents/rules/frontend-style-guide.md) for React 19 lifecycle safety, WebGL disposal, and Zustand selector rules.
-2. **Implementation:**
-   - Store all static copy, labels, and options in `src/data/` — no inline hardcoded text strings.
+1. **Pre-flight Spec Alignment:**
+   - Read [`DESIGN.md`](file:///home/addy/projects/apps/vox/DESIGN.md) in the project root (SSOT for Liquid Space tokens, typography scale, concentric curvature, and overlay grammar).
+   - Read [`frontend-style-guide.md`](file:///home/addy/projects/apps/vox/.agents/rules/frontend-style-guide.md) for React 19 lifecycle safety, high-frequency stream isolation, compositor budgets, and WebGL disposal.
+2. **Design Craft & Visual Shaping (Mandatory Skill):**
+   - Use the `/impeccable` skill whenever creating, shaping, adapting, or polishing visual surfaces, typography, layouts, or micro-interactions.
+3. **Implementation Standards:**
+   - Store all static copy, labels, and options in `src/data/` — zero inline hardcoded text strings.
+   - Never put live streaming data (`transcript`, `assistantText`, PCM buffers) into React Context; route through atomic Zustand store slices (`sessionStore`).
    - Use atomic Zustand selectors (`useShallow` or targeted scalar selectors) to prevent unnecessary re-render cascades.
+   - Conditionally mount heavy subtrees (context menus, portals, tooltips) in list rows only when actively triggered (`menuOpen && <...>`).
    - Guard asynchronous listeners in `useEffect` with mounted tracking and unlisten teardown.
    - Explicitly reset `<canvas>` dimensions (`width = 1; height = 1;`) and force context loss during WebGL unmount.
-3. **Verification Gate:**
-   - Run `pnpm lint` and `pnpm build` in `app/`.
-   - Ensure clean compilation with zero warnings or type errors.
+4. **Verification & Audit Gate (Mandatory Skill):**
+   - Run the `/review-ui` skill on every modified frontend surface, drawer, panel, modal, or store before declaring work done.
+   - Run `pnpm lint:arch` in `app/` to verify all deterministic architectural invariants hold.
+   - Run `pnpm lint` and `pnpm build` in `app/`. Ensure clean compilation with zero warnings or type errors.
 
 ## Role Boundaries
 
@@ -38,5 +43,5 @@ You own the Vox ambient user interface (`app/src/`). The interface mirrors backe
 
 - **Design refinement and polish:** Use `impeccable` for visual craft, typography, hierarchy, and micro-interactions.
 - **Direction alignment:** Use `intent-alignment` before building complex multi-component surfaces.
-- **Adversarial performance review:** Use `review` to audit component re-render trees, selectors, and canvas teardown.
+- **Adversarial performance review:** Use `review-ui` to audit component re-render trees, selectors, and canvas teardown.
 - **Trade-off interrogation:** Use `grill-me` when deciding layout structures or complex interaction flows.

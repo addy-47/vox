@@ -53,7 +53,10 @@ export const QrScannerModal = memo(
     const videoRef = useRef<HTMLVideoElement | null>(null);
     const streamRef = useRef<MediaStream | null>(null);
     const scanIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+    const rafRef = useRef<number | null>(null);
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
+    const connectingRef = useRef(connecting);
+    const scannedSuccessRef = useRef(scannedSuccess);
 
     const stopCamera = useCallback(() => {
       if (scanIntervalRef.current) {
@@ -98,12 +101,24 @@ export const QrScannerModal = memo(
       onClose();
     }, [resetState, onClose]);
 
+    useEffect(() => {
+      connectingRef.current = connecting;
+    }, [connecting]);
+    useEffect(() => {
+      scannedSuccessRef.current = scannedSuccess;
+    }, [scannedSuccess]);
+
     const handleConnect = useCallback(
       async (params: { address: string; deviceId?: string; token?: string; publicKey?: string }) => {
         try {
           setConnecting(true);
+          setCameraActive(false);
           setScanError(null);
-          stopCamera();
+          // Defer camera teardown so the connecting view can paint first (avoids
+          // a synchronous frame drop at the scan -> connect transition).
+          setTimeout(() => {
+            stopCamera();
+          }, 0);
           await connectHost(params);
           // Do not close modal immediately; wait for remote_state_changed to report Connected or Failed
         } catch (e) {
@@ -118,7 +133,7 @@ export const QrScannerModal = memo(
 
     const processQrCode = useCallback(
       (raw: string) => {
-        if (!raw || connecting || scannedSuccess) return;
+        if (!raw || connectingRef.current || scannedSuccessRef.current) return;
         try {
           const parsed = JSON.parse(raw) as ScannedQrPayload;
           if (
@@ -138,7 +153,7 @@ export const QrScannerModal = memo(
           // Non-JSON barcode or unrelated QR code, ignore
         }
       },
-      [connecting, scannedSuccess, handleConnect]
+      [handleConnect]
     );
 
     const startCamera = useCallback(async () => {
@@ -154,8 +169,8 @@ export const QrScannerModal = memo(
         const stream = await navigator.mediaDevices.getUserMedia({
           video: {
             facingMode: { ideal: "environment" },
-            width: { ideal: 1280 },
-            height: { ideal: 720 },
+            width: { ideal: 640 },
+            height: { ideal: 480 },
           },
           audio: false,
         });
@@ -209,7 +224,7 @@ export const QrScannerModal = memo(
         setScannedSuccess(true);
         const timer = setTimeout(() => {
           handleClose();
-        }, 800);
+        }, 250);
         return () => clearTimeout(timer);
       }
 
@@ -227,6 +242,19 @@ export const QrScannerModal = memo(
         if (scanIntervalRef.current) {
           clearInterval(scanIntervalRef.current);
           scanIntervalRef.current = null;
+        }
+        if (rafRef.current !== null) {
+          const v = videoRef.current as
+            | (HTMLVideoElement & {
+                cancelVideoFrameCallback?: (h: number) => void;
+              })
+            | null;
+          if (v && typeof v.cancelVideoFrameCallback === "function") {
+            v.cancelVideoFrameCallback(rafRef.current);
+          } else {
+            cancelAnimationFrame(rafRef.current);
+          }
+          rafRef.current = null;
         }
         return;
       }
@@ -255,88 +283,132 @@ export const QrScannerModal = memo(
         }
       }
 
-      if (!canvasRef.current) {
-        const c = document.createElement("canvas");
-        c.width = 640;
-        c.height = 640;
-        canvasRef.current = c;
+      // Only allocate the canvas for the CPU (jsQR) fallback path.
+      let canvas: HTMLCanvasElement | null = null;
+      let ctx: CanvasRenderingContext2D | null = null;
+      if (!nativeDetector) {
+        if (!canvasRef.current) {
+          const c = document.createElement("canvas");
+          c.width = 320;
+          c.height = 320;
+          canvasRef.current = c;
+        }
+        canvas = canvasRef.current;
+        ctx = canvas?.getContext("2d", { willReadFrequently: true }) ?? null;
       }
-      const canvas = canvasRef.current;
-      const ctx = canvas?.getContext("2d", { willReadFrequently: true });
 
       let isScanning = false;
+      let lastTime = -1;
+      let stopped = false;
 
-      scanIntervalRef.current = setInterval(() => {
-        void (async () => {
-          if (isScanning || scannedSuccess || connecting) return;
-          const video = videoRef.current;
-          if (!video || video.readyState < 2) return;
+      const decode = async () => {
+        if (stopped || isScanning) return;
+        if (connectingRef.current || scannedSuccessRef.current) return;
+        const video = videoRef.current;
+        if (!video || video.readyState < 2) return;
+        if (video.currentTime === lastTime) return;
+        lastTime = video.currentTime;
 
-          isScanning = true;
-
-          try {
-            if (nativeDetector) {
-              const barcodes = await nativeDetector.detect(video);
-              if (barcodes && barcodes.length > 0) {
-                for (const b of barcodes) {
-                  if (b.rawValue) {
-                    processQrCode(b.rawValue);
-                    break;
-                  }
+        isScanning = true;
+        try {
+          if (nativeDetector) {
+            const barcodes = await nativeDetector.detect(video);
+            if (barcodes && barcodes.length > 0) {
+              for (const b of barcodes) {
+                if (b.rawValue) {
+                  processQrCode(b.rawValue);
+                  break;
                 }
               }
-            } else if (ctx && canvas) {
-              const vw = video.videoWidth || 640;
-              const vh = video.videoHeight || 480;
-              const cropSize = Math.min(vw, vh);
-              const sx = (vw - cropSize) / 2;
-              const sy = (vh - cropSize) / 2;
-              ctx.drawImage(
-                video,
-                sx,
-                sy,
-                cropSize,
-                cropSize,
-                0,
-                0,
-                canvas.width,
-                canvas.height
-              );
-              const imageData = ctx.getImageData(
-                0,
-                0,
-                canvas.width,
-                canvas.height
-              );
-              const qr = jsQR(imageData.data, canvas.width, canvas.height, {
-                inversionAttempts: "dontInvert",
-              });
-              if (qr && qr.data) {
-                processQrCode(qr.data);
-              }
             }
-          } catch {
-            // Frame decode skip
-          } finally {
-            isScanning = false;
+          } else if (ctx && canvas) {
+            const vw = video.videoWidth || 320;
+            const vh = video.videoHeight || 320;
+            const cropSize = Math.min(vw, vh);
+            const sx = (vw - cropSize) / 2;
+            const sy = (vh - cropSize) / 2;
+            ctx.drawImage(
+              video,
+              sx,
+              sy,
+              cropSize,
+              cropSize,
+              0,
+              0,
+              canvas.width,
+              canvas.height
+            );
+            const imageData = ctx.getImageData(
+              0,
+              0,
+              canvas.width,
+              canvas.height
+            );
+            const qr = jsQR(imageData.data, canvas.width, canvas.height, {
+              inversionAttempts: "attemptBoth",
+            });
+            if (qr && qr.data) {
+              processQrCode(qr.data);
+            }
           }
-        })();
-      }, 100);
+        } catch {
+          // Frame decode skip
+        } finally {
+          isScanning = false;
+        }
+      };
+
+      const v = videoRef.current as
+        | (HTMLVideoElement & {
+            requestVideoFrameCallback?: (
+              cb: (now: number, meta: { mediaTime: number }) => void
+            ) => number;
+          })
+        | null;
+
+      if (v && typeof v.requestVideoFrameCallback === "function") {
+        const loop = () => {
+          if (stopped) return;
+          void decode();
+          const vv = videoRef.current as
+            | (HTMLVideoElement & {
+                requestVideoFrameCallback?: (
+                  cb: (now: number, meta: { mediaTime: number }) => void
+                ) => number;
+              })
+            | null;
+          if (vv && typeof vv.requestVideoFrameCallback === "function") {
+            rafRef.current = vv.requestVideoFrameCallback(loop);
+          }
+        };
+        rafRef.current = v.requestVideoFrameCallback(loop);
+      } else {
+        scanIntervalRef.current = setInterval(() => {
+          void decode();
+        }, 100);
+      }
 
       return () => {
+        stopped = true;
+        const vv = videoRef.current as
+          | (HTMLVideoElement & {
+              cancelVideoFrameCallback?: (h: number) => void;
+            })
+          | null;
+        if (rafRef.current !== null) {
+          if (vv && typeof vv.cancelVideoFrameCallback === "function") {
+            vv.cancelVideoFrameCallback(rafRef.current);
+          } else {
+            cancelAnimationFrame(rafRef.current);
+          }
+          rafRef.current = null;
+        }
         if (scanIntervalRef.current) {
           clearInterval(scanIntervalRef.current);
           scanIntervalRef.current = null;
         }
       };
-    }, [
-      open,
-      isManual,
-      connecting,
-      cameraActive,
-      scannedSuccess,
-      processQrCode,
-    ]);
+    }, [open, isManual, connecting, cameraActive, processQrCode]);
 
     useEffect(() => {
       let timer: ReturnType<typeof setTimeout> | null = null;
@@ -346,7 +418,11 @@ export const QrScannerModal = memo(
           void startCamera();
         }, 150);
       } else {
-        stopCamera();
+        // Defer teardown to avoid a synchronous frame drop during the scan -> connect
+        // transition; the video container is hidden by the connecting view anyway.
+        setTimeout(() => {
+          stopCamera();
+        }, 0);
       }
       return () => {
         if (timer) clearTimeout(timer);
@@ -519,7 +595,7 @@ export const QrScannerModal = memo(
             /* Native Low-Latency Camera Scanner View */
             <div className="flex flex-col gap-4 animate-fade-in">
               {/* Viewfinder Frame */}
-              <div className="relative w-full aspect-square max-w-[288px] mx-auto rounded-xl overflow-hidden bg-black shadow-lg border border-[rgba(var(--border),0.12)] flex items-center justify-center">
+              <div className="relative w-full aspect-square max-w-[288px] mx-auto rounded-xl overflow-hidden bg-black border border-[rgba(var(--border),0.12)] flex items-center justify-center">
                 <video
                   ref={videoRef}
                   playsInline
@@ -540,7 +616,12 @@ export const QrScannerModal = memo(
                 {/* OrbitalLoader while camera initializes */}
                 {cameraLoading && (
                   <div className="absolute inset-0 flex items-center justify-center bg-black/95 z-10 p-4">
-                    <OrbitalLoader size="md" />
+                    <div className="flex flex-col items-center gap-2">
+                      <div className="w-8 h-8 rounded-full border-2 border-[rgb(var(--accent))]/30 border-t-[rgb(var(--accent))] animate-spin" />
+                      <span className="text-[11px] font-mono text-[rgb(var(--foreground-muted))]">
+                        Starting camera…
+                      </span>
+                    </div>
                   </div>
                 )}
 

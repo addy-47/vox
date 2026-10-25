@@ -342,21 +342,23 @@ export const SessionRowItem = memo(
         )}
 
         {/* Floating Context Menu Portal (Opens inward/rightwards) */}
-        <SessionContextMenu
-          open={menuOpen}
-          onClose={() => setMenuOpen(false)}
-          anchorRect={menuAnchorRect}
-          sessionId={session.id}
-          currentProjectId={session.project_id ?? null}
-          allProjects={allProjects}
-          isUncompacted={isUncompacted}
-          isCompacting={isCompacting}
-          onCompact={handleCompact}
-          onStartRename={handleStartRename}
-          onMoveToProject={handleMove}
-          onDelete={handleDelete}
-          triggerRef={triggerRef}
-        />
+        {menuOpen && (
+          <SessionContextMenu
+            open={menuOpen}
+            onClose={() => setMenuOpen(false)}
+            anchorRect={menuAnchorRect}
+            sessionId={session.id}
+            currentProjectId={session.project_id ?? null}
+            allProjects={allProjects}
+            isUncompacted={isUncompacted}
+            isCompacting={isCompacting}
+            onCompact={handleCompact}
+            onStartRename={handleStartRename}
+            onMoveToProject={handleMove}
+            onDelete={handleDelete}
+            triggerRef={triggerRef}
+          />
+        )}
       </div>
     );
   }

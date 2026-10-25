@@ -512,21 +512,20 @@ export const VoxOrb = React.memo(({
   // ── Dynamic FPS controls ─────────────────────────────────────────────────
   // Maintain 60 FPS while state is actively engaged OR during state transitions
   // so the orb settles smoothly without dropping frames mid-shrink.
-  const [prevInteractionState, setPrevInteractionState] = useState(interactionState);
   const [isTransitioning, setIsTransitioning] = useState(false);
-
-  if (interactionState !== prevInteractionState) {
-    setPrevInteractionState(interactionState);
-    setIsTransitioning(true);
-  }
+  const isInitialMountRef = useRef(true);
 
   useEffect(() => {
-    if (!isTransitioning) return;
+    if (isInitialMountRef.current) {
+      isInitialMountRef.current = false;
+      return;
+    }
+    setIsTransitioning(true);
     const timer = setTimeout(() => {
       setIsTransitioning(false);
     }, 1400);
     return () => clearTimeout(timer);
-  }, [isTransitioning]);
+  }, [interactionState]);
 
   const isActive = (interactionState !== 'Idle' && interactionState !== 'Paused') || isTransitioning;
 
@@ -612,13 +611,6 @@ export const VoxOrb = React.memo(({
   // instead of flashing hardcoded base tokens on the first frames. The
   // observer effect owns all later updates; only the first kept value matters.
   const themeSeed = cachedOrbTheme;
-  try {
-    const r = document.documentElement;
-    const cs = getComputedStyle(r);
-    console.info(`[trace-orb] mount: cachedTheme=${themeSeed ? 'HIT#' + themeSeed.accent.getHexString() : 'MISS'}, cssAccent=[${cs.getPropertyValue('--accent').trim() || 'EMPTY'}], cssAccentDark=[${cs.getPropertyValue('--accent-dark').trim() || 'EMPTY'}], inlineAccent=[${r.style.getPropertyValue('--accent').trim() || 'EMPTY'}], docTheme=${r.getAttribute('data-theme') || 'none'}, state=${interactionState}`);
-  } catch (e) {
-    console.debug("[AdvancedOrb] Trace log failed on mount:", e);
-  }
   const themeRef = useRef({
     theme: themeSeed?.theme ?? "",
     accent: themeSeed?.accent.clone() ?? getCSSColor('--accent', '#00dbe9'),

@@ -53,8 +53,6 @@ export const Home = memo(() => {
     isSleeping,
     isPaused,
     pttStatus,
-    transcript,
-    assistantText,
     cpuWarning,
     isTemporarySession,
     isTextModeOpen,
@@ -325,7 +323,7 @@ export const Home = memo(() => {
             ))}
 
             {/* Isolated Active Streaming Transcript */}
-            <ActiveTranscript transcript={transcript} assistantText={assistantText} />
+            <ActiveTranscript />
           </div>
         </div>
       </div>

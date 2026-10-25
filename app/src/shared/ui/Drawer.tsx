@@ -103,7 +103,13 @@ export const Drawer = memo(
 
     // Focus the sheet on open; restore focus to the trigger on close.
     const previouslyFocusedRef = useRef<HTMLElement | null>(null);
+    const focusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
     useEffect(() => {
+      if (focusTimerRef.current !== null) {
+        clearTimeout(focusTimerRef.current);
+        focusTimerRef.current = null;
+      }
       if (!open) return;
       // [trace-first-open] Intent-to-paint timing for first-open jank RCA. Logs only.
       const intentAt = performance.now();
@@ -126,7 +132,8 @@ export const Drawer = memo(
             prev.tabIndex >= 0 || /^(BUTTON|INPUT|SELECT|TEXTAREA|A)$/.test(prev.tagName);
           if (focusable) {
             // Restore focus after slide-out animation finishes to prevent layout thrashing
-            setTimeout(() => {
+            focusTimerRef.current = setTimeout(() => {
+              focusTimerRef.current = null;
               if (document.contains(prev)) {
                 prev.focus({ preventScroll: true });
               }

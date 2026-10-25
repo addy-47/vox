@@ -246,13 +246,13 @@ export const History: React.FC = () => {
   );
 
   const renderDayNode = React.useCallback(
-    (id: string) => {
+    (id: string, isSelected?: boolean) => {
       const session = sessionById.get(id);
       if (!session) return null;
       return (
         <VoiceRippleNode
           session={session}
-          isSelected={selectedSession?.id === session.id}
+          isSelected={isSelected ?? (selectedSession?.id === session.id)}
           isConfirmingDelete={confirmDeleteId === session.id}
           onSelect={handleSelectSession}
           onDelete={handleDelete}
@@ -260,8 +260,12 @@ export const History: React.FC = () => {
         />
       );
     },
-    [sessionById, selectedSession?.id, confirmDeleteId, handleSelectSession, handleDelete, handleCancelDelete]
+    [sessionById, confirmDeleteId, handleSelectSession, handleDelete, handleCancelDelete]
   );
+
+  const headerSlot = isOrbitViewport && typeof document !== "undefined"
+    ? document.getElementById("app-header-center-slot")
+    : null;
 
   return (
     <div
@@ -270,14 +274,14 @@ export const History: React.FC = () => {
       className="relative flex-1 flex flex-col items-center justify-between h-full w-full overflow-hidden bg-transparent select-none"
     >
       {/* ── Top Bar Search in Orbit View portal into AppHeader center slot ── */}
-      {isOrbitViewport && typeof document !== "undefined" && document.getElementById("app-header-center-slot") &&
+      {headerSlot &&
         createPortal(
           <HistorySearchBar
             sessions={sessions}
             onSelectSession={handleSearchSelectSession}
             className="w-full max-w-[300px]"
           />,
-          document.getElementById("app-header-center-slot")!
+          headerSlot
         )}
 
       {/* Delete Error Notification Banner */}

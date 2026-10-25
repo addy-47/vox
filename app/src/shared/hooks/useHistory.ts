@@ -165,7 +165,6 @@ export function useHistory() {
   useEffect(() => {
     let isMounted = true;
     const run = async () => {
-      await Promise.resolve();
       if (!isMounted) return;
       await loadSessions();
     };
@@ -221,43 +220,34 @@ export function useHistory() {
   // Sync selected session from router query params and ensure window + day view alignment
   useEffect(() => {
     if (sessions.length === 0) return;
-    let isMounted = true;
-    const sync = async () => {
-      await Promise.resolve();
-      if (!isMounted) return;
-      const params = new URLSearchParams(location.search);
-      const targetSessionId = params.get("sessionId");
-      if (targetSessionId) {
-        const target = sessions.find((s) => s.id === Number(targetSessionId));
-        if (target) {
-          setSelectedSession(target);
-          const winIdx = sessionWindows.findIndex((w) =>
-            w.sessions.some((s) => s.id === target.id)
-          );
-          if (winIdx !== -1) {
-            setDayWindowIndex(winIdx);
-          }
-          setView("day");
-          return;
+    const params = new URLSearchParams(location.search);
+    const targetSessionId = params.get("sessionId");
+    if (targetSessionId) {
+      const target = sessions.find((s) => s.id === Number(targetSessionId));
+      if (target) {
+        setSelectedSession(target);
+        const winIdx = sessionWindows.findIndex((w) =>
+          w.sessions.some((s) => s.id === target.id)
+        );
+        if (winIdx !== -1) {
+          setDayWindowIndex(winIdx);
         }
+        setView("day");
+        return;
       }
-      // Keep currently selectedSession reference fresh if it exists in the updated sessions list
-      if (selectedSessionRef.current) {
-        const updated = sessions.find((s) => s.id === selectedSessionRef.current?.id);
-        if (
-          updated &&
-          (updated.uncompacted_turns !== selectedSessionRef.current.uncompacted_turns ||
-            updated.title !== selectedSessionRef.current.title ||
-            updated.updated_at !== selectedSessionRef.current.updated_at)
-        ) {
-          setSelectedSession(updated);
-        }
+    }
+    // Keep currently selectedSession reference fresh if it exists in the updated sessions list
+    if (selectedSessionRef.current) {
+      const updated = sessions.find((s) => s.id === selectedSessionRef.current?.id);
+      if (
+        updated &&
+        (updated.uncompacted_turns !== selectedSessionRef.current.uncompacted_turns ||
+          updated.title !== selectedSessionRef.current.title ||
+          updated.updated_at !== selectedSessionRef.current.updated_at)
+      ) {
+        setSelectedSession(updated);
       }
-    };
-    void sync();
-    return () => {
-      isMounted = false;
-    };
+    }
   }, [sessions, location.search, sessionWindows]);
 
   const effectiveSessionWindowIndex = Math.min(

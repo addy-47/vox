@@ -10,12 +10,6 @@ import { cn } from "@/shared/lib/utils";
  * Deliberately zero `backdrop-blur`: the dissolve alone reads identically at
  * these sizes for a fraction of the compositor cost.
  *
- * `dock-feather` (in `index.css`) is not cosmetic: the `background` gradient is
- * built from `rgb(var(--card))`, so its theme delta is `background-image`, which
- * is outside the flip gate's property list. Without that class the gradient
- * snapped at t=0 while the dock's own background faded under it, which read as
- * the dock being out of sync on every page.
- *
  * Contract: render as the FIRST child of the dock wrapper (sibling order keeps
  * it behind the controls), and size it via `className` so it extends above the
  * dock — ~48px for corner docks (`-top-12` overscan), ~110px full-width for
@@ -40,7 +34,7 @@ export const BottomDockFeather: React.FC<BottomDockFeatherProps> = memo(
     <div
       aria-hidden="true"
       style={FEATHER_STYLE}
-      className={cn("dock-feather pointer-events-none", className)}
+      className={cn("pointer-events-none", className)}
     />
   )
 );

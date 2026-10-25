@@ -252,6 +252,7 @@ export const SessionProjectsSection = memo(
             <Reorder.Group
               as="div"
               axis="y"
+              layoutScroll
               values={projectIds}
               onReorder={handleReorderProjectIds}
               className="flex flex-col gap-0.5"

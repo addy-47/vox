@@ -221,13 +221,15 @@ export function useSessionPanel(active: boolean = true): UseSessionPanelReturn {
     [sessions]
   );
 
-  // Sort projects according to projectOrder
+  // Sort projects according to projectOrder with O(1) index map
   const sortedProjects = useMemo(() => {
     if (!Array.isArray(projects)) return [];
     if (projectOrder.length === 0) return projects;
+    const orderMap = new Map<string, number>();
+    projectOrder.forEach((id, idx) => orderMap.set(id, idx));
     return [...projects].sort((a, b) => {
-      const idxA = projectOrder.indexOf(a.id);
-      const idxB = projectOrder.indexOf(b.id);
+      const idxA = orderMap.has(a.id) ? orderMap.get(a.id)! : -1;
+      const idxB = orderMap.has(b.id) ? orderMap.get(b.id)! : -1;
       if (idxA !== -1 && idxB !== -1) return idxA - idxB;
       if (idxA !== -1) return -1;
       if (idxB !== -1) return 1;
@@ -239,22 +241,46 @@ export function useSessionPanel(active: boolean = true): UseSessionPanelReturn {
     sortedProjectsRef.current = sortedProjects;
   }, [sortedProjects]);
 
-  const projectsWithSessions = useMemo((): ProjectGroup[] => {
-    return sortedProjects.map((project) => ({
-      project,
-      sessions: nonPinnedSessions.filter((s) => s.project_id === project.id),
-    }));
-  }, [sortedProjects, nonPinnedSessions]);
+  const prevGroupsRef = useRef<Map<string, ProjectGroup>>(new Map());
 
-  const uncategorizedSessions = useMemo(
-    () =>
-      nonPinnedSessions.filter((s) => {
-        if (!Array.isArray(projects) || projects.length === 0) return true;
-        const hasProject = projects.some((p) => p.id === s.project_id);
-        return !hasProject || !s.project_id;
-      }),
-    [nonPinnedSessions, projects]
-  );
+  const { projectsWithSessions, uncategorizedSessions } = useMemo(() => {
+    const projectSet = new Set<string>();
+    const byProject = new Map<string, SessionRow[]>();
+    for (const p of sortedProjects) {
+      projectSet.add(p.id);
+      byProject.set(p.id, []);
+    }
+
+    const uncategorized: SessionRow[] = [];
+    for (const s of nonPinnedSessions) {
+      if (s.project_id && projectSet.has(s.project_id)) {
+        byProject.get(s.project_id)!.push(s);
+      } else {
+        uncategorized.push(s);
+      }
+    }
+
+    const nextGroupsMap = new Map<string, ProjectGroup>();
+    const groups: ProjectGroup[] = sortedProjects.map((project) => {
+      const nextSlice = byProject.get(project.id) ?? [];
+      const prevGroup = prevGroupsRef.current.get(project.id);
+      if (
+        prevGroup &&
+        prevGroup.project === project &&
+        prevGroup.sessions.length === nextSlice.length &&
+        prevGroup.sessions.every((s, idx) => s === nextSlice[idx])
+      ) {
+        nextGroupsMap.set(project.id, prevGroup);
+        return prevGroup;
+      }
+      const fresh: ProjectGroup = { project, sessions: nextSlice };
+      nextGroupsMap.set(project.id, fresh);
+      return fresh;
+    });
+
+    prevGroupsRef.current = nextGroupsMap;
+    return { projectsWithSessions: groups, uncategorizedSessions: uncategorized };
+  }, [sortedProjects, nonPinnedSessions]);
 
   const createNewSession = useCallback(async (projectId?: string) => {
     try {

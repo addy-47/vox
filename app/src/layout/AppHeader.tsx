@@ -10,8 +10,7 @@ import { usePanelStateContext } from "@/shared/context/PanelStateContext";
 import { useNotificationStore, selectBadgeCount } from "@/store/notificationStore";
 import { useSessionStore } from "@/store/sessionStore";
 import { useSettingsStore } from "@/store/settingsStore";
-import { updateSetting } from "@/services/settingsService";
-import { setSessionPrivateMode } from "@/services/pipelineService";
+import { useVoiceSessionActions } from "@/shared/context/VoiceSessionContext";
 import { useViewportResize } from "@/shared/hooks/useViewportResize";
 import { NOTIFICATION_COPY } from "@/data/notificationCopy";
 import { HOME_CONTROLS_COPY } from "@/data/homeCopy";
@@ -34,11 +33,12 @@ export const AppHeader: React.FC = memo(() => {
   const { togglePanel, isPanelOpen, closePanel, openPanel, rightPanel } = usePanelStateContext();
   const unreadCount = useNotificationStore(selectBadgeCount);
 
-  const isPrivateModeSetting = useSettingsStore((s) => s.settings?.memory.private_mode ?? false);
+  const isPrivateModeSetting = useSettingsStore((s) => s.settings?.memory?.private_mode ?? false);
   const sessionIsTemporary = useSessionStore((s) => s.isTemporarySession);
   const isTemporarySession = isPrivateModeSetting || sessionIsTemporary;
   const interactionState = useSessionStore((s) => s.interactionState);
   const isIdle = interactionState === "Idle";
+  const { toggleTemporarySession: triggerToggleTemporarySession } = useVoiceSessionActions();
 
   const sessionsOpen = isPanelOpen("sessions");
   const isNotifsOpen = isPanelOpen("notifications");
@@ -48,19 +48,10 @@ export const AppHeader: React.FC = memo(() => {
   const hideLeftCluster = Boolean(rightPanel) && isNarrow;
   const hideRightCluster = Boolean(sessionsOpen) && isNarrow;
 
-  const toggleTemporarySession = useCallback(async () => {
+  const toggleTemporarySession = useCallback(() => {
     if (!isIdle) return;
-    const current = useSettingsStore.getState().settings?.memory.private_mode ?? useSessionStore.getState().isTemporarySession;
-    const next = !current;
-    useSessionStore.getState().setIsTemporarySession(next);
-    try {
-      await updateSetting("memory", "private_mode", next);
-      await useSettingsStore.getState().loadSettings();
-      await setSessionPrivateMode(next);
-    } catch {
-      // Best-effort IPC
-    }
-  }, [isIdle]);
+    void triggerToggleTemporarySession();
+  }, [isIdle, triggerToggleTemporarySession]);
 
   // Monitoring page uses its own dedicated self-contained header in both popover and full page modes
   if (isMonitoring) {

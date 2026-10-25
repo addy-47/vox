@@ -79,9 +79,14 @@ export const useRemoteStore = create<RemoteStoreState>((set, get) => ({
       });
 
       if (dto.link === "Connected") {
-        get().listPairedDevices().catch((e) => {
-          console.debug("[remoteStore] Failed to refresh paired devices:", e);
-        });
+        // Only refresh the paired-devices list when the peer isn't already
+        // known locally — avoids an extra IPC round-trip on the close path.
+        const known = get().pairedDevices.some((d) => d.deviceId === dto.deviceId);
+        if (!known) {
+          get().listPairedDevices().catch((e) => {
+            console.debug("[remoteStore] Failed to refresh paired devices:", e);
+          });
+        }
       }
     });
 

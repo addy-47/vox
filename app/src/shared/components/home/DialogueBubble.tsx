@@ -25,11 +25,15 @@ export const DialogueBubble: React.FC<DialogueBubbleProps> = memo(({
   const displayBadge = badge ?? defaultBadge;
 
   useEffect(() => {
+    if (isExpanded) return;
+    if (content.length < 90) {
+      setIsOverflowing((prev) => (prev ? false : prev));
+      return;
+    }
     const el = contentRef.current;
     if (!el) return;
-    if (!isExpanded && el.scrollHeight > el.clientHeight + 4) {
-      setIsOverflowing(true);
-    }
+    const overflows = el.scrollHeight > el.clientHeight + 4;
+    setIsOverflowing((prev) => (prev === overflows ? prev : overflows));
   }, [content, isExpanded]);
 
   return (
