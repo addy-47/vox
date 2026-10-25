@@ -11,7 +11,6 @@ export * from "./PixelSynthesisCanvas";
 export * from "./PersonalMemoryStagingCard";
 export * from "./PersonalMemoryCommentPopover";
 export * from "./PersonalMemoryVersionNav";
-export * from "./SuggestionCard";
 export * from "./LearnedFactsList";
 export * from "./MemoryStates";
 export * from "./PersonalMemoryDossierCard";

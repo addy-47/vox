@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { useLenisScrollContainer } from "@/shared/hooks/useLenisScrollContainer";
 import { cn } from "@/shared/lib/utils";
+import { Tooltip } from "@/shared/ui/Tooltip";
 import { MEMORY_COPY } from "@/data/memoryCopy";
 import {
   buildReviewDocument,
@@ -45,7 +46,7 @@ export interface SuggestionsReviewViewProps {
 
 interface DecisionButtonsProps {
   revisionId: string;
-  decisions: Record<string, "accept" | "reject">;
+  decision?: "accept" | "reject";
   onSelectDecision: (id: string, action: "accept" | "reject") => void;
   acceptTitle: string;
   rejectTitle: string;
@@ -62,50 +63,51 @@ interface DecisionButtonsProps {
  */
 const DecisionButtons = memo(function DecisionButtons({
   revisionId,
-  decisions,
+  decision,
   onSelectDecision,
   acceptTitle,
   rejectTitle,
   disabled,
   failed,
 }: DecisionButtonsProps) {
-const decision = decisions[revisionId];
   return (
     <div className="flex items-center gap-1 shrink-0">
-      <button
-        type="button"
-        onClick={() => onSelectDecision(revisionId, "accept")}
-        disabled={disabled}
-        aria-pressed={decision === "accept"}
-        aria-label={acceptTitle}
-        title={acceptTitle}
-        className={cn(
-          "w-5 h-5 rounded flex items-center justify-center cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed",
-          "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[rgb(var(--accent))]",
-          decision === "accept"
-            ? "bg-[rgba(var(--accent),0.18)] text-[rgb(var(--accent))] border border-[rgba(var(--accent),0.4)]"
-            : "border border-[rgba(var(--border),0.2)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:border-[rgba(var(--accent),0.35)] hover:bg-[rgba(var(--accent),0.08)]"
-        )}
-      >
-        <Check size={11} strokeWidth={2.5} />
-      </button>
-      <button
-        type="button"
-        onClick={() => onSelectDecision(revisionId, "reject")}
-        disabled={disabled}
-        aria-pressed={decision === "reject"}
-        aria-label={rejectTitle}
-        title={rejectTitle}
-        className={cn(
-          "w-5 h-5 rounded flex items-center justify-center cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed",
-          "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[rgb(var(--danger))]",
-          decision === "reject"
-            ? "bg-[rgba(var(--danger),0.16)] text-[rgb(var(--danger))] border border-[rgba(var(--danger),0.45)]"
-            : "border border-[rgba(var(--border),0.2)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--danger))] hover:border-[rgba(var(--danger),0.4)] hover:bg-[rgba(var(--danger),0.08)]"
-        )}
-      >
-        <X size={11} strokeWidth={2.5} />
-      </button>
+      <Tooltip label={acceptTitle}>
+        <button
+          type="button"
+          onClick={() => onSelectDecision(revisionId, "accept")}
+          disabled={disabled}
+          aria-pressed={decision === "accept"}
+          aria-label={acceptTitle}
+          className={cn(
+            "w-5 h-5 rounded flex items-center justify-center cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed",
+            "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[rgb(var(--accent))]",
+            decision === "accept"
+              ? "bg-[rgba(var(--accent),0.18)] text-[rgb(var(--accent))] border border-[rgba(var(--accent),0.4)]"
+              : "border border-[rgba(var(--border),0.2)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:border-[rgba(var(--accent),0.35)] hover:bg-[rgba(var(--accent),0.08)]"
+          )}
+        >
+          <Check size={11} strokeWidth={2.5} />
+        </button>
+      </Tooltip>
+      <Tooltip label={rejectTitle}>
+        <button
+          type="button"
+          onClick={() => onSelectDecision(revisionId, "reject")}
+          disabled={disabled}
+          aria-pressed={decision === "reject"}
+          aria-label={rejectTitle}
+          className={cn(
+            "w-5 h-5 rounded flex items-center justify-center cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed",
+            "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[rgb(var(--danger))]",
+            decision === "reject"
+              ? "bg-[rgba(var(--danger),0.16)] text-[rgb(var(--danger))] border border-[rgba(var(--danger),0.45)]"
+              : "border border-[rgba(var(--border),0.2)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--danger))] hover:border-[rgba(var(--danger),0.4)] hover:bg-[rgba(var(--danger),0.08)]"
+          )}
+        >
+          <X size={11} strokeWidth={2.5} />
+        </button>
+      </Tooltip>
       {failed && (
         <TriangleAlert
           size={11}
@@ -169,10 +171,19 @@ export const SuggestionsReviewView: React.FC<SuggestionsReviewViewProps> = memo(
 
     const { containerRef: scrollRef } = useLenisScrollContainer<HTMLDivElement>();
 
-    const addsCount = useMemo(() => revisions.filter((r) => r.op === "create_block").length, [revisions]);
-    const deletesCount = useMemo(() => revisions.filter((r) => r.op === "delete_block").length, [revisions]);
-    const updatesCount = useMemo(() => revisions.filter((r) => r.op === "update_block").length, [revisions]);
-    const sectionsCount = useMemo(() => revisions.filter((r) => r.op === "create_section").length, [revisions]);
+    const { addsCount, deletesCount, updatesCount, sectionsCount } = useMemo(() => {
+      let adds = 0;
+      let deletes = 0;
+      let updates = 0;
+      let sections = 0;
+      for (const r of revisions) {
+        if (r.op === "create_block") adds++;
+        else if (r.op === "delete_block") deletes++;
+        else if (r.op === "update_block") updates++;
+        else if (r.op === "create_section") sections++;
+      }
+      return { addsCount: adds, deletesCount: deletes, updatesCount: updates, sectionsCount: sections };
+    }, [revisions]);
 
     const anyFailed = Boolean(failedRevisionIds && failedRevisionIds.size > 0);
 
@@ -195,7 +206,7 @@ export const SuggestionsReviewView: React.FC<SuggestionsReviewViewProps> = memo(
       const buttons = (
         <DecisionButtons
           revisionId={entry.revisionId}
-          decisions={decisions}
+          decision={decision}
           onSelectDecision={onSelectDecision}
           disabled={actionsDisabled}
           failed={failed}
@@ -367,7 +378,7 @@ export const SuggestionsReviewView: React.FC<SuggestionsReviewViewProps> = memo(
                   {sec.isNew && sec.revisionId && (
                     <DecisionButtons
                       revisionId={sec.revisionId}
-                      decisions={decisions}
+                      decision={decisions[sec.revisionId]}
                       onSelectDecision={onSelectDecision}
                       disabled={actionsDisabled}
                       failed={Boolean(failedRevisionIds?.has(sec.revisionId))}

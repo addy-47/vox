@@ -486,7 +486,7 @@ export const PairingModal = memo(({ open, onClose }: PairingModalProps) => {
                               <button
                                 type="button"
                                 onClick={generatePairing}
-                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] text-xs font-bold cursor-pointer hover:opacity-90 transition-opacity"
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[rgb(var(--accent))] text-xs font-bold cursor-pointer hover:opacity-90 transition-opacity"
                               >
                                 <RotateCcw size={12} />
                                 Regenerate

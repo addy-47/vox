@@ -19,13 +19,17 @@ import { onMemoryIngestionUpdated, onSessionsChanged } from "@/services/eventsSe
 import { useSettingsStore } from "@/store/settingsStore";
 import { MEMORY_COPY } from "@/data/memoryCopy";
 import { Tooltip } from "@/shared/ui/Tooltip";
+import { useEdgePanelActive } from "@/shared/ui/edgePanelActive";
 import { TimelineQueueSection } from "./timeline/TimelineQueueSection";
 import { SessionAccordionItem } from "./timeline/SessionAccordionItem";
 
 const memoryTimelineScrollTop = { value: 0 };
+const EMPTY_FACTS: ObservationRecord[] = [];
 
 export interface MemoryTimelineProps {
   facts: ObservationRecord[];
+  sessions?: SessionRow[];
+  isLightMode?: boolean;
   selectedSessionId: string | null;
   selectedFactId: string | null;
   onSelectSession: (sessionId: string | null) => void;
@@ -35,13 +39,16 @@ export interface MemoryTimelineProps {
 
 export const MemoryTimeline = memo<MemoryTimelineProps>(({
   facts,
+  sessions: propSessions,
+  isLightMode: propIsLightMode,
   selectedSessionId,
   selectedFactId,
   onSelectSession,
   onSelectFact,
 }) => {
-  const [sessions, setSessions] = useState<SessionRow[]>([]);
-  const [loadingSessions, setLoadingSessions] = useState(true);
+  const panelActive = useEdgePanelActive();
+  const [internalSessions, setInternalSessions] = useState<SessionRow[]>([]);
+  const [loadingInternalSessions, setLoadingInternalSessions] = useState(true);
   const [stats, setStats] = useState<IngestionStats | null>(null);
   const [sessionSearchQuery, setSessionSearchQuery] = useState("");
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -51,16 +58,18 @@ export const MemoryTimeline = memo<MemoryTimelineProps>(({
 
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  const [isLightMode, setIsLightMode] = useState(false);
+  const [localIsLightMode, setLocalIsLightMode] = useState(false);
   useEffect(() => {
+    if (propIsLightMode !== undefined) return;
     const checkTheme = () => {
-      setIsLightMode(document.documentElement.getAttribute("data-theme") === "light");
+      setLocalIsLightMode(document.documentElement.getAttribute("data-theme") === "light");
     };
     checkTheme();
     const obs = new MutationObserver(checkTheme);
     obs.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
     return () => obs.disconnect();
-  }, []);
+  }, [propIsLightMode]);
+  const isLightMode = propIsLightMode ?? localIsLightMode;
 
   const pipelineProcessingEnabled = useSettingsStore(
     (s) => s.settings?.memory.pipeline_processing_enabled ?? true
@@ -68,6 +77,12 @@ export const MemoryTimeline = memo<MemoryTimelineProps>(({
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const scrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const sessions = useMemo(() => {
+    return propSessions ? sortSessionsNewestFirst(propSessions) : internalSessions;
+  }, [propSessions, internalSessions]);
+
+  const loadingSessions = propSessions ? false : loadingInternalSessions;
 
   // Persist scroll offset across drawer close/reopen
   const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
@@ -102,33 +117,36 @@ export const MemoryTimeline = memo<MemoryTimelineProps>(({
   const fetchSessionsList = useCallback(async (force = false) => {
     try {
       const data = force ? await refreshSessions() : await getSessions();
-      setSessions(sortSessionsNewestFirst(data));
+      setInternalSessions(sortSessionsNewestFirst(data));
     } catch (err) {
       console.warn("[MemoryTimeline] Failed to load sessions:", err);
     } finally {
-      setLoadingSessions(false);
+      setLoadingInternalSessions(false);
     }
   }, []);
 
   useEffect(() => {
+    if (!panelActive) return;
     void fetchStats();
-    void fetchSessionsList();
-  }, [fetchStats, fetchSessionsList]);
-
-  useEffect(() => {
     const unlistenStats = onMemoryIngestionUpdated(() => {
       void fetchStats();
     });
-    const unlistenSessions = onSessionsChanged(() => {
-      // Invalidation path: bypass the stale-while-revalidate read.
-      void fetchSessionsList(true);
-    });
-
     return () => {
       unlistenStats();
+    };
+  }, [panelActive, fetchStats]);
+
+  useEffect(() => {
+    if (propSessions !== undefined) return;
+    if (!panelActive) return;
+    void fetchSessionsList();
+    const unlistenSessions = onSessionsChanged(() => {
+      void fetchSessionsList(true);
+    });
+    return () => {
       unlistenSessions();
     };
-  }, [fetchStats, fetchSessionsList]);
+  }, [propSessions, panelActive, fetchSessionsList]);
 
   useEffect(() => {
     if (selectedSessionId) {
@@ -164,16 +182,13 @@ export const MemoryTimeline = memo<MemoryTimelineProps>(({
 
   const handleToggleSession = useCallback(
     (sessionId: number) => {
-      const sIdStr = String(sessionId);
-      if (expandedSessionId === sessionId) {
-        setExpandedSessionId(null);
-        onSelectSession(null);
-      } else {
-        setExpandedSessionId(sessionId);
-        onSelectSession(sIdStr);
-      }
+      setExpandedSessionId((prev) => {
+        const next = prev === sessionId ? null : sessionId;
+        onSelectSession(next ? String(next) : null);
+        return next;
+      });
     },
-    [expandedSessionId, onSelectSession]
+    [onSelectSession]
   );
 
   const filteredSessions = useMemo(() => {
@@ -257,12 +272,12 @@ export const MemoryTimeline = memo<MemoryTimelineProps>(({
           {loadingSessions ? (
             <div className="flex items-center justify-center p-8">
               <span className="text-[11.5px] font-mono text-[rgb(var(--foreground-muted))] animate-pulse">
-                Loading sessions…
+                {MEMORY_COPY.timeline.loadingSessions}
               </span>
             </div>
           ) : filteredSessions.length === 0 ? (
             <span className="px-2 py-4 text-[11.5px] text-[rgb(var(--foreground-muted))]/40 italic text-center">
-              {sessionSearchQuery ? MEMORY_COPY.timeline.noSessionsFound : "No sessions available"}
+              {sessionSearchQuery ? MEMORY_COPY.timeline.noSessionsFound : MEMORY_COPY.timeline.noSessionsAvailable}
             </span>
           ) : (
             <div
@@ -276,7 +291,7 @@ export const MemoryTimeline = memo<MemoryTimelineProps>(({
                 const session = filteredSessions[virtualRow.index];
                 const isExpanded = expandedSessionId === session.id;
                 const isSelectedSession = selectedSessionId !== null && Number(selectedSessionId) === session.id;
-                const sessionFacts = sessionFactsMap.get(session.id) || [];
+                const sessionFacts = sessionFactsMap.get(session.id) || EMPTY_FACTS;
 
                 return (
                   <div
@@ -298,7 +313,7 @@ export const MemoryTimeline = memo<MemoryTimelineProps>(({
                       isSelectedSession={isSelectedSession}
                       selectedFactId={selectedFactId}
                       isLightMode={isLightMode}
-                      onToggle={() => handleToggleSession(session.id)}
+                      onToggle={handleToggleSession}
                       onSelectFact={onSelectFact}
                     />
                   </div>

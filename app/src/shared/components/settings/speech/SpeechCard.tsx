@@ -1,4 +1,4 @@
-import { useState, useEffect, memo } from "react";
+import { useState, useEffect, memo, useCallback, useMemo } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
 import { useCatalogStore } from "@/store/catalogStore";
 import { onSpeechTabRequest } from "@/shared/lib/speechTabSync";
@@ -40,9 +40,15 @@ interface SpeechCardProps {
  * voice, which swaps the whole card face for the voice catalog.
  */
 export const SpeechCard = memo(({ layoutMode = "full-max" }: SpeechCardProps) => {
-  const draftSettings = useSettingsStore((s) => s.draftSettings);
+  const hasDraft = useSettingsStore((s) => Boolean(s.draftSettings));
+  const activeTtsId = useSettingsStore((s) => s.draftSettings?.tts.active.model ?? "");
+  const isRealtime = useSettingsStore((s) => s.draftSettings?.interaction.pipeline_mode === "realtime");
+  const realtimeProvider = useSettingsStore((s) => s.draftSettings?.realtime.active.provider ?? "gemini_live");
+  const isTtsDirty = useSettingsStore((s) => s.isCategoryDirty("tts"));
+  const isSttDirty = useSettingsStore((s) => s.isCategoryDirty("stt"));
+  const isVadDirty = useSettingsStore((s) => s.isCategoryDirty("vad"));
+
   const modelCatalog = useCatalogStore((s) => s.modelCatalog);
-  const isCategoryDirty = useSettingsStore((s) => s.isCategoryDirty);
 
   useEffect(() => {
     if (!modelCatalog) {
@@ -67,18 +73,19 @@ export const SpeechCard = memo(({ layoutMode = "full-max" }: SpeechCardProps) =>
   // Interaction card -> this card. Only the speech stages are shared now.
   useEffect(() => onSpeechTabRequest((tab) => setActiveTab(tab)), []);
 
-  if (!draftSettings) return null;
+  const handleChangeTab = useCallback((id: SpeechTab) => {
+    setActiveTab(id);
+    setVadSettingsOpen(false);
+  }, []);
 
-  const activeTtsId = draftSettings.tts.active.model ?? "";
-
-  const nodes: PipelineTopologyNode<SpeechTab>[] = [
+  const nodes = useMemo<PipelineTopologyNode<SpeechTab>[]>(() => [
     {
       id: "tts",
       label: SPEECH_CARD_COPY.tabs.tts,
       shortLabel: SPEECH_CARD_COPY.tabs.ttsShort,
       caption: SPEECH_CARD_COPY.tabCaptions.tts,
       Icon: AudioLines,
-      isDirty: isCategoryDirty("tts"),
+      isDirty: isTtsDirty,
     },
     {
       id: "stt",
@@ -86,7 +93,7 @@ export const SpeechCard = memo(({ layoutMode = "full-max" }: SpeechCardProps) =>
       shortLabel: SPEECH_CARD_COPY.tabs.sttShort,
       caption: SPEECH_CARD_COPY.tabCaptions.stt,
       Icon: Ear,
-      isDirty: isCategoryDirty("stt"),
+      isDirty: isSttDirty,
     },
     {
       id: "vad",
@@ -94,13 +101,14 @@ export const SpeechCard = memo(({ layoutMode = "full-max" }: SpeechCardProps) =>
       shortLabel: SPEECH_CARD_COPY.tabs.vadShort,
       caption: SPEECH_CARD_COPY.tabCaptions.vad,
       Icon: AudioWaveform,
-      isDirty: isCategoryDirty("vad"),
+      isDirty: isVadDirty,
     },
-  ];
+  ], [isTtsDirty, isSttDirty, isVadDirty]);
 
-  const isRealtime = draftSettings.interaction.pipeline_mode === "realtime";
+  if (!hasDraft) return null;
+
   const activeVoiceProvider = isRealtime
-    ? (draftSettings.realtime.active.provider ?? "gemini_live")
+    ? realtimeProvider
     : activeTtsId;
 
   return (
@@ -131,10 +139,7 @@ export const SpeechCard = memo(({ layoutMode = "full-max" }: SpeechCardProps) =>
           <PipelineTopologyMap
             nodes={nodes}
             activeTab={activeTab}
-            onChangeTab={(id) => {
-              setActiveTab(id);
-              setVadSettingsOpen(false);
-            }}
+            onChangeTab={handleChangeTab}
             layoutMode={layoutMode}
             ariaLabel={SPEECH_CARD_COPY.topologyAria}
           />

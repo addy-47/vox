@@ -472,9 +472,11 @@ export const DictationConfigDesk = memo(({ layoutMode, disabled = false }: Dicta
                     <span>{DICTATION_COPY.savedFeedback}</span>
                   </span>
                 ) : hotkeyError ? (
-                  <span role="alert" className="text-[10px] font-mono font-bold text-[rgb(var(--error))] max-w-[220px] truncate" title={hotkeyError}>
-                    {hotkeyError}
-                  </span>
+                  <Tooltip label={hotkeyError} side="top">
+                    <span role="alert" className="text-[10px] font-mono font-bold text-[rgb(var(--error))] max-w-[220px] truncate cursor-help">
+                      {hotkeyError}
+                    </span>
+                  </Tooltip>
                 ) : !isEditingHotkey && (dictation.hotkey || DEFAULT_HOTKEY) !== DEFAULT_HOTKEY ? (
                   <Tooltip label={DICTATION_COPY.resetDefault} side="bottom" asChild>
                     <button
@@ -495,7 +497,11 @@ export const DictationConfigDesk = memo(({ layoutMode, disabled = false }: Dicta
               <div className="flex items-center gap-1.5 pt-0.5">
                 <span className="flex items-center gap-1 text-[10px] sm:text-[10.5px] font-mono text-[rgb(var(--accent))] font-medium">
                   <Keyboard size={11} className="shrink-0 opacity-85" />
-                  <span>Push-to-Talk active ({dictation.hotkey || DEFAULT_HOTKEY})</span>
+                  <span>
+                    {dictation.interaction_mode === "passive"
+                      ? DICTATION_COPY.continuousActive(dictation.hotkey || DEFAULT_HOTKEY)
+                      : DICTATION_COPY.pttActive(dictation.hotkey || DEFAULT_HOTKEY)}
+                  </span>
                 </span>
               </div>
             </div>

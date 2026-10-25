@@ -3,6 +3,7 @@ import { useSettingsStore } from "@/store/settingsStore";
 import { useSessionStore } from "@/store/sessionStore";
 import { cn } from "@/shared/lib/utils";
 import { MEMORY_CARD_COPY, CUSTOM_VALUE_COPY } from "@/data/settingsCopy";
+import { Tooltip } from "@/shared/ui/Tooltip";
 import { PrivateModeGlyph } from "./PrivateModeGlyph";
 
 export interface MemoryConfigDeskProps {
@@ -378,43 +379,40 @@ export const MemoryConfigDesk = memo(({ view, layoutMode }: MemoryConfigDeskProp
                   </svg>
                 </div>
 
-                <span
-                  className={cn(
-                    "mt-3 px-2.5 py-0.5 rounded-full text-[9px] font-mono font-bold uppercase tracking-[0.14em] leading-none transition-all duration-300",
-                    consolidationCadence === "daily"
-                      ? "text-[rgb(var(--accent))]"
-                      : "text-[rgb(var(--foreground-muted))]/50"
-                  )}
-                >
-                  {consolidationCadence === "daily" ? (
-                    <span
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        timeInputRef.current?.focus();
-                      }}
-                      className="inline-flex items-center gap-1 cursor-text"
-                    >
-                      <input
-                        ref={timeInputRef}
-                        type="text"
-                        inputMode="numeric"
-                        value={timeDraft}
-                        onChange={handleTimeChange}
-                        onBlur={handleTimeBlur}
-                        placeholder="02:00"
-                        maxLength={5}
-                        aria-label={copy.schedule.timeFormatHint}
-                        className="w-[2.8rem] bg-transparent font-mono text-[9px] font-bold outline-none text-[rgb(var(--accent))] text-center tracking-wider caret-[rgb(var(--accent))] cursor-text"
-                      />
-                      <span className="text-[8px] opacity-75">
-                        {formatTimeDisplay(consolidationTime).split(" ")[1]}
-                      </span>
-                    </span>
-                  ) : (
-                    copy.schedule.manualLabel
-                  )}
-                </span>
+                {/* Badge: Manual label when not daily */}
+                {consolidationCadence !== "daily" && (
+                  <span className="mt-3 px-2.5 py-0.5 rounded-full text-[9px] font-mono font-bold uppercase tracking-[0.14em] leading-none transition-all duration-300 text-[rgb(var(--foreground-muted))]/50">
+                    {copy.schedule.manualLabel}
+                  </span>
+                )}
               </button>
+
+              {/* Time input badge — only when daily, outside toggle button */}
+              {consolidationCadence === "daily" && (
+                <button
+                  type="button"
+                  onClick={() => timeInputRef.current?.focus()}
+                  className="mt-0 flex items-center gap-1 px-2.5 py-0.5 rounded-full cursor-text transition-all duration-200 hover:bg-[rgba(var(--accent),0.08)] group/time text-[rgb(var(--accent))]"
+                  tabIndex={-1}
+                  aria-label={copy.schedule.timeFormatHint}
+                >
+                  <input
+                    ref={timeInputRef}
+                    type="text"
+                    inputMode="numeric"
+                    value={timeDraft}
+                    onChange={handleTimeChange}
+                    onBlur={handleTimeBlur}
+                    placeholder="02:00"
+                    maxLength={5}
+                    aria-label={copy.schedule.timeFormatHint}
+                    className="w-[2.8rem] bg-transparent font-mono text-[9px] font-bold outline-none text-[rgb(var(--accent))] text-center tracking-wider caret-[rgb(var(--accent))] cursor-text"
+                  />
+                  <span className="text-[8px] opacity-75 font-mono font-bold">
+                    {formatTimeDisplay(consolidationTime).split(" ")[1]}
+                  </span>
+                </button>
+              )}
             </div>
           </div>
         )}
@@ -432,116 +430,124 @@ export const MemoryConfigDesk = memo(({ view, layoutMode }: MemoryConfigDeskProp
             </div>
 
             <div className={controlColumn}>
-              <button
-                type="button"
-                onClick={() =>
-                  updateDraft(
-                    "memory",
-                    "suggestion_policy",
-                    suggestionPolicy === "auto_apply" ? "manual_review" : "auto_apply"
-                  )
-                }
-                className={cn(
-                  "group flex flex-col items-center shrink-0 select-none cursor-pointer rounded-2xl px-3 py-2 transition-all duration-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(var(--accent))]",
-                  suggestionPolicy === "auto_apply"
-                    ? "text-[rgb(var(--accent))]"
-                    : "text-[rgb(var(--foreground-muted))]/40 hover:text-[rgb(var(--foreground-muted))]/70"
-                )}
-                title={
+              <Tooltip
+                label={
                   suggestionPolicy === "auto_apply"
                     ? "Click to switch to Manual Review"
                     : "Click to switch to Auto-Apply"
                 }
               >
-                <div className="relative w-[48px] h-[48px] transition-transform duration-300 group-hover:scale-105">
-                  <svg
-                    viewBox="0 0 48 48"
-                    className="w-full h-full overflow-visible select-none"
-                    fill="none"
-                    xmlns="http://www.w3.org/2000/svg"
-                  >
-                    <circle
-                      cx="24"
-                      cy="24"
-                      r="20"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.5"
-                      strokeDasharray={suggestionPolicy === "auto_apply" ? "none" : "3 3"}
-                      className={cn(
-                        "transition-opacity duration-300",
-                        suggestionPolicy === "auto_apply" ? "opacity-90" : "opacity-40"
-                      )}
-                    />
-                    <path
-                      d={
-                        suggestionPolicy === "auto_apply"
-                          ? "M 10 24 L 38 24"
-                          : "M 10 24 L 20 24 M 28 24 L 38 24"
-                      }
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.8"
-                      strokeLinecap="round"
-                      className="transition-all duration-300"
-                    />
-                    {suggestionPolicy === "auto_apply" ? (
-                      <>
-                        <path
-                          d="M 32 19 L 37 24 L 32 29"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="1.8"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        />
-                        <circle
-                          cx="24"
-                          cy="24"
-                          r="3.5"
-                          fill="currentColor"
-                          className="animate-pulse"
-                        />
-                      </>
-                    ) : (
-                      <>
-                        <rect
-                          x="20.5"
-                          y="18.5"
-                          width="7"
-                          height="11"
-                          rx="2"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="1.5"
-                        />
-                        <line
-                          x1="24"
-                          y1="22"
-                          x2="24"
-                          y2="26"
-                          stroke="currentColor"
-                          strokeWidth="1.5"
-                          strokeLinecap="round"
-                        />
-                      </>
-                    )}
-                  </svg>
-                </div>
-
-                <span
+                <button
+                  type="button"
+                  onClick={() =>
+                    updateDraft(
+                      "memory",
+                      "suggestion_policy",
+                      suggestionPolicy === "auto_apply" ? "manual_review" : "auto_apply"
+                    )
+                  }
                   className={cn(
-                    "mt-3 px-2.5 py-0.5 rounded-full text-[9px] font-mono font-bold uppercase tracking-[0.1em] leading-none transition-all duration-300",
+                    "group flex flex-col items-center shrink-0 select-none cursor-pointer rounded-2xl px-3 py-2 transition-all duration-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(var(--accent))]",
                     suggestionPolicy === "auto_apply"
-                      ? "text-[rgb(var(--accent))] bg-[rgba(var(--accent),0.1)]"
-                      : "text-[rgb(var(--foreground-muted))]/60 bg-[rgba(var(--foreground),0.03)]"
+                      ? "text-[rgb(var(--accent))]"
+                      : "text-[rgb(var(--foreground-muted))]/40 hover:text-[rgb(var(--foreground-muted))]/70"
                   )}
+                  aria-label={
+                    suggestionPolicy === "auto_apply"
+                      ? "Switch to Manual Review"
+                      : "Switch to Auto-Apply"
+                  }
                 >
-                  {suggestionPolicy === "auto_apply"
-                    ? copy.suggestions.autoLabel
-                    : copy.suggestions.manualLabel}
-                </span>
-              </button>
+                  <div className="relative w-[48px] h-[48px] transition-transform duration-300 group-hover:scale-105">
+                    <svg
+                      viewBox="0 0 48 48"
+                      className="w-full h-full overflow-visible select-none"
+                      fill="none"
+                      xmlns="http://www.w3.org/2000/svg"
+                    >
+                      <circle
+                        cx="24"
+                        cy="24"
+                        r="20"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.5"
+                        strokeDasharray={suggestionPolicy === "auto_apply" ? "none" : "3 3"}
+                        className={cn(
+                          "transition-opacity duration-300",
+                          suggestionPolicy === "auto_apply" ? "opacity-90" : "opacity-40"
+                        )}
+                      />
+                      <path
+                        d={
+                          suggestionPolicy === "auto_apply"
+                            ? "M 10 24 L 38 24"
+                            : "M 10 24 L 20 24 M 28 24 L 38 24"
+                        }
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.8"
+                        strokeLinecap="round"
+                        className="transition-all duration-300"
+                      />
+                      {suggestionPolicy === "auto_apply" ? (
+                        <>
+                          <path
+                            d="M 32 19 L 37 24 L 32 29"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="1.8"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                          <circle
+                            cx="24"
+                            cy="24"
+                            r="3.5"
+                            fill="currentColor"
+                            className="animate-pulse"
+                          />
+                        </>
+                      ) : (
+                        <>
+                          <rect
+                            x="20.5"
+                            y="18.5"
+                            width="7"
+                            height="11"
+                            rx="2"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="1.5"
+                          />
+                          <line
+                            x1="24"
+                            y1="22"
+                            x2="24"
+                            y2="26"
+                            stroke="currentColor"
+                            strokeWidth="1.5"
+                            strokeLinecap="round"
+                          />
+                        </>
+                      )}
+                    </svg>
+                  </div>
+
+                  <span
+                    className={cn(
+                      "mt-3 px-2.5 py-0.5 rounded-full text-[9px] font-mono font-bold uppercase tracking-[0.1em] leading-none transition-all duration-300",
+                      suggestionPolicy === "auto_apply"
+                        ? "text-[rgb(var(--accent))] bg-[rgba(var(--accent),0.1)]"
+                        : "text-[rgb(var(--foreground-muted))]/60 bg-[rgba(var(--foreground),0.03)]"
+                    )}
+                  >
+                    {suggestionPolicy === "auto_apply"
+                      ? copy.suggestions.autoLabel
+                      : copy.suggestions.manualLabel}
+                  </span>
+                </button>
+              </Tooltip>
             </div>
           </div>
         )}

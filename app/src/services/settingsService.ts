@@ -91,6 +91,18 @@ export interface NumericDefaultsContract {
   speed: number;
 }
 
+export interface RealtimeProviderContract {
+  id: string;
+  name: string;
+  url: string;
+  key_placeholder?: string;
+  tagline?: string;
+  logo?: string;
+  voice_field: string;
+  supports_web_search: boolean;
+  supports_agent_mode: boolean;
+}
+
 export interface SettingsContract {
   supported_keys: Record<string, string[]>;
   supported_keys_by_domain?: Record<string, string[]>;
@@ -99,17 +111,7 @@ export interface SettingsContract {
   llm_cloud_providers: LlmCloudProviderContract[];
   tts_providers: ModelGroup[];
   tts_models?: ModelGroup[];
-  realtime_providers?: Array<{
-    id: string;
-    name: string;
-    url: string;
-    key_placeholder?: string;
-    tagline?: string;
-    logo?: string;
-    voice_field: string;
-    supports_web_search: boolean;
-    supports_agent_mode: boolean;
-  }>;
+  realtime_providers?: RealtimeProviderContract[];
   defaults: NumericDefaultsContract;
   numeric_defaults?: NumericDefaultsContract;
 }
@@ -142,6 +144,10 @@ export function getCachedSettingsContract(): SettingsContract | null {
   return cachedContract;
 }
 
+export function getRealtimeProviders(): readonly RealtimeProviderContract[] {
+  return cachedContract?.realtime_providers ?? [];
+}
+
 export function isRestartKey(domain: string, key: string): boolean {
   return cachedContract?.reload_policies?.[domain]?.[key] === "restart";
 }
@@ -167,9 +173,11 @@ export function isSecretKey(domain: string, key: string): boolean {
 export const settingsContractService = {
   getSettingsContract,
   getCachedSettingsContract,
+  getRealtimeProviders,
   isRestartKey,
   getReloadPolicy,
   getSupportedKeys,
   isSecretKey,
 };
+
 

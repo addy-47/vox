@@ -43,8 +43,19 @@ export const SelectableCard = memo(({
 }: SelectableCardProps) => {
   return (
     <div
+      role="button"
+      tabIndex={isComingSoon ? -1 : 0}
+      aria-disabled={isComingSoon}
+      aria-pressed={isSelected}
+      aria-label={name}
       data-card-id={id}
       onClick={isComingSoon ? undefined : onSelect}
+      onKeyDown={(e) => {
+        if ((e.key === "Enter" || e.key === " ") && !isComingSoon) {
+          e.preventDefault();
+          onSelect?.();
+        }
+      }}
       className={cn(
         "relative flex flex-col justify-between p-4.5 rounded-xl border transition-all duration-200 select-none group transform-gpu h-[188px]",
         isComingSoon

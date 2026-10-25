@@ -25,9 +25,7 @@ const ObservationCard = memo(function ObservationCard({
   dimmed: boolean;
   showStatus: boolean;
 }) {
-  // backend-gap: Status nomenclature collision across layers (active in DB vs staged in UI vs pending on wire).
-  // Normalized here until backend unifies on ObservationStatus enum on the IPC wire.
-  const isStaged = fact.status === "active" || (fact.status as string) === "staged";
+  const isStaged = fact.status === "staged" || (fact.status as string) === "active";
   const isPending = fact.status === "pending";
   const isIntegrated = fact.status === "integrated";
 
@@ -37,13 +35,13 @@ const ObservationCard = memo(function ObservationCard({
         "group relative p-3.5 rounded-xl bg-[rgba(var(--card),0.5)] hover:bg-[rgba(var(--card),0.8)]",
         "border border-[rgba(var(--border),0.12)] hover:border-[rgba(var(--accent),0.35)]",
         "flex flex-col justify-between h-[160px] transition-all duration-150 shadow-xs",
-        "select-text",
+        "select-text [contain:content]",
         dimmed && "opacity-60"
       )}
     >
-      <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-0.5">
+      <div className="flex-1 min-h-0 overflow-hidden pr-0.5">
         {/* Fact / Observation Text */}
-        <p className="text-[12px] text-[rgb(var(--foreground))] leading-relaxed font-sans">
+        <p className="text-[12px] text-[rgb(var(--foreground))] leading-relaxed font-sans line-clamp-5">
           {fact.text}
         </p>
       </div>

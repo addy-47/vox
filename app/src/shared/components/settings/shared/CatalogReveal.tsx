@@ -66,34 +66,26 @@ export const CatalogReveal = memo(({
 }: CatalogRevealProps) => {
   const localScrollRef = useRef<HTMLDivElement | null>(null);
   const scrollRef = externalScrollRef ?? localScrollRef;
-  const sentinelRef = useRef<HTMLDivElement | null>(null);
   const [atEnd, setAtEnd] = useState(false);
   const [isScrollable, setIsScrollable] = useState(false);
   const { open, isExpanded } = useExpandableList();
 
   const measure = useCallback(() => {
     const root = scrollRef.current;
-    const sentinel = sentinelRef.current;
-    if (!root || !sentinel) return;
+    if (!root) return;
 
-    const scrollable = root.scrollHeight > root.clientHeight + 4;
-    setIsScrollable(scrollable);
+    const sh = root.scrollHeight;
+    const ch = root.clientHeight;
+    const scrollable = sh > ch + 4;
+    setIsScrollable((prev) => (prev === scrollable ? prev : scrollable));
 
-    if (!scrollable) {
-      setAtEnd(true);
-      return;
-    }
-
-    const rootRect = root.getBoundingClientRect();
-    const sentinelRect = sentinel.getBoundingClientRect();
-    const reachedEnd = sentinelRect.top <= rootRect.bottom + 4;
-    setAtEnd(reachedEnd);
+    const reachedEnd = !scrollable || root.scrollTop + ch >= sh - 4;
+    setAtEnd((prev) => (prev === reachedEnd ? prev : reachedEnd));
   }, [scrollRef]);
 
   useLayoutEffect(() => {
     const root = scrollRef.current;
-    const sentinel = sentinelRef.current;
-    if (!root || !sentinel) return undefined;
+    if (!root) return undefined;
 
     measure();
 
@@ -112,7 +104,6 @@ export const CatalogReveal = memo(({
     <div className={cn("relative flex min-h-0 w-full flex-col", className)}>
       <div ref={scrollRef} className={cn("relative z-0", scrollerClassName)}>
         {children}
-        <div ref={sentinelRef} aria-hidden="true" className="h-px w-full" />
       </div>
 
       {/* Feather: only shown when inline (stands down in modal) and content overflows.

@@ -8,7 +8,7 @@ import { Tooltip } from "@/shared/ui/Tooltip";
 import { REMOTE_CONTROL_COPY } from "@/data/settingsCopy";
 
 export const RemoteDeskPanel = memo(() => {
-  const draftSettings = useSettingsStore((s) => s.draftSettings);
+  const acceptsControllers = useSettingsStore((s) => s.draftSettings?.remote?.accepts_controllers ?? false);
   const updateDraft = useSettingsStore((s) => s.updateDraft);
   const commitChanges = useSettingsStore((s) => s.commitChanges);
 
@@ -19,8 +19,6 @@ export const RemoteDeskPanel = memo(() => {
   const dismissPairingPrompt = useRemoteStore((s) => s.dismissPairingPrompt);
 
   const [isPairingOpen, setIsPairingOpen] = useState(false);
-
-  const acceptsControllers = draftSettings?.remote?.accepts_controllers ?? false;
   const pairedDevice = pairedDevices[0] ?? null;
 
   useEffect(() => {
@@ -64,23 +62,23 @@ export const RemoteDeskPanel = memo(() => {
             REMOTE_CONTROL_COPY.description
           ) : pairedDevice ? (
             <>
-              Connected to{" "}
+              {REMOTE_CONTROL_COPY.connectedTo}{" "}
               <span className="group inline-flex items-center gap-1 align-baseline">
                 <span className="text-[11px] font-mono font-bold text-[rgb(var(--accent))]">
                   {pairedDevice.displayName}
                 </span>
-                <Tooltip label="Revoke device" side="top">
+                <Tooltip label={REMOTE_CONTROL_COPY.revokeDevice} side="top">
                   <button
                     type="button"
                     onClick={() => void handleRevoke(pairedDevice.deviceId)}
                     className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-[rgb(var(--danger))] hover:opacity-100 transition-opacity cursor-pointer inline-flex items-center"
-                    aria-label={`Revoke ${pairedDevice.displayName}`}
+                    aria-label={REMOTE_CONTROL_COPY.revokeDeviceAria(pairedDevice.displayName)}
                   >
                     <Trash2 size={12} />
                   </button>
                 </Tooltip>
               </span>
-              . Wireless audio and session control are active.
+              {REMOTE_CONTROL_COPY.wirelessAudioActive}
             </>
           ) : (
             <>
@@ -90,7 +88,7 @@ export const RemoteDeskPanel = memo(() => {
                 onClick={() => setIsPairingOpen(true)}
                 className="inline-flex items-center gap-1 text-[11px] font-mono font-bold text-[rgb(var(--accent))] hover:text-[rgb(var(--foreground))] hover:underline cursor-pointer transition-colors select-none"
               >
-                Pair new device +
+                {REMOTE_CONTROL_COPY.pairNewDevice}
               </button>
             </>
           )}
@@ -107,10 +105,12 @@ export const RemoteDeskPanel = memo(() => {
         />
       </div>
 
-      <PairingModal
-        open={isPairingOpen || Boolean(pendingPairingPrompt)}
-        onClose={handleClosePairing}
-      />
+      {(isPairingOpen || Boolean(pendingPairingPrompt)) && (
+        <PairingModal
+          open={true}
+          onClose={handleClosePairing}
+        />
+      )}
     </div>
   );
 });

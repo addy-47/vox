@@ -1,4 +1,4 @@
-import React, { memo, useState, useRef, useEffect } from "react";
+import React, { memo, useState, useRef } from "react";
 import {
   Upload,
   Edit3,
@@ -18,6 +18,7 @@ import {
 import { cn } from "@/shared/lib/utils";
 import { MEMORY_COPY } from "@/data/memoryCopy";
 import { Tooltip } from "@/shared/ui/Tooltip";
+import { useOverlay } from "@/shared/hooks/useOverlay";
 import type { StagingMode } from "../stagingTypes";
 import type { ObservationFilter } from "@/shared/hooks/useObservationsList";
 
@@ -70,16 +71,12 @@ export const StagingHeader: React.FC<StagingHeaderProps> = memo(
     const [isFilterOpen, setIsFilterOpen] = useState(false);
     const filterMenuRef = useRef<HTMLDivElement>(null);
 
-    useEffect(() => {
-      if (!isFilterOpen) return;
-      const handleClickOutside = (e: MouseEvent) => {
-        if (filterMenuRef.current && !filterMenuRef.current.contains(e.target as Node)) {
-          setIsFilterOpen(false);
-        }
-      };
-      document.addEventListener("mousedown", handleClickOutside);
-      return () => document.removeEventListener("mousedown", handleClickOutside);
-    }, [isFilterOpen]);
+    useOverlay({
+      active: isFilterOpen,
+      onClose: () => setIsFilterOpen(false),
+      ref: filterMenuRef,
+      dismissOnOutside: true,
+    });
     return (
       <div className="flex items-center justify-between gap-x-4 gap-y-2 flex-wrap border-b border-[rgba(var(--border),0.12)] pb-3.5 min-h-[44px] shrink-0">
         <div className="flex items-center gap-3 min-w-0 flex-1">
@@ -151,22 +148,23 @@ export const StagingHeader: React.FC<StagingHeaderProps> = memo(
             <div className="flex items-center gap-1.5">
               {/* Filter dropdown */}
               <div className="relative" ref={filterMenuRef}>
-                <button
-                  type="button"
-                  onClick={() => setIsFilterOpen((prev) => !prev)}
-                  className={cn(
-                    "flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-mono border transition-colors duration-150 cursor-pointer",
-                    isFilterOpen || (observationFilter && observationFilter !== "all")
-                      ? "bg-[rgba(var(--accent),0.12)] border-[rgba(var(--accent),0.35)] text-[rgb(var(--accent))]"
-                      : "border-[rgba(var(--border),0.18)] bg-[rgba(var(--foreground),0.04)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:border-[rgba(var(--accent),0.3)]"
-                  )}
-                  title={MEMORY_COPY.filterObservations}
-                  aria-expanded={isFilterOpen}
-                >
-                  <Filter size={11} className={observationFilter && observationFilter !== "all" ? "text-[rgb(var(--accent))]" : undefined} />
-                  <span className="capitalize">{observationFilter === "staged" ? MEMORY_COPY.observationFilterStaged : observationFilter === "pending" ? MEMORY_COPY.observationFilterPending : observationFilter === "integrated" ? MEMORY_COPY.observationFilterIntegrated : MEMORY_COPY.observationFilterAll}</span>
-                  <ChevronDown size={11} className={cn("transition-transform duration-150 opacity-70", isFilterOpen && "rotate-180")} />
-                </button>
+                <Tooltip label={MEMORY_COPY.filterObservations}>
+                  <button
+                    type="button"
+                    onClick={() => setIsFilterOpen((prev) => !prev)}
+                    className={cn(
+                      "flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-mono border transition-colors duration-150 cursor-pointer",
+                      isFilterOpen || (observationFilter && observationFilter !== "all")
+                        ? "bg-[rgba(var(--accent),0.12)] border-[rgba(var(--accent),0.35)] text-[rgb(var(--accent))]"
+                        : "border-[rgba(var(--border),0.18)] bg-[rgba(var(--foreground),0.04)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:border-[rgba(var(--accent),0.3)]"
+                    )}
+                    aria-expanded={isFilterOpen}
+                  >
+                    <Filter size={11} className={observationFilter && observationFilter !== "all" ? "text-[rgb(var(--accent))]" : undefined} />
+                    <span className="capitalize">{observationFilter === "staged" ? MEMORY_COPY.observationFilterStaged : observationFilter === "pending" ? MEMORY_COPY.observationFilterPending : observationFilter === "integrated" ? MEMORY_COPY.observationFilterIntegrated : MEMORY_COPY.observationFilterAll}</span>
+                    <ChevronDown size={11} className={cn("transition-transform duration-150 opacity-70", isFilterOpen && "rotate-180")} />
+                  </button>
+                </Tooltip>
 
                 {isFilterOpen && (
                   <div className="absolute right-0 top-full mt-1.5 w-36 py-1 rounded-xl bg-[rgb(var(--card))] border border-[rgba(var(--border),0.2)] shadow-xl z-50">

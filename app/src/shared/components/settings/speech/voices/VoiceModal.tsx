@@ -22,7 +22,6 @@ import {
   Venus,
 } from "lucide-react";
 import { EmptyState } from "@/shared/components/common";
-import { cn } from "@/shared/lib/utils";
 import { VOICE_CATALOG_COPY } from "@/data/settingsCopy";
 import { useSessionStore } from "@/store/sessionStore";
 import type { UnifiedVoiceDto } from "@/services/voicesService";
@@ -34,6 +33,7 @@ import {
 } from "../../shared/CardHeader";
 import { CatalogModalToolbar } from "../../shared/CatalogModalToolbar";
 import { CatalogModalShell } from "../../shared/CatalogModalShell";
+import { CatalogFacetRail, type CatalogFacetGroup } from "../../shared/CatalogFacetRail";
 import { CatalogSkeletonGrid } from "../../shared/CatalogSkeletonGrid";
 import { VoiceCard } from "./VoiceCard";
 import { CloneVoiceCard } from "./CloneVoiceCard";
@@ -309,129 +309,60 @@ export const VoiceModal = memo(
       />
     );
 
+    const handleSelectFacet = useCallback((id: string) => {
+      if (id === "all" || id === "favorites" || id === "recent" || id === "custom") {
+        setScope(id as Scope);
+      } else if (id === "female" || id === "male" || id === "neutral") {
+        setGender((prev) => (prev === id ? null : (id as "female" | "male" | "neutral")));
+      } else if (id === "english" || id === "multilingual") {
+        setAccent((prev) => (prev === id ? null : (id as "english" | "multilingual")));
+      }
+    }, []);
+
+    const voiceFacetGroups = useMemo<CatalogFacetGroup[]>(() => [
+      {
+        id: "scope",
+        items: scopeFilters.map((s) => ({
+          id: s.id,
+          label: s.label,
+          count: s.count,
+          Icon: s.Icon,
+        })),
+      },
+      {
+        id: "gender",
+        title: VOICE_CATALOG_COPY.genderFacet,
+        items: [
+          { id: "female", label: VOICE_CATALOG_COPY.female, count: counts.female, Icon: Venus },
+          { id: "male", label: VOICE_CATALOG_COPY.male, count: counts.male, Icon: Mars },
+          ...(counts.neutral > 0
+            ? [{ id: "neutral", label: VOICE_CATALOG_COPY.neutral, count: counts.neutral, Icon: CircleUserRound }]
+            : []),
+        ],
+      },
+      {
+        id: "accent",
+        title: VOICE_CATALOG_COPY.accentFacet,
+        items: [
+          { id: "english", label: VOICE_CATALOG_COPY.english, count: counts.english, Icon: Type },
+          { id: "multilingual", label: VOICE_CATALOG_COPY.multilingual, count: counts.multilingual, Icon: Languages },
+        ],
+      },
+    ], [scopeFilters, counts]);
+
     const facetRailNode = (
-      <div className="flex flex-col gap-3.5 w-full h-full overflow-y-auto overscroll-contain custom-scrollbar pr-2 py-0.5">
-        {/* Library Section */}
-        <div className="flex flex-col gap-1">
-          {scopeFilters.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => setScope(item.id)}
-              className={cn(
-                "w-full flex items-center justify-between px-3 py-2 rounded-xl text-[13px] transition-all cursor-pointer font-medium",
-                scope === item.id
-                  ? "bg-[rgba(var(--accent),0.12)] text-[rgb(var(--accent))] font-bold shadow-xs"
-                  : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.03)]"
-              )}
-            >
-              <div className="flex items-center gap-2.5 truncate">
-                <item.Icon size={14} className={cn("shrink-0", scope === item.id ? "text-[rgb(var(--accent))]" : "opacity-60")} />
-                <span className="truncate">{item.label}</span>
-              </div>
-              <span className={cn(
-                "text-[10px] font-mono px-1.5 py-0.5 rounded-full font-bold shrink-0",
-                scope === item.id
-                  ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))]"
-                  : "bg-[rgba(var(--foreground),0.06)] text-[rgb(var(--foreground-muted))]"
-              )}>
-                {item.count}
-              </span>
-            </button>
-          ))}
-        </div>
-
-        {/* Gender Section */}
-        <div className="pt-2 border-t border-[rgba(var(--foreground),0.06)] flex flex-col gap-1">
-          <div className="px-2 pb-1 text-[11px] font-mono uppercase tracking-wider text-[rgb(var(--foreground-muted))]/60 font-semibold select-none">
-            {VOICE_CATALOG_COPY.genderFacet}
-          </div>
-          {[
-            { id: "female", label: VOICE_CATALOG_COPY.female, count: counts.female, Icon: Venus },
-            { id: "male", label: VOICE_CATALOG_COPY.male, count: counts.male, Icon: Mars },
-            ...(counts.neutral > 0
-              ? [{ id: "neutral" as const, label: "Neutral", count: counts.neutral, Icon: CircleUserRound }]
-              : []),
-          ].map((item) => {
-            const isActive = gender === item.id;
-            const Icon = item.Icon;
-            return (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => setGender(isActive ? null : item.id)}
-                className={cn(
-                  "w-full flex items-center justify-between px-3 py-1.5 rounded-xl text-[12.5px] transition-all cursor-pointer font-medium",
-                  isActive
-                    ? "bg-[rgba(var(--accent),0.12)] text-[rgb(var(--accent))] font-bold"
-                    : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.03)]"
-                )}
-              >
-                <div className="flex items-center gap-2 truncate">
-                  <Icon size={13} className={cn("shrink-0", isActive ? "text-[rgb(var(--accent))]" : "opacity-60")} />
-                  <span className="truncate">{item.label}</span>
-                </div>
-                <span className={cn(
-                  "text-[10px] font-mono px-1.5 py-0.5 rounded-full shrink-0",
-                  isActive
-                    ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] font-bold"
-                    : "bg-[rgba(var(--foreground),0.05)] text-[rgb(var(--foreground-muted))]"
-                )}>
-                  {item.count}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Accent / Language Section */}
-        <div className="pt-2 border-t border-[rgba(var(--foreground),0.06)] flex flex-col gap-1">
-          <div className="px-2 pb-1 text-[11px] font-mono uppercase tracking-wider text-[rgb(var(--foreground-muted))]/60 font-semibold select-none">
-            {VOICE_CATALOG_COPY.accentFacet}
-          </div>
-          {(
-            [
-              { id: "english", label: VOICE_CATALOG_COPY.english, count: counts.english },
-              { id: "multilingual", label: VOICE_CATALOG_COPY.multilingual, count: counts.multilingual },
-            ] as const
-          ).map((item) => {
-            const isActive = accent === item.id;
-            const Icon = item.id === "english" ? Type : Languages;
-            return (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => setAccent(isActive ? null : item.id)}
-                className={cn(
-                  "w-full flex items-center justify-between px-3 py-1.5 rounded-xl text-[12.5px] transition-all cursor-pointer font-medium",
-                  isActive
-                    ? "bg-[rgba(var(--accent),0.12)] text-[rgb(var(--accent))] font-bold"
-                    : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.03)]"
-                )}
-              >
-                <div className="flex items-center gap-1.5 truncate">
-                  <Icon size={13} className={cn("shrink-0", isActive ? "text-[rgb(var(--accent))]" : "opacity-60")} />
-                  <span className="truncate">{item.label}</span>
-                </div>
-                <span className={cn(
-                  "text-[10px] font-mono px-1.5 py-0.5 rounded-full shrink-0",
-                  isActive
-                    ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] font-bold"
-                    : "bg-[rgba(var(--foreground),0.05)] text-[rgb(var(--foreground-muted))]"
-                )}>
-                  {item.count}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-
-        {canClone && (
-          <p className="mt-auto pt-3 px-2 text-[11px] leading-relaxed text-[rgb(var(--foreground-muted))]/70 border-t border-[rgba(var(--foreground),0.06)]">
-            {VOICE_CATALOG_COPY.cloneVoiceChatterboxNote}
-          </p>
-        )}
-      </div>
+      <CatalogFacetRail
+        groups={voiceFacetGroups}
+        selectedId={gender ?? accent ?? scope}
+        onSelect={handleSelectFacet}
+        footer={
+          canClone ? (
+            <p className="mt-auto pt-3 px-2 text-[11px] leading-relaxed text-[rgb(var(--foreground-muted))]/70 border-t border-[rgba(var(--foreground),0.06)]">
+              {VOICE_CATALOG_COPY.cloneVoiceChatterboxNote}
+            </p>
+          ) : undefined
+        }
+      />
     );
 
     const emptyStateNode = (

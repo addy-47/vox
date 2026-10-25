@@ -301,15 +301,15 @@ export const VoiceCatalogView = memo(({ layoutMode, providerId, onBack }: VoiceC
             <EmptyState
               size="sm"
               icon={voices.length === 0 ? AudioLines : Search}
-              title={voices.length === 0 ? VOICE_CATALOG_COPY.emptyTitle : "No Voices Found"}
+              title={VOICE_CATALOG_COPY.emptyTitle}
               description={
                 voices.length === 0
                   ? scope.cloud_sync
                     ? VOICE_CATALOG_COPY.edgeSyncHint
-                    : "No voices available for this provider. Configure an API key or check provider connection."
+                    : VOICE_CATALOG_COPY.noVoicesAvailable
                   : search
-                  ? `No voices match "${search}" or active filters.`
-                  : "No voices match the selected filters."
+                  ? VOICE_CATALOG_COPY.noVoicesMatchSearch(search)
+                  : VOICE_CATALOG_COPY.noVoicesMatchFilters
               }
               action={
                 voices.length > 0 ? (
@@ -342,7 +342,7 @@ export const VoiceCatalogView = memo(({ layoutMode, providerId, onBack }: VoiceC
                   : "grid auto-rows-max content-start gap-2 min-h-full w-full grid-cols-1 sm:grid-cols-2"
               }
             >
-              {filteredVoices.map((v) => (
+              {filteredVoices.slice(0, 24).map((v) => (
                 <VoiceCard
                   key={v.id}
                   voice={v}
