@@ -1,6 +1,7 @@
 import { memo, useState, useEffect, useCallback, useRef } from "react";
 import { Shield, Mic, Play, Command, BarChart3, Clock, Check, X } from "lucide-react";
 import { Modal } from "@/shared/ui/Modal";
+import { cn } from "@/shared/lib/utils";
 
 export interface AuthorizeDeviceContentProps {
   deviceName?: string;
@@ -95,23 +96,21 @@ export const AuthorizeDeviceContent = memo(
       <div className="flex flex-col justify-between h-full p-6 sm:p-8 md:p-9 select-none">
         {/* Header */}
         <div className="flex items-start justify-between gap-4">
-          <div className="flex items-start gap-3">
-            <div className="text-[rgb(var(--accent))] shrink-0 mt-0.5">
-              <Shield size={24} className="text-[rgb(var(--accent))]" />
-            </div>
-            <div className="flex flex-col min-w-0">
+          <div className="flex flex-col min-w-0">
+            <div className="flex items-center gap-1.5 text-[rgb(var(--accent))]">
+              <Shield size={14} className="shrink-0 text-[rgb(var(--accent))]" />
               <span className="text-[11px] font-mono tracking-[0.2em] uppercase font-bold text-[rgb(var(--accent))]">
                 REMOTE CONTROL
               </span>
-              <h2 className="text-2xl sm:text-[26px] font-bold tracking-tight text-[rgb(var(--foreground))] mt-0.5">
-                Authorize Remote Device
-              </h2>
-              <p className="text-[12.5px] text-[rgb(var(--foreground-muted))] mt-1 leading-normal max-w-[480px]">
-                {deviceName
-                  ? `${deviceName} is requesting permission to control Vox over your local Wi-Fi network.`
-                  : "A companion device is requesting permission to control Vox over your local Wi-Fi network."}
-              </p>
             </div>
+            <h2 className="text-2xl sm:text-[26px] font-bold tracking-tight text-[rgb(var(--foreground))] mt-1">
+              Authorize Remote Device
+            </h2>
+            <p className="text-[12.5px] text-[rgb(var(--foreground-muted))] mt-1 leading-normal max-w-[480px]">
+              {deviceName
+                ? `${deviceName} is requesting permission to control Vox over your local Wi-Fi network.`
+                : "A companion device is requesting permission to control Vox over your local Wi-Fi network."}
+            </p>
           </div>
 
           <button
@@ -309,11 +308,30 @@ export const AuthorizeDeviceContent = memo(
             {/* Countdown Timer */}
             <div className="flex flex-col items-center mt-3 text-center">
               <div className="flex items-center gap-1.5 text-[rgb(var(--foreground-muted))] text-[12px] font-medium">
-                <Clock size={13} className="text-[rgb(var(--accent))]" />
+                <Clock
+                  size={13}
+                  className={cn(
+                    "transition-colors",
+                    secondsLeft <= 5 && secondsLeft > 0
+                      ? "text-[rgb(var(--error))]"
+                      : secondsLeft <= 20 && secondsLeft > 0
+                      ? "text-[rgb(var(--warning))]"
+                      : "text-[rgb(var(--accent))]"
+                  )}
+                />
                 <span>Request expires in</span>
               </div>
 
-              <span className="text-3xl font-mono font-bold tracking-wider text-[rgb(var(--foreground))] mt-1">
+              <span
+                className={cn(
+                  "text-3xl font-mono font-bold tracking-wider mt-1 transition-colors",
+                  secondsLeft <= 5 && secondsLeft > 0
+                    ? "text-[rgb(var(--error))]"
+                    : secondsLeft <= 20 && secondsLeft > 0
+                    ? "text-[rgb(var(--warning))]"
+                    : "text-[rgb(var(--foreground))]"
+                )}
+              >
                 {formattedTime}
               </span>
 

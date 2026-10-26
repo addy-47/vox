@@ -1,10 +1,8 @@
 import { memo, useState, useCallback, useEffect } from "react";
-import { Trash2 } from "lucide-react";
 import { useSettingsStore } from "@/store/settingsStore";
 import { useRemoteStore } from "@/store/remoteStore";
 import { RemoteControlGlyph } from "./RemoteControlGlyph";
 import { ConfirmModal } from "@/shared/ui/ConfirmModal";
-import { Tooltip } from "@/shared/ui/Tooltip";
 import { REMOTE_CONTROL_COPY } from "@/data/settingsCopy";
 
 export const RemoteDeskPanel = memo(() => {
@@ -62,43 +60,34 @@ export const RemoteDeskPanel = memo(() => {
             REMOTE_CONTROL_COPY.description
           ) : linkState === "Connected" && pairedDevice ? (
             <>
-              {REMOTE_CONTROL_COPY.connectedTo}{" "}
-              <span className="group inline-flex items-center gap-1.5 align-baseline">
-                <span className="text-[11px] font-mono font-bold text-[rgb(var(--accent))]">
-                  {pairedDevice.displayName}
-                </span>
-                <Tooltip label={REMOTE_CONTROL_COPY.revokeDevice} side="top">
-                  <button
-                    type="button"
-                    onClick={() => setIsConfirmRevokeOpen(true)}
-                    className="p-1 rounded-md text-[rgb(var(--danger))] hover:bg-[rgba(var(--danger),0.12)] active:scale-95 cursor-pointer transition-all inline-flex items-center opacity-80 group-hover:opacity-100"
-                    aria-label={REMOTE_CONTROL_COPY.revokeDeviceAria(pairedDevice.displayName)}
-                  >
-                    <Trash2 size={12} />
-                  </button>
-                </Tooltip>
+              {REMOTE_CONTROL_COPY.connectedTo} {pairedDevice.displayName}
+              {REMOTE_CONTROL_COPY.wirelessAudioActive}{" "}
+              <button
+                type="button"
+                onClick={() => setIsConfirmRevokeOpen(true)}
+                className="inline-flex items-center gap-1 text-[11px] font-mono font-bold text-[rgb(var(--danger))] hover:underline cursor-pointer transition-colors select-none"
+                aria-label={REMOTE_CONTROL_COPY.revokeDeviceAria(pairedDevice.displayName)}
+              >
+                {REMOTE_CONTROL_COPY.revokeDevice}
+              </button>{" "}
+              <span className="text-[11px] font-medium text-[rgb(var(--foreground-muted))]">
+                ({pairedDevice.displayName})
               </span>
-              {REMOTE_CONTROL_COPY.wirelessAudioActive}
             </>
           ) : linkState === "Paired" && pairedDevice ? (
             <>
-              Paired with{" "}
-              <span className="group inline-flex items-center gap-1.5 align-baseline">
-                <span className="text-[11px] font-mono font-bold text-[rgb(var(--accent))]">
-                  {pairedDevice.displayName}
-                </span>
-                <Tooltip label={REMOTE_CONTROL_COPY.revokeDevice} side="top">
-                  <button
-                    type="button"
-                    onClick={() => setIsConfirmRevokeOpen(true)}
-                    className="p-1 rounded-md text-[rgb(var(--danger))] hover:bg-[rgba(var(--danger),0.12)] active:scale-95 cursor-pointer transition-all inline-flex items-center opacity-80 group-hover:opacity-100"
-                    aria-label={REMOTE_CONTROL_COPY.revokeDeviceAria(pairedDevice.displayName)}
-                  >
-                    <Trash2 size={12} />
-                  </button>
-                </Tooltip>
+              Paired with {pairedDevice.displayName}. Idle on local Wi-Fi.{" "}
+              <button
+                type="button"
+                onClick={() => setIsConfirmRevokeOpen(true)}
+                className="inline-flex items-center gap-1 text-[11px] font-mono font-bold text-[rgb(var(--danger))] hover:underline cursor-pointer transition-colors select-none"
+                aria-label={REMOTE_CONTROL_COPY.revokeDeviceAria(pairedDevice.displayName)}
+              >
+                {REMOTE_CONTROL_COPY.revokeDevice}
+              </button>{" "}
+              <span className="text-[11px] font-medium text-[rgb(var(--foreground-muted))]">
+                ({pairedDevice.displayName})
               </span>
-              . Idle on local Wi-Fi.
             </>
           ) : (
             <>

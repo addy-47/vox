@@ -16,6 +16,7 @@ import {
 } from "@/shared/lib/voiceDisplay";
 import { useSessionStore } from "@/store/sessionStore";
 import { resolveActivityDisplay, type ActivityDisplayConfig } from "@/shared/lib/activityRegistry";
+import { useRemoteGuard } from "@/shared/hooks/useRemoteGuard";
 import { isMobileWidth } from "@/layout/breakpoints";
 import { installViewportResizeGate, subscribeViewportFrame } from "@/layout/viewportResize";
 
@@ -82,10 +83,19 @@ export function useHomePage() {
 
   const activeActivity = useSessionStore((s) => s.activeActivity);
 
-  const activityDisplay = useMemo(
-    () => resolveActivityDisplay(interactionState, activeActivity, isEngaged, isSleeping, isPaused),
-    [interactionState, activeActivity, isEngaged, isSleeping, isPaused]
-  );
+  const { isBlocked: isRemoteBlocked } = useRemoteGuard();
+
+  const activityDisplay = useMemo(() => {
+    if (isRemoteBlocked) {
+      return {
+        label: "Remote Session",
+        orbState: "sleeping",
+        motionPreset: "silk" as const,
+        shimmer: false,
+      };
+    }
+    return resolveActivityDisplay(interactionState, activeActivity, isEngaged, isSleeping, isPaused);
+  }, [interactionState, activeActivity, isEngaged, isSleeping, isPaused, isRemoteBlocked]);
 
   const shouldAutoScrollRef = useRef(true);
 
@@ -160,5 +170,6 @@ export function useHomePage() {
     isMobileScreen,
     activityDisplay,
     activeActivity,
+    isRemoteBlocked,
   };
 }

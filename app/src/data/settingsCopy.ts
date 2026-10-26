@@ -428,6 +428,8 @@ export const REMOTE_CONTROL_COPY = {
   pairNewDevice: "Pair new device +",
   revokeDevice: "Revoke device",
   revokeDeviceAria: (name: string) => `Revoke ${name}`,
+  revokeHost: "Revoke host",
+  revokeHostAria: (name: string) => `Revoke ${name}`,
   scanQrPrompt: "Scan QR Code to Pair",
   scanQrButton: "Scan QR",
   connectedHost: "Connected Host",

@@ -235,7 +235,7 @@ impl AppState {
             event_tx: ParkingMutex::new(None),
             pipeline_accumulator: Arc::new(ParkingMutex::new(TurnAccumulator::new())),
             turn_metrics: Arc::new(TurnMetricsCollector::new()),
-            db,
+            db: db.clone(),
             restart_requested: Arc::new(AtomicBool::new(false)),
             restart_runner: Arc::new(AtomicBool::new(false)),
             worker_warmup_claimed: Arc::new(AtomicBool::new(false)),
@@ -290,6 +290,7 @@ impl AppState {
 
                 let manager = Arc::new(RemoteSessionManager::with_callback(
                     session_role,
+                    Arc::clone(&db),
                     on_state_change,
                 ));
 

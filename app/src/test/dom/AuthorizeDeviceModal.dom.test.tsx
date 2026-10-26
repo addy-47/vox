@@ -67,22 +67,31 @@ describe("AuthorizeDeviceModal DOM suite (Image 3 Specification)", () => {
     render(
       <AuthorizeDeviceModal
         open={true}
-        timeoutSeconds={10}
+        timeoutSeconds={25}
         onApprove={vi.fn()}
         onDeny={onDeny}
         onClose={onClose}
       />
     );
 
-    expect(screen.getByText("00:10")).toBeTruthy();
+    const timerSpan = screen.getByText("00:25");
+    expect(timerSpan.className).not.toContain("var(--warning)");
+    expect(timerSpan.className).not.toContain("var(--error)");
 
     act(() => {
-      vi.advanceTimersByTime(3000);
+      vi.advanceTimersByTime(6000);
     });
-    expect(screen.getByText("00:07")).toBeTruthy();
+    const warningSpan = screen.getByText("00:19");
+    expect(warningSpan.className).toContain("text-[rgb(var(--warning))]");
+
+    act(() => {
+      vi.advanceTimersByTime(15000);
+    });
+    const errorSpan = screen.getByText("00:04");
+    expect(errorSpan.className).toContain("text-[rgb(var(--error))]");
 
     await act(async () => {
-      vi.advanceTimersByTime(7000);
+      vi.advanceTimersByTime(4000);
     });
 
     expect(onDeny).toHaveBeenCalledTimes(1);

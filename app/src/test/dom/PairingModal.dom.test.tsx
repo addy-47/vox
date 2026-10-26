@@ -66,15 +66,30 @@ describe("PairingModal DOM suite", () => {
 
     expect(screen.getByText("2:00")).toBeTruthy();
 
-    // Advance 1 second
+    // Advance 1 second: 1:59 remaining (foreground color)
     act(() => {
       vi.advanceTimersByTime(1000);
     });
-    expect(screen.getByText("1:59")).toBeTruthy();
+    const timerText = screen.getByText("1:59");
+    expect(timerText.className).toContain("text-[rgb(var(--foreground))]");
 
-    // Advance remaining 119 seconds
+    // Advance to 20 seconds remaining (100 seconds advanced: 120 - 100 = 20)
     act(() => {
-      vi.advanceTimersByTime(119_000);
+      vi.advanceTimersByTime(99_000);
+    });
+    const warningText = screen.getByText("0:20");
+    expect(warningText.className).toContain("text-[rgb(var(--warning))]");
+
+    // Advance to 5 seconds remaining (15 more seconds advanced: 20 - 15 = 5)
+    act(() => {
+      vi.advanceTimersByTime(15_000);
+    });
+    const errorText = screen.getByText("0:05");
+    expect(errorText.className).toContain("text-[rgb(var(--error))]");
+
+    // Advance remaining 5 seconds to hit 0
+    act(() => {
+      vi.advanceTimersByTime(5000);
     });
 
     expect(screen.getByText("QR Code Expired")).toBeTruthy();
@@ -164,8 +179,12 @@ describe("PairingModal DOM suite", () => {
       await Promise.resolve();
     });
 
-    // Initially in QR view
+    // Initially in QR view with header parity
+    expect(screen.getByText("REMOTE CONTROL")).toBeTruthy();
     expect(screen.getByText("Pair Mobile Controller")).toBeTruthy();
+    expect(
+      screen.getByText("Scan this QR code from the Vox mobile app to link your devices over local Wi-Fi.")
+    ).toBeTruthy();
     expect(screen.getByAltText("Remote Pairing QR Code")).toBeTruthy();
 
     // Host receives remote_pairing_requested

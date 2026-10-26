@@ -499,7 +499,7 @@ export const QrScannerModal = memo(
         onClose={handleClose}
         icon={
           linkState === "Connected" ? (
-            <CheckCircle2 size={18} className="text-[rgb(var(--success))] shrink-0" />
+            <CheckCircle2 size={18} className="text-[rgb(var(--accent))] shrink-0" />
           ) : (
             <ScanLine size={18} className="text-[rgb(var(--accent))] shrink-0" />
           )
@@ -542,57 +542,72 @@ export const QrScannerModal = memo(
         position="global"
         fitContent
         className="max-w-md w-[94vw] sm:w-full overflow-hidden"
-        footer={
-          scanError ? (
-            <div className="p-3 sm:p-4 border-t border-[rgba(var(--border),0.08)] bg-[rgba(var(--card),0.6)] backdrop-blur-md">
-              <div className="flex items-start sm:items-center justify-between gap-3 p-3 rounded-xl bg-[rgba(var(--error),0.08)] border border-[rgba(var(--error),0.2)] animate-fade-in">
-                <div className="flex items-start gap-2.5 min-w-0 flex-1">
-                  <WifiOff size={16} className="text-[rgb(var(--error))] shrink-0 mt-0.5 sm:mt-0" />
-                  <div className="flex flex-col min-w-0">
-                    {(() => {
-                      const errInfo = getErrorMessage(failureKind, scanError);
-                      return (
-                        <>
-                          <span className="text-xs font-semibold text-[rgb(var(--foreground))] break-words">
-                            {errInfo.title}
-                          </span>
-                          {errInfo.hint && (
-                            <span className="text-[11px] text-[rgb(var(--foreground-muted))] leading-tight mt-0.5">
-                              {errInfo.hint}
-                            </span>
-                          )}
-                        </>
-                      );
-                    })()}
-                  </div>
-                </div>
+      >
+        <div className="flex flex-col p-5 sm:p-6 gap-4">
+          {scanError ? (
+            /* Explicit In-Modal Failure Alert & Retry View */
+            <div className="min-h-[280px] flex flex-col items-center justify-center p-6 text-center gap-4 animate-fade-in my-auto">
+              <div className="w-14 h-14 rounded-2xl bg-[rgba(var(--error),0.12)] border border-[rgba(var(--error),0.25)] flex items-center justify-center text-[rgb(var(--error))] shadow-[0_0_24px_rgba(var(--error),0.15)]">
+                <WifiOff size={28} strokeWidth={2.2} />
+              </div>
+              <div className="flex flex-col items-center gap-1.5 max-w-sm">
+                {(() => {
+                  const errInfo = getErrorMessage(failureKind, scanError);
+                  return (
+                    <>
+                      <h3 className="text-base sm:text-lg font-bold text-[rgb(var(--foreground))]">
+                        {errInfo.title}
+                      </h3>
+                      {errInfo.hint ? (
+                        <p className="text-xs sm:text-sm text-[rgb(var(--foreground-muted))] leading-relaxed">
+                          {errInfo.hint}
+                        </p>
+                      ) : null}
+                      {scanError && errInfo.title !== scanError && (
+                        <span className="text-xs font-mono text-[rgb(var(--foreground-muted))]/80 mt-1 break-words">
+                          {scanError}
+                        </span>
+                      )}
+                    </>
+                  );
+                })()}
+              </div>
+              <div className="flex flex-col sm:flex-row items-center gap-2.5 w-full max-w-xs mt-3">
                 <button
                   type="button"
                   onClick={() => {
                     setScanError(null);
                     setScannedSuccess(false);
+                    setConnecting(false);
                     if (!isManual) void startCamera();
                   }}
-                  className="px-3 py-1.5 rounded-lg bg-[rgba(var(--error),0.18)] hover:bg-[rgba(var(--error),0.28)] text-[rgb(var(--foreground))] text-xs font-semibold shrink-0 cursor-pointer transition-colors"
+                  className="w-full h-11 inline-flex items-center justify-center gap-2 rounded-xl bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] text-sm font-bold hover:opacity-90 transition-opacity cursor-pointer shadow-md"
                 >
-                  Retry
+                  <RotateCcw size={16} strokeWidth={2.2} />
+                  Scan Again / Retry
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setScanError(null);
+                    setIsManual(true);
+                  }}
+                  className="w-full sm:w-auto h-11 px-4 inline-flex items-center justify-center text-xs font-semibold text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors cursor-pointer"
+                >
+                  Manual IP
                 </button>
               </div>
             </div>
-          ) : undefined
-        }
-      >
-        <div className="flex flex-col p-5 sm:p-6 gap-4">
-          {linkState === "Paired" || linkState === "Connected" ? (
+          ) : linkState === "Paired" || linkState === "Connected" ? (
             /* Paired Celebration State */
             <div className="h-64 flex flex-col items-center justify-center gap-3 animate-fade-in text-center p-4">
-              <div className="w-14 h-14 rounded-2xl bg-[rgba(var(--success),0.12)] border border-[rgba(var(--success),0.25)] flex items-center justify-center text-[rgb(var(--success))] shadow-[0_0_24px_rgba(var(--success),0.15)] animate-in zoom-in-95 duration-200">
+              <div className="w-14 h-14 rounded-2xl bg-[rgba(var(--accent),0.12)] border border-[rgba(var(--accent),0.25)] flex items-center justify-center text-[rgb(var(--accent))] shadow-[0_0_24px_rgba(var(--accent),0.2)] animate-in zoom-in-95 duration-200">
                 <CheckCircle2 size={32} strokeWidth={2.5} />
               </div>
-              <h3 className="text-sm font-bold text-[rgb(var(--foreground))]">
+              <h3 className="text-base font-bold text-[rgb(var(--foreground))]">
                 Host Paired Successfully
               </h3>
-              <p className="text-xs text-[rgb(var(--foreground-muted))] max-w-xs">
+              <p className="text-xs sm:text-sm text-[rgb(var(--foreground-muted))] max-w-xs leading-relaxed">
                 Your device is paired with the host. Tap the rocket icon on the home screen to connect anytime.
               </p>
             </div>
@@ -600,12 +615,12 @@ export const QrScannerModal = memo(
             /* Connecting & Pairing Progression State */
             <div className="h-64 flex flex-col items-center justify-center gap-3 animate-fade-in text-center p-4">
               <OrbitalLoader size="lg" />
-              <span className="text-xs font-mono font-medium text-[rgb(var(--foreground))]">
+              <span className="text-sm font-mono font-medium text-[rgb(var(--foreground))]">
                 {isPairingPending
                   ? "Waiting for Approval..."
                   : "Establishing Connection..."}
               </span>
-              <span className="text-[11px] font-mono text-[rgb(var(--foreground-muted))]/70 max-w-xs">
+              <span className="text-xs font-mono text-[rgb(var(--foreground-muted))]/70 max-w-xs">
                 {isPairingPending
                   ? "Please approve the prompt on your desktop screen."
                   : "Pairing with host..."}
@@ -626,13 +641,13 @@ export const QrScannerModal = memo(
                 </div>
               )}
 
-              <div className="space-y-1.5">
-                <label className="block text-xs font-semibold text-[rgb(var(--foreground))]">
+              <div className="space-y-2">
+                <label className="block text-xs sm:text-sm font-semibold text-[rgb(var(--foreground))]">
                   Desktop Host Address
                 </label>
                 <div className="relative flex items-center">
                   <div className="absolute left-3 text-[rgb(var(--foreground-muted))] pointer-events-none">
-                    <Wifi size={14} />
+                    <Wifi size={16} />
                   </div>
                   <input
                     type="text"
@@ -644,13 +659,13 @@ export const QrScannerModal = memo(
                       }
                     }}
                     placeholder="192.168.1.42:7700"
-                    className="w-full h-10 pl-9 pr-3 rounded-lg bg-[rgba(var(--foreground),0.04)] border border-[rgba(var(--border),0.12)] text-xs font-mono text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40 focus:outline-none focus:border-[rgb(var(--accent))] focus:ring-1 focus:ring-[rgb(var(--accent))] transition-colors"
+                    className="w-full h-11 pl-10 pr-3 rounded-xl bg-[rgba(var(--foreground),0.04)] border border-[rgba(var(--border),0.12)] text-xs sm:text-sm font-mono text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40 focus:outline-none focus:border-[rgb(var(--accent))] focus:ring-1 focus:ring-[rgb(var(--accent))] transition-colors"
                     autoFocus
                   />
                 </div>
-                <p className="text-[11px] text-[rgb(var(--foreground-muted))] pt-0.5">
+                <p className="text-[11px] sm:text-xs text-[rgb(var(--foreground-muted))] pt-0.5">
                   Shown under the QR code in{" "}
-                  <span className="text-[rgb(var(--foreground))] font-medium">
+                  <span className="text-[rgb(var(--foreground))] font-semibold">
                     Settings → Remote Control
                   </span>{" "}
                   on desktop.
@@ -662,10 +677,10 @@ export const QrScannerModal = memo(
                   type="button"
                   disabled={!manualAddress.trim()}
                   onClick={() => void handlePair({ address: manualAddress.trim() })}
-                  className="w-full h-10 inline-flex items-center justify-center gap-2 rounded-lg bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] text-xs font-bold hover:opacity-90 disabled:opacity-40 transition-opacity cursor-pointer shadow-sm"
+                  className="w-full h-11 inline-flex items-center justify-center gap-2 rounded-xl bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] text-xs sm:text-sm font-bold hover:opacity-90 disabled:opacity-40 transition-opacity cursor-pointer shadow-sm"
                 >
                   Connect to Host
-                  <ArrowRight size={14} strokeWidth={2.5} />
+                  <ArrowRight size={15} strokeWidth={2.5} />
                 </button>
 
                 {!cameraError && (
@@ -774,9 +789,9 @@ export const QrScannerModal = memo(
                   <div className="absolute inset-0 bg-black/75 flex flex-col items-center justify-center gap-2 z-20 animate-fade-in">
                     <CheckCircle2
                       size={42}
-                      className="text-[rgb(var(--success))]"
+                      className="text-[rgb(var(--accent))]"
                     />
-                    <span className="text-xs font-bold text-white tracking-wide">
+                    <span className="text-sm font-bold text-white tracking-wide">
                       Host QR Detected
                     </span>
                   </div>
@@ -785,9 +800,9 @@ export const QrScannerModal = memo(
 
               {/* Bottom Guidance & Action Controls */}
               <div className="flex flex-col gap-3 pt-1">
-                <p className="text-xs text-center text-[rgb(var(--foreground-muted))] leading-relaxed max-w-xs mx-auto">
+                <p className="text-xs sm:text-[13px] text-center text-[rgb(var(--foreground-muted))] leading-relaxed max-w-xs mx-auto">
                   Aim your camera at the QR code shown on desktop under{" "}
-                  <span className="text-[rgb(var(--foreground))] font-medium">
+                  <span className="text-[rgb(var(--foreground))] font-semibold">
                     Settings → Remote Control
                   </span>
                   .
@@ -797,10 +812,10 @@ export const QrScannerModal = memo(
                   <button
                     type="button"
                     onClick={() => setIsManual(true)}
-                    className="flex-1 h-10 inline-flex items-center justify-center gap-2 px-4 rounded-lg bg-[rgba(var(--foreground),0.05)] hover:bg-[rgba(var(--foreground),0.09)] border border-[rgba(var(--border),0.08)] text-xs font-semibold text-[rgb(var(--foreground))] transition-colors cursor-pointer"
+                    className="flex-1 h-11 inline-flex items-center justify-center gap-2 px-4 rounded-xl bg-[rgba(var(--foreground),0.05)] hover:bg-[rgba(var(--foreground),0.09)] border border-[rgba(var(--border),0.08)] text-xs sm:text-sm font-semibold text-[rgb(var(--foreground))] transition-colors cursor-pointer"
                   >
                     <Wifi
-                      size={14}
+                      size={15}
                       className="text-[rgb(var(--accent))] shrink-0"
                     />
                     Enter IP Manually

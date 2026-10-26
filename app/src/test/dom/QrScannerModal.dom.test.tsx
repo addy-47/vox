@@ -152,6 +152,10 @@ describe("QrScannerModal DOM suite", () => {
 
     // Immediately after transition, celebration shows and waits 800ms
     expect(screen.getAllByText("Host Paired Successfully").length).toBeGreaterThan(0);
+    // Verify accent token classes per Ticket 13
+    const celebrationWrapper = document.querySelector(".bg-\\[rgba\\(var\\(--accent\\)\\,0\\.12\\)\\]");
+    expect(celebrationWrapper).toBeTruthy();
+    expect(document.querySelector(".text-\\[rgb\\(var\\(--success\\)\\]")).toBeNull();
     expect(onClose).not.toHaveBeenCalled();
 
     // Advance timers by 800ms
@@ -201,8 +205,19 @@ describe("QrScannerModal DOM suite", () => {
       });
     });
 
-    // Assert error message is displayed in DOM
+    // Assert error message and explicit retry button are displayed in DOM
     expect(screen.getByText("Pairing denied by host: rejected by user")).toBeTruthy();
+    const retryBtn = screen.getByRole("button", { name: /Scan Again \/ Retry/i });
+    expect(retryBtn).toBeTruthy();
+
+    // Clicking retry resets scan error and restarts camera
+    await act(async () => {
+      fireEvent.click(retryBtn);
+      await vi.advanceTimersByTimeAsync(200);
+    });
+
+    // Error alert is cleared
+    expect(screen.queryByText("Pairing denied by host: rejected by user")).toBeNull();
 
     // Advance timers — modal must NOT auto-close on error
     act(() => {
