@@ -6,10 +6,14 @@ import {
   type RemoteStateDto,
   type PairNewDeviceDto,
   type PairedDeviceDto,
+  type PairedDeviceDto as PairedDeviceDtoAlias,
   type RemotePairingRequestedPayload,
   type CommandClass,
   type ConnectHostParams,
+  type PairDeviceParams,
+  type PairingStateDto,
   pairNewDevice as apiPairNewDevice,
+  pairDevice as apiPairDevice,
   approvePairing as apiApprovePairing,
   listPairedDevices as apiListPairedDevices,
   revokeDevice as apiRevokeDevice,
@@ -41,11 +45,12 @@ export interface RemoteStoreState {
   init: () => Promise<UnlistenFn>;
   hydrate: () => Promise<void>;
   pairNewDevice: () => Promise<PairNewDeviceDto>;
+  pairDevice: (params: PairDeviceParams) => Promise<void>;
   openPairingModal: () => void;
   closePairingModal: () => void;
   approvePairing: (decision: "Approve" | "Reject") => Promise<void>;
   dismissPairingPrompt: () => void;
-  listPairedDevices: () => Promise<PairedDeviceDto[]>;
+  listPairedDevices: () => Promise<PairedDeviceDtoAlias[]>;
   revokeDevice: (deviceId: string) => Promise<void>;
   disconnectDevice: (deviceId: string) => Promise<void>;
   connectHost: (params: ConnectHostParams) => Promise<void>;
@@ -53,7 +58,8 @@ export interface RemoteStoreState {
 }
 
 export const useRemoteStore = create<RemoteStoreState>((set, get) => ({
-  linkState: "Disconnected",
+  // Ticket 05: initial state is "Unpaired" — no "Disconnected" variant exists
+  linkState: "Unpaired",
   failureReason: null,
   failureKind: null,
   connectedPeer: null,
@@ -68,6 +74,7 @@ export const useRemoteStore = create<RemoteStoreState>((set, get) => ({
   init: async () => {
     await get().hydrate();
 
+    // Ticket 05: canonical event — remote_state_changed is the sole source of truth.
     const unlistenState = await listen<RemoteStateDto>("remote_state_changed", (event) => {
       const dto = event.payload;
       const peer =
@@ -75,8 +82,12 @@ export const useRemoteStore = create<RemoteStoreState>((set, get) => ({
           ? { deviceId: dto.deviceId, displayName: dto.displayName }
           : null;
 
+      // Ticket 05: terminal states that clear the pairing-pending flag
       const isTerminal =
-        dto.link === "Connected" || dto.link === "Failed" || dto.link === "Disconnected";
+        dto.link === "Connected" ||
+        dto.link === "Failed" ||
+        dto.link === "Paired" ||
+        dto.link === "Unpaired";
 
       set({
         linkState: dto.link,
@@ -86,15 +97,14 @@ export const useRemoteStore = create<RemoteStoreState>((set, get) => ({
         ...(isTerminal ? { isPairingPending: false } : {}),
       });
 
-      if (dto.link === "Connected") {
-        // Only refresh the paired-devices list when the peer isn't already
-        // known locally — avoids an extra IPC round-trip on the close path.
-        const known = get().pairedDevices.some((d) => d.deviceId === dto.deviceId);
-        if (!known) {
-          get().listPairedDevices().catch((e) => {
+      // Ticket 05: refresh paired devices list on every terminal idle state
+      // (Paired or Unpaired) — not on Connected (peer already known from dto).
+      if (dto.link === "Paired" || dto.link === "Unpaired") {
+        get()
+          .listPairedDevices()
+          .catch((e) => {
             console.debug("[remoteStore] Failed to refresh paired devices:", e);
           });
-        }
       }
     });
 
@@ -105,19 +115,29 @@ export const useRemoteStore = create<RemoteStoreState>((set, get) => ({
       }
     );
 
-    const unlistenPending = await listen("remote_pairing_pending", () => {
-      set({ isPairingPending: true });
-    });
+    const unlistenPairingState = await listen<PairingStateDto>(
+      "remote_pairing_state_changed",
+      (event) => {
+        const dto = event.payload;
+        if (dto.state === "AwaitingApproval") {
+          set({ isPairingPending: true });
+        } else if (
+          dto.state === "Approved" ||
+          dto.state === "Denied" ||
+          dto.state === "Idle"
+        ) {
+          set({ isPairingPending: false });
+        }
+      }
+    );
 
-    const unlistenPairedChanged = await listen("remote_paired_devices_changed", () => {
-      void get().listPairedDevices();
-    });
+    // Ticket 05: obsolete side-channel listeners removed.
+    // State is driven exclusively via remote_state_changed and remote_pairing_state_changed (spec §13).
 
     return () => {
       unlistenState();
       unlistenPrompt();
-      unlistenPending();
-      unlistenPairedChanged();
+      unlistenPairingState();
     };
   },
 
@@ -127,7 +147,8 @@ export const useRemoteStore = create<RemoteStoreState>((set, get) => ({
       const [stateDto, devices, routing] = await Promise.all([
         getLinkState().catch((e) => {
           console.debug("[remoteStore] getLinkState not available:", e);
-          return { link: "Disconnected" } as RemoteStateDto;
+          // Ticket 05: fallback to Unpaired (no "Disconnected")
+          return { link: "Unpaired" } as RemoteStateDto;
         }),
         apiListPairedDevices().catch((e) => {
           console.debug("[remoteStore] listPairedDevices error:", e);
@@ -164,6 +185,11 @@ export const useRemoteStore = create<RemoteStoreState>((set, get) => ({
     return apiPairNewDevice();
   },
 
+  // Ticket 05: pairDevice action — Tier 1 only, no session start
+  pairDevice: async (params: PairDeviceParams) => {
+    await apiPairDevice(params);
+  },
+
   openPairingModal: () => {
     set({ isPairingModalOpen: true });
   },
@@ -195,13 +221,15 @@ export const useRemoteStore = create<RemoteStoreState>((set, get) => ({
 
   revokeDevice: async (deviceId: string) => {
     await apiRevokeDevice(deviceId);
-    await get().listPairedDevices();
+    // Ticket 05: no explicit list refresh here; remote_state_changed will fire
+    // with Unpaired/Paired and trigger the refresh in the event handler above.
   },
 
   disconnectDevice: async (deviceId: string) => {
     await apiDisconnectDevice(deviceId);
   },
 
+  // Ticket 05: connectHost accepts { deviceId, address? } only (Tier 2)
   connectHost: async (params: ConnectHostParams) => {
     await apiConnectHost(params);
   },

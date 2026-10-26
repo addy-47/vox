@@ -4,20 +4,20 @@ import { QrScannerModal } from "@/shared/components/remote/QrScannerModal";
 import { useRemoteStore } from "@/store/remoteStore";
 
 describe("QrScannerModal DOM suite", () => {
-  let mockConnectHost: ReturnType<typeof vi.fn>;
+  let mockPairDevice: ReturnType<typeof vi.fn>;
   let detectedPayload: string | null = null;
 
   beforeEach(() => {
     vi.useFakeTimers();
     vi.restoreAllMocks();
 
-    mockConnectHost = vi.fn().mockImplementation(() => new Promise(() => {})); // pending promise
+    mockPairDevice = vi.fn().mockImplementation(() => new Promise(() => {})); // pending promise
     detectedPayload = null;
 
     useRemoteStore.setState({
-      linkState: "Disconnected",
+      linkState: "Unpaired",
       failureReason: null,
-      connectHost: mockConnectHost as unknown as (params: import("@/services/remoteService").ConnectHostParams) => Promise<void>,
+      pairDevice: mockPairDevice as unknown as (params: import("@/services/remoteService").PairDeviceParams) => Promise<void>,
     });
 
     // Mock HTMLMediaElement prototype for jsdom
@@ -67,7 +67,7 @@ describe("QrScannerModal DOM suite", () => {
     vi.useRealTimers();
   });
 
-  it("calls connectHost with full payload on QR scan, shows connecting state, and does NOT close synchronously", async () => {
+  it("calls pairDevice with full payload on QR scan, shows connecting state, and does NOT close synchronously", async () => {
     const onClose = vi.fn();
     render(<QrScannerModal open={true} onClose={onClose} />);
 
@@ -99,8 +99,8 @@ describe("QrScannerModal DOM suite", () => {
       await vi.advanceTimersByTimeAsync(200);
     });
 
-    // 1. Assert connectHost is called with full 4-field payload
-    expect(mockConnectHost).toHaveBeenCalledWith({
+    // 1. Assert pairDevice is called with full 4-field payload
+    expect(mockPairDevice).toHaveBeenCalledWith({
       address: "192.168.1.100:7700",
       deviceId: "host_id_123",
       token: "tok_test_456",
@@ -114,7 +114,7 @@ describe("QrScannerModal DOM suite", () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
-  it("closes modal after delay when linkState transitions to Connected", async () => {
+  it("closes modal after delay when linkState transitions to Paired", async () => {
     const onClose = vi.fn();
     render(<QrScannerModal open={true} onClose={onClose} />);
 
@@ -145,12 +145,13 @@ describe("QrScannerModal DOM suite", () => {
     expect(screen.getByText("Establishing Connection...")).toBeTruthy();
     expect(onClose).not.toHaveBeenCalled();
 
-    // Simulate linkState transition to Connected
+    // Simulate linkState transition to Paired (Tier 1 completes)
     act(() => {
-      useRemoteStore.setState({ linkState: "Connected" });
+      useRemoteStore.setState({ linkState: "Paired" });
     });
 
-    // Immediately after transition, onClose should still wait for celebration animation (800ms)
+    // Immediately after transition, celebration shows and waits 800ms
+    expect(screen.getAllByText("Host Paired Successfully").length).toBeGreaterThan(0);
     expect(onClose).not.toHaveBeenCalled();
 
     // Advance timers by 800ms
@@ -224,11 +225,11 @@ describe("QrScannerModal DOM suite", () => {
       await Promise.resolve();
     });
 
-    expect(mockConnectHost).toHaveBeenCalledWith({
+    expect(mockPairDevice).toHaveBeenCalledWith({
       address: "10.0.0.42:8800",
-      deviceId: undefined,
-      token: undefined,
-      publicKey: undefined,
+      deviceId: "",
+      token: "",
+      publicKey: "",
     });
 
     expect(screen.getByText("Establishing Connection...")).toBeTruthy();

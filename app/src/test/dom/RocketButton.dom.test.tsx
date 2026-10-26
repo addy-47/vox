@@ -21,8 +21,25 @@ describe("RocketButton DOM suite", () => {
       vi.spyOn(breakpoints, "isRealMobileDevice").mockReturnValue(false);
     });
 
-    it("renders nothing on Host when linkState is Disconnected", () => {
-      useRemoteStore.setState({ linkState: "Disconnected", connectedPeer: null });
+    it("renders nothing on Host when linkState is Unpaired", () => {
+      useRemoteStore.setState({ linkState: "Unpaired", connectedPeer: null });
+
+      const { container } = render(<RocketButton />);
+      expect(container.firstChild).toBeNull();
+    });
+
+    it("renders nothing on Host when linkState is Paired", () => {
+      useRemoteStore.setState({
+        linkState: "Paired",
+        connectedPeer: null,
+        pairedDevices: [{
+          deviceId: "phone_1",
+          displayName: "Phone",
+          role: "controller",
+          pairedAt: 1000,
+          hints: [],
+        }],
+      });
 
       const { container } = render(<RocketButton />);
       expect(container.firstChild).toBeNull();
@@ -109,13 +126,45 @@ describe("RocketButton DOM suite", () => {
       vi.spyOn(breakpoints, "isRealMobileDevice").mockReturnValue(true);
     });
 
-    it("is always visible on Controller even when Disconnected", () => {
-      useRemoteStore.setState({ linkState: "Disconnected", connectedPeer: null });
+    it("is visible on Controller when Unpaired and opens scanner on click", () => {
+      useRemoteStore.setState({ linkState: "Unpaired", connectedPeer: null, pairedDevices: [] });
+
+      render(<RocketButton />);
+
+      const controllerButton = screen.getByRole("button", { name: "Pair with Host" });
+      expect(controllerButton).toBeTruthy();
+
+      fireEvent.click(controllerButton);
+      // Scanner modal opens
+      expect(screen.getByText("Connect to Desktop Host")).toBeTruthy();
+    });
+
+    it("triggers connectHost when clicked in Paired state", async () => {
+      const mockConnectHost = vi.fn().mockResolvedValue(undefined);
+      useRemoteStore.setState({
+        linkState: "Paired",
+        pairedDevices: [
+          {
+            deviceId: "host_1",
+            displayName: "Desktop PC",
+            role: "host",
+            pairedAt: 1234,
+            hints: [],
+          },
+        ],
+        connectHost: mockConnectHost,
+      });
 
       render(<RocketButton />);
 
       const controllerButton = screen.getByRole("button", { name: "Connect to Host" });
       expect(controllerButton).toBeTruthy();
+
+      await act(async () => {
+        fireEvent.click(controllerButton);
+      });
+
+      expect(mockConnectHost).toHaveBeenCalledWith({ deviceId: "host_1" });
     });
 
     it("invokes disconnectHost when clicked while Connected", async () => {
@@ -136,6 +185,37 @@ describe("RocketButton DOM suite", () => {
       });
 
       expect(mockDisconnectHost).toHaveBeenCalledTimes(1);
+    });
+
+    it("displays failure tooltip and triggers retry when Failed", async () => {
+      const mockConnectHost = vi.fn().mockResolvedValue(undefined);
+      useRemoteStore.setState({
+        linkState: "Failed",
+        failureReason: "Handshake timeout",
+        pairedDevices: [
+          {
+            deviceId: "host_1",
+            displayName: "Desktop PC",
+            role: "host",
+            pairedAt: 1234,
+            hints: [],
+          },
+        ],
+        connectHost: mockConnectHost,
+      });
+
+      render(<RocketButton />);
+
+      const controllerButton = screen.getByRole("button", {
+        name: /Connection failed: Handshake timeout \(Tap to retry\)/i,
+      });
+      expect(controllerButton).toBeTruthy();
+
+      await act(async () => {
+        fireEvent.click(controllerButton);
+      });
+
+      expect(mockConnectHost).toHaveBeenCalledWith({ deviceId: "host_1" });
     });
   });
 });

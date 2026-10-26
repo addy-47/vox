@@ -17,7 +17,9 @@ pub mod state;
 pub use self::{
     listener::spawn_host_listener,
     manager::{RemoteSessionManager, SessionRole, StateChangeCallback},
-    state::{RemoteFailureKind, RemoteLinkState, RemoteStateDto},
+    state::{
+        PairingState, PairingStateDto, RemoteFailureKind, RemoteLinkState, RemoteStateDto,
+    },
 };
 pub use super::{
     HEARTBEAT_INTERVAL, HEARTBEAT_MAX_MISSED_PONGS, HEARTBEAT_PING_TIMEOUT, HEARTBEAT_PONG_TIMEOUT,

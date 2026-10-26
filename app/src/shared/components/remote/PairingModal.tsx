@@ -177,9 +177,9 @@ export const PairingModal = memo(({ open, onClose }: PairingModalProps) => {
     };
   }, [effectiveOpen, pendingPairingPrompt, generatePairing, startCountdown, clearTimer]);
 
-  // Close smoothly on connection established
+  // Close smoothly on pairing completion
   useEffect(() => {
-    if (effectiveOpen && linkState === "Connected") {
+    if (effectiveOpen && (linkState === "Paired" || linkState === "Connected")) {
       const timer = setTimeout(() => {
         effectiveOnClose();
       }, 800);

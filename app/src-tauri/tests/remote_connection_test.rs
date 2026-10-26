@@ -32,10 +32,7 @@ use vox_lib::{
             routing::{get_routing_table, CommandClass},
         },
         link::{bind, LinkCloseReason, LoopbackLink, RemoteLink},
-        protocol::{
-            framing::StreamFormat,
-            messages::{ControlMessage, LinkLossReason, PairDenied, SenderIdentity},
-        },
+        protocol::messages::{ControlMessage, LinkLossReason, PairDenied, SenderIdentity},
         security::{
             derive_device_id, DeviceKey, PairingCoordinator, PairingOutcome, PairingRequest,
         },
@@ -121,7 +118,7 @@ async fn remote_connection_pairing_handshake_approved_reaches_connected() {
     let hpk_str = host_pk_hex.clone();
 
     let dial_task = tokio::spawn(async move {
-        cm.dial_and_connect(c_db, target, Some(h_id), Some(tok_str), Some(hpk_str), None)
+        cm.pair_device(c_db, target, tok_str, hpk_str, h_id, None)
             .await
     });
 
@@ -180,36 +177,13 @@ async fn remote_connection_pairing_handshake_approved_reaches_connected() {
     )
     .await;
 
-    // 8. Host completes Hello exchange
-    let host_manager = Arc::new(RemoteSessionManager::new(SessionRole::Host));
-    let host_identity = SenderIdentity {
-        device_id: host_id.as_str().to_string(),
-        display_name: "Vox Host".to_string(),
-    };
-
-    let peer_hello = within_ok(
-        "exchange hello",
-        host_manager.exchange_hello(
-            &host_ws_link,
-            host_identity,
-            StreamFormat::DOWNLINK,
-            StreamFormat::UPLINK,
-        ),
-    )
-    .await;
-
-    host_manager
-        .attach_link(Arc::new(host_ws_link), peer_hello.sender_identity)
-        .await;
-
-    // 9. Controller dial_task finishes successfully
+    // 8. Controller dial_task finishes successfully
     within_ok("dial task result", dial_task)
         .await
-        .expect("dial_and_connect succeeded");
+        .expect("pair_device succeeded");
 
-    // 10. Assertions
-    assert_eq!(controller_manager.state(), RemoteLinkState::Connected);
-    assert_eq!(host_manager.state(), RemoteLinkState::Connected);
+    // 9. Assertions
+    assert_eq!(controller_manager.state(), RemoteLinkState::Paired);
 
     // Assert controller persisted host in Turso DB
     let stored_host = get_paired_device(&controller_conn, host_id.as_str())
@@ -264,12 +238,12 @@ async fn remote_connection_pairing_denial_transitions_to_failed() {
     let hpk_str = host_pk_hex.clone();
 
     let dial_task = tokio::spawn(async move {
-        cm.dial_and_connect(
+        cm.pair_device(
             c_db,
             target,
-            Some(h_id),
-            Some("dummy_token_abc".to_string()),
-            Some(hpk_str),
+            "dummy_token_abc".to_string(),
+            hpk_str,
+            h_id,
             None,
         )
         .await
@@ -351,12 +325,12 @@ async fn remote_connection_pairing_timeout_transitions_to_failed() {
     let hpk_str = host_pk_hex.clone();
 
     let dial_task = tokio::spawn(async move {
-        cm.dial_and_connect(
+        cm.pair_device(
             c_db,
             target,
-            Some(h_id),
-            Some("timeout_token".to_string()),
-            Some(hpk_str),
+            "timeout_token".to_string(),
+            hpk_str,
+            h_id,
             None,
         )
         .await
@@ -386,14 +360,14 @@ async fn remote_connection_pairing_timeout_transitions_to_failed() {
     }
 }
 
-/// PURPOSE:  Host must detect missed pongs during link inactivity and transition state to Disconnected.
+/// PURPOSE:  Host must detect missed pongs during link inactivity and transition state to Paired.
 /// SCENARIO: Host attaches active link with heartbeat; peer link is closed to drop all pongs; time advances past 3 heartbeat intervals.
-/// ASSERTS:  Host heartbeat supervisor marks missed pongs >= 3 and transitions canonical state to RemoteLinkState::Disconnected.
+/// ASSERTS:  Host heartbeat supervisor marks missed pongs >= 3 and transitions canonical state to RemoteLinkState::Paired.
 /// CLASS:    error-path
 /// REQUIRES: none
-/// MUTANT:   Remove missed_pongs check in run_heartbeat_loop, preventing transition to Disconnected.
+/// MUTANT:   Remove missed_pongs check in run_heartbeat_loop, preventing transition to Paired.
 #[tokio::test]
-async fn remote_connection_heartbeat_timeout_transitions_to_disconnected() {
+async fn remote_connection_heartbeat_timeout_transitions_to_paired() {
     tokio::time::pause();
 
     let (host_link, client_link) = LoopbackLink::pair();
@@ -416,12 +390,12 @@ async fn remote_connection_heartbeat_timeout_transitions_to_disconnected() {
     for _ in 0..6 {
         tokio::time::advance(Duration::from_secs(2)).await;
         tokio::time::sleep(Duration::from_millis(10)).await;
-        if host_manager.state() == RemoteLinkState::Disconnected {
+        if host_manager.state() == RemoteLinkState::Paired {
             break;
         }
     }
 
-    assert_eq!(host_manager.state(), RemoteLinkState::Disconnected);
+    assert_eq!(host_manager.state(), RemoteLinkState::Paired);
 }
 
 /// PURPOSE:  Desktop mutating commands must be denied while Connected under RULE-RC-GUARD, while reads and appearance remain permitted.
@@ -433,7 +407,7 @@ async fn remote_connection_heartbeat_timeout_transitions_to_disconnected() {
 #[test]
 fn remote_connection_rule_rc_guard_blocks_desktop_mutating_writes() {
     let connected = RemoteLinkState::Connected;
-    let disconnected = RemoteLinkState::Disconnected;
+    let unpaired = RemoteLinkState::Unpaired;
 
     // 1. When Connected, Desktop mutating commands MUST be blocked
     let mutating_commands = [
@@ -495,11 +469,11 @@ fn remote_connection_rule_rc_guard_blocks_desktop_mutating_writes() {
         );
     }
 
-    // 3. When Disconnected, all desktop commands MUST be permitted
+    // 3. When Unpaired, all desktop commands MUST be permitted
     for (cmd, domain) in mutating_commands {
         assert!(
-            is_desktop_command_permitted(cmd, domain, &disconnected),
-            "Command '{cmd}' must be PERMITTED on Desktop when Disconnected"
+            is_desktop_command_permitted(cmd, domain, &unpaired),
+            "Command '{cmd}' must be PERMITTED on Desktop when Unpaired"
         );
     }
 
@@ -562,7 +536,7 @@ async fn remote_connection_host_disconnect_keeps_pairing() {
     )
     .await;
 
-    assert_eq!(host_manager.state(), RemoteLinkState::Disconnected);
+    assert_eq!(host_manager.state(), RemoteLinkState::Paired);
     assert_eq!(host_manager.peer_identity(), None);
 
     // Verify pairing survives in Turso DB
@@ -621,11 +595,11 @@ async fn remote_connection_revocation_permanently_removes_device() {
 
     within_ok(
         "disconnect session",
-        host_manager.disconnect(LinkLossReason::HostDisconnected),
+        host_manager.disconnect(LinkLossReason::Revoked),
     )
     .await;
 
-    assert_eq!(host_manager.state(), RemoteLinkState::Disconnected);
+    assert_eq!(host_manager.state(), RemoteLinkState::Unpaired);
 
     // Assert device row is permanently gone
     let check = within_ok("query revoked device", get_paired_device(&conn, device_id)).await;

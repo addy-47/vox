@@ -5,7 +5,7 @@ pub use crate::core::state::InteractionOwner;
 use crate::{
     core::{error::PipelineError, state::AppWindow},
     persistence::PersonalMemoryRecord,
-    services::remote::session::RemoteStateDto,
+    services::remote::session::{PairingStateDto, RemoteStateDto},
     setup::model_manager::ModelSetupStatus,
 };
 
@@ -252,9 +252,8 @@ pub enum IpcEvent {
     SessionsChanged,
     MemoryIngestionUpdated,
     RemoteStateChanged(RemoteStateDto),
+    RemotePairingStateChanged(PairingStateDto),
     RemotePairingRequested(RemotePairingPromptPayload),
-    RemotePairingPending,
-    RemotePairedDevicesChanged,
 }
 
 impl From<u8> for AudioIntent {
@@ -296,9 +295,8 @@ impl IpcEvent {
             Self::SessionsChanged => "sessions_changed",
             Self::MemoryIngestionUpdated => "memory_ingestion_updated",
             Self::RemoteStateChanged(_) => "remote_state_changed",
+            Self::RemotePairingStateChanged(_) => "remote_pairing_state_changed",
             Self::RemotePairingRequested(_) => "remote_pairing_requested",
-            Self::RemotePairingPending => "remote_pairing_pending",
-            Self::RemotePairedDevicesChanged => "remote_paired_devices_changed",
         }
     }
 }
@@ -324,9 +322,8 @@ pub fn emit_ipc<R: Runtime>(app: &AppHandle<R>, event: IpcEvent) -> Result<(), t
         IpcEvent::SessionsChanged => app.emit(name, ()),
         IpcEvent::MemoryIngestionUpdated => app.emit(name, ()),
         IpcEvent::RemoteStateChanged(payload) => app.emit(name, payload),
+        IpcEvent::RemotePairingStateChanged(payload) => app.emit(name, payload),
         IpcEvent::RemotePairingRequested(payload) => app.emit(name, payload),
-        IpcEvent::RemotePairingPending => app.emit(name, ()),
-        IpcEvent::RemotePairedDevicesChanged => app.emit(name, ()),
     }
 }
 
@@ -356,9 +353,8 @@ pub fn emit_ipc_to<R: Runtime>(
         IpcEvent::SessionsChanged => app.emit_to(target_str, name, ()),
         IpcEvent::MemoryIngestionUpdated => app.emit_to(target_str, name, ()),
         IpcEvent::RemoteStateChanged(payload) => app.emit_to(target_str, name, payload),
+        IpcEvent::RemotePairingStateChanged(payload) => app.emit_to(target_str, name, payload),
         IpcEvent::RemotePairingRequested(payload) => app.emit_to(target_str, name, payload),
-        IpcEvent::RemotePairingPending => app.emit_to(target_str, name, ()),
-        IpcEvent::RemotePairedDevicesChanged => app.emit_to(target_str, name, ()),
     }
 }
 

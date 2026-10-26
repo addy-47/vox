@@ -81,7 +81,7 @@ const getErrorMessage = (
 
 export const QrScannerModal = memo(
   ({ open, onClose, defaultManual = false }: QrScannerModalProps) => {
-    const connectHost = useRemoteStore((s) => s.connectHost);
+    const pairDevice = useRemoteStore((s) => s.pairDevice);
     const linkState = useRemoteStore((s) => s.linkState);
     const failureReason = useRemoteStore((s) => s.failureReason);
     const failureKind = useRemoteStore((s) => s.failureKind);
@@ -158,23 +158,28 @@ export const QrScannerModal = memo(
       scannedSuccessRef.current = scannedSuccess;
     }, [scannedSuccess]);
 
-    const handleConnect = useCallback(
+    const handlePair = useCallback(
       async (params: { address: string; deviceId?: string; token?: string; publicKey?: string }) => {
         try {
           setConnecting(true);
           setCameraActive(false);
           setScanError(null);
           stopCamera();
-          await connectHost(params);
-          // Do not close modal immediately; wait for remote_state_changed to report Connected or Failed
+          await pairDevice({
+            address: params.address,
+            deviceId: params.deviceId ?? "",
+            token: params.token ?? "",
+            publicKey: params.publicKey ?? "",
+          });
+          // Do not close modal immediately; wait for remote_state_changed to report Paired or Failed
         } catch (e) {
-          console.warn("[QrScannerModal] connectHost failed:", e);
+          console.warn("[QrScannerModal] pairDevice failed:", e);
           setScanError(e instanceof Error ? e.message : String(e));
           setConnecting(false);
           setScannedSuccess(false);
         }
       },
-      [connectHost, stopCamera]
+      [pairDevice, stopCamera]
     );
 
     const processQrCode = useCallback(
@@ -188,7 +193,7 @@ export const QrScannerModal = memo(
           ) {
             setScannedSuccess(true);
             const target = `${parsed.hint_addr}:${parsed.hint_port}`;
-            void handleConnect({
+            void handlePair({
               address: target,
               deviceId: parsed.device_id,
               token: parsed.token,
@@ -199,7 +204,7 @@ export const QrScannerModal = memo(
           // Non-JSON barcode or unrelated QR code, ignore
         }
       },
-      [handleConnect]
+      [handlePair]
     );
 
     const startCamera = useCallback(async () => {
@@ -279,7 +284,7 @@ export const QrScannerModal = memo(
     useEffect(() => {
       if (!open) return undefined;
 
-      if (linkState === "Connected") {
+      if (linkState === "Paired" || linkState === "Connected") {
         setConnecting(false);
         setScannedSuccess(true);
         const timer = setTimeout(() => {
@@ -291,7 +296,7 @@ export const QrScannerModal = memo(
       if (linkState === "Failed") {
         setConnecting(false);
         setScannedSuccess(false);
-        setScanError(failureReason ?? "Connection to host failed.");
+        setScanError(failureReason ?? "Pairing with host failed.");
       }
       return undefined;
     }, [open, linkState, failureReason, handleClose]);
@@ -521,15 +526,15 @@ export const QrScannerModal = memo(
           ) : undefined
         }
         title={
-          linkState === "Connected"
-            ? REMOTE_CONTROL_COPY.successTitleController
+          linkState === "Paired" || linkState === "Connected"
+            ? "Host Paired Successfully"
             : "Connect to Desktop Host"
         }
         subtitle={
-          linkState === "Connected"
-            ? REMOTE_CONTROL_COPY.successSubtitleController
+          linkState === "Paired" || linkState === "Connected"
+            ? "Your phone is now paired. Tap the rocket icon on the home screen to stream."
             : connecting
-            ? "Establishing secure connection with host..."
+            ? "Establishing secure pairing with host..."
             : isManual
             ? "Enter the IP address and port displayed in your computer's pairing window."
             : "Align your camera with the pairing QR code shown on your computer screen."
@@ -578,17 +583,17 @@ export const QrScannerModal = memo(
         }
       >
         <div className="flex flex-col p-5 sm:p-6 gap-4">
-          {linkState === "Connected" ? (
-            /* Connected Celebration State */
+          {linkState === "Paired" || linkState === "Connected" ? (
+            /* Paired Celebration State */
             <div className="h-64 flex flex-col items-center justify-center gap-3 animate-fade-in text-center p-4">
               <div className="w-14 h-14 rounded-2xl bg-[rgba(var(--success),0.12)] border border-[rgba(var(--success),0.25)] flex items-center justify-center text-[rgb(var(--success))] shadow-[0_0_24px_rgba(var(--success),0.15)] animate-in zoom-in-95 duration-200">
                 <CheckCircle2 size={32} strokeWidth={2.5} />
               </div>
               <h3 className="text-sm font-bold text-[rgb(var(--foreground))]">
-                {REMOTE_CONTROL_COPY.successTitleController}
+                Host Paired Successfully
               </h3>
               <p className="text-xs text-[rgb(var(--foreground-muted))] max-w-xs">
-                {REMOTE_CONTROL_COPY.successSubtitleController}
+                Your device is paired with the host. Tap the rocket icon on the home screen to connect anytime.
               </p>
             </div>
           ) : connecting ? (
@@ -603,7 +608,7 @@ export const QrScannerModal = memo(
               <span className="text-[11px] font-mono text-[rgb(var(--foreground-muted))]/70 max-w-xs">
                 {isPairingPending
                   ? "Please approve the prompt on your desktop screen."
-                  : "Connecting to host..."}
+                  : "Pairing with host..."}
               </span>
             </div>
           ) : isManual ? (
@@ -635,7 +640,7 @@ export const QrScannerModal = memo(
                     onChange={(e) => setManualAddress(e.target.value)}
                     onKeyDown={(e) => {
                       if (e.key === "Enter" && manualAddress.trim()) {
-                        void handleConnect({ address: manualAddress.trim() });
+                        void handlePair({ address: manualAddress.trim() });
                       }
                     }}
                     placeholder="192.168.1.42:7700"
@@ -656,7 +661,7 @@ export const QrScannerModal = memo(
                 <button
                   type="button"
                   disabled={!manualAddress.trim()}
-                  onClick={() => void handleConnect({ address: manualAddress.trim() })}
+                  onClick={() => void handlePair({ address: manualAddress.trim() })}
                   className="w-full h-10 inline-flex items-center justify-center gap-2 rounded-lg bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] text-xs font-bold hover:opacity-90 disabled:opacity-40 transition-opacity cursor-pointer shadow-sm"
                 >
                   Connect to Host

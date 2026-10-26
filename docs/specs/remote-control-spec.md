@@ -103,13 +103,28 @@ flowchart LR
     Pipeline --> DB
 ```
 
-### 4.4 Three Distinct Operational Lanes
+### 4.4 Three Decoupled Operational Lifecycles (Tiers)
 
-Remote control operations are strictly partitioned into three independent lanes. Implementations MUST NOT bridge or conflate their lifecycles:
+Remote control operations are strictly partitioned into three decoupled operational tiers (lifecycles). Implementations MUST NOT bridge, shadow, or conflate their states:
 
-1. **Lane 1: Device Pairing (Mutual Cryptographic Trust Setup).** A one-time setup exchange: QR scan $\to$ Noise handshake $\to$ Host Authorization Dialog $\to$ Mutual insertion of the peer into `paired_devices`. When `PairApproved` is exchanged, the pairing link terminates cleanly. Both peers remain in `Disconnected` (paired in local storage). Zero audio streaming or IPC steering links are attached during Lane 1.
-2. **Lane 2: Remote Connection (Live Streaming Session).** Explicitly triggered from the Home screen **Rocket button** (or explicit connect action). Uses stored `paired_devices` credentials to dial the peer, perform Noise handshake + `Hello` negotiation, bind the audio socket, and attach the active streaming session. Toggling or disconnecting Lane 2 terminates the active link and pauses the session while strictly preserving the device row in `paired_devices`.
-3. **Lane 3: Revocation (Mutual Cryptographic Invalidation).** Triggered from Settings on either the Host or Controller via a dedicated two-step confirmation modal (`<ConfirmModal>`). Deletes the device row from `paired_devices`. If currently connected, the revoking party MUST send `LinkLoss { reason: LinkLossReason::Revoked }` before closing the transport link, ensuring the peer immediately purges its own local pairing row and halts reconnection loops.
+1. **Tier 1: Trust & Identity Lifecycle (Mutual Cryptographic Pairing & Revocation).**
+   - **Scope**: Manages permanent cryptographic trust in local storage (`paired_devices` Turso table).
+   - **Pairing**: A one-time setup exchange: QR scan $\to$ Noise handshake $\to$ Host Authorization Dialog $\to$ Mutual insertion into `paired_devices`. When `PairApproved` is exchanged, the pairing transport link terminates cleanly. Both peers enter `Paired` (paired in local storage, transport link idle). Zero audio streaming or IPC steering links are attached during Tier 1.
+   - **Revocation**: Triggered from Settings on either Host or Controller via a dedicated two-step confirmation modal (`<ConfirmModal>`). Permanently deletes the peer record from `paired_devices`. If currently connected, the revoking party MUST send `LinkLoss { reason: LinkLossReason::Revoked }` before closing the socket.
+   - **Invariant**: Establishing or maintaining trust NEVER implies or automatically starts an active connection.
+
+2. **Tier 2: Transport & Liveness Lifecycle (Link Connection, Heartbeat & Supervision).**
+   - **Scope**: Ephemeral network link between Host and Controller, governed by `RemoteLinkState`.
+   - **Connection**: Explicitly triggered from the Home screen **Rocket button** (or explicit connect action). Dials the peer, executes Noise_XX session handshake, exchanges `Hello`, and spawns an active Link Supervisor actor.
+   - **Liveness & Supervision**: Governed by bidirectional Ping/Pong heartbeats and transport socket error detection.
+   - **Disconnection**: Toggling or disconnecting Tier 2 terminates the active socket and returns `RemoteLinkState` to `Paired` (or `Reconnecting` on the Controller if an involuntary network drop occurs), while strictly preserving the device row in `paired_devices`.
+   - **Invariant**: Socket loss, disconnects, or network failures NEVER alter or delete the stored credentials in `paired_devices`.
+
+3. **Tier 3: Remote Application Session Lifecycle (Audio Streaming & Control Gateway).**
+   - **Scope**: Real-time voice interaction, governed by the pipeline state machine (`state_changed`).
+   - **Session**: Binds the secondary audio WebSocket using a short-lived `SessionToken`, carries PCM16 audio frames uplink/downlink, and routes IPC commands via the guarded command gateway.
+   - **Pausing / Resuming**: Pausing or resuming the voice session does not tear down the Tier 2 transport link. Disconnecting Tier 2 cleanly pauses the Tier 3 session on the host.
+   - **Invariant**: Pipeline states (Listening, Thinking, Speaking, Paused) NEVER mutate or shadow `RemoteLinkState`.
 
 ---
 
@@ -175,7 +190,7 @@ sequenceDiagram
     L->>L: Insert PairedPeer role=controller into paired_devices
     P->>P: Insert PairedPeer role=host into local paired_devices
     L->>P: Clean link close (LinkCloseReason::Local)
-    Note over L,P: Pairing complete (Lane 1 terminates). Both devices are paired in local database and remain Disconnected. Proceeding to live audio/control streaming (Lane 2) requires explicit initiation via the Home Rocket button.
+    Note over L,P: Pairing complete (Tier 1 terminates cleanly). Both devices insert peer into local database and transition RemoteLinkState to Paired. Proceeding to live audio/control streaming (Tier 2) requires explicit initiation via the Home Rocket button.
 ```
 
 > [!IMPORTANT]
@@ -202,7 +217,48 @@ sequenceDiagram
 - The host MUST wait for explicit user approval before inserting the paired peer record.
 - The host MUST NOT pin the phone's static key before the handshake, because it does not yet know which peer is connecting. The host learns the peer's identity from the handshake and then looks it up (§7.2). The **phone** pins the host's key, from the QR on first pairing and from its own `paired_devices` row afterwards.
 
-### 5.4 `paired_devices` Table
+### 5.4 Why Two Distinct State Machines (Pairing vs. Remote Link)
+
+A foundational architectural invariant is the strict decoupling of the **Pairing State Machine (`PairingState`)** from the **Remote Link State Machine (`RemoteLinkState`)**:
+
+1. **Orthogonal Domain Lifecycles**:
+   - **`PairingState` (Ephemeral Trust Workflow)**: Exists only during first-time device setup. It is a finite, modal, human-in-the-loop workflow bounded by cryptographic token TTL (120 seconds) and user approval timeouts (30 seconds). It drives pairing modals (`<AuthorizeDeviceModal>` and `<QrScannerModal>`). Once pairing resolves (`Approved` or `Denied`), `PairingState` terminates and resets to `Idle`.
+   - **`RemoteLinkState` (Persistent Subsystem & Transport Liveness)**: Exists for the entire lifetime of the application. It reflects whether the app is `Unpaired`, `Paired` (idle in DB), `Connecting`, `Connected` (streaming live audio/IPC), or `Reconnecting`.
+2. **Failure of Conflation (The Anti-Pattern)**:
+   - When implementations attempt to merge pairing into `RemoteLinkState`, `Connecting` is forced to represent both "waiting for human authorization" and "establishing a live audio socket".
+   - Similarly, failure in pairing (e.g. user taps "Deny") corrupts the general transport state into `Failed`, blinding the UI as to whether the device is still trusted.
+   - Separating them ensures pairing can succeed, fail, or time out without destabilizing persistent transport or masking database trust.
+
+### 5.5 Pairing State Machine (`PairingState`)
+
+The ephemeral pairing lifecycle is governed by `PairingState`:
+
+```
+PairingState
+├── Idle                             No pairing flow active
+├── AwaitingApproval(peer, expires)  Token verified; host user approval prompt active (30s)
+├── Approved(peer)                   Human approved; peer written to DB (transitions RemoteLinkState -> Paired)
+└── Denied(reason, kind)             Explicitly rejected, token invalid, or timed out
+```
+
+```mermaid
+stateDiagram-v2
+    [*] --> Idle
+    Idle --> AwaitingApproval: Host receives valid PairRequest / Controller invokes pair_device
+    AwaitingApproval --> Approved: Host user clicks Approve / Controller receives PairApproved
+    AwaitingApproval --> Denied: Host user clicks Deny / 30s timeout / Token invalid
+    Approved --> Idle: Peer written to DB, socket closed, RemoteLinkState becomes Paired
+    Denied --> Idle: Error displayed in UI, socket closed
+```
+
+- **IPC Commands & Event Contracts**:
+  - **Controller Initiation**: Controller frontend calls `pair_device(address, token, hostDeviceId, hostPublicKey)`. Local backend dials host, initiates Noise handshake, sends `PairRequest`, transitions `PairingState` to `AwaitingApproval`, and emits `remote_pairing_state_changed { state: "AwaitingApproval" }`.
+  - **Host Inbound Request**: Host listener receives `PairRequest`, validates token, transitions `PairingState` to `AwaitingApproval`, emits `remote_pairing_state_changed { state: "AwaitingApproval", deviceId, displayName, expiresAtMs }`, and emits `remote_pairing_requested` to display `<AuthorizeDeviceModal>`.
+  - **Host Decision**: Host user answers modal via `approve_pairing(decision: "Approve" | "Reject")`. On "Approve", host saves peer to `paired_devices`, transitions `PairingState` to `Approved`, sends `PairApproved` over wire, cleanly closes pairing socket, sets `RemoteLinkState` to `Paired`, emits `remote_state_changed { link: "Paired", deviceId, displayName }`, and resets `PairingState` to `Idle`.
+  - **Controller Completion**: Controller receives `PairApproved`, saves host to `paired_devices`, cleanly closes pairing socket, sets `RemoteLinkState` to `Paired`, emits `remote_state_changed { link: "Paired", deviceId, displayName }`, and resets `PairingState` to `Idle`.
+  - **Denial / Expiry**: If denied or timed out (30s), both peers transition `PairingState` to `Denied { reason, kind }`, emit `remote_pairing_state_changed { state: "Denied", failureReason }`, close socket, and reset to `Idle`. `RemoteLinkState` remains in its previous state (`Unpaired` or `Paired`).
+
+### 5.6 `paired_devices` Table
 
 Both the laptop and phone maintain a `paired_devices` table in their local Turso database.
 
@@ -224,7 +280,7 @@ CREATE TABLE IF NOT EXISTS paired_devices (
 - `last_seen_at`: MUST only be written on connect and disconnect events. Never written per heartbeat (RULE-DB-04 from `db-spec.md`).
 - The table name is `paired_devices` (not `devices`) to avoid collision with `AudioDevice` / `list_audio_devices`.
 
-### 5.5 Address Hints
+### 5.7 Address Hints
 
 ```
 AddressHint (#[non_exhaustive], JSON-tagged):
@@ -239,19 +295,19 @@ Hints are connection candidates, not identity. The hint array MUST be updated on
 
 An unknown `kind` in the JSON array MUST round-trip without data loss (forward compat for relay hints).
 
-### 5.6 Revocation (Lane 3)
+### 5.8 Revocation (Tier 1 Teardown)
 
 Revocation is mutual and permanent. Either peer (Host or Controller) may initiate revocation from its Settings surface.
 
 **Revocation UX & Invariants:**
 1. **Mandatory Two-Step Confirmation Modal:** Revocation MUST require explicit confirmation through a dedicated centered dialog (`<ConfirmModal>`) per Image 2 reference. In-place inline toggles or persistent layout gaps in card headers/rows are strictly forbidden.
-2. **Local Credential Purge:** The initiating peer deletes the device's row from its local `paired_devices` table and emits an IPC `remote_paired_devices_changed` event.
+2. **Local Credential Purge:** The initiating peer invokes `revoke_device(deviceId)`: deletes the device's row from its local `paired_devices` table, transitions its own `RemoteLinkState` to `Unpaired` (if 0 devices remain in DB) or `Paired` (if other paired devices remain), and emits `remote_state_changed`.
 3. **Active Connection Severance & Notification:** If an active streaming connection exists with the revoked peer, the initiating peer MUST send `LinkLoss { reason: LinkLossReason::Revoked }` before closing the transport link.
-4. **Peer Revocation Handling:** On receiving `LinkLoss(Revoked)`, the peer MUST:
+4. **Peer Revocation Handling:** On receiving `LinkLoss(Revoked)`, the peer's Link Supervisor MUST:
    - Immediately purge the revoking device from its local `paired_devices` table.
-   - Transition `RemoteLinkState` to `Failed { kind: RemoteFailureKind::RejectedByHost, failure: "Device pairing was revoked" }` as a terminal state.
+   - Transition `RemoteLinkState` to `Unpaired` (if 0 devices remain in DB) or `Paired` (if other paired devices remain), NOT `Failed`.
    - Halt all reconnection backoff loops immediately (no reconnect retries).
-   - Emit `remote_paired_devices_changed` so its local UI returns to the unpaired discovery state.
+   - Emit `remote_state_changed` so its local UI immediately returns to the `Unpaired` discovery state.
 5. **Rejection of Future Connections:** Any subsequent connection attempt from a revoked identity MUST be rejected immediately during `Hello` negotiation with `UnknownPeer`.
 
 **Revocation is permanent. It is not the same operation as a disconnect** (§6.4, §6.6), which ends the current streaming link and keeps the pairing. Revocation is for a device that is lost, unlinked, or should never connect again; a disconnect is for a device that should stop streaming *now* and be allowed back later.
@@ -277,36 +333,60 @@ The phone MUST show a list of discovered and manually-entered hosts by display n
 > [!WARNING]
 > Note for implementors: incoming TCP requires a firewall rule on the laptop's port. The port being dynamic (not 7700) means it cannot be pre-provisioned. The setup guide should inform users of this. The mDNS service record advertises the actual port.
 
-### 6.2 Connection State Machine (Controller Side)
+### 6.2 Connection State Machine
 
-The controller drives the canonical `RemoteLinkState` enum defined in §9.1.
+Both Host and Controller drive the canonical `RemoteLinkState` enum defined in §9.1. Pairing and connection are explicitly decoupled.
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Disconnected
-    Disconnected --> Connecting: User taps Connect
+    [*] --> Unpaired: 0 devices in paired_devices
+    [*] --> Paired: 1+ devices in paired_devices
+    Unpaired --> Paired: Pairing complete (PairApproved)
+    Paired --> Connecting: User taps Rocket button / connect_host
     Connecting --> Connected: Noise handshake + Hello complete
-    Connecting --> Failed: AuthError / VersionMismatch / Revoked
-    Connecting --> Disconnected: Timeout (no retry on timeout)
-    Connected --> Reconnecting: Heartbeat timeout / link drop
+    Connecting --> Failed: AuthError / VersionMismatch / Timeout
+    Connected --> Reconnecting: Heartbeat timeout / packet loss (Controller only)
     Reconnecting --> Connected: Reconnect + snapshot resync
-    Reconnecting --> Failed: Max backoff exceeded / Revoked
-    Connected --> Disconnected: User taps Disconnect (session paused on host)
-    Connected --> Disconnected: Host sends LinkLoss
-    Failed --> [*]: Terminal — user must re-pair or dismiss
+    Reconnecting --> Failed: Max backoff exceeded
+    Connected --> Paired: User taps Disconnect / Host sends LinkLoss
+    Paired --> Unpaired: Device revoked
+    Connected --> Unpaired: Device revoked (LinkLoss Revoked)
+    Failed --> Paired: Failure dismissed (peer remains paired)
+    Failed --> Unpaired: Revoked
 ```
 
-`Failed` is a terminal state. `AuthError::Revoked`, `AuthError::UnknownPeer`, and `VersionMismatch` MUST transition to `Failed`, not `Reconnecting`. A revoked device MUST NOT retry with backoff.
+`Failed` is a terminal error state for that connection attempt. `AuthError::Revoked`, `AuthError::UnknownPeer`, and `VersionMismatch` MUST transition to `Failed` or `Unpaired`, not `Reconnecting`. A revoked device MUST NOT retry with backoff.
 
-**The host occupies a subset of this enum** (§9.1). The host never dials, so it never enters `Connecting` or `Reconnecting`: a link that drops at the host is simply `Connected → Disconnected`, and the controller independently decides whether to retry.
+**State Occupancy Across Roles** (§9.1): The host never dials, so it never enters `Connecting` or `Reconnecting`. When an active link drops, the host transitions `Connected → Paired`, and the controller transitions `Connected → Reconnecting` (or `Paired` on intentional disconnect).
 
-### 6.3 Heartbeat (Bidirectional Ping/Pong)
+### 6.3 Link Supervisor Actor & Heartbeat (Bidirectional Ping/Pong)
 
-- The host sends a `Ping` every **2 seconds** on the control channel.
-- The controller MUST respond with a `Pong` containing the received ping's `seq` number within **1 second**.
-- If the host does not receive a `Pong` within 1 second, it retries. After **3 missed pongs** (≈ 6 seconds total), the host MUST call `PauseSession` and emit `LinkLoss` to the controller.
-- If the controller does not receive a `Ping` for **6 seconds**, it enters `Reconnecting`.
-- Heartbeat intervals and timeouts are named constants, not magic numbers.
+To guarantee that both peers stay in continuous synchronization and detect unintentional link cuts, both Host and Controller MUST run a dedicated background **Link Supervisor Actor** over the active control channel immediately upon `attach_link`.
+
+#### 6.3.1 Inbound Message Dispatching (The Duplex Reader)
+The Link Supervisor continuously reads from the control socket and routes messages:
+- **`Ping(seq)`**: The receiver MUST immediately respond with a `Pong(seq)` carrying the echoed sequence number.
+- **`Pong(seq)`**: The sender resets its missed pong counter to 0 and clears the liveness deadline.
+- **`Disconnect`**: Received by Host when Controller disconnects intentionally. Host pauses the active session, closes the link cleanly, transitions `RemoteLinkState` to `Paired`, and emits `remote_state_changed`.
+- **`LinkLoss(reason)`**: Received by Controller when Host ends the connection or revokes.
+  - If `reason == HostDisconnected`: Controller transitions to `Paired`, halts reconnect loops, and emits `remote_state_changed`.
+  - If `reason == Revoked`: Controller purges the host row from `paired_devices`, transitions to `Unpaired`, halts reconnect loops, and emits `remote_state_changed`.
+- **`Req` / `Res` / `Err`**: Routed to/from the IPC command gateway.
+
+#### 6.3.2 Heartbeat Probing Invariants
+- The host sends a `Ping(seq)` every **2 seconds** on the control channel.
+- The controller MUST respond with a `Pong(seq)` within **1 second**.
+- If the host does not receive a `Pong` within 1 second, it increments `missed_pongs`. After **3 missed pongs** (≈ 6 seconds total), the host MUST declare an involuntary cutoff, call `PauseSession`, close the transport link, transition `RemoteLinkState` to `Paired`, and emit `remote_state_changed`.
+- The controller monitors incoming `Ping` probes. If no `Ping` is received from the host for **6 seconds**, the controller MUST declare an involuntary cutoff, close the transport link, transition `RemoteLinkState` to `Reconnecting`, and begin exponential backoff retries.
+- Heartbeat intervals (2s) and cutoff deadlines (6s) are named constants, never magic numbers.
+
+#### 6.3.3 Involuntary Cutoff & Unannounced Failure Handling
+Unintentional cutoffs (device powered off, OS app kill, Wi-Fi deadzone, router reboot) are handled deterministically through dual detection paths:
+1. **Immediate Socket Fault (Fast Path):** If the OS kernel reports TCP RST, ECONNRESET, or WebSocket EOF, the Link Supervisor terminates immediately without waiting for the heartbeat timeout.
+2. **Heartbeat Deadline (Slow Path):** If the network path drops packets silently without TCP RST (e.g. out of range Wi-Fi), the 6-second heartbeat timeout triggers cutoff cleanup.
+In both cases:
+- The Host never hangs; it pauses the active session safely and returns to `Paired`.
+- The Controller cleanly transitions to `Reconnecting` (or `Failed` after maximum backoff) and updates the UI immediately via `remote_state_changed`.
 
 ### 6.4 Intentional Disconnect
 
@@ -663,32 +743,34 @@ Network/connection state is governed by a **single canonical enum**, `RemoteLink
 ```
 RemoteLinkState
 ├── Disabled       remote control switched OFF (host only)
-├── Disconnected   no link
-├── Connecting     handshake in progress
-├── Connected      link is up
-├── Reconnecting   link dropped, retrying with backoff
-└── Failed(kind)   terminal: Revoked | UnknownPeer | VersionMismatch | Timeout | Transport | RateLimited | HostBusy
+├── Unpaired       0 devices in paired_devices (host shows QR, controller shows scan prompt)
+├── Paired         1+ devices in paired_devices, no active streaming link (idle)
+├── Connecting     Noise session handshake in progress (triggered by Rocket connect)
+├── Connected      streaming link is up, authenticated and active
+├── Reconnecting   link dropped, retrying with backoff (controller only)
+└── Failed(kind)   terminal failure: Revoked | UnknownPeer | VersionMismatch | Timeout | Transport | HostBusy
 ```
 
-**The host and the controller read the same enum.** The controller drives it through the full dial-driven state machine (§6.2). The host never dials, so it only ever occupies a subset:
+**The host and the controller read the same enum.** The controller drives it through the dial-driven state machine (§6.2). The host never dials, so it occupies an authorized subset:
 
 | State | Controller | Host |
 | :--- | :---: | :---: |
 | `Disabled` | — | ✔ |
-| `Disconnected` | ✔ | ✔ |
+| `Unpaired` | ✔ | ✔ |
+| `Paired` | ✔ | ✔ |
 | `Connecting` | ✔ | — |
 | `Connected` | ✔ | ✔ |
 | `Reconnecting` | ✔ | — |
 | `Failed` | ✔ | — |
 
 > [!IMPORTANT]
-> **Amended from the original draft.** The first draft of this section specified a `controller_attached: bool` flag on the host. That is replaced by `RemoteLinkState`. A boolean that shadows a state transition violates `.agents/rules/backend-style-guide.md` §5 ("Never introduce boolean flags that shadow state transitions"), and it is the reason the original design produced scattered, contradictory checks across the engine, dictation, lifecycle, router and gateway. **Every consumer of remote state MUST query the canonical enum.** No `is_connected`, `controller_attached`, or equivalent boolean may exist anywhere in the codebase.
+> **Orthogonal Zero-State Invariant.** The canonical enum explicitly distinguishes `Unpaired` (no device trusted) from `Paired` (device trusted, socket idle). The codebase and frontend MUST NOT query database tables or use boolean flags (like `controller_attached` or `pairedDevices.length > 0`) to infer remote state. **Every consumer of remote state MUST query the canonical enum.**
 
 These two state machines are explicitly decoupled. `RemoteLinkState` gates event fanout and the desktop UI badge, but does not alter the pipeline state machine.
 
 **State delivery.** The backend owns the state and pushes it:
-- A `remote_state_changed` IPC event is emitted on every transition, on both the host and the controller. The desktop and the phone run the same frontend, so the same event name and payload type serve both.
-- A `get_link_state` IPC command returns the current value. It exists **only on the controller**, and **only** to hydrate the initial render: the controller auto-reconnects (§6.2, US-RC-06), so its state can already be `Reconnecting` before the UI mounts, and a frontend that only listened for events would wait forever for a transition that already happened. The host does **not** need the command: a host that has just booted cannot have a controller attached, because the link died with the previous process, so the desktop starts at `Disconnected` and follows the event.
+- A `remote_state_changed` IPC event is emitted on every transition, on both the host and the controller. It carries the canonical `RemoteStateDto` (`link`, `deviceId`, `displayName`, `failure`, `failureKind`). When `link` is `Paired` or `Connected`, it identifies the peer; when `Unpaired`, peer fields are null.
+- A `get_link_state` IPC command returns the current value. It exists **only on the controller**, and **only** to hydrate the initial render: the controller auto-reconnects (§6.2, US-RC-06), so its state can already be `Reconnecting` before the UI mounts, and a frontend that only listened for events would wait forever for a transition that already happened. The host starts at `Unpaired` or `Paired` upon boot from its database check and follows the event.
 
 **The general rule for the whole feature:** the backend owns state and pushes it; the frontend may read it once at boot, never to drive it.
 
@@ -706,10 +788,9 @@ These events describe the active voice interaction. They go to the controller (t
 
 These events describe host state that is meaningful on both surfaces.
 
-**Remote control events → host desktop only:**
-`remote_device_connected`, `remote_device_disconnected`
-
-These are how the desktop knows to show/hide the "Remote session active" badge.
+**Remote control events:**
+- `remote_state_changed`: Emitted on every transition of `RemoteLinkState` (`Disabled`, `Unpaired`, `Paired`, `Connecting`, `Connected`, `Reconnecting`, `Failed`) to **both Host and Controller**. The Host desktop UI uses `link === "Connected"` to show the "Remote session active" badge and disable local desktop write controls, and `link === "Paired"` / `link === "Unpaired"` to hide the badge and restore local controls.
+- `remote_pairing_state_changed`: Emitted on `PairingState` transitions (`Idle`, `AwaitingApproval`, `Approved`, `Denied`) to **Host desktop** (driving `<AuthorizeDeviceModal>`) and **Controller** (driving pairing progress).
 
 > [!IMPORTANT]
 > When the controller disconnects, the host MUST immediately resume sending pipeline events to the desktop window. The desktop is a passive observer during remote sessions, not permanently excluded.
@@ -765,11 +846,11 @@ The command gateway MUST enforce the routing table (§8.1) on every `Req` messag
 
 ## 11. `ownership-spec.md` Amendment
 
-**SessionOrigin** must be added to `ownership-spec.md`. When a controller is attached, the host engine MUST use `NetworkAudioCapture` (phone mic stream) as the exclusive audio capture source. It MUST NOT fall back to the local laptop microphone. The laptop dictation hotkey MUST be gated (non-functional) while a controller is attached.
+**SessionOrigin** must be added to `ownership-spec.md`. When a controller is connected (`RemoteLinkState == Connected`), the host engine MUST use `NetworkAudioCapture` (phone mic stream) as the exclusive audio capture source. It MUST NOT fall back to the local laptop microphone. The laptop dictation hotkey MUST be gated (non-functional) while `RemoteLinkState == Connected`.
 
-**Conflict with US-OWN-03:** `ownership-spec.md` US-OWN-03 says pausing restores dictation. The remote control rule takes precedence: while a controller is attached, dictation is gated regardless of pipeline state (even Paused). Dictation is only restored when the controller disconnects.
+**Conflict with US-OWN-03:** `ownership-spec.md` US-OWN-03 says pausing restores dictation. The remote control rule takes precedence: while `RemoteLinkState == Connected`, dictation is gated regardless of pipeline state (even Paused). Dictation is only restored when the controller disconnects (`RemoteLinkState` transitions to `Paired` or `Unpaired`).
 
-**"Remote session" definition:** A remote session is active when `controller_attached = true`, not merely when the pipeline is non-Idle. If the phone is attached but no session has started, dictation is still gated.
+**"Remote session" definition:** A remote session is active when `RemoteLinkState == Connected`, not merely when the pipeline is non-Idle. While `RemoteLinkState == Connected`, dictation is gated. Dictation is restored immediately when `RemoteLinkState` transitions to `Paired` or `Unpaired`.
 
 ---
 
@@ -779,16 +860,15 @@ Add `paired_devices` as §5.14 in `db-spec.md`. The `paired_devices` table has n
 
 ---
 
-## 13. `ipc-spec.md` Amendment
+## 13. `ipc-spec.md` Alignment
 
-Add the following events to §5 of `ipc-spec.md`:
+This specification aligns with §4.8 and §5 of `ipc-spec.md`. The IPC surface relies strictly on the canonical `remote_state_changed` event:
 
-| Event | Payload | Goes to |
-| :--- | :--- | :--- |
-| `attach_snapshot` | `{ state: StateChangedPayload, sessionId: number \| null, settings: BootState }` | Controller only (via `AttachSnapshot` wire message) |
-| `link_loss` | `{ reason: "host_paused" \| "host_idle" }` | Controller only |
-| `remote_device_connected` | `{ deviceId: string, displayName: string }` | Host desktop only |
-| `remote_device_disconnected` | `{ deviceId: string }` | Host desktop only |
+| Event | Payload | Emitted On | Description |
+| :--- | :--- | :--- | :--- |
+| `remote_state_changed` | `RemoteStateDto` | Host & Controller | Emitted on every `RemoteLinkState` transition. The single source of truth for remote pairing and transport state. When `link` is `Paired` or `Connected`, carries peer identity (`deviceId`, `displayName`); when `Unpaired`, peer fields are null. Eliminates the need for side-channel `paired_devices_changed` events. |
+| `remote_pairing_state_changed` | `PairingStateDto` | Host & Controller | Emitted on every `PairingState` transition (`Idle`, `AwaitingApproval`, `Approved`, `Denied`). Drives Tier 1 setup UI modals and progress states. |
+| `remote_pairing_requested` | `{ deviceId: string, displayName: string, expiresAtMs: number }` | Host only | Emitted when an inbound pairing request completes the Noise handshake and token check, opening the Host Pairing Approval Dialog (`approve_pairing`). |
 
 ---
 
@@ -809,7 +889,8 @@ Add the following events to §5 of `ipc-spec.md`:
 | **AttachSnapshot** | State snapshot sent to the controller immediately after Hello. |
 | **LinkLoss** | Host-initiated connection close due to session pause or idle. |
 | **Pipeline state** | Idle / Ready / Listening / Thinking / Working / Speaking / Paused / Sleeping / Error. Governed by `events-spec.md`. |
-| **Network state** | Disconnected / Connecting / Connected / Reconnecting / Failed. Controller's own state machine. Decoupled from pipeline state. |
+| **Link state (`RemoteLinkState`)** | Disabled / Unpaired / Paired / Connecting / Connected / Reconnecting / Failed. Canonical connection and pairing readiness state. Decoupled from pipeline state. |
+| **Pairing state (`PairingState`)** | Idle / AwaitingApproval / Approved / Denied. Ephemeral Tier 1 pairing workflow state machine. |
 | **PCM16** | 16-bit signed integer audio. Uplink: 16 kHz mono, 20 ms frames (640 bytes). Downlink: 24 kHz mono, 20 ms frames (960 bytes). |
 | **Epoch** | A monotonic counter on AudioFrame and Flush, incremented on each Flush, used to discard stale in-flight frames. |
 | **SessionToken** | The 32-byte single-use token the host issues after the `Hello` exchange and the controller presents on the audio socket, binding the two sockets to one logical session. |
@@ -832,7 +913,6 @@ Add the following events to §5 of `ipc-spec.md`:
 | **Port selection** | Dynamic free port, advertised in mDNS service record | Avoids hardcoded port conflicts. | Fixed port 7700 (conflicts with Meilisearch default). |
 | **Pairing consent** | Host shows approval prompt; explicit user tap required | Prevents rogue QR photos from pairing unauthorised devices. | Automatic approval (QR window is the only gate; photographed QR bypasses it). |
 | **Audio sockets** | Two WebSocket connections per link | High-frequency audio frames never block control messages (Ping, Flush, Disconnect). | Single multiplexed socket (audio volume starves control messages). |
-| **Audio socket auth** | Session token issued by host, sent as first audio socket message | Ties the audio socket to the authenticated control channel without a second Noise handshake. | No audio socket auth (unauthenticated audio injection possible). |
 | **Audio format** | Uplink 16 kHz, downlink 24 kHz, both declared in Hello | Uplink matches STT expectation (16 kHz); downlink matches TTS output (24 kHz). Format declared per-direction to make mismatches detectable. | Same format both directions (requires resampling either STT input or TTS output unnecessarily). |
 | **Flush epoch** | `epoch` field on AudioFrame; bumped on Flush | Allows controller to discard stale in-flight frames reliably without wall-clock comparison. | Sequence number alone (cannot distinguish gap-loss from stale-after-flush). |
 | **Session on disconnect** | Session paused (not terminated) | Allows resume from laptop or phone reconnect; no conversation lost. | Session terminated (destructive; confusing if disconnect was accidental). |

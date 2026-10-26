@@ -194,6 +194,8 @@ export const ControllerRemoteDeskPanel = memo(() => {
         : (pairedHost.hints[0] as { addr?: string })?.addr ?? "Local Wi-Fi"
       : "Local Wi-Fi";
 
+  const isPairedOrConnected = (linkState === "Paired" || linkState === "Connected") && pairedHost !== null;
+
   return (
     <div className="flex flex-row items-center justify-between gap-4 h-full p-2 sm:p-3 rounded-xl bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--accent),0.08)] animate-fade-in">
       {/* Left Column: Host Identity or Pairing Prompt */}
@@ -204,7 +206,7 @@ export const ControllerRemoteDeskPanel = memo(() => {
           </span>
         </div>
 
-        {pairedHost ? (
+        {isPairedOrConnected ? (
           <div className="flex flex-col gap-1">
             <div className="flex items-center gap-2 min-w-0">
               <span
@@ -249,7 +251,7 @@ export const ControllerRemoteDeskPanel = memo(() => {
 
       {/* Right Column: Scan Action or Connected Status with Revoke Trigger */}
       <div className="shrink-0 w-[116px] flex flex-col items-center justify-center">
-        {pairedHost ? (
+        {isPairedOrConnected ? (
           <HostGlyphButton
             isConnected={isConnected}
             onClick={() => setIsConfirmRevokeOpen(true)}
