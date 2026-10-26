@@ -64,6 +64,7 @@ const PERMITTED_DESKTOP_READS: &[&str] = &[
     "revoke_device",
     "pair_new_device",
     "approve_pairing",
+    "pair_device",
     "list_paired_devices",
     "get_link_state",
     "get_command_routing",

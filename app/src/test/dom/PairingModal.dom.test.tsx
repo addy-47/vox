@@ -25,7 +25,7 @@ describe("PairingModal DOM suite", () => {
 
     useRemoteStore.setState({
       pairNewDevice: mockPairNewDevice,
-      linkState: "Disconnected",
+      linkState: "Unpaired",
     });
 
     const onClose = vi.fn();
@@ -55,7 +55,7 @@ describe("PairingModal DOM suite", () => {
 
     useRemoteStore.setState({
       pairNewDevice: mockPairNewDevice,
-      linkState: "Disconnected",
+      linkState: "Unpaired",
     });
 
     render(<PairingModal open={true} onClose={vi.fn()} />);
@@ -90,7 +90,7 @@ describe("PairingModal DOM suite", () => {
 
     useRemoteStore.setState({
       pairNewDevice: mockPairNewDevice,
-      linkState: "Disconnected",
+      linkState: "Unpaired",
     });
 
     const onClose = vi.fn();
@@ -128,7 +128,7 @@ describe("PairingModal DOM suite", () => {
 
     useRemoteStore.setState({
       pairNewDevice: mockPairNewDevice,
-      linkState: "Disconnected",
+      linkState: "Unpaired",
     });
 
     const { unmount } = render(<PairingModal open={true} onClose={vi.fn()} />);
@@ -152,7 +152,7 @@ describe("PairingModal DOM suite", () => {
 
     useRemoteStore.setState({
       pairNewDevice: mockPairNewDevice,
-      linkState: "Disconnected",
+      linkState: "Unpaired",
       pendingPairingPrompt: null,
       approvePairing: mockApprovePairing,
     });

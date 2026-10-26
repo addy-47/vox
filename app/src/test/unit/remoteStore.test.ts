@@ -66,7 +66,7 @@ describe("remoteStore unit suite", () => {
 
     // Reset Zustand store state to defaults
     useRemoteStore.setState({
-      linkState: "Disconnected",
+      linkState: "Unpaired",
       failureReason: null,
       connectedPeer: null,
       pendingPairingPrompt: null,
@@ -114,7 +114,7 @@ describe("remoteStore unit suite", () => {
   });
 
   it("subscribes to remote_state_changed and updates store accordingly", async () => {
-    transport.mockResponses["get_link_state"] = { link: "Disconnected" } as RemoteStateDto;
+    transport.mockResponses["get_link_state"] = { link: "Unpaired" } as RemoteStateDto;
     transport.mockResponses["list_paired_devices"] = [] as PairedDeviceDto[];
     transport.mockResponses["get_command_routing"] = {};
 
@@ -149,7 +149,7 @@ describe("remoteStore unit suite", () => {
   });
 
   it("subscribes to remote_pairing_requested and sets pendingPairingPrompt", async () => {
-    transport.mockResponses["get_link_state"] = { link: "Disconnected" } as RemoteStateDto;
+    transport.mockResponses["get_link_state"] = { link: "Unpaired" } as RemoteStateDto;
     transport.mockResponses["list_paired_devices"] = [] as PairedDeviceDto[];
     transport.mockResponses["get_command_routing"] = {};
 
@@ -196,12 +196,29 @@ describe("remoteStore unit suite", () => {
     expect(useRemoteStore.getState().pairedDevices[0]?.deviceId).toBe("approved_dev");
   });
 
-  it("invokes revokeDevice, disconnectDevice, connectHost, and disconnectHost", async () => {
+  it("invokes pairDevice, revokeDevice, disconnectDevice, connectHost, and disconnectHost", async () => {
+    transport.mockResponses["pair_device"] = null;
     transport.mockResponses["revoke_device"] = null;
     transport.mockResponses["disconnect_device"] = null;
     transport.mockResponses["connect_host"] = null;
     transport.mockResponses["disconnect_host"] = null;
     transport.mockResponses["list_paired_devices"] = [];
+
+    await useRemoteStore.getState().pairDevice({
+      address: "192.168.1.100:7700",
+      token: "tok123",
+      publicKey: "pub456",
+      deviceId: "dev789",
+    });
+    expect(transport.invokes).toContainEqual({
+      cmd: "pair_device",
+      args: {
+        address: "192.168.1.100:7700",
+        token: "tok123",
+        publicKey: "pub456",
+        deviceId: "dev789",
+      },
+    });
 
     await useRemoteStore.getState().revokeDevice("device_revoke_1");
     expect(transport.invokes).toContainEqual({
@@ -215,10 +232,10 @@ describe("remoteStore unit suite", () => {
       args: { deviceId: "device_disc_1" },
     });
 
-    await useRemoteStore.getState().connectHost({ address: "192.168.1.100:7700" });
+    await useRemoteStore.getState().connectHost({ deviceId: "peer_1", address: "192.168.1.100:7700" });
     expect(transport.invokes).toContainEqual({
       cmd: "connect_host",
-      args: { address: "192.168.1.100:7700" },
+      args: { deviceId: "peer_1", address: "192.168.1.100:7700" },
     });
 
     await useRemoteStore.getState().disconnectHost();

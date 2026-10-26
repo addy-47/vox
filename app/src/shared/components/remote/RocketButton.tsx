@@ -21,9 +21,12 @@ export const RocketButton = memo(() => {
   const disconnectHost = useRemoteStore((s) => s.disconnectHost);
   const connectHost = useRemoteStore((s) => s.connectHost);
 
+  const failureReason = useRemoteStore((s) => s.failureReason);
+
   const isMobile = isRealMobileDevice();
   const isConnected = linkState === "Connected";
   const isConnecting = linkState === "Connecting" || linkState === "Reconnecting";
+  const isFailed = linkState === "Failed";
   const pairedHost = pairedDevices.find((d) => d.role === "host") ?? pairedDevices[0] ?? null;
 
   const [isConfirming, setIsConfirming] = useState(false);
@@ -47,7 +50,14 @@ export const RocketButton = memo(() => {
       } catch (e) {
         console.warn("[RocketButton] disconnectHost error:", e);
       }
-    } else if (pairedHost) {
+    } else if (linkState === "Paired" && pairedHost) {
+      try {
+        await connectHost({ deviceId: pairedHost.deviceId });
+      } catch (e) {
+        console.warn("[RocketButton] connectHost error:", e);
+      }
+    } else if (linkState === "Failed" && pairedHost) {
+      // Retry connection on failure click
       try {
         await connectHost({ deviceId: pairedHost.deviceId });
       } catch (e) {
@@ -56,7 +66,7 @@ export const RocketButton = memo(() => {
     } else {
       setIsScannerOpen(true);
     }
-  }, [isConnected, pairedHost, disconnectHost, connectHost]);
+  }, [isConnected, linkState, pairedHost, disconnectHost, connectHost]);
 
   const handleCloseScanner = useCallback(() => {
     setIsScannerOpen(false);
@@ -104,6 +114,10 @@ export const RocketButton = memo(() => {
     ? `Connected to ${connectedPeer?.displayName ?? "Host"} (Tap to disconnect)`
     : isConnecting
     ? "Connecting to Host..."
+    : isFailed
+    ? (failureReason ? `Connection failed: ${failureReason} (Tap to retry)` : "Connection failed (Tap to retry)")
+    : linkState === "Unpaired" || !pairedHost
+    ? "Pair with Host"
     : "Connect to Host";
 
   return (
@@ -116,6 +130,8 @@ export const RocketButton = memo(() => {
             "relative inline-flex items-center justify-center w-8 h-8 rounded-xl border transition-all shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))] cursor-pointer",
             isConnected
               ? "border-[rgba(var(--accent),0.5)] bg-[rgba(var(--accent),0.12)] text-[rgb(var(--accent))] shadow-[0_0_12px_rgba(var(--accent),0.2)]"
+              : isFailed
+              ? "border-[rgba(var(--danger),0.5)] bg-[rgba(var(--danger),0.12)] text-[rgb(var(--danger))] shadow-[0_0_12px_rgba(var(--danger),0.2)]"
               : "border-[rgba(var(--border),0.15)] bg-[rgba(var(--card),0.5)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:border-[rgba(var(--accent),0.3)] hover:bg-[rgba(var(--accent),0.06)]"
           )}
           aria-label={controllerTooltip}

@@ -196,9 +196,10 @@ Remote control commands exist on both roles of the pair. **Host** commands are c
 
 | Command | Arguments | Return Shape | Behavioral Contract |
 | :--- | :--- | :--- | :--- |
-| `connect_host` | `deviceId?: string`, `address?: string`, `token?: string`, `publicKey?: string` | `void` | Triggered by Rocket Button 🚀 to dial a paired host (by device id) or a manually entered address, or by QR Scanner with pairing `token` and `publicKey` to initiate first-time pairing. When `token` and `publicKey` are present, sends `PairRequest` before `Hello` and saves the host to local `paired_devices` on `PairApproved`. Resolves candidate list: stored hints first, then mDNS. Emits `remote_state_changed` on every transition. |
-| `disconnect_host` | None | `void` | Triggered by Rocket Button 🚀 to send an intentional `Disconnect`. The host pauses the session and keeps it. |
-| `get_link_state` | None | `RemoteStateDto` | Returns the current `RemoteLinkState` plus the connected host's identity. Exists so the controller's frontend can hydrate its initial render; the controller auto-reconnects, so its state can already be non-idle before the UI mounts. |
+| `pair_device` | `address: string, token: string, hostDeviceId: string, hostPublicKey: string` | `void` | Triggered by QR Scanner during first-time pairing. Connects to host, sends `PairRequest`, awaits host user authorization, saves host to `paired_devices` upon `PairApproved`, and cleanly closes socket to transition into `Paired`. Emits `remote_state_changed`. |
+| `connect_host` | `deviceId?: string, address?: string` | `void` | Triggered by Rocket Button 🚀 to dial a previously paired host (Tier 2 connection). Connects socket, executes Noise session handshake, and attaches audio/control streaming. Emits `remote_state_changed`. |
+| `disconnect_host` | None | `void` | Triggered by Rocket Button 🚀 to send an intentional `Disconnect`. The host pauses the session and keeps it; both sides return to `Paired`. |
+| `get_link_state` | None | `RemoteStateDto` | Returns the current `RemoteLinkState` plus the paired/connected peer identity. Exists so the controller's frontend can hydrate its initial render; the controller auto-reconnects, so its state can already be non-idle before the UI mounts. |
 | `get_command_routing` | None | `Record<string, CommandClass>` | Returns the static command-routing table: the classification of every IPC command and every `update_setting` domain/key as `Remote`, `Local`, `Split`, or `Denied`. The controller's frontend consults it to decide whether an action travels over the link or is handled locally. |
 | `remote_call` | `command: string`, `args?: Record<string, unknown>` | `unknown` | The carrier. Sends a `Req` over the link and resolves with the host's `Res` payload or rejects with the host's `Err` code and message. Only `Remote` and `Split` commands are dispatchable; `Local` and `Denied` are rejected before a request is sent. |
 
@@ -206,7 +207,8 @@ Remote control commands exist on both roles of the pair. **Host** commands are c
 
 | Type | Shape | Description |
 | :--- | :--- | :--- |
-| `RemoteStateDto` | `{ link: string, failure?: string, failureKind?: string, deviceId?: string, displayName?: string }` | The canonical remote link state. `link` is one of `Disabled`, `Disconnected`, `Connecting`, `Connected`, `Reconnecting`, `Failed`. `failure` and `failureKind` (`"timeout"` \| `"unreachable"` \| `"rejected_by_host"` \| `"invalid_token"` \| `"version_mismatch"` \| `"unknown"`) are present only when `link === "Failed"`. `deviceId` and `displayName` identify the attached peer when there is one. |
+| `RemoteStateDto` | `{ link: string, failure?: string, failureKind?: string, deviceId?: string, displayName?: string }` | The canonical remote link state. `link` is one of `Disabled`, `Unpaired`, `Paired`, `Connecting`, `Connected`, `Reconnecting`, `Failed`. `failure` and `failureKind` (`"timeout"` \| `"unreachable"` \| `"rejected_by_host"` \| `"invalid_token"` \| `"version_mismatch"` \| `"unknown"`) are present only when `link === "Failed"`. When `link === "Paired"` or `link === "Connected"`, `deviceId` and `displayName` identify the peer. When `link === "Unpaired"`, peer fields are null. |
+| `PairingStateDto` | `{ state: string, deviceId?: string, displayName?: string, expiresAtMs?: number, failureReason?: string }` | The ephemeral pairing state. `state` is one of `Idle`, `AwaitingApproval`, `Approved`, `Denied`. Drives setup modals (`<AuthorizeDeviceModal>` and `<QrScannerModal>`). |
 | `PairedDeviceDto` | `{ deviceId: string, displayName: string, role: string, pairedAt: number, lastSeenAt?: number, hints: Array<unknown> }` | A row of `paired_devices`. |
 | `CommandClass` | `"Remote" \| "Local" \| "Split" \| "Denied"` | The routing classification of a command or settings key. |
 
@@ -231,8 +233,9 @@ All backend events broadcast over the IPC bridge carry the following contracts:
 | `turn_metrics` | `{ turnId, ttftMs, ttfaMs, totalVoiceLatencyMs, contextTokensUsed, contextWindow }` | Milestone latencies and token usage for assistant turns. |
 | `sessions_changed` | `void` | Signals asynchronous session updates (e.g. title auto-generation). |
 | `settings_updated` | `void` | Signals settings hot-reload completion. |
-| `remote_state_changed` | `{ link: string, failure?: string, failureKind?: string, deviceId?: string, displayName?: string }` | The canonical remote link state changed. Emitted on every transition, on both the host and the controller. The backend owns this state and pushes it; the frontend MUST NOT poll for it. Supersedes the originally proposed `remote_device_connected` / `remote_device_disconnected` pair, which would force the frontend to reconstruct a state machine from two edges. |
-| `remote_pairing_requested` | `{ deviceId: string, displayName: string }` | An inbound pairing request completed the Noise handshake and passed token validation on the host. Triggers the Host Pairing Prompt Modal (`approve_pairing`). |
+| `remote_state_changed` | `{ link: string, failure?: string, failureKind?: string, deviceId?: string, displayName?: string }` | The canonical remote link state changed. Emitted on every transition, on both the host and the controller. The single source of truth for remote pairing and transport state. When `link` is `Paired` or `Connected`, carries peer identity; when `Unpaired`, peer fields are null. |
+| `remote_pairing_state_changed` | `PairingStateDto` | Ephemeral pairing workflow state changed (`Idle`, `AwaitingApproval`, `Approved`, `Denied`). Drives setup modals on Host and Controller. |
+| `remote_pairing_requested` | `{ deviceId: string, displayName: string, expiresAtMs: number }` | An inbound pairing request completed the Noise handshake and passed token validation on the host. Triggers the Host Pairing Prompt Modal (`approve_pairing`). |
 
 ### 5.1 The `activity` Envelope Contract
 When `state_changed` has `state === "Working"`, it MUST include an `activity` envelope:

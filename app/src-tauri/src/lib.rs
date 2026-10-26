@@ -73,7 +73,7 @@ use crate::{
         projects::{create_project, delete_project, get_projects, rename_project},
         remote::{
             approve_pairing, connect_host, disconnect_device, disconnect_host, get_command_routing,
-            get_link_state, list_paired_devices, pair_new_device, revoke_device,
+            get_link_state, list_paired_devices, pair_device, pair_new_device, revoke_device,
         },
         settings::{
             apply_settings_patch, get_restart_status, get_settings, get_settings_contract,
@@ -519,6 +519,17 @@ pub fn run() {
                 spawn_consolidation_scheduler(app.handle().clone(), Arc::clone(&state_arc));
             }
             ipc::remote::spawn_remote_host_listener(app.handle().clone(), Arc::clone(&state_arc));
+            {
+                let db_clone = Arc::clone(&state_arc.db);
+                let remote_mgr = Arc::clone(&state_arc.remote_manager);
+                tauri::async_runtime::spawn(async move {
+                    if let Ok(devices) = crate::services::remote::session::RemoteSessionManager::list_paired_devices(&db_clone).await {
+                        if !devices.is_empty() && remote_mgr.state() == crate::services::remote::session::RemoteLinkState::Unpaired {
+                            remote_mgr.set_state(crate::services::remote::session::RemoteLinkState::Paired);
+                        }
+                    }
+                });
+            }
 
             // ── 1.6 Dictation Global Hotkey Registration ──────────────────────────
             {
@@ -836,6 +847,7 @@ notification_permission_state,
             // Remote Control
             pair_new_device,
             approve_pairing,
+            pair_device,
             list_paired_devices,
             revoke_device,
             disconnect_device,

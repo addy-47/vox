@@ -140,6 +140,7 @@ static ROUTING_TABLE: LazyLock<HashMap<String, CommandClass>> = LazyLock::new(||
     // ─── 12. Remote Control Domain Commands ──────────────────────────────
     table.insert("pair_new_device".into(), CommandClass::Local);
     table.insert("approve_pairing".into(), CommandClass::Local);
+    table.insert("pair_device".into(), CommandClass::Local);
     table.insert("list_paired_devices".into(), CommandClass::Local);
     table.insert("revoke_device".into(), CommandClass::Local);
     table.insert("disconnect_device".into(), CommandClass::Local);

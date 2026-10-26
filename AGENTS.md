@@ -20,7 +20,7 @@ Only paths with non-obvious rules that agents cannot infer from the codebase ind
 | `app/src-tauri/scripts/verify-targets.sh` | **The compile gate.** Always use this — never bare `cargo check` on a cross target. |
 | `.agents/rules/` | Read the relevant rule file before acting in any named role. `android-style-guide.md` is mandatory for any change touching `cpal`, tray/menu, dictation, `utils/paths.rs`, model loading, `Cargo.toml` target tables, or any `cfg(`. |
 | `docs/specs/` | Authoritative behavioral contracts — SSOT. Never contradict. |
-| `docs/plans/phase13/` | Active phase. Plans and `work_log.md` live here. |
+| `docs/plans/phase14/` | Active phase. Plans and `work_log.md` live here. |
 | `temp/.env` / `temp/server.txt` | API keys and remote GPU server creds. Not versioned. |
 | `~/.vox/vox.db` | Local Turso DB. Inspect via `tursodb ~/.vox/vox.db "<SQL>"`. |
 
@@ -80,14 +80,14 @@ All authoritative specifications live in [`docs/specs/`](file:///home/addy/proje
 
 ## 6. Current Phase & Work Log
 
-> 📖 **Phase 13 (active):** All completed work and previous agent activity are recorded in [`docs/plans/phase13/work_log.md`](file:///home/addy/projects/apps/vox/docs/plans/phase13/work_log.md).
+> 📖 **Phase 14 (active):** All completed work and previous agent activity are recorded in [`docs/plans/phase14/work_log.md`](file:///home/addy/projects/apps/vox/docs/plans/phase14/work_log.md).
 > Read `work_log.md` to understand recent milestones, established architectural patterns, and verified seam implementations.
 
 ---
 
 ## 7. Backlog
 
-See **[Phase 13 Backlog](file:///home/addy/projects/apps/vox/docs/plans/phase14/backlog.md)** for Cloud TTS quota management, Azure speech integration, and setup guide modal overhaul details.
+See **[Phase 14 Backlog](file:///home/addy/projects/apps/vox/docs/plans/phase14/backlog.md)** for Cloud TTS quota management, Azure speech integration, and setup guide modal overhaul details.
 - **Backend Ticket**: [Native Barcode Scanner Plugin](file:///home/addy/projects/apps/vox/.scratch/ticket_tauri_barcode_scanner.md) (`tauri-plugin-barcode-scanner`) for Android/iOS ML Kit camera integration.
 
 ---

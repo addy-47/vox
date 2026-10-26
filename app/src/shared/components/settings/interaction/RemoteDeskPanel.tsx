@@ -14,6 +14,7 @@ export const RemoteDeskPanel = memo(() => {
   const updateDraft = useSettingsStore((s) => s.updateDraft);
   const commitChanges = useSettingsStore((s) => s.commitChanges);
 
+  const linkState = useRemoteStore((s) => s.linkState);
   const pairedDevices = useRemoteStore((s) => s.pairedDevices);
   const listPairedDevices = useRemoteStore((s) => s.listPairedDevices);
   const revokeDevice = useRemoteStore((s) => s.revokeDevice);
@@ -59,7 +60,7 @@ export const RemoteDeskPanel = memo(() => {
         <p className="text-[11px] sm:text-[11.5px] text-[rgb(var(--foreground-muted))]/75 leading-relaxed font-medium line-clamp-2">
           {!acceptsControllers ? (
             REMOTE_CONTROL_COPY.description
-          ) : pairedDevice ? (
+          ) : linkState === "Connected" && pairedDevice ? (
             <>
               {REMOTE_CONTROL_COPY.connectedTo}{" "}
               <span className="group inline-flex items-center gap-1.5 align-baseline">
@@ -78,6 +79,26 @@ export const RemoteDeskPanel = memo(() => {
                 </Tooltip>
               </span>
               {REMOTE_CONTROL_COPY.wirelessAudioActive}
+            </>
+          ) : linkState === "Paired" && pairedDevice ? (
+            <>
+              Paired with{" "}
+              <span className="group inline-flex items-center gap-1.5 align-baseline">
+                <span className="text-[11px] font-mono font-bold text-[rgb(var(--accent))]">
+                  {pairedDevice.displayName}
+                </span>
+                <Tooltip label={REMOTE_CONTROL_COPY.revokeDevice} side="top">
+                  <button
+                    type="button"
+                    onClick={() => setIsConfirmRevokeOpen(true)}
+                    className="p-1 rounded-md text-[rgb(var(--danger))] hover:bg-[rgba(var(--danger),0.12)] active:scale-95 cursor-pointer transition-all inline-flex items-center opacity-80 group-hover:opacity-100"
+                    aria-label={REMOTE_CONTROL_COPY.revokeDeviceAria(pairedDevice.displayName)}
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                </Tooltip>
+              </span>
+              . Idle on local Wi-Fi.
             </>
           ) : (
             <>

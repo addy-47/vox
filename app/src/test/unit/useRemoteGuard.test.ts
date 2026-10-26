@@ -8,7 +8,7 @@ describe("useRemoteGuard unit suite", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     useRemoteStore.setState({
-      linkState: "Disconnected",
+      linkState: "Unpaired",
       failureReason: null,
       connectedPeer: null,
     });
@@ -33,8 +33,8 @@ describe("useRemoteGuard unit suite", () => {
       expect(result.current.guardProps.className).toContain("pointer-events-none");
     });
 
-    it("allows mutating controls when linkState is Disconnected", () => {
-      useRemoteStore.setState({ linkState: "Disconnected" });
+    it("allows mutating controls when linkState is Unpaired", () => {
+      useRemoteStore.setState({ linkState: "Unpaired" });
 
       const { result } = renderHook(() => useRemoteGuard());
 
