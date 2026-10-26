@@ -1,6 +1,7 @@
 ---
 name: kilo-subagent
 description: Launch and manage persistent, role-based subagents via the `kilo run` CLI (headless Kilo) for isolated or non-backend tasks (QA, testing, review, frontend, ML research, architecture). Use when the main agent (e.g., running in Antigravity IDE via `agy`) needs to spawn a Kilo subagent as a separate OS process with the full Kilo toolchain and project context.
+disable_mode_invocation: true
 ---
 
 # `kilo-subagent` — CLI Subagent Orchestration (Kilo)

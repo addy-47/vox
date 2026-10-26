@@ -91,3 +91,32 @@ Violating these invariants causes performance regressions, memory leaks, or unmo
 
 ### 4.11 Pure Utility Isolation
 - Place pure formatting and string helpers in `src/shared/lib/`. Pure utilities must never import `@tauri-apps/api` or state stores.
+
+### 4.12 Overlay Stack & Escape Key Hierarchy
+- **Register floating controls:** Popovers, dropdown menus, context menus, and inline search inputs inside modals must register with `useOverlay`.
+- **Nested Escape containment:** Pressing `Escape` in an inner search input or dropdown must clear or close that control only. It must never dismiss the parent modal or drawer.
+- **Stack-aware outside clicks:** Container outside-click listeners must check `getStackSize() === 0` before closing parent views.
+
+### 4.13 Dormant Subtree & Offscreen View Invariant
+- **Zero background execution:** Drawers, modals, collapsible rails, and inactive background tabs must not execute IPC calls, RAF loops, interval timers, or heavy grouping logic while closed or hidden.
+- **Gate unmounted children:** Wrap expensive subtrees in `if (!isOpen && !isMounted) return null;` or use `useEdgePanelActive()` guards.
+- **Modal exclusivity:** When opening a full-page modal (e.g. `ModelModal`), unmount or hide the underlying background catalog view.
+
+### 4.14 Catalog Windowing & Floating-UI Dormancy
+- **Fold-first batching:** Catalogs with more than 50 items must render only the above-the-fold slice (~24 items) on frame 1. Defer the remaining items through idle callbacks or scroll triggers.
+- **Dormant floating hooks:** Tooltips and popovers must never execute `@floating-ui/react` positioning computations while `isOpen === false`.
+- **Zero GPU layer over-allocation:** Never apply `transform-gpu` or `will-change: transform` to hundreds of catalog items simultaneously.
+
+### 4.15 Zero Error String Heuristics (Backend Contract Integrity)
+- **No error string regex:** Never use `.includes()`, `match()`, or regex against `error.message` to branch UI logic.
+- **Typed failure codes:** The backend IPC contract must provide a typed `failure_kind` enum or structured error code.
+- **Mark temporary gaps:** If a backend contract is missing, tag the location with `// backend-gap:` and notify backend engineers.
+
+### 4.16 Semantic Primitives & Accessibility Standards
+- **Prohibited native title attributes:** The native HTML `title` attribute is strictly banned. Always use the shared `<Tooltip>` component.
+- **Interactive keyboard access:** Clickable containers must use `<button>` or provide `role="button"`, `tabIndex={0}`, and `onKeyDown`. Never nest interactive tags (`<input>`, `<a>`) inside `<button>`.
+- **Shared catalog primitives:** Use `<CatalogModalShell>`, `<CatalogModalToolbar>`, and `<CatalogFacetRail>`. Never hand-roll custom facet or header bars.
+
+### 4.17 WebGL Buffer Slicing & Transform Geometry
+- **Partial buffer uploads:** Instanced WebGL/WebGPU mesh updates must use `addUpdateRange(offset, count)` to upload only modified slices.
+- **Unscaled rect measurement:** Never use raw `getBoundingClientRect()` on elements during CSS scale/translate animations. Use untransformed center bounds (`getUnscaledRect`) and eliminate staggered `setTimeout` polling.

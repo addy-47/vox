@@ -1,5 +1,5 @@
 {
-  "latest_version": "0.8.9",
+  "latest_version": "0.8.91",
   "release_notes": [
     "Agentic Tool Runtime & Cognitive Loop: Autonomous multi-pass tool execution with loop safeguards; ships native session auto-titling (respond_and_set_title), hybrid RRF episodic memory search (search_memory), and live web search with duplex translation for Gemini Live and Deepgram.",
     "Empirical Capability Discovery & Model Probing: Automated endpoint capability probing measuring live TTFT, tokens-per-second throughput, and wire-level tool-calling support across 4,500+ catalog models with tri-state provenance and self-healing cache recovery.",

@@ -28,6 +28,10 @@ You own the Vox ambient user interface (`app/src/`). The interface mirrors backe
    - Conditionally mount heavy subtrees (context menus, portals, tooltips) in list rows only when actively triggered (`menuOpen && <...>`).
    - Guard asynchronous listeners in `useEffect` with mounted tracking and unlisten teardown.
    - Explicitly reset `<canvas>` dimensions (`width = 1; height = 1;`) and force context loss during WebGL unmount.
+   - Prohibit native HTML `title` attributes — always use the shared `<Tooltip>` component.
+   - Register all floating sub-controls (popovers, dropdowns, modal search inputs) with `useOverlay` to prevent Escape key leakage.
+   - Keep closed panels, drawers, and inactive tabs dormant — zero IPC calls, timers, or RAF loops while closed.
+   - Never parse raw error message strings with regex or `.includes()` — require typed backend failure codes.
 4. **Verification & Audit Gate (Mandatory Skill):**
    - Run the `/review-ui` skill on every modified frontend surface, drawer, panel, modal, or store before declaring work done.
    - Run `pnpm lint:arch` in `app/` to verify all deterministic architectural invariants hold.
