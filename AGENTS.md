@@ -87,37 +87,7 @@ All authoritative specifications live in [`docs/specs/`](file:///home/addy/proje
 
 ## 7. Backlog
 
-See **[Phase 13 Backlog](file:///home/addy/projects/apps/vox/docs/plans/phase13/backlog.md)** for Cloud TTS quota management, Azure speech integration, and setup guide modal overhaul details.
+See **[Phase 13 Backlog](file:///home/addy/projects/apps/vox/docs/plans/phase14/backlog.md)** for Cloud TTS quota management, Azure speech integration, and setup guide modal overhaul details.
 - **Backend Ticket**: [Native Barcode Scanner Plugin](file:///home/addy/projects/apps/vox/.scratch/ticket_tauri_barcode_scanner.md) (`tauri-plugin-barcode-scanner`) for Android/iOS ML Kit camera integration.
 
 ---
-
-## 8. TEMPORARY — Remote Control Module Map (delete when the feature lands - this section is exempted from the threshold rule in section 1)
-
-> ⏳ Added by the Remote Control feature. **This section is deleted in the final wave (W8).** It is not a permanent rule of the codebase. Full rationale: [`docs/plans/phase13/remote-control-adr.md`](file:///home/addy/projects/apps/vox/docs/plans/phase13/remote-control-adr.md). Behavioral contract: [`docs/specs/remote-control-spec.md`](file:///home/addy/projects/apps/vox/docs/specs/remote-control-spec.md).
-
-### 8.1 Module ownership
-
-Applies to `app/src-tauri/src/services/remote/`.
-
-| Module | Owns | Must never contain |
-| :--- | :--- | :--- |
-| `protocol/` | wire message types, binary framing, capability bitmask, wire error codes | I/O, state, Tauri types |
-| `link/` | `RemoteLink` trait, `LoopbackLink`, `WsLink`, link lifecycle | protocol semantics, app state |
-| `security/` | device identity, key storage, Noise handshake, pairing, trust store | session state, IPC commands |
-| `session/` | `RemoteLinkState`, `SessionRole`, session manager, heartbeat, snapshot | protocol encoding, Tauri commands |
-| `control/` | routing table, arg specs, command gateway, redaction, event policy | transport, audio |
-| `discovery/` | address hints, mDNS advertisement and browsing, dial candidates | session state |
-| `audio/` | network capture, network sink, frame pacing | session state, protocol encoding |
-| `testing/` | headless reference client | production logic |
-
-### 8.2 Rules
-
-1. **`protocol/` is pure.** No `tokio`, no `tauri`, no filesystem. It is the single source of truth for the wire contract; both roles and the test suite import it with no I/O.
-2. **`RemoteLinkState` (`session/state.rs`) is the single source of truth for remote state.** No `is_connected`, `controller_attached`, `is_remote_connected` or equivalent boolean may shadow it anywhere in the codebase. This mirrors `.agents/rules/backend-style-guide.md` §5.
-3. **Host and Controller are roles, not branches.** `session/manager.rs` implements the session once, parameterised by `SessionRole`. Never fork session logic per role.
-4. **`control/routing.rs` is a static table.** Every IPC command and every `update_setting` domain/key must appear in it, including the `model_parameters` pseudo-domain. A test asserts completeness.
-5. **The desktop-vs-remote distinction is an explicit `ControlOrigin` parameter** on the affected service functions. Never a thread-local, never a global flag.
-6. **The backend owns remote state and pushes it.** The frontend may read it once at boot, never to drive it. There is exactly one `remote_state_changed` event.
-7. **`ipc/` holds thin Tauri command wrappers only.** Domain logic belongs to the service module that owns the domain.
-8. **New modules land in the tree above, not as flat files in `services/remote/`.** If a new capability does not fit one of the eight modules, it needs a new module with a stated ownership, not a ninth file at the root.

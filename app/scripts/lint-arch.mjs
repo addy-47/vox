@@ -353,6 +353,68 @@ function offenderPush(list, src, idx, file, frag) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Invariant 34 — No native HTML `title` attributes on interactive elements (frontend-style-guide.md §4.16).
+// Must use shared <Tooltip> instead of native browser tooltip attributes.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  const PENDING_TITLE_CLEANUP = new Set([
+    "shared/components/settings/speech/voices/VoiceCard.tsx",
+    "shared/components/history/CalendarPicker.tsx",
+  ]);
+  const interactiveTitleRegex = /<(button|input|select|a|textarea)\b[^>]*?\btitle\s*=/i;
+  const offenders = [];
+  for (const f of tsFiles) {
+    const r = rel(f);
+    if (PENDING_TITLE_CLEANUP.has(r)) continue;
+    const src = fs.readFileSync(f, "utf-8");
+    if (interactiveTitleRegex.test(src)) {
+      offenders.push(`${r}: native 'title' attribute used on interactive element; use shared <Tooltip>`);
+    }
+  }
+  check("Invariant 34 (No native title on interactive elements)", offenders.length === 0, offenders.map((o) => `  ${o}`).join("\n"));
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Invariant 35 — Zero error string heuristics in UI components (frontend-style-guide.md §4.15).
+// UI components (src/shared/components, src/pages) must not inspect error message text
+// via .includes(), .match(), or regex to branch logic; require typed backend failure codes.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  const errorHeuristicRegex = /\b(err|error|scanError)\b.*?\.(includes|match|test)\(/i;
+  const offenders = [];
+  for (const f of tsFiles) {
+    const r = rel(f);
+    if (!r.startsWith("shared/components/") && !r.startsWith("pages/")) continue;
+    const src = fs.readFileSync(f, "utf-8");
+    if (errorHeuristicRegex.test(src)) {
+      offenders.push(`${r}: raw error string heuristic parsing detected; use typed failure kinds`);
+    }
+  }
+  check("Invariant 35 (Zero error string heuristics in UI)", offenders.length === 0, offenders.map((o) => `  ${o}`).join("\n"));
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Invariant 36 — Zero interactive input elements nested inside button tags (frontend-style-guide.md §4.16).
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  const PENDING_NESTED_CLEANUP = new Set([
+    "shared/components/settings/interaction/DictationConfigDesk.tsx",
+    "shared/components/settings/memory/MemoryConfigDesk.tsx",
+  ]);
+  const nestedButtonInputRegex = /<button\b[^>]*>(?:(?!<\/button>).)*?<(input|select|textarea)\b/is;
+  const offenders = [];
+  for (const f of tsFiles) {
+    const r = rel(f);
+    if (PENDING_NESTED_CLEANUP.has(r)) continue;
+    const src = fs.readFileSync(f, "utf-8");
+    if (nestedButtonInputRegex.test(src)) {
+      offenders.push(`${r}: interactive input nested inside <button> element; invalid HTML`);
+    }
+  }
+  check("Invariant 36 (No nested interactive elements in buttons)", offenders.length === 0, offenders.map((o) => `  ${o}`).join("\n"));
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 if (failures > 0) {
   console.error(`\nlint-arch: ${failures} invariant violation${failures === 1 ? "" : "s"}`);
   process.exit(1);
