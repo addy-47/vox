@@ -7,6 +7,7 @@ import {
   ScanLine,
   Smartphone,
   Link2,
+  X,
 } from "lucide-react";
 import { Modal } from "@/shared/ui/Modal";
 import { useRemoteStore } from "@/store/remoteStore";
@@ -192,6 +193,21 @@ export const PairingModal = memo(({ open, onClose }: PairingModalProps) => {
     window.open("https://github.com/addy-47/vox/releases", "_blank");
   };
 
+  const handleDenyPairing = useCallback(async () => {
+    try {
+      await approvePairing("Reject");
+    } finally {
+      _resetCachedQrDetails();
+      setDetails(null);
+      void generatePairing();
+    }
+  }, [approvePairing, generatePairing]);
+
+  const handleApprovePairing = useCallback(async () => {
+    await approvePairing("Approve");
+    effectiveOnClose();
+  }, [approvePairing, effectiveOnClose]);
+
   const minutes = Math.floor(timeLeft / 60);
   const seconds = timeLeft % 60;
   const timeFormatted = `${minutes}:${seconds.toString().padStart(2, "0")}`;
@@ -200,17 +216,6 @@ export const PairingModal = memo(({ open, onClose }: PairingModalProps) => {
     <Modal
       open={effectiveOpen}
       onClose={effectiveOnClose}
-      icon={
-        pendingPairingPrompt ? undefined : (
-          <Link2 size={18} className="text-[rgb(var(--accent))] shrink-0 rotate-45" />
-        )
-      }
-      title={pendingPairingPrompt ? undefined : "Pair Mobile Controller"}
-      subtitle={
-        pendingPairingPrompt
-          ? undefined
-          : "Scan this QR code from the Vox mobile app to link your devices over local Wi-Fi."
-      }
       position="global"
       fitContent
       className="max-w-[760px] w-[94vw] md:w-full overflow-hidden"
@@ -220,36 +225,63 @@ export const PairingModal = memo(({ open, onClose }: PairingModalProps) => {
           <AuthorizeDeviceContent
             deviceName={pendingPairingPrompt.displayName}
             deviceId={pendingPairingPrompt.deviceId}
-            onApprove={() => void approvePairing("Approve")}
-            onDeny={() => void approvePairing("Reject")}
-            onClose={effectiveOnClose}
+            onApprove={handleApprovePairing}
+            onDeny={handleDenyPairing}
+            onClose={undefined}
           />
         </div>
       ) : (
-        <div className="p-3.5 sm:p-5 md:p-6 md:sm:p-7 space-y-3.5 md:space-y-6">
-              {error ? (
-                <div className="flex flex-col items-center justify-center p-8 gap-3 text-center my-auto">
-                  <AlertCircle className="text-[rgb(var(--error))] w-8 h-8" />
-                  <p className="text-sm font-semibold text-[rgb(var(--foreground))]">
-                    Failed to generate pairing QR
-                  </p>
-                  <p className="text-xs text-[rgb(var(--foreground-muted))] font-mono max-w-sm break-words">
-                    {error}
-                  </p>
-                  <button
-                    type="button"
-                    onClick={generatePairing}
-                    className="mt-2 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[rgba(var(--accent),0.12)] hover:bg-[rgba(var(--accent),0.2)] text-[rgb(var(--accent))] text-xs font-semibold cursor-pointer transition-colors"
-                  >
-                    <RotateCcw size={13} />
-                    Try Again
-                  </button>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5 md:gap-6 items-stretch h-full">
+        <div className="flex flex-col justify-between h-full p-6 sm:p-8 md:p-9 select-none">
+          {/* Header strictly matching AuthorizeDeviceModal */}
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex flex-col min-w-0">
+              <div className="flex items-center gap-1.5 text-[rgb(var(--accent))]">
+                <Link2 size={14} className="shrink-0 rotate-45 text-[rgb(var(--accent))]" />
+                <span className="text-[11px] font-mono tracking-[0.2em] uppercase font-bold text-[rgb(var(--accent))]">
+                  REMOTE CONTROL
+                </span>
+              </div>
+              <h2 className="text-2xl sm:text-[26px] font-bold tracking-tight text-[rgb(var(--foreground))] mt-1">
+                Pair Mobile Controller
+              </h2>
+              <p className="text-[12.5px] text-[rgb(var(--foreground-muted))] mt-1 leading-normal max-w-[480px]">
+                Scan this QR code from the Vox mobile app to link your devices over local Wi-Fi.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={effectiveOnClose}
+              aria-label="Close"
+              className="w-8 h-8 rounded-full bg-[rgba(var(--foreground),0.06)] hover:bg-[rgba(var(--foreground),0.12)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] flex items-center justify-center transition-colors cursor-pointer shrink-0"
+            >
+              <X size={16} />
+            </button>
+          </div>
+
+          {error ? (
+            <div className="flex flex-col items-center justify-center p-8 gap-3 text-center my-auto mt-6">
+              <AlertCircle className="text-[rgb(var(--error))] w-8 h-8" />
+              <p className="text-sm font-semibold text-[rgb(var(--foreground))]">
+                Failed to generate pairing QR
+              </p>
+              <p className="text-xs text-[rgb(var(--foreground-muted))] font-mono max-w-sm break-words">
+                {error}
+              </p>
+              <button
+                type="button"
+                onClick={generatePairing}
+                className="mt-2 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[rgba(var(--accent),0.12)] hover:bg-[rgba(var(--accent),0.2)] text-[rgb(var(--accent))] text-xs font-semibold cursor-pointer transition-colors"
+              >
+                <RotateCcw size={13} />
+                Try Again
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5 md:gap-6 items-stretch h-full mt-7">
                   {/* Left Column: 3-Step Setup Stepper */}
-                  <div className="order-2 md:order-1 md:col-span-7 flex flex-col justify-between p-3 sm:p-4 md:p-5">
-                    <div className="relative space-y-5 md:space-y-13">
+                  <div className="order-2 md:order-1 md:col-span-7 flex flex-col justify-between p-3 sm:p-4 md:p-5 pb-0 sm:pb-0 md:pb-0">
+                    <div className="relative space-y-4 md:space-y-13">
 
 
                       {/* Continuous Vertical Timeline Spine */}
@@ -326,8 +358,8 @@ export const PairingModal = memo(({ open, onClose }: PairingModalProps) => {
                       </div>
                     </div>
 
-                    {/* Host Network Address Footer */}
-                    <div className="mt-2.5 md:mt-auto pt-2.5 md:pt-3 border-t border-[rgba(var(--border),0.06)] flex items-center justify-between text-[11px] md:text-xs">
+                    {/* Host Network Address Footer — aligned with bottom edge of right QR card */}
+                    <div className="mt-4 md:mt-auto pt-2.5 md:pt-3 pb-0.5 md:pb-1 border-t border-[rgba(var(--border),0.06)] flex items-center justify-between text-[11px] md:text-xs">
                       <div className="flex items-center gap-1.5 md:gap-2 text-[rgb(var(--foreground-muted))]">
                         <Wifi
                           size={12}
@@ -387,13 +419,25 @@ export const PairingModal = memo(({ open, onClose }: PairingModalProps) => {
                       <div className="w-full pt-2 md:pt-3 mt-2 md:mt-3 border-t border-[rgba(var(--border),0.06)] flex items-center justify-between md:flex-col md:items-center">
                         <div className="flex items-center gap-1.5 md:flex-col md:items-center">
                           <div className="inline-flex items-center gap-1 text-[11px] text-[rgb(var(--foreground-muted))]">
-                            <Clock size={11} className="text-[rgb(var(--accent))] md:w-[12px] md:h-[12px]" />
+                            <Clock
+                              size={11}
+                              className={cn(
+                                "md:w-[12px] md:h-[12px] transition-colors",
+                                timeLeft <= 5 && timeLeft > 0
+                                  ? "text-[rgb(var(--error))]"
+                                  : timeLeft <= 20 && timeLeft > 0
+                                  ? "text-[rgb(var(--warning))]"
+                                  : "text-[rgb(var(--accent))]"
+                              )}
+                            />
                             <span>Expires in</span>
                           </div>
                           <div
                             className={cn(
                               "font-mono font-extrabold tracking-tight transition-colors text-sm md:text-2xl md:sm:text-3xl md:mt-0.5",
-                              timeLeft <= 15 && timeLeft > 0
+                              timeLeft <= 5 && timeLeft > 0
+                                ? "text-[rgb(var(--error))]"
+                                : timeLeft <= 20 && timeLeft > 0
                                 ? "text-[rgb(var(--warning))]"
                                 : "text-[rgb(var(--foreground))]"
                             )}

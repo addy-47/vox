@@ -74,18 +74,18 @@ export function resolveActivityDisplay(
     };
   }
 
-  if (!isEngaged || state === "Idle") {
+  if (isSleeping || state === "Sleeping") {
     return {
-      label: "Dormant",
+      label: "Sleeping",
       orbState: "breathing",
       motionPreset: "silk",
       shimmer: false,
     };
   }
 
-  if (isSleeping || state === "Sleeping") {
+  if (!isEngaged || state === "Idle") {
     return {
-      label: "Sleeping",
+      label: "Dormant",
       orbState: "breathing",
       motionPreset: "silk",
       shimmer: false,

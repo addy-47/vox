@@ -3,7 +3,6 @@ import { useRemoteStore } from "@/store/remoteStore";
 import { QrScannerModal } from "@/shared/components/remote/QrScannerModal";
 import { ConfirmModal } from "@/shared/ui/ConfirmModal";
 import { REMOTE_CONTROL_COPY } from "@/data/settingsCopy";
-import { cn } from "@/shared/lib/utils";
 
 const ScannerGlyphButton = ({ onClick }: { onClick: () => void }) => (
   <button
@@ -55,7 +54,7 @@ const HostGlyphButton = ({
 }) => (
   <button
     type="button"
-    aria-label="Revoke paired host"
+    aria-label="Paired host status"
     onClick={onClick}
     className="group flex flex-col items-center shrink-0 select-none cursor-pointer rounded-2xl px-3 py-1.5 transition-all duration-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(var(--accent))]"
   >
@@ -73,14 +72,14 @@ const HostGlyphButton = ({
           width="30"
           height="20"
           rx="3"
-          stroke={isConnected ? "rgb(var(--accent))" : "rgba(var(--foreground), 0.4)"}
+          stroke="rgb(var(--accent))"
           strokeWidth="1.5"
           className="transition-colors duration-300"
         />
         {/* Screen stand */}
         <path
           d="M 18 28 L 18 33 M 26 28 L 26 33 M 14 33 L 30 33"
-          stroke={isConnected ? "rgb(var(--accent))" : "rgba(var(--foreground), 0.4)"}
+          stroke="rgb(var(--accent))"
           strokeWidth="1.5"
           strokeLinecap="round"
           strokeLinejoin="round"
@@ -106,22 +105,13 @@ const HostGlyphButton = ({
             />
           </>
         ) : (
-          <circle cx="22" cy="18" r="2" fill="rgba(var(--foreground), 0.35)" />
+          <circle cx="22" cy="18" r="2.5" fill="rgb(var(--accent))" />
         )}
       </svg>
     </div>
 
-    <span
-      className={cn(
-        "mt-1 text-[10px] font-mono font-bold uppercase tracking-wider transition-colors",
-        isConnected ? "text-[rgb(var(--accent))]" : "text-[rgb(var(--foreground-muted))]"
-      )}
-    >
+    <span className="mt-1 text-[10px] font-mono font-bold uppercase tracking-wider text-[rgb(var(--accent))] transition-colors">
       {isConnected ? "CONNECTED" : "PAIRED"}
-    </span>
-
-    <span className="text-[9.5px] font-medium text-[rgb(var(--danger))] opacity-75 group-hover:opacity-100 group-hover:underline transition-opacity mt-0.5">
-      Revoke
     </span>
   </button>
 );
@@ -134,7 +124,6 @@ export const ControllerRemoteDeskPanel = memo(() => {
 
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [defaultManual, setDefaultManual] = useState(false);
-  const [hasCameraPermission, setHasCameraPermission] = useState<boolean | null>(null);
   const [isConfirmRevokeOpen, setIsConfirmRevokeOpen] = useState(false);
   const [isRevokingPending, setIsRevokingPending] = useState(false);
 
@@ -144,29 +133,6 @@ export const ControllerRemoteDeskPanel = memo(() => {
   useEffect(() => {
     void listPairedDevices();
   }, [listPairedDevices]);
-
-  useEffect(() => {
-    let permStatus: PermissionStatus | null = null;
-    if (typeof navigator !== "undefined" && navigator.permissions?.query) {
-      navigator.permissions
-        .query({ name: "camera" as PermissionName })
-        .then((status) => {
-          permStatus = status;
-          setHasCameraPermission(status.state !== "denied");
-          status.onchange = () => {
-            setHasCameraPermission(status.state !== "denied");
-          };
-        })
-        .catch(() => {
-          setHasCameraPermission(true);
-        });
-    }
-    return () => {
-      if (permStatus) {
-        permStatus.onchange = null;
-      }
-    };
-  }, []);
 
   const handleOpenScanner = useCallback((manual = false) => {
     setDefaultManual(manual);
@@ -186,14 +152,6 @@ export const ControllerRemoteDeskPanel = memo(() => {
     }
   }, [pairedHost, isRevokingPending, revokeDevice]);
 
-  // Extract host IP hint if available
-  const hostHint =
-    pairedHost && Array.isArray(pairedHost.hints) && pairedHost.hints[0]
-      ? typeof pairedHost.hints[0] === "string"
-        ? pairedHost.hints[0]
-        : (pairedHost.hints[0] as { addr?: string })?.addr ?? "Local Wi-Fi"
-      : "Local Wi-Fi";
-
   const isPairedOrConnected = (linkState === "Paired" || linkState === "Connected") && pairedHost !== null;
 
   return (
@@ -206,47 +164,42 @@ export const ControllerRemoteDeskPanel = memo(() => {
           </span>
         </div>
 
-        {isPairedOrConnected ? (
-          <div className="flex flex-col gap-1">
-            <div className="flex items-center gap-2 min-w-0">
-              <span
-                className={cn(
-                  "w-2 h-2 rounded-full shrink-0",
-                  isConnected
-                    ? "bg-[rgb(var(--accent))] shadow-[0_0_8px_rgba(var(--accent),0.8)] animate-pulse"
-                    : "bg-[rgb(var(--foreground-muted))]/40"
-                )}
-              />
-              <span className="text-[13px] font-semibold text-[rgb(var(--foreground))] truncate">
-                {pairedHost.displayName}
+        <p className="text-[11px] sm:text-[11.5px] text-[rgb(var(--foreground-muted))]/75 leading-relaxed font-medium">
+          {isConnected && pairedHost ? (
+            <>
+              {REMOTE_CONTROL_COPY.connectedTo} {pairedHost.displayName}
+              {REMOTE_CONTROL_COPY.wirelessAudioActive}{" "}
+              <button
+                type="button"
+                onClick={() => setIsConfirmRevokeOpen(true)}
+                className="inline-flex items-center gap-1 text-[11px] font-mono font-bold text-[rgb(var(--danger))] hover:underline cursor-pointer transition-colors select-none"
+                aria-label={REMOTE_CONTROL_COPY.revokeHostAria(pairedHost.displayName)}
+              >
+                {REMOTE_CONTROL_COPY.revokeHost}
+              </button>{" "}
+              <span className="text-[11px] font-medium text-[rgb(var(--foreground-muted))]">
+                ({pairedHost.displayName})
               </span>
-              <span className="text-[11px] font-mono text-[rgb(var(--foreground-muted))]/70 truncate">
-                ({hostHint})
+            </>
+          ) : pairedHost ? (
+            <>
+              Paired with {pairedHost.displayName}. Idle on local Wi-Fi.{" "}
+              <button
+                type="button"
+                onClick={() => setIsConfirmRevokeOpen(true)}
+                className="inline-flex items-center gap-1 text-[11px] font-mono font-bold text-[rgb(var(--danger))] hover:underline cursor-pointer transition-colors select-none"
+                aria-label={REMOTE_CONTROL_COPY.revokeHostAria(pairedHost.displayName)}
+              >
+                {REMOTE_CONTROL_COPY.revokeHost}
+              </button>{" "}
+              <span className="text-[11px] font-medium text-[rgb(var(--foreground-muted))]">
+                ({pairedHost.displayName})
               </span>
-            </div>
-            <p className="text-[11px] sm:text-[11.5px] text-[rgb(var(--foreground-muted))]/75 leading-relaxed font-medium line-clamp-2">
-              {isConnected
-                ? "Live session active. Wireless mic and speaker streaming."
-                : "Paired over local Wi-Fi. Tap the rocket icon on home to stream."}
-            </p>
-          </div>
-        ) : (
-          <p className="text-[11px] sm:text-[11.5px] text-[rgb(var(--foreground-muted))]/75 leading-relaxed font-medium line-clamp-2">
-            {REMOTE_CONTROL_COPY.pairDeviceScreenPrompt}
-            {hasCameraPermission === false && (
-              <>
-                {" "}
-                <button
-                  type="button"
-                  onClick={() => handleOpenScanner(true)}
-                  className="inline-flex items-center gap-1 text-[11px] font-mono font-bold text-[rgb(var(--accent))] hover:text-[rgb(var(--foreground))] hover:underline cursor-pointer transition-colors select-none"
-                >
-                  {REMOTE_CONTROL_COPY.enterIpManually}
-                </button>
-              </>
-            )}
-          </p>
-        )}
+            </>
+          ) : (
+            <>Pair with desktop host over local Wi-Fi to use Vox remotely.</>
+          )}
+        </p>
       </div>
 
       {/* Right Column: Scan Action or Connected Status with Revoke Trigger */}

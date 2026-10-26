@@ -746,7 +746,10 @@ export const VoxOrb = React.memo(({
     const themeAccent = themeRef.current.accent;
     const themeGlow = themeRef.current.glow;
 
-    if (state === 'Idle' || state === 'Paused' || state === 'Error') {
+    if (sleeping || state === 'Sleeping') {
+      ctx.tgtGlow.copy(themeGlow).multiplyScalar(0.2);
+      ctx.tgtAccent.copy(themeAccent).multiplyScalar(0.25);
+    } else if (state === 'Idle' || state === 'Paused' || state === 'Error') {
       ctx.tgtGlow.copy(themeGlow);
       ctx.tgtAccent.copy(themeAccent);
     } else if (state === 'Speaking') {

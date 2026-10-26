@@ -22,7 +22,6 @@ import { AlertCircle } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { ChapterScrubber, type Chapter } from "@/shared/ui/ChapterScrubber";
 import { HomeControls } from "@/shared/components/home/HomeControls";
-import { useRemoteGuard } from "@/shared/hooks/useRemoteGuard";
 
 
 import { useProfilerDrawer } from "@/shared/components/profiler/ProfilerDrawer";
@@ -82,8 +81,8 @@ export const Home = memo(() => {
     handleDialogueScroll,
     shouldAutoScrollRef,
     activityDisplay,
+    isRemoteBlocked,
   } = useHomePage();
-  const { isBlocked: isRemoteBlocked } = useRemoteGuard();
   useMemoryTrace("Home");
 
   const { openProfiler, closeProfiler } = useProfilerDrawer();
@@ -294,7 +293,7 @@ export const Home = memo(() => {
           </div>
         )}
         {isRemoteBlocked && (
-          <div className="flex items-center text-[9.5px] font-mono font-semibold tracking-[0.25em] uppercase text-[rgba(var(--foreground),0.65)] leading-none mb-1 animate-in fade-in duration-200">
+          <div className="flex items-center text-[9.5px] font-mono font-semibold tracking-[0.25em] uppercase text-[rgb(var(--accent))]/70 leading-none mb-1 animate-in fade-in duration-200">
             <span>REMOTE</span>
           </div>
         )}
@@ -367,7 +366,7 @@ export const Home = memo(() => {
             <Suspense fallback={null}>
               <VoxOrb
                 telemetryRef={telemetryRef}
-                interactionState={interactionState}
+                interactionState={isRemoteBlocked ? "Sleeping" : interactionState}
                 isSleeping={isSleeping || isRemoteBlocked}
                 paused={isPanelOpen("sessions") || isPanelOpen("notifications") || isPanelOpen("help")}
               />

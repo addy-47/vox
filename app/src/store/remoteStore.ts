@@ -220,9 +220,18 @@ export const useRemoteStore = create<RemoteStoreState>((set, get) => ({
   },
 
   revokeDevice: async (deviceId: string) => {
+    // Optimistically remove device from store state and reset link/peer if this was current peer
+    set((state) => {
+      const remaining = state.pairedDevices.filter((d) => d.deviceId !== deviceId);
+      const isCurrent = state.connectedPeer?.deviceId === deviceId;
+      return {
+        pairedDevices: remaining,
+        connectedPeer: isCurrent ? null : state.connectedPeer,
+        linkState: remaining.length === 0 ? "Unpaired" : state.linkState === "Connected" && isCurrent ? "Paired" : state.linkState,
+      };
+    });
     await apiRevokeDevice(deviceId);
-    // Ticket 05: no explicit list refresh here; remote_state_changed will fire
-    // with Unpaired/Paired and trigger the refresh in the event handler above.
+    await get().listPairedDevices().catch(() => {});
   },
 
   disconnectDevice: async (deviceId: string) => {

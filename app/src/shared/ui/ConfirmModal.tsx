@@ -1,4 +1,4 @@
-import { memo, useRef, useEffect } from "react";
+import { memo, useRef } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { X } from "lucide-react";
@@ -37,22 +37,10 @@ export const ConfirmModal = memo(
     const dialogRef = useRef<HTMLDivElement>(null);
 
     useOverlay({
-      onClose: onCancel,
+      onClose: isLoading ? () => {} : onCancel,
       active: open,
       ref: dialogRef,
     });
-
-    useEffect(() => {
-      if (!open) return;
-      const onKeyDown = (e: KeyboardEvent) => {
-        if (e.key === "Escape" && !isLoading) {
-          e.stopPropagation();
-          onCancel();
-        }
-      };
-      window.addEventListener("keydown", onKeyDown, true);
-      return () => window.removeEventListener("keydown", onKeyDown, true);
-    }, [open, isLoading, onCancel]);
 
     if (typeof document === "undefined") return null;
 
@@ -72,11 +60,11 @@ export const ConfirmModal = memo(
               aria-labelledby="confirm-modal-title"
               aria-describedby="confirm-modal-desc"
               tabIndex={-1}
-              initial={{ opacity: 0, scale: 0.96, y: 6 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.96, y: 6 }}
-              transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
-              className="relative w-[min(440px,92vw)] p-6 rounded-2xl bg-[rgb(var(--card))] border border-[rgba(var(--accent),0.18)] shadow-[0_0_36px_rgba(var(--accent),0.14),0_25px_60px_-15px_rgba(0,0,0,0.85)] pointer-events-auto select-none"
+              initial={{ opacity: 0, scale: 0.96 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.96 }}
+              transition={{ duration: 0.15, ease: "easeOut" }}
+              className="relative w-[min(440px,92vw)] p-6 rounded-2xl bg-[rgb(var(--card))] border border-[rgba(var(--foreground),0.08)] shadow-[0_20px_50px_rgba(0,0,0,0.6)] pointer-events-auto select-none"
               onClick={(e) => e.stopPropagation()}
             >
               {/* Header: Title & Close Button */}

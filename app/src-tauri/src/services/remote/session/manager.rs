@@ -52,6 +52,7 @@ pub struct RemoteSessionManager {
     link: Arc<AsyncRwLock<Option<Arc<dyn RemoteLink>>>>,
     cancel_token: Arc<parking_lot::Mutex<Option<CancellationToken>>>,
     on_state_change: Option<StateChangeCallback>,
+    db: Arc<parking_lot::RwLock<Option<Arc<crate::persistence::VoxDb>>>>,
 }
 
 impl RemoteSessionManager {
@@ -66,11 +67,16 @@ impl RemoteSessionManager {
             link: Arc::new(AsyncRwLock::new(None)),
             cancel_token: Arc::new(parking_lot::Mutex::new(None)),
             on_state_change: None,
+            db: Arc::new(parking_lot::RwLock::new(None)),
         }
     }
 
-    /// Creates a new `RemoteSessionManager` with an attached state transition listener.
-    pub fn with_callback(role: SessionRole, callback: StateChangeCallback) -> Self {
+    /// Creates a new `RemoteSessionManager` with an attached database and state transition listener.
+    pub fn with_callback(
+        role: SessionRole,
+        db: Arc<crate::persistence::VoxDb>,
+        callback: StateChangeCallback,
+    ) -> Self {
         Self {
             role,
             state: Arc::new(RwLock::new(RemoteLinkState::Unpaired)),
@@ -78,7 +84,13 @@ impl RemoteSessionManager {
             link: Arc::new(AsyncRwLock::new(None)),
             cancel_token: Arc::new(parking_lot::Mutex::new(None)),
             on_state_change: Some(callback),
+            db: Arc::new(parking_lot::RwLock::new(Some(db))),
         }
+    }
+
+    /// Attaches the shared database handle for supervisor revocation sync.
+    pub fn set_db(&self, db: Arc<crate::persistence::VoxDb>) {
+        *self.db.write() = Some(db);
     }
 
     /// Returns the session role (Host or Controller).
@@ -256,10 +268,20 @@ impl RemoteSessionManager {
         let on_change = self.on_state_change.clone();
         let peer_arc = Arc::clone(&self.peer_identity);
         let link_slot = Arc::clone(&self.link);
+        let db_opt = self.db.read().clone();
 
         tokio::spawn(async move {
-            run_link_supervisor(role, link, cancel, state_arc, peer_arc, on_change, link_slot)
-                .await;
+            run_link_supervisor(LinkSupervisorParams {
+                role,
+                link,
+                cancel,
+                state: state_arc,
+                peer_identity: peer_arc,
+                on_change,
+                link_slot,
+                db_opt,
+            })
+            .await;
         });
     }
 
@@ -280,6 +302,7 @@ impl RemoteSessionManager {
         host_device_id: String,
         on_prompting: Option<Box<dyn FnOnce() + Send>>,
     ) -> Result<(), LinkError> {
+        self.set_db(Arc::clone(&db));
         self.set_state(RemoteLinkState::Connecting);
 
         let url = if address.starts_with("ws://") || address.starts_with("wss://") {
@@ -444,6 +467,7 @@ impl RemoteSessionManager {
         device_id: String,
         address: Option<String>,
     ) -> Result<(), LinkError> {
+        self.set_db(Arc::clone(&db));
         self.set_state(RemoteLinkState::Connecting);
 
         // Resolve address: use provided or fall back to paired_devices hints
@@ -508,22 +532,33 @@ impl RemoteSessionManager {
             Ok(h) => h,
             Err(e) => {
                 let err_str = e.to_string();
-                let (msg, kind) = if err_str.contains("UnknownPeer") {
+                if err_str.contains("UnknownPeer") {
                     // Host revoked this device or doesn't know it (§6.5, §6.7)
-                    // Purge local paired_devices entry
+                    // Purge local paired_devices entry and transition to Unpaired
                     if let Ok(conn) = db.connect() {
                         let _ = crate::persistence::paired_devices::delete_paired_device(
                             &conn, &device_id,
                         )
                         .await;
                     }
-                    (
-                        format!(
-                            "Connection rejected: this device is not paired with the host ({device_id})"
-                        ),
-                        RemoteFailureKind::RejectedByHost,
-                    )
-                } else if err_str.contains("LinkRefused") {
+                    let remaining = if let Ok(conn) = db.connect() {
+                        crate::persistence::paired_devices::list_paired_devices(&conn)
+                            .await
+                            .map(|v| v.len())
+                            .unwrap_or(0)
+                    } else {
+                        0
+                    };
+                    let new_state = if remaining == 0 {
+                        RemoteLinkState::Unpaired
+                    } else {
+                        RemoteLinkState::Paired
+                    };
+                    self.set_state(new_state);
+                    return Err(e);
+                }
+
+                let (msg, kind) = if err_str.contains("LinkRefused") {
                     (
                         format!("Host refused connection: {e}"),
                         RemoteFailureKind::RejectedByHost,
@@ -585,6 +620,8 @@ impl RemoteSessionManager {
                         reason: LinkLossReason::Revoked,
                     }))
                     .await;
+                // Grace period: allow network sink to flush LinkLoss frame before tearing down TCP
+                tokio::time::sleep(Duration::from_millis(150)).await;
                 let _ = link.close(LinkCloseReason::Local).await;
             }
             if let Some(token) = self.cancel_token.lock().take() {
@@ -733,7 +770,7 @@ where
 ///
 /// This is the ONLY reader of `recv_control()` for the lifetime of a session.
 /// Spec §6.3: handles Ping/Pong, Disconnect, LinkLoss, heartbeat, and faults.
-async fn run_link_supervisor(
+struct LinkSupervisorParams {
     role: SessionRole,
     link: Arc<dyn RemoteLink>,
     cancel: CancellationToken,
@@ -741,7 +778,20 @@ async fn run_link_supervisor(
     peer_identity: Arc<RwLock<Option<SenderIdentity>>>,
     on_change: Option<StateChangeCallback>,
     link_slot: Arc<AsyncRwLock<Option<Arc<dyn RemoteLink>>>>,
-) {
+    db_opt: Option<Arc<crate::persistence::VoxDb>>,
+}
+
+async fn run_link_supervisor(params: LinkSupervisorParams) {
+    let LinkSupervisorParams {
+        role,
+        link,
+        cancel,
+        state,
+        peer_identity,
+        on_change,
+        link_slot,
+        db_opt,
+    } = params;
     // Host sends Ping, Controller monitors Ping arrival deadline
     let mut seq: u64 = 0;
     let mut missed_pongs: u32 = 0;
@@ -803,8 +853,26 @@ async fn run_link_supervisor(
                         let new_state = match loss.reason {
                             LinkLossReason::Revoked => {
                                 // Spec §5.8: peer was revoked — clear trust, halt reconnect
-                                log::warn!("[Remote Supervisor] Link revoked by peer — no reconnect");
-                                RemoteLinkState::Unpaired // shortcut: no DB to check here
+                                log::warn!("[Remote Supervisor] Link revoked by peer — deleting from DB");
+                                let peer_id = peer_identity.read().as_ref().map(|p| p.device_id.clone());
+                                if let (Some(id), Some(db)) = (peer_id, &db_opt) {
+                                    if let Ok(conn) = db.connect() {
+                                        let _ = crate::persistence::paired_devices::delete_paired_device(&conn, &id).await;
+                                        let remaining = crate::persistence::paired_devices::list_paired_devices(&conn)
+                                            .await
+                                            .map(|d| d.len())
+                                            .unwrap_or(0);
+                                        if remaining == 0 {
+                                            RemoteLinkState::Unpaired
+                                        } else {
+                                            RemoteLinkState::Paired
+                                        }
+                                    } else {
+                                        RemoteLinkState::Unpaired
+                                    }
+                                } else {
+                                    RemoteLinkState::Unpaired
+                                }
                             }
                             _ => {
                                 // HostDisconnected / HostPaused / HostIdle — keep pairing
@@ -823,9 +891,36 @@ async fn run_link_supervisor(
                         // Spec §6.3.3 fast-path: OS reported socket fault (RST, EOF)
                         log::warn!("[Remote Supervisor] Socket fault: {e}");
                         link_slot.write().await.take();
-                        let new_state = match role {
-                            SessionRole::Host => RemoteLinkState::Paired,
-                            SessionRole::Controller => RemoteLinkState::Reconnecting,
+                        if cancel.is_cancelled() {
+                            log::debug!("[Remote Supervisor] Cancelled during shutdown — ignoring socket fault");
+                            break;
+                        }
+
+                        // Check DB: if the peer is no longer in DB (e.g. was deleted or revoked),
+                        // transition to Unpaired, NOT Reconnecting or Paired!
+                        let is_still_paired = if let Some(db) = &db_opt {
+                            let peer_id = peer_identity.read().as_ref().map(|p| p.device_id.clone());
+                            if let (Some(id), Ok(conn)) = (peer_id, db.connect()) {
+                                crate::persistence::paired_devices::get_paired_device(&conn, &id)
+                                    .await
+                                    .ok()
+                                    .flatten()
+                                    .is_some()
+                            } else {
+                                false
+                            }
+                        } else {
+                            false
+                        };
+
+                        let new_state = if !is_still_paired {
+                            log::warn!("[Remote Supervisor] Peer is no longer in paired_devices — transitioning to Unpaired");
+                            RemoteLinkState::Unpaired
+                        } else {
+                            match role {
+                                SessionRole::Host => RemoteLinkState::Paired,
+                                SessionRole::Controller => RemoteLinkState::Reconnecting,
+                            }
                         };
                         clear_peer_and_set_state(&state, &peer_identity, &on_change, new_state);
                         break;

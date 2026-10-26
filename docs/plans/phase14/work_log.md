@@ -44,3 +44,68 @@
 
 - **Verification**:
   - `./scripts/verify-targets.sh`: SUCCESS (0 warnings / 0 errors across architecture lint, desktop binary, benchmarks, and Android `aarch64-linux-android` cross-target).
+
+---
+
+## 2026-10-26 — Remote Control Revocation Synchronization & UI Polish (Tickets 07–13)
+
+- **Context & Goals**:
+  - Addressed all 7 issues identified in technical investigation across tickets `07` through `13` in `.scratch/remote-control/issues/`.
+  - Resolved peer revocation desynchronization and supervisor socket race conditions.
+  - Aligned modal headers, scanner typography, alert/retry overlays, theme accent tokens, and orb sleeping state.
+
+- **Implemented Seams & Components**:
+  1. **Revocation DB Purge & Supervisor Fault Isolation (Ticket 07)**:
+     - Injected `VoxDb` handle into `RemoteSessionManager` and passed `db_opt` into `run_link_supervisor`.
+     - In `run_link_supervisor`, on receiving `LinkLossReason::Revoked`, pruned revoked peer from Turso `paired_devices` and set `RemoteLinkState::Unpaired` (if 0 peers left) or `Paired`.
+     - On link socket faults (`Err(e)`), guarded against shutdown race conditions with `cancel.is_cancelled()`, preventing transient drops from overwriting `Unpaired` state.
+     - In `remoteStore.ts`, added optimistic `pairedDevices` pruning in `revokeDevice` before refetching `listPairedDevices()`.
+  2. **Remote Desk Panels Copy & Layout Refactor (Ticket 08)**:
+     - `RemoteDeskPanel.tsx`: Removed awkward inline trash icon and inline device button from the middle of sentences; placed device name in prose and moved `[Revoke device]` button to the bottom action block.
+     - `ControllerRemoteDeskPanel.tsx`: Simplified copy; removed verbose raw IP hints `({hostHint})` and multi-paragraph layout.
+  3. **Confirm & Revoke Modal Polish and Performance (Ticket 09)**:
+     - `ConfirmModal.tsx`: Removed heavy accent glow shadow (`shadow-[0_0_36px_...]`) and thick colored border; applied crisp neutral border (`border-[rgba(var(--foreground),0.08)]`) and clean elevation shadow (`shadow-[0_20px_50px_rgba(0,0,0,0.6)]`).
+     - Removed redundant window `keydown` listener in favor of `useOverlay` hierarchy. Streamlined framer-motion transition to `duration: 0.15`.
+  4. **Orb State Mapping to Sleeping on Remote Session (Ticket 10)**:
+     - `AdvancedOrb.tsx`: Added sleeping color target lerping (`ctx.tgtGlow` and `ctx.tgtAccent` multiplied by 0.2 and 0.25) when `sleeping || state === 'Sleeping'` for authentic dimmed dormant appearance.
+     - `activityRegistry.ts`: Prioritized `Sleeping` state over unengaged `Dormant` state.
+     - `useHomePage.ts` & `Home.tsx`: Set `activityDisplay` to "Remote Session" (`orbState: "sleeping"`) and passed mapped `interactionState="Sleeping"` to `VoxOrb` when `isRemoteBlocked` is active.
+  5. **Modal Header Alignment, Layout Parity & Visual Tuning (Ticket 11)**:
+     - `AuthorizeDeviceModal.tsx` & `PairingModal.tsx`: Completely unified modal header architecture. `PairingModal` now renders the full standalone header with matching padding (`p-6 sm:p-8 md:p-9`), uppercase `REMOTE CONTROL` badge + icon row, `text-2xl sm:text-[26px]` title, `text-[12.5px]` subtitle, and close button.
+     - `PairingModal.tsx`: Aligned the left column's desktop host Wi-Fi IP footer flush with the bottom edge of the right-side QR card (`pb-0` on left column, `mt-auto`).
+     - `PairingModal.tsx`: Updated countdown timer color thresholds so the timer and clock icon turn warning yellow (`var(--warning)`) at $\le$ 20 seconds, and urgent red (`var(--error)`) at $\le$ 5 seconds.
+  6. **QR Denial Auto-Regenerate, Scanner Typography & Explicit Alert/Retry (Ticket 12)**:
+     - `PairingModal.tsx`: Added `handleDenyPairing` callback that auto-invokes `_resetCachedQrDetails()` and `generatePairing()` immediately upon denial or timeout so desktop is instantly ready for retry.
+     - `QrScannerModal.tsx`: Replaced subtle footer error banner with a prominent in-modal Failure Alert & Retry overlay with a touch-friendly "Scan Again / Retry" button that cleanly resets scan state and restarts camera.
+     - Upgraded typography across scanner instructions, viewfinders, and manual IP inputs.
+  7. **Theme Accent Color in Controller Confirmation View (Ticket 13)**:
+     - `QrScannerModal.tsx`: Replaced all hardcoded `var(--success)` instances with the application's active accent token `var(--accent)`.
+
+- **Verification**:
+  - `cd app/src-tauri && ./scripts/verify-targets.sh`: SUCCESS (0 warnings / 0 errors across architecture lint, desktop binary, benchmarks, and Android `aarch64-linux-android` cross-target).
+  - `pnpm test src/test/unit/remoteStore.test.ts src/test/dom/`: SUCCESS (5 test files, 28 tests passed).
+
+---
+
+## 2026-10-26 — Remote Desk UI Parity & Authorize Countdown Timer
+
+- **Context & Goals**:
+  - Aligned Controller Remote Desk left copy with Host Desk panel: inline `[Revoke host]` button and explicit device name on the right.
+  - Added actual device name to the right of `[Revoke device]` button on Host Desk panel (`RemoteDeskPanel.tsx`).
+  - Styled Controller desk right-side SVG with `var(--accent)` for paired state, and `var(--accent)` with pulsing broadcast waves when connected.
+  - Added warning yellow ($\le$ 20s) and error red ($\le$ 5s) countdown timer colors to `AuthorizeDeviceModal.tsx`.
+
+- **Implemented Seams & Components**:
+  1. **Authorize Device Countdown Colors**:
+     - `AuthorizeDeviceModal.tsx`: Applied dynamic color classes to Clock icon and formatted time span: `var(--warning)` at $\le$ 20s and `var(--error)` at $\le$ 5s.
+     - `AuthorizeDeviceModal.dom.test.tsx`: Verified timer color threshold transitions at 25s, 19s, and 4s.
+  2. **Host & Controller Desk Revoke UI & Device Names**:
+     - `RemoteDeskPanel.tsx`: Added `({pairedDevice.displayName})` to the right of `[Revoke device]` button for both Connected and Paired states.
+     - `ControllerRemoteDeskPanel.tsx`: Updated left-side copy to match Host Desk prose with inline `[Revoke host]` button and `({pairedHost.displayName})` to its right.
+     - `settingsCopy.ts`: Added `revokeHost` and `revokeHostAria` strings.
+  3. **Controller Desk Glyph Accent Colors**:
+     - `ControllerRemoteDeskPanel.tsx`: Updated `HostGlyphButton` monitor frame, stand, and inner icon to render with `var(--accent)` in both Paired and Connected states. Connected state displays active animated signal waves and pulse.
+
+- **Verification**:
+  - `pnpm test src/test/unit/remoteStore.test.ts src/test/dom/`: SUCCESS (5 test files, 28 tests passed).
+
