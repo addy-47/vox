@@ -41,3 +41,11 @@
   - **Configured state**: read the existing configured signal (`Google` = ADC present, `Azure` = stored key + region) and show it on the card without hiding the card.
   - **Credential entry**: a `Configure` action per cloud engine that opens a key/region form; no provider concept in the grid, only per-engine credentials.
   - **Failure surfacing**: a synthesis failure for a cloud engine must name the missing credential and link to the form.
+
+## 6. Remote Control mDNS Subsystem & Dynamic IP Resolution (Ticket 4 Part B)
+- **Problem**: Spec §6.1 mandates mDNS service advertisement (`_vox._tcp.local`) for automatic host discovery and dynamic IP address resolution. When a paired desktop host changes local IP address (e.g. DHCP lease renewal), the controller currently fails to reconnect unless the address is manually overridden.
+- **Requirements**:
+  - **Service Advertisement (`_vox._tcp.local`)**: Desktop host registers and maintains mDNS service publication carrying TXT records for `paired_peer` (device ID) and port.
+  - **Controller Resolver Daemon**: Mobile controller listens for `_vox._tcp.local` mDNS service updates and dynamically updates `hints` in `paired_devices` on IP change.
+  - **Subsystem Isolation**: Implement dedicated actor/daemon separated from `RemoteSessionManager` so network transport and discovery lifecycles remain orthogonal.
+  - **Cross-Platform Compatibility**: Verify compatibility across Linux desktop (`zeroconf` / pure-Rust multicast DNS), macOS, Windows, and Android (`NsdManager` / native multicast socket).

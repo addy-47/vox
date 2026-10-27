@@ -5,6 +5,7 @@ import { useRemoteStore } from "@/store/remoteStore";
 
 describe("QrScannerModal DOM suite", () => {
   let mockPairDevice: ReturnType<typeof vi.fn>;
+  let mockConnectHost: ReturnType<typeof vi.fn>;
   let detectedPayload: string | null = null;
 
   beforeEach(() => {
@@ -12,12 +13,16 @@ describe("QrScannerModal DOM suite", () => {
     vi.restoreAllMocks();
 
     mockPairDevice = vi.fn().mockImplementation(() => new Promise(() => {})); // pending promise
+    mockConnectHost = vi.fn().mockImplementation(() => new Promise(() => {})); // pending promise
     detectedPayload = null;
 
     useRemoteStore.setState({
       linkState: "Unpaired",
+      connectedPeer: null,
       failureReason: null,
+      pairingFailureReason: null,
       pairDevice: mockPairDevice as unknown as (params: import("@/services/remoteService").PairDeviceParams) => Promise<void>,
+      connectHost: mockConnectHost as unknown as (params: import("@/services/remoteService").ConnectHostParams) => Promise<void>,
     });
 
     // Mock HTMLMediaElement prototype for jsdom
@@ -227,7 +232,33 @@ describe("QrScannerModal DOM suite", () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
-  it("supports manual IP entry and sends address payload without closing immediately", async () => {
+  it("shows a pairing denial from the pairing-state channel and clears it on close", async () => {
+    const onClose = vi.fn();
+    render(<QrScannerModal open={true} onClose={onClose} defaultManual={true} />);
+
+    // Controller receives PairingStateDenied (spec §5.5), not a Failed link state.
+    act(() => {
+      useRemoteStore.setState({
+        pairingFailureReason: "Pairing denied by host: User denied pairing",
+      });
+    });
+
+    expect(screen.getByText("Pairing denied by host: User denied pairing")).toBeTruthy();
+
+    // Closing the modal dismisses the ephemeral pairing failure.
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /close/i }));
+    });
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(useRemoteStore.getState().pairingFailureReason).toBeNull();
+  });
+
+  it("supports manual IP entry and connects to paired host via connectHost without closing immediately", async () => {
+    useRemoteStore.setState({
+      linkState: "Paired",
+      connectedPeer: { deviceId: "host_123", displayName: "Desktop Host" },
+    });
     const onClose = vi.fn();
     render(<QrScannerModal open={true} onClose={onClose} defaultManual={true} />);
 
@@ -240,14 +271,39 @@ describe("QrScannerModal DOM suite", () => {
       await Promise.resolve();
     });
 
-    expect(mockPairDevice).toHaveBeenCalledWith({
+    expect(mockConnectHost).toHaveBeenCalledWith({
+      deviceId: "host_123",
       address: "10.0.0.42:8800",
-      deviceId: "",
-      token: "",
-      publicKey: "",
     });
 
     expect(screen.getByText("Establishing Connection...")).toBeTruthy();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("rejects manual IP entry when unpaired and guides user to scan QR code", async () => {
+    useRemoteStore.setState({
+      linkState: "Unpaired",
+      connectedPeer: null,
+    });
+    const onClose = vi.fn();
+    render(<QrScannerModal open={true} onClose={onClose} defaultManual={true} />);
+
+    const input = screen.getByPlaceholderText("192.168.1.42:7700");
+    fireEvent.change(input, { target: { value: "10.0.0.42:8800" } });
+
+    const connectButton = screen.getByRole("button", { name: "Connect to Host" });
+    await act(async () => {
+      fireEvent.click(connectButton);
+      await Promise.resolve();
+    });
+
+    expect(mockConnectHost).not.toHaveBeenCalled();
+    expect(mockPairDevice).not.toHaveBeenCalled();
+    expect(
+      screen.getByText(
+        "Manual connection requires an existing pairing. Scan the desktop QR code to pair for the first time."
+      )
+    ).toBeTruthy();
     expect(onClose).not.toHaveBeenCalled();
   });
 });

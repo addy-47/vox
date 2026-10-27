@@ -26,7 +26,7 @@ pub mod ws;
 
 pub use self::{
     loopback::LoopbackLink,
-    remote_link::{LinkCloseReason, LinkError, RawLink, RemoteLink},
+    remote_link::{LinkCloseReason, LinkError, PeerRejection, RawLink, RemoteLink},
     ws::{bind, dial, WsLink, WsListener},
 };
 pub use super::{HANDSHAKE_DEADLINE, LOOPBACK_CHANNEL_CAPACITY};

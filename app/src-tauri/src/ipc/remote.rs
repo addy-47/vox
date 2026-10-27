@@ -25,7 +25,7 @@ use crate::{
     services::remote::{
         control::{get_routing_table, CommandClass},
         security::mint_pairing_invitation,
-        session::{PairingStateDto, RemoteLinkState, RemoteSessionManager, RemoteStateDto},
+        session::{PairingStateDto, RemoteSessionManager, RemoteStateDto},
     },
 };
 
@@ -107,7 +107,11 @@ pub async fn approve_pairing(
         .ok_or_else(|| VoxIpcError::NotFound("No pending pairing request to answer".into()))?;
 
     let approved = decision.eq_ignore_ascii_case("approve");
-    let _ = pending.responder.send(approved);
+    if approved {
+        pending.prompt.approve();
+    } else {
+        pending.prompt.reject();
+    }
     Ok(())
 }
 
@@ -266,13 +270,6 @@ pub async fn list_paired_devices(
 pub async fn get_link_state(
     state: State<'_, Arc<AppState>>,
 ) -> Result<RemoteStateDto, VoxIpcError> {
-    if state.remote_manager.state() == RemoteLinkState::Unpaired {
-        if let Ok(devices) = RemoteSessionManager::list_paired_devices(&state.db).await {
-            if !devices.is_empty() {
-                state.remote_manager.set_state(RemoteLinkState::Paired);
-            }
-        }
-    }
     Ok(state.remote_manager.state_dto())
 }
 

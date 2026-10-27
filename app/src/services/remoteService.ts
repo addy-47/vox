@@ -71,12 +71,12 @@ export function approvePairing(decision: "Approve" | "Reject"): Promise<void> {
 
 // ─── Ticket 02: Controller-side Tier 1 ───────────────────────────────────────
 
-export interface PairDeviceParams {
+export type PairDeviceParams = {
   address: string;
   token: string;
   publicKey: string;
   deviceId: string;
-}
+};
 
 /**
  * Controller performs Tier 1 pairing handshake.
@@ -89,12 +89,12 @@ export function pairDevice(params: PairDeviceParams): Promise<void> {
 
 // ─── Tier 2 — transport session ──────────────────────────────────────────────
 
-export interface ConnectHostParams {
+export type ConnectHostParams = {
   /** ID of a device already in paired_devices. */
   deviceId: string;
   /** Optional address override; falls back to paired_devices hints if absent. */
   address?: string;
-}
+};
 
 /**
  * Controller starts a Tier 2 transport session with an already-paired host.

@@ -138,6 +138,7 @@ pub async fn update_setting<R: tauri::Runtime>(
     if !is_desktop_command_permitted(
         "update_setting",
         Some(&domain),
+        Some(&key),
         &state.remote_manager.state(),
     ) {
         return Err(VoxIpcError::InvalidState(
@@ -309,7 +310,7 @@ pub async fn reset_settings<R: tauri::Runtime>(
 ) -> Result<ResetSettingsResult, VoxIpcError> {
     let state: State<'_, Arc<AppState>> = app.state();
 
-    if !is_desktop_command_permitted("reset_settings", None, &state.remote_manager.state()) {
+    if !is_desktop_command_permitted("reset_settings", None, None, &state.remote_manager.state()) {
         return Err(VoxIpcError::InvalidState(
             "Remote session active: desktop mutating writes blocked".into(),
         ));

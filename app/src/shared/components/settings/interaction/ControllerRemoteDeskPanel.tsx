@@ -118,41 +118,42 @@ const HostGlyphButton = ({
 
 export const ControllerRemoteDeskPanel = memo(() => {
   const linkState = useRemoteStore((s) => s.linkState);
-  const pairedDevices = useRemoteStore((s) => s.pairedDevices);
-  const listPairedDevices = useRemoteStore((s) => s.listPairedDevices);
+  const connectedPeer = useRemoteStore((s) => s.connectedPeer);
   const revokeDevice = useRemoteStore((s) => s.revokeDevice);
+  const connectHost = useRemoteStore((s) => s.connectHost);
 
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [defaultManual, setDefaultManual] = useState(false);
   const [isConfirmRevokeOpen, setIsConfirmRevokeOpen] = useState(false);
   const [isRevokingPending, setIsRevokingPending] = useState(false);
 
-  const pairedHost = pairedDevices.find((d) => d.role === "host") ?? pairedDevices[0] ?? null;
   const isConnected = linkState === "Connected";
-
-  useEffect(() => {
-    void listPairedDevices();
-  }, [listPairedDevices]);
 
   const handleOpenScanner = useCallback((manual = false) => {
     setDefaultManual(manual);
     setIsScannerOpen(true);
   }, []);
 
+  const handleGlyphClick = useCallback(() => {
+    if (linkState === "Paired" && connectedPeer) {
+      void connectHost({ deviceId: connectedPeer.deviceId });
+    }
+  }, [linkState, connectedPeer, connectHost]);
+
   const handleConfirmRevoke = useCallback(async () => {
-    if (!pairedHost || isRevokingPending) return;
+    if (!connectedPeer || isRevokingPending) return;
     setIsRevokingPending(true);
     try {
-      await revokeDevice(pairedHost.deviceId);
+      await revokeDevice(connectedPeer.deviceId);
       setIsConfirmRevokeOpen(false);
     } catch (e) {
       console.warn("[ControllerRemoteDeskPanel] Failed to revoke host:", e);
     } finally {
       setIsRevokingPending(false);
     }
-  }, [pairedHost, isRevokingPending, revokeDevice]);
+  }, [connectedPeer, isRevokingPending, revokeDevice]);
 
-  const isPairedOrConnected = (linkState === "Paired" || linkState === "Connected") && pairedHost !== null;
+  const isPairedOrConnected = (linkState === "Paired" || linkState === "Connected") && connectedPeer !== null;
 
   return (
     <div className="flex flex-row items-center justify-between gap-4 h-full p-2 sm:p-3 rounded-xl bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--accent),0.08)] animate-fade-in">
@@ -165,35 +166,35 @@ export const ControllerRemoteDeskPanel = memo(() => {
         </div>
 
         <p className="text-[11px] sm:text-[11.5px] text-[rgb(var(--foreground-muted))]/75 leading-relaxed font-medium">
-          {isConnected && pairedHost ? (
+          {isConnected && connectedPeer ? (
             <>
-              {REMOTE_CONTROL_COPY.connectedTo} {pairedHost.displayName}
+              {REMOTE_CONTROL_COPY.connectedTo} {connectedPeer.displayName}
               {REMOTE_CONTROL_COPY.wirelessAudioActive}{" "}
               <button
                 type="button"
                 onClick={() => setIsConfirmRevokeOpen(true)}
                 className="inline-flex items-center gap-1 text-[11px] font-mono font-bold text-[rgb(var(--danger))] hover:underline cursor-pointer transition-colors select-none"
-                aria-label={REMOTE_CONTROL_COPY.revokeHostAria(pairedHost.displayName)}
+                aria-label={REMOTE_CONTROL_COPY.revokeHostAria(connectedPeer.displayName)}
               >
                 {REMOTE_CONTROL_COPY.revokeHost}
               </button>{" "}
               <span className="text-[11px] font-medium text-[rgb(var(--foreground-muted))]">
-                ({pairedHost.displayName})
+                ({connectedPeer.displayName})
               </span>
             </>
-          ) : pairedHost ? (
+          ) : linkState === "Paired" && connectedPeer ? (
             <>
-              Paired with {pairedHost.displayName}. Idle on local Wi-Fi.{" "}
+              Paired with {connectedPeer.displayName}. Idle on local Wi-Fi.{" "}
               <button
                 type="button"
                 onClick={() => setIsConfirmRevokeOpen(true)}
                 className="inline-flex items-center gap-1 text-[11px] font-mono font-bold text-[rgb(var(--danger))] hover:underline cursor-pointer transition-colors select-none"
-                aria-label={REMOTE_CONTROL_COPY.revokeHostAria(pairedHost.displayName)}
+                aria-label={REMOTE_CONTROL_COPY.revokeHostAria(connectedPeer.displayName)}
               >
                 {REMOTE_CONTROL_COPY.revokeHost}
               </button>{" "}
               <span className="text-[11px] font-medium text-[rgb(var(--foreground-muted))]">
-                ({pairedHost.displayName})
+                ({connectedPeer.displayName})
               </span>
             </>
           ) : (
@@ -202,12 +203,12 @@ export const ControllerRemoteDeskPanel = memo(() => {
         </p>
       </div>
 
-      {/* Right Column: Scan Action or Connected Status with Revoke Trigger */}
+      {/* Right Column: Scan Action or Connected Status */}
       <div className="shrink-0 w-[116px] flex flex-col items-center justify-center">
         {isPairedOrConnected ? (
           <HostGlyphButton
             isConnected={isConnected}
-            onClick={() => setIsConfirmRevokeOpen(true)}
+            onClick={handleGlyphClick}
           />
         ) : (
           <ScannerGlyphButton onClick={() => handleOpenScanner(false)} />
@@ -224,11 +225,11 @@ export const ControllerRemoteDeskPanel = memo(() => {
       )}
 
       {/* Dedicated Two-Step Revoke Confirmation Modal (Image 2) */}
-      {pairedHost && (
+      {connectedPeer && (
         <ConfirmModal
           open={isConfirmRevokeOpen}
           title="Revoke Paired Host"
-          description={`Are you sure you want to revoke "${pairedHost.displayName}"? This will permanently sever the trusted pairing between your phone and your desktop computer.`}
+          description={`Are you sure you want to revoke "${connectedPeer.displayName}"? This will permanently sever the trusted pairing between your phone and your desktop computer.`}
           confirmLabel="Revoke"
           cancelLabel="Cancel"
           isDestructive={true}

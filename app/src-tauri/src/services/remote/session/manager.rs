@@ -8,13 +8,12 @@
 //!   while a link is alive. Dispatches Ping/Pong, Disconnect, LinkLoss, and socket faults.
 
 use std::{
-    future::Future,
     sync::Arc,
     time::{Duration, Instant},
 };
 
 use parking_lot::RwLock;
-use tokio::{sync::RwLock as AsyncRwLock, time::sleep};
+use tokio::sync::RwLock as AsyncRwLock;
 use tokio_util::sync::CancellationToken;
 
 use super::state::{RemoteFailureKind, RemoteLinkState, RemoteStateDto};
@@ -29,7 +28,6 @@ use crate::services::remote::{
             VersionMismatch,
         },
     },
-    security::{default_noise_prologue, DeviceKey, NoiseHandshake, NoiseTransport, SecurityError},
     HEARTBEAT_INTERVAL, HEARTBEAT_MAX_MISSED_PONGS, HEARTBEAT_PING_TIMEOUT, PROTOCOL_VERSION,
 };
 
@@ -43,6 +41,19 @@ pub enum SessionRole {
     Controller,
 }
 
+/// Parameters for supervising link health via the full duplex recv_control loop.
+/// Spec §6.3: handles Ping/Pong, Disconnect, LinkLoss, heartbeat, and faults.
+struct LinkSupervisorParams {
+    role: SessionRole,
+    link: Arc<dyn RemoteLink>,
+    cancel: CancellationToken,
+    state: Arc<RwLock<RemoteLinkState>>,
+    peer_identity: Arc<RwLock<Option<SenderIdentity>>>,
+    on_change: Option<StateChangeCallback>,
+    link_slot: Arc<AsyncRwLock<Option<Arc<dyn RemoteLink>>>>,
+    db_opt: Option<Arc<crate::persistence::VoxDb>>,
+}
+
 /// Manages the remote control session lifecycle, Noise_XX handshake,
 /// capabilities exchange, and link supervision.
 pub struct RemoteSessionManager {
@@ -53,6 +64,7 @@ pub struct RemoteSessionManager {
     cancel_token: Arc<parking_lot::Mutex<Option<CancellationToken>>>,
     on_state_change: Option<StateChangeCallback>,
     db: Arc<parking_lot::RwLock<Option<Arc<crate::persistence::VoxDb>>>>,
+    trust_store: Arc<parking_lot::RwLock<Option<Arc<crate::services::remote::security::TrustStore>>>>,
 }
 
 impl RemoteSessionManager {
@@ -68,6 +80,7 @@ impl RemoteSessionManager {
             cancel_token: Arc::new(parking_lot::Mutex::new(None)),
             on_state_change: None,
             db: Arc::new(parking_lot::RwLock::new(None)),
+            trust_store: Arc::new(parking_lot::RwLock::new(None)),
         }
     }
 
@@ -85,7 +98,13 @@ impl RemoteSessionManager {
             cancel_token: Arc::new(parking_lot::Mutex::new(None)),
             on_state_change: Some(callback),
             db: Arc::new(parking_lot::RwLock::new(Some(db))),
+            trust_store: Arc::new(parking_lot::RwLock::new(None)),
         }
+    }
+
+    /// Attaches the trust store for cryptographic revocation and refusal tracking.
+    pub fn set_trust_store(&self, trust_store: Arc<crate::services::remote::security::TrustStore>) {
+        *self.trust_store.write() = Some(trust_store);
     }
 
     /// Attaches the shared database handle for supervisor revocation sync.
@@ -118,8 +137,46 @@ impl RemoteSessionManager {
         )
     }
 
+    /// Sets or clears the cached peer identity.
+    pub fn set_peer_identity(&self, peer: Option<SenderIdentity>) {
+        let mut guard = self.peer_identity.write();
+        *guard = peer;
+    }
+
+    /// Hydrates peer identity from local database on startup or settings reload.
+    pub async fn hydrate_from_db(&self, db: &crate::persistence::VoxDb) {
+        if let Ok(devices) = Self::list_paired_devices(db).await {
+            let target = if devices.is_empty() {
+                RemoteLinkState::Unpaired
+            } else {
+                RemoteLinkState::Paired
+            };
+
+            if let Some(first) = devices.first() {
+                self.set_peer_identity(Some(SenderIdentity {
+                    device_id: first.device_id.clone(),
+                    display_name: first.display_name.clone(),
+                }));
+            } else {
+                self.set_peer_identity(None);
+            }
+
+            if matches!(
+                self.state(),
+                RemoteLinkState::Unpaired | RemoteLinkState::Paired | RemoteLinkState::Disabled
+            ) && self.state() != target
+            {
+                self.set_state(target);
+            }
+        }
+    }
+
     /// Transitions to a new link state and invokes listener callbacks.
     pub fn set_state(&self, new_state: RemoteLinkState) {
+        if matches!(new_state, RemoteLinkState::Unpaired | RemoteLinkState::Disabled) {
+            let mut guard = self.peer_identity.write();
+            *guard = None;
+        }
         {
             let mut guard = self.state.write();
             *guard = new_state.clone();
@@ -150,41 +207,7 @@ impl RemoteSessionManager {
         self.link.read().await.clone()
     }
 
-    /// Executes the responder side of the Noise_XX handshake.
-    pub async fn run_host_handshake<FRead, FWrite, FutR, FutW>(
-        local_key: &DeviceKey,
-        expected_peer: Option<&[u8]>,
-        read_fn: FRead,
-        write_fn: FWrite,
-    ) -> Result<NoiseTransport, SecurityError>
-    where
-        FRead: FnMut() -> FutR,
-        FutR: Future<Output = Result<Vec<u8>, SecurityError>>,
-        FWrite: FnMut(Vec<u8>) -> FutW,
-        FutW: Future<Output = Result<(), SecurityError>>,
-    {
-        let handshake =
-            NoiseHandshake::responder(local_key, expected_peer, &default_noise_prologue())?;
-        drive_noise_handshake(handshake, read_fn, write_fn).await
-    }
-
-    /// Executes the initiator side of the Noise_XX handshake.
-    pub async fn run_controller_handshake<FRead, FWrite, FutR, FutW>(
-        local_key: &DeviceKey,
-        expected_peer: Option<&[u8]>,
-        read_fn: FRead,
-        write_fn: FWrite,
-    ) -> Result<NoiseTransport, SecurityError>
-    where
-        FRead: FnMut() -> FutR,
-        FutR: Future<Output = Result<Vec<u8>, SecurityError>>,
-        FWrite: FnMut(Vec<u8>) -> FutW,
-        FutW: Future<Output = Result<(), SecurityError>>,
-    {
-        let handshake =
-            NoiseHandshake::initiator(local_key, expected_peer, &default_noise_prologue())?;
-        drive_noise_handshake(handshake, read_fn, write_fn).await
-    }
+    // ─── Ticket 02: Hello Exchange ──────────────────────────────────────────
 
     /// Exchanges `Hello` negotiation messages over the active link.
     pub async fn exchange_hello(
@@ -223,22 +246,25 @@ impl RemoteSessionManager {
                 Ok(peer_hello)
             }
             ControlMessage::VersionMismatch(mismatch) => {
-                Err(LinkError::Protocol(ProtocolError::MalformedJson(format!(
-                    "Peer rejected version: announced {}, supported {}",
-                    mismatch.version, mismatch.supported_version
-                ))))
+                Err(LinkError::PeerRejected(crate::services::remote::link::PeerRejection::VersionMismatch {
+                    version: mismatch.version,
+                    supported_version: mismatch.supported_version,
+                }))
             }
             ControlMessage::UnknownPeer(peer) => {
-                Err(LinkError::Protocol(ProtocolError::MalformedJson(format!(
-                    "UnknownPeer: {}",
-                    peer.device_id
-                ))))
+                Err(LinkError::PeerRejected(crate::services::remote::link::PeerRejection::UnknownPeer(
+                    peer.device_id,
+                )))
+            }
+            ControlMessage::RoleNotPermitted(role) => {
+                Err(LinkError::PeerRejected(crate::services::remote::link::PeerRejection::RoleNotPermitted(
+                    role.role,
+                )))
             }
             ControlMessage::LinkRefused(refused) => {
-                Err(LinkError::Protocol(ProtocolError::MalformedJson(format!(
-                    "LinkRefused: {:?}",
-                    refused.reason
-                ))))
+                Err(LinkError::PeerRejected(crate::services::remote::link::PeerRejection::LinkRefused(
+                    refused.reason,
+                )))
             }
             other => Err(LinkError::Protocol(ProtocolError::MalformedJson(format!(
                 "Expected Hello, got {:?}",
@@ -287,6 +313,113 @@ impl RemoteSessionManager {
 
     // ─── Ticket 02: Tier 1 — pair_device ────────────────────────────────────
 
+    async fn perform_pairing_handshake(
+        address: &str,
+        token: &str,
+        host_public_key: &str,
+    ) -> Result<(crate::services::remote::link::ws::WsLink, Vec<u8>), LinkError> {
+        let url = if address.starts_with("ws://") || address.starts_with("wss://") {
+            address.to_string()
+        } else {
+            format!("ws://{address}")
+        };
+        let ws_link = crate::services::remote::link::ws::dial(&url).await?;
+
+        let key_store = crate::services::remote::security::KeyStore::default_path()
+            .map_err(|e| LinkError::Transport(e.to_string()))?;
+        let device_key = key_store
+            .load_or_create()
+            .map_err(|e| LinkError::Transport(e.to_string()))?;
+
+        let controller_id =
+            crate::services::remote::security::derive_device_id(device_key.public_key());
+        let controller_pubkey_hex = hex::encode(device_key.public_key());
+        let controller_name =
+            sysinfo::System::host_name().unwrap_or_else(|| "Vox Controller".to_string());
+
+        let pair_req = ControlMessage::PairRequest(
+            crate::services::remote::protocol::messages::PairRequest {
+                token: token.to_string(),
+                device_id: controller_id.as_str().to_string(),
+                public_key: controller_pubkey_hex,
+                display_name: controller_name,
+            },
+        );
+        ws_link.send_control(pair_req).await?;
+
+        let h_pk_bytes = hex::decode(host_public_key).map_err(|e| {
+            let msg = format!("Invalid host public key hex: {e}");
+            LinkError::Protocol(ProtocolError::MalformedJson(msg))
+        })?;
+        let prologue = crate::services::remote::security::default_noise_prologue();
+        let handshake = crate::services::remote::security::NoiseHandshake::initiator(
+            &device_key,
+            Some(&h_pk_bytes),
+            &prologue,
+        )
+        .map_err(|e| LinkError::Protocol(ProtocolError::MalformedJson(e.to_string())))?;
+
+        let transport = tokio::time::timeout(
+            Duration::from_secs(5),
+            ws_link.drive_handshake(handshake),
+        )
+        .await
+        .map_err(|_| LinkError::Timeout)?
+        .map_err(|e| LinkError::Protocol(ProtocolError::MalformedJson(e.to_string())))?;
+
+        ws_link.set_cipher(transport).await;
+        Ok((ws_link, h_pk_bytes))
+    }
+
+    async fn await_pairing_approval(
+        ws_link: &crate::services::remote::link::ws::WsLink,
+        on_prompting: Option<Box<dyn FnOnce() + Send>>,
+    ) -> Result<crate::services::remote::protocol::messages::PairApproved, LinkError> {
+        let mut resp =
+            match tokio::time::timeout(Duration::from_secs(35), ws_link.recv_control()).await {
+                Ok(Ok(msg)) => msg,
+                Ok(Err(e)) => return Err(e),
+                Err(_) => {
+                    let msg = "Pairing timed out waiting for host";
+                    return Err(LinkError::Protocol(ProtocolError::MalformedJson(
+                        msg.to_string(),
+                    )));
+                }
+            };
+
+        if let ControlMessage::PairPrompting = resp {
+            if let Some(cb) = on_prompting {
+                cb();
+            }
+            resp = match tokio::time::timeout(Duration::from_secs(35), ws_link.recv_control())
+                .await
+            {
+                Ok(Ok(msg)) => msg,
+                Ok(Err(e)) => return Err(e),
+                Err(_) => {
+                    let msg = "Host did not approve pairing within 35s";
+                    return Err(LinkError::Protocol(ProtocolError::MalformedJson(
+                        msg.to_string(),
+                    )));
+                }
+            };
+        }
+
+        match resp {
+            ControlMessage::PairApproved(approved) => Ok(approved),
+            ControlMessage::PairDenied(denied) => {
+                let msg = format!("Pairing denied by host: {}", denied.reason);
+                let _ = ws_link.close(LinkCloseReason::Local).await;
+                Err(LinkError::Protocol(ProtocolError::MalformedJson(msg)))
+            }
+            other => {
+                let msg = format!("Expected PairApproved, got {:?}", other.message_type());
+                let _ = ws_link.close(LinkCloseReason::Local).await;
+                Err(LinkError::Protocol(ProtocolError::MalformedJson(msg)))
+            }
+        }
+    }
+
     /// Controller-side: dial the host, perform the Tier 1 pairing handshake,
     /// write the host into `paired_devices`, close the pairing socket, and
     /// transition `RemoteLinkState` to `Paired`.
@@ -303,197 +436,64 @@ impl RemoteSessionManager {
         on_prompting: Option<Box<dyn FnOnce() + Send>>,
     ) -> Result<(), LinkError> {
         self.set_db(Arc::clone(&db));
-        self.set_state(RemoteLinkState::Connecting);
 
-        let url = if address.starts_with("ws://") || address.starts_with("wss://") {
-            address.clone()
+        let (ws_link, h_pk_bytes) =
+            Self::perform_pairing_handshake(&address, &token, &host_public_key).await?;
+
+        let approved = Self::await_pairing_approval(&ws_link, on_prompting).await?;
+
+        let host_display_name = if !approved.host_identity.display_name.is_empty() {
+            approved.host_identity.display_name
         } else {
-            format!("ws://{address}")
+            "Vox Host".to_string()
         };
 
-        let ws_link = match crate::services::remote::link::ws::dial(&url).await {
-            Ok(l) => l,
-            Err(e) => {
-                let err_str = e.to_string();
-                let kind = classify_dial_error(&err_str);
-                self.set_state(RemoteLinkState::failed(format!("Failed to connect: {e}"), kind));
-                return Err(e);
-            }
-        };
-
-        let key_store = crate::services::remote::security::KeyStore::default_path()
-            .map_err(|e| LinkError::Transport(e.to_string()))?;
-        let device_key = key_store
-            .load_or_create()
-            .map_err(|e| LinkError::Transport(e.to_string()))?;
-
-        let controller_id =
-            crate::services::remote::security::derive_device_id(device_key.public_key());
-        let controller_pubkey_hex = hex::encode(device_key.public_key());
-
-        // Emit AwaitingApproval so the controller UI shows "Waiting for host approval"
-        // (the on_prompting callback handles the IPC emission).
-
-        let pair_req = ControlMessage::PairRequest(
-            crate::services::remote::protocol::messages::PairRequest {
-                token: token.clone(),
-                device_id: controller_id.as_str().to_string(),
-                public_key: controller_pubkey_hex,
-                display_name: "Vox Controller".to_string(),
-            },
-        );
-
-        if let Err(e) = ws_link.send_control(pair_req).await {
-            self.set_state(RemoteLinkState::failed(
-                format!("Failed to send pairing request: {e}"),
-                RemoteFailureKind::Unreachable,
-            ));
-            return Err(e);
+        if let Ok(conn) = db.connect() {
+            let _ = crate::persistence::paired_devices::insert_paired_device(
+                &conn,
+                &crate::persistence::paired_devices::NewPairedDevice {
+                    device_id: host_device_id.clone(),
+                    public_key: h_pk_bytes,
+                    display_name: host_display_name.clone(),
+                    role: crate::persistence::paired_devices::PairedDeviceRole::Host,
+                    trust_level: "full".to_string(),
+                    hints: vec![serde_json::json!({ "addr": address })],
+                },
+            )
+            .await;
         }
 
-        // Wait for PairPrompting or PairApproved/PairDenied (35s)
-        let mut resp =
-            match tokio::time::timeout(Duration::from_secs(35), ws_link.recv_control()).await {
-                Ok(Ok(msg)) => msg,
-                Ok(Err(e)) => {
-                    self.set_state(RemoteLinkState::failed(
-                        format!("Connection error awaiting pairing response: {e}"),
-                        RemoteFailureKind::Unreachable,
-                    ));
-                    return Err(e);
-                }
-                Err(_) => {
-                    let msg = "Pairing timed out waiting for host";
-                    self.set_state(RemoteLinkState::failed(msg, RemoteFailureKind::Timeout));
-                    return Err(LinkError::Protocol(ProtocolError::MalformedJson(
-                        msg.to_string(),
-                    )));
-                }
-            };
-
-        if let ControlMessage::PairPrompting = resp {
-            if let Some(cb) = on_prompting {
-                cb();
-            }
-            resp = match tokio::time::timeout(Duration::from_secs(35), ws_link.recv_control())
-                .await
-            {
-                Ok(Ok(msg)) => msg,
-                Ok(Err(e)) => {
-                    self.set_state(RemoteLinkState::failed(
-                        format!("Connection error awaiting pairing approval: {e}"),
-                        RemoteFailureKind::Unreachable,
-                    ));
-                    return Err(e);
-                }
-                Err(_) => {
-                    let msg = "Host did not approve pairing within 35s";
-                    self.set_state(RemoteLinkState::failed(msg, RemoteFailureKind::Timeout));
-                    return Err(LinkError::Protocol(ProtocolError::MalformedJson(
-                        msg.to_string(),
-                    )));
-                }
-            };
-        }
-
-        match resp {
-            ControlMessage::PairApproved => {
-                let h_pk_bytes = hex::decode(&host_public_key).map_err(|e| {
-                    let msg = format!("Invalid host public key hex: {e}");
-                    self.set_state(RemoteLinkState::failed(
-                        msg.clone(),
-                        RemoteFailureKind::InvalidToken,
-                    ));
-                    LinkError::Protocol(ProtocolError::MalformedJson(msg))
-                })?;
-
-                // Write host into paired_devices
-                if let Ok(conn) = db.connect() {
-                    let _ = crate::persistence::paired_devices::insert_paired_device(
-                        &conn,
-                        &crate::persistence::paired_devices::NewPairedDevice {
-                            device_id: host_device_id.clone(),
-                            public_key: h_pk_bytes,
-                            display_name: "Vox Host".to_string(),
-                            role: crate::persistence::paired_devices::PairedDeviceRole::Host,
-                            trust_level: "full".to_string(),
-                            hints: vec![serde_json::json!({ "addr": address })],
-                        },
-                    )
-                    .await;
-                }
-
-                // Tier 1 complete: close socket, transition to Paired (spec §4.4)
-                let _ = ws_link.close(LinkCloseReason::Local).await;
-                self.set_state(RemoteLinkState::Paired);
-                log::info!("[Remote] Pairing complete with host {host_device_id}. Tier 1 socket closed.");
-                Ok(())
-            }
-            ControlMessage::PairDenied(denied) => {
-                let is_token = denied.reason.to_lowercase().contains("token")
-                    || denied.reason.to_lowercase().contains("expired");
-                let kind = if is_token {
-                    RemoteFailureKind::InvalidToken
-                } else {
-                    RemoteFailureKind::RejectedByHost
-                };
-                let msg = format!("Pairing denied by host: {}", denied.reason);
-                self.set_state(RemoteLinkState::failed(msg.clone(), kind));
-                let _ = ws_link.close(LinkCloseReason::Local).await;
-                Err(LinkError::Protocol(ProtocolError::MalformedJson(msg)))
-            }
-            other => {
-                let msg = format!("Expected PairApproved, got {:?}", other.message_type());
-                self.set_state(RemoteLinkState::failed(
-                    msg.clone(),
-                    RemoteFailureKind::VersionMismatch,
-                ));
-                let _ = ws_link.close(LinkCloseReason::Local).await;
-                Err(LinkError::Protocol(ProtocolError::MalformedJson(msg)))
-            }
-        }
+        let _ = ws_link.close(LinkCloseReason::Local).await;
+        self.set_peer_identity(Some(SenderIdentity {
+            device_id: host_device_id.clone(),
+            display_name: host_display_name,
+        }));
+        self.set_state(RemoteLinkState::Paired);
+        log::info!("[Remote] Pairing complete with host {host_device_id}. Tier 1 socket closed.");
+        Ok(())
     }
 
     // ─── Ticket 02: Tier 2 — dial_and_connect ───────────────────────────────
 
-    /// Controller-side: dial a paired host, run Noise handshake, exchange
-    /// Hello, and spawn the Link Supervisor. Assumes device is already in
-    /// `paired_devices`. Does NOT perform pairing; call `pair_device` first.
-    ///
-    /// Spec §4.4 Tier 2: explicitly initiated from the Home Rocket button.
-    pub async fn dial_and_connect(
-        self: Arc<Self>,
-        db: Arc<crate::persistence::VoxDb>,
-        device_id: String,
+    async fn perform_dial_handshake(
+        &self,
+        host_device: &crate::persistence::paired_devices::PairedDevice,
         address: Option<String>,
-    ) -> Result<(), LinkError> {
-        self.set_db(Arc::clone(&db));
-        self.set_state(RemoteLinkState::Connecting);
-
-        // Resolve address: use provided or fall back to paired_devices hints
+    ) -> Result<(crate::services::remote::link::ws::WsLink, SenderIdentity), LinkError> {
         let dial_addr = if let Some(addr) = address {
             addr
-        } else if let Ok(conn) = db.connect() {
-            crate::persistence::paired_devices::get_paired_device(&conn, &device_id)
-                .await
-                .ok()
-                .flatten()
-                .and_then(|d| {
-                    d.hints.first().and_then(|h| {
-                        h.get("addr").and_then(|v| v.as_str()).map(|s| s.to_string())
-                    })
-                })
-                .ok_or_else(|| {
-                    LinkError::Transport(format!(
-                        "No address hint for device {device_id}"
-                    ))
-                })?
         } else {
-            return Err(LinkError::Transport("Cannot open DB to resolve address".into()));
+            host_device
+                .hints
+                .first()
+                .and_then(|h| h.get("addr").and_then(|v| v.as_str()).map(|s| s.to_string()))
+                .ok_or_else(|| {
+                    LinkError::Transport(format!("No address hint for device {}", host_device.device_id))
+                })?
         };
 
         let url = if dial_addr.starts_with("ws://") || dial_addr.starts_with("wss://") {
-            dial_addr.clone()
+            dial_addr
         } else {
             format!("ws://{dial_addr}")
         };
@@ -513,12 +513,135 @@ impl RemoteSessionManager {
             .load_or_create()
             .map_err(|e| LinkError::Transport(e.to_string()))?;
 
+        let prologue = crate::services::remote::security::default_noise_prologue();
+        let handshake = crate::services::remote::security::NoiseHandshake::initiator(
+            &device_key,
+            Some(&host_device.public_key),
+            &prologue,
+        )
+        .map_err(|e| LinkError::Protocol(ProtocolError::MalformedJson(e.to_string())))?;
+
+        let transport = tokio::time::timeout(
+            Duration::from_secs(5),
+            ws_link.drive_handshake(handshake),
+        )
+        .await
+        .map_err(|_| LinkError::Timeout)?
+        .map_err(|e| LinkError::Protocol(ProtocolError::MalformedJson(e.to_string())))?;
+
+        ws_link.set_cipher(transport).await;
+
         let controller_id =
             crate::services::remote::security::derive_device_id(device_key.public_key());
+        let controller_name =
+            sysinfo::System::host_name().unwrap_or_else(|| "Vox Controller".to_string());
         let local_identity = SenderIdentity {
             device_id: controller_id.as_str().to_string(),
-            display_name: "Vox Controller".to_string(),
+            display_name: controller_name,
         };
+
+        Ok((ws_link, local_identity))
+    }
+
+    async fn handle_dial_rejection(
+        &self,
+        db: &crate::persistence::VoxDb,
+        device_id: &str,
+        error: LinkError,
+    ) -> LinkError {
+        match &error {
+            LinkError::PeerRejected(crate::services::remote::link::PeerRejection::UnknownPeer(_)) => {
+                if let Ok(conn) = db.connect() {
+                    let _ = crate::persistence::paired_devices::delete_paired_device(&conn, device_id).await;
+                }
+                let remaining = if let Ok(conn) = db.connect() {
+                    crate::persistence::paired_devices::list_paired_devices(&conn)
+                        .await
+                        .map(|v| v.len())
+                        .unwrap_or(0)
+                } else {
+                    0
+                };
+                let new_state = if remaining == 0 {
+                    RemoteLinkState::Unpaired
+                } else {
+                    RemoteLinkState::Paired
+                };
+                self.set_state(new_state);
+            }
+            LinkError::PeerRejected(crate::services::remote::link::PeerRejection::LinkRefused(reason)) => {
+                let msg = match reason {
+                    crate::services::remote::protocol::messages::LinkRefusedReason::ControllerAttached => {
+                        "Another controller is already connected".to_string()
+                    }
+                    crate::services::remote::protocol::messages::LinkRefusedReason::NotAccepting => {
+                        "Host is not accepting controllers".to_string()
+                    }
+                    crate::services::remote::protocol::messages::LinkRefusedReason::HostBusy => {
+                        "Host is currently busy with local session".to_string()
+                    }
+                };
+                self.set_state(RemoteLinkState::failed(msg, RemoteFailureKind::RejectedByHost));
+            }
+            LinkError::PeerRejected(crate::services::remote::link::PeerRejection::RoleNotPermitted(r)) => {
+                self.set_state(RemoteLinkState::failed(
+                    format!("Role not permitted by host: {r}"),
+                    RemoteFailureKind::RejectedByHost,
+                ));
+            }
+            LinkError::PeerRejected(crate::services::remote::link::PeerRejection::VersionMismatch {
+                version,
+                supported_version,
+            }) => {
+                self.set_state(RemoteLinkState::failed(
+                    format!("Protocol version mismatch: peer {version}, supported {supported_version}"),
+                    RemoteFailureKind::VersionMismatch,
+                ));
+            }
+            LinkError::Timeout => {
+                self.set_state(RemoteLinkState::failed(
+                    format!("Handshake timed out connecting to {device_id}"),
+                    RemoteFailureKind::Timeout,
+                ));
+            }
+            _ => {
+                self.set_state(RemoteLinkState::failed(
+                    format!("Connection error connecting to {device_id}: {error}"),
+                    RemoteFailureKind::Unknown,
+                ));
+            }
+        }
+        error
+    }
+
+    /// Controller-side: dial a paired host, run Noise handshake, exchange
+    /// Hello, and spawn the Link Supervisor. Assumes device is already in
+    /// `paired_devices`. Does NOT perform pairing; call `pair_device` first.
+    ///
+    /// Spec §4.4 Tier 2: explicitly initiated from the Home Rocket button.
+    pub async fn dial_and_connect(
+        self: Arc<Self>,
+        db: Arc<crate::persistence::VoxDb>,
+        device_id: String,
+        address: Option<String>,
+    ) -> Result<(), LinkError> {
+        self.set_db(Arc::clone(&db));
+        self.set_state(RemoteLinkState::Connecting);
+
+        let host_device = if let Ok(conn) = db.connect() {
+            crate::persistence::paired_devices::get_paired_device(&conn, &device_id)
+                .await
+                .ok()
+                .flatten()
+        } else {
+            None
+        };
+        let host_device = host_device.ok_or_else(|| {
+            LinkError::Transport(format!("Device {device_id} not found in paired_devices"))
+        })?;
+
+        let (ws_link, local_identity) =
+            self.perform_dial_handshake(&host_device, address).await?;
 
         let peer_hello = match self
             .exchange_hello(
@@ -531,56 +654,10 @@ impl RemoteSessionManager {
         {
             Ok(h) => h,
             Err(e) => {
-                let err_str = e.to_string();
-                if err_str.contains("UnknownPeer") {
-                    // Host revoked this device or doesn't know it (§6.5, §6.7)
-                    // Purge local paired_devices entry and transition to Unpaired
-                    if let Ok(conn) = db.connect() {
-                        let _ = crate::persistence::paired_devices::delete_paired_device(
-                            &conn, &device_id,
-                        )
-                        .await;
-                    }
-                    let remaining = if let Ok(conn) = db.connect() {
-                        crate::persistence::paired_devices::list_paired_devices(&conn)
-                            .await
-                            .map(|v| v.len())
-                            .unwrap_or(0)
-                    } else {
-                        0
-                    };
-                    let new_state = if remaining == 0 {
-                        RemoteLinkState::Unpaired
-                    } else {
-                        RemoteLinkState::Paired
-                    };
-                    self.set_state(new_state);
-                    return Err(e);
-                }
-
-                let (msg, kind) = if err_str.contains("LinkRefused") {
-                    (
-                        format!("Host refused connection: {e}"),
-                        RemoteFailureKind::RejectedByHost,
-                    )
-                } else if err_str.contains("Timeout") || err_str.contains("timed out") {
-                    (
-                        format!("Handshake timed out connecting to {device_id}"),
-                        RemoteFailureKind::Timeout,
-                    )
-                } else {
-                    (
-                        format!("Protocol version mismatch or handshake error connecting to {device_id}: {e}"),
-                        RemoteFailureKind::VersionMismatch,
-                    )
-                };
-
-                self.set_state(RemoteLinkState::failed(msg, kind));
-                return Err(e);
+                return Err(self.handle_dial_rejection(&db, &device_id, e).await);
             }
         };
 
-        // Attach link — spawns Link Supervisor (Ticket 03)
         self.attach_link(Arc::new(ws_link), peer_hello.sender_identity)
             .await;
         Ok(())
@@ -599,6 +676,85 @@ impl RemoteSessionManager {
         crate::persistence::paired_devices::list_paired_devices(&conn).await
     }
 
+    async fn sever_active_link(&self, device_id: &str, has_active_link: bool) {
+        let is_current = self
+            .peer_identity()
+            .map(|p| p.device_id == device_id)
+            .unwrap_or(false);
+
+        if has_active_link && is_current {
+            if let Some(link) = self.link.write().await.take() {
+                let _ = link
+                    .send_control(ControlMessage::LinkLoss(LinkLoss {
+                        reason: LinkLossReason::Revoked,
+                    }))
+                    .await;
+                tokio::time::sleep(Duration::from_millis(150)).await;
+                let _ = link.close(LinkCloseReason::Local).await;
+            }
+            let mut guard = self.peer_identity.write();
+            *guard = None;
+        }
+    }
+
+    async fn notify_idle_host_revoked(
+        &self,
+        conn: &turso::Connection,
+        device_id: &str,
+    ) {
+        if self.role != SessionRole::Controller {
+            return;
+        }
+        let device = crate::persistence::paired_devices::get_paired_device(conn, device_id)
+            .await
+            .ok()
+            .flatten();
+        let Some(device) = device else { return; };
+        let Some(addr) = device
+            .hints
+            .first()
+            .and_then(|h| h.get("addr").and_then(|v| v.as_str()).map(|s| s.to_string()))
+        else {
+            return;
+        };
+        let host_pk = device.public_key;
+
+        tokio::spawn(async move {
+            let url = if addr.starts_with("ws://") || addr.starts_with("wss://") {
+                addr
+            } else {
+                format!("ws://{addr}")
+            };
+            let _ = tokio::time::timeout(Duration::from_secs(2), async move {
+                if let Ok(ws) = crate::services::remote::link::ws::dial(&url).await {
+                    if let Ok(ks) = crate::services::remote::security::KeyStore::default_path()
+                        .and_then(|k| k.load_or_create())
+                    {
+                        let prologue = crate::services::remote::security::default_noise_prologue();
+                        if let Ok(handshake) =
+                            crate::services::remote::security::NoiseHandshake::initiator(
+                                &ks,
+                                Some(&host_pk),
+                                &prologue,
+                            )
+                        {
+                            if let Ok(transport) = ws.drive_handshake(handshake).await {
+                                ws.set_cipher(transport).await;
+                                let _ = ws
+                                    .send_control(ControlMessage::LinkLoss(LinkLoss {
+                                        reason: LinkLossReason::Revoked,
+                                    }))
+                                    .await;
+                                let _ = ws.close(LinkCloseReason::Local).await;
+                            }
+                        }
+                    }
+                }
+            })
+            .await;
+        });
+    }
+
     /// Permanently removes a paired device and severs its connection.
     ///
     /// Spec §5.6 + §5.8: send `LinkLoss(Revoked)` before closing if active,
@@ -608,46 +764,37 @@ impl RemoteSessionManager {
         db: &crate::persistence::VoxDb,
         device_id: &str,
     ) -> Result<bool, crate::core::error::PersistenceError> {
-        // Ticket 04: sever active link with Revoked notification before DB deletion
-        let is_current = self
-            .peer_identity()
-            .map(|p| p.device_id == device_id)
-            .unwrap_or(false);
-        if is_current {
-            if let Some(link) = self.link.write().await.take() {
-                let _ = link
-                    .send_control(ControlMessage::LinkLoss(LinkLoss {
-                        reason: LinkLossReason::Revoked,
-                    }))
-                    .await;
-                // Grace period: allow network sink to flush LinkLoss frame before tearing down TCP
-                tokio::time::sleep(Duration::from_millis(150)).await;
-                let _ = link.close(LinkCloseReason::Local).await;
-            }
-            if let Some(token) = self.cancel_token.lock().take() {
-                token.cancel();
-            }
-            {
-                let mut guard = self.peer_identity.write();
-                *guard = None;
-            }
+        // Spec §5.8 / §3.3: cancel supervisor first so it does not emit transient state changes
+        if let Some(token) = self.cancel_token.lock().take() {
+            token.cancel();
         }
 
+        let has_active_link = self.link.read().await.is_some();
+        self.sever_active_link(device_id, has_active_link).await;
+
         let conn = db.connect()?;
-        let deleted =
-            crate::persistence::paired_devices::delete_paired_device(&conn, device_id).await?;
+        if !has_active_link {
+            self.notify_idle_host_revoked(&conn, device_id).await;
+        }
+
+        let trust_store_opt = self.trust_store.read().clone();
+        let deleted = if let Some(ts) = trust_store_opt {
+            ts.revoke(&conn, device_id).await?
+        } else {
+            crate::persistence::paired_devices::delete_paired_device(&conn, device_id).await?
+        };
 
         // Determine new state from remaining count (spec §5.8)
         let remaining = crate::persistence::paired_devices::list_paired_devices(&conn)
             .await
             .map(|v| v.len())
             .unwrap_or(0);
-        let new_state = if remaining == 0 {
-            RemoteLinkState::Unpaired
+        if remaining == 0 {
+            self.set_peer_identity(None);
+            self.set_state(RemoteLinkState::Unpaired);
         } else {
-            RemoteLinkState::Paired
-        };
-        self.set_state(new_state);
+            self.hydrate_from_db(db).await;
+        }
         Ok(deleted)
     }
 
@@ -670,12 +817,8 @@ impl RemoteSessionManager {
             let _ = link.close(LinkCloseReason::Local).await;
         }
 
-        {
-            let mut guard = self.peer_identity.write();
-            *guard = None;
-        }
-
         // Keep pairing: transition to Paired (spec §6.6 — NOT Unpaired)
+        // peer_identity is retained because the device remains in paired_devices DB.
         self.set_state(RemoteLinkState::Paired);
         Ok(())
     }
@@ -694,290 +837,203 @@ impl RemoteSessionManager {
             let _ = link.close(LinkCloseReason::Local).await;
         }
 
-        {
-            let mut guard = self.peer_identity.write();
-            *guard = None;
-        }
-
         // Keep pairing: transition to Paired (spec §6.4)
+        // peer_identity is retained because the device remains in paired_devices DB.
         self.set_state(RemoteLinkState::Paired);
         Ok(())
     }
-
-    /// Legacy unified disconnect — prefer `disconnect_host_initiated` /
-    /// `disconnect_controller_initiated`. Retained for callers not yet migrated.
-    pub async fn disconnect(&self, reason: LinkLossReason) -> Result<(), LinkError> {
-        match reason {
-            LinkLossReason::Revoked => {
-                // Only used when revoke is called without a DB context; prefer revoke_device.
-                if let Some(token) = self.cancel_token.lock().take() {
-                    token.cancel();
-                }
-                let link_opt = self.link.write().await.take();
-                if let Some(link) = link_opt {
-                    let _ = link
-                        .send_control(ControlMessage::LinkLoss(LinkLoss { reason }))
-                        .await;
-                    let _ = link.close(LinkCloseReason::Local).await;
-                }
-                {
-                    let mut guard = self.peer_identity.write();
-                    *guard = None;
-                }
-                self.set_state(RemoteLinkState::Unpaired);
-            }
-            _ => match self.role {
-                SessionRole::Host => self.disconnect_host_initiated().await?,
-                SessionRole::Controller => self.disconnect_controller_initiated().await?,
-            },
-        }
-        Ok(())
-    }
-}
-
-// ─── Noise handshake driver ─────────────────────────────────────────────────
-
-/// Drives the Noise handshake state machine to completion using provided I/O closures.
-async fn drive_noise_handshake<FRead, FWrite, FutR, FutW>(
-    mut handshake: NoiseHandshake,
-    mut read_fn: FRead,
-    mut write_fn: FWrite,
-) -> Result<NoiseTransport, SecurityError>
-where
-    FRead: FnMut() -> FutR,
-    FutR: Future<Output = Result<Vec<u8>, SecurityError>>,
-    FWrite: FnMut(Vec<u8>) -> FutW,
-    FutW: Future<Output = Result<(), SecurityError>>,
-{
-    loop {
-        if handshake.is_complete() {
-            break;
-        }
-        if handshake.is_my_turn() {
-            let msg = handshake.write_message(&[])?;
-            write_fn(msg).await?;
-        } else {
-            let msg = read_fn().await?;
-            handshake.read_message(&msg)?;
-        }
-    }
-    handshake.finish()
 }
 
 // ─── Ticket 03: Duplex Link Supervisor ──────────────────────────────────────
 
-/// Supervises link health via the full duplex recv_control loop.
-///
-/// This is the ONLY reader of `recv_control()` for the lifetime of a session.
-/// Spec §6.3: handles Ping/Pong, Disconnect, LinkLoss, heartbeat, and faults.
-struct LinkSupervisorParams {
-    role: SessionRole,
-    link: Arc<dyn RemoteLink>,
-    cancel: CancellationToken,
-    state: Arc<RwLock<RemoteLinkState>>,
-    peer_identity: Arc<RwLock<Option<SenderIdentity>>>,
-    on_change: Option<StateChangeCallback>,
-    link_slot: Arc<AsyncRwLock<Option<Arc<dyn RemoteLink>>>>,
-    db_opt: Option<Arc<crate::persistence::VoxDb>>,
+enum SupervisorFlow {
+    Continue,
+    Break,
+}
+
+async fn handle_supervisor_message(
+    params: &LinkSupervisorParams,
+    msg: ControlMessage,
+    seq: u64,
+    last_ping_at: &mut Instant,
+    missed_pongs: &mut u32,
+) -> SupervisorFlow {
+    match msg {
+        ControlMessage::Ping(p) => {
+            *last_ping_at = Instant::now();
+            let _ = params.link.send_control(ControlMessage::Pong(Pong { seq: p.seq })).await;
+            SupervisorFlow::Continue
+        }
+        ControlMessage::Pong(p) => {
+            if p.seq == seq {
+                *missed_pongs = 0;
+            }
+            SupervisorFlow::Continue
+        }
+        ControlMessage::Disconnect => {
+            log::info!("[Remote Supervisor] Received Disconnect from controller — transitioning to Paired");
+            let _ = params.link.close(LinkCloseReason::Local).await;
+            params.link_slot.write().await.take();
+            transition_supervisor_state(
+                &params.state,
+                &params.peer_identity,
+                &params.on_change,
+                RemoteLinkState::Paired,
+            );
+            SupervisorFlow::Break
+        }
+        ControlMessage::LinkLoss(loss) => {
+            log::info!("[Remote Supervisor] Received LinkLoss({:?})", loss.reason);
+            let _ = params.link.close(LinkCloseReason::Local).await;
+            params.link_slot.write().await.take();
+            let new_state = handle_supervisor_link_loss(&params.peer_identity, &params.db_opt, loss.reason).await;
+            transition_supervisor_state(
+                &params.state,
+                &params.peer_identity,
+                &params.on_change,
+                new_state,
+            );
+            SupervisorFlow::Break
+        }
+        _ => SupervisorFlow::Continue,
+    }
+}
+
+async fn handle_supervisor_link_loss(
+    peer_identity: &Arc<RwLock<Option<SenderIdentity>>>,
+    db_opt: &Option<Arc<crate::persistence::VoxDb>>,
+    reason: LinkLossReason,
+) -> RemoteLinkState {
+    if reason != LinkLossReason::Revoked {
+        return RemoteLinkState::Paired;
+    }
+    log::warn!("[Remote Supervisor] Link revoked by peer — deleting from DB");
+    let peer_id = peer_identity.read().as_ref().map(|p| p.device_id.clone());
+    if let (Some(id), Some(db)) = (peer_id, db_opt) {
+        if let Ok(conn) = db.connect() {
+            let _ = crate::persistence::paired_devices::delete_paired_device(&conn, &id).await;
+            let remaining = crate::persistence::paired_devices::list_paired_devices(&conn)
+                .await
+                .map(|d| d.len())
+                .unwrap_or(0);
+            if remaining == 0 {
+                return RemoteLinkState::Unpaired;
+            }
+            return RemoteLinkState::Paired;
+        }
+    }
+    RemoteLinkState::Unpaired
+}
+
+async fn handle_supervisor_fault(params: &LinkSupervisorParams, err: &LinkError) {
+    log::warn!("[Remote Supervisor] Socket fault: {err}");
+    params.link_slot.write().await.take();
+    if params.cancel.is_cancelled() {
+        log::debug!("[Remote Supervisor] Cancelled during shutdown — ignoring socket fault");
+        return;
+    }
+
+    let is_still_paired = if let Some(db) = &params.db_opt {
+        let peer_id = params.peer_identity.read().as_ref().map(|p| p.device_id.clone());
+        if let (Some(id), Ok(conn)) = (peer_id, db.connect()) {
+            crate::persistence::paired_devices::get_paired_device(&conn, &id)
+                .await
+                .ok()
+                .flatten()
+                .is_some()
+        } else {
+            false
+        }
+    } else {
+        true
+    };
+
+    let new_state = if !is_still_paired {
+        log::warn!("[Remote Supervisor] Peer is no longer in paired_devices — transitioning to Unpaired");
+        RemoteLinkState::Unpaired
+    } else {
+        match params.role {
+            SessionRole::Host => RemoteLinkState::Paired,
+            SessionRole::Controller => RemoteLinkState::Reconnecting,
+        }
+    };
+    transition_supervisor_state(
+        &params.state,
+        &params.peer_identity,
+        &params.on_change,
+        new_state,
+    );
+}
+
+async fn handle_host_heartbeat_tick(
+    params: &LinkSupervisorParams,
+    seq: &mut u64,
+    missed_pongs: &mut u32,
+) -> SupervisorFlow {
+    *seq = seq.wrapping_add(1);
+    let _ = params.link.send_control(ControlMessage::Ping(Ping { seq: *seq })).await;
+    *missed_pongs += 1;
+
+    if *missed_pongs >= HEARTBEAT_MAX_MISSED_PONGS {
+        log::warn!("[Remote Supervisor] Host: {} missed pongs — link dead, transitioning to Paired", *missed_pongs);
+        let _ = params.link.close(LinkCloseReason::Transport("Heartbeat: 3 missed pongs".into())).await;
+        params.link_slot.write().await.take();
+        transition_supervisor_state(&params.state, &params.peer_identity, &params.on_change, RemoteLinkState::Paired);
+        SupervisorFlow::Break
+    } else {
+        SupervisorFlow::Continue
+    }
+}
+
+async fn handle_controller_heartbeat_timeout(params: &LinkSupervisorParams) -> SupervisorFlow {
+    log::warn!("[Remote Supervisor] Controller: no Ping for {:?} — transitioning to Reconnecting", HEARTBEAT_PING_TIMEOUT);
+    let _ = params.link.close(LinkCloseReason::Transport("Heartbeat: no ping received".into())).await;
+    params.link_slot.write().await.take();
+    transition_supervisor_state(&params.state, &params.peer_identity, &params.on_change, RemoteLinkState::Reconnecting);
+    SupervisorFlow::Break
 }
 
 async fn run_link_supervisor(params: LinkSupervisorParams) {
-    let LinkSupervisorParams {
-        role,
-        link,
-        cancel,
-        state,
-        peer_identity,
-        on_change,
-        link_slot,
-        db_opt,
-    } = params;
-    // Host sends Ping, Controller monitors Ping arrival deadline
     let mut seq: u64 = 0;
     let mut missed_pongs: u32 = 0;
-    let mut last_ping_at = Instant::now(); // Controller: reset on each Ping received
+    let mut last_ping_at = Instant::now();
 
-    // Named constants per spec §6.3.2
-    const PING_INTERVAL: Duration = HEARTBEAT_INTERVAL;    // 2s
-    const PING_TIMEOUT: Duration = HEARTBEAT_PING_TIMEOUT; // 6s  (controller deadline)
-    const MAX_MISSED: u32 = HEARTBEAT_MAX_MISSED_PONGS;    // 3
-
-    let mut ping_timer = tokio::time::interval(PING_INTERVAL);
-    ping_timer.tick().await; // consume the immediate first tick
+    let mut ping_timer = tokio::time::interval(HEARTBEAT_INTERVAL);
+    ping_timer.tick().await;
 
     loop {
         tokio::select! {
-            _ = cancel.cancelled() => {
+            _ = params.cancel.cancelled() => {
                 log::debug!("[Remote Supervisor] cancelled — exiting");
                 break;
             }
-
-            // ── The duplex read arm ──────────────────────────────────────────
-            msg = link.recv_control() => {
+            msg = params.link.recv_control() => {
                 match msg {
-                    Ok(ControlMessage::Ping(p)) => {
-                        // Spec §6.3.1: receiver MUST immediately reply with Pong
-                        last_ping_at = Instant::now();
-                        let _ = link.send_control(ControlMessage::Pong(Pong { seq: p.seq })).await;
-                    }
-
-                    Ok(ControlMessage::Pong(p)) => {
-                        // Spec §6.3.1: sender resets missed counter on matching Pong
-                        if p.seq == seq {
-                            missed_pongs = 0;
-                        }
-                    }
-
-                    Ok(ControlMessage::Disconnect) => {
-                        // Spec §6.4: Controller sent intentional disconnect to Host.
-                        // Host pauses session, transitions Paired.
-                        log::info!("[Remote Supervisor] Received Disconnect from controller — transitioning to Paired");
-                        let _ = link.close(LinkCloseReason::Local).await;
-                        link_slot.write().await.take();
-                        clear_peer_and_set_state(
-                            &state,
-                            &peer_identity,
-                            &on_change,
-                            RemoteLinkState::Paired,
-                        );
-                        // shortcut: pause_session hook would go here when pipeline integration is added
-                        break;
-                    }
-
-                    Ok(ControlMessage::LinkLoss(loss)) => {
-                        // Spec §6.3.1 + §5.8: Controller receives this from Host.
-                        log::info!("[Remote Supervisor] Received LinkLoss({:?})", loss.reason);
-                        let _ = link.close(LinkCloseReason::Local).await;
-                        link_slot.write().await.take();
-
-                        let new_state = match loss.reason {
-                            LinkLossReason::Revoked => {
-                                // Spec §5.8: peer was revoked — clear trust, halt reconnect
-                                log::warn!("[Remote Supervisor] Link revoked by peer — deleting from DB");
-                                let peer_id = peer_identity.read().as_ref().map(|p| p.device_id.clone());
-                                if let (Some(id), Some(db)) = (peer_id, &db_opt) {
-                                    if let Ok(conn) = db.connect() {
-                                        let _ = crate::persistence::paired_devices::delete_paired_device(&conn, &id).await;
-                                        let remaining = crate::persistence::paired_devices::list_paired_devices(&conn)
-                                            .await
-                                            .map(|d| d.len())
-                                            .unwrap_or(0);
-                                        if remaining == 0 {
-                                            RemoteLinkState::Unpaired
-                                        } else {
-                                            RemoteLinkState::Paired
-                                        }
-                                    } else {
-                                        RemoteLinkState::Unpaired
-                                    }
-                                } else {
-                                    RemoteLinkState::Unpaired
-                                }
-                            }
-                            _ => {
-                                // HostDisconnected / HostPaused / HostIdle — keep pairing
-                                RemoteLinkState::Paired
-                            }
-                        };
-                        clear_peer_and_set_state(&state, &peer_identity, &on_change, new_state);
-                        break;
-                    }
-
-                    Ok(_other) => {
-                        // Req/Res/Event — will be routed by the command gateway in a future ticket
-                    }
-
-                    Err(e) => {
-                        // Spec §6.3.3 fast-path: OS reported socket fault (RST, EOF)
-                        log::warn!("[Remote Supervisor] Socket fault: {e}");
-                        link_slot.write().await.take();
-                        if cancel.is_cancelled() {
-                            log::debug!("[Remote Supervisor] Cancelled during shutdown — ignoring socket fault");
+                    Ok(m) => {
+                        if let SupervisorFlow::Break = handle_supervisor_message(
+                            &params,
+                            m,
+                            seq,
+                            &mut last_ping_at,
+                            &mut missed_pongs,
+                        ).await {
                             break;
                         }
-
-                        // Check DB: if the peer is no longer in DB (e.g. was deleted or revoked),
-                        // transition to Unpaired, NOT Reconnecting or Paired!
-                        let is_still_paired = if let Some(db) = &db_opt {
-                            let peer_id = peer_identity.read().as_ref().map(|p| p.device_id.clone());
-                            if let (Some(id), Ok(conn)) = (peer_id, db.connect()) {
-                                crate::persistence::paired_devices::get_paired_device(&conn, &id)
-                                    .await
-                                    .ok()
-                                    .flatten()
-                                    .is_some()
-                            } else {
-                                false
-                            }
-                        } else {
-                            false
-                        };
-
-                        let new_state = if !is_still_paired {
-                            log::warn!("[Remote Supervisor] Peer is no longer in paired_devices — transitioning to Unpaired");
-                            RemoteLinkState::Unpaired
-                        } else {
-                            match role {
-                                SessionRole::Host => RemoteLinkState::Paired,
-                                SessionRole::Controller => RemoteLinkState::Reconnecting,
-                            }
-                        };
-                        clear_peer_and_set_state(&state, &peer_identity, &on_change, new_state);
+                    }
+                    Err(e) => {
+                        handle_supervisor_fault(&params, &e).await;
                         break;
                     }
                 }
             }
-
-            // ── Host heartbeat ping ticker ───────────────────────────────────
-            _ = ping_timer.tick(), if role == SessionRole::Host => {
-                seq = seq.wrapping_add(1);
-                let sent = link.send_control(ControlMessage::Ping(Ping { seq })).await;
-                if sent.is_err() {
-                    // Socket is dead — count as a missed pong
-                    missed_pongs += 1;
-                } else {
-                    // Pong expected within HEARTBEAT_PONG_TIMEOUT; count until Pong resets it
-                    missed_pongs += 1;
-                }
-
-                if missed_pongs >= MAX_MISSED {
-                    // Spec §6.3.2: 3 missed pongs → host declares involuntary cutoff
-                    log::warn!(
-                        "[Remote Supervisor] Host: {missed_pongs} missed pongs — link dead, transitioning to Paired"
-                    );
-                    let _ = link
-                        .close(LinkCloseReason::Transport("Heartbeat: 3 missed pongs".into()))
-                        .await;
-                    link_slot.write().await.take();
-                    // shortcut: pause_session hook would go here
-                    clear_peer_and_set_state(
-                        &state,
-                        &peer_identity,
-                        &on_change,
-                        RemoteLinkState::Paired,
-                    );
+            _ = ping_timer.tick(), if params.role == SessionRole::Host => {
+                if let SupervisorFlow::Break = handle_host_heartbeat_tick(&params, &mut seq, &mut missed_pongs).await {
                     break;
                 }
             }
-
-            // ── Controller liveness deadline ─────────────────────────────────
-            _ = sleep(PING_TIMEOUT), if role == SessionRole::Controller => {
-                // Spec §6.3.2: if no Ping received for 6s, controller declares cutoff
-                if last_ping_at.elapsed() >= PING_TIMEOUT {
-                    log::warn!(
-                        "[Remote Supervisor] Controller: no Ping for {:?} — transitioning to Reconnecting",
-                        PING_TIMEOUT
-                    );
-                    let _ = link
-                        .close(LinkCloseReason::Transport("Heartbeat: no ping received".into()))
-                        .await;
-                    link_slot.write().await.take();
-                    clear_peer_and_set_state(
-                        &state,
-                        &peer_identity,
-                        &on_change,
-                        RemoteLinkState::Reconnecting,
-                    );
+            _ = tokio::time::sleep_until(tokio::time::Instant::from_std(last_ping_at + HEARTBEAT_PING_TIMEOUT)), if params.role == SessionRole::Controller => {
+                if last_ping_at.elapsed() >= HEARTBEAT_PING_TIMEOUT {
+                    handle_controller_heartbeat_timeout(&params).await;
                     break;
                 }
             }
@@ -985,14 +1041,14 @@ async fn run_link_supervisor(params: LinkSupervisorParams) {
     }
 }
 
-/// Clears the peer identity and atomically sets a new link state.
-fn clear_peer_and_set_state(
+/// Atomically sets a new link state from supervisor, only clearing peer identity if Unpaired or Disabled.
+fn transition_supervisor_state(
     state: &Arc<RwLock<RemoteLinkState>>,
     peer_identity: &Arc<RwLock<Option<SenderIdentity>>>,
     on_change: &Option<StateChangeCallback>,
     new_state: RemoteLinkState,
 ) {
-    {
+    if matches!(new_state, RemoteLinkState::Unpaired | RemoteLinkState::Disabled) {
         let mut guard = peer_identity.write();
         *guard = None;
     }
@@ -1000,8 +1056,9 @@ fn clear_peer_and_set_state(
         let mut guard = state.write();
         *guard = new_state.clone();
     }
+    let peer = peer_identity.read().clone();
     if let Some(cb) = on_change {
-        cb(&new_state, None);
+        cb(&new_state, peer.as_ref());
     }
 }
 

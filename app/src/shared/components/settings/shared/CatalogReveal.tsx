@@ -29,6 +29,8 @@ import { CATALOG_REVEAL_COPY } from "@/data/settingsCopy";
  */
 /** Default height of the feather band, in pixels. */
 const DEFAULT_FEATHER_HEIGHT = 48;
+/** Bottom padding reserved in the inline scroller for the overlaid expand button. */
+const OVERLAY_BAND_CLASS = "pb-7";
 
 export interface CatalogRevealProps {
   /** The scrolling list. Rendered inside the reveal container. */
@@ -102,25 +104,32 @@ export const CatalogReveal = memo(({
 
   return (
     <div className={cn("relative flex min-h-0 w-full flex-col", className)}>
-      <div ref={scrollRef} className={cn("relative z-0", scrollerClassName)}>
+      {/* Inline: the expand button is an overlay composited on top of the reveal,
+          so the scroller reserves a band under the last row for it — the last row
+          scrolls clear of the button and `atEnd` reads true when it is visible. */}
+      <div
+        ref={scrollRef}
+        className={cn("relative z-0", !isExpanded && OVERLAY_BAND_CLASS, scrollerClassName)}
+      >
         {children}
       </div>
 
-      {/* Feather: only shown when inline (stands down in modal) and content overflows.
-          Fades out smoothly via CSS transition when reaching the bottom or content shrinks so the mask doesn't vanish abruptly. */}
+      {/* Feather: anchored flush to the scroller's bottom edge (no magic offset —
+          it once floated above the in-flow button band, leaving a gap under the grid).
+          Only shown inline (stands down in modal) and when content overflows; fades
+          out smoothly via CSS transition at the bottom or as content shrinks. */}
       {!isExpanded && (
         <div
           className={cn(
-            "pointer-events-none absolute inset-x-0 bottom-7 z-10 bg-gradient-to-t from-[rgba(var(--card),0.97)] via-[rgba(var(--card),0.8)] to-transparent transition-opacity duration-300 ease-out",
+            "pointer-events-none absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-[rgba(var(--card),0.97)] via-[rgba(var(--card),0.8)] to-transparent transition-opacity duration-300 ease-out",
             isScrollable && !atEnd ? "opacity-100" : "opacity-0"
           )}
           style={{ height: featherHeight }}
         />
       )}
 
-      {/* Expand button: stable in-flow position, eliminating layout oscillation */}
       {!isExpanded && (
-        <div className="z-20 flex justify-center shrink-0 pt-1 pb-0.5">
+        <div className="absolute inset-x-0 bottom-1.5 z-20 flex justify-center">
           <button
             type="button"
             onClick={onReveal ?? open}

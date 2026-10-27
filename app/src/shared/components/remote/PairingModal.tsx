@@ -7,12 +7,11 @@ import {
   ScanLine,
   Smartphone,
   Link2,
-  X,
 } from "lucide-react";
-import { Modal } from "@/shared/ui/Modal";
 import { useRemoteStore } from "@/store/remoteStore";
+import type { RemoteLinkState } from "@/services/remoteService";
 import { OrbitalLoader } from "@/shared/components/common";
-import { AuthorizeDeviceContent } from "./AuthorizeDeviceModal";
+import { RemoteModalShell } from "./RemoteModalShell";
 import { cn } from "@/shared/lib/utils";
 
 export interface PairingModalProps {
@@ -66,16 +65,133 @@ const computeRemainingSeconds = (exp: number): number => {
   return rem;
 };
 
+interface QrCardProps {
+  details: QrDetails | null;
+  loading: boolean;
+  onRegenerate: () => void;
+}
+
+const QrCard = memo(({ details, loading, onRegenerate }: QrCardProps) => {
+  const [timeLeft, setTimeLeft] = useState<number>(() =>
+    details ? computeRemainingSeconds(details.expiresAt) : 120
+  );
+
+  useEffect(() => {
+    if (!details) return;
+    const initial = computeRemainingSeconds(details.expiresAt);
+    setTimeLeft(initial);
+
+    const timer = setInterval(() => {
+      setTimeLeft((prev) => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [details]);
+
+  const minutes = Math.floor(timeLeft / 60);
+  const seconds = timeLeft % 60;
+  const timeFormatted = `${minutes}:${seconds.toString().padStart(2, "0")}`;
+
+  return (
+    <div className="self-stretch h-full w-full rounded-2xl bg-[rgba(var(--card),0.8)] border border-[rgba(var(--border),0.08)] p-3.5 sm:p-4 md:p-5 flex flex-col items-center justify-between text-center shadow-sm">
+      {loading && !details ? (
+        <div className="my-auto flex items-center justify-center w-40 h-40 sm:w-48 sm:h-48 md:w-56 md:h-56">
+          <OrbitalLoader size="md" />
+        </div>
+      ) : details ? (
+        <div className="relative group my-auto">
+          <div
+            className={cn(
+              "p-2.5 sm:p-3 md:p-3.5 rounded-xl md:rounded-2xl bg-white shadow-md transition-all duration-300",
+              timeLeft === 0
+                ? "opacity-20 grayscale scale-95"
+                : "opacity-100 scale-100"
+            )}
+          >
+            <img
+              src={details.qrDataUrl}
+              alt="Remote Pairing QR Code"
+              className="w-40 h-40 sm:w-48 sm:h-48 md:w-56 md:h-56 block select-none pointer-events-none"
+            />
+          </div>
+
+          {timeLeft === 0 && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-[rgba(var(--background),0.92)] rounded-xl md:rounded-2xl p-3 md:p-4 text-center">
+              <span className="text-xs font-bold text-[rgb(var(--foreground))]">
+                QR Code Expired
+              </span>
+              <button
+                type="button"
+                onClick={onRegenerate}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[rgb(var(--accent))] text-xs font-bold cursor-pointer hover:opacity-90 transition-opacity"
+              >
+                <RotateCcw size={12} />
+                Regenerate
+              </button>
+            </div>
+          )}
+        </div>
+      ) : null}
+
+      {/* Countdown & Regenerate Action */}
+      <div className="w-full pt-2 md:pt-3 mt-2 md:mt-3 border-t border-[rgba(var(--border),0.06)] flex items-center justify-between md:flex-col md:items-center">
+        <div className="flex items-center gap-1.5 md:flex-col md:items-center">
+          <div className="inline-flex items-center gap-1 text-[11px] text-[rgb(var(--foreground-muted))]">
+            <Clock
+              size={11}
+              className={cn(
+                "md:w-[12px] md:h-[12px] transition-colors",
+                timeLeft <= 5 && timeLeft > 0
+                  ? "text-[rgb(var(--error))]"
+                  : timeLeft <= 20 && timeLeft > 0
+                  ? "text-[rgb(var(--warning))]"
+                  : "text-[rgb(var(--accent))]"
+              )}
+            />
+            <span>Expires in</span>
+          </div>
+          <div
+            className={cn(
+              "font-mono font-extrabold tracking-tight transition-colors text-sm md:text-3xl md:mt-0.5",
+              timeLeft <= 5 && timeLeft > 0
+                ? "text-[rgb(var(--error))]"
+                : timeLeft <= 20 && timeLeft > 0
+                ? "text-[rgb(var(--warning))]"
+                : "text-[rgb(var(--foreground))]"
+            )}
+          >
+            {timeFormatted}
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={onRegenerate}
+          className="inline-flex items-center gap-1 px-2.5 py-1 md:mt-2 md:px-3 md:py-1.5 rounded-lg text-xs font-semibold text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.1)] cursor-pointer transition-colors"
+        >
+          <RotateCcw size={11} className="md:w-[12px] md:h-[12px]" />
+          <span>Get a new code</span>
+        </button>
+      </div>
+    </div>
+  );
+});
+
+QrCard.displayName = "QrCard";
+
 export const PairingModal = memo(({ open, onClose }: PairingModalProps) => {
   const isPairingModalOpen = useRemoteStore((s) => s.isPairingModalOpen);
   const closePairingModal = useRemoteStore((s) => s.closePairingModal);
   const pairNewDevice = useRemoteStore((s) => s.pairNewDevice);
   const linkState = useRemoteStore((s) => s.linkState);
-  const pendingPairingPrompt = useRemoteStore((s) => s.pendingPairingPrompt);
-  const approvePairing = useRemoteStore((s) => s.approvePairing);
 
-  const effectiveOpen =
-    open !== undefined ? open : isPairingModalOpen || Boolean(pendingPairingPrompt);
+  const effectiveOpen = open !== undefined ? open : isPairingModalOpen;
   const effectiveOnClose = onClose ?? closePairingModal;
 
   // Read initial cache
@@ -87,43 +203,11 @@ export const PairingModal = memo(({ open, onClose }: PairingModalProps) => {
   );
   const [loading, setLoading] = useState<boolean>(() => (effectiveOpen ? !hasValidCache : false));
   const [error, setError] = useState<string | null>(null);
-  const [timeLeft, setTimeLeft] = useState<number>(() =>
-    hasValidCache && cachedQrDetails ? computeRemainingSeconds(cachedQrDetails.expiresAt) : 120
-  );
-
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  const clearTimer = useCallback(() => {
-    if (timerRef.current !== null) {
-      clearInterval(timerRef.current);
-      timerRef.current = null;
-    }
-  }, []);
-
-  const startCountdown = useCallback(
-    (exp: number) => {
-      clearTimer();
-      const initial = computeRemainingSeconds(exp);
-      setTimeLeft(initial);
-
-      timerRef.current = setInterval(() => {
-        setTimeLeft((prev) => {
-          if (prev <= 1) {
-            clearTimer();
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-    },
-    [clearTimer]
-  );
 
   const generatePairing = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
-      clearTimer();
 
       const res = await pairNewDevice();
       let hintAddr = "127.0.0.1";
@@ -146,41 +230,53 @@ export const PairingModal = memo(({ open, onClose }: PairingModalProps) => {
 
       cachedQrDetails = newDetails;
       setDetails(newDetails);
-      startCountdown(res.expiresAt);
     } catch (e) {
       console.warn("[PairingModal] pairNewDevice error:", e);
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);
     }
-  }, [pairNewDevice, clearTimer, startCountdown]);
+  }, [pairNewDevice]);
 
   // Synchronize on open
   useEffect(() => {
     if (!effectiveOpen) {
-      clearTimer();
       return;
     }
 
-    // Only generate or start countdown if not already in authorization step
-    if (!pendingPairingPrompt) {
-      if (cachedQrDetails && computeRemainingSeconds(cachedQrDetails.expiresAt) > 0) {
-        setDetails(cachedQrDetails);
+    if (cachedQrDetails && computeRemainingSeconds(cachedQrDetails.expiresAt) > 0) {
+      const cached = cachedQrDetails;
+      setTimeout(() => {
+        setDetails(cached);
         setLoading(false);
-        startCountdown(cachedQrDetails.expiresAt);
-      } else {
-        void generatePairing();
-      }
+      }, 0);
+    } else {
+      void generatePairing();
     }
+  }, [effectiveOpen, generatePairing]);
 
-    return () => {
-      clearTimer();
-    };
-  }, [effectiveOpen, pendingPairingPrompt, generatePairing, startCountdown, clearTimer]);
+  const wasOpenRef = useRef(false);
+  const initialLinkStateRef = useRef<RemoteLinkState | null>(null);
 
-  // Close smoothly on pairing completion
   useEffect(() => {
-    if (effectiveOpen && (linkState === "Paired" || linkState === "Connected")) {
+    if (effectiveOpen && !wasOpenRef.current) {
+      wasOpenRef.current = true;
+      initialLinkStateRef.current = linkState;
+    } else if (!effectiveOpen) {
+      wasOpenRef.current = false;
+      initialLinkStateRef.current = null;
+    }
+  }, [effectiveOpen, linkState]);
+
+  // Close smoothly on NEW pairing completion (only if linkState transitioned after modal opened)
+  useEffect(() => {
+    if (
+      effectiveOpen &&
+      wasOpenRef.current &&
+      initialLinkStateRef.current !== null &&
+      linkState !== initialLinkStateRef.current &&
+      (linkState === "Paired" || linkState === "Connected")
+    ) {
       const timer = setTimeout(() => {
         effectiveOnClose();
       }, 800);
@@ -193,275 +289,140 @@ export const PairingModal = memo(({ open, onClose }: PairingModalProps) => {
     window.open("https://github.com/addy-47/vox/releases", "_blank");
   };
 
-  const handleDenyPairing = useCallback(async () => {
-    try {
-      await approvePairing("Reject");
-    } finally {
-      _resetCachedQrDetails();
-      setDetails(null);
-      void generatePairing();
-    }
-  }, [approvePairing, generatePairing]);
-
-  const handleApprovePairing = useCallback(async () => {
-    await approvePairing("Approve");
-    effectiveOnClose();
-  }, [approvePairing, effectiveOnClose]);
-
-  const minutes = Math.floor(timeLeft / 60);
-  const seconds = timeLeft % 60;
-  const timeFormatted = `${minutes}:${seconds.toString().padStart(2, "0")}`;
-
   return (
-    <Modal
+    <RemoteModalShell
       open={effectiveOpen}
       onClose={effectiveOnClose}
-      position="global"
-      fitContent
-      className="max-w-[760px] w-[94vw] md:w-full overflow-hidden"
-    >
-      {pendingPairingPrompt ? (
-        <div className="animate-fade-in">
-          <AuthorizeDeviceContent
-            deviceName={pendingPairingPrompt.displayName}
-            deviceId={pendingPairingPrompt.deviceId}
-            onApprove={handleApprovePairing}
-            onDeny={handleDenyPairing}
-            onClose={undefined}
-          />
-        </div>
-      ) : (
-        <div className="flex flex-col justify-between h-full p-6 sm:p-8 md:p-9 select-none">
-          {/* Header strictly matching AuthorizeDeviceModal */}
-          <div className="flex items-start justify-between gap-4">
-            <div className="flex flex-col min-w-0">
-              <div className="flex items-center gap-1.5 text-[rgb(var(--accent))]">
-                <Link2 size={14} className="shrink-0 rotate-45 text-[rgb(var(--accent))]" />
-                <span className="text-[11px] font-mono tracking-[0.2em] uppercase font-bold text-[rgb(var(--accent))]">
-                  REMOTE CONTROL
-                </span>
-              </div>
-              <h2 className="text-2xl sm:text-[26px] font-bold tracking-tight text-[rgb(var(--foreground))] mt-1">
-                Pair Mobile Controller
-              </h2>
-              <p className="text-[12.5px] text-[rgb(var(--foreground-muted))] mt-1 leading-normal max-w-[480px]">
-                Scan this QR code from the Vox mobile app to link your devices over local Wi-Fi.
-              </p>
-            </div>
-
+      ariaLabel="Pair Mobile Controller"
+      kickerIcon={<Link2 size={14} className="shrink-0 rotate-45 text-[rgb(var(--accent))]" />}
+      kickerLabel="REMOTE CONTROL"
+      title="Pair Mobile Controller"
+      description="Scan this QR code from the Vox mobile app to link your devices over local Wi-Fi."
+      errorState={
+        error ? (
+          <>
+            <AlertCircle className="text-[rgb(var(--error))] w-8 h-8" />
+            <p className="text-sm font-semibold text-[rgb(var(--foreground))]">
+              Failed to generate pairing QR
+            </p>
+            <p className="text-xs text-[rgb(var(--foreground-muted))] font-mono max-w-sm break-words">
+              {error}
+            </p>
             <button
               type="button"
-              onClick={effectiveOnClose}
-              aria-label="Close"
-              className="w-8 h-8 rounded-full bg-[rgba(var(--foreground),0.06)] hover:bg-[rgba(var(--foreground),0.12)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] flex items-center justify-center transition-colors cursor-pointer shrink-0"
+              onClick={generatePairing}
+              className="mt-2 inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[rgba(var(--accent),0.12)] hover:bg-[rgba(var(--accent),0.2)] text-[rgb(var(--accent))] text-xs font-semibold cursor-pointer transition-colors"
             >
-              <X size={16} />
+              <RotateCcw size={13} />
+              Try Again
             </button>
-          </div>
+          </>
+        ) : undefined
+      }
+      leftColumnClassName="order-2 md:order-1"
+      rightColumnClassName="order-1 md:order-2"
+      contentKey="pairing"
+      leftContent={
+        <div className="flex h-full flex-col justify-center">
+          <div className="relative flex flex-col gap-16 md:gap-18 mt-8">
+              {/* Continuous Vertical Timeline Spine */}
+              <div
+                aria-hidden="true"
+                className="pointer-events-none absolute left-4 md:left-5 top-4 md:top-5 bottom-4 md:bottom-5 w-px -translate-x-1/2 bg-gradient-to-b from-[rgba(var(--accent),0.45)] via-[rgba(var(--border),0.15)] to-[rgba(var(--accent),0.35)]"
+              />
 
-          {error ? (
-            <div className="flex flex-col items-center justify-center p-8 gap-3 text-center my-auto mt-6">
-              <AlertCircle className="text-[rgb(var(--error))] w-8 h-8" />
-              <p className="text-sm font-semibold text-[rgb(var(--foreground))]">
-                Failed to generate pairing QR
-              </p>
-              <p className="text-xs text-[rgb(var(--foreground-muted))] font-mono max-w-sm break-words">
-                {error}
-              </p>
-              <button
-                type="button"
-                onClick={generatePairing}
-                className="mt-2 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[rgba(var(--accent),0.12)] hover:bg-[rgba(var(--accent),0.2)] text-[rgb(var(--accent))] text-xs font-semibold cursor-pointer transition-colors"
-              >
-                <RotateCcw size={13} />
-                Try Again
-              </button>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5 md:gap-6 items-stretch h-full mt-7">
-                  {/* Left Column: 3-Step Setup Stepper */}
-                  <div className="order-2 md:order-1 md:col-span-7 flex flex-col justify-between p-3 sm:p-4 md:p-5 pb-0 sm:pb-0 md:pb-0">
-                    <div className="relative space-y-4 md:space-y-13">
-
-
-                      {/* Continuous Vertical Timeline Spine */}
-                      <div
-                        aria-hidden="true"
-                        className="pointer-events-none absolute left-4 md:left-5 top-4 md:top-5 bottom-4 md:bottom-5 w-px -translate-x-1/2 bg-gradient-to-b from-[rgba(var(--accent),0.45)] via-[rgba(var(--border),0.15)] to-[rgba(var(--accent),0.35)]"
-                      />
-
-                      {/* Step 1: Install App */}
-                      <div className="relative flex items-start gap-2.5 md:gap-3.5">
-                        <div className="relative z-10 w-8 h-8 md:w-10 md:h-10 rounded-lg md:rounded-xl bg-[rgb(var(--card))] border border-[rgba(var(--accent),0.25)] shadow-[0_0_12px_rgba(var(--accent),0.08)] flex items-center justify-center text-[rgb(var(--accent))] shrink-0">
-                          <AndroidIcon size={16} className="md:w-[19px] md:h-[19px]" />
-                        </div>
-                        <div className="flex-1 min-w-0 pt-0.5">
-                          <div className="flex items-center gap-1.5 md:gap-2">
-                            <span className="text-[10px] md:text-[11px] font-mono font-bold text-[rgb(var(--accent))]">
-                              01
-                            </span>
-                            <h4 className="text-xs md:text-sm font-bold text-[rgb(var(--foreground))] leading-tight md:leading-snug">
-                              Install the Companion App
-                            </h4>
-                          </div>
-                          <p className="text-[11px] md:text-xs text-[rgb(var(--foreground-muted))] mt-0.5 md:mt-1 leading-snug md:leading-relaxed">
-                            Download and install the companion APK on your phone.{" "}
-                            <button
-                              type="button"
-                              onClick={handleDownloadApk}
-                              className="inline-flex items-center gap-1 text-[11px] md:text-xs font-semibold text-[rgb(var(--accent))] hover:underline cursor-pointer align-baseline transition-opacity hover:opacity-80"
-                            >
-                              <span>Download</span>
-                            </button>
-                          </p>
-                        </div>
-                      </div>
-
-                      {/* Step 2: Open QR Scanner */}
-                      <div className="relative flex items-start gap-2.5 md:gap-3.5">
-                        <div className="relative z-10 w-8 h-8 md:w-10 md:h-10 rounded-lg md:rounded-xl bg-[rgb(var(--card))] border border-[rgba(var(--accent),0.25)] shadow-[0_0_12px_rgba(var(--accent),0.08)] flex items-center justify-center text-[rgb(var(--accent))] shrink-0">
-                          <ScanLine size={15} className="md:w-[18px] md:h-[18px]" />
-                        </div>
-                        <div className="flex-1 min-w-0 pt-0.5">
-                          <div className="flex items-center gap-1.5 md:gap-2">
-                            <span className="text-[10px] md:text-[11px] font-mono font-bold text-[rgb(var(--accent))]">
-                              02
-                            </span>
-                            <h4 className="text-xs md:text-sm font-bold text-[rgb(var(--foreground))] leading-tight md:leading-snug">
-                              Open QR Scanner in App
-                            </h4>
-                          </div>
-                          <p className="text-[11px] md:text-xs text-[rgb(var(--foreground-muted))] mt-0.5 md:mt-1 leading-snug md:leading-relaxed">
-                            Launch Vox on your phone and tap the scanner icon in the top bar.
-                          </p>
-                        </div>
-                      </div>
-
-                      {/* Step 3: Scan & Authorize */}
-                      <div className="relative flex items-start gap-2.5 md:gap-3.5">
-                        <div className="relative z-10 w-8 h-8 md:w-10 md:h-10 rounded-lg md:rounded-xl bg-[rgb(var(--card))] border border-[rgba(var(--accent),0.25)] shadow-[0_0_12px_rgba(var(--accent),0.08)] flex items-center justify-center text-[rgb(var(--accent))] shrink-0">
-                          <Smartphone size={15} className="md:w-[18px] md:h-[18px]" />
-                        </div>
-                        <div className="flex-1 min-w-0 pt-0.5">
-                          <div className="flex items-center gap-1.5 md:gap-2">
-                            <span className="text-[10px] md:text-[11px] font-mono font-bold text-[rgb(var(--accent))]">
-                              03
-                            </span>
-                            <h4 className="text-xs md:text-sm font-bold text-[rgb(var(--foreground))] leading-tight md:leading-snug">
-                              Scan Code & Authorize
-                            </h4>
-                          </div>
-                          <p className="text-[11px] md:text-xs text-[rgb(var(--foreground-muted))] mt-0.5 md:mt-1 leading-snug md:leading-relaxed">
-                            Aim your camera at the QR code, then approve the prompt on this screen.
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Host Network Address Footer — aligned with bottom edge of right QR card */}
-                    <div className="mt-4 md:mt-auto pt-2.5 md:pt-3 pb-0.5 md:pb-1 border-t border-[rgba(var(--border),0.06)] flex items-center justify-between text-[11px] md:text-xs">
-                      <div className="flex items-center gap-1.5 md:gap-2 text-[rgb(var(--foreground-muted))]">
-                        <Wifi
-                          size={12}
-                          className="text-[rgb(var(--accent))] shrink-0 md:w-[13px] md:h-[13px]"
-                        />
-                        <span>Desktop Host</span>
-                      </div>
-                      <span className="font-mono text-[11px] md:text-xs font-semibold text-[rgb(var(--foreground))]">
-                        {details ? `${details.hintAddr}:${details.hintPort}` : "127.0.0.1:7700"}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Right Column: QR Code Display Card */}
-                  <div className="order-1 md:order-2 md:col-span-5 flex flex-col">
-                    <div className="h-full w-full rounded-2xl bg-[rgba(var(--card),0.8)] border border-[rgba(var(--border),0.08)] p-3.5 sm:p-4 md:p-5 flex flex-col items-center justify-between text-center shadow-sm">
-                      {loading && !details ? (
-                        <div className="my-auto flex items-center justify-center w-40 h-40 sm:w-48 sm:h-48 md:w-56 md:h-56">
-                          <OrbitalLoader size="md" />
-                        </div>
-                      ) : details ? (
-                        <div className="relative group my-auto">
-                          <div
-                            className={cn(
-                              "p-2.5 sm:p-3 md:p-3.5 rounded-xl md:rounded-2xl bg-white shadow-md transition-all duration-300",
-                              timeLeft === 0
-                                ? "opacity-20 grayscale scale-95"
-                                : "opacity-100 scale-100"
-                            )}
-                          >
-                            <img
-                              src={details.qrDataUrl}
-                              alt="Remote Pairing QR Code"
-                              className="w-40 h-40 sm:w-48 sm:h-48 md:w-56 md:h-56 block select-none pointer-events-none"
-                            />
-                          </div>
-
-                          {timeLeft === 0 && (
-                            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-[rgba(var(--background),0.92)] rounded-xl md:rounded-2xl p-3 md:p-4 text-center">
-                              <span className="text-xs font-bold text-[rgb(var(--foreground))]">
-                                QR Code Expired
-                              </span>
-                              <button
-                                type="button"
-                                onClick={generatePairing}
-                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[rgb(var(--accent))] text-xs font-bold cursor-pointer hover:opacity-90 transition-opacity"
-                              >
-                                <RotateCcw size={12} />
-                                Regenerate
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      ) : null}
-
-                      {/* Countdown & Regenerate Action */}
-                      <div className="w-full pt-2 md:pt-3 mt-2 md:mt-3 border-t border-[rgba(var(--border),0.06)] flex items-center justify-between md:flex-col md:items-center">
-                        <div className="flex items-center gap-1.5 md:flex-col md:items-center">
-                          <div className="inline-flex items-center gap-1 text-[11px] text-[rgb(var(--foreground-muted))]">
-                            <Clock
-                              size={11}
-                              className={cn(
-                                "md:w-[12px] md:h-[12px] transition-colors",
-                                timeLeft <= 5 && timeLeft > 0
-                                  ? "text-[rgb(var(--error))]"
-                                  : timeLeft <= 20 && timeLeft > 0
-                                  ? "text-[rgb(var(--warning))]"
-                                  : "text-[rgb(var(--accent))]"
-                              )}
-                            />
-                            <span>Expires in</span>
-                          </div>
-                          <div
-                            className={cn(
-                              "font-mono font-extrabold tracking-tight transition-colors text-sm md:text-2xl md:sm:text-3xl md:mt-0.5",
-                              timeLeft <= 5 && timeLeft > 0
-                                ? "text-[rgb(var(--error))]"
-                                : timeLeft <= 20 && timeLeft > 0
-                                ? "text-[rgb(var(--warning))]"
-                                : "text-[rgb(var(--foreground))]"
-                            )}
-                          >
-                            {timeFormatted}
-                          </div>
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={generatePairing}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 md:mt-2 md:px-3 md:py-1.5 rounded-lg text-xs font-semibold text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.1)] cursor-pointer transition-colors"
-                        >
-                          <RotateCcw size={11} className="md:w-[12px] md:h-[12px]" />
-                          <span>Get a new code</span>
-                        </button>
-                      </div>
-                    </div>
-                  </div>
+              {/* Step 1: Install App */}
+              <div className="relative flex items-start gap-2.5 md:gap-3.5">
+                <div className="relative z-10 w-8 h-8 md:w-10 md:h-10 rounded-lg md:rounded-xl bg-[rgb(var(--card))] border border-[rgba(var(--accent),0.25)] shadow-[0_0_12px_rgba(var(--accent),0.08)] flex items-center justify-center text-[rgb(var(--accent))] shrink-0">
+                  <AndroidIcon size={16} className="md:w-[19px] md:h-[19px]" />
                 </div>
-              )}
+              <div className="flex-1 min-w-0 pt-0.5">
+                  <div className="flex items-center gap-1.5 md:gap-2">
+                    <span className="text-[10px] md:text-[11px] font-mono font-bold text-[rgb(var(--accent))]">
+                      01
+                    </span>
+                    <h4 className="text-xs md:text-sm font-bold text-[rgb(var(--foreground))] leading-tight md:leading-snug">
+                      Install the Companion App
+                    </h4>
+                  </div>
+                  <p className="text-[11px] md:text-xs text-[rgb(var(--foreground-muted))] mt-0.5 md:mt-1 leading-snug md:leading-relaxed">
+                    Download and install the companion APK on your phone.{" "}
+                    <button
+                      type="button"
+                      onClick={handleDownloadApk}
+                      className="inline-flex items-center gap-1 text-[11px] md:text-xs font-semibold text-[rgb(var(--accent))] hover:underline cursor-pointer align-baseline transition-opacity hover:opacity-80"
+                    >
+                      <span>Download</span>
+                    </button>
+                  </p>
+                </div>
+              </div>
+
+              {/* Step 2: Open QR Scanner */}
+              <div className="relative flex items-start gap-2.5 md:gap-3.5">
+                <div className="relative z-10 w-8 h-8 md:w-10 md:h-10 rounded-lg md:rounded-xl bg-[rgb(var(--card))] border border-[rgba(var(--accent),0.25)] shadow-[0_0_12px_rgba(var(--accent),0.08)] flex items-center justify-center text-[rgb(var(--accent))] shrink-0">
+                  <ScanLine size={15} className="md:w-[18px] md:h-[18px]" />
+                </div>
+              <div className="flex-1 min-w-0 pt-0.5">
+                  <div className="flex items-center gap-1.5 md:gap-2">
+                    <span className="text-[10px] md:text-[11px] font-mono font-bold text-[rgb(var(--accent))]">
+                      02
+                    </span>
+                    <h4 className="text-xs md:text-sm font-bold text-[rgb(var(--foreground))] leading-tight md:leading-snug">
+                      Open QR Scanner in App
+                    </h4>
+                  </div>
+                  <p className="text-[11px] md:text-xs text-[rgb(var(--foreground-muted))] mt-0.5 md:mt-1 leading-snug md:leading-relaxed">
+                    Launch Vox on your phone and tap the scanner icon in the top bar.
+                  </p>
+                </div>
+              </div>
+
+              {/* Step 3: Scan & Authorize */}
+              <div className="relative flex items-start gap-2.5 md:gap-3.5">
+                <div className="relative z-10 w-8 h-8 md:w-10 md:h-10 rounded-lg md:rounded-xl bg-[rgb(var(--card))] border border-[rgba(var(--accent),0.25)] shadow-[0_0_12px_rgba(var(--accent),0.08)] flex items-center justify-center text-[rgb(var(--accent))] shrink-0">
+                  <Smartphone size={15} className="md:w-[18px] md:h-[18px]" />
+                </div>
+              <div className="flex-1 min-w-0 pt-0.5">
+                  <div className="flex items-center gap-1.5 md:gap-2">
+                    <span className="text-[10px] md:text-[11px] font-mono font-bold text-[rgb(var(--accent))]">
+                      03
+                    </span>
+                    <h4 className="text-xs md:text-sm font-bold text-[rgb(var(--foreground))] leading-tight md:leading-snug">
+                      Scan Code & Authorize
+                    </h4>
+                  </div>
+                  <p className="text-[11px] md:text-xs text-[rgb(var(--foreground-muted))] mt-0.5 md:mt-1 leading-snug md:leading-relaxed">
+                    Aim your camera at the QR code, then approve the prompt on this screen.
+                  </p>
+                </div>
+              </div>
             </div>
-          )}
-    </Modal>
+
+            {/* Wi-Fi host — mt-auto pins it to the bottom of the left col,
+                aligning with the QR card's bottom edge (grid is items-stretch) */}
+            <div className="mt-auto pt-3 border-t border-[rgba(var(--border),0.06)] flex items-center justify-between text-[11px] md:text-xs">
+              <div className="flex items-center gap-1.5 md:gap-2 text-[rgb(var(--foreground-muted))]">
+                <Wifi
+                  size={12}
+                  className="text-[rgb(var(--accent))] shrink-0 md:w-[13px] md:h-[13px]"
+                />
+                <span>Desktop Host</span>
+              </div>
+              <span className="font-mono text-[11px] md:text-xs font-semibold text-[rgb(var(--foreground))]">
+                {details ? `${details.hintAddr}:${details.hintPort}` : "127.0.0.1:7700"}
+              </span>
+            </div>
+          </div>
+      }
+      rightContent={
+        <QrCard
+          details={details}
+          loading={loading}
+          onRegenerate={generatePairing}
+        />
+      }
+    />
   );
 });
 

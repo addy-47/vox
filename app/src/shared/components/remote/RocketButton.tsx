@@ -16,7 +16,6 @@ import { cn } from "@/shared/lib/utils";
 export const RocketButton = memo(() => {
   const linkState = useRemoteStore((s) => s.linkState);
   const connectedPeer = useRemoteStore((s) => s.connectedPeer);
-  const pairedDevices = useRemoteStore((s) => s.pairedDevices);
   const disconnectDevice = useRemoteStore((s) => s.disconnectDevice);
   const disconnectHost = useRemoteStore((s) => s.disconnectHost);
   const connectHost = useRemoteStore((s) => s.connectHost);
@@ -27,7 +26,6 @@ export const RocketButton = memo(() => {
   const isConnected = linkState === "Connected";
   const isConnecting = linkState === "Connecting" || linkState === "Reconnecting";
   const isFailed = linkState === "Failed";
-  const pairedHost = pairedDevices.find((d) => d.role === "host") ?? pairedDevices[0] ?? null;
 
   const [isConfirming, setIsConfirming] = useState(false);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
@@ -50,23 +48,23 @@ export const RocketButton = memo(() => {
       } catch (e) {
         console.warn("[RocketButton] disconnectHost error:", e);
       }
-    } else if (linkState === "Paired" && pairedHost) {
+    } else if (linkState === "Paired" && connectedPeer) {
       try {
-        await connectHost({ deviceId: pairedHost.deviceId });
+        await connectHost({ deviceId: connectedPeer.deviceId });
       } catch (e) {
         console.warn("[RocketButton] connectHost error:", e);
       }
-    } else if (linkState === "Failed" && pairedHost) {
+    } else if (linkState === "Failed" && connectedPeer) {
       // Retry connection on failure click
       try {
-        await connectHost({ deviceId: pairedHost.deviceId });
+        await connectHost({ deviceId: connectedPeer.deviceId });
       } catch (e) {
         console.warn("[RocketButton] connectHost error:", e);
       }
     } else {
       setIsScannerOpen(true);
     }
-  }, [isConnected, linkState, pairedHost, disconnectHost, connectHost]);
+  }, [isConnected, linkState, connectedPeer, disconnectHost, connectHost]);
 
   const handleCloseScanner = useCallback(() => {
     setIsScannerOpen(false);
@@ -116,7 +114,7 @@ export const RocketButton = memo(() => {
     ? "Connecting to Host..."
     : isFailed
     ? (failureReason ? `Connection failed: ${failureReason} (Tap to retry)` : "Connection failed (Tap to retry)")
-    : linkState === "Unpaired" || !pairedHost
+    : linkState === "Unpaired" || !connectedPeer
     ? "Pair with Host"
     : "Connect to Host";
 

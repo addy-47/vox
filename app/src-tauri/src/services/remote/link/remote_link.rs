@@ -26,12 +26,24 @@ pub enum LinkCloseReason {
     Protocol(ProtocolError),
 }
 
+/// Why a peer rejected a connection during initial handshake.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PeerRejection {
+    UnknownPeer(String),
+    LinkRefused(crate::services::remote::protocol::messages::LinkRefusedReason),
+    VersionMismatch { version: u16, supported_version: u16 },
+    RoleNotPermitted(String),
+}
+
 /// A link failure.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum LinkError {
     /// The link is closed, in the given way.
     #[error("the link is closed: {0:?}")]
     Closed(LinkCloseReason),
+    /// The peer rejected the connection during handshake.
+    #[error("peer rejected connection: {0:?}")]
+    PeerRejected(PeerRejection),
     /// The transport failed.
     #[error("transport failure: {0}")]
     Transport(String),

@@ -48,8 +48,6 @@ static ROUTING_TABLE: LazyLock<HashMap<String, CommandClass>> = LazyLock::new(||
     table.insert("get_settings".into(), CommandClass::Split);
     table.insert("get_restart_status".into(), CommandClass::Remote);
     table.insert("get_settings_contract".into(), CommandClass::Remote);
-    table.insert("update_setting".into(), CommandClass::Remote);
-    table.insert("apply_settings_patch".into(), CommandClass::Remote);
     table.insert("reset_settings".into(), CommandClass::Remote);
 
     // ─── 4. Model Catalog & Management ───────────────────────────────────
@@ -178,6 +176,12 @@ static ROUTING_TABLE: LazyLock<HashMap<String, CommandClass>> = LazyLock::new(||
         }
     }
 
+    // Working memory and personal memory aliases (spec §8.1)
+    for key in supported_keys_for_domain("memory") {
+        table.insert(format!("working_memory.{key}"), CommandClass::Remote);
+        table.insert(format!("personal_memory.{key}"), CommandClass::Remote);
+    }
+
     // Pseudo-domain for per-model overrides
     table.insert("model_parameters".into(), CommandClass::Remote);
 
@@ -191,6 +195,21 @@ pub fn get_routing_table() -> &'static HashMap<String, CommandClass> {
 
 /// Looks up the routing classification for a specific command or domain.key setting.
 pub fn classify_command(command: &str, domain: Option<&str>, key: Option<&str>) -> CommandClass {
+    if command == "update_setting" || command == "apply_settings_patch" {
+        if let (Some(d), Some(k)) = (domain, key) {
+            let path = format!("{d}.{k}");
+            if let Some(class) = ROUTING_TABLE.get(&path) {
+                return *class;
+            }
+        }
+        if let Some(d) = domain {
+            if d == "model_parameters" {
+                return CommandClass::Remote;
+            }
+        }
+        return CommandClass::Denied;
+    }
+
     if let (Some(d), Some(k)) = (domain, key) {
         let path = format!("{d}.{k}");
         if let Some(class) = ROUTING_TABLE.get(&path) {

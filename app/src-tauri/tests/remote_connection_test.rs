@@ -20,8 +20,8 @@ use tempfile::tempdir;
 use vox_lib::{
     persistence::{
         paired_devices::{
-            delete_paired_device, get_paired_device, insert_paired_device, list_paired_devices,
-            NewPairedDevice, PairedDeviceRole,
+            get_paired_device, insert_paired_device, list_paired_devices, NewPairedDevice,
+            PairedDeviceRole,
         },
         schema::run_migrations,
         VoxDb,
@@ -32,9 +32,10 @@ use vox_lib::{
             routing::{get_routing_table, CommandClass},
         },
         link::{bind, LinkCloseReason, LoopbackLink, RemoteLink},
-        protocol::messages::{ControlMessage, LinkLossReason, PairDenied, SenderIdentity},
+        protocol::messages::{ControlMessage, LinkLossReason, PairApproved, PairDenied, SenderIdentity},
         security::{
-            derive_device_id, DeviceKey, PairingCoordinator, PairingOutcome, PairingRequest,
+            default_noise_prologue, derive_device_id, DeviceKey, NoiseHandshake,
+            PairingCoordinator, PairingOutcome, PairingRequest,
         },
         session::{RemoteLinkState, RemoteSessionManager, SessionRole},
     },
@@ -170,10 +171,20 @@ async fn remote_connection_pairing_handshake_approved_reaches_connected() {
     .await
     .expect("insert controller in host db");
 
+    // 6b. Host drives Noise responder handshake
+    let handshake = NoiseHandshake::responder(&host_key, None, &default_noise_prologue()).expect("handshake");
+    let transport = host_ws_link.drive_handshake(handshake).await.expect("drive handshake");
+    host_ws_link.set_cipher(transport).await;
+
     // 7. Host sends PairApproved
     within_ok(
         "send PairApproved",
-        host_ws_link.send_control(ControlMessage::PairApproved),
+        host_ws_link.send_control(ControlMessage::PairApproved(PairApproved {
+            host_identity: SenderIdentity {
+                device_id: host_id.as_str().to_string(),
+                display_name: "Vox Host".into(),
+            },
+        })),
     )
     .await;
 
@@ -205,14 +216,14 @@ async fn remote_connection_pairing_handshake_approved_reaches_connected() {
     );
 }
 
-/// PURPOSE:  A controller pairing request denied by the host must transition the controller state to Failed.
-/// SCENARIO: Controller calls dial_and_connect with token; Host responds with PairDenied; Controller receives rejection and terminates link.
-/// ASSERTS:  dial_and_connect returns Err, and controller_manager transitions to RemoteLinkState::Failed containing "Pairing denied by host".
+/// PURPOSE:  A denied pairing request must NOT corrupt RemoteLinkState (spec §5.4/§5.5).
+/// SCENARIO: Controller calls pair_device with a token; Host responds with PairDenied; Controller receives the rejection and closes the link.
+/// ASSERTS:  pair_device returns Err, controller_manager stays in its previous state (Unpaired), and the host is not persisted.
 /// CLASS:    error-path
 /// REQUIRES: none
-/// MUTANT:   Ignore PairDenied and leave state in Connecting in dial_and_connect.
+/// MUTANT:   Set RemoteLinkState::Failed on PairDenied, conflating PairingState with RemoteLinkState.
 #[tokio::test]
-async fn remote_connection_pairing_denial_transitions_to_failed() {
+async fn remote_connection_pairing_denial_keeps_link_state() {
     let dir = tempdir().expect("tempdir");
     vox_lib::utils::paths::init_with_root(dir.path().to_path_buf());
 
@@ -253,6 +264,18 @@ async fn remote_connection_pairing_denial_transitions_to_failed() {
     let initial_msg = within_ok("recv pair request", host_ws_link.recv_control()).await;
     assert!(matches!(initial_msg, ControlMessage::PairRequest(_)));
 
+    let handshake = NoiseHandshake::responder(
+        &host_key,
+        None,
+        &default_noise_prologue(),
+    )
+    .expect("handshake");
+    let transport = host_ws_link
+        .drive_handshake(handshake)
+        .await
+        .expect("drive handshake");
+    host_ws_link.set_cipher(transport).await;
+
     // Host explicitly denies the pairing request
     within_ok(
         "send PairDenied",
@@ -269,16 +292,12 @@ async fn remote_connection_pairing_denial_transitions_to_failed() {
         "dial_and_connect MUST return Err when pairing is denied"
     );
 
-    // Assert controller transitioned to Failed state with denial reason
-    match controller_manager.state() {
-        RemoteLinkState::Failed { reason: msg, .. } => {
-            assert!(
-                msg.contains("Pairing denied by host: User denied pairing"),
-                "Expected failure message containing denial reason, got: {msg}"
-            );
-        }
-        other => panic!("Expected RemoteLinkState::Failed, got {other:?}"),
-    }
+    // Spec §5.5: denial leaves RemoteLinkState in its previous state.
+    assert_eq!(
+        controller_manager.state(),
+        RemoteLinkState::Unpaired,
+        "Pairing denial MUST NOT corrupt RemoteLinkState"
+    );
 
     // Assert host was NOT saved in controller DB
     let stored = get_paired_device(&controller_conn, host_id.as_str())
@@ -290,14 +309,14 @@ async fn remote_connection_pairing_denial_transitions_to_failed() {
     );
 }
 
-/// PURPOSE:  A controller awaiting host pairing approval must time out and transition to Failed if host does not respond.
-/// SCENARIO: Controller dials and sends PairRequest; Host does not answer; 35-second approval timeout expires via virtual time advance.
-/// ASSERTS:  dial_and_connect returns Err, and controller_manager transitions to RemoteLinkState::Failed with timeout message.
+/// PURPOSE:  A pairing approval timeout must NOT corrupt RemoteLinkState (spec §5.4/§5.5).
+/// SCENARIO: Controller dials and sends PairRequest; Host does not answer; the 35-second approval timeout expires via virtual time advance.
+/// ASSERTS:  pair_device returns Err and controller_manager stays in its previous state (Unpaired).
 /// CLASS:    error-path
 /// REQUIRES: none
-/// MUTANT:   Remove timeout wrapping recv_control in dial_and_connect, hanging indefinitely.
+/// MUTANT:   Set RemoteLinkState::Failed on pairing timeout.
 #[tokio::test]
-async fn remote_connection_pairing_timeout_transitions_to_failed() {
+async fn remote_connection_pairing_timeout_keeps_link_state() {
     let dir = tempdir().expect("tempdir");
     vox_lib::utils::paths::init_with_root(dir.path().to_path_buf());
 
@@ -314,8 +333,6 @@ async fn remote_connection_pairing_timeout_transitions_to_failed() {
     )
     .await;
     let addr = listener.local_addr().expect("listener address");
-
-    tokio::time::pause();
 
     let controller_manager = Arc::new(RemoteSessionManager::new(SessionRole::Controller));
     let cm = Arc::clone(&controller_manager);
@@ -340,7 +357,20 @@ async fn remote_connection_pairing_timeout_transitions_to_failed() {
     let initial_msg = within_ok("recv pair request", host_ws_link.recv_control()).await;
     assert!(matches!(initial_msg, ControlMessage::PairRequest(_)));
 
-    // Host does NOT reply. Advance virtual time past 35s timeout.
+    let handshake = NoiseHandshake::responder(
+        &host_key,
+        None,
+        &default_noise_prologue(),
+    )
+    .expect("handshake");
+    let transport = host_ws_link
+        .drive_handshake(handshake)
+        .await
+        .expect("drive handshake");
+    host_ws_link.set_cipher(transport).await;
+
+    // Pause time and advance virtual time past 35s timeout
+    tokio::time::pause();
     tokio::time::advance(Duration::from_secs(36)).await;
 
     let dial_res = dial_task.await.expect("join dial task");
@@ -349,15 +379,12 @@ async fn remote_connection_pairing_timeout_transitions_to_failed() {
         "dial_and_connect MUST return Err upon timeout"
     );
 
-    match controller_manager.state() {
-        RemoteLinkState::Failed { reason: msg, .. } => {
-            assert!(
-                msg.contains("timed out"),
-                "Expected failure message containing timeout, got: {msg}"
-            );
-        }
-        other => panic!("Expected RemoteLinkState::Failed, got {other:?}"),
-    }
+    // Spec §5.5: timeout leaves RemoteLinkState in its previous state.
+    assert_eq!(
+        controller_manager.state(),
+        RemoteLinkState::Unpaired,
+        "Pairing timeout MUST NOT corrupt RemoteLinkState"
+    );
 }
 
 /// PURPOSE:  Host must detect missed pongs during link inactivity and transition state to Paired.
@@ -410,69 +437,70 @@ fn remote_connection_rule_rc_guard_blocks_desktop_mutating_writes() {
     let unpaired = RemoteLinkState::Unpaired;
 
     // 1. When Connected, Desktop mutating commands MUST be blocked
-    let mutating_commands = [
-        ("start_session", None),
-        ("end_session", None),
-        ("launch_engine", None),
-        ("stop_engine", None),
-        ("save_personal_memory", None),
-        ("create_project", None),
-        ("update_setting", Some("interaction")),
-        ("update_setting", Some("vad")),
-        ("update_setting", Some("stt")),
-        ("update_setting", Some("tts")),
-        ("update_setting", Some("llm")),
+    let mutating_commands: &[(&str, Option<&str>, Option<&str>)] = &[
+        ("start_session", None, None),
+        ("end_session", None, None),
+        ("launch_engine", None, None),
+        ("stop_engine", None, None),
+        ("save_personal_memory", None, None),
+        ("create_project", None, None),
+        ("update_setting", Some("interaction"), None),
+        ("update_setting", Some("vad"), None),
+        ("update_setting", Some("stt"), None),
+        ("update_setting", Some("tts"), None),
+        ("update_setting", Some("llm"), None),
+        ("update_setting", Some("remote"), Some("execution_mode")),
     ];
 
-    for (cmd, domain) in mutating_commands {
+    for (cmd, domain, key) in mutating_commands {
         assert!(
-            !is_desktop_command_permitted(cmd, domain, &connected),
+            !is_desktop_command_permitted(cmd, *domain, *key, &connected),
             "Command '{cmd}' (domain: {domain:?}) must be BLOCKED on Desktop when Connected"
         );
         assert!(
-            !is_command_permitted(ControlOrigin::Desktop, cmd, domain, &connected),
+            !is_command_permitted(ControlOrigin::Desktop, cmd, *domain, *key, &connected),
             "Command '{cmd}' via ControlOrigin::Desktop must be BLOCKED when Connected"
         );
         // Controller origin MUST be permitted
         assert!(
-            is_command_permitted(ControlOrigin::Controller, cmd, domain, &connected),
+            is_command_permitted(ControlOrigin::Controller, cmd, *domain, *key, &connected),
             "Command '{cmd}' via ControlOrigin::Controller must be PERMITTED when Connected"
         );
     }
 
     // 2. When Connected, Desktop reads, appearance, and remote admin commands MUST be permitted
-    let permitted_commands = [
-        ("list_audio_devices", None),
-        ("get_model_catalog", None),
-        ("get_personal_memory", None),
-        ("get_settings", None),
-        ("get_sessions", None),
-        ("get_turns", None),
-        ("show_main_window", None),
-        ("update_setting", Some("appearance")),
-        ("disconnect_device", None),
-        ("revoke_device", None),
-        ("pair_new_device", None),
-        ("approve_pairing", None),
-        ("list_paired_devices", None),
-        ("update_setting", Some("remote")),
+    let permitted_commands: &[(&str, Option<&str>, Option<&str>)] = &[
+        ("list_audio_devices", None, None),
+        ("get_model_catalog", None, None),
+        ("get_personal_memory", None, None),
+        ("get_settings", None, None),
+        ("get_sessions", None, None),
+        ("get_turns", None, None),
+        ("show_main_window", None, None),
+        ("update_setting", Some("appearance"), None),
+        ("disconnect_device", None, None),
+        ("revoke_device", None, None),
+        ("pair_new_device", None, None),
+        ("approve_pairing", None, None),
+        ("list_paired_devices", None, None),
+        ("update_setting", Some("remote"), Some("accepts_controllers")),
     ];
 
-    for (cmd, domain) in permitted_commands {
+    for (cmd, domain, key) in permitted_commands {
         assert!(
-            is_desktop_command_permitted(cmd, domain, &connected),
+            is_desktop_command_permitted(cmd, *domain, *key, &connected),
             "Command '{cmd}' (domain: {domain:?}) must be PERMITTED on Desktop when Connected"
         );
         assert!(
-            is_command_permitted(ControlOrigin::Desktop, cmd, domain, &connected),
+            is_command_permitted(ControlOrigin::Desktop, cmd, *domain, *key, &connected),
             "Command '{cmd}' via ControlOrigin::Desktop must be PERMITTED when Connected"
         );
     }
 
     // 3. When Unpaired, all desktop commands MUST be permitted
-    for (cmd, domain) in mutating_commands {
+    for (cmd, domain, key) in mutating_commands {
         assert!(
-            is_desktop_command_permitted(cmd, domain, &unpaired),
+            is_desktop_command_permitted(cmd, *domain, *key, &unpaired),
             "Command '{cmd}' must be PERMITTED on Desktop when Unpaired"
         );
     }
@@ -532,12 +560,12 @@ async fn remote_connection_host_disconnect_keeps_pairing() {
     // Host executes disconnect
     within_ok(
         "disconnect",
-        host_manager.disconnect(LinkLossReason::HostDisconnected),
+        host_manager.disconnect_host_initiated(),
     )
     .await;
 
     assert_eq!(host_manager.state(), RemoteLinkState::Paired);
-    assert_eq!(host_manager.peer_identity(), None);
+    assert!(host_manager.peer_identity().is_some());
 
     // Verify pairing survives in Turso DB
     let stored = within_ok("query paired device", get_paired_device(&conn, device_id)).await;
@@ -557,7 +585,7 @@ async fn remote_connection_host_disconnect_keeps_pairing() {
 #[tokio::test]
 async fn remote_connection_revocation_permanently_removes_device() {
     let dir = tempdir().expect("tempdir");
-    let (_db, conn) = open_migrated_db(dir.path(), "revocation.db").await;
+    let (db, conn) = open_migrated_db(dir.path(), "revocation.db").await;
 
     let device_id = "test_controller_revoked";
     let new_device = NewPairedDevice {
@@ -587,17 +615,11 @@ async fn remote_connection_revocation_permanently_removes_device() {
 
     // Perform revocation: delete row from Turso DB and disconnect session
     let deleted = within_ok(
-        "delete paired device",
-        delete_paired_device(&conn, device_id),
+        "revoke device",
+        host_manager.revoke_device(&db, device_id),
     )
     .await;
-    assert!(deleted, "delete_paired_device must return true");
-
-    within_ok(
-        "disconnect session",
-        host_manager.disconnect(LinkLossReason::Revoked),
-    )
-    .await;
+    assert!(deleted, "revoke_device must return true");
 
     assert_eq!(host_manager.state(), RemoteLinkState::Unpaired);
 
@@ -612,5 +634,138 @@ async fn remote_connection_revocation_permanently_removes_device() {
     assert!(
         all_devices.is_empty(),
         "paired_devices table must be empty after revocation"
+    );
+}
+
+/// PURPOSE:  A controller revoking an idle paired host must dial the host, deliver LinkLoss(Revoked), and delete the DB row.
+/// SCENARIO: Controller is paired with Host; no active link is present; Controller calls revoke_device; background task dials Host hints and delivers LinkLoss(Revoked).
+/// ASSERTS:  Host listener receives LinkLoss(Revoked), Controller transitions to Unpaired, and Host row is deleted from Controller DB.
+/// CLASS:    happy-path
+/// REQUIRES: none
+/// MUTANT:   Revert !has_active_link to !is_current in manager.rs::revoke_device.
+#[tokio::test]
+async fn remote_connection_controller_idle_revocation_syncs_to_host() {
+    let dir = tempdir().expect("tempdir");
+    vox_lib::utils::paths::init_with_root(dir.path().to_path_buf());
+
+    let (controller_db, controller_conn) =
+        open_migrated_db(dir.path(), "controller_idle_revoke.db").await;
+
+    // 1. Host setup with loopback listener
+    let host_key = DeviceKey::generate().expect("generate host key");
+    let host_id = derive_device_id(host_key.public_key());
+    let listener = within_ok(
+        "bind listener",
+        bind("127.0.0.1:0".parse().expect("valid loopback")),
+    )
+    .await;
+    let addr = listener.local_addr().expect("listener address");
+
+    // 2. Controller setup: insert host into controller DB with hints pointing to listener
+    let host_device = NewPairedDevice {
+        device_id: host_id.as_str().to_string(),
+        public_key: host_key.public_key().to_vec(),
+        display_name: "Vox Desktop Host".to_string(),
+        role: PairedDeviceRole::Host,
+        trust_level: "full".to_string(),
+        hints: vec![serde_json::json!({ "addr": format!("127.0.0.1:{}", addr.port()) })],
+    };
+    within_ok(
+        "insert host in controller db",
+        insert_paired_device(&controller_conn, &host_device),
+    )
+    .await;
+
+    let controller_manager = RemoteSessionManager::new(SessionRole::Controller);
+    controller_manager.set_peer_identity(Some(SenderIdentity {
+        device_id: host_id.as_str().to_string(),
+        display_name: "Vox Desktop Host".to_string(),
+    }));
+    controller_manager.set_state(RemoteLinkState::Paired);
+    assert_eq!(controller_manager.state(), RemoteLinkState::Paired);
+    assert!(controller_manager.peer_identity().is_some());
+
+    // 3. Controller revokes the idle host
+    let deleted = within_ok(
+        "revoke host from controller",
+        controller_manager.revoke_device(&controller_db, host_id.as_str()),
+    )
+    .await;
+    assert!(deleted, "revoke_device must return true");
+    assert_eq!(controller_manager.state(), RemoteLinkState::Unpaired);
+    assert_eq!(controller_manager.peer_identity(), None);
+
+    // 4. Host listener accepts the notification connection spawned by controller
+    let host_ws_link = within_ok("accept connection", listener.accept()).await;
+
+    let handshake = NoiseHandshake::responder(&host_key, None, &default_noise_prologue())
+        .expect("responder handshake");
+    let transport = host_ws_link
+        .drive_handshake(handshake)
+        .await
+        .expect("drive handshake");
+    host_ws_link.set_cipher(transport).await;
+
+    let msg = within_ok("recv LinkLoss", host_ws_link.recv_control()).await;
+    match msg {
+        ControlMessage::LinkLoss(loss) => {
+            assert_eq!(loss.reason, LinkLossReason::Revoked);
+        }
+        other => panic!("Expected LinkLoss(Revoked), got {other:?}"),
+    }
+
+    // Assert controller DB row is permanently deleted
+    let check = within_ok(
+        "query revoked host",
+        get_paired_device(&controller_conn, host_id.as_str()),
+    )
+    .await;
+    assert!(
+        check.is_none(),
+        "Revoked host row must be deleted from controller DB"
+    );
+}
+
+/// PURPOSE:  Toggling accepts_controllers off and on must round-trip from Paired -> Disabled -> Paired.
+/// SCENARIO: Host has a paired device in DB; transitions to Disabled; hydrate_from_db restores Paired state.
+/// ASSERTS:  State is Disabled after toggle off, and transitions back to Paired with peer_identity restored after toggle on.
+/// CLASS:    happy-path
+/// REQUIRES: none
+/// MUTANT:   Require state == Unpaired in hydrate_from_db, leaving host stuck in Disabled.
+#[tokio::test]
+async fn remote_connection_settings_toggle_round_trip() {
+    let dir = tempdir().expect("tempdir");
+    let (db, conn) = open_migrated_db(dir.path(), "toggle_round_trip.db").await;
+
+    let device_id = "test_paired_controller";
+    let new_device = NewPairedDevice {
+        device_id: device_id.to_string(),
+        public_key: vec![3u8; 32],
+        display_name: "Pixel 9".to_string(),
+        role: PairedDeviceRole::Controller,
+        trust_level: "full".to_string(),
+        hints: vec![],
+    };
+    within_ok("insert device", insert_paired_device(&conn, &new_device)).await;
+
+    let host_manager = RemoteSessionManager::new(SessionRole::Host);
+    host_manager.hydrate_from_db(&db).await;
+    assert_eq!(host_manager.state(), RemoteLinkState::Paired);
+    assert_eq!(
+        host_manager.peer_identity().map(|p| p.device_id),
+        Some(device_id.to_string())
+    );
+
+    // Toggle off: host enters Disabled and clears peer_identity
+    host_manager.set_state(RemoteLinkState::Disabled);
+    assert_eq!(host_manager.state(), RemoteLinkState::Disabled);
+    assert_eq!(host_manager.peer_identity(), None);
+
+    // Toggle on: hydrate_from_db restores Paired state and peer_identity
+    host_manager.hydrate_from_db(&db).await;
+    assert_eq!(host_manager.state(), RemoteLinkState::Paired);
+    assert_eq!(
+        host_manager.peer_identity().map(|p| p.device_id),
+        Some(device_id.to_string())
     );
 }

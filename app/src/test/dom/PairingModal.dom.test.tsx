@@ -157,62 +157,40 @@ describe("PairingModal DOM suite", () => {
     clearIntervalSpy.mockRestore();
   });
 
-  it("transitions in-place to AuthorizeDeviceContent when pendingPairingPrompt is received", async () => {
-    const mockPairNewDevice = vi.fn().mockResolvedValue({
-      payload: "{}",
-      qrDataUrl: "data:image/svg+xml;base64,PHN2Zz50ZXN0PC9zdmc+",
-      expiresAt: Date.now() + 120_000,
+  it("regenerates QR code when clicking Regenerate button", async () => {
+    let callCount = 0;
+    const mockPairNewDevice = vi.fn().mockImplementation(() => {
+      callCount += 1;
+      return Promise.resolve({
+        payload: JSON.stringify({ hint_addr: "127.0.0.1", hint_port: 7700 }),
+        qrDataUrl: `data:image/svg+xml;base64,PHN2Zz50ZXN0${callCount}PC9zdmc+`,
+        expiresAt: Math.floor(Date.now() / 1000) + 120,
+      });
     });
-    const mockApprovePairing = vi.fn().mockResolvedValue(undefined);
 
     useRemoteStore.setState({
       pairNewDevice: mockPairNewDevice,
       linkState: "Unpaired",
-      pendingPairingPrompt: null,
-      approvePairing: mockApprovePairing,
     });
 
-    const onClose = vi.fn();
-    render(<PairingModal open={true} onClose={onClose} />);
+    render(<PairingModal open={true} onClose={vi.fn()} />);
 
     await act(async () => {
       await Promise.resolve();
     });
 
-    // Initially in QR view with header parity
-    expect(screen.getByText("REMOTE CONTROL")).toBeTruthy();
-    expect(screen.getByText("Pair Mobile Controller")).toBeTruthy();
-    expect(
-      screen.getByText("Scan this QR code from the Vox mobile app to link your devices over local Wi-Fi.")
-    ).toBeTruthy();
-    expect(screen.getByAltText("Remote Pairing QR Code")).toBeTruthy();
+    expect(mockPairNewDevice).toHaveBeenCalledTimes(1);
 
-    // Host receives remote_pairing_requested
+    // Fast-forward 125 seconds so QR expires
     act(() => {
-      useRemoteStore.setState({
-        pendingPairingPrompt: {
-          deviceId: "phone_123",
-          displayName: "Ada's Pixel",
-        },
-      });
-      vi.advanceTimersByTime(250);
+      vi.advanceTimersByTime(125_000);
     });
 
-    // Transitions in-place to Authorize Remote Device view
-    expect(screen.getByText("Authorize Remote Device")).toBeTruthy();
-    expect(screen.getByText("THIS DEVICE CAN")).toBeTruthy();
-    expect(screen.getByText("Stream microphone audio")).toBeTruthy();
-    expect(
-      screen.getByText("Ada's Pixel is requesting permission to control Vox over your local Wi-Fi network.")
-    ).toBeTruthy();
-
-    // Approves from within the same modal
-    const approveBtn = screen.getByRole("button", { name: /Approve Connection/i });
+    const regenerateBtn = screen.getByRole("button", { name: "Regenerate" });
     await act(async () => {
-      approveBtn.click();
+      regenerateBtn.click();
     });
 
-    expect(mockApprovePairing).toHaveBeenCalledWith("Approve");
-    expect(onClose).toHaveBeenCalled();
+    expect(mockPairNewDevice).toHaveBeenCalledTimes(2);
   });
 });

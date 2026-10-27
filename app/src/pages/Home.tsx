@@ -3,6 +3,7 @@ const VoxOrb = lazy(() =>
   import("@/shared/components/home/AdvancedOrb").then((m) => ({ default: m.VoxOrb }))
 );
 import { PipelineField } from "@/shared/components/home/PipelineField";
+import { OrbitField } from "@/shared/components/home/OrbitField";
 import { DynamicStatusBadge } from "@/shared/components/home/DynamicStatusBadge";
 import { RestorePulse } from "@/shared/components/home/RestorePulse";
 import { SessionPanel } from "@/shared/components/home/SessionPanel";
@@ -81,6 +82,7 @@ export const Home = memo(() => {
     handleDialogueScroll,
     shouldAutoScrollRef,
     activityDisplay,
+    activeActivity,
     isRemoteBlocked,
   } = useHomePage();
   useMemoryTrace("Home");
@@ -362,16 +364,22 @@ export const Home = memo(() => {
         )}
         {/* Orb directly renders on Home mount with zero loader flash */}
         <div className="relative w-full h-full flex items-center justify-center">
-          <ErrorBoundary name="VoxOrb">
-            <Suspense fallback={null}>
-              <VoxOrb
-                telemetryRef={telemetryRef}
-                interactionState={isRemoteBlocked ? "Sleeping" : interactionState}
-                isSleeping={isSleeping || isRemoteBlocked}
-                paused={isPanelOpen("sessions") || isPanelOpen("notifications") || isPanelOpen("help")}
-              />
-            </Suspense>
-          </ErrorBoundary>
+          <OrbitField
+            interactionState={isRemoteBlocked ? "Sleeping" : interactionState}
+            activity={activeActivity?.name}
+            paused={isPanelOpen("sessions") || isPanelOpen("notifications") || isPanelOpen("help")}
+          >
+            <ErrorBoundary name="VoxOrb">
+              <Suspense fallback={null}>
+                <VoxOrb
+                  telemetryRef={telemetryRef}
+                  interactionState={isRemoteBlocked ? "Sleeping" : interactionState}
+                  isSleeping={isSleeping || isRemoteBlocked}
+                  paused={isPanelOpen("sessions") || isPanelOpen("notifications") || isPanelOpen("help")}
+                />
+              </Suspense>
+            </ErrorBoundary>
+          </OrbitField>
         </div>
       </div>
 

@@ -35,6 +35,8 @@ export interface RemoteStoreState {
   failureKind: RemoteFailureKind | null;
   connectedPeer: ConnectedPeer | null;
   pendingPairingPrompt: RemotePairingRequestedPayload | null;
+  /** Controller-side failure from the ephemeral PairingState (kept out of linkState). */
+  pairingFailureReason: string | null;
   isPairingModalOpen: boolean;
   isPairingPending: boolean;
   pairedDevices: PairedDeviceDto[];
@@ -50,12 +52,15 @@ export interface RemoteStoreState {
   closePairingModal: () => void;
   approvePairing: (decision: "Approve" | "Reject") => Promise<void>;
   dismissPairingPrompt: () => void;
+  dismissPairingFailure: () => void;
   listPairedDevices: () => Promise<PairedDeviceDtoAlias[]>;
   revokeDevice: (deviceId: string) => Promise<void>;
   disconnectDevice: (deviceId: string) => Promise<void>;
   connectHost: (params: ConnectHostParams) => Promise<void>;
   disconnectHost: () => Promise<void>;
 }
+
+let activeInitPromise: Promise<UnlistenFn> | null = null;
 
 export const useRemoteStore = create<RemoteStoreState>((set, get) => ({
   // Ticket 05: initial state is "Unpaired" — no "Disconnected" variant exists
@@ -64,6 +69,7 @@ export const useRemoteStore = create<RemoteStoreState>((set, get) => ({
   failureKind: null,
   connectedPeer: null,
   pendingPairingPrompt: null,
+  pairingFailureReason: null,
   isPairingModalOpen: false,
   isPairingPending: false,
   pairedDevices: [],
@@ -72,73 +78,74 @@ export const useRemoteStore = create<RemoteStoreState>((set, get) => ({
   error: null,
 
   init: async () => {
-    await get().hydrate();
+    if (activeInitPromise) return activeInitPromise;
+    activeInitPromise = (async () => {
+      await get().hydrate();
 
-    // Ticket 05: canonical event — remote_state_changed is the sole source of truth.
-    const unlistenState = await listen<RemoteStateDto>("remote_state_changed", (event) => {
-      const dto = event.payload;
-      const peer =
-        dto.deviceId && dto.displayName
-          ? { deviceId: dto.deviceId, displayName: dto.displayName }
-          : null;
+      // Ticket 05: canonical event — remote_state_changed is the sole source of truth.
+      const unlistenState = await listen<RemoteStateDto>("remote_state_changed", (event) => {
+        const dto = event.payload;
+        const peer =
+          dto.deviceId && dto.displayName
+            ? { deviceId: dto.deviceId, displayName: dto.displayName }
+            : null;
 
-      // Ticket 05: terminal states that clear the pairing-pending flag
-      const isTerminal =
-        dto.link === "Connected" ||
-        dto.link === "Failed" ||
-        dto.link === "Paired" ||
-        dto.link === "Unpaired";
+        // Ticket 05: terminal states that clear the pairing-pending flag
+        const isTerminal =
+          dto.link === "Connected" ||
+          dto.link === "Failed" ||
+          dto.link === "Paired" ||
+          dto.link === "Unpaired";
 
-      set({
-        linkState: dto.link,
-        failureReason: dto.failure ?? null,
-        failureKind: dto.failureKind ?? null,
-        connectedPeer: peer,
-        ...(isTerminal ? { isPairingPending: false } : {}),
+        set({
+          linkState: dto.link,
+          failureReason: dto.failure ?? null,
+          failureKind: dto.failureKind ?? null,
+          connectedPeer: peer,
+          ...(isTerminal ? { isPairingPending: false, pendingPairingPrompt: null } : {}),
+        });
       });
 
-      // Ticket 05: refresh paired devices list on every terminal idle state
-      // (Paired or Unpaired) — not on Connected (peer already known from dto).
-      if (dto.link === "Paired" || dto.link === "Unpaired") {
-        get()
-          .listPairedDevices()
-          .catch((e) => {
-            console.debug("[remoteStore] Failed to refresh paired devices:", e);
-          });
-      }
-    });
-
-    const unlistenPrompt = await listen<RemotePairingRequestedPayload>(
-      "remote_pairing_requested",
-      (event) => {
-        set({ pendingPairingPrompt: event.payload });
-      }
-    );
-
-    const unlistenPairingState = await listen<PairingStateDto>(
-      "remote_pairing_state_changed",
-      (event) => {
-        const dto = event.payload;
-        if (dto.state === "AwaitingApproval") {
-          set({ isPairingPending: true });
-        } else if (
-          dto.state === "Approved" ||
-          dto.state === "Denied" ||
-          dto.state === "Idle"
-        ) {
-          set({ isPairingPending: false });
+      const unlistenPrompt = await listen<RemotePairingRequestedPayload>(
+        "remote_pairing_requested",
+        (event) => {
+          // Only one remote surface may be visible at a time: an incoming
+          // authorization request takes over from the QR pairing modal.
+          set({ pendingPairingPrompt: event.payload, isPairingModalOpen: false });
         }
-      }
-    );
+      );
 
-    // Ticket 05: obsolete side-channel listeners removed.
-    // State is driven exclusively via remote_state_changed and remote_pairing_state_changed (spec §13).
+      const unlistenPairingState = await listen<PairingStateDto>(
+        "remote_pairing_state_changed",
+        (event) => {
+          const dto = event.payload;
+          if (dto.state === "AwaitingApproval") {
+            set({ isPairingPending: true, pairingFailureReason: null });
+          } else if (dto.state === "Denied") {
+            set({
+              isPairingPending: false,
+              pendingPairingPrompt: null,
+              pairingFailureReason: dto.failureReason ?? "Pairing failed.",
+            });
+          } else if (dto.state === "Approved" || dto.state === "Idle") {
+            set({
+              isPairingPending: false,
+              pendingPairingPrompt: null,
+              pairingFailureReason: null,
+            });
+          }
+        }
+      );
 
-    return () => {
-      unlistenState();
-      unlistenPrompt();
-      unlistenPairingState();
-    };
+      return () => {
+        activeInitPromise = null;
+        unlistenState();
+        unlistenPrompt();
+        unlistenPairingState();
+      };
+    })();
+
+    return activeInitPromise;
   },
 
   hydrate: async () => {
@@ -191,6 +198,8 @@ export const useRemoteStore = create<RemoteStoreState>((set, get) => ({
   },
 
   openPairingModal: () => {
+    // A pending authorization prompt owns the screen until it is resolved.
+    if (get().pendingPairingPrompt) return;
     set({ isPairingModalOpen: true });
   },
 
@@ -199,13 +208,21 @@ export const useRemoteStore = create<RemoteStoreState>((set, get) => ({
   },
 
   approvePairing: async (decision: "Approve" | "Reject") => {
-    await apiApprovePairing(decision);
-    set({ pendingPairingPrompt: null, isPairingModalOpen: false });
-    await get().listPairedDevices();
+    try {
+      await apiApprovePairing(decision);
+    } finally {
+      set({ pendingPairingPrompt: null, isPairingModalOpen: false });
+      await get().listPairedDevices().catch(() => {});
+    }
   },
 
   dismissPairingPrompt: () => {
     set({ pendingPairingPrompt: null, isPairingModalOpen: false });
+  },
+
+  dismissPairingFailure: () => {
+    if (get().pairingFailureReason === null) return;
+    set({ pairingFailureReason: null });
   },
 
   listPairedDevices: async () => {
@@ -220,16 +237,6 @@ export const useRemoteStore = create<RemoteStoreState>((set, get) => ({
   },
 
   revokeDevice: async (deviceId: string) => {
-    // Optimistically remove device from store state and reset link/peer if this was current peer
-    set((state) => {
-      const remaining = state.pairedDevices.filter((d) => d.deviceId !== deviceId);
-      const isCurrent = state.connectedPeer?.deviceId === deviceId;
-      return {
-        pairedDevices: remaining,
-        connectedPeer: isCurrent ? null : state.connectedPeer,
-        linkState: remaining.length === 0 ? "Unpaired" : state.linkState === "Connected" && isCurrent ? "Paired" : state.linkState,
-      };
-    });
     await apiRevokeDevice(deviceId);
     await get().listPairedDevices().catch(() => {});
   },
