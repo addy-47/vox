@@ -23,7 +23,7 @@ use serde_json::json;
 use vox_lib::services::remote::protocol::{
     messages::{
         AttachSnapshot, AudioControlMessage, ControlMessage, Event, Flush, Hello, LinkLoss,
-        LinkLossReason, LinkRefused, LinkRefusedReason, PairDenied, PairRequest, Ping, Pong,
+        LinkLossReason, LinkRefused, LinkRefusedReason, PairApproved, PairDenied, PairRequest, Ping, Pong,
         PttAction, PttMarker, Req, Res, RoleNotPermitted, SenderIdentity, UnknownPeer,
         VersionMismatch,
     },
@@ -182,8 +182,13 @@ pub fn control_samples() -> Vec<ControlSample> {
         },
         ControlSample {
             type_tag: "PairApproved",
-            fields: &[],
-            message: ControlMessage::PairApproved,
+            fields: &["host_identity"],
+            message: ControlMessage::PairApproved(PairApproved {
+                host_identity: SenderIdentity {
+                    device_id: "host_test_123".into(),
+                    display_name: "Vox Host".into(),
+                },
+            }),
         },
         ControlSample {
             type_tag: "PairDenied",

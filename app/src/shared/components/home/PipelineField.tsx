@@ -17,27 +17,21 @@ export const PipelineField = React.memo(({ state, volume = 0 }: PipelineFieldPro
     let targetEnergy: number;
 
     switch (state) {
-      case "Ready":
-        targetEnergy = 0.16;
-        break;
-      case "Listening":
-        targetEnergy = 0.35 + volume * 0.25;
-        break;
-      case "Thinking":
-        targetEnergy = 0.24;
-        break;
-      case "Speaking":
-        targetEnergy = 0.32 + volume * 0.3;
-        break;
       case "Paused":
+        targetEnergy = 0.08;
+        break;
+      case "Sleeping":
         targetEnergy = 0.08;
         break;
       case "Error":
         targetEnergy = 0.05;
         break;
       case "Idle":
-      default:
         targetEnergy = 0.12;
+        break;
+      default:
+        // OrbitField owns Ready, Listening, Thinking, Speaking, Working
+        targetEnergy = 0;
         break;
     }
 

@@ -404,6 +404,19 @@ pub async fn handle_setting_side_effects<R: tauri::Runtime>(
         handle_memory_side_effects(app, state, key, value).await;
     } else if (domain == "llm" || domain == "tts" || domain == "stt") && key == "active" {
         handle_active_model_side_effects(state, domain, value).await;
+    } else if domain == "remote" && key == "accepts_controllers" {
+        let accepts = value.as_bool().unwrap_or(false);
+        if state.remote_manager.role() == crate::services::remote::session::SessionRole::Host {
+            if !accepts {
+                log::info!("[Remote] accepts_controllers disabled: disconnecting active links and setting Disabled");
+                let _ = state.remote_manager.disconnect_host_initiated().await;
+                state.remote_manager.set_peer_identity(None);
+                state.remote_manager.set_state(crate::services::remote::session::RemoteLinkState::Disabled);
+            } else {
+                log::info!("[Remote] accepts_controllers enabled: reconciling link state from paired_devices");
+                state.remote_manager.hydrate_from_db(&state.db).await;
+            }
+        }
     }
 }
 

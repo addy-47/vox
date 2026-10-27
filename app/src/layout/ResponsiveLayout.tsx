@@ -645,7 +645,7 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
           <AmbientBackground
             instanceId="layout"
             originY={ambientOriginY}
-            paused={!["Idle", "Ready", "Paused", "Sleeping"].includes(interactionState) || isResizing}
+            paused={!["Idle", "Paused", "Sleeping"].includes(interactionState) || isResizing}
             rippleSpeedMultiplier={rippleSpeedMultiplier}
             rippleShape={
               isHistory && historyDisplayMode === "orbit"

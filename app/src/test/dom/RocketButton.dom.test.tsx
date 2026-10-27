@@ -143,6 +143,7 @@ describe("RocketButton DOM suite", () => {
       const mockConnectHost = vi.fn().mockResolvedValue(undefined);
       useRemoteStore.setState({
         linkState: "Paired",
+        connectedPeer: { deviceId: "host_1", displayName: "Desktop PC" },
         pairedDevices: [
           {
             deviceId: "host_1",

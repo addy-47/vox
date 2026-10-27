@@ -180,11 +180,14 @@ impl NoiseHandshake {
     /// Transitions to transport mode.
     pub fn finish(self) -> Result<NoiseTransport, SecurityError> {
         self.verify_expected_peer()?;
+        let remote_static = self
+            .remote_static()
+            .ok_or_else(|| SecurityError::Noise("Handshake completed without peer static key".into()))?;
         let state = self
             .state
             .into_transport_mode()
             .map_err(|error| SecurityError::Noise(error.to_string()))?;
-        Ok(NoiseTransport { state })
+        Ok(NoiseTransport { state, remote_static })
     }
 
     /// Checks the peer's revealed static key against the pin.
@@ -261,9 +264,15 @@ fn pinned_peer(
 /// how to frame the payload inside it.
 pub struct NoiseTransport {
     state: TransportState,
+    remote_static: [u8; X25519_KEY_BYTES],
 }
 
 impl NoiseTransport {
+    /// The authenticated remote static public key proved by the handshake.
+    pub fn remote_static(&self) -> &[u8; X25519_KEY_BYTES] {
+        &self.remote_static
+    }
+
     /// Encrypts one payload into one wire message.
     pub fn encrypt(&mut self, payload: &[u8]) -> Result<Vec<u8>, SecurityError> {
         if payload.len() > NOISE_MAX_PAYLOAD_BYTES {

@@ -43,6 +43,7 @@ import { Home } from "@/pages/Home";
 import { PageDrawerProvider } from "@/shared/context/PageDrawerContext";
 import { initSpatialNavigation } from "@/shared/lib/spatialNavigation";
 import { PairingModal } from "@/shared/components/remote/PairingModal";
+import { AuthorizeDeviceModal } from "@/shared/components/remote/AuthorizeDeviceModal";
 
 // Lazy load secondary pages for performance
 const History = lazy(() => import("@/pages/History").then(m => ({ default: m.History })));
@@ -69,10 +70,19 @@ const PageLoader = () => (
   </DelayedFallback>
 );
 
-const GlobalPairingModal = React.memo(() => {
-  return <PairingModal />;
+const GlobalRemoteModals = React.memo(() => {
+  return (
+    <>
+      <ErrorBoundary name="GlobalPairingModal">
+        <PairingModal />
+      </ErrorBoundary>
+      <ErrorBoundary name="GlobalAuthorizeDeviceModal">
+        <AuthorizeDeviceModal />
+      </ErrorBoundary>
+    </>
+  );
 });
-GlobalPairingModal.displayName = "GlobalPairingModal";
+GlobalRemoteModals.displayName = "GlobalRemoteModals";
 
 const App: React.FC = () => {
   const [setupCompleted, setSetupCompleted] = useState<boolean | null>(null);
@@ -523,7 +533,7 @@ const App: React.FC = () => {
                   </div>
                 )}
 
-                <GlobalPairingModal />
+                <GlobalRemoteModals />
               </div>
               </MotionConfig>
             </Router>

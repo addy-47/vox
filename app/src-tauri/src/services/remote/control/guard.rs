@@ -64,7 +64,6 @@ const PERMITTED_DESKTOP_READS: &[&str] = &[
     "revoke_device",
     "pair_new_device",
     "approve_pairing",
-    "pair_device",
     "list_paired_devices",
     "get_link_state",
     "get_command_routing",
@@ -78,6 +77,7 @@ const PERMITTED_DESKTOP_READS: &[&str] = &[
 pub fn is_desktop_command_permitted(
     command: &str,
     domain: Option<&str>,
+    key: Option<&str>,
     state: &RemoteLinkState,
 ) -> bool {
     if *state != RemoteLinkState::Connected {
@@ -88,7 +88,7 @@ pub fn is_desktop_command_permitted(
         if d == "appearance" {
             return true;
         }
-        if d == "remote" && command == "update_setting" {
+        if d == "remote" && command == "update_setting" && key == Some("accepts_controllers") {
             return true;
         }
         return false;
@@ -102,10 +102,11 @@ pub fn is_command_permitted(
     origin: ControlOrigin,
     command: &str,
     domain: Option<&str>,
+    key: Option<&str>,
     state: &RemoteLinkState,
 ) -> bool {
     match origin {
         ControlOrigin::Controller => true,
-        ControlOrigin::Desktop => is_desktop_command_permitted(command, domain, state),
+        ControlOrigin::Desktop => is_desktop_command_permitted(command, domain, key, state),
     }
 }

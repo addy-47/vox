@@ -109,3 +109,52 @@
 - **Verification**:
   - `pnpm test src/test/unit/remoteStore.test.ts src/test/dom/`: SUCCESS (5 test files, 28 tests passed).
 
+---
+
+## 2026-10-27 — Remote Control System Architect Audit Remediation (Batches 1–4)
+
+- **Context & Goals**:
+  - Resolved all findings identified in the System Architect audit (`REMOTE_CONTROL_AUDIT.md`) across four atomic batches.
+  - Closed P0 architectural state machine blockers, eliminated residual shadow state sources in frontend, enforced backend grammar order, decomposed all functions exceeding 50 lines, and filed the dedicated mDNS subsystem ticket.
+
+- **Implemented Seams & Components**:
+  1. **Core State Machine Blockers & Seam Tests (Batch 1)**:
+     - `manager.rs`:
+       - Checked `let has_active_link = self.link.read().await.is_some()` in `revoke_device`. Cancelled `cancel_token` before taking link (§3.3). When `has_active_link`, flushed `LinkLoss(Revoked)` before closing socket. For idle controller revocation (`!has_active_link`), dial host hints over temporary Noise link to notify host of revocation (§2.1).
+       - Fixed `hydrate_from_db` to transition `Disabled -> Paired` on settings re-enable when paired devices exist in DB (§2.2).
+     - `ipc/remote.rs`:
+       - Removed state mutation from `get_link_state`; command now purely queries `state.remote_manager.state_dto()` (§3.5).
+     - `tests/remote_connection_test.rs`:
+       - Added integration test `remote_connection_controller_idle_revocation_syncs_to_host` (§3.7).
+       - Added integration test `remote_connection_settings_toggle_round_trip` (§3.7).
+  2. **Frontend Contract & Manual Connect Fixes (Batch 2)**:
+     - `RocketButton.tsx` & `RocketButton.dom.test.tsx`:
+       - Removed `pairedDevices` fallback; bound tooltip, connect action, and disconnect confirmation strictly to `(linkState, connectedPeer)` (§3.6).
+     - `QrScannerModal.tsx`:
+       - Made `handlePair` parameters strict and non-optional (§3.1).
+       - Routed manual IP entry to `connectHost({ deviceId: connectedPeer.deviceId, address })`; rejected manual pairing when unpaired with explicit guidance alert (§3.1).
+       - Gated celebration state strictly on `scannedSuccess && (linkState === "Paired" || linkState === "Connected")` and decoupled close timer from re-renders via persistent `closeTimerRef` (§3.2).
+     - `QrScannerModal.dom.test.tsx`:
+       - Added test cases verifying manual connect calls `connectHost` when paired and shows guidance alert when unpaired.
+  3. **Backend Grammar Order & Function Decomposition (Batch 3)**:
+     - `loopback.rs`:
+       - Placed trait implementations (`impl RemoteLink for LoopbackLink` and `impl RawLink for LoopbackLink`) before inherent `impl LoopbackLink` per `backend-style-guide.md` §2.1.
+     - `manager.rs`:
+       - Moved `struct LinkSupervisorParams` to Section 3 (Data Structures) before `impl RemoteSessionManager`.
+       - Decomposed `pair_device` into `perform_pairing_handshake` and `await_pairing_approval` (<50 lines each).
+       - Decomposed `dial_and_connect` into `perform_dial_handshake` and `handle_dial_rejection` (<50 lines each).
+       - Decomposed `revoke_device` into `sever_active_link` and `notify_idle_host_revoked` (<50 lines each).
+       - Decomposed `run_link_supervisor` into `handle_supervisor_message`, `handle_supervisor_link_loss`, `handle_supervisor_fault`, `handle_host_heartbeat_tick`, and `handle_controller_heartbeat_timeout` (<50 lines each).
+     - `listener.rs`:
+       - Decomposed `handle_inbound_tier2` into `drive_tier2_handshake`, `check_host_admission`, `receive_inbound_hello`, and `respond_hello_and_attach` (<50 lines each).
+       - Decomposed `handle_inbound_pairing` into `drive_tier1_handshake` and `settle_pairing_coordinator` (<50 lines each).
+  4. **Specification Alignment & Documentation (Batch 4)**:
+     - `docs/plans/phase14/backlog.md`:
+       - Filed dedicated ticket (Ticket 4 Part B) for mDNS subsystem (`_vox._tcp.local` advertisement, controller resolver daemon, dynamic IP resolution).
+
+- **Verification**:
+  - `cd app/src-tauri && ./scripts/verify-targets.sh`: SUCCESS (0 warnings / 0 errors across desktop binary, benchmarks, and Android `aarch64-linux-android` cross-target).
+  - `cargo test --test remote_connection_test --release -- --test-threads=1`: SUCCESS (9/9 integration tests green in 1.83s).
+  - `cd app && pnpm lint:arch`: SUCCESS (All architectural invariants hold).
+  - `cd app && pnpm test`: SUCCESS (28 test suites, 235 tests passed).
+

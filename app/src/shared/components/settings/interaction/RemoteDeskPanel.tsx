@@ -1,4 +1,4 @@
-import { memo, useState, useCallback, useEffect } from "react";
+import { memo, useState, useCallback } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
 import { useRemoteStore } from "@/store/remoteStore";
 import { RemoteControlGlyph } from "./RemoteControlGlyph";
@@ -13,18 +13,12 @@ export const RemoteDeskPanel = memo(() => {
   const commitChanges = useSettingsStore((s) => s.commitChanges);
 
   const linkState = useRemoteStore((s) => s.linkState);
-  const pairedDevices = useRemoteStore((s) => s.pairedDevices);
-  const listPairedDevices = useRemoteStore((s) => s.listPairedDevices);
+  const connectedPeer = useRemoteStore((s) => s.connectedPeer);
   const revokeDevice = useRemoteStore((s) => s.revokeDevice);
   const openPairingModal = useRemoteStore((s) => s.openPairingModal);
 
   const [isConfirmRevokeOpen, setIsConfirmRevokeOpen] = useState(false);
   const [isRevokingPending, setIsRevokingPending] = useState(false);
-  const pairedDevice = pairedDevices[0] ?? null;
-
-  useEffect(() => {
-    void listPairedDevices();
-  }, [listPairedDevices]);
 
   const handleToggle = useCallback(() => {
     const next = !acceptsControllers;
@@ -33,17 +27,17 @@ export const RemoteDeskPanel = memo(() => {
   }, [acceptsControllers, updateDraft, commitChanges]);
 
   const handleConfirmRevoke = useCallback(async () => {
-    if (!pairedDevice || isRevokingPending) return;
+    if (!connectedPeer || isRevokingPending) return;
     setIsRevokingPending(true);
     try {
-      await revokeDevice(pairedDevice.deviceId);
+      await revokeDevice(connectedPeer.deviceId);
       setIsConfirmRevokeOpen(false);
     } catch (e) {
       console.warn("[RemoteDeskPanel] Failed to revoke device:", e);
     } finally {
       setIsRevokingPending(false);
     }
-  }, [pairedDevice, isRevokingPending, revokeDevice]);
+  }, [connectedPeer, isRevokingPending, revokeDevice]);
 
   return (
     <div className="flex flex-row items-center justify-between gap-4 h-full p-2 sm:p-3 rounded-xl bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--accent),0.08)] animate-fade-in">
@@ -58,35 +52,35 @@ export const RemoteDeskPanel = memo(() => {
         <p className="text-[11px] sm:text-[11.5px] text-[rgb(var(--foreground-muted))]/75 leading-relaxed font-medium line-clamp-2">
           {!acceptsControllers ? (
             REMOTE_CONTROL_COPY.description
-          ) : linkState === "Connected" && pairedDevice ? (
+          ) : linkState === "Connected" && connectedPeer ? (
             <>
-              {REMOTE_CONTROL_COPY.connectedTo} {pairedDevice.displayName}
+              {REMOTE_CONTROL_COPY.connectedTo} {connectedPeer.displayName}
               {REMOTE_CONTROL_COPY.wirelessAudioActive}{" "}
               <button
                 type="button"
                 onClick={() => setIsConfirmRevokeOpen(true)}
                 className="inline-flex items-center gap-1 text-[11px] font-mono font-bold text-[rgb(var(--danger))] hover:underline cursor-pointer transition-colors select-none"
-                aria-label={REMOTE_CONTROL_COPY.revokeDeviceAria(pairedDevice.displayName)}
+                aria-label={REMOTE_CONTROL_COPY.revokeDeviceAria(connectedPeer.displayName)}
               >
                 {REMOTE_CONTROL_COPY.revokeDevice}
               </button>{" "}
               <span className="text-[11px] font-medium text-[rgb(var(--foreground-muted))]">
-                ({pairedDevice.displayName})
+                ({connectedPeer.displayName})
               </span>
             </>
-          ) : linkState === "Paired" && pairedDevice ? (
+          ) : linkState === "Paired" && connectedPeer ? (
             <>
-              Paired with {pairedDevice.displayName}. Idle on local Wi-Fi.{" "}
+              Paired with {connectedPeer.displayName}. Idle on local Wi-Fi.{" "}
               <button
                 type="button"
                 onClick={() => setIsConfirmRevokeOpen(true)}
                 className="inline-flex items-center gap-1 text-[11px] font-mono font-bold text-[rgb(var(--danger))] hover:underline cursor-pointer transition-colors select-none"
-                aria-label={REMOTE_CONTROL_COPY.revokeDeviceAria(pairedDevice.displayName)}
+                aria-label={REMOTE_CONTROL_COPY.revokeDeviceAria(connectedPeer.displayName)}
               >
                 {REMOTE_CONTROL_COPY.revokeDevice}
               </button>{" "}
               <span className="text-[11px] font-medium text-[rgb(var(--foreground-muted))]">
-                ({pairedDevice.displayName})
+                ({connectedPeer.displayName})
               </span>
             </>
           ) : (
@@ -115,11 +109,11 @@ export const RemoteDeskPanel = memo(() => {
       </div>
 
       {/* Two-step Revoke Confirmation Modal (Image 2) */}
-      {pairedDevice && (
+      {connectedPeer && (
         <ConfirmModal
           open={isConfirmRevokeOpen}
           title="Revoke Companion Device"
-          description={`Are you sure you want to revoke "${pairedDevice.displayName}"? This will permanently sever the trusted pairing between your laptop and phone.`}
+          description={`Are you sure you want to revoke "${connectedPeer.displayName}"? This will permanently sever the trusted pairing between your laptop and phone.`}
           confirmLabel="Revoke Device"
           cancelLabel="Cancel"
           isDestructive={true}

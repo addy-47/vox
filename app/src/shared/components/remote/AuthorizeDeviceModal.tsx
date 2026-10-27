@@ -1,27 +1,34 @@
 import { memo, useState, useEffect, useCallback, useRef } from "react";
-import { Shield, Mic, Play, Command, BarChart3, Clock, Check, X } from "lucide-react";
-import { Modal } from "@/shared/ui/Modal";
+import { Shield, Mic, Play, BarChart3, Clock, Check, X } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
+import { RemoteModalShell } from "./RemoteModalShell";
+import { useRemoteStore } from "@/store/remoteStore";
 
 export interface AuthorizeDeviceContentProps {
+  open: boolean;
   deviceName?: string;
   deviceId?: string;
   timeoutSeconds?: number;
   onApprove: () => void | Promise<void>;
   onDeny: () => void | Promise<void>;
-  onClose?: () => void;
+  /** Forwarded to RemoteModalShell for AnimatePresence cross-fade keying. */
+  contentKey?: string;
 }
 
 export const AuthorizeDeviceContent = memo(
   ({
+    open,
     deviceName,
     timeoutSeconds = 30,
     onApprove,
     onDeny,
-    onClose,
+    contentKey,
   }: AuthorizeDeviceContentProps) => {
     const [secondsLeft, setSecondsLeft] = useState(timeoutSeconds);
     const [isActionPending, setIsActionPending] = useState(false);
+    const actionPendingRef = useRef(false);
+    const onDenyRef = useRef(onDeny);
+    onDenyRef.current = onDeny;
     const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
     const clearTimer = useCallback(() => {
@@ -32,31 +39,34 @@ export const AuthorizeDeviceContent = memo(
     }, []);
 
     const handleApprove = useCallback(async () => {
-      if (isActionPending) return;
+      if (actionPendingRef.current) return;
+      actionPendingRef.current = true;
       setIsActionPending(true);
       clearTimer();
       try {
         await onApprove();
       } finally {
+        actionPendingRef.current = false;
         setIsActionPending(false);
-        onClose?.();
       }
-    }, [isActionPending, onApprove, onClose, clearTimer]);
+    }, [onApprove, clearTimer]);
 
     const handleDeny = useCallback(async () => {
-      if (isActionPending) return;
+      if (actionPendingRef.current) return;
+      actionPendingRef.current = true;
       setIsActionPending(true);
       clearTimer();
       try {
         await onDeny();
       } finally {
+        actionPendingRef.current = false;
         setIsActionPending(false);
-        onClose?.();
       }
-    }, [isActionPending, onDeny, onClose, clearTimer]);
+    }, [onDeny, clearTimer]);
 
     useEffect(() => {
       setSecondsLeft(timeoutSeconds);
+      actionPendingRef.current = false;
       setIsActionPending(false);
       clearTimer();
 
@@ -64,8 +74,11 @@ export const AuthorizeDeviceContent = memo(
         setSecondsLeft((prev) => {
           if (prev <= 1) {
             clearTimer();
-            void onDeny();
-            onClose?.();
+            if (!actionPendingRef.current) {
+              actionPendingRef.current = true;
+              setIsActionPending(true);
+              void onDenyRef.current();
+            }
             return 0;
           }
           return prev - 1;
@@ -73,7 +86,7 @@ export const AuthorizeDeviceContent = memo(
       }, 1000);
 
       return () => clearTimer();
-    }, [timeoutSeconds, onDeny, onClose, clearTimer]);
+    }, [timeoutSeconds, clearTimer]);
 
     useEffect(() => {
       const onKeyDown = (e: KeyboardEvent) => {
@@ -93,56 +106,37 @@ export const AuthorizeDeviceContent = memo(
     const formattedTime = `00:${String(secondsLeft).padStart(2, "0")}`;
 
     return (
-      <div className="flex flex-col justify-between h-full p-6 sm:p-8 md:p-9 select-none">
-        {/* Header */}
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex flex-col min-w-0">
-            <div className="flex items-center gap-1.5 text-[rgb(var(--accent))]">
-              <Shield size={14} className="shrink-0 text-[rgb(var(--accent))]" />
-              <span className="text-[11px] font-mono tracking-[0.2em] uppercase font-bold text-[rgb(var(--accent))]">
-                REMOTE CONTROL
-              </span>
-            </div>
-            <h2 className="text-2xl sm:text-[26px] font-bold tracking-tight text-[rgb(var(--foreground))] mt-1">
-              Authorize Remote Device
-            </h2>
-            <p className="text-[12.5px] text-[rgb(var(--foreground-muted))] mt-1 leading-normal max-w-[480px]">
-              {deviceName
-                ? `${deviceName} is requesting permission to control Vox over your local Wi-Fi network.`
-                : "A companion device is requesting permission to control Vox over your local Wi-Fi network."}
-            </p>
-          </div>
-
-          <button
-            type="button"
-            onClick={handleDeny}
-            aria-label="Close"
-            className="w-8 h-8 rounded-full bg-[rgba(var(--foreground),0.06)] hover:bg-[rgba(var(--foreground),0.12)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] flex items-center justify-center transition-colors cursor-pointer shrink-0"
-          >
-            <X size={16} />
-          </button>
-        </div>
-
-        {/* 2-Column Responsive Body */}
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-8 items-center mt-7">
-          {/* Left Column: Permissions List */}
-          <div className="md:col-span-7 flex flex-col">
+      <RemoteModalShell
+        open={open}
+        onClose={handleDeny}
+        ariaLabel="Authorize Remote Device"
+        contentKey={contentKey}
+        kickerIcon={<Shield size={14} className="shrink-0 text-[rgb(var(--accent))]" />}
+        kickerLabel="REMOTE CONTROL"
+        title="Authorize Remote Device"
+        description={
+          deviceName
+            ? `${deviceName} is requesting permission to control Vox over your local Wi-Fi network.`
+            : "A companion device is requesting permission to control Vox over your local Wi-Fi network."
+        }
+        leftContent={
+          <>
             <span className="text-[11px] font-mono tracking-wider uppercase font-semibold text-[rgb(var(--foreground-muted))]/80 mb-3.5 block">
               THIS DEVICE CAN
             </span>
 
             <div className="space-y-3.5">
-              {/* Permission 1: Microphone */}
+              {/* Permission 1: Microphone (streaming + push-to-talk) */}
               <div className="flex items-start gap-3.5">
                 <div className="w-10 h-10 rounded-xl bg-[rgba(var(--accent),0.08)] border border-[rgba(var(--accent),0.2)] flex items-center justify-center text-[rgb(var(--accent))] shrink-0">
                   <Mic size={18} />
                 </div>
                 <div className="flex flex-col min-w-0 pt-0.5">
                   <span className="text-[13.5px] font-semibold text-[rgb(var(--foreground))]">
-                    Stream microphone audio
+                    Microphone access
                   </span>
                   <span className="text-[12px] text-[rgb(var(--foreground-muted))] mt-0.5 leading-relaxed">
-                    Send live audio from this device into Vox's speech pipeline.
+                    Stream live audio and trigger push-to-talk dictation from this device.
                   </span>
                 </div>
               </div>
@@ -162,22 +156,7 @@ export const AuthorizeDeviceContent = memo(
                 </div>
               </div>
 
-              {/* Permission 3: Push-to-Talk */}
-              <div className="flex items-start gap-3.5">
-                <div className="w-10 h-10 rounded-xl bg-[rgba(var(--accent),0.08)] border border-[rgba(var(--accent),0.2)] flex items-center justify-center text-[rgb(var(--accent))] shrink-0">
-                  <Command size={17} />
-                </div>
-                <div className="flex flex-col min-w-0 pt-0.5">
-                  <span className="text-[13.5px] font-semibold text-[rgb(var(--foreground))]">
-                    Trigger push-to-talk
-                  </span>
-                  <span className="text-[12px] text-[rgb(var(--foreground-muted))] mt-0.5 leading-relaxed">
-                    Send speech dictation input remotely.
-                  </span>
-                </div>
-              </div>
-
-              {/* Permission 4: Session State */}
+              {/* Permission 3: Session State */}
               <div className="flex items-start gap-3.5">
                 <div className="w-10 h-10 rounded-xl bg-[rgba(var(--accent),0.08)] border border-[rgba(var(--accent),0.2)] flex items-center justify-center text-[rgb(var(--accent))] shrink-0">
                   <BarChart3 size={17} />
@@ -192,10 +171,10 @@ export const AuthorizeDeviceContent = memo(
                 </div>
               </div>
             </div>
-          </div>
-
-          {/* Right Column: Connection Graphic & Countdown */}
-          <div className="md:col-span-5 flex flex-col items-center justify-center">
+          </>
+        }
+        rightContent={
+          <>
             {/* SVG Phone to Laptop Illustration matching Image 2 */}
             <div className="relative w-full max-w-[230px] h-[105px] flex items-center justify-center">
               <svg
@@ -339,41 +318,48 @@ export const AuthorizeDeviceContent = memo(
                 If you don't approve, this request will expire automatically and the device won't be able to connect.
               </p>
             </div>
-          </div>
-        </div>
+          </>
+        }
+        footer={
+          <>
+            {/* Deny Button */}
+            <button
+              type="button"
+              onClick={handleDeny}
+              disabled={isActionPending}
+              className="flex-1 h-12 rounded-lg bg-[rgba(var(--foreground),0.05)] hover:bg-[rgba(var(--foreground),0.09)] active:scale-[0.99] border border-[rgba(var(--border),0.12)] text-[rgb(var(--foreground))] font-semibold text-sm flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50"
+            >
+              <X size={16} />
+              <span>Deny</span>
+            </button>
 
-        {/* Footer Actions */}
-        <div className="flex items-center gap-4 mt-8 pt-2">
-          {/* Deny Button */}
-          <button
-            type="button"
-            onClick={handleDeny}
-            disabled={isActionPending}
-            className="flex-1 h-12 rounded-2xl bg-[rgba(var(--foreground),0.05)] hover:bg-[rgba(var(--foreground),0.09)] active:scale-[0.99] border border-[rgba(var(--border),0.12)] text-[rgb(var(--foreground))] font-semibold text-sm flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50"
-          >
-            <X size={16} />
-            <span>Deny</span>
-          </button>
-
-          {/* Approve Button */}
-          <button
-            type="button"
-            onClick={handleApprove}
-            disabled={isActionPending}
-            className="flex-1 h-12 rounded-2xl bg-[rgb(var(--accent))] hover:brightness-105 active:scale-[0.99] text-[rgb(var(--accent-foreground))] font-bold text-sm flex items-center justify-center gap-2 transition-all cursor-pointer shadow-[0_0_24px_rgba(var(--accent),0.35)] disabled:opacity-50"
-          >
-            <Check size={17} strokeWidth={2.5} />
-            <span>Approve Connection</span>
-          </button>
-        </div>
-      </div>
+            {/* Approve Button */}
+            <button
+              type="button"
+              onClick={handleApprove}
+              disabled={isActionPending}
+              className="flex-1 h-12 rounded-lg bg-[rgb(var(--accent))] hover:brightness-105 active:scale-[0.99] text-[rgb(var(--accent-foreground))] font-bold text-sm flex items-center justify-center gap-2 transition-all cursor-pointer shadow-[0_0_24px_rgba(var(--accent),0.35)] disabled:opacity-50"
+            >
+              <Check size={17} strokeWidth={2.5} />
+              <span>Approve Connection</span>
+            </button>
+          </>
+        }
+      />
     );
   }
 );
 AuthorizeDeviceContent.displayName = "AuthorizeDeviceContent";
 
-export interface AuthorizeDeviceModalProps extends AuthorizeDeviceContentProps {
-  open: boolean;
+export interface AuthorizeDeviceModalProps {
+  open?: boolean;
+  deviceName?: string;
+  deviceId?: string;
+  timeoutSeconds?: number;
+  onApprove?: () => void | Promise<void>;
+  onDeny?: () => void | Promise<void>;
+  onClose?: () => void;
+  contentKey?: string;
 }
 
 export const AuthorizeDeviceModal = memo(
@@ -385,26 +371,60 @@ export const AuthorizeDeviceModal = memo(
     onApprove,
     onDeny,
     onClose,
-  }: AuthorizeDeviceModalProps) => {
+    contentKey,
+  }: AuthorizeDeviceModalProps = {}) => {
+    const pendingPairingPrompt = useRemoteStore((s) => s.pendingPairingPrompt);
+    const approvePairing = useRemoteStore((s) => s.approvePairing);
+    const dismissPairingPrompt = useRemoteStore((s) => s.dismissPairingPrompt);
+
+    const isEffectiveOpen = open !== undefined ? open : Boolean(pendingPairingPrompt);
+    const effectiveDeviceName = deviceName ?? pendingPairingPrompt?.displayName;
+    const effectiveDeviceId = deviceId ?? pendingPairingPrompt?.deviceId;
+
+    const handleApprove = useCallback(async () => {
+      try {
+        if (onApprove) {
+          await onApprove();
+        } else {
+          await approvePairing("Approve");
+        }
+      } catch (e) {
+        console.warn("[AuthorizeDeviceModal] approve error:", e);
+      } finally {
+        dismissPairingPrompt();
+        onClose?.();
+      }
+    }, [onApprove, approvePairing, dismissPairingPrompt, onClose]);
+
+    const handleDeny = useCallback(async () => {
+      try {
+        if (onDeny) {
+          await onDeny();
+        } else {
+          await approvePairing("Reject");
+        }
+      } catch (e) {
+        console.warn("[AuthorizeDeviceModal] deny error:", e);
+      } finally {
+        dismissPairingPrompt();
+        onClose?.();
+      }
+    }, [onDeny, approvePairing, dismissPairingPrompt, onClose]);
+
+    if (!isEffectiveOpen) {
+      return null;
+    }
+
     return (
-      <Modal
-        open={open}
-        onClose={onClose ?? (() => {})}
-        position="global"
-        fitContent
-        className="max-w-[760px] w-[94vw] md:w-full overflow-hidden"
-      >
-        <div className="min-h-[500px] flex flex-col justify-between">
-          <AuthorizeDeviceContent
-            deviceName={deviceName}
-            deviceId={deviceId}
-            timeoutSeconds={timeoutSeconds}
-            onApprove={onApprove}
-            onDeny={onDeny}
-            onClose={onClose}
-          />
-        </div>
-      </Modal>
+      <AuthorizeDeviceContent
+        open={isEffectiveOpen}
+        deviceName={effectiveDeviceName}
+        deviceId={effectiveDeviceId}
+        timeoutSeconds={timeoutSeconds}
+        onApprove={handleApprove}
+        onDeny={handleDeny}
+        contentKey={contentKey}
+      />
     );
   }
 );

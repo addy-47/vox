@@ -219,6 +219,13 @@ pub struct PairRequest {
     pub display_name: String,
 }
 
+/// A pairing approval.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PairApproved {
+    /// The authenticated identity of the host.
+    pub host_identity: SenderIdentity,
+}
+
 /// A pairing refusal.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PairDenied {
@@ -389,7 +396,7 @@ pub enum ControlMessage {
     /// Host is prompting the user for approval.
     PairPrompting,
     /// A pairing approval.
-    PairApproved,
+    PairApproved(PairApproved),
     /// A pairing refusal.
     PairDenied(PairDenied),
 }
@@ -414,7 +421,7 @@ impl ControlMessage {
             ControlMessage::LinkRefused(_) => ControlType::LinkRefused,
             ControlMessage::PairRequest(_) => ControlType::PairRequest,
             ControlMessage::PairPrompting => ControlType::PairPrompting,
-            ControlMessage::PairApproved => ControlType::PairApproved,
+            ControlMessage::PairApproved(_) => ControlType::PairApproved,
             ControlMessage::PairDenied(_) => ControlType::PairDenied,
         }
     }
@@ -489,7 +496,7 @@ pub fn encode_control(message: &ControlMessage) -> Result<Vec<u8>, ProtocolError
         ControlMessage::LinkRefused(payload) => payload_map(payload)?,
         ControlMessage::PairRequest(payload) => payload_map(payload)?,
         ControlMessage::PairPrompting => Map::new(),
-        ControlMessage::PairApproved => Map::new(),
+        ControlMessage::PairApproved(payload) => payload_map(payload)?,
         ControlMessage::PairDenied(payload) => payload_map(payload)?,
     };
     encode_tagged(type_name, payload)
@@ -542,7 +549,7 @@ fn build_control(
         ControlType::LinkRefused => ControlMessage::LinkRefused(payload_value(payload)?),
         ControlType::PairRequest => ControlMessage::PairRequest(payload_value(payload)?),
         ControlType::PairPrompting => ControlMessage::PairPrompting,
-        ControlType::PairApproved => ControlMessage::PairApproved,
+        ControlType::PairApproved => ControlMessage::PairApproved(payload_value(payload)?),
         ControlType::PairDenied => ControlMessage::PairDenied(payload_value(payload)?),
     })
 }

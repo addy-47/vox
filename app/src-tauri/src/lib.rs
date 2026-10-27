@@ -522,12 +522,18 @@ pub fn run() {
             {
                 let db_clone = Arc::clone(&state_arc.db);
                 let remote_mgr = Arc::clone(&state_arc.remote_manager);
+                let settings_clone = Arc::clone(&state_arc.settings);
                 tauri::async_runtime::spawn(async move {
-                    if let Ok(devices) = crate::services::remote::session::RemoteSessionManager::list_paired_devices(&db_clone).await {
-                        if !devices.is_empty() && remote_mgr.state() == crate::services::remote::session::RemoteLinkState::Unpaired {
-                            remote_mgr.set_state(crate::services::remote::session::RemoteLinkState::Paired);
-                        }
+                    let accepts = settings_clone
+                        .read()
+                        .map(|s| s.remote.accepts_controllers)
+                        .unwrap_or(false);
+                    if remote_mgr.role() == crate::services::remote::session::SessionRole::Host && !accepts {
+                        remote_mgr.set_peer_identity(None);
+                        remote_mgr.set_state(crate::services::remote::session::RemoteLinkState::Disabled);
+                        return;
                     }
+                    remote_mgr.hydrate_from_db(&db_clone).await;
                 });
             }
 

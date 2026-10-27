@@ -33,6 +33,8 @@ pub struct WsLink {
     writer: AsyncMutex<WsSink>,
     reader: AsyncMutex<WsSource>,
     close_reason: Mutex<Option<LinkCloseReason>>,
+    peer_addr: Option<SocketAddr>,
+    cipher: AsyncMutex<Option<crate::services::remote::security::NoiseTransport>>,
 }
 
 /// Inbound TCP listener that accepts and upgrades connections to [`WsLink`].
@@ -47,9 +49,19 @@ impl RemoteLink for WsLink {
             let bytes = encode_control(&message)?;
             check_control_message_size(bytes.len(), MAX_CONTROL_MESSAGE_BYTES)?;
 
+            let payload_to_send = if let Some(cipher) = self.cipher.lock().await.as_mut() {
+                cipher.encrypt(&bytes).map_err(|e| {
+                    LinkError::Protocol(crate::services::remote::protocol::ProtocolError::MalformedJson(
+                        format!("Noise encryption error: {e}"),
+                    ))
+                })?
+            } else {
+                bytes
+            };
+
             let mut writer = self.writer.lock().await;
             writer
-                .send(Message::Binary(bytes.into()))
+                .send(Message::Binary(payload_to_send.into()))
                 .await
                 .map_err(|e| {
                     let reason = LinkCloseReason::Transport(e.to_string());
@@ -69,12 +81,30 @@ impl RemoteLink for WsLink {
             loop {
                 match reader.next().await {
                     Some(Ok(Message::Binary(bytes))) => {
-                        if let Some(msg) = self.decode_incoming(&bytes)? {
+                        let decrypted = if let Some(cipher) = self.cipher.lock().await.as_mut() {
+                            cipher.decrypt(&bytes).map_err(|e| {
+                                LinkError::Protocol(crate::services::remote::protocol::ProtocolError::MalformedJson(
+                                    format!("Noise decryption error: {e}"),
+                                ))
+                            })?
+                        } else {
+                            bytes.to_vec()
+                        };
+                        if let Some(msg) = self.decode_incoming(&decrypted)? {
                             return Ok(msg);
                         }
                     }
                     Some(Ok(Message::Text(text))) => {
-                        if let Some(msg) = self.decode_incoming(text.as_bytes())? {
+                        let decrypted = if let Some(cipher) = self.cipher.lock().await.as_mut() {
+                            cipher.decrypt(text.as_bytes()).map_err(|e| {
+                                LinkError::Protocol(crate::services::remote::protocol::ProtocolError::MalformedJson(
+                                    format!("Noise decryption error: {e}"),
+                                ))
+                            })?
+                        } else {
+                            text.as_bytes().to_vec()
+                        };
+                        if let Some(msg) = self.decode_incoming(&decrypted)? {
                             return Ok(msg);
                         }
                     }
@@ -141,12 +171,94 @@ impl RemoteLink for WsLink {
 impl WsLink {
     /// Creates a new `WsLink` from an established WebSocket stream.
     pub fn new(stream: WsStream) -> Self {
+        Self::with_addr(stream, None)
+    }
+
+    /// Creates a new `WsLink` with a known peer socket address.
+    pub fn with_addr(stream: WsStream, peer_addr: Option<SocketAddr>) -> Self {
         let (writer, reader) = stream.split();
         Self {
             writer: AsyncMutex::new(writer),
             reader: AsyncMutex::new(reader),
             close_reason: Mutex::new(None),
+            peer_addr,
+            cipher: AsyncMutex::new(None),
         }
+    }
+
+    /// Returns the remote peer socket address if known.
+    pub fn peer_addr(&self) -> Option<SocketAddr> {
+        self.peer_addr
+    }
+
+    /// Sets the active NoiseTransport cipher state for frame encryption/decryption.
+    pub async fn set_cipher(&self, cipher: crate::services::remote::security::NoiseTransport) {
+        *self.cipher.lock().await = Some(cipher);
+    }
+
+    /// Sends a raw handshake frame before or during Noise handshake negotiation.
+    pub async fn send_handshake_message(&self, bytes: &[u8]) -> Result<(), LinkError> {
+        self.ensure_open()?;
+        let mut writer = self.writer.lock().await;
+        writer
+            .send(Message::Binary(bytes.to_vec().into()))
+            .await
+            .map_err(|e| {
+                let reason = LinkCloseReason::Transport(e.to_string());
+                self.record_close(reason.clone());
+                LinkError::Closed(reason)
+            })
+    }
+
+    /// Receives a raw handshake frame before or during Noise handshake negotiation.
+    pub async fn recv_handshake_message(&self) -> Result<Vec<u8>, LinkError> {
+        self.ensure_open()?;
+        let mut reader = self.reader.lock().await;
+        loop {
+            match reader.next().await {
+                Some(Ok(Message::Binary(bytes))) => return Ok(bytes.to_vec()),
+                Some(Ok(Message::Close(_))) => {
+                    self.record_close(LinkCloseReason::Peer);
+                    return Err(LinkError::Closed(LinkCloseReason::Peer));
+                }
+                Some(Ok(Message::Ping(_))) | Some(Ok(Message::Pong(_))) | Some(Ok(Message::Frame(_))) => continue,
+                Some(Err(e)) => {
+                    let reason = LinkCloseReason::Transport(e.to_string());
+                    self.record_close(reason.clone());
+                    return Err(LinkError::Closed(reason));
+                }
+                None => {
+                    self.record_close(LinkCloseReason::Peer);
+                    return Err(LinkError::Closed(LinkCloseReason::Peer));
+                }
+                Some(Ok(Message::Text(t))) => return Ok(t.as_bytes().to_vec()),
+            }
+        }
+    }
+
+    /// Drives the Noise_XX handshake state machine to completion over this WebSocket stream.
+    pub async fn drive_handshake(
+        &self,
+        mut handshake: crate::services::remote::security::NoiseHandshake,
+    ) -> Result<crate::services::remote::security::NoiseTransport, crate::services::remote::security::SecurityError> {
+        loop {
+            if handshake.is_complete() {
+                break;
+            }
+            if handshake.is_my_turn() {
+                let msg = handshake.write_message(&[])?;
+                self.send_handshake_message(&msg)
+                    .await
+                    .map_err(|e| crate::services::remote::security::SecurityError::Noise(e.to_string()))?;
+            } else {
+                let msg = self
+                    .recv_handshake_message()
+                    .await
+                    .map_err(|e| crate::services::remote::security::SecurityError::Noise(e.to_string()))?;
+                handshake.read_message(&msg)?;
+            }
+        }
+        handshake.finish()
     }
 
     /// Verifies the link is currently open.
@@ -189,7 +301,7 @@ impl WsLink {
 impl WsListener {
     /// Accepts a new TCP stream and upgrades it to a WebSocket connection.
     pub async fn accept(&self) -> Result<WsLink, LinkError> {
-        let (tcp_stream, _) = self
+        let (tcp_stream, peer_addr) = self
             .listener
             .accept()
             .await
@@ -200,7 +312,7 @@ impl WsListener {
             .await
             .map_err(|e| LinkError::Transport(e.to_string()))?;
 
-        Ok(WsLink::new(ws_stream))
+        Ok(WsLink::with_addr(ws_stream, Some(peer_addr)))
     }
 
     /// Returns the local socket address this listener is bound to.

@@ -7,7 +7,6 @@ pub mod link;
 pub mod protocol;
 pub mod security;
 pub mod session;
-pub mod testing;
 
 // ─── Domain constants ───────────────────────────────────────────────────────
 //

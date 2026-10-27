@@ -13,7 +13,7 @@ describe("AuthorizeDeviceModal DOM suite (Image 3 Specification)", () => {
     vi.useRealTimers();
   });
 
-  it("renders header, 4 permissions, graphic and countdown timer per Image 3", () => {
+  it("renders header, 3 permissions, graphic and countdown timer", () => {
     render(
       <AuthorizeDeviceModal
         open={true}
@@ -33,18 +33,19 @@ describe("AuthorizeDeviceModal DOM suite (Image 3 Specification)", () => {
       )
     ).toBeTruthy();
 
-    // 4 Privileges per Image 3
+    // 3 Privileges (microphone, session control, session state)
     expect(screen.getByText("THIS DEVICE CAN")).toBeTruthy();
-    expect(screen.getByText("Stream microphone audio")).toBeTruthy();
-    expect(screen.getByText("Send live audio from this device into Vox's speech pipeline.")).toBeTruthy();
+    expect(screen.getByText("Microphone access")).toBeTruthy();
+    expect(
+      screen.getByText("Stream live audio and trigger push-to-talk dictation from this device.")
+    ).toBeTruthy();
     expect(screen.getByText("Start, pause, and trigger voice sessions")).toBeTruthy();
     expect(screen.getByText("Control real-time voice interactions and remote tools.")).toBeTruthy();
-    expect(screen.getByText("Trigger push-to-talk")).toBeTruthy();
-    expect(screen.getByText("Send speech dictation input remotely.")).toBeTruthy();
     expect(screen.getByText("Read session state")).toBeTruthy();
     expect(
       screen.getByText("View real-time session telemetry and pipeline status over local Wi-Fi.")
     ).toBeTruthy();
+    expect(screen.queryByText("Trigger push-to-talk")).toBeNull();
 
     // Countdown and microcopy
     expect(screen.getByText("Request expires in")).toBeTruthy();

@@ -81,109 +81,6 @@ pub struct LoopbackLink {
     peer_close: Arc<CloseSignal>,
 }
 
-impl LoopbackLink {
-    /// Creates two connected ends of an in-process link.
-    pub fn pair() -> (LoopbackLink, LoopbackLink) {
-        let (control_ab_tx, control_ab_rx) = mpsc::channel::<Vec<u8>>(LOOPBACK_CHANNEL_CAPACITY);
-        let (control_ba_tx, control_ba_rx) = mpsc::channel::<Vec<u8>>(LOOPBACK_CHANNEL_CAPACITY);
-        let (audio_ab_tx, audio_ab_rx) = mpsc::channel::<Vec<u8>>(LOOPBACK_CHANNEL_CAPACITY);
-        let (audio_ba_tx, audio_ba_rx) = mpsc::channel::<Vec<u8>>(LOOPBACK_CHANNEL_CAPACITY);
-        let close_a = Arc::new(CloseSignal::new());
-        let close_b = Arc::new(CloseSignal::new());
-
-        let first = LoopbackLink {
-            control_tx: control_ab_tx,
-            control_rx: AsyncMutex::new(control_ba_rx),
-            audio_tx: audio_ab_tx,
-            audio_rx: AsyncMutex::new(audio_ba_rx),
-            own_close: Arc::clone(&close_a),
-            peer_close: Arc::clone(&close_b),
-        };
-        let second = LoopbackLink {
-            control_tx: control_ba_tx,
-            control_rx: AsyncMutex::new(control_ab_rx),
-            audio_tx: audio_ba_tx,
-            audio_rx: AsyncMutex::new(audio_ab_rx),
-            own_close: Arc::clone(&close_b),
-            peer_close: Arc::clone(&close_a),
-        };
-        (first, second)
-    }
-
-    /// Fails when this link is closed, by either side.
-    fn ensure_open(&self) -> Result<(), LinkError> {
-        if let Some(reason) = self.own_close.reason() {
-            return Err(LinkError::Closed(reason));
-        }
-        if let Some(reason) = observed_peer_reason(&self.peer_close) {
-            return Err(LinkError::Closed(reason));
-        }
-        Ok(())
-    }
-
-    /// Terminates the link because the peer broke the wire contract.
-    ///
-    /// The cause travels with the close: a protocol violation is not a
-    /// deliberate close, so the reason is [`LinkCloseReason::Protocol`] and
-    /// not `Local`.
-    fn terminate_on_protocol_violation(&self, error: &ProtocolError) {
-        log::warn!("[Remote::Link] Terminating the link: {error}");
-        self.own_close
-            .close(LinkCloseReason::Protocol(error.clone()));
-    }
-
-    /// Decides what a decode failure does to the link.
-    ///
-    /// The protocol module owns the classification. A transport consults it
-    /// instead of matching protocol errors by hand, so the next transport
-    /// cannot disagree with this one about which violations are fatal.
-    ///
-    /// Only the fatal case reaches this function: a survivable violation is
-    /// skipped by the receive loop, not reported to the caller.
-    fn handle_decode_failure(&self, error: ProtocolError) -> LinkError {
-        self.terminate_on_protocol_violation(&error);
-        LinkError::Closed(LinkCloseReason::Protocol(error))
-    }
-
-    /// Receives the next payload from a channel, or reports that the link
-    /// closed.
-    async fn next_bytes(
-        &self,
-        receiver: &AsyncMutex<mpsc::Receiver<Vec<u8>>>,
-    ) -> Result<Vec<u8>, LinkError> {
-        let mut guard = receiver.lock().await;
-        match guard.try_recv() {
-            Ok(bytes) => return Ok(bytes),
-            Err(TryRecvError::Empty) => {}
-            Err(TryRecvError::Disconnected) => {
-                return Err(LinkError::Closed(LinkCloseReason::Peer));
-            }
-        }
-
-        // The notification is enabled before the close reason is read, so a
-        // close that lands between the two cannot be missed.
-        let notified = self.peer_close.notify.notified();
-        tokio::pin!(notified);
-        notified.as_mut().enable();
-        if self.peer_close.reason().is_some() {
-            return Err(LinkError::Closed(
-                observed_peer_reason(&self.peer_close).unwrap_or(LinkCloseReason::Peer),
-            ));
-        }
-
-        tokio::select! {
-            biased;
-            result = guard.recv() => match result {
-                Some(bytes) => Ok(bytes),
-                None => Err(LinkError::Closed(LinkCloseReason::Peer)),
-            },
-            _ = notified => Err(LinkError::Closed(
-                observed_peer_reason(&self.peer_close).unwrap_or(LinkCloseReason::Peer),
-            )),
-        }
-    }
-}
-
 impl RemoteLink for LoopbackLink {
     fn send_control<'a>(&'a self, message: ControlMessage) -> BoxFuture<'a, Result<(), LinkError>> {
         Box::pin(async move {
@@ -311,6 +208,109 @@ impl RawLink for LoopbackLink {
                 .map_err(|_| LinkError::Closed(LinkCloseReason::Peer))?;
             Ok(())
         })
+    }
+}
+
+impl LoopbackLink {
+    /// Creates two connected ends of an in-process link.
+    pub fn pair() -> (LoopbackLink, LoopbackLink) {
+        let (control_ab_tx, control_ab_rx) = mpsc::channel::<Vec<u8>>(LOOPBACK_CHANNEL_CAPACITY);
+        let (control_ba_tx, control_ba_rx) = mpsc::channel::<Vec<u8>>(LOOPBACK_CHANNEL_CAPACITY);
+        let (audio_ab_tx, audio_ab_rx) = mpsc::channel::<Vec<u8>>(LOOPBACK_CHANNEL_CAPACITY);
+        let (audio_ba_tx, audio_ba_rx) = mpsc::channel::<Vec<u8>>(LOOPBACK_CHANNEL_CAPACITY);
+        let close_a = Arc::new(CloseSignal::new());
+        let close_b = Arc::new(CloseSignal::new());
+
+        let first = LoopbackLink {
+            control_tx: control_ab_tx,
+            control_rx: AsyncMutex::new(control_ba_rx),
+            audio_tx: audio_ab_tx,
+            audio_rx: AsyncMutex::new(audio_ba_rx),
+            own_close: Arc::clone(&close_a),
+            peer_close: Arc::clone(&close_b),
+        };
+        let second = LoopbackLink {
+            control_tx: control_ba_tx,
+            control_rx: AsyncMutex::new(control_ab_rx),
+            audio_tx: audio_ba_tx,
+            audio_rx: AsyncMutex::new(audio_ab_rx),
+            own_close: Arc::clone(&close_b),
+            peer_close: Arc::clone(&close_a),
+        };
+        (first, second)
+    }
+
+    /// Fails when this link is closed, by either side.
+    fn ensure_open(&self) -> Result<(), LinkError> {
+        if let Some(reason) = self.own_close.reason() {
+            return Err(LinkError::Closed(reason));
+        }
+        if let Some(reason) = observed_peer_reason(&self.peer_close) {
+            return Err(LinkError::Closed(reason));
+        }
+        Ok(())
+    }
+
+    /// Terminates the link because the peer broke the wire contract.
+    ///
+    /// The cause travels with the close: a protocol violation is not a
+    /// deliberate close, so the reason is [`LinkCloseReason::Protocol`] and
+    /// not `Local`.
+    fn terminate_on_protocol_violation(&self, error: &ProtocolError) {
+        log::warn!("[Remote::Link] Terminating the link: {error}");
+        self.own_close
+            .close(LinkCloseReason::Protocol(error.clone()));
+    }
+
+    /// Decides what a decode failure does to the link.
+    ///
+    /// The protocol module owns the classification. A transport consults it
+    /// instead of matching protocol errors by hand, so the next transport
+    /// cannot disagree with this one about which violations are fatal.
+    ///
+    /// Only the fatal case reaches this function: a survivable violation is
+    /// skipped by the receive loop, not reported to the caller.
+    fn handle_decode_failure(&self, error: ProtocolError) -> LinkError {
+        self.terminate_on_protocol_violation(&error);
+        LinkError::Closed(LinkCloseReason::Protocol(error))
+    }
+
+    /// Receives the next payload from a channel, or reports that the link
+    /// closed.
+    async fn next_bytes(
+        &self,
+        receiver: &AsyncMutex<mpsc::Receiver<Vec<u8>>>,
+    ) -> Result<Vec<u8>, LinkError> {
+        let mut guard = receiver.lock().await;
+        match guard.try_recv() {
+            Ok(bytes) => return Ok(bytes),
+            Err(TryRecvError::Empty) => {}
+            Err(TryRecvError::Disconnected) => {
+                return Err(LinkError::Closed(LinkCloseReason::Peer));
+            }
+        }
+
+        // The notification is enabled before the close reason is read, so a
+        // close that lands between the two cannot be missed.
+        let notified = self.peer_close.notify.notified();
+        tokio::pin!(notified);
+        notified.as_mut().enable();
+        if self.peer_close.reason().is_some() {
+            return Err(LinkError::Closed(
+                observed_peer_reason(&self.peer_close).unwrap_or(LinkCloseReason::Peer),
+            ));
+        }
+
+        tokio::select! {
+            biased;
+            result = guard.recv() => match result {
+                Some(bytes) => Ok(bytes),
+                None => Err(LinkError::Closed(LinkCloseReason::Peer)),
+            },
+            _ = notified => Err(LinkError::Closed(
+                observed_peer_reason(&self.peer_close).unwrap_or(LinkCloseReason::Peer),
+            )),
+        }
     }
 }
 

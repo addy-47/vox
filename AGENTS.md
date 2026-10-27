@@ -6,6 +6,7 @@
 
 > 🛑 **POST-TASK HOOK: Record Work in `work_log.md`**
 > After every completed task, record your entry in `docs/plans/<current_phase>/work_log.md`.
+> Compact work_log once it reaches 500 lines.
 
 ---
 

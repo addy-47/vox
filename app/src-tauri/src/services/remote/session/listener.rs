@@ -8,7 +8,7 @@
 
 use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr},
-    sync::Arc,
+    sync::{atomic::Ordering, Arc},
     time::{Duration, Instant},
 };
 
@@ -20,7 +20,7 @@ use crate::{
         state::{AppState, PendingPairingState},
     },
     persistence::paired_devices::{
-        get_paired_device, insert_paired_device, NewPairedDevice, PairedDeviceRole,
+        insert_paired_device, NewPairedDevice, PairedDeviceRole,
     },
     services::remote::{
         link::{
@@ -30,11 +30,14 @@ use crate::{
         protocol::{
             framing::StreamFormat,
             messages::{
-                ControlMessage, Hello, LinkRefused, LinkRefusedReason, PairDenied, PairRequest,
-                SenderIdentity, UnknownPeer,
+                ControlMessage, Hello, LinkRefused, LinkRefusedReason, PairApproved, PairDenied,
+                PairRequest, RoleNotPermitted, SenderIdentity, UnknownPeer,
             },
         },
-        security::{derive_device_id, DeviceId, KeyStore, PairingOutcome, PairingRequest},
+        security::{
+            default_noise_prologue, derive_device_id, DeviceId, DeviceKey, KeyStore, NoiseHandshake,
+            PairingOutcome, PairingRequest, TrustDecision, TrustRefusal,
+        },
         session::state::{PairingState, RemoteLinkState},
         PAIRING_APPROVAL_TIMEOUT,
     },
@@ -138,45 +141,73 @@ async fn handle_inbound_connection<R: Runtime>(
     state: Arc<AppState>,
     app_handle: AppHandle<R>,
 ) {
-    // Spec §6.5: refuse if another controller is already connected
-    if state.remote_manager.state() == RemoteLinkState::Connected {
-        log::warn!("[Remote] Refusing connection: controller already connected");
-        return;
-    }
+    let initial_bytes = match tokio::time::timeout(
+        Duration::from_secs(10),
+        ws_link.recv_handshake_message(),
+    )
+    .await
+    {
+        Ok(Ok(bytes)) => bytes,
+        Ok(Err(e)) => {
+            log::warn!("[Remote] Failed to receive initial message: {e}");
+            return;
+        }
+        Err(_) => {
+            log::warn!("[Remote] Initial message timed out");
+            return;
+        }
+    };
 
-    let initial_msg =
-        match tokio::time::timeout(Duration::from_secs(10), ws_link.recv_control()).await {
-            Ok(Ok(msg)) => msg,
-            Ok(Err(e)) => {
-                log::warn!("[Remote] Failed to receive initial control message: {e}");
-                return;
-            }
-            Err(_) => {
-                log::warn!("[Remote] Initial message timed out");
-                return;
-            }
-        };
-
-    match initial_msg {
-        ControlMessage::PairRequest(req) => {
-            // Tier 1 path: validate token, prompt user, write DB, close socket
-            handle_inbound_pairing(ws_link, req, state, app_handle).await;
-        }
-        ControlMessage::Hello(peer_hello) => {
-            // Tier 2 path: verify paired_devices, reply Hello, attach streaming link
-            handle_inbound_hello(ws_link, peer_hello, state).await;
-        }
-        other => {
-            log::warn!(
-                "[Remote] Unexpected opening message: {:?}",
-                other.message_type()
-            );
-        }
+    if let Ok(crate::services::remote::protocol::messages::DecodeOutcome::Known(
+        ControlMessage::PairRequest(claimed_req),
+    )) = crate::services::remote::protocol::messages::decode_control(&initial_bytes)
+    {
+        // Tier 1 path: pairing request claim, followed by Noise_XX, user prompt, and DB storage
+        handle_inbound_pairing(ws_link, claimed_req, state, app_handle).await;
+    } else {
+        // Tier 2 path: initial_bytes is Noise_XX message 1 from the connecting controller
+        handle_inbound_tier2(ws_link, initial_bytes, state).await;
     }
 }
 
-async fn handle_inbound_hello(ws_link: WsLink, peer_hello: Hello, state: Arc<AppState>) {
-    // 1. Check if remote accepts controllers (§6.5)
+async fn drive_tier2_handshake(
+    ws_link: &WsLink,
+    first_msg: &[u8],
+    device_key: &DeviceKey,
+) -> Option<[u8; 32]> {
+    let prologue = default_noise_prologue();
+    let mut handshake = match NoiseHandshake::responder(device_key, None, &prologue) {
+        Ok(h) => h,
+        Err(e) => {
+            log::warn!("[Remote] Could not initialize Noise responder: {e}");
+            return None;
+        }
+    };
+
+    if let Err(e) = handshake.read_message(first_msg) {
+        log::warn!("[Remote] Failed to read initial Noise handshake message: {e}");
+        return None;
+    }
+
+    let transport = match ws_link.drive_handshake(handshake).await {
+        Ok(t) => t,
+        Err(e) => {
+            log::warn!("[Remote] Tier 2 Noise handshake failed: {e}");
+            return None;
+        }
+    };
+
+    let handshake_remote_static = *transport.remote_static();
+    ws_link.set_cipher(transport).await;
+    Some(handshake_remote_static)
+}
+
+async fn check_host_admission(
+    state: &AppState,
+    peer_id: &str,
+    handshake_remote_static: &[u8; 32],
+    ws_link: &WsLink,
+) -> Option<()> {
     let accepts = state
         .settings
         .read()
@@ -189,10 +220,9 @@ async fn handle_inbound_hello(ws_link: WsLink, peer_hello: Hello, state: Arc<App
                 reason: LinkRefusedReason::NotAccepting,
             }))
             .await;
-        return;
+        return None;
     }
 
-    // 2. Check if another controller is attached (§6.5)
     if state.remote_manager.state() == RemoteLinkState::Connected {
         log::warn!("[Remote] Inbound Hello refused: another controller is already connected");
         let _ = ws_link
@@ -200,44 +230,87 @@ async fn handle_inbound_hello(ws_link: WsLink, peer_hello: Hello, state: Arc<App
                 reason: LinkRefusedReason::ControllerAttached,
             }))
             .await;
-        return;
+        return None;
     }
 
-    // 3. Verify peer is in paired_devices (§6.5)
-    let peer_id = &peer_hello.sender_identity.device_id;
-    let is_paired = if let Ok(conn) = state.db.connect() {
-        get_paired_device(&conn, peer_id)
-            .await
-            .ok()
-            .flatten()
-            .is_some()
-    } else {
-        false
-    };
-
-    if !is_paired {
-        log::warn!("[Remote] Unknown peer attempted Tier 2 connection: {peer_id}");
+    if state.pipeline.turn_open.load(Ordering::Relaxed) {
+        log::warn!("[Remote] Inbound Hello refused: host is currently busy with local turn");
         let _ = ws_link
-            .send_control(ControlMessage::UnknownPeer(UnknownPeer {
-                device_id: peer_id.clone(),
+            .send_control(ControlMessage::LinkRefused(LinkRefused {
+                reason: LinkRefusedReason::HostBusy,
             }))
             .await;
-        return;
+        return None;
     }
 
-    // 4. Send host Hello response and attach link
-    let key_store = match KeyStore::default_path().and_then(|ks| ks.load_or_create()) {
-        Ok(k) => k,
+    let conn = match state.db.connect() {
+        Ok(c) => c,
         Err(e) => {
-            log::warn!("[Remote] Could not load host key: {e}");
-            return;
+            log::warn!("[Remote] Database connection failed: {e}");
+            return None;
         }
     };
-    let host_id = derive_device_id(key_store.public_key());
 
+    let decision = match state
+        .trust_store
+        .lookup(&conn, peer_id, PairedDeviceRole::Controller)
+        .await
+    {
+        Ok(d) => d,
+        Err(e) => {
+            log::warn!("[Remote] Error looking up peer {peer_id}: {e}");
+            return None;
+        }
+    };
+
+    let device = match decision {
+        TrustDecision::Trusted(dev) => dev,
+        TrustDecision::Refused(TrustRefusal::RoleMismatch { .. }) => {
+            log::warn!("[Remote] Refusing peer {peer_id}: role mismatch");
+            let _ = ws_link
+                .send_control(ControlMessage::RoleNotPermitted(RoleNotPermitted {
+                    role: "Controller".into(),
+                }))
+                .await;
+            return None;
+        }
+        TrustDecision::Refused(refusal) => {
+            log::warn!("[Remote] Refusing peer {peer_id}: {refusal:?}");
+            let _ = ws_link
+                .send_control(ControlMessage::UnknownPeer(UnknownPeer {
+                    device_id: peer_id.to_string(),
+                }))
+                .await;
+            return None;
+        }
+    };
+
+    if device.public_key.as_slice() != handshake_remote_static.as_slice() {
+        log::warn!(
+            "[Remote] Refusing peer {peer_id}: handshake public key does not match stored key"
+        );
+        let _ = ws_link
+            .send_control(ControlMessage::UnknownPeer(UnknownPeer {
+                device_id: peer_id.to_string(),
+            }))
+            .await;
+        return None;
+    }
+
+    Some(())
+}
+
+async fn respond_hello_and_attach(
+    ws_link: WsLink,
+    device_key: &DeviceKey,
+    peer_identity: SenderIdentity,
+    state: &AppState,
+) {
+    let host_id = derive_device_id(device_key.public_key());
+    let host_name = sysinfo::System::host_name().unwrap_or_else(|| "Vox Host".to_string());
     let local_identity = SenderIdentity {
         device_id: host_id.as_str().to_string(),
-        display_name: "Vox Host".to_string(),
+        display_name: host_name,
     };
 
     let hello_msg = Hello {
@@ -258,8 +331,144 @@ async fn handle_inbound_hello(ws_link: WsLink, peer_hello: Hello, state: Arc<App
 
     state
         .remote_manager
-        .attach_link(Arc::new(ws_link), peer_hello.sender_identity)
+        .attach_link(Arc::new(ws_link), peer_identity)
         .await;
+}
+
+async fn receive_inbound_hello(
+    ws_link: &WsLink,
+    handshake_remote_static: &[u8; 32],
+    state: &AppState,
+) -> Option<Hello> {
+    let initial_msg =
+        match tokio::time::timeout(Duration::from_secs(5), ws_link.recv_control()).await {
+            Ok(Ok(m)) => m,
+            Ok(Err(e)) => {
+                log::warn!("[Remote] Failed to receive encrypted Hello: {e}");
+                return None;
+            }
+            Err(_) => {
+                log::warn!("[Remote] Encrypted Hello timed out");
+                return None;
+            }
+        };
+
+    match initial_msg {
+        ControlMessage::Hello(h) => Some(h),
+        ControlMessage::LinkLoss(loss)
+            if loss.reason
+                == crate::services::remote::protocol::messages::LinkLossReason::Revoked =>
+        {
+            let peer_id = derive_device_id(handshake_remote_static).as_str().to_string();
+            log::info!("[Remote] Received idle LinkLoss(Revoked) from peer {peer_id}");
+            if let Ok(conn) = state.db.connect() {
+                let _ = state.trust_store.revoke(&conn, &peer_id).await;
+                state.remote_manager.hydrate_from_db(&state.db).await;
+            }
+            let _ = ws_link.close(LinkCloseReason::Peer).await;
+            None
+        }
+        other => {
+            log::warn!("[Remote] Expected Hello, got {:?}", other.message_type());
+            None
+        }
+    }
+}
+
+async fn handle_inbound_tier2(ws_link: WsLink, first_msg: Vec<u8>, state: Arc<AppState>) {
+    let device_key = match KeyStore::default_path().and_then(|ks| ks.load_or_create()) {
+        Ok(k) => k,
+        Err(e) => {
+            log::warn!("[Remote] Could not load host key: {e}");
+            return;
+        }
+    };
+
+    let Some(handshake_remote_static) =
+        drive_tier2_handshake(&ws_link, &first_msg, &device_key).await
+    else {
+        return;
+    };
+
+    let Some(peer_hello) =
+        receive_inbound_hello(&ws_link, &handshake_remote_static, &state).await
+    else {
+        return;
+    };
+
+    let peer_id = &peer_hello.sender_identity.device_id;
+    if check_host_admission(&state, peer_id, &handshake_remote_static, &ws_link)
+        .await
+        .is_none()
+    {
+        return;
+    }
+
+    respond_hello_and_attach(ws_link, &device_key, peer_hello.sender_identity, &state).await;
+}
+
+async fn drive_tier1_handshake(ws_link: &WsLink, device_key: &DeviceKey) -> Option<[u8; 32]> {
+    let prologue = default_noise_prologue();
+    let handshake = match NoiseHandshake::responder(device_key, None, &prologue) {
+        Ok(h) => h,
+        Err(e) => {
+            log::warn!("[Remote] Could not initialize Noise responder for pairing: {e}");
+            return None;
+        }
+    };
+
+    let transport = match ws_link.drive_handshake(handshake).await {
+        Ok(t) => t,
+        Err(e) => {
+            log::warn!("[Remote] Tier 1 Noise handshake failed: {e}");
+            return None;
+        }
+    };
+
+    let handshake_static = *transport.remote_static();
+    ws_link.set_cipher(transport).await;
+    Some(handshake_static)
+}
+
+async fn settle_pairing_coordinator<R: Runtime>(
+    ws_link: WsLink,
+    pending: crate::services::remote::security::pairing::PendingPairing,
+    claimed_req: PairRequest,
+    handshake_static: [u8; 32],
+    host_id: DeviceId,
+    state: Arc<AppState>,
+    app_handle: AppHandle<R>,
+) {
+    match pending.settle().await {
+        PairingOutcome::Approved { peer: _ } => {
+            complete_pairing(
+                ws_link,
+                claimed_req,
+                handshake_static.to_vec(),
+                host_id,
+                state,
+                app_handle,
+            )
+            .await;
+        }
+        PairingOutcome::Rejected | PairingOutcome::TimedOut => {
+            let _ = ws_link
+                .send_control(ControlMessage::PairDenied(PairDenied {
+                    reason: "Rejected or timed out".into(),
+                }))
+                .await;
+
+            let _ = emit_ipc(
+                &app_handle,
+                IpcEvent::RemotePairingStateChanged(
+                    PairingState::Denied {
+                        reason: "Rejected or timed out".into(),
+                    }
+                    .to_dto(),
+                ),
+            );
+        }
+    }
 }
 
 async fn handle_inbound_pairing<R: Runtime>(
@@ -268,14 +477,14 @@ async fn handle_inbound_pairing<R: Runtime>(
     state: Arc<AppState>,
     app_handle: AppHandle<R>,
 ) {
-    let key_store = match KeyStore::default_path().and_then(|ks| ks.load_or_create()) {
+    let device_key = match KeyStore::default_path().and_then(|ks| ks.load_or_create()) {
         Ok(k) => k,
         Err(e) => {
             log::warn!("[Remote] Could not load host key: {e}");
             return;
         }
     };
-    let host_id = derive_device_id(key_store.public_key());
+    let host_id = derive_device_id(device_key.public_key());
 
     let pairing_req = match PairingRequest::from_wire(
         &claimed_req.token,
@@ -290,33 +499,33 @@ async fn handle_inbound_pairing<R: Runtime>(
         }
     };
 
-    let pubkey_bytes = match hex::decode(&claimed_req.public_key) {
-        Ok(b) => b,
+    let source_ip = ws_link
+        .peer_addr()
+        .map(|a| a.ip())
+        .unwrap_or(IpAddr::V4(Ipv4Addr::LOCALHOST));
+
+    let Some(handshake_static) = drive_tier1_handshake(&ws_link, &device_key).await else {
+        return;
+    };
+
+    let pending = match state.pairing_coordinator.begin(
+        pairing_req,
+        &handshake_static,
+        source_ip,
+        Instant::now(),
+    ) {
+        Ok(p) => p,
         Err(e) => {
-            log::warn!("[Remote] Malformed public key: {e}");
+            log::warn!("[Remote] Pairing rejected by coordinator: {e}");
+            let _ = ws_link
+                .send_control(ControlMessage::PairDenied(PairDenied {
+                    reason: e.to_string(),
+                }))
+                .await;
             return;
         }
     };
 
-    let source_ip = IpAddr::V4(Ipv4Addr::LOCALHOST);
-    let pending =
-        match state
-            .pairing_coordinator
-            .begin(pairing_req, &pubkey_bytes, source_ip, Instant::now())
-        {
-            Ok(p) => p,
-            Err(e) => {
-                log::warn!("[Remote] Pairing rejected by coordinator: {e}");
-                let _ = ws_link
-                    .send_control(ControlMessage::PairDenied(PairDenied {
-                        reason: e.to_string(),
-                    }))
-                    .await;
-                return;
-            }
-        };
-
-    // Emit PairingState::AwaitingApproval to frontend (spec §5.5)
     let expires_at_ms = (Instant::now() + PAIRING_APPROVAL_TIMEOUT)
         .duration_since(Instant::now())
         .as_millis() as i64
@@ -325,26 +534,24 @@ async fn handle_inbound_pairing<R: Runtime>(
             .unwrap_or_default()
             .as_millis() as i64;
 
-    let pairing_state_dto = PairingState::AwaitingApproval {
-        device_id: claimed_req.device_id.clone(),
-        display_name: claimed_req.display_name.clone(),
-        expires_at_ms,
-    }
-    .to_dto();
-
     let _ = emit_ipc(
         &app_handle,
-        IpcEvent::RemotePairingStateChanged(pairing_state_dto),
+        IpcEvent::RemotePairingStateChanged(
+            PairingState::AwaitingApproval {
+                device_id: claimed_req.device_id.clone(),
+                display_name: claimed_req.display_name.clone(),
+                expires_at_ms,
+            }
+            .to_dto(),
+        ),
     );
 
-    // Inform controller the prompt is active
     let _ = ws_link.send_control(ControlMessage::PairPrompting).await;
 
-    let (responder_tx, responder_rx) = tokio::sync::oneshot::channel();
     *state.pending_pairing.lock() = Some(PendingPairingState {
         device_id: claimed_req.device_id.clone(),
         display_name: claimed_req.display_name.clone(),
-        responder: responder_tx,
+        prompt: pending.prompt(),
     });
 
     let _ = emit_ipc(
@@ -355,37 +562,16 @@ async fn handle_inbound_pairing<R: Runtime>(
         }),
     );
 
-    let approved = match tokio::time::timeout(PAIRING_APPROVAL_TIMEOUT, responder_rx).await {
-        Ok(Ok(decision)) => decision,
-        _ => false,
-    };
-
-    if approved {
-        pending.prompt().approve();
-    } else {
-        pending.prompt().reject();
-    }
-
-    if let PairingOutcome::Approved { peer: _ } = pending.settle().await {
-        complete_pairing(ws_link, claimed_req, pubkey_bytes, host_id, state, app_handle).await;
-    } else {
-        let _ = ws_link
-            .send_control(ControlMessage::PairDenied(PairDenied {
-                reason: "Rejected or timed out".into(),
-            }))
-            .await;
-
-        // Emit PairingState::Denied (spec §5.5)
-        let _ = emit_ipc(
-            &app_handle,
-            IpcEvent::RemotePairingStateChanged(
-                PairingState::Denied {
-                    reason: "Rejected or timed out".into(),
-                }
-                .to_dto(),
-            ),
-        );
-    }
+    settle_pairing_coordinator(
+        ws_link,
+        pending,
+        claimed_req,
+        handshake_static,
+        host_id,
+        state,
+        app_handle,
+    )
+    .await;
 }
 
 /// Tier 1 completion: write DB, send PairApproved, CLOSE socket.
@@ -398,6 +584,12 @@ async fn complete_pairing<R: Runtime>(
     state: Arc<AppState>,
     app_handle: AppHandle<R>,
 ) {
+    let hints = if let Some(addr) = ws_link.peer_addr() {
+        vec![serde_json::json!({ "addr": addr.to_string() })]
+    } else {
+        vec![]
+    };
+
     if let Ok(conn) = state.db.connect() {
         let _ = insert_paired_device(
             &conn,
@@ -407,32 +599,29 @@ async fn complete_pairing<R: Runtime>(
                 display_name: claimed_req.display_name.clone(),
                 role: PairedDeviceRole::Controller,
                 trust_level: "full".to_string(),
-                hints: vec![],
+                hints,
             },
         )
         .await;
     }
 
     // Send PairApproved then CLOSE the pairing socket (spec §5.3 step 12)
-    let _ = ws_link.send_control(ControlMessage::PairApproved).await;
+    let host_name = sysinfo::System::host_name().unwrap_or_else(|| "Vox Host".to_string());
+    let host_identity = SenderIdentity {
+        device_id: _host_id.as_str().to_string(),
+        display_name: host_name,
+    };
+    let _ = ws_link
+        .send_control(ControlMessage::PairApproved(PairApproved { host_identity }))
+        .await;
     let _ = ws_link.close(LinkCloseReason::Local).await;
 
-    // Transition Host to Paired (spec §5.3: both devices enter Paired after pairing)
+    // Transition Host to Paired with peer_identity populated
+    state.remote_manager.set_peer_identity(Some(SenderIdentity {
+        device_id: claimed_req.device_id.clone(),
+        display_name: claimed_req.display_name.clone(),
+    }));
     state.remote_manager.set_state(RemoteLinkState::Paired);
-
-    // Emit remote_state_changed { link: "Paired", deviceId, displayName }
-    // Patch the dto to carry the new peer's identity since set_state clears peer_identity
-    let dto_with_peer = crate::services::remote::session::state::RemoteStateDto {
-        link: "Paired".to_string(),
-        failure: None,
-        failure_kind: None,
-        device_id: Some(claimed_req.device_id.clone()),
-        display_name: Some(claimed_req.display_name.clone()),
-    };
-    let _ = emit_ipc(
-        &app_handle,
-        IpcEvent::RemoteStateChanged(dto_with_peer),
-    );
 
     // Emit PairingState::Approved (spec §5.5)
     let _ = emit_ipc(

@@ -70,6 +70,8 @@ describe("remoteStore unit suite", () => {
       failureReason: null,
       connectedPeer: null,
       pendingPairingPrompt: null,
+      pairingFailureReason: null,
+      isPairingModalOpen: false,
       pairedDevices: [],
       commandRouting: {},
       loading: false,
@@ -159,12 +161,72 @@ describe("remoteStore unit suite", () => {
       deviceId: "req_device_1",
       displayName: "Ada's Phone",
     };
+    // QR pairing modal is open when the phone requests authorization.
+    useRemoteStore.setState({ isPairingModalOpen: true });
+
     transport.triggerEvent<RemotePairingRequestedPayload>("remote_pairing_requested", payload);
 
     expect(useRemoteStore.getState().pendingPairingPrompt).toEqual(payload);
+    // Only one remote surface may be visible: the QR modal must close.
+    expect(useRemoteStore.getState().isPairingModalOpen).toBe(false);
 
     useRemoteStore.getState().dismissPairingPrompt();
     expect(useRemoteStore.getState().pendingPairingPrompt).toBeNull();
+
+    cleanup();
+  });
+
+  it("does not open the QR pairing modal while an authorization prompt is pending", async () => {
+    useRemoteStore.setState({
+      pendingPairingPrompt: { deviceId: "req_device_2", displayName: "Ada's Phone" },
+    });
+
+    useRemoteStore.getState().openPairingModal();
+
+    expect(useRemoteStore.getState().isPairingModalOpen).toBe(false);
+  });
+
+  it("records a pairing denial without corrupting linkState, and dismisses it", async () => {
+    transport.mockResponses["get_link_state"] = { link: "Unpaired" } as RemoteStateDto;
+    transport.mockResponses["list_paired_devices"] = [] as PairedDeviceDto[];
+    transport.mockResponses["get_command_routing"] = {};
+
+    const cleanup = await useRemoteStore.getState().init();
+
+    transport.triggerEvent("remote_pairing_state_changed", {
+      state: "Denied",
+      failureReason: "Pairing denied by host: User denied pairing",
+    });
+
+    let state = useRemoteStore.getState();
+    expect(state.pairingFailureReason).toBe(
+      "Pairing denied by host: User denied pairing"
+    );
+    expect(state.isPairingPending).toBe(false);
+    // Spec §5.5: pairing failure must not corrupt the transport state.
+    expect(state.linkState).toBe("Unpaired");
+
+    useRemoteStore.getState().dismissPairingFailure();
+    state = useRemoteStore.getState();
+    expect(state.pairingFailureReason).toBeNull();
+
+    cleanup();
+  });
+
+  it("clears the pairing failure on a fresh approval request", async () => {
+    useRemoteStore.setState({ pairingFailureReason: "Pairing denied by host" });
+
+    transport.mockResponses["get_link_state"] = { link: "Unpaired" } as RemoteStateDto;
+    transport.mockResponses["list_paired_devices"] = [] as PairedDeviceDto[];
+    transport.mockResponses["get_command_routing"] = {};
+
+    const cleanup = await useRemoteStore.getState().init();
+
+    transport.triggerEvent("remote_pairing_state_changed", {
+      state: "AwaitingApproval",
+    });
+
+    expect(useRemoteStore.getState().pairingFailureReason).toBeNull();
 
     cleanup();
   });

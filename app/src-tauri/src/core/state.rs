@@ -50,7 +50,7 @@ pub use crate::{
 pub struct PendingPairingState {
     pub device_id: String,
     pub display_name: String,
-    pub responder: tokio::sync::oneshot::Sender<bool>,
+    pub prompt: crate::services::remote::security::PairingPrompt,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -189,6 +189,7 @@ pub struct AppState {
     pub remote_manager: Arc<RemoteSessionManager>,
     pub pairing_coordinator: Arc<PairingCoordinator>,
     pub pending_pairing: Arc<ParkingMutex<Option<PendingPairingState>>>,
+    pub trust_store: Arc<crate::services::remote::security::TrustStore>,
 }
 
 impl AppState {
@@ -205,6 +206,40 @@ impl AppState {
 
         let model_manager = Arc::new(ModelManager::new(Some(app_handle.clone())));
         let manifest = Arc::new(TokioRwLock::new(None));
+
+        let trust_store = Arc::new(crate::services::remote::security::TrustStore::new());
+        let remote_manager = {
+            let session_role = if cfg!(desktop) {
+                SessionRole::Host
+            } else {
+                SessionRole::Controller
+            };
+
+            let app_handle_for_remote = app_handle.clone();
+            let on_state_change: StateChangeCallback = Arc::new(move |state, peer| {
+                let dto = state.to_dto(
+                    peer.map(|p| p.device_id.as_str()),
+                    peer.map(|p| p.display_name.as_str()),
+                );
+                let _ = crate::core::events::emit_ipc(
+                    &app_handle_for_remote,
+                    crate::core::events::IpcEvent::RemoteStateChanged(dto),
+                );
+            });
+
+            let manager = Arc::new(RemoteSessionManager::with_callback(
+                session_role,
+                Arc::clone(&db),
+                on_state_change,
+            ));
+            manager.set_trust_store(Arc::clone(&trust_store));
+
+            if session_role == SessionRole::Host && !settings.remote.accepts_controllers {
+                manager.set_state(RemoteLinkState::Disabled);
+            }
+
+            manager
+        };
 
         Self {
             engine: TokioMutex::new(None),
@@ -269,39 +304,10 @@ impl AppState {
                         .expect("Failed to initialize NexusSearch client"),
                 )
             },
-            remote_manager: {
-                let session_role = if cfg!(desktop) {
-                    SessionRole::Host
-                } else {
-                    SessionRole::Controller
-                };
-
-                let app_handle_for_remote = app_handle.clone();
-                let on_state_change: StateChangeCallback = Arc::new(move |state, peer| {
-                    let dto = state.to_dto(
-                        peer.map(|p| p.device_id.as_str()),
-                        peer.map(|p| p.display_name.as_str()),
-                    );
-                    let _ = crate::core::events::emit_ipc(
-                        &app_handle_for_remote,
-                        crate::core::events::IpcEvent::RemoteStateChanged(dto),
-                    );
-                });
-
-                let manager = Arc::new(RemoteSessionManager::with_callback(
-                    session_role,
-                    Arc::clone(&db),
-                    on_state_change,
-                ));
-
-                if session_role == SessionRole::Host && !settings.remote.accepts_controllers {
-                    manager.set_state(RemoteLinkState::Disabled);
-                }
-
-                manager
-            },
+            remote_manager,
             pairing_coordinator: Arc::new(PairingCoordinator::new()),
             pending_pairing: Arc::new(ParkingMutex::new(None)),
+            trust_store,
         }
     }
 
