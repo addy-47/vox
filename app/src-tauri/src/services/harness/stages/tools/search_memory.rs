@@ -6,10 +6,13 @@ use serde_json::{json, Value};
 use super::{ToolDefinition, ToolDomain, ToolError, ToolExecutionContext, ToolResult};
 use crate::{
     core::events::PipelineMode,
-    persistence::{fetch_active_episodic_observations, EpisodicObservationCandidate},
+    persistence::{
+        search_active_episodic_by_query_terms, search_active_episodic_by_vector,
+        EpisodicObservationCandidate,
+    },
     services::{
         llm::ToolFlow,
-        memory::ml::{cosine_similarity, ensure_embedder_loaded, generate_embedding},
+        memory::ml::{ensure_embedder_loaded, generate_embedding},
     },
 };
 
@@ -132,32 +135,6 @@ async fn perform_hybrid_search(
         .connect()
         .map_err(|e| ToolError::ExecutionFailed(format!("Database connect error: {}", e)))?;
 
-    let candidates = fetch_active_episodic_observations(&conn)
-        .await
-        .map_err(|e| ToolError::ExecutionFailed(format!("Episodic memory query error: {}", e)))?;
-
-    log::info!(
-        "[MemorySearchTool] Retrieved {} active episodic candidates for query '{}'",
-        candidates.len(),
-        query
-    );
-    for candidate in &candidates {
-        log::info!(
-            "[MemorySearchTool] Candidate id={} type={} embedding_present={} text='{}'",
-            candidate.id,
-            candidate.observation_type,
-            candidate.embedding.is_some(),
-            candidate.text
-        );
-    }
-
-    if candidates.is_empty() {
-        return Ok(format!(
-            "Memory search completed for query '{}'. No relevant historical records found.",
-            query
-        ));
-    }
-
     let (top_k, cutoff) = {
         let guard = ctx
             .app_state
@@ -183,12 +160,58 @@ async fn perform_hybrid_search(
         query_embedding.as_ref().map_or(0, Vec::len)
     );
 
+    let query_terms: Vec<String> = query
+        .split_whitespace()
+        .map(|w| w.to_lowercase())
+        .filter(|w| w.len() >= 3)
+        .collect();
+
+    // 1. Native Turso vector search pushdown (eliminates in-memory O(n) table scans)
+    let dense_candidates = if let Some(ref q_vec) = query_embedding {
+        search_active_episodic_by_vector(&conn, q_vec, cutoff, top_k * 3)
+            .await
+            .map_err(|e| ToolError::ExecutionFailed(format!("Native vector search error: {}", e)))?
+    } else {
+        Vec::new()
+    };
+
+    // 2. Sparse lexical keyword search
+    let lexical_candidates = if !query_terms.is_empty() {
+        search_active_episodic_by_query_terms(&conn, &query_terms, top_k * 2)
+            .await
+            .map_err(|e| ToolError::ExecutionFailed(format!("Lexical search error: {}", e)))?
+    } else {
+        Vec::new()
+    };
+
+    // 3. Merge candidate sets by id
+    let mut candidate_map: HashMap<String, EpisodicObservationCandidate> = HashMap::new();
+    for c in dense_candidates {
+        candidate_map.insert(c.id.clone(), c);
+    }
+    for c in lexical_candidates {
+        candidate_map.entry(c.id.clone()).or_insert(c);
+    }
+
+    let candidates: Vec<EpisodicObservationCandidate> = candidate_map.into_values().collect();
+
+    log::info!(
+        "[MemorySearchTool] Retrieved {} merged candidates (dense + lexical) for query '{}'",
+        candidates.len(),
+        query
+    );
+
+    if candidates.is_empty() {
+        return Ok(format!(
+            "Memory search completed for query '{}'. No relevant historical records found.",
+            query
+        ));
+    }
+
     let results = rank_candidates(
         &candidates,
-        query,
-        query_embedding.as_deref(),
+        &query_terms,
         top_k,
-        cutoff,
     );
     if results.is_empty() {
         Ok(format!(
@@ -207,68 +230,34 @@ async fn perform_hybrid_search(
     }
 }
 
-/// Fuses dense cosine similarity and lexical token matches via Reciprocal Rank Fusion.
+/// Fuses dense cosine similarity (computed by Turso in SQL) and lexical token matches via Reciprocal Rank Fusion.
 fn rank_candidates<'a>(
     candidates: &'a [EpisodicObservationCandidate],
-    query: &str,
-    query_embedding: Option<&[f32]>,
+    query_terms: &[String],
     top_k: usize,
-    cutoff: f32,
 ) -> Vec<&'a EpisodicObservationCandidate> {
-    let mut vector_scores: HashMap<String, f32> = HashMap::new();
-    if let Some(q_vec) = query_embedding {
-        for c in candidates {
-            if let Some(ref c_vec) = c.embedding {
-                let sim = cosine_similarity(q_vec, c_vec);
-                log::info!(
-                    "[MemorySearchTool] Dense candidate id={} similarity={} cutoff={} admitted={}",
-                    c.id,
-                    sim,
-                    cutoff,
-                    sim >= cutoff
-                );
-                if sim >= cutoff {
-                    vector_scores.insert(c.id.clone(), sim);
-                }
-            }
-        }
-    }
-
-    let query_terms: Vec<String> = query
-        .split_whitespace()
-        .map(|w| w.to_lowercase())
-        .filter(|w| w.len() >= 3)
-        .collect();
-
-    let mut lexical_scores: HashMap<String, usize> = HashMap::new();
+    let mut rrf_scores: Vec<(&'a EpisodicObservationCandidate, f32)> = Vec::new();
     for c in candidates {
+        let mut score = 0.0f32;
+        if let Some(sim) = c.similarity {
+            score += sim / (RRF_K + 1.0);
+        }
+
         let lower = c.text.to_lowercase();
         let matches: usize = query_terms
             .iter()
             .filter(|&term| lower.contains(term))
             .count();
         if matches > 0 {
-            lexical_scores.insert(c.id.clone(), matches);
+            score += (matches as f32) / (RRF_K + 1.0);
         }
-    }
 
-    let mut rrf_scores: Vec<(&'a EpisodicObservationCandidate, f32)> = Vec::new();
-    for c in candidates {
-        let mut score = 0.0f32;
-        if let Some(vec_score) = vector_scores.get(&c.id) {
-            score += vec_score / (RRF_K + 1.0);
-        }
-        if let Some(lex_count) = lexical_scores.get(&c.id) {
-            score += (*lex_count as f32) / (RRF_K + 1.0);
-        }
-        let dense_admitted = vector_scores.contains_key(&c.id);
-        let lexical_matches = lexical_scores.get(&c.id).copied().unwrap_or(0);
-        log::info!(
-            "[MemorySearchTool] Fused candidate id={} type={} dense_admitted={} lexical_matches={} rrf_score={} final_admitted={}",
+        log::trace!(
+            "[MemorySearchTool] Fused candidate id={} type={} dense_sim={:?} lexical_matches={} rrf_score={} final_admitted={}",
             c.id,
             c.observation_type,
-            dense_admitted,
-            lexical_matches,
+            c.similarity,
+            matches,
             score,
             score > 0.0
         );

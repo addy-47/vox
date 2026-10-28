@@ -77,7 +77,10 @@ export const RocketButton = memo(() => {
 
   // Host (Desktop): Rocket icon opens ConfirmModal on click
   if (!isMobile) {
-    const peerName = connectedPeer?.displayName ?? "Remote Controller";
+    const peerName =
+      connectedPeer?.displayName && connectedPeer.displayName.toLowerCase() !== "localhost"
+        ? connectedPeer.displayName
+        : "Phone Controller";
     return (
       <>
         <Tooltip label={`Connected to ${peerName} (Click to disconnect)`} side="bottom">
@@ -94,10 +97,10 @@ export const RocketButton = memo(() => {
         {isConfirming && (
           <ConfirmModal
             open={isConfirming}
-            title="Disconnect Remote Controller"
-            description={`Disconnect session with "${peerName}"? .`}
-            confirmLabel="Disconnect"
-            cancelLabel="Cancel"
+            title="Disconnect Remote Session"
+            description={`Disconnect "${peerName}"? This will terminate the active session from this workstation. Your workstation cannot initiate reconnection — you will need to reconnect from your phone controller to resume remote control.`}
+            confirmLabel="Disconnect Session"
+            cancelLabel="Keep Connected"
             isDestructive={true}
             onConfirm={handleConfirmHostDisconnect}
             onCancel={() => setIsConfirming(false)}
@@ -109,7 +112,11 @@ export const RocketButton = memo(() => {
 
   // Controller (Mobile): Always visible
   const controllerTooltip = isConnected
-    ? `Connected to ${connectedPeer?.displayName ?? "Host"} (Tap to disconnect)`
+    ? `Connected to ${
+        connectedPeer?.displayName && connectedPeer.displayName.toLowerCase() !== "localhost"
+          ? connectedPeer.displayName
+          : "Host Workstation"
+      } (Tap to disconnect)`
     : isConnecting
     ? "Connecting to Host..."
     : isFailed

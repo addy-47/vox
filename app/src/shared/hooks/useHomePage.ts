@@ -178,6 +178,7 @@ export function useHomePage() {
     handleDialogueScroll,
     shouldAutoScrollRef,
     isMobileScreen,
+    isHost,
     activityDisplay,
     activeActivity,
     isRemoteBlocked,

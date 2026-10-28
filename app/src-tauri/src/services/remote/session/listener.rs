@@ -373,7 +373,7 @@ async fn respond_hello_and_attach(
     state: &AppState,
 ) {
     let host_id = derive_device_id(device_key.public_key());
-    let host_name = sysinfo::System::host_name().unwrap_or_else(|| "Vox Host".to_string());
+    let host_name = super::manager::host_display_name();
     let local_identity = SenderIdentity {
         device_id: host_id.as_str().to_string(),
         display_name: host_name,
@@ -395,9 +395,14 @@ async fn respond_hello_and_attach(
         return;
     }
 
+    let sanitized_peer = SenderIdentity {
+        device_id: peer_identity.device_id,
+        display_name: super::manager::sanitize_peer_display_name(&peer_identity.display_name),
+    };
+
     state
         .remote_manager
-        .attach_link(Arc::new(ws_link), peer_identity)
+        .attach_link(Arc::new(ws_link), sanitized_peer)
         .await;
 }
 
@@ -553,6 +558,10 @@ async fn handle_inbound_pairing<R: Runtime>(
     };
     let host_id = derive_device_id(device_key.public_key());
 
+    let mut claimed_req = claimed_req;
+    claimed_req.display_name =
+        super::manager::sanitize_peer_display_name(&claimed_req.display_name);
+
     let pairing_req = match PairingRequest::from_wire(
         &claimed_req.token,
         &claimed_req.device_id,
@@ -673,7 +682,7 @@ async fn complete_pairing<R: Runtime>(
     }
 
     // Send PairApproved then CLOSE the pairing socket (spec §5.3 step 12)
-    let host_name = sysinfo::System::host_name().unwrap_or_else(|| "Vox Host".to_string());
+    let host_name = super::manager::host_display_name();
     let host_identity = SenderIdentity {
         device_id: _host_id.as_str().to_string(),
         display_name: host_name,

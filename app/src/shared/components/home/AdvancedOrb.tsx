@@ -526,7 +526,7 @@ export const VoxOrb = React.memo(({
       setIsTransitioning(false);
     }, 1400);
     return () => clearTimeout(timer);
-  }, [interactionState]);
+  }, [interactionState, isSleeping]);
 
   const isActive = (interactionState !== 'Idle' && interactionState !== 'Paused') || isTransitioning;
 

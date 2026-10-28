@@ -145,7 +145,10 @@ impl RemoteSessionManager {
     /// Sets or clears the cached peer identity.
     pub fn set_peer_identity(&self, peer: Option<SenderIdentity>) {
         let mut guard = self.peer_identity.write();
-        *guard = peer;
+        *guard = peer.map(|mut p| {
+            p.display_name = sanitize_peer_display_name(&p.display_name);
+            p
+        });
     }
 
     /// Hydrates peer identity from local database on startup or settings reload.
@@ -339,8 +342,7 @@ impl RemoteSessionManager {
         let controller_id =
             crate::services::remote::security::derive_device_id(device_key.public_key());
         let controller_pubkey_hex = hex::encode(device_key.public_key());
-        let controller_name =
-            sysinfo::System::host_name().unwrap_or_else(|| "Vox Controller".to_string());
+        let controller_name = controller_display_name();
 
         let pair_req = ControlMessage::PairRequest(
             crate::services::remote::protocol::messages::PairRequest {
@@ -529,8 +531,7 @@ impl RemoteSessionManager {
 
         let controller_id =
             crate::services::remote::security::derive_device_id(device_key.public_key());
-        let controller_name =
-            sysinfo::System::host_name().unwrap_or_else(|| "Vox Controller".to_string());
+        let controller_name = controller_display_name();
         Ok(SenderIdentity {
             device_id: controller_id.as_str().to_string(),
             display_name: controller_name,
@@ -1156,5 +1157,51 @@ fn classify_dial_error(err: &str) -> RemoteFailureKind {
         RemoteFailureKind::Unreachable
     } else {
         RemoteFailureKind::Unknown
+    }
+}
+
+/// Computes the controller device display name, falling back from Android's default
+/// "localhost" hostname to "Vox Phone".
+pub(crate) fn controller_display_name() -> String {
+    let name = sysinfo::System::host_name().unwrap_or_default();
+    let trimmed = name.trim();
+    if trimmed.is_empty()
+        || trimmed.eq_ignore_ascii_case("localhost")
+        || trimmed.eq_ignore_ascii_case("localhost.localdomain")
+    {
+        if cfg!(target_os = "android") {
+            "Vox Phone".to_string()
+        } else {
+            "Vox Controller".to_string()
+        }
+    } else {
+        trimmed.to_string()
+    }
+}
+
+/// Sanitizes a peer display name, replacing "localhost" and empty names with "Vox Phone".
+pub(crate) fn sanitize_peer_display_name(raw: &str) -> String {
+    let trimmed = raw.trim();
+    if trimmed.is_empty()
+        || trimmed.eq_ignore_ascii_case("localhost")
+        || trimmed.eq_ignore_ascii_case("localhost.localdomain")
+    {
+        "Vox Phone".to_string()
+    } else {
+        trimmed.to_string()
+    }
+}
+
+/// Returns the host machine display name, filtering out generic "localhost".
+pub(crate) fn host_display_name() -> String {
+    let name = sysinfo::System::host_name().unwrap_or_default();
+    let trimmed = name.trim();
+    if trimmed.is_empty()
+        || trimmed.eq_ignore_ascii_case("localhost")
+        || trimmed.eq_ignore_ascii_case("localhost.localdomain")
+    {
+        "Vox Host".to_string()
+    } else {
+        trimmed.to_string()
     }
 }

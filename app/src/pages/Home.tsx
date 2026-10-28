@@ -84,11 +84,31 @@ export const Home = memo(() => {
     shouldAutoScrollRef,
     activityDisplay,
     activeActivity,
+    isHost,
     isRemoteBlocked,
     remoteFailureReason,
     dismissRemoteFailure,
   } = useHomePage();
+  const linkState = useRemoteStore((s) => s.linkState);
   const connectedPeer = useRemoteStore((s) => s.connectedPeer);
+
+  const isRemoteActive =
+    isHost &&
+    (linkState === "Connected" ||
+      linkState === "Connecting" ||
+      linkState === "Reconnecting");
+
+  const peerDisplayName = useMemo(() => {
+    const raw = connectedPeer?.displayName?.trim();
+    if (
+      !raw ||
+      raw.toLowerCase() === "localhost" ||
+      raw.toLowerCase() === "localhost.localdomain"
+    ) {
+      return "PHONE";
+    }
+    return raw.toUpperCase();
+  }, [connectedPeer?.displayName]);
   useMemoryTrace("Home");
 
   const { openProfiler, closeProfiler } = useProfilerDrawer();
@@ -318,11 +338,10 @@ export const Home = memo(() => {
             <span>{HOME_CONTROLS_COPY.temporary.activeBadge}</span>
           </div>
         )}
-        {isRemoteBlocked && (
+        {isRemoteActive && (
           <div className="flex items-center gap-1.5 text-[10px] font-mono font-semibold tracking-[0.2em] uppercase text-[rgb(var(--accent))]/80 leading-none mb-1.5 animate-in fade-in duration-200">
-            <span>
-              {connectedPeer?.displayName ? `CONNECTED` : "REMOTE CONNECTED"}
-            </span>
+            <span className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--accent))] animate-pulse" />
+            <span>{`${linkState.toUpperCase()}: ${peerDisplayName}`}</span>
           </div>
         )}
         <DynamicStatusBadge
@@ -386,7 +405,7 @@ export const Home = memo(() => {
         {/* Orb directly renders on Home mount with zero loader flash */}
         <div className="relative w-full h-full flex items-center justify-center">
           <OrbitField
-            interactionState={isRemoteBlocked ? "Sleeping" : interactionState}
+            interactionState={isRemoteActive ? "Sleeping" : interactionState}
             activity={activeActivity?.name}
             paused={isPanelOpen("sessions") || isPanelOpen("notifications") || isPanelOpen("help")}
           >
@@ -394,8 +413,8 @@ export const Home = memo(() => {
               <Suspense fallback={null}>
                 <VoxOrb
                   telemetryRef={telemetryRef}
-                  interactionState={isRemoteBlocked ? "Sleeping" : interactionState}
-                  isSleeping={isSleeping || isRemoteBlocked}
+                  interactionState={isRemoteActive ? "Sleeping" : interactionState}
+                  isSleeping={isSleeping || isRemoteActive}
                   paused={isPanelOpen("sessions") || isPanelOpen("notifications") || isPanelOpen("help")}
                 />
               </Suspense>

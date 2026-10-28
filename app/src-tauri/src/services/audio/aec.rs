@@ -143,12 +143,16 @@ impl AecProcessor {
     fn drain_render_reference(&mut self) {
         if let Some(ref mut cons) = self.render_consumer {
             let occupied = cons.occupied_len();
+            // Critical fix: discard only the excess over MAX_RENDER_QUEUE_BACKLOG_SAMPLES,
+            // rather than wiping the entire backlog down to a single frame and destroying AEC reference continuity.
             if occupied > MAX_RENDER_QUEUE_BACKLOG_SAMPLES {
-                cons.skip(occupied - AEC_FRAME_SAMPLES);
+                let excess = occupied - MAX_RENDER_QUEUE_BACKLOG_SAMPLES;
+                cons.skip(excess);
                 self.ringbuf_overflows += 1;
             }
             let mut frames_processed = 0;
-            while cons.occupied_len() >= AEC_FRAME_SAMPLES && frames_processed < 2 {
+            // Drain up to 4 frames (40ms) if playback runs ahead of capture to maintain synchronization.
+            while cons.occupied_len() >= AEC_FRAME_SAMPLES && frames_processed < 4 {
                 let popped = cons.pop_slice(&mut self.render_buf);
                 if popped == AEC_FRAME_SAMPLES {
                     let render_in: [&[f32]; 1] = [&self.render_buf];

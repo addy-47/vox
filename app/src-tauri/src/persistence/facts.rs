@@ -510,21 +510,32 @@ pub struct EpisodicObservationCandidate {
     pub id: String,
     pub observation_type: String,
     pub text: String,
-    pub embedding: Option<Vec<f32>>,
+    pub similarity: Option<f32>,
 }
 
-/// Fetches all active non-personal episodic observations with their vector embeddings.
-pub async fn fetch_active_episodic_observations(
+/// Searches active episodic observations using Turso native vector distance (`vector_distance_cos`).
+/// Pushes similarity calculation, cutoff thresholding, and top-k ordering directly into SQL.
+pub async fn search_active_episodic_by_vector(
     conn: &Connection,
+    query_embedding: &[f32],
+    min_similarity: f32,
+    limit: usize,
 ) -> Result<Vec<EpisodicObservationCandidate>> {
+    if query_embedding.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let vec_json = serde_json::to_string(query_embedding)?;
     let mut rows = conn
         .query(
-            "SELECT f.id, f.type, f.text, v.embedding
-             FROM memory_facts f
-             LEFT JOIN memory_facts_vectors v ON f.id = v.fact_id
-             WHERE f.status = 'active' AND f.type != 'personal'
-             ORDER BY f.created_at DESC",
-            (),
+            "SELECT f.id, f.type, f.text, (1.0 - vector_distance_cos(v.embedding, vector32(?1))) AS similarity
+             FROM memory_facts_vectors v
+             JOIN memory_facts f ON f.id = v.fact_id
+             WHERE v.status = 'active' AND f.status = 'active' AND f.type != 'personal'
+               AND (1.0 - vector_distance_cos(v.embedding, vector32(?1))) >= ?2
+             ORDER BY similarity DESC
+             LIMIT ?3",
+            (vec_json, min_similarity as f64, limit as i64),
         )
         .await?;
 
@@ -533,16 +544,54 @@ pub async fn fetch_active_episodic_observations(
         let id: String = row.get(0)?;
         let observation_type: String = row.get(1)?;
         let text: String = row.get(2)?;
-        let embedding = row
-            .get::<Vec<u8>>(3)
-            .ok()
-            .map(|blob| decode_f32_blob(&blob));
-
+        let similarity: f64 = row.get(3)?;
         results.push(EpisodicObservationCandidate {
             id,
             observation_type,
             text,
-            embedding,
+            similarity: Some(similarity as f32),
+        });
+    }
+
+    Ok(results)
+}
+
+/// Searches active episodic observations matching keyword terms via SQL LIKE filters.
+pub async fn search_active_episodic_by_query_terms(
+    conn: &Connection,
+    terms: &[String],
+    limit: usize,
+) -> Result<Vec<EpisodicObservationCandidate>> {
+    if terms.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let pattern1 = format!("%{}%", terms[0]);
+    let pattern2 = terms.get(1).map(|t| format!("%{}%", t)).unwrap_or_else(|| pattern1.clone());
+    let pattern3 = terms.get(2).map(|t| format!("%{}%", t)).unwrap_or_else(|| pattern1.clone());
+
+    let mut rows = conn
+        .query(
+            "SELECT f.id, f.type, f.text
+             FROM memory_facts f
+             WHERE f.status = 'active' AND f.type != 'personal'
+               AND (LOWER(f.text) LIKE ?1 OR LOWER(f.text) LIKE ?2 OR LOWER(f.text) LIKE ?3)
+             ORDER BY f.created_at DESC
+             LIMIT ?4",
+            (pattern1, pattern2, pattern3, limit as i64),
+        )
+        .await?;
+
+    let mut results = Vec::new();
+    while let Some(row) = rows.next().await? {
+        let id: String = row.get(0)?;
+        let observation_type: String = row.get(1)?;
+        let text: String = row.get(2)?;
+        results.push(EpisodicObservationCandidate {
+            id,
+            observation_type,
+            text,
+            similarity: None,
         });
     }
 
