@@ -4,6 +4,9 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.CAMERA" />
+    <!-- Multicast lock for LAN mDNS discovery of remote control host -->
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <!-- Runtime-granted on Android 13+ (API 33). Required for the notification
          plugin to post anything at all; below API 33 this is declaration-only. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />

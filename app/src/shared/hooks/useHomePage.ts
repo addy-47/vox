@@ -15,7 +15,8 @@ import {
   type AmbientMood,
 } from "@/shared/lib/voiceDisplay";
 import { useSessionStore } from "@/store/sessionStore";
-import { resolveActivityDisplay, type ActivityDisplayConfig } from "@/shared/lib/activityRegistry";
+import { useRemoteStore } from "@/store/remoteStore";
+import { resolveActivityDisplay, resolveRemoteActivityDisplay, type ActivityDisplayConfig } from "@/shared/lib/activityRegistry";
 import { useRemoteGuard } from "@/shared/hooks/useRemoteGuard";
 import { isMobileWidth } from "@/layout/breakpoints";
 import { installViewportResizeGate, subscribeViewportFrame } from "@/layout/viewportResize";
@@ -83,19 +84,28 @@ export function useHomePage() {
 
   const activeActivity = useSessionStore((s) => s.activeActivity);
 
-  const { isBlocked: isRemoteBlocked } = useRemoteGuard();
+  const { isBlocked: isRemoteBlocked, isHost } = useRemoteGuard();
+  const linkState = useRemoteStore((s) => s.linkState);
+  const remoteFailureReason = useRemoteStore(
+    (s) => (s.linkState === "Failed" ? s.failureReason : null)
+  );
 
+  // Dismiss the failed-connect banner; resets when the link state moves so a
+  // new failure surfaces again.
+  const [dismissedForLink, setDismissedForLink] = useState<string | null>(null);
+  const remoteFailureDismissed = dismissedForLink === linkState;
+
+
+  // Status badge precedence: the host's single badge carries the remote link
+  // state (Connected / Connecting / Reconnecting / Failed) directly from the
+  // `remote_state_changed` stream. Everything else falls through to the local
+  // interaction-state cascade.
   const activityDisplay = useMemo(() => {
-    if (isRemoteBlocked) {
-      return {
-        label: "Remote Session",
-        orbState: "sleeping",
-        motionPreset: "silk" as const,
-        shimmer: false,
-      };
-    }
-    return resolveActivityDisplay(interactionState, activeActivity, isEngaged, isSleeping, isPaused);
-  }, [interactionState, activeActivity, isEngaged, isSleeping, isPaused, isRemoteBlocked]);
+    return (
+      (isHost ? resolveRemoteActivityDisplay(linkState) : null) ??
+      resolveActivityDisplay(interactionState, activeActivity, isEngaged, isSleeping, isPaused)
+    );
+  }, [isHost, linkState, interactionState, activeActivity, isEngaged, isSleeping, isPaused]);
 
   const shouldAutoScrollRef = useRef(true);
 
@@ -171,5 +181,7 @@ export function useHomePage() {
     activityDisplay,
     activeActivity,
     isRemoteBlocked,
+    remoteFailureReason: remoteFailureDismissed ? null : remoteFailureReason,
+    dismissRemoteFailure: () => setDismissedForLink(linkState),
   };
 }

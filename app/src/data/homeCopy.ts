@@ -47,6 +47,19 @@ export const HOME_CONTROLS_COPY = {
     toggleTooltip: "Incognito Mode (RAM only — nothing saved to disk)",
     activeBadge: "Incognito",
   },
+  /** Prefix on the Home error banner shown when the rocket dial to the paired host fails. */
+  remoteFailurePrefix: "Remote connect failed:",
+  /**
+   * Host-side status for the remote link (`RemoteLinkState` → badge). The
+   * single status badge carries remote state; there is no separate REMOTE
+   * kicker.
+   */
+  remoteStatus: {
+    connected: "Remote Session",
+    reconnecting: "Reconnecting",
+    connecting: "Linking",
+    failed: "Remote Failed",
+  },
   /** Accessible name for the pipeline status capsule. */
   statusAriaLabel: (label: string) => `Vox Status: ${label}`,
 } as const;

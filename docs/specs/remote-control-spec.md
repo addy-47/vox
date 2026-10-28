@@ -319,19 +319,23 @@ Revocation is mutual and permanent. Either peer (Host or Controller) may initiat
 ### 6.1 Discovery (LAN v1)
 
 When `remote.accepts_controllers` is enabled, the host MUST:
-1. Bind a TCP listener on a configurable port (default: dynamically selected free port, not hardcoded).
-2. Advertise a mDNS service `_vox._tcp.local` with the host's `device_id` in the TXT record so the phone can match the service to a paired peer.
+1. Bind a TCP listener on a configurable port (default: fixed port 7700 in LAN v1; advertised in mDNS SRV record and QR hint).
+2. Advertise a mDNS service `_vox._tcp.local` with TXT properties:
+   - `device_id`: the host's unique identity string derived from its static public key.
+   - `accepts`: `"1"` if accepting controllers, `"0"` if not accepting (enabling controllers to distinguish "host offline" from "host reachable but not accepting").
 
-**Primary discovery path:** The QR code embeds `hint_addr:hint_port` (laptop's current IP and bound port). The phone connects to this address first.
+**Primary discovery path:** The QR code embeds `hint_addr:hint_port` (laptop's current IP and bound port). The phone connects to stored address hints first.
 
-**mDNS fallback:** When the hint address fails (DHCP change, network change), the phone browses `_vox._tcp.local` and matches the discovered service's TXT `device_id` against its `paired_devices` table.
+**mDNS fallback:** When stored hints fail (DHCP change, network change), the phone browses `_vox._tcp.local` for `MDNS_BROWSE_TIMEOUT` (6s) and matches the discovered service's TXT `device_id` against its `paired_devices` table.
+- **Android Multicast Lock:** On Android, browsing `_vox._tcp.local` MUST acquire a `WifiManager.MulticastLock` (requiring `android.permission.CHANGE_WIFI_MULTICAST_STATE`) for the duration of the browse to prevent the Wi-Fi radio from dropping multicast packets.
+- **Observed Hint Refresh:** On successful connection, the dialed candidate is persisted into `paired_devices.hints` with source `Observed`, prepended to the candidate list while preserving any existing or forward-compatible hints.
 
-**Manual fallback:** A "Enter address manually" option MUST be available for environments where mDNS multicast is blocked (guest Wi-Fi, corporate networks, Android multicast lock issues).
+**Manual fallback:** A "Enter address manually" option MUST be available for environments where mDNS multicast is blocked (guest Wi-Fi, corporate networks, radio sleep).
 
 The phone MUST show a list of discovered and manually-entered hosts by display name, not by IP address.
 
 > [!WARNING]
-> Note for implementors: incoming TCP requires a firewall rule on the laptop's port. The port being dynamic (not 7700) means it cannot be pre-provisioned. The setup guide should inform users of this. The mDNS service record advertises the actual port.
+> Note for implementors: incoming TCP requires a firewall rule on the laptop's port (default 7700). The mDNS service record advertises the actual port.
 
 ### 6.2 Connection State Machine
 

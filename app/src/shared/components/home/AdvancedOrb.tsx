@@ -337,7 +337,7 @@ const DISC_FRAG = `
 
     float alpha = (edgeGlow * radialBlend * 0.92 + fill) * u_baseOpacity;
     alpha *= (1.0 + u_amplitude * 4.5);
-    alpha *= mix(1.0, 0.22, u_sleeping);
+    alpha *= mix(1.0, 0.12, u_sleeping);
 
     if (alpha < 0.004) discard;
 
@@ -382,7 +382,7 @@ const OUTER_FRAG = `
     // Very sharp rim — tight but bright
     float rim   = smoothstep(0.52, 1.0, fresnel);
     float alpha = rim * (0.65 + u_amplitude * 0.30);
-    alpha *= mix(1.0, 0.35, u_sleeping);
+    alpha *= mix(1.0, 0.18, u_sleeping);
 
     if (alpha < 0.008) discard;
 
@@ -747,8 +747,10 @@ export const VoxOrb = React.memo(({
     const themeGlow = themeRef.current.glow;
 
     if (sleeping || state === 'Sleeping') {
-      ctx.tgtGlow.copy(themeGlow).multiplyScalar(0.2);
-      ctx.tgtAccent.copy(themeAccent).multiplyScalar(0.25);
+      // Extremely calm: barely-there glow, near-black accent, and a slow drift.
+      // Remote-host sessions render with the identical Sleeping targets.
+      ctx.tgtGlow.copy(themeGlow).multiplyScalar(0.10);
+      ctx.tgtAccent.copy(themeAccent).multiplyScalar(0.10);
     } else if (state === 'Idle' || state === 'Paused' || state === 'Error') {
       ctx.tgtGlow.copy(themeGlow);
       ctx.tgtAccent.copy(themeAccent);
@@ -785,8 +787,10 @@ export const VoxOrb = React.memo(({
     (ctx.outerMat.uniforms['u_colorGlow'].value as THREE.Color).copy(ctx.curGlow);
     (ctx.outerMat.uniforms['u_colorAccent'].value as THREE.Color).copy(ctx.curAccent);
 
-    // 8. Mid & Energy drive rotational drift across sheets
-    const speedMult = 1.0 + audioEnergy * 0.6 + ctx.smoothedMid * 0.5 - ctx.think * 0.3 + ctx.work * 0.9;
+    // 8. Mid & Energy drive rotational drift across sheets. Sleeping halves the
+    // drift so the calm state all but stills the orb.
+    let speedMult = 1.0 + audioEnergy * 0.6 + ctx.smoothedMid * 0.5 - ctx.think * 0.3 + ctx.work * 0.9;
+    if (sleeping) speedMult *= 0.5;
     // Bound by live child count, not the module constant, so the
     // software-rasteriser sheet reduction (see sheetCount) stays in sync.
     for (let i = 0; i < ctx.discGroup.children.length; i++) {

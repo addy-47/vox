@@ -116,6 +116,8 @@ snow = "0.10"
 # mdns-sd: advertisement and browsing of the `_vox._tcp.local` service used for
 #          LAN discovery. Pure Rust, no async runtime dependency, no C toolchain.
 mdns-sd = "0.21"
+# if-addrs: local interface IPv4 collection for the host mDNS announcement.
+if-addrs = "0.15"
 # qrcode: rendering of the pairing QR. The `image` feature is disabled: the
 #         pairing surface needs the SVG renderer and the raw module matrix, and
 #         the `image` crate's transitive tree is dead weight on Android.

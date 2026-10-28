@@ -60,7 +60,9 @@ export interface RemoteStoreState {
   disconnectHost: () => Promise<void>;
 }
 
-let activeInitPromise: Promise<UnlistenFn> | null = null;
+let subscriptionRefCount = 0;
+let teardownListeners: (() => void) | null = null;
+let activeInitPromise: Promise<void> | null = null;
 
 export const useRemoteStore = create<RemoteStoreState>((set, get) => ({
   // Ticket 05: initial state is "Unpaired" — no "Disconnected" variant exists
@@ -78,74 +80,91 @@ export const useRemoteStore = create<RemoteStoreState>((set, get) => ({
   error: null,
 
   init: async () => {
-    if (activeInitPromise) return activeInitPromise;
-    activeInitPromise = (async () => {
-      await get().hydrate();
+    subscriptionRefCount += 1;
 
-      // Ticket 05: canonical event — remote_state_changed is the sole source of truth.
-      const unlistenState = await listen<RemoteStateDto>("remote_state_changed", (event) => {
-        const dto = event.payload;
-        const peer =
-          dto.deviceId && dto.displayName
-            ? { deviceId: dto.deviceId, displayName: dto.displayName }
-            : null;
+    if (!activeInitPromise) {
+      activeInitPromise = (async () => {
+        await get().hydrate();
 
-        // Ticket 05: terminal states that clear the pairing-pending flag
-        const isTerminal =
-          dto.link === "Connected" ||
-          dto.link === "Failed" ||
-          dto.link === "Paired" ||
-          dto.link === "Unpaired";
-
-        set({
-          linkState: dto.link,
-          failureReason: dto.failure ?? null,
-          failureKind: dto.failureKind ?? null,
-          connectedPeer: peer,
-          ...(isTerminal ? { isPairingPending: false, pendingPairingPrompt: null } : {}),
-        });
-      });
-
-      const unlistenPrompt = await listen<RemotePairingRequestedPayload>(
-        "remote_pairing_requested",
-        (event) => {
-          // Only one remote surface may be visible at a time: an incoming
-          // authorization request takes over from the QR pairing modal.
-          set({ pendingPairingPrompt: event.payload, isPairingModalOpen: false });
-        }
-      );
-
-      const unlistenPairingState = await listen<PairingStateDto>(
-        "remote_pairing_state_changed",
-        (event) => {
+        // Ticket 05: canonical event — remote_state_changed is the sole source of truth.
+        const unlistenState = await listen<RemoteStateDto>("remote_state_changed", (event) => {
           const dto = event.payload;
-          if (dto.state === "AwaitingApproval") {
-            set({ isPairingPending: true, pairingFailureReason: null });
-          } else if (dto.state === "Denied") {
-            set({
-              isPairingPending: false,
-              pendingPairingPrompt: null,
-              pairingFailureReason: dto.failureReason ?? "Pairing failed.",
-            });
-          } else if (dto.state === "Approved" || dto.state === "Idle") {
-            set({
-              isPairingPending: false,
-              pendingPairingPrompt: null,
-              pairingFailureReason: null,
-            });
+          const peer =
+            dto.deviceId && dto.displayName
+              ? { deviceId: dto.deviceId, displayName: dto.displayName }
+              : null;
+
+          // Ticket 05: terminal states that clear the pairing-pending flag
+          const isTerminal =
+            dto.link === "Connected" ||
+            dto.link === "Failed" ||
+            dto.link === "Paired" ||
+            dto.link === "Unpaired";
+
+          set({
+            linkState: dto.link,
+            failureReason: dto.failure ?? null,
+            failureKind: dto.failureKind ?? null,
+            connectedPeer: peer,
+            ...(isTerminal ? { isPairingPending: false, pendingPairingPrompt: null } : {}),
+          });
+        });
+
+        const unlistenPrompt = await listen<RemotePairingRequestedPayload>(
+          "remote_pairing_requested",
+          (event) => {
+            // Only one remote surface may be visible at a time: an incoming
+            // authorization request takes over from the QR pairing modal.
+            set({ pendingPairingPrompt: event.payload, isPairingModalOpen: false });
           }
-        }
-      );
+        );
 
-      return () => {
+        const unlistenPairingState = await listen<PairingStateDto>(
+          "remote_pairing_state_changed",
+          (event) => {
+            const dto = event.payload;
+            if (dto.state === "AwaitingApproval") {
+              set({ isPairingPending: true, pairingFailureReason: null });
+            } else if (dto.state === "Denied") {
+              set({
+                isPairingPending: false,
+                pendingPairingPrompt: null,
+                pairingFailureReason: dto.failureReason ?? "Pairing failed.",
+              });
+            } else if (dto.state === "Approved" || dto.state === "Idle") {
+              set({
+                isPairingPending: false,
+                pendingPairingPrompt: null,
+                pairingFailureReason: null,
+              });
+            }
+          }
+        );
+
+        teardownListeners = () => {
+          unlistenState();
+          unlistenPrompt();
+          unlistenPairingState();
+          teardownListeners = null;
+        };
+      })().catch((err) => {
         activeInitPromise = null;
-        unlistenState();
-        unlistenPrompt();
-        unlistenPairingState();
-      };
-    })();
+        throw err;
+      });
+    }
 
-    return activeInitPromise;
+    await activeInitPromise;
+
+    let cleanedUp = false;
+    return () => {
+      if (cleanedUp) return;
+      cleanedUp = true;
+      subscriptionRefCount = Math.max(0, subscriptionRefCount - 1);
+      if (subscriptionRefCount === 0) {
+        activeInitPromise = null;
+        teardownListeners?.();
+      }
+    };
   },
 
   hydrate: async () => {

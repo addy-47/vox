@@ -41,9 +41,7 @@ pub const MAX_CONTROL_MESSAGE_BYTES: usize = NOISE_MAX_PAYLOAD_BYTES;
 /// The wire protocol version this build speaks. Remote-control spec §7.2.
 pub const PROTOCOL_VERSION: u16 = 1;
 
-// --- Link lifecycle (owned by `link/`) ---
-
-/// Deadline for completing the Noise handshake and the Hello exchange.
+// --- Link lifecycle (owned by `link/`) ---/// Deadline for completing the Noise handshake and the Hello exchange.
 /// Remote-control spec §7.1.
 pub const HANDSHAKE_DEADLINE: Duration = Duration::from_secs(5);
 
@@ -99,3 +97,17 @@ pub const PAIRING_APPROVAL_TIMEOUT: Duration = Duration::from_secs(30);
 /// mDNS service type advertised by a host that accepts controllers.
 /// Remote-control spec §6.1.
 pub const REMOTE_MDNS_SERVICE_TYPE: &str = "_vox._tcp.local";
+
+/// Dial attempt deadline applied when cycling candidate addresses. Remote-
+/// control spec §6.1: the connector must not block one dead candidate for the
+/// full transport dial timeout while a discovery fallback waits behind it.
+pub const DIAL_CANDIDATE_TIMEOUT: Duration = Duration::from_secs(4);
+
+/// Deadline for one mDNS browse session (controller fallback dial).
+/// Remote-control spec §7.1.
+pub const MDNS_BROWSE_TIMEOUT: Duration = Duration::from_secs(6);
+
+/// Port the host inbound listener binds (owned by `session/listener.rs`).
+/// Spec §6.1 wants a dynamic port eventually; Lan v1 decision table keeps the
+/// fixed port and advertises it in the mDNS record and the QR hint.
+pub const REMOTE_LISTEN_PORT: u16 = 7700;
