@@ -552,6 +552,12 @@ impl RemoteSessionManager {
         }
         candidates.extend(discovery::lan_hint_addrs(&host_device.hints));
 
+        log::info!(
+            "[Remote] perform_dial_handshake for {}: stored candidates={:?}",
+            host_device.device_id,
+            candidates
+        );
+
         let mut last_error: Option<LinkError> = None;
         for candidate in &candidates {
             match self.dial_link(candidate, host_device).await {
@@ -565,6 +571,11 @@ impl RemoteSessionManager {
 
         // mDNS fallback: the stored hints are IPs captured at pairing time —
         // stale after any network change. Browse the LAN by host device id.
+        log::info!(
+            "[Remote] Stored candidates exhausted. Triggering mDNS browse for {} (timeout={:?})",
+            host_device.device_id,
+            discovery::MDNS_BROWSE_TIMEOUT
+        );
         let mdns_candidates =
             discovery::discover_host(&host_device.device_id, discovery::MDNS_BROWSE_TIMEOUT)
                 .await
@@ -572,6 +583,12 @@ impl RemoteSessionManager {
                     log::warn!("[Remote] mDNS browse failed: {e}");
                     Vec::new()
                 });
+
+        log::info!(
+            "[Remote] mDNS browse returned {} candidate(s): {:?}",
+            mdns_candidates.len(),
+            mdns_candidates
+        );
 
         for candidate in &mdns_candidates {
             match self.dial_link(candidate, host_device).await {
@@ -671,7 +688,6 @@ impl RemoteSessionManager {
         address: Option<String>,
     ) -> Result<(), LinkError> {
         self.set_db(Arc::clone(&db));
-        self.set_state(RemoteLinkState::Connecting);
 
         let host_device = if let Ok(conn) = db.connect() {
             crate::persistence::paired_devices::get_paired_device(&conn, &device_id)
@@ -684,6 +700,12 @@ impl RemoteSessionManager {
         let host_device = host_device.ok_or_else(|| {
             LinkError::Transport(format!("Device {device_id} not found in paired_devices"))
         })?;
+
+        self.set_peer_identity(Some(SenderIdentity {
+            device_id: host_device.device_id.clone(),
+            display_name: host_device.display_name.clone(),
+        }));
+        self.set_state(RemoteLinkState::Connecting);
 
         let (ws_link, local_identity, chosen_candidate) =
             self.perform_dial_handshake(&host_device, address)

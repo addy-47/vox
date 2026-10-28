@@ -27,6 +27,7 @@ import { HomeControls } from "@/shared/components/home/HomeControls";
 
 import { useProfilerDrawer } from "@/shared/components/profiler/ProfilerDrawer";
 import { useSessionStore } from "@/store/sessionStore";
+import { useRemoteStore } from "@/store/remoteStore";
 import { useRegisterPageDrawer } from "@/shared/context/PageDrawerContext";
 import { useHomePage } from "@/shared/hooks/useHomePage";
 import { useMemoryTrace } from "@/shared/hooks/useMemoryTrace";
@@ -87,6 +88,7 @@ export const Home = memo(() => {
     remoteFailureReason,
     dismissRemoteFailure,
   } = useHomePage();
+  const connectedPeer = useRemoteStore((s) => s.connectedPeer);
   useMemoryTrace("Home");
 
   const { openProfiler, closeProfiler } = useProfilerDrawer();
@@ -238,57 +240,62 @@ export const Home = memo(() => {
       {/* ── Restore ingestion pulse (single reverse-flow toward orb) ── */}
       <RestorePulse signal={restoreSignal} />
 
-      {/* ── Restore error toast ── */}
-      {restoreError && (
-        <div className="absolute top-16 left-1/2 -translate-x-1/2 z-[100] pointer-events-auto">
-          <div className="glass-card px-4 py-2.5 rounded-xl flex items-center gap-2.5 border border-[rgba(var(--error),0.3)] shadow-lg bg-[rgb(var(--card))]/95">
-            <AlertCircle className="text-[rgb(var(--error))] shrink-0" size={16} />
-            <p className="text-[12px] text-[rgb(var(--foreground))]/90 break-words select-text">
-              {restoreError}
-            </p>
-            <button
-              onClick={() => dismissRestoreError()}
-              className="text-[11px] font-black uppercase tracking-wider text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))] cursor-pointer"
-            >
-              {ERROR_BANNER_COPY.dismissButton}
-            </button>
-          </div>
-        </div>
-      )}
+      {/* ── Top Notification & Error Banners (Positioned neatly directly below AppHeader) ── */}
+      {(restoreError || sessionError || remoteFailureReason) && (
+        <div className="absolute top-2 sm:top-3 left-1/2 -translate-x-1/2 z-[100] flex flex-col items-center gap-2 w-[min(92vw,480px)] pointer-events-none px-2">
+          {restoreError && (
+            <div className="glass-card px-3.5 py-2 rounded-xl flex items-center justify-between gap-2.5 border border-[rgba(var(--error),0.3)] shadow-lg bg-[rgb(var(--card))]/95 w-full pointer-events-auto animate-fade-in">
+              <div className="flex items-center gap-2 min-w-0 flex-1">
+                <AlertCircle className="text-[rgb(var(--error))] shrink-0" size={15} />
+                <p className="text-[12px] text-[rgb(var(--foreground))]/90 break-words select-text">
+                  {restoreError}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => dismissRestoreError()}
+                className="text-[11px] font-black uppercase tracking-wider text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))] cursor-pointer shrink-0"
+              >
+                {ERROR_BANNER_COPY.dismissButton}
+              </button>
+            </div>
+          )}
 
-      {/* ── Session error banner (failed Engage) ── */}
-      {sessionError && (
-        <div role="alert" className="absolute top-[116px] left-1/2 -translate-x-1/2 z-[100] pointer-events-auto">
-          <div className="glass-card px-4 py-2.5 rounded-xl flex items-center gap-2.5 border border-[rgba(var(--error),0.3)] shadow-lg bg-[rgb(var(--card))]/95">
-            <AlertCircle className="text-[rgb(var(--error))] shrink-0" size={16} />
-            <p className="text-[12px] text-[rgb(var(--foreground))]/90 break-words select-text">
-              {sessionError}
-            </p>
-            <button
-              onClick={() => clearSessionError(null)}
-              className="text-[11px] font-black uppercase tracking-wider text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))] cursor-pointer"
-            >
-              {ERROR_BANNER_COPY.dismissButton}
-            </button>
-          </div>
-        </div>
-      )}
+          {sessionError && (
+            <div role="alert" className="glass-card px-3.5 py-2 rounded-xl flex items-center justify-between gap-2.5 border border-[rgba(var(--error),0.3)] shadow-lg bg-[rgb(var(--card))]/95 w-full pointer-events-auto animate-fade-in">
+              <div className="flex items-center gap-2 min-w-0 flex-1">
+                <AlertCircle className="text-[rgb(var(--error))] shrink-0" size={15} />
+                <p className="text-[12px] text-[rgb(var(--foreground))]/90 break-words select-text">
+                  {sessionError}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => clearSessionError(null)}
+                className="text-[11px] font-black uppercase tracking-wider text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))] cursor-pointer shrink-0"
+              >
+                {ERROR_BANNER_COPY.dismissButton}
+              </button>
+            </div>
+          )}
 
-      {/* ── Remote connect-failure banner (phone side; spec §6.1 manual-entry fallback) ── */}
-      {remoteFailureReason && (
-        <div role="alert" className="absolute top-[160px] left-1/2 -translate-x-1/2 z-[100] pointer-events-auto">
-          <div className="glass-card px-4 py-2.5 rounded-xl flex items-center gap-2.5 border border-[rgba(var(--danger),0.35)] shadow-lg bg-[rgb(var(--card))]/95 max-w-[90vw]">
-            <AlertCircle className="text-[rgb(var(--danger))] shrink-0" size={16} />
-            <p className="text-[12px] text-[rgb(var(--foreground))]/90 break-words select-text">
-              {HOME_CONTROLS_COPY.remoteFailurePrefix} {remoteFailureReason}
-            </p>
-            <button
-              onClick={dismissRemoteFailure}
-              className="text-[11px] font-black uppercase tracking-wider text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))] cursor-pointer shrink-0"
-            >
-              {ERROR_BANNER_COPY.dismissButton}
-            </button>
-          </div>
+          {remoteFailureReason && (
+            <div role="alert" className="glass-card px-3.5 py-2 rounded-xl flex items-center justify-between gap-2.5 border border-[rgba(var(--danger),0.35)] shadow-lg bg-[rgb(var(--card))]/95 w-full pointer-events-auto animate-fade-in">
+              <div className="flex items-center gap-2 min-w-0 flex-1">
+                <AlertCircle className="text-[rgb(var(--danger))] shrink-0" size={15} />
+                <p className="text-[12px] text-[rgb(var(--foreground))]/90 break-words select-text">
+                  {HOME_CONTROLS_COPY.remoteFailurePrefix} {remoteFailureReason}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={dismissRemoteFailure}
+                className="text-[11px] font-black uppercase tracking-wider text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))] cursor-pointer shrink-0"
+              >
+                {ERROR_BANNER_COPY.dismissButton}
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -309,6 +316,13 @@ export const Home = memo(() => {
         {isTemporarySession && (
           <div className="flex items-center text-[9px] font-mono font-semibold tracking-[0.25em] uppercase text-[rgb(var(--accent))]/60 leading-none mb-1 animate-in fade-in duration-200">
             <span>{HOME_CONTROLS_COPY.temporary.activeBadge}</span>
+          </div>
+        )}
+        {isRemoteBlocked && (
+          <div className="flex items-center gap-1.5 text-[10px] font-mono font-semibold tracking-[0.2em] uppercase text-[rgb(var(--accent))]/80 leading-none mb-1.5 animate-in fade-in duration-200">
+            <span>
+              {connectedPeer?.displayName ? `CONNECTED` : "REMOTE CONNECTED"}
+            </span>
           </div>
         )}
         <DynamicStatusBadge

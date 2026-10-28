@@ -182,6 +182,9 @@ export function useHomePage() {
     activeActivity,
     isRemoteBlocked,
     remoteFailureReason: remoteFailureDismissed ? null : remoteFailureReason,
-    dismissRemoteFailure: () => setDismissedForLink(linkState),
+    dismissRemoteFailure: () => {
+      setDismissedForLink(linkState);
+      useRemoteStore.getState().dismissFailure();
+    },
   };
 }

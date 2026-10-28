@@ -52,25 +52,35 @@ impl HostAnnouncement {
         props.insert(TXT_ACCEPTS.to_string(), accepts_value.to_string());
 
         let instance = instance_name(device_id);
-        let host = format!("vox-{device_id}.local.");
+        let host = host_name(device_id);
+        let ips = local_ips();
+        tracing::info!(
+            "[Remote::Advertiser] Announcing mDNS: type={}, instance={}, host={}, port={}, ips={:?}, device_id={}",
+            REMOTE_MDNS_SERVICE_TYPE,
+            instance,
+            host,
+            port,
+            ips,
+            device_id
+        );
         let info = ServiceInfo::new(
             REMOTE_MDNS_SERVICE_TYPE,
             &instance,
             &host,
-            local_ips().join(","),
+            ips.join(","),
             port,
             props,
         )
         .map_err(|e| format!("mDNS service info: {e}"))?;
 
+        let fullname = info.get_fullname().to_string();
+
         daemon
             .register(info)
             .map_err(|e| format!("mDNS register: {e}"))?;
 
-        Ok(Self {
-            daemon,
-            fullname: format!("{}.{}", instance_name(device_id), REMOTE_MDNS_SERVICE_TYPE),
-        })
+        tracing::info!("[Remote::Advertiser] Registered mDNS service: {}", fullname);
+        Ok(Self { daemon, fullname })
     }
 
     /// Withdraws the announcement. Fire-and-forget: the daemon owns the
@@ -88,11 +98,38 @@ impl HostAnnouncement {
 
 // ─── Helper Functions ────────────────────────────────────────────────────────
 
-/// Stable mDNS instance name for a host device. Controllers match services to
-/// their `paired_devices` rows purely by the `device_id` TXT property, so the
-/// instance name only needs to be unique per LAN; embedding the device id satisfies
-/// both requirements.
+/// Stable mDNS instance name for a host device.
+/// RFC 1035 / RFC 6763 limits any single DNS label to 63 bytes.
+/// A full SHA-256 device_id is 64 hex characters, so we truncate the label prefix
+/// to 32 characters ("Vox-<32 chars>" = 36 bytes <= 63). Controllers match
+/// discovered hosts purely by the full 64-char `device_id` in the TXT property.
 fn instance_name(device_id: &str) -> String {
-    format!("Vox-{device_id}")
+    let prefix = if device_id.len() > 32 { &device_id[..32] } else { device_id };
+    format!("Vox-{prefix}")
 }
+
+/// Stable mDNS host name for address records (RFC 1035 label limit: 63 bytes).
+fn host_name(device_id: &str) -> String {
+    let prefix = if device_id.len() > 32 { &device_id[..32] } else { device_id };
+    format!("vox-{prefix}.local.")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn host_announcement_registers_with_rfc_compliant_service_syntax() {
+        let device_id = "390cc0ea95c8390b0f39512bd8156dc8e80942919df397c64dc269aeb3329fb2";
+        let announcement = HostAnnouncement::announce(device_id, 7700, true);
+        assert!(
+            announcement.is_ok(),
+            "Host announcement failed RFC registration check: {:?}",
+            announcement.err()
+        );
+        let announcement = announcement.unwrap();
+        announcement.withdraw();
+    }
+}
+
 

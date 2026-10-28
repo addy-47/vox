@@ -31,7 +31,7 @@ Only paths with non-obvious rules that agents cannot infer from the codebase ind
 
 ## 3. Execution & Testing Invariants
 
-0. **Compile Gate:** Always use script below , never any shallow or ad-hoc cargo checks.
+0. **Compile Gate:** Always use script below , NEVER any shallow or ad-hoc cargo checks WITHOUT --release TO VERIFY AS THEY WILL COMPILE IN DEBUG AND WILL NOT USE OUR CACHE.
    ```bash
    cd app/src-tauri && ./scripts/verify-targets.sh
    ```

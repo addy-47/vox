@@ -250,6 +250,23 @@ describe("remoteStore unit suite", () => {
     cleanup();
   });
 
+  it("dismissFailure resets linkState to Paired when connectedPeer is retained", () => {
+    useRemoteStore.setState({
+      linkState: "Failed",
+      failureReason: "Connection timed out",
+      failureKind: "timeout",
+      connectedPeer: { deviceId: "host_1", displayName: "Laptop Host" },
+    });
+
+    useRemoteStore.getState().dismissFailure();
+
+    const state = useRemoteStore.getState();
+    expect(state.linkState).toBe("Paired");
+    expect(state.failureReason).toBeNull();
+    expect(state.failureKind).toBeNull();
+    expect(state.connectedPeer).toEqual({ deviceId: "host_1", displayName: "Laptop Host" });
+  });
+
   it("clears the pairing failure on a fresh approval request", async () => {
     useRemoteStore.setState({ pairingFailureReason: "Pairing denied by host" });
 
