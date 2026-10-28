@@ -32,7 +32,12 @@ use vox_lib::{
             routing::{get_routing_table, CommandClass},
         },
         link::{bind, LinkCloseReason, LoopbackLink, RemoteLink},
-        protocol::messages::{ControlMessage, LinkLossReason, PairApproved, PairDenied, SenderIdentity},
+        protocol::{
+            framing::StreamFormat,
+            messages::{
+                ControlMessage, Hello, LinkLossReason, PairApproved, PairDenied, SenderIdentity,
+            },
+        },
         security::{
             default_noise_prologue, derive_device_id, DeviceKey, NoiseHandshake,
             PairingCoordinator, PairingOutcome, PairingRequest,
@@ -78,12 +83,12 @@ async fn open_migrated_db(dir: &std::path::Path, file_name: &str) -> (VoxDb, tur
 // Subtests
 // ============================================================================
 
-/// PURPOSE:  A full controller-initiated pairing via dial_and_connect must reach Connected state and persist peers in Turso DB on both sides.
-/// SCENARIO: Controller calls dial_and_connect with valid pairing token and host public key over loopback; Host accepts, validates request through PairingCoordinator, approves, and completes Hello negotiation.
+/// PURPOSE:  A full controller-initiated pairing via pair_device must reach Connected state and persist peers in Turso DB on both sides.
+/// SCENARIO: Controller calls pair_device with valid pairing token and host public key over loopback; Host accepts, validates request through PairingCoordinator, approves, and completes Hello negotiation.
 /// ASSERTS:  Both Controller and Host reach RemoteLinkState::Connected, and each peer is inserted into their respective Turso DB paired_devices table.
 /// CLASS:    happy-path
 /// REQUIRES: none
-/// MUTANT:   Remove insert_paired_device call in dial_and_connect for host persistence.
+/// MUTANT:   Remove insert_paired_device call in pair_device for host persistence.
 #[tokio::test]
 async fn remote_connection_pairing_handshake_approved_reaches_connected() {
     let dir = tempdir().expect("tempdir");
@@ -768,4 +773,259 @@ async fn remote_connection_settings_toggle_round_trip() {
         host_manager.peer_identity().map(|p| p.device_id),
         Some(device_id.to_string())
     );
+}
+
+/// PURPOSE:  Controller must dial an existing paired host via dial_and_connect, negotiate Noise XX and Hello, and transition both sides to Connected.
+/// SCENARIO: Host listener accepts connection and runs Noise responder + Hello exchange; Controller dials paired host device ID.
+/// ASSERTS:  Both Controller and Host reach RemoteLinkState::Connected; Controller persists the observed working address to hints.
+/// CLASS:    happy-path
+/// REQUIRES: none
+/// MUTANT:   Remove manager.attach_link call in dial_and_connect.
+#[tokio::test]
+async fn remote_connection_dial_and_connect_reaches_connected() {
+    let dir = tempdir().expect("tempdir");
+    vox_lib::utils::paths::init_with_root(dir.path().to_path_buf());
+
+    let (controller_db, controller_conn) = open_migrated_db(dir.path(), "ctrl_dial.db").await;
+
+    // 1. Host key, ID, and loopback listener
+    let host_key = DeviceKey::generate().expect("host key");
+    let host_id = derive_device_id(host_key.public_key()).to_string();
+    let listener = within_ok(
+        "bind listener",
+        bind("127.0.0.1:0".parse().expect("valid loopback")),
+    )
+    .await;
+    let host_port = listener.local_addr().expect("listener address").port();
+
+    // 2. Pre-pair host into controller's DB with host port hint
+    insert_paired_device(
+        &controller_conn,
+        &NewPairedDevice {
+            device_id: host_id.clone(),
+            public_key: host_key.public_key().to_vec(),
+            display_name: "Desktop Host".to_string(),
+            role: PairedDeviceRole::Host,
+            trust_level: "full".to_string(),
+            hints: vec![serde_json::json!({ "addr": format!("127.0.0.1:{host_port}") })],
+        },
+    )
+    .await
+    .expect("insert paired host");
+
+    // 3. Host listener accepts and negotiates in background task
+    let host_manager = Arc::new(RemoteSessionManager::new(SessionRole::Host));
+    let hm = Arc::clone(&host_manager);
+    let h_id = host_id.clone();
+
+    tokio::spawn(async move {
+        let ws_link = listener.accept().await.expect("host accept");
+        let first_msg = ws_link.recv_handshake_message().await.expect("recv msg1");
+        let prologue = default_noise_prologue();
+        let mut handshake = NoiseHandshake::responder(&host_key, None, &prologue).expect("responder");
+        handshake.read_message(&first_msg).expect("read msg1");
+        let transport = ws_link.drive_handshake(handshake).await.expect("drive handshake");
+        ws_link.set_cipher(transport).await;
+
+        let client_hello = match ws_link.recv_control().await.expect("recv client hello") {
+            ControlMessage::Hello(h) => h,
+            other => panic!("expected Hello, got {other:?}"),
+        };
+
+        let host_hello = Hello {
+            version: vox_lib::services::remote::PROTOCOL_VERSION,
+            sender_identity: SenderIdentity {
+                device_id: h_id,
+                display_name: "Desktop Host".to_string(),
+            },
+            capabilities: vox_lib::services::remote::protocol::capabilities::CAP_CONTROL_MESSAGES,
+            uplink_format: StreamFormat::DOWNLINK,
+            downlink_format: StreamFormat::UPLINK,
+        };
+        ws_link.send_control(ControlMessage::Hello(host_hello)).await.expect("send host hello");
+
+        hm.attach_link(Arc::new(ws_link), client_hello.sender_identity).await;
+    });
+
+    // 4. Controller dials host
+    let controller_manager = Arc::new(RemoteSessionManager::new(SessionRole::Controller));
+    within_ok(
+        "dial_and_connect",
+        controller_manager
+            .clone()
+            .dial_and_connect(Arc::new(controller_db), host_id.clone(), None),
+    )
+    .await;
+
+    // 5. Verify states
+    assert_eq!(controller_manager.state(), RemoteLinkState::Connected);
+    assert_eq!(host_manager.state(), RemoteLinkState::Connected);
+
+    // 6. Verify observed hint persistence in controller DB (spec §5.7)
+    let updated = get_paired_device(&controller_conn, &host_id)
+        .await
+        .expect("query")
+        .expect("device exists");
+    assert!(!updated.hints.is_empty(), "Hints must be updated with observed IP");
+    assert_eq!(
+        updated.hints[0]["addr"],
+        format!("127.0.0.1:{host_port}")
+    );
+    assert_eq!(updated.hints[0]["source"], "Observed");
+}
+
+/// PURPOSE:  When the primary stored hint is unreachable, dial_and_connect must cycle to the next candidate and reach Connected.
+/// SCENARIO: Controller has dead IP (127.0.0.1:1) at index 0 and working host at index 1.
+/// ASSERTS:  dial_and_connect succeeds; Controller connects to candidate 1 and updates observed hint.
+/// CLASS:    edge-case
+/// REQUIRES: none
+/// MUTANT:   Break candidate loop in perform_dial_handshake on first error instead of trying remaining candidates.
+#[tokio::test]
+async fn remote_connection_dead_primary_hint_falls_back_to_valid_candidate() {
+    let dir = tempdir().expect("tempdir");
+    vox_lib::utils::paths::init_with_root(dir.path().to_path_buf());
+
+    let (controller_db, controller_conn) = open_migrated_db(dir.path(), "ctrl_fallback.db").await;
+
+    // 1. Host listener on valid port
+    let host_key = DeviceKey::generate().expect("host key");
+    let host_id = derive_device_id(host_key.public_key()).to_string();
+    let listener = within_ok(
+        "bind listener",
+        bind("127.0.0.1:0".parse().expect("valid loopback")),
+    )
+    .await;
+    let valid_port = listener.local_addr().expect("listener address").port();
+
+    // 2. Pre-pair host with dead port at index 0, valid port at index 1
+    insert_paired_device(
+        &controller_conn,
+        &NewPairedDevice {
+            device_id: host_id.clone(),
+            public_key: host_key.public_key().to_vec(),
+            display_name: "Desktop Host".to_string(),
+            role: PairedDeviceRole::Host,
+            trust_level: "full".to_string(),
+            hints: vec![
+                serde_json::json!({ "addr": "127.0.0.1:1" }),
+                serde_json::json!({ "addr": format!("127.0.0.1:{valid_port}") }),
+            ],
+        },
+    )
+    .await
+    .expect("insert paired host");
+
+    // 3. Host listener accepts and negotiates
+    let host_manager = Arc::new(RemoteSessionManager::new(SessionRole::Host));
+    let hm = Arc::clone(&host_manager);
+    let h_id = host_id.clone();
+
+    tokio::spawn(async move {
+        let ws_link = listener.accept().await.expect("host accept");
+        let first_msg = ws_link.recv_handshake_message().await.expect("recv msg1");
+        let prologue = default_noise_prologue();
+        let mut handshake = NoiseHandshake::responder(&host_key, None, &prologue).expect("responder");
+        handshake.read_message(&first_msg).expect("read msg1");
+        let transport = ws_link.drive_handshake(handshake).await.expect("drive handshake");
+        ws_link.set_cipher(transport).await;
+
+        let client_hello = match ws_link.recv_control().await.expect("recv client hello") {
+            ControlMessage::Hello(h) => h,
+            other => panic!("expected Hello, got {other:?}"),
+        };
+
+        let host_hello = Hello {
+            version: vox_lib::services::remote::PROTOCOL_VERSION,
+            sender_identity: SenderIdentity {
+                device_id: h_id,
+                display_name: "Desktop Host".to_string(),
+            },
+            capabilities: vox_lib::services::remote::protocol::capabilities::CAP_CONTROL_MESSAGES,
+            uplink_format: StreamFormat::DOWNLINK,
+            downlink_format: StreamFormat::UPLINK,
+        };
+        ws_link.send_control(ControlMessage::Hello(host_hello)).await.expect("send host hello");
+
+        hm.attach_link(Arc::new(ws_link), client_hello.sender_identity).await;
+    });
+
+    // 4. Controller dials host (should gracefully bypass dead 127.0.0.1:1 and connect to candidate 1)
+    let controller_manager = Arc::new(RemoteSessionManager::new(SessionRole::Controller));
+    within_ok(
+        "dial_and_connect with dead candidate 0",
+        controller_manager
+            .clone()
+            .dial_and_connect(Arc::new(controller_db), host_id.clone(), None),
+    )
+    .await;
+
+    assert_eq!(controller_manager.state(), RemoteLinkState::Connected);
+    assert_eq!(host_manager.state(), RemoteLinkState::Connected);
+
+    // Observed working candidate promoted to index 0
+    let updated = get_paired_device(&controller_conn, &host_id)
+        .await
+        .expect("query")
+        .expect("device exists");
+    assert_eq!(
+        updated.hints[0]["addr"],
+        format!("127.0.0.1:{valid_port}")
+    );
+    assert_eq!(updated.hints[0]["source"], "Observed");
+}
+
+/// PURPOSE:  When dial_and_connect fails (all candidates unreachable), the Controller must enter Failed state while preserving peer_identity and state DTO device ID.
+/// SCENARIO: Controller dials a paired host with only unreachable candidates; dial fails.
+/// ASSERTS:  dial_and_connect returns Err; controller_manager.state() is Failed; peer_identity is Some; state_dto().device_id equals host_id.
+/// CLASS:    error-path
+/// REQUIRES: none
+/// MUTANT:   Clear self.peer_identity when entering Failed state in dial_and_connect.
+#[tokio::test]
+async fn remote_connection_dial_failure_retains_peer_identity() {
+    let dir = tempdir().expect("tempdir");
+    vox_lib::utils::paths::init_with_root(dir.path().to_path_buf());
+
+    let (controller_db, controller_conn) = open_migrated_db(dir.path(), "ctrl_fail_identity.db").await;
+
+    let host_key = DeviceKey::generate().expect("host key");
+    let host_id = derive_device_id(host_key.public_key()).to_string();
+
+    // Pre-pair host with unreachable candidate
+    insert_paired_device(
+        &controller_conn,
+        &NewPairedDevice {
+            device_id: host_id.clone(),
+            public_key: host_key.public_key().to_vec(),
+            display_name: "MacBook Pro Host".to_string(),
+            role: PairedDeviceRole::Host,
+            trust_level: "full".to_string(),
+            hints: vec![serde_json::json!({ "addr": "127.0.0.1:1" })],
+        },
+    )
+    .await
+    .expect("insert paired host");
+
+    let controller_manager = Arc::new(RemoteSessionManager::new(SessionRole::Controller));
+    let dial_res = controller_manager
+        .clone()
+        .dial_and_connect(Arc::new(controller_db), host_id.clone(), None)
+        .await;
+
+    assert!(dial_res.is_err(), "dial_and_connect must fail for unreachable host");
+    assert!(
+        matches!(controller_manager.state(), RemoteLinkState::Failed { .. }),
+        "State must be Failed, got: {:?}",
+        controller_manager.state()
+    );
+
+    // CRITICAL: Peer identity must be preserved so UI does not show "No device paired"
+    let peer = controller_manager.peer_identity();
+    assert!(peer.is_some(), "peer_identity must not be cleared on Failed state");
+    assert_eq!(peer.as_ref().unwrap().device_id, host_id);
+    assert_eq!(peer.as_ref().unwrap().display_name, "MacBook Pro Host");
+
+    let dto = controller_manager.state_dto();
+    assert_eq!(dto.link, "Failed");
+    assert_eq!(dto.device_id, Some(host_id));
+    assert_eq!(dto.display_name, Some("MacBook Pro Host".to_string()));
 }

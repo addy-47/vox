@@ -47,9 +47,11 @@ const ScannerGlyphButton = ({ onClick }: { onClick: () => void }) => (
 
 const HostGlyphButton = ({
   isConnected,
+  isFailed,
   onClick,
 }: {
   isConnected: boolean;
+  isFailed?: boolean;
   onClick: () => void;
 }) => (
   <button
@@ -111,13 +113,14 @@ const HostGlyphButton = ({
     </div>
 
     <span className="mt-1 text-[10px] font-mono font-bold uppercase tracking-wider text-[rgb(var(--accent))] transition-colors">
-      {isConnected ? "CONNECTED" : "PAIRED"}
+      {isConnected ? "CONNECTED" : isFailed ? "RETRY" : "PAIRED"}
     </span>
   </button>
 );
 
 export const ControllerRemoteDeskPanel = memo(() => {
   const linkState = useRemoteStore((s) => s.linkState);
+  const failureReason = useRemoteStore((s) => s.failureReason);
   const connectedPeer = useRemoteStore((s) => s.connectedPeer);
   const revokeDevice = useRemoteStore((s) => s.revokeDevice);
   const connectHost = useRemoteStore((s) => s.connectHost);
@@ -128,6 +131,8 @@ export const ControllerRemoteDeskPanel = memo(() => {
   const [isRevokingPending, setIsRevokingPending] = useState(false);
 
   const isConnected = linkState === "Connected";
+  const isFailed = linkState === "Failed";
+  const hasPairedHost = connectedPeer !== null && linkState !== "Unpaired";
 
   const handleOpenScanner = useCallback((manual = false) => {
     setDefaultManual(manual);
@@ -135,7 +140,7 @@ export const ControllerRemoteDeskPanel = memo(() => {
   }, []);
 
   const handleGlyphClick = useCallback(() => {
-    if (linkState === "Paired" && connectedPeer) {
+    if ((linkState === "Paired" || linkState === "Failed") && connectedPeer) {
       void connectHost({ deviceId: connectedPeer.deviceId });
     }
   }, [linkState, connectedPeer, connectHost]);
@@ -152,8 +157,6 @@ export const ControllerRemoteDeskPanel = memo(() => {
       setIsRevokingPending(false);
     }
   }, [connectedPeer, isRevokingPending, revokeDevice]);
-
-  const isPairedOrConnected = (linkState === "Paired" || linkState === "Connected") && connectedPeer !== null;
 
   return (
     <div className="flex flex-row items-center justify-between gap-4 h-full p-2 sm:p-3 rounded-xl bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--accent),0.08)] animate-fade-in">
@@ -182,7 +185,22 @@ export const ControllerRemoteDeskPanel = memo(() => {
                 ({connectedPeer.displayName})
               </span>
             </>
-          ) : linkState === "Paired" && connectedPeer ? (
+          ) : isFailed && connectedPeer ? (
+            <>
+              Paired with {connectedPeer.displayName}. Connection failed: {failureReason ?? "Host unreachable."}{" "}
+              <button
+                type="button"
+                onClick={() => setIsConfirmRevokeOpen(true)}
+                className="inline-flex items-center gap-1 text-[11px] font-mono font-bold text-[rgb(var(--danger))] hover:underline cursor-pointer transition-colors select-none"
+                aria-label={REMOTE_CONTROL_COPY.revokeHostAria(connectedPeer.displayName)}
+              >
+                {REMOTE_CONTROL_COPY.revokeHost}
+              </button>{" "}
+              <span className="text-[11px] font-medium text-[rgb(var(--foreground-muted))]">
+                ({connectedPeer.displayName})
+              </span>
+            </>
+          ) : hasPairedHost && connectedPeer ? (
             <>
               Paired with {connectedPeer.displayName}. Idle on local Wi-Fi.{" "}
               <button
@@ -205,9 +223,10 @@ export const ControllerRemoteDeskPanel = memo(() => {
 
       {/* Right Column: Scan Action or Connected Status */}
       <div className="shrink-0 w-[116px] flex flex-col items-center justify-center">
-        {isPairedOrConnected ? (
+        {hasPairedHost ? (
           <HostGlyphButton
             isConnected={isConnected}
+            isFailed={isFailed}
             onClick={handleGlyphClick}
           />
         ) : (

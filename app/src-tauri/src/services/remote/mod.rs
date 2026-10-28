@@ -95,8 +95,8 @@ pub const PAIRING_APPROVAL_TIMEOUT: Duration = Duration::from_secs(30);
 // --- Discovery (owned by `discovery/`) ---
 
 /// mDNS service type advertised by a host that accepts controllers.
-/// Remote-control spec §6.1.
-pub const REMOTE_MDNS_SERVICE_TYPE: &str = "_vox._tcp.local";
+/// Remote-control spec §6.1. Must end with '._tcp.local.' per RFC 6762 / mdns-sd.
+pub const REMOTE_MDNS_SERVICE_TYPE: &str = "_vox._tcp.local.";
 
 /// Dial attempt deadline applied when cycling candidate addresses. Remote-
 /// control spec §6.1: the connector must not block one dead candidate for the

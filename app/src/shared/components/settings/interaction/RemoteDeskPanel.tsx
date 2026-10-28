@@ -68,9 +68,9 @@ export const RemoteDeskPanel = memo(() => {
                 ({connectedPeer.displayName})
               </span>
             </>
-          ) : linkState === "Paired" && connectedPeer ? (
+          ) : (linkState === "Paired" || linkState === "Failed") && connectedPeer ? (
             <>
-              Paired with {connectedPeer.displayName}. Idle on local Wi-Fi.{" "}
+              Paired with {connectedPeer.displayName}. {linkState === "Failed" ? "Connection idle." : "Idle on local Wi-Fi."}{" "}
               <button
                 type="button"
                 onClick={() => setIsConfirmRevokeOpen(true)}

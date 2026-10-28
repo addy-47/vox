@@ -53,6 +53,7 @@ export interface RemoteStoreState {
   approvePairing: (decision: "Approve" | "Reject") => Promise<void>;
   dismissPairingPrompt: () => void;
   dismissPairingFailure: () => void;
+  dismissFailure: () => void;
   listPairedDevices: () => Promise<PairedDeviceDtoAlias[]>;
   revokeDevice: (deviceId: string) => Promise<void>;
   disconnectDevice: (deviceId: string) => Promise<void>;
@@ -242,6 +243,14 @@ export const useRemoteStore = create<RemoteStoreState>((set, get) => ({
   dismissPairingFailure: () => {
     if (get().pairingFailureReason === null) return;
     set({ pairingFailureReason: null });
+  },
+
+  dismissFailure: () => {
+    set((state) => ({
+      linkState: state.connectedPeer ? "Paired" : "Unpaired",
+      failureReason: null,
+      failureKind: null,
+    }));
   },
 
   listPairedDevices: async () => {

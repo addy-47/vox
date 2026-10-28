@@ -95,7 +95,7 @@ export const RocketButton = memo(() => {
           <ConfirmModal
             open={isConfirming}
             title="Disconnect Remote Controller"
-            description={`Disconnect session with "${peerName}"? You can reconnect anytime.`}
+            description={`Disconnect session with "${peerName}"? .`}
             confirmLabel="Disconnect"
             cancelLabel="Cancel"
             isDestructive={true}

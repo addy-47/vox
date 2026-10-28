@@ -337,7 +337,7 @@ const DISC_FRAG = `
 
     float alpha = (edgeGlow * radialBlend * 0.92 + fill) * u_baseOpacity;
     alpha *= (1.0 + u_amplitude * 4.5);
-    alpha *= mix(1.0, 0.12, u_sleeping);
+    alpha *= mix(1.0, 0.85, u_sleeping);
 
     if (alpha < 0.004) discard;
 
@@ -382,7 +382,7 @@ const OUTER_FRAG = `
     // Very sharp rim — tight but bright
     float rim   = smoothstep(0.52, 1.0, fresnel);
     float alpha = rim * (0.65 + u_amplitude * 0.30);
-    alpha *= mix(1.0, 0.18, u_sleeping);
+    alpha *= mix(1.0, 0.90, u_sleeping);
 
     if (alpha < 0.008) discard;
 
@@ -747,10 +747,9 @@ export const VoxOrb = React.memo(({
     const themeGlow = themeRef.current.glow;
 
     if (sleeping || state === 'Sleeping') {
-      // Extremely calm: barely-there glow, near-black accent, and a slow drift.
-      // Remote-host sessions render with the identical Sleeping targets.
-      ctx.tgtGlow.copy(themeGlow).multiplyScalar(0.10);
-      ctx.tgtAccent.copy(themeAccent).multiplyScalar(0.10);
+      // Calm dimmed stage during remote session: fully visible orb with muted accent color
+      ctx.tgtGlow.copy(themeGlow).multiplyScalar(0.40);
+      ctx.tgtAccent.copy(themeAccent).multiplyScalar(0.40);
     } else if (state === 'Idle' || state === 'Paused' || state === 'Error') {
       ctx.tgtGlow.copy(themeGlow);
       ctx.tgtAccent.copy(themeAccent);
@@ -829,7 +828,7 @@ export const VoxOrb = React.memo(({
     fpsActive: 60,
     fpsIdle: 12,
     isActive,
-    isPaused: isSleeping || paused || lowPowerPause || isSettledIdle,
+    isPaused: paused || lowPowerPause || isSettledIdle,
   });
 
   // ── Scene initialisation (runs once) ─────────────────────────────────────

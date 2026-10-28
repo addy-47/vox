@@ -189,7 +189,25 @@
   5. Deferred Tier B (Android multicast lock) → `.scratch/remote_mdns_android_multicast_lock.md`.
   6. Verified: `verify-targets.sh` (desktop + aarch64-android) 0 warnings/0 errors; cargo lib tests 209 pass. Pre-existing failures unchanged (chapter scrubber pages-older test, tsc `ControllerRemoteDeskPanel.tsx`).
 
-- **Remote Control Android Multicast Lock & Review Remediation (2026-10-28):**
+- **Remote Control mDNS Suffix RCA & Settings Failed State Fix (2026-10-28):**
+  1. **Root Cause Analysis (Logs from Host `vox.log` & Android `adb logcat`)**:
+     - Host log and Android logcat showed identical error: `mDNS service ... must end with '._tcp.local.' or '._udp.local.'`.
+     - `REMOTE_MDNS_SERVICE_TYPE` was missing trailing dot (`_vox._tcp.local` vs `_vox._tcp.local.`).
+     - As a result, host advertisement failed to register on every loop, and controller mDNS browse failed immediately on timeout.
+     - Device pairing was intact in database (`paired_devices`), so no re-pairing was necessary.
+     - In `ControllerRemoteDeskPanel.tsx` and `RemoteDeskPanel.tsx`, UI branched exclusively on `linkState === "Paired"` and `linkState === "Connected"`.
+     - When rocket connection timed out to `linkState === "Failed"`, the desk panel treated the peer as nonexistent and rendered the unpaired "Pair with desktop..." prompt and QR scanner glyph button.
+  2. **Implemented Fixes**:
+     - `services/remote/mod.rs`: Fixed `REMOTE_MDNS_SERVICE_TYPE` to `"_vox._tcp.local."` per RFC 6762 / `mdns-sd` requirements.
+     - `services/remote/discovery/advertiser.rs`: Replaced manual string formatting with `info.get_fullname().to_string()` for exact unregistration key match.
+     - `remoteStore.ts`: Added `dismissFailure()` action to reset `linkState` to `Paired` when a paired peer is retained.
+     - `useHomePage.ts`: Wired banner dismiss button to invoke `dismissFailure()`.
+     - `ControllerRemoteDeskPanel.tsx`: Fixed state guard to `hasPairedHost = connectedPeer !== null && linkState !== "Unpaired"`. Rendered failed status with retry glyph and kept paired host identity visible when `linkState === "Failed"`.
+     - `RemoteDeskPanel.tsx`: Updated condition to keep paired device visible during `linkState === "Failed"`.
+  3. **Verification**:
+     - `./scripts/verify-targets.sh`: SUCCESS (0 warnings / 0 errors across architecture lint, desktop binary, desktop tests/benches, and Android `aarch64-linux-android`).
+     - `cd app && pnpm tsc --noEmit`: SUCCESS (0 errors).
+     - `pnpm exec vitest run src/test/unit/remoteStore.test.ts src/test/chapterScrubberWindow.dom.test.tsx src/test/remoteActivityDisplay.regression.test.ts`: SUCCESS (22/22 pass).
   1. **Android Multicast Lock & Discovery Alignment**:
      - `MulticastLockManager.kt`: Added thread-safe Kotlin manager for `WifiManager.MulticastLock` acquire/release with safe exception handling. Retained under R8 by `jni-keep.pro`.
      - `AndroidManifest.xml`: Declared `CHANGE_WIFI_MULTICAST_STATE` and `ACCESS_WIFI_STATE` permissions.
@@ -209,3 +227,49 @@
      - `pnpm tsc --noEmit`: SUCCESS (0 errors).
      - `pnpm exec vitest run src/test/chapterScrubberWindow.dom.test.tsx`: SUCCESS (6/6 pass).
      - `pnpm exec vitest run src/test/unit/remoteStore.test.ts src/test/remoteActivityDisplay.regression.test.ts`: SUCCESS (15/15 pass).
+
+- **Remote Control Test Suite Revamp & `/create-test` Implementation (2026-10-28):**
+  1. **Audit & RCA Findings**:
+     - Identified that `remote_connection_test.rs` previously faked the host listener inside the test body instead of testing the authentic production seam (`handle_inbound_connection`).
+     - Subtest header falsely claimed `dial_and_connect` while calling `pair_device`; the Rocket button path (`dial_and_connect`) had 0% integration test coverage.
+     - Zero tests called `mdns-sd`, allowing RFC 6762 trailing dot rejection to escape to production.
+     - Settings panel lacked DOM tests for `linkState === "Failed"`, allowing the "no device paired" UI regression.
+  2. **Implemented Tests & Fixes**:
+     - `services/remote/discovery/advertiser.rs`: Added `host_announcement_registers_with_rfc_compliant_service_syntax` unit test asserting `HostAnnouncement::announce` registers cleanly with `mdns-sd`.
+     - `tests/remote_connection_test.rs`: Added 3 new integration subtests:
+       - `remote_connection_dial_and_connect_reaches_connected`: Full controller `dial_and_connect` with real host listener, Noise XX handshake, and observed hint persistence.
+       - `remote_connection_dead_primary_hint_falls_back_to_valid_candidate`: Proves dead IP candidate 0 fails over to working candidate 1 within deadline.
+       - `remote_connection_dial_failure_retains_peer_identity`: Asserts dial failure transitions to `Failed` while preserving `peer_identity` and state DTO `deviceId`/`displayName`.
+     - Corrected misleading intent block on `remote_connection_pairing_handshake_approved_reaches_connected`.
+     - `app/src/test/controllerRemoteDeskPanel.dom.test.tsx`: Created DOM regression suite verifying `Failed`, `Paired`, `Connected`, and `Unpaired` states render correct affordances and retain host identity.
+  3. **Compilation & Quality Gate**:
+     - `./scripts/verify-targets.sh`: SUCCESS (0 warnings / 0 errors across architectural invariant lint, desktop lib/bin, desktop tests/benches, and Android `aarch64-linux-android`).
+     - `cd app && pnpm lint:arch && pnpm tsc --noEmit`: SUCCESS (0 errors).
+     - `pnpm exec vitest run src/test/controllerRemoteDeskPanel.dom.test.tsx`: SUCCESS (4/4 pass).
+
+- **mDNS Label Length Limit Root Cause Fix, Diagnostic Tracing & Home Error Banner Position (2026-10-28):**
+  1. **Root Cause Analysis (mDNS Packet Encoding Drop)**:
+     - Traced why `discover_host` produced 0 candidates despite both host and phone being active on the same subnet (`10.109.x.x`).
+     - Discovered that RFC 1035 §2.3.4 and RFC 6763 §4.1 enforce a maximum DNS label length of 63 octets.
+     - `advertiser.rs` constructed `instance_name = "Vox-{device_id}"` and `host = "vox-{device_id}.local."` using the raw 64-hex-char `device_id`, resulting in 68-byte labels.
+     - `mdns-sd` packet writer (`dns_parser.rs:3075`) explicitly skips any question or record containing labels > 63 bytes. As a result, the daemon dropped all announcement packets at wire encoding without returning a registration error.
+  2. **Implementation**:
+     - `services/remote/discovery/advertiser.rs`: Truncated `instance_name` and `host_name` prefix to 32 chars (`Vox-{32-char-hash}` = 36 bytes <= 63 octets), preserving full 64-char `device_id` in TXT record where controller matches. Added announcement tracing.
+     - `services/remote/discovery/browser.rs`: Added exhaustive `tracing::info!` instrumentation covering `SearchStarted`, `ServiceFound`, `ServiceResolved`, `ServiceRemoved`, candidate matching, and browse timeouts.
+     - `services/remote/session/manager.rs`: Added structured logging for candidate iteration, candidate failure causes, mDNS fallback triggers, and discovered candidates.
+     - `app/src/pages/Home.tsx`: Replaced scattered absolute coordinate error banners (`top-16`, `top-[116px]`, `top-[160px]`) with a unified flex container pinned directly below the App Header (`top-2 sm:top-3 left-1/2 -translate-x-1/2 z-[100]`), eliminating overlap with the status badge and central orb.
+  3. **Verification**:
+     - `./scripts/verify-targets.sh`: SUCCESS (0 warnings / 0 errors across architectural invariant lint, desktop lib/bin, desktop tests/benches, and Android `aarch64-linux-android`).
+     - `cd app && pnpm lint:arch && pnpm tsc --noEmit`: SUCCESS (0 errors).
+
+- **Remote Session Orb Visibility & Connected Kicker Label (2026-10-28):**
+  1. **Root Cause**:
+     - `AdvancedOrb.tsx`: `useDynamicFPS` passed `isPaused: isSleeping || ...`. When remote connected, `isSleeping` froze the animation loop, preventing dynamic transitions until unmount/remount. Furthermore, shader alpha was reduced to `0.12` and color brightness to `0.10` (`0.12 * 0.10 = 0.012`), rendering the orb pitch black.
+     - `Home.tsx`: Lacked the connected kicker label displaying the peer device identity above `DynamicStatusBadge`.
+  2. **Fix Applied**:
+     - `AdvancedOrb.tsx`: Removed `isSleeping` from `isPaused` so the orb stays alive and reactive. Preserved full visibility (`alpha` remains at 0.85-0.90) while softly muting the interior accent and glow colors (0.40 multiplier).
+     - `Home.tsx`: Added glowing pulse badge displaying `CONNECTED: <displayName>` directly above the `REMOTE SESSION` status badge.
+  3. **Verification**:
+     - `cd app && pnpm lint:arch && pnpm tsc --noEmit`: SUCCESS (0 errors).
+     - Vite HMR updated live on desktop host.
+
