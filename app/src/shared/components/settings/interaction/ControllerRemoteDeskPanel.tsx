@@ -1,4 +1,4 @@
-import { memo, useState, useEffect, useCallback } from "react";
+import { memo, useState, useCallback } from "react";
 import { useRemoteStore } from "@/store/remoteStore";
 import { QrScannerModal } from "@/shared/components/remote/QrScannerModal";
 import { ConfirmModal } from "@/shared/ui/ConfirmModal";

@@ -1,4 +1,5 @@
 import type { ActivityEnvelope, InteractionState } from "@/services/eventsService";
+import type { RemoteLinkState } from "@/services/remoteService";
 import type { OrbState } from "thinking-orbs";
 
 export type OrbMotionPreset = "silk" | "orbits" | "globe" | "web" | "morph";
@@ -175,4 +176,52 @@ export function resolveActivityDisplay(
         shimmer: false,
       };
   }
+}
+
+/**
+ * Registry: Host-side remote link states → status badge. The single status
+ * badge carries remote connection state (Connected, Connecting, Reconnecting,
+ * Failed); there is no separate REMOTE kicker. States absent from the map
+ * (Disabled, Unpaired, Paired) are local-life states and fall through to the
+ * normal interaction-state display.
+ */
+export const REMOTE_STATE_REGISTRY: Partial<
+  Record<RemoteLinkState, Omit<ActivityDisplayConfig, "shimmer">>
+> = {
+  Connected: {
+    label: "Remote Session",
+    orbState: "breathing",
+    motionPreset: "silk",
+  },
+  Reconnecting: {
+    label: "Reconnecting",
+    orbState: "breathing",
+    motionPreset: "silk",
+  },
+  Connecting: {
+    label: "Linking",
+    orbState: "breathing",
+    motionPreset: "silk",
+  },
+  Failed: {
+    label: "Remote Failed",
+    orbState: "breathing",
+    motionPreset: "silk",
+  },
+};
+
+/**
+ * Resolves the host status badge for the current remote link state, or null
+ * when the state belongs to the normal local-life display.
+ */
+export function resolveRemoteActivityDisplay(
+  linkState: RemoteLinkState
+): ActivityDisplayConfig | null {
+  const entry = REMOTE_STATE_REGISTRY[linkState];
+  if (!entry) return null;
+  return {
+    ...entry,
+    // Transient connection phases shimmer; a settled link does not.
+    shimmer: linkState === "Connecting" || linkState === "Reconnecting",
+  };
 }

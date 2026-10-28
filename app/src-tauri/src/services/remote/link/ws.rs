@@ -333,13 +333,21 @@ pub async fn bind(addr: SocketAddr) -> Result<WsListener, LinkError> {
 
 /// Connects to a WebSocket endpoint at `url` and returns a configured [`WsLink`].
 pub async fn dial(url: &str) -> Result<WsLink, LinkError> {
+    dial_with_timeout(url, std::time::Duration::from_secs(8)).await
+}
+
+/// Connects with an explicit dial deadline. Used by the controller when it
+/// cycles candidate addresses (explicit → hints → mDNS); a dead candidate
+/// must not consume the full legacy timeout per attempt.
+pub async fn dial_with_timeout(url: &str, timeout: std::time::Duration) -> Result<WsLink, LinkError> {
     let connect_future = tokio_tungstenite::connect_async(url);
-    let (ws_stream, _) = tokio::time::timeout(std::time::Duration::from_secs(8), connect_future)
+    let (ws_stream, _) = tokio::time::timeout(timeout, connect_future)
         .await
         .map_err(|_| {
-            LinkError::Transport(
-                "Connection timed out (8s limit). Host did not respond at target endpoint.".into(),
-            )
+            LinkError::Transport(format!(
+                "Connection timed out ({}s limit). Host did not respond at target endpoint.",
+                timeout.as_secs()
+            ))
         })?
         .map_err(|e| LinkError::Transport(e.to_string()))?;
     Ok(WsLink::new(ws_stream))

@@ -414,6 +414,18 @@ Rather than standard conversation logs, Vox renders a holographic dialogue strea
 * No card framing — text renders directly on the ambient field.
 * The scroll zone has a vertical CSS mask gradient so older turns dissolve upward.
 * Words and lines float up smoothly as they stream from the STT/LLM engines.
+* **History access:** the desktop dialogue rail is the history surface on `md` and
+  wider. Below `md`, where the rail is hidden, a chapter scrubber on the right
+  edge indexes the full turn history. It renders a fixed window of the newest 15
+  turns; top and bottom chevrons page one window older or newer, edge aligned
+  with the tick column. A tiny mono range readout (`71–85`) sits under the rail
+  and always states which slice is on screen; paging slides the tick column 8px
+  in the direction of travel (180 ms, skipped under `prefers-reduced-motion`).
+  A newly spoken turn always snaps the window back to the newest page and
+  highlights that turn.
+* The scrubber preview is one popover surface: `rounded-xl` radius, a hairline
+  `--border` at 0.08 alpha, and the standard `0 1px 3px` micro-elevation shadow.
+  Resting ticks use the `--foreground` token, never a hardcoded white.
 
 ---
 

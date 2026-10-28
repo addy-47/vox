@@ -39,22 +39,88 @@ use crate::{
             PairingOutcome, PairingRequest, TrustDecision, TrustRefusal,
         },
         session::state::{PairingState, RemoteLinkState},
-        PAIRING_APPROVAL_TIMEOUT,
+        PAIRING_APPROVAL_TIMEOUT, REMOTE_LISTEN_PORT,
     },
 };
 
 /// Spawns the background host listener loop accepting incoming controller connections.
 pub fn spawn_host_listener<R: Runtime>(app_handle: AppHandle<R>, state: Arc<AppState>) {
+    spawn_mdns_advertiser(Arc::clone(&state));
     tauri::async_runtime::spawn(async move {
         run_host_listener_loop(app_handle, state).await;
     });
 }
 
+/// Spawns the mDNS advertiser loop. Spec §6.1: the host advertises
+/// `_vox._tcp.local` with its `device_id` TXT whenever it accepts controllers.
+/// The announcement persists while the flag is off too (spec: a controller
+/// must be able to distinguish "not accepting" from "host offline"), and
+/// re-publishes when the flag flips.
+///
+/// Spec §6.1 mDNS fallback: controllers browse `_vox._tcp.local`, match the
+/// discovered `device_id` against `paired_devices`, and refresh stored hints.
+fn spawn_mdns_advertiser(state: Arc<AppState>) {
+    tauri::async_runtime::spawn(async move {
+        let device_id = match crate::services::remote::security::KeyStore::default_path() {
+            Ok(store) => match store.load_or_create() {
+                Ok(key) => crate::services::remote::security::derive_device_id(key.public_key())
+                    .as_str()
+                    .to_string(),
+                Err(e) => {
+                    log::error!("[Remote] mDNS advertiser: device key unavailable: {e}");
+                    return;
+                }
+            },
+            Err(e) => {
+                log::error!("[Remote] mDNS advertiser: device key path unavailable: {e}");
+                return;
+            }
+        };
+
+        let mut announcement: Option<crate::services::remote::discovery::HostAnnouncement> = None;
+        let mut advertised_flag: Option<bool> = None;
+
+        loop {
+            let accepts = state
+                .settings
+                .read()
+                .map(|s| s.remote.accepts_controllers)
+                .unwrap_or(false);
+
+            if advertised_flag != Some(accepts) {
+                if let Some(current) = announcement.take() {
+                    current.withdraw();
+                }
+                match crate::services::remote::discovery::HostAnnouncement::announce(
+                    &device_id,
+                    REMOTE_LISTEN_PORT,
+                    accepts,
+                ) {
+                    Ok(a) => {
+                        announcement = Some(a);
+                        advertised_flag = Some(accepts);
+                        log::info!(
+                            "[Remote] mDNS announcement updated: device_id={device_id}, accepts={accepts}"
+                        );
+                    }
+                    Err(e) => {
+                        log::warn!("[Remote] mDNS advertise failed: {e}");
+                        advertised_flag = None;
+                    }
+                }
+            }
+
+            tokio::time::sleep(crate::services::remote::discovery::HostAnnouncement::poll_interval())
+                .await;
+        }
+    });
+}
+
 async fn run_host_listener_loop<R: Runtime>(app_handle: AppHandle<R>, state: Arc<AppState>) {
-    let bind_addr: SocketAddr = match "0.0.0.0:7700".parse() {
+    let bind_addr: SocketAddr = match format!("0.0.0.0:{REMOTE_LISTEN_PORT}").parse() {
         Ok(a) => a,
         Err(e) => {
-            log::error!("[Remote] Invalid host bind address 0.0.0.0:7700: {e}");
+            log::error!("[Remote] Invalid host bind address 0.0.0.0:{REMOTE_LISTEN_PORT}: {e}");
             return;
         }
     };
@@ -452,6 +518,7 @@ async fn settle_pairing_coordinator<R: Runtime>(
             .await;
         }
         PairingOutcome::Rejected | PairingOutcome::TimedOut => {
+            *state.pending_pairing.lock() = None;
             let _ = ws_link
                 .send_control(ControlMessage::PairDenied(PairDenied {
                     reason: "Rejected or timed out".into(),

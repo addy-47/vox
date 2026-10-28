@@ -28,6 +28,7 @@ dependencies = [
  "gtk",
  "hex",
  "hound",
+ "if-addrs",
  "jni 0.21.1",
  "libc",
  "log",

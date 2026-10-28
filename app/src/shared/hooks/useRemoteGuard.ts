@@ -3,6 +3,7 @@ import { isRealMobileDevice } from "@/layout/breakpoints";
 
 export interface RemoteGuardResult {
   isBlocked: boolean;
+  isHost: boolean;
   tooltip?: string;
   guardProps: {
     disabled?: boolean;
@@ -26,6 +27,7 @@ export function useRemoteGuard(): RemoteGuardResult {
 
   return {
     isBlocked,
+    isHost,
     tooltip,
     guardProps: isBlocked
       ? {

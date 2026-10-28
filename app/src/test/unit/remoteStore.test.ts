@@ -176,6 +176,43 @@ describe("remoteStore unit suite", () => {
     cleanup();
   });
 
+  it("survives React StrictMode double-mount lifecycle without losing listeners", async () => {
+    transport.mockResponses["get_link_state"] = { link: "Unpaired" } as RemoteStateDto;
+    transport.mockResponses["list_paired_devices"] = [] as PairedDeviceDto[];
+    transport.mockResponses["get_command_routing"] = {};
+
+    // Simulate Mount 1
+    let isMounted1 = true;
+    let cleanup1: (() => void) | null = null;
+    const p1 = useRemoteStore.getState().init();
+    p1.then((u) => {
+      if (isMounted1) cleanup1 = u;
+      else u();
+    });
+
+    // Simulate StrictMode unmount 1 before p1 resolves
+    isMounted1 = false;
+    if (cleanup1) (cleanup1 as () => void)();
+
+    // Simulate Remount 2
+    let isMounted2 = true;
+    let cleanup2: (() => void) | null = null;
+    const p2 = useRemoteStore.getState().init();
+    await p2.then((u) => {
+      if (isMounted2) cleanup2 = u;
+      else u();
+    });
+
+    const payload: RemotePairingRequestedPayload = {
+      deviceId: "strict_dev_1",
+      displayName: "Strict Phone",
+    };
+    transport.triggerEvent<RemotePairingRequestedPayload>("remote_pairing_requested", payload);
+
+    expect(useRemoteStore.getState().pendingPairingPrompt).toEqual(payload);
+    if (cleanup2) (cleanup2 as () => void)();
+  });
+
   it("does not open the QR pairing modal while an authorization prompt is pending", async () => {
     useRemoteStore.setState({
       pendingPairingPrompt: { deviceId: "req_device_2", displayName: "Ada's Phone" },

@@ -18,7 +18,11 @@ use tokio_util::sync::CancellationToken;
 
 use super::state::{RemoteFailureKind, RemoteLinkState, RemoteStateDto};
 use crate::services::remote::{
-    link::{LinkCloseReason, LinkError, RemoteLink},
+    discovery,
+    link::{
+        ws::{dial_with_timeout, WsLink},
+        LinkCloseReason, LinkError, RemoteLink,
+    },
     protocol::{
         capabilities::CAP_CONTROL_MESSAGES,
         errors::ProtocolError,
@@ -28,7 +32,8 @@ use crate::services::remote::{
             VersionMismatch,
         },
     },
-    HEARTBEAT_INTERVAL, HEARTBEAT_MAX_MISSED_PONGS, HEARTBEAT_PING_TIMEOUT, PROTOCOL_VERSION,
+    DIAL_CANDIDATE_TIMEOUT, HEARTBEAT_INTERVAL, HEARTBEAT_MAX_MISSED_PONGS, HEARTBEAT_PING_TIMEOUT,
+    PROTOCOL_VERSION, REMOTE_LISTEN_PORT,
 };
 
 /// Type alias for state change subscriber callbacks.
@@ -475,38 +480,29 @@ impl RemoteSessionManager {
 
     // ─── Ticket 02: Tier 2 — dial_and_connect ───────────────────────────────
 
-    async fn perform_dial_handshake(
+    /// Dials a candidate and runs the Noise handshake to completion.
+    ///
+    /// Returns the sealed link paired with our local identity, or the
+    /// classified transport error (spec §6.1 candidate ordering).
+    async fn dial_link(
         &self,
+        candidate: &str,
         host_device: &crate::persistence::paired_devices::PairedDevice,
-        address: Option<String>,
-    ) -> Result<(crate::services::remote::link::ws::WsLink, SenderIdentity), LinkError> {
-        let dial_addr = if let Some(addr) = address {
-            addr
-        } else {
-            host_device
-                .hints
-                .first()
-                .and_then(|h| h.get("addr").and_then(|v| v.as_str()).map(|s| s.to_string()))
-                .ok_or_else(|| {
-                    LinkError::Transport(format!("No address hint for device {}", host_device.device_id))
-                })?
-        };
+    ) -> Result<(WsLink, SenderIdentity), LinkError> {
+        let url = discovery::dial_url(candidate, REMOTE_LISTEN_PORT);
+        let ws_link = dial_with_timeout(&url, DIAL_CANDIDATE_TIMEOUT).await?;
+        let local_identity = self
+            .drive_noise_handshake(&ws_link, &host_device.public_key)
+            .await?;
+        Ok((ws_link, local_identity))
+    }
 
-        let url = if dial_addr.starts_with("ws://") || dial_addr.starts_with("wss://") {
-            dial_addr
-        } else {
-            format!("ws://{dial_addr}")
-        };
-
-        let ws_link = match crate::services::remote::link::ws::dial(&url).await {
-            Ok(l) => l,
-            Err(e) => {
-                let kind = classify_dial_error(&e.to_string());
-                self.set_state(RemoteLinkState::failed(format!("Dial failed: {e}"), kind));
-                return Err(e);
-            }
-        };
-
+    /// Drives the Noise initiator handshake over a freshly dialed link.
+    async fn drive_noise_handshake(
+        &self,
+        ws_link: &WsLink,
+        host_public_key: &[u8],
+    ) -> Result<SenderIdentity, LinkError> {
         let key_store = crate::services::remote::security::KeyStore::default_path()
             .map_err(|e| LinkError::Transport(e.to_string()))?;
         let device_key = key_store
@@ -516,7 +512,7 @@ impl RemoteSessionManager {
         let prologue = crate::services::remote::security::default_noise_prologue();
         let handshake = crate::services::remote::security::NoiseHandshake::initiator(
             &device_key,
-            Some(&host_device.public_key),
+            Some(host_public_key),
             &prologue,
         )
         .map_err(|e| LinkError::Protocol(ProtocolError::MalformedJson(e.to_string())))?;
@@ -535,12 +531,61 @@ impl RemoteSessionManager {
             crate::services::remote::security::derive_device_id(device_key.public_key());
         let controller_name =
             sysinfo::System::host_name().unwrap_or_else(|| "Vox Controller".to_string());
-        let local_identity = SenderIdentity {
+        Ok(SenderIdentity {
             device_id: controller_id.as_str().to_string(),
             display_name: controller_name,
-        };
+        })
+    }
 
-        Ok((ws_link, local_identity))
+    /// Dial candidate resolution. Spec §6.1 (in order): explicit provided
+    /// address (QR / manual entry) → stored `paired_devices.hints` → mDNS
+    /// browse for the host `device_id` (the fallback that survives network
+    /// changes; refreshed hints are persisted before the first mDNS dial).
+    async fn perform_dial_handshake(
+        &self,
+        host_device: &crate::persistence::paired_devices::PairedDevice,
+        address: Option<String>,
+    ) -> Result<(WsLink, SenderIdentity, String), LinkError> {
+        let mut candidates: Vec<String> = Vec::new();
+        if let Some(addr) = address {
+            candidates.push(addr);
+        }
+        candidates.extend(discovery::lan_hint_addrs(&host_device.hints));
+
+        let mut last_error: Option<LinkError> = None;
+        for candidate in &candidates {
+            match self.dial_link(candidate, host_device).await {
+                Ok((link, identity)) => return Ok((link, identity, candidate.clone())),
+                Err(e) => {
+                    log::warn!("[Remote] Dial candidate {candidate} failed: {e}");
+                    last_error = Some(e);
+                }
+            }
+        }
+
+        // mDNS fallback: the stored hints are IPs captured at pairing time —
+        // stale after any network change. Browse the LAN by host device id.
+        let mdns_candidates =
+            discovery::discover_host(&host_device.device_id, discovery::MDNS_BROWSE_TIMEOUT)
+                .await
+                .unwrap_or_else(|e| {
+                    log::warn!("[Remote] mDNS browse failed: {e}");
+                    Vec::new()
+                });
+
+        for candidate in &mdns_candidates {
+            match self.dial_link(candidate, host_device).await {
+                Ok((link, identity)) => return Ok((link, identity, candidate.clone())),
+                Err(e) => {
+                    log::warn!("[Remote] mDNS candidate {candidate} failed: {e}");
+                    last_error = Some(e);
+                }
+            }
+        }
+
+        Err(last_error.unwrap_or_else(|| {
+            LinkError::Transport("No dial candidates".into())
+        }))
     }
 
     async fn handle_dial_rejection(
@@ -640,8 +685,27 @@ impl RemoteSessionManager {
             LinkError::Transport(format!("Device {device_id} not found in paired_devices"))
         })?;
 
-        let (ws_link, local_identity) =
-            self.perform_dial_handshake(&host_device, address).await?;
+        let (ws_link, local_identity, chosen_candidate) =
+            self.perform_dial_handshake(&host_device, address)
+                .await
+                .map_err(|e| {
+                    let kind = classify_dial_error(&e.to_string());
+                    self.set_state(RemoteLinkState::failed(format!("Dial failed: {e}"), kind));
+                    e
+                })?;
+
+        // Spec §5.7: hints update on successful connection (source: Observed).
+        // The dial candidate that worked is the freshest known address, placed at index 0
+        // while preserving existing hints for forward compatibility.
+        if let Ok(conn) = db.connect() {
+            let hints = discovery::update_observed_hint(&host_device.hints, &chosen_candidate);
+            let _ = crate::persistence::paired_devices::update_paired_device_hints(
+                &conn,
+                &device_id,
+                &hints,
+            )
+            .await;
+        }
 
         let peer_hello = match self
             .exchange_hello(

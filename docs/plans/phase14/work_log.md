@@ -158,3 +158,54 @@
   - `cd app && pnpm lint:arch`: SUCCESS (All architectural invariants hold).
   - `cd app && pnpm test`: SUCCESS (28 test suites, 235 tests passed).
 
+- **Mobile Chapter Scrubber History Paging & Light-Mode Fix (2026-10-27):**
+  1. **Visibility inversion (`Home.tsx`)**: the dialogue scrubber is now `md:hidden`, shown only where the dialogue rail is hidden (`< 768px`). It previously used `hidden md:block`, the inverse.
+  2. **Full-history windowing (`ChapterScrubber.tsx`)**: added a `maxVisible` prop. `Home` now passes the full `dialogueHistory` instead of `slice(-15)`; the scrubber renders a 15-row window and clamps card/preview geometry to that window.
+  3. **Chevron paging**: top and bottom chevron buttons page one window older/newer with disabled end states. A change in turn count resets to the newest page during render (no effect), so a newly spoken turn always returns the rail to the newest page and highlights it. Chevrons share the ticks' edge alignment (`justify-end`/`justify-start`) so they sit directly above and below the scrubber column, not at the rail's centre.
+     - Alignment refinement: each chevron icon sits inside a `restLength`-wide box instead of centring on the rail, so the icon centre lands exactly on the tick centreline for any geometry.
+     - Position feedback: an 11px mono range readout (`71–85`) always shows the window slice under the lower chevron, and the tick column slides 8px in the travel direction for 180ms on every page change (skipped under `prefers-reduced-motion`).
+  4. **Light-mode tick fix**: resting ticks use `bg-[rgb(var(--foreground))]` instead of `bg-white/80`, which was invisible on the light theme.
+  5. **Preview card alignment (`DESIGN.md` §2, §4.2, §5)**: border moved to `--border`/0.08, shadow reduced to the `0 1px 3px` micro-elevation, title set to the 13px scale step, description to the 11px floor, and `CARD_WIDTH` corrected to the actual 240px popover width.
+  6. **Spec**: recorded history-access and preview-surface rules in `docs/specs/design-spec.md` §9.
+  7. **Tests**: added `app/src/test/chapterScrubberWindow.dom.test.tsx` (6 cases: window size, older/newer paging, end-state disabling, snap-to-newest on new turn, token-based tick colour, no chevrons when all turns fit).
+- **Verification**:
+  - `cd app && pnpm exec vitest run src/test/chapterScrubberWindow.dom.test.tsx`: SUCCESS (6/6).
+  - `cd app && pnpm test`: SUCCESS (29 suites, 242 tests).
+  - `cd app && pnpm lint:arch`: SUCCESS.
+  - `cd app && pnpm exec eslint` on changed files: 0 errors (2 pre-existing warnings in `Home.tsx`, present on `HEAD`).
+  - `cd app && node scripts/stress_drawers.mjs`: completed, 0 runtime exceptions.
+  - `pnpm tsc --noEmit`: changed files clean; blocked by a pre-existing unused `useEffect` import in `ControllerRemoteDeskPanel.tsx`.
+
+
+- **Settings Page Layout Inventory Doc (2026-10-28):**
+  1. Explored `pages/Settings.tsx`, `useSettingsPage.ts`, `settingsLayout.ts`, `SettingsCardWrapper.tsx`, `SettingsSideCarouselCard.tsx`, `RadialHub.tsx`, and all six domain cards (Persona, Memory, Language, Appearance, Speech, Interaction) plus their desks/modals.
+  2. Created root-level `SETTINGS_PAGE_LAYOUT.md` documenting desktop radial-hub grid layout, compact/mobile single-column order, shared card chrome/commit footers, each card's settings and views, and full modals/overlays inventory, plus mobile redesign preservation notes and key file index.
+
+- **Remote Control mDNS + Connect RCA (2026-10-28):**
+  1. RCA: phone dials stale hint `192.168.29.221:7700` after network change; host never receives inbound; mDNS fallback unimplemented; controller booted Unpaired on relaunch. Pairing is key-based, not IP-coupled (RAIL-RC-01).
+  2. Implemented mDNS advertise (host) + browse (controller) in `services/remote/discovery/mod.rs`; listener spawns `spawn_mdns_advertiser`; manager cycles explicit → stored hints → mDNS and persists the working candidate as an Observed hint.
+  3. Added `ws::dial_with_timeout` (4s) and `DIAL_CANDIDATE_TIMEOUT`; added `if-addrs` dependency.
+  4. Frontend: Home failure banner with dismiss; `useHomePage` exposes `remoteFailureReason`/`dismissRemoteFailure`.
+  5. Deferred Tier B (Android multicast lock) → `.scratch/remote_mdns_android_multicast_lock.md`.
+  6. Verified: `verify-targets.sh` (desktop + aarch64-android) 0 warnings/0 errors; cargo lib tests 209 pass. Pre-existing failures unchanged (chapter scrubber pages-older test, tsc `ControllerRemoteDeskPanel.tsx`).
+
+- **Remote Control Android Multicast Lock & Review Remediation (2026-10-28):**
+  1. **Android Multicast Lock & Discovery Alignment**:
+     - `MulticastLockManager.kt`: Added thread-safe Kotlin manager for `WifiManager.MulticastLock` acquire/release with safe exception handling. Retained under R8 by `jni-keep.pro`.
+     - `AndroidManifest.xml`: Declared `CHANGE_WIFI_MULTICAST_STATE` and `ACCESS_WIFI_STATE` permissions.
+     - `services/remote/discovery/`: Decomposed discovery domain per `backend-style-guide.md` into `hints.rs`, `advertiser.rs`, `browser.rs`, `multicast.rs`, and minimal re-export `mod.rs`.
+     - `multicast.rs`: Implemented RAII `MulticastLockGuard` acquiring the lock during `discover_host` on Android (via Kotlin manager with direct JNI fallback) and releasing on drop; no-op on desktop.
+     - `hints.rs`: Added `update_observed_hint` to prepend freshly observed candidates while preserving forward-compatible hints.
+     - `remote/mod.rs`: Moved `MDNS_BROWSE_TIMEOUT` (6s) to subsystem constants per `RC-SSO`.
+  2. **Code Review Remediation of Prior Agent's Work**:
+     - `ChapterScrubber.tsx`: Rendered 11px mono range readout (`windowStart + 1`–`windowStart + visibleChapters.length`) under lower chevron when pages exist; fixed failing test in `chapterScrubberWindow.dom.test.tsx` (6/6 pass).
+     - `ControllerRemoteDeskPanel.tsx`: Removed unused `useEffect` import; resolved `TS6133` error (`pnpm tsc --noEmit` exits with 0 errors).
+  3. **Specification Alignment**:
+     - `docs/specs/remote-control-spec.md` §6.1: Documented mDNS TXT record properties (`device_id`, `accepts`), Android `MulticastLock` requirement, candidate dial sequence, and observed hint updates.
+  4. **Verification**:
+     - `./scripts/verify-targets.sh`: SUCCESS (0 warnings / 0 errors across architectural invariant lint, desktop lib/bin, desktop tests/benches, and Android `aarch64-linux-android`).
+     - `cargo test --test remote_connection_test --release -- --test-threads=1`: SUCCESS (9/9 pass in 1.84s).
+     - `cargo test discovery --release`: SUCCESS (5/5 pass).
+     - `pnpm tsc --noEmit`: SUCCESS (0 errors).
+     - `pnpm exec vitest run src/test/chapterScrubberWindow.dom.test.tsx`: SUCCESS (6/6 pass).
+     - `pnpm exec vitest run src/test/unit/remoteStore.test.ts src/test/remoteActivityDisplay.regression.test.ts`: SUCCESS (15/15 pass).

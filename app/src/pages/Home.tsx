@@ -84,6 +84,8 @@ export const Home = memo(() => {
     activityDisplay,
     activeActivity,
     isRemoteBlocked,
+    remoteFailureReason,
+    dismissRemoteFailure,
   } = useHomePage();
   useMemoryTrace("Home");
 
@@ -210,12 +212,9 @@ export const Home = memo(() => {
   }, [dialogueHistory]);
 
   const scrubberChapters = useMemo<Chapter[]>(() => {
-    // Show latest conversation turns in chronological order (oldest at top, latest at bottom).
-    // Bound to the 15 most recent turns so scrubber ticks fit comfortably within the 75% orb height cap.
-    const recent = dialogueHistory.slice(-15);
-    const startIdx = Math.max(0, dialogueHistory.length - 15);
-    return recent.map((turn, relIdx) => {
-      const absIdx = startIdx + relIdx;
+    // Full history, oldest at top. The scrubber windows it to `maxVisible` rows
+    // and pages older turns with its chevrons, so no turn becomes unreachable.
+    return dialogueHistory.map((turn, absIdx) => {
       const title = turn.user ? (turn.user.length > 40 ? `${turn.user.slice(0, 40)}...` : turn.user) : `Turn ${absIdx + 1}`;
       const desc = turn.assistant || undefined;
       return {
@@ -275,6 +274,24 @@ export const Home = memo(() => {
         </div>
       )}
 
+      {/* ── Remote connect-failure banner (phone side; spec §6.1 manual-entry fallback) ── */}
+      {remoteFailureReason && (
+        <div role="alert" className="absolute top-[160px] left-1/2 -translate-x-1/2 z-[100] pointer-events-auto">
+          <div className="glass-card px-4 py-2.5 rounded-xl flex items-center gap-2.5 border border-[rgba(var(--danger),0.35)] shadow-lg bg-[rgb(var(--card))]/95 max-w-[90vw]">
+            <AlertCircle className="text-[rgb(var(--danger))] shrink-0" size={16} />
+            <p className="text-[12px] text-[rgb(var(--foreground))]/90 break-words select-text">
+              {HOME_CONTROLS_COPY.remoteFailurePrefix} {remoteFailureReason}
+            </p>
+            <button
+              onClick={dismissRemoteFailure}
+              className="text-[11px] font-black uppercase tracking-wider text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))] cursor-pointer shrink-0"
+            >
+              {ERROR_BANNER_COPY.dismissButton}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ── Status Header: Fixed top 10% across desktop, adjusted for mobile header padding ── */}
       <div
         className="absolute left-1/2 -translate-x-1/2 z-30 flex flex-col items-center pointer-events-none text-center"
@@ -292,11 +309,6 @@ export const Home = memo(() => {
         {isTemporarySession && (
           <div className="flex items-center text-[9px] font-mono font-semibold tracking-[0.25em] uppercase text-[rgb(var(--accent))]/60 leading-none mb-1 animate-in fade-in duration-200">
             <span>{HOME_CONTROLS_COPY.temporary.activeBadge}</span>
-          </div>
-        )}
-        {isRemoteBlocked && (
-          <div className="flex items-center text-[9.5px] font-mono font-semibold tracking-[0.25em] uppercase text-[rgb(var(--accent))]/70 leading-none mb-1 animate-in fade-in duration-200">
-            <span>REMOTE</span>
           </div>
         )}
         <DynamicStatusBadge
@@ -355,13 +367,8 @@ export const Home = memo(() => {
             isEngaged && interactionState !== "Error" ? "scale-100 opacity-100 animate-field-pulse" : "scale-90 opacity-60"
           )}
         />
-        {/* Inward ripples flowing toward orb center during remote session */}
-        {isRemoteBlocked && (
-          <div
-            className="absolute inset-4 rounded-full border border-[rgb(var(--accent))]/30 pointer-events-none animate-ping"
-            style={{ animationDuration: "3s" }}
-          />
-        )}
+        {/* Remote-active look = the calm sleeping stage, exactly as Sleeping.
+            The status badge below is the sole remote signal; no extra ping. */}
         {/* Orb directly renders on Home mount with zero loader flash */}
         <div className="relative w-full h-full flex items-center justify-center">
           <OrbitField
@@ -383,10 +390,13 @@ export const Home = memo(() => {
         </div>
       </div>
 
-      {/* ── Dialogue Scrubber (Vertically centered, right edge of screen, ≤75% orb height, aligned with dialogue rail) ── */}
+      {/* ── Dialogue Scrubber (mobile only) ──
+          Mirrors the dialogue rail exactly where it is hidden (`< md`). On
+          wider layouts the transcript rail is the history surface and this
+          rail is suppressed. */}
       {scrubberChapters.length > 0 && (
         <div
-          className="absolute z-30 pointer-events-auto hidden md:block"
+          className="absolute z-30 pointer-events-auto md:hidden"
           style={{
             right: "max(6px, env(safe-area-inset-right, 6px))",
             top: stageTop(isRealMobileDevice(), 36),
@@ -402,6 +412,7 @@ export const Home = memo(() => {
             restLength={10}
             rowHeight={7}
             radius={3}
+            maxVisible={15}
             currentIndex={scrubberChapters.length - 1}
             label="Dialogue History Scrubber"
           />
