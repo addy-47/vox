@@ -84,8 +84,8 @@ pub fn resolve_threads_for(workload: Workload, execution: Execution, capacity: C
     let budget = capacity.budget();
     match workload {
         Workload::Vad => VAD_THREADS,
-        Workload::Stt => clamp_threads(budget / 2, MAX_STT_THREADS),
-        Workload::Tts => clamp_threads(budget / 2, MAX_TTS_THREADS),
+        Workload::Stt => clamp_threads(budget, MAX_STT_THREADS),
+        Workload::Tts => clamp_threads(budget, MAX_TTS_THREADS),
         Workload::Llm => clamp_threads(budget, MAX_LLM_THREADS),
     }
 }

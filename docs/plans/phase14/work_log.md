@@ -2,6 +2,39 @@
 
 ---
 
+## 2026-10-28 — Voice Pipeline RCA, Dynamic Logic Audit & Critical Bug Remediation
+
+- **Context & Goals**:
+  - Investigated Session `1793098442983` ("Gemini program summary", 2026-10-27) in Turso DB and application logs.
+  - Root-caused voice feedback loop, VAD `Thinking` deadlock, Kokoro synthesis lag, and `search_memory` log flood.
+  - Mapped complete end-to-end runtime trace across 5 sequential stages and 5 branch points in `voice_pipeline_scenarios_trace.md`.
+  - Audited all dynamic implementations and magic numbers across VAD, AEC, STT, Harness, LLM, and TTS in `dynamic_logic_and_magic_numbers_audit.md`.
+  - Implemented 5 confirmed bug fixes directly into production code.
+
+- **Implemented Seams & Components**:
+  1. **VAD Sub-Threshold Fallback Dispatch (`services/vad/segmenter.rs`)**:
+     - Added empty `VoxEvent::TranscriptFinal` emission directly to Router when `voiced_samples < VAD_MIN_UTTERANCE_SAMPLES`.
+     - Prevents pipeline deadlock where Router entered `Thinking` on `SpeechEnd` but STT was bypassed.
+     - Documented with critical 1-line architectural comment.
+  2. **AEC Reference Backlog Discard Fix (`services/audio/aec.rs`)**:
+     - Corrected ring buffer overflow logic to discard only `occupied - MAX_RENDER_QUEUE_BACKLOG_SAMPLES` instead of wiping buffer down to 1 frame.
+     - Increased per-capture-frame drain limit from 2 to 4 frames (40ms) to preserve speaker reference continuity.
+     - Documented with critical 1-line architectural comment.
+  3. **STT & TTS Thread Scaling (`core/compute.rs`)**:
+     - Removed `/ 2` budget division for `Workload::Stt` and `Workload::Tts`.
+     - Allocates full thread budget up to `MAX_TTS_THREADS` (4 threads), eliminating Kokoro 1-thread RTF 1.15 bottleneck.
+  4. **Turso Native Vector Pushdown Migration (`persistence/facts.rs` & `search_memory.rs`)**:
+     - Replaced in-memory brute-force table scan (`fetch_active_episodic_observations`) with Turso native vector search: `search_active_episodic_by_vector` and sparse keyword query `search_active_episodic_by_query_terms`.
+     - Executes `1.0 - vector_distance_cos(v.embedding, vector32(?1))` directly in SQL inside Turso engine.
+     - Pushes cutoff thresholding and top-k ordering to database, eliminating the 14+ MB in-memory vector allocation.
+  5. **Memory Search Log Flood Remediation (`services/harness/stages/tools/search_memory.rs`)**:
+     - Removed per-candidate loop logging and demoted dense similarity and fused candidate scores from `info!` to `trace!`.
+
+- **Verification**:
+  - `./scripts/verify-targets.sh`: SUCCESS (0 warnings / 0 errors across architecture lint, desktop binary, benchmarks, and Android `aarch64-linux-android` cross-target).
+
+---
+
 ## 2026-10-26 — Remote Control Architecture & Synchronization Alignment (Tickets 01–06)
 
 - **Context & Goals**:
@@ -273,3 +306,7 @@
      - `cd app && pnpm lint:arch && pnpm tsc --noEmit`: SUCCESS (0 errors).
      - Vite HMR updated live on desktop host.
 
+
+- **Restore Defaults Confirm Modal (2026-10-28):**
+  1. **Change**: Replaced in-place two-step inline confirmation in `app/src/shared/components/settings/RestoreDefaultsButton.tsx` with shared `ConfirmModal`. Button now opens modal; confirming calls `restoreDefaults()`.
+  2. **Verification**: `cd app && pnpm tsc --noEmit`: SUCCESS (0 errors).

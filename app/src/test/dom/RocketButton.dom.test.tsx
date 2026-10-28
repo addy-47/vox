@@ -67,9 +67,9 @@ describe("RocketButton DOM suite", () => {
 
       // Clicking the rocket button opens ConfirmModal
       expect(screen.getByRole("alertdialog")).toBeTruthy();
-      expect(screen.getByText("Disconnect Remote Controller")).toBeTruthy();
-      const confirmButton = screen.getByRole("button", { name: "Disconnect" });
-      const cancelButton = screen.getByRole("button", { name: "Cancel" });
+      expect(screen.getByText("Disconnect Remote Session")).toBeTruthy();
+      const confirmButton = screen.getByRole("button", { name: "Disconnect Session" });
+      const cancelButton = screen.getByRole("button", { name: "Keep Connected" });
       expect(confirmButton).toBeTruthy();
       expect(cancelButton).toBeTruthy();
     });
@@ -89,8 +89,8 @@ describe("RocketButton DOM suite", () => {
 
       expect(screen.getByRole("alertdialog")).toBeTruthy();
 
-      // User clicks Cancel
-      const cancelButton = screen.getByRole("button", { name: "Cancel" });
+      // User clicks Keep Connected
+      const cancelButton = screen.getByRole("button", { name: "Keep Connected" });
       await act(async () => {
         fireEvent.click(cancelButton);
         vi.advanceTimersByTime(250);
@@ -112,7 +112,7 @@ describe("RocketButton DOM suite", () => {
 
       fireEvent.click(screen.getByRole("button", { name: /Remote connected: Pixel 9/i }));
 
-      const confirmButton = screen.getByRole("button", { name: "Disconnect" });
+      const confirmButton = screen.getByRole("button", { name: "Disconnect Session" });
       await act(async () => {
         fireEvent.click(confirmButton);
       });

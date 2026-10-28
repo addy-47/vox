@@ -65,6 +65,19 @@ let subscriptionRefCount = 0;
 let teardownListeners: (() => void) | null = null;
 let activeInitPromise: Promise<void> | null = null;
 
+function sanitizePeerDisplayName(name: string | undefined): string {
+  if (!name) return "Phone";
+  const trimmed = name.trim();
+  if (
+    !trimmed ||
+    trimmed.toLowerCase() === "localhost" ||
+    trimmed.toLowerCase() === "localhost.localdomain"
+  ) {
+    return "Phone";
+  }
+  return trimmed;
+}
+
 export const useRemoteStore = create<RemoteStoreState>((set, get) => ({
   // Ticket 05: initial state is "Unpaired" — no "Disconnected" variant exists
   linkState: "Unpaired",
@@ -92,7 +105,7 @@ export const useRemoteStore = create<RemoteStoreState>((set, get) => ({
           const dto = event.payload;
           const peer =
             dto.deviceId && dto.displayName
-              ? { deviceId: dto.deviceId, displayName: dto.displayName }
+              ? { deviceId: dto.deviceId, displayName: sanitizePeerDisplayName(dto.displayName) }
               : null;
 
           // Ticket 05: terminal states that clear the pairing-pending flag
@@ -189,7 +202,7 @@ export const useRemoteStore = create<RemoteStoreState>((set, get) => ({
 
       const peer =
         stateDto.deviceId && stateDto.displayName
-          ? { deviceId: stateDto.deviceId, displayName: stateDto.displayName }
+          ? { deviceId: stateDto.deviceId, displayName: sanitizePeerDisplayName(stateDto.displayName) }
           : null;
 
       set({
@@ -197,7 +210,10 @@ export const useRemoteStore = create<RemoteStoreState>((set, get) => ({
         failureReason: stateDto.failure ?? null,
         failureKind: stateDto.failureKind ?? null,
         connectedPeer: peer,
-        pairedDevices: devices,
+        pairedDevices: devices.map((d) => ({
+          ...d,
+          displayName: sanitizePeerDisplayName(d.displayName),
+        })),
         commandRouting: routing,
         loading: false,
         error: null,

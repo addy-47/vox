@@ -358,6 +358,19 @@ pub fn handle_speech_end(
         }) {
             log::warn!("[VAD Actor] Failed to send Final audio to STT: {}", e);
         }
+    } else if state.realtime_tx.is_none() {
+        // Critical fix: prevent pipeline deadlock in Thinking when voiced_samples < VAD_MIN_UTTERANCE_SAMPLES.
+        // If voiced audio falls below the minimum utterance threshold, STT is skipped, so we must emit an
+        // empty TranscriptFinal directly to the Router to cleanly transition Thinking back to Ready.
+        if let Some(tx) = vox_event_tx {
+            if let Err(e) = tx.send(VoxEvent::TranscriptFinal {
+                turn_id: state.current_turn_id,
+                text: String::new(),
+                owner,
+            }) {
+                log::warn!("[VAD Actor] Failed to send empty TranscriptFinal fallback: {}", e);
+            }
+        }
     }
 
     log::info!(
