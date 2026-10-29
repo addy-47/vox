@@ -85,12 +85,9 @@ impl MulticastLockGuard {
                 }
             }
 
-            // Clear any pending exception before fallback
             let _ = env.exception_clear();
-
-            // Fallback path: direct JNI on Context.getSystemService("wifi")
-            log::info!("[Remote::Multicast] Attempting fallback JNI MulticastLock acquisition");
-            acquire_jni_fallback(&mut env, &context).unwrap_or(false)
+            log::warn!("[Remote::Multicast] MulticastLockManager.acquire failed");
+            false
         })
         .unwrap_or(false);
 
@@ -105,39 +102,3 @@ impl MulticastLockGuard {
 }
 
 // ─── Helper Functions ────────────────────────────────────────────────────────
-
-#[cfg(target_os = "android")]
-fn acquire_jni_fallback(
-    env: &mut jni::JNIEnv,
-    context: &JObject,
-) -> Result<bool, jni::errors::Error> {
-    let wifi_str = env.new_string("wifi")?;
-    let wifi_service = env
-        .call_method(
-            context,
-            "getSystemService",
-            "(Ljava/lang/String;)Ljava/lang/Object;",
-            &[(&wifi_str).into()],
-        )?
-        .l()?;
-    if wifi_service.is_null() {
-        return Ok(false);
-    }
-    let tag = env.new_string("vox_mdns_lock")?;
-    let lock = env
-        .call_method(
-            &wifi_service,
-            "createMulticastLock",
-            "(Ljava/lang/String;)Landroid/net/wifi/WifiManager$MulticastLock;",
-            &[(&tag).into()],
-        )?
-        .l()?;
-    if lock.is_null() {
-        return Ok(false);
-    }
-    let _ = env.call_method(&lock, "setReferenceCounted", "(Z)V", &[true.into()]);
-    let _ = env.call_method(&lock, "acquire", "()V", &[]);
-    log::info!("[Remote::Multicast] Fallback JNI MulticastLock acquired");
-    Ok(true)
-}
-

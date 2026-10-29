@@ -545,9 +545,7 @@ pub fn mint_pairing_qr_svg(
     token: &PairingToken,
     display_name: Option<&str>,
 ) -> Result<(String, String), SecurityError> {
-    let name = display_name
-        .filter(|s| !s.is_empty())
-        .unwrap_or("Vox Host");
+    let name = display_name.filter(|s| !s.is_empty()).unwrap_or("Vox Host");
     let payload_val = serde_json::json!({
         "device_id": host_id.as_str(),
         "public_key": hex::encode(public_key),
@@ -583,8 +581,14 @@ pub fn mint_pairing_invitation(
     let token = coordinator.issue_token(Instant::now())?;
     let hint_addr = get_local_lan_ip().unwrap_or_else(|| "127.0.0.1".to_string());
     let host_name = sysinfo::System::host_name().unwrap_or_else(|| "Vox Host".to_string());
-    let (payload, qr_data_url) =
-        mint_pairing_qr_svg(&host_id, device_key.public_key(), &hint_addr, port, &token, Some(&host_name))?;
+    let (payload, qr_data_url) = mint_pairing_qr_svg(
+        &host_id,
+        device_key.public_key(),
+        &hint_addr,
+        port,
+        &token,
+        Some(&host_name),
+    )?;
     let now_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()

@@ -66,16 +66,8 @@ let teardownListeners: (() => void) | null = null;
 let activeInitPromise: Promise<void> | null = null;
 
 function sanitizePeerDisplayName(name: string | undefined): string {
-  if (!name) return "Phone";
-  const trimmed = name.trim();
-  if (
-    !trimmed ||
-    trimmed.toLowerCase() === "localhost" ||
-    trimmed.toLowerCase() === "localhost.localdomain"
-  ) {
-    return "Phone";
-  }
-  return trimmed;
+  if (!name) return "";
+  return name.trim();
 }
 
 export const useRemoteStore = create<RemoteStoreState>((set, get) => ({

@@ -51,9 +51,11 @@ impl RemoteLink for WsLink {
 
             let payload_to_send = if let Some(cipher) = self.cipher.lock().await.as_mut() {
                 cipher.encrypt(&bytes).map_err(|e| {
-                    LinkError::Protocol(crate::services::remote::protocol::ProtocolError::MalformedJson(
-                        format!("Noise encryption error: {e}"),
-                    ))
+                    LinkError::Protocol(
+                        crate::services::remote::protocol::ProtocolError::MalformedJson(format!(
+                            "Noise encryption error: {e}"
+                        )),
+                    )
                 })?
             } else {
                 bytes
@@ -83,9 +85,11 @@ impl RemoteLink for WsLink {
                     Some(Ok(Message::Binary(bytes))) => {
                         let decrypted = if let Some(cipher) = self.cipher.lock().await.as_mut() {
                             cipher.decrypt(&bytes).map_err(|e| {
-                                LinkError::Protocol(crate::services::remote::protocol::ProtocolError::MalformedJson(
-                                    format!("Noise decryption error: {e}"),
-                                ))
+                                LinkError::Protocol(
+                                    crate::services::remote::protocol::ProtocolError::MalformedJson(
+                                        format!("Noise decryption error: {e}"),
+                                    ),
+                                )
                             })?
                         } else {
                             bytes.to_vec()
@@ -97,9 +101,11 @@ impl RemoteLink for WsLink {
                     Some(Ok(Message::Text(text))) => {
                         let decrypted = if let Some(cipher) = self.cipher.lock().await.as_mut() {
                             cipher.decrypt(text.as_bytes()).map_err(|e| {
-                                LinkError::Protocol(crate::services::remote::protocol::ProtocolError::MalformedJson(
-                                    format!("Noise decryption error: {e}"),
-                                ))
+                                LinkError::Protocol(
+                                    crate::services::remote::protocol::ProtocolError::MalformedJson(
+                                        format!("Noise decryption error: {e}"),
+                                    ),
+                                )
                             })?
                         } else {
                             text.as_bytes().to_vec()
@@ -221,7 +227,9 @@ impl WsLink {
                     self.record_close(LinkCloseReason::Peer);
                     return Err(LinkError::Closed(LinkCloseReason::Peer));
                 }
-                Some(Ok(Message::Ping(_))) | Some(Ok(Message::Pong(_))) | Some(Ok(Message::Frame(_))) => continue,
+                Some(Ok(Message::Ping(_)))
+                | Some(Ok(Message::Pong(_)))
+                | Some(Ok(Message::Frame(_))) => continue,
                 Some(Err(e)) => {
                     let reason = LinkCloseReason::Transport(e.to_string());
                     self.record_close(reason.clone());
@@ -240,21 +248,23 @@ impl WsLink {
     pub async fn drive_handshake(
         &self,
         mut handshake: crate::services::remote::security::NoiseHandshake,
-    ) -> Result<crate::services::remote::security::NoiseTransport, crate::services::remote::security::SecurityError> {
+    ) -> Result<
+        crate::services::remote::security::NoiseTransport,
+        crate::services::remote::security::SecurityError,
+    > {
         loop {
             if handshake.is_complete() {
                 break;
             }
             if handshake.is_my_turn() {
                 let msg = handshake.write_message(&[])?;
-                self.send_handshake_message(&msg)
-                    .await
-                    .map_err(|e| crate::services::remote::security::SecurityError::Noise(e.to_string()))?;
+                self.send_handshake_message(&msg).await.map_err(|e| {
+                    crate::services::remote::security::SecurityError::Noise(e.to_string())
+                })?;
             } else {
-                let msg = self
-                    .recv_handshake_message()
-                    .await
-                    .map_err(|e| crate::services::remote::security::SecurityError::Noise(e.to_string()))?;
+                let msg = self.recv_handshake_message().await.map_err(|e| {
+                    crate::services::remote::security::SecurityError::Noise(e.to_string())
+                })?;
                 handshake.read_message(&msg)?;
             }
         }
@@ -339,7 +349,10 @@ pub async fn dial(url: &str) -> Result<WsLink, LinkError> {
 /// Connects with an explicit dial deadline. Used by the controller when it
 /// cycles candidate addresses (explicit → hints → mDNS); a dead candidate
 /// must not consume the full legacy timeout per attempt.
-pub async fn dial_with_timeout(url: &str, timeout: std::time::Duration) -> Result<WsLink, LinkError> {
+pub async fn dial_with_timeout(
+    url: &str,
+    timeout: std::time::Duration,
+) -> Result<WsLink, LinkError> {
     let connect_future = tokio_tungstenite::connect_async(url);
     let (ws_stream, _) = tokio::time::timeout(timeout, connect_future)
         .await

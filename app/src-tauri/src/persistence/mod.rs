@@ -33,10 +33,10 @@ pub use compactions::{
     resolve_uncompacted_range, CompactionRecord,
 };
 pub use facts::{
-    deactivate_observation, deactivate_observations_batch,
-    fetch_active_observations_by_type, fetch_all_observations, fetch_pending_queue_observations,
-    mark_observations_integrated, search_active_episodic_by_query_terms,
-    search_active_episodic_by_vector, EpisodicObservationCandidate, ObservationRecord,
+    deactivate_observation, deactivate_observations_batch, fetch_active_observations_by_type,
+    fetch_all_observations, fetch_pending_queue_observations, mark_observations_integrated,
+    search_active_episodic_by_query_terms, search_active_episodic_by_vector,
+    EpisodicObservationCandidate, ObservationRecord,
 };
 pub use models::{
     get_all_model_parameters, get_model, get_model_parameters, list_favorite_models,

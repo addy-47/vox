@@ -67,6 +67,14 @@ tursodb ~/.vox/vox.db "SELECT name FROM sqlite_master WHERE type='table';"
 >
 > 🛑 **After modifying code:** Use the `/review` discipline to review the diff you have created and check if there are any violations with respect to the corresponding style guide and engineer rule file in `.agents/rules/` for the area you are working on.If there are reiterate until there are no violations.
 
+### 4.3 Code Style Guide Rules (Non-Negotiable)
+
+**CSG-01:** Inline crate imports , excessive comments or documentation and magic numbers , hardcoded strings or hardcoded paths are forbidden.
+**CSG-02:** Writing tests without reading testing style guide or using `/create-test` discipline is forbidden.
+**CSG-03:** Implementing patches and bandaids that degrade code quality and design is forbidden.
+**CSG-04:** Implementing ambigous seams without invoking `/grill-me` discipline is forbidden.
+**CSG-05:** Ad-hoc logic , architectural smells and hacks that simplify implemenation in lieu of architectural integrity are forbidden.
+
 ---
 
 ## 5. Specifications & Spec Alignment (Non-Drift Gate)

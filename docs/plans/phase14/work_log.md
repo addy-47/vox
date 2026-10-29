@@ -2,6 +2,37 @@
 
 ---
 
+## 2026-10-29 — Remote Control Tech Lead Review Remediation (6 Critical Bugs)
+
+- **Context & Goals**:
+  - Addressed all 6 architectural, protocol, and resource leak findings raised in Tech Lead adversarial review of Remote Control diffs.
+  - Hardened mDNS daemon lifecycle, host listener admission seam, idle revocation hints failover, JNI lock guards, and hostname sanitization.
+  - Maintained strict function decomposition (<50 lines) and Rust grammar ordering.
+
+- **Implemented Seams & Components**:
+  1. **mDNS Daemon Thread & Socket Leak Remediation (Bug 1)**:
+     - `discovery/browser.rs`: Added `daemon.shutdown()` following `stop_browse` in `discover_host` to terminate background OS thread and close UDP multicast sockets.
+     - `discovery/advertiser.rs`: Added `self.daemon.shutdown()` inside `HostAnnouncement::withdraw`.
+  2. **Host Inbound Admission Seam & Accepts Lifecycle (Bug 2)**:
+     - `session/listener.rs`: Kept `WsListener` bound on port 7700 regardless of `accepts_controllers` so dialing controllers deterministically receive wire `LinkRefused(NotAccepting)` instead of OS `ECONNREFUSED`.
+     - `session/listener.rs`: Added active link severing (`disconnect_host_initiated`) and `RemoteLinkState::Disabled` transition in `spawn_mdns_advertiser` when `accepts_controllers` is disabled, plus automatic database rehydration when re-enabled.
+  3. **Local Desktop Session Busy Admission Guard (Bug 3)**:
+     - `session/listener.rs`: Expanded `HostBusy` refusal check to verify `turn_open` or active local desktop interaction (`state.pipeline.state() != InteractionState::Idle && state.remote_manager.state() != RemoteLinkState::Connected`), preventing incoming controllers from attaching during active desktop sessions.
+  4. **Idle Revocation Candidate Cycling & Host Advertising Sync (Bug 4)**:
+     - `session/manager.rs`: Made `perform_dial_handshake` an associated function (`Self::perform_dial_handshake`) and refactored `notify_idle_host_revoked` to cycle through stored hints and fallback to mDNS discovery.
+     - `discovery/advertiser.rs` & `listener.rs`: Added `paired_peer` TXT property to `HostAnnouncement::announce` and republishing logic in `spawn_mdns_advertiser` when paired peer changes.
+  5. **Android JNI Leaked MulticastLock Elimination (Bug 5)**:
+     - `discovery/multicast.rs`: Excised `acquire_jni_fallback` completely, relying exclusively on safe Kotlin `MulticastLockManager.acquire` and eliminating un-releasable lock allocations per `backend-style-guide.md` §7.
+  6. **Hostname Role Sanitization & Structured Logging Alignment (Bug 6)**:
+     - `store/remoteStore.ts`: Removed hardcoded `"Phone"` fallback from `sanitizePeerDisplayName`, preserving role-aware backend display names.
+     - `ipc/remote.rs`: Retrieved dynamic `manager.peer_identity()` display name in `pair_device` approval IPC event.
+     - `discovery/advertiser.rs` & `browser.rs`: Replaced `tracing::*` macros with standard `log::*`.
+
+- **Verification**:
+  - `./scripts/verify-targets.sh`: SUCCESS (0 warnings / 0 errors across architecture invariant lint, desktop lib/bin, desktop tests/benches, desktop release binary, and Android `aarch64-linux-android`).
+
+---
+
 ## 2026-10-28 — Voice Pipeline RCA, Dynamic Logic Audit & Critical Bug Remediation
 
 - **Context & Goals**:

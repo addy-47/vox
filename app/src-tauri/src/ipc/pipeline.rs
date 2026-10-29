@@ -297,7 +297,12 @@ pub async fn submit_text_input<R: tauri::Runtime>(
     _app: AppHandle<R>,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), VoxIpcError> {
-    if !is_desktop_command_permitted("submit_text_input", None, None, &state.remote_manager.state()) {
+    if !is_desktop_command_permitted(
+        "submit_text_input",
+        None,
+        None,
+        &state.remote_manager.state(),
+    ) {
         return Err(VoxIpcError::InvalidState(
             "Remote session active: desktop mutating writes blocked".into(),
         ));

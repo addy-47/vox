@@ -368,7 +368,10 @@ pub fn handle_speech_end(
                 text: String::new(),
                 owner,
             }) {
-                log::warn!("[VAD Actor] Failed to send empty TranscriptFinal fallback: {}", e);
+                log::warn!(
+                    "[VAD Actor] Failed to send empty TranscriptFinal fallback: {}",
+                    e
+                );
             }
         }
     }

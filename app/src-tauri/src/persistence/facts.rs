@@ -567,8 +567,14 @@ pub async fn search_active_episodic_by_query_terms(
     }
 
     let pattern1 = format!("%{}%", terms[0]);
-    let pattern2 = terms.get(1).map(|t| format!("%{}%", t)).unwrap_or_else(|| pattern1.clone());
-    let pattern3 = terms.get(2).map(|t| format!("%{}%", t)).unwrap_or_else(|| pattern1.clone());
+    let pattern2 = terms
+        .get(1)
+        .map(|t| format!("%{}%", t))
+        .unwrap_or_else(|| pattern1.clone());
+    let pattern3 = terms
+        .get(2)
+        .map(|t| format!("%{}%", t))
+        .unwrap_or_else(|| pattern1.clone());
 
     let mut rows = conn
         .query(

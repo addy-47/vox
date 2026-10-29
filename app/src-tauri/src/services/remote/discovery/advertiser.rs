@@ -23,6 +23,10 @@ const TXT_DEVICE_ID: &str = "device_id";
 /// (spec §6.1 acceptance note). Values: `"0"` / `"1"`.
 const TXT_ACCEPTS: &str = "accepts";
 
+/// TXT property carrying the device id of the paired controller, or `"none"`
+/// when no controller is paired (spec §6.1).
+const TXT_PAIRED_PEER: &str = "paired_peer";
+
 // ─── Data Structures ─────────────────────────────────────────────────────────
 
 /// A live host mDNS announcement. Dropping the struct does not stop the
@@ -38,11 +42,12 @@ pub struct HostAnnouncement {
 // ─── Inherent Implementations ────────────────────────────────────────────────
 
 impl HostAnnouncement {
-    /// Publishes (or re-publishes with a new `accepts` flag) the host service.
+    /// Publishes (or re-publishes with a new `accepts` flag and optional paired peer) the host service.
     pub fn announce(
         device_id: &str,
         port: u16,
         accepts: bool,
+        paired_peer: Option<&str>,
     ) -> Result<Self, String> {
         let daemon = ServiceDaemon::new().map_err(|e| format!("mDNS daemon: {e}"))?;
 
@@ -50,18 +55,23 @@ impl HostAnnouncement {
         let mut props = HashMap::new();
         props.insert(TXT_DEVICE_ID.to_string(), device_id.to_string());
         props.insert(TXT_ACCEPTS.to_string(), accepts_value.to_string());
+        props.insert(
+            TXT_PAIRED_PEER.to_string(),
+            paired_peer.unwrap_or("none").to_string(),
+        );
 
         let instance = instance_name(device_id);
         let host = host_name(device_id);
         let ips = local_ips();
-        tracing::info!(
-            "[Remote::Advertiser] Announcing mDNS: type={}, instance={}, host={}, port={}, ips={:?}, device_id={}",
+        log::info!(
+            "[Remote::Advertiser] Announcing mDNS: type={}, instance={}, host={}, port={}, ips={:?}, device_id={}, paired_peer={:?}",
             REMOTE_MDNS_SERVICE_TYPE,
             instance,
             host,
             port,
             ips,
-            device_id
+            device_id,
+            paired_peer
         );
         let info = ServiceInfo::new(
             REMOTE_MDNS_SERVICE_TYPE,
@@ -79,14 +89,14 @@ impl HostAnnouncement {
             .register(info)
             .map_err(|e| format!("mDNS register: {e}"))?;
 
-        tracing::info!("[Remote::Advertiser] Registered mDNS service: {}", fullname);
+        log::info!("[Remote::Advertiser] Registered mDNS service: {}", fullname);
         Ok(Self { daemon, fullname })
     }
 
-    /// Withdraws the announcement. Fire-and-forget: the daemon owns the
-    /// goodbye packet.
+    /// Withdraws the announcement and shuts down the daemon background thread.
     pub fn withdraw(self) {
         let _ = self.daemon.unregister(&self.fullname);
+        let _ = self.daemon.shutdown();
     }
 
     /// Interval at which the advertiser polls the acceptance flag. Exposed for
@@ -104,13 +114,21 @@ impl HostAnnouncement {
 /// to 32 characters ("Vox-<32 chars>" = 36 bytes <= 63). Controllers match
 /// discovered hosts purely by the full 64-char `device_id` in the TXT property.
 fn instance_name(device_id: &str) -> String {
-    let prefix = if device_id.len() > 32 { &device_id[..32] } else { device_id };
+    let prefix = if device_id.len() > 32 {
+        &device_id[..32]
+    } else {
+        device_id
+    };
     format!("Vox-{prefix}")
 }
 
 /// Stable mDNS host name for address records (RFC 1035 label limit: 63 bytes).
 fn host_name(device_id: &str) -> String {
-    let prefix = if device_id.len() > 32 { &device_id[..32] } else { device_id };
+    let prefix = if device_id.len() > 32 {
+        &device_id[..32]
+    } else {
+        device_id
+    };
     format!("vox-{prefix}.local.")
 }
 
@@ -121,7 +139,7 @@ mod tests {
     #[test]
     fn host_announcement_registers_with_rfc_compliant_service_syntax() {
         let device_id = "390cc0ea95c8390b0f39512bd8156dc8e80942919df397c64dc269aeb3329fb2";
-        let announcement = HostAnnouncement::announce(device_id, 7700, true);
+        let announcement = HostAnnouncement::announce(device_id, 7700, true, None);
         assert!(
             announcement.is_ok(),
             "Host announcement failed RFC registration check: {:?}",
@@ -131,5 +149,3 @@ mod tests {
         announcement.withdraw();
     }
 }
-
-
