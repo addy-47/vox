@@ -121,6 +121,13 @@ pub struct AttachSnapshot {
     pub turns: Vec<Value>,
 }
 
+/// The audio-socket session binding. Spec §7.3 & §7.4.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SessionToken {
+    /// 32-byte single-use session token (hex-encoded).
+    pub token: String,
+}
+
 /// The liveness probe the host sends on the control channel.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Ping {
@@ -278,6 +285,8 @@ pub enum ControlType {
     Event,
     /// The state snapshot.
     AttachSnapshot,
+    /// The audio-socket session binding.
+    SessionToken,
     /// An intentional disconnect.
     Disconnect,
     /// A liveness probe.
@@ -306,13 +315,14 @@ pub enum ControlType {
 
 impl ControlType {
     /// Every control message kind.
-    pub const ALL: [ControlType; 18] = [
+    pub const ALL: [ControlType; 19] = [
         ControlType::Hello,
         ControlType::Req,
         ControlType::Res,
         ControlType::Err,
         ControlType::Event,
         ControlType::AttachSnapshot,
+        ControlType::SessionToken,
         ControlType::Disconnect,
         ControlType::Ping,
         ControlType::Pong,
@@ -336,6 +346,7 @@ impl ControlType {
             ControlType::Err => "Err",
             ControlType::Event => "Event",
             ControlType::AttachSnapshot => "AttachSnapshot",
+            ControlType::SessionToken => "SessionToken",
             ControlType::Disconnect => "Disconnect",
             ControlType::Ping => "Ping",
             ControlType::Pong => "Pong",
@@ -375,6 +386,8 @@ pub enum ControlMessage {
     Event(Event),
     /// The state snapshot.
     AttachSnapshot(AttachSnapshot),
+    /// The audio-socket session binding.
+    SessionToken(SessionToken),
     /// An intentional disconnect.
     Disconnect,
     /// A liveness probe.
@@ -411,6 +424,7 @@ impl ControlMessage {
             ControlMessage::Err(_) => ControlType::Err,
             ControlMessage::Event(_) => ControlType::Event,
             ControlMessage::AttachSnapshot(_) => ControlType::AttachSnapshot,
+            ControlMessage::SessionToken(_) => ControlType::SessionToken,
             ControlMessage::Disconnect => ControlType::Disconnect,
             ControlMessage::Ping(_) => ControlType::Ping,
             ControlMessage::Pong(_) => ControlType::Pong,
@@ -486,6 +500,7 @@ pub fn encode_control(message: &ControlMessage) -> Result<Vec<u8>, ProtocolError
         ControlMessage::Err(payload) => payload_map(payload)?,
         ControlMessage::Event(payload) => payload_map(payload)?,
         ControlMessage::AttachSnapshot(payload) => payload_map(payload)?,
+        ControlMessage::SessionToken(payload) => payload_map(payload)?,
         ControlMessage::Disconnect => Map::new(),
         ControlMessage::Ping(payload) => payload_map(payload)?,
         ControlMessage::Pong(payload) => payload_map(payload)?,
@@ -539,6 +554,7 @@ fn build_control(
         ControlType::Err => ControlMessage::Err(payload_value(payload)?),
         ControlType::Event => ControlMessage::Event(payload_value(payload)?),
         ControlType::AttachSnapshot => ControlMessage::AttachSnapshot(payload_value(payload)?),
+        ControlType::SessionToken => ControlMessage::SessionToken(payload_value(payload)?),
         ControlType::Disconnect => ControlMessage::Disconnect,
         ControlType::Ping => ControlMessage::Ping(payload_value(payload)?),
         ControlType::Pong => ControlMessage::Pong(payload_value(payload)?),
@@ -701,5 +717,16 @@ mod tests {
             decode_control(b"{}"),
             Err(ProtocolError::MissingTypeTag)
         ));
+    }
+
+    #[test]
+    fn session_token_wire_roundtrip() {
+        let token = SessionToken {
+            token: "test-session-token-valid-hex-payload".to_string(),
+        };
+        let encoded = encode_control(&ControlMessage::SessionToken(token.clone()))
+            .expect("must encode SessionToken");
+        let outcome = decode_control(&encoded).expect("must decode SessionToken");
+        assert_eq!(outcome, DecodeOutcome::Known(ControlMessage::SessionToken(token)));
     }
 }

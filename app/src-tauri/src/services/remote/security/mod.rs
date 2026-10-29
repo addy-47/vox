@@ -27,6 +27,7 @@ pub mod identity;
 pub mod key_store;
 pub mod noise;
 pub mod pairing;
+pub mod redaction;
 pub mod trust;
 
 pub use errors::{PairingRefusal, SecurityError};
@@ -43,6 +44,7 @@ pub use pairing::{
     PairingCoordinator, PairingDecision, PairingOutcome, PairingPrompt, PairingRequest,
     PairingToken, PairingTokenStore,
 };
+pub use redaction::{redact_settings_value, REDACTED};
 pub use trust::{TrustDecision, TrustRefusal, TrustStore};
 
 pub use super::{
