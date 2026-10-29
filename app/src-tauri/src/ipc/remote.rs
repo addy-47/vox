@@ -149,16 +149,28 @@ pub async fn pair_device(
     let dev_id_clone = device_id.clone();
     tokio::spawn(async move {
         match manager
-            .pair_device(db, address, token, public_key, dev_id_clone.clone(), Some(on_prompting))
+            .clone()
+            .pair_device(
+                db,
+                address,
+                token,
+                public_key,
+                dev_id_clone.clone(),
+                Some(on_prompting),
+            )
             .await
         {
             Ok(()) => {
+                let display_name = manager
+                    .peer_identity()
+                    .map(|p| p.display_name)
+                    .unwrap_or_else(|| "Vox Host".to_string());
                 let _ = emit_ipc(
                     &app_done,
                     IpcEvent::RemotePairingStateChanged(PairingStateDto {
                         state: "Approved".to_string(),
                         device_id: Some(dev_id_clone),
-                        display_name: Some("Vox Host".to_string()),
+                        display_name: Some(display_name),
                         expires_at_ms: None,
                         failure_reason: None,
                     }),

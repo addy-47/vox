@@ -31,7 +31,10 @@ pub enum LinkCloseReason {
 pub enum PeerRejection {
     UnknownPeer(String),
     LinkRefused(crate::services::remote::protocol::messages::LinkRefusedReason),
-    VersionMismatch { version: u16, supported_version: u16 },
+    VersionMismatch {
+        version: u16,
+        supported_version: u16,
+    },
     RoleNotPermitted(String),
 }
 

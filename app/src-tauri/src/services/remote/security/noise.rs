@@ -180,14 +180,17 @@ impl NoiseHandshake {
     /// Transitions to transport mode.
     pub fn finish(self) -> Result<NoiseTransport, SecurityError> {
         self.verify_expected_peer()?;
-        let remote_static = self
-            .remote_static()
-            .ok_or_else(|| SecurityError::Noise("Handshake completed without peer static key".into()))?;
+        let remote_static = self.remote_static().ok_or_else(|| {
+            SecurityError::Noise("Handshake completed without peer static key".into())
+        })?;
         let state = self
             .state
             .into_transport_mode()
             .map_err(|error| SecurityError::Noise(error.to_string()))?;
-        Ok(NoiseTransport { state, remote_static })
+        Ok(NoiseTransport {
+            state,
+            remote_static,
+        })
     }
 
     /// Checks the peer's revealed static key against the pin.

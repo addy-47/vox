@@ -29,12 +29,9 @@ const TXT_DEVICE_ID: &str = "device_id";
 ///
 /// On Android, acquires a `MulticastLock` for the duration of the browse to prevent
 /// the Wi-Fi radio from filtering mDNS multicast frames.
-pub async fn discover_host(
-    device_id: &str,
-    max_wait: Duration,
-) -> Result<Vec<String>, String> {
+pub async fn discover_host(device_id: &str, max_wait: Duration) -> Result<Vec<String>, String> {
     let _multicast_lock = MulticastLockGuard::acquire();
-    tracing::info!(
+    log::info!(
         "[Remote::Discovery] Starting mDNS browse for '{}' (target device_id={}, max_wait={:?})",
         REMOTE_MDNS_SERVICE_TYPE,
         device_id,
@@ -51,7 +48,7 @@ pub async fn discover_host(
     loop {
         let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
         if remaining.is_zero() {
-            tracing::info!(
+            log::info!(
                 "[Remote::Discovery] mDNS browse deadline elapsed (found {} candidate(s))",
                 candidates.len()
             );
@@ -59,59 +56,67 @@ pub async fn discover_host(
         }
         match tokio::time::timeout(remaining, receiver.recv_async()).await {
             Err(_) => {
-                tracing::info!(
+                log::info!(
                     "[Remote::Discovery] mDNS browse timeout reached (found {} candidate(s))",
                     candidates.len()
                 );
                 break;
             }
             Ok(Err(e)) => {
-                tracing::warn!("[Remote::Discovery] mDNS receiver error: {e}");
+                log::warn!("[Remote::Discovery] mDNS receiver error: {e}");
+                let _ = daemon.stop_browse(REMOTE_MDNS_SERVICE_TYPE);
+                let _ = daemon.shutdown();
                 return Err(format!("mDNS receiver: {e}"));
             }
-            Ok(Ok(event)) => match event {
-                ServiceEvent::SearchStarted(ty) => {
-                    tracing::debug!("[Remote::Discovery] mDNS browse search started for {ty}");
-                }
-                ServiceEvent::ServiceFound(ty, fullname) => {
-                    tracing::info!(
-                        "[Remote::Discovery] mDNS service discovered: type={}, fullname={}",
-                        ty,
-                        fullname
-                    );
-                }
-                ServiceEvent::ServiceResolved(info) => {
-                    tracing::info!(
-                        "[Remote::Discovery] mDNS service resolved: fullname={}, host={}, port={}, addrs={:?}, props={:?}",
-                        info.get_fullname(),
-                        info.get_hostname(),
-                        info.get_port(),
-                        info.get_addresses(),
-                        info.get_properties()
-                    );
-                    collect_candidate(&info, device_id, &mut candidates);
-                }
-                ServiceEvent::ServiceRemoved(ty, fullname) => {
-                    tracing::debug!(
-                        "[Remote::Discovery] mDNS service removed: type={}, fullname={}",
-                        ty,
-                        fullname
-                    );
-                }
-                ServiceEvent::SearchStopped(ty) => {
-                    tracing::debug!("[Remote::Discovery] mDNS browse search stopped for {ty}");
-                }
-                _ => {}
-            },
+            Ok(Ok(event)) => handle_service_event(event, device_id, &mut candidates),
         }
     }
 
     let _ = daemon.stop_browse(REMOTE_MDNS_SERVICE_TYPE);
-    tracing::info!(
+    let _ = daemon.shutdown();
+    log::info!(
         "[Remote::Discovery] mDNS browse complete. Candidates: {:?}",
         candidates
     );
     Ok(candidates)
+}
+
+/// Handles an mDNS event, collecting candidate endpoints when a matching service is resolved.
+fn handle_service_event(event: ServiceEvent, device_id: &str, candidates: &mut Vec<String>) {
+    match event {
+        ServiceEvent::SearchStarted(ty) => {
+            log::debug!("[Remote::Discovery] mDNS browse search started for {ty}");
+        }
+        ServiceEvent::ServiceFound(ty, fullname) => {
+            log::info!(
+                "[Remote::Discovery] mDNS service discovered: type={}, fullname={}",
+                ty,
+                fullname
+            );
+        }
+        ServiceEvent::ServiceResolved(info) => {
+            log::info!(
+                "[Remote::Discovery] mDNS service resolved: fullname={}, host={}, port={}, addrs={:?}, props={:?}",
+                info.get_fullname(),
+                info.get_hostname(),
+                info.get_port(),
+                info.get_addresses(),
+                info.get_properties()
+            );
+            collect_candidate(&info, device_id, candidates);
+        }
+        ServiceEvent::ServiceRemoved(ty, fullname) => {
+            log::debug!(
+                "[Remote::Discovery] mDNS service removed: type={}, fullname={}",
+                ty,
+                fullname
+            );
+        }
+        ServiceEvent::SearchStopped(ty) => {
+            log::debug!("[Remote::Discovery] mDNS browse search stopped for {ty}");
+        }
+        _ => {}
+    }
 }
 
 /// Matches a resolved service against a device id and appends its IPv4
@@ -121,7 +126,7 @@ fn collect_candidate(info: &ResolvedService, device_id: &str, out: &mut Vec<Stri
     let matches_id = prop_device_id == Some(device_id);
 
     if !matches_id {
-        tracing::debug!(
+        log::debug!(
             "[Remote::Discovery] Ignored service {}: device_id property {:?} != expected {}",
             info.get_fullname(),
             prop_device_id,
@@ -135,7 +140,7 @@ fn collect_candidate(info: &ResolvedService, device_id: &str, out: &mut Vec<Stri
             if !v4.is_loopback() {
                 let candidate = format!("{}:{}", v4, port);
                 if !out.contains(&candidate) {
-                    tracing::info!(
+                    log::info!(
                         "[Remote::Discovery] Matched host candidate for {device_id}: {candidate}"
                     );
                     out.push(candidate);
@@ -144,4 +149,3 @@ fn collect_candidate(info: &ResolvedService, device_id: &str, out: &mut Vec<Stri
         }
     }
 }
-

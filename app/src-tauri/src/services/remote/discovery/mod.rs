@@ -12,9 +12,10 @@ pub mod browser;
 pub mod hints;
 pub mod multicast;
 
-pub use super::{MDNS_BROWSE_TIMEOUT, REMOTE_MDNS_SERVICE_TYPE};
 pub use advertiser::HostAnnouncement;
 pub use browser::discover_host;
-pub use hints::{lan_hint, lan_hint_addrs, update_observed_hint};
 pub(crate) use hints::dial_url;
+pub use hints::{lan_hint, lan_hint_addrs, update_observed_hint};
 pub use multicast::MulticastLockGuard;
+
+pub use super::{MDNS_BROWSE_TIMEOUT, REMOTE_MDNS_SERVICE_TYPE};

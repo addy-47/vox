@@ -39,7 +39,11 @@ pub fn lan_hint(addr: &str, source: &str, last_ok_at_ms: Option<i64>) -> serde_j
 /// preserving existing hints (including forward-compatible opaque hint kinds).
 pub fn update_observed_hint(existing: &[serde_json::Value], addr: &str) -> Vec<serde_json::Value> {
     let mut updated = Vec::new();
-    updated.push(lan_hint(addr, "Observed", Some(chrono::Utc::now().timestamp_millis())));
+    updated.push(lan_hint(
+        addr,
+        "Observed",
+        Some(chrono::Utc::now().timestamp_millis()),
+    ));
     for h in existing {
         if h.get("addr").and_then(|v| v.as_str()) != Some(addr) {
             updated.push(h.clone());
@@ -54,7 +58,11 @@ pub(crate) fn dial_url(addr: &str, default_port: u16) -> String {
     if addr.starts_with("ws://") || addr.starts_with("wss://") {
         return addr.to_string();
     }
-    if addr.rsplit_once(':').map(|(_, p)| p.contains('.')).unwrap_or(true) {
+    if addr
+        .rsplit_once(':')
+        .map(|(_, p)| p.contains('.'))
+        .unwrap_or(true)
+    {
         // No (or a bare) IPv6-port colon split — ambiguous IPv6 is out of v1
         // scope (LAN v1 is IPv4); treat as portless and append the default.
         format!("ws://{addr}:{default_port}")
@@ -91,7 +99,10 @@ mod tests {
         ];
         assert_eq!(
             lan_hint_addrs(&hints),
-            vec!["192.168.29.221:7700".to_string(), "10.0.0.5:7700".to_string()]
+            vec![
+                "192.168.29.221:7700".to_string(),
+                "10.0.0.5:7700".to_string()
+            ]
         );
     }
 
@@ -124,10 +135,7 @@ mod tests {
 
     #[test]
     fn dial_url_passes_through_ws_schemes() {
-        assert_eq!(
-            dial_url("ws://10.0.0.5:7700", 7700),
-            "ws://10.0.0.5:7700"
-        );
+        assert_eq!(dial_url("ws://10.0.0.5:7700", 7700), "ws://10.0.0.5:7700");
     }
 
     #[test]
@@ -136,4 +144,3 @@ mod tests {
         assert_eq!(dial_url("192.168.1.7:9000", 7700), "ws://192.168.1.7:9000");
     }
 }
-

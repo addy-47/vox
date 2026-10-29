@@ -19,12 +19,10 @@ use crate::{
         events::{emit_ipc, IpcEvent, RemotePairingPromptPayload},
         state::{AppState, PendingPairingState},
     },
-    persistence::paired_devices::{
-        insert_paired_device, NewPairedDevice, PairedDeviceRole,
-    },
+    persistence::paired_devices::{insert_paired_device, NewPairedDevice, PairedDeviceRole},
     services::remote::{
         link::{
-            ws::{bind, WsLink, WsListener},
+            ws::{bind, WsLink},
             LinkCloseReason, RemoteLink,
         },
         protocol::{
@@ -35,8 +33,8 @@ use crate::{
             },
         },
         security::{
-            default_noise_prologue, derive_device_id, DeviceId, DeviceKey, KeyStore, NoiseHandshake,
-            PairingOutcome, PairingRequest, TrustDecision, TrustRefusal,
+            default_noise_prologue, derive_device_id, DeviceId, DeviceKey, KeyStore,
+            NoiseHandshake, PairingOutcome, PairingRequest, TrustDecision, TrustRefusal,
         },
         session::state::{PairingState, RemoteLinkState},
         PAIRING_APPROVAL_TIMEOUT, REMOTE_LISTEN_PORT,
@@ -79,41 +77,93 @@ fn spawn_mdns_advertiser(state: Arc<AppState>) {
 
         let mut announcement: Option<crate::services::remote::discovery::HostAnnouncement> = None;
         let mut advertised_flag: Option<bool> = None;
+        let mut advertised_peer: Option<Option<String>> = None;
 
         loop {
-            let accepts = state
-                .settings
-                .read()
-                .map(|s| s.remote.accepts_controllers)
-                .unwrap_or(false);
+            sync_advertiser_state(
+                &state,
+                &device_id,
+                &mut announcement,
+                &mut advertised_flag,
+                &mut advertised_peer,
+            )
+            .await;
 
-            if advertised_flag != Some(accepts) {
-                if let Some(current) = announcement.take() {
-                    current.withdraw();
-                }
-                match crate::services::remote::discovery::HostAnnouncement::announce(
-                    &device_id,
-                    REMOTE_LISTEN_PORT,
-                    accepts,
-                ) {
-                    Ok(a) => {
-                        announcement = Some(a);
-                        advertised_flag = Some(accepts);
-                        log::info!(
-                            "[Remote] mDNS announcement updated: device_id={device_id}, accepts={accepts}"
-                        );
-                    }
-                    Err(e) => {
-                        log::warn!("[Remote] mDNS advertise failed: {e}");
-                        advertised_flag = None;
-                    }
-                }
-            }
-
-            tokio::time::sleep(crate::services::remote::discovery::HostAnnouncement::poll_interval())
-                .await;
+            tokio::time::sleep(
+                crate::services::remote::discovery::HostAnnouncement::poll_interval(),
+            )
+            .await;
         }
     });
+}
+
+async fn sync_advertiser_state(
+    state: &AppState,
+    device_id: &str,
+    announcement: &mut Option<crate::services::remote::discovery::HostAnnouncement>,
+    advertised_flag: &mut Option<bool>,
+    advertised_peer: &mut Option<Option<String>>,
+) {
+    let accepts = state
+        .settings
+        .read()
+        .map(|s| s.remote.accepts_controllers)
+        .unwrap_or(false);
+    let paired_peer = state.remote_manager.peer_identity().map(|p| p.device_id);
+
+    if *advertised_flag != Some(accepts) || *advertised_peer != Some(paired_peer.clone()) {
+        if let Some(current) = announcement.take() {
+            current.withdraw();
+        }
+        match crate::services::remote::discovery::HostAnnouncement::announce(
+            device_id,
+            REMOTE_LISTEN_PORT,
+            accepts,
+            paired_peer.as_deref(),
+        ) {
+            Ok(a) => {
+                *announcement = Some(a);
+                *advertised_flag = Some(accepts);
+                *advertised_peer = Some(paired_peer.clone());
+                log::info!(
+                    "[Remote] mDNS announcement updated: device_id={device_id}, accepts={accepts}, paired_peer={:?}",
+                    paired_peer
+                );
+            }
+            Err(e) => {
+                log::warn!("[Remote] mDNS advertise failed: {e}");
+                *advertised_flag = None;
+                *advertised_peer = None;
+            }
+        }
+    }
+
+    sync_host_link_state(state, accepts).await;
+}
+
+async fn sync_host_link_state(state: &AppState, accepts: bool) {
+    if state.remote_manager.role() != crate::services::remote::session::SessionRole::Host {
+        return;
+    }
+    if !accepts
+        && state.remote_manager.state()
+            != crate::services::remote::session::RemoteLinkState::Disabled
+    {
+        log::info!(
+            "[Remote] accepts_controllers is false: disconnecting active link and setting Disabled"
+        );
+        let _ = state.remote_manager.disconnect_host_initiated().await;
+        state.remote_manager.set_peer_identity(None);
+        state
+            .remote_manager
+            .set_state(crate::services::remote::session::RemoteLinkState::Disabled);
+    } else if accepts
+        && state.remote_manager.state()
+            == crate::services::remote::session::RemoteLinkState::Disabled
+    {
+        log::info!("[Remote] accepts_controllers is true: hydrating from DB");
+        state.remote_manager.hydrate_from_db(&state.db).await;
+    }
 }
 
 async fn run_host_listener_loop<R: Runtime>(app_handle: AppHandle<R>, state: Arc<AppState>) {
@@ -126,17 +176,6 @@ async fn run_host_listener_loop<R: Runtime>(app_handle: AppHandle<R>, state: Arc
     };
 
     loop {
-        let accepts = state
-            .settings
-            .read()
-            .map(|s| s.remote.accepts_controllers)
-            .unwrap_or(false);
-
-        if !accepts {
-            tokio::time::sleep(Duration::from_millis(1500)).await;
-            continue;
-        }
-
         let listener = match bind(bind_addr).await {
             Ok(l) => {
                 log::info!("[Remote] Inbound host listener bound on {bind_addr}");
@@ -149,56 +188,22 @@ async fn run_host_listener_loop<R: Runtime>(app_handle: AppHandle<R>, state: Arc
             }
         };
 
-        accept_controller_connections(&listener, &app_handle, &state).await;
-    }
-}
-
-async fn accept_controller_connections<R: Runtime>(
-    listener: &WsListener,
-    app_handle: &AppHandle<R>,
-    state: &Arc<AppState>,
-) {
-    while state
-        .settings
-        .read()
-        .map(|s| s.remote.accepts_controllers)
-        .unwrap_or(false)
-    {
-        let accept_fut = listener.accept();
-        tokio::pin!(accept_fut);
-
-        let ws_link = loop {
-            tokio::select! {
-                res = &mut accept_fut => match res {
-                    Ok(link) => break Some(link),
-                    Err(e) => {
-                        log::warn!("[Remote] Accept error: {e}");
-                        break None;
-                    }
-                },
-                _ = tokio::time::sleep(Duration::from_millis(1000)) => {
-                    let still_accepts = state
-                        .settings
-                        .read()
-                        .map(|s| s.remote.accepts_controllers)
-                        .unwrap_or(false);
-                    if !still_accepts {
-                        break None;
-                    }
+        loop {
+            match listener.accept().await {
+                Ok(link) => {
+                    let state_arc = Arc::clone(&state);
+                    let app_handle_clone = app_handle.clone();
+                    tokio::spawn(async move {
+                        handle_inbound_connection(link, state_arc, app_handle_clone).await;
+                    });
+                }
+                Err(e) => {
+                    log::warn!("[Remote] Inbound accept error on {bind_addr}: {e}");
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                    break;
                 }
             }
-        };
-
-        let link = match ws_link {
-            Some(l) => l,
-            None => break,
-        };
-
-        let state_arc = Arc::clone(state);
-        let app_handle_clone = app_handle.clone();
-        tokio::spawn(async move {
-            handle_inbound_connection(link, state_arc, app_handle_clone).await;
-        });
+        }
     }
 }
 
@@ -207,22 +212,19 @@ async fn handle_inbound_connection<R: Runtime>(
     state: Arc<AppState>,
     app_handle: AppHandle<R>,
 ) {
-    let initial_bytes = match tokio::time::timeout(
-        Duration::from_secs(10),
-        ws_link.recv_handshake_message(),
-    )
-    .await
-    {
-        Ok(Ok(bytes)) => bytes,
-        Ok(Err(e)) => {
-            log::warn!("[Remote] Failed to receive initial message: {e}");
-            return;
-        }
-        Err(_) => {
-            log::warn!("[Remote] Initial message timed out");
-            return;
-        }
-    };
+    let initial_bytes =
+        match tokio::time::timeout(Duration::from_secs(10), ws_link.recv_handshake_message()).await
+        {
+            Ok(Ok(bytes)) => bytes,
+            Ok(Err(e)) => {
+                log::warn!("[Remote] Failed to receive initial message: {e}");
+                return;
+            }
+            Err(_) => {
+                log::warn!("[Remote] Initial message timed out");
+                return;
+            }
+        };
 
     if let Ok(crate::services::remote::protocol::messages::DecodeOutcome::Known(
         ControlMessage::PairRequest(claimed_req),
@@ -268,12 +270,7 @@ async fn drive_tier2_handshake(
     Some(handshake_remote_static)
 }
 
-async fn check_host_admission(
-    state: &AppState,
-    peer_id: &str,
-    handshake_remote_static: &[u8; 32],
-    ws_link: &WsLink,
-) -> Option<()> {
+async fn check_host_readiness(state: &AppState, ws_link: &WsLink) -> bool {
     let accepts = state
         .settings
         .read()
@@ -286,7 +283,7 @@ async fn check_host_admission(
                 reason: LinkRefusedReason::NotAccepting,
             }))
             .await;
-        return None;
+        return false;
     }
 
     if state.remote_manager.state() == RemoteLinkState::Connected {
@@ -296,24 +293,37 @@ async fn check_host_admission(
                 reason: LinkRefusedReason::ControllerAttached,
             }))
             .await;
-        return None;
+        return false;
     }
 
-    if state.pipeline.turn_open.load(Ordering::Relaxed) {
-        log::warn!("[Remote] Inbound Hello refused: host is currently busy with local turn");
+    let is_local_session_active = state.pipeline.turn_open.load(Ordering::Relaxed)
+        || (state.pipeline.state() != crate::core::state::InteractionState::Idle
+            && state.remote_manager.state() != RemoteLinkState::Connected);
+
+    if is_local_session_active {
+        log::warn!("[Remote] Inbound Hello refused: host is currently busy with local session");
         let _ = ws_link
             .send_control(ControlMessage::LinkRefused(LinkRefused {
                 reason: LinkRefusedReason::HostBusy,
             }))
             .await;
-        return None;
+        return false;
     }
 
+    true
+}
+
+async fn verify_peer_admission(
+    state: &AppState,
+    peer_id: &str,
+    handshake_remote_static: &[u8; 32],
+    ws_link: &WsLink,
+) -> bool {
     let conn = match state.db.connect() {
         Ok(c) => c,
         Err(e) => {
             log::warn!("[Remote] Database connection failed: {e}");
-            return None;
+            return false;
         }
     };
 
@@ -325,10 +335,19 @@ async fn check_host_admission(
         Ok(d) => d,
         Err(e) => {
             log::warn!("[Remote] Error looking up peer {peer_id}: {e}");
-            return None;
+            return false;
         }
     };
 
+    handle_peer_trust_decision(decision, peer_id, handshake_remote_static, ws_link).await
+}
+
+async fn handle_peer_trust_decision(
+    decision: TrustDecision,
+    peer_id: &str,
+    handshake_remote_static: &[u8; 32],
+    ws_link: &WsLink,
+) -> bool {
     let device = match decision {
         TrustDecision::Trusted(dev) => dev,
         TrustDecision::Refused(TrustRefusal::RoleMismatch { .. }) => {
@@ -338,7 +357,7 @@ async fn check_host_admission(
                     role: "Controller".into(),
                 }))
                 .await;
-            return None;
+            return false;
         }
         TrustDecision::Refused(refusal) => {
             log::warn!("[Remote] Refusing peer {peer_id}: {refusal:?}");
@@ -347,7 +366,7 @@ async fn check_host_admission(
                     device_id: peer_id.to_string(),
                 }))
                 .await;
-            return None;
+            return false;
         }
     };
 
@@ -360,9 +379,24 @@ async fn check_host_admission(
                 device_id: peer_id.to_string(),
             }))
             .await;
-        return None;
+        return false;
     }
 
+    true
+}
+
+async fn check_host_admission(
+    state: &AppState,
+    peer_id: &str,
+    handshake_remote_static: &[u8; 32],
+    ws_link: &WsLink,
+) -> Option<()> {
+    if !check_host_readiness(state, ws_link).await {
+        return None;
+    }
+    if !verify_peer_admission(state, peer_id, handshake_remote_static, ws_link).await {
+        return None;
+    }
     Some(())
 }
 
@@ -430,7 +464,9 @@ async fn receive_inbound_hello(
             if loss.reason
                 == crate::services::remote::protocol::messages::LinkLossReason::Revoked =>
         {
-            let peer_id = derive_device_id(handshake_remote_static).as_str().to_string();
+            let peer_id = derive_device_id(handshake_remote_static)
+                .as_str()
+                .to_string();
             log::info!("[Remote] Received idle LinkLoss(Revoked) from peer {peer_id}");
             if let Ok(conn) = state.db.connect() {
                 let _ = state.trust_store.revoke(&conn, &peer_id).await;
@@ -461,8 +497,7 @@ async fn handle_inbound_tier2(ws_link: WsLink, first_msg: Vec<u8>, state: Arc<Ap
         return;
     };
 
-    let Some(peer_hello) =
-        receive_inbound_hello(&ws_link, &handshake_remote_static, &state).await
+    let Some(peer_hello) = receive_inbound_hello(&ws_link, &handshake_remote_static, &state).await
     else {
         return;
     };

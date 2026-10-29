@@ -208,11 +208,7 @@ async fn perform_hybrid_search(
         ));
     }
 
-    let results = rank_candidates(
-        &candidates,
-        &query_terms,
-        top_k,
-    );
+    let results = rank_candidates(&candidates, &query_terms, top_k);
     if results.is_empty() {
         Ok(format!(
             "Memory search completed for query '{}'. No relevant historical records found.",

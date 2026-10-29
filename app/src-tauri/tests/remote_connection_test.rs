@@ -177,8 +177,12 @@ async fn remote_connection_pairing_handshake_approved_reaches_connected() {
     .expect("insert controller in host db");
 
     // 6b. Host drives Noise responder handshake
-    let handshake = NoiseHandshake::responder(&host_key, None, &default_noise_prologue()).expect("handshake");
-    let transport = host_ws_link.drive_handshake(handshake).await.expect("drive handshake");
+    let handshake =
+        NoiseHandshake::responder(&host_key, None, &default_noise_prologue()).expect("handshake");
+    let transport = host_ws_link
+        .drive_handshake(handshake)
+        .await
+        .expect("drive handshake");
     host_ws_link.set_cipher(transport).await;
 
     // 7. Host sends PairApproved
@@ -269,12 +273,8 @@ async fn remote_connection_pairing_denial_keeps_link_state() {
     let initial_msg = within_ok("recv pair request", host_ws_link.recv_control()).await;
     assert!(matches!(initial_msg, ControlMessage::PairRequest(_)));
 
-    let handshake = NoiseHandshake::responder(
-        &host_key,
-        None,
-        &default_noise_prologue(),
-    )
-    .expect("handshake");
+    let handshake =
+        NoiseHandshake::responder(&host_key, None, &default_noise_prologue()).expect("handshake");
     let transport = host_ws_link
         .drive_handshake(handshake)
         .await
@@ -362,12 +362,8 @@ async fn remote_connection_pairing_timeout_keeps_link_state() {
     let initial_msg = within_ok("recv pair request", host_ws_link.recv_control()).await;
     assert!(matches!(initial_msg, ControlMessage::PairRequest(_)));
 
-    let handshake = NoiseHandshake::responder(
-        &host_key,
-        None,
-        &default_noise_prologue(),
-    )
-    .expect("handshake");
+    let handshake =
+        NoiseHandshake::responder(&host_key, None, &default_noise_prologue()).expect("handshake");
     let transport = host_ws_link
         .drive_handshake(handshake)
         .await
@@ -488,7 +484,11 @@ fn remote_connection_rule_rc_guard_blocks_desktop_mutating_writes() {
         ("pair_new_device", None, None),
         ("approve_pairing", None, None),
         ("list_paired_devices", None, None),
-        ("update_setting", Some("remote"), Some("accepts_controllers")),
+        (
+            "update_setting",
+            Some("remote"),
+            Some("accepts_controllers"),
+        ),
     ];
 
     for (cmd, domain, key) in permitted_commands {
@@ -563,11 +563,7 @@ async fn remote_connection_host_disconnect_keeps_pairing() {
     assert_eq!(host_manager.state(), RemoteLinkState::Connected);
 
     // Host executes disconnect
-    within_ok(
-        "disconnect",
-        host_manager.disconnect_host_initiated(),
-    )
-    .await;
+    within_ok("disconnect", host_manager.disconnect_host_initiated()).await;
 
     assert_eq!(host_manager.state(), RemoteLinkState::Paired);
     assert!(host_manager.peer_identity().is_some());
@@ -619,11 +615,7 @@ async fn remote_connection_revocation_permanently_removes_device() {
     assert_eq!(host_manager.state(), RemoteLinkState::Connected);
 
     // Perform revocation: delete row from Turso DB and disconnect session
-    let deleted = within_ok(
-        "revoke device",
-        host_manager.revoke_device(&db, device_id),
-    )
-    .await;
+    let deleted = within_ok("revoke device", host_manager.revoke_device(&db, device_id)).await;
     assert!(deleted, "revoke_device must return true");
 
     assert_eq!(host_manager.state(), RemoteLinkState::Unpaired);
@@ -822,9 +814,13 @@ async fn remote_connection_dial_and_connect_reaches_connected() {
         let ws_link = listener.accept().await.expect("host accept");
         let first_msg = ws_link.recv_handshake_message().await.expect("recv msg1");
         let prologue = default_noise_prologue();
-        let mut handshake = NoiseHandshake::responder(&host_key, None, &prologue).expect("responder");
+        let mut handshake =
+            NoiseHandshake::responder(&host_key, None, &prologue).expect("responder");
         handshake.read_message(&first_msg).expect("read msg1");
-        let transport = ws_link.drive_handshake(handshake).await.expect("drive handshake");
+        let transport = ws_link
+            .drive_handshake(handshake)
+            .await
+            .expect("drive handshake");
         ws_link.set_cipher(transport).await;
 
         let client_hello = match ws_link.recv_control().await.expect("recv client hello") {
@@ -842,9 +838,13 @@ async fn remote_connection_dial_and_connect_reaches_connected() {
             uplink_format: StreamFormat::DOWNLINK,
             downlink_format: StreamFormat::UPLINK,
         };
-        ws_link.send_control(ControlMessage::Hello(host_hello)).await.expect("send host hello");
+        ws_link
+            .send_control(ControlMessage::Hello(host_hello))
+            .await
+            .expect("send host hello");
 
-        hm.attach_link(Arc::new(ws_link), client_hello.sender_identity).await;
+        hm.attach_link(Arc::new(ws_link), client_hello.sender_identity)
+            .await;
     });
 
     // 4. Controller dials host
@@ -866,11 +866,11 @@ async fn remote_connection_dial_and_connect_reaches_connected() {
         .await
         .expect("query")
         .expect("device exists");
-    assert!(!updated.hints.is_empty(), "Hints must be updated with observed IP");
-    assert_eq!(
-        updated.hints[0]["addr"],
-        format!("127.0.0.1:{host_port}")
+    assert!(
+        !updated.hints.is_empty(),
+        "Hints must be updated with observed IP"
     );
+    assert_eq!(updated.hints[0]["addr"], format!("127.0.0.1:{host_port}"));
     assert_eq!(updated.hints[0]["source"], "Observed");
 }
 
@@ -924,9 +924,13 @@ async fn remote_connection_dead_primary_hint_falls_back_to_valid_candidate() {
         let ws_link = listener.accept().await.expect("host accept");
         let first_msg = ws_link.recv_handshake_message().await.expect("recv msg1");
         let prologue = default_noise_prologue();
-        let mut handshake = NoiseHandshake::responder(&host_key, None, &prologue).expect("responder");
+        let mut handshake =
+            NoiseHandshake::responder(&host_key, None, &prologue).expect("responder");
         handshake.read_message(&first_msg).expect("read msg1");
-        let transport = ws_link.drive_handshake(handshake).await.expect("drive handshake");
+        let transport = ws_link
+            .drive_handshake(handshake)
+            .await
+            .expect("drive handshake");
         ws_link.set_cipher(transport).await;
 
         let client_hello = match ws_link.recv_control().await.expect("recv client hello") {
@@ -944,9 +948,13 @@ async fn remote_connection_dead_primary_hint_falls_back_to_valid_candidate() {
             uplink_format: StreamFormat::DOWNLINK,
             downlink_format: StreamFormat::UPLINK,
         };
-        ws_link.send_control(ControlMessage::Hello(host_hello)).await.expect("send host hello");
+        ws_link
+            .send_control(ControlMessage::Hello(host_hello))
+            .await
+            .expect("send host hello");
 
-        hm.attach_link(Arc::new(ws_link), client_hello.sender_identity).await;
+        hm.attach_link(Arc::new(ws_link), client_hello.sender_identity)
+            .await;
     });
 
     // 4. Controller dials host (should gracefully bypass dead 127.0.0.1:1 and connect to candidate 1)
@@ -967,10 +975,7 @@ async fn remote_connection_dead_primary_hint_falls_back_to_valid_candidate() {
         .await
         .expect("query")
         .expect("device exists");
-    assert_eq!(
-        updated.hints[0]["addr"],
-        format!("127.0.0.1:{valid_port}")
-    );
+    assert_eq!(updated.hints[0]["addr"], format!("127.0.0.1:{valid_port}"));
     assert_eq!(updated.hints[0]["source"], "Observed");
 }
 
@@ -985,7 +990,8 @@ async fn remote_connection_dial_failure_retains_peer_identity() {
     let dir = tempdir().expect("tempdir");
     vox_lib::utils::paths::init_with_root(dir.path().to_path_buf());
 
-    let (controller_db, controller_conn) = open_migrated_db(dir.path(), "ctrl_fail_identity.db").await;
+    let (controller_db, controller_conn) =
+        open_migrated_db(dir.path(), "ctrl_fail_identity.db").await;
 
     let host_key = DeviceKey::generate().expect("host key");
     let host_id = derive_device_id(host_key.public_key()).to_string();
@@ -1011,7 +1017,10 @@ async fn remote_connection_dial_failure_retains_peer_identity() {
         .dial_and_connect(Arc::new(controller_db), host_id.clone(), None)
         .await;
 
-    assert!(dial_res.is_err(), "dial_and_connect must fail for unreachable host");
+    assert!(
+        dial_res.is_err(),
+        "dial_and_connect must fail for unreachable host"
+    );
     assert!(
         matches!(controller_manager.state(), RemoteLinkState::Failed { .. }),
         "State must be Failed, got: {:?}",
@@ -1020,7 +1029,10 @@ async fn remote_connection_dial_failure_retains_peer_identity() {
 
     // CRITICAL: Peer identity must be preserved so UI does not show "No device paired"
     let peer = controller_manager.peer_identity();
-    assert!(peer.is_some(), "peer_identity must not be cleared on Failed state");
+    assert!(
+        peer.is_some(),
+        "peer_identity must not be cleared on Failed state"
+    );
     assert_eq!(peer.as_ref().unwrap().device_id, host_id);
     assert_eq!(peer.as_ref().unwrap().display_name, "MacBook Pro Host");
 
