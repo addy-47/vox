@@ -91,7 +91,7 @@ pub fn request_engine_restart<R: tauri::Runtime>(
                     target: Some("engine".to_string()),
                 }),
             );
-            let outcome = restart_engine_inner(&app, &state).await;
+            let outcome = restart_engine_inner(&app, &state, true).await;
             state.restart_in_flight.store(false, Ordering::Release);
 
             match outcome {

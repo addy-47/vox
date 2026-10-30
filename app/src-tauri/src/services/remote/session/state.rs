@@ -14,6 +14,8 @@ pub enum RemoteFailureKind {
     InvalidToken,
     /// Protocol or handshake version mismatch.
     VersionMismatch,
+    /// Peer pairing was revoked (terminal, no retry).
+    Revoked,
     /// General or unknown OS/network transport error.
     Unknown,
 }

@@ -40,6 +40,7 @@ pub async fn stop_engine<R: tauri::Runtime>(app: AppHandle<R>) -> Result<(), Vox
 pub async fn restart_engine_inner<R: tauri::Runtime>(
     app: &AppHandle<R>,
     state: &AppState,
+    reengage_session: bool,
 ) -> Result<(), VoxIpcError> {
     let active_session_id = if state.pipeline.state() != InteractionState::Idle {
         let conv_id = state.conversation_id.load(Ordering::Relaxed);
@@ -59,25 +60,27 @@ pub async fn restart_engine_inner<R: tauri::Runtime>(
         .await
         .map_err(VoxIpcError::Engine)?;
 
-    if let Some(sid) = active_session_id {
-        log::info!(
-            "[Core::Engine] Re-engaging active session {} post-restart",
-            sid
-        );
-        let event_tx = state
-            .event_tx
-            .lock()
-            .clone()
-            .ok_or_else(|| VoxIpcError::Engine("Event router is not active".into()))?;
+    if reengage_session {
+        if let Some(sid) = active_session_id {
+            log::info!(
+                "[Core::Engine] Re-engaging active session {} post-restart",
+                sid
+            );
+            let event_tx = state
+                .event_tx
+                .lock()
+                .clone()
+                .ok_or_else(|| VoxIpcError::Engine("Event router is not active".into()))?;
 
-        event_tx
-            .send(VoxEvent::SessionStart {
-                owner: InteractionOwner::Assistant,
-                session_id: Some(sid),
-            })
-            .map_err(|e| {
-                VoxIpcError::Engine(format!("Failed to send SessionStart on restart: {}", e))
-            })?;
+            event_tx
+                .send(VoxEvent::SessionStart {
+                    owner: InteractionOwner::Assistant,
+                    session_id: Some(sid),
+                })
+                .map_err(|e| {
+                    VoxIpcError::Engine(format!("Failed to send SessionStart on restart: {}", e))
+                })?;
+        }
     }
 
     Ok(())
