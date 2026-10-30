@@ -8,11 +8,13 @@ use crate::{
     },
     services::{
         llm::{
-            catalog::discover_server_dialect, ConnectionConfig, LlmProvider, LlmRuntimeTarget,
-            RemoteTransport, QWEN_MODEL_DIR, QWEN_MODEL_FILE,
+            catalog, ConnectionConfig, LlmProvider, LlmRuntimeTarget, RemoteTransport, QWEN_MODEL_DIR,
+            QWEN_MODEL_FILE,
         },
+        sidecar,
         stt::{create_stt_provider, SttProviderConfig, NEMOTRON_MODEL_DIR, QWEN_ASR_MODEL_DIR},
         tts::{
+            auth,
             TtsProviderConfig, AZURE_TTS_VOICES_PATH, CHATTERBOX_MODEL_DIR, KOKORO_MODEL_DIR,
             SUPERTONIC_MODEL_DIR, ZIPVOICE_MODEL_DIR,
         },
@@ -155,7 +157,7 @@ pub async fn check_llm_health(
                     reqwest::Client::new()
                 }
             };
-            let discovered = discover_server_dialect(&client, &base_url, &conn_cfg.auth).await;
+            let discovered = catalog::discover_server_dialect(&client, &base_url, &conn_cfg.auth).await;
 
             let provider = RemoteTransport::new(conn_cfg.clone());
             let health_error = provider.health_check().await.err();
@@ -361,7 +363,7 @@ pub async fn check_tts_health_with_reason(
             if key.trim().is_empty() {
                 return Ok((false, Some("Azure AI Speech key is required.".to_string())));
             }
-            let base = crate::services::tts::auth::normalize_azure_endpoint(&region_or_endpoint);
+            let base = auth::normalize_azure_endpoint(&region_or_endpoint);
             let url = format!("{}{}", base.trim_end_matches('/'), AZURE_TTS_VOICES_PATH);
             let client = reqwest::Client::builder()
                 .timeout(Duration::from_secs(2))
@@ -394,8 +396,8 @@ pub async fn check_tts_health_with_reason(
                     Some("Google Application Default Credentials (ADC) not found. Run 'gcloud auth application-default login' in terminal.".to_string()),
                 ));
             }
-            match crate::services::sidecar::global_sidecar_supervisor()
-                .ensure_ready(crate::services::sidecar::SidecarKind::TtsCloud, &[])
+            match sidecar::global_sidecar_supervisor()
+                .ensure_ready(sidecar::SidecarKind::TtsCloud, &[])
                 .await
             {
                 Ok(base_url) => {
@@ -443,7 +445,7 @@ pub struct ProbeProviderTargetResult {
     pub dialect: Option<String>,
     pub reason: Option<String>,
     #[serde(default)]
-    pub models: Vec<crate::services::llm::catalog::LlmModelInfo>,
+    pub models: Vec<catalog::LlmModelInfo>,
 }
 
 /// Dedicated probe and model discovery for an arbitrary or unsaved provider target.
@@ -523,7 +525,7 @@ pub async fn probe_target(
             let (effective_url, effective_provider_name) = if let Some(url) = trimmed_url {
                 (url.to_string(), provider_id.clone())
             } else if let Some(pid) = provider_id.as_deref().filter(|s| !s.trim().is_empty()) {
-                if let Some(preset) = crate::services::llm::catalog::lookup_preset(pid) {
+                if let Some(preset) = catalog::lookup_preset(pid) {
                     (preset.base_url.to_string(), Some(pid.to_string()))
                 } else if pid == "gemini_live" {
                     (
@@ -580,14 +582,14 @@ pub async fn probe_target(
                 || effective_provider_name.as_deref() == Some("gemini_live")
             {
                 let is_gemini = effective_provider_name.as_deref() == Some("gemini_live");
-                let target = crate::services::llm::LlmRuntimeTarget::Cloud {
+                let target = LlmRuntimeTarget::Cloud {
                     base_url: effective_url,
                     model: effective_model,
                     api_key: effective_api_key,
                     provider_name: effective_provider_name,
                     protocol: Some("openai".to_string()),
                 };
-                let models = crate::services::llm::catalog::list_models(state, Some(target))
+                let models = catalog::list_models(state, Some(target))
                     .await
                     .unwrap_or_default();
                 let healthy = !models.is_empty();
@@ -625,16 +627,16 @@ pub async fn probe_target(
                 }
             };
 
-            let dialect = discover_server_dialect(&client, &effective_url, &conn_cfg.auth).await;
+            let dialect = catalog::discover_server_dialect(&client, &effective_url, &conn_cfg.auth).await;
             let transport = RemoteTransport::new(conn_cfg);
             let health_res = transport.health_check().await;
 
             let models = match transport.list_models().await {
                 Ok(mut m) => {
                     let kind_str = if kind.eq_ignore_ascii_case("cloud") {
-                        crate::services::llm::catalog::CAP_KIND_CLOUD
+                        catalog::CAP_KIND_CLOUD
                     } else {
-                        crate::services::llm::catalog::CAP_KIND_SERVER
+                        catalog::CAP_KIND_SERVER
                     };
                     for item in &mut m {
                         item.provider_kind = kind_str.to_string();

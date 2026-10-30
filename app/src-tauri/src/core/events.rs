@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter, Runtime};
+use tauri::{AppHandle, Emitter, Manager, Runtime};
 
 pub use crate::core::state::InteractionOwner;
 use crate::{
@@ -301,8 +301,63 @@ impl IpcEvent {
     }
 }
 
+/// Returns whether an IPC event is an active pipeline event routed exclusively to the controller during a remote session.
+/// Spec §9.2: state_changed, transcript_partial, transcript_final, llm_token, turn_metrics, telemetry.
+pub fn is_pipeline_event(name: &str) -> bool {
+    matches!(
+        name,
+        "state_changed"
+            | "transcript_partial"
+            | "transcript_final"
+            | "llm_token"
+            | "turn_metrics"
+            | "telemetry"
+    )
+}
+
+fn event_to_value(event: &IpcEvent) -> Option<serde_json::Value> {
+    match event {
+        IpcEvent::StateChanged(payload) => serde_json::to_value(payload).ok(),
+        IpcEvent::TranscriptPartial(payload) => serde_json::to_value(payload).ok(),
+        IpcEvent::TranscriptFinal(payload) => serde_json::to_value(payload).ok(),
+        IpcEvent::LlmToken(payload) => serde_json::to_value(payload).ok(),
+        IpcEvent::ModelProgress(payload) => serde_json::to_value(payload).ok(),
+        IpcEvent::Telemetry(payload) => serde_json::to_value(payload).ok(),
+        IpcEvent::SystemStats(payload) => serde_json::to_value(payload).ok(),
+        IpcEvent::TurnMetrics(payload) => serde_json::to_value(payload).ok(),
+        IpcEvent::SettingsUpdated => Some(serde_json::json!({})),
+        IpcEvent::EngineRestartState(payload) => serde_json::to_value(payload).ok(),
+        IpcEvent::NotificationCreated(payload) => serde_json::to_value(payload).ok(),
+        IpcEvent::NotificationUpdated(payload) => serde_json::to_value(payload).ok(),
+        IpcEvent::PersonalMemoryUpdated(payload) => serde_json::to_value(payload).ok(),
+        IpcEvent::SessionsChanged => Some(serde_json::json!({})),
+        IpcEvent::MemoryIngestionUpdated => Some(serde_json::json!({})),
+        IpcEvent::RemoteStateChanged(payload) => serde_json::to_value(payload).ok(),
+        IpcEvent::RemotePairingStateChanged(payload) => serde_json::to_value(payload).ok(),
+        IpcEvent::RemotePairingRequested(payload) => serde_json::to_value(payload).ok(),
+        IpcEvent::ToggleTray => None,
+    }
+}
+
+fn should_suppress_and_forward<R: Runtime>(app: &AppHandle<R>, event: &IpcEvent) -> bool {
+    if let Some(state) = app.try_state::<std::sync::Arc<crate::core::state::AppState>>() {
+        if state.remote_manager.state() == crate::services::remote::session::RemoteLinkState::Connected {
+            if let Some(val) = event_to_value(event) {
+                state.remote_manager.forward_event(event.name(), val);
+            }
+            if is_pipeline_event(event.name()) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 /// Emits a canonical IPC event broadcast to all webview windows.
 pub fn emit_ipc<R: Runtime>(app: &AppHandle<R>, event: IpcEvent) -> Result<(), tauri::Error> {
+    if should_suppress_and_forward(app, &event) {
+        return Ok(());
+    }
     let name = event.name();
     match event {
         IpcEvent::StateChanged(payload) => app.emit(name, payload),
@@ -333,6 +388,9 @@ pub fn emit_ipc_to<R: Runtime>(
     target: AppWindow,
     event: IpcEvent,
 ) -> Result<(), tauri::Error> {
+    if should_suppress_and_forward(app, &event) {
+        return Ok(());
+    }
     let name = event.name();
     let target_str = target.as_str();
     match event {

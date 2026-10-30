@@ -15,9 +15,13 @@ use tokio_tungstenite::{tungstenite::Message, MaybeTlsStream, WebSocketStream};
 use super::remote_link::{LinkCloseReason, LinkError, RemoteLink};
 use crate::services::remote::{
     protocol::{
-        framing::{check_control_message_size, AudioPayload},
+        framing::{
+            check_control_message_size, decode_audio_payload, encode_audio_payload, AudioPayload,
+        },
         messages::{decode_control, encode_control, ControlMessage, DecodeOutcome},
+        ProtocolError,
     },
+    security::{NoiseHandshake, NoiseTransport, SecurityError},
     MAX_CONTROL_MESSAGE_BYTES,
 };
 
@@ -34,7 +38,7 @@ pub struct WsLink {
     reader: AsyncMutex<WsSource>,
     close_reason: Mutex<Option<LinkCloseReason>>,
     peer_addr: Option<SocketAddr>,
-    cipher: AsyncMutex<Option<crate::services::remote::security::NoiseTransport>>,
+    cipher: AsyncMutex<Option<NoiseTransport>>,
 }
 
 /// Inbound TCP listener that accepts and upgrades connections to [`WsLink`].
@@ -52,7 +56,7 @@ impl RemoteLink for WsLink {
             let payload_to_send = if let Some(cipher) = self.cipher.lock().await.as_mut() {
                 cipher.encrypt(&bytes).map_err(|e| {
                     LinkError::Protocol(
-                        crate::services::remote::protocol::ProtocolError::MalformedJson(format!(
+                        ProtocolError::MalformedJson(format!(
                             "Noise encryption error: {e}"
                         )),
                     )
@@ -86,7 +90,7 @@ impl RemoteLink for WsLink {
                         let decrypted = if let Some(cipher) = self.cipher.lock().await.as_mut() {
                             cipher.decrypt(&bytes).map_err(|e| {
                                 LinkError::Protocol(
-                                    crate::services::remote::protocol::ProtocolError::MalformedJson(
+                                    ProtocolError::MalformedJson(
                                         format!("Noise decryption error: {e}"),
                                     ),
                                 )
@@ -102,7 +106,7 @@ impl RemoteLink for WsLink {
                         let decrypted = if let Some(cipher) = self.cipher.lock().await.as_mut() {
                             cipher.decrypt(text.as_bytes()).map_err(|e| {
                                 LinkError::Protocol(
-                                    crate::services::remote::protocol::ProtocolError::MalformedJson(
+                                    ProtocolError::MalformedJson(
                                         format!("Noise decryption error: {e}"),
                                     ),
                                 )
@@ -136,19 +140,68 @@ impl RemoteLink for WsLink {
         })
     }
 
-    fn send_audio<'a>(&'a self, _payload: AudioPayload) -> BoxFuture<'a, Result<(), LinkError>> {
+    fn send_audio<'a>(&'a self, payload: AudioPayload) -> BoxFuture<'a, Result<(), LinkError>> {
         Box::pin(async move {
-            Err(LinkError::Transport(
-                "Audio streaming deferred to audio slice".into(),
-            ))
+            let bytes = encode_audio_payload(&payload).map_err(LinkError::Protocol)?;
+            let payload_to_send = if let Some(cipher) = self.cipher.lock().await.as_mut() {
+                cipher.encrypt(&bytes).map_err(|e| {
+                    LinkError::Protocol(ProtocolError::MalformedJson(format!(
+                        "Noise encryption error: {e}"
+                    )))
+                })?
+            } else {
+                bytes
+            };
+
+            let mut writer = self.writer.lock().await;
+            writer
+                .send(Message::Binary(payload_to_send))
+                .await
+                .map_err(|e| {
+                    let reason = LinkCloseReason::Transport(e.to_string());
+                    self.record_close(reason.clone());
+                    LinkError::Closed(reason)
+                })
         })
     }
 
     fn recv_audio<'a>(&'a self) -> BoxFuture<'a, Result<AudioPayload, LinkError>> {
         Box::pin(async move {
-            Err(LinkError::Transport(
-                "Audio streaming deferred to audio slice".into(),
-            ))
+            let mut reader = self.reader.lock().await;
+            loop {
+                match reader.next().await {
+                    Some(Ok(Message::Binary(bytes))) => {
+                        let decrypted = if let Some(cipher) = self.cipher.lock().await.as_mut() {
+                            cipher.decrypt(&bytes).map_err(|e| {
+                                LinkError::Protocol(ProtocolError::MalformedJson(format!(
+                                    "Noise decryption error: {e}"
+                                )))
+                            })?
+                        } else {
+                            bytes
+                        };
+                        match decode_audio_payload(&decrypted).map_err(LinkError::Protocol)? {
+                            DecodeOutcome::Known(payload) => return Ok(payload),
+                            DecodeOutcome::UnknownType { type_name } => {
+                                log::warn!("[WsLink] Unknown audio payload type: {type_name}");
+                                continue;
+                            }
+                        }
+                    }
+                    Some(Ok(Message::Close(_))) | None => {
+                        self.record_close(LinkCloseReason::Peer);
+                        return Err(LinkError::Closed(LinkCloseReason::Peer));
+                    }
+                    Some(Ok(Message::Ping(_))) | Some(Ok(Message::Pong(_))) => continue,
+                    Some(Ok(Message::Frame(_))) => continue,
+                    Some(Err(e)) => {
+                        let reason = LinkCloseReason::Transport(e.to_string());
+                        self.record_close(reason.clone());
+                        return Err(LinkError::Closed(reason));
+                    }
+                    _ => continue,
+                }
+            }
         })
     }
 
@@ -198,7 +251,7 @@ impl WsLink {
     }
 
     /// Sets the active NoiseTransport cipher state for frame encryption/decryption.
-    pub async fn set_cipher(&self, cipher: crate::services::remote::security::NoiseTransport) {
+    pub async fn set_cipher(&self, cipher: NoiseTransport) {
         *self.cipher.lock().await = Some(cipher);
     }
 
@@ -247,10 +300,10 @@ impl WsLink {
     /// Drives the Noise_XX handshake state machine to completion over this WebSocket stream.
     pub async fn drive_handshake(
         &self,
-        mut handshake: crate::services::remote::security::NoiseHandshake,
+        mut handshake: NoiseHandshake,
     ) -> Result<
-        crate::services::remote::security::NoiseTransport,
-        crate::services::remote::security::SecurityError,
+        NoiseTransport,
+        SecurityError,
     > {
         loop {
             if handshake.is_complete() {
@@ -259,11 +312,11 @@ impl WsLink {
             if handshake.is_my_turn() {
                 let msg = handshake.write_message(&[])?;
                 self.send_handshake_message(&msg).await.map_err(|e| {
-                    crate::services::remote::security::SecurityError::Noise(e.to_string())
+                    SecurityError::Noise(e.to_string())
                 })?;
             } else {
                 let msg = self.recv_handshake_message().await.map_err(|e| {
-                    crate::services::remote::security::SecurityError::Noise(e.to_string())
+                    SecurityError::Noise(e.to_string())
                 })?;
                 handshake.read_message(&msg)?;
             }

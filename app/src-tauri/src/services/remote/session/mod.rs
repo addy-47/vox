@@ -16,7 +16,10 @@ pub mod state;
 
 pub use self::{
     listener::spawn_host_listener,
-    manager::{RemoteSessionManager, SessionRole, StateChangeCallback},
+    manager::{
+        CommandGateway, DefaultCommandGateway, FnCommandGateway, PendingRpcMap,
+        RemoteSessionManager, SessionRole, StateChangeCallback,
+    },
     state::{PairingState, PairingStateDto, RemoteFailureKind, RemoteLinkState, RemoteStateDto},
 };
 pub use super::{

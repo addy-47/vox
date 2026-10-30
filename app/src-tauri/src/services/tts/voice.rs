@@ -16,8 +16,10 @@ use symphonia_core::audio::{Audio, GenericAudioBufferRef};
 
 use crate::{
     core::defaults::{DEFAULT_TTS_KOKORO_VOICE_ID, DEFAULT_TTS_SUPERTONIC_VOICE_ID},
+    persistence::voices,
     services::{
         audio::resolve_audio_host,
+        sidecar,
         tts::{
             providers::edge_tts::get_trusted_client_token, TtsActiveProvider, CHATTERBOX_MODEL_DIR,
             EDGE_TTS_USER_AGENT, EDGE_TTS_VOICES_URL_BASE, TTS_SAMPLE_RATE,
@@ -271,9 +273,9 @@ pub fn pre_bake_speaker_tensors(source_wav: &Path, baked_dir: &Path) -> Result<(
 
     tokio::task::block_in_place(|| {
         tokio::runtime::Handle::current().block_on(async {
-            let base_url = crate::services::sidecar::global_sidecar_supervisor()
+            let base_url = sidecar::global_sidecar_supervisor()
                 .ensure_ready(
-                    crate::services::sidecar::SidecarKind::TtsClone,
+                    sidecar::SidecarKind::TtsClone,
                     &[("--model-dir", &model_dir_str)],
                 )
                 .await
@@ -765,11 +767,11 @@ pub fn resolve_voice_scope(engine: &str) -> VoiceScopeDto {
     } else {
         engine.to_string()
     };
-    let (can_clone, cloud_sync) = match crate::services::tts::caps_for_id(engine) {
+    let (can_clone, cloud_sync) = match super::caps_for_id(engine) {
         Ok(caps) => (
             caps.clone,
-            caps.voices == crate::services::tts::TtsVoiceSource::Edge
-                || caps.voices == crate::services::tts::TtsVoiceSource::Cloud,
+            caps.voices == super::TtsVoiceSource::Edge
+                || caps.voices == super::TtsVoiceSource::Cloud,
         ),
         Err(_) => (false, false),
     };
@@ -785,10 +787,10 @@ pub async fn sync_realtime_voices_to_db(
     conn: &turso::Connection,
     provider_id: &str,
 ) -> anyhow::Result<usize> {
-    let rows: Vec<crate::persistence::voices::RemoteVoiceRow> =
+    let rows: Vec<voices::RemoteVoiceRow> =
         match provider_id.to_lowercase().as_str() {
             "gemini_live" => vec![
-                crate::persistence::voices::RemoteVoiceRow {
+                voices::RemoteVoiceRow {
                     id: "Aoede".to_string(),
                     provider_id: "gemini_live".to_string(),
                     name: "Aoede".to_string(),
@@ -799,7 +801,7 @@ pub async fn sync_realtime_voices_to_db(
                     tags_json: "[\"Realtime\",\"Google\"]".to_string(),
                     sample_text: "Hello! I am Aoede, ready to converse in real time.".to_string(),
                 },
-                crate::persistence::voices::RemoteVoiceRow {
+                voices::RemoteVoiceRow {
                     id: "Charon".to_string(),
                     provider_id: "gemini_live".to_string(),
                     name: "Charon".to_string(),
@@ -810,7 +812,7 @@ pub async fn sync_realtime_voices_to_db(
                     tags_json: "[\"Realtime\",\"Google\"]".to_string(),
                     sample_text: "Hello! I am Charon, ready to converse in real time.".to_string(),
                 },
-                crate::persistence::voices::RemoteVoiceRow {
+                voices::RemoteVoiceRow {
                     id: "Fenrir".to_string(),
                     provider_id: "gemini_live".to_string(),
                     name: "Fenrir".to_string(),
@@ -821,7 +823,7 @@ pub async fn sync_realtime_voices_to_db(
                     tags_json: "[\"Realtime\",\"Google\"]".to_string(),
                     sample_text: "Hello! I am Fenrir, ready to converse in real time.".to_string(),
                 },
-                crate::persistence::voices::RemoteVoiceRow {
+                voices::RemoteVoiceRow {
                     id: "Kore".to_string(),
                     provider_id: "gemini_live".to_string(),
                     name: "Kore".to_string(),
@@ -832,7 +834,7 @@ pub async fn sync_realtime_voices_to_db(
                     tags_json: "[\"Realtime\",\"Google\"]".to_string(),
                     sample_text: "Hello! I am Kore, ready to converse in real time.".to_string(),
                 },
-                crate::persistence::voices::RemoteVoiceRow {
+                voices::RemoteVoiceRow {
                     id: "Puck".to_string(),
                     provider_id: "gemini_live".to_string(),
                     name: "Puck".to_string(),
@@ -843,7 +845,7 @@ pub async fn sync_realtime_voices_to_db(
                     tags_json: "[\"Realtime\",\"Google\"]".to_string(),
                     sample_text: "Hello! I am Puck, ready to converse in real time.".to_string(),
                 },
-                crate::persistence::voices::RemoteVoiceRow {
+                voices::RemoteVoiceRow {
                     id: "Leda".to_string(),
                     provider_id: "gemini_live".to_string(),
                     name: "Leda".to_string(),
@@ -854,7 +856,7 @@ pub async fn sync_realtime_voices_to_db(
                     tags_json: "[\"Realtime\",\"Google\"]".to_string(),
                     sample_text: "Hello! I am Leda, ready to converse in real time.".to_string(),
                 },
-                crate::persistence::voices::RemoteVoiceRow {
+                voices::RemoteVoiceRow {
                     id: "Orus".to_string(),
                     provider_id: "gemini_live".to_string(),
                     name: "Orus".to_string(),
@@ -865,7 +867,7 @@ pub async fn sync_realtime_voices_to_db(
                     tags_json: "[\"Realtime\",\"Google\"]".to_string(),
                     sample_text: "Hello! I am Orus, ready to converse in real time.".to_string(),
                 },
-                crate::persistence::voices::RemoteVoiceRow {
+                voices::RemoteVoiceRow {
                     id: "Zephyr".to_string(),
                     provider_id: "gemini_live".to_string(),
                     name: "Zephyr".to_string(),
@@ -878,7 +880,7 @@ pub async fn sync_realtime_voices_to_db(
                 },
             ],
             "deepgram_voice_agent" => vec![
-                crate::persistence::voices::RemoteVoiceRow {
+                voices::RemoteVoiceRow {
                     id: "aura-asteria-en".to_string(),
                     provider_id: "deepgram_voice_agent".to_string(),
                     name: "Asteria".to_string(),
@@ -889,7 +891,7 @@ pub async fn sync_realtime_voices_to_db(
                     tags_json: "[\"Realtime\",\"Deepgram\"]".to_string(),
                     sample_text: "Hello, this is Asteria from Deepgram.".to_string(),
                 },
-                crate::persistence::voices::RemoteVoiceRow {
+                voices::RemoteVoiceRow {
                     id: "aura-luna-en".to_string(),
                     provider_id: "deepgram_voice_agent".to_string(),
                     name: "Luna".to_string(),
@@ -900,7 +902,7 @@ pub async fn sync_realtime_voices_to_db(
                     tags_json: "[\"Realtime\",\"Deepgram\"]".to_string(),
                     sample_text: "Hello, this is Luna from Deepgram.".to_string(),
                 },
-                crate::persistence::voices::RemoteVoiceRow {
+                voices::RemoteVoiceRow {
                     id: "aura-stella-en".to_string(),
                     provider_id: "deepgram_voice_agent".to_string(),
                     name: "Stella".to_string(),
@@ -911,7 +913,7 @@ pub async fn sync_realtime_voices_to_db(
                     tags_json: "[\"Realtime\",\"Deepgram\"]".to_string(),
                     sample_text: "Hello, this is Stella from Deepgram.".to_string(),
                 },
-                crate::persistence::voices::RemoteVoiceRow {
+                voices::RemoteVoiceRow {
                     id: "aura-athena-en".to_string(),
                     provider_id: "deepgram_voice_agent".to_string(),
                     name: "Athena".to_string(),
@@ -922,7 +924,7 @@ pub async fn sync_realtime_voices_to_db(
                     tags_json: "[\"Realtime\",\"Deepgram\"]".to_string(),
                     sample_text: "Hello, this is Athena from Deepgram.".to_string(),
                 },
-                crate::persistence::voices::RemoteVoiceRow {
+                voices::RemoteVoiceRow {
                     id: "aura-hera-en".to_string(),
                     provider_id: "deepgram_voice_agent".to_string(),
                     name: "Hera".to_string(),
@@ -933,7 +935,7 @@ pub async fn sync_realtime_voices_to_db(
                     tags_json: "[\"Realtime\",\"Deepgram\"]".to_string(),
                     sample_text: "Hello, this is Hera from Deepgram.".to_string(),
                 },
-                crate::persistence::voices::RemoteVoiceRow {
+                voices::RemoteVoiceRow {
                     id: "aura-orion-en".to_string(),
                     provider_id: "deepgram_voice_agent".to_string(),
                     name: "Orion".to_string(),
@@ -944,7 +946,7 @@ pub async fn sync_realtime_voices_to_db(
                     tags_json: "[\"Realtime\",\"Deepgram\"]".to_string(),
                     sample_text: "Hello, this is Orion from Deepgram.".to_string(),
                 },
-                crate::persistence::voices::RemoteVoiceRow {
+                voices::RemoteVoiceRow {
                     id: "aura-arcas-en".to_string(),
                     provider_id: "deepgram_voice_agent".to_string(),
                     name: "Arcas".to_string(),
@@ -955,7 +957,7 @@ pub async fn sync_realtime_voices_to_db(
                     tags_json: "[\"Realtime\",\"Deepgram\"]".to_string(),
                     sample_text: "Hello, this is Arcas from Deepgram.".to_string(),
                 },
-                crate::persistence::voices::RemoteVoiceRow {
+                voices::RemoteVoiceRow {
                     id: "aura-perseus-en".to_string(),
                     provider_id: "deepgram_voice_agent".to_string(),
                     name: "Perseus".to_string(),
@@ -966,7 +968,7 @@ pub async fn sync_realtime_voices_to_db(
                     tags_json: "[\"Realtime\",\"Deepgram\"]".to_string(),
                     sample_text: "Hello, this is Perseus from Deepgram.".to_string(),
                 },
-                crate::persistence::voices::RemoteVoiceRow {
+                voices::RemoteVoiceRow {
                     id: "aura-angus-en".to_string(),
                     provider_id: "deepgram_voice_agent".to_string(),
                     name: "Angus".to_string(),
@@ -977,7 +979,7 @@ pub async fn sync_realtime_voices_to_db(
                     tags_json: "[\"Realtime\",\"Deepgram\"]".to_string(),
                     sample_text: "Hello, this is Angus from Deepgram.".to_string(),
                 },
-                crate::persistence::voices::RemoteVoiceRow {
+                voices::RemoteVoiceRow {
                     id: "flux-alexis-en".to_string(),
                     provider_id: "deepgram_voice_agent".to_string(),
                     name: "Alexis".to_string(),
@@ -992,7 +994,7 @@ pub async fn sync_realtime_voices_to_db(
             _ => return Ok(0),
         };
     let count = rows.len();
-    crate::persistence::voices::upsert_remote_voices_batch(conn, &rows).await?;
+    voices::upsert_remote_voices_batch(conn, &rows).await?;
     Ok(count)
 }
 
@@ -1078,7 +1080,7 @@ pub async fn sync_manifest_voices_to_db(conn: &turso::Connection) -> anyhow::Res
     if manifest.is_empty() {
         return Ok(());
     }
-    crate::persistence::voices::sync_manifest_voices_batch(conn, &manifest).await
+    voices::sync_manifest_voices_batch(conn, &manifest).await
 }
 
 /// Metadata describing an Azure Speech neural voice from `voices/list`.
@@ -1123,7 +1125,7 @@ pub async fn fetch_remote_azure_voices(
     let url = format!(
         "{}{}",
         base_url.trim_end_matches('/'),
-        crate::services::tts::AZURE_TTS_VOICES_PATH
+        super::AZURE_TTS_VOICES_PATH
     );
     let resp = client
         .get(url)
@@ -1190,12 +1192,12 @@ pub async fn sync_azure_tts_voices_to_db(
     if count == 0 {
         return Ok(0);
     }
-    let rows: Vec<crate::persistence::voices::RemoteVoiceRow> = voices
+    let rows: Vec<voices::RemoteVoiceRow> = voices
         .into_iter()
         .map(|v| {
             let (locale, accent) = split_locale(&v.locale);
             let gender = normalize_gender_str(&v.gender);
-            crate::persistence::voices::RemoteVoiceRow {
+            voices::RemoteVoiceRow {
                 id: v.short_name,
                 provider_id: "azure_tts".to_string(),
                 name: v.display_name,
@@ -1208,14 +1210,14 @@ pub async fn sync_azure_tts_voices_to_db(
             }
         })
         .collect();
-    crate::persistence::voices::upsert_remote_voices_batch(conn, &rows).await?;
+    voices::upsert_remote_voices_batch(conn, &rows).await?;
     Ok(count)
 }
 
 /// Queries Google `voices:list` for streaming-capable Chirp 3: HD English voices via the sidecar.
 pub async fn fetch_remote_google_voices() -> Result<Vec<EdgeTtsVoiceEntry>, String> {
-    let base_url = crate::services::sidecar::global_sidecar_supervisor()
-        .ensure_ready(crate::services::sidecar::SidecarKind::TtsCloud, &[])
+    let base_url = sidecar::global_sidecar_supervisor()
+        .ensure_ready(sidecar::SidecarKind::TtsCloud, &[])
         .await
         .map_err(|e| format!("Google TTS sidecar not ready: {}", e))?;
 
@@ -1264,7 +1266,7 @@ pub async fn sync_google_tts_voices_to_db(conn: &turso::Connection) -> anyhow::R
     if count == 0 {
         return Ok(0);
     }
-    let rows: Vec<crate::persistence::voices::RemoteVoiceRow> = voices
+    let rows: Vec<voices::RemoteVoiceRow> = voices
         .into_iter()
         .map(|v| {
             let (locale, accent) = split_locale(&v.locale);
@@ -1275,7 +1277,7 @@ pub async fn sync_google_tts_voices_to_db(conn: &turso::Connection) -> anyhow::R
                 v.locale
             );
             let id = v.short_name.clone();
-            crate::persistence::voices::RemoteVoiceRow {
+            voices::RemoteVoiceRow {
                 id,
                 provider_id: "google_tts".to_string(),
                 name: display,
@@ -1288,7 +1290,7 @@ pub async fn sync_google_tts_voices_to_db(conn: &turso::Connection) -> anyhow::R
             }
         })
         .collect();
-    crate::persistence::voices::upsert_remote_voices_batch(conn, &rows).await?;
+    voices::upsert_remote_voices_batch(conn, &rows).await?;
     Ok(count)
 }
 
@@ -1301,13 +1303,13 @@ pub async fn sync_edge_tts_voices_to_db(conn: &turso::Connection) -> anyhow::Res
     if count == 0 {
         return Ok(0);
     }
-    let rows: Vec<crate::persistence::voices::RemoteVoiceRow> = edge_voices
+    let rows: Vec<voices::RemoteVoiceRow> = edge_voices
         .into_iter()
         .map(|e| {
             let (locale, accent) = split_locale(&e.locale);
             let gender = normalize_gender_str(&e.gender);
             let clean_name = simplify_edge_friendly_name(&e.short_name, &e.friendly_name);
-            crate::persistence::voices::RemoteVoiceRow {
+            voices::RemoteVoiceRow {
                 id: e.short_name,
                 provider_id: "edge_tts".to_string(),
                 name: clean_name,
@@ -1320,7 +1322,7 @@ pub async fn sync_edge_tts_voices_to_db(conn: &turso::Connection) -> anyhow::Res
             }
         })
         .collect();
-    crate::persistence::voices::upsert_remote_voices_batch(conn, &rows).await?;
+    voices::upsert_remote_voices_batch(conn, &rows).await?;
     Ok(count)
 }
 
@@ -1330,7 +1332,7 @@ pub async fn list_unified_voices(
     provider: Option<&str>,
 ) -> anyhow::Result<Vec<UnifiedVoiceDto>> {
     // 1. Self-healing: ensure packaged chatterbox and zipvoice voices have their correct provider_id
-    let _ = crate::persistence::voices::migrate_legacy_voice_providers(conn).await;
+    let _ = voices::migrate_legacy_voice_providers(conn).await;
 
     // 2. Query Turso voices table offline-first. The engine id maps through
     // the same scope resolution as `resolve_voice_scope` so remote-family
@@ -1343,20 +1345,20 @@ pub async fn list_unified_voices(
         }
     });
 
-    let mut entries = crate::persistence::voices::list_voices(
+    let mut entries = voices::list_voices(
         conn,
         scoped,
-        crate::persistence::voices::VoiceListScope::All,
+        voices::VoiceListScope::All,
     )
     .await?;
 
     // 3. If table has not yet been seeded (e.g. fresh ephemeral test DB), seed manifest once
     if entries.is_empty() {
         let _ = sync_manifest_voices_to_db(conn).await;
-        entries = crate::persistence::voices::list_voices(
+        entries = voices::list_voices(
             conn,
             scoped,
-            crate::persistence::voices::VoiceListScope::All,
+            voices::VoiceListScope::All,
         )
         .await?;
     }
@@ -1467,7 +1469,7 @@ mod tests {
 
     #[test]
     fn kokoro_and_supertonic_voice_ids_do_not_overlap() {
-        let manifest = crate::services::tts::voice::get_manifest_voices();
+        let manifest = get_manifest_voices();
         let kokoro: BTreeSet<String> = manifest
             .iter()
             .filter(|entry| entry.provider_id == "kokoro")
@@ -1502,8 +1504,8 @@ mod tests {
 
     #[test]
     fn each_provider_voice_resolves_inside_its_own_catalogue() {
-        let kokoro = crate::services::tts::voice::get_voice_profiles();
-        let supertonic = crate::services::tts::voice::get_supertonic_voice_profiles();
+        let kokoro = get_voice_profiles();
+        let supertonic = get_supertonic_voice_profiles();
 
         for profile in &kokoro {
             let name = profile.name.to_lowercase();
@@ -1534,17 +1536,17 @@ mod tests {
     #[test]
     fn provider_scoped_default_voice_resolves_as_specified() {
         assert_eq!(
-            crate::services::tts::voice::default_voice_id_for_provider("kokoro"),
+            default_voice_id_for_provider("kokoro"),
             Some("bella"),
             "Kokoro's default voice must be Bella"
         );
         assert_eq!(
-            crate::services::tts::voice::default_voice_id_for_provider("supertonic"),
+            default_voice_id_for_provider("supertonic"),
             Some("james"),
             "Supertonic's default voice must be James"
         );
         assert_eq!(
-            crate::services::tts::voice::default_voice_id_for_provider("edge_tts"),
+            default_voice_id_for_provider("edge_tts"),
             None,
             "a provider without a bundled catalogue has no default catalogue voice"
         );
@@ -1553,7 +1555,7 @@ mod tests {
         // catalogue index.
         let kokoro = resolve_voice_index_for_provider("kokoro", "james")
             .expect("Kokoro is a known provider id");
-        let kokoro_profiles = crate::services::tts::voice::get_voice_profiles();
+        let kokoro_profiles = get_voice_profiles();
         assert_eq!(
             kokoro_profiles[kokoro as usize].name, "Bella",
             "a Supertonic voice id under Kokoro must resolve to Kokoro's default"
@@ -1561,7 +1563,7 @@ mod tests {
 
         let supertonic = resolve_voice_index_for_provider("supertonic", "bella")
             .expect("Supertonic is a known provider id");
-        let supertonic_profiles = crate::services::tts::voice::get_supertonic_voice_profiles();
+        let supertonic_profiles = get_supertonic_voice_profiles();
         assert_eq!(
             supertonic_profiles[supertonic as usize].name, "James",
             "a Kokoro voice id under Supertonic must resolve to Supertonic's default"

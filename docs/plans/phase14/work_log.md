@@ -341,3 +341,10 @@
 - **Restore Defaults Confirm Modal (2026-10-28):**
   1. **Change**: Replaced in-place two-step inline confirmation in `app/src/shared/components/settings/RestoreDefaultsButton.tsx` with shared `ConfirmModal`. Button now opens modal; confirming calls `restoreDefaults()`.
   2. **Verification**: `cd app && pnpm tsc --noEmit`: SUCCESS (0 errors).
+
+
+- **Inline crate import cleanup (major set) (2026-10-29):**
+  1. **Scope**: Hoisted direct `crate::...` fully-qualified paths to top-level imports in major production files: core/state.rs, ipc/voices.rs, services/health.rs, services/tts/voice.rs, services/remote/session/listener.rs, services/remote/link/ws.rs, services/remote/session/manager.rs. Skipped cfg-gated files (lib.rs, ipc/tray.rs, tray.rs, window_customizer.rs).
+  2. **Counts**: 258 total direct `crate::` usages in backend (236 prod src, 16 test, 6 sidecar); major set = 8 files with ≥6 occurrences (169 usages). Inline `use crate::` statements: 24 (21 src + 3 sidecar) also addressed where overlapping.
+  3. **Minor fixes for compile**: InteractionState::as_str, health discover_server_dialect catalog path, listener conversation_id/session handling, events Arc path.
+  4. **Verification**: `./scripts/verify-targets.sh desktop`: SUCCESS (0 warnings/errors).

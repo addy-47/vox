@@ -37,6 +37,7 @@ use crate::{
         },
         memory::{ensure_embedder_loaded, is_embedder_loaded, trim_heap, unload_all_onnx_models},
         notifications::lifecycle::dictation_live_update,
+        remote::{audio::NetworkAudioCapture, session::RemoteLinkState},
         stt::{
             actor::{spawn_stt_worker, SttActorChannels, SttActorHandles, SttCommand},
             create_stt_instance_from_settings, SttProvider,
@@ -157,6 +158,28 @@ fn create_playback_engine(
         .map_err(|e| format!("[Core::Engine] Playback engine init failed: {}", e))?;
 
     Ok(Arc::new(pe))
+}
+
+fn init_audio_stream<P>(
+    state: &AppState,
+    cap_prod: P,
+) -> Result<AudioStream, String>
+where
+    P: ringbuf::traits::Producer<Item = f32> + Send + 'static,
+{
+    let audio_stream = if state.remote_manager.state() == RemoteLinkState::Connected {
+        let net_cap = NetworkAudioCapture::new(
+            cap_prod,
+            Arc::new(AtomicU64::new(0)),
+            Arc::clone(&state.pipeline.ingestion_gate),
+        );
+        AudioStream::from_capture(Box::new(net_cap))
+    } else {
+        AudioStream::new(cap_prod, Arc::clone(&state.pipeline.ingestion_gate))
+            .map_err(|e| e.to_string())?
+    };
+    audio_stream.start().map_err(|e| e.to_string())?;
+    Ok(audio_stream)
 }
 
 /// Starts the global Vox native audio engine, initializes hardware streams, and spawns worker threads.
@@ -351,9 +374,7 @@ pub async fn start_audio_engine<R: tauri::Runtime + 'static>(
     let stt_handle = spawn_stt_worker(stt_channels, stt_provider, stt_handles)
         .map_err(|e| format!("[Core::Engine] Failed to spawn STT worker: {}", e))?;
 
-    let audio_stream = AudioStream::new(cap_prod, Arc::clone(&state.pipeline.ingestion_gate))
-        .map_err(|e| e.to_string())?;
-    audio_stream.start().map_err(|e| e.to_string())?;
+    let audio_stream = init_audio_stream(state, cap_prod)?;
 
     let playback_engine = create_playback_engine(state, vox_event_tx.clone(), Some(reference_tap))?;
     let orchestrator_handle = spawn_router(app.clone(), vox_event_rx)?;
