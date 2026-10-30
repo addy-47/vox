@@ -157,6 +157,15 @@ fn create_playback_engine(
     let pe = PlaybackEngine::new(engine_handles, telemetry_handles, reference_tap)
         .map_err(|e| format!("[Core::Engine] Playback engine init failed: {}", e))?;
 
+    // Remote session: route TTS downlink to the phone speaker.
+    if state.remote_manager.state() == RemoteLinkState::Connected {
+        let sink = crate::services::remote::audio::NetworkAudioSink::new(
+            state.remote_manager.audio_link_slot(),
+            Arc::new(AtomicU64::new(1)),
+        );
+        pe.set_remote_sink(Some(Arc::new(sink)));
+    }
+
     Ok(Arc::new(pe))
 }
 
@@ -168,13 +177,16 @@ where
     P: ringbuf::traits::Producer<Item = f32> + Send + 'static,
 {
     let audio_stream = if state.remote_manager.state() == RemoteLinkState::Connected {
-        let net_cap = NetworkAudioCapture::new(
+        let epoch = Arc::new(AtomicU64::new(0));
+        let net_cap = Arc::new(NetworkAudioCapture::new(
             cap_prod,
-            Arc::new(AtomicU64::new(0)),
+            Arc::clone(&epoch),
             Arc::clone(&state.pipeline.ingestion_gate),
-        );
-        AudioStream::from_capture(Box::new(net_cap))
+        ));
+        *state.remote_audio_ingestor.lock() = Some(Arc::clone(&net_cap) as Arc<dyn crate::services::remote::audio::NetworkAudioIngestor + Send + Sync>);
+        AudioStream::from_capture(Box::new(net_cap) as Box<dyn crate::services::audio::AudioCapture>)
     } else {
+        *state.remote_audio_ingestor.lock() = None;
         AudioStream::new(cap_prod, Arc::clone(&state.pipeline.ingestion_gate))
             .map_err(|e| e.to_string())?
     };

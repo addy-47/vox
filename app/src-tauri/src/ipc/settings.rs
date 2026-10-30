@@ -14,7 +14,6 @@ use crate::{
         events::{emit_ipc, IpcEvent},
         state::AppState,
     },
-    services::remote::control::guard::is_desktop_command_permitted,
     utils::paths,
 };
 
@@ -134,17 +133,6 @@ pub async fn update_setting<R: tauri::Runtime>(
     app: AppHandle<R>,
 ) -> Result<SettingUpdateResult, VoxIpcError> {
     let state: State<'_, Arc<AppState>> = app.state();
-
-    if !is_desktop_command_permitted(
-        "update_setting",
-        Some(&domain),
-        Some(&key),
-        &state.remote_manager.state(),
-    ) {
-        return Err(VoxIpcError::InvalidState(
-            "Remote session active: desktop mutating writes blocked".into(),
-        ));
-    }
 
     if domain == "model_parameters" {
         apply_model_parameter_mutation(&state, &key, &value)
@@ -310,11 +298,6 @@ pub async fn reset_settings<R: tauri::Runtime>(
 ) -> Result<ResetSettingsResult, VoxIpcError> {
     let state: State<'_, Arc<AppState>> = app.state();
 
-    if !is_desktop_command_permitted("reset_settings", None, None, &state.remote_manager.state()) {
-        return Err(VoxIpcError::InvalidState(
-            "Remote session active: desktop mutating writes blocked".into(),
-        ));
-    }
     let defaults = VoxSettings::default();
     {
         let mut settings = state

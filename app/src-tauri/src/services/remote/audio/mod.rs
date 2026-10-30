@@ -13,5 +13,5 @@
 pub mod capture;
 pub mod sink;
 
-pub use capture::{handle_inbound_audio_payload, NetworkAudioCapture};
+pub use capture::{handle_inbound_audio_payload, NetworkAudioCapture, NetworkAudioIngestor};
 pub use sink::NetworkAudioSink;

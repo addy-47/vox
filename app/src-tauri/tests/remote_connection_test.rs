@@ -407,7 +407,7 @@ async fn remote_connection_heartbeat_timeout_transitions_to_paired() {
     };
 
     host_manager
-        .attach_link(Arc::new(host_link), peer_identity)
+        .attach_link(Arc::new(host_link), peer_identity, None)
         .await;
     assert_eq!(host_manager.state(), RemoteLinkState::Connected);
 
@@ -558,7 +558,7 @@ async fn remote_connection_host_disconnect_keeps_pairing() {
     };
 
     host_manager
-        .attach_link(Arc::new(host_link), peer_identity)
+        .attach_link(Arc::new(host_link), peer_identity, None)
         .await;
     assert_eq!(host_manager.state(), RemoteLinkState::Connected);
 
@@ -610,6 +610,7 @@ async fn remote_connection_revocation_permanently_removes_device() {
                 device_id: device_id.to_string(),
                 display_name: "Stolen Phone".to_string(),
             },
+            None,
         )
         .await;
     assert_eq!(host_manager.state(), RemoteLinkState::Connected);
@@ -843,7 +844,7 @@ async fn remote_connection_dial_and_connect_reaches_connected() {
             .await
             .expect("send host hello");
 
-        hm.attach_link(Arc::new(ws_link), client_hello.sender_identity)
+        hm.attach_link(Arc::new(ws_link), client_hello.sender_identity, None)
             .await;
     });
 
@@ -953,7 +954,7 @@ async fn remote_connection_dead_primary_hint_falls_back_to_valid_candidate() {
             .await
             .expect("send host hello");
 
-        hm.attach_link(Arc::new(ws_link), client_hello.sender_identity)
+        hm.attach_link(Arc::new(ws_link), client_hello.sender_identity, None)
             .await;
     });
 
