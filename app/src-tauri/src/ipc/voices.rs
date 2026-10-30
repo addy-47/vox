@@ -13,11 +13,10 @@ use crate::{
     core::{error::VoxIpcError, state::AppState},
     persistence::voices::{self, VoiceEntry, VoiceSourceKind},
     services::tts::{
+        auth,
         preview::{PreviewSynthesizer, VoicePreviewResult},
-        voice::{
-            convert_and_validate_audio, pre_bake_speaker_tensors, resolve_voice_scope,
-            start_recording, stop_recording, write_pcm_to_wav, UnifiedVoiceDto, VoiceScopeDto,
-        },
+        voice::{self, convert_and_validate_audio, pre_bake_speaker_tensors, resolve_voice_scope,
+            start_recording, stop_recording, write_pcm_to_wav, UnifiedVoiceDto, VoiceScopeDto},
     },
     utils::paths::voice_dir,
 };
@@ -91,11 +90,11 @@ pub async fn list_voices(
                 return Ok(Vec::new());
             }
 
-            let _ = crate::services::tts::voice::sync_realtime_voices_to_db(&conn, &p_lower).await;
+            let _ = voice::sync_realtime_voices_to_db(&conn, &p_lower).await;
         }
     }
 
-    crate::services::tts::voice::list_unified_voices(&conn, provider.as_deref())
+    voice::list_unified_voices(&conn, provider.as_deref())
         .await
         .map_err(|e| VoxIpcError::Database(format!("Failed to list voices: {}", e)))
 }
@@ -133,20 +132,20 @@ pub async fn sync_remote_voices(state: State<'_, Arc<AppState>>) -> Result<usize
         && !azure_key.trim().is_empty();
     let sync_google = is_cloud && (active_model == "google_tts" || active_model == "google");
     tokio::task::spawn(async move {
-        if let Err(e) = crate::services::tts::voice::sync_edge_tts_voices_to_db(&conn).await {
+        if let Err(e) = voice::sync_edge_tts_voices_to_db(&conn).await {
             log::warn!("[Voices] Background Edge TTS sync failed: {}", e);
         }
         if sync_azure {
-            let base = crate::services::tts::auth::normalize_azure_endpoint(&azure_base);
+            let base = auth::normalize_azure_endpoint(&azure_base);
             if let Err(e) =
-                crate::services::tts::voice::sync_azure_tts_voices_to_db(&conn, &base, &azure_key)
+                voice::sync_azure_tts_voices_to_db(&conn, &base, &azure_key)
                     .await
             {
                 log::warn!("[Voices] Background Azure TTS sync failed: {}", e);
             }
         }
         if sync_google {
-            if let Err(e) = crate::services::tts::voice::sync_google_tts_voices_to_db(&conn).await {
+            if let Err(e) = voice::sync_google_tts_voices_to_db(&conn).await {
                 log::warn!("[Voices] Background Google TTS sync failed: {}", e);
             }
         }

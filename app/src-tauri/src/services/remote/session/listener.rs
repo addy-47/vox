@@ -17,27 +17,32 @@ use tauri::{AppHandle, Runtime};
 use crate::{
     core::{
         events::{emit_ipc, IpcEvent, RemotePairingPromptPayload},
-        state::{AppState, PendingPairingState},
+        state::{AppState, InteractionState, PendingPairingState},
     },
-    persistence::paired_devices::{insert_paired_device, NewPairedDevice, PairedDeviceRole},
+    persistence::{paired_devices::{insert_paired_device, NewPairedDevice, PairedDeviceRole}, sessions},
     services::remote::{
+        discovery,
         link::{
             ws::{bind, WsLink},
             LinkCloseReason, RemoteLink,
         },
         protocol::{
+            capabilities,
+            errors::ProtocolError,
             framing::StreamFormat,
             messages::{
-                ControlMessage, Hello, LinkRefused, LinkRefusedReason, PairApproved, PairDenied,
-                PairRequest, RoleNotPermitted, SenderIdentity, UnknownPeer,
+                AttachSnapshot, ControlMessage, DecodeOutcome, Hello, LinkLossReason, LinkRefused,
+                LinkRefusedReason, PairApproved, PairDenied, PairRequest, RoleNotPermitted,
+                SenderIdentity, SessionToken, UnknownPeer, decode_control,
             },
         },
         security::{
-            default_noise_prologue, derive_device_id, DeviceId, DeviceKey, KeyStore,
-            NoiseHandshake, PairingOutcome, PairingRequest, TrustDecision, TrustRefusal,
+            default_noise_prologue, derive_device_id, redact_settings_value, DeviceId, DeviceKey,
+            KeyStore, NoiseHandshake, PairingOutcome, PairingRequest, TrustDecision, TrustRefusal,
+            pairing,
         },
-        session::state::{PairingState, RemoteLinkState},
-        PAIRING_APPROVAL_TIMEOUT, REMOTE_LISTEN_PORT,
+        session::{SessionRole, state::{PairingState, RemoteLinkState}},
+        PAIRING_APPROVAL_TIMEOUT, PROTOCOL_VERSION, REMOTE_LISTEN_PORT,
     },
 };
 
@@ -59,9 +64,9 @@ pub fn spawn_host_listener<R: Runtime>(app_handle: AppHandle<R>, state: Arc<AppS
 /// discovered `device_id` against `paired_devices`, and refresh stored hints.
 fn spawn_mdns_advertiser(state: Arc<AppState>) {
     tauri::async_runtime::spawn(async move {
-        let device_id = match crate::services::remote::security::KeyStore::default_path() {
+        let device_id = match KeyStore::default_path() {
             Ok(store) => match store.load_or_create() {
-                Ok(key) => crate::services::remote::security::derive_device_id(key.public_key())
+                Ok(key) => derive_device_id(key.public_key())
                     .as_str()
                     .to_string(),
                 Err(e) => {
@@ -75,7 +80,7 @@ fn spawn_mdns_advertiser(state: Arc<AppState>) {
             }
         };
 
-        let mut announcement: Option<crate::services::remote::discovery::HostAnnouncement> = None;
+        let mut announcement: Option<discovery::HostAnnouncement> = None;
         let mut advertised_flag: Option<bool> = None;
         let mut advertised_peer: Option<Option<String>> = None;
 
@@ -90,7 +95,7 @@ fn spawn_mdns_advertiser(state: Arc<AppState>) {
             .await;
 
             tokio::time::sleep(
-                crate::services::remote::discovery::HostAnnouncement::poll_interval(),
+                discovery::HostAnnouncement::poll_interval(),
             )
             .await;
         }
@@ -100,7 +105,7 @@ fn spawn_mdns_advertiser(state: Arc<AppState>) {
 async fn sync_advertiser_state(
     state: &AppState,
     device_id: &str,
-    announcement: &mut Option<crate::services::remote::discovery::HostAnnouncement>,
+    announcement: &mut Option<discovery::HostAnnouncement>,
     advertised_flag: &mut Option<bool>,
     advertised_peer: &mut Option<Option<String>>,
 ) {
@@ -115,7 +120,7 @@ async fn sync_advertiser_state(
         if let Some(current) = announcement.take() {
             current.withdraw();
         }
-        match crate::services::remote::discovery::HostAnnouncement::announce(
+        match discovery::HostAnnouncement::announce(
             device_id,
             REMOTE_LISTEN_PORT,
             accepts,
@@ -142,12 +147,12 @@ async fn sync_advertiser_state(
 }
 
 async fn sync_host_link_state(state: &AppState, accepts: bool) {
-    if state.remote_manager.role() != crate::services::remote::session::SessionRole::Host {
+    if state.remote_manager.role() != SessionRole::Host {
         return;
     }
     if !accepts
         && state.remote_manager.state()
-            != crate::services::remote::session::RemoteLinkState::Disabled
+            != RemoteLinkState::Disabled
     {
         log::info!(
             "[Remote] accepts_controllers is false: disconnecting active link and setting Disabled"
@@ -156,10 +161,10 @@ async fn sync_host_link_state(state: &AppState, accepts: bool) {
         state.remote_manager.set_peer_identity(None);
         state
             .remote_manager
-            .set_state(crate::services::remote::session::RemoteLinkState::Disabled);
+            .set_state(RemoteLinkState::Disabled);
     } else if accepts
         && state.remote_manager.state()
-            == crate::services::remote::session::RemoteLinkState::Disabled
+            == RemoteLinkState::Disabled
     {
         log::info!("[Remote] accepts_controllers is true: hydrating from DB");
         state.remote_manager.hydrate_from_db(&state.db).await;
@@ -226,9 +231,9 @@ async fn handle_inbound_connection<R: Runtime>(
             }
         };
 
-    if let Ok(crate::services::remote::protocol::messages::DecodeOutcome::Known(
+    if let Ok(DecodeOutcome::Known(
         ControlMessage::PairRequest(claimed_req),
-    )) = crate::services::remote::protocol::messages::decode_control(&initial_bytes)
+    )) = decode_control(&initial_bytes)
     {
         // Tier 1 path: pairing request claim, followed by Noise_XX, user prompt, and DB storage
         handle_inbound_pairing(ws_link, claimed_req, state, app_handle).await;
@@ -297,7 +302,7 @@ async fn check_host_readiness(state: &AppState, ws_link: &WsLink) -> bool {
     }
 
     let is_local_session_active = state.pipeline.turn_open.load(Ordering::Relaxed)
-        || (state.pipeline.state() != crate::core::state::InteractionState::Idle
+        || (state.pipeline.state() != InteractionState::Idle
             && state.remote_manager.state() != RemoteLinkState::Connected);
 
     if is_local_session_active {
@@ -400,10 +405,55 @@ async fn check_host_admission(
     Some(())
 }
 
+async fn build_attach_snapshot(state: &AppState) -> AttachSnapshot {
+    let pipeline_state = state.pipeline.state().as_str().to_string();
+    let state_val = serde_json::json!({
+        "state": pipeline_state,
+        "owner": "assistant",
+        "turn_id": state.pipeline.turn_open.load(Ordering::Relaxed) as u32,
+    });
+
+    let session_id_raw = state.conversation_id.load(Ordering::Relaxed);
+    let session_id = if session_id_raw > 0 {
+        Some(session_id_raw as i64)
+    } else {
+        None
+    };
+
+    let mut settings_val = serde_json::to_value(
+        &*state.settings.read().unwrap_or_else(|p| p.into_inner()),
+    )
+    .unwrap_or_default();
+    redact_settings_value(&mut settings_val);
+
+    let turns = if let Some(sid) = session_id {
+        if let Ok(conn) = state.db.connect() {
+            sessions::fetch_turns(&conn, sid)
+                .await
+                .unwrap_or_default()
+                .into_iter()
+                .map(|t| serde_json::to_value(t).unwrap_or_default())
+                .collect()
+        } else {
+            Vec::new()
+        }
+    } else {
+        Vec::new()
+    };
+
+    AttachSnapshot {
+        state: state_val,
+        session_id,
+        settings: settings_val,
+        turns,
+    }
+}
+
 async fn respond_hello_and_attach(
     ws_link: WsLink,
     device_key: &DeviceKey,
     peer_identity: SenderIdentity,
+    handshake_remote_static: &[u8; 32],
     state: &AppState,
 ) {
     let host_id = derive_device_id(device_key.public_key());
@@ -414,9 +464,9 @@ async fn respond_hello_and_attach(
     };
 
     let hello_msg = Hello {
-        version: crate::services::remote::PROTOCOL_VERSION,
+        version: PROTOCOL_VERSION,
         sender_identity: local_identity,
-        capabilities: crate::services::remote::protocol::capabilities::CAP_CONTROL_MESSAGES,
+        capabilities: capabilities::CAP_CONTROL_MESSAGES,
         uplink_format: StreamFormat::DOWNLINK,
         downlink_format: StreamFormat::UPLINK,
     };
@@ -429,6 +479,21 @@ async fn respond_hello_and_attach(
         return;
     }
 
+    let audio_token = state
+        .remote_manager
+        .audio_tokens()
+        .mint(&peer_identity.device_id, handshake_remote_static);
+    let _ = ws_link
+        .send_control(ControlMessage::SessionToken(SessionToken {
+            token: audio_token,
+        }))
+        .await;
+
+    let snapshot = build_attach_snapshot(state).await;
+    let _ = ws_link
+        .send_control(ControlMessage::AttachSnapshot(snapshot))
+        .await;
+
     let sanitized_peer = SenderIdentity {
         device_id: peer_identity.device_id,
         display_name: super::manager::sanitize_peer_display_name(&peer_identity.display_name),
@@ -440,44 +505,103 @@ async fn respond_hello_and_attach(
         .await;
 }
 
-async fn receive_inbound_hello(
+async fn handle_inbound_audio_socket(
+    ws_link: WsLink,
+    token: SessionToken,
+    handshake_remote_static: [u8; 32],
+    state: &AppState,
+) {
+    match state
+        .remote_manager
+        .audio_tokens()
+        .redeem(&token.token, &handshake_remote_static)
+    {
+        Ok(device_id) => {
+            log::info!("[Remote] Audio socket authenticated for controller device_id={device_id}");
+            state.remote_manager.attach_audio_link(Arc::new(ws_link)).await;
+        }
+        Err(err) => {
+            log::warn!("[Remote] Audio socket token redemption failed: {err}");
+            let _ = ws_link
+                .close(LinkCloseReason::Protocol(
+                    ProtocolError::MalformedJson(
+                        err.to_string(),
+                    ),
+                ))
+                .await;
+        }
+    }
+}
+
+async fn recv_tier2_initial_control(ws_link: &WsLink) -> Option<ControlMessage> {
+    match tokio::time::timeout(Duration::from_secs(5), ws_link.recv_control()).await {
+        Ok(Ok(m)) => Some(m),
+        Ok(Err(e)) => {
+            log::warn!("[Remote] Failed to receive encrypted control message: {e}");
+            None
+        }
+        Err(_) => {
+            log::warn!("[Remote] Encrypted control message timed out");
+            None
+        }
+    }
+}
+
+async fn handle_revoked_link_loss(
     ws_link: &WsLink,
     handshake_remote_static: &[u8; 32],
     state: &AppState,
-) -> Option<Hello> {
-    let initial_msg =
-        match tokio::time::timeout(Duration::from_secs(5), ws_link.recv_control()).await {
-            Ok(Ok(m)) => m,
-            Ok(Err(e)) => {
-                log::warn!("[Remote] Failed to receive encrypted Hello: {e}");
-                return None;
-            }
-            Err(_) => {
-                log::warn!("[Remote] Encrypted Hello timed out");
-                return None;
-            }
-        };
+) {
+    let peer_id = derive_device_id(handshake_remote_static)
+        .as_str()
+        .to_string();
+    log::info!("[Remote] Received idle LinkLoss(Revoked) from peer {peer_id}");
+    if let Ok(conn) = state.db.connect() {
+        let _ = state.trust_store.revoke(&conn, &peer_id).await;
+        state.remote_manager.hydrate_from_db(&state.db).await;
+    }
+    let _ = ws_link.close(LinkCloseReason::Peer).await;
+}
 
-    match initial_msg {
-        ControlMessage::Hello(h) => Some(h),
+async fn dispatch_tier2_control_msg(
+    ws_link: WsLink,
+    msg: ControlMessage,
+    handshake_remote_static: [u8; 32],
+    device_key: &DeviceKey,
+    state: &AppState,
+) {
+    match msg {
+        ControlMessage::Hello(peer_hello) => {
+            let peer_id = &peer_hello.sender_identity.device_id;
+            if check_host_admission(state, peer_id, &handshake_remote_static, &ws_link)
+                .await
+                .is_none()
+            {
+                return;
+            }
+            respond_hello_and_attach(
+                ws_link,
+                device_key,
+                peer_hello.sender_identity,
+                &handshake_remote_static,
+                state,
+            )
+            .await;
+        }
+        ControlMessage::SessionToken(token) => {
+            handle_inbound_audio_socket(ws_link, token, handshake_remote_static, state).await;
+        }
         ControlMessage::LinkLoss(loss)
             if loss.reason
-                == crate::services::remote::protocol::messages::LinkLossReason::Revoked =>
+                == LinkLossReason::Revoked =>
         {
-            let peer_id = derive_device_id(handshake_remote_static)
-                .as_str()
-                .to_string();
-            log::info!("[Remote] Received idle LinkLoss(Revoked) from peer {peer_id}");
-            if let Ok(conn) = state.db.connect() {
-                let _ = state.trust_store.revoke(&conn, &peer_id).await;
-                state.remote_manager.hydrate_from_db(&state.db).await;
-            }
-            let _ = ws_link.close(LinkCloseReason::Peer).await;
-            None
+            handle_revoked_link_loss(&ws_link, &handshake_remote_static, state).await;
         }
         other => {
-            log::warn!("[Remote] Expected Hello, got {:?}", other.message_type());
-            None
+            log::warn!(
+                "[Remote] Expected Hello or SessionToken, got {:?}",
+                other.message_type()
+            );
         }
     }
 }
@@ -497,20 +621,18 @@ async fn handle_inbound_tier2(ws_link: WsLink, first_msg: Vec<u8>, state: Arc<Ap
         return;
     };
 
-    let Some(peer_hello) = receive_inbound_hello(&ws_link, &handshake_remote_static, &state).await
-    else {
+    let Some(initial_msg) = recv_tier2_initial_control(&ws_link).await else {
         return;
     };
 
-    let peer_id = &peer_hello.sender_identity.device_id;
-    if check_host_admission(&state, peer_id, &handshake_remote_static, &ws_link)
-        .await
-        .is_none()
-    {
-        return;
-    }
-
-    respond_hello_and_attach(ws_link, &device_key, peer_hello.sender_identity, &state).await;
+    dispatch_tier2_control_msg(
+        ws_link,
+        initial_msg,
+        handshake_remote_static,
+        &device_key,
+        &state,
+    )
+    .await;
 }
 
 async fn drive_tier1_handshake(ws_link: &WsLink, device_key: &DeviceKey) -> Option<[u8; 32]> {
@@ -538,7 +660,7 @@ async fn drive_tier1_handshake(ws_link: &WsLink, device_key: &DeviceKey) -> Opti
 
 async fn settle_pairing_coordinator<R: Runtime>(
     ws_link: WsLink,
-    pending: crate::services::remote::security::pairing::PendingPairing,
+    pending: pairing::PendingPairing,
     claimed_req: PairRequest,
     handshake_static: [u8; 32],
     host_id: DeviceId,

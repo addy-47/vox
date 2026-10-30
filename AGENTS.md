@@ -67,13 +67,21 @@ tursodb ~/.vox/vox.db "SELECT name FROM sqlite_master WHERE type='table';"
 >
 > 🛑 **After modifying code:** Use the `/review` discipline to review the diff you have created and check if there are any violations with respect to the corresponding style guide and engineer rule file in `.agents/rules/` for the area you are working on.If there are reiterate until there are no violations.
 
-### 4.3 Code Style Guide Rules (Non-Negotiable)
+### 4.3 Code Style and Engineering Integrity (Non-Negotiable)
 
-**CSG-01:** Inline crate imports , excessive comments or documentation and magic numbers , hardcoded strings or hardcoded paths are forbidden.
-**CSG-02:** Writing tests without reading testing style guide or using `/create-test` discipline is forbidden.
-**CSG-03:** Implementing patches and bandaids that degrade code quality and design is forbidden.
-**CSG-04:** Implementing ambigous seams without invoking `/grill-me` discipline is forbidden.
-**CSG-05:** Ad-hoc logic , architectural smells and hacks that simplify implemenation in lieu of architectural integrity are forbidden.
+**CSG-01 — Code Hygiene:** No inline crate imports or direct crate:: path usage, excessive comments, magic numbers, or hardcoded strings and paths. Follow established repository conventions and use explicit configuration where appropriate.
+
+**CSG-02 — Test Discipline:** Never write or modify tests without first reading the testing style guide and following the `/create-test` workflow.
+
+**CSG-03 — Root Cause Over Bandaids:** Never patch symptoms while leaving the underlying problem unresolved. No ad hoc conditionals, duplicate logic, silent fallbacks, or special cases merely to make something work. Identify the root cause and fix it at the correct architectural layer.
+
+**CSG-04 — No Yes-Man Behavior:** Never agree with the user, orchestrator, or another agent merely to be compliant. Independently evaluate every proposed solution. Challenge incorrect assumptions, flawed designs, ambiguous requirements, and poor technical decisions. Explain why an approach is flawed and propose a better alternative. Prioritize technical correctness over agreement.
+
+**CSG-05 — Architectural Integrity:** No hacks, architectural smells, hidden coupling, duplicated business logic, or bypassed abstractions for implementation convenience. Respect separation of concerns, module boundaries, ownership, and established contracts. Choose the smallest *sound* solution, not simply the smallest diff. Do not overengineer or introduce unnecessary abstractions either.
+
+**CSG-06 — No Silent Compromises:** Never conceal design flaws, ignore architectural conflicts, or invent requirements to force an implementation through. Surface material risks and seek clarification when necessary. Do not claim completion without validating the implementation and reporting unresolved issues.
+
+**Core principle:** Think critically before implementing. Diagnose before patching. Challenge before agreeing. Design before hacking. Engineering integrity takes precedence over convenience and blind compliance.
 
 ---
 

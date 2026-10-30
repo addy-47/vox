@@ -1,15 +1,6 @@
-use crate::services::remote::session::RemoteLinkState;
+use thiserror::Error;
 
-/// The origin of an incoming control command.
-///
-/// Remote-control spec §8.2: The desktop-vs-remote distinction is an
-/// explicit parameter on affected service functions, never a thread-local or
-/// ambient global flag.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ControlOrigin {
-    Desktop,
-    Controller,
-}
+use crate::services::remote::session::RemoteLinkState;
 
 /// Permitted read-only or chrome command names while Desktop Host is in an active remote session.
 const PERMITTED_DESKTOP_READS: &[&str] = &[
@@ -69,6 +60,26 @@ const PERMITTED_DESKTOP_READS: &[&str] = &[
     "get_command_routing",
 ];
 
+/// The origin of an incoming control command.
+///
+/// Remote-control spec §8.2: The desktop-vs-remote distinction is an
+/// explicit parameter on affected service functions, never a thread-local or
+/// ambient global flag.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ControlOrigin {
+    Desktop,
+    Controller,
+}
+
+/// Result of evaluating a command permission check under `RULE-RC-GUARD`.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+#[error("Remote session active: desktop write command '{command}' is blocked")]
+pub struct GuardError {
+    pub command: String,
+    pub domain: Option<String>,
+    pub key: Option<String>,
+}
+
 /// Evaluates whether an IPC command is permitted from Desktop under `RULE-RC-GUARD`.
 ///
 /// When `state == RemoteLinkState::Connected`, all desktop mutating commands
@@ -88,7 +99,10 @@ pub fn is_desktop_command_permitted(
         if d == "appearance" {
             return true;
         }
-        if d == "remote" && command == "update_setting" && key == Some("accepts_controllers") {
+        if d == "remote"
+            && (command == "update_setting" || command == "apply_settings_patch")
+            && key == Some("accepts_controllers")
+        {
             return true;
         }
         return false;
@@ -108,5 +122,24 @@ pub fn is_command_permitted(
     match origin {
         ControlOrigin::Controller => true,
         ControlOrigin::Desktop => is_desktop_command_permitted(command, domain, key, state),
+    }
+}
+
+/// Enforces `RULE-RC-GUARD` by returning `Ok(())` if permitted, or `Err(GuardError)` if blocked.
+pub fn ensure_command_permitted(
+    origin: ControlOrigin,
+    command: &str,
+    domain: Option<&str>,
+    key: Option<&str>,
+    state: &RemoteLinkState,
+) -> Result<(), GuardError> {
+    if is_command_permitted(origin, command, domain, key, state) {
+        Ok(())
+    } else {
+        Err(GuardError {
+            command: command.to_string(),
+            domain: domain.map(str::to_string),
+            key: key.map(str::to_string),
+        })
     }
 }

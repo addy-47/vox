@@ -28,6 +28,7 @@ pub mod key_store;
 pub mod noise;
 pub mod pairing;
 pub mod redaction;
+pub mod tokens;
 pub mod trust;
 
 pub use errors::{PairingRefusal, SecurityError};
@@ -45,6 +46,7 @@ pub use pairing::{
     PairingToken, PairingTokenStore,
 };
 pub use redaction::{redact_settings_value, REDACTED};
+pub use tokens::{AudioSessionTokenStore, AudioTokenError};
 pub use trust::{TrustDecision, TrustRefusal, TrustStore};
 
 pub use super::{

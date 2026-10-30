@@ -21,7 +21,7 @@ use tracing_appender::non_blocking::WorkerGuard;
 use crate::{
     config::VoxSettings,
     core::{
-        events::{PipelineMode, VoxEvent},
+        events::{emit_ipc, IpcEvent, PipelineMode, VoxEvent},
         metrics::TurnMetricsCollector,
     },
     monitoring::snapshots::MonitoringState,
@@ -35,7 +35,7 @@ use crate::{
         llm::LlmProvider,
         realtime::RealtimeActor,
         remote::{
-            security::PairingCoordinator,
+            security::{PairingCoordinator, PairingPrompt, TrustStore},
             session::{RemoteLinkState, RemoteSessionManager, SessionRole, StateChangeCallback},
         },
     },
@@ -50,7 +50,7 @@ pub use crate::{
 pub struct PendingPairingState {
     pub device_id: String,
     pub display_name: String,
-    pub prompt: crate::services::remote::security::PairingPrompt,
+    pub prompt: PairingPrompt,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -124,7 +124,23 @@ pub enum InteractionState {
     Working = 8,
 }
 
+impl InteractionState {
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            Self::Idle => "Idle",
+            Self::Ready => "Ready",
+            Self::Listening => "Listening",
+            Self::Thinking => "Thinking",
+            Self::Speaking => "Speaking",
+            Self::Paused => "Paused",
+            Self::Error => "Error",
+            Self::Sleeping => "Sleeping",
+            Self::Working => "Working",
+        }
+    }
+}
 impl From<u32> for InteractionState {
+
     fn from(v: u32) -> Self {
         match v {
             1 => InteractionState::Ready,
@@ -189,7 +205,7 @@ pub struct AppState {
     pub remote_manager: Arc<RemoteSessionManager>,
     pub pairing_coordinator: Arc<PairingCoordinator>,
     pub pending_pairing: Arc<ParkingMutex<Option<PendingPairingState>>>,
-    pub trust_store: Arc<crate::services::remote::security::TrustStore>,
+    pub trust_store: Arc<TrustStore>,
 }
 
 impl AppState {
@@ -207,7 +223,7 @@ impl AppState {
         let model_manager = Arc::new(ModelManager::new(Some(app_handle.clone())));
         let manifest = Arc::new(TokioRwLock::new(None));
 
-        let trust_store = Arc::new(crate::services::remote::security::TrustStore::new());
+        let trust_store = Arc::new(TrustStore::new());
         let remote_manager = {
             let session_role = if cfg!(desktop) {
                 SessionRole::Host
@@ -221,9 +237,9 @@ impl AppState {
                     peer.map(|p| p.device_id.as_str()),
                     peer.map(|p| p.display_name.as_str()),
                 );
-                let _ = crate::core::events::emit_ipc(
+                let _ = emit_ipc(
                     &app_handle_for_remote,
-                    crate::core::events::IpcEvent::RemoteStateChanged(dto),
+                    IpcEvent::RemoteStateChanged(dto),
                 );
             });
 

@@ -9,3 +9,9 @@
 //! belongs to.
 //!
 //! Workspace rule: `AGENTS.md` §7.1, `audio/`.
+
+pub mod capture;
+pub mod sink;
+
+pub use capture::{handle_inbound_audio_payload, NetworkAudioCapture};
+pub use sink::NetworkAudioSink;
