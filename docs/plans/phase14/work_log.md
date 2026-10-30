@@ -1,5 +1,23 @@
 # Phase 14 Work Log
 
+## 2026-10-30 — Remote Control v1 Full-Feature Remediation (final blockers + full remote test suite green)
+
+- **Context & Goals**: Close the remaining Tier-3/Tier-1 blockers from root `review-report.md` and `docs/plans/phase14/remote-review.md` so full v1 remote control functionality works end-to-end with all user stories traced.
+- **Implemented Seams & Components**:
+  1. **Compile blockers resolved**: fixed `ws.rs` `Bytes`/`Vec` mismatches and `P` Sync bound on `NetworkAudioCapture`; build now green (`verify-targets.sh` SUCCESS).
+  2. **FIFO event forwarder**: replaced per-event `tokio::spawn` with a coalescing channel so control events arrive in strict wire order; telemetry ≤30 Hz, llm_token coalesced ≤1 per 50 ms (no token dropped).
+  3. **Intentional disconnect invariants**: host calls `PauseSession`, writes `last_seen_at`, drains audio link, clears forwarder on `Disconnect`/`LinkLoss`/fault.
+  4. **Audio pipelines wired**: host reader loop feeds uplink frames into `NetworkAudioCapture`; `PlaybackEngine::set_remote_sink` routes TTS downlink to phone speaker (phone-only output).
+  5. **Controller reconnect loop**: exponential backoff (RECONNECT_INITIAL_BACKOFF..MAX), max-attempts → `Failed(Timeout)`, no retry when revoked/unpaired.
+  6. **Real command gateway**: `RealCommandGateway` actually executes IPC commands on host (pipeline, settings with secret redaction, remote admin, voices, sessions, projects, memory, notifications, catalog, monitoring, audio reads); default-deny otherwise.
+  7. **Centralized desktop guard**: `handle_invoke` wraps `generate_handler`, enforcing `RULE-RC-GUARD` once, driven by canonical `RemoteLinkState` + `ControlOrigin`, no per-command guards needed.
+  8. **Audio hot-swap**: `on_state_change` re-runs `restart_engine_inner` (capture-source swap) when entering `Connected`/`Paired`.
+- **Spec/VERIFY fixes**:
+  9. `VERIFY-RC-04`: `pair_device` verifies `approved.host_identity.device_id == host_device_id` and `derive(host_public_key) == device_id`.
+  10. `VERIFY-RC-06`: added `RemoteFailureKind::Revoked`; dial rejection maps to `Failed(Revoked)` (terminal).
+  11. `VERIFY-RC-07`: added static routing-completeness test enumerating all registered IPC commands.
+- **Verification**: `./scripts/verify-targets.sh` SUCCESS; `cargo nextest --release --test remote_connection_test --test remote_security_test`: 32/32 passed.
+
 ---
 
 ## 2026-10-29 — Remote Control Tech Lead Review Remediation (6 Critical Bugs)
