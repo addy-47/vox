@@ -712,6 +712,26 @@ impl RemoteSessionManager {
 
         let approved = Self::await_pairing_approval(&ws_link, on_prompting).await?;
 
+        // VERIFY-RC-04: host identity must match the QR claim.
+        if approved.host_identity.device_id != host_device_id {
+            let _ = ws_link.close(LinkCloseReason::Local).await;
+            return Err(LinkError::PeerRejected(PeerRejection::UnknownPeer(
+                approved.host_identity.device_id,
+            )));
+        }
+        // RULE-DB-05: derive(public_key) == device_id
+        if let Ok(pk) = hex::decode(&host_public_key) {
+            if pk.len() == 32 {
+                let derived = crate::services::remote::security::derive_device_id(&pk);
+                if derived.as_str() != host_device_id {
+                    let _ = ws_link.close(LinkCloseReason::Local).await;
+                    return Err(LinkError::PeerRejected(PeerRejection::UnknownPeer(
+                        host_device_id.clone(),
+                    )));
+                }
+            }
+        }
+
         let host_display_name = if !approved.host_identity.display_name.is_empty() {
             approved.host_identity.display_name
         } else {
@@ -882,20 +902,12 @@ impl RemoteSessionManager {
                         paired_devices::delete_paired_device(&conn, device_id)
                             .await;
                 }
-                let remaining = if let Ok(conn) = db.connect() {
-                    paired_devices::list_paired_devices(&conn)
-                        .await
-                        .map(|v| v.len())
-                        .unwrap_or(0)
-                } else {
-                    0
-                };
-                let new_state = if remaining == 0 {
-                    RemoteLinkState::Unpaired
-                } else {
-                    RemoteLinkState::Paired
-                };
-                self.set_state(new_state);
+                self.set_peer_identity(None);
+                *self.event_forwarder.lock() = None;
+                self.set_state(RemoteLinkState::failed(
+                    "Device pairing was revoked.".to_string(),
+                    RemoteFailureKind::Revoked,
+                ));
             }
             LinkError::PeerRejected(PeerRejection::LinkRefused(
                 reason,

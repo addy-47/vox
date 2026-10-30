@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use tauri::menu::CheckMenuItem;
 #[cfg(desktop)]
 use tauri::Wry;
-use tauri::{async_runtime::JoinHandle, AppHandle, Runtime};
+use tauri::{async_runtime::JoinHandle, AppHandle, Manager, Runtime, State};
 use tokio::sync::{Mutex as TokioMutex, RwLock as TokioRwLock};
 use tracing_appender::non_blocking::WorkerGuard;
 
@@ -242,6 +242,21 @@ impl AppState {
                     &app_handle_for_remote,
                     IpcEvent::RemoteStateChanged(dto),
                 );
+
+                // Hot-swap audio capture source on remote connect/disconnect (US-RC-02).
+                let new_state = state.clone();
+                let app = app_handle_for_remote.clone();
+                if new_state == RemoteLinkState::Connected
+                    || new_state == RemoteLinkState::Paired
+                {
+                    tauri::async_runtime::spawn(async move {
+                        let st: State<'_, Arc<AppState>> = app.state();
+                        let running = st.engine.lock().await.is_some();
+                        if running {
+                            let _ = crate::ipc::pipeline::restart_engine_inner(&app, &st, false).await;
+                        }
+                    });
+                }
             });
 
             let manager = Arc::new(RemoteSessionManager::with_callback(
