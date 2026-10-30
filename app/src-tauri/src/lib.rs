@@ -32,6 +32,7 @@ use std::{
 };
 
 use tauri::{Manager, State};
+use tauri::ipc::InvokeBody;
 
 #[cfg(desktop)]
 use crate::ipc::tray::toggle_tray_visibility_internal;
@@ -39,6 +40,7 @@ use crate::ipc::tray::toggle_tray_visibility_internal;
 use crate::tray::setup_linux_virtual_layer;
 use crate::{
     core::{
+        error::VoxIpcError,
         events::VoxEvent,
         state::{AppState, InteractionState, RuntimeStatus, TelemetryState},
     },
@@ -112,6 +114,7 @@ use crate::{
         stt::SttCommand,
         vad::VadCommand,
     },
+    services::remote::control::is_desktop_command_permitted,
     setup::manifest::{AppManifest, VoxManifest},
     tray::{ensure_tray_window, refresh_tray_menu},
     utils::{check_cpu_governor, hardware::detect_local_gpu, logging, paths},
@@ -205,6 +208,145 @@ fn setup_platform_tray(_app: &mut tauri::App) -> Result<(), Box<dyn std::error::
 ///
 /// Sets up tray icon, menu events, window management, and auto-launches the
 /// engine on startup.
+fn handle_invoke(invoke: tauri::ipc::Invoke<tauri::Wry>) -> bool {
+    if let Some(state) = invoke
+        .message
+        .webview()
+        .window()
+        .app_handle()
+        .try_state::<Arc<AppState>>()
+    {
+        let resolver = invoke.resolver.clone();
+        let cmd = invoke.message.command();
+        let json = match invoke.message.payload() {
+            InvokeBody::Json(v) => Some(v.clone()),
+            _ => None,
+        };
+        let domain = json
+            .as_ref()
+            .and_then(|v| v.get("domain"))
+            .and_then(|x| x.as_str());
+        let key = json
+            .as_ref()
+            .and_then(|v| v.get("key"))
+            .and_then(|x| x.as_str());
+        if !is_desktop_command_permitted(cmd, domain, key, &state.remote_manager.state()) {
+            resolver.respond(Err::<(), _>(tauri::ipc::InvokeError::from(VoxIpcError::InvalidState(
+                "Remote session active: desktop write command blocked".to_string(),
+            ))));
+            return true;
+        }
+    }
+    let handler: fn(tauri::ipc::Invoke<tauri::Wry>) -> bool = tauri::generate_handler![
+            launch_engine,
+            stop_engine,
+notification_permission_state,
+            request_notification_permission,
+            debug_fire_transient,
+            start_session,
+            end_session,
+            pause_session,
+            resume_session,
+            submit_text_input,
+            set_playback_muted,
+            set_mic_muted,
+            set_session_private_mode,
+            hide_tray_window,
+            set_window_click_through,
+            show_main_window,
+            get_settings,
+            get_restart_status,
+            get_settings_contract,
+            get_model_catalog,
+            get_provider_caps,
+            check_provider_health,
+            probe_provider_target,
+            list_llm_models,
+            probe_model_capabilities,
+            get_model_capabilities_cache,
+            list_favorite_models,
+            toggle_model_favorite,
+            setup_remote_server,
+            update_setting,
+            apply_settings_patch,
+            reset_settings,
+            ptt_start,
+            ptt_stop,
+            ptt_cancel,
+            // Projects
+            get_projects,
+            create_project,
+            rename_project,
+            delete_project,
+            // History & Session Continuation
+            create_session,
+            continue_session,
+            get_sessions,
+            get_turns,
+            search_history,
+            update_session,
+            delete_session,
+            compact_session,
+            get_transcript_history,
+            // Personal Memory
+            get_personal_memory,
+            save_personal_memory,
+            consolidate_personal_memory,
+            regenerate_personal_memory,
+            get_personal_memory_versions,
+            set_active_personal_memory_version,
+            get_observations,
+            get_ingestion_stats,
+            get_memory_revisions,
+            resolve_memory_revisions,
+            // Voices
+            list_voices,
+            get_voice_scope,
+            sync_remote_voices,
+            synthesize_voice_preview,
+            toggle_voice_favorite,
+            record_voice_used,
+            set_active_voice,
+            add_voice_from_file,
+            add_voice_from_recording,
+            start_backend_recording,
+            stop_backend_recording,
+            delete_voice,
+            rename_voice,
+            // Monitoring & Profiler
+            get_runtime_snapshot,
+            get_profiler_snapshot,
+            record_memory_profile_event,
+            // Setup
+            fetch_manifest,
+            check_updates,
+            get_onboarding_status,
+            get_runtime_report,
+            manage_models,
+            complete_setup_wizard,
+            reveal_wizard,
+            // Audio
+            list_audio_devices,
+            // Notifications & Compaction
+            get_notifications,
+            mark_notifications_read,
+            dismiss_notifications,
+            execute_notification_action,
+            // Remote Control
+            pair_new_device,
+            approve_pairing,
+            pair_device,
+            list_paired_devices,
+            revoke_device,
+            disconnect_device,
+            connect_host,
+            disconnect_host,
+            get_link_state,
+            get_command_routing,
+        ];
+    handler(invoke)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Global panic containment hook: Captures backtraces, logs at FATAL, and writes emergency reports without dying silently
@@ -520,6 +662,25 @@ pub fn run() {
             }
             ipc::remote::spawn_remote_host_listener(app.handle().clone(), Arc::clone(&state_arc));
             {
+                use crate::services::remote::control::RealCommandGateway;
+                let gw = Arc::new(RealCommandGateway {
+                    app_handle: app.handle().clone(),
+                    state: Arc::clone(&state_arc),
+                });
+                state_arc.remote_manager.set_gateway(gw);
+            }
+            {
+                let remote_mgr = Arc::clone(&state_arc.remote_manager);
+                let app_for_pause = app.handle().clone();
+                remote_mgr.set_pause_session_fn(Arc::new(move || {
+                    let state: State<'_, Arc<AppState>> = app_for_pause.state();
+                    let event_tx = state.event_tx.lock().clone();
+                    if let Some(tx) = event_tx {
+                        let _ = tx.send(VoxEvent::PauseSession);
+                    }
+                }));
+            }
+            {
                 let db_clone = Arc::clone(&state_arc.db);
                 let remote_mgr = Arc::clone(&state_arc.remote_manager);
                 let settings_clone = Arc::clone(&state_arc.settings);
@@ -755,113 +916,7 @@ pub fn run() {
                 }
             }
         })
-        .invoke_handler(tauri::generate_handler![
-            launch_engine,
-            stop_engine,
-notification_permission_state,
-            request_notification_permission,
-            debug_fire_transient,
-            start_session,
-            end_session,
-            pause_session,
-            resume_session,
-            submit_text_input,
-            set_playback_muted,
-            set_mic_muted,
-            set_session_private_mode,
-            hide_tray_window,
-            set_window_click_through,
-            show_main_window,
-            get_settings,
-            get_restart_status,
-            get_settings_contract,
-            get_model_catalog,
-            get_provider_caps,
-            check_provider_health,
-            probe_provider_target,
-            list_llm_models,
-            probe_model_capabilities,
-            get_model_capabilities_cache,
-            list_favorite_models,
-            toggle_model_favorite,
-            setup_remote_server,
-            update_setting,
-            apply_settings_patch,
-            reset_settings,
-            ptt_start,
-            ptt_stop,
-            ptt_cancel,
-            // Projects
-            get_projects,
-            create_project,
-            rename_project,
-            delete_project,
-            // History & Session Continuation
-            create_session,
-            continue_session,
-            get_sessions,
-            get_turns,
-            search_history,
-            update_session,
-            delete_session,
-            compact_session,
-            get_transcript_history,
-            // Personal Memory
-            get_personal_memory,
-            save_personal_memory,
-            consolidate_personal_memory,
-            regenerate_personal_memory,
-            get_personal_memory_versions,
-            set_active_personal_memory_version,
-            get_observations,
-            get_ingestion_stats,
-            get_memory_revisions,
-            resolve_memory_revisions,
-            // Voices
-            list_voices,
-            get_voice_scope,
-            sync_remote_voices,
-            synthesize_voice_preview,
-            toggle_voice_favorite,
-            record_voice_used,
-            set_active_voice,
-            add_voice_from_file,
-            add_voice_from_recording,
-            start_backend_recording,
-            stop_backend_recording,
-            delete_voice,
-            rename_voice,
-            // Monitoring & Profiler
-            get_runtime_snapshot,
-            get_profiler_snapshot,
-            record_memory_profile_event,
-            // Setup
-            fetch_manifest,
-            check_updates,
-            get_onboarding_status,
-            get_runtime_report,
-            manage_models,
-            complete_setup_wizard,
-            reveal_wizard,
-            // Audio
-            list_audio_devices,
-            // Notifications & Compaction
-            get_notifications,
-            mark_notifications_read,
-            dismiss_notifications,
-            execute_notification_action,
-            // Remote Control
-            pair_new_device,
-            approve_pairing,
-            pair_device,
-            list_paired_devices,
-            revoke_device,
-            disconnect_device,
-            connect_host,
-            disconnect_host,
-            get_link_state,
-            get_command_routing,
-        ])
+        .invoke_handler(handle_invoke)
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app_handle, event| {
