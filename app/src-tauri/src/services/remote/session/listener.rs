@@ -33,7 +33,7 @@ use crate::{
             messages::{
                 AttachSnapshot, ControlMessage, DecodeOutcome, Hello, LinkLossReason, LinkRefused,
                 LinkRefusedReason, PairApproved, PairDenied, PairRequest, RoleNotPermitted,
-                SenderIdentity, SessionToken, UnknownPeer, decode_control,
+                SenderIdentity, SessionToken, UnknownPeer, VersionMismatch, decode_control,
             },
         },
         security::{
@@ -594,6 +594,19 @@ async fn dispatch_tier2_control_msg(
 ) {
     match msg {
         ControlMessage::Hello(peer_hello) => {
+            if peer_hello.version != PROTOCOL_VERSION {
+                let _ = ws_link
+                    .send_control(ControlMessage::VersionMismatch(VersionMismatch {
+                        version: peer_hello.version,
+                        supported_version: PROTOCOL_VERSION,
+                    }))
+                    .await;
+                let _ = ws_link.close(LinkCloseReason::Protocol(ProtocolError::MalformedJson(
+                    "protocol version mismatch".into(),
+                )))
+                .await;
+                return;
+            }
             let peer_id = &peer_hello.sender_identity.device_id;
             if check_host_admission(state, peer_id, &handshake_remote_static, &ws_link)
                 .await
