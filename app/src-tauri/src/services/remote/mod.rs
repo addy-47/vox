@@ -68,6 +68,11 @@ pub const HEARTBEAT_MAX_MISSED_PONGS: u32 = 3;
 /// reconnecting state. Remote-control spec §6.3.
 pub const HEARTBEAT_PING_TIMEOUT: Duration = Duration::from_secs(6);
 
+// --- Reconnect (controller only) ---
+pub const RECONNECT_MAX_ATTEMPTS: u32 = 10;
+pub const RECONNECT_INITIAL_BACKOFF: Duration = Duration::from_secs(1);
+pub const RECONNECT_MAX_BACKOFF: Duration = Duration::from_secs(30);
+
 // --- Pairing (owned by `security/`) ---
 
 /// Lifetime of a pairing token. Remote-control spec §5.3.

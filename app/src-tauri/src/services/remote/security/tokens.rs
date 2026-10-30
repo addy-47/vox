@@ -31,6 +31,8 @@ pub enum AudioTokenError {
     InvalidOrExpired,
     #[error("Audio socket static key does not match control session static key")]
     KeyMismatch,
+    #[error("Failed to generate cryptographically secure token entropy")]
+    EntropyFailure,
 }
 
 impl AudioSessionTokenStore {
@@ -42,9 +44,13 @@ impl AudioSessionTokenStore {
     }
 
     /// Mints a random 32-byte hex token bound to the authenticated controller's device_id and Noise static key.
-    pub fn mint(&self, device_id: &str, peer_static_pub: &[u8; 32]) -> String {
+    pub fn mint(
+        &self,
+        device_id: &str,
+        peer_static_pub: &[u8; 32],
+    ) -> Result<String, AudioTokenError> {
         let mut raw = [0u8; 32];
-        getrandom::fill(&mut raw).expect("getrandom failed");
+        getrandom::fill(&mut raw).map_err(|_| AudioTokenError::EntropyFailure)?;
         let token = hex::encode(raw);
 
         let mut lock = self.inner.lock();
@@ -60,7 +66,7 @@ impl AudioSessionTokenStore {
             },
         );
 
-        token
+        Ok(token)
     }
 
     /// Single-use redemption: verifies token exists, is not expired, and matches the Noise static key.
@@ -97,7 +103,7 @@ mod tests {
         let device_id = "test-device-id";
         let pubkey = [42u8; 32];
 
-        let token = store.mint(device_id, &pubkey);
+        let token = store.mint(device_id, &pubkey).expect("mint failed");
         assert_eq!(token.len(), 64);
 
         let redeemed = store.redeem(&token, &pubkey);
@@ -110,7 +116,7 @@ mod tests {
         let device_id = "test-device-id";
         let pubkey = [42u8; 32];
 
-        let token = store.mint(device_id, &pubkey);
+        let token = store.mint(device_id, &pubkey).expect("mint failed");
         let first = store.redeem(&token, &pubkey);
         assert!(first.is_ok());
 
@@ -125,7 +131,7 @@ mod tests {
         let pubkey = [42u8; 32];
         let wrong_pubkey = [99u8; 32];
 
-        let token = store.mint(device_id, &pubkey);
+        let token = store.mint(device_id, &pubkey).expect("mint failed");
         let result = store.redeem(&token, &wrong_pubkey);
         assert_eq!(result.unwrap_err(), AudioTokenError::KeyMismatch);
     }

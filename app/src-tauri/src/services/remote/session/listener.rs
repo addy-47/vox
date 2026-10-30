@@ -479,10 +479,17 @@ async fn respond_hello_and_attach(
         return;
     }
 
-    let audio_token = state
+    let audio_token = match state
         .remote_manager
         .audio_tokens()
-        .mint(&peer_identity.device_id, handshake_remote_static);
+        .mint(&peer_identity.device_id, handshake_remote_static)
+    {
+        Ok(t) => t,
+        Err(e) => {
+            log::error!("[Remote] Failed to mint audio session token: {e}");
+            return;
+        }
+    };
     let _ = ws_link
         .send_control(ControlMessage::SessionToken(SessionToken {
             token: audio_token,
@@ -501,7 +508,8 @@ async fn respond_hello_and_attach(
 
     state
         .remote_manager
-        .attach_link(Arc::new(ws_link), sanitized_peer)
+        .clone()
+        .attach_link(Arc::new(ws_link), sanitized_peer, None)
         .await;
 }
 
@@ -519,6 +527,20 @@ async fn handle_inbound_audio_socket(
         Ok(device_id) => {
             log::info!("[Remote] Audio socket authenticated for controller device_id={device_id}");
             state.remote_manager.attach_audio_link(Arc::new(ws_link)).await;
+
+            // Spawn host audio reader loop: feeds incoming uplink frames into the
+            // active NetworkAudioCapture (if the engine is running in remote mode).
+            let ingestor = state.remote_audio_ingestor.lock().clone();
+            let link = state.remote_manager.clone().get_audio_link().await;
+            if let Some(link) = link {
+                tokio::spawn(async move {
+                    while let Ok(payload) = link.recv_audio().await {
+                        if let Some(ing) = &ingestor {
+                            let _ = ing.ingest(payload);
+                        }
+                    }
+                });
+            }
         }
         Err(err) => {
             log::warn!("[Remote] Audio socket token redemption failed: {err}");

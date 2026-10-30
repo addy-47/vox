@@ -16,6 +16,11 @@ use crate::services::{
     },
 };
 
+/// Ingestor trait for decoded audio payloads (used by the host reader loop).
+pub trait NetworkAudioIngestor: Send + Sync {
+    fn ingest(&self, payload: AudioPayload) -> Result<(), ProtocolError>;
+}
+
 /// Scales 16-bit signed integer sample to 32-bit floating point range [-1.0, 1.0].
 const PCM16_TO_F32_SCALE: f32 = 1.0 / 32768.0;
 
@@ -108,15 +113,63 @@ where
         )
     }
 
+    /// Ingests a decoded audio payload, checking epoch and pushing to the ring buffer.
+    pub fn ingest(&self, payload: AudioPayload) -> Result<(), ProtocolError> {
+        if !self.active.load(Ordering::Relaxed) || !self.ingestion_gate.load(Ordering::Relaxed) {
+            return Ok(());
+        }
+
+        match payload {
+            AudioPayload::Frame(frame) => {
+                let min_epoch = self.active_epoch.load(Ordering::Acquire);
+                if frame.epoch < min_epoch {
+                    return Ok(());
+                }
+                let mut producer = self.producer.lock();
+                for &sample in &frame.samples {
+                    let float_val = sample as f32 * PCM16_TO_F32_SCALE;
+                    let _ = producer.try_push(float_val);
+                }
+                Ok(())
+            }
+            AudioPayload::Control(AudioControlMessage::Flush(flush)) => {
+                self.active_epoch.fetch_max(flush.epoch, Ordering::AcqRel);
+                Ok(())
+            }
+            AudioPayload::Control(AudioControlMessage::PttMarker(_)) => Ok(()),
+        }
+    }
+
     /// Returns a reference to the active epoch counter.
     pub fn active_epoch(&self) -> &Arc<AtomicU64> {
         &self.active_epoch
     }
 }
 
+impl<P> NetworkAudioIngestor for NetworkAudioCapture<P>
+where
+    P: Producer<Item = f32> + Send + 'static,
+{
+    fn ingest(&self, payload: AudioPayload) -> Result<(), ProtocolError> {
+        NetworkAudioCapture::ingest(self, payload)
+    }
+}
+
+impl<P> AudioCapture for std::sync::Arc<NetworkAudioCapture<P>>
+where
+    P: Producer<Item = f32> + Send + 'static,
+{
+    fn start(&self) -> Result<()> {
+        self.as_ref().start()
+    }
+    fn pause(&self) -> Result<()> {
+        self.as_ref().pause()
+    }
+}
+
 impl<P> AudioCapture for NetworkAudioCapture<P>
 where
-    P: Producer<Item = f32> + Send + Sync + 'static,
+    P: Producer<Item = f32> + Send + 'static,
 {
     fn start(&self) -> Result<()> {
         log::info!("[Remote::Audio] Starting network audio capture");

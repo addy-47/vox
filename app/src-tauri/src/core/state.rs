@@ -203,6 +203,7 @@ pub struct AppState {
     pub compaction_lock: Arc<TokioMutex<()>>,
     pub nexus_search: Arc<nexus::NexusSearch>,
     pub remote_manager: Arc<RemoteSessionManager>,
+    pub remote_audio_ingestor: Arc<ParkingMutex<Option<Arc<dyn crate::services::remote::audio::NetworkAudioIngestor + Send + Sync>>>>,
     pub pairing_coordinator: Arc<PairingCoordinator>,
     pub pending_pairing: Arc<ParkingMutex<Option<PendingPairingState>>>,
     pub trust_store: Arc<TrustStore>,
@@ -321,6 +322,7 @@ impl AppState {
                 )
             },
             remote_manager,
+            remote_audio_ingestor: Arc::new(ParkingMutex::new(None)),
             pairing_coordinator: Arc::new(PairingCoordinator::new()),
             pending_pairing: Arc::new(ParkingMutex::new(None)),
             trust_store,

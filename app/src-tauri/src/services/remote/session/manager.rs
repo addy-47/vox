@@ -38,7 +38,7 @@ use crate::{
             errors::ProtocolError,
             framing::StreamFormat,
             messages::{
-                AttachSnapshot, ControlMessage, ErrResponse, Event, Hello, LinkLoss, LinkLossReason,
+                AttachSnapshot, ControlMessage, ErrResponse, Hello, LinkLoss, LinkLossReason,
                 LinkRefusedReason, PairApproved, PairRequest, Ping, Pong, Req, Res, SenderIdentity,
                 SessionToken, VersionMismatch,
             },
@@ -49,6 +49,7 @@ use crate::{
         },
         DIAL_CANDIDATE_TIMEOUT, HEARTBEAT_INTERVAL, HEARTBEAT_MAX_MISSED_PONGS,
         HEARTBEAT_PING_TIMEOUT, PROTOCOL_VERSION, REMOTE_LISTEN_PORT,
+        RECONNECT_INITIAL_BACKOFF, RECONNECT_MAX_ATTEMPTS, RECONNECT_MAX_BACKOFF,
     },
 };
 
@@ -88,7 +89,9 @@ pub struct FnCommandGateway<F>(pub F);
 
 /// Parameters for supervising link health via the full duplex recv_control loop.
 /// Spec §6.3: handles Ping/Pong, Disconnect, LinkLoss, heartbeat, and faults.
+#[allow(clippy::type_complexity)]
 struct LinkSupervisorParams {
+    manager: Option<Arc<RemoteSessionManager>>,
     role: SessionRole,
     link: Arc<dyn RemoteLink>,
     cancel: CancellationToken,
@@ -103,10 +106,14 @@ struct LinkSupervisorParams {
     gateway: Arc<dyn CommandGateway>,
     last_snapshot:
         Arc<parking_lot::RwLock<Option<AttachSnapshot>>>,
+    event_forwarder:
+        Arc<parking_lot::Mutex<Option<tokio::sync::mpsc::Sender<(String, serde_json::Value)>>>>,
+    pause_session_fn: parking_lot::Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
 }
 
 /// Manages the remote control session lifecycle, Noise_XX handshake,
 /// capabilities exchange, and link supervision.
+#[allow(clippy::type_complexity)]
 pub struct RemoteSessionManager {
     role: SessionRole,
     state: Arc<RwLock<RemoteLinkState>>,
@@ -123,10 +130,11 @@ pub struct RemoteSessionManager {
     next_request_id: AtomicU64,
     gateway: Arc<parking_lot::RwLock<Arc<dyn CommandGateway>>>,
     audio_tokens: Arc<AudioSessionTokenStore>,
-    last_telemetry: Arc<parking_lot::Mutex<Instant>>,
-    last_token: Arc<parking_lot::Mutex<Instant>>,
     last_snapshot:
         Arc<parking_lot::RwLock<Option<AttachSnapshot>>>,
+    event_forwarder:
+        Arc<parking_lot::Mutex<Option<tokio::sync::mpsc::Sender<(String, serde_json::Value)>>>>,
+    pause_session_fn: parking_lot::Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
 }
 
 #[async_trait::async_trait]
@@ -185,9 +193,9 @@ impl RemoteSessionManager {
             next_request_id: AtomicU64::new(1),
             gateway: Arc::new(parking_lot::RwLock::new(Arc::new(DefaultCommandGateway))),
             audio_tokens: Arc::new(AudioSessionTokenStore::new()),
-            last_telemetry: Arc::new(parking_lot::Mutex::new(Instant::now() - Duration::from_secs(1))),
-            last_token: Arc::new(parking_lot::Mutex::new(Instant::now() - Duration::from_secs(1))),
             last_snapshot: Arc::new(parking_lot::RwLock::new(None)),
+            event_forwarder: Arc::new(parking_lot::Mutex::new(None)),
+            pause_session_fn: parking_lot::Mutex::new(None),
         }
     }
 
@@ -212,9 +220,9 @@ impl RemoteSessionManager {
             next_request_id: AtomicU64::new(1),
             gateway: Arc::new(parking_lot::RwLock::new(Arc::new(DefaultCommandGateway))),
             audio_tokens: Arc::new(AudioSessionTokenStore::new()),
-            last_telemetry: Arc::new(parking_lot::Mutex::new(Instant::now() - Duration::from_secs(1))),
-            last_token: Arc::new(parking_lot::Mutex::new(Instant::now() - Duration::from_secs(1))),
             last_snapshot: Arc::new(parking_lot::RwLock::new(None)),
+            event_forwarder: Arc::new(parking_lot::Mutex::new(None)),
+            pause_session_fn: parking_lot::Mutex::new(None),
         }
     }
 
@@ -231,6 +239,11 @@ impl RemoteSessionManager {
     /// Attaches a custom command gateway for dispatching inbound remote commands.
     pub fn set_gateway(&self, gateway: Arc<dyn CommandGateway>) {
         *self.gateway.write() = gateway;
+    }
+
+    /// Attaches a pause-session callback invoked on host-side disconnects.
+    pub fn set_pause_session_fn(&self, f: Arc<dyn Fn() + Send + Sync>) {
+        *self.pause_session_fn.lock() = Some(f);
     }
 
     /// Returns the active command gateway.
@@ -327,7 +340,12 @@ impl RemoteSessionManager {
 
     /// Attaches an active link and peer identity to the session.
     /// Spawns the Link Supervisor actor (duplex read loop + heartbeat).
-    pub async fn attach_link(&self, link: Arc<dyn RemoteLink>, peer: SenderIdentity) {
+    pub async fn attach_link(
+        &self,
+        link: Arc<dyn RemoteLink>,
+        peer: SenderIdentity,
+        manager: Option<Arc<RemoteSessionManager>>,
+    ) {
         {
             let mut guard = self.peer_identity.write();
             *guard = Some(peer);
@@ -336,8 +354,25 @@ impl RemoteSessionManager {
             let mut guard = self.link.write().await;
             *guard = Some(link.clone());
         }
+        // FIFO event forwarder (preserves wire order; coalesces high-freq events).
+        let (tx, rx) = tokio::sync::mpsc::channel::<(String, serde_json::Value)>(256);
+        *self.event_forwarder.lock() = Some(tx.clone());
+        let link_slot = Arc::clone(&self.link);
+        tokio::spawn(run_event_forwarder(rx, link_slot));
+        // Host writes last_seen_at on connect (RULE-DB-04).
+        if self.role == SessionRole::Host {
+            let peer_id = self.peer_identity().map(|p| p.device_id);
+            if let Some(id) = peer_id {
+                let db_opt = self.db.read().clone();
+                if let Some(db) = db_opt {
+                    if let Ok(conn) = db.connect() {
+                        let _ = crate::persistence::paired_devices::mark_paired_device_seen(&conn, &id).await;
+                    }
+                }
+            }
+        }
         self.set_state(RemoteLinkState::Connected);
-        self.spawn_link_supervisor(link);
+        self.spawn_link_supervisor(link, manager);
     }
 
     /// Returns a reference to the active link if one is open.
@@ -356,6 +391,11 @@ impl RemoteSessionManager {
         self.audio_link.read().await.clone()
     }
 
+    /// Returns the shared audio link slot for sinks/readers.
+    pub fn audio_link_slot(&self) -> Arc<tokio::sync::RwLock<Option<Arc<dyn RemoteLink>>>> {
+        Arc::clone(&self.audio_link)
+    }
+
     /// Returns a reference to the audio session token store.
     pub fn audio_tokens(&self) -> Arc<AudioSessionTokenStore> {
         Arc::clone(&self.audio_tokens)
@@ -366,30 +406,10 @@ impl RemoteSessionManager {
     /// Spec §9.2 & §9.3: Telemetry is capped to <= 30 Hz (drop oldest), and LLM tokens
     /// are capped to <= 1 per 50 ms. Other events are forwarded immediately.
     pub fn forward_event(&self, event_name: &str, payload: serde_json::Value) {
-        if event_name == "telemetry" {
-            let mut guard = self.last_telemetry.lock();
-            if guard.elapsed() < Duration::from_millis(33) {
-                return;
-            }
-            *guard = Instant::now();
-        } else if event_name == "llm_token" {
-            let mut guard = self.last_token.lock();
-            if guard.elapsed() < Duration::from_millis(50) {
-                return;
-            }
-            *guard = Instant::now();
+        let tx = self.event_forwarder.lock().clone();
+        if let Some(tx) = tx {
+            let _ = tx.try_send((event_name.to_string(), payload));
         }
-
-        let link_slot = Arc::clone(&self.link);
-        let event = Event {
-            event_name: event_name.to_string(),
-            payload,
-        };
-        tokio::spawn(async move {
-            if let Some(link) = link_slot.read().await.clone() {
-                let _ = link.send_control(ControlMessage::Event(event)).await;
-            }
-        });
     }
 
     /// Returns the most recent AttachSnapshot received by this controller, if any.
@@ -516,7 +536,11 @@ impl RemoteSessionManager {
     ///
     /// Spec §6.3: bidirectional Ping/Pong, Disconnect dispatch, LinkLoss
     /// dispatch, and fast-path socket fault detection.
-    fn spawn_link_supervisor(&self, link: Arc<dyn RemoteLink>) {
+    fn spawn_link_supervisor(
+        &self,
+        link: Arc<dyn RemoteLink>,
+        manager: Option<Arc<RemoteSessionManager>>,
+    ) {
         let cancel = CancellationToken::new();
         {
             let mut guard = self.cancel_token.lock();
@@ -536,9 +560,12 @@ impl RemoteSessionManager {
         let pending_rpcs = Arc::clone(&self.pending_rpcs);
         let gateway = self.gateway.read().clone();
         let last_snapshot = Arc::clone(&self.last_snapshot);
+        let event_forwarder = Arc::clone(&self.event_forwarder);
+        let pause_session_fn = parking_lot::Mutex::new(self.pause_session_fn.lock().clone());
 
         tokio::spawn(async move {
             run_link_supervisor(LinkSupervisorParams {
+                manager,
                 role,
                 link,
                 cancel,
@@ -552,6 +579,8 @@ impl RemoteSessionManager {
                 pending_rpcs,
                 gateway,
                 last_snapshot,
+                event_forwarder,
+                pause_session_fn,
             })
             .await;
         });
@@ -992,7 +1021,12 @@ impl RemoteSessionManager {
             }
         };
 
-        self.attach_link(Arc::new(ws_link), peer_hello.sender_identity)
+        self
+            .attach_link(
+                Arc::new(ws_link),
+                peer_hello.sender_identity,
+                Some(Arc::clone(&self)),
+            )
             .await;
         Ok(())
     }
@@ -1098,6 +1132,7 @@ impl RemoteSessionManager {
             .await
             .map(|v| v.len())
             .unwrap_or(0);
+        *self.event_forwarder.lock() = None;
         if remaining == 0 {
             self.set_peer_identity(None);
             self.set_state(RemoteLinkState::Unpaired);
@@ -1133,6 +1168,19 @@ impl RemoteSessionManager {
 
         // Keep pairing: transition to Paired (spec §6.6 — NOT Unpaired)
         // peer_identity is retained because the device remains in paired_devices DB.
+        if let Some(cb) = self.pause_session_fn.lock().clone() {
+            cb();
+        }
+        let peer_id = self.peer_identity().map(|p| p.device_id);
+        if let Some(id) = peer_id {
+            let db_opt = self.db.read().clone();
+            if let Some(db) = db_opt {
+                if let Ok(conn) = db.connect() {
+                    let _ = crate::persistence::paired_devices::mark_paired_device_seen(&conn, &id).await;
+                }
+            }
+        }
+        *self.event_forwarder.lock() = None;
         self.set_state(RemoteLinkState::Paired);
         Ok(())
     }
@@ -1158,8 +1206,127 @@ impl RemoteSessionManager {
 
         // Keep pairing: transition to Paired (spec §6.4)
         // peer_identity is retained because the device remains in paired_devices DB.
+        *self.event_forwarder.lock() = None;
         self.set_state(RemoteLinkState::Paired);
         Ok(())
+    }
+}
+
+// ─── FIFO event forwarder ───────────────────────────────────────────────────
+#[allow(clippy::while_let_loop, clippy::await_holding_lock)]
+async fn run_event_forwarder(
+    mut rx: tokio::sync::mpsc::Receiver<(String, serde_json::Value)>,
+    link_slot: Arc<tokio::sync::RwLock<Option<Arc<dyn crate::services::remote::link::RemoteLink>>>>,
+) {
+    use crate::services::remote::protocol::messages::{ControlMessage, Event};
+    let mut last_telemetry = Instant::now() - Duration::from_secs(1);
+    let mut pending_token: Option<(u32, String)> = None;
+    let mut token_deadline: Option<Instant> = None;
+
+    loop {
+        // Determine sleep until pending token deadline.
+        let sleep_fut = if let Some(d) = token_deadline {
+            let now = Instant::now();
+            if d <= now {
+                None
+            } else {
+                Some(tokio::time::sleep_until(tokio::time::Instant::from_std(d)))
+            }
+        } else {
+            None
+        };
+
+        let msg = if let Some(sleep) = sleep_fut {
+            tokio::select! {
+                biased;
+                _ = sleep => {
+                    // flush pending token
+                    if let Some((turn, text)) = pending_token.take() {
+                        let ev = Event { event_name: "llm_token".to_string(), payload: serde_json::json!({"turn_id": turn, "token": text}) };
+                        if let Some(link) = link_slot.read().await.clone() {
+                            let _ = link.send_control(ControlMessage::Event(ev)).await;
+                        }
+                    }
+                    token_deadline = None;
+                    continue;
+                }
+                m = rx.recv() => m,
+            }
+        } else {
+            rx.recv().await
+        };
+
+        let Some((name, payload)) = msg else {
+            // channel closed: flush pending token
+            if let Some((turn, text)) = pending_token.take() {
+                let ev = Event { event_name: "llm_token".to_string(), payload: serde_json::json!({"turn_id": turn, "token": text}) };
+                if let Some(link) = link_slot.read().await.clone() {
+                    let _ = link.send_control(ControlMessage::Event(ev)).await;
+                }
+            }
+            break;
+        };
+
+        // Flush pending token before a non-token event to preserve order.
+        if pending_token.is_some() && name != "llm_token" {
+            if let Some((turn, text)) = pending_token.take() {
+                let ev = Event { event_name: "llm_token".to_string(), payload: serde_json::json!({"turn_id": turn, "token": text}) };
+                if let Some(link) = link_slot.read().await.clone() {
+                    let _ = link.send_control(ControlMessage::Event(ev)).await;
+                }
+            }
+            token_deadline = None;
+        }
+
+        if name == "telemetry" {
+            if last_telemetry.elapsed() < Duration::from_millis(33) {
+                continue;
+            }
+            last_telemetry = Instant::now();
+        }
+
+        if name == "llm_token" {
+            let turn = payload.get("turn_id").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+            let tok = payload.get("token").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            if let Some((pt, pt_text)) = &mut pending_token {
+                if *pt == turn {
+                    pt_text.push_str(&tok);
+                } else {
+                    // flush previous turn's token
+                    let prev_text = std::mem::take(pt_text);
+                    let prev_turn = *pt;
+                    let ev = Event { event_name: "llm_token".to_string(), payload: serde_json::json!({"turn_id": prev_turn, "token": prev_text}) };
+                    if let Some(link) = link_slot.read().await.clone() {
+                        let _ = link.send_control(ControlMessage::Event(ev)).await;
+                    }
+                    *pt = turn;
+                    pt_text.push_str(&tok);
+                }
+            } else {
+                pending_token = Some((turn, tok));
+            }
+            if token_deadline.is_none() {
+                token_deadline = Some(Instant::now() + Duration::from_millis(50));
+            }
+            // If deadline already passed, flush immediately.
+            if let Some(d) = token_deadline {
+                if d <= Instant::now() {
+                    if let Some((t, text)) = pending_token.take() {
+                        let ev = Event { event_name: "llm_token".to_string(), payload: serde_json::json!({"turn_id": t, "token": text}) };
+                        if let Some(link) = link_slot.read().await.clone() {
+                            let _ = link.send_control(ControlMessage::Event(ev)).await;
+                        }
+                    }
+                    token_deadline = None;
+                }
+            }
+            continue;
+        }
+
+        let event = Event { event_name: name, payload };
+        if let Some(link) = link_slot.read().await.clone() {
+            let _ = link.send_control(ControlMessage::Event(event)).await;
+        }
     }
 }
 
@@ -1243,8 +1410,23 @@ async fn handle_supervisor_disconnect(params: &LinkSupervisorParams) -> Supervis
         "[Remote Supervisor] Received Disconnect from controller — transitioning to Paired"
     );
     params.pending_rpcs.lock().clear();
+    *params.event_forwarder.lock() = None;
     let _ = params.link.close(LinkCloseReason::Local).await;
     params.link_slot.write().await.take();
+
+    // Spec §6.4: host pauses the session and writes last_seen_at.
+    if params.role == SessionRole::Host {
+        if let Some(cb) = params.pause_session_fn.lock().clone() {
+            cb();
+        }
+        let peer_id = params.peer_identity.read().as_ref().map(|p| p.device_id.clone());
+        if let (Some(id), Some(db)) = (peer_id, &params.db_opt) {
+            if let Ok(conn) = db.connect() {
+                let _ = crate::persistence::paired_devices::mark_paired_device_seen(&conn, &id).await;
+            }
+        }
+    }
+
     transition_supervisor_state(
         &params.state,
         &params.peer_identity,
@@ -1260,6 +1442,7 @@ async fn handle_supervisor_link_loss_msg(
 ) -> SupervisorFlow {
     log::info!("[Remote Supervisor] Received LinkLoss({:?})", loss.reason);
     params.pending_rpcs.lock().clear();
+    *params.event_forwarder.lock() = None;
     let _ = params.link.close(LinkCloseReason::Local).await;
     params.link_slot.write().await.take();
     let new_state =
@@ -1354,6 +1537,7 @@ async fn handle_supervisor_link_loss(
 async fn handle_supervisor_fault(params: &LinkSupervisorParams, err: &LinkError) {
     log::warn!("[Remote Supervisor] Socket fault: {err}");
     params.pending_rpcs.lock().clear();
+    *params.event_forwarder.lock() = None;
     params.link_slot.write().await.take();
     if params.cancel.is_cancelled() {
         log::debug!("[Remote Supervisor] Cancelled during shutdown — ignoring socket fault");
@@ -1379,6 +1563,20 @@ async fn handle_supervisor_fault(params: &LinkSupervisorParams, err: &LinkError)
         true
     };
 
+    // Host-side involuntary cutoff: pause session and write last_seen_at.
+    if params.role == SessionRole::Host {
+        if let Some(cb) = params.pause_session_fn.lock().clone() {
+            cb();
+        }
+        let peer_id = params.peer_identity.read().as_ref().map(|p| p.device_id.clone());
+        if let (Some(id), Some(db)) = (peer_id, &params.db_opt) {
+            if let Ok(conn) = db.connect() {
+                let _ = crate::persistence::paired_devices::mark_paired_device_seen(&conn, &id).await;
+            }
+        }
+    }
+
+    let reconnect = params.role == SessionRole::Controller && is_still_paired;
     let new_state = if !is_still_paired {
         log::warn!(
             "[Remote Supervisor] Peer is no longer in paired_devices — transitioning to Unpaired"
@@ -1396,6 +1594,9 @@ async fn handle_supervisor_fault(params: &LinkSupervisorParams, err: &LinkError)
         &params.on_change,
         new_state,
     );
+    if reconnect {
+        spawn_controller_reconnect(params);
+    }
 }
 
 async fn handle_host_heartbeat_tick(
@@ -1441,6 +1642,7 @@ async fn handle_controller_heartbeat_timeout(params: &LinkSupervisorParams) -> S
         HEARTBEAT_PING_TIMEOUT
     );
     params.pending_rpcs.lock().clear();
+    *params.event_forwarder.lock() = None;
     let _ = params
         .link
         .close(LinkCloseReason::Transport(
@@ -1454,7 +1656,45 @@ async fn handle_controller_heartbeat_timeout(params: &LinkSupervisorParams) -> S
         &params.on_change,
         RemoteLinkState::Reconnecting,
     );
+
+    // Spawn reconnect loop (exponential backoff).
+    spawn_controller_reconnect(params);
     SupervisorFlow::Break
+}
+
+fn spawn_controller_reconnect(params: &LinkSupervisorParams) {
+    let Some(manager) = params.manager.clone() else { return };
+    let db_opt = params.db_opt.clone();
+    let peer_id = params.peer_identity.read().as_ref().map(|p| p.device_id.clone());
+    let on_change = params.on_change.clone();
+    tokio::spawn(async move {
+        let Some(id) = peer_id else { return };
+        let Some(db) = db_opt else { return };
+        let mut delay = RECONNECT_INITIAL_BACKOFF;
+        for _ in 0..RECONNECT_MAX_ATTEMPTS {
+            tokio::time::sleep(delay).await;
+            if manager.state() != RemoteLinkState::Reconnecting {
+                return;
+            }
+            match manager.clone().dial_and_connect(db.clone(), id.clone(), None).await {
+                Ok(()) => return,
+                Err(_) => {
+                    if manager.state() != RemoteLinkState::Reconnecting {
+                        return;
+                    }
+                }
+            }
+            delay = (delay * 2).min(RECONNECT_MAX_BACKOFF);
+        }
+        // max attempts exceeded
+        if manager.state() == RemoteLinkState::Reconnecting {
+            manager.set_state(RemoteLinkState::failed(
+                "Reconnect failed after maximum attempts".to_string(),
+                RemoteFailureKind::Timeout,
+            ));
+        }
+        let _ = on_change;
+    });
 }
 
 async fn run_link_supervisor(params: LinkSupervisorParams) {

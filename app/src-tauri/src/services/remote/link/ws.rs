@@ -155,7 +155,7 @@ impl RemoteLink for WsLink {
 
             let mut writer = self.writer.lock().await;
             writer
-                .send(Message::Binary(payload_to_send))
+                .send(Message::Binary(payload_to_send.into()))
                 .await
                 .map_err(|e| {
                     let reason = LinkCloseReason::Transport(e.to_string());
@@ -178,7 +178,7 @@ impl RemoteLink for WsLink {
                                 )))
                             })?
                         } else {
-                            bytes
+                            bytes.to_vec()
                         };
                         match decode_audio_payload(&decrypted).map_err(LinkError::Protocol)? {
                             DecodeOutcome::Known(payload) => return Ok(payload),

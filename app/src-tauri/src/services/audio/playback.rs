@@ -38,6 +38,7 @@ pub struct PlaybackEngine {
     playback_intent: Arc<AtomicU8>,
     pub turn_metrics: Option<Arc<TurnMetricsCollector>>,
     _sink: Option<Box<dyn AudioSink>>,
+    remote_sink: parking_lot::RwLock<Option<Arc<crate::services::remote::audio::NetworkAudioSink>>>,
 }
 
 unsafe impl Send for PlaybackEngine {}
@@ -87,6 +88,7 @@ impl PlaybackEngine {
             playback_intent: handles.playback_intent,
             turn_metrics: handles.turn_metrics,
             _sink: Some(sink),
+            remote_sink: parking_lot::RwLock::new(None),
         })
     }
 
@@ -113,7 +115,13 @@ impl PlaybackEngine {
             playback_intent: handles.playback_intent,
             turn_metrics: handles.turn_metrics,
             _sink: sink,
+            remote_sink: parking_lot::RwLock::new(None),
         }
+    }
+
+    /// Sets the remote downlink sink used during a remote session.
+    pub fn set_remote_sink(&self, sink: Option<Arc<crate::services::remote::audio::NetworkAudioSink>>) {
+        *self.remote_sink.write() = sink;
     }
 
     /// Marks the pipeline turn whose synthesis job is currently streaming audio into this engine.
@@ -152,6 +160,19 @@ impl PlaybackEngine {
     /// Ingest a 24kHz audio chunk, upsample 2x to 48kHz, push to ring buffer, and check against custom pre-roll threshold.
     pub fn ingest_chunk_with_threshold(&self, chunk_24khz: &[f32], preroll_threshold: usize) {
         if self.cancel_flag.load(Ordering::Relaxed) {
+            return;
+        }
+
+        // Remote session: route TTS output to the phone speaker instead of the
+        // laptop's local playback sink.
+        if let Some(sink) = self.remote_sink.read().clone() {
+            let i16_samples: Vec<i16> = chunk_24khz
+                .iter()
+                .map(|&s| (s * 32767.0).clamp(-32768.0, 32767.0) as i16)
+                .collect();
+            tokio::spawn(async move {
+                sink.send_samples(i16_samples).await;
+            });
             return;
         }
 
