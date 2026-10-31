@@ -727,6 +727,9 @@ mod tests {
         let encoded = encode_control(&ControlMessage::SessionToken(token.clone()))
             .expect("must encode SessionToken");
         let outcome = decode_control(&encoded).expect("must decode SessionToken");
-        assert_eq!(outcome, DecodeOutcome::Known(ControlMessage::SessionToken(token)));
+        assert_eq!(
+            outcome,
+            DecodeOutcome::Known(ControlMessage::SessionToken(token))
+        );
     }
 }

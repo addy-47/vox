@@ -23,18 +23,14 @@ use tokio_util::sync::CancellationToken;
 use super::state::{RemoteFailureKind, RemoteLinkState, RemoteStateDto};
 use crate::{
     core::error::PersistenceError,
-    persistence::{VoxDb, paired_devices},
+    persistence::{paired_devices, VoxDb},
     services::remote::{
-        control,
-        discovery,
+        control, discovery,
         link::{
-            PeerRejection,
             ws::{dial, dial_with_timeout, WsLink},
-            LinkCloseReason, LinkError, RemoteLink,
+            LinkCloseReason, LinkError, PeerRejection, RemoteLink,
         },
         protocol::{
-            CAP_CONTROL_MESSAGES,
-            RemoteErrorCode,
             errors::ProtocolError,
             framing::StreamFormat,
             messages::{
@@ -42,14 +38,15 @@ use crate::{
                 LinkRefusedReason, PairApproved, PairRequest, Ping, Pong, Req, Res, SenderIdentity,
                 SessionToken, VersionMismatch,
             },
+            RemoteErrorCode, CAP_CONTROL_MESSAGES,
         },
         security::{
-            AudioSessionTokenStore, KeyStore, NoiseHandshake, TrustStore, default_noise_prologue,
-            derive_device_id,
+            default_noise_prologue, derive_device_id, AudioSessionTokenStore, KeyStore,
+            NoiseHandshake, TrustStore,
         },
         DIAL_CANDIDATE_TIMEOUT, HEARTBEAT_INTERVAL, HEARTBEAT_MAX_MISSED_PONGS,
-        HEARTBEAT_PING_TIMEOUT, PROTOCOL_VERSION, REMOTE_LISTEN_PORT,
-        RECONNECT_INITIAL_BACKOFF, RECONNECT_MAX_ATTEMPTS, RECONNECT_MAX_BACKOFF,
+        HEARTBEAT_PING_TIMEOUT, PROTOCOL_VERSION, RECONNECT_INITIAL_BACKOFF,
+        RECONNECT_MAX_ATTEMPTS, RECONNECT_MAX_BACKOFF, REMOTE_LISTEN_PORT,
     },
 };
 
@@ -59,10 +56,7 @@ pub type StateChangeCallback = Arc<dyn Fn(&RemoteLinkState, Option<&SenderIdenti
 /// Asynchronous RPC pending map keyed by request_id.
 pub type PendingRpcMap = Arc<
     parking_lot::Mutex<
-        std::collections::HashMap<
-            u64,
-            oneshot::Sender<Result<serde_json::Value, ErrResponse>>,
-        >,
+        std::collections::HashMap<u64, oneshot::Sender<Result<serde_json::Value, ErrResponse>>>,
     >,
 >;
 
@@ -84,12 +78,27 @@ pub trait CommandGateway: Send + Sync {
 #[derive(Debug, Default)]
 pub struct DefaultCommandGateway;
 
+/// Channel sender type for serialized event forwarder queue.
+pub type EventForwarderSender = tokio::sync::mpsc::Sender<(String, serde_json::Value)>;
+
+/// Callback invoked on host session pause upon link severance.
+pub type PauseSessionCallback = Arc<dyn Fn() + Send + Sync>;
+
+/// Callback invoked when remote events or attach snapshots arrive on controller.
+pub type RemoteEventCallback = Arc<dyn Fn(&str, serde_json::Value) + Send + Sync>;
+
+/// Control flow decision for duplex supervisor message handlers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SupervisorFlow {
+    Continue,
+    Break,
+}
+
 /// A function-based command gateway adapter.
 pub struct FnCommandGateway<F>(pub F);
 
 /// Parameters for supervising link health via the full duplex recv_control loop.
 /// Spec §6.3: handles Ping/Pong, Disconnect, LinkLoss, heartbeat, and faults.
-#[allow(clippy::type_complexity)]
 struct LinkSupervisorParams {
     manager: Option<Arc<RemoteSessionManager>>,
     role: SessionRole,
@@ -104,16 +113,14 @@ struct LinkSupervisorParams {
     db_opt: Option<Arc<VoxDb>>,
     pending_rpcs: PendingRpcMap,
     gateway: Arc<dyn CommandGateway>,
-    last_snapshot:
-        Arc<parking_lot::RwLock<Option<AttachSnapshot>>>,
-    event_forwarder:
-        Arc<parking_lot::Mutex<Option<tokio::sync::mpsc::Sender<(String, serde_json::Value)>>>>,
-    pause_session_fn: parking_lot::Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
+    last_snapshot: Arc<parking_lot::RwLock<Option<AttachSnapshot>>>,
+    event_forwarder: Arc<parking_lot::Mutex<Option<EventForwarderSender>>>,
+    pause_session_fn: parking_lot::Mutex<Option<PauseSessionCallback>>,
+    on_remote_event: Arc<parking_lot::Mutex<Option<RemoteEventCallback>>>,
 }
 
 /// Manages the remote control session lifecycle, Noise_XX handshake,
 /// capabilities exchange, and link supervision.
-#[allow(clippy::type_complexity)]
 pub struct RemoteSessionManager {
     role: SessionRole,
     state: Arc<RwLock<RemoteLinkState>>,
@@ -124,17 +131,15 @@ pub struct RemoteSessionManager {
     cancel_token: Arc<parking_lot::Mutex<Option<CancellationToken>>>,
     on_state_change: Option<StateChangeCallback>,
     db: Arc<parking_lot::RwLock<Option<Arc<VoxDb>>>>,
-    trust_store:
-        Arc<parking_lot::RwLock<Option<Arc<TrustStore>>>>,
+    trust_store: Arc<parking_lot::RwLock<Option<Arc<TrustStore>>>>,
     pending_rpcs: PendingRpcMap,
     next_request_id: AtomicU64,
     gateway: Arc<parking_lot::RwLock<Arc<dyn CommandGateway>>>,
     audio_tokens: Arc<AudioSessionTokenStore>,
-    last_snapshot:
-        Arc<parking_lot::RwLock<Option<AttachSnapshot>>>,
-    event_forwarder:
-        Arc<parking_lot::Mutex<Option<tokio::sync::mpsc::Sender<(String, serde_json::Value)>>>>,
-    pause_session_fn: parking_lot::Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
+    last_snapshot: Arc<parking_lot::RwLock<Option<AttachSnapshot>>>,
+    event_forwarder: Arc<parking_lot::Mutex<Option<EventForwarderSender>>>,
+    pause_session_fn: parking_lot::Mutex<Option<PauseSessionCallback>>,
+    on_remote_event: Arc<parking_lot::Mutex<Option<RemoteEventCallback>>>,
 }
 
 #[async_trait::async_trait]
@@ -142,11 +147,9 @@ impl CommandGateway for DefaultCommandGateway {
     async fn dispatch(&self, req: Req) -> ControlMessage {
         let domain = req.args.get("domain").and_then(|v| v.as_str());
         let key = req.args.get("key").and_then(|v| v.as_str());
-        let classification =
-            control::classify_command(&req.command, domain, key);
+        let classification = control::classify_command(&req.command, domain, key);
         match classification {
-            control::CommandClass::Local
-            | control::CommandClass::Denied => {
+            control::CommandClass::Local | control::CommandClass::Denied => {
                 ControlMessage::Err(ErrResponse {
                     request_id: req.request_id,
                     code: RemoteErrorCode::Denied,
@@ -196,15 +199,12 @@ impl RemoteSessionManager {
             last_snapshot: Arc::new(parking_lot::RwLock::new(None)),
             event_forwarder: Arc::new(parking_lot::Mutex::new(None)),
             pause_session_fn: parking_lot::Mutex::new(None),
+            on_remote_event: Arc::new(parking_lot::Mutex::new(None)),
         }
     }
 
     /// Creates a new `RemoteSessionManager` with an attached database and state transition listener.
-    pub fn with_callback(
-        role: SessionRole,
-        db: Arc<VoxDb>,
-        callback: StateChangeCallback,
-    ) -> Self {
+    pub fn with_callback(role: SessionRole, db: Arc<VoxDb>, callback: StateChangeCallback) -> Self {
         Self {
             role,
             state: Arc::new(RwLock::new(RemoteLinkState::Unpaired)),
@@ -223,7 +223,13 @@ impl RemoteSessionManager {
             last_snapshot: Arc::new(parking_lot::RwLock::new(None)),
             event_forwarder: Arc::new(parking_lot::Mutex::new(None)),
             pause_session_fn: parking_lot::Mutex::new(None),
+            on_remote_event: Arc::new(parking_lot::Mutex::new(None)),
         }
+    }
+
+    /// Attaches an event listener for receiving remote pipeline events and attach snapshots.
+    pub fn set_on_remote_event(&self, callback: RemoteEventCallback) {
+        *self.on_remote_event.lock() = Some(callback);
     }
 
     /// Attaches the trust store for cryptographic revocation and refusal tracking.
@@ -366,7 +372,9 @@ impl RemoteSessionManager {
                 let db_opt = self.db.read().clone();
                 if let Some(db) = db_opt {
                     if let Ok(conn) = db.connect() {
-                        let _ = crate::persistence::paired_devices::mark_paired_device_seen(&conn, &id).await;
+                        let _ =
+                            crate::persistence::paired_devices::mark_paired_device_seen(&conn, &id)
+                                .await;
                     }
                 }
             }
@@ -418,10 +426,7 @@ impl RemoteSessionManager {
     }
 
     /// Stores an AttachSnapshot received on the controller.
-    pub fn set_last_snapshot(
-        &self,
-        snapshot: AttachSnapshot,
-    ) {
+    pub fn set_last_snapshot(&self, snapshot: AttachSnapshot) {
         let mut guard = self.last_snapshot.write();
         *guard = Some(snapshot);
     }
@@ -507,12 +512,12 @@ impl RemoteSessionManager {
                 }
                 Ok(peer_hello)
             }
-            ControlMessage::VersionMismatch(mismatch) => Err(LinkError::PeerRejected(
-                PeerRejection::VersionMismatch {
+            ControlMessage::VersionMismatch(mismatch) => {
+                Err(LinkError::PeerRejected(PeerRejection::VersionMismatch {
                     version: mismatch.version,
                     supported_version: mismatch.supported_version,
-                },
-            )),
+                }))
+            }
             ControlMessage::UnknownPeer(peer) => Err(LinkError::PeerRejected(
                 PeerRejection::UnknownPeer(peer.device_id),
             )),
@@ -562,6 +567,7 @@ impl RemoteSessionManager {
         let last_snapshot = Arc::clone(&self.last_snapshot);
         let event_forwarder = Arc::clone(&self.event_forwarder);
         let pause_session_fn = parking_lot::Mutex::new(self.pause_session_fn.lock().clone());
+        let on_remote_event = Arc::clone(&self.on_remote_event);
 
         tokio::spawn(async move {
             run_link_supervisor(LinkSupervisorParams {
@@ -581,6 +587,7 @@ impl RemoteSessionManager {
                 last_snapshot,
                 event_forwarder,
                 pause_session_fn,
+                on_remote_event,
             })
             .await;
         });
@@ -600,24 +607,22 @@ impl RemoteSessionManager {
         };
         let ws_link = dial(&url).await?;
 
-        let key_store = KeyStore::default_path()
-            .map_err(|e| LinkError::Transport(e.to_string()))?;
+        let key_store =
+            KeyStore::default_path().map_err(|e| LinkError::Transport(e.to_string()))?;
         let device_key = key_store
             .load_or_create()
             .map_err(|e| LinkError::Transport(e.to_string()))?;
 
-        let controller_id =
-            derive_device_id(device_key.public_key());
+        let controller_id = derive_device_id(device_key.public_key());
         let controller_pubkey_hex = hex::encode(device_key.public_key());
         let controller_name = controller_display_name();
 
-        let pair_req =
-            ControlMessage::PairRequest(PairRequest {
-                token: token.to_string(),
-                device_id: controller_id.as_str().to_string(),
-                public_key: controller_pubkey_hex,
-                display_name: controller_name,
-            });
+        let pair_req = ControlMessage::PairRequest(PairRequest {
+            token: token.to_string(),
+            device_id: controller_id.as_str().to_string(),
+            public_key: controller_pubkey_hex,
+            display_name: controller_name,
+        });
         ws_link.send_control(pair_req).await?;
 
         let h_pk_bytes = hex::decode(host_public_key).map_err(|e| {
@@ -625,12 +630,8 @@ impl RemoteSessionManager {
             LinkError::Protocol(ProtocolError::MalformedJson(msg))
         })?;
         let prologue = default_noise_prologue();
-        let handshake = NoiseHandshake::initiator(
-            &device_key,
-            Some(&h_pk_bytes),
-            &prologue,
-        )
-        .map_err(|e| LinkError::Protocol(ProtocolError::MalformedJson(e.to_string())))?;
+        let handshake = NoiseHandshake::initiator(&device_key, Some(&h_pk_bytes), &prologue)
+            .map_err(|e| LinkError::Protocol(ProtocolError::MalformedJson(e.to_string())))?;
 
         let transport =
             tokio::time::timeout(Duration::from_secs(5), ws_link.drive_handshake(handshake))
@@ -784,19 +785,15 @@ impl RemoteSessionManager {
         ws_link: &WsLink,
         host_public_key: &[u8],
     ) -> Result<SenderIdentity, LinkError> {
-        let key_store = KeyStore::default_path()
-            .map_err(|e| LinkError::Transport(e.to_string()))?;
+        let key_store =
+            KeyStore::default_path().map_err(|e| LinkError::Transport(e.to_string()))?;
         let device_key = key_store
             .load_or_create()
             .map_err(|e| LinkError::Transport(e.to_string()))?;
 
         let prologue = default_noise_prologue();
-        let handshake = NoiseHandshake::initiator(
-            &device_key,
-            Some(host_public_key),
-            &prologue,
-        )
-        .map_err(|e| LinkError::Protocol(ProtocolError::MalformedJson(e.to_string())))?;
+        let handshake = NoiseHandshake::initiator(&device_key, Some(host_public_key), &prologue)
+            .map_err(|e| LinkError::Protocol(ProtocolError::MalformedJson(e.to_string())))?;
 
         let transport =
             tokio::time::timeout(Duration::from_secs(5), ws_link.drive_handshake(handshake))
@@ -806,8 +803,7 @@ impl RemoteSessionManager {
 
         ws_link.set_cipher(transport).await;
 
-        let controller_id =
-            derive_device_id(device_key.public_key());
+        let controller_id = derive_device_id(device_key.public_key());
         let controller_name = controller_display_name();
         Ok(SenderIdentity {
             device_id: controller_id.as_str().to_string(),
@@ -887,20 +883,16 @@ impl RemoteSessionManager {
             .map_err(|err| err.unwrap_or_else(|| LinkError::Transport("No dial candidates".into())))
     }
 
-    async fn handle_dial_rejection(
+    async fn handle_dial_peer_rejection(
         &self,
         db: &VoxDb,
         device_id: &str,
-        error: LinkError,
-    ) -> LinkError {
-        match &error {
-            LinkError::PeerRejected(PeerRejection::UnknownPeer(
-                _,
-            )) => {
+        rejection: &PeerRejection,
+    ) {
+        match rejection {
+            PeerRejection::UnknownPeer(_) => {
                 if let Ok(conn) = db.connect() {
-                    let _ =
-                        paired_devices::delete_paired_device(&conn, device_id)
-                            .await;
+                    let _ = paired_devices::delete_paired_device(&conn, device_id).await;
                 }
                 self.set_peer_identity(None);
                 *self.event_forwarder.lock() = None;
@@ -909,39 +901,33 @@ impl RemoteSessionManager {
                     RemoteFailureKind::Revoked,
                 ));
             }
-            LinkError::PeerRejected(PeerRejection::LinkRefused(
-                reason,
-            )) => {
-                let msg = match reason {
-                    LinkRefusedReason::ControllerAttached => {
-                        "Another controller is already connected".to_string()
-                    }
-                    LinkRefusedReason::NotAccepting => {
-                        "Host is not accepting controllers".to_string()
-                    }
-                    LinkRefusedReason::HostBusy => {
-                        "Host is currently busy with local session".to_string()
-                    }
+            PeerRejection::LinkRefused(reason) => {
+                let (msg, kind) = match reason {
+                    LinkRefusedReason::ControllerAttached => (
+                        "Another controller is already connected".to_string(),
+                        RemoteFailureKind::HostBusy,
+                    ),
+                    LinkRefusedReason::NotAccepting => (
+                        "Host is not accepting controllers".to_string(),
+                        RemoteFailureKind::RejectedByHost,
+                    ),
+                    LinkRefusedReason::HostBusy => (
+                        "Host is currently busy with local session".to_string(),
+                        RemoteFailureKind::HostBusy,
+                    ),
                 };
-                self.set_state(RemoteLinkState::failed(
-                    msg,
-                    RemoteFailureKind::RejectedByHost,
-                ));
+                self.set_state(RemoteLinkState::failed(msg, kind));
             }
-            LinkError::PeerRejected(
-                PeerRejection::RoleNotPermitted(r),
-            ) => {
+            PeerRejection::RoleNotPermitted(r) => {
                 self.set_state(RemoteLinkState::failed(
                     format!("Role not permitted by host: {r}"),
                     RemoteFailureKind::RejectedByHost,
                 ));
             }
-            LinkError::PeerRejected(
-                PeerRejection::VersionMismatch {
-                    version,
-                    supported_version,
-                },
-            ) => {
+            PeerRejection::VersionMismatch {
+                version,
+                supported_version,
+            } => {
                 self.set_state(RemoteLinkState::failed(
                     format!(
                         "Protocol version mismatch: peer {version}, supported {supported_version}"
@@ -949,17 +935,36 @@ impl RemoteSessionManager {
                     RemoteFailureKind::VersionMismatch,
                 ));
             }
-            LinkError::Timeout => {
+        }
+    }
+
+    async fn handle_dial_rejection(
+        &self,
+        db: &VoxDb,
+        device_id: &str,
+        error: LinkError,
+        was_reconnecting: bool,
+    ) -> LinkError {
+        match &error {
+            LinkError::PeerRejected(rejection) => {
+                self.handle_dial_peer_rejection(db, device_id, rejection).await;
+            }
+            LinkError::Timeout if !was_reconnecting => {
                 self.set_state(RemoteLinkState::failed(
                     format!("Handshake timed out connecting to {device_id}"),
                     RemoteFailureKind::Timeout,
                 ));
             }
-            _ => {
+            _ if !was_reconnecting => {
                 self.set_state(RemoteLinkState::failed(
                     format!("Connection error connecting to {device_id}: {error}"),
                     RemoteFailureKind::Unknown,
                 ));
+            }
+            _ => {
+                log::debug!(
+                    "[Remote] Transient reconnect error: {error}; maintaining Reconnecting state"
+                );
             }
         }
         error
@@ -994,14 +999,20 @@ impl RemoteSessionManager {
             device_id: host_device.device_id.clone(),
             display_name: host_device.display_name.clone(),
         }));
-        self.set_state(RemoteLinkState::Connecting);
+
+        let was_reconnecting = self.state() == RemoteLinkState::Reconnecting;
+        if !was_reconnecting {
+            self.set_state(RemoteLinkState::Connecting);
+        }
 
         let (ws_link, local_identity, chosen_candidate) =
             Self::perform_dial_handshake(&host_device, address)
                 .await
                 .map_err(|e| {
-                    let kind = classify_dial_error(&e.to_string());
-                    self.set_state(RemoteLinkState::failed(format!("Dial failed: {e}"), kind));
+                    if !was_reconnecting {
+                        let kind = classify_dial_error(&e.to_string());
+                        self.set_state(RemoteLinkState::failed(format!("Dial failed: {e}"), kind));
+                    }
                     e
                 })?;
 
@@ -1012,10 +1023,7 @@ impl RemoteSessionManager {
         // while preserving existing hints for forward compatibility.
         if let Ok(conn) = db.connect() {
             let hints = discovery::update_observed_hint(&host_device.hints, &chosen_candidate);
-            let _ = paired_devices::update_paired_device_hints(
-                &conn, &device_id, &hints,
-            )
-            .await;
+            let _ = paired_devices::update_paired_device_hints(&conn, &device_id, &hints).await;
         }
 
         let peer_hello = match self
@@ -1029,17 +1037,16 @@ impl RemoteSessionManager {
         {
             Ok(h) => h,
             Err(e) => {
-                return Err(self.handle_dial_rejection(&db, &device_id, e).await);
+                return Err(self.handle_dial_rejection(&db, &device_id, e, was_reconnecting).await);
             }
         };
 
-        self
-            .attach_link(
-                Arc::new(ws_link),
-                peer_hello.sender_identity,
-                Some(Arc::clone(&self)),
-            )
-            .await;
+        self.attach_link(
+            Arc::new(ws_link),
+            peer_hello.sender_identity,
+            Some(Arc::clone(&self)),
+        )
+        .await;
         Ok(())
     }
 
@@ -1048,10 +1055,7 @@ impl RemoteSessionManager {
     /// Lists all paired devices from the Turso database.
     pub async fn list_paired_devices(
         db: &VoxDb,
-    ) -> Result<
-        Vec<paired_devices::PairedDevice>,
-        PersistenceError,
-    > {
+    ) -> Result<Vec<paired_devices::PairedDevice>, PersistenceError> {
         let conn = db.connect()?;
         paired_devices::list_paired_devices(&conn).await
     }
@@ -1188,7 +1192,8 @@ impl RemoteSessionManager {
             let db_opt = self.db.read().clone();
             if let Some(db) = db_opt {
                 if let Ok(conn) = db.connect() {
-                    let _ = crate::persistence::paired_devices::mark_paired_device_seen(&conn, &id).await;
+                    let _ = crate::persistence::paired_devices::mark_paired_device_seen(&conn, &id)
+                        .await;
                 }
             }
         }
@@ -1225,7 +1230,6 @@ impl RemoteSessionManager {
 }
 
 // ─── FIFO event forwarder ───────────────────────────────────────────────────
-#[allow(clippy::while_let_loop, clippy::await_holding_lock)]
 async fn run_event_forwarder(
     mut rx: tokio::sync::mpsc::Receiver<(String, serde_json::Value)>,
     link_slot: Arc<tokio::sync::RwLock<Option<Arc<dyn crate::services::remote::link::RemoteLink>>>>,
@@ -1271,7 +1275,10 @@ async fn run_event_forwarder(
         let Some((name, payload)) = msg else {
             // channel closed: flush pending token
             if let Some((turn, text)) = pending_token.take() {
-                let ev = Event { event_name: "llm_token".to_string(), payload: serde_json::json!({"turn_id": turn, "token": text}) };
+                let ev = Event {
+                    event_name: "llm_token".to_string(),
+                    payload: serde_json::json!({"turn_id": turn, "token": text}),
+                };
                 if let Some(link) = link_slot.read().await.clone() {
                     let _ = link.send_control(ControlMessage::Event(ev)).await;
                 }
@@ -1282,7 +1289,10 @@ async fn run_event_forwarder(
         // Flush pending token before a non-token event to preserve order.
         if pending_token.is_some() && name != "llm_token" {
             if let Some((turn, text)) = pending_token.take() {
-                let ev = Event { event_name: "llm_token".to_string(), payload: serde_json::json!({"turn_id": turn, "token": text}) };
+                let ev = Event {
+                    event_name: "llm_token".to_string(),
+                    payload: serde_json::json!({"turn_id": turn, "token": text}),
+                };
                 if let Some(link) = link_slot.read().await.clone() {
                     let _ = link.send_control(ControlMessage::Event(ev)).await;
                 }
@@ -1299,7 +1309,11 @@ async fn run_event_forwarder(
 
         if name == "llm_token" {
             let turn = payload.get("turn_id").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
-            let tok = payload.get("token").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let tok = payload
+                .get("token")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
             if let Some((pt, pt_text)) = &mut pending_token {
                 if *pt == turn {
                     pt_text.push_str(&tok);
@@ -1307,7 +1321,10 @@ async fn run_event_forwarder(
                     // flush previous turn's token
                     let prev_text = std::mem::take(pt_text);
                     let prev_turn = *pt;
-                    let ev = Event { event_name: "llm_token".to_string(), payload: serde_json::json!({"turn_id": prev_turn, "token": prev_text}) };
+                    let ev = Event {
+                        event_name: "llm_token".to_string(),
+                        payload: serde_json::json!({"turn_id": prev_turn, "token": prev_text}),
+                    };
                     if let Some(link) = link_slot.read().await.clone() {
                         let _ = link.send_control(ControlMessage::Event(ev)).await;
                     }
@@ -1324,7 +1341,10 @@ async fn run_event_forwarder(
             if let Some(d) = token_deadline {
                 if d <= Instant::now() {
                     if let Some((t, text)) = pending_token.take() {
-                        let ev = Event { event_name: "llm_token".to_string(), payload: serde_json::json!({"turn_id": t, "token": text}) };
+                        let ev = Event {
+                            event_name: "llm_token".to_string(),
+                            payload: serde_json::json!({"turn_id": t, "token": text}),
+                        };
                         if let Some(link) = link_slot.read().await.clone() {
                             let _ = link.send_control(ControlMessage::Event(ev)).await;
                         }
@@ -1335,7 +1355,10 @@ async fn run_event_forwarder(
             continue;
         }
 
-        let event = Event { event_name: name, payload };
+        let event = Event {
+            event_name: name,
+            payload,
+        };
         if let Some(link) = link_slot.read().await.clone() {
             let _ = link.send_control(ControlMessage::Event(event)).await;
         }
@@ -1343,11 +1366,6 @@ async fn run_event_forwarder(
 }
 
 // ─── Ticket 03: Duplex Link Supervisor ──────────────────────────────────────
-
-enum SupervisorFlow {
-    Continue,
-    Break,
-}
 
 fn handle_supervisor_rpc_res(params: &LinkSupervisorParams, res: Res) {
     if let Some(tx) = params.pending_rpcs.lock().remove(&res.request_id) {
@@ -1377,7 +1395,11 @@ fn handle_supervisor_session_token(params: &LinkSupervisorParams, token: Session
     log::info!("[Remote Supervisor] Controller received SessionToken: dialing audio link");
     let audio_slot = Arc::clone(&params.audio_link_slot);
     let db_opt = params.db_opt.clone();
-    let peer_id = params.peer_identity.read().as_ref().map(|p| p.device_id.clone());
+    let peer_id = params
+        .peer_identity
+        .read()
+        .as_ref()
+        .map(|p| p.device_id.clone());
     let host_addr = params.active_host_addr.read().clone();
     tokio::spawn(async move {
         dial_secondary_audio_socket(audio_slot, db_opt, peer_id, host_addr, token).await;
@@ -1418,9 +1440,7 @@ async fn dial_secondary_audio_socket(
 }
 
 async fn handle_supervisor_disconnect(params: &LinkSupervisorParams) -> SupervisorFlow {
-    log::info!(
-        "[Remote Supervisor] Received Disconnect from controller — transitioning to Paired"
-    );
+    log::info!("[Remote Supervisor] Received Disconnect from controller — transitioning to Paired");
     params.pending_rpcs.lock().clear();
     *params.event_forwarder.lock() = None;
     let _ = params.link.close(LinkCloseReason::Local).await;
@@ -1431,10 +1451,15 @@ async fn handle_supervisor_disconnect(params: &LinkSupervisorParams) -> Supervis
         if let Some(cb) = params.pause_session_fn.lock().clone() {
             cb();
         }
-        let peer_id = params.peer_identity.read().as_ref().map(|p| p.device_id.clone());
+        let peer_id = params
+            .peer_identity
+            .read()
+            .as_ref()
+            .map(|p| p.device_id.clone());
         if let (Some(id), Some(db)) = (peer_id, &params.db_opt) {
             if let Ok(conn) = db.connect() {
-                let _ = crate::persistence::paired_devices::mark_paired_device_seen(&conn, &id).await;
+                let _ =
+                    crate::persistence::paired_devices::mark_paired_device_seen(&conn, &id).await;
             }
         }
     }
@@ -1506,12 +1531,29 @@ async fn handle_supervisor_message(
             handle_supervisor_session_token(params, token);
             SupervisorFlow::Continue
         }
+        ControlMessage::Event(ev) => {
+            if let Some(cb) = params.on_remote_event.lock().clone() {
+                cb(&ev.event_name, ev.payload);
+            }
+            SupervisorFlow::Continue
+        }
         ControlMessage::AttachSnapshot(snapshot) => {
             log::info!(
                 "[Remote Supervisor] Controller received AttachSnapshot: session_id={:?}",
                 snapshot.session_id
             );
-            params.last_snapshot.write().replace(snapshot);
+            params.last_snapshot.write().replace(snapshot.clone());
+            if let Some(cb) = params.on_remote_event.lock().clone() {
+                cb("state_changed", snapshot.state.clone());
+                cb(
+                    "remote_attach_snapshot",
+                    serde_json::json!({
+                        "sessionId": snapshot.session_id,
+                        "turns": snapshot.turns,
+                        "settings": snapshot.settings,
+                    }),
+                );
+            }
             SupervisorFlow::Continue
         }
         ControlMessage::Disconnect => handle_supervisor_disconnect(params).await,
@@ -1580,10 +1622,15 @@ async fn handle_supervisor_fault(params: &LinkSupervisorParams, err: &LinkError)
         if let Some(cb) = params.pause_session_fn.lock().clone() {
             cb();
         }
-        let peer_id = params.peer_identity.read().as_ref().map(|p| p.device_id.clone());
+        let peer_id = params
+            .peer_identity
+            .read()
+            .as_ref()
+            .map(|p| p.device_id.clone());
         if let (Some(id), Some(db)) = (peer_id, &params.db_opt) {
             if let Ok(conn) = db.connect() {
-                let _ = crate::persistence::paired_devices::mark_paired_device_seen(&conn, &id).await;
+                let _ =
+                    crate::persistence::paired_devices::mark_paired_device_seen(&conn, &id).await;
             }
         }
     }
@@ -1636,6 +1683,25 @@ async fn handle_host_heartbeat_tick(
             ))
             .await;
         params.link_slot.write().await.take();
+
+        // Host-side involuntary cutoff: pause session and update last_seen_at (Bug 10a).
+        if params.role == SessionRole::Host {
+            if let Some(cb) = params.pause_session_fn.lock().clone() {
+                cb();
+            }
+            let peer_id = params
+                .peer_identity
+                .read()
+                .as_ref()
+                .map(|p| p.device_id.clone());
+            if let (Some(id), Some(db)) = (peer_id, &params.db_opt) {
+                if let Ok(conn) = db.connect() {
+                    let _ =
+                        crate::persistence::paired_devices::mark_paired_device_seen(&conn, &id).await;
+                }
+            }
+        }
+
         transition_supervisor_state(
             &params.state,
             &params.peer_identity,
@@ -1675,9 +1741,15 @@ async fn handle_controller_heartbeat_timeout(params: &LinkSupervisorParams) -> S
 }
 
 fn spawn_controller_reconnect(params: &LinkSupervisorParams) {
-    let Some(manager) = params.manager.clone() else { return };
+    let Some(manager) = params.manager.clone() else {
+        return;
+    };
     let db_opt = params.db_opt.clone();
-    let peer_id = params.peer_identity.read().as_ref().map(|p| p.device_id.clone());
+    let peer_id = params
+        .peer_identity
+        .read()
+        .as_ref()
+        .map(|p| p.device_id.clone());
     let on_change = params.on_change.clone();
     tokio::spawn(async move {
         let Some(id) = peer_id else { return };
@@ -1688,7 +1760,11 @@ fn spawn_controller_reconnect(params: &LinkSupervisorParams) {
             if manager.state() != RemoteLinkState::Reconnecting {
                 return;
             }
-            match manager.clone().dial_and_connect(db.clone(), id.clone(), None).await {
+            match manager
+                .clone()
+                .dial_and_connect(db.clone(), id.clone(), None)
+                .await
+            {
                 Ok(()) => return,
                 Err(_) => {
                     if manager.state() != RemoteLinkState::Reconnecting {

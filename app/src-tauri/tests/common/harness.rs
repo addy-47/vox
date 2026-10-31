@@ -120,6 +120,7 @@ pub fn create_headless_playback_with_sink(
         handles.clone(),
         Arc::clone(&discard_request),
         Arc::clone(&turn_armed),
+        Arc::new(AtomicBool::new(false)),
         &telemetry,
         None,
     );

@@ -8,7 +8,7 @@ use cpal::{
     traits::{DeviceTrait, HostTrait, StreamTrait},
     SampleFormat, StreamConfig,
 };
-use ringbuf::{traits::*, HeapCons};
+use ringbuf::{traits::Producer, HeapCons};
 
 use super::{
     sink::{PlaybackReferenceTap, PlaybackStreamContext},
@@ -16,6 +16,29 @@ use super::{
     INGESTION_BUFFER_CAPACITY_SAMPLES, INGESTION_OVERFLOW_LOG_INTERVAL, PLAYBACK_CHANNELS,
     PLAYBACK_SAMPLE_RATE, SAMPLE_RATE,
 };
+
+/// Shared ring buffer producer enabling both local CPAL stream and remote network capture
+/// to feed concurrently into the identical VAD/STT ingestion queue.
+#[derive(Clone)]
+pub struct SharedRingProducer {
+    inner: Arc<parking_lot::Mutex<ringbuf::HeapProd<f32>>>,
+}
+
+impl SharedRingProducer {
+    pub fn new(prod: ringbuf::HeapProd<f32>) -> Self {
+        Self {
+            inner: Arc::new(parking_lot::Mutex::new(prod)),
+        }
+    }
+
+    pub fn push_slice(&self, slice: &[f32]) -> usize {
+        self.inner.lock().push_slice(slice)
+    }
+
+    pub fn try_push(&self, sample: f32) -> Result<(), f32> {
+        self.inner.lock().try_push(sample)
+    }
+}
 
 /// Hardware audio capture implementation wrapping a live CPAL input stream.
 pub struct CpalAudioCapture {
@@ -60,10 +83,7 @@ unsafe impl Sync for AudioStream {}
 
 impl AudioStream {
     /// Creates and configures a new hardware audio ingestion stream using CPAL.
-    pub fn new<P>(producer: P, ingestion_gate: Arc<AtomicBool>) -> Result<Self>
-    where
-        P: Producer<Item = f32> + Send + 'static,
-    {
+    pub fn new(producer: SharedRingProducer, ingestion_gate: Arc<AtomicBool>) -> Result<Self> {
         let (device, config) = resolve_input_device()?;
         let sample_rate = config.sample_rate.0;
         let channels = config.channels as usize;
@@ -139,17 +159,14 @@ pub fn resolve_audio_host() -> cpal::Host {
 }
 
 /// Builds the CPAL input ingestion stream with lock-free ringbuf forwarding and anti-aliasing downsampling.
-fn build_input_stream<P>(
+fn build_input_stream(
     device: cpal::Device,
     config: &cpal::StreamConfig,
     channels: usize,
     sample_rate: u32,
-    mut producer: P,
+    producer: SharedRingProducer,
     ingestion_gate: Arc<AtomicBool>,
-) -> Result<cpal::Stream>
-where
-    P: Producer<Item = f32> + Send + 'static,
-{
+) -> Result<cpal::Stream> {
     let mut source_index: f32 = 0.0;
     let resample_ratio = sample_rate as f32 / SAMPLE_RATE as f32;
     let mut mono_buffer = Vec::with_capacity(INGESTION_BUFFER_CAPACITY_SAMPLES);
@@ -282,6 +299,7 @@ pub fn build_output_stream(
     handles: PlaybackEngineHandles,
     discard_request: Arc<AtomicBool>,
     turn_armed: Arc<AtomicBool>,
+    is_remote_active: Arc<AtomicBool>,
     telemetry: &PlaybackTelemetryHandles,
     reference_tap: Option<PlaybackReferenceTap>,
 ) -> Result<Box<dyn AudioSink>> {
@@ -293,6 +311,7 @@ pub fn build_output_stream(
         handles,
         discard_request,
         turn_armed,
+        is_remote_active,
         telemetry,
         reference_tap,
     );

@@ -139,7 +139,9 @@ pub fn init_dictation_hotkey_listener<R: tauri::Runtime>(
                 continue;
             }
 
-            if state.remote_manager.state() == crate::services::remote::session::RemoteLinkState::Connected {
+            if state.remote_manager.state()
+                == crate::services::remote::session::RemoteLinkState::Connected
+            {
                 log::info!("[Dictation] Ignored global hotkey while remote controller is Connected (Spec §11)");
                 continue;
             }

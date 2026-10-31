@@ -674,3 +674,492 @@ To fix these cleanly without regressions, have your agent execute these **5 atom
 <br>2. Fix `AuthorizeDeviceContent` `useEffect` dependency reset bug.<br>
 
 <br>3. Fix `PairingModal` and `QrScannerModal` immediate auto-close when opened in `Paired` state, isolate `PairingModal` 1Hz countdown into a child component, and throttle `QrScannerModal` `decode()` to ~12 FPS. |
+
+
+---
+
+# Tier 3 and test review 
+
+
+### 1. Acknowledgment: Full 4,000-Line `changes_2.diff` Received Intact
+
+I received the entire `changes_2.diff` from start (`AGENTS.md`) to finish (`app/src-tauri/tests/remote_security_test.rs`, line +115) with **zero truncation** across all 31 modified/added files. You do not need to re-send individual files from this diff.
+
+---
+
+### 2. What Landed Cleanly in This Diff
+
+* **Wire Protocol & Security Primitives (`messages.rs`, `redaction.rs`, `tokens.rs`):** `ControlMessage::SessionToken` (19 variants), `redact_settings_value` (covering maps, server arrays, `tts.azure_tts.key`, and suffixes), and single-use `AudioSessionTokenStore` with static-key binding and anti-replay tests are all clean and well-tested.
+
+
+* **Centralized Desktop Write Guard Hook (`lib.rs`, `ipc/pipeline.rs`, `ipc/settings.rs`):** Moving `is_desktop_command_permitted` out of individual IPC functions and into a single `handle_invoke` interceptor in `lib.rs` (enforcing `RULE-RC-GUARD` in one place) is much cleaner than scattered checks.
+
+
+* **FIFO Event Coalescer (`manager.rs::run_event_forwarder`) & Reconnect Loop (`spawn_controller_reconnect`):** The 30Hz `telemetry` throttle and 50ms `llm_token` string accumulator with pre-event flushing preserve wire ordering, and exponential backoff reconnection (`1s` $\to$ `30s`, max 10 attempts) is wired into the supervisor fault and timeout paths.
+
+
+* **Dictation Hotkey Gating (`hotkey.rs:142`):** Properly ignores the desktop dictation hotkey while `RemoteLinkState == Connected` per Spec §11.
+
+
+
+---
+
+### 3. Seven Critical Bugs & Missing Controller Seams in `changes_2.diff`
+
+While the **Host** half of Tier 3 is ~85% wired, the **Controller** half of Tier 3 and several Host audio/gateway seams have ship-breaking bugs that will prevent a real remote voice session from working end-to-end:
+
+#### 🔴 Bug 1 (P0 Downlink Audio Crash & Pipeline Deadlock): `PlaybackEngine::push_samples` Violates 64KB Noise Limit, Scrambles Frame Order, and Never Fires `PlaybackFinished` (`services/audio/playback.rs:168-177`)
+
+Look at what your agent wrote in `playback.rs:168-177`:
+
+```rust
+if let Some(sink) = self.remote_sink.read().clone() {
+    let i16_samples: Vec<i16> = chunk_24khz
+        .iter()
+        .map(|&s| (s * 32767.0).clamp(-32768.0, 32767.0) as i16)
+        .collect();
+    tokio::spawn(async move {
+        sink.send_samples(i16_samples).await;
+    });
+    return;
+}
+
+```
+
+Three things break here on the very first TTS response:
+
+1. **Exceeds 65,519-Byte Noise Payload Cap $\to$ Dropped Audio:** TTS synthesizes full clause buffers (`chunk_24khz` is often 35,000–60,000 samples = 70 KB–120 KB of `i16` bytes). `NetworkAudioSink::send_samples` wraps the entire `Vec<i16>` into a single `AudioFrame` and passes it to `NoiseTransport::encrypt`, which **rejects any payload > 65,519 bytes** (`NOISE_MAX_PAYLOAD_BYTES`)! Spec §7.4 mandates **20 ms frames (480 samples = 960 bytes at 24 kHz)**.
+
+
+2. **Unordered `tokio::spawn` Scrambles Audio Chunks:** Spawning an independent async task per `push_samples` call without an ordered MPSC queue means Tokio worker threads can acquire `WsLink::writer.lock().await` out of order, scrambling speech syllables.
+
+
+3. **Early `return;` Prevents `VoxEvent::PlaybackFinished` (Pipeline Deadlocks in `Speaking`):** Returning early at line 176 skips `turn_metrics.record_tts_first_audio()`, skips updating the playback state atomics, and **never emits `VoxEvent::PlaybackFinished**`—leaving the Host pipeline permanently stuck in `InteractionState::Speaking` after the first sentence!
+
+
+
+* **The Fix:** In `NetworkAudioSink::send_samples`, slice `samples` into `chunks(480)` (20 ms @ 24 kHz) and send them sequentially over a bounded MPSC channel owned by `NetworkAudioSink` (not raw `tokio::spawn` per call). And in `PlaybackEngine::push_samples`, record `turn_metrics` and pace/emit `PlaybackFinished` (or let `AudioSink` handle the network sink so `PlaybackEngine` lifecycle logic runs unchanged).
+
+---
+
+#### 🔴 Bug 2 (P0 Uplink Audio Drop): Race Between `handle_inbound_audio_socket` and `restart_engine_inner` (`listener.rs:533-543` & `core/state.rs:247-259`)
+
+Look at `handle_inbound_audio_socket` in `listener.rs:533-543`:
+
+```rust
+let ingestor = state.remote_audio_ingestor.lock().clone();
+let link = state.remote_manager.clone().get_audio_link().await;
+if let Some(link) = link {
+    tokio::spawn(async move {
+        while let Ok(payload) = link.recv_audio().await {
+            if let Some(ing) = &ingestor {
+                let _ = ing.ingest(payload);
+            }
+        }
+    });
+}
+
+```
+
+1. **Stale `ingestor` Snapshot:** When the control channel transitions to `Connected`, `core/state.rs:252` spawns `restart_engine_inner(&app, &st, false)` asynchronously (which stops the engine, sets `*state.remote_audio_ingestor.lock() = None`, and then recreates `NetworkAudioCapture` a few hundred milliseconds later in `engine.rs:186`). Meanwhile, the Controller immediately dials the audio socket and hits `listener.rs:533`, cloning `state.remote_audio_ingestor` **once before the `while` loop** while it is still `None` (or holds the old pre-restart capture instance)! As a result, `ing` is `None` or dead for the entire session, and **zero microphone audio from the phone ever reaches VAD/STT**.
+
+
+2. **Active Session Wiped on Connect (`reengage_session: false`):** Calling `restart_engine_inner(&app, &st, false)` in `core/state.rs:256` with `reengage_session = false` kills any active session on the Host down to `InteractionState::Idle` when the phone connects or disconnects.
+
+
+
+* **The Fix:** Pass `state_arc = Arc::clone(state)` into the audio reader task in `listener.rs:536` and read `state_arc.remote_audio_ingestor.lock().clone()` inside the `while` loop (or only on `None` / epoch change), and pass `reengage_session: true` (or pause on disconnect) so connecting doesn't destroy the active session.
+
+
+
+---
+
+#### 🔴 Bug 3 (P0 Security & Spec Violation): `RealCommandGateway` Never Calls `classify_command` and Rejects ~50 Valid `Remote` Commands (`control/gateway.rs:38-183`)
+
+In `lib.rs:667`, `state_arc.remote_manager.set_gateway(gw)` replaces `DefaultCommandGateway` with `RealCommandGateway`. Look inside `RealCommandGateway::dispatch` (`gateway.rs:39-183`):
+
+1. **Routing Table Bypass (`VERIFY-RC-07` & Spec §8.1 / §10.4):** `RealCommandGateway::dispatch` **never calls `classify_command(&req.command, domain, key)**`!
+* If the Controller sends `update_setting` for `appearance.theme` or `remote.accepts_controllers` (both classified as `CommandClass::Local` in `routing.rs:163-167`), `RealCommandGateway:131-144` executes them directly on the Host!
+
+
+* Lines 156–175 of `gateway.rs` also expose `list_paired_devices`, `revoke_device`, `disconnect_device`, `get_link_state`, and `get_command_routing`—all of which are classified as `CommandClass::Local` in `routing.rs:134-143`!
+
+
+
+
+2. **Missing `Remote` Command Handlers (`gateway.rs:177`):** Every History, Session, Project, Memory, Model Catalog, Voice, and Notification command classified as `CommandClass::Remote` in `routing.rs` falls through to line 177 (`_ => "Command '...' is not implemented on the remote gateway"`), breaking the phone's History, Memory, Voices, and Settings panels (US-RC-03).
+
+
+
+* **The Fix:**
+1. At the very top of `RealCommandGateway::dispatch`, run:
+```rust
+let domain = req.args.get("domain").and_then(|v| v.as_str());
+let key = req.args.get("key").and_then(|v| v.as_str());
+if matches!(
+    crate::services::remote::control::classify_command(&req.command, domain, key),
+    CommandClass::Local | CommandClass::Denied
+) {
+    return ControlMessage::Err(ErrResponse {
+        request_id: req.request_id,
+        code: RemoteErrorCode::Denied,
+        message: format!("Command '{}' is not permitted remotely", req.command),
+    });
+}
+
+```
+
+
+2. Wire the remaining `CommandClass::Remote` IPC handlers (`ipc::history::*`, `ipc::memory::*`, `ipc::voices::*`, `ipc::models::*`, `ipc::notifications::*`) into `RealCommandGateway::dispatch`.
+
+
+
+
+
+---
+
+#### 🔴 Bug 4 (P0 Controller Missing Seam): Controller Silently Drops All Forwarded `ControlMessage::Event`s and Never Applies `AttachSnapshot` (`manager.rs:1509-1519`)
+
+Look at `handle_supervisor_message` in `manager.rs:1509-1519`:
+
+1. **`ControlMessage::Event(ev)` Dropped:** When the Host forwards `state_changed`, `transcript_partial`, `transcript_final`, `llm_token`, `turn_metrics`, or `telemetry` over the wire as `ControlMessage::Event(ev)`, the Controller's `handle_supervisor_message` hits `_ => SupervisorFlow::Continue` at line 1519 and **throws the event away**! The Controller's local React UI never receives a single pipeline event from the Host.
+
+
+2. **`ControlMessage::AttachSnapshot(snapshot)` Never Emitted to UI:** Line 1514 writes `params.last_snapshot.write().replace(snapshot)`, and nothing in the codebase ever reads `last_snapshot` or hydrates the Controller's frontend stores (`sessionStore`, `settingsStore`) with the snapshot's `state`, `session_id`, `settings`, and `turns`.
+
+
+
+* **The Fix:** Give `RemoteSessionManager` an `on_remote_event: Option<Arc<dyn + Fn(&str, Send Sync serde_json::Value)>>` callback wired in `AppState::new` to `app_handle.emit(event_name, payload)`. When `ControlMessage::Event(ev)` arrives on the Controller, invoke that callback. When `ControlMessage::AttachSnapshot(snap)` arrives on the Controller, emit `state_changed` with `snap.state` and an event/callback to hydrate `session_id`, `turns`, and redacted `settings`.
+
+
+
+---
+
+#### 🔴 Bug 5 (P0 Controller Missing Seam): Controller Has Zero Audio Uplink/Downlink Workers and Zero Outbound RPC Forwarding
+
+Look at the Controller side of `dial_secondary_audio_socket` (`manager.rs:1387-1418`) and `handle_invoke` (`lib.rs:211-240`):
+
+1. **Controller Audio Socket Sits Idle:** After `dial_secondary_audio_socket` stores `ws_link` in `*audio_slot.write().await = Some(Arc::new(ws_link))` on line 1412, **nothing on the Controller ever calls `send_audio` (to stream the phone's microphone + AEC 16kHz PCM16 frames to the Host) or `recv_audio` (to play the Host's 24kHz TTS frames on the phone's speaker)**!
+
+
+2. **Controller Local `invoke` Never Calls `remote_manager.call_remote()`:** When the phone is `Connected` to the Host and the phone UI invokes `start_session`, `submit_text_input`, `ptt_start`, or `update_setting`, `handle_invoke` in `lib.rs` executes them against the **phone's local `AppState**` instead of routing `CommandClass::Remote | CommandClass::Split` commands through `state.remote_manager.call_remote(cmd, args)`!
+
+
+
+---
+
+#### 🔴 Bug 6 (P1 Event Fanout Bug): Host Forwards Its Own `remote_state_changed` Event Over the Wire to the Controller (`core/events.rs:335-353`)
+
+Look at `event_to_value` and `should_suppress_and_forward` in `core/events.rs:335-353`:
+
+* Because `event_to_value` serializes `IpcEvent::RemoteStateChanged`, `RemotePairingStateChanged`, and `RemotePairingRequested`, whenever `RemoteLinkState` is `Connected` on the Host, `should_suppress_and_forward` forwards `remote_state_changed` (carrying the **Host's** view of `peer`: the phone's `deviceId` and `displayName`) over the wire to the Controller!
+
+
+* **The Fix:** In `event_to_value` (`core/events.rs:335-337`), return `None` for `IpcEvent::RemoteStateChanged`, `IpcEvent::RemotePairingStateChanged`, and `IpcEvent::RemotePairingRequested` so local transport/pairing lifecycle events are never forwarded across the wire as pipeline/system events.
+
+
+
+---
+
+#### 🟡 Bug 7 (P1 Guard & Lint Hygiene): `apply_settings_patch` Blocked in `lib.rs:225-233` & Three Banned `#[allow(...)]` Attributes in `manager.rs`
+
+1. **`apply_settings_patch` Guard Bug (`lib.rs:225-233`):** `apply_settings_patch` passes `{ "patch": { "<domain>": { "<key>": ... } } }`, not top-level `"domain"` and `"key"`. In `handle_invoke`, `domain` and `key` evaluate to `None`, so `is_desktop_command_permitted("apply_settings_patch", None, None, &Connected)` returns `false`, blocking desktop theme changes (`appearance`) and toggling `remote.accepts_controllers` off via patch. Extract `(domain, key)` from `v.get("patch")` when `cmd == "apply_settings_patch"`.
+
+
+2. **Banned `#[allow(...)]` Attributes (`manager.rs:92, 116, 1228`):** `backend-style-guide.md` §6 enforces zero `#[allow(...)]` attributes in `src/`. Replace the complex inline types on lines 92 and 116 with type aliases (`type EventForwarderTx = ...; type PauseSessionCallback = ...;`) and remove `#[allow(clippy::while_let_loop, clippy::await_holding_lock)]` on line 1228.
+
+---
+
+Tracing every user story (`US-RC-01` through `US-RC-11`) and verification criterion (`VERIFY-RC-01` through `VERIFY-RC-22`) end-to-end across your full files (`manager_3.rs`, `listener_3.rs`, `sink.rs`, `capture.rs`, `gateway.rs`, and `changes_2.diff`) plus your three test suites (`remote_security_test.rs`, `remote_link_test.rs`, `remote_connection_test.rs`) uncovered **5 additional production bugs** (beyond the 7 from last turn) and **5 false-green / bypassed-seam flaws in the tests**.
+
+---
+
+### 1. Five Additional Production Bugs Found via User-Story Tracing
+
+#### 🔴 Bug 8 (`US-RC-07` / `US-RC-08` / `US-RC-02`): `handle_invoke` in `lib.rs` Blocks the Mobile Controller From Running Any Commands When Connected!
+
+* **Where:** `app/src-tauri/src/lib.rs:211-238` in `changes_2.diff`.
+
+
+* **User Story Trace:** The user connects their phone to the laptop (`RemoteLinkState::Connected` on both devices) and taps Engage (`start_session`), speaks/types (`submit_text_input`), or toggles a setting (`update_setting`) on the **phone**.
+* **What Actually Happens in Code:**
+```rust
+// lib.rs:233
+if !is_desktop_command_permitted(cmd, domain, key, &state.remote_manager.state()) {
+    resolver.respond(Err::<(), _>(tauri::ipc::InvokeError::from(VoxIpcError::InvalidState(
+        "Remote session active: desktop write command blocked".to_string(),
+    ))));
+    return true;
+}
+
+```
+
+
+`lib.rs` runs on **both** Desktop (`SessionRole::Host`) and Android (`SessionRole::Controller`). When the phone connects to the laptop, `state.remote_manager.state()` on the phone is `RemoteLinkState::Connected`. Because `handle_invoke` never checks `state.remote_manager.role()`, **the phone's own Tauri backend blocks every write command invoked by the phone UI** with `"Remote session active: desktop write command blocked"`!
+
+
+* **The Fix:** Branch on `state.remote_manager.role()` inside `handle_invoke`:
+
+
+* If `SessionRole::Host`: enforce `is_desktop_command_permitted(...)`.
+
+
+* If `SessionRole::Controller` and `state == RemoteLinkState::Connected`: check `classify_command(cmd, domain, key)`. If `CommandClass::Remote` or `CommandClass::Split`, forward the command over the control socket via `state.remote_manager.call_remote(cmd, json_args).await` and respond via `resolver`! If `CommandClass::Local`, let it execute locally on the phone.
+
+
+
+
+
+---
+
+#### 🔴 Bug 9 (`US-RC-06` — Auto-Reconnect on Wi-Fi Hiccup): `spawn_controller_reconnect` Aborts After Attempt #1 Because `dial_and_connect` Overwrites `RemoteLinkState::Reconnecting`
+
+* **Where:** `manager_3.rs:995-1003` and `manager_3.rs:1697-1713`.
+
+
+* **User Story Trace:** Wi-Fi drops for 5 seconds. The Controller transitions to `RemoteLinkState::Reconnecting` and spawns `spawn_controller_reconnect` (`RECONNECT_MAX_ATTEMPTS = 10`, exponential backoff 1s $\to$ 30s).
+
+
+* **What Actually Happens in Code:**
+1. After the first 1-second sleep, `spawn_controller_reconnect` calls `manager.clone().dial_and_connect(...)` (`manager_3.rs:1703`).
+
+
+2. At line 995, `dial_and_connect` immediately overwrites the state: `self.set_state(RemoteLinkState::Connecting)`.
+
+
+3. Because Wi-Fi is still recovering at $t = 1\text{s}$, `perform_dial_handshake` fails, and line 1001 sets:
+`self.set_state(RemoteLinkState::failed(format!("Dial failed: {e}"), kind))`.
+
+
+4. Control returns `Err(_)` to `spawn_controller_reconnect` at line 1706, which checks:
+```rust
+if manager.state() != RemoteLinkState::Reconnecting {
+    return;
+}
+
+```
+
+
+5. Because `dial_and_connect` mutated `manager.state()` to `Failed`, `manager.state() != RemoteLinkState::Reconnecting` is **always true** on the very first failed retry, killing the reconnect loop after 1 attempt!
+
+
+
+
+* **The Fix:** Extract an internal `try_dial_and_connect(&self, db, device_id, address, is_reconnect: bool)` helper (or check `let was_reconnecting = self.state() == RemoteLinkState::Reconnecting;`). When `is_reconnect` is true:
+* Stay in `RemoteLinkState::Reconnecting` during the dial attempt (do not flip to `Connecting`).
+
+
+* On transport/timeout error during a reconnect attempt, do **not** transition to `Failed`—keep state as `Reconnecting` and only transition to `Failed` when `handle_dial_rejection` encounters a terminal auth error (`UnknownPeer`, `RoleNotPermitted`, `VersionMismatch`) or after all `RECONNECT_MAX_ATTEMPTS` are exhausted.
+
+
+
+
+
+---
+
+#### 🔴 Bug 10 (`US-RC-05` & `VERIFY-RC-11` / `VERIFY-RC-14`): Host Heartbeat Timeout Forgets to Pause Session, and `on_state_change` Engine Restart Wipes `Paused` State Back to `Idle`
+
+* **Where:** `manager_3.rs:1622-1647`, `core/state.rs:246-259`, and `ipc/pipeline.rs:40-85`.
+
+
+* **User Story Trace:**
+1. **Case A (3 Missed Pongs — `VERIFY-RC-14`):** In `handle_host_heartbeat_tick` (`manager_3.rs:1622-1647`), when `*missed_pongs >= HEARTBEAT_MAX_MISSED_PONGS`, the Host closes the link and transitions to `Paired`, **but forgets to invoke `params.pause_session_fn` and `mark_paired_device_seen**` (which were added to `handle_supervisor_disconnect` and `handle_supervisor_fault`, but omitted from `handle_host_heartbeat_tick`!).
+
+
+2. **Case B (Intentional Disconnect — `US-RC-05` & `VERIFY-RC-11`):** When the Controller disconnects, `handle_supervisor_disconnect` calls `pause_session_fn()` (emitting `VoxEvent::PauseSession`) and transitions to `RemoteLinkState::Paired`. Transitioning to `Paired` fires `on_state_change` in `core/state.rs:249`, which calls `restart_engine_inner(&app, &st, false)`. `restart_engine_inner` calls `stop_audio_engine(state)`, which **resets `state.pipeline` to `InteractionState::Idle**` and, because `reengage_session` is `false`, leaves the pipeline in `Idle` instead of `Paused`!
+
+
+
+
+* **The Fix:**
+1. Call `pause_session_fn` and `mark_paired_device_seen` inside `handle_host_heartbeat_tick` (`manager_3.rs:1630`).
+
+
+2. Do **not** tear down and restart the entire audio engine (`stop_audio_engine` / `start_audio_engine`) on every remote connect/disconnect in `core/state.rs:249`! Instead, keep `AudioStream` running and hot-swap or gate the input/output: feed `NetworkAudioCapture` directly into the existing capture ring buffer producer (`cap_prod`) when `RemoteLinkState == Connected`, and route `PlaybackEngine` to `remote_sink` when `RemoteLinkState == Connected`. That eliminates the 300ms engine restart stall, fixes the `remote_audio_ingestor` race (Bug 2 from last turn), and preserves `InteractionState::Paused` on disconnect!
+
+
+
+
+
+---
+
+#### 🔴 Bug 11 (`US-RC-04` & `VERIFY-RC-12`): `NetworkAudioCapture::ingest` Drops `Flush` and `PttMarker` Whenever `ingestion_gate == false`, and `PttMarker` Is a No-Op
+
+* **Where:** `services/remote/audio/capture.rs:94-140`.
+
+
+* **User Story Trace:**
+1. While the Host is in `Speaking` or `Thinking` (or `Ready` in PTT mode), `self.ingestion_gate` is `false`.
+
+
+2. Look at lines 95 and 116 of `capture.rs`:
+
+
+```rust
+pub fn ingest(&self, payload: AudioPayload) -> Result<(), ProtocolError> {
+    if !self.active.load(Ordering::Relaxed) || !self.ingestion_gate.load(Ordering::Relaxed) {
+        return Ok(());
+    }
+    match payload {
+        AudioPayload::Frame(frame) => { ... }
+        AudioPayload::Control(AudioControlMessage::Flush(flush)) => {
+            self.active_epoch.fetch_max(flush.epoch, Ordering::AcqRel);
+            Ok(())
+        }
+        AudioPayload::Control(AudioControlMessage::PttMarker(_)) => Ok(()),
+    }
+}
+
+```
+
+
+3. Because the `!self.ingestion_gate.load(...)` early return sits **above** `match payload`, any `Flush(epoch)` or `PttMarker(Start)` that arrives while `ingestion_gate` is closed is **silently ignored**! In PTT mode, `ingestion_gate` is closed *until* `PttStart` opens it—so gating `PttMarker` and `Flush` behind `ingestion_gate == true` makes PTT impossible and drops `Flush` epoch updates during TTS playback!
+
+
+4. Furthermore, `AudioPayload::Control(AudioControlMessage::PttMarker(_)) => Ok(())` (line 136) and `|_ptt| {}` (line 109) are empty no-ops that never dispatch `VoxEvent::PttStart` / `PttStop` / `PttCancel`.
+
+
+
+
+* **The Fix:** Check `self.active` and `self.ingestion_gate` **only inside the `AudioPayload::Frame(frame)` arm** (after checking `frame.epoch < min_epoch`), so `Flush` always advances `active_epoch` and `PttMarker` always dispatches to `event_tx` regardless of whether the mic ingestion gate is currently open.
+
+
+
+---
+
+#### 🟡 Bug 12 (`US-RC-09` / `US-RC-11`): `RemoteFailureKind::Revoked` Added to Rust `state.rs`, But Missing From TypeScript `remoteService.ts` and `QrScannerModal.tsx`
+
+* **Where:** `state.rs:18` in `changes_2.diff` vs. `remoteService.ts:14-21` and `QrScannerModal.tsx:33-74`.
+
+
+* **What Happens:** When the Host revokes the Controller and the Controller dials, `handle_dial_rejection` (`manager_3.rs:909`) emits `RemoteLinkState::Failed { reason: "Device pairing was revoked.", kind: RemoteFailureKind::Revoked }`, which serializes as `failureKind: "revoked"`.
+
+
+* Update `RemoteFailureKind` in `remoteService.ts` to include `| "revoked"` (and `"host_busy"`), and handle `"revoked"` in `QrScannerModal.tsx::getErrorMessage`.
+
+
+
+---
+
+### 2. Test Suite Audit: 5 False Greens & Bypassed Production Seams
+
+Your test files (`remote_security_test.rs`, `remote_link_test.rs`, `remote_connection_test.rs`) have strong unit coverage on low-level primitives (Noise handshake, token TTL/rate-limits, loopback framing), **but 5 integration tests are "false greens" that bypass the production code they claim to test**:
+
+#### 🚨 False Green 1: `remote_connection_dial_and_connect_reaches_connected` Fakes the Host Instead of Running `listener.rs` (`remote_connection_test.rs:818-849, 928-959`
+
+)
+
+* What the work log claimed (`changes.diff` line 1225): *"Identified that `remote_connection_test.rs` previously faked the host listener inside the test body instead of testing the authentic production seam (`handle_inbound_connection`)... Added `remote_connection_dial_and_connect_reaches_connected`: Full controller `dial_and_connect` with real host listener."*
+
+
+* What the test actually does (`remote_connection_test.rs:818-849`):
+It spawns a custom `tokio::spawn` block that manually calls `listener.accept()`, manually runs `NoiseHandshake::responder`, manually reads `Hello`, manually sends `Hello`, and calls `hm.attach_link(...)`.
+
+
+* **Why this is a False Green:** It **never calls a single function in `listener.rs**` (`handle_inbound_connection`, `dispatch_tier2_control_msg`, `check_host_admission`, `respond_hello_and_attach`, or `handle_inbound_audio_socket`)! Because the fake host never sends `SessionToken` or `AttachSnapshot`, the test completely misses whether the Controller's `dial_secondary_audio_socket` or `AttachSnapshot` handling works.
+
+
+* **The Fix:** Extract `pub async fn handle_inbound_tier2_with_key(...)` or pass test dependencies into `listener.rs` so `remote_connection_test.rs` calls the real Host listener logic.
+
+#### 🚨 False Green 2: `remote_connection_pairing_handshake_approved_reaches_connected` Fakes the Host & Runs Noise in the Wrong Order (`remote_connection_test.rs:135-190`
+
+)
+
+* Look at lines 135–183 of `remote_connection_test.rs`:
+
+
+1. The test manually receives `PairRequest` in plaintext.
+2. At line 149, the test calls `coordinator.begin(pairing_req, &pubkey_bytes, ...)` **before** running the Noise handshake (line 178), passing the unverified plaintext `claimed_req.public_key` as `handshake_static`!
+
+
+3. At line 161, it inserts the peer into the DB *before* running the Noise handshake at line 178!
+
+
+4. And its doc comment says `ASSERTS: Both Controller and Host reach RemoteLinkState::Connected`, while line 200 asserts `RemoteLinkState::Paired` and never instantiates a `host_manager`.
+
+
+
+
+* **The Fix:** In the test's host task, run `NoiseHandshake::responder` immediately after receiving `PairRequest`, pass `*transport.remote_static()` to `coordinator.begin(...)`, and update the doc comment to `RemoteLinkState::Paired`.
+
+
+
+#### 🚨 False Green 3: `WsLink` Never Runs the Link Conformance Suite (`VERIFY-RC-15`) — And Would Fail Case 17 & 18 Today (`remote_link_test.rs:480`
+
+ & `ws_2.rs:334-345`)
+
+* Spec Requirement (`RAIL-RC-05` & `VERIFY-RC-15`): *"Every `RemoteLink` implementation passes the conformance suite."*
+
+
+* What the test does (`remote_link_test.rs:480`): Calls `run_link_conformance(LoopbackLink::pair).await`, and **never** calls `run_link_conformance` on a `WsLink` pair!
+
+
+* **Proof It Caught a Real Bug:** Compare `LoopbackLink::recv_control` (`loopback_2.rs:112-123`) with `WsLink::decode_incoming` (`ws_2.rs:334-345`) and `WsLink::recv_audio` (`ws_2.rs:183-189`):
+
+
+* `LoopbackLink` passes decode errors to `classify_protocol_error(&error)`: if `ProtocolResponse::Skippable` (such as `ProtocolError::MissingTypeTag` on a tagless JSON message), it logs a warning and **continues the receive loop** (which is tested by conformance cases `"skippable_violation_does_not_end_the_receive"` and `"skippable_audio_violation_does_not_end_the_receive"`).
+
+
+* `WsLink` **never calls `classify_protocol_error(&err)**` in `decode_incoming` or `recv_audio`—it treats every `ProtocolError` (including `MissingTypeTag`) as fatal and closes the link!
+
+
+* Calling `classify_protocol_error(&err)` in `WsLink::decode_incoming` and `WsLink::recv_audio` (matching `LoopbackLink`) fixes `WsLink` so it can pass `run_link_conformance`.
+
+
+
+
+
+#### 🚨 False Green 4: `routing_table_contains_all_registered_ipc_commands` (`VERIFY-RC-07`) Checks a Copy-Pasted Array Instead of `supported_keys_for_domain` (`remote_security_test.rs:648-760`
+
+)
+
+* In `remote_security_test.rs:648-760`, the test hardcodes a 77-element string array copied from `routing.rs` and **does not check a single `domain.key` setting entry** (violating Spec §8.1: *"The test enumerates the command registry and the settings key table and fails if any entry is missing"*).
+
+
+* **The Fix:** In `routing_table_contains_all_registered_ipc_commands`, iterate over every domain in `config::mutation` (`supported_keys_for_domain`) plus `"working_memory"`, `"personal_memory"`, and `"model_parameters"`, asserting that `classify_command("update_setting", Some(domain), Some(key)) != CommandClass::Denied`.
+
+
+
+#### 🚨 False Green 5: Zero Integration Subtests for the New Tier 3 Seams
+
+Add deterministic integration tests in `remote_connection_test.rs` covering:
+
+1. **`VERIFY-RC-13` & `21` (Audio Socket Token & Key Binding):** Mint token via `host_manager.audio_tokens().mint(...)`, verify valid token + matching static key succeeds, replay of same token fails, and valid token + different static key fails.
+
+
+2. **`VERIFY-RC-09` & `10` (Event Forwarder Coalescing):** Push 10 `telemetry` events in 10ms and 5 `llm_token` events (`"Hel"`, `"lo "`, `"wor"`, `"ld!"`) for `turn_id = 1` followed by `state_changed` into `forward_event`, and assert over `LoopbackLink` that only 1 `telemetry` event arrived and the 4 `llm_token` chunks were coalesced and flushed *before* `state_changed`.
+
+
+3. **`VERIFY-RC-06` & `US-RC-06` (Reconnect Loop):** Verify that a transient dial failure during `Reconnecting` stays in `Reconnecting` and succeeds on attempt 2, whereas an `UnknownPeer` rejection immediately halts retries and enters `Failed { kind: Revoked }`.
+
+
+
+---
+
+### 3. Complete Summary Checklist Before You Ship Tier 3
+
+If your agent resolves the **7 items from the previous turn** + the **5 user-story bugs + 5 test fixes from this turn**, every single User Story (`US-RC-01`–`11`) and Verification Criterion (`VERIFY-RC-01`–`22`) will be genuinely green:
+
+| # | Category | File(s) | Fix Summary |
+| --- | --- | --- | --- |
+| **1** | **Downlink Audio** | `sink.rs`, `playback.rs` | Chunk 24kHz PCM16 into 480-sample (20ms) frames over an ordered MPSC queue; don't skip `PlaybackFinished` or `turn_metrics` in `PlaybackEngine`.
+
+ |
+| **2** | **Uplink Audio &PTT** | `capture.rs`, `listener.rs`, `state.rs` | Don't gate `Flush` / `PttMarker` behind `ingestion_gate == true`; wire `PttMarker` to `VoxEvent::Ptt*`; avoid restarting the whole engine on connect/disconnect so `Paused` state and `remote_audio_ingestor` aren't wiped.
+
+ |
+| **3** | **Controller Audio & RPC** | `lib.rs`, `manager.rs` | In `lib.rs::handle_invoke`, only enforce `is_desktop_command_permitted` when `role == SessionRole::Host`; when `role == Controller && state == Connected`, forward `Remote`/`Split` commands via `call_remote` and bridge phone mic/speaker to `audio_link`.
+
+ |
+| **4** | **Gateway Completeness** | `gateway.rs` | Call `classify_command` at the top of `RealCommandGateway::dispatch` to block `Local`/`Denied` commands (`appearance.*`, `remote.*`), and wire the remaining `Remote` IPC handlers.
+
+ |
+| **5** | **Controller Event & Snapshot** | `manager.rs`, `events.rs` | Emit incoming `ControlMessage::Event` and `AttachSnapshot` to the Controller's local frontend; do not forward `RemoteStateChanged` / `RemotePairing*` in `events.rs::event_to_value`.
+
+ |
+| **6** | **Reconnect & Heartbeat** | `manager.rs` | Don't overwrite `Reconnecting` with `Connecting`/`Failed` on transient retry failures inside `spawn_controller_reconnect`; call `pause_session_fn` and `mark_paired_device_seen` in `handle_host_heartbeat_tick`.
+
+ |
+| **7** | **Types, Lints & Tests** | `remoteService.ts`, `ws.rs`, `tests/*.rs` | Add `"revoked"` to TS `RemoteFailureKind`; remove the 3 `#[allow(...)]` in `manager.rs`; add `classify_protocol_error` to `WsLink`; and fix the 5 false-green test seams.
+
+ |

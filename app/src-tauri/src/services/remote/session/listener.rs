@@ -19,7 +19,10 @@ use crate::{
         events::{emit_ipc, IpcEvent, RemotePairingPromptPayload},
         state::{AppState, InteractionState, PendingPairingState},
     },
-    persistence::{paired_devices::{insert_paired_device, NewPairedDevice, PairedDeviceRole}, sessions},
+    persistence::{
+        paired_devices::{insert_paired_device, NewPairedDevice, PairedDeviceRole},
+        sessions,
+    },
     services::remote::{
         discovery,
         link::{
@@ -31,17 +34,21 @@ use crate::{
             errors::ProtocolError,
             framing::StreamFormat,
             messages::{
-                AttachSnapshot, ControlMessage, DecodeOutcome, Hello, LinkLossReason, LinkRefused,
-                LinkRefusedReason, PairApproved, PairDenied, PairRequest, RoleNotPermitted,
-                SenderIdentity, SessionToken, UnknownPeer, VersionMismatch, decode_control,
+                decode_control, AttachSnapshot, ControlMessage, DecodeOutcome, Hello,
+                LinkLossReason, LinkRefused, LinkRefusedReason, PairApproved, PairDenied,
+                PairRequest, RoleNotPermitted, SenderIdentity, SessionToken, UnknownPeer,
+                VersionMismatch,
             },
         },
         security::{
-            default_noise_prologue, derive_device_id, redact_settings_value, DeviceId, DeviceKey,
-            KeyStore, NoiseHandshake, PairingOutcome, PairingRequest, TrustDecision, TrustRefusal,
-            pairing,
+            default_noise_prologue, derive_device_id, pairing, redact_settings_value, DeviceId,
+            DeviceKey, KeyStore, NoiseHandshake, PairingOutcome, PairingRequest, TrustDecision,
+            TrustRefusal,
         },
-        session::{SessionRole, state::{PairingState, RemoteLinkState}},
+        session::{
+            state::{PairingState, RemoteLinkState},
+            SessionRole,
+        },
         PAIRING_APPROVAL_TIMEOUT, PROTOCOL_VERSION, REMOTE_LISTEN_PORT,
     },
 };
@@ -66,9 +73,7 @@ fn spawn_mdns_advertiser(state: Arc<AppState>) {
     tauri::async_runtime::spawn(async move {
         let device_id = match KeyStore::default_path() {
             Ok(store) => match store.load_or_create() {
-                Ok(key) => derive_device_id(key.public_key())
-                    .as_str()
-                    .to_string(),
+                Ok(key) => derive_device_id(key.public_key()).as_str().to_string(),
                 Err(e) => {
                     log::error!("[Remote] mDNS advertiser: device key unavailable: {e}");
                     return;
@@ -94,10 +99,7 @@ fn spawn_mdns_advertiser(state: Arc<AppState>) {
             )
             .await;
 
-            tokio::time::sleep(
-                discovery::HostAnnouncement::poll_interval(),
-            )
-            .await;
+            tokio::time::sleep(discovery::HostAnnouncement::poll_interval()).await;
         }
     });
 }
@@ -150,22 +152,14 @@ async fn sync_host_link_state(state: &AppState, accepts: bool) {
     if state.remote_manager.role() != SessionRole::Host {
         return;
     }
-    if !accepts
-        && state.remote_manager.state()
-            != RemoteLinkState::Disabled
-    {
+    if !accepts && state.remote_manager.state() != RemoteLinkState::Disabled {
         log::info!(
             "[Remote] accepts_controllers is false: disconnecting active link and setting Disabled"
         );
         let _ = state.remote_manager.disconnect_host_initiated().await;
         state.remote_manager.set_peer_identity(None);
-        state
-            .remote_manager
-            .set_state(RemoteLinkState::Disabled);
-    } else if accepts
-        && state.remote_manager.state()
-            == RemoteLinkState::Disabled
-    {
+        state.remote_manager.set_state(RemoteLinkState::Disabled);
+    } else if accepts && state.remote_manager.state() == RemoteLinkState::Disabled {
         log::info!("[Remote] accepts_controllers is true: hydrating from DB");
         state.remote_manager.hydrate_from_db(&state.db).await;
     }
@@ -231,9 +225,8 @@ async fn handle_inbound_connection<R: Runtime>(
             }
         };
 
-    if let Ok(DecodeOutcome::Known(
-        ControlMessage::PairRequest(claimed_req),
-    )) = decode_control(&initial_bytes)
+    if let Ok(DecodeOutcome::Known(ControlMessage::PairRequest(claimed_req))) =
+        decode_control(&initial_bytes)
     {
         // Tier 1 path: pairing request claim, followed by Noise_XX, user prompt, and DB storage
         handle_inbound_pairing(ws_link, claimed_req, state, app_handle).await;
@@ -420,10 +413,9 @@ async fn build_attach_snapshot(state: &AppState) -> AttachSnapshot {
         None
     };
 
-    let mut settings_val = serde_json::to_value(
-        &*state.settings.read().unwrap_or_else(|p| p.into_inner()),
-    )
-    .unwrap_or_default();
+    let mut settings_val =
+        serde_json::to_value(&*state.settings.read().unwrap_or_else(|p| p.into_inner()))
+            .unwrap_or_default();
     redact_settings_value(&mut settings_val);
 
     let turns = if let Some(sid) = session_id {
@@ -517,7 +509,7 @@ async fn handle_inbound_audio_socket(
     ws_link: WsLink,
     token: SessionToken,
     handshake_remote_static: [u8; 32],
-    state: &AppState,
+    state: Arc<AppState>,
 ) {
     match state
         .remote_manager
@@ -526,16 +518,20 @@ async fn handle_inbound_audio_socket(
     {
         Ok(device_id) => {
             log::info!("[Remote] Audio socket authenticated for controller device_id={device_id}");
-            state.remote_manager.attach_audio_link(Arc::new(ws_link)).await;
+            state
+                .remote_manager
+                .attach_audio_link(Arc::new(ws_link))
+                .await;
 
             // Spawn host audio reader loop: feeds incoming uplink frames into the
-            // active NetworkAudioCapture (if the engine is running in remote mode).
-            let ingestor = state.remote_audio_ingestor.lock().clone();
+            // active NetworkAudioCapture dynamically resolving the live ingestor.
+            let state_arc = Arc::clone(&state);
             let link = state.remote_manager.clone().get_audio_link().await;
             if let Some(link) = link {
                 tokio::spawn(async move {
                     while let Ok(payload) = link.recv_audio().await {
-                        if let Some(ing) = &ingestor {
+                        let ingestor = state_arc.remote_audio_ingestor.lock().clone();
+                        if let Some(ing) = ingestor {
                             let _ = ing.ingest(payload);
                         }
                     }
@@ -545,11 +541,9 @@ async fn handle_inbound_audio_socket(
         Err(err) => {
             log::warn!("[Remote] Audio socket token redemption failed: {err}");
             let _ = ws_link
-                .close(LinkCloseReason::Protocol(
-                    ProtocolError::MalformedJson(
-                        err.to_string(),
-                    ),
-                ))
+                .close(LinkCloseReason::Protocol(ProtocolError::MalformedJson(
+                    err.to_string(),
+                )))
                 .await;
         }
     }
@@ -590,7 +584,7 @@ async fn dispatch_tier2_control_msg(
     msg: ControlMessage,
     handshake_remote_static: [u8; 32],
     device_key: &DeviceKey,
-    state: &AppState,
+    state: Arc<AppState>,
 ) {
     match msg {
         ControlMessage::Hello(peer_hello) => {
@@ -601,14 +595,15 @@ async fn dispatch_tier2_control_msg(
                         supported_version: PROTOCOL_VERSION,
                     }))
                     .await;
-                let _ = ws_link.close(LinkCloseReason::Protocol(ProtocolError::MalformedJson(
-                    "protocol version mismatch".into(),
-                )))
-                .await;
+                let _ = ws_link
+                    .close(LinkCloseReason::Protocol(ProtocolError::MalformedJson(
+                        "protocol version mismatch".into(),
+                    )))
+                    .await;
                 return;
             }
             let peer_id = &peer_hello.sender_identity.device_id;
-            if check_host_admission(state, peer_id, &handshake_remote_static, &ws_link)
+            if check_host_admission(&state, peer_id, &handshake_remote_static, &ws_link)
                 .await
                 .is_none()
             {
@@ -619,18 +614,15 @@ async fn dispatch_tier2_control_msg(
                 device_key,
                 peer_hello.sender_identity,
                 &handshake_remote_static,
-                state,
+                &state,
             )
             .await;
         }
         ControlMessage::SessionToken(token) => {
             handle_inbound_audio_socket(ws_link, token, handshake_remote_static, state).await;
         }
-        ControlMessage::LinkLoss(loss)
-            if loss.reason
-                == LinkLossReason::Revoked =>
-        {
-            handle_revoked_link_loss(&ws_link, &handshake_remote_static, state).await;
+        ControlMessage::LinkLoss(loss) if loss.reason == LinkLossReason::Revoked => {
+            handle_revoked_link_loss(&ws_link, &handshake_remote_static, &state).await;
         }
         other => {
             log::warn!(
@@ -641,17 +633,15 @@ async fn dispatch_tier2_control_msg(
     }
 }
 
-async fn handle_inbound_tier2(ws_link: WsLink, first_msg: Vec<u8>, state: Arc<AppState>) {
-    let device_key = match KeyStore::default_path().and_then(|ks| ks.load_or_create()) {
-        Ok(k) => k,
-        Err(e) => {
-            log::warn!("[Remote] Could not load host key: {e}");
-            return;
-        }
-    };
-
+/// Handles an inbound Tier 2 connection using an explicitly provided host device key.
+pub async fn handle_inbound_tier2_with_key(
+    ws_link: WsLink,
+    first_msg: Vec<u8>,
+    device_key: &DeviceKey,
+    state: Arc<AppState>,
+) {
     let Some(handshake_remote_static) =
-        drive_tier2_handshake(&ws_link, &first_msg, &device_key).await
+        drive_tier2_handshake(&ws_link, &first_msg, device_key).await
     else {
         return;
     };
@@ -664,10 +654,21 @@ async fn handle_inbound_tier2(ws_link: WsLink, first_msg: Vec<u8>, state: Arc<Ap
         ws_link,
         initial_msg,
         handshake_remote_static,
-        &device_key,
-        &state,
+        device_key,
+        state,
     )
     .await;
+}
+
+async fn handle_inbound_tier2(ws_link: WsLink, first_msg: Vec<u8>, state: Arc<AppState>) {
+    let device_key = match KeyStore::default_path().and_then(|ks| ks.load_or_create()) {
+        Ok(k) => k,
+        Err(e) => {
+            log::warn!("[Remote] Could not load host key: {e}");
+            return;
+        }
+    };
+    handle_inbound_tier2_with_key(ws_link, first_msg, &device_key, state).await;
 }
 
 async fn drive_tier1_handshake(ws_link: &WsLink, device_key: &DeviceKey) -> Option<[u8; 32]> {

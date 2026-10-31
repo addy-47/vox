@@ -31,8 +31,7 @@ use std::{
     time::Duration,
 };
 
-use tauri::{Manager, State};
-use tauri::ipc::InvokeBody;
+use tauri::{ipc::InvokeBody, Manager, State};
 
 #[cfg(desktop)]
 use crate::ipc::tray::toggle_tray_visibility_internal;
@@ -111,10 +110,13 @@ use crate::{
             scheduler::{check_missed_consolidation_on_boot, spawn_consolidation_scheduler},
             spawn_ingestion_sweep, warmup_tokenizer,
         },
+        remote::{
+            control::{classify_command, is_desktop_command_permitted, CommandClass},
+            session::{RemoteLinkState, SessionRole},
+        },
         stt::SttCommand,
         vad::VadCommand,
     },
-    services::remote::control::is_desktop_command_permitted,
     setup::manifest::{AppManifest, VoxManifest},
     tray::{ensure_tray_window, refresh_tray_menu},
     utils::{check_cpu_governor, hardware::detect_local_gpu, logging, paths},
@@ -208,6 +210,77 @@ fn setup_platform_tray(_app: &mut tauri::App) -> Result<(), Box<dyn std::error::
 ///
 /// Sets up tray icon, menu events, window management, and auto-launches the
 /// engine on startup.
+fn extract_command_domain_key<'a>(
+    cmd: &str,
+    json: &'a Option<serde_json::Value>,
+) -> (Option<&'a str>, Option<&'a str>) {
+    if cmd == "apply_settings_patch" {
+        json.as_ref()
+            .and_then(|v| v.get("patch"))
+            .and_then(|p| p.as_object())
+            .and_then(|obj| {
+                let (d, inner) = obj.iter().next()?;
+                let k = inner.as_object()?.keys().next()?;
+                Some((Some(d.as_str()), Some(k.as_str())))
+            })
+            .unwrap_or((None, None))
+    } else {
+        (
+            json.as_ref().and_then(|v| v.get("domain")).and_then(|x| x.as_str()),
+            json.as_ref().and_then(|v| v.get("key")).and_then(|x| x.as_str()),
+        )
+    }
+}
+
+fn route_intercepted_invoke(
+    invoke: &tauri::ipc::Invoke<tauri::Wry>,
+    state: &AppState,
+) -> Option<bool> {
+    let resolver = invoke.resolver.clone();
+    let cmd = invoke.message.command();
+    let json = match invoke.message.payload() {
+        InvokeBody::Json(v) => Some(v.clone()),
+        _ => None,
+    };
+    let (domain, key) = extract_command_domain_key(cmd, &json);
+
+    if state.remote_manager.role() == SessionRole::Host {
+        if !is_desktop_command_permitted(cmd, domain, key, &state.remote_manager.state()) {
+            resolver.respond(Err::<(), _>(tauri::ipc::InvokeError::from(
+                VoxIpcError::InvalidState(
+                    "Remote session active: desktop write command blocked".to_string(),
+                ),
+            )));
+            return Some(true);
+        }
+        None
+    } else if state.remote_manager.state() == RemoteLinkState::Connected {
+        match classify_command(cmd, domain, key) {
+            CommandClass::Remote | CommandClass::Split => {
+                let manager = Arc::clone(&state.remote_manager);
+                let cmd_str = cmd.to_string();
+                let args = json.unwrap_or_else(|| serde_json::json!({}));
+                tauri::async_runtime::spawn(async move {
+                    match manager.call_remote(&cmd_str, args).await {
+                        Ok(val) => resolver.resolve(val),
+                        Err(err) => resolver.reject(err.to_string()),
+                    }
+                });
+                Some(true)
+            }
+            CommandClass::Denied => {
+                resolver.respond(Err::<(), _>(tauri::ipc::InvokeError::from(
+                    VoxIpcError::InvalidState(format!("Command '{cmd}' is denied remotely")),
+                )));
+                Some(true)
+            }
+            CommandClass::Local => None,
+        }
+    } else {
+        None
+    }
+}
+
 fn handle_invoke(invoke: tauri::ipc::Invoke<tauri::Wry>) -> bool {
     if let Some(state) = invoke
         .message
@@ -216,134 +289,117 @@ fn handle_invoke(invoke: tauri::ipc::Invoke<tauri::Wry>) -> bool {
         .app_handle()
         .try_state::<Arc<AppState>>()
     {
-        let resolver = invoke.resolver.clone();
-        let cmd = invoke.message.command();
-        let json = match invoke.message.payload() {
-            InvokeBody::Json(v) => Some(v.clone()),
-            _ => None,
-        };
-        let domain = json
-            .as_ref()
-            .and_then(|v| v.get("domain"))
-            .and_then(|x| x.as_str());
-        let key = json
-            .as_ref()
-            .and_then(|v| v.get("key"))
-            .and_then(|x| x.as_str());
-        if !is_desktop_command_permitted(cmd, domain, key, &state.remote_manager.state()) {
-            resolver.respond(Err::<(), _>(tauri::ipc::InvokeError::from(VoxIpcError::InvalidState(
-                "Remote session active: desktop write command blocked".to_string(),
-            ))));
-            return true;
+        if let Some(handled) = route_intercepted_invoke(&invoke, &state) {
+            return handled;
         }
     }
     let handler: fn(tauri::ipc::Invoke<tauri::Wry>) -> bool = tauri::generate_handler![
-            launch_engine,
-            stop_engine,
-notification_permission_state,
-            request_notification_permission,
-            debug_fire_transient,
-            start_session,
-            end_session,
-            pause_session,
-            resume_session,
-            submit_text_input,
-            set_playback_muted,
-            set_mic_muted,
-            set_session_private_mode,
-            hide_tray_window,
-            set_window_click_through,
-            show_main_window,
-            get_settings,
-            get_restart_status,
-            get_settings_contract,
-            get_model_catalog,
-            get_provider_caps,
-            check_provider_health,
-            probe_provider_target,
-            list_llm_models,
-            probe_model_capabilities,
-            get_model_capabilities_cache,
-            list_favorite_models,
-            toggle_model_favorite,
-            setup_remote_server,
-            update_setting,
-            apply_settings_patch,
-            reset_settings,
-            ptt_start,
-            ptt_stop,
-            ptt_cancel,
-            // Projects
-            get_projects,
-            create_project,
-            rename_project,
-            delete_project,
-            // History & Session Continuation
-            create_session,
-            continue_session,
-            get_sessions,
-            get_turns,
-            search_history,
-            update_session,
-            delete_session,
-            compact_session,
-            get_transcript_history,
-            // Personal Memory
-            get_personal_memory,
-            save_personal_memory,
-            consolidate_personal_memory,
-            regenerate_personal_memory,
-            get_personal_memory_versions,
-            set_active_personal_memory_version,
-            get_observations,
-            get_ingestion_stats,
-            get_memory_revisions,
-            resolve_memory_revisions,
-            // Voices
-            list_voices,
-            get_voice_scope,
-            sync_remote_voices,
-            synthesize_voice_preview,
-            toggle_voice_favorite,
-            record_voice_used,
-            set_active_voice,
-            add_voice_from_file,
-            add_voice_from_recording,
-            start_backend_recording,
-            stop_backend_recording,
-            delete_voice,
-            rename_voice,
-            // Monitoring & Profiler
-            get_runtime_snapshot,
-            get_profiler_snapshot,
-            record_memory_profile_event,
-            // Setup
-            fetch_manifest,
-            check_updates,
-            get_onboarding_status,
-            get_runtime_report,
-            manage_models,
-            complete_setup_wizard,
-            reveal_wizard,
-            // Audio
-            list_audio_devices,
-            // Notifications & Compaction
-            get_notifications,
-            mark_notifications_read,
-            dismiss_notifications,
-            execute_notification_action,
-            // Remote Control
-            pair_new_device,
-            approve_pairing,
-            pair_device,
-            list_paired_devices,
-            revoke_device,
-            disconnect_device,
-            connect_host,
-            disconnect_host,
-            get_link_state,
-            get_command_routing,
-        ];
+        launch_engine,
+        stop_engine,
+        notification_permission_state,
+        request_notification_permission,
+        debug_fire_transient,
+        start_session,
+        end_session,
+        pause_session,
+        resume_session,
+        submit_text_input,
+        set_playback_muted,
+        set_mic_muted,
+        set_session_private_mode,
+        hide_tray_window,
+        set_window_click_through,
+        show_main_window,
+        get_settings,
+        get_restart_status,
+        get_settings_contract,
+        get_model_catalog,
+        get_provider_caps,
+        check_provider_health,
+        probe_provider_target,
+        list_llm_models,
+        probe_model_capabilities,
+        get_model_capabilities_cache,
+        list_favorite_models,
+        toggle_model_favorite,
+        setup_remote_server,
+        update_setting,
+        apply_settings_patch,
+        reset_settings,
+        ptt_start,
+        ptt_stop,
+        ptt_cancel,
+        // Projects
+        get_projects,
+        create_project,
+        rename_project,
+        delete_project,
+        // History & Session Continuation
+        create_session,
+        continue_session,
+        get_sessions,
+        get_turns,
+        search_history,
+        update_session,
+        delete_session,
+        compact_session,
+        get_transcript_history,
+        // Personal Memory
+        get_personal_memory,
+        save_personal_memory,
+        consolidate_personal_memory,
+        regenerate_personal_memory,
+        get_personal_memory_versions,
+        set_active_personal_memory_version,
+        get_observations,
+        get_ingestion_stats,
+        get_memory_revisions,
+        resolve_memory_revisions,
+        // Voices
+        list_voices,
+        get_voice_scope,
+        sync_remote_voices,
+        synthesize_voice_preview,
+        toggle_voice_favorite,
+        record_voice_used,
+        set_active_voice,
+        add_voice_from_file,
+        add_voice_from_recording,
+        start_backend_recording,
+        stop_backend_recording,
+        delete_voice,
+        rename_voice,
+        // Monitoring & Profiler
+        get_runtime_snapshot,
+        get_profiler_snapshot,
+        record_memory_profile_event,
+        // Setup
+        fetch_manifest,
+        check_updates,
+        get_onboarding_status,
+        get_runtime_report,
+        manage_models,
+        complete_setup_wizard,
+        reveal_wizard,
+        // Audio
+        list_audio_devices,
+        // Notifications & Compaction
+        get_notifications,
+        mark_notifications_read,
+        dismiss_notifications,
+        execute_notification_action,
+        // Remote Control
+        pair_new_device,
+        approve_pairing,
+        pair_device,
+        list_paired_devices,
+        revoke_device,
+        disconnect_device,
+        connect_host,
+        disconnect_host,
+        get_link_state,
+        get_command_routing,
+    ];
     handler(invoke)
 }
 

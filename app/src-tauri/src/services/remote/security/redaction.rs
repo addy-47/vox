@@ -65,8 +65,9 @@ fn redact_recursive(val: &mut serde_json::Value, path: &str) {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use serde_json::json;
+
+    use super::*;
 
     #[test]
     fn redacts_all_spec_secret_shapes() {

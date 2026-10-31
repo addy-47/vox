@@ -1,18 +1,20 @@
 use std::sync::{
     atomic::{AtomicBool, AtomicU64, Ordering},
+    mpsc::Sender,
     Arc,
 };
 
 use anyhow::Result;
-use parking_lot::Mutex;
-use ringbuf::traits::*;
 
-use crate::services::{
-    audio::AudioCapture,
-    remote::protocol::{
-        errors::ProtocolError,
-        framing::{decode_audio_payload, AudioPayload},
-        messages::{AudioControlMessage, DecodeOutcome, PttMarker},
+use crate::{
+    core::{events::VoxEvent, state::InteractionOwner},
+    services::{
+        audio::{AudioCapture, SharedRingProducer},
+        remote::protocol::{
+            errors::ProtocolError,
+            framing::{decode_audio_payload, AudioPayload},
+            messages::{AudioControlMessage, DecodeOutcome, PttAction, PttMarker},
+        },
     },
 };
 
@@ -68,67 +70,74 @@ where
 /// Network-backed audio capture receiving 16 kHz Mono PCM16 frames from a connected controller.
 ///
 /// Implements `AudioCapture` so it can be swapped seamlessly into `AudioStream` via `AudioStream::from_capture`.
-pub struct NetworkAudioCapture<P> {
-    producer: Arc<Mutex<P>>,
+pub struct NetworkAudioCapture {
+    producer: SharedRingProducer,
     active_epoch: Arc<AtomicU64>,
     ingestion_gate: Arc<AtomicBool>,
     active: AtomicBool,
+    event_tx: Option<Sender<VoxEvent>>,
 }
 
-impl<P> NetworkAudioCapture<P>
-where
-    P: Producer<Item = f32> + Send + 'static,
-{
+impl NetworkAudioCapture {
     /// Creates a new `NetworkAudioCapture` feeding into the given ring-buffer producer.
     pub fn new(
-        producer: P,
+        producer: SharedRingProducer,
         active_epoch: Arc<AtomicU64>,
         ingestion_gate: Arc<AtomicBool>,
     ) -> Self {
         Self {
-            producer: Arc::new(Mutex::new(producer)),
+            producer,
             active_epoch,
             ingestion_gate,
-            active: AtomicBool::new(false),
+            active: AtomicBool::new(true),
+            event_tx: None,
         }
+    }
+
+    /// Attaches an event channel to dispatch PttMarker events.
+    pub fn with_event_tx(mut self, event_tx: Sender<VoxEvent>) -> Self {
+        self.event_tx = Some(event_tx);
+        self
     }
 
     /// Ingests a raw decrypted audio WebSocket payload, checking epoch and pushing to the ring buffer.
     pub fn ingest_payload(&self, decrypted_bytes: &[u8]) -> Result<(), ProtocolError> {
-        if !self.active.load(Ordering::Relaxed) || !self.ingestion_gate.load(Ordering::Relaxed) {
-            return Ok(());
-        }
+        let is_active = self.active.load(Ordering::Relaxed);
+        let gate_open = self.ingestion_gate.load(Ordering::Relaxed);
 
-        let mut producer = self.producer.lock();
         handle_inbound_audio_payload(
             decrypted_bytes,
             &self.active_epoch,
             |samples, _seq, _offset| {
-                for &sample in samples {
-                    let float_val = sample as f32 * PCM16_TO_F32_SCALE;
-                    let _ = producer.try_push(float_val);
+                if is_active && gate_open {
+                    for &sample in samples {
+                        let float_val = sample as f32 * PCM16_TO_F32_SCALE;
+                        let _ = self.producer.try_push(float_val);
+                    }
                 }
             },
-            |_ptt| {},
+            |ptt| {
+                self.dispatch_ptt(ptt);
+            },
         )
     }
 
     /// Ingests a decoded audio payload, checking epoch and pushing to the ring buffer.
     pub fn ingest(&self, payload: AudioPayload) -> Result<(), ProtocolError> {
-        if !self.active.load(Ordering::Relaxed) || !self.ingestion_gate.load(Ordering::Relaxed) {
-            return Ok(());
-        }
-
         match payload {
             AudioPayload::Frame(frame) => {
+                if !self.active.load(Ordering::Relaxed)
+                    || !self.ingestion_gate.load(Ordering::Relaxed)
+                {
+                    return Ok(());
+                }
                 let min_epoch = self.active_epoch.load(Ordering::Acquire);
                 if frame.epoch < min_epoch {
                     return Ok(());
                 }
-                let mut producer = self.producer.lock();
                 for &sample in &frame.samples {
                     let float_val = sample as f32 * PCM16_TO_F32_SCALE;
-                    let _ = producer.try_push(float_val);
+                    let _ = self.producer.try_push(float_val);
                 }
                 Ok(())
             }
@@ -136,7 +145,30 @@ where
                 self.active_epoch.fetch_max(flush.epoch, Ordering::AcqRel);
                 Ok(())
             }
-            AudioPayload::Control(AudioControlMessage::PttMarker(_)) => Ok(()),
+            AudioPayload::Control(AudioControlMessage::PttMarker(ptt)) => {
+                let min_epoch = self.active_epoch.load(Ordering::Acquire);
+                if ptt.epoch >= min_epoch {
+                    self.dispatch_ptt(ptt);
+                }
+                Ok(())
+            }
+        }
+    }
+
+    fn dispatch_ptt(&self, ptt: PttMarker) {
+        if let Some(ref tx) = self.event_tx {
+            let event = match ptt.action {
+                PttAction::Start => VoxEvent::PttStart {
+                    owner: InteractionOwner::Assistant,
+                },
+                PttAction::Stop => VoxEvent::PttStop {
+                    owner: InteractionOwner::Assistant,
+                },
+                PttAction::Cancel => VoxEvent::PttCancel {
+                    owner: InteractionOwner::Assistant,
+                },
+            };
+            let _ = tx.send(event);
         }
     }
 
@@ -146,19 +178,13 @@ where
     }
 }
 
-impl<P> NetworkAudioIngestor for NetworkAudioCapture<P>
-where
-    P: Producer<Item = f32> + Send + 'static,
-{
+impl NetworkAudioIngestor for NetworkAudioCapture {
     fn ingest(&self, payload: AudioPayload) -> Result<(), ProtocolError> {
-        NetworkAudioCapture::ingest(self, payload)
+        self.ingest(payload)
     }
 }
 
-impl<P> AudioCapture for std::sync::Arc<NetworkAudioCapture<P>>
-where
-    P: Producer<Item = f32> + Send + 'static,
-{
+impl AudioCapture for std::sync::Arc<NetworkAudioCapture> {
     fn start(&self) -> Result<()> {
         self.as_ref().start()
     }
@@ -167,10 +193,7 @@ where
     }
 }
 
-impl<P> AudioCapture for NetworkAudioCapture<P>
-where
-    P: Producer<Item = f32> + Send + 'static,
-{
+impl AudioCapture for NetworkAudioCapture {
     fn start(&self) -> Result<()> {
         log::info!("[Remote::Audio] Starting network audio capture");
         self.active.store(true, Ordering::Release);
@@ -188,7 +211,9 @@ where
 mod tests {
     use super::*;
     use crate::services::remote::protocol::{
-        framing::{encode_audio_frame, AudioFrame, AUDIO_PAYLOAD_TAG_BINARY, AUDIO_PAYLOAD_TAG_JSON},
+        framing::{
+            encode_audio_frame, AudioFrame, AUDIO_PAYLOAD_TAG_BINARY, AUDIO_PAYLOAD_TAG_JSON,
+        },
         messages::{encode_audio_control, AudioControlMessage, Flush},
         AUDIO_CODEC_PCM16,
     };

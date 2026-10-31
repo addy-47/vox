@@ -34,6 +34,7 @@ pub struct PlaybackEngine {
     current_turn_id: Arc<AtomicU32>,
     synthesis_turn: Arc<AtomicU32>,
     turn_armed: Arc<AtomicBool>,
+    is_remote_active: Arc<AtomicBool>,
     pending_synthesis_jobs: Arc<AtomicU32>,
     playback_intent: Arc<AtomicU8>,
     pub turn_metrics: Option<Arc<TurnMetricsCollector>>,
@@ -62,6 +63,7 @@ impl PlaybackEngine {
         let (producer, consumer) = rb.split();
         let discard_request = Arc::new(AtomicBool::new(false));
         let turn_armed = Arc::new(AtomicBool::new(false));
+        let is_remote_active = Arc::new(AtomicBool::new(false));
         let synthesis_turn = Arc::new(AtomicU32::new(SYNTHESIS_TURN_UNSET));
 
         let sink = build_output_stream(
@@ -69,6 +71,7 @@ impl PlaybackEngine {
             handles.clone(),
             Arc::clone(&discard_request),
             Arc::clone(&turn_armed),
+            Arc::clone(&is_remote_active),
             &telemetry,
             reference_tap,
         )?;
@@ -84,6 +87,7 @@ impl PlaybackEngine {
             current_turn_id: handles.current_turn_id,
             synthesis_turn,
             turn_armed,
+            is_remote_active,
             pending_synthesis_jobs: handles.pending_synthesis_jobs,
             playback_intent: handles.playback_intent,
             turn_metrics: handles.turn_metrics,
@@ -111,6 +115,7 @@ impl PlaybackEngine {
             current_turn_id: handles.current_turn_id,
             synthesis_turn: Arc::new(AtomicU32::new(SYNTHESIS_TURN_UNSET)),
             turn_armed,
+            is_remote_active: Arc::new(AtomicBool::new(false)),
             pending_synthesis_jobs: handles.pending_synthesis_jobs,
             playback_intent: handles.playback_intent,
             turn_metrics: handles.turn_metrics,
@@ -120,7 +125,12 @@ impl PlaybackEngine {
     }
 
     /// Sets the remote downlink sink used during a remote session.
-    pub fn set_remote_sink(&self, sink: Option<Arc<crate::services::remote::audio::NetworkAudioSink>>) {
+    pub fn set_remote_sink(
+        &self,
+        sink: Option<Arc<crate::services::remote::audio::NetworkAudioSink>>,
+    ) {
+        self.is_remote_active
+            .store(sink.is_some(), Ordering::Relaxed);
         *self.remote_sink.write() = sink;
     }
 
@@ -163,8 +173,8 @@ impl PlaybackEngine {
             return;
         }
 
-        // Remote session: route TTS output to the phone speaker instead of the
-        // laptop's local playback sink.
+        // Remote session: route TTS output to the phone speaker in addition to
+        // driving the local pacing and event lifecycle.
         if let Some(sink) = self.remote_sink.read().clone() {
             let i16_samples: Vec<i16> = chunk_24khz
                 .iter()
@@ -173,7 +183,6 @@ impl PlaybackEngine {
             tokio::spawn(async move {
                 sink.send_samples(i16_samples).await;
             });
-            return;
         }
 
         if let Some(ref metrics) = self.turn_metrics {
@@ -354,6 +363,11 @@ impl PlaybackEngine {
         self.cancel_flag.store(true, Ordering::Relaxed);
         self.discard_request.store(true, Ordering::Relaxed);
         self.turn_armed.store(false, Ordering::Relaxed);
+        if let Some(sink) = self.remote_sink.read().clone() {
+            tokio::spawn(async move {
+                let _ = sink.send_flush().await;
+            });
+        }
         log::info!(
             "[Audio::Playback] Cancelled (turn {}) — buffer signal sent",
             self.current_turn_id.load(Ordering::Relaxed)

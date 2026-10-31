@@ -64,6 +64,16 @@ const getErrorMessage = (
         title: "Version Mismatch",
         hint: REMOTE_CONTROL_COPY.errorVersionMismatch,
       };
+    case "revoked":
+      return {
+        title: "Device Pairing Revoked",
+        hint: "This device pairing was revoked by the host. Please scan a new QR code to re-pair.",
+      };
+    case "host_busy":
+      return {
+        title: "Host is Busy",
+        hint: "The host is currently running an active local session or another controller is attached.",
+      };
     case "unknown":
       return {
         title: "Connection Failed",
