@@ -1,5 +1,26 @@
 # Phase 14 Work Log
 
+## 2026-10-31 — Remote Control Manual Testing Failure RCA & Runtime Fixes
+
+- **Context & Goals**:
+  - Remediate 4 critical defects discovered during manual end-to-end device testing via ADB: `vox-router` panic on cancel/pause, host `HostBusy` refusal on reconnect, controller engage timeout on `get_runtime_snapshot`, and controller hung UI on disconnect.
+  - Enforce Simplified Technical English, zero warnings, and dual-target verification (`desktop` + `aarch64-linux-android`).
+
+- **Implemented Remediations**:
+  1. **Router Thread Panic Remediation (`services/audio/playback.rs`)**:
+     - Replaced `tokio::spawn` with `tauri::async_runtime::spawn` in `PlaybackEngine::cancel` and `ingest_chunk_with_threshold` to avoid panic when invoked from dedicated OS threads (`vox-router`, `vox-tts-worker`) without Tokio runtime context.
+  2. **Monitoring Query Gateway Support (`services/remote/control/gateway.rs`)**:
+     - Added `get_runtime_snapshot` handling in `dispatch_system_info`, unblocking frontend `waitForPipelineState("Ready")` polling in `pipelineService.ts` and eliminating 8s engage timeouts.
+  3. **Host Admission Reconnect Unblock (`services/remote/session/listener.rs`)**:
+     - Updated `check_host_admission` to permit controller connections when `InteractionState` is `Idle` or `Paused`, allowing reconnects to paused sessions without returning `LinkRefused(HostBusy)`.
+  4. **Bidirectional Session Pause on Disconnect (`services/remote/session/manager.rs`)**:
+     - Added `handle_host_involuntary_cutoff` and `handle_controller_involuntary_cutoff` helpers ensuring both host and controller transition local session to `Paused` (emitting `state_changed: Paused` to mobile UI and calling `pause_session_fn`) across disconnects, link losses, and heartbeat cutoffs.
+
+- **Verification**:
+  - `./scripts/verify-targets.sh`: SUCCESS (0 warnings / 0 errors across architecture invariant lint, desktop lib/bin, desktop tests/benches, desktop release binary, and Android `aarch64-linux-android`).
+
+---
+
 ## 2026-10-31 — Remote Control Lead Review Remediation (17 Issues: 12 Production Bugs + 5 False-Green Test Defects)
 
 - **Context & Goals**:
@@ -405,3 +426,8 @@
 - Measured: TTS 0.04–0.45x realtime; realtime TTFB 6.95s (Q4_K_M, 4 threads), RTF 0.20; text-only 4.15s. Latency gate FAILED on CPU.
 - Wrote feasibility report: docs/plans/phase14/lfm3-audio-integration-feasibility.md (recommendation: do not integrate as realtime provider now; implement OpenAiRealtime provider independently).
 - Added probe example: app/src-tauri/examples/lfm3_audio_probe.rs (unverified compile due to time).
+- Fixed Remote Control settings propagation and session pause lifecycle:
+  - Root-caused controller disconnect pause: conditionalized `pause_session_fn` on host (`state.pipeline.state() != InteractionState::Idle`) and `handle_controller_involuntary_cutoff` / `disconnect_controller_initiated` on controller (`is_session_active()`). Disconnecting when session was ended remains in `Idle`.
+  - Root-caused settings patch rejection: `apply_settings_patch` takes `{ patch: ... }` rather than top-level `{ domain, key }`. In `routing.rs`, mapped `apply_settings_patch` to `CommandClass::Split`. In `gateway.rs`, verified all subkeys in patch rather than rejecting with `Denied`. In `lib.rs`, split patches between local (appearance) and remote (pipeline/speech/llm) keys.
+  - Root-caused speech model cards showing uninstalled/download prompt: `manage_models` was classified as `Local` in `routing.rs`. On Android, local model directory is empty. Reclassified `manage_models` to `CommandClass::Remote` and added `dispatch_manage_models` in `gateway.rs` to route model presence checks and actions to host storage.
+  - Verified with `./scripts/verify-targets.sh` (0 warnings, 0 errors on desktop and aarch64-linux-android) and passed sequential remote security and connection tests.

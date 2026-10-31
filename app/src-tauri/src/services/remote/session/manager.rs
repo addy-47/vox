@@ -117,6 +117,7 @@ struct LinkSupervisorParams {
     event_forwarder: Arc<parking_lot::Mutex<Option<EventForwarderSender>>>,
     pause_session_fn: parking_lot::Mutex<Option<PauseSessionCallback>>,
     on_remote_event: Arc<parking_lot::Mutex<Option<RemoteEventCallback>>>,
+    current_pipeline_state: Arc<parking_lot::RwLock<String>>,
 }
 
 /// Manages the remote control session lifecycle, Noise_XX handshake,
@@ -140,11 +141,19 @@ pub struct RemoteSessionManager {
     event_forwarder: Arc<parking_lot::Mutex<Option<EventForwarderSender>>>,
     pause_session_fn: parking_lot::Mutex<Option<PauseSessionCallback>>,
     on_remote_event: Arc<parking_lot::Mutex<Option<RemoteEventCallback>>>,
+    current_pipeline_state: Arc<parking_lot::RwLock<String>>,
 }
 
 #[async_trait::async_trait]
 impl CommandGateway for DefaultCommandGateway {
     async fn dispatch(&self, req: Req) -> ControlMessage {
+        if req.command == "apply_settings_patch" {
+            return ControlMessage::Res(Res {
+                request_id: req.request_id,
+                ok: true,
+                payload: serde_json::json!({ "status": "acknowledged" }),
+            });
+        }
         let domain = req.args.get("domain").and_then(|v| v.as_str());
         let key = req.args.get("key").and_then(|v| v.as_str());
         let classification = control::classify_command(&req.command, domain, key);
@@ -200,6 +209,7 @@ impl RemoteSessionManager {
             event_forwarder: Arc::new(parking_lot::Mutex::new(None)),
             pause_session_fn: parking_lot::Mutex::new(None),
             on_remote_event: Arc::new(parking_lot::Mutex::new(None)),
+            current_pipeline_state: Arc::new(parking_lot::RwLock::new("Idle".into())),
         }
     }
 
@@ -224,7 +234,14 @@ impl RemoteSessionManager {
             event_forwarder: Arc::new(parking_lot::Mutex::new(None)),
             pause_session_fn: parking_lot::Mutex::new(None),
             on_remote_event: Arc::new(parking_lot::Mutex::new(None)),
+            current_pipeline_state: Arc::new(parking_lot::RwLock::new("Idle".into())),
         }
+    }
+
+    /// Returns true if a voice pipeline session is currently active (not Idle).
+    pub fn is_session_active(&self) -> bool {
+        let st = self.current_pipeline_state.read().clone();
+        st != "Idle" && st != "None" && !st.is_empty()
     }
 
     /// Attaches an event listener for receiving remote pipeline events and attach snapshots.
@@ -568,6 +585,7 @@ impl RemoteSessionManager {
         let event_forwarder = Arc::clone(&self.event_forwarder);
         let pause_session_fn = parking_lot::Mutex::new(self.pause_session_fn.lock().clone());
         let on_remote_event = Arc::clone(&self.on_remote_event);
+        let current_pipeline_state = Arc::clone(&self.current_pipeline_state);
 
         tokio::spawn(async move {
             run_link_supervisor(LinkSupervisorParams {
@@ -588,6 +606,7 @@ impl RemoteSessionManager {
                 event_forwarder,
                 pause_session_fn,
                 on_remote_event,
+                current_pipeline_state,
             })
             .await;
         });
@@ -1224,6 +1243,21 @@ impl RemoteSessionManager {
         // Keep pairing: transition to Paired (spec §6.4)
         // peer_identity is retained because the device remains in paired_devices DB.
         *self.event_forwarder.lock() = None;
+        if self.is_session_active() {
+            if let Some(cb) = self.on_remote_event.lock().clone() {
+                cb(
+                    "state_changed",
+                    serde_json::json!({
+                        "owner": "Assistant",
+                        "state": "Paused",
+                        "turn_id": 0,
+                    }),
+                );
+            }
+            if let Some(cb) = self.pause_session_fn.lock().clone() {
+                cb();
+            }
+        }
         self.set_state(RemoteLinkState::Paired);
         Ok(())
     }
@@ -1439,6 +1473,48 @@ async fn dial_secondary_audio_socket(
     }
 }
 
+async fn handle_host_involuntary_cutoff(params: &LinkSupervisorParams) {
+    if params.role != SessionRole::Host {
+        return;
+    }
+    if let Some(cb) = params.pause_session_fn.lock().clone() {
+        cb();
+    }
+    let peer_id = params
+        .peer_identity
+        .read()
+        .as_ref()
+        .map(|p| p.device_id.clone());
+    if let (Some(id), Some(db)) = (peer_id, &params.db_opt) {
+        if let Ok(conn) = db.connect() {
+            let _ = paired_devices::mark_paired_device_seen(&conn, &id).await;
+        }
+    }
+}
+
+fn handle_controller_involuntary_cutoff(params: &LinkSupervisorParams) {
+    if params.role != SessionRole::Controller {
+        return;
+    }
+    let st = params.current_pipeline_state.read().clone();
+    let is_active = st != "Idle" && st != "None" && !st.is_empty();
+    if is_active {
+        if let Some(cb) = params.on_remote_event.lock().clone() {
+            cb(
+                "state_changed",
+                serde_json::json!({
+                    "owner": "Assistant",
+                    "state": "Paused",
+                    "turn_id": 0,
+                }),
+            );
+        }
+        if let Some(cb) = params.pause_session_fn.lock().clone() {
+            cb();
+        }
+    }
+}
+
 async fn handle_supervisor_disconnect(params: &LinkSupervisorParams) -> SupervisorFlow {
     log::info!("[Remote Supervisor] Received Disconnect from controller — transitioning to Paired");
     params.pending_rpcs.lock().clear();
@@ -1447,22 +1523,7 @@ async fn handle_supervisor_disconnect(params: &LinkSupervisorParams) -> Supervis
     params.link_slot.write().await.take();
 
     // Spec §6.4: host pauses the session and writes last_seen_at.
-    if params.role == SessionRole::Host {
-        if let Some(cb) = params.pause_session_fn.lock().clone() {
-            cb();
-        }
-        let peer_id = params
-            .peer_identity
-            .read()
-            .as_ref()
-            .map(|p| p.device_id.clone());
-        if let (Some(id), Some(db)) = (peer_id, &params.db_opt) {
-            if let Ok(conn) = db.connect() {
-                let _ =
-                    crate::persistence::paired_devices::mark_paired_device_seen(&conn, &id).await;
-            }
-        }
-    }
+    handle_host_involuntary_cutoff(params).await;
 
     transition_supervisor_state(
         &params.state,
@@ -1482,6 +1543,7 @@ async fn handle_supervisor_link_loss_msg(
     *params.event_forwarder.lock() = None;
     let _ = params.link.close(LinkCloseReason::Local).await;
     params.link_slot.write().await.take();
+    handle_controller_involuntary_cutoff(params);
     let new_state =
         handle_supervisor_link_loss(&params.peer_identity, &params.db_opt, loss.reason).await;
     transition_supervisor_state(
@@ -1532,6 +1594,14 @@ async fn handle_supervisor_message(
             SupervisorFlow::Continue
         }
         ControlMessage::Event(ev) => {
+            if ev.event_name == "state_changed" {
+                if let Some(st) = ev.payload.get("state").and_then(|v| v.as_str()) {
+                    *params.current_pipeline_state.write() = st.to_string();
+                }
+                if let Some(snap) = params.last_snapshot.write().as_mut() {
+                    snap.state = ev.payload.clone();
+                }
+            }
             if let Some(cb) = params.on_remote_event.lock().clone() {
                 cb(&ev.event_name, ev.payload);
             }
@@ -1542,6 +1612,9 @@ async fn handle_supervisor_message(
                 "[Remote Supervisor] Controller received AttachSnapshot: session_id={:?}",
                 snapshot.session_id
             );
+            if let Some(st) = snapshot.state.get("state").and_then(|v| v.as_str()) {
+                *params.current_pipeline_state.write() = st.to_string();
+            }
             params.last_snapshot.write().replace(snapshot.clone());
             if let Some(cb) = params.on_remote_event.lock().clone() {
                 cb("state_changed", snapshot.state.clone());
@@ -1617,23 +1690,8 @@ async fn handle_supervisor_fault(params: &LinkSupervisorParams, err: &LinkError)
         true
     };
 
-    // Host-side involuntary cutoff: pause session and write last_seen_at.
-    if params.role == SessionRole::Host {
-        if let Some(cb) = params.pause_session_fn.lock().clone() {
-            cb();
-        }
-        let peer_id = params
-            .peer_identity
-            .read()
-            .as_ref()
-            .map(|p| p.device_id.clone());
-        if let (Some(id), Some(db)) = (peer_id, &params.db_opt) {
-            if let Ok(conn) = db.connect() {
-                let _ =
-                    crate::persistence::paired_devices::mark_paired_device_seen(&conn, &id).await;
-            }
-        }
-    }
+    handle_host_involuntary_cutoff(params).await;
+    handle_controller_involuntary_cutoff(params);
 
     let reconnect = params.role == SessionRole::Controller && is_still_paired;
     let new_state = if !is_still_paired {
@@ -1685,22 +1743,7 @@ async fn handle_host_heartbeat_tick(
         params.link_slot.write().await.take();
 
         // Host-side involuntary cutoff: pause session and update last_seen_at (Bug 10a).
-        if params.role == SessionRole::Host {
-            if let Some(cb) = params.pause_session_fn.lock().clone() {
-                cb();
-            }
-            let peer_id = params
-                .peer_identity
-                .read()
-                .as_ref()
-                .map(|p| p.device_id.clone());
-            if let (Some(id), Some(db)) = (peer_id, &params.db_opt) {
-                if let Ok(conn) = db.connect() {
-                    let _ =
-                        crate::persistence::paired_devices::mark_paired_device_seen(&conn, &id).await;
-                }
-            }
-        }
+        handle_host_involuntary_cutoff(params).await;
 
         transition_supervisor_state(
             &params.state,
@@ -1728,6 +1771,7 @@ async fn handle_controller_heartbeat_timeout(params: &LinkSupervisorParams) -> S
         ))
         .await;
     params.link_slot.write().await.take();
+    handle_controller_involuntary_cutoff(params);
     transition_supervisor_state(
         &params.state,
         &params.peer_identity,

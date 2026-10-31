@@ -7,6 +7,7 @@ use std::sync::{
 use anyhow::Result;
 use parking_lot::Mutex;
 use ringbuf::{traits::*, HeapProd};
+use tauri::async_runtime;
 
 use super::{
     build_output_stream, resampler::upsample_2x_into, sink::PlaybackReferenceTap, AudioResampler,
@@ -180,7 +181,7 @@ impl PlaybackEngine {
                 .iter()
                 .map(|&s| (s * 32767.0).clamp(-32768.0, 32767.0) as i16)
                 .collect();
-            tokio::spawn(async move {
+            async_runtime::spawn(async move {
                 sink.send_samples(i16_samples).await;
             });
         }
@@ -364,7 +365,7 @@ impl PlaybackEngine {
         self.discard_request.store(true, Ordering::Relaxed);
         self.turn_armed.store(false, Ordering::Relaxed);
         if let Some(sink) = self.remote_sink.read().clone() {
-            tokio::spawn(async move {
+            async_runtime::spawn(async move {
                 let _ = sink.send_flush().await;
             });
         }

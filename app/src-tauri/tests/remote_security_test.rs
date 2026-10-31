@@ -780,6 +780,7 @@ const REGISTERED_IPC_COMMANDS: &[&str] = &[
     "get_restart_status",
     "get_settings_contract",
     "reset_settings",
+    "apply_settings_patch",
     "get_model_catalog",
     "get_provider_caps",
     "check_provider_health",

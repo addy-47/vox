@@ -672,6 +672,10 @@ impl RealCommandGateway {
     ) -> Option<ControlMessage> {
         let rid = req.request_id;
         match req.command.as_str() {
+            "get_runtime_snapshot" => {
+                let snap = ipc::monitoring::get_runtime_snapshot(st.clone());
+                Some(ok(rid, serde_json::to_value(snap).unwrap_or_default()))
+            }
             "get_profiler_snapshot" => match ipc::monitoring::get_profiler_snapshot(app.clone()).await {
                 Ok(v) => Some(ok(rid, serde_json::to_value(v).unwrap_or_default())),
                 Err(e) => Some(err(rid, e)),
@@ -732,6 +736,37 @@ impl RealCommandGateway {
         self.dispatch_memory_revisions(req, app, st).await
     }
 
+    async fn dispatch_manage_models(
+        &self,
+        req: &Req,
+        app: &AppHandle<Wry>,
+        st: &State<'_, Arc<AppState>>,
+    ) -> Option<ControlMessage> {
+        let rid = req.request_id;
+        if req.command != "manage_models" {
+            return None;
+        }
+        let payload = match serde_json::from_value::<ipc::setup::ManageModelsPayload>(
+            req.args
+                .get("payload")
+                .cloned()
+                .unwrap_or_else(|| req.args.clone()),
+        ) {
+            Ok(p) => p,
+            Err(e) => {
+                return Some(ControlMessage::Err(ErrResponse {
+                    request_id: rid,
+                    code: RemoteErrorCode::InvalidArgument,
+                    message: format!("Invalid manage_models payload: {e}"),
+                }));
+            }
+        };
+        match ipc::setup::manage_models(app.clone(), st.clone(), payload).await {
+            Ok(r) => Some(ok(rid, serde_json::to_value(r).unwrap_or_default())),
+            Err(e) => Some(err(rid, e)),
+        }
+    }
+
     async fn try_dispatch_management(
         &self,
         req: &Req,
@@ -739,6 +774,9 @@ impl RealCommandGateway {
         st: &State<'_, Arc<AppState>>,
     ) -> Option<ControlMessage> {
         if let Some(res) = self.dispatch_model_catalog(req, app, st).await {
+            return Some(res);
+        }
+        if let Some(res) = self.dispatch_manage_models(req, app, st).await {
             return Some(res);
         }
         if let Some(res) = self.dispatch_model_probes(req, st).await {
@@ -768,7 +806,26 @@ impl CommandGateway for RealCommandGateway {
 
         let domain = req.args.get("domain").and_then(|v| v.as_str());
         let key = req.args.get("key").and_then(|v| v.as_str());
-        if matches!(
+
+        if req.command == "apply_settings_patch" {
+            if let Some(patch) = req.args.get("patch").and_then(|v| v.as_object()) {
+                let any_denied = patch.iter().any(|(d, v)| {
+                    v.as_object().is_some_and(|keys| {
+                        keys.keys().any(|k| {
+                            classify_command("update_setting", Some(d), Some(k))
+                                == CommandClass::Denied
+                        })
+                    })
+                });
+                if any_denied {
+                    return ControlMessage::Err(ErrResponse {
+                        request_id: req.request_id,
+                        code: RemoteErrorCode::Denied,
+                        message: "One or more settings in patch are not permitted remotely".into(),
+                    });
+                }
+            }
+        } else if matches!(
             classify_command(&req.command, domain, key),
             CommandClass::Local | CommandClass::Denied
         ) {

@@ -295,8 +295,10 @@ async fn check_host_readiness(state: &AppState, ws_link: &WsLink) -> bool {
     }
 
     let is_local_session_active = state.pipeline.turn_open.load(Ordering::Relaxed)
-        || (state.pipeline.state() != InteractionState::Idle
-            && state.remote_manager.state() != RemoteLinkState::Connected);
+        || (!matches!(
+            state.pipeline.state(),
+            InteractionState::Idle | InteractionState::Paused
+        ) && state.remote_manager.state() != RemoteLinkState::Connected);
 
     if is_local_session_active {
         log::warn!("[Remote] Inbound Hello refused: host is currently busy with local session");
