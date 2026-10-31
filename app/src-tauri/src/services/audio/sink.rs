@@ -66,6 +66,7 @@ pub struct PlaybackStreamContext {
     pub handles: PlaybackEngineHandles,
     pub discard_request: Arc<AtomicBool>,
     pub turn_armed: Arc<AtomicBool>,
+    pub is_remote_active: Arc<AtomicBool>,
     pub playback_energy: Arc<AtomicU32>,
     pub playback_low: Arc<AtomicU32>,
     pub playback_mid: Arc<AtomicU32>,
@@ -85,6 +86,7 @@ impl PlaybackStreamContext {
         handles: PlaybackEngineHandles,
         discard_request: Arc<AtomicBool>,
         turn_armed: Arc<AtomicBool>,
+        is_remote_active: Arc<AtomicBool>,
         telemetry: &PlaybackTelemetryHandles,
         reference_tap: Option<PlaybackReferenceTap>,
     ) -> Self {
@@ -93,6 +95,7 @@ impl PlaybackStreamContext {
             handles,
             discard_request,
             turn_armed,
+            is_remote_active,
             playback_energy: Arc::clone(&telemetry.energy),
             playback_low: Arc::clone(&telemetry.low),
             playback_mid: Arc::clone(&telemetry.mid),
@@ -163,7 +166,8 @@ impl PlaybackStreamContext {
         let mut sum_mid_sq = 0.0;
         let mut sum_high_sq = 0.0;
         let mut popped = 0u64;
-        let is_muted = self.handles.is_playback_muted.load(Ordering::Relaxed);
+        let is_muted = self.handles.is_playback_muted.load(Ordering::Relaxed)
+            || self.is_remote_active.load(Ordering::Relaxed);
 
         for frame in 0..frames {
             let sample_opt = self.consumer.try_pop();
@@ -198,8 +202,8 @@ impl PlaybackStreamContext {
             sum_mid_sq += mid * mid;
             sum_high_sq += high * high;
 
-            output[frame * 2] = played_sample;
-            output[frame * 2 + 1] = played_sample;
+            output[frame * 2] = effective_sample;
+            output[frame * 2 + 1] = effective_sample;
         }
 
         self.update_energy_metrics(frames, sum_sq, sum_low_sq, sum_mid_sq, sum_high_sq);

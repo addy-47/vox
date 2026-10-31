@@ -16,6 +16,8 @@ pub enum RemoteFailureKind {
     VersionMismatch,
     /// Peer pairing was revoked (terminal, no retry).
     Revoked,
+    /// Host is busy or another controller is already attached.
+    HostBusy,
     /// General or unknown OS/network transport error.
     Unknown,
 }

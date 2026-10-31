@@ -1,5 +1,36 @@
 # Phase 14 Work Log
 
+## 2026-10-31 — Remote Control Lead Review Remediation (17 Issues: 12 Production Bugs + 5 False-Green Test Defects)
+
+- **Context & Goals**:
+  - Remediate all 17 findings (12 production bugs + 5 false-green test defects) identified in Tech Lead's Tier 3 and Test Review in `docs/plans/phase14/remote-review.md`.
+  - Maintain strict backend and testing style guide rules: all functions $\le 50$ lines, zero inline `crate::` imports, Turso DB MVCC exclusively, zero warnings or clippy violations.
+
+- **Implemented Seams & Remediations**:
+  1. **Audio Pipeline Hot-Swap & Engine Continuity (Bugs 1 & 2)**:
+     - `services/audio/sink.rs`: Muted local speaker output in `PlaybackStreamContext` when `is_remote_active` is true while preserving `PlaybackFinished` event emission.
+     - `services/audio/device.rs` & `core/engine.rs`: Converted `SharedRingProducer` to concrete thread-safe producer feeding both hardware CPAL input stream and `NetworkAudioCapture` without restarting the audio engine or dropping mic samples.
+     - `core/state.rs`: Hot-swapped audio sink and paused/started local stream directly in state change listener, eliminating the 300ms engine restart stall and fixing the remote audio ingestor race.
+  2. **Downlink 20ms Framing & Uplink PTT Gating (Bugs 3 & 4)**:
+     - `services/remote/audio/sink.rs`: Sliced 24 kHz audio chunks into exact 480-sample (20ms) frames before dispatching via MPSC channel to the WebSocket downlink.
+     - `services/remote/audio/capture.rs`: Implemented epoch gating and PTT marker forwarding (`PttStart`, `PttStop`, `PttCancel`) across `handle_inbound_audio_payload` and `NetworkAudioCapture::ingest`.
+  3. **Skippable Protocol Framing & Wire Robustness (Bug 5)**:
+     - `services/remote/link/ws.rs`: Implemented `classify_protocol_error` in `decode_incoming` and `recv_audio` to skip unknown JSON messages without terminating the connection.
+  4. **Audio Token Anti-Replay & Key Binding (Bug 6)**:
+     - `services/remote/security/tokens.rs` & `listener.rs`: Enforced Noise static public key binding and single-use redemption semantics (`InvalidOrExpired`) for audio WebSocket authentication.
+  5. **Code Style & Engineering Integrity (Bugs 7 & 8)**:
+     - `services/remote/control/gateway.rs`: Aligned all IPC command helper signatures, eliminated all inline `crate::` imports, and decomposed gateway dispatch routines to ensure every function is strictly $\le 50$ lines.
+  6. **False-Green Test Suite Hardening (Tests 1–5)**:
+     - `tests/remote_security_test.rs`: Added exhaustive domain security coverage and Intent Block checks across all supported and pseudo domains.
+     - `tests/remote_connection_test.rs`: Corrected Noise responder handshake message order; wired authentic host listener in dial-and-connect test; added integration tests for token coalescing, telemetry rate caps, transient reconnect preservation, and revocation.
+     - `tests/remote_link_test.rs`: Added test cases for skippable protocol errors on both control and audio links.
+
+- **Verification**:
+  - `./scripts/verify-targets.sh`: SUCCESS (0 warnings / 0 errors across architecture invariant lint, desktop lib/bin, desktop tests/benches, desktop release binary, and Android `aarch64-linux-android`).
+  - Full test suite verified green with all 500+ tests passing.
+
+---
+
 ## 2026-10-30 — Remote Control v1 Full-Feature Remediation (final blockers + full remote test suite green)
 
 - **Context & Goals**: Close the remaining Tier-3/Tier-1 blockers from root `review-report.md` and `docs/plans/phase14/remote-review.md` so full v1 remote control functionality works end-to-end with all user stories traced.
@@ -366,3 +397,11 @@
   2. **Counts**: 258 total direct `crate::` usages in backend (236 prod src, 16 test, 6 sidecar); major set = 8 files with ≥6 occurrences (169 usages). Inline `use crate::` statements: 24 (21 src + 3 sidecar) also addressed where overlapping.
   3. **Minor fixes for compile**: InteractionState::as_str, health discover_server_dialect catalog path, listener conversation_id/session handling, events Arc path.
   4. **Verification**: `./scripts/verify-targets.sh desktop`: SUCCESS (0 warnings/errors).
+
+## 2026-10-31 — LFM3-Audio-2B integration feasibility research
+
+- Researched LiquidAI/LFM3-Audio-2B-GGUF (model card, llama.cpp b11960 support, /v1/realtime WebSocket).
+- Downloaded and tested Q4_K_M + Q4_0 quants with mmproj Q8_0/Q4_0 on CPU (i5-1145G7, no GPU).
+- Measured: TTS 0.04–0.45x realtime; realtime TTFB 6.95s (Q4_K_M, 4 threads), RTF 0.20; text-only 4.15s. Latency gate FAILED on CPU.
+- Wrote feasibility report: docs/plans/phase14/lfm3-audio-integration-feasibility.md (recommendation: do not integrate as realtime provider now; implement OpenAiRealtime provider independently).
+- Added probe example: app/src-tauri/examples/lfm3_audio_probe.rs (unverified compile due to time).

@@ -12,9 +12,10 @@ use tokio::{
 };
 use tokio_tungstenite::{tungstenite::Message, MaybeTlsStream, WebSocketStream};
 
-use super::remote_link::{LinkCloseReason, LinkError, RemoteLink};
+use super::remote_link::{LinkCloseReason, LinkError, RawLink, RemoteLink};
 use crate::services::remote::{
     protocol::{
+        errors::{classify_protocol_error, ProtocolResponse},
         framing::{
             check_control_message_size, decode_audio_payload, encode_audio_payload, AudioPayload,
         },
@@ -55,11 +56,9 @@ impl RemoteLink for WsLink {
 
             let payload_to_send = if let Some(cipher) = self.cipher.lock().await.as_mut() {
                 cipher.encrypt(&bytes).map_err(|e| {
-                    LinkError::Protocol(
-                        ProtocolError::MalformedJson(format!(
-                            "Noise encryption error: {e}"
-                        )),
-                    )
+                    LinkError::Protocol(ProtocolError::MalformedJson(format!(
+                        "Noise encryption error: {e}"
+                    )))
                 })?
             } else {
                 bytes
@@ -89,11 +88,9 @@ impl RemoteLink for WsLink {
                     Some(Ok(Message::Binary(bytes))) => {
                         let decrypted = if let Some(cipher) = self.cipher.lock().await.as_mut() {
                             cipher.decrypt(&bytes).map_err(|e| {
-                                LinkError::Protocol(
-                                    ProtocolError::MalformedJson(
-                                        format!("Noise decryption error: {e}"),
-                                    ),
-                                )
+                                LinkError::Protocol(ProtocolError::MalformedJson(format!(
+                                    "Noise decryption error: {e}"
+                                )))
                             })?
                         } else {
                             bytes.to_vec()
@@ -105,11 +102,9 @@ impl RemoteLink for WsLink {
                     Some(Ok(Message::Text(text))) => {
                         let decrypted = if let Some(cipher) = self.cipher.lock().await.as_mut() {
                             cipher.decrypt(text.as_bytes()).map_err(|e| {
-                                LinkError::Protocol(
-                                    ProtocolError::MalformedJson(
-                                        format!("Noise decryption error: {e}"),
-                                    ),
-                                )
+                                LinkError::Protocol(ProtocolError::MalformedJson(format!(
+                                    "Noise decryption error: {e}"
+                                )))
                             })?
                         } else {
                             text.as_bytes().to_vec()
@@ -180,12 +175,22 @@ impl RemoteLink for WsLink {
                         } else {
                             bytes.to_vec()
                         };
-                        match decode_audio_payload(&decrypted).map_err(LinkError::Protocol)? {
-                            DecodeOutcome::Known(payload) => return Ok(payload),
-                            DecodeOutcome::UnknownType { type_name } => {
+                        match decode_audio_payload(&decrypted) {
+                            Ok(DecodeOutcome::Known(payload)) => return Ok(payload),
+                            Ok(DecodeOutcome::UnknownType { type_name }) => {
                                 log::warn!("[WsLink] Unknown audio payload type: {type_name}");
                                 continue;
                             }
+                            Err(err) => match classify_protocol_error(&err) {
+                                ProtocolResponse::Skippable => {
+                                    log::warn!("[WsLink] Skipping survivable audio error: {err}");
+                                    continue;
+                                }
+                                ProtocolResponse::Fatal => {
+                                    self.record_close(LinkCloseReason::Protocol(err.clone()));
+                                    return Err(LinkError::Protocol(err));
+                                }
+                            },
                         }
                     }
                     Some(Ok(Message::Close(_))) | None => {
@@ -224,6 +229,16 @@ impl RemoteLink for WsLink {
 
     fn close_reason(&self) -> Option<LinkCloseReason> {
         self.close_reason.lock().clone()
+    }
+}
+
+impl RawLink for WsLink {
+    fn send_control_bytes<'a>(&'a self, bytes: Vec<u8>) -> BoxFuture<'a, Result<(), LinkError>> {
+        Box::pin(async move { self.send_handshake_message(&bytes).await })
+    }
+
+    fn send_audio_bytes<'a>(&'a self, bytes: Vec<u8>) -> BoxFuture<'a, Result<(), LinkError>> {
+        Box::pin(async move { self.send_handshake_message(&bytes).await })
     }
 }
 
@@ -301,23 +316,21 @@ impl WsLink {
     pub async fn drive_handshake(
         &self,
         mut handshake: NoiseHandshake,
-    ) -> Result<
-        NoiseTransport,
-        SecurityError,
-    > {
+    ) -> Result<NoiseTransport, SecurityError> {
         loop {
             if handshake.is_complete() {
                 break;
             }
             if handshake.is_my_turn() {
                 let msg = handshake.write_message(&[])?;
-                self.send_handshake_message(&msg).await.map_err(|e| {
-                    SecurityError::Noise(e.to_string())
-                })?;
+                self.send_handshake_message(&msg)
+                    .await
+                    .map_err(|e| SecurityError::Noise(e.to_string()))?;
             } else {
-                let msg = self.recv_handshake_message().await.map_err(|e| {
-                    SecurityError::Noise(e.to_string())
-                })?;
+                let msg = self
+                    .recv_handshake_message()
+                    .await
+                    .map_err(|e| SecurityError::Noise(e.to_string()))?;
                 handshake.read_message(&msg)?;
             }
         }
@@ -353,10 +366,16 @@ impl WsLink {
                 log::warn!("[Remote::WsLink] Skipping unknown wire type: {type_name}");
                 Ok(None)
             }
-            Err(err) => {
-                self.record_close(LinkCloseReason::Protocol(err.clone()));
-                Err(LinkError::Protocol(err))
-            }
+            Err(err) => match classify_protocol_error(&err) {
+                ProtocolResponse::Skippable => {
+                    log::warn!("[Remote::WsLink] Skipping survivable control error: {err}");
+                    Ok(None)
+                }
+                ProtocolResponse::Fatal => {
+                    self.record_close(LinkCloseReason::Protocol(err.clone()));
+                    Err(LinkError::Protocol(err))
+                }
+            },
         }
     }
 }

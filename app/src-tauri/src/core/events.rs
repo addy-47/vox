@@ -332,16 +332,18 @@ fn event_to_value(event: &IpcEvent) -> Option<serde_json::Value> {
         IpcEvent::PersonalMemoryUpdated(payload) => serde_json::to_value(payload).ok(),
         IpcEvent::SessionsChanged => Some(serde_json::json!({})),
         IpcEvent::MemoryIngestionUpdated => Some(serde_json::json!({})),
-        IpcEvent::RemoteStateChanged(payload) => serde_json::to_value(payload).ok(),
-        IpcEvent::RemotePairingStateChanged(payload) => serde_json::to_value(payload).ok(),
-        IpcEvent::RemotePairingRequested(payload) => serde_json::to_value(payload).ok(),
+        IpcEvent::RemoteStateChanged(_) => None,
+        IpcEvent::RemotePairingStateChanged(_) => None,
+        IpcEvent::RemotePairingRequested(_) => None,
         IpcEvent::ToggleTray => None,
     }
 }
 
 fn should_suppress_and_forward<R: Runtime>(app: &AppHandle<R>, event: &IpcEvent) -> bool {
     if let Some(state) = app.try_state::<std::sync::Arc<crate::core::state::AppState>>() {
-        if state.remote_manager.state() == crate::services::remote::session::RemoteLinkState::Connected {
+        if state.remote_manager.state()
+            == crate::services::remote::session::RemoteLinkState::Connected
+        {
             if let Some(val) = event_to_value(event) {
                 state.remote_manager.forward_event(event.name(), val);
             }

@@ -16,6 +16,8 @@ export type RemoteFailureKind =
   | "rejected_by_host"
   | "invalid_token"
   | "version_mismatch"
+  | "revoked"
+  | "host_busy"
   | "unknown";
 
 export type CommandClass = "Remote" | "Local" | "Split" | "Denied";

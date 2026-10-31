@@ -677,3 +677,72 @@ async fn ws_link_clean_close_notifies_peer() {
     ));
     assert_eq!(client.close_reason(), Some(LinkCloseReason::Peer));
 }
+
+/// PURPOSE:  A survivable protocol violation on WsLink control channel must not terminate the link.
+/// SCENARIO: Send raw tagless JSON frame over physical TCP WebSocket; follow with valid Ping.
+/// ASSERTS:  recv_control skips the invalid frame, returns the Ping, and link remains open.
+/// CLASS:    error-path
+/// REQUIRES: none
+/// MUTANT:   Treat all decode errors as fatal in WsLink::decode_incoming without classify_protocol_error.
+#[tokio::test]
+async fn ws_link_skippable_violation_does_not_end_the_receive() {
+    let listener = within_ok("bind", bind("127.0.0.1:0".parse().expect("valid loopback"))).await;
+    let addr = listener.local_addr().expect("local addr");
+    let server_handle = tokio::spawn(async move { listener.accept().await });
+
+    let client = within_ok("dial", dial(&format!("ws://{addr}"))).await;
+    let server = server_handle
+        .await
+        .expect("server task join")
+        .expect("server accept");
+
+    let tagless = br#"{"command":"test","args":{}}"#.to_vec();
+    within_ok("send raw", client.send_control_bytes(tagless)).await;
+
+    let expected = sample_ping(7);
+    within_ok("send ping", client.send_control(expected.clone())).await;
+
+    let received = within("recv", server.recv_control()).await.expect("receive ping");
+    assert_eq!(received, expected);
+    assert!(!matches!(
+        server.close_reason(),
+        Some(LinkCloseReason::Protocol(_))
+    ));
+}
+
+/// PURPOSE:  A survivable protocol violation on WsLink audio channel must not terminate the link.
+/// SCENARIO: Send tagless JSON audio message followed by valid binary audio frame over WsLink.
+/// ASSERTS:  recv_audio skips tagless message, returns valid AudioPayload::Frame, and link remains open.
+/// CLASS:    error-path
+/// REQUIRES: none
+/// MUTANT:   Remove classify_protocol_error from WsLink::recv_audio.
+#[tokio::test]
+async fn ws_link_skippable_audio_violation_does_not_end_the_receive() {
+    let listener = within_ok("bind", bind("127.0.0.1:0".parse().expect("valid loopback"))).await;
+    let addr = listener.local_addr().expect("local addr");
+    let server_handle = tokio::spawn(async move { listener.accept().await });
+
+    let client = within_ok("dial", dial(&format!("ws://{addr}"))).await;
+    let server = server_handle
+        .await
+        .expect("server task join")
+        .expect("server accept");
+
+    let mut tagless = vec![AUDIO_PAYLOAD_TAG_JSON];
+    tagless.extend_from_slice(br#"{"seq":1}"#);
+    within_ok("send raw audio", client.send_audio_bytes(tagless)).await;
+
+    let expected = sample_audio_frame(17);
+    within_ok(
+        "send valid frame",
+        client.send_audio(AudioPayload::Frame(expected.clone())),
+    )
+    .await;
+
+    let received = within("recv audio", server.recv_audio()).await.expect("receive audio");
+    assert_eq!(received, AudioPayload::Frame(expected));
+    assert!(!matches!(
+        server.close_reason(),
+        Some(LinkCloseReason::Protocol(_))
+    ));
+}

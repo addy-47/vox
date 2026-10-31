@@ -89,6 +89,7 @@ pub use decode::{
 };
 pub use device::{
     build_output_stream, resolve_audio_host, resolve_output_device_and_config, AudioStream,
+    SharedRingProducer,
 };
 pub use playback::PlaybackEngine;
 pub use resampler::{upsample_2x, upsample_2x_into, AudioResampler};

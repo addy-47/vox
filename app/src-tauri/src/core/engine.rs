@@ -29,7 +29,7 @@ use crate::{
             playback::{PlaybackEngineHandles, PlaybackTelemetryHandles},
             sink::PlaybackReferenceTap,
             spawn_aec_worker, spawn_audio_route_watcher, AecCommand, AecProcessor, AudioStream,
-            PlaybackEngine, AEC_REFERENCE_BUFFER_SAMPLES,
+            PlaybackEngine, SharedRingProducer, AEC_REFERENCE_BUFFER_SAMPLES,
         },
         llm::{
             actor::{cool_down_llm, warm_up_llm, LlmWarmUpHandles},
@@ -169,28 +169,34 @@ fn create_playback_engine(
     Ok(Arc::new(pe))
 }
 
-fn init_audio_stream<P>(
+fn init_audio_stream(
     state: &AppState,
-    cap_prod: P,
-) -> Result<AudioStream, String>
-where
-    P: ringbuf::traits::Producer<Item = f32> + Send + 'static,
-{
-    let audio_stream = if state.remote_manager.state() == RemoteLinkState::Connected {
-        let epoch = Arc::new(AtomicU64::new(0));
-        let net_cap = Arc::new(NetworkAudioCapture::new(
-            cap_prod,
+    cap_prod: ringbuf::HeapProd<f32>,
+    event_tx: mpsc::Sender<VoxEvent>,
+) -> Result<AudioStream, String> {
+    let shared_prod = SharedRingProducer::new(cap_prod);
+    let epoch = Arc::new(AtomicU64::new(0));
+    let net_cap = Arc::new(
+        NetworkAudioCapture::new(
+            shared_prod.clone(),
             Arc::clone(&epoch),
             Arc::clone(&state.pipeline.ingestion_gate),
-        ));
-        *state.remote_audio_ingestor.lock() = Some(Arc::clone(&net_cap) as Arc<dyn crate::services::remote::audio::NetworkAudioIngestor + Send + Sync>);
-        AudioStream::from_capture(Box::new(net_cap) as Box<dyn crate::services::audio::AudioCapture>)
+        )
+        .with_event_tx(event_tx),
+    );
+
+    *state.remote_audio_ingestor.lock() = Some(Arc::clone(&net_cap)
+        as Arc<dyn crate::services::remote::audio::NetworkAudioIngestor + Send + Sync>);
+
+    let audio_stream = AudioStream::new(shared_prod, Arc::clone(&state.pipeline.ingestion_gate))
+        .map_err(|e| e.to_string())?;
+
+    if state.remote_manager.state() == RemoteLinkState::Connected {
+        let _ = audio_stream.pause();
     } else {
-        *state.remote_audio_ingestor.lock() = None;
-        AudioStream::new(cap_prod, Arc::clone(&state.pipeline.ingestion_gate))
-            .map_err(|e| e.to_string())?
-    };
-    audio_stream.start().map_err(|e| e.to_string())?;
+        audio_stream.start().map_err(|e| e.to_string())?;
+    }
+
     Ok(audio_stream)
 }
 
@@ -386,7 +392,7 @@ pub async fn start_audio_engine<R: tauri::Runtime + 'static>(
     let stt_handle = spawn_stt_worker(stt_channels, stt_provider, stt_handles)
         .map_err(|e| format!("[Core::Engine] Failed to spawn STT worker: {}", e))?;
 
-    let audio_stream = init_audio_stream(state, cap_prod)?;
+    let audio_stream = init_audio_stream(state, cap_prod, vox_event_tx.clone())?;
 
     let playback_engine = create_playback_engine(state, vox_event_tx.clone(), Some(reference_tap))?;
     let orchestrator_handle = spawn_router(app.clone(), vox_event_rx)?;

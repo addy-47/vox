@@ -15,7 +15,7 @@ pub mod manager;
 pub mod state;
 
 pub use self::{
-    listener::spawn_host_listener,
+    listener::{handle_inbound_tier2_with_key, spawn_host_listener},
     manager::{
         CommandGateway, DefaultCommandGateway, FnCommandGateway, PendingRpcMap,
         RemoteSessionManager, SessionRole, StateChangeCallback,
