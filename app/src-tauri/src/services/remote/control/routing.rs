@@ -49,6 +49,7 @@ static ROUTING_TABLE: LazyLock<HashMap<String, CommandClass>> = LazyLock::new(||
     table.insert("get_restart_status".into(), CommandClass::Remote);
     table.insert("get_settings_contract".into(), CommandClass::Remote);
     table.insert("reset_settings".into(), CommandClass::Remote);
+    table.insert("apply_settings_patch".into(), CommandClass::Split);
 
     // ─── 4. Model Catalog & Management ───────────────────────────────────
     table.insert("get_model_catalog".into(), CommandClass::Remote);
@@ -60,7 +61,7 @@ static ROUTING_TABLE: LazyLock<HashMap<String, CommandClass>> = LazyLock::new(||
     table.insert("get_model_capabilities_cache".into(), CommandClass::Remote);
     table.insert("list_favorite_models".into(), CommandClass::Remote);
     table.insert("toggle_model_favorite".into(), CommandClass::Remote);
-    table.insert("manage_models".into(), CommandClass::Local);
+    table.insert("manage_models".into(), CommandClass::Remote);
     table.insert("setup_remote_server".into(), CommandClass::Local);
 
     // ─── 5. Projects ─────────────────────────────────────────────────────
@@ -195,7 +196,7 @@ pub fn get_routing_table() -> &'static HashMap<String, CommandClass> {
 
 /// Looks up the routing classification for a specific command or domain.key setting.
 pub fn classify_command(command: &str, domain: Option<&str>, key: Option<&str>) -> CommandClass {
-    if command == "update_setting" || command == "apply_settings_patch" {
+    if command == "update_setting" {
         if let (Some(d), Some(k)) = (domain, key) {
             let path = format!("{d}.{k}");
             if let Some(class) = ROUTING_TABLE.get(&path) {
@@ -208,6 +209,16 @@ pub fn classify_command(command: &str, domain: Option<&str>, key: Option<&str>) 
             }
         }
         return CommandClass::Denied;
+    }
+
+    if command == "apply_settings_patch" {
+        if let (Some(d), Some(k)) = (domain, key) {
+            let path = format!("{d}.{k}");
+            if let Some(class) = ROUTING_TABLE.get(&path) {
+                return *class;
+            }
+        }
+        return CommandClass::Split;
     }
 
     if let (Some(d), Some(k)) = (domain, key) {
