@@ -34,59 +34,112 @@ export interface QrScannerModalProps {
   defaultManual?: boolean;
 }
 
-const getErrorMessage = (
+export interface ErrorCopy {
+  title: string;
+  hint: string;
+}
+
+export const getErrorMessage = (
   kind: RemoteFailureKind | null,
   rawReason: string | null
-): { title: string; hint?: string } => {
-  switch (kind) {
-    case "timeout":
-      return {
-        title: "Connection Timed Out",
-        hint: REMOTE_CONTROL_COPY.errorTimeout,
-      };
-    case "unreachable":
-      return {
-        title: "Host Unreachable",
-        hint: REMOTE_CONTROL_COPY.errorUnreachable,
-      };
-    case "rejected_by_host":
-      return {
-        title: "Connection Declined",
-        hint: REMOTE_CONTROL_COPY.errorRejected,
-      };
-    case "invalid_token":
-      return {
-        title: "QR Code Expired / Invalid",
-        hint: REMOTE_CONTROL_COPY.errorInvalidToken,
-      };
-    case "version_mismatch":
-      return {
-        title: "Version Mismatch",
-        hint: REMOTE_CONTROL_COPY.errorVersionMismatch,
-      };
-    case "revoked":
-      return {
-        title: "Device Pairing Revoked",
-        hint: "This device pairing was revoked by the host. Please scan a new QR code to re-pair.",
-      };
-    case "host_busy":
-      return {
-        title: "Host is Busy",
-        hint: "The host is currently running an active local session or another controller is attached.",
-      };
-    case "unknown":
-      return {
-        title: "Connection Failed",
-        hint: rawReason
-          ? REMOTE_CONTROL_COPY.errorUnknown(rawReason)
-          : REMOTE_CONTROL_COPY.errorGeneric,
-      };
-    default:
-      return {
-        title: rawReason || REMOTE_CONTROL_COPY.errorGeneric,
-        hint: undefined,
-      };
+): ErrorCopy => {
+  const raw = (rawReason ?? "").toLowerCase();
+
+  // 1. Timeout
+  if (
+    kind === "timeout" ||
+    raw.includes("timed out") ||
+    raw.includes("timeout") ||
+    raw.includes("deadline")
+  ) {
+    return {
+      title: "Connection Timed Out",
+      hint: REMOTE_CONTROL_COPY.errorTimeout,
+    };
   }
+
+  // 2. Unreachable / Offline
+  if (
+    kind === "unreachable" ||
+    raw.includes("unreachable") ||
+    raw.includes("no dial candidates") ||
+    raw.includes("connection refused") ||
+    raw.includes("failed to lookup")
+  ) {
+    return {
+      title: "Unable to Reach Computer",
+      hint: REMOTE_CONTROL_COPY.errorUnreachable,
+    };
+  }
+
+  // 3. Rejected / Declined by Host
+  if (
+    kind === "rejected_by_host" ||
+    raw.includes("denied") ||
+    raw.includes("declined") ||
+    raw.includes("rejected")
+  ) {
+    return {
+      title: "Pairing Declined",
+      hint: REMOTE_CONTROL_COPY.errorRejected,
+    };
+  }
+
+  // 4. Invalid or Expired Token / QR Code
+  if (kind === "invalid_token" || raw.includes("token") || raw.includes("expired")) {
+    return {
+      title: "QR Code Expired",
+      hint: REMOTE_CONTROL_COPY.errorInvalidToken,
+    };
+  }
+
+  // 5. Version Mismatch
+  if (kind === "version_mismatch" || raw.includes("version")) {
+    return {
+      title: "App Update Required",
+      hint: REMOTE_CONTROL_COPY.errorVersionMismatch,
+    };
+  }
+
+  // 6. Device Pairing Revoked
+  if (kind === "revoked" || raw.includes("revoked")) {
+    return {
+      title: "Pairing Removed",
+      hint: REMOTE_CONTROL_COPY.errorRevoked,
+    };
+  }
+
+  // 7. Host Busy
+  if (
+    kind === "host_busy" ||
+    raw.includes("busy") ||
+    raw.includes("already attached") ||
+    raw.includes("already connected")
+  ) {
+    return {
+      title: "Computer is Busy",
+      hint: REMOTE_CONTROL_COPY.errorHostBusy,
+    };
+  }
+
+  // 8. Protocol / Interrupted handshake / Malformed message
+  if (
+    raw.includes("protocol") ||
+    raw.includes("malformed") ||
+    raw.includes("handshake") ||
+    raw.includes("invalid host public key")
+  ) {
+    return {
+      title: "Connection Interrupted",
+      hint: REMOTE_CONTROL_COPY.errorProtocol,
+    };
+  }
+
+  // 9. Generic connection error
+  return {
+    title: "Connection Failed",
+    hint: REMOTE_CONTROL_COPY.errorGeneric,
+  };
 };
 
 export const QrScannerModal = memo(
@@ -574,8 +627,10 @@ export const QrScannerModal = memo(
         open={open}
         onClose={handleClose}
         icon={
-          linkState === "Connected" ? (
+          linkState === "Connected" || (scannedSuccess && linkState === "Paired") ? (
             <CheckCircle2 size={18} className="text-[rgb(var(--accent))] shrink-0" />
+          ) : scanError ? (
+            <WifiOff size={18} className="text-[rgb(var(--error))] shrink-0" />
           ) : (
             <ScanLine size={18} className="text-[rgb(var(--accent))] shrink-0" />
           )
@@ -609,6 +664,10 @@ export const QrScannerModal = memo(
         subtitle={
           scannedSuccess && (linkState === "Paired" || linkState === "Connected")
             ? "Your phone is now paired. Tap the rocket icon on the home screen to stream."
+            : scanError
+            ? "Unable to complete connection to your computer."
+            : isPairingPending
+            ? "A confirmation prompt has appeared on your computer."
             : connecting
             ? "Establishing secure pairing with host..."
             : isManual
@@ -619,36 +678,34 @@ export const QrScannerModal = memo(
         fitContent
         className="max-w-md w-[94vw] sm:w-full overflow-hidden"
       >
-        <div className="flex flex-col p-5 sm:p-6 gap-4">
+        <div className="flex flex-col p-4 sm:p-5 gap-3">
           {scanError ? (
             /* Explicit In-Modal Failure Alert & Retry View */
-            <div className="min-h-[280px] flex flex-col items-center justify-center p-6 text-center gap-4 animate-fade-in my-auto">
-              <div className="w-14 h-14 rounded-2xl bg-[rgba(var(--error),0.12)] border border-[rgba(var(--error),0.25)] flex items-center justify-center text-[rgb(var(--error))] shadow-[0_0_24px_rgba(var(--error),0.15)]">
-                <WifiOff size={28} strokeWidth={2.2} />
+            <div className="flex flex-col items-center justify-center py-4 sm:py-6 text-center animate-fade-in my-auto">
+              <div className="w-13 h-13 sm:w-14 sm:h-14 rounded-2xl bg-[rgba(var(--error),0.10)] border border-[rgba(var(--error),0.20)] flex items-center justify-center text-[rgb(var(--error))] shadow-[0_0_24px_rgba(var(--error),0.12)] mb-3">
+                <WifiOff size={26} strokeWidth={2} />
               </div>
               <div className="flex flex-col items-center gap-1.5 max-w-sm">
                 {(() => {
                   const errInfo = getErrorMessage(failureKind, scanError);
                   return (
                     <>
-                      <h3 className="text-base sm:text-lg font-bold text-[rgb(var(--foreground))]">
+                      <h3 className="font-display text-base sm:text-lg font-semibold text-[rgb(var(--foreground))] tracking-tight">
                         {errInfo.title}
                       </h3>
-                      {errInfo.hint ? (
-                        <p className="text-xs sm:text-sm text-[rgb(var(--foreground-muted))] leading-relaxed">
-                          {errInfo.hint}
-                        </p>
-                      ) : null}
-                      {scanError && errInfo.title !== scanError && (
-                        <span className="text-xs font-mono text-[rgb(var(--foreground-muted))]/80 mt-1 break-words">
+                      <p className="font-body text-xs sm:text-sm text-[rgb(var(--foreground-muted))] leading-relaxed mt-0.5">
+                        {errInfo.hint}
+                      </p>
+                      {scanError && scanError !== errInfo.title && (
+                        <p className="font-body text-xs text-[rgb(var(--foreground-muted))]/80 leading-relaxed mt-1 break-words">
                           {scanError}
-                        </span>
+                        </p>
                       )}
                     </>
                   );
                 })()}
               </div>
-              <div className="flex flex-col sm:flex-row items-center gap-2.5 w-full max-w-xs mt-3">
+              <div className="flex flex-col gap-2 w-full max-w-xs mt-5">
                 <button
                   type="button"
                   onClick={() => {
@@ -658,9 +715,9 @@ export const QrScannerModal = memo(
                     setConnecting(false);
                     if (!isManual) void startCamera();
                   }}
-                  className="w-full h-11 inline-flex items-center justify-center gap-2 rounded-xl bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] text-sm font-bold hover:opacity-90 transition-opacity cursor-pointer shadow-md"
+                  className="w-full h-11 inline-flex items-center justify-center gap-2 rounded-xl bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] font-display text-sm font-semibold hover:opacity-90 active:scale-[0.98] transition-all cursor-pointer shadow-sm"
                 >
-                  <RotateCcw size={16} strokeWidth={2.2} />
+                  <RotateCcw size={15} strokeWidth={2.2} />
                   Scan Again / Retry
                 </button>
                 <button
@@ -669,50 +726,78 @@ export const QrScannerModal = memo(
                     setScanError(null);
                     setIsManual(true);
                   }}
-                  className="w-full sm:w-auto h-11 px-4 inline-flex items-center justify-center text-xs font-semibold text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors cursor-pointer"
+                  className="w-full h-10 inline-flex items-center justify-center rounded-xl border border-[rgba(var(--border),0.12)] bg-[rgba(var(--foreground),0.04)] hover:bg-[rgba(var(--foreground),0.08)] font-body text-xs font-medium text-[rgb(var(--foreground))] hover:border-[rgba(var(--border),0.2)] transition-all cursor-pointer"
                 >
-                  Manual IP
+                  Enter IP Manually
                 </button>
               </div>
             </div>
           ) : scannedSuccess && (linkState === "Paired" || linkState === "Connected") ? (
             /* Paired Celebration State */
-            <div className="h-64 flex flex-col items-center justify-center gap-3 animate-fade-in text-center p-4">
+            <div className="flex flex-col items-center justify-center gap-3 py-6 animate-fade-in text-center p-4">
               <div className="w-14 h-14 rounded-2xl bg-[rgba(var(--accent),0.12)] border border-[rgba(var(--accent),0.25)] flex items-center justify-center text-[rgb(var(--accent))] shadow-[0_0_24px_rgba(var(--accent),0.2)] animate-in zoom-in-95 duration-200">
                 <CheckCircle2 size={32} strokeWidth={2.5} />
               </div>
-              <h3 className="text-base font-bold text-[rgb(var(--foreground))]">
+              <h3 className="font-display text-base sm:text-lg font-semibold text-[rgb(var(--foreground))] tracking-tight">
                 Host Paired Successfully
               </h3>
-              <p className="text-xs sm:text-sm text-[rgb(var(--foreground-muted))] max-w-xs leading-relaxed">
+              <p className="font-body text-xs sm:text-sm text-[rgb(var(--foreground-muted))] max-w-xs leading-relaxed">
                 Your device is paired with the host. Tap the rocket icon on the home screen to connect anytime.
               </p>
             </div>
-          ) : connecting ? (
-            /* Connecting & Pairing Progression State */
+          ) : isPairingPending ? (
+            /* Dedicated Waiting for Host Approval State */
             <div
               role="status"
               aria-live="polite"
-              className="min-h-[256px] flex flex-col items-center justify-center px-6 py-8 text-center animate-fade-in"
+              className="flex flex-col items-center justify-center py-5 sm:py-6 text-center animate-fade-in my-auto"
             >
               <div
                 aria-hidden="true"
-                className="relative flex items-center justify-center w-20 h-20"
+                className="relative flex items-center justify-center w-20 h-20 mb-3"
+              >
+                <div className="absolute inset-0 rounded-full bg-[radial-gradient(circle,rgba(var(--accent),0.20),transparent_70%)] animate-pulse" />
+                <OrbitalLoader size="md" className="relative z-10" />
+              </div>
+
+              <h3 className="font-display text-base sm:text-lg font-semibold text-[rgb(var(--foreground))] tracking-tight">
+                Waiting for Desktop Approval
+              </h3>
+              <p className="font-body text-xs sm:text-sm text-[rgb(var(--foreground-muted))] max-w-xs mt-1 leading-relaxed">
+                A confirmation prompt has appeared on your computer. Tap <strong>Approve</strong> on your computer screen to link this phone.
+              </p>
+
+              <div className="w-full max-w-xs mt-5">
+                <button
+                  type="button"
+                  onClick={handleClose}
+                  className="w-full h-10 inline-flex items-center justify-center rounded-xl border border-[rgba(var(--border),0.12)] bg-[rgba(var(--foreground),0.04)] hover:bg-[rgba(var(--foreground),0.08)] font-body text-xs font-medium text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : connecting ? (
+            /* Connecting Progression State */
+            <div
+              role="status"
+              aria-live="polite"
+              className="flex flex-col items-center justify-center py-5 sm:py-6 text-center animate-fade-in my-auto"
+            >
+              <div
+                aria-hidden="true"
+                className="relative flex items-center justify-center w-20 h-20 mb-3"
               >
                 <div className="absolute inset-0 rounded-full bg-[radial-gradient(circle,rgba(var(--accent),0.18),transparent_68%)]" />
                 <OrbitalLoader size="md" className="relative z-10" />
               </div>
 
-              <span className="mt-2.5 text-sm font-semibold leading-snug text-[rgb(var(--foreground))]">
-                {isPairingPending
-                  ? "Waiting for Approval..."
-                  : "Establishing Connection..."}
-              </span>
-              <span className="mt-1.5 max-w-[248px] text-xs leading-relaxed text-[rgb(var(--foreground-muted))]">
-                {isPairingPending
-                  ? "Please approve the prompt on your desktop screen."
-                  : "Pairing with host..."}
-              </span>
+              <h3 className="font-display text-base sm:text-lg font-semibold text-[rgb(var(--foreground))] tracking-tight">
+                Establishing Connection...
+              </h3>
+              <p className="font-body text-xs sm:text-sm text-[rgb(var(--foreground-muted))] max-w-xs mt-1 leading-relaxed">
+                Establishing secure Noise link with your computer.
+              </p>
             </div>
           ) : isManual ? (
             /* Manual IP Connection View */

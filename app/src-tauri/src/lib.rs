@@ -78,7 +78,7 @@ use crate::{
         },
         settings::{
             apply_settings_patch, get_restart_status, get_settings, get_settings_contract,
-            reset_settings, update_setting,
+            reset_settings, set_appearance, update_setting,
         },
         setup::{
             check_updates, complete_setup_wizard, fetch_manifest, get_onboarding_status,
@@ -210,103 +210,18 @@ fn setup_platform_tray(_app: &mut tauri::App) -> Result<(), Box<dyn std::error::
 ///
 /// Sets up tray icon, menu events, window management, and auto-launches the
 /// engine on startup.
-fn split_settings_patch(
-    patch: &serde_json::Value,
-) -> (serde_json::Value, serde_json::Value) {
-    let mut local_map = serde_json::Map::new();
-    let mut remote_map = serde_json::Map::new();
-
-    if let Some(obj) = patch.as_object() {
-        for (domain, val) in obj {
-            if let Some(inner) = val.as_object() {
-                let mut local_inner = serde_json::Map::new();
-                let mut remote_inner = serde_json::Map::new();
-                for (k, v) in inner {
-                    let class = classify_command("update_setting", Some(domain), Some(k));
-                    if class == CommandClass::Local {
-                        local_inner.insert(k.clone(), v.clone());
-                    } else {
-                        remote_inner.insert(k.clone(), v.clone());
-                    }
-                }
-                if !local_inner.is_empty() {
-                    local_map.insert(domain.clone(), serde_json::Value::Object(local_inner));
-                }
-                if !remote_inner.is_empty() {
-                    remote_map.insert(domain.clone(), serde_json::Value::Object(remote_inner));
-                }
-            }
-        }
-    }
-
-    (
-        serde_json::Value::Object(local_map),
-        serde_json::Value::Object(remote_map),
-    )
-}
-
-fn handle_controller_settings_patch(
-    invoke: &tauri::ipc::Invoke<tauri::Wry>,
-    state: &AppState,
-    json: Option<serde_json::Value>,
-) -> Option<bool> {
-    let resolver = invoke.resolver.clone();
-    let patch = json
-        .as_ref()
-        .and_then(|v| v.get("patch"))
-        .cloned()
-        .unwrap_or(serde_json::json!({}));
-    let (local_patch, remote_patch) = split_settings_patch(&patch);
-    let has_local = local_patch.as_object().is_some_and(|m| !m.is_empty());
-    let has_remote = remote_patch.as_object().is_some_and(|m| !m.is_empty());
-
-    if has_remote && !has_local {
-        let manager = Arc::clone(&state.remote_manager);
-        let args = serde_json::json!({ "patch": remote_patch });
-        tauri::async_runtime::spawn(async move {
-            match manager.call_remote("apply_settings_patch", args).await {
-                Ok(val) => resolver.resolve(val),
-                Err(err) => resolver.reject(err.to_string()),
-            }
-        });
-        Some(true)
-    } else if !has_remote {
-        None
-    } else {
-        let manager = Arc::clone(&state.remote_manager);
-        let app_handle = invoke.message.webview().window().app_handle().clone();
-        tauri::async_runtime::spawn(async move {
-            let _ = ipc::settings::apply_settings_patch(local_patch, app_handle).await;
-            let args = serde_json::json!({ "patch": remote_patch });
-            match manager.call_remote("apply_settings_patch", args).await {
-                Ok(val) => resolver.resolve(val),
-                Err(err) => resolver.reject(err.to_string()),
-            }
-        });
-        Some(true)
-    }
-}
-
 fn extract_command_domain_key<'a>(
-    cmd: &str,
+    _cmd: &str,
     json: &'a Option<serde_json::Value>,
 ) -> (Option<&'a str>, Option<&'a str>) {
-    if cmd == "apply_settings_patch" {
+    (
         json.as_ref()
-            .and_then(|v| v.get("patch"))
-            .and_then(|p| p.as_object())
-            .and_then(|obj| {
-                let (d, inner) = obj.iter().next()?;
-                let k = inner.as_object()?.keys().next()?;
-                Some((Some(d.as_str()), Some(k.as_str())))
-            })
-            .unwrap_or((None, None))
-    } else {
-        (
-            json.as_ref().and_then(|v| v.get("domain")).and_then(|x| x.as_str()),
-            json.as_ref().and_then(|v| v.get("key")).and_then(|x| x.as_str()),
-        )
-    }
+            .and_then(|v| v.get("domain"))
+            .and_then(|x| x.as_str()),
+        json.as_ref()
+            .and_then(|v| v.get("key"))
+            .and_then(|x| x.as_str()),
+    )
 }
 
 fn route_intercepted_invoke(
@@ -332,8 +247,30 @@ fn route_intercepted_invoke(
         }
         None
     } else if state.remote_manager.state() == RemoteLinkState::Connected {
-        if cmd == "apply_settings_patch" {
-            return handle_controller_settings_patch(invoke, state, json);
+        if cmd == "get_settings" {
+            let manager = Arc::clone(&state.remote_manager);
+            let local_settings = state.settings.read().map(|s| s.clone()).ok();
+            tauri::async_runtime::spawn(async move {
+                match manager
+                    .call_remote("get_settings", serde_json::json!({}))
+                    .await
+                {
+                    Ok(mut val) => {
+                        if let (Some(loc), Some(obj)) = (local_settings, val.as_object_mut()) {
+                            if let Some(host_settings) =
+                                obj.get_mut("settings").and_then(|s| s.as_object_mut())
+                            {
+                                if let Ok(loc_app) = serde_json::to_value(&loc.appearance) {
+                                    host_settings.insert("appearance".to_string(), loc_app);
+                                }
+                            }
+                        }
+                        resolver.resolve(val)
+                    }
+                    Err(err) => resolver.reject(err.to_string()),
+                }
+            });
+            return Some(true);
         }
         match classify_command(cmd, domain, key) {
             CommandClass::Remote | CommandClass::Split => {
@@ -404,6 +341,7 @@ fn handle_invoke(invoke: tauri::ipc::Invoke<tauri::Wry>) -> bool {
         toggle_model_favorite,
         setup_remote_server,
         update_setting,
+        set_appearance,
         apply_settings_patch,
         reset_settings,
         ptt_start,

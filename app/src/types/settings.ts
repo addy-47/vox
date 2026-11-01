@@ -270,7 +270,6 @@ export interface ProvidersConfigFile {
 
 export interface RemoteSettings {
   accepts_controllers: boolean;
-  execution_mode: "host_local" | "split" | "cloud_relay";
   [key: string]: unknown;
 }
 
@@ -325,6 +324,6 @@ export interface DraftKeyMap {
     | "semantic_similarity_cutoff";
   persona: "modular_prompt" | "realtime_prompt";
   system: "setup_completed";
-  remote: "accepts_controllers" | "execution_mode";
+  remote: "accepts_controllers";
   providers: never;
 }

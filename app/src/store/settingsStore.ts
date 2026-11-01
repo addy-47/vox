@@ -494,7 +494,6 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       "interaction",
       "dictation",
       "memory",
-      "appearance",
       "persona",
       "system",
       "remote",

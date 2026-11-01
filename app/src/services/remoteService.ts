@@ -59,6 +59,7 @@ export interface PairedDeviceDto {
 export interface RemotePairingRequestedPayload {
   deviceId: string;
   displayName: string;
+  expiresAtMs?: number;
 }
 
 // ─── Host-side Tier 1 ────────────────────────────────────────────────────────

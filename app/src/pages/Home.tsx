@@ -33,6 +33,7 @@ import { useHomePage } from "@/shared/hooks/useHomePage";
 import { useMemoryTrace } from "@/shared/hooks/useMemoryTrace";
 import { isRealMobileDevice } from "@/layout/breakpoints";
 import { stageTop } from "@/layout/stageMetrics";
+import { getErrorMessage } from "@/shared/components/remote/QrScannerModal";
 
 const DialogueTurn = memo(({ turn }: { turn: { user: string; assistant: string; id: number } }) => (
   <React.Fragment>
@@ -90,6 +91,7 @@ export const Home = memo(() => {
     dismissRemoteFailure,
   } = useHomePage();
   const linkState = useRemoteStore((s) => s.linkState);
+  const failureKind = useRemoteStore((s) => s.failureKind);
   const connectedPeer = useRemoteStore((s) => s.connectedPeer);
 
   const isRemoteActive =
@@ -304,7 +306,7 @@ export const Home = memo(() => {
               <div className="flex items-center gap-2 min-w-0 flex-1">
                 <AlertCircle className="text-[rgb(var(--danger))] shrink-0" size={15} />
                 <p className="text-[12px] text-[rgb(var(--foreground))]/90 break-words select-text">
-                  {HOME_CONTROLS_COPY.remoteFailurePrefix} {remoteFailureReason}
+                  {HOME_CONTROLS_COPY.remoteFailurePrefix} {getErrorMessage(failureKind, remoteFailureReason).title}
                 </p>
               </div>
               <button

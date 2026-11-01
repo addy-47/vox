@@ -448,17 +448,22 @@ export const REMOTE_CONTROL_COPY = {
   successTitleController: "Connected to Desktop Host",
   successSubtitleController: "Local microphone and speaker are ready.",
   errorTimeout:
-    "Connection timed out. The computer did not respond. Check if both devices are on the same Wi-Fi and VPNs or firewalls are not blocking port 7700.",
+    "Your computer did not respond in time. Ensure both devices are on the same Wi-Fi network and try scanning again.",
   errorUnreachable:
-    "Cannot reach desktop host. Ensure Vox is running on your computer.",
+    "Cannot reach your computer. Ensure Vox is running on desktop and both devices share the same Wi-Fi.",
   errorRejected:
-    "Pairing request was declined by the desktop host.",
+    "The pairing request was declined on your computer. Generate a new QR code on desktop to try again.",
   errorInvalidToken:
-    "The pairing QR code has expired or is invalid. Please generate a new QR code on your computer.",
+    "This pairing QR code has expired or is invalid. Click 'Get a new code' on your computer and scan again.",
   errorVersionMismatch:
-    "Protocol version mismatch between phone and computer.",
-  errorUnknown: (detail: string) => `Connection failed: ${detail}`,
-  errorGeneric: "Connection failed. Please check network and retry.",
+    "App version mismatch. Please update Vox on both your phone and computer to the latest release.",
+  errorRevoked:
+    "This phone was removed from your computer's paired devices. Scan a new QR code to reconnect.",
+  errorHostBusy:
+    "Your computer is busy with another phone or session. Try again once the active session ends.",
+  errorProtocol:
+    "The connection was interrupted during pairing. Please ensure both devices are active and scan again.",
+  errorGeneric: "Unable to connect. Please check your local network connection and try again.",
 } as const;
 
 export const MEMORY_CARD_COPY = {

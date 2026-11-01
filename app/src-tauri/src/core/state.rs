@@ -203,11 +203,8 @@ pub struct AppState {
     pub compaction_lock: Arc<TokioMutex<()>>,
     pub nexus_search: Arc<nexus::NexusSearch>,
     pub remote_manager: Arc<RemoteSessionManager>,
-    pub remote_audio_ingestor: Arc<
-        ParkingMutex<
-            Option<Arc<dyn NetworkAudioIngestor + Send + Sync>>,
-        >,
-    >,
+    pub remote_audio_ingestor:
+        Arc<ParkingMutex<Option<Arc<dyn NetworkAudioIngestor + Send + Sync>>>>,
     pub pairing_coordinator: Arc<PairingCoordinator>,
     pub pending_pairing: Arc<ParkingMutex<Option<PendingPairingState>>>,
     pub trust_store: Arc<TrustStore>,
@@ -258,7 +255,9 @@ impl AppState {
                             ));
                             engine.playback_engine.set_remote_sink(Some(sink));
                             let _ = engine.audio_stream.pause();
-                        } else if new_state == RemoteLinkState::Paired || new_state == RemoteLinkState::Unpaired {
+                        } else if new_state == RemoteLinkState::Paired
+                            || new_state == RemoteLinkState::Unpaired
+                        {
                             engine.playback_engine.set_remote_sink(None);
                             let _ = engine.audio_stream.start();
                         }
@@ -274,9 +273,11 @@ impl AppState {
             manager.set_trust_store(Arc::clone(&trust_store));
 
             let app_handle_for_remote_events = app_handle.clone();
-            manager.set_on_remote_event(Arc::new(move |event_name: &str, payload: serde_json::Value| {
-                let _ = app_handle_for_remote_events.emit(event_name, payload);
-            }));
+            manager.set_on_remote_event(Arc::new(
+                move |event_name: &str, payload: serde_json::Value| {
+                    let _ = app_handle_for_remote_events.emit(event_name, payload);
+                },
+            ));
 
             if session_role == SessionRole::Host && !settings.remote.accepts_controllers {
                 manager.set_state(RemoteLinkState::Disabled);

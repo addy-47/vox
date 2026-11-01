@@ -21,6 +21,7 @@ export const RocketButton = memo(() => {
   const connectHost = useRemoteStore((s) => s.connectHost);
 
   const failureReason = useRemoteStore((s) => s.failureReason);
+  const isPairingPending = useRemoteStore((s) => s.isPairingPending);
 
   const isMobile = isRealMobileDevice();
   const isConnected = linkState === "Connected";
@@ -149,9 +150,9 @@ export const RocketButton = memo(() => {
         </button>
       </Tooltip>
 
-      {isScannerOpen && (
+      {(isScannerOpen || isPairingPending) && (
         <QrScannerModal
-          open={isScannerOpen}
+          open={isScannerOpen || isPairingPending}
           onClose={handleCloseScanner}
         />
       )}

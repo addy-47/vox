@@ -225,6 +225,42 @@ pub async fn update_setting<R: tauri::Runtime>(
     })
 }
 
+/// Updates the client-local appearance (theme and accent seed).
+#[tauri::command]
+pub async fn set_appearance<R: tauri::Runtime>(
+    theme: Option<String>,
+    accent_seed: Option<String>,
+    app: AppHandle<R>,
+) -> Result<SettingUpdateResult, VoxIpcError> {
+    let state: State<'_, Arc<AppState>> = app.state();
+
+    {
+        let mut settings = state
+            .settings
+            .write()
+            .map_err(|e| VoxIpcError::Internal(e.to_string()))?;
+        if let Some(t) = theme {
+            settings.appearance.theme = t;
+        }
+        if let Some(s) = accent_seed {
+            settings.appearance.accent_seed = s;
+        }
+    }
+
+    schedule_debounced_save(state.inner().clone()).await;
+
+    if let Err(e) = emit_ipc(&app, IpcEvent::SettingsUpdated) {
+        log::warn!("[Settings] Failed to emit settings-updated: {}", e);
+    }
+
+    Ok(SettingUpdateResult {
+        applied: true,
+        reload_policy: "hot".to_string(),
+        message: "Appearance updated locally".to_string(),
+        restart_scheduled: false,
+    })
+}
+
 /// Applies a batched settings patch atomically.
 #[tauri::command]
 pub async fn apply_settings_patch<R: tauri::Runtime>(

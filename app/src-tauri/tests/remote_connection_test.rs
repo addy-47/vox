@@ -455,7 +455,7 @@ fn remote_connection_rule_rc_guard_blocks_desktop_mutating_writes() {
         ("update_setting", Some("stt"), None),
         ("update_setting", Some("tts"), None),
         ("update_setting", Some("llm"), None),
-        ("update_setting", Some("remote"), Some("execution_mode")),
+        ("update_setting", Some("dictation"), None),
     ];
 
     for (cmd, domain, key) in mutating_commands {
@@ -837,7 +837,10 @@ async fn verify_connected_and_observed_hint(
         .await
         .expect("query")
         .expect("device exists");
-    assert!(!updated.hints.is_empty(), "Hints must be updated with observed IP");
+    assert!(
+        !updated.hints.is_empty(),
+        "Hints must be updated with observed IP"
+    );
     assert_eq!(updated.hints[0]["addr"], format!("127.0.0.1:{host_port}"));
     assert_eq!(updated.hints[0]["source"], "Observed");
 }
@@ -851,7 +854,12 @@ async fn verify_connected_and_observed_hint(
 #[tokio::test]
 async fn remote_connection_dial_and_connect_reaches_connected() {
     let (_guard, _host_app, host_state) = setup_isolated_app_state().await;
-    host_state.settings.write().unwrap().remote.accepts_controllers = true;
+    host_state
+        .settings
+        .write()
+        .unwrap()
+        .remote
+        .accepts_controllers = true;
     let host_manager = Arc::clone(&host_state.remote_manager);
 
     let host_key = KeyStore::new(vox_lib::utils::paths::device_key_path())
@@ -1147,10 +1155,22 @@ async fn event_forwarder_coalesces_tokens_and_rate_caps_telemetry() {
         host_manager.forward_event("telemetry", serde_json::json!({ "cpu": 50 }));
     }
 
-    host_manager.forward_event("llm_token", serde_json::json!({ "turn_id": 1, "token": "Hel" }));
-    host_manager.forward_event("llm_token", serde_json::json!({ "turn_id": 1, "token": "lo " }));
-    host_manager.forward_event("llm_token", serde_json::json!({ "turn_id": 1, "token": "wor" }));
-    host_manager.forward_event("llm_token", serde_json::json!({ "turn_id": 1, "token": "ld!" }));
+    host_manager.forward_event(
+        "llm_token",
+        serde_json::json!({ "turn_id": 1, "token": "Hel" }),
+    );
+    host_manager.forward_event(
+        "llm_token",
+        serde_json::json!({ "turn_id": 1, "token": "lo " }),
+    );
+    host_manager.forward_event(
+        "llm_token",
+        serde_json::json!({ "turn_id": 1, "token": "wor" }),
+    );
+    host_manager.forward_event(
+        "llm_token",
+        serde_json::json!({ "turn_id": 1, "token": "ld!" }),
+    );
     host_manager.forward_event("state_changed", serde_json::json!({ "state": "Thinking" }));
 
     let msg1 = within("recv telemetry", controller_link.recv_control())

@@ -16,7 +16,7 @@ use tauri::{AppHandle, Runtime};
 
 use crate::{
     core::{
-        events::{emit_ipc, IpcEvent, RemotePairingPromptPayload},
+        events::{emit_ipc, IpcEvent},
         state::{AppState, InteractionState, PendingPairingState},
     },
     persistence::{
@@ -824,14 +824,6 @@ async fn handle_inbound_pairing<R: Runtime>(
         display_name: claimed_req.display_name.clone(),
         prompt: pending.prompt(),
     });
-
-    let _ = emit_ipc(
-        &app_handle,
-        IpcEvent::RemotePairingRequested(RemotePairingPromptPayload {
-            device_id: claimed_req.device_id.clone(),
-            display_name: claimed_req.display_name.clone(),
-        }),
-    );
 
     settle_pairing_coordinator(
         ws_link,

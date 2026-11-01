@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { render, screen, cleanup, act } from "@testing-library/react";
+import * as breakpoints from "@/layout/breakpoints";
 import { AuthorizeDeviceModal } from "@/shared/components/remote/AuthorizeDeviceModal";
 
 describe("AuthorizeDeviceModal DOM suite (Image 3 Specification)", () => {
@@ -162,5 +163,18 @@ describe("AuthorizeDeviceModal DOM suite (Image 3 Specification)", () => {
 
     expect(onDeny).toHaveBeenCalledTimes(1);
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not render when running on a mobile controller device", () => {
+    vi.spyOn(breakpoints, "isRealMobileDevice").mockReturnValue(true);
+    const { container } = render(
+      <AuthorizeDeviceModal
+        open={true}
+        onApprove={vi.fn()}
+        onDeny={vi.fn()}
+        onClose={vi.fn()}
+      />
+    );
+    expect(container.firstChild).toBeNull();
   });
 });

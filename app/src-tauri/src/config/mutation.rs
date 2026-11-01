@@ -54,7 +54,7 @@ pub fn supported_keys_for_domain(domain: &str) -> &'static [&'static str] {
         "persona" => &["modular_prompt", "realtime_prompt"],
         "realtime" => &["active", "active_voice_id", "voice", "voice_id", "api_keys"],
         "system" => &["setup_completed"],
-        "remote" => &["accepts_controllers", "execution_mode"],
+        "remote" => &["accepts_controllers"],
         _ => &[],
     }
 }
@@ -550,10 +550,6 @@ fn apply_remote_mutation(
             settings.remote.accepts_controllers = value
                 .as_bool()
                 .ok_or("accepts_controllers must be a boolean")?;
-        }
-        "execution_mode" => {
-            settings.remote.execution_mode = serde_json::from_value(value.clone())
-                .map_err(|e| format!("Invalid remote execution_mode: {}", e))?;
         }
         _ => return Ok(false),
     }

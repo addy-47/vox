@@ -111,10 +111,6 @@ pub fn classify_known(domain: &str, key: &str) -> Option<SettingReloadPolicy> {
         // advertisement and listener. That is a runtime action, not an engine
         // restart, so the running session manager observes the new value.
         ("remote", "accepts_controllers", SettingReloadPolicy::Hot),
-        // `remote.execution_mode` switches the device between running its own
-        // pipeline and acting as a thin client. That changes what the engine
-        // is, so it requires a restart.
-        ("remote", "execution_mode", SettingReloadPolicy::Restart),
     ];
 
     if WORKER_COMMAND

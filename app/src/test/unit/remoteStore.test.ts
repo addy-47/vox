@@ -1,10 +1,11 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { useRemoteStore } from "@/store/remoteStore";
 import { setTransport, type Transport, type UnlistenFn } from "@/services/transport";
+import * as breakpoints from "@/layout/breakpoints";
 import type {
   RemoteStateDto,
   PairedDeviceDto,
-  RemotePairingRequestedPayload,
+  PairingStateDto,
   CommandClass,
 } from "@/services/remoteService";
 
@@ -150,23 +151,29 @@ describe("remoteStore unit suite", () => {
     expect(transport.listeners.has("remote_state_changed")).toBe(false);
   });
 
-  it("subscribes to remote_pairing_requested and sets pendingPairingPrompt", async () => {
+  it("subscribes to remote_pairing_state_changed and sets pendingPairingPrompt", async () => {
     transport.mockResponses["get_link_state"] = { link: "Unpaired" } as RemoteStateDto;
     transport.mockResponses["list_paired_devices"] = [] as PairedDeviceDto[];
     transport.mockResponses["get_command_routing"] = {};
 
     const cleanup = await useRemoteStore.getState().init();
 
-    const payload: RemotePairingRequestedPayload = {
+    const payload: PairingStateDto = {
+      state: "AwaitingApproval",
       deviceId: "req_device_1",
       displayName: "Ada's Phone",
+      expiresAtMs: 12345,
     };
     // QR pairing modal is open when the phone requests authorization.
     useRemoteStore.setState({ isPairingModalOpen: true });
 
-    transport.triggerEvent<RemotePairingRequestedPayload>("remote_pairing_requested", payload);
+    transport.triggerEvent<PairingStateDto>("remote_pairing_state_changed", payload);
 
-    expect(useRemoteStore.getState().pendingPairingPrompt).toEqual(payload);
+    expect(useRemoteStore.getState().pendingPairingPrompt).toEqual({
+      deviceId: "req_device_1",
+      displayName: "Ada's Phone",
+      expiresAtMs: 12345,
+    });
     // Only one remote surface may be visible: the QR modal must close.
     expect(useRemoteStore.getState().isPairingModalOpen).toBe(false);
 
@@ -203,14 +210,37 @@ describe("remoteStore unit suite", () => {
       else u();
     });
 
-    const payload: RemotePairingRequestedPayload = {
+    const payload: PairingStateDto = {
+      state: "AwaitingApproval",
       deviceId: "strict_dev_1",
       displayName: "Strict Phone",
+      expiresAtMs: 54321,
     };
-    transport.triggerEvent<RemotePairingRequestedPayload>("remote_pairing_requested", payload);
+    transport.triggerEvent<PairingStateDto>("remote_pairing_state_changed", payload);
 
-    expect(useRemoteStore.getState().pendingPairingPrompt).toEqual(payload);
+    expect(useRemoteStore.getState().pendingPairingPrompt).toEqual({
+      deviceId: "strict_dev_1",
+      displayName: "Strict Phone",
+      expiresAtMs: 54321,
+    });
     if (cleanup2) (cleanup2 as () => void)();
+  });
+
+  it("does not set pendingPairingPrompt on a mobile controller when AwaitingApproval arrives", async () => {
+    vi.spyOn(breakpoints, "isRealMobileDevice").mockReturnValue(true);
+    transport.mockResponses["get_link_state"] = { link: "Unpaired" } as RemoteStateDto;
+    transport.mockResponses["list_paired_devices"] = [] as PairedDeviceDto[];
+    transport.mockResponses["get_command_routing"] = {};
+
+    const cleanup = await useRemoteStore.getState().init();
+
+    transport.triggerEvent<PairingStateDto>("remote_pairing_state_changed", {
+      state: "AwaitingApproval",
+    });
+
+    expect(useRemoteStore.getState().isPairingPending).toBe(true);
+    expect(useRemoteStore.getState().pendingPairingPrompt).toBeNull();
+    cleanup();
   });
 
   it("does not open the QR pairing modal while an authorization prompt is pending", async () => {

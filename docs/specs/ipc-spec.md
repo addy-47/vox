@@ -234,8 +234,7 @@ All backend events broadcast over the IPC bridge carry the following contracts:
 | `sessions_changed` | `void` | Signals asynchronous session updates (e.g. title auto-generation). |
 | `settings_updated` | `void` | Signals settings hot-reload completion. |
 | `remote_state_changed` | `{ link: string, failure?: string, failureKind?: string, deviceId?: string, displayName?: string }` | The canonical remote link state changed. Emitted on every transition, on both the host and the controller. The single source of truth for remote pairing and transport state. When `link` is `Paired` or `Connected`, carries peer identity; when `Unpaired`, peer fields are null. |
-| `remote_pairing_state_changed` | `PairingStateDto` | Ephemeral pairing workflow state changed (`Idle`, `AwaitingApproval`, `Approved`, `Denied`). Drives setup modals on Host and Controller. |
-| `remote_pairing_requested` | `{ deviceId: string, displayName: string, expiresAtMs: number }` | An inbound pairing request completed the Noise handshake and passed token validation on the host. Triggers the Host Pairing Prompt Modal (`approve_pairing`). |
+| `remote_pairing_state_changed` | `PairingStateDto` | Ephemeral pairing workflow state changed (`Idle`, `AwaitingApproval`, `Approved`, `Denied`). Drives setup and authorization modals on Host and Controller. Carries `deviceId`, `displayName`, and `expiresAtMs` when `AwaitingApproval`. |
 
 ### 5.1 The `activity` Envelope Contract
 When `state_changed` has `state === "Working"`, it MUST include an `activity` envelope:
