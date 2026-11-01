@@ -10,9 +10,13 @@
 //!
 //! Workspace rule: `AGENTS.md` §7.1, `session/`.
 
+pub mod dialer;
+pub mod forwarder;
 pub mod listener;
 pub mod manager;
+pub mod pairing_client;
 pub mod state;
+pub mod supervisor;
 
 pub use self::{
     listener::{handle_inbound_tier2_with_key, spawn_host_listener},

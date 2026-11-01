@@ -49,7 +49,8 @@ static ROUTING_TABLE: LazyLock<HashMap<String, CommandClass>> = LazyLock::new(||
     table.insert("get_restart_status".into(), CommandClass::Remote);
     table.insert("get_settings_contract".into(), CommandClass::Remote);
     table.insert("reset_settings".into(), CommandClass::Remote);
-    table.insert("apply_settings_patch".into(), CommandClass::Split);
+    table.insert("apply_settings_patch".into(), CommandClass::Remote);
+    table.insert("set_appearance".into(), CommandClass::Local);
 
     // ─── 4. Model Catalog & Management ───────────────────────────────────
     table.insert("get_model_catalog".into(), CommandClass::Remote);
@@ -170,7 +171,6 @@ static ROUTING_TABLE: LazyLock<HashMap<String, CommandClass>> = LazyLock::new(||
             let classification = match (domain, *key) {
                 ("appearance", _) => CommandClass::Local,
                 ("remote", "accepts_controllers") => CommandClass::Local,
-                ("remote", "execution_mode") => CommandClass::Local,
                 _ => CommandClass::Remote,
             };
             table.insert(key_path, classification);

@@ -13,7 +13,7 @@ use crate::{
             DEFAULT_SYSTEM_PROMPT_MODULAR, DEFAULT_SYSTEM_PROMPT_REALTIME, DEFAULT_UI_ACCENT_SEED,
             DEFAULT_UI_THEME,
         },
-        events::{InteractionMode, PipelineMode, RemoteExecutionMode},
+        events::{InteractionMode, PipelineMode},
     },
     pipeline::dictation::DictationSettings,
     services::{
@@ -122,23 +122,19 @@ pub struct SystemSettings {
 
 /// The remote-control settings domain.
 ///
-/// Two independent settings, one per role (remote-control spec §4.2):
+/// Host-side setting (remote-control spec §4.2):
 /// - `accepts_controllers` is host-side. When false the host behaves exactly
 ///   like a standalone installation.
-/// - `execution_mode` is controller-side. `local` runs the device's own
-///   pipeline; `remote` makes it a thin client for a paired host.
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 #[serde(default)]
 pub struct RemoteSettings {
     pub accepts_controllers: bool,
-    pub execution_mode: RemoteExecutionMode,
 }
 
 impl Default for RemoteSettings {
     fn default() -> Self {
         Self {
             accepts_controllers: DEFAULT_REMOTE_ACCEPTS_CONTROLLERS,
-            execution_mode: RemoteExecutionMode::default(),
         }
     }
 }

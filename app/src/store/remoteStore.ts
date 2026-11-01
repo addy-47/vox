@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { listen, type UnlistenFn } from "@/services/transport";
+import { isRealMobileDevice } from "@/layout/breakpoints";
 import {
   type RemoteLinkState,
   type RemoteFailureKind,
@@ -116,21 +117,25 @@ export const useRemoteStore = create<RemoteStoreState>((set, get) => ({
           });
         });
 
-        const unlistenPrompt = await listen<RemotePairingRequestedPayload>(
-          "remote_pairing_requested",
-          (event) => {
-            // Only one remote surface may be visible at a time: an incoming
-            // authorization request takes over from the QR pairing modal.
-            set({ pendingPairingPrompt: event.payload, isPairingModalOpen: false });
-          }
-        );
-
         const unlistenPairingState = await listen<PairingStateDto>(
           "remote_pairing_state_changed",
           (event) => {
             const dto = event.payload;
             if (dto.state === "AwaitingApproval") {
-              set({ isPairingPending: true, pairingFailureReason: null });
+              const isHost = !isRealMobileDevice();
+              const isHostPrompt = isHost && Boolean(dto.deviceId);
+              set({
+                isPairingPending: true,
+                isPairingModalOpen: false,
+                pairingFailureReason: null,
+                pendingPairingPrompt: isHostPrompt
+                  ? {
+                      deviceId: dto.deviceId ?? "",
+                      displayName: dto.displayName ?? "Unknown Device",
+                      expiresAtMs: dto.expiresAtMs ?? Date.now() + 30000,
+                    }
+                  : null,
+              });
             } else if (dto.state === "Denied") {
               set({
                 isPairingPending: false,
@@ -149,7 +154,6 @@ export const useRemoteStore = create<RemoteStoreState>((set, get) => ({
 
         teardownListeners = () => {
           unlistenState();
-          unlistenPrompt();
           unlistenPairingState();
           teardownListeners = null;
         };

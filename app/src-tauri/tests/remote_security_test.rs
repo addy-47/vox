@@ -861,14 +861,31 @@ fn assert_settings_keys_classified(
 ) {
     use vox_lib::services::remote::control::{classify_command, CommandClass};
     let domains = [
-        "appearance", "vad", "stt", "llm", "tts", "interaction",
-        "dictation", "memory", "persona", "realtime", "system", "remote",
+        "appearance",
+        "vad",
+        "stt",
+        "llm",
+        "tts",
+        "interaction",
+        "dictation",
+        "memory",
+        "persona",
+        "realtime",
+        "system",
+        "remote",
     ];
     for domain in domains {
         for key in vox_lib::config::mutation::supported_keys_for_domain(domain) {
             let class = classify_command("update_setting", Some(domain), Some(key));
-            assert_ne!(class, CommandClass::Denied, "setting {domain}.{key} must not be denied");
-            assert!(table.contains_key(&format!("{domain}.{key}")), "missing {domain}.{key}");
+            assert_ne!(
+                class,
+                CommandClass::Denied,
+                "setting {domain}.{key} must not be denied"
+            );
+            assert!(
+                table.contains_key(&format!("{domain}.{key}")),
+                "missing {domain}.{key}"
+            );
         }
     }
     for key in vox_lib::config::mutation::supported_keys_for_domain("memory") {

@@ -1,5 +1,6 @@
 pub mod audio;
 pub mod catalog;
+pub mod dispatcher;
 pub mod memory;
 pub mod monitoring;
 pub mod notifications;

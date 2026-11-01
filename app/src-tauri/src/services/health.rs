@@ -8,14 +8,13 @@ use crate::{
     },
     services::{
         llm::{
-            catalog, ConnectionConfig, LlmProvider, LlmRuntimeTarget, RemoteTransport, QWEN_MODEL_DIR,
-            QWEN_MODEL_FILE,
+            catalog, ConnectionConfig, LlmProvider, LlmRuntimeTarget, RemoteTransport,
+            QWEN_MODEL_DIR, QWEN_MODEL_FILE,
         },
         sidecar,
         stt::{create_stt_provider, SttProviderConfig, NEMOTRON_MODEL_DIR, QWEN_ASR_MODEL_DIR},
         tts::{
-            auth,
-            TtsProviderConfig, AZURE_TTS_VOICES_PATH, CHATTERBOX_MODEL_DIR, KOKORO_MODEL_DIR,
+            auth, TtsProviderConfig, AZURE_TTS_VOICES_PATH, CHATTERBOX_MODEL_DIR, KOKORO_MODEL_DIR,
             SUPERTONIC_MODEL_DIR, ZIPVOICE_MODEL_DIR,
         },
     },
@@ -157,7 +156,8 @@ pub async fn check_llm_health(
                     reqwest::Client::new()
                 }
             };
-            let discovered = catalog::discover_server_dialect(&client, &base_url, &conn_cfg.auth).await;
+            let discovered =
+                catalog::discover_server_dialect(&client, &base_url, &conn_cfg.auth).await;
 
             let provider = RemoteTransport::new(conn_cfg.clone());
             let health_error = provider.health_check().await.err();
@@ -627,7 +627,8 @@ pub async fn probe_target(
                 }
             };
 
-            let dialect = catalog::discover_server_dialect(&client, &effective_url, &conn_cfg.auth).await;
+            let dialect =
+                catalog::discover_server_dialect(&client, &effective_url, &conn_cfg.auth).await;
             let transport = RemoteTransport::new(conn_cfg);
             let health_res = transport.health_check().await;
 

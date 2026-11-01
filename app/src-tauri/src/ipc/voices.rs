@@ -15,8 +15,10 @@ use crate::{
     services::tts::{
         auth,
         preview::{PreviewSynthesizer, VoicePreviewResult},
-        voice::{self, convert_and_validate_audio, pre_bake_speaker_tensors, resolve_voice_scope,
-            start_recording, stop_recording, write_pcm_to_wav, UnifiedVoiceDto, VoiceScopeDto},
+        voice::{
+            self, convert_and_validate_audio, pre_bake_speaker_tensors, resolve_voice_scope,
+            start_recording, stop_recording, write_pcm_to_wav, UnifiedVoiceDto, VoiceScopeDto,
+        },
     },
     utils::paths::voice_dir,
 };
@@ -137,10 +139,7 @@ pub async fn sync_remote_voices(state: State<'_, Arc<AppState>>) -> Result<usize
         }
         if sync_azure {
             let base = auth::normalize_azure_endpoint(&azure_base);
-            if let Err(e) =
-                voice::sync_azure_tts_voices_to_db(&conn, &base, &azure_key)
-                    .await
-            {
+            if let Err(e) = voice::sync_azure_tts_voices_to_db(&conn, &base, &azure_key).await {
                 log::warn!("[Voices] Background Azure TTS sync failed: {}", e);
             }
         }

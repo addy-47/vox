@@ -702,7 +702,9 @@ async fn ws_link_skippable_violation_does_not_end_the_receive() {
     let expected = sample_ping(7);
     within_ok("send ping", client.send_control(expected.clone())).await;
 
-    let received = within("recv", server.recv_control()).await.expect("receive ping");
+    let received = within("recv", server.recv_control())
+        .await
+        .expect("receive ping");
     assert_eq!(received, expected);
     assert!(!matches!(
         server.close_reason(),
@@ -739,7 +741,9 @@ async fn ws_link_skippable_audio_violation_does_not_end_the_receive() {
     )
     .await;
 
-    let received = within("recv audio", server.recv_audio()).await.expect("receive audio");
+    let received = within("recv audio", server.recv_audio())
+        .await
+        .expect("receive audio");
     assert_eq!(received, AudioPayload::Frame(expected));
     assert!(!matches!(
         server.close_reason(),

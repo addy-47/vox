@@ -253,7 +253,7 @@ stateDiagram-v2
 
 - **IPC Commands & Event Contracts**:
   - **Controller Initiation**: Controller frontend calls `pair_device(address, token, hostDeviceId, hostPublicKey)`. Local backend dials host, initiates Noise handshake, sends `PairRequest`, transitions `PairingState` to `AwaitingApproval`, and emits `remote_pairing_state_changed { state: "AwaitingApproval" }`.
-  - **Host Inbound Request**: Host listener receives `PairRequest`, validates token, transitions `PairingState` to `AwaitingApproval`, emits `remote_pairing_state_changed { state: "AwaitingApproval", deviceId, displayName, expiresAtMs }`, and emits `remote_pairing_requested` to display `<AuthorizeDeviceModal>`.
+  - **Host Inbound Request**: Host listener receives `PairRequest`, validates token, transitions `PairingState` to `AwaitingApproval`, and emits `remote_pairing_state_changed { state: "AwaitingApproval", deviceId, displayName, expiresAtMs }` to display `<AuthorizeDeviceModal>`.
   - **Host Decision**: Host user answers modal via `approve_pairing(decision: "Approve" | "Reject")`. On "Approve", host saves peer to `paired_devices`, transitions `PairingState` to `Approved`, sends `PairApproved` over wire, cleanly closes pairing socket, sets `RemoteLinkState` to `Paired`, emits `remote_state_changed { link: "Paired", deviceId, displayName }`, and resets `PairingState` to `Idle`.
   - **Controller Completion**: Controller receives `PairApproved`, saves host to `paired_devices`, cleanly closes pairing socket, sets `RemoteLinkState` to `Paired`, emits `remote_state_changed { link: "Paired", deviceId, displayName }`, and resets `PairingState` to `Idle`.
   - **Denial / Expiry**: If denied or timed out (30s), both peers transition `PairingState` to `Denied { reason, kind }`, emit `remote_pairing_state_changed { state: "Denied", failureReason }`, close socket, and reset to `Idle`. `RemoteLinkState` remains in its previous state (`Unpaired` or `Paired`).
@@ -871,8 +871,7 @@ This specification aligns with §4.8 and §5 of `ipc-spec.md`. The IPC surface r
 | Event | Payload | Emitted On | Description |
 | :--- | :--- | :--- | :--- |
 | `remote_state_changed` | `RemoteStateDto` | Host & Controller | Emitted on every `RemoteLinkState` transition. The single source of truth for remote pairing and transport state. When `link` is `Paired` or `Connected`, carries peer identity (`deviceId`, `displayName`); when `Unpaired`, peer fields are null. Eliminates the need for side-channel `paired_devices_changed` events. |
-| `remote_pairing_state_changed` | `PairingStateDto` | Host & Controller | Emitted on every `PairingState` transition (`Idle`, `AwaitingApproval`, `Approved`, `Denied`). Drives Tier 1 setup UI modals and progress states. |
-| `remote_pairing_requested` | `{ deviceId: string, displayName: string, expiresAtMs: number }` | Host only | Emitted when an inbound pairing request completes the Noise handshake and token check, opening the Host Pairing Approval Dialog (`approve_pairing`). |
+| `remote_pairing_state_changed` | `PairingStateDto` | Host & Controller | Emitted on every `PairingState` transition (`Idle`, `AwaitingApproval`, `Approved`, `Denied`). Drives Tier 1 setup and authorization UI modals (`<AuthorizeDeviceModal>`) and progress states. |
 
 ---
 

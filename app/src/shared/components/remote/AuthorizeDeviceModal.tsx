@@ -3,6 +3,7 @@ import { Shield, Mic, Play, BarChart3, Clock, Check, X } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { RemoteModalShell } from "./RemoteModalShell";
 import { useRemoteStore } from "@/store/remoteStore";
+import { isRealMobileDevice } from "@/layout/breakpoints";
 
 export interface AuthorizeDeviceContentProps {
   open: boolean;
@@ -376,6 +377,12 @@ export const AuthorizeDeviceModal = memo(
     const pendingPairingPrompt = useRemoteStore((s) => s.pendingPairingPrompt);
     const approvePairing = useRemoteStore((s) => s.approvePairing);
     const dismissPairingPrompt = useRemoteStore((s) => s.dismissPairingPrompt);
+
+    // The authorization modal is strictly for the Desktop Host approving or denying an inbound phone.
+    // It must NEVER render on a mobile controller.
+    if (isRealMobileDevice()) {
+      return null;
+    }
 
     const isEffectiveOpen = open !== undefined ? open : Boolean(pendingPairingPrompt);
     const effectiveDeviceName = deviceName ?? pendingPairingPrompt?.displayName;

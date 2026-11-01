@@ -9,14 +9,6 @@ use crate::{
     setup::model_manager::ModelSetupStatus,
 };
 
-/// Inbound pairing prompt event payload broadcast to Host webview.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RemotePairingPromptPayload {
-    pub device_id: String,
-    pub display_name: String,
-}
-
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum PipelineMode {
@@ -32,15 +24,6 @@ pub enum InteractionMode {
     Passive,
     #[serde(rename = "ptt")]
     PTT,
-}
-
-/// The execution mode of a device that may act as a remote controller.
-#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Default)]
-#[serde(rename_all = "snake_case")]
-pub enum RemoteExecutionMode {
-    #[default]
-    Local,
-    Remote,
 }
 
 /// Audio synthesis intent category governing playback engine state transitions.
@@ -253,7 +236,6 @@ pub enum IpcEvent {
     MemoryIngestionUpdated,
     RemoteStateChanged(RemoteStateDto),
     RemotePairingStateChanged(PairingStateDto),
-    RemotePairingRequested(RemotePairingPromptPayload),
 }
 
 impl From<u8> for AudioIntent {
@@ -296,7 +278,6 @@ impl IpcEvent {
             Self::MemoryIngestionUpdated => "memory_ingestion_updated",
             Self::RemoteStateChanged(_) => "remote_state_changed",
             Self::RemotePairingStateChanged(_) => "remote_pairing_state_changed",
-            Self::RemotePairingRequested(_) => "remote_pairing_requested",
         }
     }
 }
@@ -334,7 +315,6 @@ fn event_to_value(event: &IpcEvent) -> Option<serde_json::Value> {
         IpcEvent::MemoryIngestionUpdated => Some(serde_json::json!({})),
         IpcEvent::RemoteStateChanged(_) => None,
         IpcEvent::RemotePairingStateChanged(_) => None,
-        IpcEvent::RemotePairingRequested(_) => None,
         IpcEvent::ToggleTray => None,
     }
 }
@@ -380,7 +360,6 @@ pub fn emit_ipc<R: Runtime>(app: &AppHandle<R>, event: IpcEvent) -> Result<(), t
         IpcEvent::MemoryIngestionUpdated => app.emit(name, ()),
         IpcEvent::RemoteStateChanged(payload) => app.emit(name, payload),
         IpcEvent::RemotePairingStateChanged(payload) => app.emit(name, payload),
-        IpcEvent::RemotePairingRequested(payload) => app.emit(name, payload),
     }
 }
 
@@ -414,7 +393,6 @@ pub fn emit_ipc_to<R: Runtime>(
         IpcEvent::MemoryIngestionUpdated => app.emit_to(target_str, name, ()),
         IpcEvent::RemoteStateChanged(payload) => app.emit_to(target_str, name, payload),
         IpcEvent::RemotePairingStateChanged(payload) => app.emit_to(target_str, name, payload),
-        IpcEvent::RemotePairingRequested(payload) => app.emit_to(target_str, name, payload),
     }
 }
 

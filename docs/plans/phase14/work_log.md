@@ -1,5 +1,42 @@
 # Phase 14 Work Log
 
+## 2026-10-31 — Remote Subsystem Deconstruction, Modal Isolation & Impeccable Error UX
+
+- **Context & Goals**:
+  - Deconstruct monolithic `manager.rs` (1,960 LOC) and redundant `gateway.rs` (855 LOC) into focused, decoupled modlets under 300 LOC.
+  - Eliminate `apply_settings_patch` splitting from `lib.rs` and introduce dedicated `set_appearance` IPC command.
+  - Fix authorization prompt bug: restrict approval dialog strictly to the Desktop Host and display "Waiting for Desktop Approval" on the Mobile Controller.
+  - Apply Impeccable clarify UX principles: eliminate raw monospace protocol errors and replace with clear, layman-friendly copy across all connection states.
+
+- **Implemented Architecture & Remediations**:
+  1. **Session Modlet Deconstruction (`services/remote/session/`)**:
+     - `pairing_client.rs`: Noise_XX handshake exchange and token redemption logic.
+     - `dialer.rs`: Candidate resolution and secure WebSocket dialer loop.
+     - `supervisor.rs`: Heartbeat ping/pong supervision and link lifecycle recovery.
+     - `forwarder.rs`: Coalescing token transmitter and telemetry rate limiter.
+     - Shrunk `manager.rs` from 1,960 LOC to 814 LOC.
+  2. **Unified IPC Command Dispatcher (`ipc/dispatcher.rs` & `gateway.rs`)**:
+     - Standardized command dispatch interface so local Tauri webview and remote network handlers share an identical dispatch contract.
+     - Reduced `gateway.rs` from 855 LOC to 83 LOC.
+  3. **Dedicated Appearance Command & Setting Decoupling**:
+     - Added `set_appearance` IPC command and removed patch splitting logic from `lib.rs`.
+     - Pruned dead `RemotePairingRequested` shadow event and dead `remote.execution_mode` config field.
+  4. **Authorization Modal Guarding & Controller Pending View**:
+     - Restricted `AuthorizeDeviceModal` rendering strictly to desktop hosts via `isRealMobileDevice()` guard.
+     - Wired `RocketButton` and `remoteStore` to open `QrScannerModal` in "Waiting for Desktop Approval" state on the mobile controller during pending authorization.
+  5. **Impeccable Clarify Error UX (`QrScannerModal.tsx`, `settingsCopy.ts`)**:
+     - Redesigned Controller error and waiting views according to `DESIGN.md` Liquid Space tokens.
+     - Implemented `getErrorMessage` to clarify timeouts, network partitions, device rejections, and expired tokens into plain, empathetic, actionable English.
+
+- **Verification**:
+  - `pnpm tsc --noEmit`: SUCCESS (0 errors).
+  - `pnpm test`: SUCCESS (31 test files, 255 tests passed).
+  - `./scripts/verify-targets.sh`: SUCCESS (0 warnings / 0 errors across architecture invariant lint, desktop lib/bin, tests/benches, and Android `aarch64-linux-android`).
+  - `cargo test --test remote_security_test --release -- --test-threads=1`: SUCCESS (20/20 passed).
+  - `cargo test --test remote_connection_test --release -- --test-threads=1`: SUCCESS (15/15 passed).
+
+---
+
 ## 2026-10-31 — Remote Control Manual Testing Failure RCA & Runtime Fixes
 
 - **Context & Goals**:
@@ -431,3 +468,28 @@
   - Root-caused settings patch rejection: `apply_settings_patch` takes `{ patch: ... }` rather than top-level `{ domain, key }`. In `routing.rs`, mapped `apply_settings_patch` to `CommandClass::Split`. In `gateway.rs`, verified all subkeys in patch rather than rejecting with `Denied`. In `lib.rs`, split patches between local (appearance) and remote (pipeline/speech/llm) keys.
   - Root-caused speech model cards showing uninstalled/download prompt: `manage_models` was classified as `Local` in `routing.rs`. On Android, local model directory is empty. Reclassified `manage_models` to `CommandClass::Remote` and added `dispatch_manage_models` in `gateway.rs` to route model presence checks and actions to host storage.
   - Verified with `./scripts/verify-targets.sh` (0 warnings, 0 errors on desktop and aarch64-linux-android) and passed sequential remote security and connection tests.
+
+## 2026-10-31 — Remote Architecture Decoupling & Manager Deconstruction
+
+- **Deconstructed `manager.rs`**:
+  - Shrunk from 1,960 LOC to 814 LOC across 4 focused modlets:
+    - `session/pairing_client.rs` (193 LOC): Noise_XX Tier 1 pairing handshake, token verification, and DB persistence.
+    - `session/dialer.rs` (311 LOC): IP candidate resolution, mDNS discovery fallback, Noise initiator handshake, and rejection classification.
+    - `session/supervisor.rs` (615 LOC): Ping/Pong heartbeat loop, RPC routing, socket fault recovery, and reconnect backoff.
+    - `session/forwarder.rs` (149 LOC): Telemetry rate limiting and streaming token coalescer.
+- **Eliminated `gateway.rs` Duplication**:
+  - Created unified IPC dispatcher in `app/src-tauri/src/ipc/dispatcher.rs` (442 LOC) servicing both local and remote invocation.
+  - Shrunk `services/remote/control/gateway.rs` from 855 LOC to 83 LOC by delegating RPC dispatch directly to `ipc::dispatcher::dispatch_command`.
+- **Pruned Shadow Events**:
+  - Deleted dead `RemotePairingRequested` event; standardized exclusively on `RemotePairingStateChanged(AwaitingApproval)`.
+  - Updated `app/src/store/remoteStore.ts` and test suite `remoteStore.test.ts`.
+  - Updated specs `docs/specs/ipc-spec.md` and `docs/specs/remote-control-spec.md`.
+- **Decoupled Appearance & Removed Patch Splitting**:
+  - Removed obsolete `remote.execution_mode` config field across backend and frontend.
+  - Added dedicated local IPC command `set_appearance` in `ipc/settings.rs` and `settingsService.ts`.
+  - Reclassified `apply_settings_patch` as purely remote (`CommandClass::Remote`) when connected.
+  - Completely removed patch-splitting logic (`split_settings_patch`, `handle_controller_settings_patch`) from `lib.rs`.
+- **Verification**:
+  - Compile gate: `./scripts/verify-targets.sh` passed with 0 warnings / 0 errors on desktop and Android (`aarch64-linux-android`).
+  - Rust tests: `remote_security_test` (20/20 passed), `remote_connection_test` (15/15 passed), `remote_link_test` (18/18 passed).
+  - Frontend tests: `pnpm test` (31/31 suites passed, 253/253 tests passed).

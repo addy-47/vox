@@ -243,7 +243,7 @@ describe("QrScannerModal DOM suite", () => {
       });
     });
 
-    expect(screen.getByText("Pairing denied by host: User denied pairing")).toBeTruthy();
+    expect(screen.getByText("Pairing Declined")).toBeTruthy();
 
     // Closing the modal dismisses the ephemeral pairing failure.
     await act(async () => {

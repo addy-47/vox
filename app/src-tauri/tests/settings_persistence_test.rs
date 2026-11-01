@@ -19,7 +19,7 @@ use vox_lib::{
         get_setting_reload_policy, is_secret_key, secret_keys, supported_keys_for_domain,
         SettingReloadPolicy, VoxSettings,
     },
-    core::events::{PipelineMode, RemoteExecutionMode},
+    core::events::PipelineMode,
     pipeline::dictation::DictationOutputMode,
     services::vad::VadBackendOption,
 };
@@ -1085,7 +1085,7 @@ fn patch_tree_failure_leaves_settings_untouched() {
 
 /// PURPOSE:  The `remote` domain must be registered in the settings contract and mutable via the production router.
 /// SCENARIO: Query contract for remote domain; check reload policies; mutate keys; verify save/load roundtrip.
-/// ASSERTS:  Contract contains accepts_controllers (Hot) and execution_mode (Restart); invalid mode rejected.
+/// ASSERTS:  Contract contains accepts_controllers (Hot).
 /// CLASS:    contract
 /// REQUIRES: none
 /// MUTANT:   Remove remote domain from supported_domains list in config/contract.rs.
@@ -1094,40 +1094,28 @@ fn remote_domain_in_contract_and_mutable() {
     let _guard = TempPathsGuard::new();
     let domain = "remote";
     let key_accepts = "accepts_controllers";
-    let key_mode = "execution_mode";
 
     // 1. Contract registration
     let contract = build_settings_contract();
     assert!(contract.supported_keys.contains_key(domain));
     let contract_keys = &contract.supported_keys[domain];
     assert!(contract_keys.contains(&key_accepts.to_string()));
-    assert!(contract_keys.contains(&key_mode.to_string()));
 
     let policies = contract.reload_policies.get(domain).expect("policies");
     assert_eq!(policies.get(key_accepts).map(|s| s.as_str()), Some("hot"));
-    assert_eq!(policies.get(key_mode).map(|s| s.as_str()), Some("restart"));
 
     assert_eq!(
         classify_known(domain, key_accepts),
         Some(SettingReloadPolicy::Hot)
     );
     assert_eq!(
-        classify_known(domain, key_mode),
-        Some(SettingReloadPolicy::Restart)
-    );
-    assert_eq!(
         get_setting_reload_policy(domain, key_accepts),
         SettingReloadPolicy::Hot
-    );
-    assert_eq!(
-        get_setting_reload_policy(domain, key_mode),
-        SettingReloadPolicy::Restart
     );
 
     // 2. Defaults
     let defaults = VoxSettings::default();
     assert!(!defaults.remote.accepts_controllers);
-    assert_eq!(defaults.remote.execution_mode, RemoteExecutionMode::Local);
 
     // 3. Mutation router
     let mut settings = VoxSettings::default();
@@ -1136,30 +1124,11 @@ fn remote_domain_in_contract_and_mutable() {
             .unwrap()
     );
     assert!(settings.remote.accepts_controllers);
-    assert!(apply_setting_mutation(
-        &mut settings,
-        domain,
-        key_mode,
-        &serde_json::json!("remote")
-    )
-    .unwrap());
-    assert_eq!(settings.remote.execution_mode, RemoteExecutionMode::Remote);
-
-    // Reject unknown execution mode
-    assert!(apply_setting_mutation(
-        &mut settings,
-        domain,
-        key_mode,
-        &serde_json::json!("invalid_mode")
-    )
-    .is_err());
-    assert_eq!(settings.remote.execution_mode, RemoteExecutionMode::Remote);
 
     // 4. Persistence round-trip
     settings.save().expect("save");
     let reloaded = VoxSettings::load();
     assert!(reloaded.remote.accepts_controllers);
-    assert_eq!(reloaded.remote.execution_mode, RemoteExecutionMode::Remote);
 
     // 5. Missing remote section falls back to defaults
     let settings_path = vox_lib::utils::paths::settings_path();
@@ -1174,7 +1143,6 @@ fn remote_domain_in_contract_and_mutable() {
     let recovered = VoxSettings::load();
     assert_eq!(recovered.appearance.theme, "nordic_frost");
     assert!(!recovered.remote.accepts_controllers);
-    assert_eq!(recovered.remote.execution_mode, RemoteExecutionMode::Local);
 }
 
 // ============================================================================
