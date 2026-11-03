@@ -10,7 +10,14 @@ pub mod transcript;
 
 use std::mem::take;
 
-use crate::services::harness::stages::streaming::ClauseChunker;
+use crate::{
+    core::{
+        events::VoxEvent,
+        state::{AppState, InteractionOwner},
+    },
+    pipeline::router::RoutingContext,
+    services::harness::stages::streaming::ClauseChunker,
+};
 
 /// Canonical turn-level textual accumulator and TTS clause chunker.
 #[derive(Debug, Clone)]
@@ -161,12 +168,10 @@ impl TurnAccumulator {
 /// Main event dispatcher for the assistant domain.
 pub fn handle_event<R: tauri::Runtime + 'static>(
     app: &tauri::AppHandle<R>,
-    state: &crate::core::state::AppState,
-    ctx: &crate::pipeline::router::RoutingContext,
-    event: crate::core::events::VoxEvent,
+    state: &AppState,
+    ctx: &RoutingContext,
+    event: VoxEvent,
 ) {
-    use crate::core::{events::VoxEvent, state::InteractionOwner};
-
     match event {
         VoxEvent::SessionStart { owner, session_id } => {
             session::on_session_start(owner, session_id, app, state, ctx);

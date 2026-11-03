@@ -9,7 +9,10 @@ use futures_util::StreamExt;
 use super::{speed_range, SynthesisContext, TtsProvider};
 use crate::services::{
     sidecar::{global_sidecar_supervisor, SidecarKind},
-    tts::{ParamRange, ProviderCaps, TtsVoiceSource, MAX_SPEED, MIN_SPEED, TTS_CHUNK_SIZE},
+    tts::{
+        voice::write_f32_wav, ParamRange, ProviderCaps, TtsExecutionKind, TtsVoiceSource,
+        MAX_SPEED, MIN_SPEED, TTS_CHUNK_SIZE,
+    },
 };
 
 pub enum CloudProviderKind {
@@ -67,7 +70,7 @@ impl TtsProvider for CloudTtsSidecarProvider {
             voices: TtsVoiceSource::Cloud,
             clone: false,
             speed_range: Self::SPEED_RANGE,
-            execution: crate::services::tts::TtsExecutionKind::Cloud,
+            execution: TtsExecutionKind::Cloud,
         }
     }
 
@@ -281,7 +284,7 @@ pub async fn google_synthesize_to_wav(
         samples.push(s16 as f32 / 32768.0);
     }
 
-    crate::services::tts::voice::write_f32_wav(target_path, &samples, 24000)
+    write_f32_wav(target_path, &samples, 24000)
         .map_err(|e| anyhow!("Failed to write preview WAV: {}", e))?;
     Ok(())
 }
@@ -326,7 +329,7 @@ pub async fn azure_synthesize_to_wav(
         samples.push(s16 as f32 / 32768.0);
     }
 
-    crate::services::tts::voice::write_f32_wav(target_path, &samples, 24000)
+    write_f32_wav(target_path, &samples, 24000)
         .map_err(|e| anyhow!("Failed to write preview WAV: {}", e))?;
     Ok(())
 }

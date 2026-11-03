@@ -20,7 +20,7 @@ import {
 } from "@/data/homeCopy";
 
 import { AlertCircle } from "lucide-react";
-import { cn } from "@/shared/lib/utils";
+
 import { ChapterScrubber, type Chapter } from "@/shared/ui/ChapterScrubber";
 import { HomeControls } from "@/shared/components/home/HomeControls";
 
@@ -395,13 +395,12 @@ export const Home = memo(() => {
           maxHeight: 580,
         }}
       >
-        {/* Subtle dynamic ring behind orb */}
-        <div
-          className={cn(
-            "absolute inset-0 rounded-full border border-[rgb(var(--accent))]/10 transition-all duration-1000",
-            isEngaged && interactionState !== "Error" ? "scale-100 opacity-100 animate-field-pulse" : "scale-90 opacity-60"
-          )}
-        />
+        {/* Subtle dynamic ring behind orb — only shown when OrbitField is dormant */}
+        {!isEngaged && (
+          <div
+            className="absolute inset-0 rounded-full border border-[rgb(var(--accent))]/10 transition-all duration-1000 scale-90 opacity-60"
+          />
+        )}
         {/* Remote-active look = the calm sleeping stage, exactly as Sleeping.
             The status badge below is the sole remote signal; no extra ping. */}
         {/* Orb directly renders on Home mount with zero loader flash */}
@@ -409,6 +408,7 @@ export const Home = memo(() => {
           <OrbitField
             interactionState={isRemoteActive ? "Sleeping" : interactionState}
             activity={activeActivity?.name}
+            telemetryRef={telemetryRef}
             paused={isPanelOpen("sessions") || isPanelOpen("notifications") || isPanelOpen("help")}
           >
             <ErrorBoundary name="VoxOrb">

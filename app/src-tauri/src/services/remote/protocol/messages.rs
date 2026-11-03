@@ -270,6 +270,32 @@ pub struct Flush {
     pub epoch: u64,
 }
 
+/// A VAD speech-start event, carried on the audio socket.
+///
+/// Signals that the controller's VAD detected the onset of user speech.
+/// The host uses this to transition the pipeline to Listening and begin
+/// forwarding incoming audio frames to STT. Remote-control spec §7.6.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SpeechStart {
+    /// The epoch the speech segment belongs to.
+    pub epoch: u64,
+    /// The absolute sample position (from session start) of speech onset.
+    pub sample_offset: u64,
+}
+
+/// A VAD speech-end event, carried on the audio socket.
+///
+/// Signals that the controller's VAD detected the end of user speech.
+/// The host uses this to flush the STT segment and run the LLM.
+/// Remote-control spec §7.6.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SpeechEnd {
+    /// The epoch the speech segment belongs to.
+    pub epoch: u64,
+    /// Total speech samples in this segment (for STT flush sizing).
+    pub sample_count: u64,
+}
+
 /// The kind of a control message, independent of its payload.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ControlType {
@@ -448,17 +474,28 @@ pub enum AudioControlType {
     PttMarker,
     /// A request to discard buffered audio.
     Flush,
+    /// Controller VAD detected speech onset.
+    SpeechStart,
+    /// Controller VAD detected speech end.
+    SpeechEnd,
 }
 
 impl AudioControlType {
     /// Every audio-control message kind.
-    pub const ALL: [AudioControlType; 2] = [AudioControlType::PttMarker, AudioControlType::Flush];
+    pub const ALL: [AudioControlType; 4] = [
+        AudioControlType::PttMarker,
+        AudioControlType::Flush,
+        AudioControlType::SpeechStart,
+        AudioControlType::SpeechEnd,
+    ];
 
     /// The exact spelling of the `"type"` tag on the wire.
     pub const fn wire_name(self) -> &'static str {
         match self {
             AudioControlType::PttMarker => "PttMarker",
             AudioControlType::Flush => "Flush",
+            AudioControlType::SpeechStart => "SpeechStart",
+            AudioControlType::SpeechEnd => "SpeechEnd",
         }
     }
 
@@ -478,6 +515,10 @@ pub enum AudioControlMessage {
     PttMarker(PttMarker),
     /// A request to discard buffered audio.
     Flush(Flush),
+    /// Controller VAD detected speech onset.
+    SpeechStart(SpeechStart),
+    /// Controller VAD detected speech end.
+    SpeechEnd(SpeechEnd),
 }
 
 impl AudioControlMessage {
@@ -486,6 +527,8 @@ impl AudioControlMessage {
         match self {
             AudioControlMessage::PttMarker(_) => AudioControlType::PttMarker,
             AudioControlMessage::Flush(_) => AudioControlType::Flush,
+            AudioControlMessage::SpeechStart(_) => AudioControlType::SpeechStart,
+            AudioControlMessage::SpeechEnd(_) => AudioControlType::SpeechEnd,
         }
     }
 }
@@ -531,6 +574,8 @@ pub fn encode_audio_control(message: &AudioControlMessage) -> Result<Vec<u8>, Pr
     let payload = match message {
         AudioControlMessage::PttMarker(payload) => payload_map(payload)?,
         AudioControlMessage::Flush(payload) => payload_map(payload)?,
+        AudioControlMessage::SpeechStart(payload) => payload_map(payload)?,
+        AudioControlMessage::SpeechEnd(payload) => payload_map(payload)?,
     };
     encode_tagged(type_name, payload)
 }
@@ -578,6 +623,8 @@ fn build_audio_control(
     Ok(match kind {
         AudioControlType::PttMarker => AudioControlMessage::PttMarker(payload_value(payload)?),
         AudioControlType::Flush => AudioControlMessage::Flush(payload_value(payload)?),
+        AudioControlType::SpeechStart => AudioControlMessage::SpeechStart(payload_value(payload)?),
+        AudioControlType::SpeechEnd => AudioControlMessage::SpeechEnd(payload_value(payload)?),
     })
 }
 
@@ -730,6 +777,33 @@ mod tests {
         assert_eq!(
             outcome,
             DecodeOutcome::Known(ControlMessage::SessionToken(token))
+        );
+    }
+
+    #[test]
+    fn speech_boundary_wire_roundtrip() {
+        let start = SpeechStart {
+            epoch: 3,
+            sample_offset: 640,
+        };
+        let encoded = encode_audio_control(&AudioControlMessage::SpeechStart(start.clone()))
+            .expect("must encode SpeechStart");
+        let outcome = decode_audio_control(&encoded).expect("must decode SpeechStart");
+        assert_eq!(
+            outcome,
+            DecodeOutcome::Known(AudioControlMessage::SpeechStart(start))
+        );
+
+        let end = SpeechEnd {
+            epoch: 3,
+            sample_count: 4800,
+        };
+        let encoded = encode_audio_control(&AudioControlMessage::SpeechEnd(end.clone()))
+            .expect("must encode SpeechEnd");
+        let outcome = decode_audio_control(&encoded).expect("must decode SpeechEnd");
+        assert_eq!(
+            outcome,
+            DecodeOutcome::Known(AudioControlMessage::SpeechEnd(end))
         );
     }
 }

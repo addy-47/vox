@@ -90,8 +90,9 @@ fn handle_supervisor_session_token(params: &LinkSupervisorParams, token: Session
         .as_ref()
         .map(|p| p.device_id.clone());
     let host_addr = params.active_host_addr.read().clone();
+    let cancel = params.cancel.clone();
     tokio::spawn(async move {
-        dial_secondary_audio_socket(audio_slot, db_opt, peer_id, host_addr, token).await;
+        dial_secondary_audio_socket(audio_slot, db_opt, peer_id, host_addr, token, cancel).await;
     });
 }
 
@@ -101,6 +102,7 @@ async fn dial_secondary_audio_socket(
     peer_id: Option<String>,
     host_addr: Option<String>,
     token: SessionToken,
+    cancel: CancellationToken,
 ) {
     let (Some(id), Some(addr), Some(db)) = (peer_id, host_addr, db_opt) else {
         return;
@@ -119,7 +121,17 @@ async fn dial_secondary_audio_socket(
                 let _ = ws_link.close(LinkCloseReason::Local).await;
             } else {
                 log::info!("[Remote] Controller audio link established");
-                *audio_slot.write().await = Some(Arc::new(ws_link));
+                let link_arc: Arc<dyn RemoteLink> = Arc::new(ws_link);
+                *audio_slot.write().await = Some(Arc::clone(&link_arc));
+
+                let vad_settings = crate::config::VoxSettings::load().vad;
+                if let Err(e) = crate::services::remote::audio::spawn_controller_audio_runtime(
+                    link_arc,
+                    cancel,
+                    vad_settings,
+                ) {
+                    log::error!("[Remote] Failed to spawn controller audio runtime: {e}");
+                }
             }
         }
         Err(e) => {

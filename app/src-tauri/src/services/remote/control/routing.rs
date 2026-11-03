@@ -62,7 +62,7 @@ static ROUTING_TABLE: LazyLock<HashMap<String, CommandClass>> = LazyLock::new(||
     table.insert("get_model_capabilities_cache".into(), CommandClass::Remote);
     table.insert("list_favorite_models".into(), CommandClass::Remote);
     table.insert("toggle_model_favorite".into(), CommandClass::Remote);
-    table.insert("manage_models".into(), CommandClass::Remote);
+    table.insert("manage_models".into(), CommandClass::Split);
     table.insert("setup_remote_server".into(), CommandClass::Local);
 
     // ─── 5. Projects ─────────────────────────────────────────────────────

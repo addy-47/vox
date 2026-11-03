@@ -7,6 +7,8 @@ export interface OrbitFieldProps {
   interactionState?: InteractionState;
   /** Resolved activity key (activity.name, else orb preset such as 'web'). */
   activity?: string;
+  /** Optional live audio telemetry ref so orbit nodes resonate with voice syllables. */
+  telemetryRef?: React.MutableRefObject<{ energy: number; vad_prob: number; low: number; mid: number; high: number }>;
   paused?: boolean;
   children: React.ReactNode;
 }
@@ -23,17 +25,22 @@ function readAccent(): [number, number, number] {
  * clipped by the stage) and a small canvas IN FRONT of the orb for the near halves of the orbits.
  * AdvancedOrb is untouched. Replaces the earlier OrbHalo.
  */
-export const OrbitField = memo(({ interactionState, activity, paused, children }: OrbitFieldProps) => {
+export const OrbitField = memo(({ interactionState, activity, telemetryRef, paused, children }: OrbitFieldProps) => {
   const wrapRef = useRef<HTMLDivElement>(null);
   const backRef = useRef<HTMLCanvasElement>(null);
   const frontRef = useRef<HTMLCanvasElement>(null);
   const engineRef = useRef<OrbitFieldEngine | null>(null);
   const loopRef = useRef<{ start: () => void } | null>(null);
   const pausedRef = useRef(!!paused);
+  const telemetryPropRef = useRef(telemetryRef);
 
   useEffect(() => {
     pausedRef.current = !!paused;
   }, [paused]);
+
+  useEffect(() => {
+    telemetryPropRef.current = telemetryRef;
+  }, [telemetryRef]);
 
   useEffect(() => {
     const backEl = backRef.current;
@@ -62,7 +69,9 @@ export const OrbitField = memo(({ interactionState, activity, paused, children }
       const dt = Math.min((now - last) / 1000, 0.1);
       last = now;
       if (pausedRef.current || isViewportResizing()) return;
-      engine.frame(reduced ? 0 : dt);
+      const t = telemetryPropRef.current as { current?: { energy?: number } } | undefined;
+      const rawEnergy = t && t.current ? (t.current.energy || 0) : 0;
+      engine.frame(reduced ? 0 : dt, rawEnergy);
       if (engine.isIdle()) { cancelAnimationFrame(raf); running = false; }
     };
     const start = () => {
@@ -95,7 +104,6 @@ export const OrbitField = memo(({ interactionState, activity, paused, children }
   useEffect(() => {
     engineRef.current?.setKey(key);
     if (key) {
-      engineRef.current?.layout(window.devicePixelRatio || 1);
       loopRef.current?.start();
     }
   }, [key]);

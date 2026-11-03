@@ -11,6 +11,13 @@ export const PipelineField = React.memo(({ state, volume = 0 }: PipelineFieldPro
   useMemoryTrace("PipelineField");
   const containerRef = useRef<HTMLDivElement>(null);
 
+  const isOrbitOwned =
+    state === "Ready" ||
+    state === "Listening" ||
+    state === "Thinking" ||
+    state === "Speaking" ||
+    state === "Working";
+
   useEffect(() => {
     if (!containerRef.current) return;
 
@@ -43,9 +50,10 @@ export const PipelineField = React.memo(({ state, volume = 0 }: PipelineFieldPro
   return (
     <div
       ref={containerRef}
-      className="absolute inset-0 pointer-events-none overflow-hidden"
+      className="absolute inset-0 pointer-events-none overflow-hidden transition-opacity duration-700"
       style={{
         zIndex: 1,
+        opacity: isOrbitOwned ? 0 : 1,
         ["--field-energy"]: "0.12",
         ["--field-scale"]: "0.85",
         ["--border-alpha"]: "0.06",

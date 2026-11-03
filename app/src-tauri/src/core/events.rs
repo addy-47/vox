@@ -3,9 +3,12 @@ use tauri::{AppHandle, Emitter, Manager, Runtime};
 
 pub use crate::core::state::InteractionOwner;
 use crate::{
-    core::{error::PipelineError, state::AppWindow},
+    core::{
+        error::PipelineError,
+        state::{AppState, AppWindow},
+    },
     persistence::PersonalMemoryRecord,
-    services::remote::session::{PairingStateDto, RemoteStateDto},
+    services::remote::session::{PairingStateDto, RemoteLinkState, RemoteStateDto},
     setup::model_manager::ModelSetupStatus,
 };
 
@@ -320,10 +323,8 @@ fn event_to_value(event: &IpcEvent) -> Option<serde_json::Value> {
 }
 
 fn should_suppress_and_forward<R: Runtime>(app: &AppHandle<R>, event: &IpcEvent) -> bool {
-    if let Some(state) = app.try_state::<std::sync::Arc<crate::core::state::AppState>>() {
-        if state.remote_manager.state()
-            == crate::services::remote::session::RemoteLinkState::Connected
-        {
+    if let Some(state) = app.try_state::<std::sync::Arc<AppState>>() {
+        if state.remote_manager.state() == RemoteLinkState::Connected {
             if let Some(val) = event_to_value(event) {
                 state.remote_manager.forward_event(event.name(), val);
             }

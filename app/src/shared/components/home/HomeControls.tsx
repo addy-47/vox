@@ -46,6 +46,17 @@ export const HomeControls = memo(({
   cancelLaunch,
 }: HomeControlsProps) => {
   const { isBlocked, guardProps, tooltip } = useRemoteGuard();
+  const [isPressed, setIsPressed] = React.useState(false);
+  const [isLatched, setIsLatched] = React.useState(false);
+  const pressStartTimeRef = React.useRef<number>(0);
+
+  React.useEffect(() => {
+    if (pttStatus === "IDLE" && !isPressed) {
+      setIsLatched(false);
+    }
+  }, [pttStatus, isPressed]);
+
+  const isPttActive = isPressed || isLatched || pttStatus === "RECORDING";
 
   return (
     <div className="flex items-center justify-center gap-6 z-20">
@@ -55,7 +66,7 @@ export const HomeControls = memo(({
           <Tooltip label={HOME_CONTROLS_COPY.error.reconnectTooltip + shortcutKeysSuffix("home.reconnect")} side="top">
             <button
               onClick={dismissRestoreError}
-              className="flex items-center gap-2 px-6 py-3 rounded-full bg-[rgba(var(--foreground),0.06)] hover:bg-[rgba(var(--foreground),0.12)] text-[rgb(var(--foreground))] border border-[rgba(var(--foreground),0.15)] transition-all cursor-pointer group"
+              className="flex items-center gap-2 px-6 py-3 rounded-full bg-[rgba(var(--foreground),0.06)] hover:bg-[rgba(var(--foreground),0.12)] text-[rgb(var(--foreground))] border border-[rgba(var(--foreground),0.15)] transition-all duration-150 cursor-pointer group"
               aria-label={HOME_CONTROLS_COPY.error.reconnectAriaLabel}
             >
               <RotateCcw size={20} className="transition-transform group-hover:-rotate-45" />
@@ -75,7 +86,7 @@ export const HomeControls = memo(({
               disabled={isBlocked}
               tabIndex={isBlocked ? -1 : 0}
               className={cn(
-                "flex items-center justify-center w-14 h-14 rounded-full transition-all duration-500 border border-[rgb(var(--accent))]/25 bg-transparent hover:bg-[rgb(var(--accent))]/10 hover:scale-105 active:scale-95 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(var(--accent))] focus-visible:ring-offset-2 focus-visible:ring-offset-[rgb(var(--background))] focus-visible:scale-105 focus-visible:shadow-[0_0_24px_rgba(var(--accent),0.4)]",
+                "flex items-center justify-center w-14 h-14 rounded-full transition-all duration-150 border border-[rgb(var(--accent))]/25 bg-transparent hover:bg-[rgb(var(--accent))]/10 hover:scale-105 active:scale-95 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(var(--accent))] focus-visible:ring-offset-2 focus-visible:ring-offset-[rgb(var(--background))] focus-visible:scale-105 focus-visible:shadow-[0_0_24px_rgba(var(--accent),0.4)] touch-manipulation select-none",
                 (isPaused || isSleeping)
                   ? "bg-[rgb(var(--accent))]/20 border-[rgb(var(--accent))]/60 text-[rgb(var(--accent))]"
                   : "text-[rgb(var(--accent))]",
@@ -92,32 +103,49 @@ export const HomeControls = memo(({
             <Tooltip label={tooltip ?? (HOME_CONTROLS_COPY.ptt.micTooltip + shortcutKeysSuffix("home.ptt"))} side="top">
               <button
                 onPointerDown={(e) => {
-                  if (isBlocked) return;
+                  if (isBlocked || isPaused || isSleeping) return;
                   e.currentTarget.setPointerCapture(e.pointerId);
+                  pressStartTimeRef.current = Date.now();
+                  if (isLatched) {
+                    setIsLatched(false);
+                    setIsPressed(false);
+                    void handlePttStop();
+                    return;
+                  }
+                  setIsPressed(true);
                   void handlePttStart();
                 }}
                 onPointerUp={(e) => {
-                  if (isBlocked) return;
+                  if (isBlocked || isPaused || isSleeping) return;
                   try {
                     e.currentTarget.releasePointerCapture(e.pointerId);
                   } catch {
                     // ignore if already released
                   }
-                  void handlePttStop();
+                  setIsPressed(false);
+                  const pressDuration = Date.now() - pressStartTimeRef.current;
+                  if (pressDuration < 300) {
+                    // Hybrid mode: short tap latches recording on
+                    setIsLatched(true);
+                  } else {
+                    // Long hold: release ends recording immediately
+                    setIsLatched(false);
+                    void handlePttStop();
+                  }
                 }}
                 disabled={isBlocked || isPaused || isSleeping}
                 tabIndex={isBlocked || isPaused || isSleeping ? -1 : 0}
                 className={cn(
-                  "flex items-center justify-center w-14 h-14 rounded-full transition-all duration-500 border border-[rgb(var(--accent))]/25 bg-transparent hover:bg-[rgb(var(--accent))]/10 hover:scale-105 active:scale-95 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(var(--accent))] focus-visible:ring-offset-2 focus-visible:ring-offset-[rgb(var(--background))] focus-visible:scale-105 focus-visible:shadow-[0_0_24px_rgba(var(--accent),0.4)]",
-                  pttStatus === "RECORDING"
-                    ? "bg-[rgb(var(--accent))]/20 border-[rgb(var(--accent))]/60 text-[rgb(var(--accent))]"
+                  "flex items-center justify-center w-14 h-14 rounded-full transition-all duration-150 border border-[rgb(var(--accent))]/25 bg-transparent hover:bg-[rgb(var(--accent))]/10 hover:scale-105 active:scale-95 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(var(--accent))] focus-visible:ring-offset-2 focus-visible:ring-offset-[rgb(var(--background))] focus-visible:scale-105 focus-visible:shadow-[0_0_24px_rgba(var(--accent),0.4)] touch-manipulation select-none",
+                  isPttActive
+                    ? "bg-[rgb(var(--accent))]/25 border-[rgb(var(--accent))] text-[rgb(var(--accent))] shadow-[0_0_24px_rgba(var(--accent),0.5)] scale-105"
                     : "text-[rgb(var(--accent))]",
                   (isPaused || isSleeping) && "opacity-40 cursor-not-allowed hover:bg-transparent hover:scale-100",
                   guardProps.className
                 )}
                 aria-label={HOME_CONTROLS_COPY.ptt.micAriaLabel}
               >
-                <Mic size={28} className={cn(pttStatus === "RECORDING" && "animate-pulse-slow")} />
+                <Mic size={28} className={cn(isPttActive && "animate-pulse-slow text-[rgb(var(--accent))]")} />
               </button>
             </Tooltip>
           )}
@@ -129,7 +157,7 @@ export const HomeControls = memo(({
               disabled={isBlocked}
               tabIndex={isBlocked ? -1 : 0}
               className={cn(
-                "flex items-center justify-center w-14 h-14 rounded-full transition-all duration-500 border border-[rgb(var(--accent))]/25 bg-transparent hover:bg-[rgb(var(--accent))]/10 hover:scale-105 active:scale-95 text-[rgb(var(--accent))] cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(var(--accent))] focus-visible:ring-offset-2 focus-visible:ring-offset-[rgb(var(--background))] focus-visible:scale-105 focus-visible:shadow-[0_0_24px_rgba(var(--accent),0.4)]",
+                "flex items-center justify-center w-14 h-14 rounded-full transition-all duration-150 border border-[rgb(var(--accent))]/25 bg-transparent hover:bg-[rgb(var(--accent))]/10 hover:scale-105 active:scale-95 text-[rgb(var(--accent))] cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(var(--accent))] focus-visible:ring-offset-2 focus-visible:ring-offset-[rgb(var(--background))] focus-visible:scale-105 focus-visible:shadow-[0_0_24px_rgba(var(--accent),0.4)] touch-manipulation select-none",
                 guardProps.className
               )}
               aria-label={HOME_CONTROLS_COPY.textMode.toggleAriaLabel}
@@ -145,7 +173,7 @@ export const HomeControls = memo(({
                 onClick={isBlocked ? undefined : disengage}
                 tabIndex={isBlocked ? -1 : 0}
                 className={cn(
-                  "flex items-center justify-center w-14 h-14 rounded-full transition-all duration-500 border border-[rgb(var(--accent))]/60 text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/15 hover:bg-[rgb(var(--accent))]/25 hover:scale-105 active:scale-95 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(var(--accent))] focus-visible:ring-offset-2 focus-visible:ring-offset-[rgb(var(--background))] focus-visible:scale-105 focus-visible:shadow-[0_0_24px_rgba(var(--accent),0.4)]",
+                  "flex items-center justify-center w-14 h-14 rounded-full transition-all duration-150 border border-[rgb(var(--accent))]/60 text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/15 hover:bg-[rgb(var(--accent))]/25 hover:scale-105 active:scale-95 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(var(--accent))] focus-visible:ring-offset-2 focus-visible:ring-offset-[rgb(var(--background))] focus-visible:scale-105 focus-visible:shadow-[0_0_24px_rgba(var(--accent),0.4)] touch-manipulation select-none",
                   isThinking && "engage-btn-loading border-transparent",
                   isLaunching && "animate-spin",
                   guardProps.className
@@ -173,7 +201,7 @@ export const HomeControls = memo(({
                 onClick={isBlocked ? undefined : (isLaunching ? cancelLaunch : engage)}
                 tabIndex={isBlocked ? -1 : 0}
                 className={cn(
-                  "flex items-center justify-center w-14 h-14 rounded-full transition-all duration-500 border border-[rgb(var(--accent))]/25 bg-transparent hover:bg-[rgb(var(--accent))]/10 hover:scale-105 active:scale-95 text-[rgb(var(--accent))] cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(var(--accent))] focus-visible:ring-offset-2 focus-visible:ring-offset-[rgb(var(--background))] focus-visible:scale-105 focus-visible:shadow-[0_0_24px_rgba(var(--accent),0.4)]",
+                  "flex items-center justify-center w-14 h-14 rounded-full transition-all duration-150 border border-[rgb(var(--accent))]/25 bg-transparent hover:bg-[rgb(var(--accent))]/10 hover:scale-105 active:scale-95 text-[rgb(var(--accent))] cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(var(--accent))] focus-visible:ring-offset-2 focus-visible:ring-offset-[rgb(var(--background))] focus-visible:scale-105 focus-visible:shadow-[0_0_24px_rgba(var(--accent),0.4)] touch-manipulation select-none",
                   isLaunching && "animate-spin border-[rgb(var(--accent))]/60",
                   guardProps.className
                 )}
@@ -184,7 +212,7 @@ export const HomeControls = memo(({
                 {isLaunching ? (
                   <X size={28} className="animate-pulse-slow text-[rgb(var(--error))]" />
                 ) : (
-                  <Power size={28} className="transition-transform duration-700" />
+                  <Power size={28} className="transition-transform duration-300" />
                 )}
               </button>
             </Tooltip>

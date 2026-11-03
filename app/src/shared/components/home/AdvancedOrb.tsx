@@ -902,7 +902,7 @@ export const VoxOrb = React.memo(({
     const discAnims: DiscAnim[] = [];
 
     // Share a single BufferGeometry across all silk-sheet meshes
-    const sharedDiscGeo = createDiscGeometry(DISC_R, 36, 12);
+    const sharedDiscGeo = createDiscGeometry(DISC_R, 28, 9);
 
     const baseWave: number[] = [];
     const baseOpac: number[] = [];
