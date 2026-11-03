@@ -21,6 +21,7 @@ use crate::{
             spawn_ingestion_sweep, start_consolidation_scheduler, stop_consolidation_scheduler,
             unload_memory_pipeline_onnx_models,
         },
+        remote::session::{RemoteLinkState, SessionRole},
         tts::{voice::resolve_voice_index_for_provider, TtsCommand},
         vad::{VadCommand, VadOperationalMode},
     },
@@ -406,14 +407,12 @@ pub async fn handle_setting_side_effects<R: tauri::Runtime>(
         handle_active_model_side_effects(state, domain, value).await;
     } else if domain == "remote" && key == "accepts_controllers" {
         let accepts = value.as_bool().unwrap_or(false);
-        if state.remote_manager.role() == crate::services::remote::session::SessionRole::Host {
+        if state.remote_manager.role() == SessionRole::Host {
             if !accepts {
                 log::info!("[Remote] accepts_controllers disabled: disconnecting active links and setting Disabled");
                 let _ = state.remote_manager.disconnect_host_initiated().await;
                 state.remote_manager.set_peer_identity(None);
-                state
-                    .remote_manager
-                    .set_state(crate::services::remote::session::RemoteLinkState::Disabled);
+                state.remote_manager.set_state(RemoteLinkState::Disabled);
             } else {
                 log::info!("[Remote] accepts_controllers enabled: reconciling link state from paired_devices");
                 state.remote_manager.hydrate_from_db(&state.db).await;

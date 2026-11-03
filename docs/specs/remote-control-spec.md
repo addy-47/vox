@@ -17,7 +17,7 @@ The spec is written to survive the addition of new transports (off-LAN, relay), 
 - Opus codec — PCM16 is v1. The codec byte exists for forward compatibility.
 - IPC command schema definitions (governed by `ipc-spec.md`; this spec adds routing classifications and four new events).
 - Database schemas for sessions, turns, and memory (governed by `db-spec.md`; this spec adds `paired_devices` to §5).
-- Audio pipeline internals, VAD/STT/TTS algorithms (governed by `events-spec.md` and `harness-spec.md`).
+- Audio pipeline internals, STT/LLM/TTS algorithms (governed by `events-spec.md` and `harness-spec.md`). VAD is an exception: in remote mode VAD runs on the controller (§7.6) rather than the host.
 - Acoustic echo cancellation implementation (governed by `aec_system_architecture_and_plan.md`; AEC runs on the phone's mic input before frames are sent and is independent of wire-protocol control messages).
 
 ---
@@ -79,12 +79,14 @@ These two settings are separate and must not be conflated.
 flowchart LR
     subgraph Phone["Controller (Phone)"]
         PhoneUI["Vox Frontend"]
-        PhoneAudio["Mic + AEC + Speaker"]
+        PhoneAudio["Mic + AEC"]
+        PhoneVAD["VAD"]
+        PhoneSpeaker["Speaker"]
         RemoteClient["RemoteClient"]
     end
 
     subgraph Laptop["Host (Laptop)"]
-        Pipeline["VAD → STT → LLM → TTS"]
+        Pipeline["STT → LLM → TTS"]
         Gateway["Command Gateway"]
         Emitter["IpcEmitter"]
         DB["Turso DB"]
@@ -92,13 +94,15 @@ flowchart LR
     end
 
     PhoneUI -- "IPC Req" --> RemoteClient
-    PhoneAudio -- "AudioFrame uplink" --> RemoteClient
+    PhoneAudio --> PhoneVAD
+    PhoneVAD -- "AudioFrame uplink + SpeechStart/SpeechEnd" --> RemoteClient
     RemoteClient -- "Noise WebSocket" --> Gateway
     Gateway --> Pipeline
     Pipeline --> Emitter
     Emitter -- "pipeline events" --> RemoteClient
     Emitter -- "system events" --> DesktopUI
     Emitter -- "system events" --> RemoteClient
+    RemoteClient -- "IPC Events + TTS downlink" --> PhoneSpeaker
     RemoteClient -- "IPC Events" --> PhoneUI
     Pipeline --> DB
 ```
@@ -532,6 +536,8 @@ On receiving the peer's `Hello`:
 | `LinkRefused` | Host → Controller | Control | Sent before close when the host refuses the connection under §6.5. Fields: `reason` (`not_accepting` \| `host_busy` \| `controller_attached`). |
 | `AudioFrame` | Both | Audio | PCM16 audio data. Binary frame (§7.4). |
 | `PttMarker` | Controller → Host | Audio | PTT button event. Travels on the audio socket to preserve ordering with audio frames (§7.4). |
+| `SpeechStart` | Controller → Host | Audio | VAD speech-onset signal. Sent when controller VAD detects user speech beginning. Host transitions pipeline to Listening. Travels on the audio socket (§7.6). |
+| `SpeechEnd` | Controller → Host | Audio | VAD speech-end signal. Sent when controller VAD detects user silence exceeding the hangover threshold. Host flushes STT segment. Travels on the audio socket (§7.6). |
 | `Flush` | Host → Controller | Audio | Discard buffered audio. Carries `epoch` field (§7.4). |
 | `PairRequest` | Controller → Host | Pre-auth | Pairing initiation. Fields: `token`, `device_id`, `public_key`, `display_name`. Pre-Noise, plaintext, and therefore a *claim* that the host verifies against the completed handshake (§5.3). |
 | `PairApproved` | Host → Controller | Pre-auth | Host accepted the pairing. Fields: `host_identity`. Sent post-Noise, so it is encrypted. |
@@ -606,6 +612,52 @@ The control socket needs no tag: every inner payload there is a JSON control mes
 
 ---
 
+### §7.6 Controller-Side Audio Runtime, VAD and Speech Boundary Signals
+
+In remote mode, the phone acts as the physical audio endpoint (speaker playout and microphone capture) and runs local VAD. This eliminates the two-leg latency (audio uplink + event downlink) that would otherwise delay speech-start, speech-end, and barge-in feedback.
+
+**Controller Audio Runtime Lifecycle:**
+- When the controller establishes the secondary audio WebSocket connection, it launches the **Controller Audio Runtime** (`spawn_controller_audio_runtime`), governed by the Link Supervisor's cancellation token.
+- **Downlink Playout Actor:**
+  - Continuously reads incoming `AudioPayload` frames from the secondary audio WebSocket via `recv_audio()`.
+  - On `AudioPayload::Frame(frame)`: decodes 24 kHz mono PCM16 samples, converts to floating point, upsamples 2x to 48 kHz, and enqueues to the local CPAL output stream.
+  - On `AudioControlMessage::Flush(flush)`: immediately clears the playback queue and advances the local playback epoch.
+- **Uplink Capture & VAD Actor:**
+  - Streams 16 kHz mono microphone audio from the local CPAL input stream in 256-sample chunks (16 ms).
+  - Evaluates each chunk using the controller's active `VadBackend` (Silero, TenVAD, or Earshot).
+  - If configured VAD weights are missing from the controller's local storage, the backend falls back to pure-Rust Earshot VAD and emits an immediate user-visible transient notification on the controller (`VadFallback`).
+  - Maintains a pre-roll buffer (600 ms = 9,600 samples) before speech onset.
+  - On VAD speech onset: sends a `SpeechStart` JSON control message on the audio WebSocket via `NetworkAudioSender`, flushes pre-roll samples, and begins streaming 20 ms (320-sample) PCM16 audio frames.
+  - On VAD speech end: sends a `SpeechEnd` JSON control message on the audio WebSocket.
+  - In PTT mode: the controller suppresses autonomous VAD segmentation and streams audio frames strictly between `PttMarker::Start` and `PttMarker::Stop` signals.
+- **Teardown:**
+  - On involuntary link loss, clean disconnect, or supervisor cancellation, both audio streams are halted immediately and internal audio queues are zeroized.
+
+**Host behaviour:**
+- The host does **not** spawn a VAD actor OS thread when `RemoteLinkState == Connected`. The VAD OS thread is skipped, and incoming commands to the host VAD channel are silently drained without channel closure errors.
+- The host does **not** spawn an AEC worker when `RemoteLinkState == Connected` (the controller has already run AEC).
+- On receiving `SpeechStart`, the host dispatches `VoxEvent::SpeechStart` into the pipeline router, beginning STT ingestion.
+- Incoming audio frames are forwarded directly to STT while in speech state.
+- On receiving `SpeechEnd`, the host dispatches `VoxEvent::SpeechEnd`, flushing the STT segment and triggering the LLM harness.
+
+**Barge-in:**
+When the host is playing TTS and a `SpeechStart` arrives from the controller, the pipeline router handles it identically to a local `VoxEvent::SpeechStart` — playback is cancelled and the pipeline transitions to Listening.
+
+**PTT mode:**
+PTT mode uses `PttMarker` messages on the audio socket. The controller does not run VAD in PTT mode. Both hold-to-talk and tap-to-latch (hybrid PTT) modes are supported.
+
+**Wire format of `SpeechStart`:**
+```json
+{ "type": "SpeechStart", "epoch": <u64>, "sample_offset": <u64> }
+```
+
+**Wire format of `SpeechEnd`:**
+```json
+{ "type": "SpeechEnd", "epoch": <u64>, "sample_count": <u64> }
+```
+
+Both messages travel on the audio socket with payload tag `0x01` (JSON audio-control message).
+
 ## 8. IPC Command Routing
 
 ### 8.1 Classification
@@ -629,7 +681,7 @@ Every IPC command is classified at **domain + key granularity** (not just comman
 | `update_setting` / `remote.accepts_controllers` | Local | Host-side switch; a controller must never be able to enable or disable controller acceptance |
 | `update_setting` / `remote.execution_mode` | Local | Controller-side switch; local to whichever device evaluates it |
 | `list_audio_devices` | Local | Returns laptop's hardware list; meaningless on phone |
-| `manage_models` | Local | Downloads to laptop's filesystem |
+| `manage_models` | Split | VAD models execute locally on controller; STT/LLM/TTS models forward to host |
 | `get_settings` | Split | Forwarded but secret fields redacted |
 | `get_settings_contract` | Remote | Schema only; no secrets |
 | `list_voices`, `set_active_voice` | Remote | Voice catalog is host-side |
@@ -852,6 +904,8 @@ The command gateway MUST enforce the routing table (§8.1) on every `Req` messag
 
 **SessionOrigin** must be added to `ownership-spec.md`. When a controller is connected (`RemoteLinkState == Connected`), the host engine MUST use `NetworkAudioCapture` (phone mic stream) as the exclusive audio capture source. It MUST NOT fall back to the local laptop microphone. The laptop dictation hotkey MUST be gated (non-functional) while `RemoteLinkState == Connected`.
 
+**VAD and AEC ownership in remote mode:** When `RemoteLinkState == Connected`, the host MUST NOT spawn a VAD actor OS thread and MUST NOT spawn an AEC worker. VAD runs on the controller (§7.6); the controller has already applied AEC before sending frames. The host receives speech-segmented audio gated by `SpeechStart`/`SpeechEnd` signals and feeds it directly to STT.
+
 **Conflict with US-OWN-03:** `ownership-spec.md` US-OWN-03 says pausing restores dictation. The remote control rule takes precedence: while `RemoteLinkState == Connected`, dictation is gated regardless of pipeline state (even Paused). Dictation is only restored when the controller disconnects (`RemoteLinkState` transitions to `Paired` or `Unpaired`).
 
 **"Remote session" definition:** A remote session is active when `RemoteLinkState == Connected`, not merely when the pipeline is non-Idle. While `RemoteLinkState == Connected`, dictation is gated. Dictation is restored immediately when `RemoteLinkState` transitions to `Paired` or `Unpaired`.
@@ -958,6 +1012,11 @@ This specification aligns with §4.8 and §5 of `ipc-spec.md`. The IPC surface r
 - **VERIFY-RC-20 (Snapshot carries the transcript):** A controller that attaches to a host with an active session receives the recent turns in the `AttachSnapshot`, not an empty transcript.
 - **VERIFY-RC-21 (Audio channel is encrypted):** The audio WebSocket rejects a connection that has not completed a Noise handshake, and rejects one whose handshake used a different static key than the control channel. The plaintext of an audio frame is never observable on the wire.
 - **VERIFY-RC-22 (State delivery is push-based):** A `remote_state_changed` event is emitted on every `RemoteLinkState` transition on both the host and the controller. The controller's initial state is retrievable via `get_link_state`. The host exposes no such command and does not need one.
+- **VERIFY-RC-23 (VAD not spawned on host in remote mode):** When `RemoteLinkState == Connected` at engine startup, no VAD OS thread is created. The `spawn_vad_actor` call is not reached.
+- **VERIFY-RC-24 (Speech boundary round-trip):** A `SpeechStart` message sent by the controller results in `VoxEvent::SpeechStart` on the host within one WS round-trip (≤ 5 ms on LAN).
+- **VERIFY-RC-25 (Silence frames not transmitted):** During silence windows, the controller sends no `AudioFrame` messages. Verified by frame count on a loopback conformance test.
+- **VERIFY-RC-26 (Pre-roll included in first segment):** The first `SttCommand::Audio` payload the host delivers to STT after `SpeechStart` includes pre-roll samples from before speech onset.
+- **VERIFY-RC-27 (Barge-in via SpeechStart):** When the host is in Speaking state and receives `SpeechStart` from the controller, the pipeline router cancels playback and transitions to Listening within one WS round-trip.
 
 ---
 

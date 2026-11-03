@@ -272,6 +272,23 @@ fn route_intercepted_invoke(
             });
             return Some(true);
         }
+        if cmd == "manage_models" {
+            let model_id = json
+                .as_ref()
+                .and_then(|v| v.get("modelId").or_else(|| v.get("model_id")))
+                .and_then(|v| v.as_str());
+
+            let is_vad_model = model_id
+                .map(|id| {
+                    id == "silero_vad" || id == "ten_vad" || id == "earshot" || id.contains("vad")
+                })
+                .unwrap_or(false);
+
+            if is_vad_model {
+                // VAD models run on the controller; execute manage_models locally
+                return None;
+            }
+        }
         match classify_command(cmd, domain, key) {
             CommandClass::Remote | CommandClass::Split => {
                 let manager = Arc::clone(&state.remote_manager);

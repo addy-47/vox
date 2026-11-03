@@ -19,22 +19,30 @@ export const DialogueBubble: React.FC<DialogueBubbleProps> = memo(({
   const [isExpanded, setIsExpanded] = useState(false);
   const [isOverflowing, setIsOverflowing] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
+  const prevLenRef = useRef(0);
 
   const isUser = role === "user";
   const defaultBadge = isUser ? DIALOGUE_COPY.userBadge : DIALOGUE_COPY.assistantBadge;
   const displayBadge = badge ?? defaultBadge;
 
   useEffect(() => {
+    const prevLen = prevLenRef.current;
+    prevLenRef.current = content.length;
+
     if (isExpanded) return;
     if (content.length < 90) {
       setIsOverflowing((prev) => (prev ? false : prev));
+      return;
+    }
+    // Once already overflowing and tokens only append, skip the synchronous scrollHeight read
+    if (isOverflowing && content.length >= prevLen) {
       return;
     }
     const el = contentRef.current;
     if (!el) return;
     const overflows = el.scrollHeight > el.clientHeight + 4;
     setIsOverflowing((prev) => (prev === overflows ? prev : overflows));
-  }, [content, isExpanded]);
+  }, [content, isExpanded, isOverflowing]);
 
   return (
     <Message from={role} className={cn("w-full max-w-[280px]", className)}>

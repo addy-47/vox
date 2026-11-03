@@ -348,113 +348,12 @@
   - `pnpm tsc --noEmit`: changed files clean; blocked by a pre-existing unused `useEffect` import in `ControllerRemoteDeskPanel.tsx`.
 
 
-- **Settings Page Layout Inventory Doc (2026-10-28):**
-  1. Explored `pages/Settings.tsx`, `useSettingsPage.ts`, `settingsLayout.ts`, `SettingsCardWrapper.tsx`, `SettingsSideCarouselCard.tsx`, `RadialHub.tsx`, and all six domain cards (Persona, Memory, Language, Appearance, Speech, Interaction) plus their desks/modals.
-  2. Created root-level `SETTINGS_PAGE_LAYOUT.md` documenting desktop radial-hub grid layout, compact/mobile single-column order, shared card chrome/commit footers, each card's settings and views, and full modals/overlays inventory, plus mobile redesign preservation notes and key file index.
-
-- **Remote Control mDNS + Connect RCA (2026-10-28):**
-  1. RCA: phone dials stale hint `192.168.29.221:7700` after network change; host never receives inbound; mDNS fallback unimplemented; controller booted Unpaired on relaunch. Pairing is key-based, not IP-coupled (RAIL-RC-01).
-  2. Implemented mDNS advertise (host) + browse (controller) in `services/remote/discovery/mod.rs`; listener spawns `spawn_mdns_advertiser`; manager cycles explicit → stored hints → mDNS and persists the working candidate as an Observed hint.
-  3. Added `ws::dial_with_timeout` (4s) and `DIAL_CANDIDATE_TIMEOUT`; added `if-addrs` dependency.
-  4. Frontend: Home failure banner with dismiss; `useHomePage` exposes `remoteFailureReason`/`dismissRemoteFailure`.
-  5. Deferred Tier B (Android multicast lock) → `.scratch/remote_mdns_android_multicast_lock.md`.
-  6. Verified: `verify-targets.sh` (desktop + aarch64-android) 0 warnings/0 errors; cargo lib tests 209 pass. Pre-existing failures unchanged (chapter scrubber pages-older test, tsc `ControllerRemoteDeskPanel.tsx`).
-
-- **Remote Control mDNS Suffix RCA & Settings Failed State Fix (2026-10-28):**
-  1. **Root Cause Analysis (Logs from Host `vox.log` & Android `adb logcat`)**:
-     - Host log and Android logcat showed identical error: `mDNS service ... must end with '._tcp.local.' or '._udp.local.'`.
-     - `REMOTE_MDNS_SERVICE_TYPE` was missing trailing dot (`_vox._tcp.local` vs `_vox._tcp.local.`).
-     - As a result, host advertisement failed to register on every loop, and controller mDNS browse failed immediately on timeout.
-     - Device pairing was intact in database (`paired_devices`), so no re-pairing was necessary.
-     - In `ControllerRemoteDeskPanel.tsx` and `RemoteDeskPanel.tsx`, UI branched exclusively on `linkState === "Paired"` and `linkState === "Connected"`.
-     - When rocket connection timed out to `linkState === "Failed"`, the desk panel treated the peer as nonexistent and rendered the unpaired "Pair with desktop..." prompt and QR scanner glyph button.
-  2. **Implemented Fixes**:
-     - `services/remote/mod.rs`: Fixed `REMOTE_MDNS_SERVICE_TYPE` to `"_vox._tcp.local."` per RFC 6762 / `mdns-sd` requirements.
-     - `services/remote/discovery/advertiser.rs`: Replaced manual string formatting with `info.get_fullname().to_string()` for exact unregistration key match.
-     - `remoteStore.ts`: Added `dismissFailure()` action to reset `linkState` to `Paired` when a paired peer is retained.
-     - `useHomePage.ts`: Wired banner dismiss button to invoke `dismissFailure()`.
-     - `ControllerRemoteDeskPanel.tsx`: Fixed state guard to `hasPairedHost = connectedPeer !== null && linkState !== "Unpaired"`. Rendered failed status with retry glyph and kept paired host identity visible when `linkState === "Failed"`.
-     - `RemoteDeskPanel.tsx`: Updated condition to keep paired device visible during `linkState === "Failed"`.
-  3. **Verification**:
-     - `./scripts/verify-targets.sh`: SUCCESS (0 warnings / 0 errors across architecture lint, desktop binary, desktop tests/benches, and Android `aarch64-linux-android`).
-     - `cd app && pnpm tsc --noEmit`: SUCCESS (0 errors).
-     - `pnpm exec vitest run src/test/unit/remoteStore.test.ts src/test/chapterScrubberWindow.dom.test.tsx src/test/remoteActivityDisplay.regression.test.ts`: SUCCESS (22/22 pass).
-  1. **Android Multicast Lock & Discovery Alignment**:
-     - `MulticastLockManager.kt`: Added thread-safe Kotlin manager for `WifiManager.MulticastLock` acquire/release with safe exception handling. Retained under R8 by `jni-keep.pro`.
-     - `AndroidManifest.xml`: Declared `CHANGE_WIFI_MULTICAST_STATE` and `ACCESS_WIFI_STATE` permissions.
-     - `services/remote/discovery/`: Decomposed discovery domain per `backend-style-guide.md` into `hints.rs`, `advertiser.rs`, `browser.rs`, `multicast.rs`, and minimal re-export `mod.rs`.
-     - `multicast.rs`: Implemented RAII `MulticastLockGuard` acquiring the lock during `discover_host` on Android (via Kotlin manager with direct JNI fallback) and releasing on drop; no-op on desktop.
-     - `hints.rs`: Added `update_observed_hint` to prepend freshly observed candidates while preserving forward-compatible hints.
-     - `remote/mod.rs`: Moved `MDNS_BROWSE_TIMEOUT` (6s) to subsystem constants per `RC-SSO`.
-  2. **Code Review Remediation of Prior Agent's Work**:
-     - `ChapterScrubber.tsx`: Rendered 11px mono range readout (`windowStart + 1`–`windowStart + visibleChapters.length`) under lower chevron when pages exist; fixed failing test in `chapterScrubberWindow.dom.test.tsx` (6/6 pass).
-     - `ControllerRemoteDeskPanel.tsx`: Removed unused `useEffect` import; resolved `TS6133` error (`pnpm tsc --noEmit` exits with 0 errors).
-  3. **Specification Alignment**:
-     - `docs/specs/remote-control-spec.md` §6.1: Documented mDNS TXT record properties (`device_id`, `accepts`), Android `MulticastLock` requirement, candidate dial sequence, and observed hint updates.
-  4. **Verification**:
-     - `./scripts/verify-targets.sh`: SUCCESS (0 warnings / 0 errors across architectural invariant lint, desktop lib/bin, desktop tests/benches, and Android `aarch64-linux-android`).
-     - `cargo test --test remote_connection_test --release -- --test-threads=1`: SUCCESS (9/9 pass in 1.84s).
-     - `cargo test discovery --release`: SUCCESS (5/5 pass).
-     - `pnpm tsc --noEmit`: SUCCESS (0 errors).
-     - `pnpm exec vitest run src/test/chapterScrubberWindow.dom.test.tsx`: SUCCESS (6/6 pass).
-     - `pnpm exec vitest run src/test/unit/remoteStore.test.ts src/test/remoteActivityDisplay.regression.test.ts`: SUCCESS (15/15 pass).
-
-- **Remote Control Test Suite Revamp & `/create-test` Implementation (2026-10-28):**
-  1. **Audit & RCA Findings**:
-     - Identified that `remote_connection_test.rs` previously faked the host listener inside the test body instead of testing the authentic production seam (`handle_inbound_connection`).
-     - Subtest header falsely claimed `dial_and_connect` while calling `pair_device`; the Rocket button path (`dial_and_connect`) had 0% integration test coverage.
-     - Zero tests called `mdns-sd`, allowing RFC 6762 trailing dot rejection to escape to production.
-     - Settings panel lacked DOM tests for `linkState === "Failed"`, allowing the "no device paired" UI regression.
-  2. **Implemented Tests & Fixes**:
-     - `services/remote/discovery/advertiser.rs`: Added `host_announcement_registers_with_rfc_compliant_service_syntax` unit test asserting `HostAnnouncement::announce` registers cleanly with `mdns-sd`.
-     - `tests/remote_connection_test.rs`: Added 3 new integration subtests:
-       - `remote_connection_dial_and_connect_reaches_connected`: Full controller `dial_and_connect` with real host listener, Noise XX handshake, and observed hint persistence.
-       - `remote_connection_dead_primary_hint_falls_back_to_valid_candidate`: Proves dead IP candidate 0 fails over to working candidate 1 within deadline.
-       - `remote_connection_dial_failure_retains_peer_identity`: Asserts dial failure transitions to `Failed` while preserving `peer_identity` and state DTO `deviceId`/`displayName`.
-     - Corrected misleading intent block on `remote_connection_pairing_handshake_approved_reaches_connected`.
-     - `app/src/test/controllerRemoteDeskPanel.dom.test.tsx`: Created DOM regression suite verifying `Failed`, `Paired`, `Connected`, and `Unpaired` states render correct affordances and retain host identity.
-  3. **Compilation & Quality Gate**:
-     - `./scripts/verify-targets.sh`: SUCCESS (0 warnings / 0 errors across architectural invariant lint, desktop lib/bin, desktop tests/benches, and Android `aarch64-linux-android`).
-     - `cd app && pnpm lint:arch && pnpm tsc --noEmit`: SUCCESS (0 errors).
-     - `pnpm exec vitest run src/test/controllerRemoteDeskPanel.dom.test.tsx`: SUCCESS (4/4 pass).
-
-- **mDNS Label Length Limit Root Cause Fix, Diagnostic Tracing & Home Error Banner Position (2026-10-28):**
-  1. **Root Cause Analysis (mDNS Packet Encoding Drop)**:
-     - Traced why `discover_host` produced 0 candidates despite both host and phone being active on the same subnet (`10.109.x.x`).
-     - Discovered that RFC 1035 §2.3.4 and RFC 6763 §4.1 enforce a maximum DNS label length of 63 octets.
-     - `advertiser.rs` constructed `instance_name = "Vox-{device_id}"` and `host = "vox-{device_id}.local."` using the raw 64-hex-char `device_id`, resulting in 68-byte labels.
-     - `mdns-sd` packet writer (`dns_parser.rs:3075`) explicitly skips any question or record containing labels > 63 bytes. As a result, the daemon dropped all announcement packets at wire encoding without returning a registration error.
-  2. **Implementation**:
-     - `services/remote/discovery/advertiser.rs`: Truncated `instance_name` and `host_name` prefix to 32 chars (`Vox-{32-char-hash}` = 36 bytes <= 63 octets), preserving full 64-char `device_id` in TXT record where controller matches. Added announcement tracing.
-     - `services/remote/discovery/browser.rs`: Added exhaustive `tracing::info!` instrumentation covering `SearchStarted`, `ServiceFound`, `ServiceResolved`, `ServiceRemoved`, candidate matching, and browse timeouts.
-     - `services/remote/session/manager.rs`: Added structured logging for candidate iteration, candidate failure causes, mDNS fallback triggers, and discovered candidates.
-     - `app/src/pages/Home.tsx`: Replaced scattered absolute coordinate error banners (`top-16`, `top-[116px]`, `top-[160px]`) with a unified flex container pinned directly below the App Header (`top-2 sm:top-3 left-1/2 -translate-x-1/2 z-[100]`), eliminating overlap with the status badge and central orb.
-  3. **Verification**:
-     - `./scripts/verify-targets.sh`: SUCCESS (0 warnings / 0 errors across architectural invariant lint, desktop lib/bin, desktop tests/benches, and Android `aarch64-linux-android`).
-     - `cd app && pnpm lint:arch && pnpm tsc --noEmit`: SUCCESS (0 errors).
-
-- **Remote Session Orb Visibility & Connected Kicker Label (2026-10-28):**
-  1. **Root Cause**:
-     - `AdvancedOrb.tsx`: `useDynamicFPS` passed `isPaused: isSleeping || ...`. When remote connected, `isSleeping` froze the animation loop, preventing dynamic transitions until unmount/remount. Furthermore, shader alpha was reduced to `0.12` and color brightness to `0.10` (`0.12 * 0.10 = 0.012`), rendering the orb pitch black.
-     - `Home.tsx`: Lacked the connected kicker label displaying the peer device identity above `DynamicStatusBadge`.
-  2. **Fix Applied**:
-     - `AdvancedOrb.tsx`: Removed `isSleeping` from `isPaused` so the orb stays alive and reactive. Preserved full visibility (`alpha` remains at 0.85-0.90) while softly muting the interior accent and glow colors (0.40 multiplier).
-     - `Home.tsx`: Added glowing pulse badge displaying `CONNECTED: <displayName>` directly above the `REMOTE SESSION` status badge.
-  3. **Verification**:
-     - `cd app && pnpm lint:arch && pnpm tsc --noEmit`: SUCCESS (0 errors).
-     - Vite HMR updated live on desktop host.
-
-
-- **Restore Defaults Confirm Modal (2026-10-28):**
-  1. **Change**: Replaced in-place two-step inline confirmation in `app/src/shared/components/settings/RestoreDefaultsButton.tsx` with shared `ConfirmModal`. Button now opens modal; confirming calls `restoreDefaults()`.
-  2. **Verification**: `cd app && pnpm tsc --noEmit`: SUCCESS (0 errors).
-
-
-- **Inline crate import cleanup (major set) (2026-10-29):**
-  1. **Scope**: Hoisted direct `crate::...` fully-qualified paths to top-level imports in major production files: core/state.rs, ipc/voices.rs, services/health.rs, services/tts/voice.rs, services/remote/session/listener.rs, services/remote/link/ws.rs, services/remote/session/manager.rs. Skipped cfg-gated files (lib.rs, ipc/tray.rs, tray.rs, window_customizer.rs).
-  2. **Counts**: 258 total direct `crate::` usages in backend (236 prod src, 16 test, 6 sidecar); major set = 8 files with ≥6 occurrences (169 usages). Inline `use crate::` statements: 24 (21 src + 3 sidecar) also addressed where overlapping.
-  3. **Minor fixes for compile**: InteractionState::as_str, health discover_server_dialect catalog path, listener conversation_id/session handling, events Arc path.
-  4. **Verification**: `./scripts/verify-targets.sh desktop`: SUCCESS (0 warnings/errors).
+- **Remote Discovery, mDNS & UI Stability (2026-10-28 – 2026-10-29):**
+  - Resolved mDNS RFC 6762 trailing dot and RFC 1035 63-octet label limits in `advertiser.rs` and `browser.rs`.
+  - Implemented Android `MulticastLockManager.kt` and RAII guard in `multicast.rs`.
+  - Added integration tests in `remote_connection_test.rs` covering authentic `dial_and_connect` and candidate failover.
+  - Fixed `ControllerRemoteDeskPanel.tsx` failed-link retention, Home error banner positioning, and restored Orb brightness.
+  - Cleaned direct `crate::` imports to top-level imports across core services.
 
 ## 2026-10-31 — LFM3-Audio-2B integration feasibility research
 
@@ -493,3 +392,39 @@
   - Compile gate: `./scripts/verify-targets.sh` passed with 0 warnings / 0 errors on desktop and Android (`aarch64-linux-android`).
   - Rust tests: `remote_security_test` (20/20 passed), `remote_connection_test` (15/15 passed), `remote_link_test` (18/18 passed).
   - Frontend tests: `pnpm test` (31/31 suites passed, 253/253 tests passed).
+
+---
+
+## 2026-11-02 — Remote Control Audio Pipeline, Host Standalone Audio & VAD Decoupling
+
+- **Root Causes Diagnosed**:
+  1. **Silent Controller Playout & Inert Uplink**: `dial_secondary_audio_socket` in `supervisor.rs` established the audio WebSocket but never spawned a reader task for downlink audio frames or an uplink capture/VAD worker task. Downlink audio sat unread; microphone audio was never captured.
+  2. **Dead Host Standalone Audio**: In `engine.rs`, `if is_remote { (tx, None, None, None) }` bypassed initialization of host AEC and VAD workers, immediately dropping `vad_rx`. Any transition to standalone mode left the hardware microphone ringbuffer overflowing (>25,000 chunks dropped) with `vad_tx` reporting "sending on a closed channel".
+  3. **Silent VAD Fallback**: Missing ONNX model files fell back silently to `Earshot` without surfacing an alert to the user.
+  4. **Coupled `manage_models` Routing**: `manage_models` was routed exclusively to the host, preventing the controller from querying and downloading local VAD models required for edge VAD.
+  5. **Sluggish Action Controls**: 500ms CSS transition delays created sluggish tactile feedback on the Home controls, lacking instant active press states and hybrid push-to-talk.
+
+- **Implemented Architecture & Fixes**:
+  1. **Controller Audio Runtime (`services/remote/audio/controller_runtime.rs`)**:
+     - Playout: Reads 24kHz PCM16 frames from secondary audio WebSocket, upsamples 2x to 48kHz, and feeds local CPAL output stream.
+     - Capture & Edge VAD: Captures 16kHz microphone audio, evaluates frame speech probability via `VadBackend`, tracks onset (3 frames = 48ms) and hangover (25 frames = 400ms), and transmits `SpeechStart`, raw audio frames, and `SpeechEnd` over `NetworkAudioSender`.
+     - Integrated in `supervisor.rs` upon secondary audio socket connection.
+  2. **Host Local Audio Pipeline Lifecycle (`core/engine.rs`)**:
+     - Retained AEC and VAD workers permanently alive regardless of remote status.
+     - In remote mode, hardware microphone capture is paused; upon disconnect, `audio_stream.start()` resumes local processing with zero dropped ringbuffer frames or dead channels.
+  3. **Non-Silent VAD Fallback (`services/vad/factory.rs`, `core/engine.rs`)**:
+     - Extended factory return signature to `VadInitOutput { backend, fallback_from, fallback_reason }`.
+     - Emits a transient warning notification (`VadFallback`) on desktop and controller when a model falls back to `Earshot`.
+  4. **Decoupled `manage_models` Command Routing (`services/remote/control/routing.rs`, `lib.rs`)**:
+     - Reclassified `manage_models` as `CommandClass::Split`.
+     - Intercepts VAD models (`silero_vad`, `ten_vad`, `earshot`) for local controller storage, while forwarding STT, TTS, and LLM models to the host.
+  5. **Instant Visual Feedback & Hybrid Push-to-Talk (`HomeControls.tsx`)**:
+     - Reduced transition latency to 150ms and introduced immediate 0ms visual press feedback.
+     - Implemented hybrid PTT: tap (<300ms) toggles latched recording; hold (≥300ms) records continuously until pointer release.
+  6. **Specification Alignment**:
+     - Updated `docs/specs/remote-control-spec.md` (§7.6 Controller Audio Runtime, §8.1 `manage_models` Split routing).
+     - Updated `docs/specs/ipc-spec.md` with `manage_models` Split behavior.
+
+- **Verification**:
+  - Backend compile gate (`./scripts/verify-targets.sh`): SUCCESS (0 warnings / 0 errors across architecture invariant lint, desktop lib/bin, desktop tests/benches, and Android `aarch64-linux-android`).
+  - Frontend test suite (`cd app && pnpm test`): SUCCESS (31 test files, 255 tests passed).

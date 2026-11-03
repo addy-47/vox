@@ -9,6 +9,8 @@ use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use turso::{params, Connection};
 
+use crate::{services::tts::voice::ManifestVoiceEntry, utils::paths};
+
 /// Declared voice origin. Serializes to the exact `source_kind` strings stored
 /// in the `voices` table, so the mapping is compiler-checked instead of an
 /// inline literal at each write site.
@@ -371,7 +373,7 @@ pub async fn batch_upsert_voices(conn: &Connection, entries: &[VoiceEntry]) -> R
 }
 
 pub async fn seed_packaged_voices(conn: &Connection) -> Result<()> {
-    let models_dir = match crate::utils::paths::try_get() {
+    let models_dir = match paths::try_get() {
         Some(p) => p.models,
         None => return Ok(()),
     };
@@ -450,7 +452,7 @@ async fn seed_single_voice(conn: &Connection, name_str: &str, path: &Path) -> Re
 }
 
 pub async fn seed_zipvoice_voices(conn: &Connection) -> Result<()> {
-    let models_dir = match crate::utils::paths::try_get() {
+    let models_dir = match paths::try_get() {
         Some(p) => p.models,
         None => return Ok(()),
     };
@@ -525,7 +527,7 @@ async fn seed_single_zipvoice(conn: &Connection, slug: &str, path: &Path) -> Res
 /// Syncs declarative bundled manifest voices into the Turso voices table.
 pub async fn sync_manifest_voices_batch(
     conn: &Connection,
-    voices: &[crate::services::tts::voice::ManifestVoiceEntry],
+    voices: &[ManifestVoiceEntry],
 ) -> Result<()> {
     if voices.is_empty() {
         return Ok(());

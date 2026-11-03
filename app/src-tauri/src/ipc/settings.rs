@@ -5,15 +5,17 @@ use tauri::{AppHandle, Manager, State};
 use crate::{
     config::{
         apply_model_parameter_mutation, apply_setting_mutation, apply_settings_patch_tree,
-        dispatch_worker_command, get_setting_reload_policy, handle_setting_side_effects,
-        request_engine_restart, schedule_debounced_save, supported_keys_for_domain,
-        SettingReloadPolicy, VoxSettings,
+        build_settings_contract, dispatch_worker_command, get_setting_reload_policy,
+        handle_setting_side_effects, is_secret_key, request_engine_restart,
+        schedule_debounced_save, supported_keys_for_domain, SettingReloadPolicy, SettingsContract,
+        VoxSettings,
     },
     core::{
         error::VoxIpcError,
         events::{emit_ipc, IpcEvent},
         state::AppState,
     },
+    services::tts::auth::redact_secret,
     utils::paths,
 };
 
@@ -100,8 +102,8 @@ pub async fn get_settings<R: tauri::Runtime>(app: AppHandle<R>) -> Result<BootSt
 /// Returns the canonical settings contract including supported keys, reload policies,
 /// secret keys, LLM cloud providers, TTS providers, and numeric defaults.
 #[tauri::command]
-pub async fn get_settings_contract() -> Result<crate::config::SettingsContract, VoxIpcError> {
-    Ok(crate::config::build_settings_contract())
+pub async fn get_settings_contract() -> Result<SettingsContract, VoxIpcError> {
+    Ok(build_settings_contract())
 }
 
 /// Strongly-typed classification of whether a `(domain, key)` setting
@@ -111,14 +113,14 @@ pub async fn get_settings_contract() -> Result<crate::config::SettingsContract, 
 /// `redact_and_supported_key_sets_agree` test. This is the ONLY place in the
 /// system that answers the question "is this setting a secret?".
 fn is_secret_setting(domain: &str, key: &str) -> bool {
-    crate::config::is_secret_key(domain, key)
+    is_secret_key(domain, key)
 }
 
 /// Redacts secret-bearing setting values for logs and restart reasons.
 /// The true value is still applied and persisted; only its display is masked.
 fn redact_setting_value(domain: &str, key: &str, value: &serde_json::Value) -> serde_json::Value {
     if is_secret_setting(domain, key) {
-        serde_json::Value::String(crate::services::tts::auth::redact_secret().to_string())
+        serde_json::Value::String(redact_secret().to_string())
     } else {
         value.clone()
     }

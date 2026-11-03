@@ -9,7 +9,7 @@ pub use actor::{
     VadOperationalMode, VadValidationResult,
 };
 pub use config::{VadBackendOption, VadSettings};
-pub use factory::create_vad_instance_from_settings;
+pub use factory::{create_vad_instance_from_settings, VadInitOutput};
 pub use providers::{
     earshot_vad, silero_onnx, ten_onnx, EarshotVadEngine, SileroVadEngine, TenVadEngine,
     VadBackend, VadEngine,

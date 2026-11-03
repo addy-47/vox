@@ -18,6 +18,7 @@ export interface FieldPreset {
   trail: number;     // comet trail length multiplier
   flow: number;      // concentric waves: + outward (scan), - inward (pull), 0 = still
   scale: number;     // orbit size multiplier (<1 = contracted)
+  orbScale: number;  // cutout disc scale, must track VoxOrb TARGET_SCALE (0.94 Listening, 1.10 Speaking)
 }
 
 /** Preset registry keys */
@@ -32,14 +33,14 @@ export type FieldPresetKey =
   | 'compaction';
 
 export const FIELD_PRESETS: Record<FieldPresetKey, FieldPreset> = {
-  ready:         { intensity: 0.35, speed: 0.35, orbits: 4,  nodes: 1,   trail: 0.5, flow: 0,    scale: 1 },
-  listening:     { intensity: 0.55, speed: 0.40, orbits: 5,  nodes: 1,   trail: 0.6, flow: -0.4, scale: 0.92 },
-  thinking:      { intensity: 0.75, speed: 0.60, orbits: 6,  nodes: 1,   trail: 0.75, flow: 0,   scale: 1 },
-  speaking:      { intensity: 0.85, speed: 0.45, orbits: 7,  nodes: 1.5, trail: 1.0, flow: 0.6,  scale: 1.12 },
-  working:       { intensity: 0.90, speed: 0.85, orbits: 7,  nodes: 1.5, trail: 0.9, flow: 0,    scale: 1 },
-  web_search:    { intensity: 1,    speed: 1.35, orbits: 8,  nodes: 2,   trail: 1.3, flow: 1.0,  scale: 1 },
-  search_memory: { intensity: 1,    speed: 0.95, orbits: 8,  nodes: 1.5, trail: 1.0, flow: -1.0, scale: 0.94 },
-  compaction:    { intensity: 1,    speed: 1.10, orbits: 7,  nodes: 1,   trail: 0.9, flow: -1.4, scale: 0.86 },
+  ready:         { intensity: 0.35, speed: 0.35, orbits: 4,  nodes: 1,   trail: 0.5, flow: 0,    scale: 1,    orbScale: 1.00 },
+  listening:     { intensity: 0.55, speed: 0.40, orbits: 5,  nodes: 1,   trail: 0.6, flow: -0.4, scale: 0.92, orbScale: 0.94 },
+  thinking:      { intensity: 0.75, speed: 0.60, orbits: 6,  nodes: 1,   trail: 0.75, flow: 0,   scale: 1,    orbScale: 1.00 },
+  speaking:      { intensity: 0.85, speed: 0.45, orbits: 7,  nodes: 1.5, trail: 1.0, flow: 0.6,  scale: 1.12, orbScale: 1.10 },
+  working:       { intensity: 0.90, speed: 0.85, orbits: 7,  nodes: 1.5, trail: 0.9, flow: 0,    scale: 1,    orbScale: 1.00 },
+  web_search:    { intensity: 1,    speed: 1.35, orbits: 8,  nodes: 2,   trail: 1.3, flow: 1.0,  scale: 1,    orbScale: 1.00 },
+  search_memory: { intensity: 1,    speed: 0.95, orbits: 8,  nodes: 1.5, trail: 1.0, flow: -1.0, scale: 0.94, orbScale: 1.00 },
+  compaction:    { intensity: 1,    speed: 1.10, orbits: 7,  nodes: 1,   trail: 0.9, flow: -1.4, scale: 0.86, orbScale: 1.00 },
 };
 
 export function isFieldPresetKey(k: string): k is FieldPresetKey {
@@ -90,9 +91,9 @@ const ORBITS: Orbit[] = [
   { a: 1.40, k: 0.42, phi: 14,  ox: 0,    oy: 0,    w: -0.7,  nodes: 1, style: 'solid',  motion: 'tumble',  rate: 0.42,  alpha: 0.5,  shimmer: 0.3 },
   { a: 1.75, k: 0.27, phi: -21, ox: 0.05, oy: 0,    w: 0.5,   nodes: 1, style: 'dust',   motion: 'static',  rate: 0,     alpha: 0.65, shimmer: 0.4 },
   { a: 2.25, k: 0.34, phi: -8,  ox: 0,    oy: 0.05, w: 0.45,  nodes: 1, style: 'band',   motion: 'breathe', rate: 0.55,  alpha: 0.3,  shimmer: 0.5 },
-  { a: 2.95, k: 0.30, phi: 12,  ox: 0.3,  oy: 0,    w: -0.38, nodes: 1, style: 'dash',   motion: 'precess', rate: -0.07, alpha: 0.5,  shimmer: 0.3 },
-  { a: 3.7,  k: 0.42, phi: -26, ox: -0.4, oy: 0.1,  w: 0.3,   nodes: 0, style: 'solid',  motion: 'static',  rate: 0,     alpha: 0.2,  shimmer: 0.6 },
-  { a: 4.6,  k: 0.24, phi: 6,   ox: 0.6,  oy: 0,    w: -0.25, nodes: 1, style: 'double', motion: 'tumble',  rate: 0.2,   alpha: 0.4,  shimmer: 0.3 },
+  { a: 2.95, k: 0.30, phi: 12,  ox: 0,    oy: 0,    w: -0.38, nodes: 1, style: 'dash',   motion: 'precess', rate: -0.07, alpha: 0.5,  shimmer: 0.3 },
+  { a: 3.7,  k: 0.42, phi: -26, ox: 0,    oy: 0,    w: 0.3,   nodes: 0, style: 'solid',  motion: 'static',  rate: 0,     alpha: 0.2,  shimmer: 0.6 },
+  { a: 4.6,  k: 0.24, phi: 6,   ox: 0,    oy: 0,    w: -0.25, nodes: 1, style: 'double', motion: 'tumble',  rate: 0.2,   alpha: 0.4,  shimmer: 0.3 },
   { a: 5.5,  k: 0.36, phi: -14, ox: -0.5, oy: -0.1, w: 0.2,   nodes: 1, style: 'dust',   motion: 'precess', rate: 0.045, alpha: 0.4,  shimmer: 0.4 },
   { a: 6.5,  k: 0.30, phi: 20,  ox: 0.2,  oy: 0,    w: -0.16, nodes: 0, style: 'solid',  motion: 'static',  rate: 0,     alpha: 0.16, shimmer: 0.5 },
   { a: 2.6,  k: 0.20, phi: 35,  ox: -0.2, oy: 0,    w: 0.6,   nodes: 1, style: 'dash',   motion: 'breathe', rate: 0.4,   alpha: 0.35, shimmer: 0.4 },
@@ -112,7 +113,7 @@ export class OrbitFieldEngine {
   private activeKey: string | null = null;
   private phase: number[][] = ORBITS.map((_o, i) => Array.from({ length: MAX_NODES }, (_, j) => (j * TAU) / MAX_NODES + i * 1.1));
   private motion: number[] = ORBITS.map(() => 0);
-  private t = 0; private dust = 0; private flowPhase = 0;
+  private t = 0; private dust = 0; private flowPhase = 0; private smoothedAudio = 0;
   private accent: [number, number, number] = [0, 219, 233];
   private accentPrefix = 'rgba(0,219,233,';
   private light = false;
@@ -173,7 +174,7 @@ export class OrbitFieldEngine {
     this.sprite = s;
   }
 
-  frame(dt: number) {
+  frame(dt: number, rawAudioEnergy = 0) {
     const k = 1 - Math.exp(-dt * 2.2);
     const c = this.cur, g = this.tgt;
     (Object.keys(c) as (keyof FieldPreset)[]).forEach((key) => { c[key] += (g[key] - c[key]) * k; });
@@ -182,7 +183,13 @@ export class OrbitFieldEngine {
       return;
     }
     this.cleared = false;
-    this.t += dt; this.dust += dt * 6 * c.speed; this.flowPhase += dt * 0.09 * c.flow;
+
+    // Smooth voice energy envelope (fast attack, gentle release) so orbits resonate with speech
+    const clampedAudio = Math.min(1, Math.max(0, rawAudioEnergy));
+    const audioRate = clampedAudio > this.smoothedAudio ? 1 - Math.exp(-dt * 10) : 1 - Math.exp(-dt * 2.8);
+    this.smoothedAudio += (clampedAudio - this.smoothedAudio) * audioRate;
+
+    this.t += dt; this.dust += dt * 6 * c.speed * (1 + this.smoothedAudio * 0.2); this.flowPhase += dt * 0.09 * c.flow;
     ORBITS.forEach((o, i) => {
       this.motion[i] += o.rate * c.speed * dt;
       for (let j = 0; j < MAX_NODES; j++) this.phase[i][j] += o.w * c.speed * dt;
@@ -190,15 +197,17 @@ export class OrbitFieldEngine {
 
     // Subtle synchronized thinking pulse bob — locked to orb's breathing phase Math.sin(t * 2.3)
     const thinkBob = this.activeKey === 'thinking' ? 0.022 * Math.sin(this.t * 2.3) : 0;
-
+    // Cutout disc tracks VoxOrb's state scale (0.94 Listening / 1.10 Speaking) so orbits never gap or guillotine
+    const effOrbR = this.R * (c.orbScale + thinkBob);
+ 
     const d = this.dpr;
     // back canvas: everything, with the orb disc cut out
     const b = this.bctx; b.setTransform(d, 0, 0, d, 0, 0); b.clearRect(0, 0, this.bw, this.bh);
-    b.save(); b.beginPath(); b.rect(0, 0, this.bw, this.bh); b.arc(this.cx, this.cy, this.R, 0, TAU); b.clip('evenodd');
+    b.save(); b.beginPath(); b.rect(0, 0, this.bw, this.bh); b.arc(this.cx, this.cy, effOrbR, 0, TAU); b.clip('evenodd');
     this.draw(b, false, this.cx, this.cy, thinkBob); b.restore();
     // front canvas: near halves only, inside the disc
     const f = this.fctx; f.setTransform(d, 0, 0, d, 0, 0); f.clearRect(0, 0, this.box, this.box);
-    f.save(); f.beginPath(); f.arc(this.box / 2, this.box / 2, this.R + 1, 0, TAU); f.clip();
+    f.save(); f.beginPath(); f.arc(this.box / 2, this.box / 2, effOrbR + 1, 0, TAU); f.clip();
     this.draw(f, true, this.box / 2, this.box / 2, thinkBob); f.restore();
   }
 
@@ -209,7 +218,7 @@ export class OrbitFieldEngine {
 
   private draw(ctx: CanvasRenderingContext2D, frontOnly: boolean, cx: number, cy: number, thinkBob: number) {
     const c = this.cur, R = this.R, lw = this.light ? 1.3 : 1;
-    const gain = this.light ? 1.25 : 1;
+    const gain = (this.light ? 1.25 : 1) * (1 + this.smoothedAudio * 0.22);
     ctx.lineCap = 'round';
 
     // concentric waves (back only — they never reach the orb face)
@@ -267,7 +276,7 @@ export class OrbitFieldEngine {
       // ── nodes + comet trails ──
       const slots = o.nodes > 0 ? Math.min(MAX_NODES, Math.ceil(o.nodes * c.nodes)) : 0;
       for (let j = 0; j < slots; j++) {
-        const na = Math.max(0, Math.min(1, o.nodes * c.nodes - j)) * vis * (0.55 + 0.45 * shim);
+        const na = Math.max(0, Math.min(1, o.nodes * c.nodes - j)) * vis * (0.55 + 0.45 * shim) * (1 + this.smoothedAudio * 0.25);
         if (na < 0.02) continue;
         const th = this.phase[i][j];
         const T = 11, step = 0.03 * c.trail;

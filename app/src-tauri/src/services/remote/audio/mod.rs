@@ -11,7 +11,11 @@
 //! Workspace rule: `AGENTS.md` §7.1, `audio/`.
 
 pub mod capture;
+pub mod controller_runtime;
+pub mod sender;
 pub mod sink;
 
 pub use capture::{handle_inbound_audio_payload, NetworkAudioCapture, NetworkAudioIngestor};
+pub use controller_runtime::spawn_controller_audio_runtime;
+pub use sender::NetworkAudioSender;
 pub use sink::NetworkAudioSink;

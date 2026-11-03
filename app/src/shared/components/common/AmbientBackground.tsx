@@ -119,12 +119,12 @@ export const AmbientBackground = React.memo(({
       const baseRipple = RIPPLE_OPACITY * rippleOpacityMultiplier;
       const dynamicRipple = baseRipple + smoothedEnergy * 0.18 * rippleOpacityMultiplier;
 
-      const glowStr = dynamicGlow.toFixed(3);
+      const glowStr = (Math.round(dynamicGlow * 200) / 200).toFixed(3);
       if (glowStr !== lastGlowStr && glowRef.current) {
         lastGlowStr = glowStr;
         glowRef.current.style.opacity = glowStr;
       }
-      const rippleStr = dynamicRipple.toFixed(3);
+      const rippleStr = (Math.round(dynamicRipple * 66) / 66).toFixed(3);
       if (rippleStr !== lastRippleStr && rippleRef.current) {
         lastRippleStr = rippleStr;
         rippleRef.current.style.opacity = rippleStr;
@@ -134,8 +134,8 @@ export const AmbientBackground = React.memo(({
       if (energy < 0.001 && smoothedEnergy < 0.001) {
         if (!isSettled) {
           isSettled = true;
-          const bgStr = baseGlow.toFixed(3);
-          const brStr = baseRipple.toFixed(3);
+          const bgStr = (Math.round(baseGlow * 200) / 200).toFixed(3);
+          const brStr = (Math.round(baseRipple * 66) / 66).toFixed(3);
           if (glowRef.current && lastGlowStr !== bgStr) {
             lastGlowStr = bgStr;
             glowRef.current.style.opacity = bgStr;

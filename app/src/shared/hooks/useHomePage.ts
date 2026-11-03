@@ -129,17 +129,8 @@ export function useHomePage() {
     });
   }, [submitText]);
 
-  // Auto-scroll the dialogue rail whenever turns update
-  useEffect(() => {
-    const el = dialogueScrollRef.current;
-    if (!el || !shouldAutoScrollRef.current) return;
-
-    requestAnimationFrame(() => {
-      if (dialogueScrollRef.current && shouldAutoScrollRef.current) {
-        dialogueScrollRef.current.scrollTop = dialogueScrollRef.current.scrollHeight;
-      }
-    });
-  }, [dialogueHistory]);
+  // Auto-scroll is handled by Home.tsx's ResizeObserver on contentInnerRef,
+  // which pins scrollTop on both dialogueHistory and streaming token changes.
 
   return {
     interactionState,

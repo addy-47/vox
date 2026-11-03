@@ -160,7 +160,7 @@ Settings mutations trigger one of three reload policies returned to the frontend
 | `list_favorite_models` | None | `Array<string>` | Queries `models` table in Turso SQLite for models with `is_favorite = 1`, ordered newest first. |
 | `toggle_model_favorite` | `modelId: string` | `boolean` | Atomically toggles `is_favorite` flag for model in `models` table. Returns new favorite boolean. |
 | `get_provider_caps` | `providerId: string` | `ProviderCaps` | Returns dynamic capabilities (supported voices, cloning support). Rejects unknown providers with `InvalidArgument`. |
-| `manage_models` | `action: string`, `modelId: string` | `void` | Downloads, verifies SHA-256, or deletes local model weights. Emits `model_progress`. |
+| `manage_models` | `action: string`, `modelId?: string`, `selectedIds?: string[]` | `ManageModelsResult` | Downloads, verifies SHA-256, presence checks, or deletes model weights. In remote sessions: VAD models execute locally on the controller, pipeline models forward to the host. Emits `model_progress`. |
 
 ### 4.7 Voice Catalog & Synthesis Domain
 Unified voice management backed by the local Turso `voices` table, serving bundled profiles, custom user clones, and remote provider voices.

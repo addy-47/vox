@@ -14,7 +14,8 @@ use crate::{
     config::VoxSettings,
     core::{
         defaults::DEFAULT_TTS_SPEED,
-        events::{emit_ipc_to, InteractionMode, IpcEvent, TranscriptPayload, VoxEvent},
+        error::PipelineImpact,
+        events::{emit_ipc_to, InteractionMode, IpcEvent, Severity, TranscriptPayload, VoxEvent},
         state::{AppState, InteractionOwner, InteractionState},
     },
     monitoring::TelemetryEvent,
@@ -36,8 +37,14 @@ use crate::{
             LlmCommand, QWEN_MODEL_DIR, QWEN_MODEL_FILE,
         },
         memory::{ensure_embedder_loaded, is_embedder_loaded, trim_heap, unload_all_onnx_models},
-        notifications::lifecycle::dictation_live_update,
-        remote::{audio::NetworkAudioCapture, session::RemoteLinkState},
+        notifications::{
+            lifecycle::dictation_live_update, notify, Action, NotificationCategory,
+            NotificationParams,
+        },
+        remote::{
+            audio::{NetworkAudioCapture, NetworkAudioIngestor, NetworkAudioSink},
+            session::RemoteLinkState,
+        },
         stt::{
             actor::{spawn_stt_worker, SttActorChannels, SttActorHandles, SttCommand},
             create_stt_instance_from_settings, SttProvider,
@@ -119,14 +126,44 @@ fn create_stt_instance(state: &AppState) -> Result<Box<dyn SttProvider>, String>
 }
 
 /// Resolves and instantiates the active VAD backend engine.
-async fn create_vad_instance(state: &AppState) -> Result<VadBackend, String> {
+async fn create_vad_instance<R: tauri::Runtime + 'static>(
+    app: &AppHandle<R>,
+    state: &AppState,
+) -> Result<VadBackend, String> {
     let settings = state
         .settings
         .read()
         .map_err(|e| format!("[Core::Engine] Settings lock poisoned: {}", e))?;
     let models_dir = paths::get().models.clone();
-    create_vad_instance_from_settings(&settings.vad, &models_dir)
-        .map_err(|e| format!("[Core::Engine] {}", e))
+    let init_output = create_vad_instance_from_settings(&settings.vad, &models_dir)
+        .map_err(|e| format!("[Core::Engine] {}", e))?;
+
+    if let (Some(_from), Some(reason)) = (init_output.fallback_from, init_output.fallback_reason) {
+        log::warn!("[Core::Engine] VAD fallback active: {:?}", reason);
+        let app_clone = app.clone();
+        let db_clone = state.db.clone();
+        tauri::async_runtime::spawn(async move {
+            let _ = notify(
+                &app_clone,
+                &db_clone,
+                NotificationParams {
+                    impact: Some(PipelineImpact::Degraded),
+                    severity: Severity::Warning,
+                    action: Action::Transient,
+                    category: NotificationCategory::Models,
+                    title: "VAD Model Fallback",
+                    message: "Configured VAD model missing. Falling back to Earshot.",
+                    duration_ms: Some(4000),
+                    group_key: Some("vad:fallback"),
+                    session_id: None,
+                    metadata: None,
+                },
+            )
+            .await;
+        });
+    }
+
+    Ok(init_output.backend)
 }
 
 /// Creates and initializes the CPAL audio playback engine.
@@ -159,7 +196,7 @@ fn create_playback_engine(
 
     // Remote session: route TTS downlink to the phone speaker.
     if state.remote_manager.state() == RemoteLinkState::Connected {
-        let sink = crate::services::remote::audio::NetworkAudioSink::new(
+        let sink = NetworkAudioSink::new(
             state.remote_manager.audio_link_slot(),
             Arc::new(AtomicU64::new(1)),
         );
@@ -173,6 +210,7 @@ fn init_audio_stream(
     state: &AppState,
     cap_prod: ringbuf::HeapProd<f32>,
     event_tx: mpsc::Sender<VoxEvent>,
+    stt_tx: mpsc::Sender<SttCommand>,
 ) -> Result<AudioStream, String> {
     let shared_prod = SharedRingProducer::new(cap_prod);
     let epoch = Arc::new(AtomicU64::new(0));
@@ -182,11 +220,12 @@ fn init_audio_stream(
             Arc::clone(&epoch),
             Arc::clone(&state.pipeline.ingestion_gate),
         )
-        .with_event_tx(event_tx),
+        .with_event_tx(event_tx)
+        .with_stt(stt_tx, Arc::clone(&state.pipeline.turn_id)),
     );
 
-    *state.remote_audio_ingestor.lock() = Some(Arc::clone(&net_cap)
-        as Arc<dyn crate::services::remote::audio::NetworkAudioIngestor + Send + Sync>);
+    *state.remote_audio_ingestor.lock() =
+        Some(Arc::clone(&net_cap) as Arc<dyn NetworkAudioIngestor + Send + Sync>);
 
     let audio_stream = AudioStream::new(shared_prod, Arc::clone(&state.pipeline.ingestion_gate))
         .map_err(|e| e.to_string())?;
@@ -221,7 +260,7 @@ pub async fn start_audio_engine<R: tauri::Runtime + 'static>(
     let (vox_event_tx, vox_event_rx) = mpsc::channel();
 
     let stt_provider = create_stt_instance(state)?;
-    let vad = create_vad_instance(state).await?;
+    let vad = create_vad_instance(app, state).await?;
 
     let (threshold, noise_gate, silence_duration_ms, speech_onset_ms, mode, audio_mode) = {
         let s = state
@@ -251,78 +290,93 @@ pub async fn start_audio_engine<R: tauri::Runtime + 'static>(
         )
     };
 
-    let (aec_tx, aec_rx) = mpsc::channel();
-
-    let aec_ref_rb = ringbuf::HeapRb::<f32>::new(AEC_REFERENCE_BUFFER_SAMPLES);
-    let (ref_prod, ref_cons) = aec_ref_rb.split();
-    let reference_tap = PlaybackReferenceTap::new(ref_prod);
-
-    let aec = AecProcessor::new(Some(ref_cons))
-        .map_err(|e| format!("[Core::Engine] AEC init failed: {}", e))?;
+    let _is_remote = state.remote_manager.state() == RemoteLinkState::Connected;
 
     let cap_ring_buffer = ringbuf::HeapRb::<f32>::new(RING_BUFFER_SIZE);
     let (cap_prod, cap_cons) = cap_ring_buffer.split();
-
-    let clean_ring_buffer = ringbuf::HeapRb::<f32>::new(RING_BUFFER_SIZE);
-    let (clean_prod, clean_cons) = clean_ring_buffer.split();
 
     state
         .pipeline
         .engine_shutdown
         .store(false, Ordering::Relaxed);
 
-    let aec_handle = spawn_aec_worker(
-        aec,
-        cap_cons,
-        clean_prod,
-        Arc::clone(&state.pipeline.engine_shutdown),
-        Some(aec_rx),
-    )
-    .map_err(|e| format!("[Core::Engine] Failed to spawn AEC worker: {}", e))?;
-
-    let vad_config = VadActorConfig {
-        initial_threshold: threshold,
-        initial_noise_gate: noise_gate,
-        initial_silence_duration_ms: silence_duration_ms,
-        initial_speech_onset_ms: speech_onset_ms,
-        initial_mode: mode,
-        initial_audio_mode: audio_mode,
-    };
-
     let incomplete_clause_hint = Arc::new(AtomicBool::new(false));
     let incomplete_clause_hint_for_vad = Arc::clone(&incomplete_clause_hint);
 
-    let vad_handles = VadActorHandles {
-        state_atomic: Arc::clone(&state.pipeline.current_state_atomic),
-        turn_id_atomic: Arc::clone(&state.pipeline.turn_id),
-        audio_suppressed: Arc::new(AtomicBool::new(false)),
-        engine_shutdown: Arc::clone(&state.pipeline.engine_shutdown),
-        dropped_counter: Arc::clone(&state.telemetry.dropped_telemetry_events),
-        purged_frames_counter: Arc::new(AtomicU64::new(0)),
-        ingestion_gate: Arc::clone(&state.pipeline.ingestion_gate),
-        owner_atomic: Arc::clone(&state.owner),
-        incomplete_clause_hint: incomplete_clause_hint_for_vad,
-    };
+    // In remote mode the controller already ran AEC and VAD before sending frames.
+    // The host skips both workers and feeds incoming audio directly to STT via
+    // SpeechStart / SpeechEnd boundary signals from the audio socket (spec §7.6).
+    let (aec_tx, aec_handle, vad_handle, reference_tap) = {
+        let (aec_tx, aec_rx) = mpsc::channel();
 
-    let vad_channels = VadActorChannels {
-        stt_tx: stt_tx.clone(),
-        vad_rx,
-        telemetry_tx: state.telemetry.telemetry_tx.clone(),
-        vox_event_tx: Some(vox_event_tx.clone()),
-    };
+        let aec_ref_rb = ringbuf::HeapRb::<f32>::new(AEC_REFERENCE_BUFFER_SAMPLES);
+        let (ref_prod, ref_cons) = aec_ref_rb.split();
+        let reference_tap = PlaybackReferenceTap::new(ref_prod);
 
-    let vad_handle = Builder::new()
-        .name("vox-vad-actor".to_string())
-        .spawn(move || {
-            if let Err(e) = spawn_vad_actor(vad, clean_cons, vad_channels, vad_handles, vad_config)
-            {
-                log::error!(
-                    "[Core::Engine] VAD actor thread terminated with error: {:?}",
-                    e
-                );
-            }
-        })
-        .map_err(|e| format!("[Core::Engine] Failed to spawn VAD thread: {}", e))?;
+        let aec = AecProcessor::new(Some(ref_cons))
+            .map_err(|e| format!("[Core::Engine] AEC init failed: {}", e))?;
+
+        let clean_ring_buffer = ringbuf::HeapRb::<f32>::new(RING_BUFFER_SIZE);
+        let (clean_prod, clean_cons) = clean_ring_buffer.split();
+
+        let aec_handle = spawn_aec_worker(
+            aec,
+            cap_cons,
+            clean_prod,
+            Arc::clone(&state.pipeline.engine_shutdown),
+            Some(aec_rx),
+        )
+        .map_err(|e| format!("[Core::Engine] Failed to spawn AEC worker: {}", e))?;
+
+        let vad_config = VadActorConfig {
+            initial_threshold: threshold,
+            initial_noise_gate: noise_gate,
+            initial_silence_duration_ms: silence_duration_ms,
+            initial_speech_onset_ms: speech_onset_ms,
+            initial_mode: mode,
+            initial_audio_mode: audio_mode,
+        };
+
+        let vad_handles = VadActorHandles {
+            state_atomic: Arc::clone(&state.pipeline.current_state_atomic),
+            turn_id_atomic: Arc::clone(&state.pipeline.turn_id),
+            audio_suppressed: Arc::new(AtomicBool::new(false)),
+            engine_shutdown: Arc::clone(&state.pipeline.engine_shutdown),
+            dropped_counter: Arc::clone(&state.telemetry.dropped_telemetry_events),
+            purged_frames_counter: Arc::new(AtomicU64::new(0)),
+            ingestion_gate: Arc::clone(&state.pipeline.ingestion_gate),
+            owner_atomic: Arc::clone(&state.owner),
+            incomplete_clause_hint: incomplete_clause_hint_for_vad,
+        };
+
+        let vad_channels = VadActorChannels {
+            stt_tx: stt_tx.clone(),
+            vad_rx,
+            telemetry_tx: state.telemetry.telemetry_tx.clone(),
+            vox_event_tx: Some(vox_event_tx.clone()),
+        };
+
+        let vad_handle = Builder::new()
+            .name("vox-vad-actor".to_string())
+            .spawn(move || {
+                if let Err(e) =
+                    spawn_vad_actor(vad, clean_cons, vad_channels, vad_handles, vad_config)
+                {
+                    log::error!(
+                        "[Core::Engine] VAD actor thread terminated with error: {:?}",
+                        e
+                    );
+                }
+            })
+            .map_err(|e| format!("[Core::Engine] Failed to spawn VAD thread: {}", e))?;
+
+        (
+            aec_tx,
+            Some(aec_handle),
+            Some(vad_handle),
+            Some(reference_tap),
+        )
+    };
 
     let app_handle = app.clone();
     let hint_emitter = Arc::clone(&incomplete_clause_hint);
@@ -392,9 +446,9 @@ pub async fn start_audio_engine<R: tauri::Runtime + 'static>(
     let stt_handle = spawn_stt_worker(stt_channels, stt_provider, stt_handles)
         .map_err(|e| format!("[Core::Engine] Failed to spawn STT worker: {}", e))?;
 
-    let audio_stream = init_audio_stream(state, cap_prod, vox_event_tx.clone())?;
+    let audio_stream = init_audio_stream(state, cap_prod, vox_event_tx.clone(), stt_tx.clone())?;
 
-    let playback_engine = create_playback_engine(state, vox_event_tx.clone(), Some(reference_tap))?;
+    let playback_engine = create_playback_engine(state, vox_event_tx.clone(), reference_tap)?;
     let orchestrator_handle = spawn_router(app.clone(), vox_event_rx)?;
     let route_watcher_handle =
         spawn_audio_route_watcher(vad_tx.clone(), Arc::clone(&state.pipeline.engine_shutdown));
@@ -409,9 +463,9 @@ pub async fn start_audio_engine<R: tauri::Runtime + 'static>(
         telemetry_tx: state.telemetry.telemetry_tx.clone(),
         pipeline_tx: vox_event_tx.clone(),
         playback_engine,
-        aec_handle: Some(aec_handle),
+        aec_handle,
         stt_handle: Some(stt_handle),
-        vad_handle: Some(vad_handle),
+        vad_handle,
         route_watcher_handle,
         llm_handle: None,
         tts_handle: None,
