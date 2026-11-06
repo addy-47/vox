@@ -127,6 +127,89 @@ async fn aec_suppresses_the_synthetic_tts_echo() {
     .expect("Test timed out");
 }
 
+/// PURPOSE:  AEC must adapt to real hardware delay (120ms PipeWire latency) and maintain suppression past 5s.
+/// SCENARIO: Initial delay is set to 40ms default, but acoustic echo arrives with 120ms delay.
+/// ASSERTS:  AEC adapts delay and maintains >= 20dB ERLE even after 5 seconds of active speech.
+/// CLASS:    regression
+/// REQUIRES: the test audio assets
+/// MUTANT:   Disable dynamic delay adaptation or drop suppression after 5s.
+#[tokio::test]
+async fn aec_adapts_delay_and_suppresses_echo_under_pipewire_latency() {
+    let test_timeout = Duration::from_secs(30);
+    tokio::time::timeout(test_timeout, async {
+        let tts_path = Path::new("tests/assets/edgetts_01_en_briefing.wav");
+        let tts_samples = common::audio::decode_wav_to_mono_16k(tts_path)
+            .expect("Failed to load TTS briefing WAV");
+
+        let rb = HeapRb::<f32>::new(65536);
+        let (mut render_prod, render_cons) = rb.split();
+
+        let mut aec = AecProcessor::new(Some(render_cons)).expect("Failed to create AecProcessor");
+        // Do NOT manually override delay to match reality — use production default 40ms
+        assert_eq!(aec.stream_delay_ms(), 40);
+
+        // Real PipeWire / ALSA latency: 120ms (1920 samples @ 16kHz) and -6dB attenuation
+        let delay_samples = 1920;
+        let attenuation = 0.5f32;
+        let mut simulated_mic = vec![0.0f32; delay_samples];
+        for &s in &tts_samples {
+            simulated_mic.push(s * attenuation);
+        }
+
+        let mut clean_output = Vec::new();
+        let mut frame_out = [0.0f32; AEC_FRAME_SAMPLES];
+
+        let num_frames = simulated_mic.len() / AEC_FRAME_SAMPLES;
+        for i in 0..num_frames {
+            let start = i * AEC_FRAME_SAMPLES;
+            let end = start + AEC_FRAME_SAMPLES;
+
+            if start < tts_samples.len() {
+                let r_end = end.min(tts_samples.len());
+                render_prod.push_slice(&tts_samples[start..r_end]);
+            }
+
+            aec.process_frame(&simulated_mic[start..end], &mut frame_out)
+                .expect("AEC stream processing failed");
+            clean_output.extend_from_slice(&frame_out);
+        }
+
+        // Evaluate suppression in the late region (> 5 seconds = 80,000 samples)
+        // where TransparentMode would disable suppression and where delay adaptation was required
+        let eval_start = 80000;
+        let eval_end = (num_frames * AEC_FRAME_SAMPLES).min(tts_samples.len());
+        assert!(eval_end > eval_start + 16000, "Audio too short for 5s+ evaluation");
+
+        let late_erle = common::audio::erle_db(
+            &simulated_mic[eval_start..eval_end],
+            &clean_output[eval_start..eval_end],
+        );
+
+        println!(
+            "[AEC PipeWire Delay Test] Late ERLE (after 5s): {:.2} dB (Input RMS: {:.4}, Output RMS: {:.4}, Final Delay: {} ms)",
+            late_erle,
+            common::audio::rms(&simulated_mic[eval_start..eval_end]),
+            common::audio::rms(&clean_output[eval_start..eval_end]),
+            aec.stream_delay_ms()
+        );
+
+        assert!(
+            late_erle >= 20.0,
+            "AEC must provide >= 20dB echo suppression under 120ms delay past 5s (measured: {:.2}dB)",
+            late_erle
+        );
+
+        // Assert: Dynamic delay adaptation must detect the 120ms delay and adapt away from 40ms
+        assert!(
+            (aec.stream_delay_ms() - 120).abs() <= 20,
+            "AEC must dynamically adapt delay from 40ms to ~120ms (current: {} ms)",
+            aec.stream_delay_ms()
+        );
+    })
+    .await
+    .expect("Test timed out");
+}
+
 /// PURPOSE:  Suppressing the echo must not erase the user.
 /// SCENARIO: Echo and user speech are mixed into the capture.
 /// ASSERTS:  The user speech survives the suppression.

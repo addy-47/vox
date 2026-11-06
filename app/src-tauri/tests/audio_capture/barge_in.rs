@@ -179,6 +179,149 @@ async fn solo_playback_never_interrupts_the_user() {
     .expect("Test timed out");
 }
 
+/// PURPOSE:  AEC must not disarm echo suppression after 6 seconds of speech under realistic hardware delay.
+/// SCENARIO: Assistant plays back 7 seconds of audio with 120ms PipeWire capture delay.
+/// ASSERTS:  No false SpeechStart interruption is emitted during the full 7-second playback.
+/// CLASS:    regression
+/// REQUIRES: the test audio assets
+/// MUTANT:   Disarm echo suppression after 6s or fail delay adaptation.
+#[tokio::test]
+async fn solo_playback_over_six_seconds_never_interrupts_with_pipewire_delay() {
+    let test_timeout = Duration::from_secs(30);
+    tokio::time::timeout(test_timeout, async {
+        let _guard = common::paths::TempPathsGuard::new();
+        vox_lib::utils::paths::init();
+        let (_app, state) = common::harness::get_test_app_and_state().await;
+        state
+            .owner
+            .store(InteractionOwner::Assistant as u32, Ordering::Relaxed);
+
+        let tts_path = Path::new("tests/assets/edgetts_01_en_briefing.wav");
+        let tts_samples = common::audio::decode_wav_to_mono_16k(tts_path)
+            .expect("Failed to load TTS briefing WAV");
+
+        let (event_tx, event_rx) = mpsc::channel::<VoxEvent>();
+
+        // Set state to Speaking
+        state.pipeline.set_state(InteractionState::Speaking);
+
+        // Queues: ref_rb, cap_rb, clean_rb
+        let ref_rb = HeapRb::<f32>::new(65536);
+        let (ref_prod, ref_cons) = ref_rb.split();
+        let mut tap = PlaybackReferenceTap::new(ref_prod);
+
+        let cap_rb = HeapRb::<f32>::new(65536);
+        let (mut cap_prod, cap_cons) = cap_rb.split();
+
+        let clean_rb = HeapRb::<f32>::new(65536);
+        let (clean_prod, clean_cons) = clean_rb.split();
+
+        let aec = AecProcessor::new(Some(ref_cons)).expect("Failed to create AecProcessor");
+        let aec_shutdown = Arc::new(AtomicBool::new(false));
+        let aec_worker =
+            spawn_aec_worker(aec, cap_cons, clean_prod, Arc::clone(&aec_shutdown), None)
+                .expect("Failed to spawn AEC worker");
+
+        let audio_suppressed = Arc::new(AtomicBool::new(false));
+        let engine_shutdown = Arc::new(AtomicBool::new(false));
+
+        let vad_handles = vox_lib::services::vad::VadActorHandles {
+            state_atomic: state.pipeline.current_state_atomic.clone(),
+            turn_id_atomic: state.pipeline.turn_id.clone(),
+            audio_suppressed: audio_suppressed.clone(),
+            engine_shutdown: engine_shutdown.clone(),
+            dropped_counter: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            purged_frames_counter: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            ingestion_gate: state.pipeline.ingestion_gate.clone(),
+            owner_atomic: Arc::clone(&state.owner),
+            incomplete_clause_hint: Arc::new(AtomicBool::new(false)),
+        };
+        let vad_channels = vox_lib::services::vad::VadActorChannels {
+            stt_tx: _dummy_stt_tx(),
+            vad_rx: _dummy_vad_rx(),
+            telemetry_tx: crossbeam_channel::unbounded().0,
+            vox_event_tx: Some(event_tx.clone()),
+        };
+        let vad_cfg = VadActorConfig {
+            initial_threshold: vox_lib::core::defaults::DEFAULT_VAD_THRESHOLD,
+            initial_noise_gate: vox_lib::core::defaults::DEFAULT_VAD_PTT_NOISE_GATE,
+            initial_silence_duration_ms: vox_lib::core::defaults::DEFAULT_VAD_SILENCE_DURATION_MS,
+            initial_speech_onset_ms: vox_lib::core::defaults::DEFAULT_VAD_SPEECH_ONSET_MS,
+            initial_mode: InteractionMode::Passive,
+            initial_audio_mode: AudioOutputMode::Speaker,
+        };
+        let vad_backend = vox_lib::services::vad::earshot_vad::EarshotVadEngine::new(
+            vox_lib::core::defaults::DEFAULT_VAD_THRESHOLD,
+        )
+        .expect("Failed to init Earshot VAD");
+        let vad_join = std::thread::Builder::new()
+            .name("test-vad-echo-actor-7s".into())
+            .spawn(move || {
+                let _ = vox_lib::services::vad::spawn_vad_actor(
+                    vox_lib::services::vad::VadBackend::Earshot(vad_backend),
+                    clean_cons,
+                    vad_channels,
+                    vad_handles,
+                    vad_cfg,
+                );
+            })
+            .expect("failed to spawn thread");
+
+        // Simulate 120ms PipeWire acoustic delay (1920 samples @ 16kHz) and -6dB attenuation echo
+        let delay_samples = 1920;
+        let test_len = tts_samples.len();
+        let mut simulated_mic = vec![0.0f32; delay_samples];
+        for &s in &tts_samples[..test_len] {
+            simulated_mic.push(s * 0.5);
+        }
+
+        let num_frames = (test_len + delay_samples) / AEC_FRAME_SAMPLES;
+        for i in 0..num_frames {
+            let start = i * AEC_FRAME_SAMPLES;
+            let end = start + AEC_FRAME_SAMPLES;
+
+            // Feed render reference (48k)
+            if start < tts_samples.len() {
+                let r_end = end.min(tts_samples.len());
+                for &s in &tts_samples[start..r_end] {
+                    tap.push_sample(s);
+                    tap.push_sample(s);
+                    tap.push_sample(s);
+                }
+            }
+
+            if end <= simulated_mic.len() {
+                cap_prod.push_slice(&simulated_mic[start..end]);
+            }
+            tokio::time::sleep(Duration::from_millis(2)).await;
+        }
+
+        // Assert: Zero SpeechStart events emitted across the entire 7 seconds
+        let mut saw_speech_start = false;
+        let mut all_events = Vec::new();
+        while let Ok(ev) = event_rx.recv_timeout(Duration::from_millis(100)) {
+            all_events.push(format!("{:?}", ev));
+            if matches!(ev, VoxEvent::SpeechStart { .. }) {
+                saw_speech_start = true;
+            }
+        }
+        eprintln!("[DEBUG TEST] Total events received: {:?}", all_events);
+
+        assert!(
+            !saw_speech_start,
+            "AEC must maintain echo suppression past 6 seconds with 120ms delay and prevent false SpeechStart"
+        );
+
+        // Teardown
+        aec_shutdown.store(true, Ordering::Relaxed);
+        engine_shutdown.store(true, Ordering::Relaxed);
+        aec_worker.join().expect("worker thread panicked");
+        vad_join.join().expect("worker thread panicked");
+    })
+    .await
+    .expect("Test timed out");
+}
+
 /// PURPOSE:  A real user speaking over the assistant must interrupt it.
 /// SCENARIO: Echo and user speech are mixed into the capture.
 /// ASSERTS:  The playback is cancelled and the state becomes Listening.
