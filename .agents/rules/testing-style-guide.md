@@ -1,6 +1,6 @@
 ---
 trigger: manual
-description: Test taxonomy, seam-level file layout, mandatory per-test intent blocks, assertion rules, execution tiers, and the deliberate no-CI test policy for Vox (`app/src-tauri/tests/`, `benches/`, `evals/`).
+description: Vox testing standard for unit, component, integration, end-to-end, benchmark, and evaluation suites. Defines the governing test question, seam boundaries, falsifiable assertions, the no-false-green rule, project paths, and the local execution tiers.
 ---
 
 # Vox — Testing, Evaluation & Benchmark Standards
@@ -9,7 +9,7 @@ Read before authoring, revamping, or reviewing any test. This document is bindin
 
 The governing question, from `/create-test`:
 
-> If the production logic between this test's entry point and its observable output silently broke — dropped data, ignored a flag, mis-routed a message — would this test fail?
+> If the production logic between this test's entry point and its observable output silently broke — dropped data, ignored a flag, mis-routed a message, or failed to adapt to real-world skew — would this test fail?
 
 If the answer is not an immediate yes with a named assertion, the test is not a test. It is decoration.
 
@@ -17,50 +17,46 @@ If the answer is not an immediate yes with a named assertion, the test is not a 
 
 ## 1. Taxonomy
 
-Levels are defined by **what they prove**, not by where the file lives.
+Levels are defined by what they prove, not by where the file lives.
 
-| Level | Proves | Location | Entry point |
-| :--- | :--- | :--- | :--- |
-| **Unit** | One algorithm, state machine, or boundary arithmetic is correct in isolation. | `#[cfg(test)] mod tests` in the owning `src/` file | The function itself |
-| **Component** | One production component behaves correctly through its own public API, with no upstream actor. | `#[cfg(test)]` or a seam binary | The component's public interface |
-| **Integration (seam)** | A real upstream trigger drives a real handoff across a real boundary, and the observable exit is correct. | `tests/<seam>_test.rs` | The production trigger |
-| **End-to-end** | The user-visible loop works: input → pipeline → output → idle. | `tests/harness_loop_test.rs` | The harness entry |
-| **Evaluation** | Model output quality meets a threshold. Never inside an integration test. | `evals/<capability>/` | Crate API + models + dataset |
-| **Benchmark** | Latency or throughput meets a budget. | `benches/<feature>_bench.rs` | `harness = false` `main()` |
+| Level | Proves | Entry point |
+| :--- | :--- | :--- |
+| **Unit** | One algorithm, state machine, or boundary arithmetic is correct in isolation. | The function itself |
+| **Component** | One production component behaves correctly through its own public API, with no upstream actor. | The component's public interface |
+| **Integration (seam)** | A real upstream trigger drives a real handoff across a real boundary, and the observable exit is correct. | The production trigger |
+| **End-to-end** | The user-visible loop works: input → pipeline → output → idle. | The harness entry |
+| **Evaluation** | Model output quality meets a threshold. Never inside an integration test. | Project eval harness |
+| **Benchmark** | Latency or throughput meets a budget. | Benchmark harness |
 
 Rules:
 
-1. A test lives at the **lowest** level that can still reach its real trigger. If calling a leaf is correct, it is a unit test — do not fake a pipeline around it.
-2. If the behavior is driven in production by an actor, channel, event, or user action, a unit test of the downstream leaf is **not** a substitute. That is a false green.
-3. **Never assert model quality inside an integration test.** Integration asserts wiring: right model, right payload, right channel, non-empty output, correct order. Quality belongs in `evals/`.
-4. A test that calls a persistence leaf, constructs no state, and asserts a row count is a **storage contract** test. File it in the storage seam, not a feature seam.
+1. A test lives at the lowest level that can still reach its real trigger. If calling a leaf is correct, it is a unit test — do not fake a pipeline around it.
+2. If the behavior is driven in production by an actor, channel, event, request, or user action, a unit test of the downstream leaf is not a substitute. That is a false green.
+3. Never assert model quality inside an integration test. Integration asserts wiring: right payload, right channel, correct order, non-empty output, proper exit condition.
+4. A test that only asserts a row count or a callback count without proving the state transition is a storage or plumbing contract test, not a user-facing behavior test.
 
 ---
 
 ## 2. File Layout: One Binary Per Seam
 
-Every integration test file compiles and links as its own binary. Compilation is the dominant cost of this suite, so file count is a budget, not a preference.
+Every integration test file compiles and links as its own binary. Compilation is a dominant cost, so file count is a budget, not a preference.
 
-**Rule:** one binary per production seam, containing **10–20 subtests**.
+**Rule:** one binary per production seam, containing 10–20 subtests.
 
 - A subtest is a test function. It covers one behavior, one scenario, one invariant.
-- A new behavior does **not** get a new file. It gets a new subtest in the seam's file.
+- A new behavior does not get a new file. It gets a new subtest in the seam's file.
 - Do not split a seam across files because the file is long. Split only when the seam genuinely splits into two production boundaries.
 - Do not merge two seams into one binary because their tests look similar. The seam is the unit of ownership.
-
-Why: 39 test binaries link 39 times. Folding them to ~19 halves the link cost and puts related scenarios in one compiled context. It also stops the `*_matrix` grab-bag: one file, one seam, many named behaviors.
 
 A seam file that cannot reach 10 subtests is either under-tested or not a seam. Investigate before accepting it.
 
 ---
 
-## 3. Intent Block — mandatory in seam binaries, banned in unit tests
+## 3. Intent Block — Mandatory in seam binaries
 
-Every test function in a **seam binary** (`app/src-tauri/tests/`) carries the block below. It is the durable output of `/create-test`, and it is what a reviewer reads instead of guessing.
+Every test function in a seam binary carries an intent block. It is the durable output of `/create-test` and what a reviewer reads instead of guessing.
 
-**Unit tests inside `app/src-tauri/src/` carry no block and no doc comment.** The behaviour-first function name is the documentation: the test sits next to the code it covers, so a block only bloats the file. `MUTANT` seeds and intent blocks live in the seam binaries, where the behaviour is not visible from the code.
-
-```rust
+```text
 /// PURPOSE:  The production defect this test exists to catch, in one sentence.
 ///           Name a failure mode, not a feature.
 /// SCENARIO: Preconditions and the exact user or system action.
@@ -76,24 +72,22 @@ Binding rules:
 1. `PURPOSE` must state what breaks in production if the test is absent. "Verifies X works" is banned.
 2. `ASSERTS` must be falsifiable without reading the body. A reviewer can name the assertion line it maps to.
 3. `CLASS` is mandatory. `suppression`, `edge-case`, and `regression` also require `MUTANT`.
-4. If the block names a metric, threshold, or count, the body must contain that assertion. A header that claims `Levenshtein ≥ 0.90` while the file never computes Levenshtein is a false statement, not documentation.
-5. `MUTANT` is the exact seed for `cargo-mutants`. It must be a concrete one-line edit, not a description.
+4. If the block names a metric, threshold, or count, the body must contain that assertion.
+5. `MUTANT` is the exact seed for mutation testing. It must be a concrete one-line edit, not a description.
 
-The old file header is retained, reduced to facts that cannot drift:
+The old file header is retained only where it documents the seam boundary, not the business logic:
 
-```rust
-//! ============================================================================
+```text
+//! =====================================================================================
 //! <file> — <seam name and the production boundary it covers>
-//! ============================================================================
-//! Category  : Integration (Seam N) | Component | E2E | Evaluation | Benchmark
+//! =====================================================================================
+//! Category  : Integration (Seam) | Component | E2E | Evaluation | Benchmark
 //! Component : <production modules in the path>
 //! Binary    : <test binary name>
 //! Prereqs   : <models / env / services, or "none">
 //! Run       : <exact command>
-//! ============================================================================
+//! =====================================================================================
 ```
-
-The `Metrics` line is gone. Metrics are asserted per test, in `ASSERTS`.
 
 ---
 
@@ -103,15 +97,13 @@ The `Metrics` line is gone. Metrics are asserted per test, in `ASSERTS`.
 - Pattern: `<subject>_<scenario>_<outcome>`.
 - One behavior per function.
 - Banned: `_matrix`, `_validation`, `_works`, `_basic`, `_sanity`, `_check`, `test_*`.
-- A subtest is named for what it **asserts**, not what it touches. A function named `paste_*` must touch the clipboard.
+- A subtest is named for what it asserts, not what it touches.
 
 Examples:
-
-- `ptt_release_with_partial_transcript_emits_single_final`
+- `queue_released_after_timeout_emits_single_final_event`
 - `stale_cancel_does_not_kill_next_turn`
 - `continuation_merges_second_utterance_into_one_request`
-- `barge_in_suppresses_pending_tts_chunk`
-- `paste_restores_previous_clipboard_after_injection`
+- `route_drops_duplicate_message_before_dispatch`
 
 If the name needs "and", it is two tests.
 
@@ -121,19 +113,18 @@ If the name needs "and", it is two tests.
 
 ### 5.1 Absence and suppression
 
-Absence is proven only after **quiescence is proven**. A timer is not proof, and a single `try_recv` is not proof.
+Absence is proven only after quiescence is proven. A timer is not proof, and a single `try_recv` is not proof.
 
 Preferred forms, in order:
 
 1. **Capture-channel interception** — attach a sink before the boundary and assert nothing arrived.
-2. **Producer closed** — drop the sender, then drain the receiver until `Disconnected`. The channel cannot produce another item after disconnection.
-3. **Barrier or acknowledgement** — a sentinel that proves the producer finished the work, then assert the queue is empty.
+2. **Producer closed** — drop the sender, then drain the receiver until `Disconnected`.
+3. **Barrier or acknowledgement** — a sentinel that proves the producer finished, then assert the queue is empty.
 4. **Storage count** — `SELECT COUNT(*) == 0` after the transaction commits.
 
 Banned:
-
 - `sleep(N)` followed by `try_recv()`.
-- Any helper whose implementation is the above. `assert_channel_empty_after` is deleted.
+- Any helper whose implementation is the above.
 - "No event within 500 ms" as a negative assertion.
 
 A suppression test that cannot name its quiescence mechanism is not written yet.
@@ -150,98 +141,114 @@ Every fallible seam asserts both directions: the failure is surfaced, and the ha
 
 ### 5.4 Time
 
-- Every `#[tokio::test]` wraps its body in `tokio::time::timeout`. A deadlock must fail, not hang.
-- Synchronous channel loops use `recv_timeout` or an explicit `Instant` deadline.
-- **No wall-clock latency assertion in the default tier.** `< 15 ms` on a shared machine measures the scheduler, not the product. Latency belongs in `benches/` or an explicitly marked benchmark subtest.
+- Every async test wraps its body in a timeout. A deadlock must fail, not hang.
+- Synchronous channel loops use a deadline or timeout primitive.
+- No wall-clock latency assertion belongs in the default tier. `< 15 ms` on a shared machine measures the scheduler and environment, not the product. Latency belongs in benchmarks or an explicitly marked benchmark subtest.
 - `sleep` may not be used to reach a state. Wait on the state transition or the event.
 
 ### 5.5 Ground truth
 
-Accuracy assertions use normalized Levenshtein ≥ 0.90 or WER ≤ 0.10 against labelled fixtures. Single-keyword presence is banned.
+Accuracy assertions must use a real, normalized, agreed metric against labelled fixtures. Single-keyword presence is banned.
 
 ---
 
 ## 6. Shared Helpers
 
-- Anything used by two tests lives in `tests/common/`.
+- Anything used by two tests lives in a shared test-support module or fixture directory.
 - A helper is valid only if it could be replaced by a direct production call with no production change. Otherwise it is production logic hiding in the test.
 - A helper that reimplements a production predicate is a false green: test and production can drift, and the test still passes. Extract the predicate to production and call it.
-- Duplicated setup between seam files is deleted, not tolerated. If two seams need the same fixture, the fixture moves to `tests/common/`.
+- Duplicated setup between seam files is deleted, not tolerated.
 - Every helper carries a one-line comment stating what production contract it stands in for.
 
 ---
 
 ## 7. Execution
 
-### 7.1 CI is compile-only, by deliberate choice
+### 7.1 Local execution is the default
 
-**Vox does not run its test suite in CI.** The `backend` job in `.github/workflows/quality.yml` runs the dual-target compile gate only. The frontend job runs lint, build, and its own unit tests.
+Production-grade tests must be run locally on demand. CI is a compile guard, not an execution proof.
 
-This is intentional. Model weights, audio devices, and long-running pipelines make a reliable hosted test job expensive and flaky. Test execution is a **local, on-demand** action.
-
-Consequences, which are binding:
-
-1. Nobody adds a CI test job without an explicit decision. A green CI check does not mean the suite passes.
+Consequences:
+1. A green CI check does not mean the suite passes.
 2. Every agent that changes test-covered code runs the affected seam locally and states the command and result.
-3. A seam that has not been run locally in this session is reported as **unverified**, never as passing.
+3. A seam not run locally in the current session is reported as unverified, never as passing.
 
 ### 7.2 Commands
 
-All runs are sequential and in release mode:
+Vox uses `cargo-nextest`. Tests run sequentially in release mode. Set the model root
+and the thread counts explicitly.
 
 ```bash
 cd app/src-tauri
-VOX_MODELS_DIR=/path/to/models cargo nextest run --test <seam> --release --test-threads=1 --no-fail-fast
-```
+export VOX_MODELS_DIR="${VOX_MODELS_DIR:-$HOME/.vox/models}"
+export RAYON_NUM_THREADS=$(nproc) OMP_NUM_THREADS=$(nproc)
 
-Full local suite:
+# One seam
+cargo nextest run --test <seam> --release --test-threads=1 --no-fail-fast
 
-```bash
-RAYON_NUM_THREADS=$(nproc) OMP_NUM_THREADS=$(nproc) \
-  cargo nextest run --release --test-threads=1 --no-fail-fast
-```
+# Full local suite
+cargo nextest run --release --test-threads=1 --no-fail-fast
 
-Isolated failure:
-
-```bash
+# Isolated failure
 cargo nextest run --test <seam> -E 'test(<subtest>)' --release --nocapture --test-threads=1
+
+# External-dependency tests (`#[ignore]`) only with explicit user approval
+cargo nextest run -- --ignored
 ```
 
-`scripts/test.sh <tier>` is the single local entry point. Tiers: `default` (no models), `models`, `all`.
+Tier wrapper: `app/src-tauri/scripts/test.sh`.
 
-### 7.3 Tiers
+```bash
+./scripts/test.sh default          # unit + structural seams, no models, no network
+./scripts/test.sh models           # seams that load ONNX/GGUF weights
+./scripts/test.sh all              # every non-remote binary, sequential, non-ignored
+./scripts/test.sh remote           # gated remote control binaries
+./scripts/test.sh seam <binary>    # one seam binary
+```
 
-| Tier | Contents | Network | Models | Budget |
-| :--- | :--- | :--- | :--- | :--- |
-| `default` | unit + component + structural seam tests | no | no | < 60 s |
-| `models` | seams that load ONNX/GGUF weights | no | yes | minutes |
-| `all` | everything, sequentially | no | yes | long |
+`tests/tier-default.txt` is the default-tier allowlist. It deliberately excludes
+`llm_to_tts_test`, `playback_test`, `vad_segmentation_test`, `audio_capture_aec_test`,
+and `e2e_voice_pipeline_test` because they need model weights or a full voice rig.
 
-External providers never enter `default` or `models`. See §8.
+### 7.3 Vox project profile
 
-### 7.4 Batch compilation
+| Item | Value |
+| :--- | :--- |
+| Integration tests | `app/src-tauri/tests/<seam>_test.rs` |
+| Shared harness | `app/src-tauri/tests/common/harness.rs` |
+| Assets | `app/src-tauri/tests/assets/` |
+| Unit tests | `#[cfg(test)] mod tests` inside `app/src-tauri/src/` |
+| Benchmarks | `app/src-tauri/benches/` |
+| Model root | `$HOME/.vox/models` (override with `VOX_MODELS_DIR`) |
+| Findings | `docs/tests/test-findings.md` |
+| Audit baseline | `docs/tests/test-audit-actual-issues-2026-11.md` |
+| Pipeline trace | `docs/plans/phase14/voice_pipeline_scenarios_trace.md` |
+| Timer/threshold audit | `docs/plans/phase14/dynamic_logic_and_magic_numbers_audit.md` |
+| Test plan | `docs/plans/phase14/test-suite-hardening-plan.md` |
+| Work log | `docs/plans/phase14/work_log.md` |
 
-One compile per seam, not per edit. Make every change in the seam, then run its binary once. Never loop the whole suite while iterating on one seam.
+Do not infer timer horizons (AEC3 ~6.0 s, early-utterance 1.25 s, hangover) from
+memory. Read the phase14 trace and timer audit first.
+
+**CI is compile-only by deliberate choice.** Never report a suite as passing because
+CI is green. Report the local command and its result, or report `unverified`.
 
 ---
 
 ## 8. External Dependencies
 
-- Cloud provider keys are **not** required by the default suite. Live keys buy contract verification; they cost determinism, money, rate-limit flakes, and secret handling.
-- Offline transport tests intercept at the HTTP boundary and assert method, URL, headers, body shape, auth presence, timeout, retry count, and error mapping for 400/401/429/500.
+- Cloud provider keys are not required by the default suite. Live keys buy contract verification; they cost determinism, money, rate-limit flakes, and secret handling.
+- Offline transport tests intercept at the HTTP boundary and assert method, URL, headers, body shape, auth presence, timeout, retry count, and error mapping.
 - Recorded cassettes cover parser drift.
-- Live provider tests are `#[ignore]`, run manually, one request per provider, and must carry:
-  - the owner,
-  - the exact assertions that need the live dependency,
-  - an expiry date.
-- An `#[ignore]` with no owner, no reason, and no expiry is deleted, not ignored.
+- Live provider tests are `#[ignore]` or framework equivalents, run manually, and must carry owner, reason, and expiry date.
+- An ignored test with no owner, no reason, and no expiry is deleted, not ignored.
 
 ---
 
 ## 9. Mutation
 
 - `MUTANT` in the intent block is the seed. It must be a concrete one-line edit to production code.
-- Mutation runs are **batched**. Do not run `cargo-mutants` after every test. Run it once per revamp campaign, over the changed files, and record the result in `docs/tests/mutation_report.md`.
+- Mutation runs are batched. Run mutation once per revamp campaign over the changed files and record the result.
 - A test whose predicted mutant survives is not done. Either the test is weak or the mutant was wrong; resolve before merge.
 - Production code is reverted after every mutation run. A mutant must never be committed.
 
@@ -267,21 +274,9 @@ No test survives on the grounds that it is already passing. Passing is not cover
 
 When a test exposes a production defect:
 
-1. Do **not** patch production to make the test pass.
-2. Do **not** weaken the assertion.
-3. Record it in `docs/plans/phase13/test-findings.md`:
-
-```
-## F-<n> — <one line>
-Seam: <slice>
-Test: <binary>::<subtest>
-Symptom: <what was observed>
-Evidence: <assertion output or log line>
-Suspected cause: <file:line, or "unknown">
-Impact: <user-visible effect>
-Status: open — not fixed
-```
-
+1. Do not patch production to make the test pass.
+2. Do not weaken the assertion.
+3. Record the defect in the project's findings artifact with test name, symptom, evidence, and suspected `file:line`.
 4. Continue with the current seam.
 
 A red test that found a real bug is a successful outcome. Hiding it is the failure.
@@ -292,25 +287,15 @@ A red test that found a real bug is a successful outcome. Hiding it is the failu
 
 ### 12.1 Single-subtest isolation
 
-When a test fails, isolate immediately:
-
-```bash
-cargo nextest run --test <seam> -E 'test(<subtest>)' --release --nocapture --test-threads=1
-```
-
-Never loop the whole suite while debugging a local failure.
+When a test fails, isolate immediately with the project's runner and a single-subtest filter. Never loop the whole suite while debugging a local failure.
 
 ### 12.2 Instrumented tracing
 
-Place explicit markers before and after locks, channel operations, and async boundaries:
-
-```rust
-eprintln!("[checkpoint X] ...");
-```
+Place explicit markers before and after locks, channel operations, and async boundaries.
 
 ### 12.3 Two-attempt rule
 
-If a failure persists after **2 targeted attempts** without a confirmed new hypothesis, stop and report:
+If a failure persists after two targeted attempts without a confirmed new hypothesis, stop and report:
 
 1. exact test and failing line,
 2. logs and checkpoints,
@@ -336,7 +321,7 @@ Never mock, stub, or delete an assertion to manufacture a pass.
 - [ ] The intent block is present and every `ASSERTS` claim maps to a line.
 - [ ] Every suppression path has an absence test with a named quiescence mechanism.
 - [ ] No swallowed join, no silent drain, no bare sleep, no wall-clock latency assert.
-- [ ] Helpers live in `tests/common/` and could be replaced by production calls.
+- [ ] Helpers live in a shared test-support area and could be replaced by production calls.
 - [ ] The name states the behavior, not the file's shape.
 - [ ] `MUTANT` is present for suppression, edge-case, and regression classes.
 - [ ] The seam binary was run locally; the command and result are reported.

@@ -12,7 +12,7 @@ use sonora::{
 
 use super::{AEC_FRAME_SAMPLES, AEC_SAMPLE_RATE};
 
-const DEFAULT_STREAM_DELAY_MS: i32 = 40;
+const DEFAULT_STREAM_DELAY_MS: i32 = 120;
 const MAX_RENDER_QUEUE_BACKLOG_SAMPLES: usize = 3200;
 
 /// Commands dispatched to the dedicated AEC worker thread.
@@ -143,25 +143,25 @@ impl AecProcessor {
     fn drain_render_reference(&mut self) {
         if let Some(ref mut cons) = self.render_consumer {
             let occupied = cons.occupied_len();
-            // Critical fix: discard only the excess over MAX_RENDER_QUEUE_BACKLOG_SAMPLES,
-            // rather than wiping the entire backlog down to a single frame and destroying AEC reference continuity.
+            // Discard only the excess over the bounded backlog, preserving reference continuity.
             if occupied > MAX_RENDER_QUEUE_BACKLOG_SAMPLES {
                 let excess = occupied - MAX_RENDER_QUEUE_BACKLOG_SAMPLES;
                 cons.skip(excess);
                 self.ringbuf_overflows += 1;
             }
-            let mut frames_processed = 0;
-            // Drain up to 4 frames (40ms) if playback runs ahead of capture to maintain synchronization.
-            while cons.occupied_len() >= AEC_FRAME_SAMPLES && frames_processed < 4 {
+
+            // Advance the render clock by exactly one frame per capture frame so AEC3 keeps
+            // its render and capture call counters in lockstep. Burst-draining extra render
+            // frames would desynchronize the two clocks and force the delay estimator to
+            // relearn the acoustic path.
+            if cons.occupied_len() >= AEC_FRAME_SAMPLES {
                 let popped = cons.pop_slice(&mut self.render_buf);
                 if popped == AEC_FRAME_SAMPLES {
                     let render_in: [&[f32]; 1] = [&self.render_buf];
                     let mut render_out: [&mut [f32]; 1] = [&mut self.render_dest];
                     let _ = self.apm.process_render_f32(&render_in, &mut render_out);
-                    frames_processed += 1;
                 }
-            }
-            if frames_processed == 0 {
+            } else {
                 // If reference buffer has no frame (e.g. slight jitter or initial startup),
                 // feed silence so APM render clock stays synchronous with capture clock.
                 self.render_buf.fill(0.0);
@@ -200,17 +200,16 @@ impl AecProcessor {
 
         output.copy_from_slice(&self.capture_dest);
 
-        // Dynamic delay adaptation: poll AEC3 reported delay median every 100 frames (~1 sec)
-        self.frame_counter = (self.frame_counter + 1) % 100;
-        if self.frame_counter == 0 {
+        // Dynamic delay adaptation. WebRTC AEC3 estimates the render→capture
+        // delay; adopt it once it has converged (median available) and only
+        // when it differs from the current estimate by a meaningful deadband.
+        // This lets the processor track real PipeWire/ALSA skew (120–180 ms)
+        // instead of being pinned to the 40 ms default.
+        self.frame_counter = self.frame_counter.wrapping_add(1);
+        if self.frame_counter.is_multiple_of(50) {
             let stats = self.apm.statistics();
             if let Some(median) = stats.delay_median_ms {
-                if median > 0 && (median - self.stream_delay_ms).abs() >= 15 {
-                    log::info!(
-                        "[Audio::AEC] Dynamic delay adaptation: adapting stream_delay_ms from {} ms to {} ms (reported median)",
-                        self.stream_delay_ms,
-                        median
-                    );
+                if (median - self.stream_delay_ms).abs() >= 10 {
                     let _ = self.set_stream_delay_ms(median);
                 }
             }

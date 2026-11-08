@@ -5,12 +5,12 @@
 use std::{
     path::PathBuf,
     sync::{
-        atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8},
+        atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8, Ordering},
         mpsc, Arc,
     },
 };
 
-use ringbuf::{traits::Split, HeapCons, HeapRb};
+use ringbuf::{traits::Split, HeapRb};
 use tauri::AppHandle;
 use vox_lib::{
     config::{AudioOutputMode, VoxSettings},
@@ -20,7 +20,11 @@ use vox_lib::{
     },
     services::{
         audio::{
-            playback::PlaybackEngineHandles, AudioStream, PlaybackEngine, PLAYBACK_BUFFER_SAMPLES,
+            aec::{AecProcessor, spawn_aec_worker, AecCommand},
+            playback::PlaybackEngineHandles,
+            PlaybackEngine, PLAYBACK_BUFFER_SAMPLES, AEC_REFERENCE_BUFFER_SAMPLES,
+            sink::{PlaybackReferenceTap, PlaybackStreamContext},
+            AudioStream,
         },
         stt::{
             actor::{spawn_stt_worker, SttActorChannels, SttActorHandles, SttCommand},
@@ -103,11 +107,17 @@ impl Drop for BenchPathsGuard {
     }
 }
 
+pub type CapturePublishedTap = (
+    Arc<parking_lot::Mutex<Vec<f32>>>,
+    Arc<AtomicBool>,
+    std::thread::JoinHandle<()>,
+);
+
 pub type E2ePipelineSetup = (
     AppHandle<tauri::test::MockRuntime>,
     Arc<AppState>,
     Arc<parking_lot::Mutex<ringbuf::HeapProd<f32>>>,
-    Arc<parking_lot::Mutex<HeapCons<f32>>>,
+    CapturePublishedTap,
     mpsc::Receiver<VoxEvent>,
     BenchPathsGuard,
 );
@@ -156,12 +166,18 @@ pub fn setup_e2e_pipeline(settings: VoxSettings) -> E2ePipelineSetup {
     *state.settings.write().unwrap() = settings.clone();
     tauri::Manager::manage(&app, state.clone());
 
-    // 1. Playback engine with tap
     let (event_tx, event_rx) = mpsc::channel::<VoxEvent>();
     *state.event_tx.lock() = Some(event_tx.clone());
 
+    // 1. Playback: real sink (consumer side) driven headlessly with the AEC
+    // reference tap, mirroring src/core/engine.rs.
     let playback_rb = HeapRb::<f32>::new(PLAYBACK_BUFFER_SAMPLES);
     let (pb_prod, pb_cons) = playback_rb.split();
+
+    let aec_ref_rb = HeapRb::<f32>::new(AEC_REFERENCE_BUFFER_SAMPLES);
+    let (aec_ref_prod, aec_ref_cons) = aec_ref_rb.split();
+    let reference_tap = PlaybackReferenceTap::new(aec_ref_prod);
+
     let pb_handles = PlaybackEngineHandles {
         cancel_flag: state.pipeline.cancel_flag.clone(),
         state_atomic: state.pipeline.current_state_atomic.clone(),
@@ -172,13 +188,57 @@ pub fn setup_e2e_pipeline(settings: VoxSettings) -> E2ePipelineSetup {
         is_playback_muted: state.pipeline.is_playback_muted.clone(),
         turn_metrics: Some(state.turn_metrics.clone()),
     };
+    let discard_request_pb = Arc::new(AtomicBool::new(false));
+    let turn_armed_pb = Arc::new(AtomicBool::new(false));
+
+    let telemetry_pb = vox_lib::services::audio::PlaybackTelemetryHandles {
+        energy: state.telemetry.latest_playback_energy.clone(),
+        low: state.telemetry.latest_playback_low.clone(),
+        mid: state.telemetry.latest_playback_mid.clone(),
+        high: state.telemetry.latest_playback_high.clone(),
+        underruns: state.pipeline.playback_underruns.clone(),
+    };
+    let sink = PlaybackStreamContext::new(
+        pb_cons,
+        pb_handles.clone(),
+        Arc::clone(&discard_request_pb),
+        Arc::clone(&turn_armed_pb),
+        Arc::new(AtomicBool::new(false)),
+        &telemetry_pb,
+        Some(reference_tap),
+    );
     let playback_engine = Arc::new(PlaybackEngine::from_parts(
         pb_prod,
         pb_handles,
-        Arc::new(AtomicBool::new(false)),
-        Arc::new(AtomicBool::new(false)),
+        discard_request_pb,
+        turn_armed_pb,
         None,
     ));
+
+    // Headless audio sink: pumps process_output_buffer and records the 48 kHz
+    // downmix (left channel) that CPAL would deliver to the DAC.
+    let captured_audio = Arc::new(parking_lot::Mutex::new(Vec::<f32>::new()));
+    let audio_shutdown = Arc::new(AtomicBool::new(false));
+    let pump_sink = Arc::new(parking_lot::Mutex::new(sink));
+    let sink_for_thread = Arc::clone(&pump_sink);
+    let captured_for_thread = Arc::clone(&captured_audio);
+    let audio_shutdown_for_thread = Arc::clone(&audio_shutdown);
+    let playback_pump = std::thread::Builder::new()
+        .name("bench-audio-sink-pump".to_string())
+        .spawn(move || {
+            let mut stereo_out = [0.0f32; 960]; // 10 ms @ 48 kHz stereo
+            while !audio_shutdown_for_thread.load(Ordering::Relaxed) {
+                {
+                    let mut sink = sink_for_thread.lock();
+                    sink.process_output_buffer(&mut stereo_out);
+                }
+                let mut mono = captured_for_thread.lock();
+                for frame in stereo_out.chunks_exact(2) {
+                    mono.push(frame[0]);
+                }
+            }
+        })
+        .expect("Failed to spawn bench-audio-sink-pump");
 
     // 2. VAD Input RingBuffer & Actor (production defaults, not bench-local magic numbers)
     let input_rb = HeapRb::<f32>::new(65536);
@@ -190,6 +250,22 @@ pub fn setup_e2e_pipeline(settings: VoxSettings) -> E2ePipelineSetup {
     let vad_backend = VadBackend::Earshot(vad_engine);
     let (vad_cmd_tx, vad_cmd_rx) = mpsc::channel::<VadCommand>();
 
+    // Capture -> AEC -> clean stream (production topology).
+    let clean_rb = HeapRb::<f32>::new(65536);
+    let (clean_prod, clean_cons) = clean_rb.split();
+    let (aec_cmd_tx, aec_rx) = mpsc::channel::<AecCommand>();
+    let aec = AecProcessor::new(Some(aec_ref_cons))
+        .expect("Failed to create AecProcessor");
+    let aec_handle = spawn_aec_worker(
+        aec,
+        in_cons,
+        clean_prod,
+        state.pipeline.engine_shutdown.clone(),
+        Some(aec_rx),
+    )
+    .expect("Failed to spawn AEC worker");
+    let in_cons = clean_cons; // VAD reads the clean stream, not the raw mic.
+
     // 3. STT Worker (Nemotron, resolved through the bench VOX_HOME so overrides are honored)
     let nemotron_dir = vox_lib::utils::paths::get()
         .models
@@ -200,10 +276,27 @@ pub fn setup_e2e_pipeline(settings: VoxSettings) -> E2ePipelineSetup {
     ) as Box<dyn SttProvider>;
 
     let (stt_tx, stt_rx) = mpsc::channel::<SttCommand>();
+    let incomplete_clause_hint = Arc::new(AtomicBool::new(false));
+    let hint_for_emitter = Arc::clone(&incomplete_clause_hint);
+    let partial_emitter: Option<Arc<dyn Fn(u32, String) + Send + Sync>> =
+        Some(Arc::new(move |_turn_id: u32, text: String| {
+            // Mirrors src/core/engine.rs::partial_emitter (incomplete_clause_hint).
+            let trimmed = text.trim();
+            let word_count = trimmed.split_whitespace().count();
+            // Keep identical to tests/common/harness.rs::incomplete_clause_hint_emitter
+            // (the bench crate cannot import the test tree).
+            let trimmed_upper = trimmed.to_uppercase();
+            let ends_with_clause = [
+                " AND", " OR", " BUT", " THE", " A", " AN", " TO", " OF", " IN", " ON",
+            ]
+            .iter()
+            .any(|suffix| trimmed_upper.ends_with(suffix));
+            hint_for_emitter.store(word_count <= 3 || ends_with_clause, Ordering::Relaxed);
+        }));
     let stt_channels = SttActorChannels {
         rx: stt_rx,
         pipeline_event_tx: Some(event_tx.clone()),
-        partial_emitter: None,
+        partial_emitter,
     };
     let stt_handles = SttActorHandles {
         cancel_flag: state.pipeline.cancel_flag.clone(),
@@ -235,7 +328,7 @@ pub fn setup_e2e_pipeline(settings: VoxSettings) -> E2ePipelineSetup {
         purged_frames_counter: Arc::new(AtomicU64::new(0)),
         ingestion_gate: state.pipeline.ingestion_gate.clone(),
         owner_atomic: state.owner.clone(),
-        incomplete_clause_hint: Arc::new(AtomicBool::new(false)),
+        incomplete_clause_hint: Arc::clone(&incomplete_clause_hint),
     };
 
     let vad_handle = std::thread::Builder::new()
@@ -298,13 +391,13 @@ pub fn setup_e2e_pipeline(settings: VoxSettings) -> E2ePipelineSetup {
         audio_stream: AudioStream::mock(),
         stt_tx,
         vad_tx: vad_cmd_tx,
-        aec_tx: None,
+        aec_tx: Some(aec_cmd_tx),
         llm_tx: None,
         tts_tx: None,
         telemetry_tx: state.telemetry.telemetry_tx.clone(),
         pipeline_tx,
         playback_engine,
-        aec_handle: None,
+        aec_handle: Some(aec_handle),
         stt_handle: Some(stt_handle),
         vad_handle: Some(vad_handle),
         route_watcher_handle: None,
@@ -322,7 +415,7 @@ pub fn setup_e2e_pipeline(settings: VoxSettings) -> E2ePipelineSetup {
         app,
         state,
         in_prod_arc,
-        Arc::new(parking_lot::Mutex::new(pb_cons)),
+        (captured_audio, audio_shutdown, playback_pump),
         bench_rx,
         _bench_guard,
     )

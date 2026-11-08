@@ -18,9 +18,39 @@ const IDLE_TIMEOUT: Duration = Duration::from_secs(300); // 5 minutes
 
 struct ActiveInstance {
     child: Child,
-    port: u16,
-    socket_path: Option<PathBuf>,
+    endpoint: SidecarEndpoint,
     last_accessed: Instant,
+}
+
+/// Endpoint for a running sidecar (sidecar-spec §6.2).
+/// On Unix, communication goes over the Unix Domain Socket per the spec
+/// (`reqwest` Unix socket transport). Elsewhere, over a loopback TCP port.
+#[derive(Clone)]
+pub struct SidecarEndpoint {
+    base_url: String,
+    #[cfg_attr(not(unix), allow(dead_code))]
+    socket_path: Option<PathBuf>,
+}
+
+impl SidecarEndpoint {
+    /// URL for `path`, e.g. `/health`.
+    pub fn url(&self, path: &str) -> String {
+        format!("{}{}", self.base_url, path)
+    }
+
+    /// Builds a reqwest client that reaches the sidecar over its transport.
+    pub fn client(&self, timeout: Option<Duration>) -> Result<reqwest::Client, reqwest::Error> {
+        let mut builder = reqwest::Client::builder();
+        if let Some(t) = timeout {
+            builder = builder.timeout(t);
+        }
+        #[cfg(unix)]
+        if let Some(path) = &self.socket_path {
+            builder = builder.unix_socket(path.as_path());
+        }
+        let _ = &self.socket_path;
+        builder.build()
+    }
 }
 
 pub struct SidecarSupervisor {
@@ -40,7 +70,8 @@ impl SidecarSupervisor {
         }
     }
 
-    /// Finds a free TCP port by binding to 127.0.0.1:0 and immediately closing it.
+    /// Finds a free TCP port by binding to 127.0.0.1:0 and binding it again on first use.
+    #[cfg(not(unix))]
     fn get_free_port() -> u16 {
         std::net::TcpListener::bind("127.0.0.1:0")
             .and_then(|l| l.local_addr())
@@ -48,13 +79,33 @@ impl SidecarSupervisor {
             .unwrap_or_else(|_| 18090)
     }
 
+    /// Builds the endpoint for the cached or freshly spawned instance.
+    #[cfg(unix)]
+    fn socket_endpoint(socket_path: &std::path::Path) -> SidecarEndpoint {
+        SidecarEndpoint {
+            // The host is placeholder metadata: with a UDS transport the actual
+            // connection goes over the socket path, not this URL.
+            base_url: "http://localhost".to_string(),
+            socket_path: Some(socket_path.to_path_buf()),
+        }
+    }
+
+    #[cfg(not(unix))]
+    fn tcp_endpoint(port: u16) -> SidecarEndpoint {
+        SidecarEndpoint {
+            base_url: format!("http://127.0.0.1:{}", port),
+            socket_path: None,
+        }
+    }
+
     /// Ensures the sidecar of the requested kind is running and healthy.
-    /// Returns the base HTTP URL (e.g., `http://127.0.0.1:18081`).
+    /// Per RULE-SIDECAR-07 this fails once the health gate cannot be
+    /// satisfied; it never returns an unreachable endpoint.
     pub async fn ensure_ready(
         &self,
         kind: SidecarKind,
         extra_args: &[(&str, &str)],
-    ) -> Result<String> {
+    ) -> Result<SidecarEndpoint> {
         // 1. Check if already running and healthy
         {
             let mut guard = self.instances.lock();
@@ -62,25 +113,31 @@ impl SidecarSupervisor {
                 // Check if child process has exited
                 if let Ok(None) = inst.child.try_wait() {
                     inst.last_accessed = Instant::now();
-                    return Ok(format!("http://127.0.0.1:{}", inst.port));
+                    return Ok(inst.endpoint.clone());
                 }
             }
         }
 
         // 2. Ensure binary exists
         let bin_path = ensure_sidecar_binary(kind).await?;
-        let port = Self::get_free_port();
 
-        // Socket path in ~/.vox/run/<name>.sock
         let run_dir = get_paths().root.join("run");
         std::fs::create_dir_all(&run_dir)?;
         let socket_path = run_dir.join(format!("{}.sock", kind.binary_name()));
 
-        let mut cmd = Command::new(&bin_path);
-        cmd.arg("--port").arg(port.to_string());
+        #[cfg(not(unix))]
+        let port = Self::get_free_port();
 
+        let mut cmd = Command::new(&bin_path);
+        // Always pass the socket path (spec: `--socket ~/.vox/run/{name}.sock`).
         #[cfg(unix)]
-        cmd.arg("--socket").arg(&socket_path);
+        {
+            cmd.arg("--socket").arg(&socket_path);
+        }
+        #[cfg(not(unix))]
+        {
+            cmd.arg("--port").arg(port.to_string());
+        }
 
         for (k, v) in extra_args {
             cmd.arg(k).arg(v);
@@ -98,25 +155,26 @@ impl SidecarSupervisor {
         cmd.stdout(std::process::Stdio::null());
         cmd.stderr(std::process::Stdio::inherit());
 
+        #[cfg(unix)]
+        let endpoint = Self::socket_endpoint(&socket_path);
+        #[cfg(not(unix))]
+        let endpoint = Self::tcp_endpoint(port);
+
         log::info!(
-            "[Sidecar] Spawning {} on port {} (binary: {:?})",
+            "[Sidecar] Spawning {} (binary: {:?})",
             kind.binary_name(),
-            port,
             bin_path
         );
 
-        let child = cmd
+        let mut child = cmd
             .spawn()
             .map_err(|e| anyhow!("Failed to spawn {}: {}", kind.binary_name(), e))?;
 
-        let base_url = format!("http://127.0.0.1:{}", port);
-        let client = reqwest::Client::builder()
-            .timeout(Duration::from_millis(500))
-            .build()?;
+        let client = endpoint.client(Some(Duration::from_millis(500)))?;
 
         // 3. Poll health check
         let start = Instant::now();
-        let health_url = format!("{}/health", base_url);
+        let health_url = endpoint.url("/health");
         let mut ready = false;
 
         while start.elapsed() < HEALTH_CHECK_TIMEOUT {
@@ -130,21 +188,22 @@ impl SidecarSupervisor {
         }
 
         if !ready {
-            log::warn!(
-                "[Sidecar] {} health check timed out after 5s. Proceeding anyway.",
-                kind.binary_name()
+            let _ = child.start_kill();
+            anyhow::bail!(
+                "[Sidecar] {} did not become healthy within {}s; refusing to route traffic (RULE-SIDECAR-07)",
+                kind.binary_name(),
+                HEALTH_CHECK_TIMEOUT.as_secs()
             );
         }
 
         let instance = ActiveInstance {
             child,
-            port,
-            socket_path: Some(socket_path),
+            endpoint: endpoint.clone(),
             last_accessed: Instant::now(),
         };
 
         self.instances.lock().insert(kind, instance);
-        Ok(base_url)
+        Ok(endpoint)
     }
 
     /// Marks an instance as active right now.
@@ -176,7 +235,8 @@ impl SidecarSupervisor {
         for (kind, mut inst) in to_kill {
             log::info!("[Sidecar] Reaping idle sidecar {}", kind.binary_name());
             let _ = inst.child.kill().await;
-            if let Some(p) = inst.socket_path {
+            #[cfg(unix)]
+            if let Some(p) = inst.endpoint.socket_path {
                 let _ = std::fs::remove_file(p);
             }
         }
@@ -188,7 +248,8 @@ impl SidecarSupervisor {
         for (kind, mut inst) in guard.drain() {
             log::info!("[Sidecar] Shutting down sidecar {}", kind.binary_name());
             let _ = inst.child.start_kill();
-            if let Some(p) = inst.socket_path {
+            #[cfg(unix)]
+            if let Some(p) = inst.endpoint.socket_path {
                 let _ = std::fs::remove_file(p);
             }
         }

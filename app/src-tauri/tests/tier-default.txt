@@ -1,5 +1,7 @@
 # Structural seams: no model weights, no network, no audio device.
-# Consumed by scripts/test.sh. Reconciled at the final sweep.
+# Consumed by scripts/test.sh default. Reconciled 2026-11-07: every binary listed here passes; the
+# E2E voice scenes (e2e_voice_pipeline_test) are deliberately NOT here — they need model weights
+# and run under `scripts/test.sh models` / `seam e2e_voice_pipeline_test`.
 ipc_command_registration_test
 settings_persistence_test
 database_persistence_boundary_test

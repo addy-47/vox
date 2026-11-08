@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use vox_lib::services::{
     llm::{GEMMA_MODEL_DIR, GEMMA_MODEL_FILE, QWEN_MODEL_DIR, QWEN_MODEL_FILE},
     stt::{NEMOTRON_MODEL_DIR, QWEN_ASR_MODEL_DIR},
-    tts::{CHATTERBOX_MODEL_DIR, SUPERTONIC_MODEL_DIR},
+    tts::{CHATTERBOX_MODEL_DIR, KOKORO_MODEL_DIR, SUPERTONIC_MODEL_DIR},
     vad::{MODEL_DIR_VAD, MODEL_FILE_VAD, MODEL_FILE_VAD_SILERO},
 };
 
@@ -70,6 +70,19 @@ pub fn get_supertonic_model_dir() -> PathBuf {
         supertonic_dir
     );
     supertonic_dir
+}
+
+/// Resolves the local Kokoro TTS model directory.
+pub fn get_kokoro_model_dir() -> PathBuf {
+    vox_lib::utils::paths::init();
+    let models_dir = vox_lib::utils::paths::get().models.clone();
+    let kokoro_dir = models_dir.join(KOKORO_MODEL_DIR);
+    assert!(
+        kokoro_dir.exists(),
+        "Kokoro model directory does not exist at {:?}",
+        kokoro_dir
+    );
+    kokoro_dir
 }
 
 /// Resolves the local Chatterbox TTS model directory.

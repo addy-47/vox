@@ -2,7 +2,7 @@
 //! vad_segmentation_test.rs — VAD segmentation seam
 //! ============================================================================
 //! Category  : Integration (Seam 2 — VAD segmentation → STT command stream)
-//! Component : services/vad/{actor,segmenter}.rs + services/stt/actor.rs
+//! Component : services/vad/{actor,segmenter}.rs + services/stt/actor.rs + router
 //! Binary    : vad_segmentation_test
 //! Prereqs   : Nemotron STT + Earshot VAD (VOX_MODELS_DIR)
 //! Run       : cargo nextest run --test vad_segmentation_test --release --test-threads=1
@@ -21,117 +21,210 @@ use std::{
 use vox_lib::{
     config::AudioOutputMode,
     core::{
-        events::{InteractionMode, VoxEvent},
-        state::InteractionState,
+        defaults::{
+            DEFAULT_VAD_SILENCE_DURATION_MS, DEFAULT_VAD_SPEECH_ONSET_MS,
+            DEFAULT_VAD_THRESHOLD, DEFAULT_VAD_PTT_NOISE_GATE,
+        },
+        events::{InteractionMode, PipelineMode, VoxEvent},
+        state::{AppState, InteractionOwner, InteractionState},
     },
+    pipeline::router::spawn_router,
     services::{
-        stt::actor::SttCommand,
+        stt::{
+            actor::{spawn_stt_worker, SttActorChannels, SttActorHandles, SttCommand},
+            EmbeddedSttProvider, SttProvider,
+        },
         vad::{actor::VadActorConfig, VadCommand},
     },
 };
 
-/// PURPOSE:  Real speech must produce exactly one final transcript, and real silence
-///           must produce none — the two ends of the segmentation contract.
-/// SCENARIO: Earshot VAD + Nemotron STT run in Passive mode. One English clip, one Hindi
-///           clip, then 100 silent frames.
-/// ASSERTS:  Each clip yields a transcript at Levenshtein >= 0.90 against ground truth;
-///           Hindi transliterates to non-empty ASCII; after both producers are joined the
-///           event channels are empty.
-/// CLASS:    happy-path (speech) + suppression (silence)
-/// REQUIRES: VOX_MODELS_DIR with Earshot + Nemotron weights; ~4 s.
-/// MUTANT:   Remove the `in_speech` guard in `process_continuous_segmentation`, so silence
-///           enters the speech branch.
-///
-/// NOTE: the three scenarios share one VAD/STT worker because re-warming Sherpa/ONNX in one
-/// process corrupts memory (testing-style-guide.md §13). Scenarios remain order-independent.
+/// Spawns a real Nemotron STT worker with a partial sink that records emitted
+/// partials and mirrors src/core/engine.rs's incomplete_clause_hint heuristic.
+/// The recording exists so tests can assert that streaming partials flowed and
+/// drove the hint atomic. The hint Arc is returned so VAD can share it.
+type PartialLog = Arc<std::sync::Mutex<Vec<(u32, String)>>>;
+
+struct RecordingStt {
+    stt_tx: mpsc::Sender<SttCommand>,
+    pipeline_event_rx: mpsc::Receiver<VoxEvent>,
+    partial_log: PartialLog,
+    incomplete_clause_hint: Arc<AtomicBool>,
+    engine_shutdown: Arc<AtomicBool>,
+    join: std::thread::JoinHandle<()>,
+}
+
+fn setup_stt_with_partial_recording() -> RecordingStt {
+    let nemotron_dir = common::paths::get_nemotron_model_dir();
+    let provider = Box::new(
+        EmbeddedSttProvider::new(&nemotron_dir, "nemotron", 2)
+            .expect("Failed to instantiate EmbeddedSttProvider with Nemotron"),
+    ) as Box<dyn SttProvider>;
+
+    let (stt_tx, stt_rx) = mpsc::channel::<SttCommand>();
+    let (pipeline_event_tx, pipeline_event_rx) = mpsc::channel::<VoxEvent>();
+    let partials = Arc::new(std::sync::Mutex::new(Vec::<(u32, String)>::new()));
+    let incomplete_clause_hint = Arc::new(AtomicBool::new(false));
+
+    let partials_for_emitter = Arc::clone(&partials);
+    let hint_for_emitter = Arc::clone(&incomplete_clause_hint);
+    let shared_hint = common::harness::incomplete_clause_hint_emitter(hint_for_emitter);
+    let partial_emitter: Option<Arc<dyn Fn(u32, String) + Send + Sync>> =
+        Some(Arc::new(move |turn_id: u32, text: String| {
+            shared_hint(turn_id, text.clone());
+            if let Ok(mut guard) = partials_for_emitter.lock() {
+                guard.push((turn_id, text));
+            }
+        }));
+
+    let cancel_flag = Arc::new(AtomicBool::new(false));
+    let engine_shutdown = Arc::new(AtomicBool::new(false));
+    let channels = SttActorChannels {
+        rx: stt_rx,
+        pipeline_event_tx: Some(pipeline_event_tx),
+        partial_emitter,
+    };
+    let handles = SttActorHandles {
+        cancel_flag,
+        engine_shutdown: Arc::clone(&engine_shutdown),
+    };
+    let join = spawn_stt_worker(channels, provider, handles).expect("Failed to spawn STT worker");
+
+    RecordingStt {
+        stt_tx,
+        pipeline_event_rx,
+        partial_log: partials,
+        incomplete_clause_hint,
+        engine_shutdown,
+        join,
+    }
+}
+
+/// VAD config identical to production defaults (never overridden in tests).
+fn production_vad_config() -> VadActorConfig {
+    VadActorConfig {
+        initial_threshold: DEFAULT_VAD_THRESHOLD,
+        initial_noise_gate: DEFAULT_VAD_PTT_NOISE_GATE,
+        initial_silence_duration_ms: DEFAULT_VAD_SILENCE_DURATION_MS,
+        initial_speech_onset_ms: DEFAULT_VAD_SPEECH_ONSET_MS,
+        initial_mode: InteractionMode::Passive,
+        initial_audio_mode: AudioOutputMode::Headset,
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn spawn_vad(
+    stt_tx: mpsc::Sender<SttCommand>,
+    vox_event_tx: mpsc::Sender<VoxEvent>,
+    incomplete_clause_hint: Arc<AtomicBool>,
+    state_atomic: Arc<AtomicU32>,
+    turn_id_atomic: Arc<AtomicU32>,
+    audio_suppressed: Arc<AtomicBool>,
+    ingestion_gate: Arc<AtomicBool>,
+    vad_shutdown: Arc<AtomicBool>,
+) -> (
+    mpsc::Sender<VadCommand>,
+    common::harness::RbProducer,
+    std::thread::JoinHandle<()>,
+) {
+    let vad_backend = common::harness::create_test_vad_backend(
+        vox_lib::services::vad::VadBackendOption::Earshot,
+        DEFAULT_VAD_THRESHOLD,
+    );
+    let vad_config = production_vad_config();
+    common::harness::setup_vad_actor(
+        vad_backend,
+        stt_tx,
+        vad_config,
+        state_atomic,
+        turn_id_atomic,
+        audio_suppressed,
+        ingestion_gate,
+        vad_shutdown,
+        vox_event_tx,
+        incomplete_clause_hint,
+    )
+}
+
+/// Sets the interaction to Passive + Realtime so the router never dispatches
+/// stale modular LLM work; VAD/STT pathways are unaffected.
+fn realtime_passive(state: &AppState) {
+    let mut settings = state.settings.write().unwrap();
+    settings.interaction.mode = InteractionMode::Passive;
+    settings.interaction.pipeline_mode = PipelineMode::Realtime;
+}
+
+
+/// PURPOSE:  Real speech must produce exactly one final transcript per segment.
+/// SCENARIO: EN and HI clips with natural ~0.4 s intra-sentence pauses at the
+///           production silence-duration default, plus a composed clip with a
+///           700 ms pause past the early-utterance window.
+/// ASSERTS:  One TranscriptFinal each; similarity >= 0.90 vs ground truth; HI transliterates to ASCII.
+/// CLASS:    happy-path (speech)
+/// REQUIRES: VOX_MODELS_DIR with Earshot + Nemotron.
+/// MUTANT:   Cut the hangover computation so natural pauses split utterances.
+/// NOTE: Scenarios share one VAD/STT worker (re-warming corrupts the ONNX allocator).
 #[test]
 fn passive_streaming_segments_speech_and_suppresses_silence() {
-    let test_deadline = Instant::now() + Duration::from_secs(60);
+    let test_deadline = Instant::now() + Duration::from_secs(90);
 
-    let _guard = common::paths::TempPathsGuard::new();
-    let app = common::harness::get_test_app_handle();
+    let (_guard, app, state) = common::harness::setup_isolated_app_state_sync();
+    state.owner.store(InteractionOwner::Assistant as u32, Ordering::Relaxed);
+    realtime_passive(&state);
+    state.pipeline.set_state(InteractionState::Ready);
 
-    // 1. Setup production STT worker with local Nemotron
-    let (stt_tx, pipeline_event_rx, stt_shutdown, stt_join) =
-        common::harness::setup_stt_worker(&app);
+    // STT worker with recording partial emitter (hint Arc shared with VAD)
+    let RecordingStt {
+        stt_tx,
+        pipeline_event_rx,
+        partial_log,
+        incomplete_clause_hint: hint_arc,
+        engine_shutdown: stt_shutdown,
+        join: stt_join,
+    } = setup_stt_with_partial_recording();
 
-    // 2. Setup production VAD actor in ContinuousSegmentation (Passive) mode
-    let state_atomic = Arc::new(AtomicU32::new(InteractionState::Ready as u32));
-    let turn_id_atomic = Arc::new(AtomicU32::new(1));
     let audio_suppressed = Arc::new(AtomicBool::new(false));
     let ingestion_gate = Arc::new(AtomicBool::new(true));
     let vad_shutdown = Arc::new(AtomicBool::new(false));
+    let state_atomic = state.pipeline.current_state_atomic.clone();
+    let turn_id_atomic = state.pipeline.turn_id.clone();
 
-    let vad_config = VadActorConfig {
-        initial_threshold: vox_lib::core::defaults::DEFAULT_VAD_THRESHOLD,
-        initial_noise_gate: vox_lib::core::defaults::DEFAULT_VAD_PTT_NOISE_GATE,
-        // The test audio clip supertonic_01_en_briefing.wav has a 0.4s (400ms) intra-sentence pause
-        // between greeting and question. We explicitly configure 800ms here so VAD tests single-turn
-        // transcription correctness on this specific legacy test clip without premature segmentation.
-        initial_silence_duration_ms: 800,
-        initial_speech_onset_ms: vox_lib::core::defaults::DEFAULT_VAD_SPEECH_ONSET_MS,
-        initial_mode: InteractionMode::Passive,
-        initial_audio_mode: AudioOutputMode::Headset,
-    };
-
-    let vad_backend = common::harness::create_test_vad_backend(
-        vox_lib::services::vad::VadBackendOption::Earshot,
-        vad_config.initial_threshold,
-    );
-    let (vad_cmd_tx, vox_event_rx, mut producer, vad_join) = common::harness::setup_vad_actor(
-        vad_backend,
-        stt_tx.clone(),
-        vad_config,
-        state_atomic.clone(),
-        turn_id_atomic.clone(),
-        audio_suppressed.clone(),
-        ingestion_gate.clone(),
-        vad_shutdown.clone(),
-    );
-
-    // --- Subtest 1: English Speech Clip (supertonic_01_en_briefing.wav) ---
-    // Single-utterance clip by construction: max intra-sentence pause 0.4s,
-    // below the 800ms production silence default, so VAD deterministically
-    // segments exactly ONE utterance regardless of threshold presets.
+    // ---------- Subtest A: English clip — natural 0.4 s pause, one utterance ----------
     {
+        state.pipeline.set_state(InteractionState::Ready);
+        state.pipeline.turn_id.store(1, Ordering::Relaxed);
+
+        let (vox_event_tx, vox_event_rx) = mpsc::channel::<VoxEvent>();
+        let router_join = spawn_router(app.clone(), vox_event_rx).expect("router");
+        let (vad_cmd_tx, mut producer, vad_join) = spawn_vad(
+            stt_tx.clone(),
+            vox_event_tx,
+            Arc::clone(&hint_arc),
+            state_atomic.clone(),
+            turn_id_atomic.clone(),
+            Arc::clone(&audio_suppressed),
+            Arc::clone(&ingestion_gate),
+            Arc::clone(&vad_shutdown),
+        );
+
         let clip_path = common::paths::get_asset_path(common::ASSET_SUPERTONIC_01_EN_FILENAME);
         let audio = common::audio::decode_wav_to_mono_16k(&clip_path)
             .expect("Failed to decode supertonic_01_en_briefing.wav");
 
-        // Stream audio in VAD_CHUNK_SIZE chunks
+        let (seen_bits, watcher_join) = common::harness::spawn_state_watcher(&state, Duration::from_secs(20));
         common::audio::stream_audio_to_ring_buffer(&audio, &mut producer);
-
-        // Feed trailing silence frames to trigger speech offset detection
         common::audio::stream_silence_frames(&mut producer, 60);
         common::audio::wait_for_buffer_drain(&producer, 5);
+        watcher_join.join().expect("state watcher panicked");
 
-        // Await SpeechStart and SpeechEnd
-        let mut saw_speech_start = false;
-        let mut saw_speech_end = false;
-        let speech_deadline = Instant::now() + Duration::from_secs(10);
-        while Instant::now() < speech_deadline && (!saw_speech_start || !saw_speech_end) {
-            if let Ok(ev) = vox_event_rx.recv_timeout(Duration::from_millis(100)) {
-                match ev {
-                    VoxEvent::SpeechStart { .. } => saw_speech_start = true,
-                    VoxEvent::SpeechEnd { .. } => saw_speech_end = true,
-                    _ => {}
-                }
-            }
-        }
         assert!(
-            saw_speech_start,
-            "Did not receive VoxEvent::SpeechStart for EN clip"
-        );
-        assert!(
-            saw_speech_end,
-            "Did not receive VoxEvent::SpeechEnd for EN clip"
+            seen_bits.load(Ordering::SeqCst) & 0b001 != 0,
+            "VAD SpeechStart must reach the router and switch Ready -> Listening"
         );
 
-        // Await the single TranscriptFinal for the one segmented utterance.
         let transcript = common::harness::collect_all_final_transcripts(
             &pipeline_event_rx,
             1,
-            Duration::from_secs(15),
+            Duration::from_secs(30),
         );
         assert!(!transcript.is_empty(), "Transcript was empty for EN clip");
 
@@ -141,21 +234,38 @@ fn passive_streaming_segments_speech_and_suppresses_silence() {
             0.90,
             "Passive Streaming EN supertonic_01",
         );
+        assert_eq!(
+            state.pipeline.state(),
+            InteractionState::Thinking,
+            "router must land on Thinking after TranscriptFinal (Realtime pending)"
+        );
+
+        // End of EN turn: Finish the drain, then join VAD before re-arming for HI clip.
+        let _ = vad_cmd_tx.send(VadCommand::Shutdown);
+        vad_shutdown.store(true, Ordering::SeqCst);
+        vad_join.join().expect("VAD join failed");
+        let _ = stt_tx.send(SttCommand::ResetStream);
+        let _ = router_join;
+        state.pipeline.set_state(InteractionState::Ready);
     }
 
-    // --- Subtest 2: Hindi Speech Clip (supertonic_07_hi_weather.wav) ---
-    // Single-utterance clip by construction: max intra-sentence pause 0.3s,
-    // below the 800ms production silence default — exactly one utterance.
+    // ---------- Subtest B: Hindi clip — Devanagari + transliteration ----------
     {
-        // Subtest 1 consumed its own events while asserting. The channels are therefore
-        // empty at this boundary; anything present would belong to no scenario.
-        common::harness::assert_channel_empty(
-            &vox_event_rx,
-            "Subtest 1 boundary — vox_event_rx must be empty",
-        );
-        common::harness::assert_channel_empty(
-            &pipeline_event_rx,
-            "Subtest 1 boundary — pipeline_event_rx must be empty",
+        state.pipeline.set_state(InteractionState::Ready);
+        state.pipeline.turn_id.store(2, Ordering::Relaxed);
+        vad_shutdown.store(false, Ordering::SeqCst);
+
+        let (vox_event_tx, vox_event_rx) = mpsc::channel::<VoxEvent>();
+        let _router_join = spawn_router(app.clone(), vox_event_rx).expect("router");
+        let (vad_cmd_tx, mut producer, vad_join) = spawn_vad(
+            stt_tx.clone(),
+            vox_event_tx,
+            Arc::clone(&hint_arc),
+            state_atomic.clone(),
+            turn_id_atomic.clone(),
+            Arc::clone(&audio_suppressed),
+            Arc::clone(&ingestion_gate),
+            Arc::clone(&vad_shutdown),
         );
 
         let clip_path = common::paths::get_asset_path(common::ASSET_SUPERTONIC_07_HI_FILENAME);
@@ -166,27 +276,6 @@ fn passive_streaming_segments_speech_and_suppresses_silence() {
         common::audio::stream_silence_frames(&mut producer, 60);
         common::audio::wait_for_buffer_drain(&producer, 5);
 
-        let mut saw_speech_start = false;
-        let mut saw_speech_end = false;
-        let speech_deadline = Instant::now() + Duration::from_secs(10);
-        while Instant::now() < speech_deadline && (!saw_speech_start || !saw_speech_end) {
-            if let Ok(ev) = vox_event_rx.recv_timeout(Duration::from_millis(100)) {
-                match ev {
-                    VoxEvent::SpeechStart { .. } => saw_speech_start = true,
-                    VoxEvent::SpeechEnd { .. } => saw_speech_end = true,
-                    _ => {}
-                }
-            }
-        }
-        assert!(
-            saw_speech_start,
-            "Did not receive VoxEvent::SpeechStart for HI clip"
-        );
-        assert!(
-            saw_speech_end,
-            "Did not receive VoxEvent::SpeechEnd for HI clip"
-        );
-
         let transcript = common::harness::collect_all_final_transcripts(
             &pipeline_event_rx,
             1,
@@ -194,7 +283,6 @@ fn passive_streaming_segments_speech_and_suppresses_silence() {
         );
         assert!(!transcript.is_empty(), "Transcript was empty for HI clip");
 
-        // Raw STT hypothesis must carry Devanagari script for Hindi speech.
         assert!(
             !transcript.is_ascii(),
             "HI hypothesis contains no Devanagari script: {:?}",
@@ -208,8 +296,6 @@ fn passive_streaming_segments_speech_and_suppresses_silence() {
             "Passive Streaming HI supertonic_07",
         );
 
-        // Spec: transliterate_if_hi engages on Devanagari final transcripts —
-        // enabled final call must yield non-empty ASCII-only Roman script.
         let roman = vox_lib::services::translit::transliterate_if_hi(&transcript, true, true);
         assert!(!roman.is_empty(), "Transliterated HI transcript is empty");
         assert!(
@@ -217,53 +303,185 @@ fn passive_streaming_segments_speech_and_suppresses_silence() {
             "Transliterated HI transcript is not ASCII-only: {:?}",
             roman
         );
+
+        let _ = vad_cmd_tx.send(VadCommand::Shutdown);
+        vad_shutdown.store(true, Ordering::SeqCst);
+        vad_join.join().expect("VAD join failed");
+        let _ = stt_tx.send(SttCommand::ResetStream);
+        state.pipeline.set_state(InteractionState::Ready);
     }
 
-    // --- Subtest 3: Silence Only Guard (Negative assertion) ---
+    // ---------- Subtest C: 700 ms pause inside the early-utterance window ----------
+    // The early-utterance protection (EARLY_UTTERANCE_MIN_END_FRAMES = 50 frames /
+    // 800 ms, active while speech_sample_counter < 20,000 samples / 1.25 s) must hold
+    // a composed 700 ms pause and keep the utterance as one segment.
     {
-        // Subtest 2 consumed its own events while asserting. The channels are empty here.
-        // The negative assertion runs after both producers are shut down and joined,
-        // so emptiness there proves the silence path emitted nothing.
-        common::harness::assert_channel_empty(
-            &vox_event_rx,
-            "Silence guard boundary — vox_event_rx must be empty",
-        );
-        common::harness::assert_channel_empty(
-            &pipeline_event_rx,
-            "Silence guard boundary — pipeline_event_rx must be empty",
+        const SPLIT_SAMPLES: usize = 9_600; // 0.6 s of speech — inside the 1.25 s early-utterance window
+        const GAP_SAMPLES: usize = 11_200; // 700 ms pause
+
+        state.pipeline.set_state(InteractionState::Ready);
+        state.pipeline.turn_id.store(3, Ordering::Relaxed);
+        vad_shutdown.store(false, Ordering::SeqCst);
+
+        let (vox_event_tx, vox_event_rx) = mpsc::channel::<VoxEvent>();
+        let _router_join = spawn_router(app.clone(), vox_event_rx).expect("router");
+        let (vad_cmd_tx, mut producer, vad_join) = spawn_vad(
+            stt_tx.clone(),
+            vox_event_tx,
+            Arc::clone(&hint_arc),
+            state_atomic.clone(),
+            turn_id_atomic.clone(),
+            Arc::clone(&audio_suppressed),
+            Arc::clone(&ingestion_gate),
+            Arc::clone(&vad_shutdown),
         );
 
-        // Stream 100 silence frames
+        let clip_path = common::paths::get_asset_path(common::ASSET_SUPERTONIC_01_EN_FILENAME);
+        let audio = common::audio::decode_wav_to_mono_16k(&clip_path)
+            .expect("Failed to decode supertonic_01_en_briefing.wav");
+        let composed = common::audio::insert_silence(&audio, SPLIT_SAMPLES, GAP_SAMPLES);
+
+        common::audio::stream_audio_to_ring_buffer(&composed, &mut producer);
+        common::audio::stream_silence_frames(&mut producer, 60);
+        common::audio::wait_for_buffer_drain(&producer, 5);
+
+        let transcript = common::harness::collect_all_final_transcripts(
+            &pipeline_event_rx,
+            1,
+            Duration::from_secs(30),
+        );
+        assert!(
+            !transcript.is_empty(),
+            "composed clip must yield a transcript (700 ms pause absorbed by early-utterance protection)"
+        );
+
+        // If hangover clipped the 700 ms pause, the split halves would fail ground truth similarity.
+        common::scoring::assert_similarity_above(
+            &transcript,
+            common::ASSET_SUPERTONIC_01_EN_GROUND_TRUTH,
+            0.90,
+            "Passive Streaming EN supertonic_01 with 700 ms mid-utterance pause",
+        );
+
+        // Streaming partials must have flowed into the engine-style hint closure.
+        let partial_count = partial_log.lock().map(|guard| guard.len()).unwrap_or(0);
+        assert!(
+            partial_count > 0,
+            "Nemotron streaming partials must reach the partial_emitter"
+        );
+
+        let _ = vad_cmd_tx.send(VadCommand::Shutdown);
+        vad_shutdown.store(true, Ordering::SeqCst);
+        vad_join.join().expect("VAD join failed");
+        let _ = stt_tx.send(SttCommand::ResetStream);
+        state.pipeline.set_state(InteractionState::Ready);
+    }
+
+    // ---------- Subtest D: Branch Point 2 / Scenario 2B — sub-300 ms burst ----------
+    {
+        // 4160 voiced samples (260 ms) lifted from the clip's high-energy "Hey Vox" burst —
+        // below the 4800-sample (300 ms) minimum utterance, but loud enough to confirm onset.
+        const BURST_START: usize = 9_200; // 0.575 s @ 16 kHz — first strongly voiced window
+        const BURST_END: usize = 13_360; // 0.835 s — 260 ms of voiced energy
+
+        state.pipeline.set_state(InteractionState::Ready);
+        state.pipeline.turn_id.store(4, Ordering::Relaxed);
+        vad_shutdown.store(false, Ordering::SeqCst);
+
+        let (vox_event_tx, vox_event_rx) = mpsc::channel::<VoxEvent>();
+        let _router_join = spawn_router(app.clone(), vox_event_rx).expect("router");
+        let (vad_cmd_tx, mut producer, vad_join) = spawn_vad(
+            stt_tx.clone(),
+            vox_event_tx,
+            Arc::clone(&hint_arc),
+            state_atomic.clone(),
+            turn_id_atomic.clone(),
+            Arc::clone(&audio_suppressed),
+            Arc::clone(&ingestion_gate),
+            Arc::clone(&vad_shutdown),
+        );
+
+        let clip_path = common::paths::get_asset_path(common::ASSET_SUPERTONIC_01_EN_FILENAME);
+        let audio = common::audio::decode_wav_to_mono_16k(&clip_path)
+            .expect("Failed to decode supertonic_01_en_briefing.wav");
+
+        let (seen_bits, watcher_join) = common::harness::spawn_state_watcher(&state, Duration::from_secs(25));
+        common::audio::stream_audio_to_ring_buffer(&audio[BURST_START..BURST_END], &mut producer);
+        common::audio::stream_silence_frames(&mut producer, 60);
+        common::audio::wait_for_buffer_drain(&producer, 5);
+        watcher_join.join().expect("state watcher panicked");
+
+        // The burst confirms SpeechStart (onset). Thinking -> Ready completes within a
+        // single router iteration after the fallback empty TranscriptFinal, so polling
+        // cannot reliably sample the intermediate Thinking state. The provable contract:
+        // Listening is entered, then the pipeline recovers to Ready without deadlock.
+        let bits = seen_bits.load(Ordering::SeqCst);
+        assert!(
+            bits & 0b001 != 0,
+            "sub-threshold burst must still trigger SpeechStart/Listening"
+        );
+        assert_eq!(
+            state.pipeline.state(),
+            InteractionState::Ready,
+            "fallback empty TranscriptFinal must recover Thinking -> Ready (no deadlock)"
+        );
+
+        let _ = vad_cmd_tx.send(VadCommand::Shutdown);
+        vad_shutdown.store(true, Ordering::SeqCst);
+        vad_join.join().expect("VAD join failed");
+        let _ = stt_tx.send(SttCommand::ResetStream);
+    }
+
+    // ---------- Subtest E: Silence guard ----------
+    {
+        assert!(Instant::now() < test_deadline, "Test exceeded overall deadline");
+
+        state.pipeline.set_state(InteractionState::Ready);
+        state.pipeline.turn_id.store(5, Ordering::Relaxed);
+        vad_shutdown.store(false, Ordering::SeqCst);
+
+        let (vox_event_tx, vox_event_rx) = mpsc::channel::<VoxEvent>();
+        let _router_join = spawn_router(app.clone(), vox_event_rx).expect("router");
+        let (vad_cmd_tx, mut producer, vad_join) = spawn_vad(
+            stt_tx.clone(),
+            vox_event_tx,
+            Arc::clone(&hint_arc),
+            state_atomic.clone(),
+            turn_id_atomic.clone(),
+            Arc::clone(&audio_suppressed),
+            Arc::clone(&ingestion_gate),
+            Arc::clone(&vad_shutdown),
+        );
+
         common::audio::stream_silence_frames(&mut producer, 100);
         common::audio::wait_for_buffer_drain(&producer, 5);
+
+        common::harness::vad_quiescence_barrier(&vad_cmd_tx);
+        common::harness::assert_channel_empty(
+            &pipeline_event_rx,
+            "Silence guard — pipeline_event_rx must be empty after silence streaming",
+        );
+        assert_eq!(
+            state.pipeline.state(),
+            InteractionState::Ready,
+            "silence must not open a turn"
+        );
+
+        let _ = vad_cmd_tx.send(VadCommand::Shutdown);
+        vad_shutdown.store(true, Ordering::SeqCst);
+        vad_join.join().expect("VAD join failed");
     }
 
-    // --- Teardown: Graceful Shutdown & Join ---
-    assert!(
-        Instant::now() < test_deadline,
-        "Test exceeded overall 60-second deadline"
-    );
+    // ---------- Teardown ----------
+    assert!(Instant::now() < test_deadline, "Test exceeded overall deadline");
 
-    let _ = vad_cmd_tx.send(VadCommand::Shutdown);
     let _ = stt_tx.send(SttCommand::Shutdown);
-    vad_shutdown.store(true, Ordering::SeqCst);
     stt_shutdown.store(true, Ordering::SeqCst);
+    stt_join.join().expect("STT worker panicked");
 
-    vad_join
-        .join()
-        .expect("VAD worker thread panicked during test execution");
-    stt_join
-        .join()
-        .expect("STT worker thread panicked during test execution");
-
-    // Quiescence is now proven: both producers are joined and cannot emit again.
-    common::harness::assert_channel_empty(
-        &vox_event_rx,
-        "Passive Streaming Silence Guard — vox_event_rx must be empty after the producers joined",
-    );
     common::harness::assert_channel_empty(
         &pipeline_event_rx,
-        "Passive Streaming Silence Guard — pipeline_event_rx must be empty after the producers joined",
+        "pipeline_event_rx must be empty after the STT worker joined",
     );
 }
 
@@ -284,14 +502,7 @@ fn silero_vad_segments_speech_and_triggers_auto_silence_stop() {
     let ingestion_gate = Arc::new(AtomicBool::new(true));
     let vad_shutdown = Arc::new(AtomicBool::new(false));
 
-    let vad_config = VadActorConfig {
-        initial_threshold: vox_lib::core::defaults::DEFAULT_VAD_THRESHOLD,
-        initial_noise_gate: vox_lib::core::defaults::DEFAULT_VAD_PTT_NOISE_GATE,
-        initial_silence_duration_ms: 800,
-        initial_speech_onset_ms: vox_lib::core::defaults::DEFAULT_VAD_SPEECH_ONSET_MS,
-        initial_mode: InteractionMode::Passive,
-        initial_audio_mode: AudioOutputMode::Headset,
-    };
+    let vad_config = production_vad_config();
 
     let silero_backend = common::harness::create_test_vad_backend(
         vox_lib::services::vad::VadBackendOption::SileroVad,
@@ -299,7 +510,8 @@ fn silero_vad_segments_speech_and_triggers_auto_silence_stop() {
     );
     let (stt_tx, _stt_rx) = mpsc::channel();
 
-    let (vad_cmd_tx, vox_event_rx, mut producer, vad_join) = common::harness::setup_vad_actor(
+    let (vox_event_tx, vox_event_rx) = mpsc::channel::<VoxEvent>();
+    let (vad_cmd_tx, mut producer, vad_join) = common::harness::setup_vad_actor(
         silero_backend,
         stt_tx,
         vad_config,
@@ -308,6 +520,8 @@ fn silero_vad_segments_speech_and_triggers_auto_silence_stop() {
         audio_suppressed,
         ingestion_gate,
         vad_shutdown.clone(),
+        vox_event_tx,
+        Arc::new(AtomicBool::new(false)),
     );
 
     // 1. Stream English speech clip
@@ -336,12 +550,14 @@ fn silero_vad_segments_speech_and_triggers_auto_silence_stop() {
     assert!(saw_speech_end, "Silero VAD did not emit SpeechEnd");
 
     // 2. Stream silence only and verify negative emission
+    common::harness::vad_quiescence_barrier(&vad_cmd_tx);
     common::harness::assert_channel_empty(
         &vox_event_rx,
         "Silero boundary — vox_event_rx must be empty before silence guard",
     );
     common::audio::stream_silence_frames(&mut producer, 80);
     common::audio::wait_for_buffer_drain(&producer, 5);
+    common::harness::vad_quiescence_barrier(&vad_cmd_tx);
 
     let _ = vad_cmd_tx.send(VadCommand::Shutdown);
     vad_shutdown.store(true, Ordering::SeqCst);

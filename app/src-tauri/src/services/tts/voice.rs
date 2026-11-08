@@ -273,7 +273,7 @@ pub fn pre_bake_speaker_tensors(source_wav: &Path, baked_dir: &Path) -> Result<(
 
     tokio::task::block_in_place(|| {
         tokio::runtime::Handle::current().block_on(async {
-            let base_url = sidecar::global_sidecar_supervisor()
+            let sidecar_endpoint = sidecar::global_sidecar_supervisor()
                 .ensure_ready(
                     sidecar::SidecarKind::TtsClone,
                     &[("--model-dir", &model_dir_str)],
@@ -281,9 +281,11 @@ pub fn pre_bake_speaker_tensors(source_wav: &Path, baked_dir: &Path) -> Result<(
                 .await
                 .map_err(|e| format!("Failed to start Chatterbox sidecar: {}", e))?;
 
-            let client = reqwest::Client::new();
+            let client = sidecar_endpoint
+                .client(None)
+                .map_err(|e| format!("Failed to build Chatterbox sidecar client: {}", e))?;
             let res = client
-                .post(format!("{}/v1/voices/pre-bake", base_url))
+                .post(sidecar_endpoint.url("/v1/voices/pre-bake"))
                 .json(&serde_json::json!({
                     "source_wav": source_wav,
                     "baked_dir": baked_dir,
@@ -1215,14 +1217,16 @@ pub async fn sync_azure_tts_voices_to_db(
 
 /// Queries Google `voices:list` for streaming-capable Chirp 3: HD English voices via the sidecar.
 pub async fn fetch_remote_google_voices() -> Result<Vec<EdgeTtsVoiceEntry>, String> {
-    let base_url = sidecar::global_sidecar_supervisor()
+    let sidecar_endpoint = sidecar::global_sidecar_supervisor()
         .ensure_ready(sidecar::SidecarKind::TtsCloud, &[])
         .await
         .map_err(|e| format!("Google TTS sidecar not ready: {}", e))?;
 
-    let client = reqwest::Client::new();
+    let client = sidecar_endpoint
+        .client(None)
+        .map_err(|e| format!("Failed to build Cloud TTS sidecar client: {}", e))?;
     let res = client
-        .post(format!("{}/v1/google/voices", base_url))
+        .post(sidecar_endpoint.url("/v1/google/voices"))
         .json(&serde_json::json!({
             "regions": ["en-US", "en-GB", "en-AU", "en-IN"]
         }))

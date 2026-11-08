@@ -87,19 +87,21 @@ impl TtsProvider for CloudTtsSidecarProvider {
 
         tokio::task::block_in_place(|| {
             tokio::runtime::Handle::current().block_on(async move {
-                let base_url = global_sidecar_supervisor()
+                let sidecar_endpoint = global_sidecar_supervisor()
                     .ensure_ready(SidecarKind::TtsCloud, &[])
                     .await
                     .map_err(|e| anyhow!("Failed to start Cloud TTS sidecar: {}", e))?;
 
-                let client = reqwest::Client::new();
+                let client = sidecar_endpoint
+                    .client(None)
+                    .map_err(|e| anyhow!("Failed to build Cloud TTS sidecar client: {}", e))?;
 
                 let (endpoint, payload) = match &self.kind {
                     CloudProviderKind::Google {
                         voice,
                         project_override,
                     } => (
-                        format!("{}/v1/google/speech", base_url),
+                        sidecar_endpoint.url("/v1/google/speech"),
                         serde_json::json!({
                             "voice": voice,
                             "text": text_clean,
@@ -113,7 +115,7 @@ impl TtsProvider for CloudTtsSidecarProvider {
                         key,
                         resource_id,
                     } => (
-                        format!("{}/v1/azure/speech", base_url),
+                        sidecar_endpoint.url("/v1/azure/speech"),
                         serde_json::json!({
                             "region_or_endpoint": region_or_endpoint,
                             "voice": voice,
@@ -255,14 +257,16 @@ pub async fn google_synthesize_to_wav(
     project_override: Option<&str>,
     target_path: &std::path::Path,
 ) -> Result<()> {
-    let base_url = global_sidecar_supervisor()
+    let sidecar_endpoint = global_sidecar_supervisor()
         .ensure_ready(SidecarKind::TtsCloud, &[])
         .await
         .map_err(|e| anyhow!("Failed to start Cloud TTS sidecar: {}", e))?;
 
-    let client = reqwest::Client::new();
+    let client = sidecar_endpoint
+        .client(None)
+        .map_err(|e| anyhow!("Failed to build Cloud TTS sidecar client: {}", e))?;
     let resp = client
-        .post(format!("{}/v1/google/speech", base_url))
+        .post(sidecar_endpoint.url("/v1/google/speech"))
         .json(&serde_json::json!({
             "voice": voice,
             "text": text,
@@ -298,14 +302,16 @@ pub async fn azure_synthesize_to_wav(
     speed: f32,
     target_path: &std::path::Path,
 ) -> Result<()> {
-    let base_url = global_sidecar_supervisor()
+    let sidecar_endpoint = global_sidecar_supervisor()
         .ensure_ready(SidecarKind::TtsCloud, &[])
         .await
         .map_err(|e| anyhow!("Failed to start Cloud TTS sidecar: {}", e))?;
 
-    let client = reqwest::Client::new();
+    let client = sidecar_endpoint
+        .client(None)
+        .map_err(|e| anyhow!("Failed to build Cloud TTS sidecar client: {}", e))?;
     let resp = client
-        .post(format!("{}/v1/azure/speech", base_url))
+        .post(sidecar_endpoint.url("/v1/azure/speech"))
         .json(&serde_json::json!({
             "region_or_endpoint": region_or_endpoint,
             "voice": voice,
