@@ -164,6 +164,8 @@ async fn chat_completions_handler(
     let cancel = CancellationToken::new();
     let (tx, rx) = mpsc::channel();
 
+    let cancel_for_stream = cancel.clone();
+
     // 3. Spawn generation
     tokio::task::spawn_blocking(move || {
         let cancel_clone = cancel.clone();
@@ -191,11 +193,16 @@ async fn chat_completions_handler(
                         }],
                     };
                     if let Ok(json_str) = serde_json::to_string(&chunk) {
-                        let _ = sse_tx.blocking_send(Ok(Event::default().data(json_str)));
+                        if sse_tx.blocking_send(Ok(Event::default().data(json_str))).is_err() {
+                            cancel_for_stream.cancel();
+                            break;
+                        }
                     }
                 }
                 LlmStreamEvent::Finished => {
-                    let _ = sse_tx.blocking_send(Ok(Event::default().data("[DONE]")));
+                    if sse_tx.blocking_send(Ok(Event::default().data("[DONE]"))).is_err() {
+                        cancel_for_stream.cancel();
+                    }
                     break;
                 }
                 LlmStreamEvent::Error(err) => {

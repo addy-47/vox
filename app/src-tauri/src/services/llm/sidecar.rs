@@ -95,13 +95,15 @@ impl LlmProvider for SidecarLlmProvider {
                 ("--threads", threads_str.as_str()),
             ];
 
-            let base_url = global_sidecar_supervisor()
+            let endpoint = global_sidecar_supervisor()
                 .ensure_ready(SidecarKind::Llm, &extra_args)
                 .await
                 .map_err(|e| LlmError::Engine(format!("Failed to start LLM sidecar: {}", e)))?;
 
-            let client = reqwest::Client::new();
-            let completions_url = format!("{}/v1/chat/completions", base_url);
+            let client = endpoint
+                .client(None)
+                .map_err(|e| LlmError::Engine(format!("Failed to build sidecar client: {}", e)))?;
+            let completions_url = endpoint.url("/v1/chat/completions");
 
             let messages_payload: Vec<Value> = request
                 .input

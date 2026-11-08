@@ -66,10 +66,8 @@ struct Rig {
     producer: common::harness::RbProducer,
     vad_cmd_tx: mpsc::Sender<VadCommand>,
     vad_shutdown: Arc<AtomicBool>,
-    forward_shutdown: Arc<AtomicBool>,
     _paths: common::paths::TempPathsGuard,
     vad_join: Option<JoinHandle<()>>,
-    forward_join: Option<JoinHandle<()>>,
     router_join: Option<JoinHandle<()>>,
 }
 
@@ -100,7 +98,8 @@ impl Rig {
         let audio_suppressed = Arc::new(AtomicBool::new(false));
         let vad_shutdown = Arc::new(AtomicBool::new(false));
 
-        let (vad_cmd_tx, vad_event_rx, producer, vad_join) = common::harness::setup_vad_actor(
+        let (event_tx, event_rx) = mpsc::channel::<VoxEvent>();
+        let (vad_cmd_tx, producer, vad_join) = common::harness::setup_vad_actor(
             vad_backend,
             stt_tx.clone(),
             vad_config,
@@ -109,6 +108,8 @@ impl Rig {
             audio_suppressed,
             state.pipeline.ingestion_gate.clone(),
             vad_shutdown.clone(),
+            event_tx.clone(),
+            Arc::new(AtomicBool::new(false)),
         );
         common::harness::attach_mock_engine_with_llm_vad_to_state(
             &app,
@@ -118,31 +119,9 @@ impl Rig {
             Some(llm_tx),
         );
 
-        let (event_tx, event_rx) = mpsc::channel::<VoxEvent>();
         *state.event_tx.lock() = Some(event_tx.clone());
         let router_join =
             vox_lib::pipeline::router::spawn_router(app.clone(), event_rx).expect("router");
-
-        // Forward VAD-originated events (window auto-stop) into the router.
-        let forward_shutdown = Arc::new(AtomicBool::new(false));
-        let forward_flag = forward_shutdown.clone();
-        let forward_tx = event_tx.clone();
-        let forward_join = std::thread::Builder::new()
-            .name("test-vad-forwarder".into())
-            .spawn(move || {
-                while !forward_flag.load(Ordering::Relaxed) {
-                    match vad_event_rx.recv_timeout(Duration::from_millis(50)) {
-                        Ok(event) => {
-                            if forward_tx.send(event).is_err() {
-                                break;
-                            }
-                        }
-                        Err(mpsc::RecvTimeoutError::Timeout) => continue,
-                        Err(mpsc::RecvTimeoutError::Disconnected) => break,
-                    }
-                }
-            })
-            .expect("spawn test-vad-forwarder");
 
         Self {
             app,
@@ -153,10 +132,8 @@ impl Rig {
             producer,
             vad_cmd_tx,
             vad_shutdown,
-            forward_shutdown,
             _paths: paths,
             vad_join: Some(vad_join),
-            forward_join: Some(forward_join),
             router_join: Some(router_join),
         }
     }
@@ -247,10 +224,6 @@ impl Rig {
     }
 
     fn close(mut self) {
-        self.forward_shutdown.store(true, Ordering::Relaxed);
-        if let Some(join) = self.forward_join.take() {
-            join.join().expect("VAD event forwarder panicked");
-        }
         let _ = self.event_tx.send(VoxEvent::Shutdown);
         if let Some(join) = self.router_join.take() {
             join.join().expect("router thread panicked");

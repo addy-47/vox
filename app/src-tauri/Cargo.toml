@@ -45,7 +45,7 @@ audioadapter = "3.0.0"         # Audio buffer adapter abstraction
 audioadapter-buffers = "3.0.0" # Audio buffer containers
 symphonia = { version = "0.6.0", features = ["mp3", "flac", "wav", "aac"] } # Media container demuxing
 symphonia-core = "0.6.0"       # Symphonia core primitives
-sonora = "0.2.0"               # Pure-Rust WebRTC AEC3, NS, and AGC2 audio processing
+sonora = "0.3.0"               # Pure-Rust WebRTC AEC3, NS, and AGC2 audio processing
 
 # ─── 3. ML Inference & Language Processing ──────────────────────────────────
 ort = { version = "=2.0.0-rc.13", features = ["download-binaries", "ndarray"] }                # ONNX Runtime bindings (1.28; fixes ReshapeFusion SIGSEGV on MiniLM INT8)

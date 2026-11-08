@@ -62,13 +62,15 @@ impl TtsProvider for ChatterboxSidecarProvider {
 
         tokio::task::block_in_place(|| {
             tokio::runtime::Handle::current().block_on(async move {
-                let base_url = global_sidecar_supervisor()
+                let sidecar_endpoint = global_sidecar_supervisor()
                     .ensure_ready(SidecarKind::TtsClone, &[("--model-dir", &model_dir_str)])
                     .await
                     .map_err(|e| anyhow!("Failed to start Chatterbox sidecar: {}", e))?;
 
-                let client = reqwest::Client::new();
-                let url = format!("{}/v1/audio/speech", base_url);
+                let client = sidecar_endpoint
+                    .client(None)
+                    .map_err(|e| anyhow!("Failed to build Chatterbox sidecar client: {}", e))?;
+                let url = sidecar_endpoint.url("/v1/audio/speech");
 
                 let payload = serde_json::json!({
                     "text": text_clean,

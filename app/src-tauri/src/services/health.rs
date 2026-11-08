@@ -400,12 +400,11 @@ pub async fn check_tts_health_with_reason(
                 .ensure_ready(sidecar::SidecarKind::TtsCloud, &[])
                 .await
             {
-                Ok(base_url) => {
-                    let client = reqwest::Client::builder()
-                        .timeout(Duration::from_secs(2))
-                        .build()
+                Ok(sidecar_endpoint) => {
+                    let client = sidecar_endpoint
+                        .client(Some(Duration::from_secs(2)))
                         .map_err(|e| e.to_string())?;
-                    match client.get(format!("{}/health", base_url)).send().await {
+                    match client.get(sidecar_endpoint.url("/health")).send().await {
                         Ok(resp) if resp.status().is_success() => Ok((true, None)),
                         Ok(resp) => Ok((
                             false,

@@ -56,17 +56,10 @@ async fn playback_gates_thinking_to_speaking_and_speaking_to_ready() {
         state.pipeline.set_state(InteractionState::Thinking);
 
         let (event_tx, event_rx) = mpsc::channel::<VoxEvent>();
-        let current_turn_id = Arc::new(AtomicU32::new(turn_id));
-        let pending_jobs = Arc::clone(&state.pipeline.pending_synthesis_jobs);
-        pending_jobs.store(0, Ordering::Relaxed);
+        state.pipeline.pending_synthesis_jobs.store(0, Ordering::Relaxed);
 
-        let (playback_engine, mut sink_ctx) =
-            common::harness::create_headless_playback_with_sink(
-                event_tx.clone(),
-                Arc::clone(&state.pipeline.current_state_atomic),
-                current_turn_id,
-                Arc::clone(&pending_jobs),
-            );
+        let (playback_engine, mut sink_ctx, _ref_cons) =
+            common::harness::create_headless_playback_with_aec_tap(&state, event_tx.clone());
 
         // Spawn central production router pump
         let router_handle = spawn_router(app.clone(), event_rx)
@@ -227,13 +220,10 @@ async fn playback_finished_is_deferred_while_a_job_is_pending() {
         pending_jobs.store(1, Ordering::Relaxed);
 
         let (event_tx, event_rx) = mpsc::channel::<VoxEvent>();
-        let current_turn_id = Arc::new(AtomicU32::new(turn_id));
 
-        let (_playback_engine, mut sink_ctx) = common::harness::create_headless_playback_with_sink(
+        let (_playback_engine, mut sink_ctx, _ref_cons) = common::harness::create_headless_playback_with_aec_tap(
+            &state,
             event_tx.clone(),
-            Arc::clone(&state.pipeline.current_state_atomic),
-            current_turn_id,
-            Arc::clone(&pending_jobs),
         );
 
         let router_handle =
@@ -342,7 +332,8 @@ fn speech_detection_follows_the_audio_output_mode() {
         vox_lib::services::vad::VadBackendOption::Earshot,
         vad_config.initial_threshold,
     );
-    let (vad_cmd_tx, vox_event_rx, mut producer, vad_join) = common::harness::setup_vad_actor(
+    let (vox_event_tx, vox_event_rx) = mpsc::channel::<VoxEvent>();
+    let (vad_cmd_tx, mut producer, vad_join) = common::harness::setup_vad_actor(
         vad_backend,
         stt_tx,
         vad_config,
@@ -351,6 +342,8 @@ fn speech_detection_follows_the_audio_output_mode() {
         audio_suppressed.clone(),
         state.pipeline.ingestion_gate.clone(),
         engine_shutdown.clone(),
+        vox_event_tx,
+        Arc::new(AtomicBool::new(false)),
     );
 
     // Case 1: Speaker mode, but state transitions to Ready (playback finished)
@@ -614,7 +607,8 @@ async fn synthesis_guard_latch_has_a_full_lifecycle() {
 
         let turn_id = 905;
         state.pipeline.turn_id.store(turn_id, Ordering::Relaxed);
-        let routing_ctx = vox_lib::pipeline::RoutingContext::from_app_state(&state);
+        let (event_tx, event_rx) = mpsc::channel::<VoxEvent>();
+        let router_handle = spawn_router(app.clone(), event_rx).expect("router");
 
         // Turn begins: transcript sets turn_open = true
         state.pipeline.set_state(InteractionState::Thinking);
@@ -623,13 +617,18 @@ async fn synthesis_guard_latch_has_a_full_lifecycle() {
         assert!(state.pipeline.is_turn_open());
 
         // Audio starts playing first clause -> transitions to Speaking
-        vox_lib::pipeline::assistant::playback::on_playback_started(
-            turn_id,
-            AudioIntent::TurnResponse,
-            &app,
-            &state,
-            &routing_ctx,
-        );
+        event_tx
+            .send(VoxEvent::PlaybackStarted {
+                turn_id,
+                intent: AudioIntent::TurnResponse,
+            })
+            .expect("router must accept PlaybackStarted");
+
+        // Poll for Speaking (router thread applies the transition).
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while Instant::now() < deadline && state.pipeline.state() != InteractionState::Speaking {
+            std::thread::sleep(Duration::from_millis(10));
+        }
         assert_eq!(state.pipeline.state(), InteractionState::Speaking);
         assert!(!state.pipeline.is_drained_while_open());
 
@@ -638,13 +637,14 @@ async fn synthesis_guard_latch_has_a_full_lifecycle() {
             .pipeline
             .pending_synthesis_jobs
             .store(0, Ordering::Relaxed);
-        vox_lib::pipeline::assistant::playback::on_playback_finished(
-            turn_id,
-            AudioIntent::TurnResponse,
-            &app,
-            &state,
-            &routing_ctx,
-        );
+        event_tx
+            .send(VoxEvent::PlaybackFinished {
+                turn_id,
+                intent: AudioIntent::TurnResponse,
+            })
+            .expect("router must accept PlaybackFinished");
+        // Give the router one iteration to arm the latch.
+        std::thread::sleep(Duration::from_millis(100));
 
         // LATCH INVARIANT: Pipeline must NOT transition to Ready! It must remain Speaking and set drained_while_open = true
         assert_eq!(
@@ -657,18 +657,20 @@ async fn synthesis_guard_latch_has_a_full_lifecycle() {
             "drained_while_open latch must be armed"
         );
 
-        // LLM finishes later: on_llm_finished evaluates the latch and completes transition to Ready
-        vox_lib::pipeline::assistant::llm::on_llm_finished(
-            turn_id,
-            Some(&app),
-            &state,
-            &routing_ctx,
-        );
+        // LLM finishes later: the router's LlmFinished arm evaluates the latch
+        event_tx
+            .send(VoxEvent::LlmFinished { turn_id })
+            .expect("router must accept LlmFinished");
+
+        let llf_deadline = Instant::now() + Duration::from_secs(5);
+        while Instant::now() < llf_deadline && state.pipeline.state() != InteractionState::Ready {
+            std::thread::sleep(Duration::from_millis(10));
+        }
 
         assert_eq!(
             state.pipeline.state(),
             InteractionState::Ready,
-            "on_llm_finished must evaluate the armed latch and transition to Ready"
+            "LlmFinished must evaluate the armed latch and transition to Ready"
         );
         assert!(
             !state.pipeline.is_turn_open(),
@@ -678,6 +680,14 @@ async fn synthesis_guard_latch_has_a_full_lifecycle() {
             !state.pipeline.is_drained_while_open(),
             "drained_while_open must be cleared after evaluation"
         );
+
+        let _ = event_tx.send(VoxEvent::Shutdown);
+        let _ = tokio::time::timeout(
+            Duration::from_secs(5),
+            tokio::task::spawn_blocking(move || router_handle.join()),
+        )
+        .await
+        .expect("Router thread join timed out");
     })
     .await
     .expect("test_invariant_14_synthesis_guard_latch_lifecycle timed out");

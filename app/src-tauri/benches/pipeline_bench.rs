@@ -27,16 +27,15 @@ use common::{
         BenchmarkSystemInfo, ClipBenchmarkResult, EngineBenchmarkRun,
     },
     scoring::{ground_truth_for_clip, lang_for_clip, levenshtein_similarity},
-    utils::{downsample_48k_to_24k, drain_consumer, write_wav_f32},
+    utils::{downsample_48k_to_24k, write_wav_f32},
 };
-use ringbuf::traits::{Observer, Producer};
+use ringbuf::traits::Producer;
 use vox_lib::{
     config::{ActiveSelection, VoxSettings},
     core::{
         events::{InteractionMode, PipelineMode, VoxEvent},
         state::{InteractionOwner, InteractionState},
     },
-    pipeline::{assistant::session::on_session_start, RoutingContext},
 };
 
 #[derive(Parser, Debug)]
@@ -210,8 +209,9 @@ fn main() {
 
     // 2. Initialize Pipeline & Capture Tap
     let mem_before = get_process_memory_mb();
-    let (app, state, in_prod_arc, playback_cons, event_rx, _bench_guard) =
+    let (app, state, in_prod_arc, captured_tap, event_rx, _bench_guard) =
         setup_e2e_pipeline(settings);
+    let (captured_audio_buf, captured_shutdown, captured_pump) = captured_tap;
     let mem_after = get_process_memory_mb();
 
     println!(
@@ -220,22 +220,23 @@ fn main() {
         mem_after.saturating_sub(mem_before)
     );
 
-    let ctx = RoutingContext {
-        pipeline_mode: PipelineMode::Modular,
-        interaction_mode: if is_ptt {
-            InteractionMode::PTT
-        } else {
-            InteractionMode::Passive
-        },
-        owner: InteractionOwner::Assistant,
-    };
+    // Route SessionStart through the router (the production entry seam), not
+    // the internal handler — the bench must observe what production observes.
+    if let Some(tx) = state.event_tx.lock().clone() {
+        let _ = tx.send(VoxEvent::SessionStart {
+            owner: InteractionOwner::Assistant,
+            session_id: None,
+        });
+    }
 
-    on_session_start(InteractionOwner::Assistant, None, &app, &state, &ctx);
-    state.pipeline.set_state(InteractionState::Ready);
-    state.pipeline.update_ingestion_gate();
-
-    // Settle
-    std::thread::sleep(Duration::from_millis(500));
+    // Wait for the router to drive Idle -> Ready (mirrors the production flow).
+    let ready_deadline = Instant::now() + Duration::from_secs(5);
+    while Instant::now() < ready_deadline {
+        if state.pipeline.state() == InteractionState::Ready {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
 
     println!("\n>>> Streaming Audio Input into Pipeline...");
     let run_start = Instant::now();
@@ -313,12 +314,12 @@ fn main() {
 
     let deadline = Instant::now() + Duration::from_secs(60);
     while Instant::now() < deadline {
-        // Harvest playback audio samples from tap
+        // Harvest playback audio samples captured by the headless sink pump.
         {
-            let mut cons = playback_cons.lock();
-            let drained = drain_consumer(&mut cons);
+            let mut drained = captured_audio_buf.lock();
             if !drained.is_empty() {
                 captured_audio.extend_from_slice(&drained);
+                drained.clear();
             }
         }
 
@@ -399,15 +400,18 @@ fn main() {
             .pipeline
             .pending_synthesis_jobs
             .load(Ordering::Relaxed);
-        let cons_empty = playback_cons.lock().is_empty();
-        if (llm_finished && pending == 0 && cons_empty && playback_start_time.is_some())
+        let pump_drained = captured_audio_buf.lock().is_empty();
+        let sink_draining = pump_drained;
+        if (llm_finished && pending == 0 && sink_draining && playback_start_time.is_some())
             || (playback_start_time.is_some() && state.pipeline.state() == InteractionState::Ready)
         {
             println!("Pipeline finished synthesis and playback drained. Finalizing...");
             std::thread::sleep(Duration::from_millis(200));
-            let mut cons = playback_cons.lock();
-            let drained = drain_consumer(&mut cons);
-            captured_audio.extend_from_slice(&drained);
+            {
+                let mut drained = captured_audio_buf.lock();
+                captured_audio.extend_from_slice(&drained);
+                drained.clear();
+            }
             break;
         }
     }
@@ -420,6 +424,10 @@ fn main() {
         let _ = tx.send(VoxEvent::Shutdown);
     }
     std::thread::sleep(Duration::from_millis(500));
+
+    // Stop the headless playback sink pump and join it.
+    captured_shutdown.store(true, std::sync::atomic::Ordering::Relaxed);
+    captured_pump.join().expect("audio sink pump panicked");
 
     let total_elapsed = run_start.elapsed().as_secs_f64();
     let audio_24k = downsample_48k_to_24k(&captured_audio);

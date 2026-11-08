@@ -18,11 +18,12 @@ mod common;
 use std::{
     sync::{atomic::Ordering, mpsc, Arc, Mutex},
     thread::JoinHandle,
+    time::Duration,
 };
 
 use vox_lib::{
     core::{
-        events::{InteractionMode, PipelineMode},
+        events::{AudioIntent, InteractionMode, PipelineMode},
         state::{AppState, InteractionOwner, InteractionState},
     },
     pipeline::RoutingContext,
@@ -158,7 +159,7 @@ impl Drop for Rig {
     fn drop(&mut self) {
         let _ = self.llm_tx.send(LlmCommand::Shutdown);
         if let Some(join) = self.llm_join.take() {
-            let _ = join.join();
+            join.join().expect("llm thread panicked");
         }
     }
 }
@@ -339,4 +340,155 @@ async fn a_finished_turn_commits_both_messages() {
         messages.iter().any(|m| m.content == "done"),
         "the assistant response must be committed"
     );
+}
+
+/// PURPOSE:  At critical token utilization the turn plays a compaction filler and
+///           enters Working before compaction proceeds.
+/// SCENARIO: The harness history is seeded past the critical threshold (> 85%) and the
+///           user speaks again; the inline-compaction path triggers.
+/// ASSERTS:  TtsCommand::Generate{InterimFiller} is dispatched with the turn id, the
+///           pending synthesis jobs counter is incremented, and the pipeline is Working.
+/// CLASS:    edge-case
+/// REQUIRES: none
+/// MUTANT:   Drop the `enter_non_terminal_phase` call in `step3_execute_compaction`.
+#[tokio::test]
+async fn critical_threshold_plays_the_compaction_filler() {
+    let paths = common::paths::TempPathsGuard::new();
+    vox_lib::utils::paths::init();
+    let (app, state) = common::harness::get_test_app_and_state().await;
+
+    {
+        let mut settings = state.settings.write().unwrap();
+        settings.interaction.mode = InteractionMode::Passive;
+        settings.interaction.pipeline_mode = PipelineMode::Modular;
+        settings.memory.auto_compaction = true;
+        settings.memory.context_retrieval_enabled = false;
+    }
+    state.owner.store(InteractionOwner::Assistant as u32, Ordering::Relaxed);
+    state.pipeline.set_state(InteractionState::Thinking);
+    state.pipeline.pending_synthesis_jobs.store(0, Ordering::Relaxed);
+
+    let common::harness::PipelineTestChannels {
+        stt_tx,
+        vad_tx,
+        tts_tx,
+        tts_rx,
+        llm_tx,
+        llm_rx: _llm_rx,
+        pipeline_tx,
+        pipeline_rx: _pipeline_rx,
+    } = common::harness::setup_pipeline_channels();
+
+    common::harness::attach_mock_engine_with_pipeline_tx_to_state(
+        &app,
+        &state,
+        stt_tx,
+        vad_tx,
+        Some(llm_tx.clone()),
+        Some(tts_tx.clone()),
+        pipeline_tx,
+    );
+
+    {
+        let settings = state.settings.read().unwrap().clone();
+        let prompt = state.resolve_base_prompt();
+        *state.harness.lock() = Some(Harness::new_modular(
+            Some(1),
+            prompt,
+            None,
+            &settings,
+            LlmExecutionParams {
+                context_window: 8192,
+                max_output_tokens: 512,
+                temperature: 0.7,
+                reasoning_enabled: false,
+            },
+            llm_tx.clone(),
+            true,
+        ));
+    }
+
+    // Seed enough history to cross the critical threshold (>85% of ~7680 usable tokens).
+    {
+        let mut guard = state.harness.lock();
+        let harness = guard.as_mut().expect("Harness must be mounted");
+        for i in 0..105 {
+            harness.push_user_turn(format!(
+                "Turn {} user statement with sufficient length and detail to accumulate tokens in accountant memory buffer. We are discussing neural networks, integration testing, and long context tracking across conversational agents.",
+                i
+            ));
+            harness.push_assistant_turn(format!(
+                "Turn {} assistant response describing system operations, memory compaction protocols, and pipeline states in detail. High token utilization will trigger inline compaction and transition filler phrase dispatch.",
+                i
+            ));
+        }
+    }
+
+    state.pipeline.set_state(InteractionState::Thinking);
+
+    let req = TurnExecutionRequest {
+        query: "Final query exceeding threshold".to_string(),
+        turn_id: 46,
+        cancel: state.pipeline.turn_token(),
+        owner: InteractionOwner::Assistant,
+        llm_tx: None,
+        tts_tx: Some(tts_tx.clone()),
+        provider: None,
+        db: Arc::clone(&state.db),
+        pipeline_tx: None,
+        accumulator: Arc::clone(&state.pipeline_accumulator),
+        pending_synthesis_jobs: Arc::clone(&state.pipeline.pending_synthesis_jobs),
+        emitter: Arc::new(app.clone()),
+        routing_ctx: vox_lib::pipeline::RoutingContext::from_app_state(&state),
+        app_state: Arc::clone(&state),
+    };
+
+    let _outcome = Harness::execute_turn(&state.harness, req).await;
+
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    let mut filler_received = None;
+    while tokio::time::Instant::now() < deadline {
+        if let Ok(cmd) = tts_rx.try_recv() {
+            filler_received = Some(cmd);
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+
+    let filler_cmd =
+        filler_received.expect("Expected filler TtsCommand::Generate on critical threshold");
+    match filler_cmd {
+        vox_lib::services::tts::TtsCommand::Generate {
+            turn_id,
+            text,
+            intent,
+        } => {
+            assert_eq!(turn_id, 46);
+            assert_eq!(
+                intent,
+                AudioIntent::InterimFiller,
+                "filler must have InterimFiller intent"
+            );
+            assert!(
+                vox_lib::services::harness::TRANSITION_MESSAGES_EN.contains(&text.as_str()),
+                "filler text '{}' must be from TRANSITION_MESSAGES_EN",
+                text
+            );
+        }
+        other => panic!("Expected TtsCommand::Generate for filler, got {:?}", other),
+    }
+
+    assert_eq!(
+        state.pipeline.state(),
+        InteractionState::Working,
+        "state must transition to Working when critical compaction filler is dispatched"
+    );
+    assert!(
+        state.pipeline.pending_synthesis_jobs.load(Ordering::Relaxed) >= 1,
+        "pending_synthesis_jobs must be incremented when filler is dispatched"
+    );
+
+    // Cancel the turn token to immediately abort the background compaction.
+    state.pipeline.turn_token().cancel();
+    drop(paths);
 }

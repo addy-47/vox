@@ -149,10 +149,11 @@ impl ConformanceReport {
 /// `make_pair` returns two connected ends of a link. The suite is generic
 /// over the link type and mentions no implementation, so a new transport
 /// proves itself by satisfying the same contract.
-pub async fn run_link_conformance<L, F>(make_pair: F) -> ConformanceReport
+pub async fn run_link_conformance<L, F, Fut>(make_pair: F) -> ConformanceReport
 where
     L: RawLink + 'static,
-    F: Fn() -> (L, L),
+    F: Fn() -> Fut,
+    Fut: std::future::Future<Output = (L, L)>,
 {
     let mut report = ConformanceReport::default();
 
@@ -278,12 +279,13 @@ where
 }
 
 /// A control message sent on one end arrives intact on the other.
-async fn control_round_trip<L, F>(make_pair: &F) -> Result<(), String>
+async fn control_round_trip<L, F, Fut>(make_pair: &F) -> Result<(), String>
 where
     L: RawLink + 'static,
-    F: Fn() -> (L, L),
+    F: Fn() -> Fut,
+    Fut: Future<Output = (L, L)>,
 {
-    let (sender, receiver) = make_pair();
+    let (sender, receiver) = make_pair().await;
     let message = sample_ping(1);
     sender
         .send_control(message.clone())
@@ -301,12 +303,13 @@ where
 }
 
 /// Control messages arrive in the order they were sent.
-async fn control_ordering<L, F>(make_pair: &F) -> Result<(), String>
+async fn control_ordering<L, F, Fut>(make_pair: &F) -> Result<(), String>
 where
     L: RawLink + 'static,
-    F: Fn() -> (L, L),
+    F: Fn() -> Fut,
+    Fut: Future<Output = (L, L)>,
 {
-    let (sender, receiver) = make_pair();
+    let (sender, receiver) = make_pair().await;
     for seq in 0..ORDERING_SAMPLE_COUNT as u64 {
         sender
             .send_control(sample_ping(seq))
@@ -327,12 +330,13 @@ where
 }
 
 /// An audio frame arrives byte for byte.
-async fn audio_round_trip<L, F>(make_pair: &F) -> Result<(), String>
+async fn audio_round_trip<L, F, Fut>(make_pair: &F) -> Result<(), String>
 where
     L: RawLink + 'static,
-    F: Fn() -> (L, L),
+    F: Fn() -> Fut,
+    Fut: Future<Output = (L, L)>,
 {
-    let (sender, receiver) = make_pair();
+    let (sender, receiver) = make_pair().await;
     let frame = sample_audio_frame(7);
     let payload = AudioPayload::Frame(frame.clone());
     sender
@@ -351,12 +355,13 @@ where
 }
 
 /// A JSON marker and a binary frame are told apart on the same channel.
-async fn audio_payload_discrimination<L, F>(make_pair: &F) -> Result<(), String>
+async fn audio_payload_discrimination<L, F, Fut>(make_pair: &F) -> Result<(), String>
 where
     L: RawLink + 'static,
-    F: Fn() -> (L, L),
+    F: Fn() -> Fut,
+    Fut: Future<Output = (L, L)>,
 {
-    let (sender, receiver) = make_pair();
+    let (sender, receiver) = make_pair().await;
     let frame = sample_audio_frame(9);
     let marker = sample_ptt_marker();
     sender
@@ -389,12 +394,13 @@ where
 }
 
 /// Audio payloads arrive in order, independently of the control channel.
-async fn audio_ordering<L, F>(make_pair: &F) -> Result<(), String>
+async fn audio_ordering<L, F, Fut>(make_pair: &F) -> Result<(), String>
 where
     L: RawLink + 'static,
-    F: Fn() -> (L, L),
+    F: Fn() -> Fut,
+    Fut: Future<Output = (L, L)>,
 {
-    let (sender, receiver) = make_pair();
+    let (sender, receiver) = make_pair().await;
     for seq in 0..ORDERING_SAMPLE_COUNT as u32 {
         sender
             .send_audio(AudioPayload::Frame(sample_audio_frame(seq)))
@@ -415,12 +421,13 @@ where
 }
 
 /// A full audio channel does not block a control send.
-async fn control_independent_of_audio<L, F>(make_pair: &F) -> Result<(), String>
+async fn control_independent_of_audio<L, F, Fut>(make_pair: &F) -> Result<(), String>
 where
     L: RawLink + 'static,
-    F: Fn() -> (L, L),
+    F: Fn() -> Fut,
+    Fut: Future<Output = (L, L)>,
 {
-    let (sender, receiver) = make_pair();
+    let (sender, receiver) = make_pair().await;
     let accepted = probe_until_blocked(|seq| {
         sender.send_audio(AudioPayload::Frame(sample_audio_frame(seq as u32)))
     })
@@ -447,12 +454,13 @@ where
 }
 
 /// A send into a full channel awaits and is not dropped.
-async fn backpressure<L, F>(make_pair: &F) -> Result<(), String>
+async fn backpressure<L, F, Fut>(make_pair: &F) -> Result<(), String>
 where
     L: RawLink + 'static,
-    F: Fn() -> (L, L),
+    F: Fn() -> Fut,
+    Fut: Future<Output = (L, L)>,
 {
-    let (sender, receiver) = make_pair();
+    let (sender, receiver) = make_pair().await;
     let sender = Arc::new(sender);
     let receiver = Arc::new(receiver);
 
@@ -498,12 +506,13 @@ where
 }
 
 /// A send on a closed link returns `Closed`, never a panic.
-async fn send_after_close<L, F>(make_pair: &F) -> Result<(), String>
+async fn send_after_close<L, F, Fut>(make_pair: &F) -> Result<(), String>
 where
     L: RawLink + 'static,
-    F: Fn() -> (L, L),
+    F: Fn() -> Fut,
+    Fut: Future<Output = (L, L)>,
 {
-    let (first, second) = make_pair();
+    let (first, second) = make_pair().await;
     first
         .close(LinkCloseReason::Local)
         .await
@@ -523,12 +532,13 @@ where
 }
 
 /// A receive on a closed link returns `Closed`, never a panic.
-async fn recv_after_close<L, F>(make_pair: &F) -> Result<(), String>
+async fn recv_after_close<L, F, Fut>(make_pair: &F) -> Result<(), String>
 where
     L: RawLink + 'static,
-    F: Fn() -> (L, L),
+    F: Fn() -> Fut,
+    Fut: Future<Output = (L, L)>,
 {
-    let (first, _second) = make_pair();
+    let (first, _second) = make_pair().await;
     first
         .close(LinkCloseReason::Local)
         .await
@@ -543,12 +553,13 @@ where
 }
 
 /// The receiver sees the peer's close and reports `LinkCloseReason::Peer`.
-async fn peer_close_observed<L, F>(make_pair: &F) -> Result<(), String>
+async fn peer_close_observed<L, F, Fut>(make_pair: &F) -> Result<(), String>
 where
     L: RawLink + 'static,
-    F: Fn() -> (L, L),
+    F: Fn() -> Fut,
+    Fut: Future<Output = (L, L)>,
 {
-    let (first, second) = make_pair();
+    let (first, second) = make_pair().await;
     first
         .close(LinkCloseReason::Local)
         .await
@@ -569,12 +580,13 @@ where
 
 /// An unknown message type is skipped, and the next known message still
 /// arrives.
-async fn unknown_type_skipped<L, F>(make_pair: &F) -> Result<(), String>
+async fn unknown_type_skipped<L, F, Fut>(make_pair: &F) -> Result<(), String>
 where
     L: RawLink + 'static,
-    F: Fn() -> (L, L),
+    F: Fn() -> Fut,
+    Fut: Future<Output = (L, L)>,
 {
-    let (sender, receiver) = make_pair();
+    let (sender, receiver) = make_pair().await;
     let unknown = br#"{"type":"AMessageFromTheFuture","payload":{"nested":true}}"#;
     sender
         .send_control_bytes(unknown.to_vec())
@@ -599,12 +611,13 @@ where
 }
 
 /// A control message larger than the cap is rejected, not sent.
-async fn oversized_message_rejected<L, F>(make_pair: &F) -> Result<(), String>
+async fn oversized_message_rejected<L, F, Fut>(make_pair: &F) -> Result<(), String>
 where
     L: RawLink + 'static,
-    F: Fn() -> (L, L),
+    F: Fn() -> Fut,
+    Fut: Future<Output = (L, L)>,
 {
-    let (sender, receiver) = make_pair();
+    let (sender, receiver) = make_pair().await;
     let oversized = ControlMessage::Req(Req {
         request_id: 1,
         command: "x".repeat(MAX_CONTROL_MESSAGE_BYTES + 1),
@@ -633,13 +646,14 @@ where
 }
 
 /// Every protocol message type survives a trip through the link.
-async fn all_protocol_types_round_trip<L, F>(make_pair: &F) -> Result<(), String>
+async fn all_protocol_types_round_trip<L, F, Fut>(make_pair: &F) -> Result<(), String>
 where
     L: RawLink + 'static,
-    F: Fn() -> (L, L),
+    F: Fn() -> Fut,
+    Fut: Future<Output = (L, L)>,
 {
     for sample in control_samples() {
-        let (sender, receiver) = make_pair();
+        let (sender, receiver) = make_pair().await;
         sender
             .send_control(sample.message.clone())
             .await
@@ -662,12 +676,13 @@ where
 /// Remote-control spec §7.1: a message that exceeds the size cap MUST cause
 /// immediate connection termination. The receive reports the close, and the
 /// link stays closed.
-async fn oversized_received_message_rejected<L, F>(make_pair: &F) -> Result<(), String>
+async fn oversized_received_message_rejected<L, F, Fut>(make_pair: &F) -> Result<(), String>
 where
     L: RawLink + 'static,
-    F: Fn() -> (L, L),
+    F: Fn() -> Fut,
+    Fut: Future<Output = (L, L)>,
 {
-    let (sender, receiver) = make_pair();
+    let (sender, receiver) = make_pair().await;
     let oversized = vec![0u8; MAX_CONTROL_MESSAGE_BYTES + 1];
     sender
         .send_control_bytes(oversized)
@@ -693,12 +708,13 @@ where
 /// Remote-control spec §7.4: a receiver MUST treat an unknown tag as a
 /// protocol error and close the audio socket, because a mis-tagged frame
 /// cannot be safely interpreted as either shape.
-async fn close_on_unknown_audio_payload_tag<L, F>(make_pair: &F) -> Result<(), String>
+async fn close_on_unknown_audio_payload_tag<L, F, Fut>(make_pair: &F) -> Result<(), String>
 where
     L: RawLink + 'static,
-    F: Fn() -> (L, L),
+    F: Fn() -> Fut,
+    Fut: Future<Output = (L, L)>,
 {
-    let (sender, receiver) = make_pair();
+    let (sender, receiver) = make_pair().await;
     let mut malformed = vec![UNKNOWN_AUDIO_PAYLOAD_TAG];
     malformed.extend_from_slice(&[0u8; 4]);
     sender
@@ -729,12 +745,13 @@ where
 /// so. A reader of the close reason has to be able to tell "the peer sent an
 /// oversized message" from "we closed the link because the session ended":
 /// the first is a protocol error worth logging loudly, the second is routine.
-async fn protocol_violation_reports_its_cause<L, F>(make_pair: &F) -> Result<(), String>
+async fn protocol_violation_reports_its_cause<L, F, Fut>(make_pair: &F) -> Result<(), String>
 where
     L: RawLink + 'static,
-    F: Fn() -> (L, L),
+    F: Fn() -> Fut,
+    Fut: Future<Output = (L, L)>,
 {
-    let (sender, receiver) = make_pair();
+    let (sender, receiver) = make_pair().await;
     let oversized = vec![0u8; MAX_CONTROL_MESSAGE_BYTES + 1];
     sender
         .send_control_bytes(oversized)
@@ -763,12 +780,13 @@ where
 /// skipped, not fatal. The link must drop the offending message and keep
 /// waiting for the next one — it must not report an error to the caller and
 /// it must not close.
-async fn skippable_violation_does_not_end_the_receive<L, F>(make_pair: &F) -> Result<(), String>
+async fn skippable_violation_does_not_end_the_receive<L, F, Fut>(make_pair: &F) -> Result<(), String>
 where
     L: RawLink + 'static,
-    F: Fn() -> (L, L),
+    F: Fn() -> Fut,
+    Fut: Future<Output = (L, L)>,
 {
-    let (sender, receiver) = make_pair();
+    let (sender, receiver) = make_pair().await;
 
     // A JSON object with no `"type"` tag: the receiver cannot tell what it
     // is, so the violation is survivable.
@@ -806,14 +824,15 @@ where
 /// tag. A JSON audio-control message with no `"type"` tag is a message this
 /// build cannot classify — the same survivable violation the control channel
 /// has — and the audio receive must skip it and keep waiting.
-async fn skippable_audio_violation_does_not_end_the_receive<L, F>(
+async fn skippable_audio_violation_does_not_end_the_receive<L, F, Fut>(
     make_pair: &F,
 ) -> Result<(), String>
 where
     L: RawLink + 'static,
-    F: Fn() -> (L, L),
+    F: Fn() -> Fut,
+    Fut: Future<Output = (L, L)>,
 {
-    let (sender, receiver) = make_pair();
+    let (sender, receiver) = make_pair().await;
 
     // The JSON payload tag, followed by an object with no `"type"` tag.
     let mut tagless = vec![AUDIO_PAYLOAD_TAG_JSON];

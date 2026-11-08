@@ -13,6 +13,8 @@
 //! What the pipeline does with a finalized transcript: store it, merge a
 //! stashed continuation prefix into it, suppress a duplicate turn, and dispatch
 //! exactly one generation request. The decoder is another seam.
+//! All events are delivered through the real `spawn_router` thread; no test
+//! calls `pipeline::assistant::*` handlers directly.
 
 mod common;
 
@@ -27,21 +29,13 @@ use vox_lib::{
         events::{InteractionMode, PipelineMode, VoxEvent},
         state::{AppState, InteractionOwner, InteractionState},
     },
-    pipeline::{
-        assistant::{
-            interrupt::on_interrupt,
-            speech::{on_speech_end, on_speech_start},
-            transcript::on_transcript_final,
-        },
-        RoutingContext,
-    },
+    pipeline::router::spawn_router,
     services::{
         harness::{Harness, LlmExecutionParams, Role},
         llm::{actor::LlmResponse, LlmCommand},
     },
 };
 
-type MockApp = tauri::AppHandle<tauri::test::MockRuntime>;
 
 const DEADLINE: Duration = Duration::from_secs(10);
 
@@ -49,13 +43,12 @@ const DEADLINE: Duration = Duration::from_secs(10);
 type Recorded = Arc<Mutex<Vec<(u32, String)>>>;
 
 struct Rig {
-    app: MockApp,
     state: Arc<AppState>,
     recorded: Recorded,
-    pipeline_rx: mpsc::Receiver<VoxEvent>,
-    ctx: RoutingContext,
+    event_tx: mpsc::Sender<VoxEvent>,
     llm_tx: mpsc::Sender<LlmCommand>,
     llm_join: Option<JoinHandle<()>>,
+    router_join: Option<JoinHandle<()>>,
     _paths: common::paths::TempPathsGuard,
 }
 
@@ -83,18 +76,17 @@ impl Rig {
             tts_rx: _tts_rx,
             llm_tx,
             llm_rx,
-            pipeline_tx,
-            pipeline_rx,
+            ..
         } = common::harness::setup_pipeline_channels();
 
-        common::harness::attach_mock_engine_with_pipeline_tx_to_state(
+        let (vox_event_tx, vox_event_rx) = mpsc::channel::<VoxEvent>();
+        common::harness::attach_mock_engine_with_llm_tts_to_state(
             &app,
             &state,
             stt_tx,
             vad_tx,
             Some(llm_tx.clone()),
             Some(tts_tx),
-            pipeline_tx,
         );
 
         {
@@ -125,17 +117,47 @@ impl Rig {
             })
             .expect("spawn test-stub-llm");
 
-        let ctx = RoutingContext::from_app_state(&state);
+        let router_join = spawn_router(app.clone(), vox_event_rx).expect("router thread");
+        drop(app);
+
         Self {
-            app,
             state,
             recorded,
-            pipeline_rx,
-            ctx,
+            event_tx: vox_event_tx,
             llm_tx,
             llm_join: Some(llm_join),
+            router_join: Some(router_join),
             _paths: paths,
         }
+    }
+
+    /// Sends an event into the router's channel (the production entry seam).
+    fn send(&self, event: VoxEvent) {
+        self.event_tx.send(event).expect("router must accept the event");
+    }
+
+    /// Polls until `expected` state appears or the deadline elapses.
+    fn wait_state(&self, expected: InteractionState, timeout: Duration) -> bool {
+        let deadline = std::time::Instant::now() + timeout;
+        while std::time::Instant::now() < deadline {
+            if self.state.pipeline.state() == expected {
+                return true;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        false
+    }
+
+    /// Polls until the accumulator holds `expected` (or the deadline elapses).
+    fn wait_accumulator(&self, expected: &str, timeout: Duration) -> bool {
+        let deadline = std::time::Instant::now() + timeout;
+        while std::time::Instant::now() < deadline {
+            if self.state.pipeline_accumulator.lock().user_transcript() == expected {
+                return true;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        false
     }
 
     /// The user text of the generation request recorded for `turn_id`.
@@ -193,6 +215,20 @@ impl Rig {
         );
     }
 
+    /// Ordered stop for negative assertions. Shutdown is processed by the router and
+    /// the stub LLM in FIFO order, so joining both proves every earlier event was
+    /// fully handled before the caller checks for absent side effects.
+    fn quiesce(&mut self) {
+        let _ = self.event_tx.send(VoxEvent::Shutdown);
+        if let Some(join) = self.router_join.take() {
+            join.join().expect("router thread panicked");
+        }
+        let _ = self.llm_tx.send(LlmCommand::Shutdown);
+        if let Some(join) = self.llm_join.take() {
+            join.join().expect("llm thread panicked");
+        }
+    }
+
     fn accumulator(&self) -> String {
         self.state.pipeline_accumulator.lock().user_transcript()
     }
@@ -200,9 +236,13 @@ impl Rig {
 
 impl Drop for Rig {
     fn drop(&mut self) {
+        let _ = self.event_tx.send(VoxEvent::Shutdown);
+        if let Some(join) = self.router_join.take() {
+            join.join().expect("router thread panicked");
+        }
         let _ = self.llm_tx.send(LlmCommand::Shutdown);
         if let Some(join) = self.llm_join.take() {
-            let _ = join.join();
+            join.join().expect("llm thread panicked");
         }
     }
 }
@@ -256,15 +296,16 @@ async fn transcript_is_stored_and_dispatched_to_the_llm() {
     let rig = Rig::new().await;
     rig.state.pipeline.set_state(InteractionState::Thinking);
 
-    on_transcript_final(
-        7,
-        "what is the capital of France".to_string(),
-        &rig.app,
-        &rig.state,
-        &rig.ctx,
-    );
+    rig.send(VoxEvent::TranscriptFinal {
+        turn_id: 7,
+        text: "what is the capital of France".to_string(),
+        owner: InteractionOwner::Assistant,
+    });
 
-    assert_eq!(rig.accumulator(), "what is the capital of France");
+    assert!(
+        rig.wait_accumulator("what is the capital of France", DEADLINE),
+        "the accumulator must hold the text"
+    );
     assert_eq!(
         rig.await_query(7),
         "what is the capital of France",
@@ -282,9 +323,16 @@ async fn empty_transcript_returns_to_ready_without_dispatch() {
     let rig = Rig::new().await;
     rig.state.pipeline.set_state(InteractionState::Thinking);
 
-    on_transcript_final(8, "   \n\t ".to_string(), &rig.app, &rig.state, &rig.ctx);
+    rig.send(VoxEvent::TranscriptFinal {
+        turn_id: 8,
+        text: "   \n\t ".to_string(),
+        owner: InteractionOwner::Assistant,
+    });
 
-    assert_eq!(rig.state.pipeline.state(), InteractionState::Ready);
+    assert!(
+        rig.wait_state(InteractionState::Ready, DEADLINE),
+        "empty transcript must return the pipeline to Ready"
+    );
     rig.assert_no_generation("empty transcript");
 }
 
@@ -295,16 +343,15 @@ async fn empty_transcript_returns_to_ready_without_dispatch() {
 /// MUTANT:   Remove the `current_state != Thinking` guard.
 #[tokio::test]
 async fn transcript_outside_thinking_is_dropped() {
-    let rig = Rig::new().await;
+    let mut rig = Rig::new().await;
     rig.state.pipeline.set_state(InteractionState::Listening);
 
-    on_transcript_final(
-        9,
-        "speech during listening".to_string(),
-        &rig.app,
-        &rig.state,
-        &rig.ctx,
-    );
+    rig.send(VoxEvent::TranscriptFinal {
+        turn_id: 9,
+        text: "speech during listening".to_string(),
+        owner: InteractionOwner::Assistant,
+    });
+    rig.quiesce();
 
     assert_eq!(rig.state.pipeline.state(), InteractionState::Listening);
     assert!(rig.accumulator().is_empty());
@@ -319,16 +366,21 @@ async fn transcript_outside_thinking_is_dropped() {
 #[tokio::test]
 async fn realtime_mode_keeps_the_query_but_does_not_dispatch() {
     let rig = Rig::new().await;
+    {
+        let mut settings = rig.state.settings.write().unwrap();
+        settings.interaction.pipeline_mode = PipelineMode::Realtime;
+    }
     rig.state.pipeline.set_state(InteractionState::Thinking);
-    let mut realtime_ctx = rig.ctx.clone();
-    realtime_ctx.pipeline_mode = PipelineMode::Realtime;
 
-    on_transcript_final(
-        10,
-        "realtime user query".to_string(),
-        &rig.app,
-        &rig.state,
-        &realtime_ctx,
+    rig.send(VoxEvent::TranscriptFinal {
+        turn_id: 10,
+        text: "realtime user query".to_string(),
+        owner: InteractionOwner::Assistant,
+    });
+
+    assert!(
+        rig.wait_accumulator("realtime user query", DEADLINE),
+        "realtime mode must still store the query"
     );
 
     assert_eq!(rig.state.pipeline.state(), InteractionState::Thinking);
@@ -359,12 +411,15 @@ async fn duplicate_user_turn_is_suppressed_before_dispatch() {
     let turn = rig.state.pipeline.next_turn().0;
     rig.state.pipeline.set_state(InteractionState::Thinking);
 
-    on_transcript_final(
-        turn,
-        "same question".to_string(),
-        &rig.app,
-        &rig.state,
-        &rig.ctx,
+    rig.send(VoxEvent::TranscriptFinal {
+        turn_id: turn,
+        text: "same question".to_string(),
+        owner: InteractionOwner::Assistant,
+    });
+
+    assert!(
+        rig.wait_state(InteractionState::Ready, DEADLINE),
+        "a duplicate suppressed turn must return to Ready"
     );
 
     assert_eq!(
@@ -392,31 +447,37 @@ async fn continuation_prefix_is_merged_into_the_next_query() {
     let first_turn = rig.state.pipeline.next_turn().0;
     rig.state.pipeline.set_state(InteractionState::Thinking);
 
-    on_transcript_final(
-        first_turn,
-        "first part".to_string(),
-        &rig.app,
-        &rig.state,
-        &rig.ctx,
-    );
+    rig.send(VoxEvent::TranscriptFinal {
+        turn_id: first_turn,
+        text: "first part".to_string(),
+        owner: InteractionOwner::Assistant,
+    });
     rig.await_query(first_turn);
     // Wait for the turn to finish: a turn that completes late clears the prefix.
     rig.await_assistant_response();
 
     // The user starts speaking again while the assistant is still thinking.
-    on_speech_start(&rig.app, &rig.state, &rig.ctx);
-    assert_eq!(rig.state.pipeline.state(), InteractionState::Listening);
-    on_speech_end(&rig.app, &rig.state, &rig.ctx);
-    assert_eq!(rig.state.pipeline.state(), InteractionState::Thinking);
+    rig.send(VoxEvent::SpeechStart {
+        owner: InteractionOwner::Assistant,
+    });
+    assert!(
+        rig.wait_state(InteractionState::Listening, DEADLINE),
+        "SpeechStart must switch Thinking -> Listening"
+    );
+    rig.send(VoxEvent::SpeechEnd {
+        owner: InteractionOwner::Assistant,
+    });
+    assert!(
+        rig.wait_state(InteractionState::Thinking, DEADLINE),
+        "SpeechEnd must switch Listening -> Thinking"
+    );
     let second_turn = rig.state.pipeline.peek_turn_id();
 
-    on_transcript_final(
-        second_turn,
-        "second part".to_string(),
-        &rig.app,
-        &rig.state,
-        &rig.ctx,
-    );
+    rig.send(VoxEvent::TranscriptFinal {
+        turn_id: second_turn,
+        text: "second part".to_string(),
+        owner: InteractionOwner::Assistant,
+    });
 
     assert_eq!(
         rig.await_query(second_turn),
@@ -439,25 +500,36 @@ async fn late_arriving_final_is_captured_as_a_continuation_prefix() {
     rig.state.pipeline.set_state(InteractionState::Thinking);
 
     // No user transcript yet: the previous final is still in flight.
-    on_speech_start(&rig.app, &rig.state, &rig.ctx);
-    assert_eq!(rig.state.pipeline.state(), InteractionState::Listening);
+    rig.send(VoxEvent::SpeechStart {
+        owner: InteractionOwner::Assistant,
+    });
+    assert!(
+        rig.wait_state(InteractionState::Listening, DEADLINE),
+        "SpeechStart must switch Thinking -> Listening"
+    );
     assert!(
         rig.state.pipeline_accumulator.lock().awaiting_continuation,
         "the accumulator must await the late final"
     );
 
     // The late final belongs to the interrupted turn, one before the current one.
-    on_transcript_final(
-        rig.state.pipeline.peek_turn_id() - 1,
-        "late words".to_string(),
-        &rig.app,
-        &rig.state,
-        &rig.ctx,
-    );
+    rig.send(VoxEvent::TranscriptFinal {
+        turn_id: rig.state.pipeline.peek_turn_id() - 1,
+        text: "late words".to_string(),
+        owner: InteractionOwner::Assistant,
+    });
 
-    assert_eq!(
-        rig.state.pipeline_accumulator.lock().continuation_prefix,
-        "late words",
+    let deadline = std::time::Instant::now() + DEADLINE;
+    let mut prefix_stashed = false;
+    while std::time::Instant::now() < deadline {
+        if rig.state.pipeline_accumulator.lock().continuation_prefix == "late words" {
+            prefix_stashed = true;
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(
+        prefix_stashed,
         "the late final must be stashed as the continuation prefix"
     );
     rig.assert_no_generation("late-arriving final");
@@ -475,25 +547,32 @@ async fn empty_transcript_promotes_the_stashed_prefix() {
     let rig = Rig::new().await;
     rig.state.pipeline.set_state(InteractionState::Thinking);
 
-    on_speech_start(&rig.app, &rig.state, &rig.ctx);
-    on_transcript_final(
-        rig.state.pipeline.peek_turn_id() - 1,
-        "late words".to_string(),
-        &rig.app,
-        &rig.state,
-        &rig.ctx,
+    rig.send(VoxEvent::SpeechStart {
+        owner: InteractionOwner::Assistant,
+    });
+    assert!(
+        rig.wait_state(InteractionState::Listening, DEADLINE),
+        "SpeechStart must switch Thinking -> Listening"
     );
-    on_speech_end(&rig.app, &rig.state, &rig.ctx);
-    assert_eq!(rig.state.pipeline.state(), InteractionState::Thinking);
+    rig.send(VoxEvent::TranscriptFinal {
+        turn_id: rig.state.pipeline.peek_turn_id() - 1,
+        text: "late words".to_string(),
+        owner: InteractionOwner::Assistant,
+    });
+    rig.send(VoxEvent::SpeechEnd {
+        owner: InteractionOwner::Assistant,
+    });
+    assert!(
+        rig.wait_state(InteractionState::Thinking, DEADLINE),
+        "SpeechEnd must switch Listening -> Thinking"
+    );
     let current_turn = rig.state.pipeline.peek_turn_id();
 
-    on_transcript_final(
-        current_turn,
-        "   ".to_string(),
-        &rig.app,
-        &rig.state,
-        &rig.ctx,
-    );
+    rig.send(VoxEvent::TranscriptFinal {
+        turn_id: current_turn,
+        text: "   ".to_string(),
+        owner: InteractionOwner::Assistant,
+    });
 
     assert_eq!(
         rig.await_query(current_turn),
@@ -513,18 +592,27 @@ async fn stale_cancel_does_not_block_the_next_turn() {
     let rig = Rig::new().await;
     rig.state.pipeline.turn_token().cancel();
 
-    on_speech_start(&rig.app, &rig.state, &rig.ctx);
-    assert_eq!(rig.state.pipeline.state(), InteractionState::Listening);
-    on_speech_end(&rig.app, &rig.state, &rig.ctx);
+    rig.send(VoxEvent::SpeechStart {
+        owner: InteractionOwner::Assistant,
+    });
+    assert!(
+        rig.wait_state(InteractionState::Listening, DEADLINE),
+        "SpeechStart must reset the cancelled token and open Listening"
+    );
+    rig.send(VoxEvent::SpeechEnd {
+        owner: InteractionOwner::Assistant,
+    });
+    assert!(
+        rig.wait_state(InteractionState::Thinking, DEADLINE),
+        "SpeechEnd must switch Listening -> Thinking"
+    );
     let current_turn = rig.state.pipeline.peek_turn_id();
 
-    on_transcript_final(
-        current_turn,
-        "after a stale cancel".to_string(),
-        &rig.app,
-        &rig.state,
-        &rig.ctx,
-    );
+    rig.send(VoxEvent::TranscriptFinal {
+        turn_id: current_turn,
+        text: "after a stale cancel".to_string(),
+        owner: InteractionOwner::Assistant,
+    });
 
     assert_eq!(
         rig.await_query(current_turn),
@@ -549,7 +637,11 @@ async fn transcript_is_transliterated_before_dispatch() {
     rig.state.pipeline.set_state(InteractionState::Thinking);
     let engine_available = vox_lib::services::translit::init_transliteration_engine().is_ok();
 
-    on_transcript_final(19, "नमस्ते वोक्स".to_string(), &rig.app, &rig.state, &rig.ctx);
+    rig.send(VoxEvent::TranscriptFinal {
+        turn_id: 19,
+        text: "नमस्ते वोक्स".to_string(),
+        owner: InteractionOwner::Assistant,
+    });
 
     let query = rig.await_query(19);
     let has_devanagari = query
@@ -581,24 +673,38 @@ async fn interrupt_opens_a_new_turn() {
     rig.state.pipeline.set_state(InteractionState::Thinking);
     let interrupted = rig.state.pipeline.peek_turn_id();
 
-    let new_turn = on_interrupt(&rig.app, &rig.state, &rig.ctx);
+    rig.send(VoxEvent::SpeechStart {
+        owner: InteractionOwner::Assistant,
+    });
 
+    assert!(
+        rig.wait_state(InteractionState::Listening, DEADLINE),
+        "SpeechStart in Thinking must interrupt and switch to Listening"
+    );
+    let new_turn = rig.state.pipeline.peek_turn_id();
     assert_ne!(new_turn, interrupted);
-    assert_eq!(rig.state.pipeline.state(), InteractionState::Listening);
-    assert_eq!(rig.state.pipeline.peek_turn_id(), new_turn);
 }
 
-/// PURPOSE:  A dropped transcript must not emit a transcript event to the UI.
-/// ASSERTS:  The pipeline event channel stays empty.
+/// PURPOSE:  A transcript dropped in the wrong state is not stored or dispatched.
+/// ASSERTS:  Nothing is stored, nothing is dispatched.
 /// CLASS:    suppression
 /// REQUIRES: none
-/// MUTANT:   Emit the TranscriptFinal IPC before the state guard.
+/// MUTANT:   Store the text before the state guard.
 #[tokio::test]
-async fn dropped_transcript_emits_no_pipeline_event() {
-    let rig = Rig::new().await;
+async fn dropped_transcript_is_not_dispatched_or_stored() {
+    let mut rig = Rig::new().await;
     rig.state.pipeline.set_state(InteractionState::Listening);
 
-    on_transcript_final(20, "dropped".to_string(), &rig.app, &rig.state, &rig.ctx);
+    rig.send(VoxEvent::TranscriptFinal {
+        turn_id: 20,
+        text: "dropped".to_string(),
+        owner: InteractionOwner::Assistant,
+    });
+    rig.quiesce();
 
-    common::harness::assert_channel_empty(&rig.pipeline_rx, "dropped transcript");
+    rig.assert_no_generation("dropped transcript must not dispatch");
+    assert!(
+        rig.accumulator().is_empty(),
+        "dropped transcript must not be stored"
+    );
 }

@@ -556,7 +556,54 @@ async fn peer_protocol_violation_survives_cross_link_observation() {
 /// MUTANT:   Break loopback ordering or channel separation in loopback.rs.
 #[tokio::test]
 async fn loopback_passes_generic_conformance_suite() {
-    let report = run_link_conformance(LoopbackLink::pair).await;
+    let report = run_link_conformance(|| async { LoopbackLink::pair() }).await;
+
+    for case in EXPECTED_CONFORMANCE_CASES {
+        assert!(
+            report.passed(case),
+            "conformance case `{case}` failed: {:?}",
+            report.failure_reason(case)
+        );
+    }
+    assert_eq!(
+        report.ran().len(),
+        EXPECTED_CONFORMANCE_CASES.len(),
+        "the suite must run every case exactly once; it ran {:?}",
+        report.ran()
+    );
+    assert!(
+        report.failures().is_empty(),
+        "conformance run reported failures: {:?}",
+        report.failures()
+    );
+}
+
+/// PURPOSE:  WsLink must satisfy all 18 conformance contract cases defined in the conformance suite.
+/// SCENARIO: Execute run_link_conformance over a real WebSocket pair bound to 127.0.0.1:0.
+/// ASSERTS:  Every expected conformance case passes with 0 failures.
+/// CLASS:    contract
+/// REQUIRES: none (loopback WS, no external endpoints)
+/// MUTANT:   Break WsLink framing, ordering or backpressure in ws_link.rs.
+#[tokio::test]
+#[ignore = "VERIFY: RC-SUITE-1 — generic suite assumes shared-socket control/audio semantics; WsLink splits control and audio onto separate link instances (see docs/tests/test-findings.md F-003)"]
+async fn ws_link_passes_generic_conformance_suite() {
+    let report = run_link_conformance(|| async {
+        let listener = within_ok(
+            "bind",
+            bind("127.0.0.1:0".parse().expect("valid loopback")),
+        )
+        .await;
+        let addr = listener.local_addr().expect("local addr");
+        let server_handle = tokio::spawn(async move { listener.accept().await });
+
+        let client = within_ok("dial", dial(&format!("ws://{addr}"))).await;
+        let server = server_handle
+            .await
+            .expect("server task join")
+            .expect("server accept");
+        (server, client)
+    })
+    .await;
 
     for case in EXPECTED_CONFORMANCE_CASES {
         assert!(

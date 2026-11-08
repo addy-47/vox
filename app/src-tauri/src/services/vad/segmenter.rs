@@ -284,6 +284,14 @@ pub fn handle_speech_start(
     );
 
     if let Some(tx) = vox_event_tx {
+        eprintln!(
+            "[VAD TEMP] SpeechStart t_ms={} noise_floor={:.5}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis())
+                .unwrap_or_default(),
+            state.noise_floor_ema
+        );
         if let Err(e) = tx.send(VoxEvent::SpeechStart { owner }) {
             log::warn!("[VAD Actor] Failed to send SpeechStart event: {}", e);
         }

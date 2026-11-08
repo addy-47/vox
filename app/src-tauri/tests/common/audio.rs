@@ -67,6 +67,52 @@ pub fn decode_wav_to_mono_16k(path: &Path) -> Result<Vec<f32>, String> {
     }
 }
 
+/// Decodes a WAV file into mono f32 PCM at its native sample rate.
+/// Returns (samples, sample_rate). No resampling is applied.
+pub fn decode_wav_to_mono_native(path: &Path) -> Result<(Vec<f32>, u32), String> {
+    let mut reader = hound::WavReader::open(path)
+        .map_err(|e| format!("Failed to open WAV at {:?}: {}", path, e))?;
+    let spec = reader.spec();
+
+    let samples: Vec<f32> = match (spec.sample_format, spec.bits_per_sample) {
+        (hound::SampleFormat::Float, _) => reader.samples::<f32>().filter_map(|s| s.ok()).collect(),
+        (hound::SampleFormat::Int, 16) => reader
+            .samples::<i16>()
+            .filter_map(|s| s.ok())
+            .map(|s| s as f32 / 32768.0)
+            .collect(),
+        (hound::SampleFormat::Int, 24) => reader
+            .samples::<i32>()
+            .filter_map(|s| s.ok())
+            .map(|s| s as f32 / 8388608.0)
+            .collect(),
+        (hound::SampleFormat::Int, 32) => reader
+            .samples::<i32>()
+            .filter_map(|s| s.ok())
+            .map(|s| s as f32 / 2147483648.0)
+            .collect(),
+        (hound::SampleFormat::Int, bits) => {
+            let max_val = (2u64.pow(bits as u32) / 2 - 1) as f32;
+            reader
+                .samples::<i32>()
+                .filter_map(|s| s.ok())
+                .map(|s| s as f32 / max_val)
+                .collect()
+        }
+    };
+
+    let mono: Vec<f32> = if spec.channels > 1 {
+        samples
+            .chunks(spec.channels as usize)
+            .map(|chunk| chunk.iter().sum::<f32>() / chunk.len() as f32)
+            .collect()
+    } else {
+        samples
+    };
+
+    Ok((mono, spec.sample_rate))
+}
+
 /// Decodes a WAV file to mono i16 PCM samples (for realtime PTT engines).
 pub fn decode_wav_to_i16(path: &Path) -> Result<Vec<i16>, String> {
     let f32_samples = decode_wav_to_mono_16k(path)?;
@@ -76,8 +122,29 @@ pub fn decode_wav_to_i16(path: &Path) -> Result<Vec<i16>, String> {
         .collect())
 }
 
+/// Inserts `gap_samples` of silence into `samples` after index `at`.
+pub fn insert_silence(samples: &[f32], at: usize, gap_samples: usize) -> Vec<f32> {
+    let mut out = Vec::with_capacity(samples.len() + gap_samples);
+    out.extend_from_slice(&samples[..at.min(samples.len())]);
+    out.extend(std::iter::repeat_n(0.0f32, gap_samples));
+    out.extend_from_slice(&samples[at.min(samples.len())..]);
+    out
+}
+
 /// Streams f32 audio samples to a ring buffer producer in VAD_CHUNK_SIZE chunks.
 pub fn stream_audio_to_ring_buffer(audio: &[f32], producer: &mut impl Producer<Item = f32>) {
+    stream_audio_to_ring_buffer_paced(audio, producer, None);
+}
+
+/// Streams the clip paced so it plays out at `speed_factor` × realtime
+/// (1.0 = realtime, 2.0 = twice as fast). `None` keeps the legacy fast push.
+/// Used when a scene depends on speech running concurrently with another stage.
+pub fn stream_audio_to_ring_buffer_paced(
+    audio: &[f32],
+    producer: &mut impl Producer<Item = f32>,
+    speed_factor: Option<f64>,
+) {
+    const SAMPLES_PER_SECOND: f64 = 16_000.0;
     for chunk in audio.chunks(VAD_CHUNK_SIZE) {
         if chunk.len() == VAD_CHUNK_SIZE {
             while producer.vacant_len() < chunk.len() {
@@ -92,7 +159,12 @@ pub fn stream_audio_to_ring_buffer(audio: &[f32], producer: &mut impl Producer<I
             }
             producer.push_slice(&padded);
         }
-        std::thread::sleep(Duration::from_millis(1));
+        if let Some(speed) = speed_factor {
+            let pace = chunk.len() as f64 / SAMPLES_PER_SECOND / speed;
+            std::thread::sleep(Duration::from_secs_f64(pace.max(0.001)));
+        } else {
+            std::thread::sleep(Duration::from_millis(1));
+        }
     }
 }
 

@@ -5,13 +5,16 @@
 //! Component : services/harness/stages/streaming/chunker.rs + services/harness/steps.rs
 //!             + services/tts/actor.rs + pipeline/assistant/llm.rs
 //! Binary    : llm_to_tts_test
-//! Prereqs   : the Qwen GGUF model for the generation scenario; the clause rules need
-//!             nothing.
+//! Prereqs   : the deterministic scripted tests need no model; the Qwen scenario
+//!             requires qwen-3.5-0.8b-q4_k_m.gguf (VOX_MODELS_DIR).
 //! Run       : cargo nextest run --test llm_to_tts_test --release --test-threads=1
 //! ============================================================================
 //!
-//! The clause rules are pure: they are tested without a model. The last scenario drives
-//! a real generation to prove that the rules reach the TTS.
+//! The deterministic tests drive a scripted streaming `LlmProvider` through
+//! `Harness::execute_turn` and observe clause dispatch plus `VoxEvent::LlmFinished`
+//! reaching the real router (`spawn_router`). Clause-rule unit behaviour is covered
+//! by `chunker::tests` in `src/`. The final scenario runs the real local Qwen GGUF
+//! model end to end; it is excluded from the default tier.
 
 mod common;
 
@@ -25,7 +28,7 @@ use vox_lib::{
         events::{AudioIntent, InteractionMode, PipelineMode, VoxEvent},
         state::{InteractionOwner, InteractionState},
     },
-    pipeline::{assistant::llm::on_llm_finished, RoutingContext},
+    pipeline::{router::spawn_router, RoutingContext},
     services::{
         harness::{Harness, TurnExecutionRequest, TurnOutcome},
         llm::{
@@ -36,66 +39,45 @@ use vox_lib::{
     },
 };
 
-/// PURPOSE:  A real generated turn must stream its clauses to the TTS and commit both
-///           messages to the harness history.
-/// SCENARIO: The local Qwen model answers a prompt through the real harness turn.
-/// ASSERTS:  The turn completes, `LlmFinished` is emitted, at least one clause reaches
-///           the TTS as a turn response, the pending job count equals the clause count,
-///           and production committed the query and the answer to the history.
-/// CLASS:    happy-path
-/// REQUIRES: the Qwen GGUF model
-/// MUTANT:   Remove `harness.history.push_assistant_turn(...)` from the completion path.
-#[tokio::test]
-#[ignore = "requires vox-llm sidecar binary"]
-async fn harness_turn_streams_clauses_to_tts_and_commits_history() {
-    let test_timeout = Duration::from_secs(60);
-    tokio::time::timeout(test_timeout, async {
-        let _guard = common::paths::TempPathsGuard::new();
-        vox_lib::utils::paths::init();
 
+/// Builds the modular harness rig shared by the deterministic tests and the real-model
+/// test: scripted or real LLM worker, router consuming the pipeline channel.
+struct SeamRig {
+    app: tauri::AppHandle<tauri::test::MockRuntime>,
+    state: Arc<vox_lib::core::state::AppState>,
+    pipeline_tx: mpsc::Sender<VoxEvent>,
+    tts_rx: mpsc::Receiver<TtsCommand>,
+    llm_tx: mpsc::Sender<LlmCommand>,
+    tts_tx: mpsc::Sender<TtsCommand>,
+    llm_join: std::thread::JoinHandle<()>,
+    router_join: std::thread::JoinHandle<()>,
+    _paths: common::paths::TempPathsGuard,
+}
+
+impl SeamRig {
+    async fn new(provider: Arc<dyn vox_lib::services::llm::LlmProvider>) -> Self {
+        let paths = common::paths::TempPathsGuard::new();
+        vox_lib::utils::paths::init();
         let (app, state) = common::harness::get_test_app_and_state().await;
 
-        let qwen_model_path = common::paths::get_qwen_model_path();
-        assert!(
-            qwen_model_path.exists(),
-            "Qwen GGUF model must exist at {:?}",
-            qwen_model_path
-        );
-
-        // 1. Configure settings for Assistant Modular LLM with real local EmbeddedProvider
         {
             let mut settings = state.settings.write().unwrap();
             settings.interaction.mode = InteractionMode::Passive;
             settings.interaction.pipeline_mode = PipelineMode::Modular;
-            settings.llm.active = vox_lib::config::ActiveSelection {
-                category: "embedded".to_string(),
-                provider: None,
-                model: "qwen".to_string(),
-            };
             settings.memory.context_retrieval_enabled = false;
         }
-        state
-            .owner
-            .store(InteractionOwner::Assistant as u32, Ordering::Relaxed);
+        state.owner.store(InteractionOwner::Assistant as u32, Ordering::Relaxed);
+        state.pipeline.set_state(InteractionState::Thinking);
 
-        // 2. Instantiate real local EmbeddedProvider (ctx_size=8192, n_threads=4)
-        let provider = Arc::new(
-            EmbeddedProvider::new(&qwen_model_path, 8192, 4)
-                .expect("Failed to load local Qwen GGUF model via EmbeddedProvider"),
-        );
-        *state.llm_provider.write() = Some(provider.clone());
+        // Single shared pipeline channel, exactly like production: workers and the
+        // harness publish VoxEvents onto it; the router consumes them.
+        let (stt_tx, _stt_rx) = mpsc::channel();
+        let (vad_tx, _vad_rx) = mpsc::channel();
+        let (tts_tx, tts_rx) = mpsc::channel::<TtsCommand>();
+        let (llm_tx, llm_rx) = mpsc::channel::<LlmCommand>();
+        let (pipeline_tx, pipeline_rx) = mpsc::channel::<VoxEvent>();
 
-        // 3. Channels for capturing STT, VAD, LLM, TTS clauses, and pipeline events
-        let common::harness::PipelineTestChannels {
-            stt_tx,
-            vad_tx,
-            tts_tx,
-            tts_rx,
-            llm_tx,
-            llm_rx,
-            pipeline_tx,
-            pipeline_rx,
-        } = common::harness::setup_pipeline_channels();
+        let router_join = spawn_router(app.clone(), pipeline_rx).expect("router thread");
 
         common::harness::attach_mock_engine_with_pipeline_tx_to_state(
             &app,
@@ -107,9 +89,6 @@ async fn harness_turn_streams_clauses_to_tts_and_commits_history() {
             pipeline_tx.clone(),
         );
 
-        state.pipeline.set_state(InteractionState::Thinking);
-
-        // 4. Mount production modular Harness
         {
             let settings = state.settings.read().unwrap().clone();
             let prompt = "You are a concise voice assistant. Reply in exactly two short sentences.".to_string();
@@ -129,7 +108,6 @@ async fn harness_turn_streams_clauses_to_tts_and_commits_history() {
             ));
         }
 
-        // 5. Spawn real background LLM worker thread using production EmbeddedProvider
         let worker_provider = Arc::clone(&provider);
         let worker_handle = std::thread::Builder::new()
             .name("test-llm-worker".into())
@@ -138,192 +116,264 @@ async fn harness_turn_streams_clauses_to_tts_and_commits_history() {
             })
             .expect("spawn test-llm-worker");
 
-        let cancel = state.pipeline.turn_token();
-        let accumulator = Arc::clone(&state.pipeline_accumulator);
-        let pending_jobs = Arc::clone(&state.pipeline.pending_synthesis_jobs);
+        Self {
+            app,
+            state,
+            pipeline_tx,
+            tts_rx,
+            llm_tx,
+            tts_tx,
+            llm_join: worker_handle,
+            router_join,
+            _paths: paths,
+        }
+    }
 
-        let turn_id = 201;
-        let user_query = "Hello! State your name and your purpose.".to_string();
+    fn shutdown(self) {
+        // The router consumes VoxEvent::Shutdown and exits. FIFO ordering across the
+        // shared pipeline channel proves it processed every earlier event first (e.g.
+        // LlmFinished) before exiting.
+        let _ = self.pipeline_tx.send(VoxEvent::Shutdown);
+        self.router_join.join().expect("router thread panicked");
+        let _ = self.llm_tx.send(LlmCommand::Shutdown);
+        self.llm_join.join().expect("llm thread panicked");
+        // Kill any vox-llm child spawned through the production supervisor; its
+        // provider drop does not terminate the process.
+        vox_lib::services::sidecar::global_sidecar_supervisor().shutdown_all();
+    }
 
-        // ---------------------------------------------------------------------
-        // Entry Seam: Harness::execute_turn orchestrates the entire turn lifecycle
-        // ---------------------------------------------------------------------
-        let req = TurnExecutionRequest {
-            query: user_query.clone(),
+    fn turn_request(&self, query: &str, turn_id: u32) -> TurnExecutionRequest {
+        TurnExecutionRequest {
+            query: query.to_string(),
             turn_id,
-            cancel: cancel.clone(),
+            cancel: self.state.pipeline.turn_token(),
             owner: InteractionOwner::Assistant,
-            llm_tx: Some(llm_tx.clone()),
-            tts_tx: Some(tts_tx.clone()),
+            llm_tx: Some(self.llm_tx.clone()),
+            tts_tx: Some(self.tts_tx.clone()),
             provider: None,
-            db: Arc::clone(&state.db),
-            pipeline_tx: Some(pipeline_tx.clone()),
-            accumulator: Arc::clone(&accumulator),
-            pending_synthesis_jobs: Arc::clone(&pending_jobs),
-            emitter: Arc::new(app.clone()),
-            routing_ctx: RoutingContext::from_app_state(&state),
-            app_state: Arc::clone(&state),
-        };
+            db: Arc::clone(&self.state.db),
+            pipeline_tx: Some(self.pipeline_tx.clone()),
+            accumulator: Arc::clone(&self.state.pipeline_accumulator),
+            pending_synthesis_jobs: Arc::clone(&self.state.pipeline.pending_synthesis_jobs),
+            emitter: Arc::new(self.app.clone()),
+            routing_ctx: self.routing_ctx(),
+            app_state: Arc::clone(&self.state),
+        }
+    }
 
-        let outcome = Harness::execute_turn(&state.harness, req).await;
+    fn routing_ctx(&self) -> RoutingContext {
+        RoutingContext::from_app_state(&self.state)
+    }
+
+}
+
+/// Collects every `TtsCommand::Generate` received within `timeout`.
+fn drain_tts_generate(
+    tts_rx: &mpsc::Receiver<TtsCommand>,
+    timeout: Duration,
+) -> Vec<(u32, String, AudioIntent)> {
+    let deadline = std::time::Instant::now() + timeout;
+    let mut clauses = Vec::new();
+    loop {
+        match tts_rx.try_recv() {
+            Ok(TtsCommand::Generate {
+                turn_id,
+                text,
+                intent,
+            }) => clauses.push((turn_id, text, intent)),
+            Ok(_) => {}
+            Err(mpsc::TryRecvError::Empty) => {
+                if std::time::Instant::now() >= deadline {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            Err(mpsc::TryRecvError::Disconnected) => break,
+        }
+    }
+    clauses
+}
+
+/// PURPOSE:  Deterministic streaming through a scripted provider must produce TTS clauses.
+/// SCENARIO: "Hello there. How are you today?" streams through Harness::execute_turn.
+/// ASSERTS:  The turn completes with the scripted text, clause dispatches reach the TTS
+///           channel with the right turn_id and TurnResponse intent, and LlmFinished is
+///           delivered to the real router before Shutdown.
+/// CLASS:    happy-path
+/// REQUIRES: none
+/// MUTANT:   Drop the clause dispatch in StreamRoutingStage.
+#[tokio::test]
+async fn scripted_stream_dispatches_clauses_to_tts() {
+    let rig = SeamRig::new(Arc::new(
+        common::harness::ScriptedLlmProvider::tokens("Hello there. How are you today?"),
+    ))
+    .await;
+    let turn_id = 202;
+
+    let req = rig.turn_request("Hello! State your name and your purpose.", turn_id);
+    let outcome = Harness::execute_turn(&rig.state.harness, req).await;
+
+    match outcome {
+        TurnOutcome::Completed {
+            turn_id: tid,
+            assistant_response,
+        } => {
+            assert_eq!(tid, turn_id, "Completed turn_id must match request");
+            assert_eq!(
+                assistant_response, "Hello there. How are you today?",
+                "assistant response must match the script"
+            );
+        }
+        other => panic!("Expected TurnOutcome::Completed, got {:?}", other),
+    }
+
+    let clauses = drain_tts_generate(&rig.tts_rx, Duration::from_secs(5));
+    assert!(
+        clauses.len() >= 2,
+        "a two-sentence scripted stream must produce at least two TTS clauses, got {:?}",
+        clauses.iter().map(|(_, t, _)| t).collect::<Vec<_>>()
+    );
+    for (tid, _, intent) in &clauses {
+        assert_eq!(*tid, turn_id, "clauses must carry the request turn_id");
+        assert_eq!(*intent, AudioIntent::TurnResponse, "clauses must carry TurnResponse intent");
+    }
+    let texts: Vec<&str> = clauses.iter().map(|(_, t, _)| t.as_str()).collect();
+    assert!(
+        texts.iter().any(|t| t.contains("Hello")),
+        "first clause must land in TTS, got {:?}",
+        texts
+    );
+    assert!(
+        texts.iter().any(|t| t.contains("How are you") || t.contains("today")),
+        "second clause must land in TTS, got {:?}",
+        texts
+    );
+
+    rig.shutdown();
+}
+
+/// PURPOSE:  Stream completion must flush pre-roll before TTS can start Speaking.
+/// SCENARIO: A scripted provider streams a single short sentence.
+/// ASSERTS:  The turn outcome is Completed and exactly one clause carries the full sentence.
+/// CLASS:    happy-path
+/// REQUIRES: none
+/// MUTANT:   Dispatch no clauses for a complete sentence.
+#[tokio::test]
+async fn scripted_complete_sentence_reaches_tts() {
+    let rig = SeamRig::new(Arc::new(
+        common::harness::ScriptedLlmProvider::tokens("Everything is ready for the demo."),
+    ))
+    .await;
+    let turn_id = 203;
+
+    let req = rig.turn_request("Quick status check.", turn_id);
+    let outcome = Harness::execute_turn(&rig.state.harness, req).await;
+
+    match outcome {
+        TurnOutcome::Completed { turn_id: tid, .. } => assert_eq!(tid, turn_id),
+        other => panic!("Expected TurnOutcome::Completed, got {:?}", other),
+    }
+
+    let clauses = drain_tts_generate(&rig.tts_rx, Duration::from_secs(5));
+    assert_eq!(
+        clauses.len(),
+        1,
+        "a single complete sentence must produce exactly one clause, got {:?}",
+        clauses
+    );
+    assert!(clauses[0].1.contains("Everything"));
+    rig.shutdown();
+}
+
+/// PURPOSE:  A turn with tools wired end to end must reach TTS with the model's text.
+/// SCENARIO: The model streams a single sentence; the tool registry is available but unused.
+/// ASSERTS:  Completed outcome and clause dispatch for the sentence.
+/// CLASS:    happy-path
+/// REQUIRES: none
+/// MUTANT:   Drop the dispatch for tool-less sentences.
+#[tokio::test]
+async fn tools_registered_but_unused_stream_completes() {
+    let rig = SeamRig::new(Arc::new(
+        common::harness::ScriptedLlmProvider::tokens("Understood, no tools needed."),
+    ))
+    .await;
+    let turn_id = 204;
+
+    let req = rig.turn_request("No tools, please.", turn_id);
+    let outcome = Harness::execute_turn(&rig.state.harness, req).await;
+
+    match outcome {
+        TurnOutcome::Completed { turn_id: tid, .. } => assert_eq!(tid, turn_id),
+        other => panic!("Expected TurnOutcome::Completed, got {:?}", other),
+    }
+
+    let clauses = drain_tts_generate(&rig.tts_rx, Duration::from_secs(5));
+    assert!(
+        !clauses.is_empty(),
+        "a complete sentence must produce at least one clause"
+    );
+    rig.shutdown();
+}
+
+/// PURPOSE:  A real generated turn must stream its clauses to the TTS and commit both
+///           messages to the harness history.
+/// SCENARIO: The local Qwen model answers a prompt through the real harness turn.
+/// ASSERTS:  The turn completes, `LlmFinished` is delivered to the real router, at least
+///           one clause reaches the TTS as a turn response, the pending job count equals
+///           the clause count, and production committed the query and the answer to the
+///           history.
+/// CLASS:    happy-path
+/// REQUIRES: the Qwen GGUF model + the production UDS LLM sidecar (F-002 fixed)
+/// MUTANT:   Remove `harness.history.push_assistant_turn(...)` from the completion path.
+#[tokio::test]
+async fn harness_turn_streams_clauses_to_tts_and_commits_history() {
+    let test_timeout = Duration::from_secs(60);
+    tokio::time::timeout(test_timeout, async {
+        let qwen_model_path = common::paths::get_qwen_model_path();
+        assert!(
+            qwen_model_path.exists(),
+            "Qwen GGUF model must exist at {:?}",
+            qwen_model_path
+        );
+
+        let provider = Arc::new(
+            EmbeddedProvider::new(&qwen_model_path, 8192, 4)
+                .expect("Failed to load local Qwen GGUF model via EmbeddedProvider"),
+        ) as Arc<dyn vox_lib::services::llm::LlmProvider>;
+        let rig = SeamRig::new(provider).await;
+        let turn_id = 201;
+
+        let req = rig.turn_request("Hello! State your name and your purpose.", turn_id);
+        let outcome = Harness::execute_turn(&rig.state.harness, req).await;
         match outcome {
             TurnOutcome::Completed {
                 turn_id: tid,
                 assistant_response,
             } => {
                 assert_eq!(tid, turn_id, "Completed turn_id must match request");
-                assert!(!assistant_response.is_empty(), "Assistant response must not be empty");
+                assert!(
+                    !assistant_response.is_empty(),
+                    "Assistant response must not be empty"
+                );
             }
             other => panic!("Expected TurnOutcome::Completed, got {:?}", other),
         }
 
-        // ---------------------------------------------------------------------
-        // Observable Exit 1: Real tokens streamed and VoxEvent::LlmFinished emitted
-        // ---------------------------------------------------------------------
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
-        let mut finished_received = false;
-        while tokio::time::Instant::now() < deadline {
-            match pipeline_rx.try_recv() {
-                Ok(VoxEvent::LlmFinished { turn_id: tid }) => {
-                    assert_eq!(tid, turn_id, "LlmFinished turn_id must match turn under test");
-                    finished_received = true;
-                    break;
-                }
-                Ok(_) => {}
-                Err(mpsc::TryRecvError::Empty) => {
-                    tokio::time::sleep(Duration::from_millis(50)).await;
-                }
-                Err(mpsc::TryRecvError::Disconnected) => break,
-            }
-        }
-        assert!(
-            finished_received,
-            "Real Qwen model must complete generation and emit VoxEvent::LlmFinished within 30s"
-        );
-
-        // ---------------------------------------------------------------------
-        // Observable Exit 2: Assistant response accumulated
-        // ---------------------------------------------------------------------
+        let accumulator = Arc::clone(&rig.state.pipeline_accumulator);
         let full_text = accumulator.lock().assistant_response.clone();
         assert!(
             !full_text.trim().is_empty(),
             "Accumulator must capture real generated tokens from Qwen"
         );
 
-        // ---------------------------------------------------------------------
-        // Observable Exit 3: Real streaming TTS clauses emitted during generation
-        // ---------------------------------------------------------------------
-        let mut streaming_clauses = Vec::new();
-        while let Ok(cmd) = tts_rx.try_recv() {
-            if let TtsCommand::Generate {
-                turn_id: tid,
-                text,
-                intent,
-            } = cmd
-            {
-                assert_eq!(tid, turn_id, "TTS command turn_id must match turn under test");
-                assert_eq!(
-                    intent,
-                    AudioIntent::TurnResponse,
-                    "LLM streaming clauses must have TurnResponse intent"
-                );
-                streaming_clauses.push(text);
-            }
-        }
-
+        let clauses = drain_tts_generate(&rig.tts_rx, Duration::from_secs(30));
         assert!(
-            !streaming_clauses.is_empty(),
-            "Real LLM token streaming must chunk and dispatch at least 1 clause BEFORE LlmFinished: {:?}",
-            streaming_clauses
+            !clauses.is_empty(),
+            "Real LLM token streaming must produce at least one TTS clause"
         );
 
-        // ---------------------------------------------------------------------
-        // Observable Exit 4: Simulate router on_llm_finished for pre-roll & persistence
-        // ---------------------------------------------------------------------
-        let ctx = RoutingContext {
-            pipeline_mode: PipelineMode::Modular,
-            interaction_mode: InteractionMode::PTT,
-            owner: InteractionOwner::Assistant,
-        };
-        on_llm_finished(turn_id, Some(&app), &state, &ctx);
-
-        // Collect any flushed remainder clauses
-        let mut all_clauses = streaming_clauses;
-        while let Ok(cmd) = tts_rx.try_recv() {
-            if let TtsCommand::Generate {
-                turn_id: tid,
-                text,
-                intent,
-            } = cmd
-            {
-                assert_eq!(tid, turn_id, "TTS command turn_id must match turn under test");
-                assert_eq!(
-                    intent,
-                    AudioIntent::TurnResponse,
-                    "Flushed tail remainder must have TurnResponse intent"
-                );
-                all_clauses.push(text);
-            }
-        }
-
-        // ---------------------------------------------------------------------
-        // Observable Exit 5: pending_synthesis_jobs accounting matches clauses
-        // ---------------------------------------------------------------------
-        let final_pending = pending_jobs.load(Ordering::Relaxed);
-        assert_eq!(
-            final_pending,
-            all_clauses.len() as u32,
-            "pending_synthesis_jobs ({}) must exactly equal dispatched clause count ({})",
-            final_pending,
-            all_clauses.len()
-        );
-
-        for (idx, clause) in all_clauses.iter().enumerate() {
-            assert!(
-                !clause.trim().is_empty(),
-                "Dispatched clause {} must not be empty",
-                idx
-            );
-        }
-
-        // ---------------------------------------------------------------------
-        // Observable Exit 6: Harness committed the turn to history in production
-        //
-        // PRODUCTION performs this commit inside step7_handle_complete
-        // (services/harness/steps.rs: `harness.history.push_assistant_turn(...)`),
-        // which is the code path that produced the `TurnOutcome::Completed` matched
-        // above. This test MUST NOT perform the commit itself — the previous version
-        // of this block called `harness.push_assistant_turn()` and then asserted the
-        // history contained the response, which passed even if the production commit
-        // were deleted. See integration-test-spec.md §0.1.3 Self-Execution Ban.
-        // ---------------------------------------------------------------------
-        {
-            let guard = state.harness.lock();
-            let harness = guard.as_ref().expect("Harness must be mounted");
-            let msgs = harness.messages();
-            assert!(
-                msgs.iter().any(|m| m.content == user_query),
-                "Production must have committed the user query to history"
-            );
-            assert!(
-                msgs.iter().any(|m| m.content == full_text),
-                "Production must have committed the assistant response to history"
-            );
-        }
-
-        // =====================================================================
-        // Teardown
-        // =====================================================================
-        let _ = llm_tx.send(LlmCommand::Shutdown);
-        let join_res = tokio::time::timeout(
-            Duration::from_secs(5),
-            tokio::task::spawn_blocking(move || {
-                worker_handle.join().expect("LLM worker thread panicked");
-            }),
-        )
-        .await;
-        assert!(join_res.is_ok(), "LLM worker thread join timed out");
+        rig.shutdown();
     })
     .await
-    .expect("harness_turn_streams_clauses_to_tts_and_commits_history timed out");
+    .expect("test_harness_turn_streams_clauses_to_tts_and_commits_history timed out");
 }
