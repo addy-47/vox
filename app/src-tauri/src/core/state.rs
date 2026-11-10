@@ -245,7 +245,10 @@ impl AppState {
                 let new_state = state.clone();
                 let app = app_handle_for_remote.clone();
                 tauri::async_runtime::spawn(async move {
-                    let st = app.state::<Arc<AppState>>().inner().clone();
+                    let Some(st_state) = app.try_state::<Arc<AppState>>() else {
+                        return;
+                    };
+                    let st = st_state.inner().clone();
                     let mut lock = st.engine.lock().await;
                     if let Some(ref mut engine) = *lock {
                         if new_state == RemoteLinkState::Connected {

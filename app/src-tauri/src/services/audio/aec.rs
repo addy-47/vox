@@ -13,7 +13,7 @@ use sonora::{
 use super::{AEC_FRAME_SAMPLES, AEC_SAMPLE_RATE};
 
 const DEFAULT_STREAM_DELAY_MS: i32 = 120;
-const MAX_RENDER_QUEUE_BACKLOG_SAMPLES: usize = 3200;
+const MAX_RENDER_QUEUE_BACKLOG_SAMPLES: usize = 9600;
 
 /// Commands dispatched to the dedicated AEC worker thread.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -104,7 +104,7 @@ impl EchoScene {
             let chunk = &samples[off..(off + frame).min(samples.len())];
             let mut padded = chunk.to_vec();
             padded.resize(frame, 0.0);
-            while self.rig.cap_prod.vacant_len() < frame {
+            while self.rig.cap_prod.occupied_len() >= frame * 4 {
                 std::thread::sleep(Duration::from_millis(1));
             }
             self.rig.cap_prod.push_slice(&padded);
@@ -141,7 +141,6 @@ impl EchoScene {
 /// REQUIRES: the test audio assets
 /// MUTANT:   Let the echo reach the VAD unattenuated.
 #[tokio::test]
-#[ignore = "PROD-BUG: AEC-120MS — AEC does not suppress 120 ms PipeWire render→capture skew; see docs/tests/test-findings.md F-001"]
 async fn solo_playback_over_six_seconds_never_interrupts_with_pipewire_delay() {
     let test_timeout = Duration::from_secs(60);
     tokio::time::timeout(test_timeout, async {
@@ -182,7 +181,6 @@ async fn solo_playback_over_six_seconds_never_interrupts_with_pipewire_delay() {
 /// REQUIRES: the test audio assets
 /// MUTANT:   Drop SpeechStart during Speaking (bracket arms never reached).
 #[tokio::test]
-#[ignore = "PROD-BUG: AEC-120MS — residual echo still triggers VAD onset; see docs/tests/test-findings.md F-001"]
 async fn double_talk_barge_in_cancels_the_playback_and_opens_listening() {
     let test_timeout = Duration::from_secs(60);
     tokio::time::timeout(test_timeout, async {

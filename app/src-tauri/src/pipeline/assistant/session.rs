@@ -382,8 +382,9 @@ pub fn on_session_start<R: Runtime + 'static>(
         }
     }
 
-    let state_arc: State<'_, Arc<AppState>> = app.state();
-    spawn_idle_monitor(app.clone(), Arc::clone(state_arc.inner()));
+    if let Some(state_arc) = app.try_state::<Arc<AppState>>() {
+        spawn_idle_monitor(app.clone(), Arc::clone(state_arc.inner()));
+    }
 
     state.pipeline_accumulator.lock().clear();
     transition(InteractionState::Ready, None, &session_ctx, app, state);
