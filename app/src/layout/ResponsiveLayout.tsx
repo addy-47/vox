@@ -19,7 +19,6 @@ import { preloadSettingsCardChunks } from "@/shared/components/settings/settings
 import { Tooltip } from "@/shared/ui/Tooltip";
 import { useProfilerDrawer } from "@/shared/components/profiler/ProfilerDrawer";
 import { usePageDrawer } from "@/shared/context/PageDrawerContext";
-import { useHistoryFilterStore } from "@/store/historyFilterStore";
 import { useSessionStore } from "@/store/sessionStore";
 import { useRemoteStore } from "@/store/remoteStore";
 import { getStackSize } from "@/shared/lib/overlayStack";
@@ -33,9 +32,6 @@ const ROUTE_REVEAL_MS = 150;
 
 async function prepareRoute(pathname: string): Promise<void> {
   switch (pathname) {
-    case "/history":
-      await import("@/pages/History");
-      return;
     case "/memory":
       await import("@/pages/Memory");
       return;
@@ -81,7 +77,6 @@ interface ResponsiveLayoutProps {
 
 const PAGE_TITLES: Record<string, string> = {
   "/": "Vox",
-  "/history": "Vox — History",
   "/memory": "Vox — Memory",
   "/settings": "Vox — Settings",
   "/monitoring": "Vox — Monitoring",
@@ -116,7 +111,6 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
   const { openProfiler } = useProfilerDrawer();
   const { openActiveDrawer, closeActiveDrawer } = usePageDrawer();
   const { isPanelOpen, closePanel, openPanel, togglePanel } = usePanelStateContext();
-  const historyDisplayMode = useHistoryFilterStore((s) => s.displayMode);
   const interactionState = useSessionStore((s) => s.interactionState);
   const remoteLinkState = useRemoteStore((s) => s.linkState);
 
@@ -261,7 +255,7 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
   const touchStartTime = useRef<number>(0);
   const [swipeDirection, setSwipeDirection] = useState<number>(0);
   const PRIMARY_ROUTES = useMemo(
-    () => (isMobile ? ["/", "/history", "/memory", "/settings"] : ["/", "/history", "/memory", "/settings", "/monitoring"]),
+    () => (isMobile ? ["/", "/memory", "/settings"] : ["/", "/memory", "/settings", "/monitoring"]),
     [isMobile]
   );
 
@@ -569,7 +563,7 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
       if (shift && (key === "ArrowRight" || key === "ArrowLeft")) {
         e.preventDefault();
         const isCompact = isCompactWidth();
-        const routes = isCompact ? ["/", "/history", "/memory", "/settings", "/monitoring"] : ["/", "/history", "/memory", "/settings"];
+        const routes = isCompact ? ["/", "/memory", "/settings", "/monitoring"] : ["/", "/memory", "/settings"];
         // Read through the ref, not the closure — keeps this listener out of
         // the pathname dependency so it isn't torn down and re-added per nav.
         const currentIndex = routes.indexOf(pathnameRef.current);
@@ -614,14 +608,13 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
 
   const isSettings = location.pathname === "/settings";
   const isHome = location.pathname === "/";
-  const isHistory = location.pathname === "/history";
   const isMemory = location.pathname === "/memory";
   const isMonitoring = location.pathname === "/monitoring";
 
-  // Ambient background logic: slow on home, slower on history/settings, disabled on memory/monitoring.
+  // Ambient background logic: slow on home, slower on settings, disabled on memory/monitoring.
   // On mobile (Android), ambient field is isolated exclusively to Home (/) to conserve GPU/battery.
   const ambientDisabled = isMemory || isMonitoring || (isMobile && !isHome);
-  const rippleSpeedMultiplier = isSettings || isHistory ? 2.2 : 1.4;
+  const rippleSpeedMultiplier = isSettings ? 2.2 : 1.4;
   const ambientOriginY = "calc(50% - 36px)";
 
   return (
@@ -647,11 +640,7 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
             originY={ambientOriginY}
             paused={!["Idle", "Paused", "Sleeping"].includes(interactionState) || isResizing}
             rippleSpeedMultiplier={rippleSpeedMultiplier}
-            rippleShape={
-              isHistory && historyDisplayMode === "orbit"
-                ? "orbit"
-                : "circle"
-            }
+            rippleShape="circle"
           />
         )}
 

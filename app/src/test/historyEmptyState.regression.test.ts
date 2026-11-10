@@ -1,7 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { renderHook } from "@testing-library/react";
-import React from "react";
-import { MemoryRouter } from "react-router-dom";
+import { describe, it, expect } from "vitest";
 import {
   formatDayLabel,
   formatMonthLabel,
@@ -16,22 +13,9 @@ import {
   groupDaysByMonth,
   chunkDaysIntoWindows,
   chunkSessionsIntoWindows,
-} from "@/shared/components/history";
-import { useHistory } from "@/shared/hooks/useHistory";
-import * as persistenceService from "@/services/persistenceService";
-import * as eventsService from "@/services/eventsService";
+} from "@/shared/components/home/recall";
 
-describe("History empty state & null-safety regressions", () => {
-  beforeEach(() => {
-    vi.spyOn(persistenceService, "getSessions").mockResolvedValue([]);
-    vi.spyOn(persistenceService, "getCachedSessions").mockReturnValue([]);
-    vi.spyOn(eventsService, "onSessionsChanged").mockReturnValue(() => {});
-  });
-
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
+describe("Recall date formatters empty state & null-safety regressions", () => {
   describe("formatters with empty/malformed inputs", () => {
     it("handles empty strings safely without throwing or NaN", () => {
       expect(formatDayLabel("")).toBe("");
@@ -65,28 +49,6 @@ describe("History empty state & null-safety regressions", () => {
 
       const sessionWindows = chunkSessionsIntoWindows([], 12);
       expect(sessionWindows).toEqual([]);
-    });
-  });
-
-  describe("useHistory hook initial and empty render", () => {
-    it("provides stable empty objects for currentMonthGroup and windows when no sessions exist", () => {
-      const wrapper: React.FC<{ children: React.ReactNode }> = ({ children }) =>
-        React.createElement(MemoryRouter, null, children);
-
-      const { result } = renderHook(() => useHistory(), { wrapper });
-
-      expect(result.current.currentMonthGroup).toBeDefined();
-      expect(result.current.currentMonthGroup.days).toBeDefined();
-      expect(Array.isArray(result.current.currentMonthGroup.days)).toBe(true);
-      expect(result.current.currentMonthGroup.days.length).toBe(0);
-
-      expect(result.current.currentMonthWindow).toBeDefined();
-      expect(result.current.currentMonthWindow.days).toBeDefined();
-      expect(Array.isArray(result.current.currentMonthWindow.days)).toBe(true);
-
-      expect(result.current.currentWindowSessions).toBeDefined();
-      expect(Array.isArray(result.current.currentWindowSessions)).toBe(true);
-      expect(result.current.currentWindowSessions.length).toBe(0);
     });
   });
 });

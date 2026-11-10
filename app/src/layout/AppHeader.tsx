@@ -23,7 +23,6 @@ export const AppHeader: React.FC = memo(() => {
   const pathname = location.pathname;
 
   const isHome = pathname === "/";
-  const isHistory = pathname === "/history";
   const isMemory = pathname === "/memory";
   const isSettings = pathname === "/settings";
   const isMonitoring = pathname === "/monitoring";
@@ -137,19 +136,6 @@ export const AppHeader: React.FC = memo(() => {
 
         {/* Remote Control Rocket Button */}
         {isHome && <RocketButton />}
-
-
-        {/* History Title in compact & mobile */}
-        {isHistory && (isCompact || isMobile) && (
-          <div className="flex flex-col min-w-0">
-            <h1 className="text-[15px] sm:text-[16px] font-display font-black uppercase tracking-[0.2em] text-[rgb(var(--foreground))] truncate">
-              History
-            </h1>
-            <span className="text-[11px] font-mono font-bold text-[rgb(var(--accent))] uppercase tracking-wider truncate">
-              Chronological Log
-            </span>
-          </div>
-        )}
 
         {/* Settings: Restore Defaults in left corner for full layouts */}
         {isSettings && !isCompact && !isMobile && <RestoreDefaultsButton />}
